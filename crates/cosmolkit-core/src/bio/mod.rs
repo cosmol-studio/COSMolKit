@@ -205,16 +205,25 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(amino_acids.len(), 128);
         for info in amino_acids {
-            assert_eq!(classify_residue_name(residue_name(info.name)), ResidueKind::AminoAcid);
+            assert_eq!(
+                classify_residue_name(residue_name(info.name)),
+                ResidueKind::AminoAcid
+            );
         }
     }
 
     #[test]
     fn classifies_gemmi_water_names_without_guessing_other_residues() {
         for name in ["HOH", "DOD", "WAT", "H2O"] {
-            assert_eq!(classify_residue_name(residue_name(name)), ResidueKind::Water);
+            assert_eq!(
+                classify_residue_name(residue_name(name)),
+                ResidueKind::Water
+            );
         }
-        assert_eq!(classify_residue_name(residue_name("XYZ")), ResidueKind::Unknown);
+        assert_eq!(
+            classify_residue_name(residue_name("XYZ")),
+            ResidueKind::Unknown
+        );
     }
 }
 
@@ -853,24 +862,27 @@ impl BioStructure {
     }
 
     /// Reads a Gemmi-aligned PDB structural record stream into a `BioStructure`.
-    #[cfg(feature = "io")]
+    #[cfg(any(feature = "io", feature = "__io_impl"))]
     pub fn from_pdb_str(text: &str) -> Result<Self, crate::io::bio::BioReadError> {
         Self::from_pdb_str_with_params(text, crate::io::bio::BioPdbReadParams::default())
     }
 
     /// Reads a PDB file into the complete structural model.
-    #[cfg(feature = "io")]
-    pub fn from_pdb(path: impl AsRef<std::path::Path>) -> Result<Self, crate::io::bio::BioReadError> {
+    #[cfg(any(feature = "io", feature = "__io_impl"))]
+    pub fn from_pdb(
+        path: impl AsRef<std::path::Path>,
+    ) -> Result<Self, crate::io::bio::BioReadError> {
         let path = path.as_ref();
-        let text = std::fs::read_to_string(path).map_err(|error| crate::io::bio::BioReadError::Parse {
-            line_number: 0,
-            message: format!("failed to read PDB file '{}': {error}", path.display()),
-        })?;
+        let text =
+            std::fs::read_to_string(path).map_err(|error| crate::io::bio::BioReadError::Parse {
+                line_number: 0,
+                message: format!("failed to read PDB file '{}': {error}", path.display()),
+            })?;
         Self::from_str_with_format(&text, &path.to_string_lossy(), BioCoorFormat::Pdb)
     }
 
     /// Reads a Gemmi-aligned PDB structural record stream with explicit PDB reader parameters.
-    #[cfg(feature = "io")]
+    #[cfg(any(feature = "io", feature = "__io_impl"))]
     pub fn from_pdb_str_with_params(
         text: &str,
         params: crate::io::bio::BioPdbReadParams,
@@ -879,30 +891,36 @@ impl BioStructure {
     }
 
     /// Reads a Gemmi-aligned mmCIF structural document into a `BioStructure`.
-    #[cfg(feature = "io")]
+    #[cfg(any(feature = "io", feature = "__io_impl"))]
     pub fn from_mmcif_str(text: &str, path: &str) -> Result<Self, crate::io::bio::BioReadError> {
         Self::from_str_with_format(text, path, BioCoorFormat::Mmcif)
     }
 
     /// Reads an mmCIF file into the complete structural model.
-    #[cfg(feature = "io")]
-    pub fn from_mmcif(path: impl AsRef<std::path::Path>) -> Result<Self, crate::io::bio::BioReadError> {
+    #[cfg(any(feature = "io", feature = "__io_impl"))]
+    pub fn from_mmcif(
+        path: impl AsRef<std::path::Path>,
+    ) -> Result<Self, crate::io::bio::BioReadError> {
         let path = path.as_ref();
-        let text = std::fs::read_to_string(path).map_err(|error| crate::io::bio::BioReadError::Parse {
-            line_number: 0,
-            message: format!("failed to read mmCIF file '{}': {error}", path.display()),
-        })?;
+        let text =
+            std::fs::read_to_string(path).map_err(|error| crate::io::bio::BioReadError::Parse {
+                line_number: 0,
+                message: format!("failed to read mmCIF file '{}': {error}", path.display()),
+            })?;
         Self::from_mmcif_str(&text, &path.to_string_lossy())
     }
 
     /// Reads a Gemmi-aligned structure by detecting the input format from text.
-    #[cfg(feature = "io")]
-    pub fn from_structure_str(text: &str, path: &str) -> Result<Self, crate::io::bio::BioReadError> {
+    #[cfg(any(feature = "io", feature = "__io_impl"))]
+    pub fn from_structure_str(
+        text: &str,
+        path: &str,
+    ) -> Result<Self, crate::io::bio::BioReadError> {
         Self::from_str_with_format(text, path, BioCoorFormat::Detect)
     }
 
     /// Reads a Gemmi-aligned structure using the requested coordinate format.
-    #[cfg(feature = "io")]
+    #[cfg(any(feature = "io", feature = "__io_impl"))]
     pub fn from_str_with_format(
         text: &str,
         path: &str,
@@ -912,13 +930,13 @@ impl BioStructure {
     }
 
     /// Serializes this complete structural model as Gemmi-aligned mmCIF.
-    #[cfg(feature = "io")]
+    #[cfg(any(feature = "io", feature = "__io_impl"))]
     pub fn to_mmcif(&self) -> Result<String, crate::io::bio::BioWriteError> {
         self.to_mmcif_with_options(crate::io::bio::MmcifWriteOptions::default())
     }
 
     /// Serializes this complete structural model with explicit mmCIF output options.
-    #[cfg(feature = "io")]
+    #[cfg(any(feature = "io", feature = "__io_impl"))]
     pub fn to_mmcif_with_options(
         &self,
         options: crate::io::bio::MmcifWriteOptions,
@@ -927,13 +945,16 @@ impl BioStructure {
     }
 
     /// Writes this complete structural model as Gemmi-aligned mmCIF.
-    #[cfg(feature = "io")]
-    pub fn write_mmcif(&self, path: impl AsRef<std::path::Path>) -> Result<(), crate::io::bio::BioWriteError> {
+    #[cfg(any(feature = "io", feature = "__io_impl"))]
+    pub fn write_mmcif(
+        &self,
+        path: impl AsRef<std::path::Path>,
+    ) -> Result<(), crate::io::bio::BioWriteError> {
         self.write_mmcif_with_options(path, crate::io::bio::MmcifWriteOptions::default())
     }
 
     /// Writes this complete structural model with explicit mmCIF output options.
-    #[cfg(feature = "io")]
+    #[cfg(any(feature = "io", feature = "__io_impl"))]
     pub fn write_mmcif_with_options(
         &self,
         path: impl AsRef<std::path::Path>,
@@ -1069,7 +1090,10 @@ impl BioStructure {
 
     #[must_use]
     pub fn atom_position(&self, atom: AtomId) -> Option<[f64; 3]> {
-        self.coordinates.positions.get(atom.index() as usize).copied()
+        self.coordinates
+            .positions
+            .get(atom.index() as usize)
+            .copied()
     }
 
     #[must_use]

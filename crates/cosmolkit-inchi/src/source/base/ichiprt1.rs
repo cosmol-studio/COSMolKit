@@ -604,7 +604,10 @@ pub(crate) fn szGetTag(
     // INCHI✔️❌: }
     // END INCHI C FUNCTION: szGetTag
 
-    fn c_bytes(heap: &SourceHeap, pointer: SourceConstPointer<i8>) -> Result<Vec<i8>, SourceHeapError> {
+    fn c_bytes(
+        heap: &SourceHeap,
+        pointer: SourceConstPointer<i8>,
+    ) -> Result<Vec<i8>, SourceHeapError> {
         let bytes = heap.slice(pointer)?;
         let length = bytes
             .iter()
@@ -613,7 +616,11 @@ pub(crate) fn szGetTag(
         Ok(bytes[..length].to_vec())
     }
 
-    fn write_c_bytes(heap: &mut SourceHeap, output: SourceMutPointer<i8>, bytes: &[i8]) -> Result<(), SourceHeapError> {
+    fn write_c_bytes(
+        heap: &mut SourceHeap,
+        output: SourceMutPointer<i8>,
+        bytes: &[i8],
+    ) -> Result<(), SourceHeapError> {
         let target = heap.slice_mut(output)?;
         let required = bytes
             .len()
@@ -768,7 +775,8 @@ pub(crate) fn str_LineEnd(
                 if inchi_strbuf_update(heap, Some(buffer), addition)? < 0 {
                     return Err(SourceHeapError::AllocationFailed);
                 }
-                let used = usize::try_from(buffer.nUsedLength).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+                let used = usize::try_from(buffer.nUsedLength)
+                    .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
                 let source = heap
                     .slice(buffer.pStr.as_const())?
                     .get(..=used)
@@ -846,8 +854,9 @@ pub(crate) fn MergeZzInStrHillFormulaComponent(
     let mut next_search = digit_position;
     let mut count = 1_i32;
     if digit_position < nul && (bytes[digit_position] as u8).is_ascii_digit() {
-        let start =
-            string.offset(i64::try_from(digit_position).map_err(|_| SourceHeapError::PointerOffsetOverflow)?)?;
+        let start = string.offset(
+            i64::try_from(digit_position).map_err(|_| SourceHeapError::PointerOffsetOverflow)?,
+        )?;
         let mut end = start.as_const();
         count = inchi_strtol(heap, start.as_const(), Some(&mut end), 10)? as i32;
         next_search = usize::try_from(end.as_mut().difference(string)?)
@@ -864,7 +873,9 @@ pub(crate) fn MergeZzInStrHillFormulaComponent(
     let second_digit = second_z + 2;
     let mut second_count = 1_i32;
     if second_digit < nul && (bytes[second_digit] as u8).is_ascii_digit() {
-        let start = string.offset(i64::try_from(second_digit).map_err(|_| SourceHeapError::PointerOffsetOverflow)?)?;
+        let start = string.offset(
+            i64::try_from(second_digit).map_err(|_| SourceHeapError::PointerOffsetOverflow)?,
+        )?;
         second_count = inchi_strtol(heap, start.as_const(), None, 10)? as i32;
     }
     count = count.wrapping_add(second_count);
@@ -952,8 +963,8 @@ pub(crate) fn MergeZzInHillFormula(
     if string_buffer.pStr.is_null() || string_buffer.nUsedLength < 1 {
         return Ok(0);
     }
-    let allocated =
-        usize::try_from(string_buffer.nAllocatedLength).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+    let allocated = usize::try_from(string_buffer.nAllocatedLength)
+        .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
     let temporary_length = u64::try_from(allocated)
         .map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?
         .checked_add(1)
@@ -982,7 +993,8 @@ pub(crate) fn MergeZzInHillFormula(
     };
 
     inchi_strbuf_reset(heap, Some(string_buffer))?;
-    let format = heap.allocate_model_storage(b"%-s%-c\0".iter().map(|byte| *byte as i8).collect())?;
+    let format =
+        heap.allocate_model_storage(b"%-s%-c\0".iter().map(|byte| *byte as i8).collect())?;
     let mut position = 0_usize;
     loop {
         let copy_bytes = heap.slice(copy.as_const())?;
@@ -1203,9 +1215,27 @@ fn isotopic_ident_labels(heap: &mut SourceHeap) -> Result<Vec<INCHI_TAG>, Source
             b"isotopic\0".as_slice(),
             0,
         ),
-        (2, b"/\0".as_slice(), b"stereo\0".as_slice(), b"stereo\0".as_slice(), 0),
-        (9, b"/b\0".as_slice(), b"dbond\0".as_slice(), b"dbond\0".as_slice(), 0),
-        (10, b"/t\0".as_slice(), b"sp3\0".as_slice(), b"sp3\0".as_slice(), 0),
+        (
+            2,
+            b"/\0".as_slice(),
+            b"stereo\0".as_slice(),
+            b"stereo\0".as_slice(),
+            0,
+        ),
+        (
+            9,
+            b"/b\0".as_slice(),
+            b"dbond\0".as_slice(),
+            b"dbond\0".as_slice(),
+            0,
+        ),
+        (
+            10,
+            b"/t\0".as_slice(),
+            b"sp3\0".as_slice(),
+            b"sp3\0".as_slice(),
+            0,
+        ),
         (
             11,
             b"/m\0".as_slice(),
@@ -1220,7 +1250,13 @@ fn isotopic_ident_labels(heap: &mut SourceHeap) -> Result<Vec<INCHI_TAG>, Source
             b"type\0".as_slice(),
             0,
         ),
-        (13, b"/i\0".as_slice(), b"atoms\0".as_slice(), b"atoms\0".as_slice(), 1),
+        (
+            13,
+            b"/i\0".as_slice(),
+            b"atoms\0".as_slice(),
+            b"atoms\0".as_slice(),
+            1,
+        ),
         (
             14,
             b"/h\0".as_slice(),
@@ -1355,7 +1391,8 @@ pub(crate) fn OutputINChI2(
     // END INCHI C FUNCTION: OutputINChI2
 
     let base_options = output_options
-        & !((crate::source_types::INCHI_OUT_PLAIN_TEXT | crate::source_types::INCHI_OUT_PLAIN_TEXT_COMMENTS) as i32);
+        & !((crate::source_types::INCHI_OUT_PLAIN_TEXT
+            | crate::source_types::INCHI_OUT_PLAIN_TEXT_COMMENTS) as i32);
     let mut result = 0_i32;
     for (index, current_option) in [
         crate::source_types::INCHI_OUT_PLAIN_TEXT as i32,
@@ -2599,10 +2636,16 @@ pub(crate) fn OutputINChI1(
     ) -> Result<i32, SourceHeapError> {
         let mobile = inchi(heap, sort.pINChI[crate::source_types::TAUT_YES as usize])?;
         let fixed = inchi(heap, sort.pINChI[crate::source_types::TAUT_NON as usize])?;
-        let mobile_exists = mobile.as_ref().is_some_and(|value| value.nNumberOfAtoms != 0);
-        let fixed_exists = fixed.as_ref().is_some_and(|value| value.nNumberOfAtoms != 0);
-        let mobile_non_taut = mobile_exists && mobile.as_ref().is_some_and(|value| value.lenTautomer == 0);
-        let fixed_non_taut = fixed_exists && fixed.as_ref().is_some_and(|value| value.lenTautomer == 0);
+        let mobile_exists = mobile
+            .as_ref()
+            .is_some_and(|value| value.nNumberOfAtoms != 0);
+        let fixed_exists = fixed
+            .as_ref()
+            .is_some_and(|value| value.nNumberOfAtoms != 0);
+        let mobile_non_taut =
+            mobile_exists && mobile.as_ref().is_some_and(|value| value.lenTautomer == 0);
+        let fixed_non_taut =
+            fixed_exists && fixed.as_ref().is_some_and(|value| value.lenTautomer == 0);
         Ok(match mode {
             value if value == crate::source_types::OUT_N1 as i32 => {
                 if mobile_non_taut {
@@ -2613,7 +2656,10 @@ pub(crate) fn OutputINChI1(
                     -1
                 }
             }
-            value if value == crate::source_types::OUT_T1 as i32 || value == crate::source_types::OUT_TN as i32 => {
+            value
+                if value == crate::source_types::OUT_T1 as i32
+                    || value == crate::source_types::OUT_TN as i32 =>
+            {
                 if mobile_exists {
                     crate::source_types::TAUT_YES as i32
                 } else if fixed_exists {
@@ -2645,7 +2691,10 @@ pub(crate) fn OutputINChI1(
             _ => -1,
         })
     }
-    fn has_fixed(heap: &SourceHeap, sort: &crate::source_types::INCHI_SORT) -> Result<i32, SourceHeapError> {
+    fn has_fixed(
+        heap: &SourceHeap,
+        sort: &crate::source_types::INCHI_SORT,
+    ) -> Result<i32, SourceHeapError> {
         Ok(i32::from(
             inchi(heap, sort.pINChI[crate::source_types::TAUT_NON as usize])?
                 .is_some_and(|value| value.nNumberOfAtoms != 0),
@@ -2679,7 +2728,8 @@ pub(crate) fn OutputINChI1(
         format: &[u8],
         arguments: Vec<SourceFormatArgument>,
     ) -> Result<(), SourceHeapError> {
-        let format = heap.allocate_model_storage(format.iter().map(|byte| *byte as i8).collect::<Vec<_>>())?;
+        let format =
+            heap.allocate_model_storage(format.iter().map(|byte| *byte as i8).collect::<Vec<_>>())?;
         let arguments = SourceVaList {
             arguments,
             ..SourceVaList::default()
@@ -2691,7 +2741,10 @@ pub(crate) fn OutputINChI1(
         }
         Ok(())
     }
-    fn c_nonempty(heap: &SourceHeap, pointer: SourceMutPointer<i8>) -> Result<bool, SourceHeapError> {
+    fn c_nonempty(
+        heap: &SourceHeap,
+        pointer: SourceMutPointer<i8>,
+    ) -> Result<bool, SourceHeapError> {
         if pointer.is_null() {
             return Ok(false);
         }
@@ -2711,12 +2764,20 @@ pub(crate) fn OutputINChI1(
         let empty = heap.allocate_model_storage(vec![0_i8])?;
         let space = heap.allocate_model_storage(vec![b' ' as i8, 0])?;
         let equal = heap.allocate_model_storage(vec![b'=' as i8, 0])?;
-        let missing =
-            heap.allocate_model_storage(b"Missing SDfile data value\0".iter().map(|byte| *byte as i8).collect())?;
+        let missing = heap.allocate_model_storage(
+            b"Missing SDfile data value\0"
+                .iter()
+                .map(|byte| *byte as i8)
+                .collect(),
+        )?;
         let has_label = c_nonempty(heap, input_parameters.pSdfLabel)?;
         let has_value = c_nonempty(heap, input_parameters.pSdfValue)?;
         let first = if has_label { space } else { empty };
-        let label = if has_label { input_parameters.pSdfLabel } else { empty };
+        let label = if has_label {
+            input_parameters.pSdfLabel
+        } else {
+            empty
+        };
         let separator = if has_label {
             if has_value { equal } else { space }
         } else {
@@ -2734,7 +2795,8 @@ pub(crate) fn OutputINChI1(
         } else {
             b"InChI serialization error for structure #%d.%s%s%s%s\n\0".as_slice()
         };
-        let format = heap.allocate_model_storage(format.iter().map(|byte| *byte as i8).collect::<Vec<_>>())?;
+        let format =
+            heap.allocate_model_storage(format.iter().map(|byte| *byte as i8).collect::<Vec<_>>())?;
         crate::source::base::ichi_io::inchi_ios_eprint(
             heap,
             Some(log),
@@ -2762,7 +2824,8 @@ pub(crate) fn OutputINChI1(
         return Ok(0);
     }
 
-    let basic_index = usize::try_from(basic_or_reconnected).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let basic_index =
+        usize::try_from(basic_or_reconnected).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let number_of_components = *component_counts
         .get(basic_index)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -2780,14 +2843,19 @@ pub(crate) fn OutputINChI1(
 
     let plain_text = i32::from(
         output_options
-            & (crate::source_types::INCHI_OUT_PLAIN_TEXT | crate::source_types::INCHI_OUT_PLAIN_TEXT_COMMENTS) as i32
+            & (crate::source_types::INCHI_OUT_PLAIN_TEXT
+                | crate::source_types::INCHI_OUT_PLAIN_TEXT_COMMENTS) as i32
             != 0,
     );
-    let plain_comments = i32::from(output_options & crate::source_types::INCHI_OUT_PLAIN_TEXT_COMMENTS as i32 != 0);
+    let plain_comments =
+        i32::from(output_options & crate::source_types::INCHI_OUT_PLAIN_TEXT_COMMENTS as i32 != 0);
     let mut io = INCHI_OUT_CTL {
         bAbcNumbers: input_parameters.bAbcNumbers,
-        ATOM_MODE: (if input_parameters.bAbcNumbers != 0 { 2 } else { 0 })
-            | 4
+        ATOM_MODE: (if input_parameters.bAbcNumbers != 0 {
+            2
+        } else {
+            0
+        }) | 4
             | 1
             | 16
             | if input_parameters.bAbcNumbers != 0 && input_parameters.bCtPredecessors != 0 {
@@ -2795,8 +2863,16 @@ pub(crate) fn OutputINChI1(
             } else {
                 0
             }
-            | if input_parameters.bCtPredecessors != 0 { 8 } else { 0 },
-        TAUT_MODE: if input_parameters.bAbcNumbers != 0 { 2 } else { 0 },
+            | if input_parameters.bCtPredecessors != 0 {
+                8
+            } else {
+                0
+            },
+        TAUT_MODE: if input_parameters.bAbcNumbers != 0 {
+            2
+        } else {
+            0
+        },
         pSortPrintINChIFlags: sort_print_flags,
         num_components: number_of_components,
         pINChISortTautAndNonTaut: selected_row,
@@ -2861,10 +2937,12 @@ pub(crate) fn OutputINChI1(
     let mut has_iso_h = 0_i32;
     let mut taut_and_non_taut = 0_i32;
     let mut taut_is_non_taut = 0_i32;
-    let fix_transposed_charge =
-        i32::from(output_options & crate::source_types::INCHI_OUT_FIX_TRANSPOSITION_CHARGE_BUG as i32 != 0);
+    let fix_transposed_charge = i32::from(
+        output_options & crate::source_types::INCHI_OUT_FIX_TRANSPOSITION_CHARGE_BUG as i32 != 0,
+    );
     io.bTautomericOutputAllowed = i32::from(
-        io.bOutType == crate::source_types::OUT_T1 as i32 || io.bOutType == crate::source_types::OUT_TN as i32,
+        io.bOutType == crate::source_types::OUT_T1 as i32
+            || io.bOutType == crate::source_types::OUT_TN as i32,
     );
     io.pINChISort = if io.bTautomericOutputAllowed != 0 {
         mobile_sorts
@@ -2890,19 +2968,30 @@ pub(crate) fn OutputINChI1(
             &mut io.sDifSegs,
             fix_transposed_charge,
         )?;
-        io.bNonTautIsIdenticalToTaut &=
-            i32::from(crate::source::base::ichimake::CompINChITautVsNonTaut(heap, &mobile_sort, &fixed_sort, 1)? == 0);
-        if let Some(value) = aux(heap, mobile_sort.pINChI_Aux[crate::source_types::TAUT_YES as usize])? {
+        io.bNonTautIsIdenticalToTaut &= i32::from(
+            crate::source::base::ichimake::CompINChITautVsNonTaut(
+                heap,
+                &mobile_sort,
+                &fixed_sort,
+                1,
+            )? == 0,
+        );
+        if let Some(value) = aux(
+            heap,
+            mobile_sort.pINChI_Aux[crate::source_types::TAUT_YES as usize],
+        )? {
             for isotope in 0..3 {
                 has_iso_h = has_iso_h.wrapping_add(i32::from(
                     value.nNumRemovedIsotopicH[isotope]
                         .checked_abs()
                         .ok_or(SourceHeapError::SourceIntegerOverflow)?,
                 ));
-                io.num_iso_H[isotope] =
-                    io.num_iso_H[isotope].wrapping_add(i32::from(value.nNumRemovedIsotopicH[isotope]));
+                io.num_iso_H[isotope] = io.num_iso_H[isotope]
+                    .wrapping_add(i32::from(value.nNumRemovedIsotopicH[isotope]));
             }
-            io.nNumRemovedProtons = io.nNumRemovedProtons.wrapping_add(i32::from(value.nNumRemovedProtons));
+            io.nNumRemovedProtons = io
+                .nNumRemovedProtons
+                .wrapping_add(i32::from(value.nNumRemovedProtons));
         }
         if io.bTautomericOutputAllowed != 0 {
             let j = crate::source_types::TAUT_YES as i32;
@@ -2911,11 +3000,15 @@ pub(crate) fn OutputINChI1(
             } else {
                 selected_representation(heap, &mobile_sort, io.bOutType)?
             };
-            if io.bOutType == crate::source_types::OUT_TN as i32 && jj == crate::source_types::TAUT_YES as i32 {
-                let value = inchi(heap, mobile_sort.pINChI[jj as usize])?.ok_or(SourceHeapError::NullPointer)?;
+            if io.bOutType == crate::source_types::OUT_TN as i32
+                && jj == crate::source_types::TAUT_YES as i32
+            {
+                let value = inchi(heap, mobile_sort.pINChI[jj as usize])?
+                    .ok_or(SourceHeapError::NullPointer)?;
                 if value.lenTautomer > 0 {
-                    taut_and_non_taut = taut_and_non_taut
-                        .wrapping_add(i32::from(value.bDeleted == 0 && has_fixed(heap, &mobile_sort)? != 0));
+                    taut_and_non_taut = taut_and_non_taut.wrapping_add(i32::from(
+                        value.bDeleted == 0 && has_fixed(heap, &mobile_sort)? != 0,
+                    ));
                 } else {
                     taut_is_non_taut = taut_is_non_taut.wrapping_add(1);
                 }
@@ -2930,7 +3023,8 @@ pub(crate) fn OutputINChI1(
                                     .wrapping_add(i32::from(value_aux.nNumRemovedIsotopicH[2])),
                             );
                             taut_iso_atom = taut_iso_atom.wrapping_add(i32::from(
-                                value.nNumberOfIsotopicAtoms > 0 || value.nNumberOfIsotopicTGroups > 0,
+                                value.nNumberOfIsotopicAtoms > 0
+                                    || value.nNumberOfIsotopicTGroups > 0,
                             ));
                         }
                     }
@@ -2939,11 +3033,12 @@ pub(crate) fn OutputINChI1(
         }
     }
     io.sDifSegs[crate::source_types::tagDiffINChILayers_DIFL_M as usize]
-        [crate::source_types::tagDiffINChISegments_DIFS_p_PROTONS as usize] = if io.nNumRemovedProtons != 0 {
-        crate::source_types::tagMarkDiff_DIFV_NEQ2PRECED as i8
-    } else {
-        crate::source_types::tagMarkDiff_DIFV_BOTH_EMPTY as i8
-    };
+        [crate::source_types::tagDiffINChISegments_DIFS_p_PROTONS as usize] =
+        if io.nNumRemovedProtons != 0 {
+            crate::source_types::tagMarkDiff_DIFV_NEQ2PRECED as i8
+        } else {
+            crate::source_types::tagMarkDiff_DIFV_BOTH_EMPTY as i8
+        };
     io.sDifSegs[crate::source_types::tagDiffINChILayers_DIFL_MI as usize]
         [crate::source_types::tagDiffINChISegments_DIFS_h_H_ATOMS as usize] = if has_iso_h != 0 {
         crate::source_types::tagMarkDiff_DIFV_NEQ2PRECED as i8
@@ -2973,9 +3068,15 @@ pub(crate) fn OutputINChI1(
                 selected_representation(heap, &sort, io.bOutType)?
             };
             let target = match io.bOutType {
-                value if value == crate::source_types::OUT_N1 as i32 => crate::source_types::TAUT_NON as i32,
-                value if value == crate::source_types::OUT_T1 as i32 => crate::source_types::TAUT_YES as i32,
-                value if value == crate::source_types::OUT_NT as i32 => crate::source_types::TAUT_NON as i32,
+                value if value == crate::source_types::OUT_N1 as i32 => {
+                    crate::source_types::TAUT_NON as i32
+                }
+                value if value == crate::source_types::OUT_T1 as i32 => {
+                    crate::source_types::TAUT_YES as i32
+                }
+                value if value == crate::source_types::OUT_NT as i32 => {
+                    crate::source_types::TAUT_NON as i32
+                }
                 value if value == crate::source_types::OUT_TN as i32 => requested,
                 _ => continue,
             };
@@ -2983,13 +3084,17 @@ pub(crate) fn OutputINChI1(
                 continue;
             }
             if io.bOutType == crate::source_types::OUT_TN as i32 && found < 0 {
-                if taut_and_non_taut != 0 && taut_is_non_taut != 0 && requested == crate::source_types::TAUT_NON as i32
+                if taut_and_non_taut != 0
+                    && taut_is_non_taut != 0
+                    && requested == crate::source_types::TAUT_NON as i32
                 {
-                    found = selected_representation(heap, &sort, crate::source_types::OUT_T1 as i32)?;
+                    found =
+                        selected_representation(heap, &sort, crate::source_types::OUT_T1 as i32)?;
                     if found < 0 {
                         continue;
                     }
-                    let fallback = inchi(heap, sort.pINChI[found as usize])?.ok_or(SourceHeapError::NullPointer)?;
+                    let fallback = inchi(heap, sort.pINChI[found as usize])?
+                        .ok_or(SourceHeapError::NullPointer)?;
                     if fallback.bDeleted != 0 || fallback.lenTautomer != 0 {
                         continue;
                     }
@@ -3013,14 +3118,17 @@ pub(crate) fn OutputINChI1(
                 all_mobile_atoms = all_mobile_atoms.wrapping_add(value.nNumberOfAtoms);
             }
             let current_taut = i32::from(value.lenTautomer > 0);
-            let current_iso = i32::from(value.nNumberOfIsotopicAtoms > 0 || value.nNumberOfIsotopicTGroups > 0);
+            let current_iso =
+                i32::from(value.nNumberOfIsotopicAtoms > 0 || value.nNumberOfIsotopicTGroups > 0);
             let possible_iso_h = i32::from(
                 (!value.nPossibleLocationsOfIsotopicH.is_null()
                     && heap.slice(value.nPossibleLocationsOfIsotopicH.as_const())?[0] > 1)
                     || value.lenTautomer > 1,
             );
-            let iso_h_stereo =
-                i32::from((possible_iso_h != 0 && (taut_iso_h_number != 0 || taut_iso_atom != 0)) || current_iso != 0);
+            let iso_h_stereo = i32::from(
+                (possible_iso_h != 0 && (taut_iso_h_number != 0 || taut_iso_atom != 0))
+                    || current_iso != 0,
+            );
             if found == requested && value.bDeleted != 0 {
                 io.num_comp[requested as usize] = io.num_comp[requested as usize].wrapping_sub(1);
                 if current_taut != 0 {
@@ -3055,10 +3163,18 @@ pub(crate) fn OutputINChI1(
                         .as_ref()
                         .is_some_and(|stereo| stereo.nNumberOfStereoCenters > 0),
             );
-            let mut current_iso_sp3_inverted =
-                i32::from(current_iso_sp3 != 0 && iso_stereo.as_ref().is_some_and(|stereo| stereo.nCompInv2Abs != 0));
-            requested_racemic |= i32::from(value.nFlags & u64::from(crate::source_types::INCHI_FLAG_RAC_STEREO) != 0);
-            requested_relative |= i32::from(value.nFlags & u64::from(crate::source_types::INCHI_FLAG_REL_STEREO) != 0);
+            let mut current_iso_sp3_inverted = i32::from(
+                current_iso_sp3 != 0
+                    && iso_stereo
+                        .as_ref()
+                        .is_some_and(|stereo| stereo.nCompInv2Abs != 0),
+            );
+            requested_racemic |= i32::from(
+                value.nFlags & u64::from(crate::source_types::INCHI_FLAG_RAC_STEREO) != 0,
+            );
+            requested_relative |= i32::from(
+                value.nFlags & u64::from(crate::source_types::INCHI_FLAG_REL_STEREO) != 0,
+            );
             if current_sp2 != 0 && current_iso_sp2 != 0 {
                 current_iso_sp2 = i32::from(
                     crate::source::base::ichiprt2::Eql_INChI_Stereo(
@@ -3097,11 +3213,13 @@ pub(crate) fn OutputINChI1(
                 }
             }
             let current_relative = i32::from(requested_relative != 0 && current_sp3 != 0);
-            let current_iso_relative =
-                i32::from(requested_relative != 0 && (current_iso_sp3 != 0 || current_iso_sp3_inverted != 0));
+            let current_iso_relative = i32::from(
+                requested_relative != 0 && (current_iso_sp3 != 0 || current_iso_sp3_inverted != 0),
+            );
             let current_racemic = i32::from(requested_racemic != 0 && current_sp3 != 0);
-            let current_iso_racemic =
-                i32::from(requested_racemic != 0 && (current_iso_sp3 != 0 || current_iso_sp3_inverted != 0));
+            let current_iso_racemic = i32::from(
+                requested_racemic != 0 && (current_iso_sp3 != 0 || current_iso_sp3_inverted != 0),
+            );
             if requested_relative != 0 {
                 current_sp3 = i32::from(
                     current_relative != 0
@@ -3110,7 +3228,11 @@ pub(crate) fn OutputINChI1(
                                 .as_ref()
                                 .is_some_and(|value| value.nNumberOfStereoCenters > 1)),
                 );
-                current_iso_sp3 = if current_iso_relative != 0 { current_iso_sp3 } else { 0 };
+                current_iso_sp3 = if current_iso_relative != 0 {
+                    current_iso_sp3
+                } else {
+                    0
+                };
             } else if requested_racemic != 0 {
                 current_sp3 = i32::from(
                     current_racemic > 1
@@ -3119,52 +3241,80 @@ pub(crate) fn OutputINChI1(
                                 .as_ref()
                                 .is_some_and(|value| value.nNumberOfStereoCenters > 1)),
                 );
-                current_iso_sp3 = if current_iso_racemic > 1 { current_iso_sp3 } else { 0 };
+                current_iso_sp3 = if current_iso_racemic > 1 {
+                    current_iso_sp3
+                } else {
+                    0
+                };
             }
-            let target = usize::try_from(target).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let target =
+                usize::try_from(target).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             io.bIsotopic |= current_iso;
             has_isotopic_atoms[target] |= current_iso;
             stereo_sp2[target] |= current_sp2;
             stereo_sp3[target] |= current_sp3;
             io.bIgn_UU_Sp3[target] |= i32::from(
-                current_sp3 == 0 && value.nFlags & u64::from(crate::source_types::INCHI_FLAG_SC_IGN_ALL_UU) != 0,
+                current_sp3 == 0
+                    && value.nFlags & u64::from(crate::source_types::INCHI_FLAG_SC_IGN_ALL_UU) != 0,
             );
             io.bIgn_UU_Sp2[target] |= i32::from(
-                current_sp2 == 0 && value.nFlags & u64::from(crate::source_types::INCHI_FLAG_SB_IGN_ALL_UU) != 0,
+                current_sp2 == 0
+                    && value.nFlags & u64::from(crate::source_types::INCHI_FLAG_SB_IGN_ALL_UU) != 0,
             );
             isotopic_stereo_sp2[target] |= current_iso_sp2;
             isotopic_stereo_sp3[target] |= current_iso_sp3;
             io.bIgn_UU_Sp3_Iso[target] |= i32::from(
                 current_iso_sp3 == 0
-                    && value.nFlags & u64::from(crate::source_types::INCHI_FLAG_SC_IGN_ALL_ISO_UU) != 0,
+                    && value.nFlags & u64::from(crate::source_types::INCHI_FLAG_SC_IGN_ALL_ISO_UU)
+                        != 0,
             );
             io.bIgn_UU_Sp2_Iso[target] |= i32::from(
                 current_iso_sp2 == 0
-                    && value.nFlags & u64::from(crate::source_types::INCHI_FLAG_SB_IGN_ALL_ISO_UU) != 0,
+                    && value.nFlags & u64::from(crate::source_types::INCHI_FLAG_SB_IGN_ALL_ISO_UU)
+                        != 0,
             );
-            stereo_abs[target] |=
-                i32::from(current_sp3 != 0 && normal_stereo.as_ref().is_some_and(|value| value.nCompInv2Abs != 0));
-            stereo_abs_inverted[target] |=
-                i32::from(current_sp3 != 0 && normal_stereo.as_ref().is_some_and(|value| value.nCompInv2Abs < 0));
-            let inversion_differs = iso_stereo
-                .as_ref()
-                .zip(normal_stereo.as_ref())
-                .is_some_and(|(iso, normal)| iso.nCompInv2Abs != 0 && iso.nCompInv2Abs != normal.nCompInv2Abs);
+            stereo_abs[target] |= i32::from(
+                current_sp3 != 0
+                    && normal_stereo
+                        .as_ref()
+                        .is_some_and(|value| value.nCompInv2Abs != 0),
+            );
+            stereo_abs_inverted[target] |= i32::from(
+                current_sp3 != 0
+                    && normal_stereo
+                        .as_ref()
+                        .is_some_and(|value| value.nCompInv2Abs < 0),
+            );
+            let inversion_differs =
+                iso_stereo
+                    .as_ref()
+                    .zip(normal_stereo.as_ref())
+                    .is_some_and(|(iso, normal)| {
+                        iso.nCompInv2Abs != 0 && iso.nCompInv2Abs != normal.nCompInv2Abs
+                    });
             isotopic_stereo_abs_inverted[target] |= i32::from(
-                (current_iso_sp3 != 0 && iso_stereo.as_ref().is_some_and(|value| value.nCompInv2Abs < 0))
+                (current_iso_sp3 != 0
+                    && iso_stereo
+                        .as_ref()
+                        .is_some_and(|value| value.nCompInv2Abs < 0))
                     || (current_iso_sp3 == 0 && inversion_differs),
             );
             isotopic_stereo_abs[target] |= i32::from(
-                (current_iso_sp3 != 0 && iso_stereo.as_ref().is_some_and(|value| value.nCompInv2Abs != 0))
+                (current_iso_sp3 != 0
+                    && iso_stereo
+                        .as_ref()
+                        .is_some_and(|value| value.nCompInv2Abs != 0))
                     || (current_iso_sp3 == 0 && inversion_differs),
             );
             io.bRelativeStereo[target] |= current_relative;
             io.bIsotopicRelativeStereo[target] |= current_iso_relative;
             io.bRacemicStereo[target] |= current_racemic;
             io.bIsotopicRacemicStereo[target] |= current_iso_racemic;
-            tautomeric_acid |= i32::from(value.nFlags & u64::from(crate::source_types::INCHI_FLAG_ACID_TAUT) != 0);
-            hard_add_remove_proton |=
-                i32::from(value.nFlags & u64::from(crate::source_types::INCHI_FLAG_HARD_ADD_REM_PROTON) != 0);
+            tautomeric_acid |=
+                i32::from(value.nFlags & u64::from(crate::source_types::INCHI_FLAG_ACID_TAUT) != 0);
+            hard_add_remove_proton |= i32::from(
+                value.nFlags & u64::from(crate::source_types::INCHI_FLAG_HARD_ADD_REM_PROTON) != 0,
+            );
             if current_taut != 0 {
                 io.bTautomeric |= 1;
                 io.bNonTautomeric |= has_fixed(heap, &sort)?;
@@ -3184,17 +3334,19 @@ pub(crate) fn OutputINChI1(
                         )?;
                     }
                     if current_iso != 0 {
-                        io.bIsotopicAtomEqu[target] |= crate::source::base::ichiprt2::bHasEquString(
-                            heap,
-                            value_aux.nConstitEquIsotopicNumbers.as_const(),
-                            value_aux.nNumberOfAtoms,
-                        )?;
-                        if current_taut != 0 {
-                            io.bIsotopicTautEqu[target] |= crate::source::base::ichiprt2::bHasEquString(
+                        io.bIsotopicAtomEqu[target] |=
+                            crate::source::base::ichiprt2::bHasEquString(
                                 heap,
-                                value_aux.nConstitEquIsotopicTGroupNumbers.as_const(),
-                                value_aux.nNumberOfTGroups,
+                                value_aux.nConstitEquIsotopicNumbers.as_const(),
+                                value_aux.nNumberOfAtoms,
                             )?;
+                        if current_taut != 0 {
+                            io.bIsotopicTautEqu[target] |=
+                                crate::source::base::ichiprt2::bHasEquString(
+                                    heap,
+                                    value_aux.nConstitEquIsotopicTGroupNumbers.as_const(),
+                                    value_aux.nNumberOfTGroups,
+                                )?;
                         }
                         io.bIsotopicOrigNumb[target] |= current_has_iso_stereo
                             & pointers_differ(
@@ -3204,7 +3356,11 @@ pub(crate) fn OutputINChI1(
                                 value_aux.nNumberOfAtoms,
                             )?;
                     }
-                    if current_sp3 != 0 && normal_stereo.as_ref().is_some_and(|value| value.nCompInv2Abs != 0) {
+                    if current_sp3 != 0
+                        && normal_stereo
+                            .as_ref()
+                            .is_some_and(|value| value.nCompInv2Abs != 0)
+                    {
                         io.bInvStereo[target] |= 1;
                         io.bInvStereoOrigNumb[target] |= pointers_differ(
                             heap,
@@ -3213,7 +3369,11 @@ pub(crate) fn OutputINChI1(
                             value_aux.nNumberOfAtoms,
                         )?;
                     }
-                    if current_iso_sp3 != 0 && iso_stereo.as_ref().is_some_and(|value| value.nCompInv2Abs != 0) {
+                    if current_iso_sp3 != 0
+                        && iso_stereo
+                            .as_ref()
+                            .is_some_and(|value| value.nCompInv2Abs != 0)
+                    {
                         io.bInvIsotopicStereo[target] |= 1;
                         io.bInvIsotopicStereoOrigNumb[target] |= pointers_differ(
                             heap,
@@ -3240,9 +3400,9 @@ pub(crate) fn OutputINChI1(
     }
     if io.bTautomeric != 0 {
         io.bTautomeric = io.bTautomeric.wrapping_add(tautomeric_acid);
-        io.bTautomeric = io
-            .bTautomeric
-            .wrapping_add(if hard_add_remove_proton != 0 { 4 } else { 0 });
+        io.bTautomeric =
+            io.bTautomeric
+                .wrapping_add(if hard_add_remove_proton != 0 { 4 } else { 0 });
     }
     if requested_racemic != 0 || requested_relative != 0 {
         for index in 0..2 {
@@ -3292,7 +3452,8 @@ pub(crate) fn OutputINChI1(
                         .as_ref()
                         .is_some_and(|value| !value.polymer.is_null() || value.n_zy != 0)
                     || (structure.is_none()
-                        && (input_parameters.bLargeMolecules != 0 || input_parameters.bPolymers != 0)),
+                        && (input_parameters.bLargeMolecules != 0
+                            || input_parameters.bPolymers != 0)),
             );
             OutputINCHI_VersionAndKind(
                 heap,
@@ -3487,12 +3648,15 @@ pub(crate) fn OutputINChI1(
             )?;
         }
         if intermediate_result == 0 && !embedded_output_called && plain_comments == 0 {
-            let empty = heap.allocate_model_storage(if component_counts[0] == 0 && component_counts[1] == 0 {
-                vec![b'/' as i8, b'/' as i8, 0]
-            } else {
-                vec![0_i8]
-            })?;
-            let ending = if output_options & crate::source_types::INCHI_OUT_NO_AUX_INFO as i32 != 0 {
+            let empty = heap.allocate_model_storage(
+                if component_counts[0] == 0 && component_counts[1] == 0 {
+                    vec![b'/' as i8, b'/' as i8, 0]
+                } else {
+                    vec![0_i8]
+                },
+            )?;
+            let ending = if output_options & crate::source_types::INCHI_OUT_NO_AUX_INFO as i32 != 0
+            {
                 heap.allocate_model_storage(vec![b'\n' as i8, 0])?
             } else {
                 tab
@@ -3608,7 +3772,10 @@ pub(crate) fn OutputINChI1(
                 {
                     io.bNonTautomeric = 0;
                 }
-                if io.bOutType == crate::source_types::OUT_TN as i32 && io.bTautomeric != 0 && io.bNonTautomeric != 0 {
+                if io.bOutType == crate::source_types::OUT_TN as i32
+                    && io.bTautomeric != 0
+                    && io.bNonTautomeric != 0
+                {
                     io.bOutType = crate::source_types::OUT_NN as i32;
                     io.iCurTautMode = crate::source_types::TAUT_NON as i32;
                     io.pINChISort = fixed_sorts;
@@ -3725,11 +3892,13 @@ pub(crate) fn OutputINChI1(
                 }
             }
             if intermediate_result == 0 && !embedded_output_called && plain_comments == 0 {
-                let empty = heap.allocate_model_storage(if component_counts[0] == 0 && component_counts[1] == 0 {
-                    vec![b'/' as i8, b'/' as i8, 0]
-                } else {
-                    vec![0_i8]
-                })?;
+                let empty = heap.allocate_model_storage(
+                    if component_counts[0] == 0 && component_counts[1] == 0 {
+                        vec![b'/' as i8, b'/' as i8, 0]
+                    } else {
+                        vec![0_i8]
+                    },
+                )?;
                 print_values(
                     heap,
                     output,
@@ -3857,13 +4026,22 @@ pub(crate) fn OutputINCHI_MainLayerFormula(
             io.num_components,
             io.bUseMulipliers,
         )?;
-        if str_LineEnd(heap, tag.as_const(), &mut io.bOverflow, string_buffer, -1, 1)? != 0 {
+        if str_LineEnd(
+            heap,
+            tag.as_const(),
+            &mut io.bOverflow,
+            string_buffer,
+            -1,
+            1,
+        )? != 0
+        {
             return Ok(1);
         }
         if io.n_pzz > 0 && io.n_zy > 0 && MergeZzInHillFormula(heap, string_buffer)? != 0 {
             return Ok(-1);
         }
-        let format = heap.allocate_model_storage(b"%s%s\0".iter().map(|byte| *byte as i8).collect())?;
+        let format =
+            heap.allocate_model_storage(b"%s%s\0".iter().map(|byte| *byte as i8).collect())?;
         inchi_ios_print_nodisplay(
             heap,
             Some(output),
@@ -3966,7 +4144,8 @@ pub(crate) fn OutputINCHI_MainLayerConnections(
         {
             return Ok(1);
         }
-        let format = heap.allocate_model_storage(b"%s%s\0".iter().map(|byte| *byte as i8).collect())?;
+        let format =
+            heap.allocate_model_storage(b"%s%s\0".iter().map(|byte| *byte as i8).collect())?;
         inchi_ios_print_nodisplay(
             heap,
             Some(output),
@@ -4038,7 +4217,8 @@ pub(crate) fn OutputINCHI_MainLayerHydrogens(
     // INCHI✔️❌: }
     // END INCHI C FUNCTION: OutputINCHI_MainLayerHydrogens
 
-    let layer = usize::try_from(io.nCurINChISegment).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let layer =
+        usize::try_from(io.nCurINChISegment).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let segment = crate::source_types::tagDiffINChISegments_DIFS_h_H_ATOMS as usize;
     let difference = *io
         .sDifSegs
@@ -4072,10 +4252,19 @@ pub(crate) fn OutputINCHI_MainLayerHydrogens(
         )?;
         if io.tot_len != io.tot_len2 {
             io.tot_len = io.tot_len2;
-            if str_LineEnd(heap, tag.as_const(), &mut io.bOverflow, string_buffer, -2, 1)? != 0 {
+            if str_LineEnd(
+                heap,
+                tag.as_const(),
+                &mut io.bOverflow,
+                string_buffer,
+                -2,
+                1,
+            )? != 0
+            {
                 return Ok(1);
             }
-            let format = heap.allocate_model_storage(b"%s%s\0".iter().map(|byte| *byte as i8).collect())?;
+            let format =
+                heap.allocate_model_storage(b"%s%s\0".iter().map(|byte| *byte as i8).collect())?;
             inchi_ios_print_nodisplay(
                 heap,
                 Some(output),
@@ -4165,7 +4354,8 @@ pub(crate) fn OutputINCHI_ChargeAndRemovedAddedProtonsLayers(
     // END INCHI C FUNCTION: OutputINCHI_ChargeAndRemovedAddedProtonsLayers
 
     fn selected_difference(io: &INCHI_OUT_CTL, segment: usize) -> Result<i8, SourceHeapError> {
-        let layer = usize::try_from(io.nCurINChISegment).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let layer = usize::try_from(io.nCurINChISegment)
+            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         io.sDifSegs
             .get(layer)
             .and_then(|segments| segments.get(segment))
@@ -4197,7 +4387,8 @@ pub(crate) fn OutputINCHI_ChargeAndRemovedAddedProtonsLayers(
         line_feed: SourceConstPointer<i8>,
         stdout: SourceMutPointer<FILE>,
     ) -> Result<(), SourceHeapError> {
-        let format = heap.allocate_model_storage(b"%s%s\0".iter().map(|byte| *byte as i8).collect())?;
+        let format =
+            heap.allocate_model_storage(b"%s%s\0".iter().map(|byte| *byte as i8).collect())?;
         inchi_ios_print_nodisplay(
             heap,
             Some(output),
@@ -4241,8 +4432,9 @@ pub(crate) fn OutputINCHI_ChargeAndRemovedAddedProtonsLayers(
                 io.bOmitRepetitions,
                 io.bUseMulipliers,
             )?;
-            io.bNonTautNonIsoIdentifierNotEmpty =
-                io.bNonTautNonIsoIdentifierNotEmpty.wrapping_add(io.bSecondNonTautPass);
+            io.bNonTautNonIsoIdentifierNotEmpty = io
+                .bNonTautNonIsoIdentifierNotEmpty
+                .wrapping_add(io.bSecondNonTautPass);
         }
         if str_LineEnd(
             heap,
@@ -4272,13 +4464,16 @@ pub(crate) fn OutputINCHI_ChargeAndRemovedAddedProtonsLayers(
             )?;
             inchi_strbuf_reset(heap, Some(string_buffer))?;
             io.tot_len = 0;
-            let format = heap.allocate_model_storage(b"%+d\0".iter().map(|byte| *byte as i8).collect())?;
+            let format =
+                heap.allocate_model_storage(b"%+d\0".iter().map(|byte| *byte as i8).collect())?;
             match inchi_strbuf_printf(
                 heap,
                 Some(string_buffer),
                 format.as_const(),
                 &SourceVaList {
-                    arguments: vec![SourceFormatArgument::Signed(i64::from(io.nNumRemovedProtons))],
+                    arguments: vec![SourceFormatArgument::Signed(i64::from(
+                        io.nNumRemovedProtons,
+                    ))],
                     ..SourceVaList::default()
                 },
             ) {
@@ -4299,7 +4494,13 @@ pub(crate) fn OutputINCHI_ChargeAndRemovedAddedProtonsLayers(
             print_buffer(heap, output, string_buffer, line_feed, stdout)?;
         } else if io.bPlainTextTags == 1 {
             let slash = heap.allocate_model_storage(vec![b'/' as i8, 0])?;
-            inchi_ios_print_nodisplay(heap, Some(output), stdout, slash.as_const(), &SourceVaList::default())?;
+            inchi_ios_print_nodisplay(
+                heap,
+                Some(output),
+                stdout,
+                slash.as_const(),
+                &SourceVaList::default(),
+            )?;
         }
     }
     Ok(0)
@@ -4463,7 +4664,8 @@ pub(crate) fn OutputINCHI_StereoLayer(
     // INCHI✔️❌: }
     // END INCHI C FUNCTION: OutputINCHI_StereoLayer
     fn selected_difference(io: &INCHI_OUT_CTL, segment: usize) -> Result<i8, SourceHeapError> {
-        let layer = usize::try_from(io.nCurINChISegment).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let layer = usize::try_from(io.nCurINChISegment)
+            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         io.sDifSegs
             .get(layer)
             .and_then(|segments| segments.get(segment))
@@ -4497,7 +4699,8 @@ pub(crate) fn OutputINCHI_StereoLayer(
         line_feed: SourceConstPointer<i8>,
         stdout: SourceMutPointer<FILE>,
     ) -> Result<(), SourceHeapError> {
-        let format = heap.allocate_model_storage(b"%s%s\0".iter().map(|byte| *byte as i8).collect())?;
+        let format =
+            heap.allocate_model_storage(b"%s%s\0".iter().map(|byte| *byte as i8).collect())?;
         inchi_ios_print_nodisplay(
             heap,
             Some(output),
@@ -4520,8 +4723,15 @@ pub(crate) fn OutputINCHI_StereoLayer(
         literal: &[u8],
         stdout: SourceMutPointer<FILE>,
     ) -> Result<(), SourceHeapError> {
-        let format = heap.allocate_model_storage(literal.iter().map(|byte| *byte as i8).collect())?;
-        inchi_ios_print_nodisplay(heap, Some(output), stdout, format.as_const(), &SourceVaList::default())?;
+        let format =
+            heap.allocate_model_storage(literal.iter().map(|byte| *byte as i8).collect())?;
+        inchi_ios_print_nodisplay(
+            heap,
+            Some(output),
+            stdout,
+            format.as_const(),
+            &SourceVaList::default(),
+        )?;
         Ok(())
     }
 
@@ -4546,8 +4756,10 @@ pub(crate) fn OutputINCHI_StereoLayer(
 
         io.nSegmAction = bond_action;
         if io.nSegmAction != 0 {
-            io.bTag2 = io.bTag1 | crate::source_types::local_ichiprt1::tagIdentLblBit_IL_DBND as i32;
-            let (tag, value) = make_tag(heap, &tags, io.nTag, io.bTag2, &io.szTag2, &mut io.bAlways)?;
+            io.bTag2 =
+                io.bTag1 | crate::source_types::local_ichiprt1::tagIdentLblBit_IL_DBND as i32;
+            let (tag, value) =
+                make_tag(heap, &tags, io.nTag, io.bTag2, &io.szTag2, &mut io.bAlways)?;
             io.szTag2 = value;
             inchi_strbuf_reset(heap, Some(string_buffer))?;
             io.tot_len = 0;
@@ -4565,8 +4777,9 @@ pub(crate) fn OutputINCHI_StereoLayer(
                     io.bOmitRepetitions,
                     io.bUseMulipliers,
                 )?;
-                io.bNonTautNonIsoIdentifierNotEmpty =
-                    io.bNonTautNonIsoIdentifierNotEmpty.wrapping_add(io.bSecondNonTautPass);
+                io.bNonTautNonIsoIdentifierNotEmpty = io
+                    .bNonTautNonIsoIdentifierNotEmpty
+                    .wrapping_add(io.bSecondNonTautPass);
             }
             if str_LineEnd(
                 heap,
@@ -4586,7 +4799,8 @@ pub(crate) fn OutputINCHI_StereoLayer(
 
         io.nSegmAction = center_action;
         if io.nSegmAction != 0 {
-            let taut_index = usize::try_from(io.iCurTautMode).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let taut_index = usize::try_from(io.iCurTautMode)
+                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             io.bRelRac = i32::from(
                 *io.bRelativeStereo
                     .get(taut_index)
@@ -4598,8 +4812,10 @@ pub(crate) fn OutputINCHI_StereoLayer(
                         .ok_or(SourceHeapError::PointerOutOfBounds)?
                         != 0,
             );
-            io.bTag2 = io.bTag1 | crate::source_types::local_ichiprt1::tagIdentLblBit_IL_SP3S as i32;
-            let (tag, value) = make_tag(heap, &tags, io.nTag, io.bTag2, &io.szTag2, &mut io.bAlways)?;
+            io.bTag2 =
+                io.bTag1 | crate::source_types::local_ichiprt1::tagIdentLblBit_IL_SP3S as i32;
+            let (tag, value) =
+                make_tag(heap, &tags, io.nTag, io.bTag2, &io.szTag2, &mut io.bAlways)?;
             io.szTag2 = value;
             inchi_strbuf_reset(heap, Some(string_buffer))?;
             io.tot_len = 0;
@@ -4618,8 +4834,9 @@ pub(crate) fn OutputINCHI_StereoLayer(
                     io.bOmitRepetitions,
                     io.bUseMulipliers,
                 )?;
-                io.bNonTautNonIsoIdentifierNotEmpty =
-                    io.bNonTautNonIsoIdentifierNotEmpty.wrapping_add(io.bSecondNonTautPass);
+                io.bNonTautNonIsoIdentifierNotEmpty = io
+                    .bNonTautNonIsoIdentifierNotEmpty
+                    .wrapping_add(io.bSecondNonTautPass);
             }
             if str_LineEnd(
                 heap,
@@ -4639,8 +4856,10 @@ pub(crate) fn OutputINCHI_StereoLayer(
 
         io.nSegmAction = inversion_action;
         if io.nSegmAction != 0 {
-            io.bTag2 = io.bTag1 | crate::source_types::local_ichiprt1::tagIdentLblBit_IL_INVS as i32;
-            let (tag, value) = make_tag(heap, &tags, io.nTag, io.bTag2, &io.szTag2, &mut io.bAlways)?;
+            io.bTag2 =
+                io.bTag1 | crate::source_types::local_ichiprt1::tagIdentLblBit_IL_INVS as i32;
+            let (tag, value) =
+                make_tag(heap, &tags, io.nTag, io.bTag2, &io.szTag2, &mut io.bAlways)?;
             io.szTag2 = value;
             inchi_strbuf_reset(heap, Some(string_buffer))?;
             io.tot_len = 0;
@@ -4653,8 +4872,9 @@ pub(crate) fn OutputINCHI_StereoLayer(
                     io.bOutType,
                     io.num_components,
                 )?;
-                io.bNonTautNonIsoIdentifierNotEmpty =
-                    io.bNonTautNonIsoIdentifierNotEmpty.wrapping_add(io.bSecondNonTautPass);
+                io.bNonTautNonIsoIdentifierNotEmpty = io
+                    .bNonTautNonIsoIdentifierNotEmpty
+                    .wrapping_add(io.bSecondNonTautPass);
             }
             if str_LineEnd(
                 heap,
@@ -4674,7 +4894,8 @@ pub(crate) fn OutputINCHI_StereoLayer(
 
         io.nSegmAction = type_action;
         if io.nSegmAction != 0 {
-            let taut_index = usize::try_from(io.iCurTautMode).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let taut_index = usize::try_from(io.iCurTautMode)
+                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             let relative = *io
                 .bRelativeStereo
                 .get(taut_index)
@@ -4685,8 +4906,10 @@ pub(crate) fn OutputINCHI_StereoLayer(
                 .get(taut_index)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?
                 != 0;
-            io.bTag2 = io.bTag1 | crate::source_types::local_ichiprt1::tagIdentLblBit_IL_TYPS as i32;
-            let (tag, value) = make_tag(heap, &tags, io.nTag, io.bTag2, &io.szTag2, &mut io.bAlways)?;
+            io.bTag2 =
+                io.bTag1 | crate::source_types::local_ichiprt1::tagIdentLblBit_IL_TYPS as i32;
+            let (tag, value) =
+                make_tag(heap, &tags, io.nTag, io.bTag2, &io.szTag2, &mut io.bAlways)?;
             io.szTag2 = value;
             inchi_strbuf_reset(heap, Some(string_buffer))?;
             io.tot_len = 0;
@@ -4698,12 +4921,17 @@ pub(crate) fn OutputINCHI_StereoLayer(
                 } else {
                     b"1\0".as_slice()
                 };
-                let stereo = heap.allocate_model_storage(stereo_text.iter().map(|byte| *byte as i8).collect())?;
-                io.tot_len =
-                    io.tot_len
-                        .wrapping_add(MakeDelim(heap, stereo.as_const(), string_buffer, &mut io.bOverflow)?);
-                io.bNonTautNonIsoIdentifierNotEmpty =
-                    io.bNonTautNonIsoIdentifierNotEmpty.wrapping_add(io.bSecondNonTautPass);
+                let stereo = heap
+                    .allocate_model_storage(stereo_text.iter().map(|byte| *byte as i8).collect())?;
+                io.tot_len = io.tot_len.wrapping_add(MakeDelim(
+                    heap,
+                    stereo.as_const(),
+                    string_buffer,
+                    &mut io.bOverflow,
+                )?);
+                io.bNonTautNonIsoIdentifierNotEmpty = io
+                    .bNonTautNonIsoIdentifierNotEmpty
+                    .wrapping_add(io.bSecondNonTautPass);
             }
             if str_LineEnd(
                 heap,
@@ -4986,7 +5214,11 @@ pub(crate) fn OutputINCHI_IsotopicLayer(
     // INCHI✔️❌: }
     // END INCHI C FUNCTION: OutputINCHI_IsotopicLayer
 
-    fn selected_difference(io: &INCHI_OUT_CTL, layer: usize, segment: usize) -> Result<i8, SourceHeapError> {
+    fn selected_difference(
+        io: &INCHI_OUT_CTL,
+        layer: usize,
+        segment: usize,
+    ) -> Result<i8, SourceHeapError> {
         io.sDifSegs
             .get(layer)
             .and_then(|segments| segments.get(segment))
@@ -5018,7 +5250,8 @@ pub(crate) fn OutputINCHI_IsotopicLayer(
         line_feed: SourceConstPointer<i8>,
         stdout: SourceMutPointer<FILE>,
     ) -> Result<(), SourceHeapError> {
-        let format = heap.allocate_model_storage(b"%s%s\0".iter().map(|byte| *byte as i8).collect())?;
+        let format =
+            heap.allocate_model_storage(b"%s%s\0".iter().map(|byte| *byte as i8).collect())?;
         inchi_ios_print_nodisplay(
             heap,
             Some(output),
@@ -5040,12 +5273,20 @@ pub(crate) fn OutputINCHI_IsotopicLayer(
         literal: &[u8],
         stdout: SourceMutPointer<FILE>,
     ) -> Result<(), SourceHeapError> {
-        let format = heap.allocate_model_storage(literal.iter().map(|byte| *byte as i8).collect())?;
-        inchi_ios_print_nodisplay(heap, Some(output), stdout, format.as_const(), &SourceVaList::default())?;
+        let format =
+            heap.allocate_model_storage(literal.iter().map(|byte| *byte as i8).collect())?;
+        inchi_ios_print_nodisplay(
+            heap,
+            Some(output),
+            stdout,
+            format.as_const(),
+            &SourceVaList::default(),
+        )?;
         Ok(())
     }
 
-    let current_layer = usize::try_from(io.nCurINChISegment).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let current_layer =
+        usize::try_from(io.nCurINChISegment).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let action = |value| crate::source::base::ichimake::INChI_SegmentAction(value);
     let fill = crate::source_types::tagINChISegmAction_INCHI_SEGM_FILL as i32;
     let atom_segment = crate::source_types::tagDiffINChISegments_DIFS_i_IATOMS as usize;
@@ -5083,7 +5324,9 @@ pub(crate) fn OutputINCHI_IsotopicLayer(
                 io.bOmitRepetitions,
                 io.bUseMulipliers,
             )?;
-            io.bNonTautIsoIdentifierNotEmpty = io.bNonTautIsoIdentifierNotEmpty.wrapping_add(io.bSecondNonTautPass);
+            io.bNonTautIsoIdentifierNotEmpty = io
+                .bNonTautIsoIdentifierNotEmpty
+                .wrapping_add(io.bSecondNonTautPass);
         } else {
             io.tot_len2 = io.tot_len;
         }
@@ -5103,8 +5346,10 @@ pub(crate) fn OutputINCHI_IsotopicLayer(
 
         io.nSegmAction = action(selected_difference(io, current_layer, hydrogen_segment)?);
         if io.nSegmAction != 0 {
-            io.bTag2 = io.bTag1 | crate::source_types::local_ichiprt1::tagIdentLblBit_IL_XCGA as i32;
-            let (tag, value) = make_tag(heap, &tags, io.nTag, io.bTag2, &io.szTag2, &mut io.bAlways)?;
+            io.bTag2 =
+                io.bTag1 | crate::source_types::local_ichiprt1::tagIdentLblBit_IL_XCGA as i32;
+            let (tag, value) =
+                make_tag(heap, &tags, io.nTag, io.bTag2, &io.szTag2, &mut io.bAlways)?;
             io.szTag2 = value;
             inchi_strbuf_reset(heap, Some(string_buffer))?;
             io.tot_len = 0;
@@ -5115,7 +5360,9 @@ pub(crate) fn OutputINCHI_IsotopicLayer(
                 io.TAUT_MODE,
                 &mut io.bOverflow,
             )?);
-            io.bNonTautIsoIdentifierNotEmpty = io.bNonTautIsoIdentifierNotEmpty.wrapping_add(io.bSecondNonTautPass);
+            io.bNonTautIsoIdentifierNotEmpty = io
+                .bNonTautIsoIdentifierNotEmpty
+                .wrapping_add(io.bSecondNonTautPass);
             if str_LineEnd(
                 heap,
                 tag.as_const(),
@@ -5135,14 +5382,17 @@ pub(crate) fn OutputINCHI_IsotopicLayer(
         let inversion_action = action(selected_difference(io, current_layer, inversion_segment)?);
         let type_action = action(selected_difference(io, current_layer, type_segment)?);
         if bond_action != 0 || center_action != 0 || inversion_action != 0 || type_action != 0 {
-            io.bTag2 = io.bTag1 | crate::source_types::local_ichiprt1::tagIdentLblBit_IL_STER as i32;
+            io.bTag2 =
+                io.bTag1 | crate::source_types::local_ichiprt1::tagIdentLblBit_IL_STER as i32;
             let (_, value) = make_tag(heap, &tags, io.nTag, io.bTag2, &io.szTag2, &mut io.bAlways)?;
             io.szTag2 = value;
 
             io.nSegmAction = bond_action;
             if io.nSegmAction != 0 {
-                io.bTag3 = io.bTag2 | crate::source_types::local_ichiprt1::tagIdentLblBit_IL_DBND as i32;
-                let (tag, value) = make_tag(heap, &tags, io.nTag, io.bTag3, &io.szTag3, &mut io.bAlways)?;
+                io.bTag3 =
+                    io.bTag2 | crate::source_types::local_ichiprt1::tagIdentLblBit_IL_DBND as i32;
+                let (tag, value) =
+                    make_tag(heap, &tags, io.nTag, io.bTag3, &io.szTag3, &mut io.bAlways)?;
                 io.szTag3 = value;
                 inchi_strbuf_reset(heap, Some(string_buffer))?;
                 io.tot_len = 0;
@@ -5160,8 +5410,9 @@ pub(crate) fn OutputINCHI_IsotopicLayer(
                         io.bOmitRepetitions,
                         io.bUseMulipliers,
                     )?;
-                    io.bNonTautIsoIdentifierNotEmpty =
-                        io.bNonTautIsoIdentifierNotEmpty.wrapping_add(io.bSecondNonTautPass);
+                    io.bNonTautIsoIdentifierNotEmpty = io
+                        .bNonTautIsoIdentifierNotEmpty
+                        .wrapping_add(io.bSecondNonTautPass);
                 }
                 if str_LineEnd(
                     heap,
@@ -5181,7 +5432,8 @@ pub(crate) fn OutputINCHI_IsotopicLayer(
 
             io.nSegmAction = center_action;
             if io.nSegmAction != 0 {
-                let taut = usize::try_from(io.iCurTautMode).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let taut = usize::try_from(io.iCurTautMode)
+                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 io.bRelRac = i32::from(
                     *io.bIsotopicRelativeStereo
                         .get(taut)
@@ -5193,8 +5445,10 @@ pub(crate) fn OutputINCHI_IsotopicLayer(
                             .ok_or(SourceHeapError::PointerOutOfBounds)?
                             != 0,
                 );
-                io.bTag3 = io.bTag2 | crate::source_types::local_ichiprt1::tagIdentLblBit_IL_SP3S as i32;
-                let (tag, value) = make_tag(heap, &tags, io.nTag, io.bTag3, &io.szTag3, &mut io.bAlways)?;
+                io.bTag3 =
+                    io.bTag2 | crate::source_types::local_ichiprt1::tagIdentLblBit_IL_SP3S as i32;
+                let (tag, value) =
+                    make_tag(heap, &tags, io.nTag, io.bTag3, &io.szTag3, &mut io.bAlways)?;
                 io.szTag3 = value;
                 inchi_strbuf_reset(heap, Some(string_buffer))?;
                 io.tot_len = 0;
@@ -5213,8 +5467,9 @@ pub(crate) fn OutputINCHI_IsotopicLayer(
                         io.bOmitRepetitions,
                         io.bUseMulipliers,
                     )?;
-                    io.bNonTautIsoIdentifierNotEmpty =
-                        io.bNonTautIsoIdentifierNotEmpty.wrapping_add(io.bSecondNonTautPass);
+                    io.bNonTautIsoIdentifierNotEmpty = io
+                        .bNonTautIsoIdentifierNotEmpty
+                        .wrapping_add(io.bSecondNonTautPass);
                 }
                 if str_LineEnd(
                     heap,
@@ -5234,8 +5489,10 @@ pub(crate) fn OutputINCHI_IsotopicLayer(
 
             io.nSegmAction = inversion_action;
             if io.nSegmAction != 0 {
-                io.bTag3 = io.bTag2 | crate::source_types::local_ichiprt1::tagIdentLblBit_IL_INVS as i32;
-                let (tag, value) = make_tag(heap, &tags, io.nTag, io.bTag3, &io.szTag3, &mut io.bAlways)?;
+                io.bTag3 =
+                    io.bTag2 | crate::source_types::local_ichiprt1::tagIdentLblBit_IL_INVS as i32;
+                let (tag, value) =
+                    make_tag(heap, &tags, io.nTag, io.bTag3, &io.szTag3, &mut io.bAlways)?;
                 io.szTag3 = value;
                 inchi_strbuf_reset(heap, Some(string_buffer))?;
                 io.tot_len = 0;
@@ -5248,8 +5505,9 @@ pub(crate) fn OutputINCHI_IsotopicLayer(
                         io.bOutType,
                         io.num_components,
                     )?;
-                    io.bNonTautIsoIdentifierNotEmpty =
-                        io.bNonTautIsoIdentifierNotEmpty.wrapping_add(io.bSecondNonTautPass);
+                    io.bNonTautIsoIdentifierNotEmpty = io
+                        .bNonTautIsoIdentifierNotEmpty
+                        .wrapping_add(io.bSecondNonTautPass);
                 }
                 if str_LineEnd(
                     heap,
@@ -5269,7 +5527,8 @@ pub(crate) fn OutputINCHI_IsotopicLayer(
 
             io.nSegmAction = type_action;
             if io.nSegmAction != 0 {
-                let taut = usize::try_from(io.iCurTautMode).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let taut = usize::try_from(io.iCurTautMode)
+                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let stereo_text = if *io
                     .bIsotopicRelativeStereo
                     .get(taut)
@@ -5287,18 +5546,26 @@ pub(crate) fn OutputINCHI_IsotopicLayer(
                 } else {
                     b"1\0".as_slice()
                 };
-                io.bTag3 = io.bTag2 | crate::source_types::local_ichiprt1::tagIdentLblBit_IL_TYPS as i32;
-                let (tag, value) = make_tag(heap, &tags, io.nTag, io.bTag3, &io.szTag3, &mut io.bAlways)?;
+                io.bTag3 =
+                    io.bTag2 | crate::source_types::local_ichiprt1::tagIdentLblBit_IL_TYPS as i32;
+                let (tag, value) =
+                    make_tag(heap, &tags, io.nTag, io.bTag3, &io.szTag3, &mut io.bAlways)?;
                 io.szTag3 = value;
                 inchi_strbuf_reset(heap, Some(string_buffer))?;
                 io.tot_len = 0;
                 if io.nSegmAction == fill {
-                    let stereo = heap.allocate_model_storage(stereo_text.iter().map(|byte| *byte as i8).collect())?;
-                    io.tot_len =
-                        io.tot_len
-                            .wrapping_add(MakeDelim(heap, stereo.as_const(), string_buffer, &mut io.bOverflow)?);
-                    io.bNonTautIsoIdentifierNotEmpty =
-                        io.bNonTautIsoIdentifierNotEmpty.wrapping_add(io.bSecondNonTautPass);
+                    let stereo = heap.allocate_model_storage(
+                        stereo_text.iter().map(|byte| *byte as i8).collect(),
+                    )?;
+                    io.tot_len = io.tot_len.wrapping_add(MakeDelim(
+                        heap,
+                        stereo.as_const(),
+                        string_buffer,
+                        &mut io.bOverflow,
+                    )?);
+                    io.bNonTautIsoIdentifierNotEmpty = io
+                        .bNonTautIsoIdentifierNotEmpty
+                        .wrapping_add(io.bSecondNonTautPass);
                 }
                 if str_LineEnd(
                     heap,
@@ -5329,7 +5596,11 @@ pub(crate) fn OutputINCHI_IsotopicLayer(
     if io.bOutType == crate::source_types::local_ichiprt1::OUT_NONTAUT as i32
         && io.bOutputType == crate::source_types::OUT_TN as i32
         && io.bSecondNonTautPass != 0
-        && action(selected_difference(io, transposition_layer, transposition_segment)?) == fill
+        && action(selected_difference(
+            io,
+            transposition_layer,
+            transposition_segment,
+        )?) == fill
     {
         let mut non_taut = SourceMutPointer::null();
         let mut taut = SourceMutPointer::null();
@@ -5343,8 +5614,10 @@ pub(crate) fn OutputINCHI_IsotopicLayer(
             io.num_components,
         )? > 0
         {
-            io.bTag1 = crate::source_types::local_ichiprt1::tagIdentLblBit_IL_TRNS as i32 | io.bFhTag;
-            let (tag, value) = make_tag(heap, &tags, io.nTag, io.bTag1, &io.szTag1, &mut io.bAlways)?;
+            io.bTag1 =
+                crate::source_types::local_ichiprt1::tagIdentLblBit_IL_TRNS as i32 | io.bFhTag;
+            let (tag, value) =
+                make_tag(heap, &tags, io.nTag, io.bTag1, &io.szTag1, &mut io.bAlways)?;
             io.szTag1 = value;
             inchi_strbuf_reset(heap, Some(string_buffer))?;
             io.tot_len = 0;
@@ -5357,7 +5630,9 @@ pub(crate) fn OutputINCHI_IsotopicLayer(
                 io.TAUT_MODE,
                 io.num_components,
             )?;
-            io.bNonTautIsoIdentifierNotEmpty = io.bNonTautIsoIdentifierNotEmpty.wrapping_add(io.bSecondNonTautPass);
+            io.bNonTautIsoIdentifierNotEmpty = io
+                .bNonTautIsoIdentifierNotEmpty
+                .wrapping_add(io.bSecondNonTautPass);
             if str_LineEnd(
                 heap,
                 tag.as_const(),
@@ -5564,7 +5839,8 @@ pub(crate) fn OutputINCHI_FixedHLayerWithSublayers(
         line_feed: SourceConstPointer<i8>,
         stdout: SourceMutPointer<FILE>,
     ) -> Result<(), SourceHeapError> {
-        let format = heap.allocate_model_storage(b"%s%s\0".iter().map(|byte| *byte as i8).collect())?;
+        let format =
+            heap.allocate_model_storage(b"%s%s\0".iter().map(|byte| *byte as i8).collect())?;
         inchi_ios_print_nodisplay(
             heap,
             Some(output),
@@ -5636,7 +5912,9 @@ pub(crate) fn OutputINCHI_FixedHLayerWithSublayers(
         )?;
         inchi_strbuf_reset(heap, Some(string_buffer))?;
         io.tot_len = 0;
-        io.nSegmAction = crate::source::base::ichimake::INChI_SegmentAction(io.sDifSegs[fixed_layer][formula_segment]);
+        io.nSegmAction = crate::source::base::ichimake::INChI_SegmentAction(
+            io.sDifSegs[fixed_layer][formula_segment],
+        );
         if io.nSegmAction == crate::source_types::tagINChISegmAction_INCHI_SEGM_FILL as i32 {
             io.tot_len2 = str_HillFormula2(
                 heap,
@@ -5651,8 +5929,9 @@ pub(crate) fn OutputINCHI_FixedHLayerWithSublayers(
             if io.n_pzz > 0 && io.n_zy > 0 {
                 let _ = MergeZzInHillFormula(heap, string_buffer)?;
             }
-            io.bNonTautNonIsoIdentifierNotEmpty =
-                io.bNonTautNonIsoIdentifierNotEmpty.wrapping_add(io.bSecondNonTautPass);
+            io.bNonTautNonIsoIdentifierNotEmpty = io
+                .bNonTautNonIsoIdentifierNotEmpty
+                .wrapping_add(io.bSecondNonTautPass);
         } else {
             io.tot_len2 = io.tot_len;
         }
@@ -5670,7 +5949,9 @@ pub(crate) fn OutputINCHI_FixedHLayerWithSublayers(
         }
         print_buffer(heap, output, string_buffer, line_feed, stdout)?;
 
-        io.nSegmAction = crate::source::base::ichimake::INChI_SegmentAction(io.sDifSegs[fixed_layer][fixed_h_segment]);
+        io.nSegmAction = crate::source::base::ichimake::INChI_SegmentAction(
+            io.sDifSegs[fixed_layer][fixed_h_segment],
+        );
         if io.nSegmAction == crate::source_types::tagINChISegmAction_INCHI_SEGM_FILL as i32 {
             let fixed_h_tag = update_tag(
                 heap,
@@ -5703,12 +5984,14 @@ pub(crate) fn OutputINCHI_FixedHLayerWithSublayers(
                 return Ok(2);
             }
             print_buffer(heap, output, string_buffer, line_feed, stdout)?;
-            io.bNonTautNonIsoIdentifierNotEmpty =
-                io.bNonTautNonIsoIdentifierNotEmpty.wrapping_add(io.bSecondNonTautPass);
+            io.bNonTautNonIsoIdentifierNotEmpty = io
+                .bNonTautNonIsoIdentifierNotEmpty
+                .wrapping_add(io.bSecondNonTautPass);
         }
         *then_goto_repeat = 1;
         return Ok(0);
-    } else if io.bOutType == out_non_taut && io.bOutputType == out_tn && io.bSecondNonTautPass != 0 {
+    } else if io.bOutType == out_non_taut && io.bOutputType == out_tn && io.bSecondNonTautPass != 0
+    {
         io.bOutType = out_tn;
         io.iCurTautMode = crate::source_types::TAUT_YES as i32;
         io.pINChISort = selected_sort(heap, io, taut_yes)?;
@@ -6016,7 +6299,8 @@ pub(crate) fn OutputINCHI_PolymerLayer(
     let mut component_numbers = SourceMutPointer::<i32>::null();
     let mut unit_numbers = SourceMutPointer::<i32>::null();
     let mut old_stars = SourceMutPointer::<i32>::null();
-    let mut units2 = SourceMutPointer::<SourceMutPointer<crate::source_types::OAD_PolymerUnit>>::null();
+    let mut units2 =
+        SourceMutPointer::<SourceMutPointer<crate::source_types::OAD_PolymerUnit>>::null();
     let mut atom_properties = SourceMutPointer::<crate::source_types::OAD_AtProps>::null();
 
     let body_result = (|| -> Result<(), SourceHeapError> {
@@ -6080,7 +6364,8 @@ pub(crate) fn OutputINCHI_PolymerLayer(
             canonical_numbers.as_const(),
         )?;
 
-        let unit_count = u64::try_from(polymer.n).map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?;
+        let unit_count = u64::try_from(polymer.n)
+            .map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?;
         units2 = match inchi_calloc(
             heap,
             unit_count,
@@ -6093,7 +6378,8 @@ pub(crate) fn OutputINCHI_PolymerLayer(
             }
             Err(other) => return Err(other),
         };
-        let star_count = u64::try_from(polymer.n_pzz).map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?;
+        let star_count = u64::try_from(polymer.n_pzz)
+            .map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?;
         old_stars = match inchi_calloc::<i32>(heap, star_count, 4) {
             Ok(pointer) => pointer,
             Err(SourceHeapError::AllocationFailed) => {
@@ -6145,8 +6431,10 @@ pub(crate) fn OutputINCHI_PolymerLayer(
             return Ok(());
         }
 
-        let layer = heap.allocate_model_storage(b"%s\0".iter().map(|byte| *byte as i8).collect())?;
-        let layer_value = heap.allocate_model_storage(b"/z\0".iter().map(|byte| *byte as i8).collect())?;
+        let layer =
+            heap.allocate_model_storage(b"%s\0".iter().map(|byte| *byte as i8).collect())?;
+        let layer_value =
+            heap.allocate_model_storage(b"/z\0".iter().map(|byte| *byte as i8).collect())?;
         inchi_strbuf_printf(
             heap,
             Some(string_buffer),
@@ -6198,7 +6486,8 @@ pub(crate) fn OutputINCHI_PolymerLayer(
                 )?;
             }
         }
-        let format = heap.allocate_model_storage(b"%s%s\0".iter().map(|byte| *byte as i8).collect())?;
+        let format =
+            heap.allocate_model_storage(b"%s%s\0".iter().map(|byte| *byte as i8).collect())?;
         let _ = inchi_ios_print_nodisplay(
             heap,
             output.as_deref_mut(),
@@ -6317,7 +6606,10 @@ pub(crate) fn OutputAUXINFO_HeaderAndNormalization_type(
     // INCHI✔️❌: }
     // END INCHI C FUNCTION: OutputAUXINFO_HeaderAndNormalization_type
 
-    fn aux_allocate(heap: &mut SourceHeap, text: &[u8]) -> Result<SourceConstPointer<i8>, SourceHeapError> {
+    fn aux_allocate(
+        heap: &mut SourceHeap,
+        text: &[u8],
+    ) -> Result<SourceConstPointer<i8>, SourceHeapError> {
         Ok(heap
             .allocate_model_storage(text.iter().map(|byte| *byte as i8).collect())?
             .as_const())
@@ -6328,7 +6620,8 @@ pub(crate) fn OutputAUXINFO_HeaderAndNormalization_type(
         format: &[u8],
         arguments: Vec<SourceFormatArgument>,
     ) -> Result<(), SourceHeapError> {
-        let format = heap.allocate_model_storage(format.iter().map(|byte| *byte as i8).collect())?;
+        let format =
+            heap.allocate_model_storage(format.iter().map(|byte| *byte as i8).collect())?;
         inchi_strbuf_printf(
             heap,
             Some(buffer),
@@ -6347,7 +6640,8 @@ pub(crate) fn OutputAUXINFO_HeaderAndNormalization_type(
         format: &[u8],
         arguments: Vec<SourceFormatArgument>,
     ) -> Result<(), SourceHeapError> {
-        let format = heap.allocate_model_storage(format.iter().map(|byte| *byte as i8).collect())?;
+        let format =
+            heap.allocate_model_storage(format.iter().map(|byte| *byte as i8).collect())?;
         let _ = inchi_ios_print_nodisplay(
             heap,
             output.as_deref_mut(),
@@ -6371,9 +6665,19 @@ pub(crate) fn OutputAUXINFO_HeaderAndNormalization_type(
             b"stereo.abs.inverted\0".as_slice(),
             0,
         ),
-        (3, b"reversibility\0".as_slice(), b"reversibility\0".as_slice(), 0),
+        (
+            3,
+            b"reversibility\0".as_slice(),
+            b"reversibility\0".as_slice(),
+            0,
+        ),
         (4, b"version\0".as_slice(), b"version\0".as_slice(), 1),
-        (5, b"normalization_type\0".as_slice(), b"norm-type\0".as_slice(), 1),
+        (
+            5,
+            b"normalization_type\0".as_slice(),
+            b"norm-type\0".as_slice(),
+            1,
+        ),
         (
             17,
             b"reconnected bond(s) to metal(s) part\0".as_slice(),
@@ -6415,7 +6719,15 @@ pub(crate) fn OutputAUXINFO_HeaderAndNormalization_type(
             ],
         )?;
         io.bTag1 = crate::source_types::local_ichiprt1::tagAuxLblBit_AL_VERS as i32;
-        szGetTag(heap, &aux_labels, io.nTag, io.bTag1, tag_pointer, &mut io.bAlways, 0)?;
+        szGetTag(
+            heap,
+            &aux_labels,
+            io.nTag,
+            io.bTag1,
+            tag_pointer,
+            &mut io.bAlways,
+            0,
+        )?;
         io.szTag1.copy_from_slice(
             heap.slice(tag_pointer.as_const())?
                 .get(..64)
@@ -6458,7 +6770,15 @@ pub(crate) fn OutputAUXINFO_HeaderAndNormalization_type(
         )?;
     } else if *basic_or_reconnected == crate::source_types::INCHI_REC as i32 {
         io.bTag1 = crate::source_types::local_ichiprt1::tagAuxLblBit_AL_REC_ as i32;
-        szGetTag(heap, &aux_labels, io.nTag, io.bTag1, tag_pointer, &mut io.bAlways, 0)?;
+        szGetTag(
+            heap,
+            &aux_labels,
+            io.nTag,
+            io.bTag1,
+            tag_pointer,
+            &mut io.bAlways,
+            0,
+        )?;
         io.szTag1.copy_from_slice(
             heap.slice(tag_pointer.as_const())?
                 .get(..64)
@@ -6485,7 +6805,15 @@ pub(crate) fn OutputAUXINFO_HeaderAndNormalization_type(
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
     if first_count != 0 || second_count != 0 {
         io.bTag1 = crate::source_types::local_ichiprt1::tagAuxLblBit_AL_NORM as i32;
-        szGetTag(heap, &aux_labels, io.nTag, io.bTag1, tag_pointer, &mut io.bAlways, 0)?;
+        szGetTag(
+            heap,
+            &aux_labels,
+            io.nTag,
+            io.bTag1,
+            tag_pointer,
+            &mut io.bAlways,
+            0,
+        )?;
         io.szTag1.copy_from_slice(
             heap.slice(tag_pointer.as_const())?
                 .get(..64)
@@ -6604,7 +6932,10 @@ pub(crate) fn OutputAUXINFO_OriginalNumbersAndEquivalenceClasses(
     // INCHI✔️❌: }
     // END INCHI C FUNCTION: OutputAUXINFO_OriginalNumbersAndEquivalenceClasses
 
-    fn allocate_text(heap: &mut SourceHeap, text: &[u8]) -> Result<SourceConstPointer<i8>, SourceHeapError> {
+    fn allocate_text(
+        heap: &mut SourceHeap,
+        text: &[u8],
+    ) -> Result<SourceConstPointer<i8>, SourceHeapError> {
         Ok(heap
             .allocate_model_storage(text.iter().map(|byte| *byte as i8).collect())?
             .as_const())
@@ -6613,7 +6944,12 @@ pub(crate) fn OutputAUXINFO_OriginalNumbersAndEquivalenceClasses(
         let rows: [(&[u8], &[u8], &[u8], i32); 18] = [
             (b"/\0", b"fixed_H\0", b"fixed-H\0", 0),
             (b"/\0", b"isotopic\0", b"isotopic\0", 0),
-            (b"/\0", b"abs_stereo_inverted\0", b"stereo.abs.inverted\0", 0),
+            (
+                b"/\0",
+                b"abs_stereo_inverted\0",
+                b"stereo.abs.inverted\0",
+                0,
+            ),
             (b"/\0", b"reversibility\0", b"reversibility\0", 0),
             (b"\0", b"version\0", b"version\0", 1),
             (b"/\0", b"normalization_type\0", b"norm-type\0", 1),
@@ -6622,13 +6958,23 @@ pub(crate) fn OutputAUXINFO_OriginalNumbersAndEquivalenceClasses(
             (b"/gE:\0", b"group_equivalence\0", b"group.equivalence\0", 0),
             (b"/it:\0", b"sp3\0", b"sp3\0", 0),
             (b"/iN:\0", b"original_atom_numbers\0", b"atom.orig-nbr\0", 0),
-            (b"/CRV:\0", b"charge_radical_valence\0", b"charges-rad-val\0", 0),
+            (
+                b"/CRV:\0",
+                b"charge_radical_valence\0",
+                b"charges-rad-val\0",
+                0,
+            ),
             (b"/rA:\0", b"atoms\0", b"atoms\0", 0),
             (b"/rB:\0", b"bonds\0", b"bonds\0", 0),
             (b"/rC:\0", b"xyz\0", b"xyz\0", 0),
             (b"/F:\0", b"original_atom_numbers\0", b"atom.orig-nbr\0", 1),
             (b"/I:\0", b"original_atom_numbers\0", b"atom.orig-nbr\0", 1),
-            (b"/R:\0", b"reconnected bond(s) to metal(s) part\0", b"\0", 1),
+            (
+                b"/R:\0",
+                b"reconnected bond(s) to metal(s) part\0",
+                b"\0",
+                1,
+            ),
         ];
         rows.into_iter()
             .map(|(plain, comment, xml, always)| {
@@ -6648,7 +6994,8 @@ pub(crate) fn OutputAUXINFO_OriginalNumbersAndEquivalenceClasses(
         format: &[u8],
         arguments: Vec<SourceFormatArgument>,
     ) -> Result<(), SourceHeapError> {
-        let format = heap.allocate_model_storage(format.iter().map(|byte| *byte as i8).collect())?;
+        let format =
+            heap.allocate_model_storage(format.iter().map(|byte| *byte as i8).collect())?;
         inchi_ios_print(
             heap,
             output.as_deref_mut(),
@@ -6723,8 +7070,12 @@ pub(crate) fn OutputAUXINFO_OriginalNumbersAndEquivalenceClasses(
             ],
         )?;
     }
-    let taut_index = usize::try_from(io.iCurTautMode).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    let atom_equivalence = *io.bAtomEqu.get(taut_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
+    let taut_index =
+        usize::try_from(io.iCurTautMode).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let atom_equivalence = *io
+        .bAtomEqu
+        .get(taut_index)
+        .ok_or(SourceHeapError::PointerOutOfBounds)?;
     if atom_equivalence != 0 {
         io.bTag1 = crate::source_types::local_ichiprt1::tagAuxLblBit_AL_AEQU as i32 | io.bFhTag;
         szGetTag(heap, &labels, io.nTag, io.bTag1, tag, &mut io.bAlways, 0)?;
@@ -6821,7 +7172,10 @@ pub(crate) fn OutputAUXINFO_TautomericGroupsEquivalence(
     // INCHI✔️❌: }
     // END INCHI C FUNCTION: OutputAUXINFO_TautomericGroupsEquivalence
 
-    fn allocate_text(heap: &mut SourceHeap, text: &[u8]) -> Result<SourceConstPointer<i8>, SourceHeapError> {
+    fn allocate_text(
+        heap: &mut SourceHeap,
+        text: &[u8],
+    ) -> Result<SourceConstPointer<i8>, SourceHeapError> {
         Ok(heap
             .allocate_model_storage(text.iter().map(|byte| *byte as i8).collect())?
             .as_const())
@@ -6831,7 +7185,12 @@ pub(crate) fn OutputAUXINFO_TautomericGroupsEquivalence(
         let rows: [(&[u8], &[u8], &[u8], i32); 18] = [
             (b"/\0", b"fixed_H\0", b"fixed-H\0", 0),
             (b"/\0", b"isotopic\0", b"isotopic\0", 0),
-            (b"/\0", b"abs_stereo_inverted\0", b"stereo.abs.inverted\0", 0),
+            (
+                b"/\0",
+                b"abs_stereo_inverted\0",
+                b"stereo.abs.inverted\0",
+                0,
+            ),
             (b"/\0", b"reversibility\0", b"reversibility\0", 0),
             (b"\0", b"version\0", b"version\0", 1),
             (b"/\0", b"normalization_type\0", b"norm-type\0", 1),
@@ -6840,13 +7199,23 @@ pub(crate) fn OutputAUXINFO_TautomericGroupsEquivalence(
             (b"/gE:\0", b"group_equivalence\0", b"group.equivalence\0", 0),
             (b"/it:\0", b"sp3\0", b"sp3\0", 0),
             (b"/iN:\0", b"original_atom_numbers\0", b"atom.orig-nbr\0", 0),
-            (b"/CRV:\0", b"charge_radical_valence\0", b"charges-rad-val\0", 0),
+            (
+                b"/CRV:\0",
+                b"charge_radical_valence\0",
+                b"charges-rad-val\0",
+                0,
+            ),
             (b"/rA:\0", b"atoms\0", b"atoms\0", 0),
             (b"/rB:\0", b"bonds\0", b"bonds\0", 0),
             (b"/rC:\0", b"xyz\0", b"xyz\0", 0),
             (b"/F:\0", b"original_atom_numbers\0", b"atom.orig-nbr\0", 1),
             (b"/I:\0", b"original_atom_numbers\0", b"atom.orig-nbr\0", 1),
-            (b"/R:\0", b"reconnected bond(s) to metal(s) part\0", b"\0", 1),
+            (
+                b"/R:\0",
+                b"reconnected bond(s) to metal(s) part\0",
+                b"\0",
+                1,
+            ),
         ];
         rows.into_iter()
             .map(|(plain, comment, xml, always)| {
@@ -6867,7 +7236,8 @@ pub(crate) fn OutputAUXINFO_TautomericGroupsEquivalence(
         format: &[u8],
         arguments: Vec<SourceFormatArgument>,
     ) -> Result<(), SourceHeapError> {
-        let format = heap.allocate_model_storage(format.iter().map(|byte| *byte as i8).collect())?;
+        let format =
+            heap.allocate_model_storage(format.iter().map(|byte| *byte as i8).collect())?;
         inchi_ios_print(
             heap,
             output.as_deref_mut(),
@@ -6881,9 +7251,17 @@ pub(crate) fn OutputAUXINFO_TautomericGroupsEquivalence(
         Ok(())
     }
 
-    let taut_index = usize::try_from(io.iCurTautMode).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    let taut_equivalence = *io.bTautEqu.get(taut_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
-    if io.bTautomericOutputAllowed != 0 && io.bTautomeric != 0 && taut_equivalence != 0 && io.bSecondNonTautPass == 0 {
+    let taut_index =
+        usize::try_from(io.iCurTautMode).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let taut_equivalence = *io
+        .bTautEqu
+        .get(taut_index)
+        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    if io.bTautomericOutputAllowed != 0
+        && io.bTautomeric != 0
+        && taut_equivalence != 0
+        && io.bSecondNonTautPass == 0
+    {
         let labels = aux_labels(heap)?;
         let tag = heap.allocate_model_storage(io.szTag1.to_vec())?;
         io.bTag1 = crate::source_types::local_ichiprt1::tagAuxLblBit_AL_GEQU as i32 | io.bFhTag;
@@ -6999,7 +7377,10 @@ pub(crate) fn OutputAUXINFO_Stereo(
     // INCHI✔️❌: }
     // END INCHI C FUNCTION: OutputAUXINFO_Stereo
 
-    fn allocate_text(heap: &mut SourceHeap, text: &[u8]) -> Result<SourceConstPointer<i8>, SourceHeapError> {
+    fn allocate_text(
+        heap: &mut SourceHeap,
+        text: &[u8],
+    ) -> Result<SourceConstPointer<i8>, SourceHeapError> {
         Ok(heap
             .allocate_model_storage(text.iter().map(|byte| *byte as i8).collect())?
             .as_const())
@@ -7008,7 +7389,12 @@ pub(crate) fn OutputAUXINFO_Stereo(
         let rows: [(&[u8], &[u8], &[u8], i32); 18] = [
             (b"/\0", b"fixed_H\0", b"fixed-H\0", 0),
             (b"/\0", b"isotopic\0", b"isotopic\0", 0),
-            (b"/\0", b"abs_stereo_inverted\0", b"stereo.abs.inverted\0", 0),
+            (
+                b"/\0",
+                b"abs_stereo_inverted\0",
+                b"stereo.abs.inverted\0",
+                0,
+            ),
             (b"/\0", b"reversibility\0", b"reversibility\0", 0),
             (b"\0", b"version\0", b"version\0", 1),
             (b"/\0", b"normalization_type\0", b"norm-type\0", 1),
@@ -7017,13 +7403,23 @@ pub(crate) fn OutputAUXINFO_Stereo(
             (b"/gE:\0", b"group_equivalence\0", b"group.equivalence\0", 0),
             (b"/it:\0", b"sp3\0", b"sp3\0", 0),
             (b"/iN:\0", b"original_atom_numbers\0", b"atom.orig-nbr\0", 0),
-            (b"/CRV:\0", b"charge_radical_valence\0", b"charges-rad-val\0", 0),
+            (
+                b"/CRV:\0",
+                b"charge_radical_valence\0",
+                b"charges-rad-val\0",
+                0,
+            ),
             (b"/rA:\0", b"atoms\0", b"atoms\0", 0),
             (b"/rB:\0", b"bonds\0", b"bonds\0", 0),
             (b"/rC:\0", b"xyz\0", b"xyz\0", 0),
             (b"/F:\0", b"original_atom_numbers\0", b"atom.orig-nbr\0", 1),
             (b"/I:\0", b"original_atom_numbers\0", b"atom.orig-nbr\0", 1),
-            (b"/R:\0", b"reconnected bond(s) to metal(s) part\0", b"\0", 1),
+            (
+                b"/R:\0",
+                b"reconnected bond(s) to metal(s) part\0",
+                b"\0",
+                1,
+            ),
         ];
         rows.into_iter()
             .map(|(plain, comment, xml, always)| {
@@ -7043,7 +7439,8 @@ pub(crate) fn OutputAUXINFO_Stereo(
         format: &[u8],
         arguments: Vec<SourceFormatArgument>,
     ) -> Result<(), SourceHeapError> {
-        let format = heap.allocate_model_storage(format.iter().map(|byte| *byte as i8).collect())?;
+        let format =
+            heap.allocate_model_storage(format.iter().map(|byte| *byte as i8).collect())?;
         inchi_ios_print(
             heap,
             output.as_deref_mut(),
@@ -7057,7 +7454,8 @@ pub(crate) fn OutputAUXINFO_Stereo(
         Ok(())
     }
 
-    let taut_index = usize::try_from(io.iCurTautMode).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let taut_index =
+        usize::try_from(io.iCurTautMode).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let inverted = *io
         .bInvStereo
         .get(taut_index)
@@ -7344,7 +7742,10 @@ pub(crate) fn OutputAUXINFO_IsotopicInfo(
     */
     // END INCHI C FUNCTION: OutputAUXINFO_IsotopicInfo
 
-    fn allocate_text(heap: &mut SourceHeap, text: &[u8]) -> Result<SourceConstPointer<i8>, SourceHeapError> {
+    fn allocate_text(
+        heap: &mut SourceHeap,
+        text: &[u8],
+    ) -> Result<SourceConstPointer<i8>, SourceHeapError> {
         Ok(heap
             .allocate_model_storage(text.iter().map(|byte| *byte as i8).collect())?
             .as_const())
@@ -7353,7 +7754,12 @@ pub(crate) fn OutputAUXINFO_IsotopicInfo(
         let rows: [(&[u8], &[u8], &[u8], i32); 18] = [
             (b"/\0", b"fixed_H\0", b"fixed-H\0", 0),
             (b"/\0", b"isotopic\0", b"isotopic\0", 0),
-            (b"/\0", b"abs_stereo_inverted\0", b"stereo.abs.inverted\0", 0),
+            (
+                b"/\0",
+                b"abs_stereo_inverted\0",
+                b"stereo.abs.inverted\0",
+                0,
+            ),
             (b"/\0", b"reversibility\0", b"reversibility\0", 0),
             (b"\0", b"version\0", b"version\0", 1),
             (b"/\0", b"normalization_type\0", b"norm-type\0", 1),
@@ -7362,13 +7768,23 @@ pub(crate) fn OutputAUXINFO_IsotopicInfo(
             (b"/gE:\0", b"group_equivalence\0", b"group.equivalence\0", 0),
             (b"/it:\0", b"sp3\0", b"sp3\0", 0),
             (b"/iN:\0", b"original_atom_numbers\0", b"atom.orig-nbr\0", 0),
-            (b"/CRV:\0", b"charge_radical_valence\0", b"charges-rad-val\0", 0),
+            (
+                b"/CRV:\0",
+                b"charge_radical_valence\0",
+                b"charges-rad-val\0",
+                0,
+            ),
             (b"/rA:\0", b"atoms\0", b"atoms\0", 0),
             (b"/rB:\0", b"bonds\0", b"bonds\0", 0),
             (b"/rC:\0", b"xyz\0", b"xyz\0", 0),
             (b"/F:\0", b"original_atom_numbers\0", b"atom.orig-nbr\0", 1),
             (b"/I:\0", b"original_atom_numbers\0", b"atom.orig-nbr\0", 1),
-            (b"/R:\0", b"reconnected bond(s) to metal(s) part\0", b"\0", 1),
+            (
+                b"/R:\0",
+                b"reconnected bond(s) to metal(s) part\0",
+                b"\0",
+                1,
+            ),
         ];
         rows.into_iter()
             .map(|(plain, comment, xml, always)| {
@@ -7388,7 +7804,8 @@ pub(crate) fn OutputAUXINFO_IsotopicInfo(
         format: &[u8],
         arguments: Vec<SourceFormatArgument>,
     ) -> Result<(), SourceHeapError> {
-        let format = heap.allocate_model_storage(format.iter().map(|byte| *byte as i8).collect())?;
+        let format =
+            heap.allocate_model_storage(format.iter().map(|byte| *byte as i8).collect())?;
         inchi_ios_print(
             heap,
             output.as_deref_mut(),
@@ -7419,7 +7836,8 @@ pub(crate) fn OutputAUXINFO_IsotopicInfo(
     if io.bIsotopic == 0 || fixed_h_isotopic_empty != 0 {
         return Ok(0);
     }
-    let taut_index = usize::try_from(io.iCurTautMode).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let taut_index =
+        usize::try_from(io.iCurTautMode).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let isotopic_numbers = *io
         .bIsotopicOrigNumb
         .get(taut_index)
@@ -7773,7 +8191,8 @@ pub(crate) fn OutputAUXINFO_ChargesRadicalsAndUnusualValences(
     if io.bSecondNonTautPass != 0 {
         return Ok(0);
     }
-    let taut_index = usize::try_from(io.iCurTautMode).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let taut_index =
+        usize::try_from(io.iCurTautMode).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     if *io
         .bChargesRadVal
         .get(taut_index)
@@ -7788,7 +8207,10 @@ pub(crate) fn OutputAUXINFO_ChargesRadicalsAndUnusualValences(
                 .as_const(),
         )
     };
-    let mut labels = vec![INCHI_TAG::default(); crate::source_types::local_ichiprt1::tagAuxLblOrd_AL_MAX_ORD as usize];
+    let mut labels = vec![
+        INCHI_TAG::default();
+        crate::source_types::local_ichiprt1::tagAuxLblOrd_AL_MAX_ORD as usize
+    ];
     labels[0] = INCHI_TAG {
         szPlainLabel: allocate_text(heap, b"/\0")?,
         szPlainComment: allocate_text(heap, b"fixed_H\0")?,
@@ -7804,7 +8226,8 @@ pub(crate) fn OutputAUXINFO_ChargesRadicalsAndUnusualValences(
     let tag = heap.allocate_model_storage(io.szTag1.to_vec())?;
     io.bTag1 = crate::source_types::local_ichiprt1::tagAuxLblBit_AL_CRV_ as i32 | io.bFhTag;
     szGetTag(heap, &labels, io.nTag, io.bTag1, tag, &mut io.bAlways, 0)?;
-    io.szTag1.copy_from_slice(&heap.slice(tag.as_const())?[..64]);
+    io.szTag1
+        .copy_from_slice(&heap.slice(tag.as_const())?[..64]);
     inchi_strbuf_reset(heap, Some(string_buffer))?;
     io.tot_len = 0;
     io.tot_len = crate::source::base::ichiprt3::str_AuxChargeRadVal(
@@ -7828,7 +8251,8 @@ pub(crate) fn OutputAUXINFO_ChargesRadicalsAndUnusualValences(
     {
         return Ok(1);
     }
-    let format = heap.allocate_model_storage(vec![b'%' as i8, b's' as i8, b'%' as i8, b's' as i8, 0])?;
+    let format =
+        heap.allocate_model_storage(vec![b'%' as i8, b's' as i8, b'%' as i8, b's' as i8, 0])?;
     inchi_ios_print(
         heap,
         output.as_deref_mut(),
@@ -8042,23 +8466,32 @@ pub(crate) fn OutputAUXINFO_ReversibilityInfo(
         return Ok(0);
     }
     let max_line = 80_i32.min(string_buffer.nAllocatedLength);
-    let text = |heap: &SourceHeap, ptr: SourceConstPointer<i8>| -> Result<Vec<i8>, SourceHeapError> {
-        let bytes = heap.slice(ptr)?;
-        let n = bytes
-            .iter()
-            .position(|b| *b == 0)
-            .ok_or(SourceHeapError::MissingNulTerminator)?;
-        Ok(bytes[..n].to_vec())
-    };
+    let text =
+        |heap: &SourceHeap, ptr: SourceConstPointer<i8>| -> Result<Vec<i8>, SourceHeapError> {
+            let bytes = heap.slice(ptr)?;
+            let n = bytes
+                .iter()
+                .position(|b| *b == 0)
+                .ok_or(SourceHeapError::MissingNulTerminator)?;
+            Ok(bytes[..n].to_vec())
+        };
     let alloc = |heap: &mut SourceHeap, bytes: &[u8]| {
         Ok::<_, SourceHeapError>(
             heap.allocate_model_storage(bytes.iter().map(|b| *b as i8).collect())?
                 .as_const(),
         )
     };
-    let mut labels = vec![INCHI_TAG::default(); crate::source_types::local_ichiprt1::tagAuxLblOrd_AL_MAX_ORD as usize];
+    let mut labels = vec![
+        INCHI_TAG::default();
+        crate::source_types::local_ichiprt1::tagAuxLblOrd_AL_MAX_ORD as usize
+    ];
     for (i, plain, comment, xml) in [
-        (0, b"/\0".as_slice(), b"fixed_H\0".as_slice(), b"fixed-H\0".as_slice()),
+        (
+            0,
+            b"/\0".as_slice(),
+            b"fixed_H\0".as_slice(),
+            b"fixed-H\0".as_slice(),
+        ),
         (3, b"/\0", b"reversibility\0", b"reversibility\0"),
         (12, b"/rA:\0", b"atoms\0", b"atoms\0"),
         (13, b"/rB:\0", b"bonds\0", b"bonds\0"),
@@ -8074,7 +8507,8 @@ pub(crate) fn OutputAUXINFO_ReversibilityInfo(
     let tags = heap.allocate_model_storage(vec![0_i8; 128])?;
     io.bTag1 = crate::source_types::local_ichiprt1::tagAuxLblBit_AL_REVR as i32 | io.bFhTag;
     szGetTag(heap, &labels, io.nTag, io.bTag1, tags, &mut io.bAlways, 0)?;
-    io.szTag1.copy_from_slice(&heap.slice(tags.as_const())?[..64]);
+    io.szTag1
+        .copy_from_slice(&heap.slice(tags.as_const())?[..64]);
     let lf = text(heap, line_feed)?;
     fn emit(
         heap: &mut SourceHeap,
@@ -8082,7 +8516,8 @@ pub(crate) fn OutputAUXINFO_ReversibilityInfo(
         stdout: SourceMutPointer<FILE>,
         bytes: &[i8],
     ) -> Result<(), SourceHeapError> {
-        let s = heap.allocate_model_storage(bytes.iter().copied().chain(std::iter::once(0)).collect())?;
+        let s =
+            heap.allocate_model_storage(bytes.iter().copied().chain(std::iter::once(0)).collect())?;
         let f = heap.allocate_model_storage(vec![b'%' as i8, b's' as i8, 0])?;
         inchi_ios_print(
             heap,
@@ -8116,7 +8551,8 @@ pub(crate) fn OutputAUXINFO_ReversibilityInfo(
         io.bTag2 = io.bTag1 | bit;
         let tag2 = tags.offset(64)?;
         szGetTag(heap, &labels, io.nTag, io.bTag2, tag2, &mut io.bAlways, 0)?;
-        io.szTag2.copy_from_slice(&heap.slice(tag2.as_const())?[..64]);
+        io.szTag2
+            .copy_from_slice(&heap.slice(tag2.as_const())?[..64]);
         inchi_strbuf_reset(heap, Some(string_buffer))?;
         emit(heap, &mut output, stdout, &text(heap, tag2.as_const())?)?;
         let source = text(heap, field)?;
@@ -8126,13 +8562,17 @@ pub(crate) fn OutputAUXINFO_ReversibilityInfo(
         while cur < source.len() {
             let mut last = source.len();
             if (source.len() - cur) as i32 >= line_len {
-                last = cur + usize::try_from(line_len).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+                last = cur
+                    + usize::try_from(line_len)
+                        .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
                 if !atom_mode {
                     last = last.saturating_sub(1);
                 }
                 while cur < last
                     && if atom_mode {
-                        !source.get(last).is_some_and(|byte| (*byte as u8).is_ascii_uppercase())
+                        !source
+                            .get(last)
+                            .is_some_and(|byte| (*byte as u8).is_ascii_uppercase())
                     } else {
                         source[last] != b';' as i8
                     }
@@ -8159,7 +8599,8 @@ pub(crate) fn OutputAUXINFO_ReversibilityInfo(
             dst[..n].copy_from_slice(&chunk);
             dst[n] = 0;
             if !atom_mode {
-                string_buffer.nUsedLength = i32::try_from(n).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+                string_buffer.nUsedLength =
+                    i32::try_from(n).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
             }
             emit(heap, &mut output, stdout, &chunk)?;
             if io.bPlainTextTags == 0 {
@@ -8291,7 +8732,10 @@ pub(crate) fn OutputAUXINFO_PolymerInfo(
 
     inchi_strbuf_reset(heap, Some(string_buffer))?;
 
-    fn format_pointer(heap: &mut SourceHeap, format: &[u8]) -> Result<SourceConstPointer<i8>, SourceHeapError> {
+    fn format_pointer(
+        heap: &mut SourceHeap,
+        format: &[u8],
+    ) -> Result<SourceConstPointer<i8>, SourceHeapError> {
         Ok(heap
             .allocate_model_storage(format.iter().map(|byte| *byte as i8).collect())?
             .as_const())
@@ -8376,7 +8820,8 @@ pub(crate) fn OutputAUXINFO_PolymerInfo(
             vec![SourceFormatArgument::Bytes(smt.as_const())],
         )?;
 
-        let atom_count = usize::try_from(unit.na).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let atom_count =
+            usize::try_from(unit.na).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         if atom_count == 0 {
             return Err(SourceHeapError::PointerOutOfBounds);
         }
@@ -8385,18 +8830,28 @@ pub(crate) fn OutputAUXINFO_PolymerInfo(
             .get(..atom_count)
             .ok_or(SourceHeapError::PointerOutOfBounds)?
             .to_vec();
-        crate::source::base::ichiprt2::print_sequence_of_nums_compressing_ranges(heap, &atoms, string_buffer)?;
+        crate::source::base::ichiprt2::print_sequence_of_nums_compressing_ranges(
+            heap,
+            &atoms,
+            string_buffer,
+        )?;
 
         if unit.nb > 0 {
             append(heap, string_buffer, b"(\0", Vec::new())?;
-            let bond_value_count = unit.nb.checked_mul(2).ok_or(SourceHeapError::SourceIntegerOverflow)?;
+            let bond_value_count = unit
+                .nb
+                .checked_mul(2)
+                .ok_or(SourceHeapError::SourceIntegerOverflow)?;
             let last = bond_value_count
                 .checked_sub(1)
                 .ok_or(SourceHeapError::SourceIntegerOverflow)?;
             for bond_index in 0..last {
                 let value = *heap
                     .slice(unit.blist.as_const())?
-                    .get(usize::try_from(bond_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
+                    .get(
+                        usize::try_from(bond_index)
+                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                    )
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
                 append(
                     heap,
@@ -8437,7 +8892,9 @@ pub(crate) fn OutputAUXINFO_PolymerInfo(
             }
         }
 
-        if index + 1 < usize::try_from(polymer.n).map_err(|_| SourceHeapError::PointerOutOfBounds)? {
+        if index + 1
+            < usize::try_from(polymer.n).map_err(|_| SourceHeapError::PointerOutOfBounds)?
+        {
             append(heap, string_buffer, b";\0", Vec::new())?;
         }
     }
@@ -8700,7 +9157,8 @@ pub(crate) fn OutputINCHI_PolymerLayer_SingleUnit(
                  format: &[u8],
                  arguments: Vec<SourceFormatArgument>|
      -> Result<(), SourceHeapError> {
-        let format = heap.allocate_model_storage(format.iter().copied().map(|byte| byte as i8).collect())?;
+        let format =
+            heap.allocate_model_storage(format.iter().copied().map(|byte| byte as i8).collect())?;
         inchi_strbuf_printf(
             heap,
             Some(buffer),
@@ -8725,13 +9183,18 @@ pub(crate) fn OutputINCHI_PolymerLayer_SingleUnit(
         b"%-d%-d%-d-\0",
         vec![signed(unit.type_), signed(unit.subtype), signed(unit.conn)],
     )?;
-    let atom_count = usize::try_from(unit.na).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+    let atom_count =
+        usize::try_from(unit.na).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
     let unit_atoms = heap
         .slice(unit.alist.as_const())?
         .get(..atom_count)
         .ok_or(SourceHeapError::PointerOutOfBounds)?
         .to_vec();
-    crate::source::base::ichiprt2::print_sequence_of_nums_compressing_ranges(heap, &unit_atoms, string_buffer)?;
+    crate::source::base::ichiprt2::print_sequence_of_nums_compressing_ranges(
+        heap,
+        &unit_atoms,
+        string_buffer,
+    )?;
 
     if unit.nb > 2 {
         return Ok(12);
@@ -8741,20 +9204,28 @@ pub(crate) fn OutputINCHI_PolymerLayer_SingleUnit(
     let mut atom2 = 0_i32;
     if unit.nb == 2 && (unit.cyclizable == 0 || unit.cyclized == 0) {
         let crossing = heap.slice(unit.blist.as_const())?;
-        let mut atom3 = *crossing.first().ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let mut atom3 = *crossing
+            .first()
+            .ok_or(SourceHeapError::PointerOutOfBounds)?;
         let mut atom4 = *crossing.get(1).ok_or(SourceHeapError::PointerOutOfBounds)?;
         let mut atom5 = *crossing.get(2).ok_or(SourceHeapError::PointerOutOfBounds)?;
         let mut atom6 = *crossing.get(3).ok_or(SourceHeapError::PointerOutOfBounds)?;
-        if crate::source::base::util::is_in_the_ilist(Some(&unit_atoms), atom3, unit.na)?.is_some() {
+        if crate::source::base::util::is_in_the_ilist(Some(&unit_atoms), atom3, unit.na)?.is_some()
+        {
             std::mem::swap(&mut atom3, &mut atom4);
         }
-        if crate::source::base::util::is_in_the_ilist(Some(&unit_atoms), atom5, unit.na)?.is_some() {
+        if crate::source::base::util::is_in_the_ilist(Some(&unit_atoms), atom5, unit.na)?.is_some()
+        {
             std::mem::swap(&mut atom5, &mut atom6);
         }
         let swap = if polymers_mode == crate::source_types::POLYMERS_LEGACY as i32 {
             atom5 < atom3
         } else {
-            crate::source::base::runichi3::OAD_Polymer_IsFirstAtomRankLower(atom4, atom6, atom_properties)? == 1
+            crate::source::base::runichi3::OAD_Polymer_IsFirstAtomRankLower(
+                atom4,
+                atom6,
+                atom_properties,
+            )? == 1
         };
         let values = if swap {
             [atom5, atom6, atom3, atom4]
@@ -8778,7 +9249,10 @@ pub(crate) fn OutputINCHI_PolymerLayer_SingleUnit(
             let mut position = 0_usize;
             while position < terminator {
                 if atom_text[position] == b'H' as i8 {
-                    let next = *atom_text.get(position + 1).ok_or(SourceHeapError::PointerOutOfBounds)? as u8;
+                    let next = *atom_text
+                        .get(position + 1)
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?
+                        as u8;
                     if next.is_ascii_uppercase() || next == 0 {
                         explicit_hydrogens = explicit_hydrogens
                             .checked_add(1)
@@ -8818,30 +9292,46 @@ pub(crate) fn OutputINCHI_PolymerLayer_SingleUnit(
                     .ok_or(SourceHeapError::SourceIntegerOverflow)?;
             }
         }
-        write(heap, string_buffer, b"(%-d,%-d-\0", vec![signed(atom1), signed(atom2)])?;
+        write(
+            heap,
+            string_buffer,
+            b"(%-d,%-d-\0",
+            vec![signed(atom1), signed(atom2)],
+        )?;
 
         if unit.cyclizable == crate::source_types::CLOSING_SRU_DIRADICAL as i32 {
             write(heap, string_buffer, b"%-d)\0", vec![signed(unit.end_atom1)])?;
         } else if unit.cyclizable == crate::source_types::CLOSING_SRU_HIGHER_ORDER_BOND as i32 {
             let (mut atom3, mut atom4) = (unit.end_atom1, unit.end_atom2);
             inchi_sort_int_pair_ascending(&mut atom3, &mut atom4);
-            write(heap, string_buffer, b"%-d.%-d)\0", vec![signed(atom3), signed(atom4)])?;
+            write(
+                heap,
+                string_buffer,
+                b"%-d.%-d)\0",
+                vec![signed(atom3), signed(atom4)],
+            )?;
         } else if unit.cyclizable == crate::source_types::CLOSING_SRU_RING as i32 {
             if unit.nbkbonds == 0 {
                 let (mut atom3, mut atom4) = (unit.end_atom1, unit.end_atom2);
                 inchi_sort_int_pair_ascending(&mut atom3, &mut atom4);
-                write(heap, string_buffer, b"%-d,%-d)\0", vec![signed(atom3), signed(atom4)])?;
+                write(
+                    heap,
+                    string_buffer,
+                    b"%-d,%-d)\0",
+                    vec![signed(atom3), signed(atom4)],
+                )?;
             } else {
                 for bond in 1..unit.nbkbonds {
-                    let bond_index = usize::try_from(bond).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+                    let bond_index = usize::try_from(bond)
+                        .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
                     let temporary = *heap
                         .slice(unit.bkbonds.as_const())?
                         .get(bond_index)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
                     let mut previous = bond - 1;
                     while previous >= 0 {
-                        let previous_index =
-                            usize::try_from(previous).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+                        let previous_index = usize::try_from(previous)
+                            .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
                         let current = *heap
                             .slice(unit.bkbonds.as_const())?
                             .get(previous_index)
@@ -8856,21 +9346,25 @@ pub(crate) fn OutputINCHI_PolymerLayer_SingleUnit(
                         heap.slice_mut(unit.bkbonds)?[previous_index + 1] = current;
                         previous -= 1;
                     }
-                    let destination =
-                        usize::try_from(previous + 1).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+                    let destination = usize::try_from(previous + 1)
+                        .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
                     heap.slice_mut(unit.bkbonds)?[destination] = temporary;
                 }
 
                 if polymer.treat == crate::source_types::POLYMERS_MODERN as i32
                     || polymer.treat == crate::source_types::POLYMERS_LEGACY_PLUS as i32
                 {
-                    if polymer.frame_shift_scheme != crate::source_types::tagFrameShifScheme_FSS_NONE as i32
+                    if polymer.frame_shift_scheme
+                        != crate::source_types::tagFrameShifScheme_FSS_NONE as i32
                         && unit.nbkbonds >= 1
                         && unit.cap1 >= 1
                         && unit.cap2 >= 1
                     {
                         let atoms = heap.slice(original_atom_data.at.as_const())?;
-                        if crate::source::base::runichi3::OAD_PolymerUnit_SetReopeningDetails(heap, unit, atoms)? != 0 {
+                        if crate::source::base::runichi3::OAD_PolymerUnit_SetReopeningDetails(
+                            heap, unit, atoms,
+                        )? != 0
+                        {
                             let mut senior_bond = 0_i32;
                             crate::source::base::runichi3::OAD_PolymerUnit_SortBackboneBondsAndSetSeniors(
                                 heap,
@@ -8882,8 +9376,8 @@ pub(crate) fn OutputINCHI_PolymerLayer_SingleUnit(
                             if senior_bond != 0 {
                                 let rows = heap.slice(unit.bkbonds.as_const())?;
                                 let first_pointer = rows[0];
-                                let senior_pointer = rows
-                                    [usize::try_from(senior_bond).map_err(|_| SourceHeapError::PointerOutOfBounds)?];
+                                let senior_pointer = rows[usize::try_from(senior_bond)
+                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?];
                                 let first = {
                                     let row = heap.slice(first_pointer.as_const())?;
                                     [row[0], row[1]]
@@ -8904,10 +9398,17 @@ pub(crate) fn OutputINCHI_PolymerLayer_SingleUnit(
                 for index in 0..unit.nbkbonds {
                     let row_pointer = *heap
                         .slice(unit.bkbonds.as_const())?
-                        .get(usize::try_from(index).map_err(|_| SourceHeapError::SourceIntegerOverflow)?)
+                        .get(
+                            usize::try_from(index)
+                                .map_err(|_| SourceHeapError::SourceIntegerOverflow)?,
+                        )
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
                     let row = heap.slice(row_pointer.as_const())?;
-                    let delimiter = if index == unit.nbkbonds - 1 { b')' } else { b',' };
+                    let delimiter = if index == unit.nbkbonds - 1 {
+                        b')'
+                    } else {
+                        b','
+                    };
                     write(
                         heap,
                         string_buffer,
@@ -9504,7 +10005,11 @@ pub(crate) fn GetSaveOptLetters(save_option_bits: u8, letter1: &mut i8, letter2:
     *letter2 = LETTERS[usize::from((save_option_bits & 0x30) >> 4)] as i8;
 }
 
-pub(crate) fn set_line_separators(output_options: i32, line_feed: &mut &'static [i8], tab: &mut &'static [i8]) {
+pub(crate) fn set_line_separators(
+    output_options: i32,
+    line_feed: &mut &'static [i8],
+    tab: &mut &'static [i8],
+) {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichiprt1.c:3112 set_line_separators
     // INCHI✔️✔️: void set_line_separators( int bINChIOutputOptions, char **pLF, char **pTAB )
     // INCHI✔️✔️: {
@@ -9579,12 +10084,19 @@ pub(crate) fn OutputINCHI_VersionAndKind(
     // INCHI✔️❌: }
     // END INCHI C FUNCTION: OutputINCHI_VersionAndKind
 
-    let format_header = heap.allocate_model_storage(b"%s%s=%s\0".iter().map(|byte| *byte as i8).collect())?;
-    let format_pair = heap.allocate_model_storage(b"%s%s\0".iter().map(|byte| *byte as i8).collect())?;
+    let format_header =
+        heap.allocate_model_storage(b"%s%s=%s\0".iter().map(|byte| *byte as i8).collect())?;
+    let format_pair =
+        heap.allocate_model_storage(b"%s%s\0".iter().map(|byte| *byte as i8).collect())?;
     let format_string = heap.allocate_model_storage(vec![b'%' as i8, b's' as i8, 0])?;
     let beta = heap.allocate_model_storage(vec![b'B' as i8, 0])?;
     let standard = heap.allocate_model_storage(vec![b'S' as i8, 0])?;
-    let name = heap.allocate_model_storage(crate::source_types::INCHI_NAME.iter().map(|byte| *byte as i8).collect())?;
+    let name = heap.allocate_model_storage(
+        crate::source_types::INCHI_NAME
+            .iter()
+            .map(|byte| *byte as i8)
+            .collect(),
+    )?;
     let version = heap.allocate_model_storage(
         crate::source_types::local_ichiprt1::x_curr_ver
             .iter()
@@ -9617,9 +10129,19 @@ pub(crate) fn OutputINCHI_VersionAndKind(
         },
     )?;
     if is_beta != 0 {
-        inchi_strbuf_printf(heap, Some(string_buffer), beta.as_const(), &SourceVaList::default())?;
+        inchi_strbuf_printf(
+            heap,
+            Some(string_buffer),
+            beta.as_const(),
+            &SourceVaList::default(),
+        )?;
     } else if output_options & INCHI_OUT_STDINCHI as i32 != 0 {
-        inchi_strbuf_printf(heap, Some(string_buffer), standard.as_const(), &SourceVaList::default())?;
+        inchi_strbuf_printf(
+            heap,
+            Some(string_buffer),
+            standard.as_const(),
+            &SourceVaList::default(),
+        )?;
     }
     inchi_ios_print_nodisplay(
         heap,
@@ -9772,9 +10294,13 @@ pub(crate) fn InternallyGetCanoNumsAndComponentNums(
             .first()
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
         if character == b',' as i8 || character == b';' as i8 || character == 0 {
-            *digits.get_mut(digit_count).ok_or(SourceHeapError::PointerOutOfBounds)? = 0;
+            *digits
+                .get_mut(digit_count)
+                .ok_or(SourceHeapError::PointerOutOfBounds)? = 0;
             let original_number = digits[..digit_count].iter().fold(0_i32, |value, digit| {
-                value.wrapping_mul(10).wrapping_add(i32::from(*digit - b'0' as i8))
+                value
+                    .wrapping_mul(10)
+                    .wrapping_add(i32::from(*digit - b'0' as i8))
             });
             let canonical = canonical_numbers.offset(i64::from(original_number))?;
             *heap
@@ -9796,7 +10322,9 @@ pub(crate) fn InternallyGetCanoNumsAndComponentNums(
                 break;
             }
         } else if (b'0' as i8..=b'9' as i8).contains(&character) {
-            *digits.get_mut(digit_count).ok_or(SourceHeapError::PointerOutOfBounds)? = character;
+            *digits
+                .get_mut(digit_count)
+                .ok_or(SourceHeapError::PointerOutOfBounds)? = character;
             digit_count += 1;
         } else {
             error = 2;
@@ -9943,36 +10471,39 @@ pub(crate) fn CleanOrigCoord(
         let mut field = coordinates[offset..offset + LEN_COORD as usize].to_vec();
         field.push(0);
         let field_pointer = heap.allocate_model_storage(field)?;
-        let parsed = (|| -> Result<(Vec<i8>, usize, f64, usize, Option<(usize, i32)>), SourceHeapError> {
-            let mut trimmed_length = 0_i32;
-            let _ = lrtrim(heap, field_pointer, Some(&mut trimmed_length))?;
-            let (coordinate, end) = source_strtod_with_end(heap, field_pointer.as_const())?;
-            let value = heap.slice(field_pointer.as_const())?.to_vec();
-            let exponent = [b'e', b'E', b'd', b'D']
-                .into_iter()
-                .find_map(|target| value.iter().position(|byte| *byte as u8 == target));
-            let exponent = match exponent {
-                Some(position) => Some((
-                    position,
-                    inchi_strtol(
-                        heap,
-                        field_pointer
-                            .as_const()
-                            .offset(i64::try_from(position + 1).map_err(|_| SourceHeapError::PointerOffsetOverflow)?)?,
-                        None,
-                        10,
-                    )? as i32,
-                )),
-                None => None,
-            };
-            Ok((
-                value,
-                usize::try_from(trimmed_length).map_err(|_| SourceHeapError::SourceIntegerOverflow)?,
-                coordinate,
-                end,
-                exponent,
-            ))
-        })();
+        let parsed =
+            (|| -> Result<(Vec<i8>, usize, f64, usize, Option<(usize, i32)>), SourceHeapError> {
+                let mut trimmed_length = 0_i32;
+                let _ = lrtrim(heap, field_pointer, Some(&mut trimmed_length))?;
+                let (coordinate, end) = source_strtod_with_end(heap, field_pointer.as_const())?;
+                let value = heap.slice(field_pointer.as_const())?.to_vec();
+                let exponent = [b'e', b'E', b'd', b'D']
+                    .into_iter()
+                    .find_map(|target| value.iter().position(|byte| *byte as u8 == target));
+                let exponent = match exponent {
+                    Some(position) => Some((
+                        position,
+                        inchi_strtol(
+                            heap,
+                            field_pointer.as_const().offset(
+                                i64::try_from(position + 1)
+                                    .map_err(|_| SourceHeapError::PointerOffsetOverflow)?,
+                            )?,
+                            None,
+                            10,
+                        )? as i32,
+                    )),
+                    None => None,
+                };
+                Ok((
+                    value,
+                    usize::try_from(trimmed_length)
+                        .map_err(|_| SourceHeapError::SourceIntegerOverflow)?,
+                    coordinate,
+                    end,
+                    exponent,
+                ))
+            })();
         let cleanup = heap.free(field_pointer);
         let (mut value, mut length, coordinate, parsed_end, exponent) = match (parsed, cleanup) {
             (Ok(value), Ok(())) => value,
@@ -10004,7 +10535,10 @@ pub(crate) fn CleanOrigCoord(
             };
 
             let first = usize::from(value[0] as u8 != b'.' && !(value[0] as u8).is_ascii_digit());
-            let value_end = value.iter().position(|byte| *byte == 0).unwrap_or(value.len());
+            let value_end = value
+                .iter()
+                .position(|byte| *byte == 0)
+                .unwrap_or(value.len());
             let decimal_point = value[..value_end]
                 .iter()
                 .position(|byte| *byte as u8 == b'.')
@@ -10128,7 +10662,8 @@ pub(crate) fn WriteOrigCoord(
         return Err(SourceHeapError::PointerOutOfBounds);
     }
     let coordinates = if current_index < num_inp_atoms {
-        let count = usize::try_from(num_inp_atoms).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let count =
+            usize::try_from(num_inp_atoms).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         heap.slice(molecular_coordinates)?
             .get(..count)
             .ok_or(SourceHeapError::PointerOutOfBounds)?
@@ -10154,8 +10689,10 @@ pub(crate) fn WriteOrigCoord(
             .map_err(|_| SourceHeapError::SourceIntegerOverflow)?
         };
         if length.wrapping_add(current_length).wrapping_add(1) < buffer_length {
-            let length_usize = usize::try_from(length).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            let current_usize = usize::try_from(current_length).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let length_usize =
+                usize::try_from(length).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let current_usize =
+                usize::try_from(current_length).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             if length_usize != 0 {
                 heap.slice_mut(buffer)?
                     .get_mut(current_usize..current_usize + length_usize)
@@ -10165,7 +10702,10 @@ pub(crate) fn WriteOrigCoord(
             current_length = current_length.wrapping_add(length);
             *heap
                 .slice_mut(buffer)?
-                .get_mut(usize::try_from(current_length).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
+                .get_mut(
+                    usize::try_from(current_length)
+                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                )
                 .ok_or(SourceHeapError::PointerOutOfBounds)? = b';' as i8;
             current_length = current_length.wrapping_add(1);
             current_index = current_index.wrapping_add(1);
@@ -10370,7 +10910,8 @@ pub(crate) fn WriteOrigAtoms(
     if *index < 0 {
         return Err(SourceHeapError::PointerOutOfBounds);
     }
-    let atom_count = usize::try_from(num_inp_atoms).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let atom_count =
+        usize::try_from(num_inp_atoms).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let atoms_view: Option<StableSourceConstSlice<inp_ATOM>> = if atom_count == 0 {
         None
     } else {
@@ -10399,7 +10940,8 @@ pub(crate) fn WriteOrigAtoms(
         for (target, source) in destination.iter_mut().zip(header.bytes().chain([0])) {
             *target = source as i8;
         }
-        current_length = i32::try_from(header.len()).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+        current_length =
+            i32::try_from(header.len()).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
     }
 
     let mut current_index = *index;
@@ -10419,12 +10961,14 @@ pub(crate) fn WriteOrigAtoms(
                 let neighbor_atom = atoms
                     .get(usize::from(neighbor))
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                if is_in_the_list(Some(&atom.neighbor), neighbor, i32::from(atom.valence))?.is_some()
+                if is_in_the_list(Some(&atom.neighbor), neighbor, i32::from(atom.valence))?
+                    .is_some()
                     && neighbor_atom.orig_at_number == atom.p_orig_at_num[n]
                 {
                     neighbor_order[neighbor_count] = atom.p_orig_at_num[n];
                     neighbor_count += 1;
-                } else if i32::from(neighbor) == current_index && neighbor_atom.orig_at_number == atom.p_orig_at_num[n]
+                } else if i32::from(neighbor) == current_index
+                    && neighbor_atom.orig_at_number == atom.p_orig_at_num[n]
                 {
                     num_trans = n as i32;
                     self_count = self_count.wrapping_add(1);
@@ -10433,13 +10977,21 @@ pub(crate) fn WriteOrigAtoms(
                     break;
                 }
             }
-            if is_ok && self_count <= 1 && self_count + neighbor_count as i32 == MAX_NUM_STEREO_ATOM_NEIGH as i32 {
-                num_trans =
-                    num_trans.wrapping_add(insertions_sort_AT_RANK(&mut neighbor_order, neighbor_count as i32)?);
+            if is_ok
+                && self_count <= 1
+                && self_count + neighbor_count as i32 == MAX_NUM_STEREO_ATOM_NEIGH as i32
+            {
+                num_trans = num_trans.wrapping_add(insertions_sort_AT_RANK(
+                    &mut neighbor_order,
+                    neighbor_count as i32,
+                )?);
                 let source_parity = i32::from(atom.p_parity);
-                if (AB_MIN_WELL_DEFINED_PARITY as i32..=AB_MAX_WELL_DEFINED_PARITY as i32).contains(&source_parity) {
+                if (AB_MIN_WELL_DEFINED_PARITY as i32..=AB_MAX_WELL_DEFINED_PARITY as i32)
+                    .contains(&source_parity)
+                {
                     parity = 2 - num_trans.wrapping_add(source_parity) % 2;
-                } else if (AB_MIN_ILL_DEFINED_PARITY as i32..=AB_MAX_ILL_DEFINED_PARITY as i32).contains(&source_parity)
+                } else if (AB_MIN_ILL_DEFINED_PARITY as i32..=AB_MAX_ILL_DEFINED_PARITY as i32)
+                    .contains(&source_parity)
                 {
                     parity = source_parity;
                 }
@@ -10465,7 +11017,11 @@ pub(crate) fn WriteOrigAtoms(
             i32::from(atom.num_H),
             i32::from(atom.valence),
         )?;
-        let isotope_hydrogens = atom.num_iso_H.iter().map(|value| i32::from(*value)).sum::<i32>();
+        let isotope_hydrogens = atom
+            .num_iso_H
+            .iter()
+            .map(|value| i32::from(*value))
+            .sum::<i32>();
         if unusual_valence != 0
             || atom.charge != 0
             || atom.radical != 0
@@ -10475,9 +11031,13 @@ pub(crate) fn WriteOrigAtoms(
         {
             if unusual_valence != 0 {
                 current_atom.extend(
-                    (if unusual_valence > 0 { unusual_valence } else { 0 })
-                        .to_string()
-                        .bytes(),
+                    (if unusual_valence > 0 {
+                        unusual_valence
+                    } else {
+                        0
+                    })
+                    .to_string()
+                    .bytes(),
                 );
             }
             let charge = i32::from(atom.charge);
@@ -10538,13 +11098,20 @@ pub(crate) fn WriteOrigAtoms(
         if current_atom.len() > 32 {
             return Err(SourceHeapError::PointerOutOfBounds);
         }
-        let atom_length = i32::try_from(current_atom.len()).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+        let atom_length = i32::try_from(current_atom.len())
+            .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
         if atom_length.wrapping_add(current_length) < buffer_length {
-            let start = usize::try_from(current_length).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let start =
+                usize::try_from(current_length).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             heap.slice_mut(buffer)?
                 .get_mut(start..start + current_atom.len())
                 .ok_or(SourceHeapError::PointerOutOfBounds)?
-                .copy_from_slice(&current_atom.iter().map(|byte| *byte as i8).collect::<Vec<_>>());
+                .copy_from_slice(
+                    &current_atom
+                        .iter()
+                        .map(|byte| *byte as i8)
+                        .collect::<Vec<_>>(),
+                );
             current_length = current_length.wrapping_add(atom_length);
             current_index = current_index.wrapping_add(1);
         } else {
@@ -10552,7 +11119,9 @@ pub(crate) fn WriteOrigAtoms(
         }
         *heap
             .slice_mut(buffer)?
-            .get_mut(usize::try_from(current_length).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
+            .get_mut(
+                usize::try_from(current_length).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+            )
             .ok_or(SourceHeapError::PointerOutOfBounds)? = 0;
         *index = current_index;
     }
@@ -11784,7 +12353,8 @@ mod tests {
         let mut coordinates = [b' ' as i8; 32];
         for (index, field) in fields.into_iter().enumerate() {
             assert!(field.len() <= LEN_COORD as usize);
-            for (target, source) in coordinates[index * LEN_COORD as usize..index * LEN_COORD as usize + field.len()]
+            for (target, source) in coordinates
+                [index * LEN_COORD as usize..index * LEN_COORD as usize + field.len()]
                 .iter_mut()
                 .zip(field.iter().copied())
             {
@@ -11809,10 +12379,17 @@ mod tests {
         let mut decimal = original_coordinates([b" 0.000000", b"001.2300", b"-0002.500"]);
         assert_eq!(CleanOrigCoord(&mut heap, &mut decimal, b',' as i32), Ok(1));
         assert_eq!(coordinate_bytes(&decimal), b"0,1.23,-2.5");
-        assert!(decimal[b"0,1.23,-2.5".len()..].iter().all(|byte| *byte == 0));
+        assert!(
+            decimal[b"0,1.23,-2.5".len()..]
+                .iter()
+                .all(|byte| *byte == 0)
+        );
 
         let mut threshold = original_coordinates([b"0.000001", b"0.0000009", b"-0.000000"]);
-        assert_eq!(CleanOrigCoord(&mut heap, &mut threshold, b'|' as i32), Ok(2));
+        assert_eq!(
+            CleanOrigCoord(&mut heap, &mut threshold, b'|' as i32),
+            Ok(2)
+        );
         assert_eq!(coordinate_bytes(&threshold), b".000001|0|0");
 
         let mut exponent = original_coordinates([b"01.200e+03", b"02.500D-02", b"1.000E+000"]);
@@ -11829,7 +12406,10 @@ mod tests {
 
         let mut full = original_coordinates([b"1234567890", b"1234567890", b"1234567890"]);
         assert_eq!(CleanOrigCoord(&mut heap, &mut full, b',' as i32), Ok(0));
-        assert_eq!(full.map(|byte| byte as u8), *b"1234567890,1234567890,1234567890");
+        assert_eq!(
+            full.map(|byte| byte as u8),
+            *b"1234567890,1234567890,1234567890"
+        );
     }
 
     #[test]
@@ -11846,7 +12426,14 @@ mod tests {
         let too_small = heap.allocate_model_storage(vec![0x55_i8; 8]).unwrap();
         let mut index = 0_i32;
         assert_eq!(
-            WriteOrigCoord(&mut heap, 3, coordinates.as_const(), &mut index, too_small, 6,),
+            WriteOrigCoord(
+                &mut heap,
+                3,
+                coordinates.as_const(),
+                &mut index,
+                too_small,
+                6,
+            ),
             Ok(0)
         );
         assert_eq!(index, 0);
@@ -11854,7 +12441,14 @@ mod tests {
 
         let first_chunk = heap.allocate_model_storage(vec![0x55_i8; 8]).unwrap();
         assert_eq!(
-            WriteOrigCoord(&mut heap, 3, coordinates.as_const(), &mut index, first_chunk, 7,),
+            WriteOrigCoord(
+                &mut heap,
+                3,
+                coordinates.as_const(),
+                &mut index,
+                first_chunk,
+                7,
+            ),
             Ok(6)
         );
         assert_eq!(index, 1);
@@ -11867,15 +12461,32 @@ mod tests {
 
         let zero_chunk = heap.allocate_model_storage(vec![0x55_i8; 4]).unwrap();
         assert_eq!(
-            WriteOrigCoord(&mut heap, 3, coordinates.as_const(), &mut index, zero_chunk, 2,),
+            WriteOrigCoord(
+                &mut heap,
+                3,
+                coordinates.as_const(),
+                &mut index,
+                zero_chunk,
+                2,
+            ),
             Ok(1)
         );
         assert_eq!(index, 2);
-        assert_eq!(&heap.slice(zero_chunk.as_const()).unwrap()[..3], &[b';' as i8, 0, 0x55]);
+        assert_eq!(
+            &heap.slice(zero_chunk.as_const()).unwrap()[..3],
+            &[b';' as i8, 0, 0x55]
+        );
 
         let full_chunk = heap.allocate_model_storage(vec![0x55_i8; 35]).unwrap();
         assert_eq!(
-            WriteOrigCoord(&mut heap, 3, coordinates.as_const(), &mut index, full_chunk, 34,),
+            WriteOrigCoord(
+                &mut heap,
+                3,
+                coordinates.as_const(),
+                &mut index,
+                full_chunk,
+                34,
+            ),
             Ok(33)
         );
         assert_eq!(index, 3);
@@ -11891,7 +12502,14 @@ mod tests {
         let empty = heap.allocate_model_storage(vec![0x55_i8; 2]).unwrap();
         index = 0;
         assert_eq!(
-            WriteOrigCoord(&mut heap, 0, SourceConstPointer::null(), &mut index, empty, 0,),
+            WriteOrigCoord(
+                &mut heap,
+                0,
+                SourceConstPointer::null(),
+                &mut index,
+                empty,
+                0,
+            ),
             Ok(0)
         );
         assert_eq!(index, 0);
@@ -11959,7 +12577,11 @@ mod tests {
     fn source_port__ichiprt1__writeorigatoms__line_2410() {
         let carbon = original_atom(b"C", 6, &[2, 2], 4, 0);
         assert_eq!(
-            write_single_original_atom(carbon.clone(), (FLAG_INP_AT_CHIRAL | FLAG_INP_AT_NONCHIRAL) as i32, 64,),
+            write_single_original_atom(
+                carbon.clone(),
+                (FLAG_INP_AT_CHIRAL | FLAG_INP_AT_NONCHIRAL) as i32,
+                64,
+            ),
             (Ok(3), 1, b"1cC".to_vec())
         );
         assert_eq!(
@@ -11986,7 +12608,10 @@ mod tests {
 
         let mut radical = original_atom(b"C", 6, &[3], 3, 0);
         radical.radical = RADICAL_DOUBLET as i8;
-        assert_eq!(write_single_original_atom(radical, 0, 64), (Ok(4), 1, b"1C.2".to_vec()));
+        assert_eq!(
+            write_single_original_atom(radical, 0, 64),
+            (Ok(4), 1, b"1C.2".to_vec())
+        );
 
         let mut isotope = carbon.clone();
         isotope.iso_atw_diff = 1;
@@ -12100,7 +12725,10 @@ mod tests {
 
     #[test]
     fn source_port__ichiprt1__writeorigbonds__line_2610() {
-        fn run(atoms: Vec<inp_ATOM>, buffer_length: i32) -> (Result<i32, SourceHeapError>, i32, Vec<u8>, String, bool) {
+        fn run(
+            atoms: Vec<inp_ATOM>,
+            buffer_length: i32,
+        ) -> (Result<i32, SourceHeapError>, i32, Vec<u8>, String, bool) {
             let atom_count = atoms.len() as i32;
             let mut heap = SourceHeap::default();
             let atom_pointer = if atoms.is_empty() {
@@ -12144,7 +12772,10 @@ mod tests {
             )
         }
 
-        assert_eq!(run(Vec::new(), 512), (Ok(0), 0, Vec::new(), String::new(), false));
+        assert_eq!(
+            run(Vec::new(), 512),
+            (Ok(0), 0, Vec::new(), String::new(), false)
+        );
 
         let cases = [
             (BOND_TYPE_SINGLE as u8, STEREO_SNGL_UP as i8, b'p'),
@@ -12190,7 +12821,10 @@ mod tests {
         sorted[2].valence = 2;
         sorted[2].neighbor[..2].copy_from_slice(&[1, 0]);
         sorted[2].bond_type[..2].copy_from_slice(&[BOND_TYPE_DOUBLE as u8, BOND_TYPE_TRIPLE as u8]);
-        assert_eq!(run(sorted, 512), (Ok(7), 3, b";;t1d2;".to_vec(), String::new(), true,));
+        assert_eq!(
+            run(sorted, 512),
+            (Ok(7), 3, b";;t1d2;".to_vec(), String::new(), true,)
+        );
 
         assert_eq!(
             run(vec![inp_ATOM::default()], 3),
@@ -12201,18 +12835,24 @@ mod tests {
             (Ok(0), 0, Vec::new(), String::new(), false)
         );
 
-        fn stereo_fixture(first_parity: i8, second_parity: i8, substituent_element: u8) -> Vec<inp_ATOM> {
+        fn stereo_fixture(
+            first_parity: i8,
+            second_parity: i8,
+            substituent_element: u8,
+        ) -> Vec<inp_ATOM> {
             let mut atoms = vec![inp_ATOM::default(); 4];
             atoms[0].valence = 2;
             atoms[0].neighbor[..2].copy_from_slice(&[1, 2]);
-            atoms[0].bond_type[..2].copy_from_slice(&[BOND_TYPE_DOUBLE as u8, BOND_TYPE_SINGLE as u8]);
+            atoms[0].bond_type[..2]
+                .copy_from_slice(&[BOND_TYPE_DOUBLE as u8, BOND_TYPE_SINGLE as u8]);
             atoms[0].sb_ord[0] = 0;
             atoms[0].sn_ord[0] = 1;
             atoms[0].sb_parity[0] = first_parity;
 
             atoms[1].valence = 2;
             atoms[1].neighbor[..2].copy_from_slice(&[0, 3]);
-            atoms[1].bond_type[..2].copy_from_slice(&[BOND_TYPE_DOUBLE as u8, BOND_TYPE_SINGLE as u8]);
+            atoms[1].bond_type[..2]
+                .copy_from_slice(&[BOND_TYPE_DOUBLE as u8, BOND_TYPE_SINGLE as u8]);
             atoms[1].sb_ord[0] = 0;
             atoms[1].sn_ord[0] = 1;
             atoms[1].sb_parity[0] = second_parity;
@@ -12229,11 +12869,17 @@ mod tests {
         }
 
         assert_eq!(
-            run(stereo_fixture(AB_PARITY_ODD as i8, AB_PARITY_ODD as i8, 6), 512,),
+            run(
+                stereo_fixture(AB_PARITY_ODD as i8, AB_PARITY_ODD as i8, 6),
+                512,
+            ),
             (Ok(11), 4, b";d+1;s1;s2;".to_vec(), String::new(), true,)
         );
         assert_eq!(
-            run(stereo_fixture(AB_PARITY_UNKN as i8, AB_PARITY_UNDF as i8, 6), 512,),
+            run(
+                stereo_fixture(AB_PARITY_UNKN as i8, AB_PARITY_UNDF as i8, 6),
+                512,
+            ),
             (Ok(11), 4, b";du1;s1;s2;".to_vec(), String::new(), true,)
         );
         let connected_and_non_metal = (AB_PARITY_ODD | (AB_PARITY_EVEN << SB_PARITY_SHFT)) as i8;
@@ -12350,7 +12996,11 @@ mod tests {
         assert_eq!(coordinate_failure_output.num_atoms, 77);
         assert_eq!(coordinate_failure_output.n_zy, 9);
         assert_eq!(coordinate_failure_input.szCoord, retained_coordinates);
-        assert!(coordinate_failure_heap.slice(retained_coordinates.as_const()).is_ok());
+        assert!(
+            coordinate_failure_heap
+                .slice(retained_coordinates.as_const())
+                .is_ok()
+        );
 
         let mut atom_failure_heap = SourceHeap::default();
         let mut atom_failure_input = input(&mut atom_failure_heap, true);
@@ -12375,7 +13025,10 @@ mod tests {
             atom_failure_heap.slice(transferred_coordinates.as_const()),
             Err(SourceHeapError::MissingAllocation)
         );
-        assert_eq!(text(&atom_failure_heap, atom_failure_output.szCoord), b"1,2,3;\0");
+        assert_eq!(
+            text(&atom_failure_heap, atom_failure_output.szCoord),
+            b"1,2,3;\0"
+        );
         assert!(atom_failure_output.szAtoms.is_null());
         assert_eq!(atom_failure_output.num_atoms, 77);
         OrigStruct_Free(&mut atom_failure_heap, Some(&mut atom_failure_output)).unwrap();
@@ -12397,7 +13050,10 @@ mod tests {
             ),
             Ok(-1)
         );
-        assert_eq!(text(&bond_failure_heap, bond_failure_output.szAtoms), b"1C0\0");
+        assert_eq!(
+            text(&bond_failure_heap, bond_failure_output.szAtoms),
+            b"1C0\0"
+        );
         assert!(bond_failure_output.szBonds.is_null());
         assert_eq!(bond_failure_output.num_atoms, 77);
         OrigStruct_Free(&mut bond_failure_heap, Some(&mut bond_failure_output)).unwrap();
@@ -12463,8 +13119,14 @@ mod tests {
         assert_eq!(structure.polymer, polymer);
         assert_eq!(structure.v3000, v3000);
         assert_eq!(structure.n_zy, 17);
-        assert_eq!(heap.slice(atoms.as_const()), Err(SourceHeapError::MissingAllocation));
-        assert_eq!(heap.slice(bonds.as_const()), Err(SourceHeapError::MissingAllocation));
+        assert_eq!(
+            heap.slice(atoms.as_const()),
+            Err(SourceHeapError::MissingAllocation)
+        );
+        assert_eq!(
+            heap.slice(bonds.as_const()),
+            Err(SourceHeapError::MissingAllocation)
+        );
         assert_eq!(
             heap.slice(coordinates.as_const()),
             Err(SourceHeapError::MissingAllocation)
@@ -12489,7 +13151,10 @@ mod tests {
         fn output_text(heap: &SourceHeap, output: &INCHI_IOSTREAM) -> String {
             let bytes = heap.slice(output.s.pStr.as_const()).unwrap();
             let end = bytes.iter().position(|byte| *byte == 0).unwrap();
-            bytes[..end].iter().map(|byte| *byte as u8 as char).collect()
+            bytes[..end]
+                .iter()
+                .map(|byte| *byte as u8 as char)
+                .collect()
         }
         fn clear(heap: &mut SourceHeap, output: &mut INCHI_IOSTREAM) {
             output.s.nUsedLength = 0;
@@ -12643,13 +13308,22 @@ mod tests {
             }
         }
         fn c_text(heap: &mut SourceHeap, value: &str) -> SourceMutPointer<i8> {
-            heap.allocate_model_storage(value.bytes().map(|byte| byte as i8).chain(std::iter::once(0)).collect())
-                .unwrap()
+            heap.allocate_model_storage(
+                value
+                    .bytes()
+                    .map(|byte| byte as i8)
+                    .chain(std::iter::once(0))
+                    .collect(),
+            )
+            .unwrap()
         }
         fn output_text(heap: &SourceHeap, output: &INCHI_IOSTREAM) -> String {
             let bytes = heap.slice(output.s.pStr.as_const()).unwrap();
             let end = bytes.iter().position(|byte| *byte == 0).unwrap();
-            bytes[..end].iter().map(|byte| *byte as u8 as char).collect()
+            bytes[..end]
+                .iter()
+                .map(|byte| *byte as u8 as char)
+                .collect()
         }
         fn run(
             heap: &mut SourceHeap,
@@ -12753,7 +13427,10 @@ mod tests {
         fn output_text(heap: &SourceHeap, output: &INCHI_IOSTREAM) -> String {
             let bytes = heap.slice(output.s.pStr.as_const()).unwrap();
             let end = bytes.iter().position(|byte| *byte == 0).unwrap();
-            bytes[..end].iter().map(|byte| *byte as u8 as char).collect()
+            bytes[..end]
+                .iter()
+                .map(|byte| *byte as u8 as char)
+                .collect()
         }
         fn smt(value: &str) -> [i8; 80] {
             let mut result = [0_i8; 80];
@@ -12762,7 +13439,10 @@ mod tests {
             }
             result
         }
-        fn run(heap: &mut SourceHeap, structure: Option<&ORIG_STRUCT>) -> (Result<i32, SourceHeapError>, String) {
+        fn run(
+            heap: &mut SourceHeap,
+            structure: Option<&ORIG_STRUCT>,
+        ) -> (Result<i32, SourceHeapError>, String) {
             let mut string_buffer = buffer(heap, 32);
             let mut output = INCHI_IOSTREAM {
                 s: buffer(heap, 32),
@@ -12787,14 +13467,22 @@ mod tests {
 
         let mut heap = SourceHeap::default();
         assert_eq!(run(&mut heap, None), (Ok(0), String::new()));
-        assert_eq!(run(&mut heap, Some(&ORIG_STRUCT::default())), (Ok(0), String::new()));
+        assert_eq!(
+            run(&mut heap, Some(&ORIG_STRUCT::default())),
+            (Ok(0), String::new())
+        );
 
-        let empty_polymer = heap.allocate_model_storage(vec![OAD_Polymer::default()]).unwrap();
+        let empty_polymer = heap
+            .allocate_model_storage(vec![OAD_Polymer::default()])
+            .unwrap();
         let empty_structure = ORIG_STRUCT {
             polymer: empty_polymer,
             ..ORIG_STRUCT::default()
         };
-        assert_eq!(run(&mut heap, Some(&empty_structure)), (Ok(0), "/Z:\n".to_owned()));
+        assert_eq!(
+            run(&mut heap, Some(&empty_structure)),
+            (Ok(0), "/Z:\n".to_owned())
+        );
 
         let first_atoms = heap.allocate_model_storage(vec![1, 2, 3, 5]).unwrap();
         let second_atoms = heap.allocate_model_storage(vec![7]).unwrap();
@@ -12842,7 +13530,8 @@ mod tests {
             run(&mut heap, Some(&structure)),
             (
                 Ok(0),
-                "/Z:123-n-1-3,5;456-eu-7(1,4,2,9)[1.250000,-0.000000,2.000000,3.500000]\n".to_owned()
+                "/Z:123-n-1-3,5;456-eu-7(1,4,2,9)[1.250000,-0.000000,2.000000,3.500000]\n"
+                    .to_owned()
             )
         );
 
@@ -12916,8 +13605,8 @@ mod tests {
     #[test]
     fn source_port__ichiprt1__outputinchi2__line_966() {
         use crate::source_types::{
-            INCHI_OUT_NO_AUX_INFO, INCHI_OUT_PLAIN_TEXT, INCHI_OUT_PLAIN_TEXT_COMMENTS, INCHI_OUT_TABBED_OUTPUT,
-            INPUT_PARMS,
+            INCHI_OUT_NO_AUX_INFO, INCHI_OUT_PLAIN_TEXT, INCHI_OUT_PLAIN_TEXT_COMMENTS,
+            INCHI_OUT_TABBED_OUTPUT, INPUT_PARMS,
         };
 
         fn buffer(heap: &mut SourceHeap) -> INCHI_IOS_STRING {
@@ -12938,11 +13627,16 @@ mod tests {
         fn text(heap: &SourceHeap, stream: &INCHI_IOSTREAM) -> String {
             let bytes = heap.slice(stream.s.pStr.as_const()).unwrap();
             let end = bytes.iter().position(|byte| *byte == 0).unwrap();
-            bytes[..end].iter().map(|byte| *byte as u8 as char).collect()
+            bytes[..end]
+                .iter()
+                .map(|byte| *byte as u8 as char)
+                .collect()
         }
         fn run(options: i32, provide_buffer: bool) -> (i32, String, String) {
             let mut heap = SourceHeap::default();
-            let rows = heap.allocate_model_storage(vec![SourceMutPointer::null(); 4]).unwrap();
+            let rows = heap
+                .allocate_model_storage(vec![SourceMutPointer::null(); 4])
+                .unwrap();
             let flags = heap.allocate_model_storage(vec![0_i32]).unwrap();
             let mut string_buffer = buffer(&mut heap);
             let mut output = stream(&mut heap);
@@ -13016,9 +13710,9 @@ mod tests {
     #[test]
     fn source_port__ichiprt1__outputinchi1__line_1043() {
         use crate::source_types::{
-            INCHI_OUT_EMBED_REC, INCHI_OUT_NO_AUX_INFO, INCHI_OUT_ONLY_AUX_INFO, INCHI_OUT_PLAIN_TEXT,
-            INCHI_OUT_PLAIN_TEXT_COMMENTS, INCHI_OUT_SAVEOPT, INCHI_OUT_STDINCHI, INCHI_SORT, INChI, INChI_Aux,
-            INPUT_PARMS,
+            INCHI_OUT_EMBED_REC, INCHI_OUT_NO_AUX_INFO, INCHI_OUT_ONLY_AUX_INFO,
+            INCHI_OUT_PLAIN_TEXT, INCHI_OUT_PLAIN_TEXT_COMMENTS, INCHI_OUT_SAVEOPT,
+            INCHI_OUT_STDINCHI, INCHI_SORT, INChI, INChI_Aux, INPUT_PARMS,
         };
 
         fn buffer(heap: &mut SourceHeap, size: usize) -> INCHI_IOS_STRING {
@@ -13039,14 +13733,24 @@ mod tests {
         fn text(heap: &SourceHeap, stream: &INCHI_IOSTREAM) -> String {
             let bytes = heap.slice(stream.s.pStr.as_const()).unwrap();
             let end = bytes.iter().position(|byte| *byte == 0).unwrap();
-            bytes[..end].iter().map(|byte| *byte as u8 as char).collect()
+            bytes[..end]
+                .iter()
+                .map(|byte| *byte as u8 as char)
+                .collect()
         }
         fn c_text(heap: &mut SourceHeap, value: &str) -> SourceMutPointer<i8> {
-            heap.allocate_model_storage(value.bytes().map(|byte| byte as i8).chain(std::iter::once(0)).collect())
-                .unwrap()
+            heap.allocate_model_storage(
+                value
+                    .bytes()
+                    .map(|byte| byte as i8)
+                    .chain(std::iter::once(0))
+                    .collect(),
+            )
+            .unwrap()
         }
         fn empty_rows(heap: &mut SourceHeap) -> SourceMutPointer<SourceMutPointer<INCHI_SORT>> {
-            heap.allocate_model_storage(vec![SourceMutPointer::null(); 4]).unwrap()
+            heap.allocate_model_storage(vec![SourceMutPointer::null(); 4])
+                .unwrap()
         }
         fn run_empty(
             output_options: i32,
@@ -13224,7 +13928,9 @@ mod tests {
                 ..INCHI_SORT::default()
             }])
             .unwrap();
-        let fixed_sort = heap.allocate_model_storage(vec![INCHI_SORT::default()]).unwrap();
+        let fixed_sort = heap
+            .allocate_model_storage(vec![INCHI_SORT::default()])
+            .unwrap();
         let rows = heap
             .allocate_model_storage(vec![
                 fixed_sort,
@@ -13297,7 +14003,10 @@ mod tests {
             ),
             Ok(1)
         );
-        assert_eq!(text(&heap, &recursive_output), "InChI=1/CH4/h1H4/rCH4/h1H4\n");
+        assert_eq!(
+            text(&heap, &recursive_output),
+            "InChI=1/CH4/h1H4/rCH4/h1H4\n"
+        );
         assert_eq!(text(&heap, &recursive_log), "");
     }
 
@@ -13338,7 +14047,8 @@ mod tests {
             Ok(0)
         );
         assert_eq!(
-            &heap.slice(string_buffer.pStr.as_const()).unwrap()[..string_buffer.nUsedLength as usize],
+            &heap.slice(string_buffer.pStr.as_const()).unwrap()
+                [..string_buffer.nUsedLength as usize],
             &[b'1' as i8]
         );
         assert_eq!(
@@ -13421,7 +14131,10 @@ mod tests {
             Ok(0)
         );
         assert_eq!(output.s.nUsedLength, 1);
-        assert_eq!(&heap.slice(output.s.pStr.as_const()).unwrap()[..2], &[b'/' as i8, 0]);
+        assert_eq!(
+            &heap.slice(output.s.pStr.as_const()).unwrap()[..2],
+            &[b'/' as i8, 0]
+        );
 
         control.bAtomEqu[0] = 1;
         assert_eq!(
@@ -13479,7 +14192,10 @@ mod tests {
             ),
             Ok(0)
         );
-        assert_eq!(&heap.slice(output.s.pStr.as_const()).unwrap()[..2], &[b'/' as i8, 0]);
+        assert_eq!(
+            &heap.slice(output.s.pStr.as_const()).unwrap()[..2],
+            &[b'/' as i8, 0]
+        );
 
         let numbers = heap.allocate_model_storage(vec![1_u16, 1]).unwrap();
         let aux = heap
@@ -13523,7 +14239,10 @@ mod tests {
         let output_end = output_bytes.iter().position(|byte| *byte == 0).unwrap();
         assert_eq!(
             &output_bytes[..output_end],
-            &b"/gE:(1,2)".iter().map(|byte| *byte as i8).collect::<Vec<_>>()
+            &b"/gE:(1,2)"
+                .iter()
+                .map(|byte| *byte as i8)
+                .collect::<Vec<_>>()
         );
         assert_eq!(
             control.bTag1,
@@ -13557,7 +14276,10 @@ mod tests {
         fn output_text(heap: &SourceHeap, output: &INCHI_IOSTREAM) -> String {
             let bytes = heap.slice(output.s.pStr.as_const()).unwrap();
             let end = bytes.iter().position(|byte| *byte == 0).unwrap();
-            bytes[..end].iter().map(|byte| *byte as u8 as char).collect()
+            bytes[..end]
+                .iter()
+                .map(|byte| *byte as u8 as char)
+                .collect()
         }
 
         let mut heap = SourceHeap::default();
@@ -13683,7 +14405,10 @@ mod tests {
         fn output_text(heap: &SourceHeap, output: &INCHI_IOSTREAM) -> String {
             let bytes = heap.slice(output.s.pStr.as_const()).unwrap();
             let end = bytes.iter().position(|byte| *byte == 0).unwrap();
-            bytes[..end].iter().map(|byte| *byte as u8 as char).collect()
+            bytes[..end]
+                .iter()
+                .map(|byte| *byte as u8 as char)
+                .collect()
         }
         fn clear(heap: &mut SourceHeap, output: &mut INCHI_IOSTREAM) {
             output.s.nUsedLength = 0;
@@ -13842,7 +14567,9 @@ mod tests {
         assert_eq!(control.tot_len, 3);
 
         let flags = heap
-            .allocate_model_storage(vec![crate::source_types::FLAG_SORT_PRINT_NO_IFIX_H_BAS as i32])
+            .allocate_model_storage(vec![
+                crate::source_types::FLAG_SORT_PRINT_NO_IFIX_H_BAS as i32,
+            ])
             .unwrap();
         control.bSecondNonTautPass = 1;
         control.pSortPrintINChIFlags = flags;
@@ -13886,8 +14613,8 @@ mod tests {
     #[test]
     fn source_port__ichiprt1__outputinchi_polymerlayer__line_3880() {
         use crate::source_types::{
-            INCHI_SORT, INChI, INChI_Aux, OAD_Polymer, OAD_PolymerUnit, ORIG_ATOM_DATA, ORIG_STRUCT, OUT_T1, TAUT_YES,
-            inp_ATOM,
+            INCHI_SORT, INChI, INChI_Aux, OAD_Polymer, OAD_PolymerUnit, ORIG_ATOM_DATA,
+            ORIG_STRUCT, OUT_T1, TAUT_YES, inp_ATOM,
         };
 
         fn output_buffer(heap: &mut SourceHeap) -> INCHI_IOS_STRING {
@@ -13917,9 +14644,15 @@ mod tests {
             Ok(0)
         );
 
-        let polymer = heap.allocate_model_storage(vec![OAD_Polymer::default()]).unwrap();
-        let empty_structure = heap.allocate_model_storage(vec![ORIG_STRUCT::default()]).unwrap();
-        let atoms = heap.allocate_model_storage(vec![inp_ATOM::default()]).unwrap();
+        let polymer = heap
+            .allocate_model_storage(vec![OAD_Polymer::default()])
+            .unwrap();
+        let empty_structure = heap
+            .allocate_model_storage(vec![ORIG_STRUCT::default()])
+            .unwrap();
+        let atoms = heap
+            .allocate_model_storage(vec![inp_ATOM::default()])
+            .unwrap();
         let original = heap
             .allocate_model_storage(vec![ORIG_ATOM_DATA {
                 at: atoms,
@@ -14055,7 +14788,10 @@ mod tests {
             }
         }
 
-        fn sort_with_numbers(heap: &mut SourceHeap, numbers: &[u16]) -> SourceMutPointer<INCHI_SORT> {
+        fn sort_with_numbers(
+            heap: &mut SourceHeap,
+            numbers: &[u16],
+        ) -> SourceMutPointer<INCHI_SORT> {
             let number_pointer = heap.allocate_model_storage(numbers.to_vec()).unwrap();
             let aux = heap
                 .allocate_model_storage(vec![INChI_Aux {
@@ -14082,7 +14818,9 @@ mod tests {
         let second = sort_with_numbers(&mut heap, &[3]);
         let first_sort = heap.slice(sorted.as_const()).unwrap()[0].clone();
         let second_sort = heap.slice(second.as_const()).unwrap()[0].clone();
-        let sorts = heap.allocate_model_storage(vec![first_sort, second_sort]).unwrap();
+        let sorts = heap
+            .allocate_model_storage(vec![first_sort, second_sort])
+            .unwrap();
         let canonical = heap.allocate_model_storage(vec![77_i32; 4]).unwrap();
         let components = heap.allocate_model_storage(vec![77_i32; 4]).unwrap();
         let mut buffer = output_buffer(&mut heap);
@@ -14254,7 +14992,9 @@ mod tests {
             let equal_to = active & (EQ_NONTAUT | EQ_ISO | EQ_INV);
             let expected = cases
                 .iter()
-                .find_map(|case| (case.0 == from && case.1 == layer_type && case.2 == equal_to).then_some(case.3))
+                .find_map(|case| {
+                    (case.0 == from && case.1 == layer_type && case.2 == equal_to).then_some(case.3)
+                })
                 .unwrap_or("??");
             assert_eq!(EquString(value), expected, "value={value:#05x}");
             assert_eq!(
@@ -14268,9 +15008,14 @@ mod tests {
     }
 
     fn tag_text(heap: &mut SourceHeap, text: &str) -> SourceConstPointer<i8> {
-        heap.allocate_model_storage(text.bytes().map(|byte| byte as i8).chain(std::iter::once(0)).collect())
-            .unwrap()
-            .as_const()
+        heap.allocate_model_storage(
+            text.bytes()
+                .map(|byte| byte as i8)
+                .chain(std::iter::once(0))
+                .collect(),
+        )
+        .unwrap()
+        .as_const()
     }
 
     fn test_tags(heap: &mut SourceHeap) -> Vec<INCHI_TAG> {
@@ -14311,7 +15056,10 @@ mod tests {
 
         for n_tag in [1, 2, 3] {
             let mut always = 42;
-            assert_eq!(szGetTag(&mut heap, &tags, n_tag, 0, output, &mut always, 1), Ok(output));
+            assert_eq!(
+                szGetTag(&mut heap, &tags, n_tag, 0, output, &mut always, 1),
+                Ok(output)
+            );
             assert_eq!(
                 tag_result(&heap, output),
                 b"???\0".iter().map(|byte| *byte as i8).collect::<Vec<_>>()
@@ -14321,7 +15069,15 @@ mod tests {
 
         let mut always = -7;
         assert_eq!(
-            szGetTag(&mut heap, &tags, 1, (1 << 2) | (1 << 17), output, &mut always, 1),
+            szGetTag(
+                &mut heap,
+                &tags,
+                1,
+                (1 << 2) | (1 << 17),
+                output,
+                &mut always,
+                1
+            ),
             Ok(output)
         );
         assert_eq!(
@@ -14356,7 +15112,10 @@ mod tests {
         );
         assert_eq!(
             tag_result(&heap, output),
-            b"P18{C0:C2:C18}\0".iter().map(|byte| *byte as i8).collect::<Vec<_>>()
+            b"P18{C0:C2:C18}\0"
+                .iter()
+                .map(|byte| *byte as i8)
+                .collect::<Vec<_>>()
         );
         assert_eq!(always, 118);
 
@@ -14378,7 +15137,10 @@ mod tests {
         );
         assert_eq!(
             tag_result(&heap, output),
-            b"P17{C17}\0".iter().map(|byte| *byte as i8).collect::<Vec<_>>()
+            b"P17{C17}\0"
+                .iter()
+                .map(|byte| *byte as i8)
+                .collect::<Vec<_>>()
         );
         assert_eq!(always, 117);
 
@@ -14410,7 +15172,15 @@ mod tests {
             nPtr: increment,
         };
         let mut overflow_value = overflow;
-        let result = str_LineEnd(&mut heap, tag, &mut overflow_value, &mut buffer, ind, plain_text_tags).unwrap();
+        let result = str_LineEnd(
+            &mut heap,
+            tag,
+            &mut overflow_value,
+            &mut buffer,
+            ind,
+            plain_text_tags,
+        )
+        .unwrap();
         let bytes = heap.slice(buffer.pStr.as_const()).unwrap();
         let nul = bytes.iter().position(|byte| *byte == 0).unwrap();
         (result, bytes[..=nul].to_vec(), buffer)
@@ -14440,7 +15210,13 @@ mod tests {
 
         let (result, bytes, buffer) = line_end_case(b"abcdef", 7, 16, 0, -1, 1);
         assert_eq!(result, 0);
-        assert_eq!(bytes, b"/cabcdef\0".iter().map(|byte| *byte as i8).collect::<Vec<_>>());
+        assert_eq!(
+            bytes,
+            b"/cabcdef\0"
+                .iter()
+                .map(|byte| *byte as i8)
+                .collect::<Vec<_>>()
+        );
         assert_eq!(buffer.nUsedLength, 8);
         assert_eq!(buffer.nAllocatedLength, 23);
     }
@@ -14561,10 +15337,16 @@ mod tests {
             nPtr: 4,
         };
         let line_feed = heap
-            .allocate(if newline { vec![b'\n' as i8, 0] } else { vec![0] })
+            .allocate(if newline {
+                vec![b'\n' as i8, 0]
+            } else {
+                vec![0]
+            })
             .unwrap();
         let tab = heap.allocate(vec![b'\n' as i8, 0]).unwrap();
-        let stdout = heap.allocate(vec![crate::source_types::SourceFile::default()]).unwrap();
+        let stdout = heap
+            .allocate(vec![crate::source_types::SourceFile::default()])
+            .unwrap();
         assert_eq!(
             OutputINCHI_VersionAndKind(
                 &mut heap,
@@ -14578,8 +15360,9 @@ mod tests {
             ),
             Ok(0)
         );
-        let output_bytes =
-            heap.slice(output.s.pStr.as_const()).unwrap()[..usize::try_from(output.s.nUsedLength).unwrap()].to_vec();
+        let output_bytes = heap.slice(output.s.pStr.as_const()).unwrap()
+            [..usize::try_from(output.s.nUsedLength).unwrap()]
+            .to_vec();
         let version_bytes = heap.slice(string_buffer.pStr.as_const()).unwrap()
             [..usize::try_from(string_buffer.nUsedLength).unwrap()]
             .to_vec();
@@ -14660,7 +15443,13 @@ mod tests {
         let output_bytes = tag_result(&heap, output.s.pStr);
         (
             result,
-            String::from_utf8(string[..string.len() - 1].iter().map(|byte| *byte as u8).collect()).unwrap(),
+            String::from_utf8(
+                string[..string.len() - 1]
+                    .iter()
+                    .map(|byte| *byte as u8)
+                    .collect(),
+            )
+            .unwrap(),
             String::from_utf8(
                 output_bytes[..output_bytes.len() - 1]
                     .iter()
@@ -14750,7 +15539,13 @@ mod tests {
         let output_bytes = tag_result(&heap, output.s.pStr);
         (
             result,
-            String::from_utf8(string[..string.len() - 1].iter().map(|byte| *byte as u8).collect()).unwrap(),
+            String::from_utf8(
+                string[..string.len() - 1]
+                    .iter()
+                    .map(|byte| *byte as u8)
+                    .collect(),
+            )
+            .unwrap(),
             String::from_utf8(
                 output_bytes[..output_bytes.len() - 1]
                     .iter()
@@ -14817,7 +15612,8 @@ mod tests {
             tot_len2: -74,
             ..INCHI_OUT_CTL::default()
         };
-        io.sDifSegs[0][crate::source_types::tagDiffINChISegments_DIFS_h_H_ATOMS as usize] = segment_difference;
+        io.sDifSegs[0][crate::source_types::tagDiffINChISegments_DIFS_h_H_ATOMS as usize] =
+            segment_difference;
         let result = OutputINCHI_MainLayerHydrogens(
             &mut heap,
             SourceMutPointer::null(),
@@ -14835,7 +15631,13 @@ mod tests {
         let output_bytes = tag_result(&heap, output.s.pStr);
         (
             result,
-            String::from_utf8(string[..string.len() - 1].iter().map(|byte| *byte as u8).collect()).unwrap(),
+            String::from_utf8(
+                string[..string.len() - 1]
+                    .iter()
+                    .map(|byte| *byte as u8)
+                    .collect(),
+            )
+            .unwrap(),
             String::from_utf8(
                 output_bytes[..output_bytes.len() - 1]
                     .iter()
@@ -14855,7 +15657,8 @@ mod tests {
             (1, 0, "formulaC2H6", 1),
             (3, 0, "/{formula}C2H6", 1),
         ] {
-            let (result, string, output, io) = formula_wrapper_case(n_tag, reconnect, "C2H6", false, 0);
+            let (result, string, output, io) =
+                formula_wrapper_case(n_tag, reconnect, "C2H6", false, 0);
             assert_eq!(result, 0);
             assert_eq!(string, expected);
             assert_eq!(output, format!("{expected}\n"));
@@ -14873,7 +15676,9 @@ mod tests {
         assert_eq!(io.tot_len, 0);
 
         let mut heap = SourceHeap::default();
-        let storage = heap.allocate_model_storage(vec![b'x' as i8, 0, 0, 0]).unwrap();
+        let storage = heap
+            .allocate_model_storage(vec![b'x' as i8, 0, 0, 0])
+            .unwrap();
         let mut string_buffer = INCHI_IOS_STRING {
             pStr: storage,
             nAllocatedLength: 4,
@@ -14912,7 +15717,10 @@ mod tests {
             Ok(0)
         );
         assert_eq!(string_buffer.nUsedLength, 1);
-        assert_eq!(heap.slice(string_buffer.pStr.as_const()).unwrap()[0], b'x' as i8);
+        assert_eq!(
+            heap.slice(string_buffer.pStr.as_const()).unwrap()[0],
+            b'x' as i8
+        );
     }
 
     #[test]
@@ -14922,7 +15730,8 @@ mod tests {
             (1, "connections1-2-3", 1),
             (3, "/c{connections}1-2-3", 1),
         ] {
-            let (result, string, output, io) = connections_wrapper_case(n_tag, &[2, 1, 3, 2], 1, 0, 1, None);
+            let (result, string, output, io) =
+                connections_wrapper_case(n_tag, &[2, 1, 3, 2], 1, 0, 1, None);
             assert_eq!(result, 0);
             assert_eq!(string, expected);
             assert_eq!(output, format!("{expected}\n"));
@@ -14932,15 +15741,20 @@ mod tests {
             assert_eq!(io.bAlways, always);
         }
 
-        let (result, string, output, io) = connections_wrapper_case(2, &[2, 1, 3, 2], 0, 0, 1, None);
-        assert_eq!((result, string.as_str(), output.as_str()), (0, "1-2-3", "1-2-3\n"));
+        let (result, string, output, io) =
+            connections_wrapper_case(2, &[2, 1, 3, 2], 0, 0, 1, None);
+        assert_eq!(
+            (result, string.as_str(), output.as_str()),
+            (0, "1-2-3", "1-2-3\n")
+        );
         assert_eq!((io.tot_len, io.tot_len2), (5, 5));
 
         let (result, string, output, io) = connections_wrapper_case(2, &[], 1, 0, 1, None);
         assert_eq!((result, string.as_str(), output.as_str()), (0, "", ""));
         assert_eq!((io.tot_len, io.tot_len2), (0, 0));
 
-        let (result, string, output, io) = connections_wrapper_case(2, &[2, 1, 3, 2], 1, 0, 2, Some(0));
+        let (result, string, output, io) =
+            connections_wrapper_case(2, &[2, 1, 3, 2], 1, 0, 2, Some(0));
         assert_eq!(
             (
                 result,
@@ -14956,7 +15770,8 @@ mod tests {
 
     #[test]
     fn source_port__ichiprt1__outputinchi_mainlayerhydrogens__line_3251() {
-        for (n_tag, expected, always) in [(2, "/h1H", -72), (1, "H1H", 1), (3, "/h{H_atoms}1H", 1)] {
+        for (n_tag, expected, always) in [(2, "/h1H", -72), (1, "H1H", 1), (3, "/h{H_atoms}1H", 1)]
+        {
             let (result, string, output, io) = hydrogens_wrapper_case(11, n_tag, &[1, 0]);
             assert_eq!(result, 0);
             assert_eq!(string, expected);
@@ -14971,7 +15786,8 @@ mod tests {
         assert_eq!((io.tot_len, io.tot_len2, io.bTag1), (0, 0, 1 << 6));
 
         for segment_difference in [0, 4] {
-            let (result, string, output, io) = hydrogens_wrapper_case(segment_difference, 2, &[1, 0]);
+            let (result, string, output, io) =
+                hydrogens_wrapper_case(segment_difference, 2, &[1, 0]);
             assert_eq!((result, string.as_str(), output.as_str()), (0, "x", ""));
             assert_eq!((io.tot_len, io.tot_len2), (-73, -74));
             assert_eq!((io.bTag1, io.bAlways), (-71, -72));
@@ -15045,8 +15861,10 @@ mod tests {
                 pINChISort2: sorts,
                 ..INCHI_OUT_CTL::default()
             };
-            io.sDifSegs[0][crate::source_types::tagDiffINChISegments_DIFS_q_CHARGE as usize] = charge_difference;
-            io.sDifSegs[0][crate::source_types::tagDiffINChISegments_DIFS_p_PROTONS as usize] = proton_difference;
+            io.sDifSegs[0][crate::source_types::tagDiffINChISegments_DIFS_q_CHARGE as usize] =
+                charge_difference;
+            io.sDifSegs[0][crate::source_types::tagDiffINChISegments_DIFS_p_PROTONS as usize] =
+                proton_difference;
             let result = OutputINCHI_ChargeAndRemovedAddedProtonsLayers(
                 &mut heap,
                 SourceMutPointer::null(),
@@ -15062,7 +15880,13 @@ mod tests {
             let output_bytes = tag_result(&heap, output.s.pStr);
             (
                 result,
-                String::from_utf8(string[..string.len() - 1].iter().map(|byte| *byte as u8).collect()).unwrap(),
+                String::from_utf8(
+                    string[..string.len() - 1]
+                        .iter()
+                        .map(|byte| *byte as u8)
+                        .collect(),
+                )
+                .unwrap(),
                 String::from_utf8(
                     output_bytes[..output_bytes.len() - 1]
                         .iter()
@@ -15082,11 +15906,17 @@ mod tests {
         let (result, string, output, io) = run_case(fill, fill, 2, 1, taut, 0, 0, 0);
         assert_eq!((result, string.as_str()), (0, "/p-3"));
         assert_eq!(output, "/q+2\n/p-3\n");
-        assert_eq!((io.nSegmAction, io.bTag1, io.tot_len, io.bAlways), (1, 1 << 8, 0, 0));
+        assert_eq!(
+            (io.nSegmAction, io.bTag1, io.tot_len, io.bAlways),
+            (1, 1 << 8, 0, 0)
+        );
         assert_eq!(io.bNonTautNonIsoIdentifierNotEmpty, 5);
 
         let (result, string, output, io) = run_case(empty, omit, 2, 1, 0, 0, 0, 0);
-        assert_eq!((result, string.as_str(), output.as_str()), (0, "/q", "/q\n"));
+        assert_eq!(
+            (result, string.as_str(), output.as_str()),
+            (0, "/q", "/q\n")
+        );
         assert_eq!((io.nSegmAction, io.tot_len), (2, 0));
 
         let (result, string, output, io) = run_case(omit, omit, 2, 1, taut, 0, 0, 0);
@@ -15094,7 +15924,10 @@ mod tests {
         assert_eq!(io.nSegmAction, 0);
 
         let (result, string, output, io) = run_case(omit, empty, 2, 1, taut, 0, 0, 0);
-        assert_eq!((result, string.as_str(), output.as_str()), (0, "/p-3", "/p-3\n"));
+        assert_eq!(
+            (result, string.as_str(), output.as_str()),
+            (0, "/p-3", "/p-3\n")
+        );
         assert_eq!((io.nSegmAction, io.tot_len), (2, 0));
 
         let fixed_h = crate::source_types::local_ichiprt1::tagIdentLblBit_IL_FIXH as i32;
@@ -15106,7 +15939,10 @@ mod tests {
         assert_eq!(io.bTag1, fixed_h | (1 << 7));
 
         let (result, string, output, io) = run_case(fill, fill, 2, 1, taut, 1, 0, 0);
-        assert_eq!((result, string.as_str(), output.as_str()), (0, "/q+2", "/q+2\n"));
+        assert_eq!(
+            (result, string.as_str(), output.as_str()),
+            (0, "/q+2", "/q+2\n")
+        );
         assert_eq!(io.bNonTautNonIsoIdentifierNotEmpty, 6);
         assert_eq!(io.nSegmAction, 1);
 
@@ -15221,7 +16057,13 @@ mod tests {
             )
             .unwrap();
             let decode = |bytes: Vec<i8>| {
-                String::from_utf8(bytes[..bytes.len() - 1].iter().map(|byte| *byte as u8).collect()).unwrap()
+                String::from_utf8(
+                    bytes[..bytes.len() - 1]
+                        .iter()
+                        .map(|byte| *byte as u8)
+                        .collect(),
+                )
+                .unwrap()
             };
             (
                 result,
@@ -15242,10 +16084,19 @@ mod tests {
         assert_eq!(io.bRelRac, 1);
         assert_eq!(io.nSegmAction, 1);
 
-        assert_eq!(run_case([fill; 4], 1, 0, 1, 0).2, "/b1-2-\n/t3+\n/m1\n/s3\n/");
-        assert_eq!(run_case([fill; 4], 1, 0, 0, 0).2, "/b1-2-\n/t3+\n/m1\n/s1\n/");
+        assert_eq!(
+            run_case([fill; 4], 1, 0, 1, 0).2,
+            "/b1-2-\n/t3+\n/m1\n/s3\n/"
+        );
+        assert_eq!(
+            run_case([fill; 4], 1, 0, 0, 0).2,
+            "/b1-2-\n/t3+\n/m1\n/s1\n/"
+        );
         assert_eq!(run_case([omit; 4], 1, 0, 0, 0).2, "////");
-        assert_eq!(run_case([fill, omit, omit, omit], 1, 0, 0, 0).2, "/b1-2-\n///");
+        assert_eq!(
+            run_case([fill, omit, omit, omit], 1, 0, 0, 0).2,
+            "/b1-2-\n///"
+        );
         let empty_case = run_case([empty; 4], 1, 0, 0, 0);
         assert_eq!(empty_case.2, "/b\n/t\n/m\n/s\n/");
         assert_eq!(empty_case.3.bNonTautNonIsoIdentifierNotEmpty, 5);
@@ -15365,12 +16216,30 @@ mod tests {
             io.bIsotopicRelativeStereo[crate::source_types::TAUT_YES as usize] = relative;
             io.bIsotopicRacemicStereo[crate::source_types::TAUT_YES as usize] = racemic;
             for (segment, value) in [
-                (crate::source_types::tagDiffINChISegments_DIFS_i_IATOMS, actions[0]),
-                (crate::source_types::tagDiffINChISegments_DIFS_h_H_ATOMS, actions[1]),
-                (crate::source_types::tagDiffINChISegments_DIFS_b_SBONDS, actions[2]),
-                (crate::source_types::tagDiffINChISegments_DIFS_t_SATOMS, actions[3]),
-                (crate::source_types::tagDiffINChISegments_DIFS_m_SP3INV, actions[4]),
-                (crate::source_types::tagDiffINChISegments_DIFS_s_STYPE, actions[5]),
+                (
+                    crate::source_types::tagDiffINChISegments_DIFS_i_IATOMS,
+                    actions[0],
+                ),
+                (
+                    crate::source_types::tagDiffINChISegments_DIFS_h_H_ATOMS,
+                    actions[1],
+                ),
+                (
+                    crate::source_types::tagDiffINChISegments_DIFS_b_SBONDS,
+                    actions[2],
+                ),
+                (
+                    crate::source_types::tagDiffINChISegments_DIFS_t_SATOMS,
+                    actions[3],
+                ),
+                (
+                    crate::source_types::tagDiffINChISegments_DIFS_m_SP3INV,
+                    actions[4],
+                ),
+                (
+                    crate::source_types::tagDiffINChISegments_DIFS_s_STYPE,
+                    actions[5],
+                ),
             ] {
                 io.sDifSegs[0][segment as usize] = value;
             }
@@ -15391,7 +16260,13 @@ mod tests {
             )
             .unwrap();
             let bytes = tag_result(&heap, output.s.pStr);
-            let text = String::from_utf8(bytes[..bytes.len() - 1].iter().map(|byte| *byte as u8).collect()).unwrap();
+            let text = String::from_utf8(
+                bytes[..bytes.len() - 1]
+                    .iter()
+                    .map(|byte| *byte as u8)
+                    .collect(),
+            )
+            .unwrap();
             let flags = heap.slice(flags.as_const()).unwrap()[0];
             (result, text, io, flags)
         }
@@ -15414,7 +16289,10 @@ mod tests {
 
         let transposed = run_case([omit; 6], 1, 0, 0, 0, true);
         assert_eq!(transposed.0, 0);
-        assert_eq!(transposed.3, crate::source_types::FLAG_SORT_PRINT_TRANSPOS_BAS as i32);
+        assert_eq!(
+            transposed.3,
+            crate::source_types::FLAG_SORT_PRINT_TRANSPOS_BAS as i32
+        );
         assert!(transposed.1.ends_with("/o(1,2)\n"));
     }
 
@@ -15451,7 +16329,14 @@ mod tests {
             let fixed_formula = tag_text(&mut heap, "C2H6");
             let taut_formula = tag_text(&mut heap, "CH4");
             let fixed_h = heap
-                .allocate_model_storage(vec![if fail_fixed_h_allocation { 127_i8 } else { 1_i8 }, 0])
+                .allocate_model_storage(vec![
+                    if fail_fixed_h_allocation {
+                        127_i8
+                    } else {
+                        1_i8
+                    },
+                    0,
+                ])
                 .unwrap();
             let fixed = heap
                 .allocate_model_storage(vec![crate::source_types::INChI {
@@ -15482,7 +16367,9 @@ mod tests {
                     ..crate::source_types::INCHI_SORT::default()
                 }])
                 .unwrap();
-            let sort_sets = heap.allocate_model_storage(vec![fixed_sorts, taut_sorts]).unwrap();
+            let sort_sets = heap
+                .allocate_model_storage(vec![fixed_sorts, taut_sorts])
+                .unwrap();
             let flags_pointer = heap.allocate_model_storage(vec![0_i32]).unwrap();
             let string_storage = heap.allocate_model_storage(vec![0_i8; 256]).unwrap();
             let mut string_buffer = INCHI_IOS_STRING {
@@ -15532,14 +16419,20 @@ mod tests {
                 n_pzz,
                 n_zy,
                 pINChISortTautAndNonTaut: sort_sets,
-                pINChISort: if second_pass != 0 { fixed_sorts } else { taut_sorts },
+                pINChISort: if second_pass != 0 {
+                    fixed_sorts
+                } else {
+                    taut_sorts
+                },
                 pINChISort2: taut_sorts,
                 ..INCHI_OUT_CTL::default()
             };
             io.sDifSegs[crate::source_types::tagDiffINChILayers_DIFL_F as usize]
-                [crate::source_types::tagDiffINChISegments_DIFS_f_FORMULA as usize] = formula_difference;
+                [crate::source_types::tagDiffINChISegments_DIFS_f_FORMULA as usize] =
+                formula_difference;
             io.sDifSegs[crate::source_types::tagDiffINChILayers_DIFL_F as usize]
-                [crate::source_types::tagDiffINChISegments_DIFS_h_H_ATOMS as usize] = fixed_h_difference;
+                [crate::source_types::tagDiffINChISegments_DIFS_h_H_ATOMS as usize] =
+                fixed_h_difference;
             let mut repeat = 99;
             if fail_fixed_h_allocation {
                 heap.fail_after_allocations(0);
@@ -15558,7 +16451,13 @@ mod tests {
             )
             .unwrap();
             let bytes = tag_result(&heap, output.s.pStr);
-            let output = String::from_utf8(bytes[..bytes.len() - 1].iter().map(|byte| *byte as u8).collect()).unwrap();
+            let output = String::from_utf8(
+                bytes[..bytes.len() - 1]
+                    .iter()
+                    .map(|byte| *byte as u8)
+                    .collect(),
+            )
+            .unwrap();
             let flags = heap.slice(flags_pointer.as_const()).unwrap()[0];
             CaseResult {
                 status,
@@ -15598,8 +16497,8 @@ mod tests {
         assert_eq!(identical_basic.output, "");
         assert_eq!(
             identical_basic.flags,
-            (crate::source_types::FLAG_SORT_PRINT_NO_NFIX_H_BAS | crate::source_types::FLAG_SORT_PRINT_NO_IFIX_H_BAS)
-                as i32
+            (crate::source_types::FLAG_SORT_PRINT_NO_NFIX_H_BAS
+                | crate::source_types::FLAG_SORT_PRINT_NO_IFIX_H_BAS) as i32
         );
         let identical_reconnected = run_case(
             crate::source_types::INCHI_REC as i32,
@@ -15620,11 +16519,14 @@ mod tests {
         );
         assert_eq!(
             identical_reconnected.flags,
-            (crate::source_types::FLAG_SORT_PRINT_NO_NFIX_H_REC | crate::source_types::FLAG_SORT_PRINT_NO_IFIX_H_REC)
-                as i32
+            (crate::source_types::FLAG_SORT_PRINT_NO_NFIX_H_REC
+                | crate::source_types::FLAG_SORT_PRINT_NO_IFIX_H_REC) as i32
         );
         assert_eq!(
-            run_case(0, out_tn, out_tn, 1, 0, 1, 0, omit, omit, 0, 0, 0, 0, 0, false,).flags,
+            run_case(
+                0, out_tn, out_tn, 1, 0, 1, 0, omit, omit, 0, 0, 0, 0, 0, false,
+            )
+            .flags,
             0
         );
 
@@ -15675,13 +16577,17 @@ mod tests {
         assert_eq!(empty_actions.io.tot_len, 0);
         assert_eq!(empty_actions.io.bNonTautNonIsoIdentifierNotEmpty, 0);
 
-        let formula_overflow = run_case(0, out_tn, out_tn, 0, 0, 0, 0, fill, fill, 0, 0, 7, 0, 0, false);
+        let formula_overflow = run_case(
+            0, out_tn, out_tn, 0, 0, 0, 0, fill, fill, 0, 0, 7, 0, 0, false,
+        );
         assert_eq!(formula_overflow.status, 1);
         assert_eq!(formula_overflow.repeat, 0);
         assert_eq!(formula_overflow.io.bSecondNonTautPass, 1);
         assert_eq!(formula_overflow.io.bNonTautNonIsoIdentifierNotEmpty, 1);
 
-        let fixed_h_overflow = run_case(0, out_tn, out_tn, 0, 0, 0, 0, fill, fill, 0, 0, 0, 0, 0, true);
+        let fixed_h_overflow = run_case(
+            0, out_tn, out_tn, 0, 0, 0, 0, fill, fill, 0, 0, 0, 0, 0, true,
+        );
         assert_eq!(fixed_h_overflow.status, 2);
         assert_eq!(fixed_h_overflow.repeat, 0);
         assert_eq!(fixed_h_overflow.output, "/fC2H6\n");
@@ -15708,15 +16614,18 @@ mod tests {
         assert_eq!(restored_basic.status, 0);
         assert_eq!(restored_basic.repeat, 0);
         assert_eq!(restored_basic.io.bOutType, out_tn);
-        assert_eq!(restored_basic.io.iCurTautMode, crate::source_types::TAUT_YES as i32);
+        assert_eq!(
+            restored_basic.io.iCurTautMode,
+            crate::source_types::TAUT_YES as i32
+        );
         assert_eq!(restored_basic.io.pINChISort, restored_basic.taut_sorts);
         assert_eq!(restored_basic.io.bSecondNonTautPass, 0);
         assert_eq!(restored_basic.io.num_components, 3);
         assert_eq!(restored_basic.io.bFhTag, 0);
         assert_eq!(
             restored_basic.flags,
-            (crate::source_types::FLAG_SORT_PRINT_NO_NFIX_H_BAS | crate::source_types::FLAG_SORT_PRINT_NO_IFIX_H_BAS)
-                as i32
+            (crate::source_types::FLAG_SORT_PRINT_NO_NFIX_H_BAS
+                | crate::source_types::FLAG_SORT_PRINT_NO_IFIX_H_BAS) as i32
         );
 
         let restored_nonempty = run_case(
@@ -15755,7 +16664,10 @@ mod tests {
         ] {
             assert_eq!(IsBondAtomNumsLesser(&first, &second), expected);
             assert_eq!(IsBondAtomNumsLesser(&second, &first), -expected);
-            assert_eq!(IsBondAtomNumsLesser(&[first[1], first[0]], &second), expected);
+            assert_eq!(
+                IsBondAtomNumsLesser(&[first[1], first[0]], &second),
+                expected
+            );
         }
     }
 
@@ -15787,8 +16699,14 @@ mod tests {
 
         let mut heap = SourceHeap::default();
         let mut null_output = INCHI_IOSTREAM::default();
-        assert_eq!(EditINCHI_HidePolymerZz(&mut heap, &mut null_output, 0, 1), Ok(()));
-        assert_eq!(EditINCHI_HidePolymerZz(&mut heap, &mut null_output, 1, 1), Ok(()));
+        assert_eq!(
+            EditINCHI_HidePolymerZz(&mut heap, &mut null_output, 0, 1),
+            Ok(())
+        );
+        assert_eq!(
+            EditINCHI_HidePolymerZz(&mut heap, &mut null_output, 1, 1),
+            Ok(())
+        );
         assert_eq!(
             EditINCHI_HidePolymerZz(&mut heap, &mut null_output, 2, 0),
             Err(SourceHeapError::NullPointer)
@@ -15799,7 +16717,10 @@ mod tests {
             let before = output.clone();
             let allocations = heap.live_allocation_count();
             heap.trace_source_allocations();
-            assert_eq!(EditINCHI_HidePolymerZz(&mut heap, &mut output, 2, 0), Ok(()));
+            assert_eq!(
+                EditINCHI_HidePolymerZz(&mut heap, &mut output, 2, 0),
+                Ok(())
+            );
             assert_eq!(output, before);
             assert_eq!(heap.source_allocation_calls(), 0);
             assert_eq!(heap.live_allocation_count(), allocations);
@@ -15815,7 +16736,10 @@ mod tests {
             let mut output = stream(&mut heap, &input, 32);
             let pointer = output.s.pStr;
             heap.trace_source_allocations();
-            assert_eq!(EditINCHI_HidePolymerZz(&mut heap, &mut output, 2, 0), Ok(()));
+            assert_eq!(
+                EditINCHI_HidePolymerZz(&mut heap, &mut output, 2, 0),
+                Ok(())
+            );
             let mut expected = HIDDEN_EXAMPLE.to_vec();
             if newline {
                 expected.push(b'\n');
@@ -15833,12 +16757,18 @@ mod tests {
         let retained_pattern = b"InChI=1B/C.Zz/c1;;/z1(2-3,4)/h1H;;";
         let retained_expected = b"InChI=1B/C/c1;/z1(2-3,4)/h1H;";
         let mut retained = stream(&mut heap, retained_pattern, 16);
-        assert_eq!(EditINCHI_HidePolymerZz(&mut heap, &mut retained, 1, 0), Ok(()));
+        assert_eq!(
+            EditINCHI_HidePolymerZz(&mut heap, &mut retained, 1, 0),
+            Ok(())
+        );
         assert_eq!(bytes(&heap, &retained), retained_expected);
 
         let mut allocation_failure = stream(&mut heap, SOURCE_EXAMPLE, 8);
         let before = allocation_failure.clone();
-        let before_bytes = heap.slice(allocation_failure.s.pStr.as_const()).unwrap().to_vec();
+        let before_bytes = heap
+            .slice(allocation_failure.s.pStr.as_const())
+            .unwrap()
+            .to_vec();
         let allocations = heap.live_allocation_count();
         heap.fail_after_allocations(0);
         assert_eq!(
@@ -15846,7 +16776,10 @@ mod tests {
             Ok(())
         );
         assert_eq!(allocation_failure, before);
-        assert_eq!(heap.slice(allocation_failure.s.pStr.as_const()).unwrap(), before_bytes);
+        assert_eq!(
+            heap.slice(allocation_failure.s.pStr.as_const()).unwrap(),
+            before_bytes
+        );
         assert_eq!(heap.live_allocation_count(), allocations);
         assert_eq!(heap.source_allocation_calls(), 1);
 
@@ -15857,7 +16790,10 @@ mod tests {
         let original_pointer = print_failure.s.pStr;
         let allocations = heap.live_allocation_count();
         heap.fail_after_allocations(1);
-        assert_eq!(EditINCHI_HidePolymerZz(&mut heap, &mut print_failure, 2, 0), Ok(()));
+        assert_eq!(
+            EditINCHI_HidePolymerZz(&mut heap, &mut print_failure, 2, 0),
+            Ok(())
+        );
         assert_eq!(print_failure.s.pStr, original_pointer);
         assert_eq!(print_failure.s.nUsedLength, 0);
         assert_eq!(print_failure.s.nAllocatedLength, 0);
@@ -15894,14 +16830,24 @@ mod tests {
             let mut second = 0_i8;
             GetSaveOptLetters(bits, &mut first, &mut second);
             assert_eq!(first, (b'A' + (bits & 0x0f)) as i8, "bits={bits:#04x}");
-            assert_eq!(second, (b'A' + ((bits & 0x30) >> 4)) as i8, "bits={bits:#04x}");
+            assert_eq!(
+                second,
+                (b'A' + ((bits & 0x30) >> 4)) as i8,
+                "bits={bits:#04x}"
+            );
         }
     }
 
     #[test]
     fn source_port__ichiprt1__set_line_separators__line_3112() {
         let sentinel: &'static [i8] = &[99, 0];
-        for options in [0, INCHI_OUT_PLAIN_TEXT_COMMENTS as i32, -1, i32::MIN, i32::MAX] {
+        for options in [
+            0,
+            INCHI_OUT_PLAIN_TEXT_COMMENTS as i32,
+            -1,
+            i32::MIN,
+            i32::MAX,
+        ] {
             let mut line_feed = sentinel;
             let mut tab = sentinel;
             set_line_separators(options, &mut line_feed, &mut tab);
@@ -15943,8 +16889,9 @@ mod tests {
     #[test]
     fn source_port__ichiprt1__outputinchi_polymerlayer_singleunit__line_4111() {
         use crate::source_types::{
-            CLOSING_SRU_DIRADICAL, CLOSING_SRU_HIGHER_ORDER_BOND, CLOSING_SRU_RING, OAD_AtProps, OAD_Polymer,
-            OAD_PolymerUnit, ORIG_ATOM_DATA, ORIG_STRUCT, POLYMERS_LEGACY, POLYMERS_MODERN, inp_ATOM,
+            CLOSING_SRU_DIRADICAL, CLOSING_SRU_HIGHER_ORDER_BOND, CLOSING_SRU_RING, OAD_AtProps,
+            OAD_Polymer, OAD_PolymerUnit, ORIG_ATOM_DATA, ORIG_STRUCT, POLYMERS_LEGACY,
+            POLYMERS_MODERN, inp_ATOM,
         };
 
         fn buffer_text(heap: &SourceHeap, buffer: &INCHI_IOS_STRING) -> String {
@@ -16003,7 +16950,8 @@ mod tests {
         }
 
         let mut heap = SourceHeap::default();
-        let (original_data, original_structure) = context(&mut heap, POLYMERS_LEGACY as i32, 1, b"C\0", 8);
+        let (original_data, original_structure) =
+            context(&mut heap, POLYMERS_LEGACY as i32, 1, b"C\0", 8);
         let alist = heap.allocate(vec![1_i32, 2, 3]).unwrap();
         let mut unsupported = OAD_PolymerUnit {
             type_: 1,
@@ -16079,7 +17027,8 @@ mod tests {
         );
         assert_eq!(buffer_text(&heap, &modern_buffer), "123-1-3(5-3,4-1)");
 
-        let (star_data, star_structure) = context(&mut heap, POLYMERS_LEGACY as i32, 1, b"CHHO\0", 10);
+        let (star_data, star_structure) =
+            context(&mut heap, POLYMERS_LEGACY as i32, 1, b"CHHO\0", 10);
         let one_atom = heap.allocate(vec![1_i32]).unwrap();
         let mut diradical = OAD_PolymerUnit {
             na: 1,
@@ -16212,7 +17161,8 @@ mod tests {
         );
         assert_eq!(buffer_text(&heap, &bonds_buffer), "000-1(0,0-2,7,3,8,5,4)");
 
-        let (modern_data, modern_structure) = context(&mut heap, POLYMERS_MODERN as i32, 0, b"C\0", 8);
+        let (modern_data, modern_structure) =
+            context(&mut heap, POLYMERS_MODERN as i32, 0, b"C\0", 8);
         let modern_row0 = heap.allocate(vec![1_i32, 2]).unwrap();
         let modern_row1 = heap.allocate(vec![3_i32, 5]).unwrap();
         let modern_rows = heap.allocate(vec![modern_row0, modern_row1]).unwrap();
@@ -16251,33 +17201,38 @@ mod tests {
 }
 use crate::source::base::ichi_bns::nBondsValenceInpAt;
 use crate::source::base::ichi_io::{
-    inchi_ios_print, inchi_ios_print_nodisplay, inchi_strbuf_printf, inchi_strbuf_reset, inchi_strbuf_update,
+    inchi_ios_print, inchi_ios_print_nodisplay, inchi_strbuf_printf, inchi_strbuf_reset,
+    inchi_strbuf_update,
 };
 use crate::source::base::ichierr::AddErrorMessage;
 use crate::source::base::ichiparm::source_strtod_with_end;
 use crate::source::base::ichiprt2::{MakeDelim, MakeIsoHString, inchi_strtol};
 use crate::source::base::ichiprt3::{
-    bin_AuxTautTrans, str_AuxEqu, str_AuxNumb, str_AuxTautTrans, str_FixedH_atoms, str_HillFormula, str_HillFormula2,
-    str_IsoAtoms, str_IsoSp2, str_IsoSp3, str_IsoStereoAbsInv, str_Sp2, str_Sp3, str_StereoAbsInv,
+    bin_AuxTautTrans, str_AuxEqu, str_AuxNumb, str_AuxTautTrans, str_FixedH_atoms, str_HillFormula,
+    str_HillFormula2, str_IsoAtoms, str_IsoSp2, str_IsoSp3, str_IsoStereoAbsInv, str_Sp2, str_Sp3,
+    str_StereoAbsInv,
 };
 use crate::source::base::ichisort::{insertions_sort, insertions_sort_AT_RANK};
 use crate::source::base::ichister::get_opposite_sb_atom_slice;
 use crate::source::base::runichi3::{
-    OAD_Polymer_PrepareWorkingSet, OAD_Polymer_SetAtProps, OAD_PolymerUnit_CreateCopy, OAD_PolymerUnit_Free,
+    OAD_Polymer_PrepareWorkingSet, OAD_Polymer_SetAtProps, OAD_PolymerUnit_CreateCopy,
+    OAD_PolymerUnit_Free,
 };
 use crate::source::base::util::{
-    get_atomic_mass_from_elnum, inchi_calloc, inchi_free, inchi_malloc, is_el_a_metal, is_in_the_list, lrtrim,
-    needed_unusual_el_valence,
+    get_atomic_mass_from_elnum, inchi_calloc, inchi_free, inchi_malloc, is_el_a_metal,
+    is_in_the_list, lrtrim, needed_unusual_el_valence,
 };
 use crate::source_types::{
-    AB_MAX_ILL_DEFINED_PARITY, AB_MAX_WELL_DEFINED_PARITY, AB_MIN_ILL_DEFINED_PARITY, AB_MIN_WELL_DEFINED_PARITY,
-    AB_PARITY_EVEN, AB_PARITY_IISO, AB_PARITY_ODD, AB_PARITY_UNDF, AB_PARITY_UNKN, AT_RANK, BOND_TYPE_ALTERN,
-    BOND_TYPE_DOUBLE, BOND_TYPE_SINGLE, BOND_TYPE_TRIPLE, CANON_GLOBALS, FILE, FIX_EITHER_STEREO_IN_AUX_INFO,
-    FLAG_INP_AT_CHIRAL, FLAG_INP_AT_NONCHIRAL, INCHI_IOS_STRING, INCHI_IOSTREAM, INCHI_OUT_CTL,
-    INCHI_OUT_PLAIN_TEXT_COMMENTS, INCHI_OUT_STDINCHI, INCHI_REC, LEN_COORD, MAX_NUM_STEREO_ATOM_NEIGH,
-    MAX_NUM_STEREO_BONDS, MAXVAL, MOL_COORD, NUM_COORD, ORIG_ATOM_DATA, ORIG_STRUCT, RADICAL_DOUBLET, SB_PARITY_MASK,
-    SB_PARITY_SHFT, STEREO_DBLE_EITHER, STEREO_SNGL_DOWN, STEREO_SNGL_EITHER, STEREO_SNGL_UP, STRUCT_DATA,
-    SourceConstPointer, SourceFormatArgument, SourceHeap, SourceHeapError, SourceMutPointer, SourceVaList,
+    AB_MAX_ILL_DEFINED_PARITY, AB_MAX_WELL_DEFINED_PARITY, AB_MIN_ILL_DEFINED_PARITY,
+    AB_MIN_WELL_DEFINED_PARITY, AB_PARITY_EVEN, AB_PARITY_IISO, AB_PARITY_ODD, AB_PARITY_UNDF,
+    AB_PARITY_UNKN, AT_RANK, BOND_TYPE_ALTERN, BOND_TYPE_DOUBLE, BOND_TYPE_SINGLE,
+    BOND_TYPE_TRIPLE, CANON_GLOBALS, FILE, FIX_EITHER_STEREO_IN_AUX_INFO, FLAG_INP_AT_CHIRAL,
+    FLAG_INP_AT_NONCHIRAL, INCHI_IOS_STRING, INCHI_IOSTREAM, INCHI_OUT_CTL,
+    INCHI_OUT_PLAIN_TEXT_COMMENTS, INCHI_OUT_STDINCHI, INCHI_REC, LEN_COORD,
+    MAX_NUM_STEREO_ATOM_NEIGH, MAX_NUM_STEREO_BONDS, MAXVAL, MOL_COORD, NUM_COORD, ORIG_ATOM_DATA,
+    ORIG_STRUCT, RADICAL_DOUBLET, SB_PARITY_MASK, SB_PARITY_SHFT, STEREO_DBLE_EITHER,
+    STEREO_SNGL_DOWN, STEREO_SNGL_EITHER, STEREO_SNGL_UP, STRUCT_DATA, SourceConstPointer,
+    SourceFormatArgument, SourceHeap, SourceHeapError, SourceMutPointer, SourceVaList,
     StableSourceConstSlice, inp_ATOM,
     local_ichiprt1::{INCHI_TAG, ORIG_STR_BUFLEN},
 };

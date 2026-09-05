@@ -1,7 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use cosmolkit_core::{
-    AdditionalOutput, AtomPairFingerprintGenerator, AtomPairFingerprintParams, FingerprintFuncArguments, Molecule,
+    AdditionalOutput, AtomPairFingerprintGenerator, AtomPairFingerprintParams,
+    FingerprintFuncArguments, Molecule,
 };
 
 fn map(entries: &[(u64, i32)]) -> BTreeMap<u64, i32> {
@@ -25,8 +26,8 @@ fn all_atom_pair_output() -> AdditionalOutput {
 fn default_generator_matches_rdkit_for_all_four_result_forms() {
     // Oracle: pinned RDKit 2026.03.1, GetAtomPairGenerator() on CCCO.
     let molecule = Molecule::from_smiles("CCCO").unwrap();
-    let generator =
-        AtomPairFingerprintGenerator::new(&AtomPairFingerprintParams::default()).expect("default AtomPair generator");
+    let generator = AtomPairFingerprintGenerator::new(&AtomPairFingerprintParams::default())
+        .expect("default AtomPair generator");
 
     let sparse_count = generator
         .sparse_count_fingerprint(&molecule, &mut FingerprintFuncArguments::default())
@@ -59,7 +60,9 @@ fn default_generator_matches_rdkit_for_all_four_result_forms() {
     assert_eq!(sparse.size(), 1 << 23);
     assert_eq!(
         sparse.on_bits(),
-        &bits(&[7_918_712, 7_918_972, 7_920_240, 8_066_360, 8_066_361, 8_066_620])
+        &bits(&[
+            7_918_712, 7_918_972, 7_920_240, 8_066_360, 8_066_361, 8_066_620
+        ])
     );
 
     let explicit = generator
@@ -111,7 +114,8 @@ fn custom_count_bounds_and_fold_collisions_match_rdkit_with_provenance() {
     assert_eq!(
         sparse.on_bits(),
         &bits(&[
-            1_747_161, 1_747_746, 1_747_941, 1_748_892, 1_749_087, 1_858_293, 1_858_482, 1_858_483, 1_859_628,
+            1_747_161, 1_747_746, 1_747_941, 1_748_892, 1_749_087, 1_858_293, 1_858_482, 1_858_483,
+            1_859_628,
         ])
     );
 
@@ -136,9 +140,18 @@ fn custom_count_bounds_and_fold_collisions_match_rdkit_with_provenance() {
         ])
     );
     let expected_pairs = BTreeMap::from([
-        (0, vec![(0, 3), (0, 4), (1, 2), (1, 5), (2, 3), (2, 5), (3, 4)]),
-        (1, vec![(0, 3), (0, 4), (1, 2), (1, 5), (2, 3), (2, 5), (3, 4)]),
-        (2, vec![(0, 3), (0, 4), (1, 2), (1, 5), (2, 3), (2, 5), (3, 4)]),
+        (
+            0,
+            vec![(0, 3), (0, 4), (1, 2), (1, 5), (2, 3), (2, 5), (3, 4)],
+        ),
+        (
+            1,
+            vec![(0, 3), (0, 4), (1, 2), (1, 5), (2, 3), (2, 5), (3, 4)],
+        ),
+        (
+            2,
+            vec![(0, 3), (0, 4), (1, 2), (1, 5), (2, 3), (2, 5), (3, 4)],
+        ),
         (6, vec![(1, 3), (1, 4), (2, 4)]),
         (7, vec![(1, 3), (1, 4), (2, 4)]),
         (9, vec![(0, 1), (0, 2), (0, 5), (3, 5), (4, 5)]),
@@ -211,14 +224,20 @@ fn chirality_custom_invariants_and_atom_filters_match_rdkit() {
     assert_eq!(explicit.on_bits(), &[0, 37]);
     let output = arguments.additional_output.unwrap();
     assert_eq!(output.atom_counts, Some(vec![1, 2, 1, 0]));
-    assert_eq!(output.atom_to_bits, Some(vec![vec![37], vec![37, 0], vec![0], vec![]]));
+    assert_eq!(
+        output.atom_to_bits,
+        Some(vec![vec![37], vec![37, 0], vec![0], vec![]])
+    );
     assert_eq!(
         output.bit_info_map,
         Some(BTreeMap::from([(0, vec![(1, 2)]), (37, vec![(0, 1)])]))
     );
     assert_eq!(
         output.atoms_per_bit,
-        Some(BTreeMap::from([(0, vec![vec![1, 2]]), (37, vec![vec![0, 1]]),]))
+        Some(BTreeMap::from([
+            (0, vec![vec![1, 2]]),
+            (37, vec![vec![0, 1]]),
+        ]))
     );
 }
 
@@ -244,11 +263,20 @@ fn three_dimensional_distance_selection_matches_rdkit() {
         ..Default::default()
     };
 
-    let sparse_count = generator.sparse_count_fingerprint(&molecule, &mut arguments()).unwrap();
-    assert_eq!(sparse_count.nonzero_elements(), &map(&[(541_731, 1), (558_114, 1)]));
-    let count = generator.count_fingerprint(&molecule, &mut arguments()).unwrap();
+    let sparse_count = generator
+        .sparse_count_fingerprint(&molecule, &mut arguments())
+        .unwrap();
+    assert_eq!(
+        sparse_count.nonzero_elements(),
+        &map(&[(541_731, 1), (558_114, 1)])
+    );
+    let count = generator
+        .count_fingerprint(&molecule, &mut arguments())
+        .unwrap();
     assert_eq!(count.nonzero_elements(), &map(&[(28, 1), (30, 1)]));
-    let sparse = generator.sparse_bit_fingerprint(&molecule, &mut arguments()).unwrap();
+    let sparse = generator
+        .sparse_bit_fingerprint(&molecule, &mut arguments())
+        .unwrap();
     assert_eq!(sparse.on_bits(), &bits(&[6_173_982, 6_174_428]));
     let explicit = generator.fingerprint(&molecule, &mut arguments()).unwrap();
     assert_eq!(explicit.on_bits(), &[28, 30]);

@@ -1,7 +1,8 @@
 use cosmolkit_core::{
-    AtomSpec, BlockSet, BondOrder, BondSpec, ChiralTag, DerivedState, Element, MOLECULE_OPS, MappingRequirement,
-    Molecule, MoleculeBuilder, MoleculeOpKind, OPERATION_INVARIANT_MATRIX, OperationDomain, OperationError,
-    PARITY_MATRIX, ParityPolicy, SUPPORT_MATRIX, StereoError, SupportStatus, TopologyEditKind,
+    AtomSpec, BlockSet, BondOrder, BondSpec, ChiralTag, DerivedState, Element, MOLECULE_OPS,
+    MappingRequirement, Molecule, MoleculeBuilder, MoleculeOpKind, OPERATION_INVARIANT_MATRIX,
+    OperationDomain, OperationError, PARITY_MATRIX, ParityPolicy, SUPPORT_MATRIX, StereoError,
+    SupportStatus, TopologyEditKind,
 };
 
 const CENTER: usize = 0;
@@ -16,9 +17,16 @@ fn tetrahedral_star(center: AtomSpec) -> Molecule {
             .expect("tetrahedral star bond should be valid");
     }
     builder
-        .add_3d_conformer(vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]])
+        .add_3d_conformer(vec![
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [0.0, 0.0, 1.0],
+        ])
         .expect("tetrahedral star coordinates should align");
-    builder.build().expect("tetrahedral star should be a valid molecule")
+    builder
+        .build()
+        .expect("tetrahedral star should be a valid molecule")
 }
 
 fn prepared_tetrahedral_star(center: AtomSpec) -> Molecule {
@@ -86,14 +94,18 @@ fn registry_declares_complete_assign_chiral_tags_operation_contract() {
         .iter()
         .find(|entry| entry.operation.method == operation.method)
         .expect("required parity operation must have a parity entry");
-    assert_eq!(parity.profile, "assign_atom_chiral_tags_from_structure_rdkit");
+    assert_eq!(
+        parity.profile,
+        "assign_atom_chiral_tags_from_structure_rdkit"
+    );
 }
 
 #[test]
 fn value_and_in_place_forms_preserve_source_coordinates_and_unrelated_properties() {
-    let molecule = prepared_tetrahedral_star(AtomSpec::new(Element::C).with_prop("center_keep", "yes"))
-        .with_prop("_StereochemDone", "1")
-        .with_prop("molecule_keep", "yes");
+    let molecule =
+        prepared_tetrahedral_star(AtomSpec::new(Element::C).with_prop("center_keep", "yes"))
+            .with_prop("_StereochemDone", "1")
+            .with_prop("molecule_keep", "yes");
     let original = molecule.clone();
     let original_coordinates = molecule.conformers_3d().to_vec();
     let original_bonds = molecule.bonds().to_vec();
@@ -107,8 +119,14 @@ fn value_and_in_place_forms_preserve_source_coordinates_and_unrelated_properties
     assert_eq!(assigned.conformers_3d(), original_coordinates);
     assert_eq!(assigned.bonds(), original_bonds);
     assert_eq!(&assigned.atoms()[1..], original_neighbors);
-    assert_eq!(assigned.atoms()[CENTER].chiral_tag(), ChiralTag::TetrahedralCcw);
-    assert_eq!(assigned.atoms()[CENTER].prop("_NonExplicit3DChirality"), Some("1"));
+    assert_eq!(
+        assigned.atoms()[CENTER].chiral_tag(),
+        ChiralTag::TetrahedralCcw
+    );
+    assert_eq!(
+        assigned.atoms()[CENTER].prop("_NonExplicit3DChirality"),
+        Some("1")
+    );
     assert_eq!(assigned.atoms()[CENTER].prop("center_keep"), Some("yes"));
     assert_eq!(assigned.prop("_StereochemDone"), None);
     assert_eq!(assigned.prop("molecule_keep"), Some("yes"));
@@ -118,7 +136,10 @@ fn value_and_in_place_forms_preserve_source_coordinates_and_unrelated_properties
     in_place
         .assign_chiral_tags_from_structure_(-1, true)
         .expect("in-place assignment should succeed");
-    assert_eq!(shared_source, original, "COW mutation escaped into a shared clone");
+    assert_eq!(
+        shared_source, original,
+        "COW mutation escaped into a shared clone"
+    );
     assert_eq!(in_place, assigned);
 
     in_place
@@ -128,7 +149,8 @@ fn value_and_in_place_forms_preserve_source_coordinates_and_unrelated_properties
 
 #[test]
 fn source_defined_noop_paths_and_replace_false_preserve_state() {
-    let no_conformer = Molecule::from_smiles("F[C@](Cl)(Br)I").expect("tagged no-conformer molecule should parse");
+    let no_conformer =
+        Molecule::from_smiles("F[C@](Cl)(Br)I").expect("tagged no-conformer molecule should parse");
     let no_conformer_result = no_conformer
         .with_chiral_tags_from_structure(-1, true)
         .expect("no conformer is a source-defined no-op");
@@ -144,7 +166,9 @@ fn source_defined_noop_paths_and_replace_false_preserve_state() {
         .expect("non-3D conformer is a source-defined no-op");
     assert_eq!(non_3d_result, non_3d);
 
-    let existing = prepared_tetrahedral_star(AtomSpec::new(Element::C).with_chiral_tag(ChiralTag::TetrahedralCw));
+    let existing = prepared_tetrahedral_star(
+        AtomSpec::new(Element::C).with_chiral_tag(ChiralTag::TetrahedralCw),
+    );
     let preserve_existing = existing
         .with_chiral_tags_from_structure(-1, false)
         .expect("replace=false assignment should succeed");
@@ -153,7 +177,8 @@ fn source_defined_noop_paths_and_replace_false_preserve_state() {
 
 #[test]
 fn structured_errors_are_transactional_for_value_and_in_place_forms() {
-    let prepared = prepared_tetrahedral_star(AtomSpec::new(Element::C)).with_prop("_StereochemDone", "1");
+    let prepared =
+        prepared_tetrahedral_star(AtomSpec::new(Element::C)).with_prop("_StereochemDone", "1");
     let original = prepared.clone();
     let error = prepared
         .with_chiral_tags_from_structure(17, true)
@@ -178,9 +203,13 @@ fn structured_errors_are_transactional_for_value_and_in_place_forms() {
             ..
         }
     ));
-    assert_eq!(in_place, original, "failed in-place call committed partial state");
+    assert_eq!(
+        in_place, original,
+        "failed in-place call committed partial state"
+    );
 
-    let mut missing_valence = tetrahedral_star(AtomSpec::new(Element::C)).with_prop("_StereochemDone", "1");
+    let mut missing_valence =
+        tetrahedral_star(AtomSpec::new(Element::C)).with_prop("_StereochemDone", "1");
     let missing_valence_original = missing_valence.clone();
     let error = missing_valence
         .assign_chiral_tags_from_structure_(-1, true)

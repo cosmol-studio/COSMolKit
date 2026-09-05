@@ -1,10 +1,10 @@
 use crate::source::base::ichicano::bInchiTimeIsOver;
 use crate::source::base::ichimap1::{
-    All_SB_Same, All_SC_Same, CompareLinCtStereoAtomToValues, CompareLinCtStereoDoubleToValues, CurTreeAddAtom,
-    CurTreeAddRank, CurTreeGetPos, CurTreeIsLastAtomEqu, CurTreeIsLastRank, CurTreeKeepLastAtomsOnly,
-    CurTreeRemoveIfLastAtom, CurTreeRemoveLastRank, CurTreeRemoveLastRankIfNoAtoms, CurTreeSetPos,
-    Next_SB_At_CanonRanks2, Next_SC_At_CanonRank2, NextStereoParity2Test, SetUseAtomForStereo,
-    bUniqueAtNbrFromMappingRank, nGetMcr, nJoin2Mcrs,
+    All_SB_Same, All_SC_Same, CompareLinCtStereoAtomToValues, CompareLinCtStereoDoubleToValues,
+    CurTreeAddAtom, CurTreeAddRank, CurTreeGetPos, CurTreeIsLastAtomEqu, CurTreeIsLastRank,
+    CurTreeKeepLastAtomsOnly, CurTreeRemoveIfLastAtom, CurTreeRemoveLastRank,
+    CurTreeRemoveLastRankIfNoAtoms, CurTreeSetPos, Next_SB_At_CanonRanks2, Next_SC_At_CanonRank2,
+    NextStereoParity2Test, SetUseAtomForStereo, bUniqueAtNbrFromMappingRank, nGetMcr, nJoin2Mcrs,
 };
 use crate::source::base::ichimap2::{
     ClearPreviousMappings, RemoveCalculatedNonStereo, map_an_atom2, might_change_other_atom_parity,
@@ -12,12 +12,13 @@ use crate::source::base::ichimap2::{
 };
 use crate::source::base::ichisort::BreakAllTies;
 use crate::source_types::{
-    AB_MAX_KNOWN_PARITY, AB_MIN_KNOWN_PARITY, AB_PARITY_CALC, AB_PARITY_NONE, AB_PARITY_UNDF, AB_PARITY_UNKN, AT_RANK,
-    AT_STEREO_CARB, AT_STEREO_DBLE, BEST_PARITY, BITS_PARITY, CANON_GLOBALS, CANON_STAT, CMODE_REDNDNT_STEREO,
-    CT_ERR_MAX, CT_ERR_MIN, CT_MAPCOUNT_ERR, CT_OVERFLOW, CT_STEREO_CANON_ERR, CT_STEREOBOND_ERROR, CT_STEREOCOUNT_ERR,
-    CT_TIMEOUT_ERR, CT_USER_QUIT_ERR, CUR_TREE, EQ_NEIGH, INCHI_CLOCK, KNOWN_PARITIES_EQL, MAX_NUM_STEREO_BONDS,
-    NEIGH_LIST, STEREO_AT_MARK, SourceHeap, SourceHeapError, SourceMutPointer, WORSE_PARITY, inchiTime, ppAT_RANK,
-    sp_ATOM,
+    AB_MAX_KNOWN_PARITY, AB_MIN_KNOWN_PARITY, AB_PARITY_CALC, AB_PARITY_NONE, AB_PARITY_UNDF,
+    AB_PARITY_UNKN, AT_RANK, AT_STEREO_CARB, AT_STEREO_DBLE, BEST_PARITY, BITS_PARITY,
+    CANON_GLOBALS, CANON_STAT, CMODE_REDNDNT_STEREO, CT_ERR_MAX, CT_ERR_MIN, CT_MAPCOUNT_ERR,
+    CT_OVERFLOW, CT_STEREO_CANON_ERR, CT_STEREOBOND_ERROR, CT_STEREOCOUNT_ERR, CT_TIMEOUT_ERR,
+    CT_USER_QUIT_ERR, CUR_TREE, EQ_NEIGH, INCHI_CLOCK, KNOWN_PARITIES_EQL, MAX_NUM_STEREO_BONDS,
+    NEIGH_LIST, STEREO_AT_MARK, SourceHeap, SourceHeapError, SourceMutPointer, WORSE_PARITY,
+    inchiTime, ppAT_RANK, sp_ATOM,
 };
 
 #[inline(always)]
@@ -1126,10 +1127,12 @@ pub(crate) fn map_stereo_bonds4(
 
     let returned_error = |value: i32| (CT_ERR_MIN..=CT_ERR_MAX).contains(&value);
     let parity_value = |value: i8| i32::from(value) & BITS_PARITY as i32;
-    let parity_known =
-        |value: i8| (AB_MIN_KNOWN_PARITY as i32..=AB_MAX_KNOWN_PARITY as i32).contains(&parity_value(value));
+    let parity_known = |value: i8| {
+        (AB_MIN_KNOWN_PARITY as i32..=AB_MAX_KNOWN_PARITY as i32).contains(&parity_value(value))
+    };
     let parity_calculate = |value: i8| parity_value(value) == AB_PARITY_CALC as i32;
-    let atom_parity_well_defined = |value: i32| (AB_MIN_KNOWN_PARITY as i32..=WORSE_PARITY as i32).contains(&value);
+    let atom_parity_well_defined =
+        |value: i32| (AB_MIN_KNOWN_PARITY as i32..=WORSE_PARITY as i32).contains(&value);
     let mut tpos1 = CurTreeGetPos(cur_tree.as_deref());
 
     'total_restart: loop {
@@ -1137,7 +1140,8 @@ pub(crate) fn map_stereo_bonds4(
         let mut previous_bond = AT_STEREO_DBLE::default();
 
         if nNumMappedBonds == 0 {
-            let count = usize::try_from(num_atoms).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let count =
+                usize::try_from(num_atoms).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             heap.slice_mut(pCS.bRankUsedForStereo)?
                 .get_mut(..count)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?
@@ -1208,12 +1212,22 @@ pub(crate) fn map_stereo_bonds4(
 
         previous_bond = source_get(heap, pCS.LinearCTStereoDble, nNumMappedBonds)?;
         let mut canon_rank1 = if nNumMappedBonds != 0 {
-            source_get(heap, pCS.LinearCTStereoDble, nNumMappedBonds.wrapping_sub(1))?.at_num1
+            source_get(
+                heap,
+                pCS.LinearCTStereoDble,
+                nNumMappedBonds.wrapping_sub(1),
+            )?
+            .at_num1
         } else {
             0
         };
         let mut canon_rank2 = if nNumMappedBonds != 0 {
-            source_get(heap, pCS.LinearCTStereoDble, nNumMappedBonds.wrapping_sub(1))?.at_num2
+            source_get(
+                heap,
+                pCS.LinearCTStereoDble,
+                nNumMappedBonds.wrapping_sub(1),
+            )?
+            .at_num2
         } else {
             0
         };
@@ -1298,13 +1312,29 @@ pub(crate) fn map_stereo_bonds4(
             let rank1_pointer = source_get(heap, pRankStack1, 0)?;
             let order2_pointer = source_get(heap, pRankStack2, 1)?;
             let rank2_pointer = source_get(heap, pRankStack2, 0)?;
-            let from1 = source_get(heap, nAtomNumberCanonFrom, i32::from(canon_rank1).wrapping_sub(1))?;
-            let from2 = source_get(heap, nAtomNumberCanonFrom, i32::from(canon_rank2).wrapping_sub(1))?;
+            let from1 = source_get(
+                heap,
+                nAtomNumberCanonFrom,
+                i32::from(canon_rank1).wrapping_sub(1),
+            )?;
+            let from2 = source_get(
+                heap,
+                nAtomNumberCanonFrom,
+                i32::from(canon_rank2).wrapping_sub(1),
+            )?;
             let mapping_rank1 = source_get(heap, rank1_pointer, i32::from(from1))?;
             let mapping_rank2 = source_get(heap, rank1_pointer, i32::from(from2))?;
             let max_index = i32::from(mapping_rank1).wrapping_sub(1);
-            let rank1_check_atom = source_get(heap, order2_pointer, i32::from(mapping_rank1).wrapping_sub(1))?;
-            let rank2_check_atom = source_get(heap, order2_pointer, i32::from(mapping_rank2).wrapping_sub(1))?;
+            let rank1_check_atom = source_get(
+                heap,
+                order2_pointer,
+                i32::from(mapping_rank1).wrapping_sub(1),
+            )?;
+            let rank2_check_atom = source_get(
+                heap,
+                order2_pointer,
+                i32::from(mapping_rank2).wrapping_sub(1),
+            )?;
             if mapping_rank1 != source_get(heap, rank2_pointer, i32::from(rank1_check_atom))?
                 || mapping_rank2 != source_get(heap, rank2_pointer, i32::from(rank2_check_atom))?
             {
@@ -1350,14 +1380,20 @@ pub(crate) fn map_stereo_bonds4(
                 }
                 candidate1 = candidate1.wrapping_add(1);
             }
-            if number_choices != number_calculate + number_undefined + number_unknown + number_best + number_worse {
+            if number_choices
+                != number_calculate + number_undefined + number_unknown + number_best + number_worse
+            {
                 return Ok(CT_STEREOCOUNT_ERR);
             }
             if number_choices == 0 {
                 continue 'canon_ranks;
             }
 
-            let mut calculated_parity = if number_calculate > 0 { BEST_PARITY as i32 } else { 0 };
+            let mut calculated_parity = if number_calculate > 0 {
+                BEST_PARITY as i32
+            } else {
+                0
+            };
             let mut requested_parity = 0_i32;
             let mut previous_requested_parity = 0_i32;
             let mut pass = 0_i32;
@@ -1407,7 +1443,9 @@ pub(crate) fn map_stereo_bonds4(
                     let compare = if total_success != 0 {
                         CompareLinCtStereoDoubleToValues(
                             heap,
-                            pCS.LinearCTStereoDble.offset(i64::from(nNumMappedBonds))?.as_const(),
+                            pCS.LinearCTStereoDble
+                                .offset(i64::from(nNumMappedBonds))?
+                                .as_const(),
                             canon_rank1,
                             canon_rank2,
                             requested_parity as u8,
@@ -1429,7 +1467,12 @@ pub(crate) fn map_stereo_bonds4(
                     };
                     if compare < 0 {
                         if total_success == 0 {
-                            source_set(heap, pCS.LinearCTStereoDble, nNumMappedBonds, previous_bond)?;
+                            source_set(
+                                heap,
+                                pCS.LinearCTStereoDble,
+                                nNumMappedBonds,
+                                previous_bond,
+                            )?;
                         }
                         CurTreeSetPos(cur_tree.as_deref_mut(), tpos1);
                         return Ok(total_success);
@@ -1459,7 +1502,12 @@ pub(crate) fn map_stereo_bonds4(
                     }
                     if tpos1 < CurTreeGetPos(cur_tree.as_deref())
                         && CurTreeIsLastRank(heap, cur_tree.as_deref(), canon_rank1)? == 1
-                        && CurTreeIsLastAtomEqu(heap, cur_tree.as_deref(), i32::from(to1), nSymmStereo.as_const())? == 1
+                        && CurTreeIsLastAtomEqu(
+                            heap,
+                            cur_tree.as_deref(),
+                            i32::from(to1),
+                            nSymmStereo.as_const(),
+                        )? == 1
                     {
                         continue;
                     }
@@ -1479,7 +1527,8 @@ pub(crate) fn map_stereo_bonds4(
                         }
                         let encoded_parity = atom1.stereo_bond_parity[slot];
                         if parity_known(encoded_parity) {
-                            if requested_parity == calculated_parity || requested_parity != parity_value(encoded_parity)
+                            if requested_parity == calculated_parity
+                                || requested_parity != parity_value(encoded_parity)
                             {
                                 continue;
                             }
@@ -1494,7 +1543,8 @@ pub(crate) fn map_stereo_bonds4(
                         mapped_ranks[0] = nNumMappedRanksInput;
                         let mut stack_index = 0_usize;
                         let mut add_stack = 0_i32;
-                        all_identical = encoded_parity & KNOWN_PARITIES_EQL as i8 != 0 && parity_known(encoded_parity);
+                        all_identical = encoded_parity & KNOWN_PARITIES_EQL as i8 != 0
+                            && parity_known(encoded_parity);
                         if !all_identical
                             && number_calculate == 0
                             && i32::from(number_undefined == 0)
@@ -1545,11 +1595,23 @@ pub(crate) fn map_stereo_bonds4(
                                 last_mapped_to1 = Some(to1);
                                 if add_stack != 0 {
                                     if tpos1 == CurTreeGetPos(cur_tree.as_deref())
-                                        || CurTreeIsLastRank(heap, cur_tree.as_deref(), canon_rank1)? == 0
+                                        || CurTreeIsLastRank(
+                                            heap,
+                                            cur_tree.as_deref(),
+                                            canon_rank1,
+                                        )? == 0
                                     {
-                                        let _ = CurTreeAddRank(heap, cur_tree.as_deref_mut(), canon_rank1)?;
+                                        let _ = CurTreeAddRank(
+                                            heap,
+                                            cur_tree.as_deref_mut(),
+                                            canon_rank1,
+                                        )?;
                                     }
-                                    let _ = CurTreeAddAtom(heap, cur_tree.as_deref_mut(), i32::from(to1))?;
+                                    let _ = CurTreeAddAtom(
+                                        heap,
+                                        cur_tree.as_deref_mut(),
+                                        i32::from(to1),
+                                    )?;
                                 }
                             }
                             stack_index = 1;
@@ -1560,14 +1622,18 @@ pub(crate) fn map_stereo_bonds4(
                             {
                                 if calculated_parity != requested_parity {
                                     number_choices = number_choices.wrapping_sub(1);
-                                    number_undefined = number_undefined
-                                        .wrapping_sub(i32::from(requested_parity == AB_PARITY_UNDF as i32));
-                                    number_unknown = number_unknown
-                                        .wrapping_sub(i32::from(requested_parity == AB_PARITY_UNKN as i32));
-                                    number_best =
-                                        number_best.wrapping_sub(i32::from(requested_parity == BEST_PARITY as i32));
-                                    number_worse =
-                                        number_worse.wrapping_sub(i32::from(requested_parity == WORSE_PARITY as i32));
+                                    number_undefined = number_undefined.wrapping_sub(i32::from(
+                                        requested_parity == AB_PARITY_UNDF as i32,
+                                    ));
+                                    number_unknown = number_unknown.wrapping_sub(i32::from(
+                                        requested_parity == AB_PARITY_UNKN as i32,
+                                    ));
+                                    number_best = number_best.wrapping_sub(i32::from(
+                                        requested_parity == BEST_PARITY as i32,
+                                    ));
+                                    number_worse = number_worse.wrapping_sub(i32::from(
+                                        requested_parity == WORSE_PARITY as i32,
+                                    ));
                                 } else if calculated_parity == BEST_PARITY as i32 {
                                     number_choices = number_choices.wrapping_sub(1);
                                     number_calculate = number_calculate.wrapping_sub(1);
@@ -1598,7 +1664,8 @@ pub(crate) fn map_stereo_bonds4(
                                 )?;
                             } else {
                                 if tpos1 < CurTreeGetPos(cur_tree.as_deref())
-                                    && CurTreeIsLastRank(heap, cur_tree.as_deref(), canon_rank2)? == 1
+                                    && CurTreeIsLastRank(heap, cur_tree.as_deref(), canon_rank2)?
+                                        == 1
                                     && CurTreeIsLastAtomEqu(
                                         heap,
                                         cur_tree.as_deref(),
@@ -1633,11 +1700,23 @@ pub(crate) fn map_stereo_bonds4(
                                 stack_index = 2;
                                 if add_stack != 0 {
                                     if tpos1 == CurTreeGetPos(cur_tree.as_deref())
-                                        || CurTreeIsLastRank(heap, cur_tree.as_deref(), canon_rank2)? == 0
+                                        || CurTreeIsLastRank(
+                                            heap,
+                                            cur_tree.as_deref(),
+                                            canon_rank2,
+                                        )? == 0
                                     {
-                                        let _ = CurTreeAddRank(heap, cur_tree.as_deref_mut(), canon_rank2)?;
+                                        let _ = CurTreeAddRank(
+                                            heap,
+                                            cur_tree.as_deref_mut(),
+                                            canon_rank2,
+                                        )?;
                                     }
-                                    let _ = CurTreeAddAtom(heap, cur_tree.as_deref_mut(), i32::from(to2))?;
+                                    let _ = CurTreeAddAtom(
+                                        heap,
+                                        cur_tree.as_deref_mut(),
+                                        i32::from(to2),
+                                    )?;
                                 }
                             }
                         } else {
@@ -1648,7 +1727,9 @@ pub(crate) fn map_stereo_bonds4(
                             let bond_parity = requested_parity;
                             let compare = CompareLinCtStereoDoubleToValues(
                                 heap,
-                                pCS.LinearCTStereoDble.offset(i64::from(nNumMappedBonds))?.as_const(),
+                                pCS.LinearCTStereoDble
+                                    .offset(i64::from(nNumMappedBonds))?
+                                    .as_const(),
                                 canon_rank1,
                                 canon_rank2,
                                 bond_parity as u8,
@@ -1656,10 +1737,18 @@ pub(crate) fn map_stereo_bonds4(
                             if compare < 0 && pCS.bStereoIsBetter == 0 {
                                 pCS.lNumRejectedCT = pCS.lNumRejectedCT.wrapping_add(1);
                                 if tpos1 < CurTreeGetPos(cur_tree.as_deref())
-                                    && CurTreeIsLastRank(heap, cur_tree.as_deref(), canon_rank2)? == 1
+                                    && CurTreeIsLastRank(heap, cur_tree.as_deref(), canon_rank2)?
+                                        == 1
                                 {
-                                    let _ = CurTreeRemoveIfLastAtom(heap, cur_tree.as_deref_mut(), i32::from(to2))?;
-                                    let _ = CurTreeRemoveLastRankIfNoAtoms(heap, cur_tree.as_deref_mut())?;
+                                    let _ = CurTreeRemoveIfLastAtom(
+                                        heap,
+                                        cur_tree.as_deref_mut(),
+                                        i32::from(to2),
+                                    )?;
+                                    let _ = CurTreeRemoveLastRankIfNoAtoms(
+                                        heap,
+                                        cur_tree.as_deref_mut(),
+                                    )?;
                                 }
                                 continue;
                             }
@@ -1681,8 +1770,10 @@ pub(crate) fn map_stereo_bonds4(
                                     parity: bond_parity as u8,
                                 },
                             )?;
-                            let used_rank1 = source_get(heap, pCS.bRankUsedForStereo, i32::from(from1))?;
-                            let used_rank2 = source_get(heap, pCS.bRankUsedForStereo, i32::from(from2))?;
+                            let used_rank1 =
+                                source_get(heap, pCS.bRankUsedForStereo, i32::from(from1))?;
+                            let used_rank2 =
+                                source_get(heap, pCS.bRankUsedForStereo, i32::from(from2))?;
                             source_set(
                                 heap,
                                 pCS.bRankUsedForStereo,
@@ -1695,11 +1786,23 @@ pub(crate) fn map_stereo_bonds4(
                                 i32::from(from2),
                                 used_rank2.wrapping_add(1),
                             )?;
-                            let used_atom1 = source_get(heap, pCS.bAtomUsedForStereo, i32::from(to1))?;
-                            let used_atom2 = source_get(heap, pCS.bAtomUsedForStereo, i32::from(to2))?;
+                            let used_atom1 =
+                                source_get(heap, pCS.bAtomUsedForStereo, i32::from(to1))?;
+                            let used_atom2 =
+                                source_get(heap, pCS.bAtomUsedForStereo, i32::from(to2))?;
                             if !all_identical {
-                                source_set(heap, pCS.bAtomUsedForStereo, i32::from(to1), used_atom1.wrapping_sub(1))?;
-                                source_set(heap, pCS.bAtomUsedForStereo, i32::from(to2), used_atom2.wrapping_sub(1))?;
+                                source_set(
+                                    heap,
+                                    pCS.bAtomUsedForStereo,
+                                    i32::from(to1),
+                                    used_atom1.wrapping_sub(1),
+                                )?;
+                                source_set(
+                                    heap,
+                                    pCS.bAtomUsedForStereo,
+                                    i32::from(to2),
+                                    used_atom2.wrapping_sub(1),
+                                )?;
                             }
                             let recursive = map_stereo_bonds4(
                                 heap,
@@ -1729,8 +1832,18 @@ pub(crate) fn map_stereo_bonds4(
                                 vABParityUnknown,
                             )?;
                             if !all_identical {
-                                source_set(heap, pCS.bAtomUsedForStereo, i32::from(to1), used_atom1)?;
-                                source_set(heap, pCS.bAtomUsedForStereo, i32::from(to2), used_atom2)?;
+                                source_set(
+                                    heap,
+                                    pCS.bAtomUsedForStereo,
+                                    i32::from(to1),
+                                    used_atom1,
+                                )?;
+                                source_set(
+                                    heap,
+                                    pCS.bAtomUsedForStereo,
+                                    i32::from(to2),
+                                    used_atom2,
+                                )?;
                             }
                             source_set(heap, pCS.bRankUsedForStereo, i32::from(from1), used_rank1)?;
                             source_set(heap, pCS.bRankUsedForStereo, i32::from(from2), used_rank2)?;
@@ -1748,19 +1861,37 @@ pub(crate) fn map_stereo_bonds4(
                                 total_success |= 1;
                                 candidate_success = candidate_success.wrapping_add(1);
                                 if better_set_here || recursive & 2 != 0 {
-                                    CurTreeKeepLastAtomsOnly(heap, cur_tree.as_deref_mut(), tpos1, 1)?;
+                                    CurTreeKeepLastAtomsOnly(
+                                        heap,
+                                        cur_tree.as_deref_mut(),
+                                        tpos1,
+                                        1,
+                                    )?;
                                     total_success |= 2;
                                 }
                             } else {
                                 if better_set_here {
                                     pCS.bStereoIsBetter = 0;
-                                    source_set(heap, pCS.LinearCTStereoDble, nNumMappedBonds, saved)?;
+                                    source_set(
+                                        heap,
+                                        pCS.LinearCTStereoDble,
+                                        nNumMappedBonds,
+                                        saved,
+                                    )?;
                                 }
                                 if tpos1 < CurTreeGetPos(cur_tree.as_deref())
-                                    && CurTreeIsLastRank(heap, cur_tree.as_deref(), canon_rank2)? == 1
+                                    && CurTreeIsLastRank(heap, cur_tree.as_deref(), canon_rank2)?
+                                        == 1
                                 {
-                                    let _ = CurTreeRemoveIfLastAtom(heap, cur_tree.as_deref_mut(), i32::from(to2))?;
-                                    let _ = CurTreeRemoveLastRankIfNoAtoms(heap, cur_tree.as_deref_mut())?;
+                                    let _ = CurTreeRemoveIfLastAtom(
+                                        heap,
+                                        cur_tree.as_deref_mut(),
+                                        i32::from(to2),
+                                    )?;
+                                    let _ = CurTreeRemoveLastRankIfNoAtoms(
+                                        heap,
+                                        cur_tree.as_deref_mut(),
+                                    )?;
                                 }
                             }
                             better_set_here = false;
@@ -1798,11 +1929,19 @@ pub(crate) fn map_stereo_bonds4(
                             let mut to_neighbor1 = 0_u16;
                             let mut neighbor1_success = 0_i32;
                             if number1 == 2 {
-                                canon_neighbor1 = source_get(heap, nCanonRankFrom, i32::from(equivalent1[0].from_at))?;
+                                canon_neighbor1 = source_get(
+                                    heap,
+                                    nCanonRankFrom,
+                                    i32::from(equivalent1[0].from_at),
+                                )?;
                                 let from_neighbor1 = equivalent1[0].from_at;
                                 to_neighbor1 = equivalent1[0].to_at[choice1 as usize];
                                 if tpos1 < CurTreeGetPos(cur_tree.as_deref())
-                                    && CurTreeIsLastRank(heap, cur_tree.as_deref(), canon_neighbor1)? == 1
+                                    && CurTreeIsLastRank(
+                                        heap,
+                                        cur_tree.as_deref(),
+                                        canon_neighbor1,
+                                    )? == 1
                                     && CurTreeIsLastAtomEqu(
                                         heap,
                                         cur_tree.as_deref(),
@@ -1833,18 +1972,31 @@ pub(crate) fn map_stereo_bonds4(
                                     return Ok(result);
                                 }
                                 mapped_ranks[stack_index2 + 1] = next_mapped;
-                                stack_ptr[stack_index2 + 1] = stack_ptr[stack_index2].wrapping_add(add_stack);
+                                stack_ptr[stack_index2 + 1] =
+                                    stack_ptr[stack_index2].wrapping_add(add_stack);
                                 stack_index2 += 1;
                                 if stack_index2 >= 6 {
                                     return Ok(CT_OVERFLOW);
                                 }
                                 if add_stack != 0 {
                                     if tpos1 == CurTreeGetPos(cur_tree.as_deref())
-                                        || CurTreeIsLastRank(heap, cur_tree.as_deref(), canon_neighbor1)? == 0
+                                        || CurTreeIsLastRank(
+                                            heap,
+                                            cur_tree.as_deref(),
+                                            canon_neighbor1,
+                                        )? == 0
                                     {
-                                        let _ = CurTreeAddRank(heap, cur_tree.as_deref_mut(), canon_neighbor1)?;
+                                        let _ = CurTreeAddRank(
+                                            heap,
+                                            cur_tree.as_deref_mut(),
+                                            canon_neighbor1,
+                                        )?;
                                     }
-                                    let _ = CurTreeAddAtom(heap, cur_tree.as_deref_mut(), i32::from(to_neighbor1))?;
+                                    let _ = CurTreeAddAtom(
+                                        heap,
+                                        cur_tree.as_deref_mut(),
+                                        i32::from(to_neighbor1),
+                                    )?;
                                 }
                                 parity1 = parity_of_mapped_half_bond(
                                     heap,
@@ -1889,12 +2041,19 @@ pub(crate) fn map_stereo_bonds4(
                                 let mut stack_index3 = stack_index2;
                                 let mut to_neighbor2 = 0_u16;
                                 if number2 == 2 {
-                                    canon_neighbor2 =
-                                        source_get(heap, nCanonRankFrom, i32::from(equivalent2[0].from_at))?;
+                                    canon_neighbor2 = source_get(
+                                        heap,
+                                        nCanonRankFrom,
+                                        i32::from(equivalent2[0].from_at),
+                                    )?;
                                     let from_neighbor2 = equivalent2[0].from_at;
                                     to_neighbor2 = equivalent2[0].to_at[choice2 as usize];
                                     if tpos1 < CurTreeGetPos(cur_tree.as_deref())
-                                        && CurTreeIsLastRank(heap, cur_tree.as_deref(), canon_neighbor2)? == 1
+                                        && CurTreeIsLastRank(
+                                            heap,
+                                            cur_tree.as_deref(),
+                                            canon_neighbor2,
+                                        )? == 1
                                         && CurTreeIsLastAtomEqu(
                                             heap,
                                             cur_tree.as_deref(),
@@ -1925,15 +2084,28 @@ pub(crate) fn map_stereo_bonds4(
                                         return Ok(result);
                                     }
                                     mapped_ranks[stack_index3 + 1] = next_mapped;
-                                    stack_ptr[stack_index3 + 1] = stack_ptr[stack_index3].wrapping_add(add_stack);
+                                    stack_ptr[stack_index3 + 1] =
+                                        stack_ptr[stack_index3].wrapping_add(add_stack);
                                     stack_index3 += 1;
                                     if add_stack != 0 {
                                         if tpos1 == CurTreeGetPos(cur_tree.as_deref())
-                                            || CurTreeIsLastRank(heap, cur_tree.as_deref(), canon_neighbor2)? == 0
+                                            || CurTreeIsLastRank(
+                                                heap,
+                                                cur_tree.as_deref(),
+                                                canon_neighbor2,
+                                            )? == 0
                                         {
-                                            let _ = CurTreeAddRank(heap, cur_tree.as_deref_mut(), canon_neighbor2)?;
+                                            let _ = CurTreeAddRank(
+                                                heap,
+                                                cur_tree.as_deref_mut(),
+                                                canon_neighbor2,
+                                            )?;
                                         }
-                                        let _ = CurTreeAddAtom(heap, cur_tree.as_deref_mut(), i32::from(to_neighbor2))?;
+                                        let _ = CurTreeAddAtom(
+                                            heap,
+                                            cur_tree.as_deref_mut(),
+                                            i32::from(to_neighbor2),
+                                        )?;
                                     }
                                     parity2 = parity_of_mapped_half_bond(
                                         heap,
@@ -1959,33 +2131,47 @@ pub(crate) fn map_stereo_bonds4(
                                 if parity1 <= 0 || parity2 <= 0 {
                                     return Ok(CT_STEREOCOUNT_ERR);
                                 }
-                                let mut bond_parity =
-                                    if atom_parity_well_defined(parity1) && atom_parity_well_defined(parity2) {
-                                        2 - (parity1 + parity2) % 2
-                                    } else {
-                                        parity1.max(parity2)
-                                    };
-                                if atom_parity_well_defined(bond_parity) && atom1.stereo_bond_z_prod[slot] < 0 {
+                                let mut bond_parity = if atom_parity_well_defined(parity1)
+                                    && atom_parity_well_defined(parity2)
+                                {
+                                    2 - (parity1 + parity2) % 2
+                                } else {
+                                    parity1.max(parity2)
+                                };
+                                if atom_parity_well_defined(bond_parity)
+                                    && atom1.stereo_bond_z_prod[slot] < 0
+                                {
                                     bond_parity = 2 - (bond_parity + 1) % 2;
                                 }
                                 let compare = CompareLinCtStereoDoubleToValues(
                                     heap,
-                                    pCS.LinearCTStereoDble.offset(i64::from(nNumMappedBonds))?.as_const(),
+                                    pCS.LinearCTStereoDble
+                                        .offset(i64::from(nNumMappedBonds))?
+                                        .as_const(),
                                     canon_rank1,
                                     canon_rank2,
                                     bond_parity as u8,
                                 )?;
-                                if calculated_parity != bond_parity || (compare < 0 && pCS.bStereoIsBetter == 0) {
+                                if calculated_parity != bond_parity
+                                    || (compare < 0 && pCS.bStereoIsBetter == 0)
+                                {
                                     pCS.lNumRejectedCT = pCS.lNumRejectedCT.wrapping_add(1);
                                     if tpos1 < CurTreeGetPos(cur_tree.as_deref())
-                                        && CurTreeIsLastRank(heap, cur_tree.as_deref(), canon_neighbor2)? == 1
+                                        && CurTreeIsLastRank(
+                                            heap,
+                                            cur_tree.as_deref(),
+                                            canon_neighbor2,
+                                        )? == 1
                                     {
                                         let _ = CurTreeRemoveIfLastAtom(
                                             heap,
                                             cur_tree.as_deref_mut(),
                                             i32::from(to_neighbor2),
                                         )?;
-                                        let _ = CurTreeRemoveLastRankIfNoAtoms(heap, cur_tree.as_deref_mut())?;
+                                        let _ = CurTreeRemoveLastRankIfNoAtoms(
+                                            heap,
+                                            cur_tree.as_deref_mut(),
+                                        )?;
                                     }
                                     continue;
                                 }
@@ -2007,10 +2193,14 @@ pub(crate) fn map_stereo_bonds4(
                                         parity: bond_parity as u8,
                                     },
                                 )?;
-                                let used_rank1 = source_get(heap, pCS.bRankUsedForStereo, i32::from(from1))?;
-                                let used_rank2 = source_get(heap, pCS.bRankUsedForStereo, i32::from(from2))?;
-                                let used_atom1 = source_get(heap, pCS.bAtomUsedForStereo, i32::from(to1))?;
-                                let used_atom2 = source_get(heap, pCS.bAtomUsedForStereo, i32::from(to2))?;
+                                let used_rank1 =
+                                    source_get(heap, pCS.bRankUsedForStereo, i32::from(from1))?;
+                                let used_rank2 =
+                                    source_get(heap, pCS.bRankUsedForStereo, i32::from(from2))?;
+                                let used_atom1 =
+                                    source_get(heap, pCS.bAtomUsedForStereo, i32::from(to1))?;
+                                let used_atom2 =
+                                    source_get(heap, pCS.bAtomUsedForStereo, i32::from(to2))?;
                                 source_set(
                                     heap,
                                     pCS.bRankUsedForStereo,
@@ -2023,8 +2213,18 @@ pub(crate) fn map_stereo_bonds4(
                                     i32::from(from2),
                                     used_rank2.wrapping_add(1),
                                 )?;
-                                source_set(heap, pCS.bAtomUsedForStereo, i32::from(to1), used_atom1.wrapping_sub(1))?;
-                                source_set(heap, pCS.bAtomUsedForStereo, i32::from(to2), used_atom2.wrapping_sub(1))?;
+                                source_set(
+                                    heap,
+                                    pCS.bAtomUsedForStereo,
+                                    i32::from(to1),
+                                    used_atom1.wrapping_sub(1),
+                                )?;
+                                source_set(
+                                    heap,
+                                    pCS.bAtomUsedForStereo,
+                                    i32::from(to2),
+                                    used_atom2.wrapping_sub(1),
+                                )?;
                                 let recursive = map_stereo_bonds4(
                                     heap,
                                     ic,
@@ -2052,10 +2252,30 @@ pub(crate) fn map_stereo_bonds4(
                                     nNumMappedBonds.wrapping_add(1),
                                     vABParityUnknown,
                                 )?;
-                                source_set(heap, pCS.bRankUsedForStereo, i32::from(from1), used_rank1)?;
-                                source_set(heap, pCS.bRankUsedForStereo, i32::from(from2), used_rank2)?;
-                                source_set(heap, pCS.bAtomUsedForStereo, i32::from(to1), used_atom1)?;
-                                source_set(heap, pCS.bAtomUsedForStereo, i32::from(to2), used_atom2)?;
+                                source_set(
+                                    heap,
+                                    pCS.bRankUsedForStereo,
+                                    i32::from(from1),
+                                    used_rank1,
+                                )?;
+                                source_set(
+                                    heap,
+                                    pCS.bRankUsedForStereo,
+                                    i32::from(from2),
+                                    used_rank2,
+                                )?;
+                                source_set(
+                                    heap,
+                                    pCS.bAtomUsedForStereo,
+                                    i32::from(to1),
+                                    used_atom1,
+                                )?;
+                                source_set(
+                                    heap,
+                                    pCS.bAtomUsedForStereo,
+                                    i32::from(to2),
+                                    used_atom2,
+                                )?;
                                 if recursive == 4 {
                                     if nNumMappedBonds != 0 {
                                         return Ok(recursive);
@@ -2071,38 +2291,60 @@ pub(crate) fn map_stereo_bonds4(
                                     candidate_success = candidate_success.wrapping_add(1);
                                     neighbor1_success = neighbor1_success.wrapping_add(1);
                                     if better_set_here || recursive & 2 != 0 {
-                                        CurTreeKeepLastAtomsOnly(heap, cur_tree.as_deref_mut(), tpos1, 1)?;
+                                        CurTreeKeepLastAtomsOnly(
+                                            heap,
+                                            cur_tree.as_deref_mut(),
+                                            tpos1,
+                                            1,
+                                        )?;
                                         total_success |= 2;
                                     }
                                 } else {
                                     if better_set_here {
                                         pCS.bStereoIsBetter = 0;
-                                        source_set(heap, pCS.LinearCTStereoDble, nNumMappedBonds, saved)?;
+                                        source_set(
+                                            heap,
+                                            pCS.LinearCTStereoDble,
+                                            nNumMappedBonds,
+                                            saved,
+                                        )?;
                                     }
                                     if tpos1 < CurTreeGetPos(cur_tree.as_deref())
-                                        && CurTreeIsLastRank(heap, cur_tree.as_deref(), canon_neighbor2)? == 1
+                                        && CurTreeIsLastRank(
+                                            heap,
+                                            cur_tree.as_deref(),
+                                            canon_neighbor2,
+                                        )? == 1
                                     {
                                         let _ = CurTreeRemoveIfLastAtom(
                                             heap,
                                             cur_tree.as_deref_mut(),
                                             i32::from(to_neighbor2),
                                         )?;
-                                        let _ = CurTreeRemoveLastRankIfNoAtoms(heap, cur_tree.as_deref_mut())?;
+                                        let _ = CurTreeRemoveLastRankIfNoAtoms(
+                                            heap,
+                                            cur_tree.as_deref_mut(),
+                                        )?;
                                     }
                                 }
                                 better_set_here = false;
                             }
                             if tpos1 < CurTreeGetPos(cur_tree.as_deref())
-                                && CurTreeIsLastRank(heap, cur_tree.as_deref(), canon_neighbor2)? == 1
+                                && CurTreeIsLastRank(heap, cur_tree.as_deref(), canon_neighbor2)?
+                                    == 1
                             {
                                 let _ = CurTreeRemoveLastRank(heap, cur_tree.as_deref_mut())?;
                             }
                             if neighbor1_success == 0
                                 && tpos1 < CurTreeGetPos(cur_tree.as_deref())
-                                && CurTreeIsLastRank(heap, cur_tree.as_deref(), canon_neighbor1)? == 1
+                                && CurTreeIsLastRank(heap, cur_tree.as_deref(), canon_neighbor1)?
+                                    == 1
                             {
-                                let _ =
-                                    CurTreeRemoveIfLastAtom(heap, cur_tree.as_deref_mut(), i32::from(to_neighbor1))?;
+                                let _ = CurTreeRemoveIfLastAtom(
+                                    heap,
+                                    cur_tree.as_deref_mut(),
+                                    i32::from(to_neighbor1),
+                                )?;
                             }
                         }
                         if tpos1 < CurTreeGetPos(cur_tree.as_deref())
@@ -2120,7 +2362,8 @@ pub(crate) fn map_stereo_bonds4(
                         && tpos1 < CurTreeGetPos(cur_tree.as_deref())
                         && CurTreeIsLastRank(heap, cur_tree.as_deref(), canon_rank1)? == 1
                     {
-                        let _ = CurTreeRemoveIfLastAtom(heap, cur_tree.as_deref_mut(), i32::from(to1))?;
+                        let _ =
+                            CurTreeRemoveIfLastAtom(heap, cur_tree.as_deref_mut(), i32::from(to1))?;
                         let _ = CurTreeRemoveLastRankIfNoAtoms(heap, cur_tree.as_deref_mut())?;
                     }
                     if all_identical {
@@ -3050,8 +3293,9 @@ pub(crate) fn map_stereo_atoms4(
 
     let returned_error = |value: i32| (CT_ERR_MIN..=CT_ERR_MAX).contains(&value);
     let parity_value = |value: i8| i32::from(value) & BITS_PARITY as i32;
-    let parity_known =
-        |value: i8| (AB_MIN_KNOWN_PARITY as i32..=AB_MAX_KNOWN_PARITY as i32).contains(&parity_value(value));
+    let parity_known = |value: i8| {
+        (AB_MIN_KNOWN_PARITY as i32..=AB_MAX_KNOWN_PARITY as i32).contains(&parity_value(value))
+    };
     let parity_calculate = |value: i8| parity_value(value) == AB_PARITY_CALC as i32;
     let tpos1 = CurTreeGetPos(cur_tree.as_deref());
     let mut total_success = 0_i32;
@@ -3060,7 +3304,12 @@ pub(crate) fn map_stereo_atoms4(
     if nNumMappedAtoms < pCS.nLenLinearCTStereoCarb {
         previous_atom = source_get(heap, pCS.LinearCTStereoCarb, nNumMappedAtoms)?;
         let mut atom_rank_canon = if nNumMappedAtoms != 0 {
-            source_get(heap, pCS.LinearCTStereoCarb, nNumMappedAtoms.wrapping_sub(1))?.at_num
+            source_get(
+                heap,
+                pCS.LinearCTStereoCarb,
+                nNumMappedAtoms.wrapping_sub(1),
+            )?
+            .at_num
         } else {
             0
         };
@@ -3071,10 +3320,16 @@ pub(crate) fn map_stereo_atoms4(
         'canon_rank: loop {
             if !bypass_limit_check
                 && pCS.bStereoIsBetter == 0
-                && atom_rank_canon >= source_get(heap, pCS.LinearCTStereoCarb, nNumMappedAtoms)?.at_num
+                && atom_rank_canon
+                    >= source_get(heap, pCS.LinearCTStereoCarb, nNumMappedAtoms)?.at_num
             {
                 if total_success == 0 {
-                    source_set(heap, pCS.LinearCTStereoCarb, nNumMappedAtoms, previous_atom.clone())?;
+                    source_set(
+                        heap,
+                        pCS.LinearCTStereoCarb,
+                        nNumMappedAtoms,
+                        previous_atom.clone(),
+                    )?;
                 }
                 CurTreeSetPos(cur_tree.as_deref_mut(), tpos1);
                 return Ok(total_success);
@@ -3094,10 +3349,16 @@ pub(crate) fn map_stereo_atoms4(
                 num_atoms,
             )? == 0
                 || (pCS.bStereoIsBetter == 0
-                    && atom_rank_canon > source_get(heap, pCS.LinearCTStereoCarb, nNumMappedAtoms)?.at_num)
+                    && atom_rank_canon
+                        > source_get(heap, pCS.LinearCTStereoCarb, nNumMappedAtoms)?.at_num)
             {
                 if total_success == 0 {
-                    source_set(heap, pCS.LinearCTStereoCarb, nNumMappedAtoms, previous_atom.clone())?;
+                    source_set(
+                        heap,
+                        pCS.LinearCTStereoCarb,
+                        nNumMappedAtoms,
+                        previous_atom.clone(),
+                    )?;
                 }
                 return Ok(total_success);
             }
@@ -3123,7 +3384,8 @@ pub(crate) fn map_stereo_atoms4(
             let mapping_rank = *rank1.get(usize::from(from_atom))?;
             // INCHI✔️✔️:         iMax = at_rank1 - 1;
             let max_index = i32::from(mapping_rank).wrapping_sub(1);
-            let max_index_usize = usize::try_from(max_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let max_index_usize =
+                usize::try_from(max_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             let check_to = *order2.get(max_index_usize)?;
             // INCHI✔️✔️:         if (at_rank1 != pRankStack2[0][pRankStack2[1][at_rank1 - 1]])
             if mapping_rank != *rank2.get(usize::from(check_to))? {
@@ -3142,8 +3404,8 @@ pub(crate) fn map_stereo_atoms4(
             // INCHI✔️✔️:         for (j1 = 0; j1 <= iMax && at_rank1 == pRankStack2[0][at_to1 = pRankStack2[1][iMax - j1]]; j1++)
             let mut scan = 0_i32;
             while scan <= max_index {
-                let order_index =
-                    usize::try_from(max_index.wrapping_sub(scan)).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let order_index = usize::try_from(max_index.wrapping_sub(scan))
+                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let to_atom = *order2.get(order_index)?;
                 if mapping_rank != *rank2.get(usize::from(to_atom))? {
                     break;
@@ -3178,7 +3440,9 @@ pub(crate) fn map_stereo_atoms4(
                 scan = scan.wrapping_add(1);
             }
             // INCHI✔️✔️:         if (nNumChoices != nNumCalc + nNumUndf + nNumUnkn + nNumBest + nNumWorse)
-            if number_choices != number_calculate + number_undefined + number_unknown + number_best + number_worse {
+            if number_choices
+                != number_calculate + number_undefined + number_unknown + number_best + number_worse
+            {
                 // INCHI✔️✔️:             return CT_STEREOCOUNT_ERR;
                 return Ok(CT_STEREOCOUNT_ERR);
             }
@@ -3188,7 +3452,11 @@ pub(crate) fn map_stereo_atoms4(
                 continue 'canon_rank;
             }
 
-            let mut calculated_parity = if number_calculate > 0 { BEST_PARITY as i32 } else { 0 };
+            let mut calculated_parity = if number_calculate > 0 {
+                BEST_PARITY as i32
+            } else {
+                0
+            };
             let mut stereo_parity = 0_i32;
             let mut pass = 0_i32;
 
@@ -3247,7 +3515,12 @@ pub(crate) fn map_stereo_atoms4(
                         };
                         if value < 0 {
                             if total_success == 0 {
-                                source_set(heap, pCS.LinearCTStereoCarb, nNumMappedAtoms, previous_atom.clone())?;
+                                source_set(
+                                    heap,
+                                    pCS.LinearCTStereoCarb,
+                                    nNumMappedAtoms,
+                                    previous_atom.clone(),
+                                )?;
                             }
                             CurTreeSetPos(cur_tree.as_deref_mut(), tpos1);
                             return Ok(total_success);
@@ -3263,7 +3536,12 @@ pub(crate) fn map_stereo_atoms4(
                         )? < 0
                     {
                         if total_success == 0 {
-                            source_set(heap, pCS.LinearCTStereoCarb, nNumMappedAtoms, previous_atom.clone())?;
+                            source_set(
+                                heap,
+                                pCS.LinearCTStereoCarb,
+                                nNumMappedAtoms,
+                                previous_atom.clone(),
+                            )?;
                         }
                         CurTreeSetPos(cur_tree.as_deref_mut(), tpos1);
                         return Ok(total_success);
@@ -3297,7 +3575,9 @@ pub(crate) fn map_stereo_atoms4(
                     }
                     // INCHI✔️✔️:             if (PARITY_KNOWN( at[at_to1].stereo_atom_parity ))
                     if parity_known(atom_parity) {
-                        if stereo_parity == calculated_parity || stereo_parity != parity_value(atom_parity) {
+                        if stereo_parity == calculated_parity
+                            || stereo_parity != parity_value(atom_parity)
+                        {
                             continue;
                         }
                     } else if parity_calculate(atom_parity) {
@@ -3309,7 +3589,8 @@ pub(crate) fn map_stereo_atoms4(
                     }
 
                     // INCHI✔️✔️:             bAllParitiesIdentical = ( ( at[at_to1].stereo_atom_parity & KNOWN_PARITIES_EQL ) && PARITY_KNOWN( at[at_to1].stereo_atom_parity ) );
-                    let mut all_identical = atom_parity & KNOWN_PARITIES_EQL as i8 != 0 && parity_known(atom_parity);
+                    let mut all_identical =
+                        atom_parity & KNOWN_PARITIES_EQL as i8 != 0 && parity_known(atom_parity);
                     if !all_identical
                         && number_calculate == 0
                         && i32::from(number_undefined == 0)
@@ -3333,8 +3614,12 @@ pub(crate) fn map_stereo_atoms4(
                     }
                     if tpos1 < CurTreeGetPos(cur_tree.as_deref())
                         && CurTreeIsLastRank(heap, cur_tree.as_deref(), atom_rank_canon)? == 1
-                        && CurTreeIsLastAtomEqu(heap, cur_tree.as_deref(), i32::from(to_atom), nSymmStereo.as_const())?
-                            == 1
+                        && CurTreeIsLastAtomEqu(
+                            heap,
+                            cur_tree.as_deref(),
+                            i32::from(to_atom),
+                            nSymmStereo.as_const(),
+                        )? == 1
                     {
                         continue;
                     }
@@ -3401,13 +3686,16 @@ pub(crate) fn map_stereo_atoms4(
                         continue;
                     }
 
-                    let direct = (stereo_parity == calculated_parity && equivalent[stack_index].num_to == 0)
+                    let direct = (stereo_parity == calculated_parity
+                        && equivalent[stack_index].num_to == 0)
                         || stereo_parity != calculated_parity;
                     let mut candidate_success = 0_i32;
                     if direct {
                         let compare = CompareLinCtStereoAtomToValues(
                             heap,
-                            pCS.LinearCTStereoCarb.offset(i64::from(nNumMappedAtoms))?.as_const(),
+                            pCS.LinearCTStereoCarb
+                                .offset(i64::from(nNumMappedAtoms))?
+                                .as_const(),
                             atom_rank_canon,
                             parity as u8,
                         )?;
@@ -3417,11 +3705,14 @@ pub(crate) fn map_stereo_atoms4(
                         }
                         if add_stack != 0 {
                             if tpos1 == CurTreeGetPos(cur_tree.as_deref())
-                                || CurTreeIsLastRank(heap, cur_tree.as_deref(), atom_rank_canon)? == 0
+                                || CurTreeIsLastRank(heap, cur_tree.as_deref(), atom_rank_canon)?
+                                    == 0
                             {
-                                let _ = CurTreeAddRank(heap, cur_tree.as_deref_mut(), atom_rank_canon)?;
+                                let _ =
+                                    CurTreeAddRank(heap, cur_tree.as_deref_mut(), atom_rank_canon)?;
                             }
-                            let _ = CurTreeAddAtom(heap, cur_tree.as_deref_mut(), i32::from(to_atom))?;
+                            let _ =
+                                CurTreeAddAtom(heap, cur_tree.as_deref_mut(), i32::from(to_atom))?;
                         }
                         let mut better_here = false;
                         let saved = if compare > 0 && pCS.bStereoIsBetter == 0 {
@@ -3442,7 +3733,8 @@ pub(crate) fn map_stereo_atoms4(
                         )?;
                         source_set(heap, pCS.bRankUsedForStereo, i32::from(from_atom), 3)?;
                         if !all_identical {
-                            let value = source_get(heap, pCS.bAtomUsedForStereo, i32::from(to_atom))?;
+                            let value =
+                                source_get(heap, pCS.bAtomUsedForStereo, i32::from(to_atom))?;
                             source_set(
                                 heap,
                                 pCS.bAtomUsedForStereo,
@@ -3478,7 +3770,8 @@ pub(crate) fn map_stereo_atoms4(
                         )?;
                         source_set(heap, pCS.bRankUsedForStereo, i32::from(from_atom), 0)?;
                         if !all_identical {
-                            let value = source_get(heap, pCS.bAtomUsedForStereo, i32::from(to_atom))?;
+                            let value =
+                                source_get(heap, pCS.bAtomUsedForStereo, i32::from(to_atom))?;
                             source_set(
                                 heap,
                                 pCS.bAtomUsedForStereo,
@@ -3505,7 +3798,11 @@ pub(crate) fn map_stereo_atoms4(
                         } else if tpos1 < CurTreeGetPos(cur_tree.as_deref())
                             && CurTreeIsLastRank(heap, cur_tree.as_deref(), atom_rank_canon)? == 1
                         {
-                            let _ = CurTreeRemoveIfLastAtom(heap, cur_tree.as_deref_mut(), i32::from(to_atom))?;
+                            let _ = CurTreeRemoveIfLastAtom(
+                                heap,
+                                cur_tree.as_deref_mut(),
+                                i32::from(to_atom),
+                            )?;
                             let _ = CurTreeRemoveLastRankIfNoAtoms(heap, cur_tree.as_deref_mut())?;
                         }
                     } else {
@@ -3514,11 +3811,14 @@ pub(crate) fn map_stereo_atoms4(
                         }
                         if add_stack != 0 {
                             if tpos1 == CurTreeGetPos(cur_tree.as_deref())
-                                || CurTreeIsLastRank(heap, cur_tree.as_deref(), atom_rank_canon)? == 0
+                                || CurTreeIsLastRank(heap, cur_tree.as_deref(), atom_rank_canon)?
+                                    == 0
                             {
-                                let _ = CurTreeAddRank(heap, cur_tree.as_deref_mut(), atom_rank_canon)?;
+                                let _ =
+                                    CurTreeAddRank(heap, cur_tree.as_deref_mut(), atom_rank_canon)?;
                             }
-                            let _ = CurTreeAddAtom(heap, cur_tree.as_deref_mut(), i32::from(to_atom))?;
+                            let _ =
+                                CurTreeAddAtom(heap, cur_tree.as_deref_mut(), i32::from(to_atom))?;
                         }
 
                         let mut choices = [0_i32; 5];
@@ -3534,17 +3834,24 @@ pub(crate) fn map_stereo_atoms4(
                             choices[level] = 0;
                             'choice: loop {
                                 let en_index = base_stack_index + level;
-                                canonical[level] =
-                                    source_get(heap, nCanonRankFrom, i32::from(equivalent[en_index].from_at))?;
-                                let choice =
-                                    usize::try_from(choices[level]).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                                canonical[level] = source_get(
+                                    heap,
+                                    nCanonRankFrom,
+                                    i32::from(equivalent[en_index].from_at),
+                                )?;
+                                let choice = usize::try_from(choices[level])
+                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                                 chosen_atoms[level] = *equivalent[en_index]
                                     .to_at
                                     .get(choice)
                                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
                                 if choices[level] != 0
                                     && tpos1 < CurTreeGetPos(cur_tree.as_deref())
-                                    && CurTreeIsLastRank(heap, cur_tree.as_deref(), canonical[level])? == 1
+                                    && CurTreeIsLastRank(
+                                        heap,
+                                        cur_tree.as_deref(),
+                                        canonical[level],
+                                    )? == 1
                                     && CurTreeIsLastAtomEqu(
                                         heap,
                                         cur_tree.as_deref(),
@@ -3578,9 +3885,17 @@ pub(crate) fn map_stereo_atoms4(
                                     }
                                     if add_stack != 0 {
                                         if tpos1 == CurTreeGetPos(cur_tree.as_deref())
-                                            || CurTreeIsLastRank(heap, cur_tree.as_deref(), canonical[level])? == 0
+                                            || CurTreeIsLastRank(
+                                                heap,
+                                                cur_tree.as_deref(),
+                                                canonical[level],
+                                            )? == 0
                                         {
-                                            let _ = CurTreeAddRank(heap, cur_tree.as_deref_mut(), canonical[level])?;
+                                            let _ = CurTreeAddRank(
+                                                heap,
+                                                cur_tree.as_deref_mut(),
+                                                canonical[level],
+                                            )?;
                                         }
                                         let _ = CurTreeAddAtom(
                                             heap,
@@ -3588,7 +3903,8 @@ pub(crate) fn map_stereo_atoms4(
                                             i32::from(chosen_atoms[level]),
                                         )?;
                                     }
-                                    stack_ptr[base_stack_index + level + 1] = current_stack.wrapping_add(add_stack);
+                                    stack_ptr[base_stack_index + level + 1] =
+                                        current_stack.wrapping_add(add_stack);
                                     mapped_ranks[base_stack_index + level + 1] = next_mapped;
                                     level += 1;
                                     let new_index = base_stack_index + level;
@@ -3612,11 +3928,15 @@ pub(crate) fn map_stereo_atoms4(
 
                                     let compare = CompareLinCtStereoAtomToValues(
                                         heap,
-                                        pCS.LinearCTStereoCarb.offset(i64::from(nNumMappedAtoms))?.as_const(),
+                                        pCS.LinearCTStereoCarb
+                                            .offset(i64::from(nNumMappedAtoms))?
+                                            .as_const(),
                                         atom_rank_canon,
                                         parity as u8,
                                     )?;
-                                    if calculated_parity != parity || (compare < 0 && pCS.bStereoIsBetter == 0) {
+                                    if calculated_parity != parity
+                                        || (compare < 0 && pCS.bStereoIsBetter == 0)
+                                    {
                                         pCS.lNumRejectedCT = pCS.lNumRejectedCT.wrapping_add(1);
                                         last_failed = true;
                                     } else {
@@ -3624,7 +3944,11 @@ pub(crate) fn map_stereo_atoms4(
                                         let saved = if compare > 0 && pCS.bStereoIsBetter == 0 {
                                             pCS.bStereoIsBetter = 1;
                                             better_here = true;
-                                            source_get(heap, pCS.LinearCTStereoCarb, nNumMappedAtoms)?
+                                            source_get(
+                                                heap,
+                                                pCS.LinearCTStereoCarb,
+                                                nNumMappedAtoms,
+                                            )?
                                         } else {
                                             AT_STEREO_CARB::default()
                                         };
@@ -3637,8 +3961,17 @@ pub(crate) fn map_stereo_atoms4(
                                                 parity: parity as u8,
                                             },
                                         )?;
-                                        source_set(heap, pCS.bRankUsedForStereo, i32::from(from_atom), 3)?;
-                                        let used = source_get(heap, pCS.bAtomUsedForStereo, i32::from(to_atom))?;
+                                        source_set(
+                                            heap,
+                                            pCS.bRankUsedForStereo,
+                                            i32::from(from_atom),
+                                            3,
+                                        )?;
+                                        let used = source_get(
+                                            heap,
+                                            pCS.bAtomUsedForStereo,
+                                            i32::from(to_atom),
+                                        )?;
                                         source_set(
                                             heap,
                                             pCS.bAtomUsedForStereo,
@@ -3671,8 +4004,18 @@ pub(crate) fn map_stereo_atoms4(
                                             nNumMappedAtoms.wrapping_add(1),
                                             vABParityUnknown,
                                         )?;
-                                        source_set(heap, pCS.bRankUsedForStereo, i32::from(from_atom), 0)?;
-                                        source_set(heap, pCS.bAtomUsedForStereo, i32::from(to_atom), used)?;
+                                        source_set(
+                                            heap,
+                                            pCS.bRankUsedForStereo,
+                                            i32::from(from_atom),
+                                            0,
+                                        )?;
+                                        source_set(
+                                            heap,
+                                            pCS.bAtomUsedForStereo,
+                                            i32::from(to_atom),
+                                            used,
+                                        )?;
                                         if recursive == 4 {
                                             return Ok(4);
                                         }
@@ -3683,13 +4026,23 @@ pub(crate) fn map_stereo_atoms4(
                                             total_success |= 1;
                                             candidate_success += 1;
                                             if better_here || recursive & 2 != 0 {
-                                                CurTreeKeepLastAtomsOnly(heap, cur_tree.as_deref_mut(), tpos1, 1)?;
+                                                CurTreeKeepLastAtomsOnly(
+                                                    heap,
+                                                    cur_tree.as_deref_mut(),
+                                                    tpos1,
+                                                    1,
+                                                )?;
                                                 total_success |= 2;
                                             }
                                         } else {
                                             if better_here {
                                                 pCS.bStereoIsBetter = 0;
-                                                source_set(heap, pCS.LinearCTStereoCarb, nNumMappedAtoms, saved)?;
+                                                source_set(
+                                                    heap,
+                                                    pCS.LinearCTStereoCarb,
+                                                    nNumMappedAtoms,
+                                                    saved,
+                                                )?;
                                             }
                                             last_failed = true;
                                         }
@@ -3699,8 +4052,16 @@ pub(crate) fn map_stereo_atoms4(
                                                 at,
                                                 num_atoms,
                                                 i32::from(to_atom),
-                                                source_get(heap, pRankStack2, stack_ptr[new_index])?,
-                                                source_get(heap, pRankStack2, stack_ptr[base_stack_index])?,
+                                                source_get(
+                                                    heap,
+                                                    pRankStack2,
+                                                    stack_ptr[new_index],
+                                                )?,
+                                                source_get(
+                                                    heap,
+                                                    pRankStack2,
+                                                    stack_ptr[base_stack_index],
+                                                )?,
                                             )? == 0
                                         {
                                             break 'neighbor_search;
@@ -3718,23 +4079,35 @@ pub(crate) fn map_stereo_atoms4(
                                     if choices[level] < equivalent[en_index].num_to {
                                         if last_failed {
                                             if tpos1 < CurTreeGetPos(cur_tree.as_deref())
-                                                && CurTreeIsLastRank(heap, cur_tree.as_deref(), canonical[level])? == 1
+                                                && CurTreeIsLastRank(
+                                                    heap,
+                                                    cur_tree.as_deref(),
+                                                    canonical[level],
+                                                )? == 1
                                             {
                                                 let _ = CurTreeRemoveIfLastAtom(
                                                     heap,
                                                     cur_tree.as_deref_mut(),
                                                     i32::from(chosen_atoms[level]),
                                                 )?;
-                                                let _ = CurTreeRemoveLastRankIfNoAtoms(heap, cur_tree.as_deref_mut())?;
+                                                let _ = CurTreeRemoveLastRankIfNoAtoms(
+                                                    heap,
+                                                    cur_tree.as_deref_mut(),
+                                                )?;
                                             }
                                             last_failed = false;
                                         }
                                         continue 'choice;
                                     }
                                     if tpos1 < CurTreeGetPos(cur_tree.as_deref())
-                                        && CurTreeIsLastRank(heap, cur_tree.as_deref(), canonical[level])? == 1
+                                        && CurTreeIsLastRank(
+                                            heap,
+                                            cur_tree.as_deref(),
+                                            canonical[level],
+                                        )? == 1
                                     {
-                                        let _ = CurTreeRemoveLastRank(heap, cur_tree.as_deref_mut())?;
+                                        let _ =
+                                            CurTreeRemoveLastRank(heap, cur_tree.as_deref_mut())?;
                                     }
                                 }
                             }
@@ -3745,7 +4118,11 @@ pub(crate) fn map_stereo_atoms4(
                         && tpos1 < CurTreeGetPos(cur_tree.as_deref())
                         && CurTreeIsLastRank(heap, cur_tree.as_deref(), atom_rank_canon)? == 1
                     {
-                        let _ = CurTreeRemoveIfLastAtom(heap, cur_tree.as_deref_mut(), i32::from(to_atom))?;
+                        let _ = CurTreeRemoveIfLastAtom(
+                            heap,
+                            cur_tree.as_deref_mut(),
+                            i32::from(to_atom),
+                        )?;
                         let _ = CurTreeRemoveLastRankIfNoAtoms(heap, cur_tree.as_deref_mut())?;
                     }
                     if all_identical {
@@ -3768,16 +4145,36 @@ pub(crate) fn map_stereo_atoms4(
             }
         }
     } else {
-        if user_action.is_some_and(|callback| callback() == 1) || console_quit.is_some_and(|callback| callback() != 0) {
+        if user_action.is_some_and(|callback| callback() == 1)
+            || console_quit.is_some_and(|callback| callback() != 0)
+        {
             return Ok(CT_USER_QUIT_ERR);
         }
 
         if pCS.bStereoIsBetter != 0 || pCS.bFirstCT != 0 {
-            let first_break = BreakAllTies(heap, pCG, num_at_tg, num_max, pRankStack1, NeighList, nTempRank, pCS)?;
+            let first_break = BreakAllTies(
+                heap,
+                pCG,
+                num_at_tg,
+                num_max,
+                pRankStack1,
+                NeighList,
+                nTempRank,
+                pCS,
+            )?;
             if returned_error(first_break) {
                 return Ok(first_break);
             }
-            let second_break = BreakAllTies(heap, pCG, num_at_tg, num_max, pRankStack2, NeighList, nTempRank, pCS)?;
+            let second_break = BreakAllTies(
+                heap,
+                pCG,
+                num_at_tg,
+                num_max,
+                pRankStack2,
+                NeighList,
+                nTempRank,
+                pCS,
+            )?;
             if returned_error(second_break) {
                 return Ok(second_break);
             }
@@ -3788,7 +4185,10 @@ pub(crate) fn map_stereo_atoms4(
             let rank2 = source_get(heap, final_stack2, 0)?;
             let order2 = source_get(heap, final_stack2, 1)?;
             heap.slice_mut(pCS.nPrevAtomNumber)?
-                .get_mut(..usize::try_from(num_at_tg).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
+                .get_mut(
+                    ..usize::try_from(num_at_tg)
+                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                )
                 .ok_or(SourceHeapError::PointerOutOfBounds)?
                 .fill(0);
             let mut index = 0_i32;
@@ -3797,10 +4197,17 @@ pub(crate) fn map_stereo_atoms4(
                 let canonical = source_get(heap, nCanonRankFrom, i32::from(from))?;
                 let to = source_get(heap, order2, index)?;
                 source_set(heap, nCanonRankTo, i32::from(to), canonical)?;
-                source_set(heap, pCS.nPrevAtomNumber, i32::from(canonical).wrapping_sub(1), to)?;
+                source_set(
+                    heap,
+                    pCS.nPrevAtomNumber,
+                    i32::from(canonical).wrapping_sub(1),
+                    to,
+                )?;
                 source_set(heap, nSymmStereo, index, index as AT_RANK)?;
-                if source_get(heap, rank1, i32::from(from))? != source_get(heap, rank2, i32::from(to))?
-                    || source_get(heap, nSymmRank, i32::from(from))? != source_get(heap, nSymmRank, i32::from(to))?
+                if source_get(heap, rank1, i32::from(from))?
+                    != source_get(heap, rank2, i32::from(to))?
+                    || source_get(heap, nSymmRank, i32::from(from))?
+                        != source_get(heap, nSymmRank, i32::from(to))?
                 {
                     return Ok(CT_STEREO_CANON_ERR);
                 }
@@ -3854,7 +4261,8 @@ pub(crate) fn map_stereo_atoms4(
                         if bUniqueAtNbrFromMappingRank(heap, pRankStack2, rank, &mut to)? == 0 {
                             return Ok(CT_MAPCOUNT_ERR);
                         }
-                        let canonical = source_get(heap, nCanonRankFrom, i32::from(from))?.wrapping_sub(1);
+                        let canonical =
+                            source_get(heap, nCanonRankFrom, i32::from(from))?.wrapping_sub(1);
                         changes = changes.wrapping_add(nJoin2Mcrs(
                             heap,
                             nSymmStereo,
@@ -3926,10 +4334,16 @@ mod tests {
             let mut heap = SourceHeap::default();
             let count = atoms.len();
             let atoms = heap.allocate_model_storage(atoms).unwrap();
-            let canon_from = heap.allocate_model_storage((1..=count as AT_RANK).collect()).unwrap();
-            let atom_by_canon = heap.allocate_model_storage((0..count as AT_RANK).collect()).unwrap();
+            let canon_from = heap
+                .allocate_model_storage((1..=count as AT_RANK).collect())
+                .unwrap();
+            let atom_by_canon = heap
+                .allocate_model_storage((0..count as AT_RANK).collect())
+                .unwrap();
             let canon_to = heap.allocate_model_storage(vec![0_u16; count]).unwrap();
-            let symm = heap.allocate_model_storage((1..=count as AT_RANK).collect()).unwrap();
+            let symm = heap
+                .allocate_model_storage((1..=count as AT_RANK).collect())
+                .unwrap();
             let rank1 = heap.allocate_model_storage(rank1).unwrap();
             let order1 = heap.allocate_model_storage(order1).unwrap();
             let output_rank1 = heap.allocate_model_storage(vec![0_u16; count]).unwrap();
@@ -3957,8 +4371,18 @@ mod tests {
                 ])
                 .unwrap();
             let temporary = heap.allocate_model_storage(vec![0_u16; count]).unwrap();
-            let symm_stereo = heap.allocate_model_storage((0..count as AT_RANK).collect()).unwrap();
-            let neighbors = CreateNeighList(&mut heap, count as i32, count as i32, atoms.as_const(), 0, None).unwrap();
+            let symm_stereo = heap
+                .allocate_model_storage((0..count as AT_RANK).collect())
+                .unwrap();
+            let neighbors = CreateNeighList(
+                &mut heap,
+                count as i32,
+                count as i32,
+                atoms.as_const(),
+                0,
+                None,
+            )
+            .unwrap();
             let b_rank = heap.allocate_model_storage(vec![0_i8; count]).unwrap();
             let b_atom = heap.allocate_model_storage(vec![0_i8; count]).unwrap();
             let previous = heap.allocate_model_storage(vec![0_u16; count]).unwrap();
@@ -4033,7 +4457,9 @@ mod tests {
             let tree_capacity = usize::try_from(count.max(1))
                 .map_err(|_| SourceHeapError::PointerOutOfBounds)?
                 .saturating_mul(8);
-            let tree_pointer = self.heap.allocate_model_storage(vec![0_u16; tree_capacity])?;
+            let tree_pointer = self
+                .heap
+                .allocate_model_storage(vec![0_u16; tree_capacity])?;
             let mut tree = CUR_TREE {
                 tree: tree_pointer,
                 max_len: tree_capacity as i32,
@@ -4084,12 +4510,14 @@ mod tests {
 
     #[test]
     fn source_port__ichimap4__map_stereo_bonds4__line_83() {
-        let mut handoff = Fixture::new(vec![sp_ATOM::default()], vec![1], vec![0], vec![1], vec![0]);
+        let mut handoff =
+            Fixture::new(vec![sp_ATOM::default()], vec![1], vec![0], vec![1], vec![0]);
         handoff.stats.bFirstCT = 1;
         assert_eq!(handoff.call_bonds(0), Ok(1));
         assert_eq!(handoff.stats.bFirstCT, 0);
 
-        let mut no_candidate = Fixture::new(vec![sp_ATOM::default()], vec![1], vec![0], vec![1], vec![0]);
+        let mut no_candidate =
+            Fixture::new(vec![sp_ATOM::default()], vec![1], vec![0], vec![1], vec![0]);
         no_candidate.stats.nLenLinearCTStereoDble = 1;
         no_candidate
             .heap
@@ -4113,9 +4541,18 @@ mod tests {
         );
 
         let invalid_atoms = vec![stereo_bond_atom(1, 7), stereo_bond_atom(0, 7)];
-        let mut invalid = Fixture::new(invalid_atoms, vec![1, 2], vec![0, 1], vec![1, 2], vec![0, 1]);
+        let mut invalid = Fixture::new(
+            invalid_atoms,
+            vec![1, 2],
+            vec![0, 1],
+            vec![1, 2],
+            vec![0, 1],
+        );
         invalid.stats.nLenLinearCTStereoDble = 1;
-        invalid.heap.slice_mut(invalid.stats.LinearCTStereoDble).unwrap()[0] = AT_STEREO_DBLE {
+        invalid
+            .heap
+            .slice_mut(invalid.stats.LinearCTStereoDble)
+            .unwrap()[0] = AT_STEREO_DBLE {
             at_num1: 3,
             at_num2: 2,
             parity: 1,
@@ -4129,14 +4566,20 @@ mod tests {
         let mut known = Fixture::new(known_atoms, vec![1, 2], vec![0, 1], vec![1, 2], vec![0, 1]);
         known.stats.nLenLinearCTStereoDble = 1;
         known.stats.bFirstCT = 1;
-        known.heap.slice_mut(known.stats.LinearCTStereoDble).unwrap()[0] = AT_STEREO_DBLE {
+        known
+            .heap
+            .slice_mut(known.stats.LinearCTStereoDble)
+            .unwrap()[0] = AT_STEREO_DBLE {
             at_num1: 3,
             at_num2: 2,
             parity: 2,
         };
         assert_eq!(known.call_bonds(0), Ok(3));
         assert_eq!(
-            known.heap.slice(known.stats.LinearCTStereoDble.as_const()).unwrap()[0],
+            known
+                .heap
+                .slice(known.stats.LinearCTStereoDble.as_const())
+                .unwrap()[0],
             AT_STEREO_DBLE {
                 at_num1: 2,
                 at_num2: 1,
@@ -4144,11 +4587,17 @@ mod tests {
             }
         );
         assert_eq!(
-            known.heap.slice(known.stats.bRankUsedForStereo.as_const()).unwrap(),
+            known
+                .heap
+                .slice(known.stats.bRankUsedForStereo.as_const())
+                .unwrap(),
             &[0, 0]
         );
         assert_eq!(
-            known.heap.slice(known.stats.bAtomUsedForStereo.as_const()).unwrap(),
+            known
+                .heap
+                .slice(known.stats.bAtomUsedForStereo.as_const())
+                .unwrap(),
             &[1, 1]
         );
 
@@ -4180,13 +4629,19 @@ mod tests {
         );
         calculated.stats.nLenLinearCTStereoDble = 1;
         calculated.stats.bFirstCT = 1;
-        calculated.heap.slice_mut(calculated.stats.LinearCTStereoDble).unwrap()[0] = AT_STEREO_DBLE {
+        calculated
+            .heap
+            .slice_mut(calculated.stats.LinearCTStereoDble)
+            .unwrap()[0] = AT_STEREO_DBLE {
             at_num1: 7,
             at_num2: 6,
             parity: 2,
         };
         let calculated_result = calculated.call_bonds(0).unwrap();
-        assert!(calculated_result > 0, "calculated result: {calculated_result}");
+        assert!(
+            calculated_result > 0,
+            "calculated result: {calculated_result}"
+        );
         let calculated_ct = &calculated
             .heap
             .slice(calculated.stats.LinearCTStereoDble.as_const())
@@ -4197,19 +4652,26 @@ mod tests {
 
     #[test]
     fn source_port__ichimap4__map_stereo_atoms4__line_1126() {
-        let mut no_candidate = Fixture::new(vec![sp_ATOM::default()], vec![1], vec![0], vec![1], vec![0]);
+        let mut no_candidate =
+            Fixture::new(vec![sp_ATOM::default()], vec![1], vec![0], vec![1], vec![0]);
         no_candidate.stats.nLenLinearCTStereoCarb = 1;
         no_candidate
             .heap
             .slice_mut(no_candidate.stats.LinearCTStereoCarb)
-            .unwrap()[0] = AT_STEREO_CARB { at_num: 7, parity: 2 };
+            .unwrap()[0] = AT_STEREO_CARB {
+            at_num: 7,
+            parity: 2,
+        };
         assert_eq!(no_candidate.call(0, None, 0), Ok(0));
         assert_eq!(
             no_candidate
                 .heap
                 .slice(no_candidate.stats.LinearCTStereoCarb.as_const())
                 .unwrap()[0],
-            AT_STEREO_CARB { at_num: 7, parity: 2 }
+            AT_STEREO_CARB {
+                at_num: 7,
+                parity: 2
+            }
         );
 
         let mut invalid = Fixture::new(
@@ -4224,8 +4686,17 @@ mod tests {
             vec![0],
         );
         invalid.stats.nLenLinearCTStereoCarb = 1;
-        invalid.heap.slice_mut(invalid.stats.bAtomUsedForStereo).unwrap()[0] = STEREO_AT_MARK as i8;
-        invalid.heap.slice_mut(invalid.stats.LinearCTStereoCarb).unwrap()[0] = AT_STEREO_CARB { at_num: 2, parity: 1 };
+        invalid
+            .heap
+            .slice_mut(invalid.stats.bAtomUsedForStereo)
+            .unwrap()[0] = STEREO_AT_MARK as i8;
+        invalid
+            .heap
+            .slice_mut(invalid.stats.LinearCTStereoCarb)
+            .unwrap()[0] = AT_STEREO_CARB {
+            at_num: 2,
+            parity: 1,
+        };
         assert_eq!(invalid.call(0, None, 0), Ok(CT_STEREOCOUNT_ERR));
 
         let mut recursive = Fixture::new(
@@ -4241,9 +4712,17 @@ mod tests {
         );
         recursive.stats.nLenLinearCTStereoCarb = 1;
         recursive.stats.bFirstCT = 1;
-        recursive.heap.slice_mut(recursive.stats.bAtomUsedForStereo).unwrap()[0] = STEREO_AT_MARK as i8;
-        recursive.heap.slice_mut(recursive.stats.LinearCTStereoCarb).unwrap()[0] =
-            AT_STEREO_CARB { at_num: 2, parity: 2 };
+        recursive
+            .heap
+            .slice_mut(recursive.stats.bAtomUsedForStereo)
+            .unwrap()[0] = STEREO_AT_MARK as i8;
+        recursive
+            .heap
+            .slice_mut(recursive.stats.LinearCTStereoCarb)
+            .unwrap()[0] = AT_STEREO_CARB {
+            at_num: 2,
+            parity: 2,
+        };
         assert_eq!(recursive.call(0, None, 0), Ok(3));
         assert_eq!(
             recursive
@@ -4269,15 +4748,25 @@ mod tests {
                 .unwrap()[0],
             0
         );
-        assert_eq!((recursive.stats.lNumTotCT, recursive.stats.lNumDecreasedCT), (1, 1));
+        assert_eq!(
+            (recursive.stats.lNumTotCT, recursive.stats.lNumDecreasedCT),
+            (1, 1)
+        );
 
-        let mut first_ct = Fixture::new(vec![sp_ATOM::default()], vec![1], vec![0], vec![1], vec![0]);
+        let mut first_ct =
+            Fixture::new(vec![sp_ATOM::default()], vec![1], vec![0], vec![1], vec![0]);
         first_ct.stats.bFirstCT = 1;
         first_ct.stats.lNumTotCT = i64::MAX;
         assert_eq!(first_ct.call(0, None, 0), Ok(1));
-        assert_eq!(first_ct.heap.slice(first_ct.canon_to.as_const()).unwrap(), &[1]);
         assert_eq!(
-            first_ct.heap.slice(first_ct.stats.nPrevAtomNumber.as_const()).unwrap(),
+            first_ct.heap.slice(first_ct.canon_to.as_const()).unwrap(),
+            &[1]
+        );
+        assert_eq!(
+            first_ct
+                .heap
+                .slice(first_ct.stats.nPrevAtomNumber.as_const())
+                .unwrap(),
             &[0]
         );
         assert_eq!(first_ct.stats.lNumTotCT, i64::MIN);
@@ -4287,7 +4776,10 @@ mod tests {
         equal.stats.lNumEqualCT = i64::MAX;
         equal.stats.lNumTotCT = 4;
         assert_eq!(equal.call(0, None, 0), Ok(1));
-        assert_eq!((equal.stats.lNumEqualCT, equal.stats.lNumTotCT), (i64::MIN, 5));
+        assert_eq!(
+            (equal.stats.lNumEqualCT, equal.stats.lNumTotCT),
+            (i64::MIN, 5)
+        );
 
         let mut mismatch = Fixture::new(
             vec![sp_ATOM::default(); 2],
@@ -4302,10 +4794,12 @@ mod tests {
         fn quit() -> i32 {
             1
         }
-        let mut quit_fixture = Fixture::new(vec![sp_ATOM::default()], vec![1], vec![0], vec![1], vec![0]);
+        let mut quit_fixture =
+            Fixture::new(vec![sp_ATOM::default()], vec![1], vec![0], vec![1], vec![0]);
         assert_eq!(quit_fixture.call(0, Some(quit), 0), Ok(CT_USER_QUIT_ERR));
 
-        let mut timeout = Fixture::new(vec![sp_ATOM::default()], vec![1], vec![0], vec![1], vec![0]);
+        let mut timeout =
+            Fixture::new(vec![sp_ATOM::default()], vec![1], vec![0], vec![1], vec![0]);
         timeout.stats.ulTimeOutTime = timeout
             .heap
             .allocate_model_storage(vec![tagInchiTime { clockTime: 0 }])

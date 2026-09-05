@@ -174,7 +174,11 @@ fn element_symbol(atomic_num: u8) -> &'static str {
 // RDKit✔️✔️: }
 //
 // Build a single PDB ATOM/HETATM line for the given atom.
-fn get_pdb_atom_line(atom: &Atom, conf: Option<&Conformer3D>, elem: &mut BTreeMap<u8, u32>) -> String {
+fn get_pdb_atom_line(
+    atom: &Atom,
+    conf: Option<&Conformer3D>,
+    elem: &mut BTreeMap<u8, u32>,
+) -> String {
     let symb = element_symbol(atom.atomic_number());
     let (at1, at2): (char, char) = match symb.len() {
         0 => (' ', 'X'),
@@ -281,7 +285,11 @@ fn get_pdb_atom_line(atom: &Atom, conf: Option<&Conformer3D>, elem: &mut BTreeMa
     // RDKit✔️✔️:   ss << "  1.00  0.00          ";
     // RDKit✔️✔️: }
     if let Some(pdb_info) = info {
-        line.push_str(&format!("{:>6.2}{:>6.2}", pdb_info.occupancy(), pdb_info.temp_factor()));
+        line.push_str(&format!(
+            "{:>6.2}{:>6.2}",
+            pdb_info.occupancy(),
+            pdb_info.temp_factor()
+        ));
         line.push_str("          ");
     } else {
         line.push_str("  1.00  0.00          ");
@@ -412,7 +420,11 @@ fn get_pdb_bond_lines(
         // RDKit✔️✔️: if (mult) {
         // RDKit✔️✔️:   btype = bptr->getBondType();
         // RDKit✔️✔️: }
-        let btype = if mult { bond.order() } else { BondOrder::Single };
+        let btype = if mult {
+            bond.order()
+        } else {
+            BondOrder::Single
+        };
 
         // RDKit✔️✔️: switch (btype) {
         // RDKit✔️✔️:   default:

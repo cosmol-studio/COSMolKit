@@ -396,12 +396,17 @@ pub(super) fn set_path_bits_rec(
         // Avalon❗✔️:       ap = mp->atom_array+ai;
         // Avalon❗✔️:       if ((flags&FORCED_RING_PATH) && mp->bond_array[bi].rsize_flags == 0)
         // Avalon❗✔️:          continue;
-        if flags.contains(PathFlags::FORCED_RING_PATH) && molecule.bonds[bond_index].rsize_flags == 0 {
+        if flags.contains(PathFlags::FORCED_RING_PATH)
+            && molecule.bonds[bond_index].rsize_flags == 0
+        {
             continue;
         }
         let atom_color = molecule.atoms[atom_index].color;
         // Avalon❗✔️:       if (ap->color >= 18  &&  ap->color != ANY_COLOR  &&  0 != (flags & STOP_AT_HEAVY_ATOM)) continue;
-        if atom_color >= 18 && atom_color != ANY_COLOR && flags.contains(PathFlags::STOP_AT_HEAVY_ATOM) {
+        if atom_color >= 18
+            && atom_color != ANY_COLOR
+            && flags.contains(PathFlags::STOP_AT_HEAVY_ATOM)
+        {
             continue;
         }
         // Avalon❗✔️:       if (touched_indices[ai] > 0)      /* ring closure */
@@ -664,7 +669,8 @@ pub(super) fn set_feature_bits(
                 if (1_i32 << path_length) & length_matrix[atom_i][atom_j] != 0 {
                     // Avalon❗✔️:                /* count the features */
                     // Avalon❗✔️:                counts[(k*19+seed)%(ncounts*4)]++;
-                    let index = ((path_length as u64 * 19).wrapping_add(seed) % feature_counts.len() as u64) as usize;
+                    let index = ((path_length as u64 * 19).wrapping_add(seed)
+                        % feature_counts.len() as u64) as usize;
                     feature_counts[index] += 1;
                     // Avalon❗✔️:                result++;
                     result += 1;
@@ -945,7 +951,11 @@ mod tests {
     #[test]
     fn feature_pair_counts_match_native_exported_function() {
         let molecule = molecule(&[0x0401, 0x0103, 0x0102], &[], &[]);
-        let length_matrix = vec![vec![0, 1 << 2, 1 << 3], vec![1 << 2, 0, 0], vec![1 << 3, 0, 0]];
+        let length_matrix = vec![
+            vec![0, 1 << 2, 1 << 3],
+            vec![1 << 2, 0, 0],
+            vec![1 << 3, 0, 0],
+        ];
         let mut counts = vec![0; 64];
 
         let result = set_feature_bits(
@@ -994,7 +1004,10 @@ mod tests {
         );
 
         assert_eq!(result, 17);
-        assert_eq!(sparse(&counts), vec![(7, 12), (55, 12), (69, 12), (131, 1), (152, 12)]);
+        assert_eq!(
+            sparse(&counts),
+            vec![(7, 12), (55, 12), (69, 12), (131, 1), (152, 12)]
+        );
     }
 
     #[test]
@@ -1003,10 +1016,24 @@ mod tests {
         molecule.atoms[0].rsize_flags = (1 << 5) | (1 << 6);
         molecule.atoms[1].rsize_flags = 1 << 4;
         molecule.atoms[2].rsize_flags = 1 << 7;
-        let length_matrix = vec![vec![0, 1 << 2, 1 << 3], vec![1 << 2, 0, 0], vec![1 << 3, 0, 0]];
+        let length_matrix = vec![
+            vec![0, 1 << 2, 1 << 3],
+            vec![1 << 2, 0, 0],
+            vec![1 << 3, 0, 0],
+        ];
         let mut counts = vec![0; 64];
 
-        let result = set_ring_size_pair_bits(&molecule, &mut counts, 0x0200, 0x0100, 1, 4, &length_matrix, 3237, 0);
+        let result = set_ring_size_pair_bits(
+            &molecule,
+            &mut counts,
+            0x0200,
+            0x0100,
+            1,
+            4,
+            &length_matrix,
+            3237,
+            0,
+        );
 
         assert_eq!(result, 4);
         assert_eq!(sparse(&counts), vec![(12, 1), (25, 1), (47, 1), (50, 1)]);

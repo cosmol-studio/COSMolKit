@@ -32,9 +32,12 @@ fn load_golden() -> Vec<XyzReadRecord> {
         .lines()
         .enumerate()
         .map(|(idx, line)| {
-            let line = line.unwrap_or_else(|err| panic!("failed to read {} line {}: {err}", path.display(), idx + 1));
-            serde_json::from_str(&line)
-                .unwrap_or_else(|err| panic!("failed to parse {} line {}: {err}", path.display(), idx + 1))
+            let line = line.unwrap_or_else(|err| {
+                panic!("failed to read {} line {}: {err}", path.display(), idx + 1)
+            });
+            serde_json::from_str(&line).unwrap_or_else(|err| {
+                panic!("failed to parse {} line {}: {err}", path.display(), idx + 1)
+            })
         })
         .collect()
 }
@@ -147,7 +150,10 @@ fn xyz_reader_matches_rdkit_golden_for_smiles_generated_xyz_blocks() {
                 row_idx + 1,
                 record.smiles
             );
-            for (atom_idx, (actual, expected)) in actual_coordinates.iter().zip(expected_coordinates.iter()).enumerate()
+            for (atom_idx, (actual, expected)) in actual_coordinates
+                .iter()
+                .zip(expected_coordinates.iter())
+                .enumerate()
             {
                 for axis in 0..3 {
                     assert!(

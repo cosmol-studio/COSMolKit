@@ -25,12 +25,16 @@ struct WriterCase {
 
 fn load_profile() -> WriterProfile {
     let path = repo_root().join("testdata/bio/gemmi_mmcif_writer_profile.json");
-    let bytes = std::fs::read(&path).unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()));
-    let profile: WriterProfile =
-        serde_json::from_slice(&bytes).unwrap_or_else(|error| panic!("failed to parse {}: {error}", path.display()));
+    let bytes = std::fs::read(&path)
+        .unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()));
+    let profile: WriterProfile = serde_json::from_slice(&bytes)
+        .unwrap_or_else(|error| panic!("failed to parse {}: {error}", path.display()));
     assert_eq!(profile.schema_version, 1);
     assert_eq!(profile.profile, PROFILE);
-    assert_eq!(profile.gemmi_commit, "5cc1c23c6007e0e6cbd69289c6f7c0bff50e943e");
+    assert_eq!(
+        profile.gemmi_commit,
+        "5cc1c23c6007e0e6cbd69289c6f7c0bff50e943e"
+    );
     profile
 }
 
@@ -47,25 +51,69 @@ fn read_case(case: &WriterCase) -> BioStructure {
 fn assert_semantic_state_eq(actual: &BioStructure, expected: &BioStructure, case_id: &str) {
     assert_eq!(actual.name(), expected.name(), "{case_id}: structure name");
     assert_eq!(actual.atoms(), expected.atoms(), "{case_id}: atoms");
-    assert_eq!(actual.residues(), expected.residues(), "{case_id}: residues");
+    assert_eq!(
+        actual.residues(),
+        expected.residues(),
+        "{case_id}: residues"
+    );
     assert_eq!(actual.chains(), expected.chains(), "{case_id}: chains");
-    assert_eq!(actual.entities(), expected.entities(), "{case_id}: entities");
+    assert_eq!(
+        actual.entities(),
+        expected.entities(),
+        "{case_id}: entities"
+    );
     assert_eq!(actual.models(), expected.models(), "{case_id}: models");
-    assert_eq!(actual.coordinates(), expected.coordinates(), "{case_id}: coordinates");
-    assert_eq!(actual.metadata(), expected.metadata(), "{case_id}: metadata");
+    assert_eq!(
+        actual.coordinates(),
+        expected.coordinates(),
+        "{case_id}: coordinates"
+    );
+    assert_eq!(
+        actual.metadata(),
+        expected.metadata(),
+        "{case_id}: metadata"
+    );
     assert_eq!(actual.crystal(), expected.crystal(), "{case_id}: crystal");
-    assert_eq!(actual.resolution(), expected.resolution(), "{case_id}: resolution");
-    assert_eq!(actual.ter_status(), expected.ter_status(), "{case_id}: TER status");
+    assert_eq!(
+        actual.resolution(),
+        expected.resolution(),
+        "{case_id}: resolution"
+    );
+    assert_eq!(
+        actual.ter_status(),
+        expected.ter_status(),
+        "{case_id}: TER status"
+    );
     assert_eq!(
         actual.mod_residues(),
         expected.mod_residues(),
         "{case_id}: modified residues"
     );
-    assert_eq!(actual.connections(), expected.connections(), "{case_id}: connections");
-    assert_eq!(actual.cispeps(), expected.cispeps(), "{case_id}: cis peptides");
-    assert_eq!(actual.assemblies(), expected.assemblies(), "{case_id}: assemblies");
-    assert_eq!(actual.has_origx(), expected.has_origx(), "{case_id}: ORIGX presence");
-    assert_eq!(actual.origx(), expected.origx(), "{case_id}: ORIGX transform");
+    assert_eq!(
+        actual.connections(),
+        expected.connections(),
+        "{case_id}: connections"
+    );
+    assert_eq!(
+        actual.cispeps(),
+        expected.cispeps(),
+        "{case_id}: cis peptides"
+    );
+    assert_eq!(
+        actual.assemblies(),
+        expected.assemblies(),
+        "{case_id}: assemblies"
+    );
+    assert_eq!(
+        actual.has_origx(),
+        expected.has_origx(),
+        "{case_id}: ORIGX presence"
+    );
+    assert_eq!(
+        actual.origx(),
+        expected.origx(),
+        "{case_id}: ORIGX transform"
+    );
     assert_eq!(
         actual.ncs_operators(),
         expected.ncs_operators(),
@@ -118,7 +166,10 @@ fn assert_exact_output(actual: &str, expected: &str, case_id: &str) {
 #[test]
 fn mmcif_writer_matches_every_prepared_pinned_gemmi_fixture_exactly_and_semantically() {
     let profile = load_profile();
-    assert!(!profile.cases.is_empty(), "writer profile must declare cases");
+    assert!(
+        !profile.cases.is_empty(),
+        "writer profile must declare cases"
+    );
 
     for case in &profile.cases {
         assert!(

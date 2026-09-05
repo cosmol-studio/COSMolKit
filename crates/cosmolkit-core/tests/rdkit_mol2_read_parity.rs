@@ -83,10 +83,20 @@ fn load_golden() -> Vec<Mol2ReadRecord> {
         .lines()
         .enumerate()
         .map(|(idx, line)| {
-            let line =
-                line.unwrap_or_else(|error| panic!("failed to read {} line {}: {error}", path.display(), idx + 1));
-            serde_json::from_str(&line)
-                .unwrap_or_else(|error| panic!("failed to parse {} line {}: {error}", path.display(), idx + 1))
+            let line = line.unwrap_or_else(|error| {
+                panic!(
+                    "failed to read {} line {}: {error}",
+                    path.display(),
+                    idx + 1
+                )
+            });
+            serde_json::from_str(&line).unwrap_or_else(|error| {
+                panic!(
+                    "failed to parse {} line {}: {error}",
+                    path.display(),
+                    idx + 1
+                )
+            })
         })
         .collect()
 }
@@ -137,7 +147,10 @@ fn read_params(record: &Mol2ReadRecord) -> Mol2ReadParams {
     }
 }
 
-fn parsed_record(record: &Mol2ReadRecord, row_idx: usize) -> Option<cosmolkit_core::io::mol2::Mol2Record> {
+fn parsed_record(
+    record: &Mol2ReadRecord,
+    row_idx: usize,
+) -> Option<cosmolkit_core::io::mol2::Mol2Record> {
     read_mol2_from_str_with_params(&record.mol2, read_params(record)).unwrap_or_else(|error| {
         panic!(
             "COSMolKit should parse MOL2 row {} fixture {} case {}: {error}",
@@ -288,7 +301,10 @@ fn mol2_read_coordinates_and_chirality_match_rdkit() {
                 record.case_id
             )
         });
-        let expected_positions = record.positions.as_ref().expect("rdkit_ok row should have positions");
+        let expected_positions = record
+            .positions
+            .as_ref()
+            .expect("rdkit_ok row should have positions");
         let coords = parsed
             .molecule
             .conformers_3d()

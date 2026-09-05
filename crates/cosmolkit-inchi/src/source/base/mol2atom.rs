@@ -3,15 +3,16 @@ use crate::source::base::ichinorm::FreeInpAtomData;
 use crate::source::base::mol_fmt2::{MolfileGetXYZDimAndNormFactors, MolfileHasNoChemStruc};
 use crate::source::base::runichi3::OAD_Polymer_Free;
 use crate::source::base::util::{
-    detect_unusual_el_valence, extract_h_atoms, get_num_H, get_periodic_table_number, inchi_calloc, inchi_free,
-    is_el_a_metal, is_in_the_list, mystrncpy_slice, n_bonds_val_to_metal,
+    detect_unusual_el_valence, extract_h_atoms, get_num_H, get_periodic_table_number, inchi_calloc,
+    inchi_free, is_el_a_metal, is_in_the_list, mystrncpy_slice, n_bonds_val_to_metal,
 };
 use crate::source_types::{
     BOND_TYPE_ALTERN, BOND_TYPE_SINGLE, COMP_ATOM_DATA, INP_ATOM_DATA, INPUT_STEREO_DBLE_EITHER,
-    INPUT_STEREO_SNGL_DOWN, INPUT_STEREO_SNGL_EITHER, INPUT_STEREO_SNGL_UP, MAX_INPUT_BOND_TYPE, MAXVAL,
-    MIN_INPUT_BOND_TYPE, MOL_FMT_DATA, NUM_H_ISOTOPES, OAD_Polymer, OAD_V3000, ORIG_ATOM_DATA, POLYMERS_MODERN,
-    RADICAL_SINGLET, RADICAL_TRIPLET, STEREO_DBLE_EITHER, STEREO_SNGL_DOWN, STEREO_SNGL_EITHER, STEREO_SNGL_UP,
-    SourceHeap, SourceHeapError, SourceMutPointer, ZERO_ATW_DIFF, inp_ATOM, local_util::ERR_ELEM,
+    INPUT_STEREO_SNGL_DOWN, INPUT_STEREO_SNGL_EITHER, INPUT_STEREO_SNGL_UP, MAX_INPUT_BOND_TYPE,
+    MAXVAL, MIN_INPUT_BOND_TYPE, MOL_FMT_DATA, NUM_H_ISOTOPES, OAD_Polymer, OAD_V3000,
+    ORIG_ATOM_DATA, POLYMERS_MODERN, RADICAL_SINGLET, RADICAL_TRIPLET, STEREO_DBLE_EITHER,
+    STEREO_SNGL_DOWN, STEREO_SNGL_EITHER, STEREO_SNGL_UP, SourceHeap, SourceHeapError,
+    SourceMutPointer, ZERO_ATW_DIFF, inp_ATOM, local_util::ERR_ELEM,
     tagFrameShifScheme_FSS_STARS_CYCLED,
 };
 
@@ -2055,7 +2056,8 @@ exit_function:;
 mod tests {
     use super::*;
     use crate::source_types::{
-        INT_ARRAY, MOL_FMT_ATOM, MOL_FMT_BOND, MOL_FMT_SGROUP, MOL_FMT_SGROUPS, MOL_FMT_v3000, NUM_LISTS,
+        INT_ARRAY, MOL_FMT_ATOM, MOL_FMT_BOND, MOL_FMT_SGROUP, MOL_FMT_SGROUPS, MOL_FMT_v3000,
+        NUM_LISTS,
     };
 
     fn assert_missing<T: 'static>(heap: &SourceHeap, pointer: SourceMutPointer<T>) {
@@ -2102,7 +2104,11 @@ mod tests {
         let atoms = CreateInpAtom(&mut heap, 3).unwrap();
         assert_eq!(
             heap.slice(atoms.as_const()).unwrap(),
-            &[inp_ATOM::default(), inp_ATOM::default(), inp_ATOM::default()]
+            &[
+                inp_ATOM::default(),
+                inp_ATOM::default(),
+                inp_ATOM::default()
+            ]
         );
         let mut atom_slot = atoms;
         FreeInpAtom(&mut heap, Some(&mut atom_slot)).unwrap();
@@ -2140,7 +2146,10 @@ mod tests {
         assert_eq!(CreateInpAtomData(&mut heap, &mut input, 3, -7), Ok(1));
         assert_eq!(input.num_at, 3);
         assert_eq!(heap.slice(input.at.as_const()).unwrap().len(), 3);
-        assert_eq!(heap.slice(input.at_fixed_bonds.as_const()).unwrap().len(), 3);
+        assert_eq!(
+            heap.slice(input.at_fixed_bonds.as_const()).unwrap().len(),
+            3
+        );
 
         let mut first_failure_heap = SourceHeap::default();
         first_failure_heap.fail_after_allocations(0);
@@ -2267,7 +2276,12 @@ mod tests {
     #[test]
     fn source_port__mol2atom__freeextorigatdata__line_1269() {
         let mut heap = SourceHeap::default();
-        FreeExtOrigAtData(&mut heap, SourceMutPointer::null(), SourceMutPointer::null()).unwrap();
+        FreeExtOrigAtData(
+            &mut heap,
+            SourceMutPointer::null(),
+            SourceMutPointer::null(),
+        )
+        .unwrap();
 
         let polymer = heap.allocate(vec![OAD_Polymer::default()]).unwrap();
         FreeExtOrigAtData(&mut heap, polymer, SourceMutPointer::null()).unwrap();
@@ -2279,7 +2293,9 @@ mod tests {
         let mut lists = Vec::new();
         for base in [10_i32, 20, 30, 40] {
             let first = heap.allocate(vec![base, base + 1]).unwrap();
-            let outer = heap.allocate(vec![first, SourceMutPointer::null()]).unwrap();
+            let outer = heap
+                .allocate(vec![first, SourceMutPointer::null()])
+                .unwrap();
             rows.push(first);
             lists.push(outer);
         }
@@ -2459,8 +2475,12 @@ mod tests {
                 .unwrap();
 
             let v3000 = if include_v3000 {
-                let atom_index_orig = heap.allocate(vec![0x1122_3344_i32, 0x5566_7788_i32]).unwrap();
-                let atom_index_fin = heap.allocate(vec![0x1020_3040_i32, 0x5060_7080_i32]).unwrap();
+                let atom_index_orig = heap
+                    .allocate(vec![0x1122_3344_i32, 0x5566_7788_i32])
+                    .unwrap();
+                let atom_index_fin = heap
+                    .allocate(vec![0x1020_3040_i32, 0x5060_7080_i32])
+                    .unwrap();
 
                 let haptic_row = heap.allocate(vec![7_i32, 8, 2, 11, 12]).unwrap();
                 let steabs_row = heap.allocate(vec![0_i32, 2, 21, 22]).unwrap();
@@ -2545,7 +2565,9 @@ mod tests {
         }
 
         let mut untouched_heap = SourceHeap::default();
-        let old_polymer = untouched_heap.allocate(vec![OAD_Polymer::default()]).unwrap();
+        let old_polymer = untouched_heap
+            .allocate(vec![OAD_Polymer::default()])
+            .unwrap();
         let old_v3000 = untouched_heap.allocate(vec![OAD_V3000::default()]).unwrap();
         let mut polymer_slot = old_polymer;
         let mut v3000_slot = old_v3000;
@@ -2569,7 +2591,13 @@ mod tests {
         let mut v3000_slot = SourceMutPointer::null();
         let mut errors = [0_i8; 256];
         assert_eq!(
-            SetExtOrigAtDataByMolfileExtInput(&mut heap, &input, &mut polymer_slot, &mut v3000_slot, Some(&mut errors),),
+            SetExtOrigAtDataByMolfileExtInput(
+                &mut heap,
+                &input,
+                &mut polymer_slot,
+                &mut v3000_slot,
+                Some(&mut errors),
+            ),
             Ok(0)
         );
         assert!(error_text(&errors).is_empty());
@@ -2642,7 +2670,9 @@ mod tests {
             let mut polymer_slot = SourceMutPointer::null();
             let mut v3000_slot = old_v3000;
             let mut errors = [0_i8; 256];
-            errors[..6].copy_from_slice(&[b'p' as i8, b'r' as i8, b'i' as i8, b'o' as i8, b'r' as i8, 0]);
+            errors[..6].copy_from_slice(&[
+                b'p' as i8, b'r' as i8, b'i' as i8, b'o' as i8, b'r' as i8, 0,
+            ]);
             assert_eq!(
                 SetExtOrigAtDataByMolfileExtInput(
                     &mut heap,
@@ -2679,12 +2709,17 @@ mod tests {
                 Ok(9002)
             );
             assert!(polymer_slot.is_null());
-            assert_eq!(error_text(&errors), b"Hydrogen as polymer end group is not supported");
+            assert_eq!(
+                error_text(&errors),
+                b"Hydrogen as polymer end group is not supported"
+            );
         }
 
         let mut no_bond_heap = SourceHeap::default();
         let no_bond_input = fixture(&mut no_bond_heap, 1, b"C", b"O", false);
-        let group_pointer = no_bond_heap.slice(no_bond_input.ctab.sgroups.group.as_const()).unwrap()[0];
+        let group_pointer = no_bond_heap
+            .slice(no_bond_input.ctab.sgroups.group.as_const())
+            .unwrap()[0];
         no_bond_heap.slice_mut(group_pointer).unwrap()[0].blist.used = 0;
         let mut polymer_slot = SourceMutPointer::null();
         let mut v3000_slot = SourceMutPointer::null();
@@ -2700,15 +2735,23 @@ mod tests {
         );
         let polymer = &no_bond_heap.slice(polymer_slot.as_const()).unwrap()[0];
         let unit = no_bond_heap.slice(polymer.units.as_const()).unwrap()[0];
-        assert!(no_bond_heap.slice(unit.as_const()).unwrap()[0].blist.is_null());
+        assert!(
+            no_bond_heap.slice(unit.as_const()).unwrap()[0]
+                .blist
+                .is_null()
+        );
         FreeExtOrigAtData(&mut no_bond_heap, polymer_slot, SourceMutPointer::null()).unwrap();
 
         for failure_after in 0..16_u64 {
             let mut heap = SourceHeap::default();
             let input = fixture(&mut heap, 1, b"C", b"O", true);
             heap.fail_after_allocations(failure_after);
-            let old_polymer = heap.allocate_model_storage(vec![OAD_Polymer::default()]).unwrap();
-            let old_v3000 = heap.allocate_model_storage(vec![OAD_V3000::default()]).unwrap();
+            let old_polymer = heap
+                .allocate_model_storage(vec![OAD_Polymer::default()])
+                .unwrap();
+            let old_v3000 = heap
+                .allocate_model_storage(vec![OAD_V3000::default()])
+                .unwrap();
             let mut polymer_slot = old_polymer;
             let mut v3000_slot = old_v3000;
             let mut errors = [0_i8; 256];
@@ -2741,7 +2784,11 @@ mod tests {
 
     #[test]
     fn source_port__mol2atom__setinpatomsxyz__line_975() {
-        fn fixture(heap: &mut SourceHeap, coordinates: &[(f64, f64, f64)], bonds: Vec<MOL_FMT_BOND>) -> MOL_FMT_DATA {
+        fn fixture(
+            heap: &mut SourceHeap,
+            coordinates: &[(f64, f64, f64)],
+            bonds: Vec<MOL_FMT_BOND>,
+        ) -> MOL_FMT_DATA {
             let atoms = heap
                 .allocate(
                     coordinates
@@ -2799,7 +2846,9 @@ mod tests {
         );
 
         let planar = fixture(&mut heap, &[(-1.25, 2.5, -0.0), (4.75, -6.5, 0.0)], vec![]);
-        let planar_output = heap.allocate(vec![inp_ATOM::default(), inp_ATOM::default()]).unwrap();
+        let planar_output = heap
+            .allocate(vec![inp_ATOM::default(), inp_ATOM::default()])
+            .unwrap();
         assert_eq!(
             SetInpAtomsXYZ(&mut heap, &planar, 1, planar_output, &mut err, None),
             Ok(2)
@@ -2825,11 +2874,20 @@ mod tests {
                 ..MOL_FMT_BOND::default()
             }],
         );
-        let spatial_output = heap.allocate(vec![inp_ATOM::default(), inp_ATOM::default()]).unwrap();
+        let spatial_output = heap
+            .allocate(vec![inp_ATOM::default(), inp_ATOM::default()])
+            .unwrap();
         let mut errors = [0_i8; 256];
         err = 0;
         assert_eq!(
-            SetInpAtomsXYZ(&mut heap, &spatial, 2, spatial_output, &mut err, Some(&mut errors),),
+            SetInpAtomsXYZ(
+                &mut heap,
+                &spatial,
+                2,
+                spatial_output,
+                &mut err,
+                Some(&mut errors),
+            ),
             Ok(3)
         );
         let atoms = heap.slice(spatial_output.as_const()).unwrap();
@@ -2864,7 +2922,11 @@ mod tests {
             }
         }
 
-        fn fixture(heap: &mut SourceHeap, atoms: Vec<MOL_FMT_ATOM>, bonds: Vec<MOL_FMT_BOND>) -> MOL_FMT_DATA {
+        fn fixture(
+            heap: &mut SourceHeap,
+            atoms: Vec<MOL_FMT_ATOM>,
+            bonds: Vec<MOL_FMT_BOND>,
+        ) -> MOL_FMT_DATA {
             let atom_count = atoms.len() as i32;
             let bond_count = bonds.len() as i32;
             let atom_pointer = heap.allocate(atoms).unwrap();
@@ -2921,7 +2983,10 @@ mod tests {
             .is_null()
         );
         assert_eq!((num_atoms, num_bonds, err), (0, 0, 0));
-        assert_eq!(no_structure_heap.slice(caller_atoms.as_const()).unwrap()[0].charge, 17);
+        assert_eq!(
+            no_structure_heap.slice(caller_atoms.as_const()).unwrap()[0].charge,
+            17
+        );
 
         let mut allocation_heap = SourceHeap::default();
         let allocation_input = fixture(&mut allocation_heap, vec![mol_atom(b"C")], vec![]);
@@ -3176,7 +3241,12 @@ mod tests {
                 .collect()
         }
 
-        fn atom(element: &[u8], element_number: u8, neighbors: &[u16], bond_types: &[u8]) -> inp_ATOM {
+        fn atom(
+            element: &[u8],
+            element_number: u8,
+            neighbors: &[u16],
+            bond_types: &[u8],
+        ) -> inp_ATOM {
             let mut result = inp_ATOM {
                 elname: name(element),
                 el_number: element_number,
@@ -3224,15 +3294,30 @@ mod tests {
         ];
         let mut err = 0;
         let mut errors = [0_i8; 256];
-        calculate_valences(&heap, None, &mut one_aromatic, 2, 0, &mut err, Some(&mut errors)).unwrap();
+        calculate_valences(
+            &heap,
+            None,
+            &mut one_aromatic,
+            2,
+            0,
+            &mut err,
+            Some(&mut errors),
+        )
+        .unwrap();
         assert_eq!(err, 32);
         assert_eq!(one_aromatic[0].bond_type[0], BOND_TYPE_SINGLE as u8);
         assert_eq!(one_aromatic[1].bond_type[0], BOND_TYPE_SINGLE as u8);
         assert_eq!(one_aromatic[0].chem_bonds_valence, 1);
         assert_eq!(one_aromatic[1].chem_bonds_valence, 1);
-        assert_eq!(error_text(&errors), b"Atom has 1 or more than 3 aromatic bonds");
+        assert_eq!(
+            error_text(&errors),
+            b"Atom has 1 or more than 3 aromatic bonds"
+        );
 
-        let mut broken = vec![atom(b"C", 6, &[1], &[BOND_TYPE_ALTERN as u8]), atom(b"C", 6, &[], &[])];
+        let mut broken = vec![
+            atom(b"C", 6, &[1], &[BOND_TYPE_ALTERN as u8]),
+            atom(b"C", 6, &[], &[]),
+        ];
         let mut err = 32;
         let mut errors = [0_i8; 256];
         calculate_valences(&heap, None, &mut broken, 2, 0, &mut err, Some(&mut errors)).unwrap();
@@ -3303,7 +3388,16 @@ mod tests {
             atom(b"C", 6, &[0], &[4]),
         ];
         let mut err = 0;
-        calculate_valences(&mf_heap, Some(&mfdata), &mut known_aromatic, 1, 0, &mut err, None).unwrap();
+        calculate_valences(
+            &mf_heap,
+            Some(&mfdata),
+            &mut known_aromatic,
+            1,
+            0,
+            &mut err,
+            None,
+        )
+        .unwrap();
         assert_eq!(known_aromatic[0].chem_bonds_valence, 2);
         assert_eq!(known_aromatic[0].num_H, 0);
 
@@ -3332,12 +3426,23 @@ mod tests {
         ];
         hydrogen_atoms[2].num_H = 2;
         let mut err = 0;
-        calculate_valences(&hydrogen_heap, Some(&mfdata), &mut hydrogen_atoms, 3, 0, &mut err, None).unwrap();
+        calculate_valences(
+            &hydrogen_heap,
+            Some(&mfdata),
+            &mut hydrogen_atoms,
+            3,
+            0,
+            &mut err,
+            None,
+        )
+        .unwrap();
         assert_eq!(hydrogen_atoms[0].num_H, 4);
         assert_eq!(hydrogen_atoms[2].num_H, 2);
 
         let mut no_h_atoms = vec![atom(b"C", 6, &[], &[])];
-        let single_mol_atom = hydrogen_heap.allocate(vec![MOL_FMT_ATOM::default()]).unwrap();
+        let single_mol_atom = hydrogen_heap
+            .allocate(vec![MOL_FMT_ATOM::default()])
+            .unwrap();
         let single_data = MOL_FMT_DATA {
             ctab: crate::source_types::MOL_FMT_CTAB {
                 atoms: single_mol_atom,

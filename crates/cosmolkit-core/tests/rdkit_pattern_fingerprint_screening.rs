@@ -1,5 +1,6 @@
 use cosmolkit_core::{
-    Fingerprint, Molecule, PatternFingerprintParams, SmartsParseParams, has_substruct_match, mol_from_smarts,
+    Fingerprint, Molecule, PatternFingerprintParams, QueryGraph, SmartsParseParams,
+    has_substruct_match, parse_smarts,
 };
 
 const FP_SIZE: usize = 2048;
@@ -20,18 +21,29 @@ struct ScreeningCase {
     target_hex: &'static str,
 }
 
-fn parse_input(kind: InputKind, input: &str) -> Molecule {
+enum ParsedInput {
+    Molecule(Molecule),
+    Query(QueryGraph),
+}
+
+fn parse_input(kind: InputKind, input: &str) -> ParsedInput {
     match kind {
-        InputKind::Smiles => Molecule::from_smiles(input).expect("screening SMILES"),
-        InputKind::Smarts => mol_from_smarts(input, &SmartsParseParams::default()).expect("screening SMARTS"),
-        InputKind::SmartsMergeHs => mol_from_smarts(
-            input,
-            &SmartsParseParams {
-                merge_hs: true,
-                ..SmartsParseParams::default()
-            },
-        )
-        .expect("screening SMARTS with merged hydrogens"),
+        InputKind::Smiles => {
+            ParsedInput::Molecule(Molecule::from_smiles(input).expect("screening SMILES"))
+        }
+        InputKind::Smarts => ParsedInput::Query(
+            parse_smarts(input, &SmartsParseParams::default()).expect("screening SMARTS"),
+        ),
+        InputKind::SmartsMergeHs => ParsedInput::Query(
+            parse_smarts(
+                input,
+                &SmartsParseParams {
+                    merge_hs: true,
+                    ..SmartsParseParams::default()
+                },
+            )
+            .expect("screening SMARTS with merged hydrogens"),
+        ),
     }
 }
 
@@ -233,30 +245,39 @@ fn pinned_upstream_and_project_screening_cases_match_exact_vectors_and_containme
         let query = parse_input(case.query_kind, case.query);
         let target = Molecule::from_smiles(case.target)
             .unwrap_or_else(|error| panic!("{} target parse failed: {error}", case.case_id));
+        let matched = match &query {
+            ParsedInput::Molecule(query_molecule) => has_substruct_match(&target, query_molecule),
+            ParsedInput::Query(query_graph) => has_substruct_match(&target, query_graph),
+        };
         assert!(
-            has_substruct_match(&target, &query),
+            matched,
             "{} source-positive substructure match failed",
             case.case_id
         );
-        let query_fingerprint = fingerprint(&query);
         let target_fingerprint = fingerprint(&target);
-        assert_eq!(
-            fingerprint_hex(&query_fingerprint),
-            case.query_hex,
-            "{} query exact vector differs",
-            case.case_id
-        );
+        if let ParsedInput::Molecule(query_molecule) = &query {
+            let query_fingerprint = fingerprint(query_molecule);
+            assert_eq!(
+                fingerprint_hex(&query_fingerprint),
+                case.query_hex,
+                "{} query exact vector differs",
+                case.case_id
+            );
+        }
         assert_eq!(
             fingerprint_hex(&target_fingerprint),
             case.target_hex,
             "{} target exact vector differs",
             case.case_id
         );
-        assert!(
-            all_probe_bits_match(&query_fingerprint, &target_fingerprint),
-            "{} query bits are not contained in the target",
-            case.case_id
-        );
+        if let ParsedInput::Molecule(query_molecule) = &query {
+            let query_fingerprint = fingerprint(query_molecule);
+            assert!(
+                all_probe_bits_match(&query_fingerprint, &target_fingerprint),
+                "{} query bits are not contained in the target",
+                case.case_id
+            );
+        }
     }
 }
 

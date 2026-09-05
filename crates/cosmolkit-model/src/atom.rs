@@ -143,7 +143,7 @@ impl AtomPdbResidueInfo {
 /// `AtomSpec` is deliberately separate from `Atom`: callers provide facts, and
 /// builders assign indices. Future agents must not add an `index` field here.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AtomSpec<Q = ()> {
+pub struct AtomSpec {
     element: Element,
     formal_charge: i8,
     explicit_hydrogens: u8,
@@ -160,13 +160,12 @@ pub struct AtomSpec<Q = ()> {
     no_implicit: bool,
     radical_electrons: u8,
     hybridization: Hybridization,
-    query: Option<Q>,
     props: BTreeMap<String, String>,
     computed_props: BTreeSet<String>,
     pdb_residue_info: Option<AtomPdbResidueInfo>,
 }
 
-impl<Q: Clone> AtomSpec<Q> {
+impl AtomSpec {
     #[must_use]
     pub const fn new(element: Element) -> Self {
         Self {
@@ -186,7 +185,6 @@ impl<Q: Clone> AtomSpec<Q> {
             no_implicit: false,
             radical_electrons: 0,
             hybridization: Hybridization::Unspecified,
-            query: None,
             props: BTreeMap::new(),
             computed_props: BTreeSet::new(),
             pdb_residue_info: None,
@@ -326,12 +324,6 @@ impl<Q: Clone> AtomSpec<Q> {
     }
 
     #[must_use]
-    pub fn with_query(mut self, query: Q) -> Self {
-        self.query = Some(query);
-        self
-    }
-
-    #[must_use]
     pub fn with_prop(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
         self.props.insert(key.into(), value.into());
         self
@@ -348,12 +340,6 @@ impl<Q: Clone> AtomSpec<Q> {
     #[must_use]
     pub fn with_pdb_residue_info(mut self, info: AtomPdbResidueInfo) -> Self {
         self.pdb_residue_info = Some(info);
-        self
-    }
-
-    #[must_use]
-    pub fn without_query(mut self) -> Self {
-        self.query = None;
         self
     }
 
@@ -428,16 +414,6 @@ impl<Q: Clone> AtomSpec<Q> {
     }
 
     #[must_use]
-    pub const fn query(&self) -> Option<&Q> {
-        self.query.as_ref()
-    }
-
-    #[must_use]
-    pub fn query_mut(&mut self) -> Option<&mut Q> {
-        self.query.as_mut()
-    }
-
-    #[must_use]
     pub fn props(&self) -> &BTreeMap<String, String> {
         &self.props
     }
@@ -460,7 +436,7 @@ impl<Q: Clone> AtomSpec<Q> {
 
 /// Immutable atom record owned by `Molecule`.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Atom<Q = ()> {
+pub struct Atom {
     id: AtomId,
     element: Element,
     formal_charge: i8,
@@ -478,14 +454,13 @@ pub struct Atom<Q = ()> {
     no_implicit: bool,
     radical_electrons: u8,
     hybridization: Hybridization,
-    query: Option<Q>,
     props: BTreeMap<String, String>,
     computed_props: BTreeSet<String>,
     pdb_residue_info: Option<AtomPdbResidueInfo>,
 }
 
-impl<Q: Clone> Atom<Q> {
-    pub fn from_spec(id: AtomId, spec: AtomSpec<Q>) -> Self {
+impl Atom {
+    pub fn from_spec(id: AtomId, spec: AtomSpec) -> Self {
         Self {
             id,
             element: spec.element,
@@ -504,7 +479,6 @@ impl<Q: Clone> Atom<Q> {
             no_implicit: spec.no_implicit,
             radical_electrons: spec.radical_electrons,
             hybridization: spec.hybridization,
-            query: spec.query,
             props: spec.props,
             computed_props: spec.computed_props,
             pdb_residue_info: spec.pdb_residue_info,
@@ -608,16 +582,6 @@ impl<Q: Clone> Atom<Q> {
     }
 
     #[must_use]
-    pub const fn query(&self) -> Option<&Q> {
-        self.query.as_ref()
-    }
-
-    #[must_use]
-    pub fn query_mut(&mut self) -> Option<&mut Q> {
-        self.query.as_mut()
-    }
-
-    #[must_use]
     pub fn props(&self) -> &BTreeMap<String, String> {
         &self.props
     }
@@ -636,6 +600,13 @@ impl<Q: Clone> Atom<Q> {
     #[must_use]
     pub fn computed_prop_names(&self) -> &BTreeSet<String> {
         &self.computed_props
+    }
+
+    /// Returns the modern CIP descriptor persisted on this atom, if present.
+    pub fn cip_descriptor(
+        &self,
+    ) -> Result<Option<crate::CipDescriptor>, crate::CipDescriptorError> {
+        crate::cip::descriptor_from_property(self.prop("_CIPCode"))
     }
 
     #[must_use]
@@ -711,11 +682,6 @@ impl<Q: Clone> Atom<Q> {
     #[allow(dead_code)]
     pub fn set_radical_electrons(&mut self, radical_electrons: u8) {
         self.radical_electrons = radical_electrons;
-    }
-
-    #[allow(dead_code)]
-    pub fn set_query(&mut self, query: Option<Q>) {
-        self.query = query;
     }
 
     #[allow(dead_code)]

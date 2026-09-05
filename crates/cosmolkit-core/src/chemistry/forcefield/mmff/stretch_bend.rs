@@ -106,8 +106,10 @@ impl StretchBendContrib {
         self.atom3_indices.push(idx3);
         // RDKit✔️✔️:   d_restLen1s.push_back(Utils::calcBondRestLength(mmffBondParams1));
         // RDKit✔️✔️:   d_restLen2s.push_back(Utils::calcBondRestLength(mmffBondParams2));
-        self.rest_lengths1.push(calc_bond_rest_length(mmff_bond_params1));
-        self.rest_lengths2.push(calc_bond_rest_length(mmff_bond_params2));
+        self.rest_lengths1
+            .push(calc_bond_rest_length(mmff_bond_params1));
+        self.rest_lengths2
+            .push(calc_bond_rest_length(mmff_bond_params2));
         // RDKit✔️✔️:   d_theta0s.push_back(Utils::calcAngleRestValue(mmffAngleParams));
         self.theta0.push(calc_angle_rest_value(mmff_angle_params));
         // RDKit✔️✔️:   std::pair<double, double> forceConstants =
@@ -247,7 +249,8 @@ impl StretchBendContrib {
             let angle_term = RAD2DEG * cos_theta.acos() - theta0;
             // RDKit✔️✔️:     double distTerm = RAD2DEG * (forceConstant1 * (dist1 - restLen1) +
             // RDKit✔️✔️:                                  forceConstant2 * (dist2 - restLen2));
-            let dist_term = RAD2DEG * (force_constant1 * (dist1 - rest_len1) + force_constant2 * (dist2 - rest_len2));
+            let dist_term = RAD2DEG
+                * (force_constant1 * (dist1 - rest_len1) + force_constant2 * (dist2 - rest_len2));
             // RDKit✔️✔️:     double dCos_dS1 = 1.0 / dist1 * (p32.x - cosTheta * p12.x);
             // RDKit✔️✔️:     double dCos_dS2 = 1.0 / dist1 * (p32.y - cosTheta * p12.y);
             // RDKit✔️✔️:     double dCos_dS3 = 1.0 / dist1 * (p32.z - cosTheta * p12.z);
@@ -268,7 +271,8 @@ impl StretchBendContrib {
             // RDKit✔️✔️:                    dCos_dS2 / (-sinTheta) * distTerm);
             // RDKit✔️✔️:     g1[2] += c5 * (p12.z * forceConstant1 * angleTerm +
             // RDKit✔️✔️:                    dCos_dS3 / (-sinTheta) * distTerm);
-            grad[3 * atom1_idx] += c5 * (p12.x * force_constant1 * angle_term + d_cos_ds1 / (-sin_theta) * dist_term);
+            grad[3 * atom1_idx] +=
+                c5 * (p12.x * force_constant1 * angle_term + d_cos_ds1 / (-sin_theta) * dist_term);
             grad[3 * atom1_idx + 1] +=
                 c5 * (p12.y * force_constant1 * angle_term + d_cos_ds2 / (-sin_theta) * dist_term);
             grad[3 * atom1_idx + 2] +=
@@ -299,7 +303,8 @@ impl StretchBendContrib {
             // RDKit✔️✔️:                    dCos_dS5 / (-sinTheta) * distTerm);
             // RDKit✔️✔️:     g3[2] += c5 * (p32.z * forceConstant2 * angleTerm +
             // RDKit✔️✔️:                    dCos_dS6 / (-sinTheta) * distTerm);
-            grad[3 * atom3_idx] += c5 * (p32.x * force_constant2 * angle_term + d_cos_ds4 / (-sin_theta) * dist_term);
+            grad[3 * atom3_idx] +=
+                c5 * (p32.x * force_constant2 * angle_term + d_cos_ds4 / (-sin_theta) * dist_term);
             grad[3 * atom3_idx + 1] +=
                 c5 * (p32.y * force_constant2 * angle_term + d_cos_ds5 / (-sin_theta) * dist_term);
             grad[3 * atom3_idx + 2] +=
@@ -402,7 +407,13 @@ fn point_from_pos(pos: &[f64], atom_idx: usize) -> ForceFieldVec3 {
 }
 
 #[must_use]
-fn calc_cos_theta(p1: ForceFieldVec3, p2: ForceFieldVec3, p3: ForceFieldVec3, dist1: f64, dist2: f64) -> f64 {
+fn calc_cos_theta(
+    p1: ForceFieldVec3,
+    p2: ForceFieldVec3,
+    p3: ForceFieldVec3,
+    dist1: f64,
+    dist2: f64,
+) -> f64 {
     // BEGIN RDKIT CPP FUNCTION ForceFields::MMFF::Utils::calcCosTheta (AngleBend.cpp:25-33)
     // RDKit✔️✔️: double calcCosTheta(RDGeom::Point3D p1, RDGeom::Point3D p2, RDGeom::Point3D p3,
     // RDKit✔️✔️:                     double dist1, double dist2) {
@@ -494,7 +505,8 @@ mod tests {
     ) -> f64 {
         let delta_theta = theta - theta0;
         let factor = 143.9325 * (std::f64::consts::PI / 180.0) * delta_theta;
-        factor * force_constants.0 * (dist1 - rest_len1) + factor * force_constants.1 * (dist2 - rest_len2)
+        factor * force_constants.0 * (dist1 - rest_len1)
+            + factor * force_constants.1 * (dist2 - rest_len2)
     }
 
     fn assert_close(actual: f64, expected: f64) {
@@ -524,9 +536,21 @@ mod tests {
         let atom1_idx = atom_indices[0];
         let atom2_idx = atom_indices[1];
         let atom3_idx = atom_indices[2];
-        let p1 = ForceFieldVec3::new(pos[3 * atom1_idx], pos[3 * atom1_idx + 1], pos[3 * atom1_idx + 2]);
-        let p2 = ForceFieldVec3::new(pos[3 * atom2_idx], pos[3 * atom2_idx + 1], pos[3 * atom2_idx + 2]);
-        let p3 = ForceFieldVec3::new(pos[3 * atom3_idx], pos[3 * atom3_idx + 1], pos[3 * atom3_idx + 2]);
+        let p1 = ForceFieldVec3::new(
+            pos[3 * atom1_idx],
+            pos[3 * atom1_idx + 1],
+            pos[3 * atom1_idx + 2],
+        );
+        let p2 = ForceFieldVec3::new(
+            pos[3 * atom2_idx],
+            pos[3 * atom2_idx + 1],
+            pos[3 * atom2_idx + 2],
+        );
+        let p3 = ForceFieldVec3::new(
+            pos[3 * atom3_idx],
+            pos[3 * atom3_idx + 1],
+            pos[3 * atom3_idx + 2],
+        );
         let dist1 = (p1 - p2).length();
         let dist2 = (p3 - p2).length();
         let p12 = (p1 - p2) / dist1;
@@ -537,7 +561,8 @@ mod tests {
         let sin_theta = sin_theta_sq.sqrt().max(1.0e-8);
         let angle_term = (180.0 / std::f64::consts::PI) * cos_theta.acos() - theta0;
         let dist_term = (180.0 / std::f64::consts::PI)
-            * (force_constants.0 * (dist1 - rest_lengths.0) + force_constants.1 * (dist2 - rest_lengths.1));
+            * (force_constants.0 * (dist1 - rest_lengths.0)
+                + force_constants.1 * (dist2 - rest_lengths.1));
         let d_cos_ds1 = 1.0 / dist1 * (p32.x - cos_theta * p12.x);
         let d_cos_ds2 = 1.0 / dist1 * (p32.y - cos_theta * p12.y);
         let d_cos_ds3 = 1.0 / dist1 * (p32.z - cos_theta * p12.z);
@@ -546,9 +571,12 @@ mod tests {
         let d_cos_ds6 = 1.0 / dist2 * (p12.z - cos_theta * p32.z);
         let mut grad = vec![0.0; pos.len()];
 
-        grad[3 * atom1_idx] += c5 * (p12.x * force_constants.0 * angle_term + d_cos_ds1 / (-sin_theta) * dist_term);
-        grad[3 * atom1_idx + 1] += c5 * (p12.y * force_constants.0 * angle_term + d_cos_ds2 / (-sin_theta) * dist_term);
-        grad[3 * atom1_idx + 2] += c5 * (p12.z * force_constants.0 * angle_term + d_cos_ds3 / (-sin_theta) * dist_term);
+        grad[3 * atom1_idx] +=
+            c5 * (p12.x * force_constants.0 * angle_term + d_cos_ds1 / (-sin_theta) * dist_term);
+        grad[3 * atom1_idx + 1] +=
+            c5 * (p12.y * force_constants.0 * angle_term + d_cos_ds2 / (-sin_theta) * dist_term);
+        grad[3 * atom1_idx + 2] +=
+            c5 * (p12.z * force_constants.0 * angle_term + d_cos_ds3 / (-sin_theta) * dist_term);
 
         grad[3 * atom2_idx] += c5
             * ((-p12.x * force_constants.0 - p32.x * force_constants.1) * angle_term
@@ -560,9 +588,12 @@ mod tests {
             * ((-p12.z * force_constants.0 - p32.z * force_constants.1) * angle_term
                 + (-d_cos_ds3 - d_cos_ds6) / (-sin_theta) * dist_term);
 
-        grad[3 * atom3_idx] += c5 * (p32.x * force_constants.1 * angle_term + d_cos_ds4 / (-sin_theta) * dist_term);
-        grad[3 * atom3_idx + 1] += c5 * (p32.y * force_constants.1 * angle_term + d_cos_ds5 / (-sin_theta) * dist_term);
-        grad[3 * atom3_idx + 2] += c5 * (p32.z * force_constants.1 * angle_term + d_cos_ds6 / (-sin_theta) * dist_term);
+        grad[3 * atom3_idx] +=
+            c5 * (p32.x * force_constants.1 * angle_term + d_cos_ds4 / (-sin_theta) * dist_term);
+        grad[3 * atom3_idx + 1] +=
+            c5 * (p32.y * force_constants.1 * angle_term + d_cos_ds5 / (-sin_theta) * dist_term);
+        grad[3 * atom3_idx + 2] +=
+            c5 * (p32.z * force_constants.1 * angle_term + d_cos_ds6 / (-sin_theta) * dist_term);
 
         grad
     }
@@ -608,8 +639,14 @@ mod tests {
             ka: 0.636,
             theta0: 110.549,
         };
-        let bond1 = MmffBond { kb: 4.258, r0: 1.508 };
-        let bond2 = MmffBond { kb: 4.766, r0: 1.093 };
+        let bond1 = MmffBond {
+            kb: 4.258,
+            r0: 1.508,
+        };
+        let bond2 = MmffBond {
+            kb: 4.766,
+            r0: 1.093,
+        };
 
         contrib.add_term(0, 1, 2, &stbn, &angle, &bond1, &bond2);
 
@@ -643,13 +680,41 @@ mod tests {
             ka: 1.006,
             theta0: 110.265,
         };
-        let first_bond1 = MmffBond { kb: 4.258, r0: 1.508 };
-        let first_bond2 = MmffBond { kb: 4.766, r0: 1.093 };
-        let second_bond1 = MmffBond { kb: 3.529, r0: 1.330 };
-        let second_bond2 = MmffBond { kb: 3.366, r0: 1.520 };
+        let first_bond1 = MmffBond {
+            kb: 4.258,
+            r0: 1.508,
+        };
+        let first_bond2 = MmffBond {
+            kb: 4.766,
+            r0: 1.093,
+        };
+        let second_bond1 = MmffBond {
+            kb: 3.529,
+            r0: 1.330,
+        };
+        let second_bond2 = MmffBond {
+            kb: 3.366,
+            r0: 1.520,
+        };
 
-        contrib.add_term(0, 1, 2, &first_stbn, &first_angle, &first_bond1, &first_bond2);
-        contrib.add_term(1, 2, 3, &second_stbn, &second_angle, &second_bond1, &second_bond2);
+        contrib.add_term(
+            0,
+            1,
+            2,
+            &first_stbn,
+            &first_angle,
+            &first_bond1,
+            &first_bond2,
+        );
+        contrib.add_term(
+            1,
+            2,
+            3,
+            &second_stbn,
+            &second_angle,
+            &second_bond1,
+            &second_bond2,
+        );
 
         assert_eq!(contrib.atom1_indices(), &[0, 1]);
         assert_eq!(contrib.atom2_indices(), &[1, 2]);
@@ -674,7 +739,10 @@ mod tests {
             ka: 0.636,
             theta0: 110.549,
         };
-        let bond = MmffBond { kb: 4.258, r0: 1.508 };
+        let bond = MmffBond {
+            kb: 4.258,
+            r0: 1.508,
+        };
 
         contrib.add_term(0, 0, 2, &stbn, &angle, &bond, &bond);
     }
@@ -692,7 +760,10 @@ mod tests {
             ka: 0.636,
             theta0: 110.549,
         };
-        let bond = MmffBond { kb: 4.258, r0: 1.508 };
+        let bond = MmffBond {
+            kb: 4.258,
+            r0: 1.508,
+        };
 
         contrib.add_term(0, 1, 1, &stbn, &angle, &bond, &bond);
     }
@@ -710,7 +781,10 @@ mod tests {
             ka: 0.636,
             theta0: 110.549,
         };
-        let bond = MmffBond { kb: 4.258, r0: 1.508 };
+        let bond = MmffBond {
+            kb: 4.258,
+            r0: 1.508,
+        };
 
         contrib.add_term(0, 1, 0, &stbn, &angle, &bond, &bond);
     }
@@ -728,7 +802,10 @@ mod tests {
             ka: 0.636,
             theta0: 110.549,
         };
-        let bond = MmffBond { kb: 4.258, r0: 1.508 };
+        let bond = MmffBond {
+            kb: 4.258,
+            r0: 1.508,
+        };
 
         contrib.add_term(3, 1, 2, &stbn, &angle, &bond, &bond);
     }
@@ -746,7 +823,10 @@ mod tests {
             ka: 0.636,
             theta0: 110.549,
         };
-        let bond = MmffBond { kb: 4.258, r0: 1.508 };
+        let bond = MmffBond {
+            kb: 4.258,
+            r0: 1.508,
+        };
 
         contrib.add_term(0, 3, 2, &stbn, &angle, &bond, &bond);
     }
@@ -764,7 +844,10 @@ mod tests {
             ka: 0.636,
             theta0: 110.549,
         };
-        let bond = MmffBond { kb: 4.258, r0: 1.508 };
+        let bond = MmffBond {
+            kb: 4.258,
+            r0: 1.508,
+        };
 
         contrib.add_term(0, 1, 3, &stbn, &angle, &bond, &bond);
     }
@@ -790,13 +873,20 @@ mod tests {
             ka: 0.636,
             theta0: 110.549,
         };
-        let bond1 = MmffBond { kb: 4.258, r0: 1.508 };
-        let bond2 = MmffBond { kb: 4.766, r0: 1.093 };
+        let bond1 = MmffBond {
+            kb: 4.258,
+            r0: 1.508,
+        };
+        let bond2 = MmffBond {
+            kb: 4.766,
+            r0: 1.093,
+        };
         let pos = [0.0, 0.0, 0.0, 1.6, 0.0, 0.0, 1.6, 1.4, 0.0];
 
         contrib.add_term(0, 1, 2, &stbn, &angle, &bond1, &bond2);
 
-        let expected = source_stretch_bend_energy(1.6, 1.508, 1.4, 1.093, 90.0, 110.549, (0.227, 0.070));
+        let expected =
+            source_stretch_bend_energy(1.6, 1.508, 1.4, 1.093, 90.0, 110.549, (0.227, 0.070));
         assert_close(contrib.get_energy(&pos), expected);
     }
 
@@ -820,10 +910,22 @@ mod tests {
             ka: 1.006,
             theta0: 110.265,
         };
-        let first_bond1 = MmffBond { kb: 4.258, r0: 1.508 };
-        let first_bond2 = MmffBond { kb: 4.766, r0: 1.093 };
-        let second_bond1 = MmffBond { kb: 3.529, r0: 1.330 };
-        let second_bond2 = MmffBond { kb: 3.366, r0: 1.520 };
+        let first_bond1 = MmffBond {
+            kb: 4.258,
+            r0: 1.508,
+        };
+        let first_bond2 = MmffBond {
+            kb: 4.766,
+            r0: 1.093,
+        };
+        let second_bond1 = MmffBond {
+            kb: 3.529,
+            r0: 1.330,
+        };
+        let second_bond2 = MmffBond {
+            kb: 3.366,
+            r0: 1.520,
+        };
         let pos = [
             0.0, 0.0, 0.0, //
             1.6, 0.0, 0.0, //
@@ -831,11 +933,29 @@ mod tests {
             2.9, 1.4, 0.0,
         ];
 
-        contrib.add_term(0, 1, 2, &first_stbn, &first_angle, &first_bond1, &first_bond2);
-        contrib.add_term(1, 2, 3, &second_stbn, &second_angle, &second_bond1, &second_bond2);
+        contrib.add_term(
+            0,
+            1,
+            2,
+            &first_stbn,
+            &first_angle,
+            &first_bond1,
+            &first_bond2,
+        );
+        contrib.add_term(
+            1,
+            2,
+            3,
+            &second_stbn,
+            &second_angle,
+            &second_bond1,
+            &second_bond2,
+        );
 
-        let first = source_stretch_bend_energy(1.6, 1.508, 1.4, 1.093, 90.0, 110.549, (0.227, 0.070));
-        let second = source_stretch_bend_energy(1.4, 1.330, 1.3, 1.520, 90.0, 110.265, (0.300, 0.400));
+        let first =
+            source_stretch_bend_energy(1.6, 1.508, 1.4, 1.093, 90.0, 110.549, (0.227, 0.070));
+        let second =
+            source_stretch_bend_energy(1.4, 1.330, 1.3, 1.520, 90.0, 110.265, (0.300, 0.400));
         assert_close(contrib.get_energy(&pos), first + second);
     }
 
@@ -880,15 +1000,22 @@ mod tests {
             ka: 0.636,
             theta0: 110.549,
         };
-        let bond1 = MmffBond { kb: 4.258, r0: 1.508 };
-        let bond2 = MmffBond { kb: 4.766, r0: 1.093 };
+        let bond1 = MmffBond {
+            kb: 4.258,
+            r0: 1.508,
+        };
+        let bond2 = MmffBond {
+            kb: 4.766,
+            r0: 1.093,
+        };
         let pos = [0.0, 0.0, 0.0, 1.6, 0.0, 0.0, 1.6, 1.4, 0.0];
         let mut grad = vec![0.0; pos.len()];
 
         contrib.add_term(0, 1, 2, &stbn, &angle, &bond1, &bond2);
         contrib.get_grad(&pos, &mut grad);
 
-        let expected = source_stretch_bend_grad(&pos, [0, 1, 2], (1.508, 1.093), 110.549, (0.227, 0.070));
+        let expected =
+            source_stretch_bend_grad(&pos, [0, 1, 2], (1.508, 1.093), 110.549, (0.227, 0.070));
         assert_eq!(grad, expected);
     }
 
@@ -912,10 +1039,22 @@ mod tests {
             ka: 1.006,
             theta0: 110.265,
         };
-        let first_bond1 = MmffBond { kb: 4.258, r0: 1.508 };
-        let first_bond2 = MmffBond { kb: 4.766, r0: 1.093 };
-        let second_bond1 = MmffBond { kb: 3.529, r0: 1.330 };
-        let second_bond2 = MmffBond { kb: 3.366, r0: 1.520 };
+        let first_bond1 = MmffBond {
+            kb: 4.258,
+            r0: 1.508,
+        };
+        let first_bond2 = MmffBond {
+            kb: 4.766,
+            r0: 1.093,
+        };
+        let second_bond1 = MmffBond {
+            kb: 3.529,
+            r0: 1.330,
+        };
+        let second_bond2 = MmffBond {
+            kb: 3.366,
+            r0: 1.520,
+        };
         let pos = [
             0.0, 0.0, 0.0, //
             1.6, 0.0, 0.0, //
@@ -924,12 +1063,30 @@ mod tests {
         ];
         let mut grad = vec![0.0; pos.len()];
 
-        contrib.add_term(0, 1, 2, &first_stbn, &first_angle, &first_bond1, &first_bond2);
-        contrib.add_term(1, 2, 3, &second_stbn, &second_angle, &second_bond1, &second_bond2);
+        contrib.add_term(
+            0,
+            1,
+            2,
+            &first_stbn,
+            &first_angle,
+            &first_bond1,
+            &first_bond2,
+        );
+        contrib.add_term(
+            1,
+            2,
+            3,
+            &second_stbn,
+            &second_angle,
+            &second_bond1,
+            &second_bond2,
+        );
         contrib.get_grad(&pos, &mut grad);
 
-        let mut expected = source_stretch_bend_grad(&pos, [0, 1, 2], (1.508, 1.093), 110.549, (0.227, 0.070));
-        let second = source_stretch_bend_grad(&pos, [1, 2, 3], (1.330, 1.520), 110.265, (0.300, 0.400));
+        let mut expected =
+            source_stretch_bend_grad(&pos, [0, 1, 2], (1.508, 1.093), 110.549, (0.227, 0.070));
+        let second =
+            source_stretch_bend_grad(&pos, [1, 2, 3], (1.330, 1.520), 110.265, (0.300, 0.400));
         for (expected, second) in expected.iter_mut().zip(second.iter()) {
             *expected += second;
         }
@@ -949,8 +1106,14 @@ mod tests {
             ka: 0.636,
             theta0: 110.549,
         };
-        let bond1 = MmffBond { kb: 4.258, r0: 1.508 };
-        let bond2 = MmffBond { kb: 4.766, r0: 1.093 };
+        let bond1 = MmffBond {
+            kb: 4.258,
+            r0: 1.508,
+        };
+        let bond2 = MmffBond {
+            kb: 4.766,
+            r0: 1.093,
+        };
         let mut grad = vec![0.0; 9];
 
         contrib.add_term(0, 1, 2, &stbn, &angle, &bond1, &bond2);
@@ -969,8 +1132,14 @@ mod tests {
             ka: 0.636,
             theta0: 110.549,
         };
-        let bond1 = MmffBond { kb: 4.258, r0: 1.508 };
-        let bond2 = MmffBond { kb: 4.766, r0: 1.093 };
+        let bond1 = MmffBond {
+            kb: 4.258,
+            r0: 1.508,
+        };
+        let bond2 = MmffBond {
+            kb: 4.766,
+            r0: 1.093,
+        };
         let pos = [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 2.0, 0.0, 0.0];
         let mut grad = vec![0.0; pos.len()];
 

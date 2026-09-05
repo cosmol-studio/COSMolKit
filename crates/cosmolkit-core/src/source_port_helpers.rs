@@ -45,13 +45,14 @@ pub(crate) fn rdkit_get_iso_map<E>(
     for (begin_id, end_id) in bonds {
         let (begin_atomic_number, begin_isotope) = atom_at(begin_id)?;
         let (end_atomic_number, end_isotope) = atom_at(end_id)?;
-        let tracked = if begin_atomic_number == 1 && begin_isotope.is_some() && end_atomic_number != 1 {
-            Some((end_id, begin_isotope.expect("checked above")))
-        } else if end_atomic_number == 1 && end_isotope.is_some() && begin_atomic_number != 1 {
-            Some((begin_id, end_isotope.expect("checked above")))
-        } else {
-            None
-        };
+        let tracked =
+            if begin_atomic_number == 1 && begin_isotope.is_some() && end_atomic_number != 1 {
+                Some((end_id, begin_isotope.expect("checked above")))
+            } else if end_atomic_number == 1 && end_isotope.is_some() && begin_atomic_number != 1 {
+                Some((begin_id, end_isotope.expect("checked above")))
+            } else {
+                None
+            };
         if let Some((heavy_atom, isotope)) = tracked {
             isotope_map.entry(heavy_atom).or_default().push(isotope);
         }
@@ -154,8 +155,12 @@ pub(crate) fn rdkit_pick_fused_rings(
     // RDKit✔️✔️:   }
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/Aromaticity.cpp :: RingUtils::pickFusedRings
-    let neighbors = neighbor_map.get(&current).ok_or(RingNeighborError::MissingRing)?;
-    let current_done = done.get_mut(current).ok_or(RingNeighborError::RingIndexOutOfBounds)?;
+    let neighbors = neighbor_map
+        .get(&current)
+        .ok_or(RingNeighborError::MissingRing)?;
+    let current_done = done
+        .get_mut(current)
+        .ok_or(RingNeighborError::RingIndexOutOfBounds)?;
     *current_done = true;
     result.push(current);
     for &neighbor in neighbors {
@@ -198,7 +203,10 @@ pub(crate) fn rdkit_set_ring_angle(hybridization: crate::Hybridization, ring_siz
     // RDKit✔️✔️:   }
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/DistGeomHelpers/BoundsMatrixBuilder.cpp :: DGeomHelpers::_setRingAngle
-    if (hybridization == crate::Hybridization::Sp2 && ring_size <= 8) || ring_size == 3 || ring_size == 4 {
+    if (hybridization == crate::Hybridization::Sp2 && ring_size <= 8)
+        || ring_size == 3
+        || ring_size == 4
+    {
         std::f64::consts::PI * (1.0 - 2.0 / ring_size as f64)
     } else if hybridization == crate::Hybridization::Sp3 {
         if ring_size == 5 {
@@ -276,7 +284,13 @@ mod tests {
 
     #[test]
     fn shared_get_iso_map_covers_every_source_selection_branch() {
-        let atoms = [(6, None), (1, Some(2)), (1, Some(3)), (1, None), (8, Some(18))];
+        let atoms = [
+            (6, None),
+            (1, Some(2)),
+            (1, Some(3)),
+            (1, None),
+            (8, Some(18)),
+        ];
         let bonds = [
             (crate::AtomId::new(1), crate::AtomId::new(0)),
             (crate::AtomId::new(0), crate::AtomId::new(2)),
@@ -285,7 +299,8 @@ mod tests {
             (crate::AtomId::new(1), crate::AtomId::new(2)),
         ];
 
-        let isotope_map = rdkit_get_iso_map(bonds, |atom| Ok::<_, ()>(atoms[atom.index()])).unwrap();
+        let isotope_map =
+            rdkit_get_iso_map(bonds, |atom| Ok::<_, ()>(atoms[atom.index()])).unwrap();
 
         assert_eq!(isotope_map, vec![(crate::AtomId::new(0), vec![2, 3])]);
         assert_eq!(
@@ -303,11 +318,15 @@ mod tests {
             (crate::AtomId::new(2), crate::AtomId::new(1)),
         ];
 
-        let isotope_map = rdkit_get_iso_map(bonds, |atom| Ok::<_, ()>(atoms[atom.index()])).unwrap();
+        let isotope_map =
+            rdkit_get_iso_map(bonds, |atom| Ok::<_, ()>(atoms[atom.index()])).unwrap();
 
         assert_eq!(
             isotope_map,
-            vec![(crate::AtomId::new(0), vec![2]), (crate::AtomId::new(1), vec![3, 2]),]
+            vec![
+                (crate::AtomId::new(0), vec![2]),
+                (crate::AtomId::new(1), vec![3, 2]),
+            ]
         );
     }
 
@@ -340,12 +359,30 @@ mod tests {
             rdkit_set_ring_angle(crate::Hybridization::Sp3, 4),
             pi * (1.0 - 2.0 / 4.0)
         );
-        assert_eq!(rdkit_set_ring_angle(crate::Hybridization::Sp2, 8), pi * 0.75);
-        assert_eq!(rdkit_set_ring_angle(crate::Hybridization::Sp2, 9), 120.0 * pi / 180.0);
-        assert_eq!(rdkit_set_ring_angle(crate::Hybridization::Sp3, 5), 104.0 * pi / 180.0);
-        assert_eq!(rdkit_set_ring_angle(crate::Hybridization::Sp3, 6), 109.5 * pi / 180.0);
-        assert_eq!(rdkit_set_ring_angle(crate::Hybridization::Sp3d, 6), 105.0 * pi / 180.0);
-        assert_eq!(rdkit_set_ring_angle(crate::Hybridization::Sp3d2, 6), 90.0 * pi / 180.0);
+        assert_eq!(
+            rdkit_set_ring_angle(crate::Hybridization::Sp2, 8),
+            pi * 0.75
+        );
+        assert_eq!(
+            rdkit_set_ring_angle(crate::Hybridization::Sp2, 9),
+            120.0 * pi / 180.0
+        );
+        assert_eq!(
+            rdkit_set_ring_angle(crate::Hybridization::Sp3, 5),
+            104.0 * pi / 180.0
+        );
+        assert_eq!(
+            rdkit_set_ring_angle(crate::Hybridization::Sp3, 6),
+            109.5 * pi / 180.0
+        );
+        assert_eq!(
+            rdkit_set_ring_angle(crate::Hybridization::Sp3d, 6),
+            105.0 * pi / 180.0
+        );
+        assert_eq!(
+            rdkit_set_ring_angle(crate::Hybridization::Sp3d2, 6),
+            90.0 * pi / 180.0
+        );
         assert_eq!(
             rdkit_set_ring_angle(crate::Hybridization::Unspecified, 6),
             120.0 * pi / 180.0

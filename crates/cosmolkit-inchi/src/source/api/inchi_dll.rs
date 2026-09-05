@@ -1,12 +1,16 @@
 use crate::source::api::inchi_dll_b::add_source_error;
-use crate::source::api::inchi_dll_ext::{SetExtOrigAtDataByInChIExtInput, SetInChIExtInputByExtOrigAtData};
+use crate::source::api::inchi_dll_ext::{
+    SetExtOrigAtDataByInChIExtInput, SetInChIExtInputByExtOrigAtData,
+};
 use crate::source::base::ichi_io::{
-    inchi_ios_close, inchi_ios_eprint, inchi_ios_init, inchi_ios_print_nodisplay, inchi_ios_reset, inchi_strbuf_close,
-    inchi_strbuf_init,
+    inchi_ios_close, inchi_ios_eprint, inchi_ios_init, inchi_ios_print_nodisplay, inchi_ios_reset,
+    inchi_strbuf_close, inchi_strbuf_init,
 };
 use crate::source::base::ichican2::SetBitFree;
 use crate::source::base::ichimak2::WriteCoord;
-use crate::source::base::ichiparm::{HelpCommandLineParms, InchiBuildMetadata, PrintInputParms, ReadCommandLineParms};
+use crate::source::base::ichiparm::{
+    HelpCommandLineParms, InchiBuildMetadata, PrintInputParms, ReadCommandLineParms,
+};
 use crate::source::base::ichiread::ReadWriteInChI;
 use crate::source::base::mol2atom::{FreeExtOrigAtData, FreeOrigAtData};
 use crate::source::base::readinch::Extract0DParities;
@@ -15,43 +19,52 @@ use crate::source::base::runichi2::TreatErrorsInReadTheStructure;
 use crate::source::base::runichi3::OAD_Polymer_SmartReopenCyclizedUnits;
 use crate::source::base::runichi4::FreeAllINChIArrays;
 use crate::source::base::util::{
-    detect_unusual_el_valence, extract_charges_and_radicals, extract_h_atoms, extract_inchi_substring,
-    get_atomic_mass_from_elnum, get_num_H, get_periodic_table_number, inchi_calloc, inchi_free, inchi_malloc,
-    inchi_stricmp, is_el_a_metal, is_in_the_list, mystrncpy_slice, n_bonds_val_to_metal,
+    detect_unusual_el_valence, extract_charges_and_radicals, extract_h_atoms,
+    extract_inchi_substring, get_atomic_mass_from_elnum, get_num_H, get_periodic_table_number,
+    inchi_calloc, inchi_free, inchi_malloc, inchi_stricmp, is_el_a_metal, is_in_the_list,
+    mystrncpy_slice, n_bonds_val_to_metal,
 };
 use crate::source_types::{
-    _IS_EOF, _IS_ERROR, _IS_FATAL, AB_PARITY_UNDF, AB_PARITY_UNKN, BOND_TYPE_ALTERN, BOND_TYPE_DOUBLE,
-    BOND_TYPE_SINGLE, BOND_TYPE_TRIPLE, CANON_GLOBALS, FILE, FLAG_INP_AT_CHIRAL, FLAG_INP_AT_NONCHIRAL,
-    FLAG_SET_INP_AT_CHIRAL, INCHI_CLOCK, INCHI_IOS_TYPE_STRING, INCHI_IOSTREAM, INCHI_MAX_NUM_ARG,
-    INCHI_OUT_SDFILE_ONLY, INPUT_PARMS, ISOTOPIC_SHIFT_FLAG, ISOTOPIC_SHIFT_MAX, LOG_MASK_NO_WARN, MAX_ATOMS,
-    MAX_NUM_PATHS, MAX_NUM_STEREO_ATOM_NEIGH, MAX_NUM_STEREO_BONDS, MAX_SDF_VALUE, MAXVAL, MOL_COORD, NO_ATOM,
-    NORMALLY_ALLOWED_INP_MAX_ATOMS, NUM_H_ISOTOPES, OAD_Polymer, OAD_V3000, ORIG_ATOM_DATA, RADICAL_DOUBLET,
-    RADICAL_TRIPLET, REQ_MODE_CHIR_FLG_STEREO, REQ_MODE_DIFF_UU_STEREO, REQ_MODE_RACEMIC_STEREO,
-    REQ_MODE_RELATIVE_STEREO, REQ_MODE_STEREO, STEREO_DBLE_EITHER, STEREO_SNGL_DOWN, STEREO_SNGL_EITHER,
-    STEREO_SNGL_UP, STRUCT_DATA, SourceArgvPointer, SourceConstPointer, SourceHeap, SourceHeapError, SourceMutPointer,
-    SourceVaList, clock_t, inchi_Atom, inchi_Input, inchi_Input_Polymer, inchi_Input_V3000, inchi_InputEx,
-    inchi_InputINCHI, inchi_Output, inchi_OutputStruct, inchi_OutputStructEx, inchi_Stereo0D, inp_ATOM,
-    local_util::ERR_ELEM, tagINCHIBondStereo2D_INCHI_BOND_STEREO_DOUBLE_EITHER,
-    tagINCHIBondStereo2D_INCHI_BOND_STEREO_NONE, tagINCHIBondStereo2D_INCHI_BOND_STEREO_SINGLE_1DOWN,
-    tagINCHIBondStereo2D_INCHI_BOND_STEREO_SINGLE_1EITHER, tagINCHIBondStereo2D_INCHI_BOND_STEREO_SINGLE_1UP,
-    tagINCHIBondStereo2D_INCHI_BOND_STEREO_SINGLE_2DOWN, tagINCHIBondStereo2D_INCHI_BOND_STEREO_SINGLE_2EITHER,
+    _IS_EOF, _IS_ERROR, _IS_FATAL, AB_PARITY_UNDF, AB_PARITY_UNKN, BOND_TYPE_ALTERN,
+    BOND_TYPE_DOUBLE, BOND_TYPE_SINGLE, BOND_TYPE_TRIPLE, CANON_GLOBALS, FILE, FLAG_INP_AT_CHIRAL,
+    FLAG_INP_AT_NONCHIRAL, FLAG_SET_INP_AT_CHIRAL, INCHI_CLOCK, INCHI_IOS_TYPE_STRING,
+    INCHI_IOSTREAM, INCHI_MAX_NUM_ARG, INCHI_OUT_SDFILE_ONLY, INPUT_PARMS, ISOTOPIC_SHIFT_FLAG,
+    ISOTOPIC_SHIFT_MAX, LOG_MASK_NO_WARN, MAX_ATOMS, MAX_NUM_PATHS, MAX_NUM_STEREO_ATOM_NEIGH,
+    MAX_NUM_STEREO_BONDS, MAX_SDF_VALUE, MAXVAL, MOL_COORD, NO_ATOM,
+    NORMALLY_ALLOWED_INP_MAX_ATOMS, NUM_H_ISOTOPES, OAD_Polymer, OAD_V3000, ORIG_ATOM_DATA,
+    RADICAL_DOUBLET, RADICAL_TRIPLET, REQ_MODE_CHIR_FLG_STEREO, REQ_MODE_DIFF_UU_STEREO,
+    REQ_MODE_RACEMIC_STEREO, REQ_MODE_RELATIVE_STEREO, REQ_MODE_STEREO, STEREO_DBLE_EITHER,
+    STEREO_SNGL_DOWN, STEREO_SNGL_EITHER, STEREO_SNGL_UP, STRUCT_DATA, SourceArgvPointer,
+    SourceConstPointer, SourceHeap, SourceHeapError, SourceMutPointer, SourceVaList, clock_t,
+    inchi_Atom, inchi_Input, inchi_Input_Polymer, inchi_Input_V3000, inchi_InputEx,
+    inchi_InputINCHI, inchi_Output, inchi_OutputStruct, inchi_OutputStructEx, inchi_Stereo0D,
+    inp_ATOM, local_util::ERR_ELEM, tagINCHIBondStereo2D_INCHI_BOND_STEREO_DOUBLE_EITHER,
+    tagINCHIBondStereo2D_INCHI_BOND_STEREO_NONE,
+    tagINCHIBondStereo2D_INCHI_BOND_STEREO_SINGLE_1DOWN,
+    tagINCHIBondStereo2D_INCHI_BOND_STEREO_SINGLE_1EITHER,
+    tagINCHIBondStereo2D_INCHI_BOND_STEREO_SINGLE_1UP,
+    tagINCHIBondStereo2D_INCHI_BOND_STEREO_SINGLE_2DOWN,
+    tagINCHIBondStereo2D_INCHI_BOND_STEREO_SINGLE_2EITHER,
     tagINCHIBondStereo2D_INCHI_BOND_STEREO_SINGLE_2UP, tagINCHIBondType_INCHI_BOND_TYPE_ALTERN,
     tagINCHIBondType_INCHI_BOND_TYPE_DOUBLE, tagINCHIBondType_INCHI_BOND_TYPE_SINGLE,
-    tagINCHIBondType_INCHI_BOND_TYPE_TRIPLE, tagINCHIRadical_INCHI_RADICAL_DOUBLET, tagINCHIRadical_INCHI_RADICAL_NONE,
-    tagINCHIRadical_INCHI_RADICAL_SINGLET, tagINCHIRadical_INCHI_RADICAL_TRIPLET,
-    tagINCHIStereoParity0D_INCHI_PARITY_EVEN, tagINCHIStereoParity0D_INCHI_PARITY_ODD,
-    tagINCHIStereoType0D_INCHI_StereoType_Allene, tagINCHIStereoType0D_INCHI_StereoType_DoubleBond,
-    tagINCHIStereoType0D_INCHI_StereoType_Tetrahedral, tagInputType_INPUT_INCHI, tagRetValCheckINCHI_INCHI_FAIL_I2I,
-    tagRetValCheckINCHI_INCHI_INVALID_LAYOUT, tagRetValCheckINCHI_INCHI_INVALID_PREFIX,
-    tagRetValCheckINCHI_INCHI_INVALID_VERSION, tagRetValCheckINCHI_INCHI_VALID_BETA,
-    tagRetValCheckINCHI_INCHI_VALID_NON_STANDARD, tagRetValCheckINCHI_INCHI_VALID_STANDARD,
-    tagRetValGetINCHI_inchi_Ret_ERROR, tagRetValGetINCHI_inchi_Ret_FATAL,
+    tagINCHIBondType_INCHI_BOND_TYPE_TRIPLE, tagINCHIRadical_INCHI_RADICAL_DOUBLET,
+    tagINCHIRadical_INCHI_RADICAL_NONE, tagINCHIRadical_INCHI_RADICAL_SINGLET,
+    tagINCHIRadical_INCHI_RADICAL_TRIPLET, tagINCHIStereoParity0D_INCHI_PARITY_EVEN,
+    tagINCHIStereoParity0D_INCHI_PARITY_ODD, tagINCHIStereoType0D_INCHI_StereoType_Allene,
+    tagINCHIStereoType0D_INCHI_StereoType_DoubleBond,
+    tagINCHIStereoType0D_INCHI_StereoType_Tetrahedral, tagInputType_INPUT_INCHI,
+    tagRetValCheckINCHI_INCHI_FAIL_I2I, tagRetValCheckINCHI_INCHI_INVALID_LAYOUT,
+    tagRetValCheckINCHI_INCHI_INVALID_PREFIX, tagRetValCheckINCHI_INCHI_INVALID_VERSION,
+    tagRetValCheckINCHI_INCHI_VALID_BETA, tagRetValCheckINCHI_INCHI_VALID_NON_STANDARD,
+    tagRetValCheckINCHI_INCHI_VALID_STANDARD, tagRetValGetINCHI_inchi_Ret_ERROR,
+    tagRetValGetINCHI_inchi_Ret_FATAL,
 };
 use crate::source_types::{
-    _IS_OKAY, _IS_SKIP, _IS_UNKNOWN, _IS_WARNING, INCHI_IOS_STRING, INCHI_OUT_SAVEOPT, INCHI_OUT_STDINCHI,
-    INCHI_STRBUF_INITIAL_SIZE, INCHI_STRBUF_SIZE_INCREMENT, MAX_SDF_HEADER, REQ_MODE_BASIC, REQ_MODE_SB_IGN_ALL_UU,
-    REQ_MODE_SC_IGN_ALL_UU, TG_FLAG_1_5_TAUT, TG_FLAG_KETO_ENOL_TAUT, TG_FLAG_RECONNECT_COORD,
-    tagRetValGetINCHI_inchi_Ret_EOF, tagRetValGetINCHI_inchi_Ret_OKAY, tagRetValGetINCHI_inchi_Ret_SKIP,
+    _IS_OKAY, _IS_SKIP, _IS_UNKNOWN, _IS_WARNING, INCHI_IOS_STRING, INCHI_OUT_SAVEOPT,
+    INCHI_OUT_STDINCHI, INCHI_STRBUF_INITIAL_SIZE, INCHI_STRBUF_SIZE_INCREMENT, MAX_SDF_HEADER,
+    REQ_MODE_BASIC, REQ_MODE_SB_IGN_ALL_UU, REQ_MODE_SC_IGN_ALL_UU, TG_FLAG_1_5_TAUT,
+    TG_FLAG_KETO_ENOL_TAUT, TG_FLAG_RECONNECT_COORD, tagRetValGetINCHI_inchi_Ret_EOF,
+    tagRetValGetINCHI_inchi_Ret_OKAY, tagRetValGetINCHI_inchi_Ret_SKIP,
     tagRetValGetINCHI_inchi_Ret_UNKNOWN, tagRetValGetINCHI_inchi_Ret_WARNING,
 };
 
@@ -195,7 +208,10 @@ pub(crate) fn SetNumImplicitH(
     Ok(())
 }
 
-pub(crate) fn FreeINCHI(heap: &mut SourceHeap, output: Option<&mut inchi_Output>) -> Result<(), SourceHeapError> {
+pub(crate) fn FreeINCHI(
+    heap: &mut SourceHeap,
+    output: Option<&mut inchi_Output>,
+) -> Result<(), SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_API/libinchi/src/inchi_dll.c:153 FreeINCHI
     // INCHI✔❌: void INCHI_DECL FreeINCHI( inchi_Output *out )
     // INCHI✔❌: {
@@ -237,7 +253,10 @@ pub(crate) fn FreeINCHI(heap: &mut SourceHeap, output: Option<&mut inchi_Output>
     Ok(())
 }
 
-pub(crate) fn FreeStdINCHI(heap: &mut SourceHeap, output: Option<&mut inchi_Output>) -> Result<(), SourceHeapError> {
+pub(crate) fn FreeStdINCHI(
+    heap: &mut SourceHeap,
+    output: Option<&mut inchi_Output>,
+) -> Result<(), SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_API/libinchi/src/inchi_dll.c:183 FreeStdINCHI
     // INCHI✔❌: void INCHI_DECL FreeStdINCHI( inchi_Output *out )
     // INCHI✔❌: {
@@ -1674,7 +1693,10 @@ pub(crate) fn FreeStructFromStdINCHI(
 }
 
 #[allow(non_snake_case)]
-pub(crate) fn GetStringLength(heap: &SourceHeap, pointer: SourceMutPointer<i8>) -> Result<i32, SourceHeapError> {
+pub(crate) fn GetStringLength(
+    heap: &SourceHeap,
+    pointer: SourceMutPointer<i8>,
+) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_API/libinchi/src/inchi_dll.c:2086 GetStringLength
     // INCHI✔️❌: int INCHI_DECL GetStringLength( char *p )
     // INCHI✔️❌: {
@@ -1700,7 +1722,10 @@ pub(crate) fn GetStringLength(heap: &SourceHeap, pointer: SourceMutPointer<i8>) 
     i32::try_from(length).map_err(|_| SourceHeapError::SourceIntegerOverflow)
 }
 
-fn source_strlen(heap: &SourceHeap, pointer: SourceConstPointer<i8>) -> Result<usize, SourceHeapError> {
+fn source_strlen(
+    heap: &SourceHeap,
+    pointer: SourceConstPointer<i8>,
+) -> Result<usize, SourceHeapError> {
     heap.slice(pointer)?
         .iter()
         .position(|byte| *byte == 0)
@@ -1719,9 +1744,17 @@ fn source_string_equals(
         .eq(expected.iter().copied()))
 }
 
-fn append_api_log(heap: &mut SourceHeap, log: &mut INCHI_IOSTREAM, text: &str) -> Result<(), SourceHeapError> {
-    let format =
-        heap.allocate_model_storage(text.bytes().chain(std::iter::once(0)).map(|byte| byte as i8).collect())?;
+fn append_api_log(
+    heap: &mut SourceHeap,
+    log: &mut INCHI_IOSTREAM,
+    text: &str,
+) -> Result<(), SourceHeapError> {
+    let format = heap.allocate_model_storage(
+        text.bytes()
+            .chain(std::iter::once(0))
+            .map(|byte| byte as i8)
+            .collect(),
+    )?;
     let result = inchi_ios_eprint(heap, Some(log), format.as_const(), &SourceVaList::default());
     heap.free(format)?;
     result.map(|_| ())
@@ -2518,14 +2551,21 @@ pub(crate) fn produce_generation_output(
                     .ok_or(SourceHeapError::MissingNulTerminator)?;
                 let mut search_start = 0_usize;
                 while search_start < nul {
-                    let Some(relative) = bytes[search_start..nul].iter().position(|byte| *byte == b'\n' as i8) else {
+                    let Some(relative) = bytes[search_start..nul]
+                        .iter()
+                        .position(|byte| *byte == b'\n' as i8)
+                    else {
                         break;
                     };
                     let position = search_start + relative;
                     let compared = bytes
                         .get(position..position + 8)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                    if compared.iter().map(|byte| *byte as u8).eq(b"\nAuxInfo".iter().copied()) {
+                    if compared
+                        .iter()
+                        .map(|byte| *byte as u8)
+                        .eq(b"\nAuxInfo".iter().copied())
+                    {
                         bytes[position] = 0;
                         output.szAuxInfo = output.szInChI.offset((position + 1) as i64)?;
                     } else if !output.szAuxInfo.is_null() || bytes[position + 1] == 0 {
@@ -2580,7 +2620,8 @@ pub(crate) fn copy_corrected_log_tail(
     }
 
     while log_file.s.nUsedLength != 0 {
-        let last = usize::try_from(log_file.s.nUsedLength - 1).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+        let last = usize::try_from(log_file.s.nUsedLength - 1)
+            .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
         let bytes = heap.slice(log_file.s.pStr.as_const())?;
         let byte = *bytes.get(last).ok_or(SourceHeapError::PointerOutOfBounds)?;
         if byte != b'\n' as i8 {
@@ -2600,7 +2641,10 @@ pub(crate) fn copy_corrected_log_tail(
             .ok_or(SourceHeapError::MissingNulTerminator)?;
         let mut search_start = 0_usize;
         while search_start < nul {
-            let Some(relative) = bytes[search_start..nul].iter().position(|byte| *byte == b' ' as i8) else {
+            let Some(relative) = bytes[search_start..nul]
+                .iter()
+                .position(|byte| *byte == b' ' as i8)
+            else {
                 break;
             };
             let position = search_start + relative;
@@ -3697,7 +3741,8 @@ pub(crate) fn parse_options_string(
     // INCHI✔❌: }
     // END INCHI C FUNCTION: parse_options_string
 
-    let max_arguments = usize::try_from(max_arguments).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+    let max_arguments =
+        usize::try_from(max_arguments).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
     if max_arguments < 2 || arguments.len() < max_arguments {
         return Err(SourceHeapError::PointerOutOfBounds);
     }
@@ -3714,19 +3759,21 @@ pub(crate) fn parse_options_string(
     let mut inside_quotes = false;
 
     while argument_index < max_arguments - 1 {
-        while matches!(command.get(input_index), Some(byte) if *byte == b' ' as i8 || *byte == b'\t' as i8) {
+        while matches!(command.get(input_index), Some(byte) if *byte == b' ' as i8 || *byte == b'\t' as i8)
+        {
             input_index += 1;
         }
-        let input = *command.get(input_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let input = *command
+            .get(input_index)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?;
         if input == 0 {
             break;
         }
 
         let argument_start = input_index;
-        arguments[argument_index] = SourceArgvPointer::Command(
-            command_pointer
-                .offset(i64::try_from(argument_start).map_err(|_| SourceHeapError::SourceIntegerOverflow)?)?,
-        );
+        arguments[argument_index] = SourceArgvPointer::Command(command_pointer.offset(
+            i64::try_from(argument_start).map_err(|_| SourceHeapError::SourceIntegerOverflow)?,
+        )?);
         argument_index += 1;
         let mut output_index = input_index;
 
@@ -3757,7 +3804,9 @@ pub(crate) fn parse_options_string(
                 command[output_index] = b'\\' as i8;
                 output_index += 1;
             }
-            let input = *command.get(input_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let input = *command
+                .get(input_index)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
             if input == 0 {
                 break;
             }
@@ -3885,7 +3934,8 @@ pub(crate) fn SetAtomProperties(
     // INCHI✔❌: }
     // END INCHI C FUNCTION: SetAtomProperties
 
-    let atom_index_usize = usize::try_from(atom_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let atom_index_usize =
+        usize::try_from(atom_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let input = heap
         .slice(input_atoms.as_const())?
         .get(atom_index_usize)
@@ -3949,7 +3999,10 @@ pub(crate) fn SetAtomProperties(
     }
 
     const MIN_BOND_LENGTH: f64 = 1.0e-6;
-    if MIN_BOND_LENGTH < input.x.abs() || MIN_BOND_LENGTH < input.y.abs() || MIN_BOND_LENGTH < input.z.abs() {
+    if MIN_BOND_LENGTH < input.x.abs()
+        || MIN_BOND_LENGTH < input.y.abs()
+        || MIN_BOND_LENGTH < input.z.abs()
+    {
         let dimensions = dimensions.ok_or(SourceHeapError::NullPointer)?;
         if MIN_BOND_LENGTH < input.z.abs() {
             *dimensions |= 3;
@@ -4176,8 +4229,10 @@ pub(crate) fn SetBondProperties(
     // INCHI✔❌: }
     // END INCHI C FUNCTION: SetBondProperties
 
-    let atom_index_usize = usize::try_from(atom_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    let bond_index_usize = usize::try_from(bond_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let atom_index_usize =
+        usize::try_from(atom_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let bond_index_usize =
+        usize::try_from(bond_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let input = heap
         .slice(input_atoms.as_const())?
         .get(atom_index_usize)
@@ -4276,9 +4331,12 @@ pub(crate) fn SetBondProperties(
     let position2 = is_in_the_list(Some(&atom2.neighbor), atom_index as u16, valence2)?;
     let max_valence = MAXVAL as i32;
 
-    let (position1, position2) = if let (Some(position1), Some(position2)) = (position1, position2) {
-        let index1 = i32::try_from(position1).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-        let index2 = i32::try_from(position2).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+    let (position1, position2) = if let (Some(position1), Some(position2)) = (position1, position2)
+    {
+        let index1 =
+            i32::try_from(position1).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+        let index2 =
+            i32::try_from(position2).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
         let duplicate1 = index1 + 1 < valence1
             && is_in_the_list(
                 Some(&atom1.neighbor[position1 + 1..]),
@@ -4311,10 +4369,12 @@ pub(crate) fn SetBondProperties(
         && (position1.is_some() || valence1 < max_valence)
         && (position2.is_some() || valence2 < max_valence)
     {
-        let index1 =
-            position1.unwrap_or(usize::try_from(valence1).map_err(|_| SourceHeapError::SourceIntegerOverflow)?);
-        let index2 =
-            position2.unwrap_or(usize::try_from(valence2).map_err(|_| SourceHeapError::SourceIntegerOverflow)?);
+        let index1 = position1.unwrap_or(
+            usize::try_from(valence1).map_err(|_| SourceHeapError::SourceIntegerOverflow)?,
+        );
+        let index2 = position2.unwrap_or(
+            usize::try_from(valence2).map_err(|_| SourceHeapError::SourceIntegerOverflow)?,
+        );
         {
             let target = heap.slice_mut(atoms)?;
             if position1.is_none() {
@@ -4327,7 +4387,8 @@ pub(crate) fn SetBondProperties(
         let mismatch = position1.is_some()
             && (bond_type as u8 != atom1.bond_type[index1] || atom1.bond_stereo[index1] != stereo1)
             || position2.is_some()
-                && (bond_type as u8 != atom2.bond_type[index2] || atom2.bond_stereo[index2] != stereo2);
+                && (bond_type as u8 != atom2.bond_type[index2]
+                    || atom2.bond_stereo[index2] != stereo2);
         if mismatch {
             add_source_error(heap, error_text, "Multiple bonds between two atoms")?;
             *error.as_deref_mut().ok_or(SourceHeapError::NullPointer)? |= 2;
@@ -4335,16 +4396,24 @@ pub(crate) fn SetBondProperties(
             add_source_error(heap, error_text, "Duplicated bond(s) between two atoms")?;
         }
         (index1, index2)
-    } else if position1.is_none() && position2.is_none() && valence1 < max_valence && valence2 < max_valence {
-        let index1 = usize::try_from(valence1).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-        let index2 = usize::try_from(valence2).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+    } else if position1.is_none()
+        && position2.is_none()
+        && valence1 < max_valence
+        && valence2 < max_valence
+    {
+        let index1 =
+            usize::try_from(valence1).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+        let index2 =
+            usize::try_from(valence2).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
         {
             let target = heap.slice_mut(atoms)?;
             target[atom_index_usize].valence += 1;
             target[neighbor_index].valence += 1;
         }
         let num_bonds = num_bonds.ok_or(SourceHeapError::NullPointer)?;
-        *num_bonds = num_bonds.checked_add(1).ok_or(SourceHeapError::SourceIntegerOverflow)?;
+        *num_bonds = num_bonds
+            .checked_add(1)
+            .ok_or(SourceHeapError::SourceIntegerOverflow)?;
         (index1, index2)
     } else {
         *error.as_deref_mut().ok_or(SourceHeapError::NullPointer)? |= 4;
@@ -4357,8 +4426,13 @@ pub(crate) fn SetBondProperties(
             .iter()
             .position(|byte| *byte == 0)
             .ok_or(SourceHeapError::MissingNulTerminator)?;
-        let element = String::from_utf8(element[..element_length].iter().map(|byte| *byte as u8).collect())
-            .map_err(|_| SourceHeapError::InvalidSourceTextEncoding)?;
+        let element = String::from_utf8(
+            element[..element_length]
+                .iter()
+                .map(|byte| *byte as u8)
+                .collect(),
+        )
+        .map_err(|_| SourceHeapError::InvalidSourceTextEncoding)?;
         add_source_error(
             heap,
             error_text,
@@ -4622,7 +4696,8 @@ pub(crate) fn SetAtomAndBondProperties(
     // END INCHI C FUNCTION: SetAtomAndBondProperties
 
     const EL_NUMBER_H: i32 = 1;
-    let atom_index_usize = usize::try_from(atom_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let atom_index_usize =
+        usize::try_from(atom_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let input = heap
         .slice(input_atoms.as_const())?
         .get(atom_index_usize)
@@ -4638,7 +4713,8 @@ pub(crate) fn SetAtomAndBondProperties(
     let mut chemical_valence = 0_i32;
     let mut alternating_bonds = 0_i32;
     for bond_index in 0..valence {
-        let bond_index = usize::try_from(bond_index).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+        let bond_index =
+            usize::try_from(bond_index).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
         let bond_type = i32::from(
             *atom
                 .bond_type
@@ -4705,7 +4781,10 @@ pub(crate) fn SetAtomAndBondProperties(
         }
 
         atom.num_H = extract_h_atoms(Some(&mut atom.elname), Some(&mut atom.num_iso_H))? as i8;
-        let isotope_hydrogens = atom.num_iso_H.iter().fold(0_i32, |sum, count| sum + i32::from(*count));
+        let isotope_hydrogens = atom
+            .num_iso_H
+            .iter()
+            .fold(0_i32, |sum, count| sum + i32::from(*count));
         if atom.elname[0] == 0 && i32::from(atom.num_H) + isotope_hydrogens != 0 {
             atom.elname[0] = b'H' as i8;
             atom.elname[1] = 0;
@@ -4749,11 +4828,14 @@ pub(crate) fn SetAtomAndBondProperties(
                 mystrncpy_slice(Some(&mut atom.elname), Some(&[b'H' as i8, 0]), 6)?;
             }
             b'H' if input.isotopic_mass >= 1 => {
-                let mut isotope_difference = isotope_mass_difference(atom.el_number, input.isotopic_mass)?;
+                let mut isotope_difference =
+                    isotope_mass_difference(atom.el_number, input.isotopic_mass)?;
                 if isotope_difference >= 0 {
                     isotope_difference = isotope_difference.wrapping_add(1);
                 }
-                if isotope_difference >= 1 && (atom.valence != 1 || isotope_difference <= NUM_H_ISOTOPES as i16) {
+                if isotope_difference >= 1
+                    && (atom.valence != 1 || isotope_difference <= NUM_H_ISOTOPES as i16)
+                {
                     atom.iso_atw_diff = isotope_difference as i8;
                 }
             }
@@ -4777,7 +4859,12 @@ pub(crate) fn SetAtomAndBondProperties(
     atom.num_iso_H.copy_from_slice(&input.num_iso_H[1..]);
 
     if alternating_bonds != 0 {
-        let hydrogen_count = i32::from(atom.num_H) + atom.num_iso_H.iter().map(|count| i32::from(*count)).sum::<i32>();
+        let hydrogen_count = i32::from(atom.num_H)
+            + atom
+                .num_iso_H
+                .iter()
+                .map(|count| i32::from(*count))
+                .sum::<i32>();
         let aromatic_valence = i32::from(atom.chem_bonds_valence)
             .checked_add(hydrogen_count)
             .ok_or(SourceHeapError::SourceIntegerOverflow)?;
@@ -5024,7 +5111,8 @@ pub(crate) fn InpAtom0DToInchiAtom(
     *output_stereo_count = 0;
 
     let inputs = if input_atom_count > 0 {
-        let count = usize::try_from(input_atom_count).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+        let count = usize::try_from(input_atom_count)
+            .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
         heap.slice(input_atoms.as_const())?
             .get(..count)
             .ok_or(SourceHeapError::PointerOutOfBounds)?
@@ -5053,7 +5141,8 @@ pub(crate) fn InpAtom0DToInchiAtom(
     let input_stereo_count = stereo_bond_ends / 2 + stereo_centers;
 
     if input_atom_count > 0 {
-        *output_atoms = match inchi_calloc(heap, input_atom_count as u64, SOURCE_SIZEOF_INCHI_ATOM) {
+        *output_atoms = match inchi_calloc(heap, input_atom_count as u64, SOURCE_SIZEOF_INCHI_ATOM)
+        {
             Ok(pointer) => pointer,
             Err(SourceHeapError::AllocationFailed) => SourceMutPointer::null(),
             Err(error) => return Err(error),
@@ -5061,14 +5150,20 @@ pub(crate) fn InpAtom0DToInchiAtom(
     }
     *output_atom_count = input_atom_count as i16;
     if input_stereo_count > 0 {
-        *output_stereo = match inchi_calloc(heap, input_stereo_count as u64, SOURCE_SIZEOF_INCHI_STEREO0D) {
+        *output_stereo = match inchi_calloc(
+            heap,
+            input_stereo_count as u64,
+            SOURCE_SIZEOF_INCHI_STEREO0D,
+        ) {
             Ok(pointer) => pointer,
             Err(SourceHeapError::AllocationFailed) => SourceMutPointer::null(),
             Err(error) => return Err(error),
         };
     }
 
-    if input_atom_count != 0 && output_atoms.is_null() || input_stereo_count > 0 && output_stereo.is_null() {
+    if input_atom_count != 0 && output_atoms.is_null()
+        || input_stereo_count > 0 && output_stereo.is_null()
+    {
         if !output_atoms.is_null() {
             inchi_free(heap, *output_atoms)?;
         }
@@ -5088,7 +5183,8 @@ pub(crate) fn InpAtom0DToInchiAtom(
             let output = &mut atoms[index];
             output.num_bonds = i16::from(input.valence);
             for bond in 0..i32::from(input.valence) {
-                let bond = usize::try_from(bond).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+                let bond =
+                    usize::try_from(bond).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
                 output.bond_type[bond] = input.bond_type[bond] as i8;
                 output.neighbor[bond] = input.neighbor[bond] as i16;
             }
@@ -5118,7 +5214,8 @@ pub(crate) fn InpAtom0DToInchiAtom(
                 stereo.parity = input.p_parity;
                 stereo.type_ = tagINCHIStereoType0D_INCHI_StereoType_Tetrahedral as i8;
                 for neighbor in 0..MAX_NUM_STEREO_ATOM_NEIGH as usize {
-                    stereo.neighbor[neighbor] = (i32::from(input.p_orig_at_num[neighbor]) - 1) as i16;
+                    stereo.neighbor[neighbor] =
+                        (i32::from(input.p_orig_at_num[neighbor]) - 1) as i16;
                 }
                 written_stereo += 1;
             } else {
@@ -5138,18 +5235,22 @@ pub(crate) fn InpAtom0DToInchiAtom(
             chain[0] = index as i32;
             let mut next_neighbor = i32::from(input.sb_ord[first_order]);
             loop {
-                let next_neighbor_index =
-                    usize::try_from(next_neighbor).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let next_neighbor_index = usize::try_from(next_neighbor)
+                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let next = usize::from(
                     *inputs[current]
                         .neighbor
                         .get(next_neighbor_index)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?,
                 );
-                let chain_slot = chain.get_mut(chain_length).ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let chain_slot = chain
+                    .get_mut(chain_length)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
                 *chain_slot = next as i32;
                 chain_length += 1;
-                let next_atom = inputs.get(next).ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let next_atom = inputs
+                    .get(next)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
                 next_neighbor = i32::from(next_atom.neighbor[0] == current as u16);
                 current = next;
                 if next_atom.sb_parity[0] != 0 || chain_length >= 12 || next_atom.valence != 2 {
@@ -5208,7 +5309,8 @@ pub(crate) fn InpAtom0DToInchiAtom(
                     stereo.neighbor[0] = (i32::from(input.sn_orig_at_num[first_order]) - 1) as i16;
                     stereo.neighbor[1] = index as i16;
                     stereo.neighbor[2] = current as i16;
-                    stereo.neighbor[3] = (i32::from(inputs[current].sn_orig_at_num[second_order]) - 1) as i16;
+                    stereo.neighbor[3] =
+                        (i32::from(inputs[current].sn_orig_at_num[second_order]) - 1) as i16;
                     written_stereo += 1;
                 } else {
                     return_value |= 1;
@@ -5232,10 +5334,10 @@ fn fixed_source_text(bytes: &[i8]) -> Result<String, SourceHeapError> {
 
 fn isotope_mass_difference(element_number: u8, isotopic_mass: i16) -> Result<i16, SourceHeapError> {
     let mass = i32::from(isotopic_mass);
-    let lower =
-        i32::try_from(ISOTOPIC_SHIFT_FLAG - ISOTOPIC_SHIFT_MAX).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-    let upper =
-        i32::try_from(ISOTOPIC_SHIFT_FLAG + ISOTOPIC_SHIFT_MAX).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+    let lower = i32::try_from(ISOTOPIC_SHIFT_FLAG - ISOTOPIC_SHIFT_MAX)
+        .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+    let upper = i32::try_from(ISOTOPIC_SHIFT_FLAG + ISOTOPIC_SHIFT_MAX)
+        .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
     let difference = if lower <= mass && mass <= upper {
         mass - ISOTOPIC_SHIFT_FLAG as i32
     } else {
@@ -5520,10 +5622,14 @@ pub(crate) fn ExtractOneStructure(
             break 'extract;
         }
 
-        atoms = inchi_calloc::<inp_ATOM>(heap, num_atoms as u64, std::mem::size_of::<inp_ATOM>() as u64)
+        atoms = inchi_calloc::<inp_ATOM>(
+            heap,
+            num_atoms as u64,
+            std::mem::size_of::<inp_ATOM>() as u64,
+        )
+        .unwrap_or_else(|_| SourceMutPointer::null());
+        coordinates = inchi_calloc::<MOL_COORD>(heap, num_atoms.max(1) as u64, 32)
             .unwrap_or_else(|_| SourceMutPointer::null());
-        coordinates =
-            inchi_calloc::<MOL_COORD>(heap, num_atoms.max(1) as u64, 32).unwrap_or_else(|_| SourceMutPointer::null());
         if atoms.is_null() || coordinates.is_null() {
             add_source_error(heap, Some(error_buffer), "Out of RAM")?;
             structure.nStructReadError = -1;
@@ -5544,7 +5650,8 @@ pub(crate) fn ExtractOneStructure(
             if structure.nStructReadError != 0 {
                 break 'extract;
             }
-            let valence = i32::from(heap.slice(input.atom.as_const())?[atom_index as usize].num_bonds);
+            let valence =
+                i32::from(heap.slice(input.atom.as_const())?[atom_index as usize].num_bonds);
             for bond_index in 0..valence {
                 SetBondProperties(
                     heap,
@@ -5610,7 +5717,8 @@ pub(crate) fn ExtractOneStructure(
             && input_parameters.nMode & REQ_MODE_STEREO as u64 != 0
         {
             if input_parameters.bChiralFlag & FLAG_SET_INP_AT_CHIRAL as i32 != 0 {
-                input_parameters.nMode &= !((REQ_MODE_RELATIVE_STEREO | REQ_MODE_RACEMIC_STEREO) as u64);
+                input_parameters.nMode &=
+                    !((REQ_MODE_RELATIVE_STEREO | REQ_MODE_RACEMIC_STEREO) as u64);
                 structure.bChiralFlag &= !(FLAG_INP_AT_NONCHIRAL as i32);
                 structure.bChiralFlag |= FLAG_INP_AT_CHIRAL as i32;
             } else {
@@ -5622,7 +5730,10 @@ pub(crate) fn ExtractOneStructure(
         } else if input_parameters.bChiralFlag & FLAG_SET_INP_AT_CHIRAL as i32 != 0 {
             structure.bChiralFlag &= !(FLAG_INP_AT_NONCHIRAL as i32);
             structure.bChiralFlag |= FLAG_INP_AT_CHIRAL as i32;
-        } else if input_parameters.bChiralFlag & crate::source_types::FLAG_SET_INP_AT_NONCHIRAL as i32 != 0 {
+        } else if input_parameters.bChiralFlag
+            & crate::source_types::FLAG_SET_INP_AT_NONCHIRAL as i32
+            != 0
+        {
             structure.bChiralFlag &= !(FLAG_INP_AT_CHIRAL as i32);
             structure.bChiralFlag |= FLAG_INP_AT_NONCHIRAL as i32;
         }
@@ -5636,7 +5747,11 @@ pub(crate) fn ExtractOneStructure(
             original_input.num_inp_atoms,
         )?;
         if extension_result != 0 {
-            add_source_error(heap, Some(error_buffer), "General error on treating polymers")?;
+            add_source_error(
+                heap,
+                Some(error_buffer),
+                "General error on treating polymers",
+            )?;
             structure.nStructReadError = -1;
             break 'extract;
         }
@@ -5681,8 +5796,14 @@ mod tests {
     #[test]
     fn source_port__inchi_dll__getinchi1__line_345() {
         fn c_string(heap: &mut SourceHeap, value: &str) -> SourceMutPointer<i8> {
-            heap.allocate_model_storage(value.bytes().chain(std::iter::once(0)).map(|byte| byte as i8).collect())
-                .unwrap()
+            heap.allocate_model_storage(
+                value
+                    .bytes()
+                    .chain(std::iter::once(0))
+                    .map(|byte| byte as i8)
+                    .collect(),
+            )
+            .unwrap()
         }
 
         fn text(heap: &SourceHeap, pointer: SourceMutPointer<i8>) -> Option<String> {
@@ -5792,10 +5913,19 @@ mod tests {
 
         let mut standard_heap = SourceHeap::default();
         let standard_input = methane_input(&mut standard_heap, SourceMutPointer::null());
-        let standard_atoms = standard_heap.slice(standard_input.atom.as_const()).unwrap().to_vec();
+        let standard_atoms = standard_heap
+            .slice(standard_input.atom.as_const())
+            .unwrap()
+            .to_vec();
         let mut standard_output = inchi_Output::default();
         assert_eq!(
-            invoke(&mut standard_heap, &standard_input, Some(&mut standard_output), 0, 0,),
+            invoke(
+                &mut standard_heap,
+                &standard_input,
+                Some(&mut standard_output),
+                0,
+                0,
+            ),
             Ok(tagRetValGetINCHI_inchi_Ret_OKAY)
         );
         assert_eq!(
@@ -5860,7 +5990,10 @@ mod tests {
             assert_eq!(heap.slice(input.atom.as_const()).unwrap(), atom_snapshot);
             FreeINCHI(&mut heap, Some(&mut output)).unwrap();
             assert_eq!(heap.live_source_allocation_count(), 1);
-            assert_eq!(heap.live_source_allocations_of::<crate::source_types::T_GROUP>(), 1);
+            assert_eq!(
+                heap.live_source_allocations_of::<crate::source_types::T_GROUP>(),
+                1
+            );
         }
 
         let mut interrupted_heap = SourceHeap::default();
@@ -5899,7 +6032,13 @@ mod tests {
         let mut failed_output = inchi_Output::default();
         option_failure_heap.fail_after_allocations(0);
         assert_eq!(
-            invoke(&mut option_failure_heap, &failed_input, Some(&mut failed_output), 0, 0,),
+            invoke(
+                &mut option_failure_heap,
+                &failed_input,
+                Some(&mut failed_output),
+                0,
+                0,
+            ),
             Ok(tagRetValGetINCHI_inchi_Ret_FATAL)
         );
         assert_eq!(option_failure_heap.source_allocation_calls(), 1);
@@ -5907,7 +6046,8 @@ mod tests {
         assert_eq!(option_failure_heap.live_source_allocation_count(), 0);
 
         let mut buffer_failure_heap = SourceHeap::default();
-        let buffer_failure_input = methane_input(&mut buffer_failure_heap, SourceMutPointer::null());
+        let buffer_failure_input =
+            methane_input(&mut buffer_failure_heap, SourceMutPointer::null());
         let mut buffer_failure_output = inchi_Output::default();
         buffer_failure_heap.fail_after_allocations(1);
         assert_eq!(
@@ -5936,8 +6076,14 @@ mod tests {
     #[test]
     fn source_port__inchi_dll__getinchi__line_270() {
         fn c_string(heap: &mut SourceHeap, value: &str) -> SourceMutPointer<i8> {
-            heap.allocate_model_storage(value.bytes().chain(std::iter::once(0)).map(|byte| byte as i8).collect())
-                .unwrap()
+            heap.allocate_model_storage(
+                value
+                    .bytes()
+                    .chain(std::iter::once(0))
+                    .map(|byte| byte as i8)
+                    .collect(),
+            )
+            .unwrap()
         }
 
         fn text(heap: &SourceHeap, pointer: SourceMutPointer<i8>) -> Option<String> {
@@ -6030,11 +6176,22 @@ mod tests {
             num_stereo0D: 0,
         };
         let methane_snapshot = methane_input.clone();
-        let methane_atom_snapshot = methane_heap.slice(methane_atom.as_const()).unwrap().to_vec();
-        let methane_option_snapshot = methane_heap.slice(methane_options.as_const()).unwrap().to_vec();
+        let methane_atom_snapshot = methane_heap
+            .slice(methane_atom.as_const())
+            .unwrap()
+            .to_vec();
+        let methane_option_snapshot = methane_heap
+            .slice(methane_options.as_const())
+            .unwrap()
+            .to_vec();
         let mut methane_output = inchi_Output::default();
         assert_eq!(
-            invoke(&mut methane_heap, Some(&methane_input), Some(&mut methane_output), 0,),
+            invoke(
+                &mut methane_heap,
+                Some(&methane_input),
+                Some(&mut methane_output),
+                0,
+            ),
             Ok(tagRetValGetINCHI_inchi_Ret_OKAY)
         );
         assert_eq!(
@@ -6138,7 +6295,12 @@ mod tests {
         };
         let mut stereo_output = inchi_Output::default();
         assert_eq!(
-            invoke(&mut stereo_heap, Some(&stereo_input), Some(&mut stereo_output), 0,),
+            invoke(
+                &mut stereo_heap,
+                Some(&stereo_input),
+                Some(&mut stereo_output),
+                0,
+            ),
             Ok(tagRetValGetINCHI_inchi_Ret_OKAY)
         );
         assert_eq!(
@@ -6236,7 +6398,12 @@ mod tests {
         let mut failure_output = inchi_Output::default();
         failure_heap.fail_after_allocations(0);
         assert_eq!(
-            invoke(&mut failure_heap, Some(&failure_input), Some(&mut failure_output), 0,),
+            invoke(
+                &mut failure_heap,
+                Some(&failure_input),
+                Some(&mut failure_output),
+                0,
+            ),
             Ok(tagRetValGetINCHI_inchi_Ret_FATAL)
         );
         assert_eq!(failure_heap.source_allocation_calls(), 1);
@@ -6246,8 +6413,14 @@ mod tests {
     #[test]
     fn source_port__inchi_dll__getinchiex__line_325() {
         fn c_string(heap: &mut SourceHeap, value: &str) -> SourceMutPointer<i8> {
-            heap.allocate_model_storage(value.bytes().chain(std::iter::once(0)).map(|byte| byte as i8).collect())
-                .unwrap()
+            heap.allocate_model_storage(
+                value
+                    .bytes()
+                    .chain(std::iter::once(0))
+                    .map(|byte| byte as i8)
+                    .collect(),
+            )
+            .unwrap()
         }
 
         fn text(heap: &SourceHeap, pointer: SourceMutPointer<i8>) -> Option<String> {
@@ -6292,7 +6465,9 @@ mod tests {
             let polymer = heap
                 .allocate_model_storage(vec![inchi_Input_Polymer::default()])
                 .unwrap();
-            let v3000 = heap.allocate_model_storage(vec![inchi_Input_V3000::default()]).unwrap();
+            let v3000 = heap
+                .allocate_model_storage(vec![inchi_Input_V3000::default()])
+                .unwrap();
             let mut input = inchi_InputEx {
                 atom: SourceMutPointer::null(),
                 num_atoms: count,
@@ -6363,7 +6538,11 @@ mod tests {
         let methane_snapshot = methane_input.clone();
         let mut methane_output = inchi_Output::default();
         assert_eq!(
-            invoke(&mut methane_heap, Some(&mut methane_input), Some(&mut methane_output),),
+            invoke(
+                &mut methane_heap,
+                Some(&mut methane_input),
+                Some(&mut methane_output),
+            ),
             Ok(tagRetValGetINCHI_inchi_Ret_OKAY)
         );
         assert_eq!(methane_input, methane_snapshot);
@@ -6419,7 +6598,11 @@ mod tests {
         let mut failure_output = inchi_Output::default();
         failure_heap.fail_after_allocations(0);
         assert_eq!(
-            invoke(&mut failure_heap, Some(&mut failure_input), Some(&mut failure_output),),
+            invoke(
+                &mut failure_heap,
+                Some(&mut failure_input),
+                Some(&mut failure_output),
+            ),
             Ok(tagRetValGetINCHI_inchi_Ret_FATAL)
         );
         assert_eq!(failure_heap.source_allocation_calls(), 1);
@@ -6429,8 +6612,14 @@ mod tests {
     #[test]
     fn source_port__inchi_dll__getstdinchi__line_242() {
         fn c_string(heap: &mut SourceHeap, value: &str) -> SourceMutPointer<i8> {
-            heap.allocate_model_storage(value.bytes().chain(std::iter::once(0)).map(|byte| byte as i8).collect())
-                .unwrap()
+            heap.allocate_model_storage(
+                value
+                    .bytes()
+                    .chain(std::iter::once(0))
+                    .map(|byte| byte as i8)
+                    .collect(),
+            )
+            .unwrap()
         }
 
         fn text(heap: &SourceHeap, pointer: SourceMutPointer<i8>) -> Option<String> {
@@ -6464,7 +6653,10 @@ mod tests {
         }
 
         let mut null_heap = SourceHeap::default();
-        assert_eq!(invoke(&mut null_heap, None, None, 0), Err(SourceHeapError::NullPointer));
+        assert_eq!(
+            invoke(&mut null_heap, None, None, 0),
+            Err(SourceHeapError::NullPointer)
+        );
         assert_eq!(null_heap.live_source_allocation_count(), 0);
 
         let mut pseudo_heap = SourceHeap::default();
@@ -6487,7 +6679,12 @@ mod tests {
             ..inchi_Output::default()
         };
         assert_eq!(
-            invoke(&mut pseudo_heap, Some(&pseudo_input), Some(&mut pseudo_output), 0,),
+            invoke(
+                &mut pseudo_heap,
+                Some(&pseudo_input),
+                Some(&mut pseudo_output),
+                0,
+            ),
             Ok(_IS_ERROR as i32)
         );
         assert!(pseudo_output.szInChI.is_null());
@@ -6515,7 +6712,12 @@ mod tests {
             ..inchi_Input::default()
         };
         assert_eq!(
-            invoke(&mut pseudo_null_output_heap, Some(&pseudo_null_input), None, 0,),
+            invoke(
+                &mut pseudo_null_output_heap,
+                Some(&pseudo_null_input),
+                None,
+                0,
+            ),
             Ok(_IS_ERROR as i32)
         );
         assert_eq!(pseudo_null_output_heap.source_allocation_calls(), 0);
@@ -6598,8 +6800,14 @@ mod tests {
         );
         assert!(output.szMessage.is_null());
         assert_eq!(input, input_snapshot);
-        assert_eq!(standard_heap.slice(atoms.as_const()).unwrap(), atom_snapshot);
-        assert_eq!(standard_heap.slice(options.as_const()).unwrap(), option_snapshot);
+        assert_eq!(
+            standard_heap.slice(atoms.as_const()).unwrap(),
+            atom_snapshot
+        );
+        assert_eq!(
+            standard_heap.slice(options.as_const()).unwrap(),
+            option_snapshot
+        );
         FreeStdINCHI(&mut standard_heap, Some(&mut output)).unwrap();
         assert_eq!(standard_heap.live_source_allocation_count(), 1);
         assert_eq!(
@@ -6640,8 +6848,13 @@ mod tests {
     #[test]
     fn source_port__scc__getinchifrominchi__line_2114() {
         fn c_string(heap: &mut SourceHeap, text: &str) -> SourceMutPointer<i8> {
-            heap.allocate_model_storage(text.bytes().chain(std::iter::once(0)).map(|byte| byte as i8).collect())
-                .unwrap()
+            heap.allocate_model_storage(
+                text.bytes()
+                    .chain(std::iter::once(0))
+                    .map(|byte| byte as i8)
+                    .collect(),
+            )
+            .unwrap()
         }
 
         fn text(heap: &SourceHeap, pointer: SourceMutPointer<i8>) -> Option<String> {
@@ -6662,7 +6875,14 @@ mod tests {
 
         let mut heap = SourceHeap::default();
         assert_eq!(
-            CheckINCHI(&mut heap, SourceConstPointer::null(), 0, stdout, build, 1_000,),
+            CheckINCHI(
+                &mut heap,
+                SourceConstPointer::null(),
+                0,
+                stdout,
+                build,
+                1_000,
+            ),
             Ok(tagRetValCheckINCHI_INCHI_INVALID_PREFIX)
         );
         for (input, expected) in [
@@ -6673,14 +6893,26 @@ mod tests {
             ("InChI=1SCH4", tagRetValCheckINCHI_INCHI_INVALID_LAYOUT),
             ("InChI=1S/0", tagRetValCheckINCHI_INCHI_INVALID_LAYOUT),
             ("InChI=1S/CH4/C1", tagRetValCheckINCHI_INCHI_INVALID_LAYOUT),
-            ("InChI=1S/CH4/c1=2", tagRetValCheckINCHI_INCHI_INVALID_LAYOUT),
-            ("InChI=1S/CH4/c1@2", tagRetValCheckINCHI_INCHI_INVALID_LAYOUT),
+            (
+                "InChI=1S/CH4/c1=2",
+                tagRetValCheckINCHI_INCHI_INVALID_LAYOUT,
+            ),
+            (
+                "InChI=1S/CH4/c1@2",
+                tagRetValCheckINCHI_INCHI_INVALID_LAYOUT,
+            ),
             ("InChI=1S/CH4", tagRetValCheckINCHI_INCHI_VALID_STANDARD),
             ("InChI=1/CH4", tagRetValCheckINCHI_INCHI_VALID_NON_STANDARD),
             ("InChI=1B/CH4", tagRetValCheckINCHI_INCHI_VALID_BETA),
-            ("InChI=1S/CH4/c1?2;3", tagRetValCheckINCHI_INCHI_VALID_STANDARD),
+            (
+                "InChI=1S/CH4/c1?2;3",
+                tagRetValCheckINCHI_INCHI_VALID_STANDARD,
+            ),
             ("InChI=1S/CH4\\PB", tagRetValCheckINCHI_INCHI_VALID_STANDARD),
-            ("InChI=1S/CH4  \t\r\n", tagRetValCheckINCHI_INCHI_VALID_STANDARD),
+            (
+                "InChI=1S/CH4  \t\r\n",
+                tagRetValCheckINCHI_INCHI_VALID_STANDARD,
+            ),
         ] {
             let pointer = c_string(&mut heap, input);
             assert_eq!(
@@ -6727,7 +6959,10 @@ mod tests {
         let mut output = inchi_Output::default();
         let result = GetINCHIfromINCHI(&mut heap, Some(&input), &mut output, stdout, build, 1_000);
         assert_eq!(result, Ok(0));
-        assert_eq!(text(&heap, output.szInChI).as_deref(), Some("InChI=1S/CH4/h1H4"));
+        assert_eq!(
+            text(&heap, output.szInChI).as_deref(),
+            Some("InChI=1S/CH4/h1H4")
+        );
         assert!(output.szAuxInfo.is_null());
         assert_eq!(text(&heap, output.szMessage).as_deref(), Some(""));
         assert_eq!(text(&heap, output.szLog).as_deref(), Some(BASE_LOG));
@@ -6752,8 +6987,14 @@ mod tests {
             Some("InChI=1/CH4/h1H4")
         );
         assert!(nonstandard_output.szAuxInfo.is_null());
-        assert_eq!(text(&heap, nonstandard_output.szMessage).as_deref(), Some(""));
-        assert_eq!(text(&heap, nonstandard_output.szLog).as_deref(), Some(BASE_LOG));
+        assert_eq!(
+            text(&heap, nonstandard_output.szMessage).as_deref(),
+            Some("")
+        );
+        assert_eq!(
+            text(&heap, nonstandard_output.szLog).as_deref(),
+            Some(BASE_LOG)
+        );
 
         let strict_options = c_string(&mut heap, "-FixedH -RecMet -SUU -SLUUD");
         let strict_input = inchi_InputINCHI {
@@ -6761,9 +7002,19 @@ mod tests {
             szOptions: strict_options,
         };
         let mut strict_output = inchi_Output::default();
-        let strict_get = GetINCHIfromINCHI(&mut heap, Some(&strict_input), &mut strict_output, stdout, build, 1_000);
+        let strict_get = GetINCHIfromINCHI(
+            &mut heap,
+            Some(&strict_input),
+            &mut strict_output,
+            stdout,
+            build,
+            1_000,
+        );
         assert_eq!(strict_get, Ok(0));
-        assert_eq!(text(&heap, strict_output.szInChI).as_deref(), Some("InChI=1/CH4/h1H4"));
+        assert_eq!(
+            text(&heap, strict_output.szInChI).as_deref(),
+            Some("InChI=1/CH4/h1H4")
+        );
         assert!(strict_output.szAuxInfo.is_null());
         assert_eq!(text(&heap, strict_output.szMessage).as_deref(), Some(""));
         assert_eq!(
@@ -6797,18 +7048,35 @@ mod tests {
 
         let strict_nonstandard = c_string(&mut heap, "InChI=1/CH4/h1H4");
         assert_eq!(
-            CheckINCHI(&mut heap, strict_nonstandard.as_const(), 1, stdout, build, 1_000,),
+            CheckINCHI(
+                &mut heap,
+                strict_nonstandard.as_const(),
+                1,
+                stdout,
+                build,
+                1_000,
+            ),
             Ok(tagRetValCheckINCHI_INCHI_VALID_NON_STANDARD)
         );
 
-        let stereo = c_string(&mut heap, "InChI=1S/C3H6O3/c1-2(4)3(5)6/h2,4H,1H3,(H,5,6)/t2-/m0/s1");
+        let stereo = c_string(
+            &mut heap,
+            "InChI=1S/C3H6O3/c1-2(4)3(5)6/h2,4H,1H3,(H,5,6)/t2-/m0/s1",
+        );
         let filter_options = c_string(&mut heap, "-SNon");
         let filter_input = inchi_InputINCHI {
             szInChI: stereo,
             szOptions: filter_options,
         };
         let mut filter_output = inchi_Output::default();
-        let filter_result = GetINCHIfromINCHI(&mut heap, Some(&filter_input), &mut filter_output, stdout, build, 1_000);
+        let filter_result = GetINCHIfromINCHI(
+            &mut heap,
+            Some(&filter_input),
+            &mut filter_output,
+            stdout,
+            build,
+            1_000,
+        );
         assert_eq!(filter_result, Ok(0));
         assert_eq!(
             text(&heap, filter_output.szInChI).as_deref(),
@@ -6869,12 +7137,22 @@ mod tests {
             text(&trace_heap, trace_output.szInChI).as_deref(),
             Some("InChI=1S/CH4/h1H4")
         );
-        assert_eq!(text(&trace_heap, trace_output.szMessage).as_deref(), Some(""));
-        assert_eq!(text(&trace_heap, trace_output.szLog).as_deref(), Some(BASE_LOG));
+        assert_eq!(
+            text(&trace_heap, trace_output.szMessage).as_deref(),
+            Some("")
+        );
+        assert_eq!(
+            text(&trace_heap, trace_output.szLog).as_deref(),
+            Some(BASE_LOG)
+        );
 
         let expected_results = [3, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 3, 3, 3, 3, 3, 0, 0, 0, 0];
-        let expected_calls = [1, 21, 3, 4, 5, 6, 7, 8, 9, 10, 20, 12, 14, 14, 15, 16, 20, 19, 19, 21];
-        let expected_live = [1, 92, 2, 3, 3, 3, 3, 3, 3, 3, 91, 3, 3, 3, 3, 4, 92, 3, 3, 92];
+        let expected_calls = [
+            1, 21, 3, 4, 5, 6, 7, 8, 9, 10, 20, 12, 14, 14, 15, 16, 20, 19, 19, 21,
+        ];
+        let expected_live = [
+            1, 92, 2, 3, 3, 3, 3, 3, 3, 3, 91, 3, 3, 3, 3, 4, 92, 3, 3, 92,
+        ];
         let expected_inchi = [
             None,
             Some("InChI=1S/CH4/h1H4"),
@@ -6915,7 +7193,11 @@ mod tests {
                 1_000,
             );
             let index = failure_after as usize;
-            assert_eq!(failed_result, Ok(expected_results[index]), "{failure_after}");
+            assert_eq!(
+                failed_result,
+                Ok(expected_results[index]),
+                "{failure_after}"
+            );
             assert_eq!(
                 failed_heap.source_allocation_calls(),
                 expected_calls[index],
@@ -6934,7 +7216,11 @@ mod tests {
             assert!(failed_output.szAuxInfo.is_null(), "{failure_after}");
             assert_eq!(
                 text(&failed_heap, failed_output.szMessage).as_deref(),
-                if matches!(index, 0 | 2) { None } else { Some("") },
+                if matches!(index, 0 | 2) {
+                    None
+                } else {
+                    Some("")
+                },
                 "{failure_after}"
             );
             let expected_log = match index {
@@ -6949,7 +7235,9 @@ mod tests {
                     )
                     .to_owned(),
                 ),
-                2 => Some(format!("{BASE_LOG}\n\n\nCannot allocate output message buffer.")),
+                2 => Some(format!(
+                    "{BASE_LOG}\n\n\nCannot allocate output message buffer."
+                )),
                 4..=9 => {
                     let suffix = match index {
                         4..=6 => "MOBILE_H_FORMULA (0)",
@@ -6964,14 +7252,25 @@ mod tests {
                 }
                 _ => Some(BASE_LOG.to_owned()),
             };
-            assert_eq!(text(&failed_heap, failed_output.szLog), expected_log, "{failure_after}");
+            assert_eq!(
+                text(&failed_heap, failed_output.szLog),
+                expected_log,
+                "{failure_after}"
+            );
         }
 
         let mut failure_heap = SourceHeap::default();
         let failure_input = c_string(&mut failure_heap, "InChI=1S/CH4/h1H4");
         failure_heap.fail_after_allocations(0);
         assert_eq!(
-            CheckINCHI(&mut failure_heap, failure_input.as_const(), 1, stdout, build, 1_000,),
+            CheckINCHI(
+                &mut failure_heap,
+                failure_input.as_const(),
+                1,
+                stdout,
+                build,
+                1_000,
+            ),
             Ok(tagRetValCheckINCHI_INCHI_FAIL_I2I)
         );
 
@@ -7016,13 +7315,20 @@ mod tests {
             heap.allocate(vec![value]).unwrap()
         }
 
-        fn outer(heap: &mut SourceHeap, row: SourceMutPointer<i32>) -> SourceMutPointer<SourceMutPointer<i32>> {
+        fn outer(
+            heap: &mut SourceHeap,
+            row: SourceMutPointer<i32>,
+        ) -> SourceMutPointer<SourceMutPointer<i32>> {
             heap.allocate(vec![row, SourceMutPointer::null()]).unwrap()
         }
 
         let mut null_heap = SourceHeap::default();
         assert_eq!(
-            FreeInChIExtInput(&mut null_heap, SourceMutPointer::null(), SourceMutPointer::null(),),
+            FreeInChIExtInput(
+                &mut null_heap,
+                SourceMutPointer::null(),
+                SourceMutPointer::null(),
+            ),
             Ok(())
         );
         assert_eq!(null_heap.live_source_allocation_count(), 0);
@@ -7037,7 +7343,9 @@ mod tests {
                 ..inchi_Input_PolymerUnit::default()
             }])
             .unwrap();
-        let units = polymer_heap.allocate(vec![unit, SourceMutPointer::null()]).unwrap();
+        let units = polymer_heap
+            .allocate(vec![unit, SourceMutPointer::null()])
+            .unwrap();
         let polymer = polymer_heap
             .allocate(vec![inchi_Input_Polymer { units, n: 2 }])
             .unwrap();
@@ -7066,7 +7374,12 @@ mod tests {
                 n: 0,
             }])
             .unwrap();
-        FreeInChIExtInput(&mut zero_polymer_heap, zero_polymer, SourceMutPointer::null()).unwrap();
+        FreeInChIExtInput(
+            &mut zero_polymer_heap,
+            zero_polymer,
+            SourceMutPointer::null(),
+        )
+        .unwrap();
         assert_live(&zero_polymer_heap, zero_alist);
         assert_live(&zero_polymer_heap, zero_unit);
         assert_live(&zero_polymer_heap, zero_units);
@@ -7085,7 +7398,12 @@ mod tests {
                 n: 1,
             }])
             .unwrap();
-        FreeInChIExtInput(&mut null_units_heap, null_units_polymer, SourceMutPointer::null()).unwrap();
+        FreeInChIExtInput(
+            &mut null_units_heap,
+            null_units_polymer,
+            SourceMutPointer::null(),
+        )
+        .unwrap();
         assert_live(&null_units_heap, null_units_polymer);
         inchi_free(&mut null_units_heap, null_units_polymer).unwrap();
 
@@ -7104,7 +7422,12 @@ mod tests {
                 n: -1,
             }])
             .unwrap();
-        FreeInChIExtInput(&mut negative_polymer_heap, negative_polymer, SourceMutPointer::null()).unwrap();
+        FreeInChIExtInput(
+            &mut negative_polymer_heap,
+            negative_polymer,
+            SourceMutPointer::null(),
+        )
+        .unwrap();
         assert_live(&negative_polymer_heap, negative_alist);
         assert_live(&negative_polymer_heap, negative_unit);
         assert_freed(&negative_polymer_heap, negative_units);
@@ -7214,7 +7537,12 @@ mod tests {
                 ..inchi_Input_V3000::default()
             }])
             .unwrap();
-        FreeInChIExtInput(&mut negative_v3000_heap, SourceMutPointer::null(), negative_v3000).unwrap();
+        FreeInChIExtInput(
+            &mut negative_v3000_heap,
+            SourceMutPointer::null(),
+            negative_v3000,
+        )
+        .unwrap();
         assert_freed(&negative_v3000_heap, negative_v3000);
         for pointer in negative_rows {
             assert_live(&negative_v3000_heap, pointer);
@@ -7234,7 +7562,12 @@ mod tests {
                 ..inchi_Input_V3000::default()
             }])
             .unwrap();
-        FreeInChIExtInput(&mut null_lists_heap, SourceMutPointer::null(), null_lists_v3000).unwrap();
+        FreeInChIExtInput(
+            &mut null_lists_heap,
+            SourceMutPointer::null(),
+            null_lists_v3000,
+        )
+        .unwrap();
         assert_freed(&null_lists_heap, null_lists_v3000);
         assert_eq!(null_lists_heap.live_source_allocation_count(), 0);
     }
@@ -7242,8 +7575,14 @@ mod tests {
     #[test]
     fn source_port__inchi_dll__getstructfromstdinchi__line_2461() {
         fn c_string(heap: &mut SourceHeap, value: &str) -> SourceMutPointer<i8> {
-            heap.allocate_model_storage(value.bytes().chain(std::iter::once(0)).map(|byte| byte as i8).collect())
-                .unwrap()
+            heap.allocate_model_storage(
+                value
+                    .bytes()
+                    .chain(std::iter::once(0))
+                    .map(|byte| byte as i8)
+                    .collect(),
+            )
+            .unwrap()
         }
 
         fn invoke(
@@ -7267,8 +7606,12 @@ mod tests {
 
         fn sentinel_output(heap: &mut SourceHeap) -> inchi_OutputStruct {
             inchi_OutputStruct {
-                atom: heap.allocate_model_storage(vec![inchi_Atom::default()]).unwrap(),
-                stereo0D: heap.allocate_model_storage(vec![inchi_Stereo0D::default()]).unwrap(),
+                atom: heap
+                    .allocate_model_storage(vec![inchi_Atom::default()])
+                    .unwrap(),
+                stereo0D: heap
+                    .allocate_model_storage(vec![inchi_Stereo0D::default()])
+                    .unwrap(),
                 num_atoms: i16::MAX,
                 num_stereo0D: i16::MIN,
                 szMessage: heap.allocate_model_storage(vec![b'M' as i8, 0]).unwrap(),
@@ -7337,7 +7680,11 @@ mod tests {
         };
         let mut standard_output = unchanged.clone();
         assert_eq!(
-            invoke(&mut standard_heap, Some(&standard_input), &mut standard_output,),
+            invoke(
+                &mut standard_heap,
+                Some(&standard_input),
+                &mut standard_output,
+            ),
             Ok(tagRetValGetINCHI_inchi_Ret_OKAY)
         );
         assert_eq!(standard_output.num_atoms, 1);
@@ -7347,7 +7694,9 @@ mod tests {
         expected_atom.elname[0] = b'C' as i8;
         expected_atom.num_iso_H = [4, 0, 0, 0];
         assert_eq!(
-            standard_heap.slice(standard_output.atom.as_const()).unwrap(),
+            standard_heap
+                .slice(standard_output.atom.as_const())
+                .unwrap(),
             &[expected_atom]
         );
         assert!(standard_output.stereo0D.is_null());
@@ -7373,8 +7722,14 @@ mod tests {
     #[test]
     fn source_port__inchi_dll__getstructfrominchi__line_2856() {
         fn c_string(heap: &mut SourceHeap, value: &str) -> SourceMutPointer<i8> {
-            heap.allocate_model_storage(value.bytes().chain(std::iter::once(0)).map(|byte| byte as i8).collect())
-                .unwrap()
+            heap.allocate_model_storage(
+                value
+                    .bytes()
+                    .chain(std::iter::once(0))
+                    .map(|byte| byte as i8)
+                    .collect(),
+            )
+            .unwrap()
         }
 
         fn text(heap: &SourceHeap, pointer: SourceMutPointer<i8>) -> Option<String> {
@@ -7443,7 +7798,10 @@ Up to 1024 atoms per structure";
         assert_eq!(okay_output.num_stereo0D, 0);
         assert_eq!(okay_output.WarningFlags, [[0, 0], [0, 0]]);
         assert_eq!(text(&okay_heap, okay_output.szMessage).as_deref(), Some(""));
-        assert_eq!(text(&okay_heap, okay_output.szLog).as_deref(), Some(COMMON_LOG));
+        assert_eq!(
+            text(&okay_heap, okay_output.szLog).as_deref(),
+            Some(COMMON_LOG)
+        );
         let mut expected_methane = inchi_Atom::default();
         expected_methane.elname[0] = b'C' as i8;
         expected_methane.num_iso_H = [4, 0, 0, 0];
@@ -7476,10 +7834,18 @@ Up to 1024 atoms per structure";
         assert_eq!(warning_output.num_atoms, 7);
         assert_eq!(warning_output.num_stereo0D, 1);
         assert_eq!(warning_output.WarningFlags, [[0, 0], [0, 0]]);
-        assert_eq!(text(&warning_heap, warning_output.szMessage).as_deref(), Some(""));
-        assert_eq!(text(&warning_heap, warning_output.szLog).as_deref(), Some(COMMON_LOG));
         assert_eq!(
-            warning_heap.slice(warning_output.stereo0D.as_const()).unwrap()[0],
+            text(&warning_heap, warning_output.szMessage).as_deref(),
+            Some("")
+        );
+        assert_eq!(
+            text(&warning_heap, warning_output.szLog).as_deref(),
+            Some(COMMON_LOG)
+        );
+        assert_eq!(
+            warning_heap
+                .slice(warning_output.stereo0D.as_const())
+                .unwrap()[0],
             inchi_Stereo0D {
                 neighbor: [6, 0, 2, 3],
                 central_atom: 1,
@@ -7543,7 +7909,9 @@ Up to 1024 atoms per structure";
         assert_eq!(failure_output.WarningFlags, [[0, 0], [0, 0]]);
         assert_eq!(
             text(&failure_heap, failure_output.szLog),
-            Some(format!("{COMMON_LOG}\n\n\nCannot allocate output message buffer."))
+            Some(format!(
+                "{COMMON_LOG}\n\n\nCannot allocate output message buffer."
+            ))
         );
         FreeStructFromINCHI(&mut failure_heap, Some(&mut failure_output)).unwrap();
 
@@ -7559,7 +7927,11 @@ Up to 1024 atoms per structure";
         };
         boundary_heap.fail_after_allocations(2);
         assert_eq!(
-            invoke(&mut boundary_heap, Some(&boundary_input), &mut boundary_output,),
+            invoke(
+                &mut boundary_heap,
+                Some(&boundary_input),
+                &mut boundary_output,
+            ),
             Err(SourceHeapError::NullPointer)
         );
         assert_eq!(boundary_heap.source_allocation_calls(), 5);
@@ -7569,8 +7941,14 @@ Up to 1024 atoms per structure";
     #[test]
     fn source_port__inchi_dll__getstructfrominchiex__line_2485() {
         fn c_string(heap: &mut SourceHeap, value: &str) -> SourceMutPointer<i8> {
-            heap.allocate_model_storage(value.bytes().chain(std::iter::once(0)).map(|byte| byte as i8).collect())
-                .unwrap()
+            heap.allocate_model_storage(
+                value
+                    .bytes()
+                    .chain(std::iter::once(0))
+                    .map(|byte| byte as i8)
+                    .collect(),
+            )
+            .unwrap()
         }
 
         fn text(heap: &SourceHeap, pointer: SourceMutPointer<i8>) -> Option<String> {
@@ -7647,7 +8025,10 @@ Up to 1024 atoms per structure";
                 szOptions: SourceMutPointer::null(),
             };
             let mut output = inchi_OutputStructEx::default();
-            assert_eq!(invoke(&mut heap, Some(&input), &mut output), Ok(expected_result));
+            assert_eq!(
+                invoke(&mut heap, Some(&input), &mut output),
+                Ok(expected_result)
+            );
             assert_eq!(output.num_atoms as usize, expected_atoms.len());
             assert_eq!(output.num_stereo0D as usize, expected_stereo.len());
             assert_eq!(heap.slice(output.atom.as_const()).unwrap(), expected_atoms);
@@ -7658,7 +8039,10 @@ Up to 1024 atoms per structure";
                     .iter()
                     .all(|stereo| *stereo == inchi_Stereo0D::default())
             );
-            assert_eq!(text(&heap, output.szMessage).as_deref(), Some(expected_message));
+            assert_eq!(
+                text(&heap, output.szMessage).as_deref(),
+                Some(expected_message)
+            );
             assert_eq!(text(&heap, output.szLog).as_deref(), Some(expected_log));
             assert!(output.polymer.is_null());
             assert!(output.v3000.is_null());
@@ -7692,7 +8076,10 @@ Up to 1024 atoms per structure";
                 expected_calls,
                 "allocation ordinal {failure_after}"
             );
-            assert_eq!(output.num_atoms, expected_atoms, "allocation ordinal {failure_after}");
+            assert_eq!(
+                output.num_atoms, expected_atoms,
+                "allocation ordinal {failure_after}"
+            );
             assert_eq!(
                 text(&heap, output.szMessage).as_deref(),
                 expected_message,
@@ -7887,7 +8274,9 @@ Up to 1024 atoms per structure";
             305,
             1,
             Some(""),
-            Some("\nOutput format: Plain text\nAux. info suppressed\nNo timeout\nUp to 1024 atoms per structure"),
+            Some(
+                "\nOutput format: Plain text\nAux. info suppressed\nNo timeout\nUp to 1024 atoms per structure",
+            ),
         );
         assert_allocation_case(2, Err(SourceHeapError::NullPointer), 5, 0, Some(""), None);
         assert_allocation_case(
@@ -7896,7 +8285,9 @@ Up to 1024 atoms per structure";
             4,
             0,
             None,
-            Some(&format!("{COMMON_LOG}\n\n\nCannot allocate output message buffer.")),
+            Some(&format!(
+                "{COMMON_LOG}\n\n\nCannot allocate output message buffer."
+            )),
         );
         assert_allocation_case(
             4,
@@ -7906,7 +8297,14 @@ Up to 1024 atoms per structure";
             Some(""),
             Some(COMMON_LOG),
         );
-        assert_allocation_case(5, Ok(tagRetValGetINCHI_inchi_Ret_EOF), 6, 0, Some(""), Some(COMMON_LOG));
+        assert_allocation_case(
+            5,
+            Ok(tagRetValGetINCHI_inchi_Ret_EOF),
+            6,
+            0,
+            Some(""),
+            Some(COMMON_LOG),
+        );
         for (ordinal, calls, layer) in [
             (6, 7, "MOBILE_H_FORMULA (0)"),
             (9, 10, "MOBILE_H_CONNECTIONS (1)"),
@@ -7925,8 +8323,18 @@ Up to 1024 atoms per structure";
             );
         }
         for (ordinal, expected_result, calls, message) in [
-            (18, tagRetValGetINCHI_inchi_Ret_FATAL, 19, "*Conversion failed*"),
-            (19, tagRetValGetINCHI_inchi_Ret_ERROR, 20, "*Conversion failed*"),
+            (
+                18,
+                tagRetValGetINCHI_inchi_Ret_FATAL,
+                19,
+                "*Conversion failed*",
+            ),
+            (
+                19,
+                tagRetValGetINCHI_inchi_Ret_ERROR,
+                20,
+                "*Conversion failed*",
+            ),
             (
                 300,
                 tagRetValGetINCHI_inchi_Ret_FATAL,
@@ -7955,7 +8363,9 @@ Up to 1024 atoms per structure";
             304,
             0,
             Some(""),
-            Some(&format!("{COMMON_LOG}\n\n\nFinal structure conversion failed")),
+            Some(&format!(
+                "{COMMON_LOG}\n\n\nFinal structure conversion failed"
+            )),
         );
     }
 
@@ -8063,7 +8473,11 @@ Up to 1024 atoms per structure";
         heap.trace_source_allocations();
         let mut success_output = unchanged.clone();
         assert_eq!(
-            input_erroneously_contains_pseudoatoms(&mut heap, Some(&pseudo_input), Some(&mut success_output),),
+            input_erroneously_contains_pseudoatoms(
+                &mut heap,
+                Some(&pseudo_input),
+                Some(&mut success_output),
+            ),
             Ok(1)
         );
         assert_eq!(heap.source_allocation_calls(), 1);
@@ -8102,13 +8516,20 @@ Up to 1024 atoms per structure";
         let failure_live = failure_heap.live_allocation_count();
         failure_heap.fail_after_allocations(0);
         assert_eq!(
-            input_erroneously_contains_pseudoatoms(&mut failure_heap, Some(&failure_input), Some(&mut failure_output),),
+            input_erroneously_contains_pseudoatoms(
+                &mut failure_heap,
+                Some(&failure_input),
+                Some(&mut failure_output),
+            ),
             Ok(1)
         );
         assert_eq!(failure_output, inchi_Output::default());
         assert_eq!(failure_heap.source_allocation_calls(), 1);
         assert_eq!(failure_heap.live_allocation_count(), failure_live);
-        assert_eq!(failure_heap.slice(failure_old.as_const()).unwrap(), &[b'X' as i8, 0]);
+        assert_eq!(
+            failure_heap.slice(failure_old.as_const()).unwrap(),
+            &[b'X' as i8, 0]
+        );
 
         let invalid_input = inchi_Input {
             atom: SourceMutPointer::null(),
@@ -8117,7 +8538,11 @@ Up to 1024 atoms per structure";
         };
         let mut invalid_output = unchanged.clone();
         assert_eq!(
-            input_erroneously_contains_pseudoatoms(&mut heap, Some(&invalid_input), Some(&mut invalid_output),),
+            input_erroneously_contains_pseudoatoms(
+                &mut heap,
+                Some(&invalid_input),
+                Some(&mut invalid_output),
+            ),
             Err(SourceHeapError::NullPointer)
         );
         assert_eq!(invalid_output, unchanged);
@@ -8154,7 +8579,11 @@ Up to 1024 atoms per structure";
             data
         }
 
-        fn stream(heap: &mut SourceHeap, text: &[u8], padding: usize) -> (INCHI_IOSTREAM, SourceMutPointer<i8>) {
+        fn stream(
+            heap: &mut SourceHeap,
+            text: &[u8],
+            padding: usize,
+        ) -> (INCHI_IOSTREAM, SourceMutPointer<i8>) {
             let mut bytes = text.iter().map(|byte| *byte as i8).collect::<Vec<_>>();
             bytes.push(0);
             bytes.extend(std::iter::repeat_n(b'#' as i8, padding));
@@ -8191,7 +8620,8 @@ Up to 1024 atoms per structure";
             Ok(())
         );
 
-        let (mut no_owner_output, no_owner_output_pointer) = stream(&mut heap, b"InChI=1S/CH4/h1H4\n", 16);
+        let (mut no_owner_output, no_owner_output_pointer) =
+            stream(&mut heap, b"InChI=1S/CH4/h1H4\n", 16);
         let (mut no_owner_log, no_owner_log_pointer) = stream(&mut heap, b"log\n\n", 16);
         assert_eq!(
             produce_generation_output(
@@ -8219,8 +8649,11 @@ Up to 1024 atoms per structure";
             szMessage: old_message,
             szLog: old_log,
         };
-        let (mut generated, generated_pointer) =
-            stream(&mut heap, b"InChI=1S/CH4/h1H4\nAuxInfo=1/0/N:1/rA:1C/rB:/rC:;\n", 16);
+        let (mut generated, generated_pointer) = stream(
+            &mut heap,
+            b"InChI=1S/CH4/h1H4\nAuxInfo=1/0/N:1/rA:1C/rB:/rC:;\n",
+            16,
+        );
         let generated_used = generated.s.nUsedLength;
         let (mut log, log_pointer) = stream(&mut heap, b"prefix structure #9\n\n", 16);
         let mut parameters = INPUT_PARMS::default();
@@ -8236,8 +8669,14 @@ Up to 1024 atoms per structure";
             ),
             Ok(())
         );
-        assert_eq!(text(&heap, output.szMessage).as_deref(), Some("source warning"));
-        assert_eq!(text(&heap, output.szInChI).as_deref(), Some("InChI=1S/CH4/h1H4"));
+        assert_eq!(
+            text(&heap, output.szMessage).as_deref(),
+            Some("source warning")
+        );
+        assert_eq!(
+            text(&heap, output.szInChI).as_deref(),
+            Some("InChI=1S/CH4/h1H4")
+        );
         assert_eq!(
             text(&heap, output.szAuxInfo).as_deref(),
             Some("AuxInfo=1/0/N:1/rA:1C/rB:/rC:;")
@@ -8276,7 +8715,10 @@ Up to 1024 atoms per structure";
         );
         assert_eq!(sdf_output.szInChI, sdf_pointer);
         assert!(sdf_output.szAuxInfo.is_null());
-        assert_eq!(text(&heap, sdf_output.szInChI).as_deref(), Some("line1\nline2\n"));
+        assert_eq!(
+            text(&heap, sdf_output.szInChI).as_deref(),
+            Some("line1\nline2\n")
+        );
         assert!(sdf_stream.s.pStr.is_null());
 
         let (mut multiline_stream, multiline_pointer) = stream(&mut heap, b"one\ntwo\n", 16);
@@ -8295,11 +8737,15 @@ Up to 1024 atoms per structure";
         );
         assert_eq!(multiline_output.szInChI, multiline_pointer);
         assert!(multiline_output.szAuxInfo.is_null());
-        assert_eq!(text(&heap, multiline_output.szInChI).as_deref(), Some("one\ntwo"));
+        assert_eq!(
+            text(&heap, multiline_output.szInChI).as_deref(),
+            Some("one\ntwo")
+        );
 
         let mut failure_heap = SourceHeap::default();
         let failure_old_message = allocate_source_fixture(&mut failure_heap, vec![b'X' as i8, 0]);
-        let (mut failure_stream, failure_pointer) = stream(&mut failure_heap, b"InChI=1S/CH4\n", 16);
+        let (mut failure_stream, failure_pointer) =
+            stream(&mut failure_heap, b"InChI=1S/CH4\n", 16);
         let mut failure_log = INCHI_IOSTREAM::default();
         let mut failure_output = inchi_Output {
             szMessage: failure_old_message,
@@ -8320,7 +8766,10 @@ Up to 1024 atoms per structure";
         assert_eq!(failure_heap.source_allocation_calls(), 1);
         assert!(failure_output.szMessage.is_null());
         assert_eq!(failure_output.szInChI, failure_pointer);
-        assert_eq!(text(&failure_heap, failure_pointer).as_deref(), Some("InChI=1S/CH4"));
+        assert_eq!(
+            text(&failure_heap, failure_pointer).as_deref(),
+            Some("InChI=1S/CH4")
+        );
         assert!(failure_stream.s.pStr.is_null());
         assert!(failure_heap.slice(failure_old_message.as_const()).is_ok());
 
@@ -8383,18 +8832,25 @@ Up to 1024 atoms per structure";
             assert_eq!(heap.slice(dormant.as_const()).unwrap(), before);
         }
 
-        let trim_only = allocate_source_fixture(&mut heap, vec![b'a' as i8, b'\n' as i8, b'\n' as i8, 0]);
+        let trim_only =
+            allocate_source_fixture(&mut heap, vec![b'a' as i8, b'\n' as i8, b'\n' as i8, 0]);
         let mut trim_stream = INCHI_IOSTREAM::default();
         trim_stream.s.pStr = trim_only;
         trim_stream.s.nAllocatedLength = 4;
         trim_stream.s.nUsedLength = 3;
         trim_stream.s.nPtr = 5;
-        assert_eq!(copy_corrected_log_tail(&mut heap, None, &mut trim_stream), Ok(()));
+        assert_eq!(
+            copy_corrected_log_tail(&mut heap, None, &mut trim_stream),
+            Ok(())
+        );
         assert_eq!(trim_stream.s.pStr, trim_only);
         assert_eq!(trim_stream.s.nAllocatedLength, 4);
         assert_eq!(trim_stream.s.nUsedLength, 1);
         assert_eq!(trim_stream.s.nPtr, 5);
-        assert_eq!(heap.slice(trim_only.as_const()).unwrap(), &[b'a' as i8, 0, 0, 0]);
+        assert_eq!(
+            heap.slice(trim_only.as_const()).unwrap(),
+            &[b'a' as i8, 0, 0, 0]
+        );
 
         let all_lf = allocate_source_fixture(&mut heap, vec![b'\n' as i8, b'\n' as i8, 0]);
         let mut all_lf_stream = INCHI_IOSTREAM::default();
@@ -8442,7 +8898,10 @@ Up to 1024 atoms per structure";
         assert_eq!(bytes[third], 0);
         assert_eq!(bytes[source.len() - 2], 0);
         assert_eq!(bytes[source.len() - 1], 0);
-        let preserved = b" Structure #2".iter().map(|byte| *byte as i8).collect::<Vec<_>>();
+        let preserved = b" Structure #2"
+            .iter()
+            .map(|byte| *byte as i8)
+            .collect::<Vec<_>>();
         assert_eq!(
             &bytes[b"alpha structure #1 beta".len()..b"alpha structure #1 beta Structure #2".len()],
             preserved
@@ -8460,13 +8919,18 @@ Up to 1024 atoms per structure";
         assert_eq!(short_stream.s.pStr, short);
         assert!(short_output.szLog.is_null());
 
-        let unterminated = allocate_source_fixture(&mut heap, vec![b'a' as i8, b'b' as i8, b'c' as i8]);
+        let unterminated =
+            allocate_source_fixture(&mut heap, vec![b'a' as i8, b'b' as i8, b'c' as i8]);
         let mut unterminated_stream = INCHI_IOSTREAM::default();
         unterminated_stream.s.pStr = unterminated;
         unterminated_stream.s.nUsedLength = 3;
         let mut unterminated_output = inchi_Output::default();
         assert_eq!(
-            copy_corrected_log_tail(&mut heap, Some(&mut unterminated_output), &mut unterminated_stream,),
+            copy_corrected_log_tail(
+                &mut heap,
+                Some(&mut unterminated_output),
+                &mut unterminated_stream,
+            ),
             Err(SourceHeapError::MissingNulTerminator)
         );
         assert!(unterminated_stream.s.pStr.is_null());
@@ -8476,8 +8940,14 @@ Up to 1024 atoms per structure";
     #[test]
     fn source_port__inchi_dll__setnumimplicith__line_994() {
         let mut heap = SourceHeap::default();
-        assert_eq!(SetNumImplicitH(&mut heap, SourceMutPointer::null(), i32::MIN), Ok(()));
-        assert_eq!(SetNumImplicitH(&mut heap, SourceMutPointer::null(), 0), Ok(()));
+        assert_eq!(
+            SetNumImplicitH(&mut heap, SourceMutPointer::null(), i32::MIN),
+            Ok(())
+        );
+        assert_eq!(
+            SetNumImplicitH(&mut heap, SourceMutPointer::null(), 0),
+            Ok(())
+        );
 
         let mut recalculate = inp_ATOM::default();
         recalculate.elname[..2].copy_from_slice(&[b'C' as i8, 0]);
@@ -8503,7 +8973,9 @@ Up to 1024 atoms per structure";
         metal.num_H = 2;
         metal.at_type = 2;
 
-        let atoms = heap.allocate(vec![recalculate, preserve, aliased, metal]).unwrap();
+        let atoms = heap
+            .allocate(vec![recalculate, preserve, aliased, metal])
+            .unwrap();
         SetNumImplicitH(&mut heap, atoms, 4).unwrap();
         let output = heap.slice(atoms.as_const()).unwrap();
         assert_eq!(
@@ -8513,11 +8985,18 @@ Up to 1024 atoms per structure";
         assert!(output.iter().all(|atom| atom.at_type == 0));
     }
 
-    fn parse_case(text: &[u8], max_arguments: i32) -> (i32, Vec<String>, Vec<SourceArgvPointer>, Vec<i64>, Vec<u8>) {
+    fn parse_case(
+        text: &[u8],
+        max_arguments: i32,
+    ) -> (i32, Vec<String>, Vec<SourceArgvPointer>, Vec<i64>, Vec<u8>) {
         let mut heap = SourceHeap::default();
-        let command = allocate_source_fixture(&mut heap, text.iter().map(|byte| *byte as i8).collect::<Vec<_>>());
+        let command = allocate_source_fixture(
+            &mut heap,
+            text.iter().map(|byte| *byte as i8).collect::<Vec<_>>(),
+        );
         let mut arguments = vec![SourceArgvPointer::Null; max_arguments as usize];
-        let count = parse_options_string(&mut heap, command, &mut arguments, max_arguments).unwrap();
+        let count =
+            parse_options_string(&mut heap, command, &mut arguments, max_arguments).unwrap();
         let values = arguments[..count as usize]
             .iter()
             .map(|argument| match argument {
@@ -8525,7 +9004,8 @@ Up to 1024 atoms per structure";
                 SourceArgvPointer::Command(pointer) => {
                     let bytes = heap.slice(pointer.as_const()).unwrap();
                     let length = bytes.iter().position(|byte| *byte == 0).unwrap();
-                    String::from_utf8(bytes[..length].iter().map(|byte| *byte as u8).collect()).unwrap()
+                    String::from_utf8(bytes[..length].iter().map(|byte| *byte as u8).collect())
+                        .unwrap()
                 }
                 SourceArgvPointer::Null => panic!("NULL inside returned argv"),
             })
@@ -8594,7 +9074,10 @@ Up to 1024 atoms per structure";
         );
         assert_eq!(structure.nStructReadError, 98);
         assert_eq!(structure.nErrorType, crate::source_types::_IS_ERROR as i32);
-        assert_eq!(fixed_source_text(&structure.pStrErrStruct).unwrap(), "Empty structure");
+        assert_eq!(
+            fixed_source_text(&structure.pStrErrStruct).unwrap(),
+            "Empty structure"
+        );
         assert_eq!(number, 0);
 
         let atom_pointer = allocate_source_fixture(
@@ -8635,8 +9118,10 @@ Up to 1024 atoms per structure";
             ..inchi_InputEx::default()
         };
         structure = STRUCT_DATA::default();
-        parameters.nMode =
-            (REQ_MODE_CHIR_FLG_STEREO | REQ_MODE_STEREO | REQ_MODE_RELATIVE_STEREO | REQ_MODE_RACEMIC_STEREO) as u64;
+        parameters.nMode = (REQ_MODE_CHIR_FLG_STEREO
+            | REQ_MODE_STEREO
+            | REQ_MODE_RELATIVE_STEREO
+            | REQ_MODE_RACEMIC_STEREO) as u64;
         parameters.bChiralFlag = FLAG_SET_INP_AT_CHIRAL as i32;
         assert_eq!(
             ExtractOneStructure(
@@ -8713,12 +9198,19 @@ Up to 1024 atoms per structure";
         let mut null_heap = SourceHeap::default();
         assert_eq!(FreeStructFromINCHIEx(&mut null_heap, None), Ok(()));
         let mut empty = inchi_OutputStructEx::default();
-        assert_eq!(FreeStructFromINCHIEx(&mut null_heap, Some(&mut empty)), Ok(()));
+        assert_eq!(
+            FreeStructFromINCHIEx(&mut null_heap, Some(&mut empty)),
+            Ok(())
+        );
         assert_eq!(empty, inchi_OutputStructEx::default());
 
         let mut heap = SourceHeap::default();
-        let atom = heap.allocate_model_storage(vec![inchi_Atom::default()]).unwrap();
-        let stereo = heap.allocate_model_storage(vec![inchi_Stereo0D::default()]).unwrap();
+        let atom = heap
+            .allocate_model_storage(vec![inchi_Atom::default()])
+            .unwrap();
+        let stereo = heap
+            .allocate_model_storage(vec![inchi_Stereo0D::default()])
+            .unwrap();
         let log = heap.allocate_model_storage(vec![b'L' as i8, 0]).unwrap();
         let message = heap.allocate_model_storage(vec![b'M' as i8, 0]).unwrap();
         let polymer_unit = heap
@@ -8731,7 +9223,9 @@ Up to 1024 atoms per structure";
                 n: 1,
             }])
             .unwrap();
-        let v3000 = heap.allocate_model_storage(vec![inchi_Input_V3000::default()]).unwrap();
+        let v3000 = heap
+            .allocate_model_storage(vec![inchi_Input_V3000::default()])
+            .unwrap();
         let mut output = inchi_OutputStructEx {
             atom,
             stereo0D: stereo,
@@ -8745,11 +9239,26 @@ Up to 1024 atoms per structure";
         };
         assert_eq!(FreeStructFromINCHIEx(&mut heap, Some(&mut output)), Ok(()));
         assert_eq!(output, inchi_OutputStructEx::default());
-        assert_eq!(heap.slice(atom.as_const()), Err(SourceHeapError::MissingAllocation));
-        assert_eq!(heap.slice(stereo.as_const()), Err(SourceHeapError::MissingAllocation));
-        assert_eq!(heap.slice(log.as_const()), Err(SourceHeapError::MissingAllocation));
-        assert_eq!(heap.slice(message.as_const()), Err(SourceHeapError::MissingAllocation));
-        assert_eq!(heap.slice(polymer.as_const()), Err(SourceHeapError::MissingAllocation));
+        assert_eq!(
+            heap.slice(atom.as_const()),
+            Err(SourceHeapError::MissingAllocation)
+        );
+        assert_eq!(
+            heap.slice(stereo.as_const()),
+            Err(SourceHeapError::MissingAllocation)
+        );
+        assert_eq!(
+            heap.slice(log.as_const()),
+            Err(SourceHeapError::MissingAllocation)
+        );
+        assert_eq!(
+            heap.slice(message.as_const()),
+            Err(SourceHeapError::MissingAllocation)
+        );
+        assert_eq!(
+            heap.slice(polymer.as_const()),
+            Err(SourceHeapError::MissingAllocation)
+        );
         assert_eq!(
             heap.slice(polymer_units.as_const()),
             Err(SourceHeapError::MissingAllocation)
@@ -8758,7 +9267,10 @@ Up to 1024 atoms per structure";
             heap.slice(polymer_unit.as_const()),
             Err(SourceHeapError::MissingAllocation)
         );
-        assert_eq!(heap.slice(v3000.as_const()), Err(SourceHeapError::MissingAllocation));
+        assert_eq!(
+            heap.slice(v3000.as_const()),
+            Err(SourceHeapError::MissingAllocation)
+        );
 
         let mut polymer_heap = SourceHeap::default();
         let polymer_only = polymer_heap
@@ -8821,7 +9333,10 @@ Up to 1024 atoms per structure";
         }
 
         let mut already_empty = inchi_OutputStruct::default();
-        assert_eq!(FreeStructFromINCHI(&mut heap, Some(&mut already_empty)), Ok(()));
+        assert_eq!(
+            FreeStructFromINCHI(&mut heap, Some(&mut already_empty)),
+            Ok(())
+        );
     }
 
     #[test]
@@ -8854,7 +9369,8 @@ Up to 1024 atoms per structure";
         let mut heap = SourceHeap::default();
         assert_eq!(GetStringLength(&heap, SourceMutPointer::null()), Ok(0));
         let empty = allocate_source_fixture(&mut heap, vec![0_i8]);
-        let embedded = allocate_source_fixture(&mut heap, vec![b'a' as i8, b'b' as i8, 0, b'c' as i8, 0]);
+        let embedded =
+            allocate_source_fixture(&mut heap, vec![b'a' as i8, b'b' as i8, 0, b'c' as i8, 0]);
         assert_eq!(GetStringLength(&heap, empty), Ok(0));
         assert_eq!(GetStringLength(&heap, embedded), Ok(2));
         let unterminated = allocate_source_fixture(&mut heap, vec![b'x' as i8]);
@@ -9071,9 +9587,30 @@ Up to 1024 atoms per structure";
                 tagINCHIStereoType0D_INCHI_StereoType_DoubleBond as i8,
                 -1_i16,
             ),
-            (2, 1, 2, 1, tagINCHIStereoType0D_INCHI_StereoType_DoubleBond as i8, -1),
-            (3, 3, 4, 4, tagINCHIStereoType0D_INCHI_StereoType_Allene as i8, 1),
-            (4, 2, 2, 2, tagINCHIStereoType0D_INCHI_StereoType_DoubleBond as i8, -1),
+            (
+                2,
+                1,
+                2,
+                1,
+                tagINCHIStereoType0D_INCHI_StereoType_DoubleBond as i8,
+                -1,
+            ),
+            (
+                3,
+                3,
+                4,
+                4,
+                tagINCHIStereoType0D_INCHI_StereoType_Allene as i8,
+                1,
+            ),
+            (
+                4,
+                2,
+                2,
+                2,
+                tagINCHIStereoType0D_INCHI_StereoType_DoubleBond as i8,
+                -1,
+            ),
         ] {
             let mut heap = SourceHeap::default();
             let input = source_stereo_chain(length, first, second);
@@ -9126,7 +9663,10 @@ Up to 1024 atoms per structure";
             );
             assert_eq!((atom_count, stereo_count), (5, 0));
             assert!(!stereo.is_null());
-            assert_eq!(heap.slice(stereo.as_const()).unwrap()[0], inchi_Stereo0D::default());
+            assert_eq!(
+                heap.slice(stereo.as_const()).unwrap()[0],
+                inchi_Stereo0D::default()
+            );
             inchi_free(&mut heap, atoms).unwrap();
             inchi_free(&mut heap, stereo).unwrap();
         }
@@ -9192,7 +9732,15 @@ Up to 1024 atoms per structure";
 
         let mut heap = SourceHeap::default();
         assert_eq!(
-            InpAtom0DToInchiAtom(&mut heap, SourceMutPointer::null(), 0, None, None, None, None,),
+            InpAtom0DToInchiAtom(
+                &mut heap,
+                SourceMutPointer::null(),
+                0,
+                None,
+                None,
+                None,
+                None,
+            ),
             Err(SourceHeapError::NullPointer)
         );
     }
@@ -9204,7 +9752,12 @@ Up to 1024 atoms per structure";
             (vec![4_u8, 4], 3, 0, ""),
             (vec![4_u8, 4, 4], 4, 0, ""),
             (vec![4_u8], 0, 8, "Atom 'C' has 1 alternating bonds"),
-            (vec![4_u8, 4, 4, 4], 0, 8, "Atom 'C' has 4 alternating bonds"),
+            (
+                vec![4_u8, 4, 4, 4],
+                0,
+                8,
+                "Atom 'C' has 4 alternating bonds",
+            ),
         ] {
             let mut heap = SourceHeap::default();
             let mut atom = named_atom(b'C');
@@ -9222,7 +9775,15 @@ Up to 1024 atoms per structure";
             let errors = allocate_source_fixture(&mut heap, vec![0_i8; STR_ERR_LEN as usize]);
             let mut error = 0;
             assert_eq!(
-                SetAtomAndBondProperties(&mut heap, atoms, inputs, 0, 0, Some(errors), Some(&mut error),),
+                SetAtomAndBondProperties(
+                    &mut heap,
+                    atoms,
+                    inputs,
+                    0,
+                    0,
+                    Some(errors),
+                    Some(&mut error),
+                ),
                 Ok(0)
             );
             let atom = &heap.slice(atoms.as_const()).unwrap()[0];
@@ -9245,7 +9806,20 @@ Up to 1024 atoms per structure";
             expected_error,
             expected_text,
         ) in [
-            ("CH3+", 0, 0, "C", 6, 3, 0, 1, 0, 3, 0, "Parsed compound atom(s): CH3+"),
+            (
+                "CH3+",
+                0,
+                0,
+                "C",
+                6,
+                3,
+                0,
+                1,
+                0,
+                3,
+                0,
+                "Parsed compound atom(s): CH3+",
+            ),
             (
                 "CH3+",
                 2,
@@ -9274,9 +9848,48 @@ Up to 1024 atoms per structure";
                 0,
                 "Ignored charge/radical redefinition: N^H; Parsed compound atom(s):",
             ),
-            ("H2", 0, 0, "H", 1, 1, 0, 0, 0, 3, 0, "Parsed compound atom(s): H2"),
-            ("D2", 0, 0, "H", 1, 0, 2, 0, 0, 3, 0, "Parsed compound atom(s): D2"),
-            ("QH2", 0, 0, "Q", 0, 2, 0, 0, 0, 2, 64, "Unknown element(s): Q"),
+            (
+                "H2",
+                0,
+                0,
+                "H",
+                1,
+                1,
+                0,
+                0,
+                0,
+                3,
+                0,
+                "Parsed compound atom(s): H2",
+            ),
+            (
+                "D2",
+                0,
+                0,
+                "H",
+                1,
+                0,
+                2,
+                0,
+                0,
+                3,
+                0,
+                "Parsed compound atom(s): D2",
+            ),
+            (
+                "QH2",
+                0,
+                0,
+                "Q",
+                0,
+                2,
+                0,
+                0,
+                0,
+                2,
+                64,
+                "Unknown element(s): Q",
+            ),
         ] {
             let mut heap = SourceHeap::default();
             let mut atom = inp_ATOM {
@@ -9295,9 +9908,22 @@ Up to 1024 atoms per structure";
             let inputs = allocate_source_fixture(&mut heap, vec![input]);
             let errors = allocate_source_fixture(&mut heap, vec![0_i8; STR_ERR_LEN as usize]);
             let mut error = 0;
-            SetAtomAndBondProperties(&mut heap, atoms, inputs, 0, 0, Some(errors), Some(&mut error)).unwrap();
+            SetAtomAndBondProperties(
+                &mut heap,
+                atoms,
+                inputs,
+                0,
+                0,
+                Some(errors),
+                Some(&mut error),
+            )
+            .unwrap();
             let atom = &heap.slice(atoms.as_const()).unwrap()[0];
-            assert_eq!(fixed_source_text(&atom.elname).unwrap(), expected_name, "{alias}");
+            assert_eq!(
+                fixed_source_text(&atom.elname).unwrap(),
+                expected_name,
+                "{alias}"
+            );
             assert_eq!(atom.el_number, expected_number, "{alias}");
             assert_eq!(atom.num_H, expected_h, "{alias}");
             assert_eq!(atom.iso_atw_diff, expected_isotope, "{alias}");
@@ -9338,17 +9964,32 @@ Up to 1024 atoms per structure";
             };
             let inputs = allocate_source_fixture(&mut heap, vec![input]);
             let mut error = 0;
-            SetAtomAndBondProperties(&mut heap, atoms, inputs, 0, 0, None, Some(&mut error)).unwrap();
+            SetAtomAndBondProperties(&mut heap, atoms, inputs, 0, 0, None, Some(&mut error))
+                .unwrap();
             let atom = &heap.slice(atoms.as_const()).unwrap()[0];
-            assert_eq!(fixed_source_text(&atom.elname).unwrap(), expected_name, "{element}");
-            assert_eq!(atom.iso_atw_diff, expected_isotope, "{element}/{isotopic_mass}");
+            assert_eq!(
+                fixed_source_text(&atom.elname).unwrap(),
+                expected_name,
+                "{element}"
+            );
+            assert_eq!(
+                atom.iso_atw_diff, expected_isotope,
+                "{element}/{isotopic_mass}"
+            );
             if element == "D" || element == "T" {
                 assert_eq!(atom.elname, source_name("H"));
             }
             assert_eq!(error, 0);
         }
 
-        for (input_hydrogens, do_not_add, initial_h, expected_h, expected_isotopes, expected_type) in [
+        for (
+            input_hydrogens,
+            do_not_add,
+            initial_h,
+            expected_h,
+            expected_isotopes,
+            expected_type,
+        ) in [
             ([-1_i8, 1, 2, 3], 0, 7, 7, [1, 2, 3], 2_u16),
             ([-1, 1, 2, 3], 1, 7, 7, [1, 2, 3], 0),
             ([4, -1, -2, -3], 0, 7, 4, [-1, -2, -3], 0),
@@ -9441,7 +10082,8 @@ Up to 1024 atoms per structure";
         assert_eq!(offsets, [-2, -1]);
         assert_eq!(mutated, b"\0");
 
-        let (count, values, arguments, offsets, mutated) = parse_case(b"  alpha\t\"beta gamma\" delta\0", 8);
+        let (count, values, arguments, offsets, mutated) =
+            parse_case(b"  alpha\t\"beta gamma\" delta\0", 8);
         assert_eq!(count, 4);
         assert_eq!(values, ["", "alpha", "beta gamma", "delta"]);
         assert_eq!(arguments[4], SourceArgvPointer::Null);
@@ -9549,7 +10191,10 @@ Up to 1024 atoms per structure";
             input.extend([0xa5; 16]);
 
             let mut heap = SourceHeap::default();
-            let command = allocate_source_fixture(&mut heap, input.iter().map(|byte| *byte as i8).collect::<Vec<_>>());
+            let command = allocate_source_fixture(
+                &mut heap,
+                input.iter().map(|byte| *byte as i8).collect::<Vec<_>>(),
+            );
             let mut arguments = vec![SourceArgvPointer::Null; max_arguments as usize];
             let count = parse_options_string(&mut heap, command, &mut arguments, max_arguments)
                 .unwrap_or_else(|error| panic!("{case_id}: {error:?}"));
@@ -9606,7 +10251,9 @@ Up to 1024 atoms per structure";
     fn source_port__inchi_dll__setatomproperties__line_1139() {
         let mut heap = SourceHeap::default();
         let mut target = inp_ATOM {
-            elname: [b'X' as i8, b'Y' as i8, b'Z' as i8, b'W' as i8, b'Q' as i8, b'R' as i8],
+            elname: [
+                b'X' as i8, b'Y' as i8, b'Z' as i8, b'W' as i8, b'Q' as i8, b'R' as i8,
+            ],
             ..inp_ATOM::default()
         };
         let input = inchi_Atom {
@@ -9639,7 +10286,9 @@ Up to 1024 atoms per structure";
         target = heap.slice(targets.as_const()).unwrap()[1].clone();
         assert_eq!(
             target.elname,
-            [b'C' as i8, 0, b'Z' as i8, b'W' as i8, b'Q' as i8, b'R' as i8]
+            [
+                b'C' as i8, 0, b'Z' as i8, b'W' as i8, b'Q' as i8, b'R' as i8
+            ]
         );
         assert_eq!((target.charge, target.radical), (-2, RADICAL_TRIPLET as i8));
         assert_eq!((target.x, target.y, target.z), (1.25, -2.5, 3.0e-6));
@@ -9678,7 +10327,10 @@ Up to 1024 atoms per structure";
                 ),
                 Ok(0)
             );
-            assert_eq!(heap.slice(known_target.as_const()).unwrap()[0].radical, expected);
+            assert_eq!(
+                heap.slice(known_target.as_const()).unwrap()[0].radical,
+                expected
+            );
             inchi_free(&mut heap, known_input).unwrap();
             inchi_free(&mut heap, known_target).unwrap();
         }
@@ -9719,7 +10371,8 @@ Up to 1024 atoms per structure";
             let bytes = heap.slice(error_buffer.as_const()).unwrap();
             let length = bytes.iter().position(|byte| *byte == 0).unwrap();
             assert_eq!(
-                String::from_utf8(bytes[..length].iter().map(|byte| *byte as u8).collect()).unwrap(),
+                String::from_utf8(bytes[..length].iter().map(|byte| *byte as u8).collect())
+                    .unwrap(),
                 expected_text
             );
             inchi_free(&mut heap, unknown_input).unwrap();
@@ -9827,7 +10480,8 @@ Up to 1024 atoms per structure";
             oracle.status,
             String::from_utf8_lossy(&oracle.stderr)
         );
-        let output = String::from_utf8(oracle.stdout).expect("official C oracle output must be UTF-8");
+        let output =
+            String::from_utf8(oracle.stdout).expect("official C oracle output must be UTF-8");
         let mut record_count = 0;
         for line in output.lines() {
             let official: Value = serde_json::from_str(line).expect("oracle record must be JSON");
@@ -9877,7 +10531,11 @@ Up to 1024 atoms per structure";
             )
             .unwrap_or_else(|failure| panic!("{case_id}: {failure:?}"));
             let expected = &official["output"];
-            assert_eq!(status, expected["status"].as_i64().unwrap() as i32, "{case_id}");
+            assert_eq!(
+                status,
+                expected["status"].as_i64().unwrap() as i32,
+                "{case_id}"
+            );
             let atom = &heap.slice(targets.as_const()).unwrap()[atom_index];
             let expected_fields = expected["atom"]["integer_fields"]
                 .as_array()
@@ -9905,8 +10563,16 @@ Up to 1024 atoms per structure";
                 .map(|value| value.as_i64().unwrap() as i8)
                 .collect::<Vec<_>>();
             assert_eq!(coordinate.as_slice(), expected_coordinate, "{case_id}");
-            assert_eq!(dimensions, expected["dimensions"].as_i64().unwrap() as i32, "{case_id}");
-            assert_eq!(error, expected["error"].as_i64().unwrap() as i32, "{case_id}");
+            assert_eq!(
+                dimensions,
+                expected["dimensions"].as_i64().unwrap() as i32,
+                "{case_id}"
+            );
+            assert_eq!(
+                error,
+                expected["error"].as_i64().unwrap() as i32,
+                "{case_id}"
+            );
             assert_eq!(
                 source_error_text(&heap, error_buffer),
                 expected["error_text"],
@@ -9932,7 +10598,8 @@ Up to 1024 atoms per structure";
         ];
         for (source_type, source_stereo, expected_type, expected1, expected2) in mapping_cases {
             let mut heap = SourceHeap::default();
-            let atoms = allocate_source_fixture(&mut heap, vec![named_atom(b'C'), named_atom(b'O')]);
+            let atoms =
+                allocate_source_fixture(&mut heap, vec![named_atom(b'C'), named_atom(b'O')]);
             let mut input = inchi_Atom::default();
             input.neighbor[0] = 1;
             input.bond_type[0] = source_type;
@@ -9974,7 +10641,8 @@ Up to 1024 atoms per structure";
 
         {
             let mut heap = SourceHeap::default();
-            let atoms = allocate_source_fixture(&mut heap, vec![named_atom(b'C'), named_atom(b'N')]);
+            let atoms =
+                allocate_source_fixture(&mut heap, vec![named_atom(b'C'), named_atom(b'N')]);
             let mut input = inchi_Atom::default();
             input.neighbor[0] = 1;
             input.bond_type[0] = 9;
@@ -10012,7 +10680,8 @@ Up to 1024 atoms per structure";
             (0, 0, "Atom has a bond to itself"),
         ] {
             let mut heap = SourceHeap::default();
-            let atoms = allocate_source_fixture(&mut heap, vec![named_atom(b'C'), named_atom(b'O')]);
+            let atoms =
+                allocate_source_fixture(&mut heap, vec![named_atom(b'C'), named_atom(b'O')]);
             let mut input = inchi_Atom::default();
             input.neighbor[0] = neighbor;
             input.bond_type[0] = 1;
@@ -10134,13 +10803,19 @@ Up to 1024 atoms per structure";
             assert_eq!((result[1].neighbor[0], result[1].bond_stereo[0]), (0, -1));
             assert_eq!(num_bonds, 9);
             if mismatch {
-                assert_eq!((error, result[0].bond_type[0], result[1].bond_type[0]), (2, 2, 2));
+                assert_eq!(
+                    (error, result[0].bond_type[0], result[1].bond_type[0]),
+                    (2, 2, 2)
+                );
                 assert_eq!(
                     source_error_text(&heap, error_buffer),
                     "Multiple bonds between two atoms"
                 );
             } else {
-                assert_eq!((error, result[0].bond_type[0], result[1].bond_type[0]), (0, 1, 1));
+                assert_eq!(
+                    (error, result[0].bond_type[0], result[1].bond_type[0]),
+                    (0, 1, 1)
+                );
                 assert_eq!(
                     source_error_text(&heap, error_buffer),
                     "Duplicated bond(s) between two atoms"
@@ -10264,7 +10939,10 @@ Up to 1024 atoms per structure";
             out.extend(atom.elname.iter().map(|v| i64::from(*v)));
             out.push(i64::from(atom.el_number));
             out.extend(atom.neighbor.iter().map(|v| i64::from(*v)));
-            out.extend([i64::from(atom.orig_at_number), i64::from(atom.orig_compt_at_numb)]);
+            out.extend([
+                i64::from(atom.orig_at_number),
+                i64::from(atom.orig_compt_at_numb),
+            ]);
             out.extend(atom.bond_stereo.iter().map(|v| i64::from(*v)));
             out.extend(atom.bond_type.iter().map(|v| i64::from(*v)));
             out.extend([
@@ -10336,7 +11014,11 @@ Up to 1024 atoms per structure";
                     atoms[1].bond_type[0] = 1;
                 }
                 10 | 11 => {
-                    let full = if mode == 10 { &mut atoms[0] } else { &mut atoms[1] };
+                    let full = if mode == 10 {
+                        &mut atoms[0]
+                    } else {
+                        &mut atoms[1]
+                    };
                     full.valence = MAXVAL as i8;
                     full.neighbor.fill(99);
                 }
@@ -10362,7 +11044,8 @@ Up to 1024 atoms per structure";
             oracle.status,
             String::from_utf8_lossy(&oracle.stderr)
         );
-        let output = String::from_utf8(oracle.stdout).expect("official C oracle output must be UTF-8");
+        let output =
+            String::from_utf8(oracle.stdout).expect("official C oracle output must be UTF-8");
         let mut count = 0;
         for line in output.lines() {
             let official: Value = serde_json::from_str(line).expect("oracle record must be JSON");
@@ -10401,7 +11084,11 @@ Up to 1024 atoms per structure";
             )
             .unwrap_or_else(|failure| panic!("{case_id}: {failure:?}"));
             let expected = &official["output"];
-            assert_eq!(status, expected["status"].as_i64().unwrap() as i32, "{case_id}");
+            assert_eq!(
+                status,
+                expected["status"].as_i64().unwrap() as i32,
+                "{case_id}"
+            );
             let actual_atoms = heap.slice(atom_pointer.as_const()).unwrap();
             for index in 0..2 {
                 let expected_atom = &expected["atoms"][index];
@@ -10432,8 +11119,16 @@ Up to 1024 atoms per structure";
                     "{case_id} atom {index}"
                 );
             }
-            assert_eq!(num_bonds, expected["num_bonds"].as_i64().unwrap() as i32, "{case_id}");
-            assert_eq!(error, expected["error"].as_i64().unwrap() as i32, "{case_id}");
+            assert_eq!(
+                num_bonds,
+                expected["num_bonds"].as_i64().unwrap() as i32,
+                "{case_id}"
+            );
+            assert_eq!(
+                error,
+                expected["error"].as_i64().unwrap() as i32,
+                "{case_id}"
+            );
             assert_eq!(
                 source_error_text(&heap, error_buffer),
                 expected["error_text"].as_str().unwrap(),
@@ -10455,8 +11150,14 @@ Up to 1024 atoms per structure";
         crate::source::base::ikey_dll::tests::official_c_oracle__getinchikeyfrominchi__exact();
 
         fn c_string(heap: &mut SourceHeap, value: &str) -> SourceMutPointer<i8> {
-            heap.allocate_model_storage(value.bytes().chain(std::iter::once(0)).map(|byte| byte as i8).collect())
-                .expect("fixture string allocation")
+            heap.allocate_model_storage(
+                value
+                    .bytes()
+                    .chain(std::iter::once(0))
+                    .map(|byte| byte as i8)
+                    .collect(),
+            )
+            .expect("fixture string allocation")
         }
 
         fn text(heap: &SourceHeap, pointer: SourceMutPointer<i8>) -> Option<String> {
@@ -10506,11 +11207,17 @@ Up to 1024 atoms per structure";
             for (field, actual) in [
                 (
                     "neighbor",
-                    atom.neighbor.iter().map(|value| i64::from(*value)).collect::<Vec<_>>(),
+                    atom.neighbor
+                        .iter()
+                        .map(|value| i64::from(*value))
+                        .collect::<Vec<_>>(),
                 ),
                 (
                     "bond_type",
-                    atom.bond_type.iter().map(|value| i64::from(*value)).collect::<Vec<_>>(),
+                    atom.bond_type
+                        .iter()
+                        .map(|value| i64::from(*value))
+                        .collect::<Vec<_>>(),
                 ),
                 (
                     "bond_stereo",
@@ -10521,14 +11228,24 @@ Up to 1024 atoms per structure";
                 ),
                 (
                     "elname",
-                    atom.elname.iter().map(|value| i64::from(*value)).collect::<Vec<_>>(),
+                    atom.elname
+                        .iter()
+                        .map(|value| i64::from(*value))
+                        .collect::<Vec<_>>(),
                 ),
                 (
                     "num_iso_h",
-                    atom.num_iso_H.iter().map(|value| i64::from(*value)).collect::<Vec<_>>(),
+                    atom.num_iso_H
+                        .iter()
+                        .map(|value| i64::from(*value))
+                        .collect::<Vec<_>>(),
                 ),
             ] {
-                assert_eq!(actual, expected_i64_array(&expected[field]), "{case_id}: atom {field}");
+                assert_eq!(
+                    actual,
+                    expected_i64_array(&expected[field]),
+                    "{case_id}: atom {field}"
+                );
             }
             for (field, actual) in [
                 ("num_bonds", i64::from(atom.num_bonds)),
@@ -10561,7 +11278,8 @@ Up to 1024 atoms per structure";
             oracle.status,
             String::from_utf8_lossy(&oracle.stderr)
         );
-        let records = String::from_utf8(oracle.stdout).expect("official C oracle output must be UTF-8");
+        let records =
+            String::from_utf8(oracle.stdout).expect("official C oracle output must be UTF-8");
         let mut record_count = 0_usize;
         for line in records.lines() {
             let official: Value = serde_json::from_str(line).expect("oracle record must be JSON");
@@ -10635,11 +11353,14 @@ Up to 1024 atoms per structure";
                     }
                     let atoms_snapshot = atoms.clone();
                     let stereo_snapshot = stereo.clone();
-                    let atom_pointer = heap.allocate_model_storage(atoms).expect("atom fixture allocation");
+                    let atom_pointer = heap
+                        .allocate_model_storage(atoms)
+                        .expect("atom fixture allocation");
                     let stereo_pointer = if stereo.is_empty() {
                         SourceMutPointer::null()
                     } else {
-                        heap.allocate_model_storage(stereo).expect("stereo fixture allocation")
+                        heap.allocate_model_storage(stereo)
+                            .expect("stereo fixture allocation")
                     };
                     let option_pointer = options
                         .map(|value| c_string(&mut heap, value))
@@ -10647,7 +11368,11 @@ Up to 1024 atoms per structure";
                     let option_snapshot = if option_pointer.is_null() {
                         None
                     } else {
-                        Some(heap.slice(option_pointer.as_const()).expect("option bytes").to_vec())
+                        Some(
+                            heap.slice(option_pointer.as_const())
+                                .expect("option bytes")
+                                .to_vec(),
+                        )
                     };
                     let input = inchi_Input {
                         atom: atom_pointer,
@@ -10683,7 +11408,11 @@ Up to 1024 atoms per structure";
                         ("message", text(&heap, output.szMessage)),
                         ("log", text(&heap, output.szLog)),
                     ] {
-                        assert_eq!(actual.as_deref(), expected_text(&expected[field]), "{case_id}: {field}");
+                        assert_eq!(
+                            actual.as_deref(),
+                            expected_text(&expected[field]),
+                            "{case_id}: {field}"
+                        );
                     }
                     assert_eq!(
                         heap.slice(atom_pointer.as_const()).expect("input atoms"),
@@ -10699,7 +11428,8 @@ Up to 1024 atoms per structure";
                     }
                     if let Some(snapshot) = option_snapshot {
                         assert_eq!(
-                            heap.slice(option_pointer.as_const()).expect("input options"),
+                            heap.slice(option_pointer.as_const())
+                                .expect("input options"),
                             snapshot,
                             "{case_id}: option input mutation"
                         );
@@ -10720,11 +11450,18 @@ Up to 1024 atoms per structure";
                     let option_pointer = options
                         .map(|value| c_string(&mut heap, value))
                         .unwrap_or_else(SourceMutPointer::null);
-                    let input_snapshot = heap.slice(input_pointer.as_const()).expect("input bytes").to_vec();
+                    let input_snapshot = heap
+                        .slice(input_pointer.as_const())
+                        .expect("input bytes")
+                        .to_vec();
                     let option_snapshot = if option_pointer.is_null() {
                         None
                     } else {
-                        Some(heap.slice(option_pointer.as_const()).expect("option bytes").to_vec())
+                        Some(
+                            heap.slice(option_pointer.as_const())
+                                .expect("option bytes")
+                                .to_vec(),
+                        )
                     };
                     let input = inchi_InputINCHI {
                         szInChI: input_pointer,
@@ -10748,7 +11485,9 @@ Up to 1024 atoms per structure";
                         },
                         1_000,
                     )
-                    .unwrap_or_else(|error| panic!("{case_id}: GetStructFromINCHI failed: {error:?}"));
+                    .unwrap_or_else(|error| {
+                        panic!("{case_id}: GetStructFromINCHI failed: {error:?}")
+                    });
                     let expected = &official["output"];
                     assert_eq!(
                         i64::from(status),
@@ -10776,7 +11515,12 @@ Up to 1024 atoms per structure";
                         "{case_id}: log"
                     );
                     assert_eq!(
-                        output.WarningFlags.iter().flatten().copied().collect::<Vec<_>>(),
+                        output
+                            .WarningFlags
+                            .iter()
+                            .flatten()
+                            .copied()
+                            .collect::<Vec<_>>(),
                         expected["warning_flags"]
                             .as_array()
                             .expect("warning flags")
@@ -10787,7 +11531,9 @@ Up to 1024 atoms per structure";
                     );
                     let expected_atoms = expected["atoms"].as_array().expect("atoms");
                     if output.num_atoms > 0 {
-                        let actual_atoms = heap.slice(output.atom.as_const()).expect("output atom storage");
+                        let actual_atoms = heap
+                            .slice(output.atom.as_const())
+                            .expect("output atom storage");
                         assert_eq!(actual_atoms.len(), expected_atoms.len(), "{case_id}");
                         for (atom, expected_atom) in actual_atoms.iter().zip(expected_atoms) {
                             assert_atom(case_id, atom, expected_atom);
@@ -10798,9 +11544,14 @@ Up to 1024 atoms per structure";
                     }
                     let expected_stereo = expected["stereo"].as_array().expect("stereo");
                     if output.num_stereo0D > 0 {
-                        let actual_stereo = heap.slice(output.stereo0D.as_const()).expect("output stereo storage");
+                        let actual_stereo = heap
+                            .slice(output.stereo0D.as_const())
+                            .expect("output stereo storage");
                         assert!(actual_stereo.len() >= expected_stereo.len(), "{case_id}");
-                        for (actual, expected) in actual_stereo.iter().take(expected_stereo.len()).zip(expected_stereo)
+                        for (actual, expected) in actual_stereo
+                            .iter()
+                            .take(expected_stereo.len())
+                            .zip(expected_stereo)
                         {
                             assert_eq!(
                                 actual
@@ -10846,9 +11597,14 @@ Up to 1024 atoms per structure";
                         );
                     }
                     assert_eq!(expected["input_unchanged"], true, "{case_id}");
-                    FreeStructFromINCHI(&mut heap, Some(&mut output))
-                        .unwrap_or_else(|error| panic!("{case_id}: FreeStructFromINCHI failed: {error:?}"));
-                    assert_eq!(output, inchi_OutputStruct::default(), "{case_id}: free reset");
+                    FreeStructFromINCHI(&mut heap, Some(&mut output)).unwrap_or_else(|error| {
+                        panic!("{case_id}: FreeStructFromINCHI failed: {error:?}")
+                    });
+                    assert_eq!(
+                        output,
+                        inchi_OutputStruct::default(),
+                        "{case_id}: free reset"
+                    );
                     let after_free = &expected["after_free"];
                     for field in ["atom_null", "stereo_null", "message_null", "log_null"] {
                         assert_eq!(after_free[field], true, "{case_id}: {field}");

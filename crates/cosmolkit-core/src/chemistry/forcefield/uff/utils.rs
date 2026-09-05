@@ -75,7 +75,10 @@ pub fn calc_bond_force_constant(
     // RDKit✔️✔️:                (restLength * restLength * restLength);
     // RDKit✔️✔️:   return res;
     // RDKit✔️✔️: }
-    Ok(2.0 * PARAMS_G * end1_params.z1 * end2_params.z1 / (rest_length * rest_length * rest_length))
+    Ok(
+        2.0 * PARAMS_G * end1_params.z1 * end2_params.z1
+            / (rest_length * rest_length * rest_length),
+    )
 }
 
 pub fn calc_angle_force_constant(
@@ -130,7 +133,10 @@ pub fn calc_nonbonded_depth(at1_params: &AtomicParams, at2_params: &AtomicParams
     (at1_params.d1 * at2_params.d1).sqrt()
 }
 
-pub fn calc_inversion_coefficients(at2_atomic_num: i32, is_c_bound_to_o: bool) -> (f64, f64, f64, f64) {
+pub fn calc_inversion_coefficients(
+    at2_atomic_num: i32,
+    is_c_bound_to_o: bool,
+) -> (f64, f64, f64, f64) {
     // RDKit✔️✔️: std::tuple<double, double, double, double>
     // RDKit✔️✔️: calcInversionCoefficientsAndForceConstant(int at2AtomicNum, bool isCBoundToO) {
     // RDKit✔️✔️:   double res = 0.0;
@@ -260,7 +266,8 @@ mod tests {
         let rest_length = calc_bond_rest_length(2.0, &end1, &end2).expect("valid bond order");
         let r_bo = -PARAMS_LAMBDA * (end1.r1 + end2.r1) * 2.0_f64.ln();
         let sqrt_delta = end1.gmp_xi.sqrt() - end2.gmp_xi.sqrt();
-        let r_en = end1.r1 * end2.r1 * sqrt_delta * sqrt_delta / (end1.gmp_xi * end1.r1 + end2.gmp_xi * end2.r1);
+        let r_en = end1.r1 * end2.r1 * sqrt_delta * sqrt_delta
+            / (end1.gmp_xi * end1.r1 + end2.gmp_xi * end2.r1);
         let expected = end1.r1 + end2.r1 + r_bo - r_en;
 
         assert!((rest_length - expected).abs() < EPS);
@@ -288,7 +295,8 @@ mod tests {
         end1.z1 = 1.912;
         end2.z1 = 2.3;
 
-        let force_constant = calc_bond_force_constant(1.25, &end1, &end2).expect("valid rest length");
+        let force_constant =
+            calc_bond_force_constant(1.25, &end1, &end2).expect("valid rest length");
         let expected = 2.0 * PARAMS_G * end1.z1 * end2.z1 / (1.25_f64 * 1.25_f64 * 1.25_f64);
 
         assert!((force_constant - expected).abs() < EPS);
@@ -318,7 +326,8 @@ mod tests {
         at3.z1 = 2.3;
         let theta0 = 109.47 * std::f64::consts::PI / 180.0;
 
-        let force_constant = calc_angle_force_constant(theta0, 1.0, 1.0, &at1, &at2, &at3).expect("valid inputs");
+        let force_constant =
+            calc_angle_force_constant(theta0, 1.0, 1.0, &at1, &at2, &at3).expect("valid inputs");
         let cos_theta0 = theta0.cos();
         let r12 = calc_bond_rest_length(1.0, &at1, &at2).expect("valid bond order");
         let r23 = calc_bond_rest_length(1.0, &at2, &at3).expect("valid bond order");
@@ -422,7 +431,10 @@ mod tests {
 
     #[test]
     fn uff_utils_calc_inversion_coefficients_scales_carbon_bound_to_oxygen() {
-        assert_tuple_close(calc_inversion_coefficients(6, true), (50.0 / 3.0, 1.0, -1.0, 0.0));
+        assert_tuple_close(
+            calc_inversion_coefficients(6, true),
+            (50.0 / 3.0, 1.0, -1.0, 0.0),
+        );
     }
 
     #[test]
@@ -439,11 +451,17 @@ mod tests {
             calc_inversion_coefficients(51, false),
             expected_group5_inversion(87.7047),
         );
-        assert_tuple_close(calc_inversion_coefficients(83, false), expected_group5_inversion(90.0));
+        assert_tuple_close(
+            calc_inversion_coefficients(83, false),
+            expected_group5_inversion(90.0),
+        );
     }
 
     #[test]
     fn uff_utils_calc_inversion_coefficients_preserves_default_switch_fallthrough() {
-        assert_tuple_close(calc_inversion_coefficients(0, false), expected_group5_inversion(1.0));
+        assert_tuple_close(
+            calc_inversion_coefficients(0, false),
+            expected_group5_inversion(1.0),
+        );
     }
 }

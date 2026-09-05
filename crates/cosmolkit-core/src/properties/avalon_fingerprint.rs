@@ -146,7 +146,13 @@ pub fn avalon_fingerprint(
         false,
     )?;
     if !params.is_query {
-        set_fingerprint_bits(&mut molecule_state, &mut bytes, params.bit_flags, false, true)?;
+        set_fingerprint_bits(
+            &mut molecule_state,
+            &mut bytes,
+            params.bit_flags,
+            false,
+            true,
+        )?;
     }
     Ok(Fingerprint::from_lsb_bytes(params.n_bits as usize, &bytes))
 }
@@ -171,24 +177,44 @@ fn count_fingerprint_patterns(
     if fpflags & ACCUMULATE_BITS == 0 {
         counts.fill(0);
     }
-    with_prepared_fingerprint_state(molecule, bit_flags, is_query, fpflags, 0, |working, state| {
-        let mut result = 0_i32;
-        let saved_atom_colors = working.atoms.iter().map(|atom| atom.color).collect::<Vec<_>>();
-        let saved_bond_colors = working.bonds.iter().map(|bond| bond.color).collect::<Vec<_>>();
-        result += count_low_flag_families_prepared(working, state, counts, bit_flags, is_query, 0);
-        for (atom, color) in working.atoms.iter_mut().zip(saved_atom_colors) {
-            atom.color = color;
-        }
-        for (bond, color) in working.bonds.iter_mut().zip(saved_bond_colors) {
-            bond.color = color;
-        }
-        result += count_middle_flag_families_prepared(working, state, counts, bit_flags, is_query, 0);
-        result += count_high_flag_families_prepared(working, state, counts, bit_flags, is_query, 0);
-        if bit_flags.bits() & AvalonFingerprintFlags::NON_SSS_BITS.bits() != 0 {
-            result += count_non_sss_flag_families_prepared(working, state, counts, bit_flags, is_query, 0);
-        }
-        Ok(result)
-    })
+    with_prepared_fingerprint_state(
+        molecule,
+        bit_flags,
+        is_query,
+        fpflags,
+        0,
+        |working, state| {
+            let mut result = 0_i32;
+            let saved_atom_colors = working
+                .atoms
+                .iter()
+                .map(|atom| atom.color)
+                .collect::<Vec<_>>();
+            let saved_bond_colors = working
+                .bonds
+                .iter()
+                .map(|bond| bond.color)
+                .collect::<Vec<_>>();
+            result +=
+                count_low_flag_families_prepared(working, state, counts, bit_flags, is_query, 0);
+            for (atom, color) in working.atoms.iter_mut().zip(saved_atom_colors) {
+                atom.color = color;
+            }
+            for (bond, color) in working.bonds.iter_mut().zip(saved_bond_colors) {
+                bond.color = color;
+            }
+            result +=
+                count_middle_flag_families_prepared(working, state, counts, bit_flags, is_query, 0);
+            result +=
+                count_high_flag_families_prepared(working, state, counts, bit_flags, is_query, 0);
+            if bit_flags.bits() & AvalonFingerprintFlags::NON_SSS_BITS.bits() != 0 {
+                result += count_non_sss_flag_families_prepared(
+                    working, state, counts, bit_flags, is_query, 0,
+                );
+            }
+            Ok(result)
+        },
+    )
 }
 
 fn set_fingerprint_bits(
@@ -336,8 +362,14 @@ mod tests {
         .expect("query fingerprint");
         assert!(query.on_bits().is_empty());
 
-        let narrow = avalon_fingerprint(&ethanol, &AvalonFingerprintParams { n_bits: 9, ..default })
-            .expect("rounded source size");
+        let narrow = avalon_fingerprint(
+            &ethanol,
+            &AvalonFingerprintParams {
+                n_bits: 9,
+                ..default
+            },
+        )
+        .expect("rounded source size");
         assert_eq!(narrow.n_bits(), 9);
         // RDKit's adapter rounds its internal byte buffer to four bytes before
         // hashing, while the public vector retains the requested nine-bit size.

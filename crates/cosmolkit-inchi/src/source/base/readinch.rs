@@ -3,13 +3,14 @@ use crate::source::base::ichierr::AddErrorMessage;
 use crate::source::base::ichister::{FixUnkn0DStereoBonds, ReconcileAllCmlBondParities};
 use crate::source::base::util::{inchi_calloc, inchi_free, is_in_the_list};
 use crate::source_types::{
-    AB_PARITY_EVEN, AB_PARITY_NONE, AB_PARITY_ODD, AB_PARITY_UNDF, BOND_TYPE_DOUBLE, INCHI_IOSTREAM,
-    MAX_NUM_STEREO_BONDS, NO_ATOM, SB_PARITY_FLAG, SB_PARITY_MASK, SB_PARITY_SHFT, SourceConstPointer, SourceHeap,
-    SourceHeapError, SourceMutPointer, inchi_Stereo0D, inp_ATOM, tagINCHIStereoParity0D_INCHI_PARITY_EVEN,
-    tagINCHIStereoParity0D_INCHI_PARITY_NONE, tagINCHIStereoParity0D_INCHI_PARITY_ODD,
-    tagINCHIStereoParity0D_INCHI_PARITY_UNDEFINED, tagINCHIStereoParity0D_INCHI_PARITY_UNKNOWN,
-    tagINCHIStereoType0D_INCHI_StereoType_Allene, tagINCHIStereoType0D_INCHI_StereoType_DoubleBond,
-    tagINCHIStereoType0D_INCHI_StereoType_None, tagINCHIStereoType0D_INCHI_StereoType_Tetrahedral,
+    AB_PARITY_EVEN, AB_PARITY_NONE, AB_PARITY_ODD, AB_PARITY_UNDF, BOND_TYPE_DOUBLE,
+    INCHI_IOSTREAM, MAX_NUM_STEREO_BONDS, NO_ATOM, SB_PARITY_FLAG, SB_PARITY_MASK, SB_PARITY_SHFT,
+    SourceConstPointer, SourceHeap, SourceHeapError, SourceMutPointer, inchi_Stereo0D, inp_ATOM,
+    tagINCHIStereoParity0D_INCHI_PARITY_EVEN, tagINCHIStereoParity0D_INCHI_PARITY_NONE,
+    tagINCHIStereoParity0D_INCHI_PARITY_ODD, tagINCHIStereoParity0D_INCHI_PARITY_UNDEFINED,
+    tagINCHIStereoParity0D_INCHI_PARITY_UNKNOWN, tagINCHIStereoType0D_INCHI_StereoType_Allene,
+    tagINCHIStereoType0D_INCHI_StereoType_DoubleBond, tagINCHIStereoType0D_INCHI_StereoType_None,
+    tagINCHIStereoType0D_INCHI_StereoType_Tetrahedral,
 };
 
 // `inchi_api.h` under the pinned LP64 ABI: five 2-byte `AT_NUM` values and
@@ -425,7 +426,8 @@ pub(crate) fn Extract0DParities(
             || (stereo_type == tagINCHIStereoType0D_INCHI_StereoType_Allene as i32
                 && 0 <= central_atom
                 && central_atom < num_atoms)
-            || (stereo_type == tagINCHIStereoType0D_INCHI_StereoType_DoubleBond as i32 && central_atom == NO_ATOM)
+            || (stereo_type == tagINCHIStereoType0D_INCHI_StereoType_DoubleBond as i32
+                && central_atom == NO_ATOM)
         {
             let mut previous = -1_i32;
             j = 0;
@@ -434,14 +436,18 @@ pub(crate) fn Extract0DParities(
                 if k < 0 || k >= num_atoms || previous == k {
                     break;
                 }
-                if stereo_type == tagINCHIStereoType0D_INCHI_StereoType_Tetrahedral as i32 && k != central_atom {
-                    let center_index =
-                        usize::try_from(central_atom).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                if stereo_type == tagINCHIStereoType0D_INCHI_StereoType_Tetrahedral as i32
+                    && k != central_atom
+                {
+                    let center_index = usize::try_from(central_atom)
+                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     let center = heap
                         .slice(atoms.as_const())?
                         .get(center_index)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                    if is_in_the_list(Some(&center.neighbor), k as u16, i32::from(center.valence))?.is_none() {
+                    if is_in_the_list(Some(&center.neighbor), k as u16, i32::from(center.valence))?
+                        .is_none()
+                    {
                         break;
                     }
                 }
@@ -461,8 +467,12 @@ pub(crate) fn Extract0DParities(
             let i1_index = usize::from(i1);
             let i2_index = usize::from(i2);
             let atom_values = heap.slice(atoms.as_const())?;
-            let atom_i1 = atom_values.get(i1_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
-            let atom_i2 = atom_values.get(i2_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let atom_i1 = atom_values
+                .get(i1_index)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let atom_i2 = atom_values
+                .get(i2_index)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
             let q1 = is_in_the_list(Some(&atom_i1.neighbor), i1n, i32::from(atom_i1.valence))?;
             let q2 = is_in_the_list(Some(&atom_i2.neighbor), i2n, i32::from(atom_i2.valence))?;
             if q1.is_none() || q2.is_none() {
@@ -486,8 +496,8 @@ pub(crate) fn Extract0DParities(
                             .get(usize::from(current))
                             .ok_or(SourceHeapError::PointerOutOfBounds)?;
                         for ordinal in 0..i32::from(current_atom.valence) {
-                            let ordinal_usize =
-                                usize::try_from(ordinal).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                            let ordinal_usize = usize::try_from(ordinal)
+                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                             if current_atom.bond_type[ordinal_usize] == BOND_TYPE_DOUBLE as u8
                                 && previous != current_atom.neighbor[ordinal_usize]
                             {
@@ -514,7 +524,11 @@ pub(crate) fn Extract0DParities(
                         .slice(atoms.as_const())?
                         .get(i2_index)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                    let p2 = is_in_the_list(Some(&final_atom.neighbor), previous, i32::from(final_atom.valence))?;
+                    let p2 = is_in_the_list(
+                        Some(&final_atom.neighbor),
+                        previous,
+                        i32::from(final_atom.valence),
+                    )?;
                     if current == i2
                         && previous != current
                         && num_double_bonds == 0
@@ -532,8 +546,11 @@ pub(crate) fn Extract0DParities(
                 } else if stereo_type == tagINCHIStereoType0D_INCHI_StereoType_Allene as i32 {
                     j = -3;
                 } else {
-                    let p2 = is_in_the_list(Some(&atom_i2.neighbor), i1, i32::from(atom_i2.valence))?;
-                    if stereo_type == tagINCHIStereoType0D_INCHI_StereoType_DoubleBond as i32 && p2.is_some() {
+                    let p2 =
+                        is_in_the_list(Some(&atom_i2.neighbor), i1, i32::from(atom_i2.valence))?;
+                    if stereo_type == tagINCHIStereoType0D_INCHI_StereoType_DoubleBond as i32
+                        && p2.is_some()
+                    {
                         sb_ord_from_i1 = p1.unwrap() as i32;
                         sb_ord_from_i2 = p2.unwrap() as i32;
                         sn_ord_from_i1 = q1.unwrap() as i32;
@@ -554,7 +571,8 @@ pub(crate) fn Extract0DParities(
 
         match stereo_type as u32 {
             tagINCHIStereoType0D_INCHI_StereoType_None => continue,
-            tagINCHIStereoType0D_INCHI_StereoType_DoubleBond | tagINCHIStereoType0D_INCHI_StereoType_Allene => {
+            tagINCHIStereoType0D_INCHI_StereoType_DoubleBond
+            | tagINCHIStereoType0D_INCHI_StereoType_Allene => {
                 let i1_index = usize::from(i1);
                 let i2_index = usize::from(i2);
                 let j1 = heap.slice(atoms.as_const())?[i1_index]
@@ -577,10 +595,18 @@ pub(crate) fn Extract0DParities(
                     && sn_ord_from_i2 >= 0
                 {
                     let (left, right) = match parity as u32 {
-                        tagINCHIStereoParity0D_INCHI_PARITY_ODD => (AB_PARITY_ODD as i8, AB_PARITY_EVEN as i8),
-                        tagINCHIStereoParity0D_INCHI_PARITY_EVEN => (AB_PARITY_ODD as i8, AB_PARITY_ODD as i8),
-                        tagINCHIStereoParity0D_INCHI_PARITY_UNDEFINED => (AB_PARITY_UNDF as i8, AB_PARITY_UNDF as i8),
-                        tagINCHIStereoParity0D_INCHI_PARITY_UNKNOWN => (unknown_parity as i8, unknown_parity as i8),
+                        tagINCHIStereoParity0D_INCHI_PARITY_ODD => {
+                            (AB_PARITY_ODD as i8, AB_PARITY_EVEN as i8)
+                        }
+                        tagINCHIStereoParity0D_INCHI_PARITY_EVEN => {
+                            (AB_PARITY_ODD as i8, AB_PARITY_ODD as i8)
+                        }
+                        tagINCHIStereoParity0D_INCHI_PARITY_UNDEFINED => {
+                            (AB_PARITY_UNDF as i8, AB_PARITY_UNDF as i8)
+                        }
+                        tagINCHIStereoParity0D_INCHI_PARITY_UNKNOWN => {
+                            (unknown_parity as i8, unknown_parity as i8)
+                        }
                         _ => (AB_PARITY_NONE as i8, AB_PARITY_NONE as i8),
                     };
                     heap.slice_mut(atoms)?[i1_index].sb_parity[j1] = left;
@@ -608,16 +634,19 @@ pub(crate) fn Extract0DParities(
                     heap.slice_mut(atoms)?[i2_index].sb_parity[j2] |= right_nm;
                     heap.slice_mut(atoms)?[i1_index].sb_ord[j1] = sb_ord_from_i1 as i8;
                     heap.slice_mut(atoms)?[i1_index].sn_ord[j1] = sn_ord_from_i1 as i8;
-                    let left_original = heap.slice(atoms.as_const())?[usize::from(i1n)].orig_at_number;
+                    let left_original =
+                        heap.slice(atoms.as_const())?[usize::from(i1n)].orig_at_number;
                     heap.slice_mut(atoms)?[i1_index].sn_orig_at_num[j1] = left_original;
                     heap.slice_mut(atoms)?[i2_index].sb_ord[j2] = sb_ord_from_i2 as i8;
                     heap.slice_mut(atoms)?[i2_index].sn_ord[j2] = sn_ord_from_i2 as i8;
-                    let right_original = heap.slice(atoms.as_const())?[usize::from(i2n)].orig_at_number;
+                    let right_original =
+                        heap.slice(atoms.as_const())?[usize::from(i2n)].orig_at_number;
                     heap.slice_mut(atoms)?[i2_index].sn_orig_at_num[j2] = right_original;
                 }
             }
             tagINCHIStereoType0D_INCHI_StereoType_Tetrahedral => {
-                let center_index = usize::try_from(central_atom).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let center_index = usize::try_from(central_atom)
+                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let atom_parity = match parity as u32 {
                     tagINCHIStereoParity0D_INCHI_PARITY_ODD => AB_PARITY_ODD as i8,
                     tagINCHIStereoParity0D_INCHI_PARITY_EVEN => AB_PARITY_EVEN as i8,
@@ -719,31 +748,41 @@ pub(crate) fn FindToken(
             let token_offset = if needle.is_empty() {
                 Some(0)
             } else {
-                haystack.windows(needle.len()).position(|window| window == needle)
+                haystack
+                    .windows(needle.len())
+                    .position(|window| window == needle)
             };
-            (token_offset, haystack.iter().rposition(|byte| *byte == b'/' as i8))
+            (
+                token_offset,
+                haystack.iter().rposition(|byte| *byte == b'/' as i8),
+            )
         };
 
         if let Some(token_offset) = token_offset {
-            let token_position =
-                cursor.offset(i64::try_from(token_offset).map_err(|_| SourceHeapError::PointerDifferenceOverflow)?)?;
+            let token_position = cursor.offset(
+                i64::try_from(token_offset)
+                    .map_err(|_| SourceHeapError::PointerDifferenceOverflow)?,
+            )?;
             return token_position.offset(i64::from(token_length));
         }
 
         if let Some(last_slash_offset) = last_slash_offset {
-            let slash = cursor
-                .offset(i64::try_from(last_slash_offset).map_err(|_| SourceHeapError::PointerDifferenceOverflow)?)?;
+            let slash = cursor.offset(
+                i64::try_from(last_slash_offset)
+                    .map_err(|_| SourceHeapError::PointerDifferenceOverflow)?,
+            )?;
             let slash_from_line = slash.difference(line)?;
             let slash_plus_token = slash_from_line
                 .checked_add(i64::from(token_length))
                 .ok_or(SourceHeapError::SourceIntegerOverflow)?;
             if slash_plus_token > i64::from(*result_length) {
-                let slash_from_line =
-                    i32::try_from(slash_from_line).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+                let slash_from_line = i32::try_from(slash_from_line)
+                    .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
                 *result_length = result_length
                     .checked_sub(slash_from_line)
                     .ok_or(SourceHeapError::SourceIntegerOverflow)?;
-                let source_start = usize::try_from(slash_from_line).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let source_start = usize::try_from(slash_from_line)
+                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let count = usize::try_from(*result_length)
                     .map_err(|_| SourceHeapError::PointerOutOfBounds)?
                     .checked_add(1)
@@ -842,7 +881,8 @@ pub(crate) fn LoadLine(
     // INCHI✔️❌: }
     // END INCHI C FUNCTION: LoadLine
 
-    let position = i32::try_from(cursor.difference(line)?).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+    let position = i32::try_from(cursor.difference(line)?)
+        .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
     let retained = result_length
         .checked_sub(position)
         .ok_or(SourceHeapError::SourceIntegerOverflow)?;
@@ -852,7 +892,8 @@ pub(crate) fn LoadLine(
     if *item_is_over == 0 && available > minimum_load_capacity {
         if position != 0 {
             *result_length = retained;
-            let source_start = usize::try_from(position).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let source_start =
+                usize::try_from(position).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             let count = usize::try_from(*result_length)
                 .map_err(|_| SourceHeapError::PointerOutOfBounds)?
                 .checked_add(1)
@@ -888,7 +929,10 @@ pub(crate) fn LoadLine(
                 bytes[..length].iter().position(|byte| *byte == b'/' as i8)
             };
             *slash_slot = if let Some(slash_offset) = slash_offset {
-                appended.offset(i64::try_from(slash_offset).map_err(|_| SourceHeapError::PointerDifferenceOverflow)?)?
+                appended.offset(
+                    i64::try_from(slash_offset)
+                        .map_err(|_| SourceHeapError::PointerDifferenceOverflow)?,
+                )?
             } else {
                 SourceMutPointer::null()
             };
@@ -913,11 +957,22 @@ mod tests {
     #[test]
     fn source_port__readinch__findtoken__line_445() {
         let mut heap = SourceHeap::default();
-        let token = allocate_source_fixture(&mut heap, b"InChI=".iter().map(|byte| *byte as i8).chain([0]).collect());
+        let token = allocate_source_fixture(
+            &mut heap,
+            b"InChI="
+                .iter()
+                .map(|byte| *byte as i8)
+                .chain([0])
+                .collect(),
+        );
 
         let line = allocate_source_fixture(
             &mut heap,
-            b"xx/InChI=abc".iter().map(|byte| *byte as i8).chain([0]).collect(),
+            b"xx/InChI=abc"
+                .iter()
+                .map(|byte| *byte as i8)
+                .chain([0])
+                .collect(),
         );
         let empty_input = allocate_source_fixture(&mut heap, Vec::<i8>::new());
         let mut ios = INCHI_IOSTREAM {
@@ -955,10 +1010,14 @@ mod tests {
 
         let line = allocate_source_fixture(&mut heap, {
             let mut bytes = vec![0_i8; 16];
-            bytes[..5].copy_from_slice(&[b'/' as i8, b'I' as i8, b'n' as i8, b'C' as i8, b'h' as i8]);
+            bytes[..5]
+                .copy_from_slice(&[b'/' as i8, b'I' as i8, b'n' as i8, b'C' as i8, b'h' as i8]);
             bytes
         });
-        let continuation = allocate_source_fixture(&mut heap, b"I=restXX".iter().map(|byte| *byte as i8).collect());
+        let continuation = allocate_source_fixture(
+            &mut heap,
+            b"I=restXX".iter().map(|byte| *byte as i8).collect(),
+        );
         let mut ios = INCHI_IOSTREAM {
             s: INCHI_IOS_STRING {
                 pStr: continuation,
@@ -1004,7 +1063,8 @@ mod tests {
 
         let line = allocate_source_fixture(&mut heap, {
             let mut bytes = vec![0_i8; 20];
-            bytes[..5].copy_from_slice(&[b'x' as i8, b'x' as i8, b'a' as i8, b'b' as i8, b'c' as i8]);
+            bytes[..5]
+                .copy_from_slice(&[b'x' as i8, b'x' as i8, b'a' as i8, b'b' as i8, b'c' as i8]);
             bytes
         });
         let empty_input = allocate_source_fixture(&mut heap, Vec::<i8>::new());
@@ -1049,10 +1109,14 @@ mod tests {
 
         let line = allocate_source_fixture(&mut heap, {
             let mut bytes = vec![0_i8; 20];
-            bytes[..5].copy_from_slice(&[b'x' as i8, b'x' as i8, b'a' as i8, b'b' as i8, b'c' as i8]);
+            bytes[..5]
+                .copy_from_slice(&[b'x' as i8, b'x' as i8, b'a' as i8, b'b' as i8, b'c' as i8]);
             bytes
         });
-        let continuation = allocate_source_fixture(&mut heap, b"de/f\t".iter().map(|byte| *byte as i8).collect());
+        let continuation = allocate_source_fixture(
+            &mut heap,
+            b"de/f\t".iter().map(|byte| *byte as i8).collect(),
+        );
         let mut ios = INCHI_IOSTREAM {
             s: INCHI_IOS_STRING {
                 pStr: continuation,
@@ -1088,7 +1152,8 @@ mod tests {
         assert_eq!(
             &heap.slice(line.as_const()).unwrap()[..8],
             &[
-                b'a' as i8, b'b' as i8, b'c' as i8, b'd' as i8, b'e' as i8, b'/' as i8, b'f' as i8, 0,
+                b'a' as i8, b'b' as i8, b'c' as i8, b'd' as i8, b'e' as i8, b'/' as i8, b'f' as i8,
+                0,
             ]
         );
         assert_eq!(inchi_free(&mut heap, line), Ok(()));
@@ -1146,7 +1211,10 @@ mod tests {
         for (parity, expected) in [
             (tagINCHIStereoParity0D_INCHI_PARITY_ODD, AB_PARITY_ODD),
             (tagINCHIStereoParity0D_INCHI_PARITY_EVEN, AB_PARITY_EVEN),
-            (tagINCHIStereoParity0D_INCHI_PARITY_UNDEFINED, AB_PARITY_UNDF),
+            (
+                tagINCHIStereoParity0D_INCHI_PARITY_UNDEFINED,
+                AB_PARITY_UNDF,
+            ),
             (tagINCHIStereoParity0D_INCHI_PARITY_UNKNOWN, AB_PARITY_UNKN),
         ] {
             let atoms = heap.allocate(tetrahedral_atoms()).unwrap();
@@ -1237,7 +1305,8 @@ mod tests {
                 central_atom: NO_ATOM as i16,
                 type_: tagINCHIStereoType0D_INCHI_StereoType_DoubleBond as i8,
                 parity: (tagINCHIStereoParity0D_INCHI_PARITY_ODD
-                    | (tagINCHIStereoParity0D_INCHI_PARITY_EVEN << SB_PARITY_SHFT)) as i8,
+                    | (tagINCHIStereoParity0D_INCHI_PARITY_EVEN << SB_PARITY_SHFT))
+                    as i8,
             }])
             .unwrap();
         Extract0DParities(
@@ -1301,7 +1370,8 @@ mod tests {
         cumulene[1].bond_type[..2].copy_from_slice(&[1, BOND_TYPE_DOUBLE as u8]);
         cumulene[1].valence = 2;
         cumulene[2].neighbor[..2].copy_from_slice(&[1, 3]);
-        cumulene[2].bond_type[..2].copy_from_slice(&[BOND_TYPE_DOUBLE as u8, BOND_TYPE_DOUBLE as u8]);
+        cumulene[2].bond_type[..2]
+            .copy_from_slice(&[BOND_TYPE_DOUBLE as u8, BOND_TYPE_DOUBLE as u8]);
         cumulene[2].valence = 2;
         cumulene[3].neighbor[..2].copy_from_slice(&[2, 4]);
         cumulene[3].bond_type[..2].copy_from_slice(&[BOND_TYPE_DOUBLE as u8, 1]);
@@ -1386,10 +1456,15 @@ mod tests {
         assert_eq!(FreeInchi_Stereo0D(&mut heap, Some(&mut null_slot)), Ok(()));
         assert!(null_slot.is_null());
 
-        let mut stereo_slot =
-            allocate_source_fixture(&mut heap, vec![inchi_Stereo0D::default(), inchi_Stereo0D::default()]);
+        let mut stereo_slot = allocate_source_fixture(
+            &mut heap,
+            vec![inchi_Stereo0D::default(), inchi_Stereo0D::default()],
+        );
         let alias = stereo_slot.as_const();
-        assert_eq!(FreeInchi_Stereo0D(&mut heap, Some(&mut stereo_slot)), Ok(()));
+        assert_eq!(
+            FreeInchi_Stereo0D(&mut heap, Some(&mut stereo_slot)),
+            Ok(())
+        );
         assert!(stereo_slot.is_null());
         assert_eq!(heap.slice(alias), Err(SourceHeapError::MissingAllocation));
 

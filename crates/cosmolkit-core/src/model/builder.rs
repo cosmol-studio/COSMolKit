@@ -1,10 +1,11 @@
 // RDKit marker convention defined in dev/source_reproduction_protocol.md.
 
 use crate::{
-    Atom, AtomId, AtomSpec, Bond, BondId, BondSpec, BondStereo, Conformer2D, Conformer3D, Molecule, MoleculeBuildError,
-    MoleculeProperties, StereoGroup, SubstanceGroup,
+    Atom, AtomId, AtomSpec, Bond, BondId, BondSpec, BondStereo, Conformer2D, Conformer3D, Molecule,
+    MoleculeBuildError, MoleculeProperties, StereoGroup, SubstanceGroup,
     molecule::{
-        AtomMapping, BondMapping, CoordinateBlock, MoleculeCapabilities, TopologyBlock, TopologyMapping, TopologyTrust,
+        AtomMapping, BondMapping, CoordinateBlock, MoleculeCapabilities, TopologyBlock,
+        TopologyMapping, TopologyTrust,
     },
 };
 
@@ -63,7 +64,11 @@ impl MoleculeBuilder {
         Ok(id)
     }
 
-    pub fn set_atom_formal_charge(&mut self, atom: AtomId, formal_charge: i8) -> Result<(), MoleculeBuildError> {
+    pub fn set_atom_formal_charge(
+        &mut self,
+        atom: AtomId,
+        formal_charge: i8,
+    ) -> Result<(), MoleculeBuildError> {
         let Some(atom) = self.atoms.get_mut(atom.index()) else {
             return Err(MoleculeBuildError::InvalidMoleculeState {
                 message: "atom index out of range while setting formal charge".to_string(),
@@ -80,7 +85,10 @@ impl MoleculeBuilder {
 
     /// Returns the bonds incident to `atom`.
     pub fn neighbor_bonds(&self, atom: AtomId) -> &[BondId] {
-        self.adjacency.get(atom.index()).map(Vec::as_slice).unwrap_or(&[])
+        self.adjacency
+            .get(atom.index())
+            .map(Vec::as_slice)
+            .unwrap_or(&[])
     }
 
     pub(crate) fn bond(&self, bond: BondId) -> Option<&Bond> {
@@ -115,11 +123,16 @@ impl MoleculeBuilder {
         let begin_bonds = self.adjacency.get(begin.index())?;
         begin_bonds.iter().copied().find(|bond_id| {
             let bond = &self.bonds[bond_id.index()];
-            (bond.begin() == begin && bond.end() == end) || (bond.begin() == end && bond.end() == begin)
+            (bond.begin() == begin && bond.end() == end)
+                || (bond.begin() == end && bond.end() == begin)
         })
     }
 
-    pub(crate) fn set_bond_order(&mut self, bond: BondId, order: crate::BondOrder) -> Result<(), MoleculeBuildError> {
+    pub(crate) fn set_bond_order(
+        &mut self,
+        bond: BondId,
+        order: crate::BondOrder,
+    ) -> Result<(), MoleculeBuildError> {
         let Some(bond) = self.bonds.get_mut(bond.index()) else {
             return Err(MoleculeBuildError::InvalidMoleculeState {
                 message: "bond index out of range while setting bond order".to_string(),
@@ -129,7 +142,11 @@ impl MoleculeBuilder {
         Ok(())
     }
 
-    pub(crate) fn remove_bond_between_atoms(&mut self, begin: AtomId, end: AtomId) -> Option<BondId> {
+    pub(crate) fn remove_bond_between_atoms(
+        &mut self,
+        begin: AtomId,
+        end: AtomId,
+    ) -> Option<BondId> {
         let bond_id = self.bond_between_atoms(begin, end)?;
         self.remove_bond_for_construction(bond_id);
         Some(bond_id)
@@ -147,7 +164,10 @@ impl MoleculeBuilder {
         }
     }
 
-    pub(crate) fn remove_atoms_for_construction(&mut self, atoms_to_remove: &[AtomId]) -> Vec<Option<AtomId>> {
+    pub(crate) fn remove_atoms_for_construction(
+        &mut self,
+        atoms_to_remove: &[AtomId],
+    ) -> Vec<Option<AtomId>> {
         let mut remove = vec![false; self.atoms.len()];
         for atom in atoms_to_remove {
             if let Some(slot) = remove.get_mut(atom.index()) {
@@ -175,7 +195,10 @@ impl MoleculeBuilder {
                 continue;
             };
             let stereo_atoms = bond.stereo_atoms().and_then(|[begin_ref, end_ref]| {
-                Some([atom_mapping[begin_ref.index()]?, atom_mapping[end_ref.index()]?])
+                Some([
+                    atom_mapping[begin_ref.index()]?,
+                    atom_mapping[end_ref.index()]?,
+                ])
             });
             let new_id = BondId::new(bonds.len());
             bonds.push(bond.remapped(new_id, begin, end, stereo_atoms));
@@ -242,11 +265,16 @@ impl MoleculeBuilder {
         let mut bond_new_to_old = Vec::with_capacity(self.bonds.len());
         let mut bonds = Vec::with_capacity(self.bonds.len());
         for bond in &self.bonds {
-            let begin = atom_old_to_new[bond.begin().index()].expect("atom permutation maps every old atom");
-            let end = atom_old_to_new[bond.end().index()].expect("atom permutation maps every old atom");
-            let stereo_atoms = bond
-                .stereo_atoms()
-                .and_then(|[left, right]| Some([atom_old_to_new[left.index()]?, atom_old_to_new[right.index()]?]));
+            let begin = atom_old_to_new[bond.begin().index()]
+                .expect("atom permutation maps every old atom");
+            let end =
+                atom_old_to_new[bond.end().index()].expect("atom permutation maps every old atom");
+            let stereo_atoms = bond.stereo_atoms().and_then(|[left, right]| {
+                Some([
+                    atom_old_to_new[left.index()]?,
+                    atom_old_to_new[right.index()]?,
+                ])
+            });
             let new_id = BondId::new(bonds.len());
             bond_old_to_new[bond.id().index()] = Some(new_id);
             bond_new_to_old.push(Some(bond.id()));
@@ -291,7 +319,8 @@ impl MoleculeBuilder {
             .filter_map(|group| group.remapped(&atom_old_to_new, &bond_old_to_new))
             .collect();
 
-        self.properties.remap_topology(&atom_new_to_old, &bond_new_to_old);
+        self.properties
+            .remap_topology(&atom_new_to_old, &bond_new_to_old);
 
         self.atoms = atoms;
         self.bonds = bonds;
@@ -369,7 +398,10 @@ impl MoleculeBuilder {
         &self.conformers_3d
     }
 
-    pub fn add_substance_group(&mut self, substance_group: SubstanceGroup) -> Result<(), MoleculeBuildError> {
+    pub fn add_substance_group(
+        &mut self,
+        substance_group: SubstanceGroup,
+    ) -> Result<(), MoleculeBuildError> {
         validate_substance_group(self.atoms.len(), self.bonds.len(), &substance_group)?;
         self.substance_groups.push(substance_group);
         Ok(())
@@ -387,7 +419,10 @@ impl MoleculeBuilder {
         self.substance_groups.get_mut(index)
     }
 
-    pub fn add_stereo_group(&mut self, stereo_group: StereoGroup) -> Result<(), MoleculeBuildError> {
+    pub fn add_stereo_group(
+        &mut self,
+        stereo_group: StereoGroup,
+    ) -> Result<(), MoleculeBuildError> {
         validate_stereo_group(self.atoms.len(), self.bonds.len(), &stereo_group)?;
         self.stereo_groups.push(stereo_group);
         Ok(())
@@ -471,21 +506,30 @@ impl MoleculeBuilder {
         )
         .map_err(|err| match err {
             crate::InvariantError::InvalidBondEndpoint {
-                begin, end, atom_count, ..
-            } => MoleculeBuildError::BondEndpointOutOfRange { begin, end, atom_count },
-            crate::InvariantError::SelfLoopBond { atom, .. } => MoleculeBuildError::SelfLoopBond { atom },
+                begin,
+                end,
+                atom_count,
+                ..
+            } => MoleculeBuildError::BondEndpointOutOfRange {
+                begin,
+                end,
+                atom_count,
+            },
+            crate::InvariantError::SelfLoopBond { atom, .. } => {
+                MoleculeBuildError::SelfLoopBond { atom }
+            }
             crate::InvariantError::CoordinateRowCount { rows, atom_count } => {
                 MoleculeBuildError::CoordinateRowCount { rows, atom_count }
             }
-            crate::InvariantError::ConformerRowCount { rows, atom_count, .. } => {
-                MoleculeBuildError::ConformerRowCount { rows, atom_count }
-            }
-            crate::InvariantError::InvalidSubstanceGroupAtom { atom, atom_count, .. } => {
-                MoleculeBuildError::SubstanceGroupAtomOutOfRange { atom, atom_count }
-            }
-            crate::InvariantError::InvalidSubstanceGroupBond { bond, bond_count, .. } => {
-                MoleculeBuildError::SubstanceGroupBondOutOfRange { bond, bond_count }
-            }
+            crate::InvariantError::ConformerRowCount {
+                rows, atom_count, ..
+            } => MoleculeBuildError::ConformerRowCount { rows, atom_count },
+            crate::InvariantError::InvalidSubstanceGroupAtom {
+                atom, atom_count, ..
+            } => MoleculeBuildError::SubstanceGroupAtomOutOfRange { atom, atom_count },
+            crate::InvariantError::InvalidSubstanceGroupBond {
+                bond, bond_count, ..
+            } => MoleculeBuildError::SubstanceGroupBondOutOfRange { bond, bond_count },
             crate::InvariantError::InvalidSubstanceGroupParent { parent, .. } => {
                 MoleculeBuildError::SubstanceGroupParentOutOfRange { parent }
             }
@@ -531,9 +575,6 @@ impl Molecule {
             if let Some(atom_map) = atom.atom_map() {
                 spec = spec.with_atom_map(atom_map);
             }
-            if let Some(query) = atom.query().cloned() {
-                spec = spec.with_query(query);
-            }
             if let Some(info) = atom.pdb_residue_info().cloned() {
                 spec = spec.with_pdb_residue_info(info);
             }
@@ -556,9 +597,6 @@ impl Molecule {
                 .with_unknown_stereo(bond.unknown_stereo());
             if let Some([begin_ref, end_ref]) = bond.stereo_atoms() {
                 spec = spec.with_stereo_atoms(begin_ref, end_ref);
-            }
-            if let Some(query) = bond.query().cloned() {
-                spec = spec.with_query(query);
             }
             for (key, value) in bond.props() {
                 spec = if bond.is_prop_computed(key) {
@@ -689,7 +727,10 @@ fn bond_spec_from_bond(bond: &Bond) -> BondSpec {
     spec
 }
 
-pub(crate) fn validate_bond_spec(atom_count: usize, spec: &BondSpec) -> Result<(), MoleculeBuildError> {
+pub(crate) fn validate_bond_spec(
+    atom_count: usize,
+    spec: &BondSpec,
+) -> Result<(), MoleculeBuildError> {
     if spec.begin() == spec.end() {
         return Err(MoleculeBuildError::SelfLoopBond { atom: spec.begin() });
     }
@@ -718,8 +759,11 @@ pub(crate) fn validate_bond_spec(atom_count: usize, spec: &BondSpec) -> Result<(
     // RDKit✔️✔️:   d_stereo = what;
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION Bond::setStereo
-    if matches!(spec.stereo(), BondStereo::Cis | BondStereo::Trans) && spec.stereo_atoms().is_none() {
-        return Err(MoleculeBuildError::BondStereoAtomsRequired { stereo: spec.stereo() });
+    if matches!(spec.stereo(), BondStereo::Cis | BondStereo::Trans) && spec.stereo_atoms().is_none()
+    {
+        return Err(MoleculeBuildError::BondStereoAtomsRequired {
+            stereo: spec.stereo(),
+        });
     }
     Ok(())
 }
@@ -727,8 +771,8 @@ pub(crate) fn validate_bond_spec(atom_count: usize, spec: &BondSpec) -> Result<(
 #[cfg(test)]
 mod tests {
     use crate::{
-        AtomQueryPredicate, BondDirection, BondOrder, BondQueryPredicate, BondSpec, BondStereo, ChiralTag, Element,
-        Hybridization, MoleculeBuilder, QueryNode, SubstanceGroup, SubstanceGroupId, SubstanceGroupKind,
+        BondDirection, BondOrder, BondSpec, BondStereo, ChiralTag, Element, Hybridization,
+        MoleculeBuilder, SubstanceGroup, SubstanceGroupId, SubstanceGroupKind,
     };
 
     #[test]
@@ -744,8 +788,7 @@ mod tests {
                 .with_atom_map(7)
                 .with_no_implicit(true)
                 .with_radical_electrons(1)
-                .with_hybridization(Hybridization::Sp2)
-                .with_query(QueryNode::predicate(AtomQueryPredicate::Any)),
+                .with_hybridization(Hybridization::Sp2),
         );
         let oxygen = builder.add_atom(
             crate::AtomSpec::new(Element::O)
@@ -760,8 +803,7 @@ mod tests {
                     .with_conjugated(true)
                     .with_direction(BondDirection::EndUpRight)
                     .with_stereo(BondStereo::Cis)
-                    .with_stereo_atoms(carbon, oxygen)
-                    .with_query(QueryNode::predicate(BondQueryPredicate::Any)),
+                    .with_stereo_atoms(carbon, oxygen),
             )
             .unwrap();
         builder
@@ -794,7 +836,6 @@ mod tests {
         assert!(carbon.no_implicit());
         assert_eq!(carbon.radical_electrons(), 1);
         assert_eq!(carbon.hybridization(), Hybridization::Sp2);
-        assert_eq!(carbon.query(), Some(&QueryNode::predicate(AtomQueryPredicate::Any)));
 
         let oxygen = molecule.atom(oxygen).unwrap();
         assert_eq!(oxygen.atomic_number(), 8);
@@ -811,7 +852,6 @@ mod tests {
         assert_eq!(bond.direction(), BondDirection::EndUpRight);
         assert_eq!(bond.stereo(), BondStereo::Cis);
         assert_eq!(bond.stereo_atoms(), Some([carbon.id(), oxygen.id()]));
-        assert_eq!(bond.query(), Some(&QueryNode::predicate(BondQueryPredicate::Any)));
         assert_eq!(
             molecule.coordinates_2d().unwrap(),
             &[[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]]
@@ -825,7 +865,10 @@ mod tests {
             Some(crate::CoordinateDimension::ThreeD)
         );
         assert_eq!(molecule.substance_groups().len(), 1);
-        assert_eq!(molecule.substance_groups()[0].atoms(), &[carbon.id(), oxygen.id()]);
+        assert_eq!(
+            molecule.substance_groups()[0].atoms(),
+            &[carbon.id(), oxygen.id()]
+        );
         assert_eq!(molecule.prop("_MolFileInfo"), Some("info"));
         assert_eq!(
             molecule.properties().sdf_data_fields(),

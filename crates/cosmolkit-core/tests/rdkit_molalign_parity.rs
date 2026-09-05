@@ -4,8 +4,9 @@ use std::{
 };
 
 use cosmolkit_core::{
-    AlignmentAtomMap, AlignmentError, AlignmentParameters, AllConformerRmsdParameters, BestAlignmentParameters,
-    Conformer3D, ConformerAlignmentParameters, CoordinateRmsdParameters, Molecule,
+    AlignmentAtomMap, AlignmentError, AlignmentParameters, AllConformerRmsdParameters,
+    BestAlignmentParameters, Conformer3D, ConformerAlignmentParameters, CoordinateRmsdParameters,
+    Molecule,
 };
 use serde::Deserialize;
 use serde_json::Value;
@@ -65,7 +66,12 @@ struct OracleRecord {
 }
 
 fn records(profile: &str) -> Vec<OracleRecord> {
-    let path = cosmolkit_test_support::expected_path_for_profile("alignment", "rdkit", profile, OUTPUT_NAME);
+    let path = cosmolkit_test_support::expected_path_for_profile(
+        "alignment",
+        "rdkit",
+        profile,
+        OUTPUT_NAME,
+    );
     BufReader::new(File::open(&path).expect("open MolAlign oracle"))
         .lines()
         .enumerate()
@@ -81,18 +87,28 @@ fn molecule(source: &MoleculeSource) -> Molecule {
     let mut builder = molecule.to_builder();
     for conformer in &source.conformers {
         builder
-            .add_conformer(Conformer3D::new(conformer.id, conformer.coordinates.clone(), true))
+            .add_conformer(Conformer3D::new(
+                conformer.id,
+                conformer.coordinates.clone(),
+                true,
+            ))
             .expect("add oracle conformer");
     }
     builder.build().expect("build oracle molecule")
 }
 
 fn number(parameters: &Value, name: &str, default: i64) -> i64 {
-    parameters.get(name).and_then(Value::as_i64).unwrap_or(default)
+    parameters
+        .get(name)
+        .and_then(Value::as_i64)
+        .unwrap_or(default)
 }
 
 fn flag(parameters: &Value, name: &str, default: bool) -> bool {
-    parameters.get(name).and_then(Value::as_bool).unwrap_or(default)
+    parameters
+        .get(name)
+        .and_then(Value::as_bool)
+        .unwrap_or(default)
 }
 
 fn indices(parameters: &Value, name: &str) -> Option<Vec<usize>> {
@@ -135,7 +151,13 @@ fn atom_map(value: &Value) -> Vec<AlignmentAtomMap> {
 fn atom_maps(parameters: &Value) -> Vec<Vec<AlignmentAtomMap>> {
     parameters
         .get("atom_maps")
-        .map(|maps| maps.as_array().expect("atom maps").iter().map(atom_map).collect())
+        .map(|maps| {
+            maps.as_array()
+                .expect("atom maps")
+                .iter()
+                .map(atom_map)
+                .collect()
+        })
         .unwrap_or_default()
 }
 
@@ -159,7 +181,11 @@ fn best_parameters(parameters: &Value) -> BestAlignmentParameters {
         reflect: flag(parameters, "reflect", false),
         max_iterations: number(parameters, "max_iterations", 50) as u32,
         max_matches: number(parameters, "max_matches", 1_000_000) as i32,
-        symmetrize_conjugated_terminal_groups: flag(parameters, "symmetrize_conjugated_terminal_groups", true),
+        symmetrize_conjugated_terminal_groups: flag(
+            parameters,
+            "symmetrize_conjugated_terminal_groups",
+            true,
+        ),
         ignore_hydrogens: flag(parameters, "ignore_hydrogens", true),
         num_threads: number(parameters, "num_threads", 1) as i32,
     }
@@ -170,7 +196,11 @@ fn all_conformer_parameters(parameters: &Value) -> AllConformerRmsdParameters {
         atom_maps: atom_maps(parameters),
         weights: weights(parameters),
         max_matches: number(parameters, "max_matches", 1_000_000) as i32,
-        symmetrize_conjugated_terminal_groups: flag(parameters, "symmetrize_conjugated_terminal_groups", true),
+        symmetrize_conjugated_terminal_groups: flag(
+            parameters,
+            "symmetrize_conjugated_terminal_groups",
+            true,
+        ),
         ignore_hydrogens: flag(parameters, "ignore_hydrogens", true),
         num_threads: number(parameters, "num_threads", 1) as i32,
     }
@@ -183,7 +213,11 @@ fn coordinate_parameters(parameters: &Value) -> CoordinateRmsdParameters {
         atom_maps: atom_maps(parameters),
         weights: weights(parameters),
         max_matches: number(parameters, "max_matches", 1_000_000) as i32,
-        symmetrize_conjugated_terminal_groups: flag(parameters, "symmetrize_conjugated_terminal_groups", true),
+        symmetrize_conjugated_terminal_groups: flag(
+            parameters,
+            "symmetrize_conjugated_terminal_groups",
+            true,
+        ),
     }
 }
 
@@ -251,9 +285,13 @@ fn assert_state(actual: &[ConformerState], expected: &[ConformerState], context:
 fn assert_error(actual: AlignmentError, expected: &str, context: &str) {
     let matches = matches!(
         (expected, &actual),
-        ("conformer_not_found", AlignmentError::ConformerNotFound { .. })
-            | ("weight_count_mismatch", AlignmentError::WeightCountMismatch { .. })
-            | ("no_substructure_match", AlignmentError::NoSubstructureMatch)
+        (
+            "conformer_not_found",
+            AlignmentError::ConformerNotFound { .. }
+        ) | (
+            "weight_count_mismatch",
+            AlignmentError::WeightCountMismatch { .. }
+        ) | ("no_substructure_match", AlignmentError::NoSubstructureMatch)
     );
     assert!(matches, "{context}: expected {expected}, got {actual:?}");
 }
@@ -263,9 +301,18 @@ fn assert_profile(profile: &str, expected_records: usize) {
     assert_eq!(records.len(), expected_records, "{profile}: record count");
     for record in records {
         assert_eq!(record.schema_version, 1);
-        let context = format!("{} call {} ({})", record.case_id, record.call_index, record.operation);
-        assert!(record.error_type.is_none() == (record.status == "ok"), "{context}");
-        assert!(record.error_message.is_none() == (record.status == "ok"), "{context}");
+        let context = format!(
+            "{} call {} ({})",
+            record.case_id, record.call_index, record.operation
+        );
+        assert!(
+            record.error_type.is_none() == (record.status == "ok"),
+            "{context}"
+        );
+        assert!(
+            record.error_message.is_none() == (record.status == "ok"),
+            "{context}"
+        );
 
         if record.operation == "input_parse" {
             assert_eq!(record.status, "error", "{context}");
@@ -282,7 +329,9 @@ fn assert_profile(profile: &str, expected_records: usize) {
             continue;
         }
 
-        if let (Some(probe_source), Some(reference_source)) = (&record.source.probe, &record.source.reference) {
+        if let (Some(probe_source), Some(reference_source)) =
+            (&record.source.probe, &record.source.reference)
+        {
             let probe = molecule(probe_source);
             let reference = molecule(reference_source);
             assert_state(
@@ -292,7 +341,11 @@ fn assert_profile(profile: &str, expected_records: usize) {
             );
             assert_state(
                 &snapshot(&reference),
-                record.before.reference.as_deref().expect("reference before state"),
+                record
+                    .before
+                    .reference
+                    .as_deref()
+                    .expect("reference before state"),
                 &context,
             );
             if record.operation == "align_to" {
@@ -300,7 +353,11 @@ fn assert_profile(profile: &str, expected_records: usize) {
                     .with_alignment_to(&reference, &alignment_parameters(&record.parameters))
                     .expect("value-style alignment");
                 let expected = record.result.as_ref().expect("oracle result");
-                assert_close(actual.rmsd, expected["rmsd"].as_f64().expect("oracle RMSD"), &context);
+                assert_close(
+                    actual.rmsd,
+                    expected["rmsd"].as_f64().expect("oracle RMSD"),
+                    &context,
+                );
                 assert_matrix(&actual.transform.matrix, &expected["transform"], &context);
                 assert_eq!(
                     actual.atom_map,
@@ -319,22 +376,32 @@ fn assert_profile(profile: &str, expected_records: usize) {
                 );
                 assert_state(
                     &snapshot(&reference),
-                    record.after.reference.as_deref().expect("reference after state"),
+                    record
+                        .after
+                        .reference
+                        .as_deref()
+                        .expect("reference after state"),
                     &context,
                 );
                 continue;
             }
             let result = match record.operation.as_str() {
-                "alignment_transform" => {
-                    probe.alignment_transform_to(&reference, &alignment_parameters(&record.parameters))
+                "alignment_transform" => probe
+                    .alignment_transform_to(&reference, &alignment_parameters(&record.parameters)),
+                "best_alignment" => {
+                    probe.best_alignment_to(&reference, &best_parameters(&record.parameters))
                 }
-                "best_alignment" => probe.best_alignment_to(&reference, &best_parameters(&record.parameters)),
                 "coordinate_rmsd" => {
-                    let actual = probe.coordinate_rmsd_to(&reference, &coordinate_parameters(&record.parameters));
+                    let actual = probe
+                        .coordinate_rmsd_to(&reference, &coordinate_parameters(&record.parameters));
                     match actual {
                         Ok(rmsd) => {
                             let expected = record.result.as_ref().expect("oracle result");
-                            assert_close(rmsd, expected["rmsd"].as_f64().expect("oracle RMSD"), &context);
+                            assert_close(
+                                rmsd,
+                                expected["rmsd"].as_f64().expect("oracle RMSD"),
+                                &context,
+                            );
                             assert_eq!(record.status, "ok", "{context}");
                         }
                         Err(error) => assert_error(
@@ -350,7 +417,11 @@ fn assert_profile(profile: &str, expected_records: usize) {
                     );
                     assert_state(
                         &snapshot(&reference),
-                        record.after.reference.as_deref().expect("reference after state"),
+                        record
+                            .after
+                            .reference
+                            .as_deref()
+                            .expect("reference after state"),
                         &context,
                     );
                     continue;
@@ -361,7 +432,11 @@ fn assert_profile(profile: &str, expected_records: usize) {
                 Ok(actual) => {
                     assert_eq!(record.status, "ok", "{context}");
                     let expected = record.result.as_ref().expect("oracle result");
-                    assert_close(actual.rmsd, expected["rmsd"].as_f64().expect("oracle RMSD"), &context);
+                    assert_close(
+                        actual.rmsd,
+                        expected["rmsd"].as_f64().expect("oracle RMSD"),
+                        &context,
+                    );
                     assert_matrix(&actual.transform.matrix, &expected["transform"], &context);
                     assert_eq!(
                         actual.atom_map,
@@ -382,7 +457,11 @@ fn assert_profile(profile: &str, expected_records: usize) {
             );
             assert_state(
                 &snapshot(&reference),
-                record.after.reference.as_deref().expect("reference after state"),
+                record
+                    .after
+                    .reference
+                    .as_deref()
+                    .expect("reference after state"),
                 &context,
             );
             continue;
@@ -392,7 +471,11 @@ fn assert_profile(profile: &str, expected_records: usize) {
         let molecule = molecule(source);
         assert_state(
             &snapshot(&molecule),
-            record.before.molecule.as_deref().expect("molecule before state"),
+            record
+                .before
+                .molecule
+                .as_deref()
+                .expect("molecule before state"),
             &context,
         );
         match record.operation.as_str() {
@@ -402,7 +485,9 @@ fn assert_profile(profile: &str, expected_records: usize) {
                     .expect("all-conformer RMSD");
                 let expected = record.result.as_ref().expect("oracle result");
                 let rmsds = expected["rmsds"].as_array().expect("oracle RMSD list");
-                let pairs = expected["conformer_pairs"].as_array().expect("oracle conformer pairs");
+                let pairs = expected["conformer_pairs"]
+                    .as_array()
+                    .expect("oracle conformer pairs");
                 assert_eq!(actual.len(), rmsds.len(), "{context}");
                 for (index, actual) in actual.iter().enumerate() {
                     let pair = pairs[index].as_array().expect("oracle conformer pair");
@@ -414,11 +499,19 @@ fn assert_profile(profile: &str, expected_records: usize) {
                         ],
                         "{context}: triangular pair order"
                     );
-                    assert_close(actual.rmsd, rmsds[index].as_f64().expect("oracle RMSD"), &context);
+                    assert_close(
+                        actual.rmsd,
+                        rmsds[index].as_f64().expect("oracle RMSD"),
+                        &context,
+                    );
                 }
                 assert_state(
                     &snapshot(&molecule),
-                    record.after.molecule.as_deref().expect("molecule after state"),
+                    record
+                        .after
+                        .molecule
+                        .as_deref()
+                        .expect("molecule after state"),
                     &context,
                 );
             }
@@ -434,12 +527,20 @@ fn assert_profile(profile: &str, expected_records: usize) {
                 }
                 assert_state(
                     &snapshot(&aligned),
-                    record.after.molecule.as_deref().expect("molecule after state"),
+                    record
+                        .after
+                        .molecule
+                        .as_deref()
+                        .expect("molecule after state"),
                     &context,
                 );
                 assert_state(
                     &snapshot(&molecule),
-                    record.before.molecule.as_deref().expect("source remains unchanged"),
+                    record
+                        .before
+                        .molecule
+                        .as_deref()
+                        .expect("source remains unchanged"),
                     &context,
                 );
             }

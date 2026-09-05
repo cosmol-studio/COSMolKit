@@ -8,8 +8,10 @@
 mod adjacency;
 mod atom;
 mod bond;
+mod cip;
 mod coordinates;
 mod properties;
+pub mod query;
 mod sgroup;
 mod stereo_group;
 mod topology;
@@ -17,20 +19,31 @@ mod topology;
 pub use adjacency::{AdjacencyError, AdjacencyList, NeighborRef};
 pub use atom::{Atom, AtomPdbResidueInfo, AtomSpec};
 pub use bond::{Bond, BondSpec};
-pub use coordinates::{Conformer2D, Conformer3D, ConformerStore, CoordinateBlock, CoordinateDimension};
+pub use cip::{CipDescriptor, CipDescriptorError};
+pub use coordinates::{
+    Conformer2D, Conformer3D, ConformerStore, CoordinateBlock, CoordinateDimension,
+    CoordinateValidationError,
+};
 pub use properties::{MoleculeProperties, PropertyStore, SdfPropertyList, SdfPropertyListTarget};
+pub use query::{
+    AtomQueryPredicate, AtomRangeBounds, AtomRangeDataFunction, AtomRangeQuery, BondQueryPredicate,
+    QueryAtom, QueryBond, QueryGraph, QueryGraphError, QueryNode, RecursiveStructureQuery,
+};
 pub use sgroup::{
-    SGroupAttachPoint, SGroupBondRole, SGroupBracket, SGroupBracketStyle, SGroupCState, SGroupConnection, SGroupData,
-    SGroupDisplay, SubstanceGroup, SubstanceGroupId, SubstanceGroupKind,
+    SGroupAttachPoint, SGroupBondRole, SGroupBracket, SGroupBracketStyle, SGroupCState,
+    SGroupConnection, SGroupData, SGroupDisplay, SubstanceGroup, SubstanceGroupId,
+    SubstanceGroupKind,
 };
 pub use stereo_group::{StereoGroup, StereoGroupKind};
-pub use topology::{AtomMapping, BondMapping, TopologyBlock, TopologyMapping};
+pub use topology::{
+    AtomMapping, BondMapping, TopologyBlock, TopologyMapping, TopologyValidationError,
+};
 
 use std::fmt;
 
 pub use cosmolkit_types::{
-    BondDirection, BondOrder, BondStereo, ChiralTag, ELEMENTS, ELEMENTS_WITH_DUMMY, Element, ElementInfo,
-    ElementParseError, Hybridization,
+    BondDirection, BondOrder, BondStereo, ChiralTag, ELEMENTS, ELEMENTS_WITH_DUMMY, Element,
+    ElementInfo, ElementParseError, Hybridization,
 };
 
 /// Stable atom-table index.

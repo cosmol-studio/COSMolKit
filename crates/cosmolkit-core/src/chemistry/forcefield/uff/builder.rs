@@ -31,7 +31,9 @@ pub(crate) enum UffBuilderError {
     Missing3dConformer { conf_id: isize },
     #[error("UFF constructForceField conf_id must be >= -1, got {conf_id}")]
     InvalidConformerId { conf_id: isize },
-    #[error("UFF addTrigonalBipyramidAngles requires central atom parameters for atom {atom_index}")]
+    #[error(
+        "UFF addTrigonalBipyramidAngles requires central atom parameters for atom {atom_index}"
+    )]
     MissingTrigonalBipyramidCenterParams { atom_index: usize },
     #[error("UFF addBonds parameter length mismatch: atoms={atoms}, params={params}")]
     ParamsLengthMismatch { atoms: usize, params: usize },
@@ -100,7 +102,10 @@ pub(crate) fn add_bonds(
     Ok(())
 }
 
-pub(crate) fn select_uff_conformer_index(mol: &Molecule, conf_id: isize) -> Result<usize, UffBuilderError> {
+pub(crate) fn select_uff_conformer_index(
+    mol: &Molecule,
+    conf_id: isize,
+) -> Result<usize, UffBuilderError> {
     let conformers = mol.conformers_3d();
     if conformers.is_empty() {
         return Err(UffBuilderError::Missing3dConformer { conf_id });
@@ -108,7 +113,8 @@ pub(crate) fn select_uff_conformer_index(mol: &Molecule, conf_id: isize) -> Resu
     if conf_id == -1 {
         return Ok(0);
     }
-    let requested = usize::try_from(conf_id).map_err(|_| UffBuilderError::InvalidConformerId { conf_id })?;
+    let requested =
+        usize::try_from(conf_id).map_err(|_| UffBuilderError::InvalidConformerId { conf_id })?;
     conformers
         .iter()
         .position(|conformer| conformer.id() == requested)
@@ -188,7 +194,8 @@ pub(crate) fn build_neighbor_matrix(mol: &Molecule) -> Result<Vec<u8>, UffBuilde
     // RDKit❗✔️:   const std::uint8_t RELATION_1_X_INIT = RELATION_1_X | (RELATION_1_X << 2) |
     // RDKit❗✔️:                                          (RELATION_1_X << 4) |
     // RDKit❗✔️:                                          (RELATION_1_X << 6);
-    let relation_1_x_init = RELATION_1_X | (RELATION_1_X << 2) | (RELATION_1_X << 4) | (RELATION_1_X << 6);
+    let relation_1_x_init =
+        RELATION_1_X | (RELATION_1_X << 2) | (RELATION_1_X << 4) | (RELATION_1_X << 6);
     // RDKit❗✔️:   unsigned int nAtoms = mol.getNumAtoms();
     let n_atoms = mol.atoms().len();
     if n_atoms == 0 {
@@ -256,7 +263,11 @@ pub(crate) fn build_neighbor_matrix(mol: &Molecule) -> Result<Vec<u8>, UffBuilde
             // RDKit❗✔️:       if (idx1 > -1) {
             if let (Some(idx1), Some(idx3)) = (idx1, idx3) {
                 // RDKit❗✔️:         setTwoBitCell(res, twoBitCellPos(nAtoms, idx1, idx3), RELATION_1_3);
-                set_two_bit_cell(&mut res, two_bit_cell_pos(n_atoms, idx1, idx3), RELATION_1_3);
+                set_two_bit_cell(
+                    &mut res,
+                    two_bit_cell_pos(n_atoms, idx1, idx3),
+                    RELATION_1_3,
+                );
                 // RDKit❗✔️:       }
             }
             // RDKit❗✔️:     }
@@ -269,7 +280,11 @@ pub(crate) fn build_neighbor_matrix(mol: &Molecule) -> Result<Vec<u8>, UffBuilde
     // END RDKIT CPP FUNCTION UFF::Tools::buildNeighborMatrix
 }
 
-fn neighbor_bond_type_as_double(mol: &Molecule, center: usize, neighbor: usize) -> Result<f64, UffBuilderError> {
+fn neighbor_bond_type_as_double(
+    mol: &Molecule,
+    center: usize,
+    neighbor: usize,
+) -> Result<f64, UffBuilderError> {
     let bond_id = mol
         .topology_block()
         .adjacency
@@ -278,7 +293,8 @@ fn neighbor_bond_type_as_double(mol: &Molecule, center: usize, neighbor: usize) 
         .find(|entry| entry.atom_index == neighbor)
         .expect("adjacency must contain bonded neighbor")
         .bond;
-    crate::chemistry::valence::bond_type_as_double(mol.bonds()[bond_id.index()].order()).map_err(UffBuilderError::from)
+    crate::chemistry::valence::bond_type_as_double(mol.bonds()[bond_id.index()].order())
+        .map_err(UffBuilderError::from)
 }
 
 pub(crate) fn add_angles(
@@ -525,8 +541,10 @@ pub(crate) fn add_torsions(
         // RDKit✔️❌:          atom1->getHybridization() == Atom::SP3) &&
         // RDKit✔️❌:         (atom2->getHybridization() == Atom::SP2 ||
         // RDKit✔️❌:          atom2->getHybridization() == Atom::SP3)) {
-        if (atom1.hybridization() == Hybridization::Sp2 || atom1.hybridization() == Hybridization::Sp3)
-            && (atom2.hybridization() == Hybridization::Sp2 || atom2.hybridization() == Hybridization::Sp3)
+        if (atom1.hybridization() == Hybridization::Sp2
+            || atom1.hybridization() == Hybridization::Sp3)
+            && (atom2.hybridization() == Hybridization::Sp2
+                || atom2.hybridization() == Hybridization::Sp3)
         {
             // RDKit✔️❌:       ROMol::OEDGE_ITER beg1, end1;
             // RDKit✔️❌:       boost::tie(beg1, end1) = mol.getAtomBonds(atom1);
@@ -558,7 +576,8 @@ pub(crate) fn add_torsions(
                                 // RDKit✔️❌:                 // if either of the end atoms is SP2 hybridized, set a flag
                                 // RDKit✔️❌:                 // here.
                                 // RDKit✔️❌:                 bool hasSP2 = false;
-                                let has_sp2 = mol.atoms()[b_idx].hybridization() == Hybridization::Sp2
+                                let has_sp2 = mol.atoms()[b_idx].hybridization()
+                                    == Hybridization::Sp2
                                     || mol.atoms()[e_idx].hybridization() == Hybridization::Sp2;
                                 // RDKit✔️❌:                 if (mol.getAtomWithIdx(bIdx)->getHybridization() == Atom::SP2 ||
                                 // RDKit✔️❌:                     mol.getAtomWithIdx(eIdx)->getHybridization() == Atom::SP2) {
@@ -663,7 +682,8 @@ pub(crate) fn add_inversions(
         // RDKit✔️✔️:         (atom[1]->getHybridization() != Atom::SP2)) {
         // RDKit✔️✔️:       continue;
         // RDKit✔️✔️:     }
-        if matches!(at2_atomic_num, 6 | 7 | 8) && center_atom.hybridization() != Hybridization::Sp2 {
+        if matches!(at2_atomic_num, 6 | 7 | 8) && center_atom.hybridization() != Hybridization::Sp2
+        {
             continue;
         }
         // RDKit✔️✔️:     boost::tie(nbrIdx, endNbrs) = mol.getAtomNeighbors(atom[1]);
@@ -814,7 +834,11 @@ pub(crate) fn add_nonbonded(
             let Some(at2_params) = &params[j] else {
                 continue;
             };
-            if ignore_interfrag_interactions && frag_mapping.as_ref().is_some_and(|mapping| mapping[i] != mapping[j]) {
+            if ignore_interfrag_interactions
+                && frag_mapping
+                    .as_ref()
+                    .is_some_and(|mapping| mapping[i] != mapping[j])
+            {
                 continue;
             }
             // RDKit✔️✔️:       if (getTwoBitCell(neighborMatrix, twoBitCellPos(nAtoms, i, j)) >=
@@ -829,7 +853,8 @@ pub(crate) fn add_nonbonded(
                 let dist = (pos_i - pos_j).length();
                 // RDKit✔️✔️:         if (dist < vdwThresh *
                 // RDKit✔️✔️:                        UFF::Utils::calcNonbondedMinimum(params[i], params[j])) {
-                let cutoff = vdw_thresh * super::utils::calc_nonbonded_minimum(at1_params, at2_params);
+                let cutoff =
+                    vdw_thresh * super::utils::calc_nonbonded_minimum(at1_params, at2_params);
                 if dist < cutoff {
                     // RDKit✔️✔️:           vdWContrib *contrib;
                     // RDKit✔️✔️:           contrib = new vdWContrib(field, i, j, params[i], params[j]);
@@ -864,7 +889,10 @@ fn add_trigonal_bipyramid_angles(
     // RDKit✔️❌:   PRECONDITION(atom, "bad atom");
     // Rust's indexed atom lookup models RDKit's non-null atom precondition.
     // RDKit✔️❌:   PRECONDITION(atom->getHybridization() == Atom::SP3D, "bad hybridization");
-    assert!(atom.hybridization() == Hybridization::Sp3d, "bad hybridization");
+    assert!(
+        atom.hybridization() == Hybridization::Sp3d,
+        "bad hybridization"
+    );
     // RDKit✔️❌:   PRECONDITION(atom->getDegree() == 5, "bad degree");
     assert!(adjacency.neighbors_of(atom_idx).len() == 5, "bad degree");
     // RDKit✔️❌:   PRECONDITION(mol.getNumAtoms() == params.size(), "bad parameters");
@@ -877,7 +905,9 @@ fn add_trigonal_bipyramid_angles(
     // RDKit✔️❌:   PRECONDITION(field, "bad forcefield");
     // Rust's mutable reference models RDKit's non-null forcefield precondition.
     let Some(center_params) = params[atom_idx].as_ref() else {
-        return Err(UffBuilderError::MissingTrigonalBipyramidCenterParams { atom_index: atom_idx });
+        return Err(UffBuilderError::MissingTrigonalBipyramidCenterParams {
+            atom_index: atom_idx,
+        });
     };
 
     // RDKit✔️❌:   const Bond *ax1 = nullptr, *ax2 = nullptr;
@@ -1046,7 +1076,9 @@ fn add_angle_special_cases(
         // RDKit✔️❌:     const Atom *atom = mol.getAtomWithIdx(i);
         // RDKit✔️❌:     // trigonal bipyramidal:
         // RDKit✔️❌:     if ((atom->getHybridization() == Atom::SP3D && atom->getDegree() == 5)) {
-        if atom.hybridization() == Hybridization::Sp3d && adjacency.neighbors_of(atom_idx).len() == 5 {
+        if atom.hybridization() == Hybridization::Sp3d
+            && adjacency.neighbors_of(atom_idx).len() == 5
+        {
             // RDKit✔️❌:       addTrigonalBipyramidAngles(atom, mol, confId, params, field);
             add_trigonal_bipyramid_angles(atom_idx, mol, &adjacency, params, field)?;
             // RDKit✔️❌:     }
@@ -1145,10 +1177,21 @@ pub(crate) fn construct_force_field(
     // RDKit✔️❌:   bool foundAll;
     // RDKit✔️❌:   AtomicParamVect params;
     // RDKit✔️❌:   boost::tie(params, foundAll) = getAtomTypes(mol);
-    let (params, _found_all) = get_atom_types_for_uff(mol, total_valences, hybridizations, atom_has_conjugated_bond)?;
+    let (params, _found_all) = get_atom_types_for_uff(
+        mol,
+        total_valences,
+        hybridizations,
+        atom_has_conjugated_bond,
+    )?;
     // RDKit✔️❌:   return constructForceField(mol, params, vdwThresh, confId,
     // RDKit✔️❌:                              ignoreInterfragInteractions);
-    construct_force_field_with_params(mol, &params, vdw_thresh, conf_id, ignore_interfrag_interactions)
+    construct_force_field_with_params(
+        mol,
+        &params,
+        vdw_thresh,
+        conf_id,
+        ignore_interfrag_interactions,
+    )
     // RDKit✔️❌: }
     // END RDKIT CPP FUNCTION RDKit::UFF::constructForceField(ROMol&, double, int, bool)
 }
@@ -1156,9 +1199,10 @@ pub(crate) fn construct_force_field(
 #[cfg(test)]
 mod tests {
     use super::{
-        DEFAULT_TORSION_BOND_SMARTS, RELATION_1_2, RELATION_1_3, RELATION_1_4, RELATION_1_X, UffAtomTyperError,
-        UffBuilderError, add_angles, add_bonds, add_inversions, add_nonbonded, add_torsions, build_neighbor_matrix,
-        construct_force_field, construct_force_field_with_params, get_two_bit_cell, two_bit_cell_pos,
+        DEFAULT_TORSION_BOND_SMARTS, RELATION_1_2, RELATION_1_3, RELATION_1_4, RELATION_1_X,
+        UffAtomTyperError, UffBuilderError, add_angles, add_bonds, add_inversions, add_nonbonded,
+        add_torsions, build_neighbor_matrix, construct_force_field,
+        construct_force_field_with_params, get_two_bit_cell, two_bit_cell_pos,
     };
     use crate::chemistry::forcefield::core::{ForceField, ForceFieldVec3};
     use crate::chemistry::forcefield::uff::angle_bend::AngleBendContrib;
@@ -1166,9 +1210,14 @@ mod tests {
     use crate::chemistry::forcefield::uff::nonbonded::VdwContrib;
     use crate::chemistry::forcefield::uff::params::AtomicParams;
     use crate::chemistry::forcefield::uff::torsion_angle::TorsionAngleContrib;
-    use crate::chemistry::forcefield::uff::utils::{calc_bond_force_constant, calc_bond_rest_length};
+    use crate::chemistry::forcefield::uff::utils::{
+        calc_bond_force_constant, calc_bond_rest_length,
+    };
     use crate::chemistry::valence::ValenceError;
-    use crate::{AtomSpec, BondOrder, BondSpec, Conformer3D, Element, Hybridization, Molecule, MoleculeBuilder};
+    use crate::{
+        AtomSpec, BondOrder, BondSpec, Conformer3D, Element, Hybridization, Molecule,
+        MoleculeBuilder,
+    };
 
     fn carbon() -> AtomSpec {
         AtomSpec::new(Element::C)
@@ -1178,7 +1227,10 @@ mod tests {
         AtomSpec::new(Element::C).with_hybridization(hybridization)
     }
 
-    fn atom_with_element_and_hybridization(element: Element, hybridization: Hybridization) -> AtomSpec {
+    fn atom_with_element_and_hybridization(
+        element: Element,
+        hybridization: Hybridization,
+    ) -> AtomSpec {
         AtomSpec::new(element).with_hybridization(hybridization)
     }
 
@@ -1206,7 +1258,8 @@ mod tests {
     fn force_field_with_positions(n_atoms: usize) -> ForceField {
         let mut ff = ForceField::new(3);
         for i in 0..n_atoms {
-            ff.positions_mut().push(ForceFieldVec3::new(i as f64, 0.0, 0.0));
+            ff.positions_mut()
+                .push(ForceFieldVec3::new(i as f64, 0.0, 0.0));
         }
         ff
     }
@@ -1252,7 +1305,10 @@ mod tests {
         }
     }
 
-    fn torsion_chain(atoms: [(Element, Hybridization); 4], bond_orders: [BondOrder; 3]) -> Molecule {
+    fn torsion_chain(
+        atoms: [(Element, Hybridization); 4],
+        bond_orders: [BondOrder; 3],
+    ) -> Molecule {
         let mut builder = MoleculeBuilder::new();
         let atom_ids: Vec<_> = atoms
             .into_iter()
@@ -1293,7 +1349,9 @@ mod tests {
             .add_bond(BondSpec::new(a2, a5, BondOrder::Single))
             .expect("bond 2-5 should build");
 
-        builder.build().expect("branched torsion molecule should build")
+        builder
+            .build()
+            .expect("branched torsion molecule should build")
     }
 
     fn trigonal_center_molecule(
@@ -1314,7 +1372,9 @@ mod tests {
                 .add_bond(BondSpec::new(center_id, neighbor_id, order))
                 .expect("trigonal center bond should build");
         }
-        builder.build().expect("trigonal center molecule should build")
+        builder
+            .build()
+            .expect("trigonal center molecule should build")
     }
 
     fn vdw_params(x1: f64, d1: f64) -> AtomicParams {
@@ -1350,7 +1410,11 @@ mod tests {
         builder.build().expect("disconnected pair should build")
     }
 
-    fn pair_with_elements_and_3d(first: Element, second: Element, coords: [[f64; 3]; 2]) -> Molecule {
+    fn pair_with_elements_and_3d(
+        first: Element,
+        second: Element,
+        coords: [[f64; 3]; 2],
+    ) -> Molecule {
         let mut builder = MoleculeBuilder::new();
         builder.add_atom(AtomSpec::new(first));
         builder.add_atom(AtomSpec::new(second));
@@ -1381,17 +1445,28 @@ mod tests {
             .add_bond(BondSpec::new(a0, a1, order))
             .expect("bond should build");
         builder
-            .add_conformer(Conformer3D::new(7, vec![[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], true))
+            .add_conformer(Conformer3D::new(
+                7,
+                vec![[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]],
+                true,
+            ))
             .expect("first named conformer should build");
         builder
-            .add_conformer(Conformer3D::new(9, vec![[10.0, 11.0, 12.0], [13.0, 14.0, 15.0]], true))
+            .add_conformer(Conformer3D::new(
+                9,
+                vec![[10.0, 11.0, 12.0], [13.0, 14.0, 15.0]],
+                true,
+            ))
             .expect("second named conformer should build");
-        builder.build().expect("named-conformer molecule should build")
+        builder
+            .build()
+            .expect("named-conformer molecule should build")
     }
 
     fn trigonal_bipyramidal_molecule_with_3d() -> Molecule {
         let mut builder = MoleculeBuilder::new();
-        let center = builder.add_atom(AtomSpec::new(Element::P).with_hybridization(Hybridization::Sp3d));
+        let center =
+            builder.add_atom(AtomSpec::new(Element::P).with_hybridization(Hybridization::Sp3d));
         let a1 = builder.add_atom(carbon());
         let a2 = builder.add_atom(carbon());
         let a3 = builder.add_atom(carbon());
@@ -1412,7 +1487,9 @@ mod tests {
                 [-0.5, -0.866_025_403_784_438_6, 0.0],
             ])
             .expect("3d conformer should build");
-        builder.build().expect("trigonal bipyramidal molecule should build")
+        builder
+            .build()
+            .expect("trigonal bipyramidal molecule should build")
     }
 
     fn branch_coverage_molecule() -> Molecule {
@@ -1440,7 +1517,9 @@ mod tests {
             .add_bond(BondSpec::new(a5, a1, BondOrder::Single))
             .expect("bond 5-1 should build");
 
-        builder.build().expect("branch coverage molecule should build")
+        builder
+            .build()
+            .expect("branch coverage molecule should build")
     }
 
     fn three_atom_angle(
@@ -1508,7 +1587,9 @@ mod tests {
         builder
             .add_bond(BondSpec::new(b, d, BondOrder::Single))
             .expect("bond b-d should build");
-        builder.build().expect("triangle ring with substituent should build")
+        builder
+            .build()
+            .expect("triangle ring with substituent should build")
     }
 
     fn square_ring() -> Molecule {
@@ -1554,7 +1635,9 @@ mod tests {
         builder
             .add_bond(BondSpec::new(b, e, BondOrder::Single))
             .expect("bond b-e should build");
-        builder.build().expect("square ring with substituent should build")
+        builder
+            .build()
+            .expect("square ring with substituent should build")
     }
 
     #[test]
@@ -1641,8 +1724,8 @@ mod tests {
 
     #[test]
     fn uff_builder_build_neighbor_matrix_rejects_empty_molecule() {
-        let err =
-            build_neighbor_matrix(&Molecule::default()).expect_err("empty molecule should stay explicitly unsupported");
+        let err = build_neighbor_matrix(&Molecule::default())
+            .expect_err("empty molecule should stay explicitly unsupported");
         assert_eq!(err, UffBuilderError::EmptyMolecule);
     }
 
@@ -1659,7 +1742,8 @@ mod tests {
 
         assert_eq!(ff.contribs().len(), 1);
         let rest_len = calc_bond_rest_length(1.0, &end1, &end2).expect("valid rest length");
-        let force_constant = calc_bond_force_constant(rest_len, &end1, &end2).expect("valid force constant");
+        let force_constant =
+            calc_bond_force_constant(rest_len, &end1, &end2).expect("valid force constant");
         let pos = [0.0, 0.0, 0.0, rest_len + 0.25, 0.0, 0.0];
         let expected = 0.5 * force_constant * 0.25_f64 * 0.25_f64;
         assert!((ff.contribs()[0].get_energy(&pos) - expected).abs() < 1.0e-12);
@@ -1687,7 +1771,13 @@ mod tests {
         let err = add_bonds(&mol, &[Some(atomic_params(0.757, 5.343, 1.912))], &mut ff)
             .expect_err("length mismatch should error");
 
-        assert_eq!(err, UffBuilderError::ParamsLengthMismatch { atoms: 2, params: 1 });
+        assert_eq!(
+            err,
+            UffBuilderError::ParamsLengthMismatch {
+                atoms: 2,
+                params: 1
+            }
+        );
     }
 
     #[test]
@@ -1825,21 +1915,28 @@ mod tests {
             Some(atomic_params(0.757, 5.343, 1.912)),
             Some(atomic_params(0.658, 8.741, 2.3)),
         ];
-        add_angles(&degree_one, &degree_one_params, &mut degree_one_ff).expect("degree-one atoms should simply skip");
+        add_angles(&degree_one, &degree_one_params, &mut degree_one_ff)
+            .expect("degree-one atoms should simply skip");
         assert_eq!(degree_one_ff.contribs().len(), 0);
 
-        let missing_center = three_atom_angle(Hybridization::Sp3, BondOrder::Single, BondOrder::Single);
+        let missing_center =
+            three_atom_angle(Hybridization::Sp3, BondOrder::Single, BondOrder::Single);
         let mut missing_center_ff = force_field_with_positions(missing_center.num_atoms());
         let missing_center_params = vec![
             Some(atomic_params(0.757, 5.343, 1.912)),
             None,
             Some(atomic_params(0.701, 6.1, 1.8)),
         ];
-        add_angles(&missing_center, &missing_center_params, &mut missing_center_ff)
-            .expect("missing center params should skip");
+        add_angles(
+            &missing_center,
+            &missing_center_params,
+            &mut missing_center_ff,
+        )
+        .expect("missing center params should skip");
         assert_eq!(missing_center_ff.contribs().len(), 0);
 
-        let missing_end = three_atom_angle(Hybridization::Sp3, BondOrder::Single, BondOrder::Single);
+        let missing_end =
+            three_atom_angle(Hybridization::Sp3, BondOrder::Single, BondOrder::Single);
         let mut missing_end_ff = force_field_with_positions(missing_end.num_atoms());
         let missing_end_params = vec![
             Some(atomic_params(0.757, 5.343, 1.912)),
@@ -1870,7 +1967,13 @@ mod tests {
         let err = add_angles(&mol, &[Some(atomic_params(0.757, 5.343, 1.912))], &mut ff)
             .expect_err("length mismatch should error");
 
-        assert_eq!(err, UffBuilderError::ParamsLengthMismatch { atoms: 3, params: 1 });
+        assert_eq!(
+            err,
+            UffBuilderError::ParamsLengthMismatch {
+                atoms: 3,
+                params: 1
+            }
+        );
     }
 
     #[test]
@@ -1883,7 +1986,8 @@ mod tests {
             Some(atomic_params(0.701, 6.1, 1.8)),
         ];
 
-        let err = add_angles(&mol, &params, &mut ff).expect_err("unsupported bond type should fail");
+        let err =
+            add_angles(&mol, &params, &mut ff).expect_err("unsupported bond type should fail");
 
         assert!(matches!(
             err,
@@ -1932,7 +2036,9 @@ mod tests {
             3,
             1.0,
             1.0,
-            params[0].as_ref().expect("ring endpoint params should exist"),
+            params[0]
+                .as_ref()
+                .expect("ring endpoint params should exist"),
             params[1].as_ref().expect("center params should exist"),
             params[3].as_ref().expect("substituent params should exist"),
             30,
@@ -1946,14 +2052,28 @@ mod tests {
     #[test]
     fn uff_builder_add_angles_applies_ring3_internal_hack_order35() {
         let mol = triangle_ring();
-        let positions = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.5, 0.866_025_403_784_438_6, 0.0]];
+        let positions = [
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [0.5, 0.866_025_403_784_438_6, 0.0],
+        ];
         let mut ff = force_field_from_positions(&positions);
         let params = vec![Some(atomic_params(0.658, 8.741, 2.3)); mol.num_atoms()];
 
         add_angles(&mol, &params, &mut ff).expect("triangle ring angles should build");
         ff.initialize();
 
-        let pos = [0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.5, 0.866_025_403_784_438_6, 0.0];
+        let pos = [
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.5,
+            0.866_025_403_784_438_6,
+            0.0,
+        ];
         let expected_total = AngleBendContrib::new(
             &ff,
             0,
@@ -2038,7 +2158,9 @@ mod tests {
             4,
             1.0,
             1.0,
-            params[0].as_ref().expect("ring endpoint params should exist"),
+            params[0]
+                .as_ref()
+                .expect("ring endpoint params should exist"),
             params[1].as_ref().expect("center params should exist"),
             params[4].as_ref().expect("substituent params should exist"),
             40,
@@ -2052,7 +2174,12 @@ mod tests {
     #[test]
     fn uff_builder_add_angles_applies_ring4_internal_hack_order45() {
         let mol = square_ring();
-        let positions = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [1.0, 1.0, 0.0], [0.0, 1.0, 0.0]];
+        let positions = [
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [1.0, 1.0, 0.0],
+            [0.0, 1.0, 0.0],
+        ];
         let mut ff = force_field_from_positions(&positions);
         let params = vec![Some(atomic_params(0.658, 8.741, 2.3)); mol.num_atoms()];
 
@@ -2139,7 +2266,13 @@ mod tests {
         )
         .expect_err("length mismatch should error");
 
-        assert_eq!(err, UffBuilderError::ParamsLengthMismatch { atoms: 4, params: 1 });
+        assert_eq!(
+            err,
+            UffBuilderError::ParamsLengthMismatch {
+                atoms: 4,
+                params: 1
+            }
+        );
     }
 
     #[test]
@@ -2173,7 +2306,12 @@ mod tests {
             ],
             [BondOrder::Single, BondOrder::Single, BondOrder::Single],
         );
-        let positions = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [1.0, 1.0, 0.0], [2.0, 1.0, 1.0]];
+        let positions = [
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [1.0, 1.0, 0.0],
+            [2.0, 1.0, 1.0],
+        ];
         let mut ff = force_field_from_positions(&positions);
         let params = vec![
             Some(torsion_params(0.0, 0.0)),
@@ -2318,7 +2456,12 @@ mod tests {
             ],
             [BondOrder::Single, BondOrder::Single, BondOrder::Single],
         );
-        let positions = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [1.0, 1.0, 0.0], [2.0, 1.0, 1.0]];
+        let positions = [
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [1.0, 1.0, 0.0],
+            [2.0, 1.0, 1.0],
+        ];
         let mut ff = force_field_from_positions(&positions);
         let params = vec![
             Some(torsion_params(0.0, 0.0)),
@@ -2378,7 +2521,8 @@ mod tests {
         ff.initialize();
 
         let pos = [
-            0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 2.0, 1.0, 0.0, 3.0, 1.0, 1.0, 1.0, -1.0, 1.0, 2.0, 2.0, 1.0,
+            0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 2.0, 1.0, 0.0, 3.0, 1.0, 1.0, 1.0, -1.0, 1.0, 2.0, 2.0,
+            1.0,
         ];
         let mut expected_total = 0.0;
         for (a, d) in [(0, 3), (0, 5), (4, 3), (4, 5)] {
@@ -2425,7 +2569,13 @@ mod tests {
 
         let err = add_inversions(&mol, &[None], &mut ff).expect_err("length mismatch should fail");
 
-        assert_eq!(err, UffBuilderError::ParamsLengthMismatch { atoms: 4, params: 1 });
+        assert_eq!(
+            err,
+            UffBuilderError::ParamsLengthMismatch {
+                atoms: 4,
+                params: 1
+            }
+        );
     }
 
     #[test]
@@ -2489,14 +2639,22 @@ mod tests {
             ],
             [BondOrder::Double, BondOrder::Single, BondOrder::Single],
         );
-        let positions = [[0.0, 0.0, 0.15], [1.2, 0.0, 0.0], [-0.6, 0.9, 0.0], [-0.6, -0.9, 0.0]];
+        let positions = [
+            [0.0, 0.0, 0.15],
+            [1.2, 0.0, 0.0],
+            [-0.6, 0.9, 0.0],
+            [-0.6, -0.9, 0.0],
+        ];
         let mut ff = force_field_from_positions(&positions);
         let params = vec![None; mol.num_atoms()];
 
-        add_inversions(&mol, &params, &mut ff).expect("sp2 carbon bound to sp2 oxygen should add inversions");
+        add_inversions(&mol, &params, &mut ff)
+            .expect("sp2 carbon bound to sp2 oxygen should add inversions");
         ff.initialize();
 
-        let pos = [0.0, 0.0, 0.15, 1.2, 0.0, 0.0, -0.6, 0.9, 0.0, -0.6, -0.9, 0.0];
+        let pos = [
+            0.0, 0.0, 0.15, 1.2, 0.0, 0.0, -0.6, 0.9, 0.0, -0.6, -0.9, 0.0,
+        ];
         let expected = InversionContrib::new(&ff, 1, 0, 2, 3, 6, true, 1.0);
 
         assert_eq!(ff.contribs().len(), 3);
@@ -2517,7 +2675,8 @@ mod tests {
         let mut ff = force_field_with_positions(mol.num_atoms());
         let params = vec![None; mol.num_atoms()];
 
-        add_inversions(&mol, &params, &mut ff).expect("unsupported central atom should simply skip");
+        add_inversions(&mol, &params, &mut ff)
+            .expect("unsupported central atom should simply skip");
 
         assert_eq!(ff.contribs().len(), 0);
     }
@@ -2566,7 +2725,8 @@ mod tests {
         let mut ff = force_field_with_positions(mol.num_atoms());
         let params = vec![None; mol.num_atoms()];
 
-        add_inversions(&mol, &params, &mut ff).expect("phosphorus center should not require sp2 hybridization");
+        add_inversions(&mol, &params, &mut ff)
+            .expect("phosphorus center should not require sp2 hybridization");
 
         assert_eq!(ff.contribs().len(), 3);
     }
@@ -2587,14 +2747,25 @@ mod tests {
         )
         .expect_err("length mismatch should fail");
 
-        assert_eq!(err, UffBuilderError::ParamsLengthMismatch { atoms: 2, params: 1 });
+        assert_eq!(
+            err,
+            UffBuilderError::ParamsLengthMismatch {
+                atoms: 2,
+                params: 1
+            }
+        );
     }
 
     #[test]
     fn uff_builder_add_nonbonded_adds_one_vdw_contrib_for_14_pair_within_threshold() {
         let mol = linear_chain(4);
         let neighbor_matrix = build_neighbor_matrix(&mol).expect("neighbor matrix should build");
-        let positions = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [2.0, 0.0, 0.0], [3.0, 0.0, 0.0]];
+        let positions = [
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [2.0, 0.0, 0.0],
+            [3.0, 0.0, 0.0],
+        ];
         let mut ff = force_field_from_positions(&positions);
         let params = vec![
             Some(vdw_params(4.0, 0.25)),
@@ -2625,7 +2796,8 @@ mod tests {
     fn uff_builder_add_nonbonded_skips_pairs_closer_than_14_relation() {
         let mol = linear_chain(3);
         let neighbor_matrix = build_neighbor_matrix(&mol).expect("neighbor matrix should build");
-        let mut ff = force_field_from_positions(&[[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [2.0, 0.0, 0.0]]);
+        let mut ff =
+            force_field_from_positions(&[[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [2.0, 0.0, 0.0]]);
         let params = vec![Some(vdw_params(4.0, 0.25)); mol.num_atoms()];
 
         add_nonbonded(&mol, &params, &mut ff, &neighbor_matrix, 10.0, false)
@@ -2654,7 +2826,8 @@ mod tests {
         let mut ff = force_field_from_positions(&[[0.0, 0.0, 0.0], [3.0, 0.0, 0.0]]);
         let params = vec![Some(vdw_params(4.0, 0.25)), None];
 
-        add_nonbonded(&mol, &params, &mut ff, &neighbor_matrix, 1.0, false).expect("missing params should skip");
+        add_nonbonded(&mol, &params, &mut ff, &neighbor_matrix, 1.0, false)
+            .expect("missing params should skip");
 
         assert_eq!(ff.contribs().len(), 0);
     }
@@ -2680,12 +2853,24 @@ mod tests {
     fn uff_builder_construct_force_field_with_params_rejects_parameter_length_mismatch() {
         let mol = disconnected_pair_with_3d([[0.0, 0.0, 0.0], [3.0, 0.0, 0.0]]);
 
-        let err = match construct_force_field_with_params(&mol, &[Some(vdw_params(4.0, 9.0))], 1.0, -1, false) {
+        let err = match construct_force_field_with_params(
+            &mol,
+            &[Some(vdw_params(4.0, 9.0))],
+            1.0,
+            -1,
+            false,
+        ) {
             Ok(_) => panic!("parameter length mismatch should error"),
             Err(err) => err,
         };
 
-        assert_eq!(err, UffBuilderError::ParamsLengthMismatch { atoms: 2, params: 1 });
+        assert_eq!(
+            err,
+            UffBuilderError::ParamsLengthMismatch {
+                atoms: 2,
+                params: 1
+            }
+        );
     }
 
     #[test]
@@ -2716,15 +2901,22 @@ mod tests {
 
     #[test]
     fn uff_builder_construct_force_field_with_params_uses_default_conformer_for_minus_one() {
-        let mol = single_bond_molecule_with_3d(BondOrder::Single, [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]);
-        let params = vec![Some(atomic_params(0.7, 1.2, 1.0)), Some(atomic_params(0.8, 1.4, 1.1))];
+        let mol =
+            single_bond_molecule_with_3d(BondOrder::Single, [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]);
+        let params = vec![
+            Some(atomic_params(0.7, 1.2, 1.0)),
+            Some(atomic_params(0.8, 1.4, 1.1)),
+        ];
 
         let ff = construct_force_field_with_params(&mol, &params, 0.0, -1, false)
             .expect("default conformer should build force field");
 
         assert_eq!(
             ff.positions(),
-            &[ForceFieldVec3::new(1.0, 2.0, 3.0), ForceFieldVec3::new(4.0, 5.0, 6.0)]
+            &[
+                ForceFieldVec3::new(1.0, 2.0, 3.0),
+                ForceFieldVec3::new(4.0, 5.0, 6.0)
+            ]
         );
         assert_eq!(ff.contribs().len(), 1);
     }
@@ -2732,7 +2924,10 @@ mod tests {
     #[test]
     fn uff_builder_construct_force_field_with_params_selects_requested_conformer_by_id() {
         let mol = molecule_with_named_conformers(BondOrder::Single);
-        let params = vec![Some(atomic_params(0.7, 1.2, 1.0)), Some(atomic_params(0.8, 1.4, 1.1))];
+        let params = vec![
+            Some(atomic_params(0.7, 1.2, 1.0)),
+            Some(atomic_params(0.8, 1.4, 1.1)),
+        ];
 
         let ff = construct_force_field_with_params(&mol, &params, 0.0, 9, false)
             .expect("named conformer id should build force field");
@@ -2758,7 +2953,8 @@ mod tests {
     }
 
     #[test]
-    fn uff_builder_construct_force_field_with_params_ignores_interfragment_interactions_when_requested() {
+    fn uff_builder_construct_force_field_with_params_ignores_interfragment_interactions_when_requested()
+     {
         let mol = disconnected_pair_with_3d([[0.0, 0.0, 0.0], [3.0, 0.0, 0.0]]);
         let params = vec![Some(vdw_params(4.0, 9.0)), Some(vdw_params(4.0, 9.0))];
 
@@ -2772,7 +2968,8 @@ mod tests {
     }
 
     #[test]
-    fn uff_builder_construct_force_field_with_params_adds_trigonal_bipyramidal_special_case_angles() {
+    fn uff_builder_construct_force_field_with_params_adds_trigonal_bipyramidal_special_case_angles()
+    {
         let mol = trigonal_bipyramidal_molecule_with_3d();
         let params = vec![
             Some(atomic_params(0.7, 1.0, 1.0)),
@@ -2859,7 +3056,8 @@ mod tests {
 
     #[test]
     fn uff_builder_construct_force_field_uses_default_conformer_for_minus_one() {
-        let mol = single_bond_molecule_with_3d(BondOrder::Single, [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]);
+        let mol =
+            single_bond_molecule_with_3d(BondOrder::Single, [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]);
 
         let ff = construct_force_field(
             &mol,
@@ -2874,7 +3072,10 @@ mod tests {
 
         assert_eq!(
             ff.positions(),
-            &[ForceFieldVec3::new(1.0, 2.0, 3.0), ForceFieldVec3::new(4.0, 5.0, 6.0)]
+            &[
+                ForceFieldVec3::new(1.0, 2.0, 3.0),
+                ForceFieldVec3::new(4.0, 5.0, 6.0)
+            ]
         );
         assert_eq!(ff.contribs().len(), 1);
     }
@@ -2963,7 +3164,8 @@ mod tests {
 
     #[test]
     fn uff_builder_construct_force_field_skips_missing_parameter_slots() {
-        let mol = pair_with_elements_and_3d(Element::C, Element::F, [[0.0, 0.0, 0.0], [3.0, 0.0, 0.0]]);
+        let mol =
+            pair_with_elements_and_3d(Element::C, Element::F, [[0.0, 0.0, 0.0], [3.0, 0.0, 0.0]]);
 
         let ff = construct_force_field(
             &mol,

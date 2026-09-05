@@ -1,10 +1,9 @@
-//! Query vocabulary exposed alongside the molecule data model.
+//! Compatibility re-exports for query values now owned by `cosmolkit-model`.
 //!
-//! Query predicates and graph values are model-level data. Parsing, matching,
-//! and compilation remain in `search`, but consumers can depend on this
-//! vocabulary without importing parser implementation modules.
+//! Search behavior remains in `crate::search`; this module is not a second
+//! query model.
 
-pub use crate::search::query::{AtomQueryPredicate, BondQueryPredicate, QueryNode};
-pub use crate::search::query_graph::{
-    CompiledQuery, MatchResult, McsResult, QueryAtom, QueryBond, QueryGraph, QueryGraphError,
+pub use cosmolkit_model::{
+    AtomQueryPredicate, AtomRangeBounds, AtomRangeDataFunction, AtomRangeQuery, BondQueryPredicate,
+    QueryAtom, QueryBond, QueryGraph, QueryGraphError, QueryNode, RecursiveStructureQuery,
 };

@@ -48,9 +48,10 @@ fn molalign_has_one_private_pure_rust_alignment_kernel() {
         inventory("pub(crate) fn align_points("),
         BTreeMap::from([("src/chemistry/numerics/alignment.rs".to_owned(), 1)])
     );
-    let alignment =
-        fs::read_to_string(core_root().join("src/chemistry/numerics/alignment.rs")).expect("read alignment kernel");
-    let mol_align = fs::read_to_string(core_root().join("src/chemistry/mol_align.rs")).expect("read MolAlign");
+    let alignment = fs::read_to_string(core_root().join("src/chemistry/numerics/alignment.rs"))
+        .expect("read alignment kernel");
+    let mol_align =
+        fs::read_to_string(core_root().join("src/chemistry/mol_align.rs")).expect("read MolAlign");
     for source in [&alignment, &mol_align] {
         assert!(!source.contains("extern \"C\""));
         assert!(!source.contains("AlignmentBackend"));
@@ -60,10 +61,12 @@ fn molalign_has_one_private_pure_rust_alignment_kernel() {
 
 #[test]
 fn depiction_distgeom_molalign_and_moltransforms_delegate_to_the_shared_kernel() {
-    let coordinates =
-        fs::read_to_string(core_root().join("src/chemistry/coordinates.rs")).expect("read coordinates source");
-    let distgeom = fs::read_to_string(core_root().join("src/chemistry/distgeom.rs")).expect("read distgeom source");
-    let mol_align = fs::read_to_string(core_root().join("src/chemistry/mol_align.rs")).expect("read MolAlign");
+    let coordinates = fs::read_to_string(core_root().join("src/chemistry/coordinates.rs"))
+        .expect("read coordinates source");
+    let distgeom = fs::read_to_string(core_root().join("src/chemistry/distgeom.rs"))
+        .expect("read distgeom source");
+    let mol_align =
+        fs::read_to_string(core_root().join("src/chemistry/mol_align.rs")).expect("read MolAlign");
     let mol_transforms = fs::read_to_string(core_root().join("src/chemistry/mol_transforms.rs"))
         .expect("read molecule transforms source");
     for (owner, source) in [
@@ -73,7 +76,8 @@ fn depiction_distgeom_molalign_and_moltransforms_delegate_to_the_shared_kernel()
         ("MolTransforms", mol_transforms),
     ] {
         assert!(
-            source.contains("chemistry::numerics::alignment") || source.contains("chemistry::numerics::alignment::{"),
+            source.contains("chemistry::numerics::alignment")
+                || source.contains("chemistry::numerics::alignment::{"),
             "{owner} stopped delegating to the sole alignment kernel"
         );
     }
@@ -96,7 +100,8 @@ fn depiction_distgeom_molalign_and_moltransforms_delegate_to_the_shared_kernel()
 
 #[test]
 fn ordinary_molalign_surface_does_not_absorb_o3a() {
-    let mol_align = fs::read_to_string(core_root().join("src/chemistry/mol_align.rs")).expect("read MolAlign");
+    let mol_align =
+        fs::read_to_string(core_root().join("src/chemistry/mol_align.rs")).expect("read MolAlign");
     for excluded in ["O3A", "Open3DAlign", "CrippenO3A", "MMFFO3A"] {
         assert!(
             !mol_align.contains(excluded),

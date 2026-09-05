@@ -33,12 +33,12 @@ full = [
     "stereoisomers",
     "confseq",
 ]
-batch = ["depict", "fingerprints", "io", "cosmolkit-core/batch"]
+batch = ["cosmolkit-core/batch"]
 confseq = ["cosmolkit-core/confseq"]
-depict = ["io", "cosmolkit-core/depict"]
+depict = ["cosmolkit-core/depict"]
 descriptors = ["cosmolkit-core/descriptors"]
-fingerprints = ["io", "cosmolkit-core/fingerprints"]
-hashing = ["fingerprints", "cosmolkit-core/hashing"]
+fingerprints = ["cosmolkit-core/fingerprints"]
+hashing = ["cosmolkit-core/hashing"]
 inchi = ["cosmolkit-core/inchi"]
 io = ["cosmolkit-core/io"]
 serialization = ["cosmolkit-core/serialization"]

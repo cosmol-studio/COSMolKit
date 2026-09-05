@@ -2,10 +2,10 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 
 use cosmolkit_core::{
-    Atom, AtomSpec, Bond, BondSpec, MmffMolProperties, MmffPublicApiError, Molecule, MoleculeBuilder,
-    mmff_has_all_molecule_params, mmff_initial_gradient_for_parity, mmff_optimize_molecule,
-    mmff_optimize_molecule_confs, uff_has_all_molecule_params, uff_initial_gradient_for_parity, uff_optimize_molecule,
-    uff_optimize_molecule_confs,
+    Atom, AtomSpec, Bond, BondSpec, MmffMolProperties, MmffPublicApiError, Molecule,
+    MoleculeBuilder, mmff_has_all_molecule_params, mmff_initial_gradient_for_parity,
+    mmff_optimize_molecule, mmff_optimize_molecule_confs, uff_has_all_molecule_params,
+    uff_initial_gradient_for_parity, uff_optimize_molecule, uff_optimize_molecule_confs,
 };
 use serde::Deserialize;
 
@@ -96,9 +96,12 @@ fn load_golden() -> Vec<ForcefieldParamsRecord> {
         .lines()
         .enumerate()
         .map(|(idx, line)| {
-            let line = line.unwrap_or_else(|err| panic!("failed to read {} line {}: {err}", path.display(), idx + 1));
-            serde_json::from_str(&line)
-                .unwrap_or_else(|err| panic!("failed to parse {} line {}: {err}", path.display(), idx + 1))
+            let line = line.unwrap_or_else(|err| {
+                panic!("failed to read {} line {}: {err}", path.display(), idx + 1)
+            });
+            serde_json::from_str(&line).unwrap_or_else(|err| {
+                panic!("failed to parse {} line {}: {err}", path.display(), idx + 1)
+            })
         })
         .collect()
 }
@@ -444,15 +447,18 @@ fn explicit_h_forcefield_params_and_mmff_atom_types_match_rdkit_golden() {
     }
 }
 
-fn assert_mmff_charges_match(row: usize, smiles: &str, props: &MmffMolProperties, expected: &ForcefieldResult) {
-    let expected_formal = expected
-        .formal_charges
-        .as_ref()
-        .unwrap_or_else(|| panic!("row {row} ({smiles}) has RDKit MMFF properties without formal charges"));
-    let expected_partial = expected
-        .partial_charges
-        .as_ref()
-        .unwrap_or_else(|| panic!("row {row} ({smiles}) has RDKit MMFF properties without partial charges"));
+fn assert_mmff_charges_match(
+    row: usize,
+    smiles: &str,
+    props: &MmffMolProperties,
+    expected: &ForcefieldResult,
+) {
+    let expected_formal = expected.formal_charges.as_ref().unwrap_or_else(|| {
+        panic!("row {row} ({smiles}) has RDKit MMFF properties without formal charges")
+    });
+    let expected_partial = expected.partial_charges.as_ref().unwrap_or_else(|| {
+        panic!("row {row} ({smiles}) has RDKit MMFF properties without partial charges")
+    });
     assert_eq!(expected_formal.len(), expected_partial.len());
     for idx in 0..expected_formal.len() {
         let actual_formal = props.get_mmff_formal_charge(idx).unwrap();
@@ -557,8 +563,15 @@ fn forcefield_initial_energy_matches_rdkit_golden_for_all_embedded_rows() {
                 embedded.mmff.needs_more,
                 embedded.mmff.energy,
                 embedded.mmff.error.as_deref(),
-                mmff_optimize_molecule_confs(&mol, 1, 0, "MMFF94", FORCEFIELD_PARITY_NONBONDED_THRESH, true)
-                    .map(|result| result.conformer_results),
+                mmff_optimize_molecule_confs(
+                    &mol,
+                    1,
+                    0,
+                    "MMFF94",
+                    FORCEFIELD_PARITY_NONBONDED_THRESH,
+                    true,
+                )
+                .map(|result| result.conformer_results),
             );
         } else {
             assert!(embedded.mmff.error.is_some());
@@ -607,7 +620,12 @@ fn forcefield_initial_gradient_matches_rdkit_golden_for_all_embedded_rows() {
                     "UFF",
                     expected_gradient,
                     embedded.uff.error.as_deref(),
-                    uff_initial_gradient_for_parity(&mol, FORCEFIELD_PARITY_NONBONDED_THRESH, -1, true),
+                    uff_initial_gradient_for_parity(
+                        &mol,
+                        FORCEFIELD_PARITY_NONBONDED_THRESH,
+                        -1,
+                        true,
+                    ),
                 );
             } else {
                 assert_unavailable_forcefield_result(
@@ -618,7 +636,14 @@ fn forcefield_initial_gradient_matches_rdkit_golden_for_all_embedded_rows() {
                     embedded.uff.energy,
                     embedded.uff.error.as_deref(),
                     mol.conformers_3d()[0].coordinates(),
-                    uff_optimize_molecule_confs(&mol, 1, 0, FORCEFIELD_PARITY_NONBONDED_THRESH, true).map(|result| {
+                    uff_optimize_molecule_confs(
+                        &mol,
+                        1,
+                        0,
+                        FORCEFIELD_PARITY_NONBONDED_THRESH,
+                        true,
+                    )
+                    .map(|result| {
                         (
                             result.conformer_results[0].needs_more,
                             result.conformer_results[0].energy,
@@ -639,7 +664,13 @@ fn forcefield_initial_gradient_matches_rdkit_golden_for_all_embedded_rows() {
                     "MMFF",
                     expected_gradient,
                     embedded.mmff.error.as_deref(),
-                    mmff_initial_gradient_for_parity(&mol, "MMFF94", FORCEFIELD_PARITY_NONBONDED_THRESH, -1, true),
+                    mmff_initial_gradient_for_parity(
+                        &mol,
+                        "MMFF94",
+                        FORCEFIELD_PARITY_NONBONDED_THRESH,
+                        -1,
+                        true,
+                    ),
                 );
             } else {
                 assert_unavailable_forcefield_result(
@@ -650,15 +681,21 @@ fn forcefield_initial_gradient_matches_rdkit_golden_for_all_embedded_rows() {
                     embedded.mmff.energy,
                     embedded.mmff.error.as_deref(),
                     mol.conformers_3d()[0].coordinates(),
-                    mmff_optimize_molecule_confs(&mol, 1, 0, "MMFF94", FORCEFIELD_PARITY_NONBONDED_THRESH, true).map(
-                        |result| {
-                            (
-                                result.conformer_results[0].needs_more,
-                                result.conformer_results[0].energy,
-                                result.molecule.conformers_3d()[0].coordinates().to_vec(),
-                            )
-                        },
-                    ),
+                    mmff_optimize_molecule_confs(
+                        &mol,
+                        1,
+                        0,
+                        "MMFF94",
+                        FORCEFIELD_PARITY_NONBONDED_THRESH,
+                        true,
+                    )
+                    .map(|result| {
+                        (
+                            result.conformer_results[0].needs_more,
+                            result.conformer_results[0].energy,
+                            result.molecule.conformers_3d()[0].coordinates().to_vec(),
+                        )
+                    }),
                 );
             }
         } else {
@@ -667,7 +704,10 @@ fn forcefield_initial_gradient_matches_rdkit_golden_for_all_embedded_rows() {
     }
 
     assert!(uff_comparisons > 0, "golden must contain UFF gradient rows");
-    assert!(mmff_comparisons > 0, "golden must contain MMFF gradient rows");
+    assert!(
+        mmff_comparisons > 0,
+        "golden must contain MMFF gradient rows"
+    );
 }
 
 #[test]
@@ -694,10 +734,13 @@ fn uff_single_conformer_final_coordinates_match_rdkit_golden_for_all_embedded_ro
                 record.smiles
             )
         });
-        let expected = embedded
-            .uff_optimized
-            .as_ref()
-            .unwrap_or_else(|| panic!("row {} ({}) has no UFF optimized golden", row_idx + 1, record.smiles));
+        let expected = embedded.uff_optimized.as_ref().unwrap_or_else(|| {
+            panic!(
+                "row {} ({}) has no UFF optimized golden",
+                row_idx + 1,
+                record.smiles
+            )
+        });
         assert!(
             expected.error.is_none(),
             "row {} ({}) has RDKit UFF optimized-coordinate error: {:?}",
@@ -810,10 +853,13 @@ fn mmff_single_conformer_final_coordinates_match_rdkit_golden_for_all_embedded_r
                 record.smiles
             )
         });
-        let expected = embedded
-            .mmff_optimized
-            .as_ref()
-            .unwrap_or_else(|| panic!("row {} ({}) has no MMFF optimized golden", row_idx + 1, record.smiles));
+        let expected = embedded.mmff_optimized.as_ref().unwrap_or_else(|| {
+            panic!(
+                "row {} ({}) has no MMFF optimized golden",
+                row_idx + 1,
+                record.smiles
+            )
+        });
         assert!(
             expected.error.is_none(),
             "row {} ({}) has RDKit MMFF optimized-coordinate error: {:?}",
@@ -937,8 +983,8 @@ fn mmff_single_conformer_final_coordinates_match_rdkit_golden_for_all_embedded_r
 fn mmff_aromatic_ring_membership_atom_properties_match_rdkit_regression() {
     let molecule = Molecule::from_smiles("CN1C(=O)c2c([n+](C)cn2C)NC1N.O=C([O-])C(F)(F)F")
         .expect("MMFF aromatic-ring-membership regression molecule parses");
-    let properties =
-        MmffMolProperties::new(&molecule, "MMFF94", 0).expect("MMFF aromatic-ring-membership properties build");
+    let properties = MmffMolProperties::new(&molecule, "MMFF94", 0)
+        .expect("MMFF aromatic-ring-membership properties build");
     let expected: [(u8, f64, f64); 21] = [
         (1, 0.0, 0.3001),
         (10, 0.0, -0.6601999999999999),
@@ -964,7 +1010,8 @@ fn mmff_aromatic_ring_membership_atom_properties_match_rdkit_regression() {
     ];
 
     assert_eq!(molecule.num_atoms(), expected.len());
-    for (atom_index, (atom_type, formal_charge, partial_charge)) in expected.into_iter().enumerate() {
+    for (atom_index, (atom_type, formal_charge, partial_charge)) in expected.into_iter().enumerate()
+    {
         assert_eq!(
             properties
                 .get_mmff_atom_type(atom_index)
@@ -1128,8 +1175,11 @@ fn uff_multi_conformer_final_coordinates_match_rdkit_golden_for_all_embedded_row
             record.smiles
         );
 
-        for (conf_idx, (actual_result, expected_result)) in
-            actual.conformer_results.iter().zip(expected_results).enumerate()
+        for (conf_idx, (actual_result, expected_result)) in actual
+            .conformer_results
+            .iter()
+            .zip(expected_results)
+            .enumerate()
         {
             assert_optimized_result_matches(
                 row_idx + 1,
@@ -1262,8 +1312,11 @@ fn mmff_multi_conformer_final_coordinates_match_rdkit_golden_for_all_embedded_ro
             record.smiles
         );
 
-        for (conf_idx, (actual_result, expected_result)) in
-            actual.conformer_results.iter().zip(expected_results).enumerate()
+        for (conf_idx, (actual_result, expected_result)) in actual
+            .conformer_results
+            .iter()
+            .zip(expected_results)
+            .enumerate()
         {
             assert_optimized_result_matches(
                 row_idx + 1,
@@ -1308,8 +1361,16 @@ fn assert_uff_optimizer_regression(row: usize) {
         .embedded
         .as_ref()
         .unwrap_or_else(|| panic!("row {row} ({}) has no embedded golden", record.smiles));
-    assert!(embedded.ok, "row {row} ({}) failed RDKit embedding", record.smiles);
-    assert!(embedded.uff.ok, "row {row} ({}) failed RDKit UFF", record.smiles);
+    assert!(
+        embedded.ok,
+        "row {row} ({}) failed RDKit embedding",
+        record.smiles
+    );
+    assert!(
+        embedded.uff.ok,
+        "row {row} ({}) failed RDKit UFF",
+        record.smiles
+    );
 
     let cxsmiles = embedded
         .cxsmiles
@@ -1346,11 +1407,12 @@ fn assert_uff_optimizer_regression(row: usize) {
             .map(|result| result.conformer_results),
     );
 
-    let expected_gradient = embedded
-        .uff
-        .gradient
-        .as_deref()
-        .unwrap_or_else(|| panic!("row {row} ({}) RDKit UFF result has no initial gradient", record.smiles));
+    let expected_gradient = embedded.uff.gradient.as_deref().unwrap_or_else(|| {
+        panic!(
+            "row {row} ({}) RDKit UFF result has no initial gradient",
+            record.smiles
+        )
+    });
     assert_initial_gradient_matches(
         row,
         &record.smiles,
@@ -1360,10 +1422,12 @@ fn assert_uff_optimizer_regression(row: usize) {
         uff_initial_gradient_for_parity(&mol, FORCEFIELD_PARITY_NONBONDED_THRESH, -1, true),
     );
 
-    let expected_single = embedded
-        .uff_optimized
-        .as_ref()
-        .unwrap_or_else(|| panic!("row {row} ({}) has no RDKit single-conformer UFF result", record.smiles));
+    let expected_single = embedded.uff_optimized.as_ref().unwrap_or_else(|| {
+        panic!(
+            "row {row} ({}) has no RDKit single-conformer UFF result",
+            record.smiles
+        )
+    });
     assert!(expected_single.ok);
     let actual_single = uff_optimize_molecule(
         &mol,
@@ -1388,10 +1452,12 @@ fn assert_uff_optimizer_regression(row: usize) {
         expected_single,
     );
 
-    let expected_multi = embedded
-        .uff_multi_optimized
-        .as_ref()
-        .unwrap_or_else(|| panic!("row {row} ({}) has no RDKit multi-conformer UFF result", record.smiles));
+    let expected_multi = embedded.uff_multi_optimized.as_ref().unwrap_or_else(|| {
+        panic!(
+            "row {row} ({}) has no RDKit multi-conformer UFF result",
+            record.smiles
+        )
+    });
     assert!(expected_multi.ok);
     let expected_initial_coords = expected_multi.initial_coords.as_ref().unwrap_or_else(|| {
         panic!(
@@ -1399,12 +1465,15 @@ fn assert_uff_optimizer_regression(row: usize) {
             record.smiles
         )
     });
-    let expected_results = expected_multi.conformer_results.as_ref().unwrap_or_else(|| {
-        panic!(
-            "row {row} ({}) RDKit multi-conformer result has no conformer results",
-            record.smiles
-        )
-    });
+    let expected_results = expected_multi
+        .conformer_results
+        .as_ref()
+        .unwrap_or_else(|| {
+            panic!(
+                "row {row} ({}) RDKit multi-conformer result has no conformer results",
+                record.smiles
+            )
+        });
     let multi_mol = molecule_with_3d_conformers(&mol, expected_initial_coords).unwrap_or_else(|err| {
         panic!(
             "COSMolKit failed to build UFF multi-conformer regression molecule at row {row} ({}): {err}",
@@ -1425,8 +1494,11 @@ fn assert_uff_optimizer_regression(row: usize) {
         )
     });
     assert_eq!(actual_multi.conformer_results.len(), expected_results.len());
-    for (conf_idx, (actual_result, expected_result)) in
-        actual_multi.conformer_results.iter().zip(expected_results).enumerate()
+    for (conf_idx, (actual_result, expected_result)) in actual_multi
+        .conformer_results
+        .iter()
+        .zip(expected_results)
+        .enumerate()
     {
         assert_optimized_result_matches(
             row,
@@ -1461,8 +1533,8 @@ fn mmff_torsion_empirical_optimizer_regression_row_123_matches_rdkit() {
 fn mmff_type_five_final_wildcard_regressions_match_rdkit() {
     let table_backed = Molecule::from_smiles("COC(=O)[C@H](c1ccccc1Cl)N1CCC2C(=CC(=O)[S+]2[O-])C1")
         .expect("table-backed MMFF regression molecule parses");
-    let table_backed_properties =
-        MmffMolProperties::new(&table_backed, "MMFF94", 0).expect("table-backed MMFF properties build");
+    let table_backed_properties = MmffMolProperties::new(&table_backed, "MMFF94", 0)
+        .expect("table-backed MMFF properties build");
     let (torsion_type, params) = table_backed_properties
         .get_mmff_torsion_params(17, 18, 20, 15)
         .expect("table-backed MMFF torsion lookup succeeds")
@@ -1486,7 +1558,9 @@ fn mmff_type_five_final_wildcard_regressions_match_rdkit() {
 
 #[test]
 fn mmff_angle_empirical_optimizer_regressions_match_rdkit() {
-    for row in [17, 18, 21, 22, 48, 49, 50, 51, 72, 73, 76, 78, 79, 90, 99, 104, 129] {
+    for row in [
+        17, 18, 21, 22, 48, 49, 50, 51, 72, 73, 76, 78, 79, 90, 99, 104, 129,
+    ] {
         assert_mmff_empirical_optimizer_regression(row);
     }
 }
@@ -1500,8 +1574,16 @@ fn assert_mmff_empirical_optimizer_regression(row: usize) {
         .embedded
         .as_ref()
         .unwrap_or_else(|| panic!("row {row} ({}) has no embedded golden", record.smiles));
-    assert!(embedded.ok, "row {row} ({}) failed RDKit embedding", record.smiles);
-    assert!(embedded.mmff.ok, "row {row} ({}) failed RDKit MMFF", record.smiles);
+    assert!(
+        embedded.ok,
+        "row {row} ({}) failed RDKit embedding",
+        record.smiles
+    );
+    assert!(
+        embedded.mmff.ok,
+        "row {row} ({}) failed RDKit MMFF",
+        record.smiles
+    );
 
     let cxsmiles = embedded
         .cxsmiles
@@ -1533,8 +1615,15 @@ fn assert_mmff_empirical_optimizer_regression(row: usize) {
         embedded.mmff.needs_more,
         embedded.mmff.energy,
         embedded.mmff.error.as_deref(),
-        mmff_optimize_molecule_confs(&mol, 1, 0, "MMFF94", FORCEFIELD_PARITY_NONBONDED_THRESH, true)
-            .map(|result| result.conformer_results),
+        mmff_optimize_molecule_confs(
+            &mol,
+            1,
+            0,
+            "MMFF94",
+            FORCEFIELD_PARITY_NONBONDED_THRESH,
+            true,
+        )
+        .map(|result| result.conformer_results),
     );
 
     let expected_gradient = embedded.mmff.gradient.as_deref().unwrap_or_else(|| {
@@ -1549,7 +1638,13 @@ fn assert_mmff_empirical_optimizer_regression(row: usize) {
         "MMFF empirical regression",
         expected_gradient,
         embedded.mmff.error.as_deref(),
-        mmff_initial_gradient_for_parity(&mol, "MMFF94", FORCEFIELD_PARITY_NONBONDED_THRESH, -1, true),
+        mmff_initial_gradient_for_parity(
+            &mol,
+            "MMFF94",
+            FORCEFIELD_PARITY_NONBONDED_THRESH,
+            -1,
+            true,
+        ),
     );
 
     let expected_single = embedded.mmff_optimized.as_ref().unwrap_or_else(|| {
@@ -1598,10 +1693,12 @@ fn assert_mmff_empirical_optimizer_regression(row: usize) {
         expected_single,
     );
 
-    let expected_multi = embedded
-        .mmff_multi_optimized
-        .as_ref()
-        .unwrap_or_else(|| panic!("row {row} ({}) has no RDKit multi-conformer MMFF result", record.smiles));
+    let expected_multi = embedded.mmff_multi_optimized.as_ref().unwrap_or_else(|| {
+        panic!(
+            "row {row} ({}) has no RDKit multi-conformer MMFF result",
+            record.smiles
+        )
+    });
     assert!(expected_multi.ok);
     let expected_initial_coords = expected_multi.initial_coords.as_ref().unwrap_or_else(|| {
         panic!(
@@ -1609,12 +1706,15 @@ fn assert_mmff_empirical_optimizer_regression(row: usize) {
             record.smiles
         )
     });
-    let expected_results = expected_multi.conformer_results.as_ref().unwrap_or_else(|| {
-        panic!(
-            "row {row} ({}) RDKit multi-conformer result has no conformer results",
-            record.smiles
-        )
-    });
+    let expected_results = expected_multi
+        .conformer_results
+        .as_ref()
+        .unwrap_or_else(|| {
+            panic!(
+                "row {row} ({}) RDKit multi-conformer result has no conformer results",
+                record.smiles
+            )
+        });
     let multi_mol = molecule_with_3d_conformers(&mol, expected_initial_coords).unwrap_or_else(|err| {
         panic!(
             "COSMolKit failed to build MMFF multi-conformer regression molecule at row {row} ({}): {err}",
@@ -1636,8 +1736,11 @@ fn assert_mmff_empirical_optimizer_regression(row: usize) {
         )
     });
     assert_eq!(actual_multi.conformer_results.len(), expected_results.len());
-    for (conf_idx, (actual_result, expected_result)) in
-        actual_multi.conformer_results.iter().zip(expected_results).enumerate()
+    for (conf_idx, (actual_result, expected_result)) in actual_multi
+        .conformer_results
+        .iter()
+        .zip(expected_results)
+        .enumerate()
     {
         assert_optimized_result_matches(
             row,
@@ -1667,17 +1770,20 @@ fn assert_initial_energy_matches<T>(
         "row {row} ({smiles}) has RDKit {forcefield} initial-energy error: {expected_error:?}"
     );
     let actual = actual.unwrap_or_else(|err| {
-        panic!("COSMolKit {forcefield} initial-energy parity errored at row {row} ({smiles}): {err}")
+        panic!(
+            "COSMolKit {forcefield} initial-energy parity errored at row {row} ({smiles}): {err}"
+        )
     });
     assert_eq!(
         actual.len(),
         1,
         "row {row} ({smiles}) {forcefield} must return one conformer result"
     );
-    let expected_needs_more = expected_needs_more
-        .unwrap_or_else(|| panic!("row {row} ({smiles}) RDKit {forcefield} result has no needs_more"));
-    let expected_energy =
-        expected_energy.unwrap_or_else(|| panic!("row {row} ({smiles}) RDKit {forcefield} result has no energy"));
+    let expected_needs_more = expected_needs_more.unwrap_or_else(|| {
+        panic!("row {row} ({smiles}) RDKit {forcefield} result has no needs_more")
+    });
+    let expected_energy = expected_energy
+        .unwrap_or_else(|| panic!("row {row} ({smiles}) RDKit {forcefield} result has no energy"));
     assert_eq!(
         actual[0].needs_more(),
         expected_needs_more,
@@ -1702,14 +1808,17 @@ fn assert_initial_gradient_matches(
         expected_error.is_none(),
         "row {row} ({smiles}) has RDKit {forcefield} gradient error: {expected_error:?}"
     );
-    let actual = actual
-        .unwrap_or_else(|err| panic!("COSMolKit {forcefield} gradient parity errored at row {row} ({smiles}): {err}"));
+    let actual = actual.unwrap_or_else(|err| {
+        panic!("COSMolKit {forcefield} gradient parity errored at row {row} ({smiles}): {err}")
+    });
     assert_eq!(
         actual.len(),
         expected_gradient.len(),
         "row {row} ({smiles}) {forcefield} gradient length mismatch"
     );
-    for (axis_idx, (actual_value, expected_value)) in actual.iter().zip(expected_gradient.iter()).enumerate() {
+    for (axis_idx, (actual_value, expected_value)) in
+        actual.iter().zip(expected_gradient.iter()).enumerate()
+    {
         assert!(
             (actual_value - expected_value).abs() <= GRADIENT_TOLERANCE,
             "row {row} ({smiles}) {forcefield} gradient mismatch at flat index {axis_idx}: actual={actual_value} expected={expected_value}"
@@ -1790,7 +1899,13 @@ fn assert_optimized_result_matches(
     assert_coordinate_matrix_close(row, smiles, label, actual_coords, expected_coords);
 }
 
-fn assert_coordinate_matrix_close(row: usize, smiles: &str, label: &str, actual: &[[f64; 3]], expected: &[[f64; 3]]) {
+fn assert_coordinate_matrix_close(
+    row: usize,
+    smiles: &str,
+    label: &str,
+    actual: &[[f64; 3]],
+    expected: &[[f64; 3]],
+) {
     assert_eq!(
         actual.len(),
         expected.len(),
@@ -1852,9 +1967,6 @@ fn atom_spec_from_atom(atom: &Atom) -> AtomSpec {
     if let Some(atom_map) = atom.atom_map() {
         spec = spec.with_atom_map(atom_map);
     }
-    if let Some(query) = atom.query().cloned() {
-        spec = spec.with_query(query);
-    }
     for (key, value) in atom.props() {
         spec = spec.with_prop(key, value);
     }
@@ -1873,9 +1985,6 @@ fn bond_spec_from_bond(bond: &Bond) -> BondSpec {
         .with_unknown_stereo(bond.unknown_stereo());
     if let Some([begin_ref, end_ref]) = bond.stereo_atoms() {
         spec = spec.with_stereo_atoms(begin_ref, end_ref);
-    }
-    if let Some(query) = bond.query().cloned() {
-        spec = spec.with_query(query);
     }
     for (key, value) in bond.props() {
         spec = spec.with_prop(key, value);

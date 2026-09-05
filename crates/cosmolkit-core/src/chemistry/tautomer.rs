@@ -13,10 +13,13 @@ use std::{
     sync::{Arc, OnceLock},
 };
 
-use super::tautomer_transforms::{CURRENT_TAUTOMER_TRANSFORM_DEFINITIONS, V1_TAUTOMER_TRANSFORM_DEFINITIONS};
+use super::tautomer_transforms::{
+    CURRENT_TAUTOMER_TRANSFORM_DEFINITIONS, V1_TAUTOMER_TRANSFORM_DEFINITIONS,
+};
 use crate::{
-    AtomId, BondDirection, BondId, BondOrder, BondStereo, ChiralTag, Hybridization, Molecule, QueryGraph,
-    RingFindingError, SmartsParseError, SmartsParseParams, StereoError, mol_from_smarts, read_parts::MoleculeReadParts,
+    AtomId, BondDirection, BondId, BondOrder, BondStereo, ChiralTag, Hybridization, Molecule,
+    QueryGraph, RingFindingError, SmartsParseError, SmartsParseParams, StereoError, parse_smarts,
+    read_parts::MoleculeReadParts,
 };
 
 pub(super) type TautomerTransformDefinition<'a> = (&'a str, &'a str, &'a str, &'a str);
@@ -228,7 +231,9 @@ impl From<TautomerTransformApplicationError> for TautomerRunError {
             TautomerTransformApplicationError::FormalChargeOutOfRange { atom, charge } => {
                 Self::FormalChargeOutOfRange { atom, charge }
             }
-            TautomerTransformApplicationError::MoleculeInvariant(source) => Self::MoleculeInvariant(source),
+            TautomerTransformApplicationError::MoleculeInvariant(source) => {
+                Self::MoleculeInvariant(source)
+            }
             TautomerTransformApplicationError::Valence(source) => Self::Valence(source),
             TautomerTransformApplicationError::RingFinding(source) => Self::RingFinding(source),
             TautomerTransformApplicationError::Sanitize(source) => Self::Sanitize(Box::new(source)),
@@ -380,7 +385,7 @@ fn transform_from_fields(
     // unchanged.
     let bond_types = string_to_bond_types(bond_str);
     let charges = string_to_charges(charge_str)?;
-    let query = mol_from_smarts(smarts, &SmartsParseParams::default()).map_err(|source| {
+    let query = parse_smarts(smarts, &SmartsParseParams::default()).map_err(|source| {
         TautomerTransformError::CannotParseSmarts {
             smarts: smarts.to_owned(),
             source,
@@ -497,7 +502,10 @@ fn read_source_line<R: BufRead>(reader: &mut R) -> io::Result<(Option<Vec<u8>>, 
     }
 }
 
-fn read_transforms<R: BufRead>(reader: &mut R, n_to_read: i32) -> Result<Vec<TautomerTransform>, TautomerCatalogError> {
+fn read_transforms<R: BufRead>(
+    reader: &mut R,
+    n_to_read: i32,
+) -> Result<Vec<TautomerTransform>, TautomerCatalogError> {
     // RDKit✔️✔️: std::vector<TautomerTransform> readTautomers(std::istream &inStream,
     // RDKit✔️✔️:                                              int nToRead) {
     // RDKit✔️✔️:   if (inStream.bad()) {
@@ -524,7 +532,8 @@ fn read_transforms<R: BufRead>(reader: &mut R, n_to_read: i32) -> Result<Vec<Tau
     while n_to_read < 0 || transforms.len() < n_to_read as usize {
         // RDKit✔️✔️:     inStream.getline(inLine, MAX_LINE_LEN, '\n');
         // RDKit✔️✔️:     tmpstr = inLine;
-        let (line, source_failbit) = read_source_line(reader).map_err(TautomerCatalogError::BadStreamContents)?;
+        let (line, source_failbit) =
+            read_source_line(reader).map_err(TautomerCatalogError::BadStreamContents)?;
         let Some(line) = line else {
             break;
         };
@@ -550,7 +559,9 @@ fn read_transforms<R: BufRead>(reader: &mut R, n_to_read: i32) -> Result<Vec<Tau
     Ok(transforms)
 }
 
-fn read_transforms_from_file(file_name: impl AsRef<Path>) -> Result<Vec<TautomerTransform>, TautomerCatalogError> {
+fn read_transforms_from_file(
+    file_name: impl AsRef<Path>,
+) -> Result<Vec<TautomerTransform>, TautomerCatalogError> {
     // RDKit✔️✔️: std::vector<TautomerTransform> readTautomers(std::string fileName) {
     // RDKit✔️✔️:   std::ifstream inStream(fileName.c_str());
     // RDKit✔️✔️:   if ((!inStream) || (inStream.bad())) {
@@ -1117,7 +1128,10 @@ impl<'callback> TautomerEnumerator<'callback> {
         self.callback
     }
 
-    pub fn enumerate(&self, molecule: &Molecule) -> Result<TautomerEnumeration, crate::OperationError> {
+    pub fn enumerate(
+        &self,
+        molecule: &Molecule,
+    ) -> Result<TautomerEnumeration, crate::OperationError> {
         // RDKit✔️❌: TautomerEnumeratorResult TautomerEnumerator::enumerate(
         // RDKit✔️❌:     const ROMol &mol) const;
         molecule.enumerate_tautomers_with_options(self)
@@ -1152,7 +1166,10 @@ impl<'callback> TautomerEnumerator<'callback> {
         Ok(result.molecules())
     }
 
-    pub fn pick_canonical(&self, result: &TautomerEnumeration) -> Result<Molecule, TautomerRunError> {
+    pub fn pick_canonical(
+        &self,
+        result: &TautomerEnumeration,
+    ) -> Result<Molecule, TautomerRunError> {
         self.pick_canonical_with(result, |molecule| Ok(score_tautomer(molecule)?.total()))
     }
 
@@ -1189,20 +1206,27 @@ impl<'callback> TautomerEnumerator<'callback> {
         // RDKit✔️✔️:     }
         // RDKit✔️✔️:   }
         pick_canonical_candidates(
-            result.iter_with_smiles().map(|(smiles, molecule)| CanonicalCandidate {
-                molecule,
-                retained_smiles: Some(smiles),
-            }),
+            result
+                .iter_with_smiles()
+                .map(|(smiles, molecule)| CanonicalCandidate {
+                    molecule,
+                    retained_smiles: Some(smiles),
+                }),
             score_func,
         )
     }
 
-    pub fn pick_canonical_from_iterable<'a, I>(&self, tautomers: I) -> Result<Molecule, TautomerRunError>
+    pub fn pick_canonical_from_iterable<'a, I>(
+        &self,
+        tautomers: I,
+    ) -> Result<Molecule, TautomerRunError>
     where
         I: IntoIterator<Item = &'a Molecule>,
         I::IntoIter: ExactSizeIterator,
     {
-        self.pick_canonical_from_iterable_with(tautomers, |molecule| Ok(score_tautomer(molecule)?.total()))
+        self.pick_canonical_from_iterable_with(tautomers, |molecule| {
+            Ok(score_tautomer(molecule)?.total())
+        })
     }
 
     pub fn pick_canonical_from_iterable_with<'a, I>(
@@ -1255,7 +1279,10 @@ impl<'callback> TautomerEnumerator<'callback> {
         )
     }
 
-    pub fn canonicalize(&self, molecule: &Molecule) -> Result<Molecule, TautomerCanonicalizationError> {
+    pub fn canonicalize(
+        &self,
+        molecule: &Molecule,
+    ) -> Result<Molecule, TautomerCanonicalizationError> {
         self.canonicalize_with(molecule, |candidate| Ok(score_tautomer(candidate)?.total()))
     }
 
@@ -1271,11 +1298,11 @@ impl<'callback> TautomerEnumerator<'callback> {
         // RDKit✔️✔️:   thisCopy.setReassignStereo(false);
         enumerator.set_reassign_stereo(false);
         // RDKit✔️✔️:   auto res = thisCopy.enumerate(mol);
-        let result = enumerator
-            .enumerate(molecule)
-            .map_err(|source| TautomerCanonicalizationError::Enumeration {
+        let result = enumerator.enumerate(molecule).map_err(|source| {
+            TautomerCanonicalizationError::Enumeration {
                 source: Box::new(source),
-            })?;
+            }
+        })?;
         // RDKit✔️✔️:   if (res.empty()) {
         if result.is_empty() {
             // RDKit✔️✔️:     BOOST_LOG(rdWarningLog)
@@ -1302,11 +1329,11 @@ impl<'callback> TautomerEnumerator<'callback> {
         // RDKit✔️✔️:   thisCopy.setReassignStereo(false);
         enumerator.set_reassign_stereo(false);
         // RDKit✔️✔️:   auto res = thisCopy.enumerate(mol);
-        let result = enumerator
-            .enumerate(molecule)
-            .map_err(|source| TautomerCanonicalizationError::Enumeration {
+        let result = enumerator.enumerate(molecule).map_err(|source| {
+            TautomerCanonicalizationError::Enumeration {
                 source: Box::new(source),
-            })?;
+            }
+        })?;
         // RDKit✔️✔️:   if (res.empty()) {
         if result.is_empty() {
             // RDKit✔️✔️:     BOOST_LOG(rdWarningLog)
@@ -1371,8 +1398,12 @@ impl<'callback> TautomerEnumerator<'callback> {
             // RDKit✔️✔️:   }
         }
         // RDKit✔️✔️:   mol.updatePropertyCache(false);
-        let valence = crate::valence::assign_valence_with_options(molecule, crate::ValenceModel::RdkitLike, false)
-            .map_err(TautomerRunError::from)?;
+        let valence = crate::valence::assign_valence_with_options(
+            molecule,
+            crate::ValenceModel::RdkitLike,
+            false,
+        )
+        .map_err(TautomerRunError::from)?;
         molecule.derived_cache_mut().valence = Some(valence);
         // RDKit✔️✔️: }
         Ok(())
@@ -1434,10 +1465,14 @@ where
     Ok(result)
 }
 
-fn canonical_candidate_smiles(candidate: CanonicalCandidate<'_>) -> Result<String, TautomerRunError> {
+fn canonical_candidate_smiles(
+    candidate: CanonicalCandidate<'_>,
+) -> Result<String, TautomerRunError> {
     match candidate.retained_smiles {
         Some(smiles) => Ok(smiles.to_owned()),
-        None => Ok(MoleculeReadParts::from_molecule(candidate.molecule).canonical_isomeric_smiles()?),
+        None => {
+            Ok(MoleculeReadParts::from_molecule(candidate.molecule).canonical_isomeric_smiles()?)
+        }
     }
 }
 
@@ -1485,7 +1520,9 @@ fn plan_tautomer_initialization_with_canonical_smiles(
         _ => Some(read.symmetrize_sssr()?),
     };
 
-    let effective_valence = valence_update.as_ref().or(read.derived_cache().valence.as_ref());
+    let effective_valence = valence_update
+        .as_ref()
+        .or(read.derived_cache().valence.as_ref());
     let effective_rings = rings_update
         .as_ref()
         .or(read.derived_cache().rings.as_ref())
@@ -1496,8 +1533,13 @@ fn plan_tautomer_initialization_with_canonical_smiles(
     // RDKit✔️✔️:   // of atom ordering in the molecule.
     // RDKit✔️✔️:   RWMOL_SPTR kekulized(new RWMol(*taut));
     // RDKit✔️✔️:   MolOps::Kekulize(*kekulized, false, true);
-    let kekulize_assignment =
-        read.kekulize_assignment_with_valence(Some(effective_rings), effective_valence, false, true, 100)?;
+    let kekulize_assignment = read.kekulize_assignment_with_valence(
+        Some(effective_rings),
+        effective_valence,
+        false,
+        true,
+        100,
+    )?;
 
     // RDKit✔️✔️:   res.d_tautomers = {{smi, Tautomer(taut, kekulized, 0, 0)}};
     // RDKit✔️✔️:   res.d_modifiedAtoms.resize(mol.getNumAtoms());
@@ -1525,7 +1567,9 @@ fn plan_tautomer_initialization_with_canonical_smiles(
     })
 }
 
-fn molecule_snapshot_from_read_parts(read: MoleculeReadParts<'_>) -> Result<Molecule, crate::InvariantError> {
+fn molecule_snapshot_from_read_parts(
+    read: MoleculeReadParts<'_>,
+) -> Result<Molecule, crate::InvariantError> {
     Molecule::from_operation_blocks(
         read.topology().clone(),
         read.coordinates().clone(),
@@ -1540,8 +1584,12 @@ pub(crate) fn find_tautomer_transform_matches(
     transform: &TautomerTransform,
 ) -> Result<Vec<crate::SubstructMatchResult>, TautomerRunError> {
     let candidate = molecule_snapshot_from_read_parts(candidate_read)?;
-    crate::try_get_substruct_matches_with_params(&candidate, transform.query(), &crate::SubstructMatchParams::default())
-        .map_err(TautomerRunError::Substructure)
+    crate::try_get_substruct_matches_with_params(
+        &candidate,
+        transform.query(),
+        &crate::SubstructMatchParams::default(),
+    )
+    .map_err(TautomerRunError::Substructure)
 }
 
 pub(crate) fn evaluate_tautomer_callback(
@@ -1559,8 +1607,12 @@ pub(crate) fn evaluate_tautomer_callback(
             molecule_snapshot_from_read_parts(read).map(|molecule| (canonical_smiles, molecule))
         })
         .collect::<Result<Vec<_>, _>>()?;
-    let result =
-        TautomerEnumeration::from_ordered_entries(entries, status, modified_atoms.clone(), modified_bonds.clone());
+    let result = TautomerEnumeration::from_ordered_entries(
+        entries,
+        status,
+        modified_atoms.clone(),
+        modified_bonds.clone(),
+    );
     Ok(callback.should_continue(&source, &result))
 }
 
@@ -1655,18 +1707,18 @@ pub(crate) fn apply_tautomer_transform_match(
             count: first_hydrogens.saturating_sub(1),
         }
     })?;
-    let last_total =
-        last_hydrogens
-            .checked_add(1)
-            .ok_or(TautomerTransformApplicationError::HydrogenCountOutOfRange {
-                atom: last,
-                count: u32::MAX,
-            })?;
-    let last_explicit =
-        u8::try_from(last_total).map_err(|_| TautomerTransformApplicationError::HydrogenCountOutOfRange {
+    let last_total = last_hydrogens.checked_add(1).ok_or(
+        TautomerTransformApplicationError::HydrogenCountOutOfRange {
+            atom: last,
+            count: u32::MAX,
+        },
+    )?;
+    let last_explicit = u8::try_from(last_total).map_err(|_| {
+        TautomerTransformApplicationError::HydrogenCountOutOfRange {
             atom: last,
             count: last_total,
-        })?;
+        }
+    })?;
     topology.atoms[first.index()].set_explicit_hydrogens(first_explicit);
     topology.atoms[last.index()].set_explicit_hydrogens(last_explicit);
 
@@ -1729,8 +1781,12 @@ pub(crate) fn apply_tautomer_transform_match(
     for (&target_atom, &delta) in match_result.atom_mapping.iter().zip(transform.charges()) {
         let atom_id = AtomId::new(target_atom);
         let charge = i32::from(topology.atoms[target_atom].formal_charge()) + delta;
-        let charge = i8::try_from(charge)
-            .map_err(|_| TautomerTransformApplicationError::FormalChargeOutOfRange { atom: atom_id, charge })?;
+        let charge = i8::try_from(charge).map_err(|_| {
+            TautomerTransformApplicationError::FormalChargeOutOfRange {
+                atom: atom_id,
+                charge,
+            }
+        })?;
         topology.atoms[target_atom].set_formal_charge(charge);
     }
 
@@ -1775,9 +1831,16 @@ pub(crate) fn apply_tautomer_transform_match(
         }
     };
     // RDKit✔️❌:           setTautomerStereoAndIsoHs(mol, *product, res);
-    set_tautomer_stereo_and_isotopic_hydrogens(&source, &mut product, &modified_atoms, &modified_bonds, options)?;
+    set_tautomer_stereo_and_isotopic_hydrogens(
+        &source,
+        &mut product,
+        &modified_atoms,
+        &modified_bonds,
+        options,
+    )?;
     // RDKit✔️❌:           tsmiles = MolToSmiles(*product, true);
-    let canonical_smiles = MoleculeReadParts::from_molecule(&product).canonical_isomeric_smiles()?;
+    let canonical_smiles =
+        MoleculeReadParts::from_molecule(&product).canonical_isomeric_smiles()?;
 
     // RDKit✔️❌:           if (res.d_tautomers.find(tsmiles) != res.d_tautomers.end()) {
     // RDKit✔️❌:             continue;
@@ -1799,7 +1862,9 @@ pub(crate) fn apply_tautomer_transform_match(
     // RDKit✔️❌:               res.d_modifiedBonds.set(i);
     // RDKit✔️❌:             }
     // RDKit✔️❌:           }
-    for (index, (source_bond, product_bond)) in source.bonds().iter().zip(product.bonds()).enumerate() {
+    for (index, (source_bond, product_bond)) in
+        source.bonds().iter().zip(product.bonds()).enumerate()
+    {
         if source_bond.order() != product_bond.order() {
             modified_bonds.insert(BondId::new(index));
         }
@@ -1894,9 +1959,10 @@ pub(crate) fn expand_tautomer_candidates_in_source_order<M: Clone, E>(
         if done {
             continue;
         }
-        let kekulized = kekulized.ok_or_else(|| TautomerExpansionError::MissingKekulizedBranch {
-            canonical_smiles: current_key.clone(),
-        })?;
+        let kekulized =
+            kekulized.ok_or_else(|| TautomerExpansionError::MissingKekulizedBranch {
+                canonical_smiles: current_key.clone(),
+            })?;
 
         // RDKit✔️✔️:       // tautomer not yet done
         // RDKit✔️✔️:       for (const auto &transform : transforms) {
@@ -1913,7 +1979,8 @@ pub(crate) fn expand_tautomer_candidates_in_source_order<M: Clone, E>(
             // RDKit✔️✔️:         std::vector<MatchVectType> matches;
             // RDKit✔️✔️:         unsigned int matched =
             // RDKit✔️✔️:             SubstructMatch(*kmol, *(transform.Mol), matches);
-            let matches = find_matches(&kekulized, transform).map_err(TautomerExpansionError::Backend)?;
+            let matches =
+                find_matches(&kekulized, transform).map_err(TautomerExpansionError::Backend)?;
 
             // RDKit✔️✔️:         if (!matched) {
             // RDKit✔️✔️:           continue;
@@ -2001,7 +2068,9 @@ pub(crate) fn expand_tautomer_candidates_in_source_order<M: Clone, E>(
                         // RDKit✔️✔️:               res.d_modifiedAtoms.count(),
                         // RDKit✔️✔️:               res.d_modifiedBonds.count());
                         if state.candidates.contains_key(&canonical_smiles) {
-                            return Err(TautomerExpansionError::DuplicateProductKey { canonical_smiles });
+                            return Err(TautomerExpansionError::DuplicateProductKey {
+                                canonical_smiles,
+                            });
                         }
                         state.candidates.insert(
                             canonical_smiles,
@@ -2027,14 +2096,20 @@ pub(crate) fn expand_tautomer_candidates_in_source_order<M: Clone, E>(
             .mark_done();
     }
 
-    Ok(TautomerExpansionPass { bailed_out: bail_out })
+    Ok(TautomerExpansionPass {
+        bailed_out: bail_out,
+    })
 }
 
 pub(crate) fn prune_and_rekey_tautomer_candidates_in_source_order<M, E>(
     state: &mut TautomerExpansionState<M>,
     options: TautomerOptions,
     mut bail_out: bool,
-    mut set_stereo_and_isotopic_hydrogens: impl FnMut(&mut M, &BTreeSet<AtomId>, &BTreeSet<BondId>) -> Result<bool, E>,
+    mut set_stereo_and_isotopic_hydrogens: impl FnMut(
+        &mut M,
+        &BTreeSet<AtomId>,
+        &BTreeSet<BondId>,
+    ) -> Result<bool, E>,
     mut canonical_isomeric_smiles: impl FnMut(&M) -> Result<String, E>,
 ) -> Result<TautomerPruningPass, TautomerPruningError<E>> {
     // RDKit✔️✔️:     completed = true;
@@ -2067,21 +2142,24 @@ pub(crate) fn prune_and_rekey_tautomer_candidates_in_source_order<M, E>(
         // RDKit✔️✔️:       if ((taut.d_numModifiedAtoms < maxNumModifiedAtoms ||
         // RDKit✔️✔️:            taut.d_numModifiedBonds < maxNumModifiedBonds) &&
         // RDKit✔️✔️:           setTautomerStereoAndIsoHs(mol, *taut.tautomer, res)) {
-        let needs_stereo_update =
-            num_modified_atoms < max_num_modified_atoms || num_modified_bonds < max_num_modified_bonds;
+        let needs_stereo_update = num_modified_atoms < max_num_modified_atoms
+            || num_modified_bonds < max_num_modified_bonds;
         let stereo_changed = if needs_stereo_update {
             let candidate = state
                 .candidates
                 .get_mut(&key)
                 .expect("the current ordered-map entry exists while pruning");
-            let tautomer = candidate
-                .tautomer
-                .as_mut()
-                .ok_or_else(|| TautomerPruningError::MissingTautomerBranch {
+            let tautomer = candidate.tautomer.as_mut().ok_or_else(|| {
+                TautomerPruningError::MissingTautomerBranch {
                     canonical_smiles: key.clone(),
-                })?;
-            set_stereo_and_isotopic_hydrogens(tautomer, &state.modified_atoms, &state.modified_bonds)
-                .map_err(TautomerPruningError::Backend)?
+                }
+            })?;
+            set_stereo_and_isotopic_hydrogens(
+                tautomer,
+                &state.modified_atoms,
+                &state.modified_bonds,
+            )
+            .map_err(TautomerPruningError::Backend)?
         } else {
             false
         };
@@ -2089,13 +2167,11 @@ pub(crate) fn prune_and_rekey_tautomer_candidates_in_source_order<M, E>(
         if stereo_changed {
             let new_key = {
                 let candidate = &state.candidates[&key];
-                let tautomer =
-                    candidate
-                        .tautomer
-                        .as_ref()
-                        .ok_or_else(|| TautomerPruningError::MissingTautomerBranch {
-                            canonical_smiles: key.clone(),
-                        })?;
+                let tautomer = candidate.tautomer.as_ref().ok_or_else(|| {
+                    TautomerPruningError::MissingTautomerBranch {
+                        canonical_smiles: key.clone(),
+                    }
+                })?;
                 canonical_isomeric_smiles(tautomer).map_err(TautomerPruningError::Backend)?
             };
             // RDKit✔️✔️:         Tautomer tautStored = std::move(taut);
@@ -2106,7 +2182,10 @@ pub(crate) fn prune_and_rekey_tautomer_candidates_in_source_order<M, E>(
                 .expect("the current ordered-map entry exists while rekeying");
             let next_after_erased = state
                 .candidates
-                .range::<str, _>((std::ops::Bound::Excluded(key.as_str()), std::ops::Bound::Unbounded))
+                .range::<str, _>((
+                    std::ops::Bound::Excluded(key.as_str()),
+                    std::ops::Bound::Unbounded,
+                ))
                 .next()
                 .map(|(next_key, _)| next_key.clone());
 
@@ -2131,7 +2210,10 @@ pub(crate) fn prune_and_rekey_tautomer_candidates_in_source_order<M, E>(
             // RDKit✔️✔️:       }
             current_key = state
                 .candidates
-                .range::<str, _>((std::ops::Bound::Excluded(key.as_str()), std::ops::Bound::Unbounded))
+                .range::<str, _>((
+                    std::ops::Bound::Excluded(key.as_str()),
+                    std::ops::Bound::Unbounded,
+                ))
                 .next()
                 .map(|(next_key, _)| next_key.clone());
         }
@@ -2168,11 +2250,11 @@ pub(crate) fn materialize_tautomer_candidates_in_source_order<M>(
     // RDKit✔️✔️:   }
     let mut entries = Vec::with_capacity(candidates.len());
     for (canonical_smiles, candidate) in candidates {
-        let tautomer = candidate
-            .tautomer
-            .ok_or_else(|| TautomerEnumerationError::MissingCandidateMolecule {
+        let tautomer = candidate.tautomer.ok_or_else(|| {
+            TautomerEnumerationError::MissingCandidateMolecule {
                 canonical_smiles: canonical_smiles.clone(),
-            })?;
+            }
+        })?;
         entries.push((canonical_smiles, tautomer));
     }
     Ok(entries)
@@ -2315,7 +2397,11 @@ fn set_tautomer_stereo_and_isotopic_hydrogens(
             // RDKit✔️❌:         for (const auto &nbri :
             // RDKit✔️❌:              boost::make_iterator_range(mol.getAtomBonds(atom))) {
             for atom_id in [source_bond.begin(), source_bond.end()] {
-                for neighbor in source.topology_block().adjacency.neighbors_of(atom_id.index()) {
+                for neighbor in source
+                    .topology_block()
+                    .adjacency
+                    .neighbors_of(atom_id.index())
+                {
                     let adjacent_bond = &source.bonds()[neighbor.bond.index()];
                     // RDKit✔️❌:           const auto &obnd = mol[nbri];
                     // RDKit✔️❌:           if (obnd->getBondDir() == Bond::ENDDOWNRIGHT ||
@@ -2335,7 +2421,8 @@ fn set_tautomer_stereo_and_isotopic_hydrogens(
         }
 
         let tautomer_bond = &tautomer.bonds()[bond_id.index()];
-        let remove_stereo = tautomer_bond.order() != BondOrder::Double || options.remove_bond_stereo();
+        let remove_stereo =
+            tautomer_bond.order() != BondOrder::Double || options.remove_bond_stereo();
         let target_stereo = if remove_stereo {
             let is_ring_bond = tautomer_bond_is_ring(tautomer, bond_id)?;
             if tautomer_bond.order() == BondOrder::Double && !is_ring_bond {
@@ -2352,7 +2439,8 @@ fn set_tautomer_stereo_and_isotopic_hydrogens(
             source_bond.stereo_atoms()
         };
         modified |= tautomer_bond.stereo() != target_stereo
-            || (!remove_stereo && tautomer_bond.stereo_atoms().is_some() != source_bond.stereo_atoms().is_some());
+            || (!remove_stereo
+                && tautomer_bond.stereo_atoms().is_some() != source_bond.stereo_atoms().is_some());
 
         // RDKit✔️❌:     auto tautBond = taut.getBondWithIdx(bondIdx);
         // RDKit✔️❌:     if (tautBond->getBondType() != Bond::DOUBLE || d_removeBondStereo) {
@@ -2441,9 +2529,14 @@ pub(crate) fn plan_tautomer_stereo_update(
 ) -> Result<TautomerStereoUpdatePlan, TautomerRunError> {
     let source = molecule_snapshot_from_read_parts(source_read)?;
     let mut tautomer = molecule_snapshot_from_read_parts(tautomer_read)?;
-    let changed =
-        set_tautomer_stereo_and_isotopic_hydrogens(&source, &mut tautomer, modified_atoms, modified_bonds, options)
-            .map_err(TautomerRunError::from)?;
+    let changed = set_tautomer_stereo_and_isotopic_hydrogens(
+        &source,
+        &mut tautomer,
+        modified_atoms,
+        modified_bonds,
+        options,
+    )
+    .map_err(TautomerRunError::from)?;
     Ok(TautomerStereoUpdatePlan {
         topology: tautomer.topology_block().clone(),
         properties: tautomer.properties().clone(),
@@ -2540,13 +2633,12 @@ impl TautomerEnumeration {
         // RDKit✔️✔️:   PRECONDITION(pos < d_tautomers.size(), "index out of bounds");
         // RDKit✔️✔️:   return d_tautomersItVec.at(pos)->second.tautomer;
         // RDKit✔️✔️: }
-        self.entries
-            .get(index)
-            .map(|(_, molecule)| molecule)
-            .ok_or(TautomerEnumerationError::IndexOutOfRange {
+        self.entries.get(index).map(|(_, molecule)| molecule).ok_or(
+            TautomerEnumerationError::IndexOutOfRange {
                 index,
                 len: self.entries.len(),
-            })
+            },
+        )
     }
 
     #[must_use]
@@ -2562,7 +2654,9 @@ impl TautomerEnumeration {
         self.entries.iter().map(|(_, molecule)| molecule)
     }
 
-    pub fn iter_with_smiles(&self) -> impl DoubleEndedIterator<Item = (&str, &Molecule)> + ExactSizeIterator {
+    pub fn iter_with_smiles(
+        &self,
+    ) -> impl DoubleEndedIterator<Item = (&str, &Molecule)> + ExactSizeIterator {
         self.entries
             .iter()
             .map(|(smiles, molecule)| (smiles.as_str(), molecule))
@@ -2592,7 +2686,10 @@ impl TautomerEnumeration {
         // RDKit✔️✔️:                  [](const SmilesTautomerPair &t) { return t.first; });
         // RDKit✔️✔️:   return smilesVec;
         // RDKit✔️✔️: }
-        self.entries.iter().map(|(smiles, _)| smiles.clone()).collect()
+        self.entries
+            .iter()
+            .map(|(smiles, _)| smiles.clone())
+            .collect()
     }
 
     #[must_use]
@@ -2629,7 +2726,10 @@ impl std::ops::Index<usize> for TautomerEnumeration {
 
 impl<'a> IntoIterator for &'a TautomerEnumeration {
     type Item = &'a Molecule;
-    type IntoIter = std::iter::Map<std::slice::Iter<'a, (String, Molecule)>, fn(&(String, Molecule)) -> &Molecule>;
+    type IntoIter = std::iter::Map<
+        std::slice::Iter<'a, (String, Molecule)>,
+        fn(&(String, Molecule)) -> &Molecule,
+    >;
 
     fn into_iter(self) -> Self::IntoIter {
         fn molecule(entry: &(String, Molecule)) -> &Molecule {
@@ -2651,7 +2751,12 @@ impl TautomerCandidate {
         }
     }
 
-    fn new(tautomer: Molecule, kekulized: Molecule, num_modified_atoms: usize, num_modified_bonds: usize) -> Self {
+    fn new(
+        tautomer: Molecule,
+        kekulized: Molecule,
+        num_modified_atoms: usize,
+        num_modified_bonds: usize,
+    ) -> Self {
         // RDKit✔️✔️: Tautomer(ROMOL_SPTR t, ROMOL_SPTR k, size_t a = 0, size_t b = 0)
         // RDKit✔️✔️:     : tautomer(std::move(t)),
         // RDKit✔️✔️:       kekulized(std::move(k)),
@@ -2718,7 +2823,7 @@ impl TautomerScoreTerm {
         // RDKit✔️✔️: }
         let name = name.into();
         let smarts = smarts.into();
-        let matcher = mol_from_smarts(&smarts, &SmartsParseParams::default()).ok();
+        let matcher = parse_smarts(&smarts, &SmartsParseParams::default()).ok();
         Self {
             name,
             smarts,
@@ -3198,10 +3303,10 @@ mod tests {
     use std::io::{self, BufRead, Cursor, Read};
 
     use super::*;
-    use crate::{SmartsParseParams, mol_from_smarts};
+    use crate::{SmartsParseParams, parse_smarts};
 
     fn query(smarts: &str) -> QueryGraph {
-        mol_from_smarts(smarts, &SmartsParseParams::default()).expect("compile transform SMARTS")
+        parse_smarts(smarts, &SmartsParseParams::default()).expect("compile transform SMARTS")
     }
 
     #[test]
@@ -3219,7 +3324,10 @@ mod tests {
 
     #[test]
     fn catalog_tokens_map_every_source_charge_symbol_in_order() {
-        assert_eq!(string_to_charges("+0-").expect("valid charges"), &[1, 0, -1]);
+        assert_eq!(
+            string_to_charges("+0-").expect("valid charges"),
+            &[1, 0, -1]
+        );
     }
 
     #[test]
@@ -3311,7 +3419,10 @@ mod tests {
             .expect("transform");
 
         assert_eq!(transform.name(), "Bondedit");
-        assert_eq!(transform.bond_types(), &[BondOrder::Double, BondOrder::Single]);
+        assert_eq!(
+            transform.bond_types(),
+            &[BondOrder::Double, BondOrder::Single]
+        );
         assert!(transform.charges().is_empty());
     }
 
@@ -3321,7 +3432,10 @@ mod tests {
             .expect("valid line")
             .expect("transform");
 
-        assert_eq!(transform.bond_types(), &[BondOrder::Double, BondOrder::Single]);
+        assert_eq!(
+            transform.bond_types(),
+            &[BondOrder::Double, BondOrder::Single]
+        );
         assert_eq!(transform.charges(), &[1, 0, -1]);
     }
 
@@ -3340,12 +3454,16 @@ mod tests {
         let error = transform_from_line(" // name\tinvalid smarts")
             .expect_err("only columns beginning with two slashes are comments");
 
-        assert!(matches!(error, TautomerTransformError::CannotParseSmarts { .. }));
+        assert!(matches!(
+            error,
+            TautomerTransformError::CannotParseSmarts { .. }
+        ));
     }
 
     #[test]
     fn transform_lines_report_malformed_smarts_with_the_source_text() {
-        let error = transform_from_line("broken\t[C").expect_err("malformed SMARTS must remain visible");
+        let error =
+            transform_from_line("broken\t[C").expect_err("malformed SMARTS must remain visible");
 
         assert!(matches!(
             error,
@@ -3366,7 +3484,10 @@ mod tests {
         let error = transform_from_line("one\ttwo\tthree\tfour\tfive")
             .expect_err("source leaves all fields defaulted for this invalid line");
 
-        assert_eq!(error, TautomerTransformError::MissingDonorOrAcceptor { actual: 0 });
+        assert_eq!(
+            error,
+            TautomerTransformError::MissingDonorOrAcceptor { actual: 0 }
+        );
     }
 
     #[test]
@@ -3376,7 +3497,10 @@ mod tests {
         let transforms = read_transforms(&mut reader, -1).expect("read stream");
 
         assert_eq!(
-            transforms.iter().map(TautomerTransform::name).collect::<Vec<_>>(),
+            transforms
+                .iter()
+                .map(TautomerTransform::name)
+                .collect::<Vec<_>>(),
             ["first", "second"]
         );
     }
@@ -3388,7 +3512,10 @@ mod tests {
         let transforms = read_transforms(&mut reader, 2).expect("read bounded stream");
 
         assert_eq!(
-            transforms.iter().map(TautomerTransform::name).collect::<Vec<_>>(),
+            transforms
+                .iter()
+                .map(TautomerTransform::name)
+                .collect::<Vec<_>>(),
             ["first", "second"]
         );
     }
@@ -3396,7 +3523,11 @@ mod tests {
     #[test]
     fn catalog_reader_zero_limit_reads_nothing() {
         let mut reader = Cursor::new(b"first\t[O]-[C]\n".as_slice());
-        assert!(read_transforms(&mut reader, 0).expect("zero limit").is_empty());
+        assert!(
+            read_transforms(&mut reader, 0)
+                .expect("zero limit")
+                .is_empty()
+        );
         assert_eq!(reader.position(), 0);
     }
 
@@ -3404,19 +3535,27 @@ mod tests {
     fn catalog_reader_file_entry_preserves_source_order() {
         let directory = tempfile::tempdir().expect("temporary directory");
         let path = directory.path().join("tautomers.in");
-        std::fs::write(&path, "first\t[O]-[C]\nsecond\t[N]-[C]\nthird\t[S]-[C]\n").expect("write fixture");
+        std::fs::write(&path, "first\t[O]-[C]\nsecond\t[N]-[C]\nthird\t[S]-[C]\n")
+            .expect("write fixture");
 
         let transforms = read_transforms_from_file(&path).expect("read file");
         assert_eq!(
-            transforms.iter().map(TautomerTransform::name).collect::<Vec<_>>(),
+            transforms
+                .iter()
+                .map(TautomerTransform::name)
+                .collect::<Vec<_>>(),
             ["first", "second", "third"]
         );
     }
 
     #[test]
     fn catalog_reader_embedded_definitions_use_the_same_constructor() {
-        let definitions = [("first", "[O]-[C]", "=", "+0"), ("second", "[N]-[C]", "-", "0-")];
-        let transforms = read_transforms_from_definitions(&definitions).expect("read embedded definitions");
+        let definitions = [
+            ("first", "[O]-[C]", "=", "+0"),
+            ("second", "[N]-[C]", "-", "0-"),
+        ];
+        let transforms =
+            read_transforms_from_definitions(&definitions).expect("read embedded definitions");
 
         assert_eq!(transforms[0].name(), "first");
         assert_eq!(transforms[0].bond_types(), &[BondOrder::Double]);
@@ -3477,9 +3616,14 @@ mod tests {
         assert!(transforms.is_empty());
     }
 
-    fn assert_builtin_catalog(actual: &[TautomerTransform], expected: &[TautomerTransformDefinition<'_>]) {
+    fn assert_builtin_catalog(
+        actual: &[TautomerTransform],
+        expected: &[TautomerTransformDefinition<'_>],
+    ) {
         assert_eq!(actual.len(), expected.len());
-        for (index, (transform, &(name, smarts, bonds, charges))) in actual.iter().zip(expected).enumerate() {
+        for (index, (transform, &(name, smarts, bonds, charges))) in
+            actual.iter().zip(expected).enumerate()
+        {
             assert_eq!(transform.name(), name, "name at source row {index}");
             let expected_query = query(smarts);
             assert_eq!(
@@ -3541,7 +3685,8 @@ mod tests {
     #[test]
     fn catalog_object_default_and_empty_file_name_select_current_catalog() {
         let default_catalog = TautomerCatalog::default();
-        let empty_file_catalog = TautomerCatalog::from_file("").expect("empty file selects default");
+        let empty_file_catalog =
+            TautomerCatalog::from_file("").expect("empty file selects default");
 
         assert_eq!(default_catalog.transforms().len(), 37);
         assert_eq!(empty_file_catalog, default_catalog);
@@ -3551,9 +3696,11 @@ mod tests {
     fn catalog_object_constructs_from_file_data_and_v1_sources() {
         let directory = tempfile::tempdir().expect("temporary directory");
         let path = directory.path().join("custom.in");
-        std::fs::write(&path, "file-first\t[O]-[C]\nfile-second\t[N]-[C]\n").expect("write catalog");
+        std::fs::write(&path, "file-first\t[O]-[C]\nfile-second\t[N]-[C]\n")
+            .expect("write catalog");
         let file_catalog = TautomerCatalog::from_file(&path).expect("file catalog");
-        let data_catalog = TautomerCatalog::from_data(&[("data", "[S]-[C]", "=", "+0")]).expect("data catalog");
+        let data_catalog =
+            TautomerCatalog::from_data(&[("data", "[S]-[C]", "=", "+0")]).expect("data catalog");
         let v1_catalog = TautomerCatalog::v1().expect("V1 catalog");
 
         assert_eq!(
@@ -3565,7 +3712,10 @@ mod tests {
             ["file-first", "file-second"]
         );
         assert_eq!(data_catalog.transforms()[0].name(), "data");
-        assert_eq!(data_catalog.transforms()[0].bond_types(), &[BondOrder::Double]);
+        assert_eq!(
+            data_catalog.transforms()[0].bond_types(),
+            &[BondOrder::Double]
+        );
         assert_eq!(data_catalog.transforms()[0].charges(), &[1, 0]);
         assert_eq!(v1_catalog.transforms().len(), 36);
     }
@@ -3574,10 +3724,20 @@ mod tests {
     fn catalog_object_indexing_returns_an_independent_value_and_checks_bounds() {
         let catalog = TautomerCatalog::from_data(&[("one", "[O]-[C]", "-", "")]).expect("catalog");
         let mut transform = catalog.transform(0).expect("first transform");
-        transform.query.atom_mut(0).expect("query atom").set_formal_charge(-1);
+        transform
+            .query
+            .atom_mut(0)
+            .expect("query atom")
+            .atom_mut()
+            .set_formal_charge(-1);
         transform.bond_types[0] = BondOrder::Double;
 
-        assert_eq!(catalog.transforms()[0].query().atoms()[0].formal_charge(), 0);
+        assert_eq!(
+            catalog.transforms()[0].query().atoms()[0]
+                .atom()
+                .formal_charge(),
+            0
+        );
         assert_eq!(catalog.transforms()[0].bond_types(), &[BondOrder::Single]);
         assert!(matches!(
             catalog.transform(1),
@@ -3587,20 +3747,25 @@ mod tests {
 
     #[test]
     fn catalog_object_clone_and_clone_from_have_independent_value_semantics() {
-        let source = TautomerCatalog::from_data(&[("source", "[O]-[C]", "-", "")]).expect("source catalog");
+        let source =
+            TautomerCatalog::from_data(&[("source", "[O]-[C]", "-", "")]).expect("source catalog");
         let mut cloned = source.clone();
         cloned.transforms[0].bond_types[0] = BondOrder::Double;
         assert_eq!(source.transforms()[0].bond_types(), &[BondOrder::Single]);
 
-        let mut target = TautomerCatalog::from_data(&[("target", "[N]-[C]", "=", "")]).expect("target catalog");
+        let mut target =
+            TautomerCatalog::from_data(&[("target", "[N]-[C]", "=", "")]).expect("target catalog");
         target.clone_from(&source);
         assert_eq!(target, source);
     }
 
     #[test]
     fn catalog_object_serialization_is_exactly_count_and_newline() {
-        let catalog = TautomerCatalog::from_data(&[("first", "[O]-[C]", "", ""), ("second", "[N]-[C]", "", "")])
-            .expect("catalog");
+        let catalog = TautomerCatalog::from_data(&[
+            ("first", "[O]-[C]", "", ""),
+            ("second", "[N]-[C]", "", ""),
+        ])
+        .expect("catalog");
         let mut bytes = Vec::new();
 
         catalog.write_to(&mut bytes).expect("write catalog count");
@@ -3686,7 +3851,10 @@ mod tests {
         without_matcher.matcher = None;
 
         assert_eq!(compiled, without_matcher);
-        assert_ne!(compiled, TautomerScoreTerm::new("different", "[#6]=[#8]", 2));
+        assert_ne!(
+            compiled,
+            TautomerScoreTerm::new("different", "[#6]=[#8]", 2)
+        );
         assert_ne!(compiled, TautomerScoreTerm::new("same", "[#7]=[#8]", 2));
         assert_ne!(compiled, TautomerScoreTerm::new("same", "[#6]=[#8]", -2));
     }
@@ -3735,7 +3903,8 @@ mod tests {
 
     #[test]
     fn ring_score_matches_with_or_without_a_precomputed_symm_sssr_cache() {
-        let without_cache = Molecule::from_smiles_with_sanitize("c1ccncc1", false).expect("parse uncached pyridine");
+        let without_cache = Molecule::from_smiles_with_sanitize("c1ccncc1", false)
+            .expect("parse uncached pyridine");
         assert!(without_cache.derived_cache().rings.is_none());
         let with_cache = without_cache
             .with_assigned_rings()
@@ -3748,13 +3917,20 @@ mod tests {
                 .is_some_and(crate::RingInfo::is_symm_sssr)
         );
 
-        assert_eq!(score_tautomer_rings(&without_cache).expect("score uncached"), 100);
-        assert_eq!(score_tautomer_rings(&with_cache).expect("score cached"), 100);
+        assert_eq!(
+            score_tautomer_rings(&without_cache).expect("score uncached"),
+            100
+        );
+        assert_eq!(
+            score_tautomer_rings(&with_cache).expect("score cached"),
+            100
+        );
     }
 
     #[test]
     fn ring_score_does_not_modify_the_source_or_materialize_its_cache() {
-        let molecule = Molecule::from_smiles_with_sanitize("c1ccccc1", false).expect("parse uncached benzene");
+        let molecule =
+            Molecule::from_smiles_with_sanitize("c1ccccc1", false).expect("parse uncached benzene");
         let topology_before = molecule.topology_block().clone();
         assert!(molecule.derived_cache().rings.is_none());
 
@@ -3791,11 +3967,13 @@ mod tests {
 
     #[test]
     fn substructure_score_evaluates_every_builtin_term_with_shared_match_semantics() {
-        let molecule = Molecule::from_smiles("CC(=O)NC(=N)N.c1ccccc1").expect("parse representative scoring molecule");
+        let molecule = Molecule::from_smiles("CC(=O)NC(=N)N.c1ccccc1")
+            .expect("parse representative scoring molecule");
 
         for term in default_tautomer_score_terms() {
             let matcher = term.matcher().expect("built-in matcher compiles");
-            let expected = (crate::get_substruct_matches(&molecule, matcher).len() as i32).wrapping_mul(term.score());
+            let expected = (crate::get_substruct_matches(&molecule, matcher).len() as i32)
+                .wrapping_mul(term.score());
             assert_eq!(
                 score_tautomer_substructures(&molecule, std::slice::from_ref(term)),
                 expected,
@@ -3816,7 +3994,10 @@ mod tests {
 
         assert_eq!(score_tautomer_substructures(&molecule, &terms), 1);
         assert_eq!(
-            terms.iter().map(TautomerScoreTerm::name).collect::<Vec<_>>(),
+            terms
+                .iter()
+                .map(TautomerScoreTerm::name)
+                .collect::<Vec<_>>(),
             ["carbon", "oxygen", "no match"]
         );
     }
@@ -3858,10 +4039,14 @@ mod tests {
     #[test]
     fn aggregate_score_counts_bracket_explicit_but_not_neighbor_isotopic_hydrogen() {
         let explicit = Molecule::from_smiles("[PH3]").expect("parse explicit phosphorus Hs");
-        let isotopic_neighbor = Molecule::from_smiles("[2H]P").expect("parse isotopic hydrogen neighbor");
+        let isotopic_neighbor =
+            Molecule::from_smiles("[2H]P").expect("parse isotopic hydrogen neighbor");
 
         assert_eq!(score_tautomer_hetero_hydrogens(&explicit).unwrap(), -3);
-        assert_eq!(score_tautomer_hetero_hydrogens(&isotopic_neighbor).unwrap(), -2);
+        assert_eq!(
+            score_tautomer_hetero_hydrogens(&isotopic_neighbor).unwrap(),
+            -2
+        );
     }
 
     #[test]
@@ -3890,13 +4075,17 @@ mod tests {
 
     #[test]
     fn aggregate_score_reports_missing_valence_only_when_a_penalized_atom_needs_it() {
-        let phosphorus = Molecule::from_smiles_with_sanitize("P", false).expect("parse unsanitized phosphorus");
-        let oxygen = Molecule::from_smiles_with_sanitize("O", false).expect("parse unsanitized oxygen");
+        let phosphorus =
+            Molecule::from_smiles_with_sanitize("P", false).expect("parse unsanitized phosphorus");
+        let oxygen =
+            Molecule::from_smiles_with_sanitize("O", false).expect("parse unsanitized oxygen");
 
         assert_eq!(
             score_tautomer_hetero_hydrogens(&phosphorus),
             Err(TautomerScoreError::Valence(
-                crate::ValenceError::ImplicitValenceCacheNotInitialized { atom: AtomId::new(0) }
+                crate::ValenceError::ImplicitValenceCacheNotInitialized {
+                    atom: AtomId::new(0)
+                }
             ))
         );
         assert_eq!(score_tautomer_hetero_hydrogens(&oxygen).unwrap(), 0);
@@ -3918,8 +4107,8 @@ mod tests {
     fn aggregate_score_default_delegate_uses_the_single_builtin_term_table() {
         let molecule = Molecule::from_smiles("CC(=O)N").expect("parse acetamide");
         let delegated = score_tautomer(&molecule).expect("score with defaults");
-        let explicit =
-            score_tautomer_with_terms(&molecule, default_tautomer_score_terms()).expect("score with explicit defaults");
+        let explicit = score_tautomer_with_terms(&molecule, default_tautomer_score_terms())
+            .expect("score with explicit defaults");
 
         assert_eq!(delegated, explicit);
         assert_eq!(
@@ -3945,7 +4134,9 @@ mod tests {
         source.topology_block_mut().atoms[0].set_prop("_CIPCode", "R");
         let source_before = source.clone();
 
-        for (hybridization, remove_sp3_stereo) in [(Hybridization::Sp2, false), (Hybridization::Sp3, true)] {
+        for (hybridization, remove_sp3_stereo) in
+            [(Hybridization::Sp2, false), (Hybridization::Sp3, true)]
+        {
             let mut tautomer = source.clone();
             tautomer.topology_block_mut().atoms[0].set_hybridization(hybridization);
             let options = TautomerOptions::default()
@@ -3993,7 +4184,10 @@ mod tests {
         .expect("restore source stereo");
 
         assert!(changed);
-        assert_eq!(tautomer.atoms()[0].chiral_tag(), source.atoms()[0].chiral_tag());
+        assert_eq!(
+            tautomer.atoms()[0].chiral_tag(),
+            source.atoms()[0].chiral_tag()
+        );
         assert_eq!(tautomer.atoms()[0].prop("_CIPCode"), Some("S"));
 
         source.topology_block_mut().atoms[0].clear_prop("_CIPCode");
@@ -4044,7 +4238,11 @@ mod tests {
             TautomerOptions::default().with_reassign_stereo(false),
         )
         .expect("remove tracked isotopes by option");
-        assert!(removed_by_option.atoms()[0].tracked_isotopic_hydrogens().is_empty());
+        assert!(
+            removed_by_option.atoms()[0]
+                .tracked_isotopic_hydrogens()
+                .is_empty()
+        );
 
         let mut removed_at_zero_h = source.clone();
         removed_at_zero_h.topology_block_mut().atoms[0].set_explicit_hydrogens(0);
@@ -4058,7 +4256,11 @@ mod tests {
                 .with_reassign_stereo(false),
         )
         .expect("remove tracked isotopes at zero total H");
-        assert!(removed_at_zero_h.atoms()[0].tracked_isotopic_hydrogens().is_empty());
+        assert!(
+            removed_at_zero_h.atoms()[0]
+                .tracked_isotopic_hydrogens()
+                .is_empty()
+        );
     }
 
     #[test]
@@ -4071,7 +4273,9 @@ mod tests {
             .find(|bond| bond.order() == BondOrder::Double)
             .expect("double bond")
             .id();
-        assert!(is_stereo_beyond_any(source.bonds()[double_bond.index()].stereo()));
+        assert!(is_stereo_beyond_any(
+            source.bonds()[double_bond.index()].stereo()
+        ));
         let directional = source
             .bonds()
             .iter()
@@ -4095,10 +4299,16 @@ mod tests {
         )
         .expect("remove non-ring bond stereo");
 
-        assert_eq!(tautomer.bonds()[double_bond.index()].stereo(), BondStereo::Any);
+        assert_eq!(
+            tautomer.bonds()[double_bond.index()].stereo(),
+            BondStereo::Any
+        );
         assert_eq!(tautomer.bonds()[double_bond.index()].stereo_atoms(), None);
         for bond_id in directional {
-            assert_eq!(tautomer.bonds()[bond_id.index()].direction(), BondDirection::None);
+            assert_eq!(
+                tautomer.bonds()[bond_id.index()].direction(),
+                BondDirection::None
+            );
         }
         assert_eq!(source, source_before);
     }
@@ -4168,7 +4378,10 @@ mod tests {
             TautomerOptions::default().with_reassign_stereo(false),
         )
         .expect("ring fallback");
-        assert_eq!(ring_tautomer.bonds()[ring_bond.index()].stereo(), BondStereo::None);
+        assert_eq!(
+            ring_tautomer.bonds()[ring_bond.index()].stereo(),
+            BondStereo::None
+        );
 
         let source = Molecule::from_smiles("CC").expect("single bond");
         let mut tautomer = source.clone();
@@ -4205,7 +4418,10 @@ mod tests {
         )
         .expect("reassign and reapply explicit undefined stereo");
 
-        assert_eq!(tautomer.bonds()[double_bond.index()].stereo(), BondStereo::Any);
+        assert_eq!(
+            tautomer.bonds()[double_bond.index()].stereo(),
+            BondStereo::Any
+        );
         assert_eq!(tautomer.bonds()[double_bond.index()].stereo_atoms(), None);
         assert_eq!(tautomer.prop("_StereochemDone"), Some("1"));
         assert!(tautomer.is_prop_computed("_StereochemDone"));
@@ -4262,12 +4478,14 @@ mod tests {
     }
 
     fn initialization_plan(molecule: &Molecule) -> TautomerInitializationPlan {
-        plan_tautomer_initialization(MoleculeReadParts::from_molecule(molecule)).expect("tautomer initialization")
+        plan_tautomer_initialization(MoleculeReadParts::from_molecule(molecule))
+            .expect("tautomer initialization")
     }
 
     #[test]
     fn enumeration_initialization_updates_only_missing_valence_and_symm_sssr_caches() {
-        let unsanitized = Molecule::from_smiles_with_sanitize("c1ccccc1", false).expect("parse unsanitized benzene");
+        let unsanitized = Molecule::from_smiles_with_sanitize("c1ccccc1", false)
+            .expect("parse unsanitized benzene");
         assert!(unsanitized.derived_cache().valence.is_none());
         assert!(unsanitized.derived_cache().rings.is_none());
         let uncached = initialization_plan(&unsanitized);
@@ -4352,7 +4570,10 @@ mod tests {
         let plan = initialization_plan(&molecule);
         let candidates = plan.into_candidate_map(17usize, 23usize);
 
-        assert_eq!(candidates.keys().map(String::as_str).collect::<Vec<_>>(), ["CC(=O)O"]);
+        assert_eq!(
+            candidates.keys().map(String::as_str).collect::<Vec<_>>(),
+            ["CC(=O)O"]
+        );
         let candidate = &candidates["CC(=O)O"];
         assert_eq!(candidate.tautomer, Some(17));
         assert_eq!(candidate.kekulized, Some(23));
@@ -4415,7 +4636,10 @@ mod tests {
         .expect("prepared tautomer candidate satisfies molecule invariants")
     }
 
-    fn first_transform_match(candidate: &Molecule, transform: &TautomerTransform) -> crate::SubstructMatchResult {
+    fn first_transform_match(
+        candidate: &Molecule,
+        transform: &TautomerTransform,
+    ) -> crate::SubstructMatchResult {
         crate::get_substruct_matches(candidate, transform.query())
             .into_iter()
             .next()
@@ -4461,8 +4685,18 @@ mod tests {
             ("CC=O", "1,3 (thio)keto/enol f", "C=CO", ""),
             ("CC=C=O", "keten/ynol f", "CC#CO", "#-"),
             ("CC#CO", "keten/ynol r", "CC=C=O", "=="),
-            ("NC(N)=S(=O)=O", "formamidinesulfinic acid f", "N=C(N)S(=O)O", "=--"),
-            ("NC(=N)S(=O)O", "formamidinesulfinic acid r", "NC(N)=S(=O)=O", "==-"),
+            (
+                "NC(N)=S(=O)=O",
+                "formamidinesulfinic acid f",
+                "N=C(N)S(=O)O",
+                "=--",
+            ),
+            (
+                "NC(=N)S(=O)O",
+                "formamidinesulfinic acid r",
+                "NC(N)=S(=O)=O",
+                "==-",
+            ),
             ("C#N", "isocyanide f", "[C-]#[NH+]", "#"),
             ("OP(O)O", "phosphonic acid f", "O=[PH](O)O", "="),
             ("[PH](=O)(O)(O)", "phosphonic acid r", "OP(O)O", "-"),
@@ -4497,7 +4731,10 @@ mod tests {
             };
             let molecule = molecule_from_product_plan(&source, &product);
 
-            assert_eq!(product.canonical_smiles, expected_smiles, "{transform_name}");
+            assert_eq!(
+                product.canonical_smiles, expected_smiles,
+                "{transform_name}"
+            );
             assert_eq!(
                 MoleculeReadParts::from_molecule(&molecule)
                     .canonical_isomeric_smiles()
@@ -4506,7 +4743,10 @@ mod tests {
                 "{transform_name}"
             );
             assert_eq!(source, source_before, "source changed for {transform_name}");
-            assert_eq!(candidate, candidate_before, "candidate changed for {transform_name}");
+            assert_eq!(
+                candidate, candidate_before,
+                "candidate changed for {transform_name}"
+            );
         }
     }
 
@@ -4536,11 +4776,20 @@ mod tests {
             panic!("ordered endpoint transform must produce a product");
         };
 
-        assert_eq!(product.topology.atoms[donor.index()].explicit_hydrogens(), 2);
-        assert_eq!(product.topology.atoms[acceptor.index()].explicit_hydrogens(), 1);
+        assert_eq!(
+            product.topology.atoms[donor.index()].explicit_hydrogens(),
+            2
+        );
+        assert_eq!(
+            product.topology.atoms[acceptor.index()].explicit_hydrogens(),
+            1
+        );
         assert!(product.topology.atoms[donor.index()].no_implicit());
         assert!(product.topology.atoms[acceptor.index()].no_implicit());
-        assert_eq!(product.modified_atoms, BTreeSet::from([donor, retained_atom, acceptor]));
+        assert_eq!(
+            product.modified_atoms,
+            BTreeSet::from([donor, retained_atom, acceptor])
+        );
         assert!(product.modified_bonds.contains(&retained_bond));
         assert!(
             matched
@@ -4596,7 +4845,10 @@ mod tests {
             let TautomerTransformAttempt::Product(product) = attempt else {
                 panic!("isotopic-H transform must produce a product");
             };
-            assert_eq!(product.topology.atoms[0].tracked_isotopic_hydrogens(), expected);
+            assert_eq!(
+                product.topology.atoms[0].tracked_isotopic_hydrogens(),
+                expected
+            );
         }
     }
 
@@ -4622,14 +4874,21 @@ mod tests {
         let TautomerTransformAttempt::Product(product) = attempt else {
             panic!("isocyanide transform must produce a product");
         };
-        assert_eq!(product.topology.atoms[matched.atom_mapping[0]].formal_charge(), -1);
-        assert_eq!(product.topology.atoms[matched.atom_mapping[1]].formal_charge(), 1);
+        assert_eq!(
+            product.topology.atoms[matched.atom_mapping[0]].formal_charge(),
+            -1
+        );
+        assert_eq!(
+            product.topology.atoms[matched.atom_mapping[1]].formal_charge(),
+            1
+        );
         assert_eq!(product.canonical_smiles, "[C-]#[NH+]");
     }
 
     #[test]
     fn single_transform_application_records_bonds_changed_only_by_sanitization() {
-        let source = Molecule::from_smiles("Cc1nc2ccccc2[nH]1").expect("parse source-comment sanitization fixture");
+        let source = Molecule::from_smiles("Cc1nc2ccccc2[nH]1")
+            .expect("parse source-comment sanitization fixture");
         let source_before = source.clone();
         let candidate = prepared_tautomer_candidate(&source);
         let catalog = TautomerCatalog::current().expect("load catalog");
@@ -4668,19 +4927,18 @@ mod tests {
             }
         }
 
-        let (product, sanitize_only) =
-            witnessed.expect("source-comment fixture must expose a sanitization-only bond-order change");
-        assert!(
-            sanitize_only
-                .iter()
-                .all(|bond| { source.bonds()[bond.index()].order() != product.topology.bonds[bond.index()].order() })
-        );
+        let (product, sanitize_only) = witnessed
+            .expect("source-comment fixture must expose a sanitization-only bond-order change");
+        assert!(sanitize_only.iter().all(|bond| {
+            source.bonds()[bond.index()].order() != product.topology.bonds[bond.index()].order()
+        }));
         let _ = molecule_from_product_plan(&source, &product);
         assert_eq!(source, source_before);
     }
 
     #[test]
-    fn single_transform_application_reports_duplicate_after_stereo_and_before_product_kekulization() {
+    fn single_transform_application_reports_duplicate_after_stereo_and_before_product_kekulization()
+    {
         let source = Molecule::from_smiles("CC=O").expect("parse duplicate fixture");
         let candidate = prepared_tautomer_candidate(&source);
         let transform = builtin_transform("1,3 (thio)keto/enol f");
@@ -4726,12 +4984,18 @@ mod tests {
 
     #[test]
     fn single_transform_application_catches_only_the_kekulize_failure_branch() {
-        let source = Molecule::from_smiles_with_sanitize("c1cccc1.CC", false).expect("parse odd aromatic ring fixture");
+        let source = Molecule::from_smiles_with_sanitize("c1cccc1.CC", false)
+            .expect("parse odd aromatic ring fixture");
         let candidate = source
             .with_assigned_valence_strict(false)
             .expect("prepare non-strict valence cache");
-        let transform = TautomerTransform::new("focused kekulize failure", query("[C]-[C]"), Vec::new(), Vec::new())
-            .expect("construct focused transform");
+        let transform = TautomerTransform::new(
+            "focused kekulize failure",
+            query("[C]-[C]"),
+            Vec::new(),
+            Vec::new(),
+        )
+        .expect("construct focused transform");
         let matched = first_transform_match(&candidate, &transform);
         let source_before = source.clone();
         let candidate_before = candidate.clone();
@@ -4765,9 +5029,13 @@ mod tests {
         let source = Molecule::from_smiles("CCC").expect("parse propagation fixture");
         let mut candidate = source.clone();
         candidate.topology_block_mut().bonds[1].set_order(BondOrder::Other);
-        let transform =
-            TautomerTransform::new("focused sanitize propagation", query("[C]-[C]"), Vec::new(), Vec::new())
-                .expect("construct focused transform");
+        let transform = TautomerTransform::new(
+            "focused sanitize propagation",
+            query("[C]-[C]"),
+            Vec::new(),
+            Vec::new(),
+        )
+        .expect("construct focused transform");
         let matched = crate::SubstructMatchResult {
             atom_mapping: vec![0, 1],
             bond_mapping: vec![0],
@@ -4824,7 +5092,10 @@ mod tests {
 
         assert!(matches!(
             error,
-            TautomerTransformApplicationError::AtomMappingCount { expected: 3, actual: 2 }
+            TautomerTransformApplicationError::AtomMappingCount {
+                expected: 3,
+                actual: 2
+            }
         ));
         assert_eq!(source, source_before);
         assert_eq!(candidate, candidate_before);
@@ -4906,7 +5177,11 @@ mod tests {
         assert!(!first.bailed_out);
         assert_eq!(visited, ["m", "z"]);
         assert_eq!(
-            state.candidates.keys().map(String::as_str).collect::<Vec<_>>(),
+            state
+                .candidates
+                .keys()
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
             ["a", "m", "z"]
         );
         assert!(!state.candidates["a"].done);
@@ -4922,7 +5197,9 @@ mod tests {
                 visited.push(handle.clone());
                 Ok::<_, &'static str>(Vec::new())
             },
-            |_, _, _, _, _, _| -> Result<_, &'static str> { unreachable!("the deferred key has no match") },
+            |_, _, _, _, _, _| -> Result<_, &'static str> {
+                unreachable!("the deferred key has no match")
+            },
             |_| Ok(true),
         )
         .expect("second ordered expansion pass");
@@ -5038,7 +5315,10 @@ mod tests {
         .expect("exact transform boundary");
         assert_eq!(applied, ["first"]);
         assert_eq!(state.num_transforms, 2);
-        assert_eq!(state.status, TautomerEnumerationStatus::MaxTransformsReached);
+        assert_eq!(
+            state.status,
+            TautomerEnumerationStatus::MaxTransformsReached
+        );
     }
 
     #[test]
@@ -5092,7 +5372,8 @@ mod tests {
     }
 
     #[test]
-    fn enumeration_expansion_callback_observes_preapplication_state_and_cancels_deterministically() {
+    fn enumeration_expansion_callback_observes_preapplication_state_and_cancels_deterministically()
+    {
         let transforms = [expansion_transform("callback")];
         let run = || {
             let mut state = expansion_state(&[("m", "m", false)]);
@@ -5127,7 +5408,11 @@ mod tests {
         assert_eq!(first.0.status, TautomerEnumerationStatus::Canceled);
         assert_eq!(
             first.2,
-            [(1, vec!["m".to_owned()], TautomerEnumerationStatus::Completed)]
+            [(
+                1,
+                vec!["m".to_owned()],
+                TautomerEnumerationStatus::Completed
+            )]
         );
         assert_eq!(first.3, 0);
         assert!(first.0.candidates["m"].done);
@@ -5146,7 +5431,9 @@ mod tests {
                 matched_handles.push(handle.clone());
                 Ok::<_, &'static str>(vec![expansion_match(0)])
             },
-            |_, _, _, _, _, _| -> Result<_, &'static str> { unreachable!("limit is checked before application") },
+            |_, _, _, _, _, _| -> Result<_, &'static str> {
+                unreachable!("limit is checked before application")
+            },
             |_| Ok(true),
         )
         .expect("bail out in ordered traversal");
@@ -5221,7 +5508,11 @@ mod tests {
         assert!(forward_pass.completed);
         assert_eq!(forward_calls, ["a-tautomer"]);
         assert_eq!(
-            forward.candidates.keys().map(String::as_str).collect::<Vec<_>>(),
+            forward
+                .candidates
+                .keys()
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
             ["b", "c", "z"]
         );
 
@@ -5245,9 +5536,16 @@ mod tests {
         )
         .expect("backward rekey traversal");
         assert!(backward_pass.completed);
-        assert_eq!(backward_calls, ["a-tautomer", "b-tautomer", "c-tautomer", "b-tautomer"]);
         assert_eq!(
-            backward.candidates.keys().map(String::as_str).collect::<Vec<_>>(),
+            backward_calls,
+            ["a-tautomer", "b-tautomer", "c-tautomer", "b-tautomer"]
+        );
+        assert_eq!(
+            backward
+                .candidates
+                .keys()
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
             ["a", "aa", "b"]
         );
     }
@@ -5276,11 +5574,18 @@ mod tests {
         assert!(!pass.bailed_out);
         assert_eq!(state.status, TautomerEnumerationStatus::Completed);
         assert_eq!(state.candidates.len(), 1);
-        assert_eq!(state.candidates["a"].tautomer.as_deref(), Some("a-tautomer"));
+        assert_eq!(
+            state.candidates["a"].tautomer.as_deref(),
+            Some("a-tautomer")
+        );
 
         let mut transform_limited = expansion_state(&[("a", "a", true), ("b", "b", true)]);
         transform_limited.modified_atoms = marked_atoms([0]);
-        transform_limited.candidates.get_mut("a").unwrap().num_modified_atoms = 1;
+        transform_limited
+            .candidates
+            .get_mut("a")
+            .unwrap()
+            .num_modified_atoms = 1;
         transform_limited.status = TautomerEnumerationStatus::MaxTransformsReached;
         let pass = prune_and_rekey_tautomer_candidates_in_source_order(
             &mut transform_limited,
@@ -5315,8 +5620,12 @@ mod tests {
             &mut state,
             TautomerOptions::default(),
             false,
-            |_, _, _| -> Result<_, &'static str> { unreachable!("equal modified-set snapshots do not reapply stereo") },
-            |_| -> Result<_, &'static str> { unreachable!("an unchanged candidate is not rekeyed") },
+            |_, _, _| -> Result<_, &'static str> {
+                unreachable!("equal modified-set snapshots do not reapply stereo")
+            },
+            |_| -> Result<_, &'static str> {
+                unreachable!("an unchanged candidate is not rekeyed")
+            },
         )
         .expect("prune with unchanged modified sets");
         assert!(first.completed);
@@ -5343,14 +5652,17 @@ mod tests {
         assert_eq!(calls, 1);
         assert_eq!(state.candidates["m"].num_modified_atoms, 2);
         assert_eq!(state.candidates["m"].num_modified_bonds, 2);
-        assert_eq!(state.candidates["m"].tautomer.as_deref(), Some("m-tautomer-updated"));
+        assert_eq!(
+            state.candidates["m"].tautomer.as_deref(),
+            Some("m-tautomer-updated")
+        );
     }
 
     #[test]
     fn enumeration_pruning_materializes_final_candidates_in_key_order() {
         let state = expansion_state(&[("z", "z", true), ("a", "a", true), ("m", "m", true)]);
-        let entries =
-            materialize_tautomer_candidates_in_source_order(state.candidates).expect("materialize ordered candidates");
+        let entries = materialize_tautomer_candidates_in_source_order(state.candidates)
+            .expect("materialize ordered candidates");
         assert_eq!(
             entries,
             [
@@ -5413,7 +5725,9 @@ mod tests {
     #[test]
     fn candidate_record_ordered_map_sorts_keys_and_replaces_one_canonical_key() {
         let molecule = Molecule::from_smiles("C").expect("parse candidate");
-        let candidate = |modified_atoms| TautomerCandidate::new(molecule.clone(), molecule.clone(), modified_atoms, 0);
+        let candidate = |modified_atoms| {
+            TautomerCandidate::new(molecule.clone(), molecule.clone(), modified_atoms, 0)
+        };
         let mut candidates = SmilesTautomerMap::new();
         candidates.insert("z".to_owned(), candidate(1));
         candidates.insert("a".to_owned(), candidate(2));
@@ -5492,13 +5806,23 @@ mod tests {
                 .collect::<Vec<_>>(),
             [("a", 1), ("m", 2), ("z", 3)]
         );
-        assert_eq!(result.iter().map(Molecule::num_atoms).collect::<Vec<_>>(), [1, 2, 3]);
         assert_eq!(
-            result.iter().rev().map(Molecule::num_atoms).collect::<Vec<_>>(),
+            result.iter().map(Molecule::num_atoms).collect::<Vec<_>>(),
+            [1, 2, 3]
+        );
+        assert_eq!(
+            result
+                .iter()
+                .rev()
+                .map(Molecule::num_atoms)
+                .collect::<Vec<_>>(),
             [3, 2, 1]
         );
         assert_eq!(
-            (&result).into_iter().map(Molecule::num_atoms).collect::<Vec<_>>(),
+            (&result)
+                .into_iter()
+                .map(Molecule::num_atoms)
+                .collect::<Vec<_>>(),
             [1, 2, 3]
         );
     }
@@ -5516,7 +5840,11 @@ mod tests {
             Err(TautomerEnumerationError::IndexOutOfRange { index: 3, len: 3 })
         );
         assert_eq!(
-            result.molecules().iter().map(Molecule::num_atoms).collect::<Vec<_>>(),
+            result
+                .molecules()
+                .iter()
+                .map(Molecule::num_atoms)
+                .collect::<Vec<_>>(),
             [1, 2, 3]
         );
     }
@@ -5558,7 +5886,10 @@ mod tests {
             ("C", TautomerOptions::default()),
             ("CC(C)=O", TautomerOptions::default()),
             ("CC(C)=O", TautomerOptions::default().with_max_transforms(1)),
-            ("OC(C)=C(C)C", TautomerOptions::default().with_max_tautomers(2)),
+            (
+                "OC(C)=C(C)C",
+                TautomerOptions::default().with_max_tautomers(2),
+            ),
         ];
 
         for (smiles, options) in cases {
@@ -5570,7 +5901,11 @@ mod tests {
             let mut modified_bonds = BTreeSet::from([BondId::new(molecule.num_bonds() + 7)]);
 
             let molecules = enumerator
-                .enumerate_deprecated_compat(&molecule, Some(&mut modified_atoms), Some(&mut modified_bonds))
+                .enumerate_deprecated_compat(
+                    &molecule,
+                    Some(&mut modified_atoms),
+                    Some(&mut modified_bonds),
+                )
                 .expect("deprecated compatibility enumeration");
 
             assert_eq!(molecules, rich.molecules(), "molecules for {smiles}");
@@ -5604,16 +5939,23 @@ mod tests {
         );
         assert_eq!(bonds_only, *rich.modified_bonds());
         assert_eq!(
-            enumerator.enumerate_deprecated_compat(&molecule, None, None).unwrap(),
+            enumerator
+                .enumerate_deprecated_compat(&molecule, None, None)
+                .unwrap(),
             rich.molecules()
         );
 
-        let invalid = Molecule::from_smiles_with_sanitize("c1cccc1", false).expect("parse invalid aromatic fixture");
+        let invalid = Molecule::from_smiles_with_sanitize("c1cccc1", false)
+            .expect("parse invalid aromatic fixture");
         let mut unchanged_atoms = BTreeSet::from([AtomId::new(17)]);
         let mut unchanged_bonds = BTreeSet::from([BondId::new(19)]);
         assert!(
             enumerator
-                .enumerate_deprecated_compat(&invalid, Some(&mut unchanged_atoms), Some(&mut unchanged_bonds),)
+                .enumerate_deprecated_compat(
+                    &invalid,
+                    Some(&mut unchanged_atoms),
+                    Some(&mut unchanged_bonds),
+                )
                 .is_err()
         );
         assert_eq!(unchanged_atoms, BTreeSet::from([AtomId::new(17)]));
@@ -5628,9 +5970,13 @@ mod tests {
 
     #[test]
     fn enumeration_clears_computed_ring_stereo_before_transforming_candidates_like_rdkit() {
-        let molecule = Molecule::from_smiles("N[C@H](C(=O)N1CCCC1)[C@H]1CC[C@H](NS(=O)(=O)c2ccc(OC(F)(F)F)cc2)CC1")
-            .expect("parse CHEMBL23979 ring-stereo regression");
-        let enumerator = TautomerEnumerator::from_options(TautomerOptions::default().with_reassign_stereo(false));
+        let molecule = Molecule::from_smiles(
+            "N[C@H](C(=O)N1CCCC1)[C@H]1CC[C@H](NS(=O)(=O)c2ccc(OC(F)(F)F)cc2)CC1",
+        )
+        .expect("parse CHEMBL23979 ring-stereo regression");
+        let enumerator = TautomerEnumerator::from_options(
+            TautomerOptions::default().with_reassign_stereo(false),
+        );
 
         let result = enumerator
             .enumerate(&molecule)
@@ -5658,7 +6004,12 @@ mod tests {
         );
         assert_eq!(
             result.modified_bonds(),
-            &BTreeSet::from([BondId::new(0), BondId::new(1), BondId::new(2), BondId::new(8),])
+            &BTreeSet::from([
+                BondId::new(0),
+                BondId::new(1),
+                BondId::new(2),
+                BondId::new(8),
+            ])
         );
         assert_eq!(
             result
@@ -5679,8 +6030,11 @@ mod tests {
 
     #[test]
     fn enumeration_rekeys_stale_computed_double_bond_stereo_like_rdkit_chembl12724() {
-        let molecule = Molecule::from_smiles("COc1ccc(OC)c(/C=N/N=C(\\N)NO)c1.Cc1ccc(S(=O)(=O)O)cc1").unwrap();
-        let enumerator = TautomerEnumerator::from_options(TautomerOptions::default().with_reassign_stereo(false));
+        let molecule =
+            Molecule::from_smiles("COc1ccc(OC)c(/C=N/N=C(\\N)NO)c1.Cc1ccc(S(=O)(=O)O)cc1").unwrap();
+        let enumerator = TautomerEnumerator::from_options(
+            TautomerOptions::default().with_reassign_stereo(false),
+        );
         let result = enumerator.enumerate(&molecule).unwrap();
         assert_eq!(
             result.canonical_smiles(),
@@ -5704,7 +6058,12 @@ mod tests {
         );
         assert_eq!(
             result.modified_bonds(),
-            &BTreeSet::from([BondId::new(11), BondId::new(12), BondId::new(13), BondId::new(14),])
+            &BTreeSet::from([
+                BondId::new(11),
+                BondId::new(12),
+                BondId::new(13),
+                BondId::new(14),
+            ])
         );
         assert_eq!(result.status(), TautomerEnumerationStatus::Completed);
         assert_eq!(
@@ -5865,11 +6224,17 @@ mod tests {
         let molecule = Molecule::from_smiles("CC(C)=O").expect("parse tautomerizable molecule");
         let before = molecule.clone();
         let enumerator = TautomerEnumerator::new();
-        let result = enumerator.enumerate(&molecule).expect("enumerate tautomers");
+        let result = enumerator
+            .enumerate(&molecule)
+            .expect("enumerate tautomers");
 
-        let default_selected = enumerator.pick_canonical(&result).expect("select with default score");
+        let default_selected = enumerator
+            .pick_canonical(&result)
+            .expect("select with default score");
         let custom_selected = enumerator
-            .pick_canonical_from_iterable_with(result.iter(), |candidate| Ok(score_tautomer(candidate)?.total()))
+            .pick_canonical_from_iterable_with(result.iter(), |candidate| {
+                Ok(score_tautomer(candidate)?.total())
+            })
             .expect("select with custom default-equivalent score");
 
         assert_eq!(default_selected, custom_selected);
@@ -5882,7 +6247,9 @@ mod tests {
     fn canonicalization_and_factories_share_current_and_v1_catalog_paths() {
         let molecule = Molecule::from_smiles("CC(C)=O").expect("parse factory fixture");
         let default = TautomerEnumerator::new();
-        let current = TautomerEnumerator::from_catalog(TautomerCatalog::current().expect("construct current catalog"));
+        let current = TautomerEnumerator::from_catalog(
+            TautomerCatalog::current().expect("construct current catalog"),
+        );
         let v1 = TautomerEnumerator::v1().expect("construct V1 enumerator");
 
         assert_eq!(default.catalog().transforms().len(), 37);
@@ -5991,7 +6358,9 @@ mod tests {
         let mut in_place = source.clone();
 
         enumerator
-            .canonicalize_in_place_compat_with(&mut in_place, |candidate| Ok(score_tautomer(candidate)?.total()))
+            .canonicalize_in_place_compat_with(&mut in_place, |candidate| {
+                Ok(score_tautomer(candidate)?.total())
+            })
             .expect("run private in-place correspondence");
 
         for (actual, expected) in in_place.atoms().iter().zip(expected.atoms()) {
@@ -6066,15 +6435,18 @@ mod tests {
 
     #[test]
     fn enumeration_matches_pcs_fused_ring_max_transform_boundary() {
-        let molecule =
-            Molecule::from_smiles("Cc1nc2c(nc1C)C(=O)C1=C(C2=O)C2C=CC1CC2").expect("parse PCS regression molecule");
+        let molecule = Molecule::from_smiles("Cc1nc2c(nc1C)C(=O)C1=C(C2=O)C2C=CC1CC2")
+            .expect("parse PCS regression molecule");
 
         let result = TautomerEnumerator::default()
             .enumerate(&molecule)
             .expect("enumerate PCS regression molecule");
 
         assert_eq!(result.len(), 272);
-        assert_eq!(result.status(), TautomerEnumerationStatus::MaxTransformsReached);
+        assert_eq!(
+            result.status(),
+            TautomerEnumerationStatus::MaxTransformsReached
+        );
     }
 
     #[test]
@@ -6137,7 +6509,8 @@ mod tests {
         }
 
         let callback = Continue;
-        let mut source = TautomerEnumerator::from_options(TautomerOptions::default().with_max_transforms(9));
+        let mut source =
+            TautomerEnumerator::from_options(TautomerOptions::default().with_max_transforms(9));
         source.set_callback(Some(&callback));
         let mut target = TautomerEnumerator::from_catalog(TautomerCatalog::v1().unwrap());
         target.clone_from(&source);
@@ -6189,7 +6562,10 @@ mod tests {
         assert_eq!(transform.name(), "ordered");
         assert_eq!(transform.query().num_atoms(), 3);
         assert_eq!(transform.query().num_bonds(), 2);
-        assert_eq!(transform.bond_types(), &[BondOrder::Double, BondOrder::Single]);
+        assert_eq!(
+            transform.bond_types(),
+            &[BondOrder::Double, BondOrder::Single]
+        );
         assert_eq!(transform.charges(), &[-1, 0, 1]);
     }
 
@@ -6204,15 +6580,20 @@ mod tests {
         .expect("valid transform");
         let mut cloned = original.clone();
 
-        cloned.query.atom_mut(0).expect("query atom").set_formal_charge(-1);
+        cloned
+            .query
+            .atom_mut(0)
+            .expect("query atom")
+            .atom_mut()
+            .set_formal_charge(-1);
         cloned.query = cloned.query.with_name("clone");
         cloned.bond_types[0] = BondOrder::Triple;
 
         assert_eq!(original.name(), "original");
-        assert_eq!(original.query().atoms()[0].formal_charge(), 0);
+        assert_eq!(original.query().atoms()[0].atom().formal_charge(), 0);
         assert_eq!(original.bond_types()[0], BondOrder::Double);
         assert_eq!(cloned.name(), "clone");
-        assert_eq!(cloned.query().atoms()[0].formal_charge(), -1);
+        assert_eq!(cloned.query().atoms()[0].atom().formal_charge(), -1);
         assert_eq!(cloned.bond_types()[0], BondOrder::Triple);
     }
 
@@ -6225,8 +6606,9 @@ mod tests {
             vec![1, 0, -1],
         )
         .expect("valid source transform");
-        let mut target = TautomerTransform::new("target", query("[O]-[C]=[C]"), Vec::new(), Vec::new())
-            .expect("valid target transform");
+        let mut target =
+            TautomerTransform::new("target", query("[O]-[C]=[C]"), Vec::new(), Vec::new())
+                .expect("valid target transform");
 
         target.clone_from(&source);
 
@@ -6238,7 +6620,8 @@ mod tests {
         let compiled = query("[O]-[C]=[C]").with_prop("compiled-sentinel", "present");
         let shared_atoms = compiled.atoms().as_ptr();
 
-        let transform = TautomerTransform::new("compiled", compiled, Vec::new(), Vec::new()).expect("valid transform");
+        let transform = TautomerTransform::new("compiled", compiled, Vec::new(), Vec::new())
+            .expect("valid transform");
 
         assert_eq!(transform.query().prop("compiled-sentinel"), Some("present"));
         assert_eq!(transform.query.atoms().as_ptr(), shared_atoms);
@@ -6246,8 +6629,9 @@ mod tests {
 
     #[test]
     fn transform_accepts_empty_bond_and_charge_edit_vectors() {
-        let transform = TautomerTransform::new("alternating", query("[O]-[C]=[C]"), Vec::new(), Vec::new())
-            .expect("empty edits select source defaults");
+        let transform =
+            TautomerTransform::new("alternating", query("[O]-[C]=[C]"), Vec::new(), Vec::new())
+                .expect("empty edits select source defaults");
 
         assert!(transform.bond_types().is_empty());
         assert!(transform.charges().is_empty());
@@ -6258,25 +6642,43 @@ mod tests {
         let error = TautomerTransform::new("invalid", query("[O]"), Vec::new(), Vec::new())
             .expect_err("one query atom cannot provide both endpoints");
 
-        assert_eq!(error, TautomerTransformError::MissingDonorOrAcceptor { actual: 1 });
+        assert_eq!(
+            error,
+            TautomerTransformError::MissingDonorOrAcceptor { actual: 1 }
+        );
     }
 
     #[test]
     fn transform_rejects_mismatched_bond_edit_count() {
-        let error = TautomerTransform::new("invalid", query("[O]-[C]=[C]"), vec![BondOrder::Double], Vec::new())
-            .expect_err("explicit bond edits must align to query bonds");
+        let error = TautomerTransform::new(
+            "invalid",
+            query("[O]-[C]=[C]"),
+            vec![BondOrder::Double],
+            Vec::new(),
+        )
+        .expect_err("explicit bond edits must align to query bonds");
 
-        assert_eq!(error, TautomerTransformError::BondEditCount { expected: 2, actual: 1 });
+        assert_eq!(
+            error,
+            TautomerTransformError::BondEditCount {
+                expected: 2,
+                actual: 1
+            }
+        );
     }
 
     #[test]
     fn transform_rejects_mismatched_charge_edit_count() {
-        let error = TautomerTransform::new("invalid", query("[O]-[C]=[C]"), Vec::new(), vec![1, -1])
-            .expect_err("explicit charge edits must align to query atoms");
+        let error =
+            TautomerTransform::new("invalid", query("[O]-[C]=[C]"), Vec::new(), vec![1, -1])
+                .expect_err("explicit charge edits must align to query atoms");
 
         assert_eq!(
             error,
-            TautomerTransformError::ChargeEditCount { expected: 3, actual: 2 }
+            TautomerTransformError::ChargeEditCount {
+                expected: 3,
+                actual: 2
+            }
         );
     }
 }

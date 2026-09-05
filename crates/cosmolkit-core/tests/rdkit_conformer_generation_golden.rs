@@ -51,14 +51,18 @@ fn fixture_root() -> PathBuf {
 
 fn load_inventory() -> Vec<ConformerGenerationFixtureRecord> {
     let path = inventory_path();
-    let file = File::open(&path).unwrap_or_else(|err| panic!("failed to open {}: {err}", path.display()));
+    let file =
+        File::open(&path).unwrap_or_else(|err| panic!("failed to open {}: {err}", path.display()));
     BufReader::new(file)
         .lines()
         .enumerate()
         .map(|(idx, line)| {
-            let line = line.unwrap_or_else(|err| panic!("failed to read {} line {}: {err}", path.display(), idx + 1));
-            serde_json::from_str(&line)
-                .unwrap_or_else(|err| panic!("failed to parse {} line {}: {err}", path.display(), idx + 1))
+            let line = line.unwrap_or_else(|err| {
+                panic!("failed to read {} line {}: {err}", path.display(), idx + 1)
+            });
+            serde_json::from_str(&line).unwrap_or_else(|err| {
+                panic!("failed to parse {} line {}: {err}", path.display(), idx + 1)
+            })
         })
         .collect()
 }
@@ -68,9 +72,9 @@ fn vendored_fixture_path(source: &str) -> PathBuf {
         .into_iter()
         .find(|record| record.source == source)
         .unwrap_or_else(|| panic!("fixture inventory missing source {source}"));
-    let fixture = record
-        .fixture
-        .unwrap_or_else(|| panic!("fixture inventory source {source} does not have a vendored fixture path"));
+    let fixture = record.fixture.unwrap_or_else(|| {
+        panic!("fixture inventory source {source} does not have a vendored fixture path")
+    });
     fixture_root().join(fixture)
 }
 
@@ -87,9 +91,12 @@ fn load_golden() -> Vec<ConformerGenerationGoldenRecord> {
         .lines()
         .enumerate()
         .map(|(idx, line)| {
-            let line = line.unwrap_or_else(|err| panic!("failed to read {} line {}: {err}", path.display(), idx + 1));
-            serde_json::from_str(&line)
-                .unwrap_or_else(|err| panic!("failed to parse {} line {}: {err}", path.display(), idx + 1))
+            let line = line.unwrap_or_else(|err| {
+                panic!("failed to read {} line {}: {err}", path.display(), idx + 1)
+            });
+            serde_json::from_str(&line).unwrap_or_else(|err| {
+                panic!("failed to parse {} line {}: {err}", path.display(), idx + 1)
+            })
         })
         .collect()
 }
@@ -107,16 +114,20 @@ fn read_rdkit_mol_fixture(source: &str) -> Molecule {
             ..Default::default()
         },
     )
-    .unwrap_or_else(|err| panic!("failed to parse RDKit mol fixture {}: {err}", path.display()))
+    .unwrap_or_else(|err| {
+        panic!(
+            "failed to parse RDKit mol fixture {}: {err}",
+            path.display()
+        )
+    })
     .molecule
 }
 
 fn load_case_molecule(source_kind: &str, source: &str) -> Molecule {
     match source_kind {
         "fixture_mol" => read_rdkit_mol_fixture(source),
-        "smiles" => {
-            Molecule::from_smiles(source).unwrap_or_else(|err| panic!("failed to parse SMILES {source}: {err}"))
-        }
+        "smiles" => Molecule::from_smiles(source)
+            .unwrap_or_else(|err| panic!("failed to parse SMILES {source}: {err}")),
         "smiles_with_hydrogens" => Molecule::from_smiles(source)
             .unwrap_or_else(|err| panic!("failed to parse SMILES {source}: {err}"))
             .with_hydrogens()
@@ -180,7 +191,8 @@ fn params_for_case(case_id: &str, preset: &str) -> (EmbedParameters, Option<usiz
             params.num_threads = 1;
             params.cpci = Some(BTreeMap::from([((0, 3), 0.5), ((1, 4), -0.25)]));
         }
-        "single_etkdgv3_x0_ring_connectivity_first" | "single_etkdgv3_x0_ring_connectivity_second" => {
+        "single_etkdgv3_x0_ring_connectivity_first"
+        | "single_etkdgv3_x0_ring_connectivity_second" => {
             params.max_iterations = 3;
             params.random_seed = 61453;
             params.num_threads = 1;
@@ -228,15 +240,25 @@ fn params_for_case(case_id: &str, preset: &str) -> (EmbedParameters, Option<usiz
     (params, num_confs)
 }
 
-fn assert_conformer_coords_match(case_id: &str, actual: &[Vec<[f64; 3]>], expected: &[Vec<[f64; 3]>]) {
-    assert_eq!(actual.len(), expected.len(), "{case_id}: conformer count mismatch");
+fn assert_conformer_coords_match(
+    case_id: &str,
+    actual: &[Vec<[f64; 3]>],
+    expected: &[Vec<[f64; 3]>],
+) {
+    assert_eq!(
+        actual.len(),
+        expected.len(),
+        "{case_id}: conformer count mismatch"
+    );
     for (conf_idx, (actual_conf, expected_conf)) in actual.iter().zip(expected).enumerate() {
         assert_eq!(
             actual_conf.len(),
             expected_conf.len(),
             "{case_id}: atom count mismatch in conformer {conf_idx}"
         );
-        for (atom_idx, (actual_xyz, expected_xyz)) in actual_conf.iter().zip(expected_conf).enumerate() {
+        for (atom_idx, (actual_xyz, expected_xyz)) in
+            actual_conf.iter().zip(expected_conf).enumerate()
+        {
             for axis in 0..3 {
                 let a = actual_xyz[axis];
                 let e = expected_xyz[axis];
@@ -259,7 +281,11 @@ fn conformer_coords(mol: &Molecule) -> Vec<Vec<[f64; 3]>> {
 #[test]
 fn conformer_generation_golden_has_expected_case_count() {
     let records = load_golden();
-    assert_eq!(records.len(), 19, "unexpected conformer-generation golden case count");
+    assert_eq!(
+        records.len(),
+        19,
+        "unexpected conformer-generation golden case count"
+    );
 }
 
 #[test]
@@ -283,9 +309,18 @@ fn conformer_generation_exhaustive_parity_matches_exact_coordinates() {
 
         match record.mode.as_str() {
             "single" => {
-                let (embedded, status) = embed_molecule(&mol, &mut params)
-                    .unwrap_or_else(|err| panic!("{}: COSMolKit single embedding failed: {err}", record.case_id));
-                assert_eq!(Some(status), record.status, "{}: status mismatch", record.case_id);
+                let (embedded, status) = embed_molecule(&mol, &mut params).unwrap_or_else(|err| {
+                    panic!(
+                        "{}: COSMolKit single embedding failed: {err}",
+                        record.case_id
+                    )
+                });
+                assert_eq!(
+                    Some(status),
+                    record.status,
+                    "{}: status mismatch",
+                    record.case_id
+                );
                 assert_eq!(
                     params.failures.as_slice(),
                     expected_failures,
@@ -293,16 +328,31 @@ fn conformer_generation_exhaustive_parity_matches_exact_coordinates() {
                     record.case_id
                 );
                 let actual_conformers = conformer_coords(&embedded);
-                assert_conformer_coords_match(&record.case_id, &actual_conformers, expected_conformers);
+                assert_conformer_coords_match(
+                    &record.case_id,
+                    &actual_conformers,
+                    expected_conformers,
+                );
             }
             "multi" => {
                 let (embedded, ids) = embed_multiple_confs(
                     &mol,
-                    u32::try_from(num_confs.expect("multi case has count")).expect("multi conformer count fits u32"),
+                    u32::try_from(num_confs.expect("multi case has count"))
+                        .expect("multi conformer count fits u32"),
                     &mut params,
                 )
-                .unwrap_or_else(|err| panic!("{}: COSMolKit multi embedding failed: {err}", record.case_id));
-                assert_eq!(Some(ids), record.ids, "{}: conformer id mismatch", record.case_id);
+                .unwrap_or_else(|err| {
+                    panic!(
+                        "{}: COSMolKit multi embedding failed: {err}",
+                        record.case_id
+                    )
+                });
+                assert_eq!(
+                    Some(ids),
+                    record.ids,
+                    "{}: conformer id mismatch",
+                    record.case_id
+                );
                 assert_eq!(
                     params.failures.as_slice(),
                     expected_failures,
@@ -310,7 +360,11 @@ fn conformer_generation_exhaustive_parity_matches_exact_coordinates() {
                     record.case_id
                 );
                 let actual_conformers = conformer_coords(&embedded);
-                assert_conformer_coords_match(&record.case_id, &actual_conformers, expected_conformers);
+                assert_conformer_coords_match(
+                    &record.case_id,
+                    &actual_conformers,
+                    expected_conformers,
+                );
             }
             other => panic!("{}: unsupported mode {other}", record.case_id),
         }

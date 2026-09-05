@@ -135,7 +135,10 @@ fn count_non_sss_bits(
             // Avalon❗✔️:                strcpy(prefix, "SI:");
             // Avalon❗✔️: // ADD_BIT(fp_counts, ncounts, extcon[j]*1013 + seed);
             // Avalon❗✔️:               ADD_BIT(fp_counts, ncounts, NEXT_SEED(seed, extcon[j]*10013));
-            add_bit(counts, next_hash(seed, extcon[atom_index].wrapping_mul(10013) as u64));
+            add_bit(
+                counts,
+                next_hash(seed, extcon[atom_index].wrapping_mul(10013) as u64),
+            );
             // Avalon❗✔️: // ADD_BIT(fp_counts, ncounts, NEXT_SEED(seed, extcon[j]*40013));
             // Avalon❗✔️: 	      result += 1;
             result += 1;
@@ -176,7 +179,9 @@ fn count_non_sss_bits(
                 // Avalon❗✔️:                       if (length_matrix[j][jj] == (1<<k))
                 // Avalon❗✔️:                           break;
                 let mut path_length = 0_i32;
-                while path_length < 12 && length_matrix[atom_index][other_index] != 1_i32 << path_length {
+                while path_length < 12
+                    && length_matrix[atom_index][other_index] != 1_i32 << path_length
+                {
                     path_length += 1;
                 }
                 // Avalon❗✔️:                   if (k >= 12) continue;    // multiple paths => no chain connection
@@ -194,7 +199,10 @@ fn count_non_sss_bits(
                     .wrapping_add(extcon[other_index].wrapping_mul(2003));
                 add_bit(
                     counts,
-                    next_hash(next_hash(seed, path_length.wrapping_mul(3) as u64), ring_pair as u64),
+                    next_hash(
+                        next_hash(seed, path_length.wrapping_mul(3) as u64),
+                        ring_pair as u64,
+                    ),
                 );
                 // Avalon❗✔️:                   // bit for position
                 // Avalon❗✔️:                   ADD_BIT(fp_counts, ncounts, NEXT_SEED(NEXT_SEED(seed,5*k), extcon2[j]*2013 + extcon[jj]*1003));
@@ -225,7 +233,10 @@ fn count_non_sss_bits(
                     .wrapping_add(extcon2[other_index].wrapping_mul(3003));
                 add_bit(
                     counts,
-                    next_hash(next_hash(seed, path_length.wrapping_mul(7) as u64), positions as u64),
+                    next_hash(
+                        next_hash(seed, path_length.wrapping_mul(7) as u64),
+                        positions as u64,
+                    ),
                 );
                 // Avalon❗✔️: 		  result += 4;
                 result += 4;
@@ -331,7 +342,10 @@ fn count_non_sss_bits(
             // Avalon❗✔️:               ADD_BIT(fp_counts, ncounts, NEXT_SEED(NEXT_SEED(seed,4), extcon[j]*3013));
             add_bit(
                 counts,
-                next_hash(next_hash(seed, 4), extcon[atom_index].wrapping_mul(3013) as u64),
+                next_hash(
+                    next_hash(seed, 4),
+                    extcon[atom_index].wrapping_mul(3013) as u64,
+                ),
             );
             // Avalon❗✔️: // ADD_BIT(fp_counts, ncounts, NEXT_SEED(NEXT_SEED(seed,4), extcon[j]*7013));
             // Avalon❗✔️: // ADD_BIT(fp_counts, ncounts, extcon[j]*16013 + 4*seed);
@@ -348,7 +362,11 @@ fn count_non_sss_bits(
     result
 }
 
-fn propagate_ring_connectivity(state: &FingerprintPreprocessingState, extcon: &mut [i32], extcon2: &mut [i32]) {
+fn propagate_ring_connectivity(
+    state: &FingerprintPreprocessingState,
+    extcon: &mut [i32],
+    extcon2: &mut [i32],
+) {
     // Avalon❗✔️:       for (i=0; i<32; i++)
     // Avalon❗✔️:       {
     for _ in 0..32 {
@@ -497,7 +515,17 @@ non_sss_exclude=scaffold_atom_8_dy1 result=22 counts=7:3,10:1,17:1,21:8,22:3,25:
 
     fn scaffold_fixture() -> MoleculeState {
         let symbols = ["C", "N", "O", "C", "S", "P", "Cl", "R"];
-        let endpoints = [[1, 2], [2, 3], [3, 1], [4, 5], [5, 6], [6, 7], [7, 4], [1, 4], [2, 8]];
+        let endpoints = [
+            [1, 2],
+            [2, 3],
+            [3, 1],
+            [4, 5],
+            [5, 6],
+            [6, 7],
+            [7, 4],
+            [1, 4],
+            [2, 8],
+        ];
         let mut molecule = MoleculeState {
             atoms: symbols
                 .into_iter()
@@ -537,10 +565,18 @@ non_sss_exclude=scaffold_atom_8_dy1 result=22 counts=7:3,10:1,17:1,21:8,22:3,25:
                 bytes[index / 8] |= 1 << (index % 8);
             }
         }
-        bytes.into_iter().map(|byte| format!("{byte:02x}")).collect()
+        bytes
+            .into_iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect()
     }
 
-    fn run_case(mask: u32, as_query: bool, daylight: bool, exclude_atom: i32) -> (i32, String, String) {
+    fn run_case(
+        mask: u32,
+        as_query: bool,
+        daylight: bool,
+        exclude_atom: i32,
+    ) -> (i32, String, String) {
         let mut molecule = scaffold_fixture();
         let mut counts = vec![0_i32; 64];
         let result = count_non_sss_flag_families(
@@ -557,7 +593,9 @@ non_sss_exclude=scaffold_atom_8_dy1 result=22 counts=7:3,10:1,17:1,21:8,22:3,25:
 
     #[test]
     fn non_sss_single_combined_query_and_aromaticity_matrix_matches_native() {
-        let mut expected = NATIVE_GOLDENS.lines().filter(|line| line.starts_with("non_sss="));
+        let mut expected = NATIVE_GOLDENS
+            .lines()
+            .filter(|line| line.starts_with("non_sss="));
         for daylight in [false, true] {
             for as_query in [false, true] {
                 for &mask in NON_SSS_MASKS {
@@ -586,7 +624,11 @@ non_sss_exclude=scaffold_atom_8_dy1 result=22 counts=7:3,10:1,17:1,21:8,22:3,25:
                     "non_sss_exclude=scaffold_atom_{exclude_atom}_dy{} result={result} counts={counts}",
                     u8::from(daylight)
                 );
-                assert_eq!(Some(actual.as_str()), expected.next(), "exclude {exclude_atom}");
+                assert_eq!(
+                    Some(actual.as_str()),
+                    expected.next(),
+                    "exclude {exclude_atom}"
+                );
             }
         }
         assert_eq!(None, expected.next());
@@ -595,11 +637,25 @@ non_sss_exclude=scaffold_atom_8_dy1 result=22 counts=7:3,10:1,17:1,21:8,22:3,25:
     #[test]
     fn shortcut_label_flag_controls_the_source_hash_color() {
         let mut without_shortcut = scaffold_fixture();
-        prepare_fingerprint_state(&mut without_shortcut, AvalonFingerprintFlags::SCAFFOLD_IDS, false, 0, 0).unwrap();
+        prepare_fingerprint_state(
+            &mut without_shortcut,
+            AvalonFingerprintFlags::SCAFFOLD_IDS,
+            false,
+            0,
+            0,
+        )
+        .unwrap();
         assert_eq!(without_shortcut.atoms[7].color, 0);
 
         let mut with_shortcut = scaffold_fixture();
-        prepare_fingerprint_state(&mut with_shortcut, AvalonFingerprintFlags::SHORTCUT_LABELS, false, 0, 0).unwrap();
+        prepare_fingerprint_state(
+            &mut with_shortcut,
+            AvalonFingerprintFlags::SHORTCUT_LABELS,
+            false,
+            0,
+            0,
+        )
+        .unwrap();
         assert_eq!(
             with_shortcut.atoms[7].color,
             ((hash_string("ALA") & 0x00ff_ff00) | 119) as i32

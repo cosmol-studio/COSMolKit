@@ -11,7 +11,10 @@ fn toolkit_error(call: &'static str, detail: &str) -> InchiToolkitError {
 }
 
 fn require_methane(molecule: &InchiMolecule, call: &'static str) -> Result<(), InchiToolkitError> {
-    if molecule.atoms().len() != 1 || molecule.atoms()[0].atomic_number != 6 || !molecule.bonds().is_empty() {
+    if molecule.atoms().len() != 1
+        || molecule.atoms()[0].atomic_number != 6
+        || !molecule.bonds().is_empty()
+    {
         return Err(toolkit_error(
             call,
             "this example adapter accepts only one carbon atom with no bonds",
@@ -25,12 +28,19 @@ fn unsupported(call: &'static str) -> InchiToolkitError {
 }
 
 impl MolToInchiToolkit for MethaneToolkit {
-    fn needs_update_property_cache(&mut self, molecule: &InchiMolecule) -> Result<bool, InchiToolkitError> {
+    fn needs_update_property_cache(
+        &mut self,
+        molecule: &InchiMolecule,
+    ) -> Result<bool, InchiToolkitError> {
         require_methane(molecule, "needs_update_property_cache")?;
         Ok(false)
     }
 
-    fn update_property_cache(&mut self, molecule: &mut InchiMolecule, strict: bool) -> Result<(), InchiToolkitError> {
+    fn update_property_cache(
+        &mut self,
+        molecule: &mut InchiMolecule,
+        strict: bool,
+    ) -> Result<(), InchiToolkitError> {
         require_methane(molecule, "update_property_cache")?;
         if strict {
             return Err(unsupported("update_property_cache(strict=true)"));
@@ -38,7 +48,11 @@ impl MolToInchiToolkit for MethaneToolkit {
         Ok(())
     }
 
-    fn kekulize(&mut self, molecule: &mut InchiMolecule, mark_atoms_bonds: bool) -> Result<(), InchiToolkitError> {
+    fn kekulize(
+        &mut self,
+        molecule: &mut InchiMolecule,
+        mark_atoms_bonds: bool,
+    ) -> Result<(), InchiToolkitError> {
         require_methane(molecule, "kekulize")?;
         if mark_atoms_bonds {
             return Err(unsupported("kekulize(mark_atoms_bonds=true)"));
@@ -60,7 +74,11 @@ impl MolToInchiToolkit for MethaneToolkit {
         }
     }
 
-    fn total_num_hydrogens(&mut self, molecule: &InchiMolecule, atom_index: u32) -> Result<u32, InchiToolkitError> {
+    fn total_num_hydrogens(
+        &mut self,
+        molecule: &InchiMolecule,
+        atom_index: u32,
+    ) -> Result<u32, InchiToolkitError> {
         require_methane(molecule, "total_num_hydrogens")?;
         molecule
             .atoms()
@@ -77,7 +95,11 @@ impl MolToInchiToolkit for MethaneToolkit {
         Err(unsupported("calc_implicit_valence"))
     }
 
-    fn total_degree(&mut self, molecule: &InchiMolecule, atom_index: u32) -> Result<u32, InchiToolkitError> {
+    fn total_degree(
+        &mut self,
+        molecule: &InchiMolecule,
+        atom_index: u32,
+    ) -> Result<u32, InchiToolkitError> {
         require_methane(molecule, "total_degree")?;
         if atom_index == 0 {
             Ok(0)
@@ -102,7 +124,11 @@ impl InchiToMolToolkit for MethaneToolkit {
         }
     }
 
-    fn update_property_cache(&mut self, molecule: &mut InchiMolecule, strict: bool) -> Result<(), InchiToolkitError> {
+    fn update_property_cache(
+        &mut self,
+        molecule: &mut InchiMolecule,
+        strict: bool,
+    ) -> Result<(), InchiToolkitError> {
         require_methane(molecule, "update_property_cache")?;
         if strict {
             return Err(unsupported("update_property_cache(strict=true)"));
@@ -110,7 +136,10 @@ impl InchiToMolToolkit for MethaneToolkit {
         Ok(())
     }
 
-    fn assign_atom_cip_ranks(&mut self, _molecule: &mut InchiMolecule) -> Result<Vec<u32>, InchiToolkitError> {
+    fn assign_atom_cip_ranks(
+        &mut self,
+        _molecule: &mut InchiMolecule,
+    ) -> Result<Vec<u32>, InchiToolkitError> {
         Err(unsupported("assign_atom_cip_ranks"))
     }
 
@@ -118,7 +147,10 @@ impl InchiToMolToolkit for MethaneToolkit {
         Err(unsupported("remove_hydrogens"))
     }
 
-    fn sanitize_molecule(&mut self, _molecule: &mut InchiMolecule) -> Result<(), InchiToolkitError> {
+    fn sanitize_molecule(
+        &mut self,
+        _molecule: &mut InchiMolecule,
+    ) -> Result<(), InchiToolkitError> {
         Err(unsupported("sanitize_molecule"))
     }
 

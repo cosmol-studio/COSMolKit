@@ -1,7 +1,7 @@
 use cosmolkit_core::{
-    AddHsParams, AtomSpec, BondOrder, BondSpec, ChiralTag, CipStatePolicy, Element, MOLECULE_OPS, Molecule,
-    MoleculeBuilder, OperationDomain, RemoveHsParams, SanitizeOps, chemistry::tautomer::TautomerEnumerator,
-    mol_from_binary, mol_to_binary,
+    AddHsParams, AtomSpec, BondOrder, BondSpec, ChiralTag, CipStatePolicy, Element, MOLECULE_OPS,
+    Molecule, MoleculeBuilder, OperationDomain, RemoveHsParams, SanitizeOps,
+    chemistry::tautomer::TautomerEnumerator, mol_from_binary, mol_to_binary,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -82,11 +82,19 @@ impl CipState {
         assert_eq!(self.computed, None);
         assert!(!self.computed_is_computed);
         assert!(self.atom_neighbor_orders.iter().all(Option::is_none));
-        assert!(self.atom_neighbor_order_is_computed.iter().all(|computed| !computed));
+        assert!(
+            self.atom_neighbor_order_is_computed
+                .iter()
+                .all(|computed| !computed)
+        );
         assert!(self.atom_ranks.iter().all(Option::is_none));
         assert!(self.atom_rank_is_computed.iter().all(|computed| !computed));
         assert!(self.bond_neighbor_orders.iter().all(Option::is_none));
-        assert!(self.bond_neighbor_order_is_computed.iter().all(|computed| !computed));
+        assert!(
+            self.bond_neighbor_order_is_computed
+                .iter()
+                .all(|computed| !computed)
+        );
     }
 }
 
@@ -103,7 +111,10 @@ fn lifecycle_seed() -> Molecule {
     let chlorine = builder.add_atom(AtomSpec::new(Element::CL));
     let bromine = builder.add_atom(AtomSpec::new(Element::BR));
     let hydrogen = builder.add_atom(AtomSpec::new(Element::H));
-    for (offset, neighbor) in [fluorine, chlorine, bromine, hydrogen].into_iter().enumerate() {
+    for (offset, neighbor) in [fluorine, chlorine, bromine, hydrogen]
+        .into_iter()
+        .enumerate()
+    {
         let mut bond = BondSpec::new(center, neighbor, BondOrder::Single);
         if offset == 0 {
             bond = bond
@@ -134,7 +145,9 @@ fn run_topology_operation(method: &str, molecule: &Molecule) -> Vec<Molecule> {
     let single = match method {
         "with_hydrogens_with_params" => molecule.with_hydrogens_with_params(AddHsParams::default()),
         "without_hydrogens_with_sanitize" => molecule.without_hydrogens_with_sanitize(true),
-        "without_hydrogens_with_params" => molecule.without_hydrogens_with_params(RemoveHsParams::default(), true),
+        "without_hydrogens_with_params" => {
+            molecule.without_hydrogens_with_params(RemoveHsParams::default(), true)
+        }
         "with_kekulized_bonds" => molecule.with_kekulized_bonds(false),
         "sanitize_with_ops" => molecule.sanitize_with_ops(SanitizeOps::ALL),
         "with_assigned_valence_strict" => molecule.with_assigned_valence_strict(true),
@@ -168,7 +181,11 @@ fn cip_state_lifecycle_matrix_executes_every_registered_topology_operation() {
     {
         executed += 1;
         let results = run_topology_operation(operation.method, &source);
-        assert!(!results.is_empty(), "{} emitted no branches", operation.method);
+        assert!(
+            !results.is_empty(),
+            "{} emitted no branches",
+            operation.method
+        );
         for result in results {
             let state = CipState::from_molecule(&result);
             match operation.cip_state {
@@ -186,7 +203,12 @@ fn cip_state_lifecycle_matrix_executes_every_registered_topology_operation() {
                 }
             }
         }
-        assert_eq!(source, lifecycle_seed(), "{} mutated its source", operation.method);
+        assert_eq!(
+            source,
+            lifecycle_seed(),
+            "{} mutated its source",
+            operation.method
+        );
     }
 
     assert_eq!(
@@ -206,7 +228,12 @@ fn cip_state_lifecycle_clone_and_binary_roundtrip_preserve_complete_state() {
     let expected = CipState::from_molecule(&labeled);
 
     assert!(expected.computed_is_computed);
-    assert!(expected.atom_code_is_computed.iter().all(|computed| !computed));
+    assert!(
+        expected
+            .atom_code_is_computed
+            .iter()
+            .all(|computed| !computed)
+    );
     assert!(
         expected
             .atom_neighbor_order_is_computed
@@ -221,7 +248,12 @@ fn cip_state_lifecycle_clone_and_binary_roundtrip_preserve_complete_state() {
             .zip(&expected.atom_ranks)
             .all(|(computed, value)| value.is_none() || *computed)
     );
-    assert!(expected.bond_code_is_computed.iter().all(|computed| !computed));
+    assert!(
+        expected
+            .bond_code_is_computed
+            .iter()
+            .all(|computed| !computed)
+    );
     assert!(
         expected
             .bond_neighbor_order_is_computed
@@ -263,16 +295,24 @@ fn computed_clearing_uses_membership_instead_of_cip_property_names() {
                 .with_prop("_CIPNeighborOrder", "user-bond-neighbors"),
         )
         .expect("membership regression bond must build");
-    let molecule = builder.build().expect("membership regression molecule must build");
+    let molecule = builder
+        .build()
+        .expect("membership regression molecule must build");
 
     let sanitized = molecule
         .sanitize()
         .expect("non-computed CIP-named properties must not violate the clear-computed contract");
 
     assert_eq!(sanitized.atoms()[0].prop("_CIPCode"), Some("user-code"));
-    assert_eq!(sanitized.atoms()[0].prop("_CIPNeighborOrder"), Some("user-neighbors"));
+    assert_eq!(
+        sanitized.atoms()[0].prop("_CIPNeighborOrder"),
+        Some("user-neighbors")
+    );
     assert_eq!(sanitized.atoms()[0].prop("_CIPRank"), Some("user-rank"));
-    assert_eq!(sanitized.bonds()[0].prop("_CIPCode"), Some("user-bond-code"));
+    assert_eq!(
+        sanitized.bonds()[0].prop("_CIPCode"),
+        Some("user-bond-code")
+    );
     assert_eq!(
         sanitized.bonds()[0].prop("_CIPNeighborOrder"),
         Some("user-bond-neighbors")

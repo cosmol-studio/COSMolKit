@@ -1,12 +1,12 @@
 use std::sync::Mutex;
 
 use cosmolkit_core::{
-    BlockSet, CipStatePolicy, DerivedState, InvariantCheckSet, MOLECULE_OPS, MappingRequirement, Molecule,
-    MoleculeOpKind, MoleculeOpOutput, OPERATION_INVARIANT_MATRIX, OperationDomain, OperationError, PARITY_MATRIX,
-    ParityPolicy, SUPPORT_MATRIX, SupportStatus, TopologyEditKind,
+    BlockSet, CipStatePolicy, DerivedState, InvariantCheckSet, MOLECULE_OPS, MappingRequirement,
+    Molecule, MoleculeOpKind, MoleculeOpOutput, OPERATION_INVARIANT_MATRIX, OperationDomain,
+    OperationError, PARITY_MATRIX, ParityPolicy, SUPPORT_MATRIX, SupportStatus, TopologyEditKind,
     chemistry::tautomer::{
-        TautomerEnumeration, TautomerEnumerationCallback, TautomerEnumerationStatus, TautomerEnumerator,
-        TautomerOptions, TautomerRunError,
+        TautomerEnumeration, TautomerEnumerationCallback, TautomerEnumerationStatus,
+        TautomerEnumerator, TautomerOptions, TautomerRunError,
     },
 };
 
@@ -41,7 +41,10 @@ fn registry_declares_the_complete_multiple_output_tautomer_contract() {
     assert_eq!(operation.may_mutate, operation.access.write());
     assert_eq!(operation.auto_remap, BlockSet::NONE);
     assert_eq!(operation.requires_mapping, MappingRequirement::None);
-    assert_eq!(operation.cip_state, CipStatePolicy::TautomerSourceTransition);
+    assert_eq!(
+        operation.cip_state,
+        CipStatePolicy::TautomerSourceTransition
+    );
     assert_eq!(
         operation.derived_effects.recompute(),
         DerivedState::RINGS
@@ -55,7 +58,10 @@ fn registry_declares_the_complete_multiple_output_tautomer_contract() {
         operation.derived_effects.invalidate(),
         DerivedState::DRAWING.union(DerivedState::FINGERPRINT)
     );
-    assert_eq!(operation.derived_effects.operation_defined(), DerivedState::NONE);
+    assert_eq!(
+        operation.derived_effects.operation_defined(),
+        DerivedState::NONE
+    );
     assert_eq!(operation.support, SupportStatus::Experimental);
     assert_eq!(operation.parity, ParityPolicy::RequiredWhenSupported);
     assert!(operation.io_roundtrip);
@@ -98,7 +104,9 @@ fn registry_declares_the_complete_multiple_output_tautomer_contract() {
 #[test]
 fn enumeration_emits_canonical_key_order_and_aligned_rich_result_metadata() {
     let source = Molecule::from_smiles("CC(C)=O").expect("parse acetone");
-    let result = TautomerEnumerator::new().enumerate(&source).expect("enumerate acetone");
+    let result = TautomerEnumerator::new()
+        .enumerate(&source)
+        .expect("enumerate acetone");
 
     assert_eq!(result.status(), TautomerEnumerationStatus::Completed);
     assert_eq!(result.len(), 2);
@@ -130,7 +138,12 @@ fn enumeration_emits_canonical_key_order_and_aligned_rich_result_metadata() {
 
     let copied = result.molecules();
     assert_eq!(copied.len(), result.len());
-    assert!(copied.iter().zip(result.iter()).all(|(left, right)| left == right));
+    assert!(
+        copied
+            .iter()
+            .zip(result.iter())
+            .all(|(left, right)| left == right)
+    );
     assert_eq!(result.clone(), result);
 }
 
@@ -170,8 +183,14 @@ fn enumeration_preserves_source_value_coordinates_properties_and_output_invarian
         assert_eq!(output.conformers_3d(), expected_3d);
         assert_eq!(output.properties(), &expected_properties);
         assert_eq!(output.prop("source_id"), Some("tautomer-operation"));
-        assert_eq!(output.conformers_2d()[0].coordinates().len(), output.num_atoms());
-        assert_eq!(output.conformers_3d()[0].coordinates().len(), output.num_atoms());
+        assert_eq!(
+            output.conformers_2d()[0].coordinates().len(),
+            output.num_atoms()
+        );
+        assert_eq!(
+            output.conformers_3d()[0].coordinates().len(),
+            output.num_atoms()
+        );
         output
             .with_assigned_valence()
             .expect("every emitted branch remains valid for a strict topology operation");
@@ -184,17 +203,28 @@ fn zero_and_exact_limits_preserve_source_defined_status_and_initial_branch() {
     let source_smiles = source.to_smiles(true).unwrap();
 
     for max_transforms in [0, 1] {
-        let enumerator =
-            TautomerEnumerator::from_options(TautomerOptions::default().with_max_transforms(max_transforms));
-        let result = enumerator.enumerate(&source).expect("transform-limited run");
-        assert_eq!(result.status(), TautomerEnumerationStatus::MaxTransformsReached);
+        let enumerator = TautomerEnumerator::from_options(
+            TautomerOptions::default().with_max_transforms(max_transforms),
+        );
+        let result = enumerator
+            .enumerate(&source)
+            .expect("transform-limited run");
+        assert_eq!(
+            result.status(),
+            TautomerEnumerationStatus::MaxTransformsReached
+        );
         assert_eq!(result.canonical_smiles(), [source_smiles.clone()]);
     }
 
     for max_tautomers in [0, 1] {
-        let enumerator = TautomerEnumerator::from_options(TautomerOptions::default().with_max_tautomers(max_tautomers));
+        let enumerator = TautomerEnumerator::from_options(
+            TautomerOptions::default().with_max_tautomers(max_tautomers),
+        );
         let result = enumerator.enumerate(&source).expect("tautomer-limited run");
-        assert_eq!(result.status(), TautomerEnumerationStatus::MaxTautomersReached);
+        assert_eq!(
+            result.status(),
+            TautomerEnumerationStatus::MaxTautomersReached
+        );
         assert_eq!(result.canonical_smiles(), [source_smiles.clone()]);
     }
     assert_eq!(source.to_smiles(true).unwrap(), source_smiles);

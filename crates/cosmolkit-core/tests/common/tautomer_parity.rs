@@ -1,7 +1,8 @@
 use std::collections::BTreeMap;
 
 use cosmolkit_core::{
-    Hybridization, Molecule, SmilesParseParams, TautomerCatalog, TautomerEnumerator, TautomerOptions, score_tautomer,
+    Hybridization, Molecule, SmilesParseParams, TautomerCatalog, TautomerEnumerator,
+    TautomerOptions, score_tautomer,
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -122,23 +123,36 @@ pub fn configured_enumerator(parameters: &Value) -> TautomerEnumerator<'static> 
         .with_remove_isotopic_hydrogens(parameters["remove_isotopic_hydrogens"].as_bool().unwrap())
         .with_reassign_stereo(parameters["reassign_stereo"].as_bool().unwrap());
     if parameters["catalog"] == "v1" {
-        TautomerEnumerator::from_catalog_and_options(TautomerCatalog::v1().expect("compile V1 catalog"), options)
+        TautomerEnumerator::from_catalog_and_options(
+            TautomerCatalog::v1().expect("compile V1 catalog"),
+            options,
+        )
     } else {
         TautomerEnumerator::from_options(options)
     }
 }
 
 pub fn parse_record(record: &GoldenRecord) -> Result<Molecule, String> {
-    let parameters = SmilesParseParams::with_sanitize(record.sanitize).with_remove_hs(record.remove_hs);
-    Molecule::from_smiles_with_params(&record.smiles, &parameters).map_err(|error| error.to_string())
+    let parameters =
+        SmilesParseParams::with_sanitize(record.sanitize).with_remove_hs(record.remove_hs);
+    Molecule::from_smiles_with_params(&record.smiles, &parameters)
+        .map_err(|error| error.to_string())
 }
 
-pub fn assert_branch(record: &GoldenRecord, name: &str, expected: &GoldenBranch, molecule: &Molecule) {
+pub fn assert_branch(
+    record: &GoldenRecord,
+    name: &str,
+    expected: &GoldenBranch,
+    molecule: &Molecule,
+) {
     let context = format!(
         "row {} case {} source {} branch {name}",
         record.row, record.case_id, record.source
     );
-    assert_eq!(expected.parameters["name"], name, "{context}: profile identity");
+    assert_eq!(
+        expected.parameters["name"], name,
+        "{context}: profile identity"
+    );
     let enumerator = configured_enumerator(&expected.parameters);
     assert_eq!(
         enumerator.max_tautomers(),
@@ -162,7 +176,9 @@ pub fn assert_branch(record: &GoldenRecord, name: &str, expected: &GoldenBranch,
     );
     assert_eq!(
         enumerator.remove_isotopic_hydrogens(),
-        expected.parameters["remove_isotopic_hydrogens"].as_bool().unwrap(),
+        expected.parameters["remove_isotopic_hydrogens"]
+            .as_bool()
+            .unwrap(),
         "{context}: remove isotopic hydrogens option"
     );
     assert_eq!(
@@ -172,7 +188,11 @@ pub fn assert_branch(record: &GoldenRecord, name: &str, expected: &GoldenBranch,
     );
     assert_eq!(
         enumerator.catalog().transforms().len(),
-        if expected.parameters["catalog"] == "v1" { 36 } else { 37 },
+        if expected.parameters["catalog"] == "v1" {
+            36
+        } else {
+            37
+        },
         "{context}: catalog option"
     );
     let result = enumerator.enumerate(molecule);
@@ -201,17 +221,28 @@ pub fn assert_branch(record: &GoldenRecord, name: &str, expected: &GoldenBranch,
         "{context}: ordered outputs"
     );
     assert_eq!(
-        result.modified_atoms().iter().map(|id| id.index()).collect::<Vec<_>>(),
+        result
+            .modified_atoms()
+            .iter()
+            .map(|id| id.index())
+            .collect::<Vec<_>>(),
         expected.modified_atoms,
         "{context}: modified atoms"
     );
     assert_eq!(
-        result.modified_bonds().iter().map(|id| id.index()).collect::<Vec<_>>(),
+        result
+            .modified_bonds()
+            .iter()
+            .map(|id| id.index())
+            .collect::<Vec<_>>(),
         expected.modified_bonds,
         "{context}: modified bonds"
     );
     let actual_states = result.iter().map(molecule_state).collect::<Vec<_>>();
-    assert_eq!(actual_states, expected.molecule_states, "{context}: molecule states");
+    assert_eq!(
+        actual_states, expected.molecule_states,
+        "{context}: molecule states"
+    );
     let actual_scores = result
         .iter()
         .map(|tautomer| {
@@ -224,12 +255,17 @@ pub fn assert_branch(record: &GoldenRecord, name: &str, expected: &GoldenBranch,
             })
         })
         .collect::<Vec<_>>();
-    assert_eq!(actual_scores, expected.scores, "{context}: score components");
+    assert_eq!(
+        actual_scores, expected.scores,
+        "{context}: score components"
+    );
     let canonical = enumerator
         .pick_canonical(&result)
         .unwrap_or_else(|error| panic!("{context}: canonical selection failed: {error}"));
     assert_eq!(
-        canonical.to_smiles(true).expect("serialize canonical tautomer"),
+        canonical
+            .to_smiles(true)
+            .expect("serialize canonical tautomer"),
         expected.canonical_smiles.as_deref().unwrap(),
         "{context}: canonical SMILES"
     );
@@ -245,12 +281,19 @@ pub fn assert_endpoint_input(row: usize, kind: &str, expected: &GoldenEndpointIn
     let parsed = Molecule::from_smiles(&expected.smiles);
     if !expected.parse["ok"].as_bool().unwrap() {
         assert!(parsed.is_err(), "{context}: expected parse failure");
-        assert!(expected.branches.is_empty(), "{context}: failed parse branches");
+        assert!(
+            expected.branches.is_empty(),
+            "{context}: failed parse branches"
+        );
         return;
     }
     let molecule = parsed.unwrap_or_else(|error| panic!("{context}: parse failed: {error}"));
     for (name, branch) in &expected.branches {
-        assert_eq!(branch.parameters["name"], name.as_str(), "{context}: profile");
+        assert_eq!(
+            branch.parameters["name"],
+            name.as_str(),
+            "{context}: profile"
+        );
         let enumerator = configured_enumerator(&branch.parameters);
         let actual = enumerator.canonicalize(&molecule);
         if !branch.ok {
@@ -268,7 +311,9 @@ pub fn assert_endpoint_input(row: usize, kind: &str, expected: &GoldenEndpointIn
         }
         let actual = actual.unwrap_or_else(|error| panic!("{context} {name}: {error}"));
         assert_eq!(
-            actual.to_smiles(true).expect("serialize canonical endpoint"),
+            actual
+                .to_smiles(true)
+                .expect("serialize canonical endpoint"),
             branch.canonical_smiles.as_deref().unwrap(),
             "{context} {name}: canonical SMILES"
         );

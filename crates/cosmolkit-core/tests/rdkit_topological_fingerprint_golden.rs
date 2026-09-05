@@ -58,15 +58,26 @@ struct GoldenParameters {
 
 fn load_golden() -> Vec<GoldenRecord> {
     let path = parity_data::golden_path("rdkit_topological_fingerprint.jsonl");
-    let file = File::open(&path).unwrap_or_else(|error| panic!("failed to open {}: {error}", path.display()));
+    let file = File::open(&path)
+        .unwrap_or_else(|error| panic!("failed to open {}: {error}", path.display()));
     BufReader::new(file)
         .lines()
         .enumerate()
         .map(|(line, content)| {
-            let content =
-                content.unwrap_or_else(|error| panic!("failed to read {} line {}: {error}", path.display(), line + 1));
-            serde_json::from_str(&content)
-                .unwrap_or_else(|error| panic!("failed to parse {} line {}: {error}", path.display(), line + 1))
+            let content = content.unwrap_or_else(|error| {
+                panic!(
+                    "failed to read {} line {}: {error}",
+                    path.display(),
+                    line + 1
+                )
+            });
+            serde_json::from_str(&content).unwrap_or_else(|error| {
+                panic!(
+                    "failed to parse {} line {}: {error}",
+                    path.display(),
+                    line + 1
+                )
+            })
         })
         .collect()
 }
@@ -82,7 +93,10 @@ fn corpus_smiles() -> Vec<String> {
         .collect()
 }
 
-fn params_from_golden(parameters: &GoldenParameters, atom_count: usize) -> TopologicalFingerprintParams {
+fn params_from_golden(
+    parameters: &GoldenParameters,
+    atom_count: usize,
+) -> TopologicalFingerprintParams {
     let mut params = TopologicalFingerprintParams {
         min_path: parameters.min_path,
         max_path: parameters.max_path,
@@ -117,11 +131,23 @@ fn rdkit_topological_fingerprint_golden_has_one_record_per_active_corpus_row() {
         assert_eq!(record.row, row, "golden row index changed at row {row}");
         assert_eq!(record.smiles, *smiles, "golden SMILES changed at row {row}");
         if record.rdkit_ok {
-            assert!(record.error.is_none(), "RDKit-success row {row} has an error");
-            assert!(!record.branches.is_empty(), "RDKit-success row {row} has no branches");
+            assert!(
+                record.error.is_none(),
+                "RDKit-success row {row} has an error"
+            );
+            assert!(
+                !record.branches.is_empty(),
+                "RDKit-success row {row} has no branches"
+            );
         } else {
-            assert!(record.branches.is_empty(), "RDKit-failed row {row} has branches");
-            assert!(record.error.is_some(), "RDKit-failed row {row} has no error");
+            assert!(
+                record.branches.is_empty(),
+                "RDKit-failed row {row} has branches"
+            );
+            assert!(
+                record.error.is_some(),
+                "RDKit-failed row {row} has no error"
+            );
         }
     }
 }
@@ -136,7 +162,10 @@ fn rdkit_topological_fingerprint_matches_every_active_golden_profile_exactly() {
         .first()
         .map(|record| record.branches.keys().cloned().collect::<Vec<_>>())
         .unwrap_or_default();
-    assert!(!expected_branch_names.is_empty(), "RDKFingerprint profile is empty");
+    assert!(
+        !expected_branch_names.is_empty(),
+        "RDKFingerprint profile is empty"
+    );
 
     golden
         .par_iter()

@@ -33,21 +33,33 @@ full = [
     "stereoisomers",
     "confseq",
 ]
-batch = ["dep:indicatif", "dep:rayon", "depict", "fingerprints", "io"]
-confseq = ["dep:rayon"]
-depict = ["dep:glam", "dep:resvg", "dep:tiny-skia", "dep:usvg", "io"]
+batch = ["dep:indicatif", "dep:rayon", "__batch_impl"]
+confseq = ["dep:rayon", "__io_impl"]
+depict = ["dep:glam", "dep:resvg", "dep:tiny-skia", "dep:usvg", "__depict_impl"]
 descriptors = []
-fingerprints = ["dep:rayon", "io"]
-hashing = ["fingerprints"]
+fingerprints = ["dep:rayon", "__fingerprint_impl"]
+hashing = ["__hashing_impl"]
 inchi = ["dep:cosmolkit-inchi"]
-io = []
+io = ["__io_impl"]
 serialization = ["dep:postcard"]
 stereoisomers = ["dep:num-bigint"]
+
+# Internal implementation capabilities. Cargo has no private feature
+# namespace, so the double-underscore names are deliberately undocumented
+# and are only selected transitively by public capabilities. They preserve
+# colocated source reuse without making one public domain feature enable
+# another public API.
+__batch_impl = ["__depict_impl", "__fingerprint_impl", "__io_impl"]
+__depict_impl = ["dep:glam", "dep:resvg", "dep:tiny-skia", "dep:usvg", "__io_impl"]
+__fingerprint_impl = ["dep:rayon", "__io_impl"]
+__hashing_impl = ["__fingerprint_impl"]
+__io_impl = []
 runtime-invariants = []
 op-contracts = []
 op-contracts-strict = ["runtime-invariants", "op-contracts"]
 
 [dependencies]
+cosmolkit-cx = { version = "0.3.0", path = "../cosmolkit-cx" }
 cosmolkit-inchi = { version = "0.3.0", path = "../cosmolkit-inchi", optional = true }
 cosmolkit-macros = { version = "0.3.0", path = "../cosmolkit-macros" }
 cosmolkit-types = { version = "0.3.0", path = "../cosmolkit-types" }

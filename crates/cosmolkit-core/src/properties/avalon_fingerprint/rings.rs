@@ -98,7 +98,8 @@ impl BondSet {
         // Avalon❗✔️:    else
         // Avalon❗✔️:       return (0 != (set->bit_array[member/BASE_BITS] & ((set_base_t)1<<(member%BASE_BITS))));
         // Avalon❗✔️: }
-        member <= self.max_member && self.bit_array[member / BASE_BITS] & (1_u32 << (member % BASE_BITS)) != 0
+        member <= self.max_member
+            && self.bit_array[member / BASE_BITS] & (1_u32 << (member % BASE_BITS)) != 0
     }
 
     pub(super) const fn max_member(&self) -> usize {
@@ -215,7 +216,9 @@ impl BondSet {
         // Avalon❗✔️:           if (set1->bit_array[i] & set2->bit_array[i]) return (FALSE);
         let words = self.bit_array.len().max(other.bit_array.len());
         let result = (0..words).all(|index| {
-            self.bit_array.get(index).copied().unwrap_or(0) & other.bit_array.get(index).copied().unwrap_or(0) == 0
+            self.bit_array.get(index).copied().unwrap_or(0)
+                & other.bit_array.get(index).copied().unwrap_or(0)
+                == 0
         });
         // Avalon❗✔️:    }
         // Avalon❗✔️:    return(TRUE);
@@ -236,12 +239,16 @@ impl BondSet {
         // Avalon❗✔️:
         // Avalon❗✔️:    return(n);
         // Avalon❗✔️: }
-        (0..=self.max_member).filter(|&member| self.contains(member)).count()
+        (0..=self.max_member)
+            .filter(|&member| self.contains(member))
+            .count()
     }
 
     #[cfg(test)]
     fn members(&self) -> Vec<usize> {
-        (0..=self.max_member).filter(|&member| self.contains(member)).collect()
+        (0..=self.max_member)
+            .filter(|&member| self.contains(member))
+            .collect()
     }
 }
 
@@ -287,7 +294,11 @@ pub(super) fn ring_list(bonds: &[[usize; 2]]) -> Vec<BondSetNode> {
     // Avalon❗✔️:       if (natoms < bonds[i][0]) natoms = bonds[i][0];
     // Avalon❗✔️:       if (natoms < bonds[i][1]) natoms = bonds[i][1];
     // Avalon❗✔️:    }
-    let natoms = bonds.iter().flat_map(|bond| bond.iter().copied()).max().unwrap_or(0);
+    let natoms = bonds
+        .iter()
+        .flat_map(|bond| bond.iter().copied())
+        .max()
+        .unwrap_or(0);
     // Avalon❗✔️:    tree = TypeAlloc(natoms+1,struct tree_cell);
     // Avalon❗✔️:
     // Avalon❗✔️:    for (i=0; i<=natoms; i++)
@@ -465,7 +476,10 @@ pub(super) fn ring_list(bonds: &[[usize; 2]]) -> Vec<BondSetNode> {
             }
             // The C linked list prepends in O(1). Appending then reversing once
             // preserves its exact order while avoiding repeated Vec front insertion.
-            result.push(BondSetNode { cardinality, bond_set });
+            result.push(BondSetNode {
+                cardinality,
+                bond_set,
+            });
             // Avalon❗✔️:       }       /* else ring found */
         }
         // Avalon❗✔️:    }       /* for all bonds */
@@ -556,7 +570,10 @@ pub(super) fn combine_rings(rings: &mut Vec<BondSetNode>) {
             for second in first + 1..rings.len() {
                 // Avalon❗✔️:             // check first if there is any overlap
                 // Avalon❗✔️:             if (IntersectionIsEmpty(p1->bond_set,p2->bond_set)) continue;;
-                if rings[first].bond_set.intersection_is_empty(&rings[second].bond_set) {
+                if rings[first]
+                    .bond_set
+                    .intersection_is_empty(&rings[second].bond_set)
+                {
                     continue;
                 }
                 // Avalon❗✔️:             set = SetExclusiveUnion(CopySet(set,p1->bond_set),p2->bond_set);
@@ -567,7 +584,9 @@ pub(super) fn combine_rings(rings: &mut Vec<BondSetNode>) {
                 // Avalon❗✔️:             if (size > 0 &&
                 // Avalon❗✔️:                 (size <= p1->cardinality || size <= p2->cardinality))
                 // Avalon❗✔️:             {
-                if size > 0 && (size <= rings[first].cardinality || size <= rings[second].cardinality) {
+                if size > 0
+                    && (size <= rings[first].cardinality || size <= rings[second].cardinality)
+                {
                     // Avalon❗✔️:                if (p1->cardinality > p2->cardinality)
                     // Avalon❗✔️:                {
                     let target = if rings[first].cardinality > rings[second].cardinality {
@@ -637,7 +656,11 @@ pub(super) fn combine_rings(rings: &mut Vec<BondSetNode>) {
     // Avalon❗✔️: }
 }
 
-pub(super) fn proper_ring_pairs(base_rings: &[BondSetNode], maxnode: usize, bonds: &[[usize; 2]]) -> Vec<BondSetNode> {
+pub(super) fn proper_ring_pairs(
+    base_rings: &[BondSetNode],
+    maxnode: usize,
+    bonds: &[[usize; 2]],
+) -> Vec<BondSetNode> {
     // Avalon❗✔️: bond_set_node *ProperRingPairs(bond_set_node *base_rings, int maxnode,
     // Avalon❗✔️:                                unsigned bonds[][2])
     // Avalon❗✔️: /*
@@ -715,7 +738,10 @@ pub(super) fn proper_ring_pairs(base_rings: &[BondSetNode], maxnode: usize, bond
                 let cardinality = bond_set.cardinality();
                 // Avalon❗✔️:             ph->next = result;
                 // Avalon❗✔️:             result = ph;
-                result.push(BondSetNode { cardinality, bond_set });
+                result.push(BondSetNode {
+                    cardinality,
+                    bond_set,
+                });
                 // Avalon❗✔️:          }
             }
             // Avalon❗✔️:       }
@@ -752,7 +778,10 @@ pub(super) fn prepend_fused_ring_pairs(rings: &mut Vec<BondSetNode>) {
         for second in first + 1..original_len {
             // Avalon❗✔️:          // check first if there is any overlap
             // Avalon❗✔️:          if (IntersectionIsEmpty(plist->bond_set,plisth->bond_set)) continue;;
-            if rings[first].bond_set.intersection_is_empty(&rings[second].bond_set) {
+            if rings[first]
+                .bond_set
+                .intersection_is_empty(&rings[second].bond_set)
+            {
                 continue;
             }
             // Avalon❗✔️:          /* assumes allocated size is large enough */
@@ -923,7 +952,13 @@ mod tests {
         let values: Vec<u32> = (0..5).map(|_| random.next()).collect();
         assert_eq!(
             values,
-            [1_804_289_383, 846_930_886, 1_681_692_777, 1_714_636_915, 1_957_747_793]
+            [
+                1_804_289_383,
+                846_930_886,
+                1_681_692_777,
+                1_714_636_915,
+                1_957_747_793
+            ]
         );
     }
 
@@ -933,7 +968,10 @@ mod tests {
         let rings = ring_list(&bonds);
         assert_eq!(member_lists(&rings), vec![vec![3, 4, 5], vec![0, 1, 2]]);
         assert_eq!(
-            rings.iter().map(|ring| ring.cardinality).collect::<Vec<_>>(),
+            rings
+                .iter()
+                .map(|ring| ring.cardinality)
+                .collect::<Vec<_>>(),
             vec![3, 3]
         );
     }
@@ -952,7 +990,10 @@ mod tests {
 
         assert_eq!(rings.len(), 2);
         assert_eq!(
-            rings.iter().map(|ring| ring.cardinality).collect::<Vec<_>>(),
+            rings
+                .iter()
+                .map(|ring| ring.cardinality)
+                .collect::<Vec<_>>(),
             vec![3, 3]
         );
         assert_eq!(member_lists(&rings), vec![vec![0, 1, 4], vec![2, 3, 4]]);
@@ -962,9 +1003,15 @@ mod tests {
     fn native_fused_and_bridged_basis_member_order_is_locked() {
         let fused = [[1, 2], [2, 3], [3, 4], [4, 1], [3, 5], [5, 6], [6, 4]];
         let mut rings = ring_list(&fused);
-        assert_eq!(member_lists(&rings), vec![vec![2, 4, 5, 6], vec![0, 1, 2, 3]]);
+        assert_eq!(
+            member_lists(&rings),
+            vec![vec![2, 4, 5, 6], vec![0, 1, 2, 3]]
+        );
         combine_rings(&mut rings);
-        assert_eq!(member_lists(&rings), vec![vec![2, 4, 5, 6], vec![0, 1, 2, 3]]);
+        assert_eq!(
+            member_lists(&rings),
+            vec![vec![2, 4, 5, 6], vec![0, 1, 2, 3]]
+        );
 
         let bridged = [[1, 2], [2, 3], [3, 1], [3, 4], [4, 5], [5, 6], [6, 4]];
         let mut rings = ring_list(&bridged);

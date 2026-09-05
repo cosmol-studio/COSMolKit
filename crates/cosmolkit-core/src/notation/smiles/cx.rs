@@ -1,4 +1,10 @@
 use super::*;
+#[cfg(test)]
+use cosmolkit_cx::{CxAtomConstraint, CxCountConstraint};
+use cosmolkit_cx::{
+    CxCoordinateBondKind, CxDoubleBondStereoKind, CxRecord, CxStereoGroupKind, CxWedgeDirection,
+    ParsedCxExtensions,
+};
 
 pub(super) fn handle_cx_part_and_name(
     state: &mut SmilesBuildState,
@@ -43,7 +49,7 @@ pub(super) fn handle_cx_part_and_name(
     }
 
     if params.allow_cxsmiles && cx_part.starts_with('|') {
-        match parse_cx_extensions(state, cx_part) {
+        match parse_cx_extensions_shared(state, cx_part) {
             Ok(consumed) => {
                 state.set_property("_CXSMILES_Data", &cx_part[..consumed]);
                 if params.parse_name && consumed < cx_part.len() {
@@ -78,240 +84,501 @@ pub(super) fn handle_cx_part_and_name(
     Ok(())
 }
 
-pub(super) fn parse_cx_extensions(state: &mut SmilesBuildState, ext_text: &str) -> Result<usize, SmilesParseError> {
-    // BEGIN RDKIT CPP FUNCTION parseCXExtensions / parser::parse_it
-    // RDKit✔️✔️: void parseCXExtensions(RDKit::RWMol &mol, const std::string &extText,
-    // RDKit✔️✔️:                        std::string::const_iterator &first,
-    // RDKit✔️✔️:                        unsigned int startAtomIdx, unsigned int startBondIdx) {
-    // RDKit✔️✔️:   if (extText.empty()) {
-    // RDKit✔️✔️:     return;
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   if (extText[0] != '|') {
-    // RDKit✔️✔️:     throw RDKit::SmilesParseException(
-    // RDKit✔️✔️:         "CXSMILES extension does not start with |");
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   first = extText.begin();
-    // RDKit✔️✔️:   bool ok =
-    // RDKit✔️✔️:       parser::parse_it(first, extText.end(), mol, startAtomIdx, startBondIdx);
-    // RDKit✔️✔️:   if (!ok) {
-    // RDKit✔️✔️:     throw RDKit::SmilesParseException("failure parsing CXSMILES extensions");
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   processCXSmilesLabels(mol);
-    // RDKit✔️✔️:   mol.clearProp("_cxsmilesLabelsProcessed");
-    // RDKit✔️✔️:   mol.clearProp(cxsgTracker);
-    // RDKit✔️✔️: }
-    // RDKit✔️✔️: bool parse_it(Iterator &first, Iterator last, RDKit::RWMol &mol,
-    // RDKit✔️✔️:               unsigned int startAtomIdx, unsigned int startBondIdx) {
-    // RDKit✔️✔️:   if (first >= last || *first != '|') {
-    // RDKit✔️✔️:     return false;
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   ++first;
-    // RDKit✔️✔️:   while (first < last && *first != '|') {
-    // RDKit✔️✔️:     typename Iterator::difference_type length = std::distance(first, last);
-    // RDKit✔️✔️:     if (*first == '(') {
-    // RDKit✔️✔️:       if (!parse_coords(first, last, mol, startAtomIdx, confIndex++)) {
-    // RDKit✔️✔️:         return false;
-    // RDKit✔️✔️:       }
-    // RDKit✔️✔️:     } else if (*first == '$') {
-    // RDKit✔️✔️:       if (length > 4 && *(first + 1) == '_' && *(first + 2) == 'A' &&
-    // RDKit✔️✔️:           *(first + 3) == 'V' && *(first + 4) == ':') {
-    // RDKit✔️✔️:         first += 4;
-    // RDKit✔️✔️:         if (!parse_atom_values(first, last, mol, startAtomIdx)) {
-    // RDKit✔️✔️:           return false;
-    // RDKit✔️✔️:         }
-    // RDKit✔️✔️:       } else {
-    // RDKit✔️✔️:         if (!parse_atom_labels(first, last, mol, startAtomIdx)) {
-    // RDKit✔️✔️:           return false;
-    // RDKit✔️✔️:         }
-    // RDKit✔️✔️:       }
-    // RDKit✔️✔️:     } else if (length > 9 && std::string(first, first + 9) == "atomProp:") {
-    // RDKit✔️✔️:       first += 9;
-    // RDKit✔️✔️:       if (!parse_atom_props(first, last, mol, startAtomIdx)) {
-    // RDKit✔️✔️:         return false;
-    // RDKit✔️✔️:       }
-    // RDKit✔️✔️:     } else if (*first == 'C') {
-    // RDKit✔️✔️:       if (!parse_coordinate_bonds(first, last, mol, Bond::DATIVE, startAtomIdx,
-    // RDKit✔️✔️:                                   startBondIdx)) {
-    // RDKit✔️✔️:         return false;
-    // RDKit✔️✔️:       }
-    // RDKit✔️✔️:     } else if (*first == 'H') {
-    // RDKit✔️✔️:       if (!parse_coordinate_bonds(first, last, mol, Bond::HYDROGEN,
-    // RDKit✔️✔️:                                   startAtomIdx, startBondIdx)) {
-    // RDKit✔️✔️:         return false;
-    // RDKit✔️✔️:       }
-    // RDKit✔️✔️:     } else if (*first == 'Z') {
-    // RDKit✔️✔️:       if (!parse_zero_bonds(first, last, mol, startAtomIdx, startBondIdx)) {
-    // RDKit✔️✔️:         return false;
-    // RDKit✔️✔️:       }
-    // RDKit✔️✔️:     } else if (*first == '^') {
-    // RDKit✔️✔️:       if (!parse_radicals(first, last, mol, startAtomIdx)) {
-    // RDKit✔️✔️:         return false;
-    // RDKit✔️✔️:       }
-    // RDKit✔️✔️:     } else if (*first == 'a' || *first == 'o' ||
-    // RDKit✔️✔️:                (*first == '&' && first + 1 < last && first[1] != '#')) {
-    // RDKit✔️✔️:       if (!parse_enhanced_stereo(first, last, mol, startAtomIdx)) {
-    // RDKit✔️✔️:         return false;
-    // RDKit✔️✔️:       }
-    // RDKit✔️✔️:     } else if (*first == 'r' && first + 1 < last && first[1] == 'b') {
-    // RDKit✔️✔️:       if (!parse_ring_bonds(first, last, mol, startAtomIdx)) {
-    // RDKit✔️✔️:         return false;
-    // RDKit✔️✔️:       }
-    // RDKit✔️✔️:     } else if (*first == 'L' && first + 1 < last && first[1] == 'N') {
-    // RDKit✔️✔️:       if (!parse_linknodes(first, last, mol, startAtomIdx)) {
-    // RDKit✔️✔️:         return false;
-    // RDKit✔️✔️:       }
-    // RDKit✔️✔️:     } else if (*first == 'S' && first + 2 < last && first[1] == 'g' &&
-    // RDKit✔️✔️:                first[2] == 'D') {
-    // RDKit✔️✔️:       if (!parse_data_sgroup(first, last, mol, startAtomIdx, nSGroups++)) {
-    // RDKit✔️✔️:         return false;
-    // RDKit✔️✔️:       }
-    // RDKit✔️✔️:     } else if (*first == 'S' && first + 2 < last && first[1] == 'g' &&
-    // RDKit✔️✔️:                first[2] == 'H') {
-    // RDKit✔️✔️:       if (!parse_sgroup_hierarchy(first, last, mol)) {
-    // RDKit✔️✔️:         return false;
-    // RDKit✔️✔️:       }
-    // RDKit✔️✔️:     } else if (*first == 'S' && first + 1 < last && first[1] == 'g') {
-    // RDKit✔️✔️:       if (!parse_polymer_sgroup(first, last, mol, startAtomIdx, nSGroups++)) {
-    // RDKit✔️✔️:         return false;
-    // RDKit✔️✔️:       }
-    // RDKit✔️✔️:     } else if (*first == 'u') {
-    // RDKit✔️✔️:       if (!parse_unsaturation(first, last, mol, startAtomIdx)) {
-    // RDKit✔️✔️:         return false;
-    // RDKit✔️✔️:       }
-    // RDKit✔️✔️:     } else if (*first == 's') {
-    // RDKit✔️✔️:       if (!parse_substitution(first, last, mol, startAtomIdx)) {
-    // RDKit✔️✔️:         return false;
-    // RDKit✔️✔️:       }
-    // RDKit✔️✔️:     } else if (*first == 'm') {
-    // RDKit✔️✔️:       if (!parse_variable_attachments(first, last, mol, startAtomIdx)) {
-    // RDKit✔️✔️:         return false;
-    // RDKit✔️✔️:       }
-    // RDKit✔️✔️:     } else if (*first == 'w') {
-    // RDKit✔️✔️:       if (!parse_wedged_bonds(first, last, mol, startAtomIdx, startBondIdx)) {
-    // RDKit✔️✔️:         return false;
-    // RDKit✔️✔️:       }
-    // RDKit✔️✔️:     } else if (*first == 'c' && first + 2 < last && first[1] == 't' &&
-    // RDKit✔️✔️:                first[2] == 'u') {
-    // RDKit✔️✔️:       if (!parse_doublebond_stereo(first, last, mol, startAtomIdx, startBondIdx,
-    // RDKit✔️✔️:                                    Bond::BondStereo::STEREOANY)) {
-    // RDKit✔️✔️:         return false;
-    // RDKit✔️✔️:       }
-    // RDKit✔️✔️:     } else if (*first == 'c') {
-    // RDKit✔️✔️:       if (!parse_doublebond_stereo(first, last, mol, startAtomIdx, startBondIdx,
-    // RDKit✔️✔️:                                    Bond::BondStereo::STEREOCIS)) {
-    // RDKit✔️✔️:         return false;
-    // RDKit✔️✔️:       }
-    // RDKit✔️✔️:     } else if (*first == 't') {
-    // RDKit✔️✔️:       if (!parse_doublebond_stereo(first, last, mol, startAtomIdx, startBondIdx,
-    // RDKit✔️✔️:                                    Bond::BondStereo::STEREOTRANS)) {
-    // RDKit✔️✔️:         return false;
-    // RDKit✔️✔️:       }
-    // RDKit✔️✔️:     } else {
-    // RDKit✔️✔️:       ++first;
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:     // if(first < last && *first != '|') ++first;
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   if (first >= last || *first != '|') {
-    // RDKit✔️✔️:     return false;
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   ++first;
-    // RDKit✔️✔️:   return true;
-    // RDKit✔️✔️: }
-    // END RDKIT CPP FUNCTION parseCXExtensions / parser::parse_it
-    if ext_text.is_empty() {
-        return Ok(0);
-    }
-    let bytes = ext_text.as_bytes();
-    if bytes.first().copied() != Some(b'|') {
-        return Err(SmilesParseError::ParseError(
-            "CXSMILES extension does not start with |".to_string(),
-        ));
-    }
-    let mut pos = 1;
-    let mut conformer_idx = 0_usize;
-    let mut sgroup_idx = 0_usize;
-    while pos < bytes.len() && bytes[pos] != b'|' {
-        if bytes[pos] == b'(' {
-            parse_cx_coords(state, ext_text, &mut pos, conformer_idx)?;
-            conformer_idx += 1;
-        } else if bytes[pos] == b'$' {
-            if ext_text[pos..].starts_with("$_AV:") {
-                pos += 4;
-                parse_cx_atom_values(state, ext_text, &mut pos)?;
-            } else {
-                parse_cx_atom_labels(state, ext_text, &mut pos)?;
-            }
-        } else if ext_text[pos..].starts_with("atomProp:") {
-            pos += "atomProp:".len();
-            parse_cx_atom_props(state, ext_text, &mut pos)?;
-        } else if bytes[pos] == b'C' {
-            parse_cx_coordinate_bonds(state, ext_text, &mut pos, BondOrder::Dative)?;
-        } else if bytes[pos] == b'H' {
-            parse_cx_coordinate_bonds(state, ext_text, &mut pos, BondOrder::Hydrogen)?;
-        } else if bytes[pos] == b'Z' {
-            parse_cx_zero_bonds(state, ext_text, &mut pos)?;
-        } else if bytes[pos] == b'^' {
-            parse_cx_radicals(state, ext_text, &mut pos)?;
-        } else if matches!(bytes[pos], b'a' | b'o')
-            || (bytes[pos] == b'&' && pos + 1 < bytes.len() && bytes[pos + 1] != b'#')
-        {
-            parse_cx_enhanced_stereo(state, ext_text, &mut pos)?;
-        } else if ext_text[pos..].starts_with("rb:") {
-            parse_cx_ring_bonds(state, ext_text, &mut pos)?;
-        } else if ext_text[pos..].starts_with("LN:") {
-            parse_cx_linknodes(state, ext_text, &mut pos)?;
-        } else if ext_text[pos..].starts_with("SgD:") {
-            parse_cx_data_sgroup(state, ext_text, &mut pos, sgroup_idx)?;
-            sgroup_idx += 1;
-        } else if ext_text[pos..].starts_with("SgH:") {
-            // BEGIN RDKIT CPP FUNCTION parse_sgroup_hierarchy (called from parser::parse_it)
-            // RDKit✔️✔️:     } else if (*first == 'S' && first + 2 < last && first[1] == 'g' &&
-            // RDKit✔️✔️:                first[2] == 'H') {
-            // RDKit✔️✔️:       if (!parse_sgroup_hierarchy(first, last, mol)) {
-            // RDKit✔️✔️:         return false;
-            // RDKit✔️✔️:       }
-            // END RDKIT CPP FUNCTION call-site in parser::parse_it
-            parse_cx_sgroup_hierarchy(state, ext_text, &mut pos)?;
-        } else if ext_text[pos..].starts_with("Sg:") {
-            // BEGIN RDKIT CPP FUNCTION parse_polymer_sgroup (called from parser::parse_it)
-            // RDKit✔️✔️:     } else if (*first == 'S' && first + 1 < last && first[1] == 'g') {
-            // RDKit✔️✔️:       if (!parse_polymer_sgroup(first, last, mol, startAtomIdx, nSGroups++)) {
-            // RDKit✔️✔️:         return false;
-            // RDKit✔️✔️:       }
-            // END RDKIT CPP FUNCTION call-site in parser::parse_it
-            parse_cx_polymer_sgroup(state, ext_text, &mut pos, sgroup_idx)?;
-            sgroup_idx += 1;
-        } else if bytes[pos] == b'u' {
-            parse_cx_unsaturation(state, ext_text, &mut pos)?;
-        } else if bytes[pos] == b's' {
-            parse_cx_substitution(state, ext_text, &mut pos)?;
-        } else if bytes[pos] == b'm' {
-            parse_cx_variable_attachments(state, ext_text, &mut pos)?;
-        } else if bytes[pos] == b'w' {
-            parse_cx_wedged_bonds(state, ext_text, &mut pos)?;
-        } else if ext_text[pos..].starts_with("ctu") {
-            parse_cx_doublebond_stereo(state, ext_text, &mut pos, BondStereo::Any)?;
-        } else if bytes[pos] == b'c' {
-            parse_cx_doublebond_stereo(state, ext_text, &mut pos, BondStereo::Cis)?;
-        } else if bytes[pos] == b't' {
-            parse_cx_doublebond_stereo(state, ext_text, &mut pos, BondStereo::Trans)?;
-        } else if bytes[pos] == b',' {
-            pos += 1;
-        } else {
-            // Skip unrecognized CXSMILES extension characters (matching RDKit
-            // behavior which silently skips unknown extensions rather than
-            // failing). Advance past the single-byte extension token.
-            pos += 1;
+/// Lower the representation-independent CX syntax records into the SMILES
+/// construction state. The syntax crate performs the only CX scan on this
+/// path; this function is responsible solely for destination validation and
+/// state mutation.
+fn apply_cx_records_to_smiles(
+    state: &mut SmilesBuildState,
+    parsed: &ParsedCxExtensions,
+) -> Result<(), SmilesParseError> {
+    // Query-only CX records cannot be lowered into the concrete Molecule
+    // model. Validate the complete record set before mutating any builder
+    // state so a later unsupported record cannot leave a partially applied
+    // extension block behind.
+    for record in parsed.records() {
+        let reason = match record {
+            CxRecord::Unsaturation(_) => Some(
+                "CX atom-query records require a QueryGraph and are not representable in a concrete Molecule",
+            ),
+            CxRecord::RingBonds(_) => Some(
+                "CX ring-bond query records require a QueryGraph and are not representable in a concrete Molecule",
+            ),
+            CxRecord::Substitution(_) => Some(
+                "CX substitution query records require a QueryGraph and are not representable in a concrete Molecule",
+            ),
+            _ => None,
+        };
+        if let Some(reason) = reason {
+            return Err(SmilesParseError::UnsupportedFeature(
+                crate::UnsupportedFeatureError {
+                    feature: "cxsmiles.query",
+                    reason,
+                },
+            ));
         }
     }
-    if pos >= bytes.len() || bytes[pos] != b'|' {
-        return Err(SmilesParseError::ParseError(
-            "failure parsing CXSMILES extensions".to_string(),
-        ));
+    let atom_count = state.builder.atoms().len();
+    let mut sgroup_index = 0;
+    for record in parsed.records() {
+        match record {
+            CxRecord::Coordinates(coordinates) => {
+                let mut values = vec![[0.0; 3]; atom_count];
+                for (index, value) in coordinates.values.iter().enumerate() {
+                    if index >= atom_count {
+                        break;
+                    }
+                    if let Some(value) = value {
+                        values[index] = *value;
+                    }
+                }
+                state
+                    .builder
+                    .add_conformer(Conformer3D::new(
+                        coordinates.conformer,
+                        values,
+                        coordinates.is_3d,
+                    ))
+                    .map_err(|error| SmilesParseError::ParseError(error.to_string()))?;
+            }
+            CxRecord::AtomLabels(values) => {
+                for (index, value) in values.iter().enumerate() {
+                    if let Some(value) = value
+                        && let Some(atom) = state.builder.atom_mut(AtomId::new(index))
+                    {
+                        atom.set_prop("atomLabel", value);
+                    }
+                }
+            }
+            CxRecord::AtomValues(values) => {
+                for (index, value) in values.iter().enumerate() {
+                    if let Some(value) = value
+                        && let Some(atom) = state.builder.atom_mut(AtomId::new(index))
+                    {
+                        atom.set_prop("molFileValue", value);
+                    }
+                }
+            }
+            CxRecord::AtomProperties(properties) => {
+                for property in properties {
+                    if let Some(atom) = state.builder.atom_mut(AtomId::new(property.atom)) {
+                        atom.set_prop(property.name.clone(), property.value.clone());
+                    }
+                }
+            }
+            CxRecord::CoordinateBonds(annotation) => {
+                let order = match annotation.kind {
+                    CxCoordinateBondKind::Dative => BondOrder::Dative,
+                    CxCoordinateBondKind::Hydrogen => BondOrder::Hydrogen,
+                };
+                for reference in &annotation.bonds {
+                    let atom = AtomId::new(reference.atom);
+                    if state.builder.atom_mut(atom).is_none() {
+                        continue;
+                    }
+                    let bond_id = cx_bond_with_smiles_idx(state, reference.bond)
+                        .ok_or_else(cx_parse_failure)?;
+                    let (begin, end) = state
+                        .builder
+                        .bond(bond_id)
+                        .map(|bond| (bond.begin(), bond.end()))
+                        .ok_or_else(cx_parse_failure)?;
+                    if begin != atom && end != atom {
+                        return Err(cx_parse_failure());
+                    }
+                    let bond = state
+                        .builder
+                        .bond_mut(bond_id)
+                        .ok_or_else(cx_parse_failure)?;
+                    bond.set_order(order);
+                    if begin != atom {
+                        bond.set_endpoints(atom, begin);
+                    }
+                }
+            }
+            CxRecord::ZeroBonds(indices) => {
+                for index in indices {
+                    let bond_id =
+                        cx_bond_with_smiles_idx(state, *index).ok_or_else(cx_parse_failure)?;
+                    state
+                        .builder
+                        .bond_mut(bond_id)
+                        .ok_or_else(cx_parse_failure)?
+                        .set_order(BondOrder::Zero);
+                }
+            }
+            CxRecord::EnhancedStereo(stereo) => {
+                let kind = match stereo.kind {
+                    CxStereoGroupKind::Absolute => StereoGroupKind::Absolute,
+                    CxStereoGroupKind::Or => StereoGroupKind::Or,
+                    CxStereoGroupKind::And => StereoGroupKind::And,
+                };
+                let atoms = stereo
+                    .atoms
+                    .iter()
+                    .map(|index| {
+                        if *index >= atom_count {
+                            Err(cx_parse_failure())
+                        } else {
+                            Ok(AtomId::new(*index))
+                        }
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                if atoms.is_empty() {
+                    continue;
+                }
+                let kind_code = match kind {
+                    StereoGroupKind::Absolute => 1,
+                    StereoGroupKind::Or => 2,
+                    StereoGroupKind::And => 3,
+                };
+                if let Some(index) = state
+                    .cx_stereo_group_tracker
+                    .get(&(kind_code, stereo.group_id))
+                    .copied()
+                {
+                    if let Some(group) = state.builder.stereo_groups_mut().get_mut(index) {
+                        for atom in atoms {
+                            group.push_atom(atom);
+                        }
+                    }
+                } else {
+                    let index = state.builder.stereo_groups_mut().len();
+                    state
+                        .builder
+                        .add_stereo_group(
+                            StereoGroup::new(kind, atoms, Vec::new()).with_id(stereo.group_id),
+                        )
+                        .map_err(|error| SmilesParseError::ParseError(error.to_string()))?;
+                    state
+                        .cx_stereo_group_tracker
+                        .insert((kind_code, stereo.group_id), index);
+                }
+            }
+            CxRecord::Unsaturation(indices) => {
+                let _ = indices;
+                return Err(SmilesParseError::UnsupportedFeature(
+                    crate::UnsupportedFeatureError {
+                        feature: "cxsmiles.query",
+                        reason: "CX atom-query records require a QueryGraph and are not representable in a concrete Molecule",
+                    },
+                ));
+            }
+            CxRecord::RingBonds(constraints) => {
+                let _ = constraints;
+                return Err(SmilesParseError::UnsupportedFeature(
+                    crate::UnsupportedFeatureError {
+                        feature: "cxsmiles.query",
+                        reason: "CX ring-bond query records require a QueryGraph and are not representable in a concrete Molecule",
+                    },
+                ));
+            }
+            CxRecord::Substitution(constraints) => {
+                let _ = constraints;
+                return Err(SmilesParseError::UnsupportedFeature(
+                    crate::UnsupportedFeatureError {
+                        feature: "cxsmiles.query",
+                        reason: "CX substitution query records require a QueryGraph and are not representable in a concrete Molecule",
+                    },
+                ));
+            }
+            CxRecord::WedgedBonds(wedges) => {
+                for wedge in wedges {
+                    let bond_id =
+                        cx_bond_with_smiles_idx(state, wedge.bond).ok_or_else(cx_parse_failure)?;
+                    let (begin, end, order, has_cfg) = state
+                        .builder
+                        .bond(bond_id)
+                        .map(|bond| {
+                            (
+                                bond.begin(),
+                                bond.end(),
+                                bond.order(),
+                                bond.prop("_MolFileBondCfg").is_some(),
+                            )
+                        })
+                        .ok_or_else(cx_parse_failure)?;
+                    if has_cfg {
+                        return Err(cx_parse_failure());
+                    }
+                    let atom = AtomId::new(wedge.atom);
+                    if begin != atom && end != atom {
+                        return Err(cx_parse_failure());
+                    }
+                    let bond = state
+                        .builder
+                        .bond_mut(bond_id)
+                        .ok_or_else(cx_parse_failure)?;
+                    if begin != atom {
+                        bond.set_endpoints(atom, begin);
+                    }
+                    let (cfg, direction) = match wedge.direction {
+                        CxWedgeDirection::Unknown => ("2", BondDirection::Unknown),
+                        CxWedgeDirection::BeginWedge => ("1", BondDirection::BeginWedge),
+                        CxWedgeDirection::BeginDash => ("3", BondDirection::BeginDash),
+                    };
+                    bond.set_prop("_MolFileBondCfg", cfg);
+                    bond.set_direction(direction);
+                    if cfg == "2" && bond_can_have_direction(order) {
+                        if let Some(atom) = state.builder.atom_mut(atom) {
+                            atom.set_chiral_tag(ChiralTag::Unspecified);
+                        }
+                        state.set_property("_needsDetectBondStereo", "1");
+                    }
+                    if matches!(cfg, "1" | "3") && bond_can_have_direction(order) {
+                        state.set_property("_needsDetectAtomStereo", "1");
+                    }
+                }
+            }
+            CxRecord::DoubleBondStereo(stereo) => {
+                let value = match stereo.stereo {
+                    CxDoubleBondStereoKind::Any => BondStereo::Any,
+                    CxDoubleBondStereoKind::Cis => BondStereo::Cis,
+                    CxDoubleBondStereoKind::Trans => BondStereo::Trans,
+                };
+                for index in &stereo.bonds {
+                    let bond_id =
+                        cx_bond_with_smiles_idx(state, *index).ok_or_else(cx_parse_failure)?;
+                    set_cx_stereo_for_bond(state, bond_id, value)?;
+                }
+            }
+            CxRecord::Radicals(radicals) => {
+                for radical in radicals {
+                    if let Some(atom) = state.builder.atom_mut(AtomId::new(radical.atom)) {
+                        atom.set_radical_electrons(radical.electrons);
+                    }
+                }
+            }
+            CxRecord::LinkNodes(link_nodes) => {
+                let mut lowered = Vec::new();
+                for link in link_nodes {
+                    let atom = AtomId::new(link.atom);
+                    if state.builder.atom_mut(atom).is_none() {
+                        continue;
+                    }
+                    let outer_atoms = if let Some(outer_atoms) = link.outer_atoms {
+                        outer_atoms
+                    } else {
+                        let neighbors = atom_neighbors(state, atom);
+                        if neighbors.len() != 2 {
+                            return Err(cx_parse_failure());
+                        }
+                        [neighbors[0].index(), neighbors[1].index()]
+                    };
+                    lowered.push(format!(
+                        "{} {} 2 {} {} {} {}",
+                        link.start_repetitions,
+                        link.end_repetitions,
+                        link.atom + 1,
+                        outer_atoms[0] + 1,
+                        link.atom + 1,
+                        outer_atoms[1] + 1
+                    ));
+                }
+                if !lowered.is_empty() {
+                    state.set_property("_MolFileLinkNodes", &lowered.join("|"));
+                }
+            }
+            CxRecord::DataSGroup(data) => {
+                let atoms = data
+                    .atoms
+                    .iter()
+                    .filter(|index| **index < atom_count)
+                    .map(|index| AtomId::new(*index))
+                    .collect::<Vec<_>>();
+                if !atoms.is_empty() {
+                    let mut group = SubstanceGroup::new(
+                        SubstanceGroupId::new(sgroup_index),
+                        SubstanceGroupKind::Data,
+                    )
+                    .with_atoms(atoms);
+                    group.set_prop("_cxsmilesindex", sgroup_index.to_string());
+                    group.set_prop(
+                        "index",
+                        (state.builder.substance_groups_len() + 1).to_string(),
+                    );
+                    group.set_prop("FIELDDISP", "    0.0000    0.0000    DR    ALL  0       0");
+                    if !data.field_name.is_empty() {
+                        group.set_prop("FIELDNAME", data.field_name.clone());
+                    }
+                    if !data.data.is_empty() {
+                        group.set_prop("DATAFIELDS", data.data.clone());
+                        group.push_data_field(data.data.clone());
+                    }
+                    if !data.query_op.is_empty() {
+                        group.set_prop("QUERYOP", data.query_op.clone());
+                    }
+                    if !data.field_info.is_empty() {
+                        group.set_prop("FIELDINFO", data.field_info.clone());
+                    }
+                    if !data.field_tag.is_empty() {
+                        group.set_prop("FIELDTAG", data.field_tag.clone());
+                    }
+                    if let Some(coordinates) = &data.coordinates {
+                        group.set_prop("COORDS", coordinates.clone());
+                    }
+                    state
+                        .builder
+                        .add_substance_group(group)
+                        .map_err(|error| SmilesParseError::ParseError(error.to_string()))?;
+                }
+                sgroup_index += 1;
+            }
+            CxRecord::SGroupHierarchy(relationships) => {
+                let cx_indices = state
+                    .builder
+                    .substance_groups()
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(position, group)| {
+                        let cx_index =
+                            group.props().get("_cxsmilesindex")?.parse::<usize>().ok()?;
+                        let index = group
+                            .props()
+                            .get("index")
+                            .and_then(|value| value.parse::<usize>().ok())
+                            .unwrap_or(position);
+                        Some((cx_index, position, index))
+                    })
+                    .collect::<Vec<_>>();
+                for relationship in relationships {
+                    let Some((_, _, parent_index)) = cx_indices
+                        .iter()
+                        .find(|(cx_index, _, _)| *cx_index == relationship.parent)
+                    else {
+                        continue;
+                    };
+                    for child in &relationship.children {
+                        if *child >= state.builder.substance_groups_len() {
+                            return Err(SmilesParseError::ParseError(
+                                "child id references non-existent SGroup".to_owned(),
+                            ));
+                        }
+                        if let Some((_, child_position, _)) =
+                            cx_indices.iter().find(|(cx_index, _, _)| cx_index == child)
+                            && let Some(group) = state.builder.substance_group_mut(*child_position)
+                        {
+                            group.set_prop("PARENT", parent_index.to_string());
+                        }
+                    }
+                }
+            }
+            CxRecord::PolymerSGroup(polymer) => {
+                let Some(kind) = cx_sgroup_type_to_kind(&polymer.type_code) else {
+                    return Err(cx_parse_failure());
+                };
+                let atoms = polymer
+                    .atoms
+                    .iter()
+                    .filter(|index| **index < atom_count)
+                    .map(|index| AtomId::new(*index))
+                    .collect::<Vec<_>>();
+                if !atoms.is_empty() {
+                    let mut group = SubstanceGroup::new(SubstanceGroupId::new(sgroup_index), kind)
+                        .with_atoms(atoms);
+                    group.set_prop("_cxsmilesindex", sgroup_index.to_string());
+                    group.set_prop(
+                        "index",
+                        (state.builder.substance_groups_len() + 1).to_string(),
+                    );
+                    match polymer.type_code.as_str() {
+                        "alt" => group.set_prop("SUBTYPE", "ALT"),
+                        "ran" => group.set_prop("SUBTYPE", "RAN"),
+                        "blk" => group.set_prop("SUBTYPE", "BLO"),
+                        _ => {}
+                    }
+                    if !polymer.label.is_empty() {
+                        group.set_prop("LABEL", polymer.label.clone());
+                    }
+                    if !polymer.connect.is_empty() {
+                        group.set_prop("CONNECT", polymer.connect.clone());
+                    }
+                    if !polymer.head_crossings.is_empty() {
+                        group.set_prop(
+                            "_headCrossings",
+                            polymer
+                                .head_crossings
+                                .iter()
+                                .map(usize::to_string)
+                                .collect::<Vec<_>>()
+                                .join(","),
+                        );
+                    }
+                    if !polymer.tail_crossings.is_empty() {
+                        group.set_prop(
+                            "_tailCrossings",
+                            polymer
+                                .tail_crossings
+                                .iter()
+                                .map(usize::to_string)
+                                .collect::<Vec<_>>()
+                                .join(","),
+                        );
+                    }
+                    state
+                        .builder
+                        .add_substance_group(group)
+                        .map_err(|error| SmilesParseError::ParseError(error.to_string()))?;
+                }
+                sgroup_index += 1;
+            }
+            CxRecord::VariableAttachments(attachments) => {
+                for attachment in attachments {
+                    let atom = AtomId::new(attachment.atom);
+                    if state.builder.atom_mut(atom).is_none() {
+                        continue;
+                    }
+                    if atom_neighbors(state, atom).len() != 1 {
+                        return Err(cx_parse_failure());
+                    }
+                    let endpoints = attachment
+                        .endpoints
+                        .iter()
+                        .filter(|index| **index < atom_count)
+                        .map(|index| (index + 1).to_string())
+                        .collect::<Vec<_>>();
+                    let value = if endpoints.is_empty() {
+                        "(0)".to_owned()
+                    } else {
+                        format!("({} {})", endpoints.len(), endpoints.join(" "))
+                    };
+                    let bonds = state.builder.neighbor_bonds(atom).to_vec();
+                    for bond in bonds {
+                        let bond = state.builder.bond_mut(bond).ok_or_else(cx_parse_failure)?;
+                        bond.set_prop("_MolFileBondEndPts", value.clone());
+                        bond.set_prop("_MolFileBondAttach", "ANY");
+                    }
+                }
+            }
+            CxRecord::Unknown(_) => {}
+        }
     }
-    Ok(pos + 1)
+    Ok(())
 }
 
+/// Parse CX syntax once and lower it into the SMILES destination.
+pub(super) fn parse_cx_extensions_shared(
+    state: &mut SmilesBuildState,
+    ext_text: &str,
+) -> Result<usize, SmilesParseError> {
+    let parsed = cosmolkit_cx::parse_cx_extensions(ext_text)
+        .map_err(|error| SmilesParseError::ParseError(error.to_string()))?;
+    apply_cx_records_to_smiles(state, &parsed)?;
+    Ok(parsed.consumed())
+}
+
+/// Test helper that exercises the production shared parser and SMILES lowerer.
+/// It keeps the narrow stateful shape needed by parser unit tests without
+/// introducing a second CX syntax implementation.
+#[cfg(test)]
+pub(super) fn parse_cx_extensions(
+    state: &mut SmilesBuildState,
+    ext_text: &str,
+) -> Result<usize, SmilesParseError> {
+    parse_cx_extensions_shared(state, ext_text)
+}
+
+#[cfg(test)]
 pub(super) fn parse_cx_coords(
     state: &mut SmilesBuildState,
     ext_text: &str,
@@ -421,6 +688,7 @@ pub(super) fn parse_cx_coords(
     Ok(())
 }
 
+#[cfg(test)]
 pub(super) fn parse_cx_atom_labels(
     state: &mut SmilesBuildState,
     ext_text: &str,
@@ -472,6 +740,7 @@ pub(super) fn parse_cx_atom_labels(
     Ok(())
 }
 
+#[cfg(test)]
 pub(super) fn parse_cx_atom_values(
     state: &mut SmilesBuildState,
     ext_text: &str,
@@ -523,6 +792,7 @@ pub(super) fn parse_cx_atom_values(
     Ok(())
 }
 
+#[cfg(test)]
 pub(super) fn parse_cx_atom_props(
     state: &mut SmilesBuildState,
     ext_text: &str,
@@ -609,6 +879,7 @@ pub(super) fn cx_bond_with_smiles_idx(state: &SmilesBuildState, idx: usize) -> O
         .map(|bond| bond.id())
 }
 
+#[cfg(test)]
 pub(super) fn parse_cx_coordinate_bonds(
     state: &mut SmilesBuildState,
     ext_text: &str,
@@ -678,7 +949,10 @@ pub(super) fn parse_cx_coordinate_bonds(
             if begin != atom_id && end != atom_id {
                 return Err(cx_parse_failure());
             }
-            let bond = state.builder.bond_mut(bond_id).ok_or_else(cx_parse_failure)?;
+            let bond = state
+                .builder
+                .bond_mut(bond_id)
+                .ok_or_else(cx_parse_failure)?;
             bond.set_order(order);
             if begin != atom_id {
                 bond.set_endpoints(atom_id, begin);
@@ -691,6 +965,7 @@ pub(super) fn parse_cx_coordinate_bonds(
     Ok(())
 }
 
+#[cfg(test)]
 pub(super) fn parse_cx_zero_bonds(
     state: &mut SmilesBuildState,
     ext_text: &str,
@@ -751,6 +1026,7 @@ pub(super) fn parse_cx_zero_bonds(
     Ok(())
 }
 
+#[cfg(test)]
 pub(super) fn parse_cx_enhanced_stereo(
     state: &mut SmilesBuildState,
     ext_text: &str,
@@ -872,7 +1148,11 @@ pub(super) fn parse_cx_enhanced_stereo(
         StereoGroupKind::Or => 2,
         StereoGroupKind::And => 3,
     };
-    if let Some(index) = state.cx_stereo_group_tracker.get(&(kind_code, group_id)).copied() {
+    if let Some(index) = state
+        .cx_stereo_group_tracker
+        .get(&(kind_code, group_id))
+        .copied()
+    {
         if let Some(group) = state.builder.stereo_groups_mut().get_mut(index) {
             for atom in atoms {
                 group.push_atom(atom);
@@ -884,26 +1164,23 @@ pub(super) fn parse_cx_enhanced_stereo(
             .builder
             .add_stereo_group(StereoGroup::new(kind, atoms, Vec::new()).with_id(group_id))
             .map_err(|error| SmilesParseError::ParseError(error.to_string()))?;
-        state.cx_stereo_group_tracker.insert((kind_code, group_id), index);
+        state
+            .cx_stereo_group_tracker
+            .insert((kind_code, group_id), index);
     }
     Ok(())
 }
 
-pub(super) fn expand_cx_atom_query(state: &mut SmilesBuildState, atom_idx: usize, predicate: AtomQueryPredicate) {
-    if let Some(atom) = state.builder.atom_mut(AtomId::new(atom_idx)) {
-        let next = QueryNode::predicate(predicate);
-        let combined = match atom.query().cloned() {
-            Some(QueryNode::And(mut children)) => {
-                children.push(next);
-                QueryNode::And(children)
-            }
-            Some(existing) => QueryNode::and(vec![existing, next]),
-            None => next,
-        };
-        atom.set_query(Some(combined));
-    }
+#[cfg(test)]
+pub(super) fn expand_cx_atom_query(
+    state: &mut SmilesBuildState,
+    atom_idx: usize,
+    predicate: AtomQueryPredicate,
+) {
+    let _ = (state, atom_idx, predicate);
 }
 
+#[cfg(test)]
 pub(super) fn parse_cx_unsaturation(
     state: &mut SmilesBuildState,
     ext_text: &str,
@@ -953,6 +1230,7 @@ pub(super) fn parse_cx_unsaturation(
     Ok(())
 }
 
+#[cfg(test)]
 pub(super) fn parse_cx_ring_bonds(
     state: &mut SmilesBuildState,
     ext_text: &str,
@@ -1076,6 +1354,7 @@ pub(super) fn atom_neighbors(state: &SmilesBuildState, atom: AtomId) -> Vec<Atom
         .collect()
 }
 
+#[cfg(test)]
 pub(super) fn parse_cx_linknodes(
     state: &mut SmilesBuildState,
     ext_text: &str,
@@ -1214,6 +1493,7 @@ pub(super) fn parse_cx_linknodes(
     Ok(())
 }
 
+#[cfg(test)]
 pub(super) fn parse_cx_data_sgroup_attr(
     sgroup: &mut SubstanceGroup,
     ext_text: &str,
@@ -1257,6 +1537,7 @@ pub(super) fn parse_cx_data_sgroup_attr(
     Ok(())
 }
 
+#[cfg(test)]
 pub(super) fn parse_cx_data_sgroup(
     state: &mut SmilesBuildState,
     ext_text: &str,
@@ -1341,7 +1622,8 @@ pub(super) fn parse_cx_data_sgroup(
             break;
         }
     }
-    let mut sgroup = SubstanceGroup::new(SubstanceGroupId::new(sgroup_idx), SubstanceGroupKind::Data);
+    let mut sgroup =
+        SubstanceGroup::new(SubstanceGroupId::new(sgroup_idx), SubstanceGroupKind::Data);
     sgroup.set_prop("_cxsmilesindex", sgroup_idx.to_string());
     let keep_sgroup = !atoms.is_empty();
     for atom in atoms {
@@ -1367,7 +1649,10 @@ pub(super) fn parse_cx_data_sgroup(
         }
     }
     if keep_sgroup {
-        sgroup.set_prop("index", (state.builder.substance_groups_len() + 1).to_string());
+        sgroup.set_prop(
+            "index",
+            (state.builder.substance_groups_len() + 1).to_string(),
+        );
         state
             .builder
             .add_substance_group(sgroup)
@@ -1376,6 +1661,7 @@ pub(super) fn parse_cx_data_sgroup(
     Ok(())
 }
 
+#[cfg(test)]
 pub(super) fn parse_cx_sgroup_hierarchy(
     state: &mut SmilesBuildState,
     ext_text: &str,
@@ -1483,7 +1769,10 @@ pub(super) fn parse_cx_sgroup_hierarchy(
                         "child id references non-existent SGroup".to_string(),
                     ));
                 }
-                if let Some((child_pos, _)) = cx_index_to_parent.iter().find(|(cx, _)| *cx == *child_cx_idx) {
+                if let Some((child_pos, _)) = cx_index_to_parent
+                    .iter()
+                    .find(|(cx, _)| *cx == *child_cx_idx)
+                {
                     if let Some(child_sg) = state.builder.substance_group_mut(*child_pos) {
                         child_sg.set_prop("PARENT", actual_parent_idx.to_string());
                     }
@@ -1499,6 +1788,7 @@ pub(super) fn parse_cx_sgroup_hierarchy(
     Ok(())
 }
 
+#[cfg(test)]
 pub(super) fn parse_cx_polymer_sgroup(
     state: &mut SmilesBuildState,
     ext_text: &str,
@@ -1668,7 +1958,10 @@ pub(super) fn parse_cx_polymer_sgroup(
         }
     }
     if keep_sgroup {
-        sgroup.set_prop("index", (state.builder.substance_groups_len() + 1).to_string());
+        sgroup.set_prop(
+            "index",
+            (state.builder.substance_groups_len() + 1).to_string(),
+        );
         state
             .builder
             .add_substance_group(sgroup)
@@ -1700,6 +1993,7 @@ pub(super) fn cx_sgroup_type_to_kind(type_code: &str) -> Option<SubstanceGroupKi
     }
 }
 
+#[cfg(test)]
 pub(super) fn parse_cx_substitution(
     state: &mut SmilesBuildState,
     ext_text: &str,
@@ -1789,6 +2083,7 @@ pub(super) fn bond_can_have_direction(order: BondOrder) -> bool {
     matches!(order, BondOrder::Single | BondOrder::Aromatic)
 }
 
+#[cfg(test)]
 pub(super) fn parse_cx_wedged_bonds(
     state: &mut SmilesBuildState,
     ext_text: &str,
@@ -1941,7 +2236,10 @@ pub(super) fn parse_cx_wedged_bonds(
             if begin != atom_id && end != atom_id {
                 return Err(cx_parse_failure());
             }
-            let bond = state.builder.bond_mut(bond_id).ok_or_else(cx_parse_failure)?;
+            let bond = state
+                .builder
+                .bond_mut(bond_id)
+                .ok_or_else(cx_parse_failure)?;
             if begin != atom_id {
                 bond.set_endpoints(atom_id, begin);
             }
@@ -1964,6 +2262,7 @@ pub(super) fn parse_cx_wedged_bonds(
     Ok(())
 }
 
+#[cfg(test)]
 pub(super) fn parse_cx_variable_attachments(
     state: &mut SmilesBuildState,
     ext_text: &str,
@@ -2065,7 +2364,10 @@ pub(super) fn parse_cx_variable_attachments(
             };
             let cached_bonds: Vec<_> = state.builder.neighbor_bonds(atom_id).to_vec();
             for bond_id in cached_bonds {
-                let bond = state.builder.bond_mut(bond_id).ok_or_else(cx_parse_failure)?;
+                let bond = state
+                    .builder
+                    .bond_mut(bond_id)
+                    .ok_or_else(cx_parse_failure)?;
                 bond.set_prop("_MolFileBondEndPts", end_pts.clone());
                 bond.set_prop("_MolFileBondAttach", "ANY");
             }
@@ -2153,13 +2455,17 @@ pub(super) fn set_cx_stereo_for_bond(
     } else {
         [low_control, high_control]
     };
-    let bond = state.builder.bond_mut(bond_id).ok_or_else(cx_parse_failure)?;
+    let bond = state
+        .builder
+        .bond_mut(bond_id)
+        .ok_or_else(cx_parse_failure)?;
     bond.set_stereo_atoms(Some(stereo_atoms));
     bond.set_stereo(stereo);
     state.set_property("_needsDetectBondStereo", "1");
     Ok(())
 }
 
+#[cfg(test)]
 pub(super) fn parse_cx_doublebond_stereo(
     state: &mut SmilesBuildState,
     ext_text: &str,
@@ -2222,6 +2528,7 @@ pub(super) fn parse_cx_doublebond_stereo(
     Ok(())
 }
 
+#[cfg(test)]
 pub(super) fn process_cx_radical_section(
     state: &mut SmilesBuildState,
     ext_text: &str,
@@ -2291,6 +2598,7 @@ pub(super) fn process_cx_radical_section(
     }
 }
 
+#[cfg(test)]
 pub(super) fn parse_cx_radicals(
     state: &mut SmilesBuildState,
     ext_text: &str,
@@ -2369,15 +2677,22 @@ pub(super) fn read_cx_usize(ext_text: &str, pos: &mut usize) -> Result<usize, Sm
             "failure parsing CXSMILES extensions".to_string(),
         ));
     }
-    ext_text[start..*pos]
-        .parse::<usize>()
-        .map_err(|_| SmilesParseError::ParseError("failure parsing CXSMILES extensions".to_string()))
+    ext_text[start..*pos].parse::<usize>().map_err(|_| {
+        SmilesParseError::ParseError("failure parsing CXSMILES extensions".to_string())
+    })
 }
 
-pub(super) fn read_cx_text_to(ext_text: &str, pos: &mut usize, delimiters: &[u8]) -> Result<String, SmilesParseError> {
+pub(super) fn read_cx_text_to(
+    ext_text: &str,
+    pos: &mut usize,
+    delimiters: &[u8],
+) -> Result<String, SmilesParseError> {
     let mut value = String::new();
     while *pos < ext_text.len() && !delimiters.contains(&ext_text.as_bytes()[*pos]) {
-        if ext_text.as_bytes()[*pos] == b'&' && *pos + 2 < ext_text.len() && ext_text.as_bytes()[*pos + 1] == b'#' {
+        if ext_text.as_bytes()[*pos] == b'&'
+            && *pos + 2 < ext_text.len()
+            && ext_text.as_bytes()[*pos + 1] == b'#'
+        {
             *pos += 2;
             let numeric_start = *pos;
             while *pos < ext_text.len() && ext_text.as_bytes()[*pos].is_ascii_digit() {
@@ -2385,13 +2700,14 @@ pub(super) fn read_cx_text_to(ext_text: &str, pos: &mut usize, delimiters: &[u8]
             }
             if *pos >= ext_text.len() || ext_text.as_bytes()[*pos] != b';' {
                 return Err(SmilesParseError::ParseError(
-                    "failure parsing CXSMILES extensions: quoted block not terminated with ';'".to_string(),
+                    "failure parsing CXSMILES extensions: quoted block not terminated with ';'"
+                        .to_string(),
                 ));
             }
             if *pos > numeric_start {
-                let code = ext_text[numeric_start..*pos]
-                    .parse::<u32>()
-                    .map_err(|_| SmilesParseError::ParseError("failure parsing CXSMILES extensions".to_string()))?;
+                let code = ext_text[numeric_start..*pos].parse::<u32>().map_err(|_| {
+                    SmilesParseError::ParseError("failure parsing CXSMILES extensions".to_string())
+                })?;
                 if let Some(ch) = char::from_u32(code) {
                     value.push(ch);
                 }
@@ -2405,7 +2721,11 @@ pub(super) fn read_cx_text_to(ext_text: &str, pos: &mut usize, delimiters: &[u8]
     Ok(value)
 }
 
-pub(super) fn expect_byte(ext_text: &str, pos: usize, expected: u8) -> Result<(), SmilesParseError> {
+pub(super) fn expect_byte(
+    ext_text: &str,
+    pos: usize,
+    expected: u8,
+) -> Result<(), SmilesParseError> {
     if pos < ext_text.len() && ext_text.as_bytes()[pos] == expected {
         Ok(())
     } else {

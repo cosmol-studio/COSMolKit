@@ -1,12 +1,14 @@
 use crate::source::base::ikey_base26::{
-    base26_dublet_for_bits_28_to_36, base26_dublet_for_bits_56_to_64, base26_triplet_1, base26_triplet_2,
-    base26_triplet_3, base26_triplet_4, get_xtra_hash_major_hex, get_xtra_hash_minor_hex,
+    base26_dublet_for_bits_28_to_36, base26_dublet_for_bits_56_to_64, base26_triplet_1,
+    base26_triplet_2, base26_triplet_3, base26_triplet_4, get_xtra_hash_major_hex,
+    get_xtra_hash_minor_hex,
 };
 use crate::source::base::sha2::sha2_csum;
 use crate::source::base::util::{extract_inchi_substring, inchi_calloc, inchi_free};
 use crate::source_types::{
-    INCHIKEY_EMPTY_INPUT, INCHIKEY_INVALID_INCHI, INCHIKEY_INVALID_INCHI_PREFIX, INCHIKEY_INVALID_STD_INCHI,
-    INCHIKEY_NOT_ENOUGH_MEMORY, INCHIKEY_OK, SourceConstPointer, SourceHeap, SourceHeapError, SourceMutPointer,
+    INCHIKEY_EMPTY_INPUT, INCHIKEY_INVALID_INCHI, INCHIKEY_INVALID_INCHI_PREFIX,
+    INCHIKEY_INVALID_STD_INCHI, INCHIKEY_NOT_ENOUGH_MEMORY, INCHIKEY_OK, SourceConstPointer,
+    SourceHeap, SourceHeapError, SourceMutPointer,
 };
 
 fn source_strtol_decimal(bytes: &[u8], start: usize) -> i32 {
@@ -819,8 +821,8 @@ pub(crate) mod tests {
             let key = allocate_bytes(&mut heap, &[0xa5; 64]);
             let xtra1 = allocate_bytes(&mut heap, &[0xa5; 64]);
             let xtra2 = allocate_bytes(&mut heap, &[0xa5; 64]);
-            let status =
-                GetINCHIKeyFromINCHI(&mut heap, input.as_const(), 1, 1, key, xtra1, xtra2).expect("source execution");
+            let status = GetINCHIKeyFromINCHI(&mut heap, input.as_const(), 1, 1, key, xtra1, xtra2)
+                .expect("source execution");
             assert_eq!(status, INCHIKEY_OK as i32, "{text}");
             let key_bytes = c_string(&heap, key.as_const());
             assert_eq!(key_bytes.len(), 27, "{text}");
@@ -831,8 +833,14 @@ pub(crate) mod tests {
             assert_eq!(c_string(&heap, xtra1.as_const()).len(), 48, "{text}");
             assert_eq!(c_string(&heap, xtra2.as_const()).len(), 56, "{text}");
             assert_eq!(heap.slice(key.as_const()).expect("key")[28], 0xa5_u8 as i8);
-            assert_eq!(heap.slice(xtra1.as_const()).expect("xtra1")[49], 0xa5_u8 as i8);
-            assert_eq!(heap.slice(xtra2.as_const()).expect("xtra2")[57], 0xa5_u8 as i8);
+            assert_eq!(
+                heap.slice(xtra1.as_const()).expect("xtra1")[49],
+                0xa5_u8 as i8
+            );
+            assert_eq!(
+                heap.slice(xtra2.as_const()).expect("xtra2")[57],
+                0xa5_u8 as i8
+            );
             assert_eq!(heap.live_source_allocation_count(), 0, "{text}");
         }
 
@@ -842,14 +850,24 @@ pub(crate) mod tests {
         let xtra1 = allocate_bytes(&mut heap, &[0xa5; 64]);
         let xtra2 = allocate_bytes(&mut heap, &[0xa5; 64]);
         assert_eq!(
-            GetINCHIKeyFromINCHI(&mut heap, input.as_const(), 0, 0, key, xtra1, xtra2).expect("source execution"),
+            GetINCHIKeyFromINCHI(&mut heap, input.as_const(), 0, 0, key, xtra1, xtra2)
+                .expect("source execution"),
             INCHIKEY_OK as i32
         );
-        assert_eq!(c_string(&heap, key.as_const()), b"VNWKTOKETHGBQD-UHFFFAOYSA-N");
+        assert_eq!(
+            c_string(&heap, key.as_const()),
+            b"VNWKTOKETHGBQD-UHFFFAOYSA-N"
+        );
         assert_eq!(heap.slice(xtra1.as_const()).expect("xtra1")[0], 0);
-        assert_eq!(heap.slice(xtra1.as_const()).expect("xtra1")[1], 0xa5_u8 as i8);
+        assert_eq!(
+            heap.slice(xtra1.as_const()).expect("xtra1")[1],
+            0xa5_u8 as i8
+        );
         assert_eq!(heap.slice(xtra2.as_const()).expect("xtra2")[0], 0);
-        assert_eq!(heap.slice(xtra2.as_const()).expect("xtra2")[1], 0xa5_u8 as i8);
+        assert_eq!(
+            heap.slice(xtra2.as_const()).expect("xtra2")[1],
+            0xa5_u8 as i8
+        );
         assert_eq!(heap.live_source_allocation_count(), 0);
 
         for minor_length in [254_usize, 255] {
@@ -880,8 +898,16 @@ pub(crate) mod tests {
         let xtra1 = allocate_bytes(&mut heap, &[0xa5; 64]);
         let xtra2 = allocate_bytes(&mut heap, &[0xa5; 64]);
         assert_eq!(
-            GetINCHIKeyFromINCHI(&mut heap, SourceConstPointer::null(), 1, 1, key, xtra1, xtra2,)
-                .expect("source execution"),
+            GetINCHIKeyFromINCHI(
+                &mut heap,
+                SourceConstPointer::null(),
+                1,
+                1,
+                key,
+                xtra1,
+                xtra2,
+            )
+            .expect("source execution"),
             INCHIKEY_EMPTY_INPUT as i32
         );
         assert_eq!(heap.slice(key.as_const()).expect("key")[0], 0xa5_u8 as i8);
@@ -898,7 +924,10 @@ pub(crate) mod tests {
             ("InChI=1S/CH4/fh1\0", INCHIKEY_INVALID_STD_INCHI),
             ("InChI=1S/CH4/rC\0", INCHIKEY_INVALID_STD_INCHI),
             ("InChI=1S/CH4/p0\0", INCHIKEY_INVALID_STD_INCHI),
-            ("InChI=1S/CH4/p-9223372036854775809\0", INCHIKEY_INVALID_STD_INCHI),
+            (
+                "InChI=1S/CH4/p-9223372036854775809\0",
+                INCHIKEY_INVALID_STD_INCHI,
+            ),
             ("InChI=1S/CH4/p\0", INCHIKEY_INVALID_STD_INCHI),
             ("InChI=1S/CH4/p/t1-\0", INCHIKEY_INVALID_INCHI),
         ] {
@@ -921,8 +950,10 @@ pub(crate) mod tests {
             );
             assert_eq!(
                 heap.slice(key.as_const()).expect("key")[0],
-                if matches!(expected, INCHIKEY_INVALID_STD_INCHI | INCHIKEY_INVALID_INCHI)
-                    && text.starts_with("InChI=1S/CH4/")
+                if matches!(
+                    expected,
+                    INCHIKEY_INVALID_STD_INCHI | INCHIKEY_INVALID_INCHI
+                ) && text.starts_with("InChI=1S/CH4/")
                 {
                     0
                 } else {
@@ -940,8 +971,16 @@ pub(crate) mod tests {
             let xtra = allocate_bytes(&mut heap, &[0xa5; 64]);
             heap.fail_after_allocations(successful_allocations);
             assert_eq!(
-                GetINCHIKeyFromINCHI(&mut heap, input.as_const(), 1, 0, key, xtra, SourceMutPointer::null(),)
-                    .expect("source execution"),
+                GetINCHIKeyFromINCHI(
+                    &mut heap,
+                    input.as_const(),
+                    1,
+                    0,
+                    key,
+                    xtra,
+                    SourceMutPointer::null(),
+                )
+                .expect("source execution"),
                 INCHIKEY_NOT_ENOUGH_MEMORY as i32
             );
             assert_eq!(heap.live_source_allocation_count(), 0);
@@ -975,7 +1014,8 @@ pub(crate) mod tests {
             oracle.status,
             String::from_utf8_lossy(&oracle.stderr)
         );
-        let output = String::from_utf8(oracle.stdout).expect("official C oracle output must be UTF-8");
+        let output =
+            String::from_utf8(oracle.stdout).expect("official C oracle output must be UTF-8");
         let mut record_count = 0_usize;
         for line in output.lines() {
             let official: Value = serde_json::from_str(line).expect("oracle record must be JSON");
@@ -1029,10 +1069,18 @@ pub(crate) mod tests {
                 } else {
                     input.as_const()
                 },
-                i32::try_from(official["input"]["xtra1"].as_i64().expect("xtra1 must be signed"))
-                    .expect("xtra1 exceeds i32"),
-                i32::try_from(official["input"]["xtra2"].as_i64().expect("xtra2 must be signed"))
-                    .expect("xtra2 exceeds i32"),
+                i32::try_from(
+                    official["input"]["xtra1"]
+                        .as_i64()
+                        .expect("xtra1 must be signed"),
+                )
+                .expect("xtra1 exceeds i32"),
+                i32::try_from(
+                    official["input"]["xtra2"]
+                        .as_i64()
+                        .expect("xtra2 must be signed"),
+                )
+                .expect("xtra2 exceeds i32"),
                 key,
                 if xtra1_pointer_null {
                     SourceMutPointer::null()
@@ -1049,7 +1097,9 @@ pub(crate) mod tests {
 
             assert_eq!(
                 i64::from(status),
-                official["output"]["status"].as_i64().expect("status must be signed"),
+                official["output"]["status"]
+                    .as_i64()
+                    .expect("status must be signed"),
                 "{case_id}"
             );
             let rust_input = heap
@@ -1058,7 +1108,11 @@ pub(crate) mod tests {
                 .iter()
                 .map(|byte| *byte as u8)
                 .collect::<Vec<_>>();
-            assert_eq!(rust_input, parse_bytes(&official["output"]["bytes"], 640), "{case_id}");
+            assert_eq!(
+                rust_input,
+                parse_bytes(&official["output"]["bytes"], 640),
+                "{case_id}"
+            );
             assert_eq!(rust_input, input_before, "{case_id}");
             assert_eq!(official["output"]["input_unchanged"], true, "{case_id}");
             for (pointer, field) in [
@@ -1082,9 +1136,15 @@ pub(crate) mod tests {
             let official_allocation_calls = official["output"]["allocation_calls"]
                 .as_u64()
                 .expect("allocation_calls must be unsigned");
-            assert_eq!(heap.source_allocation_calls(), official_allocation_calls, "{case_id}");
-            let failure_observed =
-                u64::from(allocation_failure_ordinal > 0 && official_allocation_calls >= allocation_failure_ordinal);
+            assert_eq!(
+                heap.source_allocation_calls(),
+                official_allocation_calls,
+                "{case_id}"
+            );
+            let failure_observed = u64::from(
+                allocation_failure_ordinal > 0
+                    && official_allocation_calls >= allocation_failure_ordinal,
+            );
             assert_eq!(
                 official["output"]["deferred_frees"]
                     .as_u64()

@@ -1,38 +1,46 @@
 use crate::source::base::ichi_io::{
-    inchi_ios_close, inchi_ios_eprint, inchi_ios_init, inchi_ios_print, inchi_ios_reset, inchi_strbuf_close,
-    inchi_strbuf_init,
+    inchi_ios_close, inchi_ios_eprint, inchi_ios_init, inchi_ios_print, inchi_ios_reset,
+    inchi_strbuf_close, inchi_strbuf_init,
 };
 use crate::source::base::ichicano::{InchiTimeElapsed, InchiTimeGet};
 use crate::source::base::ichimak2::AllocateAndFillHillFormula;
 use crate::source::base::ichimake::CompareReversedINChI;
 use crate::source::base::ichiprt2::{inchi_strtod, inchi_strtol};
 use crate::source::base::ichirvr7::{
-    AddOneMsg, AddProtonAndIsoHBalanceToMobHStruct, AllInchiToStructure, CompareAllDisconnectedOrigInchiToRevInChI,
-    CompareAllOrigInchiToRevInChI, FillOutCompareMessage, FreeInpInChI, FreeStrFromINChI,
-    MarkDisconectedIdenticalToReconnected, MergeStructureComponents, RemoveFixHInChIIdentical2MobH, SetUpSrm,
+    AddOneMsg, AddProtonAndIsoHBalanceToMobHStruct, AllInchiToStructure,
+    CompareAllDisconnectedOrigInchiToRevInChI, CompareAllOrigInchiToRevInChI,
+    FillOutCompareMessage, FreeInpInChI, FreeStrFromINChI, MarkDisconectedIdenticalToReconnected,
+    MergeStructureComponents, RemoveFixHInChIIdentical2MobH, SetUpSrm,
 };
 use crate::source::base::runichi4::{FreeAllINChIArrays, SortAndPrintINChI};
 use crate::source::base::strutil::{Free_INChI_Members, Free_INChI_Stereo, imat_free, imat_new};
-use crate::source::base::util::{get_periodic_table_number, inchi_calloc, inchi_free, inchi_realloc, is_el_a_metal};
+use crate::source::base::util::{
+    get_periodic_table_number, inchi_calloc, inchi_free, inchi_realloc, is_el_a_metal,
+};
 use crate::source_types::{
-    _IS_ERROR, _IS_FATAL, AB_MAX_WELL_DEFINED_PARITY, AB_MIN_WELL_DEFINED_PARITY, AB_PARITY_UNDF, AB_PARITY_UNKN,
-    AT_NUMB, CANON_GLOBALS, COMPONENT_REM_PROTONS, CT_USER_QUIT_ERR, FILE, FLAG_SORT_PRINT_ReChI_PREFIX, INCHI_BAS,
-    INCHI_CLOCK, INCHI_IOS_STRING, INCHI_IOS_TYPE_STRING, INCHI_IOSTREAM, INCHI_MODE, INCHI_NUM,
-    INCHI_OUT_INCHI_GEN_ERROR, INCHI_OUT_MISMATCH_AS_ERROR, INCHI_OUT_SAVEOPT, INCHI_OUT_SDFILE_ONLY,
-    INCHI_OUT_STDINCHI, INCHI_REC, INCHI_STRBUF_INITIAL_SIZE, INCHI_STRBUF_SIZE_INCREMENT, INChI, INChI_Aux,
-    INChI_Stereo, INPUT_PARMS, InpInChI, MAX_ATOMS, NO_VALUE_INT, NORM_CANON_FLAGS, OAD_Polymer, OAD_V3000,
-    PINChI_Aux2, PINChI2, READ_INCHI_SPLIT_OUTPUT, READ_INCHI_TO_STRUCTURE, REM_PROTONS, REQ_MODE_BASIC,
-    REQ_MODE_CHIR_FLG_STEREO, REQ_MODE_ISO, REQ_MODE_ISO_STEREO, REQ_MODE_RACEMIC_STEREO, REQ_MODE_RELATIVE_STEREO,
-    REQ_MODE_SB_IGN_ALL_UU, REQ_MODE_SC_IGN_ALL_UU, REQ_MODE_STEREO, REQ_MODE_TAUT, RI_ERR_ALLOC, RI_ERR_EOF,
-    RI_ERR_EOL, RI_ERR_MISMATCH, RI_ERR_PROGR, RI_ERR_SYNTAX, SAVE_OPT_15T, SAVE_OPT_FIXEDH, SAVE_OPT_KET,
-    SAVE_OPT_PT_06_00, SAVE_OPT_PT_13_00, SAVE_OPT_PT_16_00, SAVE_OPT_PT_18_00, SAVE_OPT_PT_22_00, SAVE_OPT_PT_39_00,
-    SAVE_OPT_RECMET, SAVE_OPT_SLUUD, SAVE_OPT_SUU, SRM, STRUCT_DATA, SourceConstPointer, SourceFormatArgument,
-    SourceHeap, SourceHeapError, SourceMutPointer, SourceVaList, StableSourceConstSlice, StableSourceSlice,
-    StrFromINChI, T_GROUP_HDR_LEN, TAUT_NON, TAUT_NUM, TAUT_YES, TG_FLAG_ARSINE_STEREO, TG_FLAG_DISCONNECT_COORD,
-    TG_FLAG_DISCONNECT_COORD_DONE, TG_FLAG_FIX_SP3_BUG, TG_FLAG_PHOSPHINE_STEREO, TG_FLAG_RECONNECT_COORD, XYZ_COORD,
-    clock_t, inchiTime, inp_ATOM, local_ichiread::IST_HAPPENED_IN_RECMET, local_ichiread::MODE_PIXH,
-    local_ichiread::NUM_ELEM, local_ichiread::tagCopySegmentType_CPY_ISO_AT as CPY_ISO_AT,
-    local_ichiread::tagCopySegmentType_CPY_SP2 as CPY_SP2, local_ichiread::tagCopySegmentType_CPY_SP3 as CPY_SP3,
+    _IS_ERROR, _IS_FATAL, AB_MAX_WELL_DEFINED_PARITY, AB_MIN_WELL_DEFINED_PARITY, AB_PARITY_UNDF,
+    AB_PARITY_UNKN, AT_NUMB, CANON_GLOBALS, COMPONENT_REM_PROTONS, CT_USER_QUIT_ERR, FILE,
+    FLAG_SORT_PRINT_ReChI_PREFIX, INCHI_BAS, INCHI_CLOCK, INCHI_IOS_STRING, INCHI_IOS_TYPE_STRING,
+    INCHI_IOSTREAM, INCHI_MODE, INCHI_NUM, INCHI_OUT_INCHI_GEN_ERROR, INCHI_OUT_MISMATCH_AS_ERROR,
+    INCHI_OUT_SAVEOPT, INCHI_OUT_SDFILE_ONLY, INCHI_OUT_STDINCHI, INCHI_REC,
+    INCHI_STRBUF_INITIAL_SIZE, INCHI_STRBUF_SIZE_INCREMENT, INChI, INChI_Aux, INChI_Stereo,
+    INPUT_PARMS, InpInChI, MAX_ATOMS, NO_VALUE_INT, NORM_CANON_FLAGS, OAD_Polymer, OAD_V3000,
+    PINChI_Aux2, PINChI2, READ_INCHI_SPLIT_OUTPUT, READ_INCHI_TO_STRUCTURE, REM_PROTONS,
+    REQ_MODE_BASIC, REQ_MODE_CHIR_FLG_STEREO, REQ_MODE_ISO, REQ_MODE_ISO_STEREO,
+    REQ_MODE_RACEMIC_STEREO, REQ_MODE_RELATIVE_STEREO, REQ_MODE_SB_IGN_ALL_UU,
+    REQ_MODE_SC_IGN_ALL_UU, REQ_MODE_STEREO, REQ_MODE_TAUT, RI_ERR_ALLOC, RI_ERR_EOF, RI_ERR_EOL,
+    RI_ERR_MISMATCH, RI_ERR_PROGR, RI_ERR_SYNTAX, SAVE_OPT_15T, SAVE_OPT_FIXEDH, SAVE_OPT_KET,
+    SAVE_OPT_PT_06_00, SAVE_OPT_PT_13_00, SAVE_OPT_PT_16_00, SAVE_OPT_PT_18_00, SAVE_OPT_PT_22_00,
+    SAVE_OPT_PT_39_00, SAVE_OPT_RECMET, SAVE_OPT_SLUUD, SAVE_OPT_SUU, SRM, STRUCT_DATA,
+    SourceConstPointer, SourceFormatArgument, SourceHeap, SourceHeapError, SourceMutPointer,
+    SourceVaList, StableSourceConstSlice, StableSourceSlice, StrFromINChI, T_GROUP_HDR_LEN,
+    TAUT_NON, TAUT_NUM, TAUT_YES, TG_FLAG_ARSINE_STEREO, TG_FLAG_DISCONNECT_COORD,
+    TG_FLAG_DISCONNECT_COORD_DONE, TG_FLAG_FIX_SP3_BUG, TG_FLAG_PHOSPHINE_STEREO,
+    TG_FLAG_RECONNECT_COORD, XYZ_COORD, clock_t, inchiTime, inp_ATOM,
+    local_ichiread::IST_HAPPENED_IN_RECMET, local_ichiread::MODE_PIXH, local_ichiread::NUM_ELEM,
+    local_ichiread::tagCopySegmentType_CPY_ISO_AT as CPY_ISO_AT,
+    local_ichiread::tagCopySegmentType_CPY_SP2 as CPY_SP2,
+    local_ichiread::tagCopySegmentType_CPY_SP3 as CPY_SP3,
     local_ichiread::tagCopySegmentType_CPY_SP3_M as CPY_SP3_M,
     local_ichiread::tagInChI_STATE_IST_MATERIAL_BALANCE_ERROR as IST_MATERIAL_BALANCE_ERROR,
     local_ichiread::tagInChI_STATE_IST_MOBILE_H_CONNECTIONS as IST_MOBILE_H_CONNECTIONS,
@@ -40,8 +48,8 @@ use crate::source_types::{
     local_ichiread::tagModeProtonIsoExchgH_MODE_PIXH_ADD_TO_EACH as MODE_PIXH_ADD_TO_EACH,
     local_ichiread::tagModeProtonIsoExchgH_MODE_PIXH_ADD_TO_FIRST as MODE_PIXH_ADD_TO_FIRST,
     local_ichiread::tagModeProtonIsoExchgH_MODE_PIXH_KEEP_TOTALS as MODE_PIXH_KEEP_TOTALS,
-    local_ichiread::tagModeProtonIsoExchgH_MODE_PIXH_UNDEFINED as MODE_PIXH_UNDEFINED, local_util::ERR_ELEM,
-    local_util::nElDataLen, tagInputType_INPUT_INCHI,
+    local_ichiread::tagModeProtonIsoExchgH_MODE_PIXH_UNDEFINED as MODE_PIXH_UNDEFINED,
+    local_util::ERR_ELEM, local_util::nElDataLen, tagInputType_INPUT_INCHI,
 };
 
 #[allow(non_snake_case)]
@@ -97,7 +105,9 @@ pub(crate) fn bInpInchiComponentExists(
         .slice(components.offset(i64::from(k))?.as_const())?
         .first()
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    Ok(i32::from(component.nNumberOfAtoms > 0 && component.bDeleted == 0))
+    Ok(i32::from(
+        component.nNumberOfAtoms > 0 && component.bDeleted == 0,
+    ))
 }
 
 #[rustfmt::skip]
@@ -160,7 +170,10 @@ int bInpInchiComponentDeleted(InpInChI* pOneInput,
 }
 
 #[allow(non_snake_case)]
-pub(crate) fn SetHillFormFromInChI(heap: &mut SourceHeap, one_input: &mut InpInChI) -> Result<i32, SourceHeapError> {
+pub(crate) fn SetHillFormFromInChI(
+    heap: &mut SourceHeap,
+    one_input: &mut InpInChI,
+) -> Result<i32, SourceHeapError> {
     // Active libinchi configuration: FIX_DALKE_BUGS == 1 includes this function.
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichiread.c:583 SetHillFormFromInChI
     // INCHI✔️❌: int SetHillFormFromInChI(InpInChI* OneInput)
@@ -196,7 +209,8 @@ pub(crate) fn SetHillFormFromInChI(heap: &mut SourceHeap, one_input: &mut InpInC
         for tautomer in TAUT_NON as usize..TAUT_NUM as usize {
             let component_count = one_input.nNumComponents[representation][tautomer];
             let component_count = if component_count > 0 {
-                usize::try_from(component_count).map_err(|_| SourceHeapError::SourceIntegerOverflow)?
+                usize::try_from(component_count)
+                    .map_err(|_| SourceHeapError::SourceIntegerOverflow)?
             } else {
                 0
             };
@@ -207,12 +221,20 @@ pub(crate) fn SetHillFormFromInChI(heap: &mut SourceHeap, one_input: &mut InpInC
                     .get(component)
                     .cloned()
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                if snapshot.nNumberOfAtoms == 0 || snapshot.bDeleted != 0 || snapshot.szHillFormula.is_null() {
+                if snapshot.nNumberOfAtoms == 0
+                    || snapshot.bDeleted != 0
+                    || snapshot.szHillFormula.is_null()
+                {
                     continue;
                 }
                 let old_formula = snapshot.szHillFormula;
                 let old_bytes = heap.slice(old_formula.as_const())?;
-                if old_bytes.first().copied().ok_or(SourceHeapError::PointerOutOfBounds)? == 0 {
+                if old_bytes
+                    .first()
+                    .copied()
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?
+                    == 0
+                {
                     continue;
                 }
 
@@ -226,7 +248,12 @@ pub(crate) fn SetHillFormFromInChI(heap: &mut SourceHeap, one_input: &mut InpInC
                     true
                 } else {
                     let new_bytes = heap.slice(new_formula.as_const())?;
-                    if new_bytes.first().copied().ok_or(SourceHeapError::PointerOutOfBounds)? == 0 {
+                    if new_bytes
+                        .first()
+                        .copied()
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?
+                        == 0
+                    {
                         true
                     } else {
                         let new_end = new_bytes
@@ -499,7 +526,8 @@ pub(crate) fn ConvertInChI2InChI(
         inchi_free(heap, *current_header)?;
         *current_header = SourceMutPointer::null();
     }
-    *processing_time = processing_time.wrapping_add(InchiTimeElapsed(clock, Some(start_time), end_clock_result));
+    *processing_time =
+        processing_time.wrapping_add(InchiTimeElapsed(clock, Some(start_time), end_clock_result));
     result
 }
 
@@ -600,7 +628,8 @@ pub(crate) fn GetNumNeighborsFromInchi(
                 .ok_or(SourceHeapError::PointerOutOfBounds)?,
         ) - 1;
         let connection_length = if inchi.lenConnTable > 1 {
-            usize::try_from(inchi.lenConnTable).map_err(|_| SourceHeapError::SourceIntegerOverflow)?
+            usize::try_from(inchi.lenConnTable)
+                .map_err(|_| SourceHeapError::SourceIntegerOverflow)?
         } else {
             1
         };
@@ -624,9 +653,13 @@ pub(crate) fn GetNumNeighborsFromInchi(
         }
     }
 
-    if let Some(inchi) = p_inchi.filter(|value| value.lenTautomer > 1 && !value.nTautomer.is_null()) {
+    if let Some(inchi) = p_inchi.filter(|value| value.lenTautomer > 1 && !value.nTautomer.is_null())
+    {
         let tautomer = heap.slice(inchi.nTautomer.as_const())?;
-        let group_count = tautomer.first().copied().ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let group_count = tautomer
+            .first()
+            .copied()
+            .ok_or(SourceHeapError::PointerOutOfBounds)?;
         if group_count > 0 {
             let total_endpoint_count = inchi
                 .lenTautomer
@@ -650,7 +683,8 @@ pub(crate) fn GetNumNeighborsFromInchi(
                         .copied()
                         .ok_or(SourceHeapError::PointerOutOfBounds)?
                         .wrapping_sub(1);
-                    tautomeric_atom = tautomeric_atom.wrapping_add(i32::from(tautomer_atom == n_at_number));
+                    tautomeric_atom =
+                        tautomeric_atom.wrapping_add(i32::from(tautomer_atom == n_at_number));
                     index = index.wrapping_add(1);
                     endpoint_count = endpoint_count.wrapping_add(1);
                 }
@@ -772,7 +806,8 @@ pub(crate) fn CountStereoTypes(
     const EL_NUMBER_P: u8 = 15;
     const EL_NUMBER_AS: u8 = 33;
     let parity_is_well_defined = |parity: i8| {
-        AB_MIN_WELL_DEFINED_PARITY as i32 <= i32::from(parity) && i32::from(parity) <= AB_MAX_WELL_DEFINED_PARITY as i32
+        AB_MIN_WELL_DEFINED_PARITY as i32 <= i32::from(parity)
+            && i32::from(parity) <= AB_MAX_WELL_DEFINED_PARITY as i32
     };
 
     if p_inchi.nNumberOfAtoms == 0 || p_inchi.bDeleted != 0 {
@@ -797,18 +832,32 @@ pub(crate) fn CountStereoTypes(
         )
     };
     let stereo = isotopic
-        .filter(|value| value.nNumberOfStereoBonds.wrapping_add(value.nNumberOfStereoCenters) != 0)
-        .or_else(|| regular.filter(|value| value.nNumberOfStereoBonds.wrapping_add(value.nNumberOfStereoCenters) != 0));
+        .filter(|value| {
+            value
+                .nNumberOfStereoBonds
+                .wrapping_add(value.nNumberOfStereoCenters)
+                != 0
+        })
+        .or_else(|| {
+            regular.filter(|value| {
+                value
+                    .nNumberOfStereoBonds
+                    .wrapping_add(value.nNumberOfStereoCenters)
+                    != 0
+            })
+        });
     let Some(stereo) = stereo else {
         return Ok(1);
     };
 
-    let stereo_bond_count =
-        usize::try_from(stereo.nNumberOfStereoBonds.max(0)).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+    let stereo_bond_count = usize::try_from(stereo.nNumberOfStereoBonds.max(0))
+        .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
     if stereo_bond_count > 0 {
         let bond_parities = heap.slice(stereo.b_parity.as_const())?;
         for index in 0..stereo_bond_count {
-            let parity = *bond_parities.get(index).ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let parity = *bond_parities
+                .get(index)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
             if parity_is_well_defined(parity) {
                 *num_known_sb = num_known_sb.wrapping_add(1);
             } else {
@@ -817,17 +866,21 @@ pub(crate) fn CountStereoTypes(
         }
     }
 
-    let stereo_center_count =
-        usize::try_from(stereo.nNumberOfStereoCenters.max(0)).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+    let stereo_center_count = usize::try_from(stereo.nNumberOfStereoCenters.max(0))
+        .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
     if stereo_center_count > 0 {
         let atom_numbers = heap.slice(stereo.nNumber.as_const())?;
         let center_parities = heap.slice(stereo.t_parity.as_const())?;
         for index in 0..stereo_center_count {
-            let atom_number = *atom_numbers.get(index).ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let atom_number = *atom_numbers
+                .get(index)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
             if atom_number == 0 || i32::from(atom_number) > p_inchi.nNumberOfAtoms {
                 return Ok(RI_ERR_PROGR);
             }
-            let parity = *center_parities.get(index).ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let parity = *center_parities
+                .get(index)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
             if parity_is_well_defined(parity) {
                 *num_known_sc = num_known_sc.wrapping_add(1);
             } else {
@@ -1000,10 +1053,14 @@ pub(crate) fn DetectInpInchiCreationOptions(
                         mode_flags_value |= (REQ_MODE_STEREO | REQ_MODE_ISO_STEREO) as i32;
                     }
                     2 => {
-                        mode_flags_value |= (REQ_MODE_STEREO | REQ_MODE_ISO_STEREO | REQ_MODE_RELATIVE_STEREO) as i32;
+                        mode_flags_value |=
+                            (REQ_MODE_STEREO | REQ_MODE_ISO_STEREO | REQ_MODE_RELATIVE_STEREO)
+                                as i32;
                     }
                     3 => {
-                        mode_flags_value |= (REQ_MODE_STEREO | REQ_MODE_ISO_STEREO | REQ_MODE_RACEMIC_STEREO) as i32;
+                        mode_flags_value |=
+                            (REQ_MODE_STEREO | REQ_MODE_ISO_STEREO | REQ_MODE_RACEMIC_STEREO)
+                                as i32;
                     }
                     _ => {}
                 }
@@ -1021,7 +1078,10 @@ pub(crate) fn DetectInpInchiCreationOptions(
             while component < max_components {
                 let inchi = heap
                     .slice(components.as_const())?
-                    .get(usize::try_from(component).map_err(|_| SourceHeapError::SourceIntegerOverflow)?)
+                    .get(
+                        usize::try_from(component)
+                            .map_err(|_| SourceHeapError::SourceIntegerOverflow)?,
+                    )
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
                 let result = CountStereoTypes(
                     heap,
@@ -1049,7 +1109,8 @@ pub(crate) fn DetectInpInchiCreationOptions(
         }
     }
 
-    if mode_flags_value & REQ_MODE_RELATIVE_STEREO as i32 != 0 && mode_flags_value & REQ_MODE_RACEMIC_STEREO as i32 != 0
+    if mode_flags_value & REQ_MODE_RELATIVE_STEREO as i32 != 0
+        && mode_flags_value & REQ_MODE_RACEMIC_STEREO as i32 != 0
     {
         return Ok(RI_ERR_SYNTAX);
     }
@@ -1725,7 +1786,9 @@ pub(crate) fn OutputInChIAsRequested(
         for representation in 0..INCHI_NUM as usize {
             for tautomer in 0..TAUT_NUM as usize {
                 let source_pointer = one_input.pInpInChI[representation][tautomer];
-                if requested_non_tautomeric || (tautomer != TAUT_NON as usize && !source_pointer.is_null()) {
+                if requested_non_tautomeric
+                    || (tautomer != TAUT_NON as usize && !source_pointer.is_null())
+                {
                     let count = if num_components[representation] > 0 {
                         usize::try_from(num_components[representation])
                             .map_err(|_| SourceHeapError::SourceIntegerOverflow)?
@@ -1765,11 +1828,14 @@ pub(crate) fn OutputInChIAsRequested(
                             }
                             Err(error) => return Err(error),
                         };
-                        heap.slice_mut(p_inchi_aux[representation])?[component][tautomer] = aux_owner;
+                        heap.slice_mut(p_inchi_aux[representation])?[component][tautomer] =
+                            aux_owner;
 
                         if component
-                            < usize::try_from(one_input.nNumComponents[representation][tautomer].max(0))
-                                .map_err(|_| SourceHeapError::SourceIntegerOverflow)?
+                            < usize::try_from(
+                                one_input.nNumComponents[representation][tautomer].max(0),
+                            )
+                            .map_err(|_| SourceHeapError::SourceIntegerOverflow)?
                         {
                             let moved = heap
                                 .slice(source_pointer.as_const())?
@@ -1781,24 +1847,33 @@ pub(crate) fn OutputInChIAsRequested(
 
                             let moved_inchi = heap.slice(inchi_owner.as_const())?[0].clone();
                             let mut aux = INChI_Aux::default();
-                            if proton_modes[representation] == MODE_PIXH_ADD_TO_EACH && tautomer == TAUT_YES as usize {
-                                let proton_pointer = one_input.nNumProtons[representation][tautomer].pNumProtons;
+                            if proton_modes[representation] == MODE_PIXH_ADD_TO_EACH
+                                && tautomer == TAUT_YES as usize
+                            {
+                                let proton_pointer =
+                                    one_input.nNumProtons[representation][tautomer].pNumProtons;
                                 let protons = heap
                                     .slice(proton_pointer.as_const())?
                                     .get(component)
                                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
                                 aux.nNumRemovedProtons = protons.nNumRemovedProtons;
                                 aux.nNumRemovedIsotopicH = protons.nNumRemovedIsotopicH;
-                            } else if (component == 0 && proton_modes[representation] == MODE_PIXH_ADD_TO_FIRST)
+                            } else if (component == 0
+                                && proton_modes[representation] == MODE_PIXH_ADD_TO_FIRST)
                                 || (component.wrapping_add(1)
-                                    == usize::try_from(one_input.nNumComponents[representation][tautomer].max(0))
-                                        .map_err(|_| SourceHeapError::SourceIntegerOverflow)?
-                                    && proton_modes[representation] == MODE_PIXH_ADD_A_PIXH_COMPONENT)
+                                    == usize::try_from(
+                                        one_input.nNumComponents[representation][tautomer].max(0),
+                                    )
+                                    .map_err(|_| SourceHeapError::SourceIntegerOverflow)?
+                                    && proton_modes[representation]
+                                        == MODE_PIXH_ADD_A_PIXH_COMPONENT)
                             {
-                                aux.nNumRemovedProtons =
-                                    one_input.nNumProtons[representation][tautomer].nNumRemovedProtons;
-                                aux.nNumRemovedIsotopicH =
-                                    one_input.nNumProtons[representation][tautomer].nNumRemovedIsotopicH;
+                                aux.nNumRemovedProtons = one_input.nNumProtons[representation]
+                                    [tautomer]
+                                    .nNumRemovedProtons;
+                                aux.nNumRemovedIsotopicH = one_input.nNumProtons[representation]
+                                    [tautomer]
+                                    .nNumRemovedIsotopicH;
                             } else {
                                 aux.bDeleted = moved_inchi.bDeleted;
                             }
@@ -1808,7 +1883,8 @@ pub(crate) fn OutputInChIAsRequested(
                                 && moved_inchi.nNumberOfAtoms != 0
                                 && moved_inchi.nNum_H_fixed.is_null()
                             {
-                                let fixed_count = i64::from(moved_inchi.nNumberOfAtoms).wrapping_add(1);
+                                let fixed_count =
+                                    i64::from(moved_inchi.nNumberOfAtoms).wrapping_add(1);
                                 if let Ok(fixed_count) = u64::try_from(fixed_count) {
                                     if let Ok(pointer) = inchi_calloc::<i8>(heap, fixed_count, 1) {
                                         heap.slice_mut(inchi_owner)?[0].nNum_H_fixed = pointer;
@@ -1819,12 +1895,14 @@ pub(crate) fn OutputInChIAsRequested(
                             if tautomer == TAUT_YES as usize
                                 && component
                                     < usize::try_from(
-                                        one_input.nNumComponents[representation][TAUT_NON as usize].max(0),
+                                        one_input.nNumComponents[representation][TAUT_NON as usize]
+                                            .max(0),
                                     )
                                     .map_err(|_| SourceHeapError::SourceIntegerOverflow)?
                             {
-                                let non_taut_owner =
-                                    heap.slice(p_inchi[representation].as_const())?[component][TAUT_NON as usize];
+                                let non_taut_owner = heap
+                                    .slice(p_inchi[representation].as_const())?[component]
+                                    [TAUT_NON as usize];
                                 let mobile = heap.slice(inchi_owner.as_const())?[0].clone();
                                 let non_taut = if non_taut_owner.is_null() {
                                     None
@@ -1832,8 +1910,16 @@ pub(crate) fn OutputInChIAsRequested(
                                     Some(heap.slice(non_taut_owner.as_const())?[0].clone())
                                 };
                                 if mobile.nNumberOfAtoms != 0
-                                    && non_taut.as_ref().is_some_and(|value| value.nNumberOfAtoms != 0)
-                                    && CompareReversedINChI(heap, Some(&mobile), non_taut.as_ref(), None, None)? == 0
+                                    && non_taut
+                                        .as_ref()
+                                        .is_some_and(|value| value.nNumberOfAtoms != 0)
+                                    && CompareReversedINChI(
+                                        heap,
+                                        Some(&mobile),
+                                        non_taut.as_ref(),
+                                        None,
+                                        None,
+                                    )? == 0
                                 {
                                     heap.slice_mut(non_taut_owner)?[0].nNumberOfAtoms = 0;
                                 }
@@ -1873,7 +1959,8 @@ pub(crate) fn OutputInChIAsRequested(
                 sd.num_components = [1, 0];
                 sd.num_non_taut = [0, 0];
                 sd.num_taut = [0, 0];
-                let component = usize::try_from(first).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+                let component =
+                    usize::try_from(first).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
                 if sd.num_components[selected_representation] != 0 {
                     for _tautomer in 0..TAUT_NUM as usize {
                         let row = heap.slice(p_inchi[selected_representation].as_const())?;
@@ -1889,15 +1976,23 @@ pub(crate) fn OutputInChIAsRequested(
                         } else {
                             Some(heap.slice(taut_owner.as_const())?[0].clone())
                         };
-                        let is_in_non_taut = non_taut.as_ref().is_some_and(|value| value.nNumberOfAtoms > 0);
-                        let is_in_taut = taut.as_ref().is_some_and(|value| value.nNumberOfAtoms > 0);
+                        let is_in_non_taut = non_taut
+                            .as_ref()
+                            .is_some_and(|value| value.nNumberOfAtoms > 0);
+                        let is_in_taut =
+                            taut.as_ref().is_some_and(|value| value.nNumberOfAtoms > 0);
                         let is_non_taut = is_in_non_taut
-                            && non_taut.as_ref().is_some_and(|value| value.lenTautomer == 0)
-                            || is_in_taut && taut.as_ref().is_some_and(|value| value.lenTautomer == 0);
-                        let is_taut = is_in_taut && taut.as_ref().is_some_and(|value| value.lenTautomer > 0);
+                            && non_taut
+                                .as_ref()
+                                .is_some_and(|value| value.lenTautomer == 0)
+                            || is_in_taut
+                                && taut.as_ref().is_some_and(|value| value.lenTautomer == 0);
+                        let is_taut =
+                            is_in_taut && taut.as_ref().is_some_and(|value| value.lenTautomer > 0);
                         if is_non_taut || is_taut {
-                            sd.num_non_taut[INCHI_BAS as usize] =
-                                sd.num_non_taut[INCHI_BAS as usize].wrapping_add(i32::from(is_non_taut));
+                            sd.num_non_taut[INCHI_BAS as usize] = sd.num_non_taut
+                                [INCHI_BAS as usize]
+                                .wrapping_add(i32::from(is_non_taut));
                             sd.num_taut[INCHI_BAS as usize] =
                                 sd.num_taut[INCHI_BAS as usize].wrapping_add(i32::from(is_taut));
                         }
@@ -1905,14 +2000,16 @@ pub(crate) fn OutputInChIAsRequested(
                 }
             } else {
                 for representation in 0..INCHI_NUM as usize {
-                    sd.num_components[representation] = one_input.nNumComponents[representation][TAUT_YES as usize]
+                    sd.num_components[representation] = one_input.nNumComponents[representation]
+                        [TAUT_YES as usize]
                         .max(one_input.nNumComponents[representation][TAUT_NON as usize]);
                     sd.num_non_taut[representation] = 0;
                     sd.num_taut[representation] = 0;
                     if sd.num_components[representation] == 0 {
                         continue;
                     }
-                    let component = usize::try_from(first).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+                    let component = usize::try_from(first)
+                        .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
                     for _tautomer in 0..TAUT_NUM as usize {
                         let row = heap.slice(p_inchi[representation].as_const())?;
                         let non_taut_owner = row[component][TAUT_NON as usize];
@@ -1927,16 +2024,24 @@ pub(crate) fn OutputInChIAsRequested(
                         } else {
                             Some(heap.slice(taut_owner.as_const())?[0].clone())
                         };
-                        let is_in_non_taut = non_taut.as_ref().is_some_and(|value| value.nNumberOfAtoms > 0);
-                        let is_in_taut = taut.as_ref().is_some_and(|value| value.nNumberOfAtoms > 0);
+                        let is_in_non_taut = non_taut
+                            .as_ref()
+                            .is_some_and(|value| value.nNumberOfAtoms > 0);
+                        let is_in_taut =
+                            taut.as_ref().is_some_and(|value| value.nNumberOfAtoms > 0);
                         let is_non_taut = is_in_non_taut
-                            && non_taut.as_ref().is_some_and(|value| value.lenTautomer == 0)
-                            || is_in_taut && taut.as_ref().is_some_and(|value| value.lenTautomer == 0);
-                        let is_taut = is_in_taut && taut.as_ref().is_some_and(|value| value.lenTautomer > 0);
+                            && non_taut
+                                .as_ref()
+                                .is_some_and(|value| value.lenTautomer == 0)
+                            || is_in_taut
+                                && taut.as_ref().is_some_and(|value| value.lenTautomer == 0);
+                        let is_taut =
+                            is_in_taut && taut.as_ref().is_some_and(|value| value.lenTautomer > 0);
                         if is_non_taut || is_taut {
-                            sd.num_non_taut[representation] =
-                                sd.num_non_taut[representation].wrapping_add(i32::from(is_non_taut));
-                            sd.num_taut[representation] = sd.num_taut[representation].wrapping_add(i32::from(is_taut));
+                            sd.num_non_taut[representation] = sd.num_non_taut[representation]
+                                .wrapping_add(i32::from(is_non_taut));
+                            sd.num_taut[representation] =
+                                sd.num_taut[representation].wrapping_add(i32::from(is_taut));
                         }
                     }
                 }
@@ -1944,9 +2049,11 @@ pub(crate) fn OutputInChIAsRequested(
 
             let flags = heap.allocate_model_storage(vec![0_i32])?;
             if split_output {
-                let component = usize::try_from(first).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+                let component =
+                    usize::try_from(first).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
                 let row = heap.slice(p_inchi[selected_representation].as_const())?[component];
-                let aux_row = heap.slice(p_inchi_aux[selected_representation].as_const())?[component];
+                let aux_row =
+                    heap.slice(p_inchi_aux[selected_representation].as_const())?[component];
                 let split_rows = heap.allocate_model_storage(vec![row])?;
                 let split_aux_rows = heap.allocate_model_storage(vec![aux_row])?;
                 let has_reconnected_metal = if has_reconnected {
@@ -2036,7 +2143,8 @@ pub(crate) fn OutputInChIAsRequested(
                 let pointer = one_input.nNumProtons[representation][tautomer].pNumProtons;
                 if !pointer.is_null() {
                     inchi_free(heap, pointer)?;
-                    one_input.nNumProtons[representation][tautomer].pNumProtons = SourceMutPointer::null();
+                    one_input.nNumProtons[representation][tautomer].pNumProtons =
+                        SourceMutPointer::null();
                 }
             }
         }
@@ -2056,7 +2164,10 @@ pub(crate) fn OutputInChIAsRequested(
 }
 
 #[allow(non_snake_case)]
-pub(crate) fn bInChIHasReconnectedMetal(heap: &SourceHeap, inchi: Option<&INChI>) -> Result<i32, SourceHeapError> {
+pub(crate) fn bInChIHasReconnectedMetal(
+    heap: &SourceHeap,
+    inchi: Option<&INChI>,
+) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichiread.c:1993 bInChIHasReconnectedMetal
     // INCHI✔❌: int bInChIHasReconnectedMetal(INChI* pInChI)
     // INCHI✔❌: {
@@ -2189,7 +2300,11 @@ pub(crate) fn getInchiStateReadErr(
         .and_then(|index| IR_ERR_MSG.get(index))
         .copied()
         .unwrap_or("Unknown Error");
-    let suffix = if reconnected { ", Reconnected layer" } else { "" };
+    let suffix = if reconnected {
+        ", Reconnected layer"
+    } else {
+        ""
+    };
     let required = message
         .len()
         .checked_add(suffix.len())
@@ -2350,10 +2465,12 @@ pub(crate) fn TreatErrorsInReadInChIString(
     // INCHI✔❌: }
     // END INCHI C FUNCTION: TreatErrorsInReadInChIString
 
-    let b_inchi_to_struct =
-        ip.bReadInChIOptions & READ_INCHI_TO_STRUCTURE as i32 != 0 && ip.nInputType == tagInputType_INPUT_INCHI;
+    let b_inchi_to_struct = ip.bReadInChIOptions & READ_INCHI_TO_STRUCTURE as i32 != 0
+        && ip.nInputType == tagInputType_INPUT_INCHI;
     if !(n_read_status == RI_ERR_EOF as i32 && n_err == 0 && p_state == 0) {
-        *num_inp = num_inp.checked_add(1).ok_or(SourceHeapError::SourceIntegerOverflow)?;
+        *num_inp = num_inp
+            .checked_add(1)
+            .ok_or(SourceHeapError::SourceIntegerOverflow)?;
         let simulation = format!("Structure: {num_inp}");
         let simulation = heap.allocate_model_storage(
             simulation
@@ -2378,8 +2495,12 @@ pub(crate) fn TreatErrorsInReadInChIString(
                 vec![SourceFormatArgument::Bytes(header)],
             )?;
         } else {
-            let error_name =
-                heap.allocate_model_storage(getInchiErrName(n_err).iter().map(|byte| *byte as i8).collect())?;
+            let error_name = heap.allocate_model_storage(
+                getInchiErrName(n_err)
+                    .iter()
+                    .map(|byte| *byte as i8)
+                    .collect(),
+            )?;
             let _ = eprint_call(
                 heap,
                 p_log.as_deref_mut(),
@@ -2447,7 +2568,15 @@ fn eprint_call(
             .map(|byte| byte as i8)
             .collect(),
     )?;
-    let result = inchi_ios_eprint(heap, log, format.as_const(), &SourceVaList { arguments, position: 0 });
+    let result = inchi_ios_eprint(
+        heap,
+        log,
+        format.as_const(),
+        &SourceVaList {
+            arguments,
+            position: 0,
+        },
+    );
     heap.free(format)?;
     result
 }
@@ -2602,24 +2731,25 @@ pub(crate) fn PrepareSaveOptBits(
             .ok_or(SourceHeapError::PointerOutOfBounds)?
             != 0
     };
-    let mut warn = |format_with_header: &str, format_with_number: &str| -> Result<(), SourceHeapError> {
-        if header_is_present {
-            let _ = eprint_call(
-                heap,
-                log.as_deref_mut(),
-                format_with_header,
-                vec![SourceFormatArgument::Bytes(sz_cur_hdr)],
-            )?;
-        } else {
-            let _ = eprint_call(
-                heap,
-                log.as_deref_mut(),
-                format_with_number,
-                vec![SourceFormatArgument::Signed(num_inp)],
-            )?;
-        }
-        Ok(())
-    };
+    let mut warn =
+        |format_with_header: &str, format_with_number: &str| -> Result<(), SourceHeapError> {
+            if header_is_present {
+                let _ = eprint_call(
+                    heap,
+                    log.as_deref_mut(),
+                    format_with_header,
+                    vec![SourceFormatArgument::Bytes(sz_cur_hdr)],
+                )?;
+            } else {
+                let _ = eprint_call(
+                    heap,
+                    log.as_deref_mut(),
+                    format_with_number,
+                    vec![SourceFormatArgument::Signed(num_inp)],
+                )?;
+            }
+            Ok(())
+        };
 
     if input_has_save_opt == 0 {
         ip.bINChIOutputOptions &= !(INCHI_OUT_SAVEOPT as i32);
@@ -15523,7 +15653,8 @@ pub(crate) fn AddLinkedBond(
             .wrapping_add(increment.wrapping_mul(2));
         let replacement = match inchi_calloc::<ONE_LINKED_BOND>(
             heap,
-            u64::try_from(new_length).map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?,
+            u64::try_from(new_length)
+                .map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?,
             4,
         ) {
             Ok(pointer) => pointer,
@@ -15537,7 +15668,8 @@ pub(crate) fn AddLinkedBond(
             Err(error) => return Err(error),
         };
         if !pLB.pBond.is_null() && pLB.len != 0 {
-            let count = usize::try_from(pLB.len).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let count =
+                usize::try_from(pLB.len).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             let values = heap
                 .slice(pLB.pBond.as_const())?
                 .get(..count)
@@ -15578,7 +15710,8 @@ pub(crate) fn AddLinkedBond(
         first.neigh = at2;
         first.prev = at1;
     } else {
-        let insertion = usize::try_from(pLB.len).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let insertion =
+            usize::try_from(pLB.len).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         let value = heap
             .slice_mut(pLB.pBond)?
             .get_mut(insertion)
@@ -15603,7 +15736,8 @@ pub(crate) fn AddLinkedBond(
         second.neigh = at1;
         second.prev = at2;
     } else {
-        let insertion = usize::try_from(pLB.len).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let insertion =
+            usize::try_from(pLB.len).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         let value = heap
             .slice_mut(pLB.pBond)?
             .get_mut(insertion)
@@ -23455,7 +23589,11 @@ endf:
 }
 
 fn conversion_c_text(value: &str) -> Vec<i8> {
-    value.bytes().chain(std::iter::once(0)).map(|byte| byte as i8).collect()
+    value
+        .bytes()
+        .chain(std::iter::once(0))
+        .map(|byte| byte as i8)
+        .collect()
 }
 
 fn conversion_c_len(value: &[i8]) -> Result<i32, SourceHeapError> {
@@ -24796,7 +24934,11 @@ mod tests {
 
     #[test]
     fn source_port__ichiread__extract_from_inchi_string__line_12416() {
-        fn parse(heap: &mut SourceHeap, text: &str, output: &mut InpInChI) -> Result<i32, SourceHeapError> {
+        fn parse(
+            heap: &mut SourceHeap,
+            text: &str,
+            output: &mut InpInChI,
+        ) -> Result<i32, SourceHeapError> {
             let input = c_string(heap, text);
             extract_from_inchi_string(heap, input, output)
         }
@@ -24836,7 +24978,11 @@ mod tests {
                 num_atoms: 77,
                 ..InpInChI::default()
             };
-            assert_eq!(parse(&mut heap, text, &mut output), Ok(_IS_ERROR as i32), "{text:?}");
+            assert_eq!(
+                parse(&mut heap, text, &mut output),
+                Ok(_IS_ERROR as i32),
+                "{text:?}"
+            );
             assert_eq!(output.num_atoms, 0);
             assert_eq!(FreeInpInChI(&mut heap, &mut output), Ok(()));
         }
@@ -24864,7 +25010,13 @@ mod tests {
         let input = c_string(&mut heap, LACTIC);
         let mut identity_marks = [9_i32; 5];
         assert_eq!(
-            extract_stereo_info_from_inchi_string(&mut heap, input, 3, &[0, 1, 2, 3], &mut identity_marks,),
+            extract_stereo_info_from_inchi_string(
+                &mut heap,
+                input,
+                3,
+                &[0, 1, 2, 3],
+                &mut identity_marks,
+            ),
             Ok(0)
         );
         assert_eq!(identity_marks[0], 0);
@@ -24877,7 +25029,13 @@ mod tests {
         let remapped_input = c_string(&mut heap, LACTIC);
         let mut remapped_marks = [7_i32; 5];
         assert_eq!(
-            extract_stereo_info_from_inchi_string(&mut heap, remapped_input, 3, &[0, 3, 1, 2], &mut remapped_marks,),
+            extract_stereo_info_from_inchi_string(
+                &mut heap,
+                remapped_input,
+                3,
+                &[0, 3, 1, 2],
+                &mut remapped_marks,
+            ),
             Ok(0)
         );
         assert_eq!(remapped_marks, [0, parity, 0, 0, 7]);
@@ -24893,7 +25051,13 @@ mod tests {
         let malformed = c_string(&mut heap, "InChI=1S/CH4/i\n");
         let mut malformed_marks = [6_i32; 3];
         assert_eq!(
-            extract_stereo_info_from_inchi_string(&mut heap, malformed, 1, &[0, 1], &mut malformed_marks,),
+            extract_stereo_info_from_inchi_string(
+                &mut heap,
+                malformed,
+                1,
+                &[0, 1],
+                &mut malformed_marks,
+            ),
             Ok(_IS_ERROR as i32)
         );
         assert_eq!(malformed_marks, [0, 0, 6]);
@@ -24934,7 +25098,10 @@ mod tests {
             Ok(0)
         );
         assert_eq!(count, 8);
-        assert_eq!(&bonds[..16], &[8, 3, 1, 6, 2, 5, 2, 7, 3, 6, 1, 5, 4, 7, 4, 8]);
+        assert_eq!(
+            &bonds[..16],
+            &[8, 3, 1, 6, 2, 5, 2, 7, 3, 6, 1, 5, 4, 7, 4, 8]
+        );
         assert!(bonds[16..].iter().all(|value| *value == 77));
 
         let remapped_input = c_string(&mut heap, POLYMER);
@@ -24953,7 +25120,9 @@ mod tests {
         assert_eq!(remapped_count, 9);
         assert_eq!(
             &remapped[..18],
-            &[88, 88, 80, 30, 20, 60, 10, 50, 10, 70, 30, 60, 20, 50, 40, 70, 40, 80]
+            &[
+                88, 88, 80, 30, 20, 60, 10, 50, 10, 70, 30, 60, 20, 50, 40, 70, 40, 80
+            ]
         );
         assert_eq!(&remapped[18..], &[88, 88]);
 
@@ -25005,16 +25174,24 @@ mod tests {
     #[test]
     fn source_port__ichiread__convertinchi2struct__line_11203() {
         let mut heap = SourceHeap::default();
-        let clock = heap.allocate_model_storage(vec![INCHI_CLOCK::default()]).unwrap();
-        let canon = heap.allocate_model_storage(vec![CANON_GLOBALS::default()]).unwrap();
+        let clock = heap
+            .allocate_model_storage(vec![INCHI_CLOCK::default()])
+            .unwrap();
+        let canon = heap
+            .allocate_model_storage(vec![CANON_GLOBALS::default()])
+            .unwrap();
         let transferred_atom = heap
             .allocate_model_storage(vec![inp_ATOM {
                 el_number: 6,
                 ..inp_ATOM::default()
             }])
             .unwrap();
-        let transferred_polymer = heap.allocate_model_storage(vec![OAD_Polymer::default()]).unwrap();
-        let transferred_v3000 = heap.allocate_model_storage(vec![OAD_V3000::default()]).unwrap();
+        let transferred_polymer = heap
+            .allocate_model_storage(vec![OAD_Polymer::default()])
+            .unwrap();
+        let transferred_v3000 = heap
+            .allocate_model_storage(vec![OAD_V3000::default()])
+            .unwrap();
         let mut header = c_string(&mut heap, "record").as_mut();
         let mut input = InpInChI {
             atom: transferred_atom,
@@ -25030,7 +25207,8 @@ mod tests {
             | REQ_MODE_CHIR_FLG_STEREO
             | REQ_MODE_SB_IGN_ALL_UU
             | REQ_MODE_SC_IGN_ALL_UU) as INCHI_MODE;
-        let clear_taut = (TG_FLAG_PHOSPHINE_STEREO | TG_FLAG_ARSINE_STEREO | TG_FLAG_FIX_SP3_BUG) as INCHI_MODE;
+        let clear_taut =
+            (TG_FLAG_PHOSPHINE_STEREO | TG_FLAG_ARSINE_STEREO | TG_FLAG_FIX_SP3_BUG) as INCHI_MODE;
         let mut parameters = INPUT_PARMS {
             nMode: INCHI_MODE::MAX,
             bTautFlags: INCHI_MODE::MAX,
@@ -25109,7 +25287,8 @@ mod tests {
         assert!(log.s.pStr.is_null());
         assert_eq!(
             parameters.nMode,
-            (INCHI_MODE::MAX & !clear_mode) | (REQ_MODE_SB_IGN_ALL_UU | REQ_MODE_SC_IGN_ALL_UU) as INCHI_MODE
+            (INCHI_MODE::MAX & !clear_mode)
+                | (REQ_MODE_SB_IGN_ALL_UU | REQ_MODE_SC_IGN_ALL_UU) as INCHI_MODE
         );
         assert_eq!(parameters.bTautFlags, INCHI_MODE::MAX & !clear_taut);
 
@@ -25253,7 +25432,10 @@ mod tests {
         );
         let short_len = failure_short.iter().position(|byte| *byte == 0).unwrap();
         assert_eq!(&failure_short[..short_len], &failure_message[..failure_len]);
-        assert_eq!(log_text(&failure_heap, &failure_log), "*Conversion failed*\n");
+        assert_eq!(
+            log_text(&failure_heap, &failure_log),
+            "*Conversion failed*\n"
+        );
         assert_eq!(failure_errors, 10);
         assert!(failure_header.is_null());
         assert_eq!(failure_input, InpInChI::default());
@@ -25330,7 +25512,10 @@ mod tests {
             ),
             Ok(-3)
         );
-        assert_eq!((nested_insertions, nested_stars, nested_positions[0]), (1, 2, 2));
+        assert_eq!(
+            (nested_insertions, nested_stars, nested_positions[0]),
+            (1, 2, 2)
+        );
 
         for value in [")", "abc)"] {
             let value = bytes(value);
@@ -25392,7 +25577,14 @@ mod tests {
         let mut location = [0];
         let mut count_stars = 0;
         assert_eq!(
-            DetectHiddenPolymerStuff(&pair, 2, &mut count, &mut location, i32::MAX, &mut count_stars,),
+            DetectHiddenPolymerStuff(
+                &pair,
+                2,
+                &mut count,
+                &mut location,
+                i32::MAX,
+                &mut count_stars,
+            ),
             Err(SourceHeapError::SourceIntegerOverflow)
         );
         assert_eq!((count, count_stars, location[0]), (0, 2, 0));
@@ -25451,7 +25643,10 @@ mod tests {
             type_: crate::source_types::INCHI_IOS_TYPE_STRING as i32,
             ..INCHI_IOSTREAM::default()
         };
-        assert_eq!(getInChIChar(&mut heap, &mut no_storage), Ok(RI_ERR_EOF as i32));
+        assert_eq!(
+            getInChIChar(&mut heap, &mut no_storage),
+            Ok(RI_ERR_EOF as i32)
+        );
 
         let file = heap
             .allocate_model_storage(vec![SourceFile {
@@ -25469,8 +25664,14 @@ mod tests {
         };
         assert_eq!(getInChIChar(&mut heap, &mut file_stream), Ok(13));
         assert_eq!(getInChIChar(&mut heap, &mut file_stream), Ok(255));
-        assert_eq!(getInChIChar(&mut heap, &mut file_stream), Ok(RI_ERR_EOF as i32));
-        assert_eq!(getInChIChar(&mut heap, &mut file_stream), Ok(RI_ERR_EOF as i32));
+        assert_eq!(
+            getInChIChar(&mut heap, &mut file_stream),
+            Ok(RI_ERR_EOF as i32)
+        );
+        assert_eq!(
+            getInChIChar(&mut heap, &mut file_stream),
+            Ok(RI_ERR_EOF as i32)
+        );
         let state = &heap.slice(file.as_const()).unwrap()[0];
         assert_eq!(state.position, 2);
         assert!(state.eof);
@@ -25504,7 +25705,10 @@ mod tests {
             f: error_file,
             ..INCHI_IOSTREAM::default()
         };
-        assert_eq!(getInChIChar(&mut heap, &mut error_stream), Ok(RI_ERR_EOF as i32));
+        assert_eq!(
+            getInChIChar(&mut heap, &mut error_stream),
+            Ok(RI_ERR_EOF as i32)
+        );
         let state = &heap.slice(error_file.as_const()).unwrap()[0];
         assert_eq!(state.position, 0);
         assert!(state.error);
@@ -25519,7 +25723,10 @@ mod tests {
     fn source_port__ichiread__addinchichar__line_10603() {
         use crate::source_types::{INCHI_IOS_STRING, SEGM_LINE, SourceFile};
 
-        fn string_input(heap: &mut SourceHeap, bytes: &[i8]) -> (INCHI_IOSTREAM, SourceMutPointer<i8>) {
+        fn string_input(
+            heap: &mut SourceHeap,
+            bytes: &[i8],
+        ) -> (INCHI_IOSTREAM, SourceMutPointer<i8>) {
             let pointer = heap.allocate_model_storage(bytes.to_vec()).unwrap();
             (
                 INCHI_IOSTREAM {
@@ -25565,7 +25772,10 @@ mod tests {
             Ok(-((b'/' as i32) + 2))
         );
         assert_eq!(line.len, 2);
-        assert_eq!(&heap.slice(buffer.as_const()).unwrap()[..4], &[65, 66, 0, 93]);
+        assert_eq!(
+            &heap.slice(buffer.as_const()).unwrap()[..4],
+            &[65, 66, 0, 93]
+        );
 
         let (mut negative, _) = string_input(&mut heap, &[-1]);
         assert_eq!(
@@ -25573,7 +25783,10 @@ mod tests {
             Ok(RI_ERR_SYNTAX)
         );
         assert_eq!(line.len, 2);
-        assert_eq!(&heap.slice(buffer.as_const()).unwrap()[..4], &[65, 66, 0, 93]);
+        assert_eq!(
+            &heap.slice(buffer.as_const()).unwrap()[..4],
+            &[65, 66, 0, 93]
+        );
 
         let empty_buffer = heap.allocate_model_storage(vec![77_i8; 4]).unwrap();
         let mut empty_line = SEGM_LINE {
@@ -25588,7 +25801,10 @@ mod tests {
             Ok(RI_ERR_EOF as i32)
         );
         assert_eq!(empty_line.len, 0);
-        assert_eq!(heap.slice(empty_buffer.as_const()).unwrap(), &[0, 77, 77, 77]);
+        assert_eq!(
+            heap.slice(empty_buffer.as_const()).unwrap(),
+            &[0, 77, 77, 77]
+        );
 
         let mut nonempty_line = SEGM_LINE {
             str_: empty_buffer,
@@ -25602,9 +25818,14 @@ mod tests {
             Ok(RI_ERR_EOF as i32)
         );
         assert_eq!(nonempty_line.len, 2);
-        assert_eq!(heap.slice(empty_buffer.as_const()).unwrap(), &[0, 0, 77, 77]);
+        assert_eq!(
+            heap.slice(empty_buffer.as_const()).unwrap(),
+            &[0, 0, 77, 77]
+        );
 
-        let old = heap.allocate_model_storage(vec![b'X' as i8, b'Y' as i8, 111]).unwrap();
+        let old = heap
+            .allocate_model_storage(vec![b'X' as i8, b'Y' as i8, 111])
+            .unwrap();
         let mut growing = SEGM_LINE {
             str_: old,
             len: 2,
@@ -25618,7 +25839,10 @@ mod tests {
         );
         assert_eq!((growing.len, growing.len_alloc), (3, 131));
         assert_ne!(growing.str_, old);
-        assert_eq!(heap.slice(old.as_const()), Err(SourceHeapError::MissingAllocation));
+        assert_eq!(
+            heap.slice(old.as_const()),
+            Err(SourceHeapError::MissingAllocation)
+        );
         let grown = heap.slice(growing.str_.as_const()).unwrap();
         assert_eq!(grown.len(), 131);
         assert_eq!(&grown[..4], &[b'X' as i8, b'Y' as i8, b'Z' as i8, 0]);
@@ -25639,7 +25863,10 @@ mod tests {
         assert_eq!((zero_length.len, zero_length.len_alloc), (1, 129));
         assert_ne!(zero_length.str_, leaked_old);
         assert_eq!(heap.slice(leaked_old.as_const()).unwrap(), &[55]);
-        assert_eq!(&heap.slice(zero_length.str_.as_const()).unwrap()[..2], &[b'Q' as i8, 0]);
+        assert_eq!(
+            &heap.slice(zero_length.str_.as_const()).unwrap()[..2],
+            &[b'Q' as i8, 0]
+        );
 
         let mut null_old = SEGM_LINE {
             str_: SourceMutPointer::null(),
@@ -25653,7 +25880,10 @@ mod tests {
             Ok(b'R' as i32)
         );
         assert_eq!((null_old.len, null_old.len_alloc), (2, 130));
-        assert_eq!(&heap.slice(null_old.str_.as_const()).unwrap()[..3], &[0, b'R' as i8, 0]);
+        assert_eq!(
+            &heap.slice(null_old.str_.as_const()).unwrap()[..3],
+            &[0, b'R' as i8, 0]
+        );
 
         let failure_old = heap.allocate_model_storage(vec![12_i8, 13]).unwrap();
         let mut failure_line = SEGM_LINE {
@@ -25665,7 +25895,12 @@ mod tests {
         let (mut failure_input, _) = string_input(&mut heap, &[b'S' as i8]);
         heap.fail_after_allocations(0);
         assert_eq!(
-            AddInChIChar(&mut heap, &mut failure_input, &mut failure_line, Some(&token),),
+            AddInChIChar(
+                &mut heap,
+                &mut failure_input,
+                &mut failure_line,
+                Some(&token),
+            ),
             Ok(RI_ERR_ALLOC)
         );
         assert_eq!(failure_input.s.nPtr, 1);
@@ -25706,7 +25941,10 @@ mod tests {
             Ok(-257)
         );
         assert_eq!(high_line.len, 0);
-        assert_eq!(heap.slice(high_buffer.as_const()).unwrap(), &[0, 44, 44, 44]);
+        assert_eq!(
+            heap.slice(high_buffer.as_const()).unwrap(),
+            &[0, 44, 44, 44]
+        );
 
         let malformed_buffer = heap.allocate_model_storage(vec![88_i8; 4]).unwrap();
         let mut malformed_line = SEGM_LINE {
@@ -25786,7 +26024,10 @@ mod tests {
             len_alloc: 16,
             c: -811,
         };
-        let mut slash = input(&mut heap, b"abc/after".iter().map(|value| *value as i8).collect());
+        let mut slash = input(
+            &mut heap,
+            b"abc/after".iter().map(|value| *value as i8).collect(),
+        );
         assert_eq!(
             nGetInChISegment(&mut heap, &mut slash, &mut line, Some(&tokens)),
             Ok(b'/' as i32)
@@ -25849,7 +26090,12 @@ mod tests {
         };
         failure_heap.fail_after_allocations(0);
         assert_eq!(
-            nGetInChISegment(&mut failure_heap, &mut failure_input, &mut failure_line, Some(&tokens),),
+            nGetInChISegment(
+                &mut failure_heap,
+                &mut failure_input,
+                &mut failure_line,
+                Some(&tokens),
+            ),
             Ok(RI_ERR_ALLOC)
         );
         assert_eq!(failure_input.s.nPtr, 1);
@@ -25865,10 +26111,18 @@ mod tests {
         let mut long_input = input(&mut expansion_heap, long_bytes);
         let mut long_line = SEGM_LINE::default();
         assert_eq!(
-            nGetInChISegment(&mut expansion_heap, &mut long_input, &mut long_line, Some(&tokens),),
+            nGetInChISegment(
+                &mut expansion_heap,
+                &mut long_input,
+                &mut long_line,
+                Some(&tokens),
+            ),
             Ok(b'/' as i32)
         );
-        assert_eq!((long_line.len, long_line.len_alloc, long_line.c), (130, 256, 47));
+        assert_eq!(
+            (long_line.len, long_line.len_alloc, long_line.c),
+            (130, 256, 47)
+        );
         let long_output = expansion_heap.slice(long_line.str_.as_const()).unwrap();
         assert!(long_output[..130].iter().all(|value| *value == b'L' as i8));
         assert_eq!(long_output[130], 0);
@@ -25941,7 +26195,8 @@ mod tests {
             let mut label = old_label_pointer;
             let mut line = SEGM_LINE::default();
             let mut state = i32::MIN;
-            let mut components = [[SourceMutPointer::null(); TAUT_NUM as usize]; INCHI_NUM as usize];
+            let mut components =
+                [[SourceMutPointer::null(); TAUT_NUM as usize]; INCHI_NUM as usize];
             let mut counts = [[0_i32; TAUT_NUM as usize]; INCHI_NUM as usize];
             let mut protons: [[REM_PROTONS; TAUT_NUM as usize]; INCHI_NUM as usize] =
                 std::array::from_fn(|_| std::array::from_fn(|_| REM_PROTONS::default()));
@@ -26050,7 +26305,10 @@ mod tests {
             assert_eq!(malformed.state, expected_state, "{text:?}");
             assert_eq!(malformed.line.len, 1, "{text:?}");
             assert_eq!(
-                malformed.heap.slice(malformed.line.str_.as_const()).unwrap()[0] as u8,
+                malformed
+                    .heap
+                    .slice(malformed.line.str_.as_const())
+                    .unwrap()[0] as u8,
                 text[text.len() - 2],
                 "{text:?}"
             );
@@ -26095,14 +26353,20 @@ mod tests {
         assert_eq!(line_allocation_failure.state, 0);
         assert!(line_allocation_failure.line.str_.is_null());
         assert_eq!(line_allocation_failure.line.len, 0);
-        assert_eq!(line_allocation_failure.stream_position, allocation_text.len() as i32);
+        assert_eq!(
+            line_allocation_failure.stream_position,
+            allocation_text.len() as i32
+        );
 
         let formula_allocation_failure = run(allocation_text, false, Some(1));
         assert_eq!(formula_allocation_failure.result, Ok(RI_ERR_ALLOC));
         assert_eq!(formula_allocation_failure.state, IST_MOBILE_H_FORMULA);
         assert!(!formula_allocation_failure.line.str_.is_null());
         assert_eq!(formula_allocation_failure.line.len, 3);
-        assert_eq!(formula_allocation_failure.stream_position, allocation_text.len() as i32);
+        assert_eq!(
+            formula_allocation_failure.stream_position,
+            allocation_text.len() as i32
+        );
     }
 
     #[test]
@@ -26123,7 +26387,12 @@ mod tests {
             allocation_calls: u64,
         }
 
-        fn run(text: &str, read_coordinates: i32, mode: INCHI_MODE, fail_after: Option<u64>) -> Outcome {
+        fn run(
+            text: &str,
+            read_coordinates: i32,
+            mode: INCHI_MODE,
+            fail_after: Option<u64>,
+        ) -> Outcome {
             let mut heap = SourceHeap::default();
             let input = heap
                 .allocate_model_storage(text.as_bytes().iter().map(|byte| *byte as i8).collect())
@@ -26142,9 +26411,11 @@ mod tests {
             let mut label = SourceMutPointer::null();
             let mut state = i32::MIN;
             let mut error = i32::MIN;
-            let mut components = [[SourceMutPointer::null(); TAUT_NUM as usize]; INCHI_NUM as usize];
+            let mut components =
+                [[SourceMutPointer::null(); TAUT_NUM as usize]; INCHI_NUM as usize];
             let mut counts = [[0_i32; TAUT_NUM as usize]; INCHI_NUM as usize];
-            let mut protons = std::array::from_fn(|_| std::array::from_fn(|_| REM_PROTONS::default()));
+            let mut protons =
+                std::array::from_fn(|_| std::array::from_fn(|_| REM_PROTONS::default()));
             let mut stereo = [[[0_i32; 2]; TAUT_NUM as usize]; INCHI_NUM as usize];
             let mut standard = -1_i32;
             let mut has_save_opt = -1_i32;
@@ -26210,12 +26481,27 @@ mod tests {
         assert_eq!(methane_component.nNumberOfAtoms, 1);
         assert_eq!(methane_component.nTotalCharge, 0);
         assert_eq!(methane_component.lenConnTable, 1);
-        assert_eq!(methane.heap.slice(methane_component.nAtom.as_const()).unwrap()[0], 6);
         assert_eq!(
-            methane.heap.slice(methane_component.nConnTable.as_const()).unwrap()[0],
+            methane
+                .heap
+                .slice(methane_component.nAtom.as_const())
+                .unwrap()[0],
+            6
+        );
+        assert_eq!(
+            methane
+                .heap
+                .slice(methane_component.nConnTable.as_const())
+                .unwrap()[0],
             1
         );
-        assert_eq!(methane.heap.slice(methane_component.nNum_H.as_const()).unwrap()[0], 4);
+        assert_eq!(
+            methane
+                .heap
+                .slice(methane_component.nNum_H.as_const())
+                .unwrap()[0],
+            4
+        );
         assert!(
             methane.protons[INCHI_BAS as usize][TAUT_YES as usize]
                 .pNumProtons
@@ -26234,7 +26520,14 @@ mod tests {
             );
             assert_eq!(lactic.result, Ok(RI_ERR_EOL));
             assert_eq!(lactic.error, 0);
-            assert!(lactic.stereo.iter().flatten().flatten().any(|value| *value == expected));
+            assert!(
+                lactic
+                    .stereo
+                    .iter()
+                    .flatten()
+                    .flatten()
+                    .any(|value| *value == expected)
+            );
             assert!(
                 lactic
                     .stereo
@@ -26275,7 +26568,12 @@ mod tests {
         assert_eq!(
             coordinates
                 .heap
-                .slice(coordinate_component.IsotopicTGroup.cast::<XYZ_COORD>().as_const())
+                .slice(
+                    coordinate_component
+                        .IsotopicTGroup
+                        .cast::<XYZ_COORD>()
+                        .as_const()
+                )
                 .unwrap()[0]
                 .xyz
                 .map(f64::to_bits),
@@ -26296,11 +26594,19 @@ mod tests {
                 [[0, 1], [0, 0]],
             ),
         ];
-        assert_eq!(methane.allocation_calls as usize, expected_allocation_failures.len());
+        assert_eq!(
+            methane.allocation_calls as usize,
+            expected_allocation_failures.len()
+        );
         for (failure_after, expected) in expected_allocation_failures.into_iter().enumerate() {
             let failed = run(methane_text, 0, 0, Some(failure_after as u64));
             assert_eq!(
-                (failed.result.unwrap(), failed.error, failed.state, failed.counts),
+                (
+                    failed.result.unwrap(),
+                    failed.error,
+                    failed.state,
+                    failed.counts
+                ),
                 expected,
                 "failure_after={failure_after}"
             );
@@ -26310,8 +26616,8 @@ mod tests {
     #[test]
     fn source_port__ichiread__readwriteinchi__line_615() {
         use crate::source_types::{
-            INCHI_IOS_STRING, INCHI_OUT_NO_AUX_INFO, INCHI_OUT_PLAIN_TEXT, POLYMERS_MODERN, READ_INCHI_OUTPUT_INCHI,
-            tagFrameShifScheme_FSS_STARS_CYCLED,
+            INCHI_IOS_STRING, INCHI_OUT_NO_AUX_INFO, INCHI_OUT_PLAIN_TEXT, POLYMERS_MODERN,
+            READ_INCHI_OUTPUT_INCHI, tagFrameShifScheme_FSS_STARS_CYCLED,
         };
 
         struct Outcome {
@@ -26357,10 +26663,13 @@ mod tests {
             assert_eq!(!outcome.canon_globals.m_bBit.is_null(), has_bits);
             if has_bits {
                 assert_eq!(
-                    outcome.heap.slice(outcome.canon_globals.m_bBit.as_const()).unwrap(),
+                    outcome
+                        .heap
+                        .slice(outcome.canon_globals.m_bBit.as_const())
+                        .unwrap(),
                     &[
-                        0x0001, 0x0002, 0x0004, 0x0008, 0x0010, 0x0020, 0x0040, 0x0080, 0x0100, 0x0200, 0x0400, 0x0800,
-                        0x1000, 0x2000, 0x4000, 0x8000,
+                        0x0001, 0x0002, 0x0004, 0x0008, 0x0010, 0x0020, 0x0040, 0x0080, 0x0100,
+                        0x0200, 0x0400, 0x0800, 0x1000, 0x2000, 0x4000, 0x8000,
                     ]
                 );
             }
@@ -26369,10 +26678,19 @@ mod tests {
         fn run(text: &str, parameters: INPUT_PARMS, fail_after: Option<u64>) -> Outcome {
             let mut heap = SourceHeap::default();
             let input = heap
-                .allocate_model_storage(text.bytes().chain(std::iter::once(0)).map(|byte| byte as i8).collect())
+                .allocate_model_storage(
+                    text.bytes()
+                        .chain(std::iter::once(0))
+                        .map(|byte| byte as i8)
+                        .collect(),
+                )
                 .unwrap();
-            let clock = heap.allocate_model_storage(vec![INCHI_CLOCK::default()]).unwrap();
-            let canon = heap.allocate_model_storage(vec![CANON_GLOBALS::default()]).unwrap();
+            let clock = heap
+                .allocate_model_storage(vec![INCHI_CLOCK::default()])
+                .unwrap();
+            let canon = heap
+                .allocate_model_storage(vec![CANON_GLOBALS::default()])
+                .unwrap();
             let mut input_stream = INCHI_IOSTREAM {
                 s: INCHI_IOS_STRING {
                     pStr: input,
@@ -26452,9 +26770,14 @@ mod tests {
         fn parameters(options: i32) -> INPUT_PARMS {
             INPUT_PARMS {
                 nInputType: tagInputType_INPUT_INCHI,
-                nMode: (REQ_MODE_BASIC | REQ_MODE_TAUT | REQ_MODE_STEREO | REQ_MODE_ISO_STEREO | REQ_MODE_ISO)
-                    as INCHI_MODE,
-                bINChIOutputOptions: (INCHI_OUT_STDINCHI | INCHI_OUT_PLAIN_TEXT | INCHI_OUT_NO_AUX_INFO) as i32,
+                nMode: (REQ_MODE_BASIC
+                    | REQ_MODE_TAUT
+                    | REQ_MODE_STEREO
+                    | REQ_MODE_ISO_STEREO
+                    | REQ_MODE_ISO) as INCHI_MODE,
+                bINChIOutputOptions: (INCHI_OUT_STDINCHI
+                    | INCHI_OUT_PLAIN_TEXT
+                    | INCHI_OUT_NO_AUX_INFO) as i32,
                 bReadInChIOptions: options,
                 ..INPUT_PARMS::default()
             }
@@ -26465,7 +26788,10 @@ mod tests {
         assert_eq!(empty.input_position, 0);
         assert_eq!(empty.output, "");
         assert_eq!(empty.log, "");
-        assert_eq!((empty.structure_data.fPtrStart, empty.structure_data.fPtrEnd), (0, 0));
+        assert_eq!(
+            (empty.structure_data.fPtrStart, empty.structure_data.fPtrEnd),
+            (0, 0)
+        );
         assert_eq!(empty.structure_data.nErrorCode, 71);
         assert_eq!(empty.structure_data.nErrorType, 73);
         assert_eq!(empty.structure_data.nStructReadError, 79);
@@ -26494,7 +26820,10 @@ mod tests {
             "\nStructure: 1 Syntax error (-2) in MOBILE_H_ISO_ATOMS (10)\n"
         );
         assert_eq!(
-            (malformed.structure_data.fPtrStart, malformed.structure_data.fPtrEnd),
+            (
+                malformed.structure_data.fPtrStart,
+                malformed.structure_data.fPtrEnd
+            ),
             (1, 0)
         );
 
@@ -26506,23 +26835,37 @@ mod tests {
             "\nWrong command line options: expected Inch2Struct or Inchi2Inchi\n"
         );
         assert_eq!(
-            (invalid.structure_data.fPtrStart, invalid.structure_data.fPtrEnd),
+            (
+                invalid.structure_data.fPtrStart,
+                invalid.structure_data.fPtrEnd
+            ),
             (1, 0)
         );
 
         let methane_text = "InChI=1S/CH4/h1H4\n";
-        let methane = run(methane_text, parameters(READ_INCHI_OUTPUT_INCHI as i32), None);
+        let methane = run(
+            methane_text,
+            parameters(READ_INCHI_OUTPUT_INCHI as i32),
+            None,
+        );
         assert_eq!(methane.result, Ok(0));
         assert_eq!(methane.input_position, methane_text.len() as i32);
         assert_eq!(methane.output, methane_text);
         assert_eq!(methane.log, "");
         assert_eq!(
-            (methane.structure_data.fPtrStart, methane.structure_data.fPtrEnd),
+            (
+                methane.structure_data.fPtrStart,
+                methane.structure_data.fPtrEnd
+            ),
             (1, 0)
         );
         assert!(methane.allocation_calls > 0);
 
-        let nonstandard = run("InChI=1/CH4/h1H4\n", parameters(READ_INCHI_OUTPUT_INCHI as i32), None);
+        let nonstandard = run(
+            "InChI=1/CH4/h1H4\n",
+            parameters(READ_INCHI_OUTPUT_INCHI as i32),
+            None,
+        );
         assert_eq!(nonstandard.result, Ok(0));
         assert_eq!(nonstandard.output, "InChI=1/CH4/h1H4\n");
         assert_eq!(nonstandard.log, "");
@@ -26530,7 +26873,9 @@ mod tests {
         let save_option = run(
             "InChI=1/CH4/h1H4\\PB\n",
             INPUT_PARMS {
-                bINChIOutputOptions: (INCHI_OUT_PLAIN_TEXT | INCHI_OUT_NO_AUX_INFO | INCHI_OUT_SAVEOPT) as i32,
+                bINChIOutputOptions: (INCHI_OUT_PLAIN_TEXT
+                    | INCHI_OUT_NO_AUX_INFO
+                    | INCHI_OUT_SAVEOPT) as i32,
                 ..parameters(READ_INCHI_OUTPUT_INCHI as i32)
             },
             None,
@@ -26545,7 +26890,10 @@ mod tests {
         assert_eq!(first_only.input_position, methane_text.len() as i32);
         assert_eq!(first_only.output, methane_text);
         assert_eq!(
-            (first_only.structure_data.fPtrStart, first_only.structure_data.fPtrEnd),
+            (
+                first_only.structure_data.fPtrStart,
+                first_only.structure_data.fPtrEnd
+            ),
             (1, 0)
         );
 
@@ -26568,7 +26916,10 @@ mod tests {
         assert_eq!(skipped.output, "InChI=1S/H2O/h1H2\n");
         assert_eq!(skipped.log, "");
         assert_eq!(
-            (skipped.structure_data.fPtrStart, skipped.structure_data.fPtrEnd),
+            (
+                skipped.structure_data.fPtrStart,
+                skipped.structure_data.fPtrEnd
+            ),
             (1, 0)
         );
 
@@ -26577,7 +26928,11 @@ mod tests {
             "AuxInfo=1/1/N:1/E:/gE:/it:/iN:/I:1/E:/gE:/it:/iN:/",
             "CRV:/rA:/rB:/rC:1.25,-2.5,3.75;\n"
         );
-        let structure = run(coordinate_text, parameters(READ_INCHI_TO_STRUCTURE as i32), None);
+        let structure = run(
+            coordinate_text,
+            parameters(READ_INCHI_TO_STRUCTURE as i32),
+            None,
+        );
         assert_eq!(structure.result, Ok(0));
         assert_eq!(structure.input_position, coordinate_text.len() as i32);
         assert_eq!(structure.atom_count, 1);
@@ -26595,7 +26950,10 @@ mod tests {
         assert_eq!(structure.log, "");
         assert_eq!(structure.warnings, [[0; 2]; 2]);
         assert_eq!(
-            (structure.structure_data.fPtrStart, structure.structure_data.fPtrEnd),
+            (
+                structure.structure_data.fPtrStart,
+                structure.structure_data.fPtrEnd
+            ),
             (1, 0)
         );
         assert_eq!(structure.message[0], 0);
@@ -26713,7 +27071,11 @@ mod tests {
             assert!(failed.polymer.is_null(), "failure_after={failure_after}");
             assert!(failed.v3000.is_null(), "failure_after={failure_after}");
             assert_eq!(failed.message[0], 0, "failure_after={failure_after}");
-            assert_eq!(failed.warnings, [[u64::MAX; 2]; 2], "failure_after={failure_after}");
+            assert_eq!(
+                failed.warnings,
+                [[u64::MAX; 2]; 2],
+                "failure_after={failure_after}"
+            );
         }
 
         assert_eq!(structure.allocation_calls, 289);
@@ -26902,12 +27264,19 @@ mod tests {
             assert_eq!(failed.atom_count, expected.atom_count);
             assert_eq!(failed.output, "");
             assert_eq!(failed.log, expected.log);
-            assert_eq!(failed.heap.live_allocation_count(), expected.live_allocations);
+            assert_eq!(
+                failed.heap.live_allocation_count(),
+                expected.live_allocations
+            );
             assert_eq!(failed.allocation_calls, expected.allocation_calls);
             assert_eq!(message_text(&failed.message), expected.message);
             let message_end = expected.message.len();
             assert_eq!(failed.message[message_end], 0);
-            assert!(failed.message[message_end + 1..].iter().all(|byte| *byte == 99));
+            assert!(
+                failed.message[message_end + 1..]
+                    .iter()
+                    .all(|byte| *byte == 99)
+            );
             assert_eq!(
                 failed.warnings,
                 if expected.warnings_are_zero {
@@ -26948,7 +27317,10 @@ mod tests {
         assert_eq!(polymer_probe.log, "");
         assert_eq!(message_text(&polymer_probe.message), "");
         assert_eq!(polymer_probe.warnings, [[0; 2]; 2]);
-        let polymer = &polymer_probe.heap.slice(polymer_probe.polymer.as_const()).unwrap()[0];
+        let polymer = &polymer_probe
+            .heap
+            .slice(polymer_probe.polymer.as_const())
+            .unwrap()[0];
         assert_eq!(
             (
                 polymer.n,
@@ -27002,7 +27374,10 @@ mod tests {
             ),
             (0, -1, -1, -1, -1, 0, 0, 0, 0)
         );
-        assert_eq!(polymer_probe.heap.slice(unit.alist.as_const()).unwrap()[0], 1);
+        assert_eq!(
+            polymer_probe.heap.slice(unit.alist.as_const()).unwrap()[0],
+            1
+        );
         assert!(unit.blist.is_null());
         assert!(unit.bkbonds.is_null());
         assert_eq!(unit.xbr1.map(f64::to_bits), [0; 4]);
@@ -27059,7 +27434,10 @@ mod tests {
         }
 
         heap.set_source_errno(0);
-        assert_eq!(parse(&mut heap, b"999999999999999999999999999999999999999999"), Ok(1));
+        assert_eq!(
+            parse(&mut heap, b"999999999999999999999999999999999999999999"),
+            Ok(1)
+        );
         assert_eq!(heap.source_errno(), 34);
 
         heap.set_source_errno(17);
@@ -27118,10 +27496,15 @@ mod tests {
         }
 
         let mut heap = SourceHeap::default();
-        let numbers = heap.allocate_model_storage(vec![11_u16, 12, 13, 21, 22, 23]).unwrap();
+        let numbers = heap
+            .allocate_model_storage(vec![11_u16, 12, 13, 21, 22, 23])
+            .unwrap();
         let source = inchi(3, numbers);
         let mut target = inchi(3, SourceMutPointer::null());
-        assert_eq!(CopyAtomNumbers(&mut heap, None, 1, Some(&source), 1), Ok(RI_ERR_PROGR));
+        assert_eq!(
+            CopyAtomNumbers(&mut heap, None, 1, Some(&source), 1),
+            Ok(RI_ERR_PROGR)
+        );
         assert_eq!(
             CopyAtomNumbers(&mut heap, Some(&mut target), 1, None, 1),
             Ok(RI_ERR_PROGR)
@@ -27145,10 +27528,19 @@ mod tests {
             ),
             (inchi(0, SourceMutPointer::null()), inchi(0, numbers)),
             (inchi(2, SourceMutPointer::null()), source.clone()),
-            (inchi(3, SourceMutPointer::null()), inchi(3, SourceMutPointer::null())),
+            (
+                inchi(3, SourceMutPointer::null()),
+                inchi(3, SourceMutPointer::null()),
+            ),
         ] {
             assert_eq!(
-                CopyAtomNumbers(&mut heap, Some(&mut invalid_target), 1, Some(&invalid_source), 1,),
+                CopyAtomNumbers(
+                    &mut heap,
+                    Some(&mut invalid_target),
+                    1,
+                    Some(&invalid_source),
+                    1,
+                ),
                 Ok(RI_ERR_PROGR)
             );
             assert!(invalid_target.nPossibleLocationsOfIsotopicH.is_null());
@@ -27159,7 +27551,10 @@ mod tests {
             Ok(1)
         );
         let target_numbers = target.nPossibleLocationsOfIsotopicH;
-        assert_eq!(heap.slice(target_numbers.as_const()).unwrap(), &[11, 12, 13, 0, 0, 0]);
+        assert_eq!(
+            heap.slice(target_numbers.as_const()).unwrap(),
+            &[11, 12, 13, 0, 0, 0]
+        );
         assert_eq!(
             CopyAtomNumbers(&mut heap, Some(&mut target), 0, Some(&source), 0),
             Ok(1)
@@ -27182,31 +27577,64 @@ mod tests {
             &[21, 22, 23, 41, 42, 43, 999]
         );
 
-        let shared_numbers = heap.allocate_model_storage(vec![1_u16, 2, 3, 4, 5, 6]).unwrap();
+        let shared_numbers = heap
+            .allocate_model_storage(vec![1_u16, 2, 3, 4, 5, 6])
+            .unwrap();
         let mut shared_target = inchi(3, shared_numbers);
         let shared_source = inchi(3, shared_numbers);
         assert_eq!(
-            CopyAtomNumbers(&mut heap, Some(&mut shared_target), 1, Some(&shared_source), 1,),
+            CopyAtomNumbers(
+                &mut heap,
+                Some(&mut shared_target),
+                1,
+                Some(&shared_source),
+                1,
+            ),
             Ok(RI_ERR_PROGR)
         );
-        assert_eq!(heap.slice(shared_numbers.as_const()).unwrap(), &[1, 2, 3, 4, 5, 6]);
         assert_eq!(
-            CopyAtomNumbers(&mut heap, Some(&mut shared_target), 0, Some(&shared_source), 1,),
+            heap.slice(shared_numbers.as_const()).unwrap(),
+            &[1, 2, 3, 4, 5, 6]
+        );
+        assert_eq!(
+            CopyAtomNumbers(
+                &mut heap,
+                Some(&mut shared_target),
+                0,
+                Some(&shared_source),
+                1,
+            ),
             Ok(1)
         );
-        assert_eq!(heap.slice(shared_numbers.as_const()).unwrap(), &[1, 2, 3, 1, 2, 3]);
+        assert_eq!(
+            heap.slice(shared_numbers.as_const()).unwrap(),
+            &[1, 2, 3, 1, 2, 3]
+        );
 
-        let reverse_numbers = heap.allocate_model_storage(vec![1_u16, 2, 3, 4, 5, 6]).unwrap();
+        let reverse_numbers = heap
+            .allocate_model_storage(vec![1_u16, 2, 3, 4, 5, 6])
+            .unwrap();
         let mut reverse_target = inchi(3, reverse_numbers);
         let reverse_source = inchi(3, reverse_numbers);
         assert_eq!(
-            CopyAtomNumbers(&mut heap, Some(&mut reverse_target), 1, Some(&reverse_source), 0,),
+            CopyAtomNumbers(
+                &mut heap,
+                Some(&mut reverse_target),
+                1,
+                Some(&reverse_source),
+                0,
+            ),
             Ok(1)
         );
-        assert_eq!(heap.slice(reverse_numbers.as_const()).unwrap(), &[4, 5, 6, 4, 5, 6]);
+        assert_eq!(
+            heap.slice(reverse_numbers.as_const()).unwrap(),
+            &[4, 5, 6, 4, 5, 6]
+        );
 
         let mut failure_heap = SourceHeap::default();
-        let failure_source_numbers = failure_heap.allocate_model_storage(vec![1_u16, 2, 3, 4]).unwrap();
+        let failure_source_numbers = failure_heap
+            .allocate_model_storage(vec![1_u16, 2, 3, 4])
+            .unwrap();
         let failure_source = inchi(2, failure_source_numbers);
         let mut failure_target = inchi(2, SourceMutPointer::null());
         failure_heap.fail_after_allocations(0);
@@ -27251,23 +27679,44 @@ mod tests {
             ),
             Err(SourceHeapError::PointerOutOfBounds)
         );
-        assert!(!allocated_before_copy_error.nPossibleLocationsOfIsotopicH.is_null());
+        assert!(
+            !allocated_before_copy_error
+                .nPossibleLocationsOfIsotopicH
+                .is_null()
+        );
         assert_eq!(
             malformed_heap
-                .slice(allocated_before_copy_error.nPossibleLocationsOfIsotopicH.as_const())
+                .slice(
+                    allocated_before_copy_error
+                        .nPossibleLocationsOfIsotopicH
+                        .as_const()
+                )
                 .unwrap(),
             &[0, 0, 0, 0]
         );
 
         let short_target_numbers = malformed_heap.allocate_model_storage(vec![81_u16]).unwrap();
-        let full_source_numbers = malformed_heap.allocate_model_storage(vec![91_u16, 92, 93, 94]).unwrap();
+        let full_source_numbers = malformed_heap
+            .allocate_model_storage(vec![91_u16, 92, 93, 94])
+            .unwrap();
         let mut short_target = inchi(2, short_target_numbers);
         let full_source = inchi(2, full_source_numbers);
         assert_eq!(
-            CopyAtomNumbers(&mut malformed_heap, Some(&mut short_target), 1, Some(&full_source), 1,),
+            CopyAtomNumbers(
+                &mut malformed_heap,
+                Some(&mut short_target),
+                1,
+                Some(&full_source),
+                1,
+            ),
             Err(SourceHeapError::PointerOutOfBounds)
         );
-        assert_eq!(malformed_heap.slice(short_target_numbers.as_const()).unwrap(), &[81]);
+        assert_eq!(
+            malformed_heap
+                .slice(short_target_numbers.as_const())
+                .unwrap(),
+            &[81]
+        );
     }
 
     #[test]
@@ -27379,7 +27828,9 @@ mod tests {
         assert_eq!(abc, 0);
         let mobile_values = heap.slice(mobile.as_const()).unwrap();
         for (component, expected) in mobile_values.iter().zip([[1, 2], [3, 4]]) {
-            let numbers = heap.slice(component.nPossibleLocationsOfIsotopicH.as_const()).unwrap();
+            let numbers = heap
+                .slice(component.nPossibleLocationsOfIsotopicH.as_const())
+                .unwrap();
             assert_eq!(&numbers[..2], &[0, 0]);
             assert_eq!(&numbers[2..], &expected);
         }
@@ -27402,8 +27853,12 @@ mod tests {
         assert_eq!(abc, 1);
         let compressed_component = &heap.slice(compressed.as_const()).unwrap()[0];
         assert_eq!(
-            heap.slice(compressed_component.nPossibleLocationsOfIsotopicH.as_const())
-                .unwrap(),
+            heap.slice(
+                compressed_component
+                    .nPossibleLocationsOfIsotopicH
+                    .as_const()
+            )
+            .unwrap(),
             &[0, 0, 1, 2]
         );
 
@@ -27429,7 +27884,10 @@ mod tests {
             ),
             Ok(2)
         );
-        assert_eq!(heap.slice(isotope_numbers.as_const()).unwrap(), &[5, 6, 7, 8]);
+        assert_eq!(
+            heap.slice(isotope_numbers.as_const()).unwrap(),
+            &[5, 6, 7, 8]
+        );
 
         let empty_field = components(&mut heap, &[2]);
         let empty_field_text = text(&mut heap, b"N:,2");
@@ -27471,7 +27929,8 @@ mod tests {
             );
             let component = &heap.slice(target.as_const()).unwrap()[0];
             assert_eq!(
-                heap.slice(component.nPossibleLocationsOfIsotopicH.as_const()).unwrap(),
+                heap.slice(component.nPossibleLocationsOfIsotopicH.as_const())
+                    .unwrap(),
                 &[0, expected_written]
             );
         }
@@ -27493,11 +27952,14 @@ mod tests {
         );
         let component = &heap.slice(compressed_zero.as_const()).unwrap()[0];
         assert_eq!(
-            heap.slice(component.nPossibleLocationsOfIsotopicH.as_const()).unwrap(),
+            heap.slice(component.nPossibleLocationsOfIsotopicH.as_const())
+                .unwrap(),
             &[0, 0]
         );
 
-        let alt_numbers = heap.allocate_model_storage(vec![31_u16, 32, 41, 42]).unwrap();
+        let alt_numbers = heap
+            .allocate_model_storage(vec![31_u16, 32, 41, 42])
+            .unwrap();
         let alt = heap
             .allocate_model_storage(vec![INChI {
                 nNumberOfAtoms: 2,
@@ -27548,13 +28010,31 @@ mod tests {
             ),
             Ok(2)
         );
-        assert_eq!(heap.slice(mobile_self_numbers.as_const()).unwrap(), &[51, 52, 51, 52]);
+        assert_eq!(
+            heap.slice(mobile_self_numbers.as_const()).unwrap(),
+            &[51, 52, 51, 52]
+        );
 
         for (state, mobile_h, input, expected) in [
-            (AST_MOBILE_H_NUMBERS, TAUT_YES as i32, b"N:m".as_slice(), RI_ERR_SYNTAX),
-            (AST_MOBILE_H_ISO_NUMBERS, TAUT_YES as i32, b"I:M", RI_ERR_SYNTAX),
+            (
+                AST_MOBILE_H_NUMBERS,
+                TAUT_YES as i32,
+                b"N:m".as_slice(),
+                RI_ERR_SYNTAX,
+            ),
+            (
+                AST_MOBILE_H_ISO_NUMBERS,
+                TAUT_YES as i32,
+                b"I:M",
+                RI_ERR_SYNTAX,
+            ),
             (AST_FIXED_H_NUMBERS, TAUT_NON as i32, b"F:n", 1),
-            (AST_FIXED_H_ISO_NUMBERS, TAUT_NON as i32, b"I:n", RI_ERR_PROGR),
+            (
+                AST_FIXED_H_ISO_NUMBERS,
+                TAUT_NON as i32,
+                b"I:n",
+                RI_ERR_PROGR,
+            ),
             (AST_FIXED_H_NUMBERS, TAUT_NON as i32, b"F:M", RI_ERR_SYNTAX),
         ] {
             let target = components(&mut heap, &[1]);
@@ -27565,7 +28045,15 @@ mod tests {
                 [target, SourceMutPointer::null()]
             };
             assert_eq!(
-                ParseAuxSegmentNumbers(&mut heap, input, mobile_h, &bases, &[1, 1], state, &mut abc,),
+                ParseAuxSegmentNumbers(
+                    &mut heap,
+                    input,
+                    mobile_h,
+                    &bases,
+                    &[1, 1],
+                    state,
+                    &mut abc,
+                ),
                 Ok(expected)
             );
         }
@@ -27742,7 +28230,9 @@ mod tests {
         );
 
         let mut ignored_heap = SourceHeap::default();
-        let ignored_alt_numbers = ignored_heap.allocate_model_storage(vec![0_u16, 71]).unwrap();
+        let ignored_alt_numbers = ignored_heap
+            .allocate_model_storage(vec![0_u16, 71])
+            .unwrap();
         let ignored_alt = ignored_heap
             .allocate_model_storage(vec![INChI {
                 nNumberOfAtoms: 1,
@@ -27787,7 +28277,9 @@ mod tests {
             Ok(1)
         );
 
-        let unterminated_wrong = heap.allocate_model_storage(vec![b'X' as i8, b':' as i8]).unwrap();
+        let unterminated_wrong = heap
+            .allocate_model_storage(vec![b'X' as i8, b':' as i8])
+            .unwrap();
         assert_eq!(
             ParseAuxSegmentNumbers(
                 &mut heap,
@@ -27827,7 +28319,9 @@ mod tests {
         };
 
         let mut heap = SourceHeap::default();
-        let valid = heap.allocate_model_storage(vec![b'E' as i8, b':' as i8]).unwrap();
+        let valid = heap
+            .allocate_model_storage(vec![b'E' as i8, b':' as i8])
+            .unwrap();
         for (state, mobile_h) in [
             (AST_MOBILE_H_ATOM_EQ, TAUT_YES as i32),
             (AST_MOBILE_H_ISO_ATOM_EQ, TAUT_YES as i32),
@@ -27869,7 +28363,9 @@ mod tests {
             ),
             Ok(RI_ERR_PROGR)
         );
-        let wrong = heap.allocate_model_storage(vec![b'X' as i8, b':' as i8]).unwrap();
+        let wrong = heap
+            .allocate_model_storage(vec![b'X' as i8, b':' as i8])
+            .unwrap();
         assert_eq!(
             ParseAuxSegmentAtomEqu(
                 &heap,
@@ -27967,7 +28463,9 @@ mod tests {
             ),
             Ok(0)
         );
-        let short = heap.allocate_model_storage(vec![b'g' as i8, b'E' as i8]).unwrap();
+        let short = heap
+            .allocate_model_storage(vec![b'g' as i8, b'E' as i8])
+            .unwrap();
         assert_eq!(
             ParseAuxSegmentGroupEqu(
                 &heap,
@@ -28060,7 +28558,9 @@ mod tests {
             ),
             Ok(0)
         );
-        let short = heap.allocate_model_storage(vec![b'i' as i8, b't' as i8]).unwrap();
+        let short = heap
+            .allocate_model_storage(vec![b'i' as i8, b't' as i8])
+            .unwrap();
         assert_eq!(
             ParseAuxSegmentSp3Inv(
                 &heap,
@@ -28153,7 +28653,9 @@ mod tests {
             ),
             Ok(0)
         );
-        let short = heap.allocate_model_storage(vec![b'i' as i8, b'N' as i8]).unwrap();
+        let short = heap
+            .allocate_model_storage(vec![b'i' as i8, b'N' as i8])
+            .unwrap();
         assert_eq!(
             ParseAuxSegmentSp3InvNumbers(
                 &heap,
@@ -28239,7 +28741,9 @@ mod tests {
             ParseAuxSegmentReverseAtoms(&heap, wrong.as_const(), AST_REVERSE_INFO_ATOMS),
             Ok(0)
         );
-        let short = heap.allocate_model_storage(vec![b'r' as i8, b'A' as i8]).unwrap();
+        let short = heap
+            .allocate_model_storage(vec![b'r' as i8, b'A' as i8])
+            .unwrap();
         assert_eq!(
             ParseAuxSegmentReverseAtoms(&heap, short.as_const(), AST_REVERSE_INFO_ATOMS),
             Err(SourceHeapError::PointerOutOfBounds)
@@ -28274,7 +28778,9 @@ mod tests {
             ParseAuxSegmentReverseBonds(&heap, wrong.as_const(), AST_REVERSE_INFO_BONDS),
             Ok(0)
         );
-        let short = heap.allocate_model_storage(vec![b'r' as i8, b'B' as i8]).unwrap();
+        let short = heap
+            .allocate_model_storage(vec![b'r' as i8, b'B' as i8])
+            .unwrap();
         assert_eq!(
             ParseAuxSegmentReverseBonds(&heap, short.as_const(), AST_REVERSE_INFO_BONDS),
             Err(SourceHeapError::PointerOutOfBounds)
@@ -28298,7 +28804,9 @@ mod tests {
         }
 
         let mut heap = SourceHeap::default();
-        let old = heap.allocate_model_storage(vec![XYZ_COORD { xyz: [9.0; 3] }]).unwrap();
+        let old = heap
+            .allocate_model_storage(vec![XYZ_COORD { xyz: [9.0; 3] }])
+            .unwrap();
         let mut output = old;
         assert_eq!(
             ParseAuxSegmentReverseXYZ(&mut heap, SourceConstPointer::null(), &mut output, u32::MAX,),
@@ -28386,7 +28894,12 @@ mod tests {
         let allocation_input = c_string(&mut heap, "rC:1,2,3;");
         heap.fail_after_allocations(0);
         assert_eq!(
-            ParseAuxSegmentReverseXYZ(&mut heap, allocation_input, &mut output, AST_REVERSE_INFO_XYZ,),
+            ParseAuxSegmentReverseXYZ(
+                &mut heap,
+                allocation_input,
+                &mut output,
+                AST_REVERSE_INFO_XYZ,
+            ),
             Ok(RI_ERR_ALLOC)
         );
         assert_eq!(output, preserved);
@@ -28395,7 +28908,12 @@ mod tests {
             .allocate_model_storage(vec![b'r' as i8, b'C' as i8, b':' as i8, b';' as i8])
             .unwrap();
         assert_eq!(
-            ParseAuxSegmentReverseXYZ(&mut heap, unterminated.as_const(), &mut output, AST_REVERSE_INFO_XYZ,),
+            ParseAuxSegmentReverseXYZ(
+                &mut heap,
+                unterminated.as_const(),
+                &mut output,
+                AST_REVERSE_INFO_XYZ,
+            ),
             Err(SourceHeapError::MissingNulTerminator)
         );
         assert_eq!(output, preserved);
@@ -28412,8 +28930,14 @@ mod tests {
         }
 
         fn coordinates(heap: &mut SourceHeap, values: &[[f64; 3]]) -> SourceMutPointer<XYZ_COORD> {
-            heap.allocate_model_storage(values.iter().copied().map(|xyz| XYZ_COORD { xyz }).collect())
-                .unwrap()
+            heap.allocate_model_storage(
+                values
+                    .iter()
+                    .copied()
+                    .map(|xyz| XYZ_COORD { xyz })
+                    .collect(),
+            )
+            .unwrap()
         }
 
         fn attached_coordinates(heap: &SourceHeap, inchi: &INChI) -> Vec<[u64; 3]> {
@@ -28428,7 +28952,14 @@ mod tests {
         let layers = empty_layers();
         let counts = empty_counts();
         assert_eq!(
-            AddAuxSegmentCoord(&mut heap, 73, SourceConstPointer::null(), 0, &layers, &counts,),
+            AddAuxSegmentCoord(
+                &mut heap,
+                73,
+                SourceConstPointer::null(),
+                0,
+                &layers,
+                &counts,
+            ),
             Ok(73)
         );
 
@@ -28536,7 +29067,11 @@ mod tests {
                 .nPossibleLocationsOfIsotopicH
                 .is_null()
         );
-        assert!(heap.slice(no_numbers.as_const()).unwrap()[0].IsotopicTGroup.is_null());
+        assert!(
+            heap.slice(no_numbers.as_const()).unwrap()[0]
+                .IsotopicTGroup
+                .is_null()
+        );
         assert!(
             heap.slice(zero.as_const()).unwrap()[0]
                 .nPossibleLocationsOfIsotopicH
@@ -28601,7 +29136,9 @@ mod tests {
 
         let mut allocation_heap = SourceHeap::default();
         let allocation_xyz = coordinates(&mut allocation_heap, &[[1.0, 2.0, 3.0]]);
-        let allocation_numbers = allocation_heap.allocate_model_storage(vec![1_u16, 0]).unwrap();
+        let allocation_numbers = allocation_heap
+            .allocate_model_storage(vec![1_u16, 0])
+            .unwrap();
         let allocation_target = allocation_heap
             .allocate_model_storage(vec![INChI {
                 nNumberOfAtoms: 1,
@@ -28615,16 +29152,28 @@ mod tests {
         counts[INCHI_BAS as usize][TAUT_YES as usize] = 1;
         allocation_heap.fail_after_allocations(0);
         assert_eq!(
-            AddAuxSegmentCoord(&mut allocation_heap, 13, allocation_xyz.as_const(), 1, &layers, &counts,),
+            AddAuxSegmentCoord(
+                &mut allocation_heap,
+                13,
+                allocation_xyz.as_const(),
+                1,
+                &layers,
+                &counts,
+            ),
             Ok(RI_ERR_ALLOC)
         );
         let allocation_value = &allocation_heap.slice(allocation_target.as_const()).unwrap()[0];
-        assert_eq!(allocation_value.nPossibleLocationsOfIsotopicH, allocation_numbers);
+        assert_eq!(
+            allocation_value.nPossibleLocationsOfIsotopicH,
+            allocation_numbers
+        );
         assert!(allocation_value.IsotopicTGroup.is_null());
 
         let mut propagation_heap = SourceHeap::default();
         let propagation_xyz = coordinates(&mut propagation_heap, &[[1.0, 2.0, 3.0]]);
-        let source_numbers = propagation_heap.allocate_model_storage(vec![1_u16, 1]).unwrap();
+        let source_numbers = propagation_heap
+            .allocate_model_storage(vec![1_u16, 1])
+            .unwrap();
         let source = propagation_heap
             .allocate_model_storage(vec![INChI {
                 nNumberOfAtoms: 1,
@@ -28708,7 +29257,14 @@ mod tests {
         let mut unused = input_stream(&mut heap, "");
         state = 77;
         assert_eq!(
-            ReadInChICoord(&mut heap, &mut unused, &mut wrong_line, &mut state, &layers, &counts,),
+            ReadInChICoord(
+                &mut heap,
+                &mut unused,
+                &mut wrong_line,
+                &mut state,
+                &layers,
+                &counts,
+            ),
             Ok(b'/' as i32)
         );
         assert_eq!((state, wrong_line.len), (-1, 8));
@@ -28722,7 +29278,14 @@ mod tests {
         };
         state = 77;
         assert_eq!(
-            ReadInChICoord(&mut heap, &mut unused, &mut bad_line, &mut state, &layers, &counts,),
+            ReadInChICoord(
+                &mut heap,
+                &mut unused,
+                &mut bad_line,
+                &mut state,
+                &layers,
+                &counts,
+            ),
             Ok(RI_ERR_PROGR)
         );
         assert_eq!((state, bad_line.len), (-1, 0));
@@ -28757,7 +29320,9 @@ mod tests {
         let mut line = SEGM_LINE::default();
         state = 55;
         assert_eq!(
-            ReadInChICoord(&mut heap, &mut input, &mut line, &mut state, &layers, &counts,),
+            ReadInChICoord(
+                &mut heap, &mut input, &mut line, &mut state, &layers, &counts,
+            ),
             Ok(RI_ERR_EOL)
         );
         assert_eq!(line.len, 0);
@@ -28816,7 +29381,9 @@ mod tests {
         for pointer in [fixed, mobile] {
             let value = &heap.slice(pointer.as_const()).unwrap()[0];
             assert!(value.nPossibleLocationsOfIsotopicH.is_null());
-            let coordinate = &heap.slice(value.IsotopicTGroup.cast::<XYZ_COORD>().as_const()).unwrap()[0];
+            let coordinate = &heap
+                .slice(value.IsotopicTGroup.cast::<XYZ_COORD>().as_const())
+                .unwrap()[0];
             assert_eq!(coordinate.xyz, [7.0, 8.0, 9.0]);
         }
 
@@ -28835,7 +29402,14 @@ mod tests {
         let mut line = SEGM_LINE::default();
         state = 0;
         assert_eq!(
-            ReadInChICoord(&mut heap, &mut malformed, &mut line, &mut state, &layers, &counts,),
+            ReadInChICoord(
+                &mut heap,
+                &mut malformed,
+                &mut line,
+                &mut state,
+                &layers,
+                &counts,
+            ),
             Ok(RI_ERR_ALLOC)
         );
         assert_eq!(
@@ -28849,7 +29423,9 @@ mod tests {
 
     #[test]
     fn source_port__ichiread__segmentsp3createempty__line_12060() {
-        use crate::source_types::{INChI_Stereo, NO_VALUE_INT, local_ichiread::tagInChI_STATE_IST_MOBILE_H_ISO_SP3};
+        use crate::source_types::{
+            INChI_Stereo, NO_VALUE_INT, local_ichiread::tagInChI_STATE_IST_MOBILE_H_ISO_SP3,
+        };
 
         fn call(
             heap: &mut SourceHeap,
@@ -28872,7 +29448,10 @@ mod tests {
         }
 
         let mut heap = SourceHeap::default();
-        assert_eq!(call(&mut heap, SourceMutPointer::null(), 0, u32::MAX), Ok(1));
+        assert_eq!(
+            call(&mut heap, SourceMutPointer::null(), 0, u32::MAX),
+            Ok(1)
+        );
 
         let normal = heap.allocate_model_storage(vec![INChI::default()]).unwrap();
         assert_eq!(call(&mut heap, normal, 1, u32::MAX), Ok(2));
@@ -28889,7 +29468,12 @@ mod tests {
 
         let iso = heap.allocate_model_storage(vec![INChI::default()]).unwrap();
         assert_eq!(
-            call(&mut heap, iso, 1, tagInChI_STATE_IST_MOBILE_H_ISO_SP3 as u32,),
+            call(
+                &mut heap,
+                iso,
+                1,
+                tagInChI_STATE_IST_MOBILE_H_ISO_SP3 as u32,
+            ),
             Ok(2)
         );
         let iso_component = &heap.slice(iso.as_const()).unwrap()[0];
@@ -28924,7 +29508,9 @@ mod tests {
 
         for failure_after in 0_u64..=3 {
             let mut failure_heap = SourceHeap::default();
-            let components = failure_heap.allocate_model_storage(vec![INChI::default()]).unwrap();
+            let components = failure_heap
+                .allocate_model_storage(vec![INChI::default()])
+                .unwrap();
             failure_heap.fail_after_allocations(failure_after);
             assert_eq!(
                 call(&mut failure_heap, components, 1, u32::MAX),
@@ -28972,7 +29558,9 @@ mod tests {
             count: i32,
             inversion: i32,
         ) -> SourceMutPointer<INChI_Stereo> {
-            let numbers = heap.allocate_model_storage(vec![60000_u16; capacity]).unwrap();
+            let numbers = heap
+                .allocate_model_storage(vec![60000_u16; capacity])
+                .unwrap();
             let parities = heap.allocate_model_storage(vec![99_i8; capacity]).unwrap();
             heap.allocate_model_storage(vec![INChI_Stereo {
                 nNumberOfStereoCenters: count,
@@ -28999,7 +29587,10 @@ mod tests {
             SegmentSp3StoreStereoCenters(heap, abc, start, finish, atoms, stereo)
         }
 
-        fn fields(heap: &SourceHeap, stereo: SourceMutPointer<INChI_Stereo>) -> (i32, i32, Vec<u16>, Vec<i8>) {
+        fn fields(
+            heap: &SourceHeap,
+            stereo: SourceMutPointer<INChI_Stereo>,
+        ) -> (i32, i32, Vec<u16>, Vec<i8>) {
             let value = &heap.slice(stereo.as_const()).unwrap()[0];
             (
                 value.nNumberOfStereoCenters,
@@ -29013,13 +29604,19 @@ mod tests {
         for mut abc in [0, 1] {
             let value = stereo(&mut heap, 1, 17, 23);
             assert_eq!(call(&mut heap, "", 0, &mut abc, 0, value), Ok(0));
-            assert_eq!(fields(&heap, value), (0, NO_VALUE_INT as i32, vec![60000], vec![99]));
+            assert_eq!(
+                fields(&heap, value),
+                (0, NO_VALUE_INT as i32, vec![60000], vec![99])
+            );
         }
 
         let all_parities = stereo(&mut heap, 6, 41, 43);
         let mut abc = -1;
         let text = "0-,1-,2+,3u,4?,";
-        assert_eq!(call(&mut heap, text, text.len(), &mut abc, 1, all_parities), Ok(0));
+        assert_eq!(
+            call(&mut heap, text, text.len(), &mut abc, 1, all_parities),
+            Ok(0)
+        );
         assert_eq!(abc, -1);
         assert_eq!(
             fields(&heap, all_parities),
@@ -29077,18 +29674,30 @@ mod tests {
 
         let duplicate = stereo(&mut heap, 2, 81, 83);
         let mut abc = 0;
-        assert_eq!(call(&mut heap, "2-,2+", 5, &mut abc, 10, duplicate), Ok(RI_ERR_SYNTAX));
+        assert_eq!(
+            call(&mut heap, "2-,2+", 5, &mut abc, 10, duplicate),
+            Ok(RI_ERR_SYNTAX)
+        );
         assert_eq!(fields(&heap, duplicate), (81, 83, vec![2, 2], vec![1, 2]));
 
         let boundary = stereo(&mut heap, 1, 91, 93);
         let mut abc = 0;
-        assert_eq!(call(&mut heap, "1-,tail", 2, &mut abc, 10, boundary), Ok(RI_ERR_SYNTAX));
-        assert_eq!(fields(&heap, boundary), (1, NO_VALUE_INT as i32, vec![1], vec![1]));
+        assert_eq!(
+            call(&mut heap, "1-,tail", 2, &mut abc, 10, boundary),
+            Ok(RI_ERR_SYNTAX)
+        );
+        assert_eq!(
+            fields(&heap, boundary),
+            (1, NO_VALUE_INT as i32, vec![1], vec![1])
+        );
 
         let compressed = stereo(&mut heap, 2, 101, 103);
         let mut abc = 1;
         let text = "1+1+2+4";
-        assert_eq!(call(&mut heap, text, text.len(), &mut abc, 2, compressed), Ok(0));
+        assert_eq!(
+            call(&mut heap, text, text.len(), &mut abc, 2, compressed),
+            Ok(0)
+        );
         assert_eq!(
             fields(&heap, compressed),
             (2, NO_VALUE_INT as i32, vec![1, 2], vec![1, 4])
@@ -29111,11 +29720,17 @@ mod tests {
             call(&mut heap, "2+1", 3, &mut abc, 1, compressed_bound),
             Ok(RI_ERR_SYNTAX)
         );
-        assert_eq!(fields(&heap, compressed_bound), (121, 123, vec![60000], vec![99]));
+        assert_eq!(
+            fields(&heap, compressed_bound),
+            (121, 123, vec![60000], vec![99])
+        );
 
         let compressed_wrap = stereo(&mut heap, 1, 131, 133);
         let mut abc = 1;
-        assert_eq!(call(&mut heap, "65537+1", 7, &mut abc, 1, compressed_wrap), Ok(0));
+        assert_eq!(
+            call(&mut heap, "65537+1", 7, &mut abc, 1, compressed_wrap),
+            Ok(0)
+        );
         assert_eq!(
             fields(&heap, compressed_wrap),
             (1, NO_VALUE_INT as i32, vec![1], vec![1])
@@ -29127,14 +29742,23 @@ mod tests {
             call(&mut heap, "2+1+1+2", 8, &mut abc, 2, compressed_order),
             Ok(RI_ERR_SYNTAX)
         );
-        assert_eq!(fields(&heap, compressed_order), (141, 143, vec![2, 1], vec![1, 2]));
+        assert_eq!(
+            fields(&heap, compressed_order),
+            (141, 143, vec![2, 1], vec![1, 2])
+        );
     }
 
     #[test]
     fn source_port__ichiread__segmentsp3copymultipliercovered__line_12203() {
-        use crate::source_types::{INChI_Stereo, local_ichiread::tagCopySegmentType_CPY_SP3_S as CPY_SP3_S};
+        use crate::source_types::{
+            INChI_Stereo, local_ichiread::tagCopySegmentType_CPY_SP3_S as CPY_SP3_S,
+        };
 
-        fn source_stereo(heap: &mut SourceHeap, trivial: i32, inversion: i32) -> SourceMutPointer<INChI_Stereo> {
+        fn source_stereo(
+            heap: &mut SourceHeap,
+            trivial: i32,
+            inversion: i32,
+        ) -> SourceMutPointer<INChI_Stereo> {
             heap.allocate_model_storage(vec![INChI_Stereo {
                 bTrivialInv: trivial,
                 nCompInv2Abs: inversion,
@@ -29166,7 +29790,14 @@ mod tests {
         let mut heap = SourceHeap::default();
         for multiplier in [i32::MIN, -1, 0, 1] {
             assert_eq!(
-                SegmentSp3CopyMultiplierCovered(&mut heap, multiplier, i32::MAX, SourceMutPointer::null(), 0, i32::MAX,),
+                SegmentSp3CopyMultiplierCovered(
+                    &mut heap,
+                    multiplier,
+                    i32::MAX,
+                    SourceMutPointer::null(),
+                    0,
+                    i32::MAX,
+                ),
                 Ok(0),
                 "multiplier={multiplier}"
             );
@@ -29276,7 +29907,10 @@ mod tests {
             SegmentSp3CopyMultiplierCovered(&mut heap, 2, 0, second_failure, 0, CPY_SP3_S as i32,),
             Ok(RI_ERR_SYNTAX)
         );
-        assert_eq!(stereo_values(&heap, second_failure, 1, false), Some((23, 29)));
+        assert_eq!(
+            stereo_values(&heap, second_failure, 1, false),
+            Some((23, 29))
+        );
 
         let later_source = source_stereo(&mut heap, 31, -1);
         let later_bad = source_stereo(&mut heap, 37, 0);
@@ -29321,15 +29955,25 @@ mod tests {
 
     #[test]
     fn source_port__ichiread__segmentsp3processabbreviation__line_12239() {
-        use crate::source_types::{INChI_Stereo, NO_VALUE_INT, local_ichiread::tagCopySegmentType_CPY_SP3 as CPY_SP3};
+        use crate::source_types::{
+            INChI_Stereo, NO_VALUE_INT, local_ichiread::tagCopySegmentType_CPY_SP3 as CPY_SP3,
+        };
 
-        const IST_FIXED_H_ISO_SP3: u32 = crate::source_types::local_ichiread::tagInChI_STATE_IST_FIXED_H_ISO_SP3 as u32;
-        const IST_FIXED_H_SP3: u32 = crate::source_types::local_ichiread::tagInChI_STATE_IST_FIXED_H_SP3 as u32;
+        const IST_FIXED_H_ISO_SP3: u32 =
+            crate::source_types::local_ichiread::tagInChI_STATE_IST_FIXED_H_ISO_SP3 as u32;
+        const IST_FIXED_H_SP3: u32 =
+            crate::source_types::local_ichiread::tagInChI_STATE_IST_FIXED_H_SP3 as u32;
         const IST_MOBILE_H_ISO_SP3: u32 =
             crate::source_types::local_ichiread::tagInChI_STATE_IST_MOBILE_H_ISO_SP3 as u32;
-        const IST_MOBILE_H_SP3: u32 = crate::source_types::local_ichiread::tagInChI_STATE_IST_MOBILE_H_SP3 as u32;
+        const IST_MOBILE_H_SP3: u32 =
+            crate::source_types::local_ichiread::tagInChI_STATE_IST_MOBILE_H_SP3 as u32;
 
-        fn stereo(heap: &mut SourceHeap, number: u16, parity: i8, inversion: i32) -> SourceMutPointer<INChI_Stereo> {
+        fn stereo(
+            heap: &mut SourceHeap,
+            number: u16,
+            parity: i8,
+            inversion: i32,
+        ) -> SourceMutPointer<INChI_Stereo> {
             let numbers = heap.allocate_model_storage(vec![number, 0]).unwrap();
             let parities = heap.allocate_model_storage(vec![parity, 0]).unwrap();
             heap.allocate_model_storage(vec![INChI_Stereo {
@@ -29343,7 +29987,9 @@ mod tests {
         }
 
         fn abbreviation(heap: &mut SourceHeap, value: u8) -> SourceConstPointer<i8> {
-            heap.allocate_model_storage(vec![value as i8, 0]).unwrap().as_const()
+            heap.allocate_model_storage(vec![value as i8, 0])
+                .unwrap()
+                .as_const()
         }
 
         enum SourceRoute {
@@ -29443,7 +30089,14 @@ mod tests {
             false,
             Some(22),
         );
-        assert_route(TAUT_NON as i32, IST_FIXED_H_SP3, b'e', SourceRoute::Empty, true, None);
+        assert_route(
+            TAUT_NON as i32,
+            IST_FIXED_H_SP3,
+            b'e',
+            SourceRoute::Empty,
+            true,
+            None,
+        );
         assert_route(
             TAUT_NON as i32,
             IST_FIXED_H_ISO_SP3,
@@ -29604,7 +30257,9 @@ mod tests {
                 ..INChI::default()
             }])
             .unwrap();
-        let invalid_alt = invalid_heap.allocate_model_storage(vec![INChI::default()]).unwrap();
+        let invalid_alt = invalid_heap
+            .allocate_model_storage(vec![INChI::default()])
+            .unwrap();
         let mut multiplier = 141;
         let mut abc = 143;
         assert_eq!(
@@ -29646,7 +30301,10 @@ mod tests {
             Ok(RI_ERR_SYNTAX)
         );
         assert_eq!((multiplier, abc), (141, 143));
-        assert_eq!(invalid_heap.slice(occupied.as_const()).unwrap()[0].nCompInv2Abs, 17);
+        assert_eq!(
+            invalid_heap.slice(occupied.as_const()).unwrap()[0].nCompInv2Abs,
+            17
+        );
 
         let mut failure_heap = SourceHeap::default();
         let q = abbreviation(&mut failure_heap, b'm');
@@ -29657,7 +30315,9 @@ mod tests {
                 ..INChI::default()
             }])
             .unwrap();
-        let failure_alt = failure_heap.allocate_model_storage(vec![INChI::default()]).unwrap();
+        let failure_alt = failure_heap
+            .allocate_model_storage(vec![INChI::default()])
+            .unwrap();
         failure_heap.fail_after_allocations(0);
         let mut multiplier = 151;
         let mut abc = 153;
@@ -29729,7 +30389,10 @@ mod tests {
         let first_target = multiple_heap.slice(multiple.as_const()).unwrap()[0].StereoIsotopic;
         let first_value = &multiple_heap.slice(first_target.as_const()).unwrap()[0];
         assert_eq!(first_value.nCompInv2Abs, NO_VALUE_INT as i32);
-        assert_eq!(multiple_heap.slice(first_value.nNumber.as_const()).unwrap()[0], 51);
+        assert_eq!(
+            multiple_heap.slice(first_value.nNumber.as_const()).unwrap()[0],
+            51
+        );
         assert_eq!(
             multiple_heap.slice(second_target.as_const()).unwrap()[0].nCompInv2Abs,
             19
@@ -29778,7 +30441,11 @@ mod tests {
         let target = offset_heap.slice(current.as_const()).unwrap()[1].StereoIsotopic;
         assert_eq!(
             offset_heap
-                .slice(offset_heap.slice(target.as_const()).unwrap()[0].nNumber.as_const())
+                .slice(
+                    offset_heap.slice(target.as_const()).unwrap()[0]
+                        .nNumber
+                        .as_const()
+                )
                 .unwrap()[0],
             61
         );
@@ -29788,8 +30455,8 @@ mod tests {
     fn source_port__ichiread__parsesegmentpolymer__line_7494() {
         use crate::source::base::runichi3::OAD_Polymer_Free;
         use crate::source_types::{
-            CLOSING_SRU_DIRADICAL, CLOSING_SRU_HIGHER_ORDER_BOND, CLOSING_SRU_RING, POLYMERS_MODERN, REM_PROTONS,
-            tagFrameShifScheme_FSS_STARS_CYCLED,
+            CLOSING_SRU_DIRADICAL, CLOSING_SRU_HIGHER_ORDER_BOND, CLOSING_SRU_RING,
+            POLYMERS_MODERN, REM_PROTONS, tagFrameShifScheme_FSS_STARS_CYCLED,
         };
 
         fn parse(
@@ -29857,24 +30524,38 @@ mod tests {
         assert_eq!(output, preserved);
         assert_eq!(polymer(&heap, output).n, 37);
 
-        let old = heap.allocate_model_storage(vec![OAD_Polymer::default()]).unwrap();
+        let old = heap
+            .allocate_model_storage(vec![OAD_Polymer::default()])
+            .unwrap();
         output = old;
         assert_eq!(parse(&mut heap, "z101-1", 4, 1, &mut output), Ok(1));
         assert_ne!(output, old);
-        assert_eq!(heap.slice(old.as_const()), Err(SourceHeapError::MissingAllocation));
+        assert_eq!(
+            heap.slice(old.as_const()),
+            Err(SourceHeapError::MissingAllocation)
+        );
         let value = polymer(&heap, output);
         assert_eq!(value.n, 1);
         assert_eq!(value.really_do_frame_shift, 1);
-        assert_eq!(value.frame_shift_scheme, tagFrameShifScheme_FSS_STARS_CYCLED as i32);
+        assert_eq!(
+            value.frame_shift_scheme,
+            tagFrameShifScheme_FSS_STARS_CYCLED as i32
+        );
         assert_eq!(value.treat, POLYMERS_MODERN as i32);
         assert_eq!(value.is_in_reconn, 0);
         let one = units(&heap, output).remove(0);
-        assert_eq!((one.id, one.label, one.type_, one.subtype, one.conn), (1, 1, 1, 0, 1));
+        assert_eq!(
+            (one.id, one.label, one.type_, one.subtype, one.conn),
+            (1, 1, 1, 0, 1)
+        );
         assert_eq!(atom_list(&heap, &one), vec![1]);
         assert_eq!((one.cap1, one.cap2, one.nb, one.nbkbonds), (-1, -1, 0, 0));
 
         let mut disabled = SourceMutPointer::null();
-        assert_eq!(parse(&mut heap, "z101-1", 4, 0, &mut disabled), Ok(RI_ERR_SYNTAX));
+        assert_eq!(
+            parse(&mut heap, "z101-1", 4, 0, &mut disabled),
+            Ok(RI_ERR_SYNTAX)
+        );
         assert!(!disabled.is_null());
         assert_eq!(polymer(&heap, disabled).n, 0);
 
@@ -29891,12 +30572,19 @@ mod tests {
             "z101-1;;200-2",
         ] {
             let mut failed = SourceMutPointer::null();
-            assert_eq!(parse(&mut heap, text, 4, 1, &mut failed), Ok(RI_ERR_SYNTAX), "{text}");
+            assert_eq!(
+                parse(&mut heap, text, 4, 1, &mut failed),
+                Ok(RI_ERR_SYNTAX),
+                "{text}"
+            );
             assert!(!failed.is_null(), "{text}");
         }
 
         let mut ranges = SourceMutPointer::null();
-        assert_eq!(parse(&mut heap, "z101-1-3;200-4,5", 5, 1, &mut ranges), Ok(2));
+        assert_eq!(
+            parse(&mut heap, "z101-1-3;200-4,5", 5, 1, &mut ranges),
+            Ok(2)
+        );
         let range_units = units(&heap, ranges);
         assert_eq!(atom_list(&heap, &range_units[0]), vec![1, 2, 3]);
         assert_eq!(atom_list(&heap, &range_units[1]), vec![4, 5]);
@@ -29907,14 +30595,23 @@ mod tests {
         assert_eq!(atom_list(&heap, &units(&heap, descending)[0]), vec![3]);
 
         let mut trailing = SourceMutPointer::null();
-        assert_eq!(parse(&mut heap, "z101-1;", 4, 1, &mut trailing), Ok(RI_ERR_SYNTAX));
+        assert_eq!(
+            parse(&mut heap, "z101-1;", 4, 1, &mut trailing),
+            Ok(RI_ERR_SYNTAX)
+        );
         assert_eq!(polymer(&heap, trailing).n, 2);
 
         let mut endgroups = SourceMutPointer::null();
-        assert_eq!(parse(&mut heap, "z101-1,2(1-2,3-4)", 4, 1, &mut endgroups), Ok(1));
+        assert_eq!(
+            parse(&mut heap, "z101-1,2(1-2,3-4)", 4, 1, &mut endgroups),
+            Ok(1)
+        );
         let endgroup = &units(&heap, endgroups)[0];
         assert_eq!((endgroup.nb, endgroup.cap1, endgroup.cap2), (2, 1, 3));
-        assert_eq!(heap.slice(endgroup.blist.as_const()).unwrap()[..4], [1, 2, 3, 4]);
+        assert_eq!(
+            heap.slice(endgroup.blist.as_const()).unwrap()[..4],
+            [1, 2, 3, 4]
+        );
 
         let mut bad_endgroups = SourceMutPointer::null();
         assert_eq!(
@@ -29926,9 +30623,21 @@ mod tests {
 
         for (text, cyclizable, expected) in [
             ("z101-1,2(1,2-3,4)", CLOSING_SRU_RING as i32, vec![[3, 4]]),
-            ("z101-1,2(1,2-3.4)", CLOSING_SRU_HIGHER_ORDER_BOND as i32, vec![[3, 4]]),
-            ("z101-1,2(1,2-3)", CLOSING_SRU_DIRADICAL as i32, vec![[3, 3]]),
-            ("z101-1,2(1,2-3,4,2,1)", CLOSING_SRU_RING as i32, vec![[3, 4], [2, 1]]),
+            (
+                "z101-1,2(1,2-3.4)",
+                CLOSING_SRU_HIGHER_ORDER_BOND as i32,
+                vec![[3, 4]],
+            ),
+            (
+                "z101-1,2(1,2-3)",
+                CLOSING_SRU_DIRADICAL as i32,
+                vec![[3, 3]],
+            ),
+            (
+                "z101-1,2(1,2-3,4,2,1)",
+                CLOSING_SRU_RING as i32,
+                vec![[3, 4], [2, 1]],
+            ),
         ] {
             let mut star = SourceMutPointer::null();
             assert_eq!(parse(&mut heap, text, 4, 1, &mut star), Ok(1), "{text}");
@@ -29938,7 +30647,12 @@ mod tests {
             assert_eq!(matrix(&heap, unit), expected, "{text}");
         }
 
-        for text in ["z101-(1,2-3)", "z101-1,2(1,2-3,)", "z101-1,2(1,2-5)", "z101-1,2(1,2)"] {
+        for text in [
+            "z101-(1,2-3)",
+            "z101-1,2(1,2-3,)",
+            "z101-1,2(1,2-5)",
+            "z101-1,2(1,2)",
+        ] {
             let mut malformed = SourceMutPointer::null();
             assert_eq!(
                 parse(&mut heap, text, 4, 1, &mut malformed),
@@ -29978,7 +30692,15 @@ mod tests {
             );
         }
 
-        for pointer in [output, disabled, ranges, descending, trailing, endgroups, bad_endgroups] {
+        for pointer in [
+            output,
+            disabled,
+            ranges,
+            descending,
+            trailing,
+            endgroups,
+            bad_endgroups,
+        ] {
             OAD_Polymer_Free(&mut heap, pointer).unwrap();
         }
     }
@@ -30013,7 +30735,10 @@ mod tests {
             .unwrap()
         }
 
-        fn fields(heap: &SourceHeap, pointer: SourceMutPointer<INChI>) -> (SourceMutPointer<INChI_IsotopicAtom>, i32) {
+        fn fields(
+            heap: &SourceHeap,
+            pointer: SourceMutPointer<INChI>,
+        ) -> (SourceMutPointer<INChI_IsotopicAtom>, i32) {
             let value = &heap.slice(pointer.as_const()).unwrap()[0];
             (value.IsotopicAtom, value.nNumberOfIsotopicAtoms)
         }
@@ -30025,7 +30750,10 @@ mod tests {
         let reused_values = vec![isotope(7, 7), isotope(8, 8), isotope(9, 9)];
         let reused = inchi(&mut heap, Some(reused_values.clone()), 3);
         let reused_pointer = fields(&heap, reused).0;
-        assert_eq!(nProtonCopyIsotopicInfo(&mut heap, reused, source.as_const()), Ok(0));
+        assert_eq!(
+            nProtonCopyIsotopicInfo(&mut heap, reused, source.as_const()),
+            Ok(0)
+        );
         assert_eq!(fields(&heap, reused), (reused_pointer, 2));
         assert_eq!(
             heap.slice(reused_pointer.as_const()).unwrap(),
@@ -30047,7 +30775,10 @@ mod tests {
 
         let expanded = inchi(&mut heap, Some(vec![isotope(12, 12)]), 1);
         let old_expanded_pointer = fields(&heap, expanded).0;
-        assert_eq!(nProtonCopyIsotopicInfo(&mut heap, expanded, source.as_const()), Ok(0));
+        assert_eq!(
+            nProtonCopyIsotopicInfo(&mut heap, expanded, source.as_const()),
+            Ok(0)
+        );
         let (expanded_pointer, expanded_count) = fields(&heap, expanded);
         assert_eq!(expanded_count, 2);
         assert_ne!(expanded_pointer, old_expanded_pointer);
@@ -30055,13 +30786,22 @@ mod tests {
             heap.slice(old_expanded_pointer.as_const()),
             Err(SourceHeapError::MissingAllocation)
         );
-        assert_eq!(heap.slice(expanded_pointer.as_const()).unwrap(), source_values);
+        assert_eq!(
+            heap.slice(expanded_pointer.as_const()).unwrap(),
+            source_values
+        );
 
         let allocated = inchi(&mut heap, None, 0);
-        assert_eq!(nProtonCopyIsotopicInfo(&mut heap, allocated, source.as_const()), Ok(0));
+        assert_eq!(
+            nProtonCopyIsotopicInfo(&mut heap, allocated, source.as_const()),
+            Ok(0)
+        );
         let (allocated_pointer, allocated_count) = fields(&heap, allocated);
         assert_eq!(allocated_count, 2);
-        assert_eq!(heap.slice(allocated_pointer.as_const()).unwrap(), source_values);
+        assert_eq!(
+            heap.slice(allocated_pointer.as_const()).unwrap(),
+            source_values
+        );
 
         let empty_source = inchi(&mut heap, None, 0);
         let cleared = inchi(&mut heap, Some(vec![isotope(13, 13)]), 1);
@@ -30085,7 +30825,10 @@ mod tests {
 
         let alias = inchi(&mut heap, Some(source_values.clone()), 2);
         let alias_pointer = fields(&heap, alias).0;
-        assert_eq!(nProtonCopyIsotopicInfo(&mut heap, alias, alias.as_const()), Ok(0));
+        assert_eq!(
+            nProtonCopyIsotopicInfo(&mut heap, alias, alias.as_const()),
+            Ok(0)
+        );
         assert_eq!(fields(&heap, alias), (alias_pointer, 2));
         assert_eq!(heap.slice(alias_pointer.as_const()).unwrap(), source_values);
 
@@ -30095,7 +30838,10 @@ mod tests {
             nProtonCopyIsotopicInfo(&mut heap, allocation_failure, source.as_const()),
             Ok(RI_ERR_ALLOC)
         );
-        assert_eq!(fields(&heap, allocation_failure), (SourceMutPointer::null(), 0));
+        assert_eq!(
+            fields(&heap, allocation_failure),
+            (SourceMutPointer::null(), 0)
+        );
         heap.trace_source_allocations();
 
         let expansion_failure = inchi(&mut heap, Some(vec![isotope(14, 14)]), 1);
@@ -30105,7 +30851,10 @@ mod tests {
             nProtonCopyIsotopicInfo(&mut heap, expansion_failure, source.as_const()),
             Ok(RI_ERR_ALLOC)
         );
-        assert_eq!(fields(&heap, expansion_failure), (SourceMutPointer::null(), 0));
+        assert_eq!(
+            fields(&heap, expansion_failure),
+            (SourceMutPointer::null(), 0)
+        );
         assert_eq!(
             heap.slice(expansion_failure_old.as_const()),
             Err(SourceHeapError::MissingAllocation)
@@ -30118,7 +30867,10 @@ mod tests {
             nProtonCopyIsotopicInfo(&mut heap, preserved_count, negative_source.as_const()),
             Ok(RI_ERR_ALLOC)
         );
-        assert_eq!(fields(&heap, preserved_count), (SourceMutPointer::null(), 7));
+        assert_eq!(
+            fields(&heap, preserved_count),
+            (SourceMutPointer::null(), 7)
+        );
     }
 
     #[test]
@@ -30572,7 +31324,15 @@ mod tests {
             bonds: &mut i32,
         ) -> Result<i32, SourceHeapError> {
             let text = c_string(heap, text);
-            ParseSegmentConnections(heap, text, TAUT_YES as i32, input, component_count, abc, bonds)
+            ParseSegmentConnections(
+                heap,
+                text,
+                TAUT_YES as i32,
+                input,
+                component_count,
+                abc,
+                bonds,
+            )
         }
 
         let mut heap = SourceHeap::default();
@@ -30594,7 +31354,10 @@ mod tests {
         assert_eq!((count, abc, bonds), (1, 77, 0));
         let initialized = &heap.slice(input.as_const()).unwrap()[0];
         assert_eq!(initialized.lenConnTable, 0);
-        assert_eq!(heap.slice(initialized.szHillFormula.as_const()).unwrap(), &[0, 0]);
+        assert_eq!(
+            heap.slice(initialized.szHillFormula.as_const()).unwrap(),
+            &[0, 0]
+        );
         assert_eq!(heap.slice(initialized.nConnTable.as_const()).unwrap(), &[0]);
 
         for failure_ordinal in 0..3 {
@@ -30689,7 +31452,9 @@ mod tests {
             let mut abc = -1;
             let mut bonds = -1;
             assert_eq!(
-                parse(&mut heap, text, &mut input, &mut count, &mut abc, &mut bonds,),
+                parse(
+                    &mut heap, text, &mut input, &mut count, &mut abc, &mut bonds,
+                ),
                 Ok(1),
                 "{text}"
             );
@@ -30710,7 +31475,9 @@ mod tests {
             let mut abc = -1;
             let mut bonds = -1;
             assert_eq!(
-                parse(&mut heap, text, &mut input, &mut count, &mut abc, &mut bonds,),
+                parse(
+                    &mut heap, text, &mut input, &mut count, &mut abc, &mut bonds,
+                ),
                 Ok(1),
                 "{text}"
             );
@@ -30730,7 +31497,9 @@ mod tests {
             let mut abc = -1;
             let mut bonds = -1;
             assert_eq!(
-                parse(&mut heap, text, &mut input, &mut count, &mut abc, &mut bonds,),
+                parse(
+                    &mut heap, text, &mut input, &mut count, &mut abc, &mut bonds,
+                ),
                 Ok(RI_ERR_SYNTAX),
                 "{text}"
             );
@@ -30743,7 +31512,14 @@ mod tests {
         let mut abc = -1;
         let mut bonds = -1;
         assert_eq!(
-            parse(&mut heap, "c1-2(3,4)5", &mut input, &mut count, &mut abc, &mut bonds,),
+            parse(
+                &mut heap,
+                "c1-2(3,4)5",
+                &mut input,
+                &mut count,
+                &mut abc,
+                &mut bonds,
+            ),
             Ok(1)
         );
         assert_eq!((abc, bonds), (0, 4));
@@ -30761,13 +31537,18 @@ mod tests {
             let mut abc = -1;
             let mut bonds = -1;
             assert_eq!(
-                parse(&mut heap, text, &mut input, &mut count, &mut abc, &mut bonds,),
+                parse(
+                    &mut heap, text, &mut input, &mut count, &mut abc, &mut bonds,
+                ),
                 Ok(2),
                 "{text}"
             );
             assert_eq!(bonds, if text.starts_with("c2") { 1 } else { 2 });
             for current in heap.slice(input.as_const()).unwrap() {
-                assert_eq!(&heap.slice(current.nConnTable.as_const()).unwrap()[..3], &[1, 2, 1]);
+                assert_eq!(
+                    &heap.slice(current.nConnTable.as_const()).unwrap()[..3],
+                    &[1, 2, 1]
+                );
             }
         }
 
@@ -30787,11 +31568,16 @@ mod tests {
         let mut abc = -1;
         let mut bonds = -1;
         assert_eq!(
-            parse(&mut heap, "c0*1-2", &mut input, &mut count, &mut abc, &mut bonds,),
+            parse(
+                &mut heap, "c0*1-2", &mut input, &mut count, &mut abc, &mut bonds,
+            ),
             Ok(0)
         );
         assert_eq!(bonds, 1);
-        assert_eq!(&heap.slice(existing_table.as_const()).unwrap()[..3], &[1, 2, 1]);
+        assert_eq!(
+            &heap.slice(existing_table.as_const()).unwrap()[..3],
+            &[1, 2, 1]
+        );
 
         let mut heap = SourceHeap::default();
         let old_atoms = atoms(&mut heap, 1);
@@ -30809,7 +31595,9 @@ mod tests {
         let mut abc = -1;
         let mut bonds = -1;
         assert_eq!(
-            parse(&mut heap, "c1-2", &mut input, &mut count, &mut abc, &mut bonds,),
+            parse(
+                &mut heap, "c1-2", &mut input, &mut count, &mut abc, &mut bonds,
+            ),
             Ok(1)
         );
         let current = &heap.slice(input.as_const()).unwrap()[0];
@@ -30842,7 +31630,9 @@ mod tests {
             let mut bonds = -1;
             heap.fail_after_allocations(failure_ordinal);
             assert_eq!(
-                parse(&mut heap, "c1-2", &mut input, &mut count, &mut abc, &mut bonds,),
+                parse(
+                    &mut heap, "c1-2", &mut input, &mut count, &mut abc, &mut bonds,
+                ),
                 Ok(RI_ERR_ALLOC),
                 "allocation {failure_ordinal}"
             );
@@ -30889,7 +31679,9 @@ mod tests {
             let mut abc = -1;
             let mut bonds = -1;
             assert_eq!(
-                parse(&mut heap, text, &mut input, &mut count, &mut abc, &mut bonds,),
+                parse(
+                    &mut heap, text, &mut input, &mut count, &mut abc, &mut bonds,
+                ),
                 Ok(RI_ERR_SYNTAX),
                 "{text}"
             );
@@ -30902,7 +31694,9 @@ mod tests {
             let mut abc = -1;
             let mut bonds = -1;
             assert_eq!(
-                parse(&mut heap, text, &mut input, &mut count, &mut abc, &mut bonds,),
+                parse(
+                    &mut heap, text, &mut input, &mut count, &mut abc, &mut bonds,
+                ),
                 Ok(1),
                 "source accepts trailing delimiter {text}"
             );
@@ -30915,7 +31709,9 @@ mod tests {
         let mut abc = -1;
         let mut bonds = -1;
         assert_eq!(
-            parse(&mut heap, "c65537", &mut input, &mut count, &mut abc, &mut bonds,),
+            parse(
+                &mut heap, "c65537", &mut input, &mut count, &mut abc, &mut bonds,
+            ),
             Ok(1)
         );
         let current = &heap.slice(input.as_const()).unwrap()[0];
@@ -30929,7 +31725,9 @@ mod tests {
             let mut abc = preset_abc;
             let mut bonds = -1;
             assert_eq!(
-                parse(&mut heap, text, &mut input, &mut count, &mut abc, &mut bonds,),
+                parse(
+                    &mut heap, text, &mut input, &mut count, &mut abc, &mut bonds,
+                ),
                 Ok(RI_ERR_SYNTAX),
                 "preset abc={preset_abc}, {text}"
             );
@@ -30948,7 +31746,9 @@ mod tests {
             let mut abc = -1;
             let mut bonds = -1;
             assert_eq!(
-                parse(&mut heap, "c1", &mut input, &mut count, &mut abc, &mut bonds,),
+                parse(
+                    &mut heap, "c1", &mut input, &mut count, &mut abc, &mut bonds,
+                ),
                 Ok(RI_ERR_SYNTAX),
                 "atom count {invalid_atom_count}"
             );
@@ -30961,7 +31761,9 @@ mod tests {
         let mut abc = -1;
         let mut bonds = -1;
         assert_eq!(
-            parse(&mut heap, "c2*1-2", &mut input, &mut count, &mut abc, &mut bonds,),
+            parse(
+                &mut heap, "c2*1-2", &mut input, &mut count, &mut abc, &mut bonds,
+            ),
             Ok(RI_ERR_SYNTAX)
         );
         assert_eq!(bonds, 1);
@@ -31013,7 +31815,10 @@ mod tests {
 
         let high_degree = format!(
             "c1({})23",
-            (2..=22).map(|value| value.to_string()).collect::<Vec<_>>().join(",")
+            (2..=22)
+                .map(|value| value.to_string())
+                .collect::<Vec<_>>()
+                .join(",")
         );
         let mut heap = SourceHeap::default();
         let mut input = components(&mut heap, &[23]);
@@ -31021,7 +31826,14 @@ mod tests {
         let mut abc = -1;
         let mut bonds = -1;
         assert_eq!(
-            parse(&mut heap, &high_degree, &mut input, &mut count, &mut abc, &mut bonds,),
+            parse(
+                &mut heap,
+                &high_degree,
+                &mut input,
+                &mut count,
+                &mut abc,
+                &mut bonds,
+            ),
             Ok(RI_ERR_SYNTAX)
         );
         assert_eq!(bonds, 22);
@@ -31041,7 +31853,9 @@ mod tests {
         let mut abc = -1;
         let mut bonds = -1;
         assert_eq!(
-            parse(&mut heap, &deep, &mut input, &mut count, &mut abc, &mut bonds,),
+            parse(
+                &mut heap, &deep, &mut input, &mut count, &mut abc, &mut bonds,
+            ),
             Ok(RI_ERR_PROGR)
         );
         assert_eq!(bonds, 512);
@@ -31052,7 +31866,9 @@ mod tests {
         let mut abc = -1;
         let mut bonds = 99;
         assert_eq!(
-            parse(&mut heap, "c1", &mut input, &mut count, &mut abc, &mut bonds,),
+            parse(
+                &mut heap, "c1", &mut input, &mut count, &mut abc, &mut bonds,
+            ),
             Ok(RI_ERR_SYNTAX)
         );
         assert_eq!(bonds, 0);
@@ -31103,7 +31919,13 @@ mod tests {
         );
 
         let dirty_pointer = heap
-            .allocate_model_storage(vec![ONE_LINKED_BOND { neigh: 99, prev: 98 }; 300])
+            .allocate_model_storage(vec![
+                ONE_LINKED_BOND {
+                    neigh: 99,
+                    prev: 98
+                };
+                300
+            ])
             .unwrap();
         let mut dirty = LINKED_BONDS {
             pBond: dirty_pointer,
@@ -31130,22 +31952,36 @@ mod tests {
             len: 4,
             len_alloc: 8,
         };
-        assert_eq!(AddLinkedBond(&mut heap, 1, 3, 3, &mut exact_capacity), Ok(0));
+        assert_eq!(
+            AddLinkedBond(&mut heap, 1, 3, 3, &mut exact_capacity),
+            Ok(0)
+        );
         assert_ne!(exact_capacity.pBond, old);
         assert_eq!(exact_capacity.len_alloc, 256);
-        assert_eq!(heap.slice(old.as_const()), Err(SourceHeapError::MissingAllocation));
+        assert_eq!(
+            heap.slice(old.as_const()),
+            Err(SourceHeapError::MissingAllocation)
+        );
         let copied = heap.slice(exact_capacity.pBond.as_const()).unwrap();
         assert_eq!((copied[1].neigh, copied[1].prev), (2, 4));
         assert_eq!((copied[4].neigh, copied[4].prev), (3, 1));
 
         for (num_atoms, expected_capacity) in [(62_u16, 256_i32), (63, 384)] {
             let mut boundary = LINKED_BONDS::default();
-            assert_eq!(AddLinkedBond(&mut heap, 1, 2, num_atoms, &mut boundary), Ok(0));
+            assert_eq!(
+                AddLinkedBond(&mut heap, 1, 2, num_atoms, &mut boundary),
+                Ok(0)
+            );
             assert_eq!(boundary.len_alloc, expected_capacity, "{num_atoms}");
             assert_eq!(boundary.len, i32::from(num_atoms) + 1, "{num_atoms}");
         }
 
-        for (at1, at2, num_atoms) in [(4_u16, 1_u16, 3_u16), (1, 4, 3), (1, 2, 32767), (65535, 65535, 32766)] {
+        for (at1, at2, num_atoms) in [
+            (4_u16, 1_u16, 3_u16),
+            (1, 4, 3),
+            (1, 2, 32767),
+            (65535, 65535, 32766),
+        ] {
             let mut invalid = LINKED_BONDS::default();
             assert_eq!(
                 AddLinkedBond(&mut heap, at1, at2, num_atoms, &mut invalid),
@@ -31163,7 +31999,10 @@ mod tests {
         assert_eq!(maximum.len, i32::from(maximum_atom) + 1);
         assert!(maximum.len_alloc > maximum.len);
         let maximum_values = heap.slice(maximum.pBond.as_const()).unwrap();
-        assert_eq!((maximum_values[0].neigh, maximum_values[0].prev), (maximum_atom, 0));
+        assert_eq!(
+            (maximum_values[0].neigh, maximum_values[0].prev),
+            (maximum_atom, 0)
+        );
         assert_eq!(
             (
                 maximum_values[usize::from(maximum_atom)].neigh,
@@ -31208,7 +32047,9 @@ mod tests {
             let mut components = Vec::new();
             for (index, atom_count) in atom_counts.iter().copied().enumerate() {
                 let formula = c_string(heap, formulas[index]).as_mut();
-                let atoms = heap.allocate_model_storage(vec![6_u8; atom_count as usize]).unwrap();
+                let atoms = heap
+                    .allocate_model_storage(vec![6_u8; atom_count as usize])
+                    .unwrap();
                 let hydrogens = initial_h.map_or(SourceMutPointer::null(), |values| {
                     heap.allocate_model_storage(values[index].clone()).unwrap()
                 });
@@ -31236,13 +32077,26 @@ mod tests {
             ParseSegmentMobileH(heap, input, mobile, &[fixed, mobile_layer], &counts, abc)
         }
 
-        fn h_values(heap: &SourceHeap, layer: SourceMutPointer<INChI>, component: usize, fixed: bool) -> Vec<i8> {
+        fn h_values(
+            heap: &SourceHeap,
+            layer: SourceMutPointer<INChI>,
+            component: usize,
+            fixed: bool,
+        ) -> Vec<i8> {
             let value = &heap.slice(layer.as_const()).unwrap()[component];
-            let pointer = if fixed { value.nNum_H_fixed } else { value.nNum_H };
+            let pointer = if fixed {
+                value.nNum_H_fixed
+            } else {
+                value.nNum_H
+            };
             heap.slice(pointer.as_const()).unwrap()[..value.nNumberOfAtoms as usize].to_vec()
         }
 
-        fn tautomer_values(heap: &SourceHeap, layer: SourceMutPointer<INChI>, component: usize) -> Vec<u16> {
+        fn tautomer_values(
+            heap: &SourceHeap,
+            layer: SourceMutPointer<INChI>,
+            component: usize,
+        ) -> Vec<u16> {
             let value = &heap.slice(layer.as_const()).unwrap()[component];
             heap.slice(value.nTautomer.as_const()).unwrap()[..value.lenTautomer as usize].to_vec()
         }
@@ -31298,7 +32152,10 @@ mod tests {
         );
         assert_eq!(abc, 0);
         assert_eq!(h_values(&heap, mobile_tautomer, 0, false), vec![0, 0]);
-        assert_eq!(tautomer_values(&heap, mobile_tautomer, 0), vec![1, 4, 1, 0, 1, 2]);
+        assert_eq!(
+            tautomer_values(&heap, mobile_tautomer, 0),
+            vec![1, 4, 1, 0, 1, 2]
+        );
 
         let compressed_tautomer = layer(&mut heap, &[2], &["C2H"], None);
         abc = -1;
@@ -31315,7 +32172,10 @@ mod tests {
             Ok(2)
         );
         assert_eq!(abc, 1);
-        assert_eq!(tautomer_values(&heap, compressed_tautomer, 0), vec![1, 4, 1, 0, 1, 2]);
+        assert_eq!(
+            tautomer_values(&heap, compressed_tautomer, 0),
+            vec![1, 4, 1, 0, 1, 2]
+        );
 
         let multiple_tautomer = layer(&mut heap, &[4], &["C4H2"], None);
         abc = -1;
@@ -31420,8 +32280,14 @@ mod tests {
             ),
             Ok(3)
         );
-        assert_eq!(tautomer_values(&heap, multiplied_tautomer, 0), vec![1, 4, 1, 0, 1, 2]);
-        assert_eq!(tautomer_values(&heap, multiplied_tautomer, 1), vec![1, 4, 1, 0, 1, 2]);
+        assert_eq!(
+            tautomer_values(&heap, multiplied_tautomer, 0),
+            vec![1, 4, 1, 0, 1, 2]
+        );
+        assert_eq!(
+            tautomer_values(&heap, multiplied_tautomer, 1),
+            vec![1, 4, 1, 0, 1, 2]
+        );
 
         let zero_multiplier = layer(&mut heap, &[1], &["CH"], None);
         abc = -1;
@@ -31603,9 +32469,15 @@ mod tests {
         let mut atom_mismatch_heap = SourceHeap::default();
         let atom_mismatch_fixed = layer(&mut atom_mismatch_heap, &[1], &["C"], None);
         let atom_mismatch_h = [vec![0_i8]];
-        let atom_mismatch_mobile = layer(&mut atom_mismatch_heap, &[1], &["N"], Some(&atom_mismatch_h));
-        atom_mismatch_heap.slice_mut(atom_mismatch_mobile).unwrap()[0].nAtom =
-            atom_mismatch_heap.allocate_model_storage(vec![7_u8]).unwrap();
+        let atom_mismatch_mobile = layer(
+            &mut atom_mismatch_heap,
+            &[1],
+            &["N"],
+            Some(&atom_mismatch_h),
+        );
+        atom_mismatch_heap.slice_mut(atom_mismatch_mobile).unwrap()[0].nAtom = atom_mismatch_heap
+            .allocate_model_storage(vec![7_u8])
+            .unwrap();
         abc = -1;
         assert_eq!(
             call(
@@ -31651,7 +32523,10 @@ mod tests {
             ),
             Ok(RI_ERR_SYNTAX)
         );
-        assert_eq!(h_values(&invalid_target_heap, invalid_target, 0, false), vec![1]);
+        assert_eq!(
+            h_values(&invalid_target_heap, invalid_target, 0, false),
+            vec![1]
+        );
 
         let mut component_count_heap = SourceHeap::default();
         let component_count = layer(&mut component_count_heap, &[1, 1], &["CH", "C"], None);
@@ -31668,7 +32543,10 @@ mod tests {
             ),
             Ok(RI_ERR_SYNTAX)
         );
-        assert_eq!(h_values(&component_count_heap, component_count, 0, false), vec![1]);
+        assert_eq!(
+            h_values(&component_count_heap, component_count, 0, false),
+            vec![1]
+        );
 
         let mut allocation_heap = SourceHeap::default();
         let allocation_layer = layer(&mut allocation_heap, &[1], &["C"], None);
@@ -31843,7 +32721,13 @@ mod tests {
             (Ok(4), vec![0, 0, 0], vec![2, 2, 2])
         );
         assert_eq!(
-            parse(&mut heap, "q2*;1*-1", TAUT_YES as i32, &[0, 0, 0], &[7, 8, 9],),
+            parse(
+                &mut heap,
+                "q2*;1*-1",
+                TAUT_YES as i32,
+                &[0, 0, 0],
+                &[7, 8, 9],
+            ),
             (Ok(4), vec![0, 0, 0], vec![no_value, no_value, -1])
         );
         for text in ["q0*+1", "q-1*+1", "q32767*+1", "q2x*+1", "q3*+1"] {
@@ -31890,7 +32774,9 @@ mod tests {
 
         fn array(heap: &mut SourceHeap, capacity: i32) -> INT_ARRAY {
             INT_ARRAY {
-                item: heap.allocate_model_storage(vec![0_i32; capacity as usize]).unwrap(),
+                item: heap
+                    .allocate_model_storage(vec![0_i32; capacity as usize])
+                    .unwrap(),
                 allocated: capacity,
                 used: 0,
                 increment: capacity,
@@ -31907,7 +32793,9 @@ mod tests {
             let input = c_string(heap, text);
             let stop_offset = text.bytes().position(|byte| byte == stop).unwrap();
             let end = input.offset(stop_offset as i64)?;
-            let result = ParseSegmentReadDelimitedNumbers(heap, input, end, list, b',' as i8, stop as i8, ret)?;
+            let result = ParseSegmentReadDelimitedNumbers(
+                heap, input, end, list, b',' as i8, stop as i8, ret,
+            )?;
             Ok((input, result))
         }
 
@@ -32015,7 +32903,10 @@ mod tests {
         assert_eq!(ret, RI_ERR_SYNTAX);
         assert_eq!(result.as_mut().difference(text.as_mut()), Ok(4));
         assert!(failure.item.is_null());
-        assert_eq!((failure.allocated, failure.used, failure.increment), (1, 1, 1));
+        assert_eq!(
+            (failure.allocated, failure.used, failure.increment),
+            (1, 1, 1)
+        );
     }
 
     #[test]
@@ -32034,7 +32925,10 @@ mod tests {
 
         let mut heap = SourceHeap::default();
         let mut protons = std::array::from_fn(|_| REM_PROTONS::default());
-        assert_eq!(parse(&mut heap, "x+1", TAUT_YES as i32, &mut protons), Ok(0));
+        assert_eq!(
+            parse(&mut heap, "x+1", TAUT_YES as i32, &mut protons),
+            Ok(0)
+        );
         assert_eq!(protons[TAUT_YES as usize].nNumRemovedProtons, 0);
 
         for (text, expected) in [
@@ -32047,12 +32941,22 @@ mod tests {
             ("p+65536", 0),
         ] {
             protons[TAUT_YES as usize].nNumRemovedProtons = 99;
-            assert_eq!(parse(&mut heap, text, TAUT_YES as i32, &mut protons), Ok(1), "{text}");
-            assert_eq!(protons[TAUT_YES as usize].nNumRemovedProtons, expected, "{text}");
+            assert_eq!(
+                parse(&mut heap, text, TAUT_YES as i32, &mut protons),
+                Ok(1),
+                "{text}"
+            );
+            assert_eq!(
+                protons[TAUT_YES as usize].nNumRemovedProtons, expected,
+                "{text}"
+            );
         }
 
         protons[TAUT_NON as usize].nNumRemovedProtons = 7;
-        assert_eq!(parse(&mut heap, "p-3", TAUT_NON as i32, &mut protons), Ok(1));
+        assert_eq!(
+            parse(&mut heap, "p-3", TAUT_NON as i32, &mut protons),
+            Ok(1)
+        );
         assert_eq!(protons[TAUT_NON as usize].nNumRemovedProtons, -3);
         assert_eq!(protons[TAUT_YES as usize].nNumRemovedProtons, 0);
 
@@ -32080,12 +32984,20 @@ mod tests {
             } else {
                 5
             };
-            assert_eq!(protons[TAUT_YES as usize].nNumRemovedProtons, expected, "{text}");
+            assert_eq!(
+                protons[TAUT_YES as usize].nNumRemovedProtons, expected,
+                "{text}"
+            );
         }
 
         protons[TAUT_YES as usize].nNumRemovedProtons = 12;
         assert_eq!(
-            parse(&mut heap, "p+9223372036854775808", TAUT_YES as i32, &mut protons,),
+            parse(
+                &mut heap,
+                "p+9223372036854775808",
+                TAUT_YES as i32,
+                &mut protons,
+            ),
             Ok(1)
         );
         assert_eq!(protons[TAUT_YES as usize].nNumRemovedProtons, -1);
@@ -32125,7 +33037,10 @@ mod tests {
             .unwrap()
         }
 
-        fn stereo(heap: &mut SourceHeap, bonds: &[(u16, u16, i8)]) -> SourceMutPointer<INChI_Stereo> {
+        fn stereo(
+            heap: &mut SourceHeap,
+            bonds: &[(u16, u16, i8)],
+        ) -> SourceMutPointer<INChI_Stereo> {
             let mut atom1: Vec<u16> = bonds.iter().map(|bond| bond.0).collect();
             let mut atom2: Vec<u16> = bonds.iter().map(|bond| bond.1).collect();
             let mut parity: Vec<i8> = bonds.iter().map(|bond| bond.2).collect();
@@ -32280,7 +33195,12 @@ mod tests {
         assert_eq!(abc, 0);
         assert_eq!(
             fields(&normal_heap, normal, 0, false),
-            Some((4, vec![2, 3, 3, 4, 0], vec![1, 1, 2, 1, 0], vec![1, 2, 3, 4, 0],))
+            Some((
+                4,
+                vec![2, 3, 3, 4, 0],
+                vec![1, 1, 2, 1, 0],
+                vec![1, 2, 3, 4, 0],
+            ))
         );
 
         let mut compressed_heap = SourceHeap::default();
@@ -32657,7 +33577,8 @@ mod tests {
         use crate::source_types::{
             INChI_Stereo, NO_VALUE_INT,
             local_ichiread::{
-                tagInChI_STATE_IST_FIXED_H_SP3, tagInChI_STATE_IST_MOBILE_H_ISO_SP3, tagInChI_STATE_IST_MOBILE_H_SP3,
+                tagInChI_STATE_IST_FIXED_H_SP3, tagInChI_STATE_IST_MOBILE_H_ISO_SP3,
+                tagInChI_STATE_IST_MOBILE_H_SP3,
             },
         };
 
@@ -32735,13 +33656,29 @@ mod tests {
         let counts = [0, 1];
         let mut abc = -1;
         assert_eq!(
-            parse(&mut heap, "x1-", TAUT_YES as i32, &layers, &counts, MOBILE, &mut abc,),
+            parse(
+                &mut heap,
+                "x1-",
+                TAUT_YES as i32,
+                &layers,
+                &counts,
+                MOBILE,
+                &mut abc,
+            ),
             Ok(0)
         );
         assert_eq!(abc, -1);
         assert_eq!(stereo_fields(&heap, mobile, 0, false), None);
         assert_eq!(
-            parse(&mut heap, "t1-", TAUT_YES as i32, &layers, &counts, u32::MAX, &mut abc,),
+            parse(
+                &mut heap,
+                "t1-",
+                TAUT_YES as i32,
+                &layers,
+                &counts,
+                u32::MAX,
+                &mut abc,
+            ),
             Ok(RI_ERR_PROGR)
         );
 
@@ -32791,7 +33728,12 @@ mod tests {
         assert_eq!(abc, 0);
         assert_eq!(
             stereo_fields(&normal_heap, normal, 0, false),
-            Some((4, NO_VALUE_INT as i32, vec![1, 2, 3, 4, 0], vec![1, 2, 3, 4, 0],))
+            Some((
+                4,
+                NO_VALUE_INT as i32,
+                vec![1, 2, 3, 4, 0],
+                vec![1, 2, 3, 4, 0],
+            ))
         );
 
         let mut compressed_heap = SourceHeap::default();
@@ -32832,8 +33774,14 @@ mod tests {
             ),
             Ok(3)
         );
-        assert_eq!(stereo_fields(&multiple_heap, multiple, 0, false).unwrap().2[0], 1);
-        assert_eq!(stereo_fields(&multiple_heap, multiple, 1, false).unwrap().2[0], 2);
+        assert_eq!(
+            stereo_fields(&multiple_heap, multiple, 0, false).unwrap().2[0],
+            1
+        );
+        assert_eq!(
+            stereo_fields(&multiple_heap, multiple, 1, false).unwrap().2[0],
+            2
+        );
 
         let mut multiplier_heap = SourceHeap::default();
         let multiplier = components(&mut multiplier_heap, &[2, 2]);
@@ -33069,7 +34017,11 @@ mod tests {
             },
         };
 
-        fn stereo(heap: &mut SourceHeap, inversion: i32, active: bool) -> SourceMutPointer<INChI_Stereo> {
+        fn stereo(
+            heap: &mut SourceHeap,
+            inversion: i32,
+            active: bool,
+        ) -> SourceMutPointer<INChI_Stereo> {
             let number = if active {
                 heap.allocate_model_storage(vec![1_u16]).unwrap()
             } else {
@@ -33113,15 +34065,36 @@ mod tests {
         let null_layers = [SourceMutPointer::null(); TAUT_NUM as usize];
         let mut heap = SourceHeap::default();
         assert_eq!(
-            parse(&mut heap, "x", TAUT_YES as i32, &null_layers, &[0, 0], u32::MAX,),
+            parse(
+                &mut heap,
+                "x",
+                TAUT_YES as i32,
+                &null_layers,
+                &[0, 0],
+                u32::MAX,
+            ),
             Ok(RI_ERR_PROGR)
         );
         assert_eq!(
-            parse(&mut heap, "x", TAUT_YES as i32, &null_layers, &[0, 0], mobile_state,),
+            parse(
+                &mut heap,
+                "x",
+                TAUT_YES as i32,
+                &null_layers,
+                &[0, 0],
+                mobile_state,
+            ),
             Ok(0)
         );
         assert_eq!(
-            parse(&mut heap, "m/", TAUT_YES as i32, &null_layers, &[0, 0], mobile_state,),
+            parse(
+                &mut heap,
+                "m/",
+                TAUT_YES as i32,
+                &null_layers,
+                &[0, 0],
+                mobile_state,
+            ),
             Ok(RI_ERR_SYNTAX)
         );
 
@@ -33317,7 +34290,9 @@ mod tests {
         }
 
         let mut allocation_heap = SourceHeap::default();
-        let allocation_components = allocation_heap.allocate_model_storage(vec![INChI::default()]).unwrap();
+        let allocation_components = allocation_heap
+            .allocate_model_storage(vec![INChI::default()])
+            .unwrap();
         let allocation_input = c_string(&mut allocation_heap, "m0");
         allocation_heap.fail_after_allocations(0);
         assert_eq!(
@@ -33332,13 +34307,17 @@ mod tests {
             Ok(RI_ERR_ALLOC)
         );
         assert!(
-            allocation_heap.slice(allocation_components.as_const()).unwrap()[0]
+            allocation_heap
+                .slice(allocation_components.as_const())
+                .unwrap()[0]
                 .Stereo
                 .is_null()
         );
 
         let mut cleanup_heap = SourceHeap::default();
-        let cleanup_components = cleanup_heap.allocate_model_storage(vec![INChI::default()]).unwrap();
+        let cleanup_components = cleanup_heap
+            .allocate_model_storage(vec![INChI::default()])
+            .unwrap();
         let cleanup_input = c_string(&mut cleanup_heap, "m");
         cleanup_heap.fail_after_allocations(2);
         assert_eq!(
@@ -33353,7 +34332,9 @@ mod tests {
             Ok(RI_ERR_ALLOC)
         );
         let cleanup_component = &cleanup_heap.slice(cleanup_components.as_const()).unwrap()[0];
-        let cleanup_stereo = &cleanup_heap.slice(cleanup_component.Stereo.as_const()).unwrap()[0];
+        let cleanup_stereo = &cleanup_heap
+            .slice(cleanup_component.Stereo.as_const())
+            .unwrap()[0];
         assert_eq!(cleanup_stereo.nCompInv2Abs, NO_VALUE_INT as i32);
         assert!(cleanup_stereo.t_parity.is_null());
         assert!(cleanup_stereo.nNumber.is_null());
@@ -33450,13 +34431,34 @@ mod tests {
             ])
             .unwrap();
         let layers = [SourceMutPointer::null(), components];
-        assert_eq!(bIsSp3LayerNotEmpty(&heap, &layers, TAUT_YES as i32, 0, 8), Ok(1));
-        assert_eq!(bIsSp3LayerNotEmpty(&heap, &layers, TAUT_YES as i32, 1, 8), Ok(1));
-        assert_eq!(bIsSp3LayerNotEmpty(&heap, &layers, TAUT_YES as i32, -7, 8), Ok(1));
-        assert_eq!(bIsSp3LayerNotEmpty(&heap, &layers, TAUT_YES as i32, 0, 1), Ok(1));
-        assert_eq!(bIsSp3LayerNotEmpty(&heap, &layers, TAUT_YES as i32, 0, 0), Ok(0));
-        assert_eq!(bIsSp3LayerNotEmpty(&heap, &layers, TAUT_YES as i32, 0, -1), Ok(0));
-        assert_eq!(bIsSp3LayerNotEmpty(&heap, &layers, TAUT_NON as i32, 0, i32::MAX), Ok(0));
+        assert_eq!(
+            bIsSp3LayerNotEmpty(&heap, &layers, TAUT_YES as i32, 0, 8),
+            Ok(1)
+        );
+        assert_eq!(
+            bIsSp3LayerNotEmpty(&heap, &layers, TAUT_YES as i32, 1, 8),
+            Ok(1)
+        );
+        assert_eq!(
+            bIsSp3LayerNotEmpty(&heap, &layers, TAUT_YES as i32, -7, 8),
+            Ok(1)
+        );
+        assert_eq!(
+            bIsSp3LayerNotEmpty(&heap, &layers, TAUT_YES as i32, 0, 1),
+            Ok(1)
+        );
+        assert_eq!(
+            bIsSp3LayerNotEmpty(&heap, &layers, TAUT_YES as i32, 0, 0),
+            Ok(0)
+        );
+        assert_eq!(
+            bIsSp3LayerNotEmpty(&heap, &layers, TAUT_YES as i32, 0, -1),
+            Ok(0)
+        );
+        assert_eq!(
+            bIsSp3LayerNotEmpty(&heap, &layers, TAUT_NON as i32, 0, i32::MAX),
+            Ok(0)
+        );
     }
 
     #[test]
@@ -33470,7 +34472,8 @@ mod tests {
         };
 
         fn components(heap: &mut SourceHeap, count: usize) -> SourceMutPointer<INChI> {
-            heap.allocate_model_storage(vec![INChI::default(); count]).unwrap()
+            heap.allocate_model_storage(vec![INChI::default(); count])
+                .unwrap()
         }
 
         fn parse(
@@ -33657,7 +34660,10 @@ mod tests {
             ),
             Ok(RI_ERR_SYNTAX)
         );
-        assert_eq!(heap.slice(conflict_stereo.as_const()).unwrap()[0].nCompInv2Abs, 0);
+        assert_eq!(
+            heap.slice(conflict_stereo.as_const()).unwrap()[0].nCompInv2Abs,
+            0
+        );
         assert_eq!(conflict_s[TAUT_NON as usize][0], NO_VALUE_INT as i32);
 
         let mut first_failure_heap = SourceHeap::default();
@@ -33679,7 +34685,9 @@ mod tests {
         );
         assert_eq!(first_failure_s[TAUT_YES as usize][0], NO_VALUE_INT as i32);
         assert!(
-            first_failure_heap.slice(first_failure_components.as_const()).unwrap()[0]
+            first_failure_heap
+                .slice(first_failure_components.as_const())
+                .unwrap()[0]
                 .Stereo
                 .is_null()
         );
@@ -33712,7 +34720,9 @@ mod tests {
         }
 
         let mut existing_cleanup_heap = SourceHeap::default();
-        let old_parity = existing_cleanup_heap.allocate_model_storage(vec![7_i8]).unwrap();
+        let old_parity = existing_cleanup_heap
+            .allocate_model_storage(vec![7_i8])
+            .unwrap();
         let stereo_pointer = existing_cleanup_heap
             .allocate_model_storage(vec![INChI_Stereo {
                 t_parity: old_parity,
@@ -33740,7 +34750,9 @@ mod tests {
             ),
             Ok(RI_ERR_ALLOC)
         );
-        let stereo = &existing_cleanup_heap.slice(stereo_pointer.as_const()).unwrap()[0];
+        let stereo = &existing_cleanup_heap
+            .slice(stereo_pointer.as_const())
+            .unwrap()[0];
         assert!(stereo.t_parity.is_null());
         assert!(stereo.nNumber.is_null());
         assert!(matches!(
@@ -33774,10 +34786,16 @@ mod tests {
     fn source_port__ichiread__parsesegmentisoatoms__line_5806() {
         use crate::source_types::{
             INChI_IsotopicAtom,
-            local_ichiread::{tagInChI_STATE_IST_FIXED_H_ISO_ATOMS, tagInChI_STATE_IST_MOBILE_H_ISO_ATOMS},
+            local_ichiread::{
+                tagInChI_STATE_IST_FIXED_H_ISO_ATOMS, tagInChI_STATE_IST_MOBILE_H_ISO_ATOMS,
+            },
         };
 
-        fn component_array(heap: &mut SourceHeap, count: usize, atoms: i32) -> SourceMutPointer<INChI> {
+        fn component_array(
+            heap: &mut SourceHeap,
+            count: usize,
+            atoms: i32,
+        ) -> SourceMutPointer<INChI> {
             heap.allocate_model_storage(
                 (0..count)
                     .map(|index| INChI {
@@ -33809,7 +34827,9 @@ mod tests {
             index: usize,
         ) -> Vec<INChI_IsotopicAtom> {
             let component = &heap.slice(components.as_const()).unwrap()[index];
-            heap.slice(component.IsotopicAtom.as_const()).unwrap()[..component.nNumberOfIsotopicAtoms as usize].to_vec()
+            heap.slice(component.IsotopicAtom.as_const()).unwrap()
+                [..component.nNumberOfIsotopicAtoms as usize]
+                .to_vec()
         }
 
         let mobile_state = tagInChI_STATE_IST_MOBILE_H_ISO_ATOMS as u32;
@@ -34144,7 +35164,9 @@ mod tests {
             Ok(RI_ERR_ALLOC)
         );
         assert!(
-            allocation_heap.slice(allocation_components.as_const()).unwrap()[0]
+            allocation_heap
+                .slice(allocation_components.as_const())
+                .unwrap()[0]
                 .IsotopicAtom
                 .is_null()
         );
@@ -34166,7 +35188,9 @@ mod tests {
             ),
             Ok(RI_ERR_ALLOC)
         );
-        let components = copy_failure_heap.slice(copy_failure_components.as_const()).unwrap();
+        let components = copy_failure_heap
+            .slice(copy_failure_components.as_const())
+            .unwrap();
         assert_eq!(components[0].nNumberOfIsotopicAtoms, 1);
         assert!(!components[0].IsotopicAtom.is_null());
         assert!(components[1].IsotopicAtom.is_null());
@@ -34224,11 +35248,21 @@ mod tests {
             .unwrap()
         }
 
-        fn values(heap: &SourceHeap, pointer: SourceMutPointer<INChI>) -> Vec<(i32, i32, i32, SourceMutPointer<u8>)> {
+        fn values(
+            heap: &SourceHeap,
+            pointer: SourceMutPointer<INChI>,
+        ) -> Vec<(i32, i32, i32, SourceMutPointer<u8>)> {
             heap.slice(pointer.as_const())
                 .unwrap()
                 .iter()
-                .map(|value| (value.nErrorCode, value.nTotalCharge, value.nLink, value.nAtom))
+                .map(|value| {
+                    (
+                        value.nErrorCode,
+                        value.nTotalCharge,
+                        value.nLink,
+                        value.nAtom,
+                    )
+                })
                 .collect()
         }
 
@@ -34304,7 +35338,15 @@ mod tests {
             Ok(RI_ERR_SYNTAX)
         );
         assert_eq!(
-            parse(&mut heap, "o", TAUT_NON as i32, &layers, &counts, fixed_state, &mut abc,),
+            parse(
+                &mut heap,
+                "o",
+                TAUT_NON as i32,
+                &layers,
+                &counts,
+                fixed_state,
+                &mut abc,
+            ),
             Ok(1)
         );
 
@@ -34325,7 +35367,10 @@ mod tests {
             Ok(1)
         );
         assert_eq!(abc, 0);
-        assert_eq!(values(&heap, decimal), vec![before[1], before[2], before[0]]);
+        assert_eq!(
+            values(&heap, decimal),
+            vec![before[1], before[2], before[0]]
+        );
 
         let sequential = components(&mut heap);
         let sequential_layers = [sequential, SourceMutPointer::null()];
@@ -34343,7 +35388,10 @@ mod tests {
             ),
             Ok(1)
         );
-        assert_eq!(values(&heap, sequential), vec![before[1], before[2], before[0]]);
+        assert_eq!(
+            values(&heap, sequential),
+            vec![before[1], before[2], before[0]]
+        );
 
         let compressed = components(&mut heap);
         let compressed_layers = [compressed, SourceMutPointer::null()];
@@ -34362,7 +35410,10 @@ mod tests {
             Ok(1)
         );
         assert_eq!(abc, 1);
-        assert_eq!(values(&heap, compressed), vec![before[1], before[2], before[0]]);
+        assert_eq!(
+            values(&heap, compressed),
+            vec![before[1], before[2], before[0]]
+        );
 
         for (text, forced_abc) in [
             ("o()", -1),
@@ -34411,7 +35462,10 @@ mod tests {
             ),
             Ok(1)
         );
-        assert_eq!(values(&heap, trailing_comma), vec![before[1], before[0], before[2]]);
+        assert_eq!(
+            values(&heap, trailing_comma),
+            vec![before[1], before[0], before[2]]
+        );
 
         let duplicate = components(&mut heap);
         let duplicate_layers = [duplicate, SourceMutPointer::null()];
@@ -34447,12 +35501,17 @@ mod tests {
             ),
             Ok(RI_ERR_SYNTAX)
         );
-        assert_eq!(values(&heap, partial), vec![before[1], before[1], before[2]]);
+        assert_eq!(
+            values(&heap, partial),
+            vec![before[1], before[1], before[2]]
+        );
     }
 
     #[test]
     fn source_port__ichiread__parsesegmentisoexchgh__line_5541() {
-        use crate::source_types::{REM_PROTONS, local_ichiread::tagInChI_STATE_IST_MOBILE_H_ISO_EXCH_H};
+        use crate::source_types::{
+            REM_PROTONS, local_ichiread::tagInChI_STATE_IST_MOBILE_H_ISO_EXCH_H,
+        };
 
         fn parse(
             heap: &mut SourceHeap,
@@ -34471,26 +35530,61 @@ mod tests {
         let mut protons = std::array::from_fn(|_| REM_PROTONS::default());
         let mut abc = -1;
         assert_eq!(
-            parse(&mut heap, "x3t", TAUT_YES as i32, state, &mut abc, &mut protons),
+            parse(
+                &mut heap,
+                "x3t",
+                TAUT_YES as i32,
+                state,
+                &mut abc,
+                &mut protons
+            ),
             Ok(0)
         );
         assert_eq!(abc, -1);
         assert_eq!(
-            parse(&mut heap, "h3t", TAUT_NON as i32, state, &mut abc, &mut protons),
+            parse(
+                &mut heap,
+                "h3t",
+                TAUT_NON as i32,
+                state,
+                &mut abc,
+                &mut protons
+            ),
             Ok(RI_ERR_PROGR)
         );
         assert_eq!(
-            parse(&mut heap, "h3t", TAUT_YES as i32, u32::MAX, &mut abc, &mut protons),
+            parse(
+                &mut heap,
+                "h3t",
+                TAUT_YES as i32,
+                u32::MAX,
+                &mut abc,
+                &mut protons
+            ),
             Ok(RI_ERR_PROGR)
         );
         assert_eq!(
-            parse(&mut heap, "h3t;", TAUT_YES as i32, state, &mut abc, &mut protons),
+            parse(
+                &mut heap,
+                "h3t;",
+                TAUT_YES as i32,
+                state,
+                &mut abc,
+                &mut protons
+            ),
             Ok(RI_ERR_SYNTAX)
         );
 
         abc = -1;
         assert_eq!(
-            parse(&mut heap, "h3t2d1h", TAUT_YES as i32, state, &mut abc, &mut protons),
+            parse(
+                &mut heap,
+                "h3t2d1h",
+                TAUT_YES as i32,
+                state,
+                &mut abc,
+                &mut protons
+            ),
             Ok(1)
         );
         assert_eq!(abc, 1);
@@ -34499,7 +35593,14 @@ mod tests {
         protons[TAUT_YES as usize].nNumRemovedIsotopicH = [0; 3];
         abc = -1;
         assert_eq!(
-            parse(&mut heap, "h1h2d", TAUT_YES as i32, state, &mut abc, &mut protons),
+            parse(
+                &mut heap,
+                "h1h2d",
+                TAUT_YES as i32,
+                state,
+                &mut abc,
+                &mut protons
+            ),
             Ok(RI_ERR_SYNTAX)
         );
         assert_eq!(protons[TAUT_YES as usize].nNumRemovedIsotopicH, [1, 0, 0]);
@@ -34507,7 +35608,14 @@ mod tests {
             protons[TAUT_YES as usize].nNumRemovedIsotopicH = [0; 3];
             abc = 1;
             assert_eq!(
-                parse(&mut heap, malformed, TAUT_YES as i32, state, &mut abc, &mut protons),
+                parse(
+                    &mut heap,
+                    malformed,
+                    TAUT_YES as i32,
+                    state,
+                    &mut abc,
+                    &mut protons
+                ),
                 Ok(RI_ERR_SYNTAX),
                 "{malformed}"
             );
@@ -34516,30 +35624,65 @@ mod tests {
         protons[TAUT_YES as usize].nNumRemovedIsotopicH = [0; 3];
         abc = -1;
         assert_eq!(
-            parse(&mut heap, "hT2D3H4", TAUT_YES as i32, state, &mut abc, &mut protons),
+            parse(
+                &mut heap,
+                "hT2D3H4",
+                TAUT_YES as i32,
+                state,
+                &mut abc,
+                &mut protons
+            ),
             Ok(1)
         );
         assert_eq!(abc, 0);
         assert_eq!(protons[TAUT_YES as usize].nNumRemovedIsotopicH, [4, 3, 2]);
         assert_eq!(
-            parse(&mut heap, "hT65535", TAUT_YES as i32, state, &mut abc, &mut protons),
+            parse(
+                &mut heap,
+                "hT65535",
+                TAUT_YES as i32,
+                state,
+                &mut abc,
+                &mut protons
+            ),
             Ok(1)
         );
         assert_eq!(protons[TAUT_YES as usize].nNumRemovedIsotopicH[2], -1);
         assert_eq!(
-            parse(&mut heap, "hDT", TAUT_YES as i32, state, &mut abc, &mut protons),
+            parse(
+                &mut heap,
+                "hDT",
+                TAUT_YES as i32,
+                state,
+                &mut abc,
+                &mut protons
+            ),
             Ok(RI_ERR_SYNTAX)
         );
 
         abc = -1;
         assert_eq!(
-            parse(&mut heap, "h", TAUT_YES as i32, state, &mut abc, &mut protons),
+            parse(
+                &mut heap,
+                "h",
+                TAUT_YES as i32,
+                state,
+                &mut abc,
+                &mut protons
+            ),
             Ok(1)
         );
         assert_eq!(abc, -1);
         abc = 0;
         assert_eq!(
-            parse(&mut heap, "h1t", TAUT_YES as i32, state, &mut abc, &mut protons),
+            parse(
+                &mut heap,
+                "h1t",
+                TAUT_YES as i32,
+                state,
+                &mut abc,
+                &mut protons
+            ),
             Ok(RI_ERR_SYNTAX)
         );
     }
@@ -34660,7 +35803,10 @@ mod tests {
                 ..INChI::default()
             };
             output = [99, 98, 97];
-            assert_eq!(GetInChIIsoH(&heap, &invalid_inchi, &mut output), Ok(RI_ERR_PROGR));
+            assert_eq!(
+                GetInChIIsoH(&heap, &invalid_inchi, &mut output),
+                Ok(RI_ERR_PROGR)
+            );
             assert_eq!(output, [0, 0, 0]);
         }
 
@@ -34688,7 +35834,10 @@ mod tests {
             ..INChI::default()
         };
         output = [99, 98, 97];
-        assert_eq!(GetInChIIsoH(&heap, &partial_inchi, &mut output), Ok(RI_ERR_PROGR));
+        assert_eq!(
+            GetInChIIsoH(&heap, &partial_inchi, &mut output),
+            Ok(RI_ERR_PROGR)
+        );
         assert_eq!(output, [3, 0, 0]);
 
         let missing_isotopes = INChI {
@@ -34741,7 +35890,9 @@ mod tests {
         assert_eq!(count, 0);
 
         let atoms = heap.allocate_model_storage(vec![1_u8, 6, 1, 8]).unwrap();
-        let hydrogens = heap.allocate_model_storage(vec![0_i8, 2, -1, i8::MIN]).unwrap();
+        let hydrogens = heap
+            .allocate_model_storage(vec![0_i8, 2, -1, i8::MIN])
+            .unwrap();
         let ordinary = INChI {
             nNumberOfAtoms: 4,
             nAtom: atoms,
@@ -34752,7 +35903,9 @@ mod tests {
         assert_eq!(GetInChINumH(&heap, &ordinary, &mut count), Ok(0));
         assert_eq!(count, -125);
 
-        let valid_tautomer = heap.allocate_model_storage(vec![2_u16, 2, 3, 91, 1, 4]).unwrap();
+        let valid_tautomer = heap
+            .allocate_model_storage(vec![2_u16, 2, 3, 91, 1, 4])
+            .unwrap();
         let valid = INChI {
             nNumberOfAtoms: 4,
             nAtom: atoms,
@@ -34765,24 +35918,34 @@ mod tests {
         assert_eq!(GetInChINumH(&heap, &valid, &mut count), Ok(0));
         assert_eq!(count, -118);
 
-        let mismatched_group_count = heap.allocate_model_storage(vec![3_u16, 2, 3, 91, 1, 4]).unwrap();
+        let mismatched_group_count = heap
+            .allocate_model_storage(vec![3_u16, 2, 3, 91, 1, 4])
+            .unwrap();
         let malformed = INChI {
             lenTautomer: 6,
             nTautomer: mismatched_group_count,
             ..INChI::default()
         };
         count = 44;
-        assert_eq!(GetInChINumH(&heap, &malformed, &mut count), Ok(RI_ERR_PROGR));
+        assert_eq!(
+            GetInChINumH(&heap, &malformed, &mut count),
+            Ok(RI_ERR_PROGR)
+        );
         assert_eq!(count, 7);
 
-        let trailing = heap.allocate_model_storage(vec![1_u16, 2, 5, 91, 77]).unwrap();
+        let trailing = heap
+            .allocate_model_storage(vec![1_u16, 2, 5, 91, 77])
+            .unwrap();
         let malformed = INChI {
             lenTautomer: 5,
             nTautomer: trailing,
             ..INChI::default()
         };
         count = 44;
-        assert_eq!(GetInChINumH(&heap, &malformed, &mut count), Ok(RI_ERR_PROGR));
+        assert_eq!(
+            GetInChINumH(&heap, &malformed, &mut count),
+            Ok(RI_ERR_PROGR)
+        );
         assert_eq!(count, 5);
 
         let short = heap.allocate_model_storage(vec![1_u16, 1]).unwrap();
@@ -34855,7 +36018,10 @@ mod tests {
             ..INChI::default()
         };
         count = 44;
-        assert_eq!(GetInChINumH(&heap, &ignored_short_tautomer, &mut count), Ok(0));
+        assert_eq!(
+            GetInChINumH(&heap, &ignored_short_tautomer, &mut count),
+            Ok(0)
+        );
         assert_eq!(count, 0);
     }
 
@@ -34879,7 +36045,10 @@ mod tests {
 
         let mut heap = SourceHeap::default();
         let mut count = 91;
-        assert_eq!(GetInChIFormulaNumH(&mut heap, &INChI::default(), &mut count), Ok(0));
+        assert_eq!(
+            GetInChIFormulaNumH(&mut heap, &INChI::default(), &mut count),
+            Ok(0)
+        );
         assert_eq!(count, 0);
 
         for (text, expected) in [
@@ -34913,17 +36082,29 @@ mod tests {
         ] {
             let inchi = formula(&mut heap, text);
             count = 73;
-            assert_eq!(GetInChIFormulaNumH(&mut heap, &inchi, &mut count), Ok(RI_ERR_SYNTAX));
+            assert_eq!(
+                GetInChIFormulaNumH(&mut heap, &inchi, &mut count),
+                Ok(RI_ERR_SYNTAX)
+            );
             assert_eq!(count, 0);
         }
 
         let partial = formula(&mut heap, b"H2H32767");
         count = 73;
-        assert_eq!(GetInChIFormulaNumH(&mut heap, &partial, &mut count), Ok(RI_ERR_SYNTAX));
+        assert_eq!(
+            GetInChIFormulaNumH(&mut heap, &partial, &mut count),
+            Ok(RI_ERR_SYNTAX)
+        );
         assert_eq!(count, 2);
 
         let storage = heap
-            .allocate_model_storage(b"xxH4\0tail".iter().copied().map(|byte| byte as i8).collect())
+            .allocate_model_storage(
+                b"xxH4\0tail"
+                    .iter()
+                    .copied()
+                    .map(|byte| byte as i8)
+                    .collect(),
+            )
             .unwrap();
         let interior = INChI {
             szHillFormula: storage.offset(2).unwrap(),
@@ -34934,7 +36115,9 @@ mod tests {
         assert_eq!(count, 4);
 
         let unterminated = INChI {
-            szHillFormula: heap.allocate_model_storage(vec![b'H' as i8, b'2' as i8]).unwrap(),
+            szHillFormula: heap
+                .allocate_model_storage(vec![b'H' as i8, b'2' as i8])
+                .unwrap(),
             ..INChI::default()
         };
         count = 77;
@@ -35004,7 +36187,14 @@ mod tests {
             Ok(0)
         );
         assert_eq!(
-            CopySegment(&mut heap, &mut INChI::default(), &INChI::default(), i32::MIN, 0, 0,),
+            CopySegment(
+                &mut heap,
+                &mut INChI::default(),
+                &INChI::default(),
+                i32::MIN,
+                0,
+                0,
+            ),
             Ok(RI_ERR_PROGR)
         );
 
@@ -35018,9 +36208,18 @@ mod tests {
         assert_eq!(heap.source_allocation_calls(), 4);
         let copied = heap.slice(target.Stereo.as_const()).unwrap()[0].clone();
         assert_eq!(copied.nNumberOfStereoBonds, 2);
-        assert_eq!(&heap.slice(copied.b_parity.as_const()).unwrap()[..3], &[1, 2, 73]);
-        assert_eq!(&heap.slice(copied.nBondAtom1.as_const()).unwrap()[..3], &[3, 4, 74]);
-        assert_eq!(&heap.slice(copied.nBondAtom2.as_const()).unwrap()[..3], &[5, 6, 75]);
+        assert_eq!(
+            &heap.slice(copied.b_parity.as_const()).unwrap()[..3],
+            &[1, 2, 73]
+        );
+        assert_eq!(
+            &heap.slice(copied.nBondAtom1.as_const()).unwrap()[..3],
+            &[3, 4, 74]
+        );
+        assert_eq!(
+            &heap.slice(copied.nBondAtom2.as_const()).unwrap()[..3],
+            &[5, 6, 75]
+        );
 
         for atoms in [-1, MAX_ATOMS as i32 + 1] {
             let mut invalid_heap = SourceHeap::default();
@@ -35028,7 +36227,14 @@ mod tests {
             let mut target = INChI::default();
             invalid_heap.trace_source_allocations();
             assert_eq!(
-                CopySegment(&mut invalid_heap, &mut target, &source, CPY_SP2 as i32, 0, 0,),
+                CopySegment(
+                    &mut invalid_heap,
+                    &mut target,
+                    &source,
+                    CPY_SP2 as i32,
+                    0,
+                    0,
+                ),
                 Ok(RI_ERR_SYNTAX)
             );
             assert_eq!(invalid_heap.source_allocation_calls(), 0);
@@ -35079,7 +36285,14 @@ mod tests {
         let mut empty_sp2 = INChI::default();
         heap.trace_source_allocations();
         assert_eq!(
-            CopySegment(&mut heap, &mut empty_sp2, &INChI::default(), CPY_SP2 as i32, 1, -1,),
+            CopySegment(
+                &mut heap,
+                &mut empty_sp2,
+                &INChI::default(),
+                CPY_SP2 as i32,
+                1,
+                -1,
+            ),
             Ok(1)
         );
         assert_eq!(heap.source_allocation_calls(), 4);
@@ -35095,7 +36308,14 @@ mod tests {
             let mut target = INChI::default();
             failure_heap.fail_after_allocations(failure_ordinal);
             assert_eq!(
-                CopySegment(&mut failure_heap, &mut target, &source, CPY_SP2 as i32, 0, 0,),
+                CopySegment(
+                    &mut failure_heap,
+                    &mut target,
+                    &source,
+                    CPY_SP2 as i32,
+                    0,
+                    0,
+                ),
                 Ok(RI_ERR_ALLOC),
                 "SP2 allocation ordinal {failure_ordinal}"
             );
@@ -35110,12 +36330,18 @@ mod tests {
                 assert_eq!(partial.nNumberOfStereoBonds, 0);
                 for pointer in [partial.b_parity.as_const()] {
                     if !pointer.is_null() {
-                        assert_eq!(failure_heap.slice(pointer), Err(SourceHeapError::MissingAllocation));
+                        assert_eq!(
+                            failure_heap.slice(pointer),
+                            Err(SourceHeapError::MissingAllocation)
+                        );
                     }
                 }
                 for pointer in [partial.nBondAtom1.as_const(), partial.nBondAtom2.as_const()] {
                     if !pointer.is_null() {
-                        assert_eq!(failure_heap.slice(pointer), Err(SourceHeapError::MissingAllocation));
+                        assert_eq!(
+                            failure_heap.slice(pointer),
+                            Err(SourceHeapError::MissingAllocation)
+                        );
                     }
                 }
             }
@@ -35132,8 +36358,14 @@ mod tests {
         assert_eq!(sp3_heap.source_allocation_calls(), 3);
         let copied = sp3_heap.slice(target.StereoIsotopic.as_const()).unwrap()[0].clone();
         assert_eq!(copied.nNumberOfStereoCenters, 2);
-        assert_eq!(&sp3_heap.slice(copied.t_parity.as_const()).unwrap()[..3], &[7, 8, 76]);
-        assert_eq!(&sp3_heap.slice(copied.nNumber.as_const()).unwrap()[..3], &[9, 10, 77]);
+        assert_eq!(
+            &sp3_heap.slice(copied.t_parity.as_const()).unwrap()[..3],
+            &[7, 8, 76]
+        );
+        assert_eq!(
+            &sp3_heap.slice(copied.nNumber.as_const()).unwrap()[..3],
+            &[9, 10, 77]
+        );
 
         for failure_ordinal in 0_u64..3 {
             let mut failure_heap = SourceHeap::default();
@@ -35141,7 +36373,14 @@ mod tests {
             let mut target = INChI::default();
             failure_heap.fail_after_allocations(failure_ordinal);
             assert_eq!(
-                CopySegment(&mut failure_heap, &mut target, &source, CPY_SP3 as i32, 0, 0,),
+                CopySegment(
+                    &mut failure_heap,
+                    &mut target,
+                    &source,
+                    CPY_SP3 as i32,
+                    0,
+                    0,
+                ),
                 Ok(RI_ERR_ALLOC),
                 "SP3 allocation ordinal {failure_ordinal}"
             );
@@ -35160,7 +36399,14 @@ mod tests {
 
         let mut empty_sp3 = INChI::default();
         assert_eq!(
-            CopySegment(&mut sp3_heap, &mut empty_sp3, &INChI::default(), CPY_SP3 as i32, 0, -1,),
+            CopySegment(
+                &mut sp3_heap,
+                &mut empty_sp3,
+                &INChI::default(),
+                CPY_SP3 as i32,
+                0,
+                -1,
+            ),
             Ok(1)
         );
         let empty = sp3_heap.slice(empty_sp3.Stereo.as_const()).unwrap()[0].clone();
@@ -35182,7 +36428,14 @@ mod tests {
         };
         let mut target = INChI::default();
         assert_eq!(
-            CopySegment(&mut scalar_heap, &mut target, &source, CPY_SP3_M as i32, 1, 0,),
+            CopySegment(
+                &mut scalar_heap,
+                &mut target,
+                &source,
+                CPY_SP3_M as i32,
+                1,
+                0,
+            ),
             Ok(1)
         );
         assert_eq!(
@@ -35192,12 +36445,26 @@ mod tests {
         scalar_heap.slice_mut(target.StereoIsotopic).unwrap()[0].nCompInv2Abs =
             crate::source_types::NO_VALUE_INT as i32;
         assert_eq!(
-            CopySegment(&mut scalar_heap, &mut target, &source, CPY_SP3_M as i32, 1, 0,),
+            CopySegment(
+                &mut scalar_heap,
+                &mut target,
+                &source,
+                CPY_SP3_M as i32,
+                1,
+                0,
+            ),
             Ok(1)
         );
         scalar_heap.slice_mut(target.StereoIsotopic).unwrap()[0].nCompInv2Abs = 2;
         assert_eq!(
-            CopySegment(&mut scalar_heap, &mut target, &source, CPY_SP3_M as i32, 1, 0,),
+            CopySegment(
+                &mut scalar_heap,
+                &mut target,
+                &source,
+                CPY_SP3_M as i32,
+                1,
+                0,
+            ),
             Ok(RI_ERR_SYNTAX)
         );
         let mut cleared = INChI::default();
@@ -35212,21 +36479,41 @@ mod tests {
             ),
             Ok(1)
         );
-        assert_eq!(scalar_heap.slice(cleared.Stereo.as_const()).unwrap()[0].nCompInv2Abs, 0);
+        assert_eq!(
+            scalar_heap.slice(cleared.Stereo.as_const()).unwrap()[0].nCompInv2Abs,
+            0
+        );
 
         let mut selector_target = INChI::default();
         assert_eq!(
-            CopySegment(&mut scalar_heap, &mut selector_target, &source, CPY_SP3_S as i32, 1, 0,),
+            CopySegment(
+                &mut scalar_heap,
+                &mut selector_target,
+                &source,
+                CPY_SP3_S as i32,
+                1,
+                0,
+            ),
             Ok(1)
         );
         assert!(!selector_target.Stereo.is_null());
         assert!(selector_target.StereoIsotopic.is_null());
         assert_eq!(
-            scalar_heap.slice(selector_target.Stereo.as_const()).unwrap()[0].bTrivialInv,
+            scalar_heap
+                .slice(selector_target.Stereo.as_const())
+                .unwrap()[0]
+                .bTrivialInv,
             3
         );
         assert_eq!(
-            CopySegment(&mut scalar_heap, &mut selector_target, &source, CPY_SP3_S as i32, 0, 0,),
+            CopySegment(
+                &mut scalar_heap,
+                &mut selector_target,
+                &source,
+                CPY_SP3_S as i32,
+                0,
+                0,
+            ),
             Ok(RI_ERR_SYNTAX)
         );
         let mut negative_selector = INChI::default();
@@ -35243,7 +36530,10 @@ mod tests {
         );
         assert!(negative_selector.Stereo.is_null());
         assert_eq!(
-            scalar_heap.slice(negative_selector.StereoIsotopic.as_const()).unwrap()[0].bTrivialInv,
+            scalar_heap
+                .slice(negative_selector.StereoIsotopic.as_const())
+                .unwrap()[0]
+                .bTrivialInv,
             0
         );
 
@@ -35304,7 +36594,9 @@ mod tests {
         );
         assert_eq!(isotope_target.nNumberOfIsotopicAtoms, 2);
         assert_eq!(
-            &isotope_heap.slice(isotope_target.IsotopicAtom.as_const()).unwrap()[..3],
+            &isotope_heap
+                .slice(isotope_target.IsotopicAtom.as_const())
+                .unwrap()[..3],
             &isotope_heap.slice(isotopes.as_const()).unwrap()[..3]
         );
 
@@ -35345,7 +36637,9 @@ mod tests {
         );
         assert_eq!(empty_isotope.nNumberOfIsotopicAtoms, 0);
         assert_eq!(
-            isotope_heap.slice(empty_isotope.IsotopicAtom.as_const()).unwrap(),
+            isotope_heap
+                .slice(empty_isotope.IsotopicAtom.as_const())
+                .unwrap(),
             &[INChI_IsotopicAtom::default()]
         );
         assert_eq!(
@@ -35408,8 +36702,14 @@ mod tests {
             &[b'H' as i8, 0]
         );
         assert_eq!(&heap.slice(inchi.nAtom.as_const()).unwrap()[..2], &[1, 0]);
-        assert_eq!(&heap.slice(inchi.nConnTable.as_const()).unwrap()[..2], &[1, 0]);
-        assert_eq!(&heap.slice(inchi.nTautomer.as_const()).unwrap()[..2], &[0, 0]);
+        assert_eq!(
+            &heap.slice(inchi.nConnTable.as_const()).unwrap()[..2],
+            &[1, 0]
+        );
+        assert_eq!(
+            &heap.slice(inchi.nTautomer.as_const()).unwrap()[..2],
+            &[0, 0]
+        );
         assert_eq!(&heap.slice(inchi.nNum_H.as_const()).unwrap()[..2], &[0, 0]);
         assert_eq!(
             (inchi.nErrorCode, inchi.nFlags, inchi.nRefCount, inchi.nLink),
@@ -35421,8 +36721,12 @@ mod tests {
             .allocate_model_storage(vec![b'X' as i8, b'Y' as i8, 77])
             .unwrap();
         let atom = existing_heap.allocate_model_storage(vec![9_u8, 8]).unwrap();
-        let connection = existing_heap.allocate_model_storage(vec![9_u16, 8]).unwrap();
-        let tautomer = existing_heap.allocate_model_storage(vec![9_u16, 8]).unwrap();
+        let connection = existing_heap
+            .allocate_model_storage(vec![9_u16, 8])
+            .unwrap();
+        let tautomer = existing_heap
+            .allocate_model_storage(vec![9_u16, 8])
+            .unwrap();
         let hydrogen = existing_heap.allocate_model_storage(vec![9_i8, 8]).unwrap();
         let mut existing = INChI {
             szHillFormula: formula,
@@ -35438,16 +36742,28 @@ mod tests {
             ..INChI::default()
         };
         existing_heap.trace_source_allocations();
-        assert_eq!(nFillOutProtonMobileH(&mut existing_heap, &mut existing), Ok(0));
+        assert_eq!(
+            nFillOutProtonMobileH(&mut existing_heap, &mut existing),
+            Ok(0)
+        );
         assert_eq!(existing_heap.source_allocation_calls(), 0);
         assert_eq!(
             &existing_heap.slice(formula.as_const()).unwrap()[..3],
             &[b'H' as i8, 0, 77]
         );
         assert_eq!(&existing_heap.slice(atom.as_const()).unwrap()[..2], &[1, 8]);
-        assert_eq!(&existing_heap.slice(connection.as_const()).unwrap()[..2], &[1, 8]);
-        assert_eq!(&existing_heap.slice(tautomer.as_const()).unwrap()[..2], &[0, 8]);
-        assert_eq!(&existing_heap.slice(hydrogen.as_const()).unwrap()[..2], &[0, 8]);
+        assert_eq!(
+            &existing_heap.slice(connection.as_const()).unwrap()[..2],
+            &[1, 8]
+        );
+        assert_eq!(
+            &existing_heap.slice(tautomer.as_const()).unwrap()[..2],
+            &[0, 8]
+        );
+        assert_eq!(
+            &existing_heap.slice(hydrogen.as_const()).unwrap()[..2],
+            &[0, 8]
+        );
         assert_eq!(
             (
                 existing.bDeleted,
@@ -35469,7 +36785,10 @@ mod tests {
                 "allocation ordinal {failure_ordinal}"
             );
             assert_eq!(failure_heap.source_allocation_calls(), failure_ordinal + 1);
-            assert_eq!(failure_heap.live_allocation_count(), failure_ordinal as usize);
+            assert_eq!(
+                failure_heap.live_allocation_count(),
+                failure_ordinal as usize
+            );
             assert_eq!(failure.bDeleted, 1);
             assert_eq!(failure.szHillFormula.is_null(), failure_ordinal == 0);
             assert_eq!(failure.nNumberOfAtoms, i32::from(failure_ordinal >= 1));
@@ -35485,8 +36804,12 @@ mod tests {
         let mut ordering_heap = SourceHeap::default();
         let formula = ordering_heap.allocate_model_storage(vec![0_i8; 2]).unwrap();
         let atom = ordering_heap.allocate_model_storage(vec![0_u8; 2]).unwrap();
-        let connection = ordering_heap.allocate_model_storage(vec![0_u16; 2]).unwrap();
-        let tautomer = ordering_heap.allocate_model_storage(vec![7_u16, 8]).unwrap();
+        let connection = ordering_heap
+            .allocate_model_storage(vec![0_u16; 2])
+            .unwrap();
+        let tautomer = ordering_heap
+            .allocate_model_storage(vec![7_u16, 8])
+            .unwrap();
         let mut ordering = INChI {
             szHillFormula: formula,
             nAtom: atom,
@@ -35560,12 +36883,18 @@ mod tests {
         assert_eq!(run_empty(1, 0, 0, 0, false, false), MODE_PIXH_KEEP_TOTALS);
         assert_eq!(run_empty(0, 0, 0, 0, false, false), MODE_PIXH_ADD_TO_FIRST);
         assert_eq!(run_empty(0, 1, 0, 0, false, false), MODE_PIXH_ADD_TO_FIRST);
-        assert_eq!(run_empty(0, 1, 0, 0, true, false), MODE_PIXH_ADD_A_PIXH_COMPONENT);
+        assert_eq!(
+            run_empty(0, 1, 0, 0, true, false),
+            MODE_PIXH_ADD_A_PIXH_COMPONENT
+        );
         assert_eq!(run_empty(1, 0, 0, 0, true, true), MODE_PIXH_ADD_TO_EACH);
         assert_eq!(run_empty(0, 0, 0, 0, false, true), MODE_PIXH_ADD_TO_EACH);
         assert_eq!(run_empty(0, 1, 1, 0, false, true), MODE_PIXH_ADD_TO_EACH);
         assert_eq!(run_empty(0, 1, 0, 1, false, true), MODE_PIXH_ADD_TO_EACH);
-        assert_eq!(run_empty(0, 1, 0, 0, false, true), MODE_PIXH_ADD_A_PIXH_COMPONENT);
+        assert_eq!(
+            run_empty(0, 1, 0, 0, false, true),
+            MODE_PIXH_ADD_A_PIXH_COMPONENT
+        );
 
         let mut totals_heap = SourceHeap::default();
         let per = totals_heap
@@ -35589,12 +36918,18 @@ mod tests {
             ),
             Ok(0)
         );
-        assert_eq!(totals_input.nNumProtons[0][TAUT_YES as usize].nNumRemovedProtons, 0);
+        assert_eq!(
+            totals_input.nNumProtons[0][TAUT_YES as usize].nNumRemovedProtons,
+            0
+        );
         assert_eq!(
             totals_input.nNumProtons[0][TAUT_YES as usize].nNumRemovedIsotopicH,
             [0; 3]
         );
-        assert_eq!(totals_input.nNumProtons[0][TAUT_YES as usize].pNumProtons, per);
+        assert_eq!(
+            totals_input.nNumProtons[0][TAUT_YES as usize].pNumProtons,
+            per
+        );
 
         let mut free_per_heap = SourceHeap::default();
         let per = free_per_heap
@@ -35616,11 +36951,17 @@ mod tests {
             ),
             Ok(0)
         );
-        assert!(free_per_input.nNumProtons[0][TAUT_YES as usize].pNumProtons.is_null());
+        assert!(
+            free_per_input.nNumProtons[0][TAUT_YES as usize]
+                .pNumProtons
+                .is_null()
+        );
         assert_eq!(free_per_heap.live_allocation_count(), 0);
 
         let mut fixed_heap = SourceHeap::default();
-        let formula = fixed_heap.allocate_model_storage(vec![b'C' as i8, 0]).unwrap();
+        let formula = fixed_heap
+            .allocate_model_storage(vec![b'C' as i8, 0])
+            .unwrap();
         let fixed = fixed_heap
             .allocate_model_storage(vec![INChI {
                 szHillFormula: formula,
@@ -35649,7 +36990,9 @@ mod tests {
         assert_eq!(fixed_heap.live_allocation_count(), 0);
 
         let mut append_heap = SourceHeap::default();
-        let retained_formula = append_heap.allocate_model_storage(vec![b'C' as i8, 0]).unwrap();
+        let retained_formula = append_heap
+            .allocate_model_storage(vec![b'C' as i8, 0])
+            .unwrap();
         let old_array = append_heap
             .allocate_model_storage(vec![INChI {
                 nErrorCode: 42,
@@ -35687,12 +37030,16 @@ mod tests {
         assert_eq!(appended[0].szHillFormula, retained_formula);
         assert_eq!((appended[1].bDeleted, appended[1].nTotalCharge), (1, 1));
         assert_eq!(
-            &append_heap.slice(appended[1].szHillFormula.as_const()).unwrap()[..2],
+            &append_heap
+                .slice(appended[1].szHillFormula.as_const())
+                .unwrap()[..2],
             &[b'H' as i8, 0]
         );
 
         let mut deleted_heap = SourceHeap::default();
-        let deleted_formula = deleted_heap.allocate_model_storage(vec![b'X' as i8, 0]).unwrap();
+        let deleted_formula = deleted_heap
+            .allocate_model_storage(vec![b'X' as i8, 0])
+            .unwrap();
         let deleted_array = deleted_heap
             .allocate_model_storage(vec![
                 INChI {
@@ -35731,7 +37078,9 @@ mod tests {
 
         for failure_after in [0_u64, 1] {
             let mut failure_heap = SourceHeap::default();
-            let array = failure_heap.allocate_model_storage(vec![INChI::default()]).unwrap();
+            let array = failure_heap
+                .allocate_model_storage(vec![INChI::default()])
+                .unwrap();
             let mut input = InpInChI::default();
             input.pInpInChI[0][TAUT_YES as usize] = array;
             input.nNumComponents[0][TAUT_YES as usize] = 1;
@@ -35739,7 +37088,17 @@ mod tests {
             let mut counts = [77, 88];
             failure_heap.fail_after_allocations(failure_after);
             assert_eq!(
-                SetProtonsAndXchgIsoH(&mut failure_heap, 0, 1, 0, 0, 1, &mut counts, &mut [0; 2], &mut input,),
+                SetProtonsAndXchgIsoH(
+                    &mut failure_heap,
+                    0,
+                    1,
+                    0,
+                    0,
+                    1,
+                    &mut counts,
+                    &mut [0; 2],
+                    &mut input,
+                ),
                 Ok(RI_ERR_ALLOC)
             );
             assert_eq!(counts, [0, 0]);
@@ -35799,8 +37158,16 @@ mod tests {
             ),
             Ok(0)
         );
-        assert!(stereo_heap.slice(array.as_const()).unwrap()[0].Stereo.is_null());
-        assert!(stereo_heap.slice(array.as_const()).unwrap()[0].StereoIsotopic.is_null());
+        assert!(
+            stereo_heap.slice(array.as_const()).unwrap()[0]
+                .Stereo
+                .is_null()
+        );
+        assert!(
+            stereo_heap.slice(array.as_const()).unwrap()[0]
+                .StereoIsotopic
+                .is_null()
+        );
         assert_eq!(stereo_heap.live_allocation_count(), 1);
     }
 
@@ -35838,22 +37205,40 @@ mod tests {
 
         let mut leading_heap = SourceHeap::default();
         let mut leading = input_stream(&mut leading_heap, " InChI=1/C/z()");
-        assert_eq!(DetectAndExposePolymerInternals(&mut leading_heap, &mut leading), Ok(0));
-        assert_eq!(log_text(&leading_heap, &leading), " InChI=1/C.2Zz/z(2,3-)\n");
+        assert_eq!(
+            DetectAndExposePolymerInternals(&mut leading_heap, &mut leading),
+            Ok(0)
+        );
+        assert_eq!(
+            log_text(&leading_heap, &leading),
+            " InChI=1/C.2Zz/z(2,3-)\n"
+        );
 
         let mut heap = SourceHeap::default();
         let mut stream = input_stream(&mut heap, "InChI=1/C2H6/z(1,2)");
         heap.trace_source_allocations();
-        assert_eq!(DetectAndExposePolymerInternals(&mut heap, &mut stream), Ok(0));
+        assert_eq!(
+            DetectAndExposePolymerInternals(&mut heap, &mut stream),
+            Ok(0)
+        );
         assert_eq!(log_text(&heap, &stream), "InChI=1/C2H6.2Zz/z(3,4-1,2)\n");
-        assert_eq!(stream.s.nUsedLength as usize, log_text(&heap, &stream).len());
+        assert_eq!(
+            stream.s.nUsedLength as usize,
+            log_text(&heap, &stream).len()
+        );
         assert!(stream.s.nAllocatedLength > stream.s.nUsedLength);
         assert_eq!(heap.source_allocation_calls(), 5);
         assert_eq!(heap.live_allocation_count(), 1);
 
         let mut tail_heap = SourceHeap::default();
-        let mut tail = input_stream(&mut tail_heap, "InChI=1/CH4/z()\tAuxInfo=1/0/N:1 InChIKey=ABC");
-        assert_eq!(DetectAndExposePolymerInternals(&mut tail_heap, &mut tail), Ok(0));
+        let mut tail = input_stream(
+            &mut tail_heap,
+            "InChI=1/CH4/z()\tAuxInfo=1/0/N:1 InChIKey=ABC",
+        );
+        assert_eq!(
+            DetectAndExposePolymerInternals(&mut tail_heap, &mut tail),
+            Ok(0)
+        );
         assert_eq!(
             log_text(&tail_heap, &tail),
             "InChI=1/CH4.2Zz/z(2,3-)\tAuxInfo=1/0/N:1 InChIKey=ABC\n"
@@ -35874,7 +37259,10 @@ mod tests {
 
         let mut layers_heap = SourceHeap::default();
         let mut layers = input_stream(&mut layers_heap, "InChI=1/C/z()/c1/m1/fabc/q1/p1/s1");
-        assert_eq!(DetectAndExposePolymerInternals(&mut layers_heap, &mut layers), Ok(0));
+        assert_eq!(
+            DetectAndExposePolymerInternals(&mut layers_heap, &mut layers),
+            Ok(0)
+        );
         assert_eq!(
             log_text(&layers_heap, &layers),
             "InChI=1/C.2Zz/z(2,3-)/c1;;/m1../fabc.2Zz/q1;;/p1/s1\n"
@@ -35902,7 +37290,10 @@ mod tests {
 
         let mut maximum_heap = SourceHeap::default();
         let mut maximum = input_stream(&mut maximum_heap, "InChI=1/C32766/z()");
-        assert_eq!(DetectAndExposePolymerInternals(&mut maximum_heap, &mut maximum), Ok(0));
+        assert_eq!(
+            DetectAndExposePolymerInternals(&mut maximum_heap, &mut maximum),
+            Ok(0)
+        );
         assert_eq!(
             log_text(&maximum_heap, &maximum),
             "InChI=1/C32766.2Zz/z(32767,32768-)\n"
@@ -35941,7 +37332,8 @@ mod tests {
         }
 
         let mut tail_failure_heap = SourceHeap::default();
-        let mut tail_failure = input_stream(&mut tail_failure_heap, "InChI=1/C/z()\tAuxInfo=1/0/N:1");
+        let mut tail_failure =
+            input_stream(&mut tail_failure_heap, "InChI=1/C/z()\tAuxInfo=1/0/N:1");
         tail_failure_heap.fail_after_allocations(1);
         assert_eq!(
             DetectAndExposePolymerInternals(&mut tail_failure_heap, &mut tail_failure),
@@ -35954,7 +37346,8 @@ mod tests {
         assert_eq!(tail_failure_heap.live_allocation_count(), 1);
 
         let mut reconnect_failure_heap = SourceHeap::default();
-        let mut reconnect_failure = input_stream(&mut reconnect_failure_heap, "InChI=1/C/z()/rC/z()");
+        let mut reconnect_failure =
+            input_stream(&mut reconnect_failure_heap, "InChI=1/C/z()/rC/z()");
         reconnect_failure_heap.fail_after_allocations(3);
         assert_eq!(
             DetectAndExposePolymerInternals(&mut reconnect_failure_heap, &mut reconnect_failure,),
@@ -36059,7 +37452,13 @@ mod tests {
             Ok(0)
         );
         assert_eq!(
-            bInpInchiComponentExists(&heap, &short_circuit, INCHI_BAS as i32, TAUT_NON as i32, i32::MAX,),
+            bInpInchiComponentExists(
+                &heap,
+                &short_circuit,
+                INCHI_BAS as i32,
+                TAUT_NON as i32,
+                i32::MAX,
+            ),
             Ok(0)
         );
 
@@ -36087,15 +37486,33 @@ mod tests {
                 populated.pInpInChI[representation as usize][mobile_h as usize] = components;
                 populated.nNumComponents[representation as usize][mobile_h as usize] = 3;
                 assert_eq!(
-                    bInpInchiComponentExists(&populated_heap, &populated, representation as i32, mobile_h as i32, 0,),
+                    bInpInchiComponentExists(
+                        &populated_heap,
+                        &populated,
+                        representation as i32,
+                        mobile_h as i32,
+                        0,
+                    ),
                     Ok(0)
                 );
                 assert_eq!(
-                    bInpInchiComponentExists(&populated_heap, &populated, representation as i32, mobile_h as i32, 1,),
+                    bInpInchiComponentExists(
+                        &populated_heap,
+                        &populated,
+                        representation as i32,
+                        mobile_h as i32,
+                        1,
+                    ),
                     Ok(0)
                 );
                 assert_eq!(
-                    bInpInchiComponentExists(&populated_heap, &populated, representation as i32, mobile_h as i32, 2,),
+                    bInpInchiComponentExists(
+                        &populated_heap,
+                        &populated,
+                        representation as i32,
+                        mobile_h as i32,
+                        2,
+                    ),
                     Ok(1)
                 );
             }
@@ -36138,7 +37555,13 @@ mod tests {
         short_circuit.nNumComponents[INCHI_BAS as usize][TAUT_NON as usize] = 1;
         for component in [1, i32::MAX] {
             assert_eq!(
-                bInpInchiComponentDeleted(&heap, &short_circuit, INCHI_BAS as i32, TAUT_NON as i32, component,),
+                bInpInchiComponentDeleted(
+                    &heap,
+                    &short_circuit,
+                    INCHI_BAS as i32,
+                    TAUT_NON as i32,
+                    component,
+                ),
                 Ok(0)
             );
         }
@@ -36190,7 +37613,13 @@ mod tests {
 
         populated.nNumComponents[INCHI_BAS as usize][TAUT_NON as usize] = 5;
         assert_eq!(
-            bInpInchiComponentDeleted(&populated_heap, &populated, INCHI_BAS as i32, TAUT_NON as i32, 4,),
+            bInpInchiComponentDeleted(
+                &populated_heap,
+                &populated,
+                INCHI_BAS as i32,
+                TAUT_NON as i32,
+                4,
+            ),
             Err(SourceHeapError::PointerOutOfBounds)
         );
     }
@@ -36255,7 +37684,10 @@ mod tests {
         assert_ne!(equal_new, equal_old);
         assert_ne!(different_new, different_old);
         assert_eq!(heap.slice(equal_new.as_const()).unwrap(), &[b'C' as i8, 0]);
-        assert_eq!(heap.slice(different_new.as_const()).unwrap(), &[b'O' as i8, 0]);
+        assert_eq!(
+            heap.slice(different_new.as_const()).unwrap(),
+            &[b'O' as i8, 0]
+        );
         assert_eq!(
             heap.slice(equal_old.as_const()),
             Err(SourceHeapError::MissingAllocation)
@@ -36287,10 +37719,23 @@ mod tests {
         skip_heap.trace_source_allocations();
         assert_eq!(SetHillFormFromInChI(&mut skip_heap, &mut skip_input), Ok(0));
         assert_eq!(skip_heap.source_allocation_calls(), 0);
-        assert_eq!(skip_heap.slice(skips.as_const()).unwrap()[0].szHillFormula, zero_old);
-        assert_eq!(skip_heap.slice(skips.as_const()).unwrap()[1].szHillFormula, deleted_old);
-        assert!(skip_heap.slice(skips.as_const()).unwrap()[2].szHillFormula.is_null());
-        assert_eq!(skip_heap.slice(skips.as_const()).unwrap()[3].szHillFormula, empty_old);
+        assert_eq!(
+            skip_heap.slice(skips.as_const()).unwrap()[0].szHillFormula,
+            zero_old
+        );
+        assert_eq!(
+            skip_heap.slice(skips.as_const()).unwrap()[1].szHillFormula,
+            deleted_old
+        );
+        assert!(
+            skip_heap.slice(skips.as_const()).unwrap()[2]
+                .szHillFormula
+                .is_null()
+        );
+        assert_eq!(
+            skip_heap.slice(skips.as_const()).unwrap()[3].szHillFormula,
+            empty_old
+        );
 
         let mut failure_heap = SourceHeap::default();
         let old = text(&mut failure_heap, b"O");
@@ -36301,7 +37746,10 @@ mod tests {
         failure_input.nNumComponents[0][0] = 1;
         failure_heap.trace_source_allocations();
         failure_heap.fail_after_allocations(0);
-        assert_eq!(SetHillFormFromInChI(&mut failure_heap, &mut failure_input), Ok(1));
+        assert_eq!(
+            SetHillFormFromInChI(&mut failure_heap, &mut failure_input),
+            Ok(1)
+        );
         assert_eq!(failure_heap.source_allocation_calls(), 1);
         assert!(
             failure_heap.slice(components.as_const()).unwrap()[0]
@@ -36371,12 +37819,17 @@ mod tests {
         assert!(input_parameters.pSdfLabel.is_null());
         assert!(current_header.is_null());
         assert_eq!(processing_time, 12);
-        assert_eq!(heap.slice(header.as_const()), Err(SourceHeapError::MissingAllocation));
+        assert_eq!(
+            heap.slice(header.as_const()),
+            Err(SourceHeapError::MissingAllocation)
+        );
         assert!(heap.slice(sdf_value.as_const()).is_ok());
         assert!(heap.slice(sdf_label.as_const()).is_ok());
 
         let mut failure_heap = SourceHeap::default();
-        let header = failure_heap.allocate_model_storage(vec![b'H' as i8, 0]).unwrap();
+        let header = failure_heap
+            .allocate_model_storage(vec![b'H' as i8, 0])
+            .unwrap();
         let mut current_header = header;
         let mut processing_time = -8_i64;
         let mut input_parameters = INPUT_PARMS {
@@ -36407,7 +37860,9 @@ mod tests {
         let mut heap = SourceHeap::default();
         assert_eq!(GetNumNeighborsFromInchi(&heap, None, 0), Ok(0));
 
-        let connection_table = heap.allocate_model_storage(vec![1_u16, 2, 1, 3, 2]).unwrap();
+        let connection_table = heap
+            .allocate_model_storage(vec![1_u16, 2, 1, 3, 2])
+            .unwrap();
         let hydrogens = heap.allocate_model_storage(vec![2_i8, -1, 0]).unwrap();
         let mut inchi = INChI {
             nNumberOfAtoms: 3,
@@ -36420,7 +37875,9 @@ mod tests {
         assert_eq!(GetNumNeighborsFromInchi(&heap, Some(&inchi), 2), Ok(1));
         assert_eq!(GetNumNeighborsFromInchi(&heap, Some(&inchi), 3), Ok(1));
 
-        let tautomer = heap.allocate_model_storage(vec![1_u16, 4, 1, 0, 1, 3]).unwrap();
+        let tautomer = heap
+            .allocate_model_storage(vec![1_u16, 4, 1, 0, 1, 3])
+            .unwrap();
         inchi.lenTautomer = 6;
         inchi.nTautomer = tautomer;
         assert_eq!(GetNumNeighborsFromInchi(&heap, Some(&inchi), 1), Ok(1003));
@@ -36434,7 +37891,10 @@ mod tests {
             nConnTable: one_vertex,
             ..INChI::default()
         };
-        assert_eq!(GetNumNeighborsFromInchi(&heap, Some(&no_hydrogens), 1), Ok(0));
+        assert_eq!(
+            GetNumNeighborsFromInchi(&heap, Some(&no_hydrogens), 1),
+            Ok(0)
+        );
 
         let invalid_vertex = heap.allocate_model_storage(vec![1_u16, 3]).unwrap();
         let invalid_connection = INChI {
@@ -36448,7 +37908,9 @@ mod tests {
             Ok(RI_ERR_PROGR)
         );
 
-        let malformed_tautomer = heap.allocate_model_storage(vec![1_u16, 3, 1, 0, 1, 0]).unwrap();
+        let malformed_tautomer = heap
+            .allocate_model_storage(vec![1_u16, 3, 1, 0, 1, 0])
+            .unwrap();
         let malformed = INChI {
             nNumberOfAtoms: 1,
             lenConnTable: 1,
@@ -36457,14 +37919,23 @@ mod tests {
             nTautomer: malformed_tautomer,
             ..INChI::default()
         };
-        assert_eq!(GetNumNeighborsFromInchi(&heap, Some(&malformed), 1), Ok(RI_ERR_PROGR));
+        assert_eq!(
+            GetNumNeighborsFromInchi(&heap, Some(&malformed), 1),
+            Ok(RI_ERR_PROGR)
+        );
     }
 
     #[test]
     fn source_port__ichiread__countstereotypes__line_1723() {
-        fn count(heap: &SourceHeap, inchi: &INChI, counters: &mut [i32; 6]) -> Result<i32, SourceHeapError> {
+        fn count(
+            heap: &SourceHeap,
+            inchi: &INChI,
+            counters: &mut [i32; 6],
+        ) -> Result<i32, SourceHeapError> {
             let [known_sb, known_sc, unknown_sb, unknown_sc, piii, asiii] = counters;
-            CountStereoTypes(heap, inchi, known_sb, known_sc, unknown_sb, unknown_sc, piii, asiii)
+            CountStereoTypes(
+                heap, inchi, known_sb, known_sc, unknown_sb, unknown_sc, piii, asiii,
+            )
         }
 
         let mut heap = SourceHeap::default();
@@ -36561,7 +38032,10 @@ mod tests {
             ..inchi.clone()
         };
         let mut counters = [0; 6];
-        assert_eq!(count(&heap, &invalid_inchi, &mut counters), Ok(RI_ERR_PROGR));
+        assert_eq!(
+            count(&heap, &invalid_inchi, &mut counters),
+            Ok(RI_ERR_PROGR)
+        );
         assert_eq!(counters, [1, 0, 0, 0, 0, 0]);
 
         let phosphorus_number = heap.allocate_model_storage(vec![1_u16]).unwrap();
@@ -36591,7 +38065,11 @@ mod tests {
 
     #[test]
     fn source_port__ichiread__detectinpinchicreationoptions__line_1880() {
-        fn detect(heap: &SourceHeap, input: &InpInChI, output: &mut [i32; 5]) -> Result<i32, SourceHeapError> {
+        fn detect(
+            heap: &SourceHeap,
+            input: &InpInChI,
+            output: &mut [i32; 5],
+        ) -> Result<i32, SourceHeapError> {
             let [reconnected, metal, fixed_h, mode, taut] = output;
             DetectInpInchiCreationOptions(heap, input, reconnected, metal, fixed_h, mode, taut)
         }
@@ -36601,13 +38079,25 @@ mod tests {
         assert_eq!(detect(&heap, &InpInChI::default(), &mut output), Ok(0));
         assert_eq!(
             output,
-            [0, 0, 0, (REQ_MODE_SB_IGN_ALL_UU | REQ_MODE_SC_IGN_ALL_UU) as i32, 0]
+            [
+                0,
+                0,
+                0,
+                (REQ_MODE_SB_IGN_ALL_UU | REQ_MODE_SC_IGN_ALL_UU) as i32,
+                0
+            ]
         );
 
         for (source_mode, expected) in [
             (1, REQ_MODE_STEREO | REQ_MODE_ISO_STEREO),
-            (2, REQ_MODE_STEREO | REQ_MODE_ISO_STEREO | REQ_MODE_RELATIVE_STEREO),
-            (3, REQ_MODE_STEREO | REQ_MODE_ISO_STEREO | REQ_MODE_RACEMIC_STEREO),
+            (
+                2,
+                REQ_MODE_STEREO | REQ_MODE_ISO_STEREO | REQ_MODE_RELATIVE_STEREO,
+            ),
+            (
+                3,
+                REQ_MODE_STEREO | REQ_MODE_ISO_STEREO | REQ_MODE_RACEMIC_STEREO,
+            ),
         ] {
             let mut input = InpInChI::default();
             input.s[0][0][1] = source_mode;
@@ -36625,7 +38115,10 @@ mod tests {
         assert_eq!(detect(&heap, &nonisotopic_mode, &mut output), Ok(0));
         assert_eq!(
             output[3],
-            (REQ_MODE_STEREO | REQ_MODE_ISO_STEREO | REQ_MODE_SB_IGN_ALL_UU | REQ_MODE_SC_IGN_ALL_UU) as i32
+            (REQ_MODE_STEREO
+                | REQ_MODE_ISO_STEREO
+                | REQ_MODE_SB_IGN_ALL_UU
+                | REQ_MODE_SC_IGN_ALL_UU) as i32
         );
 
         let mut heap = SourceHeap::default();
@@ -36681,7 +38174,10 @@ mod tests {
             output[3],
             (REQ_MODE_STEREO | REQ_MODE_ISO_STEREO | REQ_MODE_SC_IGN_ALL_UU) as i32
         );
-        assert_eq!(output[4], (TG_FLAG_PHOSPHINE_STEREO | TG_FLAG_ARSINE_STEREO) as i32);
+        assert_eq!(
+            output[4],
+            (TG_FLAG_PHOSPHINE_STEREO | TG_FLAG_ARSINE_STEREO) as i32
+        );
 
         let sodium = heap.allocate_model_storage(vec![11_u8]).unwrap();
         let sodium_h = heap.allocate_model_storage(vec![1_i8]).unwrap();
@@ -36753,7 +38249,13 @@ mod tests {
         };
         null_table.RevInChI.num_components[INCHI_BAS as usize] = 1;
         assert_eq!(
-            bRevInchiComponentExists(&heap, Some(&null_table), INCHI_BAS as i32, TAUT_NON as i32, 0,),
+            bRevInchiComponentExists(
+                &heap,
+                Some(&null_table),
+                INCHI_BAS as i32,
+                TAUT_NON as i32,
+                0,
+            ),
             Ok(0)
         );
 
@@ -36793,7 +38295,13 @@ mod tests {
             (TAUT_NON as i32, 3, 0),
         ] {
             assert_eq!(
-                bRevInchiComponentExists(&heap, Some(&structure), INCHI_BAS as i32, mobile_h, component,),
+                bRevInchiComponentExists(
+                    &heap,
+                    Some(&structure),
+                    INCHI_BAS as i32,
+                    mobile_h,
+                    component,
+                ),
                 Ok(expected)
             );
         }
@@ -36831,7 +38339,13 @@ mod tests {
         };
         null_table.RevInChI.num_components[INCHI_BAS as usize] = 1;
         assert_eq!(
-            bRevInchiComponentDeleted(&heap, Some(&null_table), INCHI_BAS as i32, TAUT_NON as i32, 0,),
+            bRevInchiComponentDeleted(
+                &heap,
+                Some(&null_table),
+                INCHI_BAS as i32,
+                TAUT_NON as i32,
+                0,
+            ),
             Ok(0)
         );
 
@@ -36880,7 +38394,13 @@ mod tests {
                 (TAUT_NON as i32, i32::MAX, 0),
             ] {
                 assert_eq!(
-                    bRevInchiComponentDeleted(&heap, Some(&structure), representation as i32, mobile_h, component,),
+                    bRevInchiComponentDeleted(
+                        &heap,
+                        Some(&structure),
+                        representation as i32,
+                        mobile_h,
+                        component,
+                    ),
                     Ok(expected)
                 );
             }
@@ -36888,7 +38408,13 @@ mod tests {
 
         structure.RevInChI.num_components[INCHI_BAS as usize] = 4;
         assert_eq!(
-            bRevInchiComponentDeleted(&heap, Some(&structure), INCHI_BAS as i32, TAUT_NON as i32, 3,),
+            bRevInchiComponentDeleted(
+                &heap,
+                Some(&structure),
+                INCHI_BAS as i32,
+                TAUT_NON as i32,
+                3,
+            ),
             Err(SourceHeapError::PointerOutOfBounds)
         );
     }
@@ -36970,9 +38496,19 @@ mod tests {
                 assert_eq!(result, Ok(0), "failure position {failure_after}");
                 assert_eq!(counts, [0, 0]);
                 assert!(input.pInpInChI[0][TAUT_YES as usize].is_null());
-                assert!(input.nNumProtons[0][TAUT_YES as usize].pNumProtons.is_null());
-                assert_eq!(heap.slice(source.as_const()), Err(SourceHeapError::MissingAllocation));
-                assert_eq!(heap.slice(proton.as_const()), Err(SourceHeapError::MissingAllocation));
+                assert!(
+                    input.nNumProtons[0][TAUT_YES as usize]
+                        .pNumProtons
+                        .is_null()
+                );
+                assert_eq!(
+                    heap.slice(source.as_const()),
+                    Err(SourceHeapError::MissingAllocation)
+                );
+                assert_eq!(
+                    heap.slice(proton.as_const()),
+                    Err(SourceHeapError::MissingAllocation)
+                );
             }
         }
 
@@ -37019,8 +38555,15 @@ mod tests {
             );
             assert_eq!(counts, [0, 0]);
             assert!(input.pInpInChI[0][TAUT_YES as usize].is_null());
-            assert!(input.nNumProtons[0][TAUT_YES as usize].pNumProtons.is_null());
-            assert_eq!(heap.slice(source.as_const()), Err(SourceHeapError::MissingAllocation));
+            assert!(
+                input.nNumProtons[0][TAUT_YES as usize]
+                    .pNumProtons
+                    .is_null()
+            );
+            assert_eq!(
+                heap.slice(source.as_const()),
+                Err(SourceHeapError::MissingAllocation)
+            );
             assert_eq!(
                 heap.slice(per_component.as_const()),
                 Err(SourceHeapError::MissingAllocation)
@@ -37071,7 +38614,10 @@ mod tests {
         );
         assert_eq!(equal_counts, [0, 0]);
         for pointer in [fixed_source.as_const(), mobile_source.as_const()] {
-            assert_eq!(equal_heap.slice(pointer), Err(SourceHeapError::MissingAllocation));
+            assert_eq!(
+                equal_heap.slice(pointer),
+                Err(SourceHeapError::MissingAllocation)
+            );
         }
         for (formula, atom, hydrogen) in [fixed_allocations, mobile_allocations] {
             assert_eq!(
@@ -37194,9 +38740,14 @@ mod tests {
     use crate::source_types::{INCHI_IOS_STRING, inp_ATOM};
 
     fn c_string(heap: &mut SourceHeap, text: &str) -> SourceConstPointer<i8> {
-        heap.allocate_model_storage(text.bytes().chain(std::iter::once(0)).map(|byte| byte as i8).collect())
-            .unwrap()
-            .as_const()
+        heap.allocate_model_storage(
+            text.bytes()
+                .chain(std::iter::once(0))
+                .map(|byte| byte as i8)
+                .collect(),
+        )
+        .unwrap()
+        .as_const()
     }
 
     fn log_text(heap: &SourceHeap, log: &INCHI_IOSTREAM) -> String {
@@ -37227,7 +38778,17 @@ mod tests {
             ..INPUT_PARMS::default()
         };
         let mut save = 0xa5;
-        PrepareSaveOptBits(&mut heap, &mut ip, Some(&mut log), -7, header, 0, 0xff, &mut save).unwrap();
+        PrepareSaveOptBits(
+            &mut heap,
+            &mut ip,
+            Some(&mut log),
+            -7,
+            header,
+            0,
+            0xff,
+            &mut save,
+        )
+        .unwrap();
         assert_eq!(ip.bINChIOutputOptions, 0x40);
         assert_eq!(ip.nMode, REQ_MODE_BASIC as INCHI_MODE);
         assert_eq!(ip.bTautFlags, TG_FLAG_RECONNECT_COORD as INCHI_MODE);
@@ -37266,7 +38827,17 @@ mod tests {
             ..INPUT_PARMS::default()
         };
         save = 0x08;
-        PrepareSaveOptBits(&mut heap, &mut ip, Some(&mut log), -9, empty_header, -1, 0, &mut save).unwrap();
+        PrepareSaveOptBits(
+            &mut heap,
+            &mut ip,
+            Some(&mut log),
+            -9,
+            empty_header,
+            -1,
+            0,
+            &mut save,
+        )
+        .unwrap();
         assert_eq!(ip.nMode, REQ_MODE_STEREO as INCHI_MODE);
         assert_eq!(ip.bTautFlags, 0);
         assert_eq!(save, 0x08);
@@ -37411,7 +38982,9 @@ mod tests {
         let mut log = stream();
         let header = c_string(&mut heap, "EOF header").as_mut();
         let cur_header = c_string(&mut heap, "EOF current").as_mut();
-        let atom = heap.allocate_model_storage(vec![inp_ATOM::default()]).unwrap();
+        let atom = heap
+            .allocate_model_storage(vec![inp_ATOM::default()])
+            .unwrap();
         let mut input = InpInChI {
             atom,
             num_atoms: 1,

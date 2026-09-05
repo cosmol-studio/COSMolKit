@@ -156,7 +156,9 @@ mod tests {
     #[cfg(feature = "inchi")]
     #[test]
     fn inchi_rust_facade_four_scalar_apis_match_exact_methane_results_and_preserve_source() {
-        let source = methane().with_name("source methane").with_prop("record", "kept");
+        let source = methane()
+            .with_name("source methane")
+            .with_prop("record", "kept");
         let before = source.clone();
 
         let generated = mol_to_inchi(&source, None).expect("methane InChI");
@@ -176,7 +178,10 @@ mod tests {
             )
             .as_bytes()
         );
-        assert_eq!(generated.return_values.aux_info, b"AuxInfo=1/0/N:1/rA:1C/rB:/rC:;");
+        assert_eq!(
+            generated.return_values.aux_info,
+            b"AuxInfo=1/0/N:1/rA:1C/rB:/rC:;"
+        );
         assert!(generated.diagnostics.is_empty());
 
         let molecule_key = mol_to_inchi_key(&source, None).expect("methane InChIKey");
@@ -220,7 +225,10 @@ mod tests {
         let invalid_key = inchi_to_inchi_key(b"").expect("source-defined key diagnostic");
         assert!(invalid_key.key.is_empty());
         assert_eq!(invalid_key.diagnostics.len(), 1);
-        assert_eq!(invalid_key.diagnostics[0].level, InchiDiagnosticLevel::Error);
+        assert_eq!(
+            invalid_key.diagnostics[0].level,
+            InchiDiagnosticLevel::Error
+        );
         assert_eq!(
             invalid_key.diagnostics[0].message,
             "Invalid InChI prefix in generating InChI Key\n"
@@ -236,13 +244,10 @@ mod tests {
         assert_eq!(unsupported.kind, InchiErrorKind::UnsupportedState);
         assert!(unsupported.detail.contains("trusted"));
 
-        let query: Molecule = mol_from_smarts("[#6]", &SmartsParseParams::default())
-            .expect("query graph")
-            .into();
-        let unsupported = mol_to_inchi_key(&query, None).expect_err("query atom");
-        assert_eq!(unsupported.operation, "mol_to_inchi_key");
-        assert_eq!(unsupported.kind, InchiErrorKind::UnsupportedState);
-        assert!(unsupported.detail.contains("query atoms"));
+        // Query graphs are intentionally independent from `Molecule` and no
+        // longer have an implicit conversion into the InChI input model.
+        let query = parse_smarts("[#6]", &SmartsParseParams::default()).expect("query graph");
+        assert_eq!(query.num_atoms(), 1);
 
         // The source/core focused tests force the official-undefined allocation
         // path. This facade assertion ensures its public category is not erased.
@@ -269,12 +274,14 @@ mod tests {
         assert!(molecule.conformers_3d().is_empty());
         assert_eq!(generated.conformers_3d().len(), 1);
 
-        let direct_result = embed_molecule_result(&molecule, &mut params).expect("embed_molecule_result re-export");
+        let direct_result =
+            embed_molecule_result(&molecule, &mut params).expect("embed_molecule_result re-export");
         assert!(direct_result.ok());
         assert_eq!(direct_result.conf_id, 0);
         assert_eq!(direct_result.molecule.conformers_3d().len(), 1);
 
-        let (embedded, conf_id) = embed_molecule(&molecule, &mut params).expect("direct embed_molecule re-export");
+        let (embedded, conf_id) =
+            embed_molecule(&molecule, &mut params).expect("direct embed_molecule re-export");
         assert_eq!(conf_id, 0);
         assert_eq!(embedded.conformers_3d().len(), 1);
 
@@ -292,8 +299,8 @@ mod tests {
         assert_eq!(multi_result.generated_count(), 2);
         assert_eq!(multi_result.molecule.conformers_3d().len(), 2);
 
-        let (embedded_multi, ids) =
-            embed_multiple_confs(&molecule, 2, &mut multi_params).expect("direct embed_multiple_confs re-export");
+        let (embedded_multi, ids) = embed_multiple_confs(&molecule, 2, &mut multi_params)
+            .expect("direct embed_multiple_confs re-export");
         assert_eq!(ids, vec![0, 1]);
         assert_eq!(embedded_multi.conformers_3d().len(), 2);
     }
@@ -302,24 +309,34 @@ mod tests {
     fn smarts_rust_facade_exposes_canonical_parser_and_writer_apis() {
         let mut parse_params = SmartsParseParams::default();
         parse_params.parse_name = false;
-        let query = mol_from_smarts("[#6]-[#8]", &parse_params).expect("SMARTS query");
+        let query = parse_smarts("[#6]-[#8]", &parse_params).expect("SMARTS query");
         let write_params = SmilesWriteParams::default();
 
-        assert_eq!(get_atom_smarts(query.atoms()[0].atom(), &write_params).unwrap(), "[#6]");
+        assert_eq!(
+            get_atom_smarts(query.atoms()[0].atom(), &write_params).unwrap(),
+            "[#6]"
+        );
         assert_eq!(
             get_bond_smarts(query.bonds()[0].bond(), &write_params, Some(0)).unwrap(),
             "-"
         );
-        assert_eq!(query.to_smarts(&write_params).unwrap(), "[#6]-[#8]");
+        let query_operator = QueryGraphOperator::new(&query);
         assert_eq!(
-            query
+            query_operator.to_smarts(&write_params).unwrap(),
+            "[#6]-[#8]"
+        );
+        assert_eq!(
+            query_operator
                 .fragment_to_smarts(&write_params, &[AtomId::new(1)], None)
                 .unwrap(),
             "[#8]"
         );
-        assert_eq!(query.to_cx_smarts(&write_params).unwrap(), "[#6]-[#8]");
         assert_eq!(
-            query
+            query_operator.to_cx_smarts(&write_params).unwrap(),
+            "[#6]-[#8]"
+        );
+        assert_eq!(
+            query_operator
                 .fragment_to_cx_smarts(&write_params, &[AtomId::new(0)], None)
                 .unwrap(),
             "[#6]"

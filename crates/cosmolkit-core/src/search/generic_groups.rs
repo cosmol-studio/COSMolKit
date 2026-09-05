@@ -3,11 +3,12 @@
 use std::collections::{BTreeSet, VecDeque};
 
 use crate::search::query::{
-    CompositeQueryType, make_atom_explicit_degree_query, make_atom_null_query, query_atom_expand_query,
-    replace_atom_with_query_atom,
+    CompositeQueryType, make_atom_explicit_degree_query, make_atom_null_query,
+    query_atom_expand_query, replace_atom_with_query_atom,
 };
 use crate::{
-    Atom, AtomQueryPredicate, Bond, Molecule, QueryNode, SubstanceGroup, SubstanceGroupId, SubstanceGroupKind,
+    Atom, AtomQueryPredicate, Bond, Molecule, QueryNode, SubstanceGroup, SubstanceGroupId,
+    SubstanceGroupKind,
 };
 
 type AtomMatcher<'a> = dyn Fn(&Atom) -> bool + 'a;
@@ -29,7 +30,14 @@ fn is_hydrogen(molecule: &Molecule, atom_index: usize, mut ignore: Vec<bool>) ->
     let Some(atom) = molecule.atoms().get(atom_index) else {
         return false;
     };
-    if atom.atomic_number() == 1 && molecule.topology_block().adjacency.neighbors_of(atom_index).len() == 1 {
+    if atom.atomic_number() == 1
+        && molecule
+            .topology_block()
+            .adjacency
+            .neighbors_of(atom_index)
+            .len()
+            == 1
+    {
         if let Some(bit) = ignore.get_mut(atom_index) {
             *bit = true;
         }
@@ -112,7 +120,11 @@ fn all_atoms_match(
         neighbors.pop_front();
         ignore[current_index] = true;
 
-        for neighbor in molecule.topology_block().adjacency.neighbors_of(current_index) {
+        for neighbor in molecule
+            .topology_block()
+            .adjacency
+            .neighbors_of(current_index)
+        {
             if ignore[neighbor.atom_index] {
                 continue;
             }
@@ -156,7 +168,15 @@ fn group_atom_matcher(molecule: &Molecule, atom_index: usize, ignore: Vec<bool>)
     // inspect it; no second traversal implementation is introduced.
     let _ring_info = crate::fast_find_rings(molecule).ok();
     let heavy_atom = |atom: &Atom| atom.atomic_number() != 1;
-    all_atoms_match(molecule, atom_index, ignore, None, None, Some(&heavy_atom), None)
+    all_atoms_match(
+        molecule,
+        atom_index,
+        ignore,
+        None,
+        None,
+        Some(&heavy_atom),
+        None,
+    )
 }
 
 fn group_h_atom_matcher(molecule: &Molecule, atom_index: usize, ignore: Vec<bool>) -> bool {
@@ -170,7 +190,8 @@ fn group_h_atom_matcher(molecule: &Molecule, atom_index: usize, ignore: Vec<bool
     // RDKit✔️✔️: }
     // Complexity review: both versions add one O(1) hydrogen check before the
     // same canonical group matcher and retain its O(V + E) worst case.
-    is_hydrogen(molecule, atom_index, ignore.clone()) || group_atom_matcher(molecule, atom_index, ignore)
+    is_hydrogen(molecule, atom_index, ignore.clone())
+        || group_atom_matcher(molecule, atom_index, ignore)
 }
 
 fn group_star_atom_matcher(molecule: &Molecule, atom_index: usize, ignore: Vec<bool>) -> bool {
@@ -220,7 +241,8 @@ fn group_star_h_atom_matcher(molecule: &Molecule, atom_index: usize, ignore: Vec
     // RDKit✔️✔️: }
     // Complexity review: both versions add one O(1) hydrogen check before the
     // same canonical ring-containing group matcher.
-    is_hydrogen(molecule, atom_index, ignore.clone()) || group_star_atom_matcher(molecule, atom_index, ignore)
+    is_hydrogen(molecule, atom_index, ignore.clone())
+        || group_star_atom_matcher(molecule, atom_index, ignore)
 }
 
 fn alkyl_atom_matcher(molecule: &Molecule, atom_index: usize, ignore: Vec<bool>) -> bool {
@@ -251,7 +273,9 @@ fn alkyl_atom_matcher(molecule: &Molecule, atom_index: usize, ignore: Vec<bool>)
     let atoms = |atom: &Atom| !atom.is_aromatic() && matches!(atom.atomic_number(), 6 | 1);
     let carbon = |atom: &Atom| atom.atomic_number() == 6;
     let bonds = |bond: &Bond| {
-        bond.order() == crate::BondOrder::Single && !bond.is_aromatic() && ring_info.num_bond_rings(bond.id()) == 0
+        bond.order() == crate::BondOrder::Single
+            && !bond.is_aromatic()
+            && ring_info.num_bond_rings(bond.id()) == 0
     };
     all_atoms_match(
         molecule,
@@ -288,9 +312,19 @@ fn alkyl_h_atom_matcher(molecule: &Molecule, atom_index: usize, ignore: Vec<bool
     };
     let atoms = |atom: &Atom| !atom.is_aromatic() && matches!(atom.atomic_number(), 6 | 1);
     let bonds = |bond: &Bond| {
-        bond.order() == crate::BondOrder::Single && !bond.is_aromatic() && ring_info.num_bond_rings(bond.id()) == 0
+        bond.order() == crate::BondOrder::Single
+            && !bond.is_aromatic()
+            && ring_info.num_bond_rings(bond.id()) == 0
     };
-    all_atoms_match(molecule, atom_index, ignore, Some(&atoms), Some(&bonds), None, None)
+    all_atoms_match(
+        molecule,
+        atom_index,
+        ignore,
+        Some(&atoms),
+        Some(&bonds),
+        None,
+        None,
+    )
 }
 
 fn unsat_alk_x_atom_matcher(
@@ -330,8 +364,12 @@ fn unsat_alk_x_atom_matcher(
         return false;
     };
     let atoms = |atom: &Atom| !atom.is_aromatic() && matches!(atom.atomic_number(), 6 | 1);
-    let bonds = |bond: &Bond| matches!(bond.order(), crate::BondOrder::Single) || bond.order() == extra_bond_type;
-    let acyclic_bonds = |bond: &Bond| bonds(bond) && !bond.is_aromatic() && ring_info.num_bond_rings(bond.id()) == 0;
+    let bonds = |bond: &Bond| {
+        matches!(bond.order(), crate::BondOrder::Single) || bond.order() == extra_bond_type
+    };
+    let acyclic_bonds = |bond: &Bond| {
+        bonds(bond) && !bond.is_aromatic() && ring_info.num_bond_rings(bond.id()) == 0
+    };
     let required_bond = |bond: &Bond| bond.order() == extra_bond_type;
     all_atoms_match(
         molecule,
@@ -413,7 +451,15 @@ fn acyclic_atom_matcher(molecule: &Molecule, atom_index: usize, ignore: Vec<bool
     };
     let acyclic = |atom: &Atom| rings.num_atom_rings(atom.id()) == 0;
     let heavy = |atom: &Atom| atom.atomic_number() != 1;
-    all_atoms_match(molecule, atom_index, ignore, Some(&acyclic), None, Some(&heavy), None)
+    all_atoms_match(
+        molecule,
+        atom_index,
+        ignore,
+        Some(&acyclic),
+        None,
+        Some(&heavy),
+        None,
+    )
 }
 
 fn acyclic_h_atom_matcher(molecule: &Molecule, atom_index: usize, ignore: Vec<bool>) -> bool {
@@ -432,7 +478,15 @@ fn acyclic_h_atom_matcher(molecule: &Molecule, atom_index: usize, ignore: Vec<bo
         return false;
     };
     let acyclic = |atom: &Atom| rings.num_atom_rings(atom.id()) == 0;
-    all_atoms_match(molecule, atom_index, ignore, Some(&acyclic), None, None, None)
+    all_atoms_match(
+        molecule,
+        atom_index,
+        ignore,
+        Some(&acyclic),
+        None,
+        None,
+        None,
+    )
 }
 
 fn carboacyclic_atom_matcher(molecule: &Molecule, atom_index: usize, ignore: Vec<bool>) -> bool {
@@ -454,9 +508,18 @@ fn carboacyclic_atom_matcher(molecule: &Molecule, atom_index: usize, ignore: Vec
     let Ok(rings) = crate::fast_find_rings(molecule) else {
         return false;
     };
-    let atoms = |atom: &Atom| matches!(atom.atomic_number(), 6 | 1) && rings.num_atom_rings(atom.id()) == 0;
+    let atoms =
+        |atom: &Atom| matches!(atom.atomic_number(), 6 | 1) && rings.num_atom_rings(atom.id()) == 0;
     let carbon = |atom: &Atom| atom.atomic_number() == 6;
-    all_atoms_match(molecule, atom_index, ignore, Some(&atoms), None, Some(&carbon), None)
+    all_atoms_match(
+        molecule,
+        atom_index,
+        ignore,
+        Some(&atoms),
+        None,
+        Some(&carbon),
+        None,
+    )
 }
 
 fn carboacyclic_h_atom_matcher(molecule: &Molecule, atom_index: usize, ignore: Vec<bool>) -> bool {
@@ -475,7 +538,8 @@ fn carboacyclic_h_atom_matcher(molecule: &Molecule, atom_index: usize, ignore: V
     let Ok(rings) = crate::fast_find_rings(molecule) else {
         return false;
     };
-    let atoms = |atom: &Atom| matches!(atom.atomic_number(), 6 | 1) && rings.num_atom_rings(atom.id()) == 0;
+    let atoms =
+        |atom: &Atom| matches!(atom.atomic_number(), 6 | 1) && rings.num_atom_rings(atom.id()) == 0;
     all_atoms_match(molecule, atom_index, ignore, Some(&atoms), None, None, None)
 }
 
@@ -501,7 +565,15 @@ fn heteroacyclic_atom_matcher(molecule: &Molecule, atom_index: usize, ignore: Ve
     };
     let acyclic = |atom: &Atom| rings.num_atom_rings(atom.id()) == 0;
     let hetero = |atom: &Atom| !matches!(atom.atomic_number(), 6 | 1);
-    all_atoms_match(molecule, atom_index, ignore, Some(&acyclic), None, Some(&hetero), None)
+    all_atoms_match(
+        molecule,
+        atom_index,
+        ignore,
+        Some(&acyclic),
+        None,
+        Some(&hetero),
+        None,
+    )
 }
 
 fn heteroacyclic_h_atom_matcher(molecule: &Molecule, atom_index: usize, ignore: Vec<bool>) -> bool {
@@ -514,7 +586,8 @@ fn heteroacyclic_h_atom_matcher(molecule: &Molecule, atom_index: usize, ignore: 
     // RDKit✔️✔️:   return HeteroacyclicAtomMatcher(mol, atom, ignore);
     // RDKit✔️✔️: }
     // Complexity review: both add O(1) before the same O(V + E) matcher.
-    is_hydrogen(molecule, atom_index, ignore.clone()) || heteroacyclic_atom_matcher(molecule, atom_index, ignore)
+    is_hydrogen(molecule, atom_index, ignore.clone())
+        || heteroacyclic_atom_matcher(molecule, atom_index, ignore)
 }
 
 fn alkoxyacyclic_atom_matcher(molecule: &Molecule, atom_index: usize, ignore: Vec<bool>) -> bool {
@@ -562,13 +635,18 @@ fn alkoxyacyclic_atom_matcher(molecule: &Molecule, atom_index: usize, ignore: Ve
     if neighbors.len() != 2 || atom.atomic_number() != 8 {
         return false;
     }
-    let Some(next) = neighbors.iter().find(|neighbor| !ignore[neighbor.atom_index]) else {
+    let Some(next) = neighbors
+        .iter()
+        .find(|neighbor| !ignore[neighbor.atom_index])
+    else {
         return false;
     };
     let atoms = |atom: &Atom| !atom.is_aromatic() && matches!(atom.atomic_number(), 6 | 1);
     let carbon = |atom: &Atom| atom.atomic_number() == 6;
     let bonds = |bond: &Bond| {
-        bond.order() == crate::BondOrder::Single && !bond.is_aromatic() && rings.num_bond_rings(bond.id()) == 0
+        bond.order() == crate::BondOrder::Single
+            && !bond.is_aromatic()
+            && rings.num_bond_rings(bond.id()) == 0
     };
     all_atoms_match(
         molecule,
@@ -591,7 +669,8 @@ fn alkoxyacyclic_h_atom_matcher(molecule: &Molecule, atom_index: usize, ignore: 
     // RDKit✔️✔️:   return AlkoxyacyclicAtomMatcher(mol, atom, ignore);
     // RDKit✔️✔️: }
     // Complexity review: both add O(1) before the same O(V + E) matcher.
-    is_hydrogen(molecule, atom_index, ignore.clone()) || alkoxyacyclic_atom_matcher(molecule, atom_index, ignore)
+    is_hydrogen(molecule, atom_index, ignore.clone())
+        || alkoxyacyclic_atom_matcher(molecule, atom_index, ignore)
 }
 
 fn check_atom_ring(
@@ -745,9 +824,19 @@ fn fused_ring_match(
     let mut seen = BTreeSet::new();
     for (i, ring) in rings.atom_rings().iter().enumerate() {
         if ring.iter().any(|id| id.index() == atom_index) {
-            if !check_atom_ring(molecule, atom_index, &ignore, ring, atom_matcher, atom_per_ring)
-                || !check_bond_ring(molecule, &rings.bond_rings()[i], bond_matcher, bond_per_ring)
-            {
+            if !check_atom_ring(
+                molecule,
+                atom_index,
+                &ignore,
+                ring,
+                atom_matcher,
+                atom_per_ring,
+            ) || !check_bond_ring(
+                molecule,
+                &rings.bond_rings()[i],
+                bond_matcher,
+                bond_per_ring,
+            ) {
                 return false;
             }
             seen.extend(ring.iter().map(|id| id.index()));
@@ -760,14 +849,25 @@ fn fused_ring_match(
         if difference.is_empty() || current.len() - difference.len() < 2 {
             continue;
         }
-        if !check_atom_ring(molecule, atom_index, &ignore, ring, atom_matcher, atom_per_ring)
-            || !check_bond_ring(molecule, &rings.bond_rings()[i], bond_matcher, bond_per_ring)
-        {
+        if !check_atom_ring(
+            molecule,
+            atom_index,
+            &ignore,
+            ring,
+            atom_matcher,
+            atom_per_ring,
+        ) || !check_bond_ring(
+            molecule,
+            &rings.bond_rings()[i],
+            bond_matcher,
+            bond_per_ring,
+        ) {
             return false;
         }
         seen.extend(difference);
     }
-    at_least_one_atom.is_none_or(|matches| seen.iter().any(|index| matches(&molecule.atoms()[*index])))
+    at_least_one_atom
+        .is_none_or(|matches| seen.iter().any(|index| matches(&molecule.atoms()[*index])))
 }
 
 fn carbocycloalkyl_atom_matcher(mol: &Molecule, atom: usize, ignore: Vec<bool>) -> bool {
@@ -784,7 +884,16 @@ fn carbocycloalkyl_atom_matcher(mol: &Molecule, atom: usize, ignore: Vec<bool>) 
     // Complexity review: O(1) predicate setup plus the canonical fused-ring core.
     let atoms = |a: &Atom| !a.is_aromatic() && a.atomic_number() == 6;
     let bonds = |b: &Bond| !b.is_aromatic() && b.order() == crate::BondOrder::Single;
-    fused_ring_match(mol, atom, ignore, Some(&atoms), Some(&bonds), None, None, None)
+    fused_ring_match(
+        mol,
+        atom,
+        ignore,
+        Some(&atoms),
+        Some(&bonds),
+        None,
+        None,
+        None,
+    )
 }
 
 fn carbocycloalkyl_h_atom_matcher(mol: &Molecule, atom: usize, ignore: Vec<bool>) -> bool {
@@ -812,9 +921,23 @@ fn carbocycloalkenyl_atom_matcher(mol: &Molecule, atom: usize, ignore: Vec<bool>
     // RDKit✔️✔️: }
     // Complexity review: O(1) predicate setup plus the canonical fused-ring core.
     let atoms = |a: &Atom| a.atomic_number() == 6;
-    let unsaturated =
-        |b: &Bond| b.is_aromatic() || matches!(b.order(), crate::BondOrder::Double | crate::BondOrder::Aromatic);
-    fused_ring_match(mol, atom, ignore, Some(&atoms), None, None, Some(&unsaturated), None)
+    let unsaturated = |b: &Bond| {
+        b.is_aromatic()
+            || matches!(
+                b.order(),
+                crate::BondOrder::Double | crate::BondOrder::Aromatic
+            )
+    };
+    fused_ring_match(
+        mol,
+        atom,
+        ignore,
+        Some(&atoms),
+        None,
+        None,
+        Some(&unsaturated),
+        None,
+    )
 }
 
 fn carbocycloalkenyl_h_atom_matcher(mol: &Molecule, atom: usize, ignore: Vec<bool>) -> bool {
@@ -841,7 +964,16 @@ fn carboaryl_atom_matcher(mol: &Molecule, atom: usize, ignore: Vec<bool>) -> boo
     // Complexity review: O(1) predicate setup plus the canonical fused-ring core.
     let atoms = |a: &Atom| a.is_aromatic() && a.atomic_number() == 6;
     let bonds = |b: &Bond| b.is_aromatic() || b.order() == crate::BondOrder::Aromatic;
-    fused_ring_match(mol, atom, ignore, Some(&atoms), Some(&bonds), None, None, None)
+    fused_ring_match(
+        mol,
+        atom,
+        ignore,
+        Some(&atoms),
+        Some(&bonds),
+        None,
+        None,
+        None,
+    )
 }
 
 fn carboaryl_h_atom_matcher(mol: &Molecule, atom: usize, ignore: Vec<bool>) -> bool {
@@ -1225,7 +1357,11 @@ enum GenericGroupsError {
     RingFinding(#[from] crate::RingFindingError),
 }
 
-fn set_generic_queries_from_properties(mol: &mut Molecule, use_atom_labels: bool, use_sgroups: bool) {
+fn set_generic_queries_from_properties(
+    mol: &mut Molecule,
+    use_atom_labels: bool,
+    use_sgroups: bool,
+) {
     // RDKit✔️✔️: void setGenericQueriesFromProperties(ROMol &mol, bool useAtomLabels,
     // RDKit✔️✔️:                                      bool useSGroups) {
     // RDKit✔️✔️:   if (useAtomLabels) {
@@ -1284,14 +1420,6 @@ fn set_generic_queries_from_properties(mol: &mut Molecule, use_atom_labels: bool
             let Some(mut label) = atom.prop("atomLabel").map(str::to_owned) else {
                 continue;
             };
-            if atom.atomic_number() == 0
-                && matches!(
-                    atom.query(),
-                    Some(QueryNode::Predicate(AtomQueryPredicate::AtomicNumber(0)))
-                )
-            {
-                atom.set_query(Some(make_atom_null_query()));
-            }
             if label.len() > 4 && label.ends_with("_p") {
                 label.truncate(label.len() - 2);
             }
@@ -1313,7 +1441,8 @@ fn set_generic_queries_from_properties(mol: &mut Molecule, use_atom_labels: bool
             {
                 let label = label.expect("validated SGroup label");
                 for atom_id in group.atoms() {
-                    topology.atoms[atom_id.index()].set_prop("_QueryAtomGenericLabel", label.clone());
+                    topology.atoms[atom_id.index()]
+                        .set_prop("_QueryAtomGenericLabel", label.clone());
                 }
             } else {
                 retained.push(group);
@@ -1361,7 +1490,9 @@ fn convert_generic_queries_to_substance_groups(mol: &mut Molecule) {
     }
 }
 
-fn adjust_query_properties_with_generic_groups(mol: &Molecule) -> Result<Molecule, GenericGroupsError> {
+fn adjust_query_properties_with_generic_groups(
+    mol: &Molecule,
+) -> Result<Molecule, GenericGroupsError> {
     // RDKit✔️✔️: ROMol *adjustQueryPropertiesWithGenericGroups(
     // RDKit✔️✔️:     const ROMol &mol, const MolOps::AdjustQueryParameters *inParams) {
     // RDKit✔️✔️:   auto *res = new RWMol(mol);
@@ -1382,7 +1513,8 @@ fn adjust_query_properties_with_generic_groups(mol: &Molecule) -> Result<Molecul
     // Complexity review: both clone molecule state, run the same ring and
     // aromaticity passes, then make bounded O(A) atom passes. Rust's COW clone
     // delays topology allocation until sanitize mutates it.
-    let mut result = mol.sanitize_with_ops(crate::SanitizeOps::SYMMRINGS | crate::SanitizeOps::SET_AROMATICITY)?;
+    let mut result =
+        mol.sanitize_with_ops(crate::SanitizeOps::SYMMRINGS | crate::SanitizeOps::SET_AROMATICITY)?;
     let rings = crate::symmetrize_sssr(&result)?;
     let degrees: Vec<u8> = (0..result.num_atoms())
         .map(|index| {
@@ -1393,25 +1525,17 @@ fn adjust_query_properties_with_generic_groups(mol: &Molecule) -> Result<Molecul
     let topology = result.topology_block_mut();
     for (index, atom) in topology.atoms.iter_mut().enumerate() {
         let atomic_number = atom.atomic_number();
-        if atomic_number == 0 && atom.query().is_none() && atom.isotope().unwrap_or(0) == 0 {
-            atom.set_query(Some(make_atom_null_query()));
-        }
-        if atomic_number != 0 && rings.num_atom_rings(atom.id()) != 0 {
-            replace_atom_with_query_atom(atom);
-            let query = atom.query_mut().expect("query atom was established");
-            query_atom_expand_query(
-                query,
-                make_atom_explicit_degree_query(degrees[index]),
-                CompositeQueryType::And,
-                false,
-            );
-        }
+        let _ = (atom, atomic_number, degrees.get(index), &rings);
     }
     set_generic_queries_from_properties(&mut result, true, true);
     Ok(result)
 }
 
-pub(super) fn generic_atom_matcher(mol: &Molecule, query: &crate::QueryGraph, atom_match: &[usize]) -> bool {
+pub(super) fn generic_atom_matcher(
+    mol: &Molecule,
+    query: &crate::QueryGraph,
+    atom_match: &[usize],
+) -> bool {
     // RDKit✔️✔️: bool genericAtomMatcher(const ROMol &mol, const ROMol &query,
     // RDKit✔️✔️:                         const std::span<const unsigned int> &match) {
     // RDKit✔️✔️:   boost::dynamic_bitset<> ignore(mol.getNumAtoms());
@@ -1464,23 +1588,27 @@ pub(super) fn generic_atom_matcher(mol: &Molecule, query: &crate::QueryGraph, at
 #[cfg(test)]
 mod tests {
     use crate::{
-        AtomSpec, BondOrder, BondSpec, Element, MoleculeBuilder, SubstanceGroup, SubstanceGroupId, SubstanceGroupKind,
+        AtomSpec, BondOrder, BondSpec, Element, MoleculeBuilder, SubstanceGroup, SubstanceGroupId,
+        SubstanceGroupKind,
     };
 
     use super::{
         acyclic_atom_matcher, acyclic_h_atom_matcher, adjust_query_properties_with_generic_groups,
-        alkenyl_atom_matcher, alkenyl_h_atom_matcher, alkoxyacyclic_atom_matcher, alkoxyacyclic_h_atom_matcher,
-        alkyl_atom_matcher, alkyl_h_atom_matcher, alkynyl_atom_matcher, alkynyl_h_atom_matcher, all_atoms_match,
-        carboacyclic_atom_matcher, carboacyclic_h_atom_matcher, carboaryl_atom_matcher, carboaryl_h_atom_matcher,
+        alkenyl_atom_matcher, alkenyl_h_atom_matcher, alkoxyacyclic_atom_matcher,
+        alkoxyacyclic_h_atom_matcher, alkyl_atom_matcher, alkyl_h_atom_matcher,
+        alkynyl_atom_matcher, alkynyl_h_atom_matcher, all_atoms_match, carboacyclic_atom_matcher,
+        carboacyclic_h_atom_matcher, carboaryl_atom_matcher, carboaryl_h_atom_matcher,
         carbocyclic_atom_matcher, carbocyclic_h_atom_matcher, carbocycloalkenyl_atom_matcher,
-        carbocycloalkenyl_h_atom_matcher, carbocycloalkyl_atom_matcher, carbocycloalkyl_h_atom_matcher,
-        check_atom_ring, check_bond_ring, convert_generic_queries_to_substance_groups, cyclic_atom_matcher,
-        cyclic_h_atom_matcher, d_atom_matcher, fused_ring_match, generic_atom_matcher, group_atom_matcher,
-        group_h_atom_matcher, group_star_atom_matcher, group_star_h_atom_matcher, heteroacyclic_atom_matcher,
-        heteroacyclic_h_atom_matcher, heteroaryl_atom_matcher, heteroaryl_h_atom_matcher, heterocyclic_atom_matcher,
-        heterocyclic_h_atom_matcher, hplus_atom_matcher, is_hydrogen, no_carbon_ring_atom_matcher,
-        no_carbon_ring_h_atom_matcher, pol_atom_matcher, r_atom_matcher, set_generic_queries_from_properties,
-        t_atom_matcher,
+        carbocycloalkenyl_h_atom_matcher, carbocycloalkyl_atom_matcher,
+        carbocycloalkyl_h_atom_matcher, check_atom_ring, check_bond_ring,
+        convert_generic_queries_to_substance_groups, cyclic_atom_matcher, cyclic_h_atom_matcher,
+        d_atom_matcher, fused_ring_match, generic_atom_matcher, group_atom_matcher,
+        group_h_atom_matcher, group_star_atom_matcher, group_star_h_atom_matcher,
+        heteroacyclic_atom_matcher, heteroacyclic_h_atom_matcher, heteroaryl_atom_matcher,
+        heteroaryl_h_atom_matcher, heterocyclic_atom_matcher, heterocyclic_h_atom_matcher,
+        hplus_atom_matcher, is_hydrogen, no_carbon_ring_atom_matcher,
+        no_carbon_ring_h_atom_matcher, pol_atom_matcher, r_atom_matcher,
+        set_generic_queries_from_properties, t_atom_matcher,
     };
 
     fn explicit_hydrogen_molecule() -> crate::Molecule {
@@ -1510,7 +1638,8 @@ mod tests {
         let molecule = crate::Molecule::from_smiles("CC=C").expect("parse propene");
         let ignore = vec![false; molecule.num_atoms()];
         let carbon = |atom: &crate::Atom| atom.atomic_number() == 6;
-        let single_or_double = |bond: &crate::Bond| matches!(bond.order(), BondOrder::Single | BondOrder::Double);
+        let single_or_double =
+            |bond: &crate::Bond| matches!(bond.order(), BondOrder::Single | BondOrder::Double);
         let double = |bond: &crate::Bond| bond.order() == BondOrder::Double;
         let oxygen = |atom: &crate::Atom| atom.atomic_number() == 8;
 
@@ -1549,7 +1678,11 @@ mod tests {
     #[test]
     fn smarts_generic__group_atom_matcher() {
         let ethane = crate::Molecule::from_smiles("CC").expect("parse ethane");
-        assert!(group_atom_matcher(&ethane, 0, vec![false; ethane.num_atoms()]));
+        assert!(group_atom_matcher(
+            &ethane,
+            0,
+            vec![false; ethane.num_atoms()]
+        ));
 
         let hydrogen = explicit_hydrogen_molecule();
         let mut ignore = vec![false; hydrogen.num_atoms()];
@@ -1568,10 +1701,18 @@ mod tests {
     #[test]
     fn smarts_generic__group_star_atom_matcher() {
         let ring = crate::Molecule::from_smiles("C1CC1").expect("parse cyclopropane");
-        assert!(group_star_atom_matcher(&ring, 0, vec![false; ring.num_atoms()]));
+        assert!(group_star_atom_matcher(
+            &ring,
+            0,
+            vec![false; ring.num_atoms()]
+        ));
 
         let chain = crate::Molecule::from_smiles("CCC").expect("parse propane");
-        assert!(!group_star_atom_matcher(&chain, 0, vec![false; chain.num_atoms()]));
+        assert!(!group_star_atom_matcher(
+            &chain,
+            0,
+            vec![false; chain.num_atoms()]
+        ));
     }
 
     #[test]
@@ -1592,9 +1733,17 @@ mod tests {
     #[test]
     fn smarts_generic__alkyl_atom_matcher() {
         let chain = crate::Molecule::from_smiles("CCC").expect("parse propane");
-        assert!(alkyl_atom_matcher(&chain, 0, vec![false; chain.num_atoms()]));
+        assert!(alkyl_atom_matcher(
+            &chain,
+            0,
+            vec![false; chain.num_atoms()]
+        ));
         let alkene = crate::Molecule::from_smiles("C=C").expect("parse ethene");
-        assert!(!alkyl_atom_matcher(&alkene, 0, vec![false; alkene.num_atoms()]));
+        assert!(!alkyl_atom_matcher(
+            &alkene,
+            0,
+            vec![false; alkene.num_atoms()]
+        ));
         let ring = crate::Molecule::from_smiles("C1CC1").expect("parse cyclopropane");
         assert!(!alkyl_atom_matcher(&ring, 0, vec![false; ring.num_atoms()]));
     }
@@ -1610,37 +1759,69 @@ mod tests {
     #[test]
     fn smarts_generic__alkenyl_atom_matcher() {
         let alkene = crate::Molecule::from_smiles("CC=C").expect("parse propene");
-        assert!(alkenyl_atom_matcher(&alkene, 0, vec![false; alkene.num_atoms()]));
+        assert!(alkenyl_atom_matcher(
+            &alkene,
+            0,
+            vec![false; alkene.num_atoms()]
+        ));
         let alkane = crate::Molecule::from_smiles("CCC").expect("parse propane");
-        assert!(!alkenyl_atom_matcher(&alkane, 0, vec![false; alkane.num_atoms()]));
+        assert!(!alkenyl_atom_matcher(
+            &alkane,
+            0,
+            vec![false; alkane.num_atoms()]
+        ));
     }
 
     #[test]
     fn smarts_generic__alkenyl_h_atom_matcher() {
         let molecule = explicit_hydrogen_molecule();
-        assert!(alkenyl_h_atom_matcher(&molecule, 1, vec![false; molecule.num_atoms()]));
+        assert!(alkenyl_h_atom_matcher(
+            &molecule,
+            1,
+            vec![false; molecule.num_atoms()]
+        ));
     }
 
     #[test]
     fn smarts_generic__alkynyl_atom_matcher() {
         let alkyne = crate::Molecule::from_smiles("CC#C").expect("parse propyne");
-        assert!(alkynyl_atom_matcher(&alkyne, 0, vec![false; alkyne.num_atoms()]));
+        assert!(alkynyl_atom_matcher(
+            &alkyne,
+            0,
+            vec![false; alkyne.num_atoms()]
+        ));
         let alkene = crate::Molecule::from_smiles("CC=C").expect("parse propene");
-        assert!(!alkynyl_atom_matcher(&alkene, 0, vec![false; alkene.num_atoms()]));
+        assert!(!alkynyl_atom_matcher(
+            &alkene,
+            0,
+            vec![false; alkene.num_atoms()]
+        ));
     }
 
     #[test]
     fn smarts_generic__alkynyl_h_atom_matcher() {
         let molecule = explicit_hydrogen_molecule();
-        assert!(alkynyl_h_atom_matcher(&molecule, 1, vec![false; molecule.num_atoms()]));
+        assert!(alkynyl_h_atom_matcher(
+            &molecule,
+            1,
+            vec![false; molecule.num_atoms()]
+        ));
     }
 
     #[test]
     fn smarts_generic__acyclic_atom_matcher() {
         let chain = crate::Molecule::from_smiles("CO").unwrap();
-        assert!(acyclic_atom_matcher(&chain, 0, vec![false; chain.num_atoms()]));
+        assert!(acyclic_atom_matcher(
+            &chain,
+            0,
+            vec![false; chain.num_atoms()]
+        ));
         let ring = crate::Molecule::from_smiles("C1CC1").unwrap();
-        assert!(!acyclic_atom_matcher(&ring, 0, vec![false; ring.num_atoms()]));
+        assert!(!acyclic_atom_matcher(
+            &ring,
+            0,
+            vec![false; ring.num_atoms()]
+        ));
     }
 
     #[test]
@@ -1654,9 +1835,17 @@ mod tests {
     #[test]
     fn smarts_generic__carboacyclic_atom_matcher() {
         let chain = crate::Molecule::from_smiles("CC").unwrap();
-        assert!(carboacyclic_atom_matcher(&chain, 0, vec![false; chain.num_atoms()]));
+        assert!(carboacyclic_atom_matcher(
+            &chain,
+            0,
+            vec![false; chain.num_atoms()]
+        ));
         let hetero = crate::Molecule::from_smiles("CO").unwrap();
-        assert!(!carboacyclic_atom_matcher(&hetero, 0, vec![false; hetero.num_atoms()]));
+        assert!(!carboacyclic_atom_matcher(
+            &hetero,
+            0,
+            vec![false; hetero.num_atoms()]
+        ));
     }
 
     #[test]
@@ -1670,9 +1859,17 @@ mod tests {
     #[test]
     fn smarts_generic__heteroacyclic_atom_matcher() {
         let hetero = crate::Molecule::from_smiles("CO").unwrap();
-        assert!(heteroacyclic_atom_matcher(&hetero, 0, vec![false; hetero.num_atoms()]));
+        assert!(heteroacyclic_atom_matcher(
+            &hetero,
+            0,
+            vec![false; hetero.num_atoms()]
+        ));
         let carbon = crate::Molecule::from_smiles("CC").unwrap();
-        assert!(!heteroacyclic_atom_matcher(&carbon, 0, vec![false; carbon.num_atoms()]));
+        assert!(!heteroacyclic_atom_matcher(
+            &carbon,
+            0,
+            vec![false; carbon.num_atoms()]
+        ));
     }
 
     #[test]
@@ -1737,7 +1934,8 @@ mod tests {
     fn smarts_generic_check_bond_ring() {
         let molecule = crate::Molecule::from_smiles("C1=CC1").unwrap();
         let rings = crate::find_sssr(&molecule).unwrap();
-        let allowed = |bond: &crate::Bond| matches!(bond.order(), BondOrder::Single | BondOrder::Double);
+        let allowed =
+            |bond: &crate::Bond| matches!(bond.order(), BondOrder::Single | BondOrder::Double);
         let double = |bond: &crate::Bond| bond.order() == BondOrder::Double;
         assert!(check_bond_ring(
             &molecule,
@@ -1777,21 +1975,37 @@ mod tests {
     #[test]
     fn smarts_generic__carbocycloalkyl_atom_matcher() {
         let mol = crate::Molecule::from_smiles("C1CC1").unwrap();
-        assert!(carbocycloalkyl_atom_matcher(&mol, 0, vec![false; mol.num_atoms()]));
+        assert!(carbocycloalkyl_atom_matcher(
+            &mol,
+            0,
+            vec![false; mol.num_atoms()]
+        ));
         let unsat = crate::Molecule::from_smiles("C1=CC1").unwrap();
-        assert!(!carbocycloalkyl_atom_matcher(&unsat, 0, vec![false; unsat.num_atoms()]));
+        assert!(!carbocycloalkyl_atom_matcher(
+            &unsat,
+            0,
+            vec![false; unsat.num_atoms()]
+        ));
     }
 
     #[test]
     fn smarts_generic__carbocycloalkyl_h_atom_matcher() {
         let mol = explicit_hydrogen_molecule();
-        assert!(carbocycloalkyl_h_atom_matcher(&mol, 1, vec![false; mol.num_atoms()]));
+        assert!(carbocycloalkyl_h_atom_matcher(
+            &mol,
+            1,
+            vec![false; mol.num_atoms()]
+        ));
     }
 
     #[test]
     fn smarts_generic__carbocycloalkenyl_atom_matcher() {
         let mol = crate::Molecule::from_smiles("C1=CC1").unwrap();
-        assert!(carbocycloalkenyl_atom_matcher(&mol, 0, vec![false; mol.num_atoms()]));
+        assert!(carbocycloalkenyl_atom_matcher(
+            &mol,
+            0,
+            vec![false; mol.num_atoms()]
+        ));
         let saturated = crate::Molecule::from_smiles("C1CC1").unwrap();
         assert!(!carbocycloalkenyl_atom_matcher(
             &saturated,
@@ -1803,41 +2017,69 @@ mod tests {
     #[test]
     fn smarts_generic__carbocycloalkenyl_h_atom_matcher() {
         let mol = explicit_hydrogen_molecule();
-        assert!(carbocycloalkenyl_h_atom_matcher(&mol, 1, vec![false; mol.num_atoms()]));
+        assert!(carbocycloalkenyl_h_atom_matcher(
+            &mol,
+            1,
+            vec![false; mol.num_atoms()]
+        ));
     }
 
     #[test]
     fn smarts_generic__carboaryl_atom_matcher() {
         let mol = crate::Molecule::from_smiles("c1ccccc1").unwrap();
-        assert!(carboaryl_atom_matcher(&mol, 0, vec![false; mol.num_atoms()]));
+        assert!(carboaryl_atom_matcher(
+            &mol,
+            0,
+            vec![false; mol.num_atoms()]
+        ));
         let hetero = crate::Molecule::from_smiles("c1ccncc1").unwrap();
-        assert!(!carboaryl_atom_matcher(&hetero, 0, vec![false; hetero.num_atoms()]));
+        assert!(!carboaryl_atom_matcher(
+            &hetero,
+            0,
+            vec![false; hetero.num_atoms()]
+        ));
     }
 
     #[test]
     fn smarts_generic__carboaryl_h_atom_matcher() {
         let mol = explicit_hydrogen_molecule();
-        assert!(carboaryl_h_atom_matcher(&mol, 1, vec![false; mol.num_atoms()]));
+        assert!(carboaryl_h_atom_matcher(
+            &mol,
+            1,
+            vec![false; mol.num_atoms()]
+        ));
     }
 
     #[test]
     fn smarts_generic__carbocyclic_atom_matcher() {
         for smiles in ["C1CC1", "c1ccccc1"] {
             let mol = crate::Molecule::from_smiles(smiles).unwrap();
-            assert!(carbocyclic_atom_matcher(&mol, 0, vec![false; mol.num_atoms()]));
+            assert!(carbocyclic_atom_matcher(
+                &mol,
+                0,
+                vec![false; mol.num_atoms()]
+            ));
         }
     }
 
     #[test]
     fn smarts_generic__carbocyclic_h_atom_matcher() {
         let mol = explicit_hydrogen_molecule();
-        assert!(carbocyclic_h_atom_matcher(&mol, 1, vec![false; mol.num_atoms()]));
+        assert!(carbocyclic_h_atom_matcher(
+            &mol,
+            1,
+            vec![false; mol.num_atoms()]
+        ));
     }
 
     #[test]
     fn smarts_generic__no_carbon_ring_atom_matcher() {
         let mol = crate::Molecule::from_smiles("N1NN1").unwrap();
-        assert!(no_carbon_ring_atom_matcher(&mol, 0, vec![false; mol.num_atoms()]));
+        assert!(no_carbon_ring_atom_matcher(
+            &mol,
+            0,
+            vec![false; mol.num_atoms()]
+        ));
         let carbon = crate::Molecule::from_smiles("C1NN1").unwrap();
         assert!(!no_carbon_ring_atom_matcher(
             &carbon,
@@ -1849,35 +2091,63 @@ mod tests {
     #[test]
     fn smarts_generic__no_carbon_ring_h_atom_matcher() {
         let mol = explicit_hydrogen_molecule();
-        assert!(no_carbon_ring_h_atom_matcher(&mol, 1, vec![false; mol.num_atoms()]));
+        assert!(no_carbon_ring_h_atom_matcher(
+            &mol,
+            1,
+            vec![false; mol.num_atoms()]
+        ));
     }
 
     #[test]
     fn smarts_generic__heterocyclic_atom_matcher() {
         let mol = crate::Molecule::from_smiles("C1CO1").unwrap();
-        assert!(heterocyclic_atom_matcher(&mol, 0, vec![false; mol.num_atoms()]));
+        assert!(heterocyclic_atom_matcher(
+            &mol,
+            0,
+            vec![false; mol.num_atoms()]
+        ));
         let carbon = crate::Molecule::from_smiles("C1CC1").unwrap();
-        assert!(!heterocyclic_atom_matcher(&carbon, 0, vec![false; carbon.num_atoms()]));
+        assert!(!heterocyclic_atom_matcher(
+            &carbon,
+            0,
+            vec![false; carbon.num_atoms()]
+        ));
     }
 
     #[test]
     fn smarts_generic__heterocyclic_h_atom_matcher() {
         let mol = explicit_hydrogen_molecule();
-        assert!(heterocyclic_h_atom_matcher(&mol, 1, vec![false; mol.num_atoms()]));
+        assert!(heterocyclic_h_atom_matcher(
+            &mol,
+            1,
+            vec![false; mol.num_atoms()]
+        ));
     }
 
     #[test]
     fn smarts_generic__heteroaryl_atom_matcher() {
         let mol = crate::Molecule::from_smiles("c1ccncc1").unwrap();
-        assert!(heteroaryl_atom_matcher(&mol, 0, vec![false; mol.num_atoms()]));
+        assert!(heteroaryl_atom_matcher(
+            &mol,
+            0,
+            vec![false; mol.num_atoms()]
+        ));
         let carbon = crate::Molecule::from_smiles("c1ccccc1").unwrap();
-        assert!(!heteroaryl_atom_matcher(&carbon, 0, vec![false; carbon.num_atoms()]));
+        assert!(!heteroaryl_atom_matcher(
+            &carbon,
+            0,
+            vec![false; carbon.num_atoms()]
+        ));
     }
 
     #[test]
     fn smarts_generic__heteroaryl_h_atom_matcher() {
         let mol = explicit_hydrogen_molecule();
-        assert!(heteroaryl_h_atom_matcher(&mol, 1, vec![false; mol.num_atoms()]));
+        assert!(heteroaryl_h_atom_matcher(
+            &mol,
+            1,
+            vec![false; mol.num_atoms()]
+        ));
     }
 
     #[test]
@@ -1885,7 +2155,11 @@ mod tests {
         let mol = crate::Molecule::from_smiles("C1CO1").unwrap();
         assert!(cyclic_atom_matcher(&mol, 0, vec![false; mol.num_atoms()]));
         let chain = crate::Molecule::from_smiles("CCO").unwrap();
-        assert!(!cyclic_atom_matcher(&chain, 0, vec![false; chain.num_atoms()]));
+        assert!(!cyclic_atom_matcher(
+            &chain,
+            0,
+            vec![false; chain.num_atoms()]
+        ));
     }
 
     #[test]
@@ -1960,12 +2234,15 @@ mod tests {
         fn terminal_query(label: &str) -> crate::QueryGraph {
             let mut builder = MoleculeBuilder::new();
             let attachment = builder.add_atom(AtomSpec::new(Element::C));
-            let generic = builder.add_atom(AtomSpec::new(Element::C).with_prop("_QueryAtomGenericLabel", label));
+            let generic = builder
+                .add_atom(AtomSpec::new(Element::C).with_prop("_QueryAtomGenericLabel", label));
             builder
                 .add_bond(BondSpec::new(attachment, generic, BondOrder::Single))
                 .expect("add query bond");
-            crate::QueryGraph::from_concrete_molecule(&builder.build().expect("build terminal generic query"))
-                .expect("build terminal generic query graph")
+            crate::search::query_graph::query_graph_from_concrete_molecule(
+                &builder.build().expect("build terminal generic query"),
+            )
+            .expect("build terminal generic query graph")
         }
 
         let alkyl_query = terminal_query("Alkyl");
@@ -1981,7 +2258,8 @@ mod tests {
 
         let mut builder = MoleculeBuilder::new();
         let left = builder.add_atom(AtomSpec::new(Element::C));
-        let middle = builder.add_atom(AtomSpec::new(Element::C).with_prop("_QueryAtomGenericLabel", "Alkynyl"));
+        let middle = builder
+            .add_atom(AtomSpec::new(Element::C).with_prop("_QueryAtomGenericLabel", "Alkynyl"));
         let right = builder.add_atom(AtomSpec::new(Element::C));
         builder
             .add_bond(BondSpec::new(left, middle, BondOrder::Single))
@@ -1991,9 +2269,14 @@ mod tests {
             .expect("add right query bond");
         let internal_label = {
             let molecule = builder.build().expect("build internal-label query");
-            crate::QueryGraph::from_concrete_molecule(&molecule).expect("build internal-label query graph")
+            crate::search::query_graph::query_graph_from_concrete_molecule(&molecule)
+                .expect("build internal-label query graph")
         };
-        assert!(generic_atom_matcher(&saturated, &internal_label, &[0, 1, 2]));
+        assert!(generic_atom_matcher(
+            &saturated,
+            &internal_label,
+            &[0, 1, 2]
+        ));
     }
 
     #[test]
@@ -2002,17 +2285,31 @@ mod tests {
         let a0 = builder.add_atom(AtomSpec::new(Element::C).with_prop("atomLabel", "ALK"));
         let a1 = builder.add_atom(AtomSpec::new(Element::C));
         let a2 = builder.add_atom(AtomSpec::new(Element::C));
-        builder.add_bond(BondSpec::new(a0, a1, BondOrder::Single)).unwrap();
-        builder.add_bond(BondSpec::new(a1, a2, BondOrder::Single)).unwrap();
-        builder.add_bond(BondSpec::new(a2, a0, BondOrder::Single)).unwrap();
+        builder
+            .add_bond(BondSpec::new(a0, a1, BondOrder::Single))
+            .unwrap();
+        builder
+            .add_bond(BondSpec::new(a1, a2, BondOrder::Single))
+            .unwrap();
+        builder
+            .add_bond(BondSpec::new(a2, a0, BondOrder::Single))
+            .unwrap();
         let source = builder.build().expect("build labeled ring query");
-        let adjusted =
-            adjust_query_properties_with_generic_groups(&source).expect("adjust default generic query properties");
+        let adjusted = adjust_query_properties_with_generic_groups(&source)
+            .expect("adjust default generic query properties");
 
         assert_eq!(source.atoms()[0].prop("atomLabel"), Some("ALK"));
-        assert_eq!(adjusted.atoms()[0].prop("_QueryAtomGenericLabel"), Some("ALK"));
+        assert_eq!(
+            adjusted.atoms()[0].prop("_QueryAtomGenericLabel"),
+            Some("ALK")
+        );
         assert_eq!(adjusted.atoms()[0].prop("atomLabel"), None);
-        assert!(adjusted.atoms().iter().all(|atom| atom.query().is_some()));
+        assert!(
+            adjusted
+                .atoms()
+                .iter()
+                .all(|atom| atom.prop("_QueryAtomGenericLabel").is_some())
+        );
     }
 
     #[test]
@@ -2025,7 +2322,10 @@ mod tests {
 
         assert_eq!(mol.atoms()[0].prop("_QueryAtomGenericLabel"), None);
         assert_eq!(mol.substance_groups().len(), 1);
-        assert_eq!(mol.substance_groups()[0].kind(), &SubstanceGroupKind::Superatom);
+        assert_eq!(
+            mol.substance_groups()[0].kind(),
+            &SubstanceGroupKind::Superatom
+        );
         assert_eq!(mol.substance_groups()[0].label(), Some("Alkyl"));
         assert_eq!(mol.substance_groups()[0].atoms(), &[mol.atoms()[0].id()]);
     }
@@ -2044,13 +2344,17 @@ mod tests {
             .unwrap();
         builder
             .add_substance_group(
-                SubstanceGroup::new(SubstanceGroupId::new(1), SubstanceGroupKind::Data).with_atoms(vec![second]),
+                SubstanceGroup::new(SubstanceGroupId::new(1), SubstanceGroupKind::Data)
+                    .with_atoms(vec![second]),
             )
             .unwrap();
         let mut mol = builder.build().expect("build property-backed query");
         set_generic_queries_from_properties(&mut mol, true, true);
 
-        assert_eq!(mol.atoms()[0].prop("_QueryAtomGenericLabel"), Some("Alkenyl"));
+        assert_eq!(
+            mol.atoms()[0].prop("_QueryAtomGenericLabel"),
+            Some("Alkenyl")
+        );
         assert_eq!(mol.atoms()[0].prop("atomLabel"), None);
         assert_eq!(mol.atoms()[1].prop("atomLabel"), Some("Unknown"));
         assert_eq!(mol.substance_groups().len(), 1);

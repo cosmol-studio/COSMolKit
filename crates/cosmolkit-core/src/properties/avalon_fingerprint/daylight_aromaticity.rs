@@ -4,7 +4,9 @@ use crate::FingerprintError;
 
 use super::preprocess::Neighbourhood;
 use super::reaccs::MoleculeState;
-use super::rings::{BondSetNode, combine_rings, prepend_fused_ring_pairs, proper_ring_pairs, ring_list};
+use super::rings::{
+    BondSetNode, combine_rings, prepend_fused_ring_pairs, proper_ring_pairs, ring_list,
+};
 use super::symbols::{atom_symbol_match, get_symbol_list};
 
 const SINGLE: i32 = 1;
@@ -19,7 +21,9 @@ struct DyAromaticCandidates {
     aromaticity_candidate: Vec<bool>,
 }
 
-fn build_dy_aromatic_candidates(molecule: &MoleculeState) -> Result<Option<DyAromaticCandidates>, FingerprintError> {
+fn build_dy_aromatic_candidates(
+    molecule: &MoleculeState,
+) -> Result<Option<DyAromaticCandidates>, FingerprintError> {
     // Avalon❗✔️:    unsigned i, j;
     // Avalon❗✔️:    int ii;
     // Avalon❗✔️:    int changed;
@@ -197,7 +201,11 @@ fn validated_source_atom_number(
         .ok()
         .filter(|&number| number > 0 && number <= atom_count)
         .ok_or_else(|| FingerprintError::AvalonConversion {
-            reason: format!("Avalon bond {} references invalid atom {}", bond_index + 1, atom_number),
+            reason: format!(
+                "Avalon bond {} references invalid atom {}",
+                bond_index + 1,
+                atom_number
+            ),
         })
 }
 
@@ -300,7 +308,9 @@ fn perceive_daylight_aromaticity_with(
                     let bond = &molecule.bonds[ligand_bond];
                     // Avalon❗✔️: 	       if (bond_is_in_ring[nbph->bonds[j]]  &&  IsMember(plist->bond_set, nbph->bonds[j]))
                     // Avalon❗✔️: 	       {
-                    if candidates.bond_is_in_ring[ligand_bond] && ring.bond_set.contains(ligand_bond) {
+                    if candidates.bond_is_in_ring[ligand_bond]
+                        && ring.bond_set.contains(ligand_bond)
+                    {
                         // Avalon❗✔️: 		  is_in_ring = TRUE;
                         is_in_ring = true;
                         // Avalon❗✔️: 		  if (blp->bond_type == AROMATIC) in_ring_aromatic++;
@@ -541,7 +551,10 @@ mod tests {
     fn run_daylight(molecule: &mut MoleculeState) -> Vec<DyMutation> {
         let neighbours = setup_neighbourhood(molecule, molecule.atoms.len()).unwrap();
         let mut mutations = Vec::new();
-        perceive_daylight_aromaticity_with(molecule, &neighbours, |mutation| mutations.push(mutation)).unwrap();
+        perceive_daylight_aromaticity_with(molecule, &neighbours, |mutation| {
+            mutations.push(mutation)
+        })
+        .unwrap();
         mutations
     }
 
@@ -621,12 +634,22 @@ mod tests {
     #[test]
     fn benzene_and_pyridine_match_native_bond_and_mutation_order() {
         let endpoints = [[1, 2], [2, 3], [3, 4], [4, 5], [5, 6], [6, 1]];
-        for symbols in [["C", "C", "C", "C", "C", "C"], ["N", "C", "C", "C", "C", "C"]] {
-            let mut molecule = molecule(&symbols, &endpoints, &[DOUBLE, SINGLE, DOUBLE, SINGLE, DOUBLE, SINGLE]);
+        for symbols in [
+            ["C", "C", "C", "C", "C", "C"],
+            ["N", "C", "C", "C", "C", "C"],
+        ] {
+            let mut molecule = molecule(
+                &symbols,
+                &endpoints,
+                &[DOUBLE, SINGLE, DOUBLE, SINGLE, DOUBLE, SINGLE],
+            );
             let mutations = run_daylight(&mut molecule);
 
             assert_eq!(bond_types(&molecule), vec![AROMATIC; 6]);
-            assert_eq!(mutations, (0..6).map(DyMutation::RingBond).collect::<Vec<_>>());
+            assert_eq!(
+                mutations,
+                (0..6).map(DyMutation::RingBond).collect::<Vec<_>>()
+            );
             assert!(molecule.atoms.iter().all(|atom| atom.query_h_count == 0));
         }
     }
@@ -641,7 +664,10 @@ mod tests {
         assert_eq!(bond_types(&pyrrole), vec![AROMATIC; 5]);
         assert_eq!(pyrrole.atoms[0].query_h_count, 2);
         assert_eq!(mutations[0], DyMutation::QueryHydrogen(0));
-        assert_eq!(&mutations[1..], &(0..5).map(DyMutation::RingBond).collect::<Vec<_>>());
+        assert_eq!(
+            &mutations[1..],
+            &(0..5).map(DyMutation::RingBond).collect::<Vec<_>>()
+        );
 
         let mut furan = molecule(&["O", "C", "C", "C", "C"], &endpoints, &types);
         assert_eq!(
@@ -660,11 +686,13 @@ mod tests {
         assert_eq!(bond_types(&list), vec![AROMATIC; 5]);
 
         let mut carbon_list = molecule(&["L", "C", "C", "C", "C"], &endpoints, &types);
-        carbon_list.symbol_lists.push(super::super::reaccs::SymbolList {
-            atom: 1,
-            inclusive: true,
-            symbols: "N,Cl".to_string(),
-        });
+        carbon_list
+            .symbol_lists
+            .push(super::super::reaccs::SymbolList {
+                atom: 1,
+                inclusive: true,
+                symbols: "N,Cl".to_string(),
+            });
         assert!(run_daylight(&mut carbon_list).is_empty());
         assert_eq!(bond_types(&carbon_list), types);
     }
@@ -706,11 +734,18 @@ mod tests {
     #[test]
     fn exocyclic_double_bond_pull_contributes_zero_pi_electrons() {
         let endpoints = [[1, 2], [2, 3], [3, 1], [1, 4]];
-        let mut molecule = molecule(&["C", "C", "C", "O"], &endpoints, &[SINGLE, DOUBLE, SINGLE, DOUBLE]);
+        let mut molecule = molecule(
+            &["C", "C", "C", "O"],
+            &endpoints,
+            &[SINGLE, DOUBLE, SINGLE, DOUBLE],
+        );
 
         let mutations = run_daylight(&mut molecule);
 
-        assert_eq!(bond_types(&molecule), vec![AROMATIC, AROMATIC, AROMATIC, DOUBLE]);
+        assert_eq!(
+            bond_types(&molecule),
+            vec![AROMATIC, AROMATIC, AROMATIC, DOUBLE]
+        );
         assert_eq!(
             mutations,
             vec![
@@ -733,7 +768,10 @@ mod tests {
         let mutations = run_daylight(&mut molecule);
 
         assert_eq!(mutations, vec![DyMutation::QueryHydrogen(0)]);
-        assert_eq!(bond_types(&molecule), vec![SINGLE, SINGLE, DOUBLE, SINGLE, SINGLE]);
+        assert_eq!(
+            bond_types(&molecule),
+            vec![SINGLE, SINGLE, DOUBLE, SINGLE, SINGLE]
+        );
         assert_eq!(molecule.atoms[0].query_h_count, 2);
     }
 
@@ -771,9 +809,10 @@ mod tests {
         let neighbours = setup_neighbourhood(&molecule, molecule.atoms.len()).unwrap();
         let mut mutations = Vec::new();
 
-        let passes =
-            perceive_daylight_aromaticity_with(&mut molecule, &neighbours, |mutation| mutations.push(mutation))
-                .unwrap();
+        let passes = perceive_daylight_aromaticity_with(&mut molecule, &neighbours, |mutation| {
+            mutations.push(mutation)
+        })
+        .unwrap();
 
         assert_eq!(passes, 3);
         assert_eq!(
@@ -797,11 +836,16 @@ mod tests {
         assert_eq!(
             bond_types(&molecule),
             vec![
-                AROMATIC, AROMATIC, AROMATIC, AROMATIC, AROMATIC, AROMATIC, AROMATIC, SINGLE, SINGLE, SINGLE
+                AROMATIC, AROMATIC, AROMATIC, AROMATIC, AROMATIC, AROMATIC, AROMATIC, SINGLE,
+                SINGLE, SINGLE
             ]
         );
         assert_eq!(
-            molecule.atoms.iter().map(|atom| atom.query_h_count).collect::<Vec<_>>(),
+            molecule
+                .atoms
+                .iter()
+                .map(|atom| atom.query_h_count)
+                .collect::<Vec<_>>(),
             vec![2, 2, 0, 0, 0, 0, 0, 0]
         );
     }

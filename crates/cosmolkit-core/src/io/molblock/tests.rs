@@ -1,10 +1,10 @@
 use super::*;
 
 use crate::{
-    AtomQueryPredicate, AtomSpec, BondDirection, BondOrder, BondQueryPredicate, BondSpec, BondStereo, ChiralTag,
-    Element, QueryNode, SGroupAttachPoint, SGroupBondRole, SGroupBracket, SGroupBracketStyle, SGroupCState,
-    SGroupConnection, SGroupData, SGroupDisplay, StereoGroup, StereoGroupKind, SubstanceGroup, SubstanceGroupId,
-    SubstanceGroupKind,
+    AtomSpec, BondDirection, BondOrder, BondSpec, BondStereo, ChiralTag, Element,
+    SGroupAttachPoint, SGroupBondRole, SGroupBracket, SGroupBracketStyle, SGroupCState,
+    SGroupConnection, SGroupData, SGroupDisplay, StereoGroup, StereoGroupKind, SubstanceGroup,
+    SubstanceGroupId, SubstanceGroupKind,
 };
 use crate::{MOLBLOCK_IO_FEATURE, Molecule, UnsupportedFeatureError};
 
@@ -23,8 +23,10 @@ fn charged_isotope_molecule() -> Molecule {
 
 #[test]
 fn molblock_writer_rejects_out_of_range_effective_atomic_number_like_rdkit() {
-    let molecule =
-        Molecule::from_smiles("[C+9]([F])([F])([F])([F])([F])([F])([F])([F])([F])([F])([F])([F])[F]").unwrap();
+    let molecule = Molecule::from_smiles(
+        "[C+9]([F])([F])([F])([F])([F])([F])([F])([F])([F])([F])([F])([F])[F]",
+    )
+    .unwrap();
     let error = mol_to_v2000_block(&molecule).unwrap_err();
     assert!(matches!(
         error,
@@ -47,16 +49,23 @@ fn ethene_molecule() -> Molecule {
     let mut builder = Molecule::builder().with_name("ethene");
     let a0 = builder.add_atom(AtomSpec::new(Element::C));
     let a1 = builder.add_atom(AtomSpec::new(Element::C));
-    builder.add_bond(BondSpec::new(a0, a1, BondOrder::Double)).unwrap();
-    builder.set_2d_coordinates(vec![[-0.75, 0.0], [0.75, -0.0]]).unwrap();
+    builder
+        .add_bond(BondSpec::new(a0, a1, BondOrder::Double))
+        .unwrap();
+    builder
+        .set_2d_coordinates(vec![[-0.75, 0.0], [0.75, -0.0]])
+        .unwrap();
     builder.build().unwrap()
 }
 
 fn sodium_chloride_molecule() -> Molecule {
     let mut builder = Molecule::builder().with_name("salt");
     builder.add_atom(AtomSpec::new(Element::from_atomic_number(11).unwrap()).with_formal_charge(1));
-    builder.add_atom(AtomSpec::new(Element::from_atomic_number(17).unwrap()).with_formal_charge(-1));
-    builder.set_2d_coordinates(vec![[0.0, 0.0], [1.0, 0.0]]).unwrap();
+    builder
+        .add_atom(AtomSpec::new(Element::from_atomic_number(17).unwrap()).with_formal_charge(-1));
+    builder
+        .set_2d_coordinates(vec![[0.0, 0.0], [1.0, 0.0]])
+        .unwrap();
     builder.build().unwrap()
 }
 
@@ -78,84 +87,8 @@ fn zbo_extension_molecule() -> Molecule {
     builder
         .add_bond(BondSpec::new(carbon, rgroup, BondOrder::Zero))
         .unwrap();
-    builder.set_2d_coordinates(vec![[0.0, 0.0], [1.0, 0.0]]).unwrap();
-    builder.build().unwrap()
-}
-
-fn atom_list_query_molecule() -> Molecule {
-    let mut builder = Molecule::builder().with_name("atom-list");
-    builder.add_atom(
-        AtomSpec::new(Element::DUMMY)
-            .with_query(QueryNode::predicate(AtomQueryPredicate::AtomicNumberIn(vec![6, 7])))
-            .with_prop("molFileValue", "[#6,#7]"),
-    );
-    builder.add_atom(
-        AtomSpec::new(Element::C).with_query(QueryNode::predicate(AtomQueryPredicate::AtomicNumberNotIn(vec![8, 16]))),
-    );
-    builder.set_2d_coordinates(vec![[0.0, 0.0], [1.0, 0.0]]).unwrap();
-    builder.build().unwrap()
-}
-
-fn query_bond_molecule() -> Molecule {
-    let mut builder = Molecule::builder().with_name("query-bond");
-    let a0 = builder.add_atom(AtomSpec::new(Element::C));
-    let a1 = builder.add_atom(AtomSpec::new(Element::C));
-    let a2 = builder.add_atom(AtomSpec::new(Element::C));
-    let a3 = builder.add_atom(AtomSpec::new(Element::C));
-    let a4 = builder.add_atom(AtomSpec::new(Element::C));
-    let a5 = builder.add_atom(AtomSpec::new(Element::C));
-    let a6 = builder.add_atom(AtomSpec::new(Element::C));
-    let a7 = builder.add_atom(AtomSpec::new(Element::C));
-    let a8 = builder.add_atom(AtomSpec::new(Element::C));
-    let a9 = builder.add_atom(AtomSpec::new(Element::C));
     builder
-        .add_bond(
-            BondSpec::new(a0, a1, BondOrder::Unspecified).with_query(QueryNode::predicate(BondQueryPredicate::Any)),
-        )
-        .unwrap();
-    builder
-        .add_bond(
-            BondSpec::new(a2, a3, BondOrder::Unspecified).with_query(QueryNode::predicate(
-                BondQueryPredicate::OrderIn(vec![BondOrder::Single, BondOrder::Double]),
-            )),
-        )
-        .unwrap();
-    builder
-        .add_bond(
-            BondSpec::new(a4, a5, BondOrder::Unspecified)
-                .with_query(QueryNode::predicate(BondQueryPredicate::MolFileQueryCode(42))),
-        )
-        .unwrap();
-    builder
-        .add_bond(
-            BondSpec::new(a6, a7, BondOrder::Single)
-                .with_query(QueryNode::predicate(BondQueryPredicate::IsInRing(true))),
-        )
-        .unwrap();
-    builder
-        .add_bond(
-            BondSpec::new(a8, a9, BondOrder::Unspecified).with_query(QueryNode::and(vec![
-                QueryNode::predicate(BondQueryPredicate::OrderIn(vec![
-                    BondOrder::Single,
-                    BondOrder::Aromatic,
-                ])),
-                QueryNode::predicate(BondQueryPredicate::IsInRing(false)),
-            ])),
-        )
-        .unwrap();
-    builder
-        .set_2d_coordinates(vec![
-            [0.0, 0.0],
-            [1.0, 0.0],
-            [2.0, 0.0],
-            [3.0, 0.0],
-            [4.0, 0.0],
-            [5.0, 0.0],
-            [6.0, 0.0],
-            [7.0, 0.0],
-            [8.0, 0.0],
-            [9.0, 0.0],
-        ])
+        .set_2d_coordinates(vec![[0.0, 0.0], [1.0, 0.0]])
         .unwrap();
     builder.build().unwrap()
 }
@@ -176,7 +109,10 @@ fn aromatic_benzene_molecule() -> Molecule {
         .collect::<Vec<_>>();
     for idx in 0..6 {
         builder
-            .add_bond(BondSpec::new(atoms[idx], atoms[(idx + 1) % 6], BondOrder::Aromatic).with_aromatic(true))
+            .add_bond(
+                BondSpec::new(atoms[idx], atoms[(idx + 1) % 6], BondOrder::Aromatic)
+                    .with_aromatic(true),
+            )
             .unwrap();
     }
     builder
@@ -205,7 +141,9 @@ fn v3000_bond_cfg_molecule() -> Molecule {
     let a1 = builder.add_atom(AtomSpec::new(Element::C));
     let a2 = builder.add_atom(AtomSpec::new(Element::C));
     builder
-        .add_bond(BondSpec::new(a0, a1, BondOrder::Single).with_direction(BondDirection::BeginWedge))
+        .add_bond(
+            BondSpec::new(a0, a1, BondOrder::Single).with_direction(BondDirection::BeginWedge),
+        )
         .unwrap();
     builder
         .add_bond(
@@ -224,7 +162,9 @@ fn sgroup_molecule() -> Molecule {
     let mut builder = Molecule::builder().with_name("sgroup");
     let a0 = builder.add_atom(AtomSpec::new(Element::C));
     let a1 = builder.add_atom(AtomSpec::new(Element::O));
-    let b0 = builder.add_bond(BondSpec::new(a0, a1, BondOrder::Single)).unwrap();
+    let b0 = builder
+        .add_bond(BondSpec::new(a0, a1, BondOrder::Single))
+        .unwrap();
     let sup = SubstanceGroup::new(SubstanceGroupId::new(0), SubstanceGroupKind::Superatom)
         .with_external_id(7)
         .with_atoms(vec![a0, a1])
@@ -269,7 +209,9 @@ fn sgroup_molecule() -> Molecule {
         });
     builder.add_substance_group(sup).unwrap();
     builder.add_substance_group(dat).unwrap();
-    builder.set_2d_coordinates(vec![[0.0, 0.0], [1.0, 0.0]]).unwrap();
+    builder
+        .set_2d_coordinates(vec![[0.0, 0.0], [1.0, 0.0]])
+        .unwrap();
     builder.build().unwrap()
 }
 
@@ -295,8 +237,12 @@ fn mol_to_v2000_block_pads_atom_symbol_like_rdkit_atomgetmolfilesymbol() {
 
     let block = mol_to_v2000_block(&molecule).unwrap();
 
-    assert!(block.contains("   -0.7500    0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n"));
-    assert!(block.contains("    0.7500   -0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n"));
+    assert!(
+        block.contains("   -0.7500    0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n")
+    );
+    assert!(
+        block.contains("    0.7500   -0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n")
+    );
 }
 
 #[test]
@@ -305,8 +251,12 @@ fn mol_to_v2000_block_writes_isolated_ion_valence_like_rdkit_getmolfileatomprope
 
     let block = mol_to_v2000_block(&molecule).unwrap();
 
-    assert!(block.contains("    0.0000    0.0000    0.0000 Na  0  0  0  0  0 15  0  0  0  0  0  0\n"));
-    assert!(block.contains("    1.0000    0.0000    0.0000 Cl  0  0  0  0  0  0  0  0  0  0  0  0\n"));
+    assert!(
+        block.contains("    0.0000    0.0000    0.0000 Na  0  0  0  0  0 15  0  0  0  0  0  0\n")
+    );
+    assert!(
+        block.contains("    1.0000    0.0000    0.0000 Cl  0  0  0  0  0  0  0  0  0  0  0  0\n")
+    );
     assert!(block.contains("M  CHG  2   1   1   2  -1\n"));
 }
 
@@ -348,7 +298,6 @@ fn molfile_total_valence_field_tracks_rdkit_r_dummy_after_v3000_read() {
     assert_eq!(atom.prop("dummyLabel"), Some("R"));
     assert_eq!(atom.prop("_MolFileRLabel"), None);
     assert_eq!(atom.atom_map(), Some(1));
-    assert_eq!(atom.query(), None);
     assert!(atom.no_implicit());
     assert_eq!(atom.explicit_hydrogens(), 0);
     assert_eq!(molecule.topology_block().adjacency.neighbors_of(0).len(), 1);
@@ -437,7 +386,9 @@ fn molblock_writer_marks_rdkit_sulfur_valence_six_in_organic_subset_case() {
     let v2000 = mol_to_v2000_block(molecule).unwrap();
     let v3000 = mol_to_v3000_block(molecule).unwrap();
 
-    assert!(v2000.contains("    3.0489    1.0287    0.0000 S   0  0  0  0  0  6  0  0  0  0  0  0\n"));
+    assert!(
+        v2000.contains("    3.0489    1.0287    0.0000 S   0  0  0  0  0  6  0  0  0  0  0  0\n")
+    );
     assert!(v3000.contains("M  V30 2 S 3.048886 1.028691 0.000000 0 VAL=6\n"));
 }
 
@@ -599,7 +550,9 @@ fn molblock_writer_accepts_rdkit_collapsed_hydrogen_roundtrip_from_v3000_source(
     let v2000 = mol_to_v2000_block(molecule).unwrap();
     let v3000 = mol_to_v3000_block(molecule).unwrap();
 
-    assert!(v2000.contains("   -1.2990   -0.7500    0.0000 C   0  0  0  0  0  0  0  0  0  7  0  0\n"));
+    assert!(
+        v2000.contains("   -1.2990   -0.7500    0.0000 C   0  0  0  0  0  0  0  0  0  7  0  0\n")
+    );
     assert!(v2000.contains("  2  1  1  1\n"));
     assert!(v2000.contains("M  ISO  1   1  13\n"));
     assert!(v3000.contains("M  V30 1 C -1.299038 -0.750000 0.000000 7 MASS=13\n"));
@@ -637,8 +590,12 @@ fn molblock_write_params_auto_upgrade_dative_molecule_to_v3000_like_rdkit() {
     let n1 = builder.add_atom(AtomSpec::new(Element::N));
     let cu = builder.add_atom(AtomSpec::new(Element::from_atomic_number(29).unwrap()));
     let n2 = builder.add_atom(AtomSpec::new(Element::N));
-    builder.add_bond(BondSpec::new(n1, cu, BondOrder::Dative)).unwrap();
-    builder.add_bond(BondSpec::new(n2, cu, BondOrder::Dative)).unwrap();
+    builder
+        .add_bond(BondSpec::new(n1, cu, BondOrder::Dative))
+        .unwrap();
+    builder
+        .add_bond(BondSpec::new(n2, cu, BondOrder::Dative))
+        .unwrap();
     builder
         .set_2d_coordinates(vec![[-1.5, 0.0], [0.0, 0.0], [1.5, 0.0]])
         .unwrap();
@@ -668,8 +625,12 @@ fn molblock_writer_emits_zero_bond_code_for_rdkit_quadruple_bond_case() {
     let rh2 = builder.add_atom(AtomSpec::new(Element::from_atomic_number(45).unwrap()));
     builder.atom_mut(rh1).unwrap().set_formal_charge(-1);
     builder.atom_mut(rh2).unwrap().set_formal_charge(-1);
-    builder.add_bond(BondSpec::new(rh1, rh2, BondOrder::Quadruple)).unwrap();
-    builder.set_2d_coordinates(vec![[-0.75, 0.0], [0.75, 0.0]]).unwrap();
+    builder
+        .add_bond(BondSpec::new(rh1, rh2, BondOrder::Quadruple))
+        .unwrap();
+    builder
+        .set_2d_coordinates(vec![[-0.75, 0.0], [0.75, 0.0]])
+        .unwrap();
     let molecule = builder.build().unwrap();
 
     let v2000 = mol_to_mol_block_with_params(
@@ -837,7 +798,10 @@ fn molblock_writer_marks_unspecified_exocyclic_imine_as_crossed_like_rdkit() {
 #[test]
 fn molblock_writer_crosses_only_rdkit_eligible_unspecified_ring_double_bonds() {
     for (smiles, should_cross) in [("C1C=CCCCC1", false), ("C1C=CCCCCC1", true)] {
-        let molecule = Molecule::from_smiles(smiles).unwrap().with_2d_coordinates().unwrap();
+        let molecule = Molecule::from_smiles(smiles)
+            .unwrap()
+            .with_2d_coordinates()
+            .unwrap();
         let v3000 = mol_to_mol_block_with_params(
             &molecule,
             &MolBlockWriteParams {
@@ -956,7 +920,9 @@ fn molblock_writer_generates_missing_2d_coords_via_registered_operation() {
     let mut builder = Molecule::builder().with_name("needs-2d");
     let a0 = builder.add_atom(AtomSpec::new(Element::C));
     let a1 = builder.add_atom(AtomSpec::new(Element::C));
-    builder.add_bond(BondSpec::new(a0, a1, BondOrder::Single)).unwrap();
+    builder
+        .add_bond(BondSpec::new(a0, a1, BondOrder::Single))
+        .unwrap();
     let mol = builder.build().unwrap();
 
     let block = mol_to_v2000_block(&mol).unwrap();
@@ -977,31 +943,6 @@ fn mol_to_v2000_block_writes_rgroup_pxa_and_zero_bond_extensions() {
     assert!(block.contains("M  HYD  2   1   2   2   0\n"));
     assert!(block.contains("M  ZCH  1   1  -1\n"));
     assert!(block.contains("M  PXA   2 payload\n"));
-}
-
-#[test]
-fn mol_to_v2000_block_writes_atom_list_query_lines() {
-    let molecule = atom_list_query_molecule();
-
-    let block = mol_to_v2000_block(&molecule).unwrap();
-
-    assert!(block.contains("    0.0000    0.0000    0.0000 L   0"));
-    assert!(block.contains("V    1 [#6,#7]\n"));
-    assert!(block.contains("M  ALS   1  2 F C   N   \n"));
-    assert!(block.contains("M  ALS   2  2 T O   S   \n"));
-}
-
-#[test]
-fn mol_to_v2000_block_writes_supported_query_bond_type_codes() {
-    let molecule = query_bond_molecule();
-
-    let block = mol_to_v2000_block(&molecule).unwrap();
-
-    assert!(block.contains("  1  2  8  0\n"));
-    assert!(block.contains("  3  4  5  0\n"));
-    assert!(block.contains("  5  6 42  0\n"));
-    assert!(block.contains("  7  8  1  0  0  1\n"));
-    assert!(block.contains("  9 10  6  0  0  2\n"));
 }
 
 #[test]
@@ -1066,7 +1007,9 @@ fn mol_to_v2000_block_writes_sgroup_lines() {
     assert!(block.contains("M  SDI   1  4    0.0000    1.0000    2.0000    3.0000\n"));
     assert!(block.contains("M  SMT   1 Me\n"));
     assert!(block.contains("M  SBV   1   1    0.5000    0.2500\n"));
-    assert!(block.contains("M  SDT   2 FIELD                         T INFO                Q OP             \n"));
+    assert!(block.contains(
+        "M  SDT   2 FIELD                         T INFO                Q OP             \n"
+    ));
     assert!(block.contains("M  SDD   2 display spec\n"));
     assert!(block.contains("M  SED   2 first valuesecond value\n"));
     assert!(block.contains("M  SAP   1  1   1   2 AP\n"));
@@ -1078,12 +1021,18 @@ fn mol_to_v3000_block_writes_basic_ctab_atom_bond_blocks() {
     let mut builder = Molecule::builder()
         .with_name("v3000")
         .with_property("_MolFileChiralFlag", "1");
-    let carbon = builder.add_atom(AtomSpec::new(Element::C).with_formal_charge(-1).with_isotope(13));
+    let carbon = builder.add_atom(
+        AtomSpec::new(Element::C)
+            .with_formal_charge(-1)
+            .with_isotope(13),
+    );
     let oxygen = builder.add_atom(AtomSpec::new(Element::O));
     builder
         .add_bond(BondSpec::new(carbon, oxygen, BondOrder::Double))
         .unwrap();
-    builder.set_2d_coordinates(vec![[1.25, -2.5], [3.0, 4.0]]).unwrap();
+    builder
+        .set_2d_coordinates(vec![[1.25, -2.5], [3.0, 4.0]])
+        .unwrap();
     let molecule = builder.build().unwrap();
 
     let block = mol_to_2d_sdf_record(&molecule, SdfFormat::V3000).unwrap();
@@ -1241,9 +1190,15 @@ fn mol_to_v3000_block_writes_enhanced_stereo_collections() {
     let mut builder = Molecule::builder().with_name("collections");
     let a0 = builder.add_atom(AtomSpec::new(Element::C));
     let a1 = builder.add_atom(AtomSpec::new(Element::O));
-    builder.set_2d_coordinates(vec![[0.0, 0.0], [1.0, 0.0]]).unwrap();
     builder
-        .add_stereo_group(StereoGroup::new(StereoGroupKind::Absolute, vec![a0], Vec::new()))
+        .set_2d_coordinates(vec![[0.0, 0.0], [1.0, 0.0]])
+        .unwrap();
+    builder
+        .add_stereo_group(StereoGroup::new(
+            StereoGroupKind::Absolute,
+            vec![a0],
+            Vec::new(),
+        ))
         .unwrap();
     builder
         .add_stereo_group(StereoGroup::new(StereoGroupKind::Or, vec![a1], Vec::new()).with_id(2))
@@ -1264,7 +1219,8 @@ fn mol_to_v2000_block_infers_wedge_from_chiral_tag_without_coordinates() {
     // pick_bonds_to_wedge should select the bond to the lowest-scored neighbor
     // (lowest atomic number wins when degree and chirality are equal).
     let mut builder = Molecule::builder().with_name("no-coords-wedge");
-    let c_chiral = builder.add_atom(AtomSpec::new(Element::C).with_chiral_tag(ChiralTag::TetrahedralCw));
+    let c_chiral =
+        builder.add_atom(AtomSpec::new(Element::C).with_chiral_tag(ChiralTag::TetrahedralCw));
     let c_me = builder.add_atom(AtomSpec::new(Element::C));
     let n = builder.add_atom(AtomSpec::new(Element::N));
     let o = builder.add_atom(AtomSpec::new(Element::O));
@@ -1272,9 +1228,15 @@ fn mol_to_v2000_block_infers_wedge_from_chiral_tag_without_coordinates() {
     builder
         .add_bond(BondSpec::new(c_chiral, c_me, BondOrder::Single))
         .unwrap();
-    builder.add_bond(BondSpec::new(c_chiral, n, BondOrder::Single)).unwrap();
-    builder.add_bond(BondSpec::new(c_chiral, o, BondOrder::Single)).unwrap();
-    builder.add_bond(BondSpec::new(c_chiral, f, BondOrder::Single)).unwrap();
+    builder
+        .add_bond(BondSpec::new(c_chiral, n, BondOrder::Single))
+        .unwrap();
+    builder
+        .add_bond(BondSpec::new(c_chiral, o, BondOrder::Single))
+        .unwrap();
+    builder
+        .add_bond(BondSpec::new(c_chiral, f, BondOrder::Single))
+        .unwrap();
     // Deliberately no coordinates
     let molecule = builder.build().unwrap();
     assert!(molecule.coordinates_2d().is_none());
@@ -1308,7 +1270,8 @@ fn mol_to_v2000_block_infers_wedge_from_chiral_tag_without_coordinates() {
 fn mol_to_v2000_block_infers_dash_from_chiral_tag_ccw_without_coordinates() {
     // Same molecule as above but with TetrahedralCcw → BeginDash → code 6.
     let mut builder = Molecule::builder().with_name("no-coords-dash");
-    let c_chiral = builder.add_atom(AtomSpec::new(Element::C).with_chiral_tag(ChiralTag::TetrahedralCcw));
+    let c_chiral =
+        builder.add_atom(AtomSpec::new(Element::C).with_chiral_tag(ChiralTag::TetrahedralCcw));
     let c_me = builder.add_atom(AtomSpec::new(Element::C));
     let n = builder.add_atom(AtomSpec::new(Element::N));
     let o = builder.add_atom(AtomSpec::new(Element::O));
@@ -1316,9 +1279,15 @@ fn mol_to_v2000_block_infers_dash_from_chiral_tag_ccw_without_coordinates() {
     builder
         .add_bond(BondSpec::new(c_chiral, c_me, BondOrder::Single))
         .unwrap();
-    builder.add_bond(BondSpec::new(c_chiral, n, BondOrder::Single)).unwrap();
-    builder.add_bond(BondSpec::new(c_chiral, o, BondOrder::Single)).unwrap();
-    builder.add_bond(BondSpec::new(c_chiral, f, BondOrder::Single)).unwrap();
+    builder
+        .add_bond(BondSpec::new(c_chiral, n, BondOrder::Single))
+        .unwrap();
+    builder
+        .add_bond(BondSpec::new(c_chiral, o, BondOrder::Single))
+        .unwrap();
+    builder
+        .add_bond(BondSpec::new(c_chiral, f, BondOrder::Single))
+        .unwrap();
     let molecule = builder.build().unwrap();
     assert!(molecule.coordinates_2d().is_none());
 
@@ -1337,5 +1306,8 @@ fn mol_to_v2000_block_infers_dash_from_chiral_tag_ccw_without_coordinates() {
     let has_dash = block
         .lines()
         .any(|l| l.starts_with("  1  2") && l.len() >= 12 && l[10..12].trim() == "6");
-    assert!(has_dash, "expected BeginDash (code 6) on bond 1-2 in output:\n{block}");
+    assert!(
+        has_dash,
+        "expected BeginDash (code 6) on bond 1-2 in output:\n{block}"
+    );
 }

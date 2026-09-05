@@ -1,5 +1,6 @@
 use cosmolkit_core::{
-    FingerprintError, Molecule, PATTERN_FINGERPRINT_VERSION, PatternFingerprintParams, pattern_fingerprint,
+    FingerprintError, Molecule, PATTERN_FINGERPRINT_VERSION, PatternFingerprintParams,
+    pattern_fingerprint,
 };
 
 #[test]
@@ -10,9 +11,14 @@ fn pattern_fingerprint_defaults_version_and_exact_ethane_bits_are_public() {
     assert_eq!(PATTERN_FINGERPRINT_VERSION, "1.0.0");
 
     let molecule = Molecule::from_smiles("CC").expect("ethane");
-    let fingerprint = molecule.pattern_fingerprint(&params).expect("Pattern fingerprint");
+    let fingerprint = molecule
+        .pattern_fingerprint(&params)
+        .expect("Pattern fingerprint");
     assert_eq!(fingerprint.n_bits(), 2048);
-    assert_eq!(fingerprint.on_bits(), vec![429, 778, 1022, 1061, 1236, 1295]);
+    assert_eq!(
+        fingerprint.on_bits(),
+        vec![429, 778, 1022, 1061, 1236, 1295]
+    );
 }
 
 #[test]
@@ -64,20 +70,19 @@ fn pattern_fingerprint_supports_boundary_widths_and_rejects_zero() {
 }
 
 #[test]
-fn pattern_fingerprint_empty_and_query_molecules_are_deterministic() {
+fn pattern_fingerprint_empty_and_concrete_molecules_are_deterministic() {
     let empty = Molecule::new();
     let empty_fingerprint = empty
         .pattern_fingerprint(&PatternFingerprintParams::default())
         .expect("empty Pattern fingerprint");
     assert!(empty_fingerprint.on_bits().is_empty());
 
-    let query =
-        cosmolkit_core::mol_from_smarts("C~C", &cosmolkit_core::SmartsParseParams::default()).expect("query molecule");
-    let first = query
+    let molecule = Molecule::from_smiles("C~C").expect("concrete molecule");
+    let first = molecule
         .pattern_fingerprint(&PatternFingerprintParams::default())
-        .expect("query Pattern fingerprint");
-    let second = query
+        .expect("Pattern fingerprint");
+    let second = molecule
         .pattern_fingerprint(&PatternFingerprintParams::default())
-        .expect("repeated query Pattern fingerprint");
+        .expect("repeated Pattern fingerprint");
     assert_eq!(first, second);
 }

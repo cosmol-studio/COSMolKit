@@ -3,7 +3,8 @@
 // Source reproduction protocol: dev/source_reproduction_protocol.md
 
 use crate::{
-    AtomId, BondId, ChiralTag, Hybridization, KekulizeError, Molecule, StereoError, ValenceError, ValenceModel,
+    AtomId, BondId, ChiralTag, Hybridization, KekulizeError, Molecule, StereoError, ValenceError,
+    ValenceModel,
 };
 
 // RDKit✔️✔️: enum class StereoType {
@@ -33,13 +34,19 @@ impl StereoType {
     pub const fn is_atom_centered(self) -> bool {
         matches!(
             self,
-            Self::AtomTetrahedral | Self::AtomSquarePlanar | Self::AtomTrigonalBipyramidal | Self::AtomOctahedral
+            Self::AtomTetrahedral
+                | Self::AtomSquarePlanar
+                | Self::AtomTrigonalBipyramidal
+                | Self::AtomOctahedral
         )
     }
 
     #[must_use]
     pub const fn is_bond_centered(self) -> bool {
-        matches!(self, Self::BondDouble | Self::BondEvenCumulene | Self::BondAtropisomer)
+        matches!(
+            self,
+            Self::BondDouble | Self::BondEvenCumulene | Self::BondAtropisomer
+        )
     }
 }
 
@@ -126,7 +133,10 @@ impl StereoInfo {
             StereoCenter::Missing => stereo_type == StereoType::Unspecified,
         };
         if !center_matches {
-            return Err(PotentialStereoError::CenterTypeMismatch { stereo_type, center });
+            return Err(PotentialStereoError::CenterTypeMismatch {
+                stereo_type,
+                center,
+            });
         }
         Ok(Self {
             stereo_type,
@@ -221,7 +231,10 @@ pub struct PotentialStereoAnalysis {
 
 impl PotentialStereoAnalysis {
     pub(crate) fn new(molecule: Molecule, stereo_info: Vec<StereoInfo>) -> Self {
-        Self { molecule, stereo_info }
+        Self {
+            molecule,
+            stereo_info,
+        }
     }
 }
 
@@ -235,7 +248,8 @@ pub fn analyze_potential_stereo(
     options: PotentialStereoOptions,
 ) -> Result<PotentialStereoAnalysis, PotentialStereoError> {
     let mut workspace = molecule.clone();
-    let stereo_info = find_potential_stereo_in_workspace(&mut workspace, options.clean, options.flag_possible)?;
+    let stereo_info =
+        find_potential_stereo_in_workspace(&mut workspace, options.clean, options.flag_possible)?;
     Ok(PotentialStereoAnalysis::new(workspace, stereo_info))
 }
 
@@ -375,9 +389,14 @@ fn bond_compare_symbol(bond: &crate::Bond) -> String {
 
 fn prepare_non_strict_property_cache(molecule: &mut Molecule) -> Result<(), PotentialStereoError> {
     let atom_count = molecule.num_atoms();
-    let needs_update = molecule.derived_cache().valence.as_ref().is_none_or(|valence| {
-        valence.explicit_valence.len() != atom_count || valence.implicit_hydrogens.len() != atom_count
-    });
+    let needs_update = molecule
+        .derived_cache()
+        .valence
+        .as_ref()
+        .is_none_or(|valence| {
+            valence.explicit_valence.len() != atom_count
+                || valence.implicit_hydrogens.len() != atom_count
+        });
     if needs_update {
         // RDKit✔️✔️: if (atom->needsUpdatePropertyCache()) {
         // RDKit✔️✔️:   atom->updatePropertyCache(false);
@@ -567,7 +586,10 @@ pub(crate) fn initialize_potential_stereo(
             }
         } else {
             let stereo = molecule.bonds()[bond_index].stereo();
-            if matches!(stereo, crate::BondStereo::AtropCw | crate::BondStereo::AtropCcw) {
+            if matches!(
+                stereo,
+                crate::BondStereo::AtropCw | crate::BondStereo::AtropCcw
+            ) {
                 state.known_bonds[bond_index] = true;
                 state.bond_symbols[bond_index].push_str(if stereo == crate::BondStereo::AtropCw {
                     "_atropcw"
@@ -633,16 +655,16 @@ pub(crate) fn are_stereobond_controlling_atoms_dupes(
     let ControllingAtom::Atom(controlling_atom_2) = controlling_atom_2 else {
         return Err(PotentialStereoError::MissingControllingAtom);
     };
-    let rank_1 = atom_ranks
-        .get(controlling_atom_1.index())
-        .ok_or(PotentialStereoError::MissingAtomRank {
+    let rank_1 = atom_ranks.get(controlling_atom_1.index()).ok_or(
+        PotentialStereoError::MissingAtomRank {
             atom: controlling_atom_1,
-        })?;
-    let rank_2 = atom_ranks
-        .get(controlling_atom_2.index())
-        .ok_or(PotentialStereoError::MissingAtomRank {
+        },
+    )?;
+    let rank_2 = atom_ranks.get(controlling_atom_2.index()).ok_or(
+        PotentialStereoError::MissingAtomRank {
             atom: controlling_atom_2,
-        })?;
+        },
+    )?;
 
     // RDKit✔️✔️:   if (atomRanks[controllingAtom1] != atomRanks[controllingAtom2]) {
     // RDKit✔️✔️:     return false;
@@ -727,10 +749,20 @@ pub(crate) fn are_stereobond_controlling_atoms_dupes(
                 // RDKit✔️✔️:         // the ring (if there are three bonds total)
                 // RDKit✔️✔️:
                 // RDKit✔️✔️:         if (mol.getAtomWithIdx(oppositeIdx)->getDegree() == 3) {
-                if molecule.topology_block().adjacency.neighbors_of(opposite.index()).len() == 3 {
+                if molecule
+                    .topology_block()
+                    .adjacency
+                    .neighbors_of(opposite.index())
+                    .len()
+                    == 3
+                {
                     // RDKit✔️✔️:           for (const auto &nbr :
                     // RDKit✔️✔️:                mol.atomBonds(mol.getAtomWithIdx(oppositeIdx))) {
-                    for neighbor in molecule.topology_block().adjacency.neighbors_of(opposite.index()) {
+                    for neighbor in molecule
+                        .topology_block()
+                        .adjacency
+                        .neighbors_of(opposite.index())
+                    {
                         // RDKit✔️✔️:             auto outOtherAtom = nbr->getOtherAtomIdx(oppositeIdx);
                         // RDKit✔️✔️:             auto bondOutPosItr =
                         // RDKit✔️✔️:                 std::find(ring.begin(), ring.end(), outOtherAtom);
@@ -739,7 +771,9 @@ pub(crate) fn are_stereobond_controlling_atoms_dupes(
                             // RDKit✔️✔️:               if (possibleBonds[nbr->getIdx()] || knownBonds[nbr->getIdx()]) {
                             // RDKit✔️✔️:                 return false;
                             // RDKit✔️✔️:               }
-                            if possible_bonds[neighbor.bond.index()] || known_bonds[neighbor.bond.index()] {
+                            if possible_bonds[neighbor.bond.index()]
+                                || known_bonds[neighbor.bond.index()]
+                            {
                                 return Ok(false);
                             }
                         }
@@ -841,7 +875,9 @@ pub(crate) fn flag_ring_stereo(
             // RDKit✔️✔️:         continue;
             // RDKit✔️✔️:       }
             let atom = atom_ring[atom_position];
-            if !known_atoms[atom.index()] && possible_atoms.is_none_or(|possible| !possible[atom.index()]) {
+            if !known_atoms[atom.index()]
+                && possible_atoms.is_none_or(|possible| !possible[atom.index()])
+            {
                 continue;
             }
 
@@ -869,13 +905,18 @@ pub(crate) fn flag_ring_stereo(
                         let other = atom_ring[(atom_position + index_increment) % ring_size];
 
                         // RDKit✔️✔️:             for (auto bond : mol.atomBonds(otherAtom)) {
-                        for neighbor in molecule.topology_block().adjacency.neighbors_of(other.index()) {
+                        for neighbor in molecule
+                            .topology_block()
+                            .adjacency
+                            .neighbors_of(other.index())
+                        {
                             // RDKit✔️✔️:               auto bidx = bond->getIdx();
                             // RDKit✔️✔️:               if ((knownBonds[bidx] ||
                             // RDKit✔️✔️:                    (possibleBonds && possibleBonds->test(bidx))) &&
                             // RDKit✔️✔️:                   std::find(bring.begin(), bring.end(), bidx) == bring.end()) {
                             if (known_bonds[neighbor.bond.index()]
-                                || possible_bonds.is_some_and(|possible| possible[neighbor.bond.index()]))
+                                || possible_bonds
+                                    .is_some_and(|possible| possible[neighbor.bond.index()]))
                                 && !bond_ring.contains(&neighbor.bond)
                             {
                                 // RDKit✔️✔️:                 otherFoundByBondCount++;
@@ -915,8 +956,9 @@ pub(crate) fn flag_ring_stereo(
                         let mut index_increment = 0;
                         while index_increment < ring_size {
                             // RDKit✔️✔️:               possibleAtomsInRing.set(aring[(ai + indexIncrement) % sz]);
-                            possible_atoms_in_ring[atom_ring[(atom_position + index_increment) % ring_size].index()] =
-                                true;
+                            possible_atoms_in_ring[atom_ring
+                                [(atom_position + index_increment) % ring_size]
+                                .index()] = true;
                             // RDKit✔️✔️:             }
                             index_increment += increment_size;
                         }
@@ -925,8 +967,10 @@ pub(crate) fn flag_ring_stereo(
                             // RDKit✔️✔️:               mol.getAtomWithIdx(aidx)->setProp(
                             // RDKit✔️✔️:                   common_properties::_ringStereoOtherAtom,
                             // RDKit✔️✔️:                   aring[(ai + incrementSize) % sz]);
-                            ring_stereo_other_atom_writes
-                                .push((atom, atom_ring[(atom_position + increment_size) % ring_size]));
+                            ring_stereo_other_atom_writes.push((
+                                atom,
+                                atom_ring[(atom_position + increment_size) % ring_size],
+                            ));
                             // RDKit✔️✔️:             }
 
                             // RDKit✔️✔️:             continue;
@@ -965,7 +1009,9 @@ pub(crate) fn flag_ring_stereo(
                     }
                     // RDKit✔️✔️:           if (knownAtoms[otherIdx] ||
                     // RDKit✔️✔️:               (possibleAtoms && possibleAtoms->test(otherIdx))) {
-                    if known_atoms[other.index()] || possible_atoms.is_some_and(|possible| possible[other.index()]) {
+                    if known_atoms[other.index()]
+                        || possible_atoms.is_some_and(|possible| possible[other.index()])
+                    {
                         // RDKit✔️✔️:             // We found another chiral atom, no need to keep
                         // RDKit✔️✔️:             // searching.
                         // RDKit✔️✔️:             nHere += 2;
@@ -1021,7 +1067,8 @@ pub(crate) fn flag_ring_stereo(
     if !ring_stereo_other_atom_writes.is_empty() {
         let topology = molecule.topology_properties_mut_for_private_workspace();
         for (atom, other) in ring_stereo_other_atom_writes {
-            topology.atoms[atom.index()].set_prop("_ringStereoOtherAtom", other.index().to_string());
+            topology.atoms[atom.index()]
+                .set_prop("_ringStereoOtherAtom", other.index().to_string());
         }
     }
     Ok(())
@@ -1054,7 +1101,10 @@ pub(crate) fn update_atoms(
         ("possible_atoms", possible_atoms.len()),
         ("known_atoms", known_atoms.len()),
         ("fixed_atoms", fixed_atoms.len()),
-        ("possible_ring_stereo_atoms", possible_ring_stereo_atoms.len()),
+        (
+            "possible_ring_stereo_atoms",
+            possible_ring_stereo_atoms.len(),
+        ),
     ] {
         if actual != molecule.num_atoms() {
             return Err(PotentialStereoError::InvalidStateTableLength {
@@ -1117,7 +1167,9 @@ pub(crate) fn update_atoms(
                                 // RDKit✔️✔️:                 auto bnd = mol.getBondBetweenAtoms(aidx, nbrIdx);
                                 // RDKit✔️✔️:                 if (!bnd || !possibleRingStereoBonds[bnd->getIdx()]) {
                                 let connecting_bond = bond_between_atoms(molecule, atom, *neighbor);
-                                if connecting_bond.is_none_or(|bond| possible_ring_stereo_bonds[bond.index()] == 0) {
+                                if connecting_bond.is_none_or(|bond| {
+                                    possible_ring_stereo_bonds[bond.index()] == 0
+                                }) {
                                     // RDKit✔️✔️:                   haveADupe = true;
                                     // RDKit✔️✔️:                   break;
                                     have_duplicate = true;
@@ -1198,10 +1250,16 @@ pub(crate) fn update_atoms(
                             // RDKit✔️✔️:               }
                             atom_compare = match info.descriptor() {
                                 StereoDescriptor::TetrahedralClockwise => {
-                                    format!("{}_CW", atom_compare_symbol(&molecule.atoms()[atom_index]))
+                                    format!(
+                                        "{}_CW",
+                                        atom_compare_symbol(&molecule.atoms()[atom_index])
+                                    )
                                 }
                                 StereoDescriptor::TetrahedralCounterclockwise => {
-                                    format!("{}_CCW", atom_compare_symbol(&molecule.atoms()[atom_index]))
+                                    format!(
+                                        "{}_CCW",
+                                        atom_compare_symbol(&molecule.atoms()[atom_index])
+                                    )
                                 }
                                 _ => atom_compare,
                             };
@@ -1256,7 +1314,8 @@ pub(crate) fn update_atoms(
                                 // RDKit✔️✔️:                 fixedAtoms[raidx] = false;
                                 // RDKit✔️✔️:                 nHere += (possibleRingStereoAtoms[raidx] > 0);
                                 fixed_atoms[ring_atom.index()] = false;
-                                count_here += u32::from(possible_ring_stereo_atoms[ring_atom.index()] > 0);
+                                count_here +=
+                                    u32::from(possible_ring_stereo_atoms[ring_atom.index()] > 0);
                                 // RDKit✔️✔️:               }
                             }
                             // RDKit✔️✔️:               if (nHere <= 1) {
@@ -1452,10 +1511,13 @@ pub(crate) fn update_bonds(
                         )? {
                             have_duplicate = true;
                         } else {
-                            let ControllingAtom::Atom(first) = info.controlling_atoms()[offset] else {
+                            let ControllingAtom::Atom(first) = info.controlling_atoms()[offset]
+                            else {
                                 unreachable!("missing controller was excluded above")
                             };
-                            let ControllingAtom::Atom(second) = info.controlling_atoms()[offset + 1] else {
+                            let ControllingAtom::Atom(second) =
+                                info.controlling_atoms()[offset + 1]
+                            else {
                                 unreachable!("missing controller was excluded above")
                             };
                             if atom_ranks[first.index()] < atom_ranks[second.index()] {
@@ -1666,7 +1728,8 @@ pub(crate) fn run_cleanup(
     // RDKit✔️✔️:   initBondInfo(mol, flagPossible, cleanIt, knownBonds, bondSymbols,
     // RDKit✔️✔️:                possibleBonds);
     let allow_nontetrahedral_stereo = crate::stereo::get_allow_nontetrahedral_chirality();
-    let mut state = initialize_potential_stereo(molecule, flag_possible, clean, allow_nontetrahedral_stereo)?;
+    let mut state =
+        initialize_potential_stereo(molecule, flag_possible, clean, allow_nontetrahedral_stereo)?;
 
     // RDKit✔️✔️:   // copy the original sets of possible atoms/bonds. We need them in the
     // RDKit✔️✔️:   // second pass
@@ -1748,7 +1811,8 @@ pub(crate) fn run_cleanup(
     // RDKit✔️✔️:     // if we're doing "flagPossible" mode and have done some cleanup, then
     // RDKit✔️✔️:     // we need to do another iteration
     if flag_possible
-        && (state.possible_atoms != original_possible_atoms || state.possible_bonds != original_possible_bonds)
+        && (state.possible_atoms != original_possible_atoms
+            || state.possible_bonds != original_possible_bonds)
     {
         // RDKit✔️✔️:     possibleAtoms = origPossibleAtoms;
         // RDKit✔️✔️:     // flag every center/bond where we removed stereo as possible:
@@ -1933,7 +1997,8 @@ pub(crate) fn clean_mol_stereo(
                             crate::BondDirection::BeginDash | crate::BondDirection::BeginWedge
                         ) {
                             // RDKit✔️✔️:               nbrBond->setBondDir(Bond::BondDir::NONE);
-                            topology.bonds[neighbor.bond.index()].set_direction(crate::BondDirection::None);
+                            topology.bonds[neighbor.bond.index()]
+                                .set_direction(crate::BondDirection::None);
                             // RDKit✔️✔️:             }
                         }
                         // RDKit✔️✔️:           }
@@ -1997,7 +2062,10 @@ pub(crate) fn clean_mol_stereo(
             ) {
                 // RDKit✔️✔️:         bool dirOk = false;
                 let mut direction_ok = false;
-                let endpoints = [topology.bonds[bond_index].begin(), topology.bonds[bond_index].end()];
+                let endpoints = [
+                    topology.bonds[bond_index].begin(),
+                    topology.bonds[bond_index].end(),
+                ];
                 // RDKit✔️✔️:         for (auto bondEnd : {bond->getBeginAtom(), bond->getEndAtom()}) {
                 for endpoint in endpoints {
                     // RDKit✔️✔️:           for (auto nbrBond : mol.atomBonds(bondEnd)) {
@@ -2005,7 +2073,8 @@ pub(crate) fn clean_mol_stereo(
                         // RDKit✔️✔️:             if (nbrBond != bond &&
                         // RDKit✔️✔️:                 nbrBond->getStereo() != Bond::BondStereo::STEREONONE) {
                         if neighbor.bond.index() != bond_index
-                            && topology.bonds[neighbor.bond.index()].stereo() != crate::BondStereo::None
+                            && topology.bonds[neighbor.bond.index()].stereo()
+                                != crate::BondStereo::None
                         {
                             // RDKit✔️✔️:               dirOk = true;
                             // RDKit✔️✔️:               break;
@@ -2047,12 +2116,19 @@ fn atom_total_hydrogens(molecule: &Molecule, atom: AtomId) -> Result<usize, Pote
         .implicit_hydrogens
         .get(atom.index())
         .ok_or(PotentialStereoError::MissingValenceState { atom })?;
-    let implicit = usize::try_from(implicit)
-        .map_err(|_| PotentialStereoError::InvalidImplicitHydrogenCount { atom, count: implicit })?;
+    let implicit = usize::try_from(implicit).map_err(|_| {
+        PotentialStereoError::InvalidImplicitHydrogenCount {
+            atom,
+            count: implicit,
+        }
+    })?;
     Ok(usize::from(atom_state.explicit_hydrogens()) + implicit)
 }
 
-pub(crate) fn get_atom_nonzero_degree(molecule: &Molecule, atom: AtomId) -> Result<usize, PotentialStereoError> {
+pub(crate) fn get_atom_nonzero_degree(
+    molecule: &Molecule,
+    atom: AtomId,
+) -> Result<usize, PotentialStereoError> {
     // RDKit✔️✔️: unsigned int getAtomNonzeroDegree(const Atom *atom) {
     // RDKit✔️✔️:   PRECONDITION(atom, "bad pointer");
     // RDKit✔️✔️:   PRECONDITION(atom->hasOwningMol(), "no owning molecule");
@@ -2069,15 +2145,25 @@ pub(crate) fn get_atom_nonzero_degree(molecule: &Molecule, atom: AtomId) -> Resu
         return Err(PotentialStereoError::AtomIndexOutOfBounds { atom });
     }
     let topology = molecule.topology_block();
-    crate::chemistry::stereo::atom_nonzero_degree_from_parts(&topology.bonds, &topology.adjacency, atom.index())
-        .map_err(PotentialStereoError::from)
+    crate::chemistry::stereo::atom_nonzero_degree_from_parts(
+        &topology.bonds,
+        &topology.adjacency,
+        atom.index(),
+    )
+    .map_err(PotentialStereoError::from)
 }
 
-pub(crate) fn has_protium_neighbor(molecule: &Molecule, atom: AtomId) -> Result<bool, PotentialStereoError> {
+pub(crate) fn has_protium_neighbor(
+    molecule: &Molecule,
+    atom: AtomId,
+) -> Result<bool, PotentialStereoError> {
     if atom.index() >= molecule.num_atoms() {
         return Err(PotentialStereoError::AtomIndexOutOfBounds { atom });
     }
-    Ok(crate::chemistry::stereo::has_protium_neighbor(molecule, atom.index()))
+    Ok(crate::chemistry::stereo::has_protium_neighbor(
+        molecule,
+        atom.index(),
+    ))
 }
 
 pub(crate) fn is_atom_potential_nontetrahedral_center(
@@ -2111,9 +2197,13 @@ pub(crate) fn is_atom_potential_nontetrahedral_center(
         .atoms()
         .get(atom.index())
         .ok_or(PotentialStereoError::AtomIndexOutOfBounds { atom })?;
-    let total_nonzero_degree = get_atom_nonzero_degree(molecule, atom)? + atom_total_hydrogens(molecule, atom)?;
+    let total_nonzero_degree =
+        get_atom_nonzero_degree(molecule, atom)? + atom_total_hydrogens(molecule, atom)?;
     let atomic_number = atom_state.atomic_number();
-    if total_nonzero_degree > 6 || total_nonzero_degree < 2 || (atomic_number < 12 && atomic_number != 4) {
+    if total_nonzero_degree > 6
+        || total_nonzero_degree < 2
+        || (atomic_number < 12 && atomic_number != 4)
+    {
         return Ok(false);
     }
     if matches!(
@@ -2232,7 +2322,9 @@ pub(crate) fn is_atom_potential_tetrahedral_center(
             .and_then(|valence| valence.explicit_valence.get(atom.index()))
             .copied()
             .ok_or(PotentialStereoError::MissingValenceState { atom })?;
-        return Ok(explicit_valence == 4 || (explicit_valence == 3 && atom_state.formal_charge() == 1));
+        return Ok(
+            explicit_valence == 4 || (explicit_valence == 3 && atom_state.formal_charge() == 1)
+        );
     }
     if atomic_number == 7 {
         let rings = molecule
@@ -2249,7 +2341,11 @@ pub(crate) fn is_atom_potential_tetrahedral_center(
         return Ok(atom_state.hybridization() == Hybridization::Sp3
             && !atom_has_conjugated_bond
             && (rings.is_atom_in_ring_of_size(atom, 3)
-                || crate::chemistry::stereo::query_is_atom_bridgehead(molecule, atom.index(), rings) != 0));
+                || crate::chemistry::stereo::query_is_atom_bridgehead(
+                    molecule,
+                    atom.index(),
+                    rings,
+                ) != 0));
     }
     Ok(false)
 }
@@ -2266,7 +2362,8 @@ pub(crate) fn is_atom_potential_stereo(
     // RDKit✔️✔️:           isAtomPotentialNontetrahedralCenter(atom));
     // RDKit✔️✔️: }
     Ok(is_atom_potential_tetrahedral_center(molecule, atom)?
-        || (allow_nontetrahedral_stereo && is_atom_potential_nontetrahedral_center(molecule, atom)?))
+        || (allow_nontetrahedral_stereo
+            && is_atom_potential_nontetrahedral_center(molecule, atom)?))
 }
 
 pub(crate) fn get_atom_stereo_info(
@@ -2376,7 +2473,10 @@ pub(crate) fn get_atom_stereo_info(
         .atoms()
         .get(atom.index())
         .ok_or(PotentialStereoError::AtomIndexOutOfBounds { atom })?;
-    let neighbors = molecule.topology_block().adjacency.neighbors_of(atom.index());
+    let neighbors = molecule
+        .topology_block()
+        .adjacency
+        .neighbors_of(atom.index());
     let mut explicit_unknown_stereo = false;
     let mut original_neighbor_order = Vec::with_capacity(neighbors.len());
     for neighbor in neighbors {
@@ -2385,15 +2485,13 @@ pub(crate) fn get_atom_stereo_info(
             explicit_unknown_stereo = true;
         } else if !explicit_unknown_stereo {
             if let Some(value) = bond.prop("_UnknownStereo") {
-                explicit_unknown_stereo =
-                    value
-                        .parse::<i32>()
-                        .map_err(|_| PotentialStereoError::InvalidBondIntegerProperty {
-                            bond: bond.id(),
-                            property: "_UnknownStereo",
-                            value: value.to_string(),
-                        })?
-                        != 0;
+                explicit_unknown_stereo = value.parse::<i32>().map_err(|_| {
+                    PotentialStereoError::InvalidBondIntegerProperty {
+                        bond: bond.id(),
+                        property: "_UnknownStereo",
+                        value: value.to_string(),
+                    }
+                })? != 0;
             } else if bond.unknown_stereo() {
                 explicit_unknown_stereo = true;
             }
@@ -2413,13 +2511,15 @@ pub(crate) fn get_atom_stereo_info(
         let mut stereo = atom_state.chiral_tag();
         if matches!(stereo, ChiralTag::TetrahedralCcw | ChiralTag::TetrahedralCw) {
             specified = StereoSpecified::Specified;
-            let swaps =
-                crate::source_port_helpers::count_swaps_to_interconvert(&original_neighbor_order, &sorted_neighbors)
-                    .map_err(|error| {
-                        PotentialStereoError::InvariantViolation(format!(
-                            "atom controlling-order swap count failed: {error:?}"
-                        ))
-                    })?;
+            let swaps = crate::source_port_helpers::count_swaps_to_interconvert(
+                &original_neighbor_order,
+                &sorted_neighbors,
+            )
+            .map_err(|error| {
+                PotentialStereoError::InvariantViolation(format!(
+                    "atom controlling-order swap count failed: {error:?}"
+                ))
+            })?;
             if swaps % 2 != 0 {
                 stereo = match stereo {
                     ChiralTag::TetrahedralCcw => ChiralTag::TetrahedralCw,
@@ -2432,7 +2532,9 @@ pub(crate) fn get_atom_stereo_info(
                 ChiralTag::TetrahedralCw => StereoDescriptor::TetrahedralClockwise,
                 _ => unreachable!("tetrahedral tag was checked above"),
             };
-        } else if allow_nontetrahedral_stereo && is_atom_potential_nontetrahedral_center(molecule, atom)? {
+        } else if allow_nontetrahedral_stereo
+            && is_atom_potential_nontetrahedral_center(molecule, atom)?
+        {
             if stereo == ChiralTag::Unspecified {
                 stereo = match neighbors.len() + atom_total_hydrogens(molecule, atom)? {
                     4 => ChiralTag::Tetrahedral,
@@ -2465,11 +2567,17 @@ pub(crate) fn get_atom_stereo_info(
         StereoCenter::Atom(atom),
         descriptor,
         permutation,
-        sorted_neighbors.into_iter().map(ControllingAtom::Atom).collect(),
+        sorted_neighbors
+            .into_iter()
+            .map(ControllingAtom::Atom)
+            .collect(),
     )
 }
 
-fn atom_total_hydrogens_including_neighbors(molecule: &Molecule, atom: AtomId) -> Result<usize, PotentialStereoError> {
+fn atom_total_hydrogens_including_neighbors(
+    molecule: &Molecule,
+    atom: AtomId,
+) -> Result<usize, PotentialStereoError> {
     let attached = molecule
         .topology_block()
         .adjacency
@@ -2480,7 +2588,10 @@ fn atom_total_hydrogens_including_neighbors(molecule: &Molecule, atom: AtomId) -
     Ok(atom_total_hydrogens(molecule, atom)? + attached)
 }
 
-pub(crate) fn is_bond_potential_stereo(molecule: &Molecule, bond: BondId) -> Result<bool, PotentialStereoError> {
+pub(crate) fn is_bond_potential_stereo(
+    molecule: &Molecule,
+    bond: BondId,
+) -> Result<bool, PotentialStereoError> {
     // RDKit✔️✔️: bool isBondPotentialStereoBond(const Bond *bond) {
     // RDKit✔️✔️:   PRECONDITION(bond, "bond is null");
     // RDKit✔️✔️:   if (bond->getBondType() != Bond::BondType::DOUBLE) {
@@ -2522,10 +2633,18 @@ pub(crate) fn is_bond_potential_stereo(molecule: &Molecule, bond: BondId) -> Res
     }
     let begin = bond_state.begin();
     let end = bond_state.end();
-    let begin_degree =
-        molecule.topology_block().adjacency.neighbors_of(begin.index()).len() + atom_total_hydrogens(molecule, begin)?;
-    let end_degree =
-        molecule.topology_block().adjacency.neighbors_of(end.index()).len() + atom_total_hydrogens(molecule, end)?;
+    let begin_degree = molecule
+        .topology_block()
+        .adjacency
+        .neighbors_of(begin.index())
+        .len()
+        + atom_total_hydrogens(molecule, begin)?;
+    let end_degree = molecule
+        .topology_block()
+        .adjacency
+        .neighbors_of(end.index())
+        .len()
+        + atom_total_hydrogens(molecule, end)?;
     if !(begin_degree > 1
         && begin_degree < 4
         && end_degree > 1
@@ -2546,7 +2665,10 @@ pub(crate) fn is_bond_potential_stereo(molecule: &Molecule, bond: BondId) -> Res
         .any(|ring| ring.len() < 8 && ring.contains(&bond)))
 }
 
-fn atom_unknown_stereo_property(molecule: &Molecule, atom: AtomId) -> Result<bool, PotentialStereoError> {
+fn atom_unknown_stereo_property(
+    molecule: &Molecule,
+    atom: AtomId,
+) -> Result<bool, PotentialStereoError> {
     let atom_state = &molecule.atoms()[atom.index()];
     if let Some(value) = atom_state.prop("_UnknownStereo") {
         return value.parse::<i32>().map(|value| value != 0).map_err(|_| {
@@ -2567,7 +2689,10 @@ fn explore_bond_end(
     controlling_atoms: &mut Vec<ControllingAtom>,
     seen_squiggle_bond: &mut bool,
 ) {
-    let neighbors = molecule.topology_block().adjacency.neighbors_of(atom.index());
+    let neighbors = molecule
+        .topology_block()
+        .adjacency
+        .neighbors_of(atom.index());
     for neighbor in neighbors {
         if neighbor.bond == bond {
             continue;
@@ -2582,15 +2707,26 @@ fn explore_bond_end(
     }
 }
 
-pub(crate) fn get_bond_stereo_info(molecule: &Molecule, bond: BondId) -> Result<StereoInfo, PotentialStereoError> {
+pub(crate) fn get_bond_stereo_info(
+    molecule: &Molecule,
+    bond: BondId,
+) -> Result<StereoInfo, PotentialStereoError> {
     let bond_state = molecule
         .bonds()
         .get(bond.index())
         .ok_or(PotentialStereoError::BondIndexOutOfBounds { bond })?;
     let begin = bond_state.begin();
     let end = bond_state.end();
-    let begin_degree = molecule.topology_block().adjacency.neighbors_of(begin.index()).len();
-    let end_degree = molecule.topology_block().adjacency.neighbors_of(end.index()).len();
+    let begin_degree = molecule
+        .topology_block()
+        .adjacency
+        .neighbors_of(begin.index())
+        .len();
+    let end_degree = molecule
+        .topology_block()
+        .adjacency
+        .neighbors_of(end.index())
+        .len();
 
     if bond_state.order() == crate::BondOrder::Double {
         // RDKit✔️✔️: if (bond->getBondType() == Bond::BondType::DOUBLE) {
@@ -2694,11 +2830,23 @@ pub(crate) fn get_bond_stereo_info(molecule: &Molecule, bond: BondId) -> Result<
         }
         let mut controlling_atoms = Vec::with_capacity(4);
         let mut seen_squiggle_bond = false;
-        explore_bond_end(molecule, bond, begin, &mut controlling_atoms, &mut seen_squiggle_bond);
-        explore_bond_end(molecule, bond, end, &mut controlling_atoms, &mut seen_squiggle_bond);
+        explore_bond_end(
+            molecule,
+            bond,
+            begin,
+            &mut controlling_atoms,
+            &mut seen_squiggle_bond,
+        );
+        explore_bond_end(
+            molecule,
+            bond,
+            end,
+            &mut controlling_atoms,
+            &mut seen_squiggle_bond,
+        );
         if !seen_squiggle_bond {
-            seen_squiggle_bond =
-                atom_unknown_stereo_property(molecule, begin)? || atom_unknown_stereo_property(molecule, end)?;
+            seen_squiggle_bond = atom_unknown_stereo_property(molecule, begin)?
+                || atom_unknown_stereo_property(molecule, end)?;
         }
         let mut specified = StereoSpecified::Unspecified;
         let mut descriptor = StereoDescriptor::None;
@@ -2822,12 +2970,22 @@ pub(crate) fn get_bond_stereo_info(molecule: &Molecule, bond: BondId) -> Result<
         }
         let mut controlling_atoms = Vec::with_capacity(4);
         for endpoint in [begin, end] {
-            for neighbor in molecule.topology_block().adjacency.neighbors_of(endpoint.index()) {
+            for neighbor in molecule
+                .topology_block()
+                .adjacency
+                .neighbors_of(endpoint.index())
+            {
                 if neighbor.bond != bond {
                     controlling_atoms.push(ControllingAtom::Atom(AtomId::new(neighbor.atom_index)));
                 }
             }
-            if molecule.topology_block().adjacency.neighbors_of(endpoint.index()).len() == 2 {
+            if molecule
+                .topology_block()
+                .adjacency
+                .neighbors_of(endpoint.index())
+                .len()
+                == 2
+            {
                 controlling_atoms.push(ControllingAtom::Missing);
             }
         }
@@ -2883,7 +3041,10 @@ mod tests {
         molecule
     }
 
-    fn ring_stereo_counts(molecule: &mut Molecule, possible_atom_indices: &[usize]) -> (Vec<u32>, Vec<u32>) {
+    fn ring_stereo_counts(
+        molecule: &mut Molecule,
+        possible_atom_indices: &[usize],
+    ) -> (Vec<u32>, Vec<u32>) {
         let known_atoms = vec![false; molecule.num_atoms()];
         let mut possible_atoms = vec![false; molecule.num_atoms()];
         for atom in possible_atom_indices {
@@ -3004,7 +3165,10 @@ mod tests {
             (StereoType::Unspecified, StereoCenter::Missing),
             (StereoType::AtomTetrahedral, StereoCenter::Atom(atom)),
             (StereoType::AtomSquarePlanar, StereoCenter::Atom(atom)),
-            (StereoType::AtomTrigonalBipyramidal, StereoCenter::Atom(atom)),
+            (
+                StereoType::AtomTrigonalBipyramidal,
+                StereoCenter::Atom(atom),
+            ),
             (StereoType::AtomOctahedral, StereoCenter::Atom(atom)),
             (StereoType::BondDouble, StereoCenter::Bond(bond)),
             (StereoType::BondEvenCumulene, StereoCenter::Bond(bond)),
@@ -3121,7 +3285,10 @@ mod tests {
             StereoCenter::Bond(BondId::new(0)),
             StereoDescriptor::None,
             0,
-            vec![ControllingAtom::Atom(AtomId::new(0)), ControllingAtom::Missing],
+            vec![
+                ControllingAtom::Atom(AtomId::new(0)),
+                ControllingAtom::Missing,
+            ],
         )
         .unwrap();
         assert_eq!(valid.validate_indices(&molecule), Ok(()));
@@ -3137,7 +3304,9 @@ mod tests {
         .unwrap();
         assert_eq!(
             invalid_center.validate_indices(&molecule),
-            Err(PotentialStereoError::AtomIndexOutOfBounds { atom: AtomId::new(2) })
+            Err(PotentialStereoError::AtomIndexOutOfBounds {
+                atom: AtomId::new(2)
+            })
         );
 
         let invalid_controller = StereoInfo::new(
@@ -3151,7 +3320,9 @@ mod tests {
         .unwrap();
         assert_eq!(
             invalid_controller.validate_indices(&molecule),
-            Err(PotentialStereoError::AtomIndexOutOfBounds { atom: AtomId::new(2) })
+            Err(PotentialStereoError::AtomIndexOutOfBounds {
+                atom: AtomId::new(2)
+            })
         );
 
         let invalid_bond = StereoInfo::new(
@@ -3165,7 +3336,9 @@ mod tests {
         .unwrap();
         assert_eq!(
             invalid_bond.validate_indices(&molecule),
-            Err(PotentialStereoError::BondIndexOutOfBounds { bond: BondId::new(1) })
+            Err(PotentialStereoError::BondIndexOutOfBounds {
+                bond: BondId::new(1)
+            })
         );
     }
 
@@ -3210,10 +3383,12 @@ mod tests {
         assert_eq!(via_method.stereo_info, via_function.stereo_info);
         assert_eq!(via_method.stereo_info.len(), 2);
         assert!(via_method.stereo_info.iter().any(|info| {
-            info.stereo_type() == StereoType::AtomTetrahedral && matches!(info.center(), StereoCenter::Atom(_))
+            info.stereo_type() == StereoType::AtomTetrahedral
+                && matches!(info.center(), StereoCenter::Atom(_))
         }));
         assert!(via_method.stereo_info.iter().any(|info| {
-            info.stereo_type() == StereoType::BondDouble && matches!(info.center(), StereoCenter::Bond(_))
+            info.stereo_type() == StereoType::BondDouble
+                && matches!(info.center(), StereoCenter::Bond(_))
         }));
         for info in &via_method.stereo_info {
             info.validate_indices(&via_method.molecule).unwrap();
@@ -3237,7 +3412,10 @@ mod tests {
         assert_eq!(source, before);
         assert_eq!(source.atoms()[1].chiral_tag(), ChiralTag::TetrahedralCcw);
         assert!(source.potential_stereo_cache().is_none());
-        assert_eq!(analysis.molecule.atoms()[1].chiral_tag(), ChiralTag::Unspecified);
+        assert_eq!(
+            analysis.molecule.atoms()[1].chiral_tag(),
+            ChiralTag::Unspecified
+        );
         assert_eq!(
             analysis.molecule.potential_stereo_cache().as_deref(),
             Some(analysis.stereo_info.as_slice())
@@ -3260,12 +3438,18 @@ mod tests {
                 analysis.molecule.to_smiles(true).unwrap(),
                 "Br.BrC(=NN=c1nn[nH][nH]1)c1ccncc1"
             );
-            assert_eq!(analysis.molecule.bonds()[0].direction(), crate::BondDirection::None);
+            assert_eq!(
+                analysis.molecule.bonds()[0].direction(),
+                crate::BondDirection::None
+            );
             assert_eq!(
                 analysis.molecule.bonds()[2].direction(),
                 crate::BondDirection::EndDownRight
             );
-            assert_eq!(analysis.molecule.bonds()[4].direction(), crate::BondDirection::None);
+            assert_eq!(
+                analysis.molecule.bonds()[4].direction(),
+                crate::BondDirection::None
+            );
         }
 
         assert_eq!(source, source_before);
@@ -3327,7 +3511,11 @@ mod tests {
         for (controller, rank) in controllers.iter().zip([2, 1, 3, 4]) {
             ranks[controller.index()] = rank;
         }
-        let mut atom_symbols = molecule.atoms().iter().map(atom_compare_symbol).collect::<Vec<_>>();
+        let mut atom_symbols = molecule
+            .atoms()
+            .iter()
+            .map(atom_compare_symbol)
+            .collect::<Vec<_>>();
         let mut possible_atoms = vec![false; molecule.num_atoms()];
         let mut known_atoms = vec![false; molecule.num_atoms()];
         known_atoms[center.index()] = true;
@@ -3410,7 +3598,11 @@ mod tests {
         for (controller, rank) in controllers.iter().zip([1, 2, 4, 3]) {
             ranks[controller.index()] = rank;
         }
-        let mut bond_symbols = molecule.bonds().iter().map(bond_compare_symbol).collect::<Vec<_>>();
+        let mut bond_symbols = molecule
+            .bonds()
+            .iter()
+            .map(bond_compare_symbol)
+            .collect::<Vec<_>>();
         let possible_atoms = vec![false; molecule.num_atoms()];
         let known_atoms = vec![false; molecule.num_atoms()];
         let mut possible_bonds = vec![false; molecule.num_bonds()];
@@ -3499,14 +3691,19 @@ mod tests {
         }
         let mut molecule = builder.build().unwrap();
         molecule.derived_cache_mut().rings = Some(crate::symmetrize_sssr(&molecule).unwrap());
-        molecule.derived_cache_mut().valence =
-            Some(crate::assign_valence_with_options(&molecule, ValenceModel::RdkitLike, false).unwrap());
+        molecule.derived_cache_mut().valence = Some(
+            crate::assign_valence_with_options(&molecule, ValenceModel::RdkitLike, false).unwrap(),
+        );
         let mut possible_atoms = vec![false; molecule.num_atoms()];
         possible_atoms[0] = true;
         possible_atoms[3] = true;
         let known_atoms = vec![false; molecule.num_atoms()];
         let mut fixed_atoms = vec![false; molecule.num_atoms()];
-        let mut atom_symbols = molecule.atoms().iter().map(atom_compare_symbol).collect::<Vec<_>>();
+        let mut atom_symbols = molecule
+            .atoms()
+            .iter()
+            .map(atom_compare_symbol)
+            .collect::<Vec<_>>();
         atom_symbols[0].push_str("_0");
         atom_symbols[3].push_str("_3");
         let ranks = vec![0; molecule.num_atoms()];
@@ -3643,7 +3840,16 @@ mod tests {
         let atoms = (0..7)
             .map(|_| builder.add_atom(AtomSpec::new(Element::C)))
             .collect::<Vec<_>>();
-        for (begin, end) in [(0, 1), (1, 2), (2, 3), (3, 0), (0, 4), (4, 5), (5, 6), (6, 0)] {
+        for (begin, end) in [
+            (0, 1),
+            (1, 2),
+            (2, 3),
+            (3, 0),
+            (0, 4),
+            (4, 5),
+            (5, 6),
+            (6, 0),
+        ] {
             builder
                 .add_bond(BondSpec::new(atoms[begin], atoms[end], BondOrder::Single))
                 .unwrap();
@@ -3743,7 +3949,11 @@ mod tests {
             .collect::<Vec<_>>();
         for index in 0..6 {
             builder
-                .add_bond(BondSpec::new(atoms[index], atoms[(index + 1) % 6], BondOrder::Single))
+                .add_bond(BondSpec::new(
+                    atoms[index],
+                    atoms[(index + 1) % 6],
+                    BondOrder::Single,
+                ))
                 .unwrap();
         }
         let external = builder
@@ -3890,7 +4100,11 @@ mod tests {
             .add_bond(BondSpec::new(acceptor, zero_neighbor, BondOrder::Zero))
             .unwrap();
         builder
-            .add_bond(BondSpec::new(acceptor, ordinary_neighbor, BondOrder::Single))
+            .add_bond(BondSpec::new(
+                acceptor,
+                ordinary_neighbor,
+                BondOrder::Single,
+            ))
             .unwrap();
         let molecule = builder.build().unwrap();
 
@@ -3985,12 +4199,12 @@ mod tests {
     #[test]
     fn query_atoms_follow_the_same_source_eligibility_rules() {
         use crate::{
-            AtomQueryPredicate, AtomSpec, BondOrder, BondSpec, Element, MoleculeBuilder, QueryNode, ValenceAssignment,
+            AtomQueryPredicate, AtomSpec, BondOrder, BondSpec, Element, MoleculeBuilder, QueryNode,
+            ValenceAssignment,
         };
 
         let mut builder = MoleculeBuilder::new();
-        let center = builder
-            .add_atom(AtomSpec::new(Element::C).with_query(QueryNode::predicate(AtomQueryPredicate::AtomicNumber(6))));
+        let center = builder.add_atom(AtomSpec::new(Element::C));
         for element in [Element::F, Element::CL, Element::BR, Element::I] {
             let neighbor = builder.add_atom(AtomSpec::new(element));
             builder
@@ -4003,7 +4217,6 @@ mod tests {
             implicit_hydrogens: vec![0; 5],
         });
 
-        assert!(molecule.atoms()[center.index()].query().is_some());
         assert!(is_atom_potential_tetrahedral_center(&molecule, center).unwrap());
     }
 
@@ -4012,17 +4225,23 @@ mod tests {
         let molecule = Molecule::from_smiles("CC").unwrap();
         assert_eq!(
             get_atom_nonzero_degree(&molecule, AtomId::new(2)),
-            Err(PotentialStereoError::AtomIndexOutOfBounds { atom: AtomId::new(2) })
+            Err(PotentialStereoError::AtomIndexOutOfBounds {
+                atom: AtomId::new(2)
+            })
         );
         assert_eq!(
             has_protium_neighbor(&molecule, AtomId::new(2)),
-            Err(PotentialStereoError::AtomIndexOutOfBounds { atom: AtomId::new(2) })
+            Err(PotentialStereoError::AtomIndexOutOfBounds {
+                atom: AtomId::new(2)
+            })
         );
 
         let unprepared = Molecule::from_smiles_with_sanitize("C(F)(Cl)Br", false).unwrap();
         assert_eq!(
             is_atom_potential_tetrahedral_center(&unprepared, AtomId::new(0)),
-            Err(PotentialStereoError::MissingValenceState { atom: AtomId::new(0) })
+            Err(PotentialStereoError::MissingValenceState {
+                atom: AtomId::new(0)
+            })
         );
     }
 
@@ -4031,8 +4250,16 @@ mod tests {
         let molecule = Molecule::from_smiles("C[C@@H](O)[C@H](C)[C@H](C)O").unwrap();
         let expected = [
             (1, StereoDescriptor::TetrahedralClockwise, vec![0, 2, 3]),
-            (3, StereoDescriptor::TetrahedralCounterclockwise, vec![1, 4, 5]),
-            (5, StereoDescriptor::TetrahedralCounterclockwise, vec![3, 6, 7]),
+            (
+                3,
+                StereoDescriptor::TetrahedralCounterclockwise,
+                vec![1, 4, 5],
+            ),
+            (
+                5,
+                StereoDescriptor::TetrahedralCounterclockwise,
+                vec![3, 6, 7],
+            ),
         ];
         for (center, descriptor, controllers) in expected {
             let info = get_atom_stereo_info(&molecule, AtomId::new(center), true).unwrap();
@@ -4050,9 +4277,13 @@ mod tests {
         }
 
         let keep_hs = crate::SmilesParseParams::default().with_remove_hs(false);
-        let isotopic = Molecule::from_smiles_with_params("[C@](F)(Cl)([2H])[3H]", &keep_hs).unwrap();
+        let isotopic =
+            Molecule::from_smiles_with_params("[C@](F)(Cl)([2H])[3H]", &keep_hs).unwrap();
         let info = get_atom_stereo_info(&isotopic, AtomId::new(0), true).unwrap();
-        assert_eq!(info.descriptor(), StereoDescriptor::TetrahedralCounterclockwise);
+        assert_eq!(
+            info.descriptor(),
+            StereoDescriptor::TetrahedralCounterclockwise
+        );
         assert_eq!(
             info.controlling_atoms(),
             [1, 2, 3, 4].map(|index| ControllingAtom::Atom(AtomId::new(index)))
@@ -4065,7 +4296,8 @@ mod tests {
 
         fn build(order: [usize; 4]) -> Molecule {
             let mut builder = MoleculeBuilder::new();
-            let center = builder.add_atom(AtomSpec::new(Element::C).with_chiral_tag(ChiralTag::TetrahedralCw));
+            let center = builder
+                .add_atom(AtomSpec::new(Element::C).with_chiral_tag(ChiralTag::TetrahedralCw));
             let neighbors = [Element::F, Element::CL, Element::BR, Element::I]
                 .map(|element| builder.add_atom(AtomSpec::new(element)));
             for index in order {
@@ -4080,7 +4312,10 @@ mod tests {
         let odd = get_atom_stereo_info(&build([1, 0, 2, 3]), AtomId::new(0), true).unwrap();
         assert_eq!(even.controlling_atoms(), odd.controlling_atoms());
         assert_eq!(even.descriptor(), StereoDescriptor::TetrahedralClockwise);
-        assert_eq!(odd.descriptor(), StereoDescriptor::TetrahedralCounterclockwise);
+        assert_eq!(
+            odd.descriptor(),
+            StereoDescriptor::TetrahedralCounterclockwise
+        );
     }
 
     #[test]
@@ -4088,11 +4323,14 @@ mod tests {
         use crate::{AtomSpec, BondDirection, BondOrder, BondSpec, Element, MoleculeBuilder};
 
         for unknown_bond in [
-            BondSpec::new(AtomId::new(0), AtomId::new(1), BondOrder::Single).with_direction(BondDirection::Unknown),
-            BondSpec::new(AtomId::new(0), AtomId::new(1), BondOrder::Single).with_prop("_UnknownStereo", "1"),
+            BondSpec::new(AtomId::new(0), AtomId::new(1), BondOrder::Single)
+                .with_direction(BondDirection::Unknown),
+            BondSpec::new(AtomId::new(0), AtomId::new(1), BondOrder::Single)
+                .with_prop("_UnknownStereo", "1"),
         ] {
             let mut builder = MoleculeBuilder::new();
-            let center = builder.add_atom(AtomSpec::new(Element::C).with_chiral_tag(ChiralTag::TetrahedralCw));
+            let center = builder
+                .add_atom(AtomSpec::new(Element::C).with_chiral_tag(ChiralTag::TetrahedralCw));
             let first = builder.add_atom(AtomSpec::new(Element::F));
             let second = builder.add_atom(AtomSpec::new(Element::CL));
             let third = builder.add_atom(AtomSpec::new(Element::BR));
@@ -4131,7 +4369,12 @@ mod tests {
     fn atom_stereo_info_preserves_nontetrahedral_permutations_and_missing_ligands() {
         let cases = [
             ("C[Pt@SP1](F)Cl", StereoType::AtomSquarePlanar, 2, 3),
-            ("C[Co@TB1](F)(Cl)Br", StereoType::AtomTrigonalBipyramidal, 3, 4),
+            (
+                "C[Co@TB1](F)(Cl)Br",
+                StereoType::AtomTrigonalBipyramidal,
+                3,
+                4,
+            ),
             ("C[Co@OH1](F)(Cl)(Br)I", StereoType::AtomOctahedral, 3, 5),
         ];
         for (smiles, stereo_type, permutation, controller_count) in cases {
@@ -4176,7 +4419,10 @@ mod tests {
         let center = builder.add_atom(AtomSpec::new(Element::C));
         let neighbor = builder.add_atom(AtomSpec::new(Element::F));
         let bond = builder
-            .add_bond(BondSpec::new(center, neighbor, BondOrder::Single).with_prop("_UnknownStereo", "not-an-integer"))
+            .add_bond(
+                BondSpec::new(center, neighbor, BondOrder::Single)
+                    .with_prop("_UnknownStereo", "not-an-integer"),
+            )
             .unwrap();
         let molecule = builder.build().unwrap();
         assert_eq!(
@@ -4189,7 +4435,9 @@ mod tests {
         );
         assert_eq!(
             get_atom_stereo_info(&molecule, AtomId::new(2), true),
-            Err(PotentialStereoError::AtomIndexOutOfBounds { atom: AtomId::new(2) })
+            Err(PotentialStereoError::AtomIndexOutOfBounds {
+                atom: AtomId::new(2)
+            })
         );
     }
 
@@ -4217,7 +4465,10 @@ mod tests {
         }
         builder.add_bond(double).unwrap();
         builder
-            .add_bond(BondSpec::new(begin, begin_first, BondOrder::Single).with_direction(first_neighbor_direction))
+            .add_bond(
+                BondSpec::new(begin, begin_first, BondOrder::Single)
+                    .with_direction(first_neighbor_direction),
+            )
             .unwrap();
         builder
             .add_bond(BondSpec::new(begin, begin_second, BondOrder::Single))
@@ -4237,13 +4488,25 @@ mod tests {
         assert_eq!(is_bond_potential_stereo(&chain, BondId::new(1)), Ok(true));
 
         let seven_membered = Molecule::from_smiles("C1=CCCCCC1").unwrap();
-        assert_eq!(is_bond_potential_stereo(&seven_membered, BondId::new(0)), Ok(false));
+        assert_eq!(
+            is_bond_potential_stereo(&seven_membered, BondId::new(0)),
+            Ok(false)
+        );
         let eight_membered = Molecule::from_smiles("C1=CCCCCCC1").unwrap();
-        assert_eq!(is_bond_potential_stereo(&eight_membered, BondId::new(0)), Ok(true));
+        assert_eq!(
+            is_bond_potential_stereo(&eight_membered, BondId::new(0)),
+            Ok(true)
+        );
 
         let terminal_allene = Molecule::from_smiles("C=C=C").unwrap();
-        assert_eq!(is_bond_potential_stereo(&terminal_allene, BondId::new(0)), Ok(false));
-        assert_eq!(is_bond_potential_stereo(&terminal_allene, BondId::new(1)), Ok(false));
+        assert_eq!(
+            is_bond_potential_stereo(&terminal_allene, BondId::new(0)),
+            Ok(false)
+        );
+        assert_eq!(
+            is_bond_potential_stereo(&terminal_allene, BondId::new(1)),
+            Ok(false)
+        );
         let substituted_cumulene = Molecule::from_smiles("CC=C=CC").unwrap();
         assert_eq!(
             is_bond_potential_stereo(&substituted_cumulene, BondId::new(1)),
@@ -4279,7 +4542,9 @@ mod tests {
         let end = builder.add_atom(AtomSpec::new(Element::C));
         let begin_ref = builder.add_atom(AtomSpec::new(Element::F));
         let end_ref = builder.add_atom(AtomSpec::new(Element::CL));
-        builder.add_bond(BondSpec::new(begin, end, BondOrder::Double)).unwrap();
+        builder
+            .add_bond(BondSpec::new(begin, end, BondOrder::Double))
+            .unwrap();
         builder
             .add_bond(BondSpec::new(begin, begin_ref, BondOrder::Single))
             .unwrap();
@@ -4291,7 +4556,8 @@ mod tests {
             explicit_valence: vec![3, 3, 1, 1],
             implicit_hydrogens: vec![1, 1, 0, 0],
         });
-        padded.derived_cache_mut().rings = Some(crate::RingInfo::new(crate::RingFindType::SymmSssr, 4, 3));
+        padded.derived_cache_mut().rings =
+            Some(crate::RingInfo::new(crate::RingFindType::SymmSssr, 4, 3));
         assert_eq!(is_bond_potential_stereo(&padded, BondId::new(0)), Ok(true));
         let info = get_bond_stereo_info(&padded, BondId::new(0)).unwrap();
         assert_eq!(
@@ -4361,7 +4627,11 @@ mod tests {
             (crate::BondStereo::E, [2, 4], StereoDescriptor::BondTrans),
             (crate::BondStereo::Z, [2, 4], StereoDescriptor::BondCis),
             (crate::BondStereo::Cis, [2, 5], StereoDescriptor::BondTrans),
-            (crate::BondStereo::Trans, [3, 5], StereoDescriptor::BondTrans),
+            (
+                crate::BondStereo::Trans,
+                [3, 5],
+                StereoDescriptor::BondTrans,
+            ),
             (crate::BondStereo::Trans, [3, 4], StereoDescriptor::BondCis),
         ];
         for (stereo, stereo_atoms, expected) in cases {
@@ -4383,8 +4653,14 @@ mod tests {
         use crate::{AtomSpec, BondOrder, BondSpec, Element, MoleculeBuilder};
 
         for (stereo, descriptor) in [
-            (crate::BondStereo::AtropCw, StereoDescriptor::BondAtropClockwise),
-            (crate::BondStereo::AtropCcw, StereoDescriptor::BondAtropCounterclockwise),
+            (
+                crate::BondStereo::AtropCw,
+                StereoDescriptor::BondAtropClockwise,
+            ),
+            (
+                crate::BondStereo::AtropCcw,
+                StereoDescriptor::BondAtropCounterclockwise,
+            ),
         ] {
             let mut builder = MoleculeBuilder::new();
             let begin = builder.add_atom(AtomSpec::new(Element::C));
@@ -4424,7 +4700,9 @@ mod tests {
         let invalid_index = Molecule::from_smiles("CC").unwrap();
         assert_eq!(
             get_bond_stereo_info(&invalid_index, BondId::new(1)),
-            Err(PotentialStereoError::BondIndexOutOfBounds { bond: BondId::new(1) })
+            Err(PotentialStereoError::BondIndexOutOfBounds {
+                bond: BondId::new(1)
+            })
         );
 
         let missing_stereo_atoms = substituted_double_bond(
@@ -4436,7 +4714,9 @@ mod tests {
         );
         assert_eq!(
             get_bond_stereo_info(&missing_stereo_atoms, BondId::new(0)),
-            Err(PotentialStereoError::InvalidStereoAtomCount { bond: BondId::new(0) })
+            Err(PotentialStereoError::InvalidStereoAtomCount {
+                bond: BondId::new(0)
+            })
         );
 
         let mismatched = substituted_double_bond(
@@ -4478,7 +4758,9 @@ mod tests {
         let two = builder.add_atom(AtomSpec::new(Element::CL));
         let three = builder.add_atom(AtomSpec::new(Element::BR));
         let end_ref = builder.add_atom(AtomSpec::new(Element::I));
-        builder.add_bond(BondSpec::new(begin, end, BondOrder::Double)).unwrap();
+        builder
+            .add_bond(BondSpec::new(begin, end, BondOrder::Double))
+            .unwrap();
         for neighbor in [one, two, three] {
             builder
                 .add_bond(BondSpec::new(begin, neighbor, BondOrder::Single))
@@ -4490,19 +4772,26 @@ mod tests {
         let invalid_degree = builder.build().unwrap();
         assert_eq!(
             get_bond_stereo_info(&invalid_degree, BondId::new(0)),
-            Err(PotentialStereoError::InvalidBondDegree { bond: BondId::new(0) })
+            Err(PotentialStereoError::InvalidBondDegree {
+                bond: BondId::new(0)
+            })
         );
 
         let mut builder = MoleculeBuilder::new();
         let begin = builder.add_atom(AtomSpec::new(Element::C));
         let end = builder.add_atom(AtomSpec::new(Element::C));
         builder
-            .add_bond(BondSpec::new(begin, end, BondOrder::Single).with_stereo(crate::BondStereo::AtropCw))
+            .add_bond(
+                BondSpec::new(begin, end, BondOrder::Single)
+                    .with_stereo(crate::BondStereo::AtropCw),
+            )
             .unwrap();
         let invalid_atrop_degree = builder.build().unwrap();
         assert_eq!(
             get_bond_stereo_info(&invalid_atrop_degree, BondId::new(0)),
-            Err(PotentialStereoError::InvalidBondDegree { bond: BondId::new(0) })
+            Err(PotentialStereoError::InvalidBondDegree {
+                bond: BondId::new(0)
+            })
         );
 
         let mut no_rings = Molecule::from_smiles_with_sanitize("CC=CC", false).unwrap();
@@ -4512,7 +4801,9 @@ mod tests {
         });
         assert_eq!(
             is_bond_potential_stereo(&no_rings, BondId::new(1)),
-            Err(PotentialStereoError::MissingBondRingState { bond: BondId::new(1) })
+            Err(PotentialStereoError::MissingBondRingState {
+                bond: BondId::new(1)
+            })
         );
     }
 
@@ -4522,7 +4813,10 @@ mod tests {
         let state = initialize_potential_stereo(&mut specified, true, false, true).unwrap();
         assert!(state.known_atoms[1]);
         assert!(!state.possible_atoms[1]);
-        assert!(matches!(state.atom_symbols[1].as_str(), "0C0_CW" | "0C0_CCW"));
+        assert!(matches!(
+            state.atom_symbols[1].as_str(),
+            "0C0_CW" | "0C0_CCW"
+        ));
         let double_bond = specified
             .bonds()
             .iter()
@@ -4538,15 +4832,20 @@ mod tests {
         use crate::{AtomSpec, BondDirection, BondOrder, BondSpec, Element, MoleculeBuilder};
         let mut builder = MoleculeBuilder::new();
         let center = builder.add_atom(AtomSpec::new(Element::C).with_unknown_stereo(true));
-        for (neighbor_index, element) in [Element::F, Element::CL, Element::BR].into_iter().enumerate() {
+        for (neighbor_index, element) in [Element::F, Element::CL, Element::BR]
+            .into_iter()
+            .enumerate()
+        {
             let neighbor = builder.add_atom(AtomSpec::new(element));
             builder
                 .add_bond(
-                    BondSpec::new(center, neighbor, BondOrder::Single).with_direction(if neighbor_index == 0 {
-                        BondDirection::Unknown
-                    } else {
-                        BondDirection::None
-                    }),
+                    BondSpec::new(center, neighbor, BondOrder::Single).with_direction(
+                        if neighbor_index == 0 {
+                            BondDirection::Unknown
+                        } else {
+                            BondDirection::None
+                        },
+                    ),
                 )
                 .unwrap();
         }
@@ -4593,7 +4892,8 @@ mod tests {
                 .id();
             assert_eq!(state.possible_bonds[double_bond.index()], possible);
             assert_eq!(
-                state.bond_symbols[double_bond.index()].ends_with(&format!("_{}", double_bond.index())),
+                state.bond_symbols[double_bond.index()]
+                    .ends_with(&format!("_{}", double_bond.index())),
                 decorated
             );
         }
@@ -4609,8 +4909,8 @@ mod tests {
 
         use crate::{AtomSpec, BondOrder, BondSpec, Element, MoleculeBuilder};
         let mut builder = MoleculeBuilder::new();
-        let atoms =
-            [Element::C, Element::C, Element::C, Element::C].map(|element| builder.add_atom(AtomSpec::new(element)));
+        let atoms = [Element::C, Element::C, Element::C, Element::C]
+            .map(|element| builder.add_atom(AtomSpec::new(element)));
         builder
             .add_bond(BondSpec::new(atoms[0], atoms[1], BondOrder::Aromatic).with_aromatic(false))
             .unwrap();
@@ -4627,7 +4927,8 @@ mod tests {
         use crate::{AtomSpec, BondOrder, BondSpec, Element, MoleculeBuilder};
 
         let mut builder = MoleculeBuilder::new();
-        let terminal = builder.add_atom(AtomSpec::new(Element::C).with_chiral_tag(ChiralTag::TetrahedralCw));
+        let terminal =
+            builder.add_atom(AtomSpec::new(Element::C).with_chiral_tag(ChiralTag::TetrahedralCw));
         let terminal_neighbor = builder.add_atom(AtomSpec::new(Element::C));
         let alkene_end = builder.add_atom(AtomSpec::new(Element::C));
         let alkene_terminal = builder.add_atom(AtomSpec::new(Element::C));
@@ -4636,16 +4937,30 @@ mod tests {
         let atrop_begin_ref = builder.add_atom(AtomSpec::new(Element::F));
         let atrop_end_ref = builder.add_atom(AtomSpec::new(Element::CL));
         builder
-            .add_bond(BondSpec::new(terminal, terminal_neighbor, BondOrder::Single))
+            .add_bond(BondSpec::new(
+                terminal,
+                terminal_neighbor,
+                BondOrder::Single,
+            ))
             .unwrap();
         let invalid_double = builder
-            .add_bond(BondSpec::new(alkene_end, alkene_terminal, BondOrder::Double).with_stereo(crate::BondStereo::Any))
+            .add_bond(
+                BondSpec::new(alkene_end, alkene_terminal, BondOrder::Double)
+                    .with_stereo(crate::BondStereo::Any),
+            )
             .unwrap();
         let atrop = builder
-            .add_bond(BondSpec::new(atrop_begin, atrop_end, BondOrder::Single).with_stereo(crate::BondStereo::AtropCcw))
+            .add_bond(
+                BondSpec::new(atrop_begin, atrop_end, BondOrder::Single)
+                    .with_stereo(crate::BondStereo::AtropCcw),
+            )
             .unwrap();
         builder
-            .add_bond(BondSpec::new(atrop_begin, atrop_begin_ref, BondOrder::Single))
+            .add_bond(BondSpec::new(
+                atrop_begin,
+                atrop_begin_ref,
+                BondOrder::Single,
+            ))
             .unwrap();
         builder
             .add_bond(BondSpec::new(atrop_end, atrop_end_ref, BondOrder::Single))
@@ -4653,12 +4968,18 @@ mod tests {
         let mut molecule = builder.build().unwrap();
         let state = initialize_potential_stereo(&mut molecule, true, true, true).unwrap();
 
-        assert_eq!(molecule.atoms()[terminal.index()].chiral_tag(), ChiralTag::Unspecified);
+        assert_eq!(
+            molecule.atoms()[terminal.index()].chiral_tag(),
+            ChiralTag::Unspecified
+        );
         assert_eq!(
             molecule.bonds()[invalid_double.index()].stereo(),
             crate::BondStereo::None
         );
-        assert_eq!(molecule.bonds()[atrop.index()].stereo(), crate::BondStereo::AtropCcw);
+        assert_eq!(
+            molecule.bonds()[atrop.index()].stereo(),
+            crate::BondStereo::AtropCcw
+        );
         assert!(state.known_bonds[atrop.index()]);
         assert_eq!(state.bond_symbols[atrop.index()], "-_atropccw");
     }
@@ -4683,7 +5004,10 @@ mod tests {
         let unrelated = builder.add_atom(AtomSpec::new(Element::C));
         let unrelated_neighbor = builder.add_atom(AtomSpec::new(Element::BR));
         let wedge = builder
-            .add_bond(BondSpec::new(tetra, tetra_neighbor, BondOrder::Single).with_direction(BondDirection::BeginWedge))
+            .add_bond(
+                BondSpec::new(tetra, tetra_neighbor, BondOrder::Single)
+                    .with_direction(BondDirection::BeginWedge),
+            )
             .unwrap();
         builder
             .add_bond(BondSpec::new(square, square_neighbor, BondOrder::Single))
@@ -4708,11 +5032,23 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(molecule.atoms()[tetra.index()].chiral_tag(), ChiralTag::Unspecified);
+        assert_eq!(
+            molecule.atoms()[tetra.index()].chiral_tag(),
+            ChiralTag::Unspecified
+        );
         assert_eq!(molecule.atoms()[tetra.index()].prop("keep"), Some("atom"));
-        assert_eq!(molecule.bonds()[wedge.index()].direction(), BondDirection::None);
-        assert_eq!(molecule.atoms()[square.index()].chiral_tag(), ChiralTag::SquarePlanar);
-        assert_eq!(molecule.atoms()[square.index()].chiral_permutation(), Some(0));
+        assert_eq!(
+            molecule.bonds()[wedge.index()].direction(),
+            BondDirection::None
+        );
+        assert_eq!(
+            molecule.atoms()[square.index()].chiral_tag(),
+            ChiralTag::SquarePlanar
+        );
+        assert_eq!(
+            molecule.atoms()[square.index()].chiral_permutation(),
+            Some(0)
+        );
         assert_eq!(
             molecule.bonds()[preserved.index()].direction(),
             BondDirection::BeginDash
@@ -4721,7 +5057,9 @@ mod tests {
 
     #[test]
     fn clean_mol_stereo_clears_invalid_bond_and_orphaned_slashes() {
-        use crate::{AtomSpec, BondDirection, BondOrder, BondSpec, BondStereo, Element, MoleculeBuilder};
+        use crate::{
+            AtomSpec, BondDirection, BondOrder, BondSpec, BondStereo, Element, MoleculeBuilder,
+        };
 
         let mut builder = MoleculeBuilder::new();
         let left = builder.add_atom(AtomSpec::new(Element::C));
@@ -4736,10 +5074,16 @@ mod tests {
             )
             .unwrap();
         let left_slash = builder
-            .add_bond(BondSpec::new(left, left_ref, BondOrder::Single).with_direction(BondDirection::EndUpRight))
+            .add_bond(
+                BondSpec::new(left, left_ref, BondOrder::Single)
+                    .with_direction(BondDirection::EndUpRight),
+            )
             .unwrap();
         let right_slash = builder
-            .add_bond(BondSpec::new(right, right_ref, BondOrder::Single).with_direction(BondDirection::EndDownRight))
+            .add_bond(
+                BondSpec::new(right, right_ref, BondOrder::Single)
+                    .with_direction(BondDirection::EndDownRight),
+            )
             .unwrap();
         let mut molecule = builder.build().unwrap();
         let atom_count = molecule.num_atoms();
@@ -4758,13 +5102,21 @@ mod tests {
 
         assert_eq!(molecule.bonds()[double.index()].stereo(), BondStereo::None);
         assert_eq!(molecule.bonds()[double.index()].stereo_atoms(), None);
-        assert_eq!(molecule.bonds()[left_slash.index()].direction(), BondDirection::None);
-        assert_eq!(molecule.bonds()[right_slash.index()].direction(), BondDirection::None);
+        assert_eq!(
+            molecule.bonds()[left_slash.index()].direction(),
+            BondDirection::None
+        );
+        assert_eq!(
+            molecule.bonds()[right_slash.index()].direction(),
+            BondDirection::None
+        );
     }
 
     #[test]
     fn clean_mol_stereo_preserves_slash_after_first_endpoint_finds_stereo() {
-        use crate::{AtomSpec, BondDirection, BondOrder, BondSpec, BondStereo, Element, MoleculeBuilder};
+        use crate::{
+            AtomSpec, BondDirection, BondOrder, BondSpec, BondStereo, Element, MoleculeBuilder,
+        };
 
         let mut builder = MoleculeBuilder::new();
         let x = builder.add_atom(AtomSpec::new(Element::C));
@@ -4774,7 +5126,9 @@ mod tests {
         let removed_left = builder.add_atom(AtomSpec::new(Element::C));
         let removed_right = builder.add_atom(AtomSpec::new(Element::C));
         let slash = builder
-            .add_bond(BondSpec::new(x, y, BondOrder::Single).with_direction(BondDirection::EndUpRight))
+            .add_bond(
+                BondSpec::new(x, y, BondOrder::Single).with_direction(BondDirection::EndUpRight),
+            )
             .unwrap();
         builder
             .add_bond(
@@ -4784,7 +5138,10 @@ mod tests {
             )
             .unwrap();
         let removed = builder
-            .add_bond(BondSpec::new(removed_left, removed_right, BondOrder::Double).with_stereo(BondStereo::Any))
+            .add_bond(
+                BondSpec::new(removed_left, removed_right, BondOrder::Double)
+                    .with_stereo(BondStereo::Any),
+            )
             .unwrap();
         let mut molecule = builder.build().unwrap();
         let atom_count = molecule.num_atoms();
@@ -4801,7 +5158,10 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(molecule.bonds()[slash.index()].direction(), BondDirection::EndUpRight);
+        assert_eq!(
+            molecule.bonds()[slash.index()].direction(),
+            BondDirection::EndUpRight
+        );
     }
 
     #[test]
@@ -4813,7 +5173,8 @@ mod tests {
             (true, true, vec![1, 3]),
         ] {
             let mut molecule = Molecule::from_smiles("FC(Cl)C(Br)I").unwrap();
-            let result = find_potential_stereo_in_workspace(&mut molecule, clean, flag_possible).unwrap();
+            let result =
+                find_potential_stereo_in_workspace(&mut molecule, clean, flag_possible).unwrap();
 
             assert_eq!(
                 result.iter().map(StereoInfo::center).collect::<Vec<_>>(),
@@ -4836,7 +5197,10 @@ mod tests {
                     .is_some_and(crate::RingInfo::is_symm_sssr)
             );
             assert!(molecule.derived_cache().valence.is_some());
-            assert_eq!(molecule.potential_stereo_cache().as_deref(), Some(result.as_slice()));
+            assert_eq!(
+                molecule.potential_stereo_cache().as_deref(),
+                Some(result.as_slice())
+            );
             for atom in molecule.atoms() {
                 assert!(atom.is_prop_computed("_chiralAtomRank"));
                 assert!(atom.prop("_chiralAtomRank").is_some());
@@ -4853,7 +5217,10 @@ mod tests {
         assert_eq!(result[0].stereo_type(), StereoType::AtomTetrahedral);
         assert_eq!(result[0].specified(), StereoSpecified::Specified);
         assert_eq!(result[0].center(), StereoCenter::Atom(AtomId::new(1)));
-        assert_eq!(result[0].descriptor(), StereoDescriptor::TetrahedralCounterclockwise);
+        assert_eq!(
+            result[0].descriptor(),
+            StereoDescriptor::TetrahedralCounterclockwise
+        );
         assert_eq!(result[0].permutation(), 0);
         assert_eq!(
             result[0].controlling_atoms(),
@@ -4863,7 +5230,11 @@ mod tests {
         );
     }
 
-    fn assert_stereo_info_matches_golden(case_id: &str, actual: &[StereoInfo], expected: &serde_json::Value) {
+    fn assert_stereo_info_matches_golden(
+        case_id: &str,
+        actual: &[StereoInfo],
+        expected: &serde_json::Value,
+    ) {
         let expected = expected.as_array().expect("golden stereo_info array");
         assert_eq!(actual.len(), expected.len(), "{case_id}: stereo row count");
         for (row_index, (actual, expected)) in actual.iter().zip(expected).enumerate() {
@@ -4943,10 +5314,20 @@ mod tests {
         }
     }
 
-    fn assert_potential_stereo_after_state(case_id: &str, molecule: &Molecule, expected: &serde_json::Value) {
+    fn assert_potential_stereo_after_state(
+        case_id: &str,
+        molecule: &Molecule,
+        expected: &serde_json::Value,
+    ) {
         let expected_atoms = expected["atoms"].as_array().unwrap();
-        assert_eq!(molecule.num_atoms(), expected_atoms.len(), "{case_id}: atoms");
-        for (atom_index, (atom, expected_atom)) in molecule.atoms().iter().zip(expected_atoms).enumerate() {
+        assert_eq!(
+            molecule.num_atoms(),
+            expected_atoms.len(),
+            "{case_id}: atoms"
+        );
+        for (atom_index, (atom, expected_atom)) in
+            molecule.atoms().iter().zip(expected_atoms).enumerate()
+        {
             let context = format!("{case_id}: atom {atom_index}");
             assert_eq!(
                 atom.chiral_tag(),
@@ -4971,7 +5352,11 @@ mod tests {
             );
             assert!(atom.is_prop_computed("_chiralAtomRank"), "{context}");
 
-            for property in ["_ringStereoOtherAtom", "_ringStereochemCand", "_ringStereoAtoms"] {
+            for property in [
+                "_ringStereoOtherAtom",
+                "_ringStereochemCand",
+                "_ringStereoAtoms",
+            ] {
                 let expected_value = values.get(property);
                 assert_eq!(
                     atom.prop(property).is_some(),
@@ -5014,8 +5399,14 @@ mod tests {
         }
 
         let expected_bonds = expected["bonds"].as_array().unwrap();
-        assert_eq!(molecule.num_bonds(), expected_bonds.len(), "{case_id}: bonds");
-        for (bond_index, (bond, expected_bond)) in molecule.bonds().iter().zip(expected_bonds).enumerate() {
+        assert_eq!(
+            molecule.num_bonds(),
+            expected_bonds.len(),
+            "{case_id}: bonds"
+        );
+        for (bond_index, (bond, expected_bond)) in
+            molecule.bonds().iter().zip(expected_bonds).enumerate()
+        {
             let context = format!("{case_id}: bond {bond_index}");
             assert_eq!(
                 format!("{:?}", bond.direction()).to_ascii_uppercase(),
@@ -5049,7 +5440,9 @@ mod tests {
                 .map(|value| AtomId::new(usize::try_from(value.as_u64().unwrap()).unwrap()))
                 .collect::<Vec<_>>();
             assert_eq!(
-                bond.stereo_atoms().map(|atoms| atoms.to_vec()).unwrap_or_default(),
+                bond.stereo_atoms()
+                    .map(|atoms| atoms.to_vec())
+                    .unwrap_or_default(),
                 expected_stereo_atoms,
                 "{context}: stereo atoms"
             );
@@ -5075,7 +5468,8 @@ mod tests {
             }
             let case_id = record["case_id"].as_str().unwrap();
             assert_eq!(record["source"]["kind"].as_str(), Some("smiles"));
-            let mut source = Molecule::from_smiles(record["source"]["value"].as_str().unwrap()).unwrap();
+            let mut source =
+                Molecule::from_smiles(record["source"]["value"].as_str().unwrap()).unwrap();
             for mutation in record["source"]["mutations"].as_array().unwrap() {
                 match mutation["kind"].as_str().unwrap() {
                     "set_atom_chiral_tag" => {
@@ -5099,7 +5493,8 @@ mod tests {
                 let flag_possible = run["options"]["flag_possible"].as_bool().unwrap();
                 assert!(seen_options.insert((clean, flag_possible)), "{case_id}");
                 let mut working = source.clone();
-                let actual = find_potential_stereo_in_workspace(&mut working, clean, flag_possible).unwrap();
+                let actual =
+                    find_potential_stereo_in_workspace(&mut working, clean, flag_possible).unwrap();
                 let context = format!("{case_id} clean={clean} possible={flag_possible}");
                 assert_stereo_info_matches_golden(&context, &actual, &run["result"]["stereo_info"]);
                 assert_potential_stereo_after_state(&context, &working, &run["after"]);

@@ -3,16 +3,23 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
-    AdjacencyList, Atom, AtomId, AtomPdbResidueInfo, Bond, BondDirection, BondId, BondOrder, BondStereo, ChiralTag,
-    Molecule, NeighborRef, SubstanceGroup, ValenceModel, ops::MoleculeReadParts,
+    AdjacencyList, Atom, AtomId, AtomPdbResidueInfo, Bond, BondDirection, BondId, BondOrder,
+    BondStereo, ChiralTag, Molecule, NeighborRef, SubstanceGroup, ValenceModel,
+    ops::MoleculeReadParts,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum AddHydrogensError {
     #[error("unsupported atom for hydrogen addition at {atom} with atomic number {atomic_number}")]
-    UnsupportedAtom { atom: crate::AtomId, atomic_number: u8 },
+    UnsupportedAtom {
+        atom: crate::AtomId,
+        atomic_number: u8,
+    },
     #[error("incomplete RDKit addHs port for {branch}: {reason}")]
-    ProtocolDebt { branch: &'static str, reason: &'static str },
+    ProtocolDebt {
+        branch: &'static str,
+        reason: &'static str,
+    },
     #[error(transparent)]
     Valence(#[from] crate::ValenceError),
     #[error("hydrogen addition is not implemented")]
@@ -32,7 +39,10 @@ pub enum RemoveHydrogensError {
     #[error("substance-group bond {bond} is neither crossing nor contained")]
     InvalidSubstanceGroupBondRole { bond: BondId },
     #[error("incomplete RDKit removeHs port for {branch}: {reason}")]
-    ProtocolDebt { branch: &'static str, reason: &'static str },
+    ProtocolDebt {
+        branch: &'static str,
+        reason: &'static str,
+    },
     #[error(transparent)]
     Sanitize(#[from] crate::SanitizeError),
     #[error("hydrogen removal is not implemented")]
@@ -341,7 +351,8 @@ pub(crate) fn add_hs_assignment(
     let atom_count = read_parts.num_atoms();
     let valence = match read_parts.derived_cache().valence.as_ref() {
         Some(valence)
-            if valence.explicit_valence.len() == atom_count && valence.implicit_hydrogens.len() == atom_count =>
+            if valence.explicit_valence.len() == atom_count
+                && valence.implicit_hydrogens.len() == atom_count =>
         {
             valence.clone()
         }
@@ -383,7 +394,9 @@ pub(crate) fn add_hs_assignment(
         assignment.atoms_to_update_property_cache.push(atom.id());
         let isotopic_hydrogens = isotopic_hydrogen_property(atom);
         if !atom.tracked_isotopic_hydrogens().is_empty() {
-            assignment.clear_isotopic_hydrogen_properties.push(atom.id());
+            assignment
+                .clear_isotopic_hydrogen_properties
+                .push(atom.id());
         }
         let mut isotopes = isotopic_hydrogens.iter().copied();
 
@@ -455,13 +468,11 @@ pub(crate) fn add_hs_valence_assignment_from_parts(
     // The molecule-level vectors require one O(numAtoms) clone that RDKit's
     // per-Atom cache layout does not. The per-atom calculations and source loop
     // ordering below are otherwise the same.
-    let valence_before_add_hs =
-        assignment
-            .valence_before_add_hs
-            .as_ref()
-            .ok_or(crate::ValenceError::UnsupportedBranch {
-                reason: "AddHs assignment is missing its original valence cache",
-            })?;
+    let valence_before_add_hs = assignment.valence_before_add_hs.as_ref().ok_or(
+        crate::ValenceError::UnsupportedBranch {
+            reason: "AddHs assignment is missing its original valence cache",
+        },
+    )?;
     if valence_before_add_hs.explicit_valence.len() != old_atom_count
         || valence_before_add_hs.implicit_hydrogens.len() != old_atom_count
     {
@@ -489,15 +500,21 @@ pub(crate) fn add_hs_valence_assignment_from_parts(
             .is_some_and(|hydrogen| hydrogen.heavy_atom == *heavy_atom)
         {
             let hydrogen = AtomId::new(old_atom_count + hydrogen_offset);
-            let (explicit, implicit) =
-                crate::valence::assign_valence_state_for_atom_from_parts(atoms, bonds, adjacency, hydrogen, true)?;
+            let (explicit, implicit) = crate::valence::assign_valence_state_for_atom_from_parts(
+                atoms, bonds, adjacency, hydrogen, true,
+            )?;
             valence.explicit_valence[hydrogen.index()] = explicit;
             valence.implicit_hydrogens[hydrogen.index()] = implicit;
             hydrogen_offset += 1;
         }
 
-        let (explicit, implicit) =
-            crate::valence::assign_valence_state_for_atom_from_parts(atoms, bonds, adjacency, *heavy_atom, false)?;
+        let (explicit, implicit) = crate::valence::assign_valence_state_for_atom_from_parts(
+            atoms,
+            bonds,
+            adjacency,
+            *heavy_atom,
+            false,
+        )?;
         valence.explicit_valence[heavy_atom.index()] = explicit;
         valence.implicit_hydrogens[heavy_atom.index()] = implicit;
     }
@@ -520,7 +537,10 @@ struct AddHsResidueInfoAssignment {
 
 impl AddHsResidueInfoAssignment {
     fn info_for_new_hydrogen(&mut self, info: &AtomPdbResidueInfo) -> AtomPdbResidueInfo {
-        let residue = (info.residue_number().to_string(), info.chain_id().to_string());
+        let residue = (
+            info.residue_number().to_string(),
+            info.chain_id().to_string(),
+        );
         self.current_h_id += 1;
         if self.current_residue.as_ref() != Some(&residue) {
             self.current_h_id = 1;
@@ -541,7 +561,10 @@ impl AddHsResidueInfoAssignment {
     }
 }
 
-fn add_hs_residue_info_assignment(read_parts: MoleculeReadParts<'_>, assignment: &mut AddHsAssignment) {
+fn add_hs_residue_info_assignment(
+    read_parts: MoleculeReadParts<'_>,
+    assignment: &mut AddHsAssignment,
+) {
     // BEGIN RDKIT CPP FUNCTION AssignHsResidueInfo
     // RDKit✔️✔️: void AssignHsResidueInfo(RWMol &mol) {
     // RDKit✔️✔️:   int max_serial = 0;
@@ -557,7 +580,10 @@ fn add_hs_residue_info_assignment(read_parts: MoleculeReadParts<'_>, assignment:
     let context = RemoveHsPredicateContext::new(read_parts);
     let mut new_hydrogens_by_heavy = BTreeMap::<AtomId, Vec<usize>>::new();
     for (idx, hydrogen) in assignment.hydrogens_to_add.iter().enumerate() {
-        new_hydrogens_by_heavy.entry(hydrogen.heavy_atom).or_default().push(idx);
+        new_hydrogens_by_heavy
+            .entry(hydrogen.heavy_atom)
+            .or_default()
+            .push(idx);
     }
     let mut planned_existing_hydrogens = BTreeSet::<AtomId>::new();
 
@@ -584,17 +610,21 @@ fn add_hs_residue_info_assignment(read_parts: MoleculeReadParts<'_>, assignment:
             // RDKit✔️✔️:           ++current_h_id;
             // COSMolKit increments inside info_for_new_hydrogen when it records a typed update.
             // RDKit✔️✔️:           if (h_info && h_info->getMonomerType() == PDBRESIDUE) { continue; }
-            if neighbor_data.pdb_residue_info().is_some() || planned_existing_hydrogens.contains(&neighbor_atom) {
+            if neighbor_data.pdb_residue_info().is_some()
+                || planned_existing_hydrogens.contains(&neighbor_atom)
+            {
                 residue_assignment.current_h_id += 1;
                 continue;
             }
             // RDKit✔️✔️:           AtomPDBResidueInfo *newInfo = new AtomPDBResidueInfo(...);
             // RDKit✔️✔️:           mol.getAtomWithIdx(*begin)->setMonomerInfo(newInfo);
             // COSMolKit records the same typed atom-state update for the operation body.
-            assignment.atom_pdb_residue_info_updates.push(AtomPdbResidueInfoUpdate {
-                atom: neighbor_atom,
-                pdb_residue_info: residue_assignment.info_for_new_hydrogen(info),
-            });
+            assignment
+                .atom_pdb_residue_info_updates
+                .push(AtomPdbResidueInfoUpdate {
+                    atom: neighbor_atom,
+                    pdb_residue_info: residue_assignment.info_for_new_hydrogen(info),
+                });
             planned_existing_hydrogens.insert(neighbor_atom);
         }
 
@@ -632,7 +662,10 @@ fn isotopic_hydrogen_property(atom: &Atom) -> Vec<u16> {
     // END RDKIT CPP BODY MolOps::addHs _isotopicHs replay
 }
 
-fn is_add_hs_query_atom(context: &RemoveHsPredicateContext<'_>, atom: AtomId) -> Result<bool, AddHydrogensError> {
+fn is_add_hs_query_atom(
+    context: &RemoveHsPredicateContext<'_>,
+    atom: AtomId,
+) -> Result<bool, AddHydrogensError> {
     // BEGIN RDKIT CPP FUNCTION isQueryAtom
     // RDKit✔️✔️: bool isQueryAtom(const RWMol &mol, const Atom &atom) {
     // RDKit✔️✔️:   if (atom.hasQuery()) { return true; }
@@ -642,17 +675,17 @@ fn is_add_hs_query_atom(context: &RemoveHsPredicateContext<'_>, atom: AtomId) ->
     // RDKit✔️✔️:   return false;
     // RDKit✔️✔️: }
     let atom_data = context.atom(atom).map_err(|err| match err {
-        RemoveHydrogensError::AtomOutOfRange { atom, .. } => {
-            AddHydrogensError::UnsupportedAtom { atom, atomic_number: 0 }
-        }
+        RemoveHydrogensError::AtomOutOfRange { atom, .. } => AddHydrogensError::UnsupportedAtom {
+            atom,
+            atomic_number: 0,
+        },
         _ => AddHydrogensError::ProtocolDebt {
             branch: "MolOps::addHs/isQueryAtom",
             reason: "unexpected remove-H context error while checking AddHs query state",
         },
     })?;
-    if atom_data.query().is_some() {
-        return Ok(true);
-    }
+    // Concrete molecule atoms have no query payload. Query atoms are carried
+    // by QueryGraph and never enter the AddHs concrete topology path.
     for neighbor in context.neighbors(atom) {
         let bond = context
             .bond(neighbor.bond)
@@ -660,9 +693,6 @@ fn is_add_hs_query_atom(context: &RemoveHsPredicateContext<'_>, atom: AtomId) ->
                 branch: "MolOps::addHs/isQueryAtom",
                 reason: "bond lookup failed while checking AddHs query state",
             })?;
-        if bond.query().is_some() {
-            return Ok(true);
-        }
     }
     Ok(false)
     // END RDKIT CPP FUNCTION isQueryAtom
@@ -777,7 +807,8 @@ fn remove_hs_assignment_inner(
                 remove_isotopes: false,
                 ..params.clone()
             };
-            let first_pass = remove_hs_assignment_inner(read_parts, &first_pass_params, false, false)?;
+            let first_pass =
+                remove_hs_assignment_inner(read_parts, &first_pass_params, false, false)?;
             let (first_pass_molecule, first_pass_mapping) =
                 remove_hs_recursive_planning_molecule(read_parts, &first_pass)?;
             let second_pass = remove_hs_assignment_inner(
@@ -837,7 +868,8 @@ fn remove_hs_assignment_inner(
     // The assignment carries those per-atom cache values across the later
     // compacting topology mapping. This mirrors Atom's value fields; they are
     // not computed RDProps and therefore survive mol.clearComputedProps(true).
-    let (atom_valence_cache_updates, cached_total_valence) = remove_hs_property_cache_update(read_parts)?;
+    let (atom_valence_cache_updates, cached_total_valence) =
+        remove_hs_property_cache_update(read_parts)?;
     let mut assignment = RemoveHsAssignment {
         atoms_to_remove,
         atom_valence_cache_updates,
@@ -865,7 +897,13 @@ fn remove_hs_assignment_inner(
     // COSMolKit does not remove atoms here; it records per-H side effects for the operation body.
     let atoms_to_remove = assignment.atoms_to_remove.clone();
     for atom in atoms_to_remove {
-        mol_remove_h_assignment(read_parts, atom, params, Some(&cached_total_valence), &mut assignment)?;
+        mol_remove_h_assignment(
+            read_parts,
+            atom,
+            params,
+            Some(&cached_total_valence),
+            &mut assignment,
+        )?;
     }
 
     // RDKit✔️✔️: ROMol *removeHs(const ROMol &mol, const RemoveHsParameters &ps, bool sanitize) {
@@ -901,9 +939,9 @@ fn remove_hs_assignment_inner(
                 && atom.chiral_tag() != ChiralTag::Unspecified
                 && atom.explicit_hydrogens() > 1
             {
-                assignment
-                    .atom_property_updates
-                    .push(AtomPropertyUpdate::ClearExcessChiralExplicitHydrogens { atom: atom.id() });
+                assignment.atom_property_updates.push(
+                    AtomPropertyUpdate::ClearExcessChiralExplicitHydrogens { atom: atom.id() },
+                );
             }
         }
     }
@@ -912,15 +950,24 @@ fn remove_hs_assignment_inner(
     Ok(assignment)
 }
 
-fn merge_remove_hs_assignments(mut first: RemoveHsAssignment, second: RemoveHsAssignment) -> RemoveHsAssignment {
+fn merge_remove_hs_assignments(
+    mut first: RemoveHsAssignment,
+    second: RemoveHsAssignment,
+) -> RemoveHsAssignment {
     first.atoms_to_remove.extend(second.atoms_to_remove);
     first.atom_valence_cache_updates = second.atom_valence_cache_updates;
     first
         .atom_explicit_hydrogen_updates
         .extend(second.atom_explicit_hydrogen_updates);
-    first.atom_chirality_inversions.extend(second.atom_chirality_inversions);
-    first.atom_property_updates.extend(second.atom_property_updates);
-    first.bond_direction_updates.extend(second.bond_direction_updates);
+    first
+        .atom_chirality_inversions
+        .extend(second.atom_chirality_inversions);
+    first
+        .atom_property_updates
+        .extend(second.atom_property_updates);
+    first
+        .bond_direction_updates
+        .extend(second.bond_direction_updates);
     first.bond_stereo_updates.extend(second.bond_stereo_updates);
     first
         .bond_stereo_atom_replacements
@@ -1032,7 +1079,11 @@ fn remove_hs_recursive_planning_molecule(
             continue;
         };
         bond.set_stereo_atoms(Some([
-            if left == update.old_atom { update.new_atom } else { left },
+            if left == update.old_atom {
+                update.new_atom
+            } else {
+                left
+            },
             if right == update.old_atom {
                 update.new_atom
             } else {
@@ -1062,12 +1113,11 @@ fn remove_hs_recursive_planning_molecule(
     let mapping = topology.remove_atoms_with_mapping(&assignment.atoms_to_remove);
     let mut coordinates = read_parts.coordinates().clone();
     coordinates.remap_topology(&mapping.retained_atom_indices());
-    let planned = Molecule::from_blocks(topology, coordinates, read_parts.properties().clone()).map_err(|_| {
-        RemoveHydrogensError::ProtocolDebt {
+    let planned = Molecule::from_blocks(topology, coordinates, read_parts.properties().clone())
+        .map_err(|_| RemoveHydrogensError::ProtocolDebt {
             branch: "MolOps::removeHs/removeAndTrackIsotopes",
             reason: "recursive prepass produced an invalid temporary molecule",
-        }
-    })?;
+        })?;
     Ok((planned, mapping))
     // END RDKIT CPP BODY MolOps::removeHs recursive prepass mutation model
 }
@@ -1182,10 +1232,12 @@ impl<'a> RemoveHsPredicateContext<'a> {
     }
 
     fn atom(&self, atom: AtomId) -> Result<&'a Atom, RemoveHydrogensError> {
-        self.read_parts.atom(atom).ok_or(RemoveHydrogensError::AtomOutOfRange {
-            atom,
-            atom_count: self.read_parts.num_atoms(),
-        })
+        self.read_parts
+            .atom(atom)
+            .ok_or(RemoveHydrogensError::AtomOutOfRange {
+                atom,
+                atom_count: self.read_parts.num_atoms(),
+            })
     }
 
     fn bond(&self, bond: BondId) -> Result<&'a Bond, RemoveHydrogensError> {
@@ -1229,10 +1281,9 @@ fn bond_has_endpoint(bond: &Bond, atom: AtomId) -> bool {
 fn sgroup_includes_atom(substance_group: &SubstanceGroup, atom: AtomId) -> bool {
     substance_group.atoms().contains(&atom)
         || substance_group.parent_atoms().contains(&atom)
-        || substance_group
-            .attach_points()
-            .iter()
-            .any(|attach_point| attach_point.atom == atom || attach_point.leaving_atom == Some(atom))
+        || substance_group.attach_points().iter().any(|attach_point| {
+            attach_point.atom == atom || attach_point.leaving_atom == Some(atom)
+        })
 }
 
 fn has_non_tetrahedral_stereo(atom: &Atom) -> bool {
@@ -1311,7 +1362,10 @@ fn tracked_isotopic_hydrogens(
     // END RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/AddHs.cpp :: getIsoMap
     // The operation adapter records clears before sets in `RemoveHsAssignment`.
     crate::source_port_helpers::rdkit_get_iso_map(
-        read_parts.bonds().iter().map(|bond| (bond.begin(), bond.end())),
+        read_parts
+            .bonds()
+            .iter()
+            .map(|bond| (bond.begin(), bond.end())),
         |atom_id| {
             read_parts
                 .atom(atom_id)
@@ -1343,9 +1397,6 @@ fn should_remove_h(
     // RDKit✔️✔️:   if (!ps.removeWithQuery && atom->hasQuery()) {
     // RDKit✔️✔️:     return false;
     // RDKit✔️✔️:   }
-    if !params.remove_with_query && atom_data.query().is_some() {
-        return Ok(false);
-    }
 
     let degree = context.degree(atom);
 
@@ -1374,7 +1425,8 @@ fn should_remove_h(
     // RDKit✔️✔️:   if (!ps.removeIsotopes && !ps.removeAndTrackIsotopes && atom->getIsotope()) {
     // RDKit✔️✔️:     return false;
     // RDKit✔️✔️:   }
-    if !params.remove_isotopes && !params.remove_and_track_isotopes && atom_data.isotope().is_some() {
+    if !params.remove_isotopes && !params.remove_and_track_isotopes && atom_data.isotope().is_some()
+    {
         return Ok(false);
     }
 
@@ -1517,7 +1569,8 @@ fn should_remove_h(
             // RDKit✔️✔️:         }
             // RDKit✔️✔️:         return false;
             // RDKit✔️✔️:       }
-            if !params.remove_nontetrahedral_neighbors && has_non_tetrahedral_stereo(neighbor_data) {
+            if !params.remove_nontetrahedral_neighbors && has_non_tetrahedral_stereo(neighbor_data)
+            {
                 if params.show_warnings {
                     log::warn!(
                         "WARNING: not removing hydrogen atom with neighbor that has non-tetrahedral stereochemistry"
@@ -1682,7 +1735,8 @@ fn mol_remove_h_assignment(
         // RDKit✔️❌:     if (heavyAtom->getDegree() == 2) { ... clear neighboring bond stereo ... }
         // COSMolKit records this as BondStereoUpdate.
         if context.degree(heavy_atom) == 2
-            && let Some(update) = clear_neighbor_stereo_assignment(&context, heavy_atom, hydrogen_bond.id())?
+            && let Some(update) =
+                clear_neighbor_stereo_assignment(&context, heavy_atom, hydrogen_bond.id())?
         {
             assignment.bond_stereo_updates.push(update);
         }
@@ -1700,9 +1754,11 @@ fn mol_remove_h_assignment(
                 }
             }
             BondDirection::EndDownRight | BondDirection::EndUpRight => {
-                if let Some(update) =
-                    copy_hydrogen_bond_direction_to_neighbor_assignment(&context, heavy_atom, hydrogen_bond)?
-                {
+                if let Some(update) = copy_hydrogen_bond_direction_to_neighbor_assignment(
+                    &context,
+                    heavy_atom,
+                    hydrogen_bond,
+                )? {
                     assignment.bond_direction_updates.push(update);
                 }
             }
@@ -1728,16 +1784,22 @@ fn mol_remove_h_assignment(
             params.update_explicit_count,
             cached_total_valence,
         )? {
-            increment_explicit_hydrogen_update(assignment, heavy_atom, heavy_atom_data.explicit_hydrogens());
+            increment_explicit_hydrogen_update(
+                assignment,
+                heavy_atom,
+                heavy_atom_data.explicit_hydrogens(),
+            );
         }
 
         // RDKit✔️❌:     for (auto &sg : getSubstanceGroups(mol)) { sg.removeBondWithIdx(...); }
         // COSMolKit records SGroup bond removal for the operation body.
         for substance_group in read_parts.substance_groups() {
             if substance_group.bonds().contains(&hydrogen_bond.id()) {
-                assignment.sgroup_updates.push(SGroupRemoveHsUpdate::RemoveBond {
-                    bond: hydrogen_bond.id(),
-                });
+                assignment
+                    .sgroup_updates
+                    .push(SGroupRemoveHsUpdate::RemoveBond {
+                        bond: hydrogen_bond.id(),
+                    });
             }
         }
     }
@@ -1962,7 +2024,10 @@ fn incident_bond_ids(context: &RemoveHsPredicateContext<'_>, atom: AtomId) -> Ve
         .collect()
 }
 
-fn count_swaps_to_interconvert(probe: &[BondId], reference: &[BondId]) -> Result<usize, RemoveHydrogensError> {
+fn count_swaps_to_interconvert(
+    probe: &[BondId],
+    reference: &[BondId],
+) -> Result<usize, RemoveHydrogensError> {
     crate::source_port_helpers::count_swaps_to_interconvert(reference, probe).map_err(|error| {
         let (branch, reason) = match error {
             crate::source_port_helpers::CountSwapsError::SizeMismatch => (
@@ -1995,13 +2060,16 @@ fn should_increment_explicit_h_count(
     // BEGIN RDKIT CPP BODY molRemoveH explicit-H-count decision
     // RDKit✔️✔️:     if (updateExplicitCount || heavyAtom->getNoImplicit() ||
     // RDKit✔️✔️:         heavyAtom->getChiralTag() != Atom::CHI_UNSPECIFIED) { ... }
-    let heavy_atom_data = read_parts
-        .atom(heavy_atom)
-        .ok_or(RemoveHydrogensError::AtomOutOfRange {
-            atom: heavy_atom,
-            atom_count: read_parts.num_atoms(),
-        })?;
-    if update_explicit_count || heavy_atom_data.no_implicit() || heavy_atom_data.chiral_tag() != ChiralTag::Unspecified
+    let heavy_atom_data =
+        read_parts
+            .atom(heavy_atom)
+            .ok_or(RemoveHydrogensError::AtomOutOfRange {
+                atom: heavy_atom,
+                atom_count: read_parts.num_atoms(),
+            })?;
+    if update_explicit_count
+        || heavy_atom_data.no_implicit()
+        || heavy_atom_data.chiral_tag() != ChiralTag::Unspecified
     {
         return Ok(true);
     }
@@ -2021,12 +2089,14 @@ fn should_increment_explicit_h_count(
             reason: "cached total valence is required before deciding whether to preserve removed H as explicit count",
         })?;
     let default_valences =
-        crate::rdkit_valence_list(heavy_atom_data.atomic_number()).map_err(|_| RemoveHydrogensError::ProtocolDebt {
-            branch: "molRemoveH/default-valence-list",
-            reason: "RDKit valence table lookup failed while deciding removed-H explicit count",
+        crate::rdkit_valence_list(heavy_atom_data.atomic_number()).map_err(|_| {
+            RemoveHydrogensError::ProtocolDebt {
+                branch: "molRemoveH/default-valence-list",
+                reason: "RDKit valence table lookup failed while deciding removed-H explicit count",
+            }
         })?;
-    let non_default_valence =
-        default_valences.is_some_and(|values| values.iter().skip(1).any(|value| *value == total_valence));
+    let non_default_valence = default_valences
+        .is_some_and(|values| values.iter().skip(1).any(|value| *value == total_valence));
     Ok(((heavy_atom_data.atomic_number() == 7
         || heavy_atom_data.atomic_number() == 15
         || may_need_extra_h(read_parts, heavy_atom, cached_total_valence)?)
@@ -2067,8 +2137,8 @@ fn may_need_extra_h(
 mod tests {
     use super::*;
     use crate::{
-        AtomQueryPredicate, AtomSpec, BondSpec, Element, MoleculeBuilder, QueryNode, SGroupAttachPoint, SGroupCState,
-        SubstanceGroupId, SubstanceGroupKind,
+        AtomQueryPredicate, AtomSpec, BondSpec, Element, MoleculeBuilder, QueryNode,
+        SGroupAttachPoint, SGroupCState, SubstanceGroupId, SubstanceGroupKind,
     };
 
     fn read(molecule: &Molecule) -> MoleculeReadParts<'_> {
@@ -2100,7 +2170,9 @@ mod tests {
 
     #[test]
     fn shared_count_swaps_remove_hs_preserves_protocol_debt_mapping() {
-        let size_error = count_swaps_to_interconvert(&[BondId::new(0)], &[BondId::new(0), BondId::new(1)]).unwrap_err();
+        let size_error =
+            count_swaps_to_interconvert(&[BondId::new(0)], &[BondId::new(0), BondId::new(1)])
+                .unwrap_err();
         assert!(matches!(
             size_error,
             RemoveHydrogensError::ProtocolDebt {
@@ -2109,9 +2181,11 @@ mod tests {
             }
         ));
 
-        let missing_error =
-            count_swaps_to_interconvert(&[BondId::new(0), BondId::new(2)], &[BondId::new(0), BondId::new(1)])
-                .unwrap_err();
+        let missing_error = count_swaps_to_interconvert(
+            &[BondId::new(0), BondId::new(2)],
+            &[BondId::new(0), BondId::new(1)],
+        )
+        .unwrap_err();
         assert!(matches!(
             missing_error,
             RemoveHydrogensError::ProtocolDebt {
@@ -2124,7 +2198,8 @@ mod tests {
     #[test]
     fn remove_hs_assignment_returns_noop_for_empty_molecule() {
         let molecule = Molecule::default();
-        let assignment = remove_hs_assignment(read(&molecule), &RemoveHsParams::default(), true).unwrap();
+        let assignment =
+            remove_hs_assignment(read(&molecule), &RemoveHsParams::default(), true).unwrap();
 
         assert!(assignment.atoms_to_remove.is_empty());
         assert!(!assignment.sanitize_after_removal);
@@ -2141,7 +2216,8 @@ mod tests {
             .unwrap();
         let molecule = builder.build().unwrap();
 
-        let assignment = remove_hs_assignment(read(&molecule), &RemoveHsParams::default(), false).unwrap();
+        let assignment =
+            remove_hs_assignment(read(&molecule), &RemoveHsParams::default(), false).unwrap();
 
         assert_eq!(assignment.atoms_to_remove, vec![hydrogen]);
         assert!(!assignment.sanitize_after_removal);
@@ -2218,14 +2294,17 @@ mod tests {
         let mut builder = MoleculeBuilder::new();
         let isolated_hydrogen = builder.add_atom(AtomSpec::new(Element::H));
         let molecule = builder.build().unwrap();
-        assert!(!should(&molecule, isolated_hydrogen, &RemoveHsParams::default()));
+        assert!(!should(
+            &molecule,
+            isolated_hydrogen,
+            &RemoveHsParams::default()
+        ));
         let mut params = RemoveHsParams::default();
         params.remove_degree_zero = true;
         assert!(should(&molecule, isolated_hydrogen, &params));
 
         let mut builder = MoleculeBuilder::new();
-        let query_hydrogen =
-            builder.add_atom(AtomSpec::new(Element::H).with_query(QueryNode::predicate(AtomQueryPredicate::Any)));
+        let query_hydrogen = builder.add_atom(AtomSpec::new(Element::H));
         let molecule = builder.build().unwrap();
         let mut params = RemoveHsParams {
             remove_degree_zero: true,
@@ -2286,10 +2365,18 @@ mod tests {
         let left_hydrogen = builder.add_atom(AtomSpec::new(Element::H));
         let right_hydrogen = builder.add_atom(AtomSpec::new(Element::H));
         builder
-            .add_bond(BondSpec::new(left_hydrogen, right_hydrogen, BondOrder::Single))
+            .add_bond(BondSpec::new(
+                left_hydrogen,
+                right_hydrogen,
+                BondOrder::Single,
+            ))
             .unwrap();
         let molecule = builder.build().unwrap();
-        assert!(!should(&molecule, left_hydrogen, &RemoveHsParams::default()));
+        assert!(!should(
+            &molecule,
+            left_hydrogen,
+            &RemoveHsParams::default()
+        ));
         let mut params = RemoveHsParams::default();
         params.remove_only_h_neighbors = true;
         assert!(should(&molecule, left_hydrogen, &params));
@@ -2298,7 +2385,10 @@ mod tests {
         let carbon = builder.add_atom(AtomSpec::new(Element::C));
         let hydrogen = builder.add_atom(AtomSpec::new(Element::H));
         builder
-            .add_bond(BondSpec::new(carbon, hydrogen, BondOrder::Single).with_direction(BondDirection::BeginWedge))
+            .add_bond(
+                BondSpec::new(carbon, hydrogen, BondOrder::Single)
+                    .with_direction(BondDirection::BeginWedge),
+            )
             .unwrap();
         let molecule = builder.build().unwrap();
         let params = RemoveHsParams {
@@ -2308,7 +2398,8 @@ mod tests {
         assert!(!should(&molecule, hydrogen, &params));
 
         let mut builder = MoleculeBuilder::new();
-        let center = builder.add_atom(AtomSpec::new(Element::C).with_chiral_tag(ChiralTag::SquarePlanar));
+        let center =
+            builder.add_atom(AtomSpec::new(Element::C).with_chiral_tag(ChiralTag::SquarePlanar));
         let hydrogen = builder.add_atom(AtomSpec::new(Element::H));
         builder
             .add_bond(BondSpec::new(center, hydrogen, BondOrder::Single))
@@ -2363,7 +2454,8 @@ mod tests {
     #[test]
     fn remove_hs_assignment_records_chiral_neighbor_inversion() {
         let mut builder = MoleculeBuilder::new();
-        let center = builder.add_atom(AtomSpec::new(Element::C).with_chiral_tag(ChiralTag::TetrahedralCw));
+        let center =
+            builder.add_atom(AtomSpec::new(Element::C).with_chiral_tag(ChiralTag::TetrahedralCw));
         let hydrogen = builder.add_atom(AtomSpec::new(Element::H));
         let oxygen = builder.add_atom(AtomSpec::new(Element::O));
         let nitrogen = builder.add_atom(AtomSpec::new(Element::N));
@@ -2382,7 +2474,8 @@ mod tests {
             .unwrap();
         let molecule = builder.build().unwrap();
 
-        let assignment = remove_hs_assignment(read(&molecule), &RemoveHsParams::default(), false).unwrap();
+        let assignment =
+            remove_hs_assignment(read(&molecule), &RemoveHsParams::default(), false).unwrap();
 
         assert_eq!(assignment.atoms_to_remove, vec![hydrogen]);
         assert_eq!(assignment.atom_chirality_inversions, vec![center]);
@@ -2429,14 +2522,18 @@ mod tests {
         let hydrogen = builder.add_atom(AtomSpec::new(Element::H));
         let oxygen = builder.add_atom(AtomSpec::new(Element::O));
         builder
-            .add_bond(BondSpec::new(carbon, hydrogen, BondOrder::Single).with_direction(BondDirection::EndUpRight))
+            .add_bond(
+                BondSpec::new(carbon, hydrogen, BondOrder::Single)
+                    .with_direction(BondDirection::EndUpRight),
+            )
             .unwrap();
         let neighbor_bond = builder
             .add_bond(BondSpec::new(carbon, oxygen, BondOrder::Single))
             .unwrap();
         let molecule = builder.build().unwrap();
 
-        let assignment = remove_hs_assignment(read(&molecule), &RemoveHsParams::default(), false).unwrap();
+        let assignment =
+            remove_hs_assignment(read(&molecule), &RemoveHsParams::default(), false).unwrap();
 
         assert_eq!(
             assignment.bond_direction_updates,
@@ -2499,7 +2596,8 @@ mod tests {
         let hydrogen = builder.add_atom(AtomSpec::new(Element::H));
         builder
             .add_substance_group(
-                SubstanceGroup::new(SubstanceGroupId::new(0), SubstanceGroupKind::Superatom).with_atoms(vec![hydrogen]),
+                SubstanceGroup::new(SubstanceGroupId::new(0), SubstanceGroupKind::Superatom)
+                    .with_atoms(vec![hydrogen]),
             )
             .unwrap();
         let molecule = builder.build().unwrap();
@@ -2570,7 +2668,8 @@ mod tests {
     #[test]
     fn remove_hs_assignment_tracks_isotopic_hydrogens_and_clears_stale_property() {
         let mut builder = MoleculeBuilder::new();
-        let carbon = builder.add_atom(AtomSpec::new(Element::C).with_tracked_isotopic_hydrogens(vec![9]));
+        let carbon =
+            builder.add_atom(AtomSpec::new(Element::C).with_tracked_isotopic_hydrogens(vec![9]));
         let deuterium = builder.add_atom(AtomSpec::new(Element::H).with_isotope(2));
         builder
             .add_bond(BondSpec::new(carbon, deuterium, BondOrder::Single))
@@ -2589,14 +2688,12 @@ mod tests {
                 .atom_property_updates
                 .contains(&AtomPropertyUpdate::ClearIsotopicHydrogens { atom: carbon })
         );
-        assert!(
-            assignment
-                .atom_property_updates
-                .contains(&AtomPropertyUpdate::SetIsotopicHydrogens {
-                    atom: carbon,
-                    isotopes: vec![2],
-                })
-        );
+        assert!(assignment.atom_property_updates.contains(
+            &AtomPropertyUpdate::SetIsotopicHydrogens {
+                atom: carbon,
+                isotopes: vec![2],
+            }
+        ));
     }
 
     #[test]
@@ -2620,14 +2717,12 @@ mod tests {
         let assignment = remove_hs_assignment(read(&molecule), &params, false).unwrap();
 
         assert_eq!(assignment.atoms_to_remove, vec![protium, deuterium]);
-        assert!(
-            assignment
-                .atom_property_updates
-                .contains(&AtomPropertyUpdate::SetIsotopicHydrogens {
-                    atom: carbon,
-                    isotopes: vec![2],
-                })
-        );
+        assert!(assignment.atom_property_updates.contains(
+            &AtomPropertyUpdate::SetIsotopicHydrogens {
+                atom: carbon,
+                isotopes: vec![2],
+            }
+        ));
         assert_eq!(
             assignment.atom_explicit_hydrogen_updates.last(),
             Some(&AtomExplicitHydrogenUpdate {
@@ -2649,7 +2744,10 @@ mod tests {
 
         let assignment = add_hs_assignment(read(&molecule), &AddHsParams::default()).unwrap();
 
-        assert_eq!(assignment.clear_isotopic_hydrogen_properties, vec![nitrogen]);
+        assert_eq!(
+            assignment.clear_isotopic_hydrogen_properties,
+            vec![nitrogen]
+        );
         assert_eq!(
             assignment.hydrogens_to_add[..2]
                 .iter()
@@ -2691,7 +2789,8 @@ mod tests {
     fn add_hs_assignment_records_residue_info_for_existing_hydrogens() {
         let mut builder = MoleculeBuilder::new();
         let nitrogen = builder.add_atom(
-            AtomSpec::new(Element::N).with_pdb_residue_info(AtomPdbResidueInfo::new(" N  ", 12, "GLY", 3, "A", false)),
+            AtomSpec::new(Element::N)
+                .with_pdb_residue_info(AtomPdbResidueInfo::new(" N  ", 12, "GLY", 3, "A", false)),
         );
         let hydrogen = builder.add_atom(AtomSpec::new(Element::H));
         builder
@@ -2765,7 +2864,12 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![oxygen, oxygen, first_hydrogen, second_hydrogen]
         );
-        assert!(assignment.hydrogens_to_add.iter().all(|hydrogen| hydrogen.is_implicit));
+        assert!(
+            assignment
+                .hydrogens_to_add
+                .iter()
+                .all(|hydrogen| hydrogen.is_implicit)
+        );
     }
 
     #[test]
@@ -2819,7 +2923,8 @@ mod tests {
             .unwrap();
         let molecule = builder.build().unwrap();
 
-        let assignment = remove_hs_assignment(read(&molecule), &RemoveHsParams::default(), false).unwrap();
+        let assignment =
+            remove_hs_assignment(read(&molecule), &RemoveHsParams::default(), false).unwrap();
 
         assert_eq!(
             assignment.atom_explicit_hydrogen_updates,
@@ -2841,11 +2946,14 @@ mod tests {
             let carbon = builder.add_atom(AtomSpec::new(Element::C));
             let hydrogen = builder.add_atom(AtomSpec::new(Element::H));
             builder
-                .add_bond(BondSpec::new(carbon, hydrogen, BondOrder::Single).with_direction(direction))
+                .add_bond(
+                    BondSpec::new(carbon, hydrogen, BondOrder::Single).with_direction(direction),
+                )
                 .unwrap();
             let molecule = builder.build().unwrap();
 
-            let assignment = remove_hs_assignment(read(&molecule), &RemoveHsParams::default(), false).unwrap();
+            let assignment =
+                remove_hs_assignment(read(&molecule), &RemoveHsParams::default(), false).unwrap();
 
             assert_eq!(assignment.atoms_to_remove, vec![hydrogen]);
         }

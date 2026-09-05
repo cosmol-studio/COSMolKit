@@ -2,7 +2,9 @@
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
-use crate::{AdjacencyList, AtomId, Bond, BondId, BondOrder, Molecule, read_parts::MoleculeReadParts};
+use crate::{
+    AdjacencyList, AtomId, Bond, BondId, BondOrder, Molecule, read_parts::MoleculeReadParts,
+};
 
 const MAX_BFSQ_SIZE: usize = 200_000;
 
@@ -137,7 +139,8 @@ impl RingInfo {
 
         let mut atom_members = vec![Vec::new(); atom_count];
         let mut bond_members = vec![Vec::new(); bond_count];
-        for (ring_index, (ring_atoms, ring_bonds)) in atom_rings.iter().zip(&bond_rings).enumerate() {
+        for (ring_index, (ring_atoms, ring_bonds)) in atom_rings.iter().zip(&bond_rings).enumerate()
+        {
             if ring_atoms.len() != ring_bonds.len() {
                 return Err("ring atom/bond size mismatch");
             }
@@ -168,7 +171,9 @@ impl RingInfo {
 
         let ring_count = atom_rings.len();
         if !fused_rings.is_empty() {
-            if fused_rings.len() != ring_count || fused_rings.iter().any(|row| row.len() != ring_count) {
+            if fused_rings.len() != ring_count
+                || fused_rings.iter().any(|row| row.len() != ring_count)
+            {
                 return Err("fused-ring matrix dimensions do not match ring count");
             }
             for left in 0..ring_count {
@@ -295,7 +300,11 @@ impl RingInfo {
         // RDKit✔️✔️:   PRECONDITION(df_init, "RingInfo not initialized");
         // RDKit✔️✔️:   PRECONDITION(d_atomRings.size() == d_bondRings.size(), "length mismatch");
         debug_assert!(self.initialized, "RingInfo not initialized");
-        debug_assert_eq!(self.atom_rings.len(), self.bond_rings.len(), "length mismatch");
+        debug_assert_eq!(
+            self.atom_rings.len(),
+            self.bond_rings.len(),
+            "length mismatch"
+        );
         // RDKit✔️✔️:   return rdcast<unsigned int>(d_atomRings.size());
         // RDKit✔️✔️: }
         // END RDKIT CPP FUNCTION RingInfo::numRings
@@ -465,7 +474,10 @@ impl RingInfo {
         // RDKit✔️✔️:   return 0;
         // RDKit✔️✔️: }
         // END RDKIT CPP FUNCTION RingInfo::numAtomRings
-        self.atom_members.get(atom.index()).map(Vec::len).unwrap_or(0)
+        self.atom_members
+            .get(atom.index())
+            .map(Vec::len)
+            .unwrap_or(0)
     }
 
     #[must_use]
@@ -480,7 +492,10 @@ impl RingInfo {
         // RDKit✔️✔️:   return 0;
         // RDKit✔️✔️: }
         // END RDKIT CPP FUNCTION RingInfo::numBondRings
-        self.bond_members.get(bond.index()).map(Vec::len).unwrap_or(0)
+        self.bond_members
+            .get(bond.index())
+            .map(Vec::len)
+            .unwrap_or(0)
     }
 
     #[must_use]
@@ -496,7 +511,10 @@ impl RingInfo {
         // RDKit✔️✔️:   return emptyVect;
         // RDKit✔️✔️: }
         // END RDKIT CPP FUNCTION RingInfo::atomMembers
-        self.atom_members.get(atom.index()).map(Vec::as_slice).unwrap_or(&[])
+        self.atom_members
+            .get(atom.index())
+            .map(Vec::as_slice)
+            .unwrap_or(&[])
     }
 
     #[must_use]
@@ -512,7 +530,10 @@ impl RingInfo {
         // RDKit✔️✔️:   return emptyVect;
         // RDKit✔️✔️: }
         // END RDKIT CPP FUNCTION RingInfo::bondMembers
-        self.bond_members.get(bond.index()).map(Vec::as_slice).unwrap_or(&[])
+        self.bond_members
+            .get(bond.index())
+            .map(Vec::as_slice)
+            .unwrap_or(&[])
     }
 
     #[must_use]
@@ -612,7 +633,11 @@ impl RingInfo {
         Ok(self.fused_rings[ring].iter().any(|fused| *fused))
     }
 
-    pub fn are_rings_fused(&mut self, ring1: usize, ring2: usize) -> Result<bool, RingFindingError> {
+    pub fn are_rings_fused(
+        &mut self,
+        ring1: usize,
+        ring2: usize,
+    ) -> Result<bool, RingFindingError> {
         // BEGIN RDKIT CPP FUNCTION RingInfo::areRingsFused
         // RDKit✔️✔️: bool RingInfo::areRingsFused(unsigned int ring1Idx, unsigned int ring2Idx) {
         // RDKit✔️✔️:   initFusedRings();
@@ -676,7 +701,10 @@ impl RingInfo {
         // RDKit✔️✔️:   return d_fusedRings[ringIdx].count();
         // RDKit✔️✔️: }
         // END RDKIT CPP FUNCTION RingInfo::numFusedRingNeighbors
-        Ok(self.fused_rings[ring].iter().filter(|fused| **fused).count())
+        Ok(self.fused_rings[ring]
+            .iter()
+            .filter(|fused| **fused)
+            .count())
     }
 
     pub fn fused_ring_neighbors(&mut self, ring: usize) -> Result<Vec<usize>, RingFindingError> {
@@ -810,9 +838,10 @@ impl RingInfo {
         // COSMolKit stores the URF relevant-cycle count only when
         // `find_ring_families()` materialized URF data. Calling this on a
         // RingInfo without that cache is an explicit unsupported branch.
-        self.relevant_cycle_count.ok_or(RingFindingError::UnsupportedBranch {
-            reason: "URF relevant-cycle data is not modeled",
-        })
+        self.relevant_cycle_count
+            .ok_or(RingFindingError::UnsupportedBranch {
+                reason: "URF relevant-cycle data is not modeled",
+            })
     }
 
     #[must_use]
@@ -933,7 +962,11 @@ impl<'a> RingSearchContext<'a> {
     }
 }
 
-fn extra_ring_can_replace_sssr_ring(extra_ring: &[usize], ring: &[usize], bond_counts: &[i32]) -> bool {
+fn extra_ring_can_replace_sssr_ring(
+    extra_ring: &[usize],
+    ring: &[usize],
+    bond_counts: &[i32],
+) -> bool {
     if ring.len() != extra_ring.len() {
         return false;
     }
@@ -976,8 +1009,16 @@ pub fn symmetrize_sssr_with_options(
     )
 }
 
-pub(crate) fn symmetrize_sssr_from_read_parts(read: MoleculeReadParts<'_>) -> Result<RingInfo, RingFindingError> {
-    symmetrize_sssr_with_options_from_parts(read.num_atoms(), read.bonds(), read.adjacency(), false, false)
+pub(crate) fn symmetrize_sssr_from_read_parts(
+    read: MoleculeReadParts<'_>,
+) -> Result<RingInfo, RingFindingError> {
+    symmetrize_sssr_with_options_from_parts(
+        read.num_atoms(),
+        read.bonds(),
+        read.adjacency(),
+        false,
+        false,
+    )
 }
 
 pub(crate) fn symmetrize_sssr_with_options_from_parts(
@@ -996,7 +1037,11 @@ pub(crate) fn symmetrize_sssr_with_options_from_parts(
     // RDKit✔️✔️:   findSSSR(mol, sssrs, includeDativeBonds, includeHydrogenBonds);
     let sssr = find_sssr_internal(&context, include_dative_bonds, include_hydrogen_bonds)?;
     // RDKit✔️✔️:   mol.getRingInfo()->initialize(FIND_RING_TYPE_SYMM_SSSR);
-    let mut info = RingInfo::new(RingFindType::SymmSssr, context.atom_count(), context.bond_count());
+    let mut info = RingInfo::new(
+        RingFindType::SymmSssr,
+        context.atom_count(),
+        context.bond_count(),
+    );
     // RDKit✔️✔️:   res.reserve(sssrs.size());
     // RDKit✔️✔️:   for (const auto &r : sssrs) {
     // RDKit✔️✔️:     res.emplace_back(r);
@@ -1065,7 +1110,11 @@ pub(crate) fn find_sssr_from_parts(
 
 fn find_sssr_from_context(context: &RingSearchContext<'_>) -> Result<RingInfo, RingFindingError> {
     let result = find_sssr_internal(&context, false, false)?;
-    let mut info = RingInfo::new(RingFindType::Sssr, context.atom_count(), context.bond_count());
+    let mut info = RingInfo::new(
+        RingFindType::Sssr,
+        context.atom_count(),
+        context.bond_count(),
+    );
     store_rings_info(&context, &result.rings, &mut info)?;
     Ok(info)
 }
@@ -1088,9 +1137,15 @@ pub(crate) fn fast_find_rings_from_parts(
     fast_find_rings_from_context(&context)
 }
 
-fn fast_find_rings_from_context(context: &RingSearchContext<'_>) -> Result<RingInfo, RingFindingError> {
+fn fast_find_rings_from_context(
+    context: &RingSearchContext<'_>,
+) -> Result<RingInfo, RingFindingError> {
     let rings = fast_find_rings_internal(&context)?;
-    let mut info = RingInfo::new(RingFindType::Fast, context.atom_count(), context.bond_count());
+    let mut info = RingInfo::new(
+        RingFindType::Fast,
+        context.atom_count(),
+        context.bond_count(),
+    );
     store_rings_info(&context, &rings, &mut info)?;
     Ok(info)
 }
@@ -1245,8 +1300,10 @@ fn find_sssr_internal(
     let mut atom_degrees_with_zero_order_bonds = vec![0i32; context.atom_count()];
     // RDKit✔️✔️:   for (unsigned int i = 0; i < nats; ++i) {
     for atom_idx in 0..context.atom_count() {
-        let deg = i32::try_from(context.neighbors(atom_idx).len()).map_err(|_| RingFindingError::Value {
-            message: "atom degree out of range",
+        let deg = i32::try_from(context.neighbors(atom_idx).len()).map_err(|_| {
+            RingFindingError::Value {
+                message: "atom degree out of range",
+            }
         })?;
         atom_degrees[atom_idx] = deg;
         atom_degrees_with_zero_order_bonds[atom_idx] = deg;
@@ -1322,7 +1379,13 @@ fn find_sssr_internal(
                 if !done_atoms[cand] {
                     done_atoms[cand] = true;
                     atoms_done += 1;
-                    trim_bonds(context, cand, &mut changed, &mut atom_degrees, &mut active_bonds);
+                    trim_bonds(
+                        context,
+                        cand,
+                        &mut changed,
+                        &mut atom_degrees,
+                        &mut active_bonds,
+                    );
                 }
             }
             let d2nodes = pick_d2_nodes(context, &cur_frag, &atom_degrees, &active_bonds);
@@ -1343,10 +1406,19 @@ fn find_sssr_internal(
                 for d2i in d2nodes {
                     done_atoms[d2i] = true;
                     atoms_done += 1;
-                    trim_bonds(context, d2i, &mut changed, &mut atom_degrees, &mut active_bonds);
+                    trim_bonds(
+                        context,
+                        d2i,
+                        &mut changed,
+                        &mut atom_degrees,
+                        &mut active_bonds,
+                    );
                 }
             } else if atoms_done <= cur_frag.len().saturating_sub(3) {
-                let cand = cur_frag.iter().copied().find(|&atom| atom_degrees[atom] == 3);
+                let cand = cur_frag
+                    .iter()
+                    .copied()
+                    .find(|&atom| atom_degrees[atom] == 3);
                 let Some(cand) = cand else {
                     break;
                 };
@@ -1356,7 +1428,13 @@ fn find_sssr_internal(
                 find_rings_d3_node(context, &mut frag_res, &mut invars, cand, &active_bonds)?;
                 done_atoms[cand] = true;
                 atoms_done += 1;
-                trim_bonds(context, cand, &mut changed, &mut atom_degrees, &mut active_bonds);
+                trim_bonds(
+                    context,
+                    cand,
+                    &mut changed,
+                    &mut atom_degrees,
+                    &mut active_bonds,
+                );
             }
         }
         let nexpt = isize::try_from(nbnds).map_err(|_| RingFindingError::Value {
@@ -1369,7 +1447,9 @@ fn find_sssr_internal(
         })?;
         if ssize < nexpt {
             let mut dead_bonds = vec![false; context.bond_count()];
-            while let Some(possible_bond) = next_possible_ring_bond(context, &ring_bonds, &ring_atoms, &dead_bonds) {
+            while let Some(possible_bond) =
+                next_possible_ring_bond(context, &ring_bonds, &ring_atoms, &dead_bonds)
+            {
                 let ring_found = find_ring_connecting_atoms(
                     context,
                     possible_bond,
@@ -1433,7 +1513,11 @@ fn is_dative(order: BondOrder) -> bool {
     )
 }
 
-fn is_inactive_ring_bond(order: BondOrder, include_dative_bonds: bool, include_hydrogen_bonds: bool) -> bool {
+fn is_inactive_ring_bond(
+    order: BondOrder,
+    include_dative_bonds: bool,
+    include_hydrogen_bonds: bool,
+) -> bool {
     order == BondOrder::Zero
         || (!include_dative_bonds && is_dative(order))
         || (!include_hydrogen_bonds && order == BondOrder::Hydrogen)
@@ -1523,7 +1607,9 @@ impl RingInvariant {
 
     #[cfg(test)]
     fn atom_indices(&self) -> Vec<usize> {
-        (0..self.num_bits).filter(|&index| self.bit(index)).collect()
+        (0..self.num_bits)
+            .filter(|&index| self.bit(index))
+            .collect()
     }
 }
 
@@ -1547,7 +1633,10 @@ fn compute_ring_invariant(ring: &[usize], num_atoms: usize) -> RingInvariant {
     }
 }
 
-fn convert_to_bonds(context: &RingSearchContext<'_>, ring: &[usize]) -> Result<Vec<usize>, RingFindingError> {
+fn convert_to_bonds(
+    context: &RingSearchContext<'_>,
+    ring: &[usize],
+) -> Result<Vec<usize>, RingFindingError> {
     // BEGIN RDKIT CPP FUNCTION RingUtils::convertToBonds
     // RDKit✔️✔️: void convertToBonds(const INT_VECT &ring, INT_VECT &bondRing,
     // RDKit✔️✔️:                     const ROMol &mol) {
@@ -1898,7 +1987,8 @@ fn find_sssr_for_dup_candidates(
                 }
                 // RDKit✔️✔️:         VECT_INT_VECT srings;
                 // RDKit✔️✔️:         smallestRingsBfs(mol, dupCand, srings, activeBondsCopy);
-                let smallest = smallest_rings_bfs(context, dup_candidate, &active_bonds_copy, None)?;
+                let smallest =
+                    smallest_rings_bfs(context, dup_candidate, &active_bonds_copy, None)?;
                 // RDKit✔️✔️:         nrings.reserve(srings.size());
                 // RDKit✔️✔️:         for (const auto &sri : srings) {
                 for ring in smallest {
@@ -2022,7 +2112,13 @@ fn find_rings_d2_nodes(
                 // RDKit✔️✔️:         auto local_cand = changed.front();
                 // RDKit✔️✔️:         changed.pop();
                 // RDKit✔️✔️:         trimBonds(local_cand, tMol, changed, atomDegrees, activeBonds);
-                trim_bonds(context, local_candidate, &mut changed, atom_degrees, active_bonds);
+                trim_bonds(
+                    context,
+                    local_candidate,
+                    &mut changed,
+                    atom_degrees,
+                    active_bonds,
+                );
             }
         }
     }
@@ -2130,7 +2226,8 @@ fn find_rings_d3_node(
             // RDKit✔️✔️:       INT_VECT forb;
             // RDKit✔️✔️:       forb.push_back(f);
             // RDKit✔️✔️:       smallestRingsBfs(tMol, cand, trings, activeBonds, &forb);
-            let rings = smallest_rings_bfs(context, candidate, active_bonds, Some(&[forbidden_atom]))?;
+            let rings =
+                smallest_rings_bfs(context, candidate, active_bonds, Some(&[forbidden_atom]))?;
             // RDKit✔️✔️:       for (const auto &nring : trings) {
             for ring in rings {
                 // RDKit✔️✔️:         auto invr = RingUtils::computeRingInvariant(nring, tMol.getNumAtoms());
@@ -2331,7 +2428,12 @@ fn rdkit_ring_size_less(left: &[usize], right: &[usize]) -> bool {
     left.len() < right.len()
 }
 
-fn rdkit_libstdcpp_introsort_loop(rings: &mut [Vec<usize>], first: usize, mut last: usize, mut depth_limit: usize) {
+fn rdkit_libstdcpp_introsort_loop(
+    rings: &mut [Vec<usize>],
+    first: usize,
+    mut last: usize,
+    mut depth_limit: usize,
+) {
     const THRESHOLD: usize = 16;
     while last - first > THRESHOLD {
         if depth_limit == 0 {
@@ -2345,13 +2447,23 @@ fn rdkit_libstdcpp_introsort_loop(rings: &mut [Vec<usize>], first: usize, mut la
     }
 }
 
-fn rdkit_libstdcpp_unguarded_partition_pivot(rings: &mut [Vec<usize>], first: usize, last: usize) -> usize {
+fn rdkit_libstdcpp_unguarded_partition_pivot(
+    rings: &mut [Vec<usize>],
+    first: usize,
+    last: usize,
+) -> usize {
     let mid = first + (last - first) / 2;
     rdkit_libstdcpp_move_median_to_first(rings, first, first + 1, mid, last - 1);
     rdkit_libstdcpp_unguarded_partition(rings, first + 1, last, first)
 }
 
-fn rdkit_libstdcpp_move_median_to_first(rings: &mut [Vec<usize>], result: usize, a: usize, b: usize, c: usize) {
+fn rdkit_libstdcpp_move_median_to_first(
+    rings: &mut [Vec<usize>],
+    result: usize,
+    a: usize,
+    b: usize,
+    c: usize,
+) {
     if rdkit_ring_size_less(&rings[a], &rings[b]) {
         if rdkit_ring_size_less(&rings[b], &rings[c]) {
             rings.swap(result, b);
@@ -2637,7 +2749,9 @@ fn molecule_fragments(context: &RingSearchContext<'_>) -> Vec<Vec<usize>> {
     components.into_values().collect()
 }
 
-fn fast_find_rings_internal(context: &RingSearchContext<'_>) -> Result<Vec<Vec<usize>>, RingFindingError> {
+fn fast_find_rings_internal(
+    context: &RingSearchContext<'_>,
+) -> Result<Vec<Vec<usize>>, RingFindingError> {
     // BEGIN RDKIT CPP FUNCTION MolOps::fastFindRings
     // RDKit✔️✔️: void fastFindRings(const ROMol &mol) {
     // RDKit✔️✔️:   // COSMolKit does not cache RingInfo on the molecule object.
@@ -2667,7 +2781,14 @@ fn fast_find_rings_internal(context: &RingSearchContext<'_>) -> Result<Vec<Vec<u
         // RDKit✔️✔️:     std::vector<const Atom *> traversalOrder;
         let mut traversal_order = Vec::new();
         // RDKit✔️✔️:     _DFS(mol, mol.getAtomWithIdx(i), atomColors, traversalOrder, res);
-        dfs_fast_find_rings(context, atom, &mut atom_colors, &mut traversal_order, &mut result, None);
+        dfs_fast_find_rings(
+            context,
+            atom,
+            &mut atom_colors,
+            &mut traversal_order,
+            &mut result,
+            None,
+        );
     }
     // RDKit✔️✔️:   // RingInfo is returned directly, not stored on the molecule.
     // RDKit✔️✔️: }
@@ -2706,11 +2827,21 @@ fn dfs_fast_find_rings(
                 atom_colors[neighbor_idx] = 2;
             } else {
                 // RDKit✔️✔️:         _DFS(mol, nbr, atomColors, traversalOrder, res, atom);
-                dfs_fast_find_rings(context, neighbor_idx, atom_colors, traversal_order, result, Some(atom));
+                dfs_fast_find_rings(
+                    context,
+                    neighbor_idx,
+                    atom_colors,
+                    traversal_order,
+                    result,
+                    Some(atom),
+                );
             }
             // RDKit✔️✔️:       }
             // RDKit✔️✔️:     } else if (atomColors[nbrIdx] == 1) {
-        } else if atom_colors[neighbor_idx] == 1 && from_atom.is_some() && Some(neighbor_idx) != from_atom {
+        } else if atom_colors[neighbor_idx] == 1
+            && from_atom.is_some()
+            && Some(neighbor_idx) != from_atom
+        {
             // RDKit✔️✔️:       if (fromAtom && nbrIdx != fromAtom->getIdx()) {
             // RDKit✔️✔️:         INT_VECT cycle;
             // RDKit✔️✔️:         auto lastElem =
@@ -2745,13 +2876,14 @@ fn dfs_fast_find_rings(
 #[cfg(test)]
 mod tests {
     use super::{
-        RingSearchContext, atom_search_bfs, compute_ring_invariant, convert_to_bonds, extra_ring_can_replace_sssr_ring,
-        fast_find_rings_internal, find_ring_connecting_atoms, find_rings_d3_node, find_sssr_for_dup_candidates,
-        next_possible_ring_bond, pick_d2_nodes, remove_extra_rings, smallest_rings_bfs, symmetrize_sssr_with_options,
+        RingSearchContext, atom_search_bfs, compute_ring_invariant, convert_to_bonds,
+        extra_ring_can_replace_sssr_ring, fast_find_rings_internal, find_ring_connecting_atoms,
+        find_rings_d3_node, find_sssr_for_dup_candidates, next_possible_ring_bond, pick_d2_nodes,
+        remove_extra_rings, smallest_rings_bfs, symmetrize_sssr_with_options,
     };
     use crate::{
-        AtomId, AtomSpec, BondId, BondOrder, BondSpec, Element, Molecule, MoleculeBuilder, RingFindType, RingInfo,
-        find_ring_families, symmetrize_sssr,
+        AtomId, AtomSpec, BondId, BondOrder, BondSpec, Element, Molecule, MoleculeBuilder,
+        RingFindType, RingInfo, find_ring_families, symmetrize_sssr,
     };
     use std::collections::{BTreeMap, BTreeSet};
 
@@ -2905,25 +3037,39 @@ mod tests {
         let a = builder.add_atom(AtomSpec::new(Element::C));
         let b = builder.add_atom(AtomSpec::new(Element::C));
         let c = builder.add_atom(AtomSpec::new(Element::C));
-        builder.add_bond(BondSpec::new(a, b, BondOrder::Dative)).unwrap();
-        builder.add_bond(BondSpec::new(b, c, BondOrder::Hydrogen)).unwrap();
-        builder.add_bond(BondSpec::new(c, a, BondOrder::Single)).unwrap();
+        builder
+            .add_bond(BondSpec::new(a, b, BondOrder::Dative))
+            .unwrap();
+        builder
+            .add_bond(BondSpec::new(b, c, BondOrder::Hydrogen))
+            .unwrap();
+        builder
+            .add_bond(BondSpec::new(c, a, BondOrder::Single))
+            .unwrap();
         let molecule = builder.build().unwrap();
 
         assert_eq!(
-            find_ring_families(&molecule, false, false).unwrap().num_ring_families(),
+            find_ring_families(&molecule, false, false)
+                .unwrap()
+                .num_ring_families(),
             0
         );
         assert_eq!(
-            find_ring_families(&molecule, true, false).unwrap().num_ring_families(),
+            find_ring_families(&molecule, true, false)
+                .unwrap()
+                .num_ring_families(),
             0
         );
         assert_eq!(
-            find_ring_families(&molecule, false, true).unwrap().num_ring_families(),
+            find_ring_families(&molecule, false, true)
+                .unwrap()
+                .num_ring_families(),
             0
         );
         assert_eq!(
-            find_ring_families(&molecule, true, true).unwrap().num_ring_families(),
+            find_ring_families(&molecule, true, true)
+                .unwrap()
+                .num_ring_families(),
             1
         );
         assert_eq!(
@@ -2942,10 +3088,18 @@ mod tests {
         let b = builder.add_atom(AtomSpec::new(Element::C));
         let c = builder.add_atom(AtomSpec::new(Element::C));
         let d = builder.add_atom(AtomSpec::new(Element::C));
-        builder.add_bond(BondSpec::new(a, d, BondOrder::Zero)).unwrap();
-        builder.add_bond(BondSpec::new(a, b, BondOrder::Single)).unwrap();
-        builder.add_bond(BondSpec::new(b, c, BondOrder::Single)).unwrap();
-        builder.add_bond(BondSpec::new(c, a, BondOrder::Single)).unwrap();
+        builder
+            .add_bond(BondSpec::new(a, d, BondOrder::Zero))
+            .unwrap();
+        builder
+            .add_bond(BondSpec::new(a, b, BondOrder::Single))
+            .unwrap();
+        builder
+            .add_bond(BondSpec::new(b, c, BondOrder::Single))
+            .unwrap();
+        builder
+            .add_bond(BondSpec::new(c, a, BondOrder::Single))
+            .unwrap();
         let molecule = builder.build().unwrap();
 
         let rings = find_ring_families(&molecule, false, false).unwrap();
@@ -3089,7 +3243,13 @@ mod tests {
         let molecule = builder.build().unwrap();
         let context = RingSearchContext::new(&molecule).unwrap();
 
-        let mut rings = smallest_rings_bfs(&context, root.index(), &vec![true; molecule.num_bonds()], None).unwrap();
+        let mut rings = smallest_rings_bfs(
+            &context,
+            root.index(),
+            &vec![true; molecule.num_bonds()],
+            None,
+        )
+        .unwrap();
         for ring in &mut rings {
             ring.sort_unstable();
         }
@@ -3205,7 +3365,10 @@ mod tests {
             .collect::<Vec<_>>();
         invariants.sort();
 
-        assert_eq!(invariants, vec![vec![0, 1, 2], vec![0, 1, 3], vec![0, 2, 3, 4]]);
+        assert_eq!(
+            invariants,
+            vec![vec![0, 1, 2], vec![0, 1, 3], vec![0, 2, 3, 4]]
+        );
     }
 
     #[test]
@@ -3214,7 +3377,16 @@ mod tests {
         let atoms = (0..6)
             .map(|_| builder.add_atom(AtomSpec::new(Element::C)))
             .collect::<Vec<_>>();
-        for &(begin, end) in &[(0, 1), (0, 2), (0, 3), (1, 2), (1, 4), (4, 3), (2, 5), (5, 3)] {
+        for &(begin, end) in &[
+            (0, 1),
+            (0, 2),
+            (0, 3),
+            (1, 2),
+            (1, 4),
+            (4, 3),
+            (2, 5),
+            (5, 3),
+        ] {
             builder
                 .add_bond(BondSpec::new(atoms[begin], atoms[end], BondOrder::Single))
                 .unwrap();
@@ -3239,7 +3411,10 @@ mod tests {
             .collect::<Vec<_>>();
         invariants.sort();
 
-        assert_eq!(invariants, vec![vec![0, 1, 2], vec![0, 1, 3, 4], vec![0, 2, 3, 5]]);
+        assert_eq!(
+            invariants,
+            vec![vec![0, 1, 2], vec![0, 1, 3, 4], vec![0, 2, 3, 5]]
+        );
     }
 
     #[test]
@@ -3335,7 +3510,10 @@ mod tests {
         assert!(ring_bonds[4]);
         assert_eq!(
             invars,
-            BTreeSet::from([compute_ring_invariant(&[0usize, 1usize, 2usize], molecule.num_atoms())])
+            BTreeSet::from([compute_ring_invariant(
+                &[0usize, 1usize, 2usize],
+                molecule.num_atoms()
+            )])
         );
     }
 
@@ -3422,7 +3600,10 @@ mod tests {
 
         let rings = fast_find_rings_internal(&context).unwrap();
 
-        assert_eq!(rings, vec![vec![3usize, 2usize, 1usize, 0usize], vec![2, 1, 0]]);
+        assert_eq!(
+            rings,
+            vec![vec![3usize, 2usize, 1usize, 0usize], vec![2, 1, 0]]
+        );
     }
 
     #[test]
@@ -3437,7 +3618,11 @@ mod tests {
         for ring in [&left, &right] {
             for idx in 0..3 {
                 builder
-                    .add_bond(BondSpec::new(ring[idx], ring[(idx + 1) % 3], BondOrder::Single))
+                    .add_bond(BondSpec::new(
+                        ring[idx],
+                        ring[(idx + 1) % 3],
+                        BondOrder::Single,
+                    ))
                     .unwrap();
             }
         }
@@ -3451,7 +3636,10 @@ mod tests {
             .collect::<Vec<_>>();
         invariants.sort();
 
-        assert_eq!(invariants, vec![vec![0usize, 1usize, 2usize], vec![3, 4, 5]]);
+        assert_eq!(
+            invariants,
+            vec![vec![0usize, 1usize, 2usize], vec![3, 4, 5]]
+        );
     }
 
     #[test]
@@ -3463,7 +3651,11 @@ mod tests {
         let leaf = builder.add_atom(AtomSpec::new(Element::C));
         for idx in 0..3 {
             builder
-                .add_bond(BondSpec::new(ring[idx], ring[(idx + 1) % 3], BondOrder::Single))
+                .add_bond(BondSpec::new(
+                    ring[idx],
+                    ring[(idx + 1) % 3],
+                    BondOrder::Single,
+                ))
                 .unwrap();
         }
         builder
@@ -3485,7 +3677,11 @@ mod tests {
             .collect::<Vec<_>>();
         for idx in 0..3 {
             builder
-                .add_bond(BondSpec::new(atoms[idx], atoms[(idx + 1) % 3], BondOrder::Dative))
+                .add_bond(BondSpec::new(
+                    atoms[idx],
+                    atoms[(idx + 1) % 3],
+                    BondOrder::Dative,
+                ))
                 .unwrap();
         }
         let molecule = builder.build().unwrap();
@@ -3512,7 +3708,11 @@ mod tests {
             .collect::<Vec<_>>();
         for idx in 0..3 {
             builder
-                .add_bond(BondSpec::new(atoms[idx], atoms[(idx + 1) % 3], BondOrder::Hydrogen))
+                .add_bond(BondSpec::new(
+                    atoms[idx],
+                    atoms[(idx + 1) % 3],
+                    BondOrder::Hydrogen,
+                ))
                 .unwrap();
         }
         let molecule = builder.build().unwrap();

@@ -2,7 +2,8 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 
 use cosmolkit_core::{
-    FingerprintError, MaccsFingerprintParams, Molecule, maccs_fingerprint, maccs_get_fingerprint_as_bit_vect,
+    FingerprintError, MaccsFingerprintParams, Molecule, maccs_fingerprint,
+    maccs_get_fingerprint_as_bit_vect,
 };
 use serde::Deserialize;
 
@@ -38,9 +39,12 @@ fn load_golden() -> Vec<MaccsRecord> {
         .lines()
         .enumerate()
         .map(|(idx, line)| {
-            let line = line.unwrap_or_else(|err| panic!("failed to read {} line {}: {err}", path.display(), idx + 1));
-            serde_json::from_str(&line)
-                .unwrap_or_else(|err| panic!("failed to parse {} line {}: {err}", path.display(), idx + 1))
+            let line = line.unwrap_or_else(|err| {
+                panic!("failed to read {} line {}: {err}", path.display(), idx + 1)
+            });
+            serde_json::from_str(&line).unwrap_or_else(|err| {
+                panic!("failed to parse {} line {}: {err}", path.display(), idx + 1)
+            })
         })
         .collect()
 }
@@ -50,15 +54,26 @@ fn record_context(record: &MaccsRecord, row_idx: usize) -> String {
         ("fixture", Some(label)) => {
             format!("fixture {label} row {} ({})", row_idx + 1, record.smiles)
         }
-        _ => format!("{} row {} ({})", record.record_type, row_idx + 1, record.smiles),
+        _ => format!(
+            "{} row {} ({})",
+            record.record_type,
+            row_idx + 1,
+            record.smiles
+        ),
     }
 }
 
 #[test]
 fn maccs_fingerprint_golden_has_profile_corpus_and_targeted_fixtures() {
     let records = load_golden();
-    let corpus_count = records.iter().filter(|record| record.record_type == "corpus").count();
-    let fixture_count = records.iter().filter(|record| record.record_type == "fixture").count();
+    let corpus_count = records
+        .iter()
+        .filter(|record| record.record_type == "corpus")
+        .count();
+    let fixture_count = records
+        .iter()
+        .filter(|record| record.record_type == "fixture")
+        .count();
 
     assert_eq!(
         corpus_count,
@@ -101,8 +116,9 @@ fn maccs_fingerprint_matches_rdkit_raw_and_public_golden() {
             .raw_on_bits
             .as_ref()
             .unwrap_or_else(|| panic!("RDKit-ok MACCS record missing raw_on_bits in {context}"));
-        let raw = maccs_get_fingerprint_as_bit_vect(&mol)
-            .unwrap_or_else(|err| panic!("COSMolKit failed raw MACCS generation in {context}: {err}"));
+        let raw = maccs_get_fingerprint_as_bit_vect(&mol).unwrap_or_else(|err| {
+            panic!("COSMolKit failed raw MACCS generation in {context}: {err}")
+        });
         assert_eq!(raw.n_bits(), 167, "raw MACCS n_bits mismatch in {context}");
         assert!(
             !raw.on_bits().contains(&0),
@@ -118,8 +134,13 @@ fn maccs_fingerprint_matches_rdkit_raw_and_public_golden() {
             .public_on_bits
             .as_ref()
             .unwrap_or_else(|| panic!("RDKit-ok MACCS record missing public_on_bits in {context}"));
-        let public = maccs_fingerprint(&mol, &MaccsFingerprintParams::default()).expect("MACCS public fingerprint");
-        assert_eq!(public.n_bits(), 166, "public MACCS n_bits mismatch in {context}");
+        let public = maccs_fingerprint(&mol, &MaccsFingerprintParams::default())
+            .expect("MACCS public fingerprint");
+        assert_eq!(
+            public.n_bits(),
+            166,
+            "public MACCS n_bits mismatch in {context}"
+        );
         assert_eq!(
             public.on_bits(),
             *expected_public,

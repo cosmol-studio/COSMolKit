@@ -1,8 +1,9 @@
 use crate::source::base::util::{inchi_calloc, inchi_free, lrtrim};
 use crate::source_types::{
-    FILE, INCHI_IOS_STRING, INCHI_IOS_TYPE_FILE, INCHI_IOS_TYPE_STRING, INCHI_IOSTREAM, INCHI_STRBUF_INITIAL_SIZE,
-    INCHI_STRBUF_SIZE_INCREMENT, SourceConstPointer, SourceFormatArgument, SourceHeap, SourceHeapError,
-    SourceMutPointer, SourceVaList, local_ichi_io::INCHI_ADD_STR_LEN,
+    FILE, INCHI_IOS_STRING, INCHI_IOS_TYPE_FILE, INCHI_IOS_TYPE_STRING, INCHI_IOSTREAM,
+    INCHI_STRBUF_INITIAL_SIZE, INCHI_STRBUF_SIZE_INCREMENT, SourceConstPointer,
+    SourceFormatArgument, SourceHeap, SourceHeapError, SourceMutPointer, SourceVaList,
+    local_ichi_io::INCHI_ADD_STR_LEN,
 };
 
 const SOURCE_EOF: i32 = -1;
@@ -239,7 +240,8 @@ pub(crate) fn inchi_strbuf_update(
         };
         if !buf.pStr.is_null() {
             if buf.nUsedLength > 0 {
-                let used = usize::try_from(buf.nUsedLength).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+                let used = usize::try_from(buf.nUsedLength)
+                    .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
                 let old = heap
                     .slice(buf.pStr.as_const())?
                     .get(..used)
@@ -310,7 +312,8 @@ pub(crate) fn inchi_strbuf_printf(
     }
     let mut render_arguments = arguments.clone();
     let rendered = source_vformat(heap, format, &mut render_arguments)?;
-    let rendered_length = i32::try_from(rendered.len()).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+    let rendered_length =
+        i32::try_from(rendered.len()).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
     let used = usize::try_from(buf.nUsedLength).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let end = used
         .checked_add(rendered.len())
@@ -320,7 +323,9 @@ pub(crate) fn inchi_strbuf_printf(
         .get_mut(used..end)
         .ok_or(SourceHeapError::PointerOutOfBounds)?
         .copy_from_slice(bytemuck::cast_slice::<u8, i8>(&rendered));
-    *destination.get_mut(end).ok_or(SourceHeapError::PointerOutOfBounds)? = 0;
+    *destination
+        .get_mut(end)
+        .ok_or(SourceHeapError::PointerOutOfBounds)? = 0;
     buf.nUsedLength = buf.nUsedLength.wrapping_add(rendered_length);
     Ok(rendered_length)
 }
@@ -423,8 +428,11 @@ int inchi_strbuf_addline(INCHI_IOS_STRING* buf,
     }
 }
 
-fn next_format_argument(arguments: &mut SourceVaList) -> Result<SourceFormatArgument, SourceHeapError> {
-    let index = usize::try_from(arguments.position).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+fn next_format_argument(
+    arguments: &mut SourceVaList,
+) -> Result<SourceFormatArgument, SourceHeapError> {
+    let index =
+        usize::try_from(arguments.position).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let argument = arguments
         .arguments
         .get(index)
@@ -439,7 +447,9 @@ fn next_format_argument(arguments: &mut SourceVaList) -> Result<SourceFormatArgu
 
 fn next_format_int(arguments: &mut SourceVaList) -> Result<i32, SourceHeapError> {
     match next_format_argument(arguments)? {
-        SourceFormatArgument::Signed(value) => i32::try_from(value).map_err(|_| SourceHeapError::SourceIntegerOverflow),
+        SourceFormatArgument::Signed(value) => {
+            i32::try_from(value).map_err(|_| SourceHeapError::SourceIntegerOverflow)
+        }
         SourceFormatArgument::Unsigned(value) => Ok(value as u32 as i32),
         SourceFormatArgument::Byte(value) => Ok(i32::from(value)),
         _ => Err(SourceHeapError::AllocationTypeMismatch),
@@ -457,13 +467,14 @@ fn apply_printf_width(mut value: String, width: i32, left: bool, zero: bool) -> 
         return value;
     }
     if zero {
-        let prefix_length = if value.starts_with('+') || value.starts_with('-') || value.starts_with(' ') {
-            1
-        } else if value.starts_with("0x") || value.starts_with("0X") {
-            2
-        } else {
-            0
-        };
+        let prefix_length =
+            if value.starts_with('+') || value.starts_with('-') || value.starts_with(' ') {
+                1
+            } else if value.starts_with("0x") || value.starts_with("0X") {
+                2
+            } else {
+                0
+            };
         value.insert_str(prefix_length, &"0".repeat(count));
         return value;
     }
@@ -472,8 +483,12 @@ fn apply_printf_width(mut value: String, width: i32, left: bool, zero: bool) -> 
 
 fn c_printf_exponential(value: f64, precision: usize, upper: bool) -> String {
     let rust = format!("{value:.precision$e}");
-    let (mantissa, exponent) = rust.split_once('e').expect("scientific format has exponent");
-    let exponent = exponent.parse::<i32>().expect("scientific exponent is decimal");
+    let (mantissa, exponent) = rust
+        .split_once('e')
+        .expect("scientific format has exponent");
+    let exponent = exponent
+        .parse::<i32>()
+        .expect("scientific exponent is decimal");
     let marker = if upper { 'E' } else { 'e' };
     format!("{mantissa}{marker}{exponent:+03}")
 }
@@ -549,8 +564,8 @@ pub(crate) fn source_vformat(
     arguments: &mut SourceVaList,
 ) -> Result<Vec<u8>, SourceHeapError> {
     let format_values = heap.slice(format)?;
-    let format_length =
-        memchr::memchr(0, bytemuck::cast_slice(format_values)).ok_or(SourceHeapError::MissingNulTerminator)?;
+    let format_length = memchr::memchr(0, bytemuck::cast_slice(format_values))
+        .ok_or(SourceHeapError::MissingNulTerminator)?;
     // SAFETY: formatting never frees or resizes the format allocation. `%n`
     // writes through an i32 allocation and therefore cannot overlap this i8
     // view under SourceHeap's allocation type checks.
@@ -593,7 +608,9 @@ pub(crate) fn source_vformat(
             position += 1;
             if width < 0 {
                 left = true;
-                width = width.checked_abs().ok_or(SourceHeapError::SourceIntegerOverflow)?;
+                width = width
+                    .checked_abs()
+                    .ok_or(SourceHeapError::SourceIntegerOverflow)?;
             }
         } else {
             while position < format.len() && (format[position] as u8).is_ascii_digit() {
@@ -618,26 +635,31 @@ pub(crate) fn source_vformat(
                 while position < format.len() && (format[position] as u8).is_ascii_digit() {
                     value = value
                         .checked_mul(10)
-                        .and_then(|current| current.checked_add(i32::from(format[position] - b'0' as i8)))
+                        .and_then(|current| {
+                            current.checked_add(i32::from(format[position] - b'0' as i8))
+                        })
                         .ok_or(SourceHeapError::SourceIntegerOverflow)?;
                     position += 1;
                 }
                 precision = Some(value as usize);
             }
         }
-        let length = if position < format.len() && matches!(format[position] as u8, b'h' | b'l' | b'L') {
-            let value = format[position] as u8;
-            position += 1;
-            if position < format.len() && format[position] as u8 == value && value != b'L' {
+        let length =
+            if position < format.len() && matches!(format[position] as u8, b'h' | b'l' | b'L') {
+                let value = format[position] as u8;
                 position += 1;
-                if value == b'h' { b'H' } else { b'q' }
+                if position < format.len() && format[position] as u8 == value && value != b'L' {
+                    position += 1;
+                    if value == b'h' { b'H' } else { b'q' }
+                } else {
+                    value
+                }
             } else {
-                value
-            }
-        } else {
-            0
-        };
-        let specifier = *format.get(position).ok_or(SourceHeapError::UnsupportedSourceBehavior)? as u8;
+                0
+            };
+        let specifier = *format
+            .get(position)
+            .ok_or(SourceHeapError::UnsupportedSourceBehavior)? as u8;
         position += 1;
 
         let mut rendered = match specifier {
@@ -756,7 +778,8 @@ pub(crate) fn source_vformat(
                     SourceFormatArgument::MutSigned(pointer) => pointer,
                     _ => return Err(SourceHeapError::AllocationTypeMismatch),
                 };
-                let count = i32::try_from(output.len()).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+                let count = i32::try_from(output.len())
+                    .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
                 *heap
                     .slice_mut(pointer)?
                     .first_mut()
@@ -815,7 +838,8 @@ pub(crate) fn inchi_vfprintf(
     if file.error {
         return Ok(-1);
     }
-    let position = usize::try_from(file.position).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let position =
+        usize::try_from(file.position).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let end = position
         .checked_add(output.len())
         .ok_or(SourceHeapError::AllocationSizeOverflow)?;
@@ -988,7 +1012,8 @@ pub(crate) fn inchi_ios_print(
             };
             if !ios.s.pStr.is_null() {
                 if ios.s.nUsedLength > 0 {
-                    let used = usize::try_from(ios.s.nUsedLength).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let used = usize::try_from(ios.s.nUsedLength)
+                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     let bytes = heap
                         .slice(ios.s.pStr.as_const())?
                         .get(..used)
@@ -1007,7 +1032,8 @@ pub(crate) fn inchi_ios_print(
         }
         let mut output_arguments = arguments.clone();
         let output = source_vformat(heap, format, &mut output_arguments)?;
-        let used = usize::try_from(ios.s.nUsedLength).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let used =
+            usize::try_from(ios.s.nUsedLength).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         let destination = heap.slice_mut(ios.s.pStr)?;
         let end = used
             .checked_add(output.len())
@@ -1019,7 +1045,8 @@ pub(crate) fn inchi_ios_print(
             *destination = *source as i8;
         }
         destination[end] = 0;
-        let result = i32::try_from(output.len()).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+        let result =
+            i32::try_from(output.len()).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
         ios.s.nUsedLength = ios
             .s
             .nUsedLength
@@ -1134,7 +1161,8 @@ pub(crate) fn inchi_ios_print_nodisplay(
             };
             if !ios.s.pStr.is_null() {
                 if ios.s.nUsedLength > 0 {
-                    let used = usize::try_from(ios.s.nUsedLength).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let used = usize::try_from(ios.s.nUsedLength)
+                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     let bytes = heap.slice(ios.s.pStr.as_const())?[..used].to_vec();
                     heap.slice_mut(new_string)?[..used].copy_from_slice(&bytes);
                 }
@@ -1149,7 +1177,8 @@ pub(crate) fn inchi_ios_print_nodisplay(
         }
         let mut output_arguments = arguments.clone();
         let output = source_vformat(heap, format, &mut output_arguments)?;
-        let used = usize::try_from(ios.s.nUsedLength).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let used =
+            usize::try_from(ios.s.nUsedLength).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         let destination = heap.slice_mut(ios.s.pStr)?;
         let end = used
             .checked_add(output.len())
@@ -1161,7 +1190,8 @@ pub(crate) fn inchi_ios_print_nodisplay(
             *destination = *source as i8;
         }
         destination[end] = 0;
-        let result = i32::try_from(output.len()).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+        let result =
+            i32::try_from(output.len()).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
         ios.s.nUsedLength = ios
             .s
             .nUsedLength
@@ -1281,7 +1311,8 @@ pub(crate) fn inchi_ios_eprint(
             };
             if !ios.s.pStr.is_null() {
                 if ios.s.nUsedLength > 0 {
-                    let used = usize::try_from(ios.s.nUsedLength).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let used = usize::try_from(ios.s.nUsedLength)
+                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     let old = heap.slice(ios.s.pStr.as_const())?;
                     if old.len() < used {
                         return Err(SourceHeapError::PointerOutOfBounds);
@@ -1301,7 +1332,8 @@ pub(crate) fn inchi_ios_eprint(
 
         let mut output_arguments = arguments.clone();
         let output = source_vformat(heap, format, &mut output_arguments)?;
-        let used = usize::try_from(ios.s.nUsedLength).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let used =
+            usize::try_from(ios.s.nUsedLength).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         let required = used
             .checked_add(output.len())
             .and_then(|value| value.checked_add(1))
@@ -1313,7 +1345,8 @@ pub(crate) fn inchi_ios_eprint(
         destination[used..used + output.len()]
             .copy_from_slice(&output.iter().map(|byte| *byte as i8).collect::<Vec<_>>());
         destination[used + output.len()] = 0;
-        let result = i32::try_from(output.len()).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+        let result =
+            i32::try_from(output.len()).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
         ios.s.nUsedLength = ios
             .s
             .nUsedLength
@@ -1388,7 +1421,8 @@ pub(crate) fn inchi_sgets(
     if ios.s.pStr.is_null() {
         return Ok(SourceMutPointer::null());
     }
-    let input_offset = usize::try_from(ios.s.nPtr).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let input_offset =
+        usize::try_from(ios.s.nPtr).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let mut input_index = input_offset;
     let mut output_index = 0_usize;
     let mut character = 0_i8;
@@ -1474,7 +1508,8 @@ fn source_file_fgets(
         *destination = *source as i8;
     }
     destination[end - start] = 0;
-    heap.slice_mut(file)?[0].position = u64::try_from(end).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+    heap.slice_mut(file)?[0].position =
+        u64::try_from(end).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
     Ok(output)
 }
 
@@ -1545,7 +1580,8 @@ pub(crate) fn inchi_fgetsLf(
     let mut result = SourceMutPointer::null();
     if input.type_ == INCHI_IOS_TYPE_FILE as i32 {
         if line_length > 0 {
-            let length = usize::try_from(line_length).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let length =
+                usize::try_from(line_length).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             let destination = heap.slice_mut(line)?;
             if destination.len() < length {
                 return Err(SourceHeapError::PointerOutOfBounds);
@@ -1577,7 +1613,8 @@ pub(crate) fn inchi_fgetsLf(
         }
     } else if input.type_ == INCHI_IOS_TYPE_STRING as i32 {
         if line_length > 0 {
-            let length = usize::try_from(line_length).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let length =
+                usize::try_from(line_length).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             let destination = heap.slice_mut(line)?;
             if destination.len() < length {
                 return Err(SourceHeapError::PointerOutOfBounds);
@@ -1615,7 +1652,8 @@ pub(crate) fn inchi_fgetsLf(
             .iter()
             .position(|byte| *byte == 0)
             .ok_or(SourceHeapError::MissingNulTerminator)?;
-        if let Some(carriage_return) = bytes[..length].iter().position(|byte| *byte == b'\r' as i8) {
+        if let Some(carriage_return) = bytes[..length].iter().position(|byte| *byte == b'\r' as i8)
+        {
             bytes[carriage_return] = b'\n' as i8;
             *bytes
                 .get_mut(carriage_return + 1)
@@ -1944,7 +1982,9 @@ pub(crate) fn GetMaxPrintfLength(
                 while (bytes[position] as u8).is_ascii_digit() {
                     precision = precision
                         .checked_mul(10)
-                        .and_then(|value| value.checked_add(i32::from(bytes[position] - b'0' as i8)))
+                        .and_then(|value| {
+                            value.checked_add(i32::from(bytes[position] - b'0' as i8))
+                        })
                         .ok_or(SourceHeapError::SourceIntegerOverflow)?;
                     position += 1;
                 }
@@ -1958,13 +1998,19 @@ pub(crate) fn GetMaxPrintfLength(
         match bytes[position] as u8 {
             b'h' => {
                 position += 1;
-                if !matches!(bytes[position] as u8, b'd' | b'i' | b'o' | b'x' | b'X' | b'u') {
+                if !matches!(
+                    bytes[position] as u8,
+                    b'd' | b'i' | b'o' | b'x' | b'X' | b'u'
+                ) {
                     modifier = FORCE_ANSI;
                 }
             }
             b'l' => {
                 position += 1;
-                if !matches!(bytes[position] as u8, b'd' | b'i' | b'o' | b'x' | b'X' | b'u' | b'f') {
+                if !matches!(
+                    bytes[position] as u8,
+                    b'd' | b'i' | b'o' | b'x' | b'X' | b'u' | b'f'
+                ) {
                     return Ok(-1);
                 }
             }
@@ -2092,7 +2138,10 @@ pub(crate) fn inchi_ios_init(
     Ok(())
 }
 
-pub(crate) fn inchi_ios_close(heap: &mut SourceHeap, ios: Option<&mut INCHI_IOSTREAM>) -> Result<(), SourceHeapError> {
+pub(crate) fn inchi_ios_close(
+    heap: &mut SourceHeap,
+    ios: Option<&mut INCHI_IOSTREAM>,
+) -> Result<(), SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichi_io.c:229 inchi_ios_close
     // INCHI✔️❌: void inchi_ios_close(INCHI_IOSTREAM* ios)
     // INCHI✔️❌: {
@@ -2139,7 +2188,10 @@ pub(crate) fn inchi_ios_close(heap: &mut SourceHeap, ios: Option<&mut INCHI_IOST
     Ok(())
 }
 
-pub(crate) fn inchi_ios_reset(heap: &mut SourceHeap, ios: &mut INCHI_IOSTREAM) -> Result<(), SourceHeapError> {
+pub(crate) fn inchi_ios_reset(
+    heap: &mut SourceHeap,
+    ios: &mut INCHI_IOSTREAM,
+) -> Result<(), SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichi_io.c:255 inchi_ios_reset
     // INCHI✔️❌: void inchi_ios_reset(INCHI_IOSTREAM* ios)
     // INCHI✔️❌: {
@@ -2171,7 +2223,10 @@ pub(crate) fn inchi_ios_reset(heap: &mut SourceHeap, ios: &mut INCHI_IOSTREAM) -
     Ok(())
 }
 
-pub(crate) fn inchi_ios_str_getc(heap: &mut SourceHeap, ios: &mut INCHI_IOSTREAM) -> Result<i32, SourceHeapError> {
+pub(crate) fn inchi_ios_str_getc(
+    heap: &mut SourceHeap,
+    ios: &mut INCHI_IOSTREAM,
+) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichi_io.c:294 inchi_ios_str_getc
     // INCHI✔️❌: int inchi_ios_str_getc(INCHI_IOSTREAM* ios)
     // INCHI✔️❌: {
@@ -2202,7 +2257,8 @@ pub(crate) fn inchi_ios_str_getc(heap: &mut SourceHeap, ios: &mut INCHI_IOSTREAM
 
     if ios.type_ == INCHI_IOS_TYPE_STRING as i32 {
         if ios.s.nPtr < ios.s.nUsedLength {
-            let index = usize::try_from(ios.s.nPtr).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let index =
+                usize::try_from(ios.s.nPtr).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             let value = *heap
                 .slice(ios.s.pStr.as_const())?
                 .get(index)
@@ -2218,7 +2274,8 @@ pub(crate) fn inchi_ios_str_getc(heap: &mut SourceHeap, ios: &mut INCHI_IOSTREAM
             .slice_mut(ios.f)?
             .first_mut()
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        let index = usize::try_from(file.position).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let index =
+            usize::try_from(file.position).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         let value = if let Some(value) = file.bytes.get(index).copied() {
             file.position += 1;
             i32::from(value)
@@ -2264,7 +2321,9 @@ pub(crate) fn inchi_ios_str_gets(
     // INCHI✔️❌: }
     // END INCHI C FUNCTION: inchi_ios_str_gets
 
-    let len = len.checked_sub(1).ok_or(SourceHeapError::SourceIntegerOverflow)?;
+    let len = len
+        .checked_sub(1)
+        .ok_or(SourceHeapError::SourceIntegerOverflow)?;
     if len < 0 {
         return Ok(SourceMutPointer::null());
     }
@@ -2333,7 +2392,9 @@ pub(crate) fn inchi_ios_str_getsTab(
     // INCHI✔️❌: }
     // END INCHI C FUNCTION: inchi_ios_str_getsTab
 
-    let len = len.checked_sub(1).ok_or(SourceHeapError::SourceIntegerOverflow)?;
+    let len = len
+        .checked_sub(1)
+        .ok_or(SourceHeapError::SourceIntegerOverflow)?;
     if len < 0 {
         return Ok(SourceMutPointer::null());
     }
@@ -2405,8 +2466,12 @@ pub(crate) fn inchi_ios_gets(
     // INCHI✔️❌: }
     // END INCHI C FUNCTION: inchi_ios_gets
 
-    let helper_len = len.checked_sub(1).ok_or(SourceHeapError::SourceIntegerOverflow)?;
-    let content_limit = len.checked_sub(2).ok_or(SourceHeapError::SourceIntegerOverflow)?;
+    let helper_len = len
+        .checked_sub(1)
+        .ok_or(SourceHeapError::SourceIntegerOverflow)?;
+    let content_limit = len
+        .checked_sub(2)
+        .ok_or(SourceHeapError::SourceIntegerOverflow)?;
     loop {
         let result = inchi_ios_str_gets(heap, line, helper_len, ios)?;
         if result.is_null() {
@@ -2414,7 +2479,8 @@ pub(crate) fn inchi_ios_gets(
             return Ok(-1);
         }
 
-        let terminator_index = usize::try_from(helper_len).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let terminator_index =
+            usize::try_from(helper_len).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         *heap
             .slice_mut(line)?
             .get_mut(terminator_index)
@@ -2426,7 +2492,9 @@ pub(crate) fn inchi_ios_gets(
                 .position(|byte| *byte == 0)
                 .ok_or(SourceHeapError::MissingNulTerminator)?;
             (
-                bytes[..string_length].iter().any(|byte| *byte == b'\n' as i8),
+                bytes[..string_length]
+                    .iter()
+                    .any(|byte| *byte == b'\n' as i8),
                 i32::try_from(string_length).map_err(|_| SourceHeapError::SourceIntegerOverflow)?,
             )
         };
@@ -2478,8 +2546,12 @@ pub(crate) fn inchi_ios_getsTab(
     // INCHI✔️❌: }
     // END INCHI C FUNCTION: inchi_ios_getsTab
 
-    let helper_len = len.checked_sub(1).ok_or(SourceHeapError::SourceIntegerOverflow)?;
-    let content_limit = len.checked_sub(2).ok_or(SourceHeapError::SourceIntegerOverflow)?;
+    let helper_len = len
+        .checked_sub(1)
+        .ok_or(SourceHeapError::SourceIntegerOverflow)?;
+    let content_limit = len
+        .checked_sub(2)
+        .ok_or(SourceHeapError::SourceIntegerOverflow)?;
     loop {
         let result = inchi_ios_str_getsTab(heap, line, helper_len, ios)?;
         if result.is_null() {
@@ -2487,7 +2559,8 @@ pub(crate) fn inchi_ios_getsTab(
             return Ok(-1);
         }
 
-        let terminator_index = usize::try_from(helper_len).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let terminator_index =
+            usize::try_from(helper_len).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         *heap
             .slice_mut(line)?
             .get_mut(terminator_index)
@@ -2499,7 +2572,9 @@ pub(crate) fn inchi_ios_getsTab(
                 .position(|byte| *byte == 0)
                 .ok_or(SourceHeapError::MissingNulTerminator)?;
             (
-                bytes[..string_length].iter().any(|byte| *byte == b'\n' as i8),
+                bytes[..string_length]
+                    .iter()
+                    .any(|byte| *byte == b'\n' as i8),
                 i32::try_from(string_length).map_err(|_| SourceHeapError::SourceIntegerOverflow)?,
             )
         };
@@ -2544,15 +2619,20 @@ pub(crate) fn inchi_ios_getsTab1(
     // INCHI✔️❌: }
     // END INCHI C FUNCTION: inchi_ios_getsTab1
 
-    let helper_len = len.checked_sub(1).ok_or(SourceHeapError::SourceIntegerOverflow)?;
-    let content_limit = len.checked_sub(2).ok_or(SourceHeapError::SourceIntegerOverflow)?;
+    let helper_len = len
+        .checked_sub(1)
+        .ok_or(SourceHeapError::SourceIntegerOverflow)?;
+    let content_limit = len
+        .checked_sub(2)
+        .ok_or(SourceHeapError::SourceIntegerOverflow)?;
     let result = inchi_ios_str_getsTab(heap, line, helper_len, ios)?;
     if result.is_null() {
         *too_long_line = 0;
         return Ok(-1);
     }
 
-    let terminator_index = usize::try_from(helper_len).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let terminator_index =
+        usize::try_from(helper_len).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     *heap
         .slice_mut(line)?
         .get_mut(terminator_index)
@@ -2564,7 +2644,9 @@ pub(crate) fn inchi_ios_getsTab1(
             .position(|byte| *byte == 0)
             .ok_or(SourceHeapError::MissingNulTerminator)?;
         (
-            bytes[..string_length].iter().any(|byte| *byte == b'\n' as i8),
+            bytes[..string_length]
+                .iter()
+                .any(|byte| *byte == b'\n' as i8),
             i32::try_from(string_length).map_err(|_| SourceHeapError::SourceIntegerOverflow)?,
         )
     };
@@ -2579,7 +2661,8 @@ pub(crate) fn inchi_ios_getsTab1(
 mod tests {
     use super::*;
     use crate::source_types::{
-        INCHI_IOS_STRING, SourceFile, SourceFormatArgument, SourceMutPointer, SourceVaList, SourceVoid,
+        INCHI_IOS_STRING, SourceFile, SourceFormatArgument, SourceMutPointer, SourceVaList,
+        SourceVoid,
     };
     use crate::test_support::allocate_source_fixture;
 
@@ -2610,7 +2693,8 @@ mod tests {
         let mut heap = SourceHeap::default();
         let mut buffer = INCHI_IOS_STRING::default();
         assert!(inchi_strbuf_init(&mut heap, &mut buffer, 4, 4).unwrap() > 0);
-        heap.slice_mut(buffer.pStr).unwrap()[..4].copy_from_slice(&[b'p' as i8, b'r' as i8, b'e' as i8, 0]);
+        heap.slice_mut(buffer.pStr).unwrap()[..4]
+            .copy_from_slice(&[b'p' as i8, b'r' as i8, b'e' as i8, 0]);
         buffer.nUsedLength = 3;
 
         let mut crlf = stream(&mut heap, b"a\r\nrest");
@@ -2688,7 +2772,9 @@ mod tests {
         );
 
         let mut failing_heap = SourceHeap::default();
-        let failed_old = failing_heap.allocate_model_storage(vec![b'Y' as i8, 0]).unwrap();
+        let failed_old = failing_heap
+            .allocate_model_storage(vec![b'Y' as i8, 0])
+            .unwrap();
         let mut failed = INCHI_IOS_STRING {
             pStr: failed_old,
             nAllocatedLength: 9,
@@ -2696,9 +2782,15 @@ mod tests {
             nPtr: 7,
         };
         failing_heap.fail_after_allocations(0);
-        assert_eq!(inchi_strbuf_init(&mut failing_heap, &mut failed, -3, 5), Ok(-1));
+        assert_eq!(
+            inchi_strbuf_init(&mut failing_heap, &mut failed, -3, 5),
+            Ok(-1)
+        );
         assert_eq!(failed, INCHI_IOS_STRING::default());
-        assert_eq!(failing_heap.slice(failed_old.as_const()).unwrap(), &[b'Y' as i8, 0]);
+        assert_eq!(
+            failing_heap.slice(failed_old.as_const()).unwrap(),
+            &[b'Y' as i8, 0]
+        );
     }
 
     #[test]
@@ -2749,11 +2841,18 @@ mod tests {
             nUsedLength: 72,
             nPtr: 73,
         };
-        assert_eq!(inchi_strbuf_create_copy(&mut heap, &mut destination, &source), Ok(0));
+        assert_eq!(
+            inchi_strbuf_create_copy(&mut heap, &mut destination, &source),
+            Ok(0)
+        );
         assert_ne!(destination.pStr, source.pStr);
         assert_ne!(destination.pStr, old_destination);
         assert_eq!(
-            (destination.nAllocatedLength, destination.nUsedLength, destination.nPtr,),
+            (
+                destination.nAllocatedLength,
+                destination.nUsedLength,
+                destination.nPtr,
+            ),
             (6, 2, 17)
         );
         assert_eq!(heap.slice(destination.pStr.as_const()).unwrap(), &[0; 6]);
@@ -2761,7 +2860,10 @@ mod tests {
             heap.slice(source_string.as_const()).unwrap(),
             &[b'A' as i8, b'B' as i8, 0, 91, 92, 93]
         );
-        assert_eq!(heap.slice(old_destination.as_const()).unwrap(), &[b'X' as i8, 0]);
+        assert_eq!(
+            heap.slice(old_destination.as_const()).unwrap(),
+            &[b'X' as i8, 0]
+        );
 
         let source_without_storage = INCHI_IOS_STRING {
             pStr: SourceMutPointer::null(),
@@ -2771,11 +2873,16 @@ mod tests {
         };
         let mut destination_without_storage = INCHI_IOS_STRING::default();
         assert_eq!(
-            inchi_strbuf_create_copy(&mut heap, &mut destination_without_storage, &source_without_storage,),
+            inchi_strbuf_create_copy(
+                &mut heap,
+                &mut destination_without_storage,
+                &source_without_storage,
+            ),
             Ok(0)
         );
         assert_eq!(
-            heap.slice(destination_without_storage.pStr.as_const()).unwrap(),
+            heap.slice(destination_without_storage.pStr.as_const())
+                .unwrap(),
             &[0; 3]
         );
         assert_eq!(destination_without_storage.nUsedLength, i32::MIN);
@@ -2788,11 +2895,19 @@ mod tests {
             ..INCHI_IOS_STRING::default()
         };
         assert_eq!(
-            inchi_strbuf_create_copy(&mut heap, &mut zero_destination, &INCHI_IOS_STRING::default(),),
+            inchi_strbuf_create_copy(
+                &mut heap,
+                &mut zero_destination,
+                &INCHI_IOS_STRING::default(),
+            ),
             Ok(0)
         );
         assert!(!zero_destination.pStr.is_null());
-        assert!(heap.slice(zero_destination.pStr.as_const()).unwrap().is_empty());
+        assert!(
+            heap.slice(zero_destination.pStr.as_const())
+                .unwrap()
+                .is_empty()
+        );
         assert_eq!(
             zero_destination,
             INCHI_IOS_STRING {
@@ -2802,7 +2917,9 @@ mod tests {
         );
 
         let mut failing_heap = SourceHeap::default();
-        let failed_old = failing_heap.allocate_model_storage(vec![b'Y' as i8, 0]).unwrap();
+        let failed_old = failing_heap
+            .allocate_model_storage(vec![b'Y' as i8, 0])
+            .unwrap();
         let mut failed = INCHI_IOS_STRING {
             pStr: failed_old,
             nAllocatedLength: 31,
@@ -2821,8 +2938,14 @@ mod tests {
             Ok(-1)
         );
         assert!(failed.pStr.is_null());
-        assert_eq!((failed.nAllocatedLength, failed.nUsedLength, failed.nPtr), (31, 32, 33));
-        assert_eq!(failing_heap.slice(failed_old.as_const()).unwrap(), &[b'Y' as i8, 0]);
+        assert_eq!(
+            (failed.nAllocatedLength, failed.nUsedLength, failed.nPtr),
+            (31, 32, 33)
+        );
+        assert_eq!(
+            failing_heap.slice(failed_old.as_const()).unwrap(),
+            &[b'Y' as i8, 0]
+        );
 
         let negative_old = heap.allocate_model_storage(vec![7_i8]).unwrap();
         let mut negative_destination = INCHI_IOS_STRING {
@@ -2882,7 +3005,10 @@ mod tests {
         assert_eq!(populated.nAllocatedLength, 5);
         assert_eq!(populated.nUsedLength, 0);
         assert_eq!(populated.nPtr, 0);
-        assert_eq!(heap.slice(allocation.as_const()).unwrap(), &[0, 66, 67, 0, 99]);
+        assert_eq!(
+            heap.slice(allocation.as_const()).unwrap(),
+            &[0, 66, 67, 0, 99]
+        );
     }
 
     #[test]
@@ -2902,22 +3028,34 @@ mod tests {
         assert_eq!(buffer.pStr, pointer);
         assert_eq!(inchi_strbuf_update(&mut heap, Some(&mut buffer), 2), Ok(6));
         assert_eq!(buffer.pStr, pointer);
-        assert_eq!(heap.slice(pointer.as_const()).unwrap(), &[1, 2, 3, 0, 77, 88]);
+        assert_eq!(
+            heap.slice(pointer.as_const()).unwrap(),
+            &[1, 2, 3, 0, 77, 88]
+        );
 
         assert_eq!(inchi_strbuf_update(&mut heap, Some(&mut buffer), 3), Ok(10));
         assert_ne!(buffer.pStr, pointer);
         assert_eq!(buffer.nAllocatedLength, 10);
         assert_eq!(buffer.nUsedLength, 3);
         assert_eq!(buffer.nPtr, 4);
-        assert_eq!(&heap.slice(buffer.pStr.as_const()).unwrap()[..3], &[1, 2, 3]);
+        assert_eq!(
+            &heap.slice(buffer.pStr.as_const()).unwrap()[..3],
+            &[1, 2, 3]
+        );
         assert_eq!(&heap.slice(buffer.pStr.as_const()).unwrap()[3..], &[0; 7]);
-        assert_eq!(heap.slice(pointer.as_const()), Err(SourceHeapError::MissingAllocation));
+        assert_eq!(
+            heap.slice(pointer.as_const()),
+            Err(SourceHeapError::MissingAllocation)
+        );
 
         let second_pointer = buffer.pStr;
         assert_eq!(inchi_strbuf_update(&mut heap, Some(&mut buffer), 9), Ok(19));
         assert_eq!(buffer.nAllocatedLength, 19);
         assert_ne!(buffer.pStr, second_pointer);
-        assert_eq!(&heap.slice(buffer.pStr.as_const()).unwrap()[..3], &[1, 2, 3]);
+        assert_eq!(
+            &heap.slice(buffer.pStr.as_const()).unwrap()[..3],
+            &[1, 2, 3]
+        );
 
         let mut failing_heap = SourceHeap::default();
         let old = failing_heap.allocate(vec![9_i8, 8, 0, 7]).unwrap();
@@ -2929,7 +3067,10 @@ mod tests {
         };
         let before = failed.clone();
         failing_heap.fail_after_allocations(0);
-        assert_eq!(inchi_strbuf_update(&mut failing_heap, Some(&mut failed), 2), Ok(-1));
+        assert_eq!(
+            inchi_strbuf_update(&mut failing_heap, Some(&mut failed), 2),
+            Ok(-1)
+        );
         assert_eq!(failed, before);
         assert_eq!(failing_heap.slice(old.as_const()).unwrap(), &[9, 8, 0, 7]);
 
@@ -2939,7 +3080,10 @@ mod tests {
             nPtr: 5,
             ..INCHI_IOS_STRING::default()
         };
-        assert_eq!(inchi_strbuf_update(&mut heap, Some(&mut null_buffer), 1), Ok(5));
+        assert_eq!(
+            inchi_strbuf_update(&mut heap, Some(&mut null_buffer), 1),
+            Ok(5)
+        );
         assert_eq!(heap.slice(null_buffer.pStr.as_const()).unwrap(), &[0; 5]);
     }
 
@@ -2969,7 +3113,9 @@ mod tests {
         assert_eq!(buffer.nUsedLength, 5);
         assert_eq!(
             &heap.slice(buffer.pStr.as_const()).unwrap()[..6],
-            &[b'x' as i8, b'y' as i8, b':' as i8, b'+' as i8, b'7' as i8, 0]
+            &[
+                b'x' as i8, b'y' as i8, b':' as i8, b'+' as i8, b'7' as i8, 0
+            ]
         );
 
         let suffix = source_format(&mut heap, "/%02u");
@@ -2978,7 +3124,12 @@ mod tests {
             ..SourceVaList::default()
         };
         assert_eq!(
-            inchi_strbuf_printf(&mut heap, Some(&mut buffer), suffix.as_const(), &suffix_arguments,),
+            inchi_strbuf_printf(
+                &mut heap,
+                Some(&mut buffer),
+                suffix.as_const(),
+                &suffix_arguments,
+            ),
             Ok(3)
         );
         assert_eq!(buffer.nUsedLength, 8);
@@ -2989,12 +3140,20 @@ mod tests {
 
         let invalid = source_format(&mut heap, "%*d");
         let invalid_arguments = SourceVaList {
-            arguments: vec![SourceFormatArgument::Signed(-1), SourceFormatArgument::Signed(5)],
+            arguments: vec![
+                SourceFormatArgument::Signed(-1),
+                SourceFormatArgument::Signed(5),
+            ],
             ..SourceVaList::default()
         };
         let before = buffer.clone();
         assert_eq!(
-            inchi_strbuf_printf(&mut heap, Some(&mut buffer), invalid.as_const(), &invalid_arguments,),
+            inchi_strbuf_printf(
+                &mut heap,
+                Some(&mut buffer),
+                invalid.as_const(),
+                &invalid_arguments,
+            ),
             Ok(0)
         );
         assert_eq!(buffer, before);
@@ -3016,11 +3175,19 @@ mod tests {
         let before = failed.clone();
         failing_heap.fail_after_allocations(0);
         assert_eq!(
-            inchi_strbuf_printf(&mut failing_heap, Some(&mut failed), format.as_const(), &arguments,),
+            inchi_strbuf_printf(
+                &mut failing_heap,
+                Some(&mut failed),
+                format.as_const(),
+                &arguments,
+            ),
             Err(SourceHeapError::AllocationFailed)
         );
         assert_eq!(failed, before);
-        assert_eq!(failing_heap.slice(old.as_const()).unwrap(), &[b'A' as i8, 0]);
+        assert_eq!(
+            failing_heap.slice(old.as_const()).unwrap(),
+            &[b'A' as i8, 0]
+        );
     }
 
     #[test]
@@ -3046,7 +3213,13 @@ mod tests {
             ..INCHI_IOSTREAM::default()
         };
         assert_eq!(
-            inchi_ios_print(&mut heap, Some(&mut string), stdout, format.as_const(), &arguments,),
+            inchi_ios_print(
+                &mut heap,
+                Some(&mut string),
+                stdout,
+                format.as_const(),
+                &arguments,
+            ),
             Ok(6)
         );
         let first = string.s.pStr;
@@ -3057,7 +3230,13 @@ mod tests {
             b"x:0007\0".map(|byte| byte as i8).as_slice()
         );
         assert_eq!(
-            inchi_ios_print(&mut heap, Some(&mut string), stdout, format.as_const(), &arguments,),
+            inchi_ios_print(
+                &mut heap,
+                Some(&mut string),
+                stdout,
+                format.as_const(),
+                &arguments,
+            ),
             Ok(6)
         );
         assert_eq!(string.s.pStr, first);
@@ -3091,8 +3270,14 @@ mod tests {
         );
         assert_ne!(exact.s.pStr, old);
         assert_eq!(exact.s.nPtr, 31);
-        assert_eq!(heap.slice(old.as_const()), Err(SourceHeapError::MissingAllocation));
-        assert_eq!(&heap.slice(exact.s.pStr.as_const()).unwrap()[..3], &[65, 66, 0]);
+        assert_eq!(
+            heap.slice(old.as_const()),
+            Err(SourceHeapError::MissingAllocation)
+        );
+        assert_eq!(
+            &heap.slice(exact.s.pStr.as_const()).unwrap()[..3],
+            &[65, 66, 0]
+        );
 
         let file = heap.allocate(vec![SourceFile::default()]).unwrap();
         let mut file_ios = INCHI_IOSTREAM {
@@ -3163,7 +3348,9 @@ mod tests {
         assert_eq!(exact, before);
 
         let mut failing_heap = SourceHeap::default();
-        let failing_format = failing_heap.allocate_model_storage(vec![b'Z' as i8, 0]).unwrap();
+        let failing_format = failing_heap
+            .allocate_model_storage(vec![b'Z' as i8, 0])
+            .unwrap();
         let failing_stdout = failing_heap
             .allocate_model_storage(vec![SourceFile::default()])
             .unwrap();
@@ -3192,12 +3379,22 @@ mod tests {
     }
 
     fn source_format(heap: &mut SourceHeap, value: &str) -> SourceMutPointer<i8> {
-        allocate_source_fixture(heap, value.bytes().map(|byte| byte as i8).chain([0]).collect())
+        allocate_source_fixture(
+            heap,
+            value.bytes().map(|byte| byte as i8).chain([0]).collect(),
+        )
     }
 
-    fn get_max_length(heap: &mut SourceHeap, format: &str, arguments: Vec<SourceFormatArgument>) -> (i32, u64) {
+    fn get_max_length(
+        heap: &mut SourceHeap,
+        format: &str,
+        arguments: Vec<SourceFormatArgument>,
+    ) -> (i32, u64) {
         let format_pointer = source_format(heap, format);
-        let mut arguments = SourceVaList { arguments, position: 0 };
+        let mut arguments = SourceVaList {
+            arguments,
+            position: 0,
+        };
         let result = GetMaxPrintfLength(heap, format_pointer.as_const(), &mut arguments).unwrap();
         inchi_free(heap, format_pointer).unwrap();
         (result, arguments.position)
@@ -3215,7 +3412,10 @@ mod tests {
             get_max_length(
                 &mut heap,
                 "%*d",
-                vec![SourceFormatArgument::Signed(40), SourceFormatArgument::Signed(7),],
+                vec![
+                    SourceFormatArgument::Signed(40),
+                    SourceFormatArgument::Signed(7),
+                ],
             ),
             (40, 2)
         );
@@ -3223,7 +3423,10 @@ mod tests {
             get_max_length(
                 &mut heap,
                 "%*d",
-                vec![SourceFormatArgument::Signed(-1), SourceFormatArgument::Signed(7),],
+                vec![
+                    SourceFormatArgument::Signed(-1),
+                    SourceFormatArgument::Signed(7),
+                ],
             ),
             (-1, 1)
         );
@@ -3231,7 +3434,10 @@ mod tests {
             get_max_length(
                 &mut heap,
                 "%.*d",
-                vec![SourceFormatArgument::Signed(-1), SourceFormatArgument::Signed(7),],
+                vec![
+                    SourceFormatArgument::Signed(-1),
+                    SourceFormatArgument::Signed(7),
+                ],
             ),
             (-1, 1)
         );
@@ -3254,16 +3460,27 @@ mod tests {
             get_max_length(
                 &mut heap,
                 "%c%5.1C",
-                vec![SourceFormatArgument::Signed(65), SourceFormatArgument::Signed(66),],
+                vec![
+                    SourceFormatArgument::Signed(65),
+                    SourceFormatArgument::Signed(66),
+                ],
             ),
             (3, 2)
         );
         assert_eq!(
-            get_max_length(&mut heap, "%d%i%u%x%X%o", vec![SourceFormatArgument::Signed(1); 6],),
+            get_max_length(
+                &mut heap,
+                "%d%i%u%x%X%o",
+                vec![SourceFormatArgument::Signed(1); 6],
+            ),
             (192, 6)
         );
         assert_eq!(
-            get_max_length(&mut heap, "%e%f%g%G", vec![SourceFormatArgument::Float(1.0); 4],),
+            get_max_length(
+                &mut heap,
+                "%e%f%g%G",
+                vec![SourceFormatArgument::Float(1.0); 4],
+            ),
             (128, 4)
         );
         assert_eq!(
@@ -3326,7 +3543,10 @@ mod tests {
         );
 
         let string = source_format(&mut heap, "abcdef");
-        let format = source_format(&mut heap, "A:%+06d U:%#x S:%-5.3s F:%.2f E:%.1e G:%.3g %% %nZ\r");
+        let format = source_format(
+            &mut heap,
+            "A:%+06d U:%#x S:%-5.3s F:%.2f E:%.1e G:%.3g %% %nZ\r",
+        );
         let count = heap.allocate(vec![-1_i32]).unwrap();
         let file = heap
             .allocate(vec![SourceFile {
@@ -3417,10 +3637,18 @@ mod tests {
             .unwrap();
         let literal = source_format(&mut heap, "literal");
         assert_eq!(
-            inchi_vfprintf(&mut heap, error_file, literal.as_const(), &mut SourceVaList::default(),),
+            inchi_vfprintf(
+                &mut heap,
+                error_file,
+                literal.as_const(),
+                &mut SourceVaList::default(),
+            ),
             Ok(-1)
         );
-        assert_eq!(heap.slice(error_file.as_const()).unwrap()[0].bytes, b"unchanged");
+        assert_eq!(
+            heap.slice(error_file.as_const()).unwrap()[0].bytes,
+            b"unchanged"
+        );
     }
 
     #[test]
@@ -3442,21 +3670,30 @@ mod tests {
             inchi_print_nodisplay(&mut heap, Some(file), stdout, format.as_const(), &arguments,),
             Ok(12)
         );
-        assert_eq!(heap.slice(file.as_const()).unwrap()[0].bytes, b"[hidden] -17");
+        assert_eq!(
+            heap.slice(file.as_const()).unwrap()[0].bytes,
+            b"[hidden] -17"
+        );
         assert!(heap.slice(stdout.as_const()).unwrap()[0].bytes.is_empty());
 
         assert_eq!(
             inchi_print_nodisplay(&mut heap, None, stdout, format.as_const(), &arguments),
             Ok(12)
         );
-        assert_eq!(heap.slice(stdout.as_const()).unwrap()[0].bytes, b"[hidden] -17");
+        assert_eq!(
+            heap.slice(stdout.as_const()).unwrap()[0].bytes,
+            b"[hidden] -17"
+        );
 
         heap.slice_mut(file).unwrap()[0].error = true;
         assert_eq!(
             inchi_print_nodisplay(&mut heap, Some(file), stdout, format.as_const(), &arguments,),
             Ok(-1)
         );
-        assert_eq!(heap.slice(file.as_const()).unwrap()[0].bytes, b"[hidden] -17");
+        assert_eq!(
+            heap.slice(file.as_const()).unwrap()[0].bytes,
+            b"[hidden] -17"
+        );
         assert_eq!(arguments.position, 0);
     }
 
@@ -3478,7 +3715,13 @@ mod tests {
             ..INCHI_IOSTREAM::default()
         };
         assert_eq!(
-            inchi_ios_print_nodisplay(&mut heap, Some(&mut string), stdout, format.as_const(), &arguments,),
+            inchi_ios_print_nodisplay(
+                &mut heap,
+                Some(&mut string),
+                stdout,
+                format.as_const(),
+                &arguments,
+            ),
             Ok(6)
         );
         assert_eq!(string.s.nUsedLength, 6);
@@ -3490,7 +3733,13 @@ mod tests {
             ]
         );
         assert_eq!(
-            inchi_ios_print_nodisplay(&mut heap, Some(&mut string), stdout, format.as_const(), &arguments,),
+            inchi_ios_print_nodisplay(
+                &mut heap,
+                Some(&mut string),
+                stdout,
+                format.as_const(),
+                &arguments,
+            ),
             Ok(6)
         );
         assert_eq!(string.s.nUsedLength, 12);
@@ -3506,7 +3755,13 @@ mod tests {
             ..INCHI_IOSTREAM::default()
         };
         assert_eq!(
-            inchi_ios_print_nodisplay(&mut heap, Some(&mut file_stream), stdout, format.as_const(), &arguments,),
+            inchi_ios_print_nodisplay(
+                &mut heap,
+                Some(&mut file_stream),
+                stdout,
+                format.as_const(),
+                &arguments,
+            ),
             Ok(0)
         );
         assert_eq!(heap.slice(file.as_const()).unwrap()[0].bytes, b"x:0007");
@@ -3529,7 +3784,13 @@ mod tests {
 
         let mut none_stream = INCHI_IOSTREAM::default();
         assert_eq!(
-            inchi_ios_print_nodisplay(&mut heap, Some(&mut none_stream), stdout, format.as_const(), &arguments,),
+            inchi_ios_print_nodisplay(
+                &mut heap,
+                Some(&mut none_stream),
+                stdout,
+                format.as_const(),
+                &arguments,
+            ),
             Ok(0)
         );
         assert_eq!(
@@ -3574,14 +3835,22 @@ mod tests {
             arguments: vec![SourceFormatArgument::Signed(17)],
             position: 0,
         };
-        assert_eq!(inchi_ios_eprint(&mut heap, None, format.as_const(), &arguments), Ok(-1));
+        assert_eq!(
+            inchi_ios_eprint(&mut heap, None, format.as_const(), &arguments),
+            Ok(-1)
+        );
 
         let mut string_ios = INCHI_IOSTREAM {
             type_: INCHI_IOS_TYPE_STRING as i32,
             ..INCHI_IOSTREAM::default()
         };
         assert_eq!(
-            inchi_ios_eprint(&mut heap, Some(&mut string_ios), format.as_const(), &arguments,),
+            inchi_ios_eprint(
+                &mut heap,
+                Some(&mut string_ios),
+                format.as_const(),
+                &arguments,
+            ),
             Ok(8)
         );
         assert_eq!(arguments.position, 0);
@@ -3591,7 +3860,8 @@ mod tests {
         assert_eq!(
             &heap.slice(first_allocation.as_const()).unwrap()[..9],
             &[
-                b'v' as i8, b'a' as i8, b'l' as i8, b'u' as i8, b'e' as i8, b'=' as i8, b'1' as i8, b'7' as i8, 0,
+                b'v' as i8, b'a' as i8, b'l' as i8, b'u' as i8, b'e' as i8, b'=' as i8, b'1' as i8,
+                b'7' as i8, 0,
             ]
         );
         let suffix = source_format(&mut heap, "/%s");
@@ -3601,7 +3871,12 @@ mod tests {
             position: 0,
         };
         assert_eq!(
-            inchi_ios_eprint(&mut heap, Some(&mut string_ios), suffix.as_const(), &suffix_arguments,),
+            inchi_ios_eprint(
+                &mut heap,
+                Some(&mut string_ios),
+                suffix.as_const(),
+                &suffix_arguments,
+            ),
             Ok(3)
         );
         assert_eq!(string_ios.s.pStr, first_allocation);
@@ -3609,8 +3884,8 @@ mod tests {
         assert_eq!(
             &heap.slice(first_allocation.as_const()).unwrap()[..12],
             &[
-                b'v' as i8, b'a' as i8, b'l' as i8, b'u' as i8, b'e' as i8, b'=' as i8, b'1' as i8, b'7' as i8,
-                b'/' as i8, b'o' as i8, b'k' as i8, 0,
+                b'v' as i8, b'a' as i8, b'l' as i8, b'u' as i8, b'e' as i8, b'=' as i8, b'1' as i8,
+                b'7' as i8, b'/' as i8, b'o' as i8, b'k' as i8, 0,
             ]
         );
 
@@ -3640,7 +3915,10 @@ mod tests {
             heap.slice(exact_old.as_const()),
             Err(SourceHeapError::MissingAllocation)
         );
-        assert_eq!(&heap.slice(exact.s.pStr.as_const()).unwrap()[..3], &[65, 66, 0]);
+        assert_eq!(
+            &heap.slice(exact.s.pStr.as_const()).unwrap()[..3],
+            &[65, 66, 0]
+        );
 
         let invalid = source_format(&mut heap, "%q");
         let exact_before = exact.clone();
@@ -3687,19 +3965,34 @@ mod tests {
             ..INCHI_IOSTREAM::default()
         };
         assert_eq!(
-            inchi_ios_eprint(&mut heap, Some(&mut file_ios), format.as_const(), &arguments,),
+            inchi_ios_eprint(
+                &mut heap,
+                Some(&mut file_ios),
+                format.as_const(),
+                &arguments,
+            ),
             Ok(8)
         );
         assert_eq!(heap.slice(file.as_const()).unwrap()[0].bytes, b"value=17");
 
         file_ios.f = SourceMutPointer::null();
         assert_eq!(
-            inchi_ios_eprint(&mut heap, Some(&mut file_ios), format.as_const(), &arguments,),
+            inchi_ios_eprint(
+                &mut heap,
+                Some(&mut file_ios),
+                format.as_const(),
+                &arguments,
+            ),
             Ok(0)
         );
         file_ios.type_ = 99;
         assert_eq!(
-            inchi_ios_eprint(&mut heap, Some(&mut file_ios), format.as_const(), &arguments,),
+            inchi_ios_eprint(
+                &mut heap,
+                Some(&mut file_ios),
+                format.as_const(),
+                &arguments,
+            ),
             Ok(0)
         );
     }
@@ -3719,20 +4012,30 @@ mod tests {
             type_: INCHI_IOS_TYPE_STRING as i32,
             ..INCHI_IOSTREAM::default()
         };
-        assert_eq!(inchi_sgets(&mut heap, output, 8, Some(&mut ios)), Ok(output));
+        assert_eq!(
+            inchi_sgets(&mut heap, output, 8, Some(&mut ios)),
+            Ok(output)
+        );
         assert_eq!(
             &heap.slice(output.as_const()).unwrap()[..4],
             &[b'a' as i8, b'b' as i8, b'\n' as i8, 0]
         );
         assert_eq!(ios.s.nPtr, 3);
-        assert_eq!(inchi_sgets(&mut heap, output, 3, Some(&mut ios)), Ok(output));
+        assert_eq!(
+            inchi_sgets(&mut heap, output, 3, Some(&mut ios)),
+            Ok(output)
+        );
         assert_eq!(
             &heap.slice(output.as_const()).unwrap()[..3],
             &[b'c' as i8, b'd' as i8, 0]
         );
         assert_eq!(ios.s.nPtr, 5);
         let before_eof = heap.slice(output.as_const()).unwrap().to_vec();
-        assert!(inchi_sgets(&mut heap, output, 8, Some(&mut ios)).unwrap().is_null());
+        assert!(
+            inchi_sgets(&mut heap, output, 8, Some(&mut ios))
+                .unwrap()
+                .is_null()
+        );
         assert_eq!(ios.s.nPtr, 5);
         assert_eq!(heap.slice(output.as_const()).unwrap()[0], 0);
         assert_ne!(heap.slice(output.as_const()).unwrap(), before_eof);
@@ -3758,7 +4061,11 @@ mod tests {
         assert_eq!(heap.slice(output.as_const()).unwrap()[0], 0);
 
         heap.slice_mut(output).unwrap()[0] = 88;
-        assert!(inchi_sgets(&mut heap, output, 0, Some(&mut ios)).unwrap().is_null());
+        assert!(
+            inchi_sgets(&mut heap, output, 0, Some(&mut ios))
+                .unwrap()
+                .is_null()
+        );
         assert_eq!(heap.slice(output.as_const()).unwrap()[0], 88);
         let mut null_input = INCHI_IOSTREAM::default();
         assert!(
@@ -3789,22 +4096,45 @@ mod tests {
             type_: INCHI_IOS_TYPE_FILE as i32,
             ..INCHI_IOSTREAM::default()
         };
-        assert_eq!(inchi_fgetsLf(&mut heap, line, 5, Some(&mut file_stream)), Ok(line));
+        assert_eq!(
+            inchi_fgetsLf(&mut heap, line, 5, Some(&mut file_stream)),
+            Ok(line)
+        );
         assert_eq!(
             &heap.slice(line.as_const()).unwrap()[..5],
             &[b'a' as i8, b'b' as i8, b'c' as i8, b'd' as i8, 0]
         );
         assert_eq!(heap.slice(file.as_const()).unwrap()[0].position, 10);
-        assert_eq!(inchi_fgetsLf(&mut heap, line, 8, Some(&mut file_stream)), Ok(line));
+        assert_eq!(
+            inchi_fgetsLf(&mut heap, line, 8, Some(&mut file_stream)),
+            Ok(line)
+        );
         assert_eq!(
             &heap.slice(line.as_const()).unwrap()[..6],
-            &[b'n' as i8, b'e' as i8, b'x' as i8, b't' as i8, b'\n' as i8, 0]
+            &[
+                b'n' as i8,
+                b'e' as i8,
+                b'x' as i8,
+                b't' as i8,
+                b'\n' as i8,
+                0
+            ]
         );
         assert_eq!(heap.slice(file.as_const()).unwrap()[0].position, 17);
-        assert_eq!(inchi_fgetsLf(&mut heap, line, 8, Some(&mut file_stream)), Ok(line));
+        assert_eq!(
+            inchi_fgetsLf(&mut heap, line, 8, Some(&mut file_stream)),
+            Ok(line)
+        );
         assert_eq!(
             &heap.slice(line.as_const()).unwrap()[..6],
-            &[b'l' as i8, b'a' as i8, b's' as i8, b't' as i8, b'\n' as i8, 0]
+            &[
+                b'l' as i8,
+                b'a' as i8,
+                b's' as i8,
+                b't' as i8,
+                b'\n' as i8,
+                0
+            ]
         );
         assert!(
             inchi_fgetsLf(&mut heap, line, 8, Some(&mut file_stream))
@@ -3824,13 +4154,19 @@ mod tests {
             type_: INCHI_IOS_TYPE_STRING as i32,
             ..INCHI_IOSTREAM::default()
         };
-        assert_eq!(inchi_fgetsLf(&mut heap, line, 5, Some(&mut string_stream)), Ok(line));
+        assert_eq!(
+            inchi_fgetsLf(&mut heap, line, 5, Some(&mut string_stream)),
+            Ok(line)
+        );
         assert_eq!(
             &heap.slice(line.as_const()).unwrap()[..5],
             &[b'1' as i8, b'2' as i8, b'3' as i8, b'4' as i8, 0]
         );
         assert_eq!(string_stream.s.nPtr, 10);
-        assert_eq!(inchi_fgetsLf(&mut heap, line, 8, Some(&mut string_stream)), Ok(line));
+        assert_eq!(
+            inchi_fgetsLf(&mut heap, line, 8, Some(&mut string_stream)),
+            Ok(line)
+        );
         assert_eq!(
             &heap.slice(line.as_const()).unwrap()[..4],
             &[b'x' as i8, b'y' as i8, b'\n' as i8, 0]
@@ -3842,7 +4178,11 @@ mod tests {
             type_: 99,
             ..INCHI_IOSTREAM::default()
         };
-        assert!(inchi_fgetsLf(&mut heap, line, 8, Some(&mut unknown)).unwrap().is_null());
+        assert!(
+            inchi_fgetsLf(&mut heap, line, 8, Some(&mut unknown))
+                .unwrap()
+                .is_null()
+        );
         assert_eq!(heap.slice(line.as_const()).unwrap(), &[77; 8]);
         assert_eq!(
             inchi_fgetsLf(&mut heap, line, 8, None),
@@ -3875,7 +4215,10 @@ mod tests {
         };
         assert_eq!(inchi_ios_close(&mut heap, Some(&mut ios)), Ok(()));
         assert!(ios.s.pStr.is_null());
-        assert_eq!((ios.s.nAllocatedLength, ios.s.nUsedLength, ios.s.nPtr), (0, 0, 0));
+        assert_eq!(
+            (ios.s.nAllocatedLength, ios.s.nUsedLength, ios.s.nPtr),
+            (0, 0, 0)
+        );
         assert_eq!(ios.f, file);
         assert_eq!(
             heap.slice(string.as_const()).map(|_| ()),
@@ -3922,7 +4265,10 @@ mod tests {
         };
         assert_eq!(inchi_ios_reset(&mut heap, &mut ios), Ok(()));
         assert!(ios.s.pStr.is_null());
-        assert_eq!((ios.s.nAllocatedLength, ios.s.nUsedLength, ios.s.nPtr), (0, 0, 0));
+        assert_eq!(
+            (ios.s.nAllocatedLength, ios.s.nUsedLength, ios.s.nPtr),
+            (0, 0, 0)
+        );
         assert_eq!(heap.slice(string.as_const()).unwrap(), &[b'k' as i8, 0]);
         assert_eq!(
             heap.slice(file.as_const()).map(|_| ()),
@@ -4022,7 +4368,10 @@ mod tests {
     #[test]
     fn source_port__ichi_io__inchi_ios_getstab1__line_451() {
         let mut heap = SourceHeap::default();
-        let input = allocate_source_fixture(&mut heap, b"\t  value \t".iter().map(|byte| *byte as i8).collect());
+        let input = allocate_source_fixture(
+            &mut heap,
+            b"\t  value \t".iter().map(|byte| *byte as i8).collect(),
+        );
         let mut ios = INCHI_IOSTREAM {
             s: INCHI_IOS_STRING {
                 pStr: input,
@@ -4036,15 +4385,23 @@ mod tests {
         let line = allocate_source_fixture(&mut heap, vec![99_i8; 12]);
         let mut too_long = -1;
 
-        assert_eq!(inchi_ios_getsTab1(&mut heap, line, 12, &mut ios, &mut too_long), Ok(0));
+        assert_eq!(
+            inchi_ios_getsTab1(&mut heap, line, 12, &mut ios, &mut too_long),
+            Ok(0)
+        );
         assert_eq!(heap.slice(line.as_const()).unwrap()[0], 0);
         assert_eq!(too_long, 0);
         assert_eq!(ios.s.nPtr, 1);
 
-        assert_eq!(inchi_ios_getsTab1(&mut heap, line, 12, &mut ios, &mut too_long), Ok(5));
+        assert_eq!(
+            inchi_ios_getsTab1(&mut heap, line, 12, &mut ios, &mut too_long),
+            Ok(5)
+        );
         assert_eq!(
             &heap.slice(line.as_const()).unwrap()[..6],
-            &[b'v' as i8, b'a' as i8, b'l' as i8, b'u' as i8, b'e' as i8, 0]
+            &[
+                b'v' as i8, b'a' as i8, b'l' as i8, b'u' as i8, b'e' as i8, 0
+            ]
         );
         assert_eq!(too_long, 0);
         assert_eq!(ios.s.nPtr, 10);
@@ -4056,7 +4413,10 @@ mod tests {
     #[test]
     fn source_port__ichi_io__inchi_ios_getstab__line_420() {
         let mut heap = SourceHeap::default();
-        let input = allocate_source_fixture(&mut heap, b"\t  value \t".iter().map(|byte| *byte as i8).collect());
+        let input = allocate_source_fixture(
+            &mut heap,
+            b"\t  value \t".iter().map(|byte| *byte as i8).collect(),
+        );
         let mut ios = INCHI_IOSTREAM {
             s: INCHI_IOS_STRING {
                 pStr: input,
@@ -4070,10 +4430,15 @@ mod tests {
         let line = allocate_source_fixture(&mut heap, vec![99_i8; 12]);
         let mut too_long = -1;
 
-        assert_eq!(inchi_ios_getsTab(&mut heap, line, 12, &mut ios, &mut too_long), Ok(5));
+        assert_eq!(
+            inchi_ios_getsTab(&mut heap, line, 12, &mut ios, &mut too_long),
+            Ok(5)
+        );
         assert_eq!(
             &heap.slice(line.as_const()).unwrap()[..6],
-            &[b'v' as i8, b'a' as i8, b'l' as i8, b'u' as i8, b'e' as i8, 0]
+            &[
+                b'v' as i8, b'a' as i8, b'l' as i8, b'u' as i8, b'e' as i8, 0
+            ]
         );
         assert_eq!(too_long, 0);
         assert_eq!(ios.s.nPtr, 10);
@@ -4085,7 +4450,10 @@ mod tests {
     #[test]
     fn source_port__ichi_io__inchi_ios_str_getstab__line_354() {
         let mut heap = SourceHeap::default();
-        let input = allocate_source_fixture(&mut heap, b"ab\tcd\n".iter().map(|byte| *byte as i8).collect());
+        let input = allocate_source_fixture(
+            &mut heap,
+            b"ab\tcd\n".iter().map(|byte| *byte as i8).collect(),
+        );
         let mut ios = INCHI_IOSTREAM {
             s: INCHI_IOS_STRING {
                 pStr: input,
@@ -4098,14 +4466,20 @@ mod tests {
         };
         let line = allocate_source_fixture(&mut heap, vec![99_i8; 8]);
 
-        assert_eq!(inchi_ios_str_getsTab(&mut heap, line, 8, &mut ios), Ok(line));
+        assert_eq!(
+            inchi_ios_str_getsTab(&mut heap, line, 8, &mut ios),
+            Ok(line)
+        );
         assert_eq!(
             &heap.slice(line.as_const()).unwrap()[..4],
             &[b'a' as i8, b'b' as i8, b'\n' as i8, 0]
         );
         assert_eq!(ios.s.nPtr, 3);
 
-        assert_eq!(inchi_ios_str_getsTab(&mut heap, line, 8, &mut ios), Ok(line));
+        assert_eq!(
+            inchi_ios_str_getsTab(&mut heap, line, 8, &mut ios),
+            Ok(line)
+        );
         assert_eq!(
             &heap.slice(line.as_const()).unwrap()[..4],
             &[b'c' as i8, b'd' as i8, b'\n' as i8, 0]
@@ -4125,7 +4499,10 @@ mod tests {
     #[test]
     fn source_port__ichi_io__inchi_ios_gets__line_386() {
         let mut heap = SourceHeap::default();
-        let input = allocate_source_fixture(&mut heap, b" \n  abc  \n".iter().map(|byte| *byte as i8).collect());
+        let input = allocate_source_fixture(
+            &mut heap,
+            b" \n  abc  \n".iter().map(|byte| *byte as i8).collect(),
+        );
         let mut ios = INCHI_IOSTREAM {
             s: INCHI_IOS_STRING {
                 pStr: input,
@@ -4138,7 +4515,10 @@ mod tests {
         };
         let line = allocate_source_fixture(&mut heap, vec![99_i8; 10]);
         let mut too_long = -1;
-        assert_eq!(inchi_ios_gets(&mut heap, line, 10, &mut ios, &mut too_long), Ok(3));
+        assert_eq!(
+            inchi_ios_gets(&mut heap, line, 10, &mut ios, &mut too_long),
+            Ok(3)
+        );
         assert_eq!(
             &heap.slice(line.as_const()).unwrap()[..4],
             &[b'a' as i8, b'b' as i8, b'c' as i8, 0]
@@ -4148,7 +4528,10 @@ mod tests {
         assert_eq!(inchi_free(&mut heap, input), Ok(()));
         assert_eq!(inchi_free(&mut heap, line), Ok(()));
 
-        let input = allocate_source_fixture(&mut heap, b"abcdef".iter().map(|byte| *byte as i8).collect());
+        let input = allocate_source_fixture(
+            &mut heap,
+            b"abcdef".iter().map(|byte| *byte as i8).collect(),
+        );
         let mut ios = INCHI_IOSTREAM {
             s: INCHI_IOS_STRING {
                 pStr: input,
@@ -4161,7 +4544,10 @@ mod tests {
         };
         let line = allocate_source_fixture(&mut heap, vec![0_i8; 5]);
         let mut too_long = 0;
-        assert_eq!(inchi_ios_gets(&mut heap, line, 5, &mut ios, &mut too_long), Ok(3));
+        assert_eq!(
+            inchi_ios_gets(&mut heap, line, 5, &mut ios, &mut too_long),
+            Ok(3)
+        );
         assert_eq!(
             &heap.slice(line.as_const()).unwrap()[..4],
             &[b'a' as i8, b'b' as i8, b'c' as i8, 0]
@@ -4197,7 +4583,10 @@ mod tests {
     #[test]
     fn source_port__ichi_io__inchi_ios_str_gets__line_324() {
         let mut heap = SourceHeap::default();
-        let input = allocate_source_fixture(&mut heap, vec![b'a' as i8, b'b' as i8, b'\n' as i8, b'z' as i8]);
+        let input = allocate_source_fixture(
+            &mut heap,
+            vec![b'a' as i8, b'b' as i8, b'\n' as i8, b'z' as i8],
+        );
         let mut ios = INCHI_IOSTREAM {
             s: INCHI_IOS_STRING {
                 pStr: input,
@@ -4303,9 +4692,15 @@ mod tests {
         assert_eq!(string_ios.s.nPtr, 1);
         assert_eq!(inchi_ios_str_getc(&mut heap, &mut string_ios), Ok(0));
         assert_eq!(string_ios.s.nPtr, 2);
-        assert_eq!(inchi_ios_str_getc(&mut heap, &mut string_ios), Ok(SOURCE_EOF));
+        assert_eq!(
+            inchi_ios_str_getc(&mut heap, &mut string_ios),
+            Ok(SOURCE_EOF)
+        );
         assert_eq!(string_ios.s.nPtr, 3);
-        assert_eq!(inchi_ios_str_getc(&mut heap, &mut string_ios), Ok(SOURCE_EOF));
+        assert_eq!(
+            inchi_ios_str_getc(&mut heap, &mut string_ios),
+            Ok(SOURCE_EOF)
+        );
         assert_eq!(string_ios.s.nPtr, 3);
         assert_eq!(inchi_free(&mut heap, string), Ok(()));
 
@@ -4334,6 +4729,9 @@ mod tests {
         assert_eq!(inchi_free(&mut heap, file), Ok(()));
 
         let mut invalid_ios = INCHI_IOSTREAM::default();
-        assert_eq!(inchi_ios_str_getc(&mut heap, &mut invalid_ios), Ok(SOURCE_EOF));
+        assert_eq!(
+            inchi_ios_str_getc(&mut heap, &mut invalid_ios),
+            Ok(SOURCE_EOF)
+        );
     }
 }

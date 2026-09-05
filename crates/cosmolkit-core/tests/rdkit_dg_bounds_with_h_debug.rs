@@ -114,8 +114,8 @@ fn debug_audited_etkdgv3_exp_torsion_details() {
             .with_hydrogens()
             .expect("add hs");
         let params = EmbedParameters::etkdg_v3();
-        let details =
-            rd_distgeom_get_exp_tors_helper_with_params(&molecule, &params).expect("experimental torsion details");
+        let details = rd_distgeom_get_exp_tors_helper_with_params(&molecule, &params)
+            .expect("experimental torsion details");
 
         println!("smiles={smiles}");
         println!("exp_torsion_atoms={:?}", details.exp_torsion_atoms);

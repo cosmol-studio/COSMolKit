@@ -3,7 +3,9 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::panic::AssertUnwindSafe;
 
-use cosmolkit_core::{BatchErrorMode, Molecule, MoleculeBatch, SmilesWriteError, SmilesWriteParams};
+use cosmolkit_core::{
+    BatchErrorMode, Molecule, MoleculeBatch, SmilesWriteError, SmilesWriteParams,
+};
 use serde::Deserialize;
 
 mod common;
@@ -51,9 +53,12 @@ fn load_golden() -> Vec<SmilesWriterRecord> {
         .lines()
         .enumerate()
         .map(|(idx, line)| {
-            let line = line.unwrap_or_else(|err| panic!("failed to read {} line {}: {err}", path.display(), idx + 1));
-            serde_json::from_str(&line)
-                .unwrap_or_else(|err| panic!("failed to parse {} line {}: {err}", path.display(), idx + 1))
+            let line = line.unwrap_or_else(|err| {
+                panic!("failed to read {} line {}: {err}", path.display(), idx + 1)
+            });
+            serde_json::from_str(&line).unwrap_or_else(|err| {
+                panic!("failed to parse {} line {}: {err}", path.display(), idx + 1)
+            })
         })
         .collect()
 }
@@ -296,7 +301,10 @@ fn smiles_writer_matches_rdkit_golden_for_common_param_branches() {
 #[test]
 fn smiles_writer_matches_rdkit_golden_for_common_root_none_param_branches_in_parallel_batch() {
     let records = load_golden();
-    let smiles = records.iter().map(|record| record.smiles.clone()).collect::<Vec<_>>();
+    let smiles = records
+        .iter()
+        .map(|record| record.smiles.clone())
+        .collect::<Vec<_>>();
     let batch = MoleculeBatch::from_smiles_list(&smiles).with_parallel_jobs(Some(4));
     let template_mol = Molecule::from_smiles("CC").expect("template molecule should parse");
 
@@ -310,8 +318,15 @@ fn smiles_writer_matches_rdkit_golden_for_common_root_none_param_branches_in_par
         }
         let params = branch_params(first_branch, &template_mol);
         let actual = batch
-            .to_smiles_list_with_params_and_options(&params, BatchErrorMode::KeepErrors, Some(4), Some(false))
-            .unwrap_or_else(|err| panic!("parallel batch SMILES writer failed for branch {branch_name}: {err}"));
+            .to_smiles_list_with_params_and_options(
+                &params,
+                BatchErrorMode::KeepErrors,
+                Some(4),
+                Some(false),
+            )
+            .unwrap_or_else(|err| {
+                panic!("parallel batch SMILES writer failed for branch {branch_name}: {err}")
+            });
 
         assert_eq!(actual.len(), records.len());
         for (row_idx, (record, actual_smiles)) in records.iter().zip(actual.iter()).enumerate() {

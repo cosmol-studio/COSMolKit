@@ -1,15 +1,15 @@
 use crate::source::base::ichimake::{CompareIcr, CompareReversedINChI2};
 use crate::source::base::ichirvr1::{
-    AddToEdgeList, AllocEdgeList, GetChargeFlowerUpperEdge, MakeOneInChIOutOfStrFromINChI2, RemoveForbiddenEdgeMask,
-    RunBnsRestoreOnce, RunBnsTestOnce, SetForbiddenEdgeMask,
+    AddToEdgeList, AllocEdgeList, GetChargeFlowerUpperEdge, MakeOneInChIOutOfStrFromINChI2,
+    RemoveForbiddenEdgeMask, RunBnsRestoreOnce, RunBnsTestOnce, SetForbiddenEdgeMask,
 };
 use crate::source::base::ichirvr4::FillOutExtraFixedHDataRestr;
 use crate::source::base::ichirvr5::GetPlusMinusVertex;
 use crate::source_types::{
-    ALL_TC_GROUPS, BN_DATA, BN_STRUCT, CANON_GLOBALS, EDGE_LIST, EDGE_LIST_CLEAR, EDGE_LIST_FREE, ICR, INCHI_CLOCK,
-    INCHI_MODE, INChI, INPUT_PARMS, NO_VERTEX, RI_ERR_ALLOC, RI_ERR_PROGR, RI_ERR_SYNTAX, STRUCT_DATA, SourceHeap,
-    SourceHeapError, SourceMutPointer, SourceTGroupInfoPointer, StrFromINChI, TAUT_NON, TAUT_YES, VAL_AT, clock_t,
-    inp_ATOM,
+    ALL_TC_GROUPS, BN_DATA, BN_STRUCT, CANON_GLOBALS, EDGE_LIST, EDGE_LIST_CLEAR, EDGE_LIST_FREE,
+    ICR, INCHI_CLOCK, INCHI_MODE, INChI, INPUT_PARMS, NO_VERTEX, RI_ERR_ALLOC, RI_ERR_PROGR,
+    RI_ERR_SYNTAX, STRUCT_DATA, SourceHeap, SourceHeapError, SourceMutPointer,
+    SourceTGroupInfoPointer, StrFromINChI, TAUT_NON, TAUT_YES, VAL_AT, clock_t, inp_ATOM,
 };
 
 const INC_ADD_EDGE: i32 = 64;
@@ -3179,7 +3179,9 @@ mod tests {
             INChI_Stereo::default()
         };
         let stereo = heap.allocate_model_storage(vec![stereo]).unwrap();
-        let formula = heap.allocate_model_storage(vec![b'C' as i8, b'2' as i8, 0]).unwrap();
+        let formula = heap
+            .allocate_model_storage(vec![b'C' as i8, b'2' as i8, 0])
+            .unwrap();
         let atoms = heap.allocate_model_storage(vec![6_u8, 6]).unwrap();
         let hydrogens = heap.allocate_model_storage(vec![0_i8, 0]).unwrap();
         heap.allocate_model_storage(vec![INChI {
@@ -3198,7 +3200,12 @@ mod tests {
         heap.allocate_model_storage(values.to_vec()).unwrap()
     }
 
-    fn bond_network(heap: &mut SourceHeap, edge_flow: i32, forbidden: i8, total_capacity: i32) -> BN_STRUCT {
+    fn bond_network(
+        heap: &mut SourceHeap,
+        edge_flow: i32,
+        forbidden: i8,
+        total_capacity: i32,
+    ) -> BN_STRUCT {
         let incident0 = heap.allocate_model_storage(vec![0_i32]).unwrap();
         let incident1 = heap.allocate_model_storage(vec![0_i32]).unwrap();
         let vertices = heap
@@ -3292,7 +3299,11 @@ mod tests {
         (result, primary, secondary, runs)
     }
 
-    fn primary_structure(reversed: SourceMutPointer<INChI>, mobile_h: i8, atom_count: i32) -> StrFromINChI {
+    fn primary_structure(
+        reversed: SourceMutPointer<INChI>,
+        mobile_h: i8,
+        atom_count: i32,
+    ) -> StrFromINChI {
         let mut structure = StrFromINChI {
             bMobileH: mobile_h,
             num_atoms: atom_count,

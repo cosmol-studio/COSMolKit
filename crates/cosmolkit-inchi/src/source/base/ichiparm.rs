@@ -80,7 +80,9 @@ fn option_prefix(
     } else {
         None
     };
-    let compared_argument = padded_argument.map(SourceMutPointer::as_const).unwrap_or(argument);
+    let compared_argument = padded_argument
+        .map(SourceMutPointer::as_const)
+        .unwrap_or(argument);
     let result = inchi_memicmp(
         heap,
         compared_argument,
@@ -94,7 +96,10 @@ fn option_prefix(
     result.map(|ordering| ordering == 0)
 }
 
-fn source_strtol_long(heap: &mut SourceHeap, pointer: SourceConstPointer<i8>) -> Result<i64, SourceHeapError> {
+fn source_strtol_long(
+    heap: &mut SourceHeap,
+    pointer: SourceConstPointer<i8>,
+) -> Result<i64, SourceHeapError> {
     source_strtol_long_with_end(heap, pointer).map(|(value, _)| value)
 }
 
@@ -108,7 +113,12 @@ fn source_strtol_long_with_end(
         .position(|byte| *byte == 0)
         .ok_or(SourceHeapError::MissingNulTerminator)?;
     let mut index = 0_usize;
-    while index < nul && matches!(bytes[index] as u8, b' ' | b'\t' | b'\n' | 0x0b | 0x0c | b'\r') {
+    while index < nul
+        && matches!(
+            bytes[index] as u8,
+            b' ' | b'\t' | b'\n' | 0x0b | 0x0c | b'\r'
+        )
+    {
         index += 1;
     }
     let negative = if index < nul && matches!(bytes[index] as u8, b'+' | b'-') {
@@ -124,9 +134,13 @@ fn source_strtol_long_with_end(
     while index < nul && (bytes[index] as u8).is_ascii_digit() {
         let digit = i64::from((bytes[index] as u8) - b'0');
         let next = if negative {
-            value.checked_mul(10).and_then(|value| value.checked_sub(digit))
+            value
+                .checked_mul(10)
+                .and_then(|value| value.checked_sub(digit))
         } else {
-            value.checked_mul(10).and_then(|value| value.checked_add(digit))
+            value
+                .checked_mul(10)
+                .and_then(|value| value.checked_add(digit))
         };
         value = next.unwrap_or_else(|| {
             overflowed = true;
@@ -154,7 +168,12 @@ pub(crate) fn source_strtod_with_end(
         .position(|byte| *byte == 0)
         .ok_or(SourceHeapError::MissingNulTerminator)?;
     let mut index = 0_usize;
-    while index < nul && matches!(bytes[index] as u8, b' ' | b'\t' | b'\n' | 0x0b | 0x0c | b'\r') {
+    while index < nul
+        && matches!(
+            bytes[index] as u8,
+            b' ' | b'\t' | b'\n' | 0x0b | 0x0c | b'\r'
+        )
+    {
         index += 1;
     }
     let token_start = index;
@@ -164,23 +183,43 @@ pub(crate) fn source_strtod_with_end(
     let number_start = index;
     let remaining = &bytes[number_start..nul];
     let lower = |byte: i8| (byte as u8).to_ascii_lowercase();
-    if remaining.len() >= 3 && lower(remaining[0]) == b'i' && lower(remaining[1]) == b'n' && lower(remaining[2]) == b'f'
+    if remaining.len() >= 3
+        && lower(remaining[0]) == b'i'
+        && lower(remaining[1]) == b'n'
+        && lower(remaining[2]) == b'f'
     {
         index += 3;
         let tail = &bytes[index..nul];
-        if tail.len() >= 5 && tail[..5].iter().map(|byte| lower(*byte)).eq(b"inity".iter().copied()) {
+        if tail.len() >= 5
+            && tail[..5]
+                .iter()
+                .map(|byte| lower(*byte))
+                .eq(b"inity".iter().copied())
+        {
             index += 5;
         }
         let negative = bytes[token_start] as u8 == b'-';
-        return Ok((if negative { f64::NEG_INFINITY } else { f64::INFINITY }, index));
+        return Ok((
+            if negative {
+                f64::NEG_INFINITY
+            } else {
+                f64::INFINITY
+            },
+            index,
+        ));
     }
-    if remaining.len() >= 3 && lower(remaining[0]) == b'n' && lower(remaining[1]) == b'a' && lower(remaining[2]) == b'n'
+    if remaining.len() >= 3
+        && lower(remaining[0]) == b'n'
+        && lower(remaining[1]) == b'a'
+        && lower(remaining[2]) == b'n'
     {
         index += 3;
         let negative = bytes[token_start] as u8 == b'-';
         let mut payload = 0_u64;
         if bytes.get(index).map(|byte| *byte as u8) == Some(b'(')
-            && let Some(close) = bytes[index + 1..nul].iter().position(|byte| *byte as u8 == b')')
+            && let Some(close) = bytes[index + 1..nul]
+                .iter()
+                .position(|byte| *byte as u8 == b')')
         {
             let payload_bytes = &bytes[index + 1..index + 1 + close];
             if payload_bytes.iter().all(|byte| {
@@ -227,12 +266,19 @@ pub(crate) fn source_strtod_with_end(
                 }
             }
         }
-        let bits = u64::from(negative) << 63 | 0x7ff8_0000_0000_0000 | (payload & 0x000f_ffff_ffff_ffff);
+        let bits =
+            u64::from(negative) << 63 | 0x7ff8_0000_0000_0000 | (payload & 0x000f_ffff_ffff_ffff);
         return Ok((f64::from_bits(bits), index));
     }
 
-    if bytes.get(index).map(|byte| (*byte as u8).to_ascii_lowercase()) == Some(b'0')
-        && bytes.get(index + 1).map(|byte| (*byte as u8).to_ascii_lowercase()) == Some(b'x')
+    if bytes
+        .get(index)
+        .map(|byte| (*byte as u8).to_ascii_lowercase())
+        == Some(b'0')
+        && bytes
+            .get(index + 1)
+            .map(|byte| (*byte as u8).to_ascii_lowercase())
+            == Some(b'x')
     {
         index += 2;
         let mut digits = 0_usize;
@@ -270,13 +316,20 @@ pub(crate) fn source_strtod_with_end(
                 has_complete_exponent = true;
             }
         }
-        let mut token: Vec<u8> = bytes[token_start..index].iter().map(|byte| *byte as u8).collect();
+        let mut token: Vec<u8> = bytes[token_start..index]
+            .iter()
+            .map(|byte| *byte as u8)
+            .collect();
         if !has_complete_exponent {
             token.extend_from_slice(b"p0");
         }
-        let token = std::str::from_utf8(&token).map_err(|_| SourceHeapError::InvalidSourceTextEncoding)?;
-        let value = hexf_parse::parse_hexf64(token, false).map_err(|_| SourceHeapError::UnsupportedSourceBehavior)?;
-        if value.is_infinite() || (has_nonzero_digit && (value == 0.0 || value.abs() < f64::MIN_POSITIVE)) {
+        let token =
+            std::str::from_utf8(&token).map_err(|_| SourceHeapError::InvalidSourceTextEncoding)?;
+        let value = hexf_parse::parse_hexf64(token, false)
+            .map_err(|_| SourceHeapError::UnsupportedSourceBehavior)?;
+        if value.is_infinite()
+            || (has_nonzero_digit && (value == 0.0 || value.abs() < f64::MIN_POSITIVE))
+        {
             heap.set_source_errno(34);
         }
         return Ok((value, index));
@@ -314,12 +367,18 @@ pub(crate) fn source_strtod_with_end(
             index = exponent;
         }
     }
-    let token: Vec<u8> = bytes[token_start..index].iter().map(|byte| *byte as u8).collect();
-    let token = std::str::from_utf8(&token).map_err(|_| SourceHeapError::InvalidSourceTextEncoding)?;
+    let token: Vec<u8> = bytes[token_start..index]
+        .iter()
+        .map(|byte| *byte as u8)
+        .collect();
+    let token =
+        std::str::from_utf8(&token).map_err(|_| SourceHeapError::InvalidSourceTextEncoding)?;
     let value = token
         .parse::<f64>()
         .map_err(|_| SourceHeapError::UnsupportedSourceBehavior)?;
-    if value.is_infinite() || (has_nonzero_digit && (value == 0.0 || value.abs() < f64::MIN_POSITIVE)) {
+    if value.is_infinite()
+        || (has_nonzero_digit && (value == 0.0 || value.abs() < f64::MIN_POSITIVE))
+    {
         heap.set_source_errno(34);
     }
     Ok((value, index))
@@ -846,7 +905,9 @@ pub(crate) fn set_common_options_by_parg(
         got = 1;
     } else if option_literal(heap, pArg, "SNON")? {
         options.ver1_default_mode &= !(REQ_MODE_STEREO as INCHI_MODE);
-        options.mode &= !((REQ_MODE_RACEMIC_STEREO | REQ_MODE_RELATIVE_STEREO | REQ_MODE_CHIR_FLG_STEREO) as i32);
+        options.mode &= !((REQ_MODE_RACEMIC_STEREO
+            | REQ_MODE_RELATIVE_STEREO
+            | REQ_MODE_CHIR_FLG_STEREO) as i32);
         got = 1;
     } else if option_literal(heap, pArg, "NEWPSOFF")? {
         options.pointed_edge_stereo = 0;
@@ -884,7 +945,8 @@ pub(crate) fn set_common_options_by_parg(
         options.forced_chiral_flag |= FLAG_SET_INP_AT_NONCHIRAL as i32;
         got = 1;
     } else if option_literal(heap, pArg, "SUU")? {
-        options.ver1_default_mode &= !((REQ_MODE_SB_IGN_ALL_UU | REQ_MODE_SC_IGN_ALL_UU) as INCHI_MODE);
+        options.ver1_default_mode &=
+            !((REQ_MODE_SB_IGN_ALL_UU | REQ_MODE_SC_IGN_ALL_UU) as INCHI_MODE);
         options.std_format = 0;
         got = 1;
     } else if option_literal(heap, pArg, "SLUUD")? {
@@ -996,7 +1058,9 @@ pub(crate) fn set_common_options_by_parg(
             ip.bFixNonUniformDraw = 0;
             options.std_format = 0;
             got = 1;
-        } else if option_literal(heap, pArg, "FixSp3bugOFF")? || option_literal(heap, pArg, "FBOFF")? {
+        } else if option_literal(heap, pArg, "FixSp3bugOFF")?
+            || option_literal(heap, pArg, "FBOFF")?
+        {
             options.fix_sp3_bug = 0;
             options.std_format = 0;
             got = 1;
@@ -1021,7 +1085,10 @@ pub(crate) fn set_common_options_by_parg(
     Ok(got)
 }
 
-fn source_c_string(heap: &SourceHeap, pointer: SourceConstPointer<i8>) -> Result<Vec<i8>, SourceHeapError> {
+fn source_c_string(
+    heap: &SourceHeap,
+    pointer: SourceConstPointer<i8>,
+) -> Result<Vec<i8>, SourceHeapError> {
     let bytes = heap.slice(pointer)?;
     let nul = bytes
         .iter()
@@ -2618,7 +2685,10 @@ pub(crate) fn ReadCommandLineParms(
             .iter()
             .position(|byte| *byte == 0)
             .ok_or(SourceHeapError::MissingNulTerminator)?;
-        if argument_nul >= 2 && argument_bytes[0] as u8 == INCHI_OPTION_PREFX && argument_bytes[1] != 0 {
+        if argument_nul >= 2
+            && argument_bytes[0] as u8 == INCHI_OPTION_PREFX
+            && argument_bytes[1] != 0
+        {
             let p_arg = argument.offset(1)?;
             b_ver1_options = b_ver1_options
                 .checked_add(2)
@@ -2634,7 +2704,8 @@ pub(crate) fn ReadCommandLineParms(
                 mystrncpy(heap, header, p_arg.offset(4)?, 65)?;
                 let mut length = 0_i32;
                 lrtrim(heap, header, Some(&mut length))?;
-                ip.szSdfDataHeader.copy_from_slice(heap.slice(header.as_const())?);
+                ip.szSdfDataHeader
+                    .copy_from_slice(heap.slice(header.as_const())?);
                 if length != 0 {
                     ip.pSdfLabel = header;
                     ip.pSdfValue = szSdfDataValue;
@@ -2696,15 +2767,17 @@ pub(crate) fn ReadCommandLineParms(
                         if tail.get(end) != Some(&0) {
                             timeout_set_warning = 1;
                         }
-                        timeout_value =
-                            if heap.source_errno() == 34 || parsed < 0.0 || parsed * 1000.0 > i64::MAX as f64 {
-                                timeout_set_warning = 1;
-                                0
-                            } else if parsed.is_nan() {
-                                return Err(SourceHeapError::UnsupportedSourceBehavior);
-                            } else {
-                                (parsed * 1000.0) as i64
-                            };
+                        timeout_value = if heap.source_errno() == 34
+                            || parsed < 0.0
+                            || parsed * 1000.0 > i64::MAX as f64
+                        {
+                            timeout_set_warning = 1;
+                            0
+                        } else if parsed.is_nan() {
+                            return Err(SourceHeapError::UnsupportedSourceBehavior);
+                        } else {
+                            (parsed * 1000.0) as i64
+                        };
                         timeout_set_error = 0;
                     } else {
                         timeout_value = 0;
@@ -2738,7 +2811,8 @@ pub(crate) fn ReadCommandLineParms(
             let copied = argument_bytes[..=argument_nul].to_vec();
             let allocation = match inchi_malloc(
                 heap,
-                u64::try_from(copied.len()).map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?,
+                u64::try_from(copied.len())
+                    .map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?,
             ) {
                 Ok(allocation) => {
                     heap.slice_mut(allocation)?.copy_from_slice(&copied);
@@ -2747,7 +2821,8 @@ pub(crate) fn ReadCommandLineParms(
                 Err(SourceHeapError::AllocationFailed) => SourceConstPointer::null(),
                 Err(error) => return Err(error),
             };
-            let path_index = usize::try_from(ip.num_paths).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+            let path_index = usize::try_from(ip.num_paths)
+                .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
             ip.path[path_index] = allocation;
             ip.num_paths += 1;
         }
@@ -2818,7 +2893,8 @@ pub(crate) fn ReadCommandLineParms(
             if previous.is_null() {
                 break;
             }
-            let path_is_empty = ip.path[index].is_null() || heap.slice(ip.path[index])?.first() == Some(&0);
+            let path_is_empty =
+                ip.path[index].is_null() || heap.slice(ip.path[index])?.first() == Some(&0);
             if path_is_empty {
                 let previous_bytes = source_c_string(heap, previous.as_const())?;
                 let mut generated = previous_bytes[..previous_bytes.len() - 1].to_vec();
@@ -2826,7 +2902,8 @@ pub(crate) fn ReadCommandLineParms(
                 generated.push(0);
                 let allocation = match inchi_malloc(
                     heap,
-                    u64::try_from(generated.len()).map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?,
+                    u64::try_from(generated.len())
+                        .map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?,
                 ) {
                     Ok(allocation) => allocation,
                     Err(SourceHeapError::AllocationFailed) => continue,
@@ -2868,19 +2945,24 @@ pub(crate) fn ReadCommandLineParms(
     ip.bDoNotAddH = options.do_not_add_h;
 
     if options.mode == 0 || options.mode == REQ_MODE_STEREO as i32 {
-        options.mode |= (REQ_MODE_BASIC | REQ_MODE_TAUT | REQ_MODE_ISO | REQ_MODE_NON_ISO | REQ_MODE_STEREO) as i32;
+        options.mode |=
+            (REQ_MODE_BASIC | REQ_MODE_TAUT | REQ_MODE_ISO | REQ_MODE_NON_ISO | REQ_MODE_STEREO)
+                as i32;
     } else {
         if options.mode & (REQ_MODE_BASIC | REQ_MODE_TAUT) as i32 == 0 {
             options.mode |= (REQ_MODE_BASIC | REQ_MODE_TAUT) as i32;
         }
-        if options.mode & REQ_MODE_STEREO as i32 != 0 && options.mode & (REQ_MODE_ISO | REQ_MODE_NON_ISO) as i32 == 0 {
+        if options.mode & REQ_MODE_STEREO as i32 != 0
+            && options.mode & (REQ_MODE_ISO | REQ_MODE_NON_ISO) as i32 == 0
+        {
             options.mode |= (REQ_MODE_ISO | REQ_MODE_NON_ISO) as i32;
         }
     }
     if options.mode & REQ_MODE_ISO as i32 != 0 {
         options.mode |= REQ_MODE_NON_ISO as i32;
     }
-    options.mode |= ((MIN_SB_RING_SIZE as i32) << REQ_MODE_MIN_SB_RING_SHFT) & REQ_MODE_MIN_SB_RING_MASK as i32;
+    options.mode |=
+        ((MIN_SB_RING_SIZE as i32) << REQ_MODE_MIN_SB_RING_SHFT) & REQ_MODE_MIN_SB_RING_MASK as i32;
     if ip.nInputType == tagInputType_INPUT_NONE && ip.num_paths > 0 {
         ip.nInputType = tagInputType_INPUT_MOLFILE;
     }
@@ -2892,7 +2974,9 @@ pub(crate) fn ReadCommandLineParms(
             0
         };
     if b_output_molfile_only != 0 {
-        b_output_style &= !((INCHI_OUT_PLAIN_TEXT | INCHI_OUT_PLAIN_TEXT_COMMENTS | INCHI_OUT_TABBED_OUTPUT) as i32);
+        b_output_style &= !((INCHI_OUT_PLAIN_TEXT
+            | INCHI_OUT_PLAIN_TEXT_COMMENTS
+            | INCHI_OUT_TABBED_OUTPUT) as i32);
         if b_output_molfile_dt != 0 {
             ip.bINChIOutputOptions |= INCHI_OUT_SDFILE_ATOMS_DT as i32;
         }
@@ -3018,8 +3102,13 @@ fn eprint_call(
                 source_arguments.push(SourceFormatArgument::Signed(value));
             }
             PrintArgument::Text(value) => {
-                let pointer = heap
-                    .allocate_model_storage(value.bytes().chain(std::iter::once(0)).map(|byte| byte as i8).collect())?;
+                let pointer = heap.allocate_model_storage(
+                    value
+                        .bytes()
+                        .chain(std::iter::once(0))
+                        .map(|byte| byte as i8)
+                        .collect(),
+                )?;
                 text_pointers.push(pointer);
                 source_arguments.push(SourceFormatArgument::Bytes(pointer.as_const()));
             }
@@ -3068,8 +3157,13 @@ fn nodisplay_call(
                 source_arguments.push(SourceFormatArgument::Signed(value));
             }
             PrintArgument::Text(value) => {
-                let pointer = heap
-                    .allocate_model_storage(value.bytes().chain(std::iter::once(0)).map(|byte| byte as i8).collect())?;
+                let pointer = heap.allocate_model_storage(
+                    value
+                        .bytes()
+                        .chain(std::iter::once(0))
+                        .map(|byte| byte as i8)
+                        .collect(),
+                )?;
                 text_pointers.push(pointer);
                 source_arguments.push(SourceFormatArgument::Bytes(pointer.as_const()));
             }
@@ -3098,7 +3192,11 @@ fn nodisplay_call(
 }
 
 fn c_text(value: &str) -> Vec<i8> {
-    value.bytes().chain(std::iter::once(0)).map(|byte| byte as i8).collect()
+    value
+        .bytes()
+        .chain(std::iter::once(0))
+        .map(|byte| byte as i8)
+        .collect()
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -3108,7 +3206,10 @@ pub(crate) struct InchiBuildMetadata<'a> {
     pub(crate) time: &'a str,
 }
 
-fn pointer_starts_with_nonzero(heap: &SourceHeap, pointer: SourceConstPointer<i8>) -> Result<bool, SourceHeapError> {
+fn pointer_starts_with_nonzero(
+    heap: &SourceHeap,
+    pointer: SourceConstPointer<i8>,
+) -> Result<bool, SourceHeapError> {
     if pointer.is_null() {
         return Ok(false);
     }
@@ -3701,8 +3802,8 @@ pub(crate) fn PrintInputParms(
         }};
     }
 
-    let b_inchi_to_struct =
-        ip.bReadInChIOptions & READ_INCHI_TO_STRUCTURE as i32 != 0 && ip.nInputType == tagInputType_INPUT_INCHI;
+    let b_inchi_to_struct = ip.bReadInChIOptions & READ_INCHI_TO_STRUCTURE as i32 != 0
+        && ip.nInputType == tagInputType_INPUT_INCHI;
     let n_mode = ip.nMode;
     let mut standard_format = true;
     let mut first = true;
@@ -3746,11 +3847,13 @@ pub(crate) fn PrintInputParms(
     if ip.bINChIOutputOptions & INCHI_OUT_SDFILE_ONLY as i32 != 0 {
         print!(
             "Output SDfile only without stereochemical information and atom coordinates%s\n",
-            PrintArgument::Text(if ip.bINChIOutputOptions & INCHI_OUT_SDFILE_ATOMS_DT as i32 != 0 {
-                "\n(write H isotopes as D, T)"
-            } else {
-                ""
-            })
+            PrintArgument::Text(
+                if ip.bINChIOutputOptions & INCHI_OUT_SDFILE_ATOMS_DT as i32 != 0 {
+                    "\n(write H isotopes as D, T)"
+                } else {
+                    ""
+                }
+            )
         );
     }
 
@@ -3822,7 +3925,8 @@ pub(crate) fn PrintInputParms(
             if n_mode & REQ_MODE_DIFF_UU_STEREO as u64 != 0 {
                 print!("  Make labels for unknown and undefined stereo different\n");
             }
-            let ring_size = ((ip.nMode & REQ_MODE_MIN_SB_RING_MASK as u64) >> REQ_MODE_MIN_SB_RING_SHFT) as i32;
+            let ring_size =
+                ((ip.nMode & REQ_MODE_MIN_SB_RING_MASK as u64) >> REQ_MODE_MIN_SB_RING_SHFT) as i32;
             if ring_size != MIN_SB_RING_SIZE as i32 {
                 if ring_size >= 3 {
                     print!(
@@ -3926,7 +4030,10 @@ pub(crate) fn PrintInputParms(
             _ => "Unknown",
         };
         print!("Input format: %s", PrintArgument::Text(input_name));
-        if matches!(ip.nInputType, tagInputType_INPUT_MOLFILE | tagInputType_INPUT_SDFILE) && ip.bGetMolfileNumber != 0
+        if matches!(
+            ip.nInputType,
+            tagInputType_INPUT_MOLFILE | tagInputType_INPUT_SDFILE
+        ) && ip.bGetMolfileNumber != 0
         {
             print!("  (attempting to read Molfile number)");
         }
@@ -4399,7 +4506,8 @@ mod tests {
                 .map(|byte| byte as i8)
                 .collect(),
         )?;
-        let result = set_common_options_by_parg(heap, pointer.as_const(), developer_options, ip, options);
+        let result =
+            set_common_options_by_parg(heap, pointer.as_const(), developer_options, ip, options);
         heap.free(pointer)?;
         result
     }
@@ -4453,7 +4561,8 @@ mod tests {
             | REQ_MODE_STEREO
             | REQ_MODE_SB_IGN_ALL_UU
             | REQ_MODE_SC_IGN_ALL_UU
-            | (MIN_SB_RING_SIZE << REQ_MODE_MIN_SB_RING_SHFT)) as INCHI_MODE;
+            | (MIN_SB_RING_SIZE << REQ_MODE_MIN_SB_RING_SHFT))
+            as INCHI_MODE;
 
         let mut heap = SourceHeap::default();
         let argv = allocate_argv(&mut heap, &["inchi"]);
@@ -4492,8 +4601,10 @@ mod tests {
         assert_eq!(ip.bTautFlagsDone, 0);
         assert_eq!(
             ip.bINChIOutputOptions,
-            (INCHI_OUT_EMBED_REC | INCHI_OUT_PLAIN_TEXT | INCHI_OUT_FIX_TRANSPOSITION_CHARGE_BUG | INCHI_OUT_STDINCHI)
-                as i32
+            (INCHI_OUT_EMBED_REC
+                | INCHI_OUT_PLAIN_TEXT
+                | INCHI_OUT_FIX_TRANSPOSITION_CHARGE_BUG
+                | INCHI_OUT_STDINCHI) as i32
         );
         assert_eq!(ip.num_paths, 0);
         assert_eq!(ip.bFixNonUniformDraw, 1);
@@ -4540,7 +4651,10 @@ mod tests {
             Ok(0)
         );
         assert!(nul_paths.path[0].is_null());
-        assert_eq!(path_text(&heap, nul_paths.path[1]).as_deref(), Some("NUL.txt"));
+        assert_eq!(
+            path_text(&heap, nul_paths.path[1]).as_deref(),
+            Some("NUL.txt")
+        );
         assert_eq!(nul_paths.num_paths, 4);
 
         let sdf_value = heap
@@ -4581,7 +4695,10 @@ mod tests {
         assert_eq!(sdf.bAllowEmptyStructure, 1);
         assert_eq!(sdf.bUnderivatize, 3);
         assert_ne!(sdf.bINChIOutputOptions & INCHI_OUT_SDFILE_ONLY as i32, 0);
-        assert_ne!(sdf.bINChIOutputOptions & INCHI_OUT_SDFILE_ATOMS_DT as i32, 0);
+        assert_ne!(
+            sdf.bINChIOutputOptions & INCHI_OUT_SDFILE_ATOMS_DT as i32,
+            0
+        );
         assert_eq!(sdf.bINChIOutputOptions & INCHI_OUT_PLAIN_TEXT as i32, 0);
         assert_eq!(sdf.bINChIOutputOptions & INCHI_OUT_STDINCHI as i32, 0);
 
@@ -4656,7 +4773,10 @@ mod tests {
         );
         assert_eq!(stale_errno_timeout.msec_MaxTime, 0);
 
-        let argv = allocate_argv(&mut heap, &["inchi", "-InChI2Struct", "-InChI2InChI", "-XHash1"]);
+        let argv = allocate_argv(
+            &mut heap,
+            &["inchi", "-InChI2Struct", "-InChI2InChI", "-XHash1"],
+        );
         let mut conversion_log = string_stream();
         let mut conversion = INPUT_PARMS::default();
         heap.set_source_errno(0);
@@ -4674,12 +4794,24 @@ mod tests {
             Ok(0)
         );
         assert_eq!(conversion.nInputType, tagInputType_INPUT_INCHI);
-        assert_ne!(conversion.bReadInChIOptions & READ_INCHI_OUTPUT_INCHI as i32, 0);
-        assert_eq!(conversion.bReadInChIOptions & READ_INCHI_TO_STRUCTURE as i32, 0);
-        assert_ne!(conversion.bINChIOutputOptions & INCHI_OUT_NO_AUX_INFO as i32, 0);
+        assert_ne!(
+            conversion.bReadInChIOptions & READ_INCHI_OUTPUT_INCHI as i32,
+            0
+        );
+        assert_eq!(
+            conversion.bReadInChIOptions & READ_INCHI_TO_STRUCTURE as i32,
+            0
+        );
+        assert_ne!(
+            conversion.bINChIOutputOptions & INCHI_OUT_NO_AUX_INFO as i32,
+            0
+        );
         assert!(output(&heap, &conversion_log).contains("InChIKey not requested"));
 
-        for arguments in [["inchi", "-Key", "-InChI2InChI"], ["inchi", "-Key", "-OUTPUTSDF"]] {
+        for arguments in [
+            ["inchi", "-Key", "-InChI2InChI"],
+            ["inchi", "-Key", "-OUTPUTSDF"],
+        ] {
             let argv = allocate_argv(&mut heap, &arguments);
             let mut early_log = string_stream();
             let mut early = INPUT_PARMS::default();
@@ -4702,7 +4834,15 @@ mod tests {
 
         let argv = allocate_argv(
             &mut heap,
-            &["inchi", "-PT_22_00", "-KET", "-RECMET", "-Key", "-XHash1", "-XHash2"],
+            &[
+                "inchi",
+                "-PT_22_00",
+                "-KET",
+                "-RECMET",
+                "-Key",
+                "-XHash1",
+                "-XHash2",
+            ],
         );
         let mut common_log = string_stream();
         let mut common = INPUT_PARMS::default();
@@ -4722,7 +4862,10 @@ mod tests {
         assert_ne!(common.bTautFlags & TG_FLAG_PT_22_00 as u64, 0);
         assert_ne!(common.bTautFlags & TG_FLAG_KETO_ENOL_TAUT as u64, 0);
         assert_ne!(common.bTautFlags & TG_FLAG_RECONNECT_COORD as u64, 0);
-        assert_eq!(common.bCalcInChIHash, tagInChIHashCalc_INCHIHASH_KEY_XTRA1_XTRA2 as i32);
+        assert_eq!(
+            common.bCalcInChIHash,
+            tagInChIHashCalc_INCHIHASH_KEY_XTRA1_XTRA2 as i32
+        );
         assert!(output(&heap, &common_log).contains("PT_22_00"));
 
         let argv = allocate_argv(&mut heap, &["inchi", "lost"]);
@@ -4759,7 +4902,9 @@ mod tests {
             ),
             Err(SourceHeapError::PointerOutOfBounds)
         );
-        let unterminated = heap.allocate_model_storage(vec![b'i' as i8, b'n' as i8]).unwrap();
+        let unterminated = heap
+            .allocate_model_storage(vec![b'i' as i8, b'n' as i8])
+            .unwrap();
         assert_eq!(
             ReadCommandLineParms(
                 &mut heap,
@@ -4799,10 +4944,16 @@ mod tests {
             ..CommonOptionsByParg::default()
         };
 
-        assert_eq!(run_common_option(&mut heap, "iNpAuX", 0, &mut ip, &mut options), Ok(1));
+        assert_eq!(
+            run_common_option(&mut heap, "iNpAuX", 0, &mut ip, &mut options),
+            Ok(1)
+        );
         assert_eq!(ip.nInputType, tagInputType_INPUT_INCHI_PLAIN);
         ip.nInputType = tagInputType_INPUT_MOLFILE;
-        assert_eq!(run_common_option(&mut heap, "INPAUX", 0, &mut ip, &mut options), Ok(1));
+        assert_eq!(
+            run_common_option(&mut heap, "INPAUX", 0, &mut ip, &mut options),
+            Ok(1)
+        );
         assert_eq!(ip.nInputType, tagInputType_INPUT_MOLFILE);
 
         for argument in [
@@ -4819,12 +4970,24 @@ mod tests {
         assert_eq!(ip.first_struct_number, 0);
         assert_eq!(ip.last_struct_number, 0);
         assert_eq!(
-            run_common_option(&mut heap, "START:9223372036854775808", 0, &mut ip, &mut options),
+            run_common_option(
+                &mut heap,
+                "START:9223372036854775808",
+                0,
+                &mut ip,
+                &mut options
+            ),
             Ok(1)
         );
         assert_eq!(ip.first_struct_number, i64::MAX);
         assert_eq!(
-            run_common_option(&mut heap, "END:-9223372036854775809", 0, &mut ip, &mut options),
+            run_common_option(
+                &mut heap,
+                "END:-9223372036854775809",
+                0,
+                &mut ip,
+                &mut options
+            ),
             Ok(1)
         );
         assert_eq!(ip.last_struct_number, i64::MIN);
@@ -4885,7 +5048,10 @@ mod tests {
             options.inchi_output_options2,
             (INCHI_OUT_MISMATCH_AS_ERROR | INCHI_OUT_INCHI_GEN_ERROR) as i32
         );
-        assert_eq!((options.hash_key, options.hash_xtra1, options.hash_xtra2), (1, 1, 1));
+        assert_eq!(
+            (options.hash_key, options.hash_xtra1, options.hash_xtra2),
+            (1, 1, 1)
+        );
         assert_eq!(options.pointed_edge_stereo, 0);
         assert_eq!(options.do_not_add_h, 1);
         assert_eq!(
@@ -4894,7 +5060,8 @@ mod tests {
         );
         assert_ne!(options.mode & REQ_MODE_CHIR_FLG_STEREO as i32, 0);
         assert_eq!(
-            options.forced_chiral_flag & (FLAG_SET_INP_AT_CHIRAL | FLAG_SET_INP_AT_NONCHIRAL) as i32,
+            options.forced_chiral_flag
+                & (FLAG_SET_INP_AT_CHIRAL | FLAG_SET_INP_AT_NONCHIRAL) as i32,
             FLAG_SET_INP_AT_NONCHIRAL as i32
         );
         assert_eq!(options.reconnect_coord, 1);
@@ -4902,7 +5069,10 @@ mod tests {
         assert_eq!((options.large_molecules, options.loose_tsa_check), (1, 1));
         assert_eq!(options.polymers, POLYMERS_LEGACY as i32);
         assert_eq!((options.np_zz, options.stereo_at_zz), (1, 1));
-        assert_eq!((options.no_warnings, options.merge_hash, options.hide_inchi), (1, 1, 1));
+        assert_eq!(
+            (options.no_warnings, options.merge_hash, options.hide_inchi),
+            (1, 1, 1)
+        );
         assert_eq!(options.fold_polymer_sru, 1);
 
         for (argument, field) in [
@@ -4933,17 +5103,29 @@ mod tests {
 
         for (argument, expected) in [
             ("FrameShift:None", tagFrameShifScheme_FSS_NONE as i32),
-            ("FrameShift:Cyclize", tagFrameShifScheme_FSS_STARS_CYCLED as i32),
-            ("FrameShift:MoveStars", tagFrameShifScheme_FSS_STARS_OPENED as i32),
+            (
+                "FrameShift:Cyclize",
+                tagFrameShifScheme_FSS_STARS_CYCLED as i32,
+            ),
+            (
+                "FrameShift:MoveStars",
+                tagFrameShifScheme_FSS_STARS_OPENED as i32,
+            ),
             (
                 "FrameShift:MoveBrackets",
                 tagFrameShifScheme_FSS_STARS_ENDS_OPENED as i32,
             ),
-            ("FrameShift:  MoveStars \t", tagFrameShifScheme_FSS_STARS_OPENED as i32),
+            (
+                "FrameShift:  MoveStars \t",
+                tagFrameShifScheme_FSS_STARS_OPENED as i32,
+            ),
             ("FrameShift:   ", tagFrameShifScheme_FSS_STARS_CYCLED as i32),
         ] {
             options.frame_shift_scheme = 99;
-            assert_eq!(run_common_option(&mut heap, argument, 0, &mut ip, &mut options), Ok(1));
+            assert_eq!(
+                run_common_option(&mut heap, argument, 0, &mut ip, &mut options),
+                Ok(1)
+            );
             assert_eq!(options.frame_shift_scheme, expected, "{argument}");
         }
         options.frame_shift_scheme = 99;
@@ -4956,14 +5138,26 @@ mod tests {
             run_common_option(&mut heap, "NoFrameShift", 0, &mut ip, &mut options),
             Ok(1)
         );
-        assert_eq!(options.frame_shift_scheme, tagFrameShifScheme_FSS_NONE as i32);
+        assert_eq!(
+            options.frame_shift_scheme,
+            tagFrameShifScheme_FSS_NONE as i32
+        );
         options.fold_polymer_sru = 9;
         options.frame_shift_scheme = 9;
-        assert_eq!(run_common_option(&mut heap, "NoEdits", 0, &mut ip, &mut options), Ok(1));
+        assert_eq!(
+            run_common_option(&mut heap, "NoEdits", 0, &mut ip, &mut options),
+            Ok(1)
+        );
         assert_eq!(options.fold_polymer_sru, 0);
-        assert_eq!(options.frame_shift_scheme, tagFrameShifScheme_FSS_NONE as i32);
+        assert_eq!(
+            options.frame_shift_scheme,
+            tagFrameShifScheme_FSS_NONE as i32
+        );
 
-        assert_eq!(run_common_option(&mut heap, "PGO", 0, &mut ip, &mut options), Ok(0));
+        assert_eq!(
+            run_common_option(&mut heap, "PGO", 0, &mut ip, &mut options),
+            Ok(0)
+        );
         for argument in [
             "PGO",
             "FilterSS",
@@ -5030,7 +5224,10 @@ mod tests {
             bINChIOutputOptions: (INCHI_OUT_STDINCHI | INCHI_OUT_PLAIN_TEXT) as i32,
             ..INPUT_PARMS::default()
         };
-        assert_eq!(PrintInputParms(&mut heap, Some(&mut stream), &standard), Ok(0));
+        assert_eq!(
+            PrintInputParms(&mut heap, Some(&mut stream), &standard),
+            Ok(0)
+        );
         assert_eq!(
             output(&heap, &stream),
             "Generating standard InChI\nOutput format: Plain text\nFull Aux. info\nNo timeout\nUp to 1024 atoms per structure\n\n\n"
@@ -5100,7 +5297,10 @@ mod tests {
             ..INPUT_PARMS::default()
         };
         let mut rich_stream = string_stream();
-        assert_eq!(PrintInputParms(&mut heap, Some(&mut rich_stream), &rich), Ok(0));
+        assert_eq!(
+            PrintInputParms(&mut heap, Some(&mut rich_stream), &rich),
+            Ok(0)
+        );
         let rich_output = output(&heap, &rich_stream);
         for expected in [
             "Both ends of wedge point to stereocenters",
@@ -5130,7 +5330,10 @@ mod tests {
         rich.nInputType = tagInputType_INPUT_INCHI;
         rich.bPolymers = POLYMERS_LEGACY as i32;
         let mut alternate_stream = string_stream();
-        assert_eq!(PrintInputParms(&mut heap, Some(&mut alternate_stream), &rich), Ok(0));
+        assert_eq!(
+            PrintInputParms(&mut heap, Some(&mut alternate_stream), &rich),
+            Ok(0)
+        );
         let alternate = output(&heap, &alternate_stream);
         for expected in [
             "Stereo OFF",
@@ -5143,7 +5346,10 @@ mod tests {
         ] {
             assert!(alternate.contains(expected), "missing {expected:?}");
         }
-        assert_eq!(PrintInputParms(&mut heap, None, &INPUT_PARMS::default()), Ok(0));
+        assert_eq!(
+            PrintInputParms(&mut heap, None, &INPUT_PARMS::default()),
+            Ok(0)
+        );
     }
 
     #[test]

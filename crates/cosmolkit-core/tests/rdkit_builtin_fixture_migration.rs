@@ -54,9 +54,12 @@ fn load_golden() -> Vec<BuiltinFixtureRecord> {
         .lines()
         .enumerate()
         .map(|(idx, line)| {
-            let line = line.unwrap_or_else(|err| panic!("failed to read {} line {}: {err}", path.display(), idx + 1));
-            serde_json::from_str(&line)
-                .unwrap_or_else(|err| panic!("failed to parse {} line {}: {err}", path.display(), idx + 1))
+            let line = line.unwrap_or_else(|err| {
+                panic!("failed to read {} line {}: {err}", path.display(), idx + 1)
+            });
+            serde_json::from_str(&line).unwrap_or_else(|err| {
+                panic!("failed to parse {} line {}: {err}", path.display(), idx + 1)
+            })
         })
         .collect()
 }
@@ -66,7 +69,8 @@ fn fixture_path(record: &BuiltinFixtureRecord) -> PathBuf {
 }
 
 fn read_text(path: &Path) -> String {
-    std::fs::read_to_string(path).unwrap_or_else(|err| panic!("failed to read fixture {}: {err}", path.display()))
+    std::fs::read_to_string(path)
+        .unwrap_or_else(|err| panic!("failed to read fixture {}: {err}", path.display()))
 }
 
 fn read_gzip_text(path: &Path) -> String {
@@ -153,7 +157,10 @@ fn assert_molecule_summary(record: &BuiltinFixtureRecord, molecule: &Molecule, c
         .collect::<Vec<_>>();
     assert_eq!(
         actual_bond_types,
-        *record.bond_types.as_ref().expect("RDKit ok record has bond_types"),
+        *record
+            .bond_types
+            .as_ref()
+            .expect("RDKit ok record has bond_types"),
         "bond type mismatch for {context}"
     );
 }
@@ -185,7 +192,9 @@ fn rdkit_builtin_fixture_golden_covers_migrated_corpora() {
         "Regress/Data/",
     ] {
         assert!(
-            records.iter().any(|record| record.fixture.starts_with(prefix)),
+            records
+                .iter()
+                .any(|record| record.fixture.starts_with(prefix)),
             "RDKit built-in fixture migration golden is missing corpus prefix {prefix}"
         );
     }
@@ -225,19 +234,25 @@ fn rdkit_builtin_fixture_migration_matches_rdkit_parse_status_and_summary() {
                     Some(true) => assert_molecule_summary(
                         record,
                         &actual
-                            .unwrap_or_else(|err| panic!("COSMolKit failed to parse {context}: {err}"))
+                            .unwrap_or_else(|err| {
+                                panic!("COSMolKit failed to parse {context}: {err}")
+                            })
                             .molecule,
                         &context,
                     ),
                     Some(false) => {
                         assert_rdkit_error_has_context(record, row_idx);
-                        assert!(actual.is_err(), "COSMolKit parsed {context}, but RDKit rejected it");
+                        assert!(
+                            actual.is_err(),
+                            "COSMolKit parsed {context}, but RDKit rejected it"
+                        );
                     }
                     None => panic!("{context} has no rdkit_ok field"),
                 }
             }
             "sdf" => {
-                let record_text = sdf_record_text(&path, record.record_index.expect("SDF record has index"));
+                let record_text =
+                    sdf_record_text(&path, record.record_index.expect("SDF record has index"));
                 let actual = record_text.as_ref().map(|text| {
                     // The golden generator uses RDKit MolFromMolBlock() on each
                     // split SDF record, not SDMolSupplier. Match that API
@@ -258,7 +273,9 @@ fn rdkit_builtin_fixture_migration_matches_rdkit_parse_status_and_summary() {
                         record,
                         &actual
                             .unwrap_or_else(|| panic!("missing local SDF record for {context}"))
-                            .unwrap_or_else(|err| panic!("COSMolKit failed to parse {context}: {err}"))
+                            .unwrap_or_else(|err| {
+                                panic!("COSMolKit failed to parse {context}: {err}")
+                            })
                             .molecule,
                         &context,
                     ),
@@ -285,11 +302,15 @@ fn rdkit_builtin_fixture_migration_matches_rdkit_parse_status_and_summary() {
                 );
                 match record.rdkit_ok {
                     Some(true) => {
-                        let parsed = actual.unwrap_or_else(|err| panic!("COSMolKit failed to parse {context}: {err}"));
+                        let parsed = actual.unwrap_or_else(|err| {
+                            panic!("COSMolKit failed to parse {context}: {err}")
+                        });
                         assert_molecule_summary(
                             record,
                             &parsed
-                                .unwrap_or_else(|| panic!("COSMolKit returned no molecule for {context}"))
+                                .unwrap_or_else(|| {
+                                    panic!("COSMolKit returned no molecule for {context}")
+                                })
                                 .molecule,
                             &context,
                         );
@@ -310,12 +331,17 @@ fn rdkit_builtin_fixture_migration_matches_rdkit_parse_status_and_summary() {
                 match record.rdkit_ok {
                     Some(true) => assert_molecule_summary(
                         record,
-                        &actual.unwrap_or_else(|err| panic!("COSMolKit failed to parse {context}: {err}")),
+                        &actual.unwrap_or_else(|err| {
+                            panic!("COSMolKit failed to parse {context}: {err}")
+                        }),
                         &context,
                     ),
                     Some(false) => {
                         assert_rdkit_error_has_context(record, row_idx);
-                        assert!(actual.is_err(), "COSMolKit parsed {context}, but RDKit rejected it");
+                        assert!(
+                            actual.is_err(),
+                            "COSMolKit parsed {context}, but RDKit rejected it"
+                        );
                     }
                     None => panic!("{context} has no rdkit_ok field"),
                 }
@@ -329,18 +355,24 @@ fn rdkit_builtin_fixture_migration_matches_rdkit_parse_status_and_summary() {
                 match record.rdkit_ok {
                     Some(true) => assert_molecule_summary(
                         record,
-                        &actual.unwrap_or_else(|err| panic!("COSMolKit failed to parse {context}: {err}")),
+                        &actual.unwrap_or_else(|err| {
+                            panic!("COSMolKit failed to parse {context}: {err}")
+                        }),
                         &context,
                     ),
                     Some(false) => {
                         assert_rdkit_error_has_context(record, row_idx);
-                        assert!(actual.is_err(), "COSMolKit parsed {context}, but RDKit rejected it");
+                        assert!(
+                            actual.is_err(),
+                            "COSMolKit parsed {context}, but RDKit rejected it"
+                        );
                     }
                     None => panic!("{context} has no rdkit_ok field"),
                 }
             }
             "inventory" => {
-                let bytes = std::fs::read(&path).unwrap_or_else(|err| panic!("failed to read {context}: {err}"));
+                let bytes = std::fs::read(&path)
+                    .unwrap_or_else(|err| panic!("failed to read {context}: {err}"));
                 assert_eq!(
                     bytes.len(),
                     record.byte_len.expect("inventory record has byte_len"),
@@ -351,7 +383,10 @@ fn rdkit_builtin_fixture_migration_matches_rdkit_parse_status_and_summary() {
                     record.nonempty.expect("inventory record has nonempty"),
                     "nonempty mismatch for {context}"
                 );
-                assert!(record.nonempty == Some(true), "empty migrated fixture: {context}");
+                assert!(
+                    record.nonempty == Some(true),
+                    "empty migrated fixture: {context}"
+                );
             }
             other => panic!("unknown RDKit built-in fixture migration kind {other}: {context}"),
         }

@@ -112,7 +112,12 @@ impl CipStateSnapshot {
             atom_codes: molecule
                 .atoms()
                 .iter()
-                .map(|atom| CipPropertySnapshot::new(atom.prop("_CIPCode"), atom.is_prop_computed("_CIPCode")))
+                .map(|atom| {
+                    CipPropertySnapshot::new(
+                        atom.prop("_CIPCode"),
+                        atom.is_prop_computed("_CIPCode"),
+                    )
+                })
                 .collect(),
             atom_neighbor_orders: molecule
                 .atoms()
@@ -127,12 +132,22 @@ impl CipStateSnapshot {
             atom_ranks: molecule
                 .atoms()
                 .iter()
-                .map(|atom| CipPropertySnapshot::new(atom.prop("_CIPRank"), atom.is_prop_computed("_CIPRank")))
+                .map(|atom| {
+                    CipPropertySnapshot::new(
+                        atom.prop("_CIPRank"),
+                        atom.is_prop_computed("_CIPRank"),
+                    )
+                })
                 .collect(),
             bond_codes: molecule
                 .bonds()
                 .iter()
-                .map(|bond| CipPropertySnapshot::new(bond.prop("_CIPCode"), bond.is_prop_computed("_CIPCode")))
+                .map(|bond| {
+                    CipPropertySnapshot::new(
+                        bond.prop("_CIPCode"),
+                        bond.is_prop_computed("_CIPCode"),
+                    )
+                })
                 .collect(),
             bond_neighbor_orders: molecule
                 .bonds()
@@ -153,7 +168,11 @@ impl ContractSourceSnapshot {
     fn from_molecule(molecule: &Molecule) -> Self {
         Self {
             atom_count: molecule.num_atoms(),
-            bond_endpoints: molecule.bonds().iter().map(|bond| (bond.begin(), bond.end())).collect(),
+            bond_endpoints: molecule
+                .bonds()
+                .iter()
+                .map(|bond| (bond.begin(), bond.end()))
+                .collect(),
             cip_state: CipStateSnapshot::from_molecule(molecule),
         }
     }
@@ -199,7 +218,10 @@ impl ContractSource<'_> {
 
     fn bond_endpoint(&self, index: usize) -> Option<(AtomId, AtomId)> {
         match self {
-            Self::Borrowed(molecule) => molecule.bonds().get(index).map(|bond| (bond.begin(), bond.end())),
+            Self::Borrowed(molecule) => molecule
+                .bonds()
+                .get(index)
+                .map(|bond| (bond.begin(), bond.end())),
             Self::Snapshot(snapshot) => snapshot.bond_endpoint(index),
         }
     }
@@ -255,7 +277,10 @@ pub struct MultiMoleculeOpParts<'a> {
 }
 
 impl<'a> OpParts<'a> {
-    pub(crate) fn new(source: &'a Molecule, spec: &'static MoleculeOpSpec) -> Result<Self, OperationError> {
+    pub(crate) fn new(
+        source: &'a Molecule,
+        spec: &'static MoleculeOpSpec,
+    ) -> Result<Self, OperationError> {
         if spec.output != crate::ops::MoleculeOpOutput::Single {
             return Err(OperationError::InvalidInput {
                 operation: spec,
@@ -265,7 +290,10 @@ impl<'a> OpParts<'a> {
         Self::new_with_output(source, spec)
     }
 
-    fn new_multi_branch(source: &'a Molecule, spec: &'static MoleculeOpSpec) -> Result<Self, OperationError> {
+    fn new_multi_branch(
+        source: &'a Molecule,
+        spec: &'static MoleculeOpSpec,
+    ) -> Result<Self, OperationError> {
         if spec.output != crate::ops::MoleculeOpOutput::Multiple {
             return Err(OperationError::InvalidInput {
                 operation: spec,
@@ -275,7 +303,10 @@ impl<'a> OpParts<'a> {
         Self::new_with_output(source, spec)
     }
 
-    fn new_with_output(source: &'a Molecule, spec: &'static MoleculeOpSpec) -> Result<Self, OperationError> {
+    fn new_with_output(
+        source: &'a Molecule,
+        spec: &'static MoleculeOpSpec,
+    ) -> Result<Self, OperationError> {
         validate_semantic_preconditions(source, spec)?;
         Ok(Self {
             spec,
@@ -315,7 +346,8 @@ impl<'a> OpParts<'a> {
         }
         validate_semantic_preconditions(target, spec)?;
         #[cfg(feature = "op-contracts")]
-        let contract_source = ContractSource::Snapshot(ContractSourceSnapshot::from_molecule(target));
+        let contract_source =
+            ContractSource::Snapshot(ContractSourceSnapshot::from_molecule(target));
         let working = std::mem::take(target);
         Ok(Self {
             spec,
@@ -395,7 +427,10 @@ impl<'a> OpParts<'a> {
         f: impl FnOnce(MoleculeReadParts<'_>) -> Result<R, OperationError>,
     ) -> Result<R, OperationError> {
         let view = self.read_parts_for_topology(topology)?;
-        f(MoleculeReadParts::from_molecule_with_access(&view, self.read_access()))
+        f(MoleculeReadParts::from_molecule_with_access(
+            &view,
+            self.read_access(),
+        ))
     }
 
     pub(crate) fn with_block_read_parts<R>(
@@ -406,7 +441,10 @@ impl<'a> OpParts<'a> {
         f: impl FnOnce(MoleculeReadParts<'_>) -> Result<R, OperationError>,
     ) -> Result<R, OperationError> {
         let view = self.read_parts_for_blocks(topology, coordinates, properties)?;
-        f(MoleculeReadParts::from_molecule_with_access(&view, self.read_access()))
+        f(MoleculeReadParts::from_molecule_with_access(
+            &view,
+            self.read_access(),
+        ))
     }
 
     pub(crate) fn with_optional_block_read_parts<R>(
@@ -417,7 +455,10 @@ impl<'a> OpParts<'a> {
         f: impl FnOnce(MoleculeReadParts<'_>) -> Result<R, OperationError>,
     ) -> Result<R, OperationError> {
         let view = self.read_parts_for_optional_blocks(topology, coordinates, properties)?;
-        f(MoleculeReadParts::from_molecule_with_access(&view, self.read_access()))
+        f(MoleculeReadParts::from_molecule_with_access(
+            &view,
+            self.read_access(),
+        ))
     }
 
     pub(crate) fn with_borrowed_optional_block_read_parts<R>(
@@ -483,7 +524,9 @@ impl<'a> OpParts<'a> {
         access
     }
 
-    fn read_access_for_spec(spec: &'static MoleculeOpSpec) -> crate::read_parts::MoleculeReadAccess {
+    fn read_access_for_spec(
+        spec: &'static MoleculeOpSpec,
+    ) -> crate::read_parts::MoleculeReadAccess {
         Self::read_access_for_blocks(spec.access.read().union(spec.access.write()))
     }
 
@@ -525,7 +568,9 @@ impl<'a> OpParts<'a> {
             coordinates
                 .cloned()
                 .unwrap_or_else(|| self.working.coordinate_block().clone()),
-            properties.cloned().unwrap_or_else(|| self.working.properties().clone()),
+            properties
+                .cloned()
+                .unwrap_or_else(|| self.working.properties().clone()),
         )
     }
 
@@ -542,7 +587,10 @@ impl<'a> OpParts<'a> {
         })
     }
 
-    pub(crate) fn commit_topology(&mut self, mut topology: TopologyBlock) -> Result<(), OperationError> {
+    pub(crate) fn commit_topology(
+        &mut self,
+        mut topology: TopologyBlock,
+    ) -> Result<(), OperationError> {
         #[cfg(feature = "op-contracts")]
         {
             if self.topology_lifecycle != BlockLifecycle::Begun {
@@ -552,7 +600,16 @@ impl<'a> OpParts<'a> {
                 });
             }
         }
-        topology.adjacency = crate::AdjacencyList::from_topology(topology.atoms.len(), &topology.bonds);
+        topology.adjacency =
+            crate::AdjacencyList::from_topology(topology.atoms.len(), &topology.bonds);
+        topology
+            .validate()
+            .map_err(|error| OperationError::InvariantViolation {
+                operation: self.spec,
+                failure: crate::InvariantError::ModelValidation {
+                    message: error.to_string(),
+                },
+            })?;
         self.record_mutation(BlockSet::TOPOLOGY);
         self.working.replace_topology_block_from_operation(topology);
         #[cfg(feature = "op-contracts")]
@@ -575,7 +632,10 @@ impl<'a> OpParts<'a> {
         })
     }
 
-    pub(crate) fn commit_coordinates(&mut self, coordinates: CoordinateBlock) -> Result<(), OperationError> {
+    pub(crate) fn commit_coordinates(
+        &mut self,
+        coordinates: CoordinateBlock,
+    ) -> Result<(), OperationError> {
         #[cfg(feature = "op-contracts")]
         {
             if self.coordinates_lifecycle != BlockLifecycle::Begun {
@@ -585,6 +645,14 @@ impl<'a> OpParts<'a> {
                 });
             }
         }
+        coordinates
+            .validate_for_atom_count(self.working.num_atoms())
+            .map_err(|error| OperationError::InvariantViolation {
+                operation: self.spec,
+                failure: crate::InvariantError::ModelValidation {
+                    message: error.to_string(),
+                },
+            })?;
         self.record_mutation(BlockSet::COORDINATES);
         self.working.replace_coordinate_block(coordinates);
         #[cfg(feature = "op-contracts")]
@@ -607,7 +675,10 @@ impl<'a> OpParts<'a> {
         })
     }
 
-    pub(crate) fn commit_properties(&mut self, properties: MoleculeProperties) -> Result<(), OperationError> {
+    pub(crate) fn commit_properties(
+        &mut self,
+        properties: MoleculeProperties,
+    ) -> Result<(), OperationError> {
         #[cfg(feature = "op-contracts")]
         {
             if self.properties_lifecycle != BlockLifecycle::Begun {
@@ -648,7 +719,11 @@ impl<'a> OpParts<'a> {
 
     pub(crate) fn with_topology_and_properties_mut<R>(
         &mut self,
-        mutate: impl FnOnce(&mut Self, &mut TopologyBlock, &mut MoleculeProperties) -> Result<R, OperationError>,
+        mutate: impl FnOnce(
+            &mut Self,
+            &mut TopologyBlock,
+            &mut MoleculeProperties,
+        ) -> Result<R, OperationError>,
     ) -> Result<R, OperationError> {
         let mut topology = self.begin_topology_mut()?;
         let mut properties = match self.begin_properties_mut() {
@@ -696,7 +771,10 @@ impl<'a> OpParts<'a> {
         result
     }
 
-    pub(crate) fn record_topology_edit(&mut self, kind: TopologyEditKind) -> Result<(), OperationError> {
+    pub(crate) fn record_topology_edit(
+        &mut self,
+        kind: TopologyEditKind,
+    ) -> Result<(), OperationError> {
         #[cfg(feature = "op-contracts")]
         {
             if kind == TopologyEditKind::Local
@@ -853,7 +931,9 @@ impl<'a> OpParts<'a> {
                 });
             }
             match proof {
-                PreservationProof::LeafAtomAppend => self.validate_leaf_atom_append_preservation()?,
+                PreservationProof::LeafAtomAppend => {
+                    self.validate_leaf_atom_append_preservation()?
+                }
             }
             self.trace.preserved_cache |= states;
         }
@@ -871,17 +951,21 @@ impl<'a> OpParts<'a> {
         {
             let this = self;
             this.validate_contract()?;
-            enforce_molecule_invariants(&this.working).map_err(|failure| OperationError::InvariantViolation {
-                operation: this.spec,
-                failure,
+            enforce_molecule_invariants(&this.working).map_err(|failure| {
+                OperationError::InvariantViolation {
+                    operation: this.spec,
+                    failure,
+                }
             })?;
             Ok(this.working)
         }
         #[cfg(not(feature = "op-contracts"))]
         {
-            enforce_molecule_invariants(&self.working).map_err(|failure| OperationError::InvariantViolation {
-                operation: self.spec,
-                failure,
+            enforce_molecule_invariants(&self.working).map_err(|failure| {
+                OperationError::InvariantViolation {
+                    operation: self.spec,
+                    failure,
+                }
             })?;
             Ok(self.working)
         }
@@ -899,30 +983,39 @@ impl<'a> OpParts<'a> {
         {
             let mut this = self;
             let validation = this.validate_contract().and_then(|()| {
-                enforce_molecule_invariants(&this.working).map_err(|failure| OperationError::InvariantViolation {
-                    operation: this.spec,
-                    failure,
+                enforce_molecule_invariants(&this.working).map_err(|failure| {
+                    OperationError::InvariantViolation {
+                        operation: this.spec,
+                        failure,
+                    }
                 })
             });
-            let target = this.in_place_target.take().ok_or(OperationError::InvalidInput {
-                operation: this.spec,
-                message: "in-place operation was finished without an in-place target",
-            })?;
+            let target = this
+                .in_place_target
+                .take()
+                .ok_or(OperationError::InvalidInput {
+                    operation: this.spec,
+                    message: "in-place operation was finished without an in-place target",
+                })?;
             *target = this.working;
             validation
         }
         #[cfg(not(feature = "op-contracts"))]
         {
             let mut this = self;
-            let validation =
-                enforce_molecule_invariants(&this.working).map_err(|failure| OperationError::InvariantViolation {
+            let validation = enforce_molecule_invariants(&this.working).map_err(|failure| {
+                OperationError::InvariantViolation {
                     operation: this.spec,
                     failure,
-                });
-            let target = this.in_place_target.take().ok_or(OperationError::InvalidInput {
-                operation: this.spec,
-                message: "in-place operation was finished without an in-place target",
-            })?;
+                }
+            });
+            let target = this
+                .in_place_target
+                .take()
+                .ok_or(OperationError::InvalidInput {
+                    operation: this.spec,
+                    message: "in-place operation was finished without an in-place target",
+                })?;
             *target = this.working;
             validation
         }
@@ -990,21 +1083,25 @@ impl<'a> OpParts<'a> {
                 });
             }
             CipStatePolicy::ClearComputed
-                if !spec.access.can_write(BlockSet::TOPOLOGY) || !spec.access.can_write(BlockSet::PROPERTIES) =>
+                if !spec.access.can_write(BlockSet::TOPOLOGY)
+                    || !spec.access.can_write(BlockSet::PROPERTIES) =>
             {
                 return Err(OperationError::InvalidInput {
                     operation: spec,
                     message: "clearing computed CIP state requires topology and properties write access",
                 });
             }
-            CipStatePolicy::TautomerSourceTransition if spec.method != "enumerate_tautomers_with_options" => {
+            CipStatePolicy::TautomerSourceTransition
+                if spec.method != "enumerate_tautomers_with_options" =>
+            {
                 return Err(OperationError::InvalidInput {
                     operation: spec,
                     message: "source-defined tautomer CIP transitions are owned only by enumerate_tautomers_with_options",
                 });
             }
             CipStatePolicy::TautomerSourceTransition
-                if !spec.access.can_write(BlockSet::TOPOLOGY) || !spec.access.can_write(BlockSet::PROPERTIES) =>
+                if !spec.access.can_write(BlockSet::TOPOLOGY)
+                    || !spec.access.can_write(BlockSet::PROPERTIES) =>
             {
                 return Err(OperationError::InvalidInput {
                     operation: spec,
@@ -1117,7 +1214,8 @@ impl<'a> OpParts<'a> {
             }
         }
         for old_idx in 0..old_bond_count {
-            let Some((before_begin, before_end)) = self.contract_source.bond_endpoint(old_idx) else {
+            let Some((before_begin, before_end)) = self.contract_source.bond_endpoint(old_idx)
+            else {
                 return Err(OperationError::InvalidInput {
                     operation: self.spec,
                     message: "leaf-append preservation proof found missing source bond endpoint",
@@ -1132,7 +1230,8 @@ impl<'a> OpParts<'a> {
             }
         }
 
-        let mut appended_degrees = vec![0usize; self.working.num_atoms().saturating_sub(old_atom_count)];
+        let mut appended_degrees =
+            vec![0usize; self.working.num_atoms().saturating_sub(old_atom_count)];
         for bond in &self.working.bonds()[old_bond_count..] {
             let begin_old = bond.begin().index() < old_atom_count;
             let end_old = bond.end().index() < old_atom_count;
@@ -1176,7 +1275,11 @@ impl<'a> OpParts<'a> {
                 message: "operation finished while a writable block was still checked out",
             });
         }
-        if !self.trace.touched_blocks.contains(self.trace.claimed_write_blocks) {
+        if !self
+            .trace
+            .touched_blocks
+            .contains(self.trace.claimed_write_blocks)
+        {
             return Err(OperationError::InvalidInput {
                 operation: self.spec,
                 message: "operation did not commit every claimed writable block",
@@ -1219,7 +1322,9 @@ impl<'a> OpParts<'a> {
             });
         }
 
-        if self.spec.requires_mapping == MappingRequirement::Required && self.topology_mapping.is_none() {
+        if self.spec.requires_mapping == MappingRequirement::Required
+            && self.topology_mapping.is_none()
+        {
             return Err(OperationError::InvalidInput {
                 operation: self.spec,
                 message: "strong topology operation did not record a topology mapping",
@@ -1263,10 +1368,16 @@ impl<'a> OpParts<'a> {
             CipStatePolicy::ClearComputed => {
                 if after.computed.computed
                     || after.atom_codes.iter().any(|state| state.computed)
-                    || after.atom_neighbor_orders.iter().any(|state| state.computed)
+                    || after
+                        .atom_neighbor_orders
+                        .iter()
+                        .any(|state| state.computed)
                     || after.atom_ranks.iter().any(|state| state.computed)
                     || after.bond_codes.iter().any(|state| state.computed)
-                    || after.bond_neighbor_orders.iter().any(|state| state.computed)
+                    || after
+                        .bond_neighbor_orders
+                        .iter()
+                        .any(|state| state.computed)
                 {
                     return Err(OperationError::InvalidInput {
                         operation: self.spec,
@@ -1326,7 +1437,9 @@ impl<'a> OpParts<'a> {
                                 "_CIPNeighborOrder" => {
                                     "operation did not reproduce atom computed-property clearing for _CIPNeighborOrder"
                                 }
-                                _ => "operation did not reproduce atom computed-property clearing for _CIPRank",
+                                _ => {
+                                    "operation did not reproduce atom computed-property clearing for _CIPRank"
+                                }
                             },
                         });
                     }
@@ -1390,7 +1503,10 @@ impl<'a> OpParts<'a> {
 }
 
 impl<'a> MultiMoleculeOpParts<'a> {
-    pub(crate) fn new(source: &'a Molecule, spec: &'static MoleculeOpSpec) -> Result<Self, OperationError> {
+    pub(crate) fn new(
+        source: &'a Molecule,
+        spec: &'static MoleculeOpSpec,
+    ) -> Result<Self, OperationError> {
         if spec.output != crate::ops::MoleculeOpOutput::Multiple {
             return Err(OperationError::InvalidInput {
                 operation: spec,
@@ -1459,10 +1575,12 @@ impl<'a> MultiMoleculeOpParts<'a> {
                 message: "multiple-output operation used a branch handle from another execution",
             });
         }
-        self.branches.get(branch.index).ok_or(OperationError::InvalidInput {
-            operation: self.spec,
-            message: "multiple-output operation used an unknown branch handle",
-        })
+        self.branches
+            .get(branch.index)
+            .ok_or(OperationError::InvalidInput {
+                operation: self.spec,
+                message: "multiple-output operation used an unknown branch handle",
+            })
     }
 
     /// Read the immutable public input through the registry-derived block
@@ -1472,7 +1590,10 @@ impl<'a> MultiMoleculeOpParts<'a> {
         read: impl FnOnce(MoleculeReadParts<'_>) -> Result<R, OperationError>,
     ) -> Result<R, OperationError> {
         OpParts::validate_access_spec_for(self.spec)?;
-        let view = MoleculeReadParts::from_molecule_with_access(self.source, OpParts::read_access_for_spec(self.spec));
+        let view = MoleculeReadParts::from_molecule_with_access(
+            self.source,
+            OpParts::read_access_for_spec(self.spec),
+        );
         read(view)
     }
 
@@ -1484,7 +1605,10 @@ impl<'a> MultiMoleculeOpParts<'a> {
     ) -> Result<R, OperationError> {
         let molecule = self.branch(branch)?;
         OpParts::validate_access_spec_for(self.spec)?;
-        let view = MoleculeReadParts::from_molecule_with_access(molecule, OpParts::read_access_for_spec(self.spec));
+        let view = MoleculeReadParts::from_molecule_with_access(
+            molecule,
+            OpParts::read_access_for_spec(self.spec),
+        );
         read(view)
     }
 
@@ -1508,7 +1632,10 @@ impl<'a> MultiMoleculeOpParts<'a> {
     pub(crate) fn with_source_and_branches_read_parts<R>(
         &self,
         branches: &[MoleculeBranchId],
-        read: impl FnOnce(MoleculeReadParts<'_>, Vec<MoleculeReadParts<'_>>) -> Result<R, OperationError>,
+        read: impl FnOnce(
+            MoleculeReadParts<'_>,
+            Vec<MoleculeReadParts<'_>>,
+        ) -> Result<R, OperationError>,
     ) -> Result<R, OperationError> {
         OpParts::validate_access_spec_for(self.spec)?;
         let molecules = branches
@@ -1543,10 +1670,12 @@ impl<'a> MultiMoleculeOpParts<'a> {
                     message: "multiple-output operation finished with a branch handle from another execution",
                 });
             }
-            let count = remaining.get_mut(branch.index).ok_or(OperationError::InvalidInput {
-                operation: self.spec,
-                message: "multiple-output operation finished with an unknown branch handle",
-            })?;
+            let count = remaining
+                .get_mut(branch.index)
+                .ok_or(OperationError::InvalidInput {
+                    operation: self.spec,
+                    message: "multiple-output operation finished with an unknown branch handle",
+                })?;
             *count = count.checked_add(1).ok_or(OperationError::InvalidInput {
                 operation: self.spec,
                 message: "multiple-output branch emission count overflowed",
@@ -1558,27 +1687,29 @@ impl<'a> MultiMoleculeOpParts<'a> {
         for branch in self.emitted {
             remaining[branch.index] -= 1;
             if remaining[branch.index] == 0 {
-                outputs.push(branches[branch.index].take().ok_or(OperationError::InvalidInput {
-                    operation: self.spec,
-                    message: "multiple-output operation emitted a consumed branch handle",
-                })?);
+                outputs.push(branches[branch.index].take().ok_or(
+                    OperationError::InvalidInput {
+                        operation: self.spec,
+                        message: "multiple-output operation emitted a consumed branch handle",
+                    },
+                )?);
             } else {
-                outputs.push(
-                    branches[branch.index]
-                        .as_ref()
-                        .cloned()
-                        .ok_or(OperationError::InvalidInput {
-                            operation: self.spec,
-                            message: "multiple-output operation emitted a consumed branch handle",
-                        })?,
-                );
+                outputs.push(branches[branch.index].as_ref().cloned().ok_or(
+                    OperationError::InvalidInput {
+                        operation: self.spec,
+                        message: "multiple-output operation emitted a consumed branch handle",
+                    },
+                )?);
             }
         }
         Ok(outputs)
     }
 }
 
-fn validate_semantic_preconditions(molecule: &Molecule, spec: &'static MoleculeOpSpec) -> Result<(), OperationError> {
+fn validate_semantic_preconditions(
+    molecule: &Molecule,
+    spec: &'static MoleculeOpSpec,
+) -> Result<(), OperationError> {
     let preconditions = spec.semantic_preconditions;
     if preconditions.contains(SemanticPreconditionSet::TRUSTED_BOND_TOPOLOGY)
         && molecule.num_atoms() != 0
@@ -1603,7 +1734,11 @@ fn validate_semantic_preconditions(molecule: &Molecule, spec: &'static MoleculeO
 }
 
 fn hydrogen_ownership_is_represented(molecule: &Molecule) -> bool {
-    if !molecule.atoms().iter().any(|atom| atom.atomic_number() != 1) {
+    if !molecule
+        .atoms()
+        .iter()
+        .any(|atom| atom.atomic_number() != 1)
+    {
         return true;
     }
     molecule

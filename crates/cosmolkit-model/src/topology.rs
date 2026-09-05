@@ -7,6 +7,69 @@
 use crate::{AdjacencyList, Atom, Bond, StereoGroup, SubstanceGroup};
 use crate::{AtomId, BondId};
 
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum TopologyValidationError {
+    #[error("atom at position {position} has id {id}, expected {position}")]
+    AtomIdMismatch { position: usize, id: AtomId },
+    #[error("bond at position {position} has id {id}, expected {position}")]
+    BondIdMismatch { position: usize, id: BondId },
+    #[error(
+        "invalid bond endpoint in bond {bond}: {endpoint} atom {atom} is out of range for {atom_count} atoms"
+    )]
+    BondEndpointOutOfRange {
+        bond: BondId,
+        endpoint: &'static str,
+        atom: AtomId,
+        atom_count: usize,
+    },
+    #[error("bond {bond} is a self-loop on atom {atom}")]
+    SelfLoopBond { bond: BondId, atom: AtomId },
+    #[error("bond {bond} stereo atoms {begin}-{end} are out of range for {atom_count} atoms")]
+    StereoAtomOutOfRange {
+        bond: BondId,
+        begin: AtomId,
+        end: AtomId,
+        atom_count: usize,
+    },
+    #[error("bond {bond} stereo {stereo:?} requires stereo atom references")]
+    StereoAtomsRequired {
+        bond: BondId,
+        stereo: crate::BondStereo,
+    },
+    #[error("substance group at position {position} has id {id:?}, expected {position}")]
+    SubstanceGroupIdMismatch {
+        position: usize,
+        id: crate::SubstanceGroupId,
+    },
+    #[error(
+        "substance group {sgroup:?} references atom {atom}, out of range for {atom_count} atoms"
+    )]
+    SubstanceGroupAtomOutOfRange {
+        sgroup: crate::SubstanceGroupId,
+        atom: AtomId,
+        atom_count: usize,
+    },
+    #[error(
+        "substance group {sgroup:?} references bond {bond}, out of range for {bond_count} bonds"
+    )]
+    SubstanceGroupBondOutOfRange {
+        sgroup: crate::SubstanceGroupId,
+        bond: BondId,
+        bond_count: usize,
+    },
+    #[error("substance group {sgroup:?} has parent {parent:?} out of range")]
+    SubstanceGroupParentOutOfRange {
+        sgroup: crate::SubstanceGroupId,
+        parent: crate::SubstanceGroupId,
+    },
+    #[error("stereo group references atom {atom}, out of range for {atom_count} atoms")]
+    StereoGroupAtomOutOfRange { atom: AtomId, atom_count: usize },
+    #[error("stereo group references bond {bond}, out of range for {bond_count} bonds")]
+    StereoGroupBondOutOfRange { bond: BondId, bond_count: usize },
+    #[error("adjacency does not match topology")]
+    AdjacencyMismatch,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AtomMapping {
     pub old_to_new: Vec<Option<AtomId>>,
@@ -76,7 +139,12 @@ impl TopologyMapping {
             },
         }
     }
-    pub fn with_appended(old_atoms: usize, old_bonds: usize, added_atoms: usize, added_bonds: usize) -> Self {
+    pub fn with_appended(
+        old_atoms: usize,
+        old_bonds: usize,
+        added_atoms: usize,
+        added_bonds: usize,
+    ) -> Self {
         let mut atom_new_to_old: Vec<_> = (0..old_atoms).map(|i| Some(AtomId::new(i))).collect();
         atom_new_to_old.extend((0..added_atoms).map(|_| None));
         let mut bond_new_to_old: Vec<_> = (0..old_bonds).map(|i| Some(BondId::new(i))).collect();
@@ -95,27 +163,172 @@ impl TopologyMapping {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct TopologyBlock<QA = (), QB = ()> {
-    pub atoms: Vec<Atom<QA>>,
-    pub bonds: Vec<Bond<QB>>,
+pub struct TopologyBlock {
+    pub atoms: Vec<Atom>,
+    pub bonds: Vec<Bond>,
     pub adjacency: AdjacencyList,
     pub substance_groups: Vec<SubstanceGroup>,
     pub stereo_groups: Vec<StereoGroup>,
 }
 
-impl<QA, QB> Default for TopologyBlock<QA, QB> {
+impl Default for TopologyBlock {
     fn default() -> Self {
         Self {
             atoms: Vec::new(),
             bonds: Vec::new(),
-            adjacency: AdjacencyList::from_topology::<()>(0, &[]),
+            adjacency: AdjacencyList::from_topology(0, &[]),
             substance_groups: Vec::new(),
             stereo_groups: Vec::new(),
         }
     }
 }
 
-impl<QA: Clone, QB: Clone> TopologyBlock<QA, QB> {
+impl TopologyBlock {
+    pub fn validate(&self) -> Result<(), TopologyValidationError> {
+        for (position, atom) in self.atoms.iter().enumerate() {
+            if atom.id() != AtomId::new(position) {
+                return Err(TopologyValidationError::AtomIdMismatch {
+                    position,
+                    id: atom.id(),
+                });
+            }
+        }
+        for (position, bond) in self.bonds.iter().enumerate() {
+            if bond.id() != BondId::new(position) {
+                return Err(TopologyValidationError::BondIdMismatch {
+                    position,
+                    id: bond.id(),
+                });
+            }
+            for (endpoint, atom) in [("begin", bond.begin()), ("end", bond.end())] {
+                if atom.index() >= self.atoms.len() {
+                    return Err(TopologyValidationError::BondEndpointOutOfRange {
+                        bond: bond.id(),
+                        endpoint,
+                        atom,
+                        atom_count: self.atoms.len(),
+                    });
+                }
+            }
+            if bond.begin() == bond.end() {
+                return Err(TopologyValidationError::SelfLoopBond {
+                    bond: bond.id(),
+                    atom: bond.begin(),
+                });
+            }
+            if let Some([begin, end]) = bond.stereo_atoms()
+                && (begin.index() >= self.atoms.len() || end.index() >= self.atoms.len())
+            {
+                return Err(TopologyValidationError::StereoAtomOutOfRange {
+                    bond: bond.id(),
+                    begin,
+                    end,
+                    atom_count: self.atoms.len(),
+                });
+            }
+            if matches!(
+                bond.stereo(),
+                crate::BondStereo::Cis | crate::BondStereo::Trans
+            ) && bond.stereo_atoms().is_none()
+            {
+                return Err(TopologyValidationError::StereoAtomsRequired {
+                    bond: bond.id(),
+                    stereo: bond.stereo(),
+                });
+            }
+        }
+        let atom_count = self.atoms.len();
+        let bond_count = self.bonds.len();
+        let sgroup_count = self.substance_groups.len();
+        for (position, group) in self.substance_groups.iter().enumerate() {
+            if group.id() != crate::SubstanceGroupId::new(position) {
+                return Err(TopologyValidationError::SubstanceGroupIdMismatch {
+                    position,
+                    id: group.id(),
+                });
+            }
+            for atom in group.atoms().iter().chain(group.parent_atoms()) {
+                if atom.index() >= atom_count {
+                    return Err(TopologyValidationError::SubstanceGroupAtomOutOfRange {
+                        sgroup: group.id(),
+                        atom: *atom,
+                        atom_count,
+                    });
+                }
+            }
+            for point in group.attach_points() {
+                for atom in std::iter::once(point.atom).chain(point.leaving_atom) {
+                    if atom.index() >= atom_count {
+                        return Err(TopologyValidationError::SubstanceGroupAtomOutOfRange {
+                            sgroup: group.id(),
+                            atom,
+                            atom_count,
+                        });
+                    }
+                }
+            }
+            for bond in group
+                .bonds()
+                .iter()
+                .chain(group.cstates().iter().map(|state| &state.bond))
+            {
+                if bond.index() >= bond_count {
+                    return Err(TopologyValidationError::SubstanceGroupBondOutOfRange {
+                        sgroup: group.id(),
+                        bond: *bond,
+                        bond_count,
+                    });
+                }
+            }
+            if let Some(parent) = group.parent()
+                && parent.index() >= sgroup_count
+            {
+                return Err(TopologyValidationError::SubstanceGroupParentOutOfRange {
+                    sgroup: group.id(),
+                    parent,
+                });
+            }
+        }
+        for group in &self.stereo_groups {
+            for atom in group.atoms() {
+                if atom.index() >= atom_count {
+                    return Err(TopologyValidationError::StereoGroupAtomOutOfRange {
+                        atom: *atom,
+                        atom_count,
+                    });
+                }
+            }
+            for bond in group.bonds() {
+                if bond.index() >= bond_count {
+                    return Err(TopologyValidationError::StereoGroupBondOutOfRange {
+                        bond: *bond,
+                        bond_count,
+                    });
+                }
+            }
+        }
+        let expected =
+            AdjacencyList::try_from_topology(self.atoms.len(), &self.bonds).map_err(|error| {
+                match error {
+                    crate::AdjacencyError::BondAtomOutOfRange {
+                        bond,
+                        endpoint,
+                        atom,
+                        atom_count,
+                    } => TopologyValidationError::BondEndpointOutOfRange {
+                        bond,
+                        endpoint,
+                        atom,
+                        atom_count,
+                    },
+                }
+            })?;
+        if self.adjacency != expected {
+            return Err(TopologyValidationError::AdjacencyMismatch);
+        }
+        Ok(())
+    }
+
     pub fn remove_atoms_with_mapping(&mut self, atoms_to_remove: &[AtomId]) -> TopologyMapping {
         let mut remove_atom = vec![false; self.atoms.len()];
         for atom in atoms_to_remove {
@@ -190,7 +403,8 @@ impl<QA: Clone, QB: Clone> TopologyBlock<QA, QB> {
             .iter()
             .enumerate()
             .filter_map(|(idx, sg)| {
-                sgroup_map[idx].and_then(|id| sg.remapped(id, &atom_old_to_new, &bond_old_to_new, &sgroup_map))
+                sgroup_map[idx]
+                    .and_then(|id| sg.remapped(id, &atom_old_to_new, &bond_old_to_new, &sgroup_map))
             })
             .collect();
         self.stereo_groups = self
@@ -211,5 +425,58 @@ impl<QA: Clone, QB: Clone> TopologyBlock<QA, QB> {
                 new_to_old: bond_new_to_old,
             },
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{AtomSpec, BondOrder, BondSpec};
+
+    fn atom(id: usize) -> Atom {
+        Atom::from_spec(AtomId::new(id), AtomSpec::new(crate::Element::C))
+    }
+
+    #[test]
+    fn validate_rejects_misaligned_ids_and_endpoints() {
+        let block = TopologyBlock {
+            atoms: vec![atom(1)],
+            ..Default::default()
+        };
+        assert!(matches!(
+            block.validate(),
+            Err(TopologyValidationError::AtomIdMismatch { .. })
+        ));
+
+        let begin = AtomId::new(0);
+        let end = AtomId::new(2);
+        let bond = Bond::from_spec(BondId::new(0), BondSpec::new(begin, end, BondOrder::Single));
+        let block = TopologyBlock {
+            atoms: vec![atom(0)],
+            bonds: vec![bond],
+            adjacency: AdjacencyList::default(),
+            ..Default::default()
+        };
+        assert!(matches!(
+            block.validate(),
+            Err(TopologyValidationError::BondEndpointOutOfRange { .. })
+        ));
+    }
+
+    #[test]
+    fn validate_rejects_stale_adjacency() {
+        let begin = AtomId::new(0);
+        let end = AtomId::new(1);
+        let bond = Bond::from_spec(BondId::new(0), BondSpec::new(begin, end, BondOrder::Single));
+        let block = TopologyBlock {
+            atoms: vec![atom(0), atom(1)],
+            bonds: vec![bond],
+            adjacency: AdjacencyList::default(),
+            ..Default::default()
+        };
+        assert_eq!(
+            block.validate(),
+            Err(TopologyValidationError::AdjacencyMismatch)
+        );
     }
 }

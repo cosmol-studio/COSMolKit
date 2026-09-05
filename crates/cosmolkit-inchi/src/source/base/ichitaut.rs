@@ -1,41 +1,49 @@
 use crate::source::base::ichiqueu::{
-    bIsCenterPointStrict, nGet12TautIn5MembAltRing, nGet14TautIn5MembAltRing, nGet14TautIn7MembAltRing,
-    nGet15TautIn6MembAltRing, nGet15TautInAltPath,
+    bIsCenterPointStrict, nGet12TautIn5MembAltRing, nGet14TautIn5MembAltRing,
+    nGet14TautIn7MembAltRing, nGet15TautIn6MembAltRing, nGet15TautInAltPath,
 };
 use crate::source::base::{
     ichi_bns::{
-        AddCGroups2BnStruct, AddTGroups2BnStruct, ReInitBnStruct, bExistsAltPath, bExistsAnyAltPath,
-        bHasAcidicHydrogen, bHasAcidicMinus, bHasOtherExchangableH, bIsHardRemHCandidate,
+        AddCGroups2BnStruct, AddTGroups2BnStruct, ReInitBnStruct, bExistsAltPath,
+        bExistsAnyAltPath, bHasAcidicHydrogen, bHasAcidicMinus, bHasOtherExchangableH,
+        bIsHardRemHCandidate,
     },
     ichisort::insertions_sort,
-    util::{get_el_valence, get_endpoint_valence, get_endpoint_valence_KET, inchi_calloc, inchi_free, inchi_realloc},
+    util::{
+        get_el_valence, get_endpoint_valence, get_endpoint_valence_KET, inchi_calloc, inchi_free,
+        inchi_realloc,
+    },
 };
 use crate::source_types::{
     ALT_PATH_MODE_4_SALT, ALT_PATH_MODE_ADD2H_CHG, ALT_PATH_MODE_ADD2H_TST, ALT_PATH_MODE_CHARGE,
-    ALT_PATH_MODE_REM2H_CHG, ALT_PATH_MODE_REM2H_TST, ALT_PATH_MODE_TAUTOM, ALT_PATH_MODE_TAUTOM_KET,
-    ALT_PATH_MODE_TAUTOM_PT_06_00, ALT_PATH_MODE_TAUTOM_PT_13_00, ALT_PATH_MODE_TAUTOM_PT_16_00,
-    ALT_PATH_MODE_TAUTOM_PT_18_00, ALT_PATH_MODE_TAUTOM_PT_22_00, ALT_PATH_MODE_TAUTOM_PT_39_00,
-    ALWAYS_ADD_TG_ON_THE_FLY, AT_FLAG_ISO_H_POINT, AT_NUMB, AT_RANK, ATT_ACIDIC_CO, BN_DATA, BN_STRUCT, BNS_CPOINT_ERR,
-    BNS_ERR, BNS_MAX_ERR_VALUE, BNS_OUT_OF_RAM, BNS_PROGRAM_ERR, BNS_RADICAL_ERR, BNS_VERT_EDGE_OVFL, BOND_ALT_13,
-    BOND_ALT12NS, BOND_ALTERN, BOND_DOUBLE, BOND_MARK_ALL, BOND_SINGLE, BOND_TAUTOM, BOND_TRIPLE, BOND_TYPE_MASK,
-    C_CANDIDATE, C_GROUP, C_GROUP_INFO, CANON_GLOBALS, CT_OUT_OF_RAM, CT_TAUCOUNT_ERR, DFS_PATH, ENDPOINT_INFO,
-    FLAG_FORCE_SALT_TAUT, FLAG_NORM_CONSIDER_TAUT, KETO_ENOL_TAUT, MAX_ATOMS, MAXVAL, NUM_H_ISOTOPES, RADICAL_SINGLET,
-    S_CANDIDATE, S_CHAR, S_GROUP_INFO, SALT_ACCEPTOR, SALT_DONOR, SALT_DONOR_ALL, SALT_DONOR_H, SALT_DONOR_H2,
-    SALT_DONOR_Neg, SALT_DONOR_Neg2, SALT_SELECTED, SALT_p_ACCEPTOR, SALT_p_DONOR, SourceHeap, SourceHeapError,
-    SourceMutPointer, T_BONDPOS, T_ENDPOINT, T_GROUP, T_GROUP_HDR_LEN, T_GROUP_INFO, T_NUM_ISOTOPIC, T_NUM_NO_ISOTOPIC,
-    TAUT_PT_06_00, TAUT_PT_13_00, TAUT_PT_16_00, TAUT_PT_18_00, TAUT_PT_22_00, TAUT_PT_39_00, TG_FLAG_1_5_TAUT,
-    TG_FLAG_ALLOW_NO_NEGTV_O, TG_FLAG_ALLOW_NO_NEGTV_O_DONE, TG_FLAG_FOUND_ISOTOPIC_ATOM_DONE,
-    TG_FLAG_FOUND_ISOTOPIC_H_DONE, TG_FLAG_FOUND_SALT_CHARGES_DONE, TG_FLAG_KETO_ENOL_TAUT, TG_FLAG_MOVE_POS_CHARGES,
-    TG_FLAG_PT_06_00, TG_FLAG_PT_13_00, TG_FLAG_PT_16_00, TG_FLAG_PT_18_00, TG_FLAG_PT_22_00, TG_FLAG_PT_39_00,
-    TG_FLAG_TEST_TAUT__ATOMS, clock_t, inp_ATOM,
+    ALT_PATH_MODE_REM2H_CHG, ALT_PATH_MODE_REM2H_TST, ALT_PATH_MODE_TAUTOM,
+    ALT_PATH_MODE_TAUTOM_KET, ALT_PATH_MODE_TAUTOM_PT_06_00, ALT_PATH_MODE_TAUTOM_PT_13_00,
+    ALT_PATH_MODE_TAUTOM_PT_16_00, ALT_PATH_MODE_TAUTOM_PT_18_00, ALT_PATH_MODE_TAUTOM_PT_22_00,
+    ALT_PATH_MODE_TAUTOM_PT_39_00, ALWAYS_ADD_TG_ON_THE_FLY, AT_FLAG_ISO_H_POINT, AT_NUMB, AT_RANK,
+    ATT_ACIDIC_CO, BN_DATA, BN_STRUCT, BNS_CPOINT_ERR, BNS_ERR, BNS_MAX_ERR_VALUE, BNS_OUT_OF_RAM,
+    BNS_PROGRAM_ERR, BNS_RADICAL_ERR, BNS_VERT_EDGE_OVFL, BOND_ALT_13, BOND_ALT12NS, BOND_ALTERN,
+    BOND_DOUBLE, BOND_MARK_ALL, BOND_SINGLE, BOND_TAUTOM, BOND_TRIPLE, BOND_TYPE_MASK, C_CANDIDATE,
+    C_GROUP, C_GROUP_INFO, CANON_GLOBALS, CT_OUT_OF_RAM, CT_TAUCOUNT_ERR, DFS_PATH, ENDPOINT_INFO,
+    FLAG_FORCE_SALT_TAUT, FLAG_NORM_CONSIDER_TAUT, KETO_ENOL_TAUT, MAX_ATOMS, MAXVAL,
+    NUM_H_ISOTOPES, RADICAL_SINGLET, S_CANDIDATE, S_CHAR, S_GROUP_INFO, SALT_ACCEPTOR, SALT_DONOR,
+    SALT_DONOR_ALL, SALT_DONOR_H, SALT_DONOR_H2, SALT_DONOR_Neg, SALT_DONOR_Neg2, SALT_SELECTED,
+    SALT_p_ACCEPTOR, SALT_p_DONOR, SourceHeap, SourceHeapError, SourceMutPointer, T_BONDPOS,
+    T_ENDPOINT, T_GROUP, T_GROUP_HDR_LEN, T_GROUP_INFO, T_NUM_ISOTOPIC, T_NUM_NO_ISOTOPIC,
+    TAUT_PT_06_00, TAUT_PT_13_00, TAUT_PT_16_00, TAUT_PT_18_00, TAUT_PT_22_00, TAUT_PT_39_00,
+    TG_FLAG_1_5_TAUT, TG_FLAG_ALLOW_NO_NEGTV_O, TG_FLAG_ALLOW_NO_NEGTV_O_DONE,
+    TG_FLAG_FOUND_ISOTOPIC_ATOM_DONE, TG_FLAG_FOUND_ISOTOPIC_H_DONE,
+    TG_FLAG_FOUND_SALT_CHARGES_DONE, TG_FLAG_KETO_ENOL_TAUT, TG_FLAG_MOVE_POS_CHARGES,
+    TG_FLAG_PT_06_00, TG_FLAG_PT_13_00, TG_FLAG_PT_16_00, TG_FLAG_PT_18_00, TG_FLAG_PT_22_00,
+    TG_FLAG_PT_39_00, TG_FLAG_TEST_TAUT__ATOMS, clock_t, inp_ATOM,
     local_ichitaut::{
         C_SUBTYPE_CHARGED_H_ACCEPT, C_SUBTYPE_CHARGED_H_ACCEPT_p_DONOR, C_SUBTYPE_CHARGED_H_DONOR,
-        C_SUBTYPE_CHARGED_NON_TAUT, C_SUBTYPE_CHARGED_p_DONOR, C_SUBTYPE_H_ACCEPT, C_SUBTYPE_H_DONOR,
-        C_SUBTYPE_NEUTRAL, C_SUBTYPE_NEUTRAL_H_ACCEPT, C_SUBTYPE_NEUTRAL_H_ACCEPT_p_ACCEPT, C_SUBTYPE_NEUTRAL_H_DONOR,
-        C_SUBTYPE_NEUTRAL_NON_TAUT, CHARGE_TYPE, MAX_STACK_ARRAY_LEN,
+        C_SUBTYPE_CHARGED_NON_TAUT, C_SUBTYPE_CHARGED_p_DONOR, C_SUBTYPE_H_ACCEPT,
+        C_SUBTYPE_H_DONOR, C_SUBTYPE_NEUTRAL, C_SUBTYPE_NEUTRAL_H_ACCEPT,
+        C_SUBTYPE_NEUTRAL_H_ACCEPT_p_ACCEPT, C_SUBTYPE_NEUTRAL_H_DONOR, C_SUBTYPE_NEUTRAL_NON_TAUT,
+        CHARGE_TYPE, MAX_STACK_ARRAY_LEN,
     },
-    sp_ATOM, tagTG_NumDA_TG_NUM_DA, tagTG_NumDA_TG_Num_aH, tagTG_NumDA_TG_Num_aM, tagTG_NumDA_TG_Num_aO,
-    tagTG_NumDA_TG_Num_dH, tagTG_NumDA_TG_Num_dM, tagTG_NumDA_TG_Num_dO,
+    sp_ATOM, tagTG_NumDA_TG_NUM_DA, tagTG_NumDA_TG_Num_aH, tagTG_NumDA_TG_Num_aM,
+    tagTG_NumDA_TG_Num_aO, tagTG_NumDA_TG_Num_dH, tagTG_NumDA_TG_Num_dM, tagTG_NumDA_TG_Num_dO,
 };
 use std::mem::MaybeUninit;
 
@@ -168,7 +176,9 @@ pub(crate) fn AddAtom2num(
     // END INCHI ACTIVE MACRO CONFIGURATION: AddAtom2num
 
     let at_index = usize::try_from(at_no).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    let at = atom.get(at_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
+    let at = atom
+        .get(at_index)
+        .ok_or(SourceHeapError::PointerOutOfBounds)?;
     let needed = (T_NUM_NO_ISOTOPIC + T_NUM_ISOTOPIC) as usize;
     if num.len() < needed {
         return Err(SourceHeapError::PointerOutOfBounds);
@@ -298,7 +308,9 @@ pub(crate) fn AddAtom2DA(
     // END INCHI ACTIVE MACRO CONFIGURATION: AddAtom2DA
 
     let at_index = usize::try_from(at_no).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    let at = atom.get(at_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
+    let at = atom
+        .get(at_index)
+        .ok_or(SourceHeapError::PointerOutOfBounds)?;
     if at.charge < -1 || (at.charge == 1 && at.c_point == 0) || at.charge > 1 {
         return Ok(());
     }
@@ -340,7 +352,11 @@ pub(crate) fn AddAtom2DA(
 }
 
 #[allow(non_snake_case)]
-pub(crate) fn AddEndPoint(pEndPoint: &mut T_ENDPOINT, at: &[inp_ATOM], iat: i32) -> Result<i32, SourceHeapError> {
+pub(crate) fn AddEndPoint(
+    pEndPoint: &mut T_ENDPOINT,
+    at: &[inp_ATOM],
+    iat: i32,
+) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichitaut.c:330 AddEndPoint
     // INCHI✔️✔️: int AddEndPoint( T_ENDPOINT *pEndPoint, inp_ATOM *at, int iat )
     // INCHI✔️✔️: {
@@ -377,7 +393,9 @@ pub(crate) fn AddEndPoint(pEndPoint: &mut T_ENDPOINT, at: &[inp_ATOM], iat: i32)
     // END INCHI ACTIVE MACRO CONFIGURATION: AddEndPoint
 
     let at_index = usize::try_from(iat).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    let atom = at.get(at_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
+    let atom = at
+        .get(at_index)
+        .ok_or(SourceHeapError::PointerOutOfBounds)?;
 
     pEndPoint.nAtomNumber = iat as AT_NUMB;
     pEndPoint.nEquNumber = 0;
@@ -1017,7 +1035,8 @@ pub(crate) fn MarkSaltChargeGroups2(
             return Ok(0);
         }
 
-        let max_count = usize::try_from(n_max_num_candidates).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let max_count = usize::try_from(n_max_num_candidates)
+            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         if heap.slice(s_candidate.as_const())?.len() < max_count {
             return Err(SourceHeapError::PointerOutOfBounds);
         }
@@ -1079,7 +1098,8 @@ pub(crate) fn MarkSaltChargeGroups2(
             s_subtype_all |= s_subtype;
         }
 
-        let permissive_donor_rule = (t_group_info.bTautFlags & u64::from(TG_FLAG_ALLOW_NO_NEGTV_O)) != 0
+        let permissive_donor_rule = (t_group_info.bTautFlags & u64::from(TG_FLAG_ALLOW_NO_NEGTV_O))
+            != 0
             || (t_group_info.bTautFlagsDone & u64::from(TG_FLAG_FOUND_SALT_CHARGES_DONE)) != 0
             || (t_group_info.tni.bNormalizationFlags & u64::from(FLAG_FORCE_SALT_TAUT)) != 0;
         if n_num_candidates <= 1
@@ -1087,7 +1107,8 @@ pub(crate) fn MarkSaltChargeGroups2(
             || if permissive_donor_rule {
                 (s_subtype_all & SALT_DONOR as i32) == 0
             } else {
-                (s_subtype_all & SALT_DONOR_Neg as i32) == 0 || n_num_other_candidates == n_num_candidates
+                (s_subtype_all & SALT_DONOR_Neg as i32) == 0
+                    || n_num_other_candidates == n_num_candidates
             }
         {
             s_group_info.num_candidates = 0;
@@ -1112,7 +1133,8 @@ pub(crate) fn MarkSaltChargeGroups2(
                 for j in (0..i).rev() {
                     if endpoint == heap.slice(s_candidate.as_const())?[j].endpoint {
                         let candidate = &mut heap.slice_mut(s_candidate)?[i];
-                        candidate.type_ = (i32::from(candidate.type_) - DISABLE_CANDIDATE) as S_CHAR;
+                        candidate.type_ =
+                            (i32::from(candidate.type_) - DISABLE_CANDIDATE) as S_CHAR;
                         n_num_left_candidates += 1;
                         break;
                     }
@@ -1122,7 +1144,8 @@ pub(crate) fn MarkSaltChargeGroups2(
 
         n_num_left_candidates = n_num_candidates - n_num_left_candidates;
         s_group_info.num_candidates = 0;
-        let candidate_count = usize::try_from(n_num_candidates).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let candidate_count =
+            usize::try_from(n_num_candidates).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         let mut candidates = heap.slice(s_candidate.as_const())?[..candidate_count].to_vec();
         candidates.sort_by(|left, right| comp_candidates(left, right).cmp(&0));
         heap.slice_mut(s_candidate)?[..candidate_count].clone_from_slice(&candidates);
@@ -1216,7 +1239,9 @@ pub(crate) fn MarkSaltChargeGroups2(
                             for j1 in 0..=i1 {
                                 if j1 != j
                                     && i1 != j
-                                    && (heap.slice(c_pair_pointer.as_const())?[pair_index(i1, j1)] & DONOR_PAIR) != 0
+                                    && (heap.slice(c_pair_pointer.as_const())?[pair_index(i1, j1)]
+                                        & DONOR_PAIR)
+                                        != 0
                                 {
                                     found_pair = Some((i, j));
                                     break 'find_two_pairs;
@@ -1232,7 +1257,9 @@ pub(crate) fn MarkSaltChargeGroups2(
                             for j1 in 0..=i1 {
                                 if j1 != j
                                     && i1 != j
-                                    && (heap.slice(c_pair_pointer.as_const())?[pair_index(i1, j1)] & ACCEPTOR_PAIR) != 0
+                                    && (heap.slice(c_pair_pointer.as_const())?[pair_index(i1, j1)]
+                                        & ACCEPTOR_PAIR)
+                                        != 0
                                 {
                                     found_pair = Some((i, j));
                                     break 'find_two_pairs;
@@ -1286,9 +1313,13 @@ pub(crate) fn MarkSaltChargeGroups2(
                             heap.slice_mut(c_pair_pointer)?[pair_index(i, j)] |= ACCEPTOR_PAIR;
                             n_cur_acceptor_pairs += i32::from(!already_tested);
                             for candidate_index in [i as usize, j as usize] {
-                                if (i32::from(candidates[candidate_index].subtype) & SALT_SELECTED as i32) == 0 {
+                                if (i32::from(candidates[candidate_index].subtype)
+                                    & SALT_SELECTED as i32)
+                                    == 0
+                                {
                                     candidates[candidate_index].subtype =
-                                        (i32::from(candidates[candidate_index].subtype) | SALT_SELECTED as i32)
+                                        (i32::from(candidates[candidate_index].subtype)
+                                            | SALT_SELECTED as i32)
                                             as S_CHAR;
                                     heap.slice_mut(s_candidate)?[candidate_index].subtype =
                                         candidates[candidate_index].subtype;
@@ -1333,9 +1364,13 @@ pub(crate) fn MarkSaltChargeGroups2(
                             heap.slice_mut(c_pair_pointer)?[pair_index(i, j)] |= DONOR_PAIR;
                             n_cur_donor_pairs += i32::from(!already_tested);
                             for candidate_index in [i as usize, j as usize] {
-                                if (i32::from(candidates[candidate_index].subtype) & SALT_SELECTED as i32) == 0 {
+                                if (i32::from(candidates[candidate_index].subtype)
+                                    & SALT_SELECTED as i32)
+                                    == 0
+                                {
                                     candidates[candidate_index].subtype =
-                                        (i32::from(candidates[candidate_index].subtype) | SALT_SELECTED as i32)
+                                        (i32::from(candidates[candidate_index].subtype)
+                                            | SALT_SELECTED as i32)
                                             as S_CHAR;
                                     heap.slice_mut(s_candidate)?[candidate_index].subtype =
                                         candidates[candidate_index].subtype;
@@ -1375,7 +1410,8 @@ pub(crate) fn MarkSaltChargeGroups2(
             let mut representative = 0_i32;
             for i in 0..n_num_left_candidates as usize {
                 if (i32::from(candidates[i].subtype) & SALT_SELECTED as i32) != 0 {
-                    candidates[i].subtype = (i32::from(candidates[i].subtype) ^ SALT_SELECTED as i32) as S_CHAR;
+                    candidates[i].subtype =
+                        (i32::from(candidates[i].subtype) ^ SALT_SELECTED as i32) as S_CHAR;
                     heap.slice_mut(s_candidate)?[i].subtype = candidates[i].subtype;
                     if j < n_num_marked_candidates {
                         representative = i32::from(candidates[i].atnumber);
@@ -1416,7 +1452,8 @@ pub(crate) fn MarkSaltChargeGroups2(
                 .endpoint;
             if n_num_marked_candidates != 0 {
                 for i in n_num_left_candidates as usize..candidate_count {
-                    candidates[i].type_ = (i32::from(candidates[i].type_) + DISABLE_CANDIDATE) as S_CHAR;
+                    candidates[i].type_ =
+                        (i32::from(candidates[i].type_) + DISABLE_CANDIDATE) as S_CHAR;
                     heap.slice_mut(s_candidate)?[i].type_ = candidates[i].type_;
                     let atom_number = usize::from(candidates[i].atnumber);
                     let atom_endpoint = heap
@@ -1433,15 +1470,16 @@ pub(crate) fn MarkSaltChargeGroups2(
                 }
             } else {
                 for i in n_num_left_candidates as usize..candidate_count {
-                    candidates[i].type_ = (i32::from(candidates[i].type_) + DISABLE_CANDIDATE) as S_CHAR;
+                    candidates[i].type_ =
+                        (i32::from(candidates[i].type_) + DISABLE_CANDIDATE) as S_CHAR;
                     heap.slice_mut(s_candidate)?[i].type_ = candidates[i].type_;
                 }
             }
 
             b_t_group_has_negative_charges_only = 0;
             let groups = heap.slice(t_group_info.t_group.as_const())?;
-            let group_count =
-                usize::try_from(t_group_info.num_t_groups).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let group_count = usize::try_from(t_group_info.num_t_groups)
+                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             for group in groups.iter().take(group_count) {
                 if group.nGroupNumber == representative_endpoint && group.num[0] == group.num[1] {
                     b_t_group_has_negative_charges_only = 1;
@@ -1780,11 +1818,13 @@ pub(crate) fn MarkSaltChargeGroups(
         return Ok(0);
     }
 
-    let max_count = usize::try_from(n_max_num_candidates).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let max_count =
+        usize::try_from(n_max_num_candidates).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     if heap.slice(s_candidate.as_const())?.len() < max_count {
         return Err(SourceHeapError::PointerOutOfBounds);
     }
-    let group_count = usize::try_from(t_group_info.num_t_groups).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let group_count = usize::try_from(t_group_info.num_t_groups)
+        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let groups = heap.slice(t_group_info.t_group.as_const())?;
     if groups.len() < group_count {
         return Err(SourceHeapError::PointerOutOfBounds);
@@ -1872,19 +1912,25 @@ pub(crate) fn MarkSaltChargeGroups(
             for i2 in i1 + 1..n_num_candidates {
                 let j2 = i32::from(heap.slice(s_candidate.as_const())?[i2 as usize].atnumber);
                 let atoms = heap.slice(at.as_const())?;
-                if atoms[j1 as usize].endpoint != 0 && atoms[j1 as usize].endpoint == atoms[j2 as usize].endpoint {
+                if atoms[j1 as usize].endpoint != 0
+                    && atoms[j1 as usize].endpoint == atoms[j2 as usize].endpoint
+                {
                     continue;
                 }
                 for orientation in 0..2 {
-                    let (donor_index, acceptor_index, donor_atom, acceptor_atom) = if orientation != 0 {
-                        (i2, i1, j2, j1)
-                    } else {
-                        (i1, i2, j1, j2)
-                    };
+                    let (donor_index, acceptor_index, donor_atom, acceptor_atom) =
+                        if orientation != 0 {
+                            (i2, i1, j2, j1)
+                        } else {
+                            (i1, i2, j1, j2)
+                        };
                     let candidates = heap.slice(s_candidate.as_const())?;
-                    if (i32::from(candidates[donor_index as usize].subtype) & (SALT_DONOR_Neg | SALT_DONOR_H) as i32)
+                    if (i32::from(candidates[donor_index as usize].subtype)
+                        & (SALT_DONOR_Neg | SALT_DONOR_H) as i32)
                         == 0
-                        || (i32::from(candidates[acceptor_index as usize].subtype) & SALT_ACCEPTOR as i32) == 0
+                        || (i32::from(candidates[acceptor_index as usize].subtype)
+                            & SALT_ACCEPTOR as i32)
+                            == 0
                     {
                         continue;
                     }
@@ -1944,7 +1990,11 @@ pub(crate) fn MarkSaltChargeGroups(
         n_tot_num_changes += n_num_changes;
         if num_tested == 0 || n_num_changes == 0 {
             if s_group_info.num_candidates == 0 {
-                s_group_info.num_candidates = if num_tested != 0 { n_num_candidates } else { -1 };
+                s_group_info.num_candidates = if num_tested != 0 {
+                    n_num_candidates
+                } else {
+                    -1
+                };
             }
             return Ok(n_tot_num_changes);
         }
@@ -2204,7 +2254,9 @@ pub(crate) fn bCanBeACPoint(
     if at.charge == cCharge && at.valence == at.chem_bonds_valence && at.num_H != 0 {
         let n_change_valence = i32::from(at.charge) * i32::from(cChangeValence);
         let n_bonds_valence = i32::from(at.chem_bonds_valence) + i32::from(at.num_H);
-        if n_bonds_valence == i32::from(neutral_bonds_valence) + n_change_valence && nEndpointValence != 0 {
+        if n_bonds_valence == i32::from(neutral_bonds_valence) + n_change_valence
+            && nEndpointValence != 0
+        {
             *cChargeSubtype = C_SUBTYPE_CHARGED_p_DONOR as S_CHAR;
         }
         return 0;
@@ -2351,7 +2403,8 @@ pub(crate) fn GetChargeType(atom: &[inp_ATOM], iat: i32, cChargeSubtype: &mut S_
 
     for ctype in &CTYPE {
         if source_strcmp_zero(&at.elname, &ctype.elname) == 0
-            && (ctype.num_bonds == 0 || (ctype.num_bonds == at.valence && at.nNumAtInRingSystem >= 5))
+            && (ctype.num_bonds == 0
+                || (ctype.num_bonds == at.valence && at.nNumAtInRingSystem >= 5))
         {
             let n_endpoint_valence = get_endpoint_valence(at.el_number) as S_CHAR;
             if bCanBeACPoint(
@@ -2514,7 +2567,9 @@ pub(crate) fn GetSaltChargeType(
     // END INCHI ACTIVE MACRO CONFIGURATION: GetSaltChargeType
 
     let at_index = usize::try_from(at_no).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    let atom = at.get(at_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
+    let atom = at
+        .get(at_index)
+        .ok_or(SourceHeapError::PointerOutOfBounds)?;
     *s_subtype = 0;
     if atom.valence != 1
         || (atom.radical != 0 && atom.radical != RADICAL_SINGLET as S_CHAR)
@@ -2537,7 +2592,9 @@ pub(crate) fn GetSaltChargeType(
     }
 
     let carbon_index = usize::from(atom.neighbor[0]);
-    let carbon = at.get(carbon_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
+    let carbon = at
+        .get(carbon_index)
+        .ok_or(SourceHeapError::PointerOutOfBounds)?;
     if carbon.el_number != 6
         || i32::from(carbon.chem_bonds_valence) + i32::from(carbon.num_H) != 4
         || carbon.charge != 0
@@ -2553,7 +2610,9 @@ pub(crate) fn GetSaltChargeType(
         && !t_group_info.t_group.is_null()
     {
         let t_groups = heap.slice(t_group_info.t_group.as_const())?;
-        for i in 0..usize::try_from(t_group_info.num_t_groups).map_err(|_| SourceHeapError::PointerOutOfBounds)? {
+        for i in 0..usize::try_from(t_group_info.num_t_groups)
+            .map_err(|_| SourceHeapError::PointerOutOfBounds)?
+        {
             let t_group = t_groups.get(i).ok_or(SourceHeapError::PointerOutOfBounds)?;
             if tg == t_group.nGroupNumber {
                 if t_group.num[0] > t_group.num[1] {
@@ -2755,7 +2814,9 @@ pub(crate) fn GetOtherSaltChargeType(
     // END INCHI ACTIVE MACRO CONFIGURATION: GetOtherSaltChargeType
 
     let at_index = usize::try_from(at_no).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    let atom = at.get(at_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
+    let atom = at
+        .get(at_index)
+        .ok_or(SourceHeapError::PointerOutOfBounds)?;
     *s_subtype = 0;
     if bAccept_O == 0 && matches!(atom.el_number, 8 | 16 | 34 | 52) {
         return Ok(-1);
@@ -2773,11 +2834,21 @@ pub(crate) fn GetOtherSaltChargeType(
     for j in 0..valence {
         let bond_type = u32::from(atom.bond_type[j]) & BOND_TYPE_MASK;
         let centerpoint_index = usize::from(atom.neighbor[j]);
-        let centerpoint = at.get(centerpoint_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let centerpoint = at
+            .get(centerpoint_index)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?;
         let bond_matches_endpoint_role = (eif.cAcceptor != 0
-            && matches!(bond_type, BOND_DOUBLE | BOND_ALTERN | BOND_ALT12NS | BOND_TAUTOM))
-            || (eif.cDonor != 0 && matches!(bond_type, BOND_SINGLE | BOND_ALTERN | BOND_ALT12NS | BOND_TAUTOM));
-        let centerpoint_has_available_valence = centerpoint.chem_bonds_valence > centerpoint.valence
+            && matches!(
+                bond_type,
+                BOND_DOUBLE | BOND_ALTERN | BOND_ALT12NS | BOND_TAUTOM
+            ))
+            || (eif.cDonor != 0
+                && matches!(
+                    bond_type,
+                    BOND_SINGLE | BOND_ALTERN | BOND_ALT12NS | BOND_TAUTOM
+                ));
+        let centerpoint_has_available_valence = centerpoint.chem_bonds_valence
+            > centerpoint.valence
             || (centerpoint.chem_bonds_valence == centerpoint.valence
                 && (centerpoint.endpoint != 0 || centerpoint.c_point != 0));
         if bond_matches_endpoint_role
@@ -2835,7 +2906,11 @@ pub(crate) fn GetOtherSaltChargeType(
 }
 
 #[allow(non_snake_case)]
-pub(crate) fn GetOtherSaltType(at: &[inp_ATOM], at_no: i32, s_subtype: &mut i32) -> Result<i32, SourceHeapError> {
+pub(crate) fn GetOtherSaltType(
+    at: &[inp_ATOM],
+    at_no: i32,
+    s_subtype: &mut i32,
+) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichitaut.c:2828 GetOtherSaltType
     // INCHI✔️✔️: int GetOtherSaltType( inp_ATOM *at, int at_no, int *s_subtype )
     // INCHI✔️✔️: {
@@ -2923,7 +2998,9 @@ pub(crate) fn GetOtherSaltType(at: &[inp_ATOM], at_no: i32, s_subtype: &mut i32)
     // END INCHI ACTIVE MACRO CONFIGURATION: GetOtherSaltType
 
     let at_index = usize::try_from(at_no).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    let atom = at.get(at_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
+    let atom = at
+        .get(at_index)
+        .ok_or(SourceHeapError::PointerOutOfBounds)?;
     if atom.valence != 1
         || atom.chem_bonds_valence != 1
         || 1 != i32::from(atom.num_H == 1) + i32::from(atom.charge == -1)
@@ -2947,7 +3024,9 @@ pub(crate) fn GetOtherSaltType(at: &[inp_ATOM], at_no: i32, s_subtype: &mut i32)
     }
 
     let centerpoint_index = usize::from(atom.neighbor[0]);
-    let centerpoint = at.get(centerpoint_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
+    let centerpoint = at
+        .get(centerpoint_index)
+        .ok_or(SourceHeapError::PointerOutOfBounds)?;
     if centerpoint.el_number != 6
         || centerpoint.charge != 0
         || (centerpoint.radical != 0 && centerpoint.radical != RADICAL_SINGLET as S_CHAR)
@@ -2983,7 +3062,12 @@ impl<T: Copy + Default + 'static> RegisterEndPointsScratch<T> {
         }
     }
 
-    fn ensure_heap(&mut self, heap: &mut SourceHeap, len: usize, initialized: usize) -> Result<(), SourceHeapError> {
+    fn ensure_heap(
+        &mut self,
+        heap: &mut SourceHeap,
+        len: usize,
+        initialized: usize,
+    ) -> Result<(), SourceHeapError> {
         if self.heap.is_none() {
             let pointer = inchi_calloc::<T>(heap, len as u64, std::mem::size_of::<T>() as u64)?;
             {
@@ -2995,7 +3079,11 @@ impl<T: Copy + Default + 'static> RegisterEndPointsScratch<T> {
                 // by the source loops. MaybeUninit<T> has the same layout as T,
                 // and the newly allocated target cannot alias the stack array.
                 unsafe {
-                    std::ptr::copy_nonoverlapping(self.stack.as_ptr().cast::<T>(), target.as_mut_ptr(), initialized);
+                    std::ptr::copy_nonoverlapping(
+                        self.stack.as_ptr().cast::<T>(),
+                        target.as_mut_ptr(),
+                        initialized,
+                    );
                 }
             }
             self.heap = Some(pointer);
@@ -3003,7 +3091,12 @@ impl<T: Copy + Default + 'static> RegisterEndPointsScratch<T> {
         Ok(())
     }
 
-    fn write(&mut self, heap: &mut SourceHeap, index: usize, value: T) -> Result<(), SourceHeapError> {
+    fn write(
+        &mut self,
+        heap: &mut SourceHeap,
+        index: usize,
+        value: T,
+    ) -> Result<(), SourceHeapError> {
         if let Some(pointer) = self.heap {
             heap.slice_mut(pointer)?
                 .get_mut(index)
@@ -3041,7 +3134,10 @@ impl<T: Copy + Default + 'static> RegisterEndPointsScratch<T> {
                 .ok_or(SourceHeapError::PointerOutOfBounds)?
                 .fill(T::default());
         } else {
-            let stack = self.stack.get_mut(..len).ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let stack = self
+                .stack
+                .get_mut(..len)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
             for value in stack {
                 value.write(T::default());
             }
@@ -3152,10 +3248,14 @@ pub(crate) fn RegisterEndPoints(
             return Ok(0);
         }
 
-        let num_endpoints = usize::try_from(nNumEndPoints).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-        let atom_count = usize::try_from(num_atoms).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-        let num_t_usize = usize::try_from(num_t).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-        let max_num_t_usize = usize::try_from(max_num_t).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+        let num_endpoints =
+            usize::try_from(nNumEndPoints).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+        let atom_count =
+            usize::try_from(num_atoms).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+        let num_t_usize =
+            usize::try_from(num_t).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+        let max_num_t_usize =
+            usize::try_from(max_num_t).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
         let t_group_slice = heap.slice(t_group.as_const())?;
         if t_group_slice.len() < max_num_t_usize {
             return Err(SourceHeapError::PointerOutOfBounds);
@@ -3200,7 +3300,11 @@ pub(crate) fn RegisterEndPoints(
                         pos
                     } else {
                         if n_num_new_t_groups as usize == MAX_STACK_ARRAY_LEN as usize {
-                            c_alloc!(n_group_new_number.ensure_heap(heap, num_endpoints, n_num_new_t_groups as usize));
+                            c_alloc!(n_group_new_number.ensure_heap(
+                                heap,
+                                num_endpoints,
+                                n_num_new_t_groups as usize
+                            ));
                         }
                         n_group_new_number.write(heap, n_num_new_t_groups as usize, group)?;
                         let pos = n_num_new_t_groups as usize;
@@ -3229,14 +3333,17 @@ pub(crate) fn RegisterEndPoints(
                 return Ok(ret);
             }
             let t_groups = heap.slice_mut(t_group)?;
-            let new_count = usize::try_from(n_num_new_t_groups).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+            let new_count = usize::try_from(n_num_new_t_groups)
+                .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
             let start = num_t_usize;
             for offset in 0..new_count {
                 t_groups[start + offset] = T_GROUP::default();
-                t_groups[start + offset].nGroupNumber = n_next_group_number.wrapping_add(offset as AT_NUMB);
+                t_groups[start + offset].nGroupNumber =
+                    n_next_group_number.wrapping_add(offset as AT_NUMB);
             }
-            t_group_snapshot = t_groups
-                [..usize::try_from(num_t).map_err(|_| SourceHeapError::SourceIntegerOverflow)? + new_count]
+            t_group_snapshot = t_groups[..usize::try_from(num_t)
+                .map_err(|_| SourceHeapError::SourceIntegerOverflow)?
+                + new_count]
                 .to_vec();
         }
 
@@ -3264,8 +3371,16 @@ pub(crate) fn RegisterEndPoints(
                 }
                 if !found {
                     if n_num_groups as usize == MAX_STACK_ARRAY_LEN as usize {
-                        c_alloc!(n_group_new_number.ensure_heap(heap, num_endpoints, n_num_groups as usize));
-                        c_alloc!(n_group_number.ensure_heap(heap, num_endpoints, n_num_groups as usize));
+                        c_alloc!(n_group_new_number.ensure_heap(
+                            heap,
+                            num_endpoints,
+                            n_num_groups as usize
+                        ));
+                        c_alloc!(n_group_number.ensure_heap(
+                            heap,
+                            num_endpoints,
+                            n_num_groups as usize
+                        ));
                     }
                     n_group_number.write(heap, n_num_groups as usize, group)?;
                     n_group_new_number.write(heap, n_num_groups as usize, endpoint.nEquNumber)?;
@@ -3277,14 +3392,15 @@ pub(crate) fn RegisterEndPoints(
                     j = num_t + i32::from(group - n_next_group_number);
                 } else if j >= num_t
                     || group
-                        != t_group_snapshot[usize::try_from(j).map_err(|_| SourceHeapError::SourceIntegerOverflow)?]
-                            .nGroupNumber
+                        != t_group_snapshot[usize::try_from(j)
+                            .map_err(|_| SourceHeapError::SourceIntegerOverflow)?]
+                        .nGroupNumber
                 {
                     j = 0;
                     while j < num_t {
                         if group
-                            == t_group_snapshot
-                                [usize::try_from(j).map_err(|_| SourceHeapError::SourceIntegerOverflow)?]
+                            == t_group_snapshot[usize::try_from(j)
+                                .map_err(|_| SourceHeapError::SourceIntegerOverflow)?]
                             .nGroupNumber
                         {
                             break;
@@ -3298,18 +3414,21 @@ pub(crate) fn RegisterEndPoints(
                 }
                 {
                     let t_groups = heap.slice_mut(t_group)?;
-                    let group_index = usize::try_from(j).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-                    t_groups[group_index].nNumEndpoints = t_groups[group_index].nNumEndpoints.wrapping_add(1);
+                    let group_index =
+                        usize::try_from(j).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+                    t_groups[group_index].nNumEndpoints =
+                        t_groups[group_index].nNumEndpoints.wrapping_add(1);
                     for idx in 0..t_groups[group_index].num.len() {
-                        t_groups[group_index].num[idx] = t_groups[group_index].num[idx].wrapping_add(endpoint.num[idx]);
+                        t_groups[group_index].num[idx] =
+                            t_groups[group_index].num[idx].wrapping_add(endpoint.num[idx]);
                     }
                     for idx in 0..t_groups[group_index].num_DA.len() {
                         t_groups[group_index].num_DA[idx] =
                             t_groups[group_index].num_DA[idx].wrapping_add(endpoint.num_DA[idx]);
                     }
                 }
-                let atom_index =
-                    usize::try_from(endpoint.nAtomNumber).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+                let atom_index = usize::try_from(endpoint.nAtomNumber)
+                    .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
                 heap.slice_mut(at)?
                     .get_mut(atom_index)
                     .ok_or(SourceHeapError::PointerOutOfBounds)?
@@ -3336,12 +3455,16 @@ pub(crate) fn RegisterEndPoints(
             }
         }
 
-        for idx in 0..usize::try_from(n_num_groups).map_err(|_| SourceHeapError::SourceIntegerOverflow)? {
+        for idx in
+            0..usize::try_from(n_num_groups).map_err(|_| SourceHeapError::SourceIntegerOverflow)?
+        {
             let group1 = n_group_number.read(heap, idx)?;
             let group2 = n_group_new_number.read(heap, idx)?;
             let mut i1 = -1_i32;
             let mut i2 = -1_i32;
-            for jdx in 0..usize::try_from(num_t).map_err(|_| SourceHeapError::SourceIntegerOverflow)? {
+            for jdx in
+                0..usize::try_from(num_t).map_err(|_| SourceHeapError::SourceIntegerOverflow)?
+            {
                 let group = t_group_snapshot[jdx].nGroupNumber;
                 if i1 < 0 && group1 == group {
                     i1 = jdx as i32;
@@ -3354,8 +3477,10 @@ pub(crate) fn RegisterEndPoints(
                 ret = -1;
                 return Ok(ret);
             }
-            let i1_index = usize::try_from(i1).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-            let i2_index = usize::try_from(i2).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+            let i1_index =
+                usize::try_from(i1).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+            let i2_index =
+                usize::try_from(i2).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
             {
                 let t_groups = heap.slice_mut(t_group)?;
                 for idx2 in 0..t_groups[i1_index].num.len() {
@@ -3363,15 +3488,16 @@ pub(crate) fn RegisterEndPoints(
                         t_groups[i2_index].num[idx2].wrapping_add(t_groups[i1_index].num[idx2]);
                 }
                 for idx2 in 0..t_groups[i1_index].num_DA.len() {
-                    t_groups[i2_index].num_DA[idx2] =
-                        t_groups[i2_index].num_DA[idx2].wrapping_add(t_groups[i1_index].num_DA[idx2]);
+                    t_groups[i2_index].num_DA[idx2] = t_groups[i2_index].num_DA[idx2]
+                        .wrapping_add(t_groups[i1_index].num_DA[idx2]);
                 }
                 t_groups[i2_index].nNumEndpoints = t_groups[i2_index]
                     .nNumEndpoints
                     .wrapping_add(t_groups[i1_index].nNumEndpoints);
                 num_t -= 1;
                 if num_t > i1 {
-                    let end = usize::try_from(num_t).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+                    let end = usize::try_from(num_t)
+                        .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
                     for shift in i1_index..end {
                         t_groups[shift] = t_groups[shift + 1].clone();
                     }
@@ -3384,20 +3510,33 @@ pub(crate) fn RegisterEndPoints(
 
         if n_num_groups != 0 {
             if n_next_group_number >= MAX_STACK_ARRAY_LEN as AT_NUMB {
-                c_alloc!(n_new_tg_number.ensure_heap(
-                    heap,
-                    usize::try_from(n_next_group_number).map_err(|_| SourceHeapError::SourceIntegerOverflow)? + 1,
-                    0
-                ));
+                c_alloc!(
+                    n_new_tg_number.ensure_heap(
+                        heap,
+                        usize::try_from(n_next_group_number)
+                            .map_err(|_| SourceHeapError::SourceIntegerOverflow)?
+                            + 1,
+                        0
+                    )
+                );
             }
-            let clear_len =
-                usize::try_from(n_next_group_number).map_err(|_| SourceHeapError::SourceIntegerOverflow)? + 1;
+            let clear_len = usize::try_from(n_next_group_number)
+                .map_err(|_| SourceHeapError::SourceIntegerOverflow)?
+                + 1;
             // INCHI✔️✔️:         memset( nNewTgNumber, 0, (nNextGroupNumber + 1) * sizeof(nNewTgNumber[0]) );
             n_new_tg_number.clear_prefix(heap, clear_len)?;
-            for idx in 0..usize::try_from(num_t).map_err(|_| SourceHeapError::SourceIntegerOverflow)? {
-                n_new_tg_number.write(heap, t_group_snapshot[idx].nGroupNumber as usize, (idx + 1) as AT_NUMB)?;
+            for idx in
+                0..usize::try_from(num_t).map_err(|_| SourceHeapError::SourceIntegerOverflow)?
+            {
+                n_new_tg_number.write(
+                    heap,
+                    t_group_snapshot[idx].nGroupNumber as usize,
+                    (idx + 1) as AT_NUMB,
+                )?;
             }
-            for idx in 0..usize::try_from(n_num_groups).map_err(|_| SourceHeapError::SourceIntegerOverflow)? {
+            for idx in 0..usize::try_from(n_num_groups)
+                .map_err(|_| SourceHeapError::SourceIntegerOverflow)?
+            {
                 let old_group = n_group_number.read(heap, idx)?;
                 let new_group = n_group_new_number.read(heap, idx)?;
                 let old_slot = n_new_tg_number.read(heap, old_group as usize)?;
@@ -3409,7 +3548,8 @@ pub(crate) fn RegisterEndPoints(
                     return Ok(ret);
                 }
             }
-            let group_count = usize::try_from(num_t).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+            let group_count =
+                usize::try_from(num_t).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
             let mut mapped_group_numbers = Vec::with_capacity(group_count);
             for group in t_group_snapshot.iter().take(group_count) {
                 mapped_group_numbers.push(n_new_tg_number.read(heap, group.nGroupNumber as usize)?);
@@ -3456,9 +3596,11 @@ pub(crate) fn RegisterEndPoints(
                 std::mem::size_of::<AT_NUMB>() as u64,
             ));
         }
-        heap.slice_mut(t_group_info.tGroupNumber)?.fill(AT_NUMB::default());
+        heap.slice_mut(t_group_info.tGroupNumber)?
+            .fill(AT_NUMB::default());
         {
-            let group_count = usize::try_from(num_t).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+            let group_count =
+                usize::try_from(num_t).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
             let t_groups = heap.slice(t_group.as_const())?[..group_count].to_vec();
             let t_group_number = heap.slice_mut(t_group_info.tGroupNumber)?;
             for (idx, group) in t_groups.iter().enumerate() {
@@ -3518,7 +3660,8 @@ pub(crate) fn RegisterEndPoints(
                         }
                     }
                 }
-                let ret_bns = AddTGroups2BnStruct(heap, pCG, pBNS, atoms, num_atoms, Some(&mut tgi))?;
+                let ret_bns =
+                    AddTGroups2BnStruct(heap, pCG, pBNS, atoms, num_atoms, Some(&mut tgi))?;
                 if is_bns_error(ret_bns) {
                     return Ok(ret_bns);
                 }
@@ -3786,7 +3929,8 @@ pub(crate) fn MergeSaltTautGroups(
         let mut s_type = GetSaltChargeType(heap, &atoms, i, Some(&*t_group_info), &mut s_subtype)?;
         let mut found = s_type == 0;
         if !found {
-            s_type = GetOtherSaltChargeType(heap, &atoms, i, Some(&*t_group_info), &mut s_subtype, 1)?;
+            s_type =
+                GetOtherSaltChargeType(heap, &atoms, i, Some(&*t_group_info), &mut s_subtype, 1)?;
             found = s_type == 1;
         }
         if !found {
@@ -3817,7 +3961,9 @@ pub(crate) fn MergeSaltTautGroups(
         } else if bDoNotMergeNonTautAtom(&atoms, i)? != 0 {
             continue;
         }
-        if (s_subtype & SALT_DONOR_ALL as i32) == 0 || ((s_subtype & SALT_ACCEPTOR as i32) != 0 && atom.endpoint == 0) {
+        if (s_subtype & SALT_DONOR_ALL as i32) == 0
+            || ((s_subtype & SALT_ACCEPTOR as i32) != 0 && atom.endpoint == 0)
+        {
             continue;
         }
         let candidate = S_CANDIDATE {
@@ -3826,7 +3972,8 @@ pub(crate) fn MergeSaltTautGroups(
             subtype: s_subtype as S_CHAR,
             endpoint: atom.endpoint,
         };
-        let candidate_index = usize::try_from(n_num_candidates).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let candidate_index =
+            usize::try_from(n_num_candidates).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         *heap
             .slice_mut(s_group_info.s_candidate)?
             .get_mut(candidate_index)
@@ -3840,7 +3987,8 @@ pub(crate) fn MergeSaltTautGroups(
         || (t_group_info.tni.bNormalizationFlags & u64::from(FLAG_FORCE_SALT_TAUT)) != 0;
     if force_merge {
         if n_num_candidates <= 1
-            || (((s_subtype_all & SALT_DONOR_Neg2 as i32) == 0 || (s_subtype_all & SALT_DONOR_H2 as i32) == 0)
+            || (((s_subtype_all & SALT_DONOR_Neg2 as i32) == 0
+                || (s_subtype_all & SALT_DONOR_H2 as i32) == 0)
                 && t_group_info.num_t_groups == 0)
         {
             s_group_info.num_candidates = -1;
@@ -3898,7 +4046,8 @@ pub(crate) fn MergeSaltTautGroups(
     } else {
         None
     };
-    let mut endpoint_stack: [T_ENDPOINT; MAX_STACK_ARRAY_LEN as usize] = std::array::from_fn(|_| T_ENDPOINT::default());
+    let mut endpoint_stack: [T_ENDPOINT; MAX_STACK_ARRAY_LEN as usize] =
+        std::array::from_fn(|_| T_ENDPOINT::default());
     let mut dynamic_endpoint_values = if let Some(pointer) = dynamic_endpoint {
         heap.slice(pointer.as_const())?.to_vec()
     } else {
@@ -3907,7 +4056,8 @@ pub(crate) fn MergeSaltTautGroups(
     let endpoints = if dynamic_endpoint.is_some() {
         dynamic_endpoint_values.as_mut_slice()
     } else {
-        &mut endpoint_stack[..usize::try_from(n_min_num_endpoints).map_err(|_| SourceHeapError::PointerOutOfBounds)?]
+        &mut endpoint_stack[..usize::try_from(n_min_num_endpoints)
+            .map_err(|_| SourceHeapError::PointerOutOfBounds)?]
     };
 
     n_cur_t_group_number = MAX_ATOMS as AT_NUMB;
@@ -4116,7 +4266,9 @@ pub(crate) fn MakeIsotopicHGroup(
 
     for i in 0..num_atoms {
         let atom_index = usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        let atom = atoms.get(atom_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let atom = atoms
+            .get(atom_index)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?;
         let mut s_subtype = 0_i32;
         let mut s_type = 0_i32;
         let b_has_h = if atom.endpoint != 0 {
@@ -4147,7 +4299,14 @@ pub(crate) fn MakeIsotopicHGroup(
             s_type = GetSaltChargeType(heap, &atoms, i, Some(&*t_group_info), &mut s_subtype)?;
             accepted = s_type == 0;
             if !accepted {
-                s_type = GetOtherSaltChargeType(heap, &atoms, i, Some(&*t_group_info), &mut s_subtype, 1)?;
+                s_type = GetOtherSaltChargeType(
+                    heap,
+                    &atoms,
+                    i,
+                    Some(&*t_group_info),
+                    &mut s_subtype,
+                    1,
+                )?;
                 accepted = s_type == 1;
             }
             if !accepted {
@@ -4176,7 +4335,8 @@ pub(crate) fn MakeIsotopicHGroup(
         if n_num_candidates >= n_max_num_candidates {
             return Ok(BNS_VERT_EDGE_OVFL);
         }
-        let candidate_index = usize::try_from(n_num_candidates).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let candidate_index =
+            usize::try_from(n_num_candidates).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         *heap
             .slice_mut(s_group_info.s_candidate)?
             .get_mut(candidate_index)
@@ -4187,7 +4347,8 @@ pub(crate) fn MakeIsotopicHGroup(
             endpoint: atom.endpoint,
         };
         n_num_candidates = n_num_candidates.wrapping_add(1);
-        n_num_non_taut_candidates = n_num_non_taut_candidates.wrapping_add(i32::from(atom.endpoint == 0));
+        n_num_non_taut_candidates =
+            n_num_non_taut_candidates.wrapping_add(i32::from(atom.endpoint == 0));
     }
 
     if n_error != 0 {
@@ -4197,23 +4358,29 @@ pub(crate) fn MakeIsotopicHGroup(
     if n_num_candidates > 0 {
         let allocation_count = u64::try_from(i64::from(n_num_non_taut_candidates) + 1)
             .map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?;
-        let isotopic_endpoints =
-            match inchi_calloc::<AT_NUMB>(heap, allocation_count, std::mem::size_of::<AT_NUMB>() as u64) {
-                Ok(pointer) => Some(pointer),
-                Err(
-                    SourceHeapError::AllocationFailed
-                    | SourceHeapError::AllocationSizeOverflow
-                    | SourceHeapError::AllocationElementCountOutOfRange,
-                ) => None,
-                Err(error) => return Err(error),
-            };
+        let isotopic_endpoints = match inchi_calloc::<AT_NUMB>(
+            heap,
+            allocation_count,
+            std::mem::size_of::<AT_NUMB>() as u64,
+        ) {
+            Ok(pointer) => Some(pointer),
+            Err(
+                SourceHeapError::AllocationFailed
+                | SourceHeapError::AllocationSizeOverflow
+                | SourceHeapError::AllocationElementCountOutOfRange,
+            ) => None,
+            Err(error) => return Err(error),
+        };
         t_group_info.nIsotopicEndpointAtomNumber = isotopic_endpoints.unwrap_or_default();
 
         if let Some(isotopic_endpoints) = isotopic_endpoints {
             heap.slice_mut(isotopic_endpoints)?[0] = n_num_non_taut_candidates as AT_NUMB;
             let candidates = heap
                 .slice(s_group_info.s_candidate.as_const())?
-                .get(..usize::try_from(n_num_candidates).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
+                .get(
+                    ..usize::try_from(n_num_candidates)
+                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                )
                 .ok_or(SourceHeapError::PointerOutOfBounds)?
                 .to_vec();
             let mut n = 1_i32;
@@ -4227,12 +4394,15 @@ pub(crate) fn MakeIsotopicHGroup(
                 if atom.endpoint == 0 {
                     *heap
                         .slice_mut(isotopic_endpoints)?
-                        .get_mut(usize::try_from(n).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
+                        .get_mut(
+                            usize::try_from(n).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                        )
                         .ok_or(SourceHeapError::PointerOutOfBounds)? = candidate.atnumber;
                     n = n.wrapping_add(1);
                 }
                 for j in 0..NUM_H_ISOTOPES as usize {
-                    t_group_info.num_iso_H[j] = t_group_info.num_iso_H[j].wrapping_add(i16::from(atom.num_iso_H[j]));
+                    t_group_info.num_iso_H[j] =
+                        t_group_info.num_iso_H[j].wrapping_add(i16::from(atom.num_iso_H[j]));
                 }
                 let atom = heap
                     .slice_mut(at)?
@@ -4420,8 +4590,10 @@ pub(crate) fn RegisterCPoints(
         }
         c_group[num_c as usize] = C_GROUP::default();
         if num_c < max_num_c {
-            c_group[num_c as usize].num[0] = charged_cpoint(at, point1).wrapping_add(charged_cpoint(at, point2));
-            c_group[num_c as usize].num_CPoints = c_group[num_c as usize].num_CPoints.wrapping_add(2);
+            c_group[num_c as usize].num[0] =
+                charged_cpoint(at, point1).wrapping_add(charged_cpoint(at, point2));
+            c_group[num_c as usize].num_CPoints =
+                c_group[num_c as usize].num_CPoints.wrapping_add(2);
             c_group[num_c as usize].cGroupType = ctype as u8;
 
             let mut nGroupNumber: AT_NUMB = 0;
@@ -4441,7 +4613,8 @@ pub(crate) fn RegisterCPoints(
             } else if at[point2_index].num_H != 0 {
                 c_group[num_c as usize].num[1] = c_group[num_c as usize].num[1].wrapping_add(1);
             } else if (at[point1_index].endpoint != 0 || at[point2_index].endpoint != 0)
-                && t_group_info.is_some_and(|info| !info.t_group.is_null() && info.num_t_groups != 0)
+                && t_group_info
+                    .is_some_and(|info| !info.t_group.is_null() && info.num_t_groups != 0)
             {
             }
             return 1;
@@ -4759,7 +4932,8 @@ pub(crate) fn MarkChargeGroups(
         }
     }
 
-    let candidate_count = usize::try_from(n_num_candidates).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let candidate_count =
+        usize::try_from(n_num_candidates).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let mut candidates = heap
         .slice(c_candidate.as_const())?
         .get(..candidate_count)
@@ -4773,7 +4947,9 @@ pub(crate) fn MarkChargeGroups(
 
     let mut i1 = 0_i32;
     'quick_exit: while i1 < n_num_candidates {
-        while i1 < n_num_candidates && (candidates[i1 as usize].subtype & C_SUBTYPE_NEUTRAL as S_CHAR) != 0 {
+        while i1 < n_num_candidates
+            && (candidates[i1 as usize].subtype & C_SUBTYPE_NEUTRAL as S_CHAR) != 0
+        {
             i1 += 1;
         }
         if i1 == n_num_candidates {
@@ -4792,7 +4968,9 @@ pub(crate) fn MarkChargeGroups(
         }
 
         let mut i3 = i2;
-        while i3 < n_num_candidates && candidates[i3 as usize].type_ == candidates[i1 as usize].type_ {
+        while i3 < n_num_candidates
+            && candidates[i3 as usize].type_ == candidates[i1 as usize].type_
+        {
             i3 += 1;
         }
 
@@ -4811,7 +4989,8 @@ pub(crate) fn MarkChargeGroups(
                 let iat2 = i32::from(candidates[j as usize].atnumber);
                 {
                     let atoms = heap.slice(at.as_const())?;
-                    if atoms[iat1 as usize].c_point != 0 && atoms[iat1 as usize].c_point == atoms[iat2 as usize].c_point
+                    if atoms[iat1 as usize].c_point != 0
+                        && atoms[iat1 as usize].c_point == atoms[iat2 as usize].c_point
                     {
                         continue;
                     }
@@ -4849,7 +5028,8 @@ pub(crate) fn MarkChargeGroups(
                         &mut atoms,
                         num_atoms,
                     );
-                    heap.slice_mut(c_group_info.c_group)?.clone_from_slice(&c_groups);
+                    heap.slice_mut(c_group_info.c_group)?
+                        .clone_from_slice(&c_groups);
                     heap.slice_mut(at)?.clone_from_slice(&atoms);
                     if ichitaut_is_bns_error(ret) {
                         return Ok(ret);
@@ -4864,7 +5044,11 @@ pub(crate) fn MarkChargeGroups(
     }
 
     if c_group_info.num_candidates == 0 {
-        c_group_info.num_candidates = if num_tested != 0 { n_num_candidates } else { -1 };
+        c_group_info.num_candidates = if num_tested != 0 {
+            n_num_candidates
+        } else {
+            -1
+        };
     }
 
     Ok(n_num_changes)
@@ -5009,7 +5193,9 @@ pub(crate) fn nGetEndpointInfo(atom: &[inp_ATOM], iat: i32, eif: &mut ENDPOINT_I
         let mut c_charge_subtype = 0;
         if at.c_point != 0
             && GetChargeType(atom, iat, &mut c_charge_subtype) >= 0
-            && (i32::from(c_charge_subtype) & (C_SUBTYPE_H_ACCEPT as i32 | C_SUBTYPE_H_DONOR as i32)) != 0
+            && (i32::from(c_charge_subtype)
+                & (C_SUBTYPE_H_ACCEPT as i32 | C_SUBTYPE_H_DONOR as i32))
+                != 0
         {
             if (i32::from(c_charge_subtype) & C_SUBTYPE_H_ACCEPT as i32) != 0 {
                 eif.cDonor = 0;
@@ -5032,7 +5218,11 @@ pub(crate) fn nGetEndpointInfo(atom: &[inp_ATOM], iat: i32, eif: &mut ENDPOINT_I
 }
 
 #[allow(non_snake_case)]
-pub(crate) fn nGetEndpointInfo_PT_22_00(atom: &[inp_ATOM], iat: i32, eif: &mut ENDPOINT_INFO) -> i32 {
+pub(crate) fn nGetEndpointInfo_PT_22_00(
+    atom: &[inp_ATOM],
+    iat: i32,
+    eif: &mut ENDPOINT_INFO,
+) -> i32 {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichitaut.c:452 nGetEndpointInfo_PT_22_00
     // INCHI✔️✔️: int nGetEndpointInfo_PT_22_00(inp_ATOM *atom, int iat, ENDPOINT_INFO *eif)
     // INCHI✔️✔️: {
@@ -5150,7 +5340,9 @@ pub(crate) fn nGetEndpointInfo_PT_22_00(atom: &[inp_ATOM], iat: i32, eif: &mut E
         let mut c_charge_subtype = 0;
         if at.c_point != 0
             && GetChargeType(atom, iat, &mut c_charge_subtype) >= 0
-            && (i32::from(c_charge_subtype) & (C_SUBTYPE_H_ACCEPT as i32 | C_SUBTYPE_H_DONOR as i32)) != 0
+            && (i32::from(c_charge_subtype)
+                & (C_SUBTYPE_H_ACCEPT as i32 | C_SUBTYPE_H_DONOR as i32))
+                != 0
         {
             if (i32::from(c_charge_subtype) & C_SUBTYPE_H_ACCEPT as i32) != 0 {
                 eif.cDonor = 0;
@@ -5173,7 +5365,11 @@ pub(crate) fn nGetEndpointInfo_PT_22_00(atom: &[inp_ATOM], iat: i32, eif: &mut E
 }
 
 #[allow(non_snake_case)]
-pub(crate) fn nGetEndpointInfo_PT_16_00(atom: &[inp_ATOM], iat: i32, eif: &mut ENDPOINT_INFO) -> i32 {
+pub(crate) fn nGetEndpointInfo_PT_16_00(
+    atom: &[inp_ATOM],
+    iat: i32,
+    eif: &mut ENDPOINT_INFO,
+) -> i32 {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichitaut.c:524 nGetEndpointInfo_PT_16_00
     // INCHI✔️✔️: int nGetEndpointInfo_PT_16_00(inp_ATOM *atom, int iat, ENDPOINT_INFO *eif)
     // INCHI✔️✔️: {
@@ -5302,7 +5498,9 @@ pub(crate) fn nGetEndpointInfo_PT_16_00(atom: &[inp_ATOM], iat: i32, eif: &mut E
         let mut c_charge_subtype = 0;
         if at.c_point != 0
             && GetChargeType(atom, iat, &mut c_charge_subtype) >= 0
-            && (i32::from(c_charge_subtype) & (C_SUBTYPE_H_ACCEPT as i32 | C_SUBTYPE_H_DONOR as i32)) != 0
+            && (i32::from(c_charge_subtype)
+                & (C_SUBTYPE_H_ACCEPT as i32 | C_SUBTYPE_H_DONOR as i32))
+                != 0
         {
             if (i32::from(c_charge_subtype) & C_SUBTYPE_H_ACCEPT as i32) != 0 {
                 eif.cDonor = 0;
@@ -5325,7 +5523,11 @@ pub(crate) fn nGetEndpointInfo_PT_16_00(atom: &[inp_ATOM], iat: i32, eif: &mut E
 }
 
 #[allow(non_snake_case)]
-pub(crate) fn nGetEndpointInfo_PT_06_00(atom: &[inp_ATOM], iat: i32, eif: &mut ENDPOINT_INFO) -> i32 {
+pub(crate) fn nGetEndpointInfo_PT_06_00(
+    atom: &[inp_ATOM],
+    iat: i32,
+    eif: &mut ENDPOINT_INFO,
+) -> i32 {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichitaut.c:600 nGetEndpointInfo_PT_06_00
     // INCHI✔️✔️: int nGetEndpointInfo_PT_06_00(inp_ATOM *atom, int iat, ENDPOINT_INFO *eif)
     // INCHI✔️✔️: {
@@ -5453,7 +5655,9 @@ pub(crate) fn nGetEndpointInfo_PT_06_00(atom: &[inp_ATOM], iat: i32, eif: &mut E
         let mut c_charge_subtype = 0;
         if at.c_point != 0
             && GetChargeType(atom, iat, &mut c_charge_subtype) >= 0
-            && (i32::from(c_charge_subtype) & (C_SUBTYPE_H_ACCEPT as i32 | C_SUBTYPE_H_DONOR as i32)) != 0
+            && (i32::from(c_charge_subtype)
+                & (C_SUBTYPE_H_ACCEPT as i32 | C_SUBTYPE_H_DONOR as i32))
+                != 0
         {
             if (i32::from(c_charge_subtype) & C_SUBTYPE_H_ACCEPT as i32) != 0 {
                 eif.cDonor = 0;
@@ -5476,7 +5680,11 @@ pub(crate) fn nGetEndpointInfo_PT_06_00(atom: &[inp_ATOM], iat: i32, eif: &mut E
 }
 
 #[allow(non_snake_case)]
-pub(crate) fn nGetEndpointInfo_PT_39_00(atom: &[inp_ATOM], iat: i32, eif: &mut ENDPOINT_INFO) -> i32 {
+pub(crate) fn nGetEndpointInfo_PT_39_00(
+    atom: &[inp_ATOM],
+    iat: i32,
+    eif: &mut ENDPOINT_INFO,
+) -> i32 {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichitaut.c:677 nGetEndpointInfo_PT_39_00
     // INCHI✔️✔️: int nGetEndpointInfo_PT_39_00(inp_ATOM *atom, int iat, ENDPOINT_INFO *eif)
     // INCHI✔️✔️: {
@@ -5609,7 +5817,9 @@ pub(crate) fn nGetEndpointInfo_PT_39_00(atom: &[inp_ATOM], iat: i32, eif: &mut E
         let mut c_charge_subtype = 0;
         if at.c_point != 0
             && GetChargeType(atom, iat, &mut c_charge_subtype) >= 0
-            && (i32::from(c_charge_subtype) & (C_SUBTYPE_H_ACCEPT as i32 | C_SUBTYPE_H_DONOR as i32)) != 0
+            && (i32::from(c_charge_subtype)
+                & (C_SUBTYPE_H_ACCEPT as i32 | C_SUBTYPE_H_DONOR as i32))
+                != 0
         {
             if (i32::from(c_charge_subtype) & C_SUBTYPE_H_ACCEPT as i32) != 0 {
                 eif.cDonor = 0;
@@ -5632,7 +5842,11 @@ pub(crate) fn nGetEndpointInfo_PT_39_00(atom: &[inp_ATOM], iat: i32, eif: &mut E
 }
 
 #[allow(non_snake_case)]
-pub(crate) fn nGetEndpointInfo_PT_13_00(atom: &[inp_ATOM], iat: i32, eif: &mut ENDPOINT_INFO) -> i32 {
+pub(crate) fn nGetEndpointInfo_PT_13_00(
+    atom: &[inp_ATOM],
+    iat: i32,
+    eif: &mut ENDPOINT_INFO,
+) -> i32 {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichitaut.c:756 nGetEndpointInfo_PT_13_00
     // INCHI✔️✔️: int nGetEndpointInfo_PT_13_00(inp_ATOM *atom, int iat, ENDPOINT_INFO *eif)
     // INCHI✔️✔️: {
@@ -5759,7 +5973,9 @@ pub(crate) fn nGetEndpointInfo_PT_13_00(atom: &[inp_ATOM], iat: i32, eif: &mut E
         let mut c_charge_subtype = 0;
         if at.c_point != 0
             && GetChargeType(atom, iat, &mut c_charge_subtype) >= 0
-            && (i32::from(c_charge_subtype) & (C_SUBTYPE_H_ACCEPT as i32 | C_SUBTYPE_H_DONOR as i32)) != 0
+            && (i32::from(c_charge_subtype)
+                & (C_SUBTYPE_H_ACCEPT as i32 | C_SUBTYPE_H_DONOR as i32))
+                != 0
         {
             if (i32::from(c_charge_subtype) & C_SUBTYPE_H_ACCEPT as i32) != 0 {
                 eif.cDonor = 0;
@@ -5782,7 +5998,11 @@ pub(crate) fn nGetEndpointInfo_PT_13_00(atom: &[inp_ATOM], iat: i32, eif: &mut E
 }
 
 #[allow(non_snake_case)]
-pub(crate) fn nGetEndpointInfo_PT_18_00(atom: &[inp_ATOM], iat: i32, eif: &mut ENDPOINT_INFO) -> i32 {
+pub(crate) fn nGetEndpointInfo_PT_18_00(
+    atom: &[inp_ATOM],
+    iat: i32,
+    eif: &mut ENDPOINT_INFO,
+) -> i32 {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichitaut.c:832 nGetEndpointInfo_PT_18_00
     // INCHI✔️✔️: int nGetEndpointInfo_PT_18_00(inp_ATOM *atom, int iat, ENDPOINT_INFO *eif)
     // INCHI✔️✔️: {
@@ -5902,7 +6122,9 @@ pub(crate) fn nGetEndpointInfo_PT_18_00(atom: &[inp_ATOM], iat: i32, eif: &mut E
         let mut c_charge_subtype = 0;
         if at.c_point != 0
             && GetChargeType(atom, iat, &mut c_charge_subtype) >= 0
-            && (i32::from(c_charge_subtype) & (C_SUBTYPE_H_ACCEPT as i32 | C_SUBTYPE_H_DONOR as i32)) != 0
+            && (i32::from(c_charge_subtype)
+                & (C_SUBTYPE_H_ACCEPT as i32 | C_SUBTYPE_H_DONOR as i32))
+                != 0
         {
             if (i32::from(c_charge_subtype) & C_SUBTYPE_H_ACCEPT as i32) != 0 {
                 eif.cDonor = 0;
@@ -6084,7 +6306,9 @@ pub(crate) fn nGetEndpointInfo_KET(atom: &[inp_ATOM], iat: i32, eif: &mut ENDPOI
         let mut c_charge_subtype = 0;
         if at.c_point != 0
             && GetChargeType(atom, iat, &mut c_charge_subtype) >= 0
-            && (i32::from(c_charge_subtype) & (C_SUBTYPE_H_ACCEPT as i32 | C_SUBTYPE_H_DONOR as i32)) != 0
+            && (i32::from(c_charge_subtype)
+                & (C_SUBTYPE_H_ACCEPT as i32 | C_SUBTYPE_H_DONOR as i32))
+                != 0
         {
             if (i32::from(c_charge_subtype) & C_SUBTYPE_H_ACCEPT as i32) != 0 {
                 eif.cDonor = 0;
@@ -6186,12 +6410,17 @@ pub(crate) fn SetTautomericBonds(
                     .get(neighbor_index)
                     .ok_or(SourceHeapError::PointerOutOfBounds)?,
             );
-            at.get_mut(center).ok_or(SourceHeapError::PointerOutOfBounds)?.bond_type[neighbor_index] = bond_type;
+            at.get_mut(center)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?
+                .bond_type[neighbor_index] = bond_type;
 
-            let neighbor_atom = at.get_mut(neighbor).ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let neighbor_atom = at
+                .get_mut(neighbor)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
             let mut ii = 0_i32;
             while ii < i32::from(neighbor_atom.valence) {
-                let reverse_index = usize::try_from(ii).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let reverse_index =
+                    usize::try_from(ii).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 if usize::from(neighbor_atom.neighbor[reverse_index]) == center {
                     neighbor_atom.bond_type[reverse_index] = bond_type;
                     break;
@@ -6367,11 +6596,15 @@ pub(crate) fn GetNeutralRepsIfNeeded(
     let mut ri = *pri;
     let mut rj = *prj;
     let ri_index = usize::from(ri);
-    let ri_atom = at.get(ri_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
+    let ri_atom = at
+        .get(ri_index)
+        .ok_or(SourceHeapError::PointerOutOfBounds)?;
     let c_point = ri_atom.c_point;
 
     if c_point != 0 {
-        let rj_atom = at.get(usize::from(rj)).ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let rj_atom = at
+            .get(usize::from(rj))
+            .ok_or(SourceHeapError::PointerOutOfBounds)?;
         if rj_atom.c_point == c_point
             && (ri_atom.charge == 1 || rj_atom.charge == 1)
             && cgi.is_some_and(|value| value.num_c_groups > 0)
@@ -6383,7 +6616,9 @@ pub(crate) fn GetNeutralRepsIfNeeded(
                 let group = groups
                     .get(usize::try_from(k).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                if group.nGroupNumber == c_point && i32::from(group.num_CPoints) - i32::from(group.num[0]) < 2 {
+                if group.nGroupNumber == c_point
+                    && i32::from(group.num_CPoints) - i32::from(group.num[0]) < 2
+                {
                     let endpoint = at
                         .get(usize::from(rj))
                         .ok_or(SourceHeapError::PointerOutOfBounds)?
@@ -6392,14 +6627,19 @@ pub(crate) fn GetNeutralRepsIfNeeded(
                         let mut i = 0_i32;
                         while i < nNumEndPoints {
                             let r = EndPoint
-                                .get(usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
+                                .get(
+                                    usize::try_from(i)
+                                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                                )
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?
                                 .nAtomNumber;
                             if r == *prj {
                                 i = i.wrapping_add(1);
                                 continue;
                             }
-                            let candidate = at.get(usize::from(r)).ok_or(SourceHeapError::PointerOutOfBounds)?;
+                            let candidate = at
+                                .get(usize::from(r))
+                                .ok_or(SourceHeapError::PointerOutOfBounds)?;
                             if candidate.endpoint != endpoint {
                                 i = i.wrapping_add(1);
                                 continue;
@@ -6422,8 +6662,10 @@ pub(crate) fn GetNeutralRepsIfNeeded(
                         if rj == *prj {
                             let mut i = 0_i32;
                             while i < num_atoms {
-                                let index = usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                                let candidate = at.get(index).ok_or(SourceHeapError::PointerOutOfBounds)?;
+                                let index = usize::try_from(i)
+                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                                let candidate =
+                                    at.get(index).ok_or(SourceHeapError::PointerOutOfBounds)?;
                                 if candidate.endpoint != endpoint || i == i32::from(*prj) {
                                     i = i.wrapping_add(1);
                                     continue;
@@ -6454,14 +6696,19 @@ pub(crate) fn GetNeutralRepsIfNeeded(
                         let mut i = 0_i32;
                         while i < nNumEndPoints {
                             let r = EndPoint
-                                .get(usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
+                                .get(
+                                    usize::try_from(i)
+                                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                                )
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?
                                 .nAtomNumber;
                             if r == *pri {
                                 i = i.wrapping_add(1);
                                 continue;
                             }
-                            let candidate = at.get(usize::from(r)).ok_or(SourceHeapError::PointerOutOfBounds)?;
+                            let candidate = at
+                                .get(usize::from(r))
+                                .ok_or(SourceHeapError::PointerOutOfBounds)?;
                             if candidate.endpoint != endpoint {
                                 i = i.wrapping_add(1);
                                 continue;
@@ -6495,8 +6742,10 @@ pub(crate) fn GetNeutralRepsIfNeeded(
                         {
                             let mut i = 0_i32;
                             while i < num_atoms {
-                                let index = usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                                let candidate = at.get(index).ok_or(SourceHeapError::PointerOutOfBounds)?;
+                                let index = usize::try_from(i)
+                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                                let candidate =
+                                    at.get(index).ok_or(SourceHeapError::PointerOutOfBounds)?;
                                 if candidate.endpoint != endpoint || i == i32::from(*pri) {
                                     i = i.wrapping_add(1);
                                     continue;
@@ -6855,11 +7104,14 @@ pub(crate) fn FindAccessibleEndPoints(
                 j = j.wrapping_add(1);
             }
             if j == different_group_count {
-                let index = usize::try_from(different_group_count).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let index = usize::try_from(different_group_count)
+                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 *representatives
                     .get_mut(index)
                     .ok_or(SourceHeapError::PointerOutOfBounds)? = endpoint.nAtomNumber;
-                *equivalences.get_mut(index).ok_or(SourceHeapError::PointerOutOfBounds)? = endpoint.nGroupNumber;
+                *equivalences
+                    .get_mut(index)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)? = endpoint.nGroupNumber;
                 *endpoint_numbers
                     .get_mut(index)
                     .ok_or(SourceHeapError::PointerOutOfBounds)? = i as AT_NUMB;
@@ -6881,7 +7133,16 @@ pub(crate) fn FindAccessibleEndPoints(
             let mut rj = representatives[j_index];
             {
                 let atoms = heap.slice(at.as_const())?;
-                GetNeutralRepsIfNeeded(heap, &mut ri, &mut rj, atoms, num_atoms, EndPoint, *nNumEndPoints, cgi)?;
+                GetNeutralRepsIfNeeded(
+                    heap,
+                    &mut ri,
+                    &mut rj,
+                    atoms,
+                    num_atoms,
+                    EndPoint,
+                    *nNumEndPoints,
+                    cgi,
+                )?;
             }
             let error = bExistsAnyAltPath(
                 heap,
@@ -6903,7 +7164,8 @@ pub(crate) fn FindAccessibleEndPoints(
                 let maximum_group = equivalences[i_index].max(equivalences[j_index]);
                 let mut k = 0_i32;
                 while k < different_group_count {
-                    let index = usize::try_from(k).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let index =
+                        usize::try_from(k).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     if equivalences[index] == maximum_group {
                         equivalences[index] = current_group;
                         found_equivalences = found_equivalences.wrapping_add(1);
@@ -6912,8 +7174,11 @@ pub(crate) fn FindAccessibleEndPoints(
                 }
                 k = 0;
                 while k < *nNumEndPoints {
-                    let index = usize::try_from(k).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                    let endpoint = EndPoint.get_mut(index).ok_or(SourceHeapError::PointerOutOfBounds)?;
+                    let index =
+                        usize::try_from(k).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let endpoint = EndPoint
+                        .get_mut(index)
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
                     if endpoint.nEquNumber == maximum_group {
                         endpoint.nEquNumber = current_group;
                     }
@@ -6931,7 +7196,8 @@ pub(crate) fn FindAccessibleEndPoints(
             let i_index = usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             let mut j = 0_i32;
             while j < i {
-                let j_index = usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let j_index =
+                    usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 if equivalences[j_index] == equivalences[i_index] {
                     equivalences[i_index] = 0;
                     break;
@@ -6945,7 +7211,8 @@ pub(crate) fn FindAccessibleEndPoints(
         while i < different_group_count {
             let i_index = usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             if equivalences[i_index] != 0 {
-                let j_index = usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let j_index =
+                    usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 if i != j {
                     equivalences[j_index] = equivalences[i_index];
                     representatives[j_index] = representatives[i_index];
@@ -6967,7 +7234,9 @@ pub(crate) fn FindAccessibleEndPoints(
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
         if endpoint.nEquNumber == 0 {
             let index = usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            *equivalences.get_mut(index).ok_or(SourceHeapError::PointerOutOfBounds)? = 0;
+            *equivalences
+                .get_mut(index)
+                .ok_or(SourceHeapError::PointerOutOfBounds)? = 0;
             *representatives
                 .get_mut(index)
                 .ok_or(SourceHeapError::PointerOutOfBounds)? = endpoint.nAtomNumber;
@@ -6995,7 +7264,16 @@ pub(crate) fn FindAccessibleEndPoints(
                 let mut rj = representatives[j_index];
                 {
                     let atoms = heap.slice(at.as_const())?;
-                    GetNeutralRepsIfNeeded(heap, &mut ri, &mut rj, atoms, num_atoms, EndPoint, *nNumEndPoints, cgi)?;
+                    GetNeutralRepsIfNeeded(
+                        heap,
+                        &mut ri,
+                        &mut rj,
+                        atoms,
+                        num_atoms,
+                        EndPoint,
+                        *nNumEndPoints,
+                        cgi,
+                    )?;
                 }
                 let error = bExistsAnyAltPath(
                     heap,
@@ -7018,7 +7296,8 @@ pub(crate) fn FindAccessibleEndPoints(
                         let maximum_group = equivalences[i_index].max(equivalences[j_index]);
                         let mut k = 0_i32;
                         while k < group_number_count {
-                            let index = usize::try_from(k).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                            let index = usize::try_from(k)
+                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                             if equivalences[index] == maximum_group {
                                 equivalences[index] = current_group;
                                 found_equivalences = found_equivalences.wrapping_add(1);
@@ -7027,8 +7306,11 @@ pub(crate) fn FindAccessibleEndPoints(
                         }
                         k = 0;
                         while k < *nNumEndPoints {
-                            let index = usize::try_from(k).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                            let endpoint = EndPoint.get_mut(index).ok_or(SourceHeapError::PointerOutOfBounds)?;
+                            let index = usize::try_from(k)
+                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                            let endpoint = EndPoint
+                                .get_mut(index)
+                                .ok_or(SourceHeapError::PointerOutOfBounds)?;
                             if endpoint.nEquNumber == maximum_group {
                                 endpoint.nEquNumber = current_group;
                             }
@@ -7082,7 +7364,8 @@ pub(crate) fn FindAccessibleEndPoints(
             let mut k = 0_i32;
             found_equivalences = 0;
             while k < *nNumEndPoints {
-                let k_index = usize::try_from(k).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let k_index =
+                    usize::try_from(k).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 found_equivalences = found_equivalences.wrapping_add(i32::from(
                     equivalence
                         == EndPoint
@@ -7093,15 +7376,23 @@ pub(crate) fn FindAccessibleEndPoints(
                 k = k.wrapping_add(1);
             }
             if found_equivalences > 1 {
-                let j_index = usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let j_index =
+                    usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 if i != j {
                     let endpoint = EndPoint
                         .get(i_index)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?
                         .clone();
-                    let bond = BondPos.get(i_index).ok_or(SourceHeapError::PointerOutOfBounds)?.clone();
-                    *EndPoint.get_mut(j_index).ok_or(SourceHeapError::PointerOutOfBounds)? = endpoint;
-                    *BondPos.get_mut(j_index).ok_or(SourceHeapError::PointerOutOfBounds)? = bond;
+                    let bond = BondPos
+                        .get(i_index)
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?
+                        .clone();
+                    *EndPoint
+                        .get_mut(j_index)
+                        .ok_or(SourceHeapError::PointerOutOfBounds)? = endpoint;
+                    *BondPos
+                        .get_mut(j_index)
+                        .ok_or(SourceHeapError::PointerOutOfBounds)? = bond;
                 }
                 j = j.wrapping_add(1);
             }
@@ -9222,14 +9513,23 @@ pub(crate) fn MarkTautomerGroups(
             } else {
                 let vertex = heap
                     .slice(pBNS.vert.as_const())?
-                    .get(usize::try_from($atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
+                    .get(
+                        usize::try_from($atom_number)
+                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                    )
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
                 let edge_number = *heap
                     .slice(vertex.iedge.as_const())?
-                    .get(usize::try_from($bond_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
+                    .get(
+                        usize::try_from($bond_number)
+                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                    )
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
                 heap.slice(pBNS.edge.as_const())?
-                    .get(usize::try_from(edge_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
+                    .get(
+                        usize::try_from(edge_number)
+                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                    )
                     .ok_or(SourceHeapError::PointerOutOfBounds)?
                     .forbidden
                     == 0
@@ -9288,7 +9588,8 @@ pub(crate) fn MarkTautomerGroups(
                     tot_changes = tot_changes.wrapping_add(i32::from(num_changes > 0));
                 }
                 if *$bond_count > 0 {
-                    let num_changes = SetTautomericBonds(heap.slice_mut(at)?, *$bond_count, $bonds)?;
+                    let num_changes =
+                        SetTautomericBonds(heap.slice_mut(at)?, *$bond_count, $bonds)?;
                     tot_changes = tot_changes.wrapping_add(i32::from(num_changes > 0));
                 }
             }
@@ -9313,12 +9614,17 @@ pub(crate) fn MarkTautomerGroups(
                         .clone();
                     let mut j = 0_i32;
                     while j < i32::from(initial_atom.valence) {
-                        let j_index = usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                        let bond_type = i32::from(initial_atom.bond_type[j_index]) & !(BOND_MARK_ALL as i32);
+                        let j_index =
+                            usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                        let bond_type =
+                            i32::from(initial_atom.bond_type[j_index]) & !(BOND_MARK_ALL as i32);
                         let centerpoint = i32::from(initial_atom.neighbor[j_index]);
                         let center = heap
                             .slice(at.as_const())?
-                            .get(usize::try_from(centerpoint).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
+                            .get(
+                                usize::try_from(centerpoint)
+                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                            )
                             .ok_or(SourceHeapError::PointerOutOfBounds)?
                             .clone();
                         let broad_center_bonds = rule == Rule::Pt13 || rule == Rule::Pt18;
@@ -9331,15 +9637,22 @@ pub(crate) fn MarkTautomerGroups(
                         let center_ok = match rule {
                             Rule::Standard => is_centerpoint_elem(center.el_number) != 0,
                             Rule::Pt22 => center.el_number == 7,
-                            Rule::Pt16 => center.el_number == 7 && center.valence == 2 && center.charge == 0,
+                            Rule::Pt16 => {
+                                center.el_number == 7 && center.valence == 2 && center.charge == 0
+                            }
                             Rule::Pt06 => matches!(center.el_number, 6 | 7 | 15),
                             Rule::Pt39 => center.el_number == 7 && center.valence == 3,
                             Rule::Pt13 | Rule::Pt18 => center.el_number == 6 && center.valence == 2,
                         };
                         if center_bond_ok && center_ok && allowed_edge!(i, j) {
                             let mut endpoints =
-                                std::array::from_fn::<_, { MAXVAL as usize }, _>(|_| T_ENDPOINT::default());
-                            let mut bonds = std::array::from_fn::<_, { MAXVAL as usize }, _>(|_| T_BONDPOS::default());
+                                std::array::from_fn::<_, { MAXVAL as usize }, _>(|_| {
+                                    T_ENDPOINT::default()
+                                });
+                            let mut bonds =
+                                std::array::from_fn::<_, { MAXVAL as usize }, _>(|_| {
+                                    T_BONDPOS::default()
+                                });
                             let mut endpoint_count = 0_i32;
                             let mut bond_count = 0_i32;
                             let mut possible_mobile = 0_i32;
@@ -9352,26 +9665,35 @@ pub(crate) fn MarkTautomerGroups(
                             let mut num_c = 0_i32;
                             let mut k = 0_i32;
                             while k < i32::from(center.valence) {
-                                let k_index = usize::try_from(k).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                                let k_index = usize::try_from(k)
+                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                                 let endpoint = i32::from(center.neighbor[k_index]);
                                 let endpoint_atom = heap
                                     .slice(at.as_const())?
-                                    .get(usize::try_from(endpoint).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
+                                    .get(
+                                        usize::try_from(endpoint)
+                                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                                    )
                                     .ok_or(SourceHeapError::PointerOutOfBounds)?
                                     .clone();
                                 if rule == Rule::Pt39 {
-                                    num_o = num_o.wrapping_add(i32::from(endpoint_atom.el_number == 8));
-                                    num_n = num_n.wrapping_add(i32::from(endpoint_atom.el_number == 7));
+                                    num_o =
+                                        num_o.wrapping_add(i32::from(endpoint_atom.el_number == 8));
+                                    num_n =
+                                        num_n.wrapping_add(i32::from(endpoint_atom.el_number == 7));
                                 }
-                                let endpoint_bond_type = i32::from(center.bond_type[k_index]) & !(BOND_MARK_ALL as i32);
+                                let endpoint_bond_type =
+                                    i32::from(center.bond_type[k_index]) & !(BOND_MARK_ALL as i32);
                                 let broad_endpoint_bonds = rule == Rule::Pt13 || rule == Rule::Pt18;
                                 let alt_bond = endpoint_bond_type == BOND_ALTERN as i32
                                     || endpoint_bond_type == BOND_ALT12NS as i32
-                                    || (broad_endpoint_bonds && endpoint_bond_type == BOND_ALT_13 as i32)
+                                    || (broad_endpoint_bonds
+                                        && endpoint_bond_type == BOND_ALT_13 as i32)
                                     || endpoint_bond_type == BOND_TAUTOM as i32;
                                 let non_taut_bond = endpoint_bond_type == BOND_SINGLE as i32
                                     || endpoint_bond_type == BOND_DOUBLE as i32
-                                    || (broad_endpoint_bonds && endpoint_bond_type == BOND_TRIPLE as i32);
+                                    || (broad_endpoint_bonds
+                                        && endpoint_bond_type == BOND_TRIPLE as i32);
                                 if !allowed_edge!(centerpoint, k) || (!alt_bond && !non_taut_bond) {
                                     k = k.wrapping_add(1);
                                     continue;
@@ -9385,8 +9707,10 @@ pub(crate) fn MarkTautomerGroups(
                                     continue;
                                 }
                                 if rule == Rule::Pt16
-                                    && ((endpoint_atom.el_number == 8 && endpoint_atom.nNumAtInRingSystem != 1)
-                                        || (endpoint != i && endpoint_atom.el_number == initial_atom.el_number))
+                                    && ((endpoint_atom.el_number == 8
+                                        && endpoint_atom.nNumAtInRingSystem != 1)
+                                        || (endpoint != i
+                                            && endpoint_atom.el_number == initial_atom.el_number))
                                 {
                                     k = k.wrapping_add(1);
                                     continue;
@@ -9400,8 +9724,8 @@ pub(crate) fn MarkTautomerGroups(
                                     continue;
                                 }
 
-                                let endpoint_slot =
-                                    usize::try_from(endpoint_count).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                                let endpoint_slot = usize::try_from(endpoint_count)
+                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                                 let mobile = if rule == Rule::Pt18 {
                                     let value = i32::from(eif1.cMobile);
                                     let _ = AddAtom2num(
@@ -9447,7 +9771,9 @@ pub(crate) fn MarkTautomerGroups(
                                     Rule::Pt13 => {
                                         if non_taut_bond {
                                             (
-                                                i32::from(mobile != 0 || endpoint_atom.endpoint != 0),
+                                                i32::from(
+                                                    mobile != 0 || endpoint_atom.endpoint != 0,
+                                                ),
                                                 i32::from(mobile == 0),
                                             )
                                         } else {
@@ -9463,11 +9789,16 @@ pub(crate) fn MarkTautomerGroups(
                                     Rule::Pt18 => {
                                         if non_taut_bond {
                                             (
-                                                i32::from(mobile != 0 || endpoint_atom.endpoint != 0),
+                                                i32::from(
+                                                    mobile != 0 || endpoint_atom.endpoint != 0,
+                                                ),
                                                 i32::from(mobile == 0),
                                             )
                                         } else {
-                                            (i32::from(eif1.cDonor != 0), i32::from(eif1.cAcceptor != 0))
+                                            (
+                                                i32::from(eif1.cDonor != 0),
+                                                i32::from(eif1.cAcceptor != 0),
+                                            )
                                         }
                                     }
                                     _ => {
@@ -9475,13 +9806,16 @@ pub(crate) fn MarkTautomerGroups(
                                             (
                                                 i32::from(
                                                     endpoint_bond_type == BOND_SINGLE as i32
-                                                        && (mobile != 0 || endpoint_atom.endpoint != 0),
+                                                        && (mobile != 0
+                                                            || endpoint_atom.endpoint != 0),
                                                 ),
                                                 i32::from(endpoint_bond_type == BOND_DOUBLE as i32),
                                             )
                                         } else {
                                             (
-                                                i32::from(endpoint_atom.endpoint != 0 || eif1.cDonor != 0),
+                                                i32::from(
+                                                    endpoint_atom.endpoint != 0 || eif1.cDonor != 0,
+                                                ),
                                                 i32::from(
                                                     endpoint_atom.endpoint != 0
                                                         || i32::from(eif1.cNeutralBondsValence)
@@ -9515,16 +9849,19 @@ pub(crate) fn MarkTautomerGroups(
                                     different_groups = different_groups.wrapping_add(1);
                                     group_number = endpoint_atom.endpoint;
                                 }
-                                let bond_slot =
-                                    usize::try_from(bond_count).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                                *bonds.get_mut(bond_slot).ok_or(SourceHeapError::PointerOutOfBounds)? = T_BONDPOS {
+                                let bond_slot = usize::try_from(bond_count)
+                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                                *bonds
+                                    .get_mut(bond_slot)
+                                    .ok_or(SourceHeapError::PointerOutOfBounds)? = T_BONDPOS {
                                     nAtomNumber: centerpoint as AT_NUMB,
                                     neighbor_index: k as AT_NUMB,
                                 };
                                 bond_count = bond_count.wrapping_add(1);
                                 possible_mobile = possible_mobile.wrapping_add(i32::from(
                                     mobile > 0
-                                        || ((rule != Rule::Pt13 && rule != Rule::Pt18) && endpoint_atom.endpoint != 0),
+                                        || ((rule != Rule::Pt13 && rule != Rule::Pt18)
+                                            && endpoint_atom.endpoint != 0),
                                 ));
                                 endpoint_count = endpoint_count.wrapping_add(1);
                                 k = k.wrapping_add(1);
@@ -9593,12 +9930,17 @@ pub(crate) fn MarkTautomerGroups(
                     .clone();
                 let mut j = 0_i32;
                 while j < i32::from(initial_atom.valence) {
-                    let j_index = usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                    let bond_type = i32::from(initial_atom.bond_type[j_index]) & !(BOND_MARK_ALL as i32);
+                    let j_index =
+                        usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let bond_type =
+                        i32::from(initial_atom.bond_type[j_index]) & !(BOND_MARK_ALL as i32);
                     let centerpoint = i32::from(initial_atom.neighbor[j_index]);
                     let center = heap
                         .slice(at.as_const())?
-                        .get(usize::try_from(centerpoint).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
+                        .get(
+                            usize::try_from(centerpoint)
+                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                        )
                         .ok_or(SourceHeapError::PointerOutOfBounds)?
                         .clone();
                     if matches!(
@@ -9610,11 +9952,18 @@ pub(crate) fn MarkTautomerGroups(
                     ) && is_centerpoint_elem_KET(center.el_number) != 0
                         && center.charge == 0
                         && center.radical == 0
-                        && i32::from(center.chem_bonds_valence).wrapping_add(i32::from(center.num_H)) == 4
+                        && i32::from(center.chem_bonds_valence)
+                            .wrapping_add(i32::from(center.num_H))
+                            == 4
                         && allowed_edge!(i, j)
                     {
-                        let mut endpoints = std::array::from_fn::<_, { MAXVAL as usize }, _>(|_| T_ENDPOINT::default());
-                        let mut bonds = std::array::from_fn::<_, { MAXVAL as usize }, _>(|_| T_BONDPOS::default());
+                        let mut endpoints =
+                            std::array::from_fn::<_, { MAXVAL as usize }, _>(|_| {
+                                T_ENDPOINT::default()
+                            });
+                        let mut bonds = std::array::from_fn::<_, { MAXVAL as usize }, _>(|_| {
+                            T_BONDPOS::default()
+                        });
                         let mut endpoint_count = 0_i32;
                         let mut bond_count = 0_i32;
                         let mut possible_mobile = 0_i32;
@@ -9626,32 +9975,40 @@ pub(crate) fn MarkTautomerGroups(
                         let mut num_c = 0_i32;
                         let mut k = 0_i32;
                         while k < i32::from(center.valence) {
-                            let k_index = usize::try_from(k).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                            let k_index = usize::try_from(k)
+                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                             let endpoint = i32::from(center.neighbor[k_index]);
                             let endpoint_atom = heap
                                 .slice(at.as_const())?
-                                .get(usize::try_from(endpoint).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
+                                .get(
+                                    usize::try_from(endpoint)
+                                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                                )
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?
                                 .clone();
-                            let endpoint_bond_type = i32::from(center.bond_type[k_index]) & !(BOND_MARK_ALL as i32);
+                            let endpoint_bond_type =
+                                i32::from(center.bond_type[k_index]) & !(BOND_MARK_ALL as i32);
                             let alt_bond = endpoint_bond_type == BOND_ALTERN as i32
                                 || endpoint_bond_type == BOND_ALT12NS as i32
                                 || endpoint_bond_type == BOND_TAUTOM as i32;
-                            let non_taut_bond =
-                                endpoint_bond_type == BOND_SINGLE as i32 || endpoint_bond_type == BOND_DOUBLE as i32;
+                            let non_taut_bond = endpoint_bond_type == BOND_SINGLE as i32
+                                || endpoint_bond_type == BOND_DOUBLE as i32;
                             if !allowed_edge!(centerpoint, k) || (!alt_bond && !non_taut_bond) {
                                 k = k.wrapping_add(1);
                                 continue;
                             }
                             let mut eif2 = ENDPOINT_INFO::default();
-                            let endpoint_valence =
-                                nGetEndpointInfo_KET(heap.slice(at.as_const())?, endpoint, &mut eif2);
+                            let endpoint_valence = nGetEndpointInfo_KET(
+                                heap.slice(at.as_const())?,
+                                endpoint,
+                                &mut eif2,
+                            );
                             if endpoint_valence == 0 {
                                 k = k.wrapping_add(1);
                                 continue;
                             }
-                            let endpoint_slot =
-                                usize::try_from(endpoint_count).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                            let endpoint_slot = usize::try_from(endpoint_count)
+                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                             let mobile = AddAtom2num(
                                 &mut endpoints
                                     .get_mut(endpoint_slot)
@@ -9683,7 +10040,8 @@ pub(crate) fn MarkTautomerGroups(
                                     i32::from(endpoint_atom.endpoint != 0 || eif1.cDonor != 0),
                                     i32::from(
                                         endpoint_atom.endpoint != 0
-                                            || i32::from(eif1.cNeutralBondsValence) > i32::from(endpoint_atom.valence),
+                                            || i32::from(eif1.cNeutralBondsValence)
+                                                > i32::from(endpoint_atom.valence),
                                     ),
                                 )
                             };
@@ -9705,15 +10063,17 @@ pub(crate) fn MarkTautomerGroups(
                                 different_groups = different_groups.wrapping_add(1);
                                 group_number = endpoint_atom.endpoint;
                             }
-                            let bond_slot =
-                                usize::try_from(bond_count).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                            *bonds.get_mut(bond_slot).ok_or(SourceHeapError::PointerOutOfBounds)? = T_BONDPOS {
+                            let bond_slot = usize::try_from(bond_count)
+                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                            *bonds
+                                .get_mut(bond_slot)
+                                .ok_or(SourceHeapError::PointerOutOfBounds)? = T_BONDPOS {
                                 nAtomNumber: centerpoint as AT_NUMB,
                                 neighbor_index: k as AT_NUMB,
                             };
                             bond_count = bond_count.wrapping_add(1);
-                            possible_mobile =
-                                possible_mobile.wrapping_add(i32::from(mobile > 0 || endpoint_atom.endpoint != 0));
+                            possible_mobile = possible_mobile
+                                .wrapping_add(i32::from(mobile > 0 || endpoint_atom.endpoint != 0));
                             endpoint_count = endpoint_count.wrapping_add(1);
                             k = k.wrapping_add(1);
                         }
@@ -9758,8 +10118,10 @@ pub(crate) fn MarkTautomerGroups(
         if !path_positions.is_null() {
             let ring_result = (|| -> Result<(), SourceHeapError> {
                 let mut dfs_path = std::array::from_fn::<_, 8, _>(|_| DFS_PATH::default());
-                let mut endpoints = std::array::from_fn::<_, { MAXVAL as usize }, _>(|_| T_ENDPOINT::default());
-                let mut bonds = std::array::from_fn::<_, { MAXVAL as usize }, _>(|_| T_BONDPOS::default());
+                let mut endpoints =
+                    std::array::from_fn::<_, { MAXVAL as usize }, _>(|_| T_ENDPOINT::default());
+                let mut bonds =
+                    std::array::from_fn::<_, { MAXVAL as usize }, _>(|_| T_BONDPOS::default());
 
                 macro_rules! accept_ring_result {
                     ($ret:expr, $endpoint_count:expr, $bond_count:expr) => {{
@@ -9789,7 +10151,8 @@ pub(crate) fn MarkTautomerGroups(
                                 tot_changes = tot_changes.wrapping_add(i32::from(num_changes > 0));
                             }
                             if $bond_count != 0 {
-                                let changed = SetTautomericBonds(heap.slice_mut(at)?, $bond_count, &bonds)?;
+                                let changed =
+                                    SetTautomericBonds(heap.slice_mut(at)?, $bond_count, &bonds)?;
                                 tot_changes = tot_changes.wrapping_add(i32::from(changed > 0));
                             }
                         } else if is_bns_error(ret) {
@@ -9887,18 +10250,24 @@ pub(crate) fn MarkTautomerGroups(
                         && atom_i1.nNumAtInRingSystem >= 5
                         && nGetEndpointInfo(heap.slice(at.as_const())?, i1, &mut eif1) == 3
                     {
-                        let mobile1 = i32::from(atom_i1.num_H).wrapping_add(i32::from(atom_i1.charge == -1));
+                        let mobile1 =
+                            i32::from(atom_i1.num_H).wrapping_add(i32::from(atom_i1.charge == -1));
                         let mut j = 0_i32;
                         while j < i32::from(atom_i1.valence) {
-                            let j_index = usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                            let j_index = usize::try_from(j)
+                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                             let i2 = i32::from(atom_i1.neighbor[j_index]);
                             if i2 < i1 {
                                 let atom_i2 = heap
                                     .slice(at.as_const())?
-                                    .get(usize::try_from(i2).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
+                                    .get(
+                                        usize::try_from(i2)
+                                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                                    )
                                     .ok_or(SourceHeapError::PointerOutOfBounds)?
                                     .clone();
-                                let bond_type = i32::from(atom_i1.bond_type[j_index]) & !(BOND_MARK_ALL as i32);
+                                let bond_type =
+                                    i32::from(atom_i1.bond_type[j_index]) & !(BOND_MARK_ALL as i32);
                                 let mut eif2 = ENDPOINT_INFO::default();
                                 if atom_i2.nRingSystem == atom_i1.nRingSystem
                                     && matches!(
@@ -9909,10 +10278,11 @@ pub(crate) fn MarkTautomerGroups(
                                             || value == BOND_ALTERN as i32
                                     )
                                     && atom_i2.valence == 2
-                                    && nGetEndpointInfo(heap.slice(at.as_const())?, i2, &mut eif2) == 3
+                                    && nGetEndpointInfo(heap.slice(at.as_const())?, i2, &mut eif2)
+                                        == 3
                                 {
-                                    let mobile2 =
-                                        i32::from(atom_i2.num_H).wrapping_add(i32::from(atom_i2.charge == -1));
+                                    let mobile2 = i32::from(atom_i2.num_H)
+                                        .wrapping_add(i32::from(atom_i2.charge == -1));
                                     if (atom_i1.endpoint != 0 || atom_i2.endpoint != 0)
                                         || mobile1.wrapping_add(mobile2) == 1
                                     {
@@ -9966,14 +10336,19 @@ pub(crate) fn MarkTautomerGroups(
                     {
                         let mut j = 0_i32;
                         while j < i32::from(atom_i1.valence) {
-                            let j_index = usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                            let j_index = usize::try_from(j)
+                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                             let i2 = i32::from(atom_i1.neighbor[j_index]);
                             let atom_i2 = heap
                                 .slice(at.as_const())?
-                                .get(usize::try_from(i2).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
+                                .get(
+                                    usize::try_from(i2)
+                                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                                )
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?
                                 .clone();
-                            let qr_bond = i32::from(atom_i1.bond_type[j_index]) & !(BOND_MARK_ALL as i32);
+                            let qr_bond =
+                                i32::from(atom_i1.bond_type[j_index]) & !(BOND_MARK_ALL as i32);
                             if atom_i2.nRingSystem == atom_i1.nRingSystem
                                 && bIsCenterPointStrict(heap, at, i2)? != 0
                                 && atom_i2.bCutVertex != 0
@@ -9989,28 +10364,32 @@ pub(crate) fn MarkTautomerGroups(
                             {
                                 let mut k = 0_i32;
                                 while k < i32::from(atom_i1.valence) {
-                                    let k_index =
-                                        usize::try_from(k).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                                    let k_index = usize::try_from(k)
+                                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                                     let endpoint1 = i32::from(atom_i1.neighbor[k_index]);
                                     if endpoint1 != i2 {
-                                        let endpoint1_atom = heap
-                                            .slice(at.as_const())?
-                                            .get(
-                                                usize::try_from(endpoint1)
-                                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                                            )
-                                            .ok_or(SourceHeapError::PointerOutOfBounds)?
-                                            .clone();
+                                        let endpoint1_atom =
+                                            heap.slice(at.as_const())?
+                                                .get(usize::try_from(endpoint1).map_err(|_| {
+                                                    SourceHeapError::PointerOutOfBounds
+                                                })?)
+                                                .ok_or(SourceHeapError::PointerOutOfBounds)?
+                                                .clone();
                                         let mut eif1 = ENDPOINT_INFO::default();
-                                        let endpoint1_valence =
-                                            nGetEndpointInfo(heap.slice(at.as_const())?, endpoint1, &mut eif1);
+                                        let endpoint1_valence = nGetEndpointInfo(
+                                            heap.slice(at.as_const())?,
+                                            endpoint1,
+                                            &mut eif1,
+                                        );
                                         let mobile1 = i32::from(endpoint1_atom.num_H)
                                             .wrapping_add(i32::from(endpoint1_atom.charge == -1));
-                                        let bond1 = i32::from(atom_i1.bond_type[k_index]) & !(BOND_MARK_ALL as i32);
+                                        let bond1 = i32::from(atom_i1.bond_type[k_index])
+                                            & !(BOND_MARK_ALL as i32);
                                         if endpoint1_valence != 0
                                             && endpoint1_atom.nRingSystem != atom_i1.nRingSystem
-                                            && mobile1.wrapping_add(i32::from(endpoint1_atom.chem_bonds_valence))
-                                                == endpoint1_valence
+                                            && mobile1.wrapping_add(i32::from(
+                                                endpoint1_atom.chem_bonds_valence,
+                                            )) == endpoint1_valence
                                             && matches!(
                                                 bond1,
                                                 value if value == BOND_SINGLE as i32
@@ -10022,16 +10401,17 @@ pub(crate) fn MarkTautomerGroups(
                                         {
                                             let mut m = 0_i32;
                                             while m < i32::from(atom_i2.valence) {
-                                                let m_index = usize::try_from(m)
-                                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                                                let endpoint2 = i32::from(atom_i2.neighbor[m_index]);
+                                                let m_index = usize::try_from(m).map_err(|_| {
+                                                    SourceHeapError::PointerOutOfBounds
+                                                })?;
+                                                let endpoint2 =
+                                                    i32::from(atom_i2.neighbor[m_index]);
                                                 if endpoint2 != i1 {
                                                     let endpoint2_atom = heap
                                                         .slice(at.as_const())?
-                                                        .get(
-                                                            usize::try_from(endpoint2)
-                                                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                                                        )
+                                                        .get(usize::try_from(endpoint2).map_err(
+                                                            |_| SourceHeapError::PointerOutOfBounds,
+                                                        )?)
                                                         .ok_or(SourceHeapError::PointerOutOfBounds)?
                                                         .clone();
                                                     let mut eif2 = ENDPOINT_INFO::default();
@@ -10041,11 +10421,15 @@ pub(crate) fn MarkTautomerGroups(
                                                         &mut eif2,
                                                     );
                                                     let mobile2 = i32::from(endpoint2_atom.num_H)
-                                                        .wrapping_add(i32::from(endpoint2_atom.charge == -1));
+                                                        .wrapping_add(i32::from(
+                                                            endpoint2_atom.charge == -1,
+                                                        ));
                                                     let bond2 =
-                                                        i32::from(atom_i2.bond_type[m_index]) & !(BOND_MARK_ALL as i32);
+                                                        i32::from(atom_i2.bond_type[m_index])
+                                                            & !(BOND_MARK_ALL as i32);
                                                     if endpoint2_valence != 0
-                                                        && endpoint2_atom.nRingSystem != atom_i2.nRingSystem
+                                                        && endpoint2_atom.nRingSystem
+                                                            != atom_i2.nRingSystem
                                                         && matches!(
                                                             bond2,
                                                             value if value == BOND_SINGLE as i32
@@ -10057,19 +10441,27 @@ pub(crate) fn MarkTautomerGroups(
                                                     {
                                                         let can_move_1_to_2 = allowed_edge!(i1, k)
                                                             && allowed_edge!(i2, m)
-                                                            && (endpoint1_atom.endpoint != 0 || mobile1 != 0)
+                                                            && (endpoint1_atom.endpoint != 0
+                                                                || mobile1 != 0)
                                                             && bond1 != BOND_DOUBLE as i32
                                                             && (endpoint2_atom.endpoint != 0
-                                                                || i32::from(eif2.cNeutralBondsValence)
-                                                                    > i32::from(endpoint2_atom.valence))
+                                                                || i32::from(
+                                                                    eif2.cNeutralBondsValence,
+                                                                ) > i32::from(
+                                                                    endpoint2_atom.valence,
+                                                                ))
                                                             && bond2 != BOND_SINGLE as i32;
                                                         let can_move_2_to_1 = allowed_edge!(i1, k)
                                                             && allowed_edge!(i2, m)
-                                                            && (endpoint2_atom.endpoint != 0 || mobile2 != 0)
+                                                            && (endpoint2_atom.endpoint != 0
+                                                                || mobile2 != 0)
                                                             && bond2 != BOND_DOUBLE as i32
                                                             && (endpoint1_atom.endpoint != 0
-                                                                || i32::from(eif1.cNeutralBondsValence)
-                                                                    > i32::from(endpoint1_atom.valence))
+                                                                || i32::from(
+                                                                    eif1.cNeutralBondsValence,
+                                                                ) > i32::from(
+                                                                    endpoint1_atom.valence,
+                                                                ))
                                                             && bond1 != BOND_SINGLE as i32;
                                                         if (can_move_1_to_2 || can_move_2_to_1)
                                                             && !(bond1 == bond2
@@ -10106,7 +10498,11 @@ pub(crate) fn MarkTautomerGroups(
                                                                     num_atoms,
                                                                     clock_result,
                                                                 )?;
-                                                                accept_ring_result!(ret, endpoint_count, bond_count);
+                                                                accept_ring_result!(
+                                                                    ret,
+                                                                    endpoint_count,
+                                                                    bond_count
+                                                                );
                                                                 if n_err != 0 {
                                                                     return Ok(());
                                                                 }
@@ -10136,7 +10532,11 @@ pub(crate) fn MarkTautomerGroups(
                                                                     num_atoms,
                                                                     clock_result,
                                                                 )?;
-                                                                accept_ring_result!(ret, endpoint_count, bond_count);
+                                                                accept_ring_result!(
+                                                                    ret,
+                                                                    endpoint_count,
+                                                                    bond_count
+                                                                );
                                                                 if n_err != 0 {
                                                                     return Ok(());
                                                                 }
@@ -10189,8 +10589,12 @@ pub(crate) fn CompRankTautomer(
     // END INCHI C FUNCTION: CompRankTautomer
 
     let ranks = heap.slice(pn_tRankForSort.as_const())?;
-    let first = *ranks.get(usize::from(a1)).ok_or(SourceHeapError::PointerOutOfBounds)?;
-    let second = *ranks.get(usize::from(a2)).ok_or(SourceHeapError::PointerOutOfBounds)?;
+    let first = *ranks
+        .get(usize::from(a1))
+        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    let second = *ranks
+        .get(usize::from(a2))
+        .ok_or(SourceHeapError::PointerOutOfBounds)?;
     Ok(i32::from(first) - i32::from(second))
 }
 
@@ -10275,7 +10679,8 @@ pub(crate) fn SortTautomerGroupsAndEndpoints(
         return Ok(0);
     }
 
-    let group_count = usize::try_from(num_t_groups).map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?;
+    let group_count = usize::try_from(num_t_groups)
+        .map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?;
     let groups = heap
         .slice(t_group_info.t_group.as_const())?
         .get(..group_count)
@@ -10292,11 +10697,14 @@ pub(crate) fn SortTautomerGroupsAndEndpoints(
         if endpoint_count + first_endpoint > t_group_info.nNumEndpoints {
             return Ok(CT_TAUCOUNT_ERR);
         }
-        let endpoint_pointer = t_group_info.nEndpointAtomNumber.offset(i64::from(first_endpoint))?;
+        let endpoint_pointer = t_group_info
+            .nEndpointAtomNumber
+            .offset(i64::from(first_endpoint))?;
         heap.with_slice_mut_and_heap(endpoint_pointer, |endpoints, heap| {
             insertions_sort(
                 bytemuck::cast_slice_mut::<AT_NUMB, u8>(endpoints),
-                usize::try_from(endpoint_count).map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?,
+                usize::try_from(endpoint_count)
+                    .map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?,
                 std::mem::size_of::<AT_NUMB>(),
                 &mut |left, right| {
                     CompRankTautomer(
@@ -10658,7 +11066,8 @@ pub(crate) fn CountTautomerGroups(
     }
 
     let mut number_of_groups = info.num_t_groups;
-    let group_count = usize::try_from(number_of_groups).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let group_count =
+        usize::try_from(number_of_groups).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     if heap.slice(info.t_group.as_const())?.len() < group_count {
         return Err(SourceHeapError::PointerOutOfBounds);
     }
@@ -10682,7 +11091,9 @@ pub(crate) fn CountTautomerGroups(
         if maximum_group != 0 {
             group_number_map = match inchi_calloc::<AT_NUMB>(
                 heap,
-                u64::try_from(maximum_group).map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)? + 1,
+                u64::try_from(maximum_group)
+                    .map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?
+                    + 1,
                 std::mem::size_of::<AT_NUMB>() as u64,
             ) {
                 Ok(pointer) => pointer,
@@ -10695,7 +11106,8 @@ pub(crate) fn CountTautomerGroups(
             }
         }
 
-        let atom_count = usize::try_from(num_atoms).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let atom_count =
+            usize::try_from(num_atoms).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         if heap.slice(at.as_const())?.len() < atom_count {
             return Err(SourceHeapError::PointerOutOfBounds);
         }
@@ -10710,7 +11122,8 @@ pub(crate) fn CountTautomerGroups(
                 return Ok(None);
             }
             if !group_number_map.is_null() {
-                let endpoint = usize::try_from(endpoint).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let endpoint =
+                    usize::try_from(endpoint).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let value = heap.slice(group_number_map.as_const())?[endpoint];
                 heap.slice_mut(group_number_map)?[endpoint] = value.wrapping_add(1);
             }
@@ -10723,7 +11136,8 @@ pub(crate) fn CountTautomerGroups(
 
         endpoint_atom_numbers = match inchi_calloc::<AT_NUMB>(
             heap,
-            u64::try_from(number_of_endpoints).map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?,
+            u64::try_from(number_of_endpoints)
+                .map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?,
             std::mem::size_of::<AT_NUMB>() as u64,
         ) {
             Ok(pointer) => pointer,
@@ -10734,12 +11148,15 @@ pub(crate) fn CountTautomerGroups(
             return_code = CT_TAUCOUNT_ERR;
             return Ok(None);
         }
-        current_endpoint_positions =
-            match inchi_calloc::<AT_NUMB>(heap, number_of_groups as u64, std::mem::size_of::<AT_NUMB>() as u64) {
-                Ok(pointer) => pointer,
-                Err(SourceHeapError::AllocationFailed) => SourceMutPointer::null(),
-                Err(error) => return Err(error),
-            };
+        current_endpoint_positions = match inchi_calloc::<AT_NUMB>(
+            heap,
+            number_of_groups as u64,
+            std::mem::size_of::<AT_NUMB>() as u64,
+        ) {
+            Ok(pointer) => pointer,
+            Err(SourceHeapError::AllocationFailed) => SourceMutPointer::null(),
+            Err(error) => return Err(error),
+        };
         if current_endpoint_positions.is_null() {
             return_code = CT_TAUCOUNT_ERR;
             return Ok(None);
@@ -10749,7 +11166,8 @@ pub(crate) fn CountTautomerGroups(
         let mut new_group_number = 0_u16;
         let mut index = 0_i32;
         while index < number_of_groups {
-            let group_index = usize::try_from(index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let group_index =
+                usize::try_from(index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             let group = heap.slice(info.t_group.as_const())?[group_index].clone();
             let old_group_number = usize::from(group.nGroupNumber);
             let number_of_hydrogens = i32::from(group.num[0]).wrapping_sub(i32::from(group.num[1]));
@@ -10762,7 +11180,8 @@ pub(crate) fn CountTautomerGroups(
                     if index < number_of_groups {
                         let groups = heap.slice_mut(info.t_group)?;
                         for moved in group_index
-                            ..usize::try_from(number_of_groups).map_err(|_| SourceHeapError::PointerOutOfBounds)?
+                            ..usize::try_from(number_of_groups)
+                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?
                         {
                             groups[moved] = groups[moved + 1].clone();
                         }
@@ -10780,7 +11199,9 @@ pub(crate) fn CountTautomerGroups(
                 heap.slice_mut(group_number_map)?[old_group_number] = new_group_number;
                 let first_position = if index != 0 {
                     let previous = &heap.slice(info.t_group.as_const())?[group_index - 1];
-                    previous.nFirstEndpointAtNoPos.wrapping_add(previous.nNumEndpoints)
+                    previous
+                        .nFirstEndpointAtNoPos
+                        .wrapping_add(previous.nNumEndpoints)
                 } else {
                     0
                 };
@@ -10809,8 +11230,11 @@ pub(crate) fn CountTautomerGroups(
         let sorted_length = u64::from(new_group_number)
             .checked_mul(u64::from(crate::source_types::TGSO_TOTAL_LEN))
             .ok_or(SourceHeapError::AllocationSizeOverflow)?;
-        sorted_group_numbers = match inchi_calloc::<AT_NUMB>(heap, sorted_length, std::mem::size_of::<AT_NUMB>() as u64)
-        {
+        sorted_group_numbers = match inchi_calloc::<AT_NUMB>(
+            heap,
+            sorted_length,
+            std::mem::size_of::<AT_NUMB>() as u64,
+        ) {
             Ok(pointer) => pointer,
             Err(SourceHeapError::AllocationFailed) => SourceMutPointer::null(),
             Err(error) => return Err(error),
@@ -10832,15 +11256,24 @@ pub(crate) fn CountTautomerGroups(
             heap.slice_mut(at)?[atom_index].endpoint = mapped;
             let group_index = i32::from(mapped) - 1;
             if group_index >= 0 && group_index < number_of_groups {
-                let group_index = usize::try_from(group_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                let position = usize::from(heap.slice(current_endpoint_positions.as_const())?[group_index]);
+                let group_index = usize::try_from(group_index)
+                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let position =
+                    usize::from(heap.slice(current_endpoint_positions.as_const())?[group_index]);
                 let group = &heap.slice(info.t_group.as_const())?[group_index];
-                if position >= usize::from(group.nFirstEndpointAtNoPos.wrapping_add(group.nNumEndpoints)) {
+                if position
+                    >= usize::from(
+                        group
+                            .nFirstEndpointAtNoPos
+                            .wrapping_add(group.nNumEndpoints),
+                    )
+                {
                     return_code = CT_TAUCOUNT_ERR;
                     return Ok(None);
                 }
                 heap.slice_mut(endpoint_atom_numbers)?[position] = atom_index as AT_NUMB;
-                heap.slice_mut(current_endpoint_positions)?[group_index] = (position as AT_NUMB).wrapping_add(1);
+                heap.slice_mut(current_endpoint_positions)?[group_index] =
+                    (position as AT_NUMB).wrapping_add(1);
             } else {
                 number_of_endpoints = number_of_endpoints.wrapping_sub(1);
             }
@@ -10883,7 +11316,8 @@ pub(crate) fn CountTautomerGroups(
     if return_code == 0
         && ((info.tni.bNormalizationFlags & u64::from(FLAG_NORM_CONSIDER_TAUT)) != 0
             || (info.nNumIsotopicEndpoints > 1
-                && (info.bTautFlagsDone & u64::from(TG_FLAG_FOUND_ISOTOPIC_H_DONE | TG_FLAG_FOUND_ISOTOPIC_ATOM_DONE))
+                && (info.bTautFlagsDone
+                    & u64::from(TG_FLAG_FOUND_ISOTOPIC_H_DONE | TG_FLAG_FOUND_ISOTOPIC_ATOM_DONE))
                     != 0))
     {
         return_code = 1;
@@ -10931,11 +11365,15 @@ pub(crate) fn set_tautomer_iso_sort_keys(
     let Some(t_group_info) = t_group_info else {
         return Ok(0);
     };
-    if t_group_info.t_group.is_null() || t_group_info.num_t_groups <= 0 || t_group_info.nNumIsotopicEndpoints != 0 {
+    if t_group_info.t_group.is_null()
+        || t_group_info.num_t_groups <= 0
+        || t_group_info.nNumIsotopicEndpoints != 0
+    {
         return Ok(0);
     }
 
-    let count = usize::try_from(t_group_info.num_t_groups).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let count = usize::try_from(t_group_info.num_t_groups)
+        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let groups = heap.slice_mut(t_group_info.t_group)?;
     if groups.len() < count {
         return Err(SourceHeapError::PointerOutOfBounds);
@@ -10946,8 +11384,8 @@ pub(crate) fn set_tautomer_iso_sort_keys(
         let mut isotope = T_NUM_ISOTOPIC as i32 - 1;
         let mut multiplier = 1_i64;
         loop {
-            let index =
-                usize::try_from(T_NUM_NO_ISOTOPIC as i32 + isotope).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let index = usize::try_from(T_NUM_NO_ISOTOPIC as i32 + isotope)
+                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             group.iWeight = group
                 .iWeight
                 .wrapping_add(multiplier.wrapping_mul(i64::from(group.num[index])));
@@ -10955,12 +11393,14 @@ pub(crate) fn set_tautomer_iso_sort_keys(
             if isotope < 0 {
                 break;
             }
-            multiplier = multiplier.wrapping_mul(i64::from(crate::source_types::T_GROUP_ISOWT_MULT));
+            multiplier =
+                multiplier.wrapping_mul(i64::from(crate::source_types::T_GROUP_ISOWT_MULT));
             if multiplier == 0 {
                 break;
             }
         }
-        number_of_isotopic_groups = number_of_isotopic_groups.wrapping_add(i32::from(group.iWeight != 0));
+        number_of_isotopic_groups =
+            number_of_isotopic_groups.wrapping_add(i32::from(group.iWeight != 0));
     }
     Ok(number_of_isotopic_groups)
 }
@@ -11096,9 +11536,13 @@ pub(crate) fn make_a_copy_of_t_group_info(
 
     let mut error_count = 0_i32;
     if source.max_num_t_groups > 0 {
-        let length =
-            u64::try_from(source.max_num_t_groups).map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?;
-        let allocated = match inchi_calloc::<T_GROUP>(heap, length + 1, std::mem::size_of::<T_GROUP>() as u64) {
+        let length = u64::try_from(source.max_num_t_groups)
+            .map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?;
+        let allocated = match inchi_calloc::<T_GROUP>(
+            heap,
+            length + 1,
+            std::mem::size_of::<T_GROUP>() as u64,
+        ) {
             Ok(pointer) => pointer,
             Err(SourceHeapError::AllocationFailed) => SourceMutPointer::null(),
             Err(error) => return Err(error),
@@ -11116,13 +11560,14 @@ pub(crate) fn make_a_copy_of_t_group_info(
     }
 
     if source.nNumEndpoints > 0 {
-        let length =
-            u64::try_from(source.nNumEndpoints).map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?;
-        let allocated = match inchi_calloc::<AT_NUMB>(heap, length, std::mem::size_of::<AT_NUMB>() as u64) {
-            Ok(pointer) => pointer,
-            Err(SourceHeapError::AllocationFailed) => SourceMutPointer::null(),
-            Err(error) => return Err(error),
-        };
+        let length = u64::try_from(source.nNumEndpoints)
+            .map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?;
+        let allocated =
+            match inchi_calloc::<AT_NUMB>(heap, length, std::mem::size_of::<AT_NUMB>() as u64) {
+                Ok(pointer) => pointer,
+                Err(SourceHeapError::AllocationFailed) => SourceMutPointer::null(),
+                Err(error) => return Err(error),
+            };
         if !allocated.is_null() {
             destination.nEndpointAtomNumber = allocated;
             let copied = heap.slice(source.nEndpointAtomNumber.as_const())?
@@ -11139,11 +11584,12 @@ pub(crate) fn make_a_copy_of_t_group_info(
             .map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?
             .checked_mul(u64::from(crate::source_types::TGSO_TOTAL_LEN))
             .ok_or(SourceHeapError::AllocationSizeOverflow)?;
-        let allocated = match inchi_calloc::<AT_NUMB>(heap, length, std::mem::size_of::<AT_NUMB>() as u64) {
-            Ok(pointer) => pointer,
-            Err(SourceHeapError::AllocationFailed) => SourceMutPointer::null(),
-            Err(error) => return Err(error),
-        };
+        let allocated =
+            match inchi_calloc::<AT_NUMB>(heap, length, std::mem::size_of::<AT_NUMB>() as u64) {
+                Ok(pointer) => pointer,
+                Err(SourceHeapError::AllocationFailed) => SourceMutPointer::null(),
+                Err(error) => return Err(error),
+            };
         if !allocated.is_null() {
             destination.tGroupNumber = allocated;
             let copied = heap.slice(source.tGroupNumber.as_const())?
@@ -11158,16 +11604,18 @@ pub(crate) fn make_a_copy_of_t_group_info(
     if source.nNumIsotopicEndpoints > 0 {
         let length = u64::try_from(source.nNumIsotopicEndpoints)
             .map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?;
-        let allocated = match inchi_calloc::<AT_NUMB>(heap, length, std::mem::size_of::<AT_NUMB>() as u64) {
-            Ok(pointer) => pointer,
-            Err(SourceHeapError::AllocationFailed) => SourceMutPointer::null(),
-            Err(error) => return Err(error),
-        };
-        let reallocated = match inchi_realloc::<AT_NUMB>(heap, source.nIsotopicEndpointAtomNumber, length) {
-            Ok(pointer) => pointer,
-            Err(SourceHeapError::AllocationFailed) => SourceMutPointer::null(),
-            Err(error) => return Err(error),
-        };
+        let allocated =
+            match inchi_calloc::<AT_NUMB>(heap, length, std::mem::size_of::<AT_NUMB>() as u64) {
+                Ok(pointer) => pointer,
+                Err(SourceHeapError::AllocationFailed) => SourceMutPointer::null(),
+                Err(error) => return Err(error),
+            };
+        let reallocated =
+            match inchi_realloc::<AT_NUMB>(heap, source.nIsotopicEndpointAtomNumber, length) {
+                Ok(pointer) => pointer,
+                Err(SourceHeapError::AllocationFailed) => SourceMutPointer::null(),
+                Err(error) => return Err(error),
+            };
         if !allocated.is_null() && !reallocated.is_null() {
             destination.nIsotopicEndpointAtomNumber = allocated;
             source.nIsotopicEndpointAtomNumber = reallocated;
@@ -11206,7 +11654,9 @@ mod tests {
     #[test]
     fn source_port__ichitaut__compranktautomer__line_7008() {
         let mut heap = SourceHeap::default();
-        let ranks = heap.allocate_model_storage(vec![0, AT_RANK::MAX, 7, 7, 1]).unwrap();
+        let ranks = heap
+            .allocate_model_storage(vec![0, AT_RANK::MAX, 7, 7, 1])
+            .unwrap();
 
         assert_eq!(CompRankTautomer(&heap, 2, 3, ranks), Ok(0));
         assert_eq!(CompRankTautomer(&heap, 1, 4, ranks), Ok(65_534));
@@ -11224,7 +11674,14 @@ mod tests {
         let mut globals = CANON_GLOBALS::default();
         let empty = T_GROUP_INFO::default();
         assert_eq!(
-            SortTautomerGroupsAndEndpoints(&mut heap, &mut globals, &empty, 4, 4, SourceMutPointer::null(),),
+            SortTautomerGroupsAndEndpoints(
+                &mut heap,
+                &mut globals,
+                &empty,
+                4,
+                4,
+                SourceMutPointer::null(),
+            ),
             Ok(0)
         );
 
@@ -11265,7 +11722,10 @@ mod tests {
             SortTautomerGroupsAndEndpoints(&mut heap, &mut globals, &info, 5, 8, ranks),
             Ok(3)
         );
-        assert_eq!(heap.slice(endpoints.as_const()).unwrap(), &[0, 1, 2, 4, 1, 3]);
+        assert_eq!(
+            heap.slice(endpoints.as_const()).unwrap(),
+            &[0, 1, 2, 4, 1, 3]
+        );
         assert_eq!(
             heap.slice(group_numbers.as_const()).unwrap(),
             &[2, 0, 1],
@@ -11277,7 +11737,14 @@ mod tests {
             ..T_GROUP_INFO::default()
         };
         assert_eq!(
-            SortTautomerGroupsAndEndpoints(&mut heap, &mut globals, &short_info, 0, 1, SourceMutPointer::null(),),
+            SortTautomerGroupsAndEndpoints(
+                &mut heap,
+                &mut globals,
+                &short_info,
+                0,
+                1,
+                SourceMutPointer::null(),
+            ),
             Ok(0)
         );
 
@@ -11298,7 +11765,14 @@ mod tests {
             ..T_GROUP_INFO::default()
         };
         assert_eq!(
-            SortTautomerGroupsAndEndpoints(&mut heap, &mut globals, &overflow_info, 1, 2, overflow_ranks,),
+            SortTautomerGroupsAndEndpoints(
+                &mut heap,
+                &mut globals,
+                &overflow_info,
+                1,
+                2,
+                overflow_ranks,
+            ),
             Ok(CT_TAUCOUNT_ERR)
         );
         assert_eq!(heap.slice(overflow_endpoints.as_const()).unwrap(), &[1, 0]);
@@ -11344,13 +11818,21 @@ mod tests {
             atoms
         }
 
-        fn network(heap: &mut SourceHeap, atoms: SourceMutPointer<inp_ATOM>, atom_count: i32) -> (BN_STRUCT, BN_DATA) {
+        fn network(
+            heap: &mut SourceHeap,
+            atoms: SourceMutPointer<inp_ATOM>,
+            atom_count: i32,
+        ) -> (BN_STRUCT, BN_DATA) {
             let mut changed_bonds = 0;
-            let bns_pointer = AllocateAndInitBnStruct(heap, atoms, atom_count, 0, 0, 1, &mut changed_bonds).unwrap();
+            let bns_pointer =
+                AllocateAndInitBnStruct(heap, atoms, atom_count, 0, 0, 1, &mut changed_bonds)
+                    .unwrap();
             assert_eq!(changed_bonds, 0);
             let mut bns = heap.slice(bns_pointer.as_const()).unwrap()[0].clone();
             bns.pbTautFlags = heap.allocate_model_storage(vec![0_u64]).unwrap();
-            bns.ic = heap.allocate_model_storage(vec![INCHI_CLOCK::default()]).unwrap();
+            bns.ic = heap
+                .allocate_model_storage(vec![INCHI_CLOCK::default()])
+                .unwrap();
             let bd_pointer = AllocateAndInitBnData(heap, bns.max_vertices).unwrap();
             let bd = heap.slice(bd_pointer.as_const()).unwrap()[0].clone();
             (bns, bd)
@@ -11531,10 +12013,19 @@ mod tests {
             atoms
         }
 
-        fn assert_ring_case(case_name: &str, mut atoms: Vec<inp_ATOM>, rule_flag: u64, expected_endpoints: &[usize]) {
+        fn assert_ring_case(
+            case_name: &str,
+            mut atoms: Vec<inp_ATOM>,
+            rule_flag: u64,
+            expected_endpoints: &[usize],
+        ) {
             let one_five = rule_flag == TG_FLAG_1_5_TAUT as u64;
             for (position, &index) in expected_endpoints.iter().enumerate() {
-                atoms[index].endpoint = if one_five { (position + 1) as AT_NUMB } else { 9 };
+                atoms[index].endpoint = if one_five {
+                    (position + 1) as AT_NUMB
+                } else {
+                    9
+                };
             }
             let atom_count = atoms.len() as i32;
             let mut heap = SourceHeap::default();
@@ -11743,7 +12234,9 @@ mod tests {
             Ok(0)
         );
 
-        let existing_groups = empty_heap.allocate_model_storage(vec![T_GROUP::default()]).unwrap();
+        let existing_groups = empty_heap
+            .allocate_model_storage(vec![T_GROUP::default()])
+            .unwrap();
         let mut zero_capacity = T_GROUP_INFO {
             t_group: existing_groups,
             bTautFlags: TG_FLAG_TEST_TAUT__ATOMS as u64,
@@ -11835,7 +12328,10 @@ mod tests {
             ),
             Ok(CT_OUT_OF_RAM)
         );
-        assert_eq!(path_allocation_heap.live_allocation_count(), allocations_before);
+        assert_eq!(
+            path_allocation_heap.live_allocation_count(),
+            allocations_before
+        );
 
         let mut heap = SourceHeap::default();
         let atoms = heap.allocate_model_storage(standard_atoms()).unwrap();
@@ -11862,8 +12358,14 @@ mod tests {
         let atoms_after = heap.slice(atoms.as_const()).unwrap();
         assert_eq!(atoms_after[0].endpoint, 1);
         assert_eq!(atoms_after[2].endpoint, 1);
-        assert_eq!(atoms_after[1].bond_type[0] & !(BOND_MARK_ALL as u8), BOND_TAUTOM as u8);
-        assert_eq!(atoms_after[1].bond_type[1] & !(BOND_MARK_ALL as u8), BOND_TAUTOM as u8);
+        assert_eq!(
+            atoms_after[1].bond_type[0] & !(BOND_MARK_ALL as u8),
+            BOND_TAUTOM as u8
+        );
+        assert_eq!(
+            atoms_after[1].bond_type[1] & !(BOND_MARK_ALL as u8),
+            BOND_TAUTOM as u8
+        );
 
         assert_rule_case(pt22_atoms(), TG_FLAG_PT_22_00 as u64, &[0, 2]);
         assert_rule_case(pt16_atoms(), TG_FLAG_PT_16_00 as u64, &[0, 2]);
@@ -11872,18 +12374,30 @@ mod tests {
         assert_rule_case(pt13_atoms(), TG_FLAG_PT_13_00 as u64, &[0, 2]);
         assert_rule_case(pt18_atoms(), TG_FLAG_PT_18_00 as u64, &[0, 2]);
         assert_rule_case(keto_atoms(), TG_FLAG_KETO_ENOL_TAUT as u64, &[0, 2]);
-        assert_ring_case("1,5 non-ring", one_five_atoms(), TG_FLAG_1_5_TAUT as u64, &[0, 4]);
+        assert_ring_case(
+            "1,5 non-ring",
+            one_five_atoms(),
+            TG_FLAG_1_5_TAUT as u64,
+            &[0, 4],
+        );
         assert_ring_case("six-member", six_member_atoms(), 0, &[0, 6]);
         assert_ring_case("pyrazole", pyrazole_atoms(), 0, &[0, 1]);
         assert_ring_case("tropolone-7", tropolone_atoms(6), 0, &[7, 8]);
         assert_ring_case("tropolone-5", tropolone_atoms(4), 0, &[5, 6]);
 
         let mut forbidden_heap = SourceHeap::default();
-        let forbidden_atoms = forbidden_heap.allocate_model_storage(standard_atoms()).unwrap();
-        let (mut forbidden_bns, mut forbidden_bd) = network(&mut forbidden_heap, forbidden_atoms, 3);
+        let forbidden_atoms = forbidden_heap
+            .allocate_model_storage(standard_atoms())
+            .unwrap();
+        let (mut forbidden_bns, mut forbidden_bd) =
+            network(&mut forbidden_heap, forbidden_atoms, 3);
         let center_vertex = forbidden_heap.slice(forbidden_bns.vert.as_const()).unwrap()[1].clone();
-        let edge_number = forbidden_heap.slice(center_vertex.iedge.as_const()).unwrap()[0];
-        forbidden_heap.slice_mut(forbidden_bns.edge).unwrap()[usize::try_from(edge_number).unwrap()].forbidden = 1;
+        let edge_number = forbidden_heap
+            .slice(center_vertex.iedge.as_const())
+            .unwrap()[0];
+        forbidden_heap.slice_mut(forbidden_bns.edge).unwrap()
+            [usize::try_from(edge_number).unwrap()]
+        .forbidden = 1;
         let mut forbidden_tgi = T_GROUP_INFO {
             bTautFlags: TG_FLAG_TEST_TAUT__ATOMS as u64,
             ..T_GROUP_INFO::default()
@@ -11924,13 +12438,20 @@ mod tests {
 
         let marked_single = 0x20 | BOND_SINGLE as u8;
         let mut atoms = bonded_pair(marked_single);
-        assert_eq!(SetTautomericBonds(&mut atoms, 1, &[first_direction.clone()]), Ok(1));
+        assert_eq!(
+            SetTautomericBonds(&mut atoms, 1, &[first_direction.clone()]),
+            Ok(1)
+        );
         assert_eq!(atoms[0].bond_type[0], 0x20 | BOND_TAUTOM as u8);
         assert_eq!(atoms[1].bond_type[0], 0x20 | BOND_TAUTOM as u8);
 
         let mut duplicate = bonded_pair(BOND_DOUBLE as u8);
         assert_eq!(
-            SetTautomericBonds(&mut duplicate, 2, &[first_direction.clone(), reverse_direction]),
+            SetTautomericBonds(
+                &mut duplicate,
+                2,
+                &[first_direction.clone(), reverse_direction]
+            ),
             Ok(1)
         );
         assert_eq!(duplicate[0].bond_type[0], BOND_TAUTOM as u8);
@@ -11946,7 +12467,10 @@ mod tests {
 
         let marked_tautomeric = 0xa0 | BOND_TAUTOM as u8;
         let mut unchanged = bonded_pair(marked_tautomeric);
-        assert_eq!(SetTautomericBonds(&mut unchanged, 1, &[first_direction.clone()]), Ok(0));
+        assert_eq!(
+            SetTautomericBonds(&mut unchanged, 1, &[first_direction.clone()]),
+            Ok(0)
+        );
         assert_eq!(unchanged[0].bond_type[0], marked_tautomeric);
         assert_eq!(unchanged[1].bond_type[0], marked_tautomeric);
 
@@ -12131,13 +12655,25 @@ mod tests {
         ri = 0;
         rj = 1;
         assert_eq!(
-            GetNeutralRepsIfNeeded(&heap, &mut ri, &mut rj, &atoms, atoms.len() as i32, &[], 0, Some(&cgi),),
+            GetNeutralRepsIfNeeded(
+                &heap,
+                &mut ri,
+                &mut rj,
+                &atoms,
+                atoms.len() as i32,
+                &[],
+                0,
+                Some(&cgi),
+            ),
             Ok(0)
         );
         assert_eq!((ri, rj), (3, 2), "the full atom scan is the fallback");
 
         let mut second_group_heap = SourceHeap::default();
-        let second_group_cgi = group_info(&mut second_group_heap, vec![c_group(2, 0, 1, 0), c_group(1, 0, 1, 0)]);
+        let second_group_cgi = group_info(
+            &mut second_group_heap,
+            vec![c_group(2, 0, 1, 0), c_group(1, 0, 1, 0)],
+        );
         ri = 0;
         rj = 1;
         assert_eq!(
@@ -12224,7 +12760,16 @@ mod tests {
         ri = 0;
         rj = 1;
         assert_eq!(
-            GetNeutralRepsIfNeeded(&heap, &mut ri, &mut rj, &zero_endpoint_atoms, 2, &[], -1, Some(&cgi),),
+            GetNeutralRepsIfNeeded(
+                &heap,
+                &mut ri,
+                &mut rj,
+                &zero_endpoint_atoms,
+                2,
+                &[],
+                -1,
+                Some(&cgi),
+            ),
             Ok(0)
         );
         assert_eq!((ri, rj), (0, 1));
@@ -12288,11 +12833,14 @@ mod tests {
             let mut heap = SourceHeap::default();
             let atoms = heap.allocate_model_storage(atoms).unwrap();
             let mut changed_bonds = 0;
-            let bns_pointer = AllocateAndInitBnStruct(&mut heap, atoms, 5, 0, 0, 1, &mut changed_bonds).unwrap();
+            let bns_pointer =
+                AllocateAndInitBnStruct(&mut heap, atoms, 5, 0, 0, 1, &mut changed_bonds).unwrap();
             assert_eq!(changed_bonds, 0);
             let mut bns = heap.slice(bns_pointer.as_const()).unwrap()[0].clone();
             bns.pbTautFlags = heap.allocate_model_storage(vec![0_u64]).unwrap();
-            bns.ic = heap.allocate_model_storage(vec![INCHI_CLOCK::default()]).unwrap();
+            bns.ic = heap
+                .allocate_model_storage(vec![INCHI_CLOCK::default()])
+                .unwrap();
             let bd_pointer = AllocateAndInitBnData(&mut heap, bns.max_vertices).unwrap();
             let bd = heap.slice(bd_pointer.as_const()).unwrap()[0].clone();
             (heap, atoms, bns, bd)
@@ -12300,13 +12848,18 @@ mod tests {
 
         fn disconnected_fixture() -> (SourceHeap, SourceMutPointer<inp_ATOM>, BN_STRUCT, BN_DATA) {
             let mut heap = SourceHeap::default();
-            let atoms = heap.allocate_model_storage(vec![inp_ATOM::default(); 2]).unwrap();
+            let atoms = heap
+                .allocate_model_storage(vec![inp_ATOM::default(); 2])
+                .unwrap();
             let mut changed_bonds = 0;
-            let bns_pointer = AllocateAndInitBnStruct(&mut heap, atoms, 2, 0, 0, 1, &mut changed_bonds).unwrap();
+            let bns_pointer =
+                AllocateAndInitBnStruct(&mut heap, atoms, 2, 0, 0, 1, &mut changed_bonds).unwrap();
             assert_eq!(changed_bonds, 0);
             let mut bns = heap.slice(bns_pointer.as_const()).unwrap()[0].clone();
             bns.pbTautFlags = heap.allocate_model_storage(vec![0_u64]).unwrap();
-            bns.ic = heap.allocate_model_storage(vec![INCHI_CLOCK::default()]).unwrap();
+            bns.ic = heap
+                .allocate_model_storage(vec![INCHI_CLOCK::default()])
+                .unwrap();
             let bd_pointer = AllocateAndInitBnData(&mut heap, bns.max_vertices).unwrap();
             let bd = heap.slice(bd_pointer.as_const()).unwrap()[0].clone();
             (heap, atoms, bns, bd)
@@ -12576,7 +13129,13 @@ mod tests {
         assert_eq!(AddAtom2num(&mut underflow, &atoms, 0, 1).unwrap(), 3);
         assert_eq!(
             underflow,
-            [u16::MAX - 2, u16::MAX, u16::MAX - 6, u16::MAX - 4, u16::MAX - 2]
+            [
+                u16::MAX - 2,
+                u16::MAX,
+                u16::MAX - 6,
+                u16::MAX - 4,
+                u16::MAX - 2
+            ]
         );
 
         let mut short = [0_u16; 4];
@@ -12663,13 +13222,28 @@ mod tests {
             ..S_CANDIDATE::default()
         };
 
-        assert_eq!(comp_candidates(&candidate(9, 0, 0), &candidate(1, -1, 7)), -1);
-        assert_eq!(comp_candidates(&candidate(9, -1, 7), &candidate(1, 0, 0)), 1);
-        assert_eq!(comp_candidates(&candidate(9, 0, 7), &candidate(1, 0, 0)), -1);
+        assert_eq!(
+            comp_candidates(&candidate(9, 0, 0), &candidate(1, -1, 7)),
+            -1
+        );
+        assert_eq!(
+            comp_candidates(&candidate(9, -1, 7), &candidate(1, 0, 0)),
+            1
+        );
+        assert_eq!(
+            comp_candidates(&candidate(9, 0, 7), &candidate(1, 0, 0)),
+            -1
+        );
         assert_eq!(comp_candidates(&candidate(9, 0, 0), &candidate(1, 0, 7)), 1);
-        assert_eq!(comp_candidates(&candidate(9, 0, 3), &candidate(1, 0, 7)), -4);
+        assert_eq!(
+            comp_candidates(&candidate(9, 0, 3), &candidate(1, 0, 7)),
+            -4
+        );
         assert_eq!(comp_candidates(&candidate(1, 0, 7), &candidate(9, 0, 3)), 4);
-        assert_eq!(comp_candidates(&candidate(3, 0, 7), &candidate(8, 0, 7)), -5);
+        assert_eq!(
+            comp_candidates(&candidate(3, 0, 7), &candidate(8, 0, 7)),
+            -5
+        );
         assert_eq!(comp_candidates(&candidate(8, 0, 0), &candidate(3, 0, 0)), 5);
     }
 
@@ -12716,7 +13290,9 @@ mod tests {
         }
 
         let mut heap = SourceHeap::default();
-        let atoms = heap.allocate_model_storage(vec![inp_ATOM::default()]).unwrap();
+        let atoms = heap
+            .allocate_model_storage(vec![inp_ATOM::default()])
+            .unwrap();
         assert_eq!(
             MarkSaltChargeGroups2(
                 &mut heap,
@@ -12754,7 +13330,8 @@ mod tests {
         );
 
         let mut invalid_heap = SourceHeap::default();
-        let (invalid_atoms, mut invalid_salt, mut invalid_taut) = allocate_case(&mut invalid_heap, false, 4);
+        let (invalid_atoms, mut invalid_salt, mut invalid_taut) =
+            allocate_case(&mut invalid_heap, false, 4);
         invalid_salt.num_candidates = -2;
         assert_eq!(
             MarkSaltChargeGroups2(
@@ -12774,7 +13351,8 @@ mod tests {
         assert_eq!(invalid_salt.num_candidates, -2);
 
         let mut overflow_heap = SourceHeap::default();
-        let (overflow_atoms, mut overflow_salt, mut overflow_taut) = allocate_case(&mut overflow_heap, false, 1);
+        let (overflow_atoms, mut overflow_salt, mut overflow_taut) =
+            allocate_case(&mut overflow_heap, false, 1);
         assert_eq!(
             MarkSaltChargeGroups2(
                 &mut overflow_heap,
@@ -12792,12 +13370,16 @@ mod tests {
         );
         assert_eq!(overflow_salt.num_candidates, 0);
         assert_eq!(
-            overflow_heap.slice(overflow_salt.s_candidate.as_const()).unwrap()[0].atnumber,
+            overflow_heap
+                .slice(overflow_salt.s_candidate.as_const())
+                .unwrap()[0]
+                .atnumber,
             0
         );
 
         let mut strict_heap = SourceHeap::default();
-        let (strict_atoms, mut strict_salt, mut strict_taut) = allocate_case(&mut strict_heap, true, 4);
+        let (strict_atoms, mut strict_salt, mut strict_taut) =
+            allocate_case(&mut strict_heap, true, 4);
         assert_eq!(
             MarkSaltChargeGroups2(
                 &mut strict_heap,
@@ -12817,7 +13399,8 @@ mod tests {
         assert_eq!(strict_taut.bTautFlagsDone, 0);
 
         let mut permissive_heap = SourceHeap::default();
-        let (permissive_atoms, mut permissive_salt, mut permissive_taut) = allocate_case(&mut permissive_heap, true, 4);
+        let (permissive_atoms, mut permissive_salt, mut permissive_taut) =
+            allocate_case(&mut permissive_heap, true, 4);
         permissive_taut.bTautFlags = u64::from(TG_FLAG_ALLOW_NO_NEGTV_O);
         let live_before = permissive_heap.live_allocation_count();
         assert_eq!(
@@ -12865,7 +13448,8 @@ mod tests {
         assert_eq!(allocation_salt.num_candidates, 0);
 
         let mut stale_heap = SourceHeap::default();
-        let (stale_atoms, mut stale_salt, mut stale_taut) = allocate_case(&mut stale_heap, false, 4);
+        let (stale_atoms, mut stale_salt, mut stale_taut) =
+            allocate_case(&mut stale_heap, false, 4);
         stale_heap.slice_mut(stale_salt.s_candidate).unwrap()[2].type_ = 2;
         stale_heap.trace_source_allocations();
         assert_eq!(
@@ -12926,7 +13510,9 @@ mod tests {
                 pbTautFlags: heap.allocate_model_storage(vec![0_u64]).unwrap(),
                 ..BN_STRUCT::default()
             };
-            bns.altp[0] = heap.allocate_model_storage(vec![BNS_ALT_PATH::default(); 8]).unwrap();
+            bns.altp[0] = heap
+                .allocate_model_storage(vec![BNS_ALT_PATH::default(); 8])
+                .unwrap();
             bns
         }
 
@@ -12934,7 +13520,12 @@ mod tests {
             heap: &mut SourceHeap,
             donor_h: bool,
             capacity: usize,
-        ) -> (SourceMutPointer<inp_ATOM>, S_GROUP_INFO, T_GROUP_INFO, BN_STRUCT) {
+        ) -> (
+            SourceMutPointer<inp_ATOM>,
+            S_GROUP_INFO,
+            T_GROUP_INFO,
+            BN_STRUCT,
+        ) {
             let atoms = heap.allocate_model_storage(salt_atoms(donor_h)).unwrap();
             let candidates = heap
                 .allocate_model_storage(vec![S_CANDIDATE::default(); capacity])
@@ -12959,7 +13550,9 @@ mod tests {
         }
 
         let mut heap = SourceHeap::default();
-        let atoms = heap.allocate_model_storage(vec![inp_ATOM::default()]).unwrap();
+        let atoms = heap
+            .allocate_model_storage(vec![inp_ATOM::default()])
+            .unwrap();
         assert_eq!(
             MarkSaltChargeGroups(
                 &mut heap,
@@ -13018,7 +13611,8 @@ mod tests {
         assert_eq!(overflow_salt.num_candidates, 0);
 
         let mut strict_heap = SourceHeap::default();
-        let (strict_atoms, mut strict_salt, mut strict_taut, mut strict_bns) = allocate_case(&mut strict_heap, true, 4);
+        let (strict_atoms, mut strict_salt, mut strict_taut, mut strict_bns) =
+            allocate_case(&mut strict_heap, true, 4);
         assert_eq!(
             MarkSaltChargeGroups(
                 &mut strict_heap,
@@ -13055,7 +13649,9 @@ mod tests {
             Ok(0)
         );
         assert_eq!(tested_salt.num_candidates, 2);
-        let candidates = tested_heap.slice(tested_salt.s_candidate.as_const()).unwrap();
+        let candidates = tested_heap
+            .slice(tested_salt.s_candidate.as_const())
+            .unwrap();
         assert_eq!(candidates[0].atnumber, 0);
         assert_eq!(candidates[0].subtype, SALT_DONOR_Neg as S_CHAR);
         assert_eq!(candidates[1].atnumber, 2);
@@ -13087,7 +13683,12 @@ mod tests {
         );
     }
 
-    fn atom(charge: S_CHAR, valence: S_CHAR, chem_bonds_valence: S_CHAR, num_h: S_CHAR) -> inp_ATOM {
+    fn atom(
+        charge: S_CHAR,
+        valence: S_CHAR,
+        chem_bonds_valence: S_CHAR,
+        num_h: S_CHAR,
+    ) -> inp_ATOM {
         inp_ATOM {
             charge,
             valence,
@@ -13149,37 +13750,58 @@ mod tests {
 
         subtype = 0;
         let charged_h_donor = atom(1, 2, 3, 1);
-        assert_eq!(bCanBeACPoint(&charged_h_donor, 1, 1, 3, 3, 3, &mut subtype), 1);
+        assert_eq!(
+            bCanBeACPoint(&charged_h_donor, 1, 1, 3, 3, 3, &mut subtype),
+            1
+        );
         assert_eq!(subtype, C_SUBTYPE_CHARGED_H_DONOR as S_CHAR);
 
         subtype = 0;
         let charged_non_taut = atom(1, 3, 4, 0);
-        assert_eq!(bCanBeACPoint(&charged_non_taut, 1, 1, 3, 3, 3, &mut subtype), 1);
+        assert_eq!(
+            bCanBeACPoint(&charged_non_taut, 1, 1, 3, 3, 3, &mut subtype),
+            1
+        );
         assert_eq!(subtype, C_SUBTYPE_CHARGED_NON_TAUT as S_CHAR);
 
         subtype = 0;
         let charged_acceptor_h = atom(1, 1, 3, 1);
-        assert_eq!(bCanBeACPoint(&charged_acceptor_h, 1, 1, 3, 3, 3, &mut subtype), 1);
+        assert_eq!(
+            bCanBeACPoint(&charged_acceptor_h, 1, 1, 3, 3, 3, &mut subtype),
+            1
+        );
         assert_eq!(subtype, C_SUBTYPE_CHARGED_H_ACCEPT_p_DONOR as S_CHAR);
 
         subtype = 0;
         let charged_acceptor = atom(1, 2, 4, 0);
-        assert_eq!(bCanBeACPoint(&charged_acceptor, 1, 1, 3, 3, 3, &mut subtype), 1);
+        assert_eq!(
+            bCanBeACPoint(&charged_acceptor, 1, 1, 3, 3, 3, &mut subtype),
+            1
+        );
         assert_eq!(subtype, C_SUBTYPE_CHARGED_H_ACCEPT as S_CHAR);
 
         subtype = 0;
         let neutral_non_taut = atom(0, 3, 3, 0);
-        assert_eq!(bCanBeACPoint(&neutral_non_taut, 1, 1, 3, 3, 3, &mut subtype), 1);
+        assert_eq!(
+            bCanBeACPoint(&neutral_non_taut, 1, 1, 3, 3, 3, &mut subtype),
+            1
+        );
         assert_eq!(subtype, C_SUBTYPE_NEUTRAL_NON_TAUT as S_CHAR);
 
         subtype = 0;
         let neutral_h_donor = atom(0, 2, 2, 1);
-        assert_eq!(bCanBeACPoint(&neutral_h_donor, 1, 1, 3, 3, 3, &mut subtype), 1);
+        assert_eq!(
+            bCanBeACPoint(&neutral_h_donor, 1, 1, 3, 3, 3, &mut subtype),
+            1
+        );
         assert_eq!(subtype, C_SUBTYPE_NEUTRAL_H_DONOR as S_CHAR);
 
         subtype = 0;
         let neutral_h_accept = atom(0, 2, 3, 0);
-        assert_eq!(bCanBeACPoint(&neutral_h_accept, 1, 1, 3, 3, 3, &mut subtype), 1);
+        assert_eq!(
+            bCanBeACPoint(&neutral_h_accept, 1, 1, 3, 3, 3, &mut subtype),
+            1
+        );
         assert_eq!(subtype, C_SUBTYPE_NEUTRAL_H_ACCEPT_p_ACCEPT as S_CHAR);
 
         subtype = 12;
@@ -13193,7 +13815,10 @@ mod tests {
         let neutral_neighbor = named_atom(b"C", 6, 0, 0, 0, 0, 0);
 
         let nitrogen = named_atom(b"N", 7, 1, 2, 3, 1, 0);
-        let atoms = atoms_with_neighbors(nitrogen, &[neutral_neighbor.clone(), neutral_neighbor.clone()]);
+        let atoms = atoms_with_neighbors(
+            nitrogen,
+            &[neutral_neighbor.clone(), neutral_neighbor.clone()],
+        );
         let mut subtype = 99;
         assert_eq!(GetChargeType(&atoms, 0, &mut subtype), 0);
         assert_eq!(subtype, C_SUBTYPE_CHARGED_H_DONOR as S_CHAR);
@@ -13218,7 +13843,10 @@ mod tests {
             (b"Te".as_slice(), 52, 5),
         ] {
             let center = named_atom(symbol, el_number, 1, 2, 3, 0, 5);
-            let atoms = atoms_with_neighbors(center, &[neutral_neighbor.clone(), neutral_neighbor.clone()]);
+            let atoms = atoms_with_neighbors(
+                center,
+                &[neutral_neighbor.clone(), neutral_neighbor.clone()],
+            );
             subtype = 77;
             assert_eq!(GetChargeType(&atoms, 0, &mut subtype), charge_type);
             assert_eq!(subtype, C_SUBTYPE_CHARGED_NON_TAUT as S_CHAR);
@@ -13291,7 +13919,10 @@ mod tests {
         subtype = 88;
         let mut radical = named_atom(b"O", 8, 0, 1, 1, 0, 0);
         radical.radical = RADICAL_SINGLET as S_CHAR + 1;
-        assert_eq!(GetSaltChargeType(&heap, &[radical], 0, None, &mut subtype).unwrap(), -1);
+        assert_eq!(
+            GetSaltChargeType(&heap, &[radical], 0, None, &mut subtype).unwrap(),
+            -1
+        );
         assert_eq!(subtype, 0);
 
         subtype = 77;
@@ -13313,7 +13944,10 @@ mod tests {
         for (symbol, el_number) in [(b"N".as_slice(), 7), (b"P".as_slice(), 15)] {
             subtype = 55;
             let atom = vec![named_atom(symbol, el_number, 0, 1, 1, 0, 0)];
-            assert_eq!(GetSaltChargeType(&heap, &atom, 0, None, &mut subtype).unwrap(), -1);
+            assert_eq!(
+                GetSaltChargeType(&heap, &atom, 0, None, &mut subtype).unwrap(),
+                -1
+            );
             assert_eq!(subtype, 0);
         }
 
@@ -13338,7 +13972,10 @@ mod tests {
                 atoms.push(carbon.clone());
                 atoms
             };
-            assert_eq!(GetSaltChargeType(&heap, &atoms, 0, None, &mut subtype).unwrap(), 0);
+            assert_eq!(
+                GetSaltChargeType(&heap, &atoms, 0, None, &mut subtype).unwrap(),
+                0
+            );
             assert_eq!(subtype, 4);
         }
 
@@ -13360,7 +13997,10 @@ mod tests {
                 atoms[0].neighbor[0] = 1;
                 atoms
             };
-            assert_eq!(GetSaltChargeType(&heap, &atoms, 0, None, &mut subtype).unwrap(), -1);
+            assert_eq!(
+                GetSaltChargeType(&heap, &atoms, 0, None, &mut subtype).unwrap(),
+                -1
+            );
             assert_eq!(subtype, 0);
         }
 
@@ -13376,7 +14016,10 @@ mod tests {
             GetSaltChargeType(&heap, &taut_atoms, 0, Some(&t_group_info), &mut subtype,).unwrap(),
             0
         );
-        assert_eq!(subtype, (SALT_DONOR_H | SALT_DONOR_Neg | SALT_ACCEPTOR) as i32);
+        assert_eq!(
+            subtype,
+            (SALT_DONOR_H | SALT_DONOR_Neg | SALT_ACCEPTOR) as i32
+        );
 
         subtype = 11;
         let mut missing_group_atom = named_atom(b"O", 8, 0, 1, 2, 0, 0);
@@ -13387,7 +14030,14 @@ mod tests {
             atoms
         };
         assert_eq!(
-            GetSaltChargeType(&heap, &missing_group_atoms, 0, Some(&t_group_info), &mut subtype,).unwrap(),
+            GetSaltChargeType(
+                &heap,
+                &missing_group_atoms,
+                0,
+                Some(&t_group_info),
+                &mut subtype,
+            )
+            .unwrap(),
             -1
         );
         assert_eq!(subtype, 0);
@@ -13556,10 +14206,14 @@ mod tests {
             vec![atom, center_double.clone()]
         };
         assert_eq!(
-            GetOtherSaltChargeType(&heap, &tgroup, 0, Some(&t_group_info), &mut subtype, 1).unwrap(),
+            GetOtherSaltChargeType(&heap, &tgroup, 0, Some(&t_group_info), &mut subtype, 1)
+                .unwrap(),
             1
         );
-        assert_eq!(subtype, (SALT_DONOR_H | SALT_DONOR_Neg | SALT_ACCEPTOR) as i32);
+        assert_eq!(
+            subtype,
+            (SALT_DONOR_H | SALT_DONOR_Neg | SALT_ACCEPTOR) as i32
+        );
 
         subtype = 44;
         let missing_group = {
@@ -13570,7 +14224,15 @@ mod tests {
             vec![atom, center_double]
         };
         assert_eq!(
-            GetOtherSaltChargeType(&heap, &missing_group, 0, Some(&t_group_info), &mut subtype, 1,).unwrap(),
+            GetOtherSaltChargeType(
+                &heap,
+                &missing_group,
+                0,
+                Some(&t_group_info),
+                &mut subtype,
+                1,
+            )
+            .unwrap(),
             -1
         );
         assert_eq!(subtype, 0);
@@ -13583,7 +14245,8 @@ mod tests {
             vec![atom, center_single]
         };
         assert_eq!(
-            GetOtherSaltChargeType(&heap, &wrong_bond_for_acceptor, 0, None, &mut subtype, 1,).unwrap(),
+            GetOtherSaltChargeType(&heap, &wrong_bond_for_acceptor, 0, None, &mut subtype, 1,)
+                .unwrap(),
             -1
         );
         assert_eq!(subtype, 0);
@@ -13593,12 +14256,18 @@ mod tests {
     fn source_port__ichitaut__getothersalttype__line_2828() {
         let mut subtype = 99;
         let wrong_valence = vec![named_atom(b"S", 16, 0, 1, 2, 1, 0)];
-        assert_eq!(GetOtherSaltType(&wrong_valence, 0, &mut subtype).unwrap(), -1);
+        assert_eq!(
+            GetOtherSaltType(&wrong_valence, 0, &mut subtype).unwrap(),
+            -1
+        );
         assert_eq!(subtype, 99);
 
         subtype = 88;
         let wrong_element = vec![named_atom(b"O", 8, 0, 1, 1, 1, 0)];
-        assert_eq!(GetOtherSaltType(&wrong_element, 0, &mut subtype).unwrap(), -1);
+        assert_eq!(
+            GetOtherSaltType(&wrong_element, 0, &mut subtype).unwrap(),
+            -1
+        );
         assert_eq!(subtype, 0);
 
         subtype = 77;
@@ -13614,7 +14283,10 @@ mod tests {
         acceptor.bond_type[0] = BOND_SINGLE as u8;
         acceptor.neighbor[0] = 1;
         let acceptor_atoms = vec![acceptor, named_atom(b"C", 6, 0, 1, 1, 0, 0)];
-        assert_eq!(GetOtherSaltType(&acceptor_atoms, 0, &mut subtype).unwrap(), 2);
+        assert_eq!(
+            GetOtherSaltType(&acceptor_atoms, 0, &mut subtype).unwrap(),
+            2
+        );
         assert_eq!(subtype, SALT_p_ACCEPTOR as i32);
 
         subtype = 55;
@@ -13624,11 +14296,19 @@ mod tests {
         let mut center = named_atom(b"C", 6, 0, 1, 1, 0, 0);
         center.charge = 1;
         let wrong_center_atoms = vec![wrong_center, center];
-        assert_eq!(GetOtherSaltType(&wrong_center_atoms, 0, &mut subtype).unwrap(), -1);
+        assert_eq!(
+            GetOtherSaltType(&wrong_center_atoms, 0, &mut subtype).unwrap(),
+            -1
+        );
         assert_eq!(subtype, 0);
     }
 
-    fn c_group(group_number: AT_NUMB, charged_points: u16, cpoints: u16, proton_points: u16) -> C_GROUP {
+    fn c_group(
+        group_number: AT_NUMB,
+        charged_points: u16,
+        cpoints: u16,
+        proton_points: u16,
+    ) -> C_GROUP {
         C_GROUP {
             num: [charged_points, proton_points],
             num_CPoints: cpoints,
@@ -13728,8 +14408,12 @@ mod tests {
                 named_atom(b"C", 6, 0, 0, 0, 0, 0),
             ])
             .unwrap();
-        let c_groups = heap.allocate_model_storage(vec![C_GROUP::default(); 2]).unwrap();
-        let c_candidates = heap.allocate_model_storage(vec![C_CANDIDATE::default(); 2]).unwrap();
+        let c_groups = heap
+            .allocate_model_storage(vec![C_GROUP::default(); 2])
+            .unwrap();
+        let c_candidates = heap
+            .allocate_model_storage(vec![C_CANDIDATE::default(); 2])
+            .unwrap();
         let mut cgi = C_GROUP_INFO {
             c_group: c_groups,
             max_num_c_groups: 2,
@@ -13743,7 +14427,17 @@ mod tests {
         let mut bd = BN_DATA::default();
 
         assert_eq!(
-            MarkChargeGroups(&mut heap, &mut cg, atoms, 2, Some(&mut cgi), None, &mut bns, &mut bd, 0,),
+            MarkChargeGroups(
+                &mut heap,
+                &mut cg,
+                atoms,
+                2,
+                Some(&mut cgi),
+                None,
+                &mut bns,
+                &mut bd,
+                0,
+            ),
             Ok(0)
         );
         assert_eq!(cgi.num_candidates, -1);
@@ -13759,7 +14453,17 @@ mod tests {
         }
         cgi.num_candidates = 2;
         assert_eq!(
-            MarkChargeGroups(&mut heap, &mut cg, atoms, 2, Some(&mut cgi), None, &mut bns, &mut bd, 0,),
+            MarkChargeGroups(
+                &mut heap,
+                &mut cg,
+                atoms,
+                2,
+                Some(&mut cgi),
+                None,
+                &mut bns,
+                &mut bd,
+                0,
+            ),
             Ok(0)
         );
         assert_eq!(cgi.num_candidates, 2);
@@ -13796,8 +14500,12 @@ mod tests {
         let mut cg = CANON_GLOBALS::default();
 
         let mut empty_heap = SourceHeap::default();
-        let empty_groups = empty_heap.allocate_model_storage(Vec::<T_GROUP>::new()).unwrap();
-        let empty_atoms = empty_heap.allocate_model_storage(Vec::<inp_ATOM>::new()).unwrap();
+        let empty_groups = empty_heap
+            .allocate_model_storage(Vec::<T_GROUP>::new())
+            .unwrap();
+        let empty_atoms = empty_heap
+            .allocate_model_storage(Vec::<inp_ATOM>::new())
+            .unwrap();
         let mut empty_tgi = T_GROUP_INFO {
             t_group: empty_groups,
             max_num_t_groups: 0,
@@ -13820,7 +14528,9 @@ mod tests {
         );
 
         let mut same_heap = SourceHeap::default();
-        let same_groups = same_heap.allocate_model_storage(vec![taut_group(7, 2, 4, 5)]).unwrap();
+        let same_groups = same_heap
+            .allocate_model_storage(vec![taut_group(7, 2, 4, 5)])
+            .unwrap();
         let same_atoms = same_heap
             .allocate_model_storage(vec![endpoint_atom(7), endpoint_atom(7)])
             .unwrap();
@@ -13850,7 +14560,9 @@ mod tests {
         assert!(same_tgi.tGroupNumber.is_null());
 
         let mut create_heap = SourceHeap::default();
-        let create_groups = create_heap.allocate_model_storage(vec![T_GROUP::default(); 3]).unwrap();
+        let create_groups = create_heap
+            .allocate_model_storage(vec![T_GROUP::default(); 3])
+            .unwrap();
         let create_atoms = create_heap
             .allocate_model_storage(vec![endpoint_atom(0), endpoint_atom(0)])
             .unwrap();
@@ -13892,11 +14604,20 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![1, 1]
         );
-        assert_eq!(create_heap.slice(create_tgi.tGroupNumber.as_const()).unwrap()[1], 1);
+        assert_eq!(
+            create_heap
+                .slice(create_tgi.tGroupNumber.as_const())
+                .unwrap()[1],
+            1
+        );
 
         let mut fict_heap = SourceHeap::default();
         let fict_groups = fict_heap
-            .allocate_model_storage(vec![taut_group(3, 1, 11, 13), T_GROUP::default(), T_GROUP::default()])
+            .allocate_model_storage(vec![
+                taut_group(3, 1, 11, 13),
+                T_GROUP::default(),
+                T_GROUP::default(),
+            ])
             .unwrap();
         let fict_atoms = fict_heap
             .allocate_model_storage(vec![endpoint_atom(0), endpoint_atom(0), endpoint_atom(0)])
@@ -14007,7 +14728,9 @@ mod tests {
         );
 
         let mut mixed_heap = SourceHeap::default();
-        let mixed_groups = mixed_heap.allocate_model_storage(vec![T_GROUP::default(); 2]).unwrap();
+        let mixed_groups = mixed_heap
+            .allocate_model_storage(vec![T_GROUP::default(); 2])
+            .unwrap();
         let mixed_atoms = mixed_heap
             .allocate_model_storage(vec![endpoint_atom(0), endpoint_atom(0)])
             .unwrap();
@@ -14035,7 +14758,9 @@ mod tests {
         assert_eq!(mixed_tgi.num_t_groups, 0);
 
         let mut overflow_heap = SourceHeap::default();
-        let overflow_groups = overflow_heap.allocate_model_storage(vec![T_GROUP::default()]).unwrap();
+        let overflow_groups = overflow_heap
+            .allocate_model_storage(vec![T_GROUP::default()])
+            .unwrap();
         let overflow_atoms = overflow_heap
             .allocate_model_storage(vec![endpoint_atom(0), endpoint_atom(0)])
             .unwrap();
@@ -14044,7 +14769,8 @@ mod tests {
             max_num_t_groups: 0,
             ..T_GROUP_INFO::default()
         };
-        let mut overflow_endpoints = vec![taut_endpoint(0, 0, 0, 0, 0), taut_endpoint(1, 0, 0, 0, 0)];
+        let mut overflow_endpoints =
+            vec![taut_endpoint(0, 0, 0, 0, 0), taut_endpoint(1, 0, 0, 0, 0)];
         assert_eq!(
             RegisterEndPoints(
                 &mut overflow_heap,
@@ -14065,7 +14791,9 @@ mod tests {
         let fail_index_groups = fail_index_heap
             .allocate_model_storage(vec![T_GROUP::default(); 2])
             .unwrap();
-        let fail_index_atoms = fail_index_heap.allocate_model_storage(vec![endpoint_atom(0)]).unwrap();
+        let fail_index_atoms = fail_index_heap
+            .allocate_model_storage(vec![endpoint_atom(0)])
+            .unwrap();
         let mut fail_index_tgi = T_GROUP_INFO {
             t_group: fail_index_groups,
             max_num_t_groups: 2,
@@ -14187,8 +14915,12 @@ mod tests {
         );
 
         let mut empty_heap = SourceHeap::default();
-        let (empty_atoms, mut empty_sgi, mut empty_tgi) =
-            storage(&mut empty_heap, vec![named_atom(b"C", 6, 0, 0, 0, 0, 0)], 1, 1);
+        let (empty_atoms, mut empty_sgi, mut empty_tgi) = storage(
+            &mut empty_heap,
+            vec![named_atom(b"C", 6, 0, 0, 0, 0, 0)],
+            1,
+            1,
+        );
         let mut empty_cgi = C_GROUP_INFO::default();
         assert_eq!(
             MergeSaltTautGroups(
@@ -14206,7 +14938,9 @@ mod tests {
         assert_eq!(empty_sgi.num_candidates, -1);
 
         let mut overflow_heap = SourceHeap::default();
-        let overflow_atoms = overflow_heap.allocate_model_storage(salt_pair_atoms()).unwrap();
+        let overflow_atoms = overflow_heap
+            .allocate_model_storage(salt_pair_atoms())
+            .unwrap();
         let overflow_candidates = overflow_heap
             .allocate_model_storage(vec![S_CANDIDATE::default()])
             .unwrap();
@@ -14239,7 +14973,8 @@ mod tests {
         );
 
         let mut merge_heap = SourceHeap::default();
-        let (merge_atoms, mut merge_sgi, mut merge_tgi) = storage(&mut merge_heap, salt_pair_atoms(), 4, 4);
+        let (merge_atoms, mut merge_sgi, mut merge_tgi) =
+            storage(&mut merge_heap, salt_pair_atoms(), 4, 4);
         let merge_candidates = merge_sgi.s_candidate;
         let merge_groups = merge_tgi.t_group;
         let mut merge_cgi = C_GROUP_INFO::default();
@@ -14262,7 +14997,10 @@ mod tests {
                 .iter()
                 .map(|candidate| (candidate.atnumber, candidate.type_, candidate.subtype))
                 .collect::<Vec<_>>(),
-            vec![(0, 0, SALT_DONOR_H as S_CHAR), (2, 0, SALT_DONOR_Neg as S_CHAR)]
+            vec![
+                (0, 0, SALT_DONOR_H as S_CHAR),
+                (2, 0, SALT_DONOR_Neg as S_CHAR)
+            ]
         );
         assert_eq!(merge_tgi.num_t_groups, 1);
         assert_eq!(
@@ -14274,7 +15012,10 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![1, 0, 1, 0]
         );
-        assert_eq!(merge_heap.slice(merge_groups.as_const()).unwrap()[0].nNumEndpoints, 2);
+        assert_eq!(
+            merge_heap.slice(merge_groups.as_const()).unwrap()[0].nNumEndpoints,
+            2
+        );
 
         let mut many_atoms = Vec::new();
         for index in 0..128_u16 {
@@ -14324,7 +15065,9 @@ mod tests {
             let candidates = heap
                 .allocate_model_storage(vec![S_CANDIDATE::default(); candidate_capacity.max(1)])
                 .unwrap();
-            let groups = heap.allocate_model_storage(vec![T_GROUP::default()]).unwrap();
+            let groups = heap
+                .allocate_model_storage(vec![T_GROUP::default()])
+                .unwrap();
             let group_numbers = heap.allocate_model_storage(vec![0_u16, 1]).unwrap();
             (
                 atoms,
@@ -14383,7 +15126,8 @@ mod tests {
         let mut invalid_heap = SourceHeap::default();
         let mut invalid_atom = named_atom(b"O", 8, 0, 0, 0, 0, 0);
         invalid_atom.endpoint = 1;
-        let (invalid_atoms, mut invalid_sgi, mut invalid_tgi) = storage(&mut invalid_heap, vec![invalid_atom], 1);
+        let (invalid_atoms, mut invalid_sgi, mut invalid_tgi) =
+            storage(&mut invalid_heap, vec![invalid_atom], 1);
         invalid_heap.slice_mut(invalid_tgi.tGroupNumber).unwrap()[1] = 0;
         assert_eq!(
             MakeIsotopicHGroup(
@@ -14400,7 +15144,8 @@ mod tests {
         let mut overflow_heap = SourceHeap::default();
         let mut overflow_atom = named_atom(b"O", 8, 0, 0, 0, 0, 0);
         overflow_atom.endpoint = 1;
-        let (overflow_atoms, mut overflow_sgi, mut overflow_tgi) = storage(&mut overflow_heap, vec![overflow_atom], 0);
+        let (overflow_atoms, mut overflow_sgi, mut overflow_tgi) =
+            storage(&mut overflow_heap, vec![overflow_atom], 0);
         let mut group = T_GROUP {
             nGroupNumber: 1,
             ..T_GROUP::default()
@@ -14447,11 +15192,19 @@ mod tests {
             nitrogen.num_iso_H = [10, 11, 12];
             nitrogen.cFlags = 2;
 
-            vec![tautomer, oxygen, oxygen_center, sulfur, sulfur_center, nitrogen]
+            vec![
+                tautomer,
+                oxygen,
+                oxygen_center,
+                sulfur,
+                sulfur_center,
+                nitrogen,
+            ]
         }
 
         let mut success_heap = SourceHeap::default();
-        let (success_atoms, mut success_sgi, mut success_tgi) = storage(&mut success_heap, candidate_atoms(), 6);
+        let (success_atoms, mut success_sgi, mut success_tgi) =
+            storage(&mut success_heap, candidate_atoms(), 6);
         let mut success_group = T_GROUP {
             nGroupNumber: 1,
             ..T_GROUP::default()
@@ -14469,7 +15222,9 @@ mod tests {
             ),
             Ok(4)
         );
-        let candidates = success_heap.slice(success_sgi.s_candidate.as_const()).unwrap();
+        let candidates = success_heap
+            .slice(success_sgi.s_candidate.as_const())
+            .unwrap();
         assert_eq!(
             candidates[..4]
                 .iter()
@@ -14504,7 +15259,8 @@ mod tests {
         assert_eq!(success_atoms[4].cFlags, 0);
 
         let mut failure_heap = SourceHeap::default();
-        let (failure_atoms, mut failure_sgi, mut failure_tgi) = storage(&mut failure_heap, candidate_atoms(), 6);
+        let (failure_atoms, mut failure_sgi, mut failure_tgi) =
+            storage(&mut failure_heap, candidate_atoms(), 6);
         let mut failure_group = T_GROUP {
             nGroupNumber: 1,
             ..T_GROUP::default()
@@ -14512,7 +15268,9 @@ mod tests {
         failure_group.num[0] = 3;
         failure_group.num[1] = 1;
         failure_heap.slice_mut(failure_tgi.t_group).unwrap()[0] = failure_group;
-        failure_tgi.nIsotopicEndpointAtomNumber = failure_heap.allocate_model_storage(vec![99_u16, 98]).unwrap();
+        failure_tgi.nIsotopicEndpointAtomNumber = failure_heap
+            .allocate_model_storage(vec![99_u16, 98])
+            .unwrap();
         failure_tgi.nNumIsotopicEndpoints = 77;
         failure_heap.fail_after_allocations(0);
         assert_eq!(
@@ -14545,7 +15303,8 @@ mod tests {
             atom.num_iso_H = [127, -128, 1];
             wrapping_atoms.push(atom);
         }
-        let (wrapping_atoms, mut wrapping_sgi, mut wrapping_tgi) = storage(&mut wrapping_heap, wrapping_atoms, 259);
+        let (wrapping_atoms, mut wrapping_sgi, mut wrapping_tgi) =
+            storage(&mut wrapping_heap, wrapping_atoms, 259);
         let mut wrapping_group = T_GROUP {
             nGroupNumber: 1,
             ..T_GROUP::default()
@@ -14606,7 +15365,17 @@ mod tests {
         let mut new_atoms = vec![cpoint_atom(0, 1, 1), cpoint_atom(0, 0, 0)];
         let mut new_num_c = 1;
         assert_eq!(
-            RegisterCPoints(&mut new_groups, &mut new_num_c, 2, None, 0, 1, 513, &mut new_atoms, 2,),
+            RegisterCPoints(
+                &mut new_groups,
+                &mut new_num_c,
+                2,
+                None,
+                0,
+                1,
+                513,
+                &mut new_atoms,
+                2,
+            ),
             1
         );
         assert_eq!(new_num_c, 2);
@@ -14651,7 +15420,17 @@ mod tests {
         let mut add_atoms = vec![cpoint_atom(4, 0, 0), cpoint_atom(0, 1, 0)];
         let mut add_num_c = 1;
         assert_eq!(
-            RegisterCPoints(&mut add_groups, &mut add_num_c, 1, None, 0, 1, 3, &mut add_atoms, 2,),
+            RegisterCPoints(
+                &mut add_groups,
+                &mut add_num_c,
+                1,
+                None,
+                0,
+                1,
+                3,
+                &mut add_atoms,
+                2,
+            ),
             1
         );
         assert_eq!(add_atoms[1].c_point, 4);
@@ -14678,7 +15457,11 @@ mod tests {
         assert_eq!(missing_num_c, 1);
         assert_eq!(missing_atoms[0].c_point, 0);
 
-        let mut merge_groups = vec![c_group(1, 1, 2, 7), c_group(3, 2, 4, 9), c_group(4, 0, 1, 5)];
+        let mut merge_groups = vec![
+            c_group(1, 1, 2, 7),
+            c_group(3, 2, 4, 9),
+            c_group(4, 0, 1, 5),
+        ];
         let mut merge_atoms = vec![
             cpoint_atom(1, 0, 0),
             cpoint_atom(3, 0, 0),
@@ -14706,7 +15489,10 @@ mod tests {
         assert_eq!(merge_groups[0].nGroupNumber, 1);
         assert_eq!(merge_groups[1].nGroupNumber, 3);
         assert_eq!(
-            merge_atoms.iter().map(|atom| atom.c_point).collect::<Vec<_>>(),
+            merge_atoms
+                .iter()
+                .map(|atom| atom.c_point)
+                .collect::<Vec<_>>(),
             vec![1, 1, 3, 1]
         );
     }
@@ -14786,13 +15572,19 @@ mod tests {
 
         let unreachable_switch_delta = named_atom(b"O", 8, 0, 0, 2, 0, 0);
         eif = endpoint_info_sentinel();
-        assert_eq!(nGetEndpointInfo(&[unreachable_switch_delta], 0, &mut eif), 0);
+        assert_eq!(
+            nGetEndpointInfo(&[unreachable_switch_delta], 0, &mut eif),
+            0
+        );
         assert_eq!(eif, endpoint_info_sentinel());
 
         let neutral_neighbor = named_atom(b"C", 6, 0, 0, 0, 0, 0);
         let mut charged_h_donor = named_atom(b"N", 7, 1, 2, 3, 1, 0);
         charged_h_donor.c_point = 1;
-        let atoms = atoms_with_neighbors(charged_h_donor, &[neutral_neighbor.clone(), neutral_neighbor.clone()]);
+        let atoms = atoms_with_neighbors(
+            charged_h_donor,
+            &[neutral_neighbor.clone(), neutral_neighbor.clone()],
+        );
         eif = endpoint_info_sentinel();
         assert_eq!(nGetEndpointInfo(&atoms, 0, &mut eif), 3);
         assert_eq!(
@@ -14809,7 +15601,10 @@ mod tests {
 
         let mut charged_h_acceptor = named_atom(b"N", 7, 1, 2, 4, 0, 0);
         charged_h_acceptor.c_point = 1;
-        let atoms = atoms_with_neighbors(charged_h_acceptor, &[neutral_neighbor.clone(), neutral_neighbor]);
+        let atoms = atoms_with_neighbors(
+            charged_h_acceptor,
+            &[neutral_neighbor.clone(), neutral_neighbor],
+        );
         eif = endpoint_info_sentinel();
         assert_eq!(nGetEndpointInfo(&atoms, 0, &mut eif), 3);
         assert_eq!(
@@ -14827,7 +15622,10 @@ mod tests {
         let positive_without_c_point = named_atom(b"N", 7, 1, 2, 3, 1, 0);
         let atoms = atoms_with_neighbors(
             positive_without_c_point,
-            &[named_atom(b"C", 6, 0, 0, 0, 0, 0), named_atom(b"C", 6, 0, 0, 0, 0, 0)],
+            &[
+                named_atom(b"C", 6, 0, 0, 0, 0, 0),
+                named_atom(b"C", 6, 0, 0, 0, 0, 0),
+            ],
         );
         eif = endpoint_info_sentinel();
         assert_eq!(nGetEndpointInfo(&atoms, 0, &mut eif), 0);
@@ -14849,7 +15647,10 @@ mod tests {
 
         let saturated_carbon = named_atom(b"C", 6, 0, 4, 4, 0, 0);
         eif = endpoint_info_sentinel();
-        assert_eq!(nGetEndpointInfo_PT_22_00(&[saturated_carbon], 0, &mut eif), 0);
+        assert_eq!(
+            nGetEndpointInfo_PT_22_00(&[saturated_carbon], 0, &mut eif),
+            0
+        );
         assert_eq!(eif, endpoint_info_sentinel());
 
         let donor_carbon = named_atom(b"C", 6, 0, 1, 1, 3, 0);
@@ -14869,7 +15670,10 @@ mod tests {
 
         let acceptor_carbon = named_atom(b"C", 6, 0, 1, 2, 2, 0);
         eif = endpoint_info_sentinel();
-        assert_eq!(nGetEndpointInfo_PT_22_00(&[acceptor_carbon], 0, &mut eif), 4);
+        assert_eq!(
+            nGetEndpointInfo_PT_22_00(&[acceptor_carbon], 0, &mut eif),
+            4
+        );
         assert_eq!(
             eif,
             ENDPOINT_INFO {
@@ -14905,7 +15709,10 @@ mod tests {
         let mut positive_carbon = named_atom(b"C", 6, 1, 1, 3, 1, 0);
         positive_carbon.c_point = 1;
         eif = endpoint_info_sentinel();
-        assert_eq!(nGetEndpointInfo_PT_22_00(&[positive_carbon], 0, &mut eif), 0);
+        assert_eq!(
+            nGetEndpointInfo_PT_22_00(&[positive_carbon], 0, &mut eif),
+            0
+        );
         assert_eq!(eif, endpoint_info_sentinel());
     }
 
@@ -14919,12 +15726,18 @@ mod tests {
 
         let excluded_carbon = named_atom(b"C", 6, 0, 1, 1, 3, 0);
         eif = endpoint_info_sentinel();
-        assert_eq!(nGetEndpointInfo_PT_16_00(&[excluded_carbon], 0, &mut eif), 0);
+        assert_eq!(
+            nGetEndpointInfo_PT_16_00(&[excluded_carbon], 0, &mut eif),
+            0
+        );
         assert_eq!(eif, endpoint_info_sentinel());
 
         let excluded_oxygen = named_atom(b"O", 8, 0, 2, 1, 1, 0);
         eif = endpoint_info_sentinel();
-        assert_eq!(nGetEndpointInfo_PT_16_00(&[excluded_oxygen], 0, &mut eif), 0);
+        assert_eq!(
+            nGetEndpointInfo_PT_16_00(&[excluded_oxygen], 0, &mut eif),
+            0
+        );
         assert_eq!(eif, endpoint_info_sentinel());
 
         let donor_carbon = named_atom(b"C", 6, 0, 2, 2, 2, 0);
@@ -14944,7 +15757,10 @@ mod tests {
 
         let acceptor_carbon = named_atom(b"C", 6, 0, 2, 3, 1, 0);
         eif = endpoint_info_sentinel();
-        assert_eq!(nGetEndpointInfo_PT_16_00(&[acceptor_carbon], 0, &mut eif), 4);
+        assert_eq!(
+            nGetEndpointInfo_PT_16_00(&[acceptor_carbon], 0, &mut eif),
+            4
+        );
         assert_eq!(
             eif,
             ENDPOINT_INFO {
@@ -14990,12 +15806,18 @@ mod tests {
 
         let saturated_carbon = named_atom(b"C", 6, 0, 4, 4, 0, 0);
         eif = endpoint_info_sentinel();
-        assert_eq!(nGetEndpointInfo_PT_06_00(&[saturated_carbon], 0, &mut eif), 0);
+        assert_eq!(
+            nGetEndpointInfo_PT_06_00(&[saturated_carbon], 0, &mut eif),
+            0
+        );
         assert_eq!(eif, endpoint_info_sentinel());
 
         let abnormal_valence = named_atom(b"O", 8, 0, 1, 3, 0, 0);
         eif = endpoint_info_sentinel();
-        assert_eq!(nGetEndpointInfo_PT_06_00(&[abnormal_valence], 0, &mut eif), 0);
+        assert_eq!(
+            nGetEndpointInfo_PT_06_00(&[abnormal_valence], 0, &mut eif),
+            0
+        );
         assert_eq!(eif, endpoint_info_sentinel());
 
         let non_standard = named_atom(b"C", 6, 0, 3, 3, 0, 0);
@@ -15020,7 +15842,10 @@ mod tests {
 
         let acceptor_carbon = named_atom(b"C", 6, 0, 2, 3, 1, 0);
         eif = endpoint_info_sentinel();
-        assert_eq!(nGetEndpointInfo_PT_06_00(&[acceptor_carbon], 0, &mut eif), 4);
+        assert_eq!(
+            nGetEndpointInfo_PT_06_00(&[acceptor_carbon], 0, &mut eif),
+            4
+        );
         assert_eq!(
             eif,
             ENDPOINT_INFO {
@@ -15054,7 +15879,10 @@ mod tests {
         charge_acceptor.c_point = 1;
         let atoms = atoms_with_neighbors(
             charge_acceptor,
-            &[named_atom(b"C", 6, 0, 0, 0, 0, 0), named_atom(b"C", 6, 0, 0, 0, 0, 0)],
+            &[
+                named_atom(b"C", 6, 0, 0, 0, 0, 0),
+                named_atom(b"C", 6, 0, 0, 0, 0, 0),
+            ],
         );
         eif = endpoint_info_sentinel();
         assert_eq!(nGetEndpointInfo_PT_06_00(&atoms, 0, &mut eif), 3);
@@ -15081,17 +15909,26 @@ mod tests {
 
         let oxygen_not_endpoint = named_atom(b"O", 8, 0, 1, 1, 1, 0);
         eif = endpoint_info_sentinel();
-        assert_eq!(nGetEndpointInfo_PT_39_00(&[oxygen_not_endpoint], 0, &mut eif), 0);
+        assert_eq!(
+            nGetEndpointInfo_PT_39_00(&[oxygen_not_endpoint], 0, &mut eif),
+            0
+        );
         assert_eq!(eif, endpoint_info_sentinel());
 
         let saturated_nitrogen = named_atom(b"N", 7, 0, 3, 3, 0, 0);
         eif = endpoint_info_sentinel();
-        assert_eq!(nGetEndpointInfo_PT_39_00(&[saturated_nitrogen], 0, &mut eif), 0);
+        assert_eq!(
+            nGetEndpointInfo_PT_39_00(&[saturated_nitrogen], 0, &mut eif),
+            0
+        );
         assert_eq!(eif, endpoint_info_sentinel());
 
         let abnormal_valence = named_atom(b"N", 7, 0, 2, 4, 0, 0);
         eif = endpoint_info_sentinel();
-        assert_eq!(nGetEndpointInfo_PT_39_00(&[abnormal_valence], 0, &mut eif), 0);
+        assert_eq!(
+            nGetEndpointInfo_PT_39_00(&[abnormal_valence], 0, &mut eif),
+            0
+        );
         assert_eq!(eif, endpoint_info_sentinel());
 
         let non_standard = named_atom(b"N", 7, 0, 2, 2, 0, 0);
@@ -15116,7 +15953,10 @@ mod tests {
 
         let acceptor_carbon = named_atom(b"C", 6, 0, 2, 3, 1, 0);
         eif = endpoint_info_sentinel();
-        assert_eq!(nGetEndpointInfo_PT_39_00(&[acceptor_carbon], 0, &mut eif), 4);
+        assert_eq!(
+            nGetEndpointInfo_PT_39_00(&[acceptor_carbon], 0, &mut eif),
+            4
+        );
         assert_eq!(
             eif,
             ENDPOINT_INFO {
@@ -15150,7 +15990,10 @@ mod tests {
         charge_acceptor.c_point = 1;
         let atoms = atoms_with_neighbors(
             charge_acceptor,
-            &[named_atom(b"C", 6, 0, 0, 0, 0, 0), named_atom(b"C", 6, 0, 0, 0, 0, 0)],
+            &[
+                named_atom(b"C", 6, 0, 0, 0, 0, 0),
+                named_atom(b"C", 6, 0, 0, 0, 0, 0),
+            ],
         );
         eif = endpoint_info_sentinel();
         assert_eq!(nGetEndpointInfo_PT_39_00(&atoms, 0, &mut eif), 3);
@@ -15177,7 +16020,10 @@ mod tests {
 
         let nitrogen_not_endpoint = named_atom(b"N", 7, 0, 1, 1, 1, 0);
         eif = endpoint_info_sentinel();
-        assert_eq!(nGetEndpointInfo_PT_13_00(&[nitrogen_not_endpoint], 0, &mut eif), 0);
+        assert_eq!(
+            nGetEndpointInfo_PT_13_00(&[nitrogen_not_endpoint], 0, &mut eif),
+            0
+        );
         assert_eq!(eif, endpoint_info_sentinel());
 
         for (symbol, el_number) in [
@@ -15204,12 +16050,18 @@ mod tests {
 
         let saturated_oxygen = named_atom(b"O", 8, 0, 2, 2, 0, 0);
         eif = endpoint_info_sentinel();
-        assert_eq!(nGetEndpointInfo_PT_13_00(&[saturated_oxygen], 0, &mut eif), 0);
+        assert_eq!(
+            nGetEndpointInfo_PT_13_00(&[saturated_oxygen], 0, &mut eif),
+            0
+        );
         assert_eq!(eif, endpoint_info_sentinel());
 
         let abnormal_valence = named_atom(b"O", 8, 0, 1, 3, 0, 0);
         eif = endpoint_info_sentinel();
-        assert_eq!(nGetEndpointInfo_PT_13_00(&[abnormal_valence], 0, &mut eif), 0);
+        assert_eq!(
+            nGetEndpointInfo_PT_13_00(&[abnormal_valence], 0, &mut eif),
+            0
+        );
         assert_eq!(eif, endpoint_info_sentinel());
 
         let non_standard = named_atom(b"C", 6, 0, 3, 3, 0, 0);
@@ -15219,7 +16071,10 @@ mod tests {
 
         let acceptor_oxygen = named_atom(b"O", 8, 0, 1, 2, 0, 0);
         eif = endpoint_info_sentinel();
-        assert_eq!(nGetEndpointInfo_PT_13_00(&[acceptor_oxygen], 0, &mut eif), 2);
+        assert_eq!(
+            nGetEndpointInfo_PT_13_00(&[acceptor_oxygen], 0, &mut eif),
+            2
+        );
         assert_eq!(
             eif,
             ENDPOINT_INFO {
@@ -15297,7 +16152,10 @@ mod tests {
 
         let neutral_oxygen_donor = named_atom(b"O", 8, 0, 1, 1, 1, 0);
         eif = endpoint_info_sentinel();
-        assert_eq!(nGetEndpointInfo_PT_18_00(&[neutral_oxygen_donor], 0, &mut eif), 2);
+        assert_eq!(
+            nGetEndpointInfo_PT_18_00(&[neutral_oxygen_donor], 0, &mut eif),
+            2
+        );
         assert_eq!(
             eif,
             ENDPOINT_INFO {
@@ -15312,7 +16170,10 @@ mod tests {
 
         let neutral_nitrogen_acceptor = named_atom(b"N", 7, -1, 1, 1, 0, 0);
         eif = endpoint_info_sentinel();
-        assert_eq!(nGetEndpointInfo_PT_18_00(&[neutral_nitrogen_acceptor], 0, &mut eif), 3);
+        assert_eq!(
+            nGetEndpointInfo_PT_18_00(&[neutral_nitrogen_acceptor], 0, &mut eif),
+            3
+        );
         assert_eq!(
             eif,
             ENDPOINT_INFO {
@@ -15346,7 +16207,10 @@ mod tests {
         charge_acceptor.c_point = 1;
         let atoms = atoms_with_neighbors(
             charge_acceptor,
-            &[named_atom(b"C", 6, 0, 0, 0, 0, 0), named_atom(b"C", 6, 0, 0, 0, 0, 0)],
+            &[
+                named_atom(b"C", 6, 0, 0, 0, 0, 0),
+                named_atom(b"C", 6, 0, 0, 0, 0, 0),
+            ],
         );
         eif = endpoint_info_sentinel();
         assert_eq!(nGetEndpointInfo_PT_18_00(&atoms, 0, &mut eif), 3);
@@ -15381,7 +16245,10 @@ mod tests {
         let mut fallback_acceptor = named_atom(b"O", 8, 1, 1, 1, 0, 0);
         fallback_acceptor.c_point = 0;
         eif = endpoint_info_sentinel();
-        assert_eq!(nGetEndpointInfo_PT_18_00(&[fallback_acceptor], 0, &mut eif), 2);
+        assert_eq!(
+            nGetEndpointInfo_PT_18_00(&[fallback_acceptor], 0, &mut eif),
+            2
+        );
         assert_eq!(
             eif,
             ENDPOINT_INFO {
@@ -15519,7 +16386,10 @@ mod tests {
         assert_eq!(free_t_group_info(&mut empty_heap, None), Ok(0));
         assert_eq!(empty_heap.live_allocation_count(), 0);
         let mut empty_info = T_GROUP_INFO::default();
-        assert_eq!(free_t_group_info(&mut empty_heap, Some(&mut empty_info)), Ok(0));
+        assert_eq!(
+            free_t_group_info(&mut empty_heap, Some(&mut empty_info)),
+            Ok(0)
+        );
         assert_eq!(empty_info, T_GROUP_INFO::default());
         assert_eq!(empty_heap.live_allocation_count(), 0);
 
@@ -15563,7 +16433,10 @@ mod tests {
             bTautFlags: u64::MAX,
             ..T_GROUP_INFO::default()
         };
-        assert_eq!(free_t_group_info(&mut partial_heap, Some(&mut partial)), Ok(0));
+        assert_eq!(
+            free_t_group_info(&mut partial_heap, Some(&mut partial)),
+            Ok(0)
+        );
         assert_eq!(partial, T_GROUP_INFO::default());
         assert_eq!(partial_heap.live_allocation_count(), 0);
     }
@@ -15611,7 +16484,9 @@ mod tests {
         assert_eq!(source.nIsotopicEndpointAtomNumber, original_isotopic);
         assert_eq!(null_heap.live_allocation_count(), 4);
 
-        let old_destination_group = null_heap.allocate_model_storage(vec![T_GROUP::default()]).unwrap();
+        let old_destination_group = null_heap
+            .allocate_model_storage(vec![T_GROUP::default()])
+            .unwrap();
         let mut destination = T_GROUP_INFO {
             t_group: old_destination_group,
             max_num_t_groups: 99,
@@ -15640,7 +16515,8 @@ mod tests {
         );
         assert_ne!(source.nIsotopicEndpointAtomNumber, old_source_isotopic);
         assert_eq!(
-            heap.slice(source.nIsotopicEndpointAtomNumber.as_const()).unwrap(),
+            heap.slice(source.nIsotopicEndpointAtomNumber.as_const())
+                .unwrap(),
             [31, 32]
         );
         assert_eq!(destination.nNumEndpoints, 3);
@@ -15653,7 +16529,8 @@ mod tests {
         assert_eq!(destination.bTautFlags, 0x5678);
         assert_eq!(destination.bTautFlagsDone, 0x9abc);
         assert_eq!(
-            heap.slice(destination.nEndpointAtomNumber.as_const()).unwrap(),
+            heap.slice(destination.nEndpointAtomNumber.as_const())
+                .unwrap(),
             [3, 5, 7]
         );
         assert_eq!(
@@ -15665,7 +16542,8 @@ mod tests {
         assert_eq!(copied_groups[0].nGroupNumber, 11);
         assert_eq!(copied_groups[1].nGroupNumber, 22);
         assert_eq!(
-            heap.slice(destination.nIsotopicEndpointAtomNumber.as_const()).unwrap(),
+            heap.slice(destination.nIsotopicEndpointAtomNumber.as_const())
+                .unwrap(),
             [31, 32]
         );
         assert_eq!(heap.live_allocation_count(), 8);
@@ -15679,7 +16557,11 @@ mod tests {
             };
             failure_heap.fail_after_allocations(successful_allocations);
             assert_eq!(
-                make_a_copy_of_t_group_info(&mut failure_heap, Some(&mut destination), Some(&mut source),),
+                make_a_copy_of_t_group_info(
+                    &mut failure_heap,
+                    Some(&mut destination),
+                    Some(&mut source),
+                ),
                 Ok(1),
                 "allocation failure after {successful_allocations} successes"
             );
@@ -15745,20 +16627,32 @@ mod tests {
             num_t_groups: 3,
             ..T_GROUP_INFO::default()
         };
-        assert_eq!(set_tautomer_iso_sort_keys(&mut heap, Some(&mut info)), Ok(2));
+        assert_eq!(
+            set_tautomer_iso_sort_keys(&mut heap, Some(&mut info)),
+            Ok(2)
+        );
         let groups_after = heap.slice(groups.as_const()).unwrap();
         assert_eq!(groups_after[0].iWeight, 1_050_627);
         assert_eq!(groups_after[1].iWeight, 0);
-        assert_eq!(groups_after[2].iWeight, i64::from(u16::MAX) * (1 + 1024 + 1_048_576));
+        assert_eq!(
+            groups_after[2].iWeight,
+            i64::from(u16::MAX) * (1 + 1024 + 1_048_576)
+        );
 
         let unchanged = groups_after.to_vec();
         info.nNumIsotopicEndpoints = 1;
-        assert_eq!(set_tautomer_iso_sort_keys(&mut heap, Some(&mut info)), Ok(0));
+        assert_eq!(
+            set_tautomer_iso_sort_keys(&mut heap, Some(&mut info)),
+            Ok(0)
+        );
         assert_eq!(heap.slice(groups.as_const()).unwrap(), unchanged);
 
         info.nNumIsotopicEndpoints = 0;
         info.num_t_groups = 0;
-        assert_eq!(set_tautomer_iso_sort_keys(&mut heap, Some(&mut info)), Ok(0));
+        assert_eq!(
+            set_tautomer_iso_sort_keys(&mut heap, Some(&mut info)),
+            Ok(0)
+        );
         assert_eq!(heap.slice(groups.as_const()).unwrap(), unchanged);
 
         info.num_t_groups = 4;
@@ -15820,17 +16714,27 @@ mod tests {
         );
         let mut empty = T_GROUP_INFO::default();
         assert_eq!(
-            CountTautomerGroups(&mut null_heap, SourceMutPointer::null(), 0, Some(&mut empty)),
+            CountTautomerGroups(
+                &mut null_heap,
+                SourceMutPointer::null(),
+                0,
+                Some(&mut empty)
+            ),
             Ok(0)
         );
 
         let mut heap = SourceHeap::default();
         let (atoms, mut info) = normal_fixture(&mut heap);
         let orphaned_endpoints = heap.allocate_model_storage(vec![91_u16, 92]).unwrap();
-        let orphaned_groups = heap.allocate_model_storage(vec![81_u16, 82, 83, 84]).unwrap();
+        let orphaned_groups = heap
+            .allocate_model_storage(vec![81_u16, 82, 83, 84])
+            .unwrap();
         info.nEndpointAtomNumber = orphaned_endpoints;
         info.tGroupNumber = orphaned_groups;
-        assert_eq!(CountTautomerGroups(&mut heap, atoms, 4, Some(&mut info)), Ok(10));
+        assert_eq!(
+            CountTautomerGroups(&mut heap, atoms, 4, Some(&mut info)),
+            Ok(10)
+        );
         assert_eq!((info.num_t_groups, info.nNumEndpoints), (2, 3));
         assert_eq!(
             heap.slice(atoms.as_const())
@@ -15852,13 +16756,19 @@ mod tests {
             ),
             (1, 0, 3, 2, 2, 2)
         );
-        assert_eq!(heap.slice(info.nEndpointAtomNumber.as_const()).unwrap(), [0, 2, 1]);
+        assert_eq!(
+            heap.slice(info.nEndpointAtomNumber.as_const()).unwrap(),
+            [0, 2, 1]
+        );
         assert_eq!(
             heap.slice(info.tGroupNumber.as_const()).unwrap(),
             [0, 1, 0, 0, 0, 0, 0, 0]
         );
         assert_eq!(heap.slice(orphaned_endpoints.as_const()).unwrap(), [91, 92]);
-        assert_eq!(heap.slice(orphaned_groups.as_const()).unwrap(), [81, 82, 83, 84]);
+        assert_eq!(
+            heap.slice(orphaned_groups.as_const()).unwrap(),
+            [81, 82, 83, 84]
+        );
         assert_eq!(heap.live_allocation_count(), 6);
 
         let mut no_h_heap = SourceHeap::default();
@@ -15868,7 +16778,9 @@ mod tests {
                 ..sp_ATOM::default()
             }])
             .unwrap();
-        let no_h_groups = no_h_heap.allocate_model_storage(vec![group(1, 1, 1, 1)]).unwrap();
+        let no_h_groups = no_h_heap
+            .allocate_model_storage(vec![group(1, 1, 1, 1)])
+            .unwrap();
         let mut no_h_info = T_GROUP_INFO {
             t_group: no_h_groups,
             num_t_groups: 1,
@@ -15880,7 +16792,10 @@ mod tests {
             Ok(0)
         );
         assert_eq!((no_h_info.num_t_groups, no_h_info.nNumEndpoints), (0, 0));
-        assert_eq!(no_h_heap.slice(no_h_atoms.as_const()).unwrap()[0].endpoint, 1);
+        assert_eq!(
+            no_h_heap.slice(no_h_atoms.as_const()).unwrap()[0].endpoint,
+            1
+        );
         assert_eq!(no_h_heap.live_allocation_count(), 2);
 
         let mut no_endpoint_heap = SourceHeap::default();
@@ -15898,10 +16813,21 @@ mod tests {
         };
         no_endpoint_info.tni.bNormalizationFlags = u64::from(FLAG_NORM_CONSIDER_TAUT);
         assert_eq!(
-            CountTautomerGroups(&mut no_endpoint_heap, no_endpoint_atoms, 1, Some(&mut no_endpoint_info),),
+            CountTautomerGroups(
+                &mut no_endpoint_heap,
+                no_endpoint_atoms,
+                1,
+                Some(&mut no_endpoint_info),
+            ),
             Ok(1)
         );
-        assert_eq!((no_endpoint_info.num_t_groups, no_endpoint_info.nNumEndpoints), (0, 0));
+        assert_eq!(
+            (
+                no_endpoint_info.num_t_groups,
+                no_endpoint_info.nNumEndpoints
+            ),
+            (0, 0)
+        );
 
         for invalid_endpoint in [3_u16, u16::MAX] {
             let mut invalid_heap = SourceHeap::default();
@@ -15911,7 +16837,9 @@ mod tests {
                     ..sp_ATOM::default()
                 }])
                 .unwrap();
-            let invalid_groups = invalid_heap.allocate_model_storage(vec![group(2, 1, 2, 0)]).unwrap();
+            let invalid_groups = invalid_heap
+                .allocate_model_storage(vec![group(2, 1, 2, 0)])
+                .unwrap();
             let mut invalid_info = T_GROUP_INFO {
                 t_group: invalid_groups,
                 num_t_groups: 1,
@@ -15932,7 +16860,9 @@ mod tests {
                 ..sp_ATOM::default()
             }])
             .unwrap();
-        let mismatch_groups = mismatch_heap.allocate_model_storage(vec![group(1, 2, 3, 0)]).unwrap();
+        let mismatch_groups = mismatch_heap
+            .allocate_model_storage(vec![group(1, 2, 3, 0)])
+            .unwrap();
         let mut mismatch_info = T_GROUP_INFO {
             t_group: mismatch_groups,
             num_t_groups: 1,
@@ -15940,7 +16870,12 @@ mod tests {
             ..T_GROUP_INFO::default()
         };
         assert_eq!(
-            CountTautomerGroups(&mut mismatch_heap, mismatch_atoms, 1, Some(&mut mismatch_info),),
+            CountTautomerGroups(
+                &mut mismatch_heap,
+                mismatch_atoms,
+                1,
+                Some(&mut mismatch_info),
+            ),
             Ok(CT_TAUCOUNT_ERR)
         );
 
@@ -15953,7 +16888,10 @@ mod tests {
                 Ok(CT_TAUCOUNT_ERR),
                 "allocation failure after {successful_allocations} successes"
             );
-            assert_eq!(failure_heap.source_allocation_calls(), successful_allocations + 1);
+            assert_eq!(
+                failure_heap.source_allocation_calls(),
+                successful_allocations + 1
+            );
             assert_eq!(failure_heap.live_allocation_count(), 2);
             assert_eq!((info.num_t_groups, info.nNumEndpoints), (0, 0));
         }

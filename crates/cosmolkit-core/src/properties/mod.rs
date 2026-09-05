@@ -1,16 +1,16 @@
 //! Derived descriptors, rendering, hashing, serialization, and batch helpers.
 
-#[cfg(feature = "fingerprints")]
+#[cfg(any(feature = "fingerprints", feature = "__fingerprint_impl"))]
 pub mod avalon_fingerprint;
-#[cfg(feature = "batch")]
+#[cfg(any(feature = "batch", feature = "__batch_impl"))]
 pub mod batch;
 #[cfg(feature = "descriptors")]
 pub mod descriptors;
-#[cfg(feature = "depict")]
+#[cfg(any(feature = "depict", feature = "__depict_impl"))]
 pub mod draw;
-#[cfg(feature = "fingerprints")]
+#[cfg(any(feature = "fingerprints", feature = "__fingerprint_impl"))]
 pub mod fingerprint;
-#[cfg(feature = "hashing")]
+#[cfg(any(feature = "hashing", feature = "__hashing_impl"))]
 pub mod mol_hash;
 #[cfg(feature = "serialization")]
 pub mod mol_pickler;

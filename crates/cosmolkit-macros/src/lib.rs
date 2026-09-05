@@ -2,8 +2,9 @@ use proc_macro::{Ident as MacroIdent, Literal, Spacing, TokenStream, TokenTree};
 use quote::{format_ident, quote};
 use std::path::PathBuf;
 use syn::{
-    Expr, FnArg, Ident, ItemFn, LitBool, LitStr, Pat, PatType, Path, Token, Type, braced, bracketed, parenthesized,
-    parse::Parse, parse::ParseStream, parse_macro_input, parse_quote, punctuated::Punctuated, spanned::Spanned,
+    Expr, FnArg, Ident, ItemFn, LitBool, LitStr, Pat, PatType, Path, Token, Type, braced,
+    bracketed, parenthesized, parse::Parse, parse::ParseStream, parse_macro_input, parse_quote,
+    punctuated::Punctuated, spanned::Spanned,
 };
 
 struct MolOpBodyAttr {
@@ -119,9 +120,13 @@ impl Parse for OpEntry {
                 "access" => fields.access = Some(parse_access_fields(&content)?),
                 "may_mutate" => fields.may_mutate = parse_ident_list(&content)?,
                 "auto_remap" => fields.auto_remap = parse_ident_list(&content)?,
-                "derived_effects" => fields.derived_effects = Some(parse_derived_effect_fields(&content)?),
+                "derived_effects" => {
+                    fields.derived_effects = Some(parse_derived_effect_fields(&content)?)
+                }
                 "cip_state" => fields.cip_state = Some(content.parse()?),
-                "semantic_preconditions" => fields.semantic_preconditions = parse_ident_list(&content)?,
+                "semantic_preconditions" => {
+                    fields.semantic_preconditions = parse_ident_list(&content)?
+                }
                 "must_handle" => {
                     return Err(syn::Error::new(
                         key.span(),
@@ -179,7 +184,11 @@ impl Parse for OpEntry {
             }
         }
 
-        Ok(Self { name, params, fields })
+        Ok(Self {
+            name,
+            params,
+            fields,
+        })
     }
 }
 
@@ -201,7 +210,10 @@ fn parse_access_fields(input: ParseStream<'_>) -> syn::Result<AccessFields> {
             "read" => fields.read = parse_ident_list(&content)?,
             "write" => fields.write = parse_ident_list(&content)?,
             other => {
-                return Err(syn::Error::new(key.span(), format!("unknown access field `{other}`")));
+                return Err(syn::Error::new(
+                    key.span(),
+                    format!("unknown access field `{other}`"),
+                ));
             }
         }
         if content.peek(Token![,]) {
@@ -255,7 +267,10 @@ fn parse_derived_effect_fields(input: ParseStream<'_>) -> syn::Result<DerivedEff
     Ok(fields)
 }
 
-fn validate_operation_defined_guardrail(operation: &Ident, effects: &DerivedEffectFields) -> syn::Result<()> {
+fn validate_operation_defined_guardrail(
+    operation: &Ident,
+    effects: &DerivedEffectFields,
+) -> syn::Result<()> {
     if effects.operation_defined.is_empty() {
         return Ok(());
     }
@@ -265,7 +280,8 @@ fn validate_operation_defined_guardrail(operation: &Ident, effects: &DerivedEffe
         operation_name.as_str(),
         "without_hydrogens" | "without_hydrogens_with_params"
     );
-    let is_valence_only = effects.operation_defined.len() == 1 && effects.operation_defined[0] == "valence";
+    let is_valence_only =
+        effects.operation_defined.len() == 1 && effects.operation_defined[0] == "valence";
     if is_hydrogen_removal && is_valence_only {
         return Ok(());
     }
@@ -287,8 +303,8 @@ fn validate_cip_state_guardrail(
         return Ok(());
     }
 
-    let is_tautomer_operation =
-        operation == "enumerate_tautomers_with_options" && method == "enumerate_tautomers_with_options";
+    let is_tautomer_operation = operation == "enumerate_tautomers_with_options"
+        && method == "enumerate_tautomers_with_options";
     let is_multiple_output = output == "multiple" || output == "Multiple";
     let writes_topology = access.write.iter().any(|block| block == "topology");
     let writes_properties = access.write.iter().any(|block| block == "properties");
@@ -316,9 +332,12 @@ pub fn mol_op_body(attr: TokenStream, item: TokenStream) -> TokenStream {
 
     for input in &func.sig.inputs {
         if matches!(input, FnArg::Receiver(_)) {
-            return syn::Error::new(input.span(), "mol_op_body operation bodies must not receive self")
-                .to_compile_error()
-                .into();
+            return syn::Error::new(
+                input.span(),
+                "mol_op_body operation bodies must not receive self",
+            )
+            .to_compile_error()
+            .into();
         }
     }
 
@@ -340,9 +359,12 @@ pub fn mol_multi_op_body(attr: TokenStream, item: TokenStream) -> TokenStream {
 
     for input in &func.sig.inputs {
         if matches!(input, FnArg::Receiver(_)) {
-            return syn::Error::new(input.span(), "mol_multi_op_body operation bodies must not receive self")
-                .to_compile_error()
-                .into();
+            return syn::Error::new(
+                input.span(),
+                "mol_multi_op_body operation bodies must not receive self",
+            )
+            .to_compile_error()
+            .into();
         }
     }
 
@@ -364,9 +386,12 @@ pub fn bio_op_body(attr: TokenStream, item: TokenStream) -> TokenStream {
 
     for input in &func.sig.inputs {
         if matches!(input, FnArg::Receiver(_)) {
-            return syn::Error::new(input.span(), "bio_op_body operation bodies must not receive self")
-                .to_compile_error()
-                .into();
+            return syn::Error::new(
+                input.span(),
+                "bio_op_body operation bodies must not receive self",
+            )
+            .to_compile_error()
+            .into();
         }
     }
 
@@ -463,7 +488,8 @@ fn expand_op(op: OpEntry) -> syn::Result<ExpandedOp> {
     let kind = required_field(op.fields.kind, &op.name, "kind")?;
     let feature = required_field(op.fields.feature, &op.name, "feature")?;
     let parity = required_field(op.fields.parity, &op.name, "parity")?;
-    let invariant_profile = required_field(op.fields.invariant_profile, &op.name, "invariant_profile")?;
+    let invariant_profile =
+        required_field(op.fields.invariant_profile, &op.name, "invariant_profile")?;
     let domain = op
         .fields
         .domain
@@ -499,8 +525,11 @@ fn expand_op(op: OpEntry) -> syn::Result<ExpandedOp> {
     }
 
     let operation_result = op.fields.result_type.clone();
-    let assembled_multiple_result = match (operation_result.clone(), op.fields.assemble_fn.clone()) {
-        (Some(result_type), Some(assemble_fn)) if multiple_output => Some((result_type, assemble_fn)),
+    let assembled_multiple_result = match (operation_result.clone(), op.fields.assemble_fn.clone())
+    {
+        (Some(result_type), Some(assemble_fn)) if multiple_output => {
+            Some((result_type, assemble_fn))
+        }
         (Some(_), Some(_)) => {
             return Err(syn::Error::new(
                 output.span(),
@@ -546,7 +575,8 @@ fn expand_op(op: OpEntry) -> syn::Result<ExpandedOp> {
     let access_expr = access_expr(&access)?;
     let may_mutate_expr = block_set_expr(&op.fields.may_mutate)?;
     let auto_remap_expr = block_set_expr(&op.fields.auto_remap)?;
-    let semantic_preconditions_expr = semantic_precondition_set_expr(&op.fields.semantic_preconditions)?;
+    let semantic_preconditions_expr =
+        semantic_precondition_set_expr(&op.fields.semantic_preconditions)?;
     let recompute_expr = derived_state_expr(&derived_effects.recompute)?;
     let preserve_expr = derived_state_expr(&derived_effects.preserve)?;
     let invalidate_expr = derived_state_expr(&derived_effects.invalidate)?;
@@ -595,7 +625,10 @@ fn expand_op(op: OpEntry) -> syn::Result<ExpandedOp> {
         crate::ops::OperationInvariantEntry::for_operation(&#spec_ident, #invariant_profile)
     };
 
-    let parity_entry = if matches!(parity.to_string().as_str(), "not_applicable" | "NotApplicable") {
+    let parity_entry = if matches!(
+        parity.to_string().as_str(),
+        "not_applicable" | "NotApplicable"
+    ) {
         None
     } else {
         let profile = required_field(op.fields.parity_profile, &op.name, "parity_profile")?;
@@ -737,7 +770,9 @@ fn expand_op(op: OpEntry) -> syn::Result<ExpandedOp> {
         None
     };
 
-    let default_inplace_method = if inplace_enabled && let Some(default_method) = default_method_ident {
+    let default_inplace_method = if inplace_enabled
+        && let Some(default_method) = default_method_ident
+    {
         let default_inplace_method =
             default_inplace_method_ident.unwrap_or_else(|| format_ident!("{}_", default_method));
         if let Some(result_type) = &operation_result {
@@ -836,7 +871,9 @@ fn topology_edit_expr(ident: &Ident) -> syn::Result<proc_macro2::TokenStream> {
         "none" | "None" => Ok(quote!(crate::ops::TopologyEditKind::None)),
         "local" | "Local" => Ok(quote!(crate::ops::TopologyEditKind::Local)),
         "compacting" | "Compacting" => Ok(quote!(crate::ops::TopologyEditKind::Compacting)),
-        "appending" | "Appending" | "append" | "Append" => Ok(quote!(crate::ops::TopologyEditKind::Appending)),
+        "appending" | "Appending" | "append" | "Append" => {
+            Ok(quote!(crate::ops::TopologyEditKind::Appending))
+        }
         "renumbering" | "Renumbering" => Ok(quote!(crate::ops::TopologyEditKind::Renumbering)),
         "merge" | "Merge" => Ok(quote!(crate::ops::TopologyEditKind::Merge)),
         other => Err(syn::Error::new(
@@ -888,17 +925,24 @@ fn cip_state_expr(ident: &Ident) -> syn::Result<proc_macro2::TokenStream> {
 }
 
 fn block_set_expr(items: &[Ident]) -> syn::Result<proc_macro2::TokenStream> {
-    union_expr(items, quote!(crate::ops::BlockSet::NONE), |item| {
-        match item.to_string().as_str() {
+    union_expr(
+        items,
+        quote!(crate::ops::BlockSet::NONE),
+        |item| match item.to_string().as_str() {
             "topology" | "Topology" => Ok(quote!(crate::ops::BlockSet::TOPOLOGY)),
             "coordinates" | "Coordinates" | "conformers" | "Conformers" => {
                 Ok(quote!(crate::ops::BlockSet::COORDINATES))
             }
-            "properties" | "Properties" | "props" | "Props" => Ok(quote!(crate::ops::BlockSet::PROPERTIES)),
+            "properties" | "Properties" | "props" | "Props" => {
+                Ok(quote!(crate::ops::BlockSet::PROPERTIES))
+            }
             "derived_cache" | "DerivedCache" => Ok(quote!(crate::ops::BlockSet::DERIVED_CACHE)),
-            other => Err(syn::Error::new(item.span(), format!("unknown mutable block `{other}`"))),
-        }
-    })
+            other => Err(syn::Error::new(
+                item.span(),
+                format!("unknown mutable block `{other}`"),
+            )),
+        },
+    )
 }
 
 fn access_expr(access: &AccessFields) -> syn::Result<proc_macro2::TokenStream> {
@@ -908,8 +952,10 @@ fn access_expr(access: &AccessFields) -> syn::Result<proc_macro2::TokenStream> {
 }
 
 fn derived_state_expr(items: &[Ident]) -> syn::Result<proc_macro2::TokenStream> {
-    union_expr(items, quote!(crate::DerivedState::NONE), |item| {
-        match item.to_string().as_str() {
+    union_expr(
+        items,
+        quote!(crate::DerivedState::NONE),
+        |item| match item.to_string().as_str() {
             "rings" | "Rings" => Ok(quote!(crate::DerivedState::RINGS)),
             "ring_families" | "RingFamilies" => Ok(quote!(crate::DerivedState::RING_FAMILIES)),
             "valence" | "Valence" => Ok(quote!(crate::DerivedState::VALENCE)),
@@ -918,9 +964,12 @@ fn derived_state_expr(items: &[Ident]) -> syn::Result<proc_macro2::TokenStream> 
             "coordinates" | "Coordinates" => Ok(quote!(crate::DerivedState::COORDINATES)),
             "drawing" | "Drawing" => Ok(quote!(crate::DerivedState::DRAWING)),
             "fingerprint" | "Fingerprint" => Ok(quote!(crate::DerivedState::FINGERPRINT)),
-            other => Err(syn::Error::new(item.span(), format!("unknown derived state `{other}`"))),
-        }
-    })
+            other => Err(syn::Error::new(
+                item.span(),
+                format!("unknown derived state `{other}`"),
+            )),
+        },
+    )
 }
 
 fn semantic_precondition_set_expr(items: &[Ident]) -> syn::Result<proc_macro2::TokenStream> {
@@ -928,9 +977,9 @@ fn semantic_precondition_set_expr(items: &[Ident]) -> syn::Result<proc_macro2::T
         items,
         quote!(crate::ops::SemanticPreconditionSet::NONE),
         |item| match item.to_string().as_str() {
-            "trusted_bond_topology" | "TrustedBondTopology" => {
-                Ok(quote!(crate::ops::SemanticPreconditionSet::TRUSTED_BOND_TOPOLOGY))
-            }
+            "trusted_bond_topology" | "TrustedBondTopology" => Ok(quote!(
+                crate::ops::SemanticPreconditionSet::TRUSTED_BOND_TOPOLOGY
+            )),
             "hydrogen_ownership_represented" | "HydrogenOwnershipRepresented" => Ok(quote!(
                 crate::ops::SemanticPreconditionSet::HYDROGEN_OWNERSHIP_REPRESENTED
             )),
@@ -942,7 +991,11 @@ fn semantic_precondition_set_expr(items: &[Ident]) -> syn::Result<proc_macro2::T
     )
 }
 
-fn union_expr<F>(items: &[Ident], none: proc_macro2::TokenStream, mut map: F) -> syn::Result<proc_macro2::TokenStream>
+fn union_expr<F>(
+    items: &[Ident],
+    none: proc_macro2::TokenStream,
+    mut map: F,
+) -> syn::Result<proc_macro2::TokenStream>
 where
     F: FnMut(&Ident) -> syn::Result<proc_macro2::TokenStream>,
 {
@@ -957,7 +1010,8 @@ where
 #[proc_macro]
 pub fn rdkit_uff_params(input: TokenStream) -> TokenStream {
     let path = manifest_relative_path(input);
-    let text = std::fs::read_to_string(&path).unwrap_or_else(|err| panic!("failed to read {}: {err}", path.display()));
+    let text = std::fs::read_to_string(&path)
+        .unwrap_or_else(|err| panic!("failed to read {}: {err}", path.display()));
     let mut out = String::from("&[");
     for (line_no, line) in text.lines().enumerate() {
         if line.trim().is_empty() {
@@ -986,7 +1040,8 @@ pub fn rdkit_uff_params(input: TokenStream) -> TokenStream {
 #[proc_macro]
 pub fn rdkit_uff_param_match(input: TokenStream) -> TokenStream {
     let (path, label_ident) = manifest_relative_path_and_ident(input);
-    let text = std::fs::read_to_string(&path).unwrap_or_else(|err| panic!("failed to read {}: {err}", path.display()));
+    let text = std::fs::read_to_string(&path)
+        .unwrap_or_else(|err| panic!("failed to read {}: {err}", path.display()));
     let mut out = format!("match {label_ident} {{");
     for (line_no, line) in text.lines().enumerate() {
         if line.trim().is_empty() {
@@ -1017,7 +1072,8 @@ pub fn rdkit_uff_param_match(input: TokenStream) -> TokenStream {
 #[proc_macro]
 pub fn rdkit_periodic_rvdw(input: TokenStream) -> TokenStream {
     let path = manifest_relative_path(input);
-    let text = std::fs::read_to_string(&path).unwrap_or_else(|err| panic!("failed to read {}: {err}", path.display()));
+    let text = std::fs::read_to_string(&path)
+        .unwrap_or_else(|err| panic!("failed to read {}: {err}", path.display()));
     let mut values = [1.7_f64; 119];
     for (line_no, line) in text.lines().enumerate() {
         if line.trim().is_empty() {
@@ -1030,9 +1086,13 @@ pub fn rdkit_periodic_rvdw(input: TokenStream) -> TokenStream {
             path.display(),
             line_no + 1
         );
-        let atomic_num: u8 = cols[0]
-            .parse()
-            .unwrap_or_else(|err| panic!("{}:{} invalid atomic number: {err}", path.display(), line_no + 1));
+        let atomic_num: u8 = cols[0].parse().unwrap_or_else(|err| {
+            panic!(
+                "{}:{} invalid atomic number: {err}",
+                path.display(),
+                line_no + 1
+            )
+        });
         let rvdw: f64 = cols[1]
             .parse()
             .unwrap_or_else(|err| panic!("{}:{} invalid rvdw: {err}", path.display(), line_no + 1));
@@ -1061,7 +1121,8 @@ fn manifest_relative_path_and_ident(input: TokenStream) -> (PathBuf, MacroIdent)
         panic!("expected a string literal path followed by an identifier");
     };
     match iter.next() {
-        Some(TokenTree::Punct(punct)) if punct.as_char() == ',' && punct.spacing() == Spacing::Alone => {}
+        Some(TokenTree::Punct(punct))
+            if punct.as_char() == ',' && punct.spacing() == Spacing::Alone => {}
         _ => panic!("expected comma after path"),
     }
     let Some(TokenTree::Ident(ident)) = iter.next() else {
@@ -1182,7 +1243,11 @@ impl Parse for BioOpEntry {
                 content.parse::<Token![,]>()?;
             }
         }
-        Ok(Self { name, params, fields })
+        Ok(Self {
+            name,
+            params,
+            fields,
+        })
     }
 }
 
@@ -1256,7 +1321,8 @@ fn expand_bio_op(op: BioOpEntry) -> syn::Result<ExpandedBioOp> {
     let kind = required_field(op.fields.kind, &op.name, "kind")?;
     let feature = required_field(op.fields.feature, &op.name, "feature")?;
     let parity = required_field(op.fields.parity, &op.name, "parity")?;
-    let invariant_profile = required_field(op.fields.invariant_profile, &op.name, "invariant_profile")?;
+    let invariant_profile =
+        required_field(op.fields.invariant_profile, &op.name, "invariant_profile")?;
 
     let domain = op
         .fields
@@ -1270,7 +1336,10 @@ fn expand_bio_op(op: BioOpEntry) -> syn::Result<ExpandedBioOp> {
         .fields
         .requires_mapping
         .map_or_else(|| ident_with_span("none", op.name.span()), Ok)?;
-    let io_roundtrip = op.fields.io_roundtrip.map_or_else(|| parse_quote!(false), |v| v);
+    let io_roundtrip = op
+        .fields
+        .io_roundtrip
+        .map_or_else(|| parse_quote!(false), |v| v);
 
     let spec_ident = format_ident!("BIO_{}_SPEC", op.name.to_string().to_ascii_uppercase());
     let method_name = method.to_string();
@@ -1383,7 +1452,9 @@ fn bio_domain_expr(ident: &Ident) -> syn::Result<proc_macro2::TokenStream> {
         "annotation" | "Annotation" => Ok(quote!(crate::bio_ops::BioOpDomain::Annotation)),
         "bonding" | "Bonding" => Ok(quote!(crate::bio_ops::BioOpDomain::Bonding)),
         "polymer" | "Polymer" => Ok(quote!(crate::bio_ops::BioOpDomain::Polymer)),
-        "chemistry_bridge" | "ChemistryBridge" => Ok(quote!(crate::bio_ops::BioOpDomain::ChemistryBridge)),
+        "chemistry_bridge" | "ChemistryBridge" => {
+            Ok(quote!(crate::bio_ops::BioOpDomain::ChemistryBridge))
+        }
         other => Err(syn::Error::new(
             ident.span(),
             format!("unknown bio op domain `{other}`"),
@@ -1395,7 +1466,10 @@ fn bio_kind_expr(ident: &Ident) -> syn::Result<proc_macro2::TokenStream> {
     match ident.to_string().as_str() {
         "strong" | "Strong" => Ok(quote!(crate::bio_ops::BioOpKind::Strong)),
         "weak" | "Weak" => Ok(quote!(crate::bio_ops::BioOpKind::Weak)),
-        other => Err(syn::Error::new(ident.span(), format!("unknown bio op kind `{other}`"))),
+        other => Err(syn::Error::new(
+            ident.span(),
+            format!("unknown bio op kind `{other}`"),
+        )),
     }
 }
 
@@ -1430,14 +1504,18 @@ fn bio_mapping_expr(ident: &Ident) -> syn::Result<proc_macro2::TokenStream> {
 
 fn bio_parity_expr(ident: &Ident) -> syn::Result<proc_macro2::TokenStream> {
     match ident.to_string().as_str() {
-        "not_applicable" | "NotApplicable" => Ok(quote!(crate::bio_ops::BioParityPolicy::NotApplicable)),
+        "not_applicable" | "NotApplicable" => {
+            Ok(quote!(crate::bio_ops::BioParityPolicy::NotApplicable))
+        }
         "gemmi_when_applicable" | "GemmiWhenApplicable" => {
             Ok(quote!(crate::bio_ops::BioParityPolicy::GemmiWhenApplicable))
         }
-        "biopython_when_applicable" | "BiopythonWhenApplicable" => {
-            Ok(quote!(crate::bio_ops::BioParityPolicy::BiopythonWhenApplicable))
+        "biopython_when_applicable" | "BiopythonWhenApplicable" => Ok(quote!(
+            crate::bio_ops::BioParityPolicy::BiopythonWhenApplicable
+        )),
+        "pdb_spec_required" | "PdbSpecRequired" => {
+            Ok(quote!(crate::bio_ops::BioParityPolicy::PdbSpecRequired))
         }
-        "pdb_spec_required" | "PdbSpecRequired" => Ok(quote!(crate::bio_ops::BioParityPolicy::PdbSpecRequired)),
         "required_now" | "RequiredNow" => Ok(quote!(crate::bio_ops::BioParityPolicy::RequiredNow)),
         other => Err(syn::Error::new(
             ident.span(),
@@ -1447,8 +1525,10 @@ fn bio_parity_expr(ident: &Ident) -> syn::Result<proc_macro2::TokenStream> {
 }
 
 fn bio_block_set_expr(items: &[Ident]) -> syn::Result<proc_macro2::TokenStream> {
-    union_expr(items, quote!(crate::bio_ops::BioBlockSet::NONE), |item| {
-        match item.to_string().as_str() {
+    union_expr(
+        items,
+        quote!(crate::bio_ops::BioBlockSet::NONE),
+        |item| match item.to_string().as_str() {
             "atoms" | "Atoms" => Ok(quote!(crate::bio_ops::BioBlockSet::ATOMS)),
             "residues" | "Residues" => Ok(quote!(crate::bio_ops::BioBlockSet::RESIDUES)),
             "chains" | "Chains" => Ok(quote!(crate::bio_ops::BioBlockSet::CHAINS)),
@@ -1458,39 +1538,59 @@ fn bio_block_set_expr(items: &[Ident]) -> syn::Result<proc_macro2::TokenStream> 
             "bonds" | "Bonds" => Ok(quote!(crate::bio_ops::BioBlockSet::BONDS)),
             "assemblies" | "Assemblies" => Ok(quote!(crate::bio_ops::BioBlockSet::ASSEMBLIES)),
             "annotations" | "Annotations" => Ok(quote!(crate::bio_ops::BioBlockSet::ANNOTATIONS)),
-            "derived_cache" | "DerivedCache" => Ok(quote!(crate::bio_ops::BioBlockSet::DERIVED_CACHE)),
+            "derived_cache" | "DerivedCache" => {
+                Ok(quote!(crate::bio_ops::BioBlockSet::DERIVED_CACHE))
+            }
             "properties" | "Properties" => Ok(quote!(crate::bio_ops::BioBlockSet::PROPERTIES)),
-            other => Err(syn::Error::new(item.span(), format!("unknown bio block `{other}`"))),
-        }
-    })
+            other => Err(syn::Error::new(
+                item.span(),
+                format!("unknown bio block `{other}`"),
+            )),
+        },
+    )
 }
 
 fn bio_state_set_expr(items: &[Ident]) -> syn::Result<proc_macro2::TokenStream> {
-    union_expr(items, quote!(crate::bio_ops::BioStateSet::NONE), |item| {
-        match item.to_string().as_str() {
+    union_expr(
+        items,
+        quote!(crate::bio_ops::BioStateSet::NONE),
+        |item| match item.to_string().as_str() {
             "hierarchy" | "Hierarchy" => Ok(quote!(crate::bio_ops::BioStateSet::HIERARCHY)),
-            "residue_spans" | "ResidueSpans" => Ok(quote!(crate::bio_ops::BioStateSet::RESIDUE_SPANS)),
+            "residue_spans" | "ResidueSpans" => {
+                Ok(quote!(crate::bio_ops::BioStateSet::RESIDUE_SPANS))
+            }
             "chain_spans" | "ChainSpans" => Ok(quote!(crate::bio_ops::BioStateSet::CHAIN_SPANS)),
             "model_spans" | "ModelSpans" => Ok(quote!(crate::bio_ops::BioStateSet::MODEL_SPANS)),
             "coordinate_alignment" | "CoordinateAlignment" => {
                 Ok(quote!(crate::bio_ops::BioStateSet::COORDINATE_ALIGNMENT))
             }
-            "entity_mapping" | "EntityMapping" => Ok(quote!(crate::bio_ops::BioStateSet::ENTITY_MAPPING)),
-            "altloc_groups" | "AltlocGroups" => Ok(quote!(crate::bio_ops::BioStateSet::ALTLOC_GROUPS)),
+            "entity_mapping" | "EntityMapping" => {
+                Ok(quote!(crate::bio_ops::BioStateSet::ENTITY_MAPPING))
+            }
+            "altloc_groups" | "AltlocGroups" => {
+                Ok(quote!(crate::bio_ops::BioStateSet::ALTLOC_GROUPS))
+            }
             "assembly_references" | "AssemblyReferences" => {
                 Ok(quote!(crate::bio_ops::BioStateSet::ASSEMBLY_REFERENCES))
             }
-            "bond_references" | "BondReferences" => Ok(quote!(crate::bio_ops::BioStateSet::BOND_REFERENCES)),
+            "bond_references" | "BondReferences" => {
+                Ok(quote!(crate::bio_ops::BioStateSet::BOND_REFERENCES))
+            }
             "selection_provenance" | "SelectionProvenance" => {
                 Ok(quote!(crate::bio_ops::BioStateSet::SELECTION_PROVENANCE))
             }
-            "polymer_annotation" | "PolymerAnnotation" => Ok(quote!(crate::bio_ops::BioStateSet::POLYMER_ANNOTATION)),
+            "polymer_annotation" | "PolymerAnnotation" => {
+                Ok(quote!(crate::bio_ops::BioStateSet::POLYMER_ANNOTATION))
+            }
             "secondary_structure" | "SecondaryStructure" => {
                 Ok(quote!(crate::bio_ops::BioStateSet::SECONDARY_STRUCTURE))
             }
-            other => Err(syn::Error::new(item.span(), format!("unknown bio state `{other}`"))),
-        }
-    })
+            other => Err(syn::Error::new(
+                item.span(),
+                format!("unknown bio state `{other}`"),
+            )),
+        },
+    )
 }
 
 fn bio_derived_state_expr(items: &[Ident]) -> syn::Result<proc_macro2::TokenStream> {
@@ -1499,24 +1599,46 @@ fn bio_derived_state_expr(items: &[Ident]) -> syn::Result<proc_macro2::TokenStre
         quote!(crate::bio_ops::BioDerivedState::NONE),
         |item| match item.to_string().as_str() {
             "atom_index" | "AtomIndex" => Ok(quote!(crate::bio_ops::BioDerivedState::ATOM_INDEX)),
-            "residue_index" | "ResidueIndex" => Ok(quote!(crate::bio_ops::BioDerivedState::RESIDUE_INDEX)),
-            "chain_index" | "ChainIndex" => Ok(quote!(crate::bio_ops::BioDerivedState::CHAIN_INDEX)),
-            "entity_index" | "EntityIndex" => Ok(quote!(crate::bio_ops::BioDerivedState::ENTITY_INDEX)),
-            "sequence_cache" | "SequenceCache" => Ok(quote!(crate::bio_ops::BioDerivedState::SEQUENCE_CACHE)),
-            "polymer_cache" | "PolymerCache" => Ok(quote!(crate::bio_ops::BioDerivedState::POLYMER_CACHE)),
-            "altloc_cache" | "AltlocCache" => Ok(quote!(crate::bio_ops::BioDerivedState::ALTLOC_CACHE)),
-            "assembly_cache" | "AssemblyCache" => Ok(quote!(crate::bio_ops::BioDerivedState::ASSEMBLY_CACHE)),
+            "residue_index" | "ResidueIndex" => {
+                Ok(quote!(crate::bio_ops::BioDerivedState::RESIDUE_INDEX))
+            }
+            "chain_index" | "ChainIndex" => {
+                Ok(quote!(crate::bio_ops::BioDerivedState::CHAIN_INDEX))
+            }
+            "entity_index" | "EntityIndex" => {
+                Ok(quote!(crate::bio_ops::BioDerivedState::ENTITY_INDEX))
+            }
+            "sequence_cache" | "SequenceCache" => {
+                Ok(quote!(crate::bio_ops::BioDerivedState::SEQUENCE_CACHE))
+            }
+            "polymer_cache" | "PolymerCache" => {
+                Ok(quote!(crate::bio_ops::BioDerivedState::POLYMER_CACHE))
+            }
+            "altloc_cache" | "AltlocCache" => {
+                Ok(quote!(crate::bio_ops::BioDerivedState::ALTLOC_CACHE))
+            }
+            "assembly_cache" | "AssemblyCache" => {
+                Ok(quote!(crate::bio_ops::BioDerivedState::ASSEMBLY_CACHE))
+            }
             "bond_cache" | "BondCache" => Ok(quote!(crate::bio_ops::BioDerivedState::BOND_CACHE)),
-            "backbone_geometry" | "BackboneGeometry" => Ok(quote!(crate::bio_ops::BioDerivedState::BACKBONE_GEOMETRY)),
+            "backbone_geometry" | "BackboneGeometry" => {
+                Ok(quote!(crate::bio_ops::BioDerivedState::BACKBONE_GEOMETRY))
+            }
             "sidechain_geometry" | "SidechainGeometry" => {
                 Ok(quote!(crate::bio_ops::BioDerivedState::SIDECHAIN_GEOMETRY))
             }
-            "nucleic_geometry" | "NucleicGeometry" => Ok(quote!(crate::bio_ops::BioDerivedState::NUCLEIC_GEOMETRY)),
+            "nucleic_geometry" | "NucleicGeometry" => {
+                Ok(quote!(crate::bio_ops::BioDerivedState::NUCLEIC_GEOMETRY))
+            }
             "secondary_structure" | "SecondaryStructure" => {
                 Ok(quote!(crate::bio_ops::BioDerivedState::SECONDARY_STRUCTURE))
             }
-            "contact_map" | "ContactMap" => Ok(quote!(crate::bio_ops::BioDerivedState::CONTACT_MAP)),
-            "graph_cache" | "GraphCache" => Ok(quote!(crate::bio_ops::BioDerivedState::GRAPH_CACHE)),
+            "contact_map" | "ContactMap" => {
+                Ok(quote!(crate::bio_ops::BioDerivedState::CONTACT_MAP))
+            }
+            "graph_cache" | "GraphCache" => {
+                Ok(quote!(crate::bio_ops::BioDerivedState::GRAPH_CACHE))
+            }
             other => Err(syn::Error::new(
                 item.span(),
                 format!("unknown bio derived state `{other}`"),
@@ -1655,7 +1777,9 @@ mod tests {
             .expect("typed single-output operation has an in-place wrapper")
             .to_string();
 
-        assert!(spec.contains("result_type : stringify ! ((crate :: molecule :: Molecule , crate :: TestResult))"));
+        assert!(spec.contains(
+            "result_type : stringify ! ((crate :: molecule :: Molecule , crate :: TestResult))"
+        ));
 
         let value_compute = method
             .find("let result = test_alignment_impl")
@@ -1687,9 +1811,9 @@ mod tests {
             Err(error) => error,
         };
         assert!(
-            error
-                .to_string()
-                .contains("multiple-output molecule operations cannot generate an in-place wrapper")
+            error.to_string().contains(
+                "multiple-output molecule operations cannot generate an in-place wrapper"
+            )
         );
     }
 }

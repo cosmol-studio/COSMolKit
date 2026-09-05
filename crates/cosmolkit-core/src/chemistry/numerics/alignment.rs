@@ -139,7 +139,11 @@ fn weighted_len_sq(points: &[[f64; 3]], weights: Option<&[f64]>) -> f64 {
         .sum()
 }
 
-fn covariance(ref_points: &[[f64; 3]], probe_points: &[[f64; 3]], weights: Option<&[f64]>) -> [[f64; 3]; 3] {
+fn covariance(
+    ref_points: &[[f64; 3]],
+    probe_points: &[[f64; 3]],
+    weights: Option<&[f64]>,
+) -> [[f64; 3]; 3] {
     // BEGIN RDKIT CPP FUNCTION RDNumeric::Alignments::_computeCovarianceMat (AlignPoints.cpp:67-88)
     // RDKit✔️✔️:     double w = weights ? wData[i] : 1.0;
     // RDKit✔️✔️:     covMat[0][0] += w * (ppt->x) * (rpt->x);
@@ -341,11 +345,16 @@ pub(crate) fn align_points(
     }
     let (evals, evecs) = jacobi(quad(cov, rsum, psum, wsum), max_iterations);
     let mut trans = identity();
-    set_rotation_from_quaternion(&mut trans, [evecs[0][0], evecs[1][0], evecs[2][0], evecs[3][0]]);
+    set_rotation_from_quaternion(
+        &mut trans,
+        [evecs[0][0], evecs[1][0], evecs[2][0], evecs[3][0]],
+    );
     if reflect_input {
         reflect(&mut trans);
     }
-    let mut ssr = evals[0] - (psum.iter().map(|x| x * x).sum::<f64>() + rsum.iter().map(|x| x * x).sum::<f64>()) / wsum
+    let mut ssr = evals[0]
+        - (psum.iter().map(|x| x * x).sum::<f64>() + rsum.iter().map(|x| x * x).sum::<f64>())
+            / wsum
         + rlen
         + plen;
     if ssr < 0.0 && ssr.abs() < TOLERANCE {
@@ -425,19 +434,32 @@ mod tests {
         ];
         let (unweighted, _) = align_points(&reference, &probe, None, false, 50).unwrap();
         assert!((unweighted - 3.0).abs() < 1.0e-4);
-        let (weighted, _) = align_points(&reference, &probe, Some(&[1.0, 1.0, 2.0]), false, 50).unwrap();
+        let (weighted, _) =
+            align_points(&reference, &probe, Some(&[1.0, 1.0, 2.0]), false, 50).unwrap();
         assert!((weighted - 3.75).abs() < 1.0e-4);
-        let (weighted, _) = align_points(&reference, &probe, Some(&[1.0, 2.0, 2.0]), false, 50).unwrap();
+        let (weighted, _) =
+            align_points(&reference, &probe, Some(&[1.0, 2.0, 2.0]), false, 50).unwrap();
         assert!((weighted - 4.8).abs() < 1.0e-4);
     }
 
     #[test]
     fn reflection_matches_rdkit_source_regression() {
-        let reference = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
-        let probe = [[2.0, 2.0, 3.0], [3.0, 2.0, 3.0], [2.0, 2.0, 4.0], [2.0, 3.0, 3.0]];
+        let reference = [
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [0.0, 0.0, 1.0],
+        ];
+        let probe = [
+            [2.0, 2.0, 3.0],
+            [3.0, 2.0, 3.0],
+            [2.0, 2.0, 4.0],
+            [2.0, 3.0, 3.0],
+        ];
         let (without_reflection, _) = align_points(&reference, &probe, None, false, 50).unwrap();
         assert!((without_reflection - 1.0).abs() < 1.0e-4);
-        let (with_reflection, transform) = align_points(&reference, &probe, None, true, 50).unwrap();
+        let (with_reflection, transform) =
+            align_points(&reference, &probe, None, true, 50).unwrap();
         assert!(with_reflection.abs() < 1.0e-4);
         for (expected, point) in reference.iter().zip(probe) {
             let actual = transform_point(&transform, point);

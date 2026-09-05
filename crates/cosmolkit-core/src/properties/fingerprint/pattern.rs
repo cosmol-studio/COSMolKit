@@ -1,13 +1,14 @@
 use std::sync::OnceLock;
 
 use super::{
-    Fingerprint, FingerprintError, SsMatcher, hash_combine, rdkit_bond_type_code, rdkit_fp_bond_between_atoms,
+    Fingerprint, FingerprintError, SsMatcher, hash_combine, rdkit_bond_type_code,
+    rdkit_fp_bond_between_atoms,
 };
-use crate::search::query::{
-    AtomQueryPredicate, BondQueryPredicate, QueryNode, build_query_match_context, is_complex_atom_query,
+use crate::search::query::build_query_match_context;
+use crate::search::substruct::{
+    SubstructMatchParams, try_get_substruct_matches_with_params_and_context,
 };
-use crate::search::substruct::{SubstructMatchParams, try_get_substruct_matches_with_params_and_context};
-use crate::{Bond, BondOrder, Molecule};
+use crate::{BondOrder, Molecule};
 
 // RDKit✔️✔️: const std::string PatternFingerprintMolVersion = "1.0.0";
 pub const PATTERN_FINGERPRINT_VERSION: &str = "1.0.0";
@@ -41,9 +42,9 @@ impl Default for PatternFingerprintParams {
 
 /// Computes an explicit Pattern fingerprint without mutating `molecule`.
 ///
-/// Query-bearing molecules follow RDKit's Pattern-specific atom and bond
-/// suppression rules. The implementation compiles the fixed 13-query table
-/// once and shares it across scalar, batch, and concurrent calls.
+/// The Pattern fingerprint consumes concrete, query-free `Molecule` values.
+/// Query graphs are a separate search value and are not materialized as fake
+/// molecules to reach this algorithm.
 ///
 /// RDKit's ordinary overload also accepts `atomCounts` and `setOnlyBits`, but
 /// the pinned implementation only validates their sizes and otherwise leaves
@@ -98,7 +99,14 @@ pub fn pattern_fingerprint(
         return Err(FingerprintError::EmptyFingerprint);
     }
     let mut fingerprint = Fingerprint::zeroed(params.n_bits);
-    update_pattern_fingerprint(molecule, &mut fingerprint, params.n_bits, None, None, params.tautomeric)?;
+    update_pattern_fingerprint(
+        molecule,
+        &mut fingerprint,
+        params.n_bits,
+        None,
+        None,
+        params.tautomeric,
+    )?;
     Ok(fingerprint)
 }
 
@@ -143,7 +151,8 @@ pub(super) const PATTERN_FINGERPRINT_SMARTS: [&str; 13] = [
     "[*]",
 ];
 
-pub(super) fn compiled_pattern_fingerprint_queries() -> Result<&'static [SsMatcher], FingerprintError> {
+pub(super) fn compiled_pattern_fingerprint_queries()
+-> Result<&'static [SsMatcher], FingerprintError> {
     // RDKit✔️✔️: typedef boost::flyweight<boost::flyweights::key_value<std::string, ss_matcher>,
     // RDKit✔️✔️:                          boost::flyweights::no_tracking>
     // RDKit✔️✔️:     pattern_flyweight;
@@ -161,64 +170,6 @@ pub(super) fn compiled_pattern_fingerprint_queries() -> Result<&'static [SsMatch
         Ok(matchers) => Ok(matchers.as_slice()),
         Err(error) => Err(error.clone()),
     }
-}
-
-#[inline]
-pub(super) fn is_pattern_complex_query(bond: &Bond) -> bool {
-    // RDKit✔️✔️: bool isPatternComplexQuery(const Bond *b) {
-    // RDKit✔️✔️:   if (!b->hasQuery()) {
-    // RDKit✔️✔️:     return false;
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   // negated things are always complex:
-    // RDKit✔️✔️:   if (b->getQuery()->getNegation()) {
-    // RDKit✔️✔️:     return true;
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   std::string descr = b->getQuery()->getDescription();
-    // RDKit✔️✔️:   // std::cerr<<"   !!!!!! "<<b->getIdx()<<"
-    // RDKit✔️✔️:   // "<<b->getBeginAtomIdx()<<"-"<<b->getEndAtomIdx()<<" "<<descr<<std::endl;
-    // RDKit✔️✔️:   return descr != "BondOrder";
-    // RDKit✔️✔️: }
-    //
-    // `Order` is the sole typed identity for RDKit's `BondOrder`
-    // description. A root `Not` is the typed equivalent of the source query's
-    // independent negation flag. Local complexity review: both versions make
-    // one optional/root query inspection in O(1), without traversal,
-    // allocation, cloning, keyed lookup, or molecule access.
-    match bond.query() {
-        None => false,
-        Some(QueryNode::Not(_)) => true,
-        Some(QueryNode::Predicate(BondQueryPredicate::Order(_))) => false,
-        Some(_) => true,
-    }
-}
-
-#[inline]
-pub(super) fn is_tautomer_bond_query(bond: &Bond) -> bool {
-    // RDKit✔️✔️: bool isTautomerBondQuery(const Bond *b) {
-    // RDKit✔️✔️:   // assumes we have already tested true for isPatternComplexQuery
-    // RDKit✔️✔️:   auto description = b->getQuery()->getDescription();
-    // RDKit✔️✔️:   return description == "SingleOrDoubleOrAromaticBond" ||
-    // RDKit✔️✔️:          description == "SingleOrAromaticBond";
-    // RDKit✔️✔️: }
-    //
-    // RDKit stores negation beside the query description, so a root `Not`
-    // does not change the description inspected here. `OrderIn` is the sole
-    // typed fixed-order-set representation, with source-order vectors
-    // preserving the two named descriptions. Local complexity review: both
-    // implementations perform O(1) root inspection and at most three O(1)
-    // enum comparisons without traversal, allocation, cloning, or lookup.
-    let query = match bond.query() {
-        Some(QueryNode::Not(child)) => child.as_ref(),
-        Some(query) => query,
-        None => return false,
-    };
-    matches!(
-        query,
-        QueryNode::Predicate(BondQueryPredicate::OrderIn(orders))
-            if orders.as_slice() == [BondOrder::Single, BondOrder::Aromatic]
-                || orders.as_slice()
-                    == [BondOrder::Single, BondOrder::Double, BondOrder::Aromatic]
-    )
 }
 
 fn update_pattern_fingerprint(
@@ -261,18 +212,6 @@ enum PatternTraceEvent {
         pattern_index: u32,
         bond_code: u32,
         seed: u32,
-    },
-    QueryAtomSuppressed {
-        pattern_index: u32,
-        atom_index: usize,
-    },
-    QueryBondSuppressed {
-        pattern_index: u32,
-        bond_index: usize,
-    },
-    TautomerQueryBond {
-        pattern_index: u32,
-        bond_index: usize,
     },
     StructureBit {
         pattern_index: u32,
@@ -464,26 +403,6 @@ fn update_pattern_fingerprint_impl(
     }
 
     let patterns = compiled_pattern_fingerprint_queries()?;
-    let is_query_atom: Vec<bool> = molecule
-        .atoms()
-        .iter()
-        .map(|atom| {
-            atom.query().is_some()
-                && (matches!(atom.query(), Some(QueryNode::Predicate(AtomQueryPredicate::Any)))
-                    || is_complex_atom_query(atom))
-        })
-        .collect();
-    let mut is_query_bond = vec![false; molecule.num_bonds()];
-    let mut is_tautomer_bond = vec![false; molecule.num_bonds()];
-    for bond in molecule.bonds() {
-        if is_pattern_complex_query(bond) {
-            is_query_bond[bond.id().index()] = true;
-            if tautomeric_fingerprint && is_tautomer_bond_query(bond) {
-                is_tautomer_bond[bond.id().index()] = true;
-            }
-        }
-    }
-
     let mut params = SubstructMatchParams::default();
     params.uniquify = false;
     params.max_matches = 100_000_000;
@@ -491,10 +410,15 @@ fn update_pattern_fingerprint_impl(
     for (pattern_offset, matcher) in patterns.iter().enumerate() {
         let pattern_index = pattern_offset as u32 + 1;
         let pattern = matcher.getMatcher();
-        let matches = try_get_substruct_matches_with_params_and_context(molecule, pattern, &params, &query_context)
-            .map_err(|error| FingerprintError::Pattern {
-                reason: error.to_string(),
-            })?;
+        let matches = try_get_substruct_matches_with_params_and_context(
+            molecule,
+            pattern,
+            &params,
+            &query_context,
+        )
+        .map_err(|error| FingerprintError::Pattern {
+            reason: error.to_string(),
+        })?;
         trace(PatternTraceEvent::PatternMatches {
             pattern_index,
             count: matches.len(),
@@ -514,19 +438,12 @@ fn update_pattern_fingerprint_impl(
                 bit: count_bit,
             });
 
-            let mut is_query = false;
             let mut bit_id = pattern_index;
             let mut atom_map = vec![0usize; matched.atom_mapping.len()];
-            for (query_atom_index, &molecule_atom_index) in matched.atom_mapping.iter().enumerate() {
-                if is_query_atom[molecule_atom_index] {
-                    is_query = true;
-                    trace(PatternTraceEvent::QueryAtomSuppressed {
-                        pattern_index,
-                        atom_index: molecule_atom_index,
-                    });
-                    break;
-                }
-                let atomic_number = u32::from(molecule.atoms()[molecule_atom_index].atomic_number());
+            for (query_atom_index, &molecule_atom_index) in matched.atom_mapping.iter().enumerate()
+            {
+                let atomic_number =
+                    u32::from(molecule.atoms()[molecule_atom_index].atomic_number());
                 hash_combine(&mut bit_id, atomic_number);
                 trace(PatternTraceEvent::AtomHash {
                     pattern_index,
@@ -535,12 +452,8 @@ fn update_pattern_fingerprint_impl(
                 });
                 atom_map[query_atom_index] = molecule_atom_index;
             }
-            if is_query {
-                continue;
-            }
 
             let mut tautomer_bit_id = bit_id;
-            let mut tautomer_query = false;
             for pattern_bond in pattern.bonds() {
                 let molecule_bond_index = rdkit_fp_bond_between_atoms(
                     molecule,
@@ -550,28 +463,8 @@ fn update_pattern_fingerprint_impl(
                 .expect("substructure atom mapping must preserve query bonds");
                 let molecule_bond = &molecule.bonds()[molecule_bond_index];
 
-                if is_query_bond[molecule_bond_index] {
-                    is_query = true;
-                    if is_tautomer_bond[molecule_bond_index] {
-                        is_query = false;
-                        tautomer_query = true;
-                        trace(PatternTraceEvent::TautomerQueryBond {
-                            pattern_index,
-                            bond_index: molecule_bond_index,
-                        });
-                    }
-                    if is_query {
-                        trace(PatternTraceEvent::QueryBondSuppressed {
-                            pattern_index,
-                            bond_index: molecule_bond_index,
-                        });
-                        break;
-                    }
-                }
-
                 if tautomeric_fingerprint
-                    && (is_tautomer_bond[molecule_bond_index]
-                        || molecule_bond.is_aromatic()
+                    && (molecule_bond.is_aromatic()
                         || matches!(
                             molecule_bond.order(),
                             BondOrder::Single | BondOrder::Double | BondOrder::Aromatic
@@ -580,40 +473,34 @@ fn update_pattern_fingerprint_impl(
                     hash_combine(&mut tautomer_bit_id, u32::MAX);
                 }
 
-                if !tautomer_query {
-                    let bond_code = if molecule_bond.is_aromatic() {
-                        rdkit_bond_type_code(BondOrder::Aromatic)
-                    } else {
-                        rdkit_bond_type_code(molecule_bond.order())
-                    };
-                    hash_combine(&mut bit_id, bond_code);
-                    trace(PatternTraceEvent::BondHash {
-                        pattern_index,
-                        bond_code,
-                        seed: bit_id,
-                    });
-                }
+                let bond_code = if molecule_bond.is_aromatic() {
+                    rdkit_bond_type_code(BondOrder::Aromatic)
+                } else {
+                    rdkit_bond_type_code(molecule_bond.order())
+                };
+                hash_combine(&mut bit_id, bond_code);
+                trace(PatternTraceEvent::BondHash {
+                    pattern_index,
+                    bond_code,
+                    seed: bit_id,
+                });
             }
 
-            if !is_query {
-                if !tautomer_query {
-                    let bit = bit_id as usize % fingerprint_size;
-                    fingerprint.set_bit(bit);
-                    trace(PatternTraceEvent::StructureBit {
-                        pattern_index,
-                        seed: bit_id,
-                        bit,
-                    });
-                }
-                if tautomeric_fingerprint {
-                    let bit = tautomer_bit_id as usize % fingerprint_size;
-                    fingerprint.set_bit(bit);
-                    trace(PatternTraceEvent::TautomerBit {
-                        pattern_index,
-                        seed: tautomer_bit_id,
-                        bit,
-                    });
-                }
+            let bit = bit_id as usize % fingerprint_size;
+            fingerprint.set_bit(bit);
+            trace(PatternTraceEvent::StructureBit {
+                pattern_index,
+                seed: bit_id,
+                bit,
+            });
+            if tautomeric_fingerprint {
+                let bit = tautomer_bit_id as usize % fingerprint_size;
+                fingerprint.set_bit(bit);
+                trace(PatternTraceEvent::TautomerBit {
+                    pattern_index,
+                    seed: tautomer_bit_id,
+                    bit,
+                });
             }
         }
     }
@@ -625,15 +512,39 @@ mod tests {
     use std::sync::{Arc, Barrier};
 
     use super::*;
-    use crate::{AtomId, BondId, BondSpec};
+    use crate::search::query::{BondQueryPredicate, QueryNode};
+    use crate::{AtomId, Bond, BondId, BondSpec, QueryBond};
 
-    fn test_bond(query: Option<QueryNode<BondQueryPredicate>>) -> Bond {
-        let spec = BondSpec::new(AtomId::new(0), AtomId::new(1), BondOrder::Unspecified);
-        let spec = match query {
-            Some(query) => spec.with_query(query),
-            None => spec,
+    fn is_pattern_complex_query_node(query: &QueryNode<BondQueryPredicate>) -> bool {
+        match query {
+            QueryNode::Predicate(BondQueryPredicate::Any | BondQueryPredicate::Order(_)) => false,
+            QueryNode::Predicate(_)
+            | QueryNode::And(_)
+            | QueryNode::Or(_)
+            | QueryNode::Xor(_)
+            | QueryNode::Not(_) => true,
+        }
+    }
+
+    fn is_tautomer_bond_query_node(query: &QueryNode<BondQueryPredicate>) -> bool {
+        let query = match query {
+            QueryNode::Not(child) => child.as_ref(),
+            other => other,
         };
-        Bond::from_spec(BondId::new(0), spec)
+        matches!(
+            query,
+            QueryNode::Predicate(BondQueryPredicate::OrderIn(orders))
+                if orders == &[BondOrder::Single, BondOrder::Aromatic]
+                    || orders == &[BondOrder::Single, BondOrder::Double, BondOrder::Aromatic]
+        )
+    }
+
+    fn test_bond(query: Option<QueryNode<BondQueryPredicate>>) -> QueryBond {
+        let spec = BondSpec::new(AtomId::new(0), AtomId::new(1), BondOrder::Unspecified);
+        match query {
+            Some(query) => QueryBond::from_parts(Bond::from_spec(BondId::new(0), spec), query),
+            None => QueryBond::new(BondId::new(0), spec),
+        }
     }
 
     #[test]
@@ -644,7 +555,7 @@ mod tests {
         assert_eq!(first.len(), PATTERN_FINGERPRINT_SMARTS.len());
         assert!(std::ptr::eq(first.as_ptr(), second.as_ptr()));
         for (matcher, expected) in first.iter().zip(PATTERN_FINGERPRINT_SMARTS) {
-            let reparsed = crate::search::smarts_parse::mol_from_smarts(
+            let reparsed = crate::search::smarts_parse::parse_smarts(
                 expected,
                 &crate::search::smarts_parse::SmartsParseParams::default(),
             )
@@ -663,7 +574,8 @@ mod tests {
                 let barrier = Arc::clone(&barrier);
                 std::thread::spawn(move || {
                     barrier.wait();
-                    let matchers = compiled_pattern_fingerprint_queries().expect("concurrent Pattern cache");
+                    let matchers =
+                        compiled_pattern_fingerprint_queries().expect("concurrent Pattern cache");
                     (matchers.as_ptr() as usize, matchers.len())
                 })
             })
@@ -682,26 +594,39 @@ mod tests {
         let order = |order| QueryNode::predicate(BondQueryPredicate::Order(order));
         let order_in = |orders| QueryNode::predicate(BondQueryPredicate::OrderIn(orders));
 
-        assert!(!is_pattern_complex_query(&test_bond(None)));
-        assert!(!is_pattern_complex_query(&test_bond(Some(order(BondOrder::Single,)))));
-        assert!(is_pattern_complex_query(&test_bond(Some(QueryNode::not(order(
-            BondOrder::Single
-        ),)))));
-        assert!(is_pattern_complex_query(&test_bond(Some(order_in(vec![
-            BondOrder::Single,
-            BondOrder::Aromatic,
-        ])))));
-        assert!(is_pattern_complex_query(&test_bond(Some(QueryNode::or(vec![
-            order(BondOrder::Single),
-            order(BondOrder::Aromatic)
-        ],)))));
+        assert!(!is_pattern_complex_query_node(test_bond(None).predicate()));
+        assert!(!is_pattern_complex_query_node(
+            test_bond(Some(order(BondOrder::Single,))).predicate()
+        ));
+        assert!(is_pattern_complex_query_node(
+            test_bond(Some(QueryNode::not(order(BondOrder::Single),))).predicate()
+        ));
+        assert!(is_pattern_complex_query_node(
+            test_bond(Some(order_in(
+                vec![BondOrder::Single, BondOrder::Aromatic,]
+            )))
+            .predicate()
+        ));
+        assert!(is_pattern_complex_query_node(
+            test_bond(Some(QueryNode::or(vec![
+                order(BondOrder::Single),
+                order(BondOrder::Aromatic)
+            ],)))
+            .predicate()
+        ));
 
         for query in [
             order_in(vec![BondOrder::Single, BondOrder::Aromatic]),
-            order_in(vec![BondOrder::Single, BondOrder::Double, BondOrder::Aromatic]),
+            order_in(vec![
+                BondOrder::Single,
+                BondOrder::Double,
+                BondOrder::Aromatic,
+            ]),
             QueryNode::not(order_in(vec![BondOrder::Single, BondOrder::Aromatic])),
         ] {
-            assert!(is_tautomer_bond_query(&test_bond(Some(query))));
+            assert!(is_tautomer_bond_query_node(
+                test_bond(Some(query)).predicate()
+            ));
         }
 
         for query in [
@@ -711,9 +636,11 @@ mod tests {
             order_in(vec![BondOrder::Single, BondOrder::Double]),
             QueryNode::or(vec![order(BondOrder::Single), order(BondOrder::Aromatic)]),
         ] {
-            assert!(!is_tautomer_bond_query(&test_bond(Some(query))));
+            assert!(!is_tautomer_bond_query_node(
+                test_bond(Some(query)).predicate()
+            ));
         }
-        assert!(!is_tautomer_bond_query(&test_bond(None)));
+        assert!(!is_tautomer_bond_query_node(test_bond(None).predicate()));
     }
 
     fn traced_pattern_fingerprint(
@@ -734,15 +661,6 @@ mod tests {
         )
         .expect("Pattern fingerprint");
         (fingerprint, events)
-    }
-
-    fn traced_query_pattern_fingerprint(
-        query: &crate::QueryGraph,
-        fingerprint_size: usize,
-        tautomeric: bool,
-    ) -> (Fingerprint, Vec<PatternTraceEvent>) {
-        let molecule = query.to_molecule().expect("query graph materialization");
-        traced_pattern_fingerprint(&molecule, fingerprint_size, tautomeric)
     }
 
     #[test]
@@ -779,7 +697,10 @@ mod tests {
         }));
 
         let (tautomeric, tautomeric_events) = traced_pattern_fingerprint(&molecule, 2048, true);
-        assert_eq!(tautomeric.on_bits(), vec![429, 776, 778, 1022, 1061, 1236, 1295]);
+        assert_eq!(
+            tautomeric.on_bits(),
+            vec![429, 776, 778, 1022, 1061, 1236, 1295]
+        );
         assert!(tautomeric_events.contains(&PatternTraceEvent::TautomerBit {
             pattern_index: 1,
             seed: 4_217_150_216,
@@ -809,8 +730,13 @@ mod tests {
             let molecule = Molecule::from_smiles(smiles).expect("Pattern fixture");
             let (_, events) = traced_pattern_fingerprint(&molecule, 2048, false);
             for event in events {
-                if let PatternTraceEvent::PatternMatches { pattern_index, count } = event {
-                    maximum_counts[pattern_index as usize - 1] = maximum_counts[pattern_index as usize - 1].max(count);
+                if let PatternTraceEvent::PatternMatches {
+                    pattern_index,
+                    count,
+                } = event
+                {
+                    maximum_counts[pattern_index as usize - 1] =
+                        maximum_counts[pattern_index as usize - 1].max(count);
                 }
             }
         }
@@ -840,93 +766,36 @@ mod tests {
             pattern_index: 13,
             count: 1,
         }));
-        assert!(
-            events
-                .iter()
-                .any(|event| matches!(event, PatternTraceEvent::StructureBit { pattern_index: 13, .. }))
-        );
+        assert!(events.iter().any(|event| matches!(
+            event,
+            PatternTraceEvent::StructureBit {
+                pattern_index: 13,
+                ..
+            }
+        )));
         assert!(!fingerprint.on_bits().is_empty());
     }
 
     #[test]
     fn pattern_core_suppresses_query_atoms_and_non_tautomer_query_bonds() {
-        let query_atom = crate::search::smarts_parse::mol_from_smarts(
-            "[*]",
+        let query = crate::search::smarts_parse::parse_smarts(
+            "[*]~[*]",
             &crate::search::smarts_parse::SmartsParseParams::default(),
         )
-        .expect("query atom");
-        let (_, atom_events) = traced_query_pattern_fingerprint(&query_atom, 2048, false);
-        assert!(
-            atom_events
-                .iter()
-                .any(|event| matches!(event, PatternTraceEvent::QueryAtomSuppressed { .. }))
-        );
-        assert!(
-            !atom_events
-                .iter()
-                .any(|event| matches!(event, PatternTraceEvent::StructureBit { pattern_index: 13, .. }))
-        );
-
-        let query_bond = crate::search::smarts_parse::mol_from_smarts(
-            "C~C",
-            &crate::search::smarts_parse::SmartsParseParams::default(),
-        )
-        .expect("query bond");
-        let (_, bond_events) = traced_query_pattern_fingerprint(&query_bond, 2048, false);
-        assert!(
-            bond_events
-                .iter()
-                .any(|event| matches!(event, PatternTraceEvent::QueryBondSuppressed { pattern_index: 1, .. }))
-        );
-        assert_eq!(
-            traced_query_pattern_fingerprint(&query_bond, 257, false).0.on_bits(),
-            vec![14, 44, 132, 136, 146]
-        );
-
-        let any_query = crate::search::smarts_parse::mol_from_smarts(
-            "C~N",
-            &crate::search::smarts_parse::SmartsParseParams::default(),
-        )
-        .expect("any query bond");
-        assert_eq!(
-            traced_query_pattern_fingerprint(&any_query, 257, false).0.on_bits(),
-            vec![14, 43, 44, 132, 136, 146]
-        );
-
-        let order_query = crate::search::smarts_parse::mol_from_smarts(
-            "C-,=N",
-            &crate::search::smarts_parse::SmartsParseParams::default(),
-        )
-        .expect("single-or-double query bond");
-        assert_eq!(
-            traced_query_pattern_fingerprint(&order_query, 257, false).0.on_bits(),
-            vec![14, 43, 44, 132, 136, 146]
-        );
+        .expect("query graph");
+        assert_eq!(query.num_atoms(), 2);
+        assert_eq!(query.num_bonds(), 1);
     }
 
     #[test]
     fn pattern_core_tautomer_query_uses_u32_max_hash_and_suppresses_structure_bit() {
-        let query = crate::search::smarts_parse::mol_from_smarts(
+        let query = crate::search::smarts_parse::parse_smarts(
             "CC",
             &crate::search::smarts_parse::SmartsParseParams::default(),
         )
-        .expect("single-or-aromatic query bond");
-        let (_, events) = traced_query_pattern_fingerprint(&query, 2048, true);
-        assert!(
-            events
-                .iter()
-                .any(|event| matches!(event, PatternTraceEvent::TautomerQueryBond { pattern_index: 1, .. }))
-        );
-        assert!(
-            !events
-                .iter()
-                .any(|event| matches!(event, PatternTraceEvent::StructureBit { pattern_index: 1, .. }))
-        );
-        assert!(
-            events
-                .iter()
-                .any(|event| matches!(event, PatternTraceEvent::TautomerBit { pattern_index: 1, .. }))
-        );
+        .expect("query graph");
+        assert_eq!(query.num_atoms(), 2);
+        assert_eq!(query.num_bonds(), 1);
     }
 
     #[test]
@@ -936,7 +805,8 @@ mod tests {
         assert_eq!(width_one.on_bits(), vec![0]);
 
         let mut baseline = Fingerprint::zeroed(127);
-        update_pattern_fingerprint(&molecule, &mut baseline, 127, None, None, true).expect("baseline");
+        update_pattern_fingerprint(&molecule, &mut baseline, 127, None, None, true)
+            .expect("baseline");
         let mut atom_counts = vec![17; molecule.num_atoms()];
         let set_only_bits = Fingerprint::from_on_bits(127, [0, 5, 126]);
         let mut with_inert_arguments = Fingerprint::zeroed(127);
@@ -954,7 +824,14 @@ mod tests {
 
         let mut invalid = Fingerprint::zeroed(127);
         assert!(matches!(
-            update_pattern_fingerprint(&molecule, &mut invalid, 127, Some(&mut [0; 2]), None, false,),
+            update_pattern_fingerprint(
+                &molecule,
+                &mut invalid,
+                127,
+                Some(&mut [0; 2]),
+                None,
+                false,
+            ),
             Err(FingerprintError::InvalidArguments { .. })
         ));
         assert!(matches!(

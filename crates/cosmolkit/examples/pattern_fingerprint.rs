@@ -15,8 +15,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         BatchRecord::Molecule(molecule),
         BatchRecord::Molecule(Molecule::from_smiles("CCO")?),
     ]);
-    let fingerprints =
-        batch.pattern_fingerprint_list_with_options(&PatternFingerprintParams::default(), Some(2), Some(false))?;
+    let fingerprints = batch.pattern_fingerprint_list_with_options(
+        &PatternFingerprintParams::default(),
+        Some(2),
+        Some(false),
+    )?;
     for (index, fingerprint) in fingerprints.into_iter().enumerate() {
         println!("batch {index}: {:?}", fingerprint.map(|fp| fp.on_bits()));
     }

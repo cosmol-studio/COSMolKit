@@ -261,6 +261,15 @@ A fine-grained feature must not depend on another domain's public feature just
   wrappers, operation bodies, and optional domain dependencies are gated by
   their owning fine-grained feature.
 
+While implementations remain colocated in `cosmolkit-core`, Cargo's lack of
+private features is handled with double-underscore implementation features
+(`__io_impl`, `__fingerprint_impl`, `__depict_impl`, `__hashing_impl`, and
+`__batch_impl`). Public features select only their own implementation feature;
+an internal edge records shared code reuse without enabling the other domain's
+public feature or its facade re-exports. These aliases are migration
+scaffolding and should disappear when the corresponding implementation crates
+are separated.
+
 ## 7. Public Compatibility
 
 The supported user entry point is `cosmolkit`. New documentation, examples,

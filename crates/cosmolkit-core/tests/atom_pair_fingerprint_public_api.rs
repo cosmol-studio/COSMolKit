@@ -125,14 +125,15 @@ fn invalid_public_arguments_return_typed_errors() {
         use_2d: false,
         ..Default::default()
     };
-    let generator = AtomPairFingerprintGenerator::new(&three_dimensional).expect("3D generator parameters");
+    let generator =
+        AtomPairFingerprintGenerator::new(&three_dimensional).expect("3D generator parameters");
     assert!(matches!(
         generator.fingerprint(&molecule, &mut FingerprintFuncArguments::default()),
         Err(FingerprintError::AtomPair { .. })
     ));
 
-    let generator =
-        AtomPairFingerprintGenerator::new(&AtomPairFingerprintParams::default()).expect("default generator");
+    let generator = AtomPairFingerprintGenerator::new(&AtomPairFingerprintParams::default())
+        .expect("default generator");
     let mut bad_indices = FingerprintFuncArguments {
         from_atoms: Some(vec![molecule.num_atoms()]),
         ..Default::default()
@@ -173,8 +174,8 @@ fn public_surface_does_not_add_rdkit_style_atom_pair_duplicates() {
 #[test]
 fn caller_selected_additional_output_allocations_are_preserved() {
     let molecule = Molecule::from_smiles("CCO").unwrap();
-    let generator =
-        AtomPairFingerprintGenerator::new(&AtomPairFingerprintParams::default()).expect("default generator");
+    let generator = AtomPairFingerprintGenerator::new(&AtomPairFingerprintParams::default())
+        .expect("default generator");
     let mut output = AdditionalOutput::new();
     output.allocate_atom_counts();
     output.allocate_bit_info_map();

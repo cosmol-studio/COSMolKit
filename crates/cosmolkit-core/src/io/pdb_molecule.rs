@@ -5,8 +5,8 @@ use std::collections::HashMap;
 use thiserror::Error;
 
 use crate::{
-    AtomId, AtomPdbResidueInfo, AtomSpec, BioStructure, BondOrder, BondSpec, ChiralTag, Conformer3D, Element, Molecule,
-    MoleculeBuildError, MoleculeBuilder, OperationError,
+    AtomId, AtomPdbResidueInfo, AtomSpec, BioStructure, BondOrder, BondSpec, ChiralTag,
+    Conformer3D, Element, Molecule, MoleculeBuildError, MoleculeBuilder, OperationError,
 };
 
 const CTD_IGNORE_H_H_CONTACTS: u32 = 0x1;
@@ -49,7 +49,7 @@ pub type RdkitPdbMolProfile = StructureMoleculeOptions;
 #[derive(Debug, Error)]
 pub enum StructureMoleculeConversionError {
     #[error("BioStructure read error: {0}")]
-    BioRead(#[from] crate::BioReadError),
+    BioRead(#[from] crate::io::bio::BioReadError),
     #[error("molecule build error: {0}")]
     Build(#[from] MoleculeBuildError),
     #[error("operation error: {0}")]
@@ -72,7 +72,10 @@ pub fn molecule_from_pdb_block_with_options(
     bio_structure_to_molecule(&structure, options)
 }
 
-#[deprecated(since = "0.2.13", note = "use Molecule::from_mmcif_block_with_options()")]
+#[deprecated(
+    since = "0.2.13",
+    note = "use Molecule::from_mmcif_block_with_options()"
+)]
 pub fn molecule_from_mmcif_block_with_options(
     text: &str,
     options: StructureMoleculeOptions,
@@ -107,7 +110,10 @@ impl Molecule {
     }
 }
 
-#[deprecated(since = "0.2.13", note = "use BioStructure::to_molecule_with_options()")]
+#[deprecated(
+    since = "0.2.13",
+    note = "use BioStructure::to_molecule_with_options()"
+)]
 pub fn bio_structure_to_rdkit_pdb_molecule(
     structure: &BioStructure,
     options: StructureMoleculeOptions,
@@ -131,7 +137,10 @@ impl BioStructure {
         bio_structure_to_molecule(self, options)
     }
 
-    #[deprecated(since = "0.2.13", note = "use BioStructure::to_molecule_with_options()")]
+    #[deprecated(
+        since = "0.2.13",
+        note = "use BioStructure::to_molecule_with_options()"
+    )]
     pub fn to_rdkit_pdb_molecule(
         &self,
         options: StructureMoleculeOptions,
@@ -155,7 +164,9 @@ fn bio_structure_to_molecule(
         if !include_atom_like_rdkit(atom, residue, structure, bio_atom_index, options)? {
             continue;
         }
-        let mol_atom = builder.add_atom(atom_spec_from_bio_atom_like_rdkit(atom, residue, structure)?);
+        let mol_atom = builder.add_atom(atom_spec_from_bio_atom_like_rdkit(
+            atom, residue, structure,
+        )?);
         if let Some(serial) = atom.source.serial {
             serial_to_atom.insert(serial.0, mol_atom);
         }
@@ -164,7 +175,11 @@ fn bio_structure_to_molecule(
         if position[2] != 0.0 {
             is_3d = true;
         }
-        coords.push([f64::from(position[0]), f64::from(position[1]), f64::from(position[2])]);
+        coords.push([
+            f64::from(position[0]),
+            f64::from(position[1]),
+            f64::from(position[2]),
+        ]);
     }
 
     if !coords.is_empty() {
@@ -234,7 +249,10 @@ fn include_atom_like_rdkit(
     if (options.flavor & 1) != 0 {
         return Ok(true);
     }
-    if atom.altloc.is_some_and(|altloc| !matches!(altloc.0, b'A' | b'1')) {
+    if atom
+        .altloc
+        .is_some_and(|altloc| !matches!(altloc.0, b'A' | b'1'))
+    {
         return Ok(false);
     }
     if residue.name.as_str() == "DUM" {
@@ -300,9 +318,10 @@ fn atom_spec_from_bio_atom_like_rdkit(
         .seq_id
         .and_then(|seq_id| seq_id.ins_code)
         .map_or_else(|| " ".to_string(), |code| char::from(code).to_string());
-    let alt_loc = atom
-        .altloc
-        .map_or_else(|| " ".to_string(), |altloc| char::from(altloc.0).to_string());
+    let alt_loc = atom.altloc.map_or_else(
+        || " ".to_string(),
+        |altloc| char::from(altloc.0).to_string(),
+    );
     let is_hetero_atom = residue.het_flag == Some('H');
     let pdb_info = AtomPdbResidueInfo::new(
         atom_name_string(atom.name),
@@ -434,7 +453,10 @@ fn apply_one_conect_bond_like_rdkit(
         bond_seen.insert(bond, if src_serial < dst_serial { 0x01 } else { 0x10 });
         return Ok(());
     };
-    if builder.bond(bond).is_some_and(|bond| bond.order() == BondOrder::Zero) {
+    if builder
+        .bond(bond)
+        .is_some_and(|bond| bond.order() == BondOrder::Zero)
+    {
         return Ok(());
     }
     let seen = *bond_seen.get(&bond).unwrap_or(&0);
@@ -608,13 +630,14 @@ fn rdkit_covalent_radius(atomic_number: u8) -> Result<f32, StructureMoleculeConv
 }
 
 const RDKIT_COVALENT_RADII: [f32; 119] = [
-    0.0, 0.31, 0.28, 1.28, 0.96, 0.84, 0.76, 0.71, 0.66, 0.57, 0.58, 1.66, 1.41, 1.21, 1.11, 1.07, 1.05, 1.02, 1.06,
-    2.03, 1.76, 1.70, 1.60, 1.52, 1.39, 1.39, 1.32, 1.26, 1.24, 1.32, 1.22, 1.22, 1.20, 1.19, 1.20, 1.20, 1.16, 2.20,
-    1.95, 1.90, 1.75, 1.64, 1.54, 1.47, 1.46, 1.42, 1.39, 1.45, 1.44, 1.42, 1.39, 1.39, 1.38, 1.39, 1.40, 2.44, 2.15,
-    2.07, 2.04, 2.03, 2.01, 1.99, 1.98, 1.98, 1.96, 1.94, 1.92, 1.92, 1.89, 1.90, 1.87, 1.87, 1.75, 1.70, 1.62, 1.51,
-    1.44, 1.41, 1.36, 1.36, 1.32, 1.45, 1.46, 1.48, 1.40, 1.50, 1.50, 2.6, 2.2, 2.15, 2.06, 2.00, 1.96, 1.90, 1.87,
-    1.80, 1.69, 1.9, 1.9, 1.9, 1.9, 1.9, 1.9, 1.9, 1.9, 1.9, 1.9, 1.9, 1.9, 1.9, 1.9, 1.9, 1.9, 1.36, 1.43, 1.62, 1.75,
-    1.65, 1.57,
+    0.0, 0.31, 0.28, 1.28, 0.96, 0.84, 0.76, 0.71, 0.66, 0.57, 0.58, 1.66, 1.41, 1.21, 1.11, 1.07,
+    1.05, 1.02, 1.06, 2.03, 1.76, 1.70, 1.60, 1.52, 1.39, 1.39, 1.32, 1.26, 1.24, 1.32, 1.22, 1.22,
+    1.20, 1.19, 1.20, 1.20, 1.16, 2.20, 1.95, 1.90, 1.75, 1.64, 1.54, 1.47, 1.46, 1.42, 1.39, 1.45,
+    1.44, 1.42, 1.39, 1.39, 1.38, 1.39, 1.40, 2.44, 2.15, 2.07, 2.04, 2.03, 2.01, 1.99, 1.98, 1.98,
+    1.96, 1.94, 1.92, 1.92, 1.89, 1.90, 1.87, 1.87, 1.75, 1.70, 1.62, 1.51, 1.44, 1.41, 1.36, 1.36,
+    1.32, 1.45, 1.46, 1.48, 1.40, 1.50, 1.50, 2.6, 2.2, 2.15, 2.06, 2.00, 1.96, 1.90, 1.87, 1.80,
+    1.69, 1.9, 1.9, 1.9, 1.9, 1.9, 1.9, 1.9, 1.9, 1.9, 1.9, 1.9, 1.9, 1.9, 1.9, 1.9, 1.9, 1.36,
+    1.43, 1.62, 1.75, 1.65, 1.57,
 ];
 
 fn is_bonded_like_rdkit(p: &ProximityEntry, q: &ProximityEntry, flags: u32) -> bool {
@@ -667,7 +690,11 @@ fn is_bonded_like_rdkit(p: &ProximityEntry, q: &ProximityEntry, flags: u32) -> b
 }
 
 fn other_atom_for_bond(bond: &crate::Bond, atom: AtomId) -> AtomId {
-    if bond.begin() == atom { bond.end() } else { bond.begin() }
+    if bond.begin() == atom {
+        bond.end()
+    } else {
+        bond.begin()
+    }
 }
 
 fn distance3(a: [f64; 3], b: [f64; 3]) -> f32 {
@@ -885,7 +912,9 @@ fn connect_the_dots_like_rdkit(
         let atom = &builder.atoms()[i];
         let elem = atom.atomic_number();
         let p = coords[i];
-        let hash = HASHX * (p[0] / MAXDIST) as i32 + HASHY * (p[1] / MAXDIST) as i32 + HASHZ * (p[2] / MAXDIST) as i32;
+        let hash = HASHX * (p[0] / MAXDIST) as i32
+            + HASHY * (p[1] / MAXDIST) as i32
+            + HASHZ * (p[2] / MAXDIST) as i32;
         let tmpi = ProximityEntry {
             x: p[0] as f32,
             y: p[1] as f32,
@@ -944,7 +973,11 @@ fn fixed_width_code(bytes: &[u8], width: usize) -> u32 {
     code
 }
 
-fn standard_pdb_double_bond_table_like_rdkit(mut rescode: u32, mut atm1: u32, mut atm2: u32) -> bool {
+fn standard_pdb_double_bond_table_like_rdkit(
+    mut rescode: u32,
+    mut atm1: u32,
+    mut atm2: u32,
+) -> bool {
     // BEGIN RDKIT CPP FUNCTION StandardPDBDoubleBond table
     // RDKit✔️✔️: static bool StandardPDBDoubleBond(unsigned int rescode, unsigned int atm1,
     // RDKit✔️✔️:                                   unsigned int atm2) {
@@ -1430,7 +1463,11 @@ const STANDARD_PDB_DOUBLE_BONDS: &[(u32, u32, u32)] = &[
     ),
 ];
 
-fn standard_pdb_double_bond_like_rdkit(builder: &MoleculeBuilder, begin: AtomId, end: AtomId) -> bool {
+fn standard_pdb_double_bond_like_rdkit(
+    builder: &MoleculeBuilder,
+    begin: AtomId,
+    end: AtomId,
+) -> bool {
     // BEGIN RDKIT CPP FUNCTION StandardPDBDoubleBond atom wrapper
     // RDKit✔️✔️: static bool StandardPDBDoubleBond(RWMol *mol, Atom *beg, Atom *end) {
     // RDKit✔️✔️:   auto *bInfo = (AtomPDBResidueInfo *)beg->getMonomerInfo();
@@ -1517,7 +1554,9 @@ fn standard_pdb_double_bond_like_rdkit(builder: &MoleculeBuilder, begin: AtomId,
     true
 }
 
-fn standard_pdb_residue_bond_orders_like_rdkit(builder: &mut MoleculeBuilder) -> Result<(), MoleculeBuildError> {
+fn standard_pdb_residue_bond_orders_like_rdkit(
+    builder: &mut MoleculeBuilder,
+) -> Result<(), MoleculeBuildError> {
     // BEGIN RDKIT CPP FUNCTION StandardPDBResidueBondOrders
     // RDKit✔️✔️: void StandardPDBResidueBondOrders(RWMol *mol) {
     // RDKit✔️✔️:   RWMol::BondIterator bondIt;
@@ -1691,7 +1730,8 @@ fn standard_pdb_residue_chirality_like_rdkit(molecule: &mut Molecule) {
             continue;
         }
         let should_clear = atom.pdb_residue_info().is_some_and(|info| {
-            !info.is_hetero_atom() && !standard_pdb_chiral_atom_like_rdkit(info.residue_name(), info.atom_name())
+            !info.is_hetero_atom()
+                && !standard_pdb_chiral_atom_like_rdkit(info.residue_name(), info.atom_name())
         });
         if should_clear {
             atom.set_chiral_tag(ChiralTag::Unspecified);
@@ -1923,7 +1963,10 @@ HETATM 2 O O . HOH B 2 2 ? 12.000 14.000 8.000 1.00 20.00 2 HOH B O
         assert_eq!(second.chain_id(), "B");
         assert!(second.is_hetero_atom());
         let coords = mol.conformers_3d()[0].coordinates();
-        for (actual, expected) in coords.iter().zip([[11.104, 13.207, 9.9], [12.0, 14.0, 8.0]]) {
+        for (actual, expected) in coords
+            .iter()
+            .zip([[11.104, 13.207, 9.9], [12.0, 14.0, 8.0]])
+        {
             for (actual_component, expected_component) in actual.iter().zip(expected) {
                 assert!((actual_component - expected_component).abs() < 1e-6);
             }

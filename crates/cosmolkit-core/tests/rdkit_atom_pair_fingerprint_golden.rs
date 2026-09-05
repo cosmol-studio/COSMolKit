@@ -4,7 +4,8 @@ use std::io::{BufRead, BufReader};
 use std::path::Path;
 
 use cosmolkit_core::{
-    AdditionalOutput, AtomPairFingerprintGenerator, AtomPairFingerprintParams, FingerprintFuncArguments, Molecule,
+    AdditionalOutput, AtomPairFingerprintGenerator, AtomPairFingerprintParams,
+    FingerprintFuncArguments, Molecule,
 };
 use rayon::prelude::*;
 use serde::Deserialize;
@@ -89,15 +90,26 @@ struct GoldenAdditionalOutput {
 
 fn read_records(profile: &str) -> Vec<GoldenRecord> {
     let path = parity_data::expected_path_for_profile("fingerprint", "rdkit", profile, OUTPUT_NAME);
-    let file = File::open(&path).unwrap_or_else(|error| panic!("failed to open {}: {error}", path.display()));
+    let file = File::open(&path)
+        .unwrap_or_else(|error| panic!("failed to open {}: {error}", path.display()));
     BufReader::new(file)
         .lines()
         .enumerate()
         .map(|(line, content)| {
-            let content =
-                content.unwrap_or_else(|error| panic!("failed to read {} line {}: {error}", path.display(), line + 1));
-            serde_json::from_str(&content)
-                .unwrap_or_else(|error| panic!("failed to parse {} line {}: {error}", path.display(), line + 1))
+            let content = content.unwrap_or_else(|error| {
+                panic!(
+                    "failed to read {} line {}: {error}",
+                    path.display(),
+                    line + 1
+                )
+            });
+            serde_json::from_str(&content).unwrap_or_else(|error| {
+                panic!(
+                    "failed to parse {} line {}: {error}",
+                    path.display(),
+                    line + 1
+                )
+            })
         })
         .collect()
 }
@@ -152,9 +164,21 @@ fn assert_additional_output(
     match (expected, actual) {
         (None, None) => {}
         (Some(expected), Some(actual)) => {
-            assert_eq!(actual.atom_counts.as_ref(), Some(&expected.atom_counts), "{context}");
-            assert_eq!(actual.atom_to_bits.as_ref(), Some(&expected.atom_to_bits), "{context}");
-            assert_eq!(actual.bit_info_map.as_ref(), Some(&expected.bit_info_map), "{context}");
+            assert_eq!(
+                actual.atom_counts.as_ref(),
+                Some(&expected.atom_counts),
+                "{context}"
+            );
+            assert_eq!(
+                actual.atom_to_bits.as_ref(),
+                Some(&expected.atom_to_bits),
+                "{context}"
+            );
+            assert_eq!(
+                actual.bit_info_map.as_ref(),
+                Some(&expected.bit_info_map),
+                "{context}"
+            );
             assert_eq!(
                 actual.atoms_per_bit.as_ref(),
                 Some(&expected.atoms_per_bit),
@@ -165,9 +189,18 @@ fn assert_additional_output(
     }
 }
 
-fn assert_branch(row: usize, smiles: &str, branch_name: &str, branch: &GoldenBranch, molecule: &Molecule) {
+fn assert_branch(
+    row: usize,
+    smiles: &str,
+    branch_name: &str,
+    branch: &GoldenBranch,
+    molecule: &Molecule,
+) {
     let context = format!("row {row} ({smiles}) branch {branch_name}");
-    assert_eq!(branch.parameters.name, branch_name, "{context}: option identity");
+    assert_eq!(
+        branch.parameters.name, branch_name,
+        "{context}: option identity"
+    );
     let generator = AtomPairFingerprintGenerator::new(&params(&branch.parameters))
         .unwrap_or_else(|error| panic!("{context}: generator creation failed: {error}"));
 
@@ -175,7 +208,11 @@ fn assert_branch(row: usize, smiles: &str, branch_name: &str, branch: &GoldenBra
     let actual = generator.sparse_count_fingerprint(molecule, &mut args);
     if branch.sparse_count.ok {
         let actual = actual.unwrap_or_else(|error| panic!("{context} sparse count: {error}"));
-        assert_eq!(actual.size(), branch.sparse_count.length.unwrap(), "{context}");
+        assert_eq!(
+            actual.size(),
+            branch.sparse_count.length.unwrap(),
+            "{context}"
+        );
         assert_eq!(
             actual.nonzero_elements(),
             branch.sparse_count.nonzero_elements.as_ref().unwrap(),
@@ -221,7 +258,11 @@ fn assert_branch(row: usize, smiles: &str, branch_name: &str, branch: &GoldenBra
     let actual = generator.sparse_bit_fingerprint(molecule, &mut args);
     if branch.sparse_bit.ok {
         let actual = actual.unwrap_or_else(|error| panic!("{context} sparse bit: {error}"));
-        assert_eq!(actual.size(), branch.sparse_bit.length.unwrap(), "{context}");
+        assert_eq!(
+            actual.size(),
+            branch.sparse_bit.length.unwrap(),
+            "{context}"
+        );
         let actual_bits: Vec<u64> = actual.on_bits().iter().copied().collect();
         assert_eq!(
             actual_bits,
@@ -245,7 +286,11 @@ fn assert_branch(row: usize, smiles: &str, branch_name: &str, branch: &GoldenBra
     let actual = generator.fingerprint(molecule, &mut args);
     if branch.explicit_bit.ok {
         let actual = actual.unwrap_or_else(|error| panic!("{context} explicit bit: {error}"));
-        assert_eq!(actual.n_bits() as u64, branch.explicit_bit.length.unwrap(), "{context}");
+        assert_eq!(
+            actual.n_bits() as u64,
+            branch.explicit_bit.length.unwrap(),
+            "{context}"
+        );
         let actual_bits: Vec<u64> = actual.on_bits().iter().map(|&bit| bit as u64).collect();
         assert_eq!(
             actual_bits,
@@ -265,9 +310,14 @@ fn assert_branch(row: usize, smiles: &str, branch_name: &str, branch: &GoldenBra
         );
     }
 
-    let actual_ok = branch.sparse_count.ok && branch.count.ok && branch.sparse_bit.ok && branch.explicit_bit.ok;
+    let actual_ok =
+        branch.sparse_count.ok && branch.count.ok && branch.sparse_bit.ok && branch.explicit_bit.ok;
     assert_eq!(branch.ok, actual_ok, "{context}: aggregate status");
-    assert_eq!(branch.error.is_none(), branch.ok, "{context}: aggregate error");
+    assert_eq!(
+        branch.error.is_none(),
+        branch.ok,
+        "{context}: aggregate error"
+    );
 }
 
 fn assert_profile(profile: &str, corpus_path: &Path) {
@@ -288,8 +338,9 @@ fn assert_profile(profile: &str, corpus_path: &Path) {
                     return;
                 }
                 assert!(record.error.is_none());
-                let molecule = Molecule::from_smiles(expected_smiles)
-                    .unwrap_or_else(|error| panic!("{profile} row {row} ({expected_smiles}) parse failed: {error}"));
+                let molecule = Molecule::from_smiles(expected_smiles).unwrap_or_else(|error| {
+                    panic!("{profile} row {row} ({expected_smiles}) parse failed: {error}")
+                });
                 for (branch_name, branch) in &record.branches {
                     assert_branch(row, expected_smiles, branch_name, branch, &molecule);
                 }
@@ -299,20 +350,28 @@ fn assert_profile(profile: &str, corpus_path: &Path) {
                 let message = payload
                     .downcast_ref::<String>()
                     .cloned()
-                    .or_else(|| payload.downcast_ref::<&str>().map(|value| (*value).to_owned()))
+                    .or_else(|| {
+                        payload
+                            .downcast_ref::<&str>()
+                            .map(|value| (*value).to_owned())
+                    })
                     .unwrap_or_else(|| "non-string panic".to_owned());
                 (row, message)
             })
         })
         .collect();
-    assert!(failures.is_empty(), "{profile} AtomPair parity failures: {failures:?}");
+    assert!(
+        failures.is_empty(),
+        "{profile} AtomPair parity failures: {failures:?}"
+    );
 }
 
 #[test]
 fn focused_and_small() {
     assert_profile(
         "atom_pair_focused",
-        &parity_data::repo_root().join("testdata/fingerprint/fixtures/rdkit/atom_pair_fingerprint_focused.smi"),
+        &parity_data::repo_root()
+            .join("testdata/fingerprint/fixtures/rdkit/atom_pair_fingerprint_focused.smi"),
     );
     assert_profile(
         "smiles_small",

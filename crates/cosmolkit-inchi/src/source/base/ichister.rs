@@ -1,23 +1,28 @@
-use crate::source::base::ichiring::{QueueCreate, QueueDelete, is_atom_in_3memb_ring, is_bond_in_Nmax_memb_ring};
+use crate::source::base::ichiring::{
+    QueueCreate, QueueDelete, is_atom_in_3memb_ring, is_bond_in_Nmax_memb_ring,
+};
 use crate::source::base::ichisort::{inchi_swap, insertions_sort};
 use crate::source::base::util::{get_endpoint_valence, inchi_calloc, inchi_free, is_el_a_metal};
 use crate::source_types::local_ichister::{
-    MAX_EDGE_RATIO, MAX_SINE, MIN_ANGLE, MIN_ANGLE_DBOND, MIN_ANGLE_RELAXED, MIN_BOND_LEN, MIN_LEN_STRAIGHT, MIN_SINE,
-    MIN_SINE_EDGE, MIN_SINE_OUTSIDE, MIN_SINE_RELAXED, MIN_SINE_SQUARE, T2D_OKAY, T2D_UNDF, T2D_WARN, ZERO_ANGLE,
-    ZERO_LENGTH, ZTYPE_3D, ZTYPE_DOWN, ZTYPE_EITHER, ZTYPE_NONE, ZTYPE_UP,
+    MAX_EDGE_RATIO, MAX_SINE, MIN_ANGLE, MIN_ANGLE_DBOND, MIN_ANGLE_RELAXED, MIN_BOND_LEN,
+    MIN_LEN_STRAIGHT, MIN_SINE, MIN_SINE_EDGE, MIN_SINE_OUTSIDE, MIN_SINE_RELAXED, MIN_SINE_SQUARE,
+    T2D_OKAY, T2D_UNDF, T2D_WARN, ZERO_ANGLE, ZERO_LENGTH, ZTYPE_3D, ZTYPE_DOWN, ZTYPE_EITHER,
+    ZTYPE_NONE, ZTYPE_UP,
 };
 use crate::source_types::{
-    AB_MAX_WELL_DEFINED_PARITY, AB_MIN_WELL_DEFINED_PARITY, AB_PARITY_0D, AB_PARITY_CALC, AB_PARITY_EVEN,
-    AB_PARITY_IISO, AB_PARITY_NONE, AB_PARITY_ODD, AB_PARITY_UNDF, AB_PARITY_UNKN, AMBIGUOUS_STEREO,
-    AMBIGUOUS_STEREO_ERROR, AT_FLAG_ISO_H_POINT, AT_NUMB, AT_RANK, BITS_PARITY, BOND_ALT12NS, BOND_ALTERN, BOND_DOUBLE,
-    BOND_MARK_ALL, BOND_SINGLE, BOND_TAUTOM, BOND_TYPE_DOUBLE, CANON_GLOBALS, CMODE_NO_ALT_SBONDS, CT_CALC_STEREO_ERR,
-    CT_ERR_MAX, CT_ERR_MIN, CT_ISO_H_ERR, CT_OUT_OF_RAM, CT_STEREOBOND_ERROR, FlagSB_0D, FlagSC_0D, INCHI_MODE,
-    MAX_CUMULENE_LEN, MAX_NUM_STEREO_ATOM_NEIGH, MAX_NUM_STEREO_BOND_NEIGH, MAX_NUM_STEREO_BONDS, MIN_DOT_PROD,
-    MIN_NUM_STEREO_BOND_NEIGH, MULT_STEREOBOND, NUM_H_ISOTOPES, PES_BIT_ARSINE_STEREO, PES_BIT_FIX_SP3_BUG,
-    PES_BIT_PHOSPHINE_STEREO, PES_BIT_POINT_EDGE_STEREO, QUEUE, RADICAL_SINGLET, REQ_MODE_MIN_SB_RING_MASK,
-    REQ_MODE_MIN_SB_RING_SHFT, S_CHAR, SB_PARITY_FLAG, SB_PARITY_MASK, SB_PARITY_SHFT, STEREO_DBLE_EITHER,
-    STEREO_SNGL_DOWN, STEREO_SNGL_EITHER, STEREO_SNGL_UP, SourceConstPointer, SourceHeap, SourceHeapError,
-    SourceMutPointer, inp_ATOM, qInt, sp_ATOM,
+    AB_MAX_WELL_DEFINED_PARITY, AB_MIN_WELL_DEFINED_PARITY, AB_PARITY_0D, AB_PARITY_CALC,
+    AB_PARITY_EVEN, AB_PARITY_IISO, AB_PARITY_NONE, AB_PARITY_ODD, AB_PARITY_UNDF, AB_PARITY_UNKN,
+    AMBIGUOUS_STEREO, AMBIGUOUS_STEREO_ERROR, AT_FLAG_ISO_H_POINT, AT_NUMB, AT_RANK, BITS_PARITY,
+    BOND_ALT12NS, BOND_ALTERN, BOND_DOUBLE, BOND_MARK_ALL, BOND_SINGLE, BOND_TAUTOM,
+    BOND_TYPE_DOUBLE, CANON_GLOBALS, CMODE_NO_ALT_SBONDS, CT_CALC_STEREO_ERR, CT_ERR_MAX,
+    CT_ERR_MIN, CT_ISO_H_ERR, CT_OUT_OF_RAM, CT_STEREOBOND_ERROR, FlagSB_0D, FlagSC_0D, INCHI_MODE,
+    MAX_CUMULENE_LEN, MAX_NUM_STEREO_ATOM_NEIGH, MAX_NUM_STEREO_BOND_NEIGH, MAX_NUM_STEREO_BONDS,
+    MIN_DOT_PROD, MIN_NUM_STEREO_BOND_NEIGH, MULT_STEREOBOND, NUM_H_ISOTOPES,
+    PES_BIT_ARSINE_STEREO, PES_BIT_FIX_SP3_BUG, PES_BIT_PHOSPHINE_STEREO,
+    PES_BIT_POINT_EDGE_STEREO, QUEUE, RADICAL_SINGLET, REQ_MODE_MIN_SB_RING_MASK,
+    REQ_MODE_MIN_SB_RING_SHFT, S_CHAR, SB_PARITY_FLAG, SB_PARITY_MASK, SB_PARITY_SHFT,
+    STEREO_DBLE_EITHER, STEREO_SNGL_DOWN, STEREO_SNGL_EITHER, STEREO_SNGL_UP, SourceConstPointer,
+    SourceHeap, SourceHeapError, SourceMutPointer, inp_ATOM, qInt, sp_ATOM,
 };
 
 #[allow(non_snake_case)]
@@ -631,7 +636,8 @@ pub(crate) fn Get2DTetrahedralAmbiguity(
     let one_pi = 3.14159265358979323846_f64;
     let two_pi = 2.0 * one_pi;
     let angle_and_pi_max_difference = 2.0 * 1.0_f64.atan2(7.0_f64.sqrt());
-    let number_of_neighbors = MAX_NUM_STEREO_ATOM_NEIGH as usize - usize::from(bAddExplicitNeighbor != 0);
+    let number_of_neighbors =
+        MAX_NUM_STEREO_ATOM_NEIGH as usize - usize::from(bAddExplicitNeighbor != 0);
     let mut bond_type = [0_i32; MAX_NUM_STEREO_ATOM_NEIGH as usize];
     let mut bond_order = [0_i32; MAX_NUM_STEREO_ATOM_NEIGH as usize];
     let mut bond_direction = [0.0_f64; MAX_NUM_STEREO_ATOM_NEIGH as usize];
@@ -726,7 +732,8 @@ pub(crate) fn Get2DTetrahedralAmbiguity(
                 let next2 = (first_up + length_up as usize + i as usize) % number_of_neighbors;
                 if bond_type[bond_order[next2] as usize] > 0 {
                     let next1 = (first_up + length_up as usize) % number_of_neighbors;
-                    let angle = bond_direction[bond_order[next1] as usize] - bond_direction[bond_order[next2] as usize];
+                    let angle = bond_direction[bond_order[next1] as usize]
+                        - bond_direction[bond_order[next2] as usize];
                     if angle.abs() < ZERO_ANGLE {
                         swap_i32(&mut bond_order, next1, next2)?;
                         length_up += 1;
@@ -740,7 +747,8 @@ pub(crate) fn Get2DTetrahedralAmbiguity(
                 let next2 = (first_up + number_of_neighbors - i as usize - 1) % number_of_neighbors;
                 if bond_type[bond_order[next2] as usize] > 0 {
                     let next1 = (first_up + number_of_neighbors - 1) % number_of_neighbors;
-                    let angle = bond_direction[bond_order[next1] as usize] - bond_direction[bond_order[next2] as usize];
+                    let angle = bond_direction[bond_order[next1] as usize]
+                        - bond_direction[bond_order[next2] as usize];
                     if angle.abs() < ZERO_ANGLE {
                         swap_i32(&mut bond_order, next1, next2)?;
                         first_up = next1;
@@ -773,7 +781,8 @@ pub(crate) fn Get2DTetrahedralAmbiguity(
                 if number_down != 0 {
                     result = (T2D_UNDF | T2D_WARN) as i32;
                 } else {
-                    let mut angle = bond_direction[bond_order[(first_up + 2) % number_of_neighbors] as usize]
+                    let mut angle = bond_direction
+                        [bond_order[(first_up + 2) % number_of_neighbors] as usize]
                         - bond_direction[bond_order[(first_up + 1) % number_of_neighbors] as usize];
                     if angle < 0.0 {
                         angle += two_pi;
@@ -787,7 +796,8 @@ pub(crate) fn Get2DTetrahedralAmbiguity(
             }
             2 => {
                 if number_down != 0 {
-                    let mut alpha = bond_direction[bond_order[(first_up + 1) % number_of_neighbors] as usize]
+                    let mut alpha = bond_direction
+                        [bond_order[(first_up + 1) % number_of_neighbors] as usize]
                         - bond_direction[bond_order[first_up % number_of_neighbors] as usize];
                     if alpha < 0.0 {
                         alpha += two_pi;
@@ -797,8 +807,10 @@ pub(crate) fn Get2DTetrahedralAmbiguity(
                     } else if alpha < two_pi / 3.0 - vMinAngle {
                         result = (T2D_UNDF | T2D_WARN) as i32;
                     } else {
-                        let mut bisector = bond_direction[bond_order[first_up % number_of_neighbors] as usize]
-                            + bond_direction[bond_order[(first_up + 1) % number_of_neighbors] as usize];
+                        let mut bisector = bond_direction
+                            [bond_order[first_up % number_of_neighbors] as usize]
+                            + bond_direction
+                                [bond_order[(first_up + 1) % number_of_neighbors] as usize];
                         bisector /= 2.0;
                         bisector -= one_pi;
                         if bisector < 0.0 {
@@ -809,7 +821,8 @@ pub(crate) fn Get2DTetrahedralAmbiguity(
                         } else {
                             alpha * 3.0 / 2.0 - one_pi
                         };
-                        let angle = bond_direction[bond_order[(first_up + 2) % number_of_neighbors] as usize];
+                        let angle = bond_direction
+                            [bond_order[(first_up + 2) % number_of_neighbors] as usize];
                         if bisector - angle < -limit || bisector - angle > limit {
                             result = (T2D_UNDF | T2D_WARN) as i32;
                         } else {
@@ -829,8 +842,10 @@ pub(crate) fn Get2DTetrahedralAmbiguity(
             1 => {
                 if number_down != 0 {
                     if bond_type[bond_order[(first_up + 2) % number_of_neighbors] as usize] < 0 {
-                        let mut angle = bond_direction[bond_order[(first_up + 3) % number_of_neighbors] as usize]
-                            - bond_direction[bond_order[(first_up + 1) % number_of_neighbors] as usize];
+                        let mut angle = bond_direction
+                            [bond_order[(first_up + 3) % number_of_neighbors] as usize]
+                            - bond_direction
+                                [bond_order[(first_up + 1) % number_of_neighbors] as usize];
                         if angle < 0.0 {
                             angle += two_pi;
                         }
@@ -844,7 +859,8 @@ pub(crate) fn Get2DTetrahedralAmbiguity(
                     }
                 } else {
                     result = T2D_OKAY as i32;
-                    let mut angle = bond_direction[bond_order[(first_up + 3) % number_of_neighbors] as usize]
+                    let mut angle = bond_direction
+                        [bond_order[(first_up + 3) % number_of_neighbors] as usize]
                         - bond_direction[bond_order[(first_up + 1) % number_of_neighbors] as usize];
                     if angle < 0.0 {
                         angle += two_pi;
@@ -860,11 +876,15 @@ pub(crate) fn Get2DTetrahedralAmbiguity(
                         result = T2D_OKAY as i32;
                     } else {
                         let angle = (two_pi
-                            - (bond_direction[bond_order[(first_up + 3) % number_of_neighbors] as usize]
-                                - bond_direction[bond_order[first_up % number_of_neighbors] as usize]))
+                            - (bond_direction
+                                [bond_order[(first_up + 3) % number_of_neighbors] as usize]
+                                - bond_direction
+                                    [bond_order[first_up % number_of_neighbors] as usize]))
                             .abs();
-                        let alpha = (bond_direction[bond_order[(first_up + 2) % number_of_neighbors] as usize]
-                            - bond_direction[bond_order[(first_up + 1) % number_of_neighbors] as usize])
+                        let alpha = (bond_direction
+                            [bond_order[(first_up + 2) % number_of_neighbors] as usize]
+                            - bond_direction
+                                [bond_order[(first_up + 1) % number_of_neighbors] as usize])
                             .abs();
                         if (angle < 2.0 * ZERO_ANGLE && alpha > vMinAngle)
                             || (alpha < 2.0 * ZERO_ANGLE && angle > vMinAngle)
@@ -882,7 +902,8 @@ pub(crate) fn Get2DTetrahedralAmbiguity(
             }
             3 => {
                 result = T2D_OKAY as i32;
-                let mut angle = bond_direction[bond_order[(first_up + 2) % number_of_neighbors] as usize]
+                let mut angle = bond_direction
+                    [bond_order[(first_up + 2) % number_of_neighbors] as usize]
                     - bond_direction[bond_order[first_up % number_of_neighbors] as usize];
                 if angle < 0.0 {
                     angle += two_pi;
@@ -1003,9 +1024,12 @@ pub(crate) fn get_z_coord(
     // END INCHI C FUNCTION: get_z_coord
 
     let atoms = heap.slice(at)?;
-    let current_index = usize::try_from(cur_atom).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let current_index =
+        usize::try_from(cur_atom).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let order = usize::try_from(neigh_no).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    let current = atoms.get(current_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
+    let current = atoms
+        .get(current_index)
+        .ok_or(SourceHeapError::PointerOutOfBounds)?;
     let stereo_value = i32::from(
         *current
             .bond_stereo
@@ -1015,7 +1039,10 @@ pub(crate) fn get_z_coord(
     let stereo_type = stereo_value.wrapping_abs();
     let neighbor = atoms
         .get(usize::from(
-            *current.neighbor.get(order).ok_or(SourceHeapError::PointerOutOfBounds)?,
+            *current
+                .neighbor
+                .get(order)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?,
         ))
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
     let z = neighbor.z - current.z;
@@ -1225,9 +1252,10 @@ pub(crate) fn dot_prodchar3(a: &[S_CHAR; 3], b: &[S_CHAR; 3]) -> i32 {
     */
     // END INCHI C FUNCTION: dot_prodchar3
 
-    let mut product =
-        (i32::from(a[0]) * i32::from(b[0]) + i32::from(a[1]) * i32::from(b[1]) + i32::from(a[2]) * i32::from(b[2]))
-            / 100;
+    let mut product = (i32::from(a[0]) * i32::from(b[0])
+        + i32::from(a[1]) * i32::from(b[1])
+        + i32::from(a[2]) * i32::from(b[2]))
+        / 100;
     if product > 100 {
         product = 100;
     } else if product < -100 {
@@ -1236,7 +1264,11 @@ pub(crate) fn dot_prodchar3(a: &[S_CHAR; 3], b: &[S_CHAR; 3]) -> i32 {
     product
 }
 
-pub(crate) fn cross_prod3<'a>(a: &[f64; 3], b: &[f64; 3], result: &'a mut [f64; 3]) -> &'a mut [f64; 3] {
+pub(crate) fn cross_prod3<'a>(
+    a: &[f64; 3],
+    b: &[f64; 3],
+    result: &'a mut [f64; 3],
+) -> &'a mut [f64; 3] {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichister.c:330 cross_prod3
     // INCHI✔️✔️: complete active source frame follows verbatim; fixed-size temporary and write order match.
     /*
@@ -1267,7 +1299,12 @@ pub(crate) fn cross_prod3<'a>(a: &[f64; 3], b: &[f64; 3], result: &'a mut [f64; 
     result
 }
 
-pub(crate) fn triple_prod(a: &[f64; 3], b: &[f64; 3], c: &[f64; 3], sine_value: Option<&mut f64>) -> f64 {
+pub(crate) fn triple_prod(
+    a: &[f64; 3],
+    b: &[f64; 3],
+    c: &[f64; 3],
+    sine_value: Option<&mut f64>,
+) -> f64 {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichister.c:347 triple_prod
     // INCHI✔️✔️: complete active source frame follows verbatim; fixed-size callee composition and branching match.
     /*
@@ -1559,7 +1596,12 @@ pub(crate) fn triple_prod_and_min_abs_sine2(
     }
 
     let mut sine_value = 0.0;
-    let ret = triple_prod(&at_coord[0], &at_coord[1], &at_coord[2], Some(&mut sine_value));
+    let ret = triple_prod(
+        &at_coord[0],
+        &at_coord[1],
+        &at_coord[2],
+        Some(&mut sine_value),
+    );
     sine_value = sine_value.abs();
 
     let mut edges = [[0.0; 3]; 3];
@@ -1616,7 +1658,8 @@ pub(crate) fn triple_prod_and_min_abs_sine2(
     }
 
     let long_edges = if bAddedExplicitNeighbor != 0 {
-        maximum_edge_length_without_explicit_neighbor < MAX_EDGE_RATIO * minimum_edge_length_without_explicit_neighbor
+        maximum_edge_length_without_explicit_neighbor
+            < MAX_EDGE_RATIO * minimum_edge_length_without_explicit_neighbor
     } else {
         maximum_edge_length < MAX_EDGE_RATIO * minimum_edge_length
     };
@@ -1707,7 +1750,10 @@ pub(crate) fn triple_prod_and_min_abs_sine2(
     ret
 }
 
-pub(crate) fn triple_prod_and_min_abs_sine(at_coord: &[[f64; 3]; 3], min_sine: Option<&mut f64>) -> f64 {
+pub(crate) fn triple_prod_and_min_abs_sine(
+    at_coord: &[[f64; 3]; 3],
+    min_sine: Option<&mut f64>,
+) -> f64 {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichister.c:1145 triple_prod_and_min_abs_sine
     // INCHI✔️✔️: complete active source frame follows verbatim; fixed-size callee composition and branching match.
     /*
@@ -1746,11 +1792,26 @@ pub(crate) fn triple_prod_and_min_abs_sine(at_coord: &[[f64; 3]; 3], min_sine: O
     let source_min = |first: f64, second: f64| if first < second { first } else { second };
     let mut min_sine_value = 9999.0_f64;
     let mut sine_value = 0.0_f64;
-    let _ = triple_prod(&at_coord[0], &at_coord[1], &at_coord[2], Some(&mut sine_value));
+    let _ = triple_prod(
+        &at_coord[0],
+        &at_coord[1],
+        &at_coord[2],
+        Some(&mut sine_value),
+    );
     min_sine_value = source_min(min_sine_value, sine_value.abs());
-    let _ = triple_prod(&at_coord[1], &at_coord[2], &at_coord[0], Some(&mut sine_value));
+    let _ = triple_prod(
+        &at_coord[1],
+        &at_coord[2],
+        &at_coord[0],
+        Some(&mut sine_value),
+    );
     min_sine_value = source_min(min_sine_value, sine_value.abs());
-    let product = triple_prod(&at_coord[2], &at_coord[0], &at_coord[1], Some(&mut sine_value));
+    let product = triple_prod(
+        &at_coord[2],
+        &at_coord[0],
+        &at_coord[1],
+        Some(&mut sine_value),
+    );
     min_sine_value = source_min(min_sine_value, sine_value.abs());
     *min_sine = min_sine_value;
     product
@@ -1942,9 +2003,13 @@ pub(crate) fn triple_prod_char(
     let atoms = heap.slice(at)?;
     let at_1_index = usize::try_from(at_1).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let at_2_index = usize::try_from(at_2).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    let next_1_index = usize::try_from(i_next_at_1).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    let next_2_index = usize::try_from(i_next_at_2).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    let endpoint_1 = atoms.get(at_1_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
+    let next_1_index =
+        usize::try_from(i_next_at_1).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let next_2_index =
+        usize::try_from(i_next_at_2).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let endpoint_1 = atoms
+        .get(at_1_index)
+        .ok_or(SourceHeapError::PointerOutOfBounds)?;
     let adjacent_1 = atoms
         .get(usize::from(
             *endpoint_1
@@ -1953,7 +2018,9 @@ pub(crate) fn triple_prod_char(
                 .ok_or(SourceHeapError::PointerOutOfBounds)?,
         ))
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    let endpoint_2 = atoms.get(at_2_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
+    let endpoint_2 = atoms
+        .get(at_2_index)
+        .ok_or(SourceHeapError::PointerOutOfBounds)?;
     let adjacent_2 = atoms
         .get(usize::from(
             *endpoint_2
@@ -2121,8 +2188,9 @@ pub(crate) fn GetHalfStereobond0DParity(
     if current_index >= atoms.len() {
         return Err(SourceHeapError::PointerOutOfBounds);
     }
-    let well_defined =
-        |parity: i32| (AB_MIN_WELL_DEFINED_PARITY as i32..=AB_MAX_WELL_DEFINED_PARITY as i32).contains(&parity);
+    let well_defined = |parity: i32| {
+        (AB_MIN_WELL_DEFINED_PARITY as i32..=AB_MAX_WELL_DEFINED_PARITY as i32).contains(&parity)
+    };
     let mut last_parity = 0_i32;
 
     for m in 0..MAX_NUM_STEREO_BONDS as usize {
@@ -2134,7 +2202,8 @@ pub(crate) fn GetHalfStereobond0DParity(
         let mut current_to_neighbor = -1_i32;
         let mut current_parity = 0_i32;
         let order = i32::from(atoms[current_index].sb_ord[m]);
-        let order_index = usize::try_from(order).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let order_index =
+            usize::try_from(order).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         let next_index = usize::from(
             *atoms[current_index]
                 .neighbor
@@ -2143,9 +2212,13 @@ pub(crate) fn GetHalfStereobond0DParity(
         );
 
         if order >= 0 && order < i32::from(atoms[current_index].valence) {
-            let next_atom = atoms.get(next_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let next_atom = atoms
+                .get(next_index)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
             let next_original_number = next_atom.orig_at_number;
-            if i32::from(next_atom.valence) <= MAX_NUM_STEREO_BONDS as i32 && next_original_number != 0 {
+            if i32::from(next_atom.valence) <= MAX_NUM_STEREO_BONDS as i32
+                && next_original_number != 0
+            {
                 for i in 0..nNumExplictAttachments {
                     let attachment = *nSbNeighOrigAtNumb
                         .get(i as usize)
@@ -2158,10 +2231,11 @@ pub(crate) fn GetHalfStereobond0DParity(
                 }
                 if current_to_neighbor >= 0 && current_to_next >= 0 {
                     if well_defined(descriptor_parity) {
-                        let order_parity =
-                            (current_to_next + current_to_neighbor + i32::from(current_to_next > current_to_neighbor)
-                                - 1)
-                                % 2;
+                        let order_parity = (current_to_next
+                            + current_to_neighbor
+                            + i32::from(current_to_next > current_to_neighbor)
+                            - 1)
+                            % 2;
                         current_parity = 2 - (order_parity + descriptor_parity) % 2;
                     } else {
                         current_parity = descriptor_parity;
@@ -2192,7 +2266,8 @@ pub(crate) fn GetHalfStereobond0DParity(
 
     if last_parity != 0 {
         bond_parity = last_parity;
-        atoms[current_index].bUsed0DParity = (i32::from(atoms[current_index].bUsed0DParity) | nFlag) as i8;
+        atoms[current_index].bUsed0DParity =
+            (i32::from(atoms[current_index].bUsed0DParity) | nFlag) as i8;
     }
     Ok(bond_parity)
 }
@@ -2402,8 +2477,14 @@ pub(crate) fn FixSb0DParities(
     let i2 = usize::try_from(at_2).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let a1 = atoms.get(i1).ok_or(SourceHeapError::PointerOutOfBounds)?;
     let a2 = atoms.get(i2).ok_or(SourceHeapError::PointerOutOfBounds)?;
-    let well = |p: i32| (AB_MIN_WELL_DEFINED_PARITY as i32..=AB_MAX_WELL_DEFINED_PARITY as i32).contains(&p);
-    let parity_sign = if *pparity1 < 0 || *pparity2 < 0 { -1 } else { 1 };
+    let well = |p: i32| {
+        (AB_MIN_WELL_DEFINED_PARITY as i32..=AB_MAX_WELL_DEFINED_PARITY as i32).contains(&p)
+    };
+    let parity_sign = if *pparity1 < 0 || *pparity2 < 0 {
+        -1
+    } else {
+        1
+    };
     let mut abs1 = pparity1.wrapping_abs();
     let mut abs2 = pparity2.wrapping_abs();
     let (mut parity1, mut parity2) = (AB_PARITY_NONE as i32, AB_PARITY_NONE as i32);
@@ -2440,7 +2521,8 @@ pub(crate) fn FixSb0DParities(
         }
         _ => {}
     }
-    match i32::from(!(well(abs1) && well(parity1))) + 2 * i32::from(!(well(abs2) && well(parity2))) {
+    match i32::from(!(well(abs1) && well(parity1))) + 2 * i32::from(!(well(abs2) && well(parity2)))
+    {
         0 => {}
         1 => {
             *pparity1 = parity_sign
@@ -2505,7 +2587,15 @@ pub(crate) fn FixSb0DParities(
                     z_dir1.map(f64::from)
                 };
                 let input = r12;
-                mult3(&input, if wrong1 { 1.0 / abs_r12 } else { -1.0 / abs_r12 }, &mut r12);
+                mult3(
+                    &input,
+                    if wrong1 {
+                        1.0 / abs_r12
+                    } else {
+                        -1.0 / abs_r12
+                    },
+                    &mut r12,
+                );
                 let mut zi2 = [0.0; 3];
                 cross_prod3(&r12, &zi1, &mut zi2);
                 let abs_zi2 = len3(&zi2);
@@ -2990,7 +3080,9 @@ pub(crate) fn half_stereo_bond_parity(
         return Ok(0);
     }
     let attachment_count = i32::from(current.valence) + num_h;
-    if attachment_count > MAX_NUM_STEREO_BOND_NEIGH as i32 || attachment_count < MIN_NUM_STEREO_BOND_NEIGH as i32 {
+    if attachment_count > MAX_NUM_STEREO_BOND_NEIGH as i32
+        || attachment_count < MIN_NUM_STEREO_BOND_NEIGH as i32
+    {
         return Ok(0);
     }
     if bCanAtomHaveAStereoBond(&current.elname, current.charge, current.radical)? == 0 {
@@ -3026,7 +3118,9 @@ pub(crate) fn half_stereo_bond_parity(
     if !at_removed_H.is_null() && num_removed_H > 0 {
         let removed = heap.slice(at_removed_H)?;
         for j in 0..num_removed_H {
-            let removed_atom = removed.get(j as usize).ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let removed_atom = removed
+                .get(j as usize)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
             if i32::from(removed_atom.neighbor[0]) == cur_at {
                 let isotope = if ignore_isotopic_h {
                     0
@@ -3062,7 +3156,8 @@ pub(crate) fn half_stereo_bond_parity(
     let valence_three = bAtomHasValence3(&current.elname, current.charge, current.radical)?;
     if i32::from(current.valence) + num_explicit_h == MIN_NUM_STEREO_BOND_NEIGH as i32
         && valence_three == 0
-        && !((num_nonisotopic_h == 1 && explicit_isotope_counts[0] == 0) || (num_h == 1 && num_explicit_h == 0))
+        && !((num_nonisotopic_h == 1 && explicit_isotope_counts[0] == 0)
+            || (num_h == 1 && num_explicit_h == 0))
     {
         return Ok(finalize_half_stereo_parity(num_h, bond_parity));
     }
@@ -3075,7 +3170,9 @@ pub(crate) fn half_stereo_bond_parity(
         let removed_offset = at_removed_H.as_mut().difference(at)?;
         for j in 0..num_explicit_h as usize {
             let next = hydrogen_indices[j];
-            let removed_atom = removed.get(next).ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let removed_atom = removed
+                .get(next)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
             at_coord[number_of_explicit_attachments][0] = removed_atom.x - current.x;
             at_coord[number_of_explicit_attachments][1] = removed_atom.y - current.y;
             neighbor_original_numbers[number_of_explicit_attachments] = removed_atom.orig_at_number;
@@ -3243,7 +3340,8 @@ pub(crate) fn half_stereo_bond_parity(
         for k in 0..3 {
             coordinate[k] = dot_prod3(&original, &points[(k + p0) % 3]);
         }
-        let projection_length = (coordinate[0] * coordinate[0] + coordinate[1] * coordinate[1]).sqrt();
+        let projection_length =
+            (coordinate[0] * coordinate[0] + coordinate[1] * coordinate[1]).sqrt();
         let input = *coordinate;
         mult3(&input, 1.0 / projection_length, coordinate);
     }
@@ -3320,7 +3418,8 @@ fn set_half_stereo_ambiguous(
         .slice_mut(at)?
         .get_mut(current_index)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    current.bAmbiguousStereo = (i32::from(current.bAmbiguousStereo) | AMBIGUOUS_STEREO as i32) as i8;
+    current.bAmbiguousStereo =
+        (i32::from(current.bAmbiguousStereo) | AMBIGUOUS_STEREO as i32) as i8;
     Ok(())
 }
 
@@ -3390,8 +3489,12 @@ pub(crate) fn save_a_stereo_bond(
     */
     // END INCHI C FUNCTION: save_a_stereo_bond
 
-    let first_slot = stereo_bond_neighbor1.iter().position(|&neighbor| neighbor == 0);
-    let second_slot = stereo_bond_neighbor2.iter().position(|&neighbor| neighbor == 0);
+    let first_slot = stereo_bond_neighbor1
+        .iter()
+        .position(|&neighbor| neighbor == 0);
+    let second_slot = stereo_bond_neighbor2
+        .iter()
+        .position(|&neighbor| neighbor == 0);
     let (Some(i1), Some(i2)) = (first_slot, second_slot) else {
         return 0;
     };
@@ -3408,7 +3511,12 @@ pub(crate) fn save_a_stereo_bond(
 }
 
 #[allow(non_snake_case)]
-pub(crate) fn half_stereo_bond_action(mut nParity: i32, bUnknown: i32, bIsotopic: i32, vABParityUnknown: i32) -> i32 {
+pub(crate) fn half_stereo_bond_action(
+    mut nParity: i32,
+    bUnknown: i32,
+    bIsotopic: i32,
+    vABParityUnknown: i32,
+) -> i32 {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichister.c:2901 half_stereo_bond_action
     // INCHI✔️✔️: complete active source frame follows verbatim; scalar control flow and allocation behavior match.
     /*
@@ -3550,7 +3658,10 @@ pub(crate) fn half_stereo_bond_action(mut nParity: i32, bUnknown: i32, bIsotopic
 
     if bIsotopic != 0 {
         match nParity {
-            value if value == AB_PARITY_ODD as i32 || value == (AB_PARITY_ODD as i32 | AB_NEGATIVE) => {
+            value
+                if value == AB_PARITY_ODD as i32
+                    || value == (AB_PARITY_ODD as i32 | AB_NEGATIVE) =>
+            {
                 AB_PARITY_CALC as i32
             }
             value
@@ -3561,10 +3672,16 @@ pub(crate) fn half_stereo_bond_action(mut nParity: i32, bUnknown: i32, bIsotopic
             {
                 vABParityUnknown
             }
-            value if value == AB_PARITY_IISO as i32 || value == (AB_PARITY_IISO as i32 | AB_UNKNOWN) => {
+            value
+                if value == AB_PARITY_IISO as i32
+                    || value == (AB_PARITY_IISO as i32 | AB_UNKNOWN) =>
+            {
                 AB_PARITY_NONE as i32
             }
-            value if value == AB_PARITY_UNDF as i32 || value == (AB_PARITY_UNDF as i32 | AB_NEGATIVE) => {
+            value
+                if value == AB_PARITY_UNDF as i32
+                    || value == (AB_PARITY_UNDF as i32 | AB_NEGATIVE) =>
+            {
                 AB_PARITY_UNDF as i32
             }
             _ => -1,
@@ -3572,7 +3689,10 @@ pub(crate) fn half_stereo_bond_action(mut nParity: i32, bUnknown: i32, bIsotopic
     } else {
         match nParity {
             value if value == AB_PARITY_ODD as i32 => AB_PARITY_CALC as i32,
-            value if value == (AB_PARITY_ODD as i32 | AB_UNKNOWN) || value == (AB_PARITY_UNDF as i32 | AB_UNKNOWN) => {
+            value
+                if value == (AB_PARITY_ODD as i32 | AB_UNKNOWN)
+                    || value == (AB_PARITY_UNDF as i32 | AB_UNKNOWN) =>
+            {
                 vABParityUnknown
             }
             value if value == AB_PARITY_UNDF as i32 => AB_PARITY_UNDF as i32,
@@ -4297,10 +4417,14 @@ pub(crate) fn set_stereo_bonds_parity(
         .ok_or(SourceHeapError::PointerOutOfBounds)?
         .clone();
     let neighbor_count = i32::from(current.valence) + i32::from(current.num_H);
-    if neighbor_count > MAX_NUM_STEREO_BOND_NEIGH as i32 || neighbor_count < MIN_NUM_STEREO_BOND_NEIGH as i32 {
+    if neighbor_count > MAX_NUM_STEREO_BOND_NEIGH as i32
+        || neighbor_count < MIN_NUM_STEREO_BOND_NEIGH as i32
+    {
         return Ok(0);
     }
-    if bCanAtomHaveAStereoBond(&current.elname, current.charge, current.radical)? == 0 || current.c_point != 0 {
+    if bCanAtomHaveAStereoBond(&current.elname, current.charge, current.radical)? == 0
+        || current.c_point != 0
+    {
         return Ok(0);
     }
     if current.num_H == 0
@@ -4318,7 +4442,10 @@ pub(crate) fn set_stereo_bonds_parity(
     let mut num_wrong_bonds_1 = 0_i32;
     let mut num_2s_hetero = [0_i32; 2];
     let mut type_n = 0_i32;
-    if current.num_H == 0 && current.charge == 0 && current.radical == 0 && get_endpoint_valence(current.el_number) == 3
+    if current.num_H == 0
+        && current.charge == 0
+        && current.radical == 0
+        && get_endpoint_valence(current.el_number) == 3
     {
         if current.valence == 2 && current.chem_bonds_valence == 3 {
             type_n = 1;
@@ -4334,7 +4461,8 @@ pub(crate) fn set_stereo_bonds_parity(
     let mut num_stereo_bonds = 0_i32;
 
     for i_next_at_1 in 0..i32::from(current.valence) {
-        let first_order = usize::try_from(i_next_at_1).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let first_order =
+            usize::try_from(i_next_at_1).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         let mut n_unknown = i32::from(current.bond_stereo[first_order] == STEREO_DBLE_EITHER as i8);
         let bond_type = get_allowed_stereo_bond_type(i32::from(current.bond_type[first_order]));
         let mut at_2 = -1_i32;
@@ -4355,16 +4483,19 @@ pub(crate) fn set_stereo_bonds_parity(
                     .clone();
                 if current.nRingSystem != opposite.nRingSystem
                     || nMode & CMODE_NO_ALT_SBONDS as INCHI_MODE != 0
-                    || bCanAtomHaveAStereoBond(&opposite.elname, opposite.charge, opposite.radical)? == 0
+                    || bCanAtomHaveAStereoBond(&opposite.elname, opposite.charge, opposite.radical)?
+                        == 0
                 {
                     continue;
                 }
             }
             BOND_DOUBLE => {
                 num_2s_1 += 1;
-                if bCanAtomBeTerminalAllene(&current.elname, current.charge, current.radical)? != 0 {
+                if bCanAtomBeTerminalAllene(&current.elname, current.charge, current.radical)? != 0
+                {
                     loop {
-                        let opposite_index = usize::try_from(at_2).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                        let opposite_index = usize::try_from(at_2)
+                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                         let opposite = heap
                             .slice(at.as_const())?
                             .get(opposite_index)
@@ -4372,16 +4503,25 @@ pub(crate) fn set_stereo_bonds_parity(
                             .clone();
                         let is_allene = opposite.num_H == 0
                             && opposite.valence == 2
-                            && get_allowed_stereo_bond_type(i32::from(opposite.bond_type[0])) == BOND_DOUBLE as i32
-                            && get_allowed_stereo_bond_type(i32::from(opposite.bond_type[1])) == BOND_DOUBLE as i32;
+                            && get_allowed_stereo_bond_type(i32::from(opposite.bond_type[0]))
+                                == BOND_DOUBLE as i32
+                            && get_allowed_stereo_bond_type(i32::from(opposite.bond_type[1]))
+                                == BOND_DOUBLE as i32;
                         if !is_allene
-                            || bCanAtomBeMiddleAllene(&opposite.elname, opposite.charge, opposite.radical)? == 0
+                            || bCanAtomBeMiddleAllene(
+                                &opposite.elname,
+                                opposite.charge,
+                                opposite.radical,
+                            )? == 0
                         {
                             if cur_chain_length != 0 {
                                 num_chains += 1;
                                 if is_allene
-                                    || bCanAtomBeTerminalAllene(&opposite.elname, opposite.charge, opposite.radical)?
-                                        == 0
+                                    || bCanAtomBeTerminalAllene(
+                                        &opposite.elname,
+                                        opposite.charge,
+                                        opposite.radical,
+                                    )? == 0
                                 {
                                     cur_chain_length = 0;
                                     reject_current_chain = true;
@@ -4402,15 +4542,22 @@ pub(crate) fn set_stereo_bonds_parity(
                     }
                 }
                 if cur_chain_length == 0 {
-                    let suitable = bIsSuitableHeteroInpAtom(heap, at.as_const().offset(i64::from(at_2))?)?;
+                    let suitable =
+                        bIsSuitableHeteroInpAtom(heap, at.as_const().offset(i64::from(at_2))?)?;
                     if suitable >= 0 {
-                        num_2s_hetero[usize::try_from(suitable).map_err(|_| SourceHeapError::PointerOutOfBounds)?] += 1;
+                        num_2s_hetero[usize::try_from(suitable)
+                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?] += 1;
                     }
                     let opposite = heap
                         .slice(at.as_const())?
-                        .get(usize::try_from(at_2).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
+                        .get(
+                            usize::try_from(at_2)
+                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                        )
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                    if bCanAtomHaveAStereoBond(&opposite.elname, opposite.charge, opposite.radical)? == 0 {
+                    if bCanAtomHaveAStereoBond(&opposite.elname, opposite.charge, opposite.radical)?
+                        == 0
+                    {
                         continue;
                     }
                 }
@@ -4425,7 +4572,8 @@ pub(crate) fn set_stereo_bonds_parity(
         let mut found = at_2 >= 0 && at_1 > at_2;
         let mut i_next_at_2 = -1_i32;
         if found {
-            let opposite_index = usize::try_from(at_2).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let opposite_index =
+                usize::try_from(at_2).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             let opposite = heap
                 .slice(at.as_const())?
                 .get(opposite_index)
@@ -4456,7 +4604,8 @@ pub(crate) fn set_stereo_bonds_parity(
             let mut num_wrong_bonds_2 = 0_i32;
             for j in 0..i32::from(opposite.valence) {
                 let order = usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                let opposite_bond_type = get_allowed_stereo_bond_type(i32::from(opposite.bond_type[order]));
+                let opposite_bond_type =
+                    get_allowed_stereo_bond_type(i32::from(opposite.bond_type[order]));
                 if opposite_bond_type == 0 {
                     num_wrong_bonds_2 += 1;
                     continue;
@@ -4464,10 +4613,13 @@ pub(crate) fn set_stereo_bonds_parity(
                 if opposite_bond_type == BOND_DOUBLE as i32 {
                     num_2s_2 += 1;
                     let next_next_at = i32::from(opposite.neighbor[order]);
-                    let suitable = bIsSuitableHeteroInpAtom(heap, at.as_const().offset(i64::from(next_next_at))?)?;
+                    let suitable = bIsSuitableHeteroInpAtom(
+                        heap,
+                        at.as_const().offset(i64::from(next_next_at))?,
+                    )?;
                     if suitable >= 0 {
-                        num_2s_hetero_next
-                            [usize::try_from(suitable).map_err(|_| SourceHeapError::PointerOutOfBounds)?] += 1;
+                        num_2s_hetero_next[usize::try_from(suitable)
+                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?] += 1;
                     }
                 } else {
                     num_alt_2 += i32::from(opposite_bond_type == BOND_ALTERN as i32);
@@ -4505,7 +4657,8 @@ pub(crate) fn set_stereo_bonds_parity(
         }
 
         if found {
-            let slot = usize::try_from(num_stereo_bonds).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let slot = usize::try_from(num_stereo_bonds)
+                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             all_pos_1[slot] = i_next_at_1;
             all_pos_2[slot] = i_next_at_2;
             all_at_2[slot] = at_2;
@@ -4517,7 +4670,9 @@ pub(crate) fn set_stereo_bonds_parity(
     if num_chains > 1 || num_wrong_bonds_1 > 1 || (num_wrong_bonds_1 != 0 && current.valence <= 2) {
         return Ok(0);
     }
-    if chain_length != 0 && (num_stereo_bonds != 1 || num_alt_1 != 0 || chain_length > MAX_CUMULENE_LEN as i32) {
+    if chain_length != 0
+        && (num_stereo_bonds != 1 || num_alt_1 != 0 || chain_length > MAX_CUMULENE_LEN as i32)
+    {
         return Ok(0);
     }
     if i32::from(num_alt_1 > 0) + i32::from(num_2s_1 > 0) != 1 || num_stereo_bonds == 0 {
@@ -4536,10 +4691,13 @@ pub(crate) fn set_stereo_bonds_parity(
 
     let mut num_stored_isotopic_stereo_bonds = 0_i32;
     let mut stop = false;
-    for k in 0..usize::try_from(num_stereo_bonds).map_err(|_| SourceHeapError::PointerOutOfBounds)? {
+    for k in
+        0..usize::try_from(num_stereo_bonds).map_err(|_| SourceHeapError::PointerOutOfBounds)?
+    {
         let at_2 = all_at_2[k];
         let i_next_at_1 = all_pos_1[k];
-        let opposite_index = usize::try_from(at_2).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let opposite_index =
+            usize::try_from(at_2).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         let ring_system_1 = heap.slice(at.as_const())?[at_1_index].nRingSystem;
         let ring_system_2 = heap
             .slice(at.as_const())?
@@ -4547,8 +4705,16 @@ pub(crate) fn set_stereo_bonds_parity(
             .ok_or(SourceHeapError::PointerOutOfBounds)?
             .nRingSystem;
         if ring_system_1 == ring_system_2 {
-            let ring =
-                is_bond_in_Nmax_memb_ring(heap, at, at_1, i_next_at_1, q, nAtomLevel, cSource, min_sb_ring_size)?;
+            let ring = is_bond_in_Nmax_memb_ring(
+                heap,
+                at,
+                at_1,
+                i_next_at_1,
+                q,
+                nAtomLevel,
+                cSource,
+                min_sb_ring_size,
+            )?;
             if ring > 0 {
                 continue;
             }
@@ -4581,10 +4747,13 @@ pub(crate) fn set_stereo_bonds_parity(
             bPointedEdgeStereo,
             vABParityUnknown,
         )?;
-        if (CT_ERR_MIN..=CT_ERR_MAX).contains(&cur_parity) || (CT_ERR_MIN..=CT_ERR_MAX).contains(&next_parity) {
+        if (CT_ERR_MIN..=CT_ERR_MAX).contains(&cur_parity)
+            || (CT_ERR_MIN..=CT_ERR_MAX).contains(&next_parity)
+        {
             return Ok(CT_CALC_STEREO_ERR);
         }
-        let used_0d_1 = i32::from(heap.slice(at.as_const())?[at_1_index].bUsed0DParity) & FlagSB_0D as i32;
+        let used_0d_1 =
+            i32::from(heap.slice(at.as_const())?[at_1_index].bUsed0DParity) & FlagSB_0D as i32;
         let used_0d_2 = i32::from(
             heap.slice(at.as_const())?
                 .get(opposite_index)
@@ -4617,8 +4786,10 @@ pub(crate) fn set_stereo_bonds_parity(
         let chain_len_bits = chain_length.wrapping_mul(MULT_STEREOBOND as i32);
         let abs_cur_parity = cur_parity.wrapping_abs();
         let abs_next_parity = next_parity.wrapping_abs();
-        let well_defined =
-            |parity: i32| (AB_MIN_WELL_DEFINED_PARITY as i32..=AB_MAX_WELL_DEFINED_PARITY as i32).contains(&parity);
+        let well_defined = |parity: i32| {
+            (AB_MIN_WELL_DEFINED_PARITY as i32..=AB_MAX_WELL_DEFINED_PARITY as i32)
+                .contains(&parity)
+        };
         let cur_parity_defined = well_defined(abs_cur_parity);
         let next_parity_defined = well_defined(abs_next_parity);
         let cur_action = half_stereo_bond_action(cur_parity, n_unknown, 0, vABParityUnknown);
@@ -4628,20 +4799,21 @@ pub(crate) fn set_stereo_bonds_parity(
             stop = true;
         }
         let dot_prod_z = if cur_parity_defined && next_parity_defined {
-            let product = if chain_len_bits != 0 && (chain_len_bits / MULT_STEREOBOND as i32) % 2 != 0 {
-                triple_prod_char(
-                    heap,
-                    at.as_const(),
-                    at_1,
-                    i_next_at_1,
-                    &z_dir1,
-                    at_2,
-                    i_next_at_2,
-                    &z_dir2,
-                )?
-            } else {
-                dot_prodchar3(&z_dir1, &z_dir2)
-            };
+            let product =
+                if chain_len_bits != 0 && (chain_len_bits / MULT_STEREOBOND as i32) % 2 != 0 {
+                    triple_prod_char(
+                        heap,
+                        at.as_const(),
+                        at_1,
+                        i_next_at_1,
+                        &z_dir1,
+                        at_2,
+                        i_next_at_2,
+                        &z_dir2,
+                    )?
+                } else {
+                    dot_prodchar3(&z_dir1, &z_dir2)
+                };
             if product.wrapping_abs() < MIN_DOT_PROD as i32 {
                 result_action = result_action.min(AB_PARITY_UNDF as i32);
             }
@@ -4650,7 +4822,11 @@ pub(crate) fn set_stereo_bonds_parity(
             0
         };
 
-        if result_action != AB_PARITY_NONE as i32 && result_action != -1 && cur_parity > 0 && next_parity > 0 {
+        if result_action != AB_PARITY_NONE as i32
+            && result_action != -1
+            && cur_parity > 0
+            && next_parity > 0
+        {
             let mut first = heap
                 .slice(out_at.as_const())?
                 .get(at_1_index)
@@ -4678,11 +4854,15 @@ pub(crate) fn set_stereo_bonds_parity(
                 &mut second.stereo_bond_parity,
             );
             if saved != 0 {
-                if first.parity == 0 || (cur_parity_defined && !well_defined(i32::from(first.parity).wrapping_abs())) {
+                if first.parity == 0
+                    || (cur_parity_defined && !well_defined(i32::from(first.parity).wrapping_abs()))
+                {
                     first.parity = cur_parity as S_CHAR;
                     first.z_dir = z_dir1;
                 }
-                if second.parity == 0 || (next_parity_defined && !well_defined(i32::from(second.parity).wrapping_abs()))
+                if second.parity == 0
+                    || (next_parity_defined
+                        && !well_defined(i32::from(second.parity).wrapping_abs()))
                 {
                     second.parity = next_parity as S_CHAR;
                     second.z_dir = z_dir2;
@@ -4737,7 +4917,8 @@ pub(crate) fn set_stereo_bonds_parity(
                 );
                 if saved != 0 {
                     if first.parity2 == 0
-                        || (cur_parity_defined && !well_defined(i32::from(first.parity2).wrapping_abs()))
+                        || (cur_parity_defined
+                            && !well_defined(i32::from(first.parity2).wrapping_abs()))
                     {
                         first.parity2 = cur_parity as S_CHAR;
                         if first.parity == 0 {
@@ -4745,7 +4926,8 @@ pub(crate) fn set_stereo_bonds_parity(
                         }
                     }
                     if second.parity2 == 0
-                        || (next_parity_defined && !well_defined(i32::from(second.parity2).wrapping_abs()))
+                        || (next_parity_defined
+                            && !well_defined(i32::from(second.parity2).wrapping_abs()))
                     {
                         second.parity2 = next_parity as S_CHAR;
                         if second.parity == 0 {
@@ -4943,7 +5125,8 @@ pub(crate) fn bInpAtomHasRequirdNeigh(
                     .iter()
                     .position(|&byte| byte == 0)
                     .ok_or(SourceHeapError::MissingNulTerminator)?;
-                if first.num_H != second.num_H && first.elname[..first_name_length] != [b'C' as i8] {
+                if first.num_H != second.num_H && first.elname[..first_name_length] != [b'C' as i8]
+                {
                     return Ok(0);
                 }
             }
@@ -5147,11 +5330,21 @@ pub(crate) fn bCanInpAtomBeAStereoCenter(
         &[b'P' as i8],
         &[b'A' as i8, b's' as i8],
     ];
-    const CHARGES: [i8; 21] = [0, 0, 0, 0, 1, -1, 0, 0, 1, 1, 0, 0, 1, 1, 0, 1, 0, 1, 0, 0, 0];
-    const NUM_BONDS_AND_H: [i8; 21] = [4, 4, 4, 4, 4, 4, 3, 4, 3, 4, 3, 4, 3, 4, 4, 4, 3, 4, 4, 3, 3];
-    const CHEM_VALENCE_H: [i8; 21] = [4, 4, 4, 4, 4, 4, 4, 6, 3, 5, 4, 6, 3, 5, 5, 4, 3, 4, 5, 3, 3];
-    const HAS_3_MEMBER_RING: [i8; 21] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0];
-    const REQUIRED_NEIGHBOR: [i8; 21] = [0, 0, 0, 0, 3, 0, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 1, 3, 3, 2, 2];
+    const CHARGES: [i8; 21] = [
+        0, 0, 0, 0, 1, -1, 0, 0, 1, 1, 0, 0, 1, 1, 0, 1, 0, 1, 0, 0, 0,
+    ];
+    const NUM_BONDS_AND_H: [i8; 21] = [
+        4, 4, 4, 4, 4, 4, 3, 4, 3, 4, 3, 4, 3, 4, 4, 4, 3, 4, 4, 3, 3,
+    ];
+    const CHEM_VALENCE_H: [i8; 21] = [
+        4, 4, 4, 4, 4, 4, 4, 6, 3, 5, 4, 6, 3, 5, 5, 4, 3, 4, 5, 3, 3,
+    ];
+    const HAS_3_MEMBER_RING: [i8; 21] = [
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0,
+    ];
+    const REQUIRED_NEIGHBOR: [i8; 21] = [
+        0, 0, 0, 0, 3, 0, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 1, 3, 3, 2, 2,
+    ];
     const PHOSPHINE_STEREO: usize = 19;
     const ARSINE_STEREO: usize = 20;
 
@@ -5173,8 +5366,10 @@ pub(crate) fn bCanInpAtomBeAStereoCenter(
         if element == ELEMENTS[i]
             && current.charge == CHARGES[i]
             && (current.radical == 0 || current.radical == 1)
-            && i32::from(current.valence) + i32::from(current.num_H) == i32::from(NUM_BONDS_AND_H[i])
-            && i32::from(current.chem_bonds_valence) + i32::from(current.num_H) == i32::from(CHEM_VALENCE_H[i])
+            && i32::from(current.valence) + i32::from(current.num_H)
+                == i32::from(NUM_BONDS_AND_H[i])
+            && i32::from(current.chem_bonds_valence) + i32::from(current.num_H)
+                == i32::from(CHEM_VALENCE_H[i])
             && (HAS_3_MEMBER_RING[i] == 0 || is_atom_in_3memb_ring(heap, at, cur_at)? != 0)
             && bInpAtomHasRequirdNeigh(
                 heap,
@@ -5190,7 +5385,9 @@ pub(crate) fn bCanInpAtomBeAStereoCenter(
             break;
         }
     }
-    if matched_index == PHOSPHINE_STEREO && bPointedEdgeStereo & PES_BIT_PHOSPHINE_STEREO as i32 == 0 {
+    if matched_index == PHOSPHINE_STEREO
+        && bPointedEdgeStereo & PES_BIT_PHOSPHINE_STEREO as i32 == 0
+    {
         result = 0;
     }
     if matched_index == ARSINE_STEREO && bPointedEdgeStereo & PES_BIT_ARSINE_STEREO as i32 == 0 {
@@ -5232,7 +5429,8 @@ pub(crate) fn can_be_a_stereo_atom_with_isotopic_H(
     // INCHI✔️❌: NEW_STEREOCENTER_CHECK == 1 and NUM_H_ISOTOPES == 3.
     // END INCHI ACTIVE MACRO CONFIGURATION: can_be_a_stereo_atom_with_isotopic_H
 
-    let number_of_neighbors = bCanInpAtomBeAStereoCenter(heap, at, cur_at, bPointedEdgeStereo, bStereoAtZz)?;
+    let number_of_neighbors =
+        bCanInpAtomBeAStereoCenter(heap, at, cur_at, bPointedEdgeStereo, bStereoAtZz)?;
     if number_of_neighbors != 0 {
         let current = heap
             .slice(at.as_const())?
@@ -5372,7 +5570,9 @@ pub(crate) fn GetStereocenter0DParity(
         return Ok(AB_PARITY_NONE as i32);
     }
 
-    let parity = if (AB_MIN_WELL_DEFINED_PARITY as i32..=AB_MAX_WELL_DEFINED_PARITY as i32).contains(&input_parity) {
+    let parity = if (AB_MIN_WELL_DEFINED_PARITY as i32..=AB_MAX_WELL_DEFINED_PARITY as i32)
+        .contains(&input_parity)
+    {
         2_i32.wrapping_sub(
             input_transactions
                 .wrapping_add(neighbor_transactions)
@@ -6103,7 +6303,8 @@ pub(crate) fn set_stereo_atom_parity(
                     let hydrogen_slot = hydrogen_indices
                         .get_mut(slot)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                    *hydrogen_slot = usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    *hydrogen_slot =
+                        usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     number_of_explicit_hydrogens += 1;
                 }
             }
@@ -6113,13 +6314,18 @@ pub(crate) fn set_stereo_atom_parity(
         if number_of_explicit_hydrogens > 0 {
             let removed_atoms = heap.slice(at_removed_H)?.to_vec();
             let removed_offset = at_removed_H.as_mut().difference(at)?;
-            for j in
-                0..usize::try_from(number_of_explicit_hydrogens).map_err(|_| SourceHeapError::PointerOutOfBounds)?
+            for j in 0..usize::try_from(number_of_explicit_hydrogens)
+                .map_err(|_| SourceHeapError::PointerOutOfBounds)?
             {
                 let next = hydrogen_indices[j];
-                let removed = removed_atoms.get(next).ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let removed = removed_atoms
+                    .get(next)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
                 let removed_index = removed_offset
-                    .checked_add(i64::try_from(next).map_err(|_| SourceHeapError::PointerDifferenceOverflow)?)
+                    .checked_add(
+                        i64::try_from(next)
+                            .map_err(|_| SourceHeapError::PointerDifferenceOverflow)?,
+                    )
                     .and_then(|value| i32::try_from(value).ok())
                     .ok_or(SourceHeapError::PointerDifferenceOverflow)?;
                 let mut coordinate_type = ZTYPE_NONE as i32;
@@ -6167,7 +6373,9 @@ pub(crate) fn set_stereo_atom_parity(
             }
         }
 
-        for j in 0..usize::try_from(current.valence).map_err(|_| SourceHeapError::PointerOutOfBounds)? {
+        for j in
+            0..usize::try_from(current.valence).map_err(|_| SourceHeapError::PointerOutOfBounds)?
+        {
             let next = usize::from(current.neighbor[j]);
             let neighbor = heap
                 .slice(at.as_const())?
@@ -6218,10 +6426,12 @@ pub(crate) fn set_stereo_atom_parity(
         }
 
         is_2d = i32::from(is_2d == number_of_z && number_of_z != 0);
-        let explicit_neighbor_count_i32 =
-            i32::try_from(explicit_neighbor_count).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-        if MAX_NUM_STEREO_ATOM_NEIGH as i32 != i32::from(current.valence) + number_of_explicit_hydrogens
-            && MAX_NUM_STEREO_ATOM_NEIGH as i32 - 1 != i32::from(current.valence) + number_of_explicit_hydrogens
+        let explicit_neighbor_count_i32 = i32::try_from(explicit_neighbor_count)
+            .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+        if MAX_NUM_STEREO_ATOM_NEIGH as i32
+            != i32::from(current.valence) + number_of_explicit_hydrogens
+            && MAX_NUM_STEREO_ATOM_NEIGH as i32 - 1
+                != i32::from(current.valence) + number_of_explicit_hydrogens
         {
             if required_number_of_neighbors == i32::from(current.valence) + i32::from(current.num_H)
                 && current.num_H > 1
@@ -6305,7 +6515,10 @@ pub(crate) fn set_stereo_atom_parity(
                 break 'calculate;
             }
             if number_of_z == 0
-                || are_3_vect_in_one_plane(&[coordinates[0], coordinates[1], coordinates[2]], minimum_sine) != 0
+                || are_3_vect_in_one_plane(
+                    &[coordinates[0], coordinates[1], coordinates[2]],
+                    minimum_sine,
+                ) != 0
             {
                 if number_of_z > 0 {
                     ambiguous |= AMBIGUOUS_STEREO as i32;
@@ -6375,7 +6588,9 @@ pub(crate) fn set_stereo_atom_parity(
                 )?;
                 if parity == AB_PARITY_NONE as i32 {
                     parity = AB_PARITY_UNDF as i32;
-                } else if (AB_MIN_WELL_DEFINED_PARITY as i32..=AB_MAX_WELL_DEFINED_PARITY as i32).contains(&parity) {
+                } else if (AB_MIN_WELL_DEFINED_PARITY as i32..=AB_MAX_WELL_DEFINED_PARITY as i32)
+                    .contains(&parity)
+                {
                     ambiguous &= !(AMBIGUOUS_STEREO as i32);
                 }
             }
@@ -6427,7 +6642,8 @@ pub(crate) fn set_stereo_atom_parity(
         );
         if triple_product.abs() > 1.0e-12
             && (actual_minimum_sine > minimum_sine
-                || (actual_minimum_sine.abs() > 1.0e-12 && tetrahedral_2d_ambiguity & T2D_OKAY as i32 != 0))
+                || (actual_minimum_sine.abs() > 1.0e-12
+                    && tetrahedral_2d_ambiguity & T2D_OKAY as i32 != 0))
         {
             parity = if triple_product > 0.0 {
                 AB_PARITY_EVEN as i32
@@ -6457,7 +6673,8 @@ pub(crate) fn set_stereo_atom_parity(
         let current_atom = atoms
             .get_mut(current_index)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        current_atom.bAmbiguousStereo = (i32::from(current_atom.bAmbiguousStereo) | ambiguous) as i8;
+        current_atom.bAmbiguousStereo =
+            (i32::from(current_atom.bAmbiguousStereo) | ambiguous) as i8;
     }
 
     {
@@ -6477,25 +6694,33 @@ pub(crate) fn set_stereo_atom_parity(
         output.parity2 = parity as i8;
 
         let nonisotopic_parity = i32::from(output.parity) & BITS_PARITY as i32;
-        output.stereo_atom_parity =
-            if (AB_MIN_WELL_DEFINED_PARITY as i32..=AB_MAX_WELL_DEFINED_PARITY as i32).contains(&nonisotopic_parity) {
-                AB_PARITY_CALC as i8
-            } else {
-                nonisotopic_parity as i8
-            };
+        output.stereo_atom_parity = if (AB_MIN_WELL_DEFINED_PARITY as i32
+            ..=AB_MAX_WELL_DEFINED_PARITY as i32)
+            .contains(&nonisotopic_parity)
+        {
+            AB_PARITY_CALC as i8
+        } else {
+            nonisotopic_parity as i8
+        };
         let isotopic_parity = i32::from(output.parity2) & BITS_PARITY as i32;
-        output.stereo_atom_parity2 =
-            if (AB_MIN_WELL_DEFINED_PARITY as i32..=AB_MAX_WELL_DEFINED_PARITY as i32).contains(&isotopic_parity) {
-                AB_PARITY_CALC as i8
-            } else {
-                isotopic_parity as i8
-            };
+        output.stereo_atom_parity2 = if (AB_MIN_WELL_DEFINED_PARITY as i32
+            ..=AB_MAX_WELL_DEFINED_PARITY as i32)
+            .contains(&isotopic_parity)
+        {
+            AB_PARITY_CALC as i8
+        } else {
+            isotopic_parity as i8
+        };
         Ok(i32::from(output.parity2))
     }
 }
 
 #[allow(non_snake_case)]
-pub(crate) fn bAtomHasValence3(elname: &[i8], charge: i8, radical: i8) -> Result<i32, SourceHeapError> {
+pub(crate) fn bAtomHasValence3(
+    elname: &[i8],
+    charge: i8,
+    radical: i8,
+) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichister.c:1574 bAtomHasValence3
     // INCHI✔️✔️: complete active source frame follows verbatim; fixed-table scan and allocation behavior match.
     /*
@@ -6530,7 +6755,11 @@ pub(crate) fn bAtomHasValence3(elname: &[i8], charge: i8, radical: i8) -> Result
 }
 
 #[allow(non_snake_case)]
-pub(crate) fn bCanAtomHaveAStereoBond(elname: &[i8], charge: i8, radical: i8) -> Result<i32, SourceHeapError> {
+pub(crate) fn bCanAtomHaveAStereoBond(
+    elname: &[i8],
+    charge: i8,
+    radical: i8,
+) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichister.c:1594 bCanAtomHaveAStereoBond
     // INCHI✔️✔️: complete source frame follows verbatim; fixed-table scan and allocation behavior match.
     /*
@@ -6576,7 +6805,11 @@ pub(crate) fn bCanAtomHaveAStereoBond(elname: &[i8], charge: i8, radical: i8) ->
 }
 
 #[allow(non_snake_case)]
-pub(crate) fn bCanAtomBeMiddleAllene(elname: &[i8], charge: i8, radical: i8) -> Result<i32, SourceHeapError> {
+pub(crate) fn bCanAtomBeMiddleAllene(
+    elname: &[i8],
+    charge: i8,
+    radical: i8,
+) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichister.c:1615 bCanAtomBeMiddleAllene
     // INCHI✔️✔️: complete active source frame follows verbatim; fixed-table scan and allocation behavior match.
     /*
@@ -6604,7 +6837,11 @@ pub(crate) fn bCanAtomBeMiddleAllene(elname: &[i8], charge: i8, radical: i8) -> 
         .position(|&byte| byte == 0)
         .ok_or(SourceHeapError::MissingNulTerminator)?;
     let element = &elname[..length];
-    let elements: [&[i8]; 3] = [&[b'C' as i8], &[b'S' as i8, b'i' as i8], &[b'G' as i8, b'e' as i8]];
+    let elements: [&[i8]; 3] = [
+        &[b'C' as i8],
+        &[b'S' as i8, b'i' as i8],
+        &[b'G' as i8, b'e' as i8],
+    ];
     let mut ret = 0_i32;
     for expected_element in elements {
         if element == expected_element && charge == 0 {
@@ -6616,7 +6853,11 @@ pub(crate) fn bCanAtomBeMiddleAllene(elname: &[i8], charge: i8, radical: i8) -> 
 }
 
 #[allow(non_snake_case)]
-pub(crate) fn bCanAtomBeTerminalAllene(elname: &[i8], charge: i8, radical: i8) -> Result<i32, SourceHeapError> {
+pub(crate) fn bCanAtomBeTerminalAllene(
+    elname: &[i8],
+    charge: i8,
+    radical: i8,
+) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichister.c:1705 bCanAtomBeTerminalAllene
     // INCHI✔️✔️: complete active source frame follows verbatim; fixed-table scan and allocation behavior match.
     /*
@@ -6645,7 +6886,11 @@ pub(crate) fn bCanAtomBeTerminalAllene(elname: &[i8], charge: i8, radical: i8) -
         .position(|&byte| byte == 0)
         .ok_or(SourceHeapError::MissingNulTerminator)?;
     let element = &elname[..length];
-    let elements: [&[i8]; 3] = [&[b'C' as i8], &[b'S' as i8, b'i' as i8], &[b'G' as i8, b'e' as i8]];
+    let elements: [&[i8]; 3] = [
+        &[b'C' as i8],
+        &[b'S' as i8, b'i' as i8],
+        &[b'G' as i8, b'e' as i8],
+    ];
     let mut ret = 0_i32;
     for expected_element in elements {
         if element == expected_element && charge == 0 {
@@ -6697,7 +6942,10 @@ pub(crate) fn bIsSuitableHeteroInpAtom(
     */
     // END INCHI C FUNCTION: bIsSuitableHeteroInpAtom
 
-    let atom = heap.slice(at)?.first().ok_or(SourceHeapError::PointerOutOfBounds)?;
+    let atom = heap
+        .slice(at)?
+        .first()
+        .ok_or(SourceHeapError::PointerOutOfBounds)?;
     if atom.charge == 0 && (atom.radical == 0 || atom.radical == RADICAL_SINGLET as i8) {
         let val = get_endpoint_valence(atom.el_number);
         if val > 0 {
@@ -7164,7 +7412,10 @@ pub(crate) fn can_be_a_stereo_bond_with_isotopic_H(
     let mut num_wrong_bonds_1 = 0_i32;
     let mut num_2s_hetero = [0_i32; 2];
     let mut type_n = 0_i32;
-    if current.num_H == 0 && current.charge == 0 && current.radical == 0 && get_endpoint_valence(current.el_number) == 3
+    if current.num_H == 0
+        && current.charge == 0
+        && current.radical == 0
+        && get_endpoint_valence(current.el_number) == 3
     {
         if current.valence == 2 && current.chem_bonds_valence == 3 {
             type_n = 1;
@@ -7186,9 +7437,11 @@ pub(crate) fn can_be_a_stereo_bond_with_isotopic_H(
             }
         } else if bond_type == BOND_TYPE_DOUBLE as i32 {
             num_2s += 1;
-            let suitable = bIsSuitableHeteroInpAtom(heap, at.as_const().offset(i64::from(next_at))?)?;
+            let suitable =
+                bIsSuitableHeteroInpAtom(heap, at.as_const().offset(i64::from(next_at))?)?;
             if suitable >= 0 {
-                num_2s_hetero[usize::try_from(suitable).map_err(|_| SourceHeapError::PointerOutOfBounds)?] += 1;
+                num_2s_hetero[usize::try_from(suitable)
+                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?] += 1;
             }
             if cur_at > next_at {
                 found = true;
@@ -7202,7 +7455,8 @@ pub(crate) fn can_be_a_stereo_bond_with_isotopic_H(
         }
 
         if found {
-            let next_index = usize::try_from(next_at).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let next_index =
+                usize::try_from(next_at).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             let next = heap
                 .slice(at.as_const())?
                 .get(next_index)
@@ -7220,7 +7474,11 @@ pub(crate) fn can_be_a_stereo_bond_with_isotopic_H(
             let mut _num_wrong_bonds_2 = 0_i32;
             let mut num_2s_hetero_next = [0_i32; 2];
             let mut type_n_next = 0_i32;
-            if next.num_H == 0 && next.charge == 0 && next.radical == 0 && get_endpoint_valence(next.el_number) == 3 {
+            if next.num_H == 0
+                && next.charge == 0
+                && next.radical == 0
+                && get_endpoint_valence(next.el_number) == 3
+            {
                 if next.valence == 2 && next.chem_bonds_valence == 3 {
                     type_n_next = 1;
                 } else if next.valence == 3 && next.chem_bonds_valence == 5 {
@@ -7230,19 +7488,26 @@ pub(crate) fn can_be_a_stereo_bond_with_isotopic_H(
 
             let mut j = 0_i32;
             while j < i32::from(next.valence) {
-                let next_bond_index = usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                let next_bond_type = get_allowed_stereo_bond_type(i32::from(next.bond_type[next_bond_index]));
+                let next_bond_index =
+                    usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let next_bond_type =
+                    get_allowed_stereo_bond_type(i32::from(next.bond_type[next_bond_index]));
                 if next_bond_type == BOND_ALTERN as i32 {
                     num_alt_next += 1;
                 } else if next_bond_type == BOND_TYPE_DOUBLE as i32 {
                     num_2s_next += 1;
                     let next_next_at = i32::from(next.neighbor[next_bond_index]);
-                    let suitable = bIsSuitableHeteroInpAtom(heap, at.as_const().offset(i64::from(next_next_at))?)?;
+                    let suitable = bIsSuitableHeteroInpAtom(
+                        heap,
+                        at.as_const().offset(i64::from(next_next_at))?,
+                    )?;
                     if suitable >= 0 {
-                        num_2s_hetero_next
-                            [usize::try_from(suitable).map_err(|_| SourceHeapError::PointerOutOfBounds)?] += 1;
+                        num_2s_hetero_next[usize::try_from(suitable)
+                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?] += 1;
                     }
-                } else if next_bond_type != BOND_SINGLE as i32 && next_bond_type != BOND_TAUTOM as i32 {
+                } else if next_bond_type != BOND_SINGLE as i32
+                    && next_bond_type != BOND_TAUTOM as i32
+                {
                     _num_wrong_bonds_2 += 1;
                     if num_wrong_bonds_1 > 1 || (num_wrong_bonds_1 != 0 && current.valence <= 2) {
                         break;
@@ -7591,7 +7856,8 @@ pub(crate) fn set_stereo_parity(
     let mut max_stereo_bonds = 0_i32;
     if nMaxNumStereoAtoms.is_some() || nMaxNumStereoBonds.is_some() {
         for i in 0..num_at {
-            let number = can_be_a_stereo_atom_with_isotopic_H(heap, at, i, bPointedEdgeStereo, bStereoAtZz)?;
+            let number =
+                can_be_a_stereo_atom_with_isotopic_H(heap, at, i, bPointedEdgeStereo, bStereoAtZz)?;
             if number != 0 {
                 max_stereo_atoms = max_stereo_atoms.wrapping_add(number);
             } else {
@@ -7609,15 +7875,24 @@ pub(crate) fn set_stereo_parity(
         }
     }
 
-    let min_sb_ring_size =
-        (((nMode & u64::from(REQ_MODE_MIN_SB_RING_MASK)) >> REQ_MODE_MIN_SB_RING_SHFT) & 0xffff) as AT_RANK;
+    let min_sb_ring_size = (((nMode & u64::from(REQ_MODE_MIN_SB_RING_MASK))
+        >> REQ_MODE_MIN_SB_RING_SHFT)
+        & 0xffff) as AT_RANK;
     let mut q = SourceMutPointer::<QUEUE>::null();
     let mut nAtomLevel = SourceMutPointer::<AT_RANK>::null();
     let mut cSource = SourceMutPointer::<S_CHAR>::null();
 
     if min_sb_ring_size >= 3 {
-        q = QueueCreate(heap, num_at.wrapping_add(1), std::mem::size_of::<qInt>() as i32)?;
-        nAtomLevel = match inchi_calloc::<AT_RANK>(heap, num_at as u64, std::mem::size_of::<AT_RANK>() as u64) {
+        q = QueueCreate(
+            heap,
+            num_at.wrapping_add(1),
+            std::mem::size_of::<qInt>() as i32,
+        )?;
+        nAtomLevel = match inchi_calloc::<AT_RANK>(
+            heap,
+            num_at as u64,
+            std::mem::size_of::<AT_RANK>() as u64,
+        ) {
             Ok(pointer) => pointer,
             Err(SourceHeapError::AllocationFailed) => SourceMutPointer::null(),
             Err(error) => {
@@ -7625,15 +7900,17 @@ pub(crate) fn set_stereo_parity(
                 return Err(error);
             }
         };
-        cSource = match inchi_calloc::<S_CHAR>(heap, num_at as u64, std::mem::size_of::<S_CHAR>() as u64) {
-            Ok(pointer) => pointer,
-            Err(SourceHeapError::AllocationFailed) => SourceMutPointer::null(),
-            Err(error) => {
-                QueueDelete(heap, q)?;
-                inchi_free(heap, nAtomLevel)?;
-                return Err(error);
-            }
-        };
+        cSource =
+            match inchi_calloc::<S_CHAR>(heap, num_at as u64, std::mem::size_of::<S_CHAR>() as u64)
+            {
+                Ok(pointer) => pointer,
+                Err(SourceHeapError::AllocationFailed) => SourceMutPointer::null(),
+                Err(error) => {
+                    QueueDelete(heap, q)?;
+                    inchi_free(heap, nAtomLevel)?;
+                    return Err(error);
+                }
+            };
         if q.is_null() || cSource.is_null() || nAtomLevel.is_null() {
             QueueDelete(heap, q)?;
             inchi_free(heap, nAtomLevel)?;
@@ -7641,7 +7918,11 @@ pub(crate) fn set_stereo_parity(
             return Ok(CT_OUT_OF_RAM);
         }
     }
-    let effective_min_sb_ring_size = if min_sb_ring_size >= 3 { min_sb_ring_size } else { 2 };
+    let effective_min_sb_ring_size = if min_sb_ring_size >= 3 {
+        min_sb_ring_size
+    } else {
+        2
+    };
 
     let result = (|| -> Result<i32, SourceHeapError> {
         let mut num_3D_stereo_atoms = 0_i32;
@@ -7663,7 +7944,8 @@ pub(crate) fn set_stereo_parity(
             )?;
             if is_stereo != 0 {
                 num_3D_stereo_atoms = num_3D_stereo_atoms.wrapping_add(i32::from(
-                    (AB_MIN_WELL_DEFINED_PARITY as i32..=AB_MAX_WELL_DEFINED_PARITY as i32).contains(&is_stereo.abs()),
+                    (AB_MIN_WELL_DEFINED_PARITY as i32..=AB_MAX_WELL_DEFINED_PARITY as i32)
+                        .contains(&is_stereo.abs()),
                 ));
             } else {
                 is_stereo = set_stereo_bonds_parity(
@@ -7751,7 +8033,8 @@ pub(crate) fn FixUnkn0DStereoBonds(
                 break;
             }
             if parity == AB_PARITY_UNKN as i8 {
-                let bond_ordinal = usize::try_from(bond_ordinal).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let bond_ordinal = usize::try_from(bond_ordinal)
+                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let atom = heap
                     .slice_mut(atoms)?
                     .get_mut(i)
@@ -7761,7 +8044,9 @@ pub(crate) fn FixUnkn0DStereoBonds(
                     .get_mut(bond_ordinal)
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
                 *stereo = STEREO_DBLE_EITHER as i8;
-                num = num.checked_add(1).ok_or(SourceHeapError::SourceIntegerOverflow)?;
+                num = num
+                    .checked_add(1)
+                    .ok_or(SourceHeapError::SourceIntegerOverflow)?;
             }
         }
     }
@@ -7822,7 +8107,8 @@ pub(crate) fn ReconcileAllCmlBondParities(
                 && was_visited == 0
                 && !(b_disconnected != 0 && is_el_a_metal(i32::from(atom.el_number))? != 0)
             {
-                ret = ReconcileCmlIncidentBondParities(heap, atoms, i, -1, visited, b_disconnected)?;
+                ret =
+                    ReconcileCmlIncidentBondParities(heap, atoms, i, -1, visited, b_disconnected)?;
                 if ret != 0 {
                     break;
                 }
@@ -8058,28 +8344,38 @@ pub(crate) fn ReconcileCmlIncidentBondParities(
         if next_atom == prev_atom {
             continue;
         }
-        let next_index = usize::try_from(next_atom).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let next_index =
+            usize::try_from(next_atom).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         if heap.slice(visited.as_const())?[next_index] >= 20 {
             continue;
         }
-        if i32::from(heap.slice(atoms.as_const())?[next_index].valence) > MAX_NUM_STEREO_BONDS as i32 {
+        if i32::from(heap.slice(atoms.as_const())?[next_index].valence)
+            > MAX_NUM_STEREO_BONDS as i32
+        {
             continue;
         }
         let j = usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         let current_parity_bits = i32::from(heap.slice(atoms.as_const())?[cur_index].sb_parity[i]);
         let next_parity_bits = i32::from(heap.slice(atoms.as_const())?[next_index].sb_parity[j]);
-        let (cur_sb_parity, current_mask) = if b_disconnected != 0 && current_parity_bits & SB_PARITY_FLAG as i32 != 0 {
-            (current_parity_bits >> SB_PARITY_SHFT, 3_i32 << SB_PARITY_SHFT)
-        } else {
-            (current_parity_bits & SB_PARITY_MASK as i32, 3)
+        let (cur_sb_parity, current_mask) =
+            if b_disconnected != 0 && current_parity_bits & SB_PARITY_FLAG as i32 != 0 {
+                (
+                    current_parity_bits >> SB_PARITY_SHFT,
+                    3_i32 << SB_PARITY_SHFT,
+                )
+            } else {
+                (current_parity_bits & SB_PARITY_MASK as i32, 3)
+            };
+        let (mut next_sb_parity, next_mask) =
+            if b_disconnected != 0 && next_parity_bits & SB_PARITY_FLAG as i32 != 0 {
+                (next_parity_bits >> SB_PARITY_SHFT, 3_i32 << SB_PARITY_SHFT)
+            } else {
+                (next_parity_bits & SB_PARITY_MASK as i32, 3)
+            };
+        let well_defined = |parity: i32| {
+            AB_MIN_WELL_DEFINED_PARITY as i32 <= parity
+                && parity <= AB_MAX_WELL_DEFINED_PARITY as i32
         };
-        let (mut next_sb_parity, next_mask) = if b_disconnected != 0 && next_parity_bits & SB_PARITY_FLAG as i32 != 0 {
-            (next_parity_bits >> SB_PARITY_SHFT, 3_i32 << SB_PARITY_SHFT)
-        } else {
-            (next_parity_bits & SB_PARITY_MASK as i32, 3)
-        };
-        let well_defined =
-            |parity: i32| AB_MIN_WELL_DEFINED_PARITY as i32 <= parity && parity <= AB_MAX_WELL_DEFINED_PARITY as i32;
         if !well_defined(cur_sb_parity) || !well_defined(next_sb_parity) {
             if cur_sb_parity == next_sb_parity {
                 continue;
@@ -8089,10 +8385,16 @@ pub(crate) fn ReconcileCmlIncidentBondParities(
 
         let current_to_neighbor = i32::from(heap.slice(atoms.as_const())?[cur_index].sn_ord[i]);
         let next_to_neighbor = i32::from(heap.slice(atoms.as_const())?[next_index].sn_ord[j]);
-        let current_order_parity =
-            (4 + current_to_next + current_to_neighbor + i32::from(current_to_neighbor > current_to_next)) % 2;
-        let next_order_parity =
-            (4 + next_to_current + next_to_neighbor + i32::from(next_to_neighbor > next_to_current)) % 2;
+        let current_order_parity = (4
+            + current_to_next
+            + current_to_neighbor
+            + i32::from(current_to_neighbor > current_to_next))
+            % 2;
+        let next_order_parity = (4
+            + next_to_current
+            + next_to_neighbor
+            + i32::from(next_to_neighbor > next_to_current))
+            % 2;
         let next_visited = heap.slice(visited.as_const())?[next_index];
         let next_parity = i32::from(next_visited % 10);
 
@@ -8114,7 +8416,14 @@ pub(crate) fn ReconcileCmlIncidentBondParities(
         }
 
         if heap.slice(visited.as_const())?[next_index] < 10 {
-            ret = ReconcileCmlIncidentBondParities(heap, atoms, next_atom, cur_atom, visited, b_disconnected)?;
+            ret = ReconcileCmlIncidentBondParities(
+                heap,
+                atoms,
+                next_atom,
+                cur_atom,
+                visited,
+                b_disconnected,
+            )?;
             if ret != 0 {
                 break;
             }
@@ -8200,26 +8509,36 @@ pub(crate) fn get_opposite_sb_atom_slice(
     mut next_parity_ordinal_out: Option<&mut i32>,
 ) -> Result<i32, SourceHeapError> {
     for len in 1..=20_i32 {
-        let current_index = usize::try_from(cur_atom).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        let next_ordinal = usize::try_from(icur2nxt).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let current_index =
+            usize::try_from(cur_atom).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let next_ordinal =
+            usize::try_from(icur2nxt).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         let next_atom = i32::from(
             *atoms
                 .get(current_index)
                 .and_then(|atom| atom.neighbor.get(next_ordinal))
                 .ok_or(SourceHeapError::PointerOutOfBounds)?,
         );
-        let next_index = usize::try_from(next_atom).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        let next = atoms.get(next_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let next_index =
+            usize::try_from(next_atom).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let next = atoms
+            .get(next_index)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?;
         let mut j = 0_usize;
         while j < MAX_NUM_STEREO_BONDS as usize && next.sb_parity[j] != 0 {
-            let reverse_ordinal = usize::try_from(next.sb_ord[j]).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let reverse_ordinal =
+                usize::try_from(next.sb_ord[j]).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             let reverse_atom = *next
                 .neighbor
                 .get(reverse_ordinal)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
             if cur_atom == i32::from(reverse_atom) {
-                *next_atom_out.as_deref_mut().ok_or(SourceHeapError::NullPointer)? = next_atom;
-                *next_to_current_out.as_deref_mut().ok_or(SourceHeapError::NullPointer)? = i32::from(next.sb_ord[j]);
+                *next_atom_out
+                    .as_deref_mut()
+                    .ok_or(SourceHeapError::NullPointer)? = next_atom;
+                *next_to_current_out
+                    .as_deref_mut()
+                    .ok_or(SourceHeapError::NullPointer)? = i32::from(next.sb_ord[j]);
                 *next_parity_ordinal_out
                     .as_deref_mut()
                     .ok_or(SourceHeapError::NullPointer)? = j as i32;
@@ -8230,7 +8549,8 @@ pub(crate) fn get_opposite_sb_atom_slice(
         if j != 0 {
             return Ok(0);
         }
-        if next.valence == 2 && (2 * BOND_TYPE_DOUBLE as i32) == i32::from(next.chem_bonds_valence) {
+        if next.valence == 2 && (2 * BOND_TYPE_DOUBLE as i32) == i32::from(next.chem_bonds_valence)
+        {
             icur2nxt = i32::from(next.neighbor[0] == cur_atom as u16);
             cur_atom = next_atom;
         } else {
@@ -8274,8 +8594,14 @@ mod tests {
         assert_eq!(CompDble(4, 6, &values), Ok(0));
         assert_eq!(CompDble(0, 5, &values), Ok(-1));
         assert_eq!(CompDble(5, 0, &values), Ok(1));
-        assert_eq!(CompDble(-1, 0, &values), Err(SourceHeapError::PointerOutOfBounds));
-        assert_eq!(CompDble(0, -1, &values), Err(SourceHeapError::PointerOutOfBounds));
+        assert_eq!(
+            CompDble(-1, 0, &values),
+            Err(SourceHeapError::PointerOutOfBounds)
+        );
+        assert_eq!(
+            CompDble(0, -1, &values),
+            Err(SourceHeapError::PointerOutOfBounds)
+        );
         assert_eq!(
             CompDble(values.len() as i32, 0, &values),
             Err(SourceHeapError::PointerOutOfBounds)
@@ -8285,7 +8611,13 @@ mod tests {
 
     #[test]
     fn source_port__ichister__get_z_coord__line_147() {
-        fn evaluate(stereo: i8, current_z: f64, selected_z: f64, pointed: i32, other_z: Option<f64>) -> (f64, i32) {
+        fn evaluate(
+            stereo: i8,
+            current_z: f64,
+            selected_z: f64,
+            pointed: i32,
+            other_z: Option<f64>,
+        ) -> (f64, i32) {
             let mut current = inp_ATOM {
                 z: current_z,
                 valence: if other_z.is_some() { 2 } else { 1 },
@@ -8312,7 +8644,8 @@ mod tests {
             let mut heap = SourceHeap::default();
             let atoms = heap.allocate_model_storage(atoms).unwrap();
             let mut coordinate_type = i32::MIN;
-            let z = get_z_coord(&heap, atoms.as_const(), 0, 0, &mut coordinate_type, pointed).unwrap();
+            let z =
+                get_z_coord(&heap, atoms.as_const(), 0, 0, &mut coordinate_type, pointed).unwrap();
             (z, coordinate_type)
         }
 
@@ -8333,7 +8666,10 @@ mod tests {
             evaluate(-(STEREO_SNGL_UP as i8), 0.0, 0.0, 0, None).1,
             -(ZTYPE_UP as i32)
         );
-        assert_eq!(evaluate(-(STEREO_SNGL_DOWN as i8), 0.0, 0.0, 0, None).1, -ZTYPE_DOWN);
+        assert_eq!(
+            evaluate(-(STEREO_SNGL_DOWN as i8), 0.0, 0.0, 0, None).1,
+            -ZTYPE_DOWN
+        );
 
         for (stereo, pointed, expected_type) in [
             (STEREO_SNGL_UP as i8, 1, ZTYPE_UP as i32),
@@ -8460,7 +8796,11 @@ mod tests {
         assert_eq!(result[1].to_bits(), 0.0_f64.to_bits());
         assert!(result[2].is_nan());
 
-        add3(&[f64::MAX, f64::MIN, f64::NAN], &[f64::MAX, f64::MIN, 1.0], &mut result);
+        add3(
+            &[f64::MAX, f64::MIN, f64::NAN],
+            &[f64::MAX, f64::MIN, 1.0],
+            &mut result,
+        );
         assert_eq!(result[0], f64::INFINITY);
         assert_eq!(result[1], f64::NEG_INFINITY);
         assert!(result[2].is_nan());
@@ -8510,14 +8850,20 @@ mod tests {
     fn source_port__ichister__dot_prod3__line_303() {
         assert_eq!(dot_prod3(&[1.0, 2.0, 3.0], &[4.0, 5.0, 6.0]), 32.0);
         assert_eq!(dot_prod3(&[1.0, 0.0, 0.0], &[0.0, 1.0, 0.0]), 0.0);
-        assert_eq!(dot_prod3(&[1.0, 1.0, 1.0], &[f64::MAX, -f64::MAX, 1.0]), 1.0);
+        assert_eq!(
+            dot_prod3(&[1.0, 1.0, 1.0], &[f64::MAX, -f64::MAX, 1.0]),
+            1.0
+        );
         assert_eq!(
             dot_prod3(&[-0.0, -0.0, -0.0], &[1.0, 1.0, 1.0]).to_bits(),
             (-0.0_f64).to_bits()
         );
         assert!(dot_prod3(&[0.0, 1.0, 2.0], &[f64::INFINITY, 1.0, 2.0]).is_nan());
         assert!(dot_prod3(&[f64::NAN, 1.0, 2.0], &[1.0, 2.0, 3.0]).is_nan());
-        assert_eq!(dot_prod3(&[f64::MAX, 0.0, 0.0], &[2.0, 0.0, 0.0]), f64::INFINITY);
+        assert_eq!(
+            dot_prod3(&[f64::MAX, 0.0, 0.0], &[2.0, 0.0, 0.0]),
+            f64::INFINITY
+        );
     }
 
     #[test]
@@ -8637,19 +8983,31 @@ mod tests {
             direct.to_bits()
         );
         let mut minimum = -91.0;
-        assert_eq!(triple_prod_and_min_abs_sine(&orthogonal, Some(&mut minimum)), 1.0);
+        assert_eq!(
+            triple_prod_and_min_abs_sine(&orthogonal, Some(&mut minimum)),
+            1.0
+        );
         assert_eq!(minimum, 1.0);
 
         let negative = [[1.0, 0.0, 0.0], [0.0, 0.0, 2.0], [0.0, 3.0, 0.0]];
-        assert_eq!(triple_prod_and_min_abs_sine(&negative, Some(&mut minimum)), -6.0);
+        assert_eq!(
+            triple_prod_and_min_abs_sine(&negative, Some(&mut minimum)),
+            -6.0
+        );
         assert_eq!(minimum, 1.0);
 
         let parallel = [[1.0, 0.0, 0.0], [2.0, 0.0, 0.0], [0.0, 1.0, 0.0]];
-        assert_eq!(triple_prod_and_min_abs_sine(&parallel, Some(&mut minimum)), 0.0);
+        assert_eq!(
+            triple_prod_and_min_abs_sine(&parallel, Some(&mut minimum)),
+            0.0
+        );
         assert_eq!(minimum, 0.0);
 
         let tiny = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0e-8]];
-        assert_eq!(triple_prod_and_min_abs_sine(&tiny, Some(&mut minimum)), 1.0e-8);
+        assert_eq!(
+            triple_prod_and_min_abs_sine(&tiny, Some(&mut minimum)),
+            1.0e-8
+        );
         assert_eq!(minimum, 0.0);
 
         let nan = [[f64::NAN, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
@@ -8670,12 +9028,18 @@ mod tests {
     fn source_port__ichister__are_3_vect_in_one_plane__line_1176() {
         let orthogonal = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
         assert_eq!(
-            are_3_vect_in_one_plane(&orthogonal, f64::from_bits(1.0_f64.to_bits().wrapping_sub(1)),),
+            are_3_vect_in_one_plane(
+                &orthogonal,
+                f64::from_bits(1.0_f64.to_bits().wrapping_sub(1)),
+            ),
             0
         );
         assert_eq!(are_3_vect_in_one_plane(&orthogonal, 1.0), 1);
         assert_eq!(
-            are_3_vect_in_one_plane(&orthogonal, f64::from_bits(1.0_f64.to_bits().wrapping_add(1)),),
+            are_3_vect_in_one_plane(
+                &orthogonal,
+                f64::from_bits(1.0_f64.to_bits().wrapping_add(1)),
+            ),
             1
         );
 
@@ -8688,12 +9052,22 @@ mod tests {
 
     #[test]
     fn source_port__ichister__are_4at_in_one_plane__line_1190() {
-        let square = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [1.0, 1.0, 0.0], [0.0, 1.0, 0.0]];
+        let square = [
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [1.0, 1.0, 0.0],
+            [0.0, 1.0, 0.0],
+        ];
         assert_eq!(are_4at_in_one_plane(&square, -f64::from_bits(1)), 0);
         assert_eq!(are_4at_in_one_plane(&square, -0.0), 1);
         assert_eq!(are_4at_in_one_plane(&square, 0.0), 1);
 
-        let tetrahedron = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
+        let tetrahedron = [
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [0.0, 0.0, 1.0],
+        ];
         assert_eq!(are_4at_in_one_plane(&tetrahedron, 0.0), 0);
         assert_eq!(are_4at_in_one_plane(&tetrahedron, 1.0), 1);
         assert_eq!(are_4at_in_one_plane(&tetrahedron, f64::NAN), 0);
@@ -8727,15 +9101,42 @@ mod tests {
             ])
             .unwrap();
         assert_eq!(
-            triple_prod_char(&heap, atoms.as_const(), 0, 0, &[0, 0, 100], 2, 0, &[100, 0, 0]),
+            triple_prod_char(
+                &heap,
+                atoms.as_const(),
+                0,
+                0,
+                &[0, 0, 100],
+                2,
+                0,
+                &[100, 0, 0]
+            ),
             Ok(-71)
         );
         assert_eq!(
-            triple_prod_char(&heap, atoms.as_const(), 0, 0, &[0, 0, 100], 2, 0, &[-100, 0, 0]),
+            triple_prod_char(
+                &heap,
+                atoms.as_const(),
+                0,
+                0,
+                &[0, 0, 100],
+                2,
+                0,
+                &[-100, 0, 0]
+            ),
             Ok(71)
         );
         assert_eq!(
-            triple_prod_char(&heap, atoms.as_const(), 0, 0, &[0, 0, 0], 2, 0, &[100, 0, 0]),
+            triple_prod_char(
+                &heap,
+                atoms.as_const(),
+                0,
+                0,
+                &[0, 0, 0],
+                2,
+                0,
+                &[100, 0, 0]
+            ),
             Ok(0)
         );
 
@@ -8748,12 +9149,30 @@ mod tests {
             ])
             .unwrap();
         assert_eq!(
-            triple_prod_char(&heap, short_middle.as_const(), 0, 0, &[0, 0, 100], 2, 0, &[100, 0, 0],),
+            triple_prod_char(
+                &heap,
+                short_middle.as_const(),
+                0,
+                0,
+                &[0, 0, 100],
+                2,
+                0,
+                &[100, 0, 0],
+            ),
             Ok(0)
         );
         heap.slice_mut(short_middle).unwrap()[0].bUsed0DParity = 1;
         assert_eq!(
-            triple_prod_char(&heap, short_middle.as_const(), 0, 0, &[0, 0, 100], 2, 0, &[100, 0, 0],),
+            triple_prod_char(
+                &heap,
+                short_middle.as_const(),
+                0,
+                0,
+                &[0, 0, 100],
+                2,
+                0,
+                &[100, 0, 0],
+            ),
             Ok(-100)
         );
 
@@ -8784,14 +9203,20 @@ mod tests {
             &[b'G' as i8, b'e' as i8, 0][..],
         ] {
             assert_eq!(bCanAtomBeMiddleAllene(element, 0, 0), Ok(1));
-            assert_eq!(bCanAtomBeMiddleAllene(element, 0, RADICAL_SINGLET as i8), Ok(1));
+            assert_eq!(
+                bCanAtomBeMiddleAllene(element, 0, RADICAL_SINGLET as i8),
+                Ok(1)
+            );
             assert_eq!(bCanAtomBeMiddleAllene(element, 0, i8::MIN), Ok(0));
             assert_eq!(bCanAtomBeMiddleAllene(element, 0, i8::MAX), Ok(0));
             assert_eq!(bCanAtomBeMiddleAllene(element, 1, 0), Ok(0));
             assert_eq!(bCanAtomBeMiddleAllene(element, -1, 0), Ok(0));
         }
         assert_eq!(bCanAtomBeMiddleAllene(&[b'N' as i8, 0], 0, 0), Ok(0));
-        assert_eq!(bCanAtomBeMiddleAllene(&[b'C' as i8, b'l' as i8, 0], 0, 0), Ok(0));
+        assert_eq!(
+            bCanAtomBeMiddleAllene(&[b'C' as i8, b'l' as i8, 0], 0, 0),
+            Ok(0)
+        );
         assert_eq!(bCanAtomBeMiddleAllene(&[0], 0, 0), Ok(0));
         assert_eq!(
             bCanAtomBeMiddleAllene(&[b'C' as i8], 0, 0),
@@ -8807,14 +9232,20 @@ mod tests {
             &[b'G' as i8, b'e' as i8, 0][..],
         ] {
             assert_eq!(bCanAtomBeTerminalAllene(element, 0, 0), Ok(1));
-            assert_eq!(bCanAtomBeTerminalAllene(element, 0, RADICAL_SINGLET as i8), Ok(1));
+            assert_eq!(
+                bCanAtomBeTerminalAllene(element, 0, RADICAL_SINGLET as i8),
+                Ok(1)
+            );
             assert_eq!(bCanAtomBeTerminalAllene(element, 0, i8::MIN), Ok(0));
             assert_eq!(bCanAtomBeTerminalAllene(element, 0, i8::MAX), Ok(0));
             assert_eq!(bCanAtomBeTerminalAllene(element, 1, 0), Ok(0));
             assert_eq!(bCanAtomBeTerminalAllene(element, -1, 0), Ok(0));
         }
         assert_eq!(bCanAtomBeTerminalAllene(&[b'N' as i8, 0], 0, 0), Ok(0));
-        assert_eq!(bCanAtomBeTerminalAllene(&[b'C' as i8, b'l' as i8, 0], 0, 0), Ok(0));
+        assert_eq!(
+            bCanAtomBeTerminalAllene(&[b'C' as i8, b'l' as i8, 0], 0, 0),
+            Ok(0)
+        );
         assert_eq!(bCanAtomBeTerminalAllene(&[0], 0, 0), Ok(0));
         assert_eq!(
             bCanAtomBeTerminalAllene(&[b'C' as i8], 0, 0),
@@ -8863,7 +9294,15 @@ mod tests {
         ) -> (Result<i32, SourceHeapError>, i8) {
             let mut heap = SourceHeap::default();
             let atoms = heap.allocate_model_storage(atoms).unwrap();
-            let result = GetHalfStereobond0DParity(&mut heap, atoms, 0, attachments, count, bond_parity, flag);
+            let result = GetHalfStereobond0DParity(
+                &mut heap,
+                atoms,
+                0,
+                attachments,
+                count,
+                bond_parity,
+                flag,
+            );
             let used = heap.slice(atoms.as_const()).unwrap()[0].bUsed0DParity;
             (result, used)
         }
@@ -8897,7 +9336,10 @@ mod tests {
             );
         }
 
-        assert_eq!(evaluate(vec![inp_ATOM::default()], &[], 0, 77, 2), (Ok(77), 0));
+        assert_eq!(
+            evaluate(vec![inp_ATOM::default()], &[], 0, 77, 2),
+            (Ok(77), 0)
+        );
         let (atoms, _) = fixture(&[AB_PARITY_ODD as i8], false);
         assert_eq!(evaluate(atoms, &[999], 1, 77, 2), (Ok(77), 4));
         let (atoms, attachments) = fixture(&[AB_PARITY_ODD as i8], false);
@@ -8935,7 +9377,11 @@ mod tests {
         );
 
         let (mut atoms, attachments) = fixture(
-            &[AB_PARITY_UNKN as i8, AB_PARITY_ODD as i8, AB_PARITY_EVEN as i8],
+            &[
+                AB_PARITY_UNKN as i8,
+                AB_PARITY_ODD as i8,
+                AB_PARITY_EVEN as i8,
+            ],
             false,
         );
         atoms[0].sb_parity[1] = 0;
@@ -8945,7 +9391,9 @@ mod tests {
         );
 
         let mut heap = SourceHeap::default();
-        let atoms = heap.allocate_model_storage(vec![inp_ATOM::default()]).unwrap();
+        let atoms = heap
+            .allocate_model_storage(vec![inp_ATOM::default()])
+            .unwrap();
         assert_eq!(
             GetHalfStereobond0DParity(&mut heap, atoms, -1, &[], 0, 77, 2),
             Err(SourceHeapError::PointerOutOfBounds)
@@ -9043,14 +9491,32 @@ mod tests {
         let mut too_many_h = atom(b"C");
         too_many_h.num_H = (NUM_H_ISOTOPES + 1) as i8;
         assert_eq!(
-            evaluate(vec![too_many_h], 0, None, 0, [7, 8, 9], 0, AB_PARITY_UNKN as i32,).0,
+            evaluate(
+                vec![too_many_h],
+                0,
+                None,
+                0,
+                [7, 8, 9],
+                0,
+                AB_PARITY_UNKN as i32,
+            )
+            .0,
             Ok(0)
         );
         for valence in [1, (MAX_NUM_STEREO_BOND_NEIGH + 1) as i8] {
             let mut center = atom(b"C");
             center.valence = valence;
             assert_eq!(
-                evaluate(vec![center], 0, None, 0, [1, 2, 3], 0, AB_PARITY_UNKN as i32,).0,
+                evaluate(
+                    vec![center],
+                    0,
+                    None,
+                    0,
+                    [1, 2, 3],
+                    0,
+                    AB_PARITY_UNKN as i32,
+                )
+                .0,
                 Ok(0)
             );
         }
@@ -9060,7 +9526,16 @@ mod tests {
                 center.radical = 2;
             }
             assert_eq!(
-                evaluate(vec![center], 0, None, 0, [1, 2, 3], 0, AB_PARITY_UNKN as i32,).0,
+                evaluate(
+                    vec![center],
+                    0,
+                    None,
+                    0,
+                    [1, 2, 3],
+                    0,
+                    AB_PARITY_UNKN as i32,
+                )
+                .0,
                 Ok(0)
             );
         }
@@ -9070,7 +9545,16 @@ mod tests {
         duplicate_isotope.num_H = 2;
         duplicate_isotope.num_iso_H[0] = 2;
         assert_eq!(
-            evaluate(vec![duplicate_isotope], 0, None, 0, [1, 2, 3], 0, AB_PARITY_UNKN as i32,).0,
+            evaluate(
+                vec![duplicate_isotope],
+                0,
+                None,
+                0,
+                [1, 2, 3],
+                0,
+                AB_PARITY_UNKN as i32,
+            )
+            .0,
             Ok(AB_PARITY_IISO as i32)
         );
         let mut duplicate_ordinary = atom(b"C");
@@ -9094,7 +9578,16 @@ mod tests {
         negative_ordinary.num_H = 1;
         negative_ordinary.num_iso_H[..2].copy_from_slice(&[1, 1]);
         assert_eq!(
-            evaluate(vec![negative_ordinary], 0, None, 0, [1, 2, 3], 0, AB_PARITY_UNKN as i32,).0,
+            evaluate(
+                vec![negative_ordinary],
+                0,
+                None,
+                0,
+                [1, 2, 3],
+                0,
+                AB_PARITY_UNKN as i32,
+            )
+            .0,
             Ok(CT_ISO_H_ERR)
         );
 
@@ -9161,7 +9654,16 @@ mod tests {
         ignored_isotopes.num_H = 2;
         ignored_isotopes.cFlags = AT_FLAG_ISO_H_POINT as i8;
         assert_eq!(
-            evaluate(vec![ignored_isotopes], 0, None, 0, [1, 2, 3], 0, AB_PARITY_UNKN as i32,).0,
+            evaluate(
+                vec![ignored_isotopes],
+                0,
+                None,
+                0,
+                [1, 2, 3],
+                0,
+                AB_PARITY_UNKN as i32,
+            )
+            .0,
             Ok(-(AB_PARITY_UNDF as i32))
         );
 
@@ -9169,26 +9671,60 @@ mod tests {
         one_attachment.valence = 1;
         one_attachment.num_H = 1;
         assert_eq!(
-            evaluate(vec![one_attachment], 0, None, 0, [1, 2, 3], 0, AB_PARITY_UNKN as i32,).0,
+            evaluate(
+                vec![one_attachment],
+                0,
+                None,
+                0,
+                [1, 2, 3],
+                0,
+                AB_PARITY_UNKN as i32,
+            )
+            .0,
             Ok(AB_PARITY_UNDF as i32)
         );
         let mut no_attachment = atom(b"C");
         no_attachment.num_H = 2;
         no_attachment.num_iso_H[..2].copy_from_slice(&[1, 1]);
         assert_eq!(
-            evaluate(vec![no_attachment], 0, None, 0, [1, 2, 3], 0, AB_PARITY_UNKN as i32,).0,
+            evaluate(
+                vec![no_attachment],
+                0,
+                None,
+                0,
+                [1, 2, 3],
+                0,
+                AB_PARITY_UNKN as i32,
+            )
+            .0,
             Ok(-(AB_PARITY_UNDF as i32))
         );
 
         let planar = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [-1.0, -1.0, 0.0]];
-        let (odd, odd_direction, odd_atoms) =
-            evaluate(geometry(&planar, 0), 0, None, 0, [0, 0, 0], 0, AB_PARITY_UNKN as i32);
+        let (odd, odd_direction, odd_atoms) = evaluate(
+            geometry(&planar, 0),
+            0,
+            None,
+            0,
+            [0, 0, 0],
+            0,
+            AB_PARITY_UNKN as i32,
+        );
         assert_eq!(odd, Ok(AB_PARITY_ODD as i32));
         assert_eq!(odd_direction, [0, 0, 100]);
         assert_eq!(odd_atoms[0].bAmbiguousStereo, 0);
         let reversed = [planar[0], planar[2], planar[1]];
         assert_eq!(
-            evaluate(geometry(&reversed, 0), 0, None, 0, [0, 0, 0], 0, AB_PARITY_UNKN as i32,).0,
+            evaluate(
+                geometry(&reversed, 0),
+                0,
+                None,
+                0,
+                [0, 0, 0],
+                0,
+                AB_PARITY_UNKN as i32,
+            )
+            .0,
             Ok(AB_PARITY_EVEN as i32)
         );
 
@@ -9197,12 +9733,21 @@ mod tests {
         assert_eq!(evaluate(either, 0, None, 0, [1, 2, 3], 0, 77).0, Ok(77));
         let mut pointed = geometry(&planar, 0);
         pointed[0].bond_stereo[0] = STEREO_SNGL_UP as i8;
-        let (pointed_parity, pointed_direction, _) = evaluate(pointed, 0, None, 0, [0, 0, 0], 1, 77);
+        let (pointed_parity, pointed_direction, _) =
+            evaluate(pointed, 0, None, 0, [0, 0, 0], 1, 77);
         assert_eq!(pointed_parity, Ok(AB_PARITY_ODD as i32));
         assert_ne!(pointed_direction, [0, 0, 100]);
 
         let three_dimensional = [[1.0, 0.0, 0.25], [0.0, 1.0, -0.5], [-1.0, -1.0, 0.75]];
-        let (parity_3d, direction_3d, _) = evaluate(geometry(&three_dimensional, 0), 0, None, 0, [0, 0, 0], 0, 77);
+        let (parity_3d, direction_3d, _) = evaluate(
+            geometry(&three_dimensional, 0),
+            0,
+            None,
+            0,
+            [0, 0, 0],
+            0,
+            77,
+        );
         assert_eq!(parity_3d, Ok(AB_PARITY_ODD as i32));
         assert_ne!(direction_3d, [0, 0, 100]);
 
@@ -9210,7 +9755,8 @@ mod tests {
         short[0].sb_parity[0] = AB_PARITY_ODD as i8;
         short[0].sb_ord[0] = 0;
         short[0].sn_orig_at_num[0] = short[2].orig_at_number;
-        let (short_result, _, short_atoms) = evaluate(short, 0, None, 0, [1, 2, 3], 0, AB_PARITY_UNKN as i32);
+        let (short_result, _, short_atoms) =
+            evaluate(short, 0, None, 0, [1, 2, 3], 0, AB_PARITY_UNKN as i32);
         assert_eq!(short_result, Ok(AB_PARITY_ODD as i32));
         assert_eq!(short_atoms[0].bUsed0DParity, FlagSB_0D as i8);
 
@@ -9242,8 +9788,14 @@ mod tests {
             AB_PARITY_UNKN as i32,
         );
         assert_eq!(two_neighbor_result, Ok(AB_PARITY_ODD as i32));
-        assert_eq!(two_neighbor_atoms[0].bAmbiguousStereo, AMBIGUOUS_STEREO as i8);
-        let too_close_to_opposite = [[1.0, 0.0, 0.0], [-(MIN_SINE / 2.0).cos(), (MIN_SINE / 2.0).sin(), 0.0]];
+        assert_eq!(
+            two_neighbor_atoms[0].bAmbiguousStereo,
+            AMBIGUOUS_STEREO as i8
+        );
+        let too_close_to_opposite = [
+            [1.0, 0.0, 0.0],
+            [-(MIN_SINE / 2.0).cos(), (MIN_SINE / 2.0).sin(), 0.0],
+        ];
         let (undefined_result, _, undefined_atoms) = evaluate(
             geometry(&too_close_to_opposite, 1),
             0,
@@ -9257,7 +9809,11 @@ mod tests {
         assert_eq!(undefined_atoms[0].bAmbiguousStereo, 0);
         let outside_ambiguous_angle = [
             [1.0, 0.0, 0.0],
-            [-(MIN_ANGLE_DBOND + 0.01).cos(), (MIN_ANGLE_DBOND + 0.01).sin(), 0.0],
+            [
+                -(MIN_ANGLE_DBOND + 0.01).cos(),
+                (MIN_ANGLE_DBOND + 0.01).sin(),
+                0.0,
+            ],
         ];
         let (defined_result, _, defined_atoms) = evaluate(
             geometry(&outside_ambiguous_angle, 1),
@@ -9276,7 +9832,16 @@ mod tests {
         nitrogen_geometry[0].valence = 2;
         nitrogen_geometry[0].neighbor[..2].copy_from_slice(&[1, 2]);
         assert_eq!(
-            evaluate(nitrogen_geometry, 0, None, 0, [1, 2, 3], 0, AB_PARITY_UNKN as i32,).0,
+            evaluate(
+                nitrogen_geometry,
+                0,
+                None,
+                0,
+                [1, 2, 3],
+                0,
+                AB_PARITY_UNKN as i32,
+            )
+            .0,
             Ok(AB_PARITY_ODD as i32)
         );
 
@@ -9358,7 +9923,9 @@ mod tests {
         );
 
         let mut heap = SourceHeap::default();
-        let atoms = heap.allocate_model_storage(geometry(&planar[..2], 1)).unwrap();
+        let atoms = heap
+            .allocate_model_storage(geometry(&planar[..2], 1))
+            .unwrap();
         let mut explicit_h = inp_ATOM::default();
         explicit_h.neighbor[0] = 0;
         let removed = heap.allocate_model_storage(vec![explicit_h]).unwrap();
@@ -9651,7 +10218,10 @@ mod tests {
             77,
             "dynamic negative unknown is retained for isotopic stereo"
         );
-        assert_eq!(half_stereo_bond_action(-77, 0, 0, 77), AB_PARITY_NONE as i32);
+        assert_eq!(
+            half_stereo_bond_action(-77, 0, 0, 77),
+            AB_PARITY_NONE as i32
+        );
     }
 
     #[test]
@@ -9748,10 +10318,17 @@ mod tests {
         assert_eq!(input[0].bAmbiguousStereo, 0);
         assert_eq!(input[1].bAmbiguousStereo, 0);
 
-        let (unknown_result, _, unknown_output) = evaluate(alkene(STEREO_DBLE_EITHER as i8), empty_output.clone(), 1);
+        let (unknown_result, _, unknown_output) =
+            evaluate(alkene(STEREO_DBLE_EITHER as i8), empty_output.clone(), 1);
         assert_eq!(unknown_result, Ok(1));
-        assert_eq!(unknown_output[1].stereo_bond_parity, [AB_PARITY_UNKN as i8, 0, 0]);
-        assert_eq!(unknown_output[1].stereo_bond_parity2, [AB_PARITY_UNKN as i8, 0, 0]);
+        assert_eq!(
+            unknown_output[1].stereo_bond_parity,
+            [AB_PARITY_UNKN as i8, 0, 0]
+        );
+        assert_eq!(
+            unknown_output[1].stereo_bond_parity2,
+            [AB_PARITY_UNKN as i8, 0, 0]
+        );
 
         let mut full_output = empty_output.clone();
         for atom in &mut full_output[..2] {
@@ -9836,7 +10413,10 @@ mod tests {
             (-1, [1, 2, 3], [4, 5, 6], 0, 0)
         );
 
-        let well_atoms = vec![endpoint(1, 0, 0, [0.0, 0.0, 0.0]), endpoint(2, 0, 0, [0.0, 1.0, 0.0])];
+        let well_atoms = vec![
+            endpoint(1, 0, 0, [0.0, 0.0, 0.0]),
+            endpoint(2, 0, 0, [0.0, 1.0, 0.0]),
+        ];
         assert_eq!(
             run(well_atoms.clone(), 2, [1, 2, 3], [4, 5, 6], 1, 2),
             (0, [1, 2, 3], [4, 5, 6], 1, 2)
@@ -9856,7 +10436,10 @@ mod tests {
         );
         assert_eq!(
             run(
-                vec![endpoint(3, 0, 0, [0.0; 3]), endpoint(4, 0, 0, [0.0, 1.0, 0.0]),],
+                vec![
+                    endpoint(3, 0, 0, [0.0; 3]),
+                    endpoint(4, 0, 0, [0.0, 1.0, 0.0]),
+                ],
                 0,
                 [1, 2, 3],
                 [4, 5, 6],
@@ -9874,7 +10457,10 @@ mod tests {
             run(both_wrong, 1, [1, 2, 3], [4, 5, 6], 1, 2),
             (0, [100, 0, 0], [0, 0, 100], 1, 2)
         );
-        let short = vec![endpoint(1, 0, FlagSB_0D as i8, [0.0; 3]), endpoint(2, 0, 0, [0.0; 3])];
+        let short = vec![
+            endpoint(1, 0, FlagSB_0D as i8, [0.0; 3]),
+            endpoint(2, 0, 0, [0.0; 3]),
+        ];
         assert_eq!(
             run(short, 1, [1, 2, 3], [0, 0, 100], 1, 2),
             (0, [100, 0, 0], [0, 0, 100], 1, 2)
@@ -9924,15 +10510,29 @@ mod tests {
         ) -> Result<i32, SourceHeapError> {
             let mut heap = SourceHeap::default();
             let atoms = heap.allocate_model_storage(atoms).unwrap();
-            bInpAtomHasRequirdNeigh(&heap, atoms.as_const(), current, required, double_bonds, stereo_at_zz)
+            bInpAtomHasRequirdNeigh(
+                &heap,
+                atoms.as_const(),
+                current,
+                required,
+                double_bonds,
+                stereo_at_zz,
+            )
         }
 
         let mut single_center = atom(b"C", 6);
         single_center.valence = 2;
         single_center.neighbor[..2].copy_from_slice(&[1, 2]);
-        single_center.bond_type[..2].copy_from_slice(&[BOND_SINGLE as u8 | BOND_MARK_ALL as u8, BOND_SINGLE as u8]);
+        single_center.bond_type[..2]
+            .copy_from_slice(&[BOND_SINGLE as u8 | BOND_MARK_ALL as u8, BOND_SINGLE as u8]);
         assert_eq!(
-            evaluate(vec![single_center.clone(), atom(b"C", 6), atom(b"C", 6)], 0, 0, 0, 0,),
+            evaluate(
+                vec![single_center.clone(), atom(b"C", 6), atom(b"C", 6)],
+                0,
+                0,
+                0,
+                0,
+            ),
             Ok(1)
         );
         let mut endpoint = single_center.clone();
@@ -9953,7 +10553,10 @@ mod tests {
         n.valence = 1;
         let mut nh = n.clone();
         nh.num_H = 1;
-        assert_eq!(evaluate(vec![nitrogen_center.clone(), n, nh], 0, 2, 0, 1), Ok(0));
+        assert_eq!(
+            evaluate(vec![nitrogen_center.clone(), n, nh], 0, 2, 0, 1),
+            Ok(0)
+        );
         let mut c = atom(b"C", 6);
         c.valence = 1;
         let mut ch = c.clone();
@@ -9965,7 +10568,10 @@ mod tests {
             center.valence = 1;
             center.neighbor[0] = 1;
             center.bond_type[0] = BOND_SINGLE as u8;
-            assert_eq!(evaluate(vec![center.clone(), atom(pseudo, 0)], 0, 0, 0, 0), Ok(0));
+            assert_eq!(
+                evaluate(vec![center.clone(), atom(pseudo, 0)], 0, 0, 0, 0),
+                Ok(0)
+            );
             assert_eq!(evaluate(vec![center, atom(pseudo, 0)], 0, 0, 0, 1), Ok(1));
         }
 
@@ -9974,8 +10580,14 @@ mod tests {
             center.valence = 1;
             center.neighbor[0] = 1;
             center.bond_type[0] = multiple as u8 | BOND_MARK_ALL as u8;
-            assert_eq!(evaluate(vec![center.clone(), atom(b"C", 6)], 0, 0, 1, 1), Ok(1));
-            assert_eq!(evaluate(vec![center.clone(), atom(b"C", 6)], 0, 0, 2, 1), Ok(0));
+            assert_eq!(
+                evaluate(vec![center.clone(), atom(b"C", 6)], 0, 0, 1, 1),
+                Ok(1)
+            );
+            assert_eq!(
+                evaluate(vec![center.clone(), atom(b"C", 6)], 0, 0, 2, 1),
+                Ok(0)
+            );
             assert_eq!(evaluate(vec![center, atom(b"C", 6)], 0, 0, 0, 1), Ok(0));
         }
         let mut other = atom(b"C", 6);
@@ -9992,12 +10604,18 @@ mod tests {
     #[test]
     fn source_port__ichister__bcaninpatombeastereocenter__line_1432() {
         const ELEMENTS: [&[u8]; 21] = [
-            b"C", b"Si", b"Ge", b"Sn", b"As", b"B", b"S", b"S", b"S", b"S", b"Se", b"Se", b"Se", b"Se", b"N", b"N",
-            b"N", b"P", b"P", b"P", b"As",
+            b"C", b"Si", b"Ge", b"Sn", b"As", b"B", b"S", b"S", b"S", b"S", b"Se", b"Se", b"Se",
+            b"Se", b"N", b"N", b"N", b"P", b"P", b"P", b"As",
         ];
-        const CHARGES: [i8; 21] = [0, 0, 0, 0, 1, -1, 0, 0, 1, 1, 0, 0, 1, 1, 0, 1, 0, 1, 0, 0, 0];
-        const NUM_BONDS: [i8; 21] = [4, 4, 4, 4, 4, 4, 3, 4, 3, 4, 3, 4, 3, 4, 4, 4, 3, 4, 4, 3, 3];
-        const CHEM_VALENCE: [i8; 21] = [4, 4, 4, 4, 4, 4, 4, 6, 3, 5, 4, 6, 3, 5, 5, 4, 3, 4, 5, 3, 3];
+        const CHARGES: [i8; 21] = [
+            0, 0, 0, 0, 1, -1, 0, 0, 1, 1, 0, 0, 1, 1, 0, 1, 0, 1, 0, 0, 0,
+        ];
+        const NUM_BONDS: [i8; 21] = [
+            4, 4, 4, 4, 4, 4, 3, 4, 3, 4, 3, 4, 3, 4, 4, 4, 3, 4, 4, 3, 3,
+        ];
+        const CHEM_VALENCE: [i8; 21] = [
+            4, 4, 4, 4, 4, 4, 4, 6, 3, 5, 4, 6, 3, 5, 5, 4, 3, 4, 5, 3, 3,
+        ];
 
         fn named(name: &[u8]) -> inp_ATOM {
             let mut atom = inp_ATOM::default();
@@ -10061,9 +10679,15 @@ mod tests {
         }
 
         assert_eq!(evaluate(fixture(19), 0, 0, 0), Ok(0));
-        assert_eq!(evaluate(fixture(19), 0, PES_BIT_PHOSPHINE_STEREO as i32, 0), Ok(3));
+        assert_eq!(
+            evaluate(fixture(19), 0, PES_BIT_PHOSPHINE_STEREO as i32, 0),
+            Ok(3)
+        );
         assert_eq!(evaluate(fixture(20), 0, 0, 0), Ok(0));
-        assert_eq!(evaluate(fixture(20), 0, PES_BIT_ARSINE_STEREO as i32, 0), Ok(3));
+        assert_eq!(
+            evaluate(fixture(20), 0, PES_BIT_ARSINE_STEREO as i32, 0),
+            Ok(3)
+        );
 
         let mut no_ring = fixture(16);
         no_ring[1].valence = 1;
@@ -10173,7 +10797,8 @@ mod tests {
         four.p_parity = AB_PARITY_EVEN as i8;
         four.p_orig_at_num = [30, 99, 10, 20];
         four.bUsed0DParity = 4;
-        let (parity, neighbors, atom) = evaluate(four.clone(), 3, vec![30, 10, 20, 777], 2).unwrap();
+        let (parity, neighbors, atom) =
+            evaluate(four.clone(), 3, vec![30, 10, 20, 777], 2).unwrap();
         assert_eq!(parity, AB_PARITY_ODD as i32);
         assert_eq!(neighbors, [10, 20, 30, 777]);
         assert_eq!(atom.bUsed0DParity, 6);
@@ -10198,7 +10823,8 @@ mod tests {
         assert_eq!(atom.bUsed0DParity, 8);
 
         for invalid_count in [i32::MIN, -1, 0, 2, 5, i32::MAX] {
-            let (parity, neighbors, atom) = evaluate(four.clone(), invalid_count, vec![9, 8, 7, 6], 1).unwrap();
+            let (parity, neighbors, atom) =
+                evaluate(four.clone(), invalid_count, vec![9, 8, 7, 6], 1).unwrap();
             assert_eq!(parity, AB_PARITY_NONE as i32);
             assert_eq!(neighbors, [9, 8, 7, 6]);
             assert_eq!(atom.bUsed0DParity, 8);
@@ -10236,7 +10862,12 @@ mod tests {
         fn point(angle: f64, z: f64) -> [f64; 3] {
             [angle.cos(), angle.sin(), z]
         }
-        fn evaluate(values: &[(f64, f64)], add_explicit_neighbor: i32, fix_border: i32, minimum_angle: f64) -> i32 {
+        fn evaluate(
+            values: &[(f64, f64)],
+            add_explicit_neighbor: i32,
+            fix_border: i32,
+            minimum_angle: f64,
+        ) -> i32 {
             let mut coordinates = [[0.0; 3]; MAX_NUM_STEREO_ATOM_NEIGH as usize];
             for (slot, &(angle, z)) in coordinates.iter_mut().zip(values) {
                 *slot = point(angle, z);
@@ -10255,15 +10886,43 @@ mod tests {
         let three_neighbor_cases: &[(&str, &[(f64, f64)], i32)] = &[
             ("all in plane", &[(0.0, 0.0), (1.0, 0.0), (2.0, 0.0)], 4),
             ("one up one down", &[(0.0, 1.0), (1.0, -1.0), (2.0, 0.0)], 6),
-            ("one up asymmetric planes", &[(0.0, 1.0), (1.0, 0.0), (2.0, 0.0)], 1),
-            ("one up opposite planes", &[(0.0, 1.0), (0.5, 0.0), (0.5 + pi, 0.0)], 6),
+            (
+                "one up asymmetric planes",
+                &[(0.0, 1.0), (1.0, 0.0), (2.0, 0.0)],
+                1,
+            ),
+            (
+                "one up opposite planes",
+                &[(0.0, 1.0), (0.5, 0.0), (0.5 + pi, 0.0)],
+                6,
+            ),
             ("two up no down", &[(0.0, 1.0), (1.0, 1.0), (2.0, 0.0)], 1),
             ("three up", &[(0.0, 1.0), (1.0, 1.0), (2.0, 1.0)], 1),
-            ("two up short alpha", &[(0.0, 1.0), (1.0, 1.0), (2.0, -1.0)], 6),
-            ("two up long alpha", &[(0.0, 1.0), (3.2, 1.0), (4.5, -1.0)], 1),
-            ("two up middle alpha inside", &[(0.0, 1.0), (2.1, 1.0), (4.19, -1.0)], 1),
-            ("two up middle alpha outside", &[(0.0, 1.0), (2.1, 1.0), (3.0, -1.0)], 6),
-            ("minority up inversion", &[(0.0, 1.0), (1.0, -1.0), (2.0, -1.0)], 6),
+            (
+                "two up short alpha",
+                &[(0.0, 1.0), (1.0, 1.0), (2.0, -1.0)],
+                6,
+            ),
+            (
+                "two up long alpha",
+                &[(0.0, 1.0), (3.2, 1.0), (4.5, -1.0)],
+                1,
+            ),
+            (
+                "two up middle alpha inside",
+                &[(0.0, 1.0), (2.1, 1.0), (4.19, -1.0)],
+                1,
+            ),
+            (
+                "two up middle alpha outside",
+                &[(0.0, 1.0), (2.1, 1.0), (3.0, -1.0)],
+                6,
+            ),
+            (
+                "minority up inversion",
+                &[(0.0, 1.0), (1.0, -1.0), (2.0, -1.0)],
+                6,
+            ),
         ];
         for &(name, values, expected) in three_neighbor_cases {
             assert_eq!(evaluate(values, 1, 0, 0.1), expected, "{name}");
@@ -10274,7 +10933,12 @@ mod tests {
         );
 
         let four_neighbor_cases: &[(&str, &[(f64, f64)], i32, i32)] = &[
-            ("all in plane", &[(0.0, 0.0), (1.0, 0.0), (2.0, 0.0), (3.0, 0.0)], 0, 4),
+            (
+                "all in plane",
+                &[(0.0, 0.0), (1.0, 0.0), (2.0, 0.0), (3.0, 0.0)],
+                0,
+                4,
+            ),
             (
                 "one up alternating down ambiguous",
                 &[(0.0, 1.0), (0.5, 0.0), (2.0, -1.0), (0.5 + pi, 0.0)],
@@ -10329,8 +10993,18 @@ mod tests {
                 1,
                 3,
             ),
-            ("three up", &[(0.0, 1.0), (1.0, 1.0), (2.0, 1.0), (3.0, 0.0)], 0, 3),
-            ("four up", &[(0.0, 1.0), (1.0, 1.0), (2.0, 1.0), (3.0, 1.0)], 0, 6),
+            (
+                "three up",
+                &[(0.0, 1.0), (1.0, 1.0), (2.0, 1.0), (3.0, 0.0)],
+                0,
+                3,
+            ),
+            (
+                "four up",
+                &[(0.0, 1.0), (1.0, 1.0), (2.0, 1.0), (3.0, 1.0)],
+                0,
+                6,
+            ),
             (
                 "minority up inversion",
                 &[(0.0, 1.0), (1.0, -1.0), (2.0, -1.0), (3.0, -1.0)],
@@ -10341,12 +11015,26 @@ mod tests {
         for &(name, values, fix, expected) in four_neighbor_cases {
             assert_eq!(evaluate(values, 0, fix, 0.1), expected, "{name}");
         }
-        assert_eq!(evaluate(four_neighbor_cases[8].1, 0, -1, 0.1), four_neighbor_cases[8].3);
+        assert_eq!(
+            evaluate(four_neighbor_cases[8].1, 0, -1, 0.1),
+            four_neighbor_cases[8].3
+        );
 
-        let mut nan_coordinates = [point(0.0, f64::NAN), point(1.0, 0.0), point(2.0, 0.0), point(3.0, 0.0)];
+        let mut nan_coordinates = [
+            point(0.0, f64::NAN),
+            point(1.0, 0.0),
+            point(2.0, 0.0),
+            point(3.0, 0.0),
+        ];
         nan_coordinates[1][0] = f64::NAN;
         assert_eq!(
-            Get2DTetrahedralAmbiguity(&mut CANON_GLOBALS::default(), &nan_coordinates, 0, 1, f64::NAN,),
+            Get2DTetrahedralAmbiguity(
+                &mut CANON_GLOBALS::default(),
+                &nan_coordinates,
+                0,
+                1,
+                f64::NAN,
+            ),
             Ok(T2D_UNDF as i32)
         );
     }
@@ -10403,7 +11091,14 @@ mod tests {
         minimum = -99.0;
         ambiguity = 0;
         assert_eq!(
-            triple_prod_and_min_abs_sine2(&planar, &[0.0; 3], 0, Some(&mut minimum), Some(&mut ambiguity), 0.1,),
+            triple_prod_and_min_abs_sine2(
+                &planar,
+                &[0.0; 3],
+                0,
+                Some(&mut minimum),
+                Some(&mut ambiguity),
+                0.1,
+            ),
             0.0
         );
         assert_eq!(minimum.to_bits(), 0.0_f64.to_bits());
@@ -10444,7 +11139,14 @@ mod tests {
 
         minimum = -99.0;
         assert_eq!(
-            triple_prod_and_min_abs_sine2(&orthogonal, &[0.25, 0.25, 0.25], 0, Some(&mut minimum), None, 0.1,),
+            triple_prod_and_min_abs_sine2(
+                &orthogonal,
+                &[0.25, 0.25, 0.25],
+                0,
+                Some(&mut minimum),
+                None,
+                0.1,
+            ),
             1.0
         );
         assert_eq!(minimum.to_bits(), (1.0_f64 / 3.0_f64.sqrt()).to_bits());
@@ -10495,7 +11197,10 @@ mod tests {
             let mut heap = SourceHeap::default();
             let atoms_pointer = heap.allocate_model_storage(atoms).unwrap();
             let removed_pointer = match removed_start {
-                Some(start) => atoms_pointer.offset(i64::try_from(start).unwrap()).unwrap().as_const(),
+                Some(start) => atoms_pointer
+                    .offset(i64::try_from(start).unwrap())
+                    .unwrap()
+                    .as_const(),
                 None => SourceConstPointer::null(),
             };
             let atom_count = heap.slice(atoms_pointer.as_const()).unwrap().len();
@@ -10541,7 +11246,12 @@ mod tests {
             }
         }
 
-        let tetrahedron = [[1.0, 1.0, 1.0], [-1.0, -1.0, 1.0], [-1.0, 1.0, -1.0], [1.0, -1.0, -1.0]];
+        let tetrahedron = [
+            [1.0, 1.0, 1.0],
+            [-1.0, -1.0, 1.0],
+            [-1.0, 1.0, -1.0],
+            [1.0, -1.0, -1.0],
+        ];
         let defined = evaluate(
             carbon_center(&tetrahedron, 0),
             0,
@@ -10592,7 +11302,8 @@ mod tests {
         assert_eq!(implicit.result, Ok(AB_PARITY_EVEN as i32));
         assert_eq!(implicit.output.parity, AB_PARITY_EVEN as i8);
 
-        let mut with_removed = carbon_center(&[[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [-1.0, -1.0, 1.0]], 1);
+        let mut with_removed =
+            carbon_center(&[[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [-1.0, -1.0, 1.0]], 1);
         let mut removed = inp_ATOM::default();
         removed.elname[..2].copy_from_slice(&[b'H' as i8, 0]);
         removed.valence = 1;
@@ -10604,7 +11315,12 @@ mod tests {
         assert_eq!(removed.result, Ok(AB_PARITY_EVEN as i32));
         assert_eq!(removed.output.parity, AB_PARITY_EVEN as i8);
 
-        let planar_coordinates = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [-1.0, 0.0, 0.0], [0.0, -1.0, 0.0]];
+        let planar_coordinates = [
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [-1.0, 0.0, 0.0],
+            [0.0, -1.0, 0.0],
+        ];
         let planar = evaluate(
             carbon_center(&planar_coordinates, 0),
             0,
@@ -10634,10 +11350,14 @@ mod tests {
         let mut zero_dimensional = carbon_center(&planar_coordinates, 0);
         zero_dimensional[0].p_parity = AB_PARITY_ODD as i8;
         zero_dimensional[0].p_orig_at_num = [101, 102, 103, 104];
-        let zero_dimensional = evaluate(zero_dimensional, 0, None, 0, 0, AB_PARITY_UNKN as i32, 0, 0);
+        let zero_dimensional =
+            evaluate(zero_dimensional, 0, None, 0, 0, AB_PARITY_UNKN as i32, 0, 0);
         assert_eq!(zero_dimensional.result, Ok(AB_PARITY_ODD as i32));
         assert_eq!(zero_dimensional.output.parity, AB_PARITY_ODD as i8);
-        assert_eq!(zero_dimensional.input.bUsed0DParity & FlagSC_0D as i8, FlagSC_0D as i8);
+        assert_eq!(
+            zero_dimensional.input.bUsed0DParity & FlagSC_0D as i8,
+            FlagSC_0D as i8
+        );
 
         let mut either = carbon_center(&planar_coordinates, 0);
         either[0].bond_stereo[0] = STEREO_SNGL_EITHER as i8;
@@ -10666,12 +11386,24 @@ mod tests {
             0,
         );
         assert_eq!(wedges.result, Ok(AB_PARITY_ODD as i32));
-        assert_eq!(i32::from(wedges.output.bAmbiguousStereo) & AMBIGUOUS_STEREO as i32, 0);
-        assert_eq!(i32::from(wedges.input.bAmbiguousStereo) & AMBIGUOUS_STEREO as i32, 0);
+        assert_eq!(
+            i32::from(wedges.output.bAmbiguousStereo) & AMBIGUOUS_STEREO as i32,
+            0
+        );
+        assert_eq!(
+            i32::from(wedges.input.bAmbiguousStereo) & AMBIGUOUS_STEREO as i32,
+            0
+        );
 
-        let warning_coordinates = [0.0_f64, 1.0, 2.0, 3.0].map(|angle| [angle.cos(), angle.sin(), 0.0]);
+        let warning_coordinates =
+            [0.0_f64, 1.0, 2.0, 3.0].map(|angle| [angle.cos(), angle.sin(), 0.0]);
         let mut warned_wedges = carbon_center(&warning_coordinates, 0);
-        warned_wedges[0].bond_stereo[..4].copy_from_slice(&[STEREO_SNGL_UP as i8, STEREO_SNGL_DOWN as i8, 0, 0]);
+        warned_wedges[0].bond_stereo[..4].copy_from_slice(&[
+            STEREO_SNGL_UP as i8,
+            STEREO_SNGL_DOWN as i8,
+            0,
+            0,
+        ]);
         let warned_wedges = evaluate(warned_wedges, 0, None, 0, 0, AB_PARITY_UNKN as i32, 0, 0);
         assert_eq!(warned_wedges.result, Ok(AB_PARITY_ODD as i32));
         assert_eq!(
@@ -10703,7 +11435,16 @@ mod tests {
 
         let mut duplicate_isotope = carbon_center(&[[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]], 2);
         duplicate_isotope[0].num_iso_H[0] = 2;
-        let duplicate_isotope = evaluate(duplicate_isotope, 0, None, 0, 0, AB_PARITY_UNKN as i32, 0, 0);
+        let duplicate_isotope = evaluate(
+            duplicate_isotope,
+            0,
+            None,
+            0,
+            0,
+            AB_PARITY_UNKN as i32,
+            0,
+            0,
+        );
         assert_eq!(duplicate_isotope.result, Ok(AB_PARITY_NONE as i32));
         assert_eq!(duplicate_isotope.output.parity2, AB_PARITY_NONE as i8);
 
@@ -10725,7 +11466,16 @@ mod tests {
         let near_planar = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [1.0, 1.0, 0.03]];
         let mut strict_atoms = carbon_center(&near_planar, 1);
         strict_atoms[0].nNumAtInRingSystem = 3;
-        let strict = evaluate(strict_atoms.clone(), 0, None, 0, 0, AB_PARITY_UNKN as i32, 0, 0);
+        let strict = evaluate(
+            strict_atoms.clone(),
+            0,
+            None,
+            0,
+            0,
+            AB_PARITY_UNKN as i32,
+            0,
+            0,
+        );
         let loose = evaluate(strict_atoms, 0, None, 0, 0, AB_PARITY_UNKN as i32, 1, 0);
         assert_eq!(strict.result, Ok(AB_PARITY_UNDF as i32));
         assert_eq!(loose.result, Ok(AB_PARITY_UNDF as i32));
@@ -10745,7 +11495,10 @@ mod tests {
             0,
             0,
         );
-        assert_eq!(negative_index.result, Err(SourceHeapError::PointerOutOfBounds));
+        assert_eq!(
+            negative_index.result,
+            Err(SourceHeapError::PointerOutOfBounds)
+        );
 
         let excessive_removed_count = evaluate(
             carbon_center(&tetrahedron, 0),
@@ -10757,14 +11510,20 @@ mod tests {
             0,
             0,
         );
-        assert_eq!(excessive_removed_count.result, Err(SourceHeapError::PointerOutOfBounds));
+        assert_eq!(
+            excessive_removed_count.result,
+            Err(SourceHeapError::PointerOutOfBounds)
+        );
     }
 
     #[test]
     fn source_port__ichister__batomhasvalence3__line_1574() {
         for radical in [0, RADICAL_SINGLET as i8] {
             assert_eq!(bAtomHasValence3(&[b'N' as i8, 0], 0, radical), Ok(1));
-            assert_eq!(bAtomHasValence3(&[b'N' as i8, 0, b'X' as i8], 0, radical), Ok(1));
+            assert_eq!(
+                bAtomHasValence3(&[b'N' as i8, 0, b'X' as i8], 0, radical),
+                Ok(1)
+            );
         }
 
         for radical in [i8::MIN, -1, 2, i8::MAX] {
@@ -10799,7 +11558,10 @@ mod tests {
         for (element, charge) in valid {
             let element = element.iter().map(|&byte| byte as i8).collect::<Vec<_>>();
             assert_eq!(bCanAtomHaveAStereoBond(&element, charge, 0), Ok(1));
-            assert_eq!(bCanAtomHaveAStereoBond(&element, charge, RADICAL_SINGLET as i8), Ok(1));
+            assert_eq!(
+                bCanAtomHaveAStereoBond(&element, charge, RADICAL_SINGLET as i8),
+                Ok(1)
+            );
             for radical in [i8::MIN, -1, 2, i8::MAX] {
                 assert_eq!(bCanAtomHaveAStereoBond(&element, charge, radical), Ok(0));
             }
@@ -10931,7 +11693,10 @@ mod tests {
 
     #[test]
     fn source_port__ichister__bisoxide__line_1667() {
-        fn evaluate(atoms: Vec<inp_ATOM>, cur_at: i32) -> (Result<i32, SourceHeapError>, Vec<inp_ATOM>) {
+        fn evaluate(
+            atoms: Vec<inp_ATOM>,
+            cur_at: i32,
+        ) -> (Result<i32, SourceHeapError>, Vec<inp_ATOM>) {
             let mut heap = SourceHeap::default();
             let atoms_pointer = heap.allocate_model_storage(atoms).unwrap();
             let result = bIsOxide(&mut heap, atoms_pointer, cur_at);
@@ -11028,14 +11793,20 @@ mod tests {
 
         let (result, atoms) = evaluate(bonded_pair(BOND_TYPE_DOUBLE as u8, oxide.clone()), 1);
         assert_eq!(result, Ok(0));
-        assert_eq!(atoms[0].bond_type[0], BOND_TYPE_DOUBLE as u8 | BOND_MARK_ALL as u8);
+        assert_eq!(
+            atoms[0].bond_type[0],
+            BOND_TYPE_DOUBLE as u8 | BOND_MARK_ALL as u8
+        );
 
         let mut negative_valence = inp_ATOM::default();
         negative_valence.valence = i8::MIN;
         negative_valence.bond_type[0] = BOND_MARK_ALL as u8 | BOND_TYPE_DOUBLE as u8;
         let (result, atoms) = evaluate(vec![negative_valence], 0);
         assert_eq!(result, Ok(0));
-        assert_eq!(atoms[0].bond_type[0], BOND_MARK_ALL as u8 | BOND_TYPE_DOUBLE as u8);
+        assert_eq!(
+            atoms[0].bond_type[0],
+            BOND_MARK_ALL as u8 | BOND_TYPE_DOUBLE as u8
+        );
 
         let (result, _) = evaluate(vec![inp_ATOM::default()], -1);
         assert_eq!(result, Err(SourceHeapError::PointerOutOfBounds));
@@ -11062,13 +11833,20 @@ mod tests {
         for bond_type in allowed {
             assert_eq!(get_allowed_stereo_bond_type(bond_type), bond_type);
             for mark in (0..=BOND_MARK_ALL).step_by(16) {
-                assert_eq!(get_allowed_stereo_bond_type(bond_type | mark as i32), bond_type);
+                assert_eq!(
+                    get_allowed_stereo_bond_type(bond_type | mark as i32),
+                    bond_type
+                );
             }
         }
 
         for bond_type in 0_i32..=u8::MAX as i32 {
             let unmarked = bond_type & !(BOND_MARK_ALL as i32);
-            let expected = if allowed.contains(&unmarked) { unmarked } else { 0 };
+            let expected = if allowed.contains(&unmarked) {
+                unmarked
+            } else {
+                0
+            };
             assert_eq!(get_allowed_stereo_bond_type(bond_type), expected);
         }
 
@@ -11095,7 +11873,11 @@ mod tests {
             atom
         }
 
-        fn evaluate(atoms: Vec<inp_ATOM>, cur_at: i32, mode: INCHI_MODE) -> Result<i32, SourceHeapError> {
+        fn evaluate(
+            atoms: Vec<inp_ATOM>,
+            cur_at: i32,
+            mode: INCHI_MODE,
+        ) -> Result<i32, SourceHeapError> {
             let mut heap = SourceHeap::default();
             let atoms = heap.allocate_model_storage(atoms).unwrap();
             can_be_a_stereo_bond_with_isotopic_H(&mut heap, atoms, cur_at, mode)
@@ -11105,11 +11887,13 @@ mod tests {
             let mut left = carbon();
             left.valence = 2;
             left.neighbor[..2].copy_from_slice(&[1, 2]);
-            left.bond_type[..2].copy_from_slice(&[BOND_TYPE_DOUBLE as u8 | mark, BOND_SINGLE as u8]);
+            left.bond_type[..2]
+                .copy_from_slice(&[BOND_TYPE_DOUBLE as u8 | mark, BOND_SINGLE as u8]);
             let mut right = carbon();
             right.valence = 2;
             right.neighbor[..2].copy_from_slice(&[0, 3]);
-            right.bond_type[..2].copy_from_slice(&[BOND_TYPE_DOUBLE as u8 | mark, BOND_SINGLE as u8]);
+            right.bond_type[..2]
+                .copy_from_slice(&[BOND_TYPE_DOUBLE as u8 | mark, BOND_SINGLE as u8]);
             vec![left, right, carbon(), carbon()]
         }
 
@@ -11126,7 +11910,10 @@ mod tests {
         alternating_right.neighbor[0] = 0;
         let alternating = vec![alternating_left, alternating_right];
         assert_eq!(evaluate(alternating.clone(), 1, 0), Ok(1));
-        assert_eq!(evaluate(alternating, 1, CMODE_NO_ALT_SBONDS as INCHI_MODE), Ok(0));
+        assert_eq!(
+            evaluate(alternating, 1, CMODE_NO_ALT_SBONDS as INCHI_MODE),
+            Ok(0)
+        );
 
         let mut invalid = ethene(0);
         invalid[1].valence = 0;
@@ -11149,7 +11936,10 @@ mod tests {
         double_endpoint.bond_type[0] = BOND_TYPE_DOUBLE as u8;
         let mut altern_endpoint = double_endpoint.clone();
         altern_endpoint.bond_type[0] = BOND_ALTERN as u8;
-        assert_eq!(evaluate(vec![double_endpoint, altern_endpoint, mixed], 2, 0), Ok(0));
+        assert_eq!(
+            evaluate(vec![double_endpoint, altern_endpoint, mixed], 2, 0),
+            Ok(0)
+        );
 
         let mut endpoint = carbon();
         endpoint.valence = 2;
@@ -11161,7 +11951,13 @@ mod tests {
         one_bad.bond_type[..3].copy_from_slice(&[BOND_TYPE_DOUBLE as u8, BOND_SINGLE as u8, 0]);
         assert_eq!(
             evaluate(
-                vec![endpoint.clone(), carbon(), one_bad.clone(), carbon(), carbon(),],
+                vec![
+                    endpoint.clone(),
+                    carbon(),
+                    one_bad.clone(),
+                    carbon(),
+                    carbon(),
+                ],
                 2,
                 0,
             ),
@@ -11193,7 +11989,8 @@ mod tests {
         let mut cumulene_current = carbon();
         cumulene_current.valence = 2;
         cumulene_current.neighbor[..2].copy_from_slice(&[1, 3]);
-        cumulene_current.bond_type[..2].copy_from_slice(&[BOND_TYPE_DOUBLE as u8, BOND_SINGLE as u8]);
+        cumulene_current.bond_type[..2]
+            .copy_from_slice(&[BOND_TYPE_DOUBLE as u8, BOND_SINGLE as u8]);
         assert_eq!(
             evaluate(vec![carbon(), middle, cumulene_current, carbon()], 2, 0,),
             Ok(1)
@@ -11203,18 +12000,27 @@ mod tests {
         dangling.valence = 2;
         dangling.neighbor[..2].copy_from_slice(&[u16::MAX, 0]);
         dangling.bond_type[..2].copy_from_slice(&[BOND_TYPE_DOUBLE as u8, BOND_SINGLE as u8]);
-        assert_eq!(evaluate(vec![dangling], 0, 0), Err(SourceHeapError::PointerOutOfBounds));
+        assert_eq!(
+            evaluate(vec![dangling], 0, 0),
+            Err(SourceHeapError::PointerOutOfBounds)
+        );
         assert_eq!(
             evaluate(vec![carbon()], -1, 0),
             Err(SourceHeapError::PointerOutOfBounds)
         );
-        assert_eq!(evaluate(vec![carbon()], 1, 0), Err(SourceHeapError::PointerOutOfBounds));
+        assert_eq!(
+            evaluate(vec![carbon()], 1, 0),
+            Err(SourceHeapError::PointerOutOfBounds)
+        );
     }
 
     #[test]
     fn source_port__ichister__fixunkn0dstereobonds__line_2006() {
         let mut heap = SourceHeap::default();
-        assert_eq!(FixUnkn0DStereoBonds(&mut heap, SourceMutPointer::null(), 0).unwrap(), 0);
+        assert_eq!(
+            FixUnkn0DStereoBonds(&mut heap, SourceMutPointer::null(), 0).unwrap(),
+            0
+        );
         assert_eq!(
             FixUnkn0DStereoBonds(&mut heap, SourceMutPointer::null(), -1).unwrap(),
             0
@@ -11264,21 +12070,24 @@ mod tests {
         let ignored = heap.allocate(vec![ignored]).unwrap();
         let ignored_visited = heap.allocate(vec![0_i8]).unwrap();
         assert_eq!(
-            ReconcileCmlIncidentBondParities(&mut heap, ignored, 0, -1, ignored_visited, 0,).unwrap(),
+            ReconcileCmlIncidentBondParities(&mut heap, ignored, 0, -1, ignored_visited, 0,)
+                .unwrap(),
             0
         );
 
         let no_parity = heap.allocate(vec![inp_ATOM::default()]).unwrap();
         let no_parity_visited = heap.allocate(vec![0_i8]).unwrap();
         assert_eq!(
-            ReconcileCmlIncidentBondParities(&mut heap, no_parity, 0, -1, no_parity_visited, 0,).unwrap(),
+            ReconcileCmlIncidentBondParities(&mut heap, no_parity, 0, -1, no_parity_visited, 0,)
+                .unwrap(),
             1
         );
 
         let already = heap.allocate(stereo_pair(1, 1)).unwrap();
         let already_visited = heap.allocate(vec![10_i8, 0]).unwrap();
         assert_eq!(
-            ReconcileCmlIncidentBondParities(&mut heap, already, 0, -1, already_visited, 0,).unwrap(),
+            ReconcileCmlIncidentBondParities(&mut heap, already, 0, -1, already_visited, 0,)
+                .unwrap(),
             2
         );
 
@@ -11297,7 +12106,8 @@ mod tests {
         let mismatch = heap.allocate(stereo_pair(3, 4)).unwrap();
         let mismatch_visited = heap.allocate(vec![0_i8; 2]).unwrap();
         assert_eq!(
-            ReconcileCmlIncidentBondParities(&mut heap, mismatch, 0, -1, mismatch_visited, 0,).unwrap(),
+            ReconcileCmlIncidentBondParities(&mut heap, mismatch, 0, -1, mismatch_visited, 0,)
+                .unwrap(),
             3
         );
 
@@ -11320,7 +12130,8 @@ mod tests {
         let reconcile = heap.allocate(stereo_pair(1, 1)).unwrap();
         let reconcile_visited = heap.allocate(vec![2_i8, 2]).unwrap();
         assert_eq!(
-            ReconcileCmlIncidentBondParities(&mut heap, reconcile, 0, -1, reconcile_visited, 0,).unwrap(),
+            ReconcileCmlIncidentBondParities(&mut heap, reconcile, 0, -1, reconcile_visited, 0,)
+                .unwrap(),
             0
         );
         assert_eq!(heap.slice(reconcile.as_const()).unwrap()[0].sb_parity[0], 2);
@@ -11339,15 +12150,27 @@ mod tests {
             .unwrap();
         let disconnected_visited = heap.allocate(vec![0_i8; 2]).unwrap();
         assert_eq!(
-            ReconcileCmlIncidentBondParities(&mut heap, disconnected, 0, -1, disconnected_visited, 1,).unwrap(),
+            ReconcileCmlIncidentBondParities(
+                &mut heap,
+                disconnected,
+                0,
+                -1,
+                disconnected_visited,
+                1,
+            )
+            .unwrap(),
             0
         );
-        assert_eq!(heap.slice(disconnected_visited.as_const()).unwrap(), &[21, 21]);
+        assert_eq!(
+            heap.slice(disconnected_visited.as_const()).unwrap(),
+            &[21, 21]
+        );
 
         let completed = heap.allocate(stereo_pair(1, 2)).unwrap();
         let completed_visited = heap.allocate(vec![0_i8, 20]).unwrap();
         assert_eq!(
-            ReconcileCmlIncidentBondParities(&mut heap, completed, 0, -1, completed_visited, 0,).unwrap(),
+            ReconcileCmlIncidentBondParities(&mut heap, completed, 0, -1, completed_visited, 0,)
+                .unwrap(),
             0
         );
         assert_eq!(heap.slice(completed_visited.as_const()).unwrap(), &[20, 20]);
@@ -11357,29 +12180,52 @@ mod tests {
         let high_valence = heap.allocate(high_valence_pair).unwrap();
         let high_valence_visited = heap.allocate(vec![0_i8; 2]).unwrap();
         assert_eq!(
-            ReconcileCmlIncidentBondParities(&mut heap, high_valence, 0, -1, high_valence_visited, 0,).unwrap(),
+            ReconcileCmlIncidentBondParities(
+                &mut heap,
+                high_valence,
+                0,
+                -1,
+                high_valence_visited,
+                0,
+            )
+            .unwrap(),
             0
         );
-        assert_eq!(heap.slice(high_valence_visited.as_const()).unwrap(), &[20, 0]);
+        assert_eq!(
+            heap.slice(high_valence_visited.as_const()).unwrap(),
+            &[20, 0]
+        );
     }
 
     #[test]
     fn source_port__ichister__reconcileallcmlbondparities__line_4663() {
         let mut heap = SourceHeap::default();
         let empty = heap.allocate(Vec::<inp_ATOM>::new()).unwrap();
-        assert_eq!(ReconcileAllCmlBondParities(&mut heap, empty, 0, 0).unwrap(), 0);
+        assert_eq!(
+            ReconcileAllCmlBondParities(&mut heap, empty, 0, 0).unwrap(),
+            0
+        );
 
         let normal = heap.allocate(stereo_pair(1, 1)).unwrap();
-        assert_eq!(ReconcileAllCmlBondParities(&mut heap, normal, 2, 0).unwrap(), 0);
+        assert_eq!(
+            ReconcileAllCmlBondParities(&mut heap, normal, 2, 0).unwrap(),
+            0
+        );
 
         let mismatch = heap.allocate(stereo_pair(3, 4)).unwrap();
-        assert_eq!(ReconcileAllCmlBondParities(&mut heap, mismatch, 2, 0).unwrap(), 3);
+        assert_eq!(
+            ReconcileAllCmlBondParities(&mut heap, mismatch, 2, 0).unwrap(),
+            3
+        );
 
         let mut metal_pair = stereo_pair(3, 4);
         metal_pair[0].el_number = 25;
         metal_pair[1].el_number = 25;
         let metal = heap.allocate(metal_pair).unwrap();
-        assert_eq!(ReconcileAllCmlBondParities(&mut heap, metal, 2, 1).unwrap(), 0);
+        assert_eq!(
+            ReconcileAllCmlBondParities(&mut heap, metal, 2, 1).unwrap(),
+            0
+        );
 
         let malformed = {
             let mut atom = inp_ATOM::default();
@@ -11388,10 +12234,16 @@ mod tests {
             atom.sb_parity[0] = 1;
             heap.allocate(vec![atom, inp_ATOM::default()]).unwrap()
         };
-        assert_eq!(ReconcileAllCmlBondParities(&mut heap, malformed, 2, 0).unwrap(), 4);
+        assert_eq!(
+            ReconcileAllCmlBondParities(&mut heap, malformed, 2, 0).unwrap(),
+            4
+        );
 
         heap.fail_after_allocations(0);
-        assert_eq!(ReconcileAllCmlBondParities(&mut heap, normal, 2, 0).unwrap(), -1);
+        assert_eq!(
+            ReconcileAllCmlBondParities(&mut heap, normal, 2, 0).unwrap(),
+            -1
+        );
     }
 
     #[test]
@@ -11503,7 +12355,12 @@ mod tests {
         }
 
         fn tetrahedron() -> Vec<inp_ATOM> {
-            let coordinates = [[1.0, 1.0, 1.0], [-1.0, -1.0, 1.0], [-1.0, 1.0, -1.0], [1.0, -1.0, -1.0]];
+            let coordinates = [
+                [1.0, 1.0, 1.0],
+                [-1.0, -1.0, 1.0],
+                [-1.0, 1.0, -1.0],
+                [1.0, -1.0, -1.0],
+            ];
             let mut center = carbon(0.0, 0.0, 0.0, 1);
             center.orig_at_number = 100;
             center.valence = 4;
@@ -11512,7 +12369,12 @@ mod tests {
             center.bond_type[..4].fill(BOND_SINGLE as u8);
             let mut atoms = vec![center];
             for (index, coordinate) in coordinates.into_iter().enumerate() {
-                let mut neighbor = carbon(coordinate[0], coordinate[1], coordinate[2], (index + 2) as u16);
+                let mut neighbor = carbon(
+                    coordinate[0],
+                    coordinate[1],
+                    coordinate[2],
+                    (index + 2) as u16,
+                );
                 neighbor.orig_at_number = 101 + index as u16;
                 atoms.push(neighbor);
             }
@@ -11562,7 +12424,9 @@ mod tests {
             ),
             Ok(-1)
         );
-        let one_atom = empty_heap.allocate_model_storage(vec![inp_ATOM::default()]).unwrap();
+        let one_atom = empty_heap
+            .allocate_model_storage(vec![inp_ATOM::default()])
+            .unwrap();
         assert_eq!(
             set_stereo_parity(
                 &mut CANON_GLOBALS::default(),
@@ -11583,7 +12447,9 @@ mod tests {
         );
 
         let mut clear_heap = SourceHeap::default();
-        let clear_input = clear_heap.allocate_model_storage(vec![inp_ATOM::default()]).unwrap();
+        let clear_input = clear_heap
+            .allocate_model_storage(vec![inp_ATOM::default()])
+            .unwrap();
         let mut dirty = sp_ATOM {
             parity: 11,
             parity2: 12,
@@ -11633,7 +12499,9 @@ mod tests {
         assert_eq!(cleared.z_dir, [14, 15, 16]);
 
         let mut tetrahedral_heap = SourceHeap::default();
-        let tetrahedral_input = tetrahedral_heap.allocate_model_storage(tetrahedron()).unwrap();
+        let tetrahedral_input = tetrahedral_heap
+            .allocate_model_storage(tetrahedron())
+            .unwrap();
         let tetrahedral_output = tetrahedral_heap
             .allocate_model_storage(vec![sp_ATOM::default(); 5])
             .unwrap();
@@ -11657,13 +12525,17 @@ mod tests {
             Ok(1)
         );
         assert_eq!((max_atoms, max_bonds), (1, 0));
-        let tetrahedral_center = &tetrahedral_heap.slice(tetrahedral_output.as_const()).unwrap()[0];
+        let tetrahedral_center = &tetrahedral_heap
+            .slice(tetrahedral_output.as_const())
+            .unwrap()[0];
         assert_eq!(tetrahedral_center.parity, AB_PARITY_EVEN as i8);
         assert_eq!(tetrahedral_center.parity2, AB_PARITY_EVEN as i8);
 
         let mut bond_heap = SourceHeap::default();
         let bond_input = bond_heap.allocate_model_storage(alkene()).unwrap();
-        let bond_output = bond_heap.allocate_model_storage(vec![sp_ATOM::default(); 4]).unwrap();
+        let bond_output = bond_heap
+            .allocate_model_storage(vec![sp_ATOM::default(); 4])
+            .unwrap();
         let (mut max_atoms, mut max_bonds) = (-1, -1);
         assert_eq!(
             set_stereo_parity(
@@ -11690,8 +12562,12 @@ mod tests {
 
         for minimum_ring_size in [0_u64, 2] {
             let mut heap = SourceHeap::default();
-            let input = heap.allocate_model_storage(vec![inp_ATOM::default()]).unwrap();
-            let output = heap.allocate_model_storage(vec![sp_ATOM::default()]).unwrap();
+            let input = heap
+                .allocate_model_storage(vec![inp_ATOM::default()])
+                .unwrap();
+            let output = heap
+                .allocate_model_storage(vec![sp_ATOM::default()])
+                .unwrap();
             heap.trace_source_allocations();
             let mode = minimum_ring_size << REQ_MODE_MIN_SB_RING_SHFT;
             assert_eq!(
@@ -11718,8 +12594,12 @@ mod tests {
 
         let ring_mode = 8_u64 << REQ_MODE_MIN_SB_RING_SHFT;
         let mut ring_heap = SourceHeap::default();
-        let ring_input = ring_heap.allocate_model_storage(vec![inp_ATOM::default()]).unwrap();
-        let ring_output = ring_heap.allocate_model_storage(vec![sp_ATOM::default()]).unwrap();
+        let ring_input = ring_heap
+            .allocate_model_storage(vec![inp_ATOM::default()])
+            .unwrap();
+        let ring_output = ring_heap
+            .allocate_model_storage(vec![sp_ATOM::default()])
+            .unwrap();
         ring_heap.trace_source_allocations();
         assert_eq!(
             set_stereo_parity(
@@ -11744,8 +12624,12 @@ mod tests {
 
         for successful_allocations in 0..4 {
             let mut heap = SourceHeap::default();
-            let input = heap.allocate_model_storage(vec![inp_ATOM::default()]).unwrap();
-            let output = heap.allocate_model_storage(vec![sp_ATOM::default()]).unwrap();
+            let input = heap
+                .allocate_model_storage(vec![inp_ATOM::default()])
+                .unwrap();
+            let output = heap
+                .allocate_model_storage(vec![sp_ATOM::default()])
+                .unwrap();
             heap.fail_after_allocations(successful_allocations);
             assert_eq!(
                 set_stereo_parity(

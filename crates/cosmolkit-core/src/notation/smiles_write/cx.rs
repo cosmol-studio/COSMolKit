@@ -1,6 +1,9 @@
 use super::*;
 
-pub fn get_cx_extensions(molecule: &Molecule, fields: CxSmilesFields) -> Result<String, SmilesWriteError> {
+pub fn get_cx_extensions(
+    molecule: &Molecule,
+    fields: CxSmilesFields,
+) -> Result<String, SmilesWriteError> {
     get_cx_extensions_scoped(molecule, fields, &CxWriteScope::full_molecule(molecule))
 }
 
@@ -50,10 +53,11 @@ pub(super) fn write_cx_smiles_fields(
         }
     }
 
-    let need_values = scope
-        .atom_order
-        .iter()
-        .any(|atom_id| molecule.atoms()[atom_id.index()].prop("molFileValue").is_some());
+    let need_values = scope.atom_order.iter().any(|atom_id| {
+        molecule.atoms()[atom_id.index()]
+            .prop("molFileValue")
+            .is_some()
+    });
     if fields.contains(CxSmilesFields::MOLFILE_VALUES) && need_values {
         let values = write_cx_atom_values(molecule, &scope.atom_order);
         if !values.is_empty() {
@@ -80,15 +84,29 @@ pub(super) fn write_cx_smiles_fields(
     }
 
     if fields.contains(CxSmilesFields::BOND_CFG) {
-        let include_coords = fields.contains(CxSmilesFields::COORDS) && molecule.coordinates_2d().is_some();
-        let bond_cfg =
-            write_cx_bond_config_block(molecule, &scope.atom_order, &scope.bond_order, include_coords, false);
+        let include_coords =
+            fields.contains(CxSmilesFields::COORDS) && molecule.coordinates_2d().is_some();
+        let bond_cfg = write_cx_bond_config_block(
+            molecule,
+            &scope.atom_order,
+            &scope.bond_order,
+            include_coords,
+            false,
+        );
         append_to_cx(&bond_cfg, &mut res);
-        let ringbond_cistrans = write_cx_ringbond_cistrans_block(molecule, &scope.atom_order, &scope.bond_order);
+        let ringbond_cistrans =
+            write_cx_ringbond_cistrans_block(molecule, &scope.atom_order, &scope.bond_order);
         append_to_cx(&ringbond_cistrans, &mut res);
     } else if fields.contains(CxSmilesFields::BOND_ATROPISOMER) {
-        let include_coords = fields.contains(CxSmilesFields::COORDS) && molecule.coordinates_2d().is_some();
-        let bond_cfg = write_cx_bond_config_block(molecule, &scope.atom_order, &scope.bond_order, include_coords, true);
+        let include_coords =
+            fields.contains(CxSmilesFields::COORDS) && molecule.coordinates_2d().is_some();
+        let bond_cfg = write_cx_bond_config_block(
+            molecule,
+            &scope.atom_order,
+            &scope.bond_order,
+            include_coords,
+            true,
+        );
         append_to_cx(&bond_cfg, &mut res);
     }
 
@@ -119,12 +137,14 @@ pub(super) fn write_cx_smiles_fields(
     }
 
     if fields.contains(CxSmilesFields::COORDINATE_BONDS) {
-        let coord_bonds = write_cx_coordinate_bonds(molecule, &scope.atom_order, &scope.bond_order, "C");
+        let coord_bonds =
+            write_cx_coordinate_bonds(molecule, &scope.atom_order, &scope.bond_order, "C");
         append_to_cx(&coord_bonds, &mut res);
     }
 
     if fields.contains(CxSmilesFields::HYDROGEN_BONDS) {
-        let h_bonds = write_cx_coordinate_bonds(molecule, &scope.atom_order, &scope.bond_order, "H");
+        let h_bonds =
+            write_cx_coordinate_bonds(molecule, &scope.atom_order, &scope.bond_order, "H");
         append_to_cx(&h_bonds, &mut res);
     }
 
@@ -147,7 +167,10 @@ pub(super) fn write_cx_smiles_fields(
     Ok(res)
 }
 
-pub(super) fn cx_atom_output_positions(atom_order: &[AtomId], atom_count: usize) -> Vec<Option<usize>> {
+pub(super) fn cx_atom_output_positions(
+    atom_order: &[AtomId],
+    atom_count: usize,
+) -> Vec<Option<usize>> {
     let mut positions = vec![None; atom_count];
     for (position, atom_id) in atom_order.iter().copied().enumerate() {
         if atom_id.index() < positions.len() {
@@ -157,7 +180,10 @@ pub(super) fn cx_atom_output_positions(atom_order: &[AtomId], atom_count: usize)
     positions
 }
 
-pub(super) fn cx_bond_output_positions(bond_order: &[BondId], bond_count: usize) -> Vec<Option<usize>> {
+pub(super) fn cx_bond_output_positions(
+    bond_order: &[BondId],
+    bond_count: usize,
+) -> Vec<Option<usize>> {
     let mut positions = vec![None; bond_count];
     for (position, bond_id) in bond_order.iter().copied().enumerate() {
         if bond_id.index() < positions.len() {
@@ -173,7 +199,13 @@ pub(super) fn zero_small_writer_coord(value: f64) -> f64 {
 
 pub(super) fn quote_atomprop_string(text: &str) -> String {
     text.chars()
-        .map(|ch| if ch == '.' { "&#46;".to_string() } else { ch.to_string() })
+        .map(|ch| {
+            if ch == '.' {
+                "&#46;".to_string()
+            } else {
+                ch.to_string()
+            }
+        })
         .collect()
 }
 
@@ -223,7 +255,10 @@ pub(super) fn write_cx_atom_labels(molecule: &Molecule, atom_order: &[AtomId]) -
                 .and_then(|value| value.parse::<u32>().ok())
                 .is_some_and(|value| value == 1 || value == 2)
         {
-            Some(format!("_AP{}", atom.prop("_fromAttachPoint").unwrap_or_default()))
+            Some(format!(
+                "_AP{}",
+                atom.prop("_fromAttachPoint").unwrap_or_default()
+            ))
         } else {
             atom.prop("atomLabel").map(str::to_string)
         };
@@ -298,7 +333,8 @@ pub(super) fn write_cx_atom_props(molecule: &Molecule, atom_order: &[AtomId]) ->
     let mut result = String::new();
     for (which, atom_id) in atom_order.iter().copied().enumerate() {
         let atom = &molecule.atoms()[atom_id.index()];
-        let is_attachment_point = atom.atomic_number() == 0 && atom.prop("_fromAttachPoint").is_some();
+        let is_attachment_point =
+            atom.atomic_number() == 0 && atom.prop("_fromAttachPoint").is_some();
         for (prop_name, prop_value) in atom.props() {
             // RDKit getPropList(includePrivate=false, includeComputed=false)
             // excludes underscore-prefixed writer-internal/cache props from
@@ -312,7 +348,8 @@ pub(super) fn write_cx_atom_props(molecule: &Molecule, atom_order: &[AtomId]) ->
             if prop_name == "dummyLabel"
                 && (is_attachment_point
                     || prop_value == "*"
-                    || ["Pol", "Mod", "Het", "Any", "A", "Q", "X", "*"].contains(&prop_value.as_str()))
+                    || ["Pol", "Mod", "Het", "Any", "A", "Q", "X", "*"]
+                        .contains(&prop_value.as_str()))
             {
                 continue;
             }
@@ -329,7 +366,11 @@ pub(super) fn write_cx_atom_props(molecule: &Molecule, atom_order: &[AtomId]) ->
     result
 }
 
-pub(super) fn write_cx_enhanced_stereo(molecule: &Molecule, atom_order: &[AtomId], _bond_order: &[BondId]) -> String {
+pub(super) fn write_cx_enhanced_stereo(
+    molecule: &Molecule,
+    atom_order: &[AtomId],
+    _bond_order: &[BondId],
+) -> String {
     use crate::stereo::StereoGroupKind;
     let atom_positions = cx_atom_output_positions(atom_order, molecule.num_atoms());
     let write_ids = assigned_writer_stereo_group_ids(molecule.stereo_groups());
@@ -338,7 +379,11 @@ pub(super) fn write_cx_enhanced_stereo(molecule: &Molecule, atom_order: &[AtomId
         let mut atom_idxs: Vec<usize> = group
             .atoms()
             .iter()
-            .filter_map(|atom| atom_positions.get(atom.index()).and_then(|position| *position))
+            .filter_map(|atom| {
+                atom_positions
+                    .get(atom.index())
+                    .and_then(|position| *position)
+            })
             .collect();
         if atom_idxs.is_empty() {
             continue;
@@ -349,7 +394,10 @@ pub(super) fn write_cx_enhanced_stereo(molecule: &Molecule, atom_order: &[AtomId
             StereoGroupKind::Or => format!("o{}", write_id.unwrap_or(1)),
             StereoGroupKind::And => format!("&{}", write_id.unwrap_or(1)),
         };
-        let members = atom_idxs.into_iter().map(|idx| idx.to_string()).collect::<Vec<_>>();
+        let members = atom_idxs
+            .into_iter()
+            .map(|idx| idx.to_string())
+            .collect::<Vec<_>>();
         parts.push(format!("{prefix}:{}", members.join(",")));
     }
     parts.join(",")
@@ -360,7 +408,10 @@ pub(super) fn assigned_writer_stereo_group_ids(groups: &[crate::StereoGroup]) ->
 
     let mut or_ids = Vec::<u32>::new();
     let mut and_ids = Vec::<u32>::new();
-    let mut assigned = groups.iter().map(crate::StereoGroup::id).collect::<Vec<_>>();
+    let mut assigned = groups
+        .iter()
+        .map(crate::StereoGroup::id)
+        .collect::<Vec<_>>();
     for (idx, group) in groups.iter().enumerate() {
         let Some(id) = assigned[idx] else {
             continue;
@@ -398,7 +449,11 @@ pub(super) fn assigned_writer_stereo_group_ids(groups: &[crate::StereoGroup]) ->
     assigned
 }
 
-pub(super) fn write_cx_sgroups(molecule: &Molecule, atom_order: &[AtomId], bond_order: &[BondId]) -> String {
+pub(super) fn write_cx_sgroups(
+    molecule: &Molecule,
+    atom_order: &[AtomId],
+    bond_order: &[BondId],
+) -> String {
     let data = write_cx_data_sgroups(molecule, atom_order);
     let other = write_cx_non_data_sgroups(molecule, atom_order, bond_order);
     match (data.is_empty(), other.is_empty()) {
@@ -438,14 +493,21 @@ pub(super) fn write_cx_data_sgroups(molecule: &Molecule, atom_order: &[AtomId]) 
     parts.join(",")
 }
 
-pub(super) fn write_cx_non_data_sgroups(molecule: &Molecule, atom_order: &[AtomId], bond_order: &[BondId]) -> String {
+pub(super) fn write_cx_non_data_sgroups(
+    molecule: &Molecule,
+    atom_order: &[AtomId],
+    bond_order: &[BondId],
+) -> String {
     use crate::sgroup::SubstanceGroupKind;
     let atom_positions = cx_atom_output_positions(atom_order, molecule.num_atoms());
     let bond_positions = cx_bond_output_positions(bond_order, molecule.num_bonds());
     let mut parts = Vec::new();
     for sgroup in molecule.substance_groups() {
         if matches!(sgroup.kind(), SubstanceGroupKind::Data)
-            || sgroup.props().get("TYPE").is_some_and(|value| value == "DAT")
+            || sgroup
+                .props()
+                .get("TYPE")
+                .is_some_and(|value| value == "DAT")
             || writer_polymer_sgroup_type_code(sgroup).is_some()
         {
             continue;
@@ -482,7 +544,12 @@ pub(super) fn write_cx_non_data_sgroups(molecule: &Molecule, atom_order: &[AtomI
         if atom_idxs.is_empty() && bond_idxs.is_empty() {
             continue;
         }
-        let mut entry = format!("_S:{}:{}:{}", kind_str, atom_idxs.join(","), bond_idxs.join(","));
+        let mut entry = format!(
+            "_S:{}:{}:{}",
+            kind_str,
+            atom_idxs.join(","),
+            bond_idxs.join(",")
+        );
         if let Some(label) = sgroup.label() {
             entry.push(':');
             entry.push_str(&label.replace(',', "\\,").replace('|', "\\|"));
@@ -525,7 +592,10 @@ pub(super) fn write_cx_coordinate_bonds(
         if !matches {
             continue;
         }
-        let Some(begin_output_idx) = atom_positions.get(bond.begin().index()).and_then(|value| *value) else {
+        let Some(begin_output_idx) = atom_positions
+            .get(bond.begin().index())
+            .and_then(|value| *value)
+        else {
             continue;
         };
         parts.push(format!("{begin_output_idx}.{bond_output_idx}"));
@@ -629,13 +699,19 @@ pub(super) fn write_cx_bond_config_block(
             continue;
         }
 
-        if matches!(direction, BondDirection::BeginDash | BondDirection::BeginWedge) {
+        if matches!(
+            direction,
+            BondDirection::BeginDash | BondDirection::BeginWedge
+        ) {
             for neighbor_bond_id in incident_bonds(molecule, wedge_start_atom) {
                 if neighbor_bond_id == bond_id {
                     continue;
                 }
                 let neighbor = &molecule.bonds()[neighbor_bond_id.index()];
-                if matches!(neighbor.stereo(), BondStereo::AtropCw | BondStereo::AtropCcw) {
+                if matches!(
+                    neighbor.stereo(),
+                    BondStereo::AtropCw | BondStereo::AtropCcw
+                ) {
                     is_an_atropisomer = true;
                     break;
                 }
@@ -676,7 +752,8 @@ pub(super) fn write_cx_bond_config_block(
             continue;
         };
 
-        let Some(Some(begin_atom_order_idx)) = atom_order_positions.get(wedge_start_atom.index()) else {
+        let Some(Some(begin_atom_order_idx)) = atom_order_positions.get(wedge_start_atom.index())
+        else {
             continue;
         };
         w_parts
@@ -703,7 +780,8 @@ pub(super) fn normalize_writer_cx_bond_direction(direction: BondDirection) -> Bo
 }
 
 pub(super) fn writer_parse_molfile_bond_cfg(bond: &Bond) -> Option<u32> {
-    bond.prop("_MolFileBondCfg").and_then(|value| value.parse::<u32>().ok())
+    bond.prop("_MolFileBondCfg")
+        .and_then(|value| value.parse::<u32>().ok())
 }
 
 // BEGIN RDKIT CPP FUNCTION get_ringbond_cistrans_block
@@ -761,7 +839,10 @@ pub(super) fn write_cx_ringbond_cistrans_block(
         if !matches!(bond.order(), BondOrder::Double | BondOrder::Aromatic) {
             continue;
         }
-        if !matches!(bond.stereo(), BondStereo::Any | BondStereo::Cis | BondStereo::Trans) {
+        if !matches!(
+            bond.stereo(),
+            BondStereo::Any | BondStereo::Cis | BondStereo::Trans
+        ) {
             continue;
         }
 
@@ -790,7 +871,9 @@ pub(super) fn write_cx_ringbond_cistrans_block(
                 if neighbor_bond == bond_id {
                     continue;
                 }
-                let Some(neighbor_atom) = bond_other_atom(&molecule.bonds()[neighbor_bond.index()], begin_atom) else {
+                let Some(neighbor_atom) =
+                    bond_other_atom(&molecule.bonds()[neighbor_bond.index()], begin_atom)
+                else {
                     continue;
                 };
                 if neighbor_atom == end_atom || neighbor_atom == stereo_begin {
@@ -817,7 +900,9 @@ pub(super) fn write_cx_ringbond_cistrans_block(
                 if neighbor_bond == bond_id {
                     continue;
                 }
-                let Some(neighbor_atom) = bond_other_atom(&molecule.bonds()[neighbor_bond.index()], end_atom) else {
+                let Some(neighbor_atom) =
+                    bond_other_atom(&molecule.bonds()[neighbor_bond.index()], end_atom)
+                else {
                     continue;
                 };
                 if neighbor_atom == begin_atom || neighbor_atom == stereo_end {
@@ -892,7 +977,10 @@ pub(super) fn write_cx_linknodes_block(molecule: &Molecule, atom_order: &[AtomId
     }
 
     let mut entries: Vec<String> = Vec::new();
-    for record in raw_link_nodes.split('|').filter(|part| !part.trim().is_empty()) {
+    for record in raw_link_nodes
+        .split('|')
+        .filter(|part| !part.trim().is_empty())
+    {
         let values: Vec<usize> = record
             .split_whitespace()
             .filter_map(|part| part.parse::<usize>().ok())
@@ -914,7 +1002,10 @@ pub(super) fn write_cx_linknodes_block(molecule: &Molecule, atom_order: &[AtomId
         let Some(center_atom_idx) = center_atom_one_based.checked_sub(1) else {
             continue;
         };
-        let Some(center_output_idx) = atom_order_positions.get(center_atom_idx).and_then(|position| *position) else {
+        let Some(center_output_idx) = atom_order_positions
+            .get(center_atom_idx)
+            .and_then(|position| *position)
+        else {
             continue;
         };
 
@@ -1006,7 +1097,12 @@ pub(super) fn write_cx_sgroup_polymer_block(
                 crate::sgroup::SGroupConnection::Either => "eu".to_string(),
                 crate::sgroup::SGroupConnection::Unknown(text) => text.to_ascii_lowercase(),
             })
-            .or_else(|| sgroup.props().get("CONNECT").map(|value| value.to_ascii_lowercase()))
+            .or_else(|| {
+                sgroup
+                    .props()
+                    .get("CONNECT")
+                    .map(|value| value.to_ascii_lowercase())
+            })
             .unwrap_or_default();
 
         let head_crossings = writer_parse_sgroup_crossings(sgroup, "_headCrossings")
@@ -1055,13 +1151,20 @@ pub(super) fn write_cx_sgroup_polymer_block(
     entries.join(",")
 }
 
-pub(super) fn write_cx_polymer_sgroups(molecule: &Molecule, atom_order: &[AtomId], bond_order: &[BondId]) -> String {
+pub(super) fn write_cx_polymer_sgroups(
+    molecule: &Molecule,
+    atom_order: &[AtomId],
+    bond_order: &[BondId],
+) -> String {
     write_cx_sgroup_polymer_block(molecule, atom_order, bond_order)
 }
 
 pub(super) fn writer_is_data_sgroup(sgroup: &crate::SubstanceGroup) -> bool {
     matches!(sgroup.kind(), crate::sgroup::SubstanceGroupKind::Data)
-        || sgroup.props().get("TYPE").is_some_and(|value| value == "DAT")
+        || sgroup
+            .props()
+            .get("TYPE")
+            .is_some_and(|value| value == "DAT")
 }
 
 pub(super) fn writer_data_sgroup_field_name(sgroup: &crate::SubstanceGroup) -> String {
@@ -1129,7 +1232,12 @@ pub(super) fn writer_polymer_sgroup_type_code(sgroup: &crate::SubstanceGroup) ->
             let subtype = sgroup
                 .subtype()
                 .map(|value| value.to_ascii_uppercase())
-                .or_else(|| sgroup.props().get("SUBTYPE").map(|value| value.to_ascii_uppercase()));
+                .or_else(|| {
+                    sgroup
+                        .props()
+                        .get("SUBTYPE")
+                        .map(|value| value.to_ascii_uppercase())
+                });
             match subtype.as_deref() {
                 Some("ALT") => "alt",
                 Some("RAN") => "ran",
@@ -1143,14 +1251,21 @@ pub(super) fn writer_polymer_sgroup_type_code(sgroup: &crate::SubstanceGroup) ->
         crate::sgroup::SubstanceGroupKind::Formulation => "f",
         crate::sgroup::SubstanceGroupKind::AnyPolymer => "any",
         crate::sgroup::SubstanceGroupKind::Graft => "grf",
-        crate::sgroup::SubstanceGroupKind::Generic(value) if value.eq_ignore_ascii_case("GEN") => "gen",
-        crate::sgroup::SubstanceGroupKind::Generic(value) if value.eq_ignore_ascii_case("COM") => "c",
+        crate::sgroup::SubstanceGroupKind::Generic(value) if value.eq_ignore_ascii_case("GEN") => {
+            "gen"
+        }
+        crate::sgroup::SubstanceGroupKind::Generic(value) if value.eq_ignore_ascii_case("COM") => {
+            "c"
+        }
         _ => return None,
     };
     Some(code.to_string())
 }
 
-pub(super) fn writer_parse_sgroup_crossings(sgroup: &crate::SubstanceGroup, key: &str) -> Option<Vec<usize>> {
+pub(super) fn writer_parse_sgroup_crossings(
+    sgroup: &crate::SubstanceGroup,
+    key: &str,
+) -> Option<Vec<usize>> {
     let raw = sgroup.props().get(key)?;
     let parsed: Vec<usize> = raw
         .split(',')
@@ -1176,8 +1291,13 @@ pub(super) fn write_cx_sgroup_hierarchy_block(
     if sgroups.is_empty() {
         return String::new();
     }
-    let output_index_by_sgroup_id =
-        writer_cx_hierarchy_output_indices(molecule, atom_order, bond_order, include_sgroups, include_polymer);
+    let output_index_by_sgroup_id = writer_cx_hierarchy_output_indices(
+        molecule,
+        atom_order,
+        bond_order,
+        include_sgroups,
+        include_polymer,
+    );
 
     if output_index_by_sgroup_id.is_empty() {
         return String::new();
@@ -1195,7 +1315,10 @@ pub(super) fn write_cx_sgroup_hierarchy_block(
         let Some(parent_output_idx) = output_index_by_sgroup_id.get(&parent_id).copied() else {
             continue;
         };
-        accum.entry(parent_output_idx).or_default().push(child_output_idx);
+        accum
+            .entry(parent_output_idx)
+            .or_default()
+            .push(child_output_idx);
     }
 
     if accum.is_empty() {
@@ -1236,11 +1359,15 @@ pub(super) fn writer_cx_hierarchy_output_indices(
 
     if include_sgroups {
         for (fallback_idx, sgroup) in molecule.substance_groups().iter().enumerate() {
-            if !writer_is_data_sgroup(sgroup) || !sgroup.atoms().iter().any(|atom| atom_set.contains(atom)) {
+            if !writer_is_data_sgroup(sgroup)
+                || !sgroup.atoms().iter().any(|atom| atom_set.contains(atom))
+            {
                 continue;
             }
             let sgroup_id = writer_sgroup_index_value(sgroup, fallback_idx);
-            if let std::collections::btree_map::Entry::Vacant(entry) = output_index_by_sgroup_id.entry(sgroup_id) {
+            if let std::collections::btree_map::Entry::Vacant(entry) =
+                output_index_by_sgroup_id.entry(sgroup_id)
+            {
                 entry.insert(next_output_index);
                 next_output_index += 1;
             }
@@ -1254,7 +1381,9 @@ pub(super) fn writer_cx_hierarchy_output_indices(
                 continue;
             }
             let sgroup_id = writer_sgroup_index_value(sgroup, fallback_idx);
-            if let std::collections::btree_map::Entry::Vacant(entry) = output_index_by_sgroup_id.entry(sgroup_id) {
+            if let std::collections::btree_map::Entry::Vacant(entry) =
+                output_index_by_sgroup_id.entry(sgroup_id)
+            {
                 entry.insert(next_output_index);
                 next_output_index += 1;
             }
@@ -1269,7 +1398,9 @@ pub(super) fn writer_cx_hierarchy_output_indices(
                 continue;
             }
             let sgroup_id = writer_sgroup_index_value(sgroup, fallback_idx);
-            if let std::collections::btree_map::Entry::Vacant(entry) = output_index_by_sgroup_id.entry(sgroup_id) {
+            if let std::collections::btree_map::Entry::Vacant(entry) =
+                output_index_by_sgroup_id.entry(sgroup_id)
+            {
                 entry.insert(next_output_index);
                 next_output_index += 1;
             }
@@ -1279,7 +1410,10 @@ pub(super) fn writer_cx_hierarchy_output_indices(
     output_index_by_sgroup_id
 }
 
-pub(super) fn writer_sgroup_index_value(sgroup: &crate::SubstanceGroup, _fallback_idx: usize) -> usize {
+pub(super) fn writer_sgroup_index_value(
+    sgroup: &crate::SubstanceGroup,
+    _fallback_idx: usize,
+) -> usize {
     sgroup
         .props()
         .get("index")

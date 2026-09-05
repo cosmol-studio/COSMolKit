@@ -2,7 +2,9 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 
-use cosmolkit_core::{MmffMolProperties, Molecule, mmff_has_all_molecule_params, uff_has_all_molecule_params};
+use cosmolkit_core::{
+    MmffMolProperties, Molecule, mmff_has_all_molecule_params, uff_has_all_molecule_params,
+};
 use serde::Deserialize;
 
 mod common;
@@ -49,41 +51,58 @@ fn load_golden() -> Vec<ForcefieldCoverageRecord> {
         .lines()
         .enumerate()
         .map(|(idx, line)| {
-            let line = line.unwrap_or_else(|err| panic!("failed to read {} line {}: {err}", path.display(), idx + 1));
-            serde_json::from_str(&line)
-                .unwrap_or_else(|err| panic!("failed to parse {} line {}: {err}", path.display(), idx + 1))
+            let line = line.unwrap_or_else(|err| {
+                panic!("failed to read {} line {}: {err}", path.display(), idx + 1)
+            });
+            serde_json::from_str(&line).unwrap_or_else(|err| {
+                panic!("failed to parse {} line {}: {err}", path.display(), idx + 1)
+            })
         })
         .collect()
 }
 
-fn assert_uff_coverage(row: usize, smiles: &str, mol: &Molecule, expected: &ForcefieldResult, surface: &str) {
+fn assert_uff_coverage(
+    row: usize,
+    smiles: &str,
+    mol: &Molecule,
+    expected: &ForcefieldResult,
+    surface: &str,
+) {
     assert!(
         expected.ok,
         "row {row} ({smiles}) has RDKit {surface} UFF error: {:?}",
         expected.error
     );
-    let expected_has_all = expected
-        .has_all
-        .unwrap_or_else(|| panic!("row {row} ({smiles}) has RDKit {surface} UFF result without has_all"));
-    let actual_has_all = uff_has_all_molecule_params(mol)
-        .unwrap_or_else(|err| panic!("row {row} ({smiles}) COSMolKit {surface} UFF coverage errored: {err}"));
+    let expected_has_all = expected.has_all.unwrap_or_else(|| {
+        panic!("row {row} ({smiles}) has RDKit {surface} UFF result without has_all")
+    });
+    let actual_has_all = uff_has_all_molecule_params(mol).unwrap_or_else(|err| {
+        panic!("row {row} ({smiles}) COSMolKit {surface} UFF coverage errored: {err}")
+    });
     assert_eq!(
         actual_has_all, expected_has_all,
         "row {row} ({smiles}) {surface} UFF parameter coverage mismatch"
     );
 }
 
-fn assert_mmff_coverage(row: usize, smiles: &str, mol: &Molecule, expected: &ForcefieldResult, surface: &str) {
+fn assert_mmff_coverage(
+    row: usize,
+    smiles: &str,
+    mol: &Molecule,
+    expected: &ForcefieldResult,
+    surface: &str,
+) {
     assert!(
         expected.ok,
         "row {row} ({smiles}) has RDKit {surface} MMFF error: {:?}",
         expected.error
     );
-    let expected_has_all = expected
-        .has_all
-        .unwrap_or_else(|| panic!("row {row} ({smiles}) has RDKit {surface} MMFF result without has_all"));
-    let actual_has_all = mmff_has_all_molecule_params(mol)
-        .unwrap_or_else(|err| panic!("row {row} ({smiles}) COSMolKit {surface} MMFF coverage errored: {err}"));
+    let expected_has_all = expected.has_all.unwrap_or_else(|| {
+        panic!("row {row} ({smiles}) has RDKit {surface} MMFF result without has_all")
+    });
+    let actual_has_all = mmff_has_all_molecule_params(mol).unwrap_or_else(|err| {
+        panic!("row {row} ({smiles}) COSMolKit {surface} MMFF coverage errored: {err}")
+    });
     assert_eq!(
         actual_has_all, expected_has_all,
         "row {row} ({smiles}) {surface} MMFF parameter coverage mismatch"
@@ -99,12 +118,15 @@ fn assert_mmff_coverage(row: usize, smiles: &str, mol: &Molecule, expected: &For
         return;
     };
 
-    let props = MmffMolProperties::new(mol, "MMFF94", 0)
-        .unwrap_or_else(|err| panic!("row {row} ({smiles}) COSMolKit {surface} MMFF properties errored: {err}"));
+    let props = MmffMolProperties::new(mol, "MMFF94", 0).unwrap_or_else(|err| {
+        panic!("row {row} ({smiles}) COSMolKit {surface} MMFF properties errored: {err}")
+    });
     let actual_atom_types = (0..mol.num_atoms())
         .map(|idx| {
             props.get_mmff_atom_type(idx).unwrap_or_else(|err| {
-                panic!("row {row} ({smiles}) COSMolKit {surface} MMFF atom {idx} type errored: {err}")
+                panic!(
+                    "row {row} ({smiles}) COSMolKit {surface} MMFF atom {idx} type errored: {err}"
+                )
             })
         })
         .collect::<Vec<_>>();
@@ -113,14 +135,12 @@ fn assert_mmff_coverage(row: usize, smiles: &str, mol: &Molecule, expected: &For
         "row {row} ({smiles}) {surface} MMFF atom type mismatch"
     );
 
-    let expected_formal = expected
-        .formal_charges
-        .as_ref()
-        .unwrap_or_else(|| panic!("row {row} ({smiles}) RDKit {surface} MMFF result has no formal charges"));
-    let expected_partial = expected
-        .partial_charges
-        .as_ref()
-        .unwrap_or_else(|| panic!("row {row} ({smiles}) RDKit {surface} MMFF result has no partial charges"));
+    let expected_formal = expected.formal_charges.as_ref().unwrap_or_else(|| {
+        panic!("row {row} ({smiles}) RDKit {surface} MMFF result has no formal charges")
+    });
+    let expected_partial = expected.partial_charges.as_ref().unwrap_or_else(|| {
+        panic!("row {row} ({smiles}) RDKit {surface} MMFF result has no partial charges")
+    });
     assert_eq!(expected_formal.len(), mol.num_atoms());
     assert_eq!(expected_partial.len(), mol.num_atoms());
     for idx in 0..mol.num_atoms() {
@@ -154,7 +174,9 @@ fn forcefield_coverage_matches_rdkit_for_every_active_profile_row() {
         .ok()
         .map(|value| {
             value.parse::<usize>().unwrap_or_else(|err| {
-                panic!("COSMOLKIT_FORCEFIELD_COVERAGE_SHARD_COUNT must be a positive integer: {err}")
+                panic!(
+                    "COSMOLKIT_FORCEFIELD_COVERAGE_SHARD_COUNT must be a positive integer: {err}"
+                )
             })
         })
         .unwrap_or(1);
@@ -192,8 +214,12 @@ fn forcefield_coverage_matches_rdkit_for_every_active_profile_row() {
             continue;
         }
 
-        let mol = Molecule::from_smiles(&record.smiles)
-            .unwrap_or_else(|err| panic!("row {row} ({}) COSMolKit parse errored: {err}", record.smiles));
+        let mol = Molecule::from_smiles(&record.smiles).unwrap_or_else(|err| {
+            panic!(
+                "row {row} ({}) COSMolKit parse errored: {err}",
+                record.smiles
+            )
+        });
         assert_uff_coverage(row, &record.smiles, &mol, &record.uff, "implicit-H");
         assert_mmff_coverage(row, &record.smiles, &mol, &record.mmff, "implicit-H");
 

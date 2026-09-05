@@ -71,7 +71,11 @@ impl StereoGroup {
         self.atoms.is_empty() && self.bonds.is_empty()
     }
 
-    pub fn remapped(&self, atom_map: &[Option<AtomId>], bond_map: &[Option<BondId>]) -> Option<Self> {
+    pub fn remapped(
+        &self,
+        atom_map: &[Option<AtomId>],
+        bond_map: &[Option<BondId>],
+    ) -> Option<Self> {
         let atoms: Option<Vec<_>> = self
             .atoms
             .iter()

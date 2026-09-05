@@ -8,7 +8,7 @@ pub use cosmolkit_types::{BondDirection, BondOrder, BondStereo};
 
 /// Bond construction payload. Builders assign `BondId`.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct BondSpec<Q = ()> {
+pub struct BondSpec {
     begin: AtomId,
     end: AtomId,
     order: BondOrder,
@@ -18,12 +18,11 @@ pub struct BondSpec<Q = ()> {
     stereo: BondStereo,
     stereo_atoms: Option<[AtomId; 2]>,
     unknown_stereo: bool,
-    query: Option<Q>,
     props: BTreeMap<String, String>,
     computed_props: BTreeSet<String>,
 }
 
-impl<Q: Clone> BondSpec<Q> {
+impl BondSpec {
     #[must_use]
     pub const fn new(begin: AtomId, end: AtomId, order: BondOrder) -> Self {
         Self {
@@ -36,7 +35,6 @@ impl<Q: Clone> BondSpec<Q> {
             stereo: BondStereo::None,
             stereo_atoms: None,
             unknown_stereo: false,
-            query: None,
             props: BTreeMap::new(),
             computed_props: BTreeSet::new(),
         }
@@ -136,23 +134,6 @@ impl<Q: Clone> BondSpec<Q> {
     }
 
     #[must_use]
-    pub fn with_query(mut self, query: Q) -> Self {
-        self.query = Some(query);
-        self
-    }
-
-    #[must_use]
-    pub fn without_query(mut self) -> Self {
-        self.query = None;
-        self
-    }
-
-    #[must_use]
-    pub const fn query(&self) -> Option<&Q> {
-        self.query.as_ref()
-    }
-
-    #[must_use]
     pub fn with_prop(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
         self.props.insert(key.into(), value.into());
         self
@@ -181,7 +162,12 @@ impl<Q: Clone> BondSpec<Q> {
         self.computed_props.contains(key)
     }
 
-    pub fn remapped_endpoints(&self, begin: AtomId, end: AtomId, stereo_atoms: Option<[AtomId; 2]>) -> Self {
+    pub fn remapped_endpoints(
+        &self,
+        begin: AtomId,
+        end: AtomId,
+        stereo_atoms: Option<[AtomId; 2]>,
+    ) -> Self {
         let mut spec = self.clone();
         spec.begin = begin;
         spec.end = end;
@@ -192,7 +178,7 @@ impl<Q: Clone> BondSpec<Q> {
 
 /// Immutable bond record owned by `Molecule`.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Bond<Q = ()> {
+pub struct Bond {
     id: BondId,
     begin: AtomId,
     end: AtomId,
@@ -203,13 +189,12 @@ pub struct Bond<Q = ()> {
     stereo: BondStereo,
     stereo_atoms: Option<[AtomId; 2]>,
     unknown_stereo: bool,
-    query: Option<Q>,
     props: BTreeMap<String, String>,
     computed_props: BTreeSet<String>,
 }
 
-impl<Q: Clone> Bond<Q> {
-    pub fn from_spec(id: BondId, spec: BondSpec<Q>) -> Self {
+impl Bond {
+    pub fn from_spec(id: BondId, spec: BondSpec) -> Self {
         Self {
             id,
             begin: spec.begin,
@@ -221,14 +206,19 @@ impl<Q: Clone> Bond<Q> {
             stereo: spec.stereo,
             stereo_atoms: spec.stereo_atoms,
             unknown_stereo: spec.unknown_stereo,
-            query: spec.query,
             props: spec.props,
             computed_props: spec.computed_props,
         }
     }
 
     #[allow(dead_code)]
-    pub fn remapped(mut self, id: BondId, begin: AtomId, end: AtomId, stereo_atoms: Option<[AtomId; 2]>) -> Self {
+    pub fn remapped(
+        mut self,
+        id: BondId,
+        begin: AtomId,
+        end: AtomId,
+        stereo_atoms: Option<[AtomId; 2]>,
+    ) -> Self {
         self.id = id;
         self.begin = begin;
         self.end = end;
@@ -291,11 +281,6 @@ impl<Q: Clone> Bond<Q> {
     }
 
     #[must_use]
-    pub const fn query(&self) -> Option<&Q> {
-        self.query.as_ref()
-    }
-
-    #[must_use]
     pub fn props(&self) -> &BTreeMap<String, String> {
         &self.props
     }
@@ -314,6 +299,13 @@ impl<Q: Clone> Bond<Q> {
     #[must_use]
     pub fn computed_prop_names(&self) -> &BTreeSet<String> {
         &self.computed_props
+    }
+
+    /// Returns the modern CIP descriptor persisted on this bond, if present.
+    pub fn cip_descriptor(
+        &self,
+    ) -> Result<Option<crate::CipDescriptor>, crate::CipDescriptorError> {
+        crate::cip::descriptor_from_property(self.prop("_CIPCode"))
     }
 
     #[allow(dead_code)]
@@ -368,11 +360,6 @@ impl<Q: Clone> Bond<Q> {
     #[allow(dead_code)]
     pub fn set_unknown_stereo(&mut self, unknown_stereo: bool) {
         self.unknown_stereo = unknown_stereo;
-    }
-
-    #[allow(dead_code)]
-    pub fn set_query(&mut self, query: Option<Q>) {
-        self.query = query;
     }
 
     #[allow(dead_code)]

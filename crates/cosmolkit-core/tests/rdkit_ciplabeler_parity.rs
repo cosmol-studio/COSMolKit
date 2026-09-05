@@ -4,7 +4,8 @@ use std::{
 };
 
 use cosmolkit_core::{
-    AtomId, BondId, BondStereo, CipLabelOptions, Molecule, OperationError, SdfReadParams, SmilesParseParams,
+    AtomId, BondId, BondStereo, CipLabelOptions, Molecule, OperationError, SdfReadParams,
+    SmilesParseParams,
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -105,10 +106,20 @@ fn load_records(profile: &str) -> Vec<OracleRecord> {
         .lines()
         .enumerate()
         .map(|(line_index, line)| {
-            let line = line
-                .unwrap_or_else(|error| panic!("failed to read {} line {}: {error}", path.display(), line_index + 1));
-            serde_json::from_str(&line)
-                .unwrap_or_else(|error| panic!("failed to parse {} line {}: {error}", path.display(), line_index + 1))
+            let line = line.unwrap_or_else(|error| {
+                panic!(
+                    "failed to read {} line {}: {error}",
+                    path.display(),
+                    line_index + 1
+                )
+            });
+            serde_json::from_str(&line).unwrap_or_else(|error| {
+                panic!(
+                    "failed to parse {} line {}: {error}",
+                    path.display(),
+                    line_index + 1
+                )
+            })
         })
         .collect()
 }
@@ -122,22 +133,22 @@ fn property_state(value: Option<&str>, computed: bool, value_type: &'static str)
             computed: false,
         };
     };
-    let value = match value_type {
-        "boolean" => json!(match value {
-            "0" => false,
-            "1" => true,
-            other => panic!("invalid stored boolean property `{other}`"),
-        }),
-        "unsigned" => json!(
-            value
-                .parse::<u64>()
-                .unwrap_or_else(|error| panic!("invalid stored unsigned property `{value}`: {error}"))
-        ),
-        "unsigned_vector" => serde_json::from_str(value)
-            .unwrap_or_else(|error| panic!("invalid stored unsigned-vector property `{value}`: {error}")),
-        "string" => json!(value),
-        other => panic!("unsupported oracle property type `{other}`"),
-    };
+    let value =
+        match value_type {
+            "boolean" => json!(match value {
+                "0" => false,
+                "1" => true,
+                other => panic!("invalid stored boolean property `{other}`"),
+            }),
+            "unsigned" => json!(value.parse::<u64>().unwrap_or_else(|error| panic!(
+                "invalid stored unsigned property `{value}`: {error}"
+            ))),
+            "unsigned_vector" => serde_json::from_str(value).unwrap_or_else(|error| {
+                panic!("invalid stored unsigned-vector property `{value}`: {error}")
+            }),
+            "string" => json!(value),
+            other => panic!("unsupported oracle property type `{other}`"),
+        };
     PropertyState {
         present: true,
         value,
@@ -174,13 +185,21 @@ fn snapshot(molecule: &Molecule) -> ObservableState {
             .map(|atom| AtomState {
                 index: atom.id().index(),
                 chiral_tag: atom.chiral_tag().rdkit_name().to_owned(),
-                cip_code: property_state(atom.prop("_CIPCode"), atom.is_prop_computed("_CIPCode"), "string"),
+                cip_code: property_state(
+                    atom.prop("_CIPCode"),
+                    atom.is_prop_computed("_CIPCode"),
+                    "string",
+                ),
                 cip_neighbor_order: property_state(
                     atom.prop("_CIPNeighborOrder"),
                     atom.is_prop_computed("_CIPNeighborOrder"),
                     "unsigned_vector",
                 ),
-                cip_rank: property_state(atom.prop("_CIPRank"), atom.is_prop_computed("_CIPRank"), "unsigned"),
+                cip_rank: property_state(
+                    atom.prop("_CIPRank"),
+                    atom.is_prop_computed("_CIPRank"),
+                    "unsigned",
+                ),
             })
             .collect(),
         bonds: molecule
@@ -194,7 +213,11 @@ fn snapshot(molecule: &Molecule) -> ObservableState {
                 stereo_atoms_u32: bond.stereo_atoms().map_or_else(Vec::new, |atoms| {
                     atoms.into_iter().map(|atom| atom.index() as u64).collect()
                 }),
-                cip_code: property_state(bond.prop("_CIPCode"), bond.is_prop_computed("_CIPCode"), "string"),
+                cip_code: property_state(
+                    bond.prop("_CIPCode"),
+                    bond.is_prop_computed("_CIPCode"),
+                    "string",
+                ),
                 cip_neighbor_order: property_state(
                     bond.prop("_CIPNeighborOrder"),
                     bond.is_prop_computed("_CIPNeighborOrder"),
@@ -233,7 +256,8 @@ fn parse_source(source: &OracleSource) -> Result<Molecule, String> {
 }
 
 fn options_for(call: &OracleCall) -> CipLabelOptions {
-    let mut options = CipLabelOptions::default().with_max_recursive_iterations(call.max_recursive_iterations);
+    let mut options =
+        CipLabelOptions::default().with_max_recursive_iterations(call.max_recursive_iterations);
     if let Some(indices) = &call.atoms_to_label {
         options = options.with_atoms(indices.iter().copied().map(AtomId::new));
     }
@@ -286,7 +310,11 @@ fn read_smiles(profile: &str) -> Option<Vec<String>> {
 
 fn assert_profile(profile: &str, expected_count: usize) {
     let records = load_records(profile);
-    assert_eq!(records.len(), expected_count, "{profile} record count changed");
+    assert_eq!(
+        records.len(),
+        expected_count,
+        "{profile} record count changed"
+    );
     let corpus = read_smiles(profile);
     if let Some(corpus) = &corpus {
         assert_eq!(records.len(), corpus.len(), "{profile} corpus coverage");
@@ -322,15 +350,22 @@ fn assert_profile(profile: &str, expected_count: usize) {
             other => panic!("{} has invalid parse status `{other}`", record.case_id),
         }
 
-        let mut molecule = parsed.unwrap_or_else(|error| panic!("{} failed to parse: {error}", record.case_id));
+        let mut molecule =
+            parsed.unwrap_or_else(|error| panic!("{} failed to parse: {error}", record.case_id));
         let initial_state = record
             .initial_state
             .as_ref()
             .unwrap_or_else(|| panic!("{} has no initial state", record.case_id));
-        assert_state(&snapshot(&molecule), initial_state, &record.case_id, "parse");
+        assert_state(
+            &snapshot(&molecule),
+            initial_state,
+            &record.case_id,
+            "parse",
+        );
 
         for (call_index, call) in record.calls.iter().enumerate() {
-            let actual_result = call_result(molecule.assign_cip_labels_with_options_(options_for(call)));
+            let actual_result =
+                call_result(molecule.assign_cip_labels_with_options_(options_for(call)));
             assert_eq!(
                 actual_result, call.result,
                 "modern CIP result mismatch for `{}` call {}",

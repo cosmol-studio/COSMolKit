@@ -498,12 +498,12 @@ impl<'a> BioOpParts<'a> {
                 message: "strong operation did not record a BioStructureMapping",
             });
         }
-        crate::bio_invariants::enforce_bio_structure_invariants(&self.working).map_err(|message| {
-            BioOperationError::InvariantViolation {
+        crate::bio_invariants::enforce_bio_structure_invariants(&self.working).map_err(
+            |message| BioOperationError::InvariantViolation {
                 operation: self.spec,
                 message,
-            }
-        })?;
+            },
+        )?;
         Ok(self.working)
     }
 
@@ -805,7 +805,8 @@ mod tests {
     fn remove_waters_preserves_source_invariants() {
         let s = make_structure_with_waters();
         let result = s.without_waters().unwrap();
-        crate::bio_invariants::enforce_bio_structure_invariants(&result).expect("result must satisfy invariants");
+        crate::bio_invariants::enforce_bio_structure_invariants(&result)
+            .expect("result must satisfy invariants");
     }
 
     #[test]

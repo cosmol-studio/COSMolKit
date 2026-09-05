@@ -138,7 +138,12 @@ impl TorsionAngleContribM6 {
         // RDKit✔️✔️:                    (idx2 != idx3) && (idx2 != idx4) && (idx3 != idx4),
         // RDKit✔️✔️:                "degenerate points");
         assert!(
-            idx1 != idx2 && idx1 != idx3 && idx1 != idx4 && idx2 != idx3 && idx2 != idx4 && idx3 != idx4,
+            idx1 != idx2
+                && idx1 != idx3
+                && idx1 != idx4
+                && idx2 != idx3
+                && idx2 != idx4
+                && idx3 != idx4,
             "degenerate points"
         );
         // RDKit✔️✔️:   URANGE_CHECK(idx1, owner->positions().size());
@@ -310,7 +315,11 @@ impl TorsionAngleContribM6 {
         // RDKit✔️✔️:   double sinPhiSq = 1.0 - cosPhi * cosPhi;
         let sin_phi_sq = 1.0 - cos_phi * cos_phi;
         // RDKit✔️✔️:   double sinPhi = ((sinPhiSq > 0.0) ? sqrt(sinPhiSq) : 0.0);
-        let sin_phi = if sin_phi_sq > 0.0 { sin_phi_sq.sqrt() } else { 0.0 };
+        let sin_phi = if sin_phi_sq > 0.0 {
+            sin_phi_sq.sqrt()
+        } else {
+            0.0
+        };
         // RDKit✔️✔️:   double cosPhi2 = cosPhi * cosPhi;
         let cos_phi2 = cos_phi * cos_phi;
         // RDKit✔️✔️:   double cosPhi3 = cosPhi * cosPhi2;
@@ -323,7 +332,10 @@ impl TorsionAngleContribM6 {
         // RDKit✔️✔️:   double dE_dPhi =
         let d_e_d_phi = -self.force_constants[0] * f64::from(self.signs[0]) * sin_phi
             - 2.0 * self.force_constants[1] * f64::from(self.signs[1]) * (2.0 * cos_phi * sin_phi)
-            - 3.0 * self.force_constants[2] * f64::from(self.signs[2]) * (4.0 * cos_phi2 * sin_phi - sin_phi)
+            - 3.0
+                * self.force_constants[2]
+                * f64::from(self.signs[2])
+                * (4.0 * cos_phi2 * sin_phi - sin_phi)
             - 4.0
                 * self.force_constants[3]
                 * f64::from(self.signs[3])
@@ -415,7 +427,8 @@ mod tests {
         let force_constants = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
         let signs = vec![1, -1, 1, -1, 1, -1];
 
-        let contrib = TorsionAngleContribM6::new(&ff, 0, 1, 2, 3, force_constants.clone(), signs.clone());
+        let contrib =
+            TorsionAngleContribM6::new(&ff, 0, 1, 2, 3, force_constants.clone(), signs.clone());
 
         assert_eq!(contrib.owner(), &ff as *const ForceField);
         assert_eq!(contrib.atom_indices(), [0, 1, 2, 3]);
@@ -484,7 +497,8 @@ mod tests {
         let pos = flattened_positions(&ff);
         let force_constants = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
         let signs = vec![1, -1, 1, -1, 1, -1];
-        let contrib = TorsionAngleContribM6::new(&ff, 0, 1, 2, 3, force_constants.clone(), signs.clone());
+        let contrib =
+            TorsionAngleContribM6::new(&ff, 0, 1, 2, 3, force_constants.clone(), signs.clone());
 
         let energy = contrib.get_energy(&pos);
         let cos_phi = compute_dihedral_from_flat(&pos, 0, 1, 2, 3, false).cos_phi;
@@ -541,7 +555,8 @@ mod tests {
         let pos = flattened_positions(&ff);
         let force_constants = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
         let signs = vec![1, -1, 1, -1, 1, -1];
-        let contrib = TorsionAngleContribM6::new(&ff, 0, 1, 2, 3, force_constants.clone(), signs.clone());
+        let contrib =
+            TorsionAngleContribM6::new(&ff, 0, 1, 2, 3, force_constants.clone(), signs.clone());
         let mut grad = vec![0.0; pos.len()];
         let mut contribs = crate::chemistry::forcefield::crystalff::TorsionAngleContribs::new(&ff);
         contribs.add_contrib(0, 1, 2, 3, force_constants, signs);
@@ -561,8 +576,10 @@ mod tests {
         let pos = flattened_positions(&ff);
         let force_constants = vec![1.25, 2.5, 3.75, 4.5, 5.25, 6.0];
         let signs = vec![1, -1, 1, -1, 1, -1];
-        let contrib = TorsionAngleContribM6::new(&ff, 0, 1, 2, 3, force_constants.clone(), signs.clone());
-        let mut collection = crate::chemistry::forcefield::crystalff::TorsionAngleContribs::new(&ff);
+        let contrib =
+            TorsionAngleContribM6::new(&ff, 0, 1, 2, 3, force_constants.clone(), signs.clone());
+        let mut collection =
+            crate::chemistry::forcefield::crystalff::TorsionAngleContribs::new(&ff);
         collection.add_contrib(0, 1, 2, 3, force_constants, signs);
         let mut contrib_grad = vec![0.0; pos.len()];
         let mut collection_grad = vec![0.0; pos.len()];

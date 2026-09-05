@@ -20,7 +20,12 @@ fn assert_record(record: GoldenRecord) {
     match parse_record(&record) {
         Ok(molecule) => {
             assert!(expected_parse, "row {} unexpectedly parsed", record.row);
-            assert_eq!(record.branches.len(), 2, "row {} profile coverage", record.row);
+            assert_eq!(
+                record.branches.len(),
+                2,
+                "row {} profile coverage",
+                record.row
+            );
             for (name, branch) in &record.branches {
                 assert_branch(&record, name, branch, &molecule);
             }
@@ -37,10 +42,9 @@ fn assert_record(record: GoldenRecord) {
             );
             assert_endpoint_input(record.row, "PCS paired input", input_tautomer);
 
-            let permutation = record
-                .atom_order_permutation
-                .as_ref()
-                .unwrap_or_else(|| panic!("row {} missing atom-order permutation evidence", record.row));
+            let permutation = record.atom_order_permutation.as_ref().unwrap_or_else(|| {
+                panic!("row {} missing atom-order permutation evidence", record.row)
+            });
             assert_endpoint_input(record.row, "atom-order permutation", permutation);
         }
         Err(error) => {
@@ -55,8 +59,10 @@ fn assert_record(record: GoldenRecord) {
 }
 
 fn assert_profile(profile: &str, expected_records: usize) {
-    let path = parity_data::expected_path_for_profile("tautomer", "rdkit", profile, "tautomer.jsonl");
-    let file = File::open(&path).unwrap_or_else(|error| panic!("failed to open {}: {error}", path.display()));
+    let path =
+        parity_data::expected_path_for_profile("tautomer", "rdkit", profile, "tautomer.jsonl");
+    let file = File::open(&path)
+        .unwrap_or_else(|error| panic!("failed to open {}: {error}", path.display()));
     let observed = AtomicUsize::new(0);
     let first_failure = Mutex::new(None::<(usize, String)>);
     BufReader::new(file)
@@ -67,10 +73,20 @@ fn assert_profile(profile: &str, expected_records: usize) {
             if first_failure.lock().unwrap().is_some() {
                 return;
             }
-            let line =
-                line.unwrap_or_else(|error| panic!("failed to read {} line {}: {error}", path.display(), index + 1));
-            let record = serde_json::from_str::<GoldenRecord>(&line)
-                .unwrap_or_else(|error| panic!("failed to parse {} line {}: {error}", path.display(), index + 1));
+            let line = line.unwrap_or_else(|error| {
+                panic!(
+                    "failed to read {} line {}: {error}",
+                    path.display(),
+                    index + 1
+                )
+            });
+            let record = serde_json::from_str::<GoldenRecord>(&line).unwrap_or_else(|error| {
+                panic!(
+                    "failed to parse {} line {}: {error}",
+                    path.display(),
+                    index + 1
+                )
+            });
             let row = record.row;
             match catch_unwind(AssertUnwindSafe(|| assert_record(record))) {
                 Ok(()) => {

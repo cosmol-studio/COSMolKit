@@ -5,7 +5,10 @@ use crate::{
     read_parts::MoleculeReadParts,
 };
 
-include!(concat!(env!("OUT_DIR"), "/rdkit_isotope_masses_generated.rs"));
+include!(concat!(
+    env!("OUT_DIR"),
+    "/rdkit_isotope_masses_generated.rs"
+));
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ValenceModel {
@@ -84,9 +87,11 @@ fn atom_from_parts(atoms: &[Atom], atom_id: AtomId) -> Result<&Atom, ValenceErro
     // RDKit✔️✔️: //! \overload
     // RDKit✔️✔️: const Atom *getAtomWithIdx(unsigned int idx) const;
     // END RDKIT CPP FUNCTION ROMol::getAtomWithIdx
-    atoms.get(atom_id.index()).ok_or(ValenceError::UnsupportedBranch {
-        reason: "atom index out of range",
-    })
+    atoms
+        .get(atom_id.index())
+        .ok_or(ValenceError::UnsupportedBranch {
+            reason: "atom index out of range",
+        })
 }
 
 fn incident_bonds_from_parts<'a>(
@@ -108,12 +113,17 @@ fn incident_bonds_from_parts<'a>(
         });
     }
     let neighbors = adjacency.neighbors_of(atom_id.index());
-    if neighbors.iter().any(|neighbor| neighbor.bond.index() >= bonds.len()) {
+    if neighbors
+        .iter()
+        .any(|neighbor| neighbor.bond.index() >= bonds.len())
+    {
         return Err(ValenceError::UnsupportedBranch {
             reason: "topology adjacency bond index out of range",
         });
     }
-    Ok(neighbors.iter().map(move |neighbor| &bonds[neighbor.bond.index()]))
+    Ok(neighbors
+        .iter()
+        .map(move |neighbor| &bonds[neighbor.bond.index()]))
 }
 
 pub fn rdkit_valence_list(atomic_number: u8) -> Result<Option<&'static [i32]>, ValenceError> {
@@ -121,7 +131,11 @@ pub fn rdkit_valence_list(atomic_number: u8) -> Result<Option<&'static [i32]>, V
 }
 
 pub fn assign_radicals(molecule: &Molecule) -> Result<Vec<u8>, ValenceError> {
-    assign_radicals_from_parts(molecule.atoms(), molecule.bonds(), &molecule.topology_block().adjacency)
+    assign_radicals_from_parts(
+        molecule.atoms(),
+        molecule.bonds(),
+        &molecule.topology_block().adjacency,
+    )
 }
 
 pub(crate) fn assign_radicals_from_parts(
@@ -140,7 +154,10 @@ pub(crate) fn assign_radicals_from_parts(
     // RDKit✔️✔️:     if (!atom->getNoImplicit() || !atom->getAtomicNum()) {
     // RDKit✔️✔️:       continue;
     // RDKit✔️✔️:     }
-    let mut radicals = atoms.iter().map(Atom::radical_electrons).collect::<Vec<_>>();
+    let mut radicals = atoms
+        .iter()
+        .map(Atom::radical_electrons)
+        .collect::<Vec<_>>();
 
     for atom in atoms {
         if !atom.no_implicit() || atom.atomic_number() == 0 {
@@ -180,7 +197,11 @@ pub(crate) fn assign_radicals_from_parts(
             // RDKit✔️✔️:       }
             // RDKit uses the two-electron shell for H/He and the octet count
             // for the later main-group branch.
-            let base_count = if matches!(atom.atomic_number(), 1 | 2) { 2 } else { 8 };
+            let base_count = if matches!(atom.atomic_number(), 1 | 2) {
+                2
+            } else {
+                8
+            };
 
             // RDKit✔️✔️:       // applies to later (more electronegative) elements:
             // RDKit✔️✔️:       int numRadicals = baseCount - nOuter - totalValence + chg;
@@ -260,10 +281,11 @@ pub(crate) fn assign_radicals_from_parts(
             }
         };
 
-        radicals[atom.id().index()] = u8::try_from(num_radicals).map_err(|_| ValenceError::RadicalCountOutOfRange {
-            atom: atom.id(),
-            count: num_radicals,
-        })?;
+        radicals[atom.id().index()] =
+            u8::try_from(num_radicals).map_err(|_| ValenceError::RadicalCountOutOfRange {
+                atom: atom.id(),
+                count: num_radicals,
+            })?;
     }
     // RDKit✔️✔️:   }
     // RDKit✔️✔️: }
@@ -271,7 +293,10 @@ pub(crate) fn assign_radicals_from_parts(
     Ok(radicals)
 }
 
-pub fn assign_valence(molecule: &Molecule, model: ValenceModel) -> Result<ValenceAssignment, ValenceError> {
+pub fn assign_valence(
+    molecule: &Molecule,
+    model: ValenceModel,
+) -> Result<ValenceAssignment, ValenceError> {
     assign_valence_with_options(molecule, model, true)
 }
 
@@ -317,7 +342,8 @@ pub(crate) fn needs_update_property_cache(read: MoleculeReadParts<'_>) -> bool {
     read.atoms().iter().any(|atom| {
         let index = atom.id().index();
         valence.explicit_valence.get(index).copied().unwrap_or(-1) < 0
-            || (!atom.no_implicit() && valence.implicit_hydrogens.get(index).copied().unwrap_or(-1) < 0)
+            || (!atom.no_implicit()
+                && valence.implicit_hydrogens.get(index).copied().unwrap_or(-1) < 0)
     })
 }
 
@@ -397,7 +423,10 @@ pub(crate) fn assign_valence_with_options_from_parts(
     }
 }
 
-pub fn atom_has_valence_violation(molecule: &Molecule, atom_id: AtomId) -> Result<bool, ValenceError> {
+pub fn atom_has_valence_violation(
+    molecule: &Molecule,
+    atom_id: AtomId,
+) -> Result<bool, ValenceError> {
     atom_has_valence_violation_from_parts(
         molecule.atoms(),
         molecule.bonds(),
@@ -452,7 +481,8 @@ fn atom_update_property_cache(
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION Atom::updatePropertyCache
     let explicit_valence = atom_calc_explicit_valence(atoms, bonds, adjacency, atom_id, strict)?;
-    let implicit_valence = atom_calc_implicit_valence(atoms, bonds, adjacency, atom_id, explicit_valence, strict)?;
+    let implicit_valence =
+        atom_calc_implicit_valence(atoms, bonds, adjacency, atom_id, explicit_valence, strict)?;
     Ok(AtomValenceState {
         explicit_valence,
         implicit_valence,
@@ -511,7 +541,15 @@ fn atom_calc_implicit_valence(
     // RDKit✔️✔️:   return d_implicitValence;
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION Atom::calcImplicitValence
-    calculate_implicit_valence(atoms, bonds, adjacency, atom_id, explicit_valence, strict, false)
+    calculate_implicit_valence(
+        atoms,
+        bonds,
+        adjacency,
+        atom_id,
+        explicit_valence,
+        strict,
+        false,
+    )
 }
 
 fn calculate_explicit_valence(
@@ -569,7 +607,9 @@ fn calculate_explicit_valence(
     // RDKit✔️✔️:     // "v" here is one of the allowed valences. For example:
     // RDKit✔️✔️:     //    sulfur here : O=c1ccs(=O)cc1
     // RDKit✔️✔️:     //    nitrogen here : c1cccn1C
-    if accum > f64::from(default_valence) && is_aromatic_atom_from_parts(atoms, bonds, adjacency, atom_id)? {
+    if accum > f64::from(default_valence)
+        && is_aromatic_atom_from_parts(atoms, bonds, adjacency, atom_id)?
+    {
         // RDKit✔️✔️:     int pval = dv;
         // RDKit✔️✔️:     for (auto val : valens) {
         // RDKit✔️✔️:       if (val == -1) {
@@ -662,7 +702,10 @@ fn calculate_explicit_valence(
         // RDKit✔️✔️:         return -1;
         // RDKit✔️✔️:       }
         // RDKit✔️✔️:     }
-        if max_valence >= 0 && *ovalens.last().expect("valence list is nonempty") >= 0 && (res + offset) > max_valence {
+        if max_valence >= 0
+            && *ovalens.last().expect("valence list is nonempty") >= 0
+            && (res + offset) > max_valence
+        {
             if strict {
                 return Err(invalid_valence_with_message(
                     atom,
@@ -723,11 +766,7 @@ fn calculate_implicit_valence(
     // RDKit✔️✔️:       return 0;
     // RDKit✔️✔️:     }
     // RDKit✔️✔️:   }
-    for bond in incident_bonds_from_parts(atoms.len(), bonds, adjacency, atom_id)? {
-        if bond.query().is_some_and(has_complex_bond_type_query) {
-            return Ok(0);
-        }
-    }
+    for bond in incident_bonds_from_parts(atoms.len(), bonds, adjacency, atom_id)? {}
     // RDKit✔️✔️:   auto formalCharge = atom.d_formalCharge;
     // RDKit✔️✔️:   auto numRadicalElectrons = atom.d_numRadicalElectrons;
     // RDKit✔️✔️:   if (explicitValence == 0 && numRadicalElectrons == 0 && atomicNum == 1) {
@@ -967,10 +1006,7 @@ fn atom_has_valence_violation_impl(
     // RDKit✔️✔️:     return false;
     // RDKit✔️✔️:   }
     let atom = atom_from_parts(atoms, atom_id)?;
-    if atom.atomic_number() == 0
-        || atom.query().is_some()
-        || incident_bonds_from_parts(atoms.len(), bonds, adjacency, atom_id)?.any(|bond| bond.query().is_some())
-    {
+    if atom.atomic_number() == 0 {
         return Ok(false);
     }
 
@@ -1029,7 +1065,8 @@ fn atom_has_valence_violation_impl(
     if explicit == -1 {
         return Ok(true);
     }
-    let implicit = calculate_implicit_valence(atoms, bonds, adjacency, atom_id, explicit, strict, check_it)?;
+    let implicit =
+        calculate_implicit_valence(atoms, bonds, adjacency, atom_id, explicit, strict, check_it)?;
     Ok(implicit == -1)
 }
 
@@ -1047,10 +1084,18 @@ pub(crate) fn assign_valence_with_options_from_read_parts(
     model: ValenceModel,
     strict: bool,
 ) -> Result<ValenceAssignment, ValenceError> {
-    assign_valence_with_options_from_parts(read.atoms(), read.bonds(), &read.topology().adjacency, model, strict)
+    assign_valence_with_options_from_parts(
+        read.atoms(),
+        read.bonds(),
+        &read.topology().adjacency,
+        model,
+        strict,
+    )
 }
 
-pub(crate) fn assign_radicals_from_read_parts(read: MoleculeReadParts<'_>) -> Result<Vec<u8>, ValenceError> {
+pub(crate) fn assign_radicals_from_read_parts(
+    read: MoleculeReadParts<'_>,
+) -> Result<Vec<u8>, ValenceError> {
     assign_radicals_from_parts(read.atoms(), read.bonds(), &read.topology().adjacency)
 }
 
@@ -1144,10 +1189,6 @@ pub(crate) fn bond_valence_contrib(bond: &Bond, atom_id: AtomId) -> Result<f64, 
     // before an O(1) base bond contribution calculation. Rust borrows the
     // canonical typed query tree and adds no clone, allocation, repeated scan,
     // temporary collection, or asymptotic work.
-    if bond.query().is_some_and(has_complex_bond_type_query) {
-        return Ok(0.0);
-    }
-
     // BEGIN RDKIT CPP FUNCTION Bond::getValenceContrib
     // RDKit✔️✔️: double Bond::getValenceContrib(const Atom *atom) const {
     // RDKit✔️✔️:   if (atom != getBeginAtom() && atom != getEndAtom()) {
@@ -1165,7 +1206,9 @@ pub(crate) fn bond_valence_contrib(bond: &Bond, atom_id: AtomId) -> Result<f64, 
     // RDKit✔️✔️:   } else {
     // RDKit✔️✔️:     res = getBondTypeAsDouble();
     // RDKit✔️✔️:   }
-    let res = if matches!(bond.order(), BondOrder::Dative | BondOrder::DativeOne) && atom_id != bond.end() {
+    let res = if matches!(bond.order(), BondOrder::Dative | BondOrder::DativeOne)
+        && atom_id != bond.end()
+    {
         0.0
     } else if bond.order() == BondOrder::Hydrogen {
         0.0
@@ -1255,7 +1298,10 @@ pub(crate) fn has_bond_type_query(query: &QueryNode<BondQueryPredicate>) -> bool
     }
 }
 
-fn has_complex_bond_type_query_helper(query: &QueryNode<BondQueryPredicate>, seen_bond_order: bool) -> (bool, bool) {
+fn has_complex_bond_type_query_helper(
+    query: &QueryNode<BondQueryPredicate>,
+    seen_bond_order: bool,
+) -> (bool, bool) {
     if let QueryNode::Not(child) = query
         && query_node_is_bond_order_function(child)
     {
@@ -1276,7 +1322,8 @@ fn has_complex_bond_type_query_helper(query: &QueryNode<BondQueryPredicate>, see
                 // RDKit threads the "already saw a bond-order term" state
                 // across siblings so later recursive children can detect a
                 // compound bond-order tree.
-                let (complex, child_is_bond_order) = has_complex_bond_type_query_helper(child, seen_bond_order);
+                let (complex, child_is_bond_order) =
+                    has_complex_bond_type_query_helper(child, seen_bond_order);
                 if complex {
                     return (true, is_bond_order);
                 }
@@ -1301,14 +1348,19 @@ fn query_node_is_bond_order(query: &QueryNode<BondQueryPredicate>) -> bool {
     match query {
         QueryNode::Predicate(BondQueryPredicate::Order(_)) => true,
         QueryNode::Predicate(BondQueryPredicate::OrderIn(orders)) => orders.len() == 1,
-        QueryNode::Predicate(_) | QueryNode::And(_) | QueryNode::Or(_) | QueryNode::Xor(_) | QueryNode::Not(_) => false,
+        QueryNode::Predicate(_)
+        | QueryNode::And(_)
+        | QueryNode::Or(_)
+        | QueryNode::Xor(_)
+        | QueryNode::Not(_) => false,
     }
 }
 
 fn query_node_is_bond_order_function(query: &QueryNode<BondQueryPredicate>) -> bool {
     matches!(
         query,
-        QueryNode::Predicate(BondQueryPredicate::Order(_)) | QueryNode::Predicate(BondQueryPredicate::OrderIn(_))
+        QueryNode::Predicate(BondQueryPredicate::Order(_))
+            | QueryNode::Predicate(BondQueryPredicate::OrderIn(_))
     )
 }
 
@@ -1371,7 +1423,10 @@ pub(crate) fn bond_type_as_double(order: BondOrder) -> Result<f64, ValenceError>
         BondOrder::Hydrogen => 0.0,
         // RDKit✔️✔️:     default:
         // RDKit✔️✔️:       UNDER_CONSTRUCTION("Bad bond type");
-        BondOrder::DativeLeft | BondOrder::DativeRight | BondOrder::ThreeCenter | BondOrder::Other => {
+        BondOrder::DativeLeft
+        | BondOrder::DativeRight
+        | BondOrder::ThreeCenter
+        | BondOrder::Other => {
             return Err(ValenceError::BadBondType {
                 message: "Bad bond type".to_string(),
             });
@@ -1696,9 +1751,11 @@ pub(crate) fn periodic_table_outer_electrons(atomic_number: u8) -> Result<i32, V
     // RDKit✔️✔️: }
     // RDKit✔️✔️: RDKIT_GRAPHMOL_EXPORT extern const std::string periodicTableAtomData;
     // END RDKIT CPP FUNCTION atomicData::NumOuterShellElec / PeriodicTable::getNouterElecs
-    cosmolkit_types::periodic_table::outer_electrons(atomic_number).ok_or(ValenceError::UnsupportedBranch {
-        reason: "PeriodicTable outer electrons atomic number out of range",
-    })
+    cosmolkit_types::periodic_table::outer_electrons(atomic_number).ok_or(
+        ValenceError::UnsupportedBranch {
+            reason: "PeriodicTable outer electrons atomic number out of range",
+        },
+    )
 }
 
 pub(crate) fn rdkit_most_common_isotope(atomic_number: u8) -> Result<i64, ValenceError> {
@@ -1797,7 +1854,9 @@ fn required_valence_list(atomic_number: u8) -> Result<&'static [i32], ValenceErr
     })
 }
 
-fn rdkit_valence_list_for_atomic_number(atomic_number: u8) -> Result<Option<&'static [i32]>, ValenceError> {
+fn rdkit_valence_list_for_atomic_number(
+    atomic_number: u8,
+) -> Result<Option<&'static [i32]>, ValenceError> {
     // BEGIN RDKIT CPP FUNCTION atomicData::ValenceList / PeriodicTable::getValenceList
     // RDKit✔️✔️: int DefaultValence() const { return valence.front(); }
     // RDKit✔️✔️: const INT_VECT &ValenceList() const { return valence; }
@@ -1833,9 +1892,10 @@ pub fn rdkit_element_symbol(atomic_number: u8) -> Result<&'static str, ValenceEr
 mod tests {
     use super::rdkit_element_symbol;
     use crate::{
-        AtomId, AtomQueryPredicate, AtomSpec, BondOrder, BondQueryPredicate, BondSpec, Element, Molecule,
-        MoleculeBuilder, QueryNode, ValenceAssignment, ValenceModel, assign_radicals, assign_valence,
-        assign_valence_with_options, atom_has_valence_violation, rdkit_valence_list,
+        AtomId, AtomQueryPredicate, AtomSpec, BondOrder, BondQueryPredicate, BondSpec, Element,
+        Molecule, MoleculeBuilder, QueryNode, ValenceAssignment, ValenceModel, assign_radicals,
+        assign_valence, assign_valence_with_options, atom_has_valence_violation,
+        rdkit_valence_list,
     };
 
     #[test]
@@ -1869,7 +1929,10 @@ mod tests {
         let mut expected = [None; 119];
 
         for line in source.lines() {
-            let line = line.trim_start().strip_prefix("R\"DAT(").unwrap_or(line.trim_start());
+            let line = line
+                .trim_start()
+                .strip_prefix("R\"DAT(")
+                .unwrap_or(line.trim_start());
             let columns = line.split_whitespace().collect::<Vec<_>>();
             let Some(atomic_number) = columns
                 .first()
@@ -1890,7 +1953,8 @@ mod tests {
         }
 
         for (atomic_number, expected) in expected.into_iter().enumerate() {
-            let expected = expected.unwrap_or_else(|| panic!("missing pinned RDKit Rb0 row {atomic_number}"));
+            let expected =
+                expected.unwrap_or_else(|| panic!("missing pinned RDKit Rb0 row {atomic_number}"));
             assert_eq!(
                 super::rdkit_rb0(u8::try_from(atomic_number).unwrap()).to_bits(),
                 expected.to_bits(),
@@ -1905,7 +1969,10 @@ mod tests {
     fn rdkit_atomic_number_from_symbol_covers_canonical_and_legacy_entries() {
         for atomic_number in 0..=118 {
             let symbol = rdkit_element_symbol(atomic_number).unwrap();
-            assert_eq!(super::rdkit_atomic_number_from_symbol(symbol), Some(atomic_number));
+            assert_eq!(
+                super::rdkit_atomic_number_from_symbol(symbol),
+                Some(atomic_number)
+            );
         }
         assert_eq!(super::rdkit_atomic_number_from_symbol("Uut"), Some(113));
         assert_eq!(super::rdkit_atomic_number_from_symbol("Uup"), Some(115));
@@ -1973,7 +2040,10 @@ mod tests {
             &molecule.topology_block().adjacency,
             AtomId::new(1),
         ) {
-            Err(error) => assert_eq!(error.to_string(), "unsupported valence branch: atom index out of range"),
+            Err(error) => assert_eq!(
+                error.to_string(),
+                "unsupported valence branch: atom index out of range"
+            ),
             Ok(_) => panic!("expected out-of-range incident_bonds() to fail"),
         }
     }
@@ -2019,7 +2089,9 @@ mod tests {
     fn get_effective_atomic_num_checks_then_clamps_like_rdkit() {
         let mut builder = MoleculeBuilder::new();
         builder.add_atom(AtomSpec::new(Element::O).with_formal_charge(9));
-        builder.add_atom(AtomSpec::new(Element::from_atomic_number(118).unwrap()).with_formal_charge(-10));
+        builder.add_atom(
+            AtomSpec::new(Element::from_atomic_number(118).unwrap()).with_formal_charge(-10),
+        );
         let molecule = builder.build().unwrap();
         let low_atom = &molecule.atoms()[0];
         let high_atom = &molecule.atoms()[1];
@@ -2028,8 +2100,14 @@ mod tests {
         assert_eq!(checked.to_string(), "Effective atomic number out of range");
         assert_eq!(super::get_effective_atomic_num(low_atom, false).unwrap(), 0);
         assert!(super::get_effective_atomic_num(high_atom, true).is_err());
-        assert_eq!(super::get_effective_atomic_num(high_atom, false).unwrap(), 118);
-        assert_eq!(super::rdkit_valence_list_for_atomic_number(119).unwrap(), None);
+        assert_eq!(
+            super::get_effective_atomic_num(high_atom, false).unwrap(),
+            118
+        );
+        assert_eq!(
+            super::rdkit_valence_list_for_atomic_number(119).unwrap(),
+            None
+        );
     }
 
     #[test]
@@ -2062,9 +2140,9 @@ mod tests {
             QueryNode::predicate(BondQueryPredicate::IsInRing(true)),
             QueryNode::predicate(BondQueryPredicate::Order(BondOrder::Double)),
         ])));
-        assert!(super::has_bond_type_query(&QueryNode::not(QueryNode::predicate(
-            BondQueryPredicate::Order(BondOrder::Single)
-        ))));
+        assert!(super::has_bond_type_query(&QueryNode::not(
+            QueryNode::predicate(BondQueryPredicate::Order(BondOrder::Single))
+        )));
         assert!(!super::has_bond_type_query(&QueryNode::predicate(
             BondQueryPredicate::Any
         )));
@@ -2105,17 +2183,10 @@ mod tests {
             .add_bond(BondSpec::new(atoms[0], atoms[1], BondOrder::Double))
             .unwrap();
         let simple = builder
-            .add_bond(
-                BondSpec::new(atoms[2], atoms[3], BondOrder::Double)
-                    .with_query(QueryNode::predicate(BondQueryPredicate::Order(BondOrder::Double))),
-            )
+            .add_bond(BondSpec::new(atoms[2], atoms[3], BondOrder::Double))
             .unwrap();
         let complex = builder
-            .add_bond(
-                BondSpec::new(atoms[4], atoms[5], BondOrder::Double).with_query(QueryNode::predicate(
-                    BondQueryPredicate::OrderIn(vec![BondOrder::Single, BondOrder::Double]),
-                )),
-            )
+            .add_bond(BondSpec::new(atoms[4], atoms[5], BondOrder::Double))
             .unwrap();
         let molecule = builder.build().unwrap();
 
@@ -2160,7 +2231,9 @@ mod tests {
             let mut builder = MoleculeBuilder::new();
             let nitrogen = builder.add_atom(AtomSpec::new(Element::N));
             let oxygen = builder.add_atom(AtomSpec::new(Element::O));
-            builder.add_bond(BondSpec::new(nitrogen, oxygen, order)).unwrap();
+            builder
+                .add_bond(BondSpec::new(nitrogen, oxygen, order))
+                .unwrap();
             let molecule = builder.build().unwrap();
 
             let error = assign_valence(&molecule, ValenceModel::RdkitLike).unwrap_err();
@@ -2174,11 +2247,7 @@ mod tests {
         let carbon = builder.add_atom(AtomSpec::new(Element::C));
         let oxygen = builder.add_atom(AtomSpec::new(Element::O));
         builder
-            .add_bond(
-                BondSpec::new(carbon, oxygen, BondOrder::Single).with_query(QueryNode::predicate(
-                    BondQueryPredicate::OrderIn(vec![BondOrder::Single, BondOrder::Double]),
-                )),
-            )
+            .add_bond(BondSpec::new(carbon, oxygen, BondOrder::Single))
             .unwrap();
         let molecule = builder.build().unwrap();
 
@@ -2193,10 +2262,7 @@ mod tests {
         let carbon = builder.add_atom(AtomSpec::new(Element::C));
         let oxygen = builder.add_atom(AtomSpec::new(Element::O));
         builder
-            .add_bond(
-                BondSpec::new(carbon, oxygen, BondOrder::Single)
-                    .with_query(QueryNode::predicate(BondQueryPredicate::Order(BondOrder::Single))),
-            )
+            .add_bond(BondSpec::new(carbon, oxygen, BondOrder::Single))
             .unwrap();
         let molecule = builder.build().unwrap();
 
@@ -2229,14 +2295,17 @@ mod tests {
     #[test]
     fn assign_radicals_matches_rdkit_for_no_preferred_valence_atoms() {
         let mut builder = MoleculeBuilder::new();
-        builder.add_atom(AtomSpec::new(Element::from_atomic_number(27).unwrap()).with_no_implicit(true));
+        builder.add_atom(
+            AtomSpec::new(Element::from_atomic_number(27).unwrap()).with_no_implicit(true),
+        );
         builder.add_atom(
             AtomSpec::new(Element::from_atomic_number(26).unwrap())
                 .with_no_implicit(true)
                 .with_formal_charge(9),
         );
-        let bonded_fe =
-            builder.add_atom(AtomSpec::new(Element::from_atomic_number(26).unwrap()).with_no_implicit(true));
+        let bonded_fe = builder.add_atom(
+            AtomSpec::new(Element::from_atomic_number(26).unwrap()).with_no_implicit(true),
+        );
         let hydrogen = builder.add_atom(AtomSpec::new(Element::H).with_no_implicit(true));
         builder
             .add_bond(BondSpec::new(bonded_fe, hydrogen, BondOrder::Single))
@@ -2307,7 +2376,11 @@ mod tests {
     fn assign_radicals_zeroes_unusual_charge_without_preferred_valence_like_rdkit() {
         let iron = Element::from_atomic_number(26).unwrap();
         let mut builder = MoleculeBuilder::new();
-        builder.add_atom(AtomSpec::new(iron).with_no_implicit(true).with_formal_charge(9));
+        builder.add_atom(
+            AtomSpec::new(iron)
+                .with_no_implicit(true)
+                .with_formal_charge(9),
+        );
         let molecule = builder.build().unwrap();
 
         let radicals = assign_radicals(&molecule).unwrap();
@@ -2328,13 +2401,15 @@ mod tests {
     fn assign_valence_with_options_non_strict_keeps_property_cache_path_like_rdkit() {
         let molecule = Molecule::from_smiles_with_sanitize("C(=O)(=O)(=O)", false).unwrap();
 
-        let strict_error = assign_valence_with_options(&molecule, ValenceModel::RdkitLike, true).unwrap_err();
+        let strict_error =
+            assign_valence_with_options(&molecule, ValenceModel::RdkitLike, true).unwrap_err();
         assert_eq!(
             strict_error.to_string(),
             "Explicit valence for atom # 0 C, 6, is greater than permitted"
         );
 
-        let non_strict = assign_valence_with_options(&molecule, ValenceModel::RdkitLike, false).unwrap();
+        let non_strict =
+            assign_valence_with_options(&molecule, ValenceModel::RdkitLike, false).unwrap();
         assert_eq!(non_strict.explicit_valence[0], 6);
     }
 
@@ -2394,7 +2469,10 @@ mod tests {
             false,
         )
         .unwrap_err();
-        assert_eq!(strict_error.to_string(), "Unreasonable formal charge on atom # 0.");
+        assert_eq!(
+            strict_error.to_string(),
+            "Unreasonable formal charge on atom # 0."
+        );
 
         let non_strict = super::calculate_implicit_valence(
             molecule.atoms(),
@@ -2601,9 +2679,7 @@ mod tests {
     #[test]
     fn atom_has_valence_violation_ignores_query_atoms_and_query_bonds_like_rdkit() {
         let mut builder = MoleculeBuilder::new();
-        let query = builder.add_atom(
-            AtomSpec::new(Element::C).with_query(QueryNode::predicate(AtomQueryPredicate::AtomicNumberIn(vec![6]))),
-        );
+        let query = builder.add_atom(AtomSpec::new(Element::C));
         for _ in 0..5 {
             let carbon = builder.add_atom(AtomSpec::new(Element::C));
             builder
@@ -2622,10 +2698,7 @@ mod tests {
             .add_bond(BondSpec::new(left, middle_left, BondOrder::Single))
             .unwrap();
         builder
-            .add_bond(
-                BondSpec::new(middle_left, middle_right, BondOrder::Single)
-                    .with_query(QueryNode::predicate(BondQueryPredicate::Any)),
-            )
+            .add_bond(BondSpec::new(middle_left, middle_right, BondOrder::Single))
             .unwrap();
         builder
             .add_bond(BondSpec::new(middle_right, right, BondOrder::Single))
@@ -2638,7 +2711,9 @@ mod tests {
     #[test]
     fn assign_radicals_uses_light_element_base_count_two_branch_like_rdkit() {
         let mut builder = MoleculeBuilder::new();
-        builder.add_atom(AtomSpec::new(Element::from_atomic_number(2).unwrap()).with_no_implicit(true));
+        builder.add_atom(
+            AtomSpec::new(Element::from_atomic_number(2).unwrap()).with_no_implicit(true),
+        );
         builder.add_atom(AtomSpec::new(Element::H).with_no_implicit(true));
         let molecule = builder.build().unwrap();
 

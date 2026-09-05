@@ -4,7 +4,7 @@ use thiserror::Error;
 
 use crate::chemistry::numerics::alignment::{Transform3D, align_points};
 use crate::read_parts::MoleculeReadParts;
-use crate::{Conformer3D, Molecule, QueryGraph, SubstructMatchParams};
+use crate::{Conformer3D, Molecule, SubstructMatchParams};
 
 const DEFAULT_MAX_ITERATIONS: u32 = 50;
 const DEFAULT_MAX_MATCHES: i32 = 1_000_000;
@@ -190,14 +190,17 @@ fn conformer_by_id(molecule: &Molecule, id: i32) -> Result<&Conformer3D, Alignme
     // RDKit✔️✔️: const Conformer &prbCnf = prbMol.getConformer(prbCid);
     // RDKit✔️✔️: const Conformer &refCnf = refMol.getConformer(refCid);
     let conformers = molecule.conformers_3d();
-    let index = crate::chemistry::conformer_selection::resolve_3d_conformer_index(conformers, i64::from(id))
-        .ok_or_else(|| {
-            if conformers.is_empty() {
-                AlignmentError::NoConformers
-            } else {
-                AlignmentError::ConformerNotFound { id }
-            }
-        })?;
+    let index = crate::chemistry::conformer_selection::resolve_3d_conformer_index(
+        conformers,
+        i64::from(id),
+    )
+    .ok_or_else(|| {
+        if conformers.is_empty() {
+            AlignmentError::NoConformers
+        } else {
+            AlignmentError::ConformerNotFound { id }
+        }
+    })?;
     Ok(&conformers[index])
 }
 
@@ -224,12 +227,14 @@ fn first_alignment_map(
         use_query_query_matches: true,
         ..SubstructMatchParams::default()
     };
-    let probe_query = QueryGraph::from_concrete_molecule(probe).map_err(|_| AlignmentError::NoSubstructureMatch)?;
-    let matched = crate::try_get_substruct_matches_with_params(reference, &probe_query, &matcher_params)
-        .map_err(|_| AlignmentError::NoSubstructureMatch)?
-        .into_iter()
-        .next()
-        .ok_or(AlignmentError::NoSubstructureMatch)?;
+    let probe_query = crate::search::query_graph::query_graph_from_concrete_molecule(probe)
+        .map_err(|_| AlignmentError::NoSubstructureMatch)?;
+    let matched =
+        crate::try_get_substruct_matches_with_params(reference, &probe_query, &matcher_params)
+            .map_err(|_| AlignmentError::NoSubstructureMatch)?
+            .into_iter()
+            .next()
+            .ok_or(AlignmentError::NoSubstructureMatch)?;
     Ok(matched
         .atom_mapping
         .into_iter()
@@ -297,8 +302,9 @@ fn automatic_maps(
     }
     let symmetrized_probe;
     let probe_for_match = if symmetrize_conjugated_terminal_groups {
-        symmetrized_probe = crate::chemistry::mol_align_support::symmetrize_terminal_atoms(probe)
-            .map_err(|message| AlignmentError::TerminalGroupSymmetrization { message })?;
+        symmetrized_probe =
+            crate::chemistry::mol_align_support::symmetrize_terminal_atoms(probe)
+                .map_err(|message| AlignmentError::TerminalGroupSymmetrization { message })?;
         &symmetrized_probe
     } else {
         probe
@@ -312,23 +318,27 @@ fn automatic_maps(
         ..Default::default()
     };
     let probe_query =
-        QueryGraph::from_concrete_molecule(probe_for_match).map_err(|_| AlignmentError::NoSubstructureMatch)?;
-    let mut maps: Vec<_> = crate::try_get_substruct_matches_with_params(reference, &probe_query, &matcher_params)
-        .map_err(|_| AlignmentError::NoSubstructureMatch)?
-        .into_iter()
-        .map(|matched| {
-            matched
-                .atom_mapping
-                .into_iter()
-                .enumerate()
-                .filter(|(probe_atom, _)| !ignore_hydrogens || probe.atoms()[*probe_atom].atomic_number() != 1)
-                .map(|(probe_atom, reference_atom)| AlignmentAtomMap {
-                    probe_atom,
-                    reference_atom,
-                })
-                .collect::<Vec<_>>()
-        })
-        .collect();
+        crate::search::query_graph::query_graph_from_concrete_molecule(probe_for_match)
+            .map_err(|_| AlignmentError::NoSubstructureMatch)?;
+    let mut maps: Vec<_> =
+        crate::try_get_substruct_matches_with_params(reference, &probe_query, &matcher_params)
+            .map_err(|_| AlignmentError::NoSubstructureMatch)?
+            .into_iter()
+            .map(|matched| {
+                matched
+                    .atom_mapping
+                    .into_iter()
+                    .enumerate()
+                    .filter(|(probe_atom, _)| {
+                        !ignore_hydrogens || probe.atoms()[*probe_atom].atomic_number() != 1
+                    })
+                    .map(|(probe_atom, reference_atom)| AlignmentAtomMap {
+                        probe_atom,
+                        reference_atom,
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect();
     maps.retain(|map| !map.is_empty());
     if maps.is_empty() {
         Err(AlignmentError::NoSubstructureMatch)
@@ -374,7 +384,10 @@ fn aligned_result(
     // RDKit✔️✔️:     refPoints, prbPoints, trans, weights, reflect, maxIterations);
     // RDKit✔️✔️: return ssr / static_cast<double>(prbPoints.size());
     validate_map(map, probe, reference, weights)?;
-    let probe_points: Vec<_> = map.iter().map(|entry| probe.coordinates()[entry.probe_atom]).collect();
+    let probe_points: Vec<_> = map
+        .iter()
+        .map(|entry| probe.coordinates()[entry.probe_atom])
+        .collect();
     let reference_points: Vec<_> = map
         .iter()
         .map(|entry| reference.coordinates()[entry.reference_atom])
@@ -411,7 +424,11 @@ fn num_threads_to_use(target: i32) -> usize {
     }
     let available = std::thread::available_parallelism().map_or(1, std::num::NonZeroUsize::get);
     let offset = target.unsigned_abs() as usize;
-    if available > offset { available - offset } else { 1 }
+    if available > offset {
+        available - offset
+    } else {
+        1
+    }
 }
 
 fn best_aligned_result(
@@ -456,8 +473,12 @@ fn best_aligned_result(
     if thread_count == 1 {
         let mut best: Option<AlignmentResult> = None;
         for map in maps {
-            let candidate = aligned_result(probe, reference, map, weights, reflect, max_iterations)?;
-            if best.as_ref().is_none_or(|current| candidate.rmsd < current.rmsd) {
+            let candidate =
+                aligned_result(probe, reference, map, weights, reflect, max_iterations)?;
+            if best
+                .as_ref()
+                .is_none_or(|current| candidate.rmsd < current.rmsd)
+            {
                 best = Some(candidate);
             }
         }
@@ -473,21 +494,34 @@ fn best_aligned_result(
                 while map_index < maps.len() {
                     bucket.push((
                         map_index,
-                        aligned_result(probe, reference, &maps[map_index], weights, reflect, max_iterations),
+                        aligned_result(
+                            probe,
+                            reference,
+                            &maps[map_index],
+                            weights,
+                            reflect,
+                            max_iterations,
+                        ),
                     ));
                     map_index += thread_count;
                 }
                 bucket
             }));
         }
-        handles.into_iter().map(|handle| handle.join()).collect::<Vec<_>>()
+        handles
+            .into_iter()
+            .map(|handle| handle.join())
+            .collect::<Vec<_>>()
     });
     let mut best: Option<AlignmentResult> = None;
     for bucket in buckets {
         let bucket = bucket.map_err(|_| AlignmentError::WorkerTerminated)?;
         for (_, candidate) in bucket {
             let candidate = candidate?;
-            if best.as_ref().is_none_or(|current| candidate.rmsd < current.rmsd) {
+            if best
+                .as_ref()
+                .is_none_or(|current| candidate.rmsd < current.rmsd)
+            {
                 best = Some(candidate);
             }
         }
@@ -573,7 +607,10 @@ pub(crate) fn align_conformers_in_coordinate_block(
     if coordinates.conformers_3d.is_empty() {
         return Ok(Vec::new());
     }
-    let atoms: Vec<usize> = params.atom_indices.clone().unwrap_or_else(|| (0..atom_count).collect());
+    let atoms: Vec<usize> = params
+        .atom_indices
+        .clone()
+        .unwrap_or_else(|| (0..atom_count).collect());
     if atoms.is_empty() {
         return Err(AlignmentError::EmptyAtomMap);
     }
@@ -670,11 +707,16 @@ pub(crate) fn apply_alignment_result_to_coordinate_block(
         if coordinates.conformers_3d.is_empty() {
             AlignmentError::NoConformers
         } else {
-            AlignmentError::ConformerNotFound { id: probe_conformer_id }
+            AlignmentError::ConformerNotFound {
+                id: probe_conformer_id,
+            }
         }
     })?;
     for point in coordinates.conformers_3d[conformer_index].coordinates_mut() {
-        *point = crate::chemistry::numerics::alignment::transform_point(&result.transform.matrix, *point);
+        *point = crate::chemistry::numerics::alignment::transform_point(
+            &result.transform.matrix,
+            *point,
+        );
     }
     Ok(())
 }
@@ -724,7 +766,11 @@ impl Molecule {
         )
     }
 
-    pub fn best_rmsd_to(&self, reference: &Self, params: &BestAlignmentParameters) -> Result<f64, AlignmentError> {
+    pub fn best_rmsd_to(
+        &self,
+        reference: &Self,
+        params: &BestAlignmentParameters,
+    ) -> Result<f64, AlignmentError> {
         Ok(self.best_alignment_to(reference, params)?.rmsd)
     }
 
@@ -745,7 +791,8 @@ impl Molecule {
         )?;
         let mut best = f64::INFINITY;
         for map in maps {
-            let value = coordinate_rmsd(probe, reference_conformer, &map, params.weights.as_deref())?;
+            let value =
+                coordinate_rmsd(probe, reference_conformer, &map, params.weights.as_deref())?;
             if value < best {
                 best = value;
             }
@@ -828,7 +875,10 @@ impl Molecule {
                     bucket
                 }));
             }
-            handles.into_iter().map(|handle| handle.join()).collect::<Vec<_>>()
+            handles
+                .into_iter()
+                .map(|handle| handle.join())
+                .collect::<Vec<_>>()
         });
         let mut ordered = vec![None; pair_count];
         for bucket in buckets {

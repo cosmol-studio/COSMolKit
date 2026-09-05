@@ -21,7 +21,9 @@ fn parse_template_backend(value: &str) -> PyResult<cosmolkit_core::ConfSeqTempla
         "distance_geometry" | "distance-geometry" | "dg" => {
             Ok(cosmolkit_core::ConfSeqTemplateBackend::DistanceGeometry)
         }
-        "fast_geometry" | "fast-geometry" => Ok(cosmolkit_core::ConfSeqTemplateBackend::FastGeometry),
+        "fast_geometry" | "fast-geometry" => {
+            Ok(cosmolkit_core::ConfSeqTemplateBackend::FastGeometry)
+        }
         _ => Err(PyValueError::new_err(
             "template_backend must be 'distance_geometry' or 'fast_geometry'",
         )),
@@ -40,8 +42,9 @@ fn decode(confseq: &str, optimize_with_uff: bool, template_backend: &str) -> PyR
         template_backend: parse_template_backend(template_backend)?,
         ..cosmolkit_core::ConfSeqDecodeOptions::default()
     };
-    let inner = cosmolkit_core::decode_confseq_record_with_options(confseq, &options).map_err(confseq_pyerr)?;
-    Ok(Molecule { inner })
+    let inner = cosmolkit_core::decode_confseq_record_with_options(confseq, &options)
+        .map_err(confseq_pyerr)?;
+    Ok(Molecule::from_inner(inner))
 }
 
 #[pyfunction]
@@ -61,8 +64,9 @@ fn decode_with_input_smiles(
         template_backend: parse_template_backend(template_backend)?,
         ..cosmolkit_core::ConfSeqDecodeOptions::default()
     };
-    let inner = cosmolkit_core::decode_confseq_with_options(in_smiles, confseq, &options).map_err(confseq_pyerr)?;
-    Ok(Molecule { inner })
+    let inner = cosmolkit_core::decode_confseq_with_options(in_smiles, confseq, &options)
+        .map_err(confseq_pyerr)?;
+    Ok(Molecule::from_inner(inner))
 }
 
 #[pyfunction]
@@ -86,12 +90,16 @@ fn decode_batch(
     options.num_threads = n_jobs;
     options.optimize_with_uff = optimize_with_uff;
     options.template_backend = parse_template_backend(template_backend)?;
-    let result = cosmolkit_core::decode_confseq_record_batch_with_options(&confseq_list, &options, keep_errors)
-        .map_err(confseq_pyerr)?;
+    let result = cosmolkit_core::decode_confseq_record_batch_with_options(
+        &confseq_list,
+        &options,
+        keep_errors,
+    )
+    .map_err(confseq_pyerr)?;
     Ok(result
         .molecules
         .into_iter()
-        .map(|molecule| molecule.map(|inner| Molecule { inner }))
+        .map(|molecule| molecule.map(Molecule::from_inner))
         .collect())
 }
 
@@ -117,13 +125,17 @@ fn decode_batch_with_input_smiles(
     options.num_threads = n_jobs;
     options.optimize_with_uff = optimize_with_uff;
     options.template_backend = parse_template_backend(template_backend)?;
-    let result =
-        cosmolkit_core::decode_confseq_batch_with_options(&in_smiles_list, &confseq_list, &options, keep_errors)
-            .map_err(confseq_pyerr)?;
+    let result = cosmolkit_core::decode_confseq_batch_with_options(
+        &in_smiles_list,
+        &confseq_list,
+        &options,
+        keep_errors,
+    )
+    .map_err(confseq_pyerr)?;
     Ok(result
         .molecules
         .into_iter()
-        .map(|molecule| molecule.map(|inner| Molecule { inner }))
+        .map(|molecule| molecule.map(Molecule::from_inner))
         .collect())
 }
 
@@ -133,7 +145,10 @@ pub(crate) fn add_confseq_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
     submodule.add_function(wrap_pyfunction!(decode, &submodule)?)?;
     submodule.add_function(wrap_pyfunction!(decode_with_input_smiles, &submodule)?)?;
     submodule.add_function(wrap_pyfunction!(decode_batch, &submodule)?)?;
-    submodule.add_function(wrap_pyfunction!(decode_batch_with_input_smiles, &submodule)?)?;
+    submodule.add_function(wrap_pyfunction!(
+        decode_batch_with_input_smiles,
+        &submodule
+    )?)?;
     py.import("sys")?
         .getattr("modules")?
         .set_item("cosmolkit.confseq", &submodule)?;

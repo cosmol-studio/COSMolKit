@@ -13,26 +13,36 @@ fn main() {
     let crystalff_generated_path = out_dir.join("crystalff_defaults_generated.rs");
     let isotope_generated_path = out_dir.join("rdkit_isotope_masses_generated.rs");
 
-    let uff_params_path = manifest_dir.join("src/chemistry/forcefield/rdkit/ForceField/UFF/Params.cpp");
-    let mmff_params_path = manifest_dir.join("src/chemistry/forcefield/rdkit/ForceField/MMFF/Params.cpp");
-    let crystalff_dir = manifest_dir.join("src/chemistry/forcefield/rdkit/GraphMol/ForceFieldHelpers/CrystalFF");
-    let rdkit_atomic_data_path = manifest_dir.join("src/chemistry/forcefield/rdkit/GraphMol/atomic_data.cpp");
+    let uff_params_path =
+        manifest_dir.join("src/chemistry/forcefield/rdkit/ForceField/UFF/Params.cpp");
+    let mmff_params_path =
+        manifest_dir.join("src/chemistry/forcefield/rdkit/ForceField/MMFF/Params.cpp");
+    let crystalff_dir =
+        manifest_dir.join("src/chemistry/forcefield/rdkit/GraphMol/ForceFieldHelpers/CrystalFF");
+    let rdkit_atomic_data_path =
+        manifest_dir.join("src/chemistry/forcefield/rdkit/GraphMol/atomic_data.cpp");
 
     println!("cargo:rerun-if-changed={}", uff_params_path.display());
     println!("cargo:rerun-if-changed={}", mmff_params_path.display());
-    println!("cargo:rerun-if-changed={}", rdkit_atomic_data_path.display());
+    println!(
+        "cargo:rerun-if-changed={}",
+        rdkit_atomic_data_path.display()
+    );
     for file_name in [
         "torsionPreferences_v1.in",
         "torsionPreferences_v2.in",
         "torsionPreferences_smallrings.in",
         "torsionPreferences_macrocycles.in",
     ] {
-        println!("cargo:rerun-if-changed={}", crystalff_dir.join(file_name).display());
+        println!(
+            "cargo:rerun-if-changed={}",
+            crystalff_dir.join(file_name).display()
+        );
     }
 
     let uff_source = fs::read_to_string(&uff_params_path).expect("read RDKit UFF Params.cpp");
-    let uff_param_data =
-        extract_cpp_string(&uff_source, "defaultParamData").expect("extract RDKit UFF defaultParamData");
+    let uff_param_data = extract_cpp_string(&uff_source, "defaultParamData")
+        .expect("extract RDKit UFF defaultParamData");
     let mut uff_atomic_params = parse_uff_atomic_params(&uff_param_data);
     uff_atomic_params.sort_by(|left, right| left.label.cmp(&right.label));
 
@@ -59,41 +69,85 @@ fn main() {
         .map(|&symbol| {
             (
                 symbol,
-                extract_cpp_string(&mmff_source, symbol).unwrap_or_else(|| panic!("extract RDKit MMFF {symbol}")),
+                extract_cpp_string(&mmff_source, symbol)
+                    .unwrap_or_else(|| panic!("extract RDKit MMFF {symbol}")),
             )
         })
         .collect();
     let mmff_angle = extract_cpp_string_array(&mmff_source, "defaultMMFFAngleData", "")
         .expect("extract RDKit MMFF defaultMMFFAngleData");
-    let mut mmff_def_rows = parse_mmff_def_rows(mmff_default(&mmff_string_defaults, "defaultMMFFDef"));
+    let mut mmff_def_rows =
+        parse_mmff_def_rows(mmff_default(&mmff_string_defaults, "defaultMMFFDef"));
     mmff_def_rows.sort_by_key(|row| row.atom_type);
-    let mut mmff_prop_rows = parse_mmff_prop_rows(mmff_default(&mmff_string_defaults, "defaultMMFFProp"));
+    let mut mmff_prop_rows =
+        parse_mmff_prop_rows(mmff_default(&mmff_string_defaults, "defaultMMFFProp"));
     mmff_prop_rows.sort_by_key(|row| row.atom_type);
-    let mut mmff_pbci_rows = parse_mmff_pbci_rows(mmff_default(&mmff_string_defaults, "defaultMMFFPBCI"));
+    let mut mmff_pbci_rows =
+        parse_mmff_pbci_rows(mmff_default(&mmff_string_defaults, "defaultMMFFPBCI"));
     mmff_pbci_rows.sort_by_key(|row| row.atom_type);
-    let mut mmff_chg_rows = parse_mmff_chg_rows(mmff_default(&mmff_string_defaults, "defaultMMFFChg"));
+    let mut mmff_chg_rows =
+        parse_mmff_chg_rows(mmff_default(&mmff_string_defaults, "defaultMMFFChg"));
     mmff_chg_rows.sort_by_key(|row| (row.bond_type, row.i_atom_type, row.j_atom_type));
-    let mut mmff_bond_rows = parse_mmff_bond_rows(mmff_default(&mmff_string_defaults, "defaultMMFFBond"));
+    let mut mmff_bond_rows =
+        parse_mmff_bond_rows(mmff_default(&mmff_string_defaults, "defaultMMFFBond"));
     mmff_bond_rows.sort_by_key(|row| (row.bond_type, row.i_atom_type, row.j_atom_type));
-    let mut mmff_bndk_rows = parse_mmff_bndk_rows(mmff_default(&mmff_string_defaults, "defaultMMFFBndk"));
+    let mut mmff_bndk_rows =
+        parse_mmff_bndk_rows(mmff_default(&mmff_string_defaults, "defaultMMFFBndk"));
     mmff_bndk_rows.sort_by_key(|row| (row.i_atomic_num, row.j_atomic_num));
-    let mut mmff_herschbach_laurie_rows =
-        parse_mmff_herschbach_laurie_rows(mmff_default(&mmff_string_defaults, "defaultMMFFHerschbachLaurie"));
+    let mut mmff_herschbach_laurie_rows = parse_mmff_herschbach_laurie_rows(mmff_default(
+        &mmff_string_defaults,
+        "defaultMMFFHerschbachLaurie",
+    ));
     mmff_herschbach_laurie_rows.sort_by_key(|row| (row.i_row, row.j_row));
-    let mut mmff_cov_rad_pau_ele_rows =
-        parse_mmff_cov_rad_pau_ele_rows(mmff_default(&mmff_string_defaults, "defaultMMFFCovRadPauEle"));
+    let mut mmff_cov_rad_pau_ele_rows = parse_mmff_cov_rad_pau_ele_rows(mmff_default(
+        &mmff_string_defaults,
+        "defaultMMFFCovRadPauEle",
+    ));
     mmff_cov_rad_pau_ele_rows.sort_by_key(|row| row.atomic_num);
     let mut mmff_angle_rows = parse_mmff_angle_rows(&mmff_angle);
-    mmff_angle_rows.sort_by_key(|row| (row.angle_type, row.i_atom_type, row.j_atom_type, row.k_atom_type));
-    let mut mmff_stbn_rows = parse_mmff_stbn_rows(mmff_default(&mmff_string_defaults, "defaultMMFFStbn"));
-    mmff_stbn_rows.sort_by_key(|row| (row.stretch_bend_type, row.i_atom_type, row.j_atom_type, row.k_atom_type));
-    let mut mmff_dfsb_rows = parse_mmff_dfsb_rows(mmff_default(&mmff_string_defaults, "defaultMMFFDfsb"));
+    mmff_angle_rows.sort_by_key(|row| {
+        (
+            row.angle_type,
+            row.i_atom_type,
+            row.j_atom_type,
+            row.k_atom_type,
+        )
+    });
+    let mut mmff_stbn_rows =
+        parse_mmff_stbn_rows(mmff_default(&mmff_string_defaults, "defaultMMFFStbn"));
+    mmff_stbn_rows.sort_by_key(|row| {
+        (
+            row.stretch_bend_type,
+            row.i_atom_type,
+            row.j_atom_type,
+            row.k_atom_type,
+        )
+    });
+    let mut mmff_dfsb_rows =
+        parse_mmff_dfsb_rows(mmff_default(&mmff_string_defaults, "defaultMMFFDfsb"));
     mmff_dfsb_rows.sort_by_key(|row| (row.i_atomic_num, row.j_atomic_num, row.k_atomic_num));
-    let mut mmff_oop_rows = parse_mmff_oop_rows(mmff_default(&mmff_string_defaults, "defaultMMFFOop"));
-    mmff_oop_rows.sort_by_key(|row| (row.i_atom_type, row.j_atom_type, row.k_atom_type, row.l_atom_type));
-    let mut mmffs_oop_rows = parse_mmff_oop_rows(mmff_default(&mmff_string_defaults, "defaultMMFFsOop"));
-    mmffs_oop_rows.sort_by_key(|row| (row.i_atom_type, row.j_atom_type, row.k_atom_type, row.l_atom_type));
-    let mut mmff_tor_rows = parse_mmff_tor_rows(mmff_default(&mmff_string_defaults, "defaultMMFFTor"));
+    let mut mmff_oop_rows =
+        parse_mmff_oop_rows(mmff_default(&mmff_string_defaults, "defaultMMFFOop"));
+    mmff_oop_rows.sort_by_key(|row| {
+        (
+            row.i_atom_type,
+            row.j_atom_type,
+            row.k_atom_type,
+            row.l_atom_type,
+        )
+    });
+    let mut mmffs_oop_rows =
+        parse_mmff_oop_rows(mmff_default(&mmff_string_defaults, "defaultMMFFsOop"));
+    mmffs_oop_rows.sort_by_key(|row| {
+        (
+            row.i_atom_type,
+            row.j_atom_type,
+            row.k_atom_type,
+            row.l_atom_type,
+        )
+    });
+    let mut mmff_tor_rows =
+        parse_mmff_tor_rows(mmff_default(&mmff_string_defaults, "defaultMMFFTor"));
     mmff_tor_rows.sort_by_key(|row| {
         (
             row.tor_type,
@@ -103,7 +157,8 @@ fn main() {
             row.l_atom_type,
         )
     });
-    let mut mmffs_tor_rows = parse_mmff_tor_rows(mmff_default(&mmff_string_defaults, "defaultMMFFsTor"));
+    let mut mmffs_tor_rows =
+        parse_mmff_tor_rows(mmff_default(&mmff_string_defaults, "defaultMMFFsTor"));
     mmffs_tor_rows.sort_by_key(|row| {
         (
             row.tor_type,
@@ -113,7 +168,8 @@ fn main() {
             row.l_atom_type,
         )
     });
-    let mut mmff_vdw_data = parse_mmff_vdw_rows(mmff_default(&mmff_string_defaults, "defaultMMFFVdW"));
+    let mut mmff_vdw_data =
+        parse_mmff_vdw_rows(mmff_default(&mmff_string_defaults, "defaultMMFFVdW"));
     mmff_vdw_data.rows.sort_by_key(|row| row.atom_type);
 
     let crystalff_defaults = [
@@ -141,7 +197,8 @@ fn main() {
     let crystalff_strings: Vec<(&str, String)> = crystalff_defaults
         .iter()
         .map(|&(rust_name, file_name, cpp_symbol)| {
-            let source = fs::read_to_string(crystalff_dir.join(file_name)).expect("read CrystalFF table");
+            let source =
+                fs::read_to_string(crystalff_dir.join(file_name)).expect("read CrystalFF table");
             (
                 rust_name,
                 extract_cpp_string(&source, cpp_symbol)
@@ -149,11 +206,14 @@ fn main() {
             )
         })
         .collect();
-    let rdkit_atomic_data_source = fs::read_to_string(&rdkit_atomic_data_path).expect("read RDKit atomic_data.cpp");
-    let periodic_table_atom_data = extract_cpp_string(&rdkit_atomic_data_source, "periodicTableAtomData")
-        .expect("extract RDKit periodicTableAtomData");
-    let isotope_atom_data = extract_cpp_string_array(&rdkit_atomic_data_source, "isotopesAtomData", "\n")
-        .expect("extract RDKit isotopesAtomData");
+    let rdkit_atomic_data_source =
+        fs::read_to_string(&rdkit_atomic_data_path).expect("read RDKit atomic_data.cpp");
+    let periodic_table_atom_data =
+        extract_cpp_string(&rdkit_atomic_data_source, "periodicTableAtomData")
+            .expect("extract RDKit periodicTableAtomData");
+    let isotope_atom_data =
+        extract_cpp_string_array(&rdkit_atomic_data_source, "isotopesAtomData", "\n")
+            .expect("extract RDKit isotopesAtomData");
     let mut isotope_masses = parse_rdkit_isotope_masses(&isotope_atom_data);
     isotope_masses.sort_by_key(|row| (row.atomic_number, row.isotope));
     assert_eq!(
@@ -165,7 +225,8 @@ fn main() {
         "RDKit isotope array element boundaries must preserve the Ca-47 source row"
     );
     let most_common_isotopes = parse_rdkit_most_common_isotopes(&periodic_table_atom_data);
-    let most_common_isotope_masses = parse_rdkit_most_common_isotope_masses(&periodic_table_atom_data);
+    let most_common_isotope_masses =
+        parse_rdkit_most_common_isotope_masses(&periodic_table_atom_data);
 
     let mut generated = String::new();
     writeln!(
@@ -205,7 +266,11 @@ fn main() {
     writeln!(generated).unwrap();
 
     let mut uff_generated = generated_header();
-    write_string_const(&mut uff_generated, "UFF_DEFAULT_PARAM_DATA", &uff_param_data);
+    write_string_const(
+        &mut uff_generated,
+        "UFF_DEFAULT_PARAM_DATA",
+        &uff_param_data,
+    );
     writeln!(
         uff_generated,
         "pub(crate) static UFF_DEFAULT_ATOMIC_PARAMS: &[(&str, AtomicParams)] = &["
@@ -266,7 +331,8 @@ fn main() {
     for (rust_name, value) in &crystalff_strings {
         write_string_const(&mut crystalff_generated, rust_name, value);
     }
-    fs::write(crystalff_generated_path, crystalff_generated).expect("write CrystalFF generated Rust");
+    fs::write(crystalff_generated_path, crystalff_generated)
+        .expect("write CrystalFF generated Rust");
 
     let mut isotope_generated = generated_header();
     writeln!(
@@ -303,7 +369,8 @@ fn main() {
         writeln!(isotope_generated, "    {:?},", mass).unwrap();
     }
     writeln!(isotope_generated, "];").unwrap();
-    fs::write(isotope_generated_path, isotope_generated).expect("write RDKit isotope mass generated Rust");
+    fs::write(isotope_generated_path, isotope_generated)
+        .expect("write RDKit isotope mass generated Rust");
 
     fs::write(generated_path, generated).expect("write forcefield generated Rust");
 }
@@ -456,7 +523,11 @@ fn parse_mmff_def_rows(mmff_def: &str) -> Vec<MmffDefRow> {
             continue;
         }
         let columns: Vec<&str> = line.split('\t').collect();
-        assert!(columns.len() >= 6, "malformed MMFFDef line {}", line_idx + 1);
+        assert!(
+            columns.len() >= 6,
+            "malformed MMFFDef line {}",
+            line_idx + 1
+        );
         rows.push(MmffDefRow {
             atom_type: parse_u8(columns[1], line),
             eq_level: [
@@ -480,7 +551,11 @@ fn parse_mmff_prop_rows(mmff_prop: &str) -> Vec<MmffPropRow> {
             continue;
         }
         let columns: Vec<&str> = line.split('\t').collect();
-        assert!(columns.len() >= 9, "malformed MMFFProp line {}", line_idx + 1);
+        assert!(
+            columns.len() >= 9,
+            "malformed MMFFProp line {}",
+            line_idx + 1
+        );
         rows.push(MmffPropRow {
             atom_type: parse_u8(columns[0], line),
             prop: [
@@ -508,7 +583,11 @@ fn parse_mmff_pbci_rows(mmff_pbci: &str) -> Vec<MmffPbciRow> {
             continue;
         }
         let columns: Vec<&str> = line.split('\t').collect();
-        assert!(columns.len() >= 4, "malformed MMFFPBCI line {}", line_idx + 1);
+        assert!(
+            columns.len() >= 4,
+            "malformed MMFFPBCI line {}",
+            line_idx + 1
+        );
         rows.push(MmffPbciRow {
             atom_type: parse_u8(columns[0], line),
             pbci: parse_f64(columns[2], line),
@@ -528,7 +607,11 @@ fn parse_mmff_chg_rows(mmff_chg: &str) -> Vec<MmffChgRow> {
             continue;
         }
         let columns: Vec<&str> = line.split('\t').collect();
-        assert!(columns.len() >= 4, "malformed MMFFChg line {}", line_idx + 1);
+        assert!(
+            columns.len() >= 4,
+            "malformed MMFFChg line {}",
+            line_idx + 1
+        );
         rows.push(MmffChgRow {
             bond_type: parse_u8(columns[0], line),
             i_atom_type: parse_u8(columns[1], line),
@@ -549,7 +632,11 @@ fn parse_mmff_bond_rows(mmff_bond: &str) -> Vec<MmffBondRow> {
             continue;
         }
         let columns: Vec<&str> = line.split('\t').collect();
-        assert!(columns.len() >= 5, "malformed MMFFBond line {}", line_idx + 1);
+        assert!(
+            columns.len() >= 5,
+            "malformed MMFFBond line {}",
+            line_idx + 1
+        );
         rows.push(MmffBondRow {
             bond_type: parse_u8(columns[0], line),
             i_atom_type: parse_u8(columns[1], line),
@@ -568,7 +655,11 @@ fn parse_mmff_bndk_rows(mmff_bndk: &str) -> Vec<MmffBndkRow> {
             continue;
         }
         let columns: Vec<&str> = line.split('\t').collect();
-        assert!(columns.len() >= 4, "malformed MMFFBndk line {}", line_idx + 1);
+        assert!(
+            columns.len() >= 4,
+            "malformed MMFFBndk line {}",
+            line_idx + 1
+        );
         rows.push(MmffBndkRow {
             i_atomic_num: parse_u8(columns[0], line),
             j_atomic_num: parse_u8(columns[1], line),
@@ -609,7 +700,11 @@ fn parse_mmff_cov_rad_pau_ele_rows(mmff_cov_rad_pau_ele: &str) -> Vec<MmffCovRad
             continue;
         }
         let columns: Vec<&str> = line.split('\t').collect();
-        assert!(columns.len() >= 3, "malformed MMFFCovRadPauEle line {}", line_idx + 1);
+        assert!(
+            columns.len() >= 3,
+            "malformed MMFFCovRadPauEle line {}",
+            line_idx + 1
+        );
         rows.push(MmffCovRadPauEleRow {
             atomic_num: parse_u8(columns[0], line),
             r0: parse_f64(columns[1], line),
@@ -632,7 +727,11 @@ fn parse_mmff_angle_rows(mmff_angle: &str) -> Vec<MmffAngleRow> {
             continue;
         }
         let columns: Vec<&str> = line.split('\t').collect();
-        assert!(columns.len() >= 6, "malformed MMFFAngle line {}", line_idx + 1);
+        assert!(
+            columns.len() >= 6,
+            "malformed MMFFAngle line {}",
+            line_idx + 1
+        );
         rows.push(MmffAngleRow {
             angle_type: parse_u8(columns[0], line),
             i_atom_type: parse_u8(columns[1], line),
@@ -655,7 +754,11 @@ fn parse_mmff_stbn_rows(mmff_stbn: &str) -> Vec<MmffStbnRow> {
             continue;
         }
         let columns: Vec<&str> = line.split('\t').collect();
-        assert!(columns.len() >= 6, "malformed MMFFStbn line {}", line_idx + 1);
+        assert!(
+            columns.len() >= 6,
+            "malformed MMFFStbn line {}",
+            line_idx + 1
+        );
         rows.push(MmffStbnRow {
             stretch_bend_type: parse_u8(columns[0], line),
             i_atom_type: parse_u8(columns[1], line),
@@ -678,7 +781,11 @@ fn parse_mmff_dfsb_rows(mmff_dfsb: &str) -> Vec<MmffDfsbRow> {
             continue;
         }
         let columns: Vec<&str> = line.split('\t').collect();
-        assert!(columns.len() >= 5, "malformed MMFFDfsb line {}", line_idx + 1);
+        assert!(
+            columns.len() >= 5,
+            "malformed MMFFDfsb line {}",
+            line_idx + 1
+        );
         rows.push(MmffDfsbRow {
             i_atomic_num: parse_u32(columns[0], line),
             j_atomic_num: parse_u32(columns[1], line),
@@ -700,7 +807,11 @@ fn parse_mmff_oop_rows(mmff_oop: &str) -> Vec<MmffOopRow> {
             continue;
         }
         let columns: Vec<&str> = line.split('\t').collect();
-        assert!(columns.len() >= 5, "malformed MMFFOop line {}", line_idx + 1);
+        assert!(
+            columns.len() >= 5,
+            "malformed MMFFOop line {}",
+            line_idx + 1
+        );
         rows.push(MmffOopRow {
             i_atom_type: parse_u8(columns[0], line),
             j_atom_type: parse_u8(columns[1], line),
@@ -722,7 +833,11 @@ fn parse_mmff_tor_rows(mmff_tor: &str) -> Vec<MmffTorRow> {
             continue;
         }
         let columns: Vec<&str> = line.split('\t').collect();
-        assert!(columns.len() >= 8, "malformed MMFFTor line {}", line_idx + 1);
+        assert!(
+            columns.len() >= 8,
+            "malformed MMFFTor line {}",
+            line_idx + 1
+        );
         rows.push(MmffTorRow {
             tor_type: parse_u8(columns[0], line),
             i_atom_type: parse_u8(columns[1], line),
@@ -760,7 +875,11 @@ fn parse_mmff_vdw_rows(mmff_vdw: &str) -> MmffVdwData {
             daeps = Some(parse_f64(columns[4], line));
             continue;
         }
-        assert!(columns.len() >= 6, "malformed MMFFVdW line {}", line_idx + 1);
+        assert!(
+            columns.len() >= 6,
+            "malformed MMFFVdW line {}",
+            line_idx + 1
+        );
         let alpha_i = parse_f64(columns[1], line);
         let a_i = parse_f64(columns[3], line);
         rows.push(MmffVdwRow {
@@ -811,7 +930,11 @@ fn write_mmff_generated_tables(
     mffs_tor_rows: &[MmffTorRow],
     vdw_data: &MmffVdwData,
 ) {
-    writeln!(output, "pub(crate) static DEFAULT_MMFF_DEF_ROWS: &[(u8, MmffDef)] = &[").unwrap();
+    writeln!(
+        output,
+        "pub(crate) static DEFAULT_MMFF_DEF_ROWS: &[(u8, MmffDef)] = &["
+    )
+    .unwrap();
     for row in def_rows {
         writeln!(
             output,
@@ -959,7 +1082,12 @@ fn write_mmff_generated_tables(
         writeln!(
             output,
             "    ({}, {}, {}, {}, MmffStbn {{ kba_ijk: {:?}, kba_kji: {:?} }}),",
-            row.stretch_bend_type, row.i_atom_type, row.j_atom_type, row.k_atom_type, row.kba_ijk, row.kba_kji
+            row.stretch_bend_type,
+            row.i_atom_type,
+            row.j_atom_type,
+            row.k_atom_type,
+            row.kba_ijk,
+            row.kba_kji
         )
         .unwrap();
     }
@@ -1019,7 +1147,14 @@ fn write_mmff_generated_tables(
         writeln!(
             output,
             "    ({}, {}, {}, {}, {}, MmffTor {{ v1: {:?}, v2: {:?}, v3: {:?} }}),",
-            row.tor_type, row.i_atom_type, row.j_atom_type, row.k_atom_type, row.l_atom_type, row.v1, row.v2, row.v3
+            row.tor_type,
+            row.i_atom_type,
+            row.j_atom_type,
+            row.k_atom_type,
+            row.l_atom_type,
+            row.v1,
+            row.v2,
+            row.v3
         )
         .unwrap();
     }
@@ -1034,7 +1169,14 @@ fn write_mmff_generated_tables(
         writeln!(
             output,
             "    ({}, {}, {}, {}, {}, MmffTor {{ v1: {:?}, v2: {:?}, v3: {:?} }}),",
-            row.tor_type, row.i_atom_type, row.j_atom_type, row.k_atom_type, row.l_atom_type, row.v1, row.v2, row.v3
+            row.tor_type,
+            row.i_atom_type,
+            row.j_atom_type,
+            row.k_atom_type,
+            row.l_atom_type,
+            row.v1,
+            row.v2,
+            row.v3
         )
         .unwrap();
     }
@@ -1046,7 +1188,12 @@ fn write_mmff_generated_tables(
         vdw_data.power
     )
     .unwrap();
-    writeln!(output, "pub(crate) const DEFAULT_MMFF_VDW_B: f64 = {:?};", vdw_data.b).unwrap();
+    writeln!(
+        output,
+        "pub(crate) const DEFAULT_MMFF_VDW_B: f64 = {:?};",
+        vdw_data.b
+    )
+    .unwrap();
     writeln!(
         output,
         "pub(crate) const DEFAULT_MMFF_VDW_BETA: f64 = {:?};",
@@ -1065,7 +1212,11 @@ fn write_mmff_generated_tables(
         vdw_data.daeps
     )
     .unwrap();
-    writeln!(output, "pub(crate) static DEFAULT_MMFF_VDW_ROWS: &[(u8, MmffVdw)] = &[").unwrap();
+    writeln!(
+        output,
+        "pub(crate) static DEFAULT_MMFF_VDW_ROWS: &[(u8, MmffVdw)] = &["
+    )
+    .unwrap();
     for row in &vdw_data.rows {
         writeln!(
             output,
@@ -1100,7 +1251,12 @@ fn parse_uff_atomic_params(param_data: &str) -> Vec<UffAtomicParamRow> {
         .enumerate()
         .map(|(idx, line)| {
             let columns: Vec<&str> = line.split('\t').collect();
-            assert_eq!(columns.len(), 12, "malformed generated UFF row {}: {line}", idx + 1);
+            assert_eq!(
+                columns.len(),
+                12,
+                "malformed generated UFF row {}: {line}",
+                idx + 1
+            );
             UffAtomicParamRow {
                 label: columns[0].to_owned(),
                 r1: parse_f64(columns[1], line),
@@ -1126,16 +1282,17 @@ fn parse_f64(value: &str, line: &str) -> f64 {
 }
 
 fn parse_u8(value: &str, line: &str) -> u8 {
-    let parsed = value
-        .parse::<u32>()
-        .unwrap_or_else(|err| panic!("invalid generated table integer {value:?} in {line:?}: {err}"));
-    u8::try_from(parsed).unwrap_or_else(|_| panic!("generated table integer {value:?} in {line:?} exceeds u8"))
+    let parsed = value.parse::<u32>().unwrap_or_else(|err| {
+        panic!("invalid generated table integer {value:?} in {line:?}: {err}")
+    });
+    u8::try_from(parsed)
+        .unwrap_or_else(|_| panic!("generated table integer {value:?} in {line:?} exceeds u8"))
 }
 
 fn parse_u32(value: &str, line: &str) -> u32 {
-    value
-        .parse::<u32>()
-        .unwrap_or_else(|err| panic!("invalid generated table integer {value:?} in {line:?}: {err}"))
+    value.parse::<u32>().unwrap_or_else(|err| {
+        panic!("invalid generated table integer {value:?} in {line:?}: {err}")
+    })
 }
 
 #[derive(Debug)]
@@ -1158,9 +1315,12 @@ fn parse_rdkit_isotope_masses(table: &str) -> Vec<RdkitIsotopeMassRow> {
                 panic!("invalid RDKit isotope data row {line:?}");
             }
             let atomic_number = parse_u8(fields[0], line);
-            let isotope = fields[2]
-                .parse::<u16>()
-                .unwrap_or_else(|err| panic!("invalid generated isotope integer {:?} in {:?}: {err}", fields[2], line));
+            let isotope = fields[2].parse::<u16>().unwrap_or_else(|err| {
+                panic!(
+                    "invalid generated isotope integer {:?} in {:?}: {err}",
+                    fields[2], line
+                )
+            });
             let mass = parse_f64(fields[3], line);
             Some(RdkitIsotopeMassRow {
                 atomic_number,
@@ -1271,11 +1431,18 @@ fn extract_cpp_string_by_header(source: &str, header: &str) -> Option<String> {
     extract_cpp_string_by_header_with_separator(source, header, "")
 }
 
-fn extract_cpp_string_by_header_with_separator(source: &str, header: &str, element_separator: &str) -> Option<String> {
+fn extract_cpp_string_by_header_with_separator(
+    source: &str,
+    header: &str,
+    element_separator: &str,
+) -> Option<String> {
     let start = source.find(header)?;
     let after_equals = &source[start + header.len()..];
     let end = find_initializer_end(after_equals)?;
-    Some(decode_cpp_string_literals(&after_equals[..end], element_separator))
+    Some(decode_cpp_string_literals(
+        &after_equals[..end],
+        element_separator,
+    ))
 }
 
 fn find_initializer_end(source: &str) -> Option<usize> {

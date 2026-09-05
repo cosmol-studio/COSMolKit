@@ -1,9 +1,10 @@
 use crate::source::base::ichimap2::DifferentiateRanks2;
 use crate::source::base::util::{inchi_calloc, inchi_free};
 use crate::source_types::{
-    AT_NUMB, AT_RANK, ATOM_INVARIANT2, BOND_DOUBLE, CANON_GLOBALS, CANON_STAT, CT_OUT_OF_RAM, NEIGH_LIST, S_CHAR,
-    SourceConstPointer, SourceHeap, SourceHeapError, SourceMutPointer, T_GROUP_INFO, sp_ATOM,
-    tagAtInvariantIndexes_AT_INV_BREAK1, tagAtInvariantIndexes_AT_INV_LENGTH,
+    AT_NUMB, AT_RANK, ATOM_INVARIANT2, BOND_DOUBLE, CANON_GLOBALS, CANON_STAT, CT_OUT_OF_RAM,
+    NEIGH_LIST, S_CHAR, SourceConstPointer, SourceHeap, SourceHeapError, SourceMutPointer,
+    T_GROUP_INFO, sp_ATOM, tagAtInvariantIndexes_AT_INV_BREAK1,
+    tagAtInvariantIndexes_AT_INV_LENGTH,
 };
 
 #[allow(non_snake_case)]
@@ -127,7 +128,11 @@ fn compare_atom_invariant2_values(first: &ATOM_INVARIANT2, second: &ATOM_INVARIA
         return i32::from(first.val[i]) - i32::from(second.val[i]);
     }
     if first.iso_aux_key != second.iso_aux_key {
-        return if first.iso_aux_key > second.iso_aux_key { 1 } else { -1 };
+        return if first.iso_aux_key > second.iso_aux_key {
+            1
+        } else {
+            -1
+        };
     }
     0
 }
@@ -140,9 +145,14 @@ pub(crate) struct AtomInvariant2SortWorkspace<'a> {
 }
 
 impl<'a> AtomInvariant2SortWorkspace<'a> {
-    pub(crate) fn new(invariants: &'a [ATOM_INVARIANT2], count: usize) -> Result<Self, SourceHeapError> {
+    pub(crate) fn new(
+        invariants: &'a [ATOM_INVARIANT2],
+        count: usize,
+    ) -> Result<Self, SourceHeapError> {
         Ok(Self {
-            invariants: invariants.get(..count).ok_or(SourceHeapError::PointerOutOfBounds)?,
+            invariants: invariants
+                .get(..count)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?,
         })
     }
 
@@ -175,7 +185,11 @@ impl<'a> AtomInvariant2SortWorkspace<'a> {
     pub(crate) unsafe fn compare_in_bounds(&self, a1: AT_RANK, a2: AT_RANK) -> i32 {
         // SAFETY: forwarded from this method's contract.
         let ret = unsafe { self.compare_only_in_bounds(a1, a2) };
-        if ret == 0 { i32::from(a1) - i32::from(a2) } else { ret }
+        if ret == 0 {
+            i32::from(a1) - i32::from(a2)
+        } else {
+            ret
+        }
     }
 }
 
@@ -252,7 +266,11 @@ pub(crate) fn CompAtomInvariants2(
     // END INCHI C FUNCTION: CompAtomInvariants2
 
     let ret = CompAtomInvariants2Only(heap, a1, a2, pCG)?;
-    Ok(if ret == 0 { i32::from(a1) - i32::from(a2) } else { ret })
+    Ok(if ret == 0 {
+        i32::from(a1) - i32::from(a2)
+    } else {
+        ret
+    })
 }
 
 #[allow(non_snake_case)]
@@ -318,7 +336,11 @@ pub(crate) fn CompRanksOrd(
         .copied()
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
     let ret = i32::from(first) - i32::from(second);
-    Ok(if ret == 0 { i32::from(a1) - i32::from(a2) } else { ret })
+    Ok(if ret == 0 {
+        i32::from(a1) - i32::from(a2)
+    } else {
+        ret
+    })
 }
 
 #[allow(non_snake_case)]
@@ -360,7 +382,10 @@ where
     heap.with_slice_mut_and_heap(base, |values, heap| {
         let mut num_trans = 0_i32;
         for k in 1..count {
-            let tmp = values.get(k).copied().ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let tmp = values
+                .get(k)
+                .copied()
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
             let mut j = k;
             while j > 0 && compare(heap, values[j - 1], tmp)? > 0 {
                 values[j] = values[j - 1];
@@ -571,8 +596,12 @@ pub(crate) fn CompNeighListRanks(
     let ranks = heap.slice(pCG.m_pn_RankForSort)?;
     let first_index = usize::from(a1);
     let second_index = usize::from(a2);
-    let first_rank = *ranks.get(first_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
-    let second_rank = *ranks.get(second_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
+    let first_rank = *ranks
+        .get(first_index)
+        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    let second_rank = *ranks
+        .get(second_index)
+        .ok_or(SourceHeapError::PointerOutOfBounds)?;
     let ret = i32::from(first_rank) - i32::from(second_rank);
     if ret != 0 {
         return Ok(ret);
@@ -686,7 +715,11 @@ pub(crate) fn CompNeighListRanksOrd(
     // END INCHI C FUNCTION: CompNeighListRanksOrd
 
     let ret = CompNeighListRanks(heap, a1, a2, pCG)?;
-    Ok(if ret == 0 { i32::from(a1) - i32::from(a2) } else { ret })
+    Ok(if ret == 0 {
+        i32::from(a1) - i32::from(a2)
+    } else {
+        ret
+    })
 }
 
 #[allow(non_snake_case)]
@@ -731,10 +764,16 @@ pub(crate) fn CompNeighborsRanksCountEql(
     */
     // END INCHI C FUNCTION: CompNeighborsRanksCountEql
 
-    let first = *ranks.get(usize::from(a1)).ok_or(SourceHeapError::PointerOutOfBounds)?;
-    let second = *ranks.get(usize::from(a2)).ok_or(SourceHeapError::PointerOutOfBounds)?;
+    let first = *ranks
+        .get(usize::from(a1))
+        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    let second = *ranks
+        .get(usize::from(a2))
+        .ok_or(SourceHeapError::PointerOutOfBounds)?;
     let ret = i32::from(first) - i32::from(second);
-    pCG.m_nNumCompNeighborsRanksCountEql = pCG.m_nNumCompNeighborsRanksCountEql.wrapping_add(i32::from(ret == 0));
+    pCG.m_nNumCompNeighborsRanksCountEql = pCG
+        .m_nNumCompNeighborsRanksCountEql
+        .wrapping_add(i32::from(ret == 0));
     Ok(ret)
 }
 
@@ -763,7 +802,12 @@ pub(crate) fn insertions_sort_NeighList_AT_NUMBERS(
     // END INCHI C FUNCTION: insertions_sort_NeighList_AT_NUMBERS
 
     heap.with_slice_mut_and_heap(base, |values, heap| {
-        let num = usize::from(values.first().copied().ok_or(SourceHeapError::PointerOutOfBounds)?);
+        let num = usize::from(
+            values
+                .first()
+                .copied()
+                .ok_or(SourceHeapError::PointerOutOfBounds)?,
+        );
         if num <= 1 {
             return Ok(());
         }
@@ -771,7 +815,10 @@ pub(crate) fn insertions_sort_NeighList_AT_NUMBERS(
         for k in 1..num {
             let mut j = k + 1;
             let mut i = k;
-            let current = values.get(j).copied().ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let current = values
+                .get(j)
+                .copied()
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
             let current_rank = *ranks
                 .get(usize::from(current))
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -821,15 +868,25 @@ pub(crate) fn insertions_sort_NeighList_AT_NUMBERS3(
     // END INCHI C FUNCTION: insertions_sort_NeighList_AT_NUMBERS3
 
     heap.with_slice_mut_and_heap(base, |values, heap| {
-        let num = usize::from(values.first().copied().ok_or(SourceHeapError::PointerOutOfBounds)?);
+        let num = usize::from(
+            values
+                .first()
+                .copied()
+                .ok_or(SourceHeapError::PointerOutOfBounds)?,
+        );
         if num <= 1 {
             return Ok(0);
         }
         let ranks = heap.slice(nRank.as_const())?;
         let mut transitions = 0_i32;
         for k in 1..num {
-            let tmp = values.get(k + 1).copied().ok_or(SourceHeapError::PointerOutOfBounds)?;
-            let current_rank = *ranks.get(usize::from(tmp)).ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let tmp = values
+                .get(k + 1)
+                .copied()
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let current_rank = *ranks
+                .get(usize::from(tmp))
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
             let mut j = k + 1;
             let mut i = k;
             while j > 1 {
@@ -914,7 +971,10 @@ pub(crate) fn insertions_sort_NeighListBySymmAndCanonRank(
 }
 
 #[allow(non_snake_case)]
-pub(crate) fn insertions_sort_AT_RANK(base: &mut [AT_RANK], num: i32) -> Result<i32, SourceHeapError> {
+pub(crate) fn insertions_sort_AT_RANK(
+    base: &mut [AT_RANK],
+    num: i32,
+) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichisort.c:375 insertions_sort_AT_RANK
     // INCHI✔️✔️: int insertions_sort_AT_RANK( AT_RANK *base, int num )
     // INCHI✔️✔️: {
@@ -952,7 +1012,12 @@ pub(crate) fn insertions_sort_AT_RANK(base: &mut [AT_RANK], num: i32) -> Result<
     Ok(num_trans)
 }
 
-pub(crate) fn inchi_qsort<C>(base: &mut [u8], num: usize, width: usize, compare: &mut C) -> Result<(), SourceHeapError>
+pub(crate) fn inchi_qsort<C>(
+    base: &mut [u8],
+    num: usize,
+    width: usize,
+    compare: &mut C,
+) -> Result<(), SourceHeapError>
 where
     C: FnMut(&[u8], &[u8]) -> Result<i32, SourceHeapError>,
 {
@@ -1140,18 +1205,25 @@ where
     if width == 0 {
         return Err(SourceHeapError::UnsupportedSourceBehavior);
     }
-    let required = num.checked_mul(width).ok_or(SourceHeapError::AllocationSizeOverflow)?;
+    let required = num
+        .checked_mul(width)
+        .ok_or(SourceHeapError::AllocationSizeOverflow)?;
     if required > base.len() {
         return Err(SourceHeapError::PointerOutOfBounds);
     }
     let width = isize::try_from(width).map_err(|_| SourceHeapError::PointerOffsetOverflow)?;
     let mut lo = 0_isize;
-    let mut hi = isize::try_from(required - width as usize).map_err(|_| SourceHeapError::PointerOffsetOverflow)?;
+    let mut hi = isize::try_from(required - width as usize)
+        .map_err(|_| SourceHeapError::PointerOffsetOverflow)?;
     let mut low_stack = [0_isize; 62];
     let mut high_stack = [0_isize; 62];
     let mut stack_pointer = 0_usize;
 
-    let compare_at = |bytes: &[u8], first: isize, second: isize, compare: &mut C| -> Result<i32, SourceHeapError> {
+    let compare_at = |bytes: &[u8],
+                      first: isize,
+                      second: isize,
+                      compare: &mut C|
+     -> Result<i32, SourceHeapError> {
         let first = usize::try_from(first).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         let second = usize::try_from(second).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         let width = usize::try_from(width).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
@@ -1263,7 +1335,12 @@ where
     }
 }
 
-pub(crate) fn inchi_swap(bytes: &mut [u8], first: usize, second: usize, width: usize) -> Result<(), SourceHeapError> {
+pub(crate) fn inchi_swap(
+    bytes: &mut [u8],
+    first: usize,
+    second: usize,
+    width: usize,
+) -> Result<(), SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichisort.c:286 inchi_swap
     // INCHI✔️✔️: void inchi_swap( char *a, char *b, size_t width )
     // INCHI✔️✔️: {
@@ -1362,7 +1439,10 @@ pub(crate) fn insertions_sort(
 /// This keeps the source algorithm's adjacent comparison and swap sequence
 /// without reinterpreting initialized Rust values, including their padding, as
 /// an initialized byte slice.
-pub(crate) fn insertions_sort_typed<T>(base: &mut [T], mut compare: impl FnMut(&T, &T) -> i32) -> i32 {
+pub(crate) fn insertions_sort_typed<T>(
+    base: &mut [T],
+    mut compare: impl FnMut(&T, &T) -> i32,
+) -> i32 {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichisort.c:304 insertions_sort
     // INCHI✔️✔️: int insertions_sort( void *pCG,
     // INCHI✔️✔️:                      void *base,
@@ -1521,7 +1601,8 @@ pub(crate) fn CreateNeighListFromLinearCT(
     if i32::from(first) > number_of_atoms {
         return Ok(SourceMutPointer::null());
     }
-    let atom_count = usize::try_from(number_of_atoms).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+    let atom_count =
+        usize::try_from(number_of_atoms).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
     let valence = match inchi_calloc::<S_CHAR>(heap, atom_count as u64 + 1, 1) {
         Ok(pointer) => pointer,
         Err(SourceHeapError::AllocationFailed) => return Ok(SourceMutPointer::null()),
@@ -1568,7 +1649,9 @@ pub(crate) fn CreateNeighListFromLinearCT(
         inchi_free(heap, valence)?;
         return Ok(SourceMutPointer::null());
     }
-    let list_length = number_of_bonds.wrapping_add(number_of_atoms).wrapping_add(1);
+    let list_length = number_of_bonds
+        .wrapping_add(number_of_atoms)
+        .wrapping_add(1);
     let pointer_list = match inchi_calloc::<NEIGH_LIST>(heap, atom_count as u64 + 1, 1) {
         Ok(pointer) => pointer,
         Err(SourceHeapError::AllocationFailed) => SourceMutPointer::null(),
@@ -1606,7 +1689,8 @@ pub(crate) fn CreateNeighListFromLinearCT(
         let start = position;
         let atom_valence = heap.slice(valence.as_const())?[atom];
         position = position.wrapping_add((i32::from(atom_valence) + 1) as usize);
-        let pointer = atom_list.offset(i64::try_from(start).map_err(|_| SourceHeapError::PointerOffsetOverflow)?)?;
+        let pointer = atom_list
+            .offset(i64::try_from(start).map_err(|_| SourceHeapError::PointerOffsetOverflow)?)?;
         heap.slice_mut(pointer_list)?[atom - 1] = pointer;
         heap.slice_mut(pointer)?[0] = 0;
     }
@@ -1815,7 +1899,8 @@ pub(crate) fn CreateNeighList(
     } else {
         (0, SourceMutPointer::null(), SourceMutPointer::null())
     };
-    let group_count = usize::try_from(num_t_groups.max(0)).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+    let group_count =
+        usize::try_from(num_t_groups.max(0)).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
     let groups_view = if group_count == 0 {
         None
     } else {
@@ -1834,7 +1919,8 @@ pub(crate) fn CreateNeighList(
             inchi_free(heap, pointer_list)?;
             return Err(SourceHeapError::UnsupportedSourceBehavior);
         }
-        let valence = usize::try_from(valence).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+        let valence =
+            usize::try_from(valence).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
         if valence > atom.neighbor.len() {
             inchi_free(heap, pointer_list)?;
             return Err(SourceHeapError::PointerOutOfBounds);
@@ -1883,9 +1969,10 @@ pub(crate) fn CreateNeighList(
         // path's error point, so failure to form this view is not returned yet.
         unsafe { heap.stable_slice(endpoint_pointer.as_const()).ok() }
     };
-    let endpoint_values = endpoint_values_view
-        .as_ref()
-        .map(|view| view.prefix(view.len()).expect("the complete stable view is in bounds"));
+    let endpoint_values = endpoint_values_view.as_ref().map(|view| {
+        view.prefix(view.len())
+            .expect("the complete stable view is in bounds")
+    });
     let source_layout_is_valid = heap
         .slice(pointer_list.as_const())
         .is_ok_and(|pointers| pointers.len() > row_count)
@@ -1918,7 +2005,9 @@ pub(crate) fn CreateNeighList(
                 let neighbor = unsafe { *atom.neighbor.get_unchecked(bond) };
                 unsafe { *list.get_unchecked_mut(position) = neighbor };
                 position += 1;
-                if bDoubleBondSquare != 0 && unsafe { *atom.bond_type.get_unchecked(bond) } == BOND_DOUBLE as u8 {
+                if bDoubleBondSquare != 0
+                    && unsafe { *atom.bond_type.get_unchecked(bond) } == BOND_DOUBLE as u8
+                {
                     unsafe { *list.get_unchecked_mut(position) = neighbor };
                     position += 1;
                 }
@@ -1926,13 +2015,16 @@ pub(crate) fn CreateNeighList(
             }
             if num_t_groups != 0 && atom.endpoint != 0 {
                 unsafe {
-                    *list.get_unchecked_mut(position) =
-                        num_atoms.wrapping_add(i32::from(atom.endpoint)).wrapping_sub(1) as AT_NUMB;
+                    *list.get_unchecked_mut(position) = num_atoms
+                        .wrapping_add(i32::from(atom.endpoint))
+                        .wrapping_sub(1)
+                        as AT_NUMB;
                 }
                 position += 1;
             }
             unsafe {
-                *list.get_unchecked_mut(start) = position.wrapping_sub(start).wrapping_sub(1) as AT_NUMB;
+                *list.get_unchecked_mut(start) =
+                    position.wrapping_sub(start).wrapping_sub(1) as AT_NUMB;
                 *pointers.get_unchecked_mut(index) = atom_list.add_unchecked(start as u64);
             }
         }
@@ -1944,21 +2036,25 @@ pub(crate) fn CreateNeighList(
             let mut endpoint = 0_usize;
             while endpoint < valence {
                 unsafe {
-                    *list.get_unchecked_mut(position) = *endpoints.get_unchecked(first_endpoint + endpoint);
+                    *list.get_unchecked_mut(position) =
+                        *endpoints.get_unchecked(first_endpoint + endpoint);
                 }
                 position += 1;
                 endpoint += 1;
             }
             unsafe {
-                *list.get_unchecked_mut(start) = position.wrapping_sub(start).wrapping_sub(1) as AT_NUMB;
-                *pointers.get_unchecked_mut(atom_count + index) = atom_list.add_unchecked(start as u64);
+                *list.get_unchecked_mut(start) =
+                    position.wrapping_sub(start).wrapping_sub(1) as AT_NUMB;
+                *pointers.get_unchecked_mut(atom_count + index) =
+                    atom_list.add_unchecked(start as u64);
             }
         }
         debug_assert!(position < list_length);
     } else {
         let mut position = 0_usize;
         for (index, atom) in atoms.iter().enumerate() {
-            let valence = usize::try_from(atom.valence).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+            let valence = usize::try_from(atom.valence)
+                .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
             let start = position;
             position += 1;
             for bond in 0..valence {
@@ -1970,11 +2066,14 @@ pub(crate) fn CreateNeighList(
                 }
             }
             if num_t_groups != 0 && atom.endpoint != 0 {
-                heap.slice_mut(atom_list)?[position] =
-                    num_atoms.wrapping_add(i32::from(atom.endpoint)).wrapping_sub(1) as AT_NUMB;
+                heap.slice_mut(atom_list)?[position] = num_atoms
+                    .wrapping_add(i32::from(atom.endpoint))
+                    .wrapping_sub(1)
+                    as AT_NUMB;
                 position += 1;
             }
-            heap.slice_mut(atom_list)?[start] = position.wrapping_sub(start).wrapping_sub(1) as AT_NUMB;
+            heap.slice_mut(atom_list)?[start] =
+                position.wrapping_sub(start).wrapping_sub(1) as AT_NUMB;
             heap.slice_mut(pointer_list)?[index] = atom_list.offset(start as i64)?;
         }
         for (index, group) in groups.iter().enumerate() {
@@ -1990,7 +2089,8 @@ pub(crate) fn CreateNeighList(
                 heap.slice_mut(atom_list)?[position] = value;
                 position += 1;
             }
-            heap.slice_mut(atom_list)?[start] = position.wrapping_sub(start).wrapping_sub(1) as AT_NUMB;
+            heap.slice_mut(atom_list)?[start] =
+                position.wrapping_sub(start).wrapping_sub(1) as AT_NUMB;
             let pointer_index = atom_count + index;
             let pointers = heap.slice_mut(pointer_list)?;
             if pointer_index >= pointers.len() {
@@ -2175,9 +2275,10 @@ pub(crate) fn BreakAllTies(
     while index < num_atoms {
         let (previous_atom, current_atom) = {
             let atom_numbers = heap.slice(new_atom_number.as_const())?;
-            let previous_index =
-                usize::try_from(index.wrapping_sub(1)).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            let current_index = usize::try_from(index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let previous_index = usize::try_from(index.wrapping_sub(1))
+                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let current_index =
+                usize::try_from(index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             (
                 *atom_numbers
                     .get(previous_index)
@@ -2282,7 +2383,9 @@ mod tests {
     #[test]
     fn source_port__ichisort__breakallties__line_956() {
         fn empty_neighbors(heap: &mut SourceHeap, count: usize) -> SourceMutPointer<NEIGH_LIST> {
-            let atoms = heap.allocate_model_storage(vec![sp_ATOM::default(); count]).unwrap();
+            let atoms = heap
+                .allocate_model_storage(vec![sp_ATOM::default(); count])
+                .unwrap();
             CreateNeighList(heap, count as i32, count as i32, atoms.as_const(), 0, None).unwrap()
         }
 
@@ -2325,8 +2428,12 @@ mod tests {
         let mut tied_heap = SourceHeap::default();
         let previous_rank = tied_heap.allocate_model_storage(vec![2_u16, 2]).unwrap();
         let previous_order = tied_heap.allocate_model_storage(vec![0_u16, 1]).unwrap();
-        let new_rank = tied_heap.allocate_model_storage(vec![99_u16, 98, 97]).unwrap();
-        let new_order = tied_heap.allocate_model_storage(vec![96_u16, 95, 94]).unwrap();
+        let new_rank = tied_heap
+            .allocate_model_storage(vec![99_u16, 98, 97])
+            .unwrap();
+        let new_order = tied_heap
+            .allocate_model_storage(vec![96_u16, 95, 94])
+            .unwrap();
         let stack = tied_heap
             .allocate_model_storage(vec![previous_rank, previous_order, new_rank, new_order])
             .unwrap();
@@ -2429,7 +2536,9 @@ mod tests {
     #[test]
     fn source_port__ichisort__compneighborsrankscounteql__line_677() {
         let mut heap = SourceHeap::default();
-        let ranks = heap.allocate_model_storage(vec![u16::MAX, 0, 77, 77]).unwrap();
+        let ranks = heap
+            .allocate_model_storage(vec![u16::MAX, 0, 77, 77])
+            .unwrap();
         let mut globals = CANON_GLOBALS {
             m_pn_RankForSort: ranks.as_const(),
             m_nNumCompNeighborsRanksCountEql: i32::MAX,
@@ -2476,12 +2585,18 @@ mod tests {
             right: AT_NUMB,
             globals: &CANON_GLOBALS,
         ) -> Result<i32, SourceHeapError> {
-            CompNeighborsAT_NUMBER(left, right, CompNeighborsATNumberContext::Globals { heap, globals })
+            CompNeighborsAT_NUMBER(
+                left,
+                right,
+                CompNeighborsATNumberContext::Globals { heap, globals },
+            )
         }
 
         let mut heap = SourceHeap::default();
         let neighbors = heap.allocate_model_storage(vec![2_u16, 0, 3, 1]).unwrap();
-        let ranks = heap.allocate_model_storage(vec![50_u16, 10, 30, 30]).unwrap();
+        let ranks = heap
+            .allocate_model_storage(vec![50_u16, 10, 30, 30])
+            .unwrap();
         let globals = CANON_GLOBALS {
             m_pNeighborsForSort: neighbors.as_const(),
             m_pn_RankForSort: ranks.as_const(),
@@ -2492,10 +2607,16 @@ mod tests {
         assert_eq!(compare(&heap, 1, 0, &globals), Ok(20));
         assert_eq!(compare(&heap, 0, 2, &globals), Ok(0));
         assert_eq!(compare(&heap, 3, 3, &globals), Ok(0));
-        assert_eq!(compare(&heap, 4, 0, &globals), Err(SourceHeapError::PointerOutOfBounds));
+        assert_eq!(
+            compare(&heap, 4, 0, &globals),
+            Err(SourceHeapError::PointerOutOfBounds)
+        );
 
         let invalid_neighbor = CANON_GLOBALS {
-            m_pNeighborsForSort: heap.allocate_model_storage(vec![99_u16]).unwrap().as_const(),
+            m_pNeighborsForSort: heap
+                .allocate_model_storage(vec![99_u16])
+                .unwrap()
+                .as_const(),
             m_pn_RankForSort: ranks.as_const(),
             ..CANON_GLOBALS::default()
         };
@@ -2570,7 +2691,11 @@ mod tests {
         let mut different = ATOM_INVARIANT2::default();
         different.val[0] = 2;
         let pointer = heap
-            .allocate_model_storage(vec![ATOM_INVARIANT2::default(), different, ATOM_INVARIANT2::default()])
+            .allocate_model_storage(vec![
+                ATOM_INVARIANT2::default(),
+                different,
+                ATOM_INVARIANT2::default(),
+            ])
             .unwrap();
         let globals = CANON_GLOBALS {
             m_pAtomInvariant2ForSort: pointer.as_const(),
@@ -2681,8 +2806,14 @@ mod tests {
         assert_eq!(CompChemElemLex(b"Cl", b"Br"), Ok(1));
         assert_eq!(CompChemElemLex(b"Ca", b"Cl"), Ok(-11));
         assert_eq!(CompChemElemLex(&[0xff, 0], &[0x01, 0]), Ok(254));
-        assert_eq!(CompChemElemLex(b"C", b"C "), Err(SourceHeapError::PointerOutOfBounds));
-        assert_eq!(CompChemElemLex(b"C ", b"C"), Err(SourceHeapError::PointerOutOfBounds));
+        assert_eq!(
+            CompChemElemLex(b"C", b"C "),
+            Err(SourceHeapError::PointerOutOfBounds)
+        );
+        assert_eq!(
+            CompChemElemLex(b"C ", b"C"),
+            Err(SourceHeapError::PointerOutOfBounds)
+        );
     }
 
     #[test]
@@ -2719,7 +2850,9 @@ mod tests {
         let first = heap.allocate_model_storage(vec![1_u16, 0]).unwrap();
         let second = heap.allocate_model_storage(vec![1_u16, 1]).unwrap();
         let equal = heap.allocate_model_storage(vec![1_u16, 0]).unwrap();
-        let neighbor_lists = heap.allocate_model_storage(vec![first, second, equal, second]).unwrap();
+        let neighbor_lists = heap
+            .allocate_model_storage(vec![first, second, equal, second])
+            .unwrap();
         let ranks = heap.allocate_model_storage(vec![7_u16, 3, 7, 7]).unwrap();
         let globals = CANON_GLOBALS {
             m_pNeighList_RankForSort: neighbor_lists.as_const(),
@@ -2761,7 +2894,9 @@ mod tests {
         let second = heap.allocate_model_storage(vec![2_u16, 0, 2]).unwrap();
         let equal = heap.allocate_model_storage(vec![2_u16, 0, 1]).unwrap();
         let short = heap.allocate_model_storage(vec![1_u16, 0]).unwrap();
-        let neighbor_lists = heap.allocate_model_storage(vec![first, second, equal, short]).unwrap();
+        let neighbor_lists = heap
+            .allocate_model_storage(vec![first, second, equal, short])
+            .unwrap();
         let globals = CANON_GLOBALS {
             m_pNeighList_RankForSort: neighbor_lists.as_const(),
             m_pn_RankForSort: ranks.as_const(),
@@ -2817,7 +2952,8 @@ mod tests {
             oracle.status,
             String::from_utf8_lossy(&oracle.stderr)
         );
-        let output = String::from_utf8(oracle.stdout).expect("official C oracle output must be UTF-8");
+        let output =
+            String::from_utf8(oracle.stdout).expect("official C oracle output must be UTF-8");
         let mut record_count = 0_usize;
         for line in output.lines() {
             let official: Value = serde_json::from_str(line).expect("oracle record must be JSON");
@@ -2907,7 +3043,9 @@ mod tests {
     #[test]
     fn source_port__ichisort__compneighlistsuptomaxrank__line_644() {
         let mut heap = SourceHeap::default();
-        let ranks = heap.allocate_model_storage(vec![1_u16, 2, 3, 9, 10, u16::MAX]).unwrap();
+        let ranks = heap
+            .allocate_model_storage(vec![1_u16, 2, 3, 9, 10, u16::MAX])
+            .unwrap();
         let first = heap.allocate_model_storage(vec![3_u16, 0, 1, 3]).unwrap();
         let second = heap.allocate_model_storage(vec![3_u16, 0, 2, 4]).unwrap();
         let short = heap.allocate_model_storage(vec![1_u16, 0]).unwrap();
@@ -2915,7 +3053,14 @@ mod tests {
         let boundary_high = heap.allocate_model_storage(vec![1_u16, 5]).unwrap();
         let boundary_low = heap.allocate_model_storage(vec![1_u16, 4]).unwrap();
         let neighbor_lists = heap
-            .allocate_model_storage(vec![first, second, short, long, boundary_high, boundary_low])
+            .allocate_model_storage(vec![
+                first,
+                second,
+                short,
+                long,
+                boundary_high,
+                boundary_low,
+            ])
             .unwrap();
         let mut globals = CANON_GLOBALS {
             m_pNeighList_RankForSort: neighbor_lists.as_const(),
@@ -2984,7 +3129,8 @@ mod tests {
             oracle.status,
             String::from_utf8_lossy(&oracle.stderr)
         );
-        let output = String::from_utf8(oracle.stdout).expect("official C oracle output must be UTF-8");
+        let output =
+            String::from_utf8(oracle.stdout).expect("official C oracle output must be UTF-8");
         let mut record_count = 0_usize;
         for line in output.lines() {
             let official: Value = serde_json::from_str(line).expect("oracle record must be JSON");
@@ -3023,8 +3169,12 @@ mod tests {
                     .expect("second_index must be u16"),
             )
             .expect("second_index exceeds u16");
-            let max_rank = u16::try_from(official["input"]["max_rank"].as_u64().expect("max_rank must be u16"))
-                .expect("max_rank exceeds u16");
+            let max_rank = u16::try_from(
+                official["input"]["max_rank"]
+                    .as_u64()
+                    .expect("max_rank must be u16"),
+            )
+            .expect("max_rank exceeds u16");
 
             let mut heap = SourceHeap::default();
             let ranks = heap.allocate_model_storage(ranks_values).unwrap();
@@ -3046,7 +3196,8 @@ mod tests {
             let ranks_before = heap.slice(ranks.as_const()).unwrap().to_vec();
             let lists_before = heap.slice(neighbor_lists.as_const()).unwrap().to_vec();
             let globals_before = globals.clone();
-            let rust = CompNeighListsUpToMaxRank(&heap, first_index, second_index, &globals).unwrap();
+            let rust =
+                CompNeighListsUpToMaxRank(&heap, first_index, second_index, &globals).unwrap();
             let expected = i32::try_from(
                 official["output"]["result"]
                     .as_i64()
@@ -3080,7 +3231,9 @@ mod tests {
         let first = heap.allocate_model_storage(vec![1_u16, 0]).unwrap();
         let second = heap.allocate_model_storage(vec![1_u16, 1]).unwrap();
         let equal = heap.allocate_model_storage(vec![1_u16, 0]).unwrap();
-        let neighbor_lists = heap.allocate_model_storage(vec![first, second, equal, second]).unwrap();
+        let neighbor_lists = heap
+            .allocate_model_storage(vec![first, second, equal, second])
+            .unwrap();
         let ranks = heap.allocate_model_storage(vec![7_u16, 3, 7, 7]).unwrap();
         let globals = CANON_GLOBALS {
             m_pNeighList_RankForSort: neighbor_lists.as_const(),
@@ -3104,7 +3257,10 @@ mod tests {
             m_pn_RankForSort: ranks.as_const(),
             ..CANON_GLOBALS::default()
         };
-        assert_eq!(CompNeighListRanksOrd(&heap, 0, 1, &rank_short_circuit), Ok(4));
+        assert_eq!(
+            CompNeighListRanksOrd(&heap, 0, 1, &rank_short_circuit),
+            Ok(4)
+        );
         assert_eq!(
             CompNeighListRanksOrd(&heap, 0, 2, &rank_short_circuit),
             Err(SourceHeapError::NullPointer)
@@ -3114,7 +3270,9 @@ mod tests {
     #[test]
     fn source_port__ichisort__insertions_sort_at_numbers__line_331() {
         let mut heap = SourceHeap::default();
-        let allocation = heap.allocate_model_storage(vec![99_u16, 21, 11, 22, 12, 88]).unwrap();
+        let allocation = heap
+            .allocate_model_storage(vec![99_u16, 21, 11, 22, 12, 88])
+            .unwrap();
         let base = allocation.offset(1).unwrap();
         let mut calls = Vec::new();
         assert_eq!(
@@ -3124,8 +3282,14 @@ mod tests {
             }),
             Ok(3)
         );
-        assert_eq!(heap.slice(allocation.as_const()).unwrap(), &[99, 11, 12, 21, 22, 88]);
-        assert_eq!(calls, vec![(21, 11), (21, 22), (22, 12), (21, 12), (11, 12)]);
+        assert_eq!(
+            heap.slice(allocation.as_const()).unwrap(),
+            &[99, 11, 12, 21, 22, 88]
+        );
+        assert_eq!(
+            calls,
+            vec![(21, 11), (21, 22), (22, 12), (21, 12), (11, 12)]
+        );
 
         let null = SourceMutPointer::<AT_NUMB>::null();
         let mut call_count = 0;
@@ -3167,14 +3331,29 @@ mod tests {
     #[test]
     fn source_port__ichisort__insertions_sort_neighlist_at_numbers__line_355() {
         let mut heap = SourceHeap::default();
-        let ranks = heap.allocate_model_storage(vec![50_u16, 10, 40, 20, 30, 20]).unwrap();
-        let allocation = heap.allocate_model_storage(vec![99_u16, 5, 0, 1, 2, 3, 4, 88]).unwrap();
+        let ranks = heap
+            .allocate_model_storage(vec![50_u16, 10, 40, 20, 30, 20])
+            .unwrap();
+        let allocation = heap
+            .allocate_model_storage(vec![99_u16, 5, 0, 1, 2, 3, 4, 88])
+            .unwrap();
         let list = allocation.offset(1).unwrap();
-        assert_eq!(insertions_sort_NeighList_AT_NUMBERS(&mut heap, list, ranks), Ok(()));
-        assert_eq!(heap.slice(allocation.as_const()).unwrap(), &[99, 5, 1, 3, 4, 2, 0, 88]);
+        assert_eq!(
+            insertions_sort_NeighList_AT_NUMBERS(&mut heap, list, ranks),
+            Ok(())
+        );
+        assert_eq!(
+            heap.slice(allocation.as_const()).unwrap(),
+            &[99, 5, 1, 3, 4, 2, 0, 88]
+        );
 
-        let stable = heap.allocate_model_storage(vec![4_u16, 5, 3, 1, 0]).unwrap();
-        assert_eq!(insertions_sort_NeighList_AT_NUMBERS(&mut heap, stable, ranks), Ok(()));
+        let stable = heap
+            .allocate_model_storage(vec![4_u16, 5, 3, 1, 0])
+            .unwrap();
+        assert_eq!(
+            insertions_sort_NeighList_AT_NUMBERS(&mut heap, stable, ranks),
+            Ok(())
+        );
         assert_eq!(heap.slice(stable.as_const()).unwrap(), &[4, 1, 5, 3, 0]);
 
         let empty = heap.allocate_model_storage(vec![0_u16]).unwrap();
@@ -3206,7 +3385,9 @@ mod tests {
     #[test]
     fn source_port__ichisort__compareneighlistlex__line_560() {
         let mut heap = SourceHeap::default();
-        let ranks = heap.allocate_model_storage(vec![5_u16, 2, 9, 2, u16::MAX, 0]).unwrap();
+        let ranks = heap
+            .allocate_model_storage(vec![5_u16, 2, 9, 2, u16::MAX, 0])
+            .unwrap();
         let first = heap.allocate_model_storage(vec![3_u16, 1, 0, 4]).unwrap();
         let second = heap.allocate_model_storage(vec![3_u16, 3, 0, 4]).unwrap();
         assert_eq!(CompareNeighListLex(&heap, first, second, ranks), Ok(0));
@@ -3224,8 +3405,12 @@ mod tests {
         let empty2 = heap.allocate_model_storage(vec![0_u16, 99]).unwrap();
         assert_eq!(CompareNeighListLex(&heap, empty1, empty2, ranks), Ok(0));
 
-        let max_rank = heap.allocate_model_storage(vec![2_u16, 4, u16::MAX]).unwrap();
-        let min_rank = heap.allocate_model_storage(vec![2_u16, 5, u16::MAX]).unwrap();
+        let max_rank = heap
+            .allocate_model_storage(vec![2_u16, 4, u16::MAX])
+            .unwrap();
+        let min_rank = heap
+            .allocate_model_storage(vec![2_u16, 5, u16::MAX])
+            .unwrap();
         assert_eq!(
             CompareNeighListLex(&heap, max_rank, min_rank, ranks),
             Ok(i32::from(u16::MAX))
@@ -3233,7 +3418,10 @@ mod tests {
 
         let short_circuit1 = heap.allocate_model_storage(vec![2_u16, 2]).unwrap();
         let short_circuit2 = heap.allocate_model_storage(vec![2_u16, 0]).unwrap();
-        assert_eq!(CompareNeighListLex(&heap, short_circuit1, short_circuit2, ranks), Ok(4));
+        assert_eq!(
+            CompareNeighListLex(&heap, short_circuit1, short_circuit2, ranks),
+            Ok(4)
+        );
 
         let malformed1 = heap.allocate_model_storage(vec![2_u16, 1]).unwrap();
         let malformed2 = heap.allocate_model_storage(vec![2_u16, 3]).unwrap();
@@ -3246,12 +3434,24 @@ mod tests {
     #[test]
     fn source_port__ichisort__compareneighlistlexuptomaxrank__line_582() {
         let mut heap = SourceHeap::default();
-        let ranks = heap.allocate_model_storage(vec![1_u16, 3, 5, 7, u16::MAX]).unwrap();
-        let first = heap.allocate_model_storage(vec![4_u16, 0, 1, 2, 4]).unwrap();
-        let second = heap.allocate_model_storage(vec![4_u16, 0, 1, 3, 4]).unwrap();
+        let ranks = heap
+            .allocate_model_storage(vec![1_u16, 3, 5, 7, u16::MAX])
+            .unwrap();
+        let first = heap
+            .allocate_model_storage(vec![4_u16, 0, 1, 2, 4])
+            .unwrap();
+        let second = heap
+            .allocate_model_storage(vec![4_u16, 0, 1, 3, 4])
+            .unwrap();
 
-        assert_eq!(CompareNeighListLexUpToMaxRank(&heap, first, second, ranks, 5), Ok(1));
-        assert_eq!(CompareNeighListLexUpToMaxRank(&heap, first, second, ranks, 7), Ok(-2));
+        assert_eq!(
+            CompareNeighListLexUpToMaxRank(&heap, first, second, ranks, 5),
+            Ok(1)
+        );
+        assert_eq!(
+            CompareNeighListLexUpToMaxRank(&heap, first, second, ranks, 7),
+            Ok(-2)
+        );
         assert_eq!(
             CompareNeighListLexUpToMaxRank(&heap, first, second, ranks, u16::MAX),
             Ok(-2)
@@ -3288,18 +3488,35 @@ mod tests {
     #[test]
     fn source_port__ichisort__insertions_sort_neighlist_at_numbers3__line_396() {
         let mut heap = SourceHeap::default();
-        let ranks = heap.allocate_model_storage(vec![3_u16, 1, 2, 1, 3]).unwrap();
-        let list = heap.allocate_model_storage(vec![5_u16, 0, 1, 2, 3, 4, 99]).unwrap();
-        assert_eq!(insertions_sort_NeighList_AT_NUMBERS3(&mut heap, list, ranks), Ok(4));
-        assert_eq!(heap.slice(list.as_const()).unwrap(), &[5, 1, 3, 2, 0, 4, 99]);
+        let ranks = heap
+            .allocate_model_storage(vec![3_u16, 1, 2, 1, 3])
+            .unwrap();
+        let list = heap
+            .allocate_model_storage(vec![5_u16, 0, 1, 2, 3, 4, 99])
+            .unwrap();
+        assert_eq!(
+            insertions_sort_NeighList_AT_NUMBERS3(&mut heap, list, ranks),
+            Ok(4)
+        );
+        assert_eq!(
+            heap.slice(list.as_const()).unwrap(),
+            &[5, 1, 3, 2, 0, 4, 99]
+        );
 
-        let descending_ranks = heap.allocate_model_storage(vec![5_u16, 4, 3, 2, 1]).unwrap();
-        let descending = heap.allocate_model_storage(vec![5_u16, 0, 1, 2, 3, 4]).unwrap();
+        let descending_ranks = heap
+            .allocate_model_storage(vec![5_u16, 4, 3, 2, 1])
+            .unwrap();
+        let descending = heap
+            .allocate_model_storage(vec![5_u16, 0, 1, 2, 3, 4])
+            .unwrap();
         assert_eq!(
             insertions_sort_NeighList_AT_NUMBERS3(&mut heap, descending, descending_ranks),
             Ok(10)
         );
-        assert_eq!(heap.slice(descending.as_const()).unwrap(), &[5, 4, 3, 2, 1, 0]);
+        assert_eq!(
+            heap.slice(descending.as_const()).unwrap(),
+            &[5, 4, 3, 2, 1, 0]
+        );
 
         let empty = heap.allocate_model_storage(vec![0_u16]).unwrap();
         let one = heap.allocate_model_storage(vec![1_u16, u16::MAX]).unwrap();
@@ -3324,20 +3541,38 @@ mod tests {
     #[test]
     fn source_port__ichisort__insertions_sort_neighlistbysymmandcanonrank__line_421() {
         let mut heap = SourceHeap::default();
-        let symmetry = heap.allocate_model_storage(vec![2_u16, 1, 2, 3, 2]).unwrap();
-        let canonical = heap.allocate_model_storage(vec![1_u16, 9, 5, 0, 5]).unwrap();
-        let list = heap.allocate_model_storage(vec![5_u16, 0, 1, 2, 3, 4, 99]).unwrap();
+        let symmetry = heap
+            .allocate_model_storage(vec![2_u16, 1, 2, 3, 2])
+            .unwrap();
+        let canonical = heap
+            .allocate_model_storage(vec![1_u16, 9, 5, 0, 5])
+            .unwrap();
+        let list = heap
+            .allocate_model_storage(vec![5_u16, 0, 1, 2, 3, 4, 99])
+            .unwrap();
         assert_eq!(
             insertions_sort_NeighListBySymmAndCanonRank(&mut heap, list, symmetry, canonical),
             Ok(())
         );
-        assert_eq!(heap.slice(list.as_const()).unwrap(), &[5, 3, 2, 4, 0, 1, 99]);
+        assert_eq!(
+            heap.slice(list.as_const()).unwrap(),
+            &[5, 3, 2, 4, 0, 1, 99]
+        );
 
-        let extrema_symmetry = heap.allocate_model_storage(vec![0_u16, u16::MAX, u16::MAX]).unwrap();
-        let extrema_canonical = heap.allocate_model_storage(vec![u16::MAX, 0, u16::MAX]).unwrap();
+        let extrema_symmetry = heap
+            .allocate_model_storage(vec![0_u16, u16::MAX, u16::MAX])
+            .unwrap();
+        let extrema_canonical = heap
+            .allocate_model_storage(vec![u16::MAX, 0, u16::MAX])
+            .unwrap();
         let extrema = heap.allocate_model_storage(vec![3_u16, 0, 1, 2]).unwrap();
         assert_eq!(
-            insertions_sort_NeighListBySymmAndCanonRank(&mut heap, extrema, extrema_symmetry, extrema_canonical,),
+            insertions_sort_NeighListBySymmAndCanonRank(
+                &mut heap,
+                extrema,
+                extrema_symmetry,
+                extrema_canonical,
+            ),
             Ok(())
         );
         assert_eq!(heap.slice(extrema.as_const()).unwrap(), &[3, 2, 1, 0]);
@@ -3367,14 +3602,24 @@ mod tests {
         let partial_canonical = heap.allocate_model_storage(vec![0_u16, 0]).unwrap();
         let partial = heap.allocate_model_storage(vec![4_u16, 0, 1]).unwrap();
         assert_eq!(
-            insertions_sort_NeighListBySymmAndCanonRank(&mut heap, partial, partial_symmetry, partial_canonical,),
+            insertions_sort_NeighListBySymmAndCanonRank(
+                &mut heap,
+                partial,
+                partial_symmetry,
+                partial_canonical,
+            ),
             Err(SourceHeapError::PointerOutOfBounds)
         );
         assert_eq!(heap.slice(partial.as_const()).unwrap(), &[4, 1, 0]);
 
         let invalid_atom = heap.allocate_model_storage(vec![2_u16, 0, 9]).unwrap();
         assert_eq!(
-            insertions_sort_NeighListBySymmAndCanonRank(&mut heap, invalid_atom, symmetry, canonical,),
+            insertions_sort_NeighListBySymmAndCanonRank(
+                &mut heap,
+                invalid_atom,
+                symmetry,
+                canonical,
+            ),
             Err(SourceHeapError::PointerOutOfBounds)
         );
     }
@@ -3390,7 +3635,12 @@ mod tests {
         let expected_transitions = original
             .iter()
             .enumerate()
-            .map(|(left, value)| original[left + 1..].iter().filter(|right| value > right).count())
+            .map(|(left, value)| {
+                original[left + 1..]
+                    .iter()
+                    .filter(|right| value > right)
+                    .count()
+            })
             .sum::<usize>() as i32;
         assert_eq!(
             insertions_sort_AT_RANK(&mut ranks, original.len() as i32),
@@ -3431,7 +3681,9 @@ mod tests {
             &[i32::MIN, -1, 3, 3, i32::MAX, 91]
         );
 
-        let descending = heap.allocate_model_storage(vec![5_i32, 4, 3, 2, 1]).unwrap();
+        let descending = heap
+            .allocate_model_storage(vec![5_i32, 4, 3, 2, 1])
+            .unwrap();
         assert_eq!(iisort(&mut heap, descending, 5), Ok(descending));
         assert_eq!(heap.slice(descending.as_const()).unwrap(), &[1, 2, 3, 4, 5]);
 
@@ -3441,10 +3693,15 @@ mod tests {
         for case in cases {
             let pointer = heap.allocate_model_storage(case).unwrap();
             assert_eq!(iisort(&mut heap, pointer, 5), Ok(pointer));
-            assert_eq!(heap.slice(pointer.as_const()).unwrap(), &[i32::MIN, -1, 3, 3, i32::MAX]);
+            assert_eq!(
+                heap.slice(pointer.as_const()).unwrap(),
+                &[i32::MIN, -1, 3, 3, i32::MAX]
+            );
         }
 
-        let interior_allocation = heap.allocate_model_storage(vec![91_i32, 5, 4, 3, 2, 1, 92]).unwrap();
+        let interior_allocation = heap
+            .allocate_model_storage(vec![91_i32, 5, 4, 3, 2, 1, 92])
+            .unwrap();
         let interior = interior_allocation.offset(1).unwrap();
         assert_eq!(iisort(&mut heap, interior, 5), Ok(interior));
         assert_eq!(
@@ -3456,7 +3713,10 @@ mod tests {
         assert_eq!(iisort(&mut heap, null, i32::MIN), Ok(null));
         assert_eq!(iisort(&mut heap, null, 0), Ok(null));
         assert_eq!(iisort(&mut heap, null, 1), Ok(null));
-        assert_eq!(iisort(&mut heap, null, 2), Err(SourceHeapError::NullPointer));
+        assert_eq!(
+            iisort(&mut heap, null, 2),
+            Err(SourceHeapError::NullPointer)
+        );
         let before_error = heap.slice(descending.as_const()).unwrap().to_vec();
         assert_eq!(
             iisort(&mut heap, descending, 6),
@@ -3525,7 +3785,9 @@ mod tests {
     #[test]
     fn source_port__ichisort__createneighlistfromlinearct__line_701() {
         let mut heap = SourceHeap::default();
-        let ct = heap.allocate_model_storage(vec![2_u16, 1, 3, 1, 2]).unwrap();
+        let ct = heap
+            .allocate_model_storage(vec![2_u16, 1, 3, 1, 2])
+            .unwrap();
         let neighbors = CreateNeighListFromLinearCT(&mut heap, ct.as_const(), 5, 3).unwrap();
         assert!(!neighbors.is_null());
         let pointers = heap.slice(neighbors.as_const()).unwrap();
@@ -3534,11 +3796,24 @@ mod tests {
         assert_eq!(pointers[0].difference(pointers[0]).unwrap(), 0);
         assert_eq!(pointers[1].difference(pointers[0]).unwrap(), 3);
         assert_eq!(pointers[2].difference(pointers[0]).unwrap(), 6);
-        assert_eq!(&heap.slice(pointers[0].as_const()).unwrap()[..3], &[2, 1, 2]);
-        assert_eq!(&heap.slice(pointers[1].as_const()).unwrap()[..3], &[2, 0, 2]);
-        assert_eq!(&heap.slice(pointers[2].as_const()).unwrap()[..3], &[2, 0, 1]);
+        assert_eq!(
+            &heap.slice(pointers[0].as_const()).unwrap()[..3],
+            &[2, 1, 2]
+        );
+        assert_eq!(
+            &heap.slice(pointers[1].as_const()).unwrap()[..3],
+            &[2, 0, 2]
+        );
+        assert_eq!(
+            &heap.slice(pointers[2].as_const()).unwrap()[..3],
+            &[2, 0, 1]
+        );
 
-        for (values, length, atoms) in [(vec![4_u16], 1, 3), (vec![2_u16, 1], 2, 3), (vec![2_u16, 1, 4], 3, 3)] {
+        for (values, length, atoms) in [
+            (vec![4_u16], 1, 3),
+            (vec![2_u16, 1], 2, 3),
+            (vec![2_u16, 1, 4], 3, 3),
+        ] {
             let ct = heap.allocate_model_storage(values).unwrap();
             assert!(
                 CreateNeighListFromLinearCT(&mut heap, ct.as_const(), length, atoms)
@@ -3549,7 +3824,9 @@ mod tests {
 
         for (successful, expected_calls) in [(0, 1), (1, 3), (2, 3)] {
             let mut failing_heap = SourceHeap::default();
-            let ct = failing_heap.allocate_model_storage(vec![2_u16, 1, 3, 1, 2]).unwrap();
+            let ct = failing_heap
+                .allocate_model_storage(vec![2_u16, 1, 3, 1, 2])
+                .unwrap();
             failing_heap.fail_after_allocations(successful);
             assert!(
                 CreateNeighListFromLinearCT(&mut failing_heap, ct.as_const(), 5, 3)
@@ -3580,10 +3857,15 @@ mod tests {
         ];
         let mut heap = SourceHeap::default();
         let atoms_pointer = heap.allocate_model_storage(atoms.clone()).unwrap();
-        let neighbors = CreateNeighList(&mut heap, 3, 3, atoms_pointer.as_const(), 0, None).unwrap();
+        let neighbors =
+            CreateNeighList(&mut heap, 3, 3, atoms_pointer.as_const(), 0, None).unwrap();
         assert!(
-            heap.proven_contiguous_neighbor_storage::<NEIGH_LIST, AT_NUMB>(neighbors.as_const(), 3, 3,)
-                .is_some()
+            heap.proven_contiguous_neighbor_storage::<NEIGH_LIST, AT_NUMB>(
+                neighbors.as_const(),
+                3,
+                3,
+            )
+            .is_some()
         );
         let pointers = heap.slice(neighbors.as_const()).unwrap().to_vec();
         assert_eq!(pointers.len(), 4);
@@ -3609,12 +3891,17 @@ mod tests {
         );
         FreeNeighList(&mut heap, squared).unwrap();
 
-        let mutable_neighbors = CreateNeighList(&mut heap, 3, 3, atoms_pointer.as_const(), 0, None).unwrap();
+        let mutable_neighbors =
+            CreateNeighList(&mut heap, 3, 3, atoms_pointer.as_const(), 0, None).unwrap();
         let first = heap.slice(mutable_neighbors.as_const()).unwrap()[0];
         heap.slice_mut(mutable_neighbors).unwrap()[0] = first;
         assert!(
-            heap.proven_contiguous_neighbor_storage::<NEIGH_LIST, AT_NUMB>(mutable_neighbors.as_const(), 3, 3,)
-                .is_none()
+            heap.proven_contiguous_neighbor_storage::<NEIGH_LIST, AT_NUMB>(
+                mutable_neighbors.as_const(),
+                3,
+                3,
+            )
+            .is_none()
         );
         FreeNeighList(&mut heap, mutable_neighbors).unwrap();
 
@@ -3643,7 +3930,8 @@ mod tests {
             num_t_groups: 2,
             ..T_GROUP_INFO::default()
         };
-        let taut_neighbors = CreateNeighList(&mut taut_heap, 2, 4, taut_atoms.as_const(), 0, Some(&info)).unwrap();
+        let taut_neighbors =
+            CreateNeighList(&mut taut_heap, 2, 4, taut_atoms.as_const(), 0, Some(&info)).unwrap();
         let taut_pointers = taut_heap.slice(taut_neighbors.as_const()).unwrap().to_vec();
         assert_eq!(taut_pointers.len(), 5);
         assert!(taut_pointers[4].is_null());
@@ -3659,10 +3947,16 @@ mod tests {
 
         let mut boundary_heap = SourceHeap::default();
         let boundary_atom = atom(&(0_u16..20).collect::<Vec<_>>(), &[1_u8; 20], 0);
-        let boundary_atoms = boundary_heap.allocate_model_storage(vec![boundary_atom]).unwrap();
-        let boundary = CreateNeighList(&mut boundary_heap, 1, 1, boundary_atoms.as_const(), 0, None).unwrap();
+        let boundary_atoms = boundary_heap
+            .allocate_model_storage(vec![boundary_atom])
+            .unwrap();
+        let boundary =
+            CreateNeighList(&mut boundary_heap, 1, 1, boundary_atoms.as_const(), 0, None).unwrap();
         let boundary_pointer = boundary_heap.slice(boundary.as_const()).unwrap()[0];
-        assert_eq!(boundary_heap.slice(boundary_pointer.as_const()).unwrap()[0], 20);
+        assert_eq!(
+            boundary_heap.slice(boundary_pointer.as_const()).unwrap()[0],
+            20
+        );
         assert_eq!(
             &boundary_heap.slice(boundary_pointer.as_const()).unwrap()[1..21],
             &(0_u16..20).collect::<Vec<_>>()
@@ -3671,7 +3965,8 @@ mod tests {
 
         let mut zero_heap = SourceHeap::default();
         zero_heap.trace_source_allocations();
-        let zero = CreateNeighList(&mut zero_heap, 0, 0, SourceConstPointer::null(), 0, None).unwrap();
+        let zero =
+            CreateNeighList(&mut zero_heap, 0, 0, SourceConstPointer::null(), 0, None).unwrap();
         assert!(!zero.is_null());
         assert!(zero_heap.slice(zero.as_const()).unwrap()[0].is_null());
         assert_eq!(zero_heap.source_allocation_calls(), 2);
@@ -3686,7 +3981,10 @@ mod tests {
                     .unwrap()
                     .is_null()
             );
-            assert_eq!(failure_heap.source_allocation_calls(), successful_allocations + 1);
+            assert_eq!(
+                failure_heap.source_allocation_calls(),
+                successful_allocations + 1
+            );
             assert_eq!(failure_heap.live_allocation_count(), baseline);
         }
     }

@@ -5,10 +5,12 @@
 use super::*;
 use crate::builder::MoleculeBuilder;
 use crate::chemistry::forcefield::uff::atom_typer::add_atom_charge_flags_for_uff;
-use crate::chemistry::forcefield::{ForceField, ForceFieldContrib, ForceFieldSnapshot, ForceFieldVec3};
+use crate::chemistry::forcefield::{
+    ForceField, ForceFieldContrib, ForceFieldSnapshot, ForceFieldVec3,
+};
 use crate::{
-    AtomSpec, BondQueryPredicate, BondSpec, Element, Molecule, QueryNode, ValenceModel, assign_valence,
-    read_mol2_from_str,
+    AtomSpec, BondQueryPredicate, BondSpec, Element, Molecule, QueryNode, ValenceModel,
+    assign_valence, read_mol2_from_str,
 };
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -26,24 +28,48 @@ fn embed_points_test_callback(iter: u32) {
 fn embed_failure_causes_match_rdkit_ordinals_and_names() {
     let expected = [
         (EmbedFailureCause::InitialCoords, 0, "INITIAL_COORDS"),
-        (EmbedFailureCause::FirstMinimization, 1, "FIRST_MINIMIZATION"),
+        (
+            EmbedFailureCause::FirstMinimization,
+            1,
+            "FIRST_MINIMIZATION",
+        ),
         (
             EmbedFailureCause::CheckTetrahedralCenters,
             2,
             "CHECK_TETRAHEDRAL_CENTERS",
         ),
-        (EmbedFailureCause::CheckChiralCenters, 3, "CHECK_CHIRAL_CENTERS"),
+        (
+            EmbedFailureCause::CheckChiralCenters,
+            3,
+            "CHECK_CHIRAL_CENTERS",
+        ),
         (
             EmbedFailureCause::MinimizeFourthDimension,
             4,
             "MINIMIZE_FOURTH_DIMENSION",
         ),
         (EmbedFailureCause::EtkMinimization, 5, "ETK_MINIMIZATION"),
-        (EmbedFailureCause::FinalChiralBounds, 6, "FINAL_CHIRAL_BOUNDS"),
-        (EmbedFailureCause::FinalCenterInVolume, 7, "FINAL_CENTER_IN_VOLUME"),
+        (
+            EmbedFailureCause::FinalChiralBounds,
+            6,
+            "FINAL_CHIRAL_BOUNDS",
+        ),
+        (
+            EmbedFailureCause::FinalCenterInVolume,
+            7,
+            "FINAL_CENTER_IN_VOLUME",
+        ),
         (EmbedFailureCause::LinearDoubleBond, 8, "LINEAR_DOUBLE_BOND"),
-        (EmbedFailureCause::BadDoubleBondStereo, 9, "BAD_DOUBLE_BOND_STEREO"),
-        (EmbedFailureCause::CheckChiralCenters2, 10, "CHECK_CHIRAL_CENTERS2"),
+        (
+            EmbedFailureCause::BadDoubleBondStereo,
+            9,
+            "BAD_DOUBLE_BOND_STEREO",
+        ),
+        (
+            EmbedFailureCause::CheckChiralCenters2,
+            10,
+            "CHECK_CHIRAL_CENTERS2",
+        ),
         (EmbedFailureCause::ExceededTimeout, 11, "EXCEEDED_TIMEOUT"),
         (EmbedFailureCause::EndOfEnum, 12, "END_OF_ENUM"),
     ];
@@ -111,7 +137,10 @@ fn embed_parameters_new_matches_default_constructor() {
     assert_eq!(from_new.box_size_mult, from_default.box_size_mult);
     assert_eq!(from_new.rand_neg_eig, from_default.rand_neg_eig);
     assert_eq!(from_new.num_zero_fail, from_default.num_zero_fail);
-    assert_eq!(from_new.optimizer_force_tol, from_default.optimizer_force_tol);
+    assert_eq!(
+        from_new.optimizer_force_tol,
+        from_default.optimizer_force_tol
+    );
     assert_eq!(
         from_new.ignore_smoothing_failures,
         from_default.ignore_smoothing_failures
@@ -121,23 +150,44 @@ fn embed_parameters_new_matches_default_constructor() {
         from_new.use_exp_torsion_angle_prefs,
         from_default.use_exp_torsion_angle_prefs
     );
-    assert_eq!(from_new.use_basic_knowledge, from_default.use_basic_knowledge);
+    assert_eq!(
+        from_new.use_basic_knowledge,
+        from_default.use_basic_knowledge
+    );
     assert_eq!(from_new.verbose, from_default.verbose);
     assert_eq!(from_new.basin_thresh, from_default.basin_thresh);
     assert_eq!(from_new.prune_rms_thresh, from_default.prune_rms_thresh);
-    assert_eq!(from_new.only_heavy_atoms_for_rms, from_default.only_heavy_atoms_for_rms);
+    assert_eq!(
+        from_new.only_heavy_atoms_for_rms,
+        from_default.only_heavy_atoms_for_rms
+    );
     assert_eq!(from_new.et_version, from_default.et_version);
     assert_eq!(
         from_new.embed_fragments_separately,
         from_default.embed_fragments_separately
     );
-    assert_eq!(from_new.use_small_ring_torsions, from_default.use_small_ring_torsions);
-    assert_eq!(from_new.use_macrocycle_torsions, from_default.use_macrocycle_torsions);
-    assert_eq!(from_new.use_macrocycle14config, from_default.use_macrocycle14config);
+    assert_eq!(
+        from_new.use_small_ring_torsions,
+        from_default.use_small_ring_torsions
+    );
+    assert_eq!(
+        from_new.use_macrocycle_torsions,
+        from_default.use_macrocycle_torsions
+    );
+    assert_eq!(
+        from_new.use_macrocycle14config,
+        from_default.use_macrocycle14config
+    );
     assert_eq!(from_new.timeout, from_default.timeout);
     assert_eq!(from_new.force_trans_amides, from_default.force_trans_amides);
-    assert_eq!(from_new.use_symmetry_for_pruning, from_default.use_symmetry_for_pruning);
-    assert_eq!(from_new.bounds_mat_force_scaling, from_default.bounds_mat_force_scaling);
+    assert_eq!(
+        from_new.use_symmetry_for_pruning,
+        from_default.use_symmetry_for_pruning
+    );
+    assert_eq!(
+        from_new.bounds_mat_force_scaling,
+        from_default.bounds_mat_force_scaling
+    );
     assert_eq!(from_new.track_failures, from_default.track_failures);
     assert_eq!(
         from_new.enable_sequential_random_seeds,
@@ -188,7 +238,10 @@ fn assert_embed_parameters_preset(
     assert_eq!(params.optimizer_force_tol, optimizer_force_tol);
     assert_eq!(params.ignore_smoothing_failures, ignore_smoothing_failures);
     assert_eq!(params.enforce_chirality, enforce_chirality);
-    assert_eq!(params.use_exp_torsion_angle_prefs, use_exp_torsion_angle_prefs);
+    assert_eq!(
+        params.use_exp_torsion_angle_prefs,
+        use_exp_torsion_angle_prefs
+    );
     assert_eq!(params.use_basic_knowledge, use_basic_knowledge);
     assert_eq!(params.verbose, verbose);
     assert_eq!(params.basin_thresh, basin_thresh);
@@ -196,7 +249,10 @@ fn assert_embed_parameters_preset(
     assert_eq!(params.only_heavy_atoms_for_rms, only_heavy_atoms_for_rms);
     assert_eq!(params.et_version, et_version);
     assert!(params.bounds_mat.is_none());
-    assert_eq!(params.embed_fragments_separately, embed_fragments_separately);
+    assert_eq!(
+        params.embed_fragments_separately,
+        embed_fragments_separately
+    );
     assert_eq!(params.use_small_ring_torsions, use_small_ring_torsions);
     assert_eq!(params.use_macrocycle_torsions, use_macrocycle_torsions);
     assert_eq!(params.use_macrocycle14config, use_macrocycle14config);
@@ -212,7 +268,11 @@ fn assert_embed_parameters_preset(
     assert!(params.symmetrize_conjugated_terminal_groups_for_pruning);
 }
 
-fn finite_difference_gradient(mut energy: impl FnMut(&[f64]) -> f64, pos: &[f64], step: f64) -> Vec<f64> {
+fn finite_difference_gradient(
+    mut energy: impl FnMut(&[f64]) -> f64,
+    pos: &[f64],
+    step: f64,
+) -> Vec<f64> {
     let mut grad = vec![0.0; pos.len()];
     let mut plus = pos.to_vec();
     let mut minus = pos.to_vec();
@@ -242,8 +302,14 @@ fn print_debug_flat_vector(stage: &str, values: &[f64]) {
 }
 
 fn print_row1_etkdg_details(details: &CrystalFFDetails) {
-    println!("row1_details exp_torsion_atoms={:?}", details.exp_torsion_atoms);
-    println!("row1_details exp_torsion_angles={:?}", details.exp_torsion_angles);
+    println!(
+        "row1_details exp_torsion_atoms={:?}",
+        details.exp_torsion_atoms
+    );
+    println!(
+        "row1_details exp_torsion_angles={:?}",
+        details.exp_torsion_angles
+    );
     println!("row1_details improper_atoms={:?}", details.improper_atoms);
     println!("row1_details bonds={:?}", details.bonds);
     println!("row1_details angles={:?}", details.angles);
@@ -253,7 +319,11 @@ fn print_row1_etkdg_details(details: &CrystalFFDetails) {
     );
 }
 
-fn print_row1_forcefield_contrib_layout(positions: &[ForceFieldVec3], mmat: &BoundsMatrix, details: &CrystalFFDetails) {
+fn print_row1_forcefield_contrib_layout(
+    positions: &[ForceFieldVec3],
+    mmat: &BoundsMatrix,
+    details: &CrystalFFDetails,
+) {
     let mut ff = ForceField::new(3);
     ff.positions_mut().extend_from_slice(positions);
     let n = positions.len();
@@ -269,7 +339,12 @@ fn print_row1_forcefield_contrib_layout(positions: &[ForceFieldVec3], mmat: &Bou
     );
 
     let before_improper = ff.contribs().len();
-    add_improper_torsion_terms(&mut ff, 10.0, &details.improper_atoms, &mut is_improper_constrained);
+    add_improper_torsion_terms(
+        &mut ff,
+        10.0,
+        &details.improper_atoms,
+        &mut is_improper_constrained,
+    );
     println!(
         "helper=add_improper_torsion_terms added={} total={}",
         ff.contribs().len() - before_improper,
@@ -327,7 +402,11 @@ fn print_row1_forcefield_contrib_layout(positions: &[ForceFieldVec3], mmat: &Bou
     );
 }
 
-fn print_row1_constraint_terms(positions: &[ForceFieldVec3], mmat: &BoundsMatrix, details: &CrystalFFDetails) {
+fn print_row1_constraint_terms(
+    positions: &[ForceFieldVec3],
+    mmat: &BoundsMatrix,
+    details: &CrystalFFDetails,
+) {
     let n = positions.len();
     let mut atom_pairs = vec![false; n * n];
     let mut is_improper_constrained = vec![false; n];
@@ -427,15 +506,30 @@ fn debug_ethene_row1_mixed_forcefield_gradient_breakdown() {
         true,
     )
     .expect("bounds");
-    bounds.triangle_smooth(0.0).then_some(()).expect("triangle smoothing");
+    bounds
+        .triangle_smooth(0.0)
+        .then_some(())
+        .expect("triangle smoothing");
     let details = rd_distgeom_get_exp_tors_helper_with_params(&mol, &params).expect("details");
 
     let rdkit_coords = [
         [0.5694019518400151, 0.12481515704039713, -0.3351477553709494],
-        [-0.5612971409218513, -0.13445204858356205, 0.3138676674580523],
-        [0.8197156052251863, -0.34949872921938324, -1.2505184200228587],
+        [
+            -0.5612971409218513,
+            -0.13445204858356205,
+            0.3138676674580523,
+        ],
+        [
+            0.8197156052251863,
+            -0.34949872921938324,
+            -1.2505184200228587,
+        ],
         [1.2587391802948145, 0.8464403614851113, 0.08713063971203365],
-        [-1.2853139846722026, -0.8443735337722904, -0.05990757486282442],
+        [
+            -1.2853139846722026,
+            -0.8443735337722904,
+            -0.05990757486282442,
+        ],
         [-0.8012456117873941, 0.35706879304042133, 1.2445754430830582],
     ];
     let positions: Vec<ForceFieldVec3> = rdkit_coords
@@ -470,7 +564,9 @@ fn debug_ethene_row1_mixed_forcefield_gradient_breakdown() {
                 argmax = i;
             }
         }
-        println!("contrib_idx={idx} energy={energy:.16} grad_max_abs_diff={max_abs:.16e} argmax={argmax}");
+        println!(
+            "contrib_idx={idx} energy={energy:.16} grad_max_abs_diff={max_abs:.16e} argmax={argmax}"
+        );
         if max_abs > 1.0e-5 {
             println!("analytic={analytic:?}");
             println!("fd={fd:?}");
@@ -513,7 +609,10 @@ fn debug_ethene_row1_mixed_forcefield_minimization_progress() {
         true,
     )
     .expect("bounds");
-    bounds.triangle_smooth(0.0).then_some(()).expect("triangle smoothing");
+    bounds
+        .triangle_smooth(0.0)
+        .then_some(())
+        .expect("triangle smoothing");
 
     let mut ff = construct_3d_forcefield(&bounds, &start, &details);
     ff.initialize();
@@ -521,7 +620,10 @@ fn debug_ethene_row1_mixed_forcefield_minimization_progress() {
     for pass in 0..5 {
         let res = ff.minimize(300, etkdg.optimizer_force_tol, 1.0e-6);
         let coords: Vec<_> = ff.positions().iter().map(|p| [p.x, p.y, p.z]).collect();
-        println!("pass={pass} res={res} energy={:.16}", ff.calc_energy_current(None));
+        println!(
+            "pass={pass} res={res} energy={:.16}",
+            ff.calc_energy_current(None)
+        );
         println!("coords={coords:?}");
     }
 }
@@ -544,18 +646,34 @@ fn debug_ethene_row1_etkdg_stage_trace() {
 
     let mut mmat = BoundsMatrix::new(mol.num_atoms());
     let coord_map = params.coord_map.as_ref();
-    let setup_ok = embedder_setup_initial_bounds_matrix(&mol, &mut mmat, coord_map, &params, &mut etkdg_details)
-        .expect("bounds setup");
+    let setup_ok = embedder_setup_initial_bounds_matrix(
+        &mol,
+        &mut mmat,
+        coord_map,
+        &params,
+        &mut etkdg_details,
+    )
+    .expect("bounds setup");
     assert!(setup_ok);
     print_row1_etkdg_details(&etkdg_details);
 
     let mut chiral_centers = Vec::new();
     let mut tetrahedral_carbons = Vec::new();
-    embedder_find_chiral_sets(&mol, &mut chiral_centers, &mut tetrahedral_carbons, coord_map);
+    embedder_find_chiral_sets(
+        &mol,
+        &mut chiral_centers,
+        &mut tetrahedral_carbons,
+        coord_map,
+    );
 
     let mut double_bond_ends = Vec::new();
     let mut stereo_double_bonds = Vec::new();
-    embedder_find_double_bonds(&mol, &mut double_bond_ends, &mut stereo_double_bonds, coord_map);
+    embedder_find_double_bonds(
+        &mol,
+        &mut double_bond_ends,
+        &mut stereo_double_bonds,
+        coord_map,
+    );
 
     let eargs = EmbedArgs {
         mmat: &mmat,
@@ -575,8 +693,9 @@ fn debug_ethene_row1_etkdg_stage_trace() {
     let mut dist_mat = SymmMatrix::with_value(mol.num_atoms(), 0.0);
     let mut rng = RdkitDistgeomMinStdRand::new_from_embed_points_seed(params.random_seed);
 
-    let got_initial = embedder_generate_initial_coords(&mut positions, &eargs, &params, &mut dist_mat, &mut rng)
-        .expect("generate initial coords");
+    let got_initial =
+        embedder_generate_initial_coords(&mut positions, &eargs, &params, &mut dist_mat, &mut rng)
+            .expect("generate initial coords");
     assert!(got_initial);
     print_debug_point_positions("after_generate_initial_coords", &positions);
 
@@ -617,7 +736,13 @@ fn debug_ethene_row1_etkdg_stage_trace() {
     mixed_ff.calc_grad_current(&mut before_grad);
     print_debug_flat_vector("before_etk_minimization_grad", &before_grad);
     let mut snapshots = Vec::new();
-    let _ = mixed_ff.minimize_with_snapshots(1, Some(&mut snapshots), 300, params.optimizer_force_tol, 1.0e-6);
+    let _ = mixed_ff.minimize_with_snapshots(
+        1,
+        Some(&mut snapshots),
+        300,
+        params.optimizer_force_tol,
+        1.0e-6,
+    );
     for (iter, snapshot) in snapshots.iter().enumerate().take(120) {
         print_debug_snapshot("etk_bfgs_snapshot", iter + 1, snapshot);
     }
@@ -654,9 +779,14 @@ fn debug_ethene_row1_mixed_forcefield_checkpoint_energy_breakdown() {
     let mut details = CrystalFFDetails::default();
     embedder_init_etkdg(&mol, &params, &mut details).expect("init etkdg");
     let mut bounds = BoundsMatrix::new(mol.num_atoms());
-    let setup_ok =
-        embedder_setup_initial_bounds_matrix(&mol, &mut bounds, params.coord_map.as_ref(), &params, &mut details)
-            .expect("bounds setup");
+    let setup_ok = embedder_setup_initial_bounds_matrix(
+        &mol,
+        &mut bounds,
+        params.coord_map.as_ref(),
+        &params,
+        &mut details,
+    )
+    .expect("bounds setup");
     assert!(setup_ok);
     let mut chiral_centers = Vec::new();
     let mut tetrahedral_carbons = Vec::new();
@@ -690,8 +820,9 @@ fn debug_ethene_row1_mixed_forcefield_checkpoint_energy_breakdown() {
     let mut positions = vec![vec![0.0; dim]; mol.num_atoms()];
     let mut dist_mat = SymmMatrix::with_value(mol.num_atoms(), 0.0);
     let mut rng = RdkitDistgeomMinStdRand::new_from_embed_points_seed(params.random_seed);
-    let got_initial = embedder_generate_initial_coords(&mut positions, &eargs, &params, &mut dist_mat, &mut rng)
-        .expect("generate initial coords");
+    let got_initial =
+        embedder_generate_initial_coords(&mut positions, &eargs, &params, &mut dist_mat, &mut rng)
+            .expect("generate initial coords");
     assert!(got_initial);
     let got_first = embedder_first_minimization(&mut positions, &eargs, &params);
     assert!(got_first);
@@ -703,7 +834,11 @@ fn debug_ethene_row1_mixed_forcefield_checkpoint_energy_breakdown() {
         (
             "rdkit_iter1",
             [
-                [0.6393890874626489, -0.4823664506293169, -0.11411397341442445],
+                [
+                    0.6393890874626489,
+                    -0.4823664506293169,
+                    -0.11411397341442445,
+                ],
                 [-0.6663053606581905, 0.7685743107744221, 0.47361592884366016],
                 [1.3947193657309926, -0.5444070942789608, -0.548973067307731],
                 [1.02264410677849, 0.9201430550357918, 0.5502878117551371],
@@ -714,7 +849,11 @@ fn debug_ethene_row1_mixed_forcefield_checkpoint_energy_breakdown() {
         (
             "rdkit_iter2",
             [
-                [0.6198122882493197, -0.48668726967691534, -0.13634582605517215],
+                [
+                    0.6198122882493197,
+                    -0.48668726967691534,
+                    -0.13634582605517215,
+                ],
                 [-0.6620921321332481, 0.7721028221849652, 0.48190001466984145],
                 [1.403910143856784, -0.5395274140418864, -0.5304450152056254],
                 [1.0248558251268691, 0.9202424679650751, 0.5452851217818754],
@@ -736,7 +875,11 @@ fn debug_ethene_row1_mixed_forcefield_checkpoint_energy_breakdown() {
         (
             "rdkit_iter3",
             [
-                [0.5877070454404664, -0.4412761330622238, -0.12417718642276727],
+                [
+                    0.5877070454404664,
+                    -0.4412761330622238,
+                    -0.12417718642276727,
+                ],
                 [-0.6550505877365503, 0.7546373534586957, 0.5143742972512187],
                 [1.382920260652038, -0.5392572677333918, -0.49030220995890705],
                 [1.0489528162110517, 0.9102790984626599, 0.49474385079631134],
@@ -747,22 +890,46 @@ fn debug_ethene_row1_mixed_forcefield_checkpoint_energy_breakdown() {
         (
             "rdkit_iter4",
             [
-                [0.5945782026504608, -0.38286741075090656, -0.1382834305334702],
+                [
+                    0.5945782026504608,
+                    -0.38286741075090656,
+                    -0.1382834305334702,
+                ],
                 [-0.6563798935334102, 0.7211672800794769, 0.5495529970118774],
-                [1.3615860327727195, -0.5737077825722357, -0.43852640889900663],
+                [
+                    1.3615860327727195,
+                    -0.5737077825722357,
+                    -0.43852640889900663,
+                ],
                 [1.0767298638008433, 0.9282388706685269, 0.44714847321875857],
-                [-1.0273123705982818, -1.1090270704804573, 0.33991186443480775],
+                [
+                    -1.0273123705982818,
+                    -1.1090270704804573,
+                    0.33991186443480775,
+                ],
                 [-1.3492018350923309, 0.4161961130555967, -0.7598034952329669],
             ],
         ),
         (
             "rdkit_iter5",
             [
-                [0.30617829081320283, -0.2824487117997652, 0.18999450067944895],
+                [
+                    0.30617829081320283,
+                    -0.2824487117997652,
+                    0.18999450067944895,
+                ],
                 [-0.5762354466460521, 0.19721581687982089, 0.5602906852395194],
-                [1.3268680369810031, -0.5293442493884913, -0.09494799647312154],
+                [
+                    1.3268680369810031,
+                    -0.5293442493884913,
+                    -0.09494799647312154,
+                ],
                 [1.4356588033017199, 1.1814346233845391, -0.1128639886771219],
-                [-1.1114876167252854, -0.9339666490256927, -0.048594636608771914],
+                [
+                    -1.1114876167252854,
+                    -0.9339666490256927,
+                    -0.048594636608771914,
+                ],
                 [-1.3809820677245899, 0.3671091699495898, -0.4938785641599527],
             ],
         ),
@@ -773,7 +940,11 @@ fn debug_ethene_row1_mixed_forcefield_checkpoint_energy_breakdown() {
                 [-0.6690575493352357, 0.08411148246009337, 0.235507082539928],
                 [1.4860858479004584, -0.2315212262936618, -0.5571487197296577],
                 [1.111788139149555, 0.9393306597875761, 0.5016014673613825],
-                [-1.0311017762331927, -0.9696977496965792, -0.5574542501005204],
+                [
+                    -1.0311017762331927,
+                    -0.9696977496965792,
+                    -0.5574542501005204,
+                ],
                 [-1.4787560190020383, 0.2692763991140623, 0.5942983120111444],
             ],
         ),
@@ -781,21 +952,45 @@ fn debug_ethene_row1_mixed_forcefield_checkpoint_energy_breakdown() {
             "rdkit_iter67",
             [
                 [0.5659519333655081, 0.09456786688077949, -0.3498907494411227],
-                [-0.5647174092513038, -0.11788255545663441, 0.31749519602622234],
+                [
+                    -0.5647174092513038,
+                    -0.11788255545663441,
+                    0.31749519602622234,
+                ],
                 [0.8485670583229148, -0.3723581483215544, -1.2526070818707484],
                 [1.2549339738080016, 0.8318163037371477, 0.09824732820612223],
-                [-1.2854319751027474, -0.8396265429949134, -0.0742921358030683],
+                [
+                    -1.2854319751027474,
+                    -0.8396265429949134,
+                    -0.0742921358030683,
+                ],
                 [-0.819303581163789, 0.403483076145871, 1.2610474428789906],
             ],
         ),
         (
             "rdkit_iter72",
             [
-                [0.5649408856122422, 0.10541291418263296, -0.34411644938593777],
-                [-0.5594806507014879, -0.12264172784088852, 0.3155697283270235],
-                [0.8253454438177249, -0.37258269733839006, -1.2553941399997504],
+                [
+                    0.5649408856122422,
+                    0.10541291418263296,
+                    -0.34411644938593777,
+                ],
+                [
+                    -0.5594806507014879,
+                    -0.12264172784088852,
+                    0.3155697283270235,
+                ],
+                [
+                    0.8253454438177249,
+                    -0.37258269733839006,
+                    -1.2553941399997504,
+                ],
                 [1.2542687371718235, 0.8361498335645288, 0.09531551656722793],
-                [-1.2869925434601595, -0.8344113660702405, -0.06306170803606982],
+                [
+                    -1.2869925434601595,
+                    -0.8344113660702405,
+                    -0.06306170803606982,
+                ],
                 [-0.7980818724616817, 0.3880730434930072, 1.2516870525239427],
             ],
         ),
@@ -803,10 +998,22 @@ fn debug_ethene_row1_mixed_forcefield_checkpoint_energy_breakdown() {
             "rdkit_final",
             [
                 [0.5694019518400151, 0.12481515704039713, -0.3351477553709494],
-                [-0.5612971409218513, -0.13445204858356205, 0.3138676674580523],
-                [0.8197156052251863, -0.34949872921938324, -1.2505184200228587],
+                [
+                    -0.5612971409218513,
+                    -0.13445204858356205,
+                    0.3138676674580523,
+                ],
+                [
+                    0.8197156052251863,
+                    -0.34949872921938324,
+                    -1.2505184200228587,
+                ],
                 [1.2587391802948145, 0.8464403614851113, 0.08713063971203365],
-                [-1.2853139846722026, -0.8443735337722904, -0.05990757486282442],
+                [
+                    -1.2853139846722026,
+                    -0.8443735337722904,
+                    -0.05990757486282442,
+                ],
                 [-0.8012456117873941, 0.35706879304042133, 1.2445754430830582],
             ],
         ),
@@ -819,11 +1026,17 @@ fn debug_ethene_row1_mixed_forcefield_checkpoint_energy_breakdown() {
         ff.calc_grad(&flat, &mut grad);
         print_debug_flat_vector(&format!("{label}_grad"), &grad);
         if label == "rdkit_iter1" {
-            let bits: Vec<String> = grad.iter().map(|value| format!("{:#018x}", value.to_bits())).collect();
+            let bits: Vec<String> = grad
+                .iter()
+                .map(|value| format!("{:#018x}", value.to_bits()))
+                .collect();
             println!("{label}_grad_bits values=[{}]", bits.join(","));
         }
         for (idx, contrib) in ff.contribs().iter().enumerate() {
-            println!("{label} contrib_idx={idx} energy={:.15}", contrib.get_energy(&flat));
+            println!(
+                "{label} contrib_idx={idx} energy={:.15}",
+                contrib.get_energy(&flat)
+            );
             let mut contrib_grad = vec![0.0; flat.len()];
             contrib.get_grad(&flat, &mut contrib_grad);
             print_debug_flat_vector(&format!("{label}_contrib_{idx}_grad"), &contrib_grad);
@@ -832,7 +1045,10 @@ fn debug_ethene_row1_mixed_forcefield_checkpoint_energy_breakdown() {
                     .iter()
                     .map(|value| format!("{:#018x}", value.to_bits()))
                     .collect();
-                println!("{label}_contrib_{idx}_grad_bits values=[{}]", bits.join(","));
+                println!(
+                    "{label}_contrib_{idx}_grad_bits values=[{}]",
+                    bits.join(",")
+                );
             }
         }
     }
@@ -855,17 +1071,33 @@ fn debug_azide_row16_etkdg_stage_trace() {
 
     let mut mmat = BoundsMatrix::new(mol.num_atoms());
     let coord_map = params.coord_map.as_ref();
-    let setup_ok = embedder_setup_initial_bounds_matrix(&mol, &mut mmat, coord_map, &params, &mut etkdg_details)
-        .expect("bounds setup");
+    let setup_ok = embedder_setup_initial_bounds_matrix(
+        &mol,
+        &mut mmat,
+        coord_map,
+        &params,
+        &mut etkdg_details,
+    )
+    .expect("bounds setup");
     assert!(setup_ok);
 
     let mut chiral_centers = Vec::new();
     let mut tetrahedral_carbons = Vec::new();
-    embedder_find_chiral_sets(&mol, &mut chiral_centers, &mut tetrahedral_carbons, coord_map);
+    embedder_find_chiral_sets(
+        &mol,
+        &mut chiral_centers,
+        &mut tetrahedral_carbons,
+        coord_map,
+    );
 
     let mut double_bond_ends = Vec::new();
     let mut stereo_double_bonds = Vec::new();
-    embedder_find_double_bonds(&mol, &mut double_bond_ends, &mut stereo_double_bonds, coord_map);
+    embedder_find_double_bonds(
+        &mol,
+        &mut double_bond_ends,
+        &mut stereo_double_bonds,
+        coord_map,
+    );
 
     let eargs = EmbedArgs {
         mmat: &mmat,
@@ -895,8 +1127,9 @@ fn debug_azide_row16_etkdg_stage_trace() {
     let mut dist_mat = SymmMatrix::with_value(mol.num_atoms(), 0.0);
     let mut rng = RdkitDistgeomMinStdRand::new_from_embed_points_seed(params.random_seed);
 
-    let got_initial = embedder_generate_initial_coords(&mut positions, &eargs, &params, &mut dist_mat, &mut rng)
-        .expect("generate initial coords");
+    let got_initial =
+        embedder_generate_initial_coords(&mut positions, &eargs, &params, &mut dist_mat, &mut rng)
+            .expect("generate initial coords");
     assert!(got_initial);
     print_debug_point_positions("row16_after_generate_initial_coords", &positions);
 
@@ -936,7 +1169,10 @@ fn debug_azide_row16_etkdg_stage_trace() {
     let mut before_grad = vec![0.0; before_etk_positions.len() * 3];
     mixed_ff.calc_grad_current(&mut before_grad);
     print_debug_flat_vector("row16_before_etk_minimization_grad", &before_grad);
-    let before_flat: Vec<f64> = before_etk_positions.iter().flat_map(|p| [p.x, p.y, p.z]).collect();
+    let before_flat: Vec<f64> = before_etk_positions
+        .iter()
+        .flat_map(|p| [p.x, p.y, p.z])
+        .collect();
     for (idx, contrib) in mixed_ff.contribs().iter().enumerate() {
         let energy = contrib.get_energy(&before_flat);
         let mut contrib_grad = vec![0.0; before_flat.len()];
@@ -976,17 +1212,33 @@ fn debug_row34_etkdg_stage_trace() {
 
     let mut mmat = BoundsMatrix::new(mol.num_atoms());
     let coord_map = params.coord_map.as_ref();
-    let setup_ok = embedder_setup_initial_bounds_matrix(&mol, &mut mmat, coord_map, &params, &mut etkdg_details)
-        .expect("bounds setup");
+    let setup_ok = embedder_setup_initial_bounds_matrix(
+        &mol,
+        &mut mmat,
+        coord_map,
+        &params,
+        &mut etkdg_details,
+    )
+    .expect("bounds setup");
     assert!(setup_ok);
 
     let mut chiral_centers = Vec::new();
     let mut tetrahedral_carbons = Vec::new();
-    embedder_find_chiral_sets(&mol, &mut chiral_centers, &mut tetrahedral_carbons, coord_map);
+    embedder_find_chiral_sets(
+        &mol,
+        &mut chiral_centers,
+        &mut tetrahedral_carbons,
+        coord_map,
+    );
 
     let mut double_bond_ends = Vec::new();
     let mut stereo_double_bonds = Vec::new();
-    embedder_find_double_bonds(&mol, &mut double_bond_ends, &mut stereo_double_bonds, coord_map);
+    embedder_find_double_bonds(
+        &mol,
+        &mut double_bond_ends,
+        &mut stereo_double_bonds,
+        coord_map,
+    );
 
     let eargs = EmbedArgs {
         mmat: &mmat,
@@ -1011,8 +1263,9 @@ fn debug_row34_etkdg_stage_trace() {
     let mut dist_mat = SymmMatrix::with_value(mol.num_atoms(), 0.0);
     let mut rng = RdkitDistgeomMinStdRand::new_from_embed_points_seed(params.random_seed);
 
-    let got_initial = embedder_generate_initial_coords(&mut positions, &eargs, &params, &mut dist_mat, &mut rng)
-        .expect("generate initial coords");
+    let got_initial =
+        embedder_generate_initial_coords(&mut positions, &eargs, &params, &mut dist_mat, &mut rng)
+            .expect("generate initial coords");
     assert!(got_initial);
     print_debug_point_positions("row34_after_generate_initial_coords", &positions);
 
@@ -1052,7 +1305,10 @@ fn debug_row34_etkdg_stage_trace() {
     let mut before_grad = vec![0.0; before_etk_positions.len() * 3];
     mixed_ff.calc_grad_current(&mut before_grad);
     print_debug_flat_vector("row34_before_etk_minimization_grad", &before_grad);
-    let before_flat: Vec<f64> = before_etk_positions.iter().flat_map(|p| [p.x, p.y, p.z]).collect();
+    let before_flat: Vec<f64> = before_etk_positions
+        .iter()
+        .flat_map(|p| [p.x, p.y, p.z])
+        .collect();
     for (idx, contrib) in mixed_ff.contribs().iter().enumerate() {
         let energy = contrib.get_energy(&before_flat);
         let mut contrib_grad = vec![0.0; before_flat.len()];
@@ -1093,17 +1349,33 @@ fn debug_row34_embed_points_failure_trace() {
 
     let mut mmat = BoundsMatrix::new(mol.num_atoms());
     let coord_map = params.coord_map.as_ref();
-    let setup_ok = embedder_setup_initial_bounds_matrix(&mol, &mut mmat, coord_map, &params, &mut etkdg_details)
-        .expect("bounds setup");
+    let setup_ok = embedder_setup_initial_bounds_matrix(
+        &mol,
+        &mut mmat,
+        coord_map,
+        &params,
+        &mut etkdg_details,
+    )
+    .expect("bounds setup");
     assert!(setup_ok);
 
     let mut chiral_centers = Vec::new();
     let mut tetrahedral_carbons = Vec::new();
-    embedder_find_chiral_sets(&mol, &mut chiral_centers, &mut tetrahedral_carbons, coord_map);
+    embedder_find_chiral_sets(
+        &mol,
+        &mut chiral_centers,
+        &mut tetrahedral_carbons,
+        coord_map,
+    );
 
     let mut double_bond_ends = Vec::new();
     let mut stereo_double_bonds = Vec::new();
-    embedder_find_double_bonds(&mol, &mut double_bond_ends, &mut stereo_double_bonds, coord_map);
+    embedder_find_double_bonds(
+        &mol,
+        &mut double_bond_ends,
+        &mut stereo_double_bonds,
+        coord_map,
+    );
 
     println!(
         "row34_embed_points_setup chiral_centers={} tetrahedral_carbons={} double_bond_ends={} stereo_double_bonds={}",
@@ -1128,7 +1400,8 @@ fn debug_row34_embed_points_failure_trace() {
         3
     };
     let mut positions = vec![vec![0.0; dim]; mol.num_atoms()];
-    let got_coords = embedder_embed_points(&mut positions, eargs, &mut params, 61453, None).expect("embed points");
+    let got_coords = embedder_embed_points(&mut positions, eargs, &mut params, 61453, None)
+        .expect("embed points");
     println!("row34_embed_points_result got_coords={got_coords}");
     println!("row34_embed_points_failures={:?}", params.failures);
     if got_coords {
@@ -1158,19 +1431,35 @@ fn debug_row34_timeout_timing_trace() {
 
     let mut mmat = BoundsMatrix::new(mol.num_atoms());
     let coord_map = params.coord_map.as_ref();
-    let setup_ok = embedder_setup_initial_bounds_matrix(&mol, &mut mmat, coord_map, &params, &mut etkdg_details)
-        .expect("bounds setup");
+    let setup_ok = embedder_setup_initial_bounds_matrix(
+        &mol,
+        &mut mmat,
+        coord_map,
+        &params,
+        &mut etkdg_details,
+    )
+    .expect("bounds setup");
     let t2 = Instant::now();
     assert!(setup_ok);
 
     let mut chiral_centers = Vec::new();
     let mut tetrahedral_carbons = Vec::new();
-    embedder_find_chiral_sets(&mol, &mut chiral_centers, &mut tetrahedral_carbons, coord_map);
+    embedder_find_chiral_sets(
+        &mol,
+        &mut chiral_centers,
+        &mut tetrahedral_carbons,
+        coord_map,
+    );
     let t3 = Instant::now();
 
     let mut double_bond_ends = Vec::new();
     let mut stereo_double_bonds = Vec::new();
-    embedder_find_double_bonds(&mol, &mut double_bond_ends, &mut stereo_double_bonds, coord_map);
+    embedder_find_double_bonds(
+        &mol,
+        &mut double_bond_ends,
+        &mut stereo_double_bonds,
+        coord_map,
+    );
     let t4 = Instant::now();
 
     let eargs = EmbedArgs {
@@ -1187,7 +1476,8 @@ fn debug_row34_timeout_timing_trace() {
         3
     };
     let mut positions = vec![vec![0.0; dim]; mol.num_atoms()];
-    let got_coords = embedder_embed_points(&mut positions, eargs, &mut params, 61453, None).expect("embed points");
+    let got_coords = embedder_embed_points(&mut positions, eargs, &mut params, 61453, None)
+        .expect("embed points");
     let t5 = Instant::now();
 
     let mut full_params = EmbedParameters::etkdg_v3();
@@ -1230,17 +1520,33 @@ fn debug_row20_etkdg_stage_trace() {
 
     let mut mmat = BoundsMatrix::new(mol.num_atoms());
     let coord_map = params.coord_map.as_ref();
-    let setup_ok = embedder_setup_initial_bounds_matrix(&mol, &mut mmat, coord_map, &params, &mut etkdg_details)
-        .expect("bounds setup");
+    let setup_ok = embedder_setup_initial_bounds_matrix(
+        &mol,
+        &mut mmat,
+        coord_map,
+        &params,
+        &mut etkdg_details,
+    )
+    .expect("bounds setup");
     assert!(setup_ok);
 
     let mut chiral_centers = Vec::new();
     let mut tetrahedral_carbons = Vec::new();
-    embedder_find_chiral_sets(&mol, &mut chiral_centers, &mut tetrahedral_carbons, coord_map);
+    embedder_find_chiral_sets(
+        &mol,
+        &mut chiral_centers,
+        &mut tetrahedral_carbons,
+        coord_map,
+    );
 
     let mut double_bond_ends = Vec::new();
     let mut stereo_double_bonds = Vec::new();
-    embedder_find_double_bonds(&mol, &mut double_bond_ends, &mut stereo_double_bonds, coord_map);
+    embedder_find_double_bonds(
+        &mol,
+        &mut double_bond_ends,
+        &mut stereo_double_bonds,
+        coord_map,
+    );
 
     let eargs = EmbedArgs {
         mmat: &mmat,
@@ -1272,8 +1578,9 @@ fn debug_row20_etkdg_stage_trace() {
     let mut dist_mat = SymmMatrix::with_value(mol.num_atoms(), 0.0);
     let mut rng = RdkitDistgeomMinStdRand::new_from_embed_points_seed(params.random_seed);
 
-    let got_initial = embedder_generate_initial_coords(&mut positions, &eargs, &params, &mut dist_mat, &mut rng)
-        .expect("generate initial coords");
+    let got_initial =
+        embedder_generate_initial_coords(&mut positions, &eargs, &params, &mut dist_mat, &mut rng)
+            .expect("generate initial coords");
     assert!(got_initial);
     print_debug_point_positions("row20_after_generate_initial_coords", &positions);
     let mut initial_ff = construct_distgeom_forcefield(
@@ -1323,7 +1630,9 @@ fn debug_row20_etkdg_stage_trace() {
     );
     print_debug_point_positions("row20_after_first_minimization", &positions);
 
-    assert!(embedder_check_tetrahedral_centers(&positions, &eargs, &params));
+    assert!(embedder_check_tetrahedral_centers(
+        &positions, &eargs, &params
+    ));
     assert!(embedder_check_chiral_centers(&positions, &eargs, &params));
 
     let got_fourth = embedder_minimize_fourth_dimension(&mut positions, &eargs, &mut params, None);
@@ -1362,7 +1671,10 @@ fn debug_row20_etkdg_stage_trace() {
     let mut before_grad = vec![0.0; before_etk_positions.len() * 3];
     mixed_ff.calc_grad_current(&mut before_grad);
     print_debug_flat_vector("row20_before_etk_minimization_grad", &before_grad);
-    let before_flat: Vec<f64> = before_etk_positions.iter().flat_map(|p| [p.x, p.y, p.z]).collect();
+    let before_flat: Vec<f64> = before_etk_positions
+        .iter()
+        .flat_map(|p| [p.x, p.y, p.z])
+        .collect();
     for (idx, contrib) in mixed_ff.contribs().iter().enumerate() {
         let energy = contrib.get_energy(&before_flat);
         let mut contrib_grad = vec![0.0; before_flat.len()];
@@ -1402,17 +1714,33 @@ fn debug_row57_etkdg_stage_trace() {
 
     let mut mmat = BoundsMatrix::new(mol.num_atoms());
     let coord_map = params.coord_map.as_ref();
-    let setup_ok = embedder_setup_initial_bounds_matrix(&mol, &mut mmat, coord_map, &params, &mut etkdg_details)
-        .expect("bounds setup");
+    let setup_ok = embedder_setup_initial_bounds_matrix(
+        &mol,
+        &mut mmat,
+        coord_map,
+        &params,
+        &mut etkdg_details,
+    )
+    .expect("bounds setup");
     assert!(setup_ok);
 
     let mut chiral_centers = Vec::new();
     let mut tetrahedral_carbons = Vec::new();
-    embedder_find_chiral_sets(&mol, &mut chiral_centers, &mut tetrahedral_carbons, coord_map);
+    embedder_find_chiral_sets(
+        &mol,
+        &mut chiral_centers,
+        &mut tetrahedral_carbons,
+        coord_map,
+    );
 
     let mut double_bond_ends = Vec::new();
     let mut stereo_double_bonds = Vec::new();
-    embedder_find_double_bonds(&mol, &mut double_bond_ends, &mut stereo_double_bonds, coord_map);
+    embedder_find_double_bonds(
+        &mol,
+        &mut double_bond_ends,
+        &mut stereo_double_bonds,
+        coord_map,
+    );
 
     let eargs = EmbedArgs {
         mmat: &mmat,
@@ -1444,8 +1772,9 @@ fn debug_row57_etkdg_stage_trace() {
     let mut dist_mat = SymmMatrix::with_value(mol.num_atoms(), 0.0);
     let mut rng = RdkitDistgeomMinStdRand::new_from_embed_points_seed(params.random_seed);
 
-    let got_initial = embedder_generate_initial_coords(&mut positions, &eargs, &params, &mut dist_mat, &mut rng)
-        .expect("generate initial coords");
+    let got_initial =
+        embedder_generate_initial_coords(&mut positions, &eargs, &params, &mut dist_mat, &mut rng)
+            .expect("generate initial coords");
     assert!(got_initial);
     print_debug_point_positions("row57_after_generate_initial_coords", &positions);
     let mut initial_ff = construct_distgeom_forcefield(
@@ -1495,11 +1824,14 @@ fn debug_row57_etkdg_stage_trace() {
     );
     print_debug_point_positions("row57_after_first_minimization", &positions);
 
-    assert!(embedder_check_tetrahedral_centers(&positions, &eargs, &params));
+    assert!(embedder_check_tetrahedral_centers(
+        &positions, &eargs, &params
+    ));
     assert!(embedder_check_chiral_centers(&positions, &eargs, &params));
 
     if !chiral_centers.is_empty() || params.use_random_coords {
-        let got_fourth = embedder_minimize_fourth_dimension(&mut positions, &eargs, &mut params, None);
+        let got_fourth =
+            embedder_minimize_fourth_dimension(&mut positions, &eargs, &mut params, None);
         assert!(got_fourth);
         let fourth_positions = point_vectors_to_forcefield_vec3(&positions);
         let mut fourth_ff = construct_distgeom_forcefield(
@@ -1534,7 +1866,10 @@ fn debug_row57_etkdg_stage_trace() {
     let mut before_grad = vec![0.0; before_etk_positions.len() * 3];
     mixed_ff.calc_grad_current(&mut before_grad);
     print_debug_flat_vector("row57_before_etk_minimization_grad", &before_grad);
-    let before_flat: Vec<f64> = before_etk_positions.iter().flat_map(|p| [p.x, p.y, p.z]).collect();
+    let before_flat: Vec<f64> = before_etk_positions
+        .iter()
+        .flat_map(|p| [p.x, p.y, p.z])
+        .collect();
     for (idx, contrib) in mixed_ff.contribs().iter().enumerate() {
         let energy = contrib.get_energy(&before_flat);
         let mut contrib_grad = vec![0.0; before_flat.len()];
@@ -1574,17 +1909,33 @@ fn debug_row60_etkdg_stage_trace() {
 
     let mut mmat = BoundsMatrix::new(mol.num_atoms());
     let coord_map = params.coord_map.as_ref();
-    let setup_ok = embedder_setup_initial_bounds_matrix(&mol, &mut mmat, coord_map, &params, &mut etkdg_details)
-        .expect("bounds setup");
+    let setup_ok = embedder_setup_initial_bounds_matrix(
+        &mol,
+        &mut mmat,
+        coord_map,
+        &params,
+        &mut etkdg_details,
+    )
+    .expect("bounds setup");
     assert!(setup_ok);
 
     let mut chiral_centers = Vec::new();
     let mut tetrahedral_carbons = Vec::new();
-    embedder_find_chiral_sets(&mol, &mut chiral_centers, &mut tetrahedral_carbons, coord_map);
+    embedder_find_chiral_sets(
+        &mol,
+        &mut chiral_centers,
+        &mut tetrahedral_carbons,
+        coord_map,
+    );
 
     let mut double_bond_ends = Vec::new();
     let mut stereo_double_bonds = Vec::new();
-    embedder_find_double_bonds(&mol, &mut double_bond_ends, &mut stereo_double_bonds, coord_map);
+    embedder_find_double_bonds(
+        &mol,
+        &mut double_bond_ends,
+        &mut stereo_double_bonds,
+        coord_map,
+    );
 
     let eargs = EmbedArgs {
         mmat: &mmat,
@@ -1616,8 +1967,9 @@ fn debug_row60_etkdg_stage_trace() {
     let mut dist_mat = SymmMatrix::with_value(mol.num_atoms(), 0.0);
     let mut rng = RdkitDistgeomMinStdRand::new_from_embed_points_seed(params.random_seed);
 
-    let got_initial = embedder_generate_initial_coords(&mut positions, &eargs, &params, &mut dist_mat, &mut rng)
-        .expect("generate initial coords");
+    let got_initial =
+        embedder_generate_initial_coords(&mut positions, &eargs, &params, &mut dist_mat, &mut rng)
+            .expect("generate initial coords");
     assert!(got_initial);
     print_debug_point_positions("row60_after_generate_initial_coords", &positions);
 
@@ -1642,11 +1994,14 @@ fn debug_row60_etkdg_stage_trace() {
     );
     print_debug_point_positions("row60_after_first_minimization", &positions);
 
-    assert!(embedder_check_tetrahedral_centers(&positions, &eargs, &params));
+    assert!(embedder_check_tetrahedral_centers(
+        &positions, &eargs, &params
+    ));
     assert!(embedder_check_chiral_centers(&positions, &eargs, &params));
 
     if !chiral_centers.is_empty() || params.use_random_coords {
-        let got_fourth = embedder_minimize_fourth_dimension(&mut positions, &eargs, &mut params, None);
+        let got_fourth =
+            embedder_minimize_fourth_dimension(&mut positions, &eargs, &mut params, None);
         assert!(got_fourth);
         let fourth_positions = point_vectors_to_forcefield_vec3(&positions);
         let mut fourth_ff = construct_distgeom_forcefield(
@@ -1683,7 +2038,10 @@ fn debug_row60_etkdg_stage_trace() {
     let mut before_grad = vec![0.0; before_etk_positions.len() * 3];
     mixed_ff.calc_grad_current(&mut before_grad);
     print_debug_flat_vector("row60_before_etk_minimization_grad", &before_grad);
-    let before_flat: Vec<f64> = before_etk_positions.iter().flat_map(|p| [p.x, p.y, p.z]).collect();
+    let before_flat: Vec<f64> = before_etk_positions
+        .iter()
+        .flat_map(|p| [p.x, p.y, p.z])
+        .collect();
     for (idx, contrib) in mixed_ff.contribs().iter().enumerate() {
         let energy = contrib.get_energy(&before_flat);
         let mut contrib_grad = vec![0.0; before_flat.len()];
@@ -1726,17 +2084,33 @@ fn debug_row89_etkdg_stage_trace() {
 
     let mut mmat = BoundsMatrix::new(mol.num_atoms());
     let coord_map = params.coord_map.as_ref();
-    let setup_ok = embedder_setup_initial_bounds_matrix(&mol, &mut mmat, coord_map, &params, &mut etkdg_details)
-        .expect("bounds setup");
+    let setup_ok = embedder_setup_initial_bounds_matrix(
+        &mol,
+        &mut mmat,
+        coord_map,
+        &params,
+        &mut etkdg_details,
+    )
+    .expect("bounds setup");
     assert!(setup_ok);
 
     let mut chiral_centers = Vec::new();
     let mut tetrahedral_carbons = Vec::new();
-    embedder_find_chiral_sets(&mol, &mut chiral_centers, &mut tetrahedral_carbons, coord_map);
+    embedder_find_chiral_sets(
+        &mol,
+        &mut chiral_centers,
+        &mut tetrahedral_carbons,
+        coord_map,
+    );
 
     let mut double_bond_ends = Vec::new();
     let mut stereo_double_bonds = Vec::new();
-    embedder_find_double_bonds(&mol, &mut double_bond_ends, &mut stereo_double_bonds, coord_map);
+    embedder_find_double_bonds(
+        &mol,
+        &mut double_bond_ends,
+        &mut stereo_double_bonds,
+        coord_map,
+    );
 
     let eargs = EmbedArgs {
         mmat: &mmat,
@@ -1766,8 +2140,9 @@ fn debug_row89_etkdg_stage_trace() {
     let mut dist_mat = SymmMatrix::with_value(mol.num_atoms(), 0.0);
     let mut rng = RdkitDistgeomMinStdRand::new_from_embed_points_seed(params.random_seed);
 
-    let got_initial = embedder_generate_initial_coords(&mut positions, &eargs, &params, &mut dist_mat, &mut rng)
-        .expect("generate initial coords");
+    let got_initial =
+        embedder_generate_initial_coords(&mut positions, &eargs, &params, &mut dist_mat, &mut rng)
+            .expect("generate initial coords");
     println!("row89_after_generate_initial_coords ok={got_initial}");
     if got_initial {
         print_debug_point_positions("row89_after_generate_initial_coords", &positions);
@@ -1807,7 +2182,9 @@ fn debug_row89_etkdg_stage_trace() {
         print_debug_point_positions("row89_after_fourth_dimension", &positions);
     }
 
-    let got_etk = if got_fourth && (params.use_exp_torsion_angle_prefs || params.use_basic_knowledge) {
+    let got_etk = if got_fourth
+        && (params.use_exp_torsion_angle_prefs || params.use_basic_knowledge)
+    {
         print_debug_point_positions("row89_before_etk_minimization", &positions);
         let before_etk_positions = point_vectors_to_forcefield_vec3(&positions);
         let mut mixed_ff = construct_3d_forcefield(&mmat, &before_etk_positions, &etkdg_details);
@@ -1819,7 +2196,10 @@ fn debug_row89_etkdg_stage_trace() {
         let mut before_grad = vec![0.0; before_etk_positions.len() * 3];
         mixed_ff.calc_grad_current(&mut before_grad);
         print_debug_flat_vector("row89_before_etk_minimization_grad", &before_grad);
-        let before_flat: Vec<f64> = before_etk_positions.iter().flat_map(|p| [p.x, p.y, p.z]).collect();
+        let before_flat: Vec<f64> = before_etk_positions
+            .iter()
+            .flat_map(|p| [p.x, p.y, p.z])
+            .collect();
         for (idx, contrib) in mixed_ff.contribs().iter().enumerate() {
             let energy = contrib.get_energy(&before_flat);
             let mut contrib_grad = vec![0.0; before_flat.len()];
@@ -1866,17 +2246,33 @@ fn debug_row61_etkdg_stage_trace() {
 
     let mut mmat = BoundsMatrix::new(mol.num_atoms());
     let coord_map = params.coord_map.as_ref();
-    let setup_ok = embedder_setup_initial_bounds_matrix(&mol, &mut mmat, coord_map, &params, &mut etkdg_details)
-        .expect("bounds setup");
+    let setup_ok = embedder_setup_initial_bounds_matrix(
+        &mol,
+        &mut mmat,
+        coord_map,
+        &params,
+        &mut etkdg_details,
+    )
+    .expect("bounds setup");
     assert!(setup_ok);
 
     let mut chiral_centers = Vec::new();
     let mut tetrahedral_carbons = Vec::new();
-    embedder_find_chiral_sets(&mol, &mut chiral_centers, &mut tetrahedral_carbons, coord_map);
+    embedder_find_chiral_sets(
+        &mol,
+        &mut chiral_centers,
+        &mut tetrahedral_carbons,
+        coord_map,
+    );
 
     let mut double_bond_ends = Vec::new();
     let mut stereo_double_bonds = Vec::new();
-    embedder_find_double_bonds(&mol, &mut double_bond_ends, &mut stereo_double_bonds, coord_map);
+    embedder_find_double_bonds(
+        &mol,
+        &mut double_bond_ends,
+        &mut stereo_double_bonds,
+        coord_map,
+    );
 
     let eargs = EmbedArgs {
         mmat: &mmat,
@@ -1917,7 +2313,9 @@ fn debug_row61_etkdg_stage_trace() {
             &format!("row61_iter{iter}_after_pick_random_distmat"),
             &dist_data[..preview_len],
         );
-        println!("row61_iter{iter}_after_pick_random_distmat_largest_distance={largest_distance:.15}");
+        println!(
+            "row61_iter{iter}_after_pick_random_distmat_largest_distance={largest_distance:.15}"
+        );
 
         got_initial = compute_initial_coords_with_rng(
             &dist_mat,
@@ -1929,7 +2327,10 @@ fn debug_row61_etkdg_stage_trace() {
         .expect("compute initial coords");
         println!("row61_iter{iter}_after_generate_initial_coords ok={got_initial}");
         if got_initial {
-            print_debug_point_positions(&format!("row61_iter{iter}_after_generate_initial_coords"), &positions);
+            print_debug_point_positions(
+                &format!("row61_iter{iter}_after_generate_initial_coords"),
+                &positions,
+            );
         }
     }
     assert!(got_initial, "row61 should get initial coords by iter 2");
@@ -1977,7 +2378,10 @@ fn debug_row61_etkdg_stage_trace() {
     let mut before_grad = vec![0.0; before_etk_positions.len() * 3];
     mixed_ff.calc_grad_current(&mut before_grad);
     print_debug_flat_vector("row61_before_etk_minimization_grad", &before_grad);
-    let before_flat: Vec<f64> = before_etk_positions.iter().flat_map(|p| [p.x, p.y, p.z]).collect();
+    let before_flat: Vec<f64> = before_etk_positions
+        .iter()
+        .flat_map(|p| [p.x, p.y, p.z])
+        .collect();
     for (idx, contrib) in mixed_ff.contribs().iter().enumerate() {
         let energy = contrib.get_energy(&before_flat);
         let mut contrib_grad = vec![0.0; before_flat.len()];
@@ -2006,16 +2410,20 @@ fn debug_row61_etkdg_stage_trace() {
 fn debug_row64_timeout_timing_trace() {
     use std::time::Instant;
 
-    let mol = Molecule::from_smiles("CCCCCCCCCc1ccc(C(=O)Nc2ccc(NC(=O)c3ccc(CCCCCCCCC)cc3)c3c2C(=O)c2ccccc2C3=O)cc1")
-        .expect("parse")
-        .with_hydrogens()
-        .expect("add hs");
+    let mol = Molecule::from_smiles(
+        "CCCCCCCCCc1ccc(C(=O)Nc2ccc(NC(=O)c3ccc(CCCCCCCCC)cc3)c3c2C(=O)c2ccccc2C3=O)cc1",
+    )
+    .expect("parse")
+    .with_hydrogens()
+    .expect("add hs");
     let mut params = EmbedParameters::etkdg_v3();
     params.random_seed = 61453;
     params.num_threads = 1;
     params.timeout = 10;
     params.track_failures = true;
-    params.failures.resize(EmbedFailureCause::EndOfEnum as usize, 0);
+    params
+        .failures
+        .resize(EmbedFailureCause::EndOfEnum as usize, 0);
     params.failures.fill(0);
 
     let t0 = Instant::now();
@@ -2025,19 +2433,35 @@ fn debug_row64_timeout_timing_trace() {
 
     let mut mmat = BoundsMatrix::new(mol.num_atoms());
     let coord_map = params.coord_map.as_ref();
-    let setup_ok = embedder_setup_initial_bounds_matrix(&mol, &mut mmat, coord_map, &params, &mut etkdg_details)
-        .expect("bounds setup");
+    let setup_ok = embedder_setup_initial_bounds_matrix(
+        &mol,
+        &mut mmat,
+        coord_map,
+        &params,
+        &mut etkdg_details,
+    )
+    .expect("bounds setup");
     let t2 = Instant::now();
     assert!(setup_ok);
 
     let mut chiral_centers = Vec::new();
     let mut tetrahedral_carbons = Vec::new();
-    embedder_find_chiral_sets(&mol, &mut chiral_centers, &mut tetrahedral_carbons, coord_map);
+    embedder_find_chiral_sets(
+        &mol,
+        &mut chiral_centers,
+        &mut tetrahedral_carbons,
+        coord_map,
+    );
     let t3 = Instant::now();
 
     let mut double_bond_ends = Vec::new();
     let mut stereo_double_bonds = Vec::new();
-    embedder_find_double_bonds(&mol, &mut double_bond_ends, &mut stereo_double_bonds, coord_map);
+    embedder_find_double_bonds(
+        &mol,
+        &mut double_bond_ends,
+        &mut stereo_double_bonds,
+        coord_map,
+    );
     let t4 = Instant::now();
 
     let eargs = EmbedArgs {
@@ -2054,7 +2478,8 @@ fn debug_row64_timeout_timing_trace() {
         3
     };
     let mut positions = vec![vec![0.0; dim]; mol.num_atoms()];
-    let got_coords = embedder_embed_points(&mut positions, eargs, &mut params, 61453, None).expect("embed points");
+    let got_coords = embedder_embed_points(&mut positions, eargs, &mut params, 61453, None)
+        .expect("embed points");
     let t5 = Instant::now();
 
     let mut full_params = EmbedParameters::etkdg_v3();
@@ -2062,7 +2487,9 @@ fn debug_row64_timeout_timing_trace() {
     full_params.num_threads = 1;
     full_params.timeout = 10;
     full_params.track_failures = true;
-    full_params.failures.resize(EmbedFailureCause::EndOfEnum as usize, 0);
+    full_params
+        .failures
+        .resize(EmbedFailureCause::EndOfEnum as usize, 0);
     full_params.failures.fill(0);
     let (_embedded, status) = embed_molecule(&mol, &mut full_params).expect("full embed");
     let t6 = Instant::now();
@@ -2085,10 +2512,12 @@ fn debug_row64_timeout_timing_trace() {
 #[test]
 #[ignore = "debug helper for row-64 ETKDG stage-by-stage parity investigation"]
 fn debug_row64_etkdg_stage_trace() {
-    let mol = Molecule::from_smiles("CCCCCCCCCc1ccc(C(=O)Nc2ccc(NC(=O)c3ccc(CCCCCCCCC)cc3)c3c2C(=O)c2ccccc2C3=O)cc1")
-        .expect("parse")
-        .with_hydrogens()
-        .expect("add hs");
+    let mol = Molecule::from_smiles(
+        "CCCCCCCCCc1ccc(C(=O)Nc2ccc(NC(=O)c3ccc(CCCCCCCCC)cc3)c3c2C(=O)c2ccccc2C3=O)cc1",
+    )
+    .expect("parse")
+    .with_hydrogens()
+    .expect("add hs");
     let mut params = EmbedParameters::etkdg_v3();
     params.random_seed = 61453;
     params.num_threads = 1;
@@ -2099,17 +2528,33 @@ fn debug_row64_etkdg_stage_trace() {
 
     let mut mmat = BoundsMatrix::new(mol.num_atoms());
     let coord_map = params.coord_map.as_ref();
-    let setup_ok = embedder_setup_initial_bounds_matrix(&mol, &mut mmat, coord_map, &params, &mut etkdg_details)
-        .expect("bounds setup");
+    let setup_ok = embedder_setup_initial_bounds_matrix(
+        &mol,
+        &mut mmat,
+        coord_map,
+        &params,
+        &mut etkdg_details,
+    )
+    .expect("bounds setup");
     assert!(setup_ok);
 
     let mut chiral_centers = Vec::new();
     let mut tetrahedral_carbons = Vec::new();
-    embedder_find_chiral_sets(&mol, &mut chiral_centers, &mut tetrahedral_carbons, coord_map);
+    embedder_find_chiral_sets(
+        &mol,
+        &mut chiral_centers,
+        &mut tetrahedral_carbons,
+        coord_map,
+    );
 
     let mut double_bond_ends = Vec::new();
     let mut stereo_double_bonds = Vec::new();
-    embedder_find_double_bonds(&mol, &mut double_bond_ends, &mut stereo_double_bonds, coord_map);
+    embedder_find_double_bonds(
+        &mol,
+        &mut double_bond_ends,
+        &mut stereo_double_bonds,
+        coord_map,
+    );
 
     let eargs = EmbedArgs {
         mmat: &mmat,
@@ -2192,12 +2637,13 @@ fn debug_row64_etkdg_stage_trace() {
         print_debug_point_positions("row64_after_fourth_dimension", &positions);
     }
 
-    let got_etk = if got_fourth && (params.use_exp_torsion_angle_prefs || params.use_basic_knowledge) {
-        print_debug_point_positions("row64_before_etk_minimization", &positions);
-        embedder_minimize_with_exp_torsions(&mut positions, &eargs, &params)
-    } else {
-        got_fourth
-    };
+    let got_etk =
+        if got_fourth && (params.use_exp_torsion_angle_prefs || params.use_basic_knowledge) {
+            print_debug_point_positions("row64_before_etk_minimization", &positions);
+            embedder_minimize_with_exp_torsions(&mut positions, &eargs, &params)
+        } else {
+            got_fourth
+        };
     println!("row64_after_etk_minimization ok={got_etk}");
     if got_etk {
         print_debug_point_positions("row64_after_etk_minimization", &positions);
@@ -2210,11 +2656,13 @@ fn debug_row103_etkdg_stage_trace() {
     unsafe {
         std::env::set_var("RDKIT_ROW103_TRACE", "1");
     }
-    let mol = Molecule::from_smiles("O=C(C1=C(C2CC2)N(C3=C4C=CC=NC4=CC=C3)N=C1)NC(N)=N.[H]Cl.[H]O[H]")
-        .expect("parse")
-        .with_hydrogens()
-        .expect("add hs");
-    let (fragments, frag_mapping) = molecule_fragments_for_embed(&mol, true).expect("fragment split");
+    let mol =
+        Molecule::from_smiles("O=C(C1=C(C2CC2)N(C3=C4C=CC=NC4=CC=C3)N=C1)NC(N)=N.[H]Cl.[H]O[H]")
+            .expect("parse")
+            .with_hydrogens()
+            .expect("add hs");
+    let (fragments, frag_mapping) =
+        molecule_fragments_for_embed(&mol, true).expect("fragment split");
     println!(
         "row103_fragment_summary total_atoms={} fragment_count={} frag_mapping={:?}",
         mol.num_atoms(),
@@ -2226,7 +2674,8 @@ fn debug_row103_etkdg_stage_trace() {
             "row103_fragment frag_idx={} num_atoms={} smiles={}",
             frag_idx,
             frag.num_atoms(),
-            frag.to_smiles(false).unwrap_or_else(|_| "<smiles-error>".to_string())
+            frag.to_smiles(false)
+                .unwrap_or_else(|_| "<smiles-error>".to_string())
         );
     }
     let mol = fragments
@@ -2244,17 +2693,33 @@ fn debug_row103_etkdg_stage_trace() {
 
     let mut mmat = BoundsMatrix::new(mol.num_atoms());
     let coord_map = params.coord_map.as_ref();
-    let setup_ok = embedder_setup_initial_bounds_matrix(&mol, &mut mmat, coord_map, &params, &mut etkdg_details)
-        .expect("bounds setup");
+    let setup_ok = embedder_setup_initial_bounds_matrix(
+        &mol,
+        &mut mmat,
+        coord_map,
+        &params,
+        &mut etkdg_details,
+    )
+    .expect("bounds setup");
     assert!(setup_ok);
 
     let mut chiral_centers = Vec::new();
     let mut tetrahedral_carbons = Vec::new();
-    embedder_find_chiral_sets(&mol, &mut chiral_centers, &mut tetrahedral_carbons, coord_map);
+    embedder_find_chiral_sets(
+        &mol,
+        &mut chiral_centers,
+        &mut tetrahedral_carbons,
+        coord_map,
+    );
 
     let mut double_bond_ends = Vec::new();
     let mut stereo_double_bonds = Vec::new();
-    embedder_find_double_bonds(&mol, &mut double_bond_ends, &mut stereo_double_bonds, coord_map);
+    embedder_find_double_bonds(
+        &mol,
+        &mut double_bond_ends,
+        &mut stereo_double_bonds,
+        coord_map,
+    );
 
     let eargs = EmbedArgs {
         mmat: &mmat,
@@ -2287,7 +2752,10 @@ fn debug_row103_etkdg_stage_trace() {
     let largest_distance = pick_random_dist_mat_with_rng(&mmat, &mut dist_mat, &mut rng);
     let dist_data = dist_mat.get_data();
     let preview_len = dist_data.len().min(12);
-    print_debug_flat_vector("row103_after_pick_random_distmat", &dist_data[..preview_len]);
+    print_debug_flat_vector(
+        "row103_after_pick_random_distmat",
+        &dist_data[..preview_len],
+    );
     println!("row103_after_pick_random_distmat_largest_distance={largest_distance:.15}");
 
     let got_initial = compute_initial_coords_with_rng(
@@ -2337,12 +2805,13 @@ fn debug_row103_etkdg_stage_trace() {
         print_debug_point_positions("row103_after_fourth_dimension", &positions);
     }
 
-    let got_etk = if got_fourth && (params.use_exp_torsion_angle_prefs || params.use_basic_knowledge) {
-        print_debug_point_positions("row103_before_etk_minimization", &positions);
-        embedder_minimize_with_exp_torsions(&mut positions, &eargs, &params)
-    } else {
-        got_fourth
-    };
+    let got_etk =
+        if got_fourth && (params.use_exp_torsion_angle_prefs || params.use_basic_knowledge) {
+            print_debug_point_positions("row103_before_etk_minimization", &positions);
+            embedder_minimize_with_exp_torsions(&mut positions, &eargs, &params)
+        } else {
+            got_fourth
+        };
     println!("row103_after_etk_minimization ok={got_etk}");
     if got_etk {
         print_debug_point_positions("row103_after_etk_minimization", &positions);
@@ -2369,8 +2838,12 @@ fn debug_audited_etkdgv3_forcefield_first_step() {
         params.num_threads = 1;
         params.timeout = 0;
 
-        let staged = embedder_stage_coords_for_test(&mol, &mut params, EmbedderTestStage::FourthDimensionCleaned)
-            .expect("stage embed");
+        let staged = embedder_stage_coords_for_test(
+            &mol,
+            &mut params,
+            EmbedderTestStage::FourthDimensionCleaned,
+        )
+        .expect("stage embed");
         let positions: Vec<ForceFieldVec3> = staged.conformers_3d()[0]
             .coordinates()
             .iter()
@@ -2381,8 +2854,14 @@ fn debug_audited_etkdgv3_forcefield_first_step() {
         embedder_init_etkdg(&mol, &params, &mut details).expect("init etkdg");
         let mut bounds = BoundsMatrix::new(mol.num_atoms());
         assert!(
-            embedder_setup_initial_bounds_matrix(&mol, &mut bounds, params.coord_map.as_ref(), &params, &mut details,)
-                .expect("bounds setup")
+            embedder_setup_initial_bounds_matrix(
+                &mol,
+                &mut bounds,
+                params.coord_map.as_ref(),
+                &params,
+                &mut details,
+            )
+            .expect("bounds setup")
         );
 
         let mut field = construct_3d_forcefield(&bounds, &positions, &details);
@@ -2399,7 +2878,10 @@ fn debug_audited_etkdgv3_forcefield_first_step() {
             contrib_energies.len()
         );
         for (idx, energy) in contrib_energies.iter().enumerate() {
-            println!("probe contribution={idx} energy_bits={:x}", energy.to_bits());
+            println!(
+                "probe contribution={idx} energy_bits={:x}",
+                energy.to_bits()
+            );
         }
         for (idx, (position, grad)) in positions
             .iter()
@@ -2622,7 +3104,10 @@ fn update_embed_parameters_from_json_empty_string_is_noop() {
 
     assert_eq!(params.max_iterations, before.max_iterations);
     assert_eq!(params.et_version, before.et_version);
-    assert_eq!(params.use_macrocycle_torsions, before.use_macrocycle_torsions);
+    assert_eq!(
+        params.use_macrocycle_torsions,
+        before.use_macrocycle_torsions
+    );
     assert_eq!(params.coord_map, before.coord_map);
 }
 
@@ -2756,7 +3241,11 @@ fn update_embed_parameters_from_json_rejects_invalid_json_and_field_types() {
             .update_from_json(r#"{"coordMap": {"x": [1.0, 2.0, 3.0]}}"#)
             .is_err()
     );
-    assert!(params.update_from_json(r#"{"coordMap": {"1": [1.0, 2.0]}}"#).is_err());
+    assert!(
+        params
+            .update_from_json(r#"{"coordMap": {"1": [1.0, 2.0]}}"#)
+            .is_err()
+    );
 }
 
 #[test]
@@ -2976,8 +3465,12 @@ fn embedder_center_in_volume_checks_all_four_faces() {
         ForceFieldVec3::new(2.0, 2.0, 2.0),
     ];
 
-    assert!(embedder_center_in_volume_indices(0, 1, 2, 3, 4, &positions, 0.01));
-    assert!(!embedder_center_in_volume_indices(5, 1, 2, 3, 4, &positions, 0.01));
+    assert!(embedder_center_in_volume_indices(
+        0, 1, 2, 3, 4, &positions, 0.01
+    ));
+    assert!(!embedder_center_in_volume_indices(
+        5, 1, 2, 3, 4, &positions, 0.01
+    ));
 }
 
 #[test]
@@ -2990,7 +3483,11 @@ fn embedder_center_in_volume_chiral_set_overload_handles_three_coordinate_center
     ];
     let three_coordinate = ChiralSet::with_default_structure_flags(0, 1, 2, 3, 0, -1.0, 1.0);
 
-    assert!(embedder_center_in_volume(&three_coordinate, &positions, 0.1));
+    assert!(embedder_center_in_volume(
+        &three_coordinate,
+        &positions,
+        0.1
+    ));
 }
 
 #[test]
@@ -3135,7 +3632,9 @@ fn embedder_first_minimization_keeps_exact_satisfied_two_point_bounds() {
 #[test]
 fn embedder_check_tetrahedral_centers_requires_volume_and_center_in_volume() {
     let mmat = BoundsMatrix::new(5);
-    let tet_set: ChiralSetPtr = Arc::new(ChiralSet::with_default_structure_flags(0, 1, 2, 3, 4, -1.0, 1.0));
+    let tet_set: ChiralSetPtr = Arc::new(ChiralSet::with_default_structure_flags(
+        0, 1, 2, 3, 4, -1.0, 1.0,
+    ));
     let chiral_centers: VectChiralSet = Vec::new();
     let tetrahedral_carbons: VectChiralSet = vec![Arc::clone(&tet_set)];
     let eargs = EmbedArgs {
@@ -3162,15 +3661,27 @@ fn embedder_check_tetrahedral_centers_requires_volume_and_center_in_volume() {
         vec![-1.0, -1.0, 1.0],
     ];
 
-    assert!(embedder_check_tetrahedral_centers(&good_positions, &eargs, &params));
-    assert!(!embedder_check_tetrahedral_centers(&outside_positions, &eargs, &params));
+    assert!(embedder_check_tetrahedral_centers(
+        &good_positions,
+        &eargs,
+        &params
+    ));
+    assert!(!embedder_check_tetrahedral_centers(
+        &outside_positions,
+        &eargs,
+        &params
+    ));
 }
 
 #[test]
 fn embedder_check_chiral_centers_matches_rdkit_volume_bound_rule() {
     let mmat = BoundsMatrix::new(5);
-    let good_set: ChiralSetPtr = Arc::new(ChiralSet::with_default_structure_flags(0, 1, 2, 3, 4, 0.5, 2.0));
-    let failing_set: ChiralSetPtr = Arc::new(ChiralSet::with_default_structure_flags(0, 1, 2, 3, 4, 2.0, 3.0));
+    let good_set: ChiralSetPtr = Arc::new(ChiralSet::with_default_structure_flags(
+        0, 1, 2, 3, 4, 0.5, 2.0,
+    ));
+    let failing_set: ChiralSetPtr = Arc::new(ChiralSet::with_default_structure_flags(
+        0, 1, 2, 3, 4, 2.0, 3.0,
+    ));
     let tetrahedral_carbons: VectChiralSet = Vec::new();
     let positions = vec![
         vec![0.0, 0.0, 0.0],
@@ -3199,8 +3710,14 @@ fn embedder_check_chiral_centers_matches_rdkit_volume_bound_rule() {
         stereo_double_bonds: &[],
     };
 
-    assert!(embedder_check_chiral_centers(&positions, &good_args, &params));
-    assert!(!embedder_check_chiral_centers(&positions, &failing_args, &params));
+    assert!(embedder_check_chiral_centers(
+        &positions, &good_args, &params
+    ));
+    assert!(!embedder_check_chiral_centers(
+        &positions,
+        &failing_args,
+        &params
+    ));
 }
 
 #[test]
@@ -3227,7 +3744,10 @@ fn embedder_minimize_fourth_dimension_keeps_exact_satisfied_two_point_bounds() {
         &mut params,
         None
     ));
-    assert_eq!(positions, vec![vec![0.0, 0.0, 0.0, 0.0], vec![1.0, 0.0, 0.0, 0.0]]);
+    assert_eq!(
+        positions,
+        vec![vec![0.0, 0.0, 0.0, 0.0], vec![1.0, 0.0, 0.0, 0.0]]
+    );
 }
 
 #[test]
@@ -3310,7 +3830,11 @@ fn embedder_minimize_with_exp_torsions_plain_etdg_preserves_random_coord_map_fix
     params.coord_map = Some(coord_map);
     let mut positions = vec![vec![3.0, 4.0, 5.0, 9.0], vec![8.0, 4.0, 5.0, -2.0]];
 
-    assert!(embedder_minimize_with_exp_torsions(&mut positions, &eargs, &params));
+    assert!(embedder_minimize_with_exp_torsions(
+        &mut positions,
+        &eargs,
+        &params
+    ));
     assert_eq!(&positions[0][..3], &[3.0, 4.0, 5.0]);
     assert_eq!(positions[0][3], 9.0);
     assert_eq!(positions[1][3], -2.0);
@@ -3337,7 +3861,11 @@ fn embedder_minimize_with_exp_torsions_basic_knowledge_accepts_empty_cpci() {
     params.cpci = Some(BTreeMap::new());
     let mut positions = vec![vec![0.0, 0.0, 0.0], vec![1.0, 0.0, 0.0]];
 
-    assert!(embedder_minimize_with_exp_torsions(&mut positions, &eargs, &params));
+    assert!(embedder_minimize_with_exp_torsions(
+        &mut positions,
+        &eargs,
+        &params
+    ));
 }
 
 #[test]
@@ -3375,8 +3903,16 @@ fn embedder_double_bond_geometry_checks_rejects_linear_arrangement() {
         stereo_double_bonds: &[],
     };
     let mut params = EmbedParameters::default();
-    let linear = vec![vec![0.0, 0.0, 0.0], vec![1.0, 0.0, 0.0], vec![2.0, 0.0, 0.0]];
-    let bent = vec![vec![0.0, 0.0, 0.0], vec![1.0, 0.0, 0.0], vec![1.0, 1.0, 0.0]];
+    let linear = vec![
+        vec![0.0, 0.0, 0.0],
+        vec![1.0, 0.0, 0.0],
+        vec![2.0, 0.0, 0.0],
+    ];
+    let bent = vec![
+        vec![0.0, 0.0, 0.0],
+        vec![1.0, 0.0, 0.0],
+        vec![1.0, 1.0, 0.0],
+    ];
 
     assert!(!embedder_double_bond_geometry_checks(
         &linear,
@@ -3384,7 +3920,12 @@ fn embedder_double_bond_geometry_checks_rejects_linear_arrangement() {
         &mut params,
         1.0e-3
     ));
-    assert!(embedder_double_bond_geometry_checks(&bent, &eargs, &mut params, 1.0e-3));
+    assert!(embedder_double_bond_geometry_checks(
+        &bent,
+        &eargs,
+        &mut params,
+        1.0e-3
+    ));
 }
 
 #[test]
@@ -3401,7 +3942,11 @@ fn embedder_double_bond_geometry_checks_accepts_missing_double_bond_ends() {
         stereo_double_bonds: &[],
     };
     let mut params = EmbedParameters::default();
-    let positions = vec![vec![0.0, 0.0, 0.0], vec![1.0, 0.0, 0.0], vec![2.0, 0.0, 0.0]];
+    let positions = vec![
+        vec![0.0, 0.0, 0.0],
+        vec![1.0, 0.0, 0.0],
+        vec![2.0, 0.0, 0.0],
+    ];
 
     assert!(embedder_double_bond_geometry_checks(
         &positions,
@@ -3479,7 +4024,9 @@ fn broad_bounds_matrix(size: usize) -> BoundsMatrix {
 #[test]
 fn embedder_final_chiral_checks_accepts_valid_final_chirality() {
     let mmat = broad_bounds_matrix(5);
-    let chiral_set: ChiralSetPtr = Arc::new(ChiralSet::with_default_structure_flags(0, 1, 2, 3, 4, -100.0, 100.0));
+    let chiral_set: ChiralSetPtr = Arc::new(ChiralSet::with_default_structure_flags(
+        0, 1, 2, 3, 4, -100.0, 100.0,
+    ));
     let chiral_centers: VectChiralSet = vec![chiral_set];
     let tetrahedral_carbons: VectChiralSet = Vec::new();
     let eargs = EmbedArgs {
@@ -3499,13 +4046,19 @@ fn embedder_final_chiral_checks_accepts_valid_final_chirality() {
         vec![0.0, 0.0, 1.0],
     ];
 
-    assert!(embedder_final_chiral_checks(&mut positions, &eargs, &mut params));
+    assert!(embedder_final_chiral_checks(
+        &mut positions,
+        &eargs,
+        &mut params
+    ));
 }
 
 #[test]
 fn embedder_final_chiral_checks_tracks_volume_failure() {
     let mmat = broad_bounds_matrix(5);
-    let chiral_set: ChiralSetPtr = Arc::new(ChiralSet::with_default_structure_flags(0, 1, 2, 3, 4, 2.0, 3.0));
+    let chiral_set: ChiralSetPtr = Arc::new(ChiralSet::with_default_structure_flags(
+        0, 1, 2, 3, 4, 2.0, 3.0,
+    ));
     let chiral_centers: VectChiralSet = vec![chiral_set];
     let tetrahedral_carbons: VectChiralSet = Vec::new();
     let eargs = EmbedArgs {
@@ -3529,15 +4082,24 @@ fn embedder_final_chiral_checks_tracks_volume_failure() {
         vec![0.0, 0.0, 1.0],
     ];
 
-    assert!(!embedder_final_chiral_checks(&mut positions, &eargs, &mut params));
-    assert_eq!(params.failures[EmbedFailureCause::CheckChiralCenters2 as usize], 1);
+    assert!(!embedder_final_chiral_checks(
+        &mut positions,
+        &eargs,
+        &mut params
+    ));
+    assert_eq!(
+        params.failures[EmbedFailureCause::CheckChiralCenters2 as usize],
+        1
+    );
 }
 
 #[test]
 fn embedder_final_chiral_checks_tracks_bounds_failure() {
     let mut mmat = broad_bounds_matrix(5);
     mmat.set_upper(0, 1, 0.05).expect("set upper");
-    let chiral_set: ChiralSetPtr = Arc::new(ChiralSet::with_default_structure_flags(0, 1, 2, 3, 4, -100.0, 100.0));
+    let chiral_set: ChiralSetPtr = Arc::new(ChiralSet::with_default_structure_flags(
+        0, 1, 2, 3, 4, -100.0, 100.0,
+    ));
     let chiral_centers: VectChiralSet = vec![chiral_set];
     let tetrahedral_carbons: VectChiralSet = Vec::new();
     let eargs = EmbedArgs {
@@ -3561,14 +4123,23 @@ fn embedder_final_chiral_checks_tracks_bounds_failure() {
         vec![0.0, 0.0, 1.0],
     ];
 
-    assert!(!embedder_final_chiral_checks(&mut positions, &eargs, &mut params));
-    assert_eq!(params.failures[EmbedFailureCause::FinalChiralBounds as usize], 1);
+    assert!(!embedder_final_chiral_checks(
+        &mut positions,
+        &eargs,
+        &mut params
+    ));
+    assert_eq!(
+        params.failures[EmbedFailureCause::FinalChiralBounds as usize],
+        1
+    );
 }
 
 #[test]
 fn embedder_final_chiral_checks_tracks_center_in_volume_failure() {
     let mmat = broad_bounds_matrix(5);
-    let chiral_set: ChiralSetPtr = Arc::new(ChiralSet::with_default_structure_flags(0, 1, 2, 3, 4, -100.0, 100.0));
+    let chiral_set: ChiralSetPtr = Arc::new(ChiralSet::with_default_structure_flags(
+        0, 1, 2, 3, 4, -100.0, 100.0,
+    ));
     let chiral_centers: VectChiralSet = vec![chiral_set];
     let tetrahedral_carbons: VectChiralSet = Vec::new();
     let eargs = EmbedArgs {
@@ -3592,8 +4163,15 @@ fn embedder_final_chiral_checks_tracks_center_in_volume_failure() {
         vec![0.0, 0.0, 1.0],
     ];
 
-    assert!(!embedder_final_chiral_checks(&mut positions, &eargs, &mut params));
-    assert_eq!(params.failures[EmbedFailureCause::FinalCenterInVolume as usize], 1);
+    assert!(!embedder_final_chiral_checks(
+        &mut positions,
+        &eargs,
+        &mut params
+    ));
+    assert_eq!(
+        params.failures[EmbedFailureCause::FinalCenterInVolume as usize],
+        1
+    );
 }
 
 #[test]
@@ -3623,7 +4201,9 @@ fn embedder_embed_points_sets_default_iterations_and_runs_callback() {
     };
     let mut positions = vec![vec![0.0; 3], vec![0.0; 3]];
 
-    assert!(embedder_embed_points(&mut positions, eargs, &mut params, 0, None).expect("embed points"));
+    assert!(
+        embedder_embed_points(&mut positions, eargs, &mut params, 0, None).expect("embed points")
+    );
     assert_eq!(params.max_iterations, 20);
     assert_eq!(EMBED_POINTS_CALLBACK_COUNT.load(Ordering::SeqCst), 1);
 }
@@ -3660,8 +4240,14 @@ fn embedder_embed_points_seed_zero_is_local_and_reproducible() {
         stereo_double_bonds: &[],
     };
 
-    assert!(embedder_embed_points(&mut positions_a, eargs_a, &mut params_a, 0, None).expect("embed points"));
-    assert!(embedder_embed_points(&mut positions_b, eargs_b, &mut params_b, 0, None).expect("embed points"));
+    assert!(
+        embedder_embed_points(&mut positions_a, eargs_a, &mut params_a, 0, None)
+            .expect("embed points")
+    );
+    assert!(
+        embedder_embed_points(&mut positions_b, eargs_b, &mut params_b, 0, None)
+            .expect("embed points")
+    );
     assert_eq!(positions_a, positions_b);
 }
 
@@ -3722,8 +4308,13 @@ fn embedder_embed_points_tracks_linear_double_bond_failure() {
     };
     let mut positions = vec![vec![0.0; 3], vec![0.0; 3], vec![0.0; 3]];
 
-    assert!(!embedder_embed_points(&mut positions, eargs, &mut params, 7, None).expect("embed points"));
-    assert_eq!(params.failures[EmbedFailureCause::LinearDoubleBond as usize], 1);
+    assert!(
+        !embedder_embed_points(&mut positions, eargs, &mut params, 7, None).expect("embed points")
+    );
+    assert_eq!(
+        params.failures[EmbedFailureCause::LinearDoubleBond as usize],
+        1
+    );
 }
 
 #[test]
@@ -3812,11 +4403,21 @@ fn embedder_find_double_bonds_collects_stereo_sign_and_honors_coord_map_skip() {
 
     let mut coord_map = BTreeMap::new();
     coord_map.insert(2, ForceFieldVec3::new(0.0, 0.0, 0.0));
-    embedder_find_double_bonds(&mol, &mut double_bond_ends, &mut stereo_double_bonds, Some(&coord_map));
+    embedder_find_double_bonds(
+        &mol,
+        &mut double_bond_ends,
+        &mut stereo_double_bonds,
+        Some(&coord_map),
+    );
     assert_eq!(stereo_double_bonds, vec![(vec![2, 0, 1, 3], -1)]);
 
     coord_map.insert(3, ForceFieldVec3::new(1.0, 0.0, 0.0));
-    embedder_find_double_bonds(&mol, &mut double_bond_ends, &mut stereo_double_bonds, Some(&coord_map));
+    embedder_find_double_bonds(
+        &mol,
+        &mut double_bond_ends,
+        &mut stereo_double_bonds,
+        Some(&coord_map),
+    );
     assert!(stereo_double_bonds.is_empty());
 }
 
@@ -3854,7 +4455,8 @@ fn embedder_find_double_bonds_uses_positive_sign_for_trans_and_e() {
 #[test]
 fn embedder_find_chiral_sets_collects_tagged_tetrahedral_center_bounds() {
     let mut builder = MoleculeBuilder::new();
-    let center = builder.add_atom(AtomSpec::new(Element::C).with_chiral_tag(ChiralTag::TetrahedralCcw));
+    let center =
+        builder.add_atom(AtomSpec::new(Element::C).with_chiral_tag(ChiralTag::TetrahedralCcw));
     let n1 = builder.add_atom(AtomSpec::new(Element::C));
     let n2 = builder.add_atom(AtomSpec::new(Element::C));
     let n3 = builder.add_atom(AtomSpec::new(Element::C));
@@ -3873,7 +4475,10 @@ fn embedder_find_chiral_sets_collects_tagged_tetrahedral_center_bounds() {
     assert_eq!(chiral_centers.len(), 1);
     assert!(tetrahedral_centers.is_empty());
     let cset = &chiral_centers[0];
-    assert_eq!((cset.idx0, cset.idx1, cset.idx2, cset.idx3, cset.idx4), (0, 1, 2, 3, 4));
+    assert_eq!(
+        (cset.idx0, cset.idx1, cset.idx2, cset.idx3, cset.idx4),
+        (0, 1, 2, 3, 4)
+    );
     assert_eq!(cset.volume_lower_bound, 5.0);
     assert_eq!(cset.volume_upper_bound, 100.0);
 }
@@ -3881,7 +4486,8 @@ fn embedder_find_chiral_sets_collects_tagged_tetrahedral_center_bounds() {
 #[test]
 fn embedder_find_chiral_sets_uses_center_as_fourth_neighbor_for_three_coordinate_tagged_atom() {
     let mut builder = MoleculeBuilder::new();
-    let center = builder.add_atom(AtomSpec::new(Element::C).with_chiral_tag(ChiralTag::TetrahedralCw));
+    let center =
+        builder.add_atom(AtomSpec::new(Element::C).with_chiral_tag(ChiralTag::TetrahedralCw));
     let n1 = builder.add_atom(AtomSpec::new(Element::C));
     let n2 = builder.add_atom(AtomSpec::new(Element::C));
     let n3 = builder.add_atom(AtomSpec::new(Element::C));
@@ -3898,7 +4504,10 @@ fn embedder_find_chiral_sets_uses_center_as_fourth_neighbor_for_three_coordinate
 
     assert_eq!(chiral_centers.len(), 1);
     let cset = &chiral_centers[0];
-    assert_eq!((cset.idx0, cset.idx1, cset.idx2, cset.idx3, cset.idx4), (0, 1, 2, 3, 0));
+    assert_eq!(
+        (cset.idx0, cset.idx1, cset.idx2, cset.idx3, cset.idx4),
+        (0, 1, 2, 3, 0)
+    );
     assert_eq!(cset.volume_lower_bound, -100.0);
     assert_eq!(cset.volume_upper_bound, -2.0);
 }
@@ -3930,14 +4539,20 @@ fn embedder_find_chiral_sets_collects_unmarked_tetrahedral_c_or_n_unless_coord_m
 
     let mut coord_map = BTreeMap::new();
     coord_map.insert(center.index() as i32, ForceFieldVec3::new(0.0, 0.0, 0.0));
-    embedder_find_chiral_sets(&mol, &mut chiral_centers, &mut tetrahedral_centers, Some(&coord_map));
+    embedder_find_chiral_sets(
+        &mol,
+        &mut chiral_centers,
+        &mut tetrahedral_centers,
+        Some(&coord_map),
+    );
     assert_eq!(tetrahedral_centers.len(), 1);
 }
 
 #[test]
 fn embedder_find_chiral_sets_skips_hydrogen_even_when_tagged() {
     let mut builder = MoleculeBuilder::new();
-    let center = builder.add_atom(AtomSpec::new(Element::H).with_chiral_tag(ChiralTag::TetrahedralCcw));
+    let center =
+        builder.add_atom(AtomSpec::new(Element::H).with_chiral_tag(ChiralTag::TetrahedralCcw));
     let ligands = [
         builder.add_atom(AtomSpec::new(Element::C)),
         builder.add_atom(AtomSpec::new(Element::C)),
@@ -3990,7 +4605,10 @@ fn embedder_find_chiral_sets_collects_atropisomer_chiral_set_with_sorted_neighbo
 
     assert_eq!(chiral_centers.len(), 1);
     let cset = &chiral_centers[0];
-    assert_eq!((cset.idx0, cset.idx1, cset.idx2, cset.idx3, cset.idx4), (0, 2, 3, 4, 0));
+    assert_eq!(
+        (cset.idx0, cset.idx1, cset.idx2, cset.idx3, cset.idx4),
+        (0, 2, 3, 4, 0)
+    );
     assert_eq!(cset.volume_lower_bound, -100.0);
     assert_eq!(cset.volume_upper_bound, -1.0);
 }
@@ -4022,12 +4640,14 @@ fn embedder_adjust_bounds_mat_from_coord_map_accepts_empty_and_singleton_maps() 
     let mut mmat = BoundsMatrix::new(2);
     let before = (mmat.get_upper(0, 1), mmat.get_lower(0, 1));
     let empty = BTreeMap::new();
-    embedder_adjust_bounds_mat_from_coord_map(&mut mmat, 2, &empty).expect("empty coord map bounds");
+    embedder_adjust_bounds_mat_from_coord_map(&mut mmat, 2, &empty)
+        .expect("empty coord map bounds");
     assert_eq!((mmat.get_upper(0, 1), mmat.get_lower(0, 1)), before);
 
     let mut singleton = BTreeMap::new();
     singleton.insert(0, ForceFieldVec3::new(1.0, 2.0, 3.0));
-    embedder_adjust_bounds_mat_from_coord_map(&mut mmat, 2, &singleton).expect("singleton coord map bounds");
+    embedder_adjust_bounds_mat_from_coord_map(&mut mmat, 2, &singleton)
+        .expect("singleton coord map bounds");
     assert_eq!((mmat.get_upper(0, 1), mmat.get_lower(0, 1)), before);
 }
 
@@ -4090,7 +4710,8 @@ fn embedder_setup_initial_bounds_matrix_sets_topological_bounds_and_smooths() {
     let mut details = CrystalFFDetails::default();
     let params = EmbedParameters::default();
 
-    let ok = embedder_setup_initial_bounds_matrix(&mol, &mut mmat, None, &params, &mut details).expect("setup");
+    let ok = embedder_setup_initial_bounds_matrix(&mol, &mut mmat, None, &params, &mut details)
+        .expect("setup");
 
     assert!(ok);
     assert!(mmat.check_valid());
@@ -4109,7 +4730,8 @@ fn embedder_setup_initial_bounds_matrix_records_etkdg_bonds_and_angles() {
         ..EmbedParameters::default()
     };
 
-    let ok = embedder_setup_initial_bounds_matrix(&mol, &mut mmat, None, &params, &mut details).expect("setup");
+    let ok = embedder_setup_initial_bounds_matrix(&mol, &mut mmat, None, &params, &mut details)
+        .expect("setup");
 
     assert!(ok);
     assert_eq!(details.bonds.len(), mol.num_bonds());
@@ -4126,8 +4748,14 @@ fn embedder_setup_initial_bounds_matrix_applies_coord_map_exact_bounds() {
     coord_map.insert(1, ForceFieldVec3::new(1.0, 0.0, 0.0));
     let params = EmbedParameters::default();
 
-    let ok =
-        embedder_setup_initial_bounds_matrix(&mol, &mut mmat, Some(&coord_map), &params, &mut details).expect("setup");
+    let ok = embedder_setup_initial_bounds_matrix(
+        &mol,
+        &mut mmat,
+        Some(&coord_map),
+        &params,
+        &mut details,
+    )
+    .expect("setup");
 
     assert!(ok);
     assert_eq!(mmat.get_upper(0, 1), 1.0);
@@ -4141,8 +4769,8 @@ fn embedder_setup_initial_bounds_matrix_propagates_topology_errors() {
     let mut details = CrystalFFDetails::default();
     let params = EmbedParameters::default();
 
-    let err =
-        embedder_setup_initial_bounds_matrix(&mol, &mut mmat, None, &params, &mut details).expect_err("empty molecule");
+    let err = embedder_setup_initial_bounds_matrix(&mol, &mut mmat, None, &params, &mut details)
+        .expect_err("empty molecule");
 
     assert!(matches!(
         err,
@@ -4153,7 +4781,11 @@ fn embedder_setup_initial_bounds_matrix_propagates_topology_errors() {
 #[test]
 fn embedder_fill_atom_positions_copies_positions_in_match_order() {
     let mol = Molecule::from_smiles("CCO").expect("mol");
-    let conf = Conformer3D::new(0, vec![[0.0, 1.0, 2.0], [3.0, 4.0, 5.0], [6.0, 7.0, 8.0]], true);
+    let conf = Conformer3D::new(
+        0,
+        vec![[0.0, 1.0, 2.0], [3.0, 4.0, 5.0], [6.0, 7.0, 8.0]],
+        true,
+    );
     let mut pts = vec![ForceFieldVec3::default(); 3];
 
     embedder_fill_atom_positions(&mut pts, &conf, &mol, &[2, 0, 1]);
@@ -4222,7 +4854,11 @@ fn embedder_is_conf_far_from_rest_prunes_close_existing_conformer_and_keeps_far_
     builder.add_atom(AtomSpec::new(Element::C));
     builder.add_atom(AtomSpec::new(Element::C));
     builder
-        .add_conformer(Conformer3D::new(0, vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]], true))
+        .add_conformer(Conformer3D::new(
+            0,
+            vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
+            true,
+        ))
         .expect("conformer");
     let mol = builder.build().expect("mol");
     let close = Conformer3D::new(1, vec![[0.01, 0.0, 0.0], [1.01, 0.0, 0.0]], true);
@@ -4248,38 +4884,30 @@ fn embedder_mol_self_matches_uses_heavy_atoms_or_all_atoms_like_rdkit() {
         use_symmetry_for_pruning: false,
         ..EmbedParameters::default()
     };
-    assert_eq!(embedder_get_mol_self_matches(&mol, &heavy).unwrap(), vec![vec![0]]);
+    assert_eq!(
+        embedder_get_mol_self_matches(&mol, &heavy).unwrap(),
+        vec![vec![0]]
+    );
 
     let all = EmbedParameters {
         only_heavy_atoms_for_rms: false,
         use_symmetry_for_pruning: false,
         ..EmbedParameters::default()
     };
-    assert_eq!(embedder_get_mol_self_matches(&mol, &all).unwrap(), vec![vec![0, 1]]);
+    assert_eq!(
+        embedder_get_mol_self_matches(&mol, &all).unwrap(),
+        vec![vec![0, 1]]
+    );
 }
 
 #[test]
 fn symmetrize_terminal_atoms_for_pruning_matches_rdkit_terminal_group_query() {
     let mol = terminal_group_symmetry_molecule();
-    let symmetrized = crate::chemistry::mol_align_support::symmetrize_terminal_atoms(&mol).expect("symmetrized");
+    let symmetrized =
+        crate::chemistry::mol_align_support::symmetrize_terminal_atoms(&mol).expect("symmetrized");
 
     assert_eq!(symmetrized.atoms()[0].formal_charge(), 0);
     assert_eq!(symmetrized.atoms()[2].formal_charge(), 0);
-    assert_eq!(
-        symmetrized.bonds()[0].query(),
-        Some(&QueryNode::predicate(BondQueryPredicate::OrderIn(vec![
-            BondOrder::Single,
-            BondOrder::Double,
-        ])))
-    );
-    assert_eq!(
-        symmetrized.bonds()[1].query(),
-        Some(&QueryNode::predicate(BondQueryPredicate::OrderIn(vec![
-            BondOrder::Single,
-            BondOrder::Double,
-        ])))
-    );
-
     let matches = get_substruct_matches_with_params(
         &mol,
         &symmetrized,
@@ -4393,11 +5021,12 @@ fn conformer_generation_parameter_parity_custom_bounds_matrix_size_check_matches
     wrong_size_params.random_seed = 42;
     wrong_size_params.num_threads = 1;
     wrong_size_params.bounds_mat = Some(Arc::new(BoundsMatrix::new(mol.num_atoms() + 1)));
-    let err =
-        embed_molecule(&mol, &mut wrong_size_params).expect_err("RDKit custom bounds matrix size mismatch must error");
+    let err = embed_molecule(&mol, &mut wrong_size_params)
+        .expect_err("RDKit custom bounds matrix size mismatch must error");
     assert!(
-        err.to_string()
-            .contains("size of boundsMat provided does not match the number of atoms in the molecule"),
+        err.to_string().contains(
+            "size of boundsMat provided does not match the number of atoms in the molecule"
+        ),
         "unexpected custom bounds error: {err}"
     );
 }
@@ -4445,7 +5074,8 @@ fn rd_distgeom_embed_molecule_wrapper_with_params_forwards_parameters() {
     let mol = carbon_single_atom_molecule();
     let mut params = random_embed_params(9, 1);
 
-    let (embedded, id) = rd_distgeom_embed_molecule_wrapper_with_params(&mol, &mut params).expect("wrapper");
+    let (embedded, id) =
+        rd_distgeom_embed_molecule_wrapper_with_params(&mol, &mut params).expect("wrapper");
 
     assert_eq!(id, 0);
     assert_eq!(embedded.conformers_3d().len(), 1);
@@ -4464,13 +5094,22 @@ fn rd_distgeom_embed_multiple_confs_wrapper_matches_core_entry_point() {
 
 #[test]
 fn rd_distgeom_parameter_factories_match_embed_parameter_presets() {
-    assert_eq!(rd_distgeom_get_kdg().to_json(), EmbedParameters::kdg().to_json());
-    assert_eq!(rd_distgeom_get_etdg().to_json(), EmbedParameters::etdg().to_json());
+    assert_eq!(
+        rd_distgeom_get_kdg().to_json(),
+        EmbedParameters::kdg().to_json()
+    );
+    assert_eq!(
+        rd_distgeom_get_etdg().to_json(),
+        EmbedParameters::etdg().to_json()
+    );
     assert_eq!(
         rd_distgeom_get_etdg_v2().to_json(),
         EmbedParameters::etdg_v2().to_json()
     );
-    assert_eq!(rd_distgeom_get_etkdg().to_json(), EmbedParameters::etkdg().to_json());
+    assert_eq!(
+        rd_distgeom_get_etkdg().to_json(),
+        EmbedParameters::etkdg().to_json()
+    );
     assert_eq!(
         rd_distgeom_get_etkdg_v2().to_json(),
         EmbedParameters::etkdg_v2().to_json()
@@ -4488,7 +5127,8 @@ fn rd_distgeom_parameter_factories_match_embed_parameter_presets() {
 #[test]
 fn rd_distgeom_exp_tors_helper_returns_source_backed_details() {
     let mol = two_atom_molecule();
-    let details = rd_distgeom_get_exp_tors_helper(&mol, false, false, false, false, 2, false).unwrap();
+    let details =
+        rd_distgeom_get_exp_tors_helper(&mol, false, false, false, false, 2, false).unwrap();
 
     assert!(details.exp_torsion_angles.is_empty());
     assert!(details.improper_atoms.is_empty());
@@ -4520,7 +5160,10 @@ fn rd_distgeom_embed_parameters_json_helper_wraps_source_backed_json() {
     params.random_seed = 123;
     params.enable_sequential_random_seeds = true;
 
-    assert_eq!(rd_distgeom_embed_parameters_to_json_helper(&params), params.to_json());
+    assert_eq!(
+        rd_distgeom_embed_parameters_to_json_helper(&params),
+        params.to_json()
+    );
 }
 
 #[test]
@@ -4580,7 +5223,9 @@ fn distgeom_chiral_set_rejects_lower_bound_above_upper_bound() {
 
 #[test]
 fn distgeom_chiral_set_aliases_model_shared_pointer_vector() {
-    let chiral_set: ChiralSetPtr = Arc::new(ChiralSet::with_default_structure_flags(0, 1, 2, 3, 4, -1.0, 1.0));
+    let chiral_set: ChiralSetPtr = Arc::new(ChiralSet::with_default_structure_flags(
+        0, 1, 2, 3, 4, -1.0, 1.0,
+    ));
     let chiral_sets: VectChiralSet = vec![Arc::clone(&chiral_set)];
 
     assert_eq!(chiral_sets.len(), 1);
@@ -4740,7 +5385,9 @@ fn chiral_violation_contribs_get_grad_matches_source_formula_for_upper_violation
 
     assert_eq!(
         grad,
-        vec![2.0, 0.0, 0.0, 0.0, 2.0, 0.0, 0.0, 0.0, 2.0, -2.0, -2.0, -2.0]
+        vec![
+            2.0, 0.0, 0.0, 0.0, 2.0, 0.0, 0.0, 0.0, 2.0, -2.0, -2.0, -2.0
+        ]
     );
 }
 
@@ -5043,8 +5690,14 @@ fn embedder_conformer_seed_policy_matches_rdkit_non_sequential_and_sequential_mo
 #[test]
 fn embedder_conformer_seed_policy_matches_rdkit_overflow_hash_branch() {
     assert!(rdkit_embedder_multiplication_overflows(46_342, 46_341));
-    assert_eq!(rdkit_embedder_conformer_seed(46_341, 46_341, false), 143_656);
-    assert_eq!(rdkit_embedder_conformer_seed(100_000, 100_000, false), 1_410_365_413);
+    assert_eq!(
+        rdkit_embedder_conformer_seed(46_341, 46_341, false),
+        143_656
+    );
+    assert_eq!(
+        rdkit_embedder_conformer_seed(100_000, 100_000, false),
+        1_410_365_413
+    );
 }
 
 #[test]
@@ -5134,7 +5787,10 @@ fn compute_initial_coords_embeds_two_point_distance() {
     let dist_mat = symm_matrix_from_distances(2, &[(1, 0, 2.0)]);
     let mut positions = vec![vec![0.0; 3], vec![0.0; 3]];
 
-    assert!(compute_initial_coords(&dist_mat, &mut positions, false, 2, 11).expect("compute initial coords"));
+    assert!(
+        compute_initial_coords(&dist_mat, &mut positions, false, 2, 11)
+            .expect("compute initial coords")
+    );
 
     assert_close(point_distance(&positions[0], &positions[1]), 2.0);
 }
@@ -5146,7 +5802,8 @@ fn compute_initial_coords_rng_overload_rejects_size_mismatch() {
     let mut rng = FixedDoubleRng::new(vec![0.25]);
 
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        compute_initial_coords_with_rng(&dist_mat, &mut positions, &mut rng, false, 2).expect("compute initial coords");
+        compute_initial_coords_with_rng(&dist_mat, &mut positions, &mut rng, false, 2)
+            .expect("compute initial coords");
     }));
 
     assert!(result.is_err());
@@ -5157,7 +5814,10 @@ fn compute_initial_coords_fails_when_zero_eigen_threshold_is_reached_for_more_th
     let dist_mat = SymmMatrix::new(4);
     let mut positions = vec![vec![0.0; 3]; 4];
 
-    assert!(!compute_initial_coords(&dist_mat, &mut positions, false, 2, 17).expect("compute initial coords"));
+    assert!(
+        !compute_initial_coords(&dist_mat, &mut positions, false, 2, 17)
+            .expect("compute initial coords")
+    );
 }
 
 #[test]
@@ -5165,7 +5825,10 @@ fn compute_initial_coords_fails_negative_eigenvalue_without_randomization() {
     let dist_mat = symm_matrix_from_distances(3, &[(1, 0, 1.0), (2, 0, 1.0), (2, 1, 3.0)]);
     let mut positions = vec![vec![0.0; 3]; 3];
 
-    assert!(!compute_initial_coords(&dist_mat, &mut positions, false, 2, 19).expect("compute initial coords"));
+    assert!(
+        !compute_initial_coords(&dist_mat, &mut positions, false, 2, 19)
+            .expect("compute initial coords")
+    );
 }
 
 #[test]
@@ -5175,7 +5838,8 @@ fn compute_initial_coords_randomizes_negative_eigenvalue_when_requested() {
     let mut rng = FixedDoubleRng::new(vec![0.25, 0.75, 0.5, 0.125, 0.875, 0.625]);
 
     assert!(
-        compute_initial_coords_with_rng(&dist_mat, &mut positions, &mut rng, true, 2).expect("compute initial coords")
+        compute_initial_coords_with_rng(&dist_mat, &mut positions, &mut rng, true, 2)
+            .expect("compute initial coords")
     );
 
     assert!(positions.iter().flatten().all(|coord| coord.is_finite()));
@@ -5186,9 +5850,16 @@ fn compute_random_coords_rng_overload_fills_points_in_source_order_exactly() {
     let mut positions = vec![vec![0.0; 3], vec![0.0; 2], vec![0.0; 1]];
     let mut rng = FixedDoubleRng::new(vec![0.0, 0.25, 0.5, 0.75, 1.0, 0.125]);
 
-    assert!(compute_random_coords_with_rng(&mut positions, 4.0, &mut rng));
+    assert!(compute_random_coords_with_rng(
+        &mut positions,
+        4.0,
+        &mut rng
+    ));
 
-    assert_eq!(positions, vec![vec![-2.0, -1.0, 0.0], vec![1.0, 2.0], vec![-1.5]]);
+    assert_eq!(
+        positions,
+        vec![vec![-2.0, -1.0, 0.0], vec![1.0, 2.0], vec![-1.5]]
+    );
     assert_eq!(rng.idx, 6);
 }
 
@@ -5214,7 +5885,11 @@ fn compute_random_coords_seed_boundary_matches_boost_seed_zero_adjustment() {
     let mut wrapped_positions = vec![vec![0.0; 2]];
     let mut direct_positions = vec![vec![0.0; 2]];
 
-    assert!(compute_random_coords(&mut wrapped_positions, 2.0, 2_147_483_647));
+    assert!(compute_random_coords(
+        &mut wrapped_positions,
+        2.0,
+        2_147_483_647
+    ));
     assert!(compute_random_coords(&mut direct_positions, 2.0, 1));
 
     assert_eq!(wrapped_positions, direct_positions);
@@ -5225,7 +5900,11 @@ fn compute_random_coords_empty_positions_returns_true_without_consuming_rng() {
     let mut positions: Vec<Vec<f64>> = Vec::new();
     let mut rng = FixedDoubleRng::new(vec![0.25]);
 
-    assert!(compute_random_coords_with_rng(&mut positions, 1.0, &mut rng));
+    assert!(compute_random_coords_with_rng(
+        &mut positions,
+        1.0,
+        &mut rng
+    ));
 
     assert!(positions.is_empty());
     assert_eq!(rng.idx, 0);
@@ -5249,7 +5928,11 @@ fn construct_distgeom_forcefield_adds_distance_terms_for_basin_and_extra_weights
     mmat.set_upper(2, 0, 2.0).expect("set upper");
     mmat.set_lower(2, 1, 1.0).expect("set lower");
     mmat.set_upper(2, 1, 4.0).expect("set upper");
-    let positions = vec![vec![0.0, 0.0, 0.0], vec![3.0, 0.0, 0.0], vec![0.0, 4.0, 0.0]];
+    let positions = vec![
+        vec![0.0, 0.0, 0.0],
+        vec![3.0, 0.0, 0.0],
+        vec![0.0, 4.0, 0.0],
+    ];
     let mut extra_weights = std::collections::BTreeMap::new();
     extra_weights.insert((2, 1), 2.0);
     let fixed_pts = vec![true, false, true];
@@ -5289,9 +5972,12 @@ fn construct_distgeom_forcefield_adds_chiral_and_fourth_dimension_terms() {
         vec![0.0, 0.0, 1.0, 3.0],
         vec![0.0, 0.0, 0.0, 4.0],
     ];
-    let cset = Arc::new(ChiralSet::with_default_structure_flags(99, 0, 1, 2, 3, -0.1, 0.1));
+    let cset = Arc::new(ChiralSet::with_default_structure_flags(
+        99, 0, 1, 2, 3, -0.1, 0.1,
+    ));
 
-    let mut field = construct_distgeom_forcefield(&mmat, &positions, &[cset], 2.0, 0.5, None, 0.0, None);
+    let mut field =
+        construct_distgeom_forcefield(&mmat, &positions, &[cset], 2.0, 0.5, None, 0.0, None);
     field.initialize();
     let mut contrib_energies = Vec::new();
     let energy = field.calc_energy_current(Some(&mut contrib_energies));
@@ -5317,7 +6003,8 @@ fn construct_distgeom_forcefield_omits_empty_contrib_groups() {
     let mmat = BoundsMatrix::new(2);
     let positions = vec![vec![0.0, 0.0, 0.0], vec![1.0, 0.0, 0.0]];
 
-    let mut field = construct_distgeom_forcefield(&mmat, &positions, &[], 0.0, 0.0, None, 0.0, None);
+    let mut field =
+        construct_distgeom_forcefield(&mmat, &positions, &[], 0.0, 0.0, None, 0.0, None);
     field.initialize();
     let mut contrib_energies = Vec::new();
 
@@ -5362,7 +6049,8 @@ fn distgeom_improper_torsion_terms_add_three_source_permutations_and_mark_center
     let energy = ff.calc_energy_current(Some(&mut contrib_energies));
 
     let expected_ff = distgeom_improper_force_field();
-    let mut expected = crate::chemistry::forcefield::uff::inversion::InversionContribs::new(&expected_ff);
+    let mut expected =
+        crate::chemistry::forcefield::uff::inversion::InversionContribs::new(&expected_ff);
     expected.add_contrib(0, 1, 2, 3, 6, true, 2.0);
     expected.add_contrib(0, 1, 3, 2, 6, true, 2.0);
     expected.add_contrib(2, 1, 3, 0, 6, true, 2.0);
@@ -5386,7 +6074,8 @@ fn distgeom_improper_torsion_terms_accumulate_multiple_centers_in_one_contrib_gr
     let energy = ff.calc_energy_current(Some(&mut contrib_energies));
 
     let expected_ff = distgeom_improper_force_field();
-    let mut expected = crate::chemistry::forcefield::uff::inversion::InversionContribs::new(&expected_ff);
+    let mut expected =
+        crate::chemistry::forcefield::uff::inversion::InversionContribs::new(&expected_ff);
     expected.add_contrib(0, 1, 2, 3, 6, false, 0.5);
     expected.add_contrib(0, 1, 3, 2, 6, false, 0.5);
     expected.add_contrib(2, 1, 3, 0, 6, false, 0.5);
@@ -5441,8 +6130,14 @@ fn distgeom_experimental_torsion_terms_mark_ordered_endpoint_pairs_and_add_contr
     let details = CrystalFFDetails {
         exp_torsion_atoms: vec![vec![0, 1, 2, 3], vec![4, 3, 2, 1]],
         exp_torsion_angles: vec![
-            (vec![1, -1, 1, -1, 1, -1], vec![0.10, 0.20, 0.30, 0.40, 0.50, 0.60]),
-            (vec![-1, 1, -1, 1, -1, 1], vec![0.05, 0.15, 0.25, 0.35, 0.45, 0.55]),
+            (
+                vec![1, -1, 1, -1, 1, -1],
+                vec![0.10, 0.20, 0.30, 0.40, 0.50, 0.60],
+            ),
+            (
+                vec![-1, 1, -1, 1, -1, 1],
+                vec![0.05, 0.15, 0.25, 0.35, 0.45, 0.55],
+            ),
         ],
         ..CrystalFFDetails::default()
     };
@@ -5454,7 +6149,8 @@ fn distgeom_experimental_torsion_terms_mark_ordered_endpoint_pairs_and_add_contr
     let energy = ff.calc_energy_current(Some(&mut contrib_energies));
 
     let expected_ff = distgeom_experimental_torsion_force_field();
-    let mut expected = crate::chemistry::forcefield::crystalff::TorsionAngleContribs::new(&expected_ff);
+    let mut expected =
+        crate::chemistry::forcefield::crystalff::TorsionAngleContribs::new(&expected_ff);
     expected.add_contrib(
         0,
         1,
@@ -5614,15 +6310,19 @@ fn distgeom_add13_terms_add_angle_improper_bounds_and_current_distance_contribs(
 
     let mut expected_ff = distgeom_experimental_torsion_force_field();
     expected_ff.initialize();
-    let mut expected_angle = crate::chemistry::forcefield::AngleConstraintContribs::new(&expected_ff);
+    let mut expected_angle =
+        crate::chemistry::forcefield::AngleConstraintContribs::new(&expected_ff);
     expected_angle.add_contrib(0, 1, 2, 179.0, 180.0, 1.0);
-    let expected_angle_energy = expected_angle.get_energy(&flatten_force_field_positions(&expected_ff));
+    let expected_angle_energy =
+        expected_angle.get_energy(&flatten_force_field_positions(&expected_ff));
 
-    let mut expected_dist = crate::chemistry::forcefield::DistanceConstraintContribs::new(&expected_ff);
+    let mut expected_dist =
+        crate::chemistry::forcefield::DistanceConstraintContribs::new(&expected_ff);
     expected_dist.add_contrib(0, 3, 1.5, 1.6, 4.0);
     let d41 = (positions[4] - positions[1]).length();
     expected_dist.add_contrib(4, 1, d41 - KNOWN_DIST_TOL, d41 + KNOWN_DIST_TOL, 4.0);
-    let expected_dist_energy = expected_dist.get_energy(&flatten_force_field_positions(&expected_ff));
+    let expected_dist_energy =
+        expected_dist.get_energy(&flatten_force_field_positions(&expected_ff));
 
     assert!(atom_pairs[2]);
     assert!(atom_pairs[3]);
@@ -5794,7 +6494,10 @@ fn construct_3d_forcefield_bounds_matrix(num_atoms: usize) -> BoundsMatrix {
 fn construct_3d_forcefield_details() -> CrystalFFDetails {
     CrystalFFDetails {
         exp_torsion_atoms: vec![vec![0, 1, 2, 3]],
-        exp_torsion_angles: vec![(vec![1, -1, 1, -1, 1, -1], vec![0.10, 0.20, 0.30, 0.40, 0.50, 0.60])],
+        exp_torsion_angles: vec![(
+            vec![1, -1, 1, -1, 1, -1],
+            vec![0.10, 0.20, 0.30, 0.40, 0.50, 0.60],
+        )],
         improper_atoms: vec![vec![1, 2, 3, 4, 6, 0]],
         bonds: vec![(0, 1), (3, 4)],
         angles: vec![vec![0, 1, 2, 1], vec![1, 2, 4, 0]],
@@ -5862,7 +6565,10 @@ fn construct_3d_forcefield_reproduces_source_helper_sequence_and_positions() {
     assert_eq!(field.positions(), positions);
     assert_eq!(contrib_energies.len(), expected_contrib_energies.len());
     assert_eq!(contrib_energies.len(), 6);
-    for (observed, expected) in contrib_energies.iter().zip(expected_contrib_energies.iter()) {
+    for (observed, expected) in contrib_energies
+        .iter()
+        .zip(expected_contrib_energies.iter())
+    {
         assert_close(*observed, *expected);
     }
     assert_close(energy, expected_energy);
@@ -5910,12 +6616,16 @@ fn construct_3d_forcefield_with_cpci_appends_electrostatic_terms_after_base_fiel
     let energy = field.calc_energy_current(Some(&mut contrib_energies));
 
     let mut expected_cpci_field = ForceField::new(3);
-    expected_cpci_field.positions_mut().extend_from_slice(&positions);
+    expected_cpci_field
+        .positions_mut()
+        .extend_from_slice(&positions);
     expected_cpci_field.initialize();
-    let mut expected_cpci = crate::chemistry::forcefield::mmff::nonbonded::NonbondedContrib::new(&expected_cpci_field);
+    let mut expected_cpci =
+        crate::chemistry::forcefield::mmff::nonbonded::NonbondedContrib::new(&expected_cpci_field);
     expected_cpci.add_term(0, 1, None, true, 0.5, 1, false);
     expected_cpci.add_term(1, 2, None, true, -0.25, 1, false);
-    let expected_cpci_energy = expected_cpci.get_energy(&flatten_force_field_positions(&expected_cpci_field));
+    let expected_cpci_energy =
+        expected_cpci.get_energy(&flatten_force_field_positions(&expected_cpci_field));
 
     let mut base = base;
     base.initialize();
@@ -5989,7 +6699,10 @@ fn construct_plain_3d_forcefield_reproduces_source_helper_sequence_without_impro
     assert_eq!(field.positions(), positions);
     assert_eq!(contrib_energies.len(), expected_contrib_energies.len());
     assert_eq!(contrib_energies.len(), 4);
-    for (observed, expected) in contrib_energies.iter().zip(expected_contrib_energies.iter()) {
+    for (observed, expected) in contrib_energies
+        .iter()
+        .zip(expected_contrib_energies.iter())
+    {
         assert_close(*observed, *expected);
     }
     assert_close(energy, expected_energy);
@@ -6027,8 +6740,13 @@ fn construct_3d_improper_forcefield_reproduces_parts_overload_terms() {
     let angles = vec![vec![0, 1, 2, 1], vec![1, 2, 4, 0], vec![4, 3, 2, 1]];
     let atom_nums = vec![6, 7, 8, 9, 16];
 
-    let mut field =
-        construct_3d_improper_forcefield_from_parts(&mmat, &positions, &improper_atoms, &angles, &atom_nums);
+    let mut field = construct_3d_improper_forcefield_from_parts(
+        &mmat,
+        &positions,
+        &improper_atoms,
+        &angles,
+        &atom_nums,
+    );
     field.initialize();
     let mut contrib_energies = Vec::new();
     let energy = field.calc_energy_current(Some(&mut contrib_energies));
@@ -6036,7 +6754,12 @@ fn construct_3d_improper_forcefield_reproduces_parts_overload_terms() {
     let mut expected = ForceField::new(3);
     expected.positions_mut().extend_from_slice(&positions);
     let mut is_improper_constrained = vec![false; positions.len()];
-    add_improper_torsion_terms(&mut expected, 10.0, &improper_atoms, &mut is_improper_constrained);
+    add_improper_torsion_terms(
+        &mut expected,
+        10.0,
+        &improper_atoms,
+        &mut is_improper_constrained,
+    );
     let mut expected_angles = crate::chemistry::forcefield::AngleConstraintContribs::new(&expected);
     expected_angles.add_contrib(0, 1, 2, 179.0, 180.0, 10.0);
     expected_angles.add_contrib(4, 3, 2, 179.0, 180.0, 10.0);
@@ -6049,7 +6772,10 @@ fn construct_3d_improper_forcefield_reproduces_parts_overload_terms() {
     assert_eq!(field.positions(), positions);
     assert_eq!(contrib_energies.len(), expected_contrib_energies.len());
     assert_eq!(contrib_energies.len(), 2);
-    for (observed, expected) in contrib_energies.iter().zip(expected_contrib_energies.iter()) {
+    for (observed, expected) in contrib_energies
+        .iter()
+        .zip(expected_contrib_energies.iter())
+    {
         assert_close(*observed, *expected);
     }
     assert_close(energy, expected_energy);
@@ -6083,7 +6809,10 @@ fn construct_3d_improper_forcefield_details_overload_delegates_to_parts_and_igno
     let expected_energy = expected.calc_energy_current(Some(&mut expected_contrib_energies));
 
     assert_eq!(contrib_energies.len(), expected_contrib_energies.len());
-    for (observed, expected) in contrib_energies.iter().zip(expected_contrib_energies.iter()) {
+    for (observed, expected) in contrib_energies
+        .iter()
+        .zip(expected_contrib_energies.iter())
+    {
         assert_close(*observed, *expected);
     }
     assert_close(energy, expected_energy);
@@ -6118,7 +6847,10 @@ fn compute_initial_coords_power_solver_follows_source_seeded_diagonal_iteration(
     let mut eigen_values = vec![0.0; 2];
     let mut eigen_vectors = DoubleMatrix::new(2, 3);
 
-    assert!(power_eigen_solver(2, &mut mat, &mut eigen_values, Some(&mut eigen_vectors), 23).expect("power solver"));
+    assert!(
+        power_eigen_solver(2, &mut mat, &mut eigen_values, Some(&mut eigen_vectors), 23)
+            .expect("power solver")
+    );
 
     assert!((eigen_values[0] - 3.0).abs() < 1.0e-3);
     assert!((eigen_values[1] - 1.006_175_852_283_403_2).abs() < 1.0e-3);
@@ -6179,7 +6911,8 @@ fn run_set15_bounds(
     use_macrocycle_14config: bool,
     force_trans_amides: bool,
 ) -> (BoundsMatrix, ComputedData, Vec<f64>) {
-    let (mut mmat, mut accum_data, dmat) = run_set14_bounds(mol, use_macrocycle_14config, force_trans_amides);
+    let (mut mmat, mut accum_data, dmat) =
+        run_set14_bounds(mol, use_macrocycle_14config, force_trans_amides);
     set_15_bounds(mol, &mut mmat, &mut accum_data, &dmat).expect("set15Bounds");
     (mmat, accum_data, dmat)
 }
@@ -6254,11 +6987,28 @@ fn run_set14_same_ring_pass_only(
             let bid3 = bring[(i + 1) % r_size].index();
             if r_size > 5 {
                 if use_macrocycle_14config && r_size >= MIN_MACROCYCLE_RING_SIZE {
-                    set_macrocycle_all_in_same_ring_14_bounds(mol, bid1, bid2, bid3, &mut accum_data, &mut mmat)
-                        .expect("macrocycle same-ring 1-4 bounds");
+                    set_macrocycle_all_in_same_ring_14_bounds(
+                        mol,
+                        bid1,
+                        bid2,
+                        bid3,
+                        &mut accum_data,
+                        &mut mmat,
+                    )
+                    .expect("macrocycle same-ring 1-4 bounds");
                 } else {
-                    set_in_ring_14_bounds(mol, bid1, bid2, bid3, &mut accum_data, &mut mmat, &dmat, r_size, &rinfo)
-                        .expect("in-ring 1-4 bounds");
+                    set_in_ring_14_bounds(
+                        mol,
+                        bid1,
+                        bid2,
+                        bid3,
+                        &mut accum_data,
+                        &mut mmat,
+                        &dmat,
+                        r_size,
+                        &rinfo,
+                    )
+                    .expect("in-ring 1-4 bounds");
                 }
             } else {
                 record_14_path(mol, bid1, bid2, bid3, &mut accum_data).expect("record14Path");
@@ -6361,8 +7111,10 @@ fn find_dispatch_triple(
                     || ring_bond_pairs.contains(&pid4)
                 {
                     Set14DispatchCase::TwoSameRing
-                } else if (rinfo.num_bond_rings(BondId::new(bid1)) > 0 && rinfo.num_bond_rings(BondId::new(bid2)) > 0)
-                    || (rinfo.num_bond_rings(BondId::new(bid2)) > 0 && rinfo.num_bond_rings(BondId::new(bid3)) > 0)
+                } else if (rinfo.num_bond_rings(BondId::new(bid1)) > 0
+                    && rinfo.num_bond_rings(BondId::new(bid2)) > 0)
+                    || (rinfo.num_bond_rings(BondId::new(bid2)) > 0
+                        && rinfo.num_bond_rings(BondId::new(bid3)) > 0)
                 {
                     Set14DispatchCase::TwoDiffRing
                 } else if rinfo.num_bond_rings(BondId::new(bid2)) > 0 {
@@ -6405,9 +7157,16 @@ fn uff_atom_label(mol: &Molecule, atom_index: usize) -> String {
             atom_has_conjugated_bond[bond.end().index()] = true;
         }
     }
-    let hybridizations = compute_hybridizations_for_uff(mol, &assignment, &atom_degree, &atom_has_conjugated_bond);
-    get_atom_label_for_uff(mol, &assignment, &hybridizations, &atom_has_conjugated_bond, atom_index)
-        .expect("UFF atom label")
+    let hybridizations =
+        compute_hybridizations_for_uff(mol, &assignment, &atom_degree, &atom_has_conjugated_bond);
+    get_atom_label_for_uff(
+        mol,
+        &assignment,
+        &hybridizations,
+        &atom_has_conjugated_bond,
+        atom_index,
+    )
+    .expect("UFF atom label")
 }
 
 #[test]
@@ -6547,13 +7306,16 @@ fn bounds_matrix_set_upper_if_better_only_tightens_within_current_interval() {
     mmat.set_lower(0, 1, 1.2).expect("set lower");
     mmat.set_upper(0, 1, 3.4).expect("set upper");
 
-    mmat.set_upper_if_better(0, 1, 2.6).expect("set upper if better");
+    mmat.set_upper_if_better(0, 1, 2.6)
+        .expect("set upper if better");
     assert_eq!(mmat.get_upper(0, 1), 2.6);
 
-    mmat.set_upper_if_better(0, 1, 2.9).expect("set upper if better");
+    mmat.set_upper_if_better(0, 1, 2.9)
+        .expect("set upper if better");
     assert_eq!(mmat.get_upper(0, 1), 2.6);
 
-    mmat.set_upper_if_better(0, 1, 1.0).expect("set upper if better");
+    mmat.set_upper_if_better(0, 1, 1.0)
+        .expect("set upper if better");
     assert_eq!(mmat.get_upper(0, 1), 2.6);
 }
 
@@ -6563,13 +7325,16 @@ fn bounds_matrix_set_lower_if_better_only_raises_within_current_interval() {
     mmat.set_lower(0, 1, 1.2).expect("set lower");
     mmat.set_upper(0, 1, 3.4).expect("set upper");
 
-    mmat.set_lower_if_better(0, 1, 2.1).expect("set lower if better");
+    mmat.set_lower_if_better(0, 1, 2.1)
+        .expect("set lower if better");
     assert_eq!(mmat.get_lower(0, 1), 2.1);
 
-    mmat.set_lower_if_better(0, 1, 1.8).expect("set lower if better");
+    mmat.set_lower_if_better(0, 1, 1.8)
+        .expect("set lower if better");
     assert_eq!(mmat.get_lower(0, 1), 2.1);
 
-    mmat.set_lower_if_better(0, 1, 3.6).expect("set lower if better");
+    mmat.set_lower_if_better(0, 1, 3.6)
+        .expect("set lower if better");
     assert_eq!(mmat.get_lower(0, 1), 2.1);
 }
 
@@ -6590,7 +7355,8 @@ fn bounds_matrix_check_valid_detects_crossed_bounds() {
 fn check_and_set_bounds_sets_uninitialized_pair_conservatively() {
     let mut mmat = BoundsMatrix::new(3);
 
-    mmat.check_and_set_bounds(0, 2, 1.2, 2.8).expect("check and set bounds");
+    mmat.check_and_set_bounds(0, 2, 1.2, 2.8)
+        .expect("check and set bounds");
 
     assert_eq!(mmat.get_lower(0, 2), 1.2);
     assert_eq!(mmat.get_upper(0, 2), 2.8);
@@ -6604,11 +7370,13 @@ fn check_and_set_bounds_only_tightens_lower_and_relaxes_upper_when_allowed() {
     mmat.set_lower(0, 2, 1.8).expect("set lower");
     mmat.set_upper(0, 2, 2.2).expect("set upper");
 
-    mmat.check_and_set_bounds(0, 2, 1.4, 2.6).expect("check and set bounds");
+    mmat.check_and_set_bounds(0, 2, 1.4, 2.6)
+        .expect("check and set bounds");
     assert_eq!(mmat.get_lower(0, 2), 1.4);
     assert_eq!(mmat.get_upper(0, 2), 2.6);
 
-    mmat.check_and_set_bounds(0, 2, 1.6, 2.0).expect("check and set bounds");
+    mmat.check_and_set_bounds(0, 2, 1.6, 2.0)
+        .expect("check and set bounds");
     assert_eq!(mmat.get_lower(0, 2), 1.4);
     assert_eq!(mmat.get_upper(0, 2), 2.6);
 }
@@ -6737,13 +7505,15 @@ fn set12_bounds_adds_extra_squish_for_conjugated_hetero_five_ring_bonds() {
 fn hbond_helpers_follow_rdkit_acceptor_donor_and_bound_hydrogen_rules() {
     let ammonia = Molecule::from_smiles_with_sanitize("N", false).expect("ammonia-like N");
     let ammonia_valence = assign_valence(&ammonia, ValenceModel::RdkitLike).expect("valence");
-    let ammonia_total_hs = total_num_hydrogens_for_distgeom(&ammonia, &ammonia.atoms()[0], &ammonia_valence, 0);
+    let ammonia_total_hs =
+        total_num_hydrogens_for_distgeom(&ammonia, &ammonia.atoms()[0], &ammonia_valence, 0);
     assert!(is_hbond_acceptor(ammonia.atoms()[0].atomic_number()));
     assert!(is_hbond_donor(&ammonia.atoms()[0], ammonia_total_hs));
 
     let methane = Molecule::from_smiles_with_sanitize("C", false).expect("methane-like C");
     let methane_valence = assign_valence(&methane, ValenceModel::RdkitLike).expect("valence");
-    let methane_total_hs = total_num_hydrogens_for_distgeom(&methane, &methane.atoms()[0], &methane_valence, 0);
+    let methane_total_hs =
+        total_num_hydrogens_for_distgeom(&methane, &methane.atoms()[0], &methane_valence, 0);
     assert!(!is_hbond_acceptor(methane.atoms()[0].atomic_number()));
     assert!(!is_hbond_donor(&methane.atoms()[0], methane_total_hs));
 
@@ -6772,14 +7542,22 @@ fn total_num_hydrogens_for_distgeom_counts_neighbor_hydrogens_like_rdkit() {
         .expect("n-c");
     let mol = builder.build().expect("explicit secondary amine fragment");
     let assignment = assign_valence(&mol, ValenceModel::RdkitLike).expect("valence");
-    let total_hs =
-        total_num_hydrogens_for_distgeom(&mol, &mol.atoms()[nitrogen.index()], &assignment, nitrogen.index());
+    let total_hs = total_num_hydrogens_for_distgeom(
+        &mol,
+        &mol.atoms()[nitrogen.index()],
+        &assignment,
+        nitrogen.index(),
+    );
     assert_eq!(total_hs, 1);
 }
 
 #[test]
 fn atom_charge_flags_adds_default_copper_charge_from_formal_charge() {
-    let mol = single_atom_molecule(AtomSpec::new(Element::CU).with_formal_charge(1).with_no_implicit(true));
+    let mol = single_atom_molecule(
+        AtomSpec::new(Element::CU)
+            .with_formal_charge(1)
+            .with_no_implicit(true),
+    );
     let assignment = assign_valence(&mol, ValenceModel::RdkitLike).expect("valence");
     let hybridizations = vec![Hybridization::Unspecified];
     let total_valence = atom_total_valence_for_uff(&assignment, 0);
@@ -6865,7 +7643,11 @@ fn atom_label_uses_aromatic_r_suffix_for_benzene_carbon() {
 
 #[test]
 fn atom_label_composes_charge_flags_after_base_label() {
-    let mol = single_atom_molecule(AtomSpec::new(Element::CU).with_formal_charge(1).with_no_implicit(true));
+    let mol = single_atom_molecule(
+        AtomSpec::new(Element::CU)
+            .with_formal_charge(1)
+            .with_no_implicit(true),
+    );
 
     let label = uff_atom_label(&mol, 0);
 
@@ -6890,7 +7672,10 @@ fn set_lower_bound_vdw_scales_15_16_and_longer_paths_like_rdkit() {
 
     let vdw_sum = vdw_radius(6) + vdw_radius(6);
     assert!((mmat.get_lower(4, 0) - (VDW_SCALE_15 * vdw_sum)).abs() < 1e-9);
-    assert!((mmat.get_lower(5, 0) - ((VDW_SCALE_15 + 0.5 * (1.0 - VDW_SCALE_15)) * vdw_sum)).abs() < 1e-9);
+    assert!(
+        (mmat.get_lower(5, 0) - ((VDW_SCALE_15 + 0.5 * (1.0 - VDW_SCALE_15)) * vdw_sum)).abs()
+            < 1e-9
+    );
     assert!((mmat.get_lower(6, 0) - vdw_sum).abs() < 1e-9);
 }
 
@@ -7039,7 +7824,10 @@ fn set_13_bounds_sets_non_ring_sp3_bounds_for_propane_path() {
 
     assert!((mmat.get_lower(0, 2) - (expected - DIST13_TOL)).abs() < 1e-9);
     assert!((mmat.get_upper(0, 2) - (expected + DIST13_TOL)).abs() < 1e-9);
-    assert!((accum_data.get_bond_angle(mol.num_bonds(), bid01, bid12) - 109.5_f64.to_radians()).abs() < 1e-9);
+    assert!(
+        (accum_data.get_bond_angle(mol.num_bonds(), bid01, bid12) - 109.5_f64.to_radians()).abs()
+            < 1e-9
+    );
     assert!(accum_data.visited13_bounds[2]);
 }
 
@@ -7066,7 +7854,8 @@ fn set_13_bounds_distributes_remaining_fused_ring_angle_like_rdkit() {
     for left in 0..neighbors.len() {
         let bid1 = bond_between_idx_simple(&mol, fusion_atom, neighbors[left]).expect("bond 1");
         for right in 0..left {
-            let bid2 = bond_between_idx_simple(&mol, fusion_atom, neighbors[right]).expect("bond 2");
+            let bid2 =
+                bond_between_idx_simple(&mol, fusion_atom, neighbors[right]).expect("bond 2");
             pair_angles.push(accum_data.get_bond_angle(mol.num_bonds(), bid1, bid2));
         }
     }
@@ -7140,7 +7929,8 @@ fn amide_ester_classification_helpers_match_ester_patterns() {
         .find(|&nbr| {
             let bond_idx = bond_between_idx_simple(&ester, carbonyl, nbr).expect("bond");
             ester.bonds()[bond_idx].order() == BondOrder::Double
-                && (ester.atoms()[nbr].atomic_number() == 8 || ester.atoms()[nbr].atomic_number() == 7)
+                && (ester.atoms()[nbr].atomic_number() == 8
+                    || ester.atoms()[nbr].atomic_number() == 7)
         })
         .expect("double bonded hetero");
     let single_hetero = neighbors_for_atom(&ester, carbonyl)
@@ -7148,7 +7938,8 @@ fn amide_ester_classification_helpers_match_ester_patterns() {
         .find(|&nbr| {
             let bond_idx = bond_between_idx_simple(&ester, carbonyl, nbr).expect("bond");
             ester.bonds()[bond_idx].order() == BondOrder::Single
-                && (ester.atoms()[nbr].atomic_number() == 8 || ester.atoms()[nbr].atomic_number() == 7)
+                && (ester.atoms()[nbr].atomic_number() == 8
+                    || ester.atoms()[nbr].atomic_number() == 7)
         })
         .expect("single bonded hetero");
     let atom1 = neighbors_for_atom(&ester, single_hetero)
@@ -7156,12 +7947,14 @@ fn amide_ester_classification_helpers_match_ester_patterns() {
         .find(|&nbr| nbr != carbonyl)
         .expect("atom1");
     let bnd1 = bond_between_idx_simple(&ester, atom1, single_hetero).expect("bond1");
-    let bnd3_double = bond_between_idx_simple(&ester, carbonyl, double_hetero).expect("bond3 double");
+    let bnd3_double =
+        bond_between_idx_simple(&ester, carbonyl, double_hetero).expect("bond3 double");
     let carbonyl_substituent = neighbors_for_atom(&ester, carbonyl)
         .into_iter()
         .find(|&nbr| nbr != single_hetero && nbr != double_hetero)
         .expect("carbonyl substituent");
-    let bnd3_single = bond_between_idx_simple(&ester, carbonyl, carbonyl_substituent).expect("bond3 single");
+    let bnd3_single =
+        bond_between_idx_simple(&ester, carbonyl, carbonyl_substituent).expect("bond3 single");
 
     assert!(check_amide_ester_14(
         &ester,
@@ -7171,7 +7964,13 @@ fn amide_ester_classification_helpers_match_ester_patterns() {
         carbonyl,
         double_hetero,
     ));
-    assert!(check_amide_ester_15(&ester, bnd1, bnd3_single, single_hetero, carbonyl,));
+    assert!(check_amide_ester_15(
+        &ester,
+        bnd1,
+        bnd3_single,
+        single_hetero,
+        carbonyl,
+    ));
 
     let tertiary_amide = Molecule::from_smiles("CN(C)C(=O)C").expect("tertiary amide");
     let tertiary_carbonyl = tertiary_amide
@@ -7183,7 +7982,8 @@ fn amide_ester_classification_helpers_match_ester_patterns() {
     let tertiary_nitrogen = neighbors_for_atom(&tertiary_amide, tertiary_carbonyl)
         .into_iter()
         .find(|&nbr| {
-            let bond_idx = bond_between_idx_simple(&tertiary_amide, tertiary_carbonyl, nbr).expect("bond");
+            let bond_idx =
+                bond_between_idx_simple(&tertiary_amide, tertiary_carbonyl, nbr).expect("bond");
             tertiary_amide.bonds()[bond_idx].order() == BondOrder::Single
                 && tertiary_amide.atoms()[nbr].atomic_number() == 7
         })
@@ -7192,17 +7992,19 @@ fn amide_ester_classification_helpers_match_ester_patterns() {
         .into_iter()
         .find(|&nbr| nbr != tertiary_carbonyl)
         .expect("substituent carbon");
-    let tertiary_bnd1 =
-        bond_between_idx_simple(&tertiary_amide, tertiary_atom1, tertiary_nitrogen).expect("tertiary bond1");
+    let tertiary_bnd1 = bond_between_idx_simple(&tertiary_amide, tertiary_atom1, tertiary_nitrogen)
+        .expect("tertiary bond1");
     let tertiary_side = neighbors_for_atom(&tertiary_amide, tertiary_carbonyl)
         .into_iter()
         .find(|&nbr| {
-            let bond_idx = bond_between_idx_simple(&tertiary_amide, tertiary_carbonyl, nbr).expect("bond");
-            tertiary_amide.bonds()[bond_idx].order() == BondOrder::Single && nbr != tertiary_nitrogen
+            let bond_idx =
+                bond_between_idx_simple(&tertiary_amide, tertiary_carbonyl, nbr).expect("bond");
+            tertiary_amide.bonds()[bond_idx].order() == BondOrder::Single
+                && nbr != tertiary_nitrogen
         })
         .expect("carbonyl side");
-    let tertiary_bnd3 =
-        bond_between_idx_simple(&tertiary_amide, tertiary_carbonyl, tertiary_side).expect("tertiary bond3");
+    let tertiary_bnd3 = bond_between_idx_simple(&tertiary_amide, tertiary_carbonyl, tertiary_side)
+        .expect("tertiary bond3");
 
     assert!(!check_amide_ester_15(
         &tertiary_amide,
@@ -7226,7 +8028,8 @@ fn macrocycle_all_in_same_ring_amide_ester_helper_matches_lactone_pattern() {
         .into_iter()
         .find(|&nbr| {
             let bond_idx = bond_between_idx_simple(&mol, carbonyl, nbr).expect("bond");
-            mol.bonds()[bond_idx].order() == BondOrder::Single && mol.atoms()[nbr].atomic_number() == 7
+            mol.bonds()[bond_idx].order() == BondOrder::Single
+                && mol.atoms()[nbr].atomic_number() == 7
         })
         .expect("ring amide nitrogen");
     let atm4 = neighbors_for_atom(&mol, carbonyl)
@@ -7266,7 +8069,8 @@ fn macrocycle_two_in_same_ring_amide_ester_helper_matches_tertiary_lactam_patter
         .into_iter()
         .find(|&nbr| {
             let bond_idx = bond_between_idx_simple(&mol, carbonyl, nbr).expect("bond");
-            mol.bonds()[bond_idx].order() == BondOrder::Single && mol.atoms()[nbr].atomic_number() == 7
+            mol.bonds()[bond_idx].order() == BondOrder::Single
+                && mol.atoms()[nbr].atomic_number() == 7
         })
         .expect("amide nitrogen");
     let atom1 = neighbors_for_atom(&mol, nitrogen)
@@ -7304,7 +8108,8 @@ fn set_macrocycle_two_in_same_ring_14_bounds_uses_cis_for_macrocycle_amide_path(
         .into_iter()
         .find(|&nbr| {
             let bond_idx = bond_between_idx_simple(&mol, carbonyl, nbr).expect("bond");
-            mol.bonds()[bond_idx].order() == BondOrder::Single && mol.atoms()[nbr].atomic_number() == 7
+            mol.bonds()[bond_idx].order() == BondOrder::Single
+                && mol.atoms()[nbr].atomic_number() == 7
         })
         .expect("amide nitrogen");
     let atom1 = neighbors_for_atom(&mol, nitrogen)
@@ -7315,8 +8120,16 @@ fn set_macrocycle_two_in_same_ring_14_bounds_uses_cis_for_macrocycle_amide_path(
     let bid1 = bond_between_idx_simple(&mol, atom1, nitrogen).expect("b1");
     let bid2 = bond_between_idx_simple(&mol, nitrogen, carbonyl).expect("b2");
     let bid3 = bond_between_idx_simple(&mol, carbonyl, oxygen).expect("b3");
-    set_macrocycle_two_in_same_ring_14_bounds(&mol, bid1, bid2, bid3, &mut accum_data, &mut mmat, &dmat)
-        .expect("macrocycle two-in-same-ring bounds");
+    set_macrocycle_two_in_same_ring_14_bounds(
+        &mol,
+        bid1,
+        bid2,
+        bid3,
+        &mut accum_data,
+        &mut mmat,
+        &dmat,
+    )
+    .expect("macrocycle two-in-same-ring bounds");
 
     let path = accum_data.paths14.last().expect("path");
     assert_eq!(path.kind, Path14Kind::Cis);
@@ -7346,7 +8159,8 @@ fn set_macrocycle_all_in_same_ring_14_bounds_uses_trans_plus_point_one_for_macro
         .into_iter()
         .find(|&nbr| {
             let bond_idx = bond_between_idx_simple(&mol, carbonyl, nbr).expect("bond");
-            mol.bonds()[bond_idx].order() == BondOrder::Single && mol.atoms()[nbr].atomic_number() == 7
+            mol.bonds()[bond_idx].order() == BondOrder::Single
+                && mol.atoms()[nbr].atomic_number() == 7
         })
         .expect("amide nitrogen");
     let atm4 = neighbors_for_atom(&mol, carbonyl)
@@ -7384,7 +8198,8 @@ fn set_macrocycle_all_in_same_ring_14_bounds_uses_trans_plus_point_one_for_macro
 fn set_macrocycle_all_in_same_ring_14_bounds_uses_other_for_plain_macrocycle_chain() {
     let mol = Molecule::from_smiles("C1CCCCCCCCC1").expect("cyclodecane");
     let (mut mmat, mut accum_data, _) = run_set14_same_ring_pass_only(&mol, true);
-    let (bid1, bid2, bid3, _) = find_same_ring_dispatch_triple(&mol, true).expect("macrocycle path");
+    let (bid1, bid2, bid3, _) =
+        find_same_ring_dispatch_triple(&mol, true).expect("macrocycle path");
 
     let before_paths = accum_data.paths14.len();
     set_macrocycle_all_in_same_ring_14_bounds(&mol, bid1, bid2, bid3, &mut accum_data, &mut mmat)
@@ -7401,8 +8216,16 @@ fn set_chain_14_bounds_uses_defined_double_bond_stereo_for_alkenes() {
     let t_bid1 = bond_between_idx_simple(&trans, 0, 1).expect("0-1");
     let t_bid2 = bond_between_idx_simple(&trans, 1, 2).expect("1-2");
     let t_bid3 = bond_between_idx_simple(&trans, 2, 3).expect("2-3");
-    set_chain_14_bounds(&trans, t_bid1, t_bid2, t_bid3, &mut trans_accum, &mut trans_mmat, false)
-        .expect("chain trans bounds");
+    set_chain_14_bounds(
+        &trans,
+        t_bid1,
+        t_bid2,
+        t_bid3,
+        &mut trans_accum,
+        &mut trans_mmat,
+        false,
+    )
+    .expect("chain trans bounds");
     let trans_path = trans_accum.paths14.last().expect("trans path");
     assert_eq!(trans_path.kind, Path14Kind::Trans);
     let trans_expected = compute_14_dist_trans(
@@ -7420,7 +8243,16 @@ fn set_chain_14_bounds_uses_defined_double_bond_stereo_for_alkenes() {
     let c_bid1 = bond_between_idx_simple(&cis, 0, 1).expect("0-1");
     let c_bid2 = bond_between_idx_simple(&cis, 1, 2).expect("1-2");
     let c_bid3 = bond_between_idx_simple(&cis, 2, 3).expect("2-3");
-    set_chain_14_bounds(&cis, c_bid1, c_bid2, c_bid3, &mut cis_accum, &mut cis_mmat, false).expect("chain cis bounds");
+    set_chain_14_bounds(
+        &cis,
+        c_bid1,
+        c_bid2,
+        c_bid3,
+        &mut cis_accum,
+        &mut cis_mmat,
+        false,
+    )
+    .expect("chain cis bounds");
     let cis_path = cis_accum.paths14.last().expect("cis path");
     assert_eq!(cis_path.kind, Path14Kind::Cis);
     let cis_expected = compute_14_dist_cis(
@@ -7441,7 +8273,8 @@ fn set_chain_14_bounds_uses_ss_special_case() {
     let bid1 = bond_between_idx_simple(&mol, 0, 1).expect("0-1");
     let bid2 = bond_between_idx_simple(&mol, 1, 2).expect("1-2");
     let bid3 = bond_between_idx_simple(&mol, 2, 3).expect("2-3");
-    set_chain_14_bounds(&mol, bid1, bid2, bid3, &mut accum_data, &mut mmat, false).expect("chain S-S bounds");
+    set_chain_14_bounds(&mol, bid1, bid2, bid3, &mut accum_data, &mut mmat, false)
+        .expect("chain S-S bounds");
 
     let path = accum_data.paths14.last().expect("path");
     assert_eq!(path.kind, Path14Kind::Other);
@@ -7461,9 +8294,11 @@ fn set_chain_14_bounds_uses_ss_special_case() {
 fn set_chain_14_bounds_honors_force_trans_amides_for_secondary_amide_h_paths() {
     let mut builder = Molecule::builder();
     let hydrogen = builder.add_atom(AtomSpec::new(Element::H)).index();
-    let nitrogen = builder.add_atom(AtomSpec::new(Element::N).with_hybridization(Hybridization::Sp2));
+    let nitrogen =
+        builder.add_atom(AtomSpec::new(Element::N).with_hybridization(Hybridization::Sp2));
     let nitrogen = nitrogen.index();
-    let carbonyl = builder.add_atom(AtomSpec::new(Element::C).with_hybridization(Hybridization::Sp2));
+    let carbonyl =
+        builder.add_atom(AtomSpec::new(Element::C).with_hybridization(Hybridization::Sp2));
     let carbonyl = carbonyl.index();
     let oxygen = builder.add_atom(AtomSpec::new(Element::O).with_hybridization(Hybridization::Sp2));
     let oxygen = oxygen.index();
@@ -7534,7 +8369,16 @@ fn set_chain_14_bounds_honors_force_trans_amides_for_secondary_amide_h_paths() {
         ideal_bond_angle(&mol.atoms()[carbonyl].hybridization(), None),
     );
 
-    set_chain_14_bounds(&mol, bid_hn, bid_nc, bid_co, &mut accum_data, &mut mmat, true).expect("chain amide14 bounds");
+    set_chain_14_bounds(
+        &mol,
+        bid_hn,
+        bid_nc,
+        bid_co,
+        &mut accum_data,
+        &mut mmat,
+        true,
+    )
+    .expect("chain amide14 bounds");
     let amide14_path = accum_data.paths14.last().expect("amide14 path");
     assert_eq!(amide14_path.kind, Path14Kind::Trans);
     let expected_14 = compute_14_dist_trans(
@@ -7547,7 +8391,16 @@ fn set_chain_14_bounds_honors_force_trans_amides_for_secondary_amide_h_paths() {
     assert!((mmat.get_lower(hydrogen, oxygen) - (expected_14 - GEN_DIST_TOL)).abs() < 1e-9);
     assert!((mmat.get_upper(hydrogen, oxygen) - (expected_14 + GEN_DIST_TOL)).abs() < 1e-9);
 
-    set_chain_14_bounds(&mol, bid_hn, bid_nc, bid_cm, &mut accum_data, &mut mmat, true).expect("chain amide15 bounds");
+    set_chain_14_bounds(
+        &mol,
+        bid_hn,
+        bid_nc,
+        bid_cm,
+        &mut accum_data,
+        &mut mmat,
+        true,
+    )
+    .expect("chain amide15 bounds");
     let amide15_path = accum_data.paths14.last().expect("amide15 path");
     assert_eq!(amide15_path.kind, Path14Kind::Cis);
     let expected_15 = compute_14_dist_cis(
@@ -7557,8 +8410,12 @@ fn set_chain_14_bounds_honors_force_trans_amides_for_secondary_amide_h_paths() {
         accum_data.get_bond_angle(mol.num_bonds(), bid_hn, bid_nc),
         accum_data.get_bond_angle(mol.num_bonds(), bid_nc, bid_cm),
     );
-    assert!((mmat.get_lower(hydrogen, carbonyl_methyl) - (expected_15 - GEN_DIST_TOL)).abs() < 1e-9);
-    assert!((mmat.get_upper(hydrogen, carbonyl_methyl) - (expected_15 + GEN_DIST_TOL)).abs() < 1e-9);
+    assert!(
+        (mmat.get_lower(hydrogen, carbonyl_methyl) - (expected_15 - GEN_DIST_TOL)).abs() < 1e-9
+    );
+    assert!(
+        (mmat.get_upper(hydrogen, carbonyl_methyl) - (expected_15 + GEN_DIST_TOL)).abs() < 1e-9
+    );
 }
 
 #[test]
@@ -7616,8 +8473,18 @@ fn set_in_ring_14_bounds_prefers_cis_for_small_sp2_ring_paths() {
     let bid2 = bond_between_idx_simple(&mol, 0, 1).expect("0-1");
     let bid3 = bond_between_idx_simple(&mol, 1, 2).expect("1-2");
     let rinfo = ring_info_for_distgeom(&mol).expect("ring info");
-    set_in_ring_14_bounds(&mol, bid1, bid2, bid3, &mut accum_data, &mut mmat, &dmat, 6, &rinfo)
-        .expect("in-ring cis bounds");
+    set_in_ring_14_bounds(
+        &mol,
+        bid1,
+        bid2,
+        bid3,
+        &mut accum_data,
+        &mut mmat,
+        &dmat,
+        6,
+        &rinfo,
+    )
+    .expect("in-ring cis bounds");
 
     let path = accum_data.paths14.last().expect("path");
     assert_eq!(path.kind, Path14Kind::Cis);
@@ -7705,12 +8572,30 @@ fn diff_ring14_and_share_ring14_delegate_to_in_ring_helper() {
     .expect("base in-ring bounds");
 
     let (mut diff_mmat, mut diff_accum) = run_set13_bounds(&mol);
-    set_two_in_diff_ring_14_bounds(&mol, bid1, bid2, bid3, &mut diff_accum, &mut diff_mmat, &dmat, &rinfo)
-        .expect("diff-ring bounds");
+    set_two_in_diff_ring_14_bounds(
+        &mol,
+        bid1,
+        bid2,
+        bid3,
+        &mut diff_accum,
+        &mut diff_mmat,
+        &dmat,
+        &rinfo,
+    )
+    .expect("diff-ring bounds");
 
     let (mut share_mmat, mut share_accum) = run_set13_bounds(&mol);
-    set_share_ring_bond_14_bounds(&mol, bid1, bid2, bid3, &mut share_accum, &mut share_mmat, &dmat, &rinfo)
-        .expect("share-ring-bond bounds");
+    set_share_ring_bond_14_bounds(
+        &mol,
+        bid1,
+        bid2,
+        bid3,
+        &mut share_accum,
+        &mut share_mmat,
+        &dmat,
+        &rinfo,
+    )
+    .expect("share-ring-bond bounds");
 
     assert_eq!(
         diff_accum.paths14.last().map(|p| p.kind),
@@ -7739,7 +8624,8 @@ fn compute_15_dist_helpers_match_rdkit_cis_and_trans_formulas() {
     let cis_dx14 = d2 - d3 * ang23.cos() - d1 * ang12.cos();
     let cis_dy14 = d3 * ang23.sin() - d1 * ang12.sin();
     let cis_d14 = (cis_dx14 * cis_dx14 + cis_dy14 * cis_dy14).sqrt();
-    let cis_cval = ((d3 - d2 * ang23.cos() + d1 * (ang12 + ang23).cos()) / cis_d14).clamp(-1.0, 1.0);
+    let cis_cval =
+        ((d3 - d2 * ang23.cos() + d1 * (ang12 + ang23).cos()) / cis_d14).clamp(-1.0, 1.0);
     let cis_ang143 = cis_cval.acos();
     let expected_cis_cis = compute_13_dist(cis_d14, d4, ang34 - cis_ang143);
     let expected_cis_trans = compute_13_dist(cis_d14, d4, ang34 + cis_ang143);
@@ -7747,15 +8633,29 @@ fn compute_15_dist_helpers_match_rdkit_cis_and_trans_formulas() {
     let trans_dx14 = d2 - d3 * ang23.cos() - d1 * ang12.cos();
     let trans_dy14 = d3 * ang23.sin() + d1 * ang12.sin();
     let trans_d14 = (trans_dx14 * trans_dx14 + trans_dy14 * trans_dy14).sqrt();
-    let trans_cval = ((d3 - d2 * ang23.cos() + d1 * (ang12 - ang23).cos()) / trans_d14).clamp(-1.0, 1.0);
+    let trans_cval =
+        ((d3 - d2 * ang23.cos() + d1 * (ang12 - ang23).cos()) / trans_d14).clamp(-1.0, 1.0);
     let trans_ang143 = trans_cval.acos();
     let expected_trans_trans = compute_13_dist(trans_d14, d4, ang34 + trans_ang143);
     let expected_trans_cis = compute_13_dist(trans_d14, d4, ang34 - trans_ang143);
 
-    assert!((compute_15_dist_cis_cis(d1, d2, d3, d4, ang12, ang23, ang34) - expected_cis_cis).abs() < 1e-12);
-    assert!((compute_15_dist_cis_trans(d1, d2, d3, d4, ang12, ang23, ang34) - expected_cis_trans).abs() < 1e-12);
-    assert!((compute_15_dist_trans_trans(d1, d2, d3, d4, ang12, ang23, ang34) - expected_trans_trans).abs() < 1e-12);
-    assert!((compute_15_dist_trans_cis(d1, d2, d3, d4, ang12, ang23, ang34) - expected_trans_cis).abs() < 1e-12);
+    assert!(
+        (compute_15_dist_cis_cis(d1, d2, d3, d4, ang12, ang23, ang34) - expected_cis_cis).abs()
+            < 1e-12
+    );
+    assert!(
+        (compute_15_dist_cis_trans(d1, d2, d3, d4, ang12, ang23, ang34) - expected_cis_trans).abs()
+            < 1e-12
+    );
+    assert!(
+        (compute_15_dist_trans_trans(d1, d2, d3, d4, ang12, ang23, ang34) - expected_trans_trans)
+            .abs()
+            < 1e-12
+    );
+    assert!(
+        (compute_15_dist_trans_cis(d1, d2, d3, d4, ang12, ang23, ang34) - expected_trans_cis).abs()
+            < 1e-12
+    );
 }
 
 #[test]
@@ -7894,7 +8794,8 @@ fn set_15_bounds_helper_uses_reversed_other_branch_formula_for_cis_path() {
     let ang23 = accum_data.get_bond_angle(nb, bid2, bid3);
     let ang34 = accum_data.get_bond_angle(nb, bid3, bid4);
     let expected_lower = compute_15_dist_cis_cis(d4, d3, d2, d1, ang34, ang23, ang12) - DIST15_TOL;
-    let expected_upper = compute_15_dist_cis_trans(d4, d3, d2, d1, ang34, ang23, ang12) + DIST15_TOL;
+    let expected_upper =
+        compute_15_dist_cis_trans(d4, d3, d2, d1, ang34, ang23, ang12) + DIST15_TOL;
 
     assert!((mmat.get_lower(0, 4) - expected_lower).abs() < 1e-12);
     assert!((mmat.get_upper(0, 4) - expected_upper).abs() < 1e-12);
@@ -7937,8 +8838,10 @@ fn set_15_bounds_helper_uses_reversed_other_branch_formula_for_trans_path() {
     let ang12 = accum_data.get_bond_angle(nb, bid1, bid2);
     let ang23 = accum_data.get_bond_angle(nb, bid2, bid3);
     let ang34 = accum_data.get_bond_angle(nb, bid3, bid4);
-    let expected_lower = compute_15_dist_trans_cis(d4, d3, d2, d1, ang34, ang23, ang12) - DIST15_TOL;
-    let expected_upper = compute_15_dist_trans_trans(d4, d3, d2, d1, ang34, ang23, ang12) + DIST15_TOL;
+    let expected_lower =
+        compute_15_dist_trans_cis(d4, d3, d2, d1, ang34, ang23, ang12) - DIST15_TOL;
+    let expected_upper =
+        compute_15_dist_trans_trans(d4, d3, d2, d1, ang34, ang23, ang12) + DIST15_TOL;
 
     assert!((mmat.get_lower(0, 4) - expected_lower).abs() < 1e-12);
     assert!((mmat.get_upper(0, 4) - expected_upper).abs() < 1e-12);
@@ -8058,7 +8961,8 @@ fn set_topol_bounds_ignores_scale_vdw_flag_like_current_rdkit_source() {
 fn set_topol_bounds_with_outputs_matches_first_overload_matrix() {
     let mol = Molecule::from_smiles("C/C=C/CC").expect("stereo pentene");
     let plain = run_set_topol_bounds(&mol, true, true, false, false, true, true);
-    let (with_outputs, bonds, angles) = run_set_topol_bounds_with_outputs(&mol, true, true, false, false, true, true);
+    let (with_outputs, bonds, angles) =
+        run_set_topol_bounds_with_outputs(&mol, true, true, false, false, true, true);
 
     assert_eq!(plain.data, with_outputs.data);
     assert_eq!(bonds.len(), mol.num_bonds());
@@ -8068,7 +8972,8 @@ fn set_topol_bounds_with_outputs_matches_first_overload_matrix() {
 #[test]
 fn set_topol_bounds_with_outputs_emits_exact_rdkit_bonds_and_angles_for_triple_bond_case() {
     let mol = Molecule::from_smiles("CC#N").expect("acetonitrile");
-    let (_mmat, bonds, angles) = run_set_topol_bounds_with_outputs(&mol, false, true, false, false, false, false);
+    let (_mmat, bonds, angles) =
+        run_set_topol_bounds_with_outputs(&mol, false, true, false, false, false, false);
 
     assert_eq!(bonds, vec![(0, 1), (1, 2)]);
     assert_eq!(angles, vec![vec![0, 1, 2, 1]]);
@@ -8078,7 +8983,8 @@ fn set_topol_bounds_with_outputs_emits_exact_rdkit_bonds_and_angles_for_triple_b
 fn set_14_bounds_entrypoint_same_ring_matches_direct_helper() {
     let mol = Molecule::from_smiles("c1ccccc1").expect("benzene");
     let (mmat, accum_data, dmat) = run_set14_bounds(&mol, false, false);
-    let (bid1, bid2, bid3, ring_size) = find_same_ring_dispatch_triple(&mol, false).expect("same-ring triple");
+    let (bid1, bid2, bid3, ring_size) =
+        find_same_ring_dispatch_triple(&mol, false).expect("same-ring triple");
     let rinfo = ring_info_for_distgeom(&mol).expect("ring info");
 
     let (mut direct_mmat, mut direct_accum) = run_set13_bounds(&mol);
@@ -8116,12 +9022,20 @@ fn set_14_bounds_entrypoint_same_ring_matches_direct_helper() {
 fn set_14_bounds_entrypoint_two_same_ring_matches_direct_helper() {
     let mol = Molecule::from_smiles("Cc1ccccc1").expect("toluene");
     let (mmat, _accum_data, dmat) = run_set14_bounds(&mol, false, false);
-    let (bid1, bid2, bid3) =
-        find_dispatch_triple(&mol, Set14DispatchCase::TwoSameRing, false).expect("two-same-ring triple");
+    let (bid1, bid2, bid3) = find_dispatch_triple(&mol, Set14DispatchCase::TwoSameRing, false)
+        .expect("two-same-ring triple");
 
     let (mut direct_mmat, mut direct_accum) = run_set13_bounds(&mol);
-    set_two_in_same_ring_14_bounds(&mol, bid1, bid2, bid3, &mut direct_accum, &mut direct_mmat, &dmat)
-        .expect("direct two-same-ring bounds");
+    set_two_in_same_ring_14_bounds(
+        &mol,
+        bid1,
+        bid2,
+        bid3,
+        &mut direct_accum,
+        &mut direct_mmat,
+        &dmat,
+    )
+    .expect("direct two-same-ring bounds");
 
     let atm2 = bond_pair_shared_atom(&mol, &direct_accum, bid1, bid2).expect("shared atom");
     let atm3 = bond_pair_shared_atom(&mol, &direct_accum, bid2, bid3).expect("shared atom");
@@ -8143,8 +9057,8 @@ fn set_14_bounds_entrypoint_two_same_ring_matches_direct_helper() {
 fn set_14_bounds_entrypoint_two_diff_ring_matches_direct_helper() {
     let mol = Molecule::from_smiles("C1CCC2(CC1)CCC3CCCCC23").expect("two-diff-ring polycycle");
     let (mmat, _accum_data, dmat) = run_set14_bounds(&mol, false, false);
-    let (bid1, bid2, bid3) =
-        find_dispatch_triple(&mol, Set14DispatchCase::TwoDiffRing, false).expect("two-diff-ring triple");
+    let (bid1, bid2, bid3) = find_dispatch_triple(&mol, Set14DispatchCase::TwoDiffRing, false)
+        .expect("two-diff-ring triple");
     let rinfo = ring_info_for_distgeom(&mol).expect("ring info");
 
     let (mut direct_mmat, mut direct_accum) = run_set13_bounds(&mol);
@@ -8180,8 +9094,8 @@ fn set_14_bounds_entrypoint_two_diff_ring_matches_direct_helper() {
 fn set_14_bounds_entrypoint_share_ring_bond_matches_direct_helper() {
     let mol = Molecule::from_smiles("Cc1ccccc1C").expect("xylene");
     let (mmat, _accum_data, dmat) = run_set14_bounds(&mol, false, false);
-    let (bid1, bid2, bid3) =
-        find_dispatch_triple(&mol, Set14DispatchCase::ShareRingBond, false).expect("share-ring-bond triple");
+    let (bid1, bid2, bid3) = find_dispatch_triple(&mol, Set14DispatchCase::ShareRingBond, false)
+        .expect("share-ring-bond triple");
     let rinfo = ring_info_for_distgeom(&mol).expect("ring info");
 
     let (mut direct_mmat, mut direct_accum) = run_set13_bounds(&mol);
@@ -8217,11 +9131,20 @@ fn set_14_bounds_entrypoint_share_ring_bond_matches_direct_helper() {
 fn set_14_bounds_entrypoint_chain_matches_direct_helper() {
     let mol = Molecule::from_smiles("CSSC").expect("disulfide");
     let (mmat, _accum_data, _dmat) = run_set14_bounds(&mol, false, false);
-    let (bid1, bid2, bid3) = find_dispatch_triple(&mol, Set14DispatchCase::Chain, false).expect("chain triple");
+    let (bid1, bid2, bid3) =
+        find_dispatch_triple(&mol, Set14DispatchCase::Chain, false).expect("chain triple");
 
     let (mut direct_mmat, mut direct_accum) = run_set13_bounds(&mol);
-    set_chain_14_bounds(&mol, bid1, bid2, bid3, &mut direct_accum, &mut direct_mmat, false)
-        .expect("direct chain bounds");
+    set_chain_14_bounds(
+        &mol,
+        bid1,
+        bid2,
+        bid3,
+        &mut direct_accum,
+        &mut direct_mmat,
+        false,
+    )
+    .expect("direct chain bounds");
 
     let atm2 = bond_pair_shared_atom(&mol, &direct_accum, bid1, bid2).expect("shared atom");
     let atm3 = bond_pair_shared_atom(&mol, &direct_accum, bid2, bid3).expect("shared atom");
@@ -8247,8 +9170,15 @@ fn set_14_bounds_entrypoint_macrocycle_matches_direct_helper() {
         find_same_ring_dispatch_triple(&mol, true).expect("macrocycle same-ring triple");
 
     let (mut direct_mmat, mut direct_accum) = run_set13_bounds(&mol);
-    set_macrocycle_all_in_same_ring_14_bounds(&mol, bid1, bid2, bid3, &mut direct_accum, &mut direct_mmat)
-        .expect("direct macrocycle bounds");
+    set_macrocycle_all_in_same_ring_14_bounds(
+        &mol,
+        bid1,
+        bid2,
+        bid3,
+        &mut direct_accum,
+        &mut direct_mmat,
+    )
+    .expect("direct macrocycle bounds");
     let atm2 = bond_pair_shared_atom(&mol, &direct_accum, bid1, bid2).expect("shared atom");
     let atm3 = bond_pair_shared_atom(&mol, &direct_accum, bid2, bid3).expect("shared atom");
     let atom1 = if mol.bonds()[bid1].begin().index() == atm2 {
@@ -8299,7 +9229,8 @@ fn test_ethane() {
         .find_map(|bond| {
             let begin = bond.begin().index();
             let end = bond.end().index();
-            (mol.atoms()[begin].atomic_number() == 6 && mol.atoms()[end].atomic_number() == 6).then_some((begin, end))
+            (mol.atoms()[begin].atomic_number() == 6 && mol.atoms()[end].atomic_number() == 6)
+                .then_some((begin, end))
         })
         .expect("ethane must contain a carbon-carbon bond");
     let carbon_hydrogen_pair = mol
@@ -8310,7 +9241,9 @@ fn test_ethane() {
             let end = bond.end().index();
             if mol.atoms()[begin].atomic_number() == 6 && mol.atoms()[end].atomic_number() == 1 {
                 Some((begin, end))
-            } else if mol.atoms()[begin].atomic_number() == 1 && mol.atoms()[end].atomic_number() == 6 {
+            } else if mol.atoms()[begin].atomic_number() == 1
+                && mol.atoms()[end].atomic_number() == 6
+            {
                 Some((end, begin))
             } else {
                 None
@@ -8357,7 +9290,8 @@ fn dg_bounds_matrix_matches_source_backed_set_topol_bounds_path() {
     let mol = Molecule::from_smiles("C/C=C/CC").expect("stereo pentene");
     let result = dg_bounds_matrix(&mol).expect("dg_bounds");
     let mut mmat = BoundsMatrix::new(mol.num_atoms());
-    set_topol_bounds(&mol, &mut mmat, true, false, false, false, true, true).expect("setTopolBounds");
+    set_topol_bounds(&mol, &mut mmat, true, false, false, false, true, true)
+        .expect("setTopolBounds");
     assert!(mmat.triangle_smooth(0.0));
 
     assert_eq!(result, mmat.to_vec_vec());
@@ -8367,7 +9301,8 @@ fn dg_bounds_matrix_matches_source_backed_set_topol_bounds_path() {
 fn dg_bounds_matrix_uses_rdkit_wrapper_defaults() {
     let mol = Molecule::from_smiles("CCCCCC").expect("hexane");
     let from_default = dg_bounds_matrix(&mol).expect("default dg_bounds");
-    let explicit_default = dg_bounds_matrix_with_options(&mol, true, false, true, false).expect("explicit");
+    let explicit_default =
+        dg_bounds_matrix_with_options(&mol, true, false, true, false).expect("explicit");
     let scaled = dg_bounds_matrix_with_options(&mol, true, true, true, false).expect("scaled vdw");
 
     assert_eq!(from_default, explicit_default);
@@ -8377,10 +9312,21 @@ fn dg_bounds_matrix_uses_rdkit_wrapper_defaults() {
 #[test]
 fn dg_bounds_matrix_with_options_can_skip_triangle_smoothing() {
     let mol = Molecule::from_smiles("C/C=C/CC").expect("stereo pentene");
-    let unsmoothed = dg_bounds_matrix_with_options(&mol, true, false, false, false).expect("unsmoothed");
+    let unsmoothed =
+        dg_bounds_matrix_with_options(&mol, true, false, false, false).expect("unsmoothed");
     let smoothed = dg_bounds_matrix_with_options(&mol, true, false, true, false).expect("smoothed");
     let mut manual_unsmoothed = BoundsMatrix::new(mol.num_atoms());
-    set_topol_bounds(&mol, &mut manual_unsmoothed, true, false, false, false, true, true).expect("setTopolBounds");
+    set_topol_bounds(
+        &mol,
+        &mut manual_unsmoothed,
+        true,
+        false,
+        false,
+        false,
+        true,
+        true,
+    )
+    .expect("setTopolBounds");
     let mut manual_smoothed = BoundsMatrix {
         data: manual_unsmoothed.data.clone(),
         n: manual_unsmoothed.n,
@@ -8413,8 +9359,17 @@ fn dg_bounds_matrix_with_options_forwards_macrocycle14config_like_rdkit_wrapper(
     .expect("manual plain");
 
     let mut manual_with_macrocycle = BoundsMatrix::new(mol.num_atoms());
-    set_topol_bounds(&mol, &mut manual_with_macrocycle, true, false, true, false, true, true)
-        .expect("manual macrocycle");
+    set_topol_bounds(
+        &mol,
+        &mut manual_with_macrocycle,
+        true,
+        false,
+        true,
+        false,
+        true,
+        true,
+    )
+    .expect("manual macrocycle");
 
     assert_eq!(wrapper_without_macrocycle, manual_without_macrocycle.data);
     assert_eq!(wrapper_with_macrocycle, manual_with_macrocycle.data);
@@ -8591,7 +9546,8 @@ fn test_ethane_bounds_consistency() {
         .find_map(|bond| {
             let begin = bond.begin().index();
             let end = bond.end().index();
-            (mol.atoms()[begin].atomic_number() == 6 && mol.atoms()[end].atomic_number() == 6).then_some((begin, end))
+            (mol.atoms()[begin].atomic_number() == 6 && mol.atoms()[end].atomic_number() == 6)
+                .then_some((begin, end))
         })
         .expect("ethane must contain a carbon-carbon bond");
     let hydrogens_on = |carbon_idx: usize| -> Vec<usize> {

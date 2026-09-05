@@ -1,5 +1,6 @@
 use cosmolkit::{
-    Molecule, mmff_has_all_molecule_params, mmff_optimize_molecule, uff_has_all_molecule_params, uff_optimize_molecule,
+    Molecule, mmff_has_all_molecule_params, mmff_optimize_molecule, uff_has_all_molecule_params,
+    uff_optimize_molecule,
 };
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -21,7 +22,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     if uff_has_all_molecule_params(&molecule)? {
         let result = uff_optimize_molecule(&molecule, 200, 10.0, -1, true)?;
-        println!("UFF needs_more={} energy={:.6}", result.needs_more, result.energy);
+        println!(
+            "UFF needs_more={} energy={:.6}",
+            result.needs_more, result.energy
+        );
         println!(
             "optimized first atom: {:?}",
             result.molecule.conformers_3d()[0].coordinates()[0]

@@ -84,11 +84,17 @@ fn enumerator(branch: &Value) -> Result<TautomerEnumerator<'static>, Box<dyn std
     }
 }
 
-fn enumerate_branch(molecule: &Molecule, branch: &Value) -> Result<Value, Box<dyn std::error::Error>> {
+fn enumerate_branch(
+    molecule: &Molecule,
+    branch: &Value,
+) -> Result<Value, Box<dyn std::error::Error>> {
     let enumerator = enumerator(branch)?;
     let result = enumerator.enumerate(molecule)?;
     let canonical = enumerator.pick_canonical(&result)?;
-    let molecule_states = result.iter().map(molecule_state).collect::<Result<Vec<_>, _>>()?;
+    let molecule_states = result
+        .iter()
+        .map(molecule_state)
+        .collect::<Result<Vec<_>, _>>()?;
     let scores = result
         .iter()
         .map(|molecule| {
@@ -217,7 +223,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         writer.write_all(b"\n")?;
         if let Ok(molecule) = molecule {
             for (name, branch) in &branches {
-                let result = enumerate_branch(&molecule, branch).unwrap_or_else(|error| failed_branch(error.as_ref()));
+                let result = enumerate_branch(&molecule, branch)
+                    .unwrap_or_else(|error| failed_branch(error.as_ref()));
                 serde_json::to_writer(
                     &mut writer,
                     &json!({"kind": "branch", "row": row.clone(), "name": name, "result": result}),

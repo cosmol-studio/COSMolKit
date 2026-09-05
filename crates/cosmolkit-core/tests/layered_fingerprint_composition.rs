@@ -2,8 +2,9 @@ use std::sync::Arc;
 
 use cosmolkit_core::{
     AtomPairFingerprintParams, AvalonFingerprintParams, Fingerprint, LayeredFingerprintLayers,
-    LayeredFingerprintParams, MaccsFingerprintParams, Molecule, MorganFingerprintParams, TopologicalFingerprintParams,
-    TopologicalTorsionFingerprintParams, topological_torsion_fingerprint,
+    LayeredFingerprintParams, MaccsFingerprintParams, Molecule, MorganFingerprintParams,
+    TopologicalFingerprintParams, TopologicalTorsionFingerprintParams,
+    topological_torsion_fingerprint,
 };
 
 fn fingerprint_key(fingerprint: Fingerprint) -> (usize, Vec<usize>) {
@@ -38,8 +39,11 @@ fn every_family_key(molecule: &Molecule) -> Vec<(usize, Vec<usize>)> {
                 .expect("AtomPair fingerprint"),
         ),
         fingerprint_key(
-            topological_torsion_fingerprint(molecule, &TopologicalTorsionFingerprintParams::default())
-                .expect("Topological Torsion fingerprint"),
+            topological_torsion_fingerprint(
+                molecule,
+                &TopologicalTorsionFingerprintParams::default(),
+            )
+            .expect("Topological Torsion fingerprint"),
         ),
         fingerprint_key(
             molecule
@@ -49,7 +53,10 @@ fn every_family_key(molecule: &Molecule) -> Vec<(usize, Vec<usize>)> {
     ]
 }
 
-fn configured_layered_key(molecule: &Molecule, params: &LayeredFingerprintParams) -> (usize, Vec<usize>) {
+fn configured_layered_key(
+    molecule: &Molecule,
+    params: &LayeredFingerprintParams,
+) -> (usize, Vec<usize>) {
     fingerprint_key(
         molecule
             .layered_fingerprint(params)
@@ -95,9 +102,15 @@ fn layered_calls_compose_with_every_fingerprint_family_without_shared_state_cros
     let ring_baseline = configured_layered_key(&molecule, &ring_and_aromatic);
 
     for _ in 0..4 {
-        assert_eq!(configured_layered_key(&molecule, &ring_and_aromatic), ring_baseline);
+        assert_eq!(
+            configured_layered_key(&molecule, &ring_and_aromatic),
+            ring_baseline
+        );
         assert_eq!(every_family_key(&molecule), family_baseline);
-        assert_eq!(configured_layered_key(&molecule, &topology_only), topology_baseline);
+        assert_eq!(
+            configured_layered_key(&molecule, &topology_only),
+            topology_baseline
+        );
         assert_eq!(every_family_key(&molecule), family_baseline);
     }
 

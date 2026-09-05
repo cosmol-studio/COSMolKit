@@ -3,9 +3,10 @@ use crate::source::base::ichimake::{GetDfsOrder4CT, mystrrev};
 use crate::source::base::ichiparm::source_strtod_with_end;
 use crate::source::base::util::inchi_free;
 use crate::source_types::{
-    CT_MODE_ABC_NUM_CLOSURES, CT_MODE_ABC_NUMBERS, CT_MODE_PREDECESSORS, EQL_EQU_ISO, EQL_EQU_TG, EQL_EXISTS, EQL_NUM,
-    EQL_NUM_INV, EQL_NUM_ISO, EQL_SP2, EQL_SP3, EQL_SP3_INV, INCHI_IOS_STRING, INChI, INChI_Stereo, MAX_ATOMS,
-    ORIG_INFO, SourceConstPointer, SourceFormatArgument, SourceHeap, SourceHeapError, SourceMutPointer, SourceVaList,
+    CT_MODE_ABC_NUM_CLOSURES, CT_MODE_ABC_NUMBERS, CT_MODE_PREDECESSORS, EQL_EQU_ISO, EQL_EQU_TG,
+    EQL_EXISTS, EQL_NUM, EQL_NUM_INV, EQL_NUM_ISO, EQL_SP2, EQL_SP3, EQL_SP3_INV, INCHI_IOS_STRING,
+    INChI, INChI_Stereo, MAX_ATOMS, ORIG_INFO, SourceConstPointer, SourceFormatArgument,
+    SourceHeap, SourceHeapError, SourceMutPointer, SourceVaList,
 };
 
 #[allow(non_snake_case)]
@@ -171,7 +172,11 @@ pub(crate) fn Eql_INChI_Stereo(
     };
     if equal1 == EQL_SP2 as i32 {
         let length = stereo1.nNumberOfStereoBonds;
-        if length > 0 && !stereo1.b_parity.is_null() && !stereo1.nBondAtom1.is_null() && !stereo1.nBondAtom2.is_null() {
+        if length > 0
+            && !stereo1.b_parity.is_null()
+            && !stereo1.nBondAtom1.is_null()
+            && !stereo1.nBondAtom2.is_null()
+        {
             let Some(stereo2) = stereo2 else {
                 return Ok(i32::from(equal2 == EQL_EXISTS as i32));
             };
@@ -181,7 +186,8 @@ pub(crate) fn Eql_INChI_Stereo(
                 && !stereo2.nBondAtom1.is_null()
                 && !stereo2.nBondAtom2.is_null()
             {
-                let length = usize::try_from(length).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+                let length =
+                    usize::try_from(length).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
                 let atoms11 = heap
                     .slice(stereo1.nBondAtom1.as_const())?
                     .get(..length)
@@ -215,11 +221,13 @@ pub(crate) fn Eql_INChI_Stereo(
     }
 
     let inverted1 = equal1 == EQL_SP3_INV as i32;
-    if !(equal1 == EQL_SP3 as i32 || inverted1) || stereo1.nNumberOfStereoCenters <= i32::from(relative_or_racemic != 0)
+    if !(equal1 == EQL_SP3 as i32 || inverted1)
+        || stereo1.nNumberOfStereoCenters <= i32::from(relative_or_racemic != 0)
     {
         return Ok(0);
     }
-    let length = usize::try_from(stereo1.nNumberOfStereoCenters).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+    let length = usize::try_from(stereo1.nNumberOfStereoCenters)
+        .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
     let (parity1_pointer, number1_pointer) = if inverted1 {
         if stereo1.nCompInv2Abs == 0 {
             return Ok(0);
@@ -237,7 +245,9 @@ pub(crate) fn Eql_INChI_Stereo(
         ));
     };
     let inverted2 = equal2 == EQL_SP3_INV as i32;
-    if !(equal2 == EQL_SP3 as i32 || inverted2) || stereo1.nNumberOfStereoCenters != stereo2.nNumberOfStereoCenters {
+    if !(equal2 == EQL_SP3 as i32 || inverted2)
+        || stereo1.nNumberOfStereoCenters != stereo2.nNumberOfStereoCenters
+    {
         return Ok(0);
     }
     let (parity2_pointer, number2_pointer) = if inverted2 {
@@ -336,8 +346,8 @@ pub(crate) fn Eql_INChI_Isotopic(
         if inchi1.IsotopicAtom.is_null() || inchi2.IsotopicAtom.is_null() {
             return Ok(0);
         }
-        let count =
-            usize::try_from(inchi1.nNumberOfIsotopicAtoms).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+        let count = usize::try_from(inchi1.nNumberOfIsotopicAtoms)
+            .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
         let atoms1 = heap
             .slice(inchi1.IsotopicAtom.as_const())?
             .get(..count)
@@ -354,8 +364,8 @@ pub(crate) fn Eql_INChI_Isotopic(
         if inchi1.IsotopicTGroup.is_null() || inchi2.IsotopicTGroup.is_null() {
             return Ok(0);
         }
-        let count =
-            usize::try_from(inchi1.nNumberOfIsotopicTGroups).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+        let count = usize::try_from(inchi1.nNumberOfIsotopicTGroups)
+            .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
         let groups1 = heap
             .slice(inchi1.IsotopicTGroup.as_const())?
             .get(..count)
@@ -619,23 +629,29 @@ pub(crate) fn Eql_INChI_Aux_Num(
     {
         return Ok(0);
     }
-    let number_pointer =
-        |aux: &crate::source_types::INChI_Aux, equal: i32| -> Option<SourceMutPointer<crate::source_types::AT_NUMB>> {
-            match equal {
-                value if value == EQL_NUM as i32 => Some(aux.nOrigAtNosInCanonOrd),
-                value if value == EQL_NUM_ISO as i32 => Some(aux.nIsotopicOrigAtNosInCanonOrd),
-                value if value == EQL_NUM_INV as i32 => Some(aux.nOrigAtNosInCanonOrdInv),
-                value if value == (EQL_NUM_INV | EQL_NUM_ISO) as i32 => Some(aux.nIsotopicOrigAtNosInCanonOrdInv),
-                _ => None,
+    let number_pointer = |aux: &crate::source_types::INChI_Aux,
+                          equal: i32|
+     -> Option<SourceMutPointer<crate::source_types::AT_NUMB>> {
+        match equal {
+            value if value == EQL_NUM as i32 => Some(aux.nOrigAtNosInCanonOrd),
+            value if value == EQL_NUM_ISO as i32 => Some(aux.nIsotopicOrigAtNosInCanonOrd),
+            value if value == EQL_NUM_INV as i32 => Some(aux.nOrigAtNosInCanonOrdInv),
+            value if value == (EQL_NUM_INV | EQL_NUM_ISO) as i32 => {
+                Some(aux.nIsotopicOrigAtNosInCanonOrdInv)
             }
-        };
-    let (Some(numbers1), Some(numbers2)) = (number_pointer(aux1, equal1), number_pointer(aux2, equal2)) else {
+            _ => None,
+        }
+    };
+    let (Some(numbers1), Some(numbers2)) =
+        (number_pointer(aux1, equal1), number_pointer(aux2, equal2))
+    else {
         return Ok(0);
     };
     if numbers1.is_null() || numbers2.is_null() {
         return Ok(0);
     }
-    let length = usize::try_from(aux1.nNumberOfAtoms).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+    let length =
+        usize::try_from(aux1.nNumberOfAtoms).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
     let numbers1 = heap
         .slice(numbers1.as_const())?
         .get(..length)
@@ -810,7 +826,14 @@ pub(crate) fn MakeCtStringNew(
     }
     let initial_used_length = string_buffer.nUsedLength;
     let initial_overflow = *overflow;
-    let dfs = GetDfsOrder4CT(heap, linear_ct, length_ct, number_hydrogens, number_of_atoms, ct_mode)?;
+    let dfs = GetDfsOrder4CT(
+        heap,
+        linear_ct,
+        length_ct,
+        number_hydrogens,
+        number_of_atoms,
+        ct_mode,
+    )?;
     if dfs.is_null() {
         *overflow = overflow.wrapping_add(1);
         return Ok(0);
@@ -821,7 +844,12 @@ pub(crate) fn MakeCtStringNew(
         let comma = heap.allocate_model_storage(vec![b',' as i8, 0])?;
         let string_format = heap.allocate_model_storage(vec![b'%' as i8, b's' as i8, 0])?;
         if initial_overflow == 0 && add_delimiter != 0 {
-            match inchi_strbuf_printf(heap, Some(string_buffer), comma.as_const(), &SourceVaList::default()) {
+            match inchi_strbuf_printf(
+                heap,
+                Some(string_buffer),
+                comma.as_const(),
+                &SourceVaList::default(),
+            ) {
                 Ok(_) | Err(SourceHeapError::AllocationFailed) => {}
                 Err(error) => return Err(error),
             }
@@ -829,14 +857,19 @@ pub(crate) fn MakeCtStringNew(
         if initial_overflow == 0 {
             let abc_numbers = ct_mode & CT_MODE_ABC_NUMBERS as i32 != 0;
             let predecessors = ct_mode & CT_MODE_PREDECESSORS as i32 != 0;
-            let count_ring_closures = abc_numbers && predecessors && ct_mode & CT_MODE_ABC_NUM_CLOSURES as i32 != 0;
+            let count_ring_closures =
+                abc_numbers && predecessors && ct_mode & CT_MODE_ABC_NUM_CLOSURES as i32 != 0;
             let no_hydrogens = number_hydrogens.is_null();
             let mut remaining_ring_closures = 0_i32;
             let mut index = 0_usize;
             while heap.slice(dfs.as_const())?[index] != 0 {
                 let value = {
                     let raw = heap.slice(dfs.as_const())?[index];
-                    if u32::from(raw) > MAX_ATOMS { 0 } else { i32::from(raw) }
+                    if u32::from(raw) > MAX_ATOMS {
+                        0
+                    } else {
+                        i32::from(raw)
+                    }
                 };
                 let hydrogens = {
                     let raw = heap.slice(dfs.as_const())?[index + 1];
@@ -853,7 +886,8 @@ pub(crate) fn MakeCtStringNew(
                                 while heap.slice(dfs.as_const())?[scan] != 0
                                     && heap.slice(dfs.as_const())?[scan + 2] == b'-' as u16
                                 {
-                                    remaining_ring_closures = remaining_ring_closures.wrapping_add(1);
+                                    remaining_ring_closures =
+                                        remaining_ring_closures.wrapping_add(1);
                                     scan += 3;
                                 }
                                 if remaining_ring_closures != 0 {
@@ -1595,7 +1629,8 @@ pub(crate) fn MakeCRVString(
         }
 
         if length != 0 {
-            let length_index = usize::try_from(length).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+            let length_index =
+                usize::try_from(length).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
             *heap
                 .slice_mut(value_buffer)?
                 .get_mut(length_index)
@@ -1650,7 +1685,8 @@ pub(crate) fn bHasOrigInfo(
                 .slice(original_info.offset(i64::from(index))?)?
                 .first()
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            found |= i32::from(info.cCharge != 0 || info.cRadical != 0 || info.cUnusualValence != 0);
+            found |=
+                i32::from(info.cCharge != 0 || info.cRadical != 0 || info.cUnusualValence != 0);
             index = index.wrapping_add(1);
         }
     }
@@ -1683,7 +1719,8 @@ pub(crate) fn EqlOrigInfo(
     {
         return Ok(0);
     }
-    let length = usize::try_from(aux1.nNumberOfAtoms).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+    let length =
+        usize::try_from(aux1.nNumberOfAtoms).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
     let first = heap
         .slice(aux1.OrigInfo.as_const())?
         .get(..length)
@@ -1824,9 +1861,21 @@ pub(crate) fn MakeMult(
     }
     let value_buffer = heap.allocate_model_storage(vec![0_i8; 2048])?;
     let length = if ct_mode & CT_MODE_ABC_NUMBERS as i32 != 0 {
-        MakeAbcNumber(heap, value_buffer, 2048, SourceConstPointer::null(), multiplier)?
+        MakeAbcNumber(
+            heap,
+            value_buffer,
+            2048,
+            SourceConstPointer::null(),
+            multiplier,
+        )?
     } else {
-        MakeDecNumber(heap, value_buffer, 2048, SourceConstPointer::null(), multiplier)?
+        MakeDecNumber(
+            heap,
+            value_buffer,
+            2048,
+            SourceConstPointer::null(),
+            multiplier,
+        )?
     };
     let delimiter = heap.slice(trailing_delimiter)?;
     let delimiter_length = delimiter
@@ -1834,7 +1883,9 @@ pub(crate) fn MakeMult(
         .position(|byte| *byte == 0)
         .ok_or(SourceHeapError::MissingNulTerminator)?;
     let delimiter = delimiter[..delimiter_length].to_vec();
-    if length.wrapping_add(i32::try_from(delimiter_length).map_err(|_| SourceHeapError::SourceIntegerOverflow)?) < 2048
+    if length.wrapping_add(
+        i32::try_from(delimiter_length).map_err(|_| SourceHeapError::SourceIntegerOverflow)?,
+    ) < 2048
     {
         let length = usize::try_from(length).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
         let output = heap.slice_mut(value_buffer)?;
@@ -1908,10 +1959,19 @@ pub(crate) fn MakeDelim(
         return Ok(0);
     }
     let delimiter = heap.slice(trailing_delimiter)?;
-    if *delimiter.first().ok_or(SourceHeapError::PointerOutOfBounds)? == 0 {
+    if *delimiter
+        .first()
+        .ok_or(SourceHeapError::PointerOutOfBounds)?
+        == 0
+    {
         return Ok(0);
     }
-    match inchi_strbuf_printf(heap, Some(buffer), trailing_delimiter, &SourceVaList::default()) {
+    match inchi_strbuf_printf(
+        heap,
+        Some(buffer),
+        trailing_delimiter,
+        &SourceVaList::default(),
+    ) {
         Ok(value) => {
             if value == -1 {
                 *overflow |= 1;
@@ -2292,12 +2352,16 @@ pub(crate) fn MakeTautString(
                         &[b')' as i8, b'(' as i8, 0]
                     };
                     heap.slice_mut(value_buffer)?[..bytes.len()].copy_from_slice(bytes);
-                    length = i32::try_from(bytes.len() - 1).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+                    length = i32::try_from(bytes.len() - 1)
+                        .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
                 } else {
                     length = 0;
                 }
-            } else if compressed && group_output_count >= crate::source_types::INCHI_T_NUM_MOVABLE as i32 {
-                length = MakeAbcNumber(heap, value_buffer, 2048, SourceConstPointer::null(), value)?;
+            } else if compressed
+                && group_output_count >= crate::source_types::INCHI_T_NUM_MOVABLE as i32
+            {
+                length =
+                    MakeAbcNumber(heap, value_buffer, 2048, SourceConstPointer::null(), value)?;
                 group_output_count = group_output_count.wrapping_add(1);
             } else {
                 if compressed {
@@ -2319,10 +2383,17 @@ pub(crate) fn MakeTautString(
                                 0 => 0,
                                 1 => {
                                     let prefix_bytes = heap.slice(prefix.as_const())?.to_vec();
-                                    heap.slice_mut(value_buffer)?[..prefix_bytes.len()].copy_from_slice(&prefix_bytes);
+                                    heap.slice_mut(value_buffer)?[..prefix_bytes.len()]
+                                        .copy_from_slice(&prefix_bytes);
                                     1
                                 }
-                                _ => MakeDecNumber(heap, value_buffer, 2048, prefix.as_const(), value)?,
+                                _ => MakeDecNumber(
+                                    heap,
+                                    value_buffer,
+                                    2048,
+                                    prefix.as_const(),
+                                    value,
+                                )?,
                             }
                         }
                         _ => 0,
@@ -2340,7 +2411,8 @@ pub(crate) fn MakeTautString(
                         length = 0;
                     } else if value == 1 {
                         let prefix_bytes = heap.slice(prefix.as_const())?.to_vec();
-                        heap.slice_mut(value_buffer)?[..prefix_bytes.len()].copy_from_slice(&prefix_bytes);
+                        heap.slice_mut(value_buffer)?[..prefix_bytes.len()]
+                            .copy_from_slice(&prefix_bytes);
                         length = i32::try_from(prefix_bytes.len() - 1)
                             .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
                     } else {
@@ -2659,18 +2731,19 @@ pub(crate) fn MakeHString(
     let upper_h = heap.allocate_model_storage(vec![b'H' as i8, 0])?;
     let lower_h = heap.allocate_model_storage(vec![b'h' as i8, 0])?;
     let string_format = heap.allocate_model_storage(vec![b'%' as i8, b'-' as i8, b's' as i8, 0])?;
-    let append = |heap: &mut SourceHeap, buffer: &mut INCHI_IOS_STRING, value| match inchi_strbuf_printf(
-        heap,
-        Some(buffer),
-        string_format.as_const(),
-        &SourceVaList {
-            arguments: vec![SourceFormatArgument::Bytes(value)],
-            ..SourceVaList::default()
-        },
-    ) {
-        Ok(_) | Err(SourceHeapError::AllocationFailed) => Ok(()),
-        Err(error) => Err(error),
-    };
+    let append =
+        |heap: &mut SourceHeap, buffer: &mut INCHI_IOS_STRING, value| match inchi_strbuf_printf(
+            heap,
+            Some(buffer),
+            string_format.as_const(),
+            &SourceVaList {
+                arguments: vec![SourceFormatArgument::Bytes(value)],
+                ..SourceVaList::default()
+            },
+        ) {
+            Ok(_) | Err(SourceHeapError::AllocationFailed) => Ok(()),
+            Err(error) => Err(error),
+        };
     if !abc && initial_overflow == 0 && add_delimiter != 0 {
         append(heap, string_buffer, comma.as_const())?;
     }
@@ -2778,8 +2851,8 @@ pub(crate) fn MakeHString(
             minimum = minimum.min(i32::from(*value));
             maximum = maximum.max(i32::from(*value));
         }
-        let count_length =
-            usize::try_from(maximum - minimum + 1).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+        let count_length = usize::try_from(maximum - minimum + 1)
+            .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
         let dynamic = minimum < INITIAL_MIN_H || maximum > INITIAL_MAX_H;
         let counts_pointer = if dynamic {
             match heap.allocate(vec![0_i32; count_length]) {
@@ -2795,26 +2868,30 @@ pub(crate) fn MakeHString(
         };
         let mut counts = vec![0_i32; count_length];
         for value in &values {
-            let index =
-                usize::try_from(i32::from(*value) - minimum).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let index = usize::try_from(i32::from(*value) - minimum)
+                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             counts[index] = counts[index].wrapping_add(1);
         }
         if let Some(pointer) = counts_pointer {
             heap.slice_mut(pointer)?.copy_from_slice(&counts);
         }
         for current_h in minimum..=maximum {
-            let mut remaining =
-                counts[usize::try_from(current_h - minimum).map_err(|_| SourceHeapError::PointerOutOfBounds)?];
+            let mut remaining = counts[usize::try_from(current_h - minimum)
+                .map_err(|_| SourceHeapError::PointerOutOfBounds)?];
             if remaining == 0 || current_h == 0 {
                 continue;
             }
             let mut position = 0_usize;
             while position < length && remaining != 0 {
                 if i32::from(values[position]) == current_h {
-                    let first = i32::try_from(position + 1).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+                    let first = i32::try_from(position + 1)
+                        .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
                     position += 1;
                     remaining -= 1;
-                    while position < length && i32::from(values[position]) == current_h && remaining != 0 {
+                    while position < length
+                        && i32::from(values[position]) == current_h
+                        && remaining != 0
+                    {
                         position += 1;
                         remaining -= 1;
                     }
@@ -2822,7 +2899,8 @@ pub(crate) fn MakeHString(
                         heap,
                         string_buffer,
                         first,
-                        i32::try_from(position).map_err(|_| SourceHeapError::SourceIntegerOverflow)?,
+                        i32::try_from(position)
+                            .map_err(|_| SourceHeapError::SourceIntegerOverflow)?,
                         current_h,
                         remaining == 0 || abc,
                         &mut next,
@@ -2948,9 +3026,13 @@ pub(crate) fn MakeAbcNumber(
     }
     if value == 0 {
         let output = heap.slice_mut(string)?;
-        *output.get_mut(position).ok_or(SourceHeapError::PointerOutOfBounds)? = b'.' as i8;
+        *output
+            .get_mut(position)
+            .ok_or(SourceHeapError::PointerOutOfBounds)? = b'.' as i8;
         position += 1;
-        *output.get_mut(position).ok_or(SourceHeapError::PointerOutOfBounds)? = 0;
+        *output
+            .get_mut(position)
+            .ok_or(SourceHeapError::PointerOutOfBounds)? = 0;
         return Ok(1);
     }
     if value < 0 {
@@ -2960,7 +3042,9 @@ pub(crate) fn MakeAbcNumber(
             .ok_or(SourceHeapError::PointerOutOfBounds)? = b'-' as i8;
         position += 1;
         string_length = string_length.wrapping_sub(1);
-        value = value.checked_neg().ok_or(SourceHeapError::UnsupportedSourceBehavior)?;
+        value = value
+            .checked_neg()
+            .ok_or(SourceHeapError::UnsupportedSourceBehavior)?;
     }
     let digit_start = position;
     while value != 0 {
@@ -2988,7 +3072,8 @@ pub(crate) fn MakeAbcNumber(
         .slice_mut(string)?
         .get_mut(position)
         .ok_or(SourceHeapError::PointerOutOfBounds)? = 0;
-    let digits = string.offset(i64::try_from(digit_start).map_err(|_| SourceHeapError::PointerOffsetOverflow)?)?;
+    let digits = string
+        .offset(i64::try_from(digit_start).map_err(|_| SourceHeapError::PointerOffsetOverflow)?)?;
     mystrrev(heap, digits)?;
     let first = heap
         .slice_mut(digits)?
@@ -3115,7 +3200,9 @@ pub(crate) fn MakeDecNumber(
             .ok_or(SourceHeapError::PointerOutOfBounds)? = b'-' as i8;
         position += 1;
         string_length = string_length.wrapping_sub(1);
-        value = value.checked_neg().ok_or(SourceHeapError::UnsupportedSourceBehavior)?;
+        value = value
+            .checked_neg()
+            .ok_or(SourceHeapError::UnsupportedSourceBehavior)?;
     }
     let digit_start = position;
     while value != 0 {
@@ -3145,7 +3232,9 @@ pub(crate) fn MakeDecNumber(
         .ok_or(SourceHeapError::PointerOutOfBounds)? = 0;
     mystrrev(
         heap,
-        string.offset(i64::try_from(digit_start).map_err(|_| SourceHeapError::PointerOffsetOverflow)?)?,
+        string.offset(
+            i64::try_from(digit_start).map_err(|_| SourceHeapError::PointerOffsetOverflow)?,
+        )?,
     )?;
     i32::try_from(position).map_err(|_| SourceHeapError::SourceIntegerOverflow)
 }
@@ -3294,9 +3383,11 @@ pub(crate) fn MakeEquString(
                     comma.as_const()
                 };
                 if ct_mode & CT_MODE_ABC_NUMBERS as i32 != 0 {
-                    let _ = MakeAbcNumber(heap, value_buffer, 2048, leading, index.wrapping_add(1))?;
+                    let _ =
+                        MakeAbcNumber(heap, value_buffer, 2048, leading, index.wrapping_add(1))?;
                 } else {
-                    let _ = MakeDecNumber(heap, value_buffer, 2048, leading, index.wrapping_add(1))?;
+                    let _ =
+                        MakeDecNumber(heap, value_buffer, 2048, leading, index.wrapping_add(1))?;
                 }
                 inchi_strbuf_printf(
                     heap,
@@ -3496,7 +3587,8 @@ pub(crate) fn MakeIsoAtomString(
     let mut local_overflow = *overflow;
     if local_overflow == 0 {
         let count = if number_of_isotopic_atoms > 0 {
-            usize::try_from(number_of_isotopic_atoms).map_err(|_| SourceHeapError::SourceIntegerOverflow)?
+            usize::try_from(number_of_isotopic_atoms)
+                .map_err(|_| SourceHeapError::SourceIntegerOverflow)?
         } else {
             0
         };
@@ -3592,11 +3684,21 @@ pub(crate) fn MakeIsoAtomString(
                         heap,
                         output,
                         remaining,
-                        if value >= 0 { plus.as_const() } else { minus.as_const() },
+                        if value >= 0 {
+                            plus.as_const()
+                        } else {
+                            minus.as_const()
+                        },
                         magnitude,
                     )?
                 } else if value != 1 {
-                    MakeDecNumber(heap, output, remaining, hydrogen_letters[field - 2].as_const(), value)?
+                    MakeDecNumber(
+                        heap,
+                        output,
+                        remaining,
+                        hydrogen_letters[field - 2].as_const(),
+                        value,
+                    )?
                 } else if remaining > 1 {
                     let target = heap.slice_mut(output)?;
                     target[0] = [b'T' as i8, b'D' as i8, b'H' as i8][field - 2];
@@ -3762,7 +3864,8 @@ pub(crate) fn MakeIsoTautString(
     let mut local_overflow = *overflow;
     if local_overflow == 0 {
         let count = if number_of_isotopic_groups > 0 {
-            usize::try_from(number_of_isotopic_groups).map_err(|_| SourceHeapError::SourceIntegerOverflow)?
+            usize::try_from(number_of_isotopic_groups)
+                .map_err(|_| SourceHeapError::SourceIntegerOverflow)?
         } else {
             0
         };
@@ -3810,11 +3913,13 @@ pub(crate) fn MakeIsoTautString(
                 } else if value == 0 {
                     continue;
                 } else if abc {
-                    let mut written = MakeDecNumber(heap, output, remaining, SourceConstPointer::null(), value)?;
+                    let mut written =
+                        MakeDecNumber(heap, output, remaining, SourceConstPointer::null(), value)?;
                     if written > 0 {
                         if remaining.wrapping_sub(written) > 1 {
                             let target = heap.slice_mut(output)?;
-                            let index = usize::try_from(written).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+                            let index = usize::try_from(written)
+                                .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
                             target[index] = isotope_letters[field - 1];
                             target[index + 1] = 0;
                             written = written.wrapping_add(1);
@@ -3824,7 +3929,8 @@ pub(crate) fn MakeIsoTautString(
                     }
                     written
                 } else if value != 1 {
-                    let delimiter = heap.allocate_model_storage(vec![isotope_names[field - 1], 0])?;
+                    let delimiter =
+                        heap.allocate_model_storage(vec![isotope_names[field - 1], 0])?;
                     MakeDecNumber(heap, output, remaining, delimiter.as_const(), value)?
                 } else if remaining > 1 {
                     let target = heap.slice_mut(output)?;
@@ -3983,7 +4089,13 @@ pub(crate) fn MakeIsoHString(
             let mut length = if abc {
                 MakeDecNumber(heap, output, remaining, SourceConstPointer::null(), value)?
             } else if value != 1 {
-                MakeDecNumber(heap, output, remaining, delimiters[isotope_index].as_const(), value)?
+                MakeDecNumber(
+                    heap,
+                    output,
+                    remaining,
+                    delimiters[isotope_index].as_const(),
+                    value,
+                )?
             } else if remaining > 1 {
                 let target = heap.slice_mut(output)?;
                 target[0] = [b'T' as i8, b'D' as i8, b'H' as i8][isotope_index];
@@ -3994,9 +4106,12 @@ pub(crate) fn MakeIsoHString(
             };
             if abc && length > 0 {
                 if remaining.wrapping_sub(length) > 1 {
-                    let position = usize::try_from(length).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+                    let position = usize::try_from(length)
+                        .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
                     let target = heap.slice_mut(output)?;
-                    *target.get_mut(position).ok_or(SourceHeapError::PointerOutOfBounds)? = lowercase[isotope_index];
+                    *target
+                        .get_mut(position)
+                        .ok_or(SourceHeapError::PointerOutOfBounds)? = lowercase[isotope_index];
                     *target
                         .get_mut(position + 1)
                         .ok_or(SourceHeapError::PointerOutOfBounds)? = 0;
@@ -4189,9 +4304,21 @@ pub(crate) fn MakeStereoString(
                 let remaining = 2048_i32.wrapping_sub(total_length);
                 let length = if ct_mode & CT_MODE_ABC_NUMBERS as i32 != 0 {
                     if field == 2 {
-                        MakeDecNumber(heap, position, remaining, SourceConstPointer::null(), source_value)?
+                        MakeDecNumber(
+                            heap,
+                            position,
+                            remaining,
+                            SourceConstPointer::null(),
+                            source_value,
+                        )?
                     } else {
-                        MakeAbcNumber(heap, position, remaining, SourceConstPointer::null(), source_value)?
+                        MakeAbcNumber(
+                            heap,
+                            position,
+                            remaining,
+                            SourceConstPointer::null(),
+                            source_value,
+                        )?
                     }
                 } else if field < 2 {
                     let delimiter = if total_length != 0 {
@@ -4316,7 +4443,8 @@ pub(crate) fn abctol(
     const THRESHOLD: i64 = (i64::MAX - 1) / ALPHA_BASE;
 
     let bytes = heap.slice(sz_string)?;
-    let nul = memchr::memchr(0, bytemuck::cast_slice(bytes)).ok_or(SourceHeapError::MissingNulTerminator)?;
+    let nul = memchr::memchr(0, bytemuck::cast_slice(bytes))
+        .ok_or(SourceHeapError::MissingNulTerminator)?;
     let mut val = 0_i64;
     let mut position = 0_usize;
     if position < nul && bytes[position] as u8 == b'-' {
@@ -4348,7 +4476,8 @@ pub(crate) fn abctol(
         }
     }
     if let Some(q) = q {
-        *q = sz_string.offset(i64::try_from(position).map_err(|_| SourceHeapError::PointerOffsetOverflow)?)?;
+        *q = sz_string
+            .offset(i64::try_from(position).map_err(|_| SourceHeapError::PointerOffsetOverflow)?)?;
     }
     Ok(val)
 }
@@ -4380,9 +4509,15 @@ pub(crate) fn inchi_strtol(
     }
 
     let bytes = heap.slice(str_)?;
-    let nul = memchr::memchr(0, bytemuck::cast_slice(bytes)).ok_or(SourceHeapError::MissingNulTerminator)?;
+    let nul = memchr::memchr(0, bytemuck::cast_slice(bytes))
+        .ok_or(SourceHeapError::MissingNulTerminator)?;
     let mut position = 0_usize;
-    while position < nul && matches!(bytes[position] as u8, b' ' | b'\t' | b'\n' | 0x0b | 0x0c | b'\r') {
+    while position < nul
+        && matches!(
+            bytes[position] as u8,
+            b' ' | b'\t' | b'\n' | 0x0b | 0x0c | b'\r'
+        )
+    {
         position += 1;
     }
     let negative = if position < nul && matches!(bytes[position] as u8, b'+' | b'-') {
@@ -4458,7 +4593,8 @@ pub(crate) fn inchi_strtol(
         return Ok(0);
     }
     if let Some(p) = p {
-        *p = str_.offset(i64::try_from(position).map_err(|_| SourceHeapError::PointerOffsetOverflow)?)?;
+        *p = str_
+            .offset(i64::try_from(position).map_err(|_| SourceHeapError::PointerOffsetOverflow)?)?;
     }
     if overflowed {
         heap.set_source_errno(34);
@@ -4550,9 +4686,12 @@ pub(crate) fn print_sequence_of_nums_compressing_ranges(
     // END INCHI C FUNCTION: print_sequence_of_nums_compressing_ranges
 
     let last = *numbers.last().ok_or(SourceHeapError::PointerOutOfBounds)?;
-    let range_format = heap.allocate_model_storage(b"%d-\0".iter().map(|byte| *byte as i8).collect())?;
-    let item_format = heap.allocate_model_storage(b"%d,\0".iter().map(|byte| *byte as i8).collect())?;
-    let last_format = heap.allocate_model_storage(b"%d\0".iter().map(|byte| *byte as i8).collect())?;
+    let range_format =
+        heap.allocate_model_storage(b"%d-\0".iter().map(|byte| *byte as i8).collect())?;
+    let item_format =
+        heap.allocate_model_storage(b"%d,\0".iter().map(|byte| *byte as i8).collect())?;
+    let last_format =
+        heap.allocate_model_storage(b"%d\0".iter().map(|byte| *byte as i8).collect())?;
     let mut range = 0_i32;
     for index in 0..numbers.len() - 1 {
         let successor = numbers[index]
@@ -4673,7 +4812,10 @@ mod tests {
 
         let (result, bytes) = abc_case(28, Some("/x"), 64);
         assert_eq!(result, 4);
-        assert_eq!(&bytes[..5], &[b'/' as i8, b'x' as i8, b'A' as i8, b'a' as i8, 0]);
+        assert_eq!(
+            &bytes[..5],
+            &[b'/' as i8, b'x' as i8, b'A' as i8, b'a' as i8, 0]
+        );
         let (result, bytes) = abc_case(0, Some("/"), 64);
         assert_eq!(result, 1);
         assert_eq!(&bytes[..3], &[b'/' as i8, b'.' as i8, 0]);
@@ -4736,7 +4878,10 @@ mod tests {
 
         let (result, bytes) = dec_case(42, Some("/x"), 64);
         assert_eq!(result, 4);
-        assert_eq!(&bytes[..5], &[b'/' as i8, b'x' as i8, b'4' as i8, b'2' as i8, 0]);
+        assert_eq!(
+            &bytes[..5],
+            &[b'/' as i8, b'x' as i8, b'4' as i8, b'2' as i8, 0]
+        );
         let (result, bytes) = dec_case(0, Some("/"), 64);
         assert_eq!(result, 2);
         assert_eq!(&bytes[..3], &[b'/' as i8, b'0' as i8, 0]);
@@ -4781,10 +4926,18 @@ mod tests {
             };
             let mut buffer = mult_buffer(&mut heap, prefix, 256);
             let mut overflow = initial_overflow;
-            let result = MakeIsoAtomString(&mut heap, pointer.as_const(), count, &mut buffer, mode, &mut overflow);
+            let result = MakeIsoAtomString(
+                &mut heap,
+                pointer.as_const(),
+                count,
+                &mut buffer,
+                mode,
+                &mut overflow,
+            );
             let bytes = heap.slice(buffer.pStr.as_const()).unwrap();
             let end = bytes.iter().position(|byte| *byte == 0).unwrap();
-            let output = String::from_utf8(bytes[..end].iter().map(|byte| *byte as u8).collect()).unwrap();
+            let output =
+                String::from_utf8(bytes[..end].iter().map(|byte| *byte as u8).collect()).unwrap();
             (result, output, overflow)
         }
 
@@ -4804,7 +4957,10 @@ mod tests {
                 nNum_H: 3,
             },
         ];
-        assert_eq!(run(&atoms, 2, 0, 0, ""), (Ok(13), "1+0TD2,27-2H3".to_owned(), 0));
+        assert_eq!(
+            run(&atoms, 2, 0, 0, ""),
+            (Ok(13), "1+0TD2,27-2H3".to_owned(), 0)
+        );
         assert_eq!(
             run(&atoms, 2, CT_MODE_ABC_NUMBERS as i32, 0, ""),
             (Ok(11), "A1td2A@-2h3".to_owned(), 0)
@@ -4813,7 +4969,10 @@ mod tests {
             nAtomNumber: u16::MAX,
             ..crate::source_types::INChI_IsotopicAtom::default()
         }];
-        assert_eq!(run(&no_isotopes, 1, 0, 0, "p"), (Ok(5), "p65535".to_owned(), 0));
+        assert_eq!(
+            run(&no_isotopes, 1, 0, 0, "p"),
+            (Ok(5), "p65535".to_owned(), 0)
+        );
         assert_eq!(
             run(&no_isotopes, 1, CT_MODE_ABC_NUMBERS as i32, 0, ""),
             (Ok(5), "Chxf0".to_owned(), 0)
@@ -4844,10 +5003,18 @@ mod tests {
             };
             let mut buffer = mult_buffer(&mut heap, prefix, 256);
             let mut overflow = initial_overflow;
-            let result = MakeIsoTautString(&mut heap, pointer.as_const(), count, &mut buffer, mode, &mut overflow);
+            let result = MakeIsoTautString(
+                &mut heap,
+                pointer.as_const(),
+                count,
+                &mut buffer,
+                mode,
+                &mut overflow,
+            );
             let bytes = heap.slice(buffer.pStr.as_const()).unwrap();
             let end = bytes.iter().position(|byte| *byte == 0).unwrap();
-            let output = String::from_utf8(bytes[..end].iter().map(|byte| *byte as u8).collect()).unwrap();
+            let output =
+                String::from_utf8(bytes[..end].iter().map(|byte| *byte as u8).collect()).unwrap();
             (result, output, overflow)
         }
 
@@ -4865,7 +5032,10 @@ mod tests {
                 nNum_H: 3,
             },
         ];
-        assert_eq!(run(&groups, 2, 0, 0, ""), (Ok(9), "1TD2,27H3".to_owned(), 0));
+        assert_eq!(
+            run(&groups, 2, 0, 0, ""),
+            (Ok(9), "1TD2,27H3".to_owned(), 0)
+        );
         assert_eq!(
             run(&groups, 2, CT_MODE_ABC_NUMBERS as i32, 0, ""),
             (Ok(9), "A1t2dA@3h".to_owned(), 0)
@@ -4875,9 +5045,15 @@ mod tests {
             nNum_H: u16::MAX,
             ..crate::source_types::INChI_IsotopicTGroup::default()
         }];
-        assert_eq!(run(&boundary, 1, 0, 0, "p"), (Ok(11), "p65535H65535".to_owned(), 0));
+        assert_eq!(
+            run(&boundary, 1, 0, 0, "p"),
+            (Ok(11), "p65535H65535".to_owned(), 0)
+        );
         assert_eq!(run(&[], 0, 0, 0, "held"), (Ok(0), "held".to_owned(), 0));
-        assert_eq!(run(&groups, -1, 0, 0, "held"), (Ok(0), "held".to_owned(), 0));
+        assert_eq!(
+            run(&groups, -1, 0, 0, "held"),
+            (Ok(0), "held".to_owned(), 0)
+        );
         assert_eq!(run(&groups, 2, 0, 7, "held"), (Ok(0), "held".to_owned(), 7));
         assert!(matches!(
             run(&groups[..1], 2, 0, 0, "").0,
@@ -4887,14 +5063,21 @@ mod tests {
 
     #[test]
     fn source_port__ichiprt2__makeisohstring__line_1924() {
-        fn run(values: [i32; 3], mode: i32, initial_overflow: i32, prefix: &str) -> (i32, String, i32) {
+        fn run(
+            values: [i32; 3],
+            mode: i32,
+            initial_overflow: i32,
+            prefix: &str,
+        ) -> (i32, String, i32) {
             let mut heap = SourceHeap::default();
             let mut buffer = mult_buffer(&mut heap, prefix, 256);
             let mut overflow = initial_overflow;
-            let length = MakeIsoHString(&mut heap, &values, &mut buffer, mode, &mut overflow).unwrap();
+            let length =
+                MakeIsoHString(&mut heap, &values, &mut buffer, mode, &mut overflow).unwrap();
             let bytes = heap.slice(buffer.pStr.as_const()).unwrap();
             let end = bytes.iter().position(|byte| *byte == 0).unwrap();
-            let output = String::from_utf8(bytes[..end].iter().map(|byte| *byte as u8).collect()).unwrap();
+            let output =
+                String::from_utf8(bytes[..end].iter().map(|byte| *byte as u8).collect()).unwrap();
             (length, output, overflow)
         }
 
@@ -4931,13 +5114,19 @@ mod tests {
         ) -> (Result<i32, SourceHeapError>, String, i32) {
             let mut heap = SourceHeap::default();
             let atom1 = atom1.map_or(SourceConstPointer::null(), |values| {
-                heap.allocate_model_storage(values.to_vec()).unwrap().as_const()
+                heap.allocate_model_storage(values.to_vec())
+                    .unwrap()
+                    .as_const()
             });
             let atom2 = atom2.map_or(SourceConstPointer::null(), |values| {
-                heap.allocate_model_storage(values.to_vec()).unwrap().as_const()
+                heap.allocate_model_storage(values.to_vec())
+                    .unwrap()
+                    .as_const()
             });
             let parity = parity.map_or(SourceConstPointer::null(), |values| {
-                heap.allocate_model_storage(values.to_vec()).unwrap().as_const()
+                heap.allocate_model_storage(values.to_vec())
+                    .unwrap()
+                    .as_const()
             });
             let mut buffer = if fail_allocation {
                 let bytes = prefix
@@ -4973,7 +5162,8 @@ mod tests {
             let visible = bytes.iter().position(|byte| *byte == 0).unwrap();
             (
                 result,
-                String::from_utf8(bytes[..visible].iter().map(|byte| *byte as u8).collect()).unwrap(),
+                String::from_utf8(bytes[..visible].iter().map(|byte| *byte as u8).collect())
+                    .unwrap(),
                 overflow,
             )
         }
@@ -5000,7 +5190,17 @@ mod tests {
             (Ok(4), "2,20".to_owned(), 0)
         );
         assert_eq!(
-            run(None, None, Some(&[0, 1, 2, 3, 4, 5, -1]), 0, 7, 0, 0, false, "",),
+            run(
+                None,
+                None,
+                Some(&[0, 1, 2, 3, 4, 5, -1]),
+                0,
+                7,
+                0,
+                0,
+                false,
+                "",
+            ),
             (Ok(7), "!-+u?!!".to_owned(), 0)
         );
         assert_eq!(
@@ -5018,7 +5218,17 @@ mod tests {
             (Ok(9), "AB1A@Aa-2".to_owned(), 0)
         );
         assert_eq!(
-            run(Some(&[1]), None, None, 0, i32::MAX, 0, i32::MIN, false, "held",),
+            run(
+                Some(&[1]),
+                None,
+                None,
+                0,
+                i32::MAX,
+                0,
+                i32::MIN,
+                false,
+                "held",
+            ),
             (Ok(0), "held".to_owned(), i32::MIN)
         );
         assert_eq!(
@@ -5061,7 +5271,9 @@ mod tests {
         ) -> (Result<i32, SourceHeapError>, String, i32) {
             let mut heap = SourceHeap::default();
             let pointer = values.map_or(SourceConstPointer::null(), |items| {
-                heap.allocate_model_storage(items.to_vec()).unwrap().as_const()
+                heap.allocate_model_storage(items.to_vec())
+                    .unwrap()
+                    .as_const()
             });
             let mut buffer = mult_buffer(&mut heap, prefix, 512);
             let mut overflow = initial_overflow;
@@ -5076,7 +5288,8 @@ mod tests {
             );
             let bytes = heap.slice(buffer.pStr.as_const()).unwrap();
             let used = usize::try_from(buffer.nUsedLength).unwrap();
-            let output = String::from_utf8(bytes[..used].iter().map(|byte| *byte as u8).collect()).unwrap();
+            let output =
+                String::from_utf8(bytes[..used].iter().map(|byte| *byte as u8).collect()).unwrap();
             (result, output, overflow)
         }
 
@@ -5109,7 +5322,14 @@ mod tests {
             )
         );
         assert_eq!(
-            run(Some(&values), values.len() as i32, 0, CT_MODE_ABC_NUMBERS as i32, 0, "",),
+            run(
+                Some(&values),
+                values.len() as i32,
+                0,
+                CT_MODE_ABC_NUMBERS as i32,
+                0,
+                "",
+            ),
             (
                 Ok(54),
                 "B+3C-2D.dE.tF.uG4H+1.3I.d4J+2tK+2d3L-128u-128M+127u127".to_owned(),
@@ -5118,10 +5338,22 @@ mod tests {
         );
 
         let empty = std::array::from_fn::<_, 4, _>(|_| ORIG_INFO::default());
-        assert_eq!(run(Some(&empty), 4, 0, 0, 0, "held"), (Ok(0), "held".to_owned(), 0));
-        assert_eq!(run(None, 0, 1, 0, 0, "held"), (Ok(2), "held, ".to_owned(), 0));
-        assert_eq!(run(None, -1, 0, 0, 0, "held"), (Ok(0), "held".to_owned(), 0));
-        assert_eq!(run(None, i32::MAX, 1, 0, 7, "held"), (Ok(0), "held".to_owned(), 7));
+        assert_eq!(
+            run(Some(&empty), 4, 0, 0, 0, "held"),
+            (Ok(0), "held".to_owned(), 0)
+        );
+        assert_eq!(
+            run(None, 0, 1, 0, 0, "held"),
+            (Ok(2), "held, ".to_owned(), 0)
+        );
+        assert_eq!(
+            run(None, -1, 0, 0, 0, "held"),
+            (Ok(0), "held".to_owned(), 0)
+        );
+        assert_eq!(
+            run(None, i32::MAX, 1, 0, 7, "held"),
+            (Ok(0), "held".to_owned(), 7)
+        );
         assert!(matches!(
             run(Some(&[]), 1, 0, 0, 0, "").0,
             Err(SourceHeapError::PointerOutOfBounds)
@@ -5133,7 +5365,9 @@ mod tests {
         fn run(values: Option<&[ORIG_INFO]>, count: i32) -> Result<i32, SourceHeapError> {
             let mut heap = SourceHeap::default();
             let pointer = values.map_or(SourceConstPointer::null(), |items| {
-                heap.allocate_model_storage(items.to_vec()).unwrap().as_const()
+                heap.allocate_model_storage(items.to_vec())
+                    .unwrap()
+                    .as_const()
             });
             bHasOrigInfo(&heap, pointer, count)
         }
@@ -5151,7 +5385,10 @@ mod tests {
         assert_eq!(run(Some(&[info(0, 127, 0)]), 1), Ok(1));
         assert_eq!(run(Some(&[info(0, 0, -128)]), 1), Ok(1));
         assert_eq!(run(Some(&[info(1, 0, 0)]), i32::MAX), Ok(1));
-        assert!(matches!(run(Some(&[]), 1), Err(SourceHeapError::PointerOutOfBounds)));
+        assert!(matches!(
+            run(Some(&[]), 1),
+            Err(SourceHeapError::PointerOutOfBounds)
+        ));
     }
 
     #[test]
@@ -5176,7 +5413,9 @@ mod tests {
         let unequal_radical = heap
             .allocate_model_storage(vec![info(1, 0, 0), info(0, 1, -3)])
             .unwrap();
-        let unequal_valence = heap.allocate_model_storage(vec![info(1, 0, 0), info(0, 2, 3)]).unwrap();
+        let unequal_valence = heap
+            .allocate_model_storage(vec![info(1, 0, 0), info(0, 2, 3)])
+            .unwrap();
         let aux = |pointer, count| INChI_Aux {
             OrigInfo: pointer,
             nNumberOfAtoms: count,
@@ -5199,15 +5438,27 @@ mod tests {
             EqlOrigInfo(&heap, Some(&aux_left), Some(&aux(unequal_valence, 2))),
             Ok(0)
         );
-        assert_eq!(EqlOrigInfo(&heap, Some(&aux_left), Some(&aux(equal, 1))), Ok(0));
+        assert_eq!(
+            EqlOrigInfo(&heap, Some(&aux_left), Some(&aux(equal, 1))),
+            Ok(0)
+        );
 
-        let empty = heap.allocate_model_storage(vec![ORIG_INFO::default()]).unwrap();
+        let empty = heap
+            .allocate_model_storage(vec![ORIG_INFO::default()])
+            .unwrap();
         let empty_aux = aux(empty, 1);
-        assert_eq!(EqlOrigInfo(&heap, Some(&empty_aux), Some(&empty_aux)), Ok(0));
+        assert_eq!(
+            EqlOrigInfo(&heap, Some(&empty_aux), Some(&empty_aux)),
+            Ok(0)
+        );
         let zero_aux = aux(SourceMutPointer::null(), 0);
         assert_eq!(EqlOrigInfo(&heap, Some(&zero_aux), Some(&zero_aux)), Ok(0));
         assert_eq!(
-            EqlOrigInfo(&heap, Some(&aux(left, 2)), Some(&aux(SourceMutPointer::null(), 2)),),
+            EqlOrigInfo(
+                &heap,
+                Some(&aux(left, 2)),
+                Some(&aux(SourceMutPointer::null(), 2)),
+            ),
             Ok(0)
         );
     }
@@ -5218,7 +5469,8 @@ mod tests {
             let mut heap = SourceHeap::default();
             let mut buffer = mult_buffer(&mut heap, prefix, 128);
             print_sequence_of_nums_compressing_ranges(&mut heap, numbers, &mut buffer)?;
-            let used = usize::try_from(buffer.nUsedLength).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+            let used = usize::try_from(buffer.nUsedLength)
+                .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
             let bytes = heap
                 .slice(buffer.pStr.as_const())?
                 .get(..used)
@@ -5242,7 +5494,10 @@ mod tests {
             assert_eq!(run(&numbers, "").unwrap(), expected, "numbers={numbers:?}");
         }
         assert_eq!(run(&[5, 6, 9], "prefix:").unwrap(), "prefix:5-6,9");
-        assert!(matches!(run(&[], ""), Err(SourceHeapError::PointerOutOfBounds)));
+        assert!(matches!(
+            run(&[], ""),
+            Err(SourceHeapError::PointerOutOfBounds)
+        ));
         assert!(matches!(
             run(&[i32::MAX, i32::MAX], ""),
             Err(SourceHeapError::SourceIntegerOverflow)
@@ -5273,7 +5528,8 @@ mod tests {
             &mut overflow,
         )
         .unwrap();
-        let bytes = &heap.slice(buffer.pStr.as_const()).unwrap()[..usize::try_from(buffer.nUsedLength).unwrap()];
+        let bytes = &heap.slice(buffer.pStr.as_const()).unwrap()
+            [..usize::try_from(buffer.nUsedLength).unwrap()];
         (
             result,
             String::from_utf8(bytes.iter().map(|byte| *byte as u8).collect()).unwrap(),
@@ -5292,7 +5548,9 @@ mod tests {
     ) -> (i32, String, i32) {
         let mut heap = SourceHeap::default();
         let pointer = values.map_or(SourceConstPointer::null(), |items| {
-            heap.allocate_model_storage(items.to_vec()).unwrap().as_const()
+            heap.allocate_model_storage(items.to_vec())
+                .unwrap()
+                .as_const()
         });
         let mut buffer = mult_buffer(&mut heap, prefix, 128);
         let mut overflow = initial_overflow;
@@ -5309,7 +5567,8 @@ mod tests {
             &mut overflow,
         )
         .unwrap();
-        let bytes = &heap.slice(buffer.pStr.as_const()).unwrap()[..usize::try_from(buffer.nUsedLength).unwrap()];
+        let bytes = &heap.slice(buffer.pStr.as_const()).unwrap()
+            [..usize::try_from(buffer.nUsedLength).unwrap()];
         (
             result,
             String::from_utf8(bytes.iter().map(|byte| *byte as u8).collect()).unwrap(),
@@ -5328,7 +5587,9 @@ mod tests {
             let mut heap = SourceHeap::default();
             let chain = heap.allocate_model_storage(vec![2_u16, 1, 3, 2]).unwrap();
             let hydrogen_pointer = hydrogens.map_or(SourceConstPointer::null(), |values| {
-                heap.allocate_model_storage(values.to_vec()).unwrap().as_const()
+                heap.allocate_model_storage(values.to_vec())
+                    .unwrap()
+                    .as_const()
             });
             let mut buffer = mult_buffer(&mut heap, "", 128);
             let mut overflow = initial_overflow;
@@ -5345,13 +5606,20 @@ mod tests {
             );
             let bytes = heap.slice(buffer.pStr.as_const()).unwrap();
             let end = bytes.iter().position(|byte| *byte == 0).unwrap();
-            let output = String::from_utf8(bytes[..end].iter().map(|byte| *byte as u8).collect()).unwrap();
+            let output =
+                String::from_utf8(bytes[..end].iter().map(|byte| *byte as u8).collect()).unwrap();
             (result, output, overflow)
         }
 
         let no_orphans = crate::source_types::CT_MODE_NO_ORPHANS as i32;
-        assert_eq!(run(None, no_orphans, 0, 0), (Ok(8), ",2-1,3-2".to_owned(), 0));
-        assert_eq!(run(Some(&[1, 2, 0]), 0, 0, 0), (Ok(7), "2,1,3,2".to_owned(), 0));
+        assert_eq!(
+            run(None, no_orphans, 0, 0),
+            (Ok(8), ",2-1,3-2".to_owned(), 0)
+        );
+        assert_eq!(
+            run(Some(&[1, 2, 0]), 0, 0, 0),
+            (Ok(7), "2,1,3,2".to_owned(), 0)
+        );
         assert_eq!(
             run(Some(&[1, 2, 0]), no_orphans, 0, 0),
             (Ok(8), "1H-2H2-3".to_owned(), 0)
@@ -5360,7 +5628,10 @@ mod tests {
             run(Some(&[1, 2, 0]), no_orphans, 1, 0),
             (Ok(9), ",1H-2H2-3".to_owned(), 0)
         );
-        assert_eq!(run(Some(&[1, 2, 0]), no_orphans, 1, 9), (Ok(0), "".to_owned(), 9));
+        assert_eq!(
+            run(Some(&[1, 2, 0]), no_orphans, 1, 9),
+            (Ok(0), "".to_owned(), 9)
+        );
     }
 
     #[test]
@@ -5392,11 +5663,15 @@ mod tests {
             );
             let bytes = heap.slice(buffer.pStr.as_const()).unwrap();
             let end = bytes.iter().position(|byte| *byte == 0).unwrap();
-            let output = String::from_utf8(bytes[..end].iter().map(|byte| *byte as u8).collect()).unwrap();
+            let output =
+                String::from_utf8(bytes[..end].iter().map(|byte| *byte as u8).collect()).unwrap();
             (result, output, overflow)
         }
 
-        assert_eq!(run(&[1, 2, 3], 3, 1, 0, 0, "pre"), (Ok(6), "pre,1,2,3".to_owned(), 0));
+        assert_eq!(
+            run(&[1, 2, 3], 3, 1, 0, 0, "pre"),
+            (Ok(6), "pre,1,2,3".to_owned(), 0)
+        );
         assert_eq!(
             run(&[1, 28, 0], 3, 1, CT_MODE_ABC_NUMBERS as i32, 0, "",),
             (Ok(5), ",AAa.".to_owned(), 0)
@@ -5411,14 +5686,24 @@ mod tests {
             (Ok(9), ",,2-1,3-1".to_owned(), 0)
         );
         assert_eq!(
-            run(&[1, 2, 1, 3, 1], 5, 0, no_orphans | CT_MODE_ABC_NUMBERS as i32, 0, "",),
+            run(
+                &[1, 2, 1, 3, 1],
+                5,
+                0,
+                no_orphans | CT_MODE_ABC_NUMBERS as i32,
+                0,
+                "",
+            ),
             (Ok(4), "BACA".to_owned(), 0)
         );
         assert_eq!(
             run(&[1, 2, 3], 3, 0, no_orphans, 0, "held"),
             (Ok(0), "held".to_owned(), 0)
         );
-        assert_eq!(run(&[u16::MAX], 1, 0, 0, 0, ""), (Ok(5), "65535".to_owned(), 0));
+        assert_eq!(
+            run(&[u16::MAX], 1, 0, 0, 0, ""),
+            (Ok(5), "65535".to_owned(), 0)
+        );
         assert_eq!(run(&[], 0, 1, 0, 0, ""), (Ok(1), ",".to_owned(), 0));
         assert_eq!(run(&[], -1, 0, 0, 0, "held"), (Ok(0), "held".to_owned(), 0));
         assert_eq!(run(&[1], 1, 1, 0, 7, "held"), (Ok(0), "held".to_owned(), 7));
@@ -5435,14 +5720,23 @@ mod tests {
         let mut buffer = mult_buffer(&mut heap, "pre", 32);
         let before = buffer.clone();
         let mut overflow = 0;
-        assert_eq!(MakeMult(&mut heap, 1, delimiter, &mut buffer, 0, &mut overflow), Ok(0));
+        assert_eq!(
+            MakeMult(&mut heap, 1, delimiter, &mut buffer, 0, &mut overflow),
+            Ok(0)
+        );
         assert_eq!(buffer, before);
         overflow = 2;
-        assert_eq!(MakeMult(&mut heap, 2, delimiter, &mut buffer, 0, &mut overflow), Ok(0));
+        assert_eq!(
+            MakeMult(&mut heap, 2, delimiter, &mut buffer, 0, &mut overflow),
+            Ok(0)
+        );
         assert_eq!(buffer, before);
 
         overflow = 0;
-        assert_eq!(MakeMult(&mut heap, 28, delimiter, &mut buffer, 0, &mut overflow), Ok(3));
+        assert_eq!(
+            MakeMult(&mut heap, 28, delimiter, &mut buffer, 0, &mut overflow),
+            Ok(3)
+        );
         assert_eq!(
             &heap.slice(buffer.pStr.as_const()).unwrap()[..7],
             &[
@@ -5465,8 +5759,8 @@ mod tests {
         assert_eq!(
             &heap.slice(buffer.pStr.as_const()).unwrap()[..10],
             &[
-                b'p' as i8, b'r' as i8, b'e' as i8, b'2' as i8, b'8' as i8, b'*' as i8, b'A' as i8, b'a' as i8,
-                b'*' as i8, 0
+                b'p' as i8, b'r' as i8, b'e' as i8, b'2' as i8, b'8' as i8, b'*' as i8, b'A' as i8,
+                b'a' as i8, b'*' as i8, 0
             ]
         );
 
@@ -5485,7 +5779,14 @@ mod tests {
         let mut overflow = 0;
         failing_heap.fail_after_allocations(0);
         assert_eq!(
-            MakeMult(&mut failing_heap, 2, delimiter, &mut failing, 0, &mut overflow),
+            MakeMult(
+                &mut failing_heap,
+                2,
+                delimiter,
+                &mut failing,
+                0,
+                &mut overflow
+            ),
             Ok(-1)
         );
         assert_eq!(overflow, 1);
@@ -5499,26 +5800,45 @@ mod tests {
         let before = buffer.clone();
         let mut overflow = 0;
         assert_eq!(
-            MakeDelim(&mut heap, SourceConstPointer::null(), &mut buffer, &mut overflow,),
+            MakeDelim(
+                &mut heap,
+                SourceConstPointer::null(),
+                &mut buffer,
+                &mut overflow,
+            ),
             Ok(0)
         );
         assert_eq!(buffer, before);
         let empty = allocate_c_string(&mut heap, b"");
-        assert_eq!(MakeDelim(&mut heap, empty, &mut buffer, &mut overflow), Ok(0));
+        assert_eq!(
+            MakeDelim(&mut heap, empty, &mut buffer, &mut overflow),
+            Ok(0)
+        );
         assert_eq!(buffer, before);
         let slash = allocate_c_string(&mut heap, b"/c");
         overflow = 2;
-        assert_eq!(MakeDelim(&mut heap, slash, &mut buffer, &mut overflow), Ok(0));
+        assert_eq!(
+            MakeDelim(&mut heap, slash, &mut buffer, &mut overflow),
+            Ok(0)
+        );
         assert_eq!(buffer, before);
 
         overflow = 0;
-        assert_eq!(MakeDelim(&mut heap, slash, &mut buffer, &mut overflow), Ok(2));
+        assert_eq!(
+            MakeDelim(&mut heap, slash, &mut buffer, &mut overflow),
+            Ok(2)
+        );
         assert_eq!(
             &heap.slice(buffer.pStr.as_const()).unwrap()[..6],
-            &[b'p' as i8, b'r' as i8, b'e' as i8, b'/' as i8, b'c' as i8, 0]
+            &[
+                b'p' as i8, b'r' as i8, b'e' as i8, b'/' as i8, b'c' as i8, 0
+            ]
         );
         let percent = allocate_c_string(&mut heap, b"%%");
-        assert_eq!(MakeDelim(&mut heap, percent, &mut buffer, &mut overflow), Ok(1));
+        assert_eq!(
+            MakeDelim(&mut heap, percent, &mut buffer, &mut overflow),
+            Ok(1)
+        );
         assert_eq!(
             &heap.slice(buffer.pStr.as_const()).unwrap()[..7],
             &[
@@ -5531,7 +5851,10 @@ mod tests {
         let mut failing = mult_buffer(&mut failing_heap, "abc", 4);
         let mut overflow = 0;
         failing_heap.fail_after_allocations(0);
-        assert_eq!(MakeDelim(&mut failing_heap, slash, &mut failing, &mut overflow), Ok(-1));
+        assert_eq!(
+            MakeDelim(&mut failing_heap, slash, &mut failing, &mut overflow),
+            Ok(-1)
+        );
         assert_eq!(overflow, 1);
         assert_eq!(failing.nUsedLength, 3);
     }
@@ -5554,7 +5877,8 @@ mod tests {
                 Ok(expected_suffix.len() as i32),
                 "multiplier={multiplier}"
             );
-            let bytes = &heap.slice(buffer.pStr.as_const()).unwrap()[..usize::try_from(buffer.nUsedLength).unwrap()];
+            let bytes = &heap.slice(buffer.pStr.as_const()).unwrap()
+                [..usize::try_from(buffer.nUsedLength).unwrap()];
             assert_eq!(
                 bytes,
                 format!("pre{expected_suffix}")
@@ -5573,14 +5897,26 @@ mod tests {
         let before = buffer.clone();
         let mut overflow = 0;
         assert_eq!(
-            MakeEqStr(&mut heap, SourceConstPointer::null(), 2, &mut buffer, &mut overflow,),
+            MakeEqStr(
+                &mut heap,
+                SourceConstPointer::null(),
+                2,
+                &mut buffer,
+                &mut overflow,
+            ),
             Ok(0)
         );
         assert_eq!(buffer, before);
-        assert_eq!(MakeEqStr(&mut heap, empty, 2, &mut buffer, &mut overflow), Ok(0));
+        assert_eq!(
+            MakeEqStr(&mut heap, empty, 2, &mut buffer, &mut overflow),
+            Ok(0)
+        );
         assert_eq!(buffer, before);
         overflow = 7;
-        assert_eq!(MakeEqStr(&mut heap, delimiter, 2, &mut buffer, &mut overflow), Ok(0));
+        assert_eq!(
+            MakeEqStr(&mut heap, delimiter, 2, &mut buffer, &mut overflow),
+            Ok(0)
+        );
         assert_eq!(buffer, before);
         assert_eq!(overflow, 7);
 
@@ -5621,7 +5957,13 @@ mod tests {
         let mut boundary = mult_buffer(&mut boundary_heap, "pre", 32);
         let mut overflow = 0;
         assert_eq!(
-            MakeEqStr(&mut boundary_heap, delimiter, i32::MIN, &mut boundary, &mut overflow,),
+            MakeEqStr(
+                &mut boundary_heap,
+                delimiter,
+                i32::MIN,
+                &mut boundary,
+                &mut overflow,
+            ),
             Err(SourceHeapError::UnsupportedSourceBehavior)
         );
         assert_eq!(boundary.nUsedLength, 3);
@@ -5633,7 +5975,10 @@ mod tests {
         for (ct, length) in [(None, 1), (Some(&[][..]), 0), (Some(&[0][..]), 1)] {
             assert_eq!(taut_case(ct, length, 1, 0, 0, "pre"), (0, "pre".into(), 0));
         }
-        assert_eq!(taut_case(Some(&[1]), -1, 1, 0, 0, "pre"), (1, "pre,".into(), 0));
+        assert_eq!(
+            taut_case(Some(&[1]), -1, 1, 0, 0, "pre"),
+            (1, "pre,".into(), 0)
+        );
         assert_eq!(
             taut_case(Some(&[1, 4, 2, 0, 1, 5]), 6, 1, 0, 0, "pre"),
             (9, "pre,(H2,1,5)".into(), 0)
@@ -5643,19 +5988,39 @@ mod tests {
             (10, "(H2-,28,5)".into(), 0)
         );
         assert_eq!(
-            taut_case(Some(&[1, 4, 2, 1, 28, 5]), 6, 1, CT_MODE_ABC_NUMBERS as i32, 0, "pre",),
+            taut_case(
+                Some(&[1, 4, 2, 1, 28, 5]),
+                6,
+                1,
+                CT_MODE_ABC_NUMBERS as i32,
+                0,
+                "pre",
+            ),
             (6, "pre,2-AaE".into(), 0)
         );
         assert_eq!(
             taut_case(Some(&[2, 2, 0, 1, 2, 1, 2]), 7, 0, 0, 0, ""),
             (8, "(-)(H-2)".into(), 0)
         );
-        assert_eq!(taut_case(Some(&[1, 3, 0, 0, 0]), 5, 0, 0, 0, ""), (4, "(,0)".into(), 0));
         assert_eq!(
-            taut_case(Some(&[1, 3, 0, 0, 0]), 5, 1, CT_MODE_ABC_NUMBERS as i32, 0, "",),
+            taut_case(Some(&[1, 3, 0, 0, 0]), 5, 0, 0, 0, ""),
+            (4, "(,0)".into(), 0)
+        );
+        assert_eq!(
+            taut_case(
+                Some(&[1, 3, 0, 0, 0]),
+                5,
+                1,
+                CT_MODE_ABC_NUMBERS as i32,
+                0,
+                "",
+            ),
             (3, ",0.".into(), 0)
         );
-        assert_eq!(taut_case(Some(&[1, 0, 2]), 3, 0, 0, 0, ""), (4, "()()".into(), 0));
+        assert_eq!(
+            taut_case(Some(&[1, 0, 2]), 3, 0, 0, 0, ""),
+            (4, "()()".into(), 0)
+        );
         assert_eq!(
             taut_case(Some(&[1, 4, 2, 1, 28, 5]), 6, 1, 0, 3, "pre"),
             (0, "pre".into(), 3)
@@ -5665,8 +6030,14 @@ mod tests {
     #[test]
     fn source_port__ichiprt2__makehstring__line_789() {
         assert_eq!(h_case(None, 3, 1, 0, 0, None, "pre"), (1, "pre,".into(), 0));
-        assert_eq!(h_case(Some(&[1]), 0, 1, 0, 0, None, "pre"), (1, "pre,".into(), 0));
-        assert_eq!(h_case(Some(&[1]), -1, 1, 0, 0, None, "pre"), (1, "pre,".into(), 0));
+        assert_eq!(
+            h_case(Some(&[1]), 0, 1, 0, 0, None, "pre"),
+            (1, "pre,".into(), 0)
+        );
+        assert_eq!(
+            h_case(Some(&[1]), -1, 1, 0, 0, None, "pre"),
+            (1, "pre,".into(), 0)
+        );
         assert_eq!(
             h_case(Some(&[1, 1, 0, 2, -1, -1]), 6, 1, 0, 0, None, "pre"),
             (14, "pre,1-2H,4H2,5-6h".into(), 0)
@@ -5712,12 +6083,18 @@ mod tests {
             h_case(Some(&[0, 0]), 2, 1, together, 0, None, "pre"),
             (0, "pre,".into(), 0)
         );
-        assert_eq!(h_case(Some(&[0, 0]), 2, 1, 0, 0, None, "pre"), (1, "pre,".into(), 0));
+        assert_eq!(
+            h_case(Some(&[0, 0]), 2, 1, 0, 0, None, "pre"),
+            (1, "pre,".into(), 0)
+        );
         assert_eq!(
             h_case(Some(&[-128, 127]), 2, 1, together, 0, Some(0), "pre"),
             (0, "pre,".into(), 1)
         );
-        assert_eq!(h_case(Some(&[1, 2]), 2, 1, 0, 7, None, "pre"), (0, "pre".into(), 7));
+        assert_eq!(
+            h_case(Some(&[1, 2]), 2, 1, 0, 7, None, "pre"),
+            (0, "pre".into(), 7)
+        );
     }
 
     #[test]
@@ -5727,7 +6104,14 @@ mod tests {
 
         let sp2 = stereo_fixture(&mut heap, &[], &[], &[], &[], &[1, 3], &[2, 4], &[1, 2]);
         assert_eq!(
-            Eql_INChI_Stereo(&heap, Some(&sp2), EQL_SP2 as i32, None, EQL_EXISTS as i32, 0),
+            Eql_INChI_Stereo(
+                &heap,
+                Some(&sp2),
+                EQL_SP2 as i32,
+                None,
+                EQL_EXISTS as i32,
+                0
+            ),
             Ok(1)
         );
         assert_eq!(
@@ -5736,7 +6120,14 @@ mod tests {
         );
         let sp2_equal = stereo_fixture(&mut heap, &[], &[], &[], &[], &[1, 3], &[2, 4], &[1, 2]);
         assert_eq!(
-            Eql_INChI_Stereo(&heap, Some(&sp2), EQL_SP2 as i32, Some(&sp2_equal), EQL_SP2 as i32, 0,),
+            Eql_INChI_Stereo(
+                &heap,
+                Some(&sp2),
+                EQL_SP2 as i32,
+                Some(&sp2_equal),
+                EQL_SP2 as i32,
+                0,
+            ),
             Ok(1)
         );
         for changed in [
@@ -5746,30 +6137,65 @@ mod tests {
             stereo_fixture(&mut heap, &[], &[], &[], &[], &[1], &[2], &[1]),
         ] {
             assert_eq!(
-                Eql_INChI_Stereo(&heap, Some(&sp2), EQL_SP2 as i32, Some(&changed), EQL_SP2 as i32, 0,),
+                Eql_INChI_Stereo(
+                    &heap,
+                    Some(&sp2),
+                    EQL_SP2 as i32,
+                    Some(&changed),
+                    EQL_SP2 as i32,
+                    0,
+                ),
                 Ok(0)
             );
         }
         let mut missing = sp2_equal.clone();
         missing.b_parity = Default::default();
         assert_eq!(
-            Eql_INChI_Stereo(&heap, Some(&sp2), EQL_SP2 as i32, Some(&missing), EQL_SP2 as i32, 0,),
+            Eql_INChI_Stereo(
+                &heap,
+                Some(&sp2),
+                EQL_SP2 as i32,
+                Some(&missing),
+                EQL_SP2 as i32,
+                0,
+            ),
             Ok(0)
         );
 
         let normal = stereo_fixture(&mut heap, &[1, 2], &[1, 4], &[1, 2], &[2, 4], &[], &[], &[]);
         let equal = stereo_fixture(&mut heap, &[1, 2], &[1, 4], &[1, 2], &[2, 4], &[], &[], &[]);
         assert_eq!(
-            Eql_INChI_Stereo(&heap, Some(&normal), EQL_SP3 as i32, Some(&equal), EQL_SP3 as i32, 0,),
+            Eql_INChI_Stereo(
+                &heap,
+                Some(&normal),
+                EQL_SP3 as i32,
+                Some(&equal),
+                EQL_SP3 as i32,
+                0,
+            ),
             Ok(1)
         );
         assert_eq!(
-            Eql_INChI_Stereo(&heap, Some(&normal), EQL_SP3 as i32, None, EQL_EXISTS as i32, 0,),
+            Eql_INChI_Stereo(
+                &heap,
+                Some(&normal),
+                EQL_SP3 as i32,
+                None,
+                EQL_EXISTS as i32,
+                0,
+            ),
             Ok(1)
         );
         let one = stereo_fixture(&mut heap, &[1], &[1], &[1], &[2], &[], &[], &[]);
         assert_eq!(
-            Eql_INChI_Stereo(&heap, Some(&one), EQL_SP3 as i32, None, EQL_EXISTS as i32, 1,),
+            Eql_INChI_Stereo(
+                &heap,
+                Some(&one),
+                EQL_SP3 as i32,
+                None,
+                EQL_EXISTS as i32,
+                1,
+            ),
             Ok(0)
         );
 
@@ -5796,7 +6222,8 @@ mod tests {
             ),
             Ok(1)
         );
-        let no_actual_inversion = stereo_fixture(&mut heap, &[1, 2], &[4, 4], &[1, 2], &[4, 4], &[], &[], &[]);
+        let no_actual_inversion =
+            stereo_fixture(&mut heap, &[1, 2], &[4, 4], &[1, 2], &[4, 4], &[], &[], &[]);
         assert_eq!(
             Eql_INChI_Stereo(
                 &heap,
@@ -5808,7 +6235,8 @@ mod tests {
             ),
             Ok(0)
         );
-        let bad_number = stereo_fixture(&mut heap, &[1, 2], &[1, 4], &[1, 3], &[2, 4], &[], &[], &[]);
+        let bad_number =
+            stereo_fixture(&mut heap, &[1, 2], &[1, 4], &[1, 3], &[2, 4], &[], &[], &[]);
         assert_eq!(
             Eql_INChI_Stereo(
                 &heap,
@@ -5823,7 +6251,14 @@ mod tests {
         let mut no_inverse = normal.clone();
         no_inverse.nCompInv2Abs = 0;
         assert_eq!(
-            Eql_INChI_Stereo(&heap, Some(&no_inverse), EQL_SP3_INV as i32, None, EQL_EXISTS as i32, 0,),
+            Eql_INChI_Stereo(
+                &heap,
+                Some(&no_inverse),
+                EQL_SP3_INV as i32,
+                None,
+                EQL_EXISTS as i32,
+                0,
+            ),
             Ok(0)
         );
         let mut missing_center = normal.clone();
@@ -5848,10 +6283,16 @@ mod tests {
 
         let mut empty1 = INChI::default();
         let empty2 = INChI::default();
-        assert_eq!(Eql_INChI_Isotopic(&heap, Some(&empty1), Some(&empty2)), Ok(0));
+        assert_eq!(
+            Eql_INChI_Isotopic(&heap, Some(&empty1), Some(&empty2)),
+            Ok(0)
+        );
         empty1.bDeleted = 1;
         empty1.nNumberOfIsotopicAtoms = 1;
-        assert_eq!(Eql_INChI_Isotopic(&heap, Some(&empty1), Some(&empty2)), Ok(0));
+        assert_eq!(
+            Eql_INChI_Isotopic(&heap, Some(&empty1), Some(&empty2)),
+            Ok(0)
+        );
 
         let atoms = vec![
             crate::source_types::INChI_IsotopicAtom {
@@ -5882,16 +6323,28 @@ mod tests {
             nTotalCharge: 99,
             ..INChI::default()
         };
-        assert_eq!(Eql_INChI_Isotopic(&heap, Some(&atom_inchi1), Some(&atom_inchi2)), Ok(1));
+        assert_eq!(
+            Eql_INChI_Isotopic(&heap, Some(&atom_inchi1), Some(&atom_inchi2)),
+            Ok(1)
+        );
         atom_inchi2.nNumberOfIsotopicAtoms = 1;
-        assert_eq!(Eql_INChI_Isotopic(&heap, Some(&atom_inchi1), Some(&atom_inchi2)), Ok(0));
+        assert_eq!(
+            Eql_INChI_Isotopic(&heap, Some(&atom_inchi1), Some(&atom_inchi2)),
+            Ok(0)
+        );
         atom_inchi2.nNumberOfIsotopicAtoms = 2;
         atom_inchi2.IsotopicAtom = SourceMutPointer::null();
-        assert_eq!(Eql_INChI_Isotopic(&heap, Some(&atom_inchi1), Some(&atom_inchi2)), Ok(0));
+        assert_eq!(
+            Eql_INChI_Isotopic(&heap, Some(&atom_inchi1), Some(&atom_inchi2)),
+            Ok(0)
+        );
         let mut changed_atoms = atoms;
         changed_atoms[1].nNum_T = 2;
         atom_inchi2.IsotopicAtom = heap.allocate_model_storage(changed_atoms).unwrap();
-        assert_eq!(Eql_INChI_Isotopic(&heap, Some(&atom_inchi1), Some(&atom_inchi2)), Ok(0));
+        assert_eq!(
+            Eql_INChI_Isotopic(&heap, Some(&atom_inchi1), Some(&atom_inchi2)),
+            Ok(0)
+        );
 
         let groups = vec![crate::source_types::INChI_IsotopicTGroup {
             nTGroupNumber: u16::MAX,
@@ -5997,7 +6450,10 @@ mod tests {
             let input = allocate_c_string(&mut heap, bytes);
             let mut end = SourceConstPointer::null();
             heap.set_source_errno(77);
-            assert_eq!(inchi_strtol(&mut heap, input, Some(&mut end), base), Ok(expected_value));
+            assert_eq!(
+                inchi_strtol(&mut heap, input, Some(&mut end), base),
+                Ok(expected_value)
+            );
             assert_eq!(end, input.offset(expected_offset).unwrap());
             assert_eq!(heap.source_errno(), 77);
         }
@@ -6119,7 +6575,10 @@ mod tests {
 
         let overflow = allocate_c_string(&mut heap, b"1e309x");
         heap.set_source_errno(0);
-        assert_eq!(inchi_strtod(&mut heap, overflow, Some(&mut end)), Ok(f64::INFINITY));
+        assert_eq!(
+            inchi_strtod(&mut heap, overflow, Some(&mut end)),
+            Ok(f64::INFINITY)
+        );
         assert_eq!(end, overflow.offset(5).unwrap());
         assert_eq!(heap.source_errno(), 34);
 
@@ -6270,7 +6729,9 @@ mod tests {
             Ok(0)
         );
         let mut failing_heap = SourceHeap::default();
-        let chain = failing_heap.allocate_model_storage(vec![2_u16, 1, 3, 2]).unwrap();
+        let chain = failing_heap
+            .allocate_model_storage(vec![2_u16, 1, 3, 2])
+            .unwrap();
         let mut buffer = mult_buffer(&mut failing_heap, "", 128);
         failing_heap.fail_after_allocations(0);
         assert_eq!(
@@ -6336,11 +6797,20 @@ mod tests {
             );
         }
         assert_eq!(
-            Eql_INChI_Aux_Num(&heap, Some(&aux1), EQL_NUM as i32, Some(&aux2), EQL_NUM_ISO as i32,),
+            Eql_INChI_Aux_Num(
+                &heap,
+                Some(&aux1),
+                EQL_NUM as i32,
+                Some(&aux2),
+                EQL_NUM_ISO as i32,
+            ),
             Ok(0)
         );
         assert_eq!(Eql_INChI_Aux_Num(&heap, None, 0, Some(&aux2), 0), Ok(0));
-        assert_eq!(Eql_INChI_Aux_Num(&heap, Some(&aux1), 99, Some(&aux2), 0), Ok(0));
+        assert_eq!(
+            Eql_INChI_Aux_Num(&heap, Some(&aux1), 99, Some(&aux2), 0),
+            Ok(0)
+        );
 
         let non_isotopic = INChI_Aux {
             bIsIsotopic: 0,
@@ -6360,17 +6830,26 @@ mod tests {
             bDeleted: 1,
             ..aux1.clone()
         };
-        assert_eq!(Eql_INChI_Aux_Num(&heap, Some(&deleted), 0, Some(&aux2), 0), Ok(0));
+        assert_eq!(
+            Eql_INChI_Aux_Num(&heap, Some(&deleted), 0, Some(&aux2), 0),
+            Ok(0)
+        );
         let wrong_length = INChI_Aux {
             nNumberOfAtoms: 2,
             ..aux2.clone()
         };
-        assert_eq!(Eql_INChI_Aux_Num(&heap, Some(&aux1), 0, Some(&wrong_length), 0), Ok(0));
+        assert_eq!(
+            Eql_INChI_Aux_Num(&heap, Some(&aux1), 0, Some(&wrong_length), 0),
+            Ok(0)
+        );
         let null_numbers = INChI_Aux {
             nOrigAtNosInCanonOrd: SourceMutPointer::null(),
             ..aux2.clone()
         };
-        assert_eq!(Eql_INChI_Aux_Num(&heap, Some(&aux1), 0, Some(&null_numbers), 0), Ok(0));
+        assert_eq!(
+            Eql_INChI_Aux_Num(&heap, Some(&aux1), 0, Some(&null_numbers), 0),
+            Ok(0)
+        );
         let short = heap.allocate(vec![1_u16, 2]).unwrap();
         let short_aux = INChI_Aux {
             nOrigAtNosInCanonOrd: short,
@@ -6396,11 +6875,21 @@ mod tests {
         }
 
         let mut heap = SourceHeap::default();
-        let linear = heap.allocate_model_storage(vec![1_u16, 1_u16, 3_u16]).unwrap();
+        let linear = heap
+            .allocate_model_storage(vec![1_u16, 1_u16, 3_u16])
+            .unwrap();
         let mut buffer = mult_buffer(&mut heap, "", 8);
         let mut overflow = 0;
         assert_eq!(
-            MakeEquString(&mut heap, linear.as_const(), 3, 0, &mut buffer, 0, &mut overflow),
+            MakeEquString(
+                &mut heap,
+                linear.as_const(),
+                3,
+                0,
+                &mut buffer,
+                0,
+                &mut overflow
+            ),
             Ok(8)
         );
         assert_eq!(text(&heap, &buffer), b"(1,2)(3)");
@@ -6409,7 +6898,15 @@ mod tests {
         buffer = mult_buffer(&mut heap, "seed", 8);
         overflow = 0;
         assert_eq!(
-            MakeEquString(&mut heap, linear.as_const(), 3, 1, &mut buffer, 0, &mut overflow),
+            MakeEquString(
+                &mut heap,
+                linear.as_const(),
+                3,
+                1,
+                &mut buffer,
+                0,
+                &mut overflow
+            ),
             Ok(10)
         );
         assert_eq!(text(&heap, &buffer), b"seed, (1,2)(3)");
@@ -6436,7 +6933,15 @@ mod tests {
         overflow = 1;
         let before = text(&heap, &buffer);
         assert_eq!(
-            MakeEquString(&mut heap, linear.as_const(), 3, 1, &mut buffer, 0, &mut overflow),
+            MakeEquString(
+                &mut heap,
+                linear.as_const(),
+                3,
+                1,
+                &mut buffer,
+                0,
+                &mut overflow
+            ),
             Ok(0)
         );
         assert_eq!(text(&heap, &buffer), before);
@@ -6445,7 +6950,15 @@ mod tests {
         buffer = mult_buffer(&mut heap, "", 8);
         overflow = 0;
         assert_eq!(
-            MakeEquString(&mut heap, linear.as_const(), 0, 1, &mut buffer, 0, &mut overflow),
+            MakeEquString(
+                &mut heap,
+                linear.as_const(),
+                0,
+                1,
+                &mut buffer,
+                0,
+                &mut overflow
+            ),
             Ok(2)
         );
         assert_eq!(text(&heap, &buffer), b", ");
@@ -6454,7 +6967,15 @@ mod tests {
         buffer = mult_buffer(&mut heap, "", 8);
         overflow = 0;
         assert_eq!(
-            MakeEquString(&mut heap, linear.as_const(), -1, 1, &mut buffer, 0, &mut overflow),
+            MakeEquString(
+                &mut heap,
+                linear.as_const(),
+                -1,
+                1,
+                &mut buffer,
+                0,
+                &mut overflow
+            ),
             Ok(2)
         );
         assert_eq!(text(&heap, &buffer), b", ");
@@ -6515,7 +7036,10 @@ mod tests {
         };
 
         assert_eq!(Eql_INChI_Aux_Equ(&heap, None, 0, Some(&second), 0), Ok(0));
-        assert_eq!(Eql_INChI_Aux_Equ(&heap, Some(&first), 0, Some(&second), 0), Ok(1));
+        assert_eq!(
+            Eql_INChI_Aux_Equ(&heap, Some(&first), 0, Some(&second), 0),
+            Ok(1)
+        );
         assert_eq!(
             Eql_INChI_Aux_Equ(
                 &heap,
@@ -6527,7 +7051,13 @@ mod tests {
             Ok(1)
         );
         assert_eq!(
-            Eql_INChI_Aux_Equ(&heap, Some(&first), EQL_EQU_TG as i32, Some(&second), EQL_EQU_TG as i32,),
+            Eql_INChI_Aux_Equ(
+                &heap,
+                Some(&first),
+                EQL_EQU_TG as i32,
+                Some(&second),
+                EQL_EQU_TG as i32,
+            ),
             Ok(1)
         );
         assert_eq!(
@@ -6537,7 +7067,10 @@ mod tests {
 
         let identity = heap.allocate_model_storage(vec![1_u16, 2, 3]).unwrap();
         second.nConstitEquNumbers = identity;
-        assert_eq!(Eql_INChI_Aux_Equ(&heap, Some(&first), 0, Some(&second), 0), Ok(0));
+        assert_eq!(
+            Eql_INChI_Aux_Equ(&heap, Some(&first), 0, Some(&second), 0),
+            Ok(0)
+        );
         second.nConstitEquNumbers = ordinary2;
         second.bIsIsotopic = 0;
         assert_eq!(
@@ -6552,12 +7085,21 @@ mod tests {
         );
         second.bIsIsotopic = 1;
         first.bDeleted = 1;
-        assert_eq!(Eql_INChI_Aux_Equ(&heap, Some(&first), 0, Some(&second), 0), Ok(0));
+        assert_eq!(
+            Eql_INChI_Aux_Equ(&heap, Some(&first), 0, Some(&second), 0),
+            Ok(0)
+        );
         first.bDeleted = 0;
         second.nNumberOfAtoms = 2;
-        assert_eq!(Eql_INChI_Aux_Equ(&heap, Some(&first), 0, Some(&second), 0), Ok(0));
+        assert_eq!(
+            Eql_INChI_Aux_Equ(&heap, Some(&first), 0, Some(&second), 0),
+            Ok(0)
+        );
         second.nNumberOfAtoms = 3;
         second.nConstitEquNumbers = SourceMutPointer::null();
-        assert_eq!(Eql_INChI_Aux_Equ(&heap, Some(&first), 0, Some(&second), 0), Ok(0));
+        assert_eq!(
+            Eql_INChI_Aux_Equ(&heap, Some(&first), 0, Some(&second), 0),
+            Ok(0)
+        );
     }
 }

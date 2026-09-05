@@ -1,7 +1,7 @@
 use cosmolkit_core::{
-    AtomPairFingerprintParams, AvalonFingerprintParams, MaccsFingerprintParams, Molecule, MorganFingerprintParams,
-    PatternFingerprintParams, TopologicalFingerprintParams, TopologicalTorsionFingerprintParams,
-    topological_torsion_fingerprint,
+    AtomPairFingerprintParams, AvalonFingerprintParams, MaccsFingerprintParams, Molecule,
+    MorganFingerprintParams, PatternFingerprintParams, TopologicalFingerprintParams,
+    TopologicalTorsionFingerprintParams, topological_torsion_fingerprint,
 };
 use rayon::prelude::*;
 
@@ -52,15 +52,24 @@ fn snapshot(molecule: &Molecule) -> Snapshot {
             .maccs_fingerprint(&MaccsFingerprintParams::default())
             .expect("MACCS fingerprint")
             .on_bits(),
-        topological_torsion: topological_torsion_fingerprint(molecule, &TopologicalTorsionFingerprintParams::default())
-            .expect("Topological Torsion fingerprint")
-            .on_bits(),
+        topological_torsion: topological_torsion_fingerprint(
+            molecule,
+            &TopologicalTorsionFingerprintParams::default(),
+        )
+        .expect("Topological Torsion fingerprint")
+        .on_bits(),
     }
 }
 
 #[test]
 fn fingerprint_families_are_order_independent_and_non_mutating() {
-    let smiles = ["CCO", "c1ccccc1O", "C[C@H](N)C(=O)O", "[2H]O[2H]", "C1CCCCC1"];
+    let smiles = [
+        "CCO",
+        "c1ccccc1O",
+        "C[C@H](N)C(=O)O",
+        "[2H]O[2H]",
+        "C1CCCCC1",
+    ];
     let molecules = smiles
         .iter()
         .map(|value| Molecule::from_smiles(value).expect("fixture molecule"))
@@ -76,14 +85,20 @@ fn fingerprint_families_are_order_independent_and_non_mutating() {
         let _ = molecule.morgan_fingerprint(&MorganFingerprintParams::default());
         let _ = molecule.atom_pair_fingerprint(&AtomPairFingerprintParams::default());
         let _ = molecule.topological_fingerprint(&TopologicalFingerprintParams::default());
-        let _ = topological_torsion_fingerprint(molecule, &TopologicalTorsionFingerprintParams::default());
+        let _ = topological_torsion_fingerprint(
+            molecule,
+            &TopologicalTorsionFingerprintParams::default(),
+        );
         let _ = molecule.maccs_fingerprint(&MaccsFingerprintParams::default());
         let _ = molecule.pattern_fingerprint(&PatternFingerprintParams::default());
         let _ = molecule.maccs_fingerprint(&MaccsFingerprintParams::default());
         let _ = molecule.avalon_fingerprint(&AvalonFingerprintParams::default());
     }
     let after = molecules.iter().map(snapshot).collect::<Vec<_>>();
-    assert_eq!(before, after, "fingerprint calls changed molecule state or caches");
+    assert_eq!(
+        before, after,
+        "fingerprint calls changed molecule state or caches"
+    );
 }
 
 #[test]

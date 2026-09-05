@@ -3,29 +3,34 @@ use crate::source::base::ichierr::AddErrorMessage;
 use crate::source::base::ichiprt2::inchi_strtol;
 use crate::source::base::mol_fmt2::{FreeMolfileData, MolfileFieldData, MolfileReadField};
 use crate::source::base::mol_fmt3::{
-    MolfileV3000Init, MolfileV3000ReadAtomsBlock, MolfileV3000ReadBondsBlock, MolfileV3000ReadCTABBeginAndCountsLine,
-    MolfileV3000ReadTailOfCTAB,
+    MolfileV3000Init, MolfileV3000ReadAtomsBlock, MolfileV3000ReadBondsBlock,
+    MolfileV3000ReadCTABBeginAndCountsLine, MolfileV3000ReadTailOfCTAB,
 };
 use crate::source::base::mol_fmt4::{
-    IntArray_Append, MolFmtSgroups_Alloc, MolFmtSgroups_Append, MolFmtSgroups_Free, MolFmtSgroups_GetIndexBySgroupId,
-    SDFileSkipExtraData,
+    IntArray_Append, MolFmtSgroups_Alloc, MolFmtSgroups_Append, MolFmtSgroups_Free,
+    MolFmtSgroups_GetIndexBySgroupId, SDFileSkipExtraData,
 };
 use crate::source::base::util::{
-    dotify_non_printable_chars, extract_charges_and_radicals, get_atomic_mass, inchi_calloc, lrtrim, mystrncpy_slice,
-    normalize_string, remove_one_lf,
+    dotify_non_printable_chars, extract_charges_and_radicals, get_atomic_mass, inchi_calloc,
+    lrtrim, mystrncpy_slice, normalize_string, remove_one_lf,
 };
 use crate::source_types::{
-    INCHI_IOSTREAM, MAXVAL, MOL_COORD, MOL_FMT_ATOM, MOL_FMT_BOND, MOL_FMT_CHAR_INT_DATA, MOL_FMT_CTAB, MOL_FMT_DATA,
-    MOL_FMT_DOUBLE_DATA, MOL_FMT_HEADER_BLOCK, MOL_FMT_INPLINELEN, MOL_FMT_JUMP_TO_RIGHT, MOL_FMT_LONG_INT_DATA,
-    MOL_FMT_M_CONN_EU, MOL_FMT_M_CONN_HH, MOL_FMT_M_CONN_HT, MOL_FMT_M_CONN_NON, MOL_FMT_M_SST_ALT, MOL_FMT_M_SST_BLK,
-    MOL_FMT_M_SST_NON, MOL_FMT_M_SST_RAN, MOL_FMT_M_STY_COP, MOL_FMT_M_STY_CRO, MOL_FMT_M_STY_MER, MOL_FMT_M_STY_MOD,
-    MOL_FMT_M_STY_MON, MOL_FMT_M_STY_NON, MOL_FMT_M_STY_SRU, MOL_FMT_MAX_VALUE_LEN, MOL_FMT_MAXLINELEN,
-    MOL_FMT_SGROUPS, MOL_FMT_SHORT_INT_DATA, MOL_FMT_STRING_DATA, MOL_FMT_v3000, POLYMERS_NO, RADICAL_DOUBLET,
-    SD_FMT_END_OF_DATA, SourceConstPointer, SourceHeap, SourceHeapError, SourceMutPointer, ZERO_ATW_DIFF,
+    INCHI_IOSTREAM, MAXVAL, MOL_COORD, MOL_FMT_ATOM, MOL_FMT_BOND, MOL_FMT_CHAR_INT_DATA,
+    MOL_FMT_CTAB, MOL_FMT_DATA, MOL_FMT_DOUBLE_DATA, MOL_FMT_HEADER_BLOCK, MOL_FMT_INPLINELEN,
+    MOL_FMT_JUMP_TO_RIGHT, MOL_FMT_LONG_INT_DATA, MOL_FMT_M_CONN_EU, MOL_FMT_M_CONN_HH,
+    MOL_FMT_M_CONN_HT, MOL_FMT_M_CONN_NON, MOL_FMT_M_SST_ALT, MOL_FMT_M_SST_BLK, MOL_FMT_M_SST_NON,
+    MOL_FMT_M_SST_RAN, MOL_FMT_M_STY_COP, MOL_FMT_M_STY_CRO, MOL_FMT_M_STY_MER, MOL_FMT_M_STY_MOD,
+    MOL_FMT_M_STY_MON, MOL_FMT_M_STY_NON, MOL_FMT_M_STY_SRU, MOL_FMT_MAX_VALUE_LEN,
+    MOL_FMT_MAXLINELEN, MOL_FMT_SGROUPS, MOL_FMT_SHORT_INT_DATA, MOL_FMT_STRING_DATA,
+    MOL_FMT_v3000, POLYMERS_NO, RADICAL_DOUBLET, SD_FMT_END_OF_DATA, SourceConstPointer,
+    SourceHeap, SourceHeapError, SourceMutPointer, ZERO_ATW_DIFF,
 };
 
 fn mol_fmt1_c_string_eq(value: &[i8], expected: &[u8]) -> bool {
-    let length = value.iter().position(|byte| *byte == 0).unwrap_or(value.len());
+    let length = value
+        .iter()
+        .position(|byte| *byte == 0)
+        .unwrap_or(value.len());
     length == expected.len()
         && value[..length]
             .iter()
@@ -33,7 +38,10 @@ fn mol_fmt1_c_string_eq(value: &[i8], expected: &[u8]) -> bool {
             .all(|(left, right)| *left as u8 == *right)
 }
 
-fn mol_fmt1_add_ascii_message(target: Option<&mut [i8]>, message: &[u8]) -> Result<i32, SourceHeapError> {
+fn mol_fmt1_add_ascii_message(
+    target: Option<&mut [i8]>,
+    message: &[u8],
+) -> Result<i32, SourceHeapError> {
     let terminated = message
         .iter()
         .map(|byte| *byte as i8)
@@ -55,7 +63,10 @@ fn mol_fmt1_treat_error(
     Ok(())
 }
 
-fn mol_fmt1_trim_array<const N: usize>(heap: &mut SourceHeap, value: &mut [i8; N]) -> Result<i32, SourceHeapError> {
+fn mol_fmt1_trim_array<const N: usize>(
+    heap: &mut SourceHeap,
+    value: &mut [i8; N],
+) -> Result<i32, SourceHeapError> {
     let pointer = heap.allocate_model_storage(value.to_vec())?;
     let mut length = 0_i32;
     lrtrim(heap, pointer, Some(&mut length))?;
@@ -3201,7 +3212,8 @@ static int MolfileTreatPseudoElementAtoms( MOL_FMT_CTAB* ctab,
 mod tests {
     use super::*;
     use crate::source_types::{
-        FILE, INCHI_IOS_STRING, INCHI_IOS_TYPE_FILE, INCHI_IOS_TYPE_STRING, MOL_COORD, MOL_FMT_ATOM, MOL_FMT_BOND,
+        FILE, INCHI_IOS_STRING, INCHI_IOS_TYPE_FILE, INCHI_IOS_TYPE_STRING, MOL_COORD,
+        MOL_FMT_ATOM, MOL_FMT_BOND,
     };
 
     fn bytes(value: &str) -> Vec<i8> {
@@ -3227,7 +3239,18 @@ mod tests {
     fn input() -> String {
         let line2 = format!(
             "{}{}{}{}{}{}{}{}{}{}{}{}",
-            "AB", "PROGNAME", "01", "02", "24", "12", "34", "2D", " 7", "      1.25", "        -2.5", "    42"
+            "AB",
+            "PROGNAME",
+            "01",
+            "02",
+            "24",
+            "12",
+            "34",
+            "2D",
+            " 7",
+            "      1.25",
+            "        -2.5",
+            "    42"
         );
         assert_eq!(line2.len(), 52);
         format!("  Molecule Name  \r\n{line2}\n  Comment text  \n")
@@ -3257,7 +3280,13 @@ mod tests {
         ctab
     }
 
-    fn polymer_parse(heap: &mut SourceHeap, ctab: &mut MOL_FMT_CTAB, type_: &str, fields: &str, err: i32) -> i32 {
+    fn polymer_parse(
+        heap: &mut SourceHeap,
+        ctab: &mut MOL_FMT_CTAB,
+        type_: &str,
+        fields: &str,
+        err: i32,
+    ) -> i32 {
         let mut input = bytes(fields);
         input.resize(256, 0);
         let pointer = heap.allocate_model_storage(input).unwrap();
@@ -3278,7 +3307,11 @@ mod tests {
         result
     }
 
-    fn polymer_group(heap: &SourceHeap, ctab: &MOL_FMT_CTAB, id: i32) -> crate::source_types::MOL_FMT_SGROUP {
+    fn polymer_group(
+        heap: &SourceHeap,
+        ctab: &MOL_FMT_CTAB,
+        id: i32,
+    ) -> crate::source_types::MOL_FMT_SGROUP {
         let index = MolFmtSgroups_GetIndexBySgroupId(heap, id, &ctab.sgroups).unwrap();
         assert_ne!(index, -1);
         let pointer = mol_fmt1_sgroup_pointer(heap, &ctab.sgroups, index).unwrap();
@@ -3300,12 +3333,18 @@ mod tests {
             atom
         }
         fn versioned(ctab: &mut MOL_FMT_CTAB) {
-            ctab.version_string[..6].copy_from_slice(&[b'V' as i8, b'2' as i8, b'0' as i8, b'0' as i8, b'0' as i8, 0]);
+            ctab.version_string[..6].copy_from_slice(&[
+                b'V' as i8, b'2' as i8, b'0' as i8, b'0' as i8, b'0' as i8, 0,
+            ]);
         }
 
         let mut heap = SourceHeap::default();
         let atoms = heap
-            .allocate_model_storage(vec![atom("C", 5, 3, 9), atom("O", 6, 1, 8), atom("D", 7, 2, 7)])
+            .allocate_model_storage(vec![
+                atom("C", 5, 3, 9),
+                atom("O", 6, 1, 8),
+                atom("D", 7, 2, 7),
+            ])
             .unwrap();
         let mut ctab = MOL_FMT_CTAB {
             n_atoms: 3,
@@ -3340,15 +3379,27 @@ mod tests {
         assert_eq!(text(&errors), "");
         let parsed = heap.slice(atoms.as_const()).unwrap();
         assert_eq!(
-            (parsed[0].charge, parsed[0].radical, parsed[0].mass_difference),
+            (
+                parsed[0].charge,
+                parsed[0].radical,
+                parsed[0].mass_difference
+            ),
             (-1, 0, 1)
         );
         assert_eq!(
-            (parsed[1].charge, parsed[1].radical, parsed[1].mass_difference),
+            (
+                parsed[1].charge,
+                parsed[1].radical,
+                parsed[1].mass_difference
+            ),
             (0, 2, ZERO_ATW_DIFF as i8)
         );
         assert_eq!(
-            (parsed[2].charge, parsed[2].radical, parsed[2].mass_difference),
+            (
+                parsed[2].charge,
+                parsed[2].radical,
+                parsed[2].mass_difference
+            ),
             (0, 0, 0)
         );
 
@@ -3408,7 +3459,9 @@ mod tests {
             (0, 1, 0, 1)
         );
 
-        let control_atoms = heap.allocate_model_storage(vec![atom("N", 2, 1, 3)]).unwrap();
+        let control_atoms = heap
+            .allocate_model_storage(vec![atom("N", 2, 1, 3)])
+            .unwrap();
         let mut control_ctab = MOL_FMT_CTAB {
             n_atoms: 1,
             atoms: control_atoms,
@@ -3454,9 +3507,14 @@ mod tests {
         for (record, message) in [
             ("M  CHG  1   9   1\nM  END\n", "Charge not recognized:"),
             ("M  RAD  1   1   9\nM  END\n", "Radical not recognized:"),
-            ("M  ISO  1   9  13\nM  END\n", "Isotopic data not recognized:"),
+            (
+                "M  ISO  1   9  13\nM  END\n",
+                "Isotopic data not recognized:",
+            ),
         ] {
-            let one_atom = heap.allocate_model_storage(vec![atom("C", 1, 2, 3)]).unwrap();
+            let one_atom = heap
+                .allocate_model_storage(vec![atom("C", 1, 2, 3)])
+                .unwrap();
             let mut invalid_ctab = MOL_FMT_CTAB {
                 n_atoms: 1,
                 atoms: one_atom,
@@ -3505,7 +3563,9 @@ mod tests {
         assert_eq!(text(&errors), "Ignore polymer data");
 
         let mut polymer_ctab = polymer_ctab(&mut heap);
-        polymer_ctab.atoms = heap.allocate_model_storage(vec![MOL_FMT_ATOM::default(); 10]).unwrap();
+        polymer_ctab.atoms = heap
+            .allocate_model_storage(vec![MOL_FMT_ATOM::default(); 10])
+            .unwrap();
         versioned(&mut polymer_ctab);
         let mut polymer_stream = string_stream(&mut heap, "M  STY  1   1 SRU\nM  END\n");
         errors.fill(0);
@@ -3523,7 +3583,10 @@ mod tests {
             Ok(0)
         );
         assert_eq!(polymer_ctab.sgroups.used, 1, "{}", text(&errors));
-        assert_eq!(polymer_group(&heap, &polymer_ctab, 1).type_, MOL_FMT_M_STY_SRU as i32);
+        assert_eq!(
+            polymer_group(&heap, &polymer_ctab, 1).type_,
+            MOL_FMT_M_STY_SRU as i32
+        );
 
         let mut fixed_ctab = MOL_FMT_CTAB {
             n_property_lines: 2,
@@ -3650,20 +3713,47 @@ mod tests {
             assert_eq!(group.xbr2, [-777777.777; 4]);
             assert_eq!(group.smt[0], 0);
         }
-        assert_eq!(polymer_parse(&mut heap, &mut ctab, "STY", "  1 1 MON", 0), 0);
-        assert_eq!(ctab.sgroups.used, 6);
-        assert_eq!(polymer_group(&heap, &ctab, 1).type_, MOL_FMT_M_STY_MON as i32);
-
         assert_eq!(
-            polymer_parse(&mut heap, &mut ctab, "SST", "  4 1 ALT 2 RAN 3 BLO 4 BLK", 0,),
+            polymer_parse(&mut heap, &mut ctab, "STY", "  1 1 MON", 0),
             0
         );
-        assert_eq!(polymer_group(&heap, &ctab, 1).subtype, MOL_FMT_M_SST_ALT as i32);
-        assert_eq!(polymer_group(&heap, &ctab, 2).subtype, MOL_FMT_M_SST_RAN as i32);
-        assert_eq!(polymer_group(&heap, &ctab, 3).subtype, MOL_FMT_M_SST_BLK as i32);
-        assert_eq!(polymer_group(&heap, &ctab, 4).subtype, MOL_FMT_M_SST_BLK as i32);
+        assert_eq!(ctab.sgroups.used, 6);
+        assert_eq!(
+            polymer_group(&heap, &ctab, 1).type_,
+            MOL_FMT_M_STY_MON as i32
+        );
 
-        assert_eq!(polymer_parse(&mut heap, &mut ctab, "SLB", "  2 1 -12 2 32767", 0), 0);
+        assert_eq!(
+            polymer_parse(
+                &mut heap,
+                &mut ctab,
+                "SST",
+                "  4 1 ALT 2 RAN 3 BLO 4 BLK",
+                0,
+            ),
+            0
+        );
+        assert_eq!(
+            polymer_group(&heap, &ctab, 1).subtype,
+            MOL_FMT_M_SST_ALT as i32
+        );
+        assert_eq!(
+            polymer_group(&heap, &ctab, 2).subtype,
+            MOL_FMT_M_SST_RAN as i32
+        );
+        assert_eq!(
+            polymer_group(&heap, &ctab, 3).subtype,
+            MOL_FMT_M_SST_BLK as i32
+        );
+        assert_eq!(
+            polymer_group(&heap, &ctab, 4).subtype,
+            MOL_FMT_M_SST_BLK as i32
+        );
+
+        assert_eq!(
+            polymer_parse(&mut heap, &mut ctab, "SLB", "  2 1 -12 2 32767", 0),
+            0
+        );
         assert_eq!(polymer_group(&heap, &ctab, 1).label, -12);
         assert_eq!(polymer_group(&heap, &ctab, 2).label, 32767);
 
@@ -3671,12 +3761,27 @@ mod tests {
             polymer_parse(&mut heap, &mut ctab, "SCN", "  3 1 HT  2 HH  3 EU ", 0),
             0
         );
-        assert_eq!(polymer_group(&heap, &ctab, 1).conn, MOL_FMT_M_CONN_HT as i32);
-        assert_eq!(polymer_group(&heap, &ctab, 2).conn, MOL_FMT_M_CONN_HH as i32);
-        assert_eq!(polymer_group(&heap, &ctab, 3).conn, MOL_FMT_M_CONN_EU as i32);
+        assert_eq!(
+            polymer_group(&heap, &ctab, 1).conn,
+            MOL_FMT_M_CONN_HT as i32
+        );
+        assert_eq!(
+            polymer_group(&heap, &ctab, 2).conn,
+            MOL_FMT_M_CONN_HH as i32
+        );
+        assert_eq!(
+            polymer_group(&heap, &ctab, 3).conn,
+            MOL_FMT_M_CONN_EU as i32
+        );
 
-        assert_eq!(polymer_parse(&mut heap, &mut ctab, "SAL", "   1  3 1 2 10", 0), 0);
-        assert_eq!(polymer_parse(&mut heap, &mut ctab, "SAL", "   1  2 3 4", 0), 0);
+        assert_eq!(
+            polymer_parse(&mut heap, &mut ctab, "SAL", "   1  3 1 2 10", 0),
+            0
+        );
+        assert_eq!(
+            polymer_parse(&mut heap, &mut ctab, "SAL", "   1  2 3 4", 0),
+            0
+        );
         let group = polymer_group(&heap, &ctab, 1);
         assert_eq!(group.alist.used, 5);
         assert_eq!(
@@ -3684,22 +3789,37 @@ mod tests {
             &[1, 2, 10, 3, 4]
         );
 
-        assert_eq!(polymer_parse(&mut heap, &mut ctab, "SBL", "   1  3 1 4 8", 0), 0);
+        assert_eq!(
+            polymer_parse(&mut heap, &mut ctab, "SBL", "   1  3 1 4 8", 0),
+            0
+        );
         let group = polymer_group(&heap, &ctab, 1);
         assert_eq!(group.blist.used, 3);
-        assert_eq!(&heap.slice(group.blist.item.as_const()).unwrap()[..3], &[1, 4, 8]);
+        assert_eq!(
+            &heap.slice(group.blist.item.as_const()).unwrap()[..3],
+            &[1, 4, 8]
+        );
 
         assert_eq!(
             polymer_parse(&mut heap, &mut ctab, "SDI", "   1  4 1.25 -2.5 3 4", 0),
             0
         );
         assert_eq!(polymer_group(&heap, &ctab, 1).xbr1, [1.25, -2.5, 3.0, 4.0]);
-        assert_eq!(polymer_parse(&mut heap, &mut ctab, "SDI", "   1  4 5 6 7 8", 0), 0);
+        assert_eq!(
+            polymer_parse(&mut heap, &mut ctab, "SDI", "   1  4 5 6 7 8", 0),
+            0
+        );
         assert_eq!(polymer_group(&heap, &ctab, 1).xbr2, [5.0, 6.0, 7.0, 8.0]);
 
-        assert_eq!(polymer_parse(&mut heap, &mut ctab, "SMT", "   1   n value   ", 0), 0);
+        assert_eq!(
+            polymer_parse(&mut heap, &mut ctab, "SMT", "   1   n value   ", 0),
+            0
+        );
         assert_eq!(text(&polymer_group(&heap, &ctab, 1).smt), "n value");
-        assert_eq!(MolFmtSgroups_Free(&mut heap, Some(&mut ctab.sgroups)), Ok(()));
+        assert_eq!(
+            MolFmtSgroups_Free(&mut heap, Some(&mut ctab.sgroups)),
+            Ok(())
+        );
         assert_eq!(heap.live_source_allocation_count(), 0);
 
         for (type_, fields, expected) in [
@@ -3714,7 +3834,10 @@ mod tests {
         ] {
             let mut case_heap = SourceHeap::default();
             let mut case_ctab = polymer_ctab(&mut case_heap);
-            assert_eq!(polymer_parse(&mut case_heap, &mut case_ctab, "STY", "  1 1 SRU", 0), 0);
+            assert_eq!(
+                polymer_parse(&mut case_heap, &mut case_ctab, "STY", "  1 1 SRU", 0),
+                0
+            );
             assert_eq!(
                 polymer_parse(&mut case_heap, &mut case_ctab, type_, fields, 99),
                 expected,
@@ -3727,9 +3850,15 @@ mod tests {
         let mut ignored_heap = SourceHeap::default();
         let mut ignored = polymer_ctab(&mut ignored_heap);
         let before = ignored.sgroups.clone();
-        assert_eq!(polymer_parse(&mut ignored_heap, &mut ignored, "STY", "  0", 77), 0);
+        assert_eq!(
+            polymer_parse(&mut ignored_heap, &mut ignored, "STY", "  0", 77),
+            0
+        );
         assert_eq!(ignored.sgroups, before);
-        assert_eq!(polymer_parse(&mut ignored_heap, &mut ignored, "XYZ", "bad", 77), 0);
+        assert_eq!(
+            polymer_parse(&mut ignored_heap, &mut ignored, "XYZ", "bad", 77),
+            0
+        );
         assert_eq!(ignored.sgroups, before);
         assert_eq!(
             MolFmtSgroups_Free(&mut ignored_heap, Some(&mut ignored.sgroups)),
@@ -3739,7 +3868,10 @@ mod tests {
         let mut failure_heap = SourceHeap::default();
         let mut failure = polymer_ctab(&mut failure_heap);
         failure_heap.fail_after_allocations(0);
-        assert_eq!(polymer_parse(&mut failure_heap, &mut failure, "STY", "  1 1 SRU", 0), 5);
+        assert_eq!(
+            polymer_parse(&mut failure_heap, &mut failure, "STY", "  1 1 SRU", 0),
+            5
+        );
         assert_eq!(failure.sgroups, MOL_FMT_SGROUPS::default());
         assert_eq!(failure_heap.live_source_allocation_count(), 0);
     }
@@ -3758,7 +3890,13 @@ mod tests {
         assert_eq!(text(&header.user_initls), "AB");
         assert_eq!(text(&header.prog_name), "PROGNAME");
         assert_eq!(
-            (header.month, header.day, header.year, header.hour, header.minute),
+            (
+                header.month,
+                header.day,
+                header.year,
+                header.hour,
+                header.minute
+            ),
             (1, 2, 24, 12, 34)
         );
         assert_eq!(text(&header.dim_code), "2D");
@@ -3796,7 +3934,12 @@ mod tests {
             let mut partial_stream = string_stream(&mut heap, partial);
             let mut partial_header = MOL_FMT_HEADER_BLOCK::default();
             assert_eq!(
-                MolfileReadHeaderLines(&mut heap, &mut partial_header, Some(&mut partial_stream), None),
+                MolfileReadHeaderLines(
+                    &mut heap,
+                    &mut partial_header,
+                    Some(&mut partial_stream),
+                    None
+                ),
                 Ok(expected)
             );
         }
@@ -3806,7 +3949,10 @@ mod tests {
     fn source_port__mol_fmt1__molfilereadcountsline__line_569() {
         fn counts(version: &str) -> String {
             let fields = [2, 1, 0, 0, 1, 0, 0, 0, 0, 0, 999];
-            let fixed = fields.iter().map(|value| format!("{value:>3}")).collect::<String>();
+            let fixed = fields
+                .iter()
+                .map(|value| format!("{value:>3}"))
+                .collect::<String>();
             assert_eq!(fixed.len(), 33);
             format!("{fixed} {version}\n")
         }
@@ -3829,13 +3975,21 @@ mod tests {
         assert_eq!(ctab.n_atoms, i32::from_ne_bytes([2, 0, 0x34, 0x12]));
         assert_eq!(ctab.n_bonds, i32::from_ne_bytes([1, 0, 0x78, 0x56]));
         assert_eq!(
-            (ctab.chiral_flag, ctab.n_stext_entries, ctab.n_property_lines),
+            (
+                ctab.chiral_flag,
+                ctab.n_stext_entries,
+                ctab.n_property_lines
+            ),
             (1, 0, 999)
         );
         assert_eq!(text(&ctab.version_string), "V2000");
         assert!(ctab.v3000.is_null());
         assert_eq!(
-            (ctab.sgroups.allocated, ctab.sgroups.used, ctab.sgroups.increment),
+            (
+                ctab.sgroups.allocated,
+                ctab.sgroups.used,
+                ctab.sgroups.increment
+            ),
             (1, 0, 1)
         );
         assert_eq!(
@@ -3851,13 +4005,21 @@ mod tests {
             Ok(0)
         );
         assert!(!v3000.v3000.is_null());
-        assert_eq!(heap.slice(v3000.v3000.as_const()).unwrap(), &[MOL_FMT_v3000::default()]);
+        assert_eq!(
+            heap.slice(v3000.v3000.as_const()).unwrap(),
+            &[MOL_FMT_v3000::default()]
+        );
 
         let mut empty = string_stream(&mut heap, "");
         let mut empty_ctab = MOL_FMT_CTAB::default();
         errors.fill(0);
         assert_eq!(
-            MolfileReadCountsLine(&mut heap, &mut empty_ctab, Some(&mut empty), Some(&mut errors)),
+            MolfileReadCountsLine(
+                &mut heap,
+                &mut empty_ctab,
+                Some(&mut empty),
+                Some(&mut errors)
+            ),
             Ok(1)
         );
         assert_eq!(error_text(&errors), "Cannot read counts line");
@@ -3866,10 +4028,18 @@ mod tests {
         let mut malformed_ctab = MOL_FMT_CTAB::default();
         errors.fill(0);
         assert_eq!(
-            MolfileReadCountsLine(&mut heap, &mut malformed_ctab, Some(&mut malformed), Some(&mut errors)),
+            MolfileReadCountsLine(
+                &mut heap,
+                &mut malformed_ctab,
+                Some(&mut malformed),
+                Some(&mut errors)
+            ),
             Ok(3)
         );
-        assert_eq!(error_text(&errors), "Cannot interpret counts line:  xx.broken");
+        assert_eq!(
+            error_text(&errors),
+            "Cannot interpret counts line:  xx.broken"
+        );
 
         let base = counts("V2000").trim_end().to_owned();
         let long_line = format!("{}{}\n", base, " ".repeat(201 - base.len()));
@@ -3878,7 +4048,12 @@ mod tests {
         let mut long_ctab = MOL_FMT_CTAB::default();
         errors.fill(0);
         assert_eq!(
-            MolfileReadCountsLine(&mut heap, &mut long_ctab, Some(&mut long_stream), Some(&mut errors)),
+            MolfileReadCountsLine(
+                &mut heap,
+                &mut long_ctab,
+                Some(&mut long_stream),
+                Some(&mut errors)
+            ),
             Ok(0)
         );
         assert_eq!(error_text(&errors), "Too long counts line");
@@ -3905,7 +4080,12 @@ mod tests {
         let mut ignored_ctab = MOL_FMT_CTAB::default();
         ignored_heap.fail_after_allocations(0);
         assert_eq!(
-            MolfileReadCountsLine(&mut ignored_heap, &mut ignored_ctab, Some(&mut ignored_stream), None),
+            MolfileReadCountsLine(
+                &mut ignored_heap,
+                &mut ignored_ctab,
+                Some(&mut ignored_stream),
+                None
+            ),
             Ok(0)
         );
         assert!(ignored_ctab.sgroups.group.is_null());
@@ -3940,11 +4120,20 @@ mod tests {
         };
         let mut errors = [0_i8; 256];
         assert_eq!(
-            MolfileReadAtomsBlock(&mut heap, &mut ctab, Some(&mut stream), 0, Some(&mut errors)),
+            MolfileReadAtomsBlock(
+                &mut heap,
+                &mut ctab,
+                Some(&mut stream),
+                0,
+                Some(&mut errors)
+            ),
             Ok(0)
         );
         let parsed = heap.slice(atoms.as_const()).unwrap();
-        assert_eq!((parsed[0].fx, parsed[0].fy, parsed[0].fz), (1.25, -2.5, 3.75));
+        assert_eq!(
+            (parsed[0].fx, parsed[0].fy, parsed[0].fz),
+            (1.25, -2.5, 3.75)
+        );
         assert_eq!(&parsed[0].symbol[..3], &[b'C' as i8, b'l' as i8, 0]);
         assert_eq!(
             (
@@ -3956,7 +4145,10 @@ mod tests {
             ),
             (2, 3, 0, 3, 6)
         );
-        assert_eq!((parsed[1].charge, parsed[1].radical), (0, RADICAL_DOUBLET as i8));
+        assert_eq!(
+            (parsed[1].charge, parsed[1].radical),
+            (0, RADICAL_DOUBLET as i8)
+        );
         assert_eq!((parsed[2].charge, parsed[2].radical), (-5, 0));
         let stored_coords = heap.slice(coords.as_const()).unwrap();
         let expected_prefix = format!("{:>10.4}{:>10.4}{:>10.4}", 1.25, -2.5, 3.75);
@@ -3979,7 +4171,13 @@ mod tests {
         };
         errors.fill(0);
         assert_eq!(
-            MolfileReadAtomsBlock(&mut heap, &mut eof_ctab, Some(&mut eof_stream), 0, Some(&mut errors)),
+            MolfileReadAtomsBlock(
+                &mut heap,
+                &mut eof_ctab,
+                Some(&mut eof_stream),
+                0,
+                Some(&mut errors)
+            ),
             Ok(2)
         );
         assert_eq!(text(&errors), "Cannot read atom block line");
@@ -4013,7 +4211,13 @@ mod tests {
         };
         errors.fill(0);
         assert_eq!(
-            MolfileReadAtomsBlock(&mut heap, &mut end_ctab, Some(&mut end_stream), 0, Some(&mut errors)),
+            MolfileReadAtomsBlock(
+                &mut heap,
+                &mut end_ctab,
+                Some(&mut end_stream),
+                0,
+                Some(&mut errors)
+            ),
             Ok(-4)
         );
 
@@ -4051,7 +4255,13 @@ mod tests {
         };
         errors.fill(0);
         assert_eq!(
-            MolfileReadAtomsBlock(&mut heap, &mut long_ctab, Some(&mut long_stream), 0, Some(&mut errors)),
+            MolfileReadAtomsBlock(
+                &mut heap,
+                &mut long_ctab,
+                Some(&mut long_stream),
+                0,
+                Some(&mut errors)
+            ),
             Ok(0)
         );
         assert_eq!(text(&errors), "Too long atom block line");
@@ -4071,7 +4281,10 @@ mod tests {
     #[test]
     fn source_port__mol_fmt1__molfilereadbondsblock__line_820() {
         fn bond_line(first: i16, second: i16, bond_type: i8, stereo: i8) -> String {
-            format!("{first:>3}{second:>3}{bond_type:>3}{stereo:>3}{:>3}{:>3}\n", 0, 0)
+            format!(
+                "{first:>3}{second:>3}{bond_type:>3}{stereo:>3}{:>3}{:>3}\n",
+                0, 0
+            )
         }
 
         let mut heap = SourceHeap::default();
@@ -4085,7 +4298,13 @@ mod tests {
         };
         let mut errors = [0_i8; 256];
         assert_eq!(
-            MolfileReadBondsBlock(&mut heap, &mut ctab, Some(&mut stream), 0, Some(&mut errors)),
+            MolfileReadBondsBlock(
+                &mut heap,
+                &mut ctab,
+                Some(&mut stream),
+                0,
+                Some(&mut errors)
+            ),
             Ok(0)
         );
         assert_eq!(
@@ -4114,7 +4333,13 @@ mod tests {
         };
         errors.fill(0);
         assert_eq!(
-            MolfileReadBondsBlock(&mut heap, &mut eof_ctab, Some(&mut eof_stream), 0, Some(&mut errors)),
+            MolfileReadBondsBlock(
+                &mut heap,
+                &mut eof_ctab,
+                Some(&mut eof_stream),
+                0,
+                Some(&mut errors)
+            ),
             Ok(2)
         );
         assert_eq!(text(&errors), "Cannot read bond block line");
@@ -4137,7 +4362,10 @@ mod tests {
             ),
             Ok(4)
         );
-        assert_eq!(text(&errors), "Cannot interpret bond block line:   1 xx.bad");
+        assert_eq!(
+            text(&errors),
+            "Cannot interpret bond block line:   1 xx.bad"
+        );
         assert_eq!(heap.slice(malformed_bonds.as_const()).unwrap()[0].atnum1, 1);
 
         let valid = bond_line(1, 2, 1, 0);
@@ -4151,10 +4379,19 @@ mod tests {
         };
         errors.fill(0);
         assert_eq!(
-            MolfileReadBondsBlock(&mut heap, &mut long_ctab, Some(&mut long_stream), 0, Some(&mut errors)),
+            MolfileReadBondsBlock(
+                &mut heap,
+                &mut long_ctab,
+                Some(&mut long_stream),
+                0,
+                Some(&mut errors)
+            ),
             Ok(3)
         );
-        assert_eq!(heap.slice(long_bonds.as_const()).unwrap()[0], MOL_FMT_BOND::default());
+        assert_eq!(
+            heap.slice(long_bonds.as_const()).unwrap()[0],
+            MOL_FMT_BOND::default()
+        );
         assert_eq!(text(&errors), "");
 
         let prior_bonds = heap.allocate(vec![MOL_FMT_BOND::default(); 2]).unwrap();
@@ -4205,7 +4442,13 @@ mod tests {
             ..MOL_FMT_CTAB::default()
         };
         assert_eq!(
-            MolfileReadSTextBlock(&mut heap, &eof_ctab, Some(&mut eof_stream), 0, Some(&mut errors)),
+            MolfileReadSTextBlock(
+                &mut heap,
+                &eof_ctab,
+                Some(&mut eof_stream),
+                0,
+                Some(&mut errors)
+            ),
             Ok(2)
         );
         assert_eq!(text(&errors), "Cannot read STEXT block line");
@@ -4213,7 +4456,13 @@ mod tests {
         let mut prior_stream = string_stream(&mut heap, "");
         errors.fill(0);
         assert_eq!(
-            MolfileReadSTextBlock(&mut heap, &eof_ctab, Some(&mut prior_stream), 7, Some(&mut errors)),
+            MolfileReadSTextBlock(
+                &mut heap,
+                &eof_ctab,
+                Some(&mut prior_stream),
+                7,
+                Some(&mut errors)
+            ),
             Ok(7)
         );
         assert_eq!(text(&errors), "");
@@ -4224,7 +4473,13 @@ mod tests {
             ..MOL_FMT_CTAB::default()
         };
         assert_eq!(
-            MolfileReadSTextBlock(&mut heap, &negative_ctab, Some(&mut negative_stream), 0, None),
+            MolfileReadSTextBlock(
+                &mut heap,
+                &negative_ctab,
+                Some(&mut negative_stream),
+                0,
+                None
+            ),
             Ok(0)
         );
         assert_eq!(negative_stream.s.nPtr, 0);
@@ -4234,7 +4489,10 @@ mod tests {
     fn source_port__mol_fmt1__molfilereaddatalines__line_165() {
         fn counts(atoms: i32, bonds: i32, version: &str) -> String {
             let fields = [atoms, bonds, 0, 0, 1, 0, 0, 0, 0, 0, 999];
-            let fixed = fields.iter().map(|value| format!("{value:>3}")).collect::<String>();
+            let fixed = fields
+                .iter()
+                .map(|value| format!("{value:>3}"))
+                .collect::<String>();
             assert_eq!(fixed.len(), 33);
             format!("{fixed} {version}\n")
         }
@@ -4247,7 +4505,10 @@ mod tests {
         }
 
         fn bond_line(first: i16, second: i16, bond_type: i8, stereo: i8) -> String {
-            format!("{first:>3}{second:>3}{bond_type:>3}{stereo:>3}{:>3}{:>3}\n", 0, 0)
+            format!(
+                "{first:>3}{second:>3}{bond_type:>3}{stereo:>3}{:>3}{:>3}\n",
+                0, 0
+            )
         }
 
         fn v2000(atom_one: (&str, i8, i8), atom_two: Option<(&str, i8, i8)>) -> String {
@@ -4368,7 +4629,11 @@ mod tests {
                 .coords
                 .is_null()
         );
-        assert!(FreeMolfileData(&mut no_coords_heap, no_coords).unwrap().is_null());
+        assert!(
+            FreeMolfileData(&mut no_coords_heap, no_coords)
+                .unwrap()
+                .is_null()
+        );
 
         let v3000_source = format!(
             "{}{}M  V30 BEGIN CTAB\nM  V30 COUNTS 1 0 0 0 0\nM  V30 BEGIN ATOM\nM  V30 1 C 1 -2.5 3.75 0\nM  V30 END ATOM\nM  V30 END CTAB\nM  END\n",
@@ -4439,8 +4704,16 @@ mod tests {
         assert_eq!(ended_heap.live_source_allocation_count(), 1);
 
         for (source, expected_err, expected_text) in [
-            (v2000(("C", 0, 21), None), 79, "Too large input atomic valence"),
-            (v2000(("H", 3, 1), None), 78, "Unacceptable isotope of hydrogen"),
+            (
+                v2000(("C", 0, 21), None),
+                79,
+                "Too large input atomic valence",
+            ),
+            (
+                v2000(("H", 3, 1), None),
+                78,
+                "Unacceptable isotope of hydrogen",
+            ),
         ] {
             let mut case_heap = SourceHeap::default();
             let mut case_stream = string_stream(&mut case_heap, &source);
@@ -4492,7 +4765,10 @@ mod tests {
     fn source_port__mol_fmt1__readmolfile__line_92() {
         fn counts(atoms: i32, bonds: i32) -> String {
             let fields = [atoms, bonds, 0, 0, 1, 0, 0, 0, 0, 0, 999];
-            let fixed = fields.iter().map(|value| format!("{value:>3}")).collect::<String>();
+            let fixed = fields
+                .iter()
+                .map(|value| format!("{value:>3}"))
+                .collect::<String>();
             format!("{fixed} V2000\n")
         }
 
@@ -4556,14 +4832,24 @@ mod tests {
             &[b'N' as i8, b'E' as i8, b'X' as i8, b'T' as i8, b'\n' as i8]
         );
         let parsed_ctab = &heap.slice(data.as_const()).unwrap()[0].ctab;
-        assert_eq!(text(&heap.slice(parsed_ctab.atoms.as_const()).unwrap()[0].symbol), "C");
+        assert_eq!(
+            text(&heap.slice(parsed_ctab.atoms.as_const()).unwrap()[0].symbol),
+            "C"
+        );
         assert!(FreeMolfileData(&mut heap, data).unwrap().is_null());
 
         for (symbol, treat_polymers, treat_npzz, expected_symbol, expected_err, expected_text) in [
             ("*", POLYMERS_NO as i32, 1, "Zz", 0, ""),
             ("*", 1, 0, "Zz", 0, ""),
             ("*", POLYMERS_NO as i32, 0, "*", 76, "Invalid element(s): *"),
-            ("Zy", POLYMERS_NO as i32, 1, "Zy", 76, "Invalid element(s): Zy"),
+            (
+                "Zy",
+                POLYMERS_NO as i32,
+                1,
+                "Zy",
+                76,
+                "Invalid element(s): Zy",
+            ),
         ] {
             let mut case_heap = SourceHeap::default();
             let case_source = format!("{}$$$$\n", molfile(symbol));
@@ -4622,7 +4908,8 @@ mod tests {
         assert!(ended.is_null());
         assert_eq!(ended_err, 34);
         assert_eq!(
-            &ended_heap.slice(ended_stream.s.pStr.as_const()).unwrap()[ended_stream.s.nPtr as usize..][..5],
+            &ended_heap.slice(ended_stream.s.pStr.as_const()).unwrap()
+                [ended_stream.s.nPtr as usize..][..5],
             &[b'N' as i8, b'E' as i8, b'X' as i8, b'T' as i8, b'\n' as i8]
         );
 
@@ -4706,7 +4993,13 @@ mod tests {
         err = 0;
         errors.fill(0);
         assert_eq!(
-            MolfileTreatPseudoElementAtoms(&mut heap, &mut prohibited, 0, &mut err, Some(&mut errors),),
+            MolfileTreatPseudoElementAtoms(
+                &mut heap,
+                &mut prohibited,
+                0,
+                &mut err,
+                Some(&mut errors),
+            ),
             Ok(2)
         );
         assert_eq!(err, 76);
@@ -4725,7 +5018,13 @@ mod tests {
         err = 91;
         errors.fill(0);
         assert_eq!(
-            MolfileTreatPseudoElementAtoms(&mut heap, &mut preexisting, -7, &mut err, Some(&mut errors),),
+            MolfileTreatPseudoElementAtoms(
+                &mut heap,
+                &mut preexisting,
+                -7,
+                &mut err,
+                Some(&mut errors),
+            ),
             Ok(0)
         );
         assert_eq!(err, 91);

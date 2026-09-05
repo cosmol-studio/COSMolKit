@@ -7,7 +7,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .map(|point| [point[0] + 3.0, point[1] - 2.0, point[2] + 1.0])
         .collect();
 
-    let reference = Molecule::from_smiles("CCC")?.with_only_3d_conformer(reference_coordinates, true)?;
+    let reference =
+        Molecule::from_smiles("CCC")?.with_only_3d_conformer(reference_coordinates, true)?;
     let probe = Molecule::from_smiles("CCC")?.with_only_3d_conformer(probe_coordinates, true)?;
     let params = AlignmentParameters {
         atom_map: Some(

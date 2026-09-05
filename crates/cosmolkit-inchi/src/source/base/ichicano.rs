@@ -8,19 +8,21 @@ use crate::source::base::ichimap1::{CompareLinCtStereo, CurTreeAlloc, CurTreeFre
 use crate::source::base::ichimap2::{SortedEquInfoToRanks, SortedRanksToEquInfo};
 use crate::source::base::ichimap4::map_stereo_bonds4;
 use crate::source::base::ichisort::{
-    CompNeighborsAT_NUMBER, CompNeighborsATNumberContext, CompRank, CompRanksOrd, FreeNeighList, inchi_qsort,
-    insertions_sort,
+    CompNeighborsAT_NUMBER, CompNeighborsATNumberContext, CompRank, CompRanksOrd, FreeNeighList,
+    inchi_qsort, insertions_sort,
 };
 use crate::source::base::ichitaut::SortTautomerGroupsAndEndpoints;
 use crate::source::base::util::{inchi_calloc, inchi_free};
 use crate::source_types::{
-    AB_PARITY_UNDF, AB_PARITY_UNKN, AT_FLAG_ISO_H_POINT, AT_ISO_TGROUP, AT_ISOTOPIC, AT_NUMB, AT_RANK, AT_TAUTOMER,
-    ATOM_SIZES, CANON_GLOBALS, CANON_STAT, CMODE_ISO, CMODE_ISO_STEREO, CMODE_NOEQ_STEREO, CMODE_STEREO, CT_ATOMID,
-    CT_ATOMID_DONTINCLUDE, CT_CALC_STEREO_ERR, CT_CANON_ERR, CT_ERR_MAX, CT_ERR_MIN, CT_LEN_MISMATCH, CT_OUT_OF_RAM,
-    CT_OVERFLOW, CT_STEREOCOUNT_ERR, CUR_TREE, INCHI_CLOCK, MAX_NUM_STEREO_BONDS, MAXVAL, REQ_MODE_DIFF_UU_STEREO,
-    SourceConstPointer, SourceHeap, SourceHeapError, SourceMutPointer, T_GROUP_HDR_LEN, T_GROUP_INFO,
-    T_NUM_NO_ISOTOPIC, TG_FLAG_FOUND_ISOTOPIC_ATOM_DONE, TG_FLAG_FOUND_ISOTOPIC_H_DONE, TGSO_SYMM_IORDER,
-    TGSO_SYMM_IRANK, TGSO_SYMM_RANK, clock_t, inchiTime, sp_ATOM,
+    AB_PARITY_UNDF, AB_PARITY_UNKN, AT_FLAG_ISO_H_POINT, AT_ISO_TGROUP, AT_ISOTOPIC, AT_NUMB,
+    AT_RANK, AT_TAUTOMER, ATOM_SIZES, CANON_GLOBALS, CANON_STAT, CMODE_ISO, CMODE_ISO_STEREO,
+    CMODE_NOEQ_STEREO, CMODE_STEREO, CT_ATOMID, CT_ATOMID_DONTINCLUDE, CT_CALC_STEREO_ERR,
+    CT_CANON_ERR, CT_ERR_MAX, CT_ERR_MIN, CT_LEN_MISMATCH, CT_OUT_OF_RAM, CT_OVERFLOW,
+    CT_STEREOCOUNT_ERR, CUR_TREE, INCHI_CLOCK, MAX_NUM_STEREO_BONDS, MAXVAL,
+    REQ_MODE_DIFF_UU_STEREO, SourceConstPointer, SourceHeap, SourceHeapError, SourceMutPointer,
+    T_GROUP_HDR_LEN, T_GROUP_INFO, T_NUM_NO_ISOTOPIC, TG_FLAG_FOUND_ISOTOPIC_ATOM_DONE,
+    TG_FLAG_FOUND_ISOTOPIC_H_DONE, TGSO_SYMM_IORDER, TGSO_SYMM_IRANK, TGSO_SYMM_RANK, clock_t,
+    inchiTime, sp_ATOM,
 };
 
 fn source_copy<T: Clone + 'static>(
@@ -213,7 +215,11 @@ pub(crate) fn InchiTimeMsecDiff(
 }
 
 #[allow(non_snake_case)]
-pub(crate) fn InchiTimeElapsed(ic: &mut INCHI_CLOCK, tick_start: Option<&inchiTime>, clock_result: clock_t) -> i64 {
+pub(crate) fn InchiTimeElapsed(
+    ic: &mut INCHI_CLOCK,
+    tick_start: Option<&inchiTime>,
+    clock_result: clock_t,
+) -> i64 {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichicano.c:223 InchiTimeElapsed
     // INCHI✔❌: long InchiTimeElapsed( INCHI_CLOCK *ic, inchiTime *TickStart )
     // INCHI✔❌: {
@@ -234,7 +240,11 @@ pub(crate) fn InchiTimeElapsed(ic: &mut INCHI_CLOCK, tick_start: Option<&inchiTi
 }
 
 #[allow(non_snake_case)]
-pub(crate) fn InchiTimeAddMsec(ic: &mut INCHI_CLOCK, tick_end: Option<&mut inchiTime>, number_msec: u64) {
+pub(crate) fn InchiTimeAddMsec(
+    ic: &mut INCHI_CLOCK,
+    tick_end: Option<&mut inchiTime>,
+    number_msec: u64,
+) {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichicano.c:234 InchiTimeAddMsec
     // INCHI✔️✔️: void InchiTimeAddMsec( INCHI_CLOCK *ic, inchiTime *TickEnd, unsigned long nNumMsec )
     // INCHI✔️✔️: {
@@ -271,7 +281,11 @@ pub(crate) fn InchiTimeAddMsec(ic: &mut INCHI_CLOCK, tick_end: Option<&mut inchi
 }
 
 #[allow(non_snake_case)]
-pub(crate) fn bInchiTimeIsOver(ic: &mut INCHI_CLOCK, tick_start: Option<&inchiTime>, clock_result: clock_t) -> i32 {
+pub(crate) fn bInchiTimeIsOver(
+    ic: &mut INCHI_CLOCK,
+    tick_start: Option<&inchiTime>,
+    clock_result: clock_t,
+) -> i32 {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichicano.c:257 bInchiTimeIsOver
     // INCHI✔❌: int bInchiTimeIsOver( INCHI_CLOCK *ic, inchiTime *TickStart )
     // INCHI✔❌: {
@@ -448,7 +462,8 @@ pub(crate) fn FillIsotopicAtLinearCT(
     if LinearCTIsotopic.is_null() || nMaxLenLinearCTIsotopic <= 0 {
         return Ok(0);
     }
-    let capacity = usize::try_from(nMaxLenLinearCTIsotopic).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let capacity = usize::try_from(nMaxLenLinearCTIsotopic)
+        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     heap.slice_mut(LinearCTIsotopic)?
         .get_mut(..capacity)
         .ok_or(SourceHeapError::PointerOutOfBounds)?
@@ -482,9 +497,21 @@ pub(crate) fn FillIsotopicAtLinearCT(
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
                 record.at_num = rank as AT_RANK;
                 record.iso_atw_diff = atom.iso_atw_diff as _;
-                record.num_1H = if has_isotopic_h { atom.num_iso_H[0] as _ } else { 0 };
-                record.num_D = if has_isotopic_h { atom.num_iso_H[1] as _ } else { 0 };
-                record.num_T = if has_isotopic_h { atom.num_iso_H[2] as _ } else { 0 };
+                record.num_1H = if has_isotopic_h {
+                    atom.num_iso_H[0] as _
+                } else {
+                    0
+                };
+                record.num_D = if has_isotopic_h {
+                    atom.num_iso_H[1] as _
+                } else {
+                    0
+                };
+                record.num_T = if has_isotopic_h {
+                    atom.num_iso_H[2] as _
+                } else {
+                    0
+                };
                 output_len = output_len.wrapping_add(1);
             }
         }
@@ -611,7 +638,8 @@ pub(crate) fn GetCanonLengths(
                 let opposite_atom = atoms
                     .get(usize::from(opposite - 1))
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                n_stereo_bonds_to_atom = n_stereo_bonds_to_atom.wrapping_add(i32::from(opposite_atom.parity > 0));
+                n_stereo_bonds_to_atom =
+                    n_stereo_bonds_to_atom.wrapping_add(i32::from(opposite_atom.parity > 0));
                 j += 1;
             }
             n_num_dbl_bonds_stereo = n_num_dbl_bonds_stereo.wrapping_add(n_stereo_bonds_to_atom);
@@ -663,7 +691,10 @@ pub(crate) fn GetCanonLengths(
 }
 
 #[allow(non_snake_case)]
-pub(crate) fn DeAllocateCS(heap: &mut SourceHeap, pCS: &mut CANON_STAT) -> Result<i32, SourceHeapError> {
+pub(crate) fn DeAllocateCS(
+    heap: &mut SourceHeap,
+    pCS: &mut CANON_STAT,
+) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichicano.c:491 DeAllocateCS
     // INCHI✔️❌: complete source frame follows verbatim.
     /*
@@ -1051,10 +1082,15 @@ pub(crate) fn AllocateCS(
         pCS.nLenLinearCTIsotopic = nLenIsotopic;
     }
     if nMode & u64::from(CMODE_ISO) != 0
-        && u64::from(crate::source_types::CANON_MODE_TAUT) == nMode & u64::from(crate::source_types::CANON_MODE_TAUT)
+        && u64::from(crate::source_types::CANON_MODE_TAUT)
+            == nMode & u64::from(crate::source_types::CANON_MODE_TAUT)
     {
         if nLenLinearCTIsotopicTautomer > 0 {
-            calloc_field!(LinearCTIsotopicTautomer, AT_ISO_TGROUP, nLenLinearCTIsotopicTautomer);
+            calloc_field!(
+                LinearCTIsotopicTautomer,
+                AT_ISO_TGROUP,
+                nLenLinearCTIsotopicTautomer
+            );
             pCS.nMaxLenLinearCTIsotopicTautomer = nLenLinearCTIsotopicTautomer;
             pCS.nLenLinearCTIsotopicTautomer = nLenLinearCTIsotopicTautomer;
         }
@@ -1097,10 +1133,15 @@ pub(crate) fn AllocateCS(
         pCS.nMaxLenLinearCTStereoCarb = nLenLinearCTStereoCarb;
         pCS.nLenLinearCTStereoCarb = nLenLinearCTStereoCarb;
     }
-    if nMode & u64::from(CMODE_STEREO) != 0 && (nLenLinearCTStereoDble > 0 || nLenLinearCTStereoCarb > 0) {
+    if nMode & u64::from(CMODE_STEREO) != 0
+        && (nLenLinearCTStereoDble > 0 || nLenLinearCTStereoCarb > 0)
+    {
         calloc_field!(nCanonOrdStereo, AT_RANK, num_at_tg);
         calloc_field!(nCanonOrdStereoInv, AT_RANK, num_at_tg);
-        if nMode & u64::from(crate::source_types::CMODE_TAUT) != 0 && nLenLinearCTTautomer > 0 && num_t_groups > 0 {
+        if nMode & u64::from(crate::source_types::CMODE_TAUT) != 0
+            && nLenLinearCTTautomer > 0
+            && num_t_groups > 0
+        {
             calloc_field!(nCanonOrdStereoTaut, AT_RANK, num_t_groups);
         }
     }
@@ -1139,11 +1180,15 @@ pub(crate) fn AllocateCS(
     {
         calloc_field!(nCanonOrdIsotopicStereo, AT_RANK, num_at_tg);
         calloc_field!(nCanonOrdIsotopicStereoInv, AT_RANK, num_at_tg);
-        if nMode & u64::from(crate::source_types::CMODE_TAUT) != 0 && nLenLinearCTTautomer > 0 && num_t_groups > 0 {
+        if nMode & u64::from(crate::source_types::CMODE_TAUT) != 0
+            && nLenLinearCTTautomer > 0
+            && num_t_groups > 0
+        {
             calloc_field!(nCanonOrdIsotopicStereoTaut, AT_RANK, num_t_groups);
         }
     }
-    if (nMode & u64::from(CMODE_STEREO) != 0 && (nLenLinearCTStereoDble > 0 || nLenLinearCTStereoCarb > 0))
+    if (nMode & u64::from(CMODE_STEREO) != 0
+        && (nLenLinearCTStereoDble > 0 || nLenLinearCTStereoCarb > 0))
         || (nMode & u64::from(CMODE_ISO_STEREO) != 0
             && (nLenLinearCTIsotopicStereoDble > 0 || nLenLinearCTIsotopicStereoCarb > 0))
     {
@@ -1400,9 +1445,11 @@ pub(crate) fn FillTautLinearCT2(
     if num_at_tg <= num_atoms || info.num_t_groups == 0 {
         return Ok(0);
     }
-    let group_count = usize::try_from(info.num_t_groups).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let group_count =
+        usize::try_from(info.num_t_groups).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let atom_count = usize::try_from(num_atoms).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    let total_count = usize::try_from(num_at_tg).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let total_count =
+        usize::try_from(num_at_tg).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let offset = num_atoms as AT_RANK;
     for (group_index, pseudo_index) in (atom_count..total_count).enumerate() {
         let group_number = heap
@@ -1418,7 +1465,9 @@ pub(crate) fn FillTautLinearCT2(
             .ok_or(SourceHeapError::PointerOutOfBounds)?
             .wrapping_sub(offset);
         let work = heap.slice_mut(info.tGroupNumber)?;
-        *work.get_mut(group_index).ok_or(SourceHeapError::PointerOutOfBounds)? = group_number;
+        *work
+            .get_mut(group_index)
+            .ok_or(SourceHeapError::PointerOutOfBounds)? = group_number;
         *work
             .get_mut(TGSO_SYMM_RANK as usize * group_count + group_index)
             .ok_or(SourceHeapError::PointerOutOfBounds)? = symmetry;
@@ -2166,11 +2215,20 @@ pub(crate) fn FixCanonEquivalenceInfo(
                 .checked_mul(size_of::<AT_NUMB>())
                 .ok_or(SourceHeapError::AllocationSizeOverflow)?;
             // AT_NUMB and the comparator's AT_RANK records are the same source uint16_t type.
-            let bytes = unsafe { std::slice::from_raw_parts_mut(atom_numbers.as_mut_ptr().cast::<u8>(), byte_len) };
+            let bytes = unsafe {
+                std::slice::from_raw_parts_mut(atom_numbers.as_mut_ptr().cast::<u8>(), byte_len)
+            };
             inchi_qsort(bytes, count, size_of::<AT_NUMB>(), &mut |first, second| {
-                let first = AT_RANK::from_ne_bytes(first.try_into().map_err(|_| SourceHeapError::PointerOutOfBounds)?);
-                let second =
-                    AT_RANK::from_ne_bytes(second.try_into().map_err(|_| SourceHeapError::PointerOutOfBounds)?);
+                let first = AT_RANK::from_ne_bytes(
+                    first
+                        .try_into()
+                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                );
+                let second = AT_RANK::from_ne_bytes(
+                    second
+                        .try_into()
+                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                );
                 CompRanksOrd(heap, first, second, pCG)
             })
         })?;
@@ -2201,7 +2259,9 @@ pub(crate) fn FixCanonEquivalenceInfo(
     };
     if bChangeCurrRank {
         heap.with_slice_mut_and_heap(nCurrRank, |current, heap| {
-            let current = current.get_mut(..count).ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let current = current
+                .get_mut(..count)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
             let temporary = heap
                 .slice(nTempRank.as_const())?
                 .get(..count)
@@ -4941,20 +5001,39 @@ mod tests {
         assert_eq!(call(&mut heap, atoms, ranks, order, &mut greater, 0), Ok(1));
         assert_eq!(heap.slice(greater.LinearCT.as_const()).unwrap()[0], 0);
 
-        let (mut heap, atoms, ranks, order, mut smaller) = fixture(vec![2, 99, 99, 99, 99], 5, 5, 5);
-        assert_eq!(call(&mut heap, atoms, ranks, order, &mut smaller, 0), Ok(-1));
-        assert_eq!(heap.slice(smaller.LinearCT.as_const()).unwrap(), &[1, 2, 3, 1, 2]);
+        let (mut heap, atoms, ranks, order, mut smaller) =
+            fixture(vec![2, 99, 99, 99, 99], 5, 5, 5);
+        assert_eq!(
+            call(&mut heap, atoms, ranks, order, &mut smaller, 0),
+            Ok(-1)
+        );
+        assert_eq!(
+            heap.slice(smaller.LinearCT.as_const()).unwrap(),
+            &[1, 2, 3, 1, 2]
+        );
 
         let (mut heap, atoms, ranks, order, mut overflow) = fixture(vec![90; 5], 2, 0, 5);
-        assert_eq!(call(&mut heap, atoms, ranks, order, &mut overflow, 1), Ok(CT_OVERFLOW));
-        assert_eq!(&heap.slice(overflow.LinearCT.as_const()).unwrap()[..3], &[1, 2, 90]);
+        assert_eq!(
+            call(&mut heap, atoms, ranks, order, &mut overflow, 1),
+            Ok(CT_OVERFLOW)
+        );
+        assert_eq!(
+            &heap.slice(overflow.LinearCT.as_const()).unwrap()[..3],
+            &[1, 2, 90]
+        );
         for (length, atom_length) in [(4, 5), (5, 4)] {
-            let (mut heap, atoms, ranks, order, mut wrong) = fixture(vec![0; 5], 5, length, atom_length);
-            assert_eq!(call(&mut heap, atoms, ranks, order, &mut wrong, 1), Ok(CT_LEN_MISMATCH));
+            let (mut heap, atoms, ranks, order, mut wrong) =
+                fixture(vec![0; 5], 5, length, atom_length);
+            assert_eq!(
+                call(&mut heap, atoms, ranks, order, &mut wrong, 1),
+                Ok(CT_LEN_MISMATCH)
+            );
         }
 
         let mut heap = SourceHeap::default();
-        let atoms = heap.allocate_model_storage(vec![atom(&[]), atom(&[])]).unwrap();
+        let atoms = heap
+            .allocate_model_storage(vec![atom(&[]), atom(&[])])
+            .unwrap();
         let ranks = heap.allocate_model_storage(vec![1_u16, 2, 3]).unwrap();
         let order = heap.allocate_model_storage(vec![0_u16, 1, 2]).unwrap();
         let endpoints = heap.allocate_model_storage(vec![1_u16, 0]).unwrap();
@@ -5062,7 +5141,13 @@ mod tests {
 
         let mut no_taut_sizes = ATOM_SIZES::default();
         assert_eq!(
-            GetCanonLengths(&heap, 4, atoms.as_const(), &mut no_taut_sizes, Some(&group_info),),
+            GetCanonLengths(
+                &heap,
+                4,
+                atoms.as_const(),
+                &mut no_taut_sizes,
+                Some(&group_info),
+            ),
             Ok(0)
         );
         assert_eq!(no_taut_sizes.nLenCT, 5);
@@ -5098,7 +5183,8 @@ mod tests {
         let mut heap = SourceHeap::default();
         macro_rules! allocation {
             () => {
-                heap.allocate_model_storage(vec![Default::default()]).unwrap()
+                heap.allocate_model_storage(vec![Default::default()])
+                    .unwrap()
             };
         }
 
@@ -5258,10 +5344,20 @@ mod tests {
         assert_eq!(heap.slice(state.nNum_H.as_const()).unwrap(), &[0; 3]);
         let isotopic = heap.slice(state.LinearCTIsotopic.as_const()).unwrap();
         assert_eq!(isotopic.len(), 8);
-        assert!(isotopic.iter().all(|value| value == &AT_ISOTOPIC::default()));
-        let isotopic_tautomer = heap.slice(state.LinearCTIsotopicTautomer.as_const()).unwrap();
+        assert!(
+            isotopic
+                .iter()
+                .all(|value| value == &AT_ISOTOPIC::default())
+        );
+        let isotopic_tautomer = heap
+            .slice(state.LinearCTIsotopicTautomer.as_const())
+            .unwrap();
         assert_eq!(isotopic_tautomer.len(), 7);
-        assert!(isotopic_tautomer.iter().all(|value| value == &AT_ISO_TGROUP::default()));
+        assert!(
+            isotopic_tautomer
+                .iter()
+                .all(|value| value == &AT_ISO_TGROUP::default())
+        );
         let stereo_double = heap.slice(state.LinearCTStereoDble.as_const()).unwrap();
         assert_eq!(stereo_double.len(), 2);
         assert!(
@@ -5276,22 +5372,32 @@ mod tests {
                 .iter()
                 .all(|value| value == &crate::source_types::AT_STEREO_CARB::default())
         );
-        let isotopic_stereo_double = heap.slice(state.LinearCTIsotopicStereoDble.as_const()).unwrap();
+        let isotopic_stereo_double = heap
+            .slice(state.LinearCTIsotopicStereoDble.as_const())
+            .unwrap();
         assert_eq!(isotopic_stereo_double.len(), 3);
         assert!(
             isotopic_stereo_double
                 .iter()
                 .all(|value| value == &crate::source_types::AT_STEREO_DBLE::default())
         );
-        let isotopic_stereo_atom = heap.slice(state.LinearCTIsotopicStereoCarb.as_const()).unwrap();
+        let isotopic_stereo_atom = heap
+            .slice(state.LinearCTIsotopicStereoCarb.as_const())
+            .unwrap();
         assert_eq!(isotopic_stereo_atom.len(), 5);
         assert!(
             isotopic_stereo_atom
                 .iter()
                 .all(|value| value == &crate::source_types::AT_STEREO_CARB::default())
         );
-        assert_eq!(heap.slice(state.LinearCTTautomer.as_const()).unwrap(), &[0; 6]);
-        assert_eq!(heap.slice(state.nPrevAtomNumber.as_const()).unwrap(), &[0; 5]);
+        assert_eq!(
+            heap.slice(state.LinearCTTautomer.as_const()).unwrap(),
+            &[0; 6]
+        );
+        assert_eq!(
+            heap.slice(state.nPrevAtomNumber.as_const()).unwrap(),
+            &[0; 5]
+        );
         assert_eq!(state.nMode, MODE);
         assert_eq!(state.nMaxLenLinearCT, 7);
         assert_eq!(state.nLenLinearCT, 7);
@@ -5330,7 +5436,9 @@ mod tests {
         };
         for failure_ordinal in 0..33_u64 {
             let mut failure_heap = SourceHeap::default();
-            let failure_bcn = failure_heap.allocate_model_storage(vec![BCN::default()]).unwrap();
+            let failure_bcn = failure_heap
+                .allocate_model_storage(vec![BCN::default()])
+                .unwrap();
             failure_heap.fail_after_allocations(failure_ordinal);
             let mut failure_state = CANON_STAT::default();
             assert_eq!(
@@ -5436,7 +5544,9 @@ mod tests {
         );
 
         let mut heap = SourceHeap::default();
-        let atoms = heap.allocate_model_storage(vec![sp_ATOM::default()]).unwrap();
+        let atoms = heap
+            .allocate_model_storage(vec![sp_ATOM::default()])
+            .unwrap();
         let linear_input = heap.allocate_model_storage(vec![1_u16]).unwrap();
         let atom_order = heap.allocate_model_storage(vec![0_u16]).unwrap();
         let rank = heap.allocate_model_storage(vec![1_u16]).unwrap();
@@ -5536,7 +5646,9 @@ mod tests {
             CANON_STAT,
             SourceMutPointer<SourceMutPointer<AT_RANK>>,
         ) {
-            let atoms = heap.allocate_model_storage(vec![sp_ATOM::default(); 2]).unwrap();
+            let atoms = heap
+                .allocate_model_storage(vec![sp_ATOM::default(); 2])
+                .unwrap();
             let linear = heap.allocate_model_storage(vec![2_u16, 1]).unwrap();
             let atom_number = heap.allocate_model_storage(vec![0_u16, 1]).unwrap();
             let ranks = heap.allocate_model_storage(vec![1_u16, 2]).unwrap();
@@ -5587,22 +5699,26 @@ mod tests {
             let output_symmetry = heap.allocate_model_storage(vec![0_u16; 2]).unwrap();
             let output_order = heap.allocate_model_storage(vec![0_u16; 2]).unwrap();
             let stereo_double = if stereo {
-                heap.allocate_model_storage(vec![Default::default(); 2]).unwrap()
+                heap.allocate_model_storage(vec![Default::default(); 2])
+                    .unwrap()
             } else {
                 SourceMutPointer::null()
             };
             let stereo_double_inv = if stereo {
-                heap.allocate_model_storage(vec![Default::default(); 2]).unwrap()
+                heap.allocate_model_storage(vec![Default::default(); 2])
+                    .unwrap()
             } else {
                 SourceMutPointer::null()
             };
             let stereo_carb = if stereo {
-                heap.allocate_model_storage(vec![Default::default(); 2]).unwrap()
+                heap.allocate_model_storage(vec![Default::default(); 2])
+                    .unwrap()
             } else {
                 SourceMutPointer::null()
             };
             let stereo_carb_inv = if stereo {
-                heap.allocate_model_storage(vec![Default::default(); 2]).unwrap()
+                heap.allocate_model_storage(vec![Default::default(); 2])
+                    .unwrap()
             } else {
                 SourceMutPointer::null()
             };
@@ -5657,14 +5773,24 @@ mod tests {
                 Rank: isotope_rank,
             };
             heap.slice_mut(state.pBCN).unwrap()[0].ftcn[0].nSymmRankCtIso = isotope_symmetry;
-            state.LinearCTIsotopic = heap.allocate_model_storage(vec![AT_ISOTOPIC::default(); 2]).unwrap();
+            state.LinearCTIsotopic = heap
+                .allocate_model_storage(vec![AT_ISOTOPIC::default(); 2])
+                .unwrap();
             state.nMaxLenLinearCTIsotopic = 2;
             state.nSymmRankIsotopic = heap.allocate_model_storage(vec![0_u16; 2]).unwrap();
             state.nCanonOrdIsotopic = heap.allocate_model_storage(vec![0_u16; 2]).unwrap();
-            state.LinearCTIsotopicStereoDble = heap.allocate_model_storage(vec![Default::default(); 2]).unwrap();
-            state.LinearCTIsotopicStereoDbleInv = heap.allocate_model_storage(vec![Default::default(); 2]).unwrap();
-            state.LinearCTIsotopicStereoCarb = heap.allocate_model_storage(vec![Default::default(); 2]).unwrap();
-            state.LinearCTIsotopicStereoCarbInv = heap.allocate_model_storage(vec![Default::default(); 2]).unwrap();
+            state.LinearCTIsotopicStereoDble = heap
+                .allocate_model_storage(vec![Default::default(); 2])
+                .unwrap();
+            state.LinearCTIsotopicStereoDbleInv = heap
+                .allocate_model_storage(vec![Default::default(); 2])
+                .unwrap();
+            state.LinearCTIsotopicStereoCarb = heap
+                .allocate_model_storage(vec![Default::default(); 2])
+                .unwrap();
+            state.LinearCTIsotopicStereoCarbInv = heap
+                .allocate_model_storage(vec![Default::default(); 2])
+                .unwrap();
             state.nMaxLenLinearCTIsotopicStereoDble = 2;
             state.nMaxLenLinearCTIsotopicStereoCarb = 2;
         }
@@ -5744,10 +5870,18 @@ mod tests {
                 }])
                 .unwrap();
             let linear = heap.allocate_model_storage(vec![0_u16; 6]).unwrap();
-            let normal_double = heap.allocate_model_storage(vec![Default::default(); 6]).unwrap();
-            let inverse_double = heap.allocate_model_storage(vec![Default::default(); 6]).unwrap();
-            let normal_carb = heap.allocate_model_storage(vec![Default::default(); 6]).unwrap();
-            let inverse_carb = heap.allocate_model_storage(vec![Default::default(); 6]).unwrap();
+            let normal_double = heap
+                .allocate_model_storage(vec![Default::default(); 6])
+                .unwrap();
+            let inverse_double = heap
+                .allocate_model_storage(vec![Default::default(); 6])
+                .unwrap();
+            let normal_carb = heap
+                .allocate_model_storage(vec![Default::default(); 6])
+                .unwrap();
+            let inverse_carb = heap
+                .allocate_model_storage(vec![Default::default(); 6])
+                .unwrap();
             let state = CANON_STAT {
                 pBCN: bcn,
                 LinearCT: linear,
@@ -5794,19 +5928,30 @@ mod tests {
                 Rank: isotope_rank,
             };
             heap.slice_mut(state.pBCN).unwrap()[0].ftcn[0].nSymmRankCtIso = isotope_symmetry;
-            state.LinearCTIsotopic = heap.allocate_model_storage(vec![AT_ISOTOPIC::default(); 6]).unwrap();
+            state.LinearCTIsotopic = heap
+                .allocate_model_storage(vec![AT_ISOTOPIC::default(); 6])
+                .unwrap();
             state.nMaxLenLinearCTIsotopic = 6;
             state.nSymmRankIsotopic = heap.allocate_model_storage(vec![0_u16; 6]).unwrap();
             state.nCanonOrdIsotopic = heap.allocate_model_storage(vec![0_u16; 6]).unwrap();
-            state.LinearCTIsotopicStereoDble = heap.allocate_model_storage(vec![Default::default(); 6]).unwrap();
-            state.LinearCTIsotopicStereoDbleInv = heap.allocate_model_storage(vec![Default::default(); 6]).unwrap();
-            state.LinearCTIsotopicStereoCarb = heap.allocate_model_storage(vec![Default::default(); 6]).unwrap();
-            state.LinearCTIsotopicStereoCarbInv = heap.allocate_model_storage(vec![Default::default(); 6]).unwrap();
+            state.LinearCTIsotopicStereoDble = heap
+                .allocate_model_storage(vec![Default::default(); 6])
+                .unwrap();
+            state.LinearCTIsotopicStereoDbleInv = heap
+                .allocate_model_storage(vec![Default::default(); 6])
+                .unwrap();
+            state.LinearCTIsotopicStereoCarb = heap
+                .allocate_model_storage(vec![Default::default(); 6])
+                .unwrap();
+            state.LinearCTIsotopicStereoCarbInv = heap
+                .allocate_model_storage(vec![Default::default(); 6])
+                .unwrap();
             state.nMaxLenLinearCTIsotopicStereoDble = 6;
             state.nMaxLenLinearCTIsotopicStereoCarb = 6;
             state.nCanonOrdIsotopicStereo = heap.allocate_model_storage(vec![0_u16; 6]).unwrap();
             state.nCanonOrdIsotopicStereoInv = heap.allocate_model_storage(vec![0_u16; 6]).unwrap();
-            state.nMode = u64::from(CMODE_STEREO | CMODE_ISO | CMODE_ISO_STEREO | CMODE_REDNDNT_STEREO);
+            state.nMode =
+                u64::from(CMODE_STEREO | CMODE_ISO | CMODE_ISO_STEREO | CMODE_REDNDNT_STEREO);
         }
 
         let mut heap = SourceHeap::default();
@@ -5868,7 +6013,8 @@ mod tests {
             AtNumber: isotope_atom_number,
             Rank: isotope_rank,
         };
-        isotope_heap.slice_mut(isotope_state.pBCN).unwrap()[0].ftcn[0].nSymmRankCtIso = isotope_symmetry;
+        isotope_heap.slice_mut(isotope_state.pBCN).unwrap()[0].ftcn[0].nSymmRankCtIso =
+            isotope_symmetry;
         isotope_heap.slice_mut(isotope_state.pBCN).unwrap()[0].ftcn[0].iso_exchg_atnos = exchange_h;
         let isotope_output = isotope_heap
             .allocate_model_storage(vec![AT_ISOTOPIC::default(); 2])
@@ -5921,26 +6067,53 @@ mod tests {
         );
         assert_eq!(isotope_state.nLenLinearCTIsotopic, 2);
         assert_eq!(isotope_state.nLenCanonOrdIsotopic, 2);
-        assert_eq!(isotope_heap.slice(isotope_symmetry_output.as_const()).unwrap(), &[2, 1]);
-        assert_eq!(isotope_heap.slice(isotope_order_output.as_const()).unwrap(), &[1, 0]);
-        assert_eq!(isotope_heap.slice(exchange_h_output.as_const()).unwrap(), &[1, 0]);
+        assert_eq!(
+            isotope_heap
+                .slice(isotope_symmetry_output.as_const())
+                .unwrap(),
+            &[2, 1]
+        );
+        assert_eq!(
+            isotope_heap.slice(isotope_order_output.as_const()).unwrap(),
+            &[1, 0]
+        );
+        assert_eq!(
+            isotope_heap.slice(exchange_h_output.as_const()).unwrap(),
+            &[1, 0]
+        );
         assert_eq!(
             isotope_heap.slice(isotope_stack.as_const()).unwrap()[..2],
             [SourceMutPointer::null(), SourceMutPointer::null()]
         );
 
         let mut exchange_only_heap = SourceHeap::default();
-        let (exchange_only_atoms, mut exchange_only_state, _) = fixture(&mut exchange_only_heap, false);
-        let exchange_only_order = exchange_only_heap.allocate_model_storage(vec![0_u16, 1]).unwrap();
-        let exchange_only_rank = exchange_only_heap.allocate_model_storage(vec![1_u16, 2]).unwrap();
-        let exchange_only_symmetry = exchange_only_heap.allocate_model_storage(vec![1_u16, 2]).unwrap();
-        exchange_only_heap.slice_mut(exchange_only_state.pBCN).unwrap()[0].ftcn[0].PartitionCtIso = Partition {
+        let (exchange_only_atoms, mut exchange_only_state, _) =
+            fixture(&mut exchange_only_heap, false);
+        let exchange_only_order = exchange_only_heap
+            .allocate_model_storage(vec![0_u16, 1])
+            .unwrap();
+        let exchange_only_rank = exchange_only_heap
+            .allocate_model_storage(vec![1_u16, 2])
+            .unwrap();
+        let exchange_only_symmetry = exchange_only_heap
+            .allocate_model_storage(vec![1_u16, 2])
+            .unwrap();
+        exchange_only_heap
+            .slice_mut(exchange_only_state.pBCN)
+            .unwrap()[0]
+            .ftcn[0]
+            .PartitionCtIso = Partition {
             AtNumber: exchange_only_order,
             Rank: exchange_only_rank,
         };
-        exchange_only_heap.slice_mut(exchange_only_state.pBCN).unwrap()[0].ftcn[0].nSymmRankCtIso =
-            exchange_only_symmetry;
-        let isotopic_endpoints = exchange_only_heap.allocate_model_storage(vec![1_u16, 0]).unwrap();
+        exchange_only_heap
+            .slice_mut(exchange_only_state.pBCN)
+            .unwrap()[0]
+            .ftcn[0]
+            .nSymmRankCtIso = exchange_only_symmetry;
+        let isotopic_endpoints = exchange_only_heap
+            .allocate_model_storage(vec![1_u16, 0])
+            .unwrap();
         exchange_only_state.t_group_info = exchange_only_heap
             .allocate_model_storage(vec![T_GROUP_INFO {
                 nIsotopicEndpointAtomNumber: isotopic_endpoints,
@@ -5949,8 +6122,12 @@ mod tests {
                 ..T_GROUP_INFO::default()
             }])
             .unwrap();
-        exchange_only_state.nSymmRankIsotopic = exchange_only_heap.allocate_model_storage(vec![0_u16; 2]).unwrap();
-        exchange_only_state.nCanonOrdIsotopic = exchange_only_heap.allocate_model_storage(vec![0_u16; 2]).unwrap();
+        exchange_only_state.nSymmRankIsotopic = exchange_only_heap
+            .allocate_model_storage(vec![0_u16; 2])
+            .unwrap();
+        exchange_only_state.nCanonOrdIsotopic = exchange_only_heap
+            .allocate_model_storage(vec![0_u16; 2])
+            .unwrap();
         exchange_only_state.nMaxLenLinearCTIsotopic = 17;
         assert_eq!(
             Canon_INChI3(
@@ -5979,7 +6156,8 @@ mod tests {
         );
 
         let mut isotope_overflow_heap = SourceHeap::default();
-        let (isotope_overflow_atoms, mut isotope_overflow_state, _) = fixture(&mut isotope_overflow_heap, false);
+        let (isotope_overflow_atoms, mut isotope_overflow_state, _) =
+            fixture(&mut isotope_overflow_heap, false);
         for (index, atom) in isotope_overflow_heap
             .slice_mut(isotope_overflow_atoms)
             .unwrap()
@@ -5988,15 +6166,28 @@ mod tests {
         {
             atom.iso_atw_diff = index as i8 + 1;
         }
-        let isotope_overflow_order = isotope_overflow_heap.allocate_model_storage(vec![0_u16, 1]).unwrap();
-        let isotope_overflow_rank = isotope_overflow_heap.allocate_model_storage(vec![1_u16, 2]).unwrap();
-        let isotope_overflow_symmetry = isotope_overflow_heap.allocate_model_storage(vec![1_u16, 2]).unwrap();
-        isotope_overflow_heap.slice_mut(isotope_overflow_state.pBCN).unwrap()[0].ftcn[0].PartitionCtIso = Partition {
+        let isotope_overflow_order = isotope_overflow_heap
+            .allocate_model_storage(vec![0_u16, 1])
+            .unwrap();
+        let isotope_overflow_rank = isotope_overflow_heap
+            .allocate_model_storage(vec![1_u16, 2])
+            .unwrap();
+        let isotope_overflow_symmetry = isotope_overflow_heap
+            .allocate_model_storage(vec![1_u16, 2])
+            .unwrap();
+        isotope_overflow_heap
+            .slice_mut(isotope_overflow_state.pBCN)
+            .unwrap()[0]
+            .ftcn[0]
+            .PartitionCtIso = Partition {
             AtNumber: isotope_overflow_order,
             Rank: isotope_overflow_rank,
         };
-        isotope_overflow_heap.slice_mut(isotope_overflow_state.pBCN).unwrap()[0].ftcn[0].nSymmRankCtIso =
-            isotope_overflow_symmetry;
+        isotope_overflow_heap
+            .slice_mut(isotope_overflow_state.pBCN)
+            .unwrap()[0]
+            .ftcn[0]
+            .nSymmRankCtIso = isotope_overflow_symmetry;
         let isotope_overflow_output = isotope_overflow_heap
             .allocate_model_storage(vec![AT_ISOTOPIC::default()])
             .unwrap();
@@ -6020,19 +6211,36 @@ mod tests {
             Ok(CT_OVERFLOW)
         );
         assert_eq!(
-            isotope_overflow_heap.slice(isotope_overflow_output.as_const()).unwrap()[0].iso_atw_diff,
+            isotope_overflow_heap
+                .slice(isotope_overflow_output.as_const())
+                .unwrap()[0]
+                .iso_atw_diff,
             1
         );
         assert!(isotope_overflow_state.NeighList.is_null());
 
         let mut taut_heap = SourceHeap::default();
-        let taut_atoms = taut_heap.allocate_model_storage(vec![sp_ATOM::default(); 2]).unwrap();
-        let taut_rank = taut_heap.allocate_model_storage(vec![2_u16, 1, 3, 4]).unwrap();
-        let taut_order = taut_heap.allocate_model_storage(vec![1_u16, 0, 3, 2]).unwrap();
-        let taut_symmetry = taut_heap.allocate_model_storage(vec![2_u16, 2, 3, 4]).unwrap();
-        let taut_iso_rank = taut_heap.allocate_model_storage(vec![2_u16, 1, 3, 4]).unwrap();
-        let taut_iso_order = taut_heap.allocate_model_storage(vec![1_u16, 0, 2, 3]).unwrap();
-        let taut_iso_symmetry = taut_heap.allocate_model_storage(vec![2_u16, 2, 3, 4]).unwrap();
+        let taut_atoms = taut_heap
+            .allocate_model_storage(vec![sp_ATOM::default(); 2])
+            .unwrap();
+        let taut_rank = taut_heap
+            .allocate_model_storage(vec![2_u16, 1, 3, 4])
+            .unwrap();
+        let taut_order = taut_heap
+            .allocate_model_storage(vec![1_u16, 0, 3, 2])
+            .unwrap();
+        let taut_symmetry = taut_heap
+            .allocate_model_storage(vec![2_u16, 2, 3, 4])
+            .unwrap();
+        let taut_iso_rank = taut_heap
+            .allocate_model_storage(vec![2_u16, 1, 3, 4])
+            .unwrap();
+        let taut_iso_order = taut_heap
+            .allocate_model_storage(vec![1_u16, 0, 2, 3])
+            .unwrap();
+        let taut_iso_symmetry = taut_heap
+            .allocate_model_storage(vec![2_u16, 2, 3, 4])
+            .unwrap();
         let taut_groups = taut_heap
             .allocate_model_storage(vec![
                 crate::source_types::T_GROUP {
@@ -6065,7 +6273,15 @@ mod tests {
             bIgnoreIsotopic: 7,
             ..T_GROUP_INFO::default()
         };
-        let taut_neighbors = CreateNeighList(&mut taut_heap, 2, 4, taut_atoms.as_const(), 0, Some(&taut_info)).unwrap();
+        let taut_neighbors = CreateNeighList(
+            &mut taut_heap,
+            2,
+            4,
+            taut_atoms.as_const(),
+            0,
+            Some(&taut_info),
+        )
+        .unwrap();
         let taut_linear_input = taut_heap.allocate_model_storage(vec![2_u16, 1]).unwrap();
         let taut_h = taut_heap.allocate_model_storage(vec![0_i16; 2]).unwrap();
         let taut_rank_scratch = taut_heap.allocate_model_storage(vec![7_u16; 4]).unwrap();
@@ -6125,7 +6341,8 @@ mod tests {
         let taut_group_order_output = taut_heap.allocate_model_storage(vec![0_u16; 2]).unwrap();
         let taut_iso_symmetry_output = taut_heap.allocate_model_storage(vec![0_u16; 4]).unwrap();
         let taut_iso_order_output = taut_heap.allocate_model_storage(vec![0_u16; 4]).unwrap();
-        let taut_iso_group_symmetry_output = taut_heap.allocate_model_storage(vec![0_u16; 2]).unwrap();
+        let taut_iso_group_symmetry_output =
+            taut_heap.allocate_model_storage(vec![0_u16; 2]).unwrap();
         let taut_iso_group_order_output = taut_heap.allocate_model_storage(vec![0_u16; 2]).unwrap();
         let mut taut_state = CANON_STAT {
             pBCN: taut_bcn,
@@ -6184,14 +6401,26 @@ mod tests {
                 },
             ]
         );
-        assert_eq!(taut_heap.slice(taut_group_symmetry_output.as_const()).unwrap(), &[1, 2]);
-        assert_eq!(taut_heap.slice(taut_group_order_output.as_const()).unwrap(), &[1, 0]);
         assert_eq!(
-            taut_heap.slice(taut_iso_group_symmetry_output.as_const()).unwrap(),
+            taut_heap
+                .slice(taut_group_symmetry_output.as_const())
+                .unwrap(),
             &[1, 2]
         );
         assert_eq!(
-            taut_heap.slice(taut_iso_group_order_output.as_const()).unwrap(),
+            taut_heap.slice(taut_group_order_output.as_const()).unwrap(),
+            &[1, 0]
+        );
+        assert_eq!(
+            taut_heap
+                .slice(taut_iso_group_symmetry_output.as_const())
+                .unwrap(),
+            &[1, 2]
+        );
+        assert_eq!(
+            taut_heap
+                .slice(taut_iso_group_order_output.as_const())
+                .unwrap(),
             &[0, 1]
         );
         assert_eq!(taut_state.nLenLinearCTTautomer, 10);
@@ -6236,7 +6465,10 @@ mod tests {
         let mut entered_heap = SourceHeap::default();
         let (entered_atoms, mut entered_state, _) = fixture(&mut entered_heap, false);
         enable_isotopic_stereo(&mut entered_heap, entered_atoms, &mut entered_state, 1);
-        let entered_atoms_before = entered_heap.slice(entered_atoms.as_const()).unwrap().to_vec();
+        let entered_atoms_before = entered_heap
+            .slice(entered_atoms.as_const())
+            .unwrap()
+            .to_vec();
         let normal_double_before = entered_state.LinearCTStereoDble;
         let normal_carb_before = entered_state.LinearCTStereoCarb;
         entered_heap.trace_source_allocations();
@@ -6292,8 +6524,12 @@ mod tests {
         assert_eq!(descriptor_probe_state.nLenLinearCTStereoDble, 1);
 
         let mut descriptor_heap = SourceHeap::default();
-        let (descriptor_atoms, mut descriptor_state) = double_bond_fixture(&mut descriptor_heap, 50, true);
-        let mut descriptor_atoms_expected = descriptor_heap.slice(descriptor_atoms.as_const()).unwrap().to_vec();
+        let (descriptor_atoms, mut descriptor_state) =
+            double_bond_fixture(&mut descriptor_heap, 50, true);
+        let mut descriptor_atoms_expected = descriptor_heap
+            .slice(descriptor_atoms.as_const())
+            .unwrap()
+            .to_vec();
         for atom in &mut descriptor_atoms_expected[4..=5] {
             atom.stereo_bond_parity[0] =
                 (crate::source_types::KNOWN_PARITIES_EQL | crate::source_types::WORSE_PARITY) as i8;
@@ -6337,8 +6573,14 @@ mod tests {
         let inverse_center = descriptor_heap.slice(inverse_carb.as_const()).unwrap()[0].clone();
         assert_eq!(forward_center.at_num, 1);
         assert_eq!(inverse_center.at_num, 1);
-        assert_eq!(forward_center.parity, crate::source_types::BEST_PARITY as u8);
-        assert_eq!(inverse_center.parity, crate::source_types::WORSE_PARITY as u8);
+        assert_eq!(
+            forward_center.parity,
+            crate::source_types::BEST_PARITY as u8
+        );
+        assert_eq!(
+            inverse_center.parity,
+            crate::source_types::WORSE_PARITY as u8
+        );
         assert_eq!(descriptor_state.nLenCanonOrdStereo, 6);
         assert_eq!(
             descriptor_heap
@@ -6389,34 +6631,48 @@ mod tests {
         );
         assert_eq!(isotope_descriptor_state.nLenLinearCTIsotopic, 0);
         assert_eq!(isotope_descriptor_state.nLenLinearCTIsotopicStereoDble, 1);
-        assert_eq!(isotope_descriptor_state.nLenLinearCTIsotopicStereoDbleInv, 1);
+        assert_eq!(
+            isotope_descriptor_state.nLenLinearCTIsotopicStereoDbleInv,
+            1
+        );
         assert_eq!(isotope_descriptor_state.nLenLinearCTIsotopicStereoCarb, 1);
-        assert_eq!(isotope_descriptor_state.nLenLinearCTIsotopicStereoCarbInv, 1);
+        assert_eq!(
+            isotope_descriptor_state.nLenLinearCTIsotopicStereoCarbInv,
+            1
+        );
         let expected_isotope_double = crate::source_types::AT_STEREO_DBLE {
             at_num1: 6,
             at_num2: 5,
             parity: crate::source_types::WORSE_PARITY as u8,
         };
         assert_eq!(
-            isotope_descriptor_heap.slice(isotope_double.as_const()).unwrap()[0],
+            isotope_descriptor_heap
+                .slice(isotope_double.as_const())
+                .unwrap()[0],
             expected_isotope_double
         );
         assert_eq!(
-            isotope_descriptor_heap.slice(isotope_double_inv.as_const()).unwrap()[0],
+            isotope_descriptor_heap
+                .slice(isotope_double_inv.as_const())
+                .unwrap()[0],
             crate::source_types::AT_STEREO_DBLE {
                 parity: crate::source_types::WORSE_PARITY as u8,
                 ..expected_isotope_double
             }
         );
         assert_eq!(
-            isotope_descriptor_heap.slice(isotope_carb.as_const()).unwrap()[0],
+            isotope_descriptor_heap
+                .slice(isotope_carb.as_const())
+                .unwrap()[0],
             crate::source_types::AT_STEREO_CARB {
                 at_num: 1,
                 parity: crate::source_types::BEST_PARITY as u8,
             }
         );
         assert_eq!(
-            isotope_descriptor_heap.slice(isotope_carb_inv.as_const()).unwrap()[0],
+            isotope_descriptor_heap
+                .slice(isotope_carb_inv.as_const())
+                .unwrap()[0],
             crate::source_types::AT_STEREO_CARB {
                 at_num: 1,
                 parity: crate::source_types::WORSE_PARITY as u8,
@@ -6431,7 +6687,11 @@ mod tests {
         );
         assert_eq!(
             isotope_descriptor_heap
-                .slice(isotope_descriptor_state.nCanonOrdIsotopicStereoInv.as_const())
+                .slice(
+                    isotope_descriptor_state
+                        .nCanonOrdIsotopicStereoInv
+                        .as_const()
+                )
                 .unwrap(),
             &[0, 1, 2, 3, 4, 5]
         );
@@ -6449,7 +6709,8 @@ mod tests {
         assert_eq!(isotope_descriptor_atoms[0].bHasStereoOrEquToStereo, 1);
         assert_eq!(isotope_descriptor_atoms[0].bHasStereoOrEquToStereo2, 1);
         for atom in &isotope_descriptor_atoms[4..=5] {
-            let expected_parity = (crate::source_types::KNOWN_PARITIES_EQL | crate::source_types::WORSE_PARITY) as i8;
+            let expected_parity =
+                (crate::source_types::KNOWN_PARITIES_EQL | crate::source_types::WORSE_PARITY) as i8;
             assert_eq!(atom.stereo_bond_parity[0], expected_parity);
             assert_eq!(atom.stereo_bond_parity2[0], expected_parity);
             assert_eq!(atom.bHasStereoOrEquToStereo, 1);
@@ -6459,7 +6720,10 @@ mod tests {
 
         let mut failure_heap = SourceHeap::default();
         let (failure_atoms, mut failure_state, failure_stack) = fixture(&mut failure_heap, true);
-        let initial_failure_stack = failure_heap.slice(failure_stack.as_const()).unwrap().to_vec();
+        let initial_failure_stack = failure_heap
+            .slice(failure_stack.as_const())
+            .unwrap()
+            .to_vec();
         failure_heap.fail_after_allocations(0);
         assert_eq!(
             Canon_INChI3(
@@ -6515,7 +6779,8 @@ mod tests {
         assert!(noeq_heap.slice(noeq_stack.as_const()).unwrap()[1].is_null());
 
         let mut redundant_heap = SourceHeap::default();
-        let (redundant_atoms, mut redundant_state, redundant_stack) = fixture(&mut redundant_heap, true);
+        let (redundant_atoms, mut redundant_state, redundant_stack) =
+            fixture(&mut redundant_heap, true);
         redundant_state.nMode = u64::from(CMODE_STEREO | CMODE_REDNDNT_STEREO);
         redundant_heap.trace_source_allocations();
         let redundant_result = Canon_INChI3(
@@ -6542,9 +6807,13 @@ mod tests {
 
         for failed_allocation in 0..noeq_allocations {
             let mut allocation_heap = SourceHeap::default();
-            let (allocation_atoms, mut allocation_state, allocation_stack) = fixture(&mut allocation_heap, true);
+            let (allocation_atoms, mut allocation_state, allocation_stack) =
+                fixture(&mut allocation_heap, true);
             let baseline_allocations = allocation_heap.live_allocation_count();
-            let original_stack = allocation_heap.slice(allocation_stack.as_const()).unwrap().to_vec();
+            let original_stack = allocation_heap
+                .slice(allocation_stack.as_const())
+                .unwrap()
+                .to_vec();
             allocation_heap.fail_after_allocations(failed_allocation);
             let expected_status = if failed_allocation == 5 {
                 CT_STEREOCOUNT_ERR
@@ -6613,7 +6882,9 @@ mod tests {
 
         let mut heap = SourceHeap::default();
         let atoms = heap.allocate_model_storage(atoms).unwrap();
-        let order = heap.allocate_model_storage(vec![4_u16, 0, 3, 2, 1]).unwrap();
+        let order = heap
+            .allocate_model_storage(vec![4_u16, 0, 3, 2, 1])
+            .unwrap();
         let sentinel = AT_ISOTOPIC {
             at_num: 99,
             num_1H: 99,
@@ -6621,7 +6892,9 @@ mod tests {
             num_T: 99,
             iso_atw_diff: 99,
         };
-        let output = heap.allocate_model_storage(vec![sentinel.clone(); 5]).unwrap();
+        let output = heap
+            .allocate_model_storage(vec![sentinel.clone(); 5])
+            .unwrap();
         let mut output_len = 0;
         assert_eq!(
             FillIsotopicAtLinearCT(
@@ -6687,7 +6960,9 @@ mod tests {
                 .all(|item| item == &sentinel)
         );
 
-        let short_output = heap.allocate_model_storage(vec![sentinel.clone(); 2]).unwrap();
+        let short_output = heap
+            .allocate_model_storage(vec![sentinel.clone(); 2])
+            .unwrap();
         let mut overflow_len = 77;
         assert_eq!(
             FillIsotopicAtLinearCT(
@@ -6722,7 +6997,9 @@ mod tests {
             ]
         );
 
-        let mismatch_output = heap.allocate_model_storage(vec![sentinel.clone(); 5]).unwrap();
+        let mismatch_output = heap
+            .allocate_model_storage(vec![sentinel.clone(); 5])
+            .unwrap();
         let mut mismatch_len = 2;
         assert_eq!(
             FillIsotopicAtLinearCT(
@@ -6807,7 +7084,9 @@ mod tests {
             let endpoints = heap.allocate_model_storage(vec![0, 1, 1]).unwrap();
             let group_work = heap.allocate_model_storage(vec![99; 8]).unwrap();
             let linear = heap.allocate_model_storage(vec![88; 10]).unwrap();
-            let linear_iso = heap.allocate_model_storage(vec![AT_ISO_TGROUP::default(); 2]).unwrap();
+            let linear_iso = heap
+                .allocate_model_storage(vec![AT_ISO_TGROUP::default(); 2])
+                .unwrap();
             let info = T_GROUP_INFO {
                 t_group: groups,
                 nEndpointAtomNumber: endpoints,
@@ -6904,8 +7183,14 @@ mod tests {
             heap.slice(info.tGroupNumber.as_const()).unwrap(),
             &[1, 0, 1, 2, 0, 1, 1, 2]
         );
-        assert_eq!(heap.slice(info.nEndpointAtomNumber.as_const()).unwrap(), &[1, 0, 1]);
-        assert_eq!(heap.slice(linear.as_const()).unwrap(), &[1, 7, 2, 1, 2, 5, 1, 1, 2, 0]);
+        assert_eq!(
+            heap.slice(info.nEndpointAtomNumber.as_const()).unwrap(),
+            &[1, 0, 1]
+        );
+        assert_eq!(
+            heap.slice(linear.as_const()).unwrap(),
+            &[1, 7, 2, 1, 2, 5, 1, 1, 2, 0]
+        );
         assert_eq!(
             heap.slice(linear_iso.as_const()).unwrap(),
             &[
@@ -7008,7 +7293,9 @@ mod tests {
         assert_eq!(iso_overflow_normal_len, 10);
         assert_eq!(iso_overflow_len, 0);
         assert_eq!(
-            iso_overflow_heap.slice(iso_overflow_linear_iso.as_const()).unwrap()[0],
+            iso_overflow_heap
+                .slice(iso_overflow_linear_iso.as_const())
+                .unwrap()[0],
             AT_ISO_TGROUP {
                 tgroup_num: 1,
                 num: [10, 11, 12],
@@ -7032,14 +7319,19 @@ mod tests {
             (
                 heap.allocate_model_storage(symmetry.to_vec()).unwrap(),
                 heap.allocate_model_storage(current.to_vec()).unwrap(),
-                heap.allocate_model_storage(vec![99; symmetry.len()]).unwrap(),
+                heap.allocate_model_storage(vec![99; symmetry.len()])
+                    .unwrap(),
                 heap.allocate_model_storage(order.to_vec()).unwrap(),
             )
         }
 
         let mut stable_heap = SourceHeap::default();
-        let (stable_symmetry, stable_current, stable_temporary, stable_order) =
-            allocate_case(&mut stable_heap, &[1, 1, 3, 3], &[2, 2, 4, 4], &[3, 1, 2, 0]);
+        let (stable_symmetry, stable_current, stable_temporary, stable_order) = allocate_case(
+            &mut stable_heap,
+            &[1, 1, 3, 3],
+            &[2, 2, 4, 4],
+            &[3, 1, 2, 0],
+        );
         let mut stable_globals = CANON_GLOBALS::default();
         let mut stable_changed = 9;
         assert_eq!(
@@ -7056,15 +7348,31 @@ mod tests {
             Ok(2)
         );
         assert_eq!(stable_changed, 0);
-        assert_eq!(stable_heap.slice(stable_order.as_const()).unwrap(), &[0, 1, 2, 3]);
-        assert_eq!(stable_heap.slice(stable_symmetry.as_const()).unwrap(), &[1, 1, 3, 3]);
-        assert_eq!(stable_heap.slice(stable_current.as_const()).unwrap(), &[2, 2, 4, 4]);
-        assert_eq!(stable_heap.slice(stable_temporary.as_const()).unwrap(), &[2, 2, 4, 4]);
+        assert_eq!(
+            stable_heap.slice(stable_order.as_const()).unwrap(),
+            &[0, 1, 2, 3]
+        );
+        assert_eq!(
+            stable_heap.slice(stable_symmetry.as_const()).unwrap(),
+            &[1, 1, 3, 3]
+        );
+        assert_eq!(
+            stable_heap.slice(stable_current.as_const()).unwrap(),
+            &[2, 2, 4, 4]
+        );
+        assert_eq!(
+            stable_heap.slice(stable_temporary.as_const()).unwrap(),
+            &[2, 2, 4, 4]
+        );
         assert_eq!(stable_globals.m_pn_RankForSort, stable_symmetry.as_const());
 
         let mut current_only_heap = SourceHeap::default();
-        let (symmetry, current, temporary, order) =
-            allocate_case(&mut current_only_heap, &[1, 1, 3, 3], &[0, 0, 0, 0], &[0, 1, 2, 3]);
+        let (symmetry, current, temporary, order) = allocate_case(
+            &mut current_only_heap,
+            &[1, 1, 3, 3],
+            &[0, 0, 0, 0],
+            &[0, 1, 2, 3],
+        );
         let mut globals = CANON_GLOBALS::default();
         let mut changed = 0;
         assert_eq!(
@@ -7081,8 +7389,14 @@ mod tests {
             Ok(2)
         );
         assert_eq!(changed, 2);
-        assert_eq!(current_only_heap.slice(current.as_const()).unwrap(), &[2, 2, 4, 4]);
-        assert_eq!(current_only_heap.slice(symmetry.as_const()).unwrap(), &[1, 1, 3, 3]);
+        assert_eq!(
+            current_only_heap.slice(current.as_const()).unwrap(),
+            &[2, 2, 4, 4]
+        );
+        assert_eq!(
+            current_only_heap.slice(symmetry.as_const()).unwrap(),
+            &[1, 1, 3, 3]
+        );
 
         let source_symmetry = [1_u16, 1, 1, 1, 3, 3, 7, 7];
         let rebuilt_ranks = [4_u16, 4, 4, 4, 6, 6, 8, 8];
@@ -7110,10 +7424,19 @@ mod tests {
             Ok(3)
         );
         assert_eq!(changed, 3);
-        assert_eq!(both_heap.slice(order.as_const()).unwrap(), &[0, 1, 2, 3, 4, 5, 6, 7]);
-        assert_eq!(both_heap.slice(temporary.as_const()).unwrap(), &rebuilt_ranks);
+        assert_eq!(
+            both_heap.slice(order.as_const()).unwrap(),
+            &[0, 1, 2, 3, 4, 5, 6, 7]
+        );
+        assert_eq!(
+            both_heap.slice(temporary.as_const()).unwrap(),
+            &rebuilt_ranks
+        );
         assert_eq!(both_heap.slice(current.as_const()).unwrap(), &rebuilt_ranks);
-        assert_eq!(both_heap.slice(symmetry.as_const()).unwrap(), &[1, 1, 1, 1, 5, 5, 7, 7]);
+        assert_eq!(
+            both_heap.slice(symmetry.as_const()).unwrap(),
+            &[1, 1, 1, 1, 5, 5, 7, 7]
+        );
 
         let mut symmetry_only_heap = SourceHeap::default();
         let (symmetry, current, temporary, order) = allocate_case(
@@ -7142,7 +7465,10 @@ mod tests {
             symmetry_only_heap.slice(symmetry.as_const()).unwrap(),
             &[1, 1, 1, 1, 5, 5, 7, 7]
         );
-        assert_eq!(symmetry_only_heap.slice(current.as_const()).unwrap(), &rebuilt_ranks);
+        assert_eq!(
+            symmetry_only_heap.slice(current.as_const()).unwrap(),
+            &rebuilt_ranks
+        );
 
         let mut empty_heap = SourceHeap::default();
         let mut empty_globals = CANON_GLOBALS::default();
@@ -7163,7 +7489,8 @@ mod tests {
         assert_eq!(empty_changed, 0);
 
         let mut error_heap = SourceHeap::default();
-        let (short_symmetry, current, temporary, order) = allocate_case(&mut error_heap, &[1], &[2, 2], &[0, 1]);
+        let (short_symmetry, current, temporary, order) =
+            allocate_case(&mut error_heap, &[1], &[2, 2], &[0, 1]);
         let mut error_globals = CANON_GLOBALS::default();
         let mut error_changed = 6;
         assert_eq!(
@@ -7237,7 +7564,9 @@ mod tests {
         assert_eq!(InchiTimeMsecDiff(&mut clock, None, None), 0);
         assert_eq!(clock.m_MaxPositiveClock, i64::MAX);
 
-        let tick = |clock_time| inchiTime { clockTime: clock_time };
+        let tick = |clock_time| inchiTime {
+            clockTime: clock_time,
+        };
         let cases = [
             (2_500_000, 1_000_000, 1_500),
             (1_000_000, 2_500_000, -1_500),
@@ -7282,7 +7611,9 @@ mod tests {
         assert_eq!(InchiTimeElapsed(&mut clock, None, 9_000_000), 0);
         assert_eq!(clock, INCHI_CLOCK::default());
 
-        let start = inchiTime { clockTime: 1_000_000 };
+        let start = inchiTime {
+            clockTime: 1_000_000,
+        };
         assert_eq!(InchiTimeElapsed(&mut clock, Some(&start), 2_500_000), 1_500);
         assert_eq!(clock.m_MaxPositiveClock, i64::MAX);
 
@@ -7335,7 +7666,9 @@ mod tests {
 
     #[test]
     fn source_port__ichicano__binchitimeisover__line_257() {
-        let tick = |clock_time| inchiTime { clockTime: clock_time };
+        let tick = |clock_time| inchiTime {
+            clockTime: clock_time,
+        };
 
         let mut clock = INCHI_CLOCK::default();
         assert_eq!(bInchiTimeIsOver(&mut clock, None, 9), 0);

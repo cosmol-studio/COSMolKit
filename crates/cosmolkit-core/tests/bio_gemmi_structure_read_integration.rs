@@ -38,7 +38,10 @@ fn pdb_fixture_exercises_gemmi_aligned_structural_records() {
     assert_eq!(structure.mod_residues()[0].parent_comp_id, "MET");
     assert_eq!(structure.entities()[0].dbrefs.len(), 2);
     assert_eq!(structure.entities()[0].dbrefs[0].accession_code, "Q12345");
-    assert_eq!(structure.entities()[0].dbrefs[1].accession_code, "Q12345LONGACCESSION");
+    assert_eq!(
+        structure.entities()[0].dbrefs[1].accession_code,
+        "Q12345LONGACCESSION"
+    );
     let crystal = structure.crystal().unwrap();
     assert_eq!(crystal.spacegroup_hm.as_deref(), Some("P 21 21 21"));
     assert!(structure.has_origx());

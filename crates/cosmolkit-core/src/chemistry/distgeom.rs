@@ -22,15 +22,16 @@ use crate::chemistry::forcefield::uff::atom_typer::get_atom_types_for_uff;
 use crate::chemistry::forcefield::uff::inversion::InversionContribs;
 use crate::chemistry::forcefield::uff::params::AtomicParams;
 use crate::chemistry::forcefield::{
-    AngleConstraintContribs, DistanceConstraintContribs, ForceField, ForceFieldContrib, ForceFieldVec3,
+    AngleConstraintContribs, DistanceConstraintContribs, ForceField, ForceFieldContrib,
+    ForceFieldVec3,
 };
 use crate::chemistry::stereo::{get_ideal_angle_between_ligands, has_non_tetrahedral_stereo};
 use crate::molecule::CoordinateBlock as MoleculeCoordinateBlock;
 use crate::read_parts::MoleculeReadParts;
 use crate::{
-    Atom, AtomId, Bond, BondId, BondOrder, BondStereo, ChiralTag, Conformer3D, Hybridization, Molecule,
-    MoleculeBuildError, SubstructMatchParams, ValenceModel, assign_valence, get_substruct_matches_with_params,
-    rdkit_valence_list,
+    Atom, AtomId, Bond, BondId, BondOrder, BondStereo, ChiralTag, Conformer3D, Hybridization,
+    Molecule, MoleculeBuildError, SubstructMatchParams, ValenceModel, assign_valence,
+    get_substruct_matches_with_params, rdkit_valence_list,
 };
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashSet};
@@ -350,7 +351,11 @@ fn embedder_center_in_volume_indices(
         && embedder_same_side(p4, p1, p2, p3, p0, tol)
 }
 
-fn embedder_center_in_volume(chiral_set: &ChiralSet, positions: &[ForceFieldVec3], tol: f64) -> bool {
+fn embedder_center_in_volume(
+    chiral_set: &ChiralSet,
+    positions: &[ForceFieldVec3],
+    tol: f64,
+) -> bool {
     // BEGIN RDKIT CPP FUNCTION DGeomHelpers::_centerInVolume chiral-set overload (Embedder.cpp:439-450)
     // RDKit✔️✔️: bool _centerInVolume(const DistGeom::ChiralSetPtr &chiralSet,
     // RDKit✔️✔️:                      const RDGeom::PointPtrVect &positions, double tol = 0.1,
@@ -378,7 +383,11 @@ fn embedder_center_in_volume(chiral_set: &ChiralSet, positions: &[ForceFieldVec3
     )
 }
 
-fn embedder_bounds_fulfilled(atoms: &[i32], mmat: &BoundsMatrix, positions: &[ForceFieldVec3]) -> bool {
+fn embedder_bounds_fulfilled(
+    atoms: &[i32],
+    mmat: &BoundsMatrix,
+    positions: &[ForceFieldVec3],
+) -> bool {
     // BEGIN RDKIT CPP FUNCTION DGeomHelpers::_boundsFulfilled (Embedder.cpp:451-476)
     // RDKit✔️✔️: bool _boundsFulfilled(const std::vector<int> &atoms,
     // RDKit✔️✔️:                       const DistGeom::BoundsMatrix &mmat,
@@ -604,7 +613,12 @@ fn embedder_test_trace_update(update: impl FnOnce(&mut EmbedderTestTrace)) {
 #[cfg(test)]
 fn embedder_test_trace_set_coords(slot: &mut Option<Vec<[f64; 3]>>, positions: &[Vec<f64>]) {
     if slot.is_none() {
-        *slot = Some(positions.iter().map(|point| [point[0], point[1], point[2]]).collect());
+        *slot = Some(
+            positions
+                .iter()
+                .map(|point| [point[0], point[1], point[2]])
+                .collect(),
+        );
     }
 }
 
@@ -630,7 +644,8 @@ pub(crate) fn embedder_stage_coords_for_test(
     params: &mut EmbedParameters,
     stage: EmbedderTestStage,
 ) -> Result<Molecule, DgBoundsError> {
-    let (mol_frags, frag_mapping) = molecule_fragments_for_embed(mol, params.embed_fragments_separately)?;
+    let (mol_frags, frag_mapping) =
+        molecule_fragments_for_embed(mol, params.embed_fragments_separately)?;
     let coord_map_storage = params.coord_map.clone();
     let mut coord_map = coord_map_storage.as_ref();
     if mol_frags.len() > 1 && coord_map.is_some() {
@@ -647,7 +662,13 @@ pub(crate) fn embedder_stage_coords_for_test(
         let mut mmat;
         if params.bounds_mat.is_none() || mol_frags.len() > 1 {
             mmat = BoundsMatrix::new(n_atoms);
-            if !embedder_setup_initial_bounds_matrix(piece, &mut mmat, coord_map, params, &mut etkdg_details)? {
+            if !embedder_setup_initial_bounds_matrix(
+                piece,
+                &mut mmat,
+                coord_map,
+                params,
+                &mut etkdg_details,
+            )? {
                 continue;
             }
         } else {
@@ -679,11 +700,21 @@ pub(crate) fn embedder_stage_coords_for_test(
 
         let mut chiral_centers = Vec::new();
         let mut tetrahedral_carbons = Vec::new();
-        embedder_find_chiral_sets(piece, &mut chiral_centers, &mut tetrahedral_carbons, coord_map);
+        embedder_find_chiral_sets(
+            piece,
+            &mut chiral_centers,
+            &mut tetrahedral_carbons,
+            coord_map,
+        );
 
         let mut double_bond_ends = Vec::new();
         let mut stereo_double_bonds = Vec::new();
-        embedder_find_double_bonds(piece, &mut double_bond_ends, &mut stereo_double_bonds, coord_map);
+        embedder_find_double_bonds(
+            piece,
+            &mut double_bond_ends,
+            &mut stereo_double_bonds,
+            coord_map,
+        );
 
         let four_d = params.use_random_coords || !chiral_centers.is_empty();
         let dim = if four_d { 4 } else { 3 };
@@ -705,8 +736,13 @@ pub(crate) fn embedder_stage_coords_for_test(
         for _iter in 0..max_iterations {
             let mut attempt_positions = vec![vec![0.0; dim]; n_atoms];
             let mut dist_mat = SymmMatrix::new(n_atoms);
-            if !embedder_generate_initial_coords(&mut attempt_positions, &embed_args, params, &mut dist_mat, &mut rng)?
-            {
+            if !embedder_generate_initial_coords(
+                &mut attempt_positions,
+                &embed_args,
+                params,
+                &mut dist_mat,
+                &mut rng,
+            )? {
                 continue;
             }
             if matches!(stage, EmbedderTestStage::InitialCoords) {
@@ -732,7 +768,12 @@ pub(crate) fn embedder_stage_coords_for_test(
                 continue;
             }
             if (!embed_args.chiral_centers.is_empty() || params.use_random_coords)
-                && !embedder_minimize_fourth_dimension(&mut attempt_positions, &embed_args, params, None)
+                && !embedder_minimize_fourth_dimension(
+                    &mut attempt_positions,
+                    &embed_args,
+                    params,
+                    None,
+                )
             {
                 continue;
             }
@@ -751,7 +792,12 @@ pub(crate) fn embedder_stage_coords_for_test(
                 break;
             }
 
-            if !embedder_double_bond_geometry_checks(&attempt_positions, &embed_args, params, 1.0e-3) {
+            if !embedder_double_bond_geometry_checks(
+                &attempt_positions,
+                &embed_args,
+                params,
+                1.0e-3,
+            ) {
                 continue;
             }
             if params.enforce_chirality {
@@ -800,7 +846,8 @@ pub(crate) fn embedder_trace_for_test(
     mol: &Molecule,
     params: &mut EmbedParameters,
 ) -> Result<EmbedderTestTrace, DgBoundsError> {
-    let (mol_frags, _frag_mapping) = molecule_fragments_for_embed(mol, params.embed_fragments_separately)?;
+    let (mol_frags, _frag_mapping) =
+        molecule_fragments_for_embed(mol, params.embed_fragments_separately)?;
     let coord_map_storage = params.coord_map.clone();
     let mut coord_map = coord_map_storage.as_ref();
     if mol_frags.len() > 1 && coord_map.is_some() {
@@ -808,7 +855,9 @@ pub(crate) fn embedder_trace_for_test(
     }
     let previous_track_failures = params.track_failures;
     params.track_failures = true;
-    params.failures.resize(EmbedFailureCause::EndOfEnum as usize, 0);
+    params
+        .failures
+        .resize(EmbedFailureCause::EndOfEnum as usize, 0);
     params.failures.fill(0);
 
     let mut trace = EmbedderTestTrace::default();
@@ -823,7 +872,13 @@ pub(crate) fn embedder_trace_for_test(
         let mut mmat;
         if params.bounds_mat.is_none() || mol_frags.len() > 1 {
             mmat = BoundsMatrix::new(n_atoms);
-            if !embedder_setup_initial_bounds_matrix(piece, &mut mmat, coord_map, params, &mut etkdg_details)? {
+            if !embedder_setup_initial_bounds_matrix(
+                piece,
+                &mut mmat,
+                coord_map,
+                params,
+                &mut etkdg_details,
+            )? {
                 continue;
             }
         } else {
@@ -855,11 +910,21 @@ pub(crate) fn embedder_trace_for_test(
 
         let mut chiral_centers = Vec::new();
         let mut tetrahedral_carbons = Vec::new();
-        embedder_find_chiral_sets(piece, &mut chiral_centers, &mut tetrahedral_carbons, coord_map);
+        embedder_find_chiral_sets(
+            piece,
+            &mut chiral_centers,
+            &mut tetrahedral_carbons,
+            coord_map,
+        );
 
         let mut double_bond_ends = Vec::new();
         let mut stereo_double_bonds = Vec::new();
-        embedder_find_double_bonds(piece, &mut double_bond_ends, &mut stereo_double_bonds, coord_map);
+        embedder_find_double_bonds(
+            piece,
+            &mut double_bond_ends,
+            &mut stereo_double_bonds,
+            coord_map,
+        );
 
         let four_d = params.use_random_coords || !chiral_centers.is_empty();
         let dim = if four_d { 4 } else { 3 };
@@ -873,7 +938,13 @@ pub(crate) fn embedder_trace_for_test(
         };
         let mut attempt_positions = vec![vec![0.0; dim]; n_atoms];
         embedder_test_low_level_trace_reset();
-        let _ = embedder_embed_points(&mut attempt_positions, embed_args, params, params.random_seed, None)?;
+        let _ = embedder_embed_points(
+            &mut attempt_positions,
+            embed_args,
+            params,
+            params.random_seed,
+            None,
+        )?;
         trace = embedder_test_low_level_trace_take();
     }
     trace.failures = embedder_test_trace_failures(params);
@@ -985,12 +1056,23 @@ fn embedder_first_minimization(
     let local_e = field.calc_energy_current(Some(&mut e_contribs));
     #[cfg(test)]
     embedder_test_trace_update(|trace| {
-        trace.low_level.first_minimization_final_energy.get_or_insert(local_e);
-        trace.low_level.first_minimization_passes.get_or_insert(minimize_passes);
+        trace
+            .low_level
+            .first_minimization_final_energy
+            .get_or_insert(local_e);
+        trace
+            .low_level
+            .first_minimization_passes
+            .get_or_insert(minimize_passes);
         trace
             .low_level
             .first_minimization_max_contrib
-            .get_or_insert_with(|| e_contribs.iter().copied().fold(0.0_f64, |acc, value| acc.max(value)));
+            .get_or_insert_with(|| {
+                e_contribs
+                    .iter()
+                    .copied()
+                    .fold(0.0_f64, |acc, value| acc.max(value))
+            });
     });
     if local_e / positions.len() as f64 >= MAX_MINIMIZED_E_PER_ATOM {
         got_coords = false;
@@ -1028,7 +1110,8 @@ fn embedder_check_tetrahedral_centers(
         && eargs.tetrahedral_carbons.len() == 3;
     for tet_set in eargs.tetrahedral_carbons {
         let volume_ok = embedder_volume_test(tet_set, &positions);
-        let center_ok = embedder_center_in_volume(tet_set, &positions, TETRAHEDRAL_CENTERINVOLUME_TOL);
+        let center_ok =
+            embedder_center_in_volume(tet_set, &positions, TETRAHEDRAL_CENTERINVOLUME_TOL);
         if trace_row103 {
             println!(
                 "row103_tetra_check idx0={} atoms=[{},{},{},{},{}] volume_ok={} center_ok={}",
@@ -1168,7 +1251,10 @@ fn embedder_minimize_fourth_dimension(
                 && Instant::now() > deadline
             {
                 if trace_row64 || trace_num_points {
-                    println!("distgeom_fourth_dimension n={} timeout pass={pass}", positions.len());
+                    println!(
+                        "distgeom_fourth_dimension n={} timeout pass={pass}",
+                        positions.len()
+                    );
                 }
                 copy_forcefield_positions_to_point_vectors(&field, positions);
                 return false;
@@ -1333,7 +1419,9 @@ fn embedder_minimize_with_exp_torsions(
 
         field2.initialize();
         let planarity_tolerance = 0.7;
-        if field2.calc_energy_current(None) > etkdg_details.improper_atoms.len() as f64 * planarity_tolerance {
+        if field2.calc_energy_current(None)
+            > etkdg_details.improper_atoms.len() as f64 * planarity_tolerance
+        {
             planar = false;
         }
     }
@@ -1381,9 +1469,12 @@ fn embedder_double_bond_geometry_checks(
     // END RDKIT CPP FUNCTION DGeomHelpers::EmbeddingOps::doubleBondGeometryChecks
     if let Some(double_bond_ends) = eargs.double_bond_ends {
         for &(idx0, idx1, idx2) in double_bond_ends {
-            let p0 = ForceFieldVec3::new(positions[idx0][0], positions[idx0][1], positions[idx0][2]);
-            let p1 = ForceFieldVec3::new(positions[idx1][0], positions[idx1][1], positions[idx1][2]);
-            let p2 = ForceFieldVec3::new(positions[idx2][0], positions[idx2][1], positions[idx2][2]);
+            let p0 =
+                ForceFieldVec3::new(positions[idx0][0], positions[idx0][1], positions[idx0][2]);
+            let p1 =
+                ForceFieldVec3::new(positions[idx1][0], positions[idx1][1], positions[idx1][2]);
+            let p2 =
+                ForceFieldVec3::new(positions[idx2][0], positions[idx2][1], positions[idx2][2]);
             let mut v1 = p1 - p0;
             v1 /= v1.length();
             let mut v2 = p1 - p2;
@@ -1426,10 +1517,26 @@ fn embedder_double_bond_stereo_checks(
     // END RDKIT CPP FUNCTION DGeomHelpers::EmbeddingOps::doubleBondStereoChecks
     const M_PI_2: f64 = std::f64::consts::FRAC_PI_2;
     for (atoms, sign) in eargs.stereo_double_bonds {
-        let p0 = ForceFieldVec3::new(positions[atoms[0]][0], positions[atoms[0]][1], positions[atoms[0]][2]);
-        let p1 = ForceFieldVec3::new(positions[atoms[1]][0], positions[atoms[1]][1], positions[atoms[1]][2]);
-        let p2 = ForceFieldVec3::new(positions[atoms[2]][0], positions[atoms[2]][1], positions[atoms[2]][2]);
-        let p3 = ForceFieldVec3::new(positions[atoms[3]][0], positions[atoms[3]][1], positions[atoms[3]][2]);
+        let p0 = ForceFieldVec3::new(
+            positions[atoms[0]][0],
+            positions[atoms[0]][1],
+            positions[atoms[0]][2],
+        );
+        let p1 = ForceFieldVec3::new(
+            positions[atoms[1]][0],
+            positions[atoms[1]][1],
+            positions[atoms[1]][2],
+        );
+        let p2 = ForceFieldVec3::new(
+            positions[atoms[2]][0],
+            positions[atoms[2]][1],
+            positions[atoms[2]][2],
+        );
+        let p3 = ForceFieldVec3::new(
+            positions[atoms[3]][0],
+            positions[atoms[3]][1],
+            positions[atoms[3]][2],
+        );
         let beg_end_vec = p2 - p1;
         let beg_nbr_vec = p0 - p1;
         let crs1 = beg_nbr_vec.cross_product(beg_end_vec);
@@ -1596,13 +1703,17 @@ fn embedder_embed_points_with_rng<R: RdkitDoubleRng>(
         } else if trace_row61 {
             println!("row61_embed_points iter_start iter={iter}");
         } else if trace_num_points {
-            println!("distgeom_embed_points n={} iter_start iter={iter}", positions.len());
+            println!(
+                "distgeom_embed_points n={} iter_start iter={iter}",
+                positions.len()
+            );
         }
         if let Some(callback) = embed_params.callback {
             callback(iter);
         }
 
-        got_coords = embedder_generate_initial_coords(positions, eargs, embed_params, &mut dist_mat, rng)?;
+        got_coords =
+            embedder_generate_initial_coords(positions, eargs, embed_params, &mut dist_mat, rng)?;
         if !got_coords {
             if trace_row64 {
                 println!("row64_embed_points iter={iter} stage=initial_coords ok=0");
@@ -1660,7 +1771,10 @@ fn embedder_embed_points_with_rng<R: RdkitDoubleRng>(
                 }
                 got_coords = embedder_check_tetrahedral_centers(positions, eargs, embed_params);
                 if !got_coords {
-                    embedder_increment_failure(embed_params, EmbedFailureCause::CheckTetrahedralCenters);
+                    embedder_increment_failure(
+                        embed_params,
+                        EmbedFailureCause::CheckTetrahedralCenters,
+                    );
                 }
             }
 
@@ -1672,11 +1786,15 @@ fn embedder_embed_points_with_rng<R: RdkitDoubleRng>(
             }
 
             if got_coords && (!eargs.chiral_centers.is_empty() || embed_params.use_random_coords) {
-                got_coords = embedder_minimize_fourth_dimension(positions, eargs, embed_params, end_time);
+                got_coords =
+                    embedder_minimize_fourth_dimension(positions, eargs, embed_params, end_time);
                 if got_coords {
                     #[cfg(test)]
                     embedder_test_trace_update(|trace| {
-                        embedder_test_trace_set_coords(&mut trace.fourth_dimension_cleaned, positions);
+                        embedder_test_trace_set_coords(
+                            &mut trace.fourth_dimension_cleaned,
+                            positions,
+                        );
                     });
                 }
                 if trace_row64 {
@@ -1700,13 +1818,21 @@ fn embedder_embed_points_with_rng<R: RdkitDoubleRng>(
                     if let Some(deadline) = end_time
                         && Instant::now() > deadline
                     {
-                        embedder_increment_failure(embed_params, EmbedFailureCause::ExceededTimeout);
+                        embedder_increment_failure(
+                            embed_params,
+                            EmbedFailureCause::ExceededTimeout,
+                        );
                     }
-                    embedder_increment_failure(embed_params, EmbedFailureCause::MinimizeFourthDimension);
+                    embedder_increment_failure(
+                        embed_params,
+                        EmbedFailureCause::MinimizeFourthDimension,
+                    );
                 }
             }
 
-            if got_coords && (embed_params.use_exp_torsion_angle_prefs || embed_params.use_basic_knowledge) {
+            if got_coords
+                && (embed_params.use_exp_torsion_angle_prefs || embed_params.use_basic_knowledge)
+            {
                 got_coords = embedder_minimize_with_exp_torsions(positions, eargs, embed_params);
                 if got_coords {
                     #[cfg(test)]
@@ -1727,7 +1853,8 @@ fn embedder_embed_points_with_rng<R: RdkitDoubleRng>(
             }
 
             if got_coords {
-                got_coords = embedder_double_bond_geometry_checks(positions, eargs, embed_params, 1.0e-3);
+                got_coords =
+                    embedder_double_bond_geometry_checks(positions, eargs, embed_params, 1.0e-3);
                 if trace_num_points {
                     println!(
                         "distgeom_embed_points n={} iter={iter} stage=double_bond_geometry ok={}",
@@ -1761,7 +1888,10 @@ fn embedder_embed_points_with_rng<R: RdkitDoubleRng>(
                         );
                     }
                     if !got_coords {
-                        embedder_increment_failure(embed_params, EmbedFailureCause::BadDoubleBondStereo);
+                        embedder_increment_failure(
+                            embed_params,
+                            EmbedFailureCause::BadDoubleBondStereo,
+                        );
                     }
                 }
             }
@@ -1914,7 +2044,10 @@ fn embedder_embed_points(
     // RDKit✔️✔️:   return gotCoords;
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION DGeomHelpers::EmbeddingOps::embedPoints
-    assert!(seed >= -1, "random seed must either be positive, zero, or negative one");
+    assert!(
+        seed >= -1,
+        "random seed must either be positive, zero, or negative one"
+    );
     if embed_params.max_iterations == 0 {
         embed_params.max_iterations = 10 * positions.len() as u32;
     }
@@ -1927,7 +2060,13 @@ fn embedder_embed_points(
         embedder_embed_points_with_rng(positions, &eargs, embed_params, end_time, &mut rng)
     } else {
         RDKIT_DISTGEOM_RNG.with(|rng| {
-            embedder_embed_points_with_rng(positions, &eargs, embed_params, end_time, &mut *rng.borrow_mut())
+            embedder_embed_points_with_rng(
+                positions,
+                &eargs,
+                embed_params,
+                end_time,
+                &mut *rng.borrow_mut(),
+            )
         })
     }?;
     Ok(got_coords)
@@ -2209,8 +2348,10 @@ fn embedder_find_chiral_sets(
         let chiral_type = atom.chiral_tag();
         let atom_idx = atom.id().index();
         let nbrs0 = neighbors_for_atom(mol, atom_idx);
-        if matches!(chiral_type, ChiralTag::TetrahedralCw | ChiralTag::TetrahedralCcw)
-            || ((atom.atomic_number() == 6 || atom.atomic_number() == 7) && nbrs0.len() == 4)
+        if matches!(
+            chiral_type,
+            ChiralTag::TetrahedralCw | ChiralTag::TetrahedralCcw
+        ) || ((atom.atomic_number() == 6 || atom.atomic_number() == 7) && nbrs0.len() == 4)
         {
             let mut nbrs = nbrs0;
             assert!(nbrs.len() >= 3, "Cannot be a chiral center");
@@ -2258,7 +2399,8 @@ fn embedder_find_chiral_sets(
                     structure_flags,
                 )));
             } else {
-                let coord_mapped = coord_map.is_some_and(|map| map.contains_key(&(atom_idx as i32)));
+                let coord_mapped =
+                    coord_map.is_some_and(|map| map.contains_key(&(atom_idx as i32)));
                 let ring_excluded = ring_info.is_some_and(|rings| {
                     rings.num_atom_rings(AtomId::new(atom_idx)) < 2
                         || rings.is_atom_in_ring_of_size(AtomId::new(atom_idx), 3)
@@ -2322,12 +2464,17 @@ fn embedder_find_chiral_sets(
     }
 }
 
-fn embedder_atropisomer_neighbor_bonds(mol: &Molecule, focus_atom: usize, atrop_bond: usize) -> Vec<usize> {
+fn embedder_atropisomer_neighbor_bonds(
+    mol: &Molecule,
+    focus_atom: usize,
+    atrop_bond: usize,
+) -> Vec<usize> {
     let mut bonds: Vec<usize> = mol
         .bonds()
         .iter()
         .filter(|bond| {
-            bond.id().index() != atrop_bond && (bond.begin().index() == focus_atom || bond.end().index() == focus_atom)
+            bond.id().index() != atrop_bond
+                && (bond.begin().index() == focus_atom || bond.end().index() == focus_atom)
         })
         .map(|bond| bond.id().index())
         .collect();
@@ -2663,12 +2810,25 @@ fn embedder_fill_atom_positions(
     }
 }
 
-fn alignments_align_points_ssr(ref_points: &[ForceFieldVec3], probe_points: &[ForceFieldVec3]) -> f64 {
+fn alignments_align_points_ssr(
+    ref_points: &[ForceFieldVec3],
+    probe_points: &[ForceFieldVec3],
+) -> f64 {
     // RDKit❗✔️: auto ssr =
     // RDKit❗✔️:     RDNumeric::Alignments::AlignPoints(refPoints, prbPoints, trans);
-    assert_eq!(ref_points.len(), probe_points.len(), "Mismatch in number of points");
-    let reference: Vec<_> = ref_points.iter().map(|point| [point.x, point.y, point.z]).collect();
-    let probe: Vec<_> = probe_points.iter().map(|point| [point.x, point.y, point.z]).collect();
+    assert_eq!(
+        ref_points.len(),
+        probe_points.len(),
+        "Mismatch in number of points"
+    );
+    let reference: Vec<_> = ref_points
+        .iter()
+        .map(|point| [point.x, point.y, point.z])
+        .collect();
+    let probe: Vec<_> = probe_points
+        .iter()
+        .map(|point| [point.x, point.y, point.z])
+        .collect();
     crate::chemistry::numerics::alignment::align_points(&reference, &probe, None, false, 50)
         .expect("distgeom passes equally sized non-empty point sets")
         .0
@@ -2676,8 +2836,15 @@ fn alignments_align_points_ssr(ref_points: &[ForceFieldVec3], probe_points: &[Fo
 
 #[cfg(test)]
 pub(crate) fn aligned_rmsd_for_test(ref_points: &[[f64; 3]], probe_points: &[[f64; 3]]) -> f64 {
-    assert_eq!(ref_points.len(), probe_points.len(), "Mismatch in number of points");
-    assert!(!ref_points.is_empty(), "alignment requires at least one point");
+    assert_eq!(
+        ref_points.len(),
+        probe_points.len(),
+        "Mismatch in number of points"
+    );
+    assert!(
+        !ref_points.is_empty(),
+        "alignment requires at least one point"
+    );
     let ref_points: Vec<_> = ref_points
         .iter()
         .map(|point| ForceFieldVec3::new(point[0], point[1], point[2]))
@@ -2740,7 +2907,9 @@ fn embedder_is_conf_far_from_rest(
     true
 }
 
-fn molecule_without_hs_for_pruning(mol: &Molecule) -> Result<(Molecule, Vec<usize>), DgBoundsError> {
+fn molecule_without_hs_for_pruning(
+    mol: &Molecule,
+) -> Result<(Molecule, Vec<usize>), DgBoundsError> {
     let hydrogens: Vec<_> = mol
         .atoms()
         .iter()
@@ -2753,14 +2922,20 @@ fn molecule_without_hs_for_pruning(mol: &Molecule) -> Result<(Molecule, Vec<usiz
         .iter()
         .enumerate()
         .filter_map(|(old_idx, new_idx)| new_idx.map(|idx| (idx.index(), old_idx)))
-        .fold(vec![0; stripped.num_atoms()], |mut acc, (new_idx, old_idx)| {
-            acc[new_idx] = old_idx;
-            acc
-        });
+        .fold(
+            vec![0; stripped.num_atoms()],
+            |mut acc, (new_idx, old_idx)| {
+                acc[new_idx] = old_idx;
+                acc
+            },
+        );
     Ok((stripped, new_to_old))
 }
 
-fn embedder_get_mol_self_matches(mol: &Molecule, params: &EmbedParameters) -> Result<Vec<Vec<usize>>, DgBoundsError> {
+fn embedder_get_mol_self_matches(
+    mol: &Molecule,
+    params: &EmbedParameters,
+) -> Result<Vec<Vec<usize>>, DgBoundsError> {
     // BEGIN RDKIT CPP FUNCTION DGeomHelpers::detail::getMolSelfMatches (Embedder.cpp:1449-1494)
     // RDKit✔️✔️: std::vector<std::vector<unsigned int>> getMolSelfMatches(
     // RDKit✔️✔️:     const ROMol &mol, const EmbedParameters &params) {
@@ -2807,8 +2982,11 @@ fn embedder_get_mol_self_matches(mol: &Molecule, params: &EmbedParameters) -> Re
             specified_stereo_query_matches_unspecified: false,
             ..Default::default()
         };
-        let prb_query = crate::QueryGraph::from_query_molecule(prb_mol_for_match.clone())
-            .map_err(|_| DgBoundsError::GenerationFailed("failed to build self-match query".to_owned()))?;
+        let prb_query =
+            crate::search::query_graph::query_graph_from_concrete_molecule(prb_mol_for_match)
+                .map_err(|_| {
+                    DgBoundsError::GenerationFailed("failed to build self-match query".to_owned())
+                })?;
         let heavy_atom_matches = get_substruct_matches_with_params(&tmol, &prb_query, &sssps);
         // RDKit✔️✔️:     for (const auto &match : heavyAtomMatches) {
         // RDKit✔️✔️:       res.emplace_back(0);
@@ -2913,8 +3091,18 @@ fn embedder_embed_helper(
             continue;
         }
 
-        let new_seed = rdkit_embedder_conformer_seed(params.random_seed, ci, params.enable_sequential_random_seeds);
-        let got_coords = embedder_embed_points(&mut positions, eargs.embed_args(), params, new_seed, end_time)?;
+        let new_seed = rdkit_embedder_conformer_seed(
+            params.random_seed,
+            ci,
+            params.enable_sequential_random_seeds,
+        );
+        let got_coords = embedder_embed_points(
+            &mut positions,
+            eargs.embed_args(),
+            params,
+            new_seed,
+            end_time,
+        )?;
 
         // RDKit✔️✔️:     // copy the coordinates into the correct conformer
         // RDKit✔️✔️:     if (gotCoords) {
@@ -2926,7 +3114,10 @@ fn embedder_embed_helper(
             for i in 0..conf.coordinates().len() {
                 // RDKit✔️✔️:         if (!eargs->fragMapping ||
                 // RDKit✔️✔️:             (*eargs->fragMapping)[i] == static_cast<int>(eargs->fragIdx)) {
-                if eargs.frag_mapping.is_none_or(|mapping| mapping[i] == eargs.frag_idx) {
+                if eargs
+                    .frag_mapping
+                    .is_none_or(|mapping| mapping[i] == eargs.frag_idx)
+                {
                     // RDKit✔️✔️:           conf->setAtomPos(i, RDGeom::Point3D((*positions[fragAtomIdx])[0],
                     // RDKit✔️✔️:                                               (*positions[fragAtomIdx])[1],
                     // RDKit✔️✔️:                                               (*positions[fragAtomIdx])[2]));
@@ -2965,7 +3156,9 @@ pub enum DgBoundsError {
     InvalidEmbedParametersJson(String),
     #[error("molecule has no atoms")]
     EmptyMolecule,
-    #[error("Only version 1 and 2 of the experimental torsion-angle preferences (ETversion) supported")]
+    #[error(
+        "Only version 1 and 2 of the experimental torsion-angle preferences (ETversion) supported"
+    )]
     UnsupportedEtVersion,
     #[error("coordinate block update failed: {0}")]
     CoordinateUpdateFailed(String),
@@ -3387,8 +3580,8 @@ impl EmbedParameters {
         // RDKit✔️✔️:                           nullptr,  // CPCI
         // RDKit✔️✔️:                           nullptr   // callback
         Self::from_rdkit_constructor(
-            0, 1, -1, true, false, 2.0, true, 1, None, 1e-3, false, true, false, true, false, 5.0, -1.0, true, 1, None,
-            true, false, false, false, 0, None, None,
+            0, 1, -1, true, false, 2.0, true, 1, None, 1e-3, false, true, false, true, false, 5.0,
+            -1.0, true, 1, None, true, false, false, false, 0, None, None,
         )
     }
 
@@ -3422,8 +3615,8 @@ impl EmbedParameters {
         // RDKit✔️✔️:                            nullptr,  // CPCI
         // RDKit✔️✔️:                            nullptr   // callback
         Self::from_rdkit_constructor(
-            0, 1, -1, true, false, 2.0, true, 1, None, 1e-3, false, false, true, false, false, 5.0, -1.0, true, 1,
-            None, true, false, false, false, 0, None, None,
+            0, 1, -1, true, false, 2.0, true, 1, None, 1e-3, false, false, true, false, false, 5.0,
+            -1.0, true, 1, None, true, false, false, false, 0, None, None,
         )
     }
 
@@ -3457,8 +3650,8 @@ impl EmbedParameters {
         // RDKit✔️✔️:                              nullptr,  // CPCI
         // RDKit✔️✔️:                              nullptr   // callback
         Self::from_rdkit_constructor(
-            0, 1, -1, true, false, 2.0, true, 1, None, 1e-3, false, false, true, false, false, 5.0, -1.0, true, 2,
-            None, true, false, false, false, 0, None, None,
+            0, 1, -1, true, false, 2.0, true, 1, None, 1e-3, false, false, true, false, false, 5.0,
+            -1.0, true, 2, None, true, false, false, false, 0, None, None,
         )
     }
 
@@ -3492,8 +3685,8 @@ impl EmbedParameters {
         // RDKit✔️✔️:                             nullptr,  // CPCI
         // RDKit✔️✔️:                             nullptr   // callback
         Self::from_rdkit_constructor(
-            0, 1, -1, true, false, 2.0, true, 1, None, 1e-3, false, true, true, true, false, 5.0, -1.0, true, 1, None,
-            true, false, false, false, 0, None, None,
+            0, 1, -1, true, false, 2.0, true, 1, None, 1e-3, false, true, true, true, false, 5.0,
+            -1.0, true, 1, None, true, false, false, false, 0, None, None,
         )
     }
 
@@ -3527,8 +3720,8 @@ impl EmbedParameters {
         // RDKit✔️✔️:                               nullptr,  // CPCI
         // RDKit✔️✔️:                               nullptr   // callback
         Self::from_rdkit_constructor(
-            0, 1, -1, true, false, 2.0, true, 1, None, 1e-3, false, true, true, true, false, 5.0, -1.0, true, 2, None,
-            true, false, false, false, 0, None, None,
+            0, 1, -1, true, false, 2.0, true, 1, None, 1e-3, false, true, true, true, false, 5.0,
+            -1.0, true, 2, None, true, false, false, false, 0, None, None,
         )
     }
 
@@ -3562,8 +3755,8 @@ impl EmbedParameters {
         // RDKit✔️✔️:                               nullptr,  // CPCI
         // RDKit✔️✔️:                               nullptr   // callback
         Self::from_rdkit_constructor(
-            0, 1, -1, true, false, 2.0, true, 1, None, 1e-3, false, true, true, true, false, 5.0, -1.0, true, 2, None,
-            true, false, true, true, 0, None, None,
+            0, 1, -1, true, false, 2.0, true, 1, None, 1e-3, false, true, true, true, false, 5.0,
+            -1.0, true, 2, None, true, false, true, true, 0, None, None,
         )
     }
 
@@ -3597,8 +3790,8 @@ impl EmbedParameters {
         // RDKit✔️✔️:                                 nullptr,  // CPCI
         // RDKit✔️✔️:                                 nullptr   // callback
         Self::from_rdkit_constructor(
-            0, 1, -1, true, false, 2.0, true, 1, None, 1e-3, false, true, true, true, false, 5.0, -1.0, true, 2, None,
-            true, true, false, false, 0, None, None,
+            0, 1, -1, true, false, 2.0, true, 1, None, 1e-3, false, true, true, true, false, 5.0,
+            -1.0, true, 2, None, true, true, false, false, 0, None, None,
         )
     }
 
@@ -3641,14 +3834,22 @@ impl EmbedParameters {
         if json.is_empty() {
             return Ok(());
         }
-        let value: serde_json::Value =
-            serde_json::from_str(json).map_err(|err| DgBoundsError::InvalidEmbedParametersJson(err.to_string()))?;
+        let value: serde_json::Value = serde_json::from_str(json)
+            .map_err(|err| DgBoundsError::InvalidEmbedParametersJson(err.to_string()))?;
 
         update_f64_field(&value, "basinThresh", &mut self.basin_thresh)?;
-        update_f64_field(&value, "boundsMatForceScaling", &mut self.bounds_mat_force_scaling)?;
+        update_f64_field(
+            &value,
+            "boundsMatForceScaling",
+            &mut self.bounds_mat_force_scaling,
+        )?;
         update_f64_field(&value, "boxSizeMult", &mut self.box_size_mult)?;
         update_bool_field(&value, "clearConfs", &mut self.clear_confs)?;
-        update_bool_field(&value, "embedFragmentsSeparately", &mut self.embed_fragments_separately)?;
+        update_bool_field(
+            &value,
+            "embedFragmentsSeparately",
+            &mut self.embed_fragments_separately,
+        )?;
         update_bool_field(
             &value,
             "enableSequentialRandomSeeds",
@@ -3657,11 +3858,19 @@ impl EmbedParameters {
         update_bool_field(&value, "enforceChirality", &mut self.enforce_chirality)?;
         update_u32_field(&value, "ETversion", &mut self.et_version)?;
         update_bool_field(&value, "forceTransAmides", &mut self.force_trans_amides)?;
-        update_bool_field(&value, "ignoreSmoothingFailures", &mut self.ignore_smoothing_failures)?;
+        update_bool_field(
+            &value,
+            "ignoreSmoothingFailures",
+            &mut self.ignore_smoothing_failures,
+        )?;
         update_u32_field(&value, "maxIterations", &mut self.max_iterations)?;
         update_i32_field(&value, "numThreads", &mut self.num_threads)?;
         update_u32_field(&value, "numZeroFail", &mut self.num_zero_fail)?;
-        update_bool_field(&value, "onlyHeavyAtomsForRMS", &mut self.only_heavy_atoms_for_rms)?;
+        update_bool_field(
+            &value,
+            "onlyHeavyAtomsForRMS",
+            &mut self.only_heavy_atoms_for_rms,
+        )?;
         update_f64_field(&value, "optimizerForceTol", &mut self.optimizer_force_tol)?;
         update_f64_field(&value, "pruneRmsThresh", &mut self.prune_rms_thresh)?;
         update_bool_field(&value, "randNegEig", &mut self.rand_neg_eig)?;
@@ -3674,12 +3883,32 @@ impl EmbedParameters {
         update_u32_field(&value, "timeout", &mut self.timeout)?;
         update_bool_field(&value, "trackFailures", &mut self.track_failures)?;
         update_bool_field(&value, "useBasicKnowledge", &mut self.use_basic_knowledge)?;
-        update_bool_field(&value, "useExpTorsionAnglePrefs", &mut self.use_exp_torsion_angle_prefs)?;
-        update_bool_field(&value, "useMacrocycle14config", &mut self.use_macrocycle14config)?;
-        update_bool_field(&value, "useMacrocycleTorsions", &mut self.use_macrocycle_torsions)?;
+        update_bool_field(
+            &value,
+            "useExpTorsionAnglePrefs",
+            &mut self.use_exp_torsion_angle_prefs,
+        )?;
+        update_bool_field(
+            &value,
+            "useMacrocycle14config",
+            &mut self.use_macrocycle14config,
+        )?;
+        update_bool_field(
+            &value,
+            "useMacrocycleTorsions",
+            &mut self.use_macrocycle_torsions,
+        )?;
         update_bool_field(&value, "useRandomCoords", &mut self.use_random_coords)?;
-        update_bool_field(&value, "useSmallRingTorsions", &mut self.use_small_ring_torsions)?;
-        update_bool_field(&value, "useSymmetryForPruning", &mut self.use_symmetry_for_pruning)?;
+        update_bool_field(
+            &value,
+            "useSmallRingTorsions",
+            &mut self.use_small_ring_torsions,
+        )?;
+        update_bool_field(
+            &value,
+            "useSymmetryForPruning",
+            &mut self.use_symmetry_for_pruning,
+        )?;
         update_bool_field(&value, "verbose", &mut self.verbose)?;
 
         if let Some(coord_map) = value.get("coordMap") {
@@ -3742,10 +3971,18 @@ impl EmbedParameters {
         // END RDKIT CPP FUNCTION DGeomHelpers::embedParametersToJSON
         let mut fields = Vec::with_capacity(31);
         push_json_field(&mut fields, "basinThresh", self.basin_thresh);
-        push_json_field(&mut fields, "boundsMatForceScaling", self.bounds_mat_force_scaling);
+        push_json_field(
+            &mut fields,
+            "boundsMatForceScaling",
+            self.bounds_mat_force_scaling,
+        );
         push_json_field(&mut fields, "boxSizeMult", self.box_size_mult);
         push_json_field(&mut fields, "clearConfs", self.clear_confs);
-        push_json_field(&mut fields, "embedFragmentsSeparately", self.embed_fragments_separately);
+        push_json_field(
+            &mut fields,
+            "embedFragmentsSeparately",
+            self.embed_fragments_separately,
+        );
         push_json_field(
             &mut fields,
             "enableSequentialRandomSeeds",
@@ -3754,11 +3991,19 @@ impl EmbedParameters {
         push_json_field(&mut fields, "enforceChirality", self.enforce_chirality);
         push_json_field(&mut fields, "ETversion", self.et_version);
         push_json_field(&mut fields, "forceTransAmides", self.force_trans_amides);
-        push_json_field(&mut fields, "ignoreSmoothingFailures", self.ignore_smoothing_failures);
+        push_json_field(
+            &mut fields,
+            "ignoreSmoothingFailures",
+            self.ignore_smoothing_failures,
+        );
         push_json_field(&mut fields, "maxIterations", self.max_iterations);
         push_json_field(&mut fields, "numThreads", self.num_threads);
         push_json_field(&mut fields, "numZeroFail", self.num_zero_fail);
-        push_json_field(&mut fields, "onlyHeavyAtomsForRMS", self.only_heavy_atoms_for_rms);
+        push_json_field(
+            &mut fields,
+            "onlyHeavyAtomsForRMS",
+            self.only_heavy_atoms_for_rms,
+        );
         push_json_field(&mut fields, "optimizerForceTol", self.optimizer_force_tol);
         push_json_field(&mut fields, "pruneRmsThresh", self.prune_rms_thresh);
         push_json_field(&mut fields, "randNegEig", self.rand_neg_eig);
@@ -3771,12 +4016,32 @@ impl EmbedParameters {
         push_json_field(&mut fields, "timeout", self.timeout);
         push_json_field(&mut fields, "trackFailures", self.track_failures);
         push_json_field(&mut fields, "useBasicKnowledge", self.use_basic_knowledge);
-        push_json_field(&mut fields, "useExpTorsionAnglePrefs", self.use_exp_torsion_angle_prefs);
-        push_json_field(&mut fields, "useMacrocycle14config", self.use_macrocycle14config);
-        push_json_field(&mut fields, "useMacrocycleTorsions", self.use_macrocycle_torsions);
+        push_json_field(
+            &mut fields,
+            "useExpTorsionAnglePrefs",
+            self.use_exp_torsion_angle_prefs,
+        );
+        push_json_field(
+            &mut fields,
+            "useMacrocycle14config",
+            self.use_macrocycle14config,
+        );
+        push_json_field(
+            &mut fields,
+            "useMacrocycleTorsions",
+            self.use_macrocycle_torsions,
+        );
         push_json_field(&mut fields, "useRandomCoords", self.use_random_coords);
-        push_json_field(&mut fields, "useSmallRingTorsions", self.use_small_ring_torsions);
-        push_json_field(&mut fields, "useSymmetryForPruning", self.use_symmetry_for_pruning);
+        push_json_field(
+            &mut fields,
+            "useSmallRingTorsions",
+            self.use_small_ring_torsions,
+        );
+        push_json_field(
+            &mut fields,
+            "useSymmetryForPruning",
+            self.use_symmetry_for_pruning,
+        );
         push_json_field(&mut fields, "verbose", self.verbose);
 
         if let Some(coord_map) = &self.coord_map {
@@ -3811,7 +4076,10 @@ impl EmbedParameters {
     }
 }
 
-fn embed_parameters_json_field<'a>(value: &'a serde_json::Value, name: &str) -> Option<&'a serde_json::Value> {
+fn embed_parameters_json_field<'a>(
+    value: &'a serde_json::Value,
+    name: &str,
+) -> Option<&'a serde_json::Value> {
     value.as_object().and_then(|object| object.get(name))
 }
 
@@ -3830,7 +4098,10 @@ fn json_value_as_f64(name: &str, value: &serde_json::Value) -> Result<f64, DgBou
         text.parse::<f64>()
             .map_err(|_| embed_parameters_invalid_json(name, "a floating-point number"))
     } else {
-        Err(embed_parameters_invalid_json(name, "a floating-point number"))
+        Err(embed_parameters_invalid_json(
+            name,
+            "a floating-point number",
+        ))
     }
 }
 
@@ -3847,12 +4118,16 @@ fn json_value_as_i32(name: &str, value: &serde_json::Value) -> Result<i32, DgBou
 
 fn json_value_as_u32(name: &str, value: &serde_json::Value) -> Result<u32, DgBoundsError> {
     if let Some(number) = value.as_u64() {
-        u32::try_from(number).map_err(|_| embed_parameters_invalid_json(name, "an unsigned 32-bit integer"))
+        u32::try_from(number)
+            .map_err(|_| embed_parameters_invalid_json(name, "an unsigned 32-bit integer"))
     } else if let Some(text) = value.as_str() {
         text.parse::<u32>()
             .map_err(|_| embed_parameters_invalid_json(name, "an unsigned 32-bit integer"))
     } else {
-        Err(embed_parameters_invalid_json(name, "an unsigned 32-bit integer"))
+        Err(embed_parameters_invalid_json(
+            name,
+            "an unsigned 32-bit integer",
+        ))
     }
 }
 
@@ -3878,35 +4153,53 @@ fn json_value_as_bool(name: &str, value: &serde_json::Value) -> Result<bool, DgB
     }
 }
 
-fn update_f64_field(value: &serde_json::Value, name: &str, target: &mut f64) -> Result<(), DgBoundsError> {
+fn update_f64_field(
+    value: &serde_json::Value,
+    name: &str,
+    target: &mut f64,
+) -> Result<(), DgBoundsError> {
     if let Some(field) = embed_parameters_json_field(value, name) {
         *target = json_value_as_f64(name, field)?;
     }
     Ok(())
 }
 
-fn update_i32_field(value: &serde_json::Value, name: &str, target: &mut i32) -> Result<(), DgBoundsError> {
+fn update_i32_field(
+    value: &serde_json::Value,
+    name: &str,
+    target: &mut i32,
+) -> Result<(), DgBoundsError> {
     if let Some(field) = embed_parameters_json_field(value, name) {
         *target = json_value_as_i32(name, field)?;
     }
     Ok(())
 }
 
-fn update_u32_field(value: &serde_json::Value, name: &str, target: &mut u32) -> Result<(), DgBoundsError> {
+fn update_u32_field(
+    value: &serde_json::Value,
+    name: &str,
+    target: &mut u32,
+) -> Result<(), DgBoundsError> {
     if let Some(field) = embed_parameters_json_field(value, name) {
         *target = json_value_as_u32(name, field)?;
     }
     Ok(())
 }
 
-fn update_bool_field(value: &serde_json::Value, name: &str, target: &mut bool) -> Result<(), DgBoundsError> {
+fn update_bool_field(
+    value: &serde_json::Value,
+    name: &str,
+    target: &mut bool,
+) -> Result<(), DgBoundsError> {
     if let Some(field) = embed_parameters_json_field(value, name) {
         *target = json_value_as_bool(name, field)?;
     }
     Ok(())
 }
 
-fn parse_embed_parameters_coord_map(value: &serde_json::Value) -> Result<BTreeMap<i32, ForceFieldVec3>, DgBoundsError> {
+fn parse_embed_parameters_coord_map(
+    value: &serde_json::Value,
+) -> Result<BTreeMap<i32, ForceFieldVec3>, DgBoundsError> {
     let object = value
         .as_object()
         .ok_or_else(|| embed_parameters_invalid_json("coordMap", "an object"))?;
@@ -4063,7 +4356,16 @@ impl ChiralSet {
         lower_vol_bound: f64,
         upper_vol_bound: f64,
     ) -> Self {
-        Self::new(pid0, pid1, pid2, pid3, pid4, lower_vol_bound, upper_vol_bound, 0)
+        Self::new(
+            pid0,
+            pid1,
+            pid2,
+            pid3,
+            pid4,
+            lower_vol_bound,
+            upper_vol_bound,
+            0,
+        )
     }
 
     #[must_use]
@@ -4091,7 +4393,14 @@ pub type ChiralSetPtr = Arc<ChiralSet>;
 pub type VectChiralSet = Vec<ChiralSetPtr>;
 
 #[must_use]
-pub fn calc_chiral_volume_flat(idx1: usize, idx2: usize, idx3: usize, idx4: usize, pos: &[f64], dim: usize) -> f64 {
+pub fn calc_chiral_volume_flat(
+    idx1: usize,
+    idx2: usize,
+    idx3: usize,
+    idx4: usize,
+    pos: &[f64],
+    dim: usize,
+) -> f64 {
     // BEGIN RDKIT CPP FUNCTION DistGeom::calcChiralVolume flat overload (ChiralViolationContribs.cpp:15-35)
     // RDKit✔️✔️: double calcChiralVolume(const unsigned int idx1, const unsigned int idx2,
     // RDKit✔️✔️:                         const unsigned int idx3, const unsigned int idx4,
@@ -4136,7 +4445,13 @@ pub fn calc_chiral_volume_flat(idx1: usize, idx2: usize, idx3: usize, idx4: usiz
 }
 
 #[must_use]
-pub fn calc_chiral_volume_points(idx1: usize, idx2: usize, idx3: usize, idx4: usize, pts: &[ForceFieldVec3]) -> f64 {
+pub fn calc_chiral_volume_points(
+    idx1: usize,
+    idx2: usize,
+    idx3: usize,
+    idx4: usize,
+    pts: &[ForceFieldVec3],
+) -> f64 {
     // BEGIN RDKIT CPP FUNCTION DistGeom::calcChiralVolume PointPtrVect overload (ChiralViolationContribs.cpp:36-56)
     // RDKit✔️✔️: double calcChiralVolume(const unsigned int idx1, const unsigned int idx2,
     // RDKit✔️✔️:                         const unsigned int idx3, const unsigned int idx4,
@@ -4772,7 +5087,8 @@ impl FourthDimContribs {
         // RDKit✔️✔️:   d_contribs.emplace_back(idx, weight);
         // RDKit✔️✔️: }
         // END RDKIT CPP METHOD DistGeom::FourthDimContribs::addContrib
-        self.contribs.push(FourthDimContribsParams::new(idx, weight));
+        self.contribs
+            .push(FourthDimContribsParams::new(idx, weight));
     }
 
     #[must_use]
@@ -5035,8 +5351,15 @@ fn bond_valence_contrib_for_atom(bond: &Bond, atom_index: usize) -> f64 {
         BondOrder::FiveAndHalf => 5.5,
         BondOrder::Aromatic => 1.5,
         BondOrder::Hydrogen => 0.0,
-        BondOrder::Dative | BondOrder::DativeOne | BondOrder::DativeLeft | BondOrder::DativeRight => {
-            if bond.end().index() == atom_index { 1.0 } else { 0.0 }
+        BondOrder::Dative
+        | BondOrder::DativeOne
+        | BondOrder::DativeLeft
+        | BondOrder::DativeRight => {
+            if bond.end().index() == atom_index {
+                1.0
+            } else {
+                0.0
+            }
         }
         BondOrder::ThreeCenter | BondOrder::Unspecified | BondOrder::Other => 0.0,
     }
@@ -5075,7 +5398,8 @@ fn count_atom_electrons_rdkit(
     let radicals = atom.radical_electrons() as i32;
     let mut res = (dv - degree) + nlp - radicals;
     if res > 1 {
-        let n_unsaturations = assignment.explicit_valence[atom_index] - atom_degree[atom_index] as i32;
+        let n_unsaturations =
+            assignment.explicit_valence[atom_index] - atom_degree[atom_index] as i32;
         if n_unsaturations > 1 {
             res = 1;
         }
@@ -5095,7 +5419,8 @@ fn is_atom_conjugation_candidate(
         && !vals.is_empty()
         && vals[0] >= 0
     {
-        let total_valence = assignment.explicit_valence[atom_index] + assignment.implicit_hydrogens[atom_index];
+        let total_valence =
+            assignment.explicit_valence[atom_index] + assignment.implicit_hydrogens[atom_index];
         if total_valence > vals[0] {
             return false;
         }
@@ -5104,7 +5429,9 @@ fn is_atom_conjugation_candidate(
     let total_degree = atom_degree[atom_index]
         + atom.explicit_hydrogens() as usize
         + assignment.implicit_hydrogens[atom_index].max(0) as usize;
-    ((atom.atomic_number() <= 10) || (nouter != 5 && nouter != 6) || (nouter == 6 && total_degree < 2))
+    ((atom.atomic_number() <= 10)
+        || (nouter != 5 && nouter != 6)
+        || (nouter == 6 && total_degree < 2))
         && count_atom_electrons_rdkit(mol, assignment, atom_degree, atom_index) > 0
 }
 
@@ -5264,7 +5591,8 @@ fn compute_hybridizations_for_uff(
             }
         } else {
             let nouter = rdkit_n_outer_electrons(atom.atomic_number()).unwrap_or(0);
-            let total_valence = assignment.explicit_valence[atom_index] + assignment.implicit_hydrogens[atom_index];
+            let total_valence =
+                assignment.explicit_valence[atom_index] + assignment.implicit_hydrogens[atom_index];
             let num_free = nouter - (total_valence + atom.formal_charge() as i32);
             let norbs = if total_valence + nouter - (atom.formal_charge() as i32) < 8 {
                 let radicals = atom.radical_electrons() as i32;
@@ -5326,7 +5654,8 @@ fn total_num_hydrogens_for_distgeom(
     assignment: &crate::ValenceAssignment,
     atom_index: usize,
 ) -> u32 {
-    let mut res = atom.explicit_hydrogens() as u32 + assignment.implicit_hydrogens[atom_index].max(0) as u32;
+    let mut res =
+        atom.explicit_hydrogens() as u32 + assignment.implicit_hydrogens[atom_index].max(0) as u32;
     res += neighbors_for_atom(mol, atom_index)
         .into_iter()
         .filter(|&nbr| mol.atoms()[nbr].atomic_number() == 1)
@@ -5410,7 +5739,8 @@ fn ideal_bond_angle(hybridization: &crate::Hybridization, ring_size: Option<usiz
 // ──────────────────────────────────────────────
 
 use crate::chemistry::matrices::{
-    LOCAL_INF_DISTANCE as LOCAL_INF_DIST, topological_distance_matrix as compute_topological_distances,
+    LOCAL_INF_DISTANCE as LOCAL_INF_DIST,
+    topological_distance_matrix as compute_topological_distances,
 };
 
 fn flatten_topological_distances_matrix(mol: &Molecule) -> Vec<f64> {
@@ -5435,7 +5765,8 @@ fn neighbors_for_atom(mol: &Molecule, idx: usize) -> Vec<usize> {
 
 fn bond_between(mol: &Molecule, a: usize, b: usize) -> Option<&Bond> {
     mol.bonds().iter().find(|bond| {
-        (bond.begin().index() == a && bond.end().index() == b) || (bond.begin().index() == b && bond.end().index() == a)
+        (bond.begin().index() == a && bond.end().index() == b)
+            || (bond.begin().index() == b && bond.end().index() == a)
     })
 }
 
@@ -5489,7 +5820,11 @@ impl BoundsMatrix {
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION DistGeom::BoundsMatrix::getUpperBound
     fn get_upper(&self, i: usize, j: usize) -> f64 {
-        if i < j { self.get_val(i, j) } else { self.get_val(j, i) }
+        if i < j {
+            self.get_val(i, j)
+        } else {
+            self.get_val(j, i)
+        }
     }
 
     // BEGIN RDKIT CPP FUNCTION DistGeom::BoundsMatrix::setUpperBound (BoundsMatrix.h:46-53)
@@ -5614,7 +5949,11 @@ impl BoundsMatrix {
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION DistGeom::BoundsMatrix::getLowerBound
     fn get_lower(&self, i: usize, j: usize) -> f64 {
-        if i < j { self.get_val(j, i) } else { self.get_val(i, j) }
+        if i < j {
+            self.get_val(j, i)
+        } else {
+            self.get_val(i, j)
+        }
     }
 
     // BEGIN RDKIT CPP FUNCTION DistGeom::BoundsMatrix::checkValid (BoundsMatrix.h:94-103)
@@ -5926,7 +6265,10 @@ fn rdkit_embedder_conformer_seed(
             new_seed = (folded_num & POSITIVE_INT_MASK) as i32;
         }
     }
-    assert!(new_seed >= -1, "Something went wrong calculating a new seed");
+    assert!(
+        new_seed >= -1,
+        "Something went wrong calculating a new seed"
+    );
     new_seed
 }
 
@@ -5945,7 +6287,8 @@ fn pick_random_dist_mat(mmat: &BoundsMatrix, dist_mat: &mut SymmMatrix, seed: i3
             *rng.borrow_mut() = RdkitDistgeomMinStdRand::new(seed);
         });
     }
-    RDKIT_DISTGEOM_RNG.with(|rng| pick_random_dist_mat_with_rng(mmat, dist_mat, &mut *rng.borrow_mut()))
+    RDKIT_DISTGEOM_RNG
+        .with(|rng| pick_random_dist_mat_with_rng(mmat, dist_mat, &mut *rng.borrow_mut()))
 }
 
 fn pick_random_dist_mat_with_rng<R: RdkitDoubleRng>(
@@ -6002,12 +6345,18 @@ fn pick_random_dist_mat_with_rng<R: RdkitDoubleRng>(
     #[cfg(test)]
     embedder_test_trace_update(|trace| {
         if trace.low_level.random_dist_preview.is_none() {
-            trace.low_level.random_dist_preview = Some(dist_mat.data.iter().take(16).copied().collect());
-            if env::var("COSMOLKIT_DG_TRACE_FULL_RANDOM_DIST").ok().as_deref() == Some("1") {
+            trace.low_level.random_dist_preview =
+                Some(dist_mat.data.iter().take(16).copied().collect());
+            if env::var("COSMOLKIT_DG_TRACE_FULL_RANDOM_DIST")
+                .ok()
+                .as_deref()
+                == Some("1")
+            {
                 trace.low_level.random_dist_full = Some(dist_mat.data.clone());
             }
             trace.low_level.random_dist_sum = Some(dist_mat.data.iter().sum());
-            trace.low_level.random_dist_sum_sq = Some(dist_mat.data.iter().map(|value| value * value).sum());
+            trace.low_level.random_dist_sum_sq =
+                Some(dist_mat.data.iter().map(|value| value * value).sum());
             trace.low_level.random_dist_largest = Some(largest_val);
         }
     });
@@ -6306,7 +6655,13 @@ fn compute_initial_coords(
         });
     }
     RDKIT_DISTGEOM_RNG.with(|rng| {
-        compute_initial_coords_with_rng(dist_mat, positions, &mut *rng.borrow_mut(), rand_neg_eig, num_zero_fail)
+        compute_initial_coords_with_rng(
+            dist_mat,
+            positions,
+            &mut *rng.borrow_mut(),
+            rand_neg_eig,
+            num_zero_fail,
+        )
     })
 }
 
@@ -6458,7 +6813,8 @@ fn compute_initial_coords_with_rng<R: RdkitDoubleRng>(
     #[cfg(test)]
     embedder_test_trace_update(|trace| {
         if trace.low_level.initial_sq_d0i_preview.is_none() {
-            trace.low_level.initial_sq_d0i_preview = Some(sq_d0i.iter().take(16).copied().collect());
+            trace.low_level.initial_sq_d0i_preview =
+                Some(sq_d0i.iter().take(16).copied().collect());
         }
     });
 
@@ -6497,14 +6853,20 @@ fn compute_initial_coords_with_rng<R: RdkitDoubleRng>(
             .map(|v| format!("{v:.15}"))
             .collect::<Vec<_>>()
             .join(",");
-        println!("row64_compute_initial_coords eig_vals_before_sqrt=[{}]", payload);
+        println!(
+            "row64_compute_initial_coords eig_vals_before_sqrt=[{}]",
+            payload
+        );
     } else if trace_row61 {
         let payload = eig_vals
             .iter()
             .map(|v| format!("{v:.15}"))
             .collect::<Vec<_>>()
             .join(",");
-        println!("row61_compute_initial_coords eig_vals_before_sqrt=[{}]", payload);
+        println!(
+            "row61_compute_initial_coords eig_vals_before_sqrt=[{}]",
+            payload
+        );
     }
     #[cfg(test)]
     embedder_test_trace_update(|trace| {
@@ -6620,10 +6982,15 @@ fn compute_random_coords(positions: &mut [Vec<f64>], box_size: f64, seed: i32) -
             *rng.borrow_mut() = RdkitDistgeomMinStdRand::new(seed);
         });
     }
-    RDKIT_DISTGEOM_RNG.with(|rng| compute_random_coords_with_rng(positions, box_size, &mut *rng.borrow_mut()))
+    RDKIT_DISTGEOM_RNG
+        .with(|rng| compute_random_coords_with_rng(positions, box_size, &mut *rng.borrow_mut()))
 }
 
-fn compute_random_coords_with_rng<R: RdkitDoubleRng>(positions: &mut [Vec<f64>], box_size: f64, rng: &mut R) -> bool {
+fn compute_random_coords_with_rng<R: RdkitDoubleRng>(
+    positions: &mut [Vec<f64>],
+    box_size: f64,
+    rng: &mut R,
+) -> bool {
     // BEGIN RDKIT CPP FUNCTION DistGeom::computeRandomCoords RNG overload (DistGeomUtils.cpp:173-183)
     // RDKit✔️✔️: bool computeRandomCoords(RDGeom::PointPtrVect &positions, double boxSize,
     // RDKit✔️✔️:                          RDKit::double_source_type &rng) {
@@ -6647,7 +7014,10 @@ fn compute_random_coords_with_rng<R: RdkitDoubleRng>(positions: &mut [Vec<f64>],
 }
 
 fn forcefield_vec_from_position(point: &[f64]) -> ForceFieldVec3 {
-    assert!((3..=4).contains(&point.len()), "unsupported point dimension");
+    assert!(
+        (3..=4).contains(&point.len()),
+        "unsupported point dimension"
+    );
     if point.len() == 4 {
         ForceFieldVec3::new4(point[0], point[1], point[2], point[3])
     } else {
@@ -6690,9 +7060,11 @@ fn construct_distgeom_forcefield(
         assert!(fixed_pts.len() >= n, "bad fixed point bitset");
     }
     let mut field = ForceField::new(dimension);
-    field
-        .positions_mut()
-        .extend(positions.iter().map(|point| forcefield_vec_from_position(point)));
+    field.positions_mut().extend(
+        positions
+            .iter()
+            .map(|point| forcefield_vec_from_position(point)),
+    );
 
     // RDKit✔️✔️:   auto contrib = new DistViolationContribs(field);
     // RDKit✔️✔️:   for (unsigned int i = 1; i < N; i++) {
@@ -7062,7 +7434,13 @@ fn add_13_terms(
         // RDKit✔️✔️:       distContribs->addContrib(i, k, mmat.getLowerBound(i, k),
         // RDKit✔️✔️:                                mmat.getUpperBound(i, k), forceConstant);
         } else if is_improper_constrained[j] {
-            dist_contribs.add_contrib(i, k, mmat.get_lower(i, k), mmat.get_upper(i, k), force_constant);
+            dist_contribs.add_contrib(
+                i,
+                k,
+                mmat.get_lower(i, k),
+                mmat.get_upper(i, k),
+                force_constant,
+            );
         // RDKit✔️✔️:     } else {
         // RDKit✔️✔️:       double d = ((*positions[i]) - (*positions[k])).length();
         // RDKit✔️✔️:       distContribs->addContrib(i, k, d - KNOWN_DIST_TOL, d + KNOWN_DIST_TOL,
@@ -7464,7 +7842,13 @@ fn construct_3d_forcefield_with_cpci(
 }
 
 impl BoundsMatrix {
-    fn check_and_set_bounds(&mut self, i: usize, j: usize, lb: f64, ub: f64) -> Result<(), DgBoundsError> {
+    fn check_and_set_bounds(
+        &mut self,
+        i: usize,
+        j: usize,
+        lb: f64,
+        ub: f64,
+    ) -> Result<(), DgBoundsError> {
         self.check_and_set_bounds_with_mode(i, j, lb, ub, false)
     }
 
@@ -7535,7 +7919,15 @@ impl BoundsMatrix {
             ));
         }
         if !(lb > DIST12_DELTA || clb > DIST12_DELTA) {
-            return Err(Self::invalid_bounds("bad lower bound", i, j, lb, ub, clb, cub));
+            return Err(Self::invalid_bounds(
+                "bad lower bound",
+                i,
+                j,
+                lb,
+                ub,
+                clb,
+                cub,
+            ));
         }
 
         if set_if_better {
@@ -7813,16 +8205,26 @@ fn is_bond_in_ring_of_size(ring_info: &crate::RingInfo, bond_idx: usize, size: u
 // `get_atom_types_for_uff()`. Local review found comparable asymptotic work
 // but left perf unresolved because the Rust path materializes extra
 // intermediate vectors for valence-derived hybridization and conjugation state.
-fn set_12_bounds(mol: &Molecule, mmat: &mut BoundsMatrix, accum_data: &mut ComputedData) -> Result<(), DgBoundsError> {
+fn set_12_bounds(
+    mol: &Molecule,
+    mmat: &mut BoundsMatrix,
+    accum_data: &mut ComputedData,
+) -> Result<(), DgBoundsError> {
     let npt = mmat.num_rows();
     if npt != mol.atoms().len() {
-        return Err(DgBoundsError::GenerationFailed("Wrong size metric matrix".to_string()));
+        return Err(DgBoundsError::GenerationFailed(
+            "Wrong size metric matrix".to_string(),
+        ));
     }
     if accum_data.bond_lengths.len() < mol.bonds().len() {
-        return Err(DgBoundsError::GenerationFailed("Wrong size accumData".to_string()));
+        return Err(DgBoundsError::GenerationFailed(
+            "Wrong size accumData".to_string(),
+        ));
     }
     let assignment = assign_valence(mol, ValenceModel::RdkitLike).map_err(|err| {
-        DgBoundsError::GenerationFailed(format!("RDKit UFF atom typing valence assignment failed: {err}"))
+        DgBoundsError::GenerationFailed(format!(
+            "RDKit UFF atom typing valence assignment failed: {err}"
+        ))
     })?;
     let mut atom_degree = vec![0usize; mol.atoms().len()];
     for bond in mol.bonds() {
@@ -7837,13 +8239,20 @@ fn set_12_bounds(mol: &Molecule, mmat: &mut BoundsMatrix, accum_data: &mut Compu
             atom_has_conjugated_bond[bond.end().index()] = true;
         }
     }
-    let hybridizations = compute_hybridizations_for_uff(mol, &assignment, &atom_degree, &atom_has_conjugated_bond);
+    let hybridizations =
+        compute_hybridizations_for_uff(mol, &assignment, &atom_degree, &atom_has_conjugated_bond);
     let total_valences = (0..mol.atoms().len())
         .map(|atom_index| atom_total_valence_for_uff(&assignment, atom_index))
         .collect::<Vec<_>>();
-    let (atom_params, _found_all) =
-        get_atom_types_for_uff(mol, &total_valences, &hybridizations, &atom_has_conjugated_bond)
-            .map_err(|err| DgBoundsError::GenerationFailed(format!("RDKit UFF atom typing failed: {err}")))?;
+    let (atom_params, _found_all) = get_atom_types_for_uff(
+        mol,
+        &total_valences,
+        &hybridizations,
+        &atom_has_conjugated_bond,
+    )
+    .map_err(|err| {
+        DgBoundsError::GenerationFailed(format!("RDKit UFF atom typing failed: {err}"))
+    })?;
 
     let mut squish_atoms = vec![false; mol.atoms().len()];
     let ring_info = ring_info_for_distgeom(mol)?;
@@ -7861,9 +8270,12 @@ fn set_12_bounds(mol: &Molecule, mmat: &mut BoundsMatrix, accum_data: &mut Compu
     for bond in mol.bonds() {
         let beg_id = bond.begin().index();
         let end_id = bond.end().index();
-        let bond_order = crate::chemistry::valence::bond_type_as_double(bond.order()).map_err(|err| {
-            DgBoundsError::GenerationFailed(format!("RDKit set12Bounds bond-order conversion failed: {err}"))
-        })?;
+        let bond_order =
+            crate::chemistry::valence::bond_type_as_double(bond.order()).map_err(|err| {
+                DgBoundsError::GenerationFailed(format!(
+                    "RDKit set12Bounds bond-order conversion failed: {err}"
+                ))
+            })?;
         if let (Some(param1), Some(param2)) = (atom_params[beg_id], atom_params[end_id]) {
             if bond_order > 0.0 {
                 let bl = calc_bond_rest_length(bond_order, &param1, &param2);
@@ -8156,7 +8568,8 @@ impl ComputedData {
     // END RDKIT CPP FUNCTION DGeomHelpers::ComputedData::visitedBound
     fn visited_bound(&self, pid: usize, dist_type: DistType) -> bool {
         self.visited12_bounds[pid]
-            || (matches!(dist_type, DistType::Dist13 | DistType::Dist14) && self.visited13_bounds[pid])
+            || (matches!(dist_type, DistType::Dist13 | DistType::Dist14)
+                && self.visited13_bounds[pid])
             || (matches!(dist_type, DistType::Dist14) && self.visited14_bounds[pid])
     }
 }
@@ -8209,7 +8622,12 @@ fn bond_pair_shared_atom(
     Ok(aid)
 }
 
-fn validate_bond_angle(angle: f64, bid1: usize, bid2: usize, context: &'static str) -> Result<(), DgBoundsError> {
+fn validate_bond_angle(
+    angle: f64,
+    bid1: usize,
+    bid2: usize,
+    context: &'static str,
+) -> Result<(), DgBoundsError> {
     if angle > 0.0 {
         Ok(())
     } else {
@@ -8352,7 +8770,11 @@ fn set_13_bounds(
         let mut aid1 = ring[r_size - 1];
         for i in 0..r_size {
             let aid2 = ring[i];
-            let aid3 = if i == r_size - 1 { ring[0] } else { ring[i + 1] };
+            let aid3 = if i == r_size - 1 {
+                ring[0]
+            } else {
+                ring[i + 1]
+            };
             let b1 = bond_between_idx_simple(mol, aid1, aid2).expect("no bond found");
             let b2 = bond_between_idx_simple(mol, aid2, aid3).expect("no bond found");
             let id1 = nb * b1 + b2;
@@ -8362,7 +8784,16 @@ fn set_13_bounds(
             if !done_paths[id1] && !done_paths[id2] {
                 let angle = set_ring_angle(mol, aid2, r_size);
                 if !accum_data.visited_bound(pid, DistType::Dist12) {
-                    set_13_bounds_helper(aid1, aid2, aid3, angle, &accum_data.bond_lengths, mmat, mol, rinfo)?;
+                    set_13_bounds_helper(
+                        aid1,
+                        aid2,
+                        aid3,
+                        angle,
+                        &accum_data.bond_lengths,
+                        mmat,
+                        mol,
+                        rinfo,
+                    )?;
                     accum_data.visited13_bounds[pid] = true;
                 }
                 accum_data.set_bond_angle(nb, b1, b2, angle);
@@ -8398,7 +8829,8 @@ fn set_13_bounds(
                     }
 
                     let angle = if ahyb == Hybridization::Sp2 {
-                        (2.0 * std::f64::consts::PI - angle_taken[aid2]) / (n13 - visited[aid2]) as f64
+                        (2.0 * std::f64::consts::PI - angle_taken[aid2])
+                            / (n13 - visited[aid2]) as f64
                     } else if ahyb == Hybridization::Sp3 {
                         if rinfo.is_atom_in_ring_of_size(AtomId::new(aid2), 3) {
                             116.0_f64.to_radians()
@@ -8419,7 +8851,16 @@ fn set_13_bounds(
 
                     let pid = aid1.min(aid3) * npt + aid1.max(aid3);
                     if !accum_data.visited_bound(pid, DistType::Dist12) {
-                        set_13_bounds_helper(aid1, aid2, aid3, angle, &accum_data.bond_lengths, mmat, mol, rinfo)?;
+                        set_13_bounds_helper(
+                            aid1,
+                            aid2,
+                            aid3,
+                            angle,
+                            &accum_data.bond_lengths,
+                            mmat,
+                            mol,
+                            rinfo,
+                        )?;
                         accum_data.visited13_bounds[pid] = true;
                     }
 
@@ -8455,10 +8896,23 @@ fn set_13_bounds(
 
                     let pid = aid1.min(aid3) * npt + aid1.max(aid3);
                     if !accum_data.visited_bound(pid, DistType::Dist12) {
-                        if deg <= 4 || (has_non_tetrahedral_stereo(atom) && atom.chiral_permutation().is_some()) {
-                            set_13_bounds_helper(aid1, aid2, aid3, angle, &accum_data.bond_lengths, mmat, mol, rinfo)?;
+                        if deg <= 4
+                            || (has_non_tetrahedral_stereo(atom)
+                                && atom.chiral_permutation().is_some())
+                        {
+                            set_13_bounds_helper(
+                                aid1,
+                                aid2,
+                                aid3,
+                                angle,
+                                &accum_data.bond_lengths,
+                                mmat,
+                                mol,
+                                rinfo,
+                            )?;
                         } else {
-                            let dmax = accum_data.bond_lengths[bid1] + accum_data.bond_lengths[bid2];
+                            let dmax =
+                                accum_data.bond_lengths[bid1] + accum_data.bond_lengths[bid2];
                             let dl = 1.0;
                             let du = dmax * 1.2;
                             mmat.check_and_set_bounds(aid1, aid3, dl, du)?;
@@ -8542,7 +8996,12 @@ fn record_14_path(
         Path14Kind::Other
     };
 
-    accum_data.paths14.push(Path14Configuration { bid1, bid2, bid3, kind });
+    accum_data.paths14.push(Path14Configuration {
+        bid1,
+        bid2,
+        bid3,
+        kind,
+    });
     Ok(())
 }
 
@@ -8663,7 +9122,9 @@ fn set_in_ring_14_bounds(
         && !matches!(stype, BondStereo::E | BondStereo::Trans)
     {
         if ring_info.num_bond_rings(BondId::new(bid2)) > 1 {
-            if ring_info.num_bond_rings(BondId::new(bid1)) == 1 && ring_info.num_bond_rings(BondId::new(bid3)) == 1 {
+            if ring_info.num_bond_rings(BondId::new(bid1)) == 1
+                && ring_info.num_bond_rings(BondId::new(bid3)) == 1
+            {
                 for br in ring_info.bond_rings() {
                     if br.contains(&BondId::new(bid1)) {
                         if br.contains(&BondId::new(bid3)) {
@@ -8695,7 +9156,12 @@ fn set_in_ring_14_bounds(
         Path14Kind::Other
     };
 
-    accum_data.paths14.push(Path14Configuration { bid1, bid2, bid3, kind });
+    accum_data.paths14.push(Path14Configuration {
+        bid1,
+        bid2,
+        bid3,
+        kind,
+    });
 
     let (mut dl, mut du) = if prefer_cis {
         let dl = compute_14_dist_cis(bl1, bl2, bl3, ba12, ba23) - GEN_DIST_TOL;
@@ -8835,7 +9301,12 @@ fn set_two_in_same_ring_14_bounds(
     };
 
     mmat.check_and_set_bounds(aid1, aid4, dl, du)?;
-    accum_data.paths14.push(Path14Configuration { bid1, bid2, bid3, kind });
+    accum_data.paths14.push(Path14Configuration {
+        bid1,
+        bid2,
+        bid3,
+        kind,
+    });
     accum_data.visited14_bounds[pid] = true;
     Ok(())
 }
@@ -9028,33 +9499,49 @@ fn set_macrocycle_two_in_same_ring_14_bounds(
     let bl3 = accum_data.bond_lengths[bid3];
     let ba12 = accum_data.get_bond_angle(mol.num_bonds(), bid1, bid2);
     let ba23 = accum_data.get_bond_angle(mol.num_bonds(), bid2, bid3);
-    validate_bond_angle(ba12, bid1, bid2, "set_macrocycle_two_in_same_ring_14_bounds")?;
-    validate_bond_angle(ba23, bid2, bid3, "set_macrocycle_two_in_same_ring_14_bounds")?;
+    validate_bond_angle(
+        ba12,
+        bid1,
+        bid2,
+        "set_macrocycle_two_in_same_ring_14_bounds",
+    )?;
+    validate_bond_angle(
+        ba23,
+        bid2,
+        bid3,
+        "set_macrocycle_two_in_same_ring_14_bounds",
+    )?;
 
     let nb = mol.num_bonds();
-    let (mut dl, mut du, kind) =
-        if check_macrocycle_two_in_same_ring_amide_ester_14(mol, bid1, bid3, atm1, atm2, atm3, atm4)
-            || check_macrocycle_two_in_same_ring_amide_ester_14(mol, bid3, bid1, atm4, atm3, atm2, atm1)
-        {
-            let dl = compute_14_dist_cis(bl1, bl2, bl3, ba12, ba23);
-            record_path_flag(&mut accum_data.cis_paths, path14_id(nb, bid1, bid2, bid3));
-            record_path_flag(&mut accum_data.cis_paths, path14_id(nb, bid3, bid2, bid1));
-            (dl - GEN_DIST_TOL, dl + GEN_DIST_TOL, Path14Kind::Cis)
-        } else {
-            let mut dl = compute_14_dist_cis(bl1, bl2, bl3, ba12, ba23);
-            let mut du = compute_14_dist_trans(bl1, bl2, bl3, ba12, ba23);
-            if du < dl {
-                std::mem::swap(&mut dl, &mut du);
-            }
-            if (du - dl).abs() < DIST12_DELTA {
-                dl -= GEN_DIST_TOL;
-                du += GEN_DIST_TOL;
-            }
-            (dl, du, Path14Kind::Other)
-        };
+    let (mut dl, mut du, kind) = if check_macrocycle_two_in_same_ring_amide_ester_14(
+        mol, bid1, bid3, atm1, atm2, atm3, atm4,
+    ) || check_macrocycle_two_in_same_ring_amide_ester_14(
+        mol, bid3, bid1, atm4, atm3, atm2, atm1,
+    ) {
+        let dl = compute_14_dist_cis(bl1, bl2, bl3, ba12, ba23);
+        record_path_flag(&mut accum_data.cis_paths, path14_id(nb, bid1, bid2, bid3));
+        record_path_flag(&mut accum_data.cis_paths, path14_id(nb, bid3, bid2, bid1));
+        (dl - GEN_DIST_TOL, dl + GEN_DIST_TOL, Path14Kind::Cis)
+    } else {
+        let mut dl = compute_14_dist_cis(bl1, bl2, bl3, ba12, ba23);
+        let mut du = compute_14_dist_trans(bl1, bl2, bl3, ba12, ba23);
+        if du < dl {
+            std::mem::swap(&mut dl, &mut du);
+        }
+        if (du - dl).abs() < DIST12_DELTA {
+            dl -= GEN_DIST_TOL;
+            du += GEN_DIST_TOL;
+        }
+        (dl, du, Path14Kind::Other)
+    };
 
     mmat.check_and_set_bounds(aid1, aid4, dl, du)?;
-    accum_data.paths14.push(Path14Configuration { bid1, bid2, bid3, kind });
+    accum_data.paths14.push(Path14Configuration {
+        bid1,
+        bid2,
+        bid3,
+        kind,
+    });
     accum_data.visited14_bounds[pid] = true;
     Ok(())
 }
@@ -9176,8 +9663,18 @@ fn set_macrocycle_all_in_same_ring_14_bounds(
     let bl3 = accum_data.bond_lengths[bid3];
     let ba12 = accum_data.get_bond_angle(mol.num_bonds(), bid1, bid2);
     let ba23 = accum_data.get_bond_angle(mol.num_bonds(), bid2, bid3);
-    validate_bond_angle(ba12, bid1, bid2, "set_macrocycle_all_in_same_ring_14_bounds")?;
-    validate_bond_angle(ba23, bid2, bid3, "set_macrocycle_all_in_same_ring_14_bounds")?;
+    validate_bond_angle(
+        ba12,
+        bid1,
+        bid2,
+        "set_macrocycle_all_in_same_ring_14_bounds",
+    )?;
+    validate_bond_angle(
+        ba23,
+        bid2,
+        bid3,
+        "set_macrocycle_all_in_same_ring_14_bounds",
+    )?;
 
     let mut set_the_bound = true;
     let nb = mol.num_bonds();
@@ -9225,7 +9722,8 @@ fn set_macrocycle_all_in_same_ring_14_bounds(
                 && neighbors_for_atom(mol, atm2).len() == 2
                 && neighbors_for_atom(mol, atm3).len() == 2
             {
-                let dl = compute_14_dist_3d(bl1, bl2, bl3, ba12, ba23, std::f64::consts::PI / 2.0) - GEN_DIST_TOL;
+                let dl = compute_14_dist_3d(bl1, bl2, bl3, ba12, ba23, std::f64::consts::PI / 2.0)
+                    - GEN_DIST_TOL;
                 (dl, dl + 2.0 * GEN_DIST_TOL, Path14Kind::Other)
             } else if check_macrocycle_all_in_same_ring_amide_ester_14(mol, atm1, atm2, atm3, atm4)
                 || check_macrocycle_all_in_same_ring_amide_ester_14(mol, atm4, atm3, atm2, atm1)
@@ -9273,7 +9771,12 @@ fn set_macrocycle_all_in_same_ring_14_bounds(
             du += GEN_DIST_TOL;
         }
         mmat.check_and_set_bounds(aid1, aid4, dl, du)?;
-        accum_data.paths14.push(Path14Configuration { bid1, bid2, bid3, kind });
+        accum_data.paths14.push(Path14Configuration {
+            bid1,
+            bid2,
+            bid3,
+            kind,
+        });
         accum_data.visited14_bounds[pid] = true;
     }
     Ok(())
@@ -9430,7 +9933,8 @@ fn set_chain_14_bounds(
                 && neighbors_for_atom(mol, atm2).len() == 2
                 && neighbors_for_atom(mol, atm3).len() == 2
             {
-                let dl = compute_14_dist_3d(bl1, bl2, bl3, ba12, ba23, std::f64::consts::PI / 2.0) - GEN_DIST_TOL;
+                let dl = compute_14_dist_3d(bl1, bl2, bl3, ba12, ba23, std::f64::consts::PI / 2.0)
+                    - GEN_DIST_TOL;
                 (dl, dl + 2.0 * GEN_DIST_TOL, Path14Kind::Other)
             } else if check_amide_ester_14(mol, bid1, bid3, atm2, atm3, atm4)
                 || check_amide_ester_14(mol, bid3, bid1, atm3, atm2, atm1)
@@ -9448,13 +9952,25 @@ fn set_chain_14_bounds(
                         && total_hs_atm3 == 1;
                     if secondary_left || secondary_right {
                         let dl = compute_14_dist_trans(bl1, bl2, bl3, ba12, ba23);
-                        record_path_flag(&mut accum_data.trans_paths, path14_id(nb, bid1, bid2, bid3));
-                        record_path_flag(&mut accum_data.trans_paths, path14_id(nb, bid3, bid2, bid1));
+                        record_path_flag(
+                            &mut accum_data.trans_paths,
+                            path14_id(nb, bid1, bid2, bid3),
+                        );
+                        record_path_flag(
+                            &mut accum_data.trans_paths,
+                            path14_id(nb, bid3, bid2, bid1),
+                        );
                         (dl - GEN_DIST_TOL, dl + GEN_DIST_TOL, Path14Kind::Trans)
                     } else {
                         let dl = compute_14_dist_cis(bl1, bl2, bl3, ba12, ba23);
-                        record_path_flag(&mut accum_data.cis_paths, path14_id(nb, bid1, bid2, bid3));
-                        record_path_flag(&mut accum_data.cis_paths, path14_id(nb, bid3, bid2, bid1));
+                        record_path_flag(
+                            &mut accum_data.cis_paths,
+                            path14_id(nb, bid1, bid2, bid3),
+                        );
+                        record_path_flag(
+                            &mut accum_data.cis_paths,
+                            path14_id(nb, bid3, bid2, bid1),
+                        );
                         (dl - GEN_DIST_TOL, dl + GEN_DIST_TOL, Path14Kind::Cis)
                     }
                 } else {
@@ -9480,13 +9996,25 @@ fn set_chain_14_bounds(
                         && total_hs_atm3 == 1;
                     if secondary_left || secondary_right {
                         let dl = compute_14_dist_cis(bl1, bl2, bl3, ba12, ba23);
-                        record_path_flag(&mut accum_data.cis_paths, path14_id(nb, bid1, bid2, bid3));
-                        record_path_flag(&mut accum_data.cis_paths, path14_id(nb, bid3, bid2, bid1));
+                        record_path_flag(
+                            &mut accum_data.cis_paths,
+                            path14_id(nb, bid1, bid2, bid3),
+                        );
+                        record_path_flag(
+                            &mut accum_data.cis_paths,
+                            path14_id(nb, bid3, bid2, bid1),
+                        );
                         (dl - GEN_DIST_TOL, dl + GEN_DIST_TOL, Path14Kind::Cis)
                     } else {
                         let dl = compute_14_dist_trans(bl1, bl2, bl3, ba12, ba23);
-                        record_path_flag(&mut accum_data.trans_paths, path14_id(nb, bid1, bid2, bid3));
-                        record_path_flag(&mut accum_data.trans_paths, path14_id(nb, bid3, bid2, bid1));
+                        record_path_flag(
+                            &mut accum_data.trans_paths,
+                            path14_id(nb, bid1, bid2, bid3),
+                        );
+                        record_path_flag(
+                            &mut accum_data.trans_paths,
+                            path14_id(nb, bid3, bid2, bid1),
+                        );
                         (dl - GEN_DIST_TOL, dl + GEN_DIST_TOL, Path14Kind::Trans)
                     }
                 } else {
@@ -9517,7 +10045,12 @@ fn set_chain_14_bounds(
             du += GEN_DIST_TOL;
         }
         mmat.check_and_set_bounds(aid1, aid4, dl, du)?;
-        accum_data.paths14.push(Path14Configuration { bid1, bid2, bid3, kind });
+        accum_data.paths14.push(Path14Configuration {
+            bid1,
+            bid2,
+            bid3,
+            kind,
+        });
         accum_data.visited14_bounds[pid] = true;
     }
     Ok(())
@@ -9549,7 +10082,9 @@ fn check_h2_nx3_h1_ox2(mol: &Molecule, atom_idx: usize) -> bool {
     };
     (atom.atomic_number() == 6 && total_hs == 2)
         || (atom.atomic_number() == 8 && total_hs == 0)
-        || (atom.atomic_number() == 7 && neighbors_for_atom(mol, atom_idx).len() == 3 && total_hs == 1)
+        || (atom.atomic_number() == 7
+            && neighbors_for_atom(mol, atom_idx).len() == 3
+            && total_hs == 1)
 }
 
 // BEGIN RDKIT CPP FUNCTION DGeomHelpers::_checkNhChChNh (BoundsMatrixBuilder.cpp:858-866)
@@ -9684,7 +10219,9 @@ fn check_macrocycle_all_in_same_ring_amide_ester_14(
         if nbr_idx != atm1 && nbr_idx != atm3 {
             let res = &mol.atoms()[nbr_idx];
             let res_bnd = &mol.bonds()[bond_between_idx_simple(mol, atm2, nbr_idx).expect("bond")];
-            if (res.atomic_number() != 6 && res.atomic_number() != 1) || res_bnd.order() != BondOrder::Single {
+            if (res.atomic_number() != 6 && res.atomic_number() != 1)
+                || res_bnd.order() != BondOrder::Single
+            {
                 return false;
             }
             break;
@@ -9725,11 +10262,15 @@ fn is_carbonyl(mol: &Molecule, atom_idx: usize) -> bool {
     if atom.atomic_number() != 6 || neighbors_for_atom(mol, atom_idx).len() <= 2 {
         return false;
     }
-    neighbors_for_atom(mol, atom_idx).into_iter().any(|nbr_idx| {
-        let at_num = mol.atoms()[nbr_idx].atomic_number();
-        (at_num == 8 || at_num == 7)
-            && mol.bonds()[bond_between_idx_simple(mol, atom_idx, nbr_idx).expect("bond")].order() == BondOrder::Double
-    })
+    neighbors_for_atom(mol, atom_idx)
+        .into_iter()
+        .any(|nbr_idx| {
+            let at_num = mol.atoms()[nbr_idx].atomic_number();
+            (at_num == 8 || at_num == 7)
+                && mol.bonds()[bond_between_idx_simple(mol, atom_idx, nbr_idx).expect("bond")]
+                    .order()
+                    == BondOrder::Double
+        })
 }
 
 // BEGIN RDKIT CPP FUNCTION DGeomHelpers::_checkAmideEster15 (BoundsMatrixBuilder.cpp:965-978)
@@ -9748,7 +10289,13 @@ fn is_carbonyl(mol: &Molecule, atom_idx: usize) -> bool {
 // RDKit✔️❌:   return false;
 // RDKit✔️❌: }
 // END RDKIT CPP FUNCTION DGeomHelpers::_checkAmideEster15
-fn check_amide_ester_15(mol: &Molecule, bnd1_idx: usize, bnd3_idx: usize, atm2: usize, atm3: usize) -> bool {
+fn check_amide_ester_15(
+    mol: &Molecule,
+    bnd1_idx: usize,
+    bnd3_idx: usize,
+    atm2: usize,
+    atm3: usize,
+) -> bool {
     let a2_num = mol.atoms()[atm2].atomic_number();
     // Behavior matches RDKit, but total-H lookup and nested carbonyl detection
     // still require repeated Rust-side scans.
@@ -9786,7 +10333,15 @@ fn check_amide_ester_15(mol: &Molecule, bnd1_idx: usize, bnd3_idx: usize, atm2: 
 // RDKit✔️✔️:   return res;
 // RDKit✔️✔️: }
 // END RDKIT CPP FUNCTION
-fn compute_15_dist_cis_cis(d1: f64, d2: f64, d3: f64, d4: f64, ang12: f64, ang23: f64, ang34: f64) -> f64 {
+fn compute_15_dist_cis_cis(
+    d1: f64,
+    d2: f64,
+    d3: f64,
+    d4: f64,
+    ang12: f64,
+    ang23: f64,
+    ang34: f64,
+) -> f64 {
     let dx14 = d2 - d3 * ang23.cos() - d1 * ang12.cos();
     let dy14 = d3 * ang23.sin() - d1 * ang12.sin();
     let d14 = (dx14 * dx14 + dy14 * dy14).sqrt();
@@ -9815,7 +10370,15 @@ fn compute_15_dist_cis_cis(d1: f64, d2: f64, d3: f64, d4: f64, ang12: f64, ang23
 // RDKit✔️✔️:   return RDGeom::compute13Dist(d14, d4, ang145);
 // RDKit✔️✔️: }
 // END RDKIT CPP FUNCTION DGeomHelpers::_compute15DistsCisTrans
-fn compute_15_dist_cis_trans(d1: f64, d2: f64, d3: f64, d4: f64, ang12: f64, ang23: f64, ang34: f64) -> f64 {
+fn compute_15_dist_cis_trans(
+    d1: f64,
+    d2: f64,
+    d3: f64,
+    d4: f64,
+    ang12: f64,
+    ang23: f64,
+    ang34: f64,
+) -> f64 {
     let dx14 = d2 - d3 * ang23.cos() - d1 * ang12.cos();
     let dy14 = d3 * ang23.sin() - d1 * ang12.sin();
     let d14 = (dx14 * dx14 + dy14 * dy14).sqrt();
@@ -9846,7 +10409,15 @@ fn compute_15_dist_cis_trans(d1: f64, d2: f64, d3: f64, d4: f64, ang12: f64, ang
 // RDKit✔️✔️:   return RDGeom::compute13Dist(d14, d4, ang145);
 // RDKit✔️✔️: }
 // END RDKIT CPP FUNCTION DGeomHelpers::_compute15DistsTransTrans
-fn compute_15_dist_trans_trans(d1: f64, d2: f64, d3: f64, d4: f64, ang12: f64, ang23: f64, ang34: f64) -> f64 {
+fn compute_15_dist_trans_trans(
+    d1: f64,
+    d2: f64,
+    d3: f64,
+    d4: f64,
+    ang12: f64,
+    ang23: f64,
+    ang34: f64,
+) -> f64 {
     let dx14 = d2 - d3 * ang23.cos() - d1 * ang12.cos();
     let dy14 = d3 * ang23.sin() + d1 * ang12.sin();
     let d14 = (dx14 * dx14 + dy14 * dy14).sqrt();
@@ -9879,7 +10450,15 @@ fn compute_15_dist_trans_trans(d1: f64, d2: f64, d3: f64, d4: f64, ang12: f64, a
 // RDKit✔️✔️:   return RDGeom::compute13Dist(d14, d4, ang145);
 // RDKit✔️✔️: }
 // END RDKIT CPP FUNCTION DGeomHelpers::_compute15DistsTransCis
-fn compute_15_dist_trans_cis(d1: f64, d2: f64, d3: f64, d4: f64, ang12: f64, ang23: f64, ang34: f64) -> f64 {
+fn compute_15_dist_trans_cis(
+    d1: f64,
+    d2: f64,
+    d3: f64,
+    d4: f64,
+    ang12: f64,
+    ang23: f64,
+    ang34: f64,
+) -> f64 {
     let dx14 = d2 - d3 * ang23.cos() - d1 * ang12.cos();
     let dy14 = d3 * ang23.sin() + d1 * ang12.sin();
     let d14 = (dx14 * dx14 + dy14 * dy14).sqrt();
@@ -10125,7 +10704,9 @@ fn set_15_bounds_helper(
         // RDKit❗✔️: check if bounds not already set and not already processed
         let pid1 = aid1 * na + aid5;
         let pid2 = aid5 * na + aid1;
-        if !(mmat.get_lower(aid1, aid5) < DIST12_DELTA || accum_data.set15_atoms[pid1] || accum_data.set15_atoms[pid2])
+        if !(mmat.get_lower(aid1, aid5) < DIST12_DELTA
+            || accum_data.set15_atoms[pid1]
+            || accum_data.set15_atoms[pid2])
         {
             continue;
         }
@@ -10170,7 +10751,8 @@ fn set_15_bounds_helper(
                     // RDKit❗✔️: trans-cis - tol, trans-trans + tol
                     (
                         compute_15_dist_trans_cis(d1, d2, d3, d4, ang12, ang23, ang34) - DIST15_TOL,
-                        compute_15_dist_trans_trans(d1, d2, d3, d4, ang12, ang23, ang34) + DIST15_TOL,
+                        compute_15_dist_trans_trans(d1, d2, d3, d4, ang12, ang23, ang34)
+                            + DIST15_TOL,
                     )
                 }
             }
@@ -10188,7 +10770,8 @@ fn set_15_bounds_helper(
                     // RDKit❗✔️: _compute15DistsTransTrans(d4,d3,d2,d1,ang34,ang23,ang12) + tol
                     (
                         compute_15_dist_trans_cis(d4, d3, d2, d1, ang34, ang23, ang12) - DIST15_TOL,
-                        compute_15_dist_trans_trans(d4, d3, d2, d1, ang34, ang23, ang12) + DIST15_TOL,
+                        compute_15_dist_trans_trans(d4, d3, d2, d1, ang34, ang23, ang12)
+                            + DIST15_TOL,
                     )
                 } else {
                     // RDKit❗✔️: VDW fallback for unknown stereochemistry
@@ -10293,10 +10876,14 @@ fn set_14_bounds(
 
             if r_size > 5 {
                 if use_macrocycle_14config && r_size >= MIN_MACROCYCLE_RING_SIZE {
-                    set_macrocycle_all_in_same_ring_14_bounds(mol, bid1, bid2, bid3, accum_data, mmat)?;
+                    set_macrocycle_all_in_same_ring_14_bounds(
+                        mol, bid1, bid2, bid3, accum_data, mmat,
+                    )?;
                     bid_is_macrocycle.insert(bid2);
                 } else {
-                    set_in_ring_14_bounds(mol, bid1, bid2, bid3, accum_data, mmat, dmat, r_size, rinfo)?;
+                    set_in_ring_14_bounds(
+                        mol, bid1, bid2, bid3, accum_data, mmat, dmat, r_size, rinfo,
+                    )?;
                 }
             } else {
                 record_14_path(mol, bid1, bid2, bid3, accum_data)?;
@@ -10340,18 +10927,36 @@ fn set_14_bounds(
                     || ring_bond_pairs.contains(&pid4)
                 {
                     if use_macrocycle_14config && bid_is_macrocycle.contains(&bid2) {
-                        set_macrocycle_two_in_same_ring_14_bounds(mol, bid1, bid2, bid3, accum_data, mmat, dmat)?;
+                        set_macrocycle_two_in_same_ring_14_bounds(
+                            mol, bid1, bid2, bid3, accum_data, mmat, dmat,
+                        )?;
                     } else {
-                        set_two_in_same_ring_14_bounds(mol, bid1, bid2, bid3, accum_data, mmat, dmat)?;
+                        set_two_in_same_ring_14_bounds(
+                            mol, bid1, bid2, bid3, accum_data, mmat, dmat,
+                        )?;
                     }
-                } else if (rinfo.num_bond_rings(BondId::new(bid1)) > 0 && rinfo.num_bond_rings(BondId::new(bid2)) > 0)
-                    || (rinfo.num_bond_rings(BondId::new(bid2)) > 0 && rinfo.num_bond_rings(BondId::new(bid3)) > 0)
+                } else if (rinfo.num_bond_rings(BondId::new(bid1)) > 0
+                    && rinfo.num_bond_rings(BondId::new(bid2)) > 0)
+                    || (rinfo.num_bond_rings(BondId::new(bid2)) > 0
+                        && rinfo.num_bond_rings(BondId::new(bid3)) > 0)
                 {
-                    set_two_in_diff_ring_14_bounds(mol, bid1, bid2, bid3, accum_data, mmat, dmat, rinfo)?;
+                    set_two_in_diff_ring_14_bounds(
+                        mol, bid1, bid2, bid3, accum_data, mmat, dmat, rinfo,
+                    )?;
                 } else if rinfo.num_bond_rings(BondId::new(bid2)) > 0 {
-                    set_share_ring_bond_14_bounds(mol, bid1, bid2, bid3, accum_data, mmat, dmat, rinfo)?;
+                    set_share_ring_bond_14_bounds(
+                        mol, bid1, bid2, bid3, accum_data, mmat, dmat, rinfo,
+                    )?;
                 } else {
-                    set_chain_14_bounds(mol, bid1, bid2, bid3, accum_data, mmat, force_trans_amides)?;
+                    set_chain_14_bounds(
+                        mol,
+                        bid1,
+                        bid2,
+                        bid3,
+                        accum_data,
+                        mmat,
+                        force_trans_amides,
+                    )?;
                 }
             }
         }
@@ -10428,7 +11033,11 @@ fn bond_between_idx_simple(mol: &Molecule, a: usize, b: usize) -> Option<usize> 
 // RDKit✔️✔️:   }
 // RDKit✔️✔️: }
 // END RDKIT CPP FUNCTION DGeomHelpers::collectBondsAndAngles
-fn collect_bonds_and_angles(mol: &Molecule, bonds: &mut Vec<(i32, i32)>, angles: &mut Vec<Vec<i32>>) {
+fn collect_bonds_and_angles(
+    mol: &Molecule,
+    bonds: &mut Vec<(i32, i32)>,
+    angles: &mut Vec<Vec<i32>>,
+) {
     bonds.clear();
     angles.clear();
     bonds.reserve(mol.num_bonds());
@@ -10535,14 +11144,20 @@ fn set_lower_bound_vdw(
             let td = dmat[i * npt + j];
 
             // H-bond special case: set lower bound to 1.8A for donor-H + acceptor
-            if (h_in_hbond_donors[i] && hbond_acceptors[j]) || (hbond_acceptors[i] && h_in_hbond_donors[j]) {
+            if (h_in_hbond_donors[i] && hbond_acceptors[j])
+                || (hbond_acceptors[i] && h_in_hbond_donors[j])
+            {
                 mmat.set_lower(i, j, H_BOND_LENGTH)?;
             } else if td == 4.0 {
                 // 1-5: scaled VDW
                 mmat.set_lower(i, j, VDW_SCALE_15 * (vw1 + vw2))?;
             } else if td == 5.0 {
                 // 1-6: slightly less scaled
-                mmat.set_lower(i, j, (VDW_SCALE_15 + 0.5 * (1.0 - VDW_SCALE_15)) * (vw1 + vw2))?;
+                mmat.set_lower(
+                    i,
+                    j,
+                    (VDW_SCALE_15 + 0.5 * (1.0 - VDW_SCALE_15)) * (vw1 + vw2),
+                )?;
             } else {
                 // Full VDW sum
                 mmat.set_lower(i, j, vw1 + vw2)?;
@@ -10599,7 +11214,9 @@ fn set_topol_bounds(
     let nb = mol.num_bonds();
     let na = mol.num_atoms();
     if na == 0 {
-        return Err(DgBoundsError::GenerationFailed("molecule has no atoms".to_string()));
+        return Err(DgBoundsError::GenerationFailed(
+            "molecule has no atoms".to_string(),
+        ));
     }
     let max_num_bonds = (u64::MAX as f64).cbrt() as usize;
     if nb >= max_num_bonds {
@@ -10713,7 +11330,9 @@ pub(crate) fn dg_path14_priors(mol: &Molecule) -> Result<Vec<DgPath14Prior>, DgB
     let nb = mol.num_bonds();
     let na = mol.num_atoms();
     if na == 0 {
-        return Err(DgBoundsError::GenerationFailed("molecule has no atoms".to_string()));
+        return Err(DgBoundsError::GenerationFailed(
+            "molecule has no atoms".to_string(),
+        ));
     }
     let max_num_bonds = (u64::MAX as f64).cbrt() as usize;
     if nb >= max_num_bonds {
@@ -10878,7 +11497,11 @@ fn molecule_fragments_for_embed(
         return Ok((vec![mol.clone()], vec![0; mol.num_atoms()]));
     }
     let frag_mapping = molecule_fragment_mapping(mol);
-    let fragment_count = frag_mapping.iter().copied().max().map_or(0, |max_frag| max_frag + 1);
+    let fragment_count = frag_mapping
+        .iter()
+        .copied()
+        .max()
+        .map_or(0, |max_frag| max_frag + 1);
     if fragment_count <= 1 {
         return Ok((vec![mol.clone()], vec![0; mol.num_atoms()]));
     }
@@ -10981,14 +11604,17 @@ pub fn embed_multiple_confs(
     // RDKit✔️✔️:     end_time_storage = Clock::now() + std::chrono::seconds(params.timeout);
     // RDKit✔️✔️:     end_time = &end_time_storage;
     // RDKit✔️✔️:   }
-    let end_time = (params.timeout > 0).then(|| Instant::now() + Duration::from_secs(u64::from(params.timeout)));
+    let end_time = (params.timeout > 0)
+        .then(|| Instant::now() + Duration::from_secs(u64::from(params.timeout)));
 
     // RDKit✔️✔️:   if (params.trackFailures) {
     // RDKit✔️✔️:     params.failures.resize(EmbedFailureCauses::END_OF_ENUM);
     // RDKit✔️✔️:     std::fill(params.failures.begin(), params.failures.end(), 0);
     // RDKit✔️✔️:   }
     if params.track_failures {
-        params.failures.resize(EmbedFailureCause::EndOfEnum as usize, 0);
+        params
+            .failures
+            .resize(EmbedFailureCause::EndOfEnum as usize, 0);
         params.failures.fill(0);
     }
     // RDKit✔️✔️:   if (!mol.getNumAtoms()) {
@@ -11038,7 +11664,8 @@ pub fn embed_multiple_confs(
     // RDKit✔️✔️:     fragMapping.resize(mol.getNumAtoms());
     // RDKit✔️✔️:     std::fill(fragMapping.begin(), fragMapping.end(), 0);
     // RDKit✔️✔️:   }
-    let (mol_frags, frag_mapping) = molecule_fragments_for_embed(mol, params.embed_fragments_separately)?;
+    let (mol_frags, frag_mapping) =
+        molecule_fragments_for_embed(mol, params.embed_fragments_separately)?;
 
     // RDKit✔️✔️:   const std::map<int, RDGeom::Point3D> *coordMap = params.coordMap;
     let coord_map_storage = params.coord_map.clone();
@@ -11098,7 +11725,13 @@ pub fn embed_multiple_confs(
             // RDKit✔️✔️:         // possible causes include a triangle smoothing failure
             // RDKit✔️✔️:         return;
             // RDKit✔️✔️:       }
-            if !embedder_setup_initial_bounds_matrix(piece, &mut mmat, coord_map, params, &mut etkdg_details)? {
+            if !embedder_setup_initial_bounds_matrix(
+                piece,
+                &mut mmat,
+                coord_map,
+                params,
+                &mut etkdg_details,
+            )? {
                 return embedder_add_conformers(mol, Vec::new(), params.clear_confs);
             }
         } else {
@@ -11163,7 +11796,12 @@ pub fn embed_multiple_confs(
         // RDKit✔️✔️:                                  coordMap);
         let mut chiral_centers = Vec::new();
         let mut tetrahedral_carbons = Vec::new();
-        embedder_find_chiral_sets(piece, &mut chiral_centers, &mut tetrahedral_carbons, coord_map);
+        embedder_find_chiral_sets(
+            piece,
+            &mut chiral_centers,
+            &mut tetrahedral_carbons,
+            coord_map,
+        );
 
         // RDKit✔️✔️:     // find double bonds
         // RDKit✔️✔️:     std::vector<std::tuple<unsigned int, unsigned int, unsigned int>>
@@ -11173,7 +11811,12 @@ pub fn embed_multiple_confs(
         // RDKit✔️✔️:                                   coordMap);
         let mut double_bond_ends = Vec::new();
         let mut stereo_double_bonds = Vec::new();
-        embedder_find_double_bonds(piece, &mut double_bond_ends, &mut stereo_double_bonds, coord_map);
+        embedder_find_double_bonds(
+            piece,
+            &mut double_bond_ends,
+            &mut stereo_double_bonds,
+            coord_map,
+        );
 
         // RDKit✔️✔️:     // if we have any chiral centers or are using random coordinates, we
         // RDKit✔️✔️:     // will first embed the molecule in four dimensions, otherwise we will
@@ -11263,14 +11906,21 @@ pub fn embed_multiple_confs(
     for (ci, conf) in confs.into_iter().enumerate() {
         if confs_ok[ci]
             && (params.prune_rms_thresh <= 0.0
-                || embedder_is_conf_far_from_rest(&out, &conf, params.prune_rms_thresh, &self_matches))
+                || embedder_is_conf_far_from_rest(
+                    &out,
+                    &conf,
+                    params.prune_rms_thresh,
+                    &self_matches,
+                ))
         {
             let conf_id = out.coordinate_block_mut().conformers_3d.len();
-            out.coordinate_block_mut().conformers_3d.push(Conformer3D::new(
-                conf_id,
-                conf.coordinates().to_vec(),
-                conf.is_3d(),
-            ));
+            out.coordinate_block_mut()
+                .conformers_3d
+                .push(Conformer3D::new(
+                    conf_id,
+                    conf.coordinates().to_vec(),
+                    conf.is_3d(),
+                ));
             res.push(conf_id as i32);
         }
     }
@@ -11310,7 +11960,10 @@ pub fn embed_multiple_confs_result(
     })
 }
 
-pub fn embed_molecule(mol: &Molecule, params: &mut EmbedParameters) -> Result<(Molecule, i32), DgBoundsError> {
+pub fn embed_molecule(
+    mol: &Molecule,
+    params: &mut EmbedParameters,
+) -> Result<(Molecule, i32), DgBoundsError> {
     // BEGIN RDKIT CPP INLINE FUNCTION DGeomHelpers::EmbedMolecule(ROMol&, EmbedParameters&) (Embedder.h:225-236)
     // RDKit✔️✔️: inline int EmbedMolecule(ROMol &mol, EmbedParameters &params) {
     // RDKit✔️✔️:   INT_VECT confIds;

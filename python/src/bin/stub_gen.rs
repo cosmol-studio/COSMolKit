@@ -7,10 +7,13 @@ fn main() -> Result<()> {
     let stub = cosmolkit::stub_info()?;
     stub.generate()?;
 
-    let pyi_path = [Path::new("./cosmolkit.pyi"), Path::new("./python/cosmolkit.pyi")]
-        .into_iter()
-        .find(|path| path.exists())
-        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "cosmolkit.pyi was not generated"))?;
+    let pyi_path = [
+        Path::new("./cosmolkit.pyi"),
+        Path::new("./python/cosmolkit.pyi"),
+    ]
+    .into_iter()
+    .find(|path| path.exists())
+    .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "cosmolkit.pyi was not generated"))?;
     let mut text = fs::read_to_string(pyi_path)?;
     let future_line = "from __future__ import annotations\n";
     if !text.contains(future_line) {
@@ -60,7 +63,10 @@ fn expose_element_enum(mut text: String) -> String {
     if !text.contains("class Element(enum.IntEnum)") {
         text = text.replace(
             "@typing.final\nclass BondOrder(enum.IntEnum):",
-            &format!("{}@typing.final\nclass BondOrder(enum.IntEnum):", element_stub_defs()),
+            &format!(
+                "{}@typing.final\nclass BondOrder(enum.IntEnum):",
+                element_stub_defs()
+            ),
         );
     }
     text
@@ -69,7 +75,10 @@ fn expose_element_enum(mut text: String) -> String {
 fn expose_confseq_module(mut text: String) -> String {
     let export = "    \"confseq\",\n";
     if !text.contains(export) {
-        text = text.replace("    \"__version__\",\n", &format!("    \"__version__\",\n{export}"));
+        text = text.replace(
+            "    \"__version__\",\n",
+            &format!("    \"__version__\",\n{export}"),
+        );
     }
 
     if !text.contains("class _ConfSeqModule(typing.Protocol):") {
@@ -107,8 +116,13 @@ fn expose_batch_getitem_overloads(mut text: String) -> String {
     @typing.overload
     def __getitem__(self, index: typing.Sequence[builtins.int]) -> MoleculeBatch: ..."#;
     if text.contains("def __getitem__(self, key: typing.Any) -> typing.Any: ...") {
-        text = text.replace("def __getitem__(self, key: typing.Any) -> typing.Any: ...", overloads);
-    } else if text.contains("def __getitem__(self, index: builtins.int) -> typing.Optional[Molecule]: ...") {
+        text = text.replace(
+            "def __getitem__(self, key: typing.Any) -> typing.Any: ...",
+            overloads,
+        );
+    } else if text
+        .contains("def __getitem__(self, index: builtins.int) -> typing.Optional[Molecule]: ...")
+    {
         text = text.replace(
             "def __getitem__(self, index: builtins.int) -> typing.Optional[Molecule]: ...",
             overloads,
@@ -154,9 +168,13 @@ fn residue_stub_defs() -> String {
     let source = fs::read_to_string("crates/cosmolkit-core/src/bio/resinfo.rs")
         .or_else(|_| fs::read_to_string("../crates/cosmolkit-core/src/bio/resinfo.rs"))
         .expect("read Rust ResidueCode enum for Python stub generation");
-    let start = source.find("pub enum ResidueCode {").expect("find ResidueCode enum");
+    let start = source
+        .find("pub enum ResidueCode {")
+        .expect("find ResidueCode enum");
     let rest = &source[start..];
-    let end = rest.find("\n}\n\nimpl ResidueCode").expect("find ResidueCode enum end");
+    let end = rest
+        .find("\n}\n\nimpl ResidueCode")
+        .expect("find ResidueCode enum end");
     let mut out = String::from("@typing.final\nclass ResidueCode(enum.IntEnum):\n");
     for raw_line in rest[..end].lines().skip(1) {
         let line = raw_line.trim().trim_end_matches(',');
@@ -420,8 +438,7 @@ fn expose_batch_validation_error(mut text: String) -> String {
         );
     }
 
-    let class_decl =
-        "class BatchValidationError(builtins.ValueError):\n    def errors(self) -> builtins.list[BatchError]: ...\n\n";
+    let class_decl = "class BatchValidationError(builtins.ValueError):\n    def errors(self) -> builtins.list[BatchError]: ...\n\n";
     if !text.contains("class BatchValidationError") {
         if text.contains("@typing.final\nclass Bond:") {
             text = text.replace(
@@ -453,7 +470,10 @@ fn expose_inchi_api(mut text: String) -> String {
     ] {
         let export = format!("    \"{export_name}\",\n");
         if !text.contains(&export) {
-            text = text.replace("    \"__version__\",\n", &format!("{export}    \"__version__\",\n"));
+            text = text.replace(
+                "    \"__version__\",\n",
+                &format!("{export}    \"__version__\",\n"),
+            );
         }
     }
 

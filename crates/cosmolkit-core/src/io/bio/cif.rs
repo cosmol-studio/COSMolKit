@@ -59,8 +59,10 @@ impl CifLoop {
         if values.len() != self.tags.len() {
             return Err("CIF loop row width differs from its tag count");
         }
-        self.values
-            .extend(values.into_iter().map(|value| CifToken { value, line_number: 0 }));
+        self.values.extend(values.into_iter().map(|value| CifToken {
+            value,
+            line_number: 0,
+        }));
         Ok(())
     }
 }
@@ -93,7 +95,10 @@ impl CifBlock {
     }
 
     fn normalized_category(category: &str) -> String {
-        assert!(category.starts_with('_'), "CIF category must start with '_'");
+        assert!(
+            category.starts_with('_'),
+            "CIF category must start with '_'"
+        );
         if category.ends_with('.') {
             category.to_string()
         } else {
@@ -147,9 +152,14 @@ impl CifBlock {
 
         for entry_index in span.clone() {
             match self.entries[entry_index] {
-                CifEntry::Pair(item_index) if self.items[item_index].tag.eq_ignore_ascii_case(tag) => {
+                CifEntry::Pair(item_index)
+                    if self.items[item_index].tag.eq_ignore_ascii_case(tag) =>
+                {
                     self.items[item_index].tag = tag.to_string();
-                    self.items[item_index].value = CifToken { value, line_number: 0 };
+                    self.items[item_index].value = CifToken {
+                        value,
+                        line_number: 0,
+                    };
                     return;
                 }
                 CifEntry::Loop(loop_index)
@@ -161,7 +171,10 @@ impl CifBlock {
                     let item_index = self.items.len();
                     self.items.push(CifItem {
                         tag: tag.to_string(),
-                        value: CifToken { value, line_number: 0 },
+                        value: CifToken {
+                            value,
+                            line_number: 0,
+                        },
                     });
                     self.entries[entry_index] = CifEntry::Pair(item_index);
                     return;
@@ -173,7 +186,10 @@ impl CifBlock {
         let item_index = self.items.len();
         self.items.push(CifItem {
             tag: tag.to_string(),
-            value: CifToken { value, line_number: 0 },
+            value: CifToken {
+                value,
+                line_number: 0,
+            },
         });
         self.entries.insert(span.end, CifEntry::Pair(item_index));
     }
@@ -314,7 +330,10 @@ pub(super) fn is_cif_text_field(value: &str) -> bool {
 // Gemmi✔️✔️: return v;
 // END GEMMI CPP FUNCTION
 pub(super) fn quote_cif_value(value: &str) -> String {
-    if !value.is_empty() && !is_cif_null(value) && value.as_bytes().iter().copied().all(is_unquoted_char) {
+    if !value.is_empty()
+        && !is_cif_null(value)
+        && value.as_bytes().iter().copied().all(is_unquoted_char)
+    {
         return value.to_string();
     }
     if !value.contains('\n') && !value.contains('\'') {
@@ -360,7 +379,11 @@ fn write_text_field<W: Write>(writer: &mut W, value: &str) -> io::Result<()> {
 // Gemmi✔️✔️: }
 // Gemmi✔️✔️: os.put('\n');
 // END GEMMI CPP FUNCTION
-fn write_pair<W: Write>(writer: &mut W, item: &CifItem, options: CifWriteOptions) -> io::Result<()> {
+fn write_pair<W: Write>(
+    writer: &mut W,
+    item: &CifItem,
+    options: CifWriteOptions,
+) -> io::Result<()> {
     writer.write_all(item.tag.as_bytes())?;
     if is_cif_text_field(&item.value.value) {
         writer.write_all(b"\n")?;
@@ -437,7 +460,11 @@ fn write_spaces<W: Write>(writer: &mut W, count: usize) -> io::Result<()> {
 // Gemmi✔️✔️: }
 // Gemmi✔️✔️: os.put('\n');
 // END GEMMI CPP FUNCTION
-fn write_loop<W: Write>(writer: &mut W, loop_: &CifLoop, options: CifWriteOptions) -> io::Result<()> {
+fn write_loop<W: Write>(
+    writer: &mut W,
+    loop_: &CifLoop,
+    options: CifWriteOptions,
+) -> io::Result<()> {
     if loop_.values.is_empty() {
         return Ok(());
     }
@@ -481,7 +508,11 @@ fn write_loop<W: Write>(writer: &mut W, loop_: &CifLoop, options: CifWriteOption
     let mut need_new_line = true;
     for value in &loop_.values {
         let text_field = is_cif_text_field(&value.value);
-        writer.write_all(if need_new_line || text_field { b"\n" } else { b" " })?;
+        writer.write_all(if need_new_line || text_field {
+            b"\n"
+        } else {
+            b" "
+        })?;
         need_new_line = text_field;
         if text_field {
             write_text_field(writer, &value.value)?;
@@ -554,7 +585,11 @@ fn should_be_separated(block: &CifBlock, first: CifEntry, second: CifEntry) -> b
 // Gemmi✔️✔️: if (options.misuse_hash)
 // Gemmi✔️✔️:   os.write("#\n", 2);
 // END GEMMI CPP FUNCTION
-pub(super) fn write_cif_block<W: Write>(writer: &mut W, block: &CifBlock, options: CifWriteOptions) -> io::Result<()> {
+pub(super) fn write_cif_block<W: Write>(
+    writer: &mut W,
+    block: &CifBlock,
+    options: CifWriteOptions,
+) -> io::Result<()> {
     writer.write_all(b"data_")?;
     writer.write_all(block.name.as_bytes())?;
     writer.write_all(b"\n")?;
@@ -612,7 +647,10 @@ pub(super) fn write_cif_document<W: Write>(
     writer.flush()
 }
 
-pub(super) fn cif_document_to_string(document: &CifDocument, options: CifWriteOptions) -> io::Result<String> {
+pub(super) fn cif_document_to_string(
+    document: &CifDocument,
+    options: CifWriteOptions,
+) -> io::Result<String> {
     let mut bytes = Vec::new();
     write_cif_document(&mut bytes, document, options)?;
     String::from_utf8(bytes).map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))
@@ -696,7 +734,10 @@ mod tests {
                 CifEntry::Pair(3),
             ]
         );
-        assert_eq!(block.loops[0].tags, ["_atom_site.id", "_atom_site.type_symbol"]);
+        assert_eq!(
+            block.loops[0].tags,
+            ["_atom_site.id", "_atom_site.type_symbol"]
+        );
         assert_eq!(block.loops[0].values[0].value, "2");
     }
 
@@ -732,12 +773,18 @@ mod tests {
     fn cif_writer_erase_category_preserves_unrelated_order_entries() {
         let mut block = CifBlock::default();
         block.push_pair("_entry.id".to_string(), token("x"));
-        block.init_mmcif_loop("_atom_site", &["id"]).add_row(["1"]).unwrap();
+        block
+            .init_mmcif_loop("_atom_site", &["id"])
+            .add_row(["1"])
+            .unwrap();
         block.push_pair("_cell.length_a".to_string(), token("10"));
 
         block.erase_mmcif_category("_atom_site.");
 
-        assert_eq!(block.entries, [CifEntry::Pair(0), CifEntry::Erased, CifEntry::Pair(1)]);
+        assert_eq!(
+            block.entries,
+            [CifEntry::Pair(0), CifEntry::Erased, CifEntry::Pair(1)]
+        );
     }
 
     #[test]
@@ -748,7 +795,9 @@ mod tests {
         };
         block.push_pair("_entry.id".to_string(), token("X"));
         block.push_pair("_cell.length_a".to_string(), token("10"));
-        let document = CifDocument { blocks: vec![block] };
+        let document = CifDocument {
+            blocks: vec![block],
+        };
 
         assert_eq!(
             cif_document_to_string(&document, CifWriteOptions::default()).unwrap(),
@@ -764,7 +813,9 @@ mod tests {
         };
         block.push_pair("_entry.id".to_string(), token("X"));
         block.push_pair("_cell.length_a".to_string(), token("10"));
-        let document = CifDocument { blocks: vec![block] };
+        let document = CifDocument {
+            blocks: vec![block],
+        };
 
         assert_eq!(
             cif_document_to_string(
@@ -787,7 +838,9 @@ mod tests {
         };
         block.push_pair("_entry.id".to_string(), token("X"));
         block.push_pair("_cell.length_a".to_string(), token("10"));
-        let document = CifDocument { blocks: vec![block] };
+        let document = CifDocument {
+            blocks: vec![block],
+        };
 
         assert_eq!(
             cif_document_to_string(
@@ -812,7 +865,9 @@ mod tests {
             .init_mmcif_loop("_atom", &["id", "type"])
             .add_row(["1", "C"])
             .unwrap();
-        let document = CifDocument { blocks: vec![block] };
+        let document = CifDocument {
+            blocks: vec![block],
+        };
 
         assert_eq!(
             cif_document_to_string(
@@ -837,7 +892,9 @@ mod tests {
         let loop_ = block.init_mmcif_loop("_atom", &["id", "type"]);
         loop_.add_row(["1", "C"]).unwrap();
         loop_.add_row(["22", "N"]).unwrap();
-        let document = CifDocument { blocks: vec![block] };
+        let document = CifDocument {
+            blocks: vec![block],
+        };
 
         assert_eq!(
             cif_document_to_string(
@@ -860,7 +917,9 @@ mod tests {
             ..CifBlock::default()
         };
         block.push_pair("_struct.title".to_string(), token(";line 1\r\nline 2\n;"));
-        let document = CifDocument { blocks: vec![block] };
+        let document = CifDocument {
+            blocks: vec![block],
+        };
 
         assert_eq!(
             cif_document_to_string(&document, CifWriteOptions::default()).unwrap(),
@@ -876,7 +935,9 @@ mod tests {
         };
         let value = "A".repeat(121);
         block.push_pair("_entry.id".to_string(), token(&value));
-        let document = CifDocument { blocks: vec![block] };
+        let document = CifDocument {
+            blocks: vec![block],
+        };
 
         assert_eq!(
             cif_document_to_string(&document, CifWriteOptions::default()).unwrap(),

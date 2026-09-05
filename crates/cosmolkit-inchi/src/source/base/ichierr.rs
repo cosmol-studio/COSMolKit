@@ -1,8 +1,9 @@
 use crate::source_types::{
-    BNS_ALTBOND_ERR, BNS_RADICAL_ERR, BNS_TIMEOUT, CT_ATOMCOUNT_ERR, CT_CALC_STEREO_ERR, CT_CANON_ERR, CT_ISO_H_ERR,
-    CT_ISOCOUNT_ERR, CT_ISOTAUCOUNT_ERR, CT_LEN_MISMATCH, CT_MAPCOUNT_ERR, CT_OUT_OF_RAM, CT_OVERFLOW, CT_RANKING_ERR,
-    CT_REMOVE_STEREO_ERR, CT_STEREO_CANON_ERR, CT_STEREOBOND_ERROR, CT_STEREOCOUNT_ERR, CT_TAUCOUNT_ERR,
-    CT_TIMEOUT_ERR, CT_UNKNOWN_ERR, CT_USER_QUIT_ERR, CT_WRONG_FORMULA, STR_ERR_LEN, SourceHeapError,
+    BNS_ALTBOND_ERR, BNS_RADICAL_ERR, BNS_TIMEOUT, CT_ATOMCOUNT_ERR, CT_CALC_STEREO_ERR,
+    CT_CANON_ERR, CT_ISO_H_ERR, CT_ISOCOUNT_ERR, CT_ISOTAUCOUNT_ERR, CT_LEN_MISMATCH,
+    CT_MAPCOUNT_ERR, CT_OUT_OF_RAM, CT_OVERFLOW, CT_RANKING_ERR, CT_REMOVE_STEREO_ERR,
+    CT_STEREO_CANON_ERR, CT_STEREOBOND_ERROR, CT_STEREOCOUNT_ERR, CT_TAUCOUNT_ERR, CT_TIMEOUT_ERR,
+    CT_UNKNOWN_ERR, CT_USER_QUIT_ERR, CT_WRONG_FORMULA, STR_ERR_LEN, SourceHeapError,
 };
 
 fn c_string_length(value: &[i8]) -> Result<usize, SourceHeapError> {
@@ -16,7 +17,9 @@ fn find_bytes(haystack: &[i8], needle: &[i8]) -> Option<usize> {
     if needle.is_empty() {
         return Some(0);
     }
-    haystack.windows(needle.len()).position(|window| window == needle)
+    haystack
+        .windows(needle.len())
+        .position(|window| window == needle)
 }
 
 #[allow(non_snake_case)]
@@ -108,7 +111,10 @@ pub(crate) fn ErrMsg(error_code: i32) -> String {
     }
 }
 
-pub(crate) fn already_have_this_message(prev_messages: &[i8], new_message: &[i8]) -> Result<i32, SourceHeapError> {
+pub(crate) fn already_have_this_message(
+    prev_messages: &[i8],
+    new_message: &[i8],
+) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichierr.c:160 already_have_this_message
     // INCHI✔️✔️: int already_have_this_message( char *prev_messages, const char *new_message )
     // INCHI✔️✔️: {
@@ -149,7 +155,9 @@ pub(crate) fn already_have_this_message(prev_messages: &[i8], new_message: &[i8]
 
     let end = position + message_length;
     let ends_at_message_boundary = end == previous_length
-        || (end + 1 < previous_length && previous[end] == b';' as i8 && previous[end + 1] == b' ' as i8)
+        || (end + 1 < previous_length
+            && previous[end] == b';' as i8
+            && previous[end + 1] == b' ' as i8)
         || (message_length > 0
             && message[message_length - 1] == b':' as i8
             && end < previous_length
@@ -243,7 +251,8 @@ pub(crate) fn AddErrorMessage(
             all_messages[output] = b' ' as i8;
             output += 1;
         }
-        all_messages[output..output + message_length].copy_from_slice(&new_message[..message_length]);
+        all_messages[output..output + message_length]
+            .copy_from_slice(&new_message[..message_length]);
         all_messages[output + message_length] = 0;
         return Ok(1);
     }
@@ -356,27 +365,45 @@ mod tests {
         assert_eq!(AddErrorMessage(None, Some(&message)), Ok(0));
         let mut messages = error_buffer("");
         assert_eq!(AddErrorMessage(Some(&mut messages), None), Ok(0));
-        assert_eq!(AddErrorMessage(Some(&mut messages), Some(&c_bytes(""))), Ok(0));
+        assert_eq!(
+            AddErrorMessage(Some(&mut messages), Some(&c_bytes(""))),
+            Ok(0)
+        );
 
         assert_eq!(AddErrorMessage(Some(&mut messages), Some(&message)), Ok(1));
         assert_eq!(buffer_text(&messages), "first");
         assert_eq!(AddErrorMessage(Some(&mut messages), Some(&message)), Ok(1));
         assert_eq!(buffer_text(&messages), "first");
-        assert_eq!(AddErrorMessage(Some(&mut messages), Some(&c_bytes("second"))), Ok(1));
+        assert_eq!(
+            AddErrorMessage(Some(&mut messages), Some(&c_bytes("second"))),
+            Ok(1)
+        );
         assert_eq!(buffer_text(&messages), "first; second");
 
         let mut colon = error_buffer("header:");
-        assert_eq!(AddErrorMessage(Some(&mut colon), Some(&c_bytes("detail"))), Ok(1));
+        assert_eq!(
+            AddErrorMessage(Some(&mut colon), Some(&c_bytes("detail"))),
+            Ok(1)
+        );
         assert_eq!(buffer_text(&colon), "header: detail");
 
         let mut no_room = error_buffer(&"x".repeat(253));
-        assert_eq!(AddErrorMessage(Some(&mut no_room), Some(&c_bytes("more"))), Ok(0));
+        assert_eq!(
+            AddErrorMessage(Some(&mut no_room), Some(&c_bytes("more"))),
+            Ok(0)
+        );
         assert_eq!(buffer_text(&no_room), "x".repeat(253));
 
         let mut marker_room = error_buffer(&"x".repeat(252));
-        assert_eq!(AddErrorMessage(Some(&mut marker_room), Some(&c_bytes("more"))), Ok(0));
+        assert_eq!(
+            AddErrorMessage(Some(&mut marker_room), Some(&c_bytes("more"))),
+            Ok(0)
+        );
         assert_eq!(buffer_text(&marker_room), format!("{}...", "x".repeat(252)));
-        assert_eq!(AddErrorMessage(Some(&mut marker_room), Some(&c_bytes("again"))), Ok(0));
+        assert_eq!(
+            AddErrorMessage(Some(&mut marker_room), Some(&c_bytes("again"))),
+            Ok(0)
+        );
         assert_eq!(buffer_text(&marker_room), format!("{}...", "x".repeat(252)));
 
         let mut short = [0_i8; 8];

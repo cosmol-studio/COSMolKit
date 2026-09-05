@@ -27,7 +27,11 @@ fn clip_to_one(value: &mut f64) {
 }
 
 fn point_from_pos(pos: &[f64], atom_idx: usize) -> ForceFieldVec3 {
-    ForceFieldVec3::new(pos[3 * atom_idx], pos[3 * atom_idx + 1], pos[3 * atom_idx + 2])
+    ForceFieldVec3::new(
+        pos[3 * atom_idx],
+        pos[3 * atom_idx + 1],
+        pos[3 * atom_idx + 2],
+    )
 }
 
 fn calc_oop_chi(
@@ -126,7 +130,14 @@ impl OopBendContrib {
             && self.koop.is_empty()
     }
 
-    pub fn add_term(&mut self, idx1: usize, idx2: usize, idx3: usize, idx4: usize, mmff_oop_params: &MmffOop) {
+    pub fn add_term(
+        &mut self,
+        idx1: usize,
+        idx2: usize,
+        idx3: usize,
+        idx4: usize,
+        mmff_oop_params: &MmffOop,
+    ) {
         // BEGIN RDKIT CPP METHOD ForceFields::MMFF::OopBendContrib::addTerm (OopBend.cpp:46-64)
         // RDKit✔️✔️: void OopBendContrib::addTerm(unsigned int idx1,
         // RDKit✔️✔️:                              unsigned int idx2,
@@ -139,7 +150,12 @@ impl OopBendContrib {
         // RDKit✔️✔️:                    (idx2 != idx3) && (idx2 != idx4) && (idx3 != idx4),
         // RDKit✔️✔️:                "degenerate points");
         assert!(
-            idx1 != idx2 && idx1 != idx3 && idx1 != idx4 && idx2 != idx3 && idx2 != idx4 && idx3 != idx4,
+            idx1 != idx2
+                && idx1 != idx3
+                && idx1 != idx4
+                && idx2 != idx3
+                && idx2 != idx4
+                && idx3 != idx4,
             "degenerate points"
         );
         let force_field = self.force_field();
@@ -329,7 +345,12 @@ impl OopBendContrib {
         // RDKit✔️✔️:   double cosChiSq = 1.0 - sinChi * sinChi;
         let cos_chi_sq = 1.0 - sin_chi * sin_chi;
         // RDKit✔️✔️:   double cosChi = std::max(((cosChiSq > 0.0) ? sqrt(cosChiSq) : 0.0), 1.0e-8);
-        let cos_chi = (if cos_chi_sq > 0.0 { cos_chi_sq.sqrt() } else { 0.0 }).max(1.0e-8);
+        let cos_chi = (if cos_chi_sq > 0.0 {
+            cos_chi_sq.sqrt()
+        } else {
+            0.0
+        })
+        .max(1.0e-8);
         // RDKit✔️✔️:   double chi = RAD2DEG * asin(sinChi);
         let chi = RAD2DEG * sin_chi.asin();
         // RDKit✔️✔️:   double cosTheta = rJI.dotProduct(rJK);
@@ -340,7 +361,12 @@ impl OopBendContrib {
         let sin_theta_sq = (1.0 - cos_theta * cos_theta).max(1.0e-8);
         // RDKit✔️✔️:   double sinTheta =
         // RDKit✔️✔️:       std::max(((sinThetaSq > 0.0) ? sqrt(sinThetaSq) : 0.0), 1.0e-8);
-        let sin_theta = (if sin_theta_sq > 0.0 { sin_theta_sq.sqrt() } else { 0.0 }).max(1.0e-8);
+        let sin_theta = (if sin_theta_sq > 0.0 {
+            sin_theta_sq.sqrt()
+        } else {
+            0.0
+        })
+        .max(1.0e-8);
 
         // RDKit✔️✔️:   double dE_dChi = RAD2DEG * c2 * d_koop[termIdx] * chi;
         let d_e_d_chi = RAD2DEG * c2 * self.koop[term_idx] * chi;
@@ -423,9 +449,11 @@ mod tests {
     fn force_field_with_positions(count: usize) -> ForceField {
         let mut force_field = ForceField::new(count);
         for idx in 0..count {
-            force_field
-                .positions_mut()
-                .push(ForceFieldVec3::new(idx as f64, idx as f64 + 0.25, idx as f64 + 0.5));
+            force_field.positions_mut().push(ForceFieldVec3::new(
+                idx as f64,
+                idx as f64 + 0.25,
+                idx as f64 + 0.5,
+            ));
         }
         force_field
     }
@@ -806,7 +834,10 @@ mod tests {
         contrib.get_grad(&pos, &mut grad);
 
         let expected_delta = finite_difference_gradient(&contrib, &pos);
-        let expected: Vec<f64> = expected_delta.into_iter().map(|value| value + 0.5).collect();
+        let expected: Vec<f64> = expected_delta
+            .into_iter()
+            .map(|value| value + 0.5)
+            .collect();
         assert_slice_close(&grad, &expected);
     }
 }

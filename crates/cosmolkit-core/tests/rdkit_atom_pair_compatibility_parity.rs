@@ -1,6 +1,8 @@
 use std::collections::BTreeMap;
 
-use cosmolkit_core::{AtomPairFingerprintGenerator, AtomPairFingerprintParams, FingerprintFuncArguments, Molecule};
+use cosmolkit_core::{
+    AtomPairFingerprintGenerator, AtomPairFingerprintParams, FingerprintFuncArguments, Molecule,
+};
 
 fn map(entries: &[(u64, i32)]) -> BTreeMap<u64, i32> {
     entries.iter().copied().collect()
@@ -10,7 +12,8 @@ fn map(entries: &[(u64, i32)]) -> BTreeMap<u64, i32> {
 fn modern_core_matches_deprecated_rdkit_default_and_count_simulation_outputs() {
     // Oracle: pinned RDKit 2026.03.1 rdMolDescriptors AtomPair entry points.
     let molecule = Molecule::from_smiles("CCCO").unwrap();
-    let default_generator = AtomPairFingerprintGenerator::new(&AtomPairFingerprintParams::default()).unwrap();
+    let default_generator =
+        AtomPairFingerprintGenerator::new(&AtomPairFingerprintParams::default()).unwrap();
     let sparse = default_generator
         .sparse_count_fingerprint(&molecule, &mut FingerprintFuncArguments::default())
         .unwrap();
@@ -74,9 +77,16 @@ fn modern_core_matches_deprecated_rdkit_custom_chiral_and_filter_outputs() {
         ..Default::default()
     };
 
-    let sparse = generator.sparse_count_fingerprint(&molecule, &mut arguments()).unwrap();
-    assert_eq!(sparse.nonzero_elements(), &map(&[(1_442_145, 1), (2_163_393, 1)]));
-    let count = generator.count_fingerprint(&molecule, &mut arguments()).unwrap();
+    let sparse = generator
+        .sparse_count_fingerprint(&molecule, &mut arguments())
+        .unwrap();
+    assert_eq!(
+        sparse.nonzero_elements(),
+        &map(&[(1_442_145, 1), (2_163_393, 1)])
+    );
+    let count = generator
+        .count_fingerprint(&molecule, &mut arguments())
+        .unwrap();
     assert_eq!(count.nonzero_elements(), &map(&[(0, 1), (37, 1)]));
     let explicit = generator.fingerprint(&molecule, &mut arguments()).unwrap();
     assert_eq!(explicit.on_bits(), &[0, 20]);
@@ -102,9 +112,16 @@ fn modern_core_matches_deprecated_rdkit_three_dimensional_outputs() {
         ..Default::default()
     };
 
-    let sparse = generator.sparse_count_fingerprint(&molecule, &mut arguments()).unwrap();
-    assert_eq!(sparse.nonzero_elements(), &map(&[(541_731, 1), (558_114, 1)]));
-    let count = generator.count_fingerprint(&molecule, &mut arguments()).unwrap();
+    let sparse = generator
+        .sparse_count_fingerprint(&molecule, &mut arguments())
+        .unwrap();
+    assert_eq!(
+        sparse.nonzero_elements(),
+        &map(&[(541_731, 1), (558_114, 1)])
+    );
+    let count = generator
+        .count_fingerprint(&molecule, &mut arguments())
+        .unwrap();
     assert_eq!(count.nonzero_elements(), &map(&[(28, 1), (30, 1)]));
     let explicit = generator.fingerprint(&molecule, &mut arguments()).unwrap();
     assert_eq!(explicit.on_bits(), &[16, 24]);

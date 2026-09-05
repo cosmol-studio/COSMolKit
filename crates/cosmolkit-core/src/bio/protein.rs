@@ -1,7 +1,7 @@
 use crate::bio::resinfo::{ResidueCode, ResidueInfo};
 use crate::bio::{
-    AtomId, AtomRow, BioStructure, ChainId, ChainKind, ChainRow, CoordinateBlock, ModelId, ModelRow, ResidueId,
-    ResidueKind, ResidueRow, RowSpan,
+    AtomId, AtomRow, BioStructure, ChainId, ChainKind, ChainRow, CoordinateBlock, ModelId,
+    ModelRow, ResidueId, ResidueKind, ResidueRow, RowSpan,
 };
 #[cfg(feature = "io")]
 use crate::{BioCoorFormat, BioReadError};
@@ -81,7 +81,11 @@ impl Protein {
     }
 
     #[cfg(feature = "io")]
-    pub fn from_str_with_format(text: &str, path: &str, format: BioCoorFormat) -> Result<Self, BioReadError> {
+    pub fn from_str_with_format(
+        text: &str,
+        path: &str,
+        format: BioCoorFormat,
+    ) -> Result<Self, BioReadError> {
         let structure = BioStructure::from_str_with_format(text, path, format)?;
         Ok(Self::project_from_bio_structure(&structure))
     }

@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "crates/cosmolkit-core",
+    "crates/cosmolkit-cx",
     "crates/cosmolkit-types",
     "crates/cosmolkit-model",
     "crates/cosmolkit-inchi",

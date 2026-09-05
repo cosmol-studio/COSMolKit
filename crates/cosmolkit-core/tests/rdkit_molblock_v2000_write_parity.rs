@@ -60,7 +60,11 @@ fn parse_v2000_body(block_body: &str) -> Option<ParsedBody> {
         .iter()
         .map(|line| parse_bond_line(line))
         .collect();
-    Some(ParsedBody { atoms, coords, bonds })
+    Some(ParsedBody {
+        atoms,
+        coords,
+        bonds,
+    })
 }
 
 fn parse_v3000_body(block_body: &str) -> Option<ParsedBody> {
@@ -124,11 +128,20 @@ fn parse_v3000_body(block_body: &str) -> Option<ParsedBody> {
         atoms.push(symbol);
         coords.push((x, y));
     }
-    Some(ParsedBody { atoms, coords, bonds })
+    Some(ParsedBody {
+        atoms,
+        coords,
+        bonds,
+    })
 }
 
 fn parse_body_for_compare(block_body: &str) -> Option<ParsedBody> {
-    if block_body.lines().next().unwrap_or_default().contains("V3000") {
+    if block_body
+        .lines()
+        .next()
+        .unwrap_or_default()
+        .contains("V3000")
+    {
         parse_v3000_body(block_body)
     } else {
         parse_v2000_body(block_body)
@@ -164,7 +177,13 @@ fn bodies_match(ours_body: &str, expected_body: &str) -> bool {
         && canonical_bonds(&ours.bonds) == canonical_bonds(&expected.bonds)
 }
 
-fn compare_against_expected(ours_body: &str, expected_body: &str, smiles: &str, row: usize, variant: &str) {
+fn compare_against_expected(
+    ours_body: &str,
+    expected_body: &str,
+    smiles: &str,
+    row: usize,
+    variant: &str,
+) {
     let ours = normalize_signed_zero(ours_body);
     let expected = normalize_signed_zero(expected_body);
     assert!(
@@ -199,16 +218,29 @@ fn load_smiles() -> Vec<String> {
 
 fn load_golden() -> Vec<GoldenRecord> {
     let path = golden_path("molblock_v2000_minimal.jsonl");
-    BufReader::new(File::open(&path).unwrap_or_else(|error| panic!("failed to open {}: {error}", path.display())))
-        .lines()
-        .enumerate()
-        .map(|(index, line)| {
-            let line =
-                line.unwrap_or_else(|error| panic!("failed to read {} line {}: {error}", path.display(), index + 1));
-            serde_json::from_str(&line)
-                .unwrap_or_else(|error| panic!("failed to parse {} line {}: {error}", path.display(), index + 1))
+    BufReader::new(
+        File::open(&path)
+            .unwrap_or_else(|error| panic!("failed to open {}: {error}", path.display())),
+    )
+    .lines()
+    .enumerate()
+    .map(|(index, line)| {
+        let line = line.unwrap_or_else(|error| {
+            panic!(
+                "failed to read {} line {}: {error}",
+                path.display(),
+                index + 1
+            )
+        });
+        serde_json::from_str(&line).unwrap_or_else(|error| {
+            panic!(
+                "failed to parse {} line {}: {error}",
+                path.display(),
+                index + 1
+            )
         })
-        .collect()
+    })
+    .collect()
 }
 
 #[test]
@@ -217,7 +249,12 @@ fn molblock_v2000_golden_has_one_record_per_smiles() {
     let golden = load_golden();
     assert_eq!(golden.len(), smiles.len());
     for (row, (record, input)) in golden.iter().zip(&smiles).enumerate() {
-        assert_eq!(&record.smiles, input, "golden smiles mismatch at row {}", row + 1);
+        assert_eq!(
+            &record.smiles,
+            input,
+            "golden smiles mismatch at row {}",
+            row + 1
+        );
         assert_eq!(
             record.parse_ok,
             record.parse_error.is_none(),
@@ -257,7 +294,11 @@ fn molblock_v2000_body_matches_rdkit_coordinates_and_topology() {
         let row = index + 1;
         let parsed = Molecule::from_smiles(&record.smiles);
         if !record.parse_ok {
-            assert!(parsed.is_err(), "parse should fail at row {row} ({})", record.smiles);
+            assert!(
+                parsed.is_err(),
+                "parse should fail at row {row} ({})",
+                record.smiles
+            );
             continue;
         }
         let molecule = parsed

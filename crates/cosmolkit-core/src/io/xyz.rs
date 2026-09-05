@@ -11,7 +11,9 @@ use crate::{AtomSpec, Element, Molecule, MoleculeBuildError, MoleculeBuilder};
 pub enum XyzReadError {
     #[error("empty XYZ block")]
     EmptyBlock,
-    #[error("unable to recognize the number of atoms: cannot convert '{value}' to unsigned int on line 0")]
+    #[error(
+        "unable to recognize the number of atoms: cannot convert '{value}' to unsigned int on line 0"
+    )]
     AtomCount { value: String },
     #[error("EOF hit while reading atoms")]
     UnexpectedEof,
@@ -95,10 +97,9 @@ fn rdkit_to_double_no_spaces(value: &str, line: usize) -> Result<f64, XyzReadErr
     // RDKit✔️✔️:   }
     // RDKit✔️✔️: }
     let checked = value.split_once('\0').map_or(value, |(prefix, _)| prefix);
-    if !checked
-        .bytes()
-        .all(|byte| byte.is_ascii_digit() || byte == b'+' || byte == b'-' || byte == b',' || byte == b'.')
-    {
+    if !checked.bytes().all(|byte| {
+        byte.is_ascii_digit() || byte == b'+' || byte == b'-' || byte == b',' || byte == b'.'
+    }) {
         return Err(XyzReadError::Coordinate {
             value: value.to_string(),
             line,
@@ -107,7 +108,9 @@ fn rdkit_to_double_no_spaces(value: &str, line: usize) -> Result<f64, XyzReadErr
     }
 
     // RDKit✔️✔️: double res = atof(input.data());
-    let numeric_prefix = checked.split_once(',').map_or(checked, |(prefix, _)| prefix);
+    let numeric_prefix = checked
+        .split_once(',')
+        .map_or(checked, |(prefix, _)| prefix);
     numeric_prefix
         .parse::<f64>()
         .map_err(|source| XyzReadError::Coordinate {
@@ -130,8 +133,10 @@ fn normalize_xyz_symbol(raw: &str) -> String {
 fn element_from_rdkit_symbol(symbol: &str) -> Result<Element, XyzReadError> {
     for atomic_number in 0..=118u8 {
         if crate::chemistry::valence::rdkit_element_symbol(atomic_number).ok() == Some(symbol) {
-            return Element::from_atomic_number(atomic_number).ok_or_else(|| XyzReadError::AtomSymbol {
-                message: format!("Bad atomic number for element symbol {symbol}"),
+            return Element::from_atomic_number(atomic_number).ok_or_else(|| {
+                XyzReadError::AtomSymbol {
+                    message: format!("Bad atomic number for element symbol {symbol}"),
+                }
             });
         }
     }
@@ -246,7 +251,8 @@ pub fn read_xyz_from_str(block: &str) -> Result<Molecule, XyzReadError> {
     // RDKit✔️✔️:   if (!comment.empty()) {
     // RDKit✔️✔️:     mol->setProp("_FileComments", comment);
     // RDKit✔️✔️:   }
-    let mut builder = MoleculeBuilder::new().with_topology_trust(crate::TopologyTrust::CoordinateOnly);
+    let mut builder =
+        MoleculeBuilder::new().with_topology_trust(crate::TopologyTrust::CoordinateOnly);
     // Grow from atom lines actually present instead of allowing the declared
     // count to trigger an eager allocation. Successful parse semantics remain
     // identical, while truncated untrusted input reaches RDKit's EOF error
@@ -304,7 +310,10 @@ mod tests {
         assert_eq!(mol.atomic_numbers(), vec![6, 1, 1, 1, 1]);
         assert_eq!(mol.properties().prop("_FileComments"), Some("methane"));
         assert_eq!(mol.conformers_3d().len(), 1);
-        assert_eq!(mol.conformers_3d()[0].coordinates()[1], [-0.635, -0.635, 0.635]);
+        assert_eq!(
+            mol.conformers_3d()[0].coordinates()[1],
+            [-0.635, -0.635, 0.635]
+        );
     }
 
     #[test]
@@ -338,13 +347,16 @@ mod tests {
         assert_eq!(mol.num_atoms(), 1);
 
         let err = read_xyz_from_str("\t1\n\nC 1 2 3\n").expect_err("tab is not accepted");
-        assert!(err.to_string().contains("unable to recognize the number of atoms"));
+        assert!(
+            err.to_string()
+                .contains("unable to recognize the number of atoms")
+        );
     }
 
     #[test]
     fn xyz_reader_reproduces_rdkit_unsigned_int_overflow_as_zero() {
-        let mol =
-            read_xyz_from_str("4294967296\ncomment\n").expect("out-of-range unsigned int remains initialized to zero");
+        let mol = read_xyz_from_str("4294967296\ncomment\n")
+            .expect("out-of-range unsigned int remains initialized to zero");
 
         assert_eq!(mol.num_atoms(), 0);
         assert!(mol.conformers_2d().is_empty());
@@ -354,8 +366,8 @@ mod tests {
 
     #[test]
     fn xyz_reader_does_not_eagerly_allocate_the_declared_atom_count() {
-        let err =
-            read_xyz_from_str("4294967295\ncomment\n").expect_err("a truncated maximum-count block should fail at EOF");
+        let err = read_xyz_from_str("4294967295\ncomment\n")
+            .expect_err("a truncated maximum-count block should fail at EOF");
 
         assert_eq!(err, super::XyzReadError::UnexpectedEof);
     }

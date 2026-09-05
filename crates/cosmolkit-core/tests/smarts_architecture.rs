@@ -23,12 +23,6 @@ const EXACT_OCCURRENCES: &[ExactOccurrence] = &[
         needle: "struct SmartsParser<'a>",
         count: 1,
     },
-    ExactOccurrence {
-        category: "recursive string representation",
-        path: "src/search/query.rs",
-        needle: "RecursiveSmarts(RecursiveStructureQuery)",
-        count: 1,
-    },
 ];
 
 const EXPECTED_SMARTS_FUNCTIONS: &[&str] = &[
@@ -47,20 +41,19 @@ const EXPECTED_SMARTS_FUNCTIONS: &[&str] = &[
     "src/properties/descriptors.rs::rdkit_count_smarts_matches",
     "src/properties/fingerprint.rs::default_feature_smarts",
     "src/properties/fingerprint.rs::from_smarts_patterns",
-    "src/search/query.rs::from_smarts",
-    "src/search/query.rs::source_smarts",
+    "src/search/query_graph.rs::atom_to_smarts",
+    "src/search/query_graph.rs::bond_to_smarts",
+    "src/search/query_graph.rs::fragment_to_smarts",
+    "src/search/query_graph.rs::fragment_to_cx_smarts",
     "src/search/query_graph.rs::to_smarts",
     "src/search/query_graph.rs::to_cx_smarts",
-    "src/search/query_graph.rs::fragment_to_smarts",
-    "src/search/query_graph.rs::from_smarts",
-    "src/search/query_graph.rs::fragment_to_cx_smarts",
     "src/search/smarts_parse.rs::atom_from_smarts",
     "src/search/smarts_parse.rs::bond_from_smarts",
     "src/search/smarts_parse.rs::materialize_smarts_atom_state",
-    "src/search/smarts_parse.rs::mol_from_smarts",
     "src/search/smarts_parse.rs::parse_atom_token",
     "src/search/smarts_parse.rs::parse_smarts",
     "src/search/smarts_parse.rs::parse_smarts_chain",
+    "src/search/smarts_parse.rs::parse_smarts_graph",
     "src/search/smarts_parse.rs::parse_smarts_molecule",
     "src/search/smarts_parse.rs::parse_smarts_with_params",
     "src/search/smarts_parse.rs::preprocess_smarts",
@@ -83,6 +76,13 @@ const EXPECTED_SMARTS_FUNCTIONS: &[&str] = &[
     "src/search/smarts_write.rs::mol_to_cx_smarts",
     "src/search/smarts_write.rs::mol_to_smarts",
     "src/search/smarts_write.rs::mol_to_smarts_internal",
+    "src/search/smarts_write.rs::query_atom_to_smarts",
+    "src/search/smarts_write.rs::query_bond_to_smarts",
+    "src/search/smarts_write.rs::query_graph_fragment_to_cx_smarts",
+    "src/search/smarts_write.rs::query_graph_fragment_to_smarts",
+    "src/search/smarts_write.rs::query_graph_to_cx_smarts",
+    "src/search/smarts_write.rs::query_graph_to_smarts",
+    "src/search/smarts_write.rs::query_graph_to_smarts_fragment",
     "src/search/smarts_write.rs::recurse_bond_smarts",
     "src/search/smarts_write.rs::recurse_get_smarts",
     "src/search/substruct.rs::recursive_smarts_root_matches",
@@ -146,7 +146,8 @@ fn without_cfg_test_modules(source: &str) -> String {
 }
 
 fn production_source(path: &Path) -> String {
-    let source = fs::read_to_string(path).unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()));
+    let source = fs::read_to_string(path)
+        .unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()));
     without_cfg_test_modules(&source)
 }
 
@@ -158,9 +159,12 @@ fn function_name(line: &str) -> Option<&str> {
     let function = line.find("fn ")?;
     let prefix = line[..function].trim();
     if !prefix.is_empty()
-        && !prefix
-            .split_whitespace()
-            .all(|part| matches!(part, "pub" | "pub(crate)" | "pub(super)" | "async" | "unsafe"))
+        && !prefix.split_whitespace().all(|part| {
+            matches!(
+                part,
+                "pub" | "pub(crate)" | "pub(super)" | "async" | "unsafe"
+            )
+        })
     {
         return None;
     }
@@ -294,7 +298,10 @@ fn smarts_single_core_architecture() {
     let root = core_root();
     let mut files = Vec::new();
     collect_rust_files(&root.join("src"), &mut files);
-    let production = files.iter().map(|path| production_source(path)).collect::<String>();
+    let production = files
+        .iter()
+        .map(|path| production_source(path))
+        .collect::<String>();
 
     assert!(!production.contains("SmartsMolecule"));
     assert!(!production.contains("build_query_molecule"));
@@ -306,8 +313,14 @@ fn smarts_single_core_architecture() {
 fn smarts_existing_consumer_regression_matrix() {
     let root = core_root();
     let required = [
-        ("src/properties/descriptors.rs", "smarts_consumer_descriptor_patterns"),
-        ("src/properties/fingerprint.rs", "smarts_consumer_fingerprint_patterns"),
+        (
+            "src/properties/descriptors.rs",
+            "smarts_consumer_descriptor_patterns",
+        ),
+        (
+            "src/properties/fingerprint.rs",
+            "smarts_consumer_fingerprint_patterns",
+        ),
         (
             "src/chemistry/forcefield/torsion_query.rs",
             "smarts_consumer_torsion_query",
@@ -316,7 +329,6 @@ fn smarts_existing_consumer_regression_matrix() {
             "src/chemistry/coordinates.rs",
             "smarts_consumer_coordinate_template_query",
         ),
-        ("src/io/sdf.rs", "smarts_consumer_sdf_smartsq"),
     ];
     for (path, test_name) in required {
         let source = fs::read_to_string(root.join(path)).unwrap();
@@ -331,7 +343,7 @@ fn smarts_existing_consumer_regression_matrix() {
 fn smarts_canonical_module_baseline() {
     let root = core_root();
     let canonical = production_source(&root.join("src/search/smarts_parse.rs"));
-    let query_model = production_source(&root.join("src/search/query.rs"));
+    let query_model = production_source(&root.join("../cosmolkit-model/src/query.rs"));
     let facade = production_source(&root.join("src/lib.rs"));
 
     assert!(
@@ -339,31 +351,26 @@ fn smarts_canonical_module_baseline() {
         "the canonical SMARTS parser/compiler owner must remain explicit",
     );
     assert!(
-        query_model.contains("define the predicate vocabulary."),
+        query_model.contains("Query values used by SMARTS, MCS, and substructure algorithms."),
         "the shared typed predicate vocabulary owner must remain explicit",
+    );
+    assert_eq!(
+        query_model
+            .matches("RecursiveSmarts(RecursiveStructureQuery)")
+            .count(),
+        1,
+        "recursive SMARTS data must have one canonical model definition",
     );
 
     for (needle, expected) in [
-        (
-            "pub enum QueryNode<",
-            BTreeMap::from([("src/search/query.rs".to_owned(), 1)]),
-        ),
-        (
-            "pub enum AtomQueryPredicate",
-            BTreeMap::from([("src/search/query.rs".to_owned(), 1)]),
-        ),
-        (
-            "pub enum BondQueryPredicate",
-            BTreeMap::from([("src/search/query.rs".to_owned(), 1)]),
-        ),
+        ("pub enum QueryNode<", BTreeMap::new()),
+        ("pub enum AtomQueryPredicate", BTreeMap::new()),
+        ("pub enum BondQueryPredicate", BTreeMap::new()),
         (
             "pub enum SmartsParseError",
             BTreeMap::from([("src/search/query.rs".to_owned(), 1)]),
         ),
-        (
-            "pub fn mol_from_smarts",
-            BTreeMap::from([("src/search/smarts_parse.rs".to_owned(), 1)]),
-        ),
+        ("pub fn mol_from_smarts", BTreeMap::new()),
     ] {
         assert_eq!(
             structural_hit_inventory(&root, needle),
@@ -385,10 +392,29 @@ fn smarts_canonical_module_baseline() {
     assert!(
         facade.contains("pub use search::{query, smarts_parse, substruct};")
             && facade.contains(
-                "pub use search::query::{AtomQueryPredicate, BondQueryPredicate, QueryNode, SmartsParseError};",
+                "pub use cosmolkit_model::{AtomQueryPredicate, BondQueryPredicate, QueryNode};"
             )
+            && facade.contains("pub use search::query::SmartsParseError;")
             && facade.contains("CompiledQuery")
             && facade.contains("QueryGraph"),
         "the public facade must expose the canonical parser module and first-class query graph model",
     );
+}
+
+#[test]
+fn query_graph_has_no_concrete_molecule_projection() {
+    let root = core_root();
+    for relative in [
+        "src/search/query_graph.rs",
+        "src/search/smarts_parse.rs",
+        "src/search/smarts_write.rs",
+        "src/search/substruct.rs",
+    ] {
+        let source = production_source(&root.join(relative));
+        assert!(
+            !source.contains("query_graph_to_molecule")
+                && !source.contains("QueryGraph::to_molecule"),
+            "query behavior must not regain a QueryGraph-to-Molecule projection: {relative}",
+        );
+    }
 }

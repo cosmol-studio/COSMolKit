@@ -3,11 +3,12 @@ use crate::source::base::ichisort::{
     CompNeighborsAT_NUMBER, CompNeighborsATNumberContext, comp_AT_RANK, insertions_sort,
 };
 use crate::source_types::{
-    AB_INV_PARITY_BITS, AB_PARITY_CALC, AB_PARITY_EVEN, AB_PARITY_NONE, AB_PARITY_UNDF, AT_NUMB, AT_RANK,
-    AT_STEREO_CARB, AT_STEREO_DBLE, CANON_GLOBALS, CANON_STAT, CT_ERR_MAX, CT_ERR_MIN, CT_OUT_OF_RAM, CT_OVERFLOW,
-    CT_STEREOBOND_ERROR, CT_STEREOCOUNT_ERR, MAX_ATOMS, MAX_NUM_STEREO_ATOM_NEIGH, MAX_NUM_STEREO_BOND_NEIGH,
-    MAX_NUM_STEREO_BONDS, MAXVAL, MIN_DOT_PROD, NUM_H_ISOTOPES, S_CHAR, SourceConstPointer, SourceHeap,
-    SourceHeapError, SourceMutPointer, sp_ATOM,
+    AB_INV_PARITY_BITS, AB_PARITY_CALC, AB_PARITY_EVEN, AB_PARITY_NONE, AB_PARITY_UNDF, AT_NUMB,
+    AT_RANK, AT_STEREO_CARB, AT_STEREO_DBLE, CANON_GLOBALS, CANON_STAT, CT_ERR_MAX, CT_ERR_MIN,
+    CT_OUT_OF_RAM, CT_OVERFLOW, CT_STEREOBOND_ERROR, CT_STEREOCOUNT_ERR, MAX_ATOMS,
+    MAX_NUM_STEREO_ATOM_NEIGH, MAX_NUM_STEREO_BOND_NEIGH, MAX_NUM_STEREO_BONDS, MAXVAL,
+    MIN_DOT_PROD, NUM_H_ISOTOPES, S_CHAR, SourceConstPointer, SourceHeap, SourceHeapError,
+    SourceMutPointer, sp_ATOM,
 };
 
 const BITS_PARITY: i32 = 0x07;
@@ -102,7 +103,9 @@ pub(crate) fn find_atoms_with_parity(
     heap.slice_mut(visited)?[current] = 1;
     for i in 0..i32::from(atom.valence) {
         let next_atom = i32::from(atom.neighbor[i as usize]);
-        if next_atom != from_atom && find_atoms_with_parity(heap, at, visited, cur_atom, next_atom)? != 0 {
+        if next_atom != from_atom
+            && find_atoms_with_parity(heap, at, visited, cur_atom, next_atom)? != 0
+        {
             return Ok(1);
         }
     }
@@ -292,7 +295,8 @@ pub(crate) fn SetOneStereoBondIllDefParity(
     let mut ret = 0_i32;
     let mut k1 = 0_i32;
     while k1 < MAX_NUM_STEREO_BOND_NEIGH as i32 {
-        let opposite_index = usize::try_from(jn).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let opposite_index =
+            usize::try_from(jn).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         let kn = heap
             .slice(at.as_const())?
             .get(opposite_index)
@@ -356,7 +360,9 @@ pub(crate) fn RemoveOneStereoBond(
     let stereo_index = usize::try_from(k).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let opposite_index = {
         let atoms = heap.slice(at.as_const())?;
-        let atom = atoms.get(current_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let atom = atoms
+            .get(current_index)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?;
         usize::from(
             *atom
                 .stereo_bond_neighbor
@@ -380,7 +386,12 @@ pub(crate) fn RemoveOneStereoBond(
             break;
         }
         if i32::from(opposite_neighbor).wrapping_sub(1) == jc {
-            ret = RemoveHalfStereoBond(heap, at, opposite_index as i32, opposite_stereo_index as i32)?;
+            ret = RemoveHalfStereoBond(
+                heap,
+                at,
+                opposite_index as i32,
+                opposite_stereo_index as i32,
+            )?;
             break;
         }
     }
@@ -579,7 +590,9 @@ pub(crate) fn InvertStereo(
                     .ok_or(SourceHeapError::PointerOutOfBounds)?,
             );
             let atoms = heap.slice_mut(at)?;
-            let atom = atoms.get_mut(atom_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let atom = atoms
+                .get_mut(atom_index)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
             if !parity_well_defined(i32::from(atom.parity)) {
                 return Ok(CT_STEREOCOUNT_ERR);
             }
@@ -650,12 +663,15 @@ pub(crate) fn InvertStereo(
                 {
                     return Ok(CT_STEREOCOUNT_ERR);
                 }
-                if !parity_well_defined(i32::from(first.parity)) || !parity_well_defined(i32::from(second.parity)) {
+                if !parity_well_defined(i32::from(first.parity))
+                    || !parity_well_defined(i32::from(second.parity))
+                {
                     return Ok(CT_STEREOCOUNT_ERR);
                 }
                 heap.slice_mut(at)?[j1.min(j2)].parity ^= AB_INV_PARITY_BITS as i8;
                 if bInvertLinearCTStereo != 0 {
-                    heap.slice_mut(pCS.LinearCTStereoDble)?[index].parity ^= AB_INV_PARITY_BITS as u8;
+                    heap.slice_mut(pCS.LinearCTStereoDble)?[index].parity ^=
+                        AB_INV_PARITY_BITS as u8;
                 }
                 num_changes = num_changes.wrapping_add(1);
                 let atoms = heap.slice_mut(at)?;
@@ -878,11 +894,20 @@ pub(crate) fn FillSingleStereoDescriptors(
         ranks: &[AT_RANK],
     ) -> Result<i32, SourceHeapError> {
         let bytes = bytemuck::cast_slice_mut::<AT_NUMB, u8>(values);
-        insertions_sort(bytes, count, std::mem::size_of::<AT_NUMB>(), &mut |left, right| {
-            let left = AT_NUMB::from_ne_bytes([left[0], left[1]]);
-            let right = AT_NUMB::from_ne_bytes([right[0], right[1]]);
-            CompNeighborsAT_NUMBER(left, right, CompNeighborsATNumberContext::Slices { neighbors, ranks })
-        })
+        insertions_sort(
+            bytes,
+            count,
+            std::mem::size_of::<AT_NUMB>(),
+            &mut |left, right| {
+                let left = AT_NUMB::from_ne_bytes([left[0], left[1]]);
+                let right = AT_NUMB::from_ne_bytes([right[0], right[1]]);
+                CompNeighborsAT_NUMBER(
+                    left,
+                    right,
+                    CompNeighborsATNumberContext::Slices { neighbors, ranks },
+                )
+            },
+        )
     }
 
     if LinearCTStereoDble.is_null() && LinearCTStereoCarb.is_null() {
@@ -935,8 +960,9 @@ pub(crate) fn FillSingleStereoDescriptors(
             stereo_neighbor_numbers[stereo_count] = stereo_count as AT_NUMB;
             stereo_neighbors[stereo_count] = neighbor.wrapping_sub(1);
             let encoded_parity = i32::from(atom_snapshot.stereo_bond_parity[stereo_count]);
-            num_allene =
-                num_allene.wrapping_add(((encoded_parity & MASK_CUMULENE_LEN as i32) / MULT_STEREOBOND as i32) % 2);
+            num_allene = num_allene.wrapping_add(
+                ((encoded_parity & MASK_CUMULENE_LEN as i32) / MULT_STEREOBOND as i32) % 2,
+            );
             stereo_count += 1;
         }
         if (bAllene > 0 && num_allene == 0) || (bAllene == 0 && num_allene != 0) {
@@ -962,7 +988,8 @@ pub(crate) fn FillSingleStereoDescriptors(
                 continue;
             }
 
-            let stereo_bond_parity = i32::from(atom_snapshot.stereo_bond_parity[stereo_order]) & BITS_PARITY;
+            let stereo_bond_parity =
+                i32::from(atom_snapshot.stereo_bond_parity[stereo_order]) & BITS_PARITY;
             if stereo_bond_parity == AB_PARITY_NONE as i32 {
                 continue;
             }
@@ -976,7 +1003,8 @@ pub(crate) fn FillSingleStereoDescriptors(
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
                 if atom_parity_well_defined(i32::from(atom_snapshot.parity))
                     && atom_parity_well_defined(i32::from(opposite_atom.parity))
-                    && i32::from(atom_snapshot.stereo_bond_z_prod[stereo_order]).abs() >= MIN_DOT_PROD as i32
+                    && i32::from(atom_snapshot.stereo_bond_z_prod[stereo_order]).abs()
+                        >= MIN_DOT_PROD as i32
                 {
                     let mut opposite_order = None;
                     for reverse_order in 0..MAX_NUM_STEREO_BONDS as usize {
@@ -993,20 +1021,31 @@ pub(crate) fn FillSingleStereoDescriptors(
                         Some(value) => value,
                         None => return Ok(CT_STEREOBOND_ERROR),
                     };
-                    let half_parity1 = HalfStereoBondParity(heap, at, i, stereo_order as i32, nRank)?;
-                    let half_parity2 =
-                        HalfStereoBondParity(heap, at, stereo_neighbor as i32, opposite_order as i32, nRank)?;
-                    if !atom_parity_well_defined(half_parity1) || !atom_parity_well_defined(half_parity2) {
+                    let half_parity1 =
+                        HalfStereoBondParity(heap, at, i, stereo_order as i32, nRank)?;
+                    let half_parity2 = HalfStereoBondParity(
+                        heap,
+                        at,
+                        stereo_neighbor as i32,
+                        opposite_order as i32,
+                        nRank,
+                    )?;
+                    if !atom_parity_well_defined(half_parity1)
+                        || !atom_parity_well_defined(half_parity2)
+                    {
                         return Ok(CT_STEREOBOND_ERROR);
                     }
                     2_i32.wrapping_sub(
                         half_parity1
                             .wrapping_add(half_parity2)
-                            .wrapping_add(i32::from(atom_snapshot.stereo_bond_z_prod[stereo_order] < 0))
+                            .wrapping_add(i32::from(
+                                atom_snapshot.stereo_bond_z_prod[stereo_order] < 0,
+                            ))
                             % 2,
                     )
                 } else {
-                    let mut fallback = i32::from(atom_snapshot.parity).max(i32::from(opposite_atom.parity));
+                    let mut fallback =
+                        i32::from(atom_snapshot.parity).max(i32::from(opposite_atom.parity));
                     if fallback == AB_PARITY_NONE as i32 {
                         continue;
                     }
@@ -1020,7 +1059,8 @@ pub(crate) fn FillSingleStereoDescriptors(
             if *nStereoDbleLen >= nMaxStereoDbleLen {
                 return Ok(CT_OVERFLOW);
             }
-            let descriptor_index = usize::try_from(*nStereoDbleLen).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let descriptor_index = usize::try_from(*nStereoDbleLen)
+                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             let descriptor = heap
                 .slice_mut(LinearCTStereoDble)?
                 .get_mut(descriptor_index)
@@ -1039,7 +1079,8 @@ pub(crate) fn FillSingleStereoDescriptors(
         if *nStereoCarbLen >= nMaxStereoCarbLen {
             return Ok(CT_OVERFLOW);
         }
-        let descriptor_index = usize::try_from(*nStereoCarbLen).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let descriptor_index =
+            usize::try_from(*nStereoCarbLen).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         let descriptor = heap
             .slice_mut(LinearCTStereoCarb)?
             .get_mut(descriptor_index)
@@ -1097,8 +1138,14 @@ pub(crate) fn SwitchAtomStereoAndIsotopicStereo(
         std::mem::swap(&mut atom.parity, &mut atom.parity2);
         std::mem::swap(&mut atom.final_parity, &mut atom.final_parity2);
         std::mem::swap(&mut atom.stereo_atom_parity, &mut atom.stereo_atom_parity2);
-        std::mem::swap(&mut atom.bHasStereoOrEquToStereo, &mut atom.bHasStereoOrEquToStereo2);
-        std::mem::swap(&mut atom.stereo_bond_neighbor, &mut atom.stereo_bond_neighbor2);
+        std::mem::swap(
+            &mut atom.bHasStereoOrEquToStereo,
+            &mut atom.bHasStereoOrEquToStereo2,
+        );
+        std::mem::swap(
+            &mut atom.stereo_bond_neighbor,
+            &mut atom.stereo_bond_neighbor2,
+        );
         std::mem::swap(&mut atom.stereo_bond_ord, &mut atom.stereo_bond_ord2);
         std::mem::swap(&mut atom.stereo_bond_z_prod, &mut atom.stereo_bond_z_prod2);
         std::mem::swap(&mut atom.stereo_bond_parity, &mut atom.stereo_bond_parity2);
@@ -1563,12 +1610,17 @@ pub(crate) fn SetKnownStereoBondParities(
 
     fn sort_ranks(values: &mut [AT_RANK], count: usize) -> Result<i32, SourceHeapError> {
         let bytes = bytemuck::cast_slice_mut::<AT_RANK, u8>(values);
-        insertions_sort(bytes, count, std::mem::size_of::<AT_RANK>(), &mut |left, right| {
-            Ok(comp_AT_RANK(
-                AT_RANK::from_ne_bytes([left[0], left[1]]),
-                AT_RANK::from_ne_bytes([right[0], right[1]]),
-            ))
-        })
+        insertions_sort(
+            bytes,
+            count,
+            std::mem::size_of::<AT_RANK>(),
+            &mut |left, right| {
+                Ok(comp_AT_RANK(
+                    AT_RANK::from_ne_bytes([left[0], left[1]]),
+                    AT_RANK::from_ne_bytes([right[0], right[1]]),
+                ))
+            },
+        )
     }
 
     let _ = pCG;
@@ -1652,7 +1704,8 @@ pub(crate) fn SetKnownStereoBondParities(
                     if count1 >= neighbor_ranks1.len() {
                         return Err(SourceHeapError::PointerOutOfBounds);
                     }
-                    neighbor_ranks1[count1] = ranks[usize::from(atoms[i1].neighbor[neighbor_order as usize])];
+                    neighbor_ranks1[count1] =
+                        ranks[usize::from(atoms[i1].neighbor[neighbor_order as usize])];
                     count1 += 1;
                 }
             }
@@ -1674,7 +1727,8 @@ pub(crate) fn SetKnownStereoBondParities(
                     if count2 >= neighbor_ranks2.len() {
                         return Err(SourceHeapError::PointerOutOfBounds);
                     }
-                    neighbor_ranks2[count2] = ranks[usize::from(atoms[i2].neighbor[neighbor_order as usize])];
+                    neighbor_ranks2[count2] =
+                        ranks[usize::from(atoms[i2].neighbor[neighbor_order as usize])];
                     count2 += 1;
                 }
             }
@@ -1709,7 +1763,8 @@ pub(crate) fn SetKnownStereoBondParities(
                         let mut next = k2;
                         while length < cumulene_len {
                             if atoms[next].valence == 2 && atoms[next].num_H == 0 {
-                                let branch = usize::from(usize::from(atoms[next].neighbor[0]) == previous);
+                                let branch =
+                                    usize::from(usize::from(atoms[next].neighbor[0]) == previous);
                                 previous = next;
                                 next = usize::from(atoms[next].neighbor[branch]);
                                 length += 1;
@@ -1735,7 +1790,8 @@ pub(crate) fn SetKnownStereoBondParities(
                         let neighbor = usize::from(atoms[k1].neighbor[neighbor_order as usize]);
                         for rank_slot in 0..neighbor_count1 - 1 {
                             if ranks[neighbor] == neighbor_ranks1[rank_slot as usize] {
-                                canonical_neighbor_ranks1[rank_slot as usize] = canonical_ranks[neighbor];
+                                canonical_neighbor_ranks1[rank_slot as usize] =
+                                    canonical_ranks[neighbor];
                                 matched1 += 1;
                                 break;
                             }
@@ -1760,7 +1816,8 @@ pub(crate) fn SetKnownStereoBondParities(
                         } else {
                             for rank_slot in 0..neighbor_count2 - 1 {
                                 if ranks[neighbor] == neighbor_ranks2[rank_slot as usize] {
-                                    canonical_neighbor_ranks2[rank_slot as usize] = canonical_ranks[neighbor];
+                                    canonical_neighbor_ranks2[rank_slot as usize] =
+                                        canonical_ranks[neighbor];
                                     matched2 += 1;
                                     break;
                                 }
@@ -1811,7 +1868,8 @@ pub(crate) fn SetKnownStereoBondParities(
                 }
                 atoms[i1].stereo_bond_parity[n1] = ((encoded_parity & !BITS_PARITY) | parity) as i8;
                 let opposite_encoded = i32::from(atoms[i2].stereo_bond_parity[n2]);
-                atoms[i2].stereo_bond_parity[n2] = ((opposite_encoded & !BITS_PARITY) | parity) as i8;
+                atoms[i2].stereo_bond_parity[n2] =
+                    ((opposite_encoded & !BITS_PARITY) | parity) as i8;
                 num_set = num_set.wrapping_add(1);
             }
             n1 += 1;
@@ -2249,7 +2307,8 @@ pub(crate) fn MarkKnownEqualStereoBondParities(
                         let mut next = k2;
                         while len < cumulene_len {
                             if atoms[next].valence == 2 && atoms[next].num_H == 0 {
-                                let branch = usize::from(usize::from(atoms[next].neighbor[0]) == prev);
+                                let branch =
+                                    usize::from(usize::from(atoms[next].neighbor[0]) == prev);
                                 prev = next;
                                 next = usize::from(atoms[next].neighbor[branch]);
                                 len += 1;
@@ -2312,7 +2371,8 @@ pub(crate) fn MarkKnownEqualStereoBondParities(
                         different_parities = 1;
                         continue;
                     }
-                    let stereo_bond_parity2 = i32::from(atoms[k1].stereo_bond_parity[s1]) & BITS_PARITY;
+                    let stereo_bond_parity2 =
+                        i32::from(atoms[k1].stereo_bond_parity[s1]) & BITS_PARITY;
                     if stereo_bond_parity2 != stereo_bond_parity {
                         different_parities = 1;
                         continue;
@@ -2351,8 +2411,10 @@ pub(crate) fn MarkKnownEqualStereoBondParities(
                             if m - 1 != k1 as i32 || s2 >= MAX_NUM_STEREO_BONDS as usize {
                                 finish!(CT_STEREOCOUNT_ERR);
                             }
-                            let b1 = i32::from(i32::from(atoms[k1].stereo_bond_parity[s1]) & 0x40 == 0);
-                            let b2 = i32::from(i32::from(atoms[k2].stereo_bond_parity[s2]) & 0x40 == 0);
+                            let b1 =
+                                i32::from(i32::from(atoms[k1].stereo_bond_parity[s1]) & 0x40 == 0);
+                            let b2 =
+                                i32::from(i32::from(atoms[k2].stereo_bond_parity[s2]) & 0x40 == 0);
                             if b1 + b2 == 2 {
                                 atoms[k1].stereo_bond_parity[s1] |= 0x40;
                                 atoms[k2].stereo_bond_parity[s2] |= 0x40;
@@ -2416,12 +2478,16 @@ pub(crate) fn GetNextNeighborAndRank(
 
     let atoms = heap.slice(at)?;
     let ranks = heap.slice(nCanonRank)?;
-    let atom = atoms.get(usize::from(cur)).ok_or(SourceHeapError::PointerOutOfBounds)?;
+    let atom = atoms
+        .get(usize::from(cur))
+        .ok_or(SourceHeapError::PointerOutOfBounds)?;
     let mut cr1 = (MAX_ATOMS + 1) as AT_RANK;
     let mut j1 = (MAX_ATOMS + 1) as AT_RANK;
     for i in 0..i32::from(atom.valence) {
         let j = atom.neighbor[i as usize];
-        let crj = *ranks.get(usize::from(j)).ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let crj = *ranks
+            .get(usize::from(j))
+            .ok_or(SourceHeapError::PointerOutOfBounds)?;
         if j != prev && cr1 > crj && crj > *cr {
             cr1 = crj;
             j1 = j;
@@ -2535,7 +2601,9 @@ pub(crate) fn GetAndCheckNextNeighbors(
     let ranks = heap.slice(nRank)?;
     let visited1 = heap.slice(nVisited1)?;
     let visited2 = heap.slice(nVisited2)?;
-    if ranks[usize::from(*n1)] != ranks[usize::from(*n2)] || visited1[usize::from(*n1)] != visited2[usize::from(*n2)] {
+    if ranks[usize::from(*n1)] != ranks[usize::from(*n2)]
+        || visited1[usize::from(*n1)] != visited2[usize::from(*n2)]
+    {
         return Ok(0);
     }
 
@@ -2563,7 +2631,9 @@ pub(crate) fn GetAndCheckNextNeighbors(
     if is_stereo1
         && (atoms[usize::from(cur1)].stereo_bond_parity[stereo_index1]
             != atoms[usize::from(cur2)].stereo_bond_parity[stereo_index2]
-            || !parity_well_defined(i32::from(atoms[usize::from(cur1)].stereo_bond_parity[stereo_index1])))
+            || !parity_well_defined(i32::from(
+                atoms[usize::from(cur1)].stereo_bond_parity[stereo_index1],
+            )))
     {
         return Ok(0);
     }
@@ -2876,7 +2946,9 @@ pub(crate) fn RemoveKnownNonStereoBondParities(
         for i1 in 0..num_atoms {
             let should_scan = {
                 let atoms = heap.slice(at.as_const())?;
-                let atom = atoms.get(i1 as usize).ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let atom = atoms
+                    .get(i1 as usize)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
                 atom.valence == 3 && atom.stereo_bond_neighbor[0] != 0
             };
             if !should_scan {
@@ -2898,7 +2970,9 @@ pub(crate) fn RemoveKnownNonStereoBondParities(
                 if s2 == 0 {
                     break;
                 }
-                if !parity_calculate(i32::from(bond_parity)) && parity_well_defined(i32::from(bond_parity)) {
+                if !parity_calculate(i32::from(bond_parity))
+                    && parity_well_defined(i32::from(bond_parity))
+                {
                     n1 += 1;
                     continue;
                 }
@@ -2909,7 +2983,8 @@ pub(crate) fn RemoveKnownNonStereoBondParities(
                 let mut n = 0_i32;
                 for j in 0..i32::from(valence) {
                     if j != m {
-                        neigh[n as usize] = heap.slice(at.as_const())?[i1 as usize].neighbor[j as usize];
+                        neigh[n as usize] =
+                            heap.slice(at.as_const())?[i1 as usize].neighbor[j as usize];
                         n += 1;
                     }
                 }
@@ -2937,8 +3012,8 @@ pub(crate) fn RemoveKnownNonStereoBondParities(
                 let visited_pointer = if let Some(pointer) = visited {
                     pointer
                 } else {
-                    let atom_count =
-                        usize::try_from(num_atoms).map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?;
+                    let atom_count = usize::try_from(num_atoms)
+                        .map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?;
                     let pointer = match heap.allocate(vec![0 as AT_RANK; atom_count]) {
                         Ok(pointer) => pointer,
                         Err(SourceHeapError::AllocationFailed) => return Ok(CT_OUT_OF_RAM),
@@ -2975,7 +3050,8 @@ pub(crate) fn RemoveKnownNonStereoBondParities(
                     let mut m = pCS.nLenLinearCTStereoDble - 1;
                     let mut n = 0_i32;
                     while n <= m {
-                        let record = heap.slice(pCS.LinearCTStereoDble.as_const())?[n as usize].clone();
+                        let record =
+                            heap.slice(pCS.LinearCTStereoDble.as_const())?[n as usize].clone();
                         if record.at_num1 == atom_rank1 && record.at_num2 == atom_rank2 {
                             if n < m {
                                 let records = heap.slice_mut(pCS.LinearCTStereoDble)?;
@@ -3140,11 +3216,16 @@ pub(crate) fn SetKnownStereoCenterParities(
 
     fn sort_ranks(values: &mut [AT_RANK], count: usize) -> Result<i32, SourceHeapError> {
         let bytes = bytemuck::cast_slice_mut::<AT_RANK, u8>(values);
-        insertions_sort(bytes, count, std::mem::size_of::<AT_RANK>(), &mut |left, right| {
-            let left = AT_RANK::from_ne_bytes([left[0], left[1]]);
-            let right = AT_RANK::from_ne_bytes([right[0], right[1]]);
-            Ok(i32::from(left) - i32::from(right))
-        })
+        insertions_sort(
+            bytes,
+            count,
+            std::mem::size_of::<AT_RANK>(),
+            &mut |left, right| {
+                let left = AT_RANK::from_ne_bytes([left[0], left[1]]);
+                let right = AT_RANK::from_ne_bytes([right[0], right[1]]);
+                Ok(i32::from(left) - i32::from(right))
+            },
+        )
     }
 
     let _ = pCG;
@@ -3152,7 +3233,9 @@ pub(crate) fn SetKnownStereoCenterParities(
     for i in 0..num_atoms {
         let (parity, stereo_atom_parity, has_stereo_bond, num_neigh, atom_neighbors) = {
             let atoms = heap.slice(at.as_const())?;
-            let atom = atoms.get(i as usize).ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let atom = atoms
+                .get(i as usize)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
             (
                 atom.parity,
                 atom.stereo_atom_parity,
@@ -3214,7 +3297,8 @@ pub(crate) fn SetKnownStereoCenterParities(
                 for n in 0..count {
                     let neighbor = equivalent_neighbors[n];
                     if heap.slice(nRank)?[usize::from(neighbor)] == neighbor_ranks[m] {
-                        neighbor_canonical_ranks[m] = heap.slice(nCanonRank)?[usize::from(neighbor)];
+                        neighbor_canonical_ranks[m] =
+                            heap.slice(nCanonRank)?[usize::from(neighbor)];
                         matched += 1;
                         break;
                     }
@@ -3356,18 +3440,28 @@ pub(crate) fn RemoveKnownNonStereoCenterParities(
     */
     // END INCHI C FUNCTION: RemoveKnownNonStereoCenterParities
 
-    fn sort_orders(orders: &mut [AT_RANK], ranks: &[AT_RANK], count: usize) -> Result<(), SourceHeapError> {
+    fn sort_orders(
+        orders: &mut [AT_RANK],
+        ranks: &[AT_RANK],
+        count: usize,
+    ) -> Result<(), SourceHeapError> {
         let bytes = bytemuck::cast_slice_mut::<AT_RANK, u8>(orders);
-        insertions_sort(bytes, count, std::mem::size_of::<AT_RANK>(), &mut |left, right| {
-            let left = AT_RANK::from_ne_bytes([left[0], left[1]]);
-            let right = AT_RANK::from_ne_bytes([right[0], right[1]]);
-            let difference = i32::from(ranks[usize::from(left)]) - i32::from(ranks[usize::from(right)]);
-            Ok(if difference == 0 {
-                i32::from(left) - i32::from(right)
-            } else {
-                difference
-            })
-        })?;
+        insertions_sort(
+            bytes,
+            count,
+            std::mem::size_of::<AT_RANK>(),
+            &mut |left, right| {
+                let left = AT_RANK::from_ne_bytes([left[0], left[1]]);
+                let right = AT_RANK::from_ne_bytes([right[0], right[1]]);
+                let difference =
+                    i32::from(ranks[usize::from(left)]) - i32::from(ranks[usize::from(right)]);
+                Ok(if difference == 0 {
+                    i32::from(left) - i32::from(right)
+                } else {
+                    difference
+                })
+            },
+        )?;
         Ok(())
     }
 
@@ -3388,7 +3482,8 @@ pub(crate) fn RemoveKnownNonStereoCenterParities(
             if !parity_calculate(center_parity) && parity_well_defined(center_parity) {
                 continue;
             }
-            let count = usize::try_from(atom_snapshot.valence).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let count = usize::try_from(atom_snapshot.valence)
+                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             if count > MAX_NUM_STEREO_ATOM_NEIGH as usize {
                 return Err(SourceHeapError::PointerOutOfBounds);
             }
@@ -3408,7 +3503,8 @@ pub(crate) fn RemoveKnownNonStereoCenterParities(
                 let current_order = usize::from(neighbor_orders[j]);
                 let previous_order = usize::from(neighbor_orders[j - 1]);
                 let current_neighbor = atom_snapshot.neighbor[current_order];
-                if atom_snapshot.nRingSystem != heap.slice(at.as_const())?[usize::from(current_neighbor)].nRingSystem
+                if atom_snapshot.nRingSystem
+                    != heap.slice(at.as_const())?[usize::from(current_neighbor)].nRingSystem
                     && neighbor_ranks[previous_order] == neighbor_ranks[current_order]
                 {
                     k = j;
@@ -3416,7 +3512,9 @@ pub(crate) fn RemoveKnownNonStereoCenterParities(
                         let visited_pointer = if let Some(pointer) = visited {
                             pointer
                         } else {
-                            let pointer = match heap.allocate(vec![0 as AT_RANK; num_atoms as usize]) {
+                            let pointer = match heap
+                                .allocate(vec![0 as AT_RANK; num_atoms as usize])
+                            {
                                 Ok(pointer) => pointer,
                                 Err(SourceHeapError::AllocationFailed) => return Ok(CT_OUT_OF_RAM),
                                 Err(error) => return Err(error),
@@ -3472,7 +3570,8 @@ pub(crate) fn RemoveKnownNonStereoCenterParities(
                         }
                         k += 1;
                         if k >= count
-                            || neighbor_ranks[previous_order] != neighbor_ranks[usize::from(neighbor_orders[k])]
+                            || neighbor_ranks[previous_order]
+                                != neighbor_ranks[usize::from(neighbor_orders[k])]
                         {
                             break;
                         }
@@ -3600,7 +3699,8 @@ pub(crate) fn MarkKnownEqualStereoCenterParities(
             if heap.slice(nRank)?[usize::from(k)] != atom_rank {
                 break;
             }
-            let parity_k = i32::from(heap.slice(at.as_const())?[usize::from(k)].stereo_atom_parity) & BITS_PARITY;
+            let parity_k = i32::from(heap.slice(at.as_const())?[usize::from(k)].stereo_atom_parity)
+                & BITS_PARITY;
             if parity_k != parity {
                 different_parities = 1;
             } else if different_parities < 0 {
@@ -3851,16 +3951,23 @@ pub(crate) fn UnmarkNonStereo(
         ranks: &[AT_RANK],
     ) -> Result<(), SourceHeapError> {
         let bytes = bytemuck::cast_slice_mut::<AT_RANK, u8>(values);
-        insertions_sort(bytes, count, std::mem::size_of::<AT_RANK>(), &mut |left, right| {
-            let left = usize::from(AT_RANK::from_ne_bytes([left[0], left[1]]));
-            let right = usize::from(AT_RANK::from_ne_bytes([right[0], right[1]]));
-            Ok(i32::from(ranks[usize::from(neighbors[left])]) - i32::from(ranks[usize::from(neighbors[right])]))
-        })?;
+        insertions_sort(
+            bytes,
+            count,
+            std::mem::size_of::<AT_RANK>(),
+            &mut |left, right| {
+                let left = usize::from(AT_RANK::from_ne_bytes([left[0], left[1]]));
+                let right = usize::from(AT_RANK::from_ne_bytes([right[0], right[1]]));
+                Ok(i32::from(ranks[usize::from(neighbors[left])])
+                    - i32::from(ranks[usize::from(neighbors[right])]))
+            },
+        )?;
         Ok(())
     }
 
     let _ = pCG;
-    let atom_count = usize::try_from(num_atoms).map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?;
+    let atom_count = usize::try_from(num_atoms)
+        .map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?;
     let visited = match heap.allocate(vec![0 as S_CHAR; atom_count]) {
         Ok(pointer) => pointer,
         Err(SourceHeapError::AllocationFailed) => return Ok(-1),
@@ -3893,20 +4000,28 @@ pub(crate) fn UnmarkNonStereo(
                         num_no_parity_atoms = 0;
                         let first = heap.slice(at.as_const())?[usize::from(first_center)].clone();
                         let valence = i32::from(first.valence);
-                        let implicit_h = if first.endpoint != 0 { 0 } else { i32::from(first.num_H) };
+                        let implicit_h = if first.endpoint != 0 {
+                            0
+                        } else {
+                            i32::from(first.num_H)
+                        };
                         if valence + implicit_h > MAX_NUM_STEREO_ATOM_NEIGH as i32 {
                             i += 1;
                             continue;
                         }
                         {
                             let count = valence as usize;
-                            let mut neighbor_numbers = [0 as AT_RANK; MAX_NUM_STEREO_ATOM_NEIGH as usize];
-                            for (index, value) in neighbor_numbers.iter_mut().take(count).enumerate() {
+                            let mut neighbor_numbers =
+                                [0 as AT_RANK; MAX_NUM_STEREO_ATOM_NEIGH as usize];
+                            for (index, value) in
+                                neighbor_numbers.iter_mut().take(count).enumerate()
+                            {
                                 *value = index as AT_RANK;
                             }
                             for ic in i1..i2 {
                                 let center = heap.slice(nAtomNumber)?[ic as usize];
-                                let atom_snapshot = heap.slice(at.as_const())?[usize::from(center)].clone();
+                                let atom_snapshot =
+                                    heap.slice(at.as_const())?[usize::from(center)].clone();
                                 sort_neighbor_numbers(
                                     &mut neighbor_numbers,
                                     count,
@@ -3920,30 +4035,34 @@ pub(crate) fn UnmarkNonStereo(
                                 while k <= count {
                                     let rank_changed = k == count
                                         || previous_neighbor_rank
-                                            != heap.slice(nRank)?
-                                                [usize::from(atom_snapshot.neighbor[usize::from(neighbor_numbers[k])])];
+                                            != heap.slice(nRank)?[usize::from(
+                                                atom_snapshot.neighbor
+                                                    [usize::from(neighbor_numbers[k])],
+                                            )];
                                     if rank_changed {
                                         let k2 = k;
                                         if k2 - k1 > 1 {
                                             num_in_same_ring_system = 0;
                                             let mut ring_system = 0_u16;
                                             for kn in k1..k2 {
-                                                let neighbor =
-                                                    atom_snapshot.neighbor[usize::from(neighbor_numbers[kn])];
-                                                let current_ring =
-                                                    heap.slice(at.as_const())?[usize::from(neighbor)].nRingSystem;
+                                                let neighbor = atom_snapshot.neighbor
+                                                    [usize::from(neighbor_numbers[kn])];
+                                                let current_ring = heap.slice(at.as_const())?
+                                                    [usize::from(neighbor)]
+                                                .nRingSystem;
                                                 if ring_system == 0 {
                                                     ring_system = current_ring;
                                                 } else {
-                                                    num_in_same_ring_system += i32::from(ring_system == current_ring);
+                                                    num_in_same_ring_system +=
+                                                        i32::from(ring_system == current_ring);
                                                 }
                                             }
                                             neighbors_with_parity = 0;
                                             for kn in k1..k2 {
                                                 heap.slice_mut(visited)?.fill(0);
                                                 heap.slice_mut(visited)?[usize::from(center)] = 1;
-                                                let neighbor =
-                                                    atom_snapshot.neighbor[usize::from(neighbor_numbers[kn])];
+                                                let neighbor = atom_snapshot.neighbor
+                                                    [usize::from(neighbor_numbers[kn])];
                                                 neighbors_with_parity += find_atoms_with_parity(
                                                     heap,
                                                     at.as_const(),
@@ -3953,13 +4072,18 @@ pub(crate) fn UnmarkNonStereo(
                                                 )?;
                                             }
                                         }
-                                        if neighbors_with_parity == 0 && num_in_same_ring_system == 0 {
+                                        if neighbors_with_parity == 0
+                                            && num_in_same_ring_system == 0
+                                        {
                                             break;
                                         }
                                         if k + 1 < count {
                                             k1 = k;
                                             previous_neighbor_rank = heap.slice(nRank)?
-                                                [usize::from(atom_snapshot.neighbor[usize::from(neighbor_numbers[k])])];
+                                                [usize::from(
+                                                    atom_snapshot.neighbor
+                                                        [usize::from(neighbor_numbers[k])],
+                                                )];
                                         } else {
                                             break;
                                         }
@@ -3967,16 +4091,20 @@ pub(crate) fn UnmarkNonStereo(
                                     k += 1;
                                 }
                                 if implicit_h > 1
-                                    && ((bIsotopic != 0 && atom_snapshot.num_iso_H.iter().any(|&value| value > 1))
+                                    && ((bIsotopic != 0
+                                        && atom_snapshot.num_iso_H.iter().any(|&value| value > 1))
                                         || implicit_h > NUM_H_ISOTOPES as i32
                                         || bIsotopic == 0)
                                 {
                                     neighbors_with_parity = 0;
                                 }
                                 num_no_parity_atoms += i32::from(neighbors_with_parity == 0);
-                                num_with_eq_neigh_in_same_ring_system += i32::from(num_in_same_ring_system != 0);
+                                num_with_eq_neigh_in_same_ring_system +=
+                                    i32::from(num_in_same_ring_system != 0);
                             }
-                            if num_no_parity_atoms == i2 - i1 && num_with_eq_neigh_in_same_ring_system != i2 - i1 {
+                            if num_no_parity_atoms == i2 - i1
+                                && num_with_eq_neigh_in_same_ring_system != i2 - i1
+                            {
                                 for ic in i1..i2 {
                                     let center = heap.slice(nAtomNumber)?[ic as usize];
                                     {
@@ -3987,8 +4115,9 @@ pub(crate) fn UnmarkNonStereo(
                                         atom.bHasStereoOrEquToStereo = 0;
                                     }
                                     for slot in 0..MAX_NUM_STEREO_BOND_NEIGH as usize {
-                                        let opposite =
-                                            heap.slice(at.as_const())?[usize::from(center)].stereo_bond_neighbor[slot];
+                                        let opposite = heap.slice(at.as_const())?
+                                            [usize::from(center)]
+                                        .stereo_bond_neighbor[slot];
                                         if opposite == 0 {
                                             break;
                                         }
@@ -4017,7 +4146,8 @@ pub(crate) fn UnmarkNonStereo(
                                         atom.stereo_bond_parity[slot] = 0;
                                     }
                                 }
-                                num_removed_parities = num_removed_parities.wrapping_add(num_no_parity_atoms);
+                                num_removed_parities =
+                                    num_removed_parities.wrapping_add(num_no_parity_atoms);
                             }
                         }
                     }
@@ -4028,7 +4158,8 @@ pub(crate) fn UnmarkNonStereo(
                     num_no_parity_atoms = 0;
                 }
                 if let Some(current) = current {
-                    num_no_parity_atoms += i32::from(heap.slice(at.as_const())?[usize::from(current)].parity == 0);
+                    num_no_parity_atoms +=
+                        i32::from(heap.slice(at.as_const())?[usize::from(current)].parity == 0);
                 }
                 i += 1;
             }
@@ -4136,28 +4267,65 @@ pub(crate) fn FillOutStereoParities(
     }
     ret = FillAllStereoDescriptors(heap, pCG, at, num_atoms, nCanonRank, nAtomNumberCanon, pCS)?;
     if ret == 0 {
-        ret = pCS.nLenLinearCTStereoCarb.wrapping_add(pCS.nLenLinearCTStereoDble);
+        ret = pCS
+            .nLenLinearCTStereoCarb
+            .wrapping_add(pCS.nLenLinearCTStereoDble);
     }
     if ret < 0 {
         return Ok(ret);
     }
 
-    let mut ret2 = SetKnownStereoCenterParities(heap, pCG, at, num_atoms, nCanonRank.as_const(), nRank, nAtomNumber)?;
+    let mut ret2 = SetKnownStereoCenterParities(
+        heap,
+        pCG,
+        at,
+        num_atoms,
+        nCanonRank.as_const(),
+        nRank,
+        nAtomNumber,
+    )?;
     if ret2 >= 0 {
         ret2 = MarkKnownEqualStereoCenterParities(heap, at, num_atoms, nRank, nAtomNumber)?;
     }
     if ret2 >= 0 {
-        ret2 = SetKnownStereoBondParities(heap, pCG, at, num_atoms, nCanonRank.as_const(), nRank, nAtomNumber)?;
+        ret2 = SetKnownStereoBondParities(
+            heap,
+            pCG,
+            at,
+            num_atoms,
+            nCanonRank.as_const(),
+            nRank,
+            nAtomNumber,
+        )?;
         if ret2 >= 0 {
             ret2 = MarkKnownEqualStereoBondParities(heap, at, num_atoms, nRank, nAtomNumber)?;
         }
     }
     if ret2 >= 0 {
         loop {
-            ret2 = RemoveKnownNonStereoCenterParities(heap, pCG, at, num_atoms, nCanonRank.as_const(), nRank, pCS)?;
+            ret2 = RemoveKnownNonStereoCenterParities(
+                heap,
+                pCG,
+                at,
+                num_atoms,
+                nCanonRank.as_const(),
+                nRank,
+                pCS,
+            )?;
             if ret2 >= 0 {
-                let ret3 = RemoveKnownNonStereoBondParities(heap, at, num_atoms, nCanonRank.as_const(), nRank, pCS)?;
-                ret2 = if ret3 >= 0 { ret2.wrapping_add(ret3) } else { ret3 };
+                let ret3 = RemoveKnownNonStereoBondParities(
+                    heap,
+                    at,
+                    num_atoms,
+                    nCanonRank.as_const(),
+                    nRank,
+                    pCS,
+                )?;
+                ret2 = if ret3 >= 0 {
+                    ret2.wrapping_add(ret3)
+                } else {
+                    ret3
+                };
             }
             if ret2 <= 0 {
                 break;
@@ -4455,12 +4623,17 @@ pub(crate) fn GetPermutationParity(
     }
     let parity = if k != 0 {
         let bytes = bytemuck::cast_slice_mut::<AT_RANK, u8>(&mut neighbor_ranks);
-        let exchanges = insertions_sort(bytes, k, std::mem::size_of::<AT_RANK>(), &mut |left, right| {
-            Ok(comp_AT_RANK(
-                AT_RANK::from_ne_bytes([left[0], left[1]]),
-                AT_RANK::from_ne_bytes([right[0], right[1]]),
-            ))
-        })?;
+        let exchanges = insertions_sort(
+            bytes,
+            k,
+            std::mem::size_of::<AT_RANK>(),
+            &mut |left, right| {
+                Ok(comp_AT_RANK(
+                    AT_RANK::from_ne_bytes([left[0], left[1]]),
+                    AT_RANK::from_ne_bytes([right[0], right[1]]),
+                ))
+            },
+        )?;
         if neighbor_ranks[0] != 0 {
             2_i32.wrapping_sub(exchanges.wrapping_rem(2))
         } else {
@@ -4545,7 +4718,8 @@ pub(crate) fn GetStereoCenterParity(
         return Ok(i32::from(atom.parity));
     }
 
-    let count = usize::try_from(atom.valence).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+    let count =
+        usize::try_from(atom.valence).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
     if count > MAXVAL as usize {
         return Err(SourceHeapError::PointerOutOfBounds);
     }
@@ -4564,17 +4738,26 @@ pub(crate) fn GetStereoCenterParity(
     }
     pCG.m_pn_RankForSort = nRank.as_const();
     let bytes = bytemuck::cast_slice_mut::<AT_NUMB, u8>(&mut neighbor_numbers);
-    let num_trans = insertions_sort(bytes, count, std::mem::size_of::<AT_NUMB>(), &mut |left, right| {
-        CompNeighborsAT_NUMBER(
-            AT_NUMB::from_ne_bytes([left[0], left[1]]),
-            AT_NUMB::from_ne_bytes([right[0], right[1]]),
-            CompNeighborsATNumberContext::Slices {
-                neighbors: &atom.neighbor,
-                ranks,
-            },
-        )
-    })?;
-    Ok(2_i32.wrapping_sub(i32::from(atom.parity).wrapping_add(num_trans).wrapping_rem(2)))
+    let num_trans = insertions_sort(
+        bytes,
+        count,
+        std::mem::size_of::<AT_NUMB>(),
+        &mut |left, right| {
+            CompNeighborsAT_NUMBER(
+                AT_NUMB::from_ne_bytes([left[0], left[1]]),
+                AT_NUMB::from_ne_bytes([right[0], right[1]]),
+                CompNeighborsATNumberContext::Slices {
+                    neighbors: &atom.neighbor,
+                    ranks,
+                },
+            )
+        },
+    )?;
+    Ok(2_i32.wrapping_sub(
+        i32::from(atom.parity)
+            .wrapping_add(num_trans)
+            .wrapping_rem(2),
+    ))
 }
 
 #[cfg(test)]
@@ -4596,13 +4779,21 @@ mod tests {
         assert_eq!(RemoveOneStereoCenter(&mut heap, atoms, 0), Ok(1));
         let values = heap.slice(atoms.as_const()).unwrap();
         assert_eq!(
-            (values[0].parity, values[0].stereo_atom_parity, values[0].final_parity),
+            (
+                values[0].parity,
+                values[0].stereo_atom_parity,
+                values[0].final_parity
+            ),
             (0, 0, 0)
         );
         assert_eq!(RemoveOneStereoCenter(&mut heap, atoms, 1), Ok(0));
         let values = heap.slice(atoms.as_const()).unwrap();
         assert_eq!(
-            (values[1].parity, values[1].stereo_atom_parity, values[1].final_parity),
+            (
+                values[1].parity,
+                values[1].stereo_atom_parity,
+                values[1].final_parity
+            ),
             (0, 5, 6)
         );
         assert_eq!(
@@ -4659,7 +4850,11 @@ mod tests {
         atoms
     }
 
-    fn run_mark_known(atoms: Vec<sp_ATOM>, ranks: Vec<AT_RANK>, atom_numbers: Vec<AT_RANK>) -> (i32, Vec<sp_ATOM>) {
+    fn run_mark_known(
+        atoms: Vec<sp_ATOM>,
+        ranks: Vec<AT_RANK>,
+        atom_numbers: Vec<AT_RANK>,
+    ) -> (i32, Vec<sp_ATOM>) {
         let mut heap = SourceHeap::default();
         let atom_pointer = heap.allocate_model_storage(atoms).unwrap();
         let rank_pointer = heap.allocate_model_storage(ranks).unwrap();
@@ -4673,7 +4868,10 @@ mod tests {
             number_pointer.as_const(),
         )
         .unwrap();
-        (result, heap.slice(atom_pointer.as_const()).unwrap().to_vec())
+        (
+            result,
+            heap.slice(atom_pointer.as_const()).unwrap().to_vec(),
+        )
     }
 
     #[test]
@@ -4703,8 +4901,14 @@ mod tests {
             let atom_pointer = heap.allocate_model_storage(atoms).unwrap();
             let rank_pointer = heap.allocate_model_storage(ranks).unwrap();
             let carb_pointer = if with_carb {
-                heap.allocate_model_storage(vec![AT_STEREO_CARB { at_num: 91, parity: 92 }; 3])
-                    .unwrap()
+                heap.allocate_model_storage(vec![
+                    AT_STEREO_CARB {
+                        at_num: 91,
+                        parity: 92
+                    };
+                    3
+                ])
+                .unwrap()
             } else {
                 SourceMutPointer::null()
             };
@@ -4798,29 +5002,107 @@ mod tests {
         );
         assert_eq!((carb_len, double_len), (7, 8));
 
-        let result = run(center(1), vec![4, 3, 1, 2], 0, -1, true, 0, 3, false, 0, 0, 0);
+        let result = run(
+            center(1),
+            vec![4, 3, 1, 2],
+            0,
+            -1,
+            true,
+            0,
+            3,
+            false,
+            0,
+            0,
+            0,
+        );
         assert_eq!(result.0, Ok(0));
-        assert_eq!(result.1[0], AT_STEREO_CARB { at_num: 4, parity: 1 });
+        assert_eq!(
+            result.1[0],
+            AT_STEREO_CARB {
+                at_num: 4,
+                parity: 1
+            }
+        );
         assert_eq!(result.3, 1);
         assert!(!result.5.m_pn_RankForSort.is_null());
 
-        let manual = run(center(1), vec![4, 3, 1, 2], 0, 1, true, 0, 3, false, 0, 0, 0);
+        let manual = run(
+            center(1),
+            vec![4, 3, 1, 2],
+            0,
+            1,
+            true,
+            0,
+            3,
+            false,
+            0,
+            0,
+            0,
+        );
         assert_eq!(manual.1[0].parity, 2);
         assert!(manual.5.m_pn_RankForSort.is_null());
 
-        let ill_defined = run(center(3), vec![4, 3, 1, 2], 0, -99, true, 0, 3, false, 0, 0, 0);
+        let ill_defined = run(
+            center(3),
+            vec![4, 3, 1, 2],
+            0,
+            -99,
+            true,
+            0,
+            3,
+            false,
+            0,
+            0,
+            0,
+        );
         assert_eq!(ill_defined.1[0].parity, 3);
 
-        let overflow = run(center(1), vec![4, 3, 1, 2], 0, 0, true, 0, 0, false, 0, 0, 0);
+        let overflow = run(
+            center(1),
+            vec![4, 3, 1, 2],
+            0,
+            0,
+            true,
+            0,
+            0,
+            false,
+            0,
+            0,
+            0,
+        );
         assert_eq!(overflow.0, Ok(CT_OVERFLOW));
         assert_eq!(overflow.1[0].at_num, 91);
         assert_eq!(overflow.3, 0);
 
-        let allene_center = run(center(1), vec![4, 3, 1, 2], 0, 0, true, 0, 3, false, 0, 0, 1);
+        let allene_center = run(
+            center(1),
+            vec![4, 3, 1, 2],
+            0,
+            0,
+            true,
+            0,
+            3,
+            false,
+            0,
+            0,
+            1,
+        );
         assert_eq!(allene_center.3, 0);
         assert_eq!(allene_center.1[0].at_num, 91);
 
-        let known = run(stereo_bond(2, 0), vec![4, 3, 2, 1], 0, -1, false, 0, 0, true, 0, 3, 0);
+        let known = run(
+            stereo_bond(2, 0),
+            vec![4, 3, 2, 1],
+            0,
+            -1,
+            false,
+            0,
+            0,
+            true,
+            0,
+            3,
+            0,
+        );
         assert_eq!(known.0, Ok(0));
         assert_eq!(
             known.2[0],
@@ -4832,11 +5114,35 @@ mod tests {
         );
         assert_eq!(known.4, 1);
 
-        let higher_rank = run(stereo_bond(2, 0), vec![2, 3, 1, 1], 0, 0, false, 0, 0, true, 0, 3, 0);
+        let higher_rank = run(
+            stereo_bond(2, 0),
+            vec![2, 3, 1, 1],
+            0,
+            0,
+            false,
+            0,
+            0,
+            true,
+            0,
+            3,
+            0,
+        );
         assert_eq!(higher_rank.4, 0);
         assert_eq!(higher_rank.2[0].at_num1, 81);
 
-        let no_parity = run(stereo_bond(0, 0), vec![4, 3, 2, 1], 0, 0, false, 0, 0, true, 0, 3, 0);
+        let no_parity = run(
+            stereo_bond(0, 0),
+            vec![4, 3, 2, 1],
+            0,
+            0,
+            false,
+            0,
+            0,
+            true,
+            0,
+            3,
+            0,
+        );
         assert_eq!(no_parity.4, 0);
 
         let fallback = run(
@@ -4857,7 +5163,19 @@ mod tests {
         let mut no_fallback_atoms = stereo_bond(AB_PARITY_CALC as i8, 49);
         no_fallback_atoms[0].parity = 0;
         no_fallback_atoms[1].parity = 0;
-        let no_fallback = run(no_fallback_atoms, vec![4, 3, 2, 1], 0, 0, false, 0, 0, true, 0, 3, 0);
+        let no_fallback = run(
+            no_fallback_atoms,
+            vec![4, 3, 2, 1],
+            0,
+            0,
+            false,
+            0,
+            0,
+            true,
+            0,
+            3,
+            0,
+        );
         assert_eq!(no_fallback.4, 0);
 
         let calculated = run(
@@ -4893,7 +5211,19 @@ mod tests {
 
         let mut missing_reverse = stereo_bond(AB_PARITY_CALC as i8, 50);
         missing_reverse[1].stereo_bond_neighbor[0] = 0;
-        let missing_reverse = run(missing_reverse, vec![4, 3, 2, 1], 0, 0, false, 0, 0, true, 0, 3, 0);
+        let missing_reverse = run(
+            missing_reverse,
+            vec![4, 3, 2, 1],
+            0,
+            0,
+            false,
+            0,
+            0,
+            true,
+            0,
+            3,
+            0,
+        );
         assert_eq!(missing_reverse.0, Ok(CT_STEREOBOND_ERROR));
         assert_eq!(missing_reverse.4, 0);
 
@@ -4912,15 +5242,51 @@ mod tests {
         );
         assert_eq!(tied_half.0, Ok(CT_STEREOBOND_ERROR));
 
-        let double_overflow = run(stereo_bond(2, 0), vec![4, 3, 2, 1], 0, 0, false, 0, 0, true, 0, 0, 0);
+        let double_overflow = run(
+            stereo_bond(2, 0),
+            vec![4, 3, 2, 1],
+            0,
+            0,
+            false,
+            0,
+            0,
+            true,
+            0,
+            0,
+            0,
+        );
         assert_eq!(double_overflow.0, Ok(CT_OVERFLOW));
         assert_eq!(double_overflow.2[0].at_num1, 81);
         assert_eq!(double_overflow.4, 0);
 
         let allene_atoms = stereo_bond((MULT_STEREOBOND + 1) as i8, 0);
-        let skipped_allene = run(allene_atoms.clone(), vec![4, 3, 2, 1], 0, 0, false, 0, 0, true, 0, 3, 0);
+        let skipped_allene = run(
+            allene_atoms.clone(),
+            vec![4, 3, 2, 1],
+            0,
+            0,
+            false,
+            0,
+            0,
+            true,
+            0,
+            3,
+            0,
+        );
         assert_eq!(skipped_allene.4, 0);
-        let selected_allene = run(allene_atoms, vec![4, 3, 2, 1], 0, 0, false, 0, 0, true, 0, 3, 1);
+        let selected_allene = run(
+            allene_atoms,
+            vec![4, 3, 2, 1],
+            0,
+            0,
+            false,
+            0,
+            0,
+            true,
+            0,
+            3,
+            1,
+        );
         assert_eq!(selected_allene.4, 1);
         assert_eq!(selected_allene.2[0].parity, 1);
     }
@@ -4928,10 +5294,18 @@ mod tests {
     #[test]
     fn source_port__ichicans__setcttononisotopicstereo__line_746() {
         let mut heap = SourceHeap::default();
-        let double = heap.allocate_model_storage(vec![AT_STEREO_DBLE::default()]).unwrap();
-        let carb = heap.allocate_model_storage(vec![AT_STEREO_CARB::default()]).unwrap();
-        let double_inv = heap.allocate_model_storage(vec![AT_STEREO_DBLE::default(); 2]).unwrap();
-        let carb_inv = heap.allocate_model_storage(vec![AT_STEREO_CARB::default(); 2]).unwrap();
+        let double = heap
+            .allocate_model_storage(vec![AT_STEREO_DBLE::default()])
+            .unwrap();
+        let carb = heap
+            .allocate_model_storage(vec![AT_STEREO_CARB::default()])
+            .unwrap();
+        let double_inv = heap
+            .allocate_model_storage(vec![AT_STEREO_DBLE::default(); 2])
+            .unwrap();
+        let carb_inv = heap
+            .allocate_model_storage(vec![AT_STEREO_CARB::default(); 2])
+            .unwrap();
         let source = CANON_STAT {
             LinearCTStereoDble: double,
             LinearCTStereoCarb: carb,
@@ -4974,10 +5348,18 @@ mod tests {
     #[test]
     fn source_port__ichicans__setcttoisotopicstereo__line_729() {
         let mut heap = SourceHeap::default();
-        let isotopic_double = heap.allocate_model_storage(vec![AT_STEREO_DBLE::default()]).unwrap();
-        let isotopic_carb = heap.allocate_model_storage(vec![AT_STEREO_CARB::default()]).unwrap();
-        let isotopic_double_inv = heap.allocate_model_storage(vec![AT_STEREO_DBLE::default(); 2]).unwrap();
-        let isotopic_carb_inv = heap.allocate_model_storage(vec![AT_STEREO_CARB::default(); 2]).unwrap();
+        let isotopic_double = heap
+            .allocate_model_storage(vec![AT_STEREO_DBLE::default()])
+            .unwrap();
+        let isotopic_carb = heap
+            .allocate_model_storage(vec![AT_STEREO_CARB::default()])
+            .unwrap();
+        let isotopic_double_inv = heap
+            .allocate_model_storage(vec![AT_STEREO_DBLE::default(); 2])
+            .unwrap();
+        let isotopic_carb_inv = heap
+            .allocate_model_storage(vec![AT_STEREO_CARB::default(); 2])
+            .unwrap();
         let source = CANON_STAT {
             LinearCTIsotopicStereoDble: isotopic_double,
             LinearCTIsotopicStereoCarb: isotopic_carb,
@@ -5119,8 +5501,12 @@ mod tests {
             let atom_pointer = heap.allocate_model_storage(atoms).unwrap();
             let rank_pointer = heap.allocate_model_storage(ranks).unwrap();
             let order_pointer = heap.allocate_model_storage(canonical_order).unwrap();
-            let carb_pointer = heap.allocate_model_storage(vec![AT_STEREO_CARB::default(); 4]).unwrap();
-            let double_pointer = heap.allocate_model_storage(vec![AT_STEREO_DBLE::default(); 4]).unwrap();
+            let carb_pointer = heap
+                .allocate_model_storage(vec![AT_STEREO_CARB::default(); 4])
+                .unwrap();
+            let double_pointer = heap
+                .allocate_model_storage(vec![AT_STEREO_DBLE::default(); 4])
+                .unwrap();
             let mut stat = CANON_STAT {
                 LinearCTStereoCarb: carb_pointer,
                 LinearCTStereoDble: double_pointer,
@@ -5206,7 +5592,10 @@ mod tests {
             Ok(0)
         );
         assert_eq!(
-            (empty_stat.nLenLinearCTStereoCarb, empty_stat.nLenLinearCTStereoDble),
+            (
+                empty_stat.nLenLinearCTStereoCarb,
+                empty_stat.nLenLinearCTStereoDble
+            ),
             (0, 0)
         );
     }
@@ -5255,7 +5644,10 @@ mod tests {
                 number_pointer.as_const(),
             )
             .unwrap();
-            (result, heap.slice(atom_pointer.as_const()).unwrap().to_vec())
+            (
+                result,
+                heap.slice(atom_pointer.as_const()).unwrap().to_vec(),
+            )
         }
 
         let ranks = vec![1, 2, 3, 4];
@@ -5274,7 +5666,12 @@ mod tests {
 
         let mut transposed = direct(AB_PARITY_CALC as i8, 50);
         transposed[1].neighbor[1..3].swap(0, 1);
-        let (count, transposed) = run(transposed, ranks.clone(), canonical.clone(), numbers.clone());
+        let (count, transposed) = run(
+            transposed,
+            ranks.clone(),
+            canonical.clone(),
+            numbers.clone(),
+        );
         assert_eq!(count, 1);
         assert_eq!(transposed[0].stereo_bond_parity[0], 2);
         assert_eq!(transposed[1].stereo_bond_parity[0], 2);
@@ -5312,7 +5709,12 @@ mod tests {
         );
 
         for parity in [AB_PARITY_NONE as i8, 2_i8, 5_i8] {
-            let (count, skipped) = run(direct(parity, 50), ranks.clone(), canonical.clone(), numbers.clone());
+            let (count, skipped) = run(
+                direct(parity, 50),
+                ranks.clone(),
+                canonical.clone(),
+                numbers.clone(),
+            );
             assert_eq!(count, 0);
             assert_eq!(skipped[0].stereo_bond_parity[0], parity);
             assert_eq!(skipped[1].stereo_bond_parity[0], parity);
@@ -5329,7 +5731,12 @@ mod tests {
 
         let mut ill_endpoint = direct(AB_PARITY_CALC as i8, 50);
         ill_endpoint[0].parity = 3;
-        let (count, ill_endpoint) = run(ill_endpoint, ranks.clone(), canonical.clone(), numbers.clone());
+        let (count, ill_endpoint) = run(
+            ill_endpoint,
+            ranks.clone(),
+            canonical.clone(),
+            numbers.clone(),
+        );
         assert_eq!(count, 0);
         assert_eq!(ill_endpoint[0].stereo_bond_parity[0], AB_PARITY_CALC as i8);
 
@@ -5354,7 +5761,12 @@ mod tests {
         cumulene[2].stereo_bond_neighbor[0] = 1;
         cumulene[2].stereo_bond_parity[0] = 14;
         cumulene[2].stereo_bond_z_prod[0] = 50;
-        let (count, cumulene) = run(cumulene, vec![1, 5, 2, 3, 4], vec![1, 5, 2, 3, 4], vec![0, 2, 3, 4, 1]);
+        let (count, cumulene) = run(
+            cumulene,
+            vec![1, 5, 2, 3, 4],
+            vec![1, 5, 2, 3, 4],
+            vec![0, 2, 3, 4, 1],
+        );
         assert_eq!(count, 1);
         assert_eq!(cumulene[0].stereo_bond_parity[0], 9);
         assert_eq!(cumulene[2].stereo_bond_parity[0], 9);
@@ -5367,7 +5779,10 @@ mod tests {
         assert_eq!(atoms[0].stereo_bond_parity[0], 0x41);
         assert_eq!(atoms[1].stereo_bond_parity[0], 0x41);
         assert_eq!(
-            (atoms[0].bHasStereoOrEquToStereo, atoms[1].bHasStereoOrEquToStereo),
+            (
+                atoms[0].bHasStereoOrEquToStereo,
+                atoms[1].bHasStereoOrEquToStereo
+            ),
             (1, 1)
         );
 
@@ -5394,10 +5809,14 @@ mod tests {
         equivalent[2].neighbor[0] = 3;
         equivalent[3].valence = 1;
         equivalent[3].neighbor[0] = 2;
-        let (result, atoms) = run_mark_known(equivalent.clone(), vec![2, 4, 2, 4], vec![0, 2, 1, 3]);
+        let (result, atoms) =
+            run_mark_known(equivalent.clone(), vec![2, 4, 2, 4], vec![0, 2, 1, 3]);
         assert_eq!(result, 0);
         assert_eq!(
-            (atoms[2].bHasStereoOrEquToStereo, atoms[3].bHasStereoOrEquToStereo),
+            (
+                atoms[2].bHasStereoOrEquToStereo,
+                atoms[3].bHasStereoOrEquToStereo
+            ),
             (2, 2)
         );
         assert_eq!(atoms[0].stereo_bond_parity[0], 1);
@@ -5465,22 +5884,54 @@ mod tests {
         let mut next = 77;
         let mut rank = 2;
         assert_eq!(
-            GetNextNeighborAndRank(&heap, atoms.as_const(), 0, 2, &mut next, &mut rank, ranks.as_const()),
+            GetNextNeighborAndRank(
+                &heap,
+                atoms.as_const(),
+                0,
+                2,
+                &mut next,
+                &mut rank,
+                ranks.as_const()
+            ),
             Ok(1)
         );
         assert_eq!((next, rank), (3, 5));
         assert_eq!(
-            GetNextNeighborAndRank(&heap, atoms.as_const(), 0, 2, &mut next, &mut rank, ranks.as_const()),
+            GetNextNeighborAndRank(
+                &heap,
+                atoms.as_const(),
+                0,
+                2,
+                &mut next,
+                &mut rank,
+                ranks.as_const()
+            ),
             Ok(1)
         );
         assert_eq!((next, rank), (1, 8));
         assert_eq!(
-            GetNextNeighborAndRank(&heap, atoms.as_const(), 0, 2, &mut next, &mut rank, ranks.as_const()),
+            GetNextNeighborAndRank(
+                &heap,
+                atoms.as_const(),
+                0,
+                2,
+                &mut next,
+                &mut rank,
+                ranks.as_const()
+            ),
             Ok(1)
         );
         assert_eq!((next, rank), (5, 9));
         assert_eq!(
-            GetNextNeighborAndRank(&heap, atoms.as_const(), 0, 2, &mut next, &mut rank, ranks.as_const()),
+            GetNextNeighborAndRank(
+                &heap,
+                atoms.as_const(),
+                0,
+                2,
+                &mut next,
+                &mut rank,
+                ranks.as_const()
+            ),
             Ok(0)
         );
         assert_eq!((next, rank), (5, 9));
@@ -5605,14 +6056,24 @@ mod tests {
             (0, 1, 3)
         );
         assert_eq!(
-            run(paired_atoms(), vec![0, 7, 0, 7], equal_visits.clone(), vec![0, 4, 0, 5]),
+            run(
+                paired_atoms(),
+                vec![0, 7, 0, 7],
+                equal_visits.clone(),
+                vec![0, 4, 0, 5]
+            ),
             (0, 1, 3)
         );
 
         let mut no_second = paired_atoms();
         no_second[2].valence = 0;
         assert_eq!(
-            run(no_second, vec![0, 7, 0, 7], equal_visits.clone(), equal_visits.clone()),
+            run(
+                no_second,
+                vec![0, 7, 0, 7],
+                equal_visits.clone(),
+                equal_visits.clone()
+            ),
             (0, 1, (MAX_ATOMS + 1) as AT_RANK)
         );
 
@@ -5634,18 +6095,33 @@ mod tests {
         let mut one_stereo = stereo.clone();
         one_stereo[2].stereo_bond_neighbor[0] = 0;
         assert_eq!(
-            run(one_stereo, vec![0, 7, 0, 7], equal_visits.clone(), equal_visits.clone()).0,
+            run(
+                one_stereo,
+                vec![0, 7, 0, 7],
+                equal_visits.clone(),
+                equal_visits.clone()
+            )
+            .0,
             0
         );
         let mut different = stereo.clone();
         different[2].stereo_bond_parity[0] = 2;
         assert_eq!(
-            run(different, vec![0, 7, 0, 7], equal_visits.clone(), equal_visits.clone()).0,
+            run(
+                different,
+                vec![0, 7, 0, 7],
+                equal_visits.clone(),
+                equal_visits.clone()
+            )
+            .0,
             0
         );
         stereo[0].stereo_bond_parity[0] = 3;
         stereo[2].stereo_bond_parity[0] = 3;
-        assert_eq!(run(stereo, vec![0, 7, 0, 7], equal_visits.clone(), equal_visits).0, 0);
+        assert_eq!(
+            run(stereo, vec![0, 7, 0, 7], equal_visits.clone(), equal_visits).0,
+            0
+        );
     }
 
     #[test]
@@ -5705,11 +6181,24 @@ mod tests {
         let mut unknown = leaves.clone();
         unknown[1].stereo_atom_parity = 3;
         unknown[4].stereo_atom_parity = 3;
-        assert_eq!(run(unknown, vec![0; 6], vec![0; 6], Some(vec![0; 6]), 0).0, 0);
+        assert_eq!(
+            run(unknown, vec![0; 6], vec![0; 6], Some(vec![0; 6]), 0).0,
+            0
+        );
 
         let mut valence_mismatch = leaves.clone();
         valence_mismatch[1].valence = 2;
-        assert_eq!(run(valence_mismatch, vec![0; 6], vec![0; 6], Some(vec![0; 6]), 0).0, 0);
+        assert_eq!(
+            run(
+                valence_mismatch,
+                vec![0; 6],
+                vec![0; 6],
+                Some(vec![0; 6]),
+                0
+            )
+            .0,
+            0
+        );
 
         let mut paths = vec![atom(0); 6];
         paths[1].valence = 2;
@@ -5743,7 +6232,13 @@ mod tests {
         assert_eq!(result, 2);
         assert_eq!((first[2], second[5]), (9, 9));
 
-        let (result, shared, second) = run(paths, vec![0, 4, 8, 0, 4, 8], vec![0, 1, 2, 0, 1, 2], None, 1);
+        let (result, shared, second) = run(
+            paths,
+            vec![0, 4, 8, 0, 4, 8],
+            vec![0, 1, 2, 0, 1, 2],
+            None,
+            1,
+        );
         assert_eq!(result, 3);
         assert_eq!(shared, second);
         assert_eq!((shared[1], shared[2], shared[4], shared[5]), (2, 3, 2, 3));
@@ -5813,7 +6308,10 @@ mod tests {
         let original = full_atom();
         assert_eq!(run(original.clone(), 3), (Ok(0), original.clone()));
         assert_eq!(run(original.clone(), i32::MAX), (Ok(0), original.clone()));
-        assert_eq!(run(original.clone(), -1).0, Err(SourceHeapError::PointerOutOfBounds));
+        assert_eq!(
+            run(original.clone(), -1).0,
+            Err(SourceHeapError::PointerOutOfBounds)
+        );
 
         let mut empty = original.clone();
         empty.stereo_bond_neighbor[1] = 0;
@@ -5856,7 +6354,10 @@ mod tests {
         assert_eq!(result, 1);
         for atom in &atoms {
             assert_eq!(atom.stereo_bond_neighbor, [0, 0, 0]);
-            assert_eq!((atom.parity, atom.stereo_atom_parity, atom.final_parity), (0, 0, 0));
+            assert_eq!(
+                (atom.parity, atom.stereo_atom_parity, atom.final_parity),
+                (0, 0, 0)
+            );
         }
 
         let mut shifted = vec![full_stereo_test_atom(), full_stereo_test_atom()];
@@ -5960,8 +6461,13 @@ mod tests {
         }
 
         let (atoms, ranks, canonical) = candidate();
-        let records = vec![descriptor(9, 8, 1), descriptor(4, 2, 2), descriptor(7, 6, 3)];
-        let (result, atoms, records, length, allocations) = run(atoms, ranks, canonical, records, false);
+        let records = vec![
+            descriptor(9, 8, 1),
+            descriptor(4, 2, 2),
+            descriptor(7, 6, 3),
+        ];
+        let (result, atoms, records, length, allocations) =
+            run(atoms, ranks, canonical, records, false);
         assert_eq!(result, 1);
         assert_eq!(length, 2);
         assert_eq!(records[0], descriptor(9, 8, 1));
@@ -5993,7 +6499,14 @@ mod tests {
         );
         atoms[1].nRingSystem = 1;
         assert_eq!(
-            run(atoms, vec![0, 7, 7, 0], canonical, vec![descriptor(4, 2, 1)], false).0,
+            run(
+                atoms,
+                vec![0, 7, 7, 0],
+                canonical,
+                vec![descriptor(4, 2, 1)],
+                false
+            )
+            .0,
             0
         );
 
@@ -6093,7 +6606,12 @@ mod tests {
         transposed[0].stereo_atom_parity = AB_PARITY_CALC as i8;
         transposed[0].valence = 3;
         transposed[0].neighbor[..3].copy_from_slice(&[1, 2, 3]);
-        let (result, atoms) = run(transposed, vec![1, 4, 3, 5], vec![1, 20, 10, 30], vec![0, 1, 2, 3]);
+        let (result, atoms) = run(
+            transposed,
+            vec![1, 4, 3, 5],
+            vec![1, 20, 10, 30],
+            vec![0, 1, 2, 3],
+        );
         assert_eq!(result, 1);
         assert_eq!(atoms[0].stereo_atom_parity, 2);
 
@@ -6141,7 +6659,12 @@ mod tests {
         partial[0].valence = 1;
         partial[0].neighbor[0] = 1;
         partial[3].valence = 2;
-        let (result, atoms) = run(partial, vec![2, 3, 4, 2], vec![1, 2, 3, 4], vec![0, 3, 1, 2]);
+        let (result, atoms) = run(
+            partial,
+            vec![2, 3, 4, 2],
+            vec![1, 2, 3, 4],
+            vec![0, 3, 1, 2],
+        );
         assert_eq!(result, CT_STEREOCOUNT_ERR);
         assert_eq!(atoms[0].stereo_atom_parity, 1);
 
@@ -6213,7 +6736,10 @@ mod tests {
         }
 
         fn carb(atom: AT_RANK, parity: u8) -> AT_STEREO_CARB {
-            AT_STEREO_CARB { at_num: atom, parity }
+            AT_STEREO_CARB {
+                at_num: atom,
+                parity,
+            }
         }
 
         fn run(
@@ -6257,7 +6783,13 @@ mod tests {
         }
 
         let (atoms, ranks, canonical) = candidate();
-        let result = run(atoms, ranks, canonical, vec![carb(9, 1), carb(7, 2), carb(8, 3)], false);
+        let result = run(
+            atoms,
+            ranks,
+            canonical,
+            vec![carb(9, 1), carb(7, 2), carb(8, 3)],
+            false,
+        );
         assert_eq!(result.0, 1);
         assert_eq!(
             (
@@ -6297,20 +6829,32 @@ mod tests {
         one[0].stereo_atom_parity = AB_PARITY_CALC as i8;
         one[0].valence = 1;
         one[0].neighbor[0] = 1;
-        assert_eq!(run(one, vec![1, 2], vec![7, 2], vec![carb(7, 1)], false).0, 0);
+        assert_eq!(
+            run(one, vec![1, 2], vec![7, 2], vec![carb(7, 1)], false).0,
+            0
+        );
     }
 
     #[test]
     fn source_port__ichicans__markknownequalstereocenterparities__line_1942() {
-        fn run(atoms: Vec<sp_ATOM>, ranks: Vec<AT_RANK>, atom_numbers: Vec<AT_RANK>) -> (i32, Vec<sp_ATOM>) {
+        fn run(
+            atoms: Vec<sp_ATOM>,
+            ranks: Vec<AT_RANK>,
+            atom_numbers: Vec<AT_RANK>,
+        ) -> (i32, Vec<sp_ATOM>) {
             let mut heap = SourceHeap::default();
             let count = atoms.len() as i32;
             let atoms = heap.allocate_model_storage(atoms).unwrap();
             let ranks = heap.allocate_model_storage(ranks).unwrap();
             let atom_numbers = heap.allocate_model_storage(atom_numbers).unwrap();
-            let result =
-                MarkKnownEqualStereoCenterParities(&mut heap, atoms, count, ranks.as_const(), atom_numbers.as_const())
-                    .unwrap();
+            let result = MarkKnownEqualStereoCenterParities(
+                &mut heap,
+                atoms,
+                count,
+                ranks.as_const(),
+                atom_numbers.as_const(),
+            )
+            .unwrap();
             (result, heap.slice(atoms.as_const()).unwrap().to_vec())
         }
 
@@ -6335,7 +6879,10 @@ mod tests {
         let (count, atoms) = run(centers([1, 2, 1]), vec![3, 3, 3], vec![0, 1, 2]);
         assert_eq!(count, 0);
         assert_eq!(
-            atoms.iter().map(|atom| atom.stereo_atom_parity).collect::<Vec<_>>(),
+            atoms
+                .iter()
+                .map(|atom| atom.stereo_atom_parity)
+                .collect::<Vec<_>>(),
             vec![1, 2, 1]
         );
         assert!(atoms.iter().all(|atom| atom.bHasStereoOrEquToStereo == 1));
@@ -6398,13 +6945,17 @@ mod tests {
             let mut heap = SourceHeap::default();
             let atoms = heap.allocate_model_storage(atoms).unwrap();
             let visited = heap.allocate_model_storage(visited).unwrap();
-            let result = find_atoms_with_parity(&mut heap, atoms.as_const(), visited, from, current);
+            let result =
+                find_atoms_with_parity(&mut heap, atoms.as_const(), visited, from, current);
             (result, heap.slice(visited.as_const()).unwrap().to_vec())
         }
 
         let mut parity_atom = atom(1);
         parity_atom.valence = 0;
-        assert_eq!(run(vec![parity_atom.clone()], vec![0], -1, 0), (Ok(1), vec![0]));
+        assert_eq!(
+            run(vec![parity_atom.clone()], vec![0], -1, 0),
+            (Ok(1), vec![0])
+        );
         assert_eq!(run(vec![parity_atom], vec![1], -1, 0), (Ok(0), vec![1]));
 
         let mut path = vec![atom(0); 4];
@@ -6416,10 +6967,16 @@ mod tests {
         path[2].neighbor[..2].copy_from_slice(&[1, 3]);
         path[2].parity = 1;
         path[3].parity = 1;
-        assert_eq!(run(path.clone(), vec![0; 4], -1, 0), (Ok(1), vec![1, 1, 0, 0]));
+        assert_eq!(
+            run(path.clone(), vec![0; 4], -1, 0),
+            (Ok(1), vec![1, 1, 0, 0])
+        );
 
         path[2].parity = 0;
-        assert_eq!(run(path.clone(), vec![0; 4], 2, 1), (Ok(0), vec![1, 1, 0, 0]));
+        assert_eq!(
+            run(path.clone(), vec![0; 4], 2, 1),
+            (Ok(0), vec![1, 1, 0, 0])
+        );
 
         path[2].valence = 2;
         path[2].neighbor[..2].copy_from_slice(&[1, 0]);
@@ -6462,9 +7019,15 @@ mod tests {
         atom.parity = 5;
         atom.stereo_bond_parity[1] = 0x31;
         let atoms = heap.allocate_model_storage(vec![atom]).unwrap();
-        assert_eq!(SetHalfStereoBondIllDefPariy(&mut heap, atoms, 0, 1, i32::MAX), Ok(0));
+        assert_eq!(
+            SetHalfStereoBondIllDefPariy(&mut heap, atoms, 0, 1, i32::MAX),
+            Ok(0)
+        );
         assert_eq!(heap.slice(atoms.as_const()).unwrap()[0].parity, 5);
-        assert_eq!(heap.slice(atoms.as_const()).unwrap()[0].stereo_bond_parity[1], 0x31);
+        assert_eq!(
+            heap.slice(atoms.as_const()).unwrap()[0].stereo_bond_parity[1],
+            0x31
+        );
         assert_eq!(
             SetHalfStereoBondIllDefPariy(
                 &mut heap,
@@ -6522,7 +7085,10 @@ mod tests {
             SetOneStereoBondIllDefParity(&mut no_reverse_heap, no_reverse, 0, 0, 4),
             Ok(0)
         );
-        assert_eq!(no_reverse_heap.slice(no_reverse.as_const()).unwrap(), original);
+        assert_eq!(
+            no_reverse_heap.slice(no_reverse.as_const()).unwrap(),
+            original
+        );
 
         let mut terminated_heap = SourceHeap::default();
         let mut terminated = vec![sp_ATOM::default(); 2];
@@ -6536,7 +7102,10 @@ mod tests {
             SetOneStereoBondIllDefParity(&mut terminated_heap, terminated, 0, 0, 3),
             Ok(0)
         );
-        assert_eq!(terminated_heap.slice(terminated.as_const()).unwrap(), original);
+        assert_eq!(
+            terminated_heap.slice(terminated.as_const()).unwrap(),
+            original
+        );
 
         let mut self_heap = SourceHeap::default();
         let mut self_atom = sp_ATOM::default();
@@ -6557,10 +7126,18 @@ mod tests {
             Err(SourceHeapError::PointerOutOfBounds)
         );
         assert_eq!(
-            SetOneStereoBondIllDefParity(&mut self_heap, self_pointer, 0, MAX_NUM_STEREO_BOND_NEIGH as i32, 1,),
+            SetOneStereoBondIllDefParity(
+                &mut self_heap,
+                self_pointer,
+                0,
+                MAX_NUM_STEREO_BOND_NEIGH as i32,
+                1,
+            ),
             Err(SourceHeapError::PointerOutOfBounds)
         );
-        let zero_neighbor = self_heap.allocate_model_storage(vec![sp_ATOM::default()]).unwrap();
+        let zero_neighbor = self_heap
+            .allocate_model_storage(vec![sp_ATOM::default()])
+            .unwrap();
         assert_eq!(
             SetOneStereoBondIllDefParity(&mut self_heap, zero_neighbor, 0, 0, 1),
             Err(SourceHeapError::PointerOutOfBounds)
@@ -6712,8 +7289,12 @@ mod tests {
             let canonical_order = heap.allocate_model_storage(canonical_order).unwrap();
             let ranks = heap.allocate_model_storage(ranks).unwrap();
             let atom_numbers = heap.allocate_model_storage(atom_numbers).unwrap();
-            let carb = heap.allocate_model_storage(vec![AT_STEREO_CARB::default(); 8]).unwrap();
-            let double = heap.allocate_model_storage(vec![AT_STEREO_DBLE::default(); 8]).unwrap();
+            let carb = heap
+                .allocate_model_storage(vec![AT_STEREO_CARB::default(); 8])
+                .unwrap();
+            let double = heap
+                .allocate_model_storage(vec![AT_STEREO_DBLE::default(); 8])
+                .unwrap();
             let mut stat = CANON_STAT {
                 LinearCTStereoCarb: carb,
                 LinearCTStereoDble: double,
@@ -6757,18 +7338,48 @@ mod tests {
             stereo_atom_parity: AB_PARITY_ODD as i8,
             ..sp_ATOM::default()
         };
-        let descriptor = run(vec![center.clone()], vec![1], vec![0], vec![1], vec![0], 8, 8, 0, false);
+        let descriptor = run(
+            vec![center.clone()],
+            vec![1],
+            vec![0],
+            vec![1],
+            vec![0],
+            8,
+            8,
+            0,
+            false,
+        );
         assert_eq!(descriptor.0, 1);
         assert_eq!(descriptor.2.nLenLinearCTStereoCarb, 1);
         assert_eq!(descriptor.2.nLenLinearCTStereoDble, 0);
         assert_eq!(descriptor.3[0].at_num, 1);
         assert_eq!(descriptor.3[0].parity, AB_PARITY_ODD as u8);
 
-        let overflow = run(vec![center.clone()], vec![1], vec![0], vec![1], vec![0], 0, 8, 1, false);
+        let overflow = run(
+            vec![center.clone()],
+            vec![1],
+            vec![0],
+            vec![1],
+            vec![0],
+            0,
+            8,
+            1,
+            false,
+        );
         assert_eq!(overflow.0, CT_OVERFLOW);
         assert_eq!(overflow.2.nLenLinearCTStereoCarb, 0);
 
-        let allocation_failure = run(vec![center], vec![1], vec![0], vec![1], vec![0], 8, 8, 0, true);
+        let allocation_failure = run(
+            vec![center],
+            vec![1],
+            vec![0],
+            vec![1],
+            vec![0],
+            8,
+            8,
+            0,
+            true,
+        );
         assert_eq!(allocation_failure.0, -1);
         assert_eq!(allocation_failure.2.nLenLinearCTStereoCarb, 71);
         assert_eq!(allocation_failure.2.nLenLinearCTStereoDble, 72);
@@ -6840,16 +7451,33 @@ mod tests {
                 at_num: 2,
                 parity: AB_PARITY_ODD as u8,
             },
-            AT_STEREO_CARB { at_num: 1, parity: 3 },
+            AT_STEREO_CARB {
+                at_num: 1,
+                parity: 3,
+            },
         ];
         let (mut heap, atoms, ranks, canonical, mut stat) = fixture(atoms, carb, vec![]);
         assert_eq!(
-            InvertStereo(&mut heap, atoms, 2, ranks.as_const(), canonical, &mut stat, 1),
+            InvertStereo(
+                &mut heap,
+                atoms,
+                2,
+                ranks.as_const(),
+                canonical,
+                &mut stat,
+                1
+            ),
             Ok(1)
         );
         assert_eq!(heap.slice(canonical.as_const()).unwrap()[..2], [1, 0]);
-        assert_eq!(heap.slice(atoms.as_const()).unwrap()[0].parity, AB_PARITY_EVEN as i8);
-        assert_eq!(heap.slice(atoms.as_const()).unwrap()[0].stereo_atom_parity, 0x41);
+        assert_eq!(
+            heap.slice(atoms.as_const()).unwrap()[0].parity,
+            AB_PARITY_EVEN as i8
+        );
+        assert_eq!(
+            heap.slice(atoms.as_const()).unwrap()[0].stereo_atom_parity,
+            0x41
+        );
         assert_eq!(heap.slice(atoms.as_const()).unwrap()[0].final_parity, 4);
         assert_eq!(
             heap.slice(stat.LinearCTStereoCarb.as_const()).unwrap()[0].parity,
@@ -6875,14 +7503,25 @@ mod tests {
         ];
         let (mut heap, atoms, ranks, canonical, mut stat) = fixture(atoms, vec![], double);
         assert_eq!(
-            InvertStereo(&mut heap, atoms, 2, ranks.as_const(), canonical, &mut stat, 1),
+            InvertStereo(
+                &mut heap,
+                atoms,
+                2,
+                ranks.as_const(),
+                canonical,
+                &mut stat,
+                1
+            ),
             Ok(1)
         );
         let result = heap.slice(atoms.as_const()).unwrap();
         assert_eq!((result[0].parity, result[1].parity), (2, 2));
         assert_eq!(result[0].stereo_bond_parity[0], 0x08 | 2);
         assert_eq!(result[1].stereo_bond_parity[0], 0x08 | 1);
-        assert_eq!(heap.slice(stat.LinearCTStereoDble.as_const()).unwrap()[0].parity, 1);
+        assert_eq!(
+            heap.slice(stat.LinearCTStereoDble.as_const()).unwrap()[0].parity,
+            1
+        );
 
         let mut atoms = vec![atom(1), atom(2)];
         atoms[0].stereo_bond_parity[0] = 0x10 | 1;
@@ -6897,14 +7536,25 @@ mod tests {
             }],
         );
         assert_eq!(
-            InvertStereo(&mut heap, atoms, 2, ranks.as_const(), canonical, &mut stat, 1),
+            InvertStereo(
+                &mut heap,
+                atoms,
+                2,
+                ranks.as_const(),
+                canonical,
+                &mut stat,
+                1
+            ),
             Ok(0)
         );
         let result = heap.slice(atoms.as_const()).unwrap();
         assert_eq!((result[0].parity, result[1].parity), (1, 2));
         assert_eq!(result[0].stereo_bond_parity[0], 0x10 | 1);
         assert_eq!(result[1].stereo_bond_parity[0], 0x10 | 2);
-        assert_eq!(heap.slice(stat.LinearCTStereoDble.as_const()).unwrap()[0].parity, 1);
+        assert_eq!(
+            heap.slice(stat.LinearCTStereoDble.as_const()).unwrap()[0].parity,
+            1
+        );
 
         let error_case = |mut atoms: Vec<sp_ATOM>| {
             atoms[0].stereo_bond_parity[0] = 0x08 | 1;
@@ -6925,44 +7575,98 @@ mod tests {
         let (mut heap, atoms, ranks, canonical, mut stat) = error_case(vec![atom(1), atom(2)]);
         heap.slice_mut(atoms).unwrap()[0].stereo_bond_neighbor[1] = 3;
         assert_eq!(
-            InvertStereo(&mut heap, atoms, 2, ranks.as_const(), canonical, &mut stat, 0),
+            InvertStereo(
+                &mut heap,
+                atoms,
+                2,
+                ranks.as_const(),
+                canonical,
+                &mut stat,
+                0
+            ),
             Ok(CT_STEREOCOUNT_ERR)
         );
 
         let (mut heap, atoms, ranks, canonical, mut stat) = error_case(vec![atom(1), atom(2)]);
         heap.slice_mut(atoms).unwrap()[1].stereo_bond_parity[0] = 0x10 | 2;
         assert_eq!(
-            InvertStereo(&mut heap, atoms, 2, ranks.as_const(), canonical, &mut stat, 0),
+            InvertStereo(
+                &mut heap,
+                atoms,
+                2,
+                ranks.as_const(),
+                canonical,
+                &mut stat,
+                0
+            ),
             Ok(CT_STEREOCOUNT_ERR)
         );
 
         let (mut heap, atoms, ranks, canonical, mut stat) = error_case(vec![atom(1), atom(2)]);
         heap.slice_mut(atoms).unwrap()[1].stereo_bond_neighbor[0] = 2;
         assert_eq!(
-            InvertStereo(&mut heap, atoms, 2, ranks.as_const(), canonical, &mut stat, 0),
+            InvertStereo(
+                &mut heap,
+                atoms,
+                2,
+                ranks.as_const(),
+                canonical,
+                &mut stat,
+                0
+            ),
             Ok(CT_STEREOCOUNT_ERR)
         );
 
         let (mut heap, atoms, ranks, canonical, mut stat) = error_case(vec![atom(4), atom(2)]);
         assert_eq!(
-            InvertStereo(&mut heap, atoms, 2, ranks.as_const(), canonical, &mut stat, 0),
+            InvertStereo(
+                &mut heap,
+                atoms,
+                2,
+                ranks.as_const(),
+                canonical,
+                &mut stat,
+                0
+            ),
             Ok(CT_STEREOCOUNT_ERR)
         );
 
         let (mut heap, atoms, ranks, canonical, mut stat) = fixture(
             vec![atom(4), atom(2)],
-            vec![AT_STEREO_CARB { at_num: 2, parity: 1 }],
+            vec![AT_STEREO_CARB {
+                at_num: 2,
+                parity: 1,
+            }],
             vec![],
         );
         assert_eq!(
-            InvertStereo(&mut heap, atoms, 2, ranks.as_const(), canonical, &mut stat, 1),
+            InvertStereo(
+                &mut heap,
+                atoms,
+                2,
+                ranks.as_const(),
+                canonical,
+                &mut stat,
+                1
+            ),
             Ok(CT_STEREOCOUNT_ERR)
         );
-        assert_eq!(heap.slice(stat.LinearCTStereoCarb.as_const()).unwrap()[0].parity, 1);
+        assert_eq!(
+            heap.slice(stat.LinearCTStereoCarb.as_const()).unwrap()[0].parity,
+            1
+        );
 
         let (mut heap, atoms, ranks, canonical, mut stat) = fixture(vec![], vec![], vec![]);
         assert_eq!(
-            InvertStereo(&mut heap, atoms, -1, ranks.as_const(), canonical, &mut stat, 0),
+            InvertStereo(
+                &mut heap,
+                atoms,
+                -1,
+                ranks.as_const(),
+                canonical,
+                &mut stat,
+                0
+            ),
             Ok(0)
         );
         assert_eq!(heap.slice(canonical.as_const()).unwrap(), &[99; 4]);
@@ -6997,7 +7701,11 @@ mod tests {
         fn fixture(
             z_product: i8,
             ranks: Vec<AT_RANK>,
-        ) -> (SourceHeap, SourceMutPointer<sp_ATOM>, SourceMutPointer<AT_RANK>) {
+        ) -> (
+            SourceHeap,
+            SourceMutPointer<sp_ATOM>,
+            SourceMutPointer<AT_RANK>,
+        ) {
             let mut atoms = vec![sp_ATOM::default(); 6];
             atoms[0].valence = 3;
             atoms[0].parity = 1;
@@ -7027,7 +7735,10 @@ mod tests {
         assert_eq!(GetStereoBondParity(&heap, atoms, 0, 1, ranks), Ok(0));
 
         let (heap, atoms, ranks) = fixture(MIN_DOT_PROD as i8, vec![1, 2, 3, 3, 5, 5]);
-        assert_eq!(GetStereoBondParity(&heap, atoms, 0, 1, ranks), Ok(CT_STEREOBOND_ERROR));
+        assert_eq!(
+            GetStereoBondParity(&heap, atoms, 0, 1, ranks),
+            Ok(CT_STEREOBOND_ERROR)
+        );
 
         let (mut heap, atoms, ranks) = fixture(0, vec![1, 2, 3, 4, 5, 6]);
         heap.slice_mut(atoms).unwrap()[0].parity = 0;
@@ -7087,7 +7798,10 @@ mod tests {
 
     #[test]
     fn source_port__ichicans__getstereocenterparity__line_2340() {
-        fn run(atom: sp_ATOM, ranks: Vec<AT_RANK>) -> (Result<i32, SourceHeapError>, CANON_GLOBALS) {
+        fn run(
+            atom: sp_ATOM,
+            ranks: Vec<AT_RANK>,
+        ) -> (Result<i32, SourceHeapError>, CANON_GLOBALS) {
             let mut heap = SourceHeap::default();
             let atoms = heap.allocate_model_storage(vec![atom]).unwrap();
             let ranks = heap.allocate_model_storage(ranks).unwrap();

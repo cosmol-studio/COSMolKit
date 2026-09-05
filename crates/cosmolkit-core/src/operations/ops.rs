@@ -22,7 +22,8 @@ use cosmolkit_macros::mol_multi_op_body;
 use cosmolkit_macros::{mol_op_body, molecule_ops};
 
 use crate::{
-    AtomId, DerivedState, InvariantError, Molecule, MoleculeProperties, SupportStatus, TopologyTrust,
+    AtomId, DerivedState, InvariantError, Molecule, MoleculeProperties, SupportStatus,
+    TopologyTrust,
     invariants::enforce_molecule_invariants,
     molecule::{CoordinateBlock, TopologyBlock, TopologyMapping},
 };
@@ -221,7 +222,9 @@ impl DerivedEffects {
 
     #[must_use]
     pub const fn needs_update(self) -> DerivedState {
-        self.invalidate.union(self.recompute).union(self.operation_defined)
+        self.invalidate
+            .union(self.recompute)
+            .union(self.operation_defined)
     }
 }
 
@@ -1132,7 +1135,9 @@ use self::runtime::OpParts;
 pub use self::runtime::OperationTrace;
 use self::{bodies::*, hydrogens::*, sanitize_pipeline::*, tautomer::*};
 
-pub(crate) use self::sanitize_pipeline::{sanitize_conjugation_assignment, sanitize_hybridization_assignment};
+pub(crate) use self::sanitize_pipeline::{
+    sanitize_conjugation_assignment, sanitize_hybridization_assignment,
+};
 
 #[cfg(test)]
 mod tests {
@@ -1206,7 +1211,10 @@ mod tests {
             assert_eq!(molecules[0].atoms()[0].formal_charge(), 0);
             assert_eq!(molecules[1].atoms()[0].formal_charge(), 1);
             assert_eq!(source.atoms()[0].formal_charge(), 0);
-            assert_eq!(TEST_GENERATED_MULTIPLE_OUTPUT_SPEC.output, MoleculeOpOutput::Multiple);
+            assert_eq!(
+                TEST_GENERATED_MULTIPLE_OUTPUT_SPEC.output,
+                MoleculeOpOutput::Multiple
+            );
             assert_eq!(
                 TEST_GENERATED_MULTIPLE_OUTPUT_SPEC.result_type,
                 "(Vec < crate :: Molecule > , usize)"
@@ -1292,7 +1300,10 @@ mod tests {
         domain: OperationDomain::Topology,
         kind: MoleculeOpKind::Weak,
         topology_edit: TopologyEditKind::Local,
-        access: BlockAccess::new(BlockSet::NONE, BlockSet::TOPOLOGY.union(BlockSet::DERIVED_CACHE)),
+        access: BlockAccess::new(
+            BlockSet::NONE,
+            BlockSet::TOPOLOGY.union(BlockSet::DERIVED_CACHE),
+        ),
         may_mutate: BlockSet::TOPOLOGY.union(BlockSet::DERIVED_CACHE),
         auto_remap: BlockSet::NONE,
         semantic_preconditions: SemanticPreconditionSet::NONE,
@@ -1366,7 +1377,10 @@ mod tests {
         [
             ("bodies.rs", include_str!("ops/bodies.rs")),
             ("hydrogens.rs", include_str!("ops/hydrogens.rs")),
-            ("sanitize_pipeline.rs", include_str!("ops/sanitize_pipeline.rs")),
+            (
+                "sanitize_pipeline.rs",
+                include_str!("ops/sanitize_pipeline.rs"),
+            ),
             ("tautomer.rs", include_str!("ops/tautomer.rs")),
         ]
     }
@@ -1505,13 +1519,17 @@ mod tests {
         let molecule = builder.build().expect("multi-conformer molecule");
 
         crate::mol_align::reset_align_conformers_call_count();
-        let (_aligned, report) = molecule.with_aligned_conformers().expect("value conformer alignment");
+        let (_aligned, report) = molecule
+            .with_aligned_conformers()
+            .expect("value conformer alignment");
         assert_eq!(report.rmsds.len(), 1);
         assert_eq!(crate::mol_align::align_conformers_call_count(), 1);
 
         let mut inplace = molecule;
         crate::mol_align::reset_align_conformers_call_count();
-        let report = inplace.align_conformers_().expect("in-place conformer alignment");
+        let report = inplace
+            .align_conformers_()
+            .expect("in-place conformer alignment");
         assert_eq!(report.rmsds.len(), 1);
         assert_eq!(crate::mol_align::align_conformers_call_count(), 1);
     }
@@ -1603,7 +1621,8 @@ mod tests {
         assert_eq!(outputs[1].atoms()[0].formal_charge(), 1);
         assert_eq!(source.atoms()[0].formal_charge(), 0);
         for output in &outputs {
-            enforce_molecule_invariants(output).expect("every emitted branch must satisfy molecule invariants");
+            enforce_molecule_invariants(output)
+                .expect("every emitted branch must satisfy molecule invariants");
         }
     }
 
@@ -1644,12 +1663,16 @@ mod tests {
     #[test]
     fn tautomer_multiple_output_spec_rejects_foreign_handles_after_source_and_child_derivation() {
         let source = crate::Molecule::from_smiles("CC(C)=O").unwrap();
-        let mut foreign = MultiMoleculeOpParts::new(&source, &ENUMERATE_TAUTOMERS_WITH_OPTIONS_SPEC).unwrap();
+        let mut foreign =
+            MultiMoleculeOpParts::new(&source, &ENUMERATE_TAUTOMERS_WITH_OPTIONS_SPEC).unwrap();
         let foreign_branch = foreign.derive_from_source(|_branch| Ok(())).unwrap();
 
-        let mut parts = MultiMoleculeOpParts::new(&source, &ENUMERATE_TAUTOMERS_WITH_OPTIONS_SPEC).unwrap();
+        let mut parts =
+            MultiMoleculeOpParts::new(&source, &ENUMERATE_TAUTOMERS_WITH_OPTIONS_SPEC).unwrap();
         let source_branch = parts.derive_from_source(|_branch| Ok(())).unwrap();
-        let child_branch = parts.derive_from_branch(source_branch, |_branch| Ok(())).unwrap();
+        let child_branch = parts
+            .derive_from_branch(source_branch, |_branch| Ok(()))
+            .unwrap();
         parts.emit(source_branch).unwrap();
         parts.emit(child_branch).unwrap();
         assert!(matches!(
@@ -1737,7 +1760,9 @@ mod tests {
     fn begin_topology_mut_rejects_second_begin() {
         let molecule = crate::Molecule::new();
         let mut parts = OpParts::new(&molecule, &WITH_KEKULIZED_BONDS_SPEC).unwrap();
-        let _topology = parts.begin_topology_mut().expect("first topology begin should succeed");
+        let _topology = parts
+            .begin_topology_mut()
+            .expect("first topology begin should succeed");
         let err = match parts.begin_topology_mut() {
             Ok(_) => panic!("second topology begin must be rejected"),
             Err(err) => err,
@@ -1752,7 +1777,9 @@ mod tests {
     fn begin_topology_mut_rejects_second_begin_before_commit() {
         let molecule = crate::Molecule::new();
         let mut parts = OpParts::new(&molecule, &WITH_KEKULIZED_BONDS_SPEC).unwrap();
-        let _topology = parts.begin_topology_mut().expect("first topology begin should succeed");
+        let _topology = parts
+            .begin_topology_mut()
+            .expect("first topology begin should succeed");
         let err = match parts.begin_topology_mut() {
             Ok(_) => panic!("second topology begin must be rejected"),
             Err(err) => err,
@@ -1791,7 +1818,9 @@ mod tests {
             Ok(_) => panic!("overlapping read/write access must be rejected"),
             Err(err) => err,
         };
-        assert!(matches!(err, OperationError::InvalidInput { message, .. } if message.contains("both read and write")));
+        assert!(
+            matches!(err, OperationError::InvalidInput { message, .. } if message.contains("both read and write"))
+        );
     }
 
     #[test]
@@ -1826,7 +1855,9 @@ mod tests {
         })
     }
 
-    fn support_feature_for(operation: &'static MoleculeOpSpec) -> Option<&'static crate::FeatureSpec> {
+    fn support_feature_for(
+        operation: &'static MoleculeOpSpec,
+    ) -> Option<&'static crate::FeatureSpec> {
         SUPPORT_MATRIX.iter().find_map(|entry| {
             entry
                 .operation
@@ -1861,7 +1892,10 @@ mod tests {
                 assert!(same_operation(actual_operation, operation));
                 assert_eq!(source.feature, feature.name);
             }
-            other => panic!("expected UnsupportedFeature for {}, got {other:?}", operation.method),
+            other => panic!(
+                "expected UnsupportedFeature for {}, got {other:?}",
+                operation.method
+            ),
         }
     }
 
@@ -1890,11 +1924,17 @@ mod tests {
                 .iter()
                 .map(|operation| operation.method)
                 .collect::<Vec<_>>(),
-            vec!["without_hydrogens_with_sanitize", "without_hydrogens_with_params"],
+            vec![
+                "without_hydrogens_with_sanitize",
+                "without_hydrogens_with_params"
+            ],
             "OperationDefined is approved only for the two generated specs of the single hydrogen-removal operation family"
         );
         for operation in operation_defined {
-            assert_eq!(operation.derived_effects.operation_defined(), DerivedState::VALENCE);
+            assert_eq!(
+                operation.derived_effects.operation_defined(),
+                DerivedState::VALENCE
+            );
             assert!(operation.access.can_write(BlockSet::DERIVED_CACHE));
             assert_eq!(operation.parity, ParityPolicy::RequiredNow);
         }
@@ -2117,11 +2157,23 @@ mod tests {
             support_feature_for(&WITH_ONLY_3D_CONFORMER_SPEC).map(|feature| feature.name),
             Some(crate::COORDINATE_EDIT_FEATURE.name)
         );
-        assert_eq!(WITH_2D_COORDINATE_BLOCK_SPEC.domain, OperationDomain::Coordinate);
+        assert_eq!(
+            WITH_2D_COORDINATE_BLOCK_SPEC.domain,
+            OperationDomain::Coordinate
+        );
         assert_eq!(WITH_3D_COORDINATES_SPEC.domain, OperationDomain::Coordinate);
-        assert_eq!(WITH_CLEARED_3D_CONFORMERS_SPEC.domain, OperationDomain::Coordinate);
-        assert_eq!(WITH_ADDED_3D_CONFORMER_SPEC.domain, OperationDomain::Coordinate);
-        assert_eq!(WITH_ONLY_3D_CONFORMER_SPEC.domain, OperationDomain::Coordinate);
+        assert_eq!(
+            WITH_CLEARED_3D_CONFORMERS_SPEC.domain,
+            OperationDomain::Coordinate
+        );
+        assert_eq!(
+            WITH_ADDED_3D_CONFORMER_SPEC.domain,
+            OperationDomain::Coordinate
+        );
+        assert_eq!(
+            WITH_ONLY_3D_CONFORMER_SPEC.domain,
+            OperationDomain::Coordinate
+        );
         assert!(support_matrix_contains(&WITH_2D_COORDINATE_BLOCK_SPEC));
         assert!(support_matrix_contains(&WITH_3D_COORDINATES_SPEC));
         assert!(support_matrix_contains(&WITH_CLEARED_3D_CONFORMERS_SPEC));
@@ -2145,13 +2197,17 @@ mod tests {
             .iter()
             .copied()
             .filter(|operation| {
-                support_feature_for(operation).map(|feature| feature.name) == Some(crate::MOLALIGN_FEATURE.name)
+                support_feature_for(operation).map(|feature| feature.name)
+                    == Some(crate::MOLALIGN_FEATURE.name)
             })
             .map(|operation| operation.method)
             .collect::<Vec<_>>();
         assert_eq!(
             molalign_operations,
-            vec![WITH_ALIGNMENT_TO_SPEC.method, WITH_ALIGNED_CONFORMERS_SPEC.method,]
+            vec![
+                WITH_ALIGNMENT_TO_SPEC.method,
+                WITH_ALIGNED_CONFORMERS_SPEC.method,
+            ]
         );
         for operation in [&WITH_ALIGNMENT_TO_SPEC, &WITH_ALIGNED_CONFORMERS_SPEC] {
             assert_eq!(operation.domain, OperationDomain::Coordinate);
@@ -2192,7 +2248,9 @@ mod tests {
         assert!(parity_matrix_contains(&WITH_3D_CONFORMERS_SPEC));
 
         let molecule = crate::Molecule::from_smiles("CC").expect("ethane");
-        let generated = molecule.with_3d_conformer().expect("default ETKDGv3 conformer");
+        let generated = molecule
+            .with_3d_conformer()
+            .expect("default ETKDGv3 conformer");
         assert!(molecule.conformers_3d().is_empty());
         assert_eq!(generated.conformers_3d().len(), 1);
 
@@ -2247,7 +2305,10 @@ mod tests {
 
         assert_eq!(molecule, original);
         assert_eq!(result.conformers_2d().len(), 1);
-        assert_eq!(result.source_coordinate_dim(), Some(crate::CoordinateDimension::TwoD));
+        assert_eq!(
+            result.source_coordinate_dim(),
+            Some(crate::CoordinateDimension::TwoD)
+        );
     }
 
     #[test]
@@ -2269,22 +2330,31 @@ mod tests {
             .with_added_3d_conformer(second.clone(), true)
             .unwrap();
         let cleared = with_two.with_cleared_3d_conformers().unwrap();
-        let only = with_two.with_only_3d_conformer(replacement.clone(), true).unwrap();
+        let only = with_two
+            .with_only_3d_conformer(replacement.clone(), true)
+            .unwrap();
 
         assert_eq!(with_two.conformers_3d().len(), 2);
         assert!(cleared.conformers_3d().is_empty());
         assert_eq!(only.conformers_3d().len(), 1);
         assert_eq!(only.conformers_3d()[0].coordinates(), replacement);
-        assert_eq!(only.source_coordinate_dim(), Some(crate::CoordinateDimension::ThreeD));
+        assert_eq!(
+            only.source_coordinate_dim(),
+            Some(crate::CoordinateDimension::ThreeD)
+        );
 
         let mut in_place = with_two.clone();
         in_place.clear_3d_conformers_().unwrap();
         assert!(in_place.conformers_3d().is_empty());
-        in_place.set_only_3d_conformer_(second.clone(), true).unwrap();
+        in_place
+            .set_only_3d_conformer_(second.clone(), true)
+            .unwrap();
         assert_eq!(in_place.conformers_3d().len(), 1);
         assert_eq!(in_place.conformers_3d()[0].coordinates(), second);
 
-        let two_d_flagged = with_two.with_only_3d_conformer(replacement.clone(), false).unwrap();
+        let two_d_flagged = with_two
+            .with_only_3d_conformer(replacement.clone(), false)
+            .unwrap();
         assert_eq!(
             two_d_flagged.source_coordinate_dim(),
             Some(crate::CoordinateDimension::TwoD)
@@ -2403,7 +2473,11 @@ mod tests {
         for index in 0..5 {
             let neighbor = builder.add_atom(crate::AtomSpec::new(crate::Element::C));
             builder
-                .add_bond(crate::BondSpec::new(center, neighbor, crate::BondOrder::Single))
+                .add_bond(crate::BondSpec::new(
+                    center,
+                    neighbor,
+                    crate::BondOrder::Single,
+                ))
                 .unwrap();
             coords.push([index as f64, 0.0, 0.0]);
         }
@@ -2492,7 +2566,8 @@ mod tests {
     #[test]
     fn with_hydrogens_materializes_explicit_h_count_and_clears_heavy_atom_count() {
         let mut builder = crate::MoleculeBuilder::new();
-        let nitrogen = builder.add_atom(crate::AtomSpec::new(crate::Element::N).with_explicit_hydrogens(2));
+        let nitrogen =
+            builder.add_atom(crate::AtomSpec::new(crate::Element::N).with_explicit_hydrogens(2));
         let molecule = builder.build().unwrap();
 
         let result = molecule.with_hydrogens().unwrap();
@@ -2526,7 +2601,12 @@ mod tests {
         assert_eq!(result.num_atoms(), 2);
         assert_eq!(result.num_bonds(), 1);
         assert!(result.atoms().iter().all(|atom| atom.atomic_number() == 1));
-        assert!(result.atoms().iter().all(|atom| atom.explicit_hydrogens() == 0));
+        assert!(
+            result
+                .atoms()
+                .iter()
+                .all(|atom| atom.explicit_hydrogens() == 0)
+        );
         assert_eq!(result.bonds()[0].order(), crate::BondOrder::Single);
     }
 
@@ -2556,9 +2636,11 @@ mod tests {
         assert_eq!(modern.size(), 1_u64 << 36);
         assert_eq!(modern.nonzero_elements(), &expected);
 
-        let legacy =
-            crate::topological_torsion_legacy_fingerprint(&result, &crate::TopologicalTorsionLegacyParams::default())
-                .unwrap();
+        let legacy = crate::topological_torsion_legacy_fingerprint(
+            &result,
+            &crate::TopologicalTorsionLegacyParams::default(),
+        )
+        .unwrap();
         let crate::TopologicalTorsionLegacyResult::SparseCount(legacy) = legacy else {
             panic!("default legacy Topological Torsion must return unfolded counts");
         };
@@ -2588,10 +2670,7 @@ mod tests {
     #[test]
     fn with_hydrogens_skip_queries_preserves_skipped_atom_cache_entry() {
         let mut builder = crate::MoleculeBuilder::new();
-        let query_carbon = builder.add_atom(
-            crate::AtomSpec::new(crate::Element::C)
-                .with_query(crate::QueryNode::predicate(crate::AtomQueryPredicate::Any)),
-        );
+        let query_carbon = builder.add_atom(crate::AtomSpec::new(crate::Element::C));
         let plain_carbon = builder.add_atom(crate::AtomSpec::new(crate::Element::C));
         builder
             .add_bond(crate::BondSpec::new(
@@ -2600,7 +2679,11 @@ mod tests {
                 crate::BondOrder::Single,
             ))
             .unwrap();
-        let molecule = builder.build().unwrap().with_assigned_valence_strict(false).unwrap();
+        let molecule = builder
+            .build()
+            .unwrap()
+            .with_assigned_valence_strict(false)
+            .unwrap();
         let before = molecule.derived_cache().valence.clone().unwrap();
 
         let result = molecule
@@ -2611,7 +2694,10 @@ mod tests {
             .unwrap();
         let after = result.derived_cache().valence.as_ref().unwrap();
 
-        assert_eq!(after.explicit_valence[query_carbon.index()], before.explicit_valence[0]);
+        assert_eq!(
+            after.explicit_valence[query_carbon.index()],
+            before.explicit_valence[0]
+        );
         assert_eq!(
             after.implicit_hydrogens[query_carbon.index()],
             before.implicit_hydrogens[0]
@@ -2641,17 +2727,24 @@ mod tests {
         );
         assert_eq!(result.atoms()[nitrogen.index()].explicit_hydrogens(), 0);
         assert_eq!(
-            result.atoms()[1..].iter().map(crate::Atom::isotope).collect::<Vec<_>>(),
+            result.atoms()[1..]
+                .iter()
+                .map(crate::Atom::isotope)
+                .collect::<Vec<_>>(),
             vec![Some(2), Some(3), None]
         );
     }
 
     #[test]
     fn with_hydrogens_clears_atom_cip_ranks_like_rdkit_addhs() {
-        let smiles = "O=C(NC[C@]12C[C@H]3C[C@H](C[C@H](C3)C1)C2)[C@@H]1C[C@H]2c3ccccc3[C@@H]1c1ccccc12";
+        let smiles =
+            "O=C(NC[C@]12C[C@H]3C[C@H](C[C@H](C3)C1)C2)[C@@H]1C[C@H]2c3ccccc3[C@@H]1c1ccccc12";
         let molecule = crate::Molecule::from_smiles(smiles).unwrap();
         assert!(
-            molecule.atoms().iter().any(|atom| atom.prop("_CIPRank").is_some()),
+            molecule
+                .atoms()
+                .iter()
+                .any(|atom| atom.prop("_CIPRank").is_some()),
             "SMILES sanitize path should assign legacy _CIPRank before AddHs"
         );
         assert_eq!(molecule.prop("_StereochemDone"), Some("1"));
@@ -2669,7 +2762,10 @@ mod tests {
             .unwrap();
 
         assert!(
-            result.atoms().iter().all(|atom| atom.prop("_CIPRank").is_none()),
+            result
+                .atoms()
+                .iter()
+                .all(|atom| atom.prop("_CIPRank").is_none()),
             "RDKit AddHs clears atom _CIPRank computed props before depiction"
         );
         assert_eq!(
@@ -2690,11 +2786,18 @@ mod tests {
                 isotope: None,
                 is_implicit: false,
                 props: Default::default(),
-                pdb_residue_info: Some(crate::AtomPdbResidueInfo::new(" H1 ", 12, "GLY", 3, "A", false)),
+                pdb_residue_info: Some(crate::AtomPdbResidueInfo::new(
+                    " H1 ", 12, "GLY", 3, "A", false,
+                )),
             }],
             atoms_to_update_property_cache: vec![nitrogen],
             valence_before_add_hs: Some(
-                crate::assign_valence_with_options(&molecule, crate::ValenceModel::RdkitLike, false).unwrap(),
+                crate::assign_valence_with_options(
+                    &molecule,
+                    crate::ValenceModel::RdkitLike,
+                    false,
+                )
+                .unwrap(),
             ),
             ..crate::hydrogens::AddHsAssignment::default()
         };
@@ -2735,8 +2838,9 @@ mod tests {
     fn with_hydrogens_with_params_materializes_add_residue_info_branch() {
         let mut builder = crate::MoleculeBuilder::new();
         builder.add_atom(
-            crate::AtomSpec::new(crate::Element::N)
-                .with_pdb_residue_info(crate::AtomPdbResidueInfo::new(" N  ", 10, "GLY", 3, "A", false)),
+            crate::AtomSpec::new(crate::Element::N).with_pdb_residue_info(
+                crate::AtomPdbResidueInfo::new(" N  ", 10, "GLY", 3, "A", false),
+            ),
         );
         let molecule = builder.build().unwrap();
         let params = crate::AddHsParams {
@@ -2766,7 +2870,12 @@ mod tests {
             }],
             atoms_to_update_property_cache: vec![hydrogen],
             valence_before_add_hs: Some(
-                crate::assign_valence_with_options(&molecule, crate::ValenceModel::RdkitLike, false).unwrap(),
+                crate::assign_valence_with_options(
+                    &molecule,
+                    crate::ValenceModel::RdkitLike,
+                    false,
+                )
+                .unwrap(),
             ),
             ..crate::hydrogens::AddHsAssignment::default()
         };
@@ -2807,14 +2916,21 @@ mod tests {
     fn without_hydrogens_removes_basic_explicit_hydrogen_through_operation_pipeline() {
         let mut builder = crate::MoleculeBuilder::new();
         let carbon = builder.add_atom(
-            crate::AtomSpec::new(crate::Element::C)
-                .with_pdb_residue_info(crate::AtomPdbResidueInfo::new(" C  ", 7, "GLY", 3, "A", false)),
+            crate::AtomSpec::new(crate::Element::C).with_pdb_residue_info(
+                crate::AtomPdbResidueInfo::new(" C  ", 7, "GLY", 3, "A", false),
+            ),
         );
         let hydrogen = builder.add_atom(crate::AtomSpec::new(crate::Element::H));
         builder
-            .add_bond(crate::BondSpec::new(carbon, hydrogen, crate::BondOrder::Single))
+            .add_bond(crate::BondSpec::new(
+                carbon,
+                hydrogen,
+                crate::BondOrder::Single,
+            ))
             .unwrap();
-        builder.set_2d_coordinates(vec![[0.0, 0.0], [1.0, 0.0]]).unwrap();
+        builder
+            .set_2d_coordinates(vec![[0.0, 0.0], [1.0, 0.0]])
+            .unwrap();
         let molecule = builder.build().unwrap();
         let original = molecule.clone();
 
@@ -2824,7 +2940,13 @@ mod tests {
         assert_eq!(result.num_atoms(), 1);
         assert_eq!(result.num_bonds(), 0);
         assert_eq!(result.coordinates_2d(), Some(&[[0.0, 0.0]][..]));
-        assert_eq!(result.atoms()[0].pdb_residue_info().unwrap().serial_number(), 7);
+        assert_eq!(
+            result.atoms()[0]
+                .pdb_residue_info()
+                .unwrap()
+                .serial_number(),
+            7
+        );
     }
 
     #[test]
@@ -2850,14 +2972,23 @@ mod tests {
     #[test]
     fn without_hydrogens_with_params_materializes_remove_and_track_isotopes_branch() {
         let mut builder = crate::MoleculeBuilder::new();
-        let carbon = builder.add_atom(crate::AtomSpec::new(crate::Element::C).with_no_implicit(true));
+        let carbon =
+            builder.add_atom(crate::AtomSpec::new(crate::Element::C).with_no_implicit(true));
         let protium = builder.add_atom(crate::AtomSpec::new(crate::Element::H));
         let deuterium = builder.add_atom(crate::AtomSpec::new(crate::Element::H).with_isotope(2));
         builder
-            .add_bond(crate::BondSpec::new(carbon, protium, crate::BondOrder::Single))
+            .add_bond(crate::BondSpec::new(
+                carbon,
+                protium,
+                crate::BondOrder::Single,
+            ))
             .unwrap();
         builder
-            .add_bond(crate::BondSpec::new(carbon, deuterium, crate::BondOrder::Single))
+            .add_bond(crate::BondSpec::new(
+                carbon,
+                deuterium,
+                crate::BondOrder::Single,
+            ))
             .unwrap();
         let molecule = builder.build().unwrap();
         let params = crate::RemoveHsParams {
@@ -2865,7 +2996,9 @@ mod tests {
             ..crate::RemoveHsParams::default()
         };
 
-        let result = molecule.without_hydrogens_with_params(params, false).unwrap();
+        let result = molecule
+            .without_hydrogens_with_params(params, false)
+            .unwrap();
 
         assert_eq!(result.num_atoms(), 1);
         assert_eq!(result.atoms()[0].tracked_isotopic_hydrogens(), &[2]);
@@ -2878,12 +3011,19 @@ mod tests {
         let carbon = builder.add_atom(crate::AtomSpec::new(crate::Element::C));
         let hydrogen = builder.add_atom(crate::AtomSpec::new(crate::Element::H));
         builder
-            .add_bond(crate::BondSpec::new(carbon, hydrogen, crate::BondOrder::Single))
+            .add_bond(crate::BondSpec::new(
+                carbon,
+                hydrogen,
+                crate::BondOrder::Single,
+            ))
             .unwrap();
         builder
             .add_substance_group(
-                crate::SubstanceGroup::new(crate::SubstanceGroupId::new(0), crate::SubstanceGroupKind::Superatom)
-                    .with_atoms(vec![carbon, hydrogen]),
+                crate::SubstanceGroup::new(
+                    crate::SubstanceGroupId::new(0),
+                    crate::SubstanceGroupKind::Superatom,
+                )
+                .with_atoms(vec![carbon, hydrogen]),
             )
             .unwrap();
         let molecule = builder.build().unwrap();
@@ -2892,7 +3032,10 @@ mod tests {
 
         assert_eq!(result.num_atoms(), 1);
         assert_eq!(result.substance_groups().len(), 1);
-        assert_eq!(result.substance_groups()[0].atoms(), &[crate::AtomId::new(0)]);
+        assert_eq!(
+            result.substance_groups()[0].atoms(),
+            &[crate::AtomId::new(0)]
+        );
     }
 
     #[test]
@@ -2934,7 +3077,10 @@ mod tests {
 
     #[test]
     fn without_hydrogens_without_sanitize_retains_rdkit_pre_removal_valence_cache() {
-        let molecule = crate::Molecule::from_smiles("CCO").unwrap().with_hydrogens().unwrap();
+        let molecule = crate::Molecule::from_smiles("CCO")
+            .unwrap()
+            .with_hydrogens()
+            .unwrap();
         let original = molecule.clone();
 
         let value = molecule.without_hydrogens_with_sanitize(false).unwrap();
@@ -2951,7 +3097,8 @@ mod tests {
                 })
             );
             assert_eq!(
-                crate::assign_valence_with_options(result, crate::ValenceModel::RdkitLike, false,).unwrap(),
+                crate::assign_valence_with_options(result, crate::ValenceModel::RdkitLike, false,)
+                    .unwrap(),
                 crate::ValenceAssignment {
                     explicit_valence: vec![1, 2, 1],
                     implicit_hydrogens: vec![3, 2, 1],
@@ -2976,7 +3123,9 @@ mod tests {
 
         assert_eq!(result.derived_cache().rings, rings_before);
         assert_eq!(result.derived_cache().ring_families, ring_families_before);
-        let expected = crate::assign_valence_with_options(&result, crate::ValenceModel::RdkitLike, false).unwrap();
+        let expected =
+            crate::assign_valence_with_options(&result, crate::ValenceModel::RdkitLike, false)
+                .unwrap();
         assert_eq!(result.derived_cache().valence, Some(expected));
     }
 
@@ -3006,7 +3155,9 @@ mod tests {
         let molecule = crate::Molecule::from_smiles_with_sanitize("C1=CC=CC=C1", false).unwrap();
         let result = molecule
             .sanitize_with_ops(
-                crate::SanitizeOps::PROPERTIES | crate::SanitizeOps::SYMMRINGS | crate::SanitizeOps::SET_AROMATICITY,
+                crate::SanitizeOps::PROPERTIES
+                    | crate::SanitizeOps::SYMMRINGS
+                    | crate::SanitizeOps::SET_AROMATICITY,
             )
             .unwrap();
 
@@ -3017,7 +3168,8 @@ mod tests {
                 .all(|bond| bond.order() == crate::BondOrder::Aromatic)
         );
         let expected_valence =
-            crate::assign_valence_with_options(&result, crate::ValenceModel::RdkitLike, true).unwrap();
+            crate::assign_valence_with_options(&result, crate::ValenceModel::RdkitLike, true)
+                .unwrap();
         assert_eq!(result.derived_cache().valence, Some(expected_valence));
     }
 
@@ -3030,12 +3182,10 @@ mod tests {
             .unwrap();
 
         assert!(result.bonds().iter().all(|bond| !bond.is_aromatic()));
-        assert!(
-            result
-                .bonds()
-                .iter()
-                .all(|bond| matches!(bond.order(), crate::BondOrder::Single | crate::BondOrder::Double))
-        );
+        assert!(result.bonds().iter().all(|bond| matches!(
+            bond.order(),
+            crate::BondOrder::Single | crate::BondOrder::Double
+        )));
         assert_eq!(
             result
                 .bonds()
@@ -3049,7 +3199,8 @@ mod tests {
 
     #[test]
     fn sanitized_kekulize_materializes_ring_cache_without_explicit_symmrings_step_like_rdkit() {
-        let molecule = crate::Molecule::from_smiles("Cc1nc2c(nc1C)C(=O)C1=C(C2=O)C2C=CC1CC2").unwrap();
+        let molecule =
+            crate::Molecule::from_smiles("Cc1nc2c(nc1C)C(=O)C1=C(C2=O)C2C=CC1CC2").unwrap();
         assert_eq!(
             molecule
                 .derived_cache()
@@ -3060,7 +3211,9 @@ mod tests {
             crate::RingFindType::SymmSssr
         );
 
-        let result = molecule.sanitize_with_ops(crate::SanitizeOps::KEKULIZE).unwrap();
+        let result = molecule
+            .sanitize_with_ops(crate::SanitizeOps::KEKULIZE)
+            .unwrap();
 
         let rings = result
             .derived_cache()
@@ -3069,12 +3222,10 @@ mod tests {
             .expect("Kekulize should initialize ordinary SSSR ring information");
         assert_eq!(rings.find_type(), crate::RingFindType::Sssr);
         assert_eq!(rings.num_rings(), 4);
-        assert!(
-            result
-                .bonds()
-                .iter()
-                .all(|bond| matches!(bond.order(), crate::BondOrder::Single | crate::BondOrder::Double))
-        );
+        assert!(result.bonds().iter().all(|bond| matches!(
+            bond.order(),
+            crate::BondOrder::Single | crate::BondOrder::Double
+        )));
 
         let symmetrized = molecule
             .sanitize_with_ops(crate::SanitizeOps::SYMMRINGS | crate::SanitizeOps::KEKULIZE)
@@ -3092,7 +3243,9 @@ mod tests {
     fn sanitized_reports_kekulize_failure_step_like_rdkit_operation_that_failed() {
         let molecule = crate::Molecule::from_smiles_with_sanitize("c", false).unwrap();
 
-        let err = molecule.sanitize_with_ops(crate::SanitizeOps::KEKULIZE).unwrap_err();
+        let err = molecule
+            .sanitize_with_ops(crate::SanitizeOps::KEKULIZE)
+            .unwrap_err();
 
         match err {
             OperationError::Sanitize { source, .. } => {
@@ -3168,8 +3321,12 @@ mod tests {
     fn sanitized_without_properties_uses_non_strict_property_cache_like_rdkit() {
         let molecule = crate::Molecule::from_smiles_with_sanitize("C(=O)(=O)(=O)", false).unwrap();
 
-        let result = molecule.sanitize_with_ops(crate::SanitizeOps::NONE).unwrap();
-        let expected = crate::assign_valence_with_options(&result, crate::ValenceModel::RdkitLike, false).unwrap();
+        let result = molecule
+            .sanitize_with_ops(crate::SanitizeOps::NONE)
+            .unwrap();
+        let expected =
+            crate::assign_valence_with_options(&result, crate::ValenceModel::RdkitLike, false)
+                .unwrap();
 
         assert_eq!(result.derived_cache().valence, Some(expected));
     }
@@ -3182,17 +3339,31 @@ mod tests {
         let oxygen_single = builder.add_atom(crate::AtomSpec::new(crate::Element::O));
         let oxygen_double = builder.add_atom(crate::AtomSpec::new(crate::Element::O));
         builder
-            .add_bond(crate::BondSpec::new(carbon, nitrogen, crate::BondOrder::Single))
+            .add_bond(crate::BondSpec::new(
+                carbon,
+                nitrogen,
+                crate::BondOrder::Single,
+            ))
             .unwrap();
         builder
-            .add_bond(crate::BondSpec::new(nitrogen, oxygen_single, crate::BondOrder::Double))
+            .add_bond(crate::BondSpec::new(
+                nitrogen,
+                oxygen_single,
+                crate::BondOrder::Double,
+            ))
             .unwrap();
         builder
-            .add_bond(crate::BondSpec::new(nitrogen, oxygen_double, crate::BondOrder::Double))
+            .add_bond(crate::BondSpec::new(
+                nitrogen,
+                oxygen_double,
+                crate::BondOrder::Double,
+            ))
             .unwrap();
         let molecule = builder.build().unwrap();
 
-        let result = molecule.sanitize_with_ops(crate::SanitizeOps::CLEANUP).unwrap();
+        let result = molecule
+            .sanitize_with_ops(crate::SanitizeOps::CLEANUP)
+            .unwrap();
 
         assert_eq!(result.atoms()[nitrogen.index()].formal_charge(), 1);
         assert_eq!(
@@ -3243,16 +3414,25 @@ mod tests {
             .unwrap();
         let molecule = builder.build().unwrap();
 
-        let result = molecule.sanitize_with_ops(crate::SanitizeOps::CLEANUP).unwrap();
+        let result = molecule
+            .sanitize_with_ops(crate::SanitizeOps::CLEANUP)
+            .unwrap();
 
         assert_eq!(result.atoms()[nitrogen_center.index()].formal_charge(), 1);
-        assert_eq!(result.atoms()[nitrogen_terminal.index()].formal_charge(), -1);
-        assert_eq!(result.bonds()[triple_bond.index()].order(), crate::BondOrder::Double);
+        assert_eq!(
+            result.atoms()[nitrogen_terminal.index()].formal_charge(),
+            -1
+        );
+        assert_eq!(
+            result.bonds()[triple_bond.index()].order(),
+            crate::BondOrder::Double
+        );
     }
 
     #[test]
     fn sanitized_cleanup_converts_phosphorus_oxo_like_rdkit() {
-        let phosphorus_element = crate::Element::from_atomic_number(15).expect("phosphorus atomic number is valid");
+        let phosphorus_element =
+            crate::Element::from_atomic_number(15).expect("phosphorus atomic number is valid");
         let mut builder = crate::MoleculeBuilder::new();
         let carbon_single = builder.add_atom(crate::AtomSpec::new(crate::Element::C));
         let phosphorus = builder.add_atom(crate::AtomSpec::new(phosphorus_element));
@@ -3267,17 +3447,31 @@ mod tests {
             ))
             .unwrap();
         builder
-            .add_bond(crate::BondSpec::new(phosphorus, oxygen, crate::BondOrder::Double))
+            .add_bond(crate::BondSpec::new(
+                phosphorus,
+                oxygen,
+                crate::BondOrder::Double,
+            ))
             .unwrap();
         builder
-            .add_bond(crate::BondSpec::new(phosphorus, nitrogen, crate::BondOrder::Double))
+            .add_bond(crate::BondSpec::new(
+                phosphorus,
+                nitrogen,
+                crate::BondOrder::Double,
+            ))
             .unwrap();
         builder
-            .add_bond(crate::BondSpec::new(nitrogen, carbon_double, crate::BondOrder::Single))
+            .add_bond(crate::BondSpec::new(
+                nitrogen,
+                carbon_double,
+                crate::BondOrder::Single,
+            ))
             .unwrap();
         let molecule = builder.build().unwrap();
 
-        let result = molecule.sanitize_with_ops(crate::SanitizeOps::CLEANUP).unwrap();
+        let result = molecule
+            .sanitize_with_ops(crate::SanitizeOps::CLEANUP)
+            .unwrap();
 
         assert_eq!(result.atoms()[phosphorus.index()].formal_charge(), 1);
         assert_eq!(result.atoms()[oxygen.index()].formal_charge(), -1);
@@ -3287,49 +3481,82 @@ mod tests {
     }
 
     #[test]
-    fn sanitized_phosphorus_cleanup_leaves_double_oxo_without_double_cn_branch_unchanged_like_rdkit() {
-        let phosphorus_element = crate::Element::from_atomic_number(15).expect("phosphorus atomic number is valid");
+    fn sanitized_phosphorus_cleanup_leaves_double_oxo_without_double_cn_branch_unchanged_like_rdkit()
+     {
+        let phosphorus_element =
+            crate::Element::from_atomic_number(15).expect("phosphorus atomic number is valid");
         let mut builder = crate::MoleculeBuilder::new();
         let phosphorus = builder.add_atom(crate::AtomSpec::new(phosphorus_element));
         let oxygen_one = builder.add_atom(crate::AtomSpec::new(crate::Element::O));
         let oxygen_two = builder.add_atom(crate::AtomSpec::new(crate::Element::O));
         let carbon = builder.add_atom(crate::AtomSpec::new(crate::Element::C));
         let bond_one = builder
-            .add_bond(crate::BondSpec::new(phosphorus, oxygen_one, crate::BondOrder::Double))
+            .add_bond(crate::BondSpec::new(
+                phosphorus,
+                oxygen_one,
+                crate::BondOrder::Double,
+            ))
             .unwrap();
         let bond_two = builder
-            .add_bond(crate::BondSpec::new(phosphorus, oxygen_two, crate::BondOrder::Double))
+            .add_bond(crate::BondSpec::new(
+                phosphorus,
+                oxygen_two,
+                crate::BondOrder::Double,
+            ))
             .unwrap();
         builder
-            .add_bond(crate::BondSpec::new(phosphorus, carbon, crate::BondOrder::Single))
+            .add_bond(crate::BondSpec::new(
+                phosphorus,
+                carbon,
+                crate::BondOrder::Single,
+            ))
             .unwrap();
         let molecule = builder.build().unwrap();
 
-        let result = molecule.sanitize_with_ops(crate::SanitizeOps::CLEANUP).unwrap();
+        let result = molecule
+            .sanitize_with_ops(crate::SanitizeOps::CLEANUP)
+            .unwrap();
 
         assert_eq!(result.atoms()[phosphorus.index()].formal_charge(), 0);
         assert_eq!(result.atoms()[oxygen_one.index()].formal_charge(), 0);
         assert_eq!(result.atoms()[oxygen_two.index()].formal_charge(), 0);
-        assert_eq!(result.bonds()[bond_one.index()].order(), crate::BondOrder::Double);
-        assert_eq!(result.bonds()[bond_two.index()].order(), crate::BondOrder::Double);
+        assert_eq!(
+            result.bonds()[bond_one.index()].order(),
+            crate::BondOrder::Double
+        );
+        assert_eq!(
+            result.bonds()[bond_two.index()].order(),
+            crate::BondOrder::Double
+        );
     }
 
     #[test]
     fn sanitized_cleanup_converts_hypervalent_halogen_oxo_like_rdkit() {
-        let chlorine = crate::Element::from_atomic_number(17).expect("chlorine atomic number is valid");
+        let chlorine =
+            crate::Element::from_atomic_number(17).expect("chlorine atomic number is valid");
         let mut builder = crate::MoleculeBuilder::new();
         let center = builder.add_atom(crate::AtomSpec::new(chlorine));
         let oxygen_one = builder.add_atom(crate::AtomSpec::new(crate::Element::O));
         let oxygen_two = builder.add_atom(crate::AtomSpec::new(crate::Element::O));
         builder
-            .add_bond(crate::BondSpec::new(center, oxygen_one, crate::BondOrder::Double))
+            .add_bond(crate::BondSpec::new(
+                center,
+                oxygen_one,
+                crate::BondOrder::Double,
+            ))
             .unwrap();
         builder
-            .add_bond(crate::BondSpec::new(center, oxygen_two, crate::BondOrder::Single))
+            .add_bond(crate::BondSpec::new(
+                center,
+                oxygen_two,
+                crate::BondOrder::Single,
+            ))
             .unwrap();
         let molecule = builder.build().unwrap();
 
-        let result = molecule.sanitize_with_ops(crate::SanitizeOps::CLEANUP).unwrap();
+        let result = molecule
+            .sanitize_with_ops(crate::SanitizeOps::CLEANUP)
+            .unwrap();
 
         assert_eq!(result.atoms()[center.index()].formal_charge(), 1);
         assert_eq!(result.atoms()[oxygen_one.index()].formal_charge(), -1);
@@ -3344,24 +3571,38 @@ mod tests {
 
     #[test]
     fn sanitized_halogen_cleanup_skips_non_oxo_neighbor_branch_like_rdkit() {
-        let chlorine = crate::Element::from_atomic_number(17).expect("chlorine atomic number is valid");
+        let chlorine =
+            crate::Element::from_atomic_number(17).expect("chlorine atomic number is valid");
         let mut builder = crate::MoleculeBuilder::new();
         let center = builder.add_atom(crate::AtomSpec::new(chlorine));
         let oxygen = builder.add_atom(crate::AtomSpec::new(crate::Element::O));
         let carbon = builder.add_atom(crate::AtomSpec::new(crate::Element::C));
         let double_bond = builder
-            .add_bond(crate::BondSpec::new(center, oxygen, crate::BondOrder::Double))
+            .add_bond(crate::BondSpec::new(
+                center,
+                oxygen,
+                crate::BondOrder::Double,
+            ))
             .unwrap();
         builder
-            .add_bond(crate::BondSpec::new(center, carbon, crate::BondOrder::Single))
+            .add_bond(crate::BondSpec::new(
+                center,
+                carbon,
+                crate::BondOrder::Single,
+            ))
             .unwrap();
         let molecule = builder.build().unwrap();
 
-        let result = molecule.sanitize_with_ops(crate::SanitizeOps::CLEANUP).unwrap();
+        let result = molecule
+            .sanitize_with_ops(crate::SanitizeOps::CLEANUP)
+            .unwrap();
 
         assert_eq!(result.atoms()[center.index()].formal_charge(), 0);
         assert_eq!(result.atoms()[oxygen.index()].formal_charge(), 0);
-        assert_eq!(result.bonds()[double_bond.index()].order(), crate::BondOrder::Double);
+        assert_eq!(
+            result.bonds()[double_bond.index()].order(),
+            crate::BondOrder::Double
+        );
     }
 
     #[test]
@@ -3396,21 +3637,34 @@ mod tests {
         let oxygen = builder.add_atom(crate::AtomSpec::new(crate::Element::O));
         let carbon = builder.add_atom(crate::AtomSpec::new(crate::Element::C));
         let oxygen_bond = builder
-            .add_bond(crate::BondSpec::new(nitrogen, oxygen, crate::BondOrder::Double))
+            .add_bond(crate::BondSpec::new(
+                nitrogen,
+                oxygen,
+                crate::BondOrder::Double,
+            ))
             .unwrap();
         builder
-            .add_bond(crate::BondSpec::new(nitrogen, carbon, crate::BondOrder::Single))
+            .add_bond(crate::BondSpec::new(
+                nitrogen,
+                carbon,
+                crate::BondOrder::Single,
+            ))
             .unwrap();
         let molecule = builder.build().unwrap();
         let read = MoleculeReadParts::from_molecule(&molecule);
         let adjacency = sanitize_adjacency(read).unwrap();
         let mut assignment = SanitizeCleanupAssignment {
-            atom_formal_charges: molecule.atoms().iter().map(crate::Atom::formal_charge).collect(),
+            atom_formal_charges: molecule
+                .atoms()
+                .iter()
+                .map(crate::Atom::formal_charge)
+                .collect(),
             bond_orders: molecule.bonds().iter().map(crate::Bond::order).collect(),
         };
         assignment.bond_orders[oxygen_bond.index()] = crate::BondOrder::Single;
 
-        let valence = sanitize_cleanup_explicit_valence(read, &adjacency, &assignment, nitrogen).unwrap();
+        let valence =
+            sanitize_cleanup_explicit_valence(read, &adjacency, &assignment, nitrogen).unwrap();
 
         assert_eq!(valence, 2);
     }
@@ -3426,7 +3680,11 @@ mod tests {
         let metal = builder.add_atom(crate::AtomSpec::new(iron));
         for neighbor in [carbon_one, carbon_two, carbon_three, metal] {
             builder
-                .add_bond(crate::BondSpec::new(nitrogen, neighbor, crate::BondOrder::Single))
+                .add_bond(crate::BondSpec::new(
+                    nitrogen,
+                    neighbor,
+                    crate::BondOrder::Single,
+                ))
                 .unwrap();
         }
         let molecule = builder.build().unwrap();
@@ -3438,7 +3696,8 @@ mod tests {
             .bonds()
             .iter()
             .find(|bond| {
-                (bond.begin() == nitrogen && bond.end() == metal) || (bond.begin() == metal && bond.end() == nitrogen)
+                (bond.begin() == nitrogen && bond.end() == metal)
+                    || (bond.begin() == metal && bond.end() == nitrogen)
             })
             .unwrap();
 
@@ -3461,7 +3720,11 @@ mod tests {
 
         for neighbor in [donor_c1, donor_c2, donor_c3, metal_busy, metal_open] {
             builder
-                .add_bond(crate::BondSpec::new(donor, neighbor, crate::BondOrder::Single))
+                .add_bond(crate::BondSpec::new(
+                    donor,
+                    neighbor,
+                    crate::BondOrder::Single,
+                ))
                 .unwrap();
         }
 
@@ -3471,11 +3734,19 @@ mod tests {
         let busy_c3 = builder.add_atom(crate::AtomSpec::new(crate::Element::C));
         for neighbor in [busy_c1, busy_c2, busy_c3] {
             builder
-                .add_bond(crate::BondSpec::new(donor_busy, neighbor, crate::BondOrder::Single))
+                .add_bond(crate::BondSpec::new(
+                    donor_busy,
+                    neighbor,
+                    crate::BondOrder::Single,
+                ))
                 .unwrap();
         }
         builder
-            .add_bond(crate::BondSpec::new(donor_busy, metal_busy, crate::BondOrder::Dative))
+            .add_bond(crate::BondSpec::new(
+                donor_busy,
+                metal_busy,
+                crate::BondOrder::Dative,
+            ))
             .unwrap();
 
         let molecule = builder.build().unwrap();
@@ -3511,14 +3782,23 @@ mod tests {
     fn sanitized_organometallic_cleanup_skips_non_hypervalent_donor_like_rdkit() {
         let iron = crate::Element::from_atomic_number(26).expect("iron atomic number is valid");
         let mut builder = crate::MoleculeBuilder::new();
-        let oxygen = builder.add_atom(crate::AtomSpec::new(crate::Element::O).with_no_implicit(true));
+        let oxygen =
+            builder.add_atom(crate::AtomSpec::new(crate::Element::O).with_no_implicit(true));
         let carbon = builder.add_atom(crate::AtomSpec::new(crate::Element::C));
         let metal = builder.add_atom(crate::AtomSpec::new(iron));
         builder
-            .add_bond(crate::BondSpec::new(oxygen, carbon, crate::BondOrder::Single))
+            .add_bond(crate::BondSpec::new(
+                oxygen,
+                carbon,
+                crate::BondOrder::Single,
+            ))
             .unwrap();
         let metal_bond = builder
-            .add_bond(crate::BondSpec::new(oxygen, metal, crate::BondOrder::Single))
+            .add_bond(crate::BondSpec::new(
+                oxygen,
+                metal,
+                crate::BondOrder::Single,
+            ))
             .unwrap();
         let molecule = builder.build().unwrap();
 
@@ -3526,7 +3806,10 @@ mod tests {
             .sanitize_with_ops(crate::SanitizeOps::CLEANUP_ORGANOMETALLICS)
             .unwrap();
 
-        assert_eq!(result.bonds()[metal_bond.index()].order(), crate::BondOrder::Single);
+        assert_eq!(
+            result.bonds()[metal_bond.index()].order(),
+            crate::BondOrder::Single
+        );
     }
 
     #[test]
@@ -3542,7 +3825,11 @@ mod tests {
         let hydrogen = builder.add_atom(crate::AtomSpec::new(crate::Element::H));
         for neighbor in [c1, c2, c3, metal_plain, metal_substituted] {
             builder
-                .add_bond(crate::BondSpec::new(donor, neighbor, crate::BondOrder::Single))
+                .add_bond(crate::BondSpec::new(
+                    donor,
+                    neighbor,
+                    crate::BondOrder::Single,
+                ))
                 .unwrap();
         }
         builder
@@ -3561,16 +3848,30 @@ mod tests {
         let ranks = read.rank_mol_atoms().unwrap();
         let mut assignment = SanitizeOrganometallicCleanupAssignment {
             bond_orders: molecule.bonds().iter().map(crate::Bond::order).collect(),
-            bond_endpoints: molecule.bonds().iter().map(|bond| (bond.begin(), bond.end())).collect(),
+            bond_endpoints: molecule
+                .bonds()
+                .iter()
+                .map(|bond| (bond.begin(), bond.end()))
+                .collect(),
         };
 
-        sanitize_metal_bond_cleanup_assignment(read, &adjacency, &valence, &ranks, donor, &mut assignment).unwrap();
+        sanitize_metal_bond_cleanup_assignment(
+            read,
+            &adjacency,
+            &valence,
+            &ranks,
+            donor,
+            &mut assignment,
+        )
+        .unwrap();
 
         let chosen_metal = assignment
             .bond_endpoints
             .iter()
             .zip(assignment.bond_orders.iter())
-            .find_map(|(&(begin, end), &order)| (order == crate::BondOrder::Dative && begin == donor).then_some(end))
+            .find_map(|(&(begin, end), &order)| {
+                (order == crate::BondOrder::Dative && begin == donor).then_some(end)
+            })
             .unwrap();
         let expected = [metal_plain, metal_substituted]
             .into_iter()
@@ -3585,13 +3886,20 @@ mod tests {
         let iron = crate::Element::from_atomic_number(26).unwrap();
 
         let mut aromatic_builder = crate::MoleculeBuilder::new();
-        let sulfur_atom =
-            aromatic_builder.add_atom(crate::AtomSpec::new(carbon).with_aromatic(true).with_no_implicit(true));
+        let sulfur_atom = aromatic_builder.add_atom(
+            crate::AtomSpec::new(carbon)
+                .with_aromatic(true)
+                .with_no_implicit(true),
+        );
         let mut aromatic_neighbors = Vec::new();
         for _ in 0..4 {
             let carbon = aromatic_builder.add_atom(crate::AtomSpec::new(crate::Element::C));
             aromatic_builder
-                .add_bond(crate::BondSpec::new(sulfur_atom, carbon, crate::BondOrder::Single))
+                .add_bond(crate::BondSpec::new(
+                    sulfur_atom,
+                    carbon,
+                    crate::BondOrder::Single,
+                ))
                 .unwrap();
             aromatic_neighbors.push(carbon);
         }
@@ -3603,14 +3911,24 @@ mod tests {
             .unwrap();
 
         assert!(
-            sanitize_is_hypervalent_nonmetal(aromatic_read, &aromatic_adj, &aromatic_valence, sulfur_atom).unwrap()
+            sanitize_is_hypervalent_nonmetal(
+                aromatic_read,
+                &aromatic_adj,
+                &aromatic_valence,
+                sulfur_atom
+            )
+            .unwrap()
         );
 
         let mut metal_builder = crate::MoleculeBuilder::new();
         let metal_atom = metal_builder.add_atom(crate::AtomSpec::new(iron));
         let ligand = metal_builder.add_atom(crate::AtomSpec::new(crate::Element::C));
         metal_builder
-            .add_bond(crate::BondSpec::new(metal_atom, ligand, crate::BondOrder::Single))
+            .add_bond(crate::BondSpec::new(
+                metal_atom,
+                ligand,
+                crate::BondOrder::Single,
+            ))
             .unwrap();
         let metal_molecule = metal_builder.build().unwrap();
         let metal_read = MoleculeReadParts::from_molecule(&metal_molecule);
@@ -3619,7 +3937,10 @@ mod tests {
             .assign_valence_with_options(crate::ValenceModel::RdkitLike, false)
             .unwrap();
 
-        assert!(!sanitize_is_hypervalent_nonmetal(metal_read, &metal_adj, &metal_valence, metal_atom).unwrap());
+        assert!(
+            !sanitize_is_hypervalent_nonmetal(metal_read, &metal_adj, &metal_valence, metal_atom)
+                .unwrap()
+        );
     }
 
     #[test]
@@ -3631,24 +3952,41 @@ mod tests {
         let metal_rewritten = builder.add_atom(crate::AtomSpec::new(iron));
         let carbon = builder.add_atom(crate::AtomSpec::new(crate::Element::C));
         let keep_bond = builder
-            .add_bond(crate::BondSpec::new(donor, metal_single, crate::BondOrder::Single))
+            .add_bond(crate::BondSpec::new(
+                donor,
+                metal_single,
+                crate::BondOrder::Single,
+            ))
             .unwrap();
         let rewritten_bond = builder
-            .add_bond(crate::BondSpec::new(donor, metal_rewritten, crate::BondOrder::Single))
+            .add_bond(crate::BondSpec::new(
+                donor,
+                metal_rewritten,
+                crate::BondOrder::Single,
+            ))
             .unwrap();
         builder
-            .add_bond(crate::BondSpec::new(donor, carbon, crate::BondOrder::Single))
+            .add_bond(crate::BondSpec::new(
+                donor,
+                carbon,
+                crate::BondOrder::Single,
+            ))
             .unwrap();
         let molecule = builder.build().unwrap();
         let read = MoleculeReadParts::from_molecule(&molecule);
         let adjacency = sanitize_adjacency(read).unwrap();
         let mut assignment = SanitizeOrganometallicCleanupAssignment {
             bond_orders: molecule.bonds().iter().map(crate::Bond::order).collect(),
-            bond_endpoints: molecule.bonds().iter().map(|bond| (bond.begin(), bond.end())).collect(),
+            bond_endpoints: molecule
+                .bonds()
+                .iter()
+                .map(|bond| (bond.begin(), bond.end()))
+                .collect(),
         };
         assignment.bond_orders[rewritten_bond.index()] = crate::BondOrder::Dative;
 
-        let metals = sanitize_organometallic_single_bonded_metals(read, &adjacency, &assignment, donor);
+        let metals =
+            sanitize_organometallic_single_bonded_metals(read, &adjacency, &assignment, donor);
 
         assert_eq!(metals, vec![metal_single]);
         assert_eq!(keep_bond.index(), 0);
@@ -3661,7 +3999,8 @@ mod tests {
         let right = builder.add_atom(crate::AtomSpec::new(crate::Element::C));
         builder
             .add_bond(
-                crate::BondSpec::new(left, right, crate::BondOrder::Single).with_stereo(crate::BondStereo::AtropCw),
+                crate::BondSpec::new(left, right, crate::BondOrder::Single)
+                    .with_stereo(crate::BondStereo::AtropCw),
             )
             .unwrap();
         let molecule = builder.build().unwrap();
@@ -3679,7 +4018,10 @@ mod tests {
         let mut builder = crate::MoleculeBuilder::new();
         let atoms = (0..6)
             .map(|_| {
-                builder.add_atom(crate::AtomSpec::new(crate::Element::C).with_hybridization(crate::Hybridization::Sp2))
+                builder.add_atom(
+                    crate::AtomSpec::new(crate::Element::C)
+                        .with_hybridization(crate::Hybridization::Sp2),
+                )
             })
             .collect::<Vec<_>>();
         let atrop_bond = builder
@@ -3710,7 +4052,10 @@ mod tests {
             .sanitize_with_ops(crate::SanitizeOps::CLEANUP_ATROPISOMERS)
             .unwrap();
 
-        assert_eq!(result.bonds()[atrop_bond.index()].stereo(), crate::BondStereo::None);
+        assert_eq!(
+            result.bonds()[atrop_bond.index()].stereo(),
+            crate::BondStereo::None
+        );
         assert_eq!(result.bonds()[atrop_bond.index()].stereo_atoms(), None);
         assert!(result.stereo_groups().is_empty());
     }
@@ -3718,21 +4063,29 @@ mod tests {
     #[test]
     fn sanitized_cleanup_chirality_clears_non_sp3_tetrahedral_tag_like_rdkit() {
         let mut builder = crate::MoleculeBuilder::new();
-        builder.add_atom(crate::AtomSpec::new(crate::Element::C).with_chiral_tag(crate::ChiralTag::TetrahedralCw));
+        builder.add_atom(
+            crate::AtomSpec::new(crate::Element::C)
+                .with_chiral_tag(crate::ChiralTag::TetrahedralCw),
+        );
         let molecule = builder.build().unwrap();
 
         let result = molecule
             .sanitize_with_ops(crate::SanitizeOps::CLEANUP_CHIRALITY)
             .unwrap();
 
-        assert_eq!(result.atoms()[0].chiral_tag(), crate::ChiralTag::Unspecified);
+        assert_eq!(
+            result.atoms()[0].chiral_tag(),
+            crate::ChiralTag::Unspecified
+        );
     }
 
     #[test]
     fn sanitized_cleanup_chirality_cleans_stereo_groups_for_non_sp3_tetrahedral_tags_like_rdkit() {
         let mut builder = crate::MoleculeBuilder::new();
-        let atom =
-            builder.add_atom(crate::AtomSpec::new(crate::Element::C).with_chiral_tag(crate::ChiralTag::TetrahedralCw));
+        let atom = builder.add_atom(
+            crate::AtomSpec::new(crate::Element::C)
+                .with_chiral_tag(crate::ChiralTag::TetrahedralCw),
+        );
         builder
             .add_stereo_group(crate::StereoGroup::new(
                 crate::StereoGroupKind::Absolute,
@@ -3746,7 +4099,10 @@ mod tests {
             .sanitize_with_ops(crate::SanitizeOps::CLEANUP_CHIRALITY)
             .unwrap();
 
-        assert_eq!(result.atoms()[atom.index()].chiral_tag(), crate::ChiralTag::Unspecified);
+        assert_eq!(
+            result.atoms()[atom.index()].chiral_tag(),
+            crate::ChiralTag::Unspecified
+        );
         assert!(result.stereo_groups().is_empty());
     }
 
@@ -3765,7 +4121,10 @@ mod tests {
             .sanitize_with_ops(crate::SanitizeOps::CLEANUP_CHIRALITY)
             .unwrap();
 
-        assert_eq!(result.atoms()[0].chiral_tag(), crate::ChiralTag::Tetrahedral);
+        assert_eq!(
+            result.atoms()[0].chiral_tag(),
+            crate::ChiralTag::Tetrahedral
+        );
         assert_eq!(result.atoms()[0].chiral_permutation(), Some(0));
     }
 
@@ -3784,7 +4143,11 @@ mod tests {
             .add_bond(crate::BondSpec::new(center, left, crate::BondOrder::Single))
             .unwrap();
         builder
-            .add_bond(crate::BondSpec::new(center, right, crate::BondOrder::Single))
+            .add_bond(crate::BondSpec::new(
+                center,
+                right,
+                crate::BondOrder::Single,
+            ))
             .unwrap();
         let molecule = builder.build().unwrap();
 
@@ -3811,7 +4174,11 @@ mod tests {
         );
         let neighbor = builder.add_atom(crate::AtomSpec::new(crate::Element::C));
         builder
-            .add_bond(crate::BondSpec::new(center, neighbor, crate::BondOrder::Single))
+            .add_bond(crate::BondSpec::new(
+                center,
+                neighbor,
+                crate::BondOrder::Single,
+            ))
             .unwrap();
         builder
             .add_stereo_group(crate::StereoGroup::new(
@@ -3849,7 +4216,9 @@ mod tests {
     fn sanitized_set_conjugation_keeps_aromatic_bonds_conjugated_like_rdkit() {
         let molecule = crate::Molecule::from_smiles_with_sanitize("c1ccccc1", false).unwrap();
 
-        let result = molecule.sanitize_with_ops(crate::SanitizeOps::SET_CONJUGATION).unwrap();
+        let result = molecule
+            .sanitize_with_ops(crate::SanitizeOps::SET_CONJUGATION)
+            .unwrap();
 
         assert!(result.bonds().iter().all(crate::Bond::is_conjugated));
     }
@@ -3886,18 +4255,26 @@ mod tests {
     #[test]
     fn sanitized_set_hybridization_uses_chiral_tag_coordination_override() {
         let mut builder = crate::MoleculeBuilder::new();
-        let center =
-            builder.add_atom(crate::AtomSpec::new(crate::Element::C).with_chiral_tag(crate::ChiralTag::TetrahedralCw));
+        let center = builder.add_atom(
+            crate::AtomSpec::new(crate::Element::C)
+                .with_chiral_tag(crate::ChiralTag::TetrahedralCw),
+        );
         for _ in 0..4 {
             let neighbor = builder.add_atom(crate::AtomSpec::new(crate::Element::C));
             builder
-                .add_bond(crate::BondSpec::new(center, neighbor, crate::BondOrder::Single))
+                .add_bond(crate::BondSpec::new(
+                    center,
+                    neighbor,
+                    crate::BondOrder::Single,
+                ))
                 .unwrap();
         }
         let molecule = builder.build().unwrap();
 
         let result = molecule
-            .sanitize_with_ops(crate::SanitizeOps::PROPERTIES | crate::SanitizeOps::SET_HYBRIDIZATION)
+            .sanitize_with_ops(
+                crate::SanitizeOps::PROPERTIES | crate::SanitizeOps::SET_HYBRIDIZATION,
+            )
             .unwrap();
 
         assert_eq!(
@@ -3910,19 +4287,30 @@ mod tests {
     fn sanitized_set_hybridization_excludes_dative_bonds_from_num_bonds_plus_lone_pairs() {
         let iron = crate::Element::from_atomic_number(26).unwrap();
         let mut builder = crate::MoleculeBuilder::new();
-        let nitrogen = builder.add_atom(crate::AtomSpec::new(crate::Element::N).with_no_implicit(true));
+        let nitrogen =
+            builder.add_atom(crate::AtomSpec::new(crate::Element::N).with_no_implicit(true));
         let carbon = builder.add_atom(crate::AtomSpec::new(crate::Element::C));
         let metal = builder.add_atom(crate::AtomSpec::new(iron));
         builder
-            .add_bond(crate::BondSpec::new(nitrogen, carbon, crate::BondOrder::Single))
+            .add_bond(crate::BondSpec::new(
+                nitrogen,
+                carbon,
+                crate::BondOrder::Single,
+            ))
             .unwrap();
         builder
-            .add_bond(crate::BondSpec::new(nitrogen, metal, crate::BondOrder::Dative))
+            .add_bond(crate::BondSpec::new(
+                nitrogen,
+                metal,
+                crate::BondOrder::Dative,
+            ))
             .unwrap();
         let molecule = builder.build().unwrap();
 
         let result = molecule
-            .sanitize_with_ops(crate::SanitizeOps::PROPERTIES | crate::SanitizeOps::SET_HYBRIDIZATION)
+            .sanitize_with_ops(
+                crate::SanitizeOps::PROPERTIES | crate::SanitizeOps::SET_HYBRIDIZATION,
+            )
             .unwrap();
 
         assert_eq!(
@@ -3934,11 +4322,16 @@ mod tests {
     #[test]
     fn sanitized_set_hybridization_excludes_zero_bonds_from_num_bonds_plus_lone_pairs() {
         let mut builder = crate::MoleculeBuilder::new();
-        let oxygen = builder.add_atom(crate::AtomSpec::new(crate::Element::O).with_no_implicit(true));
+        let oxygen =
+            builder.add_atom(crate::AtomSpec::new(crate::Element::O).with_no_implicit(true));
         let carbon = builder.add_atom(crate::AtomSpec::new(crate::Element::C));
         let dummy = builder.add_atom(crate::AtomSpec::new(crate::Element::DUMMY));
         builder
-            .add_bond(crate::BondSpec::new(oxygen, carbon, crate::BondOrder::Single))
+            .add_bond(crate::BondSpec::new(
+                oxygen,
+                carbon,
+                crate::BondOrder::Single,
+            ))
             .unwrap();
         builder
             .add_bond(crate::BondSpec::new(oxygen, dummy, crate::BondOrder::Zero))
@@ -3946,7 +4339,9 @@ mod tests {
         let molecule = builder.build().unwrap();
 
         let result = molecule
-            .sanitize_with_ops(crate::SanitizeOps::PROPERTIES | crate::SanitizeOps::SET_HYBRIDIZATION)
+            .sanitize_with_ops(
+                crate::SanitizeOps::PROPERTIES | crate::SanitizeOps::SET_HYBRIDIZATION,
+            )
             .unwrap();
 
         assert_eq!(
@@ -3978,16 +4373,25 @@ mod tests {
         for _ in 0..2 {
             let neighbor = builder.add_atom(crate::AtomSpec::new(crate::Element::C));
             builder
-                .add_bond(crate::BondSpec::new(center, neighbor, crate::BondOrder::Single))
+                .add_bond(crate::BondSpec::new(
+                    center,
+                    neighbor,
+                    crate::BondOrder::Single,
+                ))
                 .unwrap();
         }
         let molecule = builder.build().unwrap();
 
         let result = molecule
-            .sanitize_with_ops(crate::SanitizeOps::PROPERTIES | crate::SanitizeOps::SET_HYBRIDIZATION)
+            .sanitize_with_ops(
+                crate::SanitizeOps::PROPERTIES | crate::SanitizeOps::SET_HYBRIDIZATION,
+            )
             .unwrap();
 
-        assert_eq!(result.atoms()[center.index()].hybridization(), crate::Hybridization::Sp);
+        assert_eq!(
+            result.atoms()[center.index()].hybridization(),
+            crate::Hybridization::Sp
+        );
     }
 
     #[test]
@@ -4000,10 +4404,14 @@ mod tests {
         );
         let molecule = builder.build().unwrap();
 
-        let result = molecule.sanitize_with_ops(crate::SanitizeOps::FIND_RADICALS).unwrap();
+        let result = molecule
+            .sanitize_with_ops(crate::SanitizeOps::FIND_RADICALS)
+            .unwrap();
 
         assert_eq!(result.atoms()[0].radical_electrons(), 1);
-        let expected = crate::assign_valence_with_options(&result, crate::ValenceModel::RdkitLike, false).unwrap();
+        let expected =
+            crate::assign_valence_with_options(&result, crate::ValenceModel::RdkitLike, false)
+                .unwrap();
         assert_eq!(result.derived_cache().valence, Some(expected));
     }
 
@@ -4037,13 +4445,19 @@ mod tests {
         assert!(result.atoms()[0].is_aromatic());
         assert_eq!(result.atoms()[0].explicit_hydrogens(), 1);
         assert_eq!(
-            result.derived_cache().valence.as_ref().unwrap().implicit_hydrogens[0],
+            result
+                .derived_cache()
+                .valence
+                .as_ref()
+                .unwrap()
+                .implicit_hydrogens[0],
             0
         );
     }
 
     #[test]
-    fn sanitize_adjust_hydrogens_assignment_preserves_existing_explicit_hydrogen_when_delta_is_zero() {
+    fn sanitize_adjust_hydrogens_assignment_preserves_existing_explicit_hydrogen_when_delta_is_zero()
+     {
         let mut builder = crate::MoleculeBuilder::new();
         builder.add_atom(
             crate::AtomSpec::new(crate::Element::N)
@@ -4060,7 +4474,8 @@ mod tests {
     }
 
     #[test]
-    fn sanitize_adjust_hydrogens_assignment_leaves_stable_explicit_hydrogens_unchanged_like_rdkit() {
+    fn sanitize_adjust_hydrogens_assignment_leaves_stable_explicit_hydrogens_unchanged_like_rdkit()
+    {
         let molecule = crate::Molecule::from_smiles_with_sanitize("CCO", false).unwrap();
 
         let result = molecule
@@ -4090,7 +4505,9 @@ mod tests {
         let result = molecule
             .sanitize_with_ops(crate::SanitizeOps::ADJUST_HYDROGENS)
             .unwrap();
-        let expected = crate::assign_valence_with_options(&result, crate::ValenceModel::RdkitLike, false).unwrap();
+        let expected =
+            crate::assign_valence_with_options(&result, crate::ValenceModel::RdkitLike, false)
+                .unwrap();
 
         assert_eq!(result.derived_cache().valence, Some(expected));
         assert!(!crate::valence::needs_update_property_cache(
@@ -4118,7 +4535,10 @@ mod tests {
         assert_eq!(result.bonds(), original.bonds());
         assert_eq!(result.coordinates_2d(), original.coordinates_2d());
         assert_eq!(result.conformers_3d(), original.conformers_3d());
-        assert_eq!(result.source_coordinate_dim(), original.source_coordinate_dim());
+        assert_eq!(
+            result.source_coordinate_dim(),
+            original.source_coordinate_dim()
+        );
         assert_eq!(result.properties(), original.properties());
         assert_eq!(
             result.derived_cache().valence,
@@ -4144,7 +4564,9 @@ mod tests {
 
     #[cfg(feature = "op-contracts")]
     #[test]
-    #[should_panic(expected = "operation read capability does not permit access to the coordinates block")]
+    #[should_panic(
+        expected = "operation read capability does not permit access to the coordinates block"
+    )]
     fn topology_read_capability_does_not_expose_coordinates() {
         let molecule = crate::Molecule::new();
         let parts = OpParts::new(&molecule, &ASSIGNED_VALENCE_SPEC).unwrap();
@@ -4188,7 +4610,10 @@ mod tests {
         });
         parts.mark_aromaticity_valid();
         parts.clear_cache(
-            DerivedState::RING_FAMILIES | DerivedState::STEREO | DerivedState::DRAWING | DerivedState::FINGERPRINT,
+            DerivedState::RING_FAMILIES
+                | DerivedState::STEREO
+                | DerivedState::DRAWING
+                | DerivedState::FINGERPRINT,
         );
         let result = parts
             .finish()
@@ -4219,7 +4644,9 @@ mod tests {
     fn committed_write_cannot_bypass_cache_obligations() {
         let molecule = crate::Molecule::new();
         let mut parts = OpParts::new(&molecule, &WITH_2D_COORDINATES_SPEC).unwrap();
-        parts.with_coordinates_mut(|_parts, _coordinates| Ok(())).unwrap();
+        parts
+            .with_coordinates_mut(|_parts, _coordinates| Ok(()))
+            .unwrap();
 
         let error = parts
             .finish()
@@ -4266,7 +4693,9 @@ mod tests {
         parts.commit_topology(topology).unwrap();
         parts.commit_coordinates(coordinates).unwrap();
         parts.commit_properties(properties).unwrap();
-        parts.record_topology_edit(TopologyEditKind::Appending).unwrap();
+        parts
+            .record_topology_edit(TopologyEditKind::Appending)
+            .unwrap();
         parts.record_topology_mapping(TopologyMapping::with_appended(0, 0, 0, 0));
         parts.clear_cache(WITH_HYDROGENS_SPEC.needs_update());
 
@@ -4302,7 +4731,9 @@ mod tests {
         parts.commit_topology(topology).unwrap();
         parts.commit_coordinates(coordinates).unwrap();
         parts.commit_properties(properties).unwrap();
-        parts.record_topology_edit(TopologyEditKind::Appending).unwrap();
+        parts
+            .record_topology_edit(TopologyEditKind::Appending)
+            .unwrap();
         parts.record_topology_mapping(TopologyMapping::with_appended(1, 0, 1, 0));
 
         let err = parts
@@ -4450,7 +4881,11 @@ mod tests {
             .with_sdf_property_list(crate::SdfPropertyList::new(
                 crate::SdfPropertyListTarget::Atom,
                 "atom_tag",
-                vec![Some("c0".to_string()), Some("o1".to_string()), Some("n2".to_string())],
+                vec![
+                    Some("c0".to_string()),
+                    Some("o1".to_string()),
+                    Some("n2".to_string()),
+                ],
             ))
             .with_sdf_property_list(crate::SdfPropertyList::new(
                 crate::SdfPropertyListTarget::Bond,
@@ -4468,11 +4903,17 @@ mod tests {
         let mapping = topology.remove_atoms_with_mapping(&[o1]);
         coordinates.remap_topology(&mapping.retained_atom_indices());
         properties.remap_topology(&mapping.atoms.new_to_old, &mapping.bonds.new_to_old);
-        parts.record_topology_edit(TopologyEditKind::Compacting).unwrap();
+        parts
+            .record_topology_edit(TopologyEditKind::Compacting)
+            .unwrap();
         parts.record_topology_mapping(mapping.clone());
         assert_eq!(
             mapping.atoms().old_to_new(),
-            &[Some(crate::AtomId::new(0)), None, Some(crate::AtomId::new(1))]
+            &[
+                Some(crate::AtomId::new(0)),
+                None,
+                Some(crate::AtomId::new(1))
+            ]
         );
         assert_eq!(mapping.bonds().old_to_new(), &[None, None]);
         parts.clear_cache(WITHOUT_HYDROGENS_SPEC.needs_update());
@@ -4503,15 +4944,21 @@ mod tests {
         let n2 = builder.add_atom(crate::AtomSpec::new(crate::Element::N));
         builder
             .add_substance_group(
-                crate::SubstanceGroup::new(crate::SubstanceGroupId::new(0), crate::SubstanceGroupKind::Superatom)
-                    .with_atoms(vec![c0]),
+                crate::SubstanceGroup::new(
+                    crate::SubstanceGroupId::new(0),
+                    crate::SubstanceGroupKind::Superatom,
+                )
+                .with_atoms(vec![c0]),
             )
             .unwrap();
         builder
             .add_substance_group(
-                crate::SubstanceGroup::new(crate::SubstanceGroupId::new(1), crate::SubstanceGroupKind::Data)
-                    .with_atoms(vec![o1])
-                    .with_parent(crate::SubstanceGroupId::new(0)),
+                crate::SubstanceGroup::new(
+                    crate::SubstanceGroupId::new(1),
+                    crate::SubstanceGroupKind::Data,
+                )
+                .with_atoms(vec![o1])
+                .with_parent(crate::SubstanceGroupId::new(0)),
             )
             .unwrap();
         let molecule = builder.build().unwrap();
@@ -4523,7 +4970,9 @@ mod tests {
         let mapping = topology.remove_atoms_with_mapping(&[n2]);
         coordinates.remap_topology(&mapping.retained_atom_indices());
         properties.remap_topology(&mapping.atoms.new_to_old, &mapping.bonds.new_to_old);
-        parts.record_topology_edit(TopologyEditKind::Compacting).unwrap();
+        parts
+            .record_topology_edit(TopologyEditKind::Compacting)
+            .unwrap();
         parts.record_topology_mapping(mapping);
         parts.clear_cache(WITHOUT_HYDROGENS_SPEC.needs_update());
         parts.commit_topology(topology).unwrap();
@@ -4535,8 +4984,14 @@ mod tests {
             .expect("strong compacting edit should preserve surviving SGroup parent links");
 
         assert_eq!(result.substance_groups().len(), 2);
-        assert_eq!(result.substance_groups()[0].atoms(), &[crate::AtomId::new(0)]);
-        assert_eq!(result.substance_groups()[1].atoms(), &[crate::AtomId::new(1)]);
+        assert_eq!(
+            result.substance_groups()[0].atoms(),
+            &[crate::AtomId::new(0)]
+        );
+        assert_eq!(
+            result.substance_groups()[1].atoms(),
+            &[crate::AtomId::new(1)]
+        );
         assert_eq!(
             result.substance_groups()[1].parent(),
             Some(crate::SubstanceGroupId::new(0))
@@ -4572,7 +5027,10 @@ mod tests {
             result.properties().sdf_property_lists()[0].values(),
             &[Some("c0".to_string()), None]
         );
-        assert_eq!(result.properties().sdf_property_lists()[1].values(), &[None]);
+        assert_eq!(
+            result.properties().sdf_property_lists()[1].values(),
+            &[None]
+        );
         assert_eq!(result.atoms()[carbon.index()].explicit_hydrogens(), 0);
     }
 
@@ -4592,7 +5050,11 @@ mod tests {
         let molecule = crate::Molecule::from_smiles("C1=CC=CC=C1").unwrap();
 
         let kekulized = molecule.with_kekulized_bonds(false).unwrap();
-        let bond_orders = kekulized.bonds().iter().map(|bond| bond.order()).collect::<Vec<_>>();
+        let bond_orders = kekulized
+            .bonds()
+            .iter()
+            .map(|bond| bond.order())
+            .collect::<Vec<_>>();
 
         assert_eq!(
             bond_orders,

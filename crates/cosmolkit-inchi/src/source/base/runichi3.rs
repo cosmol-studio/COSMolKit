@@ -3,28 +3,32 @@ use crate::source::base::ichinorm::MarkRingSystemsInp;
 use crate::source::base::ichisort::iisort;
 use crate::source::base::ichister::ReconcileAllCmlBondParities;
 use crate::source::base::strutil::{
-    CompAtomData_GetNumMapping, DisconnectMetals, DisconnectSalts, MarkDisconnectedComponents, bMayDisconnectMetals,
-    bNumHeterAtomHasIsotopicH, fix_odd_things, imat_free, imat_new, post_fix_odd_things, remove_ion_pairs,
-    subgraf_free, subgraf_new, subgraf_pathfinder_collect_all, subgraf_pathfinder_free, subgraf_pathfinder_new,
+    CompAtomData_GetNumMapping, DisconnectMetals, DisconnectSalts, MarkDisconnectedComponents,
+    bMayDisconnectMetals, bNumHeterAtomHasIsotopicH, fix_odd_things, imat_free, imat_new,
+    post_fix_odd_things, remove_ion_pairs, subgraf_free, subgraf_new,
+    subgraf_pathfinder_collect_all, subgraf_pathfinder_free, subgraf_pathfinder_new,
     subgraf_pathfinder_run,
 };
 use crate::source::base::util::{
-    detect_unusual_el_valence, inchi_calloc, inchi_free, is_el_a_metal, is_ilist_inside, is_in_the_ilist,
-    mystrncpy_slice,
+    detect_unusual_el_valence, inchi_calloc, inchi_free, is_el_a_metal, is_ilist_inside,
+    is_in_the_ilist, mystrncpy_slice,
 };
 use crate::source_types::{
     _IS_ERROR, _IS_FATAL, _IS_OKAY, _IS_WARNING, AT_NUMB, BOND_TAUTOM, CLOSING_SRU_DIRADICAL,
-    CLOSING_SRU_HIGHER_ORDER_BOND, CLOSING_SRU_NOT_APPLICABLE, CLOSING_SRU_RING, COMP_ATOM_DATA, INCHI_BAS,
-    INCHI_CLOCK, INCHI_MODE, INCHI_REC, INPUT_PARMS, MAX_NUM_STEREO_BONDS, MAXVAL, MOL_COORD, NO_POLYMER, OAD_AtProps,
-    OAD_Polymer, OAD_PolymerUnit, OAD_V3000, ORIG_ATOM_DATA, POLYMER_CONN_EU, POLYMER_CONN_HT, POLYMER_CONN_NON,
-    POLYMER_REPRESENTATION_MIXED, POLYMER_REPRESENTATION_SOURCE_BASED, POLYMER_REPRESENTATION_STRUCTURE_BASED,
-    POLYMER_REPRESENTATION_UNRECOGNIZED, POLYMER_SST_ALT, POLYMER_SST_BLK, POLYMER_SST_NON, POLYMER_SST_RAN,
-    POLYMER_STY_COP, POLYMER_STY_CRO, POLYMER_STY_MER, POLYMER_STY_MOD, POLYMER_STY_MON, POLYMER_STY_SRU, POLYMERS_NO,
-    RADICAL_DOUBLET, RADICAL_SINGLET, RADICAL_TRIPLET, SB_PARITY_FLAG, SB_PARITY_MASK, SB_PARITY_SHFT, STRUCT_DATA,
+    CLOSING_SRU_HIGHER_ORDER_BOND, CLOSING_SRU_NOT_APPLICABLE, CLOSING_SRU_RING, COMP_ATOM_DATA,
+    INCHI_BAS, INCHI_CLOCK, INCHI_MODE, INCHI_REC, INPUT_PARMS, MAX_NUM_STEREO_BONDS, MAXVAL,
+    MOL_COORD, NO_POLYMER, OAD_AtProps, OAD_Polymer, OAD_PolymerUnit, OAD_V3000, ORIG_ATOM_DATA,
+    POLYMER_CONN_EU, POLYMER_CONN_HT, POLYMER_CONN_NON, POLYMER_REPRESENTATION_MIXED,
+    POLYMER_REPRESENTATION_SOURCE_BASED, POLYMER_REPRESENTATION_STRUCTURE_BASED,
+    POLYMER_REPRESENTATION_UNRECOGNIZED, POLYMER_SST_ALT, POLYMER_SST_BLK, POLYMER_SST_NON,
+    POLYMER_SST_RAN, POLYMER_STY_COP, POLYMER_STY_CRO, POLYMER_STY_MER, POLYMER_STY_MOD,
+    POLYMER_STY_MON, POLYMER_STY_SRU, POLYMERS_NO, RADICAL_DOUBLET, RADICAL_SINGLET,
+    RADICAL_TRIPLET, SB_PARITY_FLAG, SB_PARITY_MASK, SB_PARITY_SHFT, STRUCT_DATA,
     SourceConstPointer, SourceHeap, SourceHeapError, SourceMutPointer, TG_FLAG_CHECK_VALENCE_COORD,
-    TG_FLAG_DISCONNECT_COORD, TG_FLAG_DISCONNECT_COORD_DONE, TG_FLAG_DISCONNECT_SALTS, TG_FLAG_DISCONNECT_SALTS_DONE,
-    TG_FLAG_FIX_ODD_THINGS_DONE, TG_FLAG_FIX_SP3_BUG, TG_FLAG_FOUND_ISOTOPIC_ATOM_DONE, TG_FLAG_FOUND_ISOTOPIC_H_DONE,
-    TG_FLAG_RECONNECT_COORD, inp_ATOM, tagFrameShifScheme_FSS_NONE, tagINCHIBondType_INCHI_BOND_TYPE_DOUBLE,
+    TG_FLAG_DISCONNECT_COORD, TG_FLAG_DISCONNECT_COORD_DONE, TG_FLAG_DISCONNECT_SALTS,
+    TG_FLAG_DISCONNECT_SALTS_DONE, TG_FLAG_FIX_ODD_THINGS_DONE, TG_FLAG_FIX_SP3_BUG,
+    TG_FLAG_FOUND_ISOTOPIC_ATOM_DONE, TG_FLAG_FOUND_ISOTOPIC_H_DONE, TG_FLAG_RECONNECT_COORD,
+    inp_ATOM, tagFrameShifScheme_FSS_NONE, tagINCHIBondType_INCHI_BOND_TYPE_DOUBLE,
     tagINCHIBondType_INCHI_BOND_TYPE_SINGLE, tagINCHIBondType_INCHI_BOND_TYPE_TRIPLE,
 };
 
@@ -199,21 +203,28 @@ const SOURCE_SIZEOF_INP_ATOM: u64 = 176;
 const SOURCE_SIZEOF_OAD_POLYMER: u64 = 48;
 const SOURCE_SIZEOF_OAD_V3000: u64 = 104;
 
-fn add_preprocess_message(structure_data: &mut STRUCT_DATA, message: &[u8]) -> Result<(), SourceHeapError> {
+fn add_preprocess_message(
+    structure_data: &mut STRUCT_DATA,
+    message: &[u8],
+) -> Result<(), SourceHeapError> {
     let mut c_message = message.iter().map(|byte| *byte as i8).collect::<Vec<_>>();
     c_message.push(0);
     AddErrorMessage(Some(&mut structure_data.pStrErrStruct), Some(&c_message))?;
     Ok(())
 }
 
-fn mask_connected_parities(heap: &mut SourceHeap, data: &ORIG_ATOM_DATA) -> Result<(), SourceHeapError> {
+fn mask_connected_parities(
+    heap: &mut SourceHeap,
+    data: &ORIG_ATOM_DATA,
+) -> Result<(), SourceHeapError> {
     if data.at.is_null() {
         if data.num_inp_atoms <= 0 {
             return Ok(());
         }
         return Err(SourceHeapError::MissingAllocation);
     }
-    let atom_count = usize::try_from(data.num_inp_atoms).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let atom_count =
+        usize::try_from(data.num_inp_atoms).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let atoms = heap
         .slice_mut(data.at)?
         .get_mut(..atom_count)
@@ -231,8 +242,12 @@ fn mask_connected_parities(heap: &mut SourceHeap, data: &ORIG_ATOM_DATA) -> Resu
     Ok(())
 }
 
-fn restore_disconnected_parities(heap: &mut SourceHeap, data: &ORIG_ATOM_DATA) -> Result<(), SourceHeapError> {
-    let atom_count = usize::try_from(data.num_inp_atoms).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+fn restore_disconnected_parities(
+    heap: &mut SourceHeap,
+    data: &ORIG_ATOM_DATA,
+) -> Result<(), SourceHeapError> {
+    let atom_count =
+        usize::try_from(data.num_inp_atoms).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let atoms = heap
         .slice_mut(data.at)?
         .get_mut(..atom_count)
@@ -667,14 +682,22 @@ pub(crate) fn PreprocessOneStructure(
         }
 
         if input_parameters.bTautFlags & TG_FLAG_DISCONNECT_SALTS as INCHI_MODE != 0 {
-            prepared[0].bDisconnectSalts = i32::from(DisconnectSalts(heap, &mut prepared[0], 0)? > 0);
+            prepared[0].bDisconnectSalts =
+                i32::from(DisconnectSalts(heap, &mut prepared[0], 0)? > 0);
         } else {
             prepared[0].bDisconnectSalts = 0;
         }
 
         if input_parameters.bTautFlags & TG_FLAG_DISCONNECT_COORD as INCHI_MODE != 0 {
-            let check_valence = i32::from(input_parameters.bTautFlags & TG_FLAG_CHECK_VALENCE_COORD as INCHI_MODE != 0);
-            let _ = bMayDisconnectMetals(heap, &mut prepared[0], check_valence, Some(&mut taut_flags_done))?;
+            let check_valence = i32::from(
+                input_parameters.bTautFlags & TG_FLAG_CHECK_VALENCE_COORD as INCHI_MODE != 0,
+            );
+            let _ = bMayDisconnectMetals(
+                heap,
+                &mut prepared[0],
+                check_valence,
+                Some(&mut taut_flags_done),
+            )?;
             structure_data.bTautFlagsDone[base] |= taut_flags_done;
         } else {
             prepared[0].bDisconnectCoord = 0;
@@ -682,7 +705,8 @@ pub(crate) fn PreprocessOneStructure(
         original.bDisconnectSalts = prepared[0].bDisconnectSalts;
         original.bDisconnectCoord = prepared[0].bDisconnectCoord;
 
-        let salt_changes = if input_parameters.bTautFlags & TG_FLAG_DISCONNECT_SALTS as INCHI_MODE != 0
+        let salt_changes = if input_parameters.bTautFlags & TG_FLAG_DISCONNECT_SALTS as INCHI_MODE
+            != 0
             && prepared[0].bDisconnectSalts != 0
         {
             DisconnectSalts(heap, &mut prepared[0], 1)?
@@ -697,7 +721,8 @@ pub(crate) fn PreprocessOneStructure(
             if structure_data.nErrorType < _IS_WARNING as i32 {
                 structure_data.nErrorType = _IS_WARNING as i32;
             }
-            let parity_status = ReconcileAllCmlBondParities(heap, prepared[0].at, prepared[0].num_inp_atoms, 0)?;
+            let parity_status =
+                ReconcileAllCmlBondParities(heap, prepared[0].at, prepared[0].num_inp_atoms, 0)?;
             if parity_status != 0 {
                 add_preprocess_message(structure_data, b"0D Parities Reconciliation failed:")?;
                 add_preprocess_message(structure_data, parity_status.to_string().as_bytes())?;
@@ -749,7 +774,9 @@ pub(crate) fn PreprocessOneStructure(
 
             if input_parameters.bTautFlags & TG_FLAG_RECONNECT_COORD as INCHI_MODE != 0 {
                 let (base_data, saved_data) = prepared.split_at_mut(1);
-                let saved = saved_data.first_mut().ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let saved = saved_data
+                    .first_mut()
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
                 if OrigAtData_Duplicate(heap, saved, &base_data[0])? < 0 {
                     add_preprocess_message(structure_data, b"Out of RAM")?;
                     structure_data.nStructReadError = 99;
@@ -761,8 +788,15 @@ pub(crate) fn PreprocessOneStructure(
                 mask_connected_parities(heap, saved)?;
             }
 
-            let check_valence = i32::from(input_parameters.bTautFlags & TG_FLAG_CHECK_VALENCE_COORD as INCHI_MODE != 0);
-            let metal_changes = DisconnectMetals(heap, &mut prepared[0], check_valence, Some(&mut taut_flags_done))?;
+            let check_valence = i32::from(
+                input_parameters.bTautFlags & TG_FLAG_CHECK_VALENCE_COORD as INCHI_MODE != 0,
+            );
+            let metal_changes = DisconnectMetals(
+                heap,
+                &mut prepared[0],
+                check_valence,
+                Some(&mut taut_flags_done),
+            )?;
             if metal_changes > 0 {
                 if input_parameters.bNoWarnings == 0 {
                     add_preprocess_message(structure_data, b"Metal was disconnected")?;
@@ -781,7 +815,12 @@ pub(crate) fn PreprocessOneStructure(
                 }
 
                 restore_disconnected_parities(heap, &prepared[0])?;
-                let parity_status = ReconcileAllCmlBondParities(heap, prepared[0].at, prepared[0].num_inp_atoms, 1)?;
+                let parity_status = ReconcileAllCmlBondParities(
+                    heap,
+                    prepared[0].at,
+                    prepared[0].num_inp_atoms,
+                    1,
+                )?;
                 if parity_status != 0 {
                     add_preprocess_message(structure_data, b"0D Parities Reconciliation failed:")?;
                     add_preprocess_message(structure_data, parity_status.to_string().as_bytes())?;
@@ -799,8 +838,10 @@ pub(crate) fn PreprocessOneStructure(
                     if structure_data.nErrorType < _IS_WARNING as i32 {
                         structure_data.nErrorType = _IS_WARNING as i32;
                     }
-                    structure_data.bTautFlagsDone[reconnected] |= TG_FLAG_FIX_ODD_THINGS_DONE as INCHI_MODE;
-                    structure_data.bTautFlagsDone[base] |= TG_FLAG_FIX_ODD_THINGS_DONE as INCHI_MODE;
+                    structure_data.bTautFlagsDone[reconnected] |=
+                        TG_FLAG_FIX_ODD_THINGS_DONE as INCHI_MODE;
+                    structure_data.bTautFlagsDone[base] |=
+                        TG_FLAG_FIX_ODD_THINGS_DONE as INCHI_MODE;
                 }
             } else if metal_changes < 0 {
                 add_preprocess_message(structure_data, b"Cannot disconnect metal error")?;
@@ -919,14 +960,19 @@ pub(crate) fn OrigAtData_bCheckUnusualValences(
     }
     let atoms = heap
         .slice(original.at.as_const())?
-        .get(..usize::try_from(original.num_inp_atoms).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
+        .get(
+            ..usize::try_from(original.num_inp_atoms)
+                .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+        )
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
     let mut found = 0_i32;
     for atom in atoms {
         let hydrogen_count = if add_isotopic_hydrogen != 0 {
             atom.num_iso_H
                 .iter()
-                .fold(i32::from(atom.num_H), |sum, count| sum.wrapping_add(i32::from(*count)))
+                .fold(i32::from(atom.num_H), |sum, count| {
+                    sum.wrapping_add(i32::from(*count))
+                })
         } else {
             i32::from(atom.num_H)
         };
@@ -1329,7 +1375,9 @@ pub(crate) fn OrigAtData_Duplicate(
             };
         }
 
-        if !destination.nOldCompNumber.is_null() && destination.num_components >= original_component_count {
+        if !destination.nOldCompNumber.is_null()
+            && destination.num_components >= original_component_count
+        {
             current_lengths = destination.nCurAtLen;
         } else {
             let count = match i64::from(original_component_count)
@@ -1346,7 +1394,9 @@ pub(crate) fn OrigAtData_Duplicate(
             };
         }
 
-        if !destination.nCurAtLen.is_null() && destination.num_components >= original_component_count {
+        if !destination.nCurAtLen.is_null()
+            && destination.num_components >= original_component_count
+        {
             old_component_numbers = destination.nOldCompNumber;
         } else {
             let count = match i64::from(original_component_count)
@@ -1367,9 +1417,10 @@ pub(crate) fn OrigAtData_Duplicate(
             break 'duplicate;
         }
 
-        let atom_count = usize::try_from(original_atom_count).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-        let component_count =
-            usize::try_from(original_component_count).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+        let atom_count = usize::try_from(original_atom_count)
+            .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+        let component_count = usize::try_from(original_component_count)
+            .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
         if !source.at.is_null() {
             let values = heap
                 .slice(source.at.as_const())?
@@ -1410,7 +1461,9 @@ pub(crate) fn OrigAtData_Duplicate(
         if !destination.nCurAtLen.is_null() && destination.nCurAtLen != current_lengths {
             inchi_free(heap, destination.nCurAtLen)?;
         }
-        if !destination.nOldCompNumber.is_null() && destination.nOldCompNumber != old_component_numbers {
+        if !destination.nOldCompNumber.is_null()
+            && destination.nOldCompNumber != old_component_numbers
+        {
             inchi_free(heap, destination.nOldCompNumber)?;
         }
 
@@ -1455,7 +1508,8 @@ pub(crate) fn OrigAtData_Duplicate(
                 .first()
                 .ok_or(SourceHeapError::PointerOutOfBounds)?
                 .clone();
-            let new_polymer = match inchi_calloc::<OAD_Polymer>(heap, 1, SOURCE_SIZEOF_OAD_POLYMER) {
+            let new_polymer = match inchi_calloc::<OAD_Polymer>(heap, 1, SOURCE_SIZEOF_OAD_POLYMER)
+            {
                 Ok(pointer) => pointer,
                 Err(SourceHeapError::AllocationFailed) => break 'duplicate,
                 Err(error) => return Err(error),
@@ -1468,7 +1522,8 @@ pub(crate) fn OrigAtData_Duplicate(
                     break 'duplicate;
                 }
             };
-            let units = match inchi_calloc::<SourceMutPointer<OAD_PolymerUnit>>(heap, unit_count, 8) {
+            let units = match inchi_calloc::<SourceMutPointer<OAD_PolymerUnit>>(heap, unit_count, 8)
+            {
                 Ok(pointer) => pointer,
                 Err(SourceHeapError::AllocationFailed) => {
                     inchi_free(heap, new_polymer)?;
@@ -1486,7 +1541,8 @@ pub(crate) fn OrigAtData_Duplicate(
                 heap.slice_mut(units)?[index as usize] = new_unit;
             }
             if old_polymer.n_pzz > 0 {
-                let pzz_count = u64::try_from(old_polymer.n_pzz).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+                let pzz_count = u64::try_from(old_polymer.n_pzz)
+                    .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
                 let pzz = match inchi_calloc::<i32>(heap, pzz_count, 4) {
                     Ok(pointer) => pointer,
                     Err(SourceHeapError::AllocationFailed) => {
@@ -1559,8 +1615,8 @@ pub(crate) fn OrigAtData_Duplicate(
             }
 
             if old_v3000.n_haptic_bonds != 0 && !old_v3000.lists_haptic_bonds.is_null() {
-                let count =
-                    u64::try_from(old_v3000.n_haptic_bonds).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+                let count = u64::try_from(old_v3000.n_haptic_bonds)
+                    .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
                 let lists = inchi_calloc::<SourceMutPointer<i32>>(heap, count, 8)?;
                 heap.slice_mut(new_v3000)?[0].lists_haptic_bonds = lists;
                 for index in 0..old_v3000.n_haptic_bonds as usize {
@@ -1588,7 +1644,8 @@ pub(crate) fn OrigAtData_Duplicate(
             }
 
             if old_v3000.n_steabs != 0 && !old_v3000.lists_steabs.is_null() {
-                let count = u64::try_from(old_v3000.n_steabs).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+                let count = u64::try_from(old_v3000.n_steabs)
+                    .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
                 let lists = inchi_calloc::<SourceMutPointer<i32>>(heap, count, 8)?;
                 heap.slice_mut(new_v3000)?[0].lists_steabs = lists;
                 for index in 0..old_v3000.n_steabs as usize {
@@ -1617,7 +1674,8 @@ pub(crate) fn OrigAtData_Duplicate(
             }
 
             if old_v3000.n_sterel != 0 && !old_v3000.lists_sterel.is_null() {
-                let count = u64::try_from(old_v3000.n_sterel).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+                let count = u64::try_from(old_v3000.n_sterel)
+                    .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
                 let lists = match inchi_calloc::<SourceMutPointer<i32>>(heap, count, 8) {
                     Ok(pointer) => pointer,
                     Err(SourceHeapError::AllocationFailed) => SourceMutPointer::null(),
@@ -1656,7 +1714,8 @@ pub(crate) fn OrigAtData_Duplicate(
             }
 
             if old_v3000.n_sterac != 0 && !old_v3000.lists_sterac.is_null() {
-                let count = u64::try_from(old_v3000.n_sterac).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+                let count = u64::try_from(old_v3000.n_sterac)
+                    .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
                 let lists = match inchi_calloc::<SourceMutPointer<i32>>(heap, count, 8) {
                     Ok(pointer) => pointer,
                     Err(SourceHeapError::AllocationFailed) => SourceMutPointer::null(),
@@ -1685,7 +1744,8 @@ pub(crate) fn OrigAtData_Duplicate(
                             }
                             Err(error) => return Err(error),
                         };
-                        let values = heap.slice(old_list.as_const())?[..list_count as usize].to_vec();
+                        let values =
+                            heap.slice(old_list.as_const())?[..list_count as usize].to_vec();
                         heap.slice_mut(list)?.copy_from_slice(&values);
                         heap.slice_mut(lists)?[index] = list;
                     }
@@ -1985,7 +2045,12 @@ pub(crate) fn OAD_PolymerUnit_Free(
                 .slice(unit.as_const())?
                 .first()
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            (unit_ref.alist, unit_ref.blist, unit_ref.maxbkbonds, unit_ref.bkbonds)
+            (
+                unit_ref.alist,
+                unit_ref.blist,
+                unit_ref.maxbkbonds,
+                unit_ref.bkbonds,
+            )
         };
         if !alist.is_null() {
             inchi_free(heap, alist)?;
@@ -2105,7 +2170,11 @@ pub(crate) fn OAD_PolymerUnit_CreateCopy(
         .first()
         .ok_or(SourceHeapError::PointerOutOfBounds)?
         .clone();
-    let copy = match inchi_calloc::<OAD_PolymerUnit>(heap, 1, std::mem::size_of::<OAD_PolymerUnit>() as u64) {
+    let copy = match inchi_calloc::<OAD_PolymerUnit>(
+        heap,
+        1,
+        std::mem::size_of::<OAD_PolymerUnit>() as u64,
+    ) {
         Ok(pointer) => pointer,
         Err(SourceHeapError::AllocationFailed) => return Ok(SourceMutPointer::null()),
         Err(error) => return Err(error),
@@ -2148,7 +2217,9 @@ pub(crate) fn OAD_PolymerUnit_CreateCopy(
         let source_values = heap.slice(source.alist.as_const())?.to_vec();
         let target = heap.slice_mut(alist)?;
         for (index, value) in target.iter_mut().enumerate() {
-            *value = *source_values.get(index).ok_or(SourceHeapError::PointerOutOfBounds)?;
+            *value = *source_values
+                .get(index)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
         }
     }
     heap.slice_mut(copy)?[0].alist = alist;
@@ -2169,7 +2240,9 @@ pub(crate) fn OAD_PolymerUnit_CreateCopy(
         let source_values = heap.slice(source.blist.as_const())?.to_vec();
         let target = heap.slice_mut(blist)?;
         for (index, value) in target.iter_mut().enumerate() {
-            *value = *source_values.get(index).ok_or(SourceHeapError::PointerOutOfBounds)?;
+            *value = *source_values
+                .get(index)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
         }
     }
     heap.slice_mut(copy)?[0].blist = blist;
@@ -2235,8 +2308,14 @@ pub(crate) fn OAD_PolymerUnit_CompareAtomListsMod(
     // INCHI❌❌: }
     // END INCHI C FUNCTION: OAD_PolymerUnit_CompareAtomListsMod
 
-    let first = heap.slice(first)?.first().ok_or(SourceHeapError::PointerOutOfBounds)?;
-    let second = heap.slice(second)?.first().ok_or(SourceHeapError::PointerOutOfBounds)?;
+    let first = heap
+        .slice(first)?
+        .first()
+        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    let second = heap
+        .slice(second)?
+        .first()
+        .ok_or(SourceHeapError::PointerOutOfBounds)?;
     if first.na < second.na {
         return Ok(-1);
     }
@@ -2357,18 +2436,24 @@ pub(crate) fn OAD_PolymerUnit_OrderBondAtomsAndBondsThemselves(
         Some(heap.slice(star_atoms)?.to_vec())
     };
     for bond_index in 0..unit.nb {
-        let offset = usize::try_from(i64::from(bond_index) * 2).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+        let offset = usize::try_from(i64::from(bond_index) * 2)
+            .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
         let (first, second) = {
             let bonds = heap.slice(unit.blist.as_const())?;
             (
-                *bonds.get(offset).ok_or(SourceHeapError::PointerOutOfBounds)?,
-                *bonds.get(offset + 1).ok_or(SourceHeapError::PointerOutOfBounds)?,
+                *bonds
+                    .get(offset)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?,
+                *bonds
+                    .get(offset + 1)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?,
             )
         };
         let first_external = is_in_the_ilist(alist.as_deref(), first, unit.na)?.is_none();
         let first_star = is_in_the_ilist(stars.as_deref(), first, number_of_star_atoms)?.is_some();
         let second_external = is_in_the_ilist(alist.as_deref(), second, unit.na)?.is_none();
-        let second_star = is_in_the_ilist(stars.as_deref(), second, number_of_star_atoms)?.is_some();
+        let second_star =
+            is_in_the_ilist(stars.as_deref(), second, number_of_star_atoms)?.is_some();
         if (first_external || first_star) && (second_external || second_star) {
             return Ok(1);
         }
@@ -2380,7 +2465,8 @@ pub(crate) fn OAD_PolymerUnit_OrderBondAtomsAndBondsThemselves(
     }
     if unit.nb == 2 {
         let bonds = heap.slice_mut(unit.blist)?;
-        let [first_first, first_second, second_first, second_second] = [bonds[0], bonds[1], bonds[2], bonds[3]];
+        let [first_first, first_second, second_first, second_second] =
+            [bonds[0], bonds[1], bonds[2], bonds[3]];
         if first_first > second_first {
             bonds[0] = second_first;
             bonds[1] = second_second;
@@ -2728,7 +2814,12 @@ pub(crate) fn OAD_Polymer_PrepareWorkingSet(
                 .slice(units2.offset(i64::from(temporary))?.as_const())?
                 .first()
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            if OAD_PolymerUnit_CompareAtomListsMod(heap, left_pointer.as_const(), right_pointer.as_const())? <= 0 {
+            if OAD_PolymerUnit_CompareAtomListsMod(
+                heap,
+                left_pointer.as_const(),
+                right_pointer.as_const(),
+            )? <= 0
+            {
                 break;
             }
             heap.slice_mut(unit_numbers.offset(i64::from(previous + 1))?)?[0] = left_number;
@@ -2806,7 +2897,13 @@ pub(crate) fn OrigAtData_RemoveHalfBond(
     let valence = i32::from(atom.valence);
     for k in 0..valence {
         let index = usize::try_from(k).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-        if i32::from(*atom.neighbor.get(index).ok_or(SourceHeapError::PointerOutOfBounds)?) != other_atom {
+        if i32::from(
+            *atom
+                .neighbor
+                .get(index)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?,
+        ) != other_atom
+        {
             continue;
         }
         *bond_type = i32::from(atom.bond_type[index]);
@@ -2875,8 +2972,10 @@ pub(crate) fn OrigAtData_RemoveBond(
     if atoms.is_null() || this_atom < 0 || other_atom < 0 {
         return Ok(0);
     }
-    let first = OrigAtData_RemoveHalfBond(heap, this_atom, other_atom, atoms, bond_type, bond_stereo)?;
-    let second = OrigAtData_RemoveHalfBond(heap, other_atom, this_atom, atoms, bond_type, bond_stereo)?;
+    let first =
+        OrigAtData_RemoveHalfBond(heap, this_atom, other_atom, atoms, bond_type, bond_stereo)?;
+    let second =
+        OrigAtData_RemoveHalfBond(heap, other_atom, this_atom, atoms, bond_type, bond_stereo)?;
     if first + second == 2 {
         *num_inp_bonds = num_inp_bonds.wrapping_sub(1);
         let first_pointer = atoms.offset(i64::from(this_atom))?;
@@ -2887,7 +2986,8 @@ pub(crate) fn OrigAtData_RemoveBond(
                 .first_mut()
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
             first_atom.valence = first_atom.valence.wrapping_sub(1);
-            first_atom.chem_bonds_valence = first_atom.chem_bonds_valence.wrapping_sub(*bond_type as i8);
+            first_atom.chem_bonds_valence =
+                first_atom.chem_bonds_valence.wrapping_sub(*bond_type as i8);
         }
         {
             let second_atom = heap
@@ -2895,7 +2995,9 @@ pub(crate) fn OrigAtData_RemoveBond(
                 .first_mut()
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
             second_atom.valence = second_atom.valence.wrapping_sub(1);
-            second_atom.chem_bonds_valence = second_atom.chem_bonds_valence.wrapping_sub(*bond_type as i8);
+            second_atom.chem_bonds_valence = second_atom
+                .chem_bonds_valence
+                .wrapping_sub(*bond_type as i8);
         }
         return Ok(1);
     }
@@ -3015,7 +3117,8 @@ pub(crate) fn OrigAtData_AddBond(
             .slice_mut(first_pointer)?
             .first_mut()
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        let k = usize::try_from(atom.valence).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+        let k =
+            usize::try_from(atom.valence).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
         let already_here = atom.neighbor[..k]
             .iter()
             .any(|neighbor| i32::from(*neighbor) == other_atom);
@@ -3032,7 +3135,8 @@ pub(crate) fn OrigAtData_AddBond(
             .slice_mut(second_pointer)?
             .first_mut()
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        let k = usize::try_from(atom.valence).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+        let k =
+            usize::try_from(atom.valence).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
         let already_here = atom.neighbor[..k]
             .iter()
             .any(|neighbor| i32::from(*neighbor) == this_atom);
@@ -3240,9 +3344,11 @@ pub(crate) fn OAD_Polymer_FindRingSystems(
             .clone();
         if atom.nNumAtInRingSystem > 2 {
             let atom_index = i32::from(atom.orig_at_number);
-            heap.slice_mut(num_ring_sys.offset(i64::from(atom_index))?)?[0] = i32::from(atom.nRingSystem);
+            heap.slice_mut(num_ring_sys.offset(i64::from(atom_index))?)?[0] =
+                i32::from(atom.nRingSystem);
             if !size_ring_sys.is_null() {
-                heap.slice_mut(size_ring_sys.offset(i64::from(atom_index))?)?[0] = i32::from(atom.nNumAtInRingSystem);
+                heap.slice_mut(size_ring_sys.offset(i64::from(atom_index))?)?[0] =
+                    i32::from(atom.nNumAtInRingSystem);
             }
         }
     }
@@ -3488,20 +3594,22 @@ pub(crate) fn OAD_Polymer_SetAtProps(
     // END INCHI C FUNCTION: OAD_Polymer_SetAtProps
 
     const ERANK_RULE2: &[i32] = &[
-        0, 1, 198, 197, 196, 202, 2, 216, 215, 191, 190, 189, 188, 187, 206, 210, 214, 183, 182, 181, 180, 179, 178,
-        177, 176, 175, 174, 173, 172, 171, 170, 169, 205, 209, 213, 165, 164, 163, 162, 161, 160, 159, 158, 157, 156,
-        155, 154, 153, 152, 151, 204, 208, 212, 147, 146, 145, 144, 143, 142, 141, 140, 139, 138, 137, 136, 135, 134,
-        133, 132, 131, 130, 129, 128, 127, 126, 125, 124, 123, 122, 121, 201, 119, 203, 207, 116, 115, 114, 113, 112,
-        111, 110, 109, 108, 107, 106, 105, 104, 103, 102, 101, 100, 99, 98, 97, 96, 95, 94, 93, 92, 91, 90, 89, 88, 87,
-        86, 85, 84, 83, 82, 81,
+        0, 1, 198, 197, 196, 202, 2, 216, 215, 191, 190, 189, 188, 187, 206, 210, 214, 183, 182,
+        181, 180, 179, 178, 177, 176, 175, 174, 173, 172, 171, 170, 169, 205, 209, 213, 165, 164,
+        163, 162, 161, 160, 159, 158, 157, 156, 155, 154, 153, 152, 151, 204, 208, 212, 147, 146,
+        145, 144, 143, 142, 141, 140, 139, 138, 137, 136, 135, 134, 133, 132, 131, 130, 129, 128,
+        127, 126, 125, 124, 123, 122, 121, 201, 119, 203, 207, 116, 115, 114, 113, 112, 111, 110,
+        109, 108, 107, 106, 105, 104, 103, 102, 101, 100, 99, 98, 97, 96, 95, 94, 93, 92, 91, 90,
+        89, 88, 87, 86, 85, 84, 83, 82, 81,
     ];
     const ERANK_RULE4: &[i32] = &[
-        0, 1, 198, 197, 196, 202, 2, 211, 215, 191, 190, 189, 188, 187, 206, 210, 214, 183, 182, 181, 180, 179, 178,
-        177, 176, 175, 174, 173, 172, 171, 170, 169, 205, 209, 213, 165, 164, 163, 162, 161, 160, 159, 158, 157, 156,
-        155, 154, 153, 152, 151, 204, 208, 212, 147, 146, 145, 144, 143, 142, 141, 140, 139, 138, 137, 136, 135, 134,
-        133, 132, 131, 130, 129, 128, 127, 126, 125, 124, 123, 122, 121, 201, 119, 203, 207, 116, 115, 114, 113, 112,
-        111, 110, 109, 108, 107, 106, 105, 104, 103, 102, 101, 100, 99, 98, 97, 96, 95, 94, 93, 92, 91, 90, 89, 88, 87,
-        86, 85, 84, 83, 82, 81,
+        0, 1, 198, 197, 196, 202, 2, 211, 215, 191, 190, 189, 188, 187, 206, 210, 214, 183, 182,
+        181, 180, 179, 178, 177, 176, 175, 174, 173, 172, 171, 170, 169, 205, 209, 213, 165, 164,
+        163, 162, 161, 160, 159, 158, 157, 156, 155, 154, 153, 152, 151, 204, 208, 212, 147, 146,
+        145, 144, 143, 142, 141, 140, 139, 138, 137, 136, 135, 134, 133, 132, 131, 130, 129, 128,
+        127, 126, 125, 124, 123, 122, 121, 201, 119, 203, 207, 116, 115, 114, 113, 112, 111, 110,
+        109, 108, 107, 106, 105, 104, 103, 102, 101, 100, 99, 98, 97, 96, 95, 94, 93, 92, 91, 90,
+        89, 88, 87, 86, 85, 84, 83, 82, 81,
     ];
 
     if atom_properties.is_null() || atoms.is_null() || polymer.is_null() {
@@ -3577,7 +3685,11 @@ pub(crate) fn OAD_Polymer_SetAtProps(
                 .first()
                 .ok_or(SourceHeapError::PointerOutOfBounds)?
                 .clone();
-            if unit.na > 2 && unit.nbkbonds > 0 && unit.cyclized == 0 && unit.cyclizable == CLOSING_SRU_RING as i32 {
+            if unit.na > 2
+                && unit.nbkbonds > 0
+                && unit.cyclized == 0
+                && unit.cyclizable == CLOSING_SRU_RING as i32
+            {
                 let row = *heap
                     .slice(unit.bkbonds.as_const())?
                     .first()
@@ -3585,11 +3697,28 @@ pub(crate) fn OAD_Polymer_SetAtProps(
                 let bond = heap.slice(row.as_const())?;
                 let a1 = bond[0].wrapping_sub(1);
                 let a2 = bond[1].wrapping_sub(1);
-                let _ = OrigAtData_RemoveBond(heap, a1, a2, atoms, &mut bond_type, &mut bond_stereo, &mut dummy)?;
+                let _ = OrigAtData_RemoveBond(
+                    heap,
+                    a1,
+                    a2,
+                    atoms,
+                    &mut bond_type,
+                    &mut bond_stereo,
+                    &mut dummy,
+                )?;
             }
         }
 
-        let rings = OAD_Polymer_FindRingSystems(heap, polymer, atoms, nat, num_inp_bonds, ring_numbers, ring_sizes, 0)?;
+        let rings = OAD_Polymer_FindRingSystems(
+            heap,
+            polymer,
+            atoms,
+            nat,
+            num_inp_bonds,
+            ring_numbers,
+            ring_sizes,
+            0,
+        )?;
 
         for j in 0..polymer_value.n {
             let unit_pointer = *heap
@@ -3601,7 +3730,11 @@ pub(crate) fn OAD_Polymer_SetAtProps(
                 .first()
                 .ok_or(SourceHeapError::PointerOutOfBounds)?
                 .clone();
-            if unit.na > 2 && unit.nbkbonds > 0 && unit.cyclized == 0 && unit.cyclizable == CLOSING_SRU_RING as i32 {
+            if unit.na > 2
+                && unit.nbkbonds > 0
+                && unit.cyclized == 0
+                && unit.cyclizable == CLOSING_SRU_RING as i32
+            {
                 let row = *heap
                     .slice(unit.bkbonds.as_const())?
                     .first()
@@ -3609,7 +3742,8 @@ pub(crate) fn OAD_Polymer_SetAtProps(
                 let bond = heap.slice(row.as_const())?;
                 let a1 = bond[0].wrapping_sub(1);
                 let a2 = bond[1].wrapping_sub(1);
-                let _ = OrigAtData_AddBond(heap, a1, a2, atoms, bond_type, bond_stereo, &mut dummy)?;
+                let _ =
+                    OrigAtData_AddBond(heap, a1, a2, atoms, bond_type, bond_stereo, &mut dummy)?;
             }
         }
 
@@ -3627,11 +3761,13 @@ pub(crate) fn OAD_Polymer_SetAtProps(
                 } else {
                     canonical_index(heap, atom_number)?.wrapping_add(1)
                 };
-                let ring_number = heap.slice(ring_numbers.as_const())?
-                    [usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?];
+                let ring_number =
+                    heap.slice(ring_numbers.as_const())?[usize::try_from(atom_number)
+                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?];
                 if ring_number >= 0 {
-                    let ring_size = heap.slice(ring_sizes.as_const())?
-                        [usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?];
+                    let ring_size =
+                        heap.slice(ring_sizes.as_const())?[usize::try_from(atom_number)
+                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?];
                     let properties = heap
                         .slice_mut(atom_properties.offset(i64::from(index))?)?
                         .first_mut()
@@ -4916,13 +5052,21 @@ pub(crate) fn OAD_CollectBackboneBonds(
     // INCHI✔️❌: COMPILE_ANSI_ONLY; TARGET_API_LIB; GCC/Linux; #if 0 endpoint sorting is inactive; TREAT_ERR retains a pre-existing nonzero error and always calls AddErrorMessage.
     // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: OAD_CollectBackboneBonds
 
-    fn treat_error(error: &mut i32, code: i32, error_text: Option<&mut [i8]>) -> Result<(), SourceHeapError> {
+    fn treat_error(
+        error: &mut i32,
+        code: i32,
+        error_text: Option<&mut [i8]>,
+    ) -> Result<(), SourceHeapError> {
         if *error == 0 && code != 0 {
             *error = code;
         }
         AddErrorMessage(
             error_text,
-            Some(b"Not enough memory (polymers)\0".map(|byte| byte as i8).as_slice()),
+            Some(
+                b"Not enough memory (polymers)\0"
+                    .map(|byte| byte as i8)
+                    .as_slice(),
+            ),
         )?;
         Ok(())
     }
@@ -4938,11 +5082,16 @@ pub(crate) fn OAD_CollectBackboneBonds(
         .first()
         .cloned()
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    let start_index = usize::try_from(end_atom1).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let start_index =
+        usize::try_from(end_atom1).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let end_index = usize::try_from(end_atom2).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let mapping = heap.slice(graph_value.orig2node.as_const())?;
-    let start = *mapping.get(start_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
-    let end = *mapping.get(end_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
+    let start = *mapping
+        .get(start_index)
+        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    let end = *mapping
+        .get(end_index)
+        .ok_or(SourceHeapError::PointerOutOfBounds)?;
     let pathfinder = subgraf_pathfinder_new(heap, graph, atom_data, start, end)?;
     if pathfinder.is_null() {
         treat_error(error, 9039, error_text)?;
@@ -5022,7 +5171,8 @@ pub(crate) fn OAD_PolymerUnit_RemoveLinkFromCRUChain(
     // INCHI✔️✔️: COMPILE_ANSI_ONLY; TARGET_API_LIB; GCC/Linux; the #if 0 endpoint-sorting block is inactive.
     // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: OAD_PolymerUnit_RemoveLinkFromCRUChain
 
-    let count = usize::try_from((*bond_count).max(0)).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let count =
+        usize::try_from((*bond_count).max(0)).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     for position in 0..count {
         let row = *heap
             .slice(bonds.as_const())?
@@ -5038,8 +5188,12 @@ pub(crate) fn OAD_PolymerUnit_RemoveLinkFromCRUChain(
                     .get(source_position)
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
                 let source_values = heap.slice(source_row.as_const())?;
-                let source_first = *source_values.first().ok_or(SourceHeapError::PointerOutOfBounds)?;
-                let source_second = *source_values.get(1).ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let source_first = *source_values
+                    .first()
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let source_second = *source_values
+                    .get(1)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
                 let target_row = *heap
                     .slice(bonds.as_const())?
                     .get(source_position - 1)
@@ -5183,7 +5337,8 @@ pub(crate) fn OAD_PolymerUnit_DelistIntraRingBackboneBonds(
             if position >= current.nbkbonds {
                 break;
             }
-            let position_index = usize::try_from(position).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let position_index =
+                usize::try_from(position).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             let row = *heap
                 .slice(current.bkbonds.as_const())?
                 .get(position_index)
@@ -5191,14 +5346,26 @@ pub(crate) fn OAD_PolymerUnit_DelistIntraRingBackboneBonds(
             let values = heap.slice(row.as_const())?;
             let atom1 = *values.first().ok_or(SourceHeapError::PointerOutOfBounds)?;
             let atom2 = *values.get(1).ok_or(SourceHeapError::PointerOutOfBounds)?;
-            let atom1_index = usize::try_from(atom1).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            let atom2_index = usize::try_from(atom2).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let atom1_index =
+                usize::try_from(atom1).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let atom2_index =
+                usize::try_from(atom2).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             let systems = heap.slice(ring_systems.as_const())?;
-            let first_system = *systems.get(atom1_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
-            let second_system = *systems.get(atom2_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let first_system = *systems
+                .get(atom1_index)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let second_system = *systems
+                .get(atom2_index)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
             if first_system == second_system && first_system != -1 {
                 let mut count = current.nbkbonds;
-                OAD_PolymerUnit_RemoveLinkFromCRUChain(heap, atom1, atom2, &mut count, current.bkbonds)?;
+                OAD_PolymerUnit_RemoveLinkFromCRUChain(
+                    heap,
+                    atom1,
+                    atom2,
+                    &mut count,
+                    current.bkbonds,
+                )?;
                 heap.slice_mut(unit)?[0].nbkbonds = count;
             } else {
                 position = position.wrapping_add(1);
@@ -5366,36 +5533,49 @@ pub(crate) fn OAD_PolymerUnit_DelistHighOrderBackboneBonds(
         if position >= current.nbkbonds {
             break;
         }
-        let position_index = usize::try_from(position).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let position_index =
+            usize::try_from(position).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         let row = *heap
             .slice(current.bkbonds.as_const())?
             .get(position_index)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
         let row_values = heap.slice(row.as_const())?;
-        let atom1 = *row_values.first().ok_or(SourceHeapError::PointerOutOfBounds)?;
-        let atom2 = *row_values.get(1).ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let atom1 = *row_values
+            .first()
+            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let atom2 = *row_values
+            .get(1)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?;
         let mut untouchable = false;
         if check_taut {
             if let Some(composite) = composite_normalized_data {
                 if !composite.at.is_null() && !current_numbers.is_null() {
-                    let atom1_index = usize::try_from(atom1).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                    let atom2_index = usize::try_from(atom2).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let atom1_index =
+                        usize::try_from(atom1).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let atom2_index =
+                        usize::try_from(atom2).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     let mapping = heap.slice(current_numbers.as_const())?;
-                    let current1 = *mapping.get(atom1_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
-                    let current2 = *mapping.get(atom2_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
-                    let current1_index = usize::try_from(current1).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let current1 = *mapping
+                        .get(atom1_index)
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                    let current2 = *mapping
+                        .get(atom2_index)
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                    let current1_index = usize::try_from(current1)
+                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     let normalized_atom = heap
                         .slice(composite.at.as_const())?
                         .get(current1_index)
                         .cloned()
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
                     for neighbor_index in 0..i32::from(normalized_atom.valence).max(0) {
-                        let neighbor_index =
-                            usize::try_from(neighbor_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                        let neighbor_index = usize::try_from(neighbor_index)
+                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                         if i32::from(normalized_atom.neighbor[neighbor_index]) != current2 {
                             continue;
                         }
-                        untouchable = u32::from(normalized_atom.bond_type[neighbor_index]) == BOND_TAUTOM;
+                        untouchable =
+                            u32::from(normalized_atom.bond_type[neighbor_index]) == BOND_TAUTOM;
                         break;
                     }
                 }
@@ -5403,7 +5583,13 @@ pub(crate) fn OAD_PolymerUnit_DelistHighOrderBackboneBonds(
         }
         if untouchable {
             let mut count = current.nbkbonds;
-            OAD_PolymerUnit_RemoveLinkFromCRUChain(heap, atom1, atom2, &mut count, current.bkbonds)?;
+            OAD_PolymerUnit_RemoveLinkFromCRUChain(
+                heap,
+                atom1,
+                atom2,
+                &mut count,
+                current.bkbonds,
+            )?;
             heap.slice_mut(unit)?[0].nbkbonds = count;
         } else {
             position = position.wrapping_add(1);
@@ -5523,7 +5709,8 @@ pub(crate) fn OAD_Polymer_FindBackbones(
         if unit.cyclizable == 0 {
             continue;
         }
-        let listed_count = usize::try_from(unit.na.max(0)).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let listed_count =
+            usize::try_from(unit.na.max(0)).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         let atom_list = if listed_count == 0 {
             Vec::new()
         } else {
@@ -5553,7 +5740,13 @@ pub(crate) fn OAD_Polymer_FindBackbones(
         if backbone_count < 1 || backbone_count == 1 {
             continue;
         }
-        OAD_PolymerUnit_DelistIntraRingBackboneBonds(heap, unit_pointer, atom_data, error, error_text.as_deref_mut())?;
+        OAD_PolymerUnit_DelistIntraRingBackboneBonds(
+            heap,
+            unit_pointer,
+            atom_data,
+            error,
+            error_text.as_deref_mut(),
+        )?;
         if *error != 0 {
             continue;
         }
@@ -5716,10 +5909,12 @@ pub(crate) fn OAD_Polymer_GetRepresentation(
             .cloned()
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
         if unit.nb == 2 || unit.nbkbonds > 0 || (unit.cap1 > 0 && unit.cap2 > 0) {
-            heap.slice_mut(unit_pointer)?[0].representation = POLYMER_REPRESENTATION_STRUCTURE_BASED as i32;
+            heap.slice_mut(unit_pointer)?[0].representation =
+                POLYMER_REPRESENTATION_STRUCTURE_BASED as i32;
             structure_units = structure_units.wrapping_add(1);
         } else if unit.nb == 0 {
-            heap.slice_mut(unit_pointer)?[0].representation = POLYMER_REPRESENTATION_SOURCE_BASED as i32;
+            heap.slice_mut(unit_pointer)?[0].representation =
+                POLYMER_REPRESENTATION_SOURCE_BASED as i32;
             source_units = source_units.wrapping_add(1);
         }
     }
@@ -5727,7 +5922,10 @@ pub(crate) fn OAD_Polymer_GetRepresentation(
         Ok(POLYMER_REPRESENTATION_SOURCE_BASED as i32)
     } else if value.n == structure_units {
         Ok(POLYMER_REPRESENTATION_STRUCTURE_BASED as i32)
-    } else if source_units != 0 && structure_units != 0 && source_units.wrapping_add(structure_units) == value.n {
+    } else if source_units != 0
+        && structure_units != 0
+        && source_units.wrapping_add(structure_units) == value.n
+    {
         Ok(POLYMER_REPRESENTATION_MIXED as i32)
     } else {
         Ok(POLYMER_REPRESENTATION_UNRECOGNIZED as i32)
@@ -5940,8 +6138,10 @@ pub(crate) fn OrigAtData_DecreaseBondOrder(
     // INCHI✔️❌: COMPILE_ANSI_ONLY; TARGET_API_LIB; GCC/Linux; MAXVAL is source-defined; neighbor is AT_NUMB/unsigned short and bond_type is U_CHAR.
     // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: OrigAtData_DecreaseBondOrder
 
-    let first_index = usize::try_from(this_atom).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    let second_index = usize::try_from(other_atom).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let first_index =
+        usize::try_from(this_atom).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let second_index =
+        usize::try_from(other_atom).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let first = heap
         .slice(atoms.as_const())?
         .get(first_index)
@@ -5952,7 +6152,8 @@ pub(crate) fn OrigAtData_DecreaseBondOrder(
     }
     let mut decreased = 0_i32;
     for neighbor_index in 0..i32::from(first.valence).max(0) {
-        let neighbor_index = usize::try_from(neighbor_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let neighbor_index =
+            usize::try_from(neighbor_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         if i32::from(first.neighbor[neighbor_index]) != other_atom {
             continue;
         }
@@ -5975,7 +6176,8 @@ pub(crate) fn OrigAtData_DecreaseBondOrder(
         .cloned()
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
     for neighbor_index in 0..i32::from(second.valence).max(0) {
-        let neighbor_index = usize::try_from(neighbor_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let neighbor_index =
+            usize::try_from(neighbor_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         if i32::from(second.neighbor[neighbor_index]) != this_atom {
             continue;
         }
@@ -6087,8 +6289,8 @@ pub(crate) fn OAD_PolymerUnit_ReopenCyclized(
             atoms,
         )?;
     } else if initial.cyclizable == CLOSING_SRU_DIRADICAL as i32 {
-        let end =
-            usize::try_from(initial.end_atom1.wrapping_sub(1)).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let end = usize::try_from(initial.end_atom1.wrapping_sub(1))
+            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         let atom = heap
             .slice_mut(atoms)?
             .get_mut(end)
@@ -6133,10 +6335,18 @@ pub(crate) fn OAD_PolymerUnit_ReopenCyclized(
         return Ok(());
     }
     let values = heap.slice_mut(bond_list)?;
-    *values.first_mut().ok_or(SourceHeapError::PointerOutOfBounds)? = initial.cap1;
-    *values.get_mut(1).ok_or(SourceHeapError::PointerOutOfBounds)? = initial.end_atom1;
-    *values.get_mut(2).ok_or(SourceHeapError::PointerOutOfBounds)? = initial.cap2;
-    *values.get_mut(3).ok_or(SourceHeapError::PointerOutOfBounds)? = initial.end_atom2;
+    *values
+        .first_mut()
+        .ok_or(SourceHeapError::PointerOutOfBounds)? = initial.cap1;
+    *values
+        .get_mut(1)
+        .ok_or(SourceHeapError::PointerOutOfBounds)? = initial.end_atom1;
+    *values
+        .get_mut(2)
+        .ok_or(SourceHeapError::PointerOutOfBounds)? = initial.cap2;
+    *values
+        .get_mut(3)
+        .ok_or(SourceHeapError::PointerOutOfBounds)? = initial.end_atom2;
     Ok(())
 }
 
@@ -6282,17 +6492,36 @@ pub(crate) fn OAD_Polymer_SmartReopenCyclizedUnits(
             .first()
             .cloned()
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        if unit.nbkbonds < 1 || unit.cap1 < 1 || unit.cap2 < 1 || unit.cap1 > atom_count || unit.cap2 > atom_count {
+        if unit.nbkbonds < 1
+            || unit.cap1 < 1
+            || unit.cap2 < 1
+            || unit.cap1 > atom_count
+            || unit.cap2 > atom_count
+        {
             continue;
         }
-        let reopening = OAD_PolymerUnit_SetReopeningDetails(heap, &mut unit, heap.slice(atoms.as_const())?)?;
+        let reopening =
+            OAD_PolymerUnit_SetReopeningDetails(heap, &mut unit, heap.slice(atoms.as_const())?)?;
         if reopening != 0 {
             let properties = heap.slice(atom_properties.as_const())?.to_vec();
             let mut senior_bond = 0_i32;
-            OAD_PolymerUnit_SortBackboneBondsAndSetSeniors(heap, &mut unit, atoms, &properties, &mut senior_bond)?;
+            OAD_PolymerUnit_SortBackboneBondsAndSetSeniors(
+                heap,
+                &mut unit,
+                atoms,
+                &properties,
+                &mut senior_bond,
+            )?;
         }
         heap.slice_mut(unit_pointer)?[0] = unit;
-        OAD_PolymerUnit_ReopenCyclized(heap, unit_pointer, atoms, atom_properties, atom_count, input_bond_count)?;
+        OAD_PolymerUnit_ReopenCyclized(
+            heap,
+            unit_pointer,
+            atoms,
+            atom_properties,
+            atom_count,
+            input_bond_count,
+        )?;
     }
     heap.slice_mut(polymer)?[0].really_do_frame_shift = 0;
     inchi_free(heap, atom_properties)?;
@@ -6373,13 +6602,15 @@ pub(crate) fn OAD_PolymerUnit_SetReopeningDetails(
                     .ok_or(SourceHeapError::SourceIntegerOverflow)?,
             )
             .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            let atom = atoms.get(atom_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let atom = atoms
+                .get(atom_index)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
             let target = unit
                 .end_atom2
                 .checked_sub(1)
                 .ok_or(SourceHeapError::SourceIntegerOverflow)?;
-            let valence =
-                usize::try_from(i32::from(atom.valence).max(0)).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+            let valence = usize::try_from(i32::from(atom.valence).max(0))
+                .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
             for index in 0..valence {
                 if i32::from(atom.neighbor[index]) == target {
                     if atom.bond_type[index] > 1 {
@@ -6447,9 +6678,15 @@ pub(crate) fn OAD_PolymerUnit_SortBackboneBondsAndSetSeniors(
         match inchi_calloc::<i32>(heap, unit.nbkbonds as u64, 4) {
             Ok(bond_number_pointer) => {
                 for (index, value) in heap.slice_mut(bond_number_pointer)?.iter_mut().enumerate() {
-                    *value = i32::try_from(index).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+                    *value =
+                        i32::try_from(index).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
                 }
-                let sort_result = OAD_PolymerUnit_SortBackboneBonds(heap, unit, atom_properties, bond_number_pointer);
+                let sort_result = OAD_PolymerUnit_SortBackboneBonds(
+                    heap,
+                    unit,
+                    atom_properties,
+                    bond_number_pointer,
+                );
                 if sort_result.is_ok() {
                     *senior_bond = *heap
                         .slice(bond_number_pointer.as_const())?
@@ -6464,7 +6701,8 @@ pub(crate) fn OAD_PolymerUnit_SortBackboneBondsAndSetSeniors(
         }
     }
 
-    let senior_index = usize::try_from(*senior_bond).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let senior_index =
+        usize::try_from(*senior_bond).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let row_pointer = *heap
         .slice(unit.bkbonds.as_const())?
         .get(senior_index)
@@ -6561,7 +6799,8 @@ pub(crate) fn OAD_PolymerUnit_SortBackboneBonds(
             heap.slice_mut(bond_numbers)?[j_index + 1] = current;
             j -= 1;
         }
-        let destination = usize::try_from(j + 1).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+        let destination =
+            usize::try_from(j + 1).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
         heap.slice_mut(bond_numbers)?[destination] = temporary;
     }
     Ok(())
@@ -6855,8 +7094,12 @@ pub(crate) fn OAD_Polymer_CompareRanksOfTwoAtoms(
     const CARBOCYC: i32 = 1;
     const CARBOAT: i32 = 0;
 
-    let index1 = atom1.checked_sub(1).ok_or(SourceHeapError::SourceIntegerOverflow)?;
-    let index2 = atom2.checked_sub(1).ok_or(SourceHeapError::SourceIntegerOverflow)?;
+    let index1 = atom1
+        .checked_sub(1)
+        .ok_or(SourceHeapError::SourceIntegerOverflow)?;
+    let index2 = atom2
+        .checked_sub(1)
+        .ok_or(SourceHeapError::SourceIntegerOverflow)?;
     if index1 < 0 || index2 < 0 {
         return Ok(0);
     }
@@ -6868,7 +7111,11 @@ pub(crate) fn OAD_Polymer_CompareRanksOfTwoAtoms(
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
     let classify = |property: &OAD_AtProps| {
         if property.ring_size > 2 {
-            if property.ring_erank <= 2 { CARBOCYC } else { HETEROCYC }
+            if property.ring_erank <= 2 {
+                CARBOCYC
+            } else {
+                HETEROCYC
+            }
         } else if property.erank == 2 {
             CARBOAT
         } else {
@@ -8589,7 +8836,9 @@ mod tests {
         negative.neighbor[0] = 12;
         negative.bond_type[0] = 92;
 
-        let atoms = heap.allocate_model_storage(vec![populated, zero, negative]).unwrap();
+        let atoms = heap
+            .allocate_model_storage(vec![populated, zero, negative])
+            .unwrap();
         let before = heap.slice(atoms.as_const()).unwrap().to_vec();
 
         assert_eq!(Inp_Atom_GetBondType(&heap, atoms.as_const(), 0, 0), Ok(0));
@@ -8601,8 +8850,14 @@ mod tests {
         assert_eq!(Inp_Atom_GetBondType(&heap, atoms.as_const(), 0, 8), Ok(5));
         assert_eq!(Inp_Atom_GetBondType(&heap, atoms.as_const(), 0, 9), Ok(-1));
         assert_eq!(Inp_Atom_GetBondType(&heap, atoms.as_const(), 0, -1), Ok(-1));
-        assert_eq!(Inp_Atom_GetBondType(&heap, atoms.as_const(), 0, i32::MIN), Ok(-1));
-        assert_eq!(Inp_Atom_GetBondType(&heap, atoms.as_const(), 0, i32::MAX), Ok(-1));
+        assert_eq!(
+            Inp_Atom_GetBondType(&heap, atoms.as_const(), 0, i32::MIN),
+            Ok(-1)
+        );
+        assert_eq!(
+            Inp_Atom_GetBondType(&heap, atoms.as_const(), 0, i32::MAX),
+            Ok(-1)
+        );
         assert_eq!(Inp_Atom_GetBondType(&heap, atoms.as_const(), 1, 11), Ok(-1));
         assert_eq!(Inp_Atom_GetBondType(&heap, atoms.as_const(), 2, 12), Ok(-1));
         assert_eq!(heap.slice(atoms.as_const()).unwrap(), before);
@@ -8622,7 +8877,12 @@ mod tests {
         }
         let full = heap.allocate_model_storage(vec![full]).unwrap();
         assert_eq!(
-            Inp_Atom_GetBondType(&heap, full.as_const(), 0, i32::try_from(MAXVAL - 1).unwrap(),),
+            Inp_Atom_GetBondType(
+                &heap,
+                full.as_const(),
+                0,
+                i32::try_from(MAXVAL - 1).unwrap(),
+            ),
             Ok((MAXVAL as i32 - 1).wrapping_add(101))
         );
         assert_eq!(Inp_Atom_GetBondType(&heap, full.as_const(), 0, 20), Ok(-1));
@@ -8652,8 +8912,15 @@ mod tests {
     }
 
     fn preprocess_error_text(data: &STRUCT_DATA) -> Vec<u8> {
-        let length = data.pStrErrStruct.iter().position(|byte| *byte == 0).unwrap();
-        data.pStrErrStruct[..length].iter().map(|byte| *byte as u8).collect()
+        let length = data
+            .pStrErrStruct
+            .iter()
+            .position(|byte| *byte == 0)
+            .unwrap();
+        data.pStrErrStruct[..length]
+            .iter()
+            .map(|byte| *byte as u8)
+            .collect()
     }
 
     #[test]
@@ -8713,7 +8980,10 @@ mod tests {
                 &mut error,
                 Some(error_text),
             );
-            (result, [end1, cap1, cap1_star, end2, cap2, cap2_star, error])
+            (
+                result,
+                [end1, cap1, cap1_star, end2, cap2, cap2_star, error],
+            )
         }
 
         fn error_bytes(buffer: &[i8; 256]) -> Vec<u8> {
@@ -8758,7 +9028,12 @@ mod tests {
             assert_eq!(result, Ok(()));
             assert_eq!(outputs, [2, 1, 1, 3, 4, 0, 0]);
             assert_eq!(
-                (success.end_atom1, success.cap1, success.end_atom2, success.cap2,),
+                (
+                    success.end_atom1,
+                    success.cap1,
+                    success.end_atom2,
+                    success.cap2,
+                ),
                 (2, 1, 3, 4)
             );
             assert!(error_bytes(&message).is_empty());
@@ -8790,9 +9065,21 @@ mod tests {
         assert_eq!(error_bytes(&message), b"Polymer CRU cap(s) lie inside CRU");
 
         for (bonds, expected_error, expected_message) in [
-            (vec![1, 9, 3, 4], 9090, b"Invalid polymer CRU crossing bond".as_slice()),
-            (vec![1, 2, 4, 9], 9091, b"Invalid polymer CRU crossing bond".as_slice()),
-            (vec![1, 2, 1, 3], 9090, b"Invalid polymer CRU surrounding".as_slice()),
+            (
+                vec![1, 9, 3, 4],
+                9090,
+                b"Invalid polymer CRU crossing bond".as_slice(),
+            ),
+            (
+                vec![1, 2, 4, 9],
+                9091,
+                b"Invalid polymer CRU crossing bond".as_slice(),
+            ),
+            (
+                vec![1, 2, 1, 3],
+                9090,
+                b"Invalid polymer CRU surrounding".as_slice(),
+            ),
         ] {
             let mut invalid = unit(&mut heap, vec![2, 3], Some(bonds), 2);
             let before = invalid.clone();
@@ -8843,7 +9130,11 @@ mod tests {
             atom
         }
 
-        fn unit(heap: &mut SourceHeap, atom_list: Vec<i32>, crossing_bonds: Option<Vec<i32>>) -> OAD_PolymerUnit {
+        fn unit(
+            heap: &mut SourceHeap,
+            atom_list: Vec<i32>,
+            crossing_bonds: Option<Vec<i32>>,
+        ) -> OAD_PolymerUnit {
             OAD_PolymerUnit {
                 na: atom_list.len() as i32,
                 alist: heap.allocate_model_storage(atom_list).unwrap(),
@@ -8871,12 +9162,21 @@ mod tests {
         }
 
         let mut heap = SourceHeap::default();
-        let ordinary = original(&mut heap, vec![atom(b"C\0"), atom(b"N\0"), atom(b"O\0"), atom(b"H\0")]);
+        let ordinary = original(
+            &mut heap,
+            vec![atom(b"C\0"), atom(b"N\0"), atom(b"O\0"), atom(b"H\0")],
+        );
         let mut empty = unit(&mut heap, vec![2, 3], None);
         let mut error = 88;
         let mut message = [0_i8; 256];
         assert_eq!(
-            OAD_PolymerUnit_SetEndsAndCaps(&heap, &mut empty, &ordinary, &mut error, Some(&mut message),),
+            OAD_PolymerUnit_SetEndsAndCaps(
+                &heap,
+                &mut empty,
+                &ordinary,
+                &mut error,
+                Some(&mut message),
+            ),
             Ok(())
         );
         assert_eq!(error, 0);
@@ -8895,19 +9195,36 @@ mod tests {
 
         let mut non_star = unit(&mut heap, vec![2, 3], Some(vec![1, 2, 3, 4]));
         assert_eq!(
-            OAD_PolymerUnit_SetEndsAndCaps(&heap, &mut non_star, &ordinary, &mut error, Some(&mut message),),
+            OAD_PolymerUnit_SetEndsAndCaps(
+                &heap,
+                &mut non_star,
+                &ordinary,
+                &mut error,
+                Some(&mut message),
+            ),
             Ok(())
         );
         assert_eq!(non_star.cyclizable, CLOSING_SRU_NOT_APPLICABLE as i32);
         assert_eq!(
-            (non_star.end_atom1, non_star.cap1, non_star.end_atom2, non_star.cap2,),
+            (
+                non_star.end_atom1,
+                non_star.cap1,
+                non_star.end_atom2,
+                non_star.cap2,
+            ),
             (2, 1, 3, 4)
         );
 
         let stars = original(&mut heap, vec![atom(b"Zz\0"), atom(b"C\0"), atom(b"Zz\0")]);
         let mut diradical = unit(&mut heap, vec![2], Some(vec![1, 2, 2, 3]));
         assert_eq!(
-            OAD_PolymerUnit_SetEndsAndCaps(&heap, &mut diradical, &stars, &mut error, Some(&mut message),),
+            OAD_PolymerUnit_SetEndsAndCaps(
+                &heap,
+                &mut diradical,
+                &stars,
+                &mut error,
+                Some(&mut message),
+            ),
             Ok(())
         );
         assert_eq!(diradical.cyclizable, CLOSING_SRU_DIRADICAL as i32);
@@ -8920,10 +9237,19 @@ mod tests {
         let adjacent = original(&mut heap, adjacent_atoms);
         let mut higher_order = unit(&mut heap, vec![2, 3], Some(vec![1, 2, 3, 4]));
         assert_eq!(
-            OAD_PolymerUnit_SetEndsAndCaps(&heap, &mut higher_order, &adjacent, &mut error, Some(&mut message),),
+            OAD_PolymerUnit_SetEndsAndCaps(
+                &heap,
+                &mut higher_order,
+                &adjacent,
+                &mut error,
+                Some(&mut message),
+            ),
             Ok(())
         );
-        assert_eq!(higher_order.cyclizable, CLOSING_SRU_HIGHER_ORDER_BOND as i32);
+        assert_eq!(
+            higher_order.cyclizable,
+            CLOSING_SRU_HIGHER_ORDER_BOND as i32
+        );
 
         let ring_atoms = original(
             &mut heap,
@@ -8931,15 +9257,30 @@ mod tests {
         );
         let mut ring = unit(&mut heap, vec![2, 3], Some(vec![1, 2, 3, 4]));
         assert_eq!(
-            OAD_PolymerUnit_SetEndsAndCaps(&heap, &mut ring, &ring_atoms, &mut error, Some(&mut message),),
+            OAD_PolymerUnit_SetEndsAndCaps(
+                &heap,
+                &mut ring,
+                &ring_atoms,
+                &mut error,
+                Some(&mut message),
+            ),
             Ok(())
         );
         assert_eq!(ring.cyclizable, CLOSING_SRU_RING as i32);
 
-        let one_star_atoms = original(&mut heap, vec![atom(b"Zz\0"), atom(b"C\0"), atom(b"N\0"), atom(b"O\0")]);
+        let one_star_atoms = original(
+            &mut heap,
+            vec![atom(b"Zz\0"), atom(b"C\0"), atom(b"N\0"), atom(b"O\0")],
+        );
         let mut one_star = unit(&mut heap, vec![2, 3], Some(vec![1, 2, 3, 4]));
         assert_eq!(
-            OAD_PolymerUnit_SetEndsAndCaps(&heap, &mut one_star, &one_star_atoms, &mut error, Some(&mut message),),
+            OAD_PolymerUnit_SetEndsAndCaps(
+                &heap,
+                &mut one_star,
+                &one_star_atoms,
+                &mut error,
+                Some(&mut message),
+            ),
             Ok(())
         );
         assert_eq!(one_star.cyclizable, CLOSING_SRU_RING as i32);
@@ -8947,7 +9288,13 @@ mod tests {
         let mut invalid = unit(&mut heap, vec![2, 3], Some(vec![2, 3, 1, 4]));
         message.fill(0);
         assert_eq!(
-            OAD_PolymerUnit_SetEndsAndCaps(&heap, &mut invalid, &ordinary, &mut error, Some(&mut message),),
+            OAD_PolymerUnit_SetEndsAndCaps(
+                &heap,
+                &mut invalid,
+                &ordinary,
+                &mut error,
+                Some(&mut message),
+            ),
             Ok(())
         );
         assert_eq!(error, 9032);
@@ -8964,7 +9311,13 @@ mod tests {
 
         let mut undefined = unit(&mut heap, vec![2, 3], Some(vec![0, 2, 3, 4]));
         assert_eq!(
-            OAD_PolymerUnit_SetEndsAndCaps(&heap, &mut undefined, &ordinary, &mut error, Some(&mut message),),
+            OAD_PolymerUnit_SetEndsAndCaps(
+                &heap,
+                &mut undefined,
+                &ordinary,
+                &mut error,
+                Some(&mut message),
+            ),
             Err(SourceHeapError::UnsupportedSourceBehavior)
         );
         assert_eq!(
@@ -8981,7 +9334,10 @@ mod tests {
     #[test]
     fn source_port__runichi3__origatdata_debugtrace__line_1108() {
         let mut heap = SourceHeap::default();
-        assert_eq!(OrigAtData_DebugTrace(&heap, &ORIG_ATOM_DATA::default()), Ok(()));
+        assert_eq!(
+            OrigAtData_DebugTrace(&heap, &ORIG_ATOM_DATA::default()),
+            Ok(())
+        );
         assert_eq!(
             OrigAtData_DebugTrace(
                 &heap,
@@ -9103,7 +9459,10 @@ mod tests {
     #[test]
     fn source_port__runichi3__oad_polymer_debugtrace__line_3757() {
         let mut heap = SourceHeap::default();
-        assert_eq!(OAD_Polymer_DebugTrace(&heap, SourceMutPointer::null()), Ok(()));
+        assert_eq!(
+            OAD_Polymer_DebugTrace(&heap, SourceMutPointer::null()),
+            Ok(())
+        );
 
         let dangling_pzz = heap.allocate_model_storage(vec![71_i32]).unwrap();
         inchi_free(&mut heap, dangling_pzz).unwrap();
@@ -9121,7 +9480,9 @@ mod tests {
         let dangling_alist = heap.allocate_model_storage(vec![81_i32]).unwrap();
         let dangling_blist = heap.allocate_model_storage(vec![82_i32]).unwrap();
         let dangling_bond_row = heap.allocate_model_storage(vec![83_i32]).unwrap();
-        let dangling_bonds = heap.allocate_model_storage(vec![dangling_bond_row]).unwrap();
+        let dangling_bonds = heap
+            .allocate_model_storage(vec![dangling_bond_row])
+            .unwrap();
         inchi_free(&mut heap, dangling_alist).unwrap();
         inchi_free(&mut heap, dangling_blist).unwrap();
         inchi_free(&mut heap, dangling_bond_row).unwrap();
@@ -9138,7 +9499,9 @@ mod tests {
             bkbonds: dangling_bonds,
             ..OAD_PolymerUnit::default()
         };
-        let unit = heap.allocate_model_storage(vec![unit_value.clone()]).unwrap();
+        let unit = heap
+            .allocate_model_storage(vec![unit_value.clone()])
+            .unwrap();
         let units = heap
             .allocate_model_storage(vec![SourceMutPointer::null(), unit])
             .unwrap();
@@ -9152,7 +9515,9 @@ mod tests {
             edit_repeats: -7,
             ..OAD_Polymer::default()
         };
-        let polymer = heap.allocate_model_storage(vec![polymer_value.clone()]).unwrap();
+        let polymer = heap
+            .allocate_model_storage(vec![polymer_value.clone()])
+            .unwrap();
         assert_eq!(OAD_Polymer_DebugTrace(&heap, polymer), Ok(()));
         assert_eq!(heap.slice(polymer.as_const()).unwrap()[0], polymer_value);
         assert_eq!(heap.slice(unit.as_const()).unwrap()[0], unit_value);
@@ -9183,7 +9548,9 @@ mod tests {
             Err(SourceHeapError::PointerOutOfBounds)
         );
 
-        let dangling_unit = heap.allocate_model_storage(vec![OAD_PolymerUnit::default()]).unwrap();
+        let dangling_unit = heap
+            .allocate_model_storage(vec![OAD_PolymerUnit::default()])
+            .unwrap();
         inchi_free(&mut heap, dangling_unit).unwrap();
         let dangling_unit_list = heap.allocate_model_storage(vec![dangling_unit]).unwrap();
         let dangling = heap
@@ -9236,7 +9603,8 @@ mod tests {
         );
 
         let mut failure_heap = SourceHeap::default();
-        let mut failure_original = preprocess_original(&mut failure_heap, vec![preprocess_atom(6, 0)]);
+        let mut failure_original =
+            preprocess_original(&mut failure_heap, vec![preprocess_atom(6, 0)]);
         let mut failure_prepared = [ORIG_ATOM_DATA::default(), ORIG_ATOM_DATA::default()];
         let mut failure_data = STRUCT_DATA::default();
         failure_data.bTautFlags[INCHI_BAS as usize] = 0x1000_0000;
@@ -9277,7 +9645,10 @@ mod tests {
             Ok(_IS_FATAL as i32)
         );
         assert_eq!(component_failure_data.nStructReadError, 99);
-        assert_eq!(preprocess_error_text(&component_failure_data), b"Out of RAM");
+        assert_eq!(
+            preprocess_error_text(&component_failure_data),
+            b"Out of RAM"
+        );
         assert!(!component_failure_prepared[0].at.is_null());
         assert_eq!(component_failure_prepared[0].num_components, -1);
 
@@ -9346,11 +9717,13 @@ mod tests {
             Ok(0)
         );
         assert_ne!(
-            isotope_data.bTautFlagsDone[INCHI_BAS as usize] & TG_FLAG_FOUND_ISOTOPIC_H_DONE as INCHI_MODE,
+            isotope_data.bTautFlagsDone[INCHI_BAS as usize]
+                & TG_FLAG_FOUND_ISOTOPIC_H_DONE as INCHI_MODE,
             0
         );
         assert_ne!(
-            isotope_data.bTautFlagsDone[INCHI_BAS as usize] & TG_FLAG_FOUND_ISOTOPIC_ATOM_DONE as INCHI_MODE,
+            isotope_data.bTautFlagsDone[INCHI_BAS as usize]
+                & TG_FLAG_FOUND_ISOTOPIC_ATOM_DONE as INCHI_MODE,
             0
         );
 
@@ -9408,7 +9781,11 @@ mod tests {
         assert!(preprocess_error_text(&quiet_data).is_empty());
 
         let mut salt_heap = SourceHeap::default();
-        let mut salt_atoms = vec![preprocess_atom(7, 1), preprocess_atom(8, -1), preprocess_atom(6, 0)];
+        let mut salt_atoms = vec![
+            preprocess_atom(7, 1),
+            preprocess_atom(8, -1),
+            preprocess_atom(6, 0),
+        ];
         salt_atoms[0].num_H = 4;
         preprocess_bond(&mut salt_atoms, 0, 1, 1);
         preprocess_bond(&mut salt_atoms, 1, 2, 1);
@@ -9435,7 +9812,8 @@ mod tests {
         assert_eq!(salt_prepared[0].bDisconnectSalts, 1);
         assert_eq!(salt_prepared[0].num_inp_bonds, 1);
         assert_ne!(
-            salt_data.bTautFlagsDone[INCHI_BAS as usize] & TG_FLAG_DISCONNECT_SALTS_DONE as INCHI_MODE,
+            salt_data.bTautFlagsDone[INCHI_BAS as usize]
+                & TG_FLAG_DISCONNECT_SALTS_DONE as INCHI_MODE,
             0
         );
         assert_eq!(
@@ -9468,7 +9846,8 @@ mod tests {
         );
         assert_eq!(metal_original.bDisconnectCoord, 1);
         assert_ne!(
-            metal_data.bTautFlagsDone[INCHI_BAS as usize] & TG_FLAG_DISCONNECT_COORD_DONE as INCHI_MODE,
+            metal_data.bTautFlagsDone[INCHI_BAS as usize]
+                & TG_FLAG_DISCONNECT_COORD_DONE as INCHI_MODE,
             0
         );
         assert_eq!(metal_data.bTautFlags[INCHI_REC as usize], 0x8000_0000);
@@ -9490,7 +9869,9 @@ mod tests {
         let at = heap.allocate_model_storage(atoms).unwrap();
         let current_lengths = heap.allocate_model_storage(vec![2_u16]).unwrap();
         let old_components = heap.allocate_model_storage(vec![7_u16]).unwrap();
-        let coordinates = heap.allocate_model_storage(vec![[1_i8; 32], [2_i8; 32]]).unwrap();
+        let coordinates = heap
+            .allocate_model_storage(vec![[1_i8; 32], [2_i8; 32]])
+            .unwrap();
 
         let alist = heap.allocate_model_storage(vec![1_i32]).unwrap();
         let blist = heap.allocate_model_storage(vec![1_i32, 2]).unwrap();
@@ -9522,8 +9903,12 @@ mod tests {
             }])
             .unwrap();
 
-        let haptic = heap.allocate_model_storage(vec![10_i32, 20, 2, 30, 40]).unwrap();
-        let steabs = heap.allocate_model_storage(vec![50_i32, 2, 60, 70]).unwrap();
+        let haptic = heap
+            .allocate_model_storage(vec![10_i32, 20, 2, 30, 40])
+            .unwrap();
+        let steabs = heap
+            .allocate_model_storage(vec![50_i32, 2, 60, 70])
+            .unwrap();
         let sterel = heap.allocate_model_storage(vec![80_i32, 1, 90]).unwrap();
         let sterac = heap.allocate_model_storage(vec![100_i32, 1, 110]).unwrap();
         let haptic_lists = heap.allocate_model_storage(vec![haptic]).unwrap();
@@ -9644,7 +10029,10 @@ mod tests {
             Ok(4)
         );
         assert_eq!(&unchanged[..2], &[b'x' as i8, 0]);
-        assert_eq!(OrigAtData_bCheckUnusualValences(&heap, None, 1, None, 0), Ok(0));
+        assert_eq!(
+            OrigAtData_bCheckUnusualValences(&heap, None, 1, None, 0),
+            Ok(0)
+        );
         assert_eq!(
             OrigAtData_bCheckUnusualValences(&heap, Some(&ORIG_ATOM_DATA::default()), 1, None, 0,),
             Ok(0)
@@ -9656,17 +10044,29 @@ mod tests {
         let mut heap = SourceHeap::default();
         let source = duplicate_source(&mut heap);
         let mut destination = ORIG_ATOM_DATA::default();
-        assert_eq!(OrigAtData_Duplicate(&mut heap, &mut destination, &source), Ok(0));
+        assert_eq!(
+            OrigAtData_Duplicate(&mut heap, &mut destination, &source),
+            Ok(0)
+        );
         assert_eq!(destination.num_inp_atoms, 2);
         assert_eq!(destination.num_components, 1);
         assert_ne!(destination.at, source.at);
         assert_ne!(destination.nCurAtLen, source.nCurAtLen);
         assert_ne!(destination.nOldCompNumber, source.nOldCompNumber);
         assert_ne!(destination.szCoord, source.szCoord);
-        assert_eq!(heap.slice(destination.at.as_const()).unwrap()[0].orig_at_number, 11);
-        assert_eq!(heap.slice(destination.at.as_const()).unwrap()[1].orig_at_number, 22);
+        assert_eq!(
+            heap.slice(destination.at.as_const()).unwrap()[0].orig_at_number,
+            11
+        );
+        assert_eq!(
+            heap.slice(destination.at.as_const()).unwrap()[1].orig_at_number,
+            22
+        );
         assert_eq!(heap.slice(destination.nCurAtLen.as_const()).unwrap()[0], 2);
-        assert_eq!(heap.slice(destination.nOldCompNumber.as_const()).unwrap()[0], 7);
+        assert_eq!(
+            heap.slice(destination.nOldCompNumber.as_const()).unwrap()[0],
+            7
+        );
         assert_eq!(
             heap.slice(destination.szCoord.as_const()).unwrap(),
             &[[1_i8; 32], [2_i8; 32]]
@@ -9684,7 +10084,10 @@ mod tests {
         assert_eq!(copied_polymer.n_pzz, 2);
         assert_ne!(copied_polymer.units, source_polymer.units);
         assert_ne!(copied_polymer.pzz, source_polymer.pzz);
-        assert_eq!(heap.slice(copied_polymer.pzz.as_const()).unwrap(), &[31, 32]);
+        assert_eq!(
+            heap.slice(copied_polymer.pzz.as_const()).unwrap(),
+            &[31, 32]
+        );
         let source_unit = heap.slice(source_polymer.units.as_const()).unwrap()[0];
         let copied_unit = heap.slice(copied_polymer.units.as_const()).unwrap()[0];
         assert_ne!(copied_unit, source_unit);
@@ -9695,8 +10098,14 @@ mod tests {
         let copied_v3000 = heap.slice(destination.v3000.as_const()).unwrap()[0].clone();
         assert_ne!(copied_v3000.atom_index_orig, source_v3000.atom_index_orig);
         assert_ne!(copied_v3000.atom_index_fin, source_v3000.atom_index_fin);
-        assert_eq!(heap.slice(copied_v3000.atom_index_orig.as_const()).unwrap(), &[4, 5]);
-        assert_eq!(heap.slice(copied_v3000.atom_index_fin.as_const()).unwrap(), &[6, 7]);
+        assert_eq!(
+            heap.slice(copied_v3000.atom_index_orig.as_const()).unwrap(),
+            &[4, 5]
+        );
+        assert_eq!(
+            heap.slice(copied_v3000.atom_index_fin.as_const()).unwrap(),
+            &[6, 7]
+        );
         for (copied_lists, source_lists, expected) in [
             (
                 copied_v3000.lists_haptic_bonds,
@@ -9708,8 +10117,16 @@ mod tests {
                 source_v3000.lists_steabs,
                 vec![50, 2, 60, 70],
             ),
-            (copied_v3000.lists_sterel, source_v3000.lists_sterel, vec![80, 1, 90]),
-            (copied_v3000.lists_sterac, source_v3000.lists_sterac, vec![100, 1, 110]),
+            (
+                copied_v3000.lists_sterel,
+                source_v3000.lists_sterel,
+                vec![80, 1, 90],
+            ),
+            (
+                copied_v3000.lists_sterac,
+                source_v3000.lists_sterac,
+                vec![100, 1, 110],
+            ),
         ] {
             assert_ne!(copied_lists, source_lists);
             let copied_list = heap.slice(copied_lists.as_const()).unwrap()[0];
@@ -9718,14 +10135,19 @@ mod tests {
             assert_eq!(heap.slice(copied_list.as_const()).unwrap(), expected);
         }
         heap.slice_mut(destination.at).unwrap()[0].orig_at_number = 99;
-        assert_eq!(heap.slice(source.at.as_const()).unwrap()[0].orig_at_number, 11);
+        assert_eq!(
+            heap.slice(source.at.as_const()).unwrap()[0].orig_at_number,
+            11
+        );
 
         let mut reuse_heap = SourceHeap::default();
         let mut reuse_source = duplicate_source(&mut reuse_heap);
         reuse_source.szCoord = SourceMutPointer::null();
         reuse_source.polymer = SourceMutPointer::null();
         reuse_source.v3000 = SourceMutPointer::null();
-        let reused_atoms = reuse_heap.allocate_model_storage(vec![inp_ATOM::default(); 4]).unwrap();
+        let reused_atoms = reuse_heap
+            .allocate_model_storage(vec![inp_ATOM::default(); 4])
+            .unwrap();
         let reused_lengths = reuse_heap.allocate_model_storage(vec![0_u16; 2]).unwrap();
         let reused_old = reuse_heap.allocate_model_storage(vec![0_u16; 2]).unwrap();
         let mut reused = ORIG_ATOM_DATA {
@@ -9736,7 +10158,10 @@ mod tests {
             num_components: 2,
             ..ORIG_ATOM_DATA::default()
         };
-        assert_eq!(OrigAtData_Duplicate(&mut reuse_heap, &mut reused, &reuse_source), Ok(0));
+        assert_eq!(
+            OrigAtData_Duplicate(&mut reuse_heap, &mut reused, &reuse_source),
+            Ok(0)
+        );
         assert_eq!(reused.at, reused_atoms);
         assert_eq!(reused.nCurAtLen, reused_lengths);
         assert_eq!(reused.nOldCompNumber, reused_old);
@@ -9762,7 +10187,11 @@ mod tests {
         let mut partial = ORIG_ATOM_DATA::default();
         coordinate_failure_heap.fail_after_allocations(3);
         assert_eq!(
-            OrigAtData_Duplicate(&mut coordinate_failure_heap, &mut partial, &coordinate_source),
+            OrigAtData_Duplicate(
+                &mut coordinate_failure_heap,
+                &mut partial,
+                &coordinate_source
+            ),
             Ok(-1)
         );
         assert_eq!(partial.num_inp_atoms, coordinate_source.num_inp_atoms);
@@ -9779,8 +10208,16 @@ mod tests {
             OrigAtData_Duplicate(&mut unit_failure_heap, &mut unit_destination, &unit_source),
             Ok(0)
         );
-        let copied_polymer = unit_failure_heap.slice(unit_destination.polymer.as_const()).unwrap()[0].clone();
-        assert!(unit_failure_heap.slice(copied_polymer.units.as_const()).unwrap()[0].is_null());
+        let copied_polymer = unit_failure_heap
+            .slice(unit_destination.polymer.as_const())
+            .unwrap()[0]
+            .clone();
+        assert!(
+            unit_failure_heap
+                .slice(copied_polymer.units.as_const())
+                .unwrap()[0]
+                .is_null()
+        );
 
         let mut count_heap = SourceHeap::default();
         let count_source = duplicate_source(&mut count_heap);
@@ -9798,10 +10235,17 @@ mod tests {
         let mut sterac_destination = ORIG_ATOM_DATA::default();
         sterac_failure_heap.fail_after_allocations(allocation_count - 2);
         assert_eq!(
-            OrigAtData_Duplicate(&mut sterac_failure_heap, &mut sterac_destination, &sterac_source),
+            OrigAtData_Duplicate(
+                &mut sterac_failure_heap,
+                &mut sterac_destination,
+                &sterac_source
+            ),
             Ok(0)
         );
-        let copied_v3000 = sterac_failure_heap.slice(sterac_destination.v3000.as_const()).unwrap()[0].clone();
+        let copied_v3000 = sterac_failure_heap
+            .slice(sterac_destination.v3000.as_const())
+            .unwrap()[0]
+            .clone();
         assert_eq!(copied_v3000.n_sterac, 1);
         assert!(copied_v3000.lists_sterac.is_null());
     }
@@ -9820,7 +10264,12 @@ mod tests {
             ..OAD_PolymerUnit::default()
         };
         assert_eq!(
-            OAD_PolymerUnit_OrderBondAtomsAndBondsThemselves(&mut heap, &mut unit, 3, stars.as_const(),),
+            OAD_PolymerUnit_OrderBondAtomsAndBondsThemselves(
+                &mut heap,
+                &mut unit,
+                3,
+                stars.as_const(),
+            ),
             Ok(0)
         );
         assert_eq!(heap.slice(bonds.as_const()).unwrap(), &[8, 2, 9, 1]);
@@ -9834,7 +10283,12 @@ mod tests {
             ..OAD_PolymerUnit::default()
         };
         assert_eq!(
-            OAD_PolymerUnit_OrderBondAtomsAndBondsThemselves(&mut heap, &mut partial, 3, stars.as_const(),),
+            OAD_PolymerUnit_OrderBondAtomsAndBondsThemselves(
+                &mut heap,
+                &mut partial,
+                3,
+                stars.as_const(),
+            ),
             Ok(1)
         );
         assert_eq!(heap.slice(partial_bonds.as_const()).unwrap(), &[9, 1, 8, 7]);
@@ -9848,7 +10302,12 @@ mod tests {
             ..OAD_PolymerUnit::default()
         };
         assert_eq!(
-            OAD_PolymerUnit_OrderBondAtomsAndBondsThemselves(&mut heap, &mut single, 0, SourceConstPointer::null(),),
+            OAD_PolymerUnit_OrderBondAtomsAndBondsThemselves(
+                &mut heap,
+                &mut single,
+                0,
+                SourceConstPointer::null(),
+            ),
             Ok(0)
         );
         assert_eq!(heap.slice(external.as_const()).unwrap(), &[6, 1]);
@@ -9879,7 +10338,10 @@ mod tests {
             bond_list: Vec<i32>,
             fields: [i32; 4],
             backbone_bonds: &[[i32; 2]],
-        ) -> (SourceMutPointer<OAD_PolymerUnit>, Vec<SourceMutPointer<i32>>) {
+        ) -> (
+            SourceMutPointer<OAD_PolymerUnit>,
+            Vec<SourceMutPointer<i32>>,
+        ) {
             let na = i32::try_from(atom_list.len()).unwrap();
             let nb = i32::try_from(bond_list.len() / 2).unwrap();
             let alist = if atom_list.is_empty() {
@@ -9921,7 +10383,9 @@ mod tests {
         }
 
         let mut heap = SourceHeap::default();
-        let canonical = heap.allocate_model_storage(vec![4_i32, -1, 2, 0, 5, 1, 3, 6]).unwrap();
+        let canonical = heap
+            .allocate_model_storage(vec![4_i32, -1, 2, 0, 5, 1, 3, 6])
+            .unwrap();
         let pzz = heap.allocate_model_storage(vec![6_i32]).unwrap();
         let (first, first_rows) = allocate_unit(
             &mut heap,
@@ -9963,8 +10427,14 @@ mod tests {
             ),
             (5, 3, 1, 2)
         );
-        assert_eq!(heap.slice(first_value.alist.as_const()).unwrap(), &[1, 3, 5, 2]);
-        assert_eq!(heap.slice(first_value.blist.as_const()).unwrap(), &[1, 5, 6, 3]);
+        assert_eq!(
+            heap.slice(first_value.alist.as_const()).unwrap(),
+            &[1, 3, 5, 2]
+        );
+        assert_eq!(
+            heap.slice(first_value.blist.as_const()).unwrap(),
+            &[1, 5, 6, 3]
+        );
         assert_eq!(heap.slice(first_rows[0].as_const()).unwrap(), &[5, 6]);
         assert_eq!(heap.slice(first_rows[1].as_const()).unwrap(), &[1, 2]);
         assert_eq!(heap.slice(first_rows[2].as_const()).unwrap(), &[0, 1]);
@@ -9972,7 +10442,9 @@ mod tests {
         assert_eq!(heap.slice(second_value.alist.as_const()).unwrap(), &[2, 7]);
 
         let mut error10_heap = SourceHeap::default();
-        let error10_canonical = error10_heap.allocate_model_storage(vec![0_i32, -1]).unwrap();
+        let error10_canonical = error10_heap
+            .allocate_model_storage(vec![0_i32, -1])
+            .unwrap();
         let error10_pzz = error10_heap.allocate_model_storage(vec![0_i32, 1]).unwrap();
         let mut error10_polymer = OAD_Polymer {
             n_pzz: 2,
@@ -9993,9 +10465,14 @@ mod tests {
         assert_eq!(error10_heap.slice(error10_pzz.as_const()).unwrap(), &[1, 1]);
 
         let mut bond_error_heap = SourceHeap::default();
-        let bond_error_canonical = bond_error_heap.allocate_model_storage(vec![4_i32, 3, -1]).unwrap();
-        let (bond_error_unit, _) = allocate_unit(&mut bond_error_heap, vec![0], vec![1, 2], [0, 0, 0, 0], &[]);
-        let bond_error_units = bond_error_heap.allocate_model_storage(vec![bond_error_unit]).unwrap();
+        let bond_error_canonical = bond_error_heap
+            .allocate_model_storage(vec![4_i32, 3, -1])
+            .unwrap();
+        let (bond_error_unit, _) =
+            allocate_unit(&mut bond_error_heap, vec![0], vec![1, 2], [0, 0, 0, 0], &[]);
+        let bond_error_units = bond_error_heap
+            .allocate_model_storage(vec![bond_error_unit])
+            .unwrap();
         let mut bond_error_polymer = OAD_Polymer {
             n: 1,
             ..OAD_Polymer::default()
@@ -10014,7 +10491,9 @@ mod tests {
         let bond_error_value = &bond_error_heap.slice(bond_error_unit.as_const()).unwrap()[0];
         assert_eq!(bond_error_value.na, 1);
         assert_eq!(
-            bond_error_heap.slice(bond_error_value.blist.as_const()).unwrap(),
+            bond_error_heap
+                .slice(bond_error_value.blist.as_const())
+                .unwrap(),
             &[4, 2]
         );
         assert_eq!(bond_error_value.cap1, 0);
@@ -10024,8 +10503,10 @@ mod tests {
             let mut canonical_values = vec![9_i32, 8, 7, 6, 5, 4];
             canonical_values[failed_field + 1] = -1;
             let canonical = error_heap.allocate_model_storage(canonical_values).unwrap();
-            let (first_unit, _) = allocate_unit(&mut error_heap, vec![5, 0], vec![], [0, 0, 0, 0], &[]);
-            let (failing_unit, _) = allocate_unit(&mut error_heap, vec![0], vec![], [1, 2, 3, 4], &[]);
+            let (first_unit, _) =
+                allocate_unit(&mut error_heap, vec![5, 0], vec![], [0, 0, 0, 0], &[]);
+            let (failing_unit, _) =
+                allocate_unit(&mut error_heap, vec![0], vec![], [1, 2, 3, 4], &[]);
             let units = error_heap
                 .allocate_model_storage(vec![first_unit, failing_unit])
                 .unwrap();
@@ -10045,7 +10526,10 @@ mod tests {
                 Ok(11)
             );
             let first_value = &error_heap.slice(first_unit.as_const()).unwrap()[0];
-            assert_eq!(error_heap.slice(first_value.alist.as_const()).unwrap(), &[5, 10]);
+            assert_eq!(
+                error_heap.slice(first_value.alist.as_const()).unwrap(),
+                &[5, 10]
+            );
             let value = &error_heap.slice(failing_unit.as_const()).unwrap()[0];
             let actual = [value.cap1, value.cap2, value.end_atom1, value.end_atom2];
             for index in 0..4 {
@@ -10054,14 +10538,22 @@ mod tests {
                 } else {
                     i32::try_from(index + 1).unwrap()
                 };
-                assert_eq!(actual[index], expected, "failed field {failed_field}, field {index}");
+                assert_eq!(
+                    actual[index], expected,
+                    "failed field {failed_field}, field {index}"
+                );
             }
         }
 
         let mut error12_heap = SourceHeap::default();
-        let error12_canonical = error12_heap.allocate_model_storage(vec![0_i32, 1, 2]).unwrap();
-        let (error12_unit, _) = allocate_unit(&mut error12_heap, vec![0], vec![1, 2], [0, 0, 0, 0], &[]);
-        let error12_units = error12_heap.allocate_model_storage(vec![error12_unit]).unwrap();
+        let error12_canonical = error12_heap
+            .allocate_model_storage(vec![0_i32, 1, 2])
+            .unwrap();
+        let (error12_unit, _) =
+            allocate_unit(&mut error12_heap, vec![0], vec![1, 2], [0, 0, 0, 0], &[]);
+        let error12_units = error12_heap
+            .allocate_model_storage(vec![error12_unit])
+            .unwrap();
         let error12_numbers = error12_heap.allocate_model_storage(vec![-7_i32]).unwrap();
         let mut error12_polymer = OAD_Polymer {
             n: 1,
@@ -10078,7 +10570,10 @@ mod tests {
             ),
             Ok(12)
         );
-        assert_eq!(error12_heap.slice(error12_numbers.as_const()).unwrap(), &[-7]);
+        assert_eq!(
+            error12_heap.slice(error12_numbers.as_const()).unwrap(),
+            &[-7]
+        );
 
         let mut empty_heap = SourceHeap::default();
         let mut empty_polymer = OAD_Polymer {
@@ -10169,7 +10664,14 @@ mod tests {
         }
         let full_atoms = heap.allocate_model_storage(vec![full]).unwrap();
         assert_eq!(
-            OrigAtData_RemoveHalfBond(&mut heap, 0, 1, full_atoms, &mut bond_type, &mut bond_stereo,),
+            OrigAtData_RemoveHalfBond(
+                &mut heap,
+                0,
+                1,
+                full_atoms,
+                &mut bond_type,
+                &mut bond_stereo,
+            ),
             Ok(1)
         );
         assert_eq!((bond_type, bond_stereo), (1, -10));
@@ -10207,7 +10709,15 @@ mod tests {
         let mut bond_stereo = -2;
         let mut num_bonds = 2;
         assert_eq!(
-            OrigAtData_RemoveBond(&mut heap, 0, 1, atoms, &mut bond_type, &mut bond_stereo, &mut num_bonds,),
+            OrigAtData_RemoveBond(
+                &mut heap,
+                0,
+                1,
+                atoms,
+                &mut bond_type,
+                &mut bond_stereo,
+                &mut num_bonds,
+            ),
             Ok(1)
         );
         assert_eq!((bond_type, bond_stereo, num_bonds), (2, 1, 1));
@@ -10291,7 +10801,10 @@ mod tests {
         }
 
         let before = heap.slice(atoms.as_const()).unwrap().to_vec();
-        assert_eq!(OrigAtData_AddBond(&mut heap, 0, 1, atoms, 3, -7, &mut num_bonds), Ok(1));
+        assert_eq!(
+            OrigAtData_AddBond(&mut heap, 0, 1, atoms, 3, -7, &mut num_bonds),
+            Ok(1)
+        );
         assert_eq!(num_bonds, 6);
         assert_eq!(heap.slice(atoms.as_const()).unwrap(), before.as_slice());
 
@@ -10327,7 +10840,9 @@ mod tests {
             ..inp_ATOM::default()
         };
         full.neighbor = [8; 20];
-        let full_atoms = heap.allocate_model_storage(vec![full, inp_ATOM::default()]).unwrap();
+        let full_atoms = heap
+            .allocate_model_storage(vec![full, inp_ATOM::default()])
+            .unwrap();
         let before = heap.slice(full_atoms.as_const()).unwrap().to_vec();
         num_bonds = 10;
         assert_eq!(
@@ -10335,9 +10850,14 @@ mod tests {
             Ok(0)
         );
         assert_eq!(num_bonds, 10);
-        assert_eq!(heap.slice(full_atoms.as_const()).unwrap(), before.as_slice());
+        assert_eq!(
+            heap.slice(full_atoms.as_const()).unwrap(),
+            before.as_slice()
+        );
 
-        let self_atom = heap.allocate_model_storage(vec![inp_ATOM::default()]).unwrap();
+        let self_atom = heap
+            .allocate_model_storage(vec![inp_ATOM::default()])
+            .unwrap();
         num_bonds = -1;
         assert_eq!(
             OrigAtData_AddBond(&mut heap, 0, 0, self_atom, 3, 1, &mut num_bonds),
@@ -10349,7 +10869,15 @@ mod tests {
         assert_eq!(num_bonds, 0);
 
         assert_eq!(
-            OrigAtData_AddBond(&mut heap, 0, 1, SourceMutPointer::null(), 2, 0, &mut num_bonds,),
+            OrigAtData_AddBond(
+                &mut heap,
+                0,
+                1,
+                SourceMutPointer::null(),
+                2,
+                0,
+                &mut num_bonds,
+            ),
             Ok(0)
         );
         assert_eq!(num_bonds, 0);
@@ -10392,7 +10920,10 @@ mod tests {
             );
         }
         assert_eq!((values[0].charge, values[1].charge), (-2, 3));
-        assert_eq!(UnMarkRingSystemsInp(&mut heap, SourceMutPointer::null(), 0), Ok(0));
+        assert_eq!(
+            UnMarkRingSystemsInp(&mut heap, SourceMutPointer::null(), 0),
+            Ok(0)
+        );
         assert_eq!(
             UnMarkRingSystemsInp(&mut heap, SourceMutPointer::null(), i32::MIN),
             Ok(0)
@@ -10415,7 +10946,13 @@ mod tests {
         assert_eq!((values[0].bond_type[0], values[0].bond_stereo[0]), (1, 0));
         assert_eq!((values[1].bond_type[0], values[1].bond_stereo[0]), (1, 0));
         assert_eq!(
-            OrigAtData_AddSingleStereolessBond(&mut heap, 0, 1, SourceMutPointer::null(), &mut num_bonds,),
+            OrigAtData_AddSingleStereolessBond(
+                &mut heap,
+                0,
+                1,
+                SourceMutPointer::null(),
+                &mut num_bonds,
+            ),
             Ok(0)
         );
         assert_eq!(num_bonds, 1);
@@ -10433,7 +10970,9 @@ mod tests {
             atom.orig_at_number = u16::try_from(index).unwrap();
         }
         let atoms = heap.allocate_model_storage(triangle_atoms).unwrap();
-        let polymer = heap.allocate_model_storage(vec![OAD_Polymer::default()]).unwrap();
+        let polymer = heap
+            .allocate_model_storage(vec![OAD_Polymer::default()])
+            .unwrap();
         let ring_numbers = heap.allocate_model_storage(vec![-8_i32; 4]).unwrap();
         let ring_sizes = heap.allocate_model_storage(vec![-9_i32; 4]).unwrap();
         let mut num_bonds = 3;
@@ -10532,8 +11071,12 @@ mod tests {
             atom.el_number = [6, 7, 8][index];
         }
         let atoms = heap.allocate_model_storage(atoms_values).unwrap();
-        let polymer = heap.allocate_model_storage(vec![OAD_Polymer::default()]).unwrap();
-        let properties = heap.allocate_model_storage(vec![OAD_AtProps::default(); 3]).unwrap();
+        let polymer = heap
+            .allocate_model_storage(vec![OAD_Polymer::default()])
+            .unwrap();
+        let properties = heap
+            .allocate_model_storage(vec![OAD_AtProps::default(); 3])
+            .unwrap();
         let mut num_bonds = 3;
         assert_eq!(
             OAD_Polymer_SetAtProps(
@@ -10574,7 +11117,9 @@ mod tests {
         assert_eq!(num_bonds, 3);
 
         let canonical = heap.allocate_model_storage(vec![2_i32, 0, 1]).unwrap();
-        let mapped_properties = heap.allocate_model_storage(vec![OAD_AtProps::default(); 4]).unwrap();
+        let mapped_properties = heap
+            .allocate_model_storage(vec![OAD_AtProps::default(); 4])
+            .unwrap();
         assert_eq!(
             OAD_Polymer_SetAtProps(
                 &mut heap,
@@ -10588,13 +11133,22 @@ mod tests {
             Ok(())
         );
         let values = heap.slice(mapped_properties.as_const()).unwrap();
-        assert_eq!((values[1].ring_num, values[2].ring_num, values[3].ring_num), (1, 1, 1));
         assert_eq!(
-            (values[1].ring_size, values[2].ring_size, values[3].ring_size),
+            (values[1].ring_num, values[2].ring_num, values[3].ring_num),
+            (1, 1, 1)
+        );
+        assert_eq!(
+            (
+                values[1].ring_size,
+                values[2].ring_size,
+                values[3].ring_size
+            ),
             (3, 3, 3)
         );
 
-        let failure_properties = heap.allocate_model_storage(vec![OAD_AtProps::default(); 3]).unwrap();
+        let failure_properties = heap
+            .allocate_model_storage(vec![OAD_AtProps::default(); 3])
+            .unwrap();
         heap.trace_source_allocations();
         heap.fail_after_allocations(0);
         assert_eq!(
@@ -10609,7 +11163,10 @@ mod tests {
             ),
             Ok(())
         );
-        assert_eq!(heap.slice(failure_properties.as_const()).unwrap()[0].erank, 2);
+        assert_eq!(
+            heap.slice(failure_properties.as_const()).unwrap()[0].erank,
+            2
+        );
     }
 
     #[test]
@@ -10684,7 +11241,11 @@ mod tests {
             }])
             .unwrap();
         assert_eq!(
-            OAD_PolymerUnit_CompareAtomListsMod(&heap, negative.as_const(), negative_other.as_const()),
+            OAD_PolymerUnit_CompareAtomListsMod(
+                &heap,
+                negative.as_const(),
+                negative_other.as_const()
+            ),
             Ok(0)
         );
     }
@@ -10797,8 +11358,14 @@ mod tests {
         )
         .unwrap();
         let value = &capacity_heap.slice(unit.as_const()).unwrap()[0];
-        assert_eq!(capacity_heap.slice(value.alist.as_const()).unwrap(), &[0, 0, 0]);
-        assert_eq!(capacity_heap.slice(value.blist.as_const()).unwrap(), &[0, 0, 0, 0]);
+        assert_eq!(
+            capacity_heap.slice(value.alist.as_const()).unwrap(),
+            &[0, 0, 0]
+        );
+        assert_eq!(
+            capacity_heap.slice(value.blist.as_const()).unwrap(),
+            &[0, 0, 0, 0]
+        );
         assert_eq!((value.na, value.nb, value.nbkbonds), (0, 0, -8));
 
         let mut null_heap = SourceHeap::default();
@@ -10847,7 +11414,10 @@ mod tests {
         )
         .unwrap();
         let value = &zero_blist_heap.slice(unit.as_const()).unwrap()[0];
-        assert_eq!(zero_blist_heap.slice(value.blist.as_const()).unwrap(), &[0, 0]);
+        assert_eq!(
+            zero_blist_heap.slice(value.blist.as_const()).unwrap(),
+            &[0, 0]
+        );
 
         for failure_after in 0_u64..=2 {
             let mut failure_heap = SourceHeap::default();
@@ -10886,7 +11456,9 @@ mod tests {
             let blist = heap.allocate_model_storage(vec![1_i32, 2, 3, 4]).unwrap();
             let first_row = heap.allocate_model_storage(vec![6_i32, 7]).unwrap();
             let second_row = heap.allocate_model_storage(vec![8_i32, 9]).unwrap();
-            let bkbonds = heap.allocate_model_storage(vec![first_row, second_row]).unwrap();
+            let bkbonds = heap
+                .allocate_model_storage(vec![first_row, second_row])
+                .unwrap();
             let mut smt = [99_i8; 80];
             smt[..4].copy_from_slice(&[b'A' as i8, b'B' as i8, b'C' as i8, 0]);
             heap.allocate_model_storage(vec![OAD_PolymerUnit {
@@ -10939,7 +11511,10 @@ mod tests {
         for (actual, expected) in copy_value.xbr2.iter().zip(source_value.xbr2.iter()) {
             assert_eq!(actual.to_bits(), expected.to_bits());
         }
-        assert_eq!(&copy_value.smt[..4], &[b'A' as i8, b'B' as i8, b'C' as i8, 0]);
+        assert_eq!(
+            &copy_value.smt[..4],
+            &[b'A' as i8, b'B' as i8, b'C' as i8, 0]
+        );
         assert!(copy_value.smt[4..].iter().all(|byte| *byte == 0));
         assert_eq!(copy_value.representation, 0);
         assert_eq!(copy_value.maxbkbonds, 2);
@@ -10947,7 +11522,10 @@ mod tests {
         assert_ne!(copy_value.blist, source_value.blist);
         assert_ne!(copy_value.bkbonds, source_value.bkbonds);
         assert_eq!(heap.slice(copy_value.alist.as_const()).unwrap(), &[4, 5]);
-        assert_eq!(heap.slice(copy_value.blist.as_const()).unwrap(), &[1, 2, 3, 4]);
+        assert_eq!(
+            heap.slice(copy_value.blist.as_const()).unwrap(),
+            &[1, 2, 3, 4]
+        );
         let copy_rows = heap.slice(copy_value.bkbonds.as_const()).unwrap();
         let source_rows = heap.slice(source_value.bkbonds.as_const()).unwrap();
         assert_ne!(copy_rows[0], source_rows[0]);
@@ -10964,11 +11542,16 @@ mod tests {
             let source_value = failure_heap.slice(source.as_const()).unwrap()[0].clone();
             failure_heap.fail_after_allocations(successful_allocations);
             assert!(
-                OAD_PolymerUnit_CreateCopy(&mut failure_heap, source).unwrap().is_null(),
+                OAD_PolymerUnit_CreateCopy(&mut failure_heap, source)
+                    .unwrap()
+                    .is_null(),
                 "successful_allocations={successful_allocations}"
             );
             assert!(failure_heap.slice(source.as_const()).is_ok());
-            assert_eq!(failure_heap.slice(source_value.alist.as_const()).unwrap(), &[4, 5]);
+            assert_eq!(
+                failure_heap.slice(source_value.alist.as_const()).unwrap(),
+                &[4, 5]
+            );
             OAD_PolymerUnit_Free(&mut failure_heap, source).unwrap();
         }
     }
@@ -11009,7 +11592,10 @@ mod tests {
         ] {
             assert_eq!(result, Err(SourceHeapError::MissingAllocation));
         }
-        assert_eq!(heap.slice(bkbonds.as_const()), Err(SourceHeapError::MissingAllocation));
+        assert_eq!(
+            heap.slice(bkbonds.as_const()),
+            Err(SourceHeapError::MissingAllocation)
+        );
         assert_eq!(
             heap.slice(complete_unit.as_const()),
             Err(SourceHeapError::MissingAllocation)
@@ -11106,8 +11692,14 @@ mod tests {
             heap.slice(second_unit.as_const()),
             Err(SourceHeapError::MissingAllocation)
         );
-        assert_eq!(heap.slice(units.as_const()), Err(SourceHeapError::MissingAllocation));
-        assert_eq!(heap.slice(pzz.as_const()), Err(SourceHeapError::MissingAllocation));
+        assert_eq!(
+            heap.slice(units.as_const()),
+            Err(SourceHeapError::MissingAllocation)
+        );
+        assert_eq!(
+            heap.slice(pzz.as_const()),
+            Err(SourceHeapError::MissingAllocation)
+        );
         assert_eq!(
             heap.slice(complete_polymer.as_const()),
             Err(SourceHeapError::MissingAllocation)
@@ -11194,7 +11786,12 @@ mod tests {
 
     #[test]
     fn source_port__runichi3__oad_polymerunit_setreopeningdetails__line_4007() {
-        fn run(nbkbonds: i32, endpoints: [i32; 2], atom: inp_ATOM, initial_cyclizable: i32) -> (i32, OAD_PolymerUnit) {
+        fn run(
+            nbkbonds: i32,
+            endpoints: [i32; 2],
+            atom: inp_ATOM,
+            initial_cyclizable: i32,
+        ) -> (i32, OAD_PolymerUnit) {
             let mut heap = SourceHeap::default();
             let row = heap.allocate_model_storage(endpoints.to_vec()).unwrap();
             let rows = heap.allocate_model_storage(vec![row]).unwrap();
@@ -11215,7 +11812,10 @@ mod tests {
         for count in [i32::MIN, -1, 0, 2, i32::MAX] {
             let (status, unit) = run(count, [1, 2], inp_ATOM::default(), 7);
             assert_eq!(status, count);
-            assert_eq!((unit.end_atom1, unit.end_atom2, unit.cyclizable), (91, 92, 7));
+            assert_eq!(
+                (unit.end_atom1, unit.end_atom2, unit.cyclizable),
+                (91, 92, 7)
+            );
         }
 
         let (_, diradical) = run(1, [1, 1], inp_ATOM::default(), 7);
@@ -11367,8 +11967,14 @@ mod tests {
             ),
         ] {
             let values = [first, second];
-            assert_eq!(OAD_Polymer_CompareRanksOfTwoAtoms(1, 2, &values).unwrap(), expected);
-            assert_eq!(OAD_Polymer_CompareRanksOfTwoAtoms(2, 1, &values).unwrap(), -expected);
+            assert_eq!(
+                OAD_Polymer_CompareRanksOfTwoAtoms(1, 2, &values).unwrap(),
+                expected
+            );
+            assert_eq!(
+                OAD_Polymer_CompareRanksOfTwoAtoms(2, 1, &values).unwrap(),
+                -expected
+            );
         }
 
         assert_eq!(OAD_Polymer_CompareRanksOfTwoAtoms(0, 1, &[]).unwrap(), 0);
@@ -11395,13 +12001,34 @@ mod tests {
                 ..OAD_AtProps::default()
             },
         ];
-        assert_eq!(OAD_Polymer_IsFirstAtomRankLower(1, 2, &properties).unwrap(), 1);
-        assert_eq!(OAD_Polymer_IsFirstAtomRankLower(2, 1, &properties).unwrap(), -1);
-        assert_eq!(OAD_Polymer_IsFirstAtomRankLower(1, 1, &properties).unwrap(), 0);
-        assert_eq!(OAD_Polymer_IsFirstAtomRankLower(1, 3, &properties).unwrap(), 1);
-        assert_eq!(OAD_Polymer_IsFirstAtomRankLower(3, 1, &properties).unwrap(), -1);
-        assert_eq!(OAD_Polymer_IsFirstAtomRankLower(0, 1, &properties).unwrap(), 1);
-        assert_eq!(OAD_Polymer_IsFirstAtomRankLower(-1, -2, &properties).unwrap(), -1);
+        assert_eq!(
+            OAD_Polymer_IsFirstAtomRankLower(1, 2, &properties).unwrap(),
+            1
+        );
+        assert_eq!(
+            OAD_Polymer_IsFirstAtomRankLower(2, 1, &properties).unwrap(),
+            -1
+        );
+        assert_eq!(
+            OAD_Polymer_IsFirstAtomRankLower(1, 1, &properties).unwrap(),
+            0
+        );
+        assert_eq!(
+            OAD_Polymer_IsFirstAtomRankLower(1, 3, &properties).unwrap(),
+            1
+        );
+        assert_eq!(
+            OAD_Polymer_IsFirstAtomRankLower(3, 1, &properties).unwrap(),
+            -1
+        );
+        assert_eq!(
+            OAD_Polymer_IsFirstAtomRankLower(0, 1, &properties).unwrap(),
+            1
+        );
+        assert_eq!(
+            OAD_Polymer_IsFirstAtomRankLower(-1, -2, &properties).unwrap(),
+            -1
+        );
     }
 
     #[test]
@@ -11414,7 +12041,13 @@ mod tests {
             erank: 8,
             ..OAD_AtProps::default()
         };
-        let properties = [carbon.clone(), carbon.clone(), carbon.clone(), carbon, heteroatom];
+        let properties = [
+            carbon.clone(),
+            carbon.clone(),
+            carbon.clone(),
+            carbon,
+            heteroatom,
+        ];
 
         assert_eq!(
             OAD_Polymer_CompareBackboneBondsSeniority(&[1, 5], &[2, 3], &properties).unwrap(),
@@ -11508,7 +12141,8 @@ mod tests {
         };
         OAD_PolymerUnit_SortBackboneBonds(&mut heap, &no_bonds, &properties, unchanged).unwrap();
         assert_eq!(heap.slice(unchanged.as_const()).unwrap(), &[3, 2, 1, 0]);
-        OAD_PolymerUnit_SortBackboneBonds(&mut heap, &unit, &properties, SourceMutPointer::null()).unwrap();
+        OAD_PolymerUnit_SortBackboneBonds(&mut heap, &unit, &properties, SourceMutPointer::null())
+            .unwrap();
 
         let invalid = heap.allocate(vec![0, -1, 2, 3]).unwrap();
         assert_eq!(
@@ -11569,7 +12203,9 @@ mod tests {
         let mut failure_heap = SourceHeap::default();
         let failure_row0 = failure_heap.allocate(vec![1_i32, 2]).unwrap();
         let failure_row1 = failure_heap.allocate(vec![3_i32, 5]).unwrap();
-        let failure_rows = failure_heap.allocate(vec![failure_row0, failure_row1]).unwrap();
+        let failure_rows = failure_heap
+            .allocate(vec![failure_row0, failure_row1])
+            .unwrap();
         let mut failure_unit = OAD_PolymerUnit {
             nbkbonds: 2,
             bkbonds: failure_rows,
@@ -11586,7 +12222,10 @@ mod tests {
         )
         .unwrap();
         assert_eq!(senior, 0);
-        assert_eq!(&failure_heap.slice(failure_row0.as_const()).unwrap()[..2], &[2, 1]);
+        assert_eq!(
+            &failure_heap.slice(failure_row0.as_const()).unwrap()[..2],
+            &[2, 1]
+        );
         assert_eq!((failure_unit.end_atom1, failure_unit.end_atom2), (2, 1));
 
         let mut single_heap = SourceHeap::default();
@@ -11607,7 +12246,10 @@ mod tests {
         )
         .unwrap();
         assert_eq!(senior, 0);
-        assert_eq!(&single_heap.slice(single_row.as_const()).unwrap()[..2], &[2, 1]);
+        assert_eq!(
+            &single_heap.slice(single_row.as_const()).unwrap()[..2],
+            &[2, 1]
+        );
         assert_eq!((single_unit.end_atom1, single_unit.end_atom2), (2, 1));
     }
 
@@ -11667,7 +12309,10 @@ mod tests {
         assert_eq!(heap.source_allocation_calls(), 13);
         assert_eq!(heap.live_allocation_count(), baseline);
         assert_eq!(reachable_count, 5);
-        assert_eq!(&heap.slice(reachable.as_const()).unwrap()[..5], &[1, 2, 3, 4, 5]);
+        assert_eq!(
+            &heap.slice(reachable.as_const()).unwrap()[..5],
+            &[1, 2, 3, 4, 5]
+        );
         assert_eq!(&heap.slice(reachable.as_const()).unwrap()[5..], &[-9, -9]);
         assert_eq!(error, 77);
         assert_eq!(error_text, [b'o' as i8, b'l' as i8, b'd' as i8, 0, -1]);
@@ -11815,7 +12460,9 @@ mod tests {
             let mut failure_heap = SourceHeap::default();
             let failure_data = atom_data(&mut failure_heap, 4);
             let failure_forbidden = failure_heap.allocate_model_storage(vec![2_i32, 3]).unwrap();
-            let failure_reachable = failure_heap.allocate_model_storage(vec![-11_i32; 4]).unwrap();
+            let failure_reachable = failure_heap
+                .allocate_model_storage(vec![-11_i32; 4])
+                .unwrap();
             let failure_baseline = failure_heap.live_allocation_count();
             let mut failure_count = 4_i32;
             let mut failure_error = 314_i32;
@@ -11836,7 +12483,10 @@ mod tests {
                 Ok(_IS_ERROR as i32),
                 "allocation ordinal {successful_allocations}"
             );
-            assert_eq!(failure_count, 0, "allocation ordinal {successful_allocations}");
+            assert_eq!(
+                failure_count, 0,
+                "allocation ordinal {successful_allocations}"
+            );
             assert_eq!(
                 failure_heap.slice(failure_forbidden.as_const()).unwrap(),
                 &[2, 3],
@@ -11876,7 +12526,12 @@ mod tests {
             atoms
         }
 
-        fn output_rows(heap: &mut SourceHeap) -> (SourceMutPointer<SourceMutPointer<i32>>, Vec<SourceMutPointer<i32>>) {
+        fn output_rows(
+            heap: &mut SourceHeap,
+        ) -> (
+            SourceMutPointer<SourceMutPointer<i32>>,
+            Vec<SourceMutPointer<i32>>,
+        ) {
             let rows = (0..6)
                 .map(|_| heap.allocate(vec![-1_i32, -1]).unwrap())
                 .collect::<Vec<_>>();
@@ -11942,7 +12597,9 @@ mod tests {
         assert_eq!(heap.slice(reverse_rows[1].as_const()).unwrap(), &[2, 1]);
 
         let mut graph_failure_heap = SourceHeap::default();
-        let failure_atoms = graph_failure_heap.allocate_model_storage(diamond_atoms()).unwrap();
+        let failure_atoms = graph_failure_heap
+            .allocate_model_storage(diamond_atoms())
+            .unwrap();
         let failure_data = ORIG_ATOM_DATA {
             at: failure_atoms,
             num_inp_atoms: 4,
@@ -11970,12 +12627,17 @@ mod tests {
         assert_eq!(failure_count, 0);
         assert_eq!(failure_error, 9037);
         let expected = b"Not enough memory (polymers)\0";
-        assert_eq!(&failure_text[..expected.len()], &expected.map(|byte| byte as i8));
+        assert_eq!(
+            &failure_text[..expected.len()],
+            &expected.map(|byte| byte as i8)
+        );
         assert_eq!(graph_failure_heap.live_allocation_count(), failure_baseline);
 
         for successful_allocations in [9_u64, 10] {
             let mut pathfinder_failure_heap = SourceHeap::default();
-            let pathfinder_failure_atoms = pathfinder_failure_heap.allocate_model_storage(diamond_atoms()).unwrap();
+            let pathfinder_failure_atoms = pathfinder_failure_heap
+                .allocate_model_storage(diamond_atoms())
+                .unwrap();
             let pathfinder_failure_data = ORIG_ATOM_DATA {
                 at: pathfinder_failure_atoms,
                 num_inp_atoms: 4,
@@ -12022,7 +12684,10 @@ mod tests {
         fn make_bonds(
             heap: &mut SourceHeap,
             values: &[[i32; 2]],
-        ) -> (SourceMutPointer<SourceMutPointer<i32>>, Vec<SourceMutPointer<i32>>) {
+        ) -> (
+            SourceMutPointer<SourceMutPointer<i32>>,
+            Vec<SourceMutPointer<i32>>,
+        ) {
             let rows = values
                 .iter()
                 .map(|value| heap.allocate(value.to_vec()).unwrap())
@@ -12039,9 +12704,17 @@ mod tests {
         assert_eq!(heap.slice(rows[1].as_const()).unwrap(), &[5, 6]);
         assert_eq!(heap.slice(rows[2].as_const()).unwrap(), &[5, 6]);
 
-        let (first_bonds, first_rows) = make_bonds(&mut heap, &[[i32::MIN, i32::MAX], [7, 8], [9, 10]]);
+        let (first_bonds, first_rows) =
+            make_bonds(&mut heap, &[[i32::MIN, i32::MAX], [7, 8], [9, 10]]);
         let mut first_count = 3_i32;
-        OAD_PolymerUnit_RemoveLinkFromCRUChain(&mut heap, i32::MIN, i32::MAX, &mut first_count, first_bonds).unwrap();
+        OAD_PolymerUnit_RemoveLinkFromCRUChain(
+            &mut heap,
+            i32::MIN,
+            i32::MAX,
+            &mut first_count,
+            first_bonds,
+        )
+        .unwrap();
         assert_eq!(first_count, 2);
         assert_eq!(heap.slice(first_rows[0].as_const()).unwrap(), &[7, 8]);
         assert_eq!(heap.slice(first_rows[1].as_const()).unwrap(), &[9, 10]);
@@ -12049,28 +12722,51 @@ mod tests {
 
         let (last_bonds, last_rows) = make_bonds(&mut heap, &[[1, 2], [3, 4]]);
         let mut last_count = 2_i32;
-        OAD_PolymerUnit_RemoveLinkFromCRUChain(&mut heap, 3, 4, &mut last_count, last_bonds).unwrap();
+        OAD_PolymerUnit_RemoveLinkFromCRUChain(&mut heap, 3, 4, &mut last_count, last_bonds)
+            .unwrap();
         assert_eq!(last_count, 1);
         assert_eq!(heap.slice(last_rows[1].as_const()).unwrap(), &[3, 4]);
 
         let (reverse_bonds, reverse_rows) = make_bonds(&mut heap, &[[2, 1], [3, 4]]);
         let mut reverse_count = 2_i32;
-        OAD_PolymerUnit_RemoveLinkFromCRUChain(&mut heap, 1, 2, &mut reverse_count, reverse_bonds).unwrap();
+        OAD_PolymerUnit_RemoveLinkFromCRUChain(&mut heap, 1, 2, &mut reverse_count, reverse_bonds)
+            .unwrap();
         assert_eq!(reverse_count, 2);
         assert_eq!(heap.slice(reverse_rows[0].as_const()).unwrap(), &[2, 1]);
 
         let (duplicate_bonds, duplicate_rows) = make_bonds(&mut heap, &[[4, 5], [4, 5], [6, 7]]);
         let mut duplicate_count = 3_i32;
-        OAD_PolymerUnit_RemoveLinkFromCRUChain(&mut heap, 4, 5, &mut duplicate_count, duplicate_bonds).unwrap();
+        OAD_PolymerUnit_RemoveLinkFromCRUChain(
+            &mut heap,
+            4,
+            5,
+            &mut duplicate_count,
+            duplicate_bonds,
+        )
+        .unwrap();
         assert_eq!(duplicate_count, 2);
         assert_eq!(heap.slice(duplicate_rows[0].as_const()).unwrap(), &[4, 5]);
         assert_eq!(heap.slice(duplicate_rows[1].as_const()).unwrap(), &[6, 7]);
 
         let mut negative_count = i32::MIN;
-        OAD_PolymerUnit_RemoveLinkFromCRUChain(&mut heap, 1, 2, &mut negative_count, SourceMutPointer::null()).unwrap();
+        OAD_PolymerUnit_RemoveLinkFromCRUChain(
+            &mut heap,
+            1,
+            2,
+            &mut negative_count,
+            SourceMutPointer::null(),
+        )
+        .unwrap();
         assert_eq!(negative_count, i32::MIN);
         let mut zero_count = 0_i32;
-        OAD_PolymerUnit_RemoveLinkFromCRUChain(&mut heap, 1, 2, &mut zero_count, SourceMutPointer::null()).unwrap();
+        OAD_PolymerUnit_RemoveLinkFromCRUChain(
+            &mut heap,
+            1,
+            2,
+            &mut zero_count,
+            SourceMutPointer::null(),
+        )
+        .unwrap();
         assert_eq!(zero_count, 0);
     }
 
@@ -12090,7 +12786,9 @@ mod tests {
                 atom.chem_bonds_valence = atom.valence;
             }
             let atoms = heap.allocate_model_storage(atoms).unwrap();
-            let polymer = heap.allocate_model_storage(vec![OAD_Polymer::default()]).unwrap();
+            let polymer = heap
+                .allocate_model_storage(vec![OAD_Polymer::default()])
+                .unwrap();
             ORIG_ATOM_DATA {
                 at: atoms,
                 polymer,
@@ -12103,7 +12801,10 @@ mod tests {
         fn make_unit(
             heap: &mut SourceHeap,
             values: &[[i32; 2]],
-        ) -> (SourceMutPointer<OAD_PolymerUnit>, Vec<SourceMutPointer<i32>>) {
+        ) -> (
+            SourceMutPointer<OAD_PolymerUnit>,
+            Vec<SourceMutPointer<i32>>,
+        ) {
             let rows = values
                 .iter()
                 .map(|value| heap.allocate(value.to_vec()).unwrap())
@@ -12127,8 +12828,14 @@ mod tests {
         let baseline = heap.live_allocation_count();
         let mut error = 88_i32;
         let mut text = [0_i8; 256];
-        OAD_PolymerUnit_DelistIntraRingBackboneBonds(&mut heap, unit, &mut atom_data, &mut error, Some(&mut text))
-            .unwrap();
+        OAD_PolymerUnit_DelistIntraRingBackboneBonds(
+            &mut heap,
+            unit,
+            &mut atom_data,
+            &mut error,
+            Some(&mut text),
+        )
+        .unwrap();
         assert_eq!(error, 0);
         assert_eq!(text[0], 0);
         assert_eq!(heap.live_allocation_count(), baseline);
@@ -12150,7 +12857,9 @@ mod tests {
             atom.chem_bonds_valence = atom.valence;
         }
         let chain_atom_pointer = heap.allocate_model_storage(chain_atoms).unwrap();
-        let chain_polymer = heap.allocate_model_storage(vec![OAD_Polymer::default()]).unwrap();
+        let chain_polymer = heap
+            .allocate_model_storage(vec![OAD_Polymer::default()])
+            .unwrap();
         let mut chain_data = ORIG_ATOM_DATA {
             at: chain_atom_pointer,
             polymer: chain_polymer,
@@ -12160,7 +12869,14 @@ mod tests {
         };
         let (chain_unit, chain_rows) = make_unit(&mut heap, &[[1, 2], [2, 3]]);
         error = 66;
-        OAD_PolymerUnit_DelistIntraRingBackboneBonds(&mut heap, chain_unit, &mut chain_data, &mut error, None).unwrap();
+        OAD_PolymerUnit_DelistIntraRingBackboneBonds(
+            &mut heap,
+            chain_unit,
+            &mut chain_data,
+            &mut error,
+            None,
+        )
+        .unwrap();
         assert_eq!(error, 0);
         assert_eq!(heap.slice(chain_unit.as_const()).unwrap()[0].nbkbonds, 2);
         assert_eq!(heap.slice(chain_rows[0].as_const()).unwrap(), &[1, 2]);
@@ -12182,7 +12898,14 @@ mod tests {
                 ..OAD_PolymerUnit::default()
             }])
             .unwrap();
-        OAD_PolymerUnit_DelistIntraRingBackboneBonds(&mut heap, empty_unit, &mut early_data, &mut error, None).unwrap();
+        OAD_PolymerUnit_DelistIntraRingBackboneBonds(
+            &mut heap,
+            empty_unit,
+            &mut early_data,
+            &mut error,
+            None,
+        )
+        .unwrap();
         assert_eq!(error, 19);
 
         let mut failure_heap = SourceHeap::default();
@@ -12206,8 +12929,14 @@ mod tests {
         assert_eq!(failure_error, 1);
         assert_eq!(&failure_text[..2], &[b'x' as i8, 0]);
         assert_eq!(failure_heap.live_allocation_count(), failure_baseline);
-        assert_eq!(failure_heap.slice(failure_unit.as_const()).unwrap()[0].nbkbonds, 2);
-        assert_eq!(failure_heap.slice(failure_rows[0].as_const()).unwrap(), &[1, 2]);
+        assert_eq!(
+            failure_heap.slice(failure_unit.as_const()).unwrap()[0].nbkbonds,
+            2
+        );
+        assert_eq!(
+            failure_heap.slice(failure_rows[0].as_const()).unwrap(),
+            &[1, 2]
+        );
     }
 
     #[test]
@@ -12215,7 +12944,10 @@ mod tests {
         fn make_unit(
             heap: &mut SourceHeap,
             values: &[[i32; 2]],
-        ) -> (SourceMutPointer<OAD_PolymerUnit>, Vec<SourceMutPointer<i32>>) {
+        ) -> (
+            SourceMutPointer<OAD_PolymerUnit>,
+            Vec<SourceMutPointer<i32>>,
+        ) {
             let rows = values
                 .iter()
                 .map(|value| heap.allocate(value.to_vec()).unwrap())
@@ -12235,7 +12967,9 @@ mod tests {
 
         fn original_data(heap: &mut SourceHeap) -> ORIG_ATOM_DATA {
             ORIG_ATOM_DATA {
-                at: heap.allocate_model_storage(vec![inp_ATOM::default(); 3]).unwrap(),
+                at: heap
+                    .allocate_model_storage(vec![inp_ATOM::default(); 3])
+                    .unwrap(),
                 num_inp_atoms: 3,
                 ..ORIG_ATOM_DATA::default()
             }
@@ -12291,10 +13025,23 @@ mod tests {
         original_atoms[0].valence = 1;
         original_atoms[0].neighbor[0] = 1;
         original_atoms[0].bond_type[0] = 3;
-        OAD_PolymerUnit_DelistHighOrderBackboneBonds(&mut heap, no_composite_unit, &original, None, &mut error, None)
-            .unwrap();
-        assert_eq!(heap.slice(no_composite_unit.as_const()).unwrap()[0].nbkbonds, 1);
-        assert_eq!(heap.slice(no_composite_rows[0].as_const()).unwrap(), &[1, 2]);
+        OAD_PolymerUnit_DelistHighOrderBackboneBonds(
+            &mut heap,
+            no_composite_unit,
+            &original,
+            None,
+            &mut error,
+            None,
+        )
+        .unwrap();
+        assert_eq!(
+            heap.slice(no_composite_unit.as_const()).unwrap()[0].nbkbonds,
+            1
+        );
+        assert_eq!(
+            heap.slice(no_composite_rows[0].as_const()).unwrap(),
+            &[1, 2]
+        );
 
         let mut second_failure_heap = SourceHeap::default();
         let second_failure_original = original_data(&mut second_failure_heap);
@@ -12313,10 +13060,16 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            second_failure_heap.slice(second_failure_unit.as_const()).unwrap()[0].nbkbonds,
+            second_failure_heap
+                .slice(second_failure_unit.as_const())
+                .unwrap()[0]
+                .nbkbonds,
             1
         );
-        assert_eq!(second_failure_heap.live_allocation_count(), second_failure_baseline);
+        assert_eq!(
+            second_failure_heap.live_allocation_count(),
+            second_failure_baseline
+        );
         assert_eq!(second_failure_error, 82);
 
         let mut first_failure_heap = SourceHeap::default();
@@ -12328,7 +13081,9 @@ mod tests {
         zero_mapped_atoms[0].bond_type[0] = BOND_TAUTOM as u8;
         zero_mapped_atoms[1].orig_at_number = 2;
         let first_failure_composite = COMP_ATOM_DATA {
-            at: first_failure_heap.allocate_model_storage(zero_mapped_atoms).unwrap(),
+            at: first_failure_heap
+                .allocate_model_storage(zero_mapped_atoms)
+                .unwrap(),
             num_at: 2,
             ..COMP_ATOM_DATA::default()
         };
@@ -12346,10 +13101,16 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            first_failure_heap.slice(first_failure_unit.as_const()).unwrap()[0].nbkbonds,
+            first_failure_heap
+                .slice(first_failure_unit.as_const())
+                .unwrap()[0]
+                .nbkbonds,
             0
         );
-        assert_eq!(first_failure_heap.live_allocation_count(), first_failure_baseline);
+        assert_eq!(
+            first_failure_heap.live_allocation_count(),
+            first_failure_baseline
+        );
         assert_eq!(first_failure_error, 93);
 
         for (na, nb, nbkbonds) in [(1, 9, 1), (9, 1, 1), (9, 9, 0)] {
@@ -12459,7 +13220,8 @@ mod tests {
         let baseline = heap.live_allocation_count();
         let mut error = 91_i32;
         let mut text = [0_i8; 256];
-        OAD_Polymer_FindBackbones(&mut heap, &mut atom_data, None, &mut error, Some(&mut text)).unwrap();
+        OAD_Polymer_FindBackbones(&mut heap, &mut atom_data, None, &mut error, Some(&mut text))
+            .unwrap();
         let result = heap.slice(unit.as_const()).unwrap()[0].clone();
         assert_eq!(error, 0);
         assert_eq!(result.cyclizable, 1);
@@ -12485,7 +13247,10 @@ mod tests {
             Some(&mut collect_failure_text),
         )
         .unwrap();
-        let failed = collect_failure_heap.slice(collect_failure_unit.as_const()).unwrap()[0].clone();
+        let failed = collect_failure_heap
+            .slice(collect_failure_unit.as_const())
+            .unwrap()[0]
+            .clone();
         assert_eq!(failed.cyclizable, CLOSING_SRU_NOT_APPLICABLE as i32);
         assert_eq!(failed.nbkbonds, 0);
         assert_eq!(collect_failure_error, 9037);
@@ -12494,14 +13259,20 @@ mod tests {
             &collect_failure_text[..expected.len()],
             &expected.map(|byte| byte as i8)
         );
-        assert_eq!(collect_failure_heap.live_allocation_count(), collect_failure_baseline);
         assert_eq!(
-            collect_failure_heap.slice(collect_failure_rows[0].as_const()).unwrap(),
+            collect_failure_heap.live_allocation_count(),
+            collect_failure_baseline
+        );
+        assert_eq!(
+            collect_failure_heap
+                .slice(collect_failure_rows[0].as_const())
+                .unwrap(),
             &[-1, -1]
         );
 
         let mut intra_failure_heap = SourceHeap::default();
-        let (mut intra_failure_data, intra_failure_unit, _, _) = triangle_data(&mut intra_failure_heap, false);
+        let (mut intra_failure_data, intra_failure_unit, _, _) =
+            triangle_data(&mut intra_failure_heap, false);
         let intra_failure_baseline = intra_failure_heap.live_allocation_count();
         intra_failure_heap.fail_after_allocations(10);
         let mut intra_failure_error = 33_i32;
@@ -12513,11 +13284,17 @@ mod tests {
             None,
         )
         .unwrap();
-        let partial = intra_failure_heap.slice(intra_failure_unit.as_const()).unwrap()[0].clone();
+        let partial = intra_failure_heap
+            .slice(intra_failure_unit.as_const())
+            .unwrap()[0]
+            .clone();
         assert_eq!(intra_failure_error, 1);
         assert_eq!(partial.cyclizable, 1);
         assert!(partial.nbkbonds > 1);
-        assert_eq!(intra_failure_heap.live_allocation_count(), intra_failure_baseline);
+        assert_eq!(
+            intra_failure_heap.live_allocation_count(),
+            intra_failure_baseline
+        );
     }
 
     #[test]
@@ -12525,7 +13302,10 @@ mod tests {
         fn polymer_with_units(
             heap: &mut SourceHeap,
             units: Vec<OAD_PolymerUnit>,
-        ) -> (SourceMutPointer<OAD_Polymer>, Vec<SourceMutPointer<OAD_PolymerUnit>>) {
+        ) -> (
+            SourceMutPointer<OAD_Polymer>,
+            Vec<SourceMutPointer<OAD_PolymerUnit>>,
+        ) {
             let pointers = units
                 .into_iter()
                 .map(|unit| heap.allocate_model_storage(vec![unit]).unwrap())
@@ -12546,7 +13326,9 @@ mod tests {
             OAD_Polymer_GetRepresentation(&mut heap, SourceMutPointer::null()),
             Ok(NO_POLYMER)
         );
-        let empty = heap.allocate_model_storage(vec![OAD_Polymer::default()]).unwrap();
+        let empty = heap
+            .allocate_model_storage(vec![OAD_Polymer::default()])
+            .unwrap();
         assert_eq!(
             OAD_Polymer_GetRepresentation(&mut heap, empty),
             Ok(POLYMER_REPRESENTATION_SOURCE_BASED as i32)
@@ -12647,7 +13429,11 @@ mod tests {
 
     #[test]
     fn source_port__runichi3__origatdata_increasebondorder__line_2692() {
-        fn pair(heap: &mut SourceHeap, first_type: u8, second_type: u8) -> SourceMutPointer<inp_ATOM> {
+        fn pair(
+            heap: &mut SourceHeap,
+            first_type: u8,
+            second_type: u8,
+        ) -> SourceMutPointer<inp_ATOM> {
             let mut atoms = vec![inp_ATOM::default(); 2];
             atoms[0].valence = 1;
             atoms[0].neighbor[0] = 1;
@@ -12679,14 +13465,20 @@ mod tests {
             let limited = pair(&mut heap, 1, 1);
             heap.slice_mut(limited).unwrap()[limited_index].valence = MAXVAL as i8;
             let before = heap.slice(limited.as_const()).unwrap().to_vec();
-            assert_eq!(OrigAtData_IncreaseBondOrder(&mut heap, 0, 1, limited), Ok(0));
+            assert_eq!(
+                OrigAtData_IncreaseBondOrder(&mut heap, 0, 1, limited),
+                Ok(0)
+            );
             assert_eq!(heap.slice(limited.as_const()).unwrap(), before);
         }
 
         for negative_index in [0_usize, 1] {
             let negative = pair(&mut heap, 1, 1);
             heap.slice_mut(negative).unwrap()[negative_index].valence = -1;
-            assert_eq!(OrigAtData_IncreaseBondOrder(&mut heap, 0, 1, negative), Ok(1));
+            assert_eq!(
+                OrigAtData_IncreaseBondOrder(&mut heap, 0, 1, negative),
+                Ok(1)
+            );
             let values = heap.slice(negative.as_const()).unwrap();
             if negative_index == 0 {
                 assert_eq!((values[0].bond_type[0], values[1].bond_type[0]), (1, 2));
@@ -12697,39 +13489,66 @@ mod tests {
 
         let first_valence_max = pair(&mut heap, 1, 1);
         heap.slice_mut(first_valence_max).unwrap()[0].chem_bonds_valence = MAXVAL as i8;
-        assert_eq!(OrigAtData_IncreaseBondOrder(&mut heap, 0, 1, first_valence_max), Ok(0));
-        assert_eq!(heap.slice(first_valence_max.as_const()).unwrap()[0].bond_type[0], 1);
+        assert_eq!(
+            OrigAtData_IncreaseBondOrder(&mut heap, 0, 1, first_valence_max),
+            Ok(0)
+        );
+        assert_eq!(
+            heap.slice(first_valence_max.as_const()).unwrap()[0].bond_type[0],
+            1
+        );
 
         let second_valence_max = pair(&mut heap, 1, 1);
         heap.slice_mut(second_valence_max).unwrap()[1].chem_bonds_valence = MAXVAL as i8;
-        assert_eq!(OrigAtData_IncreaseBondOrder(&mut heap, 0, 1, second_valence_max), Ok(0));
+        assert_eq!(
+            OrigAtData_IncreaseBondOrder(&mut heap, 0, 1, second_valence_max),
+            Ok(0)
+        );
         let values = heap.slice(second_valence_max.as_const()).unwrap();
-        assert_eq!((values[0].bond_type[0], values[0].chem_bonds_valence), (2, 2));
+        assert_eq!(
+            (values[0].bond_type[0], values[0].chem_bonds_valence),
+            (2, 2)
+        );
         assert_eq!(
             (values[1].bond_type[0], values[1].chem_bonds_valence),
             (1, MAXVAL as i8)
         );
 
         let first_unknown = pair(&mut heap, 4, 1);
-        assert_eq!(OrigAtData_IncreaseBondOrder(&mut heap, 0, 1, first_unknown), Ok(0));
+        assert_eq!(
+            OrigAtData_IncreaseBondOrder(&mut heap, 0, 1, first_unknown),
+            Ok(0)
+        );
         let values = heap.slice(first_unknown.as_const()).unwrap();
         assert_eq!((values[0].bond_type[0], values[1].bond_type[0]), (4, 1));
 
         let second_unknown = pair(&mut heap, 1, 4);
-        assert_eq!(OrigAtData_IncreaseBondOrder(&mut heap, 0, 1, second_unknown), Ok(0));
+        assert_eq!(
+            OrigAtData_IncreaseBondOrder(&mut heap, 0, 1, second_unknown),
+            Ok(0)
+        );
         let values = heap.slice(second_unknown.as_const()).unwrap();
         assert_eq!((values[0].bond_type[0], values[1].bond_type[0]), (2, 4));
-        assert_eq!((values[0].chem_bonds_valence, values[1].chem_bonds_valence), (2, 4));
+        assert_eq!(
+            (values[0].chem_bonds_valence, values[1].chem_bonds_valence),
+            (2, 4)
+        );
 
         let first_missing = pair(&mut heap, 1, 1);
         heap.slice_mut(first_missing).unwrap()[0].neighbor[0] = 0;
-        assert_eq!(OrigAtData_IncreaseBondOrder(&mut heap, 0, 1, first_missing), Ok(1));
+        assert_eq!(
+            OrigAtData_IncreaseBondOrder(&mut heap, 0, 1, first_missing),
+            Ok(1)
+        );
         let values = heap.slice(first_missing.as_const()).unwrap();
         assert_eq!((values[0].bond_type[0], values[1].bond_type[0]), (1, 2));
 
         let second_missing = pair(&mut heap, 1, 1);
         heap.slice_mut(second_missing).unwrap()[1].neighbor[0] = 1;
-        assert_eq!(OrigAtData_IncreaseBondOrder(&mut heap, 0, 1, second_missing), Ok(1));
+        assert_eq!(
+            OrigAtData_IncreaseBondOrder(&mut heap, 0, 1, second_missing),
+            Ok(1)
+        );
         let values = heap.slice(second_missing.as_const()).unwrap();
         assert_eq!((values[0].bond_type[0], values[1].bond_type[0]), (2, 1));
 
@@ -12739,7 +13558,10 @@ mod tests {
             values[0].neighbor[0] = 0;
             values[1].neighbor[0] = 1;
         }
-        assert_eq!(OrigAtData_IncreaseBondOrder(&mut heap, 0, 1, both_missing), Ok(0));
+        assert_eq!(
+            OrigAtData_IncreaseBondOrder(&mut heap, 0, 1, both_missing),
+            Ok(0)
+        );
 
         let mut scanned_atoms = vec![inp_ATOM::default(); 3];
         scanned_atoms[0].valence = 2;
@@ -12751,11 +13573,17 @@ mod tests {
         scanned_atoms[1].bond_type[..2].copy_from_slice(&[3, 1]);
         scanned_atoms[1].chem_bonds_valence = 4;
         let scanned = heap.allocate_model_storage(scanned_atoms).unwrap();
-        assert_eq!(OrigAtData_IncreaseBondOrder(&mut heap, 0, 1, scanned), Ok(2));
+        assert_eq!(
+            OrigAtData_IncreaseBondOrder(&mut heap, 0, 1, scanned),
+            Ok(2)
+        );
         let values = heap.slice(scanned.as_const()).unwrap();
         assert_eq!(values[0].bond_type[..2], [3, 2]);
         assert_eq!(values[1].bond_type[..2], [3, 2]);
-        assert_eq!((values[0].chem_bonds_valence, values[1].chem_bonds_valence), (5, 5));
+        assert_eq!(
+            (values[0].chem_bonds_valence, values[1].chem_bonds_valence),
+            (5, 5)
+        );
 
         let mut self_atom = inp_ATOM {
             valence: 1,
@@ -12765,9 +13593,15 @@ mod tests {
         self_atom.neighbor[0] = 0;
         self_atom.bond_type[0] = 1;
         let self_pointer = heap.allocate_model_storage(vec![self_atom]).unwrap();
-        assert_eq!(OrigAtData_IncreaseBondOrder(&mut heap, 0, 0, self_pointer), Ok(2));
+        assert_eq!(
+            OrigAtData_IncreaseBondOrder(&mut heap, 0, 0, self_pointer),
+            Ok(2)
+        );
         let self_value = &heap.slice(self_pointer.as_const()).unwrap()[0];
-        assert_eq!((self_value.bond_type[0], self_value.chem_bonds_valence), (3, 3));
+        assert_eq!(
+            (self_value.bond_type[0], self_value.chem_bonds_valence),
+            (3, 3)
+        );
 
         let normal = pair(&mut heap, 1, 1);
         assert_eq!(
@@ -12782,7 +13616,11 @@ mod tests {
 
     #[test]
     fn source_port__runichi3__origatdata_decreasebondorder__line_2750() {
-        fn pair(heap: &mut SourceHeap, first_type: u8, second_type: u8) -> SourceMutPointer<inp_ATOM> {
+        fn pair(
+            heap: &mut SourceHeap,
+            first_type: u8,
+            second_type: u8,
+        ) -> SourceMutPointer<inp_ATOM> {
             let mut atoms = vec![inp_ATOM::default(); 2];
             atoms[0].valence = 1;
             atoms[0].neighbor[0] = 1;
@@ -12799,8 +13637,14 @@ mod tests {
         let normal = pair(&mut heap, 3, 3);
         assert_eq!(OrigAtData_DecreaseBondOrder(&mut heap, 0, 1, normal), Ok(2));
         let values = heap.slice(normal.as_const()).unwrap();
-        assert_eq!((values[0].bond_type[0], values[0].chem_bonds_valence), (2, 2));
-        assert_eq!((values[1].bond_type[0], values[1].chem_bonds_valence), (2, 2));
+        assert_eq!(
+            (values[0].bond_type[0], values[0].chem_bonds_valence),
+            (2, 2)
+        );
+        assert_eq!(
+            (values[1].bond_type[0], values[1].chem_bonds_valence),
+            (2, 2)
+        );
 
         let maxed = pair(&mut heap, 3, 3);
         heap.slice_mut(maxed).unwrap()[0].chem_bonds_valence = MAXVAL as i8;
@@ -12808,25 +13652,43 @@ mod tests {
         assert_eq!(heap.slice(maxed.as_const()).unwrap()[0].bond_type[0], 3);
 
         let first_low = pair(&mut heap, 1, 3);
-        assert_eq!(OrigAtData_DecreaseBondOrder(&mut heap, 0, 1, first_low), Ok(0));
+        assert_eq!(
+            OrigAtData_DecreaseBondOrder(&mut heap, 0, 1, first_low),
+            Ok(0)
+        );
         assert_eq!(heap.slice(first_low.as_const()).unwrap()[1].bond_type[0], 3);
 
         let second_low = pair(&mut heap, 2, 1);
-        assert_eq!(OrigAtData_DecreaseBondOrder(&mut heap, 0, 1, second_low), Ok(0));
+        assert_eq!(
+            OrigAtData_DecreaseBondOrder(&mut heap, 0, 1, second_low),
+            Ok(0)
+        );
         let values = heap.slice(second_low.as_const()).unwrap();
-        assert_eq!((values[0].bond_type[0], values[0].chem_bonds_valence), (1, 1));
-        assert_eq!((values[1].bond_type[0], values[1].chem_bonds_valence), (1, 1));
+        assert_eq!(
+            (values[0].bond_type[0], values[0].chem_bonds_valence),
+            (1, 1)
+        );
+        assert_eq!(
+            (values[1].bond_type[0], values[1].chem_bonds_valence),
+            (1, 1)
+        );
 
         let first_missing = pair(&mut heap, 3, 3);
         heap.slice_mut(first_missing).unwrap()[0].neighbor[0] = 0;
-        assert_eq!(OrigAtData_DecreaseBondOrder(&mut heap, 0, 1, first_missing), Ok(1));
+        assert_eq!(
+            OrigAtData_DecreaseBondOrder(&mut heap, 0, 1, first_missing),
+            Ok(1)
+        );
         let values = heap.slice(first_missing.as_const()).unwrap();
         assert_eq!(values[0].bond_type[0], 3);
         assert_eq!(values[1].bond_type[0], 2);
 
         let second_missing = pair(&mut heap, 3, 3);
         heap.slice_mut(second_missing).unwrap()[1].neighbor[0] = 1;
-        assert_eq!(OrigAtData_DecreaseBondOrder(&mut heap, 0, 1, second_missing), Ok(1));
+        assert_eq!(
+            OrigAtData_DecreaseBondOrder(&mut heap, 0, 1, second_missing),
+            Ok(1)
+        );
         let values = heap.slice(second_missing.as_const()).unwrap();
         assert_eq!(values[0].bond_type[0], 2);
         assert_eq!(values[1].bond_type[0], 3);
@@ -12848,9 +13710,15 @@ mod tests {
                 ..inp_ATOM::default()
             }])
             .unwrap();
-        assert_eq!(OrigAtData_DecreaseBondOrder(&mut heap, 0, 0, self_bond), Ok(2));
+        assert_eq!(
+            OrigAtData_DecreaseBondOrder(&mut heap, 0, 0, self_bond),
+            Ok(2)
+        );
         let self_value = &heap.slice(self_bond.as_const()).unwrap()[0];
-        assert_eq!((self_value.bond_type[0], self_value.chem_bonds_valence), (1, 1));
+        assert_eq!(
+            (self_value.bond_type[0], self_value.chem_bonds_valence),
+            (1, 1)
+        );
 
         let self_partial = heap
             .allocate_model_storage(vec![inp_ATOM {
@@ -12865,9 +13733,15 @@ mod tests {
                 ..inp_ATOM::default()
             }])
             .unwrap();
-        assert_eq!(OrigAtData_DecreaseBondOrder(&mut heap, 0, 0, self_partial), Ok(0));
+        assert_eq!(
+            OrigAtData_DecreaseBondOrder(&mut heap, 0, 0, self_partial),
+            Ok(0)
+        );
         let self_value = &heap.slice(self_partial.as_const()).unwrap()[0];
-        assert_eq!((self_value.bond_type[0], self_value.chem_bonds_valence), (1, 1));
+        assert_eq!(
+            (self_value.bond_type[0], self_value.chem_bonds_valence),
+            (1, 1)
+        );
 
         assert_eq!(
             OrigAtData_DecreaseBondOrder(&mut heap, -1, 0, normal),
@@ -12882,8 +13756,14 @@ mod tests {
             cyclizable: i32,
             end_bond_type: Option<i32>,
             blist: SourceMutPointer<i32>,
-        ) -> (SourceMutPointer<OAD_PolymerUnit>, SourceMutPointer<inp_ATOM>, i32) {
-            let atoms = heap.allocate_model_storage(vec![inp_ATOM::default(); 4]).unwrap();
+        ) -> (
+            SourceMutPointer<OAD_PolymerUnit>,
+            SourceMutPointer<inp_ATOM>,
+            i32,
+        ) {
+            let atoms = heap
+                .allocate_model_storage(vec![inp_ATOM::default(); 4])
+                .unwrap();
             let mut bond_count = 0_i32;
             if let Some(bond_type) = end_bond_type {
                 OrigAtData_AddBond(heap, 1, 2, atoms, bond_type, 0, &mut bond_count).unwrap();
@@ -12905,8 +13785,12 @@ mod tests {
         }
 
         let mut heap = SourceHeap::default();
-        let (ring_unit, ring_atoms, mut ring_bonds) =
-            fixture(&mut heap, CLOSING_SRU_RING as i32, Some(1), SourceMutPointer::null());
+        let (ring_unit, ring_atoms, mut ring_bonds) = fixture(
+            &mut heap,
+            CLOSING_SRU_RING as i32,
+            Some(1),
+            SourceMutPointer::null(),
+        );
         OAD_PolymerUnit_ReopenCyclized(
             &mut heap,
             ring_unit,
@@ -12961,7 +13845,10 @@ mod tests {
         .unwrap();
         assert_eq!(heap.slice(radical_atoms.as_const()).unwrap()[1].radical, 0);
         assert_eq!(heap.slice(existing.as_const()).unwrap(), &[1, 2, 4, 3, 5]);
-        assert_eq!(heap.slice(radical_unit.as_const()).unwrap()[0].blist, existing);
+        assert_eq!(
+            heap.slice(radical_unit.as_const()).unwrap()[0].blist,
+            existing
+        );
 
         let (unknown_unit, unknown_atoms, mut unknown_bonds) =
             fixture(&mut heap, i32::MAX, None, SourceMutPointer::null());
@@ -13049,12 +13936,19 @@ mod tests {
         let (polymer, unit, atoms) = fixture(&mut heap, 0);
         let baseline = heap.live_allocation_count();
         let mut bond_count = 0_i32;
-        OAD_Polymer_SmartReopenCyclizedUnits(&mut heap, polymer, atoms, 3, &mut bond_count).unwrap();
-        assert_eq!(heap.slice(polymer.as_const()).unwrap()[0].really_do_frame_shift, 0);
+        OAD_Polymer_SmartReopenCyclizedUnits(&mut heap, polymer, atoms, 3, &mut bond_count)
+            .unwrap();
+        assert_eq!(
+            heap.slice(polymer.as_const()).unwrap()[0].really_do_frame_shift,
+            0
+        );
         let reopened = heap.slice(unit.as_const()).unwrap()[0].clone();
         assert_eq!(reopened.cyclizable, CLOSING_SRU_DIRADICAL as i32);
         assert_eq!((reopened.nb, reopened.nbkbonds), (2, 0));
-        assert_eq!(heap.slice(reopened.blist.as_const()).unwrap(), &[1, 2, 3, 2]);
+        assert_eq!(
+            heap.slice(reopened.blist.as_const()).unwrap(),
+            &[1, 2, 3, 2]
+        );
         assert_eq!(heap.slice(atoms.as_const()).unwrap()[1].radical, 0);
         assert_eq!(bond_count, 2);
         assert_eq!(heap.live_allocation_count(), baseline + 1);
@@ -13077,30 +13971,69 @@ mod tests {
             }])
             .unwrap();
         let empty_baseline = heap.live_allocation_count();
-        OAD_Polymer_SmartReopenCyclizedUnits(&mut heap, empty, SourceMutPointer::null(), 3, &mut bond_count).unwrap();
-        assert_eq!(heap.slice(empty.as_const()).unwrap()[0].really_do_frame_shift, 1);
+        OAD_Polymer_SmartReopenCyclizedUnits(
+            &mut heap,
+            empty,
+            SourceMutPointer::null(),
+            3,
+            &mut bond_count,
+        )
+        .unwrap();
+        assert_eq!(
+            heap.slice(empty.as_const()).unwrap()[0].really_do_frame_shift,
+            1
+        );
         assert_eq!(heap.live_allocation_count(), empty_baseline);
 
         let (disabled, disabled_unit, disabled_atoms) = fixture(&mut heap, 0);
         heap.slice_mut(disabled).unwrap()[0].really_do_frame_shift = 0;
         let disabled_baseline = heap.live_allocation_count();
-        OAD_Polymer_SmartReopenCyclizedUnits(&mut heap, disabled, disabled_atoms, 3, &mut bond_count).unwrap();
+        OAD_Polymer_SmartReopenCyclizedUnits(
+            &mut heap,
+            disabled,
+            disabled_atoms,
+            3,
+            &mut bond_count,
+        )
+        .unwrap();
         assert_eq!(heap.slice(disabled_unit.as_const()).unwrap()[0].nbkbonds, 1);
         assert_eq!(heap.live_allocation_count(), disabled_baseline);
 
         let (zero_nat, zero_nat_unit, zero_nat_atoms) = fixture(&mut heap, 0);
         let zero_baseline = heap.live_allocation_count();
-        OAD_Polymer_SmartReopenCyclizedUnits(&mut heap, zero_nat, zero_nat_atoms, 0, &mut bond_count).unwrap();
+        OAD_Polymer_SmartReopenCyclizedUnits(
+            &mut heap,
+            zero_nat,
+            zero_nat_atoms,
+            0,
+            &mut bond_count,
+        )
+        .unwrap();
         assert_eq!(heap.slice(zero_nat_unit.as_const()).unwrap()[0].nbkbonds, 1);
-        assert_eq!(heap.slice(zero_nat.as_const()).unwrap()[0].really_do_frame_shift, 1);
+        assert_eq!(
+            heap.slice(zero_nat.as_const()).unwrap()[0].really_do_frame_shift,
+            1
+        );
         assert_eq!(heap.live_allocation_count(), zero_baseline);
 
         let (null_atoms, null_atoms_unit, _) = fixture(&mut heap, 0);
         let null_atoms_baseline = heap.live_allocation_count();
-        OAD_Polymer_SmartReopenCyclizedUnits(&mut heap, null_atoms, SourceMutPointer::null(), 3, &mut bond_count)
-            .unwrap();
-        assert_eq!(heap.slice(null_atoms_unit.as_const()).unwrap()[0].nbkbonds, 1);
-        assert_eq!(heap.slice(null_atoms.as_const()).unwrap()[0].really_do_frame_shift, 1);
+        OAD_Polymer_SmartReopenCyclizedUnits(
+            &mut heap,
+            null_atoms,
+            SourceMutPointer::null(),
+            3,
+            &mut bond_count,
+        )
+        .unwrap();
+        assert_eq!(
+            heap.slice(null_atoms_unit.as_const()).unwrap()[0].nbkbonds,
+            1
+        );
+        assert_eq!(
+            heap.slice(null_atoms.as_const()).unwrap()[0].really_do_frame_shift,
+            1
+        );
         assert_eq!(heap.live_allocation_count(), null_atoms_baseline);
 
         let mut failure_heap = SourceHeap::default();
@@ -13108,20 +14041,40 @@ mod tests {
         let failure_baseline = failure_heap.live_allocation_count();
         failure_heap.fail_after_allocations(0);
         let mut failure_bonds = 0_i32;
-        OAD_Polymer_SmartReopenCyclizedUnits(&mut failure_heap, failure_polymer, failure_atoms, 3, &mut failure_bonds)
-            .unwrap();
+        OAD_Polymer_SmartReopenCyclizedUnits(
+            &mut failure_heap,
+            failure_polymer,
+            failure_atoms,
+            3,
+            &mut failure_bonds,
+        )
+        .unwrap();
         assert_eq!(
             failure_heap.slice(failure_polymer.as_const()).unwrap()[0].really_do_frame_shift,
             1
         );
-        assert_eq!(failure_heap.slice(failure_unit.as_const()).unwrap()[0].nbkbonds, 1);
+        assert_eq!(
+            failure_heap.slice(failure_unit.as_const()).unwrap()[0].nbkbonds,
+            1
+        );
         assert_eq!(failure_heap.live_allocation_count(), failure_baseline);
 
-        let (none_scheme, none_unit, none_atoms) = fixture(&mut heap, tagFrameShifScheme_FSS_NONE as i32);
+        let (none_scheme, none_unit, none_atoms) =
+            fixture(&mut heap, tagFrameShifScheme_FSS_NONE as i32);
         let none_baseline = heap.live_allocation_count();
         let mut none_bonds = 0_i32;
-        OAD_Polymer_SmartReopenCyclizedUnits(&mut heap, none_scheme, none_atoms, 3, &mut none_bonds).unwrap();
-        assert_eq!(heap.slice(none_scheme.as_const()).unwrap()[0].really_do_frame_shift, 0);
+        OAD_Polymer_SmartReopenCyclizedUnits(
+            &mut heap,
+            none_scheme,
+            none_atoms,
+            3,
+            &mut none_bonds,
+        )
+        .unwrap();
+        assert_eq!(
+            heap.slice(none_scheme.as_const()).unwrap()[0].really_do_frame_shift,
+            0
+        );
         assert_eq!(heap.slice(none_unit.as_const()).unwrap()[0].nbkbonds, 1);
         assert_eq!(none_bonds, 0);
         assert_eq!(heap.live_allocation_count(), none_baseline);
@@ -13129,7 +14082,14 @@ mod tests {
         let (invalid_cap, invalid_unit, invalid_atoms) = fixture(&mut heap, 0);
         heap.slice_mut(invalid_unit).unwrap()[0].cap2 = 4;
         let invalid_baseline = heap.live_allocation_count();
-        OAD_Polymer_SmartReopenCyclizedUnits(&mut heap, invalid_cap, invalid_atoms, 3, &mut none_bonds).unwrap();
+        OAD_Polymer_SmartReopenCyclizedUnits(
+            &mut heap,
+            invalid_cap,
+            invalid_atoms,
+            3,
+            &mut none_bonds,
+        )
+        .unwrap();
         assert_eq!(heap.slice(invalid_unit.as_const()).unwrap()[0].nbkbonds, 1);
         assert_eq!(heap.live_allocation_count(), invalid_baseline);
     }
@@ -13210,7 +14170,12 @@ mod tests {
 
         let mut allowed = original(
             &mut heap,
-            vec![atom(b"*\0", 21), atom(b"Zz\0", 22), atom(b"Zy\0", 23), atom(b"O\0", 24)],
+            vec![
+                atom(b"*\0", 21),
+                atom(b"Zz\0", 22),
+                atom(b"Zy\0", 23),
+                atom(b"O\0", 24),
+            ],
         );
         heap.slice_mut(allowed.at).unwrap()[2].iso_atw_diff = i8::MAX;
         heap.slice_mut(allowed.at).unwrap()[2].valence = -1;
@@ -13255,7 +14220,10 @@ mod tests {
         assert_eq!(&values[1].elname[..3], &[b'Z' as i8, b'z' as i8, 0]);
         assert_eq!(error_bytes(&message), b"Invalid pseudo element(s) bonding");
 
-        let mut prohibited = original(&mut heap, vec![atom(b"*\0", 41), atom(b"Zz\0", 42), atom(b"Zy\0", 43)]);
+        let mut prohibited = original(
+            &mut heap,
+            vec![atom(b"*\0", 41), atom(b"Zz\0", 42), atom(b"Zy\0", 43)],
+        );
         error = 0;
         message.fill(0);
         OAD_ValidateAndSortOutPseudoElementAtoms(
@@ -13283,13 +14251,26 @@ mod tests {
         treatment_only.polymer = polymer(&mut heap, Vec::new(), 83);
         error = 0;
         message.fill(0);
-        OAD_ValidateAndSortOutPseudoElementAtoms(&mut heap, &mut treatment_only, 1, 0, &mut error, Some(&mut message))
-            .unwrap();
+        OAD_ValidateAndSortOutPseudoElementAtoms(
+            &mut heap,
+            &mut treatment_only,
+            1,
+            0,
+            &mut error,
+            Some(&mut message),
+        )
+        .unwrap();
         assert_eq!(error, 74);
         assert_eq!(treatment_only.valid_polymer, 0);
         assert_eq!(treatment_only.n_zy, 1);
-        assert_eq!(heap.slice(treatment_only.polymer.as_const()).unwrap()[0].n_pzz, 0);
-        assert_eq!(error_bytes(&message), b"Polymer-unrelated pseudoatoms are not allowed");
+        assert_eq!(
+            heap.slice(treatment_only.polymer.as_const()).unwrap()[0].n_pzz,
+            0
+        );
+        assert_eq!(
+            error_bytes(&message),
+            b"Polymer-unrelated pseudoatoms are not allowed"
+        );
 
         let mut non_boolean_disallowed = original(&mut heap, vec![atom(b"Zz\0", 61)]);
         error = 0;
@@ -13357,8 +14338,15 @@ mod tests {
         polymer_data.valid_polymer = 1;
         error = 0;
         message.fill(0);
-        OAD_ValidateAndSortOutPseudoElementAtoms(&mut heap, &mut polymer_data, 1, 1, &mut error, Some(&mut message))
-            .unwrap();
+        OAD_ValidateAndSortOutPseudoElementAtoms(
+            &mut heap,
+            &mut polymer_data,
+            1,
+            1,
+            &mut error,
+            Some(&mut message),
+        )
+        .unwrap();
         assert_eq!(error, 0);
         assert_eq!(polymer_data.valid_polymer, 1);
         assert_eq!(polymer_data.n_zy, 1);
@@ -13386,8 +14374,15 @@ mod tests {
         repeated.valid_polymer = 1;
         error = 0;
         message.fill(0);
-        OAD_ValidateAndSortOutPseudoElementAtoms(&mut heap, &mut repeated, 1, 0, &mut error, Some(&mut message))
-            .unwrap();
+        OAD_ValidateAndSortOutPseudoElementAtoms(
+            &mut heap,
+            &mut repeated,
+            1,
+            0,
+            &mut error,
+            Some(&mut message),
+        )
+        .unwrap();
         assert_eq!(error, 74);
         assert_eq!(repeated.n_zy, -1);
         assert_eq!(repeated.valid_polymer, 0);
@@ -13449,7 +14444,9 @@ mod tests {
         );
         assert_eq!(unterminated.n_zy, 101);
 
-        let partial_atoms = heap.allocate_model_storage(vec![atom(b"*\0", 102)]).unwrap();
+        let partial_atoms = heap
+            .allocate_model_storage(vec![atom(b"*\0", 102)])
+            .unwrap();
         let mut short_atoms = ORIG_ATOM_DATA {
             at: partial_atoms,
             num_inp_atoms: 2,
@@ -13512,12 +14509,22 @@ mod tests {
         invalid_cap.n_zy = 109;
         error = 0;
         assert_eq!(
-            OAD_ValidateAndSortOutPseudoElementAtoms(&mut heap, &mut invalid_cap, 1, 1, &mut error, Some(&mut message),),
+            OAD_ValidateAndSortOutPseudoElementAtoms(
+                &mut heap,
+                &mut invalid_cap,
+                1,
+                1,
+                &mut error,
+                Some(&mut message),
+            ),
             Err(SourceHeapError::UnsupportedSourceBehavior)
         );
         assert_eq!(invalid_cap.n_zy, 0);
         assert_eq!(invalid_cap.valid_polymer, 1);
-        assert_eq!(heap.slice(invalid_cap_polymer.as_const()).unwrap()[0].n_pzz, 106);
+        assert_eq!(
+            heap.slice(invalid_cap_polymer.as_const()).unwrap()[0].n_pzz,
+            106
+        );
         let values = heap.slice(invalid_cap.at.as_const()).unwrap();
         assert_eq!(&values[0].elname[..3], &[b'Z' as i8, b'z' as i8, 0]);
         assert_eq!(&values[1].elname[..3], &[b'Z' as i8, b'y' as i8, 0]);
@@ -13561,7 +14568,14 @@ mod tests {
             atom
         }
 
-        fn spec(type_: u32, subtype: u32, conn: u32, atoms: &[i32], bonds: Option<&[i32]>, nb: i32) -> UnitSpec {
+        fn spec(
+            type_: u32,
+            subtype: u32,
+            conn: u32,
+            atoms: &[i32],
+            bonds: Option<&[i32]>,
+            nb: i32,
+        ) -> UnitSpec {
             UnitSpec {
                 type_: type_ as i32,
                 subtype: subtype as i32,
@@ -13659,7 +14673,12 @@ mod tests {
             buffer[..end].iter().map(|byte| *byte as u8).collect()
         }
 
-        fn assert_error(names: &[&[u8]], specs: &[UnitSpec], expected_error: i32, expected_message: &[u8]) {
+        fn assert_error(
+            names: &[&[u8]],
+            specs: &[UnitSpec],
+            expected_error: i32,
+            expected_message: &[u8],
+        ) {
             let mut heap = SourceHeap::default();
             let (mut original, _, _) = fixture(&mut heap, names, specs, 1, 0);
             let (result, text) = invoke(&mut heap, &mut original, 1, 1, 0);
@@ -13712,14 +14731,28 @@ mod tests {
 
         assert_error(
             &[b"C\0"],
-            &[spec(POLYMER_STY_COP, POLYMER_SST_NON, POLYMER_CONN_NON, &[1], None, 0)],
+            &[spec(
+                POLYMER_STY_COP,
+                POLYMER_SST_NON,
+                POLYMER_CONN_NON,
+                &[1],
+                None,
+                0,
+            )],
             9001,
             b"Copolymer must contain more than one unit",
         );
         for subtype in [POLYMER_SST_RAN, POLYMER_SST_ALT, POLYMER_SST_BLK] {
             assert_error(
                 &[b"C\0"],
-                &[spec(POLYMER_STY_MON, subtype, POLYMER_CONN_NON, &[1], None, 0)],
+                &[spec(
+                    POLYMER_STY_MON,
+                    subtype,
+                    POLYMER_CONN_NON,
+                    &[1],
+                    None,
+                    0,
+                )],
                 9002,
                 b"Single polymer unit may not be RAN/ALT/BLO",
             );
@@ -13739,7 +14772,14 @@ mod tests {
         );
         assert_error(
             &[b"C\0"],
-            &[spec(POLYMER_STY_MON, POLYMER_SST_NON, POLYMER_CONN_NON, &[], None, 0)],
+            &[spec(
+                POLYMER_STY_MON,
+                POLYMER_SST_NON,
+                POLYMER_CONN_NON,
+                &[],
+                None,
+                0,
+            )],
             9004,
             b"Empty polymer unit",
         );
@@ -13772,9 +14812,17 @@ mod tests {
             );
         }
 
-        let source_spec = spec(POLYMER_STY_SRU, POLYMER_SST_NON, POLYMER_CONN_HT, &[1], None, 0);
+        let source_spec = spec(
+            POLYMER_STY_SRU,
+            POLYMER_SST_NON,
+            POLYMER_CONN_HT,
+            &[1],
+            None,
+            0,
+        );
         let mut source_heap = SourceHeap::default();
-        let (mut source, _, source_units) = fixture(&mut source_heap, &[b"C\0"], &[source_spec.clone()], 1, 0);
+        let (mut source, _, source_units) =
+            fixture(&mut source_heap, &[b"C\0"], &[source_spec.clone()], 1, 0);
         let (result, text) = invoke(&mut source_heap, &mut source, 1, 1, 0);
         assert_eq!(result, Ok(0));
         assert_eq!(source.valid_polymer, 1);
@@ -13800,13 +14848,39 @@ mod tests {
         );
 
         let embedding_specs = [
-            spec(POLYMER_STY_SRU, POLYMER_SST_NON, POLYMER_CONN_NON, &[1, 2], None, 0),
-            spec(POLYMER_STY_MON, POLYMER_SST_NON, POLYMER_CONN_NON, &[1], None, 0),
-            spec(POLYMER_STY_MON, POLYMER_SST_NON, POLYMER_CONN_NON, &[2], None, 0),
+            spec(
+                POLYMER_STY_SRU,
+                POLYMER_SST_NON,
+                POLYMER_CONN_NON,
+                &[1, 2],
+                None,
+                0,
+            ),
+            spec(
+                POLYMER_STY_MON,
+                POLYMER_SST_NON,
+                POLYMER_CONN_NON,
+                &[1],
+                None,
+                0,
+            ),
+            spec(
+                POLYMER_STY_MON,
+                POLYMER_SST_NON,
+                POLYMER_CONN_NON,
+                &[2],
+                None,
+                0,
+            ),
         ];
         let mut embedding_heap = SourceHeap::default();
-        let (mut embedding, _, embedding_units) =
-            fixture(&mut embedding_heap, &[b"C\0", b"N\0"], &embedding_specs, 1, 0);
+        let (mut embedding, _, embedding_units) = fixture(
+            &mut embedding_heap,
+            &[b"C\0", b"N\0"],
+            &embedding_specs,
+            1,
+            0,
+        );
         let (result, text) = invoke(&mut embedding_heap, &mut embedding, 1, 1, 0);
         assert_eq!(result, Ok(0));
         let outer = &embedding_heap.slice(embedding_units[0].as_const()).unwrap()[0];
@@ -13820,8 +14894,22 @@ mod tests {
         assert_error(
             &[b"C\0", b"N\0"],
             &[
-                spec(POLYMER_STY_COP, POLYMER_SST_NON, POLYMER_CONN_NON, &[1, 2], None, 0),
-                spec(POLYMER_STY_MON, POLYMER_SST_NON, POLYMER_CONN_NON, &[1], None, 0),
+                spec(
+                    POLYMER_STY_COP,
+                    POLYMER_SST_NON,
+                    POLYMER_CONN_NON,
+                    &[1, 2],
+                    None,
+                    0,
+                ),
+                spec(
+                    POLYMER_STY_MON,
+                    POLYMER_SST_NON,
+                    POLYMER_CONN_NON,
+                    &[1],
+                    None,
+                    0,
+                ),
             ],
             9027,
             b"Polymer COP unit contains a single SRU instead of multiple",
@@ -13837,7 +14925,14 @@ mod tests {
                     Some(&[1, 2, 3, 2]),
                     2,
                 ),
-                spec(POLYMER_STY_MON, POLYMER_SST_NON, POLYMER_CONN_NON, &[1], None, 0),
+                spec(
+                    POLYMER_STY_MON,
+                    POLYMER_SST_NON,
+                    POLYMER_CONN_NON,
+                    &[1],
+                    None,
+                    0,
+                ),
             ],
             9026,
             b"Polymer COP unit contains bracket-crossing bonds, not supported",
@@ -13878,8 +14973,14 @@ mod tests {
             (vec![2, 3, 4], vec![1, 2, 5, 4], CLOSING_SRU_RING),
         ] {
             let names = vec![b"C\0".as_slice(); atoms.len() + 2];
-            let (heap, original, unit_pointer, result, text) =
-                structure_case(&names, &atoms, &bonds, POLYMER_STY_SRU, POLYMER_CONN_HT, None);
+            let (heap, original, unit_pointer, result, text) = structure_case(
+                &names,
+                &atoms,
+                &bonds,
+                POLYMER_STY_SRU,
+                POLYMER_CONN_HT,
+                None,
+            );
             assert_eq!(result, Ok(0));
             assert_eq!(original.valid_polymer, 1);
             assert!(message(&text).is_empty());
@@ -13921,7 +15022,10 @@ mod tests {
         assert_eq!(unit.conn, POLYMER_CONN_EU as i32);
         assert_eq!(unit.cyclizable, CLOSING_SRU_NOT_APPLICABLE as i32);
         assert!(unit.bkbonds.is_null());
-        assert_eq!(message(&text), b"Set missing copolymer unit connection to EU");
+        assert_eq!(
+            message(&text),
+            b"Set missing copolymer unit connection to EU"
+        );
 
         for (names, expected_error) in [
             (vec![b"H\0".as_slice(), b"C\0", b"O\0"], 9030),
@@ -13929,8 +15033,14 @@ mod tests {
             (vec![b"D\0".as_slice(), b"C\0", b"O\0"], 9030),
             (vec![b"T\0".as_slice(), b"C\0", b"O\0"], 9030),
         ] {
-            let (_, original, _, result, text) =
-                structure_case(&names, &[2], &[1, 2, 3, 2], POLYMER_STY_SRU, POLYMER_CONN_HT, None);
+            let (_, original, _, result, text) = structure_case(
+                &names,
+                &[2],
+                &[1, 2, 3, 2],
+                POLYMER_STY_SRU,
+                POLYMER_CONN_HT,
+                None,
+            );
             assert_eq!(result, Ok(expected_error));
             assert_eq!(original.valid_polymer, 0);
             assert_eq!(message(&text), b"H as polymer end group is not supported");
@@ -13974,8 +15084,12 @@ mod tests {
             1,
             2,
         );
-        let old_row = replacement_heap.allocate_model_storage(vec![71_i32, 72]).unwrap();
-        let old_matrix = replacement_heap.allocate_model_storage(vec![old_row]).unwrap();
+        let old_row = replacement_heap
+            .allocate_model_storage(vec![71_i32, 72])
+            .unwrap();
+        let old_matrix = replacement_heap
+            .allocate_model_storage(vec![old_row])
+            .unwrap();
         {
             let unit = &mut replacement_heap.slice_mut(replacement_units[0]).unwrap()[0];
             unit.maxbkbonds = 1;
@@ -13991,7 +15105,9 @@ mod tests {
             replacement_heap.slice(old_row.as_const()),
             Err(SourceHeapError::MissingAllocation)
         ));
-        let replacement_unit = &replacement_heap.slice(replacement_units[0].as_const()).unwrap()[0];
+        let replacement_unit = &replacement_heap
+            .slice(replacement_units[0].as_const())
+            .unwrap()[0];
         assert!(!replacement_unit.bkbonds.is_null());
         assert_ne!(replacement_unit.bkbonds, old_matrix);
 
@@ -14008,7 +15124,14 @@ mod tests {
         assert_eq!(message(&text), b"Caps of polymer unit lie inside it");
 
         let mixed_specs = [
-            spec(POLYMER_STY_SRU, POLYMER_SST_NON, POLYMER_CONN_NON, &[1], None, 0),
+            spec(
+                POLYMER_STY_SRU,
+                POLYMER_SST_NON,
+                POLYMER_CONN_NON,
+                &[1],
+                None,
+                0,
+            ),
             spec(
                 POLYMER_STY_MON,
                 POLYMER_SST_NON,
@@ -14019,8 +15142,13 @@ mod tests {
             ),
         ];
         let mut mixed_heap = SourceHeap::default();
-        let (mut mixed, _, mixed_units) =
-            fixture(&mut mixed_heap, &[b"C\0", b"C\0", b"N\0", b"O\0"], &mixed_specs, 1, 2);
+        let (mut mixed, _, mixed_units) = fixture(
+            &mut mixed_heap,
+            &[b"C\0", b"C\0", b"N\0", b"O\0"],
+            &mixed_specs,
+            1,
+            2,
+        );
         let (result, text) = invoke(&mut mixed_heap, &mut mixed, 1, 1, 0);
         assert_eq!(result, Ok(0));
         let source_unit = &mixed_heap.slice(mixed_units[0].as_const()).unwrap()[0];
@@ -14036,9 +15164,16 @@ mod tests {
         );
 
         let mut invalid_representation_heap = SourceHeap::default();
-        let (mut invalid_representation, polymer, _) = fixture(&mut invalid_representation_heap, &[], &[], 1, 0);
+        let (mut invalid_representation, polymer, _) =
+            fixture(&mut invalid_representation_heap, &[], &[], 1, 0);
         invalid_representation_heap.slice_mut(polymer).unwrap()[0].n = -1;
-        let (result, text) = invoke(&mut invalid_representation_heap, &mut invalid_representation, 1, 1, 0);
+        let (result, text) = invoke(
+            &mut invalid_representation_heap,
+            &mut invalid_representation,
+            1,
+            1,
+            0,
+        );
         assert_eq!(result, Ok(9035));
         assert_eq!(invalid_representation.valid_polymer, 0);
         assert_eq!(message(&text), b"Invalid kind of polymer representation");
@@ -14047,7 +15182,14 @@ mod tests {
         let (mut pseudo_error, _, _) = fixture(
             &mut pseudo_error_heap,
             &[b"Zz\0"],
-            &[spec(POLYMER_STY_MON, POLYMER_SST_NON, POLYMER_CONN_NON, &[1], None, 0)],
+            &[spec(
+                POLYMER_STY_MON,
+                POLYMER_SST_NON,
+                POLYMER_CONN_NON,
+                &[1],
+                None,
+                0,
+            )],
             1,
             0,
         );
@@ -14111,7 +15253,9 @@ mod tests {
             1,
             2,
         );
-        let stale_pzz = old_pzz_heap.allocate_model_storage(vec![91_i32, 92]).unwrap();
+        let stale_pzz = old_pzz_heap
+            .allocate_model_storage(vec![91_i32, 92])
+            .unwrap();
         old_pzz_heap.slice_mut(old_pzz_polymer).unwrap()[0].pzz = stale_pzz;
         let (result, _) = invoke(&mut old_pzz_heap, &mut old_pzz_original, 1, 1, 0);
         assert_eq!(result, Ok(0));
@@ -14121,7 +15265,10 @@ mod tests {
         ));
         let replacement_pzz = old_pzz_heap.slice(old_pzz_polymer.as_const()).unwrap()[0].pzz;
         assert_ne!(replacement_pzz, stale_pzz);
-        assert_eq!(old_pzz_heap.slice(replacement_pzz.as_const()).unwrap(), &[1, 3]);
+        assert_eq!(
+            old_pzz_heap.slice(replacement_pzz.as_const()).unwrap(),
+            &[1, 3]
+        );
 
         let (_, original, _, result, text) = pseudo_cap_case(POLYMERS_NO as i32, None);
         assert_eq!(result, Ok(9));
@@ -14212,14 +15359,26 @@ mod tests {
         let (mut ring, ring_unit) = ring_case(&mut heap, true, false);
         let mut message = [0_i8; 256];
         assert_eq!(
-            OAD_Polymer_CyclizeCloseableUnits(&mut heap, &mut ring, i32::MIN, Some(&mut message), 0,),
+            OAD_Polymer_CyclizeCloseableUnits(
+                &mut heap,
+                &mut ring,
+                i32::MIN,
+                Some(&mut message),
+                0,
+            ),
             Ok(0)
         );
-        assert_eq!(text(&message), b"Frame shift in metallated polymer unit may be missed");
+        assert_eq!(
+            text(&message),
+            b"Frame shift in metallated polymer unit may be missed"
+        );
         let unit = heap.slice(ring_unit.as_const()).unwrap()[0].clone();
         assert_eq!(unit.cyclizable, CLOSING_SRU_RING as i32);
         assert_eq!(unit.cyclized, 1);
-        assert_eq!((unit.cap1, unit.end_atom1, unit.end_atom2, unit.cap2), (1, 2, 3, 4));
+        assert_eq!(
+            (unit.cap1, unit.end_atom1, unit.end_atom2, unit.cap2),
+            (1, 2, 3, 4)
+        );
         assert_eq!(ring.num_inp_bonds, 1);
         let atoms = heap.slice(ring.at.as_const()).unwrap();
         assert_eq!((atoms[1].neighbor[0], atoms[2].neighbor[0]), (2, 1));
@@ -14227,7 +15386,13 @@ mod tests {
         let (mut quiet, quiet_unit) = ring_case(&mut heap, true, false);
         message.fill(0);
         assert_eq!(
-            OAD_Polymer_CyclizeCloseableUnits(&mut heap, &mut quiet, i32::MAX, Some(&mut message), 1,),
+            OAD_Polymer_CyclizeCloseableUnits(
+                &mut heap,
+                &mut quiet,
+                i32::MAX,
+                Some(&mut message),
+                1,
+            ),
             Ok(0)
         );
         assert!(text(&message).is_empty());
@@ -14298,7 +15463,12 @@ mod tests {
         }
 
         let ordinary_atoms = heap
-            .allocate_model_storage(vec![atom(b"C\0", 6), atom(b"N\0", 7), atom(b"O\0", 8), atom(b"F\0", 9)])
+            .allocate_model_storage(vec![
+                atom(b"C\0", 6),
+                atom(b"N\0", 7),
+                atom(b"O\0", 8),
+                atom(b"F\0", 9),
+            ])
             .unwrap();
         let invalid_alist = heap.allocate_model_storage(vec![2_i32, 3]).unwrap();
         let invalid_blist = heap.allocate_model_storage(vec![2_i32, 3, 1, 4]).unwrap();
@@ -14321,7 +15491,9 @@ mod tests {
                 ..OAD_PolymerUnit::default()
             }])
             .unwrap();
-        let units = heap.allocate_model_storage(vec![invalid_unit, untouched_unit]).unwrap();
+        let units = heap
+            .allocate_model_storage(vec![invalid_unit, untouched_unit])
+            .unwrap();
         let polymer = heap
             .allocate_model_storage(vec![OAD_Polymer {
                 units,
@@ -14361,7 +15533,9 @@ mod tests {
             cyclizable: i32,
             end_bond_type: Option<i32>,
         ) -> (SourceMutPointer<OAD_PolymerUnit>, ORIG_ATOM_DATA) {
-            let atoms = heap.allocate_model_storage(vec![inp_ATOM::default(); 4]).unwrap();
+            let atoms = heap
+                .allocate_model_storage(vec![inp_ATOM::default(); 4])
+                .unwrap();
             let mut bond_count = 0_i32;
             OrigAtData_AddBond(heap, 0, 1, atoms, 1, -1, &mut bond_count).unwrap();
             OrigAtData_AddBond(heap, 3, 2, atoms, 1, 1, &mut bond_count).unwrap();
@@ -14406,12 +15580,18 @@ mod tests {
         .unwrap();
         assert_eq!(error, 0);
         assert_eq!(inactive_data.num_inp_bonds, 2);
-        assert_eq!(heap.slice(inactive_unit.as_const()).unwrap()[0].cyclized, 73);
+        assert_eq!(
+            heap.slice(inactive_unit.as_const()).unwrap()[0].cyclized,
+            73
+        );
         assert_eq!(
             heap.slice(inactive_data.at.as_const()).unwrap(),
             inactive_atoms.as_slice()
         );
-        assert_eq!(&message[..5], &[b'k' as i8, b'e' as i8, b'e' as i8, b'p' as i8, 0]);
+        assert_eq!(
+            &message[..5],
+            &[b'k' as i8, b'e' as i8, b'e' as i8, b'p' as i8, 0]
+        );
 
         let (ring_unit, mut ring_data) = fixture(&mut heap, CLOSING_SRU_RING as i32, None);
         error = i32::MIN;
@@ -14432,15 +15612,23 @@ mod tests {
         assert_eq!((atoms[1].bond_type[0], atoms[2].bond_type[0]), (1, 1));
         assert_eq!((atoms[1].bond_stereo[0], atoms[2].bond_stereo[0]), (0, 0));
 
-        let (higher_unit, mut higher_data) = fixture(&mut heap, CLOSING_SRU_HIGHER_ORDER_BOND as i32, Some(1));
-        OAD_PolymerUnit_UnlinkCapsAndConnectEndAtoms(&mut heap, higher_unit, &mut higher_data, &mut error, None)
-            .unwrap();
+        let (higher_unit, mut higher_data) =
+            fixture(&mut heap, CLOSING_SRU_HIGHER_ORDER_BOND as i32, Some(1));
+        OAD_PolymerUnit_UnlinkCapsAndConnectEndAtoms(
+            &mut heap,
+            higher_unit,
+            &mut higher_data,
+            &mut error,
+            None,
+        )
+        .unwrap();
         assert_eq!((error, higher_data.num_inp_bonds), (0, 1));
         let atoms = heap.slice(higher_data.at.as_const()).unwrap();
         assert_eq!((atoms[1].bond_type[0], atoms[2].bond_type[0]), (2, 2));
         assert_eq!(heap.slice(higher_unit.as_const()).unwrap()[0].cyclized, 1);
 
-        let (missing_end_unit, mut missing_end_data) = fixture(&mut heap, CLOSING_SRU_HIGHER_ORDER_BOND as i32, None);
+        let (missing_end_unit, mut missing_end_data) =
+            fixture(&mut heap, CLOSING_SRU_HIGHER_ORDER_BOND as i32, None);
         OAD_PolymerUnit_UnlinkCapsAndConnectEndAtoms(
             &mut heap,
             missing_end_unit,
@@ -14450,20 +15638,41 @@ mod tests {
         )
         .unwrap();
         assert_eq!((error, missing_end_data.num_inp_bonds), (0, 0));
-        assert_eq!(heap.slice(missing_end_unit.as_const()).unwrap()[0].cyclized, 1);
-        assert_eq!(&message[..5], &[b'k' as i8, b'e' as i8, b'e' as i8, b'p' as i8, 0]);
+        assert_eq!(
+            heap.slice(missing_end_unit.as_const()).unwrap()[0].cyclized,
+            1
+        );
+        assert_eq!(
+            &message[..5],
+            &[b'k' as i8, b'e' as i8, b'e' as i8, b'p' as i8, 0]
+        );
 
-        let (diradical_unit, mut diradical_data) = fixture(&mut heap, CLOSING_SRU_DIRADICAL as i32, None);
-        OAD_PolymerUnit_UnlinkCapsAndConnectEndAtoms(&mut heap, diradical_unit, &mut diradical_data, &mut error, None)
-            .unwrap();
+        let (diradical_unit, mut diradical_data) =
+            fixture(&mut heap, CLOSING_SRU_DIRADICAL as i32, None);
+        OAD_PolymerUnit_UnlinkCapsAndConnectEndAtoms(
+            &mut heap,
+            diradical_unit,
+            &mut diradical_data,
+            &mut error,
+            None,
+        )
+        .unwrap();
         assert_eq!((error, diradical_data.num_inp_bonds), (0, 0));
         let atoms = heap.slice(diradical_data.at.as_const()).unwrap();
         assert_eq!(atoms[1].radical, RADICAL_TRIPLET as i8);
         assert_eq!(
-            (atoms[0].valence, atoms[1].valence, atoms[2].valence, atoms[3].valence),
+            (
+                atoms[0].valence,
+                atoms[1].valence,
+                atoms[2].valence,
+                atoms[3].valence
+            ),
             (0, 0, 0, 0)
         );
-        assert_eq!(heap.slice(diradical_unit.as_const()).unwrap()[0].cyclized, 1);
+        assert_eq!(
+            heap.slice(diradical_unit.as_const()).unwrap()[0].cyclized,
+            1
+        );
 
         let (unknown_unit, mut unknown_data) = fixture(&mut heap, i32::MAX, Some(3));
         let unknown_atoms = heap.slice(unknown_data.at.as_const()).unwrap().to_vec();
@@ -14484,8 +15693,14 @@ mod tests {
 
         let (partial_unit, mut partial_data) = fixture(&mut heap, CLOSING_SRU_RING as i32, None);
         heap.slice_mut(partial_data.at).unwrap()[3].neighbor[0] = 1;
-        OAD_PolymerUnit_UnlinkCapsAndConnectEndAtoms(&mut heap, partial_unit, &mut partial_data, &mut error, None)
-            .unwrap();
+        OAD_PolymerUnit_UnlinkCapsAndConnectEndAtoms(
+            &mut heap,
+            partial_unit,
+            &mut partial_data,
+            &mut error,
+            None,
+        )
+        .unwrap();
         assert_eq!((error, partial_data.num_inp_bonds), (0, 2));
         let atoms = heap.slice(partial_data.at.as_const()).unwrap();
         assert_eq!(atoms[3].valence, 1);
@@ -14494,11 +15709,18 @@ mod tests {
         assert_eq!((atoms[2].neighbor[1], atoms[2].bond_type[1]), (1, 1));
         assert_eq!((atoms[1].neighbor[0], atoms[1].bond_type[0]), (2, 1));
 
-        let (invalid_unit, mut invalid_data) = fixture(&mut heap, CLOSING_SRU_DIRADICAL as i32, None);
+        let (invalid_unit, mut invalid_data) =
+            fixture(&mut heap, CLOSING_SRU_DIRADICAL as i32, None);
         heap.slice_mut(invalid_unit).unwrap()[0].end_atom1 = 0;
         error = 44;
         assert_eq!(
-            OAD_PolymerUnit_UnlinkCapsAndConnectEndAtoms(&mut heap, invalid_unit, &mut invalid_data, &mut error, None,),
+            OAD_PolymerUnit_UnlinkCapsAndConnectEndAtoms(
+                &mut heap,
+                invalid_unit,
+                &mut invalid_data,
+                &mut error,
+                None,
+            ),
             Err(SourceHeapError::PointerOutOfBounds)
         );
         assert_eq!(error, 0);
@@ -14563,7 +15785,10 @@ mod tests {
                 alist: list,
                 ..OAD_PolymerUnit::default()
             };
-            assert_eq!(OAD_PolymerUnit_HasMetal(&heap, &unit, atoms.as_const()), Ok(1));
+            assert_eq!(
+                OAD_PolymerUnit_HasMetal(&heap, &unit, atoms.as_const()),
+                Ok(1)
+            );
         }
         let nonmetals = heap.allocate_model_storage(vec![1, 2, 4]).unwrap();
         assert_eq!(

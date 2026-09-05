@@ -7,7 +7,9 @@ use super::AvalonFingerprintFlags;
 use super::aromaticity::perceive_aromatic_bonds;
 use super::daylight_aromaticity::perceive_daylight_aromaticity;
 use super::hash::hash_string;
-use super::preprocess::{Neighbourhood, collect_hydrogen_counts, ring_state, set_ring_size_flags, setup_neighbourhood};
+use super::preprocess::{
+    Neighbourhood, collect_hydrogen_counts, ring_state, set_ring_size_flags, setup_neighbourhood,
+};
 use super::reaccs::MoleculeState;
 use super::symbols::atom_symbol_match;
 
@@ -47,7 +49,10 @@ fn validate_l_symbol_lists(molecule: &MoleculeState) -> Result<(), FingerprintEr
                 .any(|symbol_list| symbol_list.atom == atom_index as i32 + 1)
         {
             return Err(FingerprintError::AvalonConversion {
-                reason: format!("Avalon L atom {} has no matching symbol list", atom_index + 1),
+                reason: format!(
+                    "Avalon L atom {} has no matching symbol list",
+                    atom_index + 1
+                ),
             });
         }
     }
@@ -71,7 +76,11 @@ pub(super) fn prepare_fingerprint_state(
     // Avalon❗✔️:    old_bond_types = TypeAlloc(mp->n_bonds, int);
     // Avalon❗✔️:    for (i=0; i<mp->n_bonds; i++)
     // Avalon❗✔️:       old_bond_types[i] = mp->bond_array[i].bond_type;
-    let old_bond_types = molecule.bonds.iter().map(|bond| bond.bond_type).collect::<Vec<_>>();
+    let old_bond_types = molecule
+        .bonds
+        .iter()
+        .map(|bond| bond.bond_type)
+        .collect::<Vec<_>>();
     // Avalon❗✔️:
     // The complete source H_count allocation and query/non-query branches are
     // reproduced line-by-line in `collect_hydrogen_counts` and its helpers.
@@ -169,7 +178,10 @@ pub(super) fn prepare_fingerprint_state(
             }
             // Avalon❗✔️:          }
             list_result.ok_or_else(|| FingerprintError::AvalonConversion {
-                reason: format!("Avalon L atom {} has no matching symbol list", atom_index + 1),
+                reason: format!(
+                    "Avalon L atom {} has no matching symbol list",
+                    atom_index + 1
+                ),
             })?
             // Avalon❗✔️:       }
             // Avalon❗✔️:       else
@@ -370,7 +382,10 @@ pub(super) fn with_prepared_fingerprint_state<T>(
     as_query: bool,
     fpflags: i32,
     exclude_atom: i32,
-    operation: impl FnOnce(&mut MoleculeState, &FingerprintPreprocessingState) -> Result<T, FingerprintError>,
+    operation: impl FnOnce(
+        &mut MoleculeState,
+        &FingerprintPreprocessingState,
+    ) -> Result<T, FingerprintError>,
 ) -> Result<T, FingerprintError> {
     let state = prepare_fingerprint_state(molecule, which_bits, as_query, fpflags, exclude_atom)?;
     let result = operation(molecule, &state);
@@ -619,11 +634,19 @@ mod tests {
         assert_eq!(state.atom_status, vec![3, 2, 3, 2]);
         assert_eq!(state.bond_status, vec![1, 1, 1, 1, 2]);
         assert_eq!(
-            molecule.atoms.iter().map(|atom| atom.rsize_flags).collect::<Vec<_>>(),
+            molecule
+                .atoms
+                .iter()
+                .map(|atom| atom.rsize_flags)
+                .collect::<Vec<_>>(),
             vec![25; 4]
         );
         assert_eq!(
-            molecule.bonds.iter().map(|bond| bond.rsize_flags).collect::<Vec<_>>(),
+            molecule
+                .bonds
+                .iter()
+                .map(|bond| bond.rsize_flags)
+                .collect::<Vec<_>>(),
             vec![25, 25, 25, 25, 9]
         );
         assert_eq!(state.double_bond_count, 2);
@@ -709,7 +732,11 @@ mod tests {
                 if reason == "Avalon L atom 1 has no matching symbol list"
         ));
         assert_eq!(
-            molecule.bonds.iter().map(|bond| bond.bond_type).collect::<Vec<_>>(),
+            molecule
+                .bonds
+                .iter()
+                .map(|bond| bond.bond_type)
+                .collect::<Vec<_>>(),
             original
         );
     }
@@ -749,8 +776,14 @@ mod tests {
             ..MoleculeState::default()
         };
 
-        let state =
-            prepare_fingerprint_state(&mut molecule, AvalonFingerprintFlags::from_bits_retain(0), false, 0, 0).unwrap();
+        let state = prepare_fingerprint_state(
+            &mut molecule,
+            AvalonFingerprintFlags::from_bits_retain(0),
+            false,
+            0,
+            0,
+        )
+        .unwrap();
 
         assert_eq!(state.old_bond_types, original);
         assert!(
@@ -846,9 +879,16 @@ mod tests {
             },
         );
 
-        assert!(matches!(result, Err(FingerprintError::InvalidArguments { .. })));
+        assert!(matches!(
+            result,
+            Err(FingerprintError::InvalidArguments { .. })
+        ));
         assert_eq!(
-            molecule.bonds.iter().map(|bond| bond.bond_type).collect::<Vec<_>>(),
+            molecule
+                .bonds
+                .iter()
+                .map(|bond| bond.bond_type)
+                .collect::<Vec<_>>(),
             original
         );
     }
@@ -881,7 +921,11 @@ mod tests {
 
         assert_eq!(aromatic_count, 6);
         assert_eq!(
-            molecule.bonds.iter().map(|bond| bond.bond_type).collect::<Vec<_>>(),
+            molecule
+                .bonds
+                .iter()
+                .map(|bond| bond.bond_type)
+                .collect::<Vec<_>>(),
             original
         );
     }

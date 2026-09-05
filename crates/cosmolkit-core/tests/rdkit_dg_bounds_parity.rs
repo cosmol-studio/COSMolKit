@@ -28,9 +28,12 @@ fn load_golden() -> Vec<DgBoundsRecord> {
         .lines()
         .enumerate()
         .map(|(idx, line)| {
-            let line = line.unwrap_or_else(|err| panic!("failed to read {} line {}: {err}", path.display(), idx + 1));
-            serde_json::from_str(&line)
-                .unwrap_or_else(|err| panic!("failed to parse {} line {}: {err}", path.display(), idx + 1))
+            let line = line.unwrap_or_else(|err| {
+                panic!("failed to read {} line {}: {err}", path.display(), idx + 1)
+            });
+            serde_json::from_str(&line).unwrap_or_else(|err| {
+                panic!("failed to parse {} line {}: {err}", path.display(), idx + 1)
+            })
         })
         .collect()
 }
@@ -67,10 +70,13 @@ fn dg_bounds_matrix_matches_rdkit_golden() {
             );
             continue;
         }
-        let expected = record
-            .bounds
-            .as_ref()
-            .unwrap_or_else(|| panic!("row {} ({}) is rdkit_ok but has no bounds", row_idx + 1, record.smiles));
+        let expected = record.bounds.as_ref().unwrap_or_else(|| {
+            panic!(
+                "row {} ({}) is rdkit_ok but has no bounds",
+                row_idx + 1,
+                record.smiles
+            )
+        });
         let mol = Molecule::from_smiles(&record.smiles).unwrap_or_else(|err| {
             panic!(
                 "cosmolkit failed to parse row {} ({}): {err}",
@@ -118,7 +124,10 @@ fn dg_bounds_matrix_matches_rdkit_golden() {
     }
 
     if row_filter.is_none() {
-        let smiles = records.iter().map(|record| record.smiles.clone()).collect::<Vec<_>>();
+        let smiles = records
+            .iter()
+            .map(|record| record.smiles.clone())
+            .collect::<Vec<_>>();
         let batch = MoleculeBatch::from_smiles_list(&smiles);
         for (row_idx, (record, batch_record)) in records.iter().zip(batch.iter()).enumerate() {
             if !record.rdkit_ok {
@@ -164,7 +173,10 @@ fn dg_bounds_matrix_matches_rdkit_golden() {
 #[test]
 fn dg_bounds_matrix_matches_rdkit_golden_in_parallel_batch() {
     let records = load_golden();
-    let smiles = records.iter().map(|record| record.smiles.clone()).collect::<Vec<_>>();
+    let smiles = records
+        .iter()
+        .map(|record| record.smiles.clone())
+        .collect::<Vec<_>>();
     let batch = MoleculeBatch::from_smiles_list(&smiles).with_parallel_jobs(Some(4));
     let actual = batch
         .dg_bounds_matrix_list_with_progress(None)

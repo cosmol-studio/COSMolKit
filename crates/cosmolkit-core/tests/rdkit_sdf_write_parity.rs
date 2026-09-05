@@ -52,9 +52,12 @@ fn load_golden() -> Vec<SdfWriteRecord> {
         .lines()
         .enumerate()
         .map(|(idx, line)| {
-            let line = line.unwrap_or_else(|err| panic!("failed to read {} line {}: {err}", path.display(), idx + 1));
-            serde_json::from_str(&line)
-                .unwrap_or_else(|err| panic!("failed to parse {} line {}: {err}", path.display(), idx + 1))
+            let line = line.unwrap_or_else(|err| {
+                panic!("failed to read {} line {}: {err}", path.display(), idx + 1)
+            });
+            serde_json::from_str(&line).unwrap_or_else(|err| {
+                panic!("failed to parse {} line {}: {err}", path.display(), idx + 1)
+            })
         })
         .collect()
 }
@@ -130,8 +133,12 @@ fn sdf_write_matches_rdkit_for_supported_branches_and_reports_unimplemented_ones
         for (branch_name, branch) in &record.branches {
             let params = branch_params(branch);
             let actual = match branch.params.dimension.as_str() {
-                "2d" => mol_2d.as_ref().map(|mol| mol_to_sdf_record_with_params(mol, &params)),
-                "3d" => mol_3d.as_ref().map(|mol| mol_to_sdf_record_with_params(mol, &params)),
+                "2d" => mol_2d
+                    .as_ref()
+                    .map(|mol| mol_to_sdf_record_with_params(mol, &params)),
+                "3d" => mol_3d
+                    .as_ref()
+                    .map(|mol| mol_to_sdf_record_with_params(mol, &params)),
                 other => panic!("unknown SDF write dimension branch '{other}'"),
             };
             let Some(actual) = actual else {

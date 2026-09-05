@@ -90,10 +90,20 @@ fn load_golden() -> Vec<MolFileReadRecord> {
         .lines()
         .enumerate()
         .map(|(idx, line)| {
-            let line =
-                line.unwrap_or_else(|error| panic!("failed to read {} line {}: {error}", path.display(), idx + 1));
-            serde_json::from_str(&line)
-                .unwrap_or_else(|error| panic!("failed to parse {} line {}: {error}", path.display(), idx + 1))
+            let line = line.unwrap_or_else(|error| {
+                panic!(
+                    "failed to read {} line {}: {error}",
+                    path.display(),
+                    idx + 1
+                )
+            });
+            serde_json::from_str(&line).unwrap_or_else(|error| {
+                panic!(
+                    "failed to parse {} line {}: {error}",
+                    path.display(),
+                    idx + 1
+                )
+            })
         })
         .collect()
 }
@@ -151,10 +161,14 @@ fn parsed_record(record: &MolFileReadRecord, row_idx: usize) -> MolFileRecord {
         "MolFromMolBlock" => read_mol_record_from_str_with_params(molblock, params),
         "MolFromMolFile" => {
             let mut temp = tempfile::NamedTempFile::new().expect("should create temp molfile");
-            std::io::Write::write_all(&mut temp, molblock.as_bytes()).expect("should write temp molfile");
+            std::io::Write::write_all(&mut temp, molblock.as_bytes())
+                .expect("should write temp molfile");
             read_mol_file_with_params(temp.path(), params)
         }
-        other => panic!("unsupported molfile golden API {other} at row {}", row_idx + 1),
+        other => panic!(
+            "unsupported molfile golden API {other} at row {}",
+            row_idx + 1
+        ),
     };
     let mut parsed = read_result.unwrap_or_else(|error| {
         panic!(
@@ -168,7 +182,11 @@ fn parsed_record(record: &MolFileReadRecord, row_idx: usize) -> MolFileRecord {
     parsed
 }
 
-fn apply_delayed_operation(molecule: Molecule, record: &MolFileReadRecord, row_idx: usize) -> Molecule {
+fn apply_delayed_operation(
+    molecule: Molecule,
+    record: &MolFileReadRecord,
+    row_idx: usize,
+) -> Molecule {
     match record.operation.as_deref().unwrap_or("read") {
         "read" => molecule,
         "delayed_sanitize" => molecule.sanitize().unwrap_or_else(|error| {
@@ -188,7 +206,10 @@ fn apply_delayed_operation(molecule: Molecule, record: &MolFileReadRecord, row_i
             )
         }),
         "failure" => molecule,
-        other => panic!("unsupported molfile golden operation {other} at row {}", row_idx + 1),
+        other => panic!(
+            "unsupported molfile golden operation {other} at row {}",
+            row_idx + 1
+        ),
     }
 }
 
@@ -214,10 +235,14 @@ fn assert_error_matches_rdkit(record: &MolFileReadRecord, row_idx: usize) {
         "MolFromMolBlock" => read_mol_record_from_str_with_params(molblock, params),
         "MolFromMolFile" => {
             let mut temp = tempfile::NamedTempFile::new().expect("should create temp molfile");
-            std::io::Write::write_all(&mut temp, molblock.as_bytes()).expect("should write temp molfile");
+            std::io::Write::write_all(&mut temp, molblock.as_bytes())
+                .expect("should write temp molfile");
             read_mol_file_with_params(temp.path(), params)
         }
-        other => panic!("unsupported molfile golden API {other} at row {}", row_idx + 1),
+        other => panic!(
+            "unsupported molfile golden API {other} at row {}",
+            row_idx + 1
+        ),
     };
     assert!(
         result.is_err(),
@@ -352,12 +377,17 @@ fn molfile_read_coordinates_match_rdkit_for_2d_and_3d_records() {
         };
 
         if record.dimension == "2D" {
-            let coords = parsed
-                .molecule
-                .coordinates_2d()
-                .unwrap_or_else(|| panic!("row {} {} should preserve 2D coords", row_idx + 1, record.case_id));
+            let coords = parsed.molecule.coordinates_2d().unwrap_or_else(|| {
+                panic!(
+                    "row {} {} should preserve 2D coords",
+                    row_idx + 1,
+                    record.case_id
+                )
+            });
             assert_eq!(coords.len(), expected_positions.len());
-            for (atom_idx, (actual, expected)) in coords.iter().zip(expected_positions.iter()).enumerate() {
+            for (atom_idx, (actual, expected)) in
+                coords.iter().zip(expected_positions.iter()).enumerate()
+            {
                 assert!(
                     (actual[0] - expected[0]).abs() <= 1e-12
                         && (actual[1] - expected[1]).abs() <= 1e-12
@@ -375,9 +405,17 @@ fn molfile_read_coordinates_match_rdkit_for_2d_and_3d_records() {
                 .conformers_3d()
                 .first()
                 .map(|c| c.coordinates())
-                .unwrap_or_else(|| panic!("row {} {} should preserve 3D coords", row_idx + 1, record.case_id));
+                .unwrap_or_else(|| {
+                    panic!(
+                        "row {} {} should preserve 3D coords",
+                        row_idx + 1,
+                        record.case_id
+                    )
+                });
             assert_eq!(coords.len(), expected_positions.len());
-            for (atom_idx, (actual, expected)) in coords.iter().zip(expected_positions.iter()).enumerate() {
+            for (atom_idx, (actual, expected)) in
+                coords.iter().zip(expected_positions.iter()).enumerate()
+            {
                 assert!(
                     (actual[0] - expected[0]).abs() <= 1e-12
                         && (actual[1] - expected[1]).abs() <= 1e-12

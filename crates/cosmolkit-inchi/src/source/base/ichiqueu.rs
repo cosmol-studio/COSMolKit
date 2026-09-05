@@ -4,9 +4,10 @@ use crate::source::base::{
     util::get_endpoint_valence,
 };
 use crate::source_types::{
-    ALT_PATH_MODE_TAUTOM, AT_RANK, BOND_ALT_13, BOND_ALT12NS, BOND_ALTERN, BOND_DOUBLE, BOND_MARK_ALL, BOND_SINGLE,
-    BOND_TAUTOM, BOND_TRIPLE, BalancedNetworkData, BalancedNetworkStructure, CANON_GLOBALS, DFS_PATH, ENDPOINT_INFO,
-    SourceHeap, SourceHeapError, SourceMutPointer, T_BONDPOS, T_ENDPOINT, clock_t, inp_ATOM,
+    ALT_PATH_MODE_TAUTOM, AT_RANK, BOND_ALT_13, BOND_ALT12NS, BOND_ALTERN, BOND_DOUBLE,
+    BOND_MARK_ALL, BOND_SINGLE, BOND_TAUTOM, BOND_TRIPLE, BalancedNetworkData,
+    BalancedNetworkStructure, CANON_GLOBALS, DFS_PATH, ENDPOINT_INFO, SourceHeap, SourceHeapError,
+    SourceMutPointer, T_BONDPOS, T_ENDPOINT, clock_t, inp_ATOM,
 };
 
 pub(crate) fn are_alt_bonds(bonds: &[u8], len: i32) -> Result<i32, SourceHeapError> {
@@ -83,7 +84,9 @@ pub(crate) fn are_alt_bonds(bonds: &[u8], len: i32) -> Result<i32, SourceHeapErr
         return Ok(0);
     }
     let len = usize::try_from(len).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    let bonds = bonds.get(..len).ok_or(SourceHeapError::PointerOutOfBounds)?;
+    let bonds = bonds
+        .get(..len)
+        .ok_or(SourceHeapError::PointerOutOfBounds)?;
     if bonds[0] == BOND_TRIPLE as u8 || bonds[0] == BOND_ALT_13 as u8 {
         return Ok(0);
     }
@@ -209,27 +212,45 @@ pub(crate) fn AddBondsPos(
     // INCHI✔️✔️: }
     // END INCHI C FUNCTION: AddBondsPos
 
-    let temporary_count = usize::try_from(nNumBondPosTmp).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let temporary_count =
+        usize::try_from(nNumBondPosTmp).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     if temporary_count > BondPosTmp.len() {
         return Err(SourceHeapError::PointerOutOfBounds);
     }
     let mut j = 0_usize;
     while j < temporary_count {
-        let first = BondPosTmp.get(j).cloned().ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let first = BondPosTmp
+            .get(j)
+            .cloned()
+            .ok_or(SourceHeapError::PointerOutOfBounds)?;
         let cur_at = usize::from(first.nAtomNumber);
         let neighbor_index = usize::from(first.neighbor_index);
-        let current = atom.get(cur_at).ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let current = atom
+            .get(cur_at)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?;
         let nxt_at = usize::from(
             *current
                 .neighbor
                 .get(neighbor_index)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?,
         );
-        let next = atom.get(nxt_at).ok_or(SourceHeapError::PointerOutOfBounds)?;
-        let valence = usize::try_from(next.valence).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let next = atom
+            .get(nxt_at)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let valence =
+            usize::try_from(next.valence).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         for k in 0..valence {
-            if cur_at == usize::from(*next.neighbor.get(k).ok_or(SourceHeapError::PointerOutOfBounds)?) {
-                let opposite = BondPosTmp.get_mut(j + 1).ok_or(SourceHeapError::PointerOutOfBounds)?;
+            if cur_at
+                == usize::from(
+                    *next
+                        .neighbor
+                        .get(k)
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?,
+                )
+            {
+                let opposite = BondPosTmp
+                    .get_mut(j + 1)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
                 opposite.nAtomNumber = nxt_at as AT_RANK;
                 opposite.neighbor_index = k as AT_RANK;
                 break;
@@ -240,24 +261,33 @@ pub(crate) fn AddBondsPos(
 
     let mut j = 0_usize;
     while j < temporary_count {
-        let existing_count = usize::try_from(nNumBondPos).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let existing_count =
+            usize::try_from(nNumBondPos).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         if existing_count > BondPos.len() {
             return Err(SourceHeapError::PointerOutOfBounds);
         }
-        let first = BondPosTmp.get(j).ok_or(SourceHeapError::PointerOutOfBounds)?;
-        let opposite = BondPosTmp.get(j + 1).ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let first = BondPosTmp
+            .get(j)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let opposite = BondPosTmp
+            .get(j + 1)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?;
         let mut i = 0_usize;
         while i < existing_count {
             let existing = BondPos.get(i).ok_or(SourceHeapError::PointerOutOfBounds)?;
-            if (existing.nAtomNumber == first.nAtomNumber && existing.neighbor_index == first.neighbor_index)
-                || (existing.nAtomNumber == opposite.nAtomNumber && existing.neighbor_index == opposite.neighbor_index)
+            if (existing.nAtomNumber == first.nAtomNumber
+                && existing.neighbor_index == first.neighbor_index)
+                || (existing.nAtomNumber == opposite.nAtomNumber
+                    && existing.neighbor_index == opposite.neighbor_index)
             {
                 break;
             }
             i += 1;
         }
         if i == existing_count {
-            if i32::try_from(i).map_err(|_| SourceHeapError::SourceIntegerOverflow)? > nMaxNumBondPos {
+            if i32::try_from(i).map_err(|_| SourceHeapError::SourceIntegerOverflow)?
+                > nMaxNumBondPos
+            {
                 return Ok(-1);
             }
             *BondPos
@@ -311,24 +341,33 @@ pub(crate) fn AddEndPoints(
     // INCHI✔️✔️: }
     // END INCHI C FUNCTION: AddEndPoints
 
-    let new_count = usize::try_from(nNumNewEndPoint).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let new_count =
+        usize::try_from(nNumNewEndPoint).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let new_endpoints = EndPointTmp
         .get(..new_count)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
     for candidate in new_endpoints {
-        let existing_count = usize::try_from(nNumEndPoint).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let existing_count =
+            usize::try_from(nNumEndPoint).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         if existing_count > EndPoint.len() {
             return Err(SourceHeapError::PointerOutOfBounds);
         }
         let mut i = 0_usize;
         while i < existing_count {
-            if EndPoint.get(i).ok_or(SourceHeapError::PointerOutOfBounds)?.nAtomNumber == candidate.nAtomNumber {
+            if EndPoint
+                .get(i)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?
+                .nAtomNumber
+                == candidate.nAtomNumber
+            {
                 break;
             }
             i += 1;
         }
         if i == existing_count {
-            if i32::try_from(i).map_err(|_| SourceHeapError::SourceIntegerOverflow)? > nMaxNumEndPoint {
+            if i32::try_from(i).map_err(|_| SourceHeapError::SourceIntegerOverflow)?
+                > nMaxNumEndPoint
+            {
                 return Ok(-1);
             }
             *EndPoint
@@ -572,7 +611,10 @@ pub(crate) fn Check7MembTautRing(
         o1_at = i32::from(
             *path1_atom
                 .neighbor
-                .get(usize::try_from(nStartAtomNeighborNeighbor).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
+                .get(
+                    usize::try_from(nStartAtomNeighborNeighbor)
+                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                )
                 .ok_or(SourceHeapError::PointerOutOfBounds)?,
         );
         let path0_atom = atoms
@@ -581,19 +623,25 @@ pub(crate) fn Check7MembTautRing(
         o2_at = i32::from(
             *path0_atom
                 .neighbor
-                .get(usize::try_from(nStartAtomNeighbor2).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
+                .get(
+                    usize::try_from(nStartAtomNeighbor2)
+                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                )
                 .ok_or(SourceHeapError::PointerOutOfBounds)?,
         );
 
         let mut eif1 = ENDPOINT_INFO::default();
         let mut eif2 = ENDPOINT_INFO::default();
-        if nGetEndpointInfo(atoms, o1_at, &mut eif1) == 0 || nGetEndpointInfo(atoms, o2_at, &mut eif2) == 0 {
+        if nGetEndpointInfo(atoms, o1_at, &mut eif1) == 0
+            || nGetEndpointInfo(atoms, o2_at, &mut eif2) == 0
+        {
             return Ok(0);
         }
 
         let mut EndPointTmp: [T_ENDPOINT; 2] = std::array::from_fn(|_| T_ENDPOINT::default());
         for endpoint in [o1_at, o2_at] {
-            let temporary_index = usize::try_from(nNumEndPointTmp).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let temporary_index = usize::try_from(nNumEndPointTmp)
+                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             let endpoint_atom = atoms
                 .get(usize::try_from(endpoint).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -610,10 +658,11 @@ pub(crate) fn Check7MembTautRing(
         }
 
         let mut path_bonds = [0_u8; PATH_LEN as usize + 1];
-        let mut BondPosTmp: [T_BONDPOS; 2 * PATH_LEN as usize] = std::array::from_fn(|_| T_BONDPOS::default());
+        let mut BondPosTmp: [T_BONDPOS; 2 * PATH_LEN as usize] =
+            std::array::from_fn(|_| T_BONDPOS::default());
         let k = i32::from(path1.at_no);
-        let first_neighbor_index =
-            usize::try_from(nStartAtomNeighborNeighbor).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let first_neighbor_index = usize::try_from(nStartAtomNeighborNeighbor)
+            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         let mut bond_type = *path1_atom
             .bond_type
             .get(first_neighbor_index)
@@ -627,7 +676,8 @@ pub(crate) fn Check7MembTautRing(
                 || x == BOND_ALTERN as u8
                 || x == BOND_ALT12NS as u8
         ) {
-            let index = usize::try_from(nNumBondPosTmp).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let index =
+                usize::try_from(nNumBondPosTmp).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             BondPosTmp[index].nAtomNumber = k as AT_RANK;
             BondPosTmp[index].neighbor_index = nStartAtomNeighborNeighbor as AT_RANK;
             nNumBondPosTmp = nNumBondPosTmp.wrapping_add(2);
@@ -639,7 +689,8 @@ pub(crate) fn Check7MembTautRing(
                 .get(usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
             bond_type = path.bond_type;
-            path_bonds[usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?] = bond_type;
+            path_bonds[usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?] =
+                bond_type;
             if matches!(
                 bond_type,
                 x if x == BOND_SINGLE as u8
@@ -647,7 +698,8 @@ pub(crate) fn Check7MembTautRing(
                     || x == BOND_ALTERN as u8
                     || x == BOND_ALT12NS as u8
             ) {
-                let index = usize::try_from(nNumBondPosTmp).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let index = usize::try_from(nNumBondPosTmp)
+                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 BondPosTmp[index].nAtomNumber = path.at_no;
                 BondPosTmp[index].neighbor_index = path.bond_pos as AT_RANK;
                 nNumBondPosTmp = nNumBondPosTmp.wrapping_add(2);
@@ -657,10 +709,14 @@ pub(crate) fn Check7MembTautRing(
 
         bond_type = *path0_atom
             .bond_type
-            .get(usize::try_from(nStartAtomNeighbor2).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
+            .get(
+                usize::try_from(nStartAtomNeighbor2)
+                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+            )
             .ok_or(SourceHeapError::PointerOutOfBounds)?
             & !(BOND_MARK_ALL as u8);
-        path_bonds[usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?] = bond_type;
+        path_bonds[usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?] =
+            bond_type;
         i = i.wrapping_add(1);
         if matches!(
             bond_type,
@@ -669,7 +725,8 @@ pub(crate) fn Check7MembTautRing(
                 || x == BOND_ALTERN as u8
                 || x == BOND_ALT12NS as u8
         ) {
-            let index = usize::try_from(nNumBondPosTmp).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let index =
+                usize::try_from(nNumBondPosTmp).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             BondPosTmp[index].nAtomNumber = path0.at_no;
             BondPosTmp[index].neighbor_index = nStartAtomNeighbor2 as AT_RANK;
             nNumBondPosTmp = nNumBondPosTmp.wrapping_add(2);
@@ -690,9 +747,11 @@ pub(crate) fn Check7MembTautRing(
             .get(usize::try_from(o2_at).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
         if (j == BOND_SINGLE as i32
-            && ((o2.endpoint == 0 && eif2.cDonor == 0) || (o1.endpoint == 0 && eif1.cAcceptor == 0)))
+            && ((o2.endpoint == 0 && eif2.cDonor == 0)
+                || (o1.endpoint == 0 && eif1.cAcceptor == 0)))
             || (j == BOND_DOUBLE as i32
-                && ((o2.endpoint == 0 && eif2.cAcceptor == 0) || (o1.endpoint == 0 && eif1.cDonor == 0)))
+                && ((o2.endpoint == 0 && eif2.cAcceptor == 0)
+                    || (o1.endpoint == 0 && eif1.cDonor == 0)))
         {
             return Ok(0);
         }
@@ -705,9 +764,18 @@ pub(crate) fn Check7MembTautRing(
             nMaxNumBondPos,
             nNumBondPos,
         )?;
-        nNumEndPoint = AddEndPoints(&EndPointTmp, nNumEndPointTmp, EndPoint, nMaxNumEndPoint, nNumEndPoint)?;
+        nNumEndPoint = AddEndPoints(
+            &EndPointTmp,
+            nNumEndPointTmp,
+            EndPoint,
+            nMaxNumEndPoint,
+            nNumEndPoint,
+        )?;
 
-        if nNumBondPos >= 0 && nNumEndPoint >= 0 && (nNumBondPos > *pnNumBondPos || nNumEndPoint > *pnNumEndPoint) {
+        if nNumBondPos >= 0
+            && nNumEndPoint >= 0
+            && (nNumBondPos > *pnNumBondPos || nNumEndPoint > *pnNumEndPoint)
+        {
             ret = 1;
             *pnNumBondPos = nNumBondPos;
             *pnNumEndPoint = nNumEndPoint;
@@ -1045,7 +1113,12 @@ pub(crate) fn Check6MembTautRing(
     }
 
     let middle_pos = nLenDfsPath.wrapping_add(1) / 2;
-    let n_at = i32::from(DfsPath.first().ok_or(SourceHeapError::PointerOutOfBounds)?.at_no);
+    let n_at = i32::from(
+        DfsPath
+            .first()
+            .ok_or(SourceHeapError::PointerOutOfBounds)?
+            .at_no,
+    );
     let nxt_at = i32::from(
         DfsPath
             .get(usize::try_from(middle_pos).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
@@ -1053,7 +1126,17 @@ pub(crate) fn Check6MembTautRing(
             .at_no,
     );
 
-    let (o_at, external_bond_pos, external_bond, eif1, eif2, endpoint_valence1, endpoint_valence2, nMobile1, nMobile2) = {
+    let (
+        o_at,
+        external_bond_pos,
+        external_bond,
+        eif1,
+        eif2,
+        endpoint_valence1,
+        endpoint_valence2,
+        nMobile1,
+        nMobile2,
+    ) = {
         let atoms = heap.slice(atom.as_const())?;
         let center = atoms
             .get(usize::try_from(nxt_at).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
@@ -1062,17 +1145,27 @@ pub(crate) fn Check6MembTautRing(
             return Ok(0);
         }
         let previous = DfsPath
-            .get(usize::try_from(middle_pos.wrapping_sub(1)).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
+            .get(
+                usize::try_from(middle_pos.wrapping_sub(1))
+                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+            )
             .ok_or(SourceHeapError::PointerOutOfBounds)?
             .at_no;
         let next = DfsPath
-            .get(usize::try_from(middle_pos.wrapping_add(1)).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
+            .get(
+                usize::try_from(middle_pos.wrapping_add(1))
+                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+            )
             .ok_or(SourceHeapError::PointerOutOfBounds)?
             .at_no;
-        let valence = usize::try_from(center.valence).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let valence =
+            usize::try_from(center.valence).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         let mut external = None;
         for i in 0..valence {
-            let neighbor = *center.neighbor.get(i).ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let neighbor = *center
+                .neighbor
+                .get(i)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
             if neighbor != previous && neighbor != next {
                 external = Some((i, i32::from(neighbor)));
                 break;
@@ -1167,7 +1260,8 @@ pub(crate) fn Check6MembTautRing(
                 .get(usize::try_from(k).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
             let bond_type = path.bond_type;
-            path_bonds[usize::try_from(side).unwrap()][usize::try_from(j.wrapping_add(1)).unwrap()] = bond_type;
+            path_bonds[usize::try_from(side).unwrap()]
+                [usize::try_from(j.wrapping_add(1)).unwrap()] = bond_type;
             if matches!(
                 bond_type,
                 x if x == BOND_SINGLE as u8
@@ -1175,7 +1269,8 @@ pub(crate) fn Check6MembTautRing(
                     || x == BOND_ALTERN as u8
                     || x == BOND_ALT12NS as u8
             ) {
-                let index = usize::try_from(nNumBondPosTmp).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let index = usize::try_from(nNumBondPosTmp)
+                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 BondPosTmp[index].nAtomNumber = path.at_no;
                 BondPosTmp[index].neighbor_index = path.bond_pos as AT_RANK;
                 nNumBondPosTmp = nNumBondPosTmp.wrapping_add(2);
@@ -1190,8 +1285,10 @@ pub(crate) fn Check6MembTautRing(
 
     let (endpoint_o, endpoint_n) = {
         let atoms = heap.slice(atom.as_const())?;
-        let endpoint_o = atoms[usize::try_from(o_at).map_err(|_| SourceHeapError::PointerOutOfBounds)?].endpoint;
-        let endpoint_n = atoms[usize::try_from(n_at).map_err(|_| SourceHeapError::PointerOutOfBounds)?].endpoint;
+        let endpoint_o =
+            atoms[usize::try_from(o_at).map_err(|_| SourceHeapError::PointerOutOfBounds)?].endpoint;
+        let endpoint_n =
+            atoms[usize::try_from(n_at).map_err(|_| SourceHeapError::PointerOutOfBounds)?].endpoint;
         (endpoint_o, endpoint_n)
     };
     if endpoint_o != endpoint_n || endpoint_o == 0 {
@@ -1220,7 +1317,11 @@ pub(crate) fn Check6MembTautRing(
             .get(usize::try_from(endpoint).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
         if endpoint_atom.endpoint == 0 {
-            let endpoint_valence = if j != 0 { endpoint_valence2 } else { endpoint_valence1 };
+            let endpoint_valence = if j != 0 {
+                endpoint_valence2
+            } else {
+                endpoint_valence1
+            };
             let chem_bonds_valence = if j != 0 {
                 i32::from(eif2.cNeutralBondsValence)
             } else {
@@ -1247,9 +1348,18 @@ pub(crate) fn Check6MembTautRing(
         nMaxNumBondPos,
         *pnNumBondPos,
     )?;
-    let nNumEndPoint = AddEndPoints(&EndPointTmp, nNumEndPointTmp, EndPoint, nMaxNumEndPoint, *pnNumEndPoint)?;
+    let nNumEndPoint = AddEndPoints(
+        &EndPointTmp,
+        nNumEndPointTmp,
+        EndPoint,
+        nMaxNumEndPoint,
+        *pnNumEndPoint,
+    )?;
     let mut ret = 0_i32;
-    if nNumBondPos >= 0 && nNumEndPoint >= 0 && (nNumBondPos > *pnNumBondPos || nNumEndPoint > *pnNumEndPoint) {
+    if nNumBondPos >= 0
+        && nNumEndPoint >= 0
+        && (nNumBondPos > *pnNumBondPos || nNumEndPoint > *pnNumEndPoint)
+    {
         ret = 1;
         *pnNumBondPos = nNumBondPos;
         *pnNumEndPoint = nNumEndPoint;
@@ -1461,7 +1571,9 @@ pub(crate) fn Check5MembTautRing(
         let atoms = heap.slice(atom.as_const())?;
         let mut eif1 = ENDPOINT_INFO::default();
         let mut eif2 = ENDPOINT_INFO::default();
-        if nGetEndpointInfo(atoms, n1_at, &mut eif1) == 0 || nGetEndpointInfo(atoms, n2_at, &mut eif2) == 0 {
+        if nGetEndpointInfo(atoms, n1_at, &mut eif1) == 0
+            || nGetEndpointInfo(atoms, n2_at, &mut eif2) == 0
+        {
             return Ok(0);
         }
         let atom1 = atoms
@@ -1504,7 +1616,8 @@ pub(crate) fn Check5MembTautRing(
     let mut nNumEndPointTmp = 0_i32;
     let mut EndPointTmp: [T_ENDPOINT; 2] = std::array::from_fn(|_| T_ENDPOINT::default());
     for endpoint in [n2_at, n1_at] {
-        let temporary_index = usize::try_from(nNumEndPointTmp).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let temporary_index =
+            usize::try_from(nNumEndPointTmp).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         let endpoint_atom = atoms
             .get(usize::try_from(endpoint).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -1529,7 +1642,8 @@ pub(crate) fn Check5MembTautRing(
             .get(usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
         let bond_type = path.bond_type;
-        path_bonds[usize::try_from(i.wrapping_sub(1)).map_err(|_| SourceHeapError::PointerOutOfBounds)?] = bond_type;
+        path_bonds[usize::try_from(i.wrapping_sub(1))
+            .map_err(|_| SourceHeapError::PointerOutOfBounds)?] = bond_type;
         if matches!(
             bond_type,
             x if x == BOND_SINGLE as u8
@@ -1537,7 +1651,8 @@ pub(crate) fn Check5MembTautRing(
                 || x == BOND_ALTERN as u8
                 || x == BOND_ALT12NS as u8
         ) {
-            let temporary_index = usize::try_from(nNumBondPosTmp).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let temporary_index =
+                usize::try_from(nNumBondPosTmp).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             BondPosTmp[temporary_index].nAtomNumber = path.at_no;
             BondPosTmp[temporary_index].neighbor_index = path.bond_pos as AT_RANK;
             nNumBondPosTmp = nNumBondPosTmp.wrapping_add(2);
@@ -1556,9 +1671,11 @@ pub(crate) fn Check5MembTautRing(
         .get(usize::try_from(n2_at).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
     if (terminal_bond == BOND_SINGLE as i32
-        && ((atom1.endpoint == 0 && eif1.cDonor == 0) || (atom2.endpoint == 0 && eif2.cAcceptor == 0)))
+        && ((atom1.endpoint == 0 && eif1.cDonor == 0)
+            || (atom2.endpoint == 0 && eif2.cAcceptor == 0)))
         || (terminal_bond == BOND_DOUBLE as i32
-            && ((atom1.endpoint == 0 && eif1.cAcceptor == 0) || (atom2.endpoint == 0 && eif2.cDonor == 0)))
+            && ((atom1.endpoint == 0 && eif1.cAcceptor == 0)
+                || (atom2.endpoint == 0 && eif2.cDonor == 0)))
     {
         return Ok(0);
     }
@@ -1571,10 +1688,19 @@ pub(crate) fn Check5MembTautRing(
         nMaxNumBondPos,
         nNumBondPos,
     )?;
-    nNumEndPoint = AddEndPoints(&EndPointTmp, nNumEndPointTmp, EndPoint, nMaxNumEndPoint, nNumEndPoint)?;
+    nNumEndPoint = AddEndPoints(
+        &EndPointTmp,
+        nNumEndPointTmp,
+        EndPoint,
+        nMaxNumEndPoint,
+        nNumEndPoint,
+    )?;
 
     let mut ret = 0_i32;
-    if nNumBondPos >= 0 && nNumEndPoint >= 0 && (nNumBondPos > *pnNumBondPos || nNumEndPoint > *pnNumEndPoint) {
+    if nNumBondPos >= 0
+        && nNumEndPoint >= 0
+        && (nNumBondPos > *pnNumBondPos || nNumEndPoint > *pnNumEndPoint)
+    {
         ret = 1;
         *pnNumBondPos = nNumBondPos;
         *pnNumEndPoint = nNumEndPoint;
@@ -1679,8 +1805,9 @@ pub(crate) fn nGet14TautIn7MembAltRing(
             clock_result,
         )
     };
-    let mut check_center =
-        |heap: &SourceHeap, atom: SourceMutPointer<inp_ATOM>, iat: i32| bIsCenterPointStrict(heap, atom, iat);
+    let mut check_center = |heap: &SourceHeap, atom: SourceMutPointer<inp_ATOM>, iat: i32| {
+        bIsCenterPointStrict(heap, atom, iat)
+    };
 
     DFS_FindTautInARing(
         heap,
@@ -1801,8 +1928,9 @@ pub(crate) fn nGet14TautIn5MembAltRing(
             clock_result,
         )
     };
-    let mut check_center =
-        |heap: &SourceHeap, atom: SourceMutPointer<inp_ATOM>, iat: i32| bIsCenterPointStrict(heap, atom, iat);
+    let mut check_center = |heap: &SourceHeap, atom: SourceMutPointer<inp_ATOM>, iat: i32| {
+        bIsCenterPointStrict(heap, atom, iat)
+    };
 
     DFS_FindTautInARing(
         heap,
@@ -1920,8 +2048,9 @@ pub(crate) fn nGet12TautIn5MembAltRing(
             clock_result,
         )
     };
-    let mut check_center =
-        |heap: &SourceHeap, atom: SourceMutPointer<inp_ATOM>, iat: i32| bIsCenterPointStrict(heap, atom, iat);
+    let mut check_center = |heap: &SourceHeap, atom: SourceMutPointer<inp_ATOM>, iat: i32| {
+        bIsCenterPointStrict(heap, atom, iat)
+    };
 
     DFS_FindTautInARing(
         heap,
@@ -2041,8 +2170,9 @@ pub(crate) fn nGet15TautIn6MembAltRing(
             clock_result,
         )
     };
-    let mut check_center =
-        |heap: &SourceHeap, atom: SourceMutPointer<inp_ATOM>, iat: i32| bIsCenterPointStrict(heap, atom, iat);
+    let mut check_center = |heap: &SourceHeap, atom: SourceMutPointer<inp_ATOM>, iat: i32| {
+        bIsCenterPointStrict(heap, atom, iat)
+    };
     DFS_FindTautInARing(
         heap,
         pCG,
@@ -2246,7 +2376,8 @@ pub(crate) fn bIsCenterPointStrict(
     if atom.valence == atom.chem_bonds_valence {
         let endpoint_valence = get_endpoint_valence(atom.el_number);
         if endpoint_valence != 0
-            && ((endpoint_valence > i32::from(atom.valence) && (atom.num_H != 0 || atom.charge == -1))
+            && ((endpoint_valence > i32::from(atom.valence)
+                && (atom.num_H != 0 || atom.charge == -1))
                 || (atom.charge == 0 && atom.c_point != 0))
         {
             return Ok(1);
@@ -2289,14 +2420,16 @@ pub(crate) fn Check15TautPathCenterpoint(
     // END INCHI ACTIVE TYPE CONFIGURATION: Check15TautPathCenterpoint
     // SourceHeap preserves C pointer identity but adds BTreeMap lookups for atom access.
 
-    let path_index = usize::try_from(nLenDfsPath).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let path_index =
+        usize::try_from(nLenDfsPath).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let current_atom_index = usize::from(
         DfsPath
             .get(path_index)
             .ok_or(SourceHeapError::PointerOutOfBounds)?
             .at_no,
     );
-    let neighbor_index = usize::try_from(jNxtNeigh).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let neighbor_index =
+        usize::try_from(jNxtNeigh).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let nxt_at = i32::from(
         *heap
             .slice(atom.as_const())?
@@ -2306,7 +2439,8 @@ pub(crate) fn Check15TautPathCenterpoint(
             .get(neighbor_index)
             .ok_or(SourceHeapError::PointerOutOfBounds)?,
     );
-    let next_atom_index = usize::try_from(nxt_at).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let next_atom_index =
+        usize::try_from(nxt_at).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let endpoint = heap
         .slice(atom.as_const())?
         .get(next_atom_index)
@@ -2582,14 +2716,16 @@ pub(crate) fn Check15TautPath(
     let mut nNumEndPoint = *pnNumEndPoint;
     let mut ret = 0_i32;
 
-    let path_index = usize::try_from(nLenDfsPath).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let path_index =
+        usize::try_from(nLenDfsPath).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let prv_at = i32::from(
         DfsPath
             .get(path_index)
             .ok_or(SourceHeapError::PointerOutOfBounds)?
             .at_no,
     );
-    let neighbor_index = usize::try_from(jNxtNeigh).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let neighbor_index =
+        usize::try_from(jNxtNeigh).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let (cur_at, bond_type) = {
         let previous = heap
             .slice(atom.as_const())?
@@ -2609,11 +2745,14 @@ pub(crate) fn Check15TautPath(
                 & !(BOND_MARK_ALL as u8),
         )
     };
-    let path = DfsPath.get_mut(path_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
+    let path = DfsPath
+        .get_mut(path_index)
+        .ok_or(SourceHeapError::PointerOutOfBounds)?;
     path.bond_type = bond_type;
     path.bond_pos = jNxtNeigh as i8;
     nLenDfsPath = nLenDfsPath.wrapping_add(1);
-    let end_path_index = usize::try_from(nLenDfsPath).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let end_path_index =
+        usize::try_from(nLenDfsPath).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let end_path = DfsPath
         .get_mut(end_path_index)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -2621,7 +2760,12 @@ pub(crate) fn Check15TautPath(
     end_path.bond_type = 0;
     end_path.bond_pos = -1;
 
-    let at1 = i32::from(DfsPath.first().ok_or(SourceHeapError::PointerOutOfBounds)?.at_no);
+    let at1 = i32::from(
+        DfsPath
+            .first()
+            .ok_or(SourceHeapError::PointerOutOfBounds)?
+            .at_no,
+    );
     let at2 = i32::from(
         DfsPath
             .get(end_path_index)
@@ -2648,7 +2792,10 @@ pub(crate) fn Check15TautPath(
     let classify_bond = |bond: u8| -> i32 {
         if bond == BOND_SINGLE as u8 || bond == BOND_DOUBLE as u8 {
             i32::from(bond)
-        } else if bond == BOND_ALTERN as u8 || bond == BOND_TAUTOM as u8 || bond == BOND_ALT12NS as u8 {
+        } else if bond == BOND_ALTERN as u8
+            || bond == BOND_TAUTOM as u8
+            || bond == BOND_ALT12NS as u8
+        {
             BOND_ALTERN as i32
         } else {
             BOND_WRONG
@@ -2656,7 +2803,10 @@ pub(crate) fn Check15TautPath(
     };
     let mut alt_bonds = [0_i32; 2];
     for i in 0..end_path_index {
-        let bond = DfsPath.get(i).ok_or(SourceHeapError::PointerOutOfBounds)?.bond_type;
+        let bond = DfsPath
+            .get(i)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?
+            .bond_type;
         alt_bonds[i % 2] |= classify_bond(bond);
     }
     if (alt_bonds[0] & alt_bonds[1] & (BOND_SINGLE as i32 | BOND_DOUBLE as i32)) != 0
@@ -2681,8 +2831,12 @@ pub(crate) fn Check15TautPath(
 
     let (nMobile1, nMobile2, endpoint1, endpoint2, valence1, valence2) = {
         let atoms = heap.slice(atom.as_const())?;
-        let atom1 = atoms.get(at1_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
-        let atom2 = atoms.get(at2_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let atom1 = atoms
+            .get(at1_index)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let atom2 = atoms
+            .get(at2_index)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?;
         (
             i32::from(atom1.num_H) + i32::from(atom1.charge == -1),
             i32::from(atom2.num_H) + i32::from(atom2.charge == -1),
@@ -2752,7 +2906,8 @@ pub(crate) fn Check15TautPath(
             || bond_type == BOND_ALTERN as u8
             || bond_type == BOND_ALT12NS as u8
         {
-            let index = usize::try_from(nNumBondPosTmp).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let index =
+                usize::try_from(nNumBondPosTmp).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             BondPosTmp[index].nAtomNumber = path.at_no;
             BondPosTmp[index].neighbor_index = path.bond_pos as AT_RANK;
             nNumBondPosTmp = nNumBondPosTmp.wrapping_add(2);
@@ -2762,15 +2917,21 @@ pub(crate) fn Check15TautPath(
     let mut EndPointTmp: [T_ENDPOINT; 2] = std::array::from_fn(|_| T_ENDPOINT::default());
     let mut nNumEndPointTmp = 0_i32;
     for (j, endpoint) in [at1, at2].into_iter().enumerate() {
-        let temporary_index = usize::try_from(nNumEndPointTmp).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        let endpoint_index = usize::try_from(endpoint).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let temporary_index =
+            usize::try_from(nNumEndPointTmp).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let endpoint_index =
+            usize::try_from(endpoint).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         let known_endpoint = heap
             .slice(atom.as_const())?
             .get(endpoint_index)
             .ok_or(SourceHeapError::PointerOutOfBounds)?
             .endpoint;
         if known_endpoint == 0 {
-            let endpoint_valence = if j != 0 { endpoint_valence2 } else { endpoint_valence1 };
+            let endpoint_valence = if j != 0 {
+                endpoint_valence2
+            } else {
+                endpoint_valence1
+            };
             let chem_bonds_valence = if j != 0 {
                 i32::from(eif2.cNeutralBondsValence)
             } else {
@@ -2802,7 +2963,13 @@ pub(crate) fn Check15TautPath(
             nMaxNumBondPos,
             nNumBondPos,
         )?;
-        nNumEndPoint = AddEndPoints(&EndPointTmp, nNumEndPointTmp, EndPoint, nMaxNumEndPoint, nNumEndPoint)?;
+        nNumEndPoint = AddEndPoints(
+            &EndPointTmp,
+            nNumEndPointTmp,
+            EndPoint,
+            nMaxNumEndPoint,
+            nNumEndPoint,
+        )?;
     }
     if nNumBondPos >= 0 && nNumEndPoint >= 0 {
         ret = i32::from(nNumBondPos > *pnNumBondPos || nNumEndPoint > *pnNumEndPoint);
@@ -2861,7 +3028,8 @@ pub(crate) fn DFS_FindTautInARing<CheckRing, CheckCenter>(
 ) -> Result<i32, SourceHeapError>
 where
     CheckRing: for<'a> FnMut(DfsRingCallbackArgs<'a>) -> Result<i32, SourceHeapError>,
-    CheckCenter: FnMut(&SourceHeap, SourceMutPointer<inp_ATOM>, i32) -> Result<i32, SourceHeapError>,
+    CheckCenter:
+        FnMut(&SourceHeap, SourceMutPointer<inp_ATOM>, i32) -> Result<i32, SourceHeapError>,
 {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichiqueu.c:458 DFS_FindTautInARing
     // INCHI✔️❌: int DFS_FindTautInARing( struct tagCANON_GLOBALS *pCG,
@@ -3035,8 +3203,11 @@ where
     nCycleLen = nCycleLen.wrapping_sub(1);
 
     let mut cur_at = nStartAtom;
-    let path_index = usize::try_from(nLenDfsPath).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    let path = DfsPath.get_mut(path_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
+    let path_index =
+        usize::try_from(nLenDfsPath).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let path = DfsPath
+        .get_mut(path_index)
+        .ok_or(SourceHeapError::PointerOutOfBounds)?;
     path.at_no = nStartAtom as AT_RANK;
     path.bond_type = 0;
     path.bond_pos = -1;
@@ -3048,7 +3219,8 @@ where
 
     let mut nMinLenDfsPath = 0_u16;
     if nStartAtomNeighbor2 >= 0 {
-        let neighbor_index = usize::try_from(nStartAtomNeighbor2).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let neighbor_index = usize::try_from(nStartAtomNeighbor2)
+            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         nDoNotTouchAtom1 = i32::from(
             *heap
                 .slice(atom.as_const())?
@@ -3061,39 +3233,54 @@ where
     }
 
     if nStartAtomNeighbor >= 0 {
-        let j = usize::try_from(nStartAtomNeighbor).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let j =
+            usize::try_from(nStartAtomNeighbor).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         let prv_at = cur_at;
-        let previous_index = usize::try_from(prv_at).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let previous_index =
+            usize::try_from(prv_at).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         let (next_atom, bond_type) = {
             let previous = heap
                 .slice(atom.as_const())?
                 .get(previous_index)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
             (
-                *previous.neighbor.get(j).ok_or(SourceHeapError::PointerOutOfBounds)?,
-                *previous.bond_type.get(j).ok_or(SourceHeapError::PointerOutOfBounds)? & !0xf0_u8,
+                *previous
+                    .neighbor
+                    .get(j)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?,
+                *previous
+                    .bond_type
+                    .get(j)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?
+                    & !0xf0_u8,
             )
         };
         cur_at = i32::from(next_atom);
-        let path = DfsPath.get_mut(path_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let path = DfsPath
+            .get_mut(path_index)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?;
         path.bond_type = bond_type;
         path.bond_pos = nStartAtomNeighbor as i8;
 
         nLenDfsPath = nLenDfsPath.wrapping_add(1);
-        let path_index = usize::try_from(nLenDfsPath).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        let path = DfsPath.get_mut(path_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let path_index =
+            usize::try_from(nLenDfsPath).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let path = DfsPath
+            .get_mut(path_index)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?;
         path.at_no = cur_at as AT_RANK;
         path.bond_type = 0;
         path.bond_pos = -1;
-        let current_index = usize::try_from(cur_at).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let current_index =
+            usize::try_from(cur_at).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         *heap
             .slice_mut(nDfsPathPos)?
             .get_mut(current_index)
             .ok_or(SourceHeapError::PointerOutOfBounds)? = nLenDfsPath.wrapping_add(1) as AT_RANK;
         nMinLenDfsPath = nMinLenDfsPath.wrapping_add(1);
         if nStartAtomNeighborNeighbor >= 0 {
-            let neighbor_index =
-                usize::try_from(nStartAtomNeighborNeighbor).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let neighbor_index = usize::try_from(nStartAtomNeighborNeighbor)
+                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             nDoNotTouchAtom2 = i32::from(
                 *heap
                     .slice(atom.as_const())?
@@ -3107,12 +3294,16 @@ where
     }
 
     while nLenDfsPath >= i32::from(nMinLenDfsPath) {
-        let path_index = usize::try_from(nLenDfsPath).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        let path = DfsPath.get_mut(path_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let path_index =
+            usize::try_from(nLenDfsPath).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let path = DfsPath
+            .get_mut(path_index)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?;
         path.bond_pos = path.bond_pos.wrapping_add(1);
         let j = i32::from(path.bond_pos);
         cur_at = i32::from(path.at_no);
-        let current_index = usize::try_from(cur_at).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let current_index =
+            usize::try_from(cur_at).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         let valence = i32::from(
             heap.slice(atom.as_const())?
                 .get(current_index)
@@ -3120,7 +3311,8 @@ where
                 .valence,
         );
         if j < valence {
-            let neighbor_index = usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let neighbor_index =
+                usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             let (bond_type, next_atom) = {
                 let current = heap
                     .slice(atom.as_const())?
@@ -3145,7 +3337,8 @@ where
                 .bond_type = bond_type;
 
             if nxt_at != nDoNotTouchAtom1 && nxt_at != nDoNotTouchAtom2 {
-                let next_index = usize::try_from(nxt_at).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let next_index =
+                    usize::try_from(nxt_at).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let next_path_position = *heap
                     .slice(nDfsPathPos.as_const())?
                     .get(next_index)
@@ -3174,16 +3367,16 @@ where
                         if ret < 0 {
                             nNumFound = ret;
                             while nLenDfsPath >= 0 {
-                                let clear_index =
-                                    usize::try_from(nLenDfsPath).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                                let clear_index = usize::try_from(nLenDfsPath)
+                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                                 let atom_to_clear = i32::from(
                                     DfsPath
                                         .get(clear_index)
                                         .ok_or(SourceHeapError::PointerOutOfBounds)?
                                         .at_no,
                                 );
-                                let atom_to_clear =
-                                    usize::try_from(atom_to_clear).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                                let atom_to_clear = usize::try_from(atom_to_clear)
+                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                                 *heap
                                     .slice_mut(nDfsPathPos)?
                                     .get_mut(atom_to_clear)
@@ -3197,19 +3390,21 @@ where
                 } else if CheckCenterPoint(heap, atom, nxt_at)? != 0 && nLenDfsPath < nCycleLen {
                     nLenDfsPath = nLenDfsPath.wrapping_add(1);
                     cur_at = nxt_at;
-                    let next_path_index =
-                        usize::try_from(nLenDfsPath).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let next_path_index = usize::try_from(nLenDfsPath)
+                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     let next_path = DfsPath
                         .get_mut(next_path_index)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
                     next_path.at_no = cur_at as AT_RANK;
                     next_path.bond_type = 0;
                     next_path.bond_pos = -1;
-                    let next_index = usize::try_from(cur_at).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let next_index =
+                        usize::try_from(cur_at).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     *heap
                         .slice_mut(nDfsPathPos)?
                         .get_mut(next_index)
-                        .ok_or(SourceHeapError::PointerOutOfBounds)? = nLenDfsPath.wrapping_add(1) as AT_RANK;
+                        .ok_or(SourceHeapError::PointerOutOfBounds)? =
+                        nLenDfsPath.wrapping_add(1) as AT_RANK;
                 }
             }
         } else {
@@ -3219,7 +3414,8 @@ where
                     .ok_or(SourceHeapError::PointerOutOfBounds)?
                     .at_no,
             );
-            let atom_to_clear = usize::try_from(atom_to_clear).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let atom_to_clear =
+                usize::try_from(atom_to_clear).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             *heap
                 .slice_mut(nDfsPathPos)?
                 .get_mut(atom_to_clear)
@@ -3229,14 +3425,16 @@ where
     }
 
     while nLenDfsPath >= 0 {
-        let clear_index = usize::try_from(nLenDfsPath).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let clear_index =
+            usize::try_from(nLenDfsPath).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         let atom_to_clear = i32::from(
             DfsPath
                 .get(clear_index)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?
                 .at_no,
         );
-        let atom_to_clear = usize::try_from(atom_to_clear).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let atom_to_clear =
+            usize::try_from(atom_to_clear).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         *heap
             .slice_mut(nDfsPathPos)?
             .get_mut(atom_to_clear)
@@ -3482,7 +3680,9 @@ where
     nCycleLen = nCycleLen.wrapping_sub(1);
 
     let mut cur_at = nStartAtom;
-    let path = DfsPath.get_mut(0).ok_or(SourceHeapError::PointerOutOfBounds)?;
+    let path = DfsPath
+        .get_mut(0)
+        .ok_or(SourceHeapError::PointerOutOfBounds)?;
     path.at_no = nStartAtom as AT_RANK;
     path.bond_type = 0;
     path.bond_pos = -1;
@@ -3494,7 +3694,8 @@ where
 
     let mut nMinLenDfsPath = 0_u16;
     if nStartAtomNeighbor2 >= 0 {
-        let neighbor_index = usize::try_from(nStartAtomNeighbor2).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let neighbor_index = usize::try_from(nStartAtomNeighbor2)
+            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         nDoNotTouchAtom1 = i32::from(
             *heap
                 .slice(atom.as_const())?
@@ -3507,39 +3708,54 @@ where
     }
 
     if nStartAtomNeighbor >= 0 {
-        let j = usize::try_from(nStartAtomNeighbor).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let j =
+            usize::try_from(nStartAtomNeighbor).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         let prv_at = cur_at;
-        let previous_index = usize::try_from(prv_at).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let previous_index =
+            usize::try_from(prv_at).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         let (next_atom, bond_type) = {
             let previous = heap
                 .slice(atom.as_const())?
                 .get(previous_index)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
             (
-                *previous.neighbor.get(j).ok_or(SourceHeapError::PointerOutOfBounds)?,
-                *previous.bond_type.get(j).ok_or(SourceHeapError::PointerOutOfBounds)? & !(BOND_MARK_ALL as u8),
+                *previous
+                    .neighbor
+                    .get(j)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?,
+                *previous
+                    .bond_type
+                    .get(j)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?
+                    & !(BOND_MARK_ALL as u8),
             )
         };
         cur_at = i32::from(next_atom);
-        let path = DfsPath.get_mut(0).ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let path = DfsPath
+            .get_mut(0)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?;
         path.bond_type = bond_type;
         path.bond_pos = nStartAtomNeighbor as i8;
 
         nLenDfsPath = nLenDfsPath.wrapping_add(1);
-        let path_index = usize::try_from(nLenDfsPath).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        let path = DfsPath.get_mut(path_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let path_index =
+            usize::try_from(nLenDfsPath).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let path = DfsPath
+            .get_mut(path_index)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?;
         path.at_no = cur_at as AT_RANK;
         path.bond_type = 0;
         path.bond_pos = -1;
-        let current_index = usize::try_from(cur_at).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let current_index =
+            usize::try_from(cur_at).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         *heap
             .slice_mut(nDfsPathPos)?
             .get_mut(current_index)
             .ok_or(SourceHeapError::PointerOutOfBounds)? = nLenDfsPath.wrapping_add(1) as AT_RANK;
         nMinLenDfsPath = nMinLenDfsPath.wrapping_add(1);
         if nStartAtomNeighborNeighbor >= 0 {
-            let neighbor_index =
-                usize::try_from(nStartAtomNeighborNeighbor).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let neighbor_index = usize::try_from(nStartAtomNeighborNeighbor)
+                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             nDoNotTouchAtom2 = i32::from(
                 *heap
                     .slice(atom.as_const())?
@@ -3553,12 +3769,16 @@ where
     }
 
     while nLenDfsPath >= i32::from(nMinLenDfsPath) {
-        let path_index = usize::try_from(nLenDfsPath).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        let path = DfsPath.get_mut(path_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let path_index =
+            usize::try_from(nLenDfsPath).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let path = DfsPath
+            .get_mut(path_index)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?;
         path.bond_pos = path.bond_pos.wrapping_add(1);
         let j = i32::from(path.bond_pos);
         cur_at = i32::from(path.at_no);
-        let current_index = usize::try_from(cur_at).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let current_index =
+            usize::try_from(cur_at).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         let valence = i32::from(
             heap.slice(atom.as_const())?
                 .get(current_index)
@@ -3566,7 +3786,8 @@ where
                 .valence,
         );
         if j < valence {
-            let neighbor_index = usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let neighbor_index =
+                usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             let (bond_type, next_atom) = {
                 let current = heap
                     .slice(atom.as_const())?
@@ -3590,14 +3811,15 @@ where
                 .ok_or(SourceHeapError::PointerOutOfBounds)?
                 .bond_type = bond_type;
 
-            let next_index = usize::try_from(nxt_at).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let next_index =
+                usize::try_from(nxt_at).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             let next_path_position = *heap
                 .slice(nDfsPathPos.as_const())?
                 .get(next_index)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
             let is_step_backwards = if nLenDfsPath != 0 {
-                let previous_path_index =
-                    usize::try_from(nLenDfsPath.wrapping_sub(1)).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let previous_path_index = usize::try_from(nLenDfsPath.wrapping_sub(1))
+                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 nxt_at
                     == i32::from(
                         DfsPath
@@ -3608,7 +3830,10 @@ where
             } else {
                 false
             };
-            if nxt_at == nDoNotTouchAtom1 || nxt_at == nDoNotTouchAtom2 || next_path_position != 0 || is_step_backwards
+            if nxt_at == nDoNotTouchAtom1
+                || nxt_at == nDoNotTouchAtom2
+                || next_path_position != 0
+                || is_step_backwards
             {
                 continue;
             }
@@ -3654,8 +3879,8 @@ where
                 if ret < 0 {
                     nNumFound = ret;
                     while nLenDfsPath >= 0 {
-                        let clear_index =
-                            usize::try_from(nLenDfsPath).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                        let clear_index = usize::try_from(nLenDfsPath)
+                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                         let atom_to_clear = usize::from(
                             DfsPath
                                 .get(clear_index)
@@ -3685,8 +3910,8 @@ where
                 if center != 0 && nLenDfsPath < nCycleLen {
                     nLenDfsPath = nLenDfsPath.wrapping_add(1);
                     cur_at = nxt_at;
-                    let next_path_index =
-                        usize::try_from(nLenDfsPath).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let next_path_index = usize::try_from(nLenDfsPath)
+                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     let next_path = DfsPath
                         .get_mut(next_path_index)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -3696,7 +3921,8 @@ where
                     *heap
                         .slice_mut(nDfsPathPos)?
                         .get_mut(next_index)
-                        .ok_or(SourceHeapError::PointerOutOfBounds)? = nLenDfsPath.wrapping_add(1) as AT_RANK;
+                        .ok_or(SourceHeapError::PointerOutOfBounds)? =
+                        nLenDfsPath.wrapping_add(1) as AT_RANK;
                 }
             }
         } else {
@@ -3715,7 +3941,8 @@ where
     }
 
     while nLenDfsPath >= 0 {
-        let clear_index = usize::try_from(nLenDfsPath).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let clear_index =
+            usize::try_from(nLenDfsPath).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         let atom_to_clear = usize::from(
             DfsPath
                 .get(clear_index)
@@ -3738,7 +3965,14 @@ mod tests {
     use crate::source::base::ichi_bns::{AllocateAndInitBnData, AllocateAndInitBnStruct};
     use crate::source_types::{BNS_ALT_PATH, BNS_EDGE, BNS_VERTEX, INCHI_CLOCK, RADICAL_DOUBLET};
 
-    fn atom(element: u8, valence: i8, chem_bonds_valence: i8, num_h: i8, charge: i8, c_point: u16) -> inp_ATOM {
+    fn atom(
+        element: u8,
+        valence: i8,
+        chem_bonds_valence: i8,
+        num_h: i8,
+        charge: i8,
+        c_point: u16,
+    ) -> inp_ATOM {
         inp_ATOM {
             el_number: element,
             valence,
@@ -3818,7 +4052,9 @@ mod tests {
         assert_eq!(check(atom(7, 3, 3, 0, 0, 0)), Ok(0));
 
         let mut heap = SourceHeap::default();
-        let atoms = heap.allocate_model_storage(vec![inp_ATOM::default(); 2]).unwrap();
+        let atoms = heap
+            .allocate_model_storage(vec![inp_ATOM::default(); 2])
+            .unwrap();
         let path = vec![DFS_PATH {
             at_no: 0,
             bond_type: 0,
@@ -3864,14 +4100,24 @@ mod tests {
         atoms[second].valence += 1;
     }
 
-    fn add_bond_with_positions(atoms: &mut [inp_ATOM], first: usize, second: usize, bond_type: u8) -> (i32, i32) {
+    fn add_bond_with_positions(
+        atoms: &mut [inp_ATOM],
+        first: usize,
+        second: usize,
+        bond_type: u8,
+    ) -> (i32, i32) {
         let first_pos = i32::from(atoms[first].valence);
         let second_pos = i32::from(atoms[second].valence);
         add_bond(atoms, first, second, bond_type);
         (first_pos, second_pos)
     }
 
-    fn check7_bns(heap: &mut SourceHeap, atom_count: usize, left: usize, right: usize) -> BalancedNetworkStructure {
+    fn check7_bns(
+        heap: &mut SourceHeap,
+        atom_count: usize,
+        left: usize,
+        right: usize,
+    ) -> BalancedNetworkStructure {
         let edge = heap
             .allocate_model_storage(vec![BNS_EDGE {
                 neighbor1: left.min(right) as AT_RANK,
@@ -3910,7 +4156,9 @@ mod tests {
             pbTautFlags: heap.allocate_model_storage(vec![0_u64]).unwrap(),
             ..BalancedNetworkStructure::default()
         };
-        bns.altp[0] = heap.allocate_model_storage(vec![BNS_ALT_PATH::default(); 8]).unwrap();
+        bns.altp[0] = heap
+            .allocate_model_storage(vec![BNS_ALT_PATH::default(); 8])
+            .unwrap();
         bns
     }
 
@@ -3933,7 +4181,8 @@ mod tests {
         ];
         let mut path = vec![DFS_PATH::default(); 5];
         for index in 0..4 {
-            let (bond_pos, _) = add_bond_with_positions(&mut atoms, index, index + 1, bond_types[index]);
+            let (bond_pos, _) =
+                add_bond_with_positions(&mut atoms, index, index + 1, bond_types[index]);
             if index < 3 {
                 path[index] = DFS_PATH {
                     at_no: index as AT_RANK,
@@ -3963,11 +4212,14 @@ mod tests {
         let atoms = heap.allocate_model_storage(atoms).unwrap();
         let positions = heap.allocate_model_storage(vec![0; 5]).unwrap();
         let mut changed_bonds = 0;
-        let bns_pointer = AllocateAndInitBnStruct(&mut heap, atoms, 5, 0, 0, 1, &mut changed_bonds).unwrap();
+        let bns_pointer =
+            AllocateAndInitBnStruct(&mut heap, atoms, 5, 0, 0, 1, &mut changed_bonds).unwrap();
         assert_eq!(changed_bonds, 0);
         let mut bns = heap.slice(bns_pointer.as_const()).unwrap()[0].clone();
         bns.pbTautFlags = heap.allocate_model_storage(vec![0_u64]).unwrap();
-        bns.ic = heap.allocate_model_storage(vec![INCHI_CLOCK::default()]).unwrap();
+        bns.ic = heap
+            .allocate_model_storage(vec![INCHI_CLOCK::default()])
+            .unwrap();
         let bd_pointer = AllocateAndInitBnData(&mut heap, bns.max_vertices).unwrap();
         let bd = heap.slice(bd_pointer.as_const()).unwrap()[0].clone();
         Check15Fixture {
@@ -4098,7 +4350,12 @@ mod tests {
         assert_eq!(unknown_endpoints[1].nAtomNumber, 4);
         assert_eq!(unknown_endpoints[1].nGroupNumber, 0);
 
-        for (path_len, n1, n2, n3) in [(2, -1, -1, -1), (3, 0, -1, -1), (3, -1, 0, -1), (3, -1, -1, 0)] {
+        for (path_len, n1, n2, n3) in [
+            (2, -1, -1, -1),
+            (3, 0, -1, -1),
+            (3, -1, 0, -1),
+            (3, -1, -1, 0),
+        ] {
             let mut invalid = check15_fixture(1, 2);
             let original_path = invalid.path.clone();
             let mut count1 = 7;
@@ -4319,10 +4576,17 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![(0, 0), (1, 1), (2, 1), (3, 1)]
         );
-        assert_eq!(accepted.heap.slice(accepted.positions.as_const()).unwrap(), &[0; 5]);
+        assert_eq!(
+            accepted.heap.slice(accepted.positions.as_const()).unwrap(),
+            &[0; 5]
+        );
 
         let mut too_short = check15_fixture(1, 2);
-        too_short.heap.slice_mut(too_short.positions).unwrap().fill(13);
+        too_short
+            .heap
+            .slice_mut(too_short.positions)
+            .unwrap()
+            .fill(13);
         let mut short_endpoint_count = 77;
         let mut short_bond_count = 88;
         assert_eq!(
@@ -4338,7 +4602,13 @@ mod tests {
             Ok(-1)
         );
         assert_eq!((short_endpoint_count, short_bond_count), (0, 0));
-        assert_eq!(too_short.heap.slice(too_short.positions.as_const()).unwrap(), &[13; 5]);
+        assert_eq!(
+            too_short
+                .heap
+                .slice(too_short.positions.as_const())
+                .unwrap(),
+            &[13; 5]
+        );
 
         let mut no_path = check15_fixture(1, 2);
         no_path.heap.slice_mut(no_path.atoms).unwrap()[2].chem_bonds_valence = 2;
@@ -4357,7 +4627,10 @@ mod tests {
             Ok(0)
         );
         assert_eq!((no_path_endpoint_count, no_path_bond_count), (0, 0));
-        assert_eq!(no_path.heap.slice(no_path.positions.as_const()).unwrap(), &[0; 5]);
+        assert_eq!(
+            no_path.heap.slice(no_path.positions.as_const()).unwrap(),
+            &[0; 5]
+        );
 
         let mut invalid_start = check15_fixture(1, 2);
         let mut invalid_endpoint_count = 77;
@@ -4528,7 +4801,9 @@ mod tests {
         );
         assert_eq!((endpoint_count, bond_count), (2, 4));
 
-        for (path_len, start_neighbor2, start_neighbor_neighbor) in [(3, -1, -1), (4, 0, -1), (4, -1, 0)] {
+        for (path_len, start_neighbor2, start_neighbor_neighbor) in
+            [(3, -1, -1), (4, 0, -1), (4, -1, 0)]
+        {
             let mut invalid = check5_fixture(9);
             let mut invalid_endpoint_count = 7;
             let mut invalid_bond_count = 8;
@@ -4551,7 +4826,11 @@ mod tests {
         }
 
         let mut invalid_endpoint = check5_fixture(9);
-        invalid_endpoint.heap.slice_mut(invalid_endpoint.atoms).unwrap()[0].radical = RADICAL_DOUBLET as i8;
+        invalid_endpoint
+            .heap
+            .slice_mut(invalid_endpoint.atoms)
+            .unwrap()[0]
+            .radical = RADICAL_DOUBLET as i8;
         let mut rejected_endpoint_count = 0;
         let mut rejected_bond_count = 0;
         assert_eq!(
@@ -4734,12 +5013,19 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![(1, 1), (2, 1), (3, 1), (4, 1)]
         );
-        assert_eq!(accepted.heap.slice(accepted.positions.as_const()).unwrap(), &[0; 5]);
+        assert_eq!(
+            accepted.heap.slice(accepted.positions.as_const()).unwrap(),
+            &[0; 5]
+        );
         assert_eq!(accepted.path[0].at_no, 0);
         assert_eq!(accepted.path[1].at_no, 1);
 
         let mut too_short = check5_fixture(9);
-        too_short.heap.slice_mut(too_short.positions).unwrap().fill(13);
+        too_short
+            .heap
+            .slice_mut(too_short.positions)
+            .unwrap()
+            .fill(13);
         let mut too_short_endpoint_count = 77;
         let mut too_short_bond_count = 88;
         assert_eq!(
@@ -4754,7 +5040,13 @@ mod tests {
             Ok(-1)
         );
         assert_eq!((too_short_endpoint_count, too_short_bond_count), (0, 0));
-        assert_eq!(too_short.heap.slice(too_short.positions.as_const()).unwrap(), &[13; 5]);
+        assert_eq!(
+            too_short
+                .heap
+                .slice(too_short.positions.as_const())
+                .unwrap(),
+            &[13; 5]
+        );
 
         let mut no_ring = check5_fixture(9);
         {
@@ -4776,7 +5068,10 @@ mod tests {
             Ok(0)
         );
         assert_eq!((no_ring_endpoint_count, no_ring_bond_count), (0, 0));
-        assert_eq!(no_ring.heap.slice(no_ring.positions.as_const()).unwrap(), &[0; 5]);
+        assert_eq!(
+            no_ring.heap.slice(no_ring.positions.as_const()).unwrap(),
+            &[0; 5]
+        );
 
         let mut missing_path = check5_fixture(9);
         missing_path.path.clear();
@@ -4921,13 +5216,19 @@ mod tests {
             vec![(6, 9), (0, 9)]
         );
         assert_eq!(
-            bonds.iter().map(|bond| bond.nAtomNumber).collect::<Vec<_>>(),
+            bonds
+                .iter()
+                .map(|bond| bond.nAtomNumber)
+                .collect::<Vec<_>>(),
             vec![3, 2, 3, 1, 4, 0, 5]
         );
 
-        for (path_len, start_neighbor, start_neighbor2, start_neighbor_neighbor) in
-            [(4, -1, -1, -1), (5, 0, -1, -1), (5, -1, 0, -1), (5, -1, -1, 0)]
-        {
+        for (path_len, start_neighbor, start_neighbor2, start_neighbor_neighbor) in [
+            (4, -1, -1, -1),
+            (5, 0, -1, -1),
+            (5, -1, 0, -1),
+            (5, -1, -1, 0),
+        ] {
             let mut invalid = check6_fixture(9);
             let mut invalid_endpoint_count = 7;
             let mut invalid_bond_count = 8;
@@ -4995,7 +5296,11 @@ mod tests {
         );
 
         let mut invalid_endpoint = check6_fixture(9);
-        invalid_endpoint.heap.slice_mut(invalid_endpoint.atoms).unwrap()[6].radical = RADICAL_DOUBLET as i8;
+        invalid_endpoint
+            .heap
+            .slice_mut(invalid_endpoint.atoms)
+            .unwrap()[6]
+            .radical = RADICAL_DOUBLET as i8;
         assert_eq!(
             run(
                 &mut invalid_endpoint,
@@ -5143,10 +5448,17 @@ mod tests {
             Ok(1)
         );
         assert_eq!((endpoint_count, bond_count), (2, 7));
-        assert_eq!(accepted.heap.slice(accepted.positions.as_const()).unwrap(), &[0; 7]);
+        assert_eq!(
+            accepted.heap.slice(accepted.positions.as_const()).unwrap(),
+            &[0; 7]
+        );
 
         let mut too_short = check6_fixture(9);
-        too_short.heap.slice_mut(too_short.positions).unwrap().fill(13);
+        too_short
+            .heap
+            .slice_mut(too_short.positions)
+            .unwrap()
+            .fill(13);
         let mut too_short_endpoint_count = 77;
         let mut too_short_bond_count = 88;
         assert_eq!(
@@ -5161,7 +5473,13 @@ mod tests {
             Ok(-1)
         );
         assert_eq!((too_short_endpoint_count, too_short_bond_count), (0, 0));
-        assert_eq!(too_short.heap.slice(too_short.positions.as_const()).unwrap(), &[13; 7]);
+        assert_eq!(
+            too_short
+                .heap
+                .slice(too_short.positions.as_const())
+                .unwrap(),
+            &[13; 7]
+        );
 
         let mut no_ring = check6_fixture(9);
         no_ring.heap.slice_mut(no_ring.atoms).unwrap()[3].bCutVertex = 0;
@@ -5179,7 +5497,10 @@ mod tests {
             Ok(0)
         );
         assert_eq!((no_ring_endpoint_count, no_ring_bond_count), (0, 0));
-        assert_eq!(no_ring.heap.slice(no_ring.positions.as_const()).unwrap(), &[0; 7]);
+        assert_eq!(
+            no_ring.heap.slice(no_ring.positions.as_const()).unwrap(),
+            &[0; 7]
+        );
 
         let mut missing_path = check6_fixture(9);
         missing_path.path.clear();
@@ -5217,8 +5538,10 @@ mod tests {
         let atom_count = path_len + 3;
         let mut atoms = vec![inp_ATOM::default(); atom_count];
 
-        let (start_neighbor_neighbor, _) = add_bond_with_positions(&mut atoms, 1, first_endpoint, BOND_DOUBLE as u8);
-        let (start_neighbor2, _) = add_bond_with_positions(&mut atoms, 0, second_endpoint, BOND_SINGLE as u8);
+        let (start_neighbor_neighbor, _) =
+            add_bond_with_positions(&mut atoms, 1, first_endpoint, BOND_DOUBLE as u8);
+        let (start_neighbor2, _) =
+            add_bond_with_positions(&mut atoms, 0, second_endpoint, BOND_SINGLE as u8);
 
         let mut path = vec![DFS_PATH::default(); path_len + 1];
         path[0].at_no = 0;
@@ -5317,7 +5640,11 @@ mod tests {
         assert_eq!(
             endpoints
                 .iter()
-                .map(|endpoint| (endpoint.nAtomNumber, endpoint.nGroupNumber, endpoint.nEquNumber))
+                .map(|endpoint| (
+                    endpoint.nAtomNumber,
+                    endpoint.nGroupNumber,
+                    endpoint.nEquNumber
+                ))
                 .collect::<Vec<_>>(),
             vec![(5, 9, 0), (6, 9, 0)]
         );
@@ -5388,8 +5715,11 @@ mod tests {
         }
 
         let mut invalid_endpoint = check7_fixture(4, 9);
-        invalid_endpoint.heap.slice_mut(invalid_endpoint.atoms).unwrap()[invalid_endpoint.first_endpoint].radical =
-            RADICAL_DOUBLET as i8;
+        invalid_endpoint
+            .heap
+            .slice_mut(invalid_endpoint.atoms)
+            .unwrap()[invalid_endpoint.first_endpoint]
+            .radical = RADICAL_DOUBLET as i8;
         let mut rejected_endpoints = vec![T_ENDPOINT::default(); 2];
         let mut rejected_bonds = vec![T_BONDPOS::default(); 6];
         let mut rejected_endpoint_count = 0;
@@ -5509,8 +5839,10 @@ mod tests {
         let atom_count = path_len + 3;
         let mut atoms = vec![inp_ATOM::default(); atom_count];
         let (start_neighbor, _) = add_bond_with_positions(&mut atoms, 0, 1, BOND_SINGLE as u8);
-        let (neighbor_endpoint, _) = add_bond_with_positions(&mut atoms, 1, first_endpoint, BOND_DOUBLE as u8);
-        let (start_endpoint, _) = add_bond_with_positions(&mut atoms, 0, second_endpoint, BOND_SINGLE as u8);
+        let (neighbor_endpoint, _) =
+            add_bond_with_positions(&mut atoms, 1, first_endpoint, BOND_DOUBLE as u8);
+        let (start_endpoint, _) =
+            add_bond_with_positions(&mut atoms, 0, second_endpoint, BOND_SINGLE as u8);
         for index in 1..=path_len {
             let next = if index == path_len { 0 } else { index + 1 };
             let bond_type = if index % 2 == 1 {
@@ -5608,12 +5940,19 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![(7, 9), (8, 9)]
         );
-        assert_eq!(fixture.heap.slice(fixture.positions.as_const()).unwrap(), &[0; 9]);
+        assert_eq!(
+            fixture.heap.slice(fixture.positions.as_const()).unwrap(),
+            &[0; 9]
+        );
         assert_eq!(fixture.path[0].at_no, 0);
         assert_eq!(fixture.path[1].at_no, 1);
 
         let mut too_short = nget14_fixture(6);
-        too_short.heap.slice_mut(too_short.positions).unwrap().fill(13);
+        too_short
+            .heap
+            .slice_mut(too_short.positions)
+            .unwrap()
+            .fill(13);
         let mut too_short_endpoint_count = 77;
         let mut too_short_bond_count = 88;
         assert_eq!(
@@ -5628,7 +5967,13 @@ mod tests {
             Ok(-1)
         );
         assert_eq!((too_short_endpoint_count, too_short_bond_count), (0, 0));
-        assert_eq!(too_short.heap.slice(too_short.positions.as_const()).unwrap(), &[13; 9]);
+        assert_eq!(
+            too_short
+                .heap
+                .slice(too_short.positions.as_const())
+                .unwrap(),
+            &[13; 9]
+        );
 
         let mut no_ring = nget14_fixture(6);
         {
@@ -5650,7 +5995,10 @@ mod tests {
             Ok(0)
         );
         assert_eq!((no_ring_endpoint_count, no_ring_bond_count), (0, 0));
-        assert_eq!(no_ring.heap.slice(no_ring.positions.as_const()).unwrap(), &[0; 9]);
+        assert_eq!(
+            no_ring.heap.slice(no_ring.positions.as_const()).unwrap(),
+            &[0; 9]
+        );
 
         let mut missing_path = nget14_fixture(6);
         missing_path.path.clear();
@@ -5728,12 +6076,19 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![(5, 9), (6, 9)]
         );
-        assert_eq!(fixture.heap.slice(fixture.positions.as_const()).unwrap(), &[0; 7]);
+        assert_eq!(
+            fixture.heap.slice(fixture.positions.as_const()).unwrap(),
+            &[0; 7]
+        );
         assert_eq!(fixture.path[0].at_no, 0);
         assert_eq!(fixture.path[1].at_no, 1);
 
         let mut too_short = nget14_fixture(4);
-        too_short.heap.slice_mut(too_short.positions).unwrap().fill(13);
+        too_short
+            .heap
+            .slice_mut(too_short.positions)
+            .unwrap()
+            .fill(13);
         let mut too_short_endpoint_count = 77;
         let mut too_short_bond_count = 88;
         assert_eq!(
@@ -5748,7 +6103,13 @@ mod tests {
             Ok(-1)
         );
         assert_eq!((too_short_endpoint_count, too_short_bond_count), (0, 0));
-        assert_eq!(too_short.heap.slice(too_short.positions.as_const()).unwrap(), &[13; 7]);
+        assert_eq!(
+            too_short
+                .heap
+                .slice(too_short.positions.as_const())
+                .unwrap(),
+            &[13; 7]
+        );
 
         let mut no_ring = nget14_fixture(4);
         {
@@ -5770,7 +6131,10 @@ mod tests {
             Ok(0)
         );
         assert_eq!((no_ring_endpoint_count, no_ring_bond_count), (0, 0));
-        assert_eq!(no_ring.heap.slice(no_ring.positions.as_const()).unwrap(), &[0; 7]);
+        assert_eq!(
+            no_ring.heap.slice(no_ring.positions.as_const()).unwrap(),
+            &[0; 7]
+        );
 
         let mut missing_path = nget14_fixture(4);
         missing_path.path.clear();
@@ -5918,7 +6282,9 @@ mod tests {
                 Ok(1)
             };
             let mut selective_center =
-                move |_heap: &SourceHeap, _atoms: SourceMutPointer<inp_ATOM>, _iat: i32| Ok(center_result);
+                move |_heap: &SourceHeap, _atoms: SourceMutPointer<inp_ATOM>, _iat: i32| {
+                    Ok(center_result)
+                };
             assert_eq!(
                 DFS_FindTautInARing(
                     &mut heap,
@@ -6062,7 +6428,8 @@ mod tests {
             Ok(2)
         };
         let mut check_center = |args: DfsPathCenterCallbackArgs<'_>| {
-            let current = usize::from(args.DfsPath[usize::try_from(args.nLenDfsPath).unwrap()].at_no);
+            let current =
+                usize::from(args.DfsPath[usize::try_from(args.nLenDfsPath).unwrap()].at_no);
             let next = usize::from(
                 args.heap.slice(args.atom.as_const()).unwrap()[current].neighbor
                     [usize::try_from(args.jNxtNeigh).unwrap()],
@@ -6099,7 +6466,10 @@ mod tests {
             ),
             Ok(2)
         );
-        assert_eq!(path_calls, vec![vec![(0, 1, 0), (1, 2, 1), (2, 3, 1), (3, 4, 1)]]);
+        assert_eq!(
+            path_calls,
+            vec![vec![(0, 1, 0), (1, 2, 1), (2, 3, 1), (3, 4, 1)]]
+        );
         assert_eq!(center_calls, vec![(0, 0, 1), (1, 1, 2), (2, 2, 3)]);
         assert_eq!(heap.slice(positions.as_const()).unwrap(), &[0; 5]);
         assert_eq!(canon.m_num_bit, 1);
@@ -6271,7 +6641,14 @@ mod tests {
         }
 
         let mut branched = vec![inp_ATOM::default(); 6];
-        for (first, second, bond_type) in [(0, 1, 1), (1, 2, 2), (0, 4, 1), (4, 2, 2), (2, 3, 3), (3, 5, 4)] {
+        for (first, second, bond_type) in [
+            (0, 1, 1),
+            (1, 2, 2),
+            (0, 4, 1),
+            (4, 2, 2),
+            (2, 3, 3),
+            (3, 5, 4),
+        ] {
             add_bond(&mut branched, first, second, bond_type);
         }
         branched[0].nNumAtInRingSystem = 1;
@@ -6429,9 +6806,18 @@ mod tests {
         temporary[3].nAtomNumber = 79;
         temporary[3].neighbor_index = 80;
         let mut output = vec![T_BONDPOS::default(); 4];
-        assert_eq!(AddBondsPos(&atoms, &mut temporary, 4, &mut output, 3, 0), Ok(2));
-        assert_eq!((temporary[1].nAtomNumber, temporary[1].neighbor_index), (1, 0));
-        assert_eq!((temporary[3].nAtomNumber, temporary[3].neighbor_index), (2, 0));
+        assert_eq!(
+            AddBondsPos(&atoms, &mut temporary, 4, &mut output, 3, 0),
+            Ok(2)
+        );
+        assert_eq!(
+            (temporary[1].nAtomNumber, temporary[1].neighbor_index),
+            (1, 0)
+        );
+        assert_eq!(
+            (temporary[3].nAtomNumber, temporary[3].neighbor_index),
+            (2, 0)
+        );
         assert_eq!((output[0].nAtomNumber, output[0].neighbor_index), (0, 0));
         assert_eq!((output[1].nAtomNumber, output[1].neighbor_index), (1, 1));
 
@@ -6450,7 +6836,10 @@ mod tests {
         equality[0].neighbor_index = 1;
         let mut equality_output = vec![T_BONDPOS::default(); 2];
         equality_output[0].nAtomNumber = 9;
-        assert_eq!(AddBondsPos(&atoms, &mut equality, 2, &mut equality_output, 1, 1), Ok(2));
+        assert_eq!(
+            AddBondsPos(&atoms, &mut equality, 2, &mut equality_output, 1, 1),
+            Ok(2)
+        );
         assert_eq!(equality_output[1], equality[0]);
 
         let mut overflow = vec![T_BONDPOS::default(); 2];
@@ -6460,9 +6849,15 @@ mod tests {
         full[0].nAtomNumber = 7;
         full[1].nAtomNumber = 8;
         let before = full.clone();
-        assert_eq!(AddBondsPos(&atoms, &mut overflow, 2, &mut full, 1, 2), Ok(-1));
+        assert_eq!(
+            AddBondsPos(&atoms, &mut overflow, 2, &mut full, 1, 2),
+            Ok(-1)
+        );
         assert_eq!(full, before);
-        assert_eq!((overflow[1].nAtomNumber, overflow[1].neighbor_index), (2, 0));
+        assert_eq!(
+            (overflow[1].nAtomNumber, overflow[1].neighbor_index),
+            (2, 0)
+        );
 
         let mut odd = vec![T_BONDPOS::default(); 1];
         assert_eq!(
@@ -6501,7 +6896,10 @@ mod tests {
         let equality = vec![endpoint(5, 50, 500)];
         let mut equality_output = vec![T_ENDPOINT::default(); 2];
         equality_output[0] = endpoint(4, 40, 400);
-        assert_eq!(AddEndPoints(&equality, 1, &mut equality_output, 1, 1), Ok(2));
+        assert_eq!(
+            AddEndPoints(&equality, 1, &mut equality_output, 1, 1),
+            Ok(2)
+        );
         assert_eq!(equality_output[1], equality[0]);
 
         let partial = vec![endpoint(6, 60, 600), endpoint(7, 70, 700)];

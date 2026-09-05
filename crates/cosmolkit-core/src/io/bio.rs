@@ -22,17 +22,21 @@
 
 use crate::Element;
 use crate::bio::{
-    AltLocLabel, AtomName, AtomRow, AtomSourceIds, BioAssembly, BioAssemblyGenerator, BioAssemblyOperator, BioAsu,
-    BioAtomAddress, BioCalcFlag, BioCisPep, BioConnection, BioConnectionType, BioCoorFormat, BioDiffractionInfo,
-    BioEntityDbRef, BioExperimentCrystalInfo, BioExperimentInfo, BioHelix, BioMetadata, BioModRes, BioNcsOperator,
-    BioRefinementBin, BioRefinementInfo, BioRefinementRestraint, BioReflectionsInfo, BioSheet, BioSheetStrand,
-    BioSiftsUnpResidue, BioSoftwareClassification, BioSoftwareItem, BioStructure, BioTlsGroup, BioTlsSelection,
-    BioTransform, ChainId, ChainKind, ChainRow, ChainSourceIds, CrystalCell, CrystalInfo, EntityId, EntityKind,
-    EntityRow, EntitySourceIds, ModelId, ModelRow, PdbAtomSerial, PdbChainId, PdbSeqId, PolymerKind, ResidueId,
-    ResidueKind, ResidueName, ResidueRow, ResidueSourceIds, RowSpan, classify_residue_name,
+    AltLocLabel, AtomName, AtomRow, AtomSourceIds, BioAssembly, BioAssemblyGenerator,
+    BioAssemblyOperator, BioAsu, BioAtomAddress, BioCalcFlag, BioCisPep, BioConnection,
+    BioConnectionType, BioCoorFormat, BioDiffractionInfo, BioEntityDbRef, BioExperimentCrystalInfo,
+    BioExperimentInfo, BioHelix, BioMetadata, BioModRes, BioNcsOperator, BioRefinementBin,
+    BioRefinementInfo, BioRefinementRestraint, BioReflectionsInfo, BioSheet, BioSheetStrand,
+    BioSiftsUnpResidue, BioSoftwareClassification, BioSoftwareItem, BioStructure, BioTlsGroup,
+    BioTlsSelection, BioTransform, ChainId, ChainKind, ChainRow, ChainSourceIds, CrystalCell,
+    CrystalInfo, EntityId, EntityKind, EntityRow, EntitySourceIds, ModelId, ModelRow,
+    PdbAtomSerial, PdbChainId, PdbSeqId, PolymerKind, ResidueId, ResidueKind, ResidueName,
+    ResidueRow, ResidueSourceIds, RowSpan, classify_residue_name,
 };
 use crate::bio_invariants::enforce_bio_structure_invariants;
-use crate::io::gemmi_spacegroup_table::{GEMMI_ALT_NAMES, GEMMI_OP_DEN, GEMMI_SPACEGROUPS, GemmiSpaceGroupEntry};
+use crate::io::gemmi_spacegroup_table::{
+    GEMMI_ALT_NAMES, GEMMI_OP_DEN, GEMMI_SPACEGROUPS, GemmiSpaceGroupEntry,
+};
 use crate::support::{BIO_MMCIF_READ_FEATURE, BIO_PDB_READ_FEATURE, FeatureSpec};
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
@@ -64,7 +68,9 @@ pub(crate) fn write_bio_structure_mmcif(
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum BioReadError {
-    #[error("unsupported BioStructure input feature {feature_name} at line {line_number}: {reason}")]
+    #[error(
+        "unsupported BioStructure input feature {feature_name} at line {line_number}: {reason}"
+    )]
     Unsupported {
         line_number: usize,
         feature_name: &'static str,
@@ -131,7 +137,8 @@ impl PdbBioBuilder {
         (start..end)
             .find(|&idx| {
                 let chain = &self.structure.chains[idx];
-                chain.source.auth_chain_id == Some(chain_key) || chain.source.label_asym_id == Some(chain_key)
+                chain.source.auth_chain_id == Some(chain_key)
+                    || chain.source.label_asym_id == Some(chain_key)
             })
             .map(|idx| ChainId::new(idx as u32))
     }
@@ -141,7 +148,8 @@ impl PdbBioBuilder {
         if chain.residue_span.is_empty() {
             return false;
         }
-        self.structure.residues[chain.residue_span.start as usize].entity_kind == EntityKind::Polymer
+        self.structure.residues[chain.residue_span.start as usize].entity_kind
+            == EntityKind::Polymer
     }
 
     fn find_entity_by_source_id(&self, source_entity_id: &str) -> Option<EntityId> {
@@ -160,7 +168,12 @@ impl PdbBioBuilder {
             .map(|idx| EntityId::new(idx as u32))
     }
 
-    fn find_or_add_entity(&mut self, source_entity_id: &str, kind: EntityKind, polymer_kind: PolymerKind) -> EntityId {
+    fn find_or_add_entity(
+        &mut self,
+        source_entity_id: &str,
+        kind: EntityKind,
+        polymer_kind: PolymerKind,
+    ) -> EntityId {
         if let Some(entity_id) = self.find_entity_by_source_id(source_entity_id) {
             let entity = &mut self.structure.entities[entity_id.index() as usize];
             if entity.kind == EntityKind::Unknown {
@@ -271,7 +284,8 @@ impl PdbBioBuilder {
             .or(source.auth_chain_id)
             .and_then(|subchain| self.find_entity_by_subchain(subchain))
             .or_else(|| {
-                Self::entity_for_chain_source(&source).and_then(|source_id| self.find_entity_by_source_id(&source_id))
+                Self::entity_for_chain_source(&source)
+                    .and_then(|source_id| self.find_entity_by_source_id(&source_id))
             });
         self.structure.chains.push(ChainRow {
             model_id,
@@ -280,7 +294,9 @@ impl PdbBioBuilder {
             kind: ChainKind::Unknown,
             source,
         });
-        self.structure.models[model_id.index() as usize].chain_span.len += 1;
+        self.structure.models[model_id.index() as usize]
+            .chain_span
+            .len += 1;
         self.current_chain = Some((chain_id, chain_key));
         self.current_residue = None;
         self.residue_lookup.clear();
@@ -331,7 +347,9 @@ impl PdbBioBuilder {
             het_flag: None,
             sifts_unp: None,
         });
-        self.structure.chains[chain_id.index() as usize].residue_span.len += 1;
+        self.structure.chains[chain_id.index() as usize]
+            .residue_span
+            .len += 1;
         self.residue_lookup.insert(key.clone(), residue_id);
         self.current_residue = Some((residue_id, key));
         residue_id
@@ -345,8 +363,18 @@ impl PdbBioBuilder {
         entity_kind: EntityKind,
     ) {
         let model_id = self.ensure_model(source_model_number);
-        let chain_id = self.ensure_chain(model_id, record.chain_key, record.chain_source, force_new_chain);
-        let residue_id = self.ensure_residue(chain_id, record.residue_key(), record.residue_kind, entity_kind);
+        let chain_id = self.ensure_chain(
+            model_id,
+            record.chain_key,
+            record.chain_source,
+            force_new_chain,
+        );
+        let residue_id = self.ensure_residue(
+            chain_id,
+            record.residue_key(),
+            record.residue_kind,
+            entity_kind,
+        );
         if let Some(label_seq_id) = record.label_seq_id {
             let residue = &mut self.structure.residues[residue_id.index() as usize];
             if residue.source.label_seq_id.is_none() {
@@ -393,7 +421,10 @@ impl PdbBioBuilder {
             self.structure.coordinates.positions.push(record.position);
         } else {
             self.structure.atoms.insert(insert_idx, atom_row);
-            self.structure.coordinates.positions.insert(insert_idx, record.position);
+            self.structure
+                .coordinates
+                .positions
+                .insert(insert_idx, record.position);
             for (idx, residue) in self.structure.residues.iter_mut().enumerate() {
                 if idx != residue_idx && residue.atom_span.start as usize >= insert_idx {
                     residue.atom_span.start += 1;
@@ -404,7 +435,11 @@ impl PdbBioBuilder {
         self.structure.residues[residue_idx].atom_span.len += 1;
     }
 
-    fn set_last_atom_anisou(&mut self, line_number: usize, anisou: [f32; 6]) -> Result<(), BioReadError> {
+    fn set_last_atom_anisou(
+        &mut self,
+        line_number: usize,
+        anisou: [f32; 6],
+    ) -> Result<(), BioReadError> {
         let atom = self
             .last_atom_index
             .and_then(|index| self.structure.atoms.get_mut(index))
@@ -681,7 +716,10 @@ fn read_pdb_bio_structure_from_str_with_params_and_source(
         if line.len() > params.max_line_length {
             return Err(BioReadError::Parse {
                 line_number,
-                message: format!("PDB line exceeds max_line_length {}", params.max_line_length),
+                message: format!(
+                    "PDB line exceeds max_line_length {}",
+                    params.max_line_length
+                ),
             });
         }
         if starts_record(line, "data_") && builder.current_model.is_none() {
@@ -716,7 +754,9 @@ fn read_pdb_bio_structure_from_str_with_params_and_source(
                     segment[..raw.len().min(4)].copy_from_slice(&raw[..raw.len().min(4)]);
                     atom.segment_id = Some(segment);
                 }
-                let model_id = builder.current_model.expect("implicit model initialized above");
+                let model_id = builder
+                    .current_model
+                    .expect("implicit model initialized above");
                 let force_new_chain = split_chain_on_next_atom;
                 if force_new_chain {
                     builder.current_chain = None;
@@ -725,7 +765,8 @@ fn read_pdb_bio_structure_from_str_with_params_and_source(
                     && current_chain_key != atom.chain_key
                 {
                     let prev_part = builder.find_chain_in_model(model_id, atom.chain_key);
-                    after_ter = prev_part.is_some_and(|chain_id| builder.chain_has_polymer_first_residue(chain_id));
+                    after_ter = prev_part
+                        .is_some_and(|chain_id| builder.chain_has_polymer_first_residue(chain_id));
                 }
                 let entity_kind = if after_ter {
                     if atom.residue_kind == ResidueKind::Water {
@@ -813,7 +854,10 @@ fn read_pdb_bio_structure_from_str_with_params_and_source(
                 parse_pdb_header_record(&mut builder, line);
             }
             "TITL" if starts_record(line, "TITLE") => {
-                append_metadata_string(&mut builder.structure.metadata.title, field_raw(line, 10, line.len()));
+                append_metadata_string(
+                    &mut builder.structure.metadata.title,
+                    field_raw(line, 10, line.len()),
+                );
             }
             "KEYW" if starts_record(line, "KEYWDS") => {
                 append_metadata_string(
@@ -838,7 +882,10 @@ fn read_pdb_bio_structure_from_str_with_params_and_source(
             // Gemmi✔️✔️:   }
             "SCAL" if starts_record(line, "SCALE") => {
                 if read_matrix(&mut matrix, line) == 3 {
-                    let crystal = builder.structure.crystal.get_or_insert_with(default_crystal_info);
+                    let crystal = builder
+                        .structure
+                        .crystal
+                        .get_or_insert_with(default_crystal_info);
                     crystal.scale = Some(matrix);
                     crystal_set_matrices_from_fract(crystal, matrix);
                     matrix = bio_transform_identity();
@@ -989,9 +1036,13 @@ fn build_structure_from_mmcif_first_block(
         loop_
     } else {
         atom_site_storage = make_single_row_atom_site_loop_from_items(block)?;
-        atom_site_storage
-            .as_ref()
-            .ok_or_else(|| unsupported(&BIO_MMCIF_READ_FEATURE, 0, "mmCIF _atom_site loop is missing"))?
+        atom_site_storage.as_ref().ok_or_else(|| {
+            unsupported(
+                &BIO_MMCIF_READ_FEATURE,
+                0,
+                "mmCIF _atom_site loop is missing",
+            )
+        })?
     };
     let empty_loops = Vec::new();
     let atom_site_loops = if block
@@ -1016,7 +1067,10 @@ fn build_structure_from_mmcif_first_block(
     read_ncs_info(&block.loops, &mut structure)?;
     set_cell_from_mmcif(&document, &mut structure.crystal);
     if let Some(spacegroup_hm) = find_spacegroup_hm_value(&document).and_then(cif_optional) {
-        structure.crystal.get_or_insert_with(default_crystal_info).spacegroup_hm = Some(spacegroup_hm.to_string());
+        structure
+            .crystal
+            .get_or_insert_with(default_crystal_info)
+            .spacegroup_hm = Some(spacegroup_hm.to_string());
     }
     if let Some(fract) = find_cif_transform(
         &block.loops,
@@ -1051,7 +1105,9 @@ fn build_structure_from_mmcif_first_block(
     Ok(structure)
 }
 
-fn read_mmcif_atom_site_subset_from_document(document: &CifDocument) -> Result<BioStructure, BioReadError> {
+fn read_mmcif_atom_site_subset_from_document(
+    document: &CifDocument,
+) -> Result<BioStructure, BioReadError> {
     // BEGIN GEMMI CPP FUNCTION gemmi::make_structure
     // Gemmi✔️✔️: for (size_t i = 1; i < doc.blocks.size(); ++i)
     // Gemmi✔️✔️:   if (doc.blocks[i].has_tag("_atom_site.id"))
@@ -1220,10 +1276,13 @@ fn read_mmcif_atom_site_subset_from_document(document: &CifDocument) -> Result<B
             });
         }
     }
-    let block = document
-        .blocks
-        .first()
-        .ok_or_else(|| unsupported(&BIO_MMCIF_READ_FEATURE, 0, "mmCIF _atom_site loop is missing"))?;
+    let block = document.blocks.first().ok_or_else(|| {
+        unsupported(
+            &BIO_MMCIF_READ_FEATURE,
+            0,
+            "mmCIF _atom_site loop is missing",
+        )
+    })?;
     build_structure_from_mmcif_first_block(document, block)
 }
 
@@ -1353,7 +1412,11 @@ fn make_residue_from_chemcomp_block(
     };
 
     let xyz_tags = match resolved_kind {
-        ChemCompModel::Xyz => ("_chem_comp_atom.x", "_chem_comp_atom.y", "_chem_comp_atom.z"),
+        ChemCompModel::Xyz => (
+            "_chem_comp_atom.x",
+            "_chem_comp_atom.y",
+            "_chem_comp_atom.z",
+        ),
         ChemCompModel::Example => (
             "_chem_comp_atom.model_Cartn_x",
             "_chem_comp_atom.model_Cartn_y",
@@ -1387,16 +1450,29 @@ fn make_residue_from_chemcomp_block(
     let y = required_cif_col(atom_loop, xyz_tags.1)?;
     let z = required_cif_col(atom_loop, xyz_tags.2)?;
 
-    let residue_name = if let Some(comp_loop) = find_cif_loop(&block.loops, "_chem_comp_atom.comp_id") {
-        let comp_id = required_cif_col(comp_loop, "_chem_comp_atom.comp_id")?;
-        let mut rows = cif_loop_rows(comp_loop)?;
-        rows.next()
-            .and_then(|row| cif_optional(row[comp_id].value.as_str()))
-            .map(residue_name_from_field)
-            .unwrap_or_else(|| residue_name_from_field(block.name.strip_prefix("comp_").unwrap_or(block.name.as_str())))
-    } else {
-        residue_name_from_field(block.name.strip_prefix("comp_").unwrap_or(block.name.as_str()))
-    };
+    let residue_name =
+        if let Some(comp_loop) = find_cif_loop(&block.loops, "_chem_comp_atom.comp_id") {
+            let comp_id = required_cif_col(comp_loop, "_chem_comp_atom.comp_id")?;
+            let mut rows = cif_loop_rows(comp_loop)?;
+            rows.next()
+                .and_then(|row| cif_optional(row[comp_id].value.as_str()))
+                .map(residue_name_from_field)
+                .unwrap_or_else(|| {
+                    residue_name_from_field(
+                        block
+                            .name
+                            .strip_prefix("comp_")
+                            .unwrap_or(block.name.as_str()),
+                    )
+                })
+        } else {
+            residue_name_from_field(
+                block
+                    .name
+                    .strip_prefix("comp_")
+                    .unwrap_or(block.name.as_str()),
+            )
+        };
 
     let residue = ResidueRow {
         chain_id: ChainId::new(0),
@@ -1428,11 +1504,20 @@ fn make_residue_from_chemcomp_block(
             .ok_or_else(|| missing_cif_value(line_number, "_chem_comp_atom.type_symbol"))?;
         let element = element_from_symbol(symbol).ok_or_else(|| BioReadError::Parse {
             line_number,
-            message: format!("invalid _chem_comp_atom.type_symbol: {:?}", row[type_symbol].value),
+            message: format!(
+                "invalid _chem_comp_atom.type_symbol: {:?}",
+                row[type_symbol].value
+            ),
         })?;
         let formal_charge = charge
             .and_then(|idx| cif_optional(row[idx].value.as_str()))
-            .map(|value| parse_f32(value, row[charge.unwrap()].line_number, "_chem_comp_atom.charge"))
+            .map(|value| {
+                parse_f32(
+                    value,
+                    row[charge.unwrap()].line_number,
+                    "_chem_comp_atom.charge",
+                )
+            })
             .transpose()?
             .map(|value| value.round() as i8);
         let pos = [
@@ -1473,7 +1558,10 @@ fn make_residue_from_chemcomp_block(
 // Gemmi✔️✔️:   return model;
 // Gemmi✔️✔️: }
 // END GEMMI CPP FUNCTION
-fn make_model_from_chemcomp_block(block: &CifBlock, kind: ChemCompModel) -> Result<BioStructure, BioReadError> {
+fn make_model_from_chemcomp_block(
+    block: &CifBlock,
+    kind: ChemCompModel,
+) -> Result<BioStructure, BioReadError> {
     let residue_build = make_residue_from_chemcomp_block(block, kind)?;
     let mut structure = BioStructure::default();
     structure.models.push(ModelRow {
@@ -1544,7 +1632,10 @@ fn make_model_from_chemcomp_block(block: &CifBlock, kind: ChemCompModel) -> Resu
 // Gemmi✔️✔️:   return st;
 // Gemmi✔️✔️: }
 // END GEMMI CPP FUNCTION
-fn make_structure_from_chemcomp_block(block: &CifBlock, which: i32) -> Result<BioStructure, BioReadError> {
+fn make_structure_from_chemcomp_block(
+    block: &CifBlock,
+    which: i32,
+) -> Result<BioStructure, BioReadError> {
     let mut structure = BioStructure::default();
     structure.input_format = BioCoorFormat::ChemComp;
     if let Some(item) = block.items.iter().find(|item| item.tag == "_chem_comp.id")
@@ -1559,13 +1650,17 @@ fn make_structure_from_chemcomp_block(block: &CifBlock, which: i32) -> Result<Bi
             make_model_from_chemcomp_block(block, ChemCompModel::Xyz)?,
         );
     }
-    if ok(ChemCompModel::Example) && find_cif_loop(&block.loops, "_chem_comp_atom.model_Cartn_x").is_some() {
+    if ok(ChemCompModel::Example)
+        && find_cif_loop(&block.loops, "_chem_comp_atom.model_Cartn_x").is_some()
+    {
         append_bio_structure_rows(
             &mut structure,
             make_model_from_chemcomp_block(block, ChemCompModel::Example)?,
         );
     }
-    if ok(ChemCompModel::Ideal) && find_cif_loop(&block.loops, "_chem_comp_atom.pdbx_model_Cartn_x_ideal").is_some() {
+    if ok(ChemCompModel::Ideal)
+        && find_cif_loop(&block.loops, "_chem_comp_atom.pdbx_model_Cartn_x_ideal").is_some()
+    {
         append_bio_structure_rows(
             &mut structure,
             make_model_from_chemcomp_block(block, ChemCompModel::Ideal)?,
@@ -1589,11 +1684,15 @@ fn append_bio_structure_rows(structure: &mut BioStructure, mut other: BioStructu
     }
     for chain in &mut other.chains {
         chain.model_id = ModelId::new(chain.model_id.index() + model_start);
-        chain.residue_span = RowSpan::new(chain.residue_span.start + residue_start, chain.residue_span.len);
+        chain.residue_span = RowSpan::new(
+            chain.residue_span.start + residue_start,
+            chain.residue_span.len,
+        );
     }
     for residue in &mut other.residues {
         residue.chain_id = ChainId::new(residue.chain_id.index() + chain_start);
-        residue.atom_span = RowSpan::new(residue.atom_span.start + atom_start, residue.atom_span.len);
+        residue.atom_span =
+            RowSpan::new(residue.atom_span.start + atom_start, residue.atom_span.len);
     }
     for atom in &mut other.atoms {
         atom.residue_id = ResidueId::new(atom.residue_id.index() + residue_start);
@@ -1603,30 +1702,45 @@ fn append_bio_structure_rows(structure: &mut BioStructure, mut other: BioStructu
     structure.chains.extend(other.chains);
     structure.residues.extend(other.residues);
     structure.atoms.extend(other.atoms);
-    structure.coordinates.positions.extend(other.coordinates.positions);
+    structure
+        .coordinates
+        .positions
+        .extend(other.coordinates.positions);
 }
 
 fn check_chemcomp_block_number(document: &CifDocument) -> i32 {
     if document.blocks.len() == 2 && document.blocks[0].name == "comp_list" {
         return 1;
     }
-    if document.blocks.len() == 3 && document.blocks[0].name.is_empty() && document.blocks[1].name == "comp_list" {
+    if document.blocks.len() == 3
+        && document.blocks[0].name.is_empty()
+        && document.blocks[1].name == "comp_list"
+    {
         return 2;
     }
     if document.blocks.len() == 1 {
         let block = &document.blocks[0];
         let has_tag = |tag: &str| {
             block.items.iter().any(|item| item.tag == tag)
-                || block.loops.iter().any(|loop_| loop_.tags.iter().any(|t| t == tag))
+                || block
+                    .loops
+                    .iter()
+                    .any(|loop_| loop_.tags.iter().any(|t| t == tag))
         };
-        if !has_tag("_atom_site.id") && !has_tag("_cell.length_a") && has_tag("_chem_comp_atom.atom_id") {
+        if !has_tag("_atom_site.id")
+            && !has_tag("_cell.length_a")
+            && has_tag("_chem_comp_atom.atom_id")
+        {
             return 0;
         }
     }
     -1
 }
 
-fn make_structure_from_chemcomp_doc(document: &CifDocument, which: i32) -> Result<BioStructure, BioReadError> {
+fn make_structure_from_chemcomp_doc(
+    document: &CifDocument,
+    which: i32,
+) -> Result<BioStructure, BioReadError> {
     let index = check_chemcomp_block_number(document);
     if index == -1 {
         return Err(BioReadError::Parse {
@@ -1726,7 +1840,10 @@ fn coor_format_from_content(buf: &[u8]) -> Result<BioCoorFormat, BioReadError> {
     Ok(BioCoorFormat::Unknown)
 }
 
-fn make_structure_from_doc(document: &CifDocument, possible_chemcomp: bool) -> Result<BioStructure, BioReadError> {
+fn make_structure_from_doc(
+    document: &CifDocument,
+    possible_chemcomp: bool,
+) -> Result<BioStructure, BioReadError> {
     if possible_chemcomp {
         let index = check_chemcomp_block_number(document);
         if index != -1 {
@@ -1742,13 +1859,17 @@ pub(crate) fn read_structure_from_memory(
     format: BioCoorFormat,
 ) -> Result<BioStructure, BioReadError> {
     let format = match format {
-        BioCoorFormat::Unknown | BioCoorFormat::Detect => coor_format_from_content(data.as_bytes())?,
+        BioCoorFormat::Unknown | BioCoorFormat::Detect => {
+            coor_format_from_content(data.as_bytes())?
+        }
         other => other,
     };
     match format {
-        BioCoorFormat::Pdb => {
-            read_pdb_bio_structure_from_str_with_params_and_source(data, path, BioPdbReadParams::default())
-        }
+        BioCoorFormat::Pdb => read_pdb_bio_structure_from_str_with_params_and_source(
+            data,
+            path,
+            BioPdbReadParams::default(),
+        ),
         BioCoorFormat::Mmcif => make_structure_from_doc(&parse_cif_document(data)?, true),
         BioCoorFormat::Mmjson => {
             let document = read_mmjson_document(data, path)?;
@@ -1800,7 +1921,11 @@ fn parse_pdb_atom_record(line: &str, line_number: usize) -> Result<PdbAtomRecord
         seq_id,
         label_seq_id: None,
         label_entity_id: None,
-        group_pdb: Some(if starts_record(line, "HETATM") { 'H' } else { 'A' }),
+        group_pdb: Some(if starts_record(line, "HETATM") {
+            'H'
+        } else {
+            'A'
+        }),
         segment_id: None,
         position: [x, y, z],
         occupancy,
@@ -1921,16 +2046,20 @@ fn add_software(meta: &mut BioMetadata, classification: BioSoftwareClassificatio
                     item.name.truncate(sep);
                     if item.version.ends_with(')') {
                         if let Some(open_br) = item.version.find('(') {
-                            let date = pdb_date_format_to_iso(&item.version[open_br + 1..item.version.len() - 1]);
+                            let date = pdb_date_format_to_iso(
+                                &item.version[open_br + 1..item.version.len() - 1],
+                            );
                             if date.len() == 10 && date.as_bytes().get(5).copied() != Some(b'x') {
                                 item.date = date;
-                                item.version.truncate(item.version[..open_br].trim_end().len());
+                                item.version
+                                    .truncate(item.version[..open_br].trim_end().len());
                             }
                         } else {
                             item.version.pop();
                         }
                     }
-                    if item.version.len() >= 8 && item.version[..8].eq_ignore_ascii_case("version ") {
+                    if item.version.len() >= 8 && item.version[..8].eq_ignore_ascii_case("version ")
+                    {
                         item.version.drain(..8);
                     }
                 } else {
@@ -1967,9 +2096,15 @@ fn add_restraint_count_weight(ref_info: &mut BioRefinementInfo, key: &str, value
         ..BioRefinementRestraint::default()
     };
     let parts: Vec<_> = value.split(';').collect();
-    restr.count = parts.first().and_then(|part| part.trim().parse::<i32>().ok());
-    restr.weight = parts.get(1).and_then(|part| part.trim().parse::<f64>().ok());
-    restr.function = parts.get(2).map_or(String::new(), |part| part.trim().to_string());
+    restr.count = parts
+        .first()
+        .and_then(|part| part.trim().parse::<i32>().ok());
+    restr.weight = parts
+        .get(1)
+        .and_then(|part| part.trim().parse::<f64>().ok());
+    restr.function = parts
+        .get(2)
+        .map_or(String::new(), |part| part.trim().to_string());
     ref_info.restr_stats.push(restr);
 }
 
@@ -1977,8 +2112,15 @@ fn add_restraint_count_weight(ref_info: &mut BioRefinementInfo, key: &str, value
 // Gemmi✔️✔️: impl::find_or_add(ref_info.restr_stats, key) returns the existing
 // Gemmi✔️✔️: restraint entry with matching key or appends a new entry first.
 // END GEMMI CPP HELPER impl::find_or_add(ref_info.restr_stats, key)
-fn find_or_add_restraint<'a>(ref_info: &'a mut BioRefinementInfo, key: &str) -> &'a mut BioRefinementRestraint {
-    if let Some(index) = ref_info.restr_stats.iter().position(|restr| restr.name == key) {
+fn find_or_add_restraint<'a>(
+    ref_info: &'a mut BioRefinementInfo,
+    key: &str,
+) -> &'a mut BioRefinementRestraint {
+    if let Some(index) = ref_info
+        .restr_stats
+        .iter()
+        .position(|restr| restr.name == key)
+    {
         return &mut ref_info.restr_stats[index];
     }
     ref_info.restr_stats.push(BioRefinementRestraint {
@@ -1996,7 +2138,10 @@ fn find_or_add_restraint<'a>(ref_info: &'a mut BioRefinementInfo, key: &str) -> 
 // Gemmi✔️✔️: fixed-width value field.
 // END GEMMI CPP HELPER read_double(value, 50)
 fn parse_prefixed_f64(value: &str, width: usize) -> Option<f64> {
-    let end = value.char_indices().nth(width).map_or(value.len(), |(idx, _)| idx);
+    let end = value
+        .char_indices()
+        .nth(width)
+        .map_or(value.len(), |(idx, _)| idx);
     value
         .get(..end)
         .unwrap_or(value)
@@ -2152,7 +2297,11 @@ fn read_fixed_string(line: &str, start: usize, len: usize) -> String {
 // Gemmi✔️✔️:       meta.refinement.back().bins.emplace_back();
 // Gemmi✔️✔️: }
 // END GEMMI CPP FUNCTION
-fn read_remark3_line(line: &str, meta: &mut BioMetadata, continuation: &mut Option<Remark3Continuation>) {
+fn read_remark3_line(
+    line: &str,
+    meta: &mut BioMetadata,
+    continuation: &mut Option<Remark3Continuation>,
+) {
     let remark_body = field_raw(line, 10, line.len());
     let key_start_offset = remark_body
         .char_indices()
@@ -2328,7 +2477,9 @@ fn read_remark3_line(line: &str, meta: &mut BioMetadata, continuation: &mut Opti
             "SUM OF OCCUPANCIES" => {
                 add_restraint_count_weight(ref_info, "t_sum_occupancies", value);
             }
-            "UTILITY DISTANCES" => add_restraint_count_weight(ref_info, "t_utility_distance", value),
+            "UTILITY DISTANCES" => {
+                add_restraint_count_weight(ref_info, "t_utility_distance", value)
+            }
             "UTILITY ANGLES" => add_restraint_count_weight(ref_info, "t_utility_angle", value),
             "UTILITY TORSION" => add_restraint_count_weight(ref_info, "t_utility_torsion", value),
             "IDEAL-DIST CONTACT TERM" => {
@@ -2373,8 +2524,10 @@ fn read_remark3_line(line: &str, meta: &mut BioMetadata, continuation: &mut Opti
                     let chain1 = read_fixed_string(line, colon_idx + 11, 5);
                     let chain2 = read_fixed_string(line, colon_idx + 26, 5);
                     if !chain1.is_empty() && chain1 == chain2 {
-                        let res_begin = parse_gemmi_seq_id_string(&read_fixed_string(line, colon_idx + 16, 6));
-                        let res_end = parse_gemmi_seq_id_string(&read_fixed_string(line, colon_idx + 31, 6));
+                        let res_begin =
+                            parse_gemmi_seq_id_string(&read_fixed_string(line, colon_idx + 16, 6));
+                        let res_end =
+                            parse_gemmi_seq_id_string(&read_fixed_string(line, colon_idx + 31, 6));
                         if let (Some(res_begin), Some(res_end)) = (res_begin, res_end) {
                             group.selections.push(BioTlsSelection {
                                 chain: chain1,
@@ -2436,11 +2589,17 @@ fn read_remark3_line(line: &str, meta: &mut BioMetadata, continuation: &mut Opti
 // Gemmi✔️✔️: std::string key(key_start, key_end);
 // Gemmi✔️✔️: ...
 // END GEMMI CPP FUNCTION
-fn read_remark_200_230_240(line: &str, meta: &mut BioMetadata, continuation: &mut Option<Remark200Continuation>) {
+fn read_remark_200_230_240(
+    line: &str,
+    meta: &mut BioMetadata,
+    continuation: &mut Option<Remark200Continuation>,
+) {
     if let Some(Remark200Continuation::CrystalDescription { crystal_idx }) = continuation.take() {
         if byte_at(line, 10) == b' ' && byte_at(line, 11) == b' ' {
             if let Some(crystal) = meta.experiment_crystals.get_mut(crystal_idx) {
-                crystal.description.push_str(field_raw(line, 11, line.len()).trim_end());
+                crystal
+                    .description
+                    .push_str(field_raw(line, 11, line.len()).trim_end());
                 *continuation = Some(Remark200Continuation::CrystalDescription { crystal_idx });
                 return;
             }
@@ -2517,9 +2676,12 @@ fn read_remark_200_230_240(line: &str, meta: &mut BioMetadata, continuation: &mu
                     }
                     "BEAMLINE" => {
                         diffraction.beamline = value.to_string();
-                        if !diffraction.synchrotron.is_empty() && diffraction.source_type.is_empty() {
-                            diffraction.source_type =
-                                format!("{} BEAMLINE {}", diffraction.synchrotron, diffraction.beamline);
+                        if !diffraction.synchrotron.is_empty() && diffraction.source_type.is_empty()
+                        {
+                            diffraction.source_type = format!(
+                                "{} BEAMLINE {}",
+                                diffraction.synchrotron, diffraction.beamline
+                            );
                         }
                     }
                     "X-RAY GENERATOR MODEL" => diffraction.source_type = value.to_string(),
@@ -2649,7 +2811,14 @@ fn find_residue_for_address(
         .residues
         .iter()
         .enumerate()
-        .find(|(idx, _)| residue_matches_address(structure, ResidueId::new(*idx as u32), address, first_model_only))
+        .find(|(idx, _)| {
+            residue_matches_address(
+                structure,
+                ResidueId::new(*idx as u32),
+                address,
+                first_model_only,
+            )
+        })
         .map(|(idx, _)| ResidueId::new(idx as u32))
 }
 
@@ -2659,11 +2828,17 @@ fn residue_atom_indices(structure: &BioStructure, residue_id: ResidueId) -> std:
 }
 
 fn first_sulfur_in_residue(structure: &BioStructure, residue_id: ResidueId) -> Option<usize> {
-    residue_atom_indices(structure, residue_id).find(|&idx| structure.atoms[idx].element == Element::S)
+    residue_atom_indices(structure, residue_id)
+        .find(|&idx| structure.atoms[idx].element == Element::S)
 }
 
-fn find_atom_in_residue(structure: &BioStructure, residue_id: ResidueId, atom_name: &str) -> Option<usize> {
-    residue_atom_indices(structure, residue_id).find(|&idx| atom_name_trimmed(structure.atoms[idx].name) == atom_name)
+fn find_atom_in_residue(
+    structure: &BioStructure,
+    residue_id: ResidueId,
+    atom_name: &str,
+) -> Option<usize> {
+    residue_atom_indices(structure, residue_id)
+        .find(|&idx| atom_name_trimmed(structure.atoms[idx].name) == atom_name)
 }
 
 // BEGIN GEMMI CPP FUNCTION complete_ssbond_atom
@@ -2676,7 +2851,10 @@ fn find_atom_in_residue(structure: &BioStructure, residue_id: ResidueId, atom_na
 // Gemmi✔️✔️:   }
 // Gemmi✔️✔️: return cra.residue;
 // END GEMMI CPP FUNCTION
-fn complete_ssbond_atom(address: &mut BioAtomAddress, structure: &BioStructure) -> Option<ResidueId> {
+fn complete_ssbond_atom(
+    address: &mut BioAtomAddress,
+    structure: &BioStructure,
+) -> Option<ResidueId> {
     address.atom_name = "SG".to_string();
     let residue_id = find_residue_for_address(structure, address, true)?;
     let sulfur_idx = match find_atom_in_residue(structure, residue_id, "SG") {
@@ -2720,12 +2898,12 @@ fn complete_ssbond(connection: &mut BioConnection, structure: &BioStructure) {
         return;
     }
     let mut best: Option<(f64, Option<AltLocLabel>, Option<AltLocLabel>)> = None;
-    for a1_idx in residue_atom_indices(structure, res1)
-        .filter(|&idx| atom_name_trimmed(structure.atoms[idx].name) == connection.partner1.atom_name)
-    {
-        for a2_idx in residue_atom_indices(structure, res2)
-            .filter(|&idx| atom_name_trimmed(structure.atoms[idx].name) == connection.partner2.atom_name)
-        {
+    for a1_idx in residue_atom_indices(structure, res1).filter(|&idx| {
+        atom_name_trimmed(structure.atoms[idx].name) == connection.partner1.atom_name
+    }) {
+        for a2_idx in residue_atom_indices(structure, res2).filter(|&idx| {
+            atom_name_trimmed(structure.atoms[idx].name) == connection.partner2.atom_name
+        }) {
             let alt1 = structure.atoms[a1_idx].altloc;
             let alt2 = structure.atoms[a2_idx].altloc;
             if same_conformer(alt1, alt2) {
@@ -2770,7 +2948,8 @@ fn compare_link_symops(record: &str, reported_sym: &mut [i16; 4]) -> BioAsu {
             99
         };
         for i in 1..=3 {
-            reported_sym[i] = i16::from(s2.as_bytes()[len2 - 4 + i]) - i16::from(s1.as_bytes()[len1 - 4 + i]);
+            reported_sym[i] =
+                i16::from(s2.as_bytes()[len2 - 4 + i]) - i16::from(s1.as_bytes()[len1 - 4 + i]);
         }
     }
     BioAsu::Different
@@ -2778,7 +2957,11 @@ fn compare_link_symops(record: &str, reported_sym: &mut [i16; 4]) -> BioAsu {
 
 fn element_from_padded_name_is_ambiguous(atom_name: &str) -> bool {
     let bytes = atom_name.as_bytes();
-    bytes.len() >= 4 && bytes[0] != b' ' && bytes[3] != b' ' && !bytes[0].is_ascii_digit() && !bytes[1].is_ascii_digit()
+    bytes.len() >= 4
+        && bytes[0] != b' '
+        && bytes[3] != b' '
+        && !bytes[0].is_ascii_digit()
+        && !bytes[1].is_ascii_digit()
 }
 
 fn is_metal_element(element: Option<Element>) -> bool {
@@ -2904,7 +3087,9 @@ fn process_conn(structure: &mut BioStructure, conn_records: &[String]) {
                     address.chain_name = read_fixed_string(record, base + 20, 2);
                     address.residue_name = read_fixed_string(record, base + 17, 3);
                     address.seq_id = Some(PdbSeqId {
-                        seq_num: field(record, base + 22, base + 26).parse::<i32>().unwrap_or(0),
+                        seq_num: field(record, base + 22, base + 26)
+                            .parse::<i32>()
+                            .unwrap_or(0),
                         ins_code: match byte_at(record, base + 26) {
                             b' ' | 0 => None,
                             value => Some(value),
@@ -2916,7 +3101,8 @@ fn process_conn(structure: &mut BioStructure, conn_records: &[String]) {
                 let get_elem = |name: &str, address: &BioAtomAddress| -> Option<Element> {
                     if element_from_padded_name_is_ambiguous(name) {
                         if let Some(residue_id) = find_residue_for_address(structure, address, true)
-                            && let Some(atom_idx) = find_atom_in_residue(structure, residue_id, &address.atom_name)
+                            && let Some(atom_idx) =
+                                find_atom_in_residue(structure, residue_id, &address.atom_name)
                         {
                             return Some(structure.atoms[atom_idx].element);
                         }
@@ -3098,14 +3284,18 @@ fn read_metadata_from_remarks(structure: &mut BioStructure) -> Result<(), BioRea
                     detail.push('\n');
                     detail.push_str(field_raw(remark, 11, remark.len()).trim_end());
                 } else if remark.get(11..18) == Some("REMARK:") {
-                    structure.metadata.remark_300_detail = Some(field_raw(remark, 18, remark.len()).trim().to_string());
+                    structure.metadata.remark_300_detail =
+                        Some(field_raw(remark, 18, remark.len()).trim().to_string());
                 }
             }
             350 => {
-                if !structure.assemblies.is_empty() && remark[11..].trim_start().starts_with("BIOMT") {
+                if !structure.assemblies.is_empty()
+                    && remark[11..].trim_start().starts_with("BIOMT")
+                {
                     let assembly = structure.assemblies.last_mut().expect("checked non-empty");
                     let row = read_matrix(&mut matrix, &remark[13..]);
-                    if (row == 3 || remark[11..].trim_start().starts_with("BIOMT3")) && !assembly.generators.is_empty()
+                    if (row == 3 || remark[11..].trim_start().starts_with("BIOMT3"))
+                        && !assembly.generators.is_empty()
                     {
                         let generator = assembly.generators.last_mut().expect("checked non-empty");
                         generator.operators.push(BioAssemblyOperator {
@@ -3117,12 +3307,21 @@ fn read_metadata_from_remarks(structure: &mut BioStructure) -> Result<(), BioRea
                     }
                     continue;
                 }
-                let Some(colon) = remark.get(11..).and_then(|text| text.find(':')).map(|idx| idx + 11) else {
+                let Some(colon) = remark
+                    .get(11..)
+                    .and_then(|text| text.find(':'))
+                    .map(|idx| idx + 11)
+                else {
                     continue;
                 };
-                if remark.get(11..).is_some_and(|text| text.starts_with("BIOMOLECULE")) {
+                if remark
+                    .get(11..)
+                    .is_some_and(|text| text.starts_with("BIOMOLECULE"))
+                {
                     structure.assemblies.push(BioAssembly {
-                        name: field_raw(remark, colon + 1, remark.len()).trim().to_string(),
+                        name: field_raw(remark, colon + 1, remark.len())
+                            .trim()
+                            .to_string(),
                         ..BioAssembly::default()
                     });
                     continue;
@@ -3130,7 +3329,8 @@ fn read_metadata_from_remarks(structure: &mut BioStructure) -> Result<(), BioRea
                 let Some(assembly) = structure.assemblies.last_mut() else {
                     continue;
                 };
-                let r350_key = |cpos: usize, text: &str| colon == cpos && remark[11..].starts_with(text);
+                let r350_key =
+                    |cpos: usize, text: &str| colon == cpos && remark[11..].starts_with(text);
                 let remark_350_body = &remark[11..];
                 if r350_key(44, "AUTHOR DETERMINED") {
                     assembly.author_determined = true;
@@ -3154,10 +3354,15 @@ fn read_metadata_from_remarks(structure: &mut BioStructure) -> Result<(), BioRea
                     } else if assembly.generators.is_empty() {
                         continue;
                     }
-                    let generator = assembly.generators.last_mut().expect("generator must exist");
-                    generator
-                        .chains
-                        .extend(split_remark_350_chains(field_raw(remark, colon + 1, remark.len())));
+                    let generator = assembly
+                        .generators
+                        .last_mut()
+                        .expect("generator must exist");
+                    generator.chains.extend(split_remark_350_chains(field_raw(
+                        remark,
+                        colon + 1,
+                        remark.len(),
+                    )));
                 }
             }
             _ => {}
@@ -3219,7 +3424,9 @@ fn has_entity_types_and_subchains(structure: &BioStructure, chain_id: ChainId) -
     let chain = &structure.chains[chain_id.index() as usize];
     let mut has_entity_types = true;
     let mut has_subchains = true;
-    for residue in &structure.residues[chain.residue_span.start as usize..chain.residue_span.end() as usize] {
+    for residue in
+        &structure.residues[chain.residue_span.start as usize..chain.residue_span.end() as usize]
+    {
         if residue.source.subchain_id.is_none() {
             has_subchains = false;
         }
@@ -3264,7 +3471,11 @@ fn nonpolymer_subchain_id(chain_name: &str, counter: i32) -> Option<PdbChainId> 
 // Gemmi✔️✔️:   }
 // Gemmi✔️✔️: }
 // END GEMMI CPP FUNCTION
-fn assign_subchain_names(structure: &mut BioStructure, chain_id: ChainId, nonpolymer_counter: &mut i32) {
+fn assign_subchain_names(
+    structure: &mut BioStructure,
+    chain_id: ChainId,
+    nonpolymer_counter: &mut i32,
+) {
     let chain_name = {
         let chain = &structure.chains[chain_id.index() as usize];
         chain
@@ -3275,7 +3486,9 @@ fn assign_subchain_names(structure: &mut BioStructure, chain_id: ChainId, nonpol
             .unwrap_or_default()
     };
     let chain = &structure.chains[chain_id.index() as usize];
-    for residue in &mut structure.residues[chain.residue_span.start as usize..chain.residue_span.end() as usize] {
+    for residue in &mut structure.residues
+        [chain.residue_span.start as usize..chain.residue_span.end() as usize]
+    {
         residue.source.subchain_id = match residue.entity_kind {
             EntityKind::Polymer => pdb_chain_id_from_str(&format!("{chain_name}xp")),
             EntityKind::NonPolymer => {
@@ -3303,7 +3516,11 @@ fn assign_subchain_names(structure: &mut BioStructure, chain_id: ChainId, nonpol
 // Gemmi✔️✔️:   }
 // Gemmi✔️✔️: }
 // END GEMMI CPP FUNCTION
-fn assign_subchains(structure: &mut BioStructure, force: bool, fail_if_unknown: bool) -> Result<(), BioReadError> {
+fn assign_subchains(
+    structure: &mut BioStructure,
+    force: bool,
+    fail_if_unknown: bool,
+) -> Result<(), BioReadError> {
     for model in structure.models.clone() {
         let mut counters: std::collections::HashMap<String, i32> = std::collections::HashMap::new();
         for chain_idx in model.chain_span.start as usize..model.chain_span.end() as usize {
@@ -3328,7 +3545,9 @@ fn assign_subchains(structure: &mut BioStructure, force: bool, fail_if_unknown: 
                         .unwrap_or_default();
                     return Err(BioReadError::Parse {
                         line_number: 0,
-                        message: format!("assign_subchains(): missing entity_type in chain {chain_name}"),
+                        message: format!(
+                            "assign_subchains(): missing entity_type in chain {chain_name}"
+                        ),
                     });
                 }
             }
@@ -3357,7 +3576,8 @@ fn backfill_polymer_subchains_to_entities(structure: &mut BioStructure) {
             .or(chain.source.label_asym_id)
             .map(|id| id.as_str().to_string())
             .unwrap_or_default();
-        let Some(subchain_id) = first_polymer_subchain(structure, ChainId::new(chain_idx as u32)) else {
+        let Some(subchain_id) = first_polymer_subchain(structure, ChainId::new(chain_idx as u32))
+        else {
             continue;
         };
         let Some(entity_idx) = structure
@@ -3367,7 +3587,10 @@ fn backfill_polymer_subchains_to_entities(structure: &mut BioStructure) {
         else {
             continue;
         };
-        if !structure.entities[entity_idx].subchains.contains(&subchain_id) {
+        if !structure.entities[entity_idx]
+            .subchains
+            .contains(&subchain_id)
+        {
             structure.entities[entity_idx].subchains.push(subchain_id);
         }
     }
@@ -3579,7 +3802,8 @@ fn find_spacegroup_by_name(
         if hm[2] == normalized.as_bytes().get(p).copied().unwrap_or_default() {
             let mut a = skip_space(&normalized, p + 1);
             let mut b = skip_space(sg.hm, 3);
-            while (normalized.as_bytes().get(a).copied().unwrap_or_default() == hm.get(b).copied().unwrap_or_default()
+            while (normalized.as_bytes().get(a).copied().unwrap_or_default()
+                == hm.get(b).copied().unwrap_or_default()
                 && hm.get(b).copied().unwrap_or_default() != 0)
                 || (normalized.as_bytes().get(a).copied().unwrap_or_default() == b'3'
                     && hm.get(b).copied().unwrap_or_default() == b'-'
@@ -3594,7 +3818,9 @@ fn find_spacegroup_by_name(
             }
             if b >= hm.len() {
                 if a >= normalized.len() {
-                    if ext_matches(sg.ext, b'H') && (alpha == 0.0 || gamma < 1.125 * alpha || prefer_r) {
+                    if ext_matches(sg.ext, b'H')
+                        && (alpha == 0.0 || gamma < 1.125 * alpha || prefer_r)
+                    {
                         return GEMMI_SPACEGROUPS.get(index + 1);
                     }
                     if ext_matches(sg.ext, b'1') && prefer_2 {
@@ -3603,7 +3829,11 @@ fn find_spacegroup_by_name(
                     return Some(sg);
                 }
                 if normalized.as_bytes().get(a).copied() == Some(b':')
-                    && normalized.as_bytes().get(skip_space(&normalized, a + 1)).copied() == Some(sg.ext)
+                    && normalized
+                        .as_bytes()
+                        .get(skip_space(&normalized, a + 1))
+                        .copied()
+                        == Some(sg.ext)
                 {
                     return Some(sg);
                 }
@@ -3628,7 +3858,9 @@ fn find_spacegroup_by_name(
                     a += 1;
                     b += 1;
                 }
-                if skip_space(&normalized, a) >= normalized.len() && hm.get(b).copied().unwrap_or(end) == end {
+                if skip_space(&normalized, a) >= normalized.len()
+                    && hm.get(b).copied().unwrap_or(end) == end
+                {
                     return Some(sg);
                 }
             }
@@ -3642,7 +3874,8 @@ fn find_spacegroup_by_name(
         }
         let mut a = skip_space(&normalized, p + 1);
         let mut b = skip_space(alt.hm, 3);
-        while normalized.as_bytes().get(a).copied().unwrap_or_default() == hm.get(b).copied().unwrap_or_default()
+        while normalized.as_bytes().get(a).copied().unwrap_or_default()
+            == hm.get(b).copied().unwrap_or_default()
             && hm.get(b).copied().unwrap_or_default() != 0
         {
             a = skip_space(&normalized, a + 1);
@@ -3651,7 +3884,11 @@ fn find_spacegroup_by_name(
         if b >= hm.len()
             && (a >= normalized.len()
                 || (normalized.as_bytes().get(a).copied() == Some(b':')
-                    && normalized.as_bytes().get(skip_space(&normalized, a + 1)).copied() == Some(alt.ext)))
+                    && normalized
+                        .as_bytes()
+                        .get(skip_space(&normalized, a + 1))
+                        .copied()
+                        == Some(alt.ext)))
         {
             return GEMMI_SPACEGROUPS.get(alt.pos);
         }
@@ -3710,7 +3947,10 @@ fn setup_cell_images(structure: &mut BioStructure) -> Result<(), BioReadError> {
     }
     for ncs_op in &structure.ncs_operators {
         if !ncs_op.given {
-            let f = bio_transform_combine(&crystal.frac, &bio_transform_combine(&ncs_op.transform, &crystal.orth));
+            let f = bio_transform_combine(
+                &crystal.frac,
+                &bio_transform_combine(&ncs_op.transform, &crystal.orth),
+            );
             crystal.cell_images.push(f);
             for i in 0..crystal.cs_count as usize {
                 let combined = bio_transform_combine(&crystal.cell_images[i], &f);
@@ -3729,12 +3969,48 @@ fn parse_pdb_anisou_record(line: &str, line_number: usize) -> Result<[f32; 6], B
         });
     }
     Ok([
-        parse_decimal_i32(&BIO_PDB_READ_FEATURE, field(line, 28, 35), line_number, "ANISOU u11")? as f32 * 1e-4,
-        parse_decimal_i32(&BIO_PDB_READ_FEATURE, field(line, 35, 42), line_number, "ANISOU u22")? as f32 * 1e-4,
-        parse_decimal_i32(&BIO_PDB_READ_FEATURE, field(line, 42, 49), line_number, "ANISOU u33")? as f32 * 1e-4,
-        parse_decimal_i32(&BIO_PDB_READ_FEATURE, field(line, 49, 56), line_number, "ANISOU u12")? as f32 * 1e-4,
-        parse_decimal_i32(&BIO_PDB_READ_FEATURE, field(line, 56, 63), line_number, "ANISOU u13")? as f32 * 1e-4,
-        parse_decimal_i32(&BIO_PDB_READ_FEATURE, field(line, 63, 70), line_number, "ANISOU u23")? as f32 * 1e-4,
+        parse_decimal_i32(
+            &BIO_PDB_READ_FEATURE,
+            field(line, 28, 35),
+            line_number,
+            "ANISOU u11",
+        )? as f32
+            * 1e-4,
+        parse_decimal_i32(
+            &BIO_PDB_READ_FEATURE,
+            field(line, 35, 42),
+            line_number,
+            "ANISOU u22",
+        )? as f32
+            * 1e-4,
+        parse_decimal_i32(
+            &BIO_PDB_READ_FEATURE,
+            field(line, 42, 49),
+            line_number,
+            "ANISOU u33",
+        )? as f32
+            * 1e-4,
+        parse_decimal_i32(
+            &BIO_PDB_READ_FEATURE,
+            field(line, 49, 56),
+            line_number,
+            "ANISOU u12",
+        )? as f32
+            * 1e-4,
+        parse_decimal_i32(
+            &BIO_PDB_READ_FEATURE,
+            field(line, 56, 63),
+            line_number,
+            "ANISOU u13",
+        )? as f32
+            * 1e-4,
+        parse_decimal_i32(
+            &BIO_PDB_READ_FEATURE,
+            field(line, 63, 70),
+            line_number,
+            "ANISOU u23",
+        )? as f32
+            * 1e-4,
     ])
 }
 
@@ -3744,7 +4020,8 @@ fn parse_pdb_seqres_record(builder: &mut PdbBioBuilder, line: &str) {
     if source_entity_id.is_empty() {
         return;
     }
-    let entity_id = builder.find_or_add_entity(source_entity_id, EntityKind::Polymer, PolymerKind::Unknown);
+    let entity_id =
+        builder.find_or_add_entity(source_entity_id, EntityKind::Polymer, PolymerKind::Unknown);
     for start in (19..68).step_by(4) {
         let residue_name = field(line, start, start + 3);
         if !residue_name.is_empty() {
@@ -3897,7 +4174,8 @@ fn parse_pdb_hetnam_record(structure: &mut BioStructure, line: &str) {
 
 fn parse_pdb_dbref_record(builder: &mut PdbBioBuilder, line: &str) {
     let chain_name = read_fixed_string(line, 11, 2);
-    let entity_id = builder.find_or_add_entity(&chain_name, EntityKind::Polymer, PolymerKind::Unknown);
+    let entity_id =
+        builder.find_or_add_entity(&chain_name, EntityKind::Polymer, PolymerKind::Unknown);
     let entity = &mut builder.structure.entities[entity_id.index() as usize];
     if matches!(byte_at(line, 5), b' ' | b'1') {
         entity.dbrefs.push(BioEntityDbRef::default());
@@ -3922,14 +4200,20 @@ fn parse_pdb_dbref_record(builder: &mut PdbBioBuilder, line: &str) {
         }
     } else if byte_at(line, 5) == b'2' {
         dbref.accession_code = read_fixed_string(line, 18, 22);
-        dbref.db_begin = field(line, 45, 55).parse::<i32>().ok().map(|seq_num| PdbSeqId {
-            seq_num,
-            ins_code: None,
-        });
-        dbref.db_end = field(line, 57, 67).parse::<i32>().ok().map(|seq_num| PdbSeqId {
-            seq_num,
-            ins_code: None,
-        });
+        dbref.db_begin = field(line, 45, 55)
+            .parse::<i32>()
+            .ok()
+            .map(|seq_num| PdbSeqId {
+                seq_num,
+                ins_code: None,
+            });
+        dbref.db_end = field(line, 57, 67)
+            .parse::<i32>()
+            .ok()
+            .map(|seq_num| PdbSeqId {
+                seq_num,
+                ins_code: None,
+            });
     }
 }
 
@@ -3989,9 +4273,17 @@ fn parse_pdb_author_record(builder: &mut PdbBioBuilder, line: &str) {
     }
 }
 
-fn parse_pdb_cryst1_record(builder: &mut PdbBioBuilder, line: &str, line_number: usize) -> Result<(), BioReadError> {
+fn parse_pdb_cryst1_record(
+    builder: &mut PdbBioBuilder,
+    line: &str,
+    line_number: usize,
+) -> Result<(), BioReadError> {
     if line.len() > 54 {
-        let existing_scale = builder.structure.crystal.as_ref().and_then(|crystal| crystal.scale);
+        let existing_scale = builder
+            .structure
+            .crystal
+            .as_ref()
+            .and_then(|crystal| crystal.scale);
         let mut crystal = default_crystal_info();
         crystal.scale = existing_scale;
         crystal_set(
@@ -4053,7 +4345,10 @@ enum Remark200Continuation {
     CrystalDescription { crystal_idx: usize },
 }
 
-fn read_mmcif_entity_and_sequence_info(builder: &mut PdbBioBuilder, loops: &[CifLoop]) -> Result<(), BioReadError> {
+fn read_mmcif_entity_and_sequence_info(
+    builder: &mut PdbBioBuilder,
+    loops: &[CifLoop],
+) -> Result<(), BioReadError> {
     if let Some(entity_loop) = find_cif_loop(loops, "_entity.id") {
         let width = checked_cif_loop_width(entity_loop)?;
         let id_col = required_cif_col(entity_loop, "_entity.id")?;
@@ -4066,7 +4361,8 @@ fn read_mmcif_entity_and_sequence_info(builder: &mut PdbBioBuilder, loops: &[Cif
                 .map(entity_kind_from_cif)
                 .unwrap_or(EntityKind::Unknown);
             let polymer_kind = find_mmcif_polymer_kind(loops, source_id)?;
-            let entity_kind = if kind == EntityKind::Unknown && polymer_kind != PolymerKind::Unknown {
+            let entity_kind = if kind == EntityKind::Unknown && polymer_kind != PolymerKind::Unknown
+            {
                 EntityKind::Polymer
             } else {
                 kind
@@ -4087,8 +4383,9 @@ fn read_mmcif_entity_and_sequence_info(builder: &mut PdbBioBuilder, loops: &[Cif
             ],
         ) {
             for row in sequence_loop.values.chunks(width) {
-                let source_id = cif_optional(row[entity_col].value.as_str())
-                    .ok_or_else(|| missing_cif_value(row[entity_col].line_number, "_entity_poly_seq.entity_id"))?;
+                let source_id = cif_optional(row[entity_col].value.as_str()).ok_or_else(|| {
+                    missing_cif_value(row[entity_col].line_number, "_entity_poly_seq.entity_id")
+                })?;
                 let Some(entity_id) = builder.find_entity_by_source_id(source_id) else {
                     continue;
                 };
@@ -4115,7 +4412,15 @@ fn read_mmcif_entity_and_sequence_info(builder: &mut PdbBioBuilder, loops: &[Cif
         let ref_width = checked_cif_loop_width(struct_ref)?;
         if let (
             Some([ref_id, ref_entity_id, ref_db_name, ref_db_code]),
-            Some([seq_ref_id, seq_align_beg, seq_align_end, db_align_beg, db_align_end]),
+            Some(
+                [
+                    seq_ref_id,
+                    seq_align_beg,
+                    seq_align_end,
+                    db_align_beg,
+                    db_align_end,
+                ],
+            ),
         ) = (
             required_cif_table_cols(
                 struct_ref,
@@ -4140,10 +4445,18 @@ fn read_mmcif_entity_and_sequence_info(builder: &mut PdbBioBuilder, loops: &[Cif
             let ref_accession = optional_cif_col(struct_ref, "_struct_ref.pdbx_db_accession");
             let ref_isoform = optional_cif_col(struct_ref, "_struct_ref.pdbx_db_isoform");
 
-            let auth_seq_align_beg = optional_cif_col(struct_ref_seq, "_struct_ref_seq.pdbx_auth_seq_align_beg");
-            let seq_align_beg_ins = optional_cif_col(struct_ref_seq, "_struct_ref_seq.pdbx_seq_align_beg_ins_code");
-            let auth_seq_align_end = optional_cif_col(struct_ref_seq, "_struct_ref_seq.pdbx_auth_seq_align_end");
-            let seq_align_end_ins = optional_cif_col(struct_ref_seq, "_struct_ref_seq.pdbx_seq_align_end_ins_code");
+            let auth_seq_align_beg =
+                optional_cif_col(struct_ref_seq, "_struct_ref_seq.pdbx_auth_seq_align_beg");
+            let seq_align_beg_ins = optional_cif_col(
+                struct_ref_seq,
+                "_struct_ref_seq.pdbx_seq_align_beg_ins_code",
+            );
+            let auth_seq_align_end =
+                optional_cif_col(struct_ref_seq, "_struct_ref_seq.pdbx_auth_seq_align_end");
+            let seq_align_end_ins = optional_cif_col(
+                struct_ref_seq,
+                "_struct_ref_seq.pdbx_seq_align_end_ins_code",
+            );
 
             let mut seen = Vec::<String>::new();
             for seq_row in cif_loop_rows(struct_ref_seq)? {
@@ -4261,9 +4574,10 @@ fn read_mmcif_entity_and_sequence_info(builder: &mut PdbBioBuilder, loops: &[Cif
 
     if let Some(struct_asym_loop) = find_cif_loop(loops, "_struct_asym.id") {
         let width = checked_cif_loop_width(struct_asym_loop)?;
-        let Some([id_col, entity_col]) =
-            required_cif_table_cols(struct_asym_loop, ["_struct_asym.id", "_struct_asym.entity_id"])
-        else {
+        let Some([id_col, entity_col]) = required_cif_table_cols(
+            struct_asym_loop,
+            ["_struct_asym.id", "_struct_asym.entity_id"],
+        ) else {
             return Ok(());
         };
         for row in struct_asym_loop.values.chunks(width) {
@@ -4347,7 +4661,10 @@ fn import_shortened_ccd_codes_from_chem_comp(
     for row in cif_loop_rows(loop_)? {
         let alias = row[id].value.trim();
         let long_id = row[three_letter_code].value.trim();
-        if alias.as_bytes().first() == Some(&b'~') && long_id.as_bytes().first() != Some(&b'~') && !long_id.is_empty() {
+        if alias.as_bytes().first() == Some(&b'~')
+            && long_id.as_bytes().first() != Some(&b'~')
+            && !long_id.is_empty()
+        {
             structure
                 .shortened_ccd_codes
                 .push((long_id.to_string(), alias.to_string()));
@@ -4356,14 +4673,18 @@ fn import_shortened_ccd_codes_from_chem_comp(
     Ok(())
 }
 
-fn find_mmcif_polymer_kind(loops: &[CifLoop], entity_id: &str) -> Result<PolymerKind, BioReadError> {
+fn find_mmcif_polymer_kind(
+    loops: &[CifLoop],
+    entity_id: &str,
+) -> Result<PolymerKind, BioReadError> {
     let Some(polymer_loop) = find_cif_loop(loops, "_entity_poly.entity_id") else {
         return Ok(PolymerKind::Unknown);
     };
     let width = checked_cif_loop_width(polymer_loop)?;
-    let Some([entity_col, type_col]) =
-        required_cif_table_cols(polymer_loop, ["_entity_poly.entity_id", "_entity_poly.type"])
-    else {
+    let Some([entity_col, type_col]) = required_cif_table_cols(
+        polymer_loop,
+        ["_entity_poly.entity_id", "_entity_poly.type"],
+    ) else {
         return Ok(PolymerKind::Unknown);
     };
     for row in polymer_loop.values.chunks(width) {
@@ -4382,7 +4703,9 @@ fn find_cif_loop<'a>(loops: &'a [CifLoop], tag: &str) -> Option<&'a CifLoop> {
         .find(|loop_| loop_.tags.iter().any(|candidate| candidate == tag))
 }
 
-fn make_single_row_atom_site_loop_from_items(block: &CifBlock) -> Result<Option<CifLoop>, BioReadError> {
+fn make_single_row_atom_site_loop_from_items(
+    block: &CifBlock,
+) -> Result<Option<CifLoop>, BioReadError> {
     let mut tags = Vec::new();
     let mut values = Vec::new();
     for item in &block.items {
@@ -4503,7 +4826,11 @@ struct CifRowAccess {
 // Gemmi✔️✔️: }
 // Gemmi✔️✔️: return ret;
 // END GEMMI CPP FUNCTION
-fn make_seqid(seqid: &str, icode: Option<&str>, line_number: usize) -> Result<Option<PdbSeqId>, BioReadError> {
+fn make_seqid(
+    seqid: &str,
+    icode: Option<&str>,
+    line_number: usize,
+) -> Result<Option<PdbSeqId>, BioReadError> {
     let mut ret = PdbSeqId::default();
     let mut has_num = false;
     let mut ret_icode = icode
@@ -4552,7 +4879,10 @@ fn make_resid(
     icode: Option<&str>,
     line_number: usize,
 ) -> Result<(ResidueName, Option<PdbSeqId>), BioReadError> {
-    Ok((residue_name_from_field(name), make_seqid(seqid, icode, line_number)?))
+    Ok((
+        residue_name_from_field(name),
+        make_seqid(seqid, icode, line_number)?,
+    ))
 }
 
 impl CifRowAccess {
@@ -4648,7 +4978,11 @@ fn copy_int(row: &[CifToken], index: usize, dest: &mut i32) -> Result<(), BioRea
 fn copy_double(row: &[CifToken], index: usize, dest: &mut f32) -> Result<(), BioReadError> {
     if cif_row_has2(row, index) {
         let token = &row[index];
-        *dest = parse_f32(token.value.as_str(), token.line_number, "mmCIF number field")?;
+        *dest = parse_f32(
+            token.value.as_str(),
+            token.line_number,
+            "mmCIF number field",
+        )?;
     }
     Ok(())
 }
@@ -4673,12 +5007,36 @@ fn copy_string(row: &[CifToken], index: usize, dest: &mut String) {
 // END GEMMI CPP FUNCTION
 fn get_smat33(row: &[CifToken], index: usize) -> Result<CifSmat33<f32>, BioReadError> {
     Ok(CifSmat33 {
-        u11: parse_f32(row[index].value.as_str(), row[index].line_number, "SMat33 u11")?,
-        u22: parse_f32(row[index + 1].value.as_str(), row[index + 1].line_number, "SMat33 u22")?,
-        u33: parse_f32(row[index + 2].value.as_str(), row[index + 2].line_number, "SMat33 u33")?,
-        u12: parse_f32(row[index + 3].value.as_str(), row[index + 3].line_number, "SMat33 u12")?,
-        u13: parse_f32(row[index + 4].value.as_str(), row[index + 4].line_number, "SMat33 u13")?,
-        u23: parse_f32(row[index + 5].value.as_str(), row[index + 5].line_number, "SMat33 u23")?,
+        u11: parse_f32(
+            row[index].value.as_str(),
+            row[index].line_number,
+            "SMat33 u11",
+        )?,
+        u22: parse_f32(
+            row[index + 1].value.as_str(),
+            row[index + 1].line_number,
+            "SMat33 u22",
+        )?,
+        u33: parse_f32(
+            row[index + 2].value.as_str(),
+            row[index + 2].line_number,
+            "SMat33 u33",
+        )?,
+        u12: parse_f32(
+            row[index + 3].value.as_str(),
+            row[index + 3].line_number,
+            "SMat33 u12",
+        )?,
+        u13: parse_f32(
+            row[index + 4].value.as_str(),
+            row[index + 4].line_number,
+            "SMat33 u13",
+        )?,
+        u23: parse_f32(
+            row[index + 5].value.as_str(),
+            row[index + 5].line_number,
+            "SMat33 u23",
+        )?,
     })
 }
 
@@ -4825,10 +5183,18 @@ fn get_transform_matrix(row: &[CifToken]) -> Result<BioTransform, BioReadError> 
     for i in 0..3 {
         for j in 0..3 {
             let idx = 4 * i + j;
-            transform.mat[i][j] = parse_f64(row[idx].value.as_str(), row[idx].line_number, "transform matrix")?;
+            transform.mat[i][j] = parse_f64(
+                row[idx].value.as_str(),
+                row[idx].line_number,
+                "transform matrix",
+            )?;
         }
         let idx = 4 * i + 3;
-        transform.vec[i] = parse_f64(row[idx].value.as_str(), row[idx].line_number, "transform vector")?;
+        transform.vec[i] = parse_f64(
+            row[idx].value.as_str(),
+            row[idx].line_number,
+            "transform vector",
+        )?;
     }
     Ok(transform)
 }
@@ -4879,7 +5245,10 @@ fn set_part_of_address_from_label(
     for residue in &structure.residues {
         let chain = &structure.chains[residue.chain_id.index() as usize];
         if chain.model_id.index() == 0
-            && chain.source.label_asym_id.is_some_and(|id| id.as_str() == label_asym)
+            && chain
+                .source
+                .label_asym_id
+                .is_some_and(|id| id.as_str() == label_asym)
             && residue.source.label_seq_id == Some(seq)
         {
             address.chain_name = chain
@@ -4895,7 +5264,10 @@ fn set_part_of_address_from_label(
     Ok(())
 }
 
-fn connection_type_from_mmcif(value: &str, _line_number: usize) -> Result<BioConnectionType, BioReadError> {
+fn connection_type_from_mmcif(
+    value: &str,
+    _line_number: usize,
+) -> Result<BioConnectionType, BioReadError> {
     Ok(match value.trim() {
         "covale" => BioConnectionType::Covale,
         "disulf" => BioConnectionType::Disulf,
@@ -5011,15 +5383,31 @@ fn read_connectivity(loops: &[CifLoop], structure: &mut BioStructure) -> Result<
             } else {
                 &mut connection.partner2
             };
-            let auth_asym = if i == 0 { ptnr1_auth_asym_id } else { ptnr2_auth_asym_id };
-            let auth_seq = if i == 0 { ptnr1_auth_seq_id } else { ptnr2_auth_seq_id };
+            let auth_asym = if i == 0 {
+                ptnr1_auth_asym_id
+            } else {
+                ptnr2_auth_asym_id
+            };
+            let auth_seq = if i == 0 {
+                ptnr1_auth_seq_id
+            } else {
+                ptnr2_auth_seq_id
+            };
             let label_asym = if i == 0 {
                 ptnr1_label_asym_id
             } else {
                 ptnr2_label_asym_id
             };
-            let label_seq = if i == 0 { ptnr1_label_seq_id } else { ptnr2_label_seq_id };
-            let ins_code = if i == 0 { ptnr1_ins_code } else { ptnr2_ins_code };
+            let label_seq = if i == 0 {
+                ptnr1_label_seq_id
+            } else {
+                ptnr2_label_seq_id
+            };
+            let ins_code = if i == 0 {
+                ptnr1_ins_code
+            } else {
+                ptnr2_ins_code
+            };
             let label_comp = if i == 0 {
                 ptnr1_label_comp_id
             } else {
@@ -5030,7 +5418,11 @@ fn read_connectivity(loops: &[CifLoop], structure: &mut BioStructure) -> Result<
             } else {
                 ptnr2_label_atom_id
             };
-            let label_alt = if i == 0 { ptnr1_label_alt_id } else { ptnr2_label_alt_id };
+            let label_alt = if i == 0 {
+                ptnr1_label_alt_id
+            } else {
+                ptnr2_label_alt_id
+            };
             if let (Some(auth_asym_idx), Some(auth_seq_idx)) = (auth_asym, auth_seq)
                 && cif_row_has2(row, auth_asym_idx)
                 && cif_row_has2(row, auth_seq_idx)
@@ -5057,7 +5449,8 @@ fn read_connectivity(loops: &[CifLoop], structure: &mut BioStructure) -> Result<
             } else {
                 return Err(BioReadError::Parse {
                     line_number,
-                    message: "_struct_conn without either _auth_ or _label_ asym_id+seq_id".to_string(),
+                    message: "_struct_conn without either _auth_ or _label_ asym_id+seq_id"
+                        .to_string(),
                 });
             }
             address.residue_name = row[label_comp].value.trim().to_string();
@@ -5178,7 +5571,10 @@ fn read_prot_cis(loops: &[CifLoop], structure: &mut BioStructure) -> Result<(), 
 // Gemmi✔️✔️:   st.mod_residues.push_back(modres);
 // Gemmi✔️✔️: }
 // END GEMMI CPP FUNCTION
-fn read_struct_mod_residue(loops: &[CifLoop], structure: &mut BioStructure) -> Result<(), BioReadError> {
+fn read_struct_mod_residue(
+    loops: &[CifLoop],
+    structure: &mut BioStructure,
+) -> Result<(), BioReadError> {
     let Some(loop_) = find_cif_loop(loops, "_pdbx_struct_mod_residue.auth_asym_id") else {
         return Ok(());
     };
@@ -5336,12 +5732,12 @@ fn fill_residue_entity_type(structure: &mut BioStructure) {
         {
             structure.residues[residue_idx].entity_kind = structure.entities[entity_idx].kind;
         } else {
-            structure.residues[residue_idx].entity_kind = if structure.residues[residue_idx].kind == ResidueKind::Water
-            {
-                EntityKind::Water
-            } else {
-                EntityKind::Unknown
-            };
+            structure.residues[residue_idx].entity_kind =
+                if structure.residues[residue_idx].kind == ResidueKind::Water {
+                    EntityKind::Water
+                } else {
+                    EntityKind::Unknown
+                };
         }
     }
 }
@@ -5353,7 +5749,10 @@ fn fill_residue_entity_type(structure: &mut BioStructure) {
 // Gemmi✔️✔️:       return &diffr_info;
 // Gemmi✔️✔️: return nullptr;
 // END GEMMI CPP FUNCTION
-fn find_diffrn<'a>(meta: &'a mut BioMetadata, diffrn_id: &str) -> Option<&'a mut BioDiffractionInfo> {
+fn find_diffrn<'a>(
+    meta: &'a mut BioMetadata,
+    diffrn_id: &str,
+) -> Option<&'a mut BioDiffractionInfo> {
     for crystal in &mut meta.experiment_crystals {
         for diffraction in &mut crystal.diffractions {
             if diffraction.id == diffrn_id {
@@ -5428,7 +5827,11 @@ fn transform_has_nan(transform: &BioTransform) -> bool {
         .any(|value| value.is_nan())
 }
 
-fn copy_optional_i32(row: &[CifToken], index: usize, dest: &mut Option<i32>) -> Result<(), BioReadError> {
+fn copy_optional_i32(
+    row: &[CifToken],
+    index: usize,
+    dest: &mut Option<i32>,
+) -> Result<(), BioReadError> {
     if cif_row_has2(row, index) {
         *dest = Some(parse_decimal_i32(
             &BIO_MMCIF_READ_FEATURE,
@@ -5440,7 +5843,11 @@ fn copy_optional_i32(row: &[CifToken], index: usize, dest: &mut Option<i32>) -> 
     Ok(())
 }
 
-fn copy_optional_f64(row: &[CifToken], index: usize, dest: &mut Option<f64>) -> Result<(), BioReadError> {
+fn copy_optional_f64(
+    row: &[CifToken],
+    index: usize,
+    dest: &mut Option<f64>,
+) -> Result<(), BioReadError> {
     if cif_row_has2(row, index) {
         *dest = Some(f64::from(parse_f32(
             row[index].value.as_str(),
@@ -5490,17 +5897,25 @@ fn read_entry_info(document: &CifDocument, structure: &mut BioStructure) {
     };
     for item in &block.items {
         match item.tag.as_str() {
-            "_entry.id" => append_info_value(&mut structure.metadata.entry_id, item.value.value.as_str()),
+            "_entry.id" => {
+                append_info_value(&mut structure.metadata.entry_id, item.value.value.as_str())
+            }
             "_cell.Z_PDB" => {
                 let value = item.value.value.trim();
                 if cif_optional(value).is_some() {
-                    structure.crystal.get_or_insert_with(default_crystal_info).z_pdb = Some(value.to_string());
+                    structure
+                        .crystal
+                        .get_or_insert_with(default_crystal_info)
+                        .z_pdb = Some(value.to_string());
                 }
             }
-            "_exptl.method" => {
-                append_info_value(&mut structure.metadata.experimental_method, item.value.value.as_str())
+            "_exptl.method" => append_info_value(
+                &mut structure.metadata.experimental_method,
+                item.value.value.as_str(),
+            ),
+            "_struct.title" => {
+                append_info_value(&mut structure.metadata.title, item.value.value.as_str())
             }
-            "_struct.title" => append_info_value(&mut structure.metadata.title, item.value.value.as_str()),
             "_database_PDB_rev.date_original" => append_info_value(
                 &mut structure.metadata.received_initial_deposition_date,
                 item.value.value.as_str(),
@@ -5509,10 +5924,13 @@ fn read_entry_info(document: &CifDocument, structure: &mut BioStructure) {
                 &mut structure.metadata.received_initial_deposition_date,
                 item.value.value.as_str(),
             ),
-            "_struct_keywords.pdbx_keywords" => {
-                append_info_value(&mut structure.metadata.pdbx_keywords, item.value.value.as_str())
+            "_struct_keywords.pdbx_keywords" => append_info_value(
+                &mut structure.metadata.pdbx_keywords,
+                item.value.value.as_str(),
+            ),
+            "_struct_keywords.text" => {
+                append_info_value(&mut structure.metadata.keywords, item.value.value.as_str())
             }
-            "_struct_keywords.text" => append_info_value(&mut structure.metadata.keywords, item.value.value.as_str()),
             _ => {}
         }
     }
@@ -5642,7 +6060,11 @@ fn read_refinement_info(
         && let Some(value) = find_cif_item_value(document, "_em_3d_reconstruction.resolution")
         && let Some(value) = cif_optional(value)
     {
-        structure.resolution = Some(f64::from(parse_f32(value, 0, "_em_3d_reconstruction.resolution")?));
+        structure.resolution = Some(f64::from(parse_f32(
+            value,
+            0,
+            "_em_3d_reconstruction.resolution",
+        )?));
     }
     Ok(())
 }
@@ -5748,8 +6170,11 @@ fn read_tls_info(loops: &[CifLoop], structure: &mut BioStructure) -> Result<(), 
             if structure.metadata.refinement.is_empty() {
                 break;
             }
-            let refine_id = pdbx_refine_id.and_then(|index| cif_optional(row[index].value.as_str()));
-            let Some(refinement) = first_or_add_refinement_by_id(&mut structure.metadata, refine_id) else {
+            let refine_id =
+                pdbx_refine_id.and_then(|index| cif_optional(row[index].value.as_str()));
+            let Some(refinement) =
+                first_or_add_refinement_by_id(&mut structure.metadata, refine_id)
+            else {
                 break;
             };
             let tls_id = row[id].value.trim().to_string();
@@ -5907,7 +6332,11 @@ fn read_tls_info(loops: &[CifLoop], structure: &mut BioStructure) -> Result<(), 
         for row in cif_loop_rows(loop_)? {
             let tls_id = row[refine_tls_id].value.trim();
             for refinement in &mut structure.metadata.refinement {
-                if let Some(group) = refinement.tls_groups.iter_mut().find(|group| group.id == tls_id) {
+                if let Some(group) = refinement
+                    .tls_groups
+                    .iter_mut()
+                    .find(|group| group.id == tls_id)
+                {
                     let mut selection = BioTlsSelection::default();
                     if let Some(index) = beg_auth_asym_id
                         && cif_row_has2(row, index)
@@ -5954,7 +6383,10 @@ fn read_tls_info(loops: &[CifLoop], structure: &mut BioStructure) -> Result<(), 
 // Gemmi✔️✔️: for (auto row : block.find("_diffrn_radiation.", {...})) if (DiffractionInfo* di = find_diffrn(...)) { ... }
 // Gemmi✔️✔️: for (auto row : block.find("_diffrn_source.", {...})) if (DiffractionInfo* di = find_diffrn(...)) { ... }
 // END GEMMI CPP FUNCTION
-fn read_experimental_info(loops: &[CifLoop], structure: &mut BioStructure) -> Result<(), BioReadError> {
+fn read_experimental_info(
+    loops: &[CifLoop],
+    structure: &mut BioStructure,
+) -> Result<(), BioReadError> {
     if let Some(loop_) = find_cif_loop(loops, "_exptl.method") {
         let method = required_cif_col(loop_, "_exptl.method")?;
         let crystals_number = optional_cif_col(loop_, "_exptl.crystals_number");
@@ -5986,7 +6418,9 @@ fn read_experimental_info(loops: &[CifLoop], structure: &mut BioStructure) -> Re
         }
     }
     if let Some(loop_) = find_cif_loop(loops, "_diffrn.id") {
-        if let Some([id, crystal_id]) = required_cif_table_cols(loop_, ["_diffrn.id", "_diffrn.crystal_id"]) {
+        if let Some([id, crystal_id]) =
+            required_cif_table_cols(loop_, ["_diffrn.id", "_diffrn.crystal_id"])
+        {
             let ambient_temp = optional_cif_col(loop_, "_diffrn.ambient_temp");
             for row in cif_loop_rows(loop_)? {
                 let crystal_id_value = row[crystal_id].value.trim();
@@ -6015,7 +6449,9 @@ fn read_experimental_info(loops: &[CifLoop], structure: &mut BioStructure) -> Re
         let type_ = optional_cif_col(loop_, "_diffrn_detector.type");
         let details = optional_cif_col(loop_, "_diffrn_detector.details");
         for row in cif_loop_rows(loop_)? {
-            if let Some(diffraction) = find_diffrn(&mut structure.metadata, row[diffrn_id].value.trim()) {
+            if let Some(diffraction) =
+                find_diffrn(&mut structure.metadata, row[diffrn_id].value.trim())
+            {
                 if let Some(index) = collection_date
                     && cif_row_has2(row, index)
                 {
@@ -6042,10 +6478,13 @@ fn read_experimental_info(loops: &[CifLoop], structure: &mut BioStructure) -> Re
     if let Some(loop_) = find_cif_loop(loops, "_diffrn_radiation.diffrn_id") {
         let diffrn_id = required_cif_col(loop_, "_diffrn_radiation.diffrn_id")?;
         let scattering_type = optional_cif_col(loop_, "_diffrn_radiation.pdbx_scattering_type");
-        let mono_or_laue = optional_cif_col(loop_, "_diffrn_radiation.pdbx_monochromatic_or_laue_m_l");
+        let mono_or_laue =
+            optional_cif_col(loop_, "_diffrn_radiation.pdbx_monochromatic_or_laue_m_l");
         let monochromator = optional_cif_col(loop_, "_diffrn_radiation.monochromator");
         for row in cif_loop_rows(loop_)? {
-            if let Some(diffraction) = find_diffrn(&mut structure.metadata, row[diffrn_id].value.trim()) {
+            if let Some(diffraction) =
+                find_diffrn(&mut structure.metadata, row[diffrn_id].value.trim())
+            {
                 if let Some(index) = scattering_type
                     && cif_row_has2(row, index)
                 {
@@ -6072,7 +6511,9 @@ fn read_experimental_info(loops: &[CifLoop], structure: &mut BioStructure) -> Re
         let beamline = optional_cif_col(loop_, "_diffrn_source.pdbx_synchrotron_beamline");
         let wavelength_list = optional_cif_col(loop_, "_diffrn_source.pdbx_wavelength_list");
         for row in cif_loop_rows(loop_)? {
-            if let Some(diffraction) = find_diffrn(&mut structure.metadata, row[diffrn_id].value.trim()) {
+            if let Some(diffraction) =
+                find_diffrn(&mut structure.metadata, row[diffrn_id].value.trim())
+            {
                 if let Some(index) = source
                     && cif_row_has2(row, index)
                 {
@@ -6313,7 +6754,8 @@ fn read_ncs_info(loops: &[CifLoop], structure: &mut BioStructure) -> Result<(), 
             row[vector3].clone(),
         ];
         let transform = get_transform_matrix(&matrix_row)?;
-        let given = code.is_some_and(|index| cif_row_has2(row, index) && row[index].value.trim() == "given");
+        let given = code
+            .is_some_and(|index| cif_row_has2(row, index) && row[index].value.trim() == "given");
         let op_id = row[id].value.trim().to_string();
         if transform_is_identity(&transform) {
             structure.ncs_oper_identity_id = Some(op_id);
@@ -6435,7 +6877,15 @@ fn read_assemblies(loops: &[CifLoop]) -> Result<Vec<BioAssembly>, BioReadError> 
     let Some(loop_) = find_cif_loop(loops, "_pdbx_struct_assembly.id") else {
         return Ok(Vec::new());
     };
-    let Some([id, details, method_details, oligomeric_details, oligomeric_count]) = required_cif_table_cols(
+    let Some(
+        [
+            id,
+            details,
+            method_details,
+            oligomeric_details,
+            oligomeric_count,
+        ],
+    ) = required_cif_table_cols(
         loop_,
         [
             "_pdbx_struct_assembly.id",
@@ -6444,7 +6894,8 @@ fn read_assemblies(loops: &[CifLoop]) -> Result<Vec<BioAssembly>, BioReadError> 
             "_pdbx_struct_assembly.oligomeric_details",
             "_pdbx_struct_assembly.oligomeric_count",
         ],
-    ) else {
+    )
+    else {
         return Ok(Vec::new());
     };
     let mut assemblies = Vec::new();
@@ -6687,7 +7138,9 @@ fn read_helices(loops: &[CifLoop]) -> Result<Vec<BioHelix>, BioReadError> {
     let mut helices = Vec::new();
     for row in cif_loop_rows(loop_)? {
         let conf_type = row[conf_type_id].value.trim();
-        if conf_type.is_empty() || conf_type.as_bytes().first().map(|b| b.to_ascii_uppercase()) != Some(b'H') {
+        if conf_type.is_empty()
+            || conf_type.as_bytes().first().map(|b| b.to_ascii_uppercase()) != Some(b'H')
+        {
             continue;
         }
         let line_number = row[conf_type_id].line_number;
@@ -6871,13 +7324,20 @@ fn read_sheets(loops: &[CifLoop]) -> Result<Vec<BioSheet>, BioReadError> {
             return Ok(sheets);
         };
         for row in cif_loop_rows(order)? {
-            if let Some(sheet) = sheets.iter_mut().find(|sheet| sheet.name == row[sheet_id].value.trim())
+            if let Some(sheet) = sheets
+                .iter_mut()
+                .find(|sheet| sheet.name == row[sheet_id].value.trim())
                 && let Some(strand) = sheet
                     .strands
                     .iter_mut()
                     .find(|strand| strand.name == row[range_id_2].value.trim())
             {
-                match row[sense].value.as_bytes().first().map(|b| b.to_ascii_uppercase()) {
+                match row[sense]
+                    .value
+                    .as_bytes()
+                    .first()
+                    .map(|b| b.to_ascii_uppercase())
+                {
                     Some(b'P') => strand.sense = 1,
                     Some(b'A') => strand.sense = -1,
                     _ => {}
@@ -6921,7 +7381,9 @@ fn read_sheets(loops: &[CifLoop]) -> Result<Vec<BioSheet>, BioReadError> {
         let range_2_ins = optional_cif_col(hbond, "_pdbx_struct_sheet_hbond.range_2_PDB_ins_code");
         for row in cif_loop_rows(hbond)? {
             let line_number = row[sheet_id].line_number;
-            if let Some(sheet) = sheets.iter_mut().find(|sheet| sheet.name == row[sheet_id].value.trim())
+            if let Some(sheet) = sheets
+                .iter_mut()
+                .find(|sheet| sheet.name == row[sheet_id].value.trim())
                 && let Some(strand) = sheet
                     .strands
                     .iter_mut()
@@ -6949,11 +7411,17 @@ fn read_sheets(loops: &[CifLoop]) -> Result<Vec<BioSheet>, BioReadError> {
     Ok(sheets)
 }
 
-fn read_mmcif_atom_site(atom_site: &CifLoop, loops: &[CifLoop]) -> Result<BioStructure, BioReadError> {
+fn read_mmcif_atom_site(
+    atom_site: &CifLoop,
+    loops: &[CifLoop],
+) -> Result<BioStructure, BioReadError> {
     let width = atom_site.tags.len();
     if width == 0 || atom_site.values.len() % width != 0 {
         return Err(BioReadError::Parse {
-            line_number: atom_site.values.first().map_or(0, |token| token.line_number),
+            line_number: atom_site
+                .values
+                .first()
+                .map_or(0, |token| token.line_number),
             message: "mmCIF loop value count is not divisible by tag count".to_string(),
         });
     }
@@ -6964,13 +7432,22 @@ fn read_mmcif_atom_site(atom_site: &CifLoop, loops: &[CifLoop]) -> Result<BioStr
     let atom_id = CifRowAccess::new(columns.auth_atom_id, Some(columns.label_atom_id));
     let seq_id = CifRowAccess::new(columns.auth_seq_id, Some(columns.label_seq_id));
     if !asym_id.ok() {
-        return Err(missing_cif_value(0, "_atom_site.label_asym_id/auth_asym_id"));
+        return Err(missing_cif_value(
+            0,
+            "_atom_site.label_asym_id/auth_asym_id",
+        ));
     }
     if !comp_id.ok() {
-        return Err(missing_cif_value(0, "_atom_site.label_comp_id/auth_comp_id"));
+        return Err(missing_cif_value(
+            0,
+            "_atom_site.label_comp_id/auth_comp_id",
+        ));
     }
     if !atom_id.ok() {
-        return Err(missing_cif_value(0, "_atom_site.label_atom_id/auth_atom_id"));
+        return Err(missing_cif_value(
+            0,
+            "_atom_site.label_atom_id/auth_atom_id",
+        ));
     }
     if !seq_id.ok() {
         return Err(missing_cif_value(0, "_atom_site.label_seq_id/auth_seq_id"));
@@ -6988,15 +7465,17 @@ fn read_mmcif_atom_site(atom_site: &CifLoop, loops: &[CifLoop]) -> Result<BioStr
         let model_number = columns
             .model_num
             .and_then(|idx| cif_optional(row[idx].value.as_str()))
-            .map(|value| parse_decimal_i32(&BIO_MMCIF_READ_FEATURE, value, line_number, "model number"))
+            .map(|value| {
+                parse_decimal_i32(&BIO_MMCIF_READ_FEATURE, value, line_number, "model number")
+            })
             .transpose()?;
         let effective_model_number = model_number.or(Some(1));
         if columns.model_num.is_some()
             && (builder.current_model.is_none()
                 || effective_model_number
-                    != builder
-                        .current_model
-                        .and_then(|id| builder.structure.models[id.index() as usize].source_model_number))
+                    != builder.current_model.and_then(|id| {
+                        builder.structure.models[id.index() as usize].source_model_number
+                    }))
         {
             builder.begin_model(effective_model_number);
         }
@@ -7019,27 +7498,27 @@ fn read_mmcif_atom_site(atom_site: &CifLoop, loops: &[CifLoop]) -> Result<BioStr
             .map(|value| pdb_chain_id_from_cif(value, line_number))
             .transpose()?;
 
-        let atom_name = atom_id
-            .get(row)
-            .and_then(cif_optional)
-            .ok_or_else(|| missing_cif_value(line_number, "_atom_site.label_atom_id/auth_atom_id"))?;
-        let residue_name = comp_id
-            .get(row)
-            .and_then(cif_optional)
-            .ok_or_else(|| missing_cif_value(line_number, "_atom_site.label_comp_id/auth_comp_id"))?;
+        let atom_name = atom_id.get(row).and_then(cif_optional).ok_or_else(|| {
+            missing_cif_value(line_number, "_atom_site.label_atom_id/auth_atom_id")
+        })?;
+        let residue_name = comp_id.get(row).and_then(cif_optional).ok_or_else(|| {
+            missing_cif_value(line_number, "_atom_site.label_comp_id/auth_comp_id")
+        })?;
         let seq_text = seq_id
             .get(row)
             .and_then(cif_optional)
             .ok_or_else(|| missing_cif_value(line_number, "_atom_site.label_seq_id/auth_seq_id"))?;
 
-        let serial = cif_optional(row[columns.id].value.as_str()).and_then(|value| value.parse::<i32>().ok());
+        let serial = cif_optional(row[columns.id].value.as_str())
+            .and_then(|value| value.parse::<i32>().ok());
         let ins_code_text = columns
             .ins_code
             .and_then(|idx| row.get(idx))
             .map(|token| token.value.as_str());
-        let (residue_name, seq_id_value) = make_resid(residue_name, seq_text, ins_code_text, line_number)?;
-        let seq_id_value =
-            seq_id_value.ok_or_else(|| missing_cif_value(line_number, "_atom_site.label_seq_id/auth_seq_id"))?;
+        let (residue_name, seq_id_value) =
+            make_resid(residue_name, seq_text, ins_code_text, line_number)?;
+        let seq_id_value = seq_id_value
+            .ok_or_else(|| missing_cif_value(line_number, "_atom_site.label_seq_id/auth_seq_id"))?;
         let altloc = cif_optional(row[columns.alt_id].value.as_str())
             .and_then(|value| value.as_bytes().first().copied())
             .and_then(parse_altloc);
@@ -7076,7 +7555,9 @@ fn read_mmcif_atom_site(atom_site: &CifLoop, loops: &[CifLoop]) -> Result<BioStr
         let label_entity_id = columns
             .label_entity_id
             .and_then(|idx| cif_optional(row[idx].value.as_str()))
-            .map(|value| builder.find_or_add_entity(value, EntityKind::Unknown, PolymerKind::Unknown));
+            .map(|value| {
+                builder.find_or_add_entity(value, EntityKind::Unknown, PolymerKind::Unknown)
+            });
         let group_pdb = columns
             .group_pdb
             .and_then(|idx| cif_optional(row[idx].value.as_str()))
@@ -7266,7 +7747,10 @@ fn json_type_as_string(value: &JsonValue) -> &'static str {
 // Gemmi✔️✔️:     return "";
 // Gemmi✔️✔️: }
 // END GEMMI CPP FUNCTION
-fn mmjson_value_as_cif_value(value: &JsonValue, line_number: usize) -> Result<String, BioReadError> {
+fn mmjson_value_as_cif_value(
+    value: &JsonValue,
+    line_number: usize,
+) -> Result<String, BioReadError> {
     match value {
         JsonValue::Null => Ok("?".to_string()),
         JsonValue::Bool(false) => Ok("NO".to_string()),
@@ -7282,7 +7766,10 @@ fn mmjson_value_as_cif_value(value: &JsonValue, line_number: usize) -> Result<St
                 let JsonValue::String(text) = entry else {
                     return Err(BioReadError::Parse {
                         line_number,
-                        message: format!("Unexpected {} as value in JSON.", json_type_as_string(entry)),
+                        message: format!(
+                            "Unexpected {} as value in JSON.",
+                            json_type_as_string(entry)
+                        ),
                     });
                 };
                 joined.push_str(text);
@@ -7291,7 +7778,10 @@ fn mmjson_value_as_cif_value(value: &JsonValue, line_number: usize) -> Result<St
         }
         _ => Err(BioReadError::Parse {
             line_number,
-            message: format!("Unexpected {} as value in JSON.", json_type_as_string(value)),
+            message: format!(
+                "Unexpected {} as value in JSON.",
+                json_type_as_string(value)
+            ),
         }),
     }
 }
@@ -7423,13 +7913,20 @@ fn fill_document_from_mmjson_value(
                 let JsonValue::Array(values) = array_value else {
                     return Err(BioReadError::Parse {
                         line_number,
-                        message: format!("Expected array, got {}", json_type_as_string(array_value)),
+                        message: format!(
+                            "Expected array, got {}",
+                            json_type_as_string(array_value)
+                        ),
                     });
                 };
                 if values.len() != cif_rows {
                     return Err(BioReadError::Parse {
                         line_number,
-                        message: format!("Expected array of length {} not {}", cif_rows, values.len()),
+                        message: format!(
+                            "Expected array of length {} not {}",
+                            cif_rows,
+                            values.len()
+                        ),
                     });
                 }
 
@@ -7506,7 +8003,15 @@ fn set_cell_from_mmcif(document: &CifDocument, crystal: &mut Option<CrystalInfo>
         find_cif_item_value(document, "_cell.angle_beta"),
         find_cif_item_value(document, "_cell.angle_gamma"),
     ];
-    let [Some(a), Some(b), Some(c), Some(alpha), Some(beta), Some(gamma)] = values else {
+    let [
+        Some(a),
+        Some(b),
+        Some(c),
+        Some(alpha),
+        Some(beta),
+        Some(gamma),
+    ] = values
+    else {
         return;
     };
     if cif_optional(a).is_none() || cif_optional(b).is_none() || cif_optional(c).is_none() {
@@ -7546,7 +8051,10 @@ fn parse_cif_document(text: &str) -> Result<CifDocument, BioReadError> {
     let mut idx = 0;
     while idx < tokens.len() {
         if tokens[idx].value.starts_with("data_") {
-            if !current_block.items.is_empty() || !current_block.loops.is_empty() || !blocks.is_empty() {
+            if !current_block.items.is_empty()
+                || !current_block.loops.is_empty()
+                || !blocks.is_empty()
+            {
                 blocks.push(current_block);
                 current_block = CifBlock {
                     name: String::new(),
@@ -7563,10 +8071,13 @@ fn parse_cif_document(text: &str) -> Result<CifDocument, BioReadError> {
             if tokens[idx].value.starts_with('_') {
                 let tag = tokens[idx].value.clone();
                 idx += 1;
-                let value = tokens.get(idx).cloned().ok_or_else(|| BioReadError::Parse {
-                    line_number: tokens.last().map_or(0, |token| token.line_number),
-                    message: format!("mmCIF item {tag} is missing a value"),
-                })?;
+                let value = tokens
+                    .get(idx)
+                    .cloned()
+                    .ok_or_else(|| BioReadError::Parse {
+                        line_number: tokens.last().map_or(0, |token| token.line_number),
+                        message: format!("mmCIF item {tag} is missing a value"),
+                    })?;
                 current_block.push_pair(tag, value);
                 idx += 1;
                 continue;
@@ -7604,7 +8115,10 @@ fn parse_cif_document(text: &str) -> Result<CifDocument, BioReadError> {
         }
         current_block.push_loop(CifLoop { tags, values });
     }
-    if !current_block.items.is_empty() || !current_block.loops.is_empty() || !current_block.name.is_empty() {
+    if !current_block.items.is_empty()
+        || !current_block.loops.is_empty()
+        || !current_block.name.is_empty()
+    {
         blocks.push(current_block);
     }
     if blocks.is_empty() {
@@ -7694,7 +8208,9 @@ fn tokenize_cif(text: &str) -> Result<Vec<CifToken>, BioReadError> {
             _ => {
                 let start_line = line_number;
                 let start = idx;
-                while idx < bytes.len() && !matches!(bytes[idx], b' ' | b'\t' | b'\r' | b'\n' | b'#') {
+                while idx < bytes.len()
+                    && !matches!(bytes[idx], b' ' | b'\t' | b'\r' | b'\n' | b'#')
+                {
                     idx += 1;
                 }
                 tokens.push(CifToken {
@@ -7712,9 +8228,11 @@ fn tokenize_cif(text: &str) -> Result<Vec<CifToken>, BioReadError> {
 fn parse_pdb_element(line: &str, line_number: usize) -> Result<Element, BioReadError> {
     let symbol = field(line, 76, 78).trim();
     if symbol.is_empty() {
-        return infer_element_from_padded_atom_name(field_raw(line, 12, 16)).ok_or_else(|| BioReadError::Parse {
-            line_number,
-            message: "could not infer PDB atom element from atom name".to_string(),
+        return infer_element_from_padded_atom_name(field_raw(line, 12, 16)).ok_or_else(|| {
+            BioReadError::Parse {
+                line_number,
+                message: "could not infer PDB atom element from atom name".to_string(),
+            }
         });
     }
     element_from_symbol(symbol).ok_or_else(|| BioReadError::Parse {
@@ -7734,8 +8252,13 @@ fn starts_record(line: &str, record: &str) -> bool {
 
 fn starts_record3(line: &str, record: &str) -> bool {
     let prefix = field_raw(line, 0, line.len().min(4));
-    prefix.get(0..3).is_some_and(|value| value.eq_ignore_ascii_case(record))
-        && matches!(prefix.as_bytes().get(3).copied().unwrap_or(b' '), b' ' | b'\0')
+    prefix
+        .get(0..3)
+        .is_some_and(|value| value.eq_ignore_ascii_case(record))
+        && matches!(
+            prefix.as_bytes().get(3).copied().unwrap_or(b' '),
+            b' ' | b'\0'
+        )
 }
 
 fn field(line: &str, start: usize, end: usize) -> &str {
@@ -7789,14 +8312,19 @@ fn bio_transform_combine(a: &BioTransform, b: &BioTransform) -> BioTransform {
         mat: bio_transform_multiply(&a.mat, &b.mat),
         vec: {
             let shifted = bio_transform_apply_mat(&a.mat, b.vec);
-            [shifted[0] + a.vec[0], shifted[1] + a.vec[1], shifted[2] + a.vec[2]]
+            [
+                shifted[0] + a.vec[0],
+                shifted[1] + a.vec[1],
+                shifted[2] + a.vec[2],
+            ]
         },
     }
 }
 
 fn bio_transform_inverse(transform: &BioTransform) -> Option<BioTransform> {
     let m = &transform.mat;
-    let det = m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1]) - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0])
+    let det = m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1])
+        - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0])
         + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]);
     if det.abs() <= f64::EPSILON {
         return None;
@@ -7851,12 +8379,36 @@ fn crystal_calculate_properties(crystal: &mut CrystalInfo) {
     let a = crystal.cell.a;
     let b = crystal.cell.b;
     let c = crystal.cell.c;
-    let cos_alpha = if alpha == 90.0 { 0.0 } else { alpha.to_radians().cos() };
-    let cos_beta = if beta == 90.0 { 0.0 } else { beta.to_radians().cos() };
-    let cos_gamma = if gamma == 90.0 { 0.0 } else { gamma.to_radians().cos() };
-    let sin_alpha = if alpha == 90.0 { 1.0 } else { alpha.to_radians().sin() };
-    let sin_beta = if beta == 90.0 { 1.0 } else { beta.to_radians().sin() };
-    let sin_gamma = if gamma == 90.0 { 1.0 } else { gamma.to_radians().sin() };
+    let cos_alpha = if alpha == 90.0 {
+        0.0
+    } else {
+        alpha.to_radians().cos()
+    };
+    let cos_beta = if beta == 90.0 {
+        0.0
+    } else {
+        beta.to_radians().cos()
+    };
+    let cos_gamma = if gamma == 90.0 {
+        0.0
+    } else {
+        gamma.to_radians().cos()
+    };
+    let sin_alpha = if alpha == 90.0 {
+        1.0
+    } else {
+        alpha.to_radians().sin()
+    };
+    let sin_beta = if beta == 90.0 {
+        1.0
+    } else {
+        beta.to_radians().sin()
+    };
+    let sin_gamma = if gamma == 90.0 {
+        1.0
+    } else {
+        gamma.to_radians().sin()
+    };
     if sin_alpha == 0.0 || sin_beta == 0.0 || sin_gamma == 0.0 {
         return;
     }
@@ -7884,7 +8436,8 @@ fn crystal_calculate_properties(crystal: &mut CrystalInfo) {
         vec: [0.0, 0.0, 0.0],
     };
     let o12 = -cos_gamma / (sin_gamma * a);
-    let o13 = -(cos_gamma * cos_alphar_sin_beta + cos_beta * sin_gamma) / (sin_alphar * sin_beta * sin_gamma * a);
+    let o13 = -(cos_gamma * cos_alphar_sin_beta + cos_beta * sin_gamma)
+        / (sin_alphar * sin_beta * sin_gamma * a);
     let o23 = cos_alphar / (sin_alphar * sin_gamma * b);
     crystal.frac = BioTransform {
         mat: [
@@ -8095,7 +8648,11 @@ fn read_pdb_seq_id(value: &str) -> PdbSeqId {
     };
     let seq_num = if bytes.first().copied().unwrap_or(b' ') < b'A' {
         (0..4)
-            .find(|&index| bytes.get(index).is_some_and(|byte| !byte.is_ascii_whitespace()))
+            .find(|&index| {
+                bytes
+                    .get(index)
+                    .is_some_and(|byte| !byte.is_ascii_whitespace())
+            })
             .map_or(i32::MIN, |index| {
                 read_pdb_unchecked_decimal(&value[index..4.min(value.len())])
             })
@@ -8187,11 +8744,19 @@ fn pdb_date_format_to_iso(value: &str) -> String {
     let Ok(year2) = year.parse::<u16>() else {
         return String::new();
     };
-    let year = if year2 >= 50 { 1900 + year2 } else { 2000 + year2 };
+    let year = if year2 >= 50 {
+        1900 + year2
+    } else {
+        2000 + year2
+    };
     format!("{year:04}-{month:02}-{day:02}")
 }
 
-fn parse_f32(value: &str, line_number: usize, field_name: &'static str) -> Result<f32, BioReadError> {
+fn parse_f32(
+    value: &str,
+    line_number: usize,
+    field_name: &'static str,
+) -> Result<f32, BioReadError> {
     let trimmed = value.trim();
     trimmed.parse::<f32>().map_err(|_| BioReadError::Parse {
         line_number,
@@ -8199,7 +8764,11 @@ fn parse_f32(value: &str, line_number: usize, field_name: &'static str) -> Resul
     })
 }
 
-fn parse_f64(value: &str, line_number: usize, field_name: &'static str) -> Result<f64, BioReadError> {
+fn parse_f64(
+    value: &str,
+    line_number: usize,
+    field_name: &'static str,
+) -> Result<f64, BioReadError> {
     let trimmed = value.trim();
     trimmed.parse::<f64>().map_err(|_| BioReadError::Parse {
         line_number,
@@ -8215,7 +8784,11 @@ fn parse_i8(value: &str, line_number: usize, field_name: &'static str) -> Result
     })
 }
 
-fn parse_optional_f32(value: &str, line_number: usize, field_name: &'static str) -> Result<Option<f32>, BioReadError> {
+fn parse_optional_f32(
+    value: &str,
+    line_number: usize,
+    field_name: &'static str,
+) -> Result<Option<f32>, BioReadError> {
     let trimmed = value.trim();
     if trimmed.is_empty() {
         return Ok(None);
@@ -8235,10 +8808,12 @@ fn parse_pdb_charge(value: &str, line_number: usize) -> Result<Option<i8>, BioRe
         });
     }
     let bytes = trimmed.as_bytes();
-    let magnitude = (bytes[0] as char).to_digit(10).ok_or_else(|| BioReadError::Parse {
-        line_number,
-        message: format!("invalid PDB formal charge: {trimmed:?}"),
-    })? as i8;
+    let magnitude = (bytes[0] as char)
+        .to_digit(10)
+        .ok_or_else(|| BioReadError::Parse {
+            line_number,
+            message: format!("invalid PDB formal charge: {trimmed:?}"),
+        })? as i8;
     match bytes[1] {
         b'+' => Ok(Some(magnitude)),
         b'-' => Ok(Some(-magnitude)),
@@ -8401,7 +8976,10 @@ fn infer_element_from_padded_atom_name(atom_name: &str) -> Option<Element> {
         .copied()
         .is_some_and(|byte| byte == b' ' || byte.is_ascii_digit())
     {
-        let first = bytes.iter().copied().find(|byte| byte.is_ascii_alphabetic())?;
+        let first = bytes
+            .iter()
+            .copied()
+            .find(|byte| byte.is_ascii_alphabetic())?;
         let symbol = (first as char).to_string();
         return element_from_symbol(&symbol);
     }
@@ -8424,7 +9002,11 @@ fn infer_element_from_padded_atom_name(atom_name: &str) -> Option<Element> {
         .and_then(|ch| element_from_symbol(&ch.to_string()))
 }
 
-fn unsupported(feature: &'static FeatureSpec, line_number: usize, reason: &'static str) -> BioReadError {
+fn unsupported(
+    feature: &'static FeatureSpec,
+    line_number: usize,
+    reason: &'static str,
+) -> BioReadError {
     BioReadError::Unsupported {
         line_number,
         feature_name: feature.name,
@@ -8453,7 +9035,8 @@ mod tests {
 
     #[test]
     fn reads_single_pdb_atom_record() {
-        let pdb = "ATOM      1  CA  ALA A   7      11.104  13.207   9.900  1.00 20.00           C  \n";
+        let pdb =
+            "ATOM      1  CA  ALA A   7      11.104  13.207   9.900  1.00 20.00           C  \n";
 
         let structure = BioStructure::from_pdb_str(&pdb).unwrap();
 
@@ -8461,7 +9044,10 @@ mod tests {
         assert_eq!(structure.num_chains(), 1);
         assert_eq!(structure.num_residues(), 1);
         assert_eq!(structure.num_atoms(), 1);
-        assert_eq!(structure.chains[0].source.auth_chain_id.unwrap().as_str(), "A");
+        assert_eq!(
+            structure.chains[0].source.auth_chain_id.unwrap().as_str(),
+            "A"
+        );
         assert_eq!(structure.residues[0].source.seq_id.unwrap().seq_num, 7);
         assert_eq!(structure.residues[0].name.as_str(), "ALA");
         assert_eq!(structure.residues[0].kind, crate::ResidueKind::AminoAcid);
@@ -8492,7 +9078,11 @@ mod tests {
             pdb.replace_range(76..78, &element_field);
 
             let structure = BioStructure::from_pdb_str(&format!("{pdb}\n")).unwrap();
-            assert_eq!(structure.atoms[0].element.atomic_number(), atomic_number, "{symbol}");
+            assert_eq!(
+                structure.atoms[0].element.atomic_number(),
+                atomic_number,
+                "{symbol}"
+            );
         }
 
         for (symbol, expected) in [("HG", Element::HG), ("CD", Element::CD)] {
@@ -8564,7 +9154,9 @@ _atom_site.Cartn_z
 
         for atomic_number in 1..=118 {
             assert_eq!(
-                structure.atoms[usize::from(atomic_number - 1)].element.atomic_number(),
+                structure.atoms[usize::from(atomic_number - 1)]
+                    .element
+                    .atomic_number(),
                 atomic_number
             );
         }
@@ -8575,7 +9167,8 @@ _atom_site.Cartn_z
 
     #[test]
     fn preserves_altloc_and_water_kind() {
-        let pdb = "HETATM   22  O  AHOH B  10       1.000   2.000   3.000  1.00 10.00           O  \n";
+        let pdb =
+            "HETATM   22  O  AHOH B  10       1.000   2.000   3.000  1.00 10.00           O  \n";
 
         let structure = BioStructure::from_pdb_str(&pdb).unwrap();
 
@@ -8600,7 +9193,8 @@ ANISOU    1  CA  ALA A   7    1000   2000   3000    400    500    600       C
 
     #[test]
     fn infers_missing_pdb_element_from_padded_atom_name() {
-        let pdb = "ATOM      1  CA  ALA A   7      11.104  13.207   9.900  1.00 20.00              \n";
+        let pdb =
+            "ATOM      1  CA  ALA A   7      11.104  13.207   9.900  1.00 20.00              \n";
 
         let structure = BioStructure::from_pdb_str(&pdb).unwrap();
 
@@ -8618,7 +9212,10 @@ ATOM      1  CA  ALA A   7      11.104  13.207   9.900  1.00 20.00           C
 
         assert_eq!(structure.num_entities(), 1);
         assert_eq!(structure.entities[0].kind, EntityKind::Polymer);
-        assert_eq!(structure.entities[0].sequence, vec!["ALA", "GLY", "SER", "THR", "TYR"]);
+        assert_eq!(
+            structure.entities[0].sequence,
+            vec!["ALA", "GLY", "SER", "THR", "TYR"]
+        );
         assert_eq!(structure.chains[0].entity_id, Some(EntityId::new(0)));
     }
 
@@ -8650,12 +9247,30 @@ CRYST1   10.000   20.000   30.000  90.00 100.00 120.00 P 1           2
 {}
 ATOM      1  CA  ALA A   7      11.104  13.207   9.900  1.00 20.00           C
 ",
-            format!("SCALE1    {:>10.6}{:>10.6}{:>10.6}     {:>10.5}", 0.1, 0.2, 0.3, 1.5),
-            format!("SCALE2    {:>10.6}{:>10.6}{:>10.6}     {:>10.5}", 0.4, 0.5, 0.6, 2.5),
-            format!("SCALE3    {:>10.6}{:>10.6}{:>10.6}     {:>10.5}", 0.7, 0.8, 0.9, 3.5),
-            format!("ORIGX1    {:>10.6}{:>10.6}{:>10.6}     {:>10.5}", 1.0, 0.0, 0.0, 4.5),
-            format!("ORIGX2    {:>10.6}{:>10.6}{:>10.6}     {:>10.5}", 0.0, 1.0, 0.0, 5.5),
-            format!("ORIGX3    {:>10.6}{:>10.6}{:>10.6}     {:>10.5}", 0.0, 0.0, 1.0, 6.5),
+            format!(
+                "SCALE1    {:>10.6}{:>10.6}{:>10.6}     {:>10.5}",
+                0.1, 0.2, 0.3, 1.5
+            ),
+            format!(
+                "SCALE2    {:>10.6}{:>10.6}{:>10.6}     {:>10.5}",
+                0.4, 0.5, 0.6, 2.5
+            ),
+            format!(
+                "SCALE3    {:>10.6}{:>10.6}{:>10.6}     {:>10.5}",
+                0.7, 0.8, 0.9, 3.5
+            ),
+            format!(
+                "ORIGX1    {:>10.6}{:>10.6}{:>10.6}     {:>10.5}",
+                1.0, 0.0, 0.0, 4.5
+            ),
+            format!(
+                "ORIGX2    {:>10.6}{:>10.6}{:>10.6}     {:>10.5}",
+                0.0, 1.0, 0.0, 5.5
+            ),
+            format!(
+                "ORIGX3    {:>10.6}{:>10.6}{:>10.6}     {:>10.5}",
+                0.0, 0.0, 1.0, 6.5
+            ),
             format!(
                 "MTRIX1   1{:>10.6}{:>10.6}{:>10.6}     {:>10.5}    1",
                 1.0, 0.0, 0.0, 0.0
@@ -8687,11 +9302,17 @@ ATOM      1  CA  ALA A   7      11.104  13.207   9.900  1.00 20.00           C
         let crystal = structure.crystal().unwrap();
 
         assert_eq!(metadata.entry_id.as_deref(), Some("2XYZ"));
-        assert_eq!(metadata.received_initial_deposition_date.as_deref(), Some("2007-03-28"));
+        assert_eq!(
+            metadata.received_initial_deposition_date.as_deref(),
+            Some("2007-03-28")
+        );
         assert_eq!(metadata.title.as_deref(), Some("EXAMPLE STRUCTURE"));
         assert_eq!(metadata.pdbx_keywords.as_deref(), Some("OXIDOREDUCTASE"));
         assert_eq!(metadata.keywords.as_deref(), Some("TEST, GEMMI ROUTE"));
-        assert_eq!(metadata.experimental_method.as_deref(), Some("X-RAYDIFFRACTION"));
+        assert_eq!(
+            metadata.experimental_method.as_deref(),
+            Some("X-RAYDIFFRACTION")
+        );
         assert_eq!(metadata.authors, vec!["DOE", "SMITH, J."]);
         assert_eq!(crystal.cell.a, 10.0);
         assert_eq!(crystal.cell.gamma, 120.0);
@@ -8777,10 +9398,24 @@ ATOM      1  CA  ALA A   7      11.104  13.207   9.900  1.00 20.00           C
         assert_eq!(structure.sheets[0].strands[1].sense, -1);
         assert_eq!(structure.sheets[0].strands[1].hbond_atom2.atom_name, "O");
         assert_eq!(structure.sheets[0].strands[1].hbond_atom2.chain_name, "A");
-        assert_eq!(structure.sheets[0].strands[1].hbond_atom2.seq_id.unwrap().seq_num, 157);
+        assert_eq!(
+            structure.sheets[0].strands[1]
+                .hbond_atom2
+                .seq_id
+                .unwrap()
+                .seq_num,
+            157
+        );
         assert_eq!(structure.sheets[0].strands[1].hbond_atom1.atom_name, "N");
         assert_eq!(structure.sheets[0].strands[1].hbond_atom1.chain_name, "A");
-        assert_eq!(structure.sheets[0].strands[1].hbond_atom1.seq_id.unwrap().seq_num, 20);
+        assert_eq!(
+            structure.sheets[0].strands[1]
+                .hbond_atom1
+                .seq_id
+                .unwrap()
+                .seq_num,
+            20
+        );
     }
 
     #[test]
@@ -8916,11 +9551,20 @@ TER
         assert_eq!(structure.entities[0].dbrefs[0].db_name, "UNP");
         assert_eq!(structure.entities[0].dbrefs[0].accession_code, "Q12345");
         assert_eq!(structure.entities[0].dbrefs[0].id_code, "SAMPLE_ID");
-        assert_eq!(structure.entities[0].dbrefs[0].db_begin.unwrap().seq_num, 11);
+        assert_eq!(
+            structure.entities[0].dbrefs[0].db_begin.unwrap().seq_num,
+            11
+        );
         assert_eq!(structure.entities[0].dbrefs[0].db_end.unwrap().seq_num, 19);
         assert_eq!(structure.entities[0].dbrefs[1].id_code, "SAMPLE_IDENTIFIER");
-        assert_eq!(structure.entities[0].dbrefs[1].accession_code, "Q12345LONGACCESSION");
-        assert_eq!(structure.entities[0].dbrefs[1].db_begin.unwrap().seq_num, 101);
+        assert_eq!(
+            structure.entities[0].dbrefs[1].accession_code,
+            "Q12345LONGACCESSION"
+        );
+        assert_eq!(
+            structure.entities[0].dbrefs[1].db_begin.unwrap().seq_num,
+            101
+        );
         assert_eq!(structure.entities[0].dbrefs[1].db_end.unwrap().seq_num, 109);
         assert!(structure.residues[0].source.subchain_id.is_none());
         assert!(structure.residues[1].source.subchain_id.is_none());
@@ -8983,15 +9627,27 @@ TER
         });
 
         assign_subchains(&mut structure, false, false).unwrap();
-        assert_eq!(structure.residues[0].source.subchain_id.unwrap().as_str(), "Axp");
-        assert_eq!(structure.residues[1].source.subchain_id.unwrap().as_str(), "Axw");
+        assert_eq!(
+            structure.residues[0].source.subchain_id.unwrap().as_str(),
+            "Axp"
+        );
+        assert_eq!(
+            structure.residues[1].source.subchain_id.unwrap().as_str(),
+            "Axw"
+        );
 
         structure.residues[0].source.subchain_id = pdb_chain_id_from_str("QQQ");
         assign_subchains(&mut structure, false, false).unwrap();
-        assert_eq!(structure.residues[0].source.subchain_id.unwrap().as_str(), "QQQ");
+        assert_eq!(
+            structure.residues[0].source.subchain_id.unwrap().as_str(),
+            "QQQ"
+        );
 
         assign_subchains(&mut structure, true, false).unwrap();
-        assert_eq!(structure.residues[0].source.subchain_id.unwrap().as_str(), "Axp");
+        assert_eq!(
+            structure.residues[0].source.subchain_id.unwrap().as_str(),
+            "Axp"
+        );
 
         structure.residues[0].entity_kind = EntityKind::Unknown;
         let err = assign_subchains(&mut structure, true, true).unwrap_err();
@@ -9012,7 +9668,10 @@ REMARK 300 REMARK: DETAIL
         assert_eq!(structure.num_models(), 1);
         assert_eq!(structure.models[0].source_model_number, Some(1));
         assert_eq!(structure.metadata.authors, vec!["DOE, A.-B."]);
-        assert_eq!(structure.metadata.remark_300_detail.as_deref(), Some("DETAIL"));
+        assert_eq!(
+            structure.metadata.remark_300_detail.as_deref(),
+            Some("DETAIL")
+        );
         assert!(structure.crystal().is_none());
 
         let skipped = BioStructure::from_pdb_str_with_params(
@@ -9262,7 +9921,13 @@ TER
     #[test]
     fn mmcif_make_seqid_rejects_inconsistent_insertion_code() {
         let err = make_seqid("15A", Some("B"), 23).unwrap_err();
-        assert!(matches!(err, BioReadError::Parse { line_number: 23, .. }));
+        assert!(matches!(
+            err,
+            BioReadError::Parse {
+                line_number: 23,
+                ..
+            }
+        ));
     }
 
     #[test]
@@ -9348,7 +10013,10 @@ _atom_site_anisotrop.U[2][3]
 "#;
 
         let structure = read_test_mmcif(cif).unwrap();
-        assert_eq!(structure.atoms[0].anisou, Some([1.0, 2.0, 3.0, 4.0, 5.0, 6.0]));
+        assert_eq!(
+            structure.atoms[0].anisou,
+            Some([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+        );
     }
 
     #[test]
@@ -9382,7 +10050,10 @@ _atom_site_anisotrop.U[2][3]
         let structure = read_test_mmcif(cif).unwrap();
 
         assert_eq!(structure.atoms[0].anisou, None);
-        assert_eq!(structure.atoms[1].anisou, Some([1.5, 2.5, 3.5, 4.5, 5.5, 6.5]));
+        assert_eq!(
+            structure.atoms[1].anisou,
+            Some([1.5, 2.5, 3.5, 4.5, 5.5, 6.5])
+        );
     }
 
     #[test]
@@ -9470,7 +10141,10 @@ AA1 2 A CYS 157 ? O A TYR 20 ? N
         assert_eq!(sheets[0].strands.len(), 2);
         assert_eq!(sheets[0].strands[1].sense, -1);
         assert_eq!(sheets[0].strands[1].hbond_atom1.atom_name, "O");
-        assert_eq!(sheets[0].strands[1].hbond_atom1.seq_id.unwrap().seq_num, 157);
+        assert_eq!(
+            sheets[0].strands[1].hbond_atom1.seq_id.unwrap().seq_num,
+            157
+        );
         assert_eq!(sheets[0].strands[1].hbond_atom2.atom_name, "N");
         assert_eq!(sheets[0].strands[1].hbond_atom2.seq_id.unwrap().seq_num, 20);
     }
@@ -9525,7 +10199,10 @@ _symmetry.space_group_name_H-M .
 
         assert_eq!(crystal.unwrap().cell.a, 7.5);
         assert_eq!(find_spacegroup_hm_value(&document), Some("."));
-        assert_eq!(find_spacegroup_hm_value(&document).and_then(cif_optional), None);
+        assert_eq!(
+            find_spacegroup_hm_value(&document).and_then(cif_optional),
+            None
+        );
     }
 
     #[test]
@@ -9542,9 +10219,18 @@ _symmetry.space_group_name_H-M .
     fn read_matrix_extracts_rows_one_through_three() {
         let mut transform = BioTransform::default();
 
-        let row1 = format!("SCALE1    {:>10.6}{:>10.6}{:>10.6}     {:>10.5}", 0.1, 0.2, 0.3, 1.5);
-        let row2 = format!("SCALE2    {:>10.6}{:>10.6}{:>10.6}     {:>10.5}", 0.4, 0.5, 0.6, 2.5);
-        let row3 = format!("SCALE3    {:>10.6}{:>10.6}{:>10.6}     {:>10.5}", 0.7, 0.8, 0.9, 3.5);
+        let row1 = format!(
+            "SCALE1    {:>10.6}{:>10.6}{:>10.6}     {:>10.5}",
+            0.1, 0.2, 0.3, 1.5
+        );
+        let row2 = format!(
+            "SCALE2    {:>10.6}{:>10.6}{:>10.6}     {:>10.5}",
+            0.4, 0.5, 0.6, 2.5
+        );
+        let row3 = format!(
+            "SCALE3    {:>10.6}{:>10.6}{:>10.6}     {:>10.5}",
+            0.7, 0.8, 0.9, 3.5
+        );
 
         assert_eq!(read_matrix(&mut transform, &row1), 1);
         assert_eq!(read_matrix(&mut transform, &row2), 2);
@@ -9566,7 +10252,10 @@ _symmetry.space_group_name_H-M .
     #[test]
     fn read_matrix_ignores_non_one_to_three_row_numbers() {
         let mut transform = BioTransform::default();
-        let row4 = format!("SCALE4    {:>10.6}{:>10.6}{:>10.6}     {:>10.5}", 9.9, 8.8, 7.7, 6.5);
+        let row4 = format!(
+            "SCALE4    {:>10.6}{:>10.6}{:>10.6}     {:>10.5}",
+            9.9, 8.8, 7.7, 6.5
+        );
 
         assert_eq!(read_matrix(&mut transform, &row4), 4);
         assert_eq!(transform, BioTransform::default());
@@ -9586,7 +10275,10 @@ _symmetry.space_group_name_H-M .
         assert_eq!(meta.software[0].name, "REFMAC");
         assert_eq!(meta.software[0].version, "5.8.0258");
         assert_eq!(meta.software[0].date, "2018-01-12");
-        assert_eq!(meta.software[0].classification, BioSoftwareClassification::Refinement);
+        assert_eq!(
+            meta.software[0].classification,
+            BioSoftwareClassification::Refinement
+        );
         assert_eq!(meta.software[1].name, "SHELXL");
         assert_eq!(meta.software[1].version, "2018/3");
     }
@@ -9610,7 +10302,11 @@ _symmetry.space_group_name_H-M .
         let mut meta = BioMetadata::default();
         let mut continuation = None;
 
-        read_remark3_line("REMARK   3   DATA USED IN REFINEMENT.", &mut meta, &mut continuation);
+        read_remark3_line(
+            "REMARK   3   DATA USED IN REFINEMENT.",
+            &mut meta,
+            &mut continuation,
+        );
         read_remark3_line("REMARK   3    TLS GROUP : 1", &mut meta, &mut continuation);
         read_remark3_line(
             "REMARK   3    SET : RESIDUES A  1 THROUGH A  10",
@@ -9653,7 +10349,11 @@ _symmetry.space_group_name_H-M .
         let mut meta = BioMetadata::default();
         let mut continuation = None;
 
-        read_remark_200_230_240("REMARK 200 EXPERIMENTAL DETAILS", &mut meta, &mut continuation);
+        read_remark_200_230_240(
+            "REMARK 200 EXPERIMENTAL DETAILS",
+            &mut meta,
+            &mut continuation,
+        );
         read_remark_200_230_240(
             "REMARK 200 EXPERIMENT TYPE                : X-RAY DIFFRACTION",
             &mut meta,
@@ -9680,7 +10380,10 @@ _symmetry.space_group_name_H-M .
         assert_eq!(meta.experiments[0].method, "X-RAY DIFFRACTION");
         assert_eq!(meta.experiment_crystals.len(), 1);
         assert_eq!(meta.experiment_crystals[0].ph, Some(6.5));
-        assert_eq!(meta.experiment_crystals[0].description, "FIRST LINE SECOND LINE");
+        assert_eq!(
+            meta.experiment_crystals[0].description,
+            "FIRST LINE SECOND LINE"
+        );
         assert_eq!(meta.software.len(), 1);
         assert_eq!(
             meta.software[0].classification,
@@ -9749,7 +10452,9 @@ _symmetry.space_group_name_H-M .
         assert_eq!(structure.assemblies[0].generators[0].chains, vec!["A", "B"]);
         assert_eq!(structure.assemblies[0].generators[0].operators.len(), 1);
         assert_eq!(
-            structure.assemblies[0].generators[0].operators[0].transform.mat[0],
+            structure.assemblies[0].generators[0].operators[0]
+                .transform
+                .mat[0],
             [1.0, 0.0, 0.0]
         );
     }
@@ -9964,11 +10669,14 @@ ATOM      2  O   HOH A   2       2.000   0.000   0.000  1.00 20.00           O
 
     #[test]
     fn pdb_option_guards_detect_cif_and_mmjson_and_skip_remarks() {
-        let cif_err = BioStructure::from_pdb_str_with_params("data_demo\n", BioPdbReadParams::default()).unwrap_err();
+        let cif_err =
+            BioStructure::from_pdb_str_with_params("data_demo\n", BioPdbReadParams::default())
+                .unwrap_err();
         assert!(matches!(cif_err, BioReadError::Parse { .. }));
 
         let json_err =
-            BioStructure::from_pdb_str_with_params("{\"data_\":1}\n", BioPdbReadParams::default()).unwrap_err();
+            BioStructure::from_pdb_str_with_params("{\"data_\":1}\n", BioPdbReadParams::default())
+                .unwrap_err();
         assert!(matches!(json_err, BioReadError::Parse { .. }));
 
         let pdb = "\
@@ -10061,13 +10769,21 @@ ATOM  A0001  CA  VAL LA000      53.657 -67.774 -12.458  1.00  3.40           C
             .iter()
             .map(|atom| {
                 let residue = &structure.residues[atom.residue_id.index() as usize];
-                (atom.source.serial.unwrap().0, residue.source.seq_id.unwrap().seq_num)
+                (
+                    atom.source.serial.unwrap().0,
+                    residue.source.seq_id.unwrap().seq_num,
+                )
             })
             .collect::<Vec<_>>();
 
         assert_eq!(
             values,
-            vec![(99_998, 9_999), (99_999, 9_999), (100_000, 10_000), (100_001, 10_000)]
+            vec![
+                (99_998, 9_999),
+                (99_999, 9_999),
+                (100_000, 10_000),
+                (100_001, 10_000)
+            ]
         );
     }
 
@@ -10155,7 +10871,10 @@ ANISOU    1  CA  ALA A   7    1000   2000   3000    400    500    600       C
         let structure = BioStructure::from_pdb_str(&pdb).unwrap();
 
         assert_eq!(structure.num_residues(), 2);
-        assert_eq!(structure.residues[0].source.seq_id, structure.residues[1].source.seq_id);
+        assert_eq!(
+            structure.residues[0].source.seq_id,
+            structure.residues[1].source.seq_id
+        );
         assert_eq!(structure.residues[0].name, structure.residues[1].name);
         assert_eq!(structure.residues[0].source.segment_id, Some(*b"SEG1"));
         assert_eq!(structure.residues[1].source.segment_id, Some(*b"SEG2"));
@@ -10435,8 +11154,14 @@ ATOM 1 C CA . ALA A 7 11.104 13.207 9.900 1.00 20.00 7 ALA A CA 1
 
         assert_eq!(structure.num_models(), 1);
         assert_eq!(structure.models[0].source_model_number, Some(1));
-        assert_eq!(structure.chains[0].source.auth_chain_id.unwrap().as_str(), "A");
-        assert_eq!(structure.chains[0].source.label_asym_id.unwrap().as_str(), "A");
+        assert_eq!(
+            structure.chains[0].source.auth_chain_id.unwrap().as_str(),
+            "A"
+        );
+        assert_eq!(
+            structure.chains[0].source.label_asym_id.unwrap().as_str(),
+            "A"
+        );
         assert_eq!(structure.residues[0].name.as_str(), "ALA");
         assert_eq!(structure.atoms[0].source.serial, Some(PdbAtomSerial(1)));
         assert_eq!(structure.atoms[0].occupancy, Some(1.0));
@@ -10450,7 +11175,11 @@ ATOM 1 C CA . ALA A 7 11.104 13.207 9.900 1.00 20.00 7 ALA A CA 1
             "".to_string(),
             "_atom_site.occupancy\n_atom_site.B_iso_or_equiv\n".to_string(),
         ] {
-            let optional_values = if optional_columns.is_empty() { "" } else { ". ? " };
+            let optional_values = if optional_columns.is_empty() {
+                ""
+            } else {
+                ". ? "
+            };
             let cif = format!(
                 "data_demo\nloop_\n_atom_site.id\n_atom_site.type_symbol\n_atom_site.label_atom_id\n_atom_site.label_alt_id\n_atom_site.label_comp_id\n_atom_site.label_asym_id\n_atom_site.label_seq_id\n_atom_site.Cartn_x\n_atom_site.Cartn_y\n_atom_site.Cartn_z\n{optional_columns}1 C CA . ALA A 1 0 0 0 {optional_values}\n"
             );
@@ -10508,7 +11237,10 @@ _atom_site_anisotrop.U[2][3]
         assert_eq!(structure.models[0].source_model_number, Some(1));
         assert_eq!(structure.models[1].source_model_number, Some(2));
         assert!(structure.has_d_fraction);
-        assert_eq!(structure.residues[0].source.label_entity_id, Some(EntityId::new(0)));
+        assert_eq!(
+            structure.residues[0].source.label_entity_id,
+            Some(EntityId::new(0))
+        );
         assert_eq!(structure.residues[0].het_flag, Some('A'));
         assert_eq!(structure.residues[1].het_flag, Some('H'));
         assert_eq!(structure.residues[1].entity_kind, EntityKind::Water);
@@ -10518,9 +11250,18 @@ _atom_site_anisotrop.U[2][3]
         assert_eq!(structure.atoms[1].tls_group_id, Some(7));
         assert_eq!(structure.atoms[0].fraction, Some(0.25));
         assert_eq!(structure.atoms[1].fraction, Some(0.75));
-        assert_eq!(structure.atoms[0].anisou, Some([1.0, 2.0, 3.0, 4.0, 5.0, 6.0]));
-        assert_eq!(structure.chains[0].source.auth_chain_id.unwrap().as_str(), "X");
-        assert_eq!(structure.chains[0].source.label_asym_id.unwrap().as_str(), "A");
+        assert_eq!(
+            structure.atoms[0].anisou,
+            Some([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+        );
+        assert_eq!(
+            structure.chains[0].source.auth_chain_id.unwrap().as_str(),
+            "X"
+        );
+        assert_eq!(
+            structure.chains[0].source.label_asym_id.unwrap().as_str(),
+            "A"
+        );
     }
 
     #[test]
@@ -10862,7 +11603,10 @@ A 5 ? MSE MSE MET 'SELENOMETHIONINE' MOD1
     fn mmcif_parse_operation_expr_expands_ranges_and_lists() {
         assert_eq!(parse_operation_expr("3"), vec!["3"]);
         assert_eq!(parse_operation_expr("(1-3)"), vec!["1", "2", "3"]);
-        assert_eq!(parse_operation_expr("(2,3-4,XY)"), vec!["2", "3", "4", "XY"]);
+        assert_eq!(
+            parse_operation_expr("(2,3-4,XY)"),
+            vec!["2", "3", "4", "XY"]
+        );
     }
 
     #[test]
@@ -10930,12 +11674,20 @@ _pdbx_struct_assembly_prop.value
         assert_eq!(structure.assemblies[0].absa, Some(12.5));
         assert_eq!(structure.assemblies[0].ssa, Some(8.0));
         assert_eq!(structure.assemblies[0].generators.len(), 1);
-        assert_eq!(structure.assemblies[0].generators[0].subchains, vec!["A", "B"]);
+        assert_eq!(
+            structure.assemblies[0].generators[0].subchains,
+            vec!["A", "B"]
+        );
         assert_eq!(structure.assemblies[0].generators[0].operators.len(), 2);
         assert_eq!(structure.assemblies[0].generators[0].operators[1].name, "2");
         assert_eq!(structure.assemblies[1].name, "2");
         assert_eq!(structure.assemblies[1].more, Some(4.5));
-        assert!(structure.assemblies.iter().all(|assembly| assembly.name != "3"));
+        assert!(
+            structure
+                .assemblies
+                .iter()
+                .all(|assembly| assembly.name != "3")
+        );
     }
 
     #[test]
@@ -11090,12 +11842,21 @@ _audit_author.name
             structure.metadata.experimental_method.as_deref(),
             Some("X-RAY DIFFRACTION; NEUTRON DIFFRACTION")
         );
-        assert_eq!(structure.metadata.title.as_deref(), Some("FIRST TITLE; SECOND TITLE"));
         assert_eq!(
-            structure.metadata.received_initial_deposition_date.as_deref(),
+            structure.metadata.title.as_deref(),
+            Some("FIRST TITLE; SECOND TITLE")
+        );
+        assert_eq!(
+            structure
+                .metadata
+                .received_initial_deposition_date
+                .as_deref(),
             Some("2001-01-02")
         );
-        assert_eq!(structure.metadata.pdbx_keywords.as_deref(), Some("OXIDOREDUCTASE"));
+        assert_eq!(
+            structure.metadata.pdbx_keywords.as_deref(),
+            Some("OXIDOREDUCTASE")
+        );
         assert_eq!(structure.metadata.keywords.as_deref(), Some("TEST CASE"));
         assert_eq!(structure.crystal().unwrap().z_pdb.as_deref(), Some("4"));
         assert_eq!(structure.metadata.authors, vec!["DOE, J.", "SMITH, A."]);
@@ -11245,7 +12006,10 @@ _struct_ncs_oper.code
         assert_eq!(structure.metadata.refinement[0].id, "X-RAY");
         assert_eq!(structure.metadata.refinement[0].work_set_count, Some(900));
         assert_eq!(structure.metadata.refinement[0].tls_groups.len(), 1);
-        assert_eq!(structure.metadata.refinement[0].tls_groups[0].num_id, Some(1));
+        assert_eq!(
+            structure.metadata.refinement[0].tls_groups[0].num_id,
+            Some(1)
+        );
         assert_eq!(
             structure.metadata.refinement[0].tls_groups[0].selections[0].res_begin,
             Some(PdbSeqId {
@@ -11261,15 +12025,29 @@ _struct_ncs_oper.code
             })
         );
         assert_eq!(structure.metadata.experiments.len(), 1);
-        assert_eq!(structure.metadata.experiments[0].number_of_crystals, Some(2));
+        assert_eq!(
+            structure.metadata.experiments[0].number_of_crystals,
+            Some(2)
+        );
         assert_eq!(
             structure.metadata.experiments[0].diffraction_ids,
             vec!["D1".to_string(), "D2".to_string()]
         );
-        assert!((structure.metadata.experiments[0].reflections.r_merge.unwrap() - 0.1).abs() < 1e-6);
+        assert!(
+            (structure.metadata.experiments[0]
+                .reflections
+                .r_merge
+                .unwrap()
+                - 0.1)
+                .abs()
+                < 1e-6
+        );
         assert_eq!(structure.metadata.experiment_crystals.len(), 1);
         assert_eq!(structure.metadata.experiment_crystals[0].id, "C1");
-        assert_eq!(structure.metadata.experiment_crystals[0].diffractions[0].id, "D1");
+        assert_eq!(
+            structure.metadata.experiment_crystals[0].diffractions[0].id,
+            "D1"
+        );
         assert_eq!(
             structure.metadata.experiment_crystals[0].diffractions[0].mono_or_laue,
             Some('M')
@@ -11807,7 +12585,10 @@ LIG C1 C 1.6 1.0 2.0 3.0 11.0 12.0 13.0 21.0 22.0 23.0
         let ideal = make_model_from_chemcomp_block(block, ChemCompModel::Ideal).unwrap();
 
         assert_eq!(xyz.residues()[0].name.as_str(), "LIG");
-        assert_eq!(xyz.atom_position(crate::bio::AtomId::new(0)), Some([1.0, 2.0, 3.0]));
+        assert_eq!(
+            xyz.atom_position(crate::bio::AtomId::new(0)),
+            Some([1.0, 2.0, 3.0])
+        );
         assert_eq!(
             example.atom_position(crate::bio::AtomId::new(0)),
             Some([11.0, 12.0, 13.0])
@@ -11842,7 +12623,10 @@ ABA N1 N 4.0 5.0 6.0 1.0 2.0 3.0
 
         let first = make_model_from_chemcomp_block(block, ChemCompModel::First).unwrap();
 
-        assert_eq!(first.atom_position(crate::bio::AtomId::new(0)), Some([4.0, 5.0, 6.0]));
+        assert_eq!(
+            first.atom_position(crate::bio::AtomId::new(0)),
+            Some([4.0, 5.0, 6.0])
+        );
     }
 
     #[test]
@@ -11889,9 +12673,11 @@ C1 C 0 1.0 2.0 3.0 4.0 5.0 6.0
         .unwrap();
         let block = &document.blocks[0];
 
-        let structure =
-            make_structure_from_chemcomp_block(block, (ChemCompModel::Example as i32) | (ChemCompModel::Ideal as i32))
-                .unwrap();
+        let structure = make_structure_from_chemcomp_block(
+            block,
+            (ChemCompModel::Example as i32) | (ChemCompModel::Ideal as i32),
+        )
+        .unwrap();
 
         assert_eq!(structure.input_format, BioCoorFormat::ChemComp);
         assert_eq!(structure.name, "DEM");
@@ -11934,7 +12720,9 @@ C1 C 0 1.0 2.0 3.0 4.0 5.0 6.0
 
     #[test]
     fn chemcomp_doc_reader_rejects_non_chemcomp_documents() {
-        let document = parse_cif_document("data_bad\nloop_\n_atom_site.id\n_atom_site.type_symbol\n1 C\n").unwrap();
+        let document =
+            parse_cif_document("data_bad\nloop_\n_atom_site.id\n_atom_site.type_symbol\n1 C\n")
+                .unwrap();
 
         let error = make_structure_from_chemcomp_doc(&document, 7).unwrap_err();
         assert!(matches!(error, BioReadError::Parse { .. }));
@@ -11943,12 +12731,30 @@ C1 C 0 1.0 2.0 3.0 4.0 5.0 6.0
 
     #[test]
     fn dispatch_helpers_detect_extension_and_detect_mmjson() {
-        assert_eq!(coor_format_from_ext("demo.pdb").unwrap(), BioCoorFormat::Pdb);
-        assert_eq!(coor_format_from_ext("demo.ent").unwrap(), BioCoorFormat::Pdb);
-        assert_eq!(coor_format_from_ext("demo.cif").unwrap(), BioCoorFormat::Mmcif);
-        assert_eq!(coor_format_from_ext("demo.mmcif").unwrap(), BioCoorFormat::Mmcif);
-        assert_eq!(coor_format_from_ext("demo.unknown").unwrap(), BioCoorFormat::Unknown);
-        assert_eq!(coor_format_from_ext("demo.json").unwrap(), BioCoorFormat::Mmjson);
+        assert_eq!(
+            coor_format_from_ext("demo.pdb").unwrap(),
+            BioCoorFormat::Pdb
+        );
+        assert_eq!(
+            coor_format_from_ext("demo.ent").unwrap(),
+            BioCoorFormat::Pdb
+        );
+        assert_eq!(
+            coor_format_from_ext("demo.cif").unwrap(),
+            BioCoorFormat::Mmcif
+        );
+        assert_eq!(
+            coor_format_from_ext("demo.mmcif").unwrap(),
+            BioCoorFormat::Mmcif
+        );
+        assert_eq!(
+            coor_format_from_ext("demo.unknown").unwrap(),
+            BioCoorFormat::Unknown
+        );
+        assert_eq!(
+            coor_format_from_ext("demo.json").unwrap(),
+            BioCoorFormat::Mmjson
+        );
     }
 
     #[test]
@@ -11961,7 +12767,10 @@ C1 C 0 1.0 2.0 3.0 4.0 5.0 6.0
             coor_format_from_content(b"  # comment\nATOM      1  CA  ALA A   7\n").unwrap(),
             BioCoorFormat::Pdb
         );
-        assert_eq!(coor_format_from_content(b" \n\t").unwrap(), BioCoorFormat::Unknown);
+        assert_eq!(
+            coor_format_from_content(b" \n\t").unwrap(),
+            BioCoorFormat::Unknown
+        );
         assert_eq!(
             coor_format_from_content(br#"{"data_demo":{"entry":{"id":["DEMO"]}}}"#).unwrap(),
             BioCoorFormat::Mmjson
@@ -11970,20 +12779,24 @@ C1 C 0 1.0 2.0 3.0 4.0 5.0 6.0
 
     #[test]
     fn structure_dispatch_from_memory_routes_pdb_mmcif_and_chemcomp() {
-        let pdb = "ATOM      1  CA  ALA A   7      11.104  13.207   9.900  1.00 20.00           C  \n";
-        let pdb_structure = read_structure_from_memory(pdb, "demo.pdb", BioCoorFormat::Detect).unwrap();
+        let pdb =
+            "ATOM      1  CA  ALA A   7      11.104  13.207   9.900  1.00 20.00           C  \n";
+        let pdb_structure =
+            read_structure_from_memory(pdb, "demo.pdb", BioCoorFormat::Detect).unwrap();
         assert_eq!(pdb_structure.input_format, BioCoorFormat::Pdb);
         assert_eq!(pdb_structure.name, "demo");
         assert_eq!(pdb_structure.num_atoms(), 1);
 
         let mmcif = "data_demo\nloop_\n_atom_site.group_PDB\n_atom_site.id\n_atom_site.type_symbol\n_atom_site.label_atom_id\n_atom_site.label_alt_id\n_atom_site.label_comp_id\n_atom_site.label_asym_id\n_atom_site.label_entity_id\n_atom_site.label_seq_id\n_atom_site.Cartn_x\n_atom_site.Cartn_y\n_atom_site.Cartn_z\nATOM 1 C CA . ALA A 1 1 0.0 0.0 0.0\n";
-        let mmcif_structure = read_structure_from_memory(mmcif, "demo.cif", BioCoorFormat::Detect).unwrap();
+        let mmcif_structure =
+            read_structure_from_memory(mmcif, "demo.cif", BioCoorFormat::Detect).unwrap();
         assert_eq!(mmcif_structure.input_format, BioCoorFormat::Mmcif);
         assert_eq!(mmcif_structure.name, "demo");
         assert_eq!(mmcif_structure.num_atoms(), 1);
 
         let chemcomp = "data_GLY\n_chem_comp.id GLY\nloop_\n_chem_comp_atom.atom_id\n_chem_comp_atom.type_symbol\n_chem_comp_atom.charge\n_chem_comp_atom.x\n_chem_comp_atom.y\n_chem_comp_atom.z\nN N 0 1.0 2.0 3.0\n";
-        let chemcomp_structure = read_structure_from_memory(chemcomp, "gly.cif", BioCoorFormat::Mmcif).unwrap();
+        let chemcomp_structure =
+            read_structure_from_memory(chemcomp, "gly.cif", BioCoorFormat::Mmcif).unwrap();
         assert_eq!(chemcomp_structure.input_format, BioCoorFormat::ChemComp);
         assert_eq!(chemcomp_structure.name, "GLY");
         assert_eq!(chemcomp_structure.num_atoms(), 1);
@@ -11991,8 +12804,14 @@ C1 C 0 1.0 2.0 3.0 4.0 5.0 6.0
 
     #[test]
     fn pdb_source_name_uses_gemmi_path_basename_rules() {
-        assert_eq!(gemmi_path_basename(r"C:\data\demo.pdb.gz", &[".gz", ".pdb"]), "demo");
-        assert_eq!(gemmi_path_basename("/data/demo.PDB", &[".gz", ".pdb"]), "demo.PDB");
+        assert_eq!(
+            gemmi_path_basename(r"C:\data\demo.pdb.gz", &[".gz", ".pdb"]),
+            "demo"
+        );
+        assert_eq!(
+            gemmi_path_basename("/data/demo.PDB", &[".gz", ".pdb"]),
+            "demo.PDB"
+        );
         assert_eq!(gemmi_path_basename(".pdb", &[".gz", ".pdb"]), ".pdb");
     }
 
@@ -12016,13 +12835,15 @@ C1 C 0 1.0 2.0 3.0 4.0 5.0 6.0
     }
   }
 }"#;
-        let json_structure = read_structure_from_memory(mmjson, "demo.json", BioCoorFormat::Detect).unwrap();
+        let json_structure =
+            read_structure_from_memory(mmjson, "demo.json", BioCoorFormat::Detect).unwrap();
         assert_eq!(json_structure.input_format, BioCoorFormat::Mmjson);
         assert_eq!(json_structure.name, "demo");
         assert_eq!(json_structure.num_atoms(), 1);
         assert_eq!(json_structure.coordinates.positions[0], [1.0, 2.0, 3.0]);
 
-        let unknown_err = read_structure_from_memory(" \n\t", "demo.xyz", BioCoorFormat::Unknown).unwrap_err();
+        let unknown_err =
+            read_structure_from_memory(" \n\t", "demo.xyz", BioCoorFormat::Unknown).unwrap_err();
         assert!(matches!(unknown_err, BioReadError::Parse { .. }));
         assert!(
             unknown_err
@@ -12057,7 +12878,12 @@ C1 C 0 1.0 2.0 3.0 4.0 5.0 6.0
         let document = read_mmjson_document(mmjson, "demo.json").unwrap();
         assert_eq!(document.blocks.len(), 1);
         assert_eq!(document.blocks[0].name, "demo");
-        assert!(document.blocks[0].items.iter().any(|item| item.tag == "_entry.id"));
+        assert!(
+            document.blocks[0]
+                .items
+                .iter()
+                .any(|item| item.tag == "_entry.id")
+        );
         assert!(
             document.blocks[0]
                 .loops
@@ -12076,6 +12902,9 @@ C1 C 0 1.0 2.0 3.0 4.0 5.0 6.0
     fn rejects_mmcif_without_atom_site_loop() {
         let err = read_test_mmcif("data_test\n").unwrap_err();
 
-        assert!(matches!(err, BioReadError::Unsupported { line_number: 0, .. }));
+        assert!(matches!(
+            err,
+            BioReadError::Unsupported { line_number: 0, .. }
+        ));
     }
 }

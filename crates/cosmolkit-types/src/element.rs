@@ -211,7 +211,8 @@ impl Element {
     /// Return the canonical element symbol (`*`, `H` through `Og`).
     #[must_use]
     pub fn symbol(self) -> &'static str {
-        crate::periodic_table::symbol(self.atomic_number).expect("Element's private atomic number is always in 0..=118")
+        crate::periodic_table::symbol(self.atomic_number)
+            .expect("Element's private atomic number is always in 0..=118")
     }
 
     /// Return the source-aligned periodic-table metadata used by COSMolKit.

@@ -5,6 +5,19 @@
 
 use std::collections::BTreeMap;
 
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum CoordinateValidationError {
+    #[error("{dimension} conformer {conformer} has {rows} coordinate rows, expected {atom_count}")]
+    RowCount {
+        dimension: &'static str,
+        conformer: usize,
+        rows: usize,
+        atom_count: usize,
+    },
+    #[error("duplicate {dimension} conformer id {id}")]
+    DuplicateConformerId { dimension: &'static str, id: usize },
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CoordinateDimension {
     TwoD,
@@ -19,6 +32,21 @@ pub struct Conformer2D {
 }
 
 impl Conformer2D {
+    pub fn validate_for_atom_count(
+        &self,
+        atom_count: usize,
+    ) -> Result<(), CoordinateValidationError> {
+        if self.coords.len() != atom_count {
+            return Err(CoordinateValidationError::RowCount {
+                dimension: "2D",
+                conformer: self.id,
+                rows: self.coords.len(),
+                atom_count,
+            });
+        }
+        Ok(())
+    }
+
     #[must_use]
     pub fn new(id: usize, coords: Vec<[f64; 2]>) -> Self {
         Self {
@@ -87,6 +115,21 @@ pub struct Conformer3D {
 }
 
 impl Conformer3D {
+    pub fn validate_for_atom_count(
+        &self,
+        atom_count: usize,
+    ) -> Result<(), CoordinateValidationError> {
+        if self.coords.len() != atom_count {
+            return Err(CoordinateValidationError::RowCount {
+                dimension: "3D",
+                conformer: self.id,
+                rows: self.coords.len(),
+                atom_count,
+            });
+        }
+        Ok(())
+    }
+
     #[must_use]
     pub fn new(id: usize, coords: Vec<[f64; 3]>, is_3d: bool) -> Self {
         Self {
@@ -173,6 +216,33 @@ pub struct CoordinateBlock {
 }
 
 impl CoordinateBlock {
+    pub fn validate_for_atom_count(
+        &self,
+        atom_count: usize,
+    ) -> Result<(), CoordinateValidationError> {
+        let mut ids = std::collections::BTreeSet::new();
+        for conformer in &self.conformers_2d {
+            if !ids.insert(conformer.id()) {
+                return Err(CoordinateValidationError::DuplicateConformerId {
+                    dimension: "2D",
+                    id: conformer.id(),
+                });
+            }
+            conformer.validate_for_atom_count(atom_count)?;
+        }
+        ids.clear();
+        for conformer in &self.conformers_3d {
+            if !ids.insert(conformer.id()) {
+                return Err(CoordinateValidationError::DuplicateConformerId {
+                    dimension: "3D",
+                    id: conformer.id(),
+                });
+            }
+            conformer.validate_for_atom_count(atom_count)?;
+        }
+        Ok(())
+    }
+
     /// Remap conformer rows after a topology operation removes atoms.
     ///
     /// The runtime computes the authoritative topology mapping and passes only
@@ -191,5 +261,43 @@ impl CoordinateBlock {
             .enumerate()
             .map(|(id, conformer)| conformer.remapped_to_kept_atoms(kept_old_indices, id))
             .collect();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn validate_rejects_coordinate_row_mismatch() {
+        let block = CoordinateBlock {
+            conformers_2d: vec![Conformer2D::new(0, vec![[0.0, 0.0]])],
+            ..Default::default()
+        };
+        assert!(matches!(
+            block.validate_for_atom_count(2),
+            Err(CoordinateValidationError::RowCount {
+                dimension: "2D",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn validate_rejects_duplicate_ids_per_dimension() {
+        let block = CoordinateBlock {
+            conformers_3d: vec![
+                Conformer3D::new(4, vec![[0.0, 0.0, 0.0]], true),
+                Conformer3D::new(4, vec![[1.0, 1.0, 1.0]], true),
+            ],
+            ..Default::default()
+        };
+        assert!(matches!(
+            block.validate_for_atom_count(1),
+            Err(CoordinateValidationError::DuplicateConformerId {
+                dimension: "3D",
+                id: 4
+            })
+        ));
     }
 }

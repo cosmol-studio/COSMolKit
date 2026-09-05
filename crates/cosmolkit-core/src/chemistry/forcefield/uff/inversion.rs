@@ -126,7 +126,8 @@ impl InversionContrib {
 
         // RDKit✔️✔️:   auto invCoeffForceCon = Utils::calcInversionCoefficientsAndForceConstant(
         // RDKit✔️✔️:       at2AtomicNum, isCBoundToO);
-        let (force_constant, c0, c1, c2) = calc_inversion_coefficients(at2_atomic_num, is_c_bound_to_o);
+        let (force_constant, c0, c1, c2) =
+            calc_inversion_coefficients(at2_atomic_num, is_c_bound_to_o);
         // RDKit✔️✔️:   d_forceConstant = oobForceScalingFactor * std::get<0>(invCoeffForceCon);
         // RDKit✔️✔️:   d_C0 = std::get<1>(invCoeffForceCon);
         // RDKit✔️✔️:   d_C1 = std::get<2>(invCoeffForceCon);
@@ -196,7 +197,12 @@ impl InversionContrib {
         // RDKit✔️✔️:   PRECONDITION(dp_forceField, "no owner");
         assert!(!self.owner.is_null(), "no owner");
         // RDKit✔️✔️:   PRECONDITION(pos, "bad vector");
-        let required_len = 3 * self.at1_idx.max(self.at2_idx).max(self.at3_idx).max(self.at4_idx) + 3;
+        let required_len = 3 * self
+            .at1_idx
+            .max(self.at2_idx)
+            .max(self.at3_idx)
+            .max(self.at4_idx)
+            + 3;
         assert!(pos.len() >= required_len, "bad vector");
 
         // RDKit✔️✔️:   RDGeom::Point3D p1(pos[3 * d_at1Idx], pos[3 * d_at1Idx + 1],
@@ -250,7 +256,12 @@ impl InversionContrib {
         assert!(!self.owner.is_null(), "no owner");
         // RDKit✔️✔️:   PRECONDITION(pos, "bad vector");
         // RDKit✔️✔️:   PRECONDITION(grad, "bad vector");
-        let required_len = 3 * self.at1_idx.max(self.at2_idx).max(self.at3_idx).max(self.at4_idx) + 3;
+        let required_len = 3 * self
+            .at1_idx
+            .max(self.at2_idx)
+            .max(self.at3_idx)
+            .max(self.at4_idx)
+            + 3;
         assert!(pos.len() >= required_len, "bad vector");
         assert!(grad.len() >= required_len, "bad vector");
 
@@ -490,7 +501,8 @@ impl InversionContribs {
         assert!(idx4 < owner.positions().len());
         // RDKit✔️✔️:   auto invCoeffForceCon = Utils::calcInversionCoefficientsAndForceConstant(
         // RDKit✔️✔️:       at2AtomicNum, isCBoundToO);
-        let (force_constant, c0, c1, c2) = calc_inversion_coefficients(at2_atomic_num, is_c_bound_to_o);
+        let (force_constant, c0, c1, c2) =
+            calc_inversion_coefficients(at2_atomic_num, is_c_bound_to_o);
 
         // RDKit✔️✔️:   d_contribs.emplace_back(
         // RDKit✔️✔️:       idx1, idx2, idx3, idx4, at2AtomicNum, isCBoundToO,
@@ -523,7 +535,12 @@ impl InversionContribs {
         let mut accum = 0.0;
         // RDKit✔️✔️:   for (const auto &contrib : d_contribs) {
         for contrib in &self.contribs {
-            let required_len = 3 * contrib.idx1.max(contrib.idx2).max(contrib.idx3).max(contrib.idx4) + 3;
+            let required_len = 3 * contrib
+                .idx1
+                .max(contrib.idx2)
+                .max(contrib.idx3)
+                .max(contrib.idx4)
+                + 3;
             assert!(pos.len() >= required_len, "bad vector");
             // RDKit✔️✔️:     const RDGeom::Point3D p1(pos[3 * contrib.idx1], pos[3 * contrib.idx1 + 1],
             // RDKit✔️✔️:                              pos[3 * contrib.idx1 + 2]);
@@ -564,7 +581,8 @@ impl InversionContribs {
             let cos2_w = 2.0 * sin_y * sin_y - 1.0;
             // RDKit✔️✔️:     accum += contrib.forceConstant *
             // RDKit✔️✔️:              (contrib.C0 + contrib.C1 * sinY + contrib.C2 * cos2W);
-            accum += contrib.force_constant * (contrib.c0 + contrib.c1 * sin_y + contrib.c2 * cos2_w);
+            accum +=
+                contrib.force_constant * (contrib.c0 + contrib.c1 * sin_y + contrib.c2 * cos2_w);
             // RDKit✔️✔️:   }
         }
         // RDKit✔️✔️:   return accum;
@@ -582,7 +600,12 @@ impl InversionContribs {
         assert!(!grad.is_empty(), "bad vector");
         // RDKit✔️✔️:   for (const auto &contrib : d_contribs) {
         for contrib in &self.contribs {
-            let required_len = 3 * contrib.idx1.max(contrib.idx2).max(contrib.idx3).max(contrib.idx4) + 3;
+            let required_len = 3 * contrib
+                .idx1
+                .max(contrib.idx2)
+                .max(contrib.idx3)
+                .max(contrib.idx4)
+                + 3;
             assert!(pos.len() >= required_len, "bad vector");
             assert!(grad.len() >= required_len, "bad vector");
             // RDKit✔️✔️:     const RDGeom::Point3D p1(pos[3 * contrib.idx1], pos[3 * contrib.idx1 + 1],
@@ -667,7 +690,8 @@ impl InversionContribs {
             // RDKit✔️✔️:     // sin(2 * W) = 2 * sin(W) * cos(W) = 2 * cos(Y) * sin(Y)
             // RDKit✔️✔️:     const double dE_dW = -contrib.forceConstant *
             // RDKit✔️✔️:                          (contrib.C1 * cosY - 4.0 * contrib.C2 * cosY * sinY);
-            let de_dw = -contrib.force_constant * (contrib.c1 * cos_y - 4.0 * contrib.c2 * cos_y * sin_y);
+            let de_dw =
+                -contrib.force_constant * (contrib.c1 * cos_y - 4.0 * contrib.c2 * cos_y * sin_y);
             // RDKit✔️✔️:     const RDGeom::Point3D t1 = rJL.crossProduct(rJK);
             // RDKit✔️✔️:     const RDGeom::Point3D t2 = rJI.crossProduct(rJL);
             // RDKit✔️✔️:     const RDGeom::Point3D t3 = rJK.crossProduct(rJI);
@@ -906,7 +930,10 @@ mod tests {
 
         assert_close(calculate_cos_y(origin, origin, y, x), 0.0);
         assert_close(calculate_cos_y(x, origin, y, origin), 0.0);
-        assert_close(calculate_cos_y(x, origin, ForceFieldVec3::new(2.0, 0.0, 0.0), y), 0.0);
+        assert_close(
+            calculate_cos_y(x, origin, ForceFieldVec3::new(2.0, 0.0, 0.0), y),
+            0.0,
+        );
     }
 
     #[test]
@@ -1099,7 +1126,8 @@ mod tests {
         let contrib = &contribs.contribs()[0];
         let sin_y = 0.5_f64.sqrt();
         let cos2_w = 2.0 * sin_y * sin_y - 1.0;
-        let expected = contrib.force_constant() * (contrib.c0() + contrib.c1() * sin_y + contrib.c2() * cos2_w);
+        let expected = contrib.force_constant()
+            * (contrib.c0() + contrib.c1() * sin_y + contrib.c2() * cos2_w);
 
         assert_close(contribs.get_energy(&pos), expected);
     }
@@ -1144,7 +1172,8 @@ mod tests {
                 let sin_y_sq = 1.0 - cos_y * cos_y;
                 let sin_y = if sin_y_sq > 0.0 { sin_y_sq.sqrt() } else { 0.0 };
                 let cos2_w = 2.0 * sin_y * sin_y - 1.0;
-                contrib.force_constant() * (contrib.c0() + contrib.c1() * sin_y + contrib.c2() * cos2_w)
+                contrib.force_constant()
+                    * (contrib.c0() + contrib.c1() * sin_y + contrib.c2() * cos2_w)
             })
             .sum::<f64>();
 

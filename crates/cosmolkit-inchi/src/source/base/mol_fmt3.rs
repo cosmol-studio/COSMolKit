@@ -1,23 +1,28 @@
 use crate::source::base::ichi_io::{
-    inchi_ios_close, inchi_ios_init, inchi_strbuf_addline, inchi_strbuf_close, inchi_strbuf_reset, source_vformat,
+    inchi_ios_close, inchi_ios_init, inchi_strbuf_addline, inchi_strbuf_close, inchi_strbuf_reset,
+    source_vformat,
 };
 use crate::source::base::ichierr::AddErrorMessage;
 use crate::source::base::ichiprt2::{inchi_strtod, inchi_strtol};
 use crate::source::base::mol_fmt4::{NumLists_Alloc, NumLists_Append, NumLists_Free};
 use crate::source::base::util::{
-    dotify_non_printable_chars, get_atomic_mass, inchi_calloc, inchi_free, mystrncpy, mystrncpy_slice, read_upto_delim,
-    remove_one_lf, remove_trailing_spaces,
+    dotify_non_printable_chars, get_atomic_mass, inchi_calloc, inchi_free, mystrncpy,
+    mystrncpy_slice, read_upto_delim, remove_one_lf, remove_trailing_spaces,
 };
 use crate::source_types::{
-    ATOM_EL_LEN, INCHI_IOS_STRING, INCHI_IOS_TYPE_STRING, INCHI_IOSTREAM, MOL_FMT_CHAR_INT_DATA, MOL_FMT_CTAB,
-    MOL_FMT_DOUBLE_DATA, MOL_FMT_FLOAT_DATA, MOL_FMT_INT_DATA, MOL_FMT_LONG_INT_DATA, MOL_FMT_SHORT_INT_DATA,
-    MOL_FMT_STRING_DATA, MOL_FMT_V3000_MAXFIELDLEN, MOL_FMT_V3000_STEABS, MOL_FMT_V3000_STENON, MOL_FMT_V3000_STERAC,
-    MOL_FMT_V3000_STEREL, MOL_FMT_v3000, NUM_LISTS, SD_FMT_END_OF_DATA, SourceConstPointer, SourceFormatArgument,
-    SourceHeap, SourceHeapError, SourceMutPointer, SourceVaList,
+    ATOM_EL_LEN, INCHI_IOS_STRING, INCHI_IOS_TYPE_STRING, INCHI_IOSTREAM, MOL_FMT_CHAR_INT_DATA,
+    MOL_FMT_CTAB, MOL_FMT_DOUBLE_DATA, MOL_FMT_FLOAT_DATA, MOL_FMT_INT_DATA, MOL_FMT_LONG_INT_DATA,
+    MOL_FMT_SHORT_INT_DATA, MOL_FMT_STRING_DATA, MOL_FMT_V3000_MAXFIELDLEN, MOL_FMT_V3000_STEABS,
+    MOL_FMT_V3000_STENON, MOL_FMT_V3000_STERAC, MOL_FMT_V3000_STEREL, MOL_FMT_v3000, NUM_LISTS,
+    SD_FMT_END_OF_DATA, SourceConstPointer, SourceFormatArgument, SourceHeap, SourceHeapError,
+    SourceMutPointer, SourceVaList,
 };
 
 fn mol_fmt3_c_string_eq(value: &[i8], expected: &[u8]) -> bool {
-    let length = value.iter().position(|byte| *byte == 0).unwrap_or(value.len());
+    let length = value
+        .iter()
+        .position(|byte| *byte == 0)
+        .unwrap_or(value.len());
     length == expected.len()
         && value[..length]
             .iter()
@@ -3265,8 +3270,14 @@ mod tests {
     use crate::source_types::{INCHI_IOS_TYPE_STRING, MOL_COORD, MOL_FMT_ATOM, MOL_FMT_BOND};
 
     fn input(heap: &mut SourceHeap, value: &str) -> SourceMutPointer<i8> {
-        heap.allocate_model_storage(value.bytes().map(|byte| byte as i8).chain(std::iter::once(0)).collect())
-            .unwrap()
+        heap.allocate_model_storage(
+            value
+                .bytes()
+                .map(|byte| byte as i8)
+                .chain(std::iter::once(0))
+                .collect(),
+        )
+        .unwrap()
     }
 
     fn stream(heap: &mut SourceHeap, value: &str) -> INCHI_IOSTREAM {
@@ -3295,7 +3306,8 @@ mod tests {
         let mut heap = SourceHeap::default();
         let mut buffer = INCHI_IOS_STRING::default();
         inchi_strbuf_init(&mut heap, &mut buffer, 8, 8).unwrap();
-        heap.slice_mut(buffer.pStr).unwrap()[..4].copy_from_slice(&[b'o' as i8, b'l' as i8, b'd' as i8, 0]);
+        heap.slice_mut(buffer.pStr).unwrap()[..4]
+            .copy_from_slice(&[b'o' as i8, b'l' as i8, b'd' as i8, 0]);
         buffer.nUsedLength = 3;
 
         let mut single = stream(&mut heap, "M  V30 BEGIN CTAB\nrest\n");
@@ -3312,7 +3324,10 @@ mod tests {
             Ok(6)
         );
         assert_eq!(output(&heap, &buffer), b"ABCDEF");
-        assert_eq!(continued.s.nPtr, "M  V30 ABC-\r\nM  V30 DEF   \r\n".len() as i32);
+        assert_eq!(
+            continued.s.nPtr,
+            "M  V30 ABC-\r\nM  V30 DEF   \r\n".len() as i32
+        );
 
         for malformed in ["", "M  V30 \n", "X  V30 VALUE\n"] {
             let mut malformed_stream = stream(&mut heap, malformed);
@@ -3337,7 +3352,9 @@ mod tests {
         assert_eq!(MolfileV3000ReadKeyword(&mut heap, key, &mut cursor), Ok(5));
         assert_eq!(
             &heap.slice(key.as_const()).unwrap()[..7],
-            &[b'A' as i8, b'T' as i8, b'O' as i8, b'M' as i8, b'S' as i8, 0, 0x55]
+            &[
+                b'A' as i8, b'T' as i8, b'O' as i8, b'M' as i8, b'S' as i8, 0, 0x55
+            ]
         );
         assert_eq!(heap.slice(cursor.as_const()).unwrap()[0], b'V' as i8);
 
@@ -3402,7 +3419,12 @@ mod tests {
         let mut valid = stream(&mut heap, &format!("{consumed}M  V30 NEXT\n"));
         let mut errors = [0_i8; 256];
         assert_eq!(
-            MolfileV3000ReadCTABBeginAndCountsLine(&mut heap, &mut valid_ctab, Some(&mut valid), Some(&mut errors),),
+            MolfileV3000ReadCTABBeginAndCountsLine(
+                &mut heap,
+                &mut valid_ctab,
+                Some(&mut valid),
+                Some(&mut errors),
+            ),
             Ok(0)
         );
         assert_eq!(valid.s.nPtr, consumed.len() as i32);
@@ -3417,7 +3439,10 @@ mod tests {
             (12, 13, 1, -1, 999)
         );
         let valid_v3000 = &heap.slice(valid_ctab.v3000.as_const()).unwrap()[0];
-        assert_eq!((valid_v3000.n_sgroups, valid_v3000.n_3d_constraints), (2, 3));
+        assert_eq!(
+            (valid_v3000.n_sgroups, valid_v3000.n_3d_constraints),
+            (2, 3)
+        );
         assert_eq!(errors[0], 0);
 
         let mut wrong_ctab = ctab(&mut heap);
@@ -3425,7 +3450,12 @@ mod tests {
         let mut wrong = stream(&mut heap, "M  V30 COUNTS 1 2 3 4 0\n");
         errors.fill(0);
         assert_eq!(
-            MolfileV3000ReadCTABBeginAndCountsLine(&mut heap, &mut wrong_ctab, Some(&mut wrong), Some(&mut errors),),
+            MolfileV3000ReadCTABBeginAndCountsLine(
+                &mut heap,
+                &mut wrong_ctab,
+                Some(&mut wrong),
+                Some(&mut errors),
+            ),
             Ok(1)
         );
         assert_eq!(wrong_ctab, wrong_before);
@@ -3435,7 +3465,12 @@ mod tests {
         let mut eof = stream(&mut heap, "M  V30 BEGIN CTAB\n");
         errors.fill(0);
         assert_eq!(
-            MolfileV3000ReadCTABBeginAndCountsLine(&mut heap, &mut eof_ctab, Some(&mut eof), Some(&mut errors),),
+            MolfileV3000ReadCTABBeginAndCountsLine(
+                &mut heap,
+                &mut eof_ctab,
+                Some(&mut eof),
+                Some(&mut errors),
+            ),
             Ok(1)
         );
         assert_eq!(
@@ -3456,7 +3491,12 @@ mod tests {
         let mut keyword = stream(&mut heap, "M  V30 BEGIN CTAB\nM  V30 COUNT 1 2 3 4 0\n");
         errors.fill(0);
         assert_eq!(
-            MolfileV3000ReadCTABBeginAndCountsLine(&mut heap, &mut keyword_ctab, Some(&mut keyword), Some(&mut errors),),
+            MolfileV3000ReadCTABBeginAndCountsLine(
+                &mut heap,
+                &mut keyword_ctab,
+                Some(&mut keyword),
+                Some(&mut errors),
+            ),
             Ok(1)
         );
         assert_eq!(keyword_ctab.n_atoms, -1);
@@ -3464,7 +3504,10 @@ mod tests {
 
         let mut atom_overflow_ctab = ctab(&mut heap);
         let overflow_line = "COUNTS 2147483648 2 3 4 1\x01";
-        let mut atom_overflow = stream(&mut heap, &format!("M  V30 BEGIN CTAB\nM  V30 {overflow_line}\n"));
+        let mut atom_overflow = stream(
+            &mut heap,
+            &format!("M  V30 BEGIN CTAB\nM  V30 {overflow_line}\n"),
+        );
         errors.fill(0);
         assert_eq!(
             MolfileV3000ReadCTABBeginAndCountsLine(
@@ -3483,7 +3526,8 @@ mod tests {
         );
 
         let mut later_overflow_ctab = ctab(&mut heap);
-        let mut later_overflow = stream(&mut heap, "M  V30 BEGIN CTAB\nM  V30 COUNTS 5 6 7 8 128\n");
+        let mut later_overflow =
+            stream(&mut heap, "M  V30 BEGIN CTAB\nM  V30 COUNTS 5 6 7 8 128\n");
         errors.fill(0);
         assert_eq!(
             MolfileV3000ReadCTABBeginAndCountsLine(
@@ -3503,8 +3547,14 @@ mod tests {
             (5, 6, 0)
         );
         let later_v3000 = &heap.slice(later_overflow_ctab.v3000.as_const()).unwrap()[0];
-        assert_eq!((later_v3000.n_sgroups, later_v3000.n_3d_constraints), (7, 8));
-        assert_eq!(text(&errors), "Cannot interpret V3000 counts line: COUNTS 5 6 7 8 128");
+        assert_eq!(
+            (later_v3000.n_sgroups, later_v3000.n_3d_constraints),
+            (7, 8)
+        );
+        assert_eq!(
+            text(&errors),
+            "Cannot interpret V3000 counts line: COUNTS 5 6 7 8 128"
+        );
 
         let mut nonnumeric_ctab = ctab(&mut heap);
         let mut nonnumeric = stream(&mut heap, "M  V30 BEGIN CTAB\nM  V30 COUNTS x y z q r\n");
@@ -3527,7 +3577,13 @@ mod tests {
             (0, 0, 0)
         );
         let nonnumeric_v3000 = &heap.slice(nonnumeric_ctab.v3000.as_const()).unwrap()[0];
-        assert_eq!((nonnumeric_v3000.n_sgroups, nonnumeric_v3000.n_3d_constraints), (0, 0));
+        assert_eq!(
+            (
+                nonnumeric_v3000.n_sgroups,
+                nonnumeric_v3000.n_3d_constraints
+            ),
+            (0, 0)
+        );
         assert_eq!(errors[0], 0);
     }
 
@@ -3542,7 +3598,10 @@ mod tests {
             Ok(10)
         );
         assert_ne!(output, stale);
-        assert_eq!(heap.slice(output.as_const()).unwrap(), &[-1, -1, 3, 4, 5, 6]);
+        assert_eq!(
+            heap.slice(output.as_const()).unwrap(),
+            &[-1, -1, 3, 4, 5, 6]
+        );
         assert!(cursor.is_null());
         inchi_free(&mut heap, output).unwrap();
 
@@ -3556,7 +3615,13 @@ mod tests {
         assert!(cursor.is_null());
         inchi_free(&mut heap, output).unwrap();
 
-        for malformed in ["X(1 9) ", "( x ", "( -1 ", "(1 999999999999) ", "(1 9) ATTACH=ANY"] {
+        for malformed in [
+            "X(1 9) ",
+            "( x ",
+            "( -1 ",
+            "(1 999999999999) ",
+            "(1 9) ATTACH=ANY",
+        ] {
             cursor = input(&mut heap, malformed);
             output = stale;
             assert_eq!(
@@ -3588,7 +3653,10 @@ mod tests {
             Ok(1)
         );
         assert_ne!(output, stale);
-        assert_eq!(heap.slice(output.as_const()).unwrap(), &[-1, 3, 10, 20, 30, 0]);
+        assert_eq!(
+            heap.slice(output.as_const()).unwrap(),
+            &[-1, 3, 10, 20, 30, 0]
+        );
         assert_eq!(heap.slice(cursor.as_const()).unwrap()[0], b' ' as i8);
         inchi_free(&mut heap, output).unwrap();
 
@@ -3650,7 +3718,9 @@ mod tests {
         fn ctab(heap: &mut SourceHeap, bond_count: i32) -> MOL_FMT_CTAB {
             let orig = heap.allocate_model_storage(vec![1_i32, 2, 3]).unwrap();
             let fin = heap.allocate_model_storage(vec![1_i32, 2, -1]).unwrap();
-            let list_array = heap.allocate_model_storage(vec![SourceMutPointer::null(); 2]).unwrap();
+            let list_array = heap
+                .allocate_model_storage(vec![SourceMutPointer::null(); 2])
+                .unwrap();
             let haptic = heap
                 .allocate_model_storage(vec![NUM_LISTS {
                     lists: list_array,
@@ -3682,7 +3752,10 @@ mod tests {
 
         let mut heap = SourceHeap::default();
         let mut empty = MOL_FMT_CTAB::default();
-        assert_eq!(MolfileV3000ReadBondsBlock(&mut heap, &mut empty, None, 17, None), Ok(0));
+        assert_eq!(
+            MolfileV3000ReadBondsBlock(&mut heap, &mut empty, None, 17, None),
+            Ok(0)
+        );
 
         let mut structure = ctab(&mut heap, 3);
         let mut input_stream = stream(
@@ -3695,7 +3768,13 @@ mod tests {
         );
         let mut errors = [0_i8; 256];
         assert_eq!(
-            MolfileV3000ReadBondsBlock(&mut heap, &mut structure, Some(&mut input_stream), 0, Some(&mut errors),),
+            MolfileV3000ReadBondsBlock(
+                &mut heap,
+                &mut structure,
+                Some(&mut input_stream),
+                0,
+                Some(&mut errors),
+            ),
             Ok(0)
         );
         assert_eq!(structure.n_bonds, 2);
@@ -3722,7 +3801,10 @@ mod tests {
         assert_eq!(lists.used, 1);
         let haptic = heap.slice(lists.lists.as_const()).unwrap()[0];
         assert_eq!(heap.slice(haptic.as_const()).unwrap(), &[2, 1, 2, 2, 3]);
-        assert_eq!(error_text(&errors), "V3000 haptic bonds read/stored but ignored");
+        assert_eq!(
+            error_text(&errors),
+            "V3000 haptic bonds read/stored but ignored"
+        );
 
         let mut bad_start = ctab(&mut heap, 1);
         let mut bad_start_stream = stream(&mut heap, "M  V30 BEGIN ATOM\n");
@@ -3737,17 +3819,26 @@ mod tests {
             ),
             Ok(1)
         );
-        assert_eq!(error_text(&errors), "Error: No V3000 Bond block start marker");
+        assert_eq!(
+            error_text(&errors),
+            "Error: No V3000 Bond block start marker"
+        );
 
         let mut preexisting = ctab(&mut heap, 1);
-        let mut end_data = stream(&mut heap, "M  V30 BEGIN BOND\nM  V30 $$$$\nM  V30 END BOND\n");
+        let mut end_data = stream(
+            &mut heap,
+            "M  V30 BEGIN BOND\nM  V30 $$$$\nM  V30 END BOND\n",
+        );
         assert_eq!(
             MolfileV3000ReadBondsBlock(&mut heap, &mut preexisting, Some(&mut end_data), 7, None,),
             Ok(-7)
         );
 
         let mut malformed = ctab(&mut heap, 1);
-        let mut malformed_stream = stream(&mut heap, "M  V30 BEGIN BOND\nM  V30 bad\nM  V30 END BOND\n");
+        let mut malformed_stream = stream(
+            &mut heap,
+            "M  V30 BEGIN BOND\nM  V30 bad\nM  V30 END BOND\n",
+        );
         errors.fill(0);
         assert_eq!(
             MolfileV3000ReadBondsBlock(
@@ -3770,7 +3861,10 @@ mod tests {
                 bond_stereo: 0,
             }
         );
-        assert_eq!(error_text(&errors), "Cannot interpret V3000 bond block line: bad");
+        assert_eq!(
+            error_text(&errors),
+            "Cannot interpret V3000 bond block line: bad"
+        );
     }
 
     #[test]
@@ -3823,7 +3917,13 @@ mod tests {
         let mut valid = stream(&mut heap, "M  V30 END OBJ3D\r\nM  V30 NEXT\n");
         let mut errors = [0_i8; 256];
         assert_eq!(
-            MolfileV3000Read3DBlock(&mut heap, Some(&mut ctab), Some(&mut valid), 9, Some(&mut errors),),
+            MolfileV3000Read3DBlock(
+                &mut heap,
+                Some(&mut ctab),
+                Some(&mut valid),
+                9,
+                Some(&mut errors),
+            ),
             Ok(9)
         );
         assert_eq!(ctab, original);
@@ -3840,7 +3940,13 @@ mod tests {
         errors.fill(0);
         let mut wrong_existing = stream(&mut heap, "M  V30 WRONG\n");
         assert_eq!(
-            MolfileV3000Read3DBlock(&mut heap, None, Some(&mut wrong_existing), 27, Some(&mut errors),),
+            MolfileV3000Read3DBlock(
+                &mut heap,
+                None,
+                Some(&mut wrong_existing),
+                27,
+                Some(&mut errors),
+            ),
             Ok(27)
         );
         assert_eq!(text(&errors), "Error: No V3000 3DBlock end marker");
@@ -3862,7 +3968,9 @@ mod tests {
         }
 
         fn descriptor(heap: &mut SourceHeap) -> SourceMutPointer<NUM_LISTS> {
-            let array = heap.allocate_model_storage(vec![SourceMutPointer::null(); 2]).unwrap();
+            let array = heap
+                .allocate_model_storage(vec![SourceMutPointer::null(); 2])
+                .unwrap();
             heap.allocate_model_storage(vec![NUM_LISTS {
                 lists: array,
                 allocated: 2,
@@ -3911,19 +4019,33 @@ mod tests {
         let mut input_stream = stream(&mut heap, &format!("{consumed}M  V30 NEXT\n"));
         let mut errors = [0_i8; 256];
         assert_eq!(
-            MolfileV3000ReadCollections(&mut heap, &mut ctab, Some(&mut input_stream), 0, Some(&mut errors),),
+            MolfileV3000ReadCollections(
+                &mut heap,
+                &mut ctab,
+                Some(&mut input_stream),
+                0,
+                Some(&mut errors),
+            ),
             Ok(0)
         );
         assert_eq!(input_stream.s.nPtr, consumed.len() as i32);
         let v3000 = heap.slice(ctab.v3000.as_const()).unwrap()[0].clone();
         assert_eq!(
-            (v3000.n_collections, v3000.n_steabs, v3000.n_sterel, v3000.n_sterac,),
+            (
+                v3000.n_collections,
+                v3000.n_steabs,
+                v3000.n_sterel,
+                v3000.n_sterac,
+            ),
             (3, 1, 1, 1)
         );
         assert_eq!(only_list(&heap, v3000.steabs), vec![1, 3, 1, 20, 30, 0]);
         assert_eq!(only_list(&heap, v3000.sterel), vec![2, 2, 20, 30, 0]);
         assert_eq!(only_list(&heap, v3000.sterac), vec![3, 1, 30, 0]);
-        assert_eq!(text(&errors), "V3000 enhanced stereo read/stored but ignored");
+        assert_eq!(
+            text(&errors),
+            "V3000 enhanced stereo read/stored but ignored"
+        );
 
         let mut failed_ctab = collection_ctab(&mut heap);
         let failure_consumed = "M  V30 BAD\nM  V30 AFTER\x01\n";
@@ -3940,7 +4062,10 @@ mod tests {
             Ok(7)
         );
         assert_eq!(failed_stream.s.nPtr, failure_consumed.len() as i32);
-        assert_eq!(text(&errors), "Cannot interpret V3000 collection line(s); AFTER.");
+        assert_eq!(
+            text(&errors),
+            "Cannot interpret V3000 collection line(s); AFTER."
+        );
         let failed_v3000 = &heap.slice(failed_ctab.v3000.as_const()).unwrap()[0];
         assert_eq!(failed_v3000.n_collections, 0);
     }
@@ -3953,7 +4078,9 @@ mod tests {
         }
 
         fn ctab(heap: &mut SourceHeap) -> MOL_FMT_CTAB {
-            let v3000 = heap.allocate_model_storage(vec![MOL_FMT_v3000::default()]).unwrap();
+            let v3000 = heap
+                .allocate_model_storage(vec![MOL_FMT_v3000::default()])
+                .unwrap();
             MOL_FMT_CTAB {
                 v3000,
                 ..MOL_FMT_CTAB::default()
@@ -3975,7 +4102,13 @@ mod tests {
         let mut full = stream(&mut heap, &format!("{consumed}M  V30 FOLLOWING\n"));
         let mut errors = [0_i8; 256];
         assert_eq!(
-            MolfileV3000ReadTailOfCTAB(&mut heap, &mut structure, Some(&mut full), 0, Some(&mut errors),),
+            MolfileV3000ReadTailOfCTAB(
+                &mut heap,
+                &mut structure,
+                Some(&mut full),
+                0,
+                Some(&mut errors),
+            ),
             Ok(0)
         );
         assert_eq!(full.s.nPtr, consumed.len() as i32);
@@ -4015,13 +4148,22 @@ mod tests {
         let mut eof = stream(&mut heap, "");
         errors.fill(0);
         assert_eq!(
-            MolfileV3000ReadTailOfCTAB(&mut heap, &mut eof_structure, Some(&mut eof), 31, Some(&mut errors),),
+            MolfileV3000ReadTailOfCTAB(
+                &mut heap,
+                &mut eof_structure,
+                Some(&mut eof),
+                31,
+                Some(&mut errors),
+            ),
             Ok(31)
         );
         assert_eq!(text(&errors), "Error: No V3000 CTAB end marker");
 
         let mut child_structure = ctab(&mut heap);
-        let mut child_error = stream(&mut heap, "M  V30 BEGIN OBJ3D\nM  V30 WRONG\nM  V30 END CTAB\n");
+        let mut child_error = stream(
+            &mut heap,
+            "M  V30 BEGIN OBJ3D\nM  V30 WRONG\nM  V30 END CTAB\n",
+        );
         errors.fill(0);
         assert_eq!(
             MolfileV3000ReadTailOfCTAB(
@@ -4034,10 +4176,16 @@ mod tests {
             Ok(0)
         );
         assert_eq!(text(&errors), "Error: No V3000 3DBlock end marker");
-        assert_eq!(child_error.s.nPtr, "M  V30 BEGIN OBJ3D\nM  V30 WRONG\n".len() as i32);
+        assert_eq!(
+            child_error.s.nPtr,
+            "M  V30 BEGIN OBJ3D\nM  V30 WRONG\n".len() as i32
+        );
 
         let mut existing_structure = ctab(&mut heap);
-        let mut existing = stream(&mut heap, "M  V30 BEGIN OBJ3D\nM  V30 END OBJ3D\nM  V30 END CTAB\n");
+        let mut existing = stream(
+            &mut heap,
+            "M  V30 BEGIN OBJ3D\nM  V30 END OBJ3D\nM  V30 END CTAB\n",
+        );
         errors.fill(0);
         assert_eq!(
             MolfileV3000ReadTailOfCTAB(
@@ -4050,7 +4198,10 @@ mod tests {
             Ok(9)
         );
         assert_eq!(errors[0], 0);
-        assert_eq!(existing.s.nPtr, "M  V30 BEGIN OBJ3D\nM  V30 END OBJ3D\n".len() as i32);
+        assert_eq!(
+            existing.s.nPtr,
+            "M  V30 BEGIN OBJ3D\nM  V30 END OBJ3D\n".len() as i32
+        );
     }
 
     #[test]
@@ -4088,9 +4239,15 @@ mod tests {
         let mut valid = ctab(&mut heap, 3);
         heap.slice_mut(valid.v3000).unwrap()[0].atom_index_orig = old_index;
         let mut errors = [0_i8; 256];
-        assert_eq!(MolfileV3000Init(&mut heap, &mut valid, Some(&mut errors)), Ok(0));
+        assert_eq!(
+            MolfileV3000Init(&mut heap, &mut valid, Some(&mut errors)),
+            Ok(0)
+        );
         let initialized = heap.slice(valid.v3000.as_const()).unwrap()[0].clone();
-        assert_eq!((initialized.n_star_atoms, initialized.n_non_star_atoms), (0, 0));
+        assert_eq!(
+            (initialized.n_star_atoms, initialized.n_non_star_atoms),
+            (0, 0)
+        );
         assert_eq!(
             heap.slice(initialized.atom_index_orig.as_const()).unwrap(),
             &[-1, -1, -1]
@@ -4116,8 +4273,14 @@ mod tests {
             (initialized.sterac, 4),
         ] {
             let lists = descriptor(&heap, pointer);
-            assert_eq!((lists.allocated, lists.used, lists.increment), (capacity, 0, capacity));
-            assert_eq!(heap.slice(lists.lists.as_const()).unwrap().len(), capacity as usize);
+            assert_eq!(
+                (lists.allocated, lists.used, lists.increment),
+                (capacity, 0, capacity)
+            );
+            assert_eq!(
+                heap.slice(lists.lists.as_const()).unwrap().len(),
+                capacity as usize
+            );
             assert!(
                 heap.slice(lists.lists.as_const())
                     .unwrap()
@@ -4142,8 +4305,13 @@ mod tests {
         let mut atom_failure_heap = SourceHeap::default();
         let mut atom_failure = ctab(&mut atom_failure_heap, 2);
         atom_failure_heap.fail_after_allocations(0);
-        assert_eq!(MolfileV3000Init(&mut atom_failure_heap, &mut atom_failure, None), Ok(0));
-        let atom_failure_v3000 = &atom_failure_heap.slice(atom_failure.v3000.as_const()).unwrap()[0];
+        assert_eq!(
+            MolfileV3000Init(&mut atom_failure_heap, &mut atom_failure, None),
+            Ok(0)
+        );
+        let atom_failure_v3000 = &atom_failure_heap
+            .slice(atom_failure.v3000.as_const())
+            .unwrap()[0];
         assert!(atom_failure_v3000.atom_index_orig.is_null());
         assert_eq!(
             atom_failure_heap
@@ -4382,13 +4550,22 @@ mod tests {
     fn source_port__mol_fmt3__get_actual_atom_number__line_1585() {
         let orig = [10, -7, 10, i32::MAX];
         let fin = [1, -1, 3, i32::MIN];
-        assert_eq!(get_actual_atom_number(10, 4, Some(&orig), Some(&fin)), Ok(1));
-        assert_eq!(get_actual_atom_number(-7, 4, Some(&orig), Some(&fin)), Ok(-1));
+        assert_eq!(
+            get_actual_atom_number(10, 4, Some(&orig), Some(&fin)),
+            Ok(1)
+        );
+        assert_eq!(
+            get_actual_atom_number(-7, 4, Some(&orig), Some(&fin)),
+            Ok(-1)
+        );
         assert_eq!(
             get_actual_atom_number(i32::MAX, 4, Some(&orig), Some(&fin)),
             Ok(i32::MIN)
         );
-        assert_eq!(get_actual_atom_number(10, 1, Some(&orig), Some(&fin)), Ok(1));
+        assert_eq!(
+            get_actual_atom_number(10, 1, Some(&orig), Some(&fin)),
+            Ok(1)
+        );
         assert_eq!(get_actual_atom_number(10, 0, None, None), Ok(-1));
         assert_eq!(get_actual_atom_number(10, i32::MIN, None, None), Ok(-1));
         assert_eq!(
@@ -4408,7 +4585,10 @@ mod tests {
     #[test]
     fn source_port__mol_fmt3__deletemolfilev3000info__line_165() {
         let mut heap = SourceHeap::default();
-        assert_eq!(DeleteMolfileV3000Info(&mut heap, SourceMutPointer::null()), Ok(0));
+        assert_eq!(
+            DeleteMolfileV3000Info(&mut heap, SourceMutPointer::null()),
+            Ok(0)
+        );
 
         let atom_index_orig = heap.allocate_model_storage(vec![3_i32, 1]).unwrap();
         let atom_index_fin = heap.allocate_model_storage(vec![1_i32, 3]).unwrap();
@@ -4443,13 +4623,22 @@ mod tests {
             .unwrap();
         assert_eq!(DeleteMolfileV3000Info(&mut heap, object), Ok(0));
         for pointer in child_lists {
-            assert_eq!(heap.slice(pointer.as_const()), Err(SourceHeapError::MissingAllocation));
+            assert_eq!(
+                heap.slice(pointer.as_const()),
+                Err(SourceHeapError::MissingAllocation)
+            );
         }
         for pointer in list_arrays {
-            assert_eq!(heap.slice(pointer.as_const()), Err(SourceHeapError::MissingAllocation));
+            assert_eq!(
+                heap.slice(pointer.as_const()),
+                Err(SourceHeapError::MissingAllocation)
+            );
         }
         for pointer in descriptors {
-            assert_eq!(heap.slice(pointer.as_const()), Err(SourceHeapError::MissingAllocation));
+            assert_eq!(
+                heap.slice(pointer.as_const()),
+                Err(SourceHeapError::MissingAllocation)
+            );
         }
         assert_eq!(
             heap.slice(atom_index_orig.as_const()),
@@ -4459,11 +4648,19 @@ mod tests {
             heap.slice(atom_index_fin.as_const()),
             Err(SourceHeapError::MissingAllocation)
         );
-        assert_eq!(heap.slice(object.as_const()), Err(SourceHeapError::MissingAllocation));
+        assert_eq!(
+            heap.slice(object.as_const()),
+            Err(SourceHeapError::MissingAllocation)
+        );
 
-        let empty = heap.allocate_model_storage(vec![MOL_FMT_v3000::default()]).unwrap();
+        let empty = heap
+            .allocate_model_storage(vec![MOL_FMT_v3000::default()])
+            .unwrap();
         assert_eq!(DeleteMolfileV3000Info(&mut heap, empty), Ok(0));
-        assert_eq!(heap.slice(empty.as_const()), Err(SourceHeapError::MissingAllocation));
+        assert_eq!(
+            heap.slice(empty.as_const()),
+            Err(SourceHeapError::MissingAllocation)
+        );
     }
 
     #[test]
@@ -4473,7 +4670,12 @@ mod tests {
             String::from_utf8(buffer[..end].iter().map(|byte| *byte as u8).collect()).unwrap()
         }
 
-        fn ctab(heap: &mut SourceHeap, atom_count: i32, with_atoms: bool, with_coords: bool) -> MOL_FMT_CTAB {
+        fn ctab(
+            heap: &mut SourceHeap,
+            atom_count: i32,
+            with_atoms: bool,
+            with_coords: bool,
+        ) -> MOL_FMT_CTAB {
             let count = atom_count.max(0) as usize;
             let atom_index_orig = heap.allocate_model_storage(vec![-9_i32; count]).unwrap();
             let atom_index_fin = heap.allocate_model_storage(vec![-8_i32; count]).unwrap();
@@ -4515,15 +4717,27 @@ mod tests {
         let mut valid = stream(&mut heap, &format!("{consumed}M  V30 NEXT\n"));
         let mut errors = [0_i8; 1024];
         assert_eq!(
-            MolfileV3000ReadAtomsBlock(&mut heap, &mut structure, Some(&mut valid), 0, Some(&mut errors),),
+            MolfileV3000ReadAtomsBlock(
+                &mut heap,
+                &mut structure,
+                Some(&mut valid),
+                0,
+                Some(&mut errors),
+            ),
             Ok(0)
         );
         assert_eq!(valid.s.nPtr, consumed.len() as i32);
         assert_eq!(structure.n_atoms, 2);
         let v3000 = heap.slice(structure.v3000.as_const()).unwrap()[0].clone();
         assert_eq!((v3000.n_non_star_atoms, v3000.n_star_atoms), (2, 1));
-        assert_eq!(heap.slice(v3000.atom_index_orig.as_const()).unwrap(), &[1, 2, 3]);
-        assert_eq!(heap.slice(v3000.atom_index_fin.as_const()).unwrap(), &[1, -1, 2]);
+        assert_eq!(
+            heap.slice(v3000.atom_index_orig.as_const()).unwrap(),
+            &[1, 2, 3]
+        );
+        assert_eq!(
+            heap.slice(v3000.atom_index_fin.as_const()).unwrap(),
+            &[1, -1, 2]
+        );
         let atoms = heap.slice(structure.atoms.as_const()).unwrap();
         assert_eq!(&atoms[0].symbol, &[b'C' as i8, b'l' as i8, 0, 0, 0, 0]);
         assert_eq!((atoms[0].fx, atoms[0].fy, atoms[0].fz), (1.0, -2.5, 0.0));
@@ -4538,29 +4752,47 @@ mod tests {
             (-2, 3, 2, 127, 15)
         );
         assert_eq!(&atoms[1].symbol, &[b'C' as i8, 0, 0, 0, 0, 0]);
-        assert_eq!((atoms[1].fx, atoms[1].fy, atoms[1].fz), (0.00001, 100000.0, -0.0));
+        assert_eq!(
+            (atoms[1].fx, atoms[1].fy, atoms[1].fz),
+            (0.00001, 100000.0, -0.0)
+        );
         assert_eq!((atoms[1].mass_difference, atoms[1].valence), (1, 2));
         let coords = heap.slice(structure.coords.as_const()).unwrap();
         assert_eq!(
             &coords[0][..31],
-            b"         1      -2.5         0\0".map(|byte| byte as i8).as_slice()
+            b"         1      -2.5         0\0"
+                .map(|byte| byte as i8)
+                .as_slice()
         );
         assert_eq!(coords[0][31], 0x55);
         assert_eq!(
             &coords[1][..31],
-            b"         4         5         6\0".map(|byte| byte as i8).as_slice()
+            b"         4         5         6\0"
+                .map(|byte| byte as i8)
+                .as_slice()
         );
         assert_eq!(
             &coords[2][..31],
-            b"     1e-05    100000        -0\0".map(|byte| byte as i8).as_slice()
+            b"     1e-05    100000        -0\0"
+                .map(|byte| byte as i8)
+                .as_slice()
         );
         assert_eq!(text(&errors), "V3000 star atoms ignored");
 
         let mut no_atoms = ctab(&mut heap, 1, false, false);
-        let mut ignored = stream(&mut heap, "M  V30 BEGIN ATOM\nM  V30 unparsed input\nM  V30 END ATOM\n");
+        let mut ignored = stream(
+            &mut heap,
+            "M  V30 BEGIN ATOM\nM  V30 unparsed input\nM  V30 END ATOM\n",
+        );
         errors.fill(0);
         assert_eq!(
-            MolfileV3000ReadAtomsBlock(&mut heap, &mut no_atoms, Some(&mut ignored), 0, Some(&mut errors),),
+            MolfileV3000ReadAtomsBlock(
+                &mut heap,
+                &mut no_atoms,
+                Some(&mut ignored),
+                0,
+                Some(&mut errors),
+            ),
             Ok(0)
         );
         assert_eq!(errors[0], 0);
@@ -4569,7 +4801,13 @@ mod tests {
         let mut wrong = stream(&mut heap, "M  V30 BEGIN BOND\n");
         errors.fill(0);
         assert_eq!(
-            MolfileV3000ReadAtomsBlock(&mut heap, &mut bad_start, Some(&mut wrong), 0, Some(&mut errors),),
+            MolfileV3000ReadAtomsBlock(
+                &mut heap,
+                &mut bad_start,
+                Some(&mut wrong),
+                0,
+                Some(&mut errors),
+            ),
             Ok(1)
         );
         assert_eq!(text(&errors), "Error: No V3000 Atom block start marker");
@@ -4581,14 +4819,23 @@ mod tests {
         );
         errors.fill(0);
         assert_eq!(
-            MolfileV3000ReadAtomsBlock(&mut heap, &mut positional, Some(&mut overflow), 0, Some(&mut errors),),
+            MolfileV3000ReadAtomsBlock(
+                &mut heap,
+                &mut positional,
+                Some(&mut overflow),
+                0,
+                Some(&mut errors),
+            ),
             Ok(4)
         );
         assert_eq!(
             text(&errors),
             "Cannot interpret V3000 atom block line: 2147483648 C 0 0 0 0"
         );
-        assert_eq!(heap.slice(positional.v3000.as_const()).unwrap()[0].n_non_star_atoms, 0);
+        assert_eq!(
+            heap.slice(positional.v3000.as_const()).unwrap()[0].n_non_star_atoms,
+            0
+        );
 
         let mut keyword = ctab(&mut heap, 1, true, false);
         let mut narrowing = stream(
@@ -4597,7 +4844,13 @@ mod tests {
         );
         errors.fill(0);
         assert_eq!(
-            MolfileV3000ReadAtomsBlock(&mut heap, &mut keyword, Some(&mut narrowing), 0, Some(&mut errors),),
+            MolfileV3000ReadAtomsBlock(
+                &mut heap,
+                &mut keyword,
+                Some(&mut narrowing),
+                0,
+                Some(&mut errors),
+            ),
             Ok(4)
         );
         let keyword_atom = &heap.slice(keyword.atoms.as_const()).unwrap()[0];
@@ -4614,7 +4867,13 @@ mod tests {
         );
         errors.fill(0);
         assert_eq!(
-            MolfileV3000ReadAtomsBlock(&mut heap, &mut mass, Some(&mut mass_overflow), 0, Some(&mut errors),),
+            MolfileV3000ReadAtomsBlock(
+                &mut heap,
+                &mut mass,
+                Some(&mut mass_overflow),
+                0,
+                Some(&mut errors),
+            ),
             Ok(4)
         );
         assert_eq!(
@@ -4629,7 +4888,13 @@ mod tests {
         );
         errors.fill(0);
         assert_eq!(
-            MolfileV3000ReadAtomsBlock(&mut heap, &mut preexisting, Some(&mut bypass), 9, Some(&mut errors),),
+            MolfileV3000ReadAtomsBlock(
+                &mut heap,
+                &mut preexisting,
+                Some(&mut bypass),
+                9,
+                Some(&mut errors),
+            ),
             Ok(-9)
         );
         assert_eq!(errors[0], 0);
@@ -4638,7 +4903,13 @@ mod tests {
         let mut eof = stream(&mut heap, "M  V30 BEGIN ATOM\n");
         errors.fill(0);
         assert_eq!(
-            MolfileV3000ReadAtomsBlock(&mut heap, &mut missing_line, Some(&mut eof), 0, Some(&mut errors),),
+            MolfileV3000ReadAtomsBlock(
+                &mut heap,
+                &mut missing_line,
+                Some(&mut eof),
+                0,
+                Some(&mut errors),
+            ),
             Ok(2)
         );
         assert_eq!(
@@ -4647,10 +4918,19 @@ mod tests {
         );
 
         let mut missing_end = ctab(&mut heap, 1, true, false);
-        let mut wrong_end = stream(&mut heap, "M  V30 BEGIN ATOM\nM  V30 1 C 0 0 0 0\nM  V30 WRONG\n");
+        let mut wrong_end = stream(
+            &mut heap,
+            "M  V30 BEGIN ATOM\nM  V30 1 C 0 0 0 0\nM  V30 WRONG\n",
+        );
         errors.fill(0);
         assert_eq!(
-            MolfileV3000ReadAtomsBlock(&mut heap, &mut missing_end, Some(&mut wrong_end), 0, Some(&mut errors),),
+            MolfileV3000ReadAtomsBlock(
+                &mut heap,
+                &mut missing_end,
+                Some(&mut wrong_end),
+                0,
+                Some(&mut errors),
+            ),
             Ok(1)
         );
         assert_eq!(text(&errors), "Error: No V3000 Atom block end marker");

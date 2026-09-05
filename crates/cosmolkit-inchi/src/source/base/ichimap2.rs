@@ -1,26 +1,29 @@
 use crate::source::base::ichicans::{
-    GetPermutationParity, GetStereoBondParity, GetStereoCenterParity, GetStereoNeighborPos, RemoveOneStereoBond,
-    RemoveOneStereoCenter, SetOneStereoBondIllDefParity,
+    GetPermutationParity, GetStereoBondParity, GetStereoCenterParity, GetStereoNeighborPos,
+    RemoveOneStereoBond, RemoveOneStereoCenter, SetOneStereoBondIllDefParity,
 };
 use crate::source::base::ichisort::{
-    CompNeighListRanks, CompNeighListRanksOrd, CompNeighLists, CompNeighListsUpToMaxRank, CompNeighborsRanksCountEql,
-    CompRank, CompRanksInvOrd, CompRanksOrd, CompareNeighListLex, CompareNeighListLexUpToMaxRank, CreateNeighList,
-    FreeNeighList, inchi_qsort, insertions_sort, insertions_sort_AT_NUMBERS, insertions_sort_NeighList_AT_NUMBERS,
+    CompNeighListRanks, CompNeighListRanksOrd, CompNeighLists, CompNeighListsUpToMaxRank,
+    CompNeighborsRanksCountEql, CompRank, CompRanksInvOrd, CompRanksOrd, CompareNeighListLex,
+    CompareNeighListLexUpToMaxRank, CreateNeighList, FreeNeighList, inchi_qsort, insertions_sort,
+    insertions_sort_AT_NUMBERS, insertions_sort_NeighList_AT_NUMBERS,
     insertions_sort_NeighList_AT_NUMBERS3, insertions_sort_NeighListBySymmAndCanonRank,
 };
 use crate::source::base::util::inchi_free;
 use crate::source_types::local_ichimap2::{
-    CHECKING_STEREOBOND, CHECKING_STEREOCENTER, COMP_STEREO_SUCCESS, MAP_MODE_C2, MAP_MODE_C2v, MAP_MODE_S4,
-    MAP_MODE_STD, NEIGH_MODE_CHAIN, NEIGH_MODE_RING, NOT_WELL_DEF_UNDF, NOT_WELL_DEF_UNKN, PARITY_IMPOSSIBLE,
+    CHECKING_STEREOBOND, CHECKING_STEREOCENTER, COMP_STEREO_SUCCESS, MAP_MODE_C2, MAP_MODE_C2v,
+    MAP_MODE_S4, MAP_MODE_STD, NEIGH_MODE_CHAIN, NEIGH_MODE_RING, NOT_WELL_DEF_UNDF,
+    NOT_WELL_DEF_UNKN, PARITY_IMPOSSIBLE,
 };
 use crate::source_types::{
-    AB_MAX_ILL_DEFINED_PARITY, AB_MAX_KNOWN_PARITY, AB_MAX_WELL_DEFINED_PARITY, AB_MIN_ILL_DEFINED_PARITY,
-    AB_MIN_KNOWN_PARITY, AB_MIN_WELL_DEFINED_PARITY, AB_PARITY_CALC, AB_PARITY_UNDF, AT_NUMB, AT_RANK, BITS_PARITY,
-    CANON_GLOBALS, CANON_STAT, CT_ERR_MAX, CT_ERR_MIN, CT_MAPCOUNT_ERR, CT_OUT_OF_RAM, CT_REMOVE_STEREO_ERR,
-    CT_STEREOBOND_ERROR, CT_STEREOCOUNT_ERR, EQ_NEIGH, KNOWN_PARITIES_EQL, MASK_CUMULENE_LEN, MAX_ATOMS,
-    MAX_NUM_STEREO_ATOM_NEIGH, MAX_NUM_STEREO_BOND_NEIGH, MAX_NUM_STEREO_BONDS, MIN_NUM_STEREO_BOND_NEIGH,
-    MULT_STEREOBOND, NEIGH_LIST, SourceHeap, SourceHeapError, SourceMutPointer, StableSourceConstSlice,
-    StableSourceSlice, ppAT_RANK, sp_ATOM,
+    AB_MAX_ILL_DEFINED_PARITY, AB_MAX_KNOWN_PARITY, AB_MAX_WELL_DEFINED_PARITY,
+    AB_MIN_ILL_DEFINED_PARITY, AB_MIN_KNOWN_PARITY, AB_MIN_WELL_DEFINED_PARITY, AB_PARITY_CALC,
+    AB_PARITY_UNDF, AT_NUMB, AT_RANK, BITS_PARITY, CANON_GLOBALS, CANON_STAT, CT_ERR_MAX,
+    CT_ERR_MIN, CT_MAPCOUNT_ERR, CT_OUT_OF_RAM, CT_REMOVE_STEREO_ERR, CT_STEREOBOND_ERROR,
+    CT_STEREOCOUNT_ERR, EQ_NEIGH, KNOWN_PARITIES_EQL, MASK_CUMULENE_LEN, MAX_ATOMS,
+    MAX_NUM_STEREO_ATOM_NEIGH, MAX_NUM_STEREO_BOND_NEIGH, MAX_NUM_STEREO_BONDS,
+    MIN_NUM_STEREO_BOND_NEIGH, MULT_STEREOBOND, NEIGH_LIST, SourceHeap, SourceHeapError,
+    SourceMutPointer, StableSourceConstSlice, StableSourceSlice, ppAT_RANK, sp_ATOM,
 };
 
 #[allow(non_snake_case, clippy::too_many_arguments)]
@@ -176,7 +179,8 @@ pub(crate) fn NumberOfTies(
     // INCHI✔️✔️:     for (i1 = 1; i1 <= iMax && r == nRank1[nAtomNumber1[iMax - i1]]; i1++)
     let mut i1 = 1_i32;
     while i1 <= i_max {
-        let order_index = usize::try_from(i_max.wrapping_sub(i1)).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let order_index = usize::try_from(i_max.wrapping_sub(i1))
+            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         let atom = *atom_numbers1.get(order_index)?;
         if r != *ranks1.get(usize::from(atom))? {
             break;
@@ -186,7 +190,8 @@ pub(crate) fn NumberOfTies(
     // INCHI✔️✔️:     for (i2 = 1; i2 <= iMax && r == nRank2[nAtomNumber2[iMax - i2]]; i2++)
     let mut i2 = 1_i32;
     while i2 <= i_max {
-        let order_index = usize::try_from(i_max.wrapping_sub(i2)).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let order_index = usize::try_from(i_max.wrapping_sub(i2))
+            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         let atom = *atom_numbers2.get(order_index)?;
         if r != *ranks2.get(usize::from(atom))? {
             break;
@@ -205,15 +210,16 @@ pub(crate) fn NumberOfTies(
         if length < 0 || length % 2 != 0 {
             return Err(SourceHeapError::UnsupportedSourceBehavior);
         }
-        let element_count =
-            usize::try_from(length / 2).map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?;
+        let element_count = usize::try_from(length / 2)
+            .map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?;
         for i in 0..4_i32 {
             let (stack, slot) = if i < 2 {
                 (pRankStack1, i.wrapping_add(2))
             } else {
                 (pRankStack2, i)
             };
-            let slot_index = usize::try_from(slot).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let slot_index =
+                usize::try_from(slot).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             let mut temporary = if i < 2 {
                 *rank_stack1.get(slot_index)?
             } else {
@@ -243,7 +249,9 @@ pub(crate) fn NumberOfTies(
                 if temporary != source {
                     heap.with_slice_mut_and_heap(temporary, |target, heap| {
                         let source = heap.slice(source.as_const())?;
-                        let source = source.get(..element_count).ok_or(SourceHeapError::PointerOutOfBounds)?;
+                        let source = source
+                            .get(..element_count)
+                            .ok_or(SourceHeapError::PointerOutOfBounds)?;
                         let target = target
                             .get_mut(..element_count)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -266,7 +274,10 @@ pub(crate) fn NumberOfTies(
 }
 
 #[allow(non_snake_case)]
-pub(crate) fn ClearPreviousMappings(heap: &mut SourceHeap, pRankStack1: ppAT_RANK) -> Result<i32, SourceHeapError> {
+pub(crate) fn ClearPreviousMappings(
+    heap: &mut SourceHeap,
+    pRankStack1: ppAT_RANK,
+) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichimap2.c:1334 ClearPreviousMappings
     // INCHI✔️✔️: complete source frame follows verbatim.
     /*
@@ -454,7 +465,8 @@ pub(crate) fn map_an_atom2(
         let nNewAtomNumber1 = source_get(heap, pRankStack1, 3)?;
         let nNewRank2 = source_get(heap, pRankStack2, 2)?;
         let nNewAtomNumber2 = source_get(heap, pRankStack2, 3)?;
-        let count = usize::try_from(num_max).map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?;
+        let count = usize::try_from(num_max)
+            .map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?;
 
         copy_rank_prefix(heap, nNewRank2, nRank2, count)?;
         copy_rank_prefix(heap, nNewAtomNumber2, nAtomNumber2, count)?;
@@ -521,7 +533,9 @@ pub(crate) fn map_an_atom2(
         while i < num_atoms {
             let from_atom = source_get(heap, nNewAtomNumber1, i)?;
             let to_atom = source_get(heap, nNewAtomNumber2, i)?;
-            if source_get(heap, nNewRank1, i32::from(from_atom))? != source_get(heap, nNewRank2, i32::from(to_atom))? {
+            if source_get(heap, nNewRank1, i32::from(from_atom))?
+                != source_get(heap, nNewRank2, i32::from(to_atom))?
+            {
                 return Ok(CT_MAPCOUNT_ERR);
             }
             i = i.wrapping_add(1);
@@ -530,7 +544,16 @@ pub(crate) fn map_an_atom2(
         *pnNewNumMappedRanks = nNumMappedRanks;
     }
 
-    source_get(heap, if nNewRank1.is_null() { nRank1 } else { nNewRank1 }, at_no1).map(i32::from)
+    source_get(
+        heap,
+        if nNewRank1.is_null() {
+            nRank1
+        } else {
+            nNewRank1
+        },
+        at_no1,
+    )
+    .map(i32::from)
 }
 
 fn copy_rank_prefix(
@@ -550,7 +573,9 @@ fn copy_rank_prefix(
             .slice(source.as_const())?
             .get(..count)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        let target = target.get_mut(..count).ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let target = target
+            .get_mut(..count)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?;
         target.copy_from_slice(source);
         Ok(())
     })
@@ -627,7 +652,9 @@ pub(crate) fn SortedEquInfoToRanks(
             if current_symmetry_rank != rOld {
                 nNumDiffRanks = nNumDiffRanks.wrapping_add(1);
                 rNew = i as AT_RANK;
-                nNumChanges = nNumChanges.wrapping_add(i32::from(i32::from(rOld) != i32::from(rNew).wrapping_add(1)));
+                nNumChanges = nNumChanges.wrapping_add(i32::from(
+                    i32::from(rOld) != i32::from(rNew).wrapping_add(1),
+                ));
                 rOld = current_symmetry_rank;
             }
             source_set(heap, nRank, j, rNew)?;
@@ -782,7 +809,8 @@ impl ContiguousNeighborRankSortWorkspace {
         if rank_values.len() < count || atom_values.len() < count || list_pointers.len() < count {
             return None;
         }
-        let atom_numbers_are_bounded = heap.has_proven_index_bound(atom_numbers.as_const(), count, count);
+        let atom_numbers_are_bounded =
+            heap.has_proven_index_bound(atom_numbers.as_const(), count, count);
         if !atom_numbers_are_bounded
             && atom_values
                 .prefix(count)
@@ -809,7 +837,8 @@ impl ContiguousNeighborRankSortWorkspace {
             rank_values.len(),
         )?;
         let storage_identity = storage_origin.allocation_identity()?;
-        if [rank_identity, atom_number_identity, neighbor_list_identity].contains(&storage_identity) {
+        if [rank_identity, atom_number_identity, neighbor_list_identity].contains(&storage_identity)
+        {
             return None;
         }
         if !atom_numbers_are_bounded {
@@ -819,7 +848,10 @@ impl ContiguousNeighborRankSortWorkspace {
 
         // SAFETY: the official ranking loops only permute the atom-number
         // prefix, so the checked index bound remains true for the workspace.
-        let atom_numbers = unsafe { heap.stable_index_bounded_slice_mut(atom_numbers, count, count).ok()? };
+        let atom_numbers = unsafe {
+            heap.stable_index_bounded_slice_mut(atom_numbers, count, count)
+                .ok()?
+        };
         // `rank_values` and `list_pointers` are the stable views validated at
         // the start of this constructor; no second allocation lookup is needed.
         let ranks = rank_values;
@@ -979,7 +1011,9 @@ impl ContiguousNeighborRankSortWorkspace {
             let atom = self.atom_number(k);
             let rank = self.rank(atom);
             let row_offset = self.row_offset(usize::from(atom));
-            if (rank != (k + 1) as AT_RANK || rank == previous_rank) && self.storage_value(row_offset) > 1 {
+            if (rank != (k + 1) as AT_RANK || rank == previous_rank)
+                && self.storage_value(row_offset) > 1
+            {
                 self.sort_row_by_rank_shifting(row_offset);
             }
             previous_rank = rank;
@@ -1043,7 +1077,8 @@ impl ContiguousNeighborRankSortWorkspace {
             first_len -= 1;
         }
         // INCHI✔️✔️:     while (0 < len2 && nRank[pp2[len2 - 1]] > nMaxAtNeighRank)
-        while second_len > 0 && self.rank(self.storage_value(second_offset + second_len)) > max_rank {
+        while second_len > 0 && self.rank(self.storage_value(second_offset + second_len)) > max_rank
+        {
             // INCHI✔️✔️:         len2--;
             second_len -= 1;
         }
@@ -1069,7 +1104,12 @@ impl ContiguousNeighborRankSortWorkspace {
     }
 
     #[inline(always)]
-    fn sort_atom_number_range_by_lists(&mut self, start: usize, count: usize, max_rank: Option<AT_RANK>) {
+    fn sort_atom_number_range_by_lists(
+        &mut self,
+        start: usize,
+        count: usize,
+        max_rank: Option<AT_RANK>,
+    ) {
         // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichisort.c:331 insertions_sort_AT_NUMBERS
         // INCHI✔️✔️:     AT_NUMB *i, *j, *pk, tmp;
         // INCHI✔️✔️:     int  k, num_trans = 0;
@@ -1084,7 +1124,11 @@ impl ContiguousNeighborRankSortWorkspace {
             while j > start {
                 let current = self.atom_number(i);
                 let difference = if let Some(max_rank) = max_rank {
-                    self.compare_lists_up_to_max_rank(usize::from(current), usize::from(temporary), max_rank)
+                    self.compare_lists_up_to_max_rank(
+                        usize::from(current),
+                        usize::from(temporary),
+                        max_rank,
+                    )
                 } else {
                     self.compare_lists(usize::from(current), usize::from(temporary))
                 };
@@ -1179,7 +1223,11 @@ impl ContiguousNeighborRankSortWorkspace {
         different_rank_count
     }
 
-    fn set_new_ranks4(&mut self, new_ranks: &mut StableSourceSlice<AT_RANK>, max_rank: AT_RANK) -> i32 {
+    fn set_new_ranks4(
+        &mut self,
+        new_ranks: &mut StableSourceSlice<AT_RANK>,
+        max_rank: AT_RANK,
+    ) -> i32 {
         self.set_new_ranks_from_lists(new_ranks, Some(max_rank))
     }
 
@@ -1325,16 +1373,24 @@ impl NeighListRankWorkspace {
         if rank_values.len() < count
             || list_pointers.len() < count
             || atoms.len() < count
-            || atoms[..count].iter().any(|&atom| usize::from(atom) >= count)
+            || atoms[..count]
+                .iter()
+                .any(|&atom| usize::from(atom) >= count)
         {
             return None;
         }
 
-        let writable_ids = [atom_numbers.allocation_identity()?, new_ranks.allocation_identity()?];
+        let writable_ids = [
+            atom_numbers.allocation_identity()?,
+            new_ranks.allocation_identity()?,
+        ];
         if writable_ids[0] == writable_ids[1]
-            || [ranks.allocation_identity()?, neighbor_lists.allocation_identity()?]
-                .iter()
-                .any(|identity| writable_ids.contains(identity))
+            || [
+                ranks.allocation_identity()?,
+                neighbor_lists.allocation_identity()?,
+            ]
+            .iter()
+            .any(|identity| writable_ids.contains(identity))
         {
             return None;
         }
@@ -1370,7 +1426,12 @@ impl NeighListRankWorkspace {
         Some(Self { ranks, lists })
     }
 
-    fn refresh_ranks(&mut self, heap: &SourceHeap, ranks: SourceMutPointer<AT_RANK>, count: usize) -> bool {
+    fn refresh_ranks(
+        &mut self,
+        heap: &SourceHeap,
+        ranks: SourceMutPointer<AT_RANK>,
+        count: usize,
+    ) -> bool {
         let Ok(values) = heap.slice(ranks.as_const()) else {
             return false;
         };
@@ -1392,8 +1453,17 @@ impl NeighListRankWorkspace {
     fn compare(&self, first: AT_RANK, second: AT_RANK, preserve_order: bool) -> i32 {
         let first_index = usize::from(first);
         let second_index = usize::from(second);
-        let mut difference = i32::from(*self.ranks.get(first_index).expect("workspace validated atom index"))
-            - i32::from(*self.ranks.get(second_index).expect("workspace validated atom index"));
+        let mut difference = i32::from(
+            *self
+                .ranks
+                .get(first_index)
+                .expect("workspace validated atom index"),
+        ) - i32::from(
+            *self
+                .ranks
+                .get(second_index)
+                .expect("workspace validated atom index"),
+        );
         if difference == 0 {
             difference = self.compare_lists(first_index, second_index);
         }
@@ -1413,7 +1483,8 @@ impl NeighListRankWorkspace {
             .expect("workspace owns the complete row");
         let first_len = usize::from(first[0]);
         let second_len = usize::from(second[0]);
-        for (&first_atom, &second_atom) in first[1..=first_len].iter().zip(&second[1..=second_len]) {
+        for (&first_atom, &second_atom) in first[1..=first_len].iter().zip(&second[1..=second_len])
+        {
             let difference = i32::from(
                 *self
                     .ranks
@@ -1538,7 +1609,9 @@ pub(crate) fn SetNewRanksFromNeighLists3(
     let mut new_ranks = unsafe { heap.stable_slice_mut(nNewRank)? };
     let mut clear_index = 0_i32;
     while clear_index < num_atoms {
-        *new_ranks.get_mut(usize::try_from(clear_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?)? = 0;
+        *new_ranks.get_mut(
+            usize::try_from(clear_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+        )? = 0;
         clear_index = clear_index.wrapping_add(1);
     }
     let atom_numbers = unsafe { heap.stable_slice(nAtomNumber.as_const())? };
@@ -1547,10 +1620,16 @@ pub(crate) fn SetNewRanksFromNeighLists3(
     let mut i = 0_i32;
     let mut r1: AT_RANK = 1;
     while i < num_atoms {
-        let mut j = i32::from(*atom_numbers.get(usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?)?);
-        let mut r2 = *ranks.get(usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?)?;
+        let mut j = i32::from(
+            *atom_numbers
+                .get(usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?)?,
+        );
+        let mut r2 =
+            *ranks.get(usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?)?;
         if r1 == r2 {
-            *new_ranks.get_mut(usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?)? = r2;
+            *new_ranks
+                .get_mut(usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?)? =
+                r2;
             nNumDiffRanks = nNumDiffRanks.wrapping_add(1);
             i = i.wrapping_add(1);
             r1 = r1.wrapping_add(1);
@@ -1565,14 +1644,20 @@ pub(crate) fn SetNewRanksFromNeighLists3(
             &mut |heap, left: AT_NUMB, right: AT_NUMB| CompNeighLists(heap, left, right, pCG),
         )?;
         j = i32::from(r2).wrapping_sub(1);
-        let k = i32::from(*atom_numbers.get(usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?)?);
-        *new_ranks.get_mut(usize::try_from(k).map_err(|_| SourceHeapError::PointerOutOfBounds)?)? = r2;
+        let k = i32::from(
+            *atom_numbers
+                .get(usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?)?,
+        );
+        *new_ranks
+            .get_mut(usize::try_from(k).map_err(|_| SourceHeapError::PointerOutOfBounds)?)? = r2;
         nNumDiffRanks = nNumDiffRanks.wrapping_add(1);
         while j > i {
-            let previous_atom = *atom_numbers
-                .get(usize::try_from(j.wrapping_sub(1)).map_err(|_| SourceHeapError::PointerOutOfBounds)?)?;
-            let current_atom =
-                *atom_numbers.get(usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?)?;
+            let previous_atom = *atom_numbers.get(
+                usize::try_from(j.wrapping_sub(1))
+                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+            )?;
+            let current_atom = *atom_numbers
+                .get(usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?)?;
             let previous_list = source_get(heap, NeighList, i32::from(previous_atom))?;
             let current_list = source_get(heap, NeighList, i32::from(current_atom))?;
             if CompareNeighListLex(heap, previous_list, current_list, nRank)? != 0 {
@@ -1581,9 +1666,13 @@ pub(crate) fn SetNewRanksFromNeighLists3(
                 nNumNewRanks = nNumNewRanks.wrapping_add(1);
             }
             j = j.wrapping_sub(1);
-            let atom =
-                i32::from(*atom_numbers.get(usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?)?);
-            *new_ranks.get_mut(usize::try_from(atom).map_err(|_| SourceHeapError::PointerOutOfBounds)?)? = r2;
+            let atom = i32::from(
+                *atom_numbers
+                    .get(usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?)?,
+            );
+            *new_ranks.get_mut(
+                usize::try_from(atom).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+            )? = r2;
         }
         i = i32::from(r1);
         r1 = r1.wrapping_add(1);
@@ -1691,7 +1780,9 @@ pub(crate) fn SetNewRanksFromNeighLists4(
     let mut new_ranks = unsafe { heap.stable_slice_mut(nNewRank)? };
     let mut clear_index = 0_i32;
     while clear_index < num_atoms {
-        *new_ranks.get_mut(usize::try_from(clear_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?)? = 0;
+        *new_ranks.get_mut(
+            usize::try_from(clear_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+        )? = 0;
         clear_index = clear_index.wrapping_add(1);
     }
     let atom_numbers = unsafe { heap.stable_slice(nAtomNumber.as_const())? };
@@ -1700,10 +1791,16 @@ pub(crate) fn SetNewRanksFromNeighLists4(
     let mut i = 0_i32;
     let mut r1: AT_RANK = 1;
     while i < num_atoms {
-        let mut j = i32::from(*atom_numbers.get(usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?)?);
-        let mut r2 = *ranks.get(usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?)?;
+        let mut j = i32::from(
+            *atom_numbers
+                .get(usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?)?,
+        );
+        let mut r2 =
+            *ranks.get(usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?)?;
         if r1 == r2 {
-            *new_ranks.get_mut(usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?)? = r2;
+            *new_ranks
+                .get_mut(usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?)? =
+                r2;
             nNumDiffRanks = nNumDiffRanks.wrapping_add(1);
             i = i.wrapping_add(1);
             r1 = r1.wrapping_add(1);
@@ -1715,28 +1812,42 @@ pub(crate) fn SetNewRanksFromNeighLists4(
             heap,
             nAtomNumber.offset(i64::from(i))?,
             i32::from(r2).wrapping_sub(i),
-            &mut |heap, left: AT_NUMB, right: AT_NUMB| CompNeighListsUpToMaxRank(heap, left, right, pCG),
+            &mut |heap, left: AT_NUMB, right: AT_NUMB| {
+                CompNeighListsUpToMaxRank(heap, left, right, pCG)
+            },
         )?;
         j = i32::from(r2).wrapping_sub(1);
-        let atom = i32::from(*atom_numbers.get(usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?)?);
-        *new_ranks.get_mut(usize::try_from(atom).map_err(|_| SourceHeapError::PointerOutOfBounds)?)? = r2;
+        let atom = i32::from(
+            *atom_numbers
+                .get(usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?)?,
+        );
+        *new_ranks
+            .get_mut(usize::try_from(atom).map_err(|_| SourceHeapError::PointerOutOfBounds)?)? = r2;
         nNumDiffRanks = nNumDiffRanks.wrapping_add(1);
         while j > i {
-            let previous_atom = *atom_numbers
-                .get(usize::try_from(j.wrapping_sub(1)).map_err(|_| SourceHeapError::PointerOutOfBounds)?)?;
-            let current_atom =
-                *atom_numbers.get(usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?)?;
+            let previous_atom = *atom_numbers.get(
+                usize::try_from(j.wrapping_sub(1))
+                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+            )?;
+            let current_atom = *atom_numbers
+                .get(usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?)?;
             let previous_list = source_get(heap, NeighList, i32::from(previous_atom))?;
             let current_list = source_get(heap, NeighList, i32::from(current_atom))?;
-            if CompareNeighListLexUpToMaxRank(heap, previous_list, current_list, nRank, nMaxAtRank)? != 0 {
+            if CompareNeighListLexUpToMaxRank(heap, previous_list, current_list, nRank, nMaxAtRank)?
+                != 0
+            {
                 r2 = j as AT_RANK;
                 nNumDiffRanks = nNumDiffRanks.wrapping_add(1);
                 nNumNewRanks = nNumNewRanks.wrapping_add(1);
             }
             j = j.wrapping_sub(1);
-            let atom =
-                i32::from(*atom_numbers.get(usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?)?);
-            *new_ranks.get_mut(usize::try_from(atom).map_err(|_| SourceHeapError::PointerOutOfBounds)?)? = r2;
+            let atom = i32::from(
+                *atom_numbers
+                    .get(usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?)?,
+            );
+            *new_ranks.get_mut(
+                usize::try_from(atom).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+            )? = r2;
         }
         i = i32::from(r1);
         r1 = r1.wrapping_add(1);
@@ -1759,7 +1870,12 @@ pub(crate) fn SetNewRanksFromNeighLists(
     nNewRank: SourceMutPointer<AT_RANK>,
     nAtomNumber: SourceMutPointer<AT_RANK>,
     bUseAltSort: i32,
-    comp: &mut dyn FnMut(&SourceHeap, AT_RANK, AT_RANK, &CANON_GLOBALS) -> Result<i32, SourceHeapError>,
+    comp: &mut dyn FnMut(
+        &SourceHeap,
+        AT_RANK,
+        AT_RANK,
+        &CANON_GLOBALS,
+    ) -> Result<i32, SourceHeapError>,
     workspace: Option<&dyn NeighListRankCompareWorkspace>,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichimap2.c:380 SetNewRanksFromNeighLists
@@ -1831,13 +1947,20 @@ pub(crate) fn SetNewRanksFromNeighLists(
     } else if num_atoms > 1 {
         if nAtomNumber.allocation_identity() != nRank.allocation_identity() {
             heap.with_slice_mut_and_heap_mut(nAtomNumber, |atoms, heap| {
-                let atoms = atoms.get_mut(..count).ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let atoms = atoms
+                    .get_mut(..count)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
                 let bytes = bytemuck::cast_slice_mut::<AT_RANK, u8>(atoms);
-                inchi_qsort(bytes, count, std::mem::size_of::<AT_RANK>(), &mut |left, right| {
-                    let left = AT_RANK::from_ne_bytes([left[0], left[1]]);
-                    let right = AT_RANK::from_ne_bytes([right[0], right[1]]);
-                    comp(heap, left, right, pCG)
-                })
+                inchi_qsort(
+                    bytes,
+                    count,
+                    std::mem::size_of::<AT_RANK>(),
+                    &mut |left, right| {
+                        let left = AT_RANK::from_ne_bytes([left[0], left[1]]);
+                        let right = AT_RANK::from_ne_bytes([right[0], right[1]]);
+                        comp(heap, left, right, pCG)
+                    },
+                )
             })?;
         } else {
             let mut atoms = heap
@@ -1847,11 +1970,16 @@ pub(crate) fn SetNewRanksFromNeighLists(
                 .to_vec();
             let sort_result = {
                 let bytes = bytemuck::cast_slice_mut::<AT_RANK, u8>(&mut atoms);
-                inchi_qsort(bytes, count, std::mem::size_of::<AT_RANK>(), &mut |left, right| {
-                    let left = AT_RANK::from_ne_bytes([left[0], left[1]]);
-                    let right = AT_RANK::from_ne_bytes([right[0], right[1]]);
-                    comp(heap, left, right, pCG)
-                })
+                inchi_qsort(
+                    bytes,
+                    count,
+                    std::mem::size_of::<AT_RANK>(),
+                    &mut |left, right| {
+                        let left = AT_RANK::from_ne_bytes([left[0], left[1]]);
+                        let right = AT_RANK::from_ne_bytes([right[0], right[1]]);
+                        comp(heap, left, right, pCG)
+                    },
+                )
             };
             for (index, atom) in atoms.into_iter().enumerate() {
                 source_set(heap, nAtomNumber, index as i32, atom)?;
@@ -1870,7 +1998,10 @@ pub(crate) fn SetNewRanksFromNeighLists(
             .slice(nAtomNumber.as_const())?
             .get(..count)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        if atom_values.iter().any(|&atom| usize::from(atom) >= new_rank_len) {
+        if atom_values
+            .iter()
+            .any(|&atom| usize::from(atom) >= new_rank_len)
+        {
             return Err(SourceHeapError::PointerOutOfBounds);
         }
         // SAFETY: the complete source ranges and every indirect output index
@@ -1971,7 +2102,8 @@ pub(crate) fn SortNeighListsBySymmAndCanonRank(
     let neighbor_lists = unsafe { heap.stable_slice(NeighList.as_const())? };
     let mut i = 0_i32;
     while i < num_atoms {
-        let list = *neighbor_lists.get(usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?)?;
+        let list = *neighbor_lists
+            .get(usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?)?;
         insertions_sort_NeighListBySymmAndCanonRank(heap, list, nSymmRank, nCanonRank)?;
         i = i.wrapping_add(1);
     }
@@ -2043,7 +2175,8 @@ pub(crate) fn SortNeighLists2(
     let neighbor_lists = unsafe { heap.stable_slice(NeighList.as_const())? };
     let mut position = 0_i32;
     while position < num_atoms {
-        let atom = *atom_numbers.get(usize::try_from(position).map_err(|_| SourceHeapError::PointerOutOfBounds)?)?;
+        let atom = *atom_numbers
+            .get(usize::try_from(position).map_err(|_| SourceHeapError::PointerOutOfBounds)?)?;
         let list = *neighbor_lists.get(usize::from(atom))?;
         if source_get(heap, list, 0)? > 1 {
             insertions_sort_NeighList_AT_NUMBERS(heap, list, nRank)?;
@@ -2110,7 +2243,8 @@ pub(crate) fn SortNeighLists3(
     let mut position = 0_i32;
     let mut previous_rank = 0;
     while position < num_atoms {
-        let atom = *atom_numbers.get(usize::try_from(position).map_err(|_| SourceHeapError::PointerOutOfBounds)?)?;
+        let atom = *atom_numbers
+            .get(usize::try_from(position).map_err(|_| SourceHeapError::PointerOutOfBounds)?)?;
         let rank = *ranks.get(usize::from(atom))?;
         if rank != position.wrapping_add(1) as AT_RANK || rank == previous_rank {
             let list = source_get(heap, NeighList, i32::from(atom))?;
@@ -2130,7 +2264,10 @@ pub(crate) fn SortNeighLists3(
 ///
 /// Every value in `atom_numbers` must be a valid index into `ranks`.
 #[inline]
-unsafe fn insertion_sort_atom_numbers_by_rank(ranks: &[AT_RANK], atom_numbers: &mut [AT_RANK]) -> i32 {
+unsafe fn insertion_sort_atom_numbers_by_rank(
+    ranks: &[AT_RANK],
+    atom_numbers: &mut [AT_RANK],
+) -> i32 {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichisort.c:304 insertions_sort
     // INCHI✔️✔️:     char *i, *j, *pk = (char*) base;
     // INCHI✔️✔️:     int  num_trans = 0;
@@ -2160,9 +2297,11 @@ unsafe fn insertion_sort_atom_numbers_by_rank(ranks: &[AT_RANK], atom_numbers: &
             let i = j - 1;
             // SAFETY: the caller proved the complete atom-number bound. Both
             // positions are inside the slice by construction of this loop.
-            let left_rank = unsafe { *ranks.get_unchecked(usize::from(*atom_numbers.get_unchecked(i))) };
+            let left_rank =
+                unsafe { *ranks.get_unchecked(usize::from(*atom_numbers.get_unchecked(i))) };
             // SAFETY: identical source-array proof and loop bounds as above.
-            let right_rank = unsafe { *ranks.get_unchecked(usize::from(*atom_numbers.get_unchecked(j))) };
+            let right_rank =
+                unsafe { *ranks.get_unchecked(usize::from(*atom_numbers.get_unchecked(j))) };
             if left_rank <= right_rank {
                 break;
             }
@@ -2192,7 +2331,11 @@ fn try_insertion_sort_atom_numbers_by_rank(
         return None;
     }
     let indices_are_bounded = heap.has_proven_index_bound(atom_numbers.as_const(), count, count);
-    if !indices_are_bounded && atom_values[..count].iter().any(|&atom| usize::from(atom) >= count) {
+    if !indices_are_bounded
+        && atom_values[..count]
+            .iter()
+            .any(|&atom| usize::from(atom) >= count)
+    {
         return None;
     }
     if !indices_are_bounded {
@@ -2205,7 +2348,10 @@ fn try_insertion_sort_atom_numbers_by_rank(
     let ranks = unsafe { heap.stable_slice(ranks.as_const()).ok()? };
     // SAFETY: the sorter only swaps values in the proved prefix, preserving
     // both its membership and its index bound.
-    let mut atom_numbers = unsafe { heap.stable_index_bounded_slice_mut(atom_numbers, count, count).ok()? };
+    let mut atom_numbers = unsafe {
+        heap.stable_index_bounded_slice_mut(atom_numbers, count, count)
+            .ok()?
+    };
     let ranks = ranks.prefix(count).ok()?;
     let atom_numbers = atom_numbers.prefix_mut(count).ok()?;
     // SAFETY: construction above proved every atom number indexes `ranks`.
@@ -2266,28 +2412,40 @@ pub(crate) fn DifferentiateRanks2(
 
     pCG.m_pn_RankForSort = pnCurrRank.as_const();
     let count = usize::try_from(num_atoms).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-    let used_direct_insertion_sort =
-        bUseAltSort & 1 != 0 && try_insertion_sort_atom_numbers_by_rank(heap, pnCurrRank, nAtomNumber, count).is_some();
+    let used_direct_insertion_sort = bUseAltSort & 1 != 0
+        && try_insertion_sort_atom_numbers_by_rank(heap, pnCurrRank, nAtomNumber, count).is_some();
     if !used_direct_insertion_sort
         && count != 0
         && nAtomNumber.allocation_identity() != pnCurrRank.allocation_identity()
     {
         heap.with_slice_mut_and_heap_mut(nAtomNumber, |atoms, heap| {
-            let atoms = atoms.get_mut(..count).ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let atoms = atoms
+                .get_mut(..count)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
             let bytes = bytemuck::cast_slice_mut::<AT_RANK, u8>(atoms);
             if bUseAltSort & 1 != 0 {
-                insertions_sort(bytes, count, std::mem::size_of::<AT_RANK>(), &mut |left, right| {
-                    let left = AT_RANK::from_ne_bytes([left[0], left[1]]);
-                    let right = AT_RANK::from_ne_bytes([right[0], right[1]]);
-                    CompRank(heap, left, right, pCG)
-                })
+                insertions_sort(
+                    bytes,
+                    count,
+                    std::mem::size_of::<AT_RANK>(),
+                    &mut |left, right| {
+                        let left = AT_RANK::from_ne_bytes([left[0], left[1]]);
+                        let right = AT_RANK::from_ne_bytes([right[0], right[1]]);
+                        CompRank(heap, left, right, pCG)
+                    },
+                )
                 .map(|_| ())
             } else {
-                inchi_qsort(bytes, count, std::mem::size_of::<AT_RANK>(), &mut |left, right| {
-                    let left = AT_RANK::from_ne_bytes([left[0], left[1]]);
-                    let right = AT_RANK::from_ne_bytes([right[0], right[1]]);
-                    CompRanksOrd(heap, left, right, pCG)
-                })
+                inchi_qsort(
+                    bytes,
+                    count,
+                    std::mem::size_of::<AT_RANK>(),
+                    &mut |left, right| {
+                        let left = AT_RANK::from_ne_bytes([left[0], left[1]]);
+                        let right = AT_RANK::from_ne_bytes([right[0], right[1]]);
+                        CompRanksOrd(heap, left, right, pCG)
+                    },
+                )
             }
         })?;
     } else if !used_direct_insertion_sort && count != 0 {
@@ -2299,18 +2457,28 @@ pub(crate) fn DifferentiateRanks2(
         let sort_result = {
             let bytes = bytemuck::cast_slice_mut::<AT_RANK, u8>(&mut atoms);
             if bUseAltSort & 1 != 0 {
-                insertions_sort(bytes, count, std::mem::size_of::<AT_RANK>(), &mut |left, right| {
-                    let left = AT_RANK::from_ne_bytes([left[0], left[1]]);
-                    let right = AT_RANK::from_ne_bytes([right[0], right[1]]);
-                    CompRank(heap, left, right, pCG)
-                })
+                insertions_sort(
+                    bytes,
+                    count,
+                    std::mem::size_of::<AT_RANK>(),
+                    &mut |left, right| {
+                        let left = AT_RANK::from_ne_bytes([left[0], left[1]]);
+                        let right = AT_RANK::from_ne_bytes([right[0], right[1]]);
+                        CompRank(heap, left, right, pCG)
+                    },
+                )
                 .map(|_| ())
             } else {
-                inchi_qsort(bytes, count, std::mem::size_of::<AT_RANK>(), &mut |left, right| {
-                    let left = AT_RANK::from_ne_bytes([left[0], left[1]]);
-                    let right = AT_RANK::from_ne_bytes([right[0], right[1]]);
-                    CompRanksOrd(heap, left, right, pCG)
-                })
+                inchi_qsort(
+                    bytes,
+                    count,
+                    std::mem::size_of::<AT_RANK>(),
+                    &mut |left, right| {
+                        let left = AT_RANK::from_ne_bytes([left[0], left[1]]);
+                        let right = AT_RANK::from_ne_bytes([right[0], right[1]]);
+                        CompRanksOrd(heap, left, right, pCG)
+                    },
+                )
             }
         };
         for (index, atom) in atoms.into_iter().enumerate() {
@@ -2324,9 +2492,16 @@ pub(crate) fn DifferentiateRanks2(
         heap.record_index_bound(nAtomNumber, count, count)?;
     }
 
-    let mut sort_workspace_cache =
-        ContiguousNeighborRankSortWorkspace::try_new(heap, count, pnCurrRank, NeighList, nAtomNumber)
-            .and_then(|workspace| AlternatingContiguousNeighborRankSortWorkspace::try_new(heap, workspace, pnPrevRank));
+    let mut sort_workspace_cache = ContiguousNeighborRankSortWorkspace::try_new(
+        heap,
+        count,
+        pnCurrRank,
+        NeighList,
+        nAtomNumber,
+    )
+    .and_then(|workspace| {
+        AlternatingContiguousNeighborRankSortWorkspace::try_new(heap, workspace, pnPrevRank)
+    });
     let mut workspace_cache: Option<NeighListRankWorkspace> = None;
     loop {
         *lNumIter = lNumIter.wrapping_add(1);
@@ -2347,8 +2522,14 @@ pub(crate) fn DifferentiateRanks2(
                 .as_mut()
                 .is_some_and(|workspace| workspace.refresh_ranks(heap, pnPrevRank, count));
             if !refreshed {
-                workspace_cache =
-                    NeighListRankWorkspace::try_new(heap, NeighList, pnPrevRank, nAtomNumber, pnCurrRank, count);
+                workspace_cache = NeighListRankWorkspace::try_new(
+                    heap,
+                    NeighList,
+                    pnPrevRank,
+                    nAtomNumber,
+                    pnCurrRank,
+                    count,
+                );
             }
             let workspace: Option<&dyn NeighListRankCompareWorkspace> = workspace_cache
                 .as_ref()
@@ -2441,9 +2622,16 @@ pub(crate) fn DifferentiateRanks3(
     // END INCHI C FUNCTION: DifferentiateRanks3
 
     let count = usize::try_from(num_atoms.max(0)).expect("non-negative i32 fits usize");
-    let mut sort_workspace_cache =
-        ContiguousNeighborRankSortWorkspace::try_new(heap, count, pnCurrRank, NeighList, nAtomNumber)
-            .and_then(|workspace| AlternatingContiguousNeighborRankSortWorkspace::try_new(heap, workspace, pnPrevRank));
+    let mut sort_workspace_cache = ContiguousNeighborRankSortWorkspace::try_new(
+        heap,
+        count,
+        pnCurrRank,
+        NeighList,
+        nAtomNumber,
+    )
+    .and_then(|workspace| {
+        AlternatingContiguousNeighborRankSortWorkspace::try_new(heap, workspace, pnPrevRank)
+    });
     loop {
         *lNumIter = lNumIter.wrapping_add(1);
         switch_ptrs(&mut pnCurrRank, &mut pnPrevRank);
@@ -2459,8 +2647,15 @@ pub(crate) fn DifferentiateRanks3(
             nNumCurrRanks = workspace.set_new_ranks3(&mut new_ranks);
         } else {
             SortNeighLists3(heap, num_atoms, pnPrevRank, NeighList, nAtomNumber)?;
-            nNumCurrRanks =
-                SetNewRanksFromNeighLists3(heap, pCG, num_atoms, NeighList, pnPrevRank, pnCurrRank, nAtomNumber)?;
+            nNumCurrRanks = SetNewRanksFromNeighLists3(
+                heap,
+                pCG,
+                num_atoms,
+                NeighList,
+                pnPrevRank,
+                pnCurrRank,
+                nAtomNumber,
+            )?;
         }
         if nNumCurrRanks >= 0 {
             break;
@@ -2511,9 +2706,16 @@ pub(crate) fn DifferentiateRanks4(
     // END INCHI C FUNCTION: DifferentiateRanks4
 
     let count = usize::try_from(num_atoms.max(0)).expect("non-negative i32 fits usize");
-    let mut sort_workspace_cache =
-        ContiguousNeighborRankSortWorkspace::try_new(heap, count, pnCurrRank, NeighList, nAtomNumber)
-            .and_then(|workspace| AlternatingContiguousNeighborRankSortWorkspace::try_new(heap, workspace, pnPrevRank));
+    let mut sort_workspace_cache = ContiguousNeighborRankSortWorkspace::try_new(
+        heap,
+        count,
+        pnCurrRank,
+        NeighList,
+        nAtomNumber,
+    )
+    .and_then(|workspace| {
+        AlternatingContiguousNeighborRankSortWorkspace::try_new(heap, workspace, pnPrevRank)
+    });
     loop {
         *lNumIter = lNumIter.wrapping_add(1);
         switch_ptrs(&mut pnCurrRank, &mut pnPrevRank);
@@ -2611,18 +2813,28 @@ pub(crate) fn DifferentiateRanksBasic(
     let sort_result = {
         let bytes = bytemuck::cast_slice_mut::<AT_RANK, u8>(&mut atoms);
         if bUseAltSort & 1 != 0 {
-            insertions_sort(bytes, count, std::mem::size_of::<AT_RANK>(), &mut |left, right| {
-                let left = AT_RANK::from_ne_bytes([left[0], left[1]]);
-                let right = AT_RANK::from_ne_bytes([right[0], right[1]]);
-                CompRank(heap, left, right, pCG)
-            })
+            insertions_sort(
+                bytes,
+                count,
+                std::mem::size_of::<AT_RANK>(),
+                &mut |left, right| {
+                    let left = AT_RANK::from_ne_bytes([left[0], left[1]]);
+                    let right = AT_RANK::from_ne_bytes([right[0], right[1]]);
+                    CompRank(heap, left, right, pCG)
+                },
+            )
             .map(|_| ())
         } else {
-            inchi_qsort(bytes, count, std::mem::size_of::<AT_RANK>(), &mut |left, right| {
-                let left = AT_RANK::from_ne_bytes([left[0], left[1]]);
-                let right = AT_RANK::from_ne_bytes([right[0], right[1]]);
-                CompRank(heap, left, right, pCG)
-            })
+            inchi_qsort(
+                bytes,
+                count,
+                std::mem::size_of::<AT_RANK>(),
+                &mut |left, right| {
+                    let left = AT_RANK::from_ne_bytes([left[0], left[1]]);
+                    let right = AT_RANK::from_ne_bytes([right[0], right[1]]);
+                    CompRank(heap, left, right, pCG)
+                },
+            )
         }
     };
     for (index, atom) in atoms.into_iter().enumerate() {
@@ -2634,9 +2846,16 @@ pub(crate) fn DifferentiateRanksBasic(
         heap.record_index_bound(nAtomNumber, count, count)?;
     }
 
-    let mut sort_workspace_cache =
-        ContiguousNeighborRankSortWorkspace::try_new(heap, count, pnCurrRank, NeighList, nAtomNumber)
-            .and_then(|workspace| AlternatingContiguousNeighborRankSortWorkspace::try_new(heap, workspace, pnPrevRank));
+    let mut sort_workspace_cache = ContiguousNeighborRankSortWorkspace::try_new(
+        heap,
+        count,
+        pnCurrRank,
+        NeighList,
+        nAtomNumber,
+    )
+    .and_then(|workspace| {
+        AlternatingContiguousNeighborRankSortWorkspace::try_new(heap, workspace, pnPrevRank)
+    });
     let mut workspace_cache: Option<NeighListRankWorkspace> = None;
     loop {
         *lNumIter = lNumIter.wrapping_add(1);
@@ -2655,8 +2874,14 @@ pub(crate) fn DifferentiateRanksBasic(
                 .as_mut()
                 .is_some_and(|workspace| workspace.refresh_ranks(heap, pnPrevRank, count));
             if !refreshed {
-                workspace_cache =
-                    NeighListRankWorkspace::try_new(heap, NeighList, pnPrevRank, nAtomNumber, pnCurrRank, count);
+                workspace_cache = NeighListRankWorkspace::try_new(
+                    heap,
+                    NeighList,
+                    pnPrevRank,
+                    nAtomNumber,
+                    pnCurrRank,
+                    count,
+                );
             }
         }
         let workspace: Option<&dyn NeighListRankCompareWorkspace> = if use_workspace {
@@ -2886,7 +3111,9 @@ pub(crate) fn HalfStereoBondParity(
     }
 
     let parity_value = at1_parity & BITS_PARITY as i32;
-    if !(AB_MIN_WELL_DEFINED_PARITY as i32..=AB_MAX_WELL_DEFINED_PARITY as i32).contains(&parity_value) {
+    if !(AB_MIN_WELL_DEFINED_PARITY as i32..=AB_MAX_WELL_DEFINED_PARITY as i32)
+        .contains(&parity_value)
+    {
         if (AB_MIN_KNOWN_PARITY as i32..=AB_MAX_KNOWN_PARITY as i32).contains(&parity_value) {
             return Ok(at1_parity);
         }
@@ -2942,7 +3169,12 @@ pub(crate) fn HalfStereoBondParity(
     if j == 2 && r[0] == r[1] {
         Ok(AB_PARITY_CALC as i32)
     } else {
-        Ok(2_i32.wrapping_sub(at1_parity.wrapping_add(iNeigh).wrapping_add(i32::from(r[1] < r[0])) % 2))
+        Ok(2_i32.wrapping_sub(
+            at1_parity
+                .wrapping_add(iNeigh)
+                .wrapping_add(i32::from(r[1] < r[0]))
+                % 2,
+        ))
     }
 }
 
@@ -3201,17 +3433,26 @@ pub(crate) fn parity_of_mapped_half_bond(
 
     let parity = i32::from(to_atom.parity) & BITS_PARITY as i32;
     let num_neigh = i32::from(to_atom.valence);
-    if num_neigh > MAX_NUM_STEREO_BOND_NEIGH as i32 || num_neigh < MIN_NUM_STEREO_BOND_NEIGH as i32 {
+    if num_neigh > MAX_NUM_STEREO_BOND_NEIGH as i32 || num_neigh < MIN_NUM_STEREO_BOND_NEIGH as i32
+    {
         if num_neigh == 1 && to_atom.stereo_bond_neighbor[0] != 0 {
-            if (AB_MIN_WELL_DEFINED_PARITY as i32..=AB_MAX_WELL_DEFINED_PARITY as i32).contains(&parity) {
+            if (AB_MIN_WELL_DEFINED_PARITY as i32..=AB_MAX_WELL_DEFINED_PARITY as i32)
+                .contains(&parity)
+            {
                 return Ok(2_i32.wrapping_sub(parity % 2));
             }
-            return Ok(if parity != 0 { parity } else { AB_PARITY_UNDF as i32 });
+            return Ok(if parity != 0 {
+                parity
+            } else {
+                AB_PARITY_UNDF as i32
+            });
         }
         return Ok(0);
     }
     if (AB_MIN_KNOWN_PARITY as i32..=AB_MAX_KNOWN_PARITY as i32).contains(&parity) {
-        if !(AB_MIN_WELL_DEFINED_PARITY as i32..=AB_MAX_WELL_DEFINED_PARITY as i32).contains(&parity) {
+        if !(AB_MIN_WELL_DEFINED_PARITY as i32..=AB_MAX_WELL_DEFINED_PARITY as i32)
+            .contains(&parity)
+        {
             return Ok(parity);
         }
     } else {
@@ -3560,8 +3801,14 @@ pub(crate) fn parity_of_mapped_atom2(
     for i in 0..count {
         neigh_number_from[i] = i as AT_RANK;
         neigh_number_to[i] = i as AT_RANK;
-        let to_neighbour = *to_atom.neighbor.get(i).ok_or(SourceHeapError::PointerOutOfBounds)?;
-        let from_neighbour = *from_atom.neighbor.get(i).ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let to_neighbour = *to_atom
+            .neighbor
+            .get(i)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let from_neighbour = *from_atom
+            .neighbor
+            .get(i)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?;
         neigh_rank_to[i] = rank_at(&rank_to, i32::from(to_neighbour))?;
         neigh_rank_from[i] = rank_at(&rank_from, i32::from(from_neighbour))?;
         neigh_rank_from_canon[i] = rank_at(&canon_from, i32::from(from_neighbour))?;
@@ -3652,7 +3899,9 @@ pub(crate) fn parity_of_mapped_atom2(
             return Ok(0);
         }
 
-        if !(AB_MIN_WELL_DEFINED_PARITY as i8..=AB_MAX_WELL_DEFINED_PARITY as i8).contains(&to_atom.parity) {
+        if !(AB_MIN_WELL_DEFINED_PARITY as i8..=AB_MAX_WELL_DEFINED_PARITY as i8)
+            .contains(&to_atom.parity)
+        {
             return Ok(i32::from(to_atom.parity));
         }
 
@@ -3764,11 +4013,17 @@ pub(crate) fn might_change_other_atom_parity(
     let mut i = 0_i32;
     while i < num_atoms {
         let index = usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        if rank2.get(index).ok_or(SourceHeapError::PointerOutOfBounds)?
-            != rank1.get(index).ok_or(SourceHeapError::PointerOutOfBounds)?
+        if rank2
+            .get(index)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?
+            != rank1
+                .get(index)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?
         {
             let atoms = heap.slice(at.as_const())?;
-            let atom = atoms.get(index).ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let atom = atoms
+                .get(index)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
             if i != at_no
                 && atom.bHasStereoOrEquToStereo != 0
                 && (i32::from(atom.stereo_atom_parity) & KNOWN_PARITIES_EQL as i32) == 0
@@ -3787,7 +4042,8 @@ pub(crate) fn might_change_other_atom_parity(
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
                 if i32::from(neighbour) != at_no
                     && neighbour_atom.bHasStereoOrEquToStereo != 0
-                    && (i32::from(neighbour_atom.stereo_atom_parity) & KNOWN_PARITIES_EQL as i32) == 0
+                    && (i32::from(neighbour_atom.stereo_atom_parity) & KNOWN_PARITIES_EQL as i32)
+                        == 0
                     && neighbour_atom.stereo_bond_neighbor[0] == 0
                 {
                     return Ok(1);
@@ -4541,7 +4797,8 @@ pub(crate) fn BreakNeighborsTie(
 
     if (mode == mode_s4 && in1 != 0)
         || (mode != mode_std && ia_valence != MAX_NUM_STEREO_ATOM_NEIGH as i32)
-        || (mode != mode_std && source_get(heap, nSymmRank, n1)? != source_get(heap, nSymmRank, n2)?)
+        || (mode != mode_std
+            && source_get(heap, nSymmRank, n1)? != source_get(heap, nSymmRank, n2)?)
     {
         return Ok(0);
     }
@@ -4563,8 +4820,11 @@ pub(crate) fn BreakNeighborsTie(
         let mut i = 0_i32;
         while i < ia_valence {
             if i != in1 && i != in2 {
-                let slot = usize::try_from(num_other_neigh).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                *other_neigh.get_mut(slot).ok_or(SourceHeapError::PointerOutOfBounds)? =
+                let slot = usize::try_from(num_other_neigh)
+                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                *other_neigh
+                    .get_mut(slot)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)? =
                     i32::from(source_get(heap, neigh_num, i)?);
                 *other_neig_ord
                     .get_mut(slot)
@@ -4576,8 +4836,10 @@ pub(crate) fn BreakNeighborsTie(
     }
     let _ = (other_neig_ord, num_other_neigh);
     if (mode != mode_std
-        && source_get(heap, nSymmRank, other_neigh[0])? != source_get(heap, nSymmRank, other_neigh[1])?)
-        || (mode == mode_s4 && source_get(heap, nSymmRank, n1)? != source_get(heap, nSymmRank, other_neigh[1])?)
+        && source_get(heap, nSymmRank, other_neigh[0])?
+            != source_get(heap, nSymmRank, other_neigh[1])?)
+        || (mode == mode_s4
+            && source_get(heap, nSymmRank, n1)? != source_get(heap, nSymmRank, other_neigh[1])?)
     {
         return Ok(0);
     }
@@ -4665,11 +4927,14 @@ pub(crate) fn BreakNeighborsTie(
             let (nn1, nn2) = if i == 0 {
                 (n2, n1)
             } else if mode == mode_c2v {
-                let index = usize::try_from(i.wrapping_sub(1)).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let index = usize::try_from(i.wrapping_sub(1))
+                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 (other_neigh[index], other_neigh[index])
             } else if mode == mode_c2 {
-                let first = usize::try_from(i.wrapping_sub(1)).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                let second = usize::try_from(2_i32.wrapping_sub(i)).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let first = usize::try_from(i.wrapping_sub(1))
+                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let second = usize::try_from(2_i32.wrapping_sub(i))
+                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 (other_neigh[first], other_neigh[second])
             } else {
                 return Ok(-1);
@@ -4720,7 +4985,8 @@ pub(crate) fn BreakNeighborsTie(
     if mode == mode_s4 {
         let mut i = 0_i32;
         while i <= 2 {
-            let odd = usize::try_from(1_i32.wrapping_sub(in2 % 2)).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let odd = usize::try_from(1_i32.wrapping_sub(in2 % 2))
+                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             let even = usize::try_from(in2 % 2).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             let (nn1, nn2) = match i {
                 0 => (n2, other_neigh[odd]),
@@ -4779,7 +5045,9 @@ pub(crate) fn BreakNeighborsTie(
             let neighbor = *ia_neighbors
                 .get(usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            num_eq = num_eq.wrapping_add(i32::from(tied == source_get(heap, rank10, i32::from(neighbor))?));
+            num_eq = num_eq.wrapping_add(i32::from(
+                tied == source_get(heap, rank10, i32::from(neighbor))?,
+            ));
             i = i.wrapping_add(1);
         }
         if num_eq == MAX_NUM_STEREO_ATOM_NEIGH as i32 - 1 {
@@ -4821,7 +5089,9 @@ pub(crate) fn BreakNeighborsTie(
     while i < num_at_tg {
         let atom1 = source_get(heap, order10, i)?;
         let atom2 = source_get(heap, order20, i)?;
-        if source_get(heap, rank10, i32::from(atom1))? != source_get(heap, rank20, i32::from(atom2))? {
+        if source_get(heap, rank10, i32::from(atom1))?
+            != source_get(heap, rank20, i32::from(atom2))?
+        {
             return Ok(-1);
         }
         i = i.wrapping_add(1);
@@ -4996,7 +5266,8 @@ pub(crate) fn CheckNextSymmNeighborsAndBonds(
         1 => return Ok(-1),
         _ => {}
     }
-    if source_get(heap, nVisitOrd1, i32::from(n1))? != source_get(heap, nVisitOrd2, i32::from(n2))? {
+    if source_get(heap, nVisitOrd1, i32::from(n1))? != source_get(heap, nVisitOrd2, i32::from(n2))?
+    {
         return Ok(-1);
     }
 
@@ -5015,8 +5286,13 @@ pub(crate) fn CheckNextSymmNeighborsAndBonds(
         if s1 == 0 {
             break;
         }
-        let order = usize::try_from(atom1.stereo_bond_ord[i1]).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        k1 = *atom1.neighbor.get(order).ok_or(SourceHeapError::PointerOutOfBounds)? == n1;
+        let order = usize::try_from(atom1.stereo_bond_ord[i1])
+            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        k1 = *atom1
+            .neighbor
+            .get(order)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?
+            == n1;
         if k1 {
             break;
         }
@@ -5030,8 +5306,13 @@ pub(crate) fn CheckNextSymmNeighborsAndBonds(
         if s2 == 0 {
             break;
         }
-        let order = usize::try_from(atom2.stereo_bond_ord[i2]).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        k2 = *atom2.neighbor.get(order).ok_or(SourceHeapError::PointerOutOfBounds)? == n2;
+        let order = usize::try_from(atom2.stereo_bond_ord[i2])
+            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        k2 = *atom2
+            .neighbor
+            .get(order)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?
+            == n2;
         if k2 {
             break;
         }
@@ -5059,8 +5340,10 @@ pub(crate) fn CheckNextSymmNeighborsAndBonds(
         if parity1 != parity2 {
             let value1 = i32::from(parity1) & BITS_PARITY as i32;
             let value2 = i32::from(parity2) & BITS_PARITY as i32;
-            let known1 = (AB_MIN_KNOWN_PARITY as i32..=AB_MAX_KNOWN_PARITY as i32).contains(&value1);
-            let known2 = (AB_MIN_KNOWN_PARITY as i32..=AB_MAX_KNOWN_PARITY as i32).contains(&value2);
+            let known1 =
+                (AB_MIN_KNOWN_PARITY as i32..=AB_MAX_KNOWN_PARITY as i32).contains(&value1);
+            let known2 =
+                (AB_MIN_KNOWN_PARITY as i32..=AB_MAX_KNOWN_PARITY as i32).contains(&value2);
             if known1 && known2 {
                 return Ok(0);
             }
@@ -5223,7 +5506,16 @@ pub(crate) fn CreateCheckSymmPaths(
     source_set(heap, nVisitOrd1, i32::from(cur1), *nLength)?;
     source_set(heap, nVisitOrd2, i32::from(cur2), *nLength)?;
 
-    let (parity1, parity2, atom_parity1, atom_parity2, stereo_neighbor1, stereo_neighbor2, valence1, valence2) = {
+    let (
+        parity1,
+        parity2,
+        atom_parity1,
+        atom_parity2,
+        stereo_neighbor1,
+        stereo_neighbor2,
+        valence1,
+        valence2,
+    ) = {
         let atoms = heap.slice(at.as_const())?;
         let atom1 = atoms
             .get(usize::from(cur1))
@@ -5244,12 +5536,17 @@ pub(crate) fn CreateCheckSymmPaths(
     };
     let parity_value = |value: i8| i32::from(value) & BITS_PARITY as i32;
     let well_defined = |value: i8| {
-        (AB_MIN_WELL_DEFINED_PARITY as i32..=AB_MAX_WELL_DEFINED_PARITY as i32).contains(&parity_value(value))
+        (AB_MIN_WELL_DEFINED_PARITY as i32..=AB_MAX_WELL_DEFINED_PARITY as i32)
+            .contains(&parity_value(value))
     };
-    let known = |value: i8| (AB_MIN_KNOWN_PARITY as i32..=AB_MAX_KNOWN_PARITY as i32).contains(&parity_value(value));
+    let known = |value: i8| {
+        (AB_MIN_KNOWN_PARITY as i32..=AB_MAX_KNOWN_PARITY as i32).contains(&parity_value(value))
+    };
 
     if well_defined(parity1) && well_defined(parity2) {
-        let inverted = i32::from(parity1).wrapping_add(i32::from(parity2)).wrapping_rem(2);
+        let inverted = i32::from(parity1)
+            .wrapping_add(i32::from(parity2))
+            .wrapping_rem(2);
         if *bParitiesInverted < 0 {
             *bParitiesInverted = inverted;
         } else if *bParitiesInverted != inverted {
@@ -5259,7 +5556,11 @@ pub(crate) fn CreateCheckSymmPaths(
         return Ok(0);
     }
 
-    if cur1 != cur2 && stereo_neighbor1 == 0 && stereo_neighbor2 == 0 && known(atom_parity1) != known(atom_parity2) {
+    if cur1 != cur2
+        && stereo_neighbor1 == 0
+        && stereo_neighbor2 == 0
+        && known(atom_parity1) != known(atom_parity2)
+    {
         return Ok(0);
     }
     if valence1 != valence2 {
@@ -6103,7 +6404,9 @@ pub(crate) fn CalculatedPathsParitiesAreIdentical(
     let mut n_num_diff = 0_i32;
     let mut n_num_inv = 0_i32;
 
-    if (nNeighMode != NEIGH_MODE_RING as i32 && bParitiesInverted != 0) || bParitiesInverted.wrapping_abs() != 1 {
+    if (nNeighMode != NEIGH_MODE_RING as i32 && bParitiesInverted != 0)
+        || bParitiesInverted.wrapping_abs() != 1
+    {
         bParitiesInverted = 0;
     }
 
@@ -6112,8 +6415,10 @@ pub(crate) fn CalculatedPathsParitiesAreIdentical(
         let mut missing1 = 0_i32;
         let mut missing2 = 0_i32;
         for index in 0..count {
-            missing1 = missing1.wrapping_add(i32::from(source_get(heap, nVisited1, index as i32)? == 0));
-            missing2 = missing2.wrapping_add(i32::from(source_get(heap, nVisited2, index as i32)? == 0));
+            missing1 =
+                missing1.wrapping_add(i32::from(source_get(heap, nVisited1, index as i32)? == 0));
+            missing2 =
+                missing2.wrapping_add(i32::from(source_get(heap, nVisited2, index as i32)? == 0));
             source_set(heap, nAtomNumberCanon1, index as i32, sentinel)?;
             source_set(heap, nAtomNumberCanon2, index as i32, sentinel)?;
         }
@@ -6141,13 +6446,23 @@ pub(crate) fn CalculatedPathsParitiesAreIdentical(
         if visited1 != 0 {
             let canonical = source_get(heap, nCanonRank, i32::from(visited1) - 1)?;
             source_set(heap, nVisited1, index as i32, canonical)?;
-            source_set(heap, nAtomNumberCanon1, i32::from(canonical) - 1, index as AT_RANK)?;
+            source_set(
+                heap,
+                nAtomNumberCanon1,
+                i32::from(canonical) - 1,
+                index as AT_RANK,
+            )?;
         }
         let visited2 = source_get(heap, nVisited2, index as i32)?;
         if visited2 != 0 {
             let canonical = source_get(heap, nCanonRank, i32::from(visited2) - 1)?;
             source_set(heap, nVisited2, index as i32, canonical)?;
-            source_set(heap, nAtomNumberCanon2, i32::from(canonical) - 1, index as AT_RANK)?;
+            source_set(
+                heap,
+                nAtomNumberCanon2,
+                i32::from(canonical) - 1,
+                index as AT_RANK,
+            )?;
         }
     }
 
@@ -6205,18 +6520,22 @@ pub(crate) fn CalculatedPathsParitiesAreIdentical(
             .filter(|index| *index < count)
             .ok_or(SourceHeapError::PointerOutOfBounds)
     };
-    let atom_known = |parity: i32| (AB_MIN_KNOWN_PARITY as i32..=AB_MAX_KNOWN_PARITY as i32).contains(&parity);
-    let atom_well_defined =
-        |parity: i32| (AB_MIN_WELL_DEFINED_PARITY as i32..=AB_MAX_WELL_DEFINED_PARITY as i32).contains(&parity);
+    let atom_known =
+        |parity: i32| (AB_MIN_KNOWN_PARITY as i32..=AB_MAX_KNOWN_PARITY as i32).contains(&parity);
+    let atom_well_defined = |parity: i32| {
+        (AB_MIN_WELL_DEFINED_PARITY as i32..=AB_MAX_WELL_DEFINED_PARITY as i32).contains(&parity)
+    };
 
     let cur_index = atom_index(cur)?;
     if checking_mode == CHECKING_STEREOBOND as i32 {
         let opposite = atom_index(prev_sb_neigh)?;
         if visited1[opposite] != 0 || visited2[opposite] != 0 {
-            if visited1[opposite] != visited2[opposite] || canonical[opposite] != visited2[opposite] {
+            if visited1[opposite] != visited2[opposite] || canonical[opposite] != visited2[opposite]
+            {
                 return Ok(0);
             }
-            if i32::from(atoms[opposite].valence).wrapping_add(i32::from(atoms[opposite].num_H)) > 3 {
+            if i32::from(atoms[opposite].valence).wrapping_add(i32::from(atoms[opposite].num_H)) > 3
+            {
                 return Ok(0);
             }
             let mut slot = 0_usize;
@@ -6282,7 +6601,9 @@ pub(crate) fn CalculatedPathsParitiesAreIdentical(
         if other_count as i32 + i32::from(atoms[cur_index].num_H) > 2 {
             return Ok(CT_STEREOCOUNT_ERR);
         }
-        if bParitiesInverted != 0 && i32::from(atoms[cur_index].valence) == MAX_NUM_STEREO_ATOM_NEIGH as i32 {
+        if bParitiesInverted != 0
+            && i32::from(atoms[cur_index].valence) == MAX_NUM_STEREO_ATOM_NEIGH as i32
+        {
             let atom_pointer = at.offset(i64::from(cur))?;
             let canon_parity = GetPermutationParity(heap, pCG, atom_pointer, sentinel, nCanonRank)?;
             let parity1 = GetPermutationParity(heap, pCG, atom_pointer, sentinel, nVisited1)?;
@@ -6309,8 +6630,8 @@ pub(crate) fn CalculatedPathsParitiesAreIdentical(
         }
     }
 
-    let center_count =
-        usize::try_from(pCS.nLenLinearCTStereoCarb).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+    let center_count = usize::try_from(pCS.nLenLinearCTStereoCarb)
+        .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
     let centers = if center_count == 0 {
         Vec::new()
     } else {
@@ -6355,8 +6676,16 @@ pub(crate) fn CalculatedPathsParitiesAreIdentical(
             if mapped1 != mapped2 && !parity_inverted_here {
                 return Ok(-1);
             }
-            if atoms.get(mapped1).ok_or(SourceHeapError::PointerOutOfBounds)?.parity == 0
-                || atoms.get(mapped2).ok_or(SourceHeapError::PointerOutOfBounds)?.parity == 0
+            if atoms
+                .get(mapped1)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?
+                .parity
+                == 0
+                || atoms
+                    .get(mapped2)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?
+                    .parity
+                    == 0
             {
                 return Ok(0);
             }
@@ -6365,7 +6694,9 @@ pub(crate) fn CalculatedPathsParitiesAreIdentical(
             if i32::from(traversed1) + i32::from(traversed2) != 1 {
                 return Ok(-1);
             }
-            if (traversed1 && atoms[mapped1].parity == 0) || (traversed2 && atoms[mapped2].parity == 0) {
+            if (traversed1 && atoms[mapped1].parity == 0)
+                || (traversed2 && atoms[mapped2].parity == 0)
+            {
                 return Ok(0);
             }
         }
@@ -6390,8 +6721,10 @@ pub(crate) fn CalculatedPathsParitiesAreIdentical(
             }
             if traversed1 && traversed2 {
                 if parity_inverted_here {
-                    let original1 = GetStereoCenterParity(heap, pCG, at, mapped1 as i32, nCanonRank)?;
-                    let original2 = GetStereoCenterParity(heap, pCG, at, mapped2 as i32, nCanonRank)?;
+                    let original1 =
+                        GetStereoCenterParity(heap, pCG, at, mapped1 as i32, nCanonRank)?;
+                    let original2 =
+                        GetStereoCenterParity(heap, pCG, at, mapped2 as i32, nCanonRank)?;
                     if mapped1 == mapped2
                         || ((parity1 == original1 || parity2 == original2 || parity1 != parity2)
                             && atom_well_defined(parity1))
@@ -6460,7 +6793,8 @@ pub(crate) fn CalculatedPathsParitiesAreIdentical(
         return Ok(0);
     }
 
-    let bond_count = usize::try_from(pCS.nLenLinearCTStereoDble).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+    let bond_count = usize::try_from(pCS.nLenLinearCTStereoDble)
+        .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
     let bonds = if bond_count == 0 {
         Vec::new()
     } else {
@@ -6501,7 +6835,9 @@ pub(crate) fn CalculatedPathsParitiesAreIdentical(
             }
         }
         if nNeighMode == NEIGH_MODE_RING as i32 {
-            if (mapped11 != mapped21 || mapped12 != mapped22) && (mapped11 != mapped22 || mapped12 != mapped21) {
+            if (mapped11 != mapped21 || mapped12 != mapped22)
+                && (mapped11 != mapped22 || mapped12 != mapped21)
+            {
                 return Ok(-1);
             }
             if GetStereoNeighborPos(heap, at, mapped11 as i32, mapped12 as i32)? < 0 {
@@ -6513,7 +6849,8 @@ pub(crate) fn CalculatedPathsParitiesAreIdentical(
                 return Ok(-1);
             }
             if (traversed1 && GetStereoNeighborPos(heap, at, mapped11 as i32, mapped12 as i32)? < 0)
-                || (traversed2 && GetStereoNeighborPos(heap, at, mapped21 as i32, mapped22 as i32)? < 0)
+                || (traversed2
+                    && GetStereoNeighborPos(heap, at, mapped21 as i32, mapped22 as i32)? < 0)
             {
                 return Ok(0);
             }
@@ -6540,7 +6877,8 @@ pub(crate) fn CalculatedPathsParitiesAreIdentical(
             }
             if traversed1
                 && traversed2
-                && (((mapped11 != mapped21 || mapped12 != mapped22) && (mapped11 != mapped22 || mapped12 != mapped21))
+                && (((mapped11 != mapped21 || mapped12 != mapped22)
+                    && (mapped11 != mapped22 || mapped12 != mapped21))
                     || parity1 != parity2)
             {
                 return Ok(-1);
@@ -6550,8 +6888,10 @@ pub(crate) fn CalculatedPathsParitiesAreIdentical(
                 compared = true;
                 if checking_mode == CHECKING_STEREOBOND as i32
                     && nNeighMode == NEIGH_MODE_RING as i32
-                    && ((symm[cur_index] == symm[original1] && symm[usize::from(prev_sb_neigh)] == symm[original2])
-                        || (symm[cur_index] == symm[original2] && symm[usize::from(prev_sb_neigh)] == symm[original1]))
+                    && ((symm[cur_index] == symm[original1]
+                        && symm[usize::from(prev_sb_neigh)] == symm[original2])
+                        || (symm[cur_index] == symm[original2]
+                            && symm[usize::from(prev_sb_neigh)] == symm[original1]))
                 {
                     n_num_eq_stereogenic = n_num_eq_stereogenic.wrapping_add(1);
                 }
@@ -6620,7 +6960,9 @@ pub(crate) fn CalculatedPathsParitiesAreIdentical(
                 .wrapping_add(GetPermutationParity(heap, pCG, atom2, avoid2, nVisited1)?);
             let new2 = GetPermutationParity(heap, pCG, atom1, avoid1, nVisited2)?
                 .wrapping_add(GetPermutationParity(heap, pCG, atom2, avoid2, nVisited2)?);
-            if old.wrapping_rem(2) != new1.wrapping_rem(2) || new1.wrapping_rem(2) != new2.wrapping_rem(2) {
+            if old.wrapping_rem(2) != new1.wrapping_rem(2)
+                || new1.wrapping_rem(2) != new2.wrapping_rem(2)
+            {
                 return Ok(0);
             }
             compared = true;
@@ -6927,12 +7269,15 @@ pub(crate) fn RemoveCalculatedNonStereoBondParities(
     let parity_value = |value: i8| i32::from(value) & BITS_PARITY as i32;
     let parity_calculate = |value: i8| parity_value(value) == AB_PARITY_CALC as i32;
     let parity_well_defined = |value: i8| {
-        (AB_MIN_WELL_DEFINED_PARITY as i32..=AB_MAX_WELL_DEFINED_PARITY as i32).contains(&parity_value(value))
+        (AB_MIN_WELL_DEFINED_PARITY as i32..=AB_MAX_WELL_DEFINED_PARITY as i32)
+            .contains(&parity_value(value))
     };
     let parity_ill_defined = |value: i8| {
-        (AB_MIN_ILL_DEFINED_PARITY as i32..=AB_MAX_ILL_DEFINED_PARITY as i32).contains(&parity_value(value))
+        (AB_MIN_ILL_DEFINED_PARITY as i32..=AB_MAX_ILL_DEFINED_PARITY as i32)
+            .contains(&parity_value(value))
     };
-    let is_allene_chain = |value: i8| ((u32::from(value as u8) & MASK_CUMULENE_LEN) / MULT_STEREOBOND) % 2 != 0;
+    let is_allene_chain =
+        |value: i8| ((u32::from(value as u8) & MASK_CUMULENE_LEN) / MULT_STEREOBOND) % 2 != 0;
 
     let mut ret = 0_i32;
     let mut ret_failed = 0_i32;
@@ -6942,7 +7287,8 @@ pub(crate) fn RemoveCalculatedNonStereoBondParities(
     'passes: loop {
         let mut atom_number = 0_i32;
         while atom_number < num_atoms && !returned_error(ret_failed) {
-            let atom_index = usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let atom_index =
+                usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             let atom_snapshot = heap
                 .slice(at.as_const())?
                 .get(atom_index)
@@ -6960,7 +7306,8 @@ pub(crate) fn RemoveCalculatedNonStereoBondParities(
                     .get(atom_index)
                     .ok_or(SourceHeapError::PointerOutOfBounds)?
                     .clone();
-                let slot = usize::try_from(stereo_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let slot = usize::try_from(stereo_index)
+                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let stereo_neighbor = atom_snapshot.stereo_bond_neighbor[slot];
                 if stereo_neighbor == 0 {
                     break;
@@ -7016,57 +7363,58 @@ pub(crate) fn RemoveCalculatedNonStereoBondParities(
                     first.nRingSystem == second.nRingSystem
                 };
 
-                let (path_list1, path_list2, symm_rank1, symm_rank2) = if neigh_mode == NEIGH_MODE_CHAIN as i32 {
-                    if ring_neighbors {
-                        num_equal_ring_neighbors = num_equal_ring_neighbors.wrapping_add(1);
-                        stereo_index = stereo_index.wrapping_add(1);
-                        continue;
-                    }
-                    (nl, nl, nSymmRank, nSymmRank)
-                } else if neigh_mode == NEIGH_MODE_RING as i32 {
-                    if !ring_neighbors {
-                        stereo_index = stereo_index.wrapping_add(1);
-                        continue;
-                    }
-                    let neighbor_storage = heap.allocate_model_storage(neighbors.to_vec())?;
-                    let symmetric = BreakNeighborsTie(
-                        heap,
-                        pCG,
-                        at,
-                        num_atoms,
-                        num_at_tg,
-                        i32::from(opposite_atom),
-                        atom_number,
-                        neighbor_storage,
-                        0,
-                        1,
-                        0,
-                        pRankStack1,
-                        pRankStack2,
-                        nTempRank,
-                        NeighList,
-                        nSymmRank,
-                        nCanonRank,
-                        nl1,
-                        nl2,
-                        &mut pCS.lNumNeighListIter,
-                    )?;
-                    if symmetric <= 0 {
-                        if ret_failed > symmetric {
-                            ret_failed = symmetric;
+                let (path_list1, path_list2, symm_rank1, symm_rank2) =
+                    if neigh_mode == NEIGH_MODE_CHAIN as i32 {
+                        if ring_neighbors {
+                            num_equal_ring_neighbors = num_equal_ring_neighbors.wrapping_add(1);
+                            stereo_index = stereo_index.wrapping_add(1);
+                            continue;
                         }
-                        stereo_index = stereo_index.wrapping_add(1);
-                        continue;
-                    }
-                    (
-                        nl1,
-                        nl2,
-                        source_get(heap, pRankStack1, 0)?,
-                        source_get(heap, pRankStack2, 0)?,
-                    )
-                } else {
-                    return Ok(CT_STEREOCOUNT_ERR);
-                };
+                        (nl, nl, nSymmRank, nSymmRank)
+                    } else if neigh_mode == NEIGH_MODE_RING as i32 {
+                        if !ring_neighbors {
+                            stereo_index = stereo_index.wrapping_add(1);
+                            continue;
+                        }
+                        let neighbor_storage = heap.allocate_model_storage(neighbors.to_vec())?;
+                        let symmetric = BreakNeighborsTie(
+                            heap,
+                            pCG,
+                            at,
+                            num_atoms,
+                            num_at_tg,
+                            i32::from(opposite_atom),
+                            atom_number,
+                            neighbor_storage,
+                            0,
+                            1,
+                            0,
+                            pRankStack1,
+                            pRankStack2,
+                            nTempRank,
+                            NeighList,
+                            nSymmRank,
+                            nCanonRank,
+                            nl1,
+                            nl2,
+                            &mut pCS.lNumNeighListIter,
+                        )?;
+                        if symmetric <= 0 {
+                            if ret_failed > symmetric {
+                                ret_failed = symmetric;
+                            }
+                            stereo_index = stereo_index.wrapping_add(1);
+                            continue;
+                        }
+                        (
+                            nl1,
+                            nl2,
+                            source_get(heap, pRankStack1, 0)?,
+                            source_get(heap, pRankStack2, 0)?,
+                        )
+                    } else {
+                        return Ok(CT_STEREOCOUNT_ERR);
+                    };
 
                 heap.slice_mut(nVisited1)?
                     .get_mut(..count)
@@ -7086,11 +7434,22 @@ pub(crate) fn RemoveCalculatedNonStereoBondParities(
                     .fill(0);
 
                 let mut length = 1_u16;
-                source_set(heap, nVisited1, atom_number, atom_number.wrapping_add(1) as AT_RANK)?;
-                source_set(heap, nVisited2, atom_number, atom_number.wrapping_add(1) as AT_RANK)?;
+                source_set(
+                    heap,
+                    nVisited1,
+                    atom_number,
+                    atom_number.wrapping_add(1) as AT_RANK,
+                )?;
+                source_set(
+                    heap,
+                    nVisited2,
+                    atom_number,
+                    atom_number.wrapping_add(1) as AT_RANK,
+                )?;
                 source_set(heap, nAtomNumberCanon1, atom_number, length)?;
                 source_set(heap, nAtomNumberCanon2, atom_number, length)?;
-                let avoid = heap.allocate_model_storage(vec![atom_number as AT_RANK, opposite_atom])?;
+                let avoid =
+                    heap.allocate_model_storage(vec![atom_number as AT_RANK, opposite_atom])?;
                 let opposite_index = usize::from(opposite_atom);
                 let opposite_snapshot = heap
                     .slice(at.as_const())?
@@ -7160,13 +7519,22 @@ pub(crate) fn RemoveCalculatedNonStereoBondParities(
                             } else {
                                 AB_PARITY_UNDF as i32
                             };
-                            let current_parity = heap.slice(at.as_const())?[atom_index].stereo_bond_parity[slot];
-                            if (parity_ill_defined(current_parity) && parity_value(current_parity) > new_parity)
+                            let current_parity =
+                                heap.slice(at.as_const())?[atom_index].stereo_bond_parity[slot];
+                            if (parity_ill_defined(current_parity)
+                                && parity_value(current_parity) > new_parity)
                                 || parity_calculate(current_parity)
                             {
-                                SetOneStereoBondIllDefParity(heap, at, atom_number, stereo_index, new_parity)?;
+                                SetOneStereoBondIllDefParity(
+                                    heap,
+                                    at,
+                                    atom_number,
+                                    stereo_index,
+                                    new_parity,
+                                )?;
                                 let rank_a = source_get(heap, nCanonRank, atom_number)?;
-                                let rank_b = source_get(heap, nCanonRank, i32::from(opposite_atom))?;
+                                let rank_b =
+                                    source_get(heap, nCanonRank, i32::from(opposite_atom))?;
                                 let rank1 = rank_a.max(rank_b);
                                 let rank2 = rank_a.min(rank_b);
                                 let stereo_count = usize::try_from(pCS.nLenLinearCTStereoDble)
@@ -7209,7 +7577,8 @@ pub(crate) fn RemoveCalculatedNonStereoBondParities(
                                         stereo_entries[source - 1] = stereo_entries[source].clone();
                                     }
                                 }
-                                pCS.nLenLinearCTStereoDble = pCS.nLenLinearCTStereoDble.wrapping_sub(1);
+                                pCS.nLenLinearCTStereoDble =
+                                    pCS.nLenLinearCTStereoDble.wrapping_sub(1);
                                 ret = ret.wrapping_add(1);
                             } else {
                                 ret = CT_STEREOCOUNT_ERR;
@@ -7240,7 +7609,10 @@ pub(crate) fn RemoveCalculatedNonStereoBondParities(
             atom_number = atom_number.wrapping_add(1);
         }
 
-        if neigh_mode == NEIGH_MODE_CHAIN as i32 && num_equal_ring_neighbors != 0 && !returned_error(ret_failed) {
+        if neigh_mode == NEIGH_MODE_CHAIN as i32
+            && num_equal_ring_neighbors != 0
+            && !returned_error(ret_failed)
+        {
             neigh_mode = NEIGH_MODE_RING as i32;
             continue;
         }
@@ -7613,7 +7985,8 @@ pub(crate) fn RemoveCalculatedNonStereoCenterParities(
     let parity_value = |value: i8| i32::from(value) & BITS_PARITY as i32;
     let parity_calculate = |value: i8| parity_value(value) == AB_PARITY_CALC as i32;
     let parity_ill_defined = |value: i8| {
-        (AB_MIN_ILL_DEFINED_PARITY as i32..=AB_MAX_ILL_DEFINED_PARITY as i32).contains(&parity_value(value))
+        (AB_MIN_ILL_DEFINED_PARITY as i32..=AB_MAX_ILL_DEFINED_PARITY as i32)
+            .contains(&parity_value(value))
     };
 
     let mut ret = 0_i32;
@@ -7624,7 +7997,8 @@ pub(crate) fn RemoveCalculatedNonStereoCenterParities(
     'passes: loop {
         let mut atom_number = 0_i32;
         while atom_number < num_atoms && !returned_error(ret_failed) {
-            let atom_index = usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let atom_index =
+                usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             let atom_snapshot = heap
                 .slice(at.as_const())?
                 .get(atom_index)
@@ -7658,23 +8032,32 @@ pub(crate) fn RemoveCalculatedNonStereoCenterParities(
                     neighbors[position] = source_get(
                         heap,
                         row,
-                        i32::try_from(position + 1).map_err(|_| SourceHeapError::SourceIntegerOverflow)?,
+                        i32::try_from(position + 1)
+                            .map_err(|_| SourceHeapError::SourceIntegerOverflow)?,
                     )?;
                 }
             }
 
             let max_mode = MAP_MODE_STD as i32;
             let mut j = 0_i32;
-            while j < valence && heap.slice(at.as_const())?[atom_index].parity != 0 && !returned_error(ret_failed) {
+            while j < valence
+                && heap.slice(at.as_const())?[atom_index].parity != 0
+                && !returned_error(ret_failed)
+            {
                 let mut k = j.wrapping_add(1);
-                while k < valence && heap.slice(at.as_const())?[atom_index].parity != 0 && !returned_error(ret_failed) {
+                while k < valence
+                    && heap.slice(at.as_const())?[atom_index].parity != 0
+                    && !returned_error(ret_failed)
+                {
                     let mut mode = 0_i32;
                     while mode <= max_mode
                         && heap.slice(at.as_const())?[atom_index].parity != 0
                         && !returned_error(ret_failed)
                     {
-                        let first = neighbors[usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?];
-                        let second = neighbors[usize::try_from(k).map_err(|_| SourceHeapError::PointerOutOfBounds)?];
+                        let first = neighbors[usize::try_from(j)
+                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?];
+                        let second = neighbors[usize::try_from(k)
+                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?];
                         if source_get(heap, nSymmRank, i32::from(first))?
                             != source_get(heap, nSymmRank, i32::from(second))?
                         {
@@ -7694,7 +8077,8 @@ pub(crate) fn RemoveCalculatedNonStereoCenterParities(
                                     .nRingSystem
                         };
 
-                        let (path_list1, path_list2, symm_rank1, symm_rank2) = if neigh_mode == NEIGH_MODE_CHAIN as i32
+                        let (path_list1, path_list2, symm_rank1, symm_rank2) = if neigh_mode
+                            == NEIGH_MODE_CHAIN as i32
                         {
                             if ring_neighbors {
                                 num_equal_ring_neighbors = num_equal_ring_neighbors.wrapping_add(1);
@@ -7707,7 +8091,8 @@ pub(crate) fn RemoveCalculatedNonStereoCenterParities(
                                 mode = mode.wrapping_add(1);
                                 continue;
                             }
-                            let neighbor_storage = heap.allocate_model_storage(neighbors.to_vec())?;
+                            let neighbor_storage =
+                                heap.allocate_model_storage(neighbors.to_vec())?;
                             let symmetric = BreakNeighborsTie(
                                 heap,
                                 pCG,
@@ -7771,8 +8156,8 @@ pub(crate) fn RemoveCalculatedNonStereoCenterParities(
                             .fill(0);
 
                         let mut length = 1_u16;
-                        let atom_rank =
-                            AT_RANK::try_from(atom_number).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+                        let atom_rank = AT_RANK::try_from(atom_number)
+                            .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
                         source_set(heap, nVisited1, atom_number, atom_rank.wrapping_add(1))?;
                         source_set(heap, nVisited2, atom_number, atom_rank.wrapping_add(1))?;
                         source_set(heap, nAtomNumberCanon1, atom_number, length)?;
@@ -7782,11 +8167,12 @@ pub(crate) fn RemoveCalculatedNonStereoCenterParities(
                             AT_RANK::try_from(MAX_ATOMS.wrapping_add(1))
                                 .map_err(|_| SourceHeapError::SourceIntegerOverflow)?,
                         ])?;
-                        let mut parities_inverted = if mode == MAP_MODE_C2v as i32 || mode == MAP_MODE_S4 as i32 {
-                            -1
-                        } else {
-                            0
-                        };
+                        let mut parities_inverted =
+                            if mode == MAP_MODE_C2v as i32 || mode == MAP_MODE_S4 as i32 {
+                                -1
+                            } else {
+                                0
+                            };
 
                         let checks = (|| -> Result<(i32, i32), SourceHeapError> {
                             let ret1 = CreateCheckSymmPaths(
@@ -7848,25 +8234,32 @@ pub(crate) fn RemoveCalculatedNonStereoCenterParities(
                                     } else {
                                         AB_PARITY_UNDF as i32
                                     };
-                                    let current = heap.slice(at.as_const())?[atom_index].stereo_atom_parity;
-                                    if (parity_ill_defined(current) && parity_value(current) > new_parity)
+                                    let current =
+                                        heap.slice(at.as_const())?[atom_index].stereo_atom_parity;
+                                    if (parity_ill_defined(current)
+                                        && parity_value(current) > new_parity)
                                         || parity_calculate(current)
                                     {
                                         let atom = &mut heap.slice_mut(at)?[atom_index];
-                                        atom.stereo_atom_parity = (i32::from(atom.stereo_atom_parity)
-                                            ^ parity_value(atom.stereo_atom_parity)
-                                            | (new_parity & BITS_PARITY as i32))
-                                            as i8;
+                                        atom.stereo_atom_parity =
+                                            (i32::from(atom.stereo_atom_parity)
+                                                ^ parity_value(atom.stereo_atom_parity)
+                                                | (new_parity & BITS_PARITY as i32))
+                                                as i8;
                                         atom.parity = (new_parity & BITS_PARITY as i32) as i8;
 
-                                        let canonical_rank = source_get(heap, nCanonRank, atom_number)?;
-                                        let stereo_count = usize::try_from(pCS.nLenLinearCTStereoCarb)
-                                            .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+                                        let canonical_rank =
+                                            source_get(heap, nCanonRank, atom_number)?;
+                                        let stereo_count = usize::try_from(
+                                            pCS.nLenLinearCTStereoCarb,
+                                        )
+                                        .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
                                         let entries = heap.slice_mut(pCS.LinearCTStereoCarb)?;
                                         let mut found = false;
                                         for entry in entries.iter_mut().take(stereo_count) {
                                             if entry.at_num == canonical_rank {
-                                                entry.parity = (new_parity & BITS_PARITY as i32) as u8;
+                                                entry.parity =
+                                                    (new_parity & BITS_PARITY as i32) as u8;
                                                 found = true;
                                                 break;
                                             }
@@ -7878,14 +8271,20 @@ pub(crate) fn RemoveCalculatedNonStereoCenterParities(
                                         ret = ret.wrapping_add(1);
                                     }
                                 } else {
-                                    let current = heap.slice(at.as_const())?[atom_index].stereo_atom_parity;
+                                    let current =
+                                        heap.slice(at.as_const())?[atom_index].stereo_atom_parity;
                                     if current & KNOWN_PARITIES_EQL as i8 != 0 {
-                                        let equivalent_rank = source_get(heap, pCS.nSymmRank, atom_number)?;
+                                        let equivalent_rank =
+                                            source_get(heap, pCS.nSymmRank, atom_number)?;
                                         let mut equivalent = 0_i32;
                                         while equivalent < num_atoms {
-                                            if source_get(heap, pCS.nSymmRank, equivalent)? == equivalent_rank {
-                                                let index = usize::try_from(equivalent)
-                                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                                            if source_get(heap, pCS.nSymmRank, equivalent)?
+                                                == equivalent_rank
+                                            {
+                                                let index =
+                                                    usize::try_from(equivalent).map_err(|_| {
+                                                        SourceHeapError::PointerOutOfBounds
+                                                    })?;
                                                 heap.slice_mut(at)?[index].stereo_atom_parity &=
                                                     !(KNOWN_PARITIES_EQL as i8);
                                             }
@@ -7906,7 +8305,8 @@ pub(crate) fn RemoveCalculatedNonStereoCenterParities(
                                         for source in index + 1..stereo_count {
                                             entries[source - 1] = entries[source].clone();
                                         }
-                                        pCS.nLenLinearCTStereoCarb = pCS.nLenLinearCTStereoCarb.wrapping_sub(1);
+                                        pCS.nLenLinearCTStereoCarb =
+                                            pCS.nLenLinearCTStereoCarb.wrapping_sub(1);
                                         ret = ret.wrapping_add(1);
                                     } else {
                                         ret = CT_STEREOCOUNT_ERR;
@@ -7940,7 +8340,10 @@ pub(crate) fn RemoveCalculatedNonStereoCenterParities(
             atom_number = atom_number.wrapping_add(1);
         }
 
-        if neigh_mode == NEIGH_MODE_CHAIN as i32 && num_equal_ring_neighbors != 0 && !returned_error(ret_failed) {
+        if neigh_mode == NEIGH_MODE_CHAIN as i32
+            && num_equal_ring_neighbors != 0
+            && !returned_error(ret_failed)
+        {
             neigh_mode = NEIGH_MODE_RING as i32;
             continue;
         }
@@ -8233,7 +8636,8 @@ mod tests {
 
             let mut direct = atoms;
             // SAFETY: every fixture is a permutation of valid rank indices.
-            let direct_transactions = unsafe { insertion_sort_atom_numbers_by_rank(&ranks, &mut direct) };
+            let direct_transactions =
+                unsafe { insertion_sort_atom_numbers_by_rank(&ranks, &mut direct) };
             assert_eq!(direct, checked);
             assert_eq!(direct_transactions, checked_transactions);
             assert_eq!(direct_transactions, expected_transactions);
@@ -8262,7 +8666,9 @@ mod tests {
     #[test]
     fn source_port__ichimap2__removecalculatednonstereobondparities__line_3099() {
         let mut heap = SourceHeap::default();
-        let atoms = heap.allocate_model_storage(vec![sp_ATOM::default()]).unwrap();
+        let atoms = heap
+            .allocate_model_storage(vec![sp_ATOM::default()])
+            .unwrap();
         let mut globals = CANON_GLOBALS::default();
         let mut stats = CANON_STAT::default();
         assert_eq!(
@@ -8334,8 +8740,12 @@ mod tests {
         error_atoms[0].stereo_bond_neighbor[0] = 2;
         error_atoms[0].stereo_bond_parity[0] = AB_PARITY_CALC as i8;
         let error_atoms = error_heap.allocate_model_storage(error_atoms).unwrap();
-        let error_row = error_heap.allocate_model_storage(vec![3_u16, 1, 1, 1]).unwrap();
-        let error_nl = error_heap.allocate_model_storage(vec![error_row, error_row]).unwrap();
+        let error_row = error_heap
+            .allocate_model_storage(vec![3_u16, 1, 1, 1])
+            .unwrap();
+        let error_nl = error_heap
+            .allocate_model_storage(vec![error_row, error_row])
+            .unwrap();
         let mut error_globals = CANON_GLOBALS::default();
         let mut error_stats = CANON_STAT::default();
         assert_eq!(
@@ -8386,16 +8796,24 @@ mod tests {
         atoms[3].nRingSystem = 2;
         atoms[3].stereo_atom_parity = crate::source_types::AB_PARITY_ODD as i8;
         let atoms = remove_heap.allocate_model_storage(atoms).unwrap();
-        let row0 = remove_heap.allocate_model_storage(vec![3_u16, 3, 2, 1]).unwrap();
+        let row0 = remove_heap
+            .allocate_model_storage(vec![3_u16, 3, 2, 1])
+            .unwrap();
         let row1 = remove_heap.allocate_model_storage(vec![1_u16, 0]).unwrap();
         let row2 = remove_heap.allocate_model_storage(vec![1_u16, 0]).unwrap();
         let row3 = remove_heap.allocate_model_storage(vec![1_u16, 0]).unwrap();
         let nl = remove_heap
             .allocate_model_storage(vec![row0, row1, row2, row3])
             .unwrap();
-        let canon = remove_heap.allocate_model_storage(vec![1_u16, 2, 3, 4]).unwrap();
-        let symm = remove_heap.allocate_model_storage(vec![1_u16, 2, 3, 3]).unwrap();
-        let atom_by_canon = remove_heap.allocate_model_storage(vec![0_u16, 1, 2, 3]).unwrap();
+        let canon = remove_heap
+            .allocate_model_storage(vec![1_u16, 2, 3, 4])
+            .unwrap();
+        let symm = remove_heap
+            .allocate_model_storage(vec![1_u16, 2, 3, 3])
+            .unwrap();
+        let atom_by_canon = remove_heap
+            .allocate_model_storage(vec![0_u16, 1, 2, 3])
+            .unwrap();
         let atom_by_canon1 = remove_heap.allocate_model_storage(vec![0_u16; 4]).unwrap();
         let atom_by_canon2 = remove_heap.allocate_model_storage(vec![0_u16; 4]).unwrap();
         let visited1 = remove_heap.allocate_model_storage(vec![0_u16; 4]).unwrap();
@@ -8453,7 +8871,9 @@ mod tests {
         let sentinel = (MAX_ATOMS + 1) as AT_RANK;
 
         let mut heap = SourceHeap::default();
-        let atoms = heap.allocate_model_storage(vec![sp_ATOM::default(); 3]).unwrap();
+        let atoms = heap
+            .allocate_model_storage(vec![sp_ATOM::default(); 3])
+            .unwrap();
         let symm = heap.allocate_model_storage(vec![1_u16, 1, 1]).unwrap();
         let canon = heap.allocate_model_storage(vec![2_u16, 3, 1]).unwrap();
         let atom_by_canon = heap.allocate_model_storage(vec![2_u16, 0, 1]).unwrap();
@@ -8494,7 +8914,9 @@ mod tests {
         assert_eq!(heap.slice(atom_by_canon2.as_const()).unwrap(), &[0, 1, 2]);
 
         let mut heap = SourceHeap::default();
-        let atoms = heap.allocate_model_storage(vec![sp_ATOM::default(); 3]).unwrap();
+        let atoms = heap
+            .allocate_model_storage(vec![sp_ATOM::default(); 3])
+            .unwrap();
         let symm = heap.allocate_model_storage(vec![1_u16; 3]).unwrap();
         let canon = heap.allocate_model_storage(vec![1_u16, 2, 3]).unwrap();
         let atom_by_canon = heap.allocate_model_storage(vec![0_u16, 1, 2]).unwrap();
@@ -8530,11 +8952,19 @@ mod tests {
             Ok(0)
         );
         assert_eq!(heap.slice(visited1.as_const()).unwrap(), &[1, 0, 3]);
-        assert_eq!(heap.slice(atom_by_canon1.as_const()).unwrap(), &[sentinel; 3]);
-        assert_eq!(heap.slice(atom_by_canon2.as_const()).unwrap(), &[sentinel; 3]);
+        assert_eq!(
+            heap.slice(atom_by_canon1.as_const()).unwrap(),
+            &[sentinel; 3]
+        );
+        assert_eq!(
+            heap.slice(atom_by_canon2.as_const()).unwrap(),
+            &[sentinel; 3]
+        );
 
         let mut heap = SourceHeap::default();
-        let atoms = heap.allocate_model_storage(vec![sp_ATOM::default(); 3]).unwrap();
+        let atoms = heap
+            .allocate_model_storage(vec![sp_ATOM::default(); 3])
+            .unwrap();
         let symm = heap.allocate_model_storage(vec![1_u16; 3]).unwrap();
         let canon = heap.allocate_model_storage(vec![1_u16, 2, 3]).unwrap();
         let atom_by_canon = heap.allocate_model_storage(vec![0_u16, 1, 2]).unwrap();
@@ -8570,7 +9000,10 @@ mod tests {
             Ok(COMP_STEREO_SUCCESS as i32)
         );
         assert_eq!(heap.slice(visited1.as_const()).unwrap(), &[1, 0, 3]);
-        assert_eq!(heap.slice(atom_by_canon1.as_const()).unwrap(), &[0, sentinel, 2]);
+        assert_eq!(
+            heap.slice(atom_by_canon1.as_const()).unwrap(),
+            &[0, sentinel, 2]
+        );
 
         let mut heap = SourceHeap::default();
         let mut atom_values = vec![sp_ATOM::default(); 4];
@@ -8613,7 +9046,9 @@ mod tests {
         );
 
         let mut heap = SourceHeap::default();
-        let atoms = heap.allocate_model_storage(vec![sp_ATOM::default(); 2]).unwrap();
+        let atoms = heap
+            .allocate_model_storage(vec![sp_ATOM::default(); 2])
+            .unwrap();
         let symm = heap.allocate_model_storage(vec![1_u16; 2]).unwrap();
         let canon = heap.allocate_model_storage(vec![1_u16, 2]).unwrap();
         let atom_by_canon = heap.allocate_model_storage(vec![0_u16, 1]).unwrap();
@@ -8856,7 +9291,9 @@ mod tests {
             [SourceMutPointer::null(); 2],
             [SourceMutPointer::null(); 2],
         );
-        let no_tie_temp = no_tie_heap.allocate_model_storage(vec![91_u16, 92]).unwrap();
+        let no_tie_temp = no_tie_heap
+            .allocate_model_storage(vec![91_u16, 92])
+            .unwrap();
         let no_tie_neighbours = empty_neighbours(&mut no_tie_heap);
         let mut no_tie_new_count = 77;
         let mut no_tie_add_stack = 77;
@@ -8885,8 +9322,14 @@ mod tests {
             Ok(1)
         );
         assert_eq!((no_tie_new_count, no_tie_add_stack), (2, 0));
-        assert_eq!((no_tie_stat.lNumBreakTies, no_tie_stat.lNumNeighListIter), (5, 6));
-        assert_eq!(no_tie_heap.slice(no_tie_temp.as_const()).unwrap(), &[91, 92]);
+        assert_eq!(
+            (no_tie_stat.lNumBreakTies, no_tie_stat.lNumNeighListIter),
+            (5, 6)
+        );
+        assert_eq!(
+            no_tie_heap.slice(no_tie_temp.as_const()).unwrap(),
+            &[91, 92]
+        );
 
         let mut mismatch_heap = SourceHeap::default();
         let (mismatch1, mismatch2) = tie_fixture(
@@ -8898,7 +9341,9 @@ mod tests {
             [SourceMutPointer::null(); 2],
             [SourceMutPointer::null(); 2],
         );
-        let mismatch_temp = mismatch_heap.allocate_model_storage(vec![0_u16; 2]).unwrap();
+        let mismatch_temp = mismatch_heap
+            .allocate_model_storage(vec![0_u16; 2])
+            .unwrap();
         let mismatch_neighbours = empty_neighbours(&mut mismatch_heap);
         let mut mismatch_new_count = 83;
         let mut mismatch_add_stack = 84;
@@ -8930,7 +9375,9 @@ mod tests {
         let rebuild_order1 = rebuild_heap.allocate_model_storage(vec![0_u16, 1]).unwrap();
         let rebuild_rank2 = rebuild_heap.allocate_model_storage(vec![2_u16, 2]).unwrap();
         let rebuild_order2 = rebuild_heap.allocate_model_storage(vec![0_u16, 1]).unwrap();
-        let previous_mapping = rebuild_heap.allocate_model_storage(vec![19_u16, 20]).unwrap();
+        let previous_mapping = rebuild_heap
+            .allocate_model_storage(vec![19_u16, 20])
+            .unwrap();
         let rebuild_stack1 = rebuild_heap
             .allocate_model_storage(vec![
                 rebuild_rank1,
@@ -8982,10 +9429,19 @@ mod tests {
             (rebuild_stat.lNumBreakTies, rebuild_stat.lNumNeighListIter),
             (i64::MIN + 1, i64::MIN)
         );
-        assert_eq!(rebuild_heap.slice(previous_mapping.as_const()).unwrap(), &[0, 20]);
+        assert_eq!(
+            rebuild_heap.slice(previous_mapping.as_const()).unwrap(),
+            &[0, 20]
+        );
         let rebuild_slots = rebuild_heap.slice(rebuild_stack1.as_const()).unwrap();
-        assert_eq!(rebuild_heap.slice(rebuild_slots[2].as_const()).unwrap(), &[1, 2]);
-        assert_eq!(rebuild_heap.slice(rebuild_slots[3].as_const()).unwrap(), &[0, 1]);
+        assert_eq!(
+            rebuild_heap.slice(rebuild_slots[2].as_const()).unwrap(),
+            &[1, 2]
+        );
+        assert_eq!(
+            rebuild_heap.slice(rebuild_slots[3].as_const()).unwrap(),
+            &[0, 1]
+        );
 
         let mut reuse_heap = SourceHeap::default();
         let reuse_rank1 = reuse_heap.allocate_model_storage(vec![2_u16, 2]).unwrap();
@@ -9036,7 +9492,10 @@ mod tests {
             Ok(1)
         );
         assert_eq!((reuse_new_count, reuse_add_stack), (2, 2));
-        assert_eq!((reuse_stat.lNumBreakTies, reuse_stat.lNumNeighListIter), (1, 1));
+        assert_eq!(
+            (reuse_stat.lNumBreakTies, reuse_stat.lNumNeighListIter),
+            (1, 1)
+        );
         assert_eq!(reuse_heap.slice(mapped_rank1.as_const()).unwrap(), &[2, 1]);
         assert_eq!(reuse_heap.slice(mapped_order1.as_const()).unwrap(), &[1, 0]);
 
@@ -9050,7 +9509,9 @@ mod tests {
             [SourceMutPointer::null(); 2],
             [SourceMutPointer::null(); 2],
         );
-        let allocation_temp = allocation_heap.allocate_model_storage(vec![0_u16; 2]).unwrap();
+        let allocation_temp = allocation_heap
+            .allocate_model_storage(vec![0_u16; 2])
+            .unwrap();
         let allocation_neighbours = empty_neighbours(&mut allocation_heap);
         allocation_heap.fail_after_allocations(0);
         let mut allocation_new_count = 31;
@@ -9145,10 +9606,19 @@ mod tests {
         assert_eq!(run(center(3, 0, 0), vec![0, 1, 2, 3], 0), 0);
         assert_eq!(run(center(3, 3, 0), vec![0, 1, 2, 3], 0), 3);
         assert_eq!(run(center(3, 0x43, 0), vec![0, 1, 2, 3], 0), 0x43);
-        assert_eq!(run(center(3, AB_PARITY_CALC as i8, 0), vec![0, 1, 2, 3], 0), -6);
+        assert_eq!(
+            run(center(3, AB_PARITY_CALC as i8, 0), vec![0, 1, 2, 3], 0),
+            -6
+        );
 
-        assert_eq!(run(center(3, 1, 0), vec![0, 1, 2, 3], -1), CT_STEREOBOND_ERROR);
-        assert_eq!(run(center(3, 1, 0), vec![0, 1, 2, 3], 3), CT_STEREOBOND_ERROR);
+        assert_eq!(
+            run(center(3, 1, 0), vec![0, 1, 2, 3], -1),
+            CT_STEREOBOND_ERROR
+        );
+        assert_eq!(
+            run(center(3, 1, 0), vec![0, 1, 2, 3], 3),
+            CT_STEREOBOND_ERROR
+        );
 
         let mut missing = center(3, 1, 0);
         missing.stereo_bond_neighbor[1] = 0;
@@ -9161,7 +9631,10 @@ mod tests {
 
         assert_eq!(run(center(3, 2, 1), vec![0, 1, 2, 3], 0), 1);
         assert_eq!(run(center(3, 2, 1), vec![0, 3, 2, 1], 0), 2);
-        assert_eq!(run(center(3, 2, 1), vec![0, 4, 2, 4], 0), AB_PARITY_CALC as i32);
+        assert_eq!(
+            run(center(3, 2, 1), vec![0, 4, 2, 4], 0),
+            AB_PARITY_CALC as i32
+        );
         assert_eq!(run(center(3, 2, 1), vec![0, 0, 2, 3], 0), 0);
         assert_eq!(run(center(3, 2, 1), vec![0, 1, 2, 0], 0), 0);
 
@@ -9222,14 +9695,29 @@ mod tests {
                 rank: 99,
                 canon_rank: 99,
             };
-            let result =
-                parity_of_mapped_half_bond(&heap, 1, 0, 3, 2, atoms, Some(&mut en), canon_from, rank_from, rank_to);
+            let result = parity_of_mapped_half_bond(
+                &heap,
+                1,
+                0,
+                3,
+                2,
+                atoms,
+                Some(&mut en),
+                canon_from,
+                rank_from,
+                rank_to,
+            );
             (result, en)
         }
 
         let (atoms, canon_from, rank_from, rank_to) = fixture();
         assert_eq!(
-            run(atoms.clone(), canon_from.clone(), rank_from.clone(), rank_to.clone()),
+            run(
+                atoms.clone(),
+                canon_from.clone(),
+                rank_from.clone(),
+                rank_to.clone()
+            ),
             (Ok(1), EQ_NEIGH::default())
         );
 
@@ -9237,7 +9725,13 @@ mod tests {
         reversed_canon[6] = 200;
         reversed_canon[7] = 100;
         assert_eq!(
-            run(atoms.clone(), reversed_canon, rank_from.clone(), rank_to.clone()).0,
+            run(
+                atoms.clone(),
+                reversed_canon,
+                rank_from.clone(),
+                rank_to.clone()
+            )
+            .0,
             Ok(2)
         );
 
@@ -9245,7 +9739,12 @@ mod tests {
         tied_rank_from[7] = 30;
         let mut tied_rank_to = rank_to.clone();
         tied_rank_to[5] = 30;
-        let (tied_result, tied_en) = run(atoms.clone(), canon_from.clone(), tied_rank_from, tied_rank_to);
+        let (tied_result, tied_en) = run(
+            atoms.clone(),
+            canon_from.clone(),
+            tied_rank_from,
+            tied_rank_to,
+        );
         assert_eq!(tied_result, Ok(-30));
         assert_eq!(
             tied_en,
@@ -9278,22 +9777,38 @@ mod tests {
             terminal_atoms[1].valence = 1;
             terminal_atoms[0].parity = parity;
             assert_eq!(
-                run(terminal_atoms, canon_from.clone(), rank_from.clone(), rank_to.clone()).0,
+                run(
+                    terminal_atoms,
+                    canon_from.clone(),
+                    rank_from.clone(),
+                    rank_to.clone()
+                )
+                .0,
                 Ok(expected)
             );
         }
 
         let mut mismatch_rank_to = rank_to.clone();
         mismatch_rank_to[0] = 11;
-        let (mismatch_result, mismatch_en) =
-            run(atoms.clone(), canon_from.clone(), rank_from.clone(), mismatch_rank_to);
+        let (mismatch_result, mismatch_en) = run(
+            atoms.clone(),
+            canon_from.clone(),
+            rank_from.clone(),
+            mismatch_rank_to,
+        );
         assert_eq!((mismatch_result, mismatch_en), (Ok(0), EQ_NEIGH::default()));
 
         let mut invalid_valence = atoms.clone();
         invalid_valence[0].valence = 4;
         invalid_valence[1].valence = 4;
         assert_eq!(
-            run(invalid_valence, canon_from.clone(), rank_from.clone(), rank_to.clone()).0,
+            run(
+                invalid_valence,
+                canon_from.clone(),
+                rank_from.clone(),
+                rank_to.clone()
+            )
+            .0,
             Ok(0)
         );
         let mut terminal_without_bond = atoms.clone();
@@ -9315,7 +9830,13 @@ mod tests {
             let mut parity_atoms = atoms.clone();
             parity_atoms[0].parity = parity;
             assert_eq!(
-                run(parity_atoms, canon_from.clone(), rank_from.clone(), rank_to.clone()).0,
+                run(
+                    parity_atoms,
+                    canon_from.clone(),
+                    rank_from.clone(),
+                    rank_to.clone()
+                )
+                .0,
                 Ok(if parity == 3 { 3 } else { 0 })
             );
         }
@@ -9348,7 +9869,13 @@ mod tests {
         let mut unexpected_from_rank = rank_from.clone();
         unexpected_from_rank[7] = 41;
         assert_eq!(
-            run(atoms.clone(), canon_from.clone(), unexpected_from_rank, rank_to.clone()).0,
+            run(
+                atoms.clone(),
+                canon_from.clone(),
+                unexpected_from_rank,
+                rank_to.clone()
+            )
+            .0,
             Ok(0)
         );
         let mut missing_canon = canon_from.clone();
@@ -9439,7 +9966,13 @@ mod tests {
         tied_from[5] = 20;
         let mut tied_to = to.clone();
         tied_to[3] = 20;
-        let tied = run(atoms.clone(), canon.clone(), tied_from.clone(), tied_to.clone(), true);
+        let tied = run(
+            atoms.clone(),
+            canon.clone(),
+            tied_from.clone(),
+            tied_to.clone(),
+            true,
+        );
         assert_eq!(tied.0, Ok(-20));
         assert_eq!(
             tied.1,
@@ -9454,7 +9987,10 @@ mod tests {
         assert!(tied.2 > 0);
         assert!(tied.3);
         assert_eq!(tied.4, 0);
-        assert_eq!(run(atoms.clone(), canon.clone(), tied_from, tied_to, false).0, Ok(-20));
+        assert_eq!(
+            run(atoms.clone(), canon.clone(), tied_from, tied_to, false).0,
+            Ok(-20)
+        );
 
         let mut unknown_atoms = atoms.clone();
         unknown_atoms[1].parity = 3;
@@ -9467,7 +10003,14 @@ mod tests {
             terminal_atoms[1].valence = 1;
             terminal_atoms[1].parity = parity;
             assert_eq!(
-                run(terminal_atoms, canon.clone(), from.clone(), to.clone(), true).0,
+                run(
+                    terminal_atoms,
+                    canon.clone(),
+                    from.clone(),
+                    to.clone(),
+                    true
+                )
+                .0,
                 Ok(expected)
             );
         }
@@ -9475,12 +10018,25 @@ mod tests {
         let mut invalid_valence = atoms.clone();
         invalid_valence[1].valence = 5;
         assert_eq!(
-            run(invalid_valence, canon.clone(), from.clone(), to.clone(), true).0,
+            run(
+                invalid_valence,
+                canon.clone(),
+                from.clone(),
+                to.clone(),
+                true
+            )
+            .0,
             Ok(0)
         );
         let mut central_mismatch = to.clone();
         central_mismatch[1] = 11;
-        let mismatch = run(atoms.clone(), canon.clone(), from.clone(), central_mismatch, true);
+        let mismatch = run(
+            atoms.clone(),
+            canon.clone(),
+            from.clone(),
+            central_mismatch,
+            true,
+        );
         assert_eq!(mismatch.0, Ok(0));
         assert_eq!(mismatch.1, EQ_NEIGH::default());
         assert!(!mismatch.3);
@@ -9489,7 +10045,14 @@ mod tests {
         let mut neighbourhood_mismatch = to.clone();
         neighbourhood_mismatch[4] = 41;
         assert_eq!(
-            run(atoms.clone(), canon.clone(), from.clone(), neighbourhood_mismatch, true).0,
+            run(
+                atoms.clone(),
+                canon.clone(),
+                from.clone(),
+                neighbourhood_mismatch,
+                true
+            )
+            .0,
             Ok(0)
         );
         let mut zero_tied_from = from.clone();
@@ -9498,7 +10061,10 @@ mod tests {
         let mut zero_tied_to = to;
         zero_tied_to[2] = 0;
         zero_tied_to[3] = 0;
-        assert_eq!(run(atoms, canon, zero_tied_from, zero_tied_to, true).0, Ok(0));
+        assert_eq!(
+            run(atoms, canon, zero_tied_from, zero_tied_to, true).0,
+            Ok(0)
+        );
     }
 
     #[test]
@@ -9532,22 +10098,42 @@ mod tests {
         neighbour[0].valence = 2;
         neighbour[0].neighbor[..2].copy_from_slice(&[1, 2]);
         neighbour[1].bHasStereoOrEquToStereo = 1;
-        assert_eq!(run(neighbour.clone(), vec![9, 2, 3], vec![1, 2, 3], 0), Ok(1));
+        assert_eq!(
+            run(neighbour.clone(), vec![9, 2, 3], vec![1, 2, 3], 0),
+            Ok(1)
+        );
         neighbour[1].stereo_atom_parity = KNOWN_PARITIES_EQL as i8;
-        assert_eq!(run(neighbour.clone(), vec![9, 2, 3], vec![1, 2, 3], 0), Ok(0));
+        assert_eq!(
+            run(neighbour.clone(), vec![9, 2, 3], vec![1, 2, 3], 0),
+            Ok(0)
+        );
         neighbour[1].stereo_atom_parity = 0;
         neighbour[1].stereo_bond_neighbor[0] = 2;
         assert_eq!(run(neighbour, vec![9, 2, 3], vec![1, 2, 3], 0), Ok(0));
 
         let mut negative_valence = atoms.clone();
         negative_valence[0].valence = -1;
-        assert_eq!(run(negative_valence, vec![9, 2, 3], vec![1, 2, 3], 0), Ok(0));
+        assert_eq!(
+            run(negative_valence, vec![9, 2, 3], vec![1, 2, 3], 0),
+            Ok(0)
+        );
 
         let mut no_access_heap = SourceHeap::default();
-        let equal2 = no_access_heap.allocate_model_storage(vec![1_u16, 2]).unwrap();
-        let equal1 = no_access_heap.allocate_model_storage(vec![1_u16, 2]).unwrap();
+        let equal2 = no_access_heap
+            .allocate_model_storage(vec![1_u16, 2])
+            .unwrap();
+        let equal1 = no_access_heap
+            .allocate_model_storage(vec![1_u16, 2])
+            .unwrap();
         assert_eq!(
-            might_change_other_atom_parity(&no_access_heap, SourceMutPointer::null(), 2, 0, equal2, equal1,),
+            might_change_other_atom_parity(
+                &no_access_heap,
+                SourceMutPointer::null(),
+                2,
+                0,
+                equal2,
+                equal1,
+            ),
             Ok(0)
         );
         assert_eq!(
@@ -9563,7 +10149,14 @@ mod tests {
         );
         let short = no_access_heap.allocate_model_storage(vec![1_u16]).unwrap();
         assert_eq!(
-            might_change_other_atom_parity(&no_access_heap, SourceMutPointer::null(), 2, 0, short, equal1,),
+            might_change_other_atom_parity(
+                &no_access_heap,
+                SourceMutPointer::null(),
+                2,
+                0,
+                short,
+                equal1,
+            ),
             Err(SourceHeapError::PointerOutOfBounds)
         );
     }
@@ -9734,7 +10327,10 @@ mod tests {
             let rows = heap.slice(pointer_list.as_const()).unwrap();
             assert_eq!(rows.len(), 4);
             assert!(rows[3].is_null());
-            assert_eq!(heap.slice(rows[0].as_const()).unwrap(), &[2, 2, 1, 1, 0, 1, 0, 0]);
+            assert_eq!(
+                heap.slice(rows[0].as_const()).unwrap(),
+                &[2, 2, 1, 1, 0, 1, 0, 0]
+            );
             assert_eq!(&heap.slice(rows[1].as_const()).unwrap()[..2], &[1, 0]);
             assert_eq!(&heap.slice(rows[2].as_const()).unwrap()[..2], &[1, 0]);
         }
@@ -9783,8 +10379,12 @@ mod tests {
     #[test]
     fn source_port__ichimap2__getminnewrank__line_1587() {
         let mut heap = SourceHeap::default();
-        let ranks = heap.allocate_model_storage(vec![2_u16, 4, 4, 7, 7]).unwrap();
-        let atoms = heap.allocate_model_storage(vec![0_u16, 2, 1, 4, 3]).unwrap();
+        let ranks = heap
+            .allocate_model_storage(vec![2_u16, 4, 4, 7, 7])
+            .unwrap();
+        let atoms = heap
+            .allocate_model_storage(vec![0_u16, 2, 1, 4, 3])
+            .unwrap();
         assert_eq!(GetMinNewRank(&heap, ranks, atoms, 0), Ok(1));
         assert_eq!(GetMinNewRank(&heap, ranks, atoms, 1), Ok(3));
         assert_eq!(GetMinNewRank(&heap, ranks, atoms, 2), Ok(5));
@@ -9798,11 +10398,17 @@ mod tests {
 
         let all_tied_ranks = heap.allocate_model_storage(vec![3_u16; 3]).unwrap();
         let all_tied_atoms = heap.allocate_model_storage(vec![2_u16, 0, 1]).unwrap();
-        assert_eq!(GetMinNewRank(&heap, all_tied_ranks, all_tied_atoms, 3), Ok(1));
+        assert_eq!(
+            GetMinNewRank(&heap, all_tied_ranks, all_tied_atoms, 3),
+            Ok(1)
+        );
 
         let wrapping_ranks = heap.allocate_model_storage(vec![u16::MAX, 9_u16]).unwrap();
         let wrapping_atoms = heap.allocate_model_storage(vec![0_u16]).unwrap();
-        assert_eq!(GetMinNewRank(&heap, wrapping_ranks, wrapping_atoms, 1), Ok(0));
+        assert_eq!(
+            GetMinNewRank(&heap, wrapping_ranks, wrapping_atoms, 1),
+            Ok(0)
+        );
 
         let bad_atoms = heap.allocate_model_storage(vec![9_u16]).unwrap();
         assert_eq!(
@@ -9833,12 +10439,21 @@ mod tests {
         assert_eq!(empty_changed, 0);
 
         let mut heap = SourceHeap::default();
-        let symmetry = heap.allocate_model_storage(vec![10_u16, 30, 10, 20]).unwrap();
+        let symmetry = heap
+            .allocate_model_storage(vec![10_u16, 30, 10, 20])
+            .unwrap();
         let ranks = heap.allocate_model_storage(vec![99_u16; 4]).unwrap();
         let atom_numbers = heap.allocate_model_storage(vec![2_u16, 0, 3, 1]).unwrap();
         let mut changed = 0;
         assert_eq!(
-            SortedEquInfoToRanks(&mut heap, symmetry, ranks, atom_numbers, 4, Some(&mut changed),),
+            SortedEquInfoToRanks(
+                &mut heap,
+                symmetry,
+                ranks,
+                atom_numbers,
+                4,
+                Some(&mut changed),
+            ),
             Ok(3)
         );
         assert_eq!(heap.slice(ranks.as_const()).unwrap(), &[2, 4, 2, 3]);
@@ -9847,7 +10462,14 @@ mod tests {
         let alias = heap.allocate_model_storage(vec![2_u16, 4, 2, 3]).unwrap();
         let mut alias_changed = 9;
         assert_eq!(
-            SortedEquInfoToRanks(&mut heap, alias, alias, atom_numbers, 4, Some(&mut alias_changed),),
+            SortedEquInfoToRanks(
+                &mut heap,
+                alias,
+                alias,
+                atom_numbers,
+                4,
+                Some(&mut alias_changed),
+            ),
             Ok(3)
         );
         assert_eq!(heap.slice(alias.as_const()).unwrap(), &[2, 4, 2, 3]);
@@ -9882,11 +10504,17 @@ mod tests {
         let ranks = heap.allocate_model_storage(vec![2_u16, 4, 2, 3]).unwrap();
         let symmetry = heap.allocate_model_storage(vec![99_u16; 4]).unwrap();
         let atom_numbers = heap.allocate_model_storage(vec![2_u16, 0, 3, 1]).unwrap();
-        assert_eq!(SortedRanksToEquInfo(&mut heap, symmetry, ranks, atom_numbers, 4), Ok(3));
+        assert_eq!(
+            SortedRanksToEquInfo(&mut heap, symmetry, ranks, atom_numbers, 4),
+            Ok(3)
+        );
         assert_eq!(heap.slice(symmetry.as_const()).unwrap(), &[1, 4, 1, 3]);
 
         let alias = heap.allocate_model_storage(vec![2_u16, 4, 2, 3]).unwrap();
-        assert_eq!(SortedRanksToEquInfo(&mut heap, alias, alias, atom_numbers, 4), Ok(3));
+        assert_eq!(
+            SortedRanksToEquInfo(&mut heap, alias, alias, atom_numbers, 4),
+            Ok(3)
+        );
         assert_eq!(heap.slice(alias.as_const()).unwrap(), &[1, 4, 1, 3]);
 
         let one_rank = heap.allocate_model_storage(vec![77_u16]).unwrap();
@@ -9933,7 +10561,10 @@ mod tests {
         assert_eq!(heap.slice(first.as_const()).unwrap(), &[22, 23]);
         assert_eq!(heap.slice(second.as_const()).unwrap(), &[11, 12]);
         assert_eq!(heap.slice(first_base.as_const()).unwrap(), &[10, 11, 12]);
-        assert_eq!(heap.slice(second_base.as_const()).unwrap(), &[20, 21, 22, 23]);
+        assert_eq!(
+            heap.slice(second_base.as_const()).unwrap(),
+            &[20, 21, 22, 23]
+        );
 
         let mut null = SourceMutPointer::<AT_RANK>::null();
         switch_ptrs(&mut first, &mut null);
@@ -9977,15 +10608,23 @@ mod tests {
             ),
             Ok(3)
         );
-        assert_eq!(singleton_heap.slice(singleton_new.as_const()).unwrap(), &[2, 3, 1]);
-        assert_eq!(singleton_heap.slice(singleton_atoms.as_const()).unwrap(), &[2, 0, 1]);
+        assert_eq!(
+            singleton_heap.slice(singleton_new.as_const()).unwrap(),
+            &[2, 3, 1]
+        );
+        assert_eq!(
+            singleton_heap.slice(singleton_atoms.as_const()).unwrap(),
+            &[2, 0, 1]
+        );
 
         let mut tied_heap = SourceHeap::default();
         let list0 = tied_heap.allocate(vec![0_u16]).unwrap();
         let list1 = tied_heap.allocate(vec![1_u16, 0]).unwrap();
         let list2 = tied_heap.allocate(vec![2_u16, 0, 0]).unwrap();
         let list3 = tied_heap.allocate(vec![1_u16, 0]).unwrap();
-        let lists = tied_heap.allocate(vec![list0, list1, list2, list3]).unwrap();
+        let lists = tied_heap
+            .allocate(vec![list0, list1, list2, list3])
+            .unwrap();
         let tied_ranks = tied_heap.allocate(vec![4_u16; 4]).unwrap();
         let tied_new = tied_heap.allocate(vec![9_u16; 4]).unwrap();
         let tied_atoms = tied_heap.allocate(vec![2_u16, 0, 3, 1]).unwrap();
@@ -10002,12 +10641,17 @@ mod tests {
             ),
             Ok(-3)
         );
-        assert_eq!(tied_heap.slice(tied_atoms.as_const()).unwrap(), &[0, 3, 1, 2]);
+        assert_eq!(
+            tied_heap.slice(tied_atoms.as_const()).unwrap(),
+            &[0, 3, 1, 2]
+        );
         assert_eq!(tied_heap.slice(tied_new.as_const()).unwrap(), &[1, 3, 4, 3]);
         assert_eq!(tied_globals.m_pNeighList_RankForSort, lists.as_const());
         assert_eq!(tied_globals.m_pn_RankForSort, tied_ranks.as_const());
 
-        let equal_lists = tied_heap.allocate(vec![list1, list1, list1, list1]).unwrap();
+        let equal_lists = tied_heap
+            .allocate(vec![list1, list1, list1, list1])
+            .unwrap();
         let equal_new = tied_heap.allocate(vec![8_u16; 4]).unwrap();
         let equal_atoms = tied_heap.allocate(vec![3_u16, 2, 1, 0]).unwrap();
         assert_eq!(
@@ -10022,8 +10666,14 @@ mod tests {
             ),
             Ok(1)
         );
-        assert_eq!(tied_heap.slice(equal_atoms.as_const()).unwrap(), &[3, 2, 1, 0]);
-        assert_eq!(tied_heap.slice(equal_new.as_const()).unwrap(), &[4, 4, 4, 4]);
+        assert_eq!(
+            tied_heap.slice(equal_atoms.as_const()).unwrap(),
+            &[3, 2, 1, 0]
+        );
+        assert_eq!(
+            tied_heap.slice(equal_new.as_const()).unwrap(),
+            &[4, 4, 4, 4]
+        );
 
         let mut partial_heap = SourceHeap::default();
         let partial_new = partial_heap.allocate(vec![7_u16, 8]).unwrap();
@@ -10044,7 +10694,10 @@ mod tests {
             Err(SourceHeapError::PointerOutOfBounds)
         );
         assert_eq!(partial_heap.slice(partial_new.as_const()).unwrap(), &[0, 0]);
-        assert_eq!(partial_globals.m_pNeighList_RankForSort, partial_lists.as_const());
+        assert_eq!(
+            partial_globals.m_pNeighList_RankForSort,
+            partial_lists.as_const()
+        );
         assert_eq!(partial_globals.m_pn_RankForSort, partial_ranks.as_const());
     }
 
@@ -10062,7 +10715,16 @@ mod tests {
         let mut globals = CANON_GLOBALS::default();
 
         assert_eq!(
-            SetNewRanksFromNeighLists4(&mut heap, &mut globals, 4, lists, ranks, new_ranks, atoms, 2,),
+            SetNewRanksFromNeighLists4(
+                &mut heap,
+                &mut globals,
+                4,
+                lists,
+                ranks,
+                new_ranks,
+                atoms,
+                2,
+            ),
             Ok(1)
         );
         assert_eq!(heap.slice(atoms.as_const()).unwrap(), &[2, 0, 3, 1]);
@@ -10073,7 +10735,16 @@ mod tests {
 
         heap.slice_mut(new_ranks).unwrap().fill(9);
         assert_eq!(
-            SetNewRanksFromNeighLists4(&mut heap, &mut globals, 4, lists, ranks, new_ranks, atoms, 4,),
+            SetNewRanksFromNeighLists4(
+                &mut heap,
+                &mut globals,
+                4,
+                lists,
+                ranks,
+                new_ranks,
+                atoms,
+                4,
+            ),
             Ok(-3)
         );
         assert_eq!(heap.slice(atoms.as_const()).unwrap(), &[0, 3, 1, 2]);
@@ -10132,7 +10803,9 @@ mod tests {
             SourceMutPointer<AT_RANK>,
             SourceMutPointer<AT_RANK>,
         ) {
-            let storage = heap.allocate_model_storage(vec![0_u16, 1, 0, 2, 0, 0, 1, 0]).unwrap();
+            let storage = heap
+                .allocate_model_storage(vec![0_u16, 1, 0, 2, 0, 0, 1, 0])
+                .unwrap();
             let lists = heap
                 .allocate_model_storage(vec![
                     storage,
@@ -10147,14 +10820,16 @@ mod tests {
             if record_official_layout {
                 // This fixture reproduces the pointer table and backing
                 // allocation after CreateNeighList has filled both arrays.
-                heap.record_contiguous_neighbor_layout(lists, storage, 4, 4).unwrap();
+                heap.record_contiguous_neighbor_layout(lists, storage, 4, 4)
+                    .unwrap();
             }
             (lists, ranks, new_ranks, atoms)
         }
 
         for max_rank in [None, Some(2_u16), Some(4_u16)] {
             let mut checked_heap = SourceHeap::default();
-            let (checked_lists, checked_ranks, checked_new_ranks, checked_atoms) = inputs(&mut checked_heap, false);
+            let (checked_lists, checked_ranks, checked_new_ranks, checked_atoms) =
+                inputs(&mut checked_heap, false);
             assert!(
                 ContiguousNeighborRankSortWorkspace::try_new(
                     &mut checked_heap,
@@ -10190,11 +10865,18 @@ mod tests {
                 )
                 .unwrap()
             };
-            let checked_atom_values = checked_heap.slice(checked_atoms.as_const()).unwrap().to_vec();
-            let checked_rank_values = checked_heap.slice(checked_new_ranks.as_const()).unwrap().to_vec();
+            let checked_atom_values = checked_heap
+                .slice(checked_atoms.as_const())
+                .unwrap()
+                .to_vec();
+            let checked_rank_values = checked_heap
+                .slice(checked_new_ranks.as_const())
+                .unwrap()
+                .to_vec();
 
             let mut direct_heap = SourceHeap::default();
-            let (direct_lists, direct_ranks, direct_new_ranks, direct_atoms) = inputs(&mut direct_heap, true);
+            let (direct_lists, direct_ranks, direct_new_ranks, direct_atoms) =
+                inputs(&mut direct_heap, true);
             let mut workspace = ContiguousNeighborRankSortWorkspace::try_new(
                 &mut direct_heap,
                 4,
@@ -10204,7 +10886,8 @@ mod tests {
             )
             .unwrap();
             assert!(workspace.is_disjoint_from(direct_new_ranks));
-            let mut direct_output = unsafe { direct_heap.stable_slice_mut(direct_new_ranks).unwrap() };
+            let mut direct_output =
+                unsafe { direct_heap.stable_slice_mut(direct_new_ranks).unwrap() };
             let direct_result = if let Some(max_rank) = max_rank {
                 workspace.set_new_ranks4(&mut direct_output, max_rank)
             } else {
@@ -10225,7 +10908,8 @@ mod tests {
         }
 
         let mut checked_heap = SourceHeap::default();
-        let (checked_lists, checked_ranks, checked_new_ranks, checked_atoms) = inputs(&mut checked_heap, false);
+        let (checked_lists, checked_ranks, checked_new_ranks, checked_atoms) =
+            inputs(&mut checked_heap, false);
         let mut checked_globals = CANON_GLOBALS::default();
         let checked_result = SetNewRanksFromNeighLists(
             &mut checked_heap,
@@ -10240,19 +10924,37 @@ mod tests {
             None,
         )
         .unwrap();
-        let checked_atoms = checked_heap.slice(checked_atoms.as_const()).unwrap().to_vec();
-        let checked_new = checked_heap.slice(checked_new_ranks.as_const()).unwrap().to_vec();
+        let checked_atoms = checked_heap
+            .slice(checked_atoms.as_const())
+            .unwrap()
+            .to_vec();
+        let checked_new = checked_heap
+            .slice(checked_new_ranks.as_const())
+            .unwrap()
+            .to_vec();
 
         let mut direct_heap = SourceHeap::default();
-        let (direct_lists, direct_ranks, direct_new_ranks, direct_atoms) = inputs(&mut direct_heap, true);
-        let mut workspace =
-            ContiguousNeighborRankSortWorkspace::try_new(&mut direct_heap, 4, direct_ranks, direct_lists, direct_atoms)
-                .unwrap();
+        let (direct_lists, direct_ranks, direct_new_ranks, direct_atoms) =
+            inputs(&mut direct_heap, true);
+        let mut workspace = ContiguousNeighborRankSortWorkspace::try_new(
+            &mut direct_heap,
+            4,
+            direct_ranks,
+            direct_lists,
+            direct_atoms,
+        )
+        .unwrap();
         let mut direct_output = unsafe { direct_heap.stable_slice_mut(direct_new_ranks).unwrap() };
         let direct_result = workspace.set_new_ranks2(&mut direct_output);
         assert_eq!(direct_result, checked_result);
-        assert_eq!(direct_heap.slice(direct_atoms.as_const()).unwrap(), checked_atoms);
-        assert_eq!(direct_heap.slice(direct_new_ranks.as_const()).unwrap(), checked_new);
+        assert_eq!(
+            direct_heap.slice(direct_atoms.as_const()).unwrap(),
+            checked_atoms
+        );
+        assert_eq!(
+            direct_heap.slice(direct_new_ranks.as_const()).unwrap(),
+            checked_new
+        );
     }
 
     #[test]
@@ -10260,19 +10962,32 @@ mod tests {
         let mut heap = SourceHeap::default();
         let storage = heap.allocate_model_storage(vec![0_u16; 3]).unwrap();
         let lists = heap
-            .allocate_model_storage(vec![storage, storage.offset(1).unwrap(), storage.offset(2).unwrap()])
+            .allocate_model_storage(vec![
+                storage,
+                storage.offset(1).unwrap(),
+                storage.offset(2).unwrap(),
+            ])
             .unwrap();
-        heap.record_contiguous_neighbor_layout(lists, storage, 3, 3).unwrap();
+        heap.record_contiguous_neighbor_layout(lists, storage, 3, 3)
+            .unwrap();
         let first_ranks = heap.allocate_model_storage(vec![1_u16, 2, 3]).unwrap();
         let second_ranks = heap.allocate_model_storage(vec![3_u16, 2, 1]).unwrap();
         let atoms = heap.allocate_model_storage(vec![0_u16, 1, 2]).unwrap();
 
-        let aliased = ContiguousNeighborRankSortWorkspace::try_new(&mut heap, 3, first_ranks, lists, atoms).unwrap();
-        assert!(AlternatingContiguousNeighborRankSortWorkspace::try_new(&heap, aliased, first_ranks,).is_none());
+        let aliased =
+            ContiguousNeighborRankSortWorkspace::try_new(&mut heap, 3, first_ranks, lists, atoms)
+                .unwrap();
+        assert!(
+            AlternatingContiguousNeighborRankSortWorkspace::try_new(&heap, aliased, first_ranks,)
+                .is_none()
+        );
 
-        let active = ContiguousNeighborRankSortWorkspace::try_new(&mut heap, 3, first_ranks, lists, atoms).unwrap();
+        let active =
+            ContiguousNeighborRankSortWorkspace::try_new(&mut heap, 3, first_ranks, lists, atoms)
+                .unwrap();
         let mut workspace =
-            AlternatingContiguousNeighborRankSortWorkspace::try_new(&heap, active, second_ranks).unwrap();
+            AlternatingContiguousNeighborRankSortWorkspace::try_new(&heap, active, second_ranks)
+                .unwrap();
 
         assert_eq!(workspace.next_input().compare(0, 2, false), -2);
         assert_eq!(workspace.next_input().compare(0, 2, false), 2);
@@ -10312,7 +11027,9 @@ mod tests {
             let list1 = heap.allocate_model_storage(vec![0_u16]).unwrap();
             let list2 = heap.allocate_model_storage(vec![1_u16, 3]).unwrap();
             let list3 = heap.allocate_model_storage(vec![0_u16]).unwrap();
-            let lists = heap.allocate_model_storage(vec![list0, list1, list2, list3]).unwrap();
+            let lists = heap
+                .allocate_model_storage(vec![list0, list1, list2, list3])
+                .unwrap();
             let ranks = heap.allocate_model_storage(vec![3_u16, 1, 3, 4]).unwrap();
             let new_ranks = heap.allocate_model_storage(vec![99_u16; 4]).unwrap();
             let atoms = heap.allocate_model_storage(vec![3_u16, 2, 1, 0]).unwrap();
@@ -10345,7 +11062,9 @@ mod tests {
 
         let mut tied_heap = SourceHeap::default();
         let tied_list = tied_heap.allocate_model_storage(vec![0_u16]).unwrap();
-        let tied_lists = tied_heap.allocate_model_storage(vec![tied_list, tied_list]).unwrap();
+        let tied_lists = tied_heap
+            .allocate_model_storage(vec![tied_list, tied_list])
+            .unwrap();
         let tied_ranks = tied_heap.allocate_model_storage(vec![2_u16; 2]).unwrap();
         let tied_new = tied_heap.allocate_model_storage(vec![9_u16; 2]).unwrap();
         let tied_atoms = tied_heap.allocate_model_storage(vec![1_u16, 0]).unwrap();
@@ -10390,11 +11109,14 @@ mod tests {
         let list0 = heap.allocate_model_storage(vec![2_u16, 1, 2]).unwrap();
         let list1 = heap.allocate_model_storage(vec![1_u16, 0]).unwrap();
         let list2 = heap.allocate_model_storage(vec![2_u16, 0, 1]).unwrap();
-        let lists = heap.allocate_model_storage(vec![list0, list1, list2]).unwrap();
+        let lists = heap
+            .allocate_model_storage(vec![list0, list1, list2])
+            .unwrap();
         let ranks = heap.allocate_model_storage(vec![2_u16, 2, 3]).unwrap();
         let atoms = heap.allocate_model_storage(vec![0_u16, 1, 2]).unwrap();
         let new_ranks = heap.allocate_model_storage(vec![0_u16; 3]).unwrap();
-        let mut workspace = NeighListRankWorkspace::try_new(&heap, lists, ranks, atoms, new_ranks, 3).unwrap();
+        let mut workspace =
+            NeighListRankWorkspace::try_new(&heap, lists, ranks, atoms, new_ranks, 3).unwrap();
         let mut globals = CANON_GLOBALS {
             m_pNeighList_RankForSort: lists.as_const(),
             m_pn_RankForSort: ranks.as_const(),
@@ -10414,7 +11136,9 @@ mod tests {
             }
         }
 
-        heap.slice_mut(new_ranks).unwrap().copy_from_slice(&[3, 1, 2]);
+        heap.slice_mut(new_ranks)
+            .unwrap()
+            .copy_from_slice(&[3, 1, 2]);
         globals.m_pn_RankForSort = new_ranks.as_const();
         assert!(workspace.refresh_ranks(&heap, new_ranks, 3));
         for first in 0_u16..3 {
@@ -10428,7 +11152,9 @@ mod tests {
         let short_ranks = heap.allocate_model_storage(vec![1_u16; 2]).unwrap();
         assert!(!workspace.refresh_ranks(&heap, short_ranks, 3));
 
-        let contiguous = heap.allocate_model_storage(vec![2_u16, 1, 2, 1, 0, 2, 0, 1]).unwrap();
+        let contiguous = heap
+            .allocate_model_storage(vec![2_u16, 1, 2, 1, 0, 2, 0, 1])
+            .unwrap();
         let contiguous_lists = heap
             .allocate_model_storage(vec![
                 contiguous,
@@ -10436,13 +11162,28 @@ mod tests {
                 contiguous.offset(5).unwrap(),
             ])
             .unwrap();
-        assert!(ContiguousNeighborRankSortWorkspace::try_new(&mut heap, 3, ranks, contiguous_lists, atoms,).is_none());
+        assert!(
+            ContiguousNeighborRankSortWorkspace::try_new(
+                &mut heap,
+                3,
+                ranks,
+                contiguous_lists,
+                atoms,
+            )
+            .is_none()
+        );
         // Model the proof recorded by CreateNeighList after fully populating
         // this constructor-shaped fixture.
         heap.record_contiguous_neighbor_layout(contiguous_lists, contiguous, 3, 3)
             .unwrap();
-        let contiguous_workspace =
-            ContiguousNeighborRankSortWorkspace::try_new(&mut heap, 3, ranks, contiguous_lists, atoms).unwrap();
+        let contiguous_workspace = ContiguousNeighborRankSortWorkspace::try_new(
+            &mut heap,
+            3,
+            ranks,
+            contiguous_lists,
+            atoms,
+        )
+        .unwrap();
         globals.m_pNeighList_RankForSort = contiguous_lists.as_const();
         globals.m_pn_RankForSort = ranks.as_const();
         for first in 0_u16..3 {
@@ -10459,8 +11200,13 @@ mod tests {
         }
 
         let short_row = heap.allocate_model_storage(vec![2_u16, 1]).unwrap();
-        let short_lists = heap.allocate_model_storage(vec![short_row, list1, list2]).unwrap();
-        assert!(NeighListRankWorkspace::try_new(&heap, short_lists, ranks, atoms, new_ranks, 3,).is_none());
+        let short_lists = heap
+            .allocate_model_storage(vec![short_row, list1, list2])
+            .unwrap();
+        assert!(
+            NeighListRankWorkspace::try_new(&heap, short_lists, ranks, atoms, new_ranks, 3,)
+                .is_none()
+        );
         assert!(NeighListRankWorkspace::try_new(&heap, lists, ranks, atoms, atoms, 3).is_none());
 
         assert_eq!(heap.slice(atoms.as_const()).unwrap(), &[0, 1, 2]);
@@ -10472,10 +11218,14 @@ mod tests {
         let mut heap = SourceHeap::default();
         let symmetry = heap.allocate_model_storage(vec![1_u16, 3, 3]).unwrap();
         let canonical = heap.allocate_model_storage(vec![9_u16, 1, 5]).unwrap();
-        let first = heap.allocate_model_storage(vec![3_u16, 0, 1, 2, 77]).unwrap();
+        let first = heap
+            .allocate_model_storage(vec![3_u16, 0, 1, 2, 77])
+            .unwrap();
         let second = heap.allocate_model_storage(vec![2_u16, 0, 2, 88]).unwrap();
         let empty = heap.allocate_model_storage(vec![0_u16, 99]).unwrap();
-        let lists = heap.allocate_model_storage(vec![first, second, empty]).unwrap();
+        let lists = heap
+            .allocate_model_storage(vec![first, second, empty])
+            .unwrap();
 
         assert_eq!(
             SortNeighListsBySymmAndCanonRank(&mut heap, 3, lists, symmetry, canonical,),
@@ -10513,7 +11263,13 @@ mod tests {
             .allocate_model_storage(vec![partial, SourceMutPointer::null()])
             .unwrap();
         assert_eq!(
-            SortNeighListsBySymmAndCanonRank(&mut heap, 2, partial_lists, partial_symmetry, partial_canonical,),
+            SortNeighListsBySymmAndCanonRank(
+                &mut heap,
+                2,
+                partial_lists,
+                partial_symmetry,
+                partial_canonical,
+            ),
             Err(SourceHeapError::NullPointer)
         );
         assert_eq!(heap.slice(partial.as_const()).unwrap(), &[2, 1, 0]);
@@ -10553,8 +11309,20 @@ mod tests {
                 contiguous.offset(13).unwrap(),
             ])
             .unwrap();
-        assert!(ContiguousNeighborRankSortWorkspace::try_new(&mut heap, 5, ranks, contiguous_lists, atoms,).is_none());
-        assert_eq!(SortNeighLists2(&mut heap, 5, ranks, contiguous_lists, atoms), Ok(0));
+        assert!(
+            ContiguousNeighborRankSortWorkspace::try_new(
+                &mut heap,
+                5,
+                ranks,
+                contiguous_lists,
+                atoms,
+            )
+            .is_none()
+        );
+        assert_eq!(
+            SortNeighLists2(&mut heap, 5, ranks, contiguous_lists, atoms),
+            Ok(0)
+        );
         assert_eq!(
             heap.slice(contiguous.as_const()).unwrap(),
             &[3, 1, 2, 4, 1, 4, 2, 3, 2, 3, 1, 2, 4, 0]
@@ -10574,8 +11342,14 @@ mod tests {
             .unwrap();
         heap.record_contiguous_neighbor_layout(proven_lists, proven_contiguous, 5, 5)
             .unwrap();
-        assert!(ContiguousNeighborRankSortWorkspace::try_new(&mut heap, 5, ranks, proven_lists, atoms,).is_some());
-        assert_eq!(SortNeighLists2(&mut heap, 5, ranks, proven_lists, atoms), Ok(0));
+        assert!(
+            ContiguousNeighborRankSortWorkspace::try_new(&mut heap, 5, ranks, proven_lists, atoms,)
+                .is_some()
+        );
+        assert_eq!(
+            SortNeighLists2(&mut heap, 5, ranks, proven_lists, atoms),
+            Ok(0)
+        );
         assert_eq!(
             heap.slice(proven_contiguous.as_const()).unwrap(),
             &[3, 1, 2, 4, 1, 4, 2, 3, 2, 3, 1, 2, 4, 0]
@@ -10633,7 +11407,9 @@ mod tests {
         assert_eq!(heap.slice(list4.as_const()).unwrap(), &[0]);
         assert_eq!(heap.slice(atoms.as_const()).unwrap(), &[0, 1, 2, 3, 4]);
 
-        let contiguous = heap.allocate(vec![3_u16, 2, 0, 1, 1, 2, 0, 2, 2, 0, 0]).unwrap();
+        let contiguous = heap
+            .allocate(vec![3_u16, 2, 0, 1, 1, 2, 0, 2, 2, 0, 0])
+            .unwrap();
         let contiguous_lists = heap
             .allocate(vec![
                 contiguous,
@@ -10643,14 +11419,28 @@ mod tests {
                 contiguous.offset(10).unwrap(),
             ])
             .unwrap();
-        assert!(ContiguousNeighborRankSortWorkspace::try_new(&mut heap, 5, ranks, contiguous_lists, atoms,).is_none());
-        assert_eq!(SortNeighLists3(&mut heap, 5, ranks, contiguous_lists, atoms), Ok(0));
+        assert!(
+            ContiguousNeighborRankSortWorkspace::try_new(
+                &mut heap,
+                5,
+                ranks,
+                contiguous_lists,
+                atoms,
+            )
+            .is_none()
+        );
+        assert_eq!(
+            SortNeighLists3(&mut heap, 5, ranks, contiguous_lists, atoms),
+            Ok(0)
+        );
         assert_eq!(
             heap.slice(contiguous.as_const()).unwrap(),
             &[3, 0, 1, 2, 1, 2, 0, 2, 0, 2, 0]
         );
 
-        let proven_contiguous = heap.allocate(vec![3_u16, 2, 0, 1, 1, 2, 0, 2, 2, 0, 0]).unwrap();
+        let proven_contiguous = heap
+            .allocate(vec![3_u16, 2, 0, 1, 1, 2, 0, 2, 2, 0, 0])
+            .unwrap();
         let proven_lists = heap
             .allocate(vec![
                 proven_contiguous,
@@ -10662,8 +11452,14 @@ mod tests {
             .unwrap();
         heap.record_contiguous_neighbor_layout(proven_lists, proven_contiguous, 5, 5)
             .unwrap();
-        assert!(ContiguousNeighborRankSortWorkspace::try_new(&mut heap, 5, ranks, proven_lists, atoms,).is_some());
-        assert_eq!(SortNeighLists3(&mut heap, 5, ranks, proven_lists, atoms), Ok(0));
+        assert!(
+            ContiguousNeighborRankSortWorkspace::try_new(&mut heap, 5, ranks, proven_lists, atoms,)
+                .is_some()
+        );
+        assert_eq!(
+            SortNeighLists3(&mut heap, 5, ranks, proven_lists, atoms),
+            Ok(0)
+        );
         assert_eq!(
             heap.slice(proven_contiguous.as_const()).unwrap(),
             &[3, 0, 1, 2, 1, 2, 0, 2, 0, 2, 0]
@@ -10834,15 +11630,23 @@ mod tests {
             Ok(3)
         );
         assert_eq!(singleton_iterations, 8);
-        assert_eq!(singleton_heap.slice(singleton_current.as_const()).unwrap(), &[1, 2, 3]);
-        assert_eq!(singleton_heap.slice(singleton_previous.as_const()).unwrap(), &[1, 2, 3]);
+        assert_eq!(
+            singleton_heap.slice(singleton_current.as_const()).unwrap(),
+            &[1, 2, 3]
+        );
+        assert_eq!(
+            singleton_heap.slice(singleton_previous.as_const()).unwrap(),
+            &[1, 2, 3]
+        );
 
         let mut tied_heap = SourceHeap::default();
         let list0 = tied_heap.allocate(vec![0_u16]).unwrap();
         let list1 = tied_heap.allocate(vec![1_u16, 0]).unwrap();
         let list2 = tied_heap.allocate(vec![2_u16, 0, 0]).unwrap();
         let list3 = tied_heap.allocate(vec![1_u16, 0]).unwrap();
-        let lists = tied_heap.allocate(vec![list0, list1, list2, list3]).unwrap();
+        let lists = tied_heap
+            .allocate(vec![list0, list1, list2, list3])
+            .unwrap();
         let tied_current = tied_heap.allocate(vec![4_u16; 4]).unwrap();
         let tied_previous = tied_heap.allocate(vec![0_u16; 4]).unwrap();
         let tied_atoms = tied_heap.allocate(vec![2_u16, 0, 3, 1]).unwrap();
@@ -10863,9 +11667,18 @@ mod tests {
             Ok(3)
         );
         assert_eq!(tied_iterations, 0);
-        assert_eq!(tied_heap.slice(tied_current.as_const()).unwrap(), &[1, 3, 4, 3]);
-        assert_eq!(tied_heap.slice(tied_previous.as_const()).unwrap(), &[1, 3, 4, 3]);
-        assert_eq!(tied_heap.slice(tied_atoms.as_const()).unwrap(), &[0, 3, 1, 2]);
+        assert_eq!(
+            tied_heap.slice(tied_current.as_const()).unwrap(),
+            &[1, 3, 4, 3]
+        );
+        assert_eq!(
+            tied_heap.slice(tied_previous.as_const()).unwrap(),
+            &[1, 3, 4, 3]
+        );
+        assert_eq!(
+            tied_heap.slice(tied_atoms.as_const()).unwrap(),
+            &[0, 3, 1, 2]
+        );
 
         let mut empty_iterations = 10_i64;
         assert_eq!(
@@ -10974,9 +11787,18 @@ mod tests {
             Ok(3)
         );
         assert_eq!(full_iterations, 13);
-        assert_eq!(full_heap.slice(full_current.as_const()).unwrap(), &[1, 3, 4, 3]);
-        assert_eq!(full_heap.slice(full_previous.as_const()).unwrap(), &[1, 3, 4, 3]);
-        assert_eq!(full_heap.slice(full_atoms.as_const()).unwrap(), &[0, 3, 1, 2]);
+        assert_eq!(
+            full_heap.slice(full_current.as_const()).unwrap(),
+            &[1, 3, 4, 3]
+        );
+        assert_eq!(
+            full_heap.slice(full_previous.as_const()).unwrap(),
+            &[1, 3, 4, 3]
+        );
+        assert_eq!(
+            full_heap.slice(full_atoms.as_const()).unwrap(),
+            &[0, 3, 1, 2]
+        );
         assert_eq!(full_globals.m_nMaxAtNeighRankForSort, 4);
 
         let mut error_heap = SourceHeap::default();
@@ -11018,7 +11840,8 @@ mod tests {
             let list2 = heap.allocate_model_storage(vec![2_u16, 0, 0]).unwrap();
             let list3 = heap.allocate_model_storage(vec![3_u16, 0, 0, 0]).unwrap();
             (
-                heap.allocate_model_storage(vec![list0, list1, list2, list3]).unwrap(),
+                heap.allocate_model_storage(vec![list0, list1, list2, list3])
+                    .unwrap(),
                 heap.allocate_model_storage(vec![4_u16; 4]).unwrap(),
                 heap.allocate_model_storage(vec![0_u16; 4]).unwrap(),
                 heap.allocate_model_storage(vec![2_u16, 0, 3, 1]).unwrap(),
@@ -11287,15 +12110,24 @@ mod tests {
         let avoid = heap.allocate_model_storage(vec![9_u16, 9]).unwrap();
         let visited1 = heap.allocate_model_storage(vec![0_u16; 5]).unwrap();
         let visited2 = heap.allocate_model_storage(vec![0_u16; 5]).unwrap();
-        let order1 = heap.allocate_model_storage(vec![0_u16, 0, 7, 0, 0]).unwrap();
-        let order2 = heap.allocate_model_storage(vec![0_u16, 0, 0, 7, 0]).unwrap();
-        let rank1 = heap.allocate_model_storage(vec![0_u16, 0, 6, 0, 0]).unwrap();
-        let rank2 = heap.allocate_model_storage(vec![0_u16, 0, 0, 6, 0]).unwrap();
+        let order1 = heap
+            .allocate_model_storage(vec![0_u16, 0, 7, 0, 0])
+            .unwrap();
+        let order2 = heap
+            .allocate_model_storage(vec![0_u16, 0, 0, 7, 0])
+            .unwrap();
+        let rank1 = heap
+            .allocate_model_storage(vec![0_u16, 0, 6, 0, 0])
+            .unwrap();
+        let rank2 = heap
+            .allocate_model_storage(vec![0_u16, 0, 0, 6, 0])
+            .unwrap();
 
         macro_rules! check {
             () => {
                 CheckNextSymmNeighborsAndBonds(
-                    &heap, atoms, 0, 1, 2, 3, avoid, visited1, visited2, order1, order2, rank1, rank2,
+                    &heap, atoms, 0, 1, 2, 3, avoid, visited1, visited2, order1, order2, rank1,
+                    rank2,
                 )
             };
         }
@@ -11362,11 +12194,21 @@ mod tests {
         terminal_atoms[1].valence = 1;
         terminal_atoms[0].stereo_atom_parity = 1;
         terminal_atoms[1].stereo_atom_parity = 2;
-        let terminal_atoms = terminal_heap.allocate_model_storage(terminal_atoms).unwrap();
-        let visited1 = terminal_heap.allocate_model_storage(vec![0_u16; 2]).unwrap();
-        let visited2 = terminal_heap.allocate_model_storage(vec![0_u16; 2]).unwrap();
-        let order1 = terminal_heap.allocate_model_storage(vec![0_u16; 2]).unwrap();
-        let order2 = terminal_heap.allocate_model_storage(vec![0_u16; 2]).unwrap();
+        let terminal_atoms = terminal_heap
+            .allocate_model_storage(terminal_atoms)
+            .unwrap();
+        let visited1 = terminal_heap
+            .allocate_model_storage(vec![0_u16; 2])
+            .unwrap();
+        let visited2 = terminal_heap
+            .allocate_model_storage(vec![0_u16; 2])
+            .unwrap();
+        let order1 = terminal_heap
+            .allocate_model_storage(vec![0_u16; 2])
+            .unwrap();
+        let order2 = terminal_heap
+            .allocate_model_storage(vec![0_u16; 2])
+            .unwrap();
         let mut length = 0_u16;
         let mut inverted = -1_i32;
         assert_eq!(
@@ -11468,8 +12310,12 @@ mod tests {
         atoms[1].nRingSystem = 8;
         atoms[3].nRingSystem = 8;
         let atoms = recursive_heap.allocate_model_storage(atoms).unwrap();
-        let list0 = recursive_heap.allocate_model_storage(vec![2_u16, 4, 2]).unwrap();
-        let list1 = recursive_heap.allocate_model_storage(vec![2_u16, 4, 3]).unwrap();
+        let list0 = recursive_heap
+            .allocate_model_storage(vec![2_u16, 4, 2])
+            .unwrap();
+        let list1 = recursive_heap
+            .allocate_model_storage(vec![2_u16, 4, 3])
+            .unwrap();
         let dummy = recursive_heap.allocate_model_storage(vec![0_u16]).unwrap();
         let lists1 = recursive_heap
             .allocate_model_storage(vec![list0, dummy, dummy, dummy, dummy])
@@ -11477,13 +12323,27 @@ mod tests {
         let lists2 = recursive_heap
             .allocate_model_storage(vec![dummy, list1, dummy, dummy, dummy])
             .unwrap();
-        let avoid = recursive_heap.allocate_model_storage(vec![9_u16, 9]).unwrap();
-        let visited1 = recursive_heap.allocate_model_storage(vec![0_u16; 5]).unwrap();
-        let visited2 = recursive_heap.allocate_model_storage(vec![0_u16; 5]).unwrap();
-        let order1 = recursive_heap.allocate_model_storage(vec![0_u16; 5]).unwrap();
-        let order2 = recursive_heap.allocate_model_storage(vec![0_u16; 5]).unwrap();
-        let ranks1 = recursive_heap.allocate_model_storage(vec![1_u16, 1, 5, 0, 0]).unwrap();
-        let ranks2 = recursive_heap.allocate_model_storage(vec![1_u16, 1, 0, 5, 0]).unwrap();
+        let avoid = recursive_heap
+            .allocate_model_storage(vec![9_u16, 9])
+            .unwrap();
+        let visited1 = recursive_heap
+            .allocate_model_storage(vec![0_u16; 5])
+            .unwrap();
+        let visited2 = recursive_heap
+            .allocate_model_storage(vec![0_u16; 5])
+            .unwrap();
+        let order1 = recursive_heap
+            .allocate_model_storage(vec![0_u16; 5])
+            .unwrap();
+        let order2 = recursive_heap
+            .allocate_model_storage(vec![0_u16; 5])
+            .unwrap();
+        let ranks1 = recursive_heap
+            .allocate_model_storage(vec![1_u16, 1, 5, 0, 0])
+            .unwrap();
+        let ranks2 = recursive_heap
+            .allocate_model_storage(vec![1_u16, 1, 0, 5, 0])
+            .unwrap();
         let mut recursive_length = 0_u16;
         let mut recursive_inverted = -1_i32;
         assert_eq!(
@@ -11511,10 +12371,22 @@ mod tests {
             Ok(1)
         );
         assert_eq!(recursive_length, 2);
-        assert_eq!(recursive_heap.slice(visited1.as_const()).unwrap(), &[2, 0, 4, 0, 0]);
-        assert_eq!(recursive_heap.slice(visited2.as_const()).unwrap(), &[0, 1, 0, 3, 0]);
-        assert_eq!(recursive_heap.slice(order1.as_const()).unwrap(), &[1, 0, 2, 0, 0]);
-        assert_eq!(recursive_heap.slice(order2.as_const()).unwrap(), &[0, 1, 0, 2, 0]);
+        assert_eq!(
+            recursive_heap.slice(visited1.as_const()).unwrap(),
+            &[2, 0, 4, 0, 0]
+        );
+        assert_eq!(
+            recursive_heap.slice(visited2.as_const()).unwrap(),
+            &[0, 1, 0, 3, 0]
+        );
+        assert_eq!(
+            recursive_heap.slice(order1.as_const()).unwrap(),
+            &[1, 0, 2, 0, 0]
+        );
+        assert_eq!(
+            recursive_heap.slice(order2.as_const()).unwrap(),
+            &[0, 1, 0, 2, 0]
+        );
     }
 
     #[test]
@@ -11558,9 +12430,13 @@ mod tests {
             let canonical_pointer = heap.allocate_model_storage(canonical).unwrap();
             let atom_by_canonical_pointer = heap.allocate_model_storage(atom_by_canonical).unwrap();
             let rank1 = heap.allocate_model_storage(vec![0_u16; count]).unwrap();
-            let order1 = heap.allocate_model_storage((0..count as AT_RANK).collect()).unwrap();
+            let order1 = heap
+                .allocate_model_storage((0..count as AT_RANK).collect())
+                .unwrap();
             let rank2 = heap.allocate_model_storage(vec![0_u16; count]).unwrap();
-            let order2 = heap.allocate_model_storage((0..count as AT_RANK).collect()).unwrap();
+            let order2 = heap
+                .allocate_model_storage((0..count as AT_RANK).collect())
+                .unwrap();
             let rank_stack1 = heap.allocate_model_storage(vec![rank1, order1]).unwrap();
             let rank_stack2 = heap.allocate_model_storage(vec![rank2, order2]).unwrap();
             let temporary_rank = heap.allocate_model_storage(vec![0_u16; count]).unwrap();
@@ -11591,7 +12467,8 @@ mod tests {
             let carb_pointer = heap.allocate_model_storage(carb_entries).unwrap();
             let mut stats = CANON_STAT::default();
             stats.LinearCTStereoCarb = carb_pointer;
-            stats.nLenLinearCTStereoCarb = heap.slice(carb_pointer.as_const()).unwrap().len() as i32;
+            stats.nLenLinearCTStereoCarb =
+                heap.slice(carb_pointer.as_const()).unwrap().len() as i32;
             stats.nSymmRank = symmetry_pointer;
             let mut globals = CANON_GLOBALS::default();
             let result = RemoveCalculatedNonStereoCenterParities(
@@ -11627,35 +12504,41 @@ mod tests {
         }
 
         let mut heap = SourceHeap::default();
-        let atoms = heap.allocate_model_storage(vec![sp_ATOM::default()]).unwrap();
+        let atoms = heap
+            .allocate_model_storage(vec![sp_ATOM::default()])
+            .unwrap();
         let mut globals = CANON_GLOBALS::default();
         let mut stats = CANON_STAT::default();
-        let call_without_arrays = |heap: &mut SourceHeap, globals: &mut CANON_GLOBALS, stats: &mut CANON_STAT| {
-            RemoveCalculatedNonStereoCenterParities(
-                heap,
-                globals,
-                atoms,
-                1,
-                1,
-                SourceMutPointer::null(),
-                SourceMutPointer::null(),
-                SourceMutPointer::null(),
-                SourceMutPointer::null(),
-                SourceMutPointer::null(),
-                SourceMutPointer::null(),
-                SourceMutPointer::null(),
-                SourceMutPointer::null(),
-                SourceMutPointer::null(),
-                SourceMutPointer::null(),
-                SourceMutPointer::null(),
-                SourceMutPointer::null(),
-                SourceMutPointer::null(),
-                SourceMutPointer::null(),
-                stats,
-                AB_PARITY_UNKN as i32,
-            )
-        };
-        assert_eq!(call_without_arrays(&mut heap, &mut globals, &mut stats), Ok(0));
+        let call_without_arrays =
+            |heap: &mut SourceHeap, globals: &mut CANON_GLOBALS, stats: &mut CANON_STAT| {
+                RemoveCalculatedNonStereoCenterParities(
+                    heap,
+                    globals,
+                    atoms,
+                    1,
+                    1,
+                    SourceMutPointer::null(),
+                    SourceMutPointer::null(),
+                    SourceMutPointer::null(),
+                    SourceMutPointer::null(),
+                    SourceMutPointer::null(),
+                    SourceMutPointer::null(),
+                    SourceMutPointer::null(),
+                    SourceMutPointer::null(),
+                    SourceMutPointer::null(),
+                    SourceMutPointer::null(),
+                    SourceMutPointer::null(),
+                    SourceMutPointer::null(),
+                    SourceMutPointer::null(),
+                    SourceMutPointer::null(),
+                    stats,
+                    AB_PARITY_UNKN as i32,
+                )
+            };
+        assert_eq!(
+            call_without_arrays(&mut heap, &mut globals, &mut stats),
+            Ok(0)
+        );
 
         {
             let atom = &mut heap.slice_mut(atoms).unwrap()[0];
@@ -11663,34 +12546,49 @@ mod tests {
             atom.stereo_atom_parity = AB_PARITY_CALC as i8;
             atom.stereo_bond_neighbor[0] = 1;
         }
-        assert_eq!(call_without_arrays(&mut heap, &mut globals, &mut stats), Ok(0));
+        assert_eq!(
+            call_without_arrays(&mut heap, &mut globals, &mut stats),
+            Ok(0)
+        );
 
         {
             let atom = &mut heap.slice_mut(atoms).unwrap()[0];
             atom.stereo_bond_neighbor[0] = 0;
             atom.valence = 5;
         }
-        assert_eq!(call_without_arrays(&mut heap, &mut globals, &mut stats), Ok(0));
+        assert_eq!(
+            call_without_arrays(&mut heap, &mut globals, &mut stats),
+            Ok(0)
+        );
 
         {
             let atom = &mut heap.slice_mut(atoms).unwrap()[0];
             atom.valence = -1;
         }
-        assert_eq!(call_without_arrays(&mut heap, &mut globals, &mut stats), Ok(0));
+        assert_eq!(
+            call_without_arrays(&mut heap, &mut globals, &mut stats),
+            Ok(0)
+        );
 
         {
             let atom = &mut heap.slice_mut(atoms).unwrap()[0];
             atom.valence = 2;
             atom.stereo_atom_parity = AB_PARITY_ODD as i8;
         }
-        assert_eq!(call_without_arrays(&mut heap, &mut globals, &mut stats), Ok(0));
+        assert_eq!(
+            call_without_arrays(&mut heap, &mut globals, &mut stats),
+            Ok(0)
+        );
 
         let removed = run(
             candidate(true),
             vec![1, 2, 2, 4],
             vec![1, 2, 3, 4],
             vec![0, 1, 2, 3],
-            vec![carb(1, AB_PARITY_CALC as i32), carb(4, AB_PARITY_ODD as i32)],
+            vec![
+                carb(1, AB_PARITY_CALC as i32),
+                carb(4, AB_PARITY_ODD as i32),
+            ],
         );
         assert_eq!(removed.0, 1);
         assert_eq!(removed.1[0].parity, 0);
@@ -11713,7 +12611,13 @@ mod tests {
         assert_eq!(ring.1[0].parity, 0);
         assert_eq!(ring.3, 0);
 
-        let missing = run(candidate(false), vec![1, 2, 2], vec![1, 2, 3], vec![0, 1, 2], vec![]);
+        let missing = run(
+            candidate(false),
+            vec![1, 2, 2],
+            vec![1, 2, 3],
+            vec![0, 1, 2],
+            vec![],
+        );
         assert_eq!(missing.0, CT_STEREOCOUNT_ERR);
         assert_eq!(missing.1[0].parity, 0);
         assert_eq!(missing.3, 0);
@@ -11742,7 +12646,10 @@ mod tests {
             vec![1, 2, 2],
             vec![1, 2, 3],
             vec![0, 1, 2],
-            vec![carb(1, AB_PARITY_CALC as i32), carb(2, AB_PARITY_UNKN as i32)],
+            vec![
+                carb(1, AB_PARITY_CALC as i32),
+                carb(2, AB_PARITY_UNKN as i32),
+            ],
         );
         assert_eq!(propagated.0, 0);
         assert_eq!(propagated.1[0].parity, AB_PARITY_CALC as i8);
@@ -11785,18 +12692,30 @@ mod tests {
             let canonical_pointer = heap.allocate_model_storage(canonical).unwrap();
             let atom_by_canonical_pointer = heap.allocate_model_storage(atom_by_canonical).unwrap();
             let rank1 = heap.allocate_model_storage(vec![0_u16; count]).unwrap();
-            let order1 = heap.allocate_model_storage((0..count as AT_RANK).collect()).unwrap();
+            let order1 = heap
+                .allocate_model_storage((0..count as AT_RANK).collect())
+                .unwrap();
             let rank2 = heap.allocate_model_storage(vec![0_u16; count]).unwrap();
-            let order2 = heap.allocate_model_storage((0..count as AT_RANK).collect()).unwrap();
+            let order2 = heap
+                .allocate_model_storage((0..count as AT_RANK).collect())
+                .unwrap();
             let rank_stack1 = heap.allocate_model_storage(vec![rank1, order1]).unwrap();
             let rank_stack2 = heap.allocate_model_storage(vec![rank2, order2]).unwrap();
             let temporary_rank = heap.allocate_model_storage(vec![0_u16; count]).unwrap();
-            let neighbor_list =
-                CreateNeighList(&mut heap, count as i32, count as i32, atoms_pointer.as_const(), 0, None).unwrap();
+            let neighbor_list = CreateNeighList(
+                &mut heap,
+                count as i32,
+                count as i32,
+                atoms_pointer.as_const(),
+                0,
+                None,
+            )
+            .unwrap();
             let carb_pointer = heap.allocate_model_storage(carb_entries).unwrap();
             let mut stats = CANON_STAT::default();
             stats.LinearCTStereoCarb = carb_pointer;
-            stats.nLenLinearCTStereoCarb = heap.slice(carb_pointer.as_const()).unwrap().len() as i32;
+            stats.nLenLinearCTStereoCarb =
+                heap.slice(carb_pointer.as_const()).unwrap().len() as i32;
             stats.nSymmRank = symmetry_pointer;
             let baseline = heap.live_allocation_count();
             let result = RemoveCalculatedNonStereo(
@@ -11863,7 +12782,9 @@ mod tests {
         assert_eq!(missing.3, missing.4);
 
         let mut failure_heap = SourceHeap::default();
-        let atoms = failure_heap.allocate_model_storage(vec![sp_ATOM::default()]).unwrap();
+        let atoms = failure_heap
+            .allocate_model_storage(vec![sp_ATOM::default()])
+            .unwrap();
         let symmetry = failure_heap.allocate_model_storage(vec![1_u16]).unwrap();
         let canonical = failure_heap.allocate_model_storage(vec![1_u16]).unwrap();
         let atom_by_canonical = failure_heap.allocate_model_storage(vec![0_u16]).unwrap();

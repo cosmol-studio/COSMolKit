@@ -1,11 +1,17 @@
 //! Source-backed RDKit MMFF torsion-angle contribution.
 
-use crate::chemistry::forcefield::core::{ForceField, ForceFieldContrib, ForceFieldVec3, compute_dihedral_from_flat};
+use crate::chemistry::forcefield::core::{
+    ForceField, ForceFieldContrib, ForceFieldVec3, compute_dihedral_from_flat,
+};
 
 use super::params::MmffTor;
 
 fn point_from_pos(pos: &[f64], atom_idx: usize) -> ForceFieldVec3 {
-    ForceFieldVec3::new(pos[3 * atom_idx], pos[3 * atom_idx + 1], pos[3 * atom_idx + 2])
+    ForceFieldVec3::new(
+        pos[3 * atom_idx],
+        pos[3 * atom_idx + 1],
+        pos[3 * atom_idx + 2],
+    )
 }
 
 fn is_double_zero(value: f64) -> bool {
@@ -234,7 +240,14 @@ impl TorsionAngleContrib {
             && self.v3.is_empty()
     }
 
-    pub fn add_term(&mut self, idx1: usize, idx2: usize, idx3: usize, idx4: usize, mmff_tor_params: &MmffTor) {
+    pub fn add_term(
+        &mut self,
+        idx1: usize,
+        idx2: usize,
+        idx3: usize,
+        idx4: usize,
+        mmff_tor_params: &MmffTor,
+    ) {
         // BEGIN RDKIT CPP METHOD ForceFields::MMFF::TorsionAngleContrib::addTerm (TorsionAngle.cpp:105-123)
         // RDKit✔️✔️: void TorsionAngleContrib::addTerm(
         // RDKit✔️✔️:     unsigned int idx1, unsigned int idx2, unsigned int idx3, unsigned int idx4,
@@ -243,7 +256,12 @@ impl TorsionAngleContrib {
         // RDKit✔️✔️:                    (idx2 != idx3) && (idx2 != idx4) && (idx3 != idx4),
         // RDKit✔️✔️:                "degenerate points");
         assert!(
-            idx1 != idx2 && idx1 != idx3 && idx1 != idx4 && idx2 != idx3 && idx2 != idx4 && idx3 != idx4,
+            idx1 != idx2
+                && idx1 != idx3
+                && idx1 != idx4
+                && idx2 != idx3
+                && idx2 != idx4
+                && idx3 != idx4,
             "degenerate points"
         );
         let force_field = self.force_field();
@@ -395,7 +413,8 @@ impl TorsionAngleContrib {
 
             // RDKit✔️✔️:     RDKit::ForceFieldsHelper::computeDihedral(
             // RDKit✔️✔️:         pos, at1Idx, at2Idx, at3Idx, at4Idx, nullptr, &cosPhi, r, t, d);
-            let dihedral_output = compute_dihedral_from_flat(pos, atom1_idx, atom2_idx, atom3_idx, atom4_idx, false);
+            let dihedral_output =
+                compute_dihedral_from_flat(pos, atom1_idx, atom2_idx, atom3_idx, atom4_idx, false);
             let cos_phi = dihedral_output.cos_phi;
             let r = dihedral_output.r;
             let t = dihedral_output.t;
@@ -403,7 +422,11 @@ impl TorsionAngleContrib {
             // RDKit✔️✔️:     double sinPhiSq = 1.0 - cosPhi * cosPhi;
             let sin_phi_sq = 1.0 - cos_phi * cos_phi;
             // RDKit✔️✔️:     double sinPhi = ((sinPhiSq > 0.0) ? sqrt(sinPhiSq) : 0.0);
-            let sin_phi = if sin_phi_sq > 0.0 { sin_phi_sq.sqrt() } else { 0.0 };
+            let sin_phi = if sin_phi_sq > 0.0 {
+                sin_phi_sq.sqrt()
+            } else {
+                0.0
+            };
             // RDKit✔️✔️:     double sin2Phi = 2.0 * sinPhi * cosPhi;
             let sin2_phi = 2.0 * sin_phi * cos_phi;
             // RDKit✔️✔️:     double sin3Phi = 3.0 * sinPhi - 4.0 * sinPhi * sinPhiSq;
@@ -411,7 +434,9 @@ impl TorsionAngleContrib {
             // RDKit✔️✔️:     // dE/dPhi is independent of cartesians:
             // RDKit✔️✔️:     double dE_dPhi = 0.5 * (-(d_V1[i]) * sinPhi + 2.0 * d_V2[i] * sin2Phi -
             // RDKit✔️✔️:                             3.0 * d_V3[i] * sin3Phi);
-            let de_dphi = 0.5 * (-(self.v1[i]) * sin_phi + 2.0 * self.v2[i] * sin2_phi - 3.0 * self.v3[i] * sin3_phi);
+            let de_dphi = 0.5
+                * (-(self.v1[i]) * sin_phi + 2.0 * self.v2[i] * sin2_phi
+                    - 3.0 * self.v3[i] * sin3_phi);
             // RDKit✔️✔️:     // FIX: use a tolerance here
             // RDKit✔️✔️:     // this is hacky, but it's per the
             // RDKit✔️✔️:     // recommendation from Niketic and Rasmussen:
@@ -493,7 +518,8 @@ mod tests {
 
     fn assert_slice_close(actual: &[f64], expected: &[f64]) {
         assert_eq!(actual.len(), expected.len());
-        for (idx, (actual_value, expected_value)) in actual.iter().zip(expected.iter()).enumerate() {
+        for (idx, (actual_value, expected_value)) in actual.iter().zip(expected.iter()).enumerate()
+        {
             assert!(
                 (actual_value - expected_value).abs() <= 1.0e-6,
                 "index {idx}: expected {expected_value:.16}, got {actual_value:.16}"
@@ -768,7 +794,8 @@ mod tests {
         let cos_phi = -std::f64::consts::FRAC_1_SQRT_2;
         let cos2_phi = 2.0 * cos_phi * cos_phi - 1.0;
         let cos3_phi = cos_phi * (2.0 * cos2_phi - 1.0);
-        let expected = 0.5 * (tor.v1 * (1.0 + cos_phi) + tor.v2 * (1.0 - cos2_phi) + tor.v3 * (1.0 + cos3_phi));
+        let expected = 0.5
+            * (tor.v1 * (1.0 + cos_phi) + tor.v2 * (1.0 - cos2_phi) + tor.v3 * (1.0 + cos3_phi));
         assert_close(contrib.get_energy(&pos), expected);
     }
 
@@ -961,7 +988,10 @@ mod tests {
         contrib.get_grad(&pos, &mut grad);
 
         let expected_delta = finite_difference_gradient(&contrib, &pos);
-        let expected: Vec<f64> = expected_delta.into_iter().map(|value| value + 0.5).collect();
+        let expected: Vec<f64> = expected_delta
+            .into_iter()
+            .map(|value| value + 0.5)
+            .collect();
         assert_slice_close(&grad, &expected);
     }
 }

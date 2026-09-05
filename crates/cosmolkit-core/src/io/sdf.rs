@@ -33,10 +33,11 @@ use std::{
 
 use crate::search::query::convert_complex_name_to_query;
 use crate::{
-    AtomId, AtomQueryPredicate, AtomSpec, BondDirection, BondId, BondOrder, BondQueryPredicate, BondSpec, BondStereo,
-    Conformer2D, Conformer3D, CoordinateDimension, Element, MOLBLOCK_IO_FEATURE, Molecule, MoleculeBuilder, QueryNode,
-    SGroupAttachPoint, SGroupBracket, SGroupBracketStyle, SGroupCState, SGroupConnection, SdfPropertyList,
-    SdfPropertyListTarget, StereoGroup, StereoGroupKind, SubstanceGroup, SubstanceGroupId, SubstanceGroupKind,
+    AtomId, AtomQueryPredicate, AtomSpec, BondDirection, BondId, BondOrder, BondQueryPredicate,
+    BondSpec, BondStereo, Conformer2D, Conformer3D, CoordinateDimension, Element,
+    MOLBLOCK_IO_FEATURE, Molecule, MoleculeBuilder, QueryNode, SGroupAttachPoint, SGroupBracket,
+    SGroupBracketStyle, SGroupCState, SGroupConnection, SdfPropertyList, SdfPropertyListTarget,
+    StereoGroup, StereoGroupKind, SubstanceGroup, SubstanceGroupId, SubstanceGroupKind,
     UnsupportedFeatureError,
 };
 
@@ -104,7 +105,10 @@ impl SdfDataset {
         open_sdf_dataset(path.as_ref(), SdfReadParams::default())
     }
 
-    pub fn open_with_params(path: impl AsRef<Path>, params: SdfReadParams) -> Result<Self, SdfReadError> {
+    pub fn open_with_params(
+        path: impl AsRef<Path>,
+        params: SdfReadParams,
+    ) -> Result<Self, SdfReadError> {
         open_sdf_dataset(path.as_ref(), params)
     }
 
@@ -141,7 +145,11 @@ impl SdfDataset {
         read_indexed_sdf_record(self, index, self.params)
     }
 
-    pub fn record_with_params(&self, index: usize, params: SdfReadParams) -> Result<SdfRecord, SdfReadError> {
+    pub fn record_with_params(
+        &self,
+        index: usize,
+        params: SdfReadParams,
+    ) -> Result<SdfRecord, SdfReadError> {
         read_indexed_sdf_record(self, index, params)
     }
 }
@@ -225,7 +233,10 @@ pub fn read_sdf_from_str_with_coordinate_mode(
     )
 }
 
-pub fn read_sdf_from_str_with_params(s: &str, params: SdfReadParams) -> Result<SdfRecord, SdfReadError> {
+pub fn read_sdf_from_str_with_params(
+    s: &str,
+    params: SdfReadParams,
+) -> Result<SdfRecord, SdfReadError> {
     parse_sdf_record_text(s, 0, params)
 }
 
@@ -275,6 +286,7 @@ struct V2000AtomLine {
     line_number: usize,
     text: String,
     spec: AtomSpec,
+    query: Option<QueryNode<AtomQueryPredicate>>,
     coord_3d: [f64; 3],
 }
 
@@ -283,6 +295,7 @@ struct V2000BondLine {
     line_number: usize,
     text: String,
     spec: BondSpec,
+    query: Option<QueryNode<BondQueryPredicate>>,
     molfile_bond_type: u32,
     molfile_stereo: Option<u32>,
 }
@@ -303,6 +316,7 @@ struct V3000AtomLine {
     mol_idx: u32,
     tokens: Vec<String>,
     spec: AtomSpec,
+    query: Option<QueryNode<AtomQueryPredicate>>,
     coord_3d: [f64; 3],
 }
 
@@ -314,6 +328,7 @@ struct V3000BondLine {
     begin_mol_idx: u32,
     end_mol_idx: u32,
     spec: BondSpec,
+    query: Option<QueryNode<BondQueryPredicate>>,
     molfile_bond_type: u32,
 }
 
@@ -397,7 +412,8 @@ fn parse_rdkit_unsigned(text: &str, accept_spaces: bool) -> Result<u32, ()> {
 
 fn parse_rdkit_int(text: &str, accept_spaces: bool) -> Result<i32, ()> {
     for byte in text.bytes().take_while(|byte| *byte != b'\0') {
-        if byte.is_ascii_digit() || byte == b'+' || byte == b'-' || (accept_spaces && byte == b' ') {
+        if byte.is_ascii_digit() || byte == b'+' || byte == b'-' || (accept_spaces && byte == b' ')
+        {
             continue;
         }
         return Err(());
@@ -411,17 +427,28 @@ fn parse_rdkit_int(text: &str, accept_spaces: bool) -> Result<i32, ()> {
         }
     }
     let sign_len = usize::from(input.starts_with(['+', '-']));
-    let digits_len = input[sign_len..].bytes().take_while(u8::is_ascii_digit).count();
+    let digits_len = input[sign_len..]
+        .bytes()
+        .take_while(u8::is_ascii_digit)
+        .count();
     if digits_len == 0 {
         return Ok(0);
     }
     Ok(input[..sign_len + digits_len].parse().unwrap_or(0))
 }
 
-fn parse_required_int_field(line: &str, start: usize, len: usize, line_number: usize) -> Result<i32, SdfReadError> {
+fn parse_required_int_field(
+    line: &str,
+    start: usize,
+    len: usize,
+    line_number: usize,
+) -> Result<i32, SdfReadError> {
     let field = rdkit_substr(line, start, len);
-    parse_rdkit_int(field, true)
-        .map_err(|()| SdfReadError::Parse(format!("Cannot convert '{field}' to int on line {line_number}")))
+    parse_rdkit_int(field, true).map_err(|()| {
+        SdfReadError::Parse(format!(
+            "Cannot convert '{field}' to int on line {line_number}"
+        ))
+    })
 }
 
 fn parse_required_unsigned_field(
@@ -431,8 +458,11 @@ fn parse_required_unsigned_field(
     line_number: usize,
 ) -> Result<u32, SdfReadError> {
     let field = rdkit_substr(line, start, len);
-    parse_rdkit_unsigned(field, true)
-        .map_err(|()| SdfReadError::Parse(format!("Cannot convert '{field}' to int on line {line_number}")))
+    parse_rdkit_unsigned(field, true).map_err(|()| {
+        SdfReadError::Parse(format!(
+            "Cannot convert '{field}' to int on line {line_number}"
+        ))
+    })
 }
 
 fn atom_line_mut(
@@ -440,10 +470,9 @@ fn atom_line_mut(
     one_based_atom_id: u32,
     line_number: usize,
 ) -> Result<&mut V2000AtomLine, SdfReadError> {
-    let index = one_based_atom_id
-        .checked_sub(1)
-        .ok_or_else(|| SdfReadError::Parse(format!("Atom index 0 out of range on line {line_number}")))?
-        as usize;
+    let index = one_based_atom_id.checked_sub(1).ok_or_else(|| {
+        SdfReadError::Parse(format!("Atom index 0 out of range on line {line_number}"))
+    })? as usize;
     atoms.get_mut(index).ok_or_else(|| {
         SdfReadError::Parse(format!(
             "Atom index {one_based_atom_id} out of range on line {line_number}"
@@ -550,7 +579,10 @@ mol_symbol_atomic_numbers! {
     ],
 }
 
-fn element_from_query_atomic_number(atomic_number: u8, line_number: usize) -> Result<Element, SdfReadError> {
+fn element_from_query_atomic_number(
+    atomic_number: u8,
+    line_number: usize,
+) -> Result<Element, SdfReadError> {
     Element::from_atomic_number(atomic_number).ok_or_else(|| {
         SdfReadError::Parse(format!(
             "Unsupported atom-list atomic number {atomic_number} on line {line_number}"
@@ -719,7 +751,10 @@ fn open_sdf_dataset(path: &Path, params: SdfReadParams) -> Result<SdfDataset, Sd
     })
 }
 
-fn build_sdf_index<R: BufRead>(reader: &mut R, params: SdfReadParams) -> Result<Vec<SdfRecordMetadata>, SdfReadError> {
+fn build_sdf_index<R: BufRead>(
+    reader: &mut R,
+    params: SdfReadParams,
+) -> Result<Vec<SdfRecordMetadata>, SdfReadError> {
     // BEGIN RDKIT CPP BODY: build_sdf_index
     // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/FileParsers/SDMolSupplier.cpp :: void SDMolSupplier::buildIndexTo
     // RDKit✔️❌:
@@ -842,7 +877,9 @@ fn build_sdf_index<R: BufRead>(reader: &mut R, params: SdfReadParams) -> Result<
     let mut byte_offset = 0_u64;
     let mut line_number = 0_usize;
 
-    while let Some(raw) = extract_next_indexed_sdf_record(reader, next_index, byte_offset, line_number, params)? {
+    while let Some(raw) =
+        extract_next_indexed_sdf_record(reader, next_index, byte_offset, line_number, params)?
+    {
         line_number += raw.text.bytes().filter(|byte| *byte == b'\n').count();
         byte_offset += raw.byte_len;
         metadata.push(SdfRecordMetadata {
@@ -889,7 +926,9 @@ fn read_indexed_sdf_record(
     let mut byte_offset = 0_u64;
     let mut line_number = 0_usize;
 
-    while let Some(raw) = extract_next_indexed_sdf_record(&mut reader, next_index, byte_offset, line_number, params)? {
+    while let Some(raw) =
+        extract_next_indexed_sdf_record(&mut reader, next_index, byte_offset, line_number, params)?
+    {
         line_number += raw.text.bytes().filter(|byte| *byte == b'\n').count();
         byte_offset += raw.byte_len;
         if raw.index == index {
@@ -903,7 +942,9 @@ fn read_indexed_sdf_record(
     )))
 }
 
-fn read_next_sdf_record<R: BufRead>(reader: &mut SdfReader<R>) -> Result<Option<SdfRecord>, SdfReadError> {
+fn read_next_sdf_record<R: BufRead>(
+    reader: &mut SdfReader<R>,
+) -> Result<Option<SdfRecord>, SdfReadError> {
     // BEGIN RDKIT CPP BODY: read_next_sdf_record
     // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/FileParsers/ForwardSDMolSupplier.cpp :: std::unique_ptr<RWMol> ForwardSDMolSupplier::next
     // RDKit✔️❌:
@@ -1356,7 +1397,8 @@ fn extract_next_raw_sdf_record<R: BufRead>(
 
         // RDKit calls checkForEnd() here. COSMolKit's raw-record extraction has
         // no supplier-level end flag yet, so that state update remains ❌❌.
-        if previous.find(|c: char| !" \t\r\n".contains(c)).is_none() && current.starts_with("$$$$") {
+        if previous.find(|c: char| !" \t\r\n".contains(c)).is_none() && current.starts_with("$$$$")
+        {
             break;
         }
     }
@@ -1433,7 +1475,11 @@ fn seek_to_next_sdf_record<R: BufRead>(
     Ok(())
 }
 
-fn parse_sdf_record_text(text: &str, start_line: usize, params: SdfReadParams) -> Result<SdfRecord, SdfReadError> {
+fn parse_sdf_record_text(
+    text: &str,
+    start_line: usize,
+    params: SdfReadParams,
+) -> Result<SdfRecord, SdfReadError> {
     // BEGIN RDKIT CPP BODY: parse_sdf_record_text
     // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/FileParsers/MultithreadedSDMolSupplier.cpp :: RWMol *MultithreadedSDMolSupplier::processMoleculeRecord
     // RDKit✔️❗:
@@ -1468,15 +1514,22 @@ fn parse_sdf_record_text(text: &str, start_line: usize, params: SdfReadParams) -
     process_sdf_property_lists(&mut molecule, &fields, params)?;
     Ok(SdfRecord {
         molecule,
-        data_fields: fields.into_iter().map(|field| (field.name, field.value)).collect(),
+        data_fields: fields
+            .into_iter()
+            .map(|field| (field.name, field.value))
+            .collect(),
     })
 }
 
-fn parse_forward_sdf_record_text(raw: &RawSdfRecord, params: SdfReadParams) -> Result<Option<SdfRecord>, SdfReadError> {
+fn parse_forward_sdf_record_text(
+    raw: &RawSdfRecord,
+    params: SdfReadParams,
+) -> Result<Option<SdfRecord>, SdfReadError> {
     let (mol_block, data_lines, data_start_line) = split_sdf_record_parts(raw);
     let parsed = match mol_from_mol_block(mol_block, params) {
         Ok(parsed) => parsed,
-        Err(SdfReadError::Parse(_)) | Err(SdfReadError::Operation(crate::OperationError::Sanitize { .. })) => {
+        Err(SdfReadError::Parse(_))
+        | Err(SdfReadError::Operation(crate::OperationError::Sanitize { .. })) => {
             return Ok(None);
         }
         Err(error) => return Err(error),
@@ -1496,11 +1549,17 @@ fn parse_forward_sdf_record_text(raw: &RawSdfRecord, params: SdfReadParams) -> R
     process_sdf_property_lists(&mut molecule, &fields, params)?;
     Ok(Some(SdfRecord {
         molecule,
-        data_fields: fields.into_iter().map(|field| (field.name, field.value)).collect(),
+        data_fields: fields
+            .into_iter()
+            .map(|field| (field.name, field.value))
+            .collect(),
     }))
 }
 
-fn split_sdf_record(raw: &RawSdfRecord, params: SdfReadParams) -> Result<(&str, Vec<SdfDataField>), SdfReadError> {
+fn split_sdf_record(
+    raw: &RawSdfRecord,
+    params: SdfReadParams,
+) -> Result<(&str, Vec<SdfDataField>), SdfReadError> {
     let (mol_block, data_lines, data_start_line) = split_sdf_record_parts(raw);
     let fields = parse_sdf_data_fields(&data_lines, data_start_line, params)?;
     Ok((mol_block, fields))
@@ -1709,12 +1768,16 @@ fn parse_sdf_data_fields(
                         idx += 1;
                         while idx < lines.len() && !strip_sdf_line(lines[idx]).is_empty() {
                             if is_sdf_record_delimiter(strip_sdf_line(lines[idx])) {
-                                return Err(SdfReadError::Parse("End of data field name not found".to_string()));
+                                return Err(SdfReadError::Parse(
+                                    "End of data field name not found".to_string(),
+                                ));
                             }
                             idx += 1;
                         }
                         if idx >= lines.len() {
-                            return Err(SdfReadError::Parse("End of data field name not found".to_string()));
+                            return Err(SdfReadError::Parse(
+                                "End of data field name not found".to_string(),
+                            ));
                         }
                     }
                 }
@@ -2027,7 +2090,9 @@ enum SdfPropertyListValueKind {
     Bool,
 }
 
-fn sdf_property_list_target(name: &str) -> Option<(SdfPropertyListTarget, &str, SdfPropertyListValueKind)> {
+fn sdf_property_list_target(
+    name: &str,
+) -> Option<(SdfPropertyListTarget, &str, SdfPropertyListValueKind)> {
     const PREFIXES: [(&str, SdfPropertyListTarget, SdfPropertyListValueKind); 8] = [
         (
             "atom.prop.",
@@ -2133,7 +2198,11 @@ fn parse_sdf_property_list_values(
     let tokens = split_rdkit_property_list_tokens(value);
     let mut missing_value = "n/a";
     let mut first_token = 0;
-    if tokens.len() == n_items + 1 && tokens[0].starts_with('[') && tokens[0].ends_with(']') && tokens[0].len() >= 2 {
+    if tokens.len() == n_items + 1
+        && tokens[0].starts_with('[')
+        && tokens[0].ends_with(']')
+        && tokens[0].len() >= 2
+    {
         missing_value = &tokens[0][1..tokens[0].len() - 1];
         first_token = 1;
     }
@@ -2148,8 +2217,12 @@ fn parse_sdf_property_list_values(
         }
         let parsed = match value_kind {
             SdfPropertyListValueKind::String => Some((*token).to_string()),
-            SdfPropertyListValueKind::Int => token.parse::<i64>().ok().map(|_| (*token).to_string()),
-            SdfPropertyListValueKind::Double => token.parse::<f64>().ok().map(|_| (*token).to_string()),
+            SdfPropertyListValueKind::Int => {
+                token.parse::<i64>().ok().map(|_| (*token).to_string())
+            }
+            SdfPropertyListValueKind::Double => {
+                token.parse::<f64>().ok().map(|_| (*token).to_string())
+            }
             SdfPropertyListValueKind::Bool => parse_rdkit_bool_token(token),
         };
         values.push(parsed);
@@ -2438,8 +2511,9 @@ fn mol_from_mol_data_stream<R: BufRead>(
 
     let mut header = parse_mol_header(reader, line_number, params)?;
     *line_number += 1;
-    let counts_line = read_rdkit_line(reader)?
-        .ok_or_else(|| SdfReadError::Parse(format!("Counts line too short: '' on line{}", *line_number)))?;
+    let counts_line = read_rdkit_line(reader)?.ok_or_else(|| {
+        SdfReadError::Parse(format!("Counts line too short: '' on line{}", *line_number))
+    })?;
     let counts = parse_counts_line(&counts_line, *line_number, params)?;
     header.ctab_version = counts.ctab_version;
 
@@ -2688,7 +2762,9 @@ fn parse_mol_header<R: BufRead>(
 
     *line_number += 1;
     let Some(name) = read_rdkit_line(reader)? else {
-        return Err(SdfReadError::Parse("EOF hit while reading mol name".to_string()));
+        return Err(SdfReadError::Parse(
+            "EOF hit while reading mol name".to_string(),
+        ));
     };
     *line_number += 1;
     let info = read_rdkit_line(reader)?.unwrap_or_default();
@@ -2765,7 +2841,10 @@ fn finalize_parsed_coordinate_storage(mut molecule: Molecule) -> Result<Molecule
     if coordinates.conformers_3d[0].is_3d() {
         coordinates.source_coordinate_dim = Some(CoordinateDimension::ThreeD);
     } else {
-        let source = coordinates.conformers_3d.pop().expect("length checked above");
+        let source = coordinates
+            .conformers_3d
+            .pop()
+            .expect("length checked above");
         let mut conformer = Conformer2D::new(
             source.id(),
             source
@@ -2784,7 +2863,11 @@ fn finalize_parsed_coordinate_storage(mut molecule: Molecule) -> Result<Molecule
     Ok(molecule)
 }
 
-fn parse_counts_line(line: &str, line_number: usize, params: SdfReadParams) -> Result<CountsLine, SdfReadError> {
+fn parse_counts_line(
+    line: &str,
+    line_number: usize,
+    params: SdfReadParams,
+) -> Result<CountsLine, SdfReadError> {
     // BEGIN RDKIT CPP BODY: parse_counts_line
     // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/FileParsers/MolFileParser.cpp :: std::unique_ptr<RWMol> MolFromMolDataStream
     // RDKit✔️❗:
@@ -3129,9 +3212,12 @@ fn parse_v2000_ctab<R: BufRead>(
         parse_v2000_atom_block(reader, counts.atom_count, line_number, params)?
     };
     let mut bond_lines = parse_v2000_bond_block(reader, counts.bond_count, line_number, params)?;
-    let chirality_possible = bond_lines
-        .iter()
-        .any(|bond| !matches!(bond.spec.direction(), BondDirection::None | BondDirection::Unknown));
+    let chirality_possible = bond_lines.iter().any(|bond| {
+        !matches!(
+            bond.spec.direction(),
+            BondDirection::None | BondDirection::Unknown
+        )
+    });
 
     let mut property_state = V2000PropertyState {
         first_charge_line: true,
@@ -3156,9 +3242,16 @@ fn parse_v2000_ctab<R: BufRead>(
         )));
     }
 
-    let coords = atom_lines.iter().map(|atom| atom.coord_3d).collect::<Vec<_>>();
+    let coords = atom_lines
+        .iter()
+        .map(|atom| atom.coord_3d)
+        .collect::<Vec<_>>();
     let is_3d = resolve_coordinate_3d_flag(
-        calculate_rdkit_3d_flag(molfile_info_marks_3d(&header.info), &coords, chirality_possible),
+        calculate_rdkit_3d_flag(
+            molfile_info_marks_3d(&header.info),
+            &coords,
+            chirality_possible,
+        ),
         params.coordinate_mode,
     );
 
@@ -3174,9 +3267,15 @@ fn parse_v2000_ctab<R: BufRead>(
         builder = builder.with_property(key.clone(), value.clone());
     }
     for atom in atom_lines {
+        if atom.query.is_some() {
+            return Err(UnsupportedFeatureError::from_spec(&MOLBLOCK_IO_FEATURE).into());
+        }
         builder.add_atom(atom.spec);
     }
     for bond in bond_lines {
+        if bond.query.is_some() {
+            return Err(UnsupportedFeatureError::from_spec(&MOLBLOCK_IO_FEATURE).into());
+        }
         builder.add_bond(bond.spec).map_err(molecule_build_error)?;
     }
     for substance_group in property_state.sgroups.into_values() {
@@ -3230,14 +3329,20 @@ fn parse_v2000_atom_block<R: BufRead>(
     for _ in 1..=atom_count {
         *line_number += 1;
         let Some(line) = read_rdkit_line(reader)? else {
-            return Err(SdfReadError::Parse("EOF hit while reading atoms".to_string()));
+            return Err(SdfReadError::Parse(
+                "EOF hit while reading atoms".to_string(),
+            ));
         };
         atoms.push(parse_v2000_atom_line(&line, *line_number, params)?);
     }
     Ok(atoms)
 }
 
-fn parse_v2000_atom_line(line: &str, line_number: usize, params: SdfReadParams) -> Result<V2000AtomLine, SdfReadError> {
+fn parse_v2000_atom_line(
+    line: &str,
+    line_number: usize,
+    params: SdfReadParams,
+) -> Result<V2000AtomLine, SdfReadError> {
     // BEGIN RDKIT CPP BODY: parse_v2000_atom_line
     // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/FileParsers/MolFileParser.cpp :: Atom *ParseMolFileAtomLine
     // RDKit✔️❗:
@@ -3509,12 +3614,15 @@ fn parse_v2000_atom_line(line: &str, line_number: usize, params: SdfReadParams) 
         )));
     }
 
-    let x = parse_rdkit_double(rdkit_substr(line, 0, 10), true)
-        .map_err(|_| SdfReadError::Parse(format!("Cannot process coordinates on line {line_number}")))?;
-    let y = parse_rdkit_double(rdkit_substr(line, 10, 10), true)
-        .map_err(|_| SdfReadError::Parse(format!("Cannot process coordinates on line {line_number}")))?;
-    let z = parse_rdkit_double(rdkit_substr(line, 20, 10), true)
-        .map_err(|_| SdfReadError::Parse(format!("Cannot process coordinates on line {line_number}")))?;
+    let x = parse_rdkit_double(rdkit_substr(line, 0, 10), true).map_err(|_| {
+        SdfReadError::Parse(format!("Cannot process coordinates on line {line_number}"))
+    })?;
+    let y = parse_rdkit_double(rdkit_substr(line, 10, 10), true).map_err(|_| {
+        SdfReadError::Parse(format!("Cannot process coordinates on line {line_number}"))
+    })?;
+    let z = parse_rdkit_double(rdkit_substr(line, 20, 10), true).map_err(|_| {
+        SdfReadError::Parse(format!("Cannot process coordinates on line {line_number}"))
+    })?;
     let symbol = rdkit_substr(line, 31, 3).trim();
 
     let mass_diff = if line.len() >= 36 && rdkit_substr(line, 34, 2) != " 0" {
@@ -3548,22 +3656,26 @@ fn parse_v2000_atom_line(line: &str, line_number: usize, params: SdfReadParams) 
         0
     };
     let mol_parity = if line.len() >= 42 && rdkit_substr(line, 39, 3) != "  0" {
-        Some(parse_rdkit_int(rdkit_substr(line, 39, 3), true).map_err(|_| {
-            SdfReadError::Parse(format!(
-                "Cannot convert '{}' to int on line {line_number}",
-                rdkit_substr(line, 39, 3)
-            ))
-        })?)
+        Some(
+            parse_rdkit_int(rdkit_substr(line, 39, 3), true).map_err(|_| {
+                SdfReadError::Parse(format!(
+                    "Cannot convert '{}' to int on line {line_number}",
+                    rdkit_substr(line, 39, 3)
+                ))
+            })?,
+        )
     } else {
         None
     };
     let mol_inversion_flag = if line.len() >= 66 && rdkit_substr(line, 63, 3) != "  0" {
-        Some(parse_rdkit_int(rdkit_substr(line, 63, 3), true).map_err(|_| {
-            SdfReadError::Parse(format!(
-                "Cannot convert '{}' to int on line {line_number}",
-                rdkit_substr(line, 63, 3)
-            ))
-        })?)
+        Some(
+            parse_rdkit_int(rdkit_substr(line, 63, 3), true).map_err(|_| {
+                SdfReadError::Parse(format!(
+                    "Cannot convert '{}' to int on line {line_number}",
+                    rdkit_substr(line, 63, 3)
+                ))
+            })?,
+        )
     } else {
         None
     };
@@ -3683,14 +3795,11 @@ fn parse_v2000_atom_line(line: &str, line_number: usize, params: SdfReadParams) 
             .with_prop("molAtomMapNumber", atom_map.to_string());
     }
 
-    if let Some(query) = query {
-        spec = spec.with_query(query);
-    }
-
     Ok(V2000AtomLine {
         line_number,
         text: line.to_string(),
         spec,
+        query,
         coord_3d: [x, y, z],
     })
 }
@@ -3750,14 +3859,20 @@ fn parse_v2000_bond_block<R: BufRead>(
     for _ in 1..=bond_count {
         *line_number += 1;
         let Some(line) = read_rdkit_line(reader)? else {
-            return Err(SdfReadError::Parse("EOF hit while reading bonds".to_string()));
+            return Err(SdfReadError::Parse(
+                "EOF hit while reading bonds".to_string(),
+            ));
         };
         bonds.push(parse_v2000_bond_line(&line, *line_number, params)?);
     }
     Ok(bonds)
 }
 
-fn parse_v2000_bond_line(line: &str, line_number: usize, params: SdfReadParams) -> Result<V2000BondLine, SdfReadError> {
+fn parse_v2000_bond_line(
+    line: &str,
+    line_number: usize,
+    params: SdfReadParams,
+) -> Result<V2000BondLine, SdfReadError> {
     // BEGIN RDKIT CPP BODY: parse_v2000_bond_line
     // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/FileParsers/MolFileParser.cpp :: Bond *ParseMolFileBondLine
     // RDKit✔️❗:
@@ -3980,7 +4095,9 @@ fn parse_v2000_bond_line(line: &str, line_number: usize, params: SdfReadParams) 
         ),
         other => (
             BondOrder::Unspecified,
-            Some(QueryNode::predicate(BondQueryPredicate::MolFileQueryCode(other))),
+            Some(QueryNode::predicate(BondQueryPredicate::MolFileQueryCode(
+                other,
+            ))),
         ),
     };
 
@@ -4031,14 +4148,11 @@ fn parse_v2000_bond_line(line: &str, line_number: usize, params: SdfReadParams) 
         });
     }
 
-    if let Some(query) = query {
-        spec = spec.with_query(query);
-    }
-
     Ok(V2000BondLine {
         line_number,
         text: line.to_string(),
         spec,
+        query,
         molfile_bond_type: bond_type,
         molfile_stereo,
     })
@@ -4262,13 +4376,16 @@ fn parse_v2000_property_block<R: BufRead>(
 
         if line.starts_with('A') {
             *line_number += 1;
-            let next_line = read_rdkit_line(reader)?
-                .ok_or_else(|| SdfReadError::Parse("EOF hit while reading atom alias line".to_string()))?;
+            let next_line = read_rdkit_line(reader)?.ok_or_else(|| {
+                SdfReadError::Parse("EOF hit while reading atom alias line".to_string())
+            })?;
             parse_atom_alias_line(&line, &next_line, *line_number, atoms)?;
         } else if line.starts_with('G') {
             *line_number += 1;
             let _ = read_rdkit_line(reader)?.ok_or_else(|| {
-                SdfReadError::Parse("EOF hit while skipping deprecated group abbreviation".to_string())
+                SdfReadError::Parse(
+                    "EOF hit while skipping deprecated group abbreviation".to_string(),
+                )
             })?;
         } else if line.starts_with('V') {
             parse_atom_value_line(&line, *line_number, atoms)?;
@@ -4305,9 +4422,11 @@ fn parse_v2000_property_block<R: BufRead>(
                 "M  MRV" => parse_marvin_smarts_line(&line, *line_number, atoms)?,
                 "M  APO" => parse_attach_point_line(&line, *line_number, params, atoms)?,
                 "M  LIN" => parse_link_node_line(&line, *line_number, atoms.len(), state)?,
-                "M  STY" | "M  SST" | "M  SLB" | "M  SCN" | "M  SDS" | "M  SAL" | "M  SBL" | "M  SPA" | "M  SMT"
-                | "M  SDI" | "M  SBV" | "M  SDT" | "M  SDD" | "M  SCD" | "M  SED" | "M  SPL" | "M  SNC" | "M  SAP"
-                | "M  SCL" | "M  SBT" => parse_v2000_sgroup_line(&line, *line_number, params, state)?,
+                "M  STY" | "M  SST" | "M  SLB" | "M  SCN" | "M  SDS" | "M  SAL" | "M  SBL"
+                | "M  SPA" | "M  SMT" | "M  SDI" | "M  SBV" | "M  SDT" | "M  SDD" | "M  SCD"
+                | "M  SED" | "M  SPL" | "M  SNC" | "M  SAP" | "M  SCL" | "M  SBT" => {
+                    parse_v2000_sgroup_line(&line, *line_number, params, state)?
+                }
                 _ => {}
             }
         } else if !line.starts_with(['S']) {
@@ -4491,7 +4610,11 @@ fn parse_v2000_radical_line(
     Ok(())
 }
 
-fn parse_v2000_isotope_line(line: &str, line_number: usize, atoms: &mut [V2000AtomLine]) -> Result<(), SdfReadError> {
+fn parse_v2000_isotope_line(
+    line: &str,
+    line_number: usize,
+    atoms: &mut [V2000AtomLine],
+) -> Result<(), SdfReadError> {
     // BEGIN RDKIT CPP BODY: parse_v2000_isotope_line
     // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/FileParsers/MolFileParser.cpp :: void ParseIsotopeLine
     // RDKit✔️❗:
@@ -4553,7 +4676,11 @@ fn parse_v2000_isotope_line(line: &str, line_number: usize, atoms: &mut [V2000At
     Ok(())
 }
 
-fn parse_rgroup_labels_line(line: &str, line_number: usize, atoms: &mut [V2000AtomLine]) -> Result<(), SdfReadError> {
+fn parse_rgroup_labels_line(
+    line: &str,
+    line_number: usize,
+    atoms: &mut [V2000AtomLine],
+) -> Result<(), SdfReadError> {
     // BEGIN RDKIT CPP BODY: parse_rgroup_labels_line
     // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/FileParsers/MolFileParser.cpp :: void ParseRGroupLabels
     // RDKit✔️❗:
@@ -4630,12 +4757,14 @@ fn parse_rgroup_labels_line(line: &str, line_number: usize, atoms: &mut [V2000At
         let mut spec = atom.spec.clone();
         spec = spec
             .with_prop("_MolFileRLabel", r_label.to_string())
-            .with_prop("dummyLabel", format!("R{r_label}"))
-            .with_query(QueryNode::predicate(AtomQueryPredicate::RGroupLabel(r_label)));
+            .with_prop("dummyLabel", format!("R{r_label}"));
         if (1..999).contains(&r_label) {
             spec = spec.with_isotope(r_label as u16);
         }
         atom.spec = spec;
+        atom.query = Some(QueryNode::predicate(AtomQueryPredicate::RGroupLabel(
+            r_label,
+        )));
     }
     Ok(())
 }
@@ -4660,12 +4789,19 @@ fn parse_substitution_count_line(
             continue;
         }
         let atom = atom_line_mut(atoms, aid, line_number)?;
-        atom.spec = atom.spec.clone().with_prop("molSubstCount", count.to_string());
+        atom.spec = atom
+            .spec
+            .clone()
+            .with_prop("molSubstCount", count.to_string());
     }
     Ok(())
 }
 
-fn parse_unsaturation_line(line: &str, line_number: usize, atoms: &mut [V2000AtomLine]) -> Result<(), SdfReadError> {
+fn parse_unsaturation_line(
+    line: &str,
+    line_number: usize,
+    atoms: &mut [V2000AtomLine],
+) -> Result<(), SdfReadError> {
     let nent = parse_required_unsigned_field(line, 6, 3, line_number)?;
     let mut spos = 9_usize;
     for _ in 0..nent {
@@ -4686,8 +4822,8 @@ fn parse_unsaturation_line(line: &str, line_number: usize, atoms: &mut [V2000Ato
             )));
         }
         let atom = atom_line_mut(atoms, aid, line_number)?;
-        atom.spec = atom.spec.clone().with_query(merge_atom_query(
-            atom.spec.query().cloned(),
+        atom.query = Some(merge_atom_query(
+            atom.query.take(),
             QueryNode::predicate(AtomQueryPredicate::IsUnsaturated),
         ));
     }
@@ -4734,25 +4870,36 @@ fn parse_ring_bond_count_line(
         atom.spec = atom
             .spec
             .clone()
-            .with_prop("molRingBondCount", count.to_string())
-            .with_query(merge_atom_query(
-                atom.spec.query().cloned(),
-                QueryNode::predicate(predicate),
-            ));
+            .with_prop("molRingBondCount", count.to_string());
+        atom.query = Some(merge_atom_query(
+            atom.query.take(),
+            QueryNode::predicate(predicate),
+        ));
     }
     Ok(())
 }
 
-fn parse_pxa_line(line: &str, line_number: usize, atoms: &mut [V2000AtomLine]) -> Result<(), SdfReadError> {
+fn parse_pxa_line(
+    line: &str,
+    line_number: usize,
+    atoms: &mut [V2000AtomLine],
+) -> Result<(), SdfReadError> {
     let mut pos = 7_usize;
     let atom_index = parse_required_unsigned_field(line, pos, 3, line_number)?;
     pos += 3;
     let atom = atom_line_mut(atoms, atom_index, line_number)?;
-    atom.spec = atom.spec.clone().with_prop("_MolFile_PXA", line[pos..].to_string());
+    atom.spec = atom
+        .spec
+        .clone()
+        .with_prop("_MolFile_PXA", line[pos..].to_string());
     Ok(())
 }
 
-fn parse_marvin_smarts_line(line: &str, line_number: usize, atoms: &mut [V2000AtomLine]) -> Result<(), SdfReadError> {
+fn parse_marvin_smarts_line(
+    line: &str,
+    line_number: usize,
+    atoms: &mut [V2000AtomLine],
+) -> Result<(), SdfReadError> {
     // BEGIN RDKIT CPP BODY: parse_marvin_smarts_line
     // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/FileParsers/MolFileParser.cpp :: void ParseMarvinSmartsLine
     // RDKit✔️✔️:   if (text.substr(0, 10) != "M  MRV SMA") {
@@ -4811,19 +4958,27 @@ fn parse_marvin_smarts_line(line: &str, line_number: usize, atoms: &mut [V2000At
     let atom = atom_line_mut(atoms, atom_index, line_number)?;
     // Local complexity review: the Marvin SMARTS is compiled exactly once and
     // the resulting canonical query graph is moved into the recursive query.
-    let query_molecule = crate::mol_from_smarts(sma, &crate::SmartsParseParams::default())
-        .map_err(|_| SdfReadError::Parse(format!("Cannot parse smarts: '{sma}' on line {line_number}")))?;
+    let query_molecule =
+        crate::parse_smarts(sma, &crate::SmartsParseParams::default()).map_err(|_| {
+            SdfReadError::Parse(format!(
+                "Cannot parse smarts: '{sma}' on line {line_number}"
+            ))
+        })?;
     atom.spec = atom
         .spec
         .clone()
         .with_prop("MRV_SMA", sma)
-        .with_prop("_MolFileAtomQuery", "1")
-        .with_query(merge_atom_query(
-            atom.spec.query().cloned(),
-            QueryNode::predicate(AtomQueryPredicate::RecursiveSmarts(
-                crate::search::query::RecursiveStructureQuery::from_smarts(sma, query_molecule.into(), 0),
-            )),
-        ));
+        .with_prop("_MolFileAtomQuery", "1");
+    atom.query = Some(merge_atom_query(
+        atom.query.take(),
+        QueryNode::predicate(AtomQueryPredicate::RecursiveSmarts(
+            crate::search::query::RecursiveStructureQuery::from_smarts(
+                sma,
+                query_molecule.into(),
+                0,
+            ),
+        )),
+    ));
     Ok(())
 }
 
@@ -4877,12 +5032,16 @@ fn parse_link_node_line(
             prop_val.push('|');
         }
         if subst_c != 0 {
-            prop_val.push_str(&format!("1 {repeat_count} 2 {aid} {subst_b} {aid} {subst_c}"));
+            prop_val.push_str(&format!(
+                "1 {repeat_count} 2 {aid} {subst_b} {aid} {subst_c}"
+            ));
         } else {
             prop_val.push_str(&format!("1 {repeat_count} 1 {aid} {subst_b}"));
         }
     }
-    state.molecule_props.insert("_MolFileLinkNodes".to_string(), prop_val);
+    state
+        .molecule_props
+        .insert("_MolFileLinkNodes".to_string(), prop_val);
     Ok(())
 }
 
@@ -5106,7 +5265,9 @@ fn parse_v2000_new_atom_list_line(
     atoms: &mut [V2000AtomLine],
 ) -> Result<(), SdfReadError> {
     if line.len() < 15 {
-        return Err(SdfReadError::Parse(format!("Atom list line too short: '{line}'")));
+        return Err(SdfReadError::Parse(format!(
+            "Atom list line too short: '{line}'"
+        )));
     }
 
     let atom_index = parse_required_unsigned_field(line, 7, 3, line_number)?;
@@ -5131,7 +5292,10 @@ fn parse_v2000_new_atom_list_line(
         let symbol = rdkit_substr(line, pos, 4)
             .split_once(' ')
             .map_or(rdkit_substr(line, pos, 4), |(head, _)| head);
-        atomic_numbers.push(atomic_number_from_mol_symbol(symbol, params.strict_parsing)?);
+        atomic_numbers.push(atomic_number_from_mol_symbol(
+            symbol,
+            params.strict_parsing,
+        )?);
     }
 
     let atom = atom_line_mut(atoms, atom_index, line_number)?;
@@ -5145,19 +5309,26 @@ fn parse_v2000_new_atom_list_line(
             )));
         }
         None => {
-            return Err(SdfReadError::Parse(format!("Atom list line too short: '{line}'")));
+            return Err(SdfReadError::Parse(format!(
+                "Atom list line too short: '{line}'"
+            )));
         }
     };
     let first_atomic_number = match &query {
-        QueryNode::Predicate(AtomQueryPredicate::AtomicNumberIn(numbers)) if numbers.len() == 1 => numbers[0],
+        QueryNode::Predicate(AtomQueryPredicate::AtomicNumberIn(numbers)) if numbers.len() == 1 => {
+            numbers[0]
+        }
         _ => 0,
     };
     atom.spec = atom
         .spec
         .clone()
-        .with_element(element_from_query_atomic_number(first_atomic_number, line_number)?)
-        .with_query(merge_atom_query(atom.spec.query().cloned(), query))
+        .with_element(element_from_query_atomic_number(
+            first_atomic_number,
+            line_number,
+        )?)
         .with_prop("_MolFileAtomQuery", "1");
+    atom.query = Some(merge_atom_query(atom.query.take(), query));
     Ok(())
 }
 
@@ -5198,19 +5369,28 @@ fn parse_v2000_old_atom_list_line(
             )));
         }
         None => {
-            return Err(SdfReadError::Parse(format!("Atom list line too short: '{line}'")));
+            return Err(SdfReadError::Parse(format!(
+                "Atom list line too short: '{line}'"
+            )));
         }
     };
     let first_atomic_number = match &query {
-        QueryNode::Predicate(AtomQueryPredicate::AtomicNumberIn(numbers)) if !numbers.is_empty() => numbers[0],
+        QueryNode::Predicate(AtomQueryPredicate::AtomicNumberIn(numbers))
+            if !numbers.is_empty() =>
+        {
+            numbers[0]
+        }
         _ => 0,
     };
     atom.spec = atom
         .spec
         .clone()
-        .with_element(element_from_query_atomic_number(first_atomic_number, line_number)?)
-        .with_query(query)
+        .with_element(element_from_query_atomic_number(
+            first_atomic_number,
+            line_number,
+        )?)
         .with_prop("_MolFileAtomQuery", "1");
+    atom.query = Some(query);
     Ok(())
 }
 
@@ -5402,7 +5582,9 @@ fn parse_v2000_sgroup_line(
         "M  SLB" => parse_v2000_sgroup_slb_line(line, line_number, params, state),
         "M  SCN" => parse_v2000_sgroup_scn_line(line, line_number, params, state),
         "M  SDS" => parse_v2000_sgroup_sds_line(line, line_number, params, state),
-        "M  SAL" | "M  SBL" | "M  SPA" => parse_v2000_sgroup_vector_data_line(line, line_number, params, state),
+        "M  SAL" | "M  SBL" | "M  SPA" => {
+            parse_v2000_sgroup_vector_data_line(line, line_number, params, state)
+        }
         "M  SMT" => parse_v2000_sgroup_smt_line(line, line_number, params, state),
         "M  SDI" => parse_v2000_sgroup_sdi_line(line, line_number, params, state),
         "M  SBV" => parse_v2000_sgroup_sbv_line(line, line_number, params, state),
@@ -5479,14 +5661,20 @@ fn parse_sgroup_int_field(
             "Cannot convert '{field}' to int on line {line_number}"
         )));
     }
-    let value = parse_rdkit_int(field, true)
-        .map_err(|()| SdfReadError::Parse(format!("Cannot convert '{field}' to int on line {line_number}")))?
-        as u32;
+    let value = parse_rdkit_int(field, true).map_err(|()| {
+        SdfReadError::Parse(format!(
+            "Cannot convert '{field}' to int on line {line_number}"
+        ))
+    })? as u32;
     *pos += len;
     Ok(value)
 }
 
-fn parse_sgroup_double_field(line: &str, line_number: usize, pos: &mut usize) -> Result<f64, SdfReadError> {
+fn parse_sgroup_double_field(
+    line: &str,
+    line_number: usize,
+    pos: &mut usize,
+) -> Result<f64, SdfReadError> {
     // BEGIN RDKIT CPP BODY: parse_sgroup_double_field
     // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/FileParsers/MolSGroupParsing.cpp :: double ParseSGroupDoubleField
     // RDKit✔️❗:   size_t len = 10;
@@ -5520,8 +5708,11 @@ fn parse_sgroup_double_field(line: &str, line_number: usize, pos: &mut usize) ->
             "Cannot convert '{field}' to double on line {line_number}"
         )));
     }
-    let value = parse_rdkit_double(field, true)
-        .map_err(|()| SdfReadError::Parse(format!("Cannot convert '{field}' to double on line {line_number}")))?;
+    let value = parse_rdkit_double(field, true).map_err(|()| {
+        SdfReadError::Parse(format!(
+            "Cannot convert '{field}' to double on line {line_number}"
+        ))
+    })?;
     *pos += len;
     Ok(value)
 }
@@ -5546,7 +5737,9 @@ fn find_sgroup_mut<'a>(
     state.sgroups.get_mut(&sg_idx).ok_or_else(|| {
         // RDKit logs and returns nullptr. COSMolKit parser errors are explicit
         // because silently ignoring a referenced structure would hide data loss.
-        SdfReadError::Parse(format!("SGroup {sg_idx} referenced on line {line_number} not found."))
+        SdfReadError::Parse(format!(
+            "SGroup {sg_idx} referenced on line {line_number} not found."
+        ))
     })
 }
 
@@ -5652,7 +5845,9 @@ fn parse_v2000_sgroup_sty_line(
         let sequence_id = parse_sgroup_int_field(line, line_number, &mut pos, false)?;
         let typ = rdkit_substr(line, pos + 1, 3);
         if !is_valid_rdkit_sgroup_type(typ) {
-            return Err(SdfReadError::Parse(format!("S group {typ} on line {line_number}")));
+            return Err(SdfReadError::Parse(format!(
+                "S group {typ} on line {line_number}"
+            )));
         }
         // RDKit creates a SubstanceGroup keyed by the file sequence id.
         // COSMolKit keeps row ids contiguous for molecule invariants and stores
@@ -5795,18 +5990,20 @@ fn parse_v2000_sgroup_vector_data_line(
         }
         let nbr = parse_sgroup_int_field(line, line_number, &mut pos, false)?;
         match typ {
-            "SAL" => {
-                sgroup.push_atom(AtomId::new(nbr.checked_sub(1).ok_or_else(|| {
-                    SdfReadError::Parse(format!("SGroup atom index 0 out of range on line {line_number}"))
-                })? as usize))
-            }
-            "SBL" => {
-                sgroup.push_bond(BondId::new(nbr.checked_sub(1).ok_or_else(|| {
-                    SdfReadError::Parse(format!("SGroup bond index 0 out of range on line {line_number}"))
-                })? as usize))
-            }
+            "SAL" => sgroup.push_atom(AtomId::new(nbr.checked_sub(1).ok_or_else(|| {
+                SdfReadError::Parse(format!(
+                    "SGroup atom index 0 out of range on line {line_number}"
+                ))
+            })? as usize)),
+            "SBL" => sgroup.push_bond(BondId::new(nbr.checked_sub(1).ok_or_else(|| {
+                SdfReadError::Parse(format!(
+                    "SGroup bond index 0 out of range on line {line_number}"
+                ))
+            })? as usize)),
             "SPA" => sgroup.push_parent_atom(AtomId::new(nbr.checked_sub(1).ok_or_else(|| {
-                SdfReadError::Parse(format!("SGroup parent atom index 0 out of range on line {line_number}"))
+                SdfReadError::Parse(format!(
+                    "SGroup parent atom index 0 out of range on line {line_number}"
+                ))
             })? as usize)),
             _ => {
                 return Err(SdfReadError::Parse(format!(
@@ -5963,7 +6160,9 @@ fn parse_v2000_sgroup_sds_line(
     // END RDKIT CPP BODY: parse_v2000_sgroup_sds_line
 
     if !line.starts_with("M  SDS EXP") {
-        return Err(SdfReadError::Parse(format!("bad SDS line on line {line_number}")));
+        return Err(SdfReadError::Parse(format!(
+            "bad SDS line on line {line_number}"
+        )));
     }
     let mut pos = 10_usize;
     let nent = parse_sgroup_int_field(line, line_number, &mut pos, true)?;
@@ -6103,12 +6302,11 @@ fn parse_v2000_sgroup_sbv_line(
     let sg_idx = parse_sgroup_int_field(line, line_number, &mut pos, false)?;
     let sgroup = find_sgroup_mut(state, sg_idx, line_number)?;
     let bond_mark = parse_sgroup_int_field(line, line_number, &mut pos, false)?;
-    let bond = BondId::new(
-        bond_mark
-            .checked_sub(1)
-            .ok_or_else(|| SdfReadError::Parse(format!("SGroup bond index 0 out of range on line {line_number}")))?
-            as usize,
-    );
+    let bond = BondId::new(bond_mark.checked_sub(1).ok_or_else(|| {
+        SdfReadError::Parse(format!(
+            "SGroup bond index 0 out of range on line {line_number}"
+        ))
+    })? as usize);
     let vector = if sgroup.kind() == &SubstanceGroupKind::Superatom {
         [
             parse_sgroup_double_field(line, line_number, &mut pos)?,
@@ -6190,7 +6388,9 @@ fn parse_v2000_sgroup_sdd_line(
     let sg_idx = parse_sgroup_int_field(line, line_number, &mut pos, false)?;
     pos += 1;
     if pos < line.len() {
-        find_sgroup_mut(state, sg_idx, line_number)?.data_mut().field_display = Some(line[pos..].to_string());
+        find_sgroup_mut(state, sg_idx, line_number)?
+            .data_mut()
+            .field_display = Some(line[pos..].to_string());
     }
     Ok(())
 }
@@ -6240,7 +6440,9 @@ fn parse_v2000_sgroup_scd_sed_line(
         )));
     }
     if pos + 1 < line.len() {
-        state.current_data_field.push_str(rdkit_substr(line, pos + 1, 69));
+        state
+            .current_data_field
+            .push_str(rdkit_substr(line, pos + 1, 69));
         if typ == "SED" {
             let trimmed = state.current_data_field.trim_end().to_string();
             find_sgroup_mut(state, sg_idx, line_number)?
@@ -6283,11 +6485,15 @@ fn parse_v2000_sgroup_spl_line(
         }
         let sg_idx = parse_sgroup_int_field(line, line_number, &mut pos, false)?;
         let parent_idx = parse_sgroup_int_field(line, line_number, &mut pos, false)?;
-        let parent = state.sgroups.get(&parent_idx).map(SubstanceGroup::id).ok_or_else(|| {
-            SdfReadError::Parse(format!(
-                "SGroup {parent_idx} referenced on line {line_number} not found."
-            ))
-        })?;
+        let parent = state
+            .sgroups
+            .get(&parent_idx)
+            .map(SubstanceGroup::id)
+            .ok_or_else(|| {
+                SdfReadError::Parse(format!(
+                    "SGroup {parent_idx} referenced on line {line_number} not found."
+                ))
+            })?;
         find_sgroup_mut(state, sg_idx, line_number)?.set_parent(parent);
     }
     Ok(())
@@ -6365,7 +6571,9 @@ fn parse_v2000_sgroup_sap_line(
         };
         sgroup.push_attach_point(SGroupAttachPoint {
             atom: AtomId::new(atom_mark.checked_sub(1).ok_or_else(|| {
-                SdfReadError::Parse(format!("SGroup attach atom index 0 out of range on line {line_number}"))
+                SdfReadError::Parse(format!(
+                    "SGroup attach atom index 0 out of range on line {line_number}"
+                ))
             })? as usize),
             leaving_atom: if leaving_mark == 0 {
                 None
@@ -6573,14 +6781,21 @@ fn parse_attach_point_line(
                     )));
                 }
             } else {
-                atom.spec = atom.spec.clone().with_prop("molAttachPoint", val.to_string());
+                atom.spec = atom
+                    .spec
+                    .clone()
+                    .with_prop("molAttachPoint", val.to_string());
             }
         }
     }
     Ok(())
 }
 
-fn parse_zch_line(line: &str, line_number: usize, atoms: &mut [V2000AtomLine]) -> Result<(), SdfReadError> {
+fn parse_zch_line(
+    line: &str,
+    line_number: usize,
+    atoms: &mut [V2000AtomLine],
+) -> Result<(), SdfReadError> {
     // BEGIN RDKIT CPP BODY: parse_zch_line
     // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/FileParsers/MolFileParser.cpp :: void ParseZCHLine
     // RDKit✔️❗:   // part of Alex Clark's ZBO proposal
@@ -6670,7 +6885,11 @@ fn parse_zch_line(line: &str, line_number: usize, atoms: &mut [V2000AtomLine]) -
     Ok(())
 }
 
-fn parse_hyd_line(line: &str, line_number: usize, atoms: &mut [V2000AtomLine]) -> Result<(), SdfReadError> {
+fn parse_hyd_line(
+    line: &str,
+    line_number: usize,
+    atoms: &mut [V2000AtomLine],
+) -> Result<(), SdfReadError> {
     // BEGIN RDKIT CPP BODY: parse_hyd_line
     // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/FileParsers/MolFileParser.cpp :: void ParseHYDLine
     // RDKit✔️❗:   // part of Alex Clark's ZBO proposal
@@ -6769,7 +6988,11 @@ fn parse_hyd_line(line: &str, line_number: usize, atoms: &mut [V2000AtomLine]) -
     Ok(())
 }
 
-fn parse_zbo_line(line: &str, line_number: usize, bonds: &mut [V2000BondLine]) -> Result<(), SdfReadError> {
+fn parse_zbo_line(
+    line: &str,
+    line_number: usize,
+    bonds: &mut [V2000BondLine],
+) -> Result<(), SdfReadError> {
     // BEGIN RDKIT CPP BODY: parse_zbo_line
     // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/FileParsers/MolFileParser.cpp :: void ParseZBOLine
     // RDKit✔️❗:   // part of Alex Clark's ZBO proposal
@@ -6904,11 +7127,18 @@ fn parse_atom_alias_line(
         )));
     }
     let atom = atom_line_mut(atoms, idx, line_number)?;
-    atom.spec = atom.spec.clone().with_prop("molFileAlias", next_line.to_string());
+    atom.spec = atom
+        .spec
+        .clone()
+        .with_prop("molFileAlias", next_line.to_string());
     Ok(())
 }
 
-fn parse_atom_value_line(line: &str, line_number: usize, atoms: &mut [V2000AtomLine]) -> Result<(), SdfReadError> {
+fn parse_atom_value_line(
+    line: &str,
+    line_number: usize,
+    atoms: &mut [V2000AtomLine],
+) -> Result<(), SdfReadError> {
     // BEGIN RDKIT CPP BODY: parse_atom_value_line
     // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/FileParsers/MolFileParser.cpp :: void ParseAtomValue
     // RDKit✔️❗:   PRECONDITION(mol, "bad mol");
@@ -6944,14 +7174,18 @@ fn parse_atom_value_line(line: &str, line_number: usize, atoms: &mut [V2000AtomL
         )));
     }
     let atom = atom_line_mut(atoms, idx, line_number)?;
-    atom.spec = atom
-        .spec
-        .clone()
-        .with_prop("molFileValue", line.get(7..).unwrap_or_default().to_string());
+    atom.spec = atom.spec.clone().with_prop(
+        "molFileValue",
+        line.get(7..).unwrap_or_default().to_string(),
+    );
     Ok(())
 }
 
-fn skip_sgroup_lines<R: BufRead>(reader: &mut R, line: &str, line_number: &mut usize) -> Result<(), SdfReadError> {
+fn skip_sgroup_lines<R: BufRead>(
+    reader: &mut R,
+    line: &str,
+    line_number: &mut usize,
+) -> Result<(), SdfReadError> {
     let n_to_skip = parse_rdkit_int(rdkit_substr(line, 6, 3), true).map_err(|_| {
         SdfReadError::Parse(format!(
             "Cannot convert '{}' to int on line {}",
@@ -6967,8 +7201,9 @@ fn skip_sgroup_lines<R: BufRead>(reader: &mut R, line: &str, line_number: &mut u
     }
     for _ in 0..n_to_skip as usize {
         *line_number += 1;
-        let _ = read_rdkit_line(reader)?
-            .ok_or_else(|| SdfReadError::Parse("EOF hit while skipping S  SKP payload".to_string()))?;
+        let _ = read_rdkit_line(reader)?.ok_or_else(|| {
+            SdfReadError::Parse("EOF hit while skipping S  SKP payload".to_string())
+        })?;
     }
     Ok(())
 }
@@ -7202,7 +7437,9 @@ fn parse_v3000_ctab<R: BufRead>(
 
     let _ = counts;
     let begin_ctab = get_v3000_line(reader, line_number, params)?;
-    if begin_ctab.to_ascii_uppercase().len() < 10 || &begin_ctab.to_ascii_uppercase()[..10] != "BEGIN CTAB" {
+    if begin_ctab.to_ascii_uppercase().len() < 10
+        || &begin_ctab.to_ascii_uppercase()[..10] != "BEGIN CTAB"
+    {
         return Err(SdfReadError::Parse(format!(
             "BEGIN CTAB line not found on line {}",
             *line_number
@@ -7221,9 +7458,12 @@ fn parse_v3000_ctab<R: BufRead>(
     } else {
         parse_v3000_bond_block(reader, v3000_counts.bond_count, line_number, params)?
     };
-    let chirality_possible = bond_lines
-        .iter()
-        .any(|bond| !matches!(bond.spec.direction(), BondDirection::None | BondDirection::Unknown));
+    let chirality_possible = bond_lines.iter().any(|bond| {
+        !matches!(
+            bond.spec.direction(),
+            BondDirection::None | BondDirection::Unknown
+        )
+    });
 
     let mut atom_id_by_mol_idx = BTreeMap::new();
     let mut bond_id_by_mol_idx = BTreeMap::new();
@@ -7240,35 +7480,38 @@ fn parse_v3000_ctab<R: BufRead>(
         let id = builder.add_atom(atom_line.spec.clone());
         atom_id_by_mol_idx.insert(atom_line.mol_idx, id);
     }
-    if atom_lines
-        .iter()
-        .filter_map(|atom_line| atom_line.spec.query())
-        .any(atom_query_needs_scan)
-    {
-        builder = builder.with_property("_NeedsQueryScan", "1");
+    if atom_lines.iter().any(|atom_line| atom_line.query.is_some()) {
+        return Err(UnsupportedFeatureError::from_spec(&MOLBLOCK_IO_FEATURE).into());
     }
-    let coords = atom_lines.iter().map(|line| line.coord_3d).collect::<Vec<_>>();
+    let coords = atom_lines
+        .iter()
+        .map(|line| line.coord_3d)
+        .collect::<Vec<_>>();
 
     for bond_line in &bond_lines {
-        let begin = *atom_id_by_mol_idx.get(&bond_line.begin_mol_idx).ok_or_else(|| {
-            SdfReadError::Parse(format!(
-                "Bond endpoint {} out of range on line {}",
-                bond_line.begin_mol_idx, bond_line.line_number
-            ))
-        })?;
-        let end = *atom_id_by_mol_idx.get(&bond_line.end_mol_idx).ok_or_else(|| {
-            SdfReadError::Parse(format!(
-                "Bond endpoint {} out of range on line {}",
-                bond_line.end_mol_idx, bond_line.line_number
-            ))
-        })?;
+        let begin = *atom_id_by_mol_idx
+            .get(&bond_line.begin_mol_idx)
+            .ok_or_else(|| {
+                SdfReadError::Parse(format!(
+                    "Bond endpoint {} out of range on line {}",
+                    bond_line.begin_mol_idx, bond_line.line_number
+                ))
+            })?;
+        let end = *atom_id_by_mol_idx
+            .get(&bond_line.end_mol_idx)
+            .ok_or_else(|| {
+                SdfReadError::Parse(format!(
+                    "Bond endpoint {} out of range on line {}",
+                    bond_line.end_mol_idx, bond_line.line_number
+                ))
+            })?;
         let mut spec = BondSpec::new(begin, end, bond_line.spec.order())
             .with_aromatic(bond_line.spec.is_aromatic())
             .with_conjugated(bond_line.spec.is_conjugated())
             .with_direction(bond_line.spec.direction())
             .with_stereo(bond_line.spec.stereo());
-        if let Some(query) = bond_line.spec.query().cloned() {
-            spec = spec.with_query(query);
+        if bond_line.query.is_some() {
+            return Err(UnsupportedFeatureError::from_spec(&MOLBLOCK_IO_FEATURE).into());
         }
         if let Some(stereo_atoms) = bond_line.spec.stereo_atoms() {
             spec = spec.with_stereo_atoms(stereo_atoms[0], stereo_atoms[1]);
@@ -7336,7 +7579,8 @@ fn parse_v3000_ctab<R: BufRead>(
                 )));
             }
             collection_found = true;
-            stereo_groups = parse_v3000_collection_block(reader, line_number, params, &atom_id_by_mol_idx)?;
+            stereo_groups =
+                parse_v3000_collection_block(reader, line_number, params, &atom_id_by_mol_idx)?;
             next_line = get_v3000_line(reader, line_number, params)?;
             next_upper = next_line.to_ascii_uppercase();
         } else if next_upper.len() >= 11 && next_upper.starts_with("BEGIN OBJ3D") {
@@ -7387,12 +7631,17 @@ fn parse_v3000_ctab<R: BufRead>(
     *line_number += 1;
     if !m_end.starts_with("M  END") {
         return Err(SdfReadError::Parse(
-            "Problems encountered parsing Mol data, M  END missing around line ".to_string() + &line_number.to_string(),
+            "Problems encountered parsing Mol data, M  END missing around line ".to_string()
+                + &line_number.to_string(),
         ));
     }
 
     let is_3d = resolve_coordinate_3d_flag(
-        calculate_rdkit_3d_flag(molfile_info_marks_3d(&header.info), &coords, chirality_possible),
+        calculate_rdkit_3d_flag(
+            molfile_info_marks_3d(&header.info),
+            &coords,
+            chirality_possible,
+        ),
         params.coordinate_mode,
     );
     builder
@@ -7404,7 +7653,9 @@ fn parse_v3000_ctab<R: BufRead>(
             .map_err(molecule_build_error)?;
     }
     for stereo_group in stereo_groups {
-        builder.add_stereo_group(stereo_group).map_err(molecule_build_error)?;
+        builder
+            .add_stereo_group(stereo_group)
+            .map_err(molecule_build_error)?;
     }
     let molecule = builder
         .with_topology_trust(crate::TopologyTrust::TrustedGraph)
@@ -7417,7 +7668,11 @@ fn parse_v3000_ctab<R: BufRead>(
     })
 }
 
-fn parse_v3000_counts_line(line: &str, line_number: usize, params: SdfReadParams) -> Result<CountsLine, SdfReadError> {
+fn parse_v3000_counts_line(
+    line: &str,
+    line_number: usize,
+    params: SdfReadParams,
+) -> Result<CountsLine, SdfReadError> {
     // BEGIN RDKIT CPP BODY: parse_v3000_counts_line
     // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/FileParsers/MolFileParser.cpp :: bool ParseV3000CTAB
     // RDKit✔️❗:
@@ -7856,7 +8111,7 @@ fn parse_v3000_atom_block<R: BufRead>(
         }
 
         let mol_idx = parse_rdkit_unsigned(&tokens[0], false).unwrap_or(0);
-        let mut spec = parse_v3000_atom_symbol(&tokens[1], *line_number, params)?;
+        let (mut spec, mut query) = parse_v3000_atom_symbol(&tokens[1], *line_number, params)?;
         let x = parse_rdkit_double(&tokens[2], false).unwrap_or(0.0);
         let y = parse_rdkit_double(&tokens[3], false).unwrap_or(0.0);
         let z = parse_rdkit_double(&tokens[4], false).unwrap_or(0.0);
@@ -7866,12 +8121,13 @@ fn parse_v3000_atom_block<R: BufRead>(
                 .with_atom_map(map_num as u32)
                 .with_prop("molAtomMapNumber", map_num.to_string());
         }
-        spec = parse_v3000_atom_props(&tokens[6..], *line_number, params, spec)?;
+        (spec, query) = parse_v3000_atom_props(&tokens[6..], *line_number, params, spec, query)?;
         atoms.push(V3000AtomLine {
             line_number: *line_number,
             mol_idx,
             tokens,
             spec,
+            query,
             coord_3d: [x, y, z],
         });
     }
@@ -7887,7 +8143,11 @@ fn parse_v3000_atom_block<R: BufRead>(
     Ok(atoms)
 }
 
-fn parse_v3000_atom_symbol(token: &str, line_number: usize, params: SdfReadParams) -> Result<AtomSpec, SdfReadError> {
+fn parse_v3000_atom_symbol(
+    token: &str,
+    line_number: usize,
+    params: SdfReadParams,
+) -> Result<(AtomSpec, Option<QueryNode<AtomQueryPredicate>>), SdfReadError> {
     // BEGIN RDKIT CPP BODY: parse_v3000_atom_symbol
     // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/FileParsers/MolFileParser.cpp :: Atom *ParseV3000AtomSymbol
     // RDKit✔️❗:
@@ -8037,7 +8297,10 @@ fn parse_v3000_atom_symbol(token: &str, line_number: usize, params: SdfReadParam
         } else {
             AtomQueryPredicate::AtomicNumberIn(atomic_numbers)
         };
-        return Ok(AtomSpec::new(Element::DUMMY).with_query(QueryNode::predicate(query)));
+        return Ok((
+            AtomSpec::new(Element::DUMMY),
+            Some(QueryNode::predicate(query)),
+        ));
     }
 
     if negate {
@@ -8047,27 +8310,38 @@ fn parse_v3000_atom_symbol(token: &str, line_number: usize, params: SdfReadParam
     }
 
     match token {
-        "*" => Ok(AtomSpec::new(Element::DUMMY)
-            .with_query(QueryNode::predicate(AtomQueryPredicate::Any))
-            .with_no_implicit(true)),
-        "D" => Ok(AtomSpec::new(Element::H).with_isotope(2)),
-        "T" => Ok(AtomSpec::new(Element::H).with_isotope(3)),
-        "R" | "R#" => Ok(AtomSpec::new(Element::DUMMY).with_prop("dummyLabel", token.to_string())),
-        _ if token.starts_with('R') && token.len() <= 3 && token[1..].chars().all(|char| char.is_ascii_digit()) => {
+        "*" => Ok((
+            AtomSpec::new(Element::DUMMY).with_no_implicit(true),
+            Some(QueryNode::predicate(AtomQueryPredicate::Any)),
+        )),
+        "D" => Ok((AtomSpec::new(Element::H).with_isotope(2), None)),
+        "T" => Ok((AtomSpec::new(Element::H).with_isotope(3), None)),
+        "R" | "R#" => Ok((
+            AtomSpec::new(Element::DUMMY).with_prop("dummyLabel", token.to_string()),
+            None,
+        )),
+        _ if token.starts_with('R')
+            && token.len() <= 3
+            && token[1..].chars().all(|char| char.is_ascii_digit()) =>
+        {
             let number = token[1..].parse::<u32>().unwrap_or(0);
-            Ok(AtomSpec::new(Element::DUMMY)
-                .with_isotope(number as u16)
-                .with_prop("dummyLabel", token.to_string()))
+            Ok((
+                AtomSpec::new(Element::DUMMY)
+                    .with_isotope(number as u16)
+                    .with_prop("dummyLabel", token.to_string()),
+                None,
+            ))
         }
-        "A" | "Q" | "L" | "LP" => Ok(AtomSpec::new(Element::DUMMY)
-            .with_query(QueryNode::predicate(AtomQueryPredicate::MolFileAlias(
+        "A" | "Q" | "L" | "LP" => Ok((
+            AtomSpec::new(Element::DUMMY).with_no_implicit(true),
+            Some(QueryNode::predicate(AtomQueryPredicate::MolFileAlias(
                 token.to_string(),
-            )))
-            .with_no_implicit(true)),
+            ))),
+        )),
         other => {
             let atomic_number = atomic_number_from_mol_symbol(other, params.strict_parsing)?;
             let element = Element::from_atomic_number(atomic_number).unwrap_or(Element::DUMMY);
-            Ok(AtomSpec::new(element))
+            Ok((AtomSpec::new(element), None))
         }
     }
 }
@@ -8077,7 +8351,8 @@ fn parse_v3000_atom_props(
     line_number: usize,
     params: SdfReadParams,
     mut spec: AtomSpec,
-) -> Result<AtomSpec, SdfReadError> {
+    mut query: Option<QueryNode<AtomQueryPredicate>>,
+) -> Result<(AtomSpec, Option<QueryNode<AtomQueryPredicate>>), SdfReadError> {
     // BEGIN RDKIT CPP BODY: parse_v3000_atom_props
     // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/FileParsers/MolFileParser.cpp :: void ParseV3000AtomProps
     // RDKit✔️❗:
@@ -8320,13 +8595,19 @@ fn parse_v3000_atom_props(
         })?;
         match prop {
             "CHG" => {
-                let charge = parse_rdkit_int(val, false)
-                    .map_err(|_| SdfReadError::Parse(format!("Cannot convert '{val}' to int on line {line_number}")))?;
+                let charge = parse_rdkit_int(val, false).map_err(|_| {
+                    SdfReadError::Parse(format!(
+                        "Cannot convert '{val}' to int on line {line_number}"
+                    ))
+                })?;
                 spec = spec.with_formal_charge(charge as i8);
             }
             "RAD" => {
-                let radical_code = parse_rdkit_int(val, false)
-                    .map_err(|_| SdfReadError::Parse(format!("Cannot convert '{val}' to int on line {line_number}")))?;
+                let radical_code = parse_rdkit_int(val, false).map_err(|_| {
+                    SdfReadError::Parse(format!(
+                        "Cannot convert '{val}' to int on line {line_number}"
+                    ))
+                })?;
                 let radical_electrons = match radical_code {
                     0 => 0,
                     1 => 2,
@@ -8344,7 +8625,9 @@ fn parse_v3000_atom_props(
                 let isotope = parse_rdkit_int(val, false)
                     .or_else(|_| parse_rdkit_double(val, false).map(|dv| dv.floor() as i32))
                     .map_err(|_| {
-                        SdfReadError::Parse(format!("Bad value for MASS :{val} for atom on line {line_number}"))
+                        SdfReadError::Parse(format!(
+                            "Bad value for MASS :{val} for atom on line {line_number}"
+                        ))
                     })?;
                 if isotope < 0 {
                     return Err(SdfReadError::Parse(format!(
@@ -8354,11 +8637,18 @@ fn parse_v3000_atom_props(
                 spec = spec.with_isotope(isotope as u16);
             }
             "CFG" => {
-                let cfg = parse_rdkit_int(val, false)
-                    .map_err(|_| SdfReadError::Parse(format!("Cannot convert '{val}' to int on line {line_number}")))?;
+                let cfg = parse_rdkit_int(val, false).map_err(|_| {
+                    SdfReadError::Parse(format!(
+                        "Cannot convert '{val}' to int on line {line_number}"
+                    ))
+                })?;
                 match cfg {
                     0 => {}
-                    1 | 2 | 3 => spec = spec.with_mol_parity(cfg).with_prop("molParity", cfg.to_string()),
+                    1 | 2 | 3 => {
+                        spec = spec
+                            .with_mol_parity(cfg)
+                            .with_prop("molParity", cfg.to_string())
+                    }
                     _ => {
                         return Err(SdfReadError::Parse(format!(
                             "Unrecognized CFG value : {val} for atom on line {line_number}"
@@ -8369,25 +8659,27 @@ fn parse_v3000_atom_props(
             "HCOUNT" => {
                 if val != "0" {
                     let mut hcount = parse_rdkit_int(val, false).map_err(|_| {
-                        SdfReadError::Parse(format!("Cannot convert '{val}' to int on line {line_number}"))
+                        SdfReadError::Parse(format!(
+                            "Cannot convert '{val}' to int on line {line_number}"
+                        ))
                     })?;
                     if hcount == -1 {
                         hcount = 0;
                     }
-                    let query = if hcount == 0 {
+                    let predicate = if hcount == 0 {
                         QueryNode::predicate(AtomQueryPredicate::ImplicitHydrogenCount(0))
                     } else {
-                        QueryNode::predicate(AtomQueryPredicate::ImplicitHydrogenCountLessEqual(hcount as u8))
+                        QueryNode::predicate(AtomQueryPredicate::ImplicitHydrogenCountLessEqual(
+                            hcount as u8,
+                        ))
                     };
-                    let existing = spec.query().cloned();
-                    spec = spec.with_query(merge_atom_query(existing, query));
+                    query = Some(merge_atom_query(query.take(), predicate));
                 }
             }
             "UNSAT" => {
                 if val == "1" {
-                    let existing = spec.query().cloned();
-                    spec = spec.with_query(merge_atom_query(
-                        existing,
+                    query = Some(merge_atom_query(
+                        query.take(),
                         QueryNode::predicate(AtomQueryPredicate::IsUnsaturated),
                     ));
                 }
@@ -8395,15 +8687,16 @@ fn parse_v3000_atom_props(
             "RBCNT" => {
                 if val != "0" {
                     let mut rbcount = parse_rdkit_int(val, false).map_err(|_| {
-                        SdfReadError::Parse(format!("Cannot convert '{val}' to int on line {line_number}"))
+                        SdfReadError::Parse(format!(
+                            "Cannot convert '{val}' to int on line {line_number}"
+                        ))
                     })?;
                     spec = spec.with_prop("molRingBondCount", rbcount.to_string());
                     if rbcount == -1 {
                         rbcount = 0;
                     } else if rbcount == -2 {
-                        let existing = spec.query().cloned();
-                        spec = spec.with_query(merge_atom_query(
-                            existing,
+                        query = Some(merge_atom_query(
+                            query.take(),
                             QueryNode::predicate(AtomQueryPredicate::RingBondCount(
                                 crate::search::query::QUERY_SCAN_MAGIC_VALUE,
                             )),
@@ -8417,8 +8710,10 @@ fn parse_v3000_atom_props(
                     } else {
                         AtomQueryPredicate::RingBondCount(rbcount as u32)
                     };
-                    let existing = spec.query().cloned();
-                    spec = spec.with_query(merge_atom_query(existing, QueryNode::predicate(predicate)));
+                    query = Some(merge_atom_query(
+                        query.take(),
+                        QueryNode::predicate(predicate),
+                    ));
                 }
             }
             "RGROUPS" => {
@@ -8427,8 +8722,8 @@ fn parse_v3000_atom_props(
                     spec = spec
                         .with_prop("_MolFileRLabel", rlabel.to_string())
                         .with_prop("dummyLabel", format!("R{rlabel}"))
-                        .with_isotope(rlabel as u16)
-                        .with_query(QueryNode::predicate(AtomQueryPredicate::Any));
+                        .with_isotope(rlabel as u16);
+                    query = Some(QueryNode::predicate(AtomQueryPredicate::Any));
                 }
             }
             "VAL" if val != "0" => spec = spec.with_prop("molTotValence", val.to_string()),
@@ -8436,8 +8731,11 @@ fn parse_v3000_atom_props(
             "SUBST" if val != "0" => spec = spec.with_prop("molSubstCount", val.to_string()),
             "EXACHG" if val != "0" => spec = spec.with_prop("molRxnExactChange", val.to_string()),
             "INVRET" if val != "0" => {
-                let inversion_flag = parse_rdkit_int(val, false)
-                    .map_err(|_| SdfReadError::Parse(format!("Cannot convert '{val}' to int on line {line_number}")))?;
+                let inversion_flag = parse_rdkit_int(val, false).map_err(|_| {
+                    SdfReadError::Parse(format!(
+                        "Cannot convert '{val}' to int on line {line_number}"
+                    ))
+                })?;
                 spec = spec.with_mol_inversion_flag(inversion_flag);
             }
             "ATTCHPT" if val != "0" => {
@@ -8459,11 +8757,13 @@ fn parse_v3000_atom_props(
             }
             "CLASS" => spec = spec.with_prop("molAtomClass", val.to_string()),
             "SEQID" if val != "0" => spec = spec.with_prop("molAtomSeqId", val.to_string()),
-            "SEQNAME" if !val.is_empty() => spec = spec.with_prop("molAtomSeqName", val.to_string()),
+            "SEQNAME" if !val.is_empty() => {
+                spec = spec.with_prop("molAtomSeqName", val.to_string())
+            }
             _ => {}
         }
     }
-    Ok(spec)
+    Ok((spec, query))
 }
 
 fn parse_v3000_rgroups(text: &str, line_number: usize) -> Result<Vec<u32>, SdfReadError> {
@@ -8547,8 +8847,11 @@ fn parse_v3000_rgroups(text: &str, line_number: usize) -> Result<Vec<u32>, SdfRe
         .skip(1)
         .take(n_rs)
         .map(|token| {
-            parse_rdkit_unsigned(token, true)
-                .map_err(|_| SdfReadError::Parse(format!("Cannot convert '{token}' to int on line{line_number}")))
+            parse_rdkit_unsigned(token, true).map_err(|_| {
+                SdfReadError::Parse(format!(
+                    "Cannot convert '{token}' to int on line{line_number}"
+                ))
+            })
         })
         .collect()
 }
@@ -8570,7 +8873,10 @@ fn v3000_bond_spec_for_type(
         1 => (BondSpec::new(begin, end, BondOrder::Single), None),
         2 => (BondSpec::new(begin, end, BondOrder::Double), None),
         3 => (BondSpec::new(begin, end, BondOrder::Triple), None),
-        4 => (BondSpec::new(begin, end, BondOrder::Aromatic).with_aromatic(true), None),
+        4 => (
+            BondSpec::new(begin, end, BondOrder::Aromatic).with_aromatic(true),
+            None,
+        ),
         9 => (BondSpec::new(begin, end, BondOrder::Dative), None),
         10 => (BondSpec::new(begin, end, BondOrder::Hydrogen), None),
         0 => (BondSpec::new(begin, end, BondOrder::Unspecified), None),
@@ -8601,7 +8907,9 @@ fn v3000_bond_spec_for_type(
         ),
         other => (
             BondSpec::new(begin, end, BondOrder::Unspecified),
-            Some(QueryNode::predicate(BondQueryPredicate::MolFileQueryCode(other))),
+            Some(QueryNode::predicate(BondQueryPredicate::MolFileQueryCode(
+                other,
+            ))),
         ),
     }
 }
@@ -8812,17 +9120,19 @@ fn parse_v3000_bond_block<R: BufRead>(
         let trimmed = temp_str.trim().to_string();
         let tokens = tokenize_v3000_line(&trimmed, *line_number)?;
         if tokens.len() < 4 {
-            return Err(SdfReadError::Parse(format!("bond line {} is too short", *line_number)));
+            return Err(SdfReadError::Parse(format!(
+                "bond line {} is too short",
+                *line_number
+            )));
         }
         let bond_idx = parse_rdkit_unsigned(&tokens[0], false).unwrap_or(0);
         let bond_type = parse_rdkit_unsigned(&tokens[1], false).unwrap_or(0);
         let begin_mol_idx = parse_rdkit_unsigned(&tokens[2], false).unwrap_or(0);
         let end_mol_idx = parse_rdkit_unsigned(&tokens[3], false).unwrap_or(0);
-        let (mut spec, query) = v3000_bond_spec_for_type(AtomId::new(0), AtomId::new(0), bond_type);
-        if let Some(query) = query {
-            spec = spec.with_query(query);
-        }
-        spec = parse_v3000_bond_props(&tokens[4..], *line_number, params, spec, bond_type)?;
+        let (mut spec, mut query) =
+            v3000_bond_spec_for_type(AtomId::new(0), AtomId::new(0), bond_type);
+        (spec, query) =
+            parse_v3000_bond_props(&tokens[4..], *line_number, params, spec, bond_type, query)?;
         bonds.push(V3000BondLine {
             line_number: *line_number,
             mol_idx: bond_idx,
@@ -8830,6 +9140,7 @@ fn parse_v3000_bond_block<R: BufRead>(
             begin_mol_idx,
             end_mol_idx,
             spec,
+            query,
             molfile_bond_type: bond_type,
         });
     }
@@ -8850,7 +9161,8 @@ fn parse_v3000_bond_props(
     params: SdfReadParams,
     mut spec: BondSpec,
     bond_type: u32,
-) -> Result<BondSpec, SdfReadError> {
+    mut query: Option<QueryNode<BondQueryPredicate>>,
+) -> Result<(BondSpec, Option<QueryNode<BondQueryPredicate>>), SdfReadError> {
     // BEGIN RDKIT CPP BODY: parse_v3000_bond_props
     // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/FileParsers/MolFileParser.cpp :: void ParseV3000BondBlock
     // RDKit✔️❗:
@@ -9042,8 +9354,9 @@ fn parse_v3000_bond_props(
 
     let _ = params;
     for token in tokens {
-        let (prop, val) = split_assign_token(token)
-            .ok_or_else(|| SdfReadError::Parse(format!("bad bond property '{token}' on line {line_number}")))?;
+        let (prop, val) = split_assign_token(token).ok_or_else(|| {
+            SdfReadError::Parse(format!("bad bond property '{token}' on line {line_number}"))
+        })?;
         match prop {
             "CFG" => {
                 let cfg = parse_rdkit_unsigned(val, false).unwrap_or(0);
@@ -9078,11 +9391,11 @@ fn parse_v3000_bond_props(
                             )));
                         }
                     };
-                    let query = match spec.query().cloned() {
+                    let topology_query = match query.take() {
                         Some(existing) => QueryNode::and(vec![existing, topology_query]),
                         None => topology_query,
                     };
-                    spec = spec.with_query(query);
+                    query = Some(topology_query);
                 }
             }
             "RXCTR" => spec = spec.with_prop("molReactStatus", val.to_string()),
@@ -9092,7 +9405,7 @@ fn parse_v3000_bond_props(
             _ => {}
         }
     }
-    Ok(spec)
+    Ok((spec, query))
 }
 
 fn parse_v3000_sgroup_block<R: BufRead>(
@@ -9301,7 +9614,8 @@ fn parse_v3000_sgroup_block<R: BufRead>(
 
     for _ in 0..sgroup_count {
         let trimmed = temp_str.trim_end().to_string();
-        let (sequence_token, typ, external_token, label_tokens) = split_v3000_sgroup_line(&trimmed, *line_number)?;
+        let (sequence_token, typ, external_token, label_tokens) =
+            split_v3000_sgroup_line(&trimmed, *line_number)?;
         if sequence_token.is_empty() || typ.is_empty() || external_token.is_empty() {
             return Err(SdfReadError::Parse(format!(
                 "Found {} SGroups when {sgroup_count} were expected.",
@@ -9321,7 +9635,10 @@ fn parse_v3000_sgroup_block<R: BufRead>(
             )));
         }
         let external_id = parse_rdkit_unsigned(external_token, false).unwrap_or(0);
-        let mut sgroup = SubstanceGroup::new(SubstanceGroupId::new(sgroups.len()), sgroup_kind_from_rdkit_type(typ));
+        let mut sgroup = SubstanceGroup::new(
+            SubstanceGroupId::new(sgroups.len()),
+            sgroup_kind_from_rdkit_type(typ),
+        );
         sgroup.set_rdkit_sequence_id(sequence_id);
         sgroup.set_prop("TYPE", typ);
         if external_id > 0 {
@@ -9415,9 +9732,9 @@ fn parse_v3000_sgroup_block<R: BufRead>(
         sgroup.set_id(*id);
     }
     for (sequence_id, parent_sequence_id) in parent_by_sequence_id {
-        let parent = *id_by_sequence_id
-            .get(&parent_sequence_id)
-            .ok_or_else(|| SdfReadError::Parse(format!("Invalid PARENT label found on line {line_number}")))?;
+        let parent = *id_by_sequence_id.get(&parent_sequence_id).ok_or_else(|| {
+            SdfReadError::Parse(format!("Invalid PARENT label found on line {line_number}"))
+        })?;
         let sgroup = sgroups
             .get_mut(&sequence_id)
             .ok_or_else(|| SdfReadError::Parse(format!("SGroup {sequence_id} missing")))?;
@@ -9439,7 +9756,9 @@ fn parse_v3000_array_values<T>(
             "WARNING: first character of V3000 array is not '(' on line {line_number}"
         )));
     }
-    let fields = trimmed[1..trimmed.len() - 1].split_whitespace().collect::<Vec<_>>();
+    let fields = trimmed[1..trimmed.len() - 1]
+        .split_whitespace()
+        .collect::<Vec<_>>();
     if fields.is_empty() {
         return Ok(Vec::new());
     }
@@ -9477,7 +9796,11 @@ fn merge_v3000_assign_tokens(tokens: &[String]) -> Vec<String> {
             .map(|(_, value)| value.trim())
             .unwrap_or_default();
         if value.starts_with('"') {
-            let quote_count = value.as_bytes().iter().filter(|byte| **byte == b'"').count();
+            let quote_count = value
+                .as_bytes()
+                .iter()
+                .filter(|byte| **byte == b'"')
+                .count();
             in_quoted_value = quote_count % 2 == 1;
         }
         if !in_quoted_value {
@@ -9490,7 +9813,10 @@ fn merge_v3000_assign_tokens(tokens: &[String]) -> Vec<String> {
     merged
 }
 
-fn split_v3000_sgroup_line(line: &str, line_number: usize) -> Result<(&str, &str, &str, Vec<String>), SdfReadError> {
+fn split_v3000_sgroup_line(
+    line: &str,
+    line_number: usize,
+) -> Result<(&str, &str, &str, Vec<String>), SdfReadError> {
     let mut fields = line.splitn(4, char::is_whitespace);
     let sequence = fields.next().unwrap_or_default();
     let typ = fields.next().unwrap_or_default();
@@ -9501,7 +9827,12 @@ fn split_v3000_sgroup_line(line: &str, line_number: usize) -> Result<(&str, &str
             "SGroup line too short: '{line}' on line {line_number}"
         )));
     }
-    Ok((sequence, typ, external_id, tokenize_v3000_sgroup_labels(rest)))
+    Ok((
+        sequence,
+        typ,
+        external_id,
+        tokenize_v3000_sgroup_labels(rest),
+    ))
 }
 
 fn tokenize_v3000_sgroup_labels(text: &str) -> Vec<String> {
@@ -9559,7 +9890,11 @@ fn tokenize_v3000_sgroup_labels(text: &str) -> Vec<String> {
     tokens
 }
 
-fn parse_v3000_u32_array(value: &str, line_number: usize, max_count: Option<usize>) -> Result<Vec<u32>, SdfReadError> {
+fn parse_v3000_u32_array(
+    value: &str,
+    line_number: usize,
+    max_count: Option<usize>,
+) -> Result<Vec<u32>, SdfReadError> {
     parse_v3000_array_values(value, line_number, max_count, |field| {
         parse_rdkit_unsigned(field, false).map_err(|_| {
             SdfReadError::Parse(format!(
@@ -9569,10 +9904,17 @@ fn parse_v3000_u32_array(value: &str, line_number: usize, max_count: Option<usiz
     })
 }
 
-fn parse_v3000_f64_array(value: &str, line_number: usize, max_count: Option<usize>) -> Result<Vec<f64>, SdfReadError> {
+fn parse_v3000_f64_array(
+    value: &str,
+    line_number: usize,
+    max_count: Option<usize>,
+) -> Result<Vec<f64>, SdfReadError> {
     parse_v3000_array_values(value, line_number, max_count, |field| {
-        parse_rdkit_double(field, false)
-            .map_err(|_| SdfReadError::Parse(format!("Cannot convert '{field}' to double on line {line_number}")))
+        parse_rdkit_double(field, false).map_err(|_| {
+            SdfReadError::Parse(format!(
+                "Cannot convert '{field}' to double on line {line_number}"
+            ))
+        })
     })
 }
 
@@ -9588,7 +9930,9 @@ fn parse_v3000_sgroup_label(
 ) -> Result<(), SdfReadError> {
     match label {
         "ATOMS" => {
-            for atom_idx in parse_v3000_u32_array(value, line_number, Some(atom_id_by_mol_idx.len()))? {
+            for atom_idx in
+                parse_v3000_u32_array(value, line_number, Some(atom_id_by_mol_idx.len()))?
+            {
                 let atom = *atom_id_by_mol_idx.get(&atom_idx).ok_or_else(|| {
                     SdfReadError::Parse(format!(
                         "SGroup atom index {atom_idx} out of range on line {line_number}"
@@ -9598,7 +9942,9 @@ fn parse_v3000_sgroup_label(
             }
         }
         "PATOMS" => {
-            for atom_idx in parse_v3000_u32_array(value, line_number, Some(atom_id_by_mol_idx.len()))? {
+            for atom_idx in
+                parse_v3000_u32_array(value, line_number, Some(atom_id_by_mol_idx.len()))?
+            {
                 let atom = *atom_id_by_mol_idx.get(&atom_idx).ok_or_else(|| {
                     SdfReadError::Parse(format!(
                         "SGroup parent atom index {atom_idx} out of range on line {line_number}"
@@ -9613,7 +9959,9 @@ fn parse_v3000_sgroup_label(
             } else {
                 crate::SGroupBondRole::Crossing
             };
-            for bond_idx in parse_v3000_u32_array(value, line_number, Some(bond_id_by_mol_idx.len()))? {
+            for bond_idx in
+                parse_v3000_u32_array(value, line_number, Some(bond_id_by_mol_idx.len()))?
+            {
                 let bond = *bond_id_by_mol_idx.get(&bond_idx).ok_or_else(|| {
                     SdfReadError::Parse(format!(
                         "SGroup bond index {bond_idx} out of range on line {line_number}"
@@ -9637,8 +9985,9 @@ fn parse_v3000_sgroup_label(
         "CSTATE" => parse_v3000_cstate_label(value, line_number, sgroup, bond_id_by_mol_idx)?,
         "SAP" => parse_v3000_sap_label(value, line_number, sgroup, atom_id_by_mol_idx)?,
         "PARENT" => {
-            let parent_idx = parse_rdkit_unsigned(value, false)
-                .map_err(|_| SdfReadError::Parse(format!("Invalid PARENT label found on line {line_number}")))?;
+            let parent_idx = parse_rdkit_unsigned(value, false).map_err(|_| {
+                SdfReadError::Parse(format!("Invalid PARENT label found on line {line_number}"))
+            })?;
             if let Some(sequence_id) = sgroup.rdkit_sequence_id() {
                 parent_by_sequence_id.insert(sequence_id, parent_idx);
             }
@@ -9906,7 +10255,9 @@ fn parse_v3000_collection_block<R: BufRead>(
     let mut temp_str = get_v3000_line(reader, line_number, params)?;
     let mut temp_upper = temp_str.to_ascii_uppercase();
     while !temp_upper.starts_with("END") {
-        if let Some(group) = parse_v3000_stereo_collection_line(&temp_upper, *line_number, atom_id_by_mol_idx)? {
+        if let Some(group) =
+            parse_v3000_stereo_collection_line(&temp_upper, *line_number, atom_id_by_mol_idx)?
+        {
             if group.kind() == StereoGroupKind::Absolute {
                 if abs_group_seen == 1 && params.strict_parsing {
                     return Err(SdfReadError::Parse(format!(
@@ -9939,13 +10290,17 @@ fn parse_v3000_stereo_collection_line(
     }
     let tag = &rest[..3];
     let after_tag = &rest[3..];
-    let group_digits = after_tag.chars().take_while(char::is_ascii_digit).collect::<String>();
+    let group_digits = after_tag
+        .chars()
+        .take_while(char::is_ascii_digit)
+        .collect::<String>();
     let after_digits = &after_tag[group_digits.len()..];
     let Some(atoms_pos) = after_digits.find("ATOMS=") else {
         return Ok(None);
     };
     let atom_value = &after_digits[atoms_pos + 6..];
-    let mol_atom_indices = parse_v3000_u32_array(atom_value, line_number, Some(atom_id_by_mol_idx.len()))?;
+    let mol_atom_indices =
+        parse_v3000_u32_array(atom_value, line_number, Some(atom_id_by_mol_idx.len()))?;
     let mut atoms = Vec::with_capacity(mol_atom_indices.len());
     for atom_idx in mol_atom_indices {
         atoms.push(*atom_id_by_mol_idx.get(&atom_idx).ok_or_else(|| {
@@ -10413,7 +10768,13 @@ mod tests {
         file
     }
 
-    fn v2000_atom_line(symbol: &str, mass: i32, charge: i32, h_count: i32, atom_map: i32) -> String {
+    fn v2000_atom_line(
+        symbol: &str,
+        mass: i32,
+        charge: i32,
+        h_count: i32,
+        atom_map: i32,
+    ) -> String {
         format!(
             "{:>10.4}{:>10.4}{:>10.4} {:<3}{:>2}{:>3}{:>3}{:>3}{:>3}{:>3}{:>3}{:>3}{:>3}{:>3}",
             1.25, -2.5, 0.75, symbol, mass, charge, 0, h_count, 0, 0, 0, 0, 0, atom_map
@@ -10435,7 +10796,10 @@ mod tests {
     }
 
     fn v2000_bond_line(begin: u32, end: u32, bond_type: u32, stereo: u32, topology: u32) -> String {
-        format!("{begin:>3}{end:>3}{bond_type:>3}{stereo:>3}{:>3}{topology:>3}", 0)
+        format!(
+            "{begin:>3}{end:>3}{bond_type:>3}{stereo:>3}{:>3}{topology:>3}",
+            0
+        )
     }
 
     fn single_atom_sdf_record(name: &str, symbol: &str, trailing_newline: bool) -> String {
@@ -10507,7 +10871,10 @@ mod tests {
 
     #[test]
     fn parse_sdf_data_header_extracts_label_like_rdkit() {
-        assert_eq!(parse_sdf_data_header("> <ID>", 1).unwrap(), Some("ID".to_string()));
+        assert_eq!(
+            parse_sdf_data_header("> <ID>", 1).unwrap(),
+            Some("ID".to_string())
+        );
         assert_eq!(
             parse_sdf_data_header(" \t>  <Long Name>  \r\n", 2).unwrap(),
             Some("Long Name".to_string())
@@ -10537,7 +10904,9 @@ mod tests {
 
     #[test]
     fn parse_sdf_data_fields_reads_single_and_multiline_values_like_rdkit() {
-        let lines = ["> <ID>", "cmpd-1", "", "> <NOTE>", "alpha", "beta", "", "$$$$"];
+        let lines = [
+            "> <ID>", "cmpd-1", "", "> <NOTE>", "alpha", "beta", "", "$$$$",
+        ];
         let fields = parse_sdf_data_fields(&lines, 10, SdfReadParams::default()).unwrap();
 
         assert_eq!(
@@ -10602,7 +10971,10 @@ mod tests {
         let lines = ["> <>", "unterminated"];
         let err = parse_sdf_data_fields(&lines, 1, SdfReadParams::default()).unwrap_err();
 
-        assert_eq!(err, SdfReadError::Parse("End of data field name not found".to_string()));
+        assert_eq!(
+            err,
+            SdfReadError::Parse("End of data field name not found".to_string())
+        );
     }
 
     #[test]
@@ -10658,7 +11030,8 @@ mod tests {
     fn extract_next_raw_sdf_record_ignores_trailing_newlines_like_rdkit() {
         let mut reader = std::io::Cursor::new("\n\r\n".as_bytes());
 
-        let raw = extract_next_raw_sdf_record(&mut reader, 0, 0, 0, SdfReadParams::default()).unwrap();
+        let raw =
+            extract_next_raw_sdf_record(&mut reader, 0, 0, 0, SdfReadParams::default()).unwrap();
 
         assert_eq!(raw, None);
     }
@@ -10788,7 +11161,10 @@ mod tests {
 
         let record = read_next_sdf_record(&mut reader).unwrap().unwrap();
 
-        assert_eq!(record.molecule.properties().name(), Some("missing-delimiter"));
+        assert_eq!(
+            record.molecule.properties().name(),
+            Some("missing-delimiter")
+        );
         assert!(reader.end);
     }
 
@@ -10876,7 +11252,9 @@ mod tests {
         let out_of_range = dataset.record(3).unwrap_err();
         assert_eq!(
             out_of_range,
-            SdfReadError::Parse("ERROR: Index error (idx = 3) :  we do not have enough mol blocks".to_string())
+            SdfReadError::Parse(
+                "ERROR: Index error (idx = 3) :  we do not have enough mol blocks".to_string()
+            )
         );
     }
 
@@ -10963,7 +11341,8 @@ mod tests {
         let mut reader = std::io::Cursor::new(input.as_bytes());
         let mut line_number = 0;
 
-        let err = get_v3000_line(&mut reader, &mut line_number, SdfReadParams::default()).unwrap_err();
+        let err =
+            get_v3000_line(&mut reader, &mut line_number, SdfReadParams::default()).unwrap_err();
 
         assert_eq!(
             err,
@@ -11037,7 +11416,10 @@ mod tests {
             parsed.molecule.prop("_MolFileInfoLine"),
             Some("  COSMolKit          3D")
         );
-        assert_eq!(parsed.molecule.prop("_MolFileComments"), Some("stream-comment"));
+        assert_eq!(
+            parsed.molecule.prop("_MolFileComments"),
+            Some("stream-comment")
+        );
         assert_eq!(parsed.molecule.prop("_MolFileChiralFlag"), Some("1"));
         assert_eq!(parsed.molecule.num_atoms(), 1);
         assert_eq!(parsed.molecule.num_bonds(), 0);
@@ -11050,7 +11432,8 @@ mod tests {
         let mut reader = std::io::Cursor::new("name\ninfo\ncomments\n".as_bytes());
         let mut line_number = 0;
 
-        let err = mol_from_mol_data_stream(&mut reader, &mut line_number, SdfReadParams::default()).unwrap_err();
+        let err = mol_from_mol_data_stream(&mut reader, &mut line_number, SdfReadParams::default())
+            .unwrap_err();
 
         assert_eq!(
             err,
@@ -11125,11 +11508,17 @@ M  END
 
         let mut strict_reader = std::io::Cursor::new(input.as_bytes());
         let mut strict_line = 0;
-        let strict_err =
-            mol_from_mol_data_stream(&mut strict_reader, &mut strict_line, SdfReadParams::default()).unwrap_err();
+        let strict_err = mol_from_mol_data_stream(
+            &mut strict_reader,
+            &mut strict_line,
+            SdfReadParams::default(),
+        )
+        .unwrap_err();
         assert_eq!(
             strict_err,
-            SdfReadError::Parse("V3000 mol blocks should have 0s in the initial counts line. (line: 4)".to_string())
+            SdfReadError::Parse(
+                "V3000 mol blocks should have 0s in the initial counts line. (line: 4)".to_string()
+            )
         );
 
         let mut nonstrict_reader = std::io::Cursor::new(input.as_bytes());
@@ -11171,7 +11560,8 @@ M  END
         let mut reader = std::io::Cursor::new(input.as_bytes());
         let mut line_number = 0;
 
-        let err = mol_from_mol_data_stream(&mut reader, &mut line_number, SdfReadParams::default()).unwrap_err();
+        let err = mol_from_mol_data_stream(&mut reader, &mut line_number, SdfReadParams::default())
+            .unwrap_err();
 
         assert_eq!(
             err,
@@ -11188,11 +11578,14 @@ M  END
         let mut reader = std::io::Cursor::new(input.as_bytes());
         let mut line_number = 0;
 
-        let err = mol_from_mol_data_stream(&mut reader, &mut line_number, SdfReadParams::default()).unwrap_err();
+        let err = mol_from_mol_data_stream(&mut reader, &mut line_number, SdfReadParams::default())
+            .unwrap_err();
 
         assert_eq!(
             err,
-            SdfReadError::Parse("Problems encountered parsing Mol data, M  END missing around line 6".to_string())
+            SdfReadError::Parse(
+                "Problems encountered parsing Mol data, M  END missing around line 6".to_string()
+            )
         );
     }
 
@@ -11216,11 +11609,14 @@ M  V30 END CTAB
         let mut reader = std::io::Cursor::new(input.as_bytes());
         let mut line_number = 0;
 
-        let err = mol_from_mol_data_stream(&mut reader, &mut line_number, SdfReadParams::default()).unwrap_err();
+        let err = mol_from_mol_data_stream(&mut reader, &mut line_number, SdfReadParams::default())
+            .unwrap_err();
 
         assert_eq!(
             err,
-            SdfReadError::Parse("Problems encountered parsing Mol data, M  END missing around line 11".to_string())
+            SdfReadError::Parse(
+                "Problems encountered parsing Mol data, M  END missing around line 11".to_string()
+            )
         );
         assert_eq!(line_number, 11);
     }
@@ -11246,9 +11642,16 @@ M  END
 
         let mut strict_reader = std::io::Cursor::new(input.as_bytes());
         let mut strict_line = 0;
-        let strict_err =
-            mol_from_mol_data_stream(&mut strict_reader, &mut strict_line, SdfReadParams::default()).unwrap_err();
-        assert_eq!(strict_err, SdfReadError::Parse("END CTAB line not found".to_string()));
+        let strict_err = mol_from_mol_data_stream(
+            &mut strict_reader,
+            &mut strict_line,
+            SdfReadParams::default(),
+        )
+        .unwrap_err();
+        assert_eq!(
+            strict_err,
+            SdfReadError::Parse("END CTAB line not found".to_string())
+        );
 
         let mut nonstrict_reader = std::io::Cursor::new(input.as_bytes());
         let mut nonstrict_line = 0;
@@ -11301,10 +11704,16 @@ M  END
 
         assert_eq!(parsed.molecule.num_atoms(), 2);
         assert_eq!(parsed.molecule.num_bonds(), 1);
-        assert_eq!(parsed.molecule.properties().name(), Some("ethanol-fragment"));
+        assert_eq!(
+            parsed.molecule.properties().name(),
+            Some("ethanol-fragment")
+        );
         assert_eq!(parsed.molecule.bonds()[0].order(), BondOrder::Single);
         assert_eq!(parsed.molecule.conformers_3d()[0].coordinates().len(), 2);
-        assert_eq!(parsed.molecule.conformers_3d()[0].coordinates()[0], [1.25, -2.5, 0.75]);
+        assert_eq!(
+            parsed.molecule.conformers_3d()[0].coordinates()[0],
+            [1.25, -2.5, 0.75]
+        );
         assert!(parsed.molecule.conformers_3d()[0].is_3d());
         assert_eq!(line_number, 8);
     }
@@ -11332,7 +11741,10 @@ M  END
         assert_eq!(record.molecule.num_bonds(), 1);
         assert_eq!(record.molecule.properties().name(), Some("sample"));
         assert_eq!(record.molecule.prop("ID"), Some("cmpd-1"));
-        assert_eq!(record.data_fields, vec![("ID".to_string(), "cmpd-1".to_string())]);
+        assert_eq!(
+            record.data_fields,
+            vec![("ID".to_string(), "cmpd-1".to_string())]
+        );
     }
 
     #[test]
@@ -11410,9 +11822,18 @@ M  END
         )
         .unwrap();
 
-        assert_eq!(unprocessed.molecule.prop("atom.prop.Label"), Some("C1 O2 N3"));
+        assert_eq!(
+            unprocessed.molecule.prop("atom.prop.Label"),
+            Some("C1 O2 N3")
+        );
         assert_eq!(unprocessed.molecule.atoms()[0].prop("Label"), None);
-        assert!(unprocessed.molecule.properties().sdf_property_lists().is_empty());
+        assert!(
+            unprocessed
+                .molecule
+                .properties()
+                .sdf_property_lists()
+                .is_empty()
+        );
     }
 
     #[test]
@@ -11545,7 +11966,10 @@ $$$$
         assert_eq!(record.molecule.atoms()[1].isotope(), Some(18));
         assert_eq!(record.molecule.atoms()[1].radical_electrons(), 1);
         assert_eq!(record.molecule.bonds()[0].order(), BondOrder::Double);
-        assert_eq!(record.molecule.bonds()[0].direction(), BondDirection::EitherDouble);
+        assert_eq!(
+            record.molecule.bonds()[0].direction(),
+            BondDirection::EitherDouble
+        );
         assert_eq!(record.molecule.bonds()[0].stereo(), BondStereo::Any);
         assert_eq!(
             record.molecule.conformers_3d()[0].coordinates(),
@@ -11597,7 +12021,10 @@ $$$$
 
         let double_bond = &record.molecule.bonds()[0];
         assert_eq!(double_bond.stereo(), BondStereo::Any);
-        assert_eq!(double_bond.stereo_atoms(), Some([AtomId::new(2), AtomId::new(3)]));
+        assert_eq!(
+            double_bond.stereo_atoms(),
+            Some([AtomId::new(2), AtomId::new(3)])
+        );
     }
 
     #[test]
@@ -11678,51 +12105,6 @@ $$$$
     }
 
     #[test]
-    fn read_sdf_from_str_completes_v3000_ring_bond_count_scan() {
-        let mut counts_line = "  0  0  0  0  0            999".to_string();
-        while counts_line.len() < 34 {
-            counts_line.push(' ');
-        }
-        counts_line.push_str("V3000");
-        let input = format!(
-            "\
-v3000-ring-query
-  COSMolKit
-
-{counts_line}
-M  V30 BEGIN CTAB
-M  V30 COUNTS 3 3 0 0 0
-M  V30 BEGIN ATOM
-M  V30 1 C 0.0 0.0 0.0 0 RBCNT=-2
-M  V30 2 C 1.0 0.0 0.0 0 HCOUNT=2
-M  V30 3 C 0.5 1.0 0.0 0
-M  V30 END ATOM
-M  V30 BEGIN BOND
-M  V30 1 1 1 2
-M  V30 2 1 2 3
-M  V30 3 1 3 1
-M  V30 END BOND
-M  V30 END CTAB
-M  END
-"
-        );
-
-        let record = read_sdf_from_str(&input).unwrap();
-
-        assert_eq!(record.molecule.prop("_NeedsQueryScan"), None);
-        assert_eq!(
-            record.molecule.atoms()[0].query(),
-            Some(&QueryNode::predicate(AtomQueryPredicate::RingBondCount(2)))
-        );
-        assert_eq!(
-            record.molecule.atoms()[1].query(),
-            Some(&QueryNode::predicate(
-                AtomQueryPredicate::ImplicitHydrogenCountLessEqual(2)
-            ))
-        );
-    }
-
-    #[test]
     fn read_sdf_from_str_reads_v3000_sgroups_and_stereo_collections() {
         let mut counts_line = "  0  0  0  0  0            999".to_string();
         while counts_line.len() < 34 {
@@ -11775,7 +12157,10 @@ $$$$
         assert_eq!(sup.external_id(), Some(7));
         assert_eq!(sup.atoms(), &[AtomId::new(0), AtomId::new(1)]);
         assert_eq!(sup.bonds(), &[BondId::new(0)]);
-        assert_eq!(sup.bond_role(BondId::new(0)), crate::SGroupBondRole::Crossing);
+        assert_eq!(
+            sup.bond_role(BondId::new(0)),
+            crate::SGroupBondRole::Crossing
+        );
         assert_eq!(sup.label(), Some("Me"));
         assert_eq!(sup.connection(), Some(&SGroupConnection::HeadToTail));
         assert_eq!(sup.display().unwrap().brackets[0].p1, [0.0, 1.0]);
@@ -11795,11 +12180,23 @@ $$$$
         assert_eq!(data.values, ["payload"]);
 
         assert_eq!(record.molecule.stereo_groups().len(), 2);
-        assert_eq!(record.molecule.stereo_groups()[0].kind(), StereoGroupKind::Absolute);
-        assert_eq!(record.molecule.stereo_groups()[0].atoms(), &[AtomId::new(0)]);
-        assert_eq!(record.molecule.stereo_groups()[1].kind(), StereoGroupKind::Or);
+        assert_eq!(
+            record.molecule.stereo_groups()[0].kind(),
+            StereoGroupKind::Absolute
+        );
+        assert_eq!(
+            record.molecule.stereo_groups()[0].atoms(),
+            &[AtomId::new(0)]
+        );
+        assert_eq!(
+            record.molecule.stereo_groups()[1].kind(),
+            StereoGroupKind::Or
+        );
         assert_eq!(record.molecule.stereo_groups()[1].id(), Some(2));
-        assert_eq!(record.molecule.stereo_groups()[1].atoms(), &[AtomId::new(1)]);
+        assert_eq!(
+            record.molecule.stereo_groups()[1].atoms(),
+            &[AtomId::new(1)]
+        );
     }
 
     #[test]
@@ -11842,8 +12239,14 @@ M  END
         let input = format!("{record}{record}");
         let mut reader = SdfReader::new(std::io::Cursor::new(input.as_bytes()));
 
-        assert_eq!(reader.next_record().unwrap().unwrap().molecule.num_atoms(), 1);
-        assert_eq!(reader.next_record().unwrap().unwrap().molecule.num_atoms(), 1);
+        assert_eq!(
+            reader.next_record().unwrap().unwrap().molecule.num_atoms(),
+            1
+        );
+        assert_eq!(
+            reader.next_record().unwrap().unwrap().molecule.num_atoms(),
+            1
+        );
         assert!(reader.next_record().unwrap().is_none());
     }
 
@@ -11894,7 +12297,9 @@ M  END
                 .with_prop("molSubstCount", "-2"),
         );
         let a1 = builder.add_atom(AtomSpec::new(Element::O));
-        builder.add_bond(BondSpec::new(a0, a1, BondOrder::Single)).unwrap();
+        builder
+            .add_bond(BondSpec::new(a0, a1, BondOrder::Single))
+            .unwrap();
         let molecule = builder.build().unwrap();
 
         let processed = finish_mol_processing(
@@ -11912,51 +12317,7 @@ M  END
         assert!(atom.no_implicit());
         assert_eq!(atom.explicit_hydrogens(), 3);
         assert_eq!(atom.prop("molTotValence"), None);
-        assert_eq!(
-            atom.query(),
-            Some(&QueryNode::predicate(AtomQueryPredicate::ExplicitDegree(1)))
-        );
-    }
-
-    #[test]
-    fn process_mol_props_finalization_keeps_v2000_query_props_like_rdkit() {
-        let input = format!(
-            "query-props\n  COSMolKit          2D\ncomment\n  3  3  0  0  1  0            999 V2000\n{}\n{}\n{}\n{}\n{}\n{}\nM  RBC  1   1  -2\nM  UNS  1   2   1\nM  END\n",
-            v2000_atom_line("C", 0, 0, 0, 0),
-            v2000_atom_line("C", 0, 0, 0, 0),
-            v2000_atom_line("C", 0, 0, 0, 0),
-            v2000_bond_line(1, 2, 5, 0, 0),
-            v2000_bond_line(2, 3, 1, 0, 0),
-            v2000_bond_line(3, 1, 1, 0, 0)
-        );
-
-        let record = read_sdf_from_str_with_params(
-            &input,
-            SdfReadParams {
-                sanitize: false,
-                remove_hs: false,
-                ..Default::default()
-            },
-        )
-        .unwrap();
-
-        assert_eq!(record.molecule.prop("_MolFileChiralFlag"), Some("1"));
-        assert_eq!(
-            record.molecule.atoms()[0].query(),
-            Some(&QueryNode::predicate(AtomQueryPredicate::RingBondCount(2)))
-        );
-        assert_eq!(
-            record.molecule.atoms()[1].query(),
-            Some(&QueryNode::predicate(AtomQueryPredicate::IsUnsaturated))
-        );
-        assert_eq!(
-            record.molecule.bonds()[0].query(),
-            Some(&QueryNode::predicate(BondQueryPredicate::OrderIn(vec![
-                BondOrder::Single,
-                BondOrder::Double,
-            ])))
-        );
-        assert_eq!(record.molecule.bonds()[0].prop("_MolFileBondQuery"), Some("1"));
+        assert_eq!(atom.prop("molSubstCount"), None);
     }
 
     #[test]
@@ -11964,7 +12325,9 @@ M  END
         let mut builder = MoleculeBuilder::new();
         let a0 = builder.add_atom(AtomSpec::new(Element::C));
         let a1 = builder.add_atom(AtomSpec::new(Element::N));
-        let b0 = builder.add_bond(BondSpec::new(a0, a1, BondOrder::Single)).unwrap();
+        let b0 = builder
+            .add_bond(BondSpec::new(a0, a1, BondOrder::Single))
+            .unwrap();
         builder
             .add_substance_group(
                 SubstanceGroup::new(SubstanceGroupId::new(0), SubstanceGroupKind::Data)
@@ -12012,33 +12375,6 @@ M  END
     }
 
     #[test]
-    fn smarts_consumer_sdf_smartsq() {
-        let mut builder = MoleculeBuilder::new();
-        let a0 = builder.add_atom(AtomSpec::new(Element::C));
-        builder
-            .add_substance_group(
-                SubstanceGroup::new(SubstanceGroupId::new(0), SubstanceGroupKind::Data)
-                    .with_atoms(vec![a0])
-                    .with_data(crate::SGroupData {
-                        query_type: Some("SMARTSQ".to_string()),
-                        query_op: Some("=".to_string()),
-                        values: vec!["[#6]".to_string()],
-                        ..Default::default()
-                    }),
-            )
-            .unwrap();
-        let mut molecule = builder.build().unwrap();
-
-        process_sgroups(&mut molecule, SdfReadParams::default()).unwrap();
-
-        assert!(matches!(
-            molecule.atoms()[0].query(),
-            Some(QueryNode::Predicate(AtomQueryPredicate::RecursiveSmarts(_)))
-        ));
-        assert!(molecule.substance_groups().is_empty());
-    }
-
-    #[test]
     fn process_sgroups_ignores_non_equals_smartsq_queryop_like_rdkit() {
         let mut builder = MoleculeBuilder::new();
         let a0 = builder.add_atom(AtomSpec::new(Element::C));
@@ -12059,7 +12395,6 @@ M  END
         process_sgroups(&mut molecule, SdfReadParams::default()).unwrap();
 
         assert_eq!(molecule.substance_groups().len(), 0);
-        assert_eq!(molecule.atoms()[0].query(), None);
     }
 
     #[test]
@@ -12067,7 +12402,9 @@ M  END
         let mut builder = MoleculeBuilder::new();
         let a0 = builder.add_atom(AtomSpec::new(Element::C));
         let a1 = builder.add_atom(AtomSpec::new(Element::O));
-        let b0 = builder.add_bond(BondSpec::new(a0, a1, BondOrder::Unspecified)).unwrap();
+        let b0 = builder
+            .add_bond(BondSpec::new(a0, a1, BondOrder::Unspecified))
+            .unwrap();
         builder
             .add_substance_group(
                 SubstanceGroup::new(SubstanceGroupId::new(0), SubstanceGroupKind::Data)
@@ -12112,7 +12449,6 @@ M  END
         let dummy = &result.molecule.atoms()[1];
         assert_eq!(dummy.element().atomic_number(), 0);
         assert_eq!(dummy.prop("_fromAttachPoint"), Some("1"));
-        assert_eq!(dummy.query(), Some(&QueryNode::predicate(AtomQueryPredicate::Any)));
         assert_eq!(result.molecule.bonds()[0].begin().index(), 0);
         assert_eq!(result.molecule.bonds()[0].end().index(), 1);
         assert_eq!(result.molecule.bonds()[0].order(), BondOrder::Single);
@@ -12142,7 +12478,7 @@ M  END
     }
 
     #[test]
-    fn expand_attachment_points_minus_one_adds_two_query_dummies_like_rdkit() {
+    fn expand_attachment_points_minus_one_adds_two_dummies_like_rdkit() {
         let input = format!(
             "attachment-two\n  COSMolKit          2D\ncomment\n  1  0  0  0  0  0            999 V2000\n{0}\nM  APO  1   1   3\nM  END\n$$$$\n",
             v2000_atom_line("C", 0, 0, 0, 0)
@@ -12162,15 +12498,13 @@ M  END
         assert_eq!(result.molecule.num_atoms(), 3);
         assert_eq!(result.molecule.num_bonds(), 2);
         assert_eq!(result.molecule.atoms()[0].prop("molAttachPoint"), None);
-        assert_eq!(result.molecule.atoms()[1].prop("_fromAttachPoint"), Some("1"));
-        assert_eq!(result.molecule.atoms()[2].prop("_fromAttachPoint"), Some("2"));
         assert_eq!(
-            result.molecule.atoms()[1].query(),
-            Some(&QueryNode::predicate(AtomQueryPredicate::Any))
+            result.molecule.atoms()[1].prop("_fromAttachPoint"),
+            Some("1")
         );
         assert_eq!(
-            result.molecule.atoms()[2].query(),
-            Some(&QueryNode::predicate(AtomQueryPredicate::Any))
+            result.molecule.atoms()[2].prop("_fromAttachPoint"),
+            Some("2")
         );
     }
 
@@ -12330,7 +12664,13 @@ $$$$
         )
         .unwrap();
 
-        assert!(record.molecule.atoms().iter().all(|atom| atom.is_aromatic()));
+        assert!(
+            record
+                .molecule
+                .atoms()
+                .iter()
+                .all(|atom| atom.is_aromatic())
+        );
         assert!(
             record
                 .molecule
@@ -12347,13 +12687,24 @@ $$$$
         let c1 = builder.add_atom(AtomSpec::new(Element::C).with_no_implicit(true));
         let f = builder.add_atom(AtomSpec::new(Element::from_atomic_number(9).unwrap()));
         let cl = builder.add_atom(AtomSpec::new(Element::from_atomic_number(17).unwrap()));
-        builder.add_bond(BondSpec::new(c0, c1, BondOrder::Double)).unwrap();
-        builder.add_bond(BondSpec::new(c0, f, BondOrder::Single)).unwrap();
-        builder.add_bond(BondSpec::new(c1, cl, BondOrder::Single)).unwrap();
+        builder
+            .add_bond(BondSpec::new(c0, c1, BondOrder::Double))
+            .unwrap();
+        builder
+            .add_bond(BondSpec::new(c0, f, BondOrder::Single))
+            .unwrap();
+        builder
+            .add_bond(BondSpec::new(c1, cl, BondOrder::Single))
+            .unwrap();
         builder
             .add_conformer(Conformer3D::new(
                 0,
-                vec![[-1.0, 0.0, 0.0], [1.0, 0.0, 0.0], [-1.0, 1.0, 0.0], [1.0, -1.0, 0.0]],
+                vec![
+                    [-1.0, 0.0, 0.0],
+                    [1.0, 0.0, 0.0],
+                    [-1.0, 1.0, 0.0],
+                    [1.0, -1.0, 0.0],
+                ],
                 true,
             ))
             .unwrap();
@@ -12388,7 +12739,10 @@ $$$$
         let chlorine = builder.add_atom(AtomSpec::new(Element::from_atomic_number(17).unwrap()));
         let bromine = builder.add_atom(AtomSpec::new(Element::from_atomic_number(35).unwrap()));
         builder
-            .add_bond(BondSpec::new(center, fluorine, BondOrder::Single).with_direction(BondDirection::BeginWedge))
+            .add_bond(
+                BondSpec::new(center, fluorine, BondOrder::Single)
+                    .with_direction(BondDirection::BeginWedge),
+            )
             .unwrap();
         builder
             .add_bond(BondSpec::new(center, chlorine, BondOrder::Single))
@@ -12399,15 +12753,24 @@ $$$$
         builder
             .add_conformer(Conformer3D::new(
                 0,
-                vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [-1.0, -1.0, 0.0]],
+                vec![
+                    [0.0, 0.0, 0.0],
+                    [1.0, 0.0, 0.0],
+                    [0.0, 1.0, 0.0],
+                    [-1.0, -1.0, 0.0],
+                ],
                 false,
             ))
             .unwrap();
         let molecule = builder.build().unwrap();
 
-        let molecule = assign_chiral_types_from_bond_dirs(molecule, SdfReadParams::default()).unwrap();
+        let molecule =
+            assign_chiral_types_from_bond_dirs(molecule, SdfReadParams::default()).unwrap();
 
-        assert_ne!(molecule.atoms()[0].chiral_tag(), crate::ChiralTag::Unspecified);
+        assert_ne!(
+            molecule.atoms()[0].chiral_tag(),
+            crate::ChiralTag::Unspecified
+        );
         assert_eq!(molecule.atoms()[0].explicit_hydrogens(), 1);
     }
 
@@ -12418,13 +12781,24 @@ $$$$
         let c1 = builder.add_atom(AtomSpec::new(Element::C).with_no_implicit(true));
         let f = builder.add_atom(AtomSpec::new(Element::from_atomic_number(9).unwrap()));
         let cl = builder.add_atom(AtomSpec::new(Element::from_atomic_number(17).unwrap()));
-        builder.add_bond(BondSpec::new(c0, c1, BondOrder::Double)).unwrap();
-        builder.add_bond(BondSpec::new(c0, f, BondOrder::Single)).unwrap();
-        builder.add_bond(BondSpec::new(c1, cl, BondOrder::Single)).unwrap();
+        builder
+            .add_bond(BondSpec::new(c0, c1, BondOrder::Double))
+            .unwrap();
+        builder
+            .add_bond(BondSpec::new(c0, f, BondOrder::Single))
+            .unwrap();
+        builder
+            .add_bond(BondSpec::new(c1, cl, BondOrder::Single))
+            .unwrap();
         builder
             .add_conformer(Conformer3D::new(
                 0,
-                vec![[-1.0, 0.0, 0.0], [1.0, 0.0, 0.0], [-1.0, 1.0, 0.0], [1.0, -1.0, 0.0]],
+                vec![
+                    [-1.0, 0.0, 0.0],
+                    [1.0, 0.0, 0.0],
+                    [-1.0, 1.0, 0.0],
+                    [1.0, -1.0, 0.0],
+                ],
                 false,
             ))
             .unwrap();
@@ -12469,7 +12843,10 @@ $$$$
         );
 
         let record = read_sdf_from_str(input).unwrap();
-        let coords_2d = record.molecule.coordinates_2d().expect("2D coords should be stored");
+        let coords_2d = record
+            .molecule
+            .coordinates_2d()
+            .expect("2D coords should be stored");
         assert_eq!(
             coords_2d,
             &[
@@ -12655,7 +13032,10 @@ $$$$
         )
         .unwrap();
 
-        assert_ne!(record.molecule.atoms()[0].chiral_tag(), crate::ChiralTag::Unspecified);
+        assert_ne!(
+            record.molecule.atoms()[0].chiral_tag(),
+            crate::ChiralTag::Unspecified
+        );
         assert_eq!(record.molecule.atoms()[0].explicit_hydrogens(), 1);
         assert_eq!(record.molecule.bonds()[0].direction(), BondDirection::None);
     }
@@ -12674,7 +13054,10 @@ $$$$
         )
         .unwrap();
 
-        assert_ne!(record.molecule.atoms()[0].chiral_tag(), crate::ChiralTag::Unspecified);
+        assert_ne!(
+            record.molecule.atoms()[0].chiral_tag(),
+            crate::ChiralTag::Unspecified
+        );
         assert_eq!(record.molecule.atoms()[0].explicit_hydrogens(), 1);
         assert_eq!(record.molecule.bonds()[0].direction(), BondDirection::None);
     }
@@ -12700,7 +13083,10 @@ $$$$
         )
         .unwrap();
 
-        assert_ne!(dashed.molecule.atoms()[0].chiral_tag(), crate::ChiralTag::Unspecified);
+        assert_ne!(
+            dashed.molecule.atoms()[0].chiral_tag(),
+            crate::ChiralTag::Unspecified
+        );
         assert_ne!(
             wedged.molecule.atoms()[0].chiral_tag(),
             dashed.molecule.atoms()[0].chiral_tag()
@@ -12725,7 +13111,10 @@ $$$$
 
         assert_eq!(record.molecule.num_atoms(), 5);
         assert_eq!(record.molecule.atoms()[1].atomic_number(), 1);
-        assert_ne!(record.molecule.atoms()[0].chiral_tag(), crate::ChiralTag::Unspecified);
+        assert_ne!(
+            record.molecule.atoms()[0].chiral_tag(),
+            crate::ChiralTag::Unspecified
+        );
         assert_eq!(record.molecule.atoms()[0].explicit_hydrogens(), 0);
     }
 
@@ -12737,7 +13126,10 @@ $$$$
         let chlorine = builder.add_atom(AtomSpec::new(Element::from_atomic_number(17).unwrap()));
         let bromine = builder.add_atom(AtomSpec::new(Element::from_atomic_number(35).unwrap()));
         builder
-            .add_bond(BondSpec::new(center, fluorine, BondOrder::Single).with_direction(BondDirection::BeginWedge))
+            .add_bond(
+                BondSpec::new(center, fluorine, BondOrder::Single)
+                    .with_direction(BondDirection::BeginWedge),
+            )
             .unwrap();
         builder
             .add_bond(BondSpec::new(center, chlorine, BondOrder::Single))
@@ -12748,34 +13140,55 @@ $$$$
         builder
             .add_conformer(Conformer3D::new(
                 0,
-                vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [-1.0, -1.0, 0.0]],
+                vec![
+                    [0.0, 0.0, 0.0],
+                    [1.0, 0.0, 0.0],
+                    [0.0, 1.0, 0.0],
+                    [-1.0, -1.0, 0.0],
+                ],
                 false,
             ))
             .unwrap();
         let molecule = builder.build().unwrap();
 
-        let molecule = assign_chiral_types_from_bond_dirs(molecule, SdfReadParams::default()).unwrap();
+        let molecule =
+            assign_chiral_types_from_bond_dirs(molecule, SdfReadParams::default()).unwrap();
 
-        assert_ne!(molecule.atoms()[0].chiral_tag(), crate::ChiralTag::Unspecified);
+        assert_ne!(
+            molecule.atoms()[0].chiral_tag(),
+            crate::ChiralTag::Unspecified
+        );
         assert_eq!(molecule.atoms()[0].explicit_hydrogens(), 1);
     }
 
     #[test]
     fn assign_chiral_types_from_bond_dirs_replace_existing_tags_true_clears_unknown() {
         let mut builder = MoleculeBuilder::new();
-        let center = builder.add_atom(AtomSpec::new(Element::C).with_chiral_tag(crate::ChiralTag::TetrahedralCw));
+        let center = builder
+            .add_atom(AtomSpec::new(Element::C).with_chiral_tag(crate::ChiralTag::TetrahedralCw));
         let fluorine = builder.add_atom(AtomSpec::new(Element::from_atomic_number(9).unwrap()));
         builder
-            .add_bond(BondSpec::new(center, fluorine, BondOrder::Single).with_direction(BondDirection::Unknown))
+            .add_bond(
+                BondSpec::new(center, fluorine, BondOrder::Single)
+                    .with_direction(BondDirection::Unknown),
+            )
             .unwrap();
         builder
-            .add_conformer(Conformer3D::new(0, vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]], false))
+            .add_conformer(Conformer3D::new(
+                0,
+                vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
+                false,
+            ))
             .unwrap();
         let molecule = builder.build().unwrap();
 
-        let molecule = assign_chiral_types_from_bond_dirs(molecule, SdfReadParams::default()).unwrap();
+        let molecule =
+            assign_chiral_types_from_bond_dirs(molecule, SdfReadParams::default()).unwrap();
 
-        assert_eq!(molecule.atoms()[0].chiral_tag(), crate::ChiralTag::Unspecified);
+        assert_eq!(
+            molecule.atoms()[0].chiral_tag(),
+            crate::ChiralTag::Unspecified
+        );
     }
 
     #[test]
@@ -12797,7 +13210,12 @@ $$$$
         builder
             .add_conformer(Conformer3D::new(
                 0,
-                vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+                vec![
+                    [0.0, 0.0, 0.0],
+                    [1.0, 0.0, 0.0],
+                    [0.0, 1.0, 0.0],
+                    [0.0, 0.0, 1.0],
+                ],
                 true,
             ))
             .unwrap();
@@ -12813,7 +13231,10 @@ $$$$
         )
         .unwrap();
 
-        assert_ne!(molecule.atoms()[0].chiral_tag(), crate::ChiralTag::Unspecified);
+        assert_ne!(
+            molecule.atoms()[0].chiral_tag(),
+            crate::ChiralTag::Unspecified
+        );
     }
 
     fn tetrahedral_3d_for_assign_chiral_types_from_3d(center: AtomSpec, is_3d: bool) -> Molecule {
@@ -12834,7 +13255,12 @@ $$$$
         builder
             .add_conformer(Conformer3D::new(
                 0,
-                vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+                vec![
+                    [0.0, 0.0, 0.0],
+                    [1.0, 0.0, 0.0],
+                    [0.0, 1.0, 0.0],
+                    [0.0, 0.0, 1.0],
+                ],
                 is_3d,
             ))
             .unwrap();
@@ -12868,7 +13294,8 @@ $$$$
 
     #[test]
     fn assign_chiral_types_from_3d_reads_tetrahedral_center_with_sanitize_false() {
-        let molecule = tetrahedral_3d_for_assign_chiral_types_from_3d(AtomSpec::new(Element::C), true);
+        let molecule =
+            tetrahedral_3d_for_assign_chiral_types_from_3d(AtomSpec::new(Element::C), true);
 
         let molecule = assign_chiral_types_from_3d(
             molecule,
@@ -12880,17 +13307,27 @@ $$$$
         )
         .unwrap();
 
-        assert_ne!(molecule.atoms()[0].chiral_tag(), crate::ChiralTag::Unspecified);
-        assert_eq!(molecule.atoms()[0].prop("_NonExplicit3DChirality"), Some("1"));
+        assert_ne!(
+            molecule.atoms()[0].chiral_tag(),
+            crate::ChiralTag::Unspecified
+        );
+        assert_eq!(
+            molecule.atoms()[0].prop("_NonExplicit3DChirality"),
+            Some("1")
+        );
     }
 
     #[test]
     fn assign_chiral_types_from_3d_uses_implicit_hydrogen_like_rdkit() {
-        let molecule = tetrahedral_3d_for_assign_chiral_types_from_3d(AtomSpec::new(Element::C), true);
+        let molecule =
+            tetrahedral_3d_for_assign_chiral_types_from_3d(AtomSpec::new(Element::C), true);
 
         let molecule = assign_chiral_types_from_3d(molecule, SdfReadParams::default()).unwrap();
 
-        assert_ne!(molecule.atoms()[0].chiral_tag(), crate::ChiralTag::Unspecified);
+        assert_ne!(
+            molecule.atoms()[0].chiral_tag(),
+            crate::ChiralTag::Unspecified
+        );
         assert_eq!(molecule.atoms()[0].explicit_hydrogens(), 0);
     }
 
@@ -12903,7 +13340,10 @@ $$$$
 
         let molecule = assign_chiral_types_from_3d(molecule, SdfReadParams::default()).unwrap();
 
-        assert_eq!(molecule.atoms()[0].chiral_tag(), crate::ChiralTag::TetrahedralCcw);
+        assert_eq!(
+            molecule.atoms()[0].chiral_tag(),
+            crate::ChiralTag::TetrahedralCcw
+        );
         assert_eq!(molecule.atoms()[0].prop("_NonExplicit3DChirality"), None);
     }
 
@@ -12916,7 +13356,10 @@ $$$$
 
         let molecule = assign_chiral_types_from_3d(molecule, SdfReadParams::default()).unwrap();
 
-        assert_eq!(molecule.atoms()[0].chiral_tag(), crate::ChiralTag::TetrahedralCw);
+        assert_eq!(
+            molecule.atoms()[0].chiral_tag(),
+            crate::ChiralTag::TetrahedralCw
+        );
     }
 
     #[test]
@@ -12925,9 +13368,15 @@ $$$$
 
         let molecule = assign_chiral_types_from_3d(molecule, SdfReadParams::default()).unwrap();
 
-        assert_eq!(molecule.atoms()[0].chiral_tag(), crate::ChiralTag::SquarePlanar);
+        assert_eq!(
+            molecule.atoms()[0].chiral_tag(),
+            crate::ChiralTag::SquarePlanar
+        );
         assert_eq!(molecule.atoms()[0].chiral_permutation(), Some(2));
-        assert_eq!(molecule.atoms()[0].prop("_NonExplicit3DChirality"), Some("1"));
+        assert_eq!(
+            molecule.atoms()[0].prop("_NonExplicit3DChirality"),
+            Some("1")
+        );
     }
 
     fn v3000_atropisomer_block(
@@ -12942,7 +13391,14 @@ $$$$
             bonds.len()
         );
         for (idx, (symbol, x, y, z)) in atoms.iter().enumerate() {
-            block.push_str(&format!("M  V30 {} {} {:.6} {:.6} {:.6} 0\n", idx + 1, symbol, x, y, z));
+            block.push_str(&format!(
+                "M  V30 {} {} {:.6} {:.6} {:.6} 0\n",
+                idx + 1,
+                symbol,
+                x,
+                y,
+                z
+            ));
         }
         block.push_str("M  V30 END ATOM\nM  V30 BEGIN BOND\n");
         for (idx, (order, begin, end, cfg)) in bonds.iter().enumerate() {
@@ -12987,7 +13443,12 @@ $$$$
                 ("C", 1.0, 0.0, 0.0),
                 ("C", 1.0, -1.0, 0.0),
             ],
-            &[(1, 2, 1, Some(1)), (2, 2, 3, None), (1, 2, 4, None), (2, 4, 5, None)],
+            &[
+                (1, 2, 1, Some(1)),
+                (2, 2, 3, None),
+                (1, 2, 4, None),
+                (2, 4, 5, None),
+            ],
         )
     }
 
@@ -13002,7 +13463,12 @@ $$$$
                 ("C", 1.0, 0.0, 0.0),
                 ("C", 1.0, -1.0, 0.0),
             ],
-            &[(1, 2, 1, Some(1)), (2, 2, 3, Some(1)), (1, 2, 4, None), (2, 4, 5, None)],
+            &[
+                (1, 2, 1, Some(1)),
+                (2, 2, 3, Some(1)),
+                (1, 2, 4, None),
+                (2, 4, 5, None),
+            ],
         )
     }
 
@@ -13132,15 +13598,25 @@ $$$$
         );
 
         let record = read_sdf_from_str(input).unwrap();
-        assert_eq!(record.molecule.atoms()[1].chiral_tag(), crate::ChiralTag::Unspecified);
+        assert_eq!(
+            record.molecule.atoms()[1].chiral_tag(),
+            crate::ChiralTag::Unspecified
+        );
     }
 
     #[test]
     fn parse_v2000_property_block_ignores_unknown_m_and_s_lines_like_rdkit() {
-        let mut reader = std::io::Cursor::new("M  XYZ  1 payload\nS  XXX  1 payload\nM  END\n".as_bytes());
+        let mut reader =
+            std::io::Cursor::new("M  XYZ  1 payload\nS  XXX  1 payload\nM  END\n".as_bytes());
         let mut line_number = 8;
-        let mut atoms =
-            vec![parse_v2000_atom_line(&v2000_atom_line("C", 0, 0, 0, 0), 1, SdfReadParams::default()).unwrap()];
+        let mut atoms = vec![
+            parse_v2000_atom_line(
+                &v2000_atom_line("C", 0, 0, 0, 0),
+                1,
+                SdfReadParams::default(),
+            )
+            .unwrap(),
+        ];
         let mut bonds = Vec::new();
         let mut state = V2000PropertyState::default();
 
@@ -13173,8 +13649,18 @@ $$$$
         let mut reader = std::io::Cursor::new(input.as_bytes());
         let mut line_number = 8;
         let mut atoms = vec![
-            parse_v2000_atom_line(&v2000_atom_line("C", 0, 0, 0, 0), 1, SdfReadParams::default()).unwrap(),
-            parse_v2000_atom_line(&v2000_atom_line("R", 0, 0, 0, 0), 2, SdfReadParams::default()).unwrap(),
+            parse_v2000_atom_line(
+                &v2000_atom_line("C", 0, 0, 0, 0),
+                1,
+                SdfReadParams::default(),
+            )
+            .unwrap(),
+            parse_v2000_atom_line(
+                &v2000_atom_line("R", 0, 0, 0, 0),
+                2,
+                SdfReadParams::default(),
+            )
+            .unwrap(),
         ];
         let mut bonds = Vec::new();
         let mut state = V2000PropertyState::default();
@@ -13197,7 +13683,10 @@ $$$$
         assert_eq!(atoms[1].spec.isotope(), Some(7));
         assert_eq!(atoms[1].spec.prop("molSubstCount"), Some("6"));
         assert_eq!(atoms[1].spec.prop("MRV_SMA"), Some("[#6]"));
-        assert_eq!(state.molecule_props.get("_NeedsQueryScan"), Some(&"1".to_string()));
+        assert_eq!(
+            state.molecule_props.get("_NeedsQueryScan"),
+            Some(&"1".to_string())
+        );
         assert_eq!(
             state.molecule_props.get("_MolFileLinkNodes"),
             Some(&"1 2 1 1 2".to_string())
@@ -13218,8 +13707,18 @@ $$$$
         let mut reader = std::io::Cursor::new(input.as_bytes());
         let mut line_number = 8;
         let mut atoms = vec![
-            parse_v2000_atom_line(&v2000_atom_line("C", 0, 3, 0, 0), 1, SdfReadParams::default()).unwrap(),
-            parse_v2000_atom_line(&v2000_atom_line("O", 0, 0, 0, 0), 2, SdfReadParams::default()).unwrap(),
+            parse_v2000_atom_line(
+                &v2000_atom_line("C", 0, 3, 0, 0),
+                1,
+                SdfReadParams::default(),
+            )
+            .unwrap(),
+            parse_v2000_atom_line(
+                &v2000_atom_line("O", 0, 0, 0, 0),
+                2,
+                SdfReadParams::default(),
+            )
+            .unwrap(),
         ];
         let mut bonds = Vec::new();
         let mut state = V2000PropertyState {
@@ -13243,8 +13742,10 @@ $$$$
         assert_eq!(atoms[1].spec.isotope(), Some(18));
         assert_eq!(atoms[1].spec.radical_electrons(), 1);
         assert_eq!(
-            atoms[0].spec.query(),
-            Some(&QueryNode::predicate(AtomQueryPredicate::AtomicNumberIn(vec![6, 7])))
+            atoms[0].query.as_ref(),
+            Some(&QueryNode::predicate(AtomQueryPredicate::AtomicNumberIn(
+                vec![6, 7]
+            )))
         );
         assert_eq!(atoms[0].spec.prop("_MolFileAtomQuery"), Some("1"));
         assert_eq!(atoms[0].spec.prop("molAttachPoint"), Some("-1"));
@@ -13262,11 +13763,23 @@ $$$$
         let mut reader = std::io::Cursor::new(input.as_bytes());
         let mut line_number = 8;
         let mut atoms = vec![
-            parse_v2000_atom_line(&v2000_atom_line("C", 0, 0, 0, 0), 1, SdfReadParams::default()).unwrap(),
-            parse_v2000_atom_line(&v2000_atom_line("O", 0, 0, 0, 0), 2, SdfReadParams::default()).unwrap(),
+            parse_v2000_atom_line(
+                &v2000_atom_line("C", 0, 0, 0, 0),
+                1,
+                SdfReadParams::default(),
+            )
+            .unwrap(),
+            parse_v2000_atom_line(
+                &v2000_atom_line("O", 0, 0, 0, 0),
+                2,
+                SdfReadParams::default(),
+            )
+            .unwrap(),
         ];
-        let mut bonds =
-            vec![parse_v2000_bond_line(&v2000_bond_line(1, 2, 1, 0, 0), 3, SdfReadParams::default()).unwrap()];
+        let mut bonds = vec![
+            parse_v2000_bond_line(&v2000_bond_line(1, 2, 1, 0, 0), 3, SdfReadParams::default())
+                .unwrap(),
+        ];
         let mut state = V2000PropertyState::default();
 
         let file_complete = parse_v2000_property_block(
@@ -13290,8 +13803,14 @@ $$$$
         let input = concat!("A    1\nAliasLabel\nV    1 payload\nM  END\n");
         let mut reader = std::io::Cursor::new(input.as_bytes());
         let mut line_number = 8;
-        let mut atoms =
-            vec![parse_v2000_atom_line(&v2000_atom_line("C", 0, 0, 0, 0), 1, SdfReadParams::default()).unwrap()];
+        let mut atoms = vec![
+            parse_v2000_atom_line(
+                &v2000_atom_line("C", 0, 0, 0, 0),
+                1,
+                SdfReadParams::default(),
+            )
+            .unwrap(),
+        ];
         let mut bonds = Vec::new();
         let mut state = V2000PropertyState::default();
 
@@ -13314,8 +13833,14 @@ $$$$
     fn parse_v2000_property_block_reports_incomplete_at_sdf_delimiter_like_rdkit() {
         let mut reader = std::io::Cursor::new("$$$$\n".as_bytes());
         let mut line_number = 8;
-        let mut atoms =
-            vec![parse_v2000_atom_line(&v2000_atom_line("C", 0, 0, 0, 0), 1, SdfReadParams::default()).unwrap()];
+        let mut atoms = vec![
+            parse_v2000_atom_line(
+                &v2000_atom_line("C", 0, 0, 0, 0),
+                1,
+                SdfReadParams::default(),
+            )
+            .unwrap(),
+        ];
         let mut bonds = Vec::new();
         let mut state = V2000PropertyState::default();
 
@@ -13377,9 +13902,15 @@ $$$$
 
     #[test]
     fn parse_v2000_ctab_preserves_typed_sgroup_properties() {
-        let sdi_line = format!("M  SDI   1  4{:>10.4}{:>10.4}{:>10.4}{:>10.4}", 0.0, 1.0, 2.0, 3.0);
+        let sdi_line = format!(
+            "M  SDI   1  4{:>10.4}{:>10.4}{:>10.4}{:>10.4}",
+            0.0, 1.0, 2.0, 3.0
+        );
         let sbv_line = format!("M  SBV   1   1{:>10.4}{:>10.4}", 0.5, 0.25);
-        let sdt_line = format!("M  SDT   2 {:<30}{:<2}{:<20}{:<2}{}", "FIELD", "T", "INFO", "Q", "OP");
+        let sdt_line = format!(
+            "M  SDT   2 {:<30}{:<2}{:<20}{:<2}{}",
+            "FIELD", "T", "INFO", "Q", "OP"
+        );
         let input = format!(
             "{}\n{}\n{}\nM  STY  2   1 SUP   2 DAT\nM  SST  1   1 ALT\nM  SCN  1   1 HT\nM  SDS EXP  1   1\nM  SAL   1  2   1   2\nM  SBL   1  1   1\n{sdi_line}\n{sbv_line}\n{sdt_line}\nM  SDD   2 display spec\nM  SCD   2 first value\nM  SED   2 second value\nM  SPL  1   2   1\nM  SNC  1   2   5\nM  SAP   1  1   1   2 AP\nM  SCL   2 CLASS\nM  SBT  1   2   1\nM  END\n",
             v2000_atom_line("C", 0, 0, 0, 0),
@@ -13416,7 +13947,10 @@ $$$$
         assert_eq!(sup.expansion_state(), Some("E"));
         assert_eq!(sup.atoms(), &[AtomId::new(0), AtomId::new(1)]);
         assert_eq!(sup.bonds(), &[BondId::new(0)]);
-        assert_eq!(sup.bond_role(BondId::new(0)), crate::SGroupBondRole::Crossing);
+        assert_eq!(
+            sup.bond_role(BondId::new(0)),
+            crate::SGroupBondRole::Crossing
+        );
         assert_eq!(sup.display().unwrap().brackets[0].p1, [0.0, 1.0]);
         assert_eq!(sup.display().unwrap().brackets[0].p2, [2.0, 3.0]);
         assert_eq!(
@@ -13468,10 +14002,18 @@ $$$$
     fn parse_v2000_sgroup_sty_line_rejects_invalid_types_like_rdkit() {
         let mut state = V2000PropertyState::default();
 
-        let err =
-            parse_v2000_sgroup_sty_line("M  STY  1   1 BAD", 12, SdfReadParams::default(), &mut state).unwrap_err();
+        let err = parse_v2000_sgroup_sty_line(
+            "M  STY  1   1 BAD",
+            12,
+            SdfReadParams::default(),
+            &mut state,
+        )
+        .unwrap_err();
 
-        assert_eq!(err, SdfReadError::Parse("S group BAD on line 12".to_string()));
+        assert_eq!(
+            err,
+            SdfReadError::Parse("S group BAD on line 12".to_string())
+        );
         assert!(state.sgroups.is_empty());
     }
 
@@ -13494,29 +14036,54 @@ $$$$
 
     #[test]
     fn parse_v2000_atom_line_handles_deuterium_and_mass_diff_like_rdkit() {
-        let deuterium = parse_v2000_atom_line(&v2000_atom_line("D", 0, 0, 0, 0), 1, SdfReadParams::default()).unwrap();
+        let deuterium = parse_v2000_atom_line(
+            &v2000_atom_line("D", 0, 0, 0, 0),
+            1,
+            SdfReadParams::default(),
+        )
+        .unwrap();
         assert_eq!(deuterium.spec.element().atomic_number(), 1);
         assert_eq!(deuterium.spec.isotope(), Some(2));
 
-        let carbon_13 = parse_v2000_atom_line(&v2000_atom_line("C", 1, 0, 0, 0), 2, SdfReadParams::default()).unwrap();
+        let carbon_13 = parse_v2000_atom_line(
+            &v2000_atom_line("C", 1, 0, 0, 0),
+            2,
+            SdfReadParams::default(),
+        )
+        .unwrap();
         assert_eq!(carbon_13.spec.isotope(), Some(13));
 
-        let sodium_24 = parse_v2000_atom_line(&v2000_atom_line("Na", 1, 0, 0, 0), 3, SdfReadParams::default()).unwrap();
+        let sodium_24 = parse_v2000_atom_line(
+            &v2000_atom_line("Na", 1, 0, 0, 0),
+            3,
+            SdfReadParams::default(),
+        )
+        .unwrap();
         assert_eq!(sodium_24.spec.isotope(), Some(24));
     }
 
     #[test]
     fn parse_v2000_atom_line_preserves_query_atom_markers_like_rdkit() {
-        let atom = parse_v2000_atom_line(&v2000_atom_line("*", 0, 0, 0, 0), 1, SdfReadParams::default()).unwrap();
+        let atom = parse_v2000_atom_line(
+            &v2000_atom_line("*", 0, 0, 0, 0),
+            1,
+            SdfReadParams::default(),
+        )
+        .unwrap();
 
         assert_eq!(atom.spec.element().atomic_number(), 0);
         assert!(atom.spec.no_implicit());
-        assert_eq!(atom.spec.query(), Some(&QueryNode::predicate(AtomQueryPredicate::Any)));
+        assert_eq!(
+            atom.query.as_ref(),
+            Some(&QueryNode::predicate(AtomQueryPredicate::Any))
+        );
     }
 
     #[test]
     fn parse_v2000_bond_line_reads_order_stereo_and_query_topology_like_rdkit() {
-        let wedge = parse_v2000_bond_line(&v2000_bond_line(1, 2, 1, 1, 0), 5, SdfReadParams::default()).unwrap();
+        let wedge =
+            parse_v2000_bond_line(&v2000_bond_line(1, 2, 1, 1, 0), 5, SdfReadParams::default())
+                .unwrap();
         assert_eq!(wedge.spec.begin(), AtomId::new(0));
         assert_eq!(wedge.spec.end(), AtomId::new(1));
         assert_eq!(wedge.spec.order(), BondOrder::Single);
@@ -13524,11 +14091,16 @@ $$$$
         assert_eq!(wedge.molfile_bond_type, 1);
         assert_eq!(wedge.molfile_stereo, Some(1));
 
-        let query = parse_v2000_bond_line(&v2000_bond_line(2, 3, 5, 0, 1), 6, SdfReadParams::default()).unwrap();
+        let query =
+            parse_v2000_bond_line(&v2000_bond_line(2, 3, 5, 0, 1), 6, SdfReadParams::default())
+                .unwrap();
         assert_eq!(
-            query.spec.query(),
+            query.query.as_ref(),
             Some(&QueryNode::and(vec![
-                QueryNode::predicate(BondQueryPredicate::OrderIn(vec![BondOrder::Single, BondOrder::Double,])),
+                QueryNode::predicate(BondQueryPredicate::OrderIn(vec![
+                    BondOrder::Single,
+                    BondOrder::Double,
+                ])),
                 QueryNode::predicate(BondQueryPredicate::IsInRing(true)),
             ]))
         );

@@ -1,14 +1,13 @@
 //! Core aliases for the shared concrete atom model.
 //!
-//! Storage and local value operations live in `cosmolkit-model`. The core
-//! specializes the opaque query payload with its search-layer representation;
-//! this module intentionally contains no second atom implementation.
+//! Storage and local value operations live in `cosmolkit-model`; this module
+//! intentionally contains no second atom implementation or query payload.
 
 pub use cosmolkit_model::AtomId;
 pub use cosmolkit_model::{
-    AtomPdbResidueInfo, ChiralTag, ELEMENTS, ELEMENTS_WITH_DUMMY, Element, ElementInfo, ElementParseError,
-    Hybridization,
+    AtomPdbResidueInfo, ChiralTag, ELEMENTS, ELEMENTS_WITH_DUMMY, Element, ElementInfo,
+    ElementParseError, Hybridization,
 };
 
-pub type AtomSpec = cosmolkit_model::AtomSpec<crate::QueryNode<crate::AtomQueryPredicate>>;
-pub type Atom = cosmolkit_model::Atom<crate::QueryNode<crate::AtomQueryPredicate>>;
+pub use cosmolkit_model::Atom;
+pub use cosmolkit_model::AtomSpec;

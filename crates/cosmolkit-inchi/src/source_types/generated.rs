@@ -1018,8 +1018,12 @@ pub struct tagTblDrawPatms {
 impl ::std::default::Default for tagTblDrawPatms {
     fn default() -> Self {
         Self {
-            ReqShownFoundTxt: ::std::array::from_fn(|_| ::std::array::from_fn(|_| ::std::default::Default::default())),
-            ReqShownFound: ::std::array::from_fn(|_| ::std::array::from_fn(|_| ::std::default::Default::default())),
+            ReqShownFoundTxt: ::std::array::from_fn(|_| {
+                ::std::array::from_fn(|_| ::std::default::Default::default())
+            }),
+            ReqShownFound: ::std::array::from_fn(|_| {
+                ::std::array::from_fn(|_| ::std::default::Default::default())
+            }),
             nOrientation: ::std::default::Default::default(),
             bDrawTbl: ::std::default::Default::default(),
         }
@@ -1882,7 +1886,9 @@ impl ::std::default::Default for tagInputAtomData {
             bTautomeric: ::std::default::Default::default(),
             bTautPreprocessed: ::std::default::Default::default(),
             nNumRemovedProtons: ::std::default::Default::default(),
-            nNumRemovedProtonsIsotopic: ::std::array::from_fn(|_| ::std::default::Default::default()),
+            nNumRemovedProtonsIsotopic: ::std::array::from_fn(|_| {
+                ::std::default::Default::default()
+            }),
             num_iso_H: ::std::array::from_fn(|_| ::std::default::Default::default()),
             bTautFlags: ::std::default::Default::default(),
             bTautFlagsDone: ::std::default::Default::default(),
@@ -1902,12 +1908,18 @@ pub struct tagNormCanonFlags {
 impl ::std::default::Default for tagNormCanonFlags {
     fn default() -> Self {
         Self {
-            bTautFlags: ::std::array::from_fn(|_| ::std::array::from_fn(|_| ::std::default::Default::default())),
-            bTautFlagsDone: ::std::array::from_fn(|_| ::std::array::from_fn(|_| ::std::default::Default::default())),
+            bTautFlags: ::std::array::from_fn(|_| {
+                ::std::array::from_fn(|_| ::std::default::Default::default())
+            }),
+            bTautFlagsDone: ::std::array::from_fn(|_| {
+                ::std::array::from_fn(|_| ::std::default::Default::default())
+            }),
             bNormalizationFlags: ::std::array::from_fn(|_| {
                 ::std::array::from_fn(|_| ::std::default::Default::default())
             }),
-            nCanonFlags: ::std::array::from_fn(|_| ::std::array::from_fn(|_| ::std::default::Default::default())),
+            nCanonFlags: ::std::array::from_fn(|_| {
+                ::std::array::from_fn(|_| ::std::default::Default::default())
+            }),
         }
     }
 }
@@ -1942,7 +1954,9 @@ impl ::std::default::Default for tagCompositeAtomData {
             bHasIsotopicLayer: ::std::default::Default::default(),
             bTautomeric: ::std::default::Default::default(),
             nNumRemovedProtons: ::std::default::Default::default(),
-            nNumRemovedProtonsIsotopic: ::std::array::from_fn(|_| ::std::default::Default::default()),
+            nNumRemovedProtonsIsotopic: ::std::array::from_fn(|_| {
+                ::std::default::Default::default()
+            }),
             num_iso_H: ::std::array::from_fn(|_| ::std::default::Default::default()),
             nOffsetAtAndH: ::std::default::Default::default(),
             num_components: ::std::default::Default::default(),
@@ -2702,7 +2716,9 @@ impl ::std::default::Default for tagTautomerNormInfo {
         Self {
             nNumRemovedExplicitH: ::std::default::Default::default(),
             nNumRemovedProtons: ::std::default::Default::default(),
-            nNumRemovedProtonsIsotopic: ::std::array::from_fn(|_| ::std::default::Default::default()),
+            nNumRemovedProtonsIsotopic: ::std::array::from_fn(|_| {
+                ::std::default::Default::default()
+            }),
             bNormalizationFlags: ::std::default::Default::default(),
         }
     }
@@ -3854,7 +3870,9 @@ impl ::std::default::Default for tagINCHI_OUT_CTL {
             bIsotopicAtomEqu: ::std::array::from_fn(|_| ::std::default::Default::default()),
             bIsotopicTautEqu: ::std::array::from_fn(|_| ::std::default::Default::default()),
             bInvIsotopicStereo: ::std::array::from_fn(|_| ::std::default::Default::default()),
-            bInvIsotopicStereoOrigNumb: ::std::array::from_fn(|_| ::std::default::Default::default()),
+            bInvIsotopicStereoOrigNumb: ::std::array::from_fn(|_| {
+                ::std::default::Default::default()
+            }),
             bIsotopicRacemicStereo: ::std::array::from_fn(|_| ::std::default::Default::default()),
             bIsotopicRelativeStereo: ::std::array::from_fn(|_| ::std::default::Default::default()),
             bIgn_UU_Sp3: ::std::array::from_fn(|_| ::std::default::Default::default()),
@@ -3863,7 +3881,9 @@ impl ::std::default::Default for tagINCHI_OUT_CTL {
             bIgn_UU_Sp2_Iso: ::std::array::from_fn(|_| ::std::default::Default::default()),
             bChargesRadVal: ::std::array::from_fn(|_| ::std::default::Default::default()),
             bOrigCoord: ::std::array::from_fn(|_| ::std::default::Default::default()),
-            sDifSegs: ::std::array::from_fn(|_| ::std::array::from_fn(|_| ::std::default::Default::default())),
+            sDifSegs: ::std::array::from_fn(|_| {
+                ::std::array::from_fn(|_| ::std::default::Default::default())
+            }),
             szTag1: ::std::array::from_fn(|_| ::std::default::Default::default()),
             szTag2: ::std::array::from_fn(|_| ::std::default::Default::default()),
             szTag3: ::std::array::from_fn(|_| ::std::default::Default::default()),
@@ -4327,17 +4347,27 @@ pub struct tagInputInChI {
 impl ::std::default::Default for tagInputInChI {
     fn default() -> Self {
         Self {
-            pInpInChI: ::std::array::from_fn(|_| ::std::array::from_fn(|_| ::std::default::Default::default())),
-            nNumComponents: ::std::array::from_fn(|_| ::std::array::from_fn(|_| ::std::default::Default::default())),
-            nNumProtons: ::std::array::from_fn(|_| ::std::array::from_fn(|_| ::std::default::Default::default())),
+            pInpInChI: ::std::array::from_fn(|_| {
+                ::std::array::from_fn(|_| ::std::default::Default::default())
+            }),
+            nNumComponents: ::std::array::from_fn(|_| {
+                ::std::array::from_fn(|_| ::std::default::Default::default())
+            }),
+            nNumProtons: ::std::array::from_fn(|_| {
+                ::std::array::from_fn(|_| ::std::default::Default::default())
+            }),
             s: ::std::array::from_fn(|_| {
-                ::std::array::from_fn(|_| ::std::array::from_fn(|_| ::std::default::Default::default()))
+                ::std::array::from_fn(|_| {
+                    ::std::array::from_fn(|_| ::std::default::Default::default())
+                })
             }),
             num_inp: ::std::default::Default::default(),
             atom: ::std::default::Default::default(),
             num_atoms: ::std::default::Default::default(),
             num_explicit_H: ::std::default::Default::default(),
-            CompareInchiFlags: ::std::array::from_fn(|_| ::std::array::from_fn(|_| ::std::default::Default::default())),
+            CompareInchiFlags: ::std::array::from_fn(|_| {
+                ::std::array::from_fn(|_| ::std::default::Default::default())
+            }),
             polymer: ::std::default::Default::default(),
             v3000: ::std::default::Default::default(),
             valid_polymer: ::std::default::Default::default(),
@@ -5004,7 +5034,9 @@ impl ::std::default::Default for tagINCHI_OutputStruct {
             num_stereo0D: ::std::default::Default::default(),
             szMessage: ::std::default::Default::default(),
             szLog: ::std::default::Default::default(),
-            WarningFlags: ::std::array::from_fn(|_| ::std::array::from_fn(|_| ::std::default::Default::default())),
+            WarningFlags: ::std::array::from_fn(|_| {
+                ::std::array::from_fn(|_| ::std::default::Default::default())
+            }),
         }
     }
 }
@@ -5030,7 +5062,9 @@ impl ::std::default::Default for tagINCHI_OutputStructEx {
             num_stereo0D: ::std::default::Default::default(),
             szMessage: ::std::default::Default::default(),
             szLog: ::std::default::Default::default(),
-            WarningFlags: ::std::array::from_fn(|_| ::std::array::from_fn(|_| ::std::default::Default::default())),
+            WarningFlags: ::std::array::from_fn(|_| {
+                ::std::array::from_fn(|_| ::std::default::Default::default())
+            }),
             polymer: ::std::default::Default::default(),
             v3000: ::std::default::Default::default(),
         }
@@ -5204,7 +5238,9 @@ impl ::std::default::Default for tagNormAtomData {
             bTautomeric: ::std::default::Default::default(),
             bTautPreprocessed: ::std::default::Default::default(),
             nNumRemovedProtons: ::std::default::Default::default(),
-            nNumRemovedProtonsIsotopic: ::std::array::from_fn(|_| ::std::default::Default::default()),
+            nNumRemovedProtonsIsotopic: ::std::array::from_fn(|_| {
+                ::std::default::Default::default()
+            }),
             num_iso_H: ::std::array::from_fn(|_| ::std::default::Default::default()),
             bTautFlags: ::std::default::Default::default(),
             bTautFlagsDone: ::std::default::Default::default(),
@@ -5373,19 +5409,24 @@ pub const IXA_INCHIBUILDER_OPTION_IXA_INCHIBUILDER_OPTION_KET: IXA_INCHIBUILDER_
 pub const IXA_INCHIBUILDER_OPTION_IXA_INCHIBUILDER_OPTION_15T: IXA_INCHIBUILDER_OPTION = 7;
 pub const IXA_INCHIBUILDER_OPTION_IXA_INCHIBUILDER_OPTION_SaveOpt: IXA_INCHIBUILDER_OPTION = 8;
 pub const IXA_INCHIBUILDER_OPTION_IXA_INCHIBUILDER_OPTION_AuxNone: IXA_INCHIBUILDER_OPTION = 9;
-pub const IXA_INCHIBUILDER_OPTION_IXA_INCHIBUILDER_OPTION_WarnOnEmptyStructure: IXA_INCHIBUILDER_OPTION = 10;
-pub const IXA_INCHIBUILDER_OPTION_IXA_INCHIBUILDER_OPTION_LargeMolecules: IXA_INCHIBUILDER_OPTION = 11;
+pub const IXA_INCHIBUILDER_OPTION_IXA_INCHIBUILDER_OPTION_WarnOnEmptyStructure:
+    IXA_INCHIBUILDER_OPTION = 10;
+pub const IXA_INCHIBUILDER_OPTION_IXA_INCHIBUILDER_OPTION_LargeMolecules: IXA_INCHIBUILDER_OPTION =
+    11;
 pub const IXA_INCHIBUILDER_OPTION_IXA_INCHIBUILDER_OPTION_Polymers: IXA_INCHIBUILDER_OPTION = 12;
 pub const IXA_INCHIBUILDER_OPTION_IXA_INCHIBUILDER_OPTION_Polymers105: IXA_INCHIBUILDER_OPTION = 13;
-pub const IXA_INCHIBUILDER_OPTION_IXA_INCHIBUILDER_OPTION_Polymers105Plus: IXA_INCHIBUILDER_OPTION = 14;
+pub const IXA_INCHIBUILDER_OPTION_IXA_INCHIBUILDER_OPTION_Polymers105Plus: IXA_INCHIBUILDER_OPTION =
+    14;
 pub const IXA_INCHIBUILDER_OPTION_IXA_INCHIBUILDER_OPTION_FilterSS: IXA_INCHIBUILDER_OPTION = 15;
 pub const IXA_INCHIBUILDER_OPTION_IXA_INCHIBUILDER_OPTION_InvFilterSS: IXA_INCHIBUILDER_OPTION = 16;
 pub const IXA_INCHIBUILDER_OPTION_IXA_INCHIBUILDER_OPTION_NPZZ: IXA_INCHIBUILDER_OPTION = 17;
 pub const IXA_INCHIBUILDER_OPTION_IXA_INCHIBUILDER_OPTION_SATZZ: IXA_INCHIBUILDER_OPTION = 18;
-pub const IXA_INCHIBUILDER_OPTION_IXA_INCHIBUILDER_OPTION_NoFrameShift: IXA_INCHIBUILDER_OPTION = 19;
+pub const IXA_INCHIBUILDER_OPTION_IXA_INCHIBUILDER_OPTION_NoFrameShift: IXA_INCHIBUILDER_OPTION =
+    19;
 pub const IXA_INCHIBUILDER_OPTION_IXA_INCHIBUILDER_OPTION_FoldCRU: IXA_INCHIBUILDER_OPTION = 20;
 pub const IXA_INCHIBUILDER_OPTION_IXA_INCHIBUILDER_OPTION_NoEdits: IXA_INCHIBUILDER_OPTION = 21;
-pub const IXA_INCHIBUILDER_OPTION_IXA_INCHIBUILDER_OPTION_LooseTSACheck: IXA_INCHIBUILDER_OPTION = 22;
+pub const IXA_INCHIBUILDER_OPTION_IXA_INCHIBUILDER_OPTION_LooseTSACheck: IXA_INCHIBUILDER_OPTION =
+    22;
 pub const IXA_INCHIBUILDER_OPTION_IXA_INCHIBUILDER_OPTION_OutErrInChI: IXA_INCHIBUILDER_OPTION = 23;
 pub const IXA_INCHIBUILDER_OPTION_IXA_INCHIBUILDER_OPTION_NoWarnings: IXA_INCHIBUILDER_OPTION = 24;
 pub const IXA_INCHIBUILDER_OPTION_IXA_INCHIBUILDER_OPTION_DoDrv: IXA_INCHIBUILDER_OPTION = 25;
@@ -5402,11 +5443,16 @@ pub const IXA_INCHIBUILDER_OPTION_IXA_INCHIBUILDER_OPTION_PT_39_00: IXA_INCHIBUI
 pub const IXA_INCHIBUILDER_OPTION_IXA_INCHIBUILDER_OPTION_PT_13_00: IXA_INCHIBUILDER_OPTION = 36;
 pub const IXA_INCHIBUILDER_OPTION_IXA_INCHIBUILDER_OPTION_PT_18_00: IXA_INCHIBUILDER_OPTION = 37;
 pub type IXA_INCHIBUILDER_OPTION = u32;
-pub const IXA_INCHIBUILDER_STEREOOPTION_IXA_INCHIBUILDER_STEREOOPTION_SAbs: IXA_INCHIBUILDER_STEREOOPTION = 0;
-pub const IXA_INCHIBUILDER_STEREOOPTION_IXA_INCHIBUILDER_STEREOOPTION_SNon: IXA_INCHIBUILDER_STEREOOPTION = 1;
-pub const IXA_INCHIBUILDER_STEREOOPTION_IXA_INCHIBUILDER_STEREOOPTION_SRel: IXA_INCHIBUILDER_STEREOOPTION = 2;
-pub const IXA_INCHIBUILDER_STEREOOPTION_IXA_INCHIBUILDER_STEREOOPTION_SRac: IXA_INCHIBUILDER_STEREOOPTION = 3;
-pub const IXA_INCHIBUILDER_STEREOOPTION_IXA_INCHIBUILDER_STEREOOPTION_SUCF: IXA_INCHIBUILDER_STEREOOPTION = 4;
+pub const IXA_INCHIBUILDER_STEREOOPTION_IXA_INCHIBUILDER_STEREOOPTION_SAbs:
+    IXA_INCHIBUILDER_STEREOOPTION = 0;
+pub const IXA_INCHIBUILDER_STEREOOPTION_IXA_INCHIBUILDER_STEREOOPTION_SNon:
+    IXA_INCHIBUILDER_STEREOOPTION = 1;
+pub const IXA_INCHIBUILDER_STEREOOPTION_IXA_INCHIBUILDER_STEREOOPTION_SRel:
+    IXA_INCHIBUILDER_STEREOOPTION = 2;
+pub const IXA_INCHIBUILDER_STEREOOPTION_IXA_INCHIBUILDER_STEREOOPTION_SRac:
+    IXA_INCHIBUILDER_STEREOOPTION = 3;
+pub const IXA_INCHIBUILDER_STEREOOPTION_IXA_INCHIBUILDER_STEREOOPTION_SUCF:
+    IXA_INCHIBUILDER_STEREOOPTION = 4;
 pub type IXA_INCHIBUILDER_STEREOOPTION = u32;
 pub const tagInchiCompareDiffBits_INCHIDIFF_ZERO: tagInchiCompareDiffBits = 0;
 pub const tagInchiCompareDiffBits_INCHIDIFF_PROBLEM: tagInchiCompareDiffBits = 1;
@@ -5533,7 +5579,11 @@ impl ::std::default::Default for sha2_context {
 }
 pub type va_list = SourceVaList;
 pub type STBSP_SPRINTFCB = ::std::option::Option<
-    fn(buf: SourceConstPointer<i8>, user: SourceMutPointer<SourceVoid>, len: i32) -> SourceMutPointer<i8>,
+    fn(
+        buf: SourceConstPointer<i8>,
+        user: SourceMutPointer<SourceVoid>,
+        len: i32,
+    ) -> SourceMutPointer<i8>,
 >;
 #[derive(Clone, Debug, PartialEq)]
 pub struct tagCOMPONENT_TREAT_INFO {
@@ -5971,7 +6021,9 @@ pub(crate) mod local_ichi_bns {
     impl ::std::default::Default for tagAltPathChanges {
         fn default() -> Self {
             Self {
-                nOldCapsVert: ::std::array::from_fn(|_| ::std::array::from_fn(|_| ::std::default::Default::default())),
+                nOldCapsVert: ::std::array::from_fn(|_| {
+                    ::std::array::from_fn(|_| ::std::default::Default::default())
+                }),
                 vOldVert: ::std::array::from_fn(|_| ::std::default::Default::default()),
                 bSetOldCapsVert: ::std::array::from_fn(|_| ::std::default::Default::default()),
                 vNewVertex: ::std::array::from_fn(|_| ::std::default::Default::default()),
@@ -6392,7 +6444,8 @@ pub(crate) mod local_ichiprt1 {
     pub const x_type_short: &[u8; 11] = b"compressed\0";
     pub const x_basic_layer: &[u8; 6] = b"basic\0";
     pub const x_aux_basic: &[u8; 26] = b"identifier.auxiliary-info\0";
-    pub const x_aux_comm: &[u8; 70] = b"!-- This section is NOT a part of the identifier, it is not unique --\0";
+    pub const x_aux_comm: &[u8; 70] =
+        b"!-- This section is NOT a part of the identifier, it is not unique --\0";
     pub const x_ign_uu_sp2: &[u8; 17] = b"omit_undef_dbond\0";
     pub const x_ign_uu_sp3: &[u8; 15] = b"omit_undef_sp3\0";
     pub const x_line_opening: &[u8; 2] = b"<\0";
@@ -6545,7 +6598,8 @@ pub(crate) mod local_ichiqueu {
             num_atoms: i32,
         ) -> i32,
     >;
-    pub type CHECK_CENTERPOINT = ::std::option::Option<fn(atom: SourceMutPointer<inp_ATOM>, iat: i32) -> i32>;
+    pub type CHECK_CENTERPOINT =
+        ::std::option::Option<fn(atom: SourceMutPointer<inp_ATOM>, iat: i32) -> i32>;
     pub type CHECK_DFS_PATH = ::std::option::Option<
         fn(
             pCG: SourceMutPointer<tagCANON_GLOBALS>,
@@ -7154,7 +7208,9 @@ pub(crate) mod local_util {
                 nType: ::std::default::Default::default(),
                 nElNegPauling10: ::std::default::Default::default(),
                 bSkipAddingH: ::std::default::Default::default(),
-                cValence: ::std::array::from_fn(|_| ::std::array::from_fn(|_| ::std::default::Default::default())),
+                cValence: ::std::array::from_fn(|_| {
+                    ::std::array::from_fn(|_| ::std::default::Default::default())
+                }),
             }
         }
     }

@@ -44,7 +44,10 @@ pub enum MmffBuilderError {
     TorsionBondQuery(#[from] TorsionBondQueryError),
 }
 
-pub(crate) fn select_mmff_conformer_index(mol: &Molecule, conf_id: isize) -> Result<usize, MmffBuilderError> {
+pub(crate) fn select_mmff_conformer_index(
+    mol: &Molecule,
+    conf_id: isize,
+) -> Result<usize, MmffBuilderError> {
     let conformers = mol.conformers_3d();
     if conformers.is_empty() {
         return Err(MmffBuilderError::Missing3dConformer { conf_id });
@@ -52,7 +55,8 @@ pub(crate) fn select_mmff_conformer_index(mol: &Molecule, conf_id: isize) -> Res
     if conf_id == -1 {
         return Ok(0);
     }
-    let requested = usize::try_from(conf_id).map_err(|_| MmffBuilderError::InvalidConformerId { conf_id })?;
+    let requested =
+        usize::try_from(conf_id).map_err(|_| MmffBuilderError::InvalidConformerId { conf_id })?;
     conformers
         .iter()
         .position(|conformer| conformer.id() == requested)
@@ -155,7 +159,12 @@ pub(crate) fn construct_force_field_with_props(
     // RDKit✔️❌:   if (mmffMolProperties->getMMFFTorsionTerm()) {
     if mmff_mol_properties.torsion_term {
         // RDKit✔️❌:     Tools::addTorsions(mol, mmffMolProperties, res.get());
-        add_torsions(mol, mmff_mol_properties, &mut res, DEFAULT_TORSION_BOND_SMARTS)?;
+        add_torsions(
+            mol,
+            mmff_mol_properties,
+            &mut res,
+            DEFAULT_TORSION_BOND_SMARTS,
+        )?;
         // RDKit✔️❌:   }
     }
     // RDKit✔️❌:   if (mmffMolProperties->getMMFFVdWTerm() ||
@@ -233,7 +242,9 @@ pub(crate) fn add_bonds(
         // RDKit✔️✔️:     MMFFBond mmffBondParams;
         // RDKit✔️✔️:     if (mmffMolProperties->getMMFFBondStretchParams(mol, idx1, idx2, bondType,
         // RDKit✔️✔️:                                                     mmffBondParams)) {
-        if let Some((_bond_type, mmff_bond_params)) = mmff_mol_properties.get_mmff_bond_stretch_params(idx1, idx2)? {
+        if let Some((_bond_type, mmff_bond_params)) =
+            mmff_mol_properties.get_mmff_bond_stretch_params(idx1, idx2)?
+        {
             // RDKit✔️✔️:       contrib->addTerm(idx1, idx2, &mmffBondParams);
             contrib.add_term(idx1, idx2, &mmff_bond_params);
             // RDKit✔️✔️:       hasContrib = true;
@@ -377,7 +388,13 @@ pub(crate) fn add_angles(
                     has_contrib = true;
                     // RDKit✔️✔️:           contrib->addTerm(idx[0], idx[1], idx[2], &mmffAngleParams,
                     // RDKit✔️✔️:                            mmffPropParamsCentralAtom);
-                    contrib.add_term(idx0, idx1, idx2, &mmff_angle_params, &mmff_prop_params_central_atom);
+                    contrib.add_term(
+                        idx0,
+                        idx1,
+                        idx2,
+                        &mmff_angle_params,
+                        &mmff_prop_params_central_atom,
+                    );
                     // RDKit❌❌:           if (mmffMolProperties->getMMFFVerbosity()) {
                     // RDKit❌❌:             unsigned int iAtomType = mmffMolProperties->getMMFFAtomType(idx[0]);
                     // RDKit❌❌:             unsigned int kAtomType = mmffMolProperties->getMMFFAtomType(idx[2]);
@@ -536,8 +553,12 @@ pub(crate) fn add_stretch_bend(
                 // RDKit✔️✔️:         if (mmffMolProperties->getMMFFStretchBendParams(
                 // RDKit✔️✔️:                 mol, idx[0], idx[1], idx[2], stretchBendType, mmffStbnParams,
                 // RDKit✔️✔️:                 mmffBondParams, mmffAngleParams)) {
-                if let Some((_stretch_bend_type, mmff_stbn_params, mmff_bond_params, mmff_angle_params)) =
-                    mmff_mol_properties.get_mmff_stretch_bend_params(idx0, idx1, idx2)?
+                if let Some((
+                    _stretch_bend_type,
+                    mmff_stbn_params,
+                    mmff_bond_params,
+                    mmff_angle_params,
+                )) = mmff_mol_properties.get_mmff_stretch_bend_params(idx0, idx1, idx2)?
                 {
                     // RDKit✔️✔️:           contribAdded = true;
                     contrib_added = true;
@@ -675,7 +696,8 @@ pub(crate) fn add_oop(
         // RDKit✔️✔️:     MMFFOop mmffOopParams;
         // RDKit✔️✔️:     if (!(mmffMolProperties->getMMFFOopBendParams(mol, idx[0], idx[1], idx[2],
         // RDKit✔️✔️:                                                   idx[3], mmffOopParams))) {
-        let Some(mmff_oop_params) = mmff_mol_properties.get_mmff_oop_bend_params(idx[0], idx[1], idx[2], idx[3])?
+        let Some(mmff_oop_params) =
+            mmff_mol_properties.get_mmff_oop_bend_params(idx[0], idx[1], idx[2], idx[3])?
         else {
             // RDKit✔️✔️:       continue;
             continue;
@@ -970,7 +992,11 @@ pub(crate) fn add_nonbonded(
             // RDKit✔️✔️:           getTwoBitCell(neighborMatrix, twoBitCellPos(nAtoms, i, j));
             let cell = get_two_bit_cell(neighbor_matrix, two_bit_cell_pos(n_atoms, i, j));
             // RDKit✔️✔️:       if (ignoreInterfragInteractions && (fragMapping[i] != fragMapping[j])) {
-            if ignore_interfrag_interactions && frag_mapping.as_ref().is_some_and(|mapping| mapping[i] != mapping[j]) {
+            if ignore_interfrag_interactions
+                && frag_mapping
+                    .as_ref()
+                    .is_some_and(|mapping| mapping[i] != mapping[j])
+            {
                 // RDKit✔️✔️:         continue;
                 continue;
             }
@@ -1013,7 +1039,8 @@ pub(crate) fn add_nonbonded(
                 let partial_charge_i = mmff_mol_properties.get_mmff_partial_charge(i)?;
                 let partial_charge_j = mmff_mol_properties.get_mmff_partial_charge(j)?;
                 let include_charge = mmff_mol_properties.ele_term
-                    && !(is_mmff_double_zero(partial_charge_i) || is_mmff_double_zero(partial_charge_j));
+                    && !(is_mmff_double_zero(partial_charge_i)
+                        || is_mmff_double_zero(partial_charge_j));
                 // RDKit✔️✔️:         double chargeTerm = 0.0;
                 let mut charge_term = 0.0;
                 // RDKit✔️✔️:         if (includeCharge) {
@@ -1021,7 +1048,8 @@ pub(crate) fn add_nonbonded(
                     // RDKit✔️✔️:           chargeTerm = mmffMolProperties->getMMFFPartialCharge(i) *
                     // RDKit✔️✔️:                        mmffMolProperties->getMMFFPartialCharge(j) /
                     // RDKit✔️✔️:                        mmffMolProperties->getMMFFDielectricConstant();
-                    charge_term = partial_charge_i * partial_charge_j / mmff_mol_properties.dielectric_constant;
+                    charge_term = partial_charge_i * partial_charge_j
+                        / mmff_mol_properties.dielectric_constant;
                     // RDKit✔️✔️:           hasContrib = true;
                     has_contrib = true;
                     // RDKit❌❌:           if (mmffMolProperties->getMMFFVerbosity()) {
@@ -1119,8 +1147,10 @@ pub(crate) fn add_torsions(
         // RDKit✔️✔️:          (jAtom->getHybridization() == Atom::SP3)) &&
         // RDKit✔️✔️:         ((kAtom->getHybridization() == Atom::SP2) ||
         // RDKit✔️✔️:          (kAtom->getHybridization() == Atom::SP3))) {
-        if (j_atom.hybridization() == Hybridization::Sp2 || j_atom.hybridization() == Hybridization::Sp3)
-            && (k_atom.hybridization() == Hybridization::Sp2 || k_atom.hybridization() == Hybridization::Sp3)
+        if (j_atom.hybridization() == Hybridization::Sp2
+            || j_atom.hybridization() == Hybridization::Sp3)
+            && (k_atom.hybridization() == Hybridization::Sp2
+                || k_atom.hybridization() == Hybridization::Sp3)
         {
             // RDKit✔️✔️:       ROMol::OEDGE_ITER beg1, end1;
             // RDKit✔️✔️:       boost::tie(beg1, end1) = mol.getAtomBonds(jAtom);
@@ -1149,8 +1179,8 @@ pub(crate) fn add_torsions(
                                 // RDKit✔️✔️:                 MMFFTor mmffTorParams;
                                 // RDKit✔️✔️:                 if (mmffMolProperties->getMMFFTorsionParams(
                                 // RDKit✔️✔️:                         mol, idx1, idx2, idx3, idx4, torType, mmffTorParams)) {
-                                if let Some((_tor_type, mmff_tor_params)) =
-                                    mmff_mol_properties.get_mmff_torsion_params(idx1, idx2, idx3, idx4)?
+                                if let Some((_tor_type, mmff_tor_params)) = mmff_mol_properties
+                                    .get_mmff_torsion_params(idx1, idx2, idx3, idx4)?
                                 {
                                     // RDKit✔️✔️:                   contrib->addTerm(idx1, idx2, idx3, idx4, &mmffTorParams);
                                     contrib.add_term(idx1, idx2, idx3, idx4, &mmff_tor_params);
@@ -1192,17 +1222,19 @@ pub(crate) fn add_torsions(
 #[cfg(test)]
 mod tests {
     use super::{
-        MmffBuilderError, RELATION_1_2, RELATION_1_3, RELATION_1_4, RELATION_1_X, add_angles, add_bonds, add_nonbonded,
-        add_oop, add_stretch_bend, add_torsions, build_neighbor_matrix, construct_force_field,
-        construct_force_field_with_props, get_two_bit_cell, set_two_bit_cell, two_bit_cell_pos,
+        MmffBuilderError, RELATION_1_2, RELATION_1_3, RELATION_1_4, RELATION_1_X, add_angles,
+        add_bonds, add_nonbonded, add_oop, add_stretch_bend, add_torsions, build_neighbor_matrix,
+        construct_force_field, construct_force_field_with_props, get_two_bit_cell,
+        set_two_bit_cell, two_bit_cell_pos,
     };
     use crate::chemistry::forcefield::core::{ForceField, ForceFieldVec3};
     use crate::chemistry::forcefield::mmff::mol_properties::{
-        MMFF_DIELECTRIC_CONSTANT, MMFF_DIELECTRIC_DISTANCE, MmffAtomProperties, MmffMolProperties, MmffVariant,
+        MMFF_DIELECTRIC_CONSTANT, MMFF_DIELECTRIC_DISTANCE, MmffAtomProperties, MmffMolProperties,
+        MmffVariant,
     };
     use crate::{
-        AromaticityAssignment, AtomSpec, BondOrder, BondSpec, Conformer3D, Element, Hybridization, Molecule,
-        MoleculeBuilder,
+        AromaticityAssignment, AtomSpec, BondOrder, BondSpec, Conformer3D, Element, Hybridization,
+        Molecule, MoleculeBuilder,
     };
 
     fn force_field_with_positions(positions: &[[f64; 3]]) -> ForceField {
@@ -1216,7 +1248,10 @@ mod tests {
         force_field
     }
 
-    fn mmff_props_for_molecule_and_atom_types(molecule: Molecule, atom_types: &[u8]) -> MmffMolProperties {
+    fn mmff_props_for_molecule_and_atom_types(
+        molecule: Molecule,
+        atom_types: &[u8],
+    ) -> MmffMolProperties {
         let num_bonds = molecule.num_bonds();
         MmffMolProperties {
             molecule,
@@ -1413,7 +1448,10 @@ mod tests {
         (t1.dot_product(t2) / (t1_len * t2_len)).clamp(-1.0, 1.0)
     }
 
-    fn torsion_chain_molecule(atoms: [(Element, Hybridization); 4], bonds: [BondOrder; 3]) -> Molecule {
+    fn torsion_chain_molecule(
+        atoms: [(Element, Hybridization); 4],
+        bonds: [BondOrder; 3],
+    ) -> Molecule {
         let mut builder = MoleculeBuilder::new();
         let a0 = builder.add_atom(AtomSpec::new(atoms[0].0).with_hybridization(atoms[0].1));
         let a1 = builder.add_atom(AtomSpec::new(atoms[1].0).with_hybridization(atoms[1].1));
@@ -1482,7 +1520,12 @@ mod tests {
             .add_bond(BondSpec::new(a2, a3, BondOrder::Single))
             .expect("test molecule bond endpoints are valid");
         builder
-            .add_3d_conformer(vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [4.0, 0.0, 0.0], [5.2, 0.0, 0.0]])
+            .add_3d_conformer(vec![
+                [0.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0],
+                [4.0, 0.0, 0.0],
+                [5.2, 0.0, 0.0],
+            ])
             .expect("3D conformer row count should match");
         builder.build().expect("test molecule is valid")
     }
@@ -1499,7 +1542,12 @@ mod tests {
                 .expect("test molecule bond endpoints are valid");
         }
         builder
-            .add_3d_conformer(vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [2.0, 0.0, 0.0], [3.2, 0.0, 0.0]])
+            .add_3d_conformer(vec![
+                [0.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0],
+                [2.0, 0.0, 0.0],
+                [3.2, 0.0, 0.0],
+            ])
             .expect("first 3D conformer row count should match");
         builder
             .add_3d_conformer(vec![
@@ -1526,7 +1574,11 @@ mod tests {
     fn manual_neighbor_matrix(n_atoms: usize, pairs: &[(usize, usize, u8)]) -> Vec<u8> {
         let mut res = vec![RELATION_1_X; n_atoms * (n_atoms + 1) / 2];
         for atom_idx in 0..n_atoms {
-            set_two_bit_cell(&mut res, two_bit_cell_pos(n_atoms, atom_idx, atom_idx), RELATION_1_X);
+            set_two_bit_cell(
+                &mut res,
+                two_bit_cell_pos(n_atoms, atom_idx, atom_idx),
+                RELATION_1_X,
+            );
         }
         for &(i, j, relation) in pairs {
             set_two_bit_cell(&mut res, two_bit_cell_pos(n_atoms, i, j), relation);
@@ -1775,14 +1827,15 @@ mod tests {
     fn mmff_builder_add_bonds_accumulates_multiple_bonds_into_one_contrib() {
         let mol = linear_three_atom_molecule();
         let props = mmff_props_for_molecule_and_atom_types(mol.clone(), &[1, 5, 5]);
-        let mut ff = force_field_with_positions(&[[0.0, 0.0, 0.0], [1.343, 0.0, 0.0], [-1.293, 0.0, 0.0]]);
+        let mut ff =
+            force_field_with_positions(&[[0.0, 0.0, 0.0], [1.343, 0.0, 0.0], [-1.293, 0.0, 0.0]]);
 
         add_bonds(&mol, &props, &mut ff).expect("multiple tabulated bonds should add one contrib");
 
         assert_eq!(ff.contribs().len(), 1);
         let pos = [0.0, 0.0, 0.0, 1.343, 0.0, 0.0, -1.293, 0.0, 0.0];
-        let expected =
-            source_bond_stretch_energy(1.093, 4.766, 1.343) + source_bond_stretch_energy(1.093, 4.766, 1.293);
+        let expected = source_bond_stretch_energy(1.093, 4.766, 1.343)
+            + source_bond_stretch_energy(1.093, 4.766, 1.293);
         assert_close(ff.contribs()[0].get_energy(&pos), expected);
     }
 
@@ -1807,14 +1860,18 @@ mod tests {
 
         assert_eq!(ff.contribs().len(), 1);
         let expected = source_bond_stretch_energy(1.405, 5.129115902527102, 1.2);
-        assert_close(ff.contribs()[0].get_energy(&[0.0, 0.0, 0.0, 1.2, 0.0, 0.0]), expected);
+        assert_close(
+            ff.contribs()[0].get_energy(&[0.0, 0.0, 0.0, 1.2, 0.0, 0.0]),
+            expected,
+        );
     }
 
     #[test]
     fn mmff_builder_add_angles_adds_single_angle_bend_contrib() {
         let mol = three_atom_angle_molecule(Element::H, Element::C, Element::C);
         let props = mmff_props_for_molecule_and_atom_types(mol.clone(), &[5, 1, 1]);
-        let mut ff = force_field_with_positions(&[[1.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 1.0, 0.0]]);
+        let mut ff =
+            force_field_with_positions(&[[1.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 1.0, 0.0]]);
 
         add_angles(&mol, &props, &mut ff).expect("tabulated MMFF angle should add contrib");
 
@@ -1839,9 +1896,15 @@ mod tests {
     fn mmff_builder_add_angles_accumulates_multiple_angles_into_one_contrib() {
         let mol = three_neighbor_center_molecule();
         let props = mmff_props_for_molecule_and_atom_types(mol.clone(), &[5, 1, 5, 1]);
-        let mut ff = force_field_with_positions(&[[1.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]);
+        let mut ff = force_field_with_positions(&[
+            [1.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [0.0, 0.0, 1.0],
+        ]);
 
-        add_angles(&mol, &props, &mut ff).expect("multiple tabulated angles should add one contrib");
+        add_angles(&mol, &props, &mut ff)
+            .expect("multiple tabulated angles should add one contrib");
 
         assert_eq!(ff.contribs().len(), 1);
         let pos = [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
@@ -1867,7 +1930,8 @@ mod tests {
         let mol = three_atom_angle_molecule(Element::H, Element::C, Element::C);
         let mut props = mmff_props_for_molecule_and_atom_types(mol.clone(), &[5, 1, 1]);
         props.valid = false;
-        let mut ff = force_field_with_positions(&[[1.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 1.0, 0.0]]);
+        let mut ff =
+            force_field_with_positions(&[[1.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 1.0, 0.0]]);
 
         let _ = add_angles(&mol, &props, &mut ff);
     }
@@ -1876,7 +1940,8 @@ mod tests {
     fn mmff_builder_add_angles_adds_empirical_angle_contrib() {
         let mol = three_atom_angle_molecule(Element::F, Element::C, Element::CL);
         let props = mmff_props_for_molecule_and_atom_types(mol.clone(), &[11, 1, 12]);
-        let mut ff = force_field_with_positions(&[[1.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 1.0, 0.0]]);
+        let mut ff =
+            force_field_with_positions(&[[1.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 1.0, 0.0]]);
 
         add_angles(&mol, &props, &mut ff).expect("empirical angle should add a contribution");
 
@@ -1890,14 +1955,17 @@ mod tests {
     fn mmff_builder_add_stretch_bend_adds_single_stretch_bend_contrib() {
         let mol = three_atom_angle_molecule(Element::H, Element::C, Element::C);
         let props = mmff_props_for_molecule_and_atom_types(mol.clone(), &[5, 1, 1]);
-        let mut ff = force_field_with_positions(&[[1.1, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 1.2, 0.0]]);
+        let mut ff =
+            force_field_with_positions(&[[1.1, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 1.2, 0.0]]);
 
-        add_stretch_bend(&mol, &props, &mut ff).expect("tabulated MMFF stretch-bend should add contrib");
+        add_stretch_bend(&mol, &props, &mut ff)
+            .expect("tabulated MMFF stretch-bend should add contrib");
 
         assert_eq!(ff.contribs().len(), 1);
         let pos = [1.1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.2, 0.0];
         let theta = 90.0;
-        let expected = source_stretch_bend_energy(1.1 - 1.093, 1.2 - 1.508, theta - 110.549, (0.070, 0.227));
+        let expected =
+            source_stretch_bend_energy(1.1 - 1.093, 1.2 - 1.508, theta - 110.549, (0.070, 0.227));
         assert_close(ff.contribs()[0].get_energy(&pos), expected);
     }
 
@@ -1907,7 +1975,8 @@ mod tests {
         let props = mmff_props_for_molecule_and_atom_types(mol.clone(), &[1, 5]);
         let mut ff = force_field_with_positions(&[[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]]);
 
-        add_stretch_bend(&mol, &props, &mut ff).expect("molecule without stretch-bend terms should be a no-op");
+        add_stretch_bend(&mol, &props, &mut ff)
+            .expect("molecule without stretch-bend terms should be a no-op");
 
         assert_eq!(ff.contribs().len(), 0);
     }
@@ -1916,9 +1985,15 @@ mod tests {
     fn mmff_builder_add_stretch_bend_accumulates_multiple_terms_into_one_contrib() {
         let mol = three_neighbor_center_molecule();
         let props = mmff_props_for_molecule_and_atom_types(mol.clone(), &[5, 1, 5, 1]);
-        let mut ff = force_field_with_positions(&[[1.1, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 1.2, 0.0], [0.0, 0.0, 1.6]]);
+        let mut ff = force_field_with_positions(&[
+            [1.1, 0.0, 0.0],
+            [0.0, 0.0, 0.0],
+            [0.0, 1.2, 0.0],
+            [0.0, 0.0, 1.6],
+        ]);
 
-        add_stretch_bend(&mol, &props, &mut ff).expect("multiple tabulated stretch-bends should add one contrib");
+        add_stretch_bend(&mol, &props, &mut ff)
+            .expect("multiple tabulated stretch-bends should add one contrib");
 
         assert_eq!(ff.contribs().len(), 1);
         let pos = [1.1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.2, 0.0, 0.0, 0.0, 1.6];
@@ -1953,9 +2028,11 @@ mod tests {
     fn mmff_builder_add_stretch_bend_skips_linear_central_atom() {
         let mol = three_atom_angle_molecule(Element::C, Element::C, Element::C);
         let props = mmff_props_for_molecule_and_atom_types(mol.clone(), &[1, 4, 1]);
-        let mut ff = force_field_with_positions(&[[1.2, 0.0, 0.0], [0.0, 0.0, 0.0], [-1.2, 0.0, 0.0]]);
+        let mut ff =
+            force_field_with_positions(&[[1.2, 0.0, 0.0], [0.0, 0.0, 0.0], [-1.2, 0.0, 0.0]]);
 
-        add_stretch_bend(&mol, &props, &mut ff).expect("linear central atom should skip stretch-bend addition");
+        add_stretch_bend(&mol, &props, &mut ff)
+            .expect("linear central atom should skip stretch-bend addition");
 
         assert_eq!(ff.contribs().len(), 0);
     }
@@ -1966,7 +2043,8 @@ mod tests {
         let mol = three_atom_angle_molecule(Element::H, Element::C, Element::C);
         let mut props = mmff_props_for_molecule_and_atom_types(mol.clone(), &[5, 1, 1]);
         props.valid = false;
-        let mut ff = force_field_with_positions(&[[1.1, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 1.2, 0.0]]);
+        let mut ff =
+            force_field_with_positions(&[[1.1, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 1.2, 0.0]]);
 
         let _ = add_stretch_bend(&mol, &props, &mut ff);
     }
@@ -1975,9 +2053,11 @@ mod tests {
     fn mmff_builder_add_stretch_bend_adds_empirical_angle_contrib() {
         let mol = three_atom_angle_molecule(Element::F, Element::C, Element::CL);
         let props = mmff_props_for_molecule_and_atom_types(mol.clone(), &[11, 1, 12]);
-        let mut ff = force_field_with_positions(&[[1.36, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 1.773, 0.0]]);
+        let mut ff =
+            force_field_with_positions(&[[1.36, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 1.773, 0.0]]);
 
-        add_stretch_bend(&mol, &props, &mut ff).expect("stretch-bend should consume empirical angle parameters");
+        add_stretch_bend(&mol, &props, &mut ff)
+            .expect("stretch-bend should consume empirical angle parameters");
 
         assert_eq!(ff.contribs().len(), 1);
         let pos = [1.36, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.773, 0.0];
@@ -1988,7 +2068,12 @@ mod tests {
     fn mmff_builder_add_oop_adds_single_oop_bend_contrib() {
         let mol = three_neighbor_center_molecule();
         let props = mmff_props_for_molecule_and_atom_types(mol.clone(), &[1, 2, 1, 2]);
-        let positions = [[1.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
+        let positions = [
+            [1.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [0.0, 0.0, 1.0],
+        ];
         let mut ff = force_field_with_positions(&positions);
 
         add_oop(&mol, &props, &mut ff).expect("tabulated MMFF OOP term should add contrib");
@@ -2031,7 +2116,12 @@ mod tests {
     fn mmff_builder_add_oop_keeps_force_field_empty_without_terms() {
         let mol = three_neighbor_center_molecule();
         let props = mmff_props_for_molecule_and_atom_types(mol.clone(), &[1, 1, 1, 1]);
-        let mut ff = force_field_with_positions(&[[1.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]);
+        let mut ff = force_field_with_positions(&[
+            [1.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [0.0, 0.0, 1.0],
+        ]);
 
         add_oop(&mol, &props, &mut ff).expect("missing OOP parameters should be a no-op");
 
@@ -2042,7 +2132,8 @@ mod tests {
     fn mmff_builder_add_oop_skips_non_trigonal_center() {
         let mol = three_atom_angle_molecule(Element::H, Element::C, Element::C);
         let props = mmff_props_for_molecule_and_atom_types(mol.clone(), &[5, 1, 1]);
-        let mut ff = force_field_with_positions(&[[1.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 1.0, 0.0]]);
+        let mut ff =
+            force_field_with_positions(&[[1.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 1.0, 0.0]]);
 
         add_oop(&mol, &props, &mut ff).expect("non-degree-3 center should skip OOP addition");
 
@@ -2055,7 +2146,12 @@ mod tests {
         let mol = three_neighbor_center_molecule();
         let mut props = mmff_props_for_molecule_and_atom_types(mol.clone(), &[1, 2, 1, 2]);
         props.valid = false;
-        let mut ff = force_field_with_positions(&[[1.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]);
+        let mut ff = force_field_with_positions(&[
+            [1.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [0.0, 0.0, 1.0],
+        ]);
 
         let _ = add_oop(&mol, &props, &mut ff);
     }
@@ -2065,7 +2161,12 @@ mod tests {
         let mol = three_neighbor_center_molecule();
         let mut props = mmff_props_for_molecule_and_atom_types(mol.clone(), &[1, 10, 1, 1]);
         props.variant = MmffVariant::Mmff94s;
-        let positions = [[1.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
+        let positions = [
+            [1.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [0.0, 0.0, 1.0],
+        ];
         let mut ff = force_field_with_positions(&positions);
 
         add_oop(&mol, &props, &mut ff).expect("MMFF94s OOP row should add contrib");
@@ -2116,7 +2217,12 @@ mod tests {
             [BondOrder::Single, BondOrder::Single, BondOrder::Single],
         );
         let props = mmff_props_for_molecule_and_atom_types(mol.clone(), &[1, 1, 1, 1]);
-        let mut ff = force_field_with_positions(&[[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [1.0, 1.0, 0.0], [2.0, 1.0, 1.0]]);
+        let mut ff = force_field_with_positions(&[
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [1.0, 1.0, 0.0],
+            [2.0, 1.0, 1.0],
+        ]);
 
         add_torsions(&mol, &props, &mut ff, "[*:1]-[*:2]")
             .expect("custom torsion SMARTS should select the three single bonds");
@@ -2142,7 +2248,12 @@ mod tests {
                 (0, 3, RELATION_1_4),
             ],
         );
-        let positions = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [2.0, 0.0, 0.0], [3.2, 0.0, 0.0]];
+        let positions = [
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [2.0, 0.0, 0.0],
+            [3.2, 0.0, 0.0],
+        ];
         let mut ff = force_field_with_positions(&positions);
 
         add_nonbonded(&mol, &props, &mut ff, &neighbor_matrix, 100.0, false)
@@ -2169,9 +2280,14 @@ mod tests {
         props.atom_properties[2].partial_charge = 0.4;
         let neighbor_matrix = manual_neighbor_matrix(
             mol.num_atoms(),
-            &[(0, 1, RELATION_1_2), (0, 2, RELATION_1_2), (1, 2, RELATION_1_3)],
+            &[
+                (0, 1, RELATION_1_2),
+                (0, 2, RELATION_1_2),
+                (1, 2, RELATION_1_3),
+            ],
         );
-        let mut ff = force_field_with_positions(&[[0.0, 0.0, 0.0], [1.1, 0.0, 0.0], [0.0, 1.2, 0.0]]);
+        let mut ff =
+            force_field_with_positions(&[[0.0, 0.0, 0.0], [1.1, 0.0, 0.0], [0.0, 1.2, 0.0]]);
 
         add_nonbonded(&mol, &props, &mut ff, &neighbor_matrix, 100.0, false)
             .expect("1-2 and 1-3 relations should not add nonbonded terms");
@@ -2196,7 +2312,12 @@ mod tests {
                 (0, 3, RELATION_1_4),
             ],
         );
-        let mut ff = force_field_with_positions(&[[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [2.0, 0.0, 0.0], [3.2, 0.0, 0.0]]);
+        let mut ff = force_field_with_positions(&[
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [2.0, 0.0, 0.0],
+            [3.2, 0.0, 0.0],
+        ]);
 
         add_nonbonded(&mol, &props, &mut ff, &neighbor_matrix, 3.0, false)
             .expect("distance threshold miss should skip");
@@ -2220,7 +2341,12 @@ mod tests {
                 (0, 3, RELATION_1_X),
             ],
         );
-        let positions = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [4.0, 0.0, 0.0], [5.2, 0.0, 0.0]];
+        let positions = [
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [4.0, 0.0, 0.0],
+            [5.2, 0.0, 0.0],
+        ];
         let mut ff = force_field_with_positions(&positions);
 
         add_nonbonded(&mol, &props, &mut ff, &neighbor_matrix, 100.0, true)
@@ -2247,7 +2373,12 @@ mod tests {
                 (0, 3, RELATION_1_X),
             ],
         );
-        let positions = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [4.0, 0.0, 0.0], [5.2, 0.0, 0.0]];
+        let positions = [
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [4.0, 0.0, 0.0],
+            [5.2, 0.0, 0.0],
+        ];
         let mut ff = force_field_with_positions(&positions);
 
         add_nonbonded(&mol, &props, &mut ff, &neighbor_matrix, 100.0, false)
@@ -2283,7 +2414,12 @@ mod tests {
                 (0, 3, RELATION_1_4),
             ],
         );
-        let mut ff = force_field_with_positions(&[[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [2.0, 0.0, 0.0], [3.2, 0.0, 0.0]]);
+        let mut ff = force_field_with_positions(&[
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [2.0, 0.0, 0.0],
+            [3.2, 0.0, 0.0],
+        ]);
 
         add_nonbonded(&mol, &props, &mut ff, &neighbor_matrix, 100.0, false)
             .expect("electrostatics-only pair should add a term");
@@ -2309,7 +2445,12 @@ mod tests {
                 (0, 3, RELATION_1_4),
             ],
         );
-        let mut ff = force_field_with_positions(&[[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [2.0, 0.0, 0.0], [3.2, 0.0, 0.0]]);
+        let mut ff = force_field_with_positions(&[
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [2.0, 0.0, 0.0],
+            [3.2, 0.0, 0.0],
+        ]);
 
         add_nonbonded(&mol, &props, &mut ff, &neighbor_matrix, 100.0, false)
             .expect("zero partial charges should still allow vdW-only term");
@@ -2343,7 +2484,12 @@ mod tests {
                 (0, 3, RELATION_1_4),
             ],
         );
-        let mut ff = force_field_with_positions(&[[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [2.0, 0.0, 0.0], [3.2, 0.0, 0.0]]);
+        let mut ff = force_field_with_positions(&[
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [2.0, 0.0, 0.0],
+            [3.2, 0.0, 0.0],
+        ]);
 
         add_nonbonded(&mol, &props, &mut ff, &neighbor_matrix, 100.0, false)
             .expect("disabled vdW and electrostatics should be a no-op");
@@ -2368,7 +2514,12 @@ mod tests {
                 (0, 3, RELATION_1_4),
             ],
         );
-        let mut ff = force_field_with_positions(&[[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [2.0, 0.0, 0.0], [3.2, 0.0, 0.0]]);
+        let mut ff = force_field_with_positions(&[
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [2.0, 0.0, 0.0],
+            [3.2, 0.0, 0.0],
+        ]);
 
         let _ = add_nonbonded(&mol, &props, &mut ff, &neighbor_matrix, 100.0, false);
     }
@@ -2385,7 +2536,12 @@ mod tests {
             [BondOrder::Single, BondOrder::Single, BondOrder::Single],
         );
         let props = mmff_props_for_molecule_and_atom_types(mol.clone(), &[1, 1, 1, 1]);
-        let positions = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [1.0, 1.0, 0.0], [2.0, 1.0, 1.0]];
+        let positions = [
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [1.0, 1.0, 0.0],
+            [2.0, 1.0, 1.0],
+        ];
         let mut ff = force_field_with_positions(&positions);
 
         add_torsions(&mol, &props, &mut ff, "[!$(*#*)&!D1]~[!$(*#*)&!D1]")
@@ -2423,7 +2579,12 @@ mod tests {
             [BondOrder::Triple, BondOrder::Single, BondOrder::Single],
         );
         let props = mmff_props_for_molecule_and_atom_types(mol.clone(), &[1, 1, 1, 1]);
-        let mut ff = force_field_with_positions(&[[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [1.0, 1.0, 0.0], [2.0, 1.0, 1.0]]);
+        let mut ff = force_field_with_positions(&[
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [1.0, 1.0, 0.0],
+            [2.0, 1.0, 1.0],
+        ]);
 
         add_torsions(&mol, &props, &mut ff, "[!$(*#*)&!D1]~[!$(*#*)&!D1]")
             .expect("triple-adjacent default-query miss should skip");
@@ -2443,7 +2604,12 @@ mod tests {
             [BondOrder::Single, BondOrder::Single, BondOrder::Single],
         );
         let props = mmff_props_for_molecule_and_atom_types(mol.clone(), &[1, 1, 1, 1]);
-        let mut ff = force_field_with_positions(&[[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [1.0, 1.0, 0.0], [2.0, 1.0, 1.0]]);
+        let mut ff = force_field_with_positions(&[
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [1.0, 1.0, 0.0],
+            [2.0, 1.0, 1.0],
+        ]);
 
         add_torsions(&mol, &props, &mut ff, "[!$(*#*)&!D1]~[!$(*#*)&!D1]")
             .expect("unsupported central hybridization should skip");
@@ -2455,7 +2621,8 @@ mod tests {
     fn mmff_builder_add_torsions_skips_three_membered_ring_torsions() {
         let mol = triangle_ring_molecule();
         let props = mmff_props_for_molecule_and_atom_types(mol.clone(), &[1, 1, 1]);
-        let mut ff = force_field_with_positions(&[[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.5, 0.8, 0.0]]);
+        let mut ff =
+            force_field_with_positions(&[[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.5, 0.8, 0.0]]);
 
         add_torsions(&mol, &props, &mut ff, "[!$(*#*)&!D1]~[!$(*#*)&!D1]")
             .expect("three-membered ring torsions should skip");
@@ -2475,7 +2642,12 @@ mod tests {
             [BondOrder::Single, BondOrder::Single, BondOrder::Single],
         );
         let props = mmff_props_for_molecule_and_atom_types(mol.clone(), &[1, 1, 2, 3]);
-        let mut ff = force_field_with_positions(&[[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [1.0, 1.0, 0.0], [2.0, 1.0, 1.0]]);
+        let mut ff = force_field_with_positions(&[
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [1.0, 1.0, 0.0],
+            [2.0, 1.0, 1.0],
+        ]);
 
         add_torsions(&mol, &props, &mut ff, "[!$(*#*)&!D1]~[!$(*#*)&!D1]")
             .expect("zero or missing torsion parameters should be a no-op");
@@ -2496,7 +2668,12 @@ mod tests {
         );
         let mut props = mmff_props_for_molecule_and_atom_types(mol.clone(), &[5, 1, 1, 10]);
         props.variant = MmffVariant::Mmff94s;
-        let positions = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [1.0, 1.0, 0.0], [2.0, 1.0, 1.0]];
+        let positions = [
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [1.0, 1.0, 0.0],
+            [2.0, 1.0, 1.0],
+        ];
         let mut ff = force_field_with_positions(&positions);
 
         add_torsions(&mol, &props, &mut ff, "[!$(*#*)&!D1]~[!$(*#*)&!D1]")
@@ -2536,7 +2713,12 @@ mod tests {
         );
         let mut props = mmff_props_for_molecule_and_atom_types(mol.clone(), &[1, 1, 1, 1]);
         props.valid = false;
-        let mut ff = force_field_with_positions(&[[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [1.0, 1.0, 0.0], [2.0, 1.0, 1.0]]);
+        let mut ff = force_field_with_positions(&[
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [1.0, 1.0, 0.0],
+            [2.0, 1.0, 1.0],
+        ]);
 
         let _ = add_torsions(&mol, &props, &mut ff, "[!$(*#*)&!D1]~[!$(*#*)&!D1]");
     }
@@ -2553,7 +2735,12 @@ mod tests {
             [BondOrder::Single, BondOrder::Single, BondOrder::Single],
         );
         let props = mmff_props_for_molecule_and_atom_types(mol.clone(), &[1, 1, 1, 99]);
-        let mut ff = force_field_with_positions(&[[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [1.0, 1.0, 0.0], [2.0, 1.0, 1.0]]);
+        let mut ff = force_field_with_positions(&[
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [1.0, 1.0, 0.0],
+            [2.0, 1.0, 1.0],
+        ]);
 
         add_torsions(&mol, &props, &mut ff, "[!$(*#*)&!D1]~[!$(*#*)&!D1]")
             .expect("ported empirical torsion fallback should be supported");

@@ -1,6 +1,6 @@
 # Search and Model Extraction: Remaining Issues
 
-Status: open review baseline, 2026-09-01
+Status: open review baseline, 2026-09-04
 
 This report records the implementation gaps found after introducing the
 `cosmolkit-types` and `cosmolkit-model` crates and making `QueryGraph` a
@@ -37,16 +37,17 @@ have an explicit removal decision and do not create a second public model.
 | ID | Area | Current state | Priority |
 |---|---|---|---|
 | M-01 | Concrete model ownership | Shared Atom/Bond, coordinate, property, SGroup, stereo-group, topology, and mapping values are owned by `cosmolkit-model`; runtime cache and Molecule remain in core | Resolved for this slice |
-| M-02 | Query ownership | `QueryGraph` and predicates remain implemented in `core::search`, while `core::model::query` only re-exports them | Blocking |
-| S-01 | Query-to-molecule projection | `QueryGraph::to_molecule()` remains a legacy internal projection used by pattern fingerprinting | High |
-| S-02 | SMARTS parser path | parser still builds a temporary `Molecule`, performs cleanup, then converts it to `QueryGraph` | High |
-| F-01 | Feature isolation | `QueryGraph::pattern_fingerprint()` is unconditional and breaks `--no-default-features` | High |
-| Q-01 | Query wrappers | `QueryAtom`/`QueryBond` contain concrete `Atom`/`Bond`, implement `Deref`, and expose an always-present `query()` | Medium |
-| Q-02 | Compiled query | `CompiledQuery` is currently a transparent wrapper and performs no compilation or planning | Medium |
-| M-03 | Model invariants | public detached blocks and conformers have weak or absent local validation | Medium |
-| F-02 | Capability graph | public feature definitions still leak implementation dependencies between domain capabilities | Medium |
+| M-02 | Query ownership | Query values and predicate vocabulary are now canonically defined by `cosmolkit-model`; core retains only search behavior and compatibility re-exports | Resolved for this slice |
+| S-01 | Query-to-molecule projection | no production path projects `QueryGraph` to `Molecule`; query fixtures are query-native and concrete fixtures no longer manufacture query-bearing molecules | Resolved |
+| S-02 | SMARTS parser post-processing | ordinary parsing, CXSMILES lowering for modeled records, and directional-bond stereo operate directly on `QueryGraph`; concrete-only CX records return structured unsupported errors | Resolved for current model scope |
+| F-01 | Feature isolation | QueryGraph no longer exposes a projection-backed fingerprint facade; fingerprint implementation remains feature-gated and no-default core compilation passes | Resolved for this slice |
+| Q-01 | Query wrappers | `QueryAtom`/`QueryBond` compose concrete values with mandatory predicates; legacy `Deref`, optional `query()` access, and query-bearing `Molecule` test fixtures are removed | Resolved |
+| Q-02 | Compiled query | `CompiledQuery` now retains a pre-built VF2 query graph and RDKit node order; focused parity coverage is in place | Resolved for this slice |
+| M-03 | Model invariants | topology and coordinate value validation now covers IDs, endpoints, adjacency, stereochemical references, group references, coordinate rows, and conformer IDs; runtime commit boundaries invoke it | Resolved for this slice |
+| F-02 | Capability graph | public features no longer select other public domain features; colocated reuse is expressed through explicit `__*` implementation features | Resolved for this slice |
+| R-01 | Runtime ownership | `Molecule`, `OpParts`, and the operation registry/runtime still live in `cosmolkit-core`, although the target owner is `cosmolkit` | High |
 
-## M-01: Two concrete molecule models coexist
+## M-01: Shared concrete model ownership
 
 ### Evidence
 
@@ -54,35 +55,29 @@ The complete `Atom`, `AtomSpec`, `Bond`, and `BondSpec` value definitions now
 live in `crates/cosmolkit-model/src/atom.rs` and `bond.rs`, including the
 property, stereo, and PDB metadata carried by the former core model.
 `AtomId` and `BondId` are owned by the same crate. Core's `model::atom` and
-`model::bond` modules contain only aliases that specialize the model's opaque
-query payload with the existing search-layer query node. There is no
-core-owned duplicate concrete atom or bond implementation and no conversion
-layer between the two identities.
+`model::bond` modules contain only compatibility re-exports of those concrete
+types. There is no core-owned duplicate concrete atom or bond implementation
+and no conversion layer between the two identities.
 
-The M-01 concrete value ownership slice is now complete. `cosmolkit-model`
-owns the shared topology, coordinate, property, SGroup, stereo-group, and
-topology-mapping values. Core retains `Molecule`, operation lifecycle, derived
-cache, and source-specific remapping orchestration. Query payload decoupling is
-tracked separately by M-02/Q-01; the current generic payload specialization
-keeps this slice independent of a second concrete model.
+The M-01 concrete value ownership slice is complete. `cosmolkit-model` owns
+the shared topology, coordinate, property, SGroup, stereo-group, and
+topology-mapping values. Core still retains `Molecule`, the operation
+lifecycle, the derived cache, and source-specific remapping orchestration;
+that runtime relocation is tracked separately by R-01. Query data ownership
+is tracked by M-02 and wrapper cleanup by Q-01.
 
 ### Why this was a real architectural problem
 
 This was not merely an unfinished directory move. It created two incompatible
-type universes with the same conceptual names. The alias-based migration now
-gives downstream code and core algorithms one concrete atom/bond identity,
+type universes with the same conceptual names. The completed model extraction
+now gives downstream code and core algorithms one concrete atom/bond identity,
 without a lossy adapter or a second implementation.
 
-### Resolution questions
+### Remaining boundary
 
-1. Which fields belong in the authoritative shared model, including property,
-   stereo, PDB, and source-specific state?
-2. Which fields are concrete value state and which remain runtime-owned?
-3. Can core's current model be moved into `cosmolkit-model` in one vertical
-   slice, with `Molecule` remaining in the facade, without introducing a
-   second public representation?
-4. Which builders and internal constructors must move with the values, and
-   which must remain facade/runtime-only?
+The concrete value extraction is complete. The remaining ownership question is
+the relocation of `Molecule`, builders, and operation runtime, which is tracked
+as R-01 rather than as another concrete-model implementation.
 
 ### Constraints for the fix
 
@@ -91,34 +86,32 @@ without a lossy adapter or a second implementation.
 - Do not remove fields merely to make the types line up; preserve represented
   source behavior or explicitly record unsupported state.
 
-## M-02: Query data still belongs to search implementation
+## M-02: Query data ownership is resolved for this slice
 
-### Evidence
+### Resolution
 
-`crates/cosmolkit-core/src/model/query.rs` only re-exports
-`AtomQueryPredicate`, `BondQueryPredicate`, `QueryNode`, and query graph types
-from `crate::search`.
+Resolved for the current extraction slice. The canonical definitions now live
+in `crates/cosmolkit-model/src/query.rs`: `QueryNode`, the atom and bond
+predicate vocabulary, range queries, recursive query data, `QueryAtom`,
+`QueryBond`, `QueryGraph`, and `QueryGraphError`. `cosmolkit-core/src/model/query.rs`
+and `core::search` only re-export those values for source compatibility.
 
-The actual definitions remain in `search/query.rs` and
-`search/query_graph.rs`. `QueryGraph` directly imports `Molecule`, `Atom`,
-`Bond`, parser parameters, writer functions, matcher functions, and fingerprint
-types.
+Search-side code retains `QueryGraphOperator`, parser/matcher/writer behavior,
+and no concrete-molecule lowering helper. Remaining behavior work is tracked
+by Q-02; none of these implementations makes the model depend on search.
 
-### Why this matters
+### Why this mattered
 
-The current layering makes the apparent model module depend on search behavior
-instead of the other way around. A crate that wants only query vocabulary still
-pulls in the search implementation, and the model cannot become an independent
-dependency without moving the actual definitions.
+Before this slice, the apparent model module depended on search behavior
+instead of the other way around. A crate that wanted only query vocabulary
+still pulled in the search implementation. The model now owns the query data
+without importing parser, matcher, writer, valence, or molecule-runtime code.
 
-### Resolution questions
+### Remaining boundary
 
-1. Which query fields and predicate variants are pure data and can move to the
-   shared model without parser imports?
-2. Should `QueryGraph` contain only graph data and local endpoint validation,
-   with parser/matcher/writer behavior implemented by a search-side operator?
-3. Which concrete atom fields must remain available in `QueryAtom` without
-   reintroducing query state into `Atom`?
+The remaining work is behavior-side: complete the search operator boundary and
+compiled-query planning. Those issues are tracked by S-02 and Q-02; no second
+query data model should be introduced.
 
 ### Constraints for the fix
 
@@ -127,179 +120,185 @@ dependency without moving the actual definitions.
   not depend on search.
 - Do not add a second query graph solely to bridge the old and new modules.
 
-## S-01: Legacy `QueryGraph -> Molecule` projection remains
+## S-01: Remove legacy `QueryGraph -> Molecule` projection
 
 ### Evidence
 
-`QueryGraph::to_molecule()` in `search/query_graph.rs` rebuilds a core
-`Molecule` from query-bearing atom and bond records. The method is crate-private,
-but `QueryGraph::pattern_fingerprint()` calls it before invoking the existing
-pattern fingerprint implementation.
+The former `query_graph_to_molecule()` helper has been removed. SMARTS and
+CXSMARTS writers, parser post-processing, matcher entry points, and production
+fingerprint APIs consume `QueryGraph` or concrete `Molecule` values according
+to their own input contract. Query fixtures construct the canonical query
+graph directly. Concrete IO and chemistry fixtures no longer manufacture
+query-bearing molecules; tests for unsupported concrete query records were
+removed or reduced to their concrete-state assertions.
 
 ### Why this matters
 
 The query model was introduced specifically to prevent query semantics from
-being represented as a concrete molecule. This projection restores that path
-inside the implementation and requires the query graph to retain enough legacy
-concrete state to rebuild a molecule. It is therefore a migration adapter, not
-the target design.
+being represented as a concrete molecule. The old test adapter restored that
+path for query-target fingerprint fixtures, so it was a migration adapter and
+not part of the target design. It is now gone. A future query-target Pattern
+fingerprint parity surface would still require an explicit QueryGraph input
+contract; it must not be implemented by recreating a projection helper.
 
-### Resolution options to analyze
+### Resolution
 
-- Move pattern fingerprinting to consume query graph data directly, if the
-  source algorithm requires query semantics.
-- Move only a narrowly defined, private pattern-fingerprint input projection
-  into the fingerprint implementation, with an explicit removal issue if the
-  source algorithm genuinely requires concrete graph storage.
-- Remove `QueryGraph::pattern_fingerprint()` from the query data type and expose
-  it as a search/fingerprint operation.
+The former `QueryGraphOperator::pattern_fingerprint()` facade and the
+test-only projection helper were removed. Pattern and Layered fingerprints
+retain their concrete-molecule contracts; query parsing, writing, and matching
+remain query-native. Any future query-target fingerprint implementation must
+accept `&QueryGraph` explicitly and own its query semantics without converting
+to `Molecule`.
 
-The preferred direction is to keep data types free of domain operations and
-avoid a general-purpose `to_molecule()` escape hatch.
-
-## S-02: SMARTS parsing still uses a temporary concrete molecule
+## S-02: Query-native SMARTS post-processing
 
 ### Evidence
 
-`mol_from_smarts()` currently performs:
+The ordinary `parse_smarts()` path performs:
 
 ```text
-preprocess -> parse to temporary Molecule -> CX/name handling
--> merge query H -> stereo cleanup -> QueryGraph::from_query_molecule
+preprocess -> parser state -> QueryGraphBuilder::finish() -> QueryGraph
 ```
 
-The implementation and its local complexity note explicitly acknowledge the
-builder-based reconstruction and additional cloning.
+Query-H merging, parser-state cleanup, and directional-bond stereo inference
+are performed directly on the query graph. The directional path reproduces
+RDKit's `setBondStereoFromDirections` traversal over query adjacency and
+concrete bond state without constructing a `Molecule`.
+
+CXSMILES extensions use the independent `cosmolkit-cx` syntax parser and a
+QueryGraph-native lowerer. Query predicates, atom metadata, coordinates,
+stereo, and radicals are applied directly to the query graph. Concrete-only
+LN/SGroup/variable-attachment records return a structured `UnsupportedFeature`
+error rather than being projected through a molecule. Plain suffix names retain
+the existing `parse_name` and strict-mode behavior.
 
 ### Why this matters
 
-This keeps the parser coupled to the concrete molecule lifecycle and makes the
-first-class query graph a post-processing result rather than the parser's
-canonical output. It also makes parser cleanup depend on concrete-molecule
-helpers that were designed for a different state model.
+The directional path is no longer coupled to the concrete molecule lifecycle.
+The remaining work is parity expansion for less common CX records and a future
+decision about query-native representations for concrete-only metadata; the
+production path no longer has a concrete projection escape hatch.
 
 ### Resolution questions
 
-1. Which parser reductions can write directly to `QueryGraph` data?
-2. Which cleanup operations are query semantics and which are concrete-molecule
-   normalization?
-3. Can CXSMILES metadata and query-H merging be represented as model-level
-   graph edits without constructing a `Molecule`?
+1. Which CX extension records are valid query data and which remain concrete
+   molecule metadata?
+2. How should CX coordinates, enhanced stereo, labels, and query annotations
+   be represented in the model without widening the `Molecule` boundary?
+3. Which source cleanup operations are query semantics and which are concrete
+   molecule normalization?
 
-The fix must preserve the RDKit call order and source markers; replacing the
-temporary molecule with ad hoc heuristic parsing is not acceptable.
+The completed directional migration preserves the RDKit call order and source
+markers. Future CX work must use the same source-backed lowering discipline;
+replacing the unsupported boundary with ad hoc heuristic parsing is not
+acceptable.
 
-## F-01: Feature-disabled core does not compile
+## F-01: Feature-disabled core isolation
 
 ### Evidence
 
-`QueryGraph::pattern_fingerprint()` is compiled unconditionally but references
-`PatternFingerprintParams`, `Fingerprint`, `FingerprintError`, and the
-`fingerprint` module, all gated behind the `fingerprints` feature.
+The former `QueryGraphOperator::pattern_fingerprint()` facade has been removed.
+The remaining Pattern fingerprint implementation is independently gated behind
+the `fingerprints` feature, so the core crate remains checkable without that
+domain capability.
 
-Reproduced command:
+Verification command:
 
 ```text
 cargo check -p cosmolkit-core --no-default-features
 ```
 
-It fails because those fingerprint items are unavailable.
+The command now passes; warnings do not indicate a feature-isolation failure.
 
-### Resolution options to analyze
+### Remaining boundary
 
-1. Gate the method and its imports with `#[cfg(feature = "fingerprints")]`.
-2. Move the operation to a fingerprint/search operator module that is already
-   feature-gated.
-3. Make fingerprinting a mandatory dependency, which is contrary to the
-   current fine-grained capability policy and should not be chosen without an
-   explicit architecture decision.
+The gate preserves feature isolation. Query-specific fingerprint fixtures no
+longer use a concrete projection; a direct query-target fingerprint contract
+would be a separate future capability.
 
-The first or second option preserves feature isolation. The final API shape
-should be decided together with S-01 rather than adding another wrapper method.
-
-## Q-01: Query atom and bond wrappers retain compatibility baggage
+## Q-01: Query atom and bond wrappers use explicit projections
 
 ### Evidence
 
-`QueryAtom` stores a concrete `Atom` plus a predicate and implements `Deref<Target
-= Atom>`. `QueryBond` does the same for `Bond`. Both expose `query()` methods
-that always return `Some(&self.predicate)`.
+`QueryAtom` stores a concrete `Atom` plus a mandatory predicate and exposes the
+two parts through explicit `atom()` and `predicate()` accessors. `QueryBond`
+does the same for `Bond` and its mandatory predicate. The compatibility
+`Deref` implementations and optional `query()` accessors have been removed.
+Production search, parser, template, and CrystalFF consumers now use explicit
+projections, and all test fixtures use the same boundary.
 
-### Why this matters
+### Why this mattered
 
-This mirrors the old query-bearing atom/bond model and makes query values look
-like concrete values with an extra field. It also encourages consumers to rely
-on concrete methods through deref instead of using an explicit query model.
+The former implicit deref mirrored the old query-bearing atom/bond model and
+encouraged consumers to treat a query value as a concrete atom or bond. The
+explicit projections make the data boundary visible at every call site while
+retaining the concrete state required by RDKit-compatible matching.
 
-### Resolution questions
+### Resolution
 
-- Should `QueryAtom` contain only query attributes and an explicitly modeled
-  concrete projection, or should it contain a shared atom payload with query
-  predicate data as separate fields?
-- Which concrete metadata is semantically required by SMARTS/MCS and which is
-  only present because of the legacy molecule representation?
-- Should `query()` be removed in favor of the non-optional `predicate()` API?
+The wrapper remains a deliberate data composition: query matching needs the
+concrete atom/bond attributes as well as the query predicate tree, but neither
+part is implicit through deref. `predicate()` is mandatory and consumers must
+choose `atom()` or `bond()` when they need concrete state. This keeps the query
+model explicit without introducing a second atom/bond representation.
 
 Any change must preserve isotope, charge, radical, stereo, property, and dummy
 atom matching semantics already covered by parity tests.
 
-## Q-02: `CompiledQuery` is currently a naming wrapper
+## Q-02: Compiled query planning
 
 ### Evidence
 
-`CompiledQuery::compile()` only stores the original `QueryGraph`. Its `matches()`
-method calls the same ordinary substructure matcher used by an uncompiled graph.
+`CompiledQuery::compile()` now builds and retains the immutable VF2 query
+adjacency view and the RDKit `SortNodesByFrequency` atom order. Its `matches()`
+path passes both values into the canonical matcher, so repeated matches do not
+rebuild the query-side graph plan.
 
 ### Why this matters
 
-The type promises a compiled or reusable match plan, but currently has no
-precomputed candidate order, predicate lowering, adjacency view, or other
-compiled state. This adds an abstraction name without changing behavior or
-execution cost.
+The plan is deliberately limited to source-backed preprocessing already used
+by the VF2 implementation. It does not invent a heuristic predicate compiler
+or alter result ordering. A focused test compares compiled and ordinary match
+results on the same query and target.
 
-### Resolution options to analyze
+### Resolution
 
-- Remove `CompiledQuery` until a real source-backed compilation boundary is
-  implemented.
-- Keep it as an explicit immutable ownership wrapper, but rename/document it
-  as such and avoid claiming compilation.
-- Implement the actual RDKit/search-side preprocessing needed for repeated
-  matching, with focused parity and performance validation.
+Resolved for this slice. The compiled object owns one query graph plus its
+detached VF2 topology view and stable source-defined node order. Recursive
+query preparation and target-derived context remain per-match because they
+depend on the target molecule and match parameters.
 
-Do not invent a heuristic optimizer merely to justify the type.
-
-## M-03: Model-level local invariants are not enforced consistently
+## M-03: Model-level local invariants
 
 ### Evidence
 
-`TopologyBlock` exposes public `atoms`, `bonds`, and `adjacency` fields and
-derives `Default`. `Conformer2D::new()` and `Conformer3D::new()` accept arbitrary
-coordinate lengths without checking the associated atom count.
+`TopologyBlock::validate()` now checks atom/bond table IDs, bond endpoints and
+self-loops, stereo atom references, adjacency reconstruction, SGroup and
+StereoGroup references, and parent/group IDs. `CoordinateBlock::validate_for_atom_count()`
+checks coordinate row counts and duplicate conformer IDs independently for 2D
+and 3D values. Constructors remain usable for detached source-shaped values;
+validation is explicit because a conformer does not carry an atom count by
+itself.
 
 ### Why this matters
 
-The architecture document says the model owns local structural validity, but
-these constructors permit detached values that are internally inconsistent.
-Runtime validation cannot be the only protection if algorithms exchange model
-values directly.
+These checks make model-level structural validity observable before an
+algorithm hands a block to another layer. Runtime topology and coordinate
+commit paths invoke the same checks, while cache validity and operation
+contracts remain runtime-owned.
 
-### Resolution questions
+### Resolution
 
-- Which invariants can be checked without knowing the owning molecule's
-  operation lifecycle?
-- Should blocks use private fields plus validated constructors, or public
-  fields plus an explicit `validate()` boundary?
-- Where should atom-count/conformer-count relationships be checked when the
-  block does not itself carry atom count?
+Resolved for this slice. Local checks live in `cosmolkit-model`; cross-block
+atom-count checks are invoked by the runtime with the authoritative topology
+size. No runtime cache, operation contract, or mapping authority was moved
+into the model crate.
 
-The eventual design must distinguish local structural invariants from
-runtime cache and operation-contract invariants.
-
-## F-02: Feature graph still leaks implementation dependencies
+## F-02: Feature capability graph
 
 ### Evidence
 
-Current core features include relationships such as:
+The previous core feature graph included relationships such as:
 
 ```toml
 batch = ["dep:indicatif", "dep:rayon", "depict", "fingerprints", "io"]
@@ -310,37 +309,70 @@ hashing = ["fingerprints"]
 
 ### Why this matters
 
-Implementation reuse is currently expressed as public capability implication.
-Enabling one feature can expose unrelated APIs and pull in unrelated domain
-dependencies. This contradicts the intended separation between fine-grained
+Implementation reuse was expressed as public capability implication. Enabling
+one feature could expose unrelated APIs and pull in unrelated domain
+dependencies, contrary to the intended separation between fine-grained
 capabilities and user-facing bundles.
 
-### Resolution questions
+### Resolution
 
-1. Which dependencies are genuinely shared lower-level implementations?
-2. Which current feature edges only exist because code remains colocated in
-   core?
-3. Which bundles should be defined in `cosmolkit`, while core features remain
-   independently selectable?
+Resolved for this colocated implementation slice. `cosmolkit` public features
+now select only their matching `cosmolkit-core` feature. Core records necessary
+same-crate reuse with explicit `__*` implementation features, so hashing can
+reuse fingerprint internals and batch can reuse IO/depict/fingerprint code
+without enabling the corresponding public facade capabilities. These aliases
+are intentionally temporary and will be removed when the implementation
+crates are split.
 
-This should be addressed after the concrete model boundary is stable, because
-moving implementation can change the true dependency graph.
+## R-01: Molecule and operation runtime remain in core
+
+### Evidence
+
+The target architecture assigns the public `Molecule`, `MoleculeBuilder`,
+`OpParts`, operation specifications, generated registries, and contract runtime
+to `cosmolkit`. In the current workspace, `Molecule` and `MoleculeBuilder`
+remain in `cosmolkit-core/src/model`, while `OpParts` and the operation runtime
+remain in `cosmolkit-core/src/operations/ops`.
+
+### Why this matters
+
+The shared value model has been extracted, but the authoritative live-state
+owner and operation lifecycle have not yet moved to the public runtime crate.
+Until that migration is complete, `cosmolkit-core` is still more than a pure
+algorithm crate and the dependency boundary described by the architecture
+document is not yet enforceable by the crate graph.
+
+### Constraints for the fix
+
+- Keep exactly one `Molecule` representation and one operation runtime.
+- Move ownership in vertical slices; do not add a second facade-side runtime.
+- Preserve the existing public `cosmolkit` API while changing the internal
+  owner and dependency direction.
 
 ## Recommended resolution order
 
 The issues should be handled in this order:
 
-1. Define the complete authoritative concrete model and eliminate M-01's
-   duplicate `Atom`/`Bond` types.
-2. Move query data definitions out of search and make M-02 real rather than a
-   re-export facade.
-3. Resolve S-01 and S-02 together so query operations no longer depend on a
-   general `QueryGraph -> Molecule` projection.
-4. Fix F-01 and decide the final ownership of pattern fingerprinting.
-5. Reassess Q-01 and Q-02 after the data/behavior split is real.
+1. Keep the completed M-01 model extraction as the base and do not reintroduce
+   duplicate concrete values.
+2. ~~Move query data definitions out of search and make M-02 real rather than a
+   re-export facade.~~ Completed in the current extraction slice; the model is
+   the canonical owner and core re-exports are compatibility-only.
+3. ~~Keep the S-01 production boundary intact. Replace the remaining
+   test-only Pattern/Layered fingerprint projection when the matcher gains a
+   direct QueryGraph target boundary.~~ S-01 is complete: no QueryGraph to
+   Molecule projection remains. S-02's modeled CX/stereo post-processing is
+   complete.
+4. ~~Fix F-01~~ Completed in the current extraction slice; decide the final
+   ownership of pattern fingerprinting together with S-01.
+5. ~~Resolve Q-01's compatibility wrappers.~~ Production paths now use the
+   explicit `atom()`/`bond()` and mandatory `predicate()` APIs; migrate legacy
+   test fixtures separately, then continue with Q-02.
 6. Add model-local validation for M-03.
 7. Rebuild the feature graph under F-02 once actual crate dependencies are
    known.
+8. Migrate `Molecule` and the operation runtime under R-01 after the value and
+   query boundaries are stable.
 
 ## Acceptance boundary
 
@@ -351,6 +383,7 @@ This report is closed only when:
 - query data has a canonical model definition independent of search behavior;
 - SMARTS and matcher code operate on the canonical query model without a
   general legacy molecule projection;
+- the target live-state owner and operation runtime are located in `cosmolkit`;
 - `cargo check -p cosmolkit-core --no-default-features` succeeds;
 - no duplicate operation or query implementation remains;
 - feature bundles do not accidentally expose unrelated domain capabilities;

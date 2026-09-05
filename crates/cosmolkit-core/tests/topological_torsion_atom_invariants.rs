@@ -20,7 +20,8 @@ fn carbon_star(degree: usize) -> Molecule {
     let mut builder = Molecule::builder();
     let center = builder.add_atom(AtomSpec::new(Element::C).with_hybridization(Hybridization::Sp3));
     for _ in 0..degree {
-        let leaf = builder.add_atom(AtomSpec::new(Element::H).with_hybridization(Hybridization::Sp3));
+        let leaf =
+            builder.add_atom(AtomSpec::new(Element::H).with_hybridization(Hybridization::Sp3));
         builder
             .add_bond(BondSpec::new(center, leaf, BondOrder::Single))
             .expect("star bond");
@@ -90,7 +91,8 @@ fn topological_torsion_atom_invariants_cover_aromatic_hybridization_and_explicit
 fn topological_torsion_atom_invariants_cover_dative_direction_and_modulo_boundaries() {
     let mut builder = Molecule::builder();
     let donor = builder.add_atom(AtomSpec::new(Element::C).with_hybridization(Hybridization::Sp2));
-    let acceptor = builder.add_atom(AtomSpec::new(Element::N).with_hybridization(Hybridization::Sp2));
+    let acceptor =
+        builder.add_atom(AtomSpec::new(Element::N).with_hybridization(Hybridization::Sp2));
     builder
         .add_bond(BondSpec::new(donor, acceptor, BondOrder::Dative))
         .expect("dative bond");
@@ -143,7 +145,9 @@ fn topological_torsion_atom_invariants_cover_correction_clone_and_json() {
     let boron = one_atom(AtomSpec::new(Element::B).with_hybridization(Hybridization::Sp3));
     let generator = AtomPairAtomInvGenerator::new(false, true);
     assert_eq!(
-        generator.getAtomInvariants(&boron).expect("corrected boron"),
+        generator
+            .getAtomInvariants(&boron)
+            .expect("corrected boron"),
         vec![u32::MAX - 1]
     );
     assert_eq!(

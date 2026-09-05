@@ -1,6 +1,8 @@
 use crate::source::base::ichi_bns::mark_alt_bonds_and_taut_groups;
 use crate::source::base::ichican2::{DeAllocBCN, GetBaseCanonRanking};
-use crate::source::base::ichicano::{AllocateCS, Canon_INChI, DeAllocateCS, GetCanonLengths, UpdateFullLinearCT};
+use crate::source::base::ichicano::{
+    AllocateCS, Canon_INChI, DeAllocateCS, GetCanonLengths, UpdateFullLinearCT,
+};
 use crate::source::base::ichiisot::set_atom_iso_sort_keys;
 use crate::source::base::ichimak2::FillOutINChI;
 use crate::source::base::ichinorm::MarkRingSystemsInp;
@@ -9,46 +11,60 @@ use crate::source::base::ichisort::{
     CreateNeighListFromLinearCT, FreeNeighList, insertions_sort, insertions_sort_AT_RANK,
 };
 use crate::source::base::ichister::set_stereo_parity;
-use crate::source::base::ichitaut::{CountTautomerGroups, make_a_copy_of_t_group_info, set_tautomer_iso_sort_keys};
+use crate::source::base::ichitaut::{
+    CountTautomerGroups, make_a_copy_of_t_group_info, set_tautomer_iso_sort_keys,
+};
 use crate::source::base::mol2atom::FreeInpAtom;
 use crate::source::base::strutil::{add_DT_to_num_H, remove_terminal_HDT};
-use crate::source::base::util::{get_periodic_table_number, inchi_calloc, inchi_free, inchi_malloc};
+use crate::source::base::util::{
+    get_periodic_table_number, inchi_calloc, inchi_free, inchi_malloc,
+};
 use crate::source_types::{
-    _IS_ERROR, _IS_FATAL, _IS_OKAY, _IS_WARNING, AB_PARITY_UNDF, AB_PARITY_UNKN, AT_NUMB, AT_RANK, ATOM_SIZES,
-    ATT_PROTON, BCN, CANON_GLOBALS, CANON_MODE_CT, CANON_MODE_ISO, CANON_MODE_ISO_STEREO, CANON_MODE_STEREO,
-    CANON_MODE_TAUT, CANON_STAT, CMODE_NO_ALT_SBONDS, CMODE_NOEQ_STEREO, CMODE_RACEMIC_STEREO, CMODE_REDNDNT_STEREO,
-    CMODE_RELATIVE_STEREO, CMODE_SB_IGN_ALL_UU, CMODE_SC_IGN_ALL_UU, CT_CANON_ERR, CT_ERR_MAX, CT_ERR_MIN,
-    CT_TAUCOUNT_ERR, EQL_SP2, EQL_SP3, ERR_NO_CANON_RESULTS, FLAG_NORM_CONSIDER_TAUT, ICR, ICR_MAX_DIFF_FIXED_H,
-    ICR_MAX_ENDP_IN1_ONLY, ICR_MAX_ENDP_IN2_ONLY, ICR_MAX_SB_IN1_ONLY, ICR_MAX_SB_IN2_ONLY, ICR_MAX_SB_UNDF,
-    ICR_MAX_SC_IN1_ONLY, ICR_MAX_SC_IN2_ONLY, ICR_MAX_SC_UNDF, INCHI_CLOCK, INCHI_FLAG_RAC_STEREO,
-    INCHI_FLAG_REL_STEREO, INCHI_MODE, INCHI_SORT, INChI, INChI_Aux, INChI_Stereo, INP_ATOM_DATA, INPUT_PARMS,
-    MAX_ATOMS, NUM_H_ISOTOPES, ORIG_ATOM_DATA, PES_BIT_ARSINE_STEREO, PES_BIT_FIX_SP3_BUG, PES_BIT_PHOSPHINE_STEREO,
-    PES_BIT_POINT_EDGE_STEREO, REQ_MODE_BASIC, REQ_MODE_DEFAULT, REQ_MODE_DIFF_UU_STEREO, REQ_MODE_ISO,
-    REQ_MODE_ISO_STEREO, REQ_MODE_NO_ALT_SBONDS, REQ_MODE_NOEQ_STEREO, REQ_MODE_NON_ISO, REQ_MODE_RACEMIC_STEREO,
-    REQ_MODE_REDNDNT_STEREO, REQ_MODE_RELATIVE_STEREO, REQ_MODE_SB_IGN_ALL_UU, REQ_MODE_SC_IGN_ALL_UU, REQ_MODE_STEREO,
-    REQ_MODE_TAUT, SourceConstPointer, SourceHeap, SourceHeapError, SourceMutPointer, StableSourceConstSlice,
-    StableSourceSlice, T_GROUP_INFO, TAUT_NON, TAUT_NUM, TAUT_YES, TG_FLAG_ALL_TAUTOMERIC, TG_FLAG_ARSINE_STEREO,
-    TG_FLAG_FIX_ISO_FIXEDH_BUG, TG_FLAG_FIX_SP3_BUG, TG_FLAG_FIX_TERM_H_CHRG_BUG, TG_FLAG_FOUND_ISOTOPIC_ATOM_DONE,
-    TG_FLAG_FOUND_ISOTOPIC_H_DONE, TG_FLAG_H_ALREADY_REMOVED, TG_FLAG_PHOSPHINE_STEREO, TG_FLAG_POINTED_EDGE_STEREO,
-    WARN_FAILED_ISOTOPIC, WARN_FAILED_ISOTOPIC_STEREO, WARN_FAILED_STEREO, clock_t, inchiTime, inp_ATOM, sp_ATOM,
-    tagDiffINChILayers_DIFL_F, tagDiffINChILayers_DIFL_FI, tagDiffINChILayers_DIFL_M, tagDiffINChILayers_DIFL_MI,
-    tagDiffINChISegments_DIFS_b_SBONDS, tagDiffINChISegments_DIFS_f_FORMULA, tagDiffINChISegments_DIFS_h_H_ATOMS,
-    tagDiffINChISegments_DIFS_i_IATOMS, tagDiffINChISegments_DIFS_m_SP3INV, tagDiffINChISegments_DIFS_o_TRANSP,
-    tagDiffINChISegments_DIFS_q_CHARGE, tagDiffINChISegments_DIFS_s_STYPE, tagDiffINChISegments_DIFS_t_SATOMS,
+    _IS_ERROR, _IS_FATAL, _IS_OKAY, _IS_WARNING, AB_PARITY_UNDF, AB_PARITY_UNKN, AT_NUMB, AT_RANK,
+    ATOM_SIZES, ATT_PROTON, BCN, CANON_GLOBALS, CANON_MODE_CT, CANON_MODE_ISO,
+    CANON_MODE_ISO_STEREO, CANON_MODE_STEREO, CANON_MODE_TAUT, CANON_STAT, CMODE_NO_ALT_SBONDS,
+    CMODE_NOEQ_STEREO, CMODE_RACEMIC_STEREO, CMODE_REDNDNT_STEREO, CMODE_RELATIVE_STEREO,
+    CMODE_SB_IGN_ALL_UU, CMODE_SC_IGN_ALL_UU, CT_CANON_ERR, CT_ERR_MAX, CT_ERR_MIN,
+    CT_TAUCOUNT_ERR, EQL_SP2, EQL_SP3, ERR_NO_CANON_RESULTS, FLAG_NORM_CONSIDER_TAUT, ICR,
+    ICR_MAX_DIFF_FIXED_H, ICR_MAX_ENDP_IN1_ONLY, ICR_MAX_ENDP_IN2_ONLY, ICR_MAX_SB_IN1_ONLY,
+    ICR_MAX_SB_IN2_ONLY, ICR_MAX_SB_UNDF, ICR_MAX_SC_IN1_ONLY, ICR_MAX_SC_IN2_ONLY,
+    ICR_MAX_SC_UNDF, INCHI_CLOCK, INCHI_FLAG_RAC_STEREO, INCHI_FLAG_REL_STEREO, INCHI_MODE,
+    INCHI_SORT, INChI, INChI_Aux, INChI_Stereo, INP_ATOM_DATA, INPUT_PARMS, MAX_ATOMS,
+    NUM_H_ISOTOPES, ORIG_ATOM_DATA, PES_BIT_ARSINE_STEREO, PES_BIT_FIX_SP3_BUG,
+    PES_BIT_PHOSPHINE_STEREO, PES_BIT_POINT_EDGE_STEREO, REQ_MODE_BASIC, REQ_MODE_DEFAULT,
+    REQ_MODE_DIFF_UU_STEREO, REQ_MODE_ISO, REQ_MODE_ISO_STEREO, REQ_MODE_NO_ALT_SBONDS,
+    REQ_MODE_NOEQ_STEREO, REQ_MODE_NON_ISO, REQ_MODE_RACEMIC_STEREO, REQ_MODE_REDNDNT_STEREO,
+    REQ_MODE_RELATIVE_STEREO, REQ_MODE_SB_IGN_ALL_UU, REQ_MODE_SC_IGN_ALL_UU, REQ_MODE_STEREO,
+    REQ_MODE_TAUT, SourceConstPointer, SourceHeap, SourceHeapError, SourceMutPointer,
+    StableSourceConstSlice, StableSourceSlice, T_GROUP_INFO, TAUT_NON, TAUT_NUM, TAUT_YES,
+    TG_FLAG_ALL_TAUTOMERIC, TG_FLAG_ARSINE_STEREO, TG_FLAG_FIX_ISO_FIXEDH_BUG, TG_FLAG_FIX_SP3_BUG,
+    TG_FLAG_FIX_TERM_H_CHRG_BUG, TG_FLAG_FOUND_ISOTOPIC_ATOM_DONE, TG_FLAG_FOUND_ISOTOPIC_H_DONE,
+    TG_FLAG_H_ALREADY_REMOVED, TG_FLAG_PHOSPHINE_STEREO, TG_FLAG_POINTED_EDGE_STEREO,
+    WARN_FAILED_ISOTOPIC, WARN_FAILED_ISOTOPIC_STEREO, WARN_FAILED_STEREO, clock_t, inchiTime,
+    inp_ATOM, sp_ATOM, tagDiffINChILayers_DIFL_F, tagDiffINChILayers_DIFL_FI,
+    tagDiffINChILayers_DIFL_M, tagDiffINChILayers_DIFL_MI, tagDiffINChISegments_DIFS_b_SBONDS,
+    tagDiffINChISegments_DIFS_f_FORMULA, tagDiffINChISegments_DIFS_h_H_ATOMS,
+    tagDiffINChISegments_DIFS_i_IATOMS, tagDiffINChISegments_DIFS_m_SP3INV,
+    tagDiffINChISegments_DIFS_o_TRANSP, tagDiffINChISegments_DIFS_q_CHARGE,
+    tagDiffINChISegments_DIFS_s_STYPE, tagDiffINChISegments_DIFS_t_SATOMS,
     tagInchiDiffBits_IDIF_ATOMS, tagInchiDiffBits_IDIF_CHARGE, tagInchiDiffBits_IDIF_CON_LEN,
-    tagInchiDiffBits_IDIF_CON_TBL, tagInchiDiffBits_IDIF_DIFF_TG_ENDP, tagInchiDiffBits_IDIF_EXTRA_TG_ENDP,
-    tagInchiDiffBits_IDIF_ISO_AT, tagInchiDiffBits_IDIF_LESS_FH, tagInchiDiffBits_IDIF_LESS_H,
-    tagInchiDiffBits_IDIF_MISS_TG_ENDP, tagInchiDiffBits_IDIF_MORE_FH, tagInchiDiffBits_IDIF_MORE_H,
-    tagInchiDiffBits_IDIF_MULTIPLE_TG, tagInchiDiffBits_IDIF_NO_TAUT, tagInchiDiffBits_IDIF_NUM_AT,
-    tagInchiDiffBits_IDIF_NUM_EL, tagInchiDiffBits_IDIF_NUM_ISO_AT, tagInchiDiffBits_IDIF_NUM_TG,
-    tagInchiDiffBits_IDIF_POSITION_H, tagInchiDiffBits_IDIF_PROBLEM, tagInchiDiffBits_IDIF_REM_ISO_H,
-    tagInchiDiffBits_IDIF_REM_PROT, tagInchiDiffBits_IDIF_SB_EXTRA, tagInchiDiffBits_IDIF_SB_EXTRA_UNDF,
-    tagInchiDiffBits_IDIF_SB_MISS, tagInchiDiffBits_IDIF_SB_MISS_UNDF, tagInchiDiffBits_IDIF_SB_PARITY,
-    tagInchiDiffBits_IDIF_SC_EXTRA, tagInchiDiffBits_IDIF_SC_EXTRA_UNDF, tagInchiDiffBits_IDIF_SC_INV,
-    tagInchiDiffBits_IDIF_SC_MISS, tagInchiDiffBits_IDIF_SC_MISS_UNDF, tagInchiDiffBits_IDIF_SC_PARITY,
-    tagInchiDiffBits_IDIF_SINGLE_TG, tagInchiDiffBits_IDIF_TG, tagInchiDiffBits_IDIF_WRONG_TAUT,
-    tagMarkDiff_DIFV_BOTH_EMPTY, tagMarkDiff_DIFV_EQL2PRECED, tagMarkDiff_DIFV_FI_EQ_MI, tagMarkDiff_DIFV_IS_EMPTY,
-    tagMarkDiff_DIFV_NEQ2PRECED, tagMarkDiff_DIFV_OUTPUT_OMIT_F,
+    tagInchiDiffBits_IDIF_CON_TBL, tagInchiDiffBits_IDIF_DIFF_TG_ENDP,
+    tagInchiDiffBits_IDIF_EXTRA_TG_ENDP, tagInchiDiffBits_IDIF_ISO_AT,
+    tagInchiDiffBits_IDIF_LESS_FH, tagInchiDiffBits_IDIF_LESS_H,
+    tagInchiDiffBits_IDIF_MISS_TG_ENDP, tagInchiDiffBits_IDIF_MORE_FH,
+    tagInchiDiffBits_IDIF_MORE_H, tagInchiDiffBits_IDIF_MULTIPLE_TG, tagInchiDiffBits_IDIF_NO_TAUT,
+    tagInchiDiffBits_IDIF_NUM_AT, tagInchiDiffBits_IDIF_NUM_EL, tagInchiDiffBits_IDIF_NUM_ISO_AT,
+    tagInchiDiffBits_IDIF_NUM_TG, tagInchiDiffBits_IDIF_POSITION_H, tagInchiDiffBits_IDIF_PROBLEM,
+    tagInchiDiffBits_IDIF_REM_ISO_H, tagInchiDiffBits_IDIF_REM_PROT,
+    tagInchiDiffBits_IDIF_SB_EXTRA, tagInchiDiffBits_IDIF_SB_EXTRA_UNDF,
+    tagInchiDiffBits_IDIF_SB_MISS, tagInchiDiffBits_IDIF_SB_MISS_UNDF,
+    tagInchiDiffBits_IDIF_SB_PARITY, tagInchiDiffBits_IDIF_SC_EXTRA,
+    tagInchiDiffBits_IDIF_SC_EXTRA_UNDF, tagInchiDiffBits_IDIF_SC_INV,
+    tagInchiDiffBits_IDIF_SC_MISS, tagInchiDiffBits_IDIF_SC_MISS_UNDF,
+    tagInchiDiffBits_IDIF_SC_PARITY, tagInchiDiffBits_IDIF_SINGLE_TG, tagInchiDiffBits_IDIF_TG,
+    tagInchiDiffBits_IDIF_WRONG_TAUT, tagMarkDiff_DIFV_BOTH_EMPTY, tagMarkDiff_DIFV_EQL2PRECED,
+    tagMarkDiff_DIFV_FI_EQ_MI, tagMarkDiff_DIFV_IS_EMPTY, tagMarkDiff_DIFV_NEQ2PRECED,
+    tagMarkDiff_DIFV_OUTPUT_OMIT_F,
 };
 
 fn copy_inp_atom_prefix(
@@ -183,7 +199,9 @@ pub(crate) fn inp2spATOM(
             if valence > 20 {
                 return Err(SourceHeapError::PointerOutOfBounds);
             }
-            for index in 0..usize::try_from(valence.max(0)).map_err(|_| SourceHeapError::SourceIntegerOverflow)? {
+            for index in 0..usize::try_from(valence.max(0))
+                .map_err(|_| SourceHeapError::SourceIntegerOverflow)?
+            {
                 destination.neighbor[index] = source.neighbor[index];
                 destination.bond_type[index] = source.bond_type[index];
             }
@@ -1949,7 +1967,8 @@ pub(crate) fn CheckCanonNumberingCorrectness(
     };
     let computation = (|| -> Result<i32, SourceHeapError> {
         let mut error_code = 0_i32;
-        let total = usize::try_from(num_at_tg).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+        let total =
+            usize::try_from(num_at_tg).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
 
         let nonisotopic_order = if pCS.nLenCanonOrdStereo > 0 {
             pCS.nCanonOrdStereo
@@ -1965,7 +1984,18 @@ pub(crate) fn CheckCanonNumberingCorrectness(
                 let order = heap.slice(nonisotopic_order.as_const())?[i];
                 heap.slice_mut(ranks)?[usize::from(order)] = (i as AT_NUMB).wrapping_add(1);
             }
-            if UpdateFullLinearCT(heap, num_atoms, num_at_tg, at, ranks, nonisotopic_order, pCS, pCG, 0)? != 0 {
+            if UpdateFullLinearCT(
+                heap,
+                num_atoms,
+                num_at_tg,
+                at,
+                ranks,
+                nonisotopic_order,
+                pCS,
+                pCG,
+                0,
+            )? != 0
+            {
                 error_code |= WARN_FAILED_STEREO as i32;
             }
 
@@ -1981,7 +2011,18 @@ pub(crate) fn CheckCanonNumberingCorrectness(
                     let order = heap.slice(isotopic_order.as_const())?[i];
                     heap.slice_mut(ranks)?[usize::from(order)] = (i as AT_NUMB).wrapping_add(1);
                 }
-                if UpdateFullLinearCT(heap, num_atoms, num_at_tg, at, ranks, isotopic_order, pCS, pCG, 0)? != 0 {
+                if UpdateFullLinearCT(
+                    heap,
+                    num_atoms,
+                    num_at_tg,
+                    at,
+                    ranks,
+                    isotopic_order,
+                    pCS,
+                    pCG,
+                    0,
+                )? != 0
+                {
                     error_code |= if pCS.nLenCanonOrdIsotopicStereo != 0 {
                         WARN_FAILED_ISOTOPIC_STEREO as i32
                     } else {
@@ -2074,8 +2115,9 @@ pub(crate) fn GetElementAndCount(
                     .get_mut(..symbol_length)
                     .ok_or(SourceHeapError::PointerOutOfBounds)?
                     .copy_from_slice(&symbol[..symbol_length]);
-                let number =
-                    (*formula).offset(i64::try_from(consumed).map_err(|_| SourceHeapError::SourceIntegerOverflow)?)?;
+                let number = (*formula).offset(
+                    i64::try_from(consumed).map_err(|_| SourceHeapError::SourceIntegerOverflow)?,
+                )?;
                 if has_digits {
                     let mut end = SourceConstPointer::null();
                     *count = inchi_strtol(heap, number, Some(&mut end), 10)? as i32;
@@ -2568,7 +2610,10 @@ pub(crate) fn CompINChITautVsNonTaut(
     };
     let i1_pointer = p1.pINChI[n1];
     let p2_non = p2.pINChI[taut_non];
-    let i2_pointer = if n1 == taut_yes && !p2_non.is_null() && heap.slice(p2_non.as_const())?[0].nNumberOfAtoms != 0 {
+    let i2_pointer = if n1 == taut_yes
+        && !p2_non.is_null()
+        && heap.slice(p2_non.as_const())?[0].nNumberOfAtoms != 0
+    {
         p2_non
     } else {
         crate::source_types::SourceMutPointer::null()
@@ -2604,7 +2649,8 @@ pub(crate) fn CompINChITautVsNonTaut(
     if ret != 0 {
         return Ok(ret);
     }
-    let atom_count = usize::try_from(i1.nNumberOfAtoms.max(0)).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+    let atom_count = usize::try_from(i1.nNumberOfAtoms.max(0))
+        .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
     let atoms1 = heap
         .slice(i1.nAtom.as_const())?
         .get(..atom_count)
@@ -2623,8 +2669,8 @@ pub(crate) fn CompINChITautVsNonTaut(
     if ret != 0 {
         return Ok(ret);
     }
-    let connection_count =
-        usize::try_from(i2.lenConnTable.max(0)).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+    let connection_count = usize::try_from(i2.lenConnTable.max(0))
+        .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
     if connection_count > 0 {
         let connections1 = heap
             .slice(i1.nConnTable.as_const())?
@@ -2687,18 +2733,26 @@ pub(crate) fn CompINChITautVsNonTaut(
     } else {
         Some(heap.slice(i2.Stereo.as_const())?[0].clone())
     };
-    let ret = CompareInchiStereo(heap, stereo1.as_ref(), i1.nFlags, stereo2.as_ref(), i2.nFlags)?;
+    let ret = CompareInchiStereo(
+        heap,
+        stereo1.as_ref(),
+        i1.nFlags,
+        stereo2.as_ref(),
+        i2.nFlags,
+    )?;
     if ret != 0 {
         return Ok(ret);
     }
 
     if compare_isotopic != 0 {
-        let ret = i2.nNumberOfIsotopicAtoms.wrapping_sub(i1.nNumberOfIsotopicAtoms);
+        let ret = i2
+            .nNumberOfIsotopicAtoms
+            .wrapping_sub(i1.nNumberOfIsotopicAtoms);
         if ret != 0 {
             return Ok(ret);
         }
-        let isotope_count =
-            usize::try_from(i1.nNumberOfIsotopicAtoms.max(0)).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+        let isotope_count = usize::try_from(i1.nNumberOfIsotopicAtoms.max(0))
+            .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
         if isotope_count > 0 {
             let isotopes1 = heap
                 .slice(i1.IsotopicAtom.as_const())?
@@ -2710,8 +2764,10 @@ pub(crate) fn CompINChITautVsNonTaut(
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
             for index in 0..isotope_count {
                 for ret in [
-                    i32::from(isotopes2[index].nAtomNumber) - i32::from(isotopes1[index].nAtomNumber),
-                    i32::from(isotopes2[index].nIsoDifference) - i32::from(isotopes1[index].nIsoDifference),
+                    i32::from(isotopes2[index].nAtomNumber)
+                        - i32::from(isotopes1[index].nAtomNumber),
+                    i32::from(isotopes2[index].nIsoDifference)
+                        - i32::from(isotopes1[index].nIsoDifference),
                 ] {
                     if ret != 0 {
                         return Ok(ret);
@@ -2743,7 +2799,13 @@ pub(crate) fn CompINChITautVsNonTaut(
         } else {
             Some(heap.slice(i2.StereoIsotopic.as_const())?[0].clone())
         };
-        let ret = CompareInchiStereo(heap, stereo1.as_ref(), i1.nFlags, stereo2.as_ref(), i2.nFlags)?;
+        let ret = CompareInchiStereo(
+            heap,
+            stereo1.as_ref(),
+            i1.nFlags,
+            stereo2.as_ref(),
+            i2.nFlags,
+        )?;
         if ret != 0 {
             return Ok(ret);
         }
@@ -3714,7 +3776,10 @@ pub(crate) fn CompINChILayers(
     };
     let i1_pointer = p1.pINChI[n1];
     let p2_non = p2.pINChI[taut_non];
-    let i2_pointer = if n1 == taut_yes && !p2_non.is_null() && heap.slice(p2_non.as_const())?[0].nNumberOfAtoms != 0 {
+    let i2_pointer = if n1 == taut_yes
+        && !p2_non.is_null()
+        && heap.slice(p2_non.as_const())?[0].nNumberOfAtoms != 0
+    {
         p2_non
     } else {
         Default::default()
@@ -3767,7 +3832,11 @@ pub(crate) fn CompINChILayers(
         }
     } else {
         difference_segments[M][FORMULA] |= BOTH_EMPTY;
-        difference_segments[F][FORMULA] |= if formula2_present { NOT_EQUAL } else { BOTH_EMPTY };
+        difference_segments[F][FORMULA] |= if formula2_present {
+            NOT_EQUAL
+        } else {
+            BOTH_EMPTY
+        };
     }
 
     difference_segments[M][FORMULA] |= if i1_live.is_some_and(|inchi| inchi.lenConnTable > 1) {
@@ -3777,13 +3846,14 @@ pub(crate) fn CompINChILayers(
     };
 
     let mobile_h_present = if let Some(inchi) = i1_live {
-        let tautomeric =
-            inchi.lenTautomer > 0 && !inchi.nTautomer.is_null() && heap.slice(inchi.nTautomer.as_const())?[0] != 0;
+        let tautomeric = inchi.lenTautomer > 0
+            && !inchi.nTautomer.is_null()
+            && heap.slice(inchi.nTautomer.as_const())?[0] != 0;
         if tautomeric {
             true
         } else if !inchi.nNum_H.is_null() {
-            let count =
-                usize::try_from(inchi.nNumberOfAtoms.max(0)).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+            let count = usize::try_from(inchi.nNumberOfAtoms.max(0))
+                .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
             heap.slice(inchi.nNum_H.as_const())?
                 .get(..count)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?
@@ -3795,13 +3865,17 @@ pub(crate) fn CompINChILayers(
     } else {
         false
     };
-    difference_segments[M][H_ATOMS] |= if mobile_h_present { NOT_EQUAL } else { BOTH_EMPTY };
+    difference_segments[M][H_ATOMS] |= if mobile_h_present {
+        NOT_EQUAL
+    } else {
+        BOTH_EMPTY
+    };
     let fixed_h_present = if let (Some(first), Some(second)) = (i1_live, i2_live) {
         if second.nNum_H_fixed.is_null() {
             false
         } else {
-            let count =
-                usize::try_from(first.nNumberOfAtoms.max(0)).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+            let count = usize::try_from(first.nNumberOfAtoms.max(0))
+                .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
             heap.slice(second.nNum_H_fixed.as_const())?
                 .get(..count)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?
@@ -3811,10 +3885,18 @@ pub(crate) fn CompINChILayers(
     } else {
         false
     };
-    difference_segments[F][H_ATOMS] |= if fixed_h_present { NOT_EQUAL } else { BOTH_EMPTY };
+    difference_segments[F][H_ATOMS] |= if fixed_h_present {
+        NOT_EQUAL
+    } else {
+        BOTH_EMPTY
+    };
 
     if let Some(first) = i1_live {
-        difference_segments[M][CHARGE] |= if first.nTotalCharge != 0 { NOT_EQUAL } else { BOTH_EMPTY };
+        difference_segments[M][CHARGE] |= if first.nTotalCharge != 0 {
+            NOT_EQUAL
+        } else {
+            BOTH_EMPTY
+        };
         if let Some(second) = i2_live {
             difference_segments[F][CHARGE] |= if first.nTotalCharge != 0 {
                 if first.nTotalCharge == second.nTotalCharge {
@@ -3830,7 +3912,10 @@ pub(crate) fn CompINChILayers(
                 BOTH_EMPTY
             };
         } else if i2.is_none() {
-            let fixed_mark = if fix_transposed_charge_bug == 1 && p1.ord_number != p2.ord_number && n1 == taut_yes {
+            let fixed_mark = if fix_transposed_charge_bug == 1
+                && p1.ord_number != p2.ord_number
+                && n1 == taut_yes
+            {
                 let p2_taut = p2.pINChI[taut_yes];
                 if !p2_taut.is_null() {
                     let second_taut = &heap.slice(p2_taut.as_const())?[0];
@@ -3865,7 +3950,11 @@ pub(crate) fn CompINChILayers(
             };
             difference_segments[F][CHARGE] |= fixed_mark;
         } else {
-            difference_segments[F][CHARGE] |= if first.nTotalCharge != 0 { IS_EMPTY } else { BOTH_EMPTY };
+            difference_segments[F][CHARGE] |= if first.nTotalCharge != 0 {
+                IS_EMPTY
+            } else {
+                BOTH_EMPTY
+            };
         }
     } else {
         difference_segments[M][CHARGE] |= BOTH_EMPTY;
@@ -3898,7 +3987,9 @@ pub(crate) fn CompINChILayers(
     } else {
         None
     };
-    let has_bonds = |stereo: Option<&INChI_Stereo>| stereo.is_some_and(|stereo| stereo.nNumberOfStereoBonds != 0);
+    let has_bonds = |stereo: Option<&INChI_Stereo>| {
+        stereo.is_some_and(|stereo| stereo.nNumberOfStereoBonds != 0)
+    };
     let s1 = stereo1.as_ref();
     let is1 = iso_stereo1.as_ref();
     let s2 = stereo2.as_ref();
@@ -4096,7 +4187,10 @@ pub(crate) fn CompINChILayers(
     difference_segments[FI][STYPE] |= if rel_rac[FI] & SP3_TYPE != 0 {
         if rel_rac[FI] & SP3_TYPE == rel_rac[F] & SP3_TYPE {
             EQUAL
-        } else if rel_rac[M] & SP3_TYPE == 0 && rel_rac[F] & SP3_TYPE == 0 && rel_rac[MI] & SP3_TYPE != 0 {
+        } else if rel_rac[M] & SP3_TYPE == 0
+            && rel_rac[F] & SP3_TYPE == 0
+            && rel_rac[MI] & SP3_TYPE != 0
+        {
             FI_EQ_MI
         } else {
             NOT_EQUAL
@@ -4113,11 +4207,17 @@ pub(crate) fn CompINChILayers(
         difference_segments[F][TRANSP] |= NOT_EQUAL;
     }
 
-    let isotopic1_present =
-        i1_live.is_some_and(|inchi| inchi.nNumberOfIsotopicAtoms != 0 || inchi.nNumberOfIsotopicTGroups != 0);
-    difference_segments[MI][IATOMS] |= if isotopic1_present { NOT_EQUAL } else { BOTH_EMPTY };
+    let isotopic1_present = i1_live.is_some_and(|inchi| {
+        inchi.nNumberOfIsotopicAtoms != 0 || inchi.nNumberOfIsotopicTGroups != 0
+    });
+    difference_segments[MI][IATOMS] |= if isotopic1_present {
+        NOT_EQUAL
+    } else {
+        BOTH_EMPTY
+    };
     if let Some(second) = i2_live {
-        let isotopic2_present = second.nNumberOfIsotopicAtoms != 0 || second.nNumberOfIsotopicTGroups != 0;
+        let isotopic2_present =
+            second.nNumberOfIsotopicAtoms != 0 || second.nNumberOfIsotopicTGroups != 0;
         if isotopic2_present {
             let Some(first) = i1_live else {
                 difference_segments[FI][IATOMS] |= NOT_EQUAL;
@@ -4161,7 +4261,8 @@ pub(crate) fn CompINChILayers(
                                 different = true;
                                 break;
                             }
-                            let d_difference = i32::from(groups2[index].nNum_D) - i32::from(groups1[index].nNum_D);
+                            let d_difference =
+                                i32::from(groups2[index].nNum_D) - i32::from(groups1[index].nNum_D);
                             if d_difference != 0 {
                                 return Ok(d_difference);
                             }
@@ -4291,9 +4392,12 @@ pub(crate) fn CompareInchiStereo(
     // END INCHI C FUNCTION: CompareInchiStereo
 
     if let (Some(stereo1), Some(stereo2)) = (stereo1, stereo2) {
-        let bond_count = stereo1.nNumberOfStereoBonds.min(stereo2.nNumberOfStereoBonds);
+        let bond_count = stereo1
+            .nNumberOfStereoBonds
+            .min(stereo2.nNumberOfStereoBonds);
         if bond_count > 0 {
-            let count = usize::try_from(bond_count).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+            let count =
+                usize::try_from(bond_count).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
             let atom11 = heap
                 .slice(stereo1.nBondAtom1.as_const())?
                 .get(..count)
@@ -4337,9 +4441,12 @@ pub(crate) fn CompareInchiStereo(
         if ret != 0 {
             return Ok(ret);
         }
-        let center_count = stereo1.nNumberOfStereoCenters.min(stereo2.nNumberOfStereoCenters);
+        let center_count = stereo1
+            .nNumberOfStereoCenters
+            .min(stereo2.nNumberOfStereoCenters);
         if center_count > 0 {
-            let count = usize::try_from(center_count).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+            let count = usize::try_from(center_count)
+                .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
             let number1 = heap
                 .slice(stereo1.nNumber.as_const())?
                 .get(..count)
@@ -4371,17 +4478,22 @@ pub(crate) fn CompareInchiStereo(
         if ret != 0 {
             return Ok(ret);
         }
-        if (flags1 | flags2) & INCHI_MODE::from(INCHI_FLAG_RAC_STEREO | INCHI_FLAG_REL_STEREO) == 0 {
+        if (flags1 | flags2) & INCHI_MODE::from(INCHI_FLAG_RAC_STEREO | INCHI_FLAG_REL_STEREO) == 0
+        {
             let ret = i32::from(stereo2.nCompInv2Abs < 0) - i32::from(stereo1.nCompInv2Abs < 0);
             if ret != 0 {
                 return Ok(ret);
             }
         }
     } else {
-        if stereo2.is_some_and(|stereo| stereo.nNumberOfStereoBonds > 0 || stereo.nNumberOfStereoCenters > 0) {
+        if stereo2.is_some_and(|stereo| {
+            stereo.nNumberOfStereoBonds > 0 || stereo.nNumberOfStereoCenters > 0
+        }) {
             return Ok(1);
         }
-        if stereo1.is_some_and(|stereo| stereo.nNumberOfStereoBonds > 0 || stereo.nNumberOfStereoCenters > 0) {
+        if stereo1.is_some_and(|stereo| {
+            stereo.nNumberOfStereoBonds > 0 || stereo.nNumberOfStereoCenters > 0
+        }) {
             return Ok(-1);
         }
     }
@@ -4754,12 +4866,18 @@ pub(crate) fn CompINChI2(
     };
     let p1_non = p1.pINChI[taut_non];
     let p2_non = p2.pINChI[taut_non];
-    let i1n = if n1 == taut_yes && !p1_non.is_null() && heap.slice(p1_non.as_const())?[0].nNumberOfAtoms != 0 {
+    let i1n = if n1 == taut_yes
+        && !p1_non.is_null()
+        && heap.slice(p1_non.as_const())?[0].nNumberOfAtoms != 0
+    {
         Some(heap.slice(p1_non.as_const())?[0].clone())
     } else {
         None
     };
-    let i2n = if n2 == taut_yes && !p2_non.is_null() && heap.slice(p2_non.as_const())?[0].nNumberOfAtoms != 0 {
+    let i2n = if n2 == taut_yes
+        && !p2_non.is_null()
+        && heap.slice(p2_non.as_const())?[0].nNumberOfAtoms != 0
+    {
         Some(heap.slice(p2_non.as_const())?[0].clone())
     } else {
         None
@@ -4793,8 +4911,8 @@ pub(crate) fn CompINChI2(
     if ret != 0 {
         return Ok(ret);
     }
-    let atom_count =
-        usize::try_from(first.nNumberOfAtoms.max(0)).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+    let atom_count = usize::try_from(first.nNumberOfAtoms.max(0))
+        .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
     if atom_count > 0 {
         let atoms1 = heap
             .slice(first.nAtom.as_const())?
@@ -4815,8 +4933,8 @@ pub(crate) fn CompINChI2(
     if ret != 0 {
         return Ok(ret);
     }
-    let connection_count =
-        usize::try_from(second.lenConnTable.max(0)).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+    let connection_count = usize::try_from(second.lenConnTable.max(0))
+        .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
     if connection_count > 0 {
         let connections1 = heap
             .slice(first.nConnTable.as_const())?
@@ -4864,8 +4982,12 @@ pub(crate) fn CompINChI2(
     }
 
     if b_taut == TAUT_NON
-        && (i1n.as_ref().is_some_and(|value| !value.nNum_H_fixed.is_null())
-            || i2n.as_ref().is_some_and(|value| !value.nNum_H_fixed.is_null()))
+        && (i1n
+            .as_ref()
+            .is_some_and(|value| !value.nNum_H_fixed.is_null())
+            || i2n
+                .as_ref()
+                .is_some_and(|value| !value.nNum_H_fixed.is_null()))
     {
         let formula1 = i1n.as_ref().unwrap_or(first).szHillFormula;
         let formula2 = i2n.as_ref().unwrap_or(second).szHillFormula;
@@ -4906,8 +5028,8 @@ pub(crate) fn CompINChI2(
                 }
             }
             (Some(left), None) => {
-                let count =
-                    usize::try_from(left.nNumberOfAtoms.max(0)).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+                let count = usize::try_from(left.nNumberOfAtoms.max(0))
+                    .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
                 if heap
                     .slice(left.nNum_H_fixed.as_const())?
                     .get(..count)
@@ -4919,8 +5041,8 @@ pub(crate) fn CompINChI2(
                 }
             }
             (None, Some(right)) => {
-                let count =
-                    usize::try_from(right.nNumberOfAtoms.max(0)).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+                let count = usize::try_from(right.nNumberOfAtoms.max(0))
+                    .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
                 if heap
                     .slice(right.nNum_H_fixed.as_const())?
                     .get(..count)
@@ -4955,18 +5077,26 @@ pub(crate) fn CompINChI2(
     } else {
         Some(heap.slice(second.Stereo.as_const())?[0].clone())
     };
-    let ret = CompareInchiStereo(heap, stereo1.as_ref(), first.nFlags, stereo2.as_ref(), second.nFlags)?;
+    let ret = CompareInchiStereo(
+        heap,
+        stereo1.as_ref(),
+        first.nFlags,
+        stereo2.as_ref(),
+        second.nFlags,
+    )?;
     if ret != 0 {
         return Ok(ret);
     }
 
     if compare_isotopic != 0 {
-        let ret = second.nNumberOfIsotopicAtoms.wrapping_sub(first.nNumberOfIsotopicAtoms);
+        let ret = second
+            .nNumberOfIsotopicAtoms
+            .wrapping_sub(first.nNumberOfIsotopicAtoms);
         if ret != 0 {
             return Ok(ret);
         }
-        let isotope_count =
-            usize::try_from(first.nNumberOfIsotopicAtoms.max(0)).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+        let isotope_count = usize::try_from(first.nNumberOfIsotopicAtoms.max(0))
+            .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
         if isotope_count > 0 {
             let isotopes1 = heap
                 .slice(first.IsotopicAtom.as_const())?
@@ -4978,8 +5108,10 @@ pub(crate) fn CompINChI2(
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
             for index in 0..isotope_count {
                 for ret in [
-                    i32::from(isotopes2[index].nAtomNumber) - i32::from(isotopes1[index].nAtomNumber),
-                    i32::from(isotopes2[index].nIsoDifference) - i32::from(isotopes1[index].nIsoDifference),
+                    i32::from(isotopes2[index].nAtomNumber)
+                        - i32::from(isotopes1[index].nAtomNumber),
+                    i32::from(isotopes2[index].nIsoDifference)
+                        - i32::from(isotopes1[index].nIsoDifference),
                 ] {
                     if ret != 0 {
                         return Ok(ret);
@@ -5017,7 +5149,8 @@ pub(crate) fn CompINChI2(
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
             for index in 0..group_count {
                 for ret in [
-                    i32::from(groups2[index].nTGroupNumber) - i32::from(groups1[index].nTGroupNumber),
+                    i32::from(groups2[index].nTGroupNumber)
+                        - i32::from(groups1[index].nTGroupNumber),
                     i32::from(groups2[index].nNum_T) - i32::from(groups1[index].nNum_T),
                     i32::from(groups2[index].nNum_D) - i32::from(groups1[index].nNum_D),
                     i32::from(groups2[index].nNum_H) - i32::from(groups1[index].nNum_H),
@@ -5038,7 +5171,13 @@ pub(crate) fn CompINChI2(
         } else {
             Some(heap.slice(second.StereoIsotopic.as_const())?[0].clone())
         };
-        let ret = CompareInchiStereo(heap, stereo1.as_ref(), first.nFlags, stereo2.as_ref(), second.nFlags)?;
+        let ret = CompareInchiStereo(
+            heap,
+            stereo1.as_ref(),
+            first.nFlags,
+            stereo2.as_ref(),
+            second.nFlags,
+        )?;
         if ret != 0 {
             return Ok(ret);
         }
@@ -5089,7 +5228,11 @@ pub(crate) fn CompINChINonTaut2(
 }
 
 #[allow(non_snake_case)]
-pub(crate) fn CompINChITaut2(heap: &mut SourceHeap, p1: &INCHI_SORT, p2: &INCHI_SORT) -> Result<i32, SourceHeapError> {
+pub(crate) fn CompINChITaut2(
+    heap: &mut SourceHeap,
+    p1: &INCHI_SORT,
+    p2: &INCHI_SORT,
+) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichimake.c:2064 CompINChITaut2
     // INCHI✔️❌: int CompINChITaut2(const void* p1, const void* p2)
     // INCHI✔️❌: {
@@ -5245,8 +5388,13 @@ pub(crate) fn MarkUnusedAndEmptyLayers(s_dif_segs: &mut [[i8; 11]; 4]) -> i32 {
 
     let first_iso = tagDiffINChISegments_DIFS_i_IATOMS as usize;
     let output_omit = tagMarkDiff_DIFV_OUTPUT_OMIT_F as i8;
-    for layer in [tagDiffINChILayers_DIFL_FI as usize, tagDiffINChILayers_DIFL_MI as usize] {
-        let bits = s_dif_segs[layer].iter().fold(0_i8, |bits, value| bits | value);
+    for layer in [
+        tagDiffINChILayers_DIFL_FI as usize,
+        tagDiffINChILayers_DIFL_MI as usize,
+    ] {
+        let bits = s_dif_segs[layer]
+            .iter()
+            .fold(0_i8, |bits, value| bits | value);
         if bits & output_omit == 0 {
             s_dif_segs[layer].fill(tagMarkDiff_DIFV_BOTH_EMPTY as i8);
         } else if s_dif_segs[layer][first_iso] == tagMarkDiff_DIFV_BOTH_EMPTY as i8
@@ -5257,9 +5405,12 @@ pub(crate) fn MarkUnusedAndEmptyLayers(s_dif_segs: &mut [[i8; 11]; 4]) -> i32 {
     }
     let fixed = tagDiffINChILayers_DIFL_F as usize;
     let formula = tagDiffINChISegments_DIFS_f_FORMULA as usize;
-    let bits = s_dif_segs[fixed].iter().fold(0_i8, |bits, value| bits | value);
+    let bits = s_dif_segs[fixed]
+        .iter()
+        .fold(0_i8, |bits, value| bits | value);
     if bits & output_omit == 0
-        && s_dif_segs[tagDiffINChILayers_DIFL_FI as usize][first_iso] == tagMarkDiff_DIFV_BOTH_EMPTY as i8
+        && s_dif_segs[tagDiffINChILayers_DIFL_FI as usize][first_iso]
+            == tagMarkDiff_DIFV_BOTH_EMPTY as i8
     {
         s_dif_segs[fixed].fill(tagMarkDiff_DIFV_BOTH_EMPTY as i8);
     } else if s_dif_segs[fixed][formula] == tagMarkDiff_DIFV_BOTH_EMPTY as i8
@@ -5372,7 +5523,8 @@ pub(crate) fn CompareReversedStereoINChI(
         return Ok(21);
     }
     if s1.nNumberOfStereoCenters > 0 {
-        let count = usize::try_from(s1.nNumberOfStereoCenters).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+        let count = usize::try_from(s1.nNumberOfStereoCenters)
+            .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
         if heap
             .slice(s1.nNumber.as_const())?
             .get(..count)
@@ -5403,7 +5555,8 @@ pub(crate) fn CompareReversedStereoINChI(
         return Ok(25);
     }
     if s1.nNumberOfStereoBonds > 0 {
-        let count = usize::try_from(s1.nNumberOfStereoBonds).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+        let count = usize::try_from(s1.nNumberOfStereoBonds)
+            .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
         if heap
             .slice(s1.nBondAtom1.as_const())?
             .get(..count)
@@ -5774,8 +5927,10 @@ pub(crate) fn CompareReversedStereoINChI2(
 
     if let (Some(s1), Some(s2)) = (s1, s2) {
         if num_sc1 != 0 || num_sc2 != 0 {
-            let count1 = usize::try_from(num_sc1).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-            let count2 = usize::try_from(num_sc2).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+            let count1 =
+                usize::try_from(num_sc1).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+            let count2 =
+                usize::try_from(num_sc2).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
             let numbers1 = if count1 == 0 {
                 &[][..]
             } else {
@@ -5827,7 +5982,8 @@ pub(crate) fn CompareReversedStereoINChI2(
                                 picr.num_sc_in1_only += 1;
                             }
                             if undefined && picr.num_sc_undef_in1_only < ICR_MAX_SC_UNDF as i32 {
-                                picr.sc_undef_in1_only[picr.num_sc_undef_in1_only as usize] = j1 as AT_NUMB;
+                                picr.sc_undef_in1_only[picr.num_sc_undef_in1_only as usize] =
+                                    j1 as AT_NUMB;
                                 picr.num_sc_undef_in1_only += 1;
                             }
                         }
@@ -5842,7 +5998,8 @@ pub(crate) fn CompareReversedStereoINChI2(
                                 picr.num_sc_in2_only += 1;
                             }
                             if undefined && picr.num_sc_undef_in2_only < ICR_MAX_SC_UNDF as i32 {
-                                picr.sc_undef_in2_only[picr.num_sc_undef_in2_only as usize] = j1 as AT_NUMB;
+                                picr.sc_undef_in2_only[picr.num_sc_undef_in2_only as usize] =
+                                    j1 as AT_NUMB;
                                 picr.num_sc_undef_in2_only += 1;
                             }
                         }
@@ -5859,7 +6016,8 @@ pub(crate) fn CompareReversedStereoINChI2(
                             picr.num_sc_in1_only += 1;
                         }
                         if undefined && picr.num_sc_undef_in1_only < ICR_MAX_SC_UNDF as i32 {
-                            picr.sc_undef_in1_only[picr.num_sc_undef_in1_only as usize] = j1 as AT_NUMB;
+                            picr.sc_undef_in1_only[picr.num_sc_undef_in1_only as usize] =
+                                j1 as AT_NUMB;
                             picr.num_sc_undef_in1_only += 1;
                         }
                     }
@@ -5904,8 +6062,10 @@ pub(crate) fn CompareReversedStereoINChI2(
     if num_sb1 != 0 || num_sb2 != 0 {
         let s1 = s1.ok_or(SourceHeapError::PointerOutOfBounds)?;
         let s2 = s2.ok_or(SourceHeapError::PointerOutOfBounds)?;
-        let count1 = usize::try_from(num_sb1).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-        let count2 = usize::try_from(num_sb2).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+        let count1 =
+            usize::try_from(num_sb1).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+        let count2 =
+            usize::try_from(num_sb2).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
         let atom11 = if count1 == 0 {
             &[][..]
         } else {
@@ -5961,7 +6121,9 @@ pub(crate) fn CompareReversedStereoINChI2(
                     num_dif = num_dif.wrapping_add(i32::from(parity1[j1] != parity2[j2]));
                     j1 += 1;
                     j2 += 1;
-                } else if atom11[j1] < atom21[j2] || (atom11[j1] == atom21[j2] && atom12[j1] < atom22[j2]) {
+                } else if atom11[j1] < atom21[j2]
+                    || (atom11[j1] == atom21[j2] && atom12[j1] < atom22[j2])
+                {
                     num_in1_only += 1;
                     let undefined = parity1[j1] == AB_PARITY_UNDF as i8;
                     num_extra_undf += i32::from(undefined);
@@ -5971,7 +6133,8 @@ pub(crate) fn CompareReversedStereoINChI2(
                             picr.num_sb_in1_only += 1;
                         }
                         if undefined && picr.num_sb_undef_in1_only < ICR_MAX_SB_UNDF as i32 {
-                            picr.sb_undef_in1_only[picr.num_sb_undef_in1_only as usize] = j1 as AT_NUMB;
+                            picr.sb_undef_in1_only[picr.num_sb_undef_in1_only as usize] =
+                                j1 as AT_NUMB;
                             picr.num_sb_undef_in1_only += 1;
                         }
                     }
@@ -5986,7 +6149,8 @@ pub(crate) fn CompareReversedStereoINChI2(
                             picr.num_sb_in2_only += 1;
                         }
                         if undefined && picr.num_sb_undef_in2_only < ICR_MAX_SB_UNDF as i32 {
-                            picr.sb_undef_in2_only[picr.num_sb_undef_in2_only as usize] = j1 as AT_NUMB;
+                            picr.sb_undef_in2_only[picr.num_sb_undef_in2_only as usize] =
+                                j1 as AT_NUMB;
                             picr.num_sb_undef_in2_only += 1;
                         }
                     }
@@ -6680,7 +6844,8 @@ pub(crate) fn CompareReversedINChI2(
         finish!();
     }
     if i1.nNumberOfAtoms > 0 {
-        let atom_count = usize::try_from(i1.nNumberOfAtoms).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+        let atom_count = usize::try_from(i1.nNumberOfAtoms)
+            .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
         let atoms1 = heap
             .slice(i1.nAtom.as_const())?
             .get(..atom_count)
@@ -6705,7 +6870,9 @@ pub(crate) fn CompareReversedINChI2(
         if hydrogens1 != hydrogens2 {
             ret |= tagInchiDiffBits_IDIF_POSITION_H;
             for index in 0..atom_count {
-                if hydrogens1[index] != hydrogens2[index] && picr.num_diff_pos_H < ICR_MAX_DIFF_FIXED_H as i32 {
+                if hydrogens1[index] != hydrogens2[index]
+                    && picr.num_diff_pos_H < ICR_MAX_DIFF_FIXED_H as i32
+                {
                     let output = picr.num_diff_pos_H as usize;
                     picr.diff_pos_H_at[output] = index as AT_NUMB;
                     picr.diff_pos_H_nH[output] = hydrogens1[index].wrapping_sub(hydrogens2[index]);
@@ -6734,14 +6901,14 @@ pub(crate) fn CompareReversedINChI2(
                 )
             };
             let has_fixed1 = fixed1.map_or(0_i32, |values| {
-                values
-                    .iter()
-                    .fold(0_i32, |count, value| count.wrapping_add(i32::from(*value != 0)))
+                values.iter().fold(0_i32, |count, value| {
+                    count.wrapping_add(i32::from(*value != 0))
+                })
             });
             let has_fixed2 = fixed2.map_or(0_i32, |values| {
-                values
-                    .iter()
-                    .fold(0_i32, |count, value| count.wrapping_add(i32::from(*value != 0)))
+                values.iter().fold(0_i32, |count, value| {
+                    count.wrapping_add(i32::from(*value != 0))
+                })
             });
 
             if has_fixed1 != 0 && has_fixed2 == 0 {
@@ -6778,12 +6945,16 @@ pub(crate) fn CompareReversedINChI2(
                         if values1[index] > values2[index] {
                             if count1 < ICR_MAX_DIFF_FIXED_H as i32 {
                                 picr.fixed_H_at1_more[count1 as usize] = index as AT_NUMB;
-                                picr.fixed_H_nH1_more[count1 as usize] = values1[index].wrapping_sub(values2[index]);
+                                picr.fixed_H_nH1_more[count1 as usize] =
+                                    values1[index].wrapping_sub(values2[index]);
                                 count1 = count1.wrapping_add(1);
                             }
-                        } else if values1[index] < values2[index] && count2 < ICR_MAX_DIFF_FIXED_H as i32 {
+                        } else if values1[index] < values2[index]
+                            && count2 < ICR_MAX_DIFF_FIXED_H as i32
+                        {
                             picr.fixed_H_at2_more[count2 as usize] = index as AT_NUMB;
-                            picr.fixed_H_nH2_more[count2 as usize] = values2[index].wrapping_sub(values1[index]);
+                            picr.fixed_H_nH2_more[count2 as usize] =
+                                values2[index].wrapping_sub(values1[index]);
                             count2 = count2.wrapping_add(1);
                         }
                     }
@@ -6827,7 +6998,8 @@ pub(crate) fn CompareReversedINChI2(
         finish!();
     }
     if i1.lenConnTable > 0 {
-        let connection_count = usize::try_from(i1.lenConnTable).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+        let connection_count =
+            usize::try_from(i1.lenConnTable).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
         let connections1 = heap
             .slice(i1.nConnTable.as_const())?
             .get(..connection_count)
@@ -6905,67 +7077,90 @@ pub(crate) fn CompareReversedINChI2(
             }
         };
 
-        let endpoint_result = (|| -> Result<(Vec<AT_NUMB>, Vec<AT_NUMB>, i32, i32, i32, i32), SourceHeapError> {
-            let tautomer_count1 =
-                usize::try_from(i1.lenTautomer).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-            let tautomer_count2 =
-                usize::try_from(i2.lenTautomer).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-            let tautomer1 = if tautomer_count1 == 0 {
-                Vec::new()
-            } else {
-                heap.slice(i1.nTautomer.as_const())?
-                    .get(..tautomer_count1)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?
-                    .to_vec()
-            };
-            let tautomer2 = if tautomer_count2 == 0 {
-                Vec::new()
-            } else {
-                heap.slice(i2.nTautomer.as_const())?
-                    .get(..tautomer_count2)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?
-                    .to_vec()
-            };
+        let endpoint_result =
+            (|| -> Result<(Vec<AT_NUMB>, Vec<AT_NUMB>, i32, i32, i32, i32), SourceHeapError> {
+                let tautomer_count1 = usize::try_from(i1.lenTautomer)
+                    .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+                let tautomer_count2 = usize::try_from(i2.lenTautomer)
+                    .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+                let tautomer1 = if tautomer_count1 == 0 {
+                    Vec::new()
+                } else {
+                    heap.slice(i1.nTautomer.as_const())?
+                        .get(..tautomer_count1)
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?
+                        .to_vec()
+                };
+                let tautomer2 = if tautomer_count2 == 0 {
+                    Vec::new()
+                } else {
+                    heap.slice(i2.nTautomer.as_const())?
+                        .get(..tautomer_count2)
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?
+                        .to_vec()
+                };
 
-            let mut endpoints1 = Vec::new();
-            let mut endpoints2 = Vec::new();
-            let mut taut_h1 = 0_i32;
-            let mut taut_h2 = 0_i32;
-            let mut taut_m1 = 0_i32;
-            let mut taut_m2 = 0_i32;
+                let mut endpoints1 = Vec::new();
+                let mut endpoints2 = Vec::new();
+                let mut taut_h1 = 0_i32;
+                let mut taut_h2 = 0_i32;
+                let mut taut_m1 = 0_i32;
+                let mut taut_m2 = 0_i32;
 
-            let mut m = 1_usize;
-            while m < tautomer_count1 {
-                let length = usize::from(tautomer1[m]);
-                m += 1;
-                let record = tautomer1
-                    .get(m..m.saturating_add(length))
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                taut_h1 = taut_h1.wrapping_add(i32::from(*record.first().ok_or(SourceHeapError::PointerOutOfBounds)?));
-                taut_m1 = taut_m1.wrapping_add(i32::from(*record.get(1).ok_or(SourceHeapError::PointerOutOfBounds)?));
-                endpoints1.extend_from_slice(record.get(2..length).ok_or(SourceHeapError::PointerOutOfBounds)?);
-                m = m.checked_add(length).ok_or(SourceHeapError::SourceIntegerOverflow)?;
-            }
+                let mut m = 1_usize;
+                while m < tautomer_count1 {
+                    let length = usize::from(tautomer1[m]);
+                    m += 1;
+                    let record = tautomer1
+                        .get(m..m.saturating_add(length))
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                    taut_h1 = taut_h1.wrapping_add(i32::from(
+                        *record.first().ok_or(SourceHeapError::PointerOutOfBounds)?,
+                    ));
+                    taut_m1 = taut_m1.wrapping_add(i32::from(
+                        *record.get(1).ok_or(SourceHeapError::PointerOutOfBounds)?,
+                    ));
+                    endpoints1.extend_from_slice(
+                        record
+                            .get(2..length)
+                            .ok_or(SourceHeapError::PointerOutOfBounds)?,
+                    );
+                    m = m
+                        .checked_add(length)
+                        .ok_or(SourceHeapError::SourceIntegerOverflow)?;
+                }
 
-            m = 1;
-            while m < tautomer_count2 {
-                let length = usize::from(tautomer2[m]);
-                m += 1;
-                let record = tautomer2
-                    .get(m..m.saturating_add(length))
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                taut_h2 = taut_h2.wrapping_add(i32::from(*record.first().ok_or(SourceHeapError::PointerOutOfBounds)?));
-                taut_m2 = taut_m2.wrapping_add(i32::from(*record.get(1).ok_or(SourceHeapError::PointerOutOfBounds)?));
-                endpoints2.extend_from_slice(record.get(2..length).ok_or(SourceHeapError::PointerOutOfBounds)?);
-                m = m.checked_add(length).ok_or(SourceHeapError::SourceIntegerOverflow)?;
-            }
+                m = 1;
+                while m < tautomer_count2 {
+                    let length = usize::from(tautomer2[m]);
+                    m += 1;
+                    let record = tautomer2
+                        .get(m..m.saturating_add(length))
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                    taut_h2 = taut_h2.wrapping_add(i32::from(
+                        *record.first().ok_or(SourceHeapError::PointerOutOfBounds)?,
+                    ));
+                    taut_m2 = taut_m2.wrapping_add(i32::from(
+                        *record.get(1).ok_or(SourceHeapError::PointerOutOfBounds)?,
+                    ));
+                    endpoints2.extend_from_slice(
+                        record
+                            .get(2..length)
+                            .ok_or(SourceHeapError::PointerOutOfBounds)?,
+                    );
+                    m = m
+                        .checked_add(length)
+                        .ok_or(SourceHeapError::SourceIntegerOverflow)?;
+                }
 
-            let count1 = i32::try_from(endpoints1.len()).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-            let count2 = i32::try_from(endpoints2.len()).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-            insertions_sort_AT_RANK(&mut endpoints1, count1)?;
-            insertions_sort_AT_RANK(&mut endpoints2, count2)?;
-            Ok((endpoints1, endpoints2, taut_h1, taut_h2, taut_m1, taut_m2))
-        })();
+                let count1 = i32::try_from(endpoints1.len())
+                    .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+                let count2 = i32::try_from(endpoints2.len())
+                    .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+                insertions_sort_AT_RANK(&mut endpoints1, count1)?;
+                insertions_sort_AT_RANK(&mut endpoints2, count2)?;
+                Ok((endpoints1, endpoints2, taut_h1, taut_h2, taut_m1, taut_m2))
+            })();
 
         let free1 = inchi_free(heap, endpoint_allocation1);
         let free2 = inchi_free(heap, endpoint_allocation2);
@@ -7035,7 +7230,8 @@ pub(crate) fn CompareReversedINChI2(
         let raw_tautomer_difference = if i1.lenTautomer != i2.lenTautomer {
             true
         } else {
-            let count = usize::try_from(i1.lenTautomer).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+            let count = usize::try_from(i1.lenTautomer)
+                .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
             heap.slice(i1.nTautomer.as_const())?
                 .get(..count)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?
@@ -7052,7 +7248,8 @@ pub(crate) fn CompareReversedINChI2(
     if i1.nNumberOfIsotopicAtoms != i2.nNumberOfIsotopicAtoms {
         ret |= tagInchiDiffBits_IDIF_NUM_ISO_AT;
     } else if i1.nNumberOfIsotopicAtoms > 0 {
-        let count = usize::try_from(i1.nNumberOfIsotopicAtoms).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+        let count = usize::try_from(i1.nNumberOfIsotopicAtoms)
+            .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
         if heap
             .slice(i1.IsotopicAtom.as_const())?
             .get(..count)
@@ -7069,7 +7266,9 @@ pub(crate) fn CompareReversedINChI2(
         ret |= tagInchiDiffBits_IDIF_CHARGE;
     }
     if let Some(aux1) = a1 {
-        if aux1.nNumRemovedProtons != 0 && a2.is_none_or(|aux2| aux2.nNumRemovedProtons != aux1.nNumRemovedProtons) {
+        if aux1.nNumRemovedProtons != 0
+            && a2.is_none_or(|aux2| aux2.nNumRemovedProtons != aux1.nNumRemovedProtons)
+        {
             ret |= tagInchiDiffBits_IDIF_REM_PROT;
         }
         if a2.is_none_or(|aux2| {
@@ -7091,9 +7290,12 @@ pub(crate) fn CompareReversedINChI2(
     } else {
         heap.slice(i1.Stereo.as_const())?.first()
     };
-    let stereo1 = if isotopic_stereo1
-        .is_some_and(|stereo| stereo.nNumberOfStereoBonds.wrapping_add(stereo.nNumberOfStereoCenters) != 0)
-    {
+    let stereo1 = if isotopic_stereo1.is_some_and(|stereo| {
+        stereo
+            .nNumberOfStereoBonds
+            .wrapping_add(stereo.nNumberOfStereoCenters)
+            != 0
+    }) {
         isotopic_stereo1
     } else {
         regular_stereo1
@@ -7109,9 +7311,12 @@ pub(crate) fn CompareReversedINChI2(
     } else {
         heap.slice(i2.Stereo.as_const())?.first()
     };
-    let stereo2 = if isotopic_stereo2
-        .is_some_and(|stereo| stereo.nNumberOfStereoBonds.wrapping_add(stereo.nNumberOfStereoCenters) != 0)
-    {
+    let stereo2 = if isotopic_stereo2.is_some_and(|stereo| {
+        stereo
+            .nNumberOfStereoBonds
+            .wrapping_add(stereo.nNumberOfStereoCenters)
+            != 0
+    }) {
         isotopic_stereo2
     } else {
         regular_stereo2
@@ -7400,7 +7605,8 @@ pub(crate) fn CompareReversedINChI(
         return Ok(3);
     }
     if i1.nNumberOfAtoms > 0 {
-        let count = usize::try_from(i1.nNumberOfAtoms).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+        let count = usize::try_from(i1.nNumberOfAtoms)
+            .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
         let atoms1 = heap
             .slice(i1.nAtom.as_const())?
             .get(..count)
@@ -7459,8 +7665,12 @@ pub(crate) fn CompareReversedINChI(
                         .ok_or(SourceHeapError::PointerOutOfBounds)?,
                 )
             };
-            let has1 = fixed1.map_or(0, |values| values.iter().filter(|value| **value != 0).count());
-            let has2 = fixed2.map_or(0, |values| values.iter().filter(|value| **value != 0).count());
+            let has1 = fixed1.map_or(0, |values| {
+                values.iter().filter(|value| **value != 0).count()
+            });
+            let has2 = fixed2.map_or(0, |values| {
+                values.iter().filter(|value| **value != 0).count()
+            });
             if has1 != 0 && has2 == 0 {
                 return Ok(18);
             }
@@ -7497,7 +7707,8 @@ pub(crate) fn CompareReversedINChI(
         return Ok(8);
     }
     if i1.lenConnTable > 0 {
-        let count = usize::try_from(i1.lenConnTable).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+        let count =
+            usize::try_from(i1.lenConnTable).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
         let connections1 = heap
             .slice(i1.nConnTable.as_const())?
             .get(..count)
@@ -7514,7 +7725,8 @@ pub(crate) fn CompareReversedINChI(
         return Ok(10);
     }
     if i1.lenTautomer > 1 && i2.lenTautomer > 1 {
-        let count = usize::try_from(i1.lenTautomer).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+        let count =
+            usize::try_from(i1.lenTautomer).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
         let tautomer1 = heap
             .slice(i1.nTautomer.as_const())?
             .get(..count)
@@ -7531,7 +7743,8 @@ pub(crate) fn CompareReversedINChI(
         return Ok(12);
     }
     if i1.nNumberOfIsotopicAtoms > 0 {
-        let count = usize::try_from(i1.nNumberOfIsotopicAtoms).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+        let count = usize::try_from(i1.nNumberOfIsotopicAtoms)
+            .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
         let isotopic_atoms1 = heap
             .slice(i1.IsotopicAtom.as_const())?
             .get(..count)
@@ -7582,7 +7795,8 @@ pub(crate) fn CompareReversedINChI(
     if isotopic2.is_none()
         && stereo2.is_some()
         && isotopic1.is_some()
-        && isotopic1.is_some_and(|stereo| stereo.nNumberOfStereoBonds + stereo.nNumberOfStereoCenters > 0)
+        && isotopic1
+            .is_some_and(|stereo| stereo.nNumberOfStereoBonds + stereo.nNumberOfStereoCenters > 0)
         && CompareReversedStereoINChI(heap, isotopic1, stereo2)? == 0
     {
         return Ok(0);
@@ -7656,7 +7870,10 @@ pub(crate) fn GetInpStructErrorType(
     Ok(_IS_OKAY as i32)
 }
 
-pub(crate) fn mystrrev(heap: &mut SourceHeap, string: SourceMutPointer<i8>) -> Result<(), SourceHeapError> {
+pub(crate) fn mystrrev(
+    heap: &mut SourceHeap,
+    string: SourceMutPointer<i8>,
+) -> Result<(), SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichimake.c:2090 mystrrev
     // INCHI✔️✔️: void mystrrev(char* p)
     // INCHI✔️✔️: {
@@ -7732,19 +7949,29 @@ fn CompareDfsDescendants4CT(
     // END INCHI C FUNCTION: CompareDfsDescendants4CT
 
     if u32::from(neighbor1) > MAX_ATOMS {
-        return Ok(if u32::from(neighbor2) > MAX_ATOMS { 0 } else { 1 });
+        return Ok(if u32::from(neighbor2) > MAX_ATOMS {
+            0
+        } else {
+            1
+        });
     }
     if u32::from(neighbor2) > MAX_ATOMS {
         return Ok(-1);
     }
-    let current = usize::try_from(order.current_atom).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let current =
+        usize::try_from(order.current_atom).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let current_dfs = *order
         .dfs_number
         .get(current)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
     let first = usize::from(neighbor1);
     let second = usize::from(neighbor2);
-    let descendants1 = if current_dfs > *order.dfs_number.get(first).ok_or(SourceHeapError::PointerOutOfBounds)? {
+    let descendants1 = if current_dfs
+        > *order
+            .dfs_number
+            .get(first)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?
+    {
         0
     } else {
         i32::from(
@@ -8112,16 +8339,20 @@ pub(crate) fn GetDfsOrder4CT(
     // INCHI✔️✔️:
     // END INCHI C FUNCTION: GetDfsOrder4CT
 
-    let atom_count = usize::try_from(number_of_atoms).map_err(|_| SourceHeapError::UnsupportedSourceBehavior)?;
+    let atom_count =
+        usize::try_from(number_of_atoms).map_err(|_| SourceHeapError::UnsupportedSourceBehavior)?;
     if atom_count == 0 {
         return Err(SourceHeapError::UnsupportedSourceBehavior);
     }
-    let allocate_u16 =
-        |heap: &mut SourceHeap| match inchi_calloc::<u16>(heap, atom_count as u64, std::mem::size_of::<u16>() as u64) {
-            Ok(pointer) => Ok(pointer),
-            Err(SourceHeapError::AllocationFailed) => Ok(SourceMutPointer::null()),
-            Err(error) => Err(error),
-        };
+    let allocate_u16 = |heap: &mut SourceHeap| match inchi_calloc::<u16>(
+        heap,
+        atom_count as u64,
+        std::mem::size_of::<u16>() as u64,
+    ) {
+        Ok(pointer) => Ok(pointer),
+        Err(SourceHeapError::AllocationFailed) => Ok(SourceMutPointer::null()),
+        Err(error) => Err(error),
+    };
     let stack = allocate_u16(heap)?;
     let mut number_of_descendants = allocate_u16(heap)?;
     let dfs_number = allocate_u16(heap)?;
@@ -8130,7 +8361,8 @@ pub(crate) fn GetDfsOrder4CT(
         Err(SourceHeapError::AllocationFailed) => SourceMutPointer::null(),
         Err(error) => return Err(error),
     };
-    let neighbor_lists = CreateNeighListFromLinearCT(heap, linear_ct.as_const(), length_ct, number_of_atoms)?;
+    let neighbor_lists =
+        CreateNeighListFromLinearCT(heap, linear_ct.as_const(), length_ct, number_of_atoms)?;
     let predecessors = ct_mode & crate::source_types::CT_MODE_PREDECESSORS as i32;
 
     let computation = (|| -> Result<SourceMutPointer<AT_NUMB>, SourceHeapError> {
@@ -8173,8 +8405,10 @@ pub(crate) fn GetDfsOrder4CT(
                 if i32::from(heap.slice(list_pointer.as_const())?[0]) < neighbor_index {
                     break;
                 }
-                heap.slice_mut(neighbor_number)?[atom] = heap.slice(neighbor_number.as_const())?[atom].wrapping_add(1);
-                let adjacent = usize::from(heap.slice(list_pointer.as_const())?[neighbor_index as usize]);
+                heap.slice_mut(neighbor_number)?[atom] =
+                    heap.slice(neighbor_number.as_const())?[atom].wrapping_add(1);
+                let adjacent =
+                    usize::from(heap.slice(list_pointer.as_const())?[neighbor_index as usize]);
                 if heap.slice(dfs_number.as_const())?[adjacent] == 0 {
                     stack_top += 1;
                     heap.slice_mut(stack)?[stack_top as usize] = adjacent as u16;
@@ -8187,8 +8421,10 @@ pub(crate) fn GetDfsOrder4CT(
                             heap.slice(number_of_descendants.as_const())?[adjacent].wrapping_add(1);
                     }
                 } else if stack_top != 0
-                    && adjacent != usize::from(heap.slice(stack.as_const())?[(stack_top - 1) as usize])
-                    && heap.slice(dfs_number.as_const())?[adjacent] < heap.slice(dfs_number.as_const())?[atom]
+                    && adjacent
+                        != usize::from(heap.slice(stack.as_const())?[(stack_top - 1) as usize])
+                    && heap.slice(dfs_number.as_const())?[adjacent]
+                        < heap.slice(dfs_number.as_const())?[atom]
                 {
                     if predecessors == 0 {
                         heap.slice_mut(number_of_descendants)?[atom] =
@@ -8203,7 +8439,8 @@ pub(crate) fn GetDfsOrder4CT(
             heap.slice_mut(neighbor_number)?[atom] = 0;
             if predecessors == 0 && stack_top != 0 {
                 let parent = usize::from(heap.slice(stack.as_const())?[(stack_top - 1) as usize]);
-                heap.slice_mut(number_of_descendants)?[parent] = heap.slice(number_of_descendants.as_const())?[parent]
+                heap.slice_mut(number_of_descendants)?[parent] = heap
+                    .slice(number_of_descendants.as_const())?[parent]
                     .wrapping_add(heap.slice(number_of_descendants.as_const())?[atom]);
             }
             stack_top -= 1;
@@ -8250,7 +8487,8 @@ pub(crate) fn GetDfsOrder4CT(
             .and_then(|value| value.checked_add(1))
             .and_then(|value| value.checked_mul(3))
             .ok_or(SourceHeapError::UnsupportedSourceBehavior)?;
-        let output_length = usize::try_from(total_length).map_err(|_| SourceHeapError::UnsupportedSourceBehavior)?;
+        let output_length = usize::try_from(total_length)
+            .map_err(|_| SourceHeapError::UnsupportedSourceBehavior)?;
         let output = match inchi_calloc::<u16>(heap, output_length as u64, 2) {
             Ok(pointer) => pointer,
             Err(SourceHeapError::AllocationFailed) => return Ok(SourceMutPointer::null()),
@@ -8316,9 +8554,10 @@ pub(crate) fn GetDfsOrder4CT(
                 let atom = usize::from(heap.slice(stack.as_const())?[stack_top as usize]);
                 let list_pointer = heap.slice(neighbor_lists.as_const())?[atom];
                 let list_count = usize::from(heap.slice(list_pointer.as_const())?[0]);
-                let neighbor_index = usize::try_from(i32::from(heap.slice(neighbor_number.as_const())?[atom]))
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?
-                    + 1;
+                let neighbor_index =
+                    usize::try_from(i32::from(heap.slice(neighbor_number.as_const())?[atom]))
+                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?
+                        + 1;
                 if atom < atom_count && neighbor_index <= list_count {
                     position += 3;
                     if position + 6 > output_length {
@@ -8327,9 +8566,12 @@ pub(crate) fn GetDfsOrder4CT(
                     }
                     heap.slice_mut(neighbor_number)?[atom] =
                         heap.slice(neighbor_number.as_const())?[atom].wrapping_add(1);
-                    let adjacent = usize::from(heap.slice(list_pointer.as_const())?[neighbor_index]);
+                    let adjacent =
+                        usize::from(heap.slice(list_pointer.as_const())?[neighbor_index]);
                     heap.slice_mut(output)?[position] = (adjacent + 1) as u16;
-                    if heap.slice(dfs_number.as_const())?[adjacent] > heap.slice(dfs_number.as_const())?[atom] {
+                    if heap.slice(dfs_number.as_const())?[adjacent]
+                        > heap.slice(dfs_number.as_const())?[atom]
+                    {
                         stack_top += 1;
                         heap.slice_mut(stack)?[stack_top as usize] = adjacent as u16;
                         heap.slice_mut(output)?[position + 1] = if number_hydrogens.is_null() {
@@ -8379,7 +8621,11 @@ mod tests {
 
     #[test]
     fn source_port__ichimake__compareicr__line_3189() {
-        fn compare(flags1: INCHI_MODE, flags2: INCHI_MODE, mask: INCHI_MODE) -> (i32, INCHI_MODE, INCHI_MODE) {
+        fn compare(
+            flags1: INCHI_MODE,
+            flags2: INCHI_MODE,
+            mask: INCHI_MODE,
+        ) -> (i32, INCHI_MODE, INCHI_MODE) {
             let left = ICR {
                 flags: flags1,
                 tot_num_H1: i32::MIN,
@@ -8412,9 +8658,18 @@ mod tests {
         let low = 1_u64;
         let middle = 1_u64 << 17;
         let high = 1_u64 << 30;
-        assert_eq!(compare(low | middle, high, INCHI_MODE::MAX), (2, low | middle, high));
-        assert_eq!(compare(low | middle, middle | high, INCHI_MODE::MAX), (2, low, high));
-        assert_eq!(compare(low | middle, high, low | middle), (1, low | middle, 0));
+        assert_eq!(
+            compare(low | middle, high, INCHI_MODE::MAX),
+            (2, low | middle, high)
+        );
+        assert_eq!(
+            compare(low | middle, middle | high, INCHI_MODE::MAX),
+            (2, low, high)
+        );
+        assert_eq!(
+            compare(low | middle, high, low | middle),
+            (1, low | middle, 0)
+        );
         assert_eq!(compare(low | middle, high, high), (-1, 0, high));
 
         let left = ICR {
@@ -8434,7 +8689,9 @@ mod tests {
     #[test]
     fn source_port__ichimake__create_inchi__line_3707() {
         let mut heap = SourceHeap::default();
-        let clock = heap.allocate_model_storage(vec![INCHI_CLOCK::default()]).unwrap();
+        let clock = heap
+            .allocate_model_storage(vec![INCHI_CLOCK::default()])
+            .unwrap();
         let mut empty_outputs = std::array::from_fn(|_| INP_ATOM_DATA::default());
         assert_eq!(
             Create_INChI(
@@ -8467,7 +8724,9 @@ mod tests {
         };
         carbon.elname[0] = b'C' as i8;
         let input = heap.allocate_model_storage(vec![carbon]).unwrap();
-        let normalized = heap.allocate_model_storage(vec![inp_ATOM::default()]).unwrap();
+        let normalized = heap
+            .allocate_model_storage(vec![inp_ATOM::default()])
+            .unwrap();
         let inchi_atoms = heap.allocate_model_storage(vec![0_u8]).unwrap();
         let inchi_connections = heap.allocate_model_storage(vec![0_u16]).unwrap();
         let inchi_hydrogens = heap.allocate_model_storage(vec![0_i8]).unwrap();
@@ -8538,9 +8797,18 @@ mod tests {
 
     #[test]
     fn source_port__ichimake__checkcanonnumberingcorrectness__line_6230() {
-        fn fixture(with_isotope: bool) -> (SourceHeap, SourceMutPointer<sp_ATOM>, CANON_STAT, CANON_GLOBALS) {
+        fn fixture(
+            with_isotope: bool,
+        ) -> (
+            SourceHeap,
+            SourceMutPointer<sp_ATOM>,
+            CANON_STAT,
+            CANON_GLOBALS,
+        ) {
             let mut heap = SourceHeap::default();
-            let atoms = heap.allocate_model_storage(vec![sp_ATOM::default()]).unwrap();
+            let atoms = heap
+                .allocate_model_storage(vec![sp_ATOM::default()])
+                .unwrap();
             let order = heap.allocate_model_storage(vec![0_u16]).unwrap();
             let isotope = if with_isotope {
                 heap.allocate_model_storage(vec![0_u16]).unwrap()
@@ -8565,14 +8833,32 @@ mod tests {
         let (mut heap, atoms, mut canon, mut globals) = fixture(true);
         let live = heap.live_allocation_count();
         assert_eq!(
-            CheckCanonNumberingCorrectness(&mut heap, 1, 1, atoms.as_const(), &mut canon, &mut globals, 0, None,),
+            CheckCanonNumberingCorrectness(
+                &mut heap,
+                1,
+                1,
+                atoms.as_const(),
+                &mut canon,
+                &mut globals,
+                0,
+                None,
+            ),
             Ok(0)
         );
         assert_eq!(heap.live_allocation_count(), live);
 
         let (mut heap, atoms, mut canon, mut globals) = fixture(false);
         assert_eq!(
-            CheckCanonNumberingCorrectness(&mut heap, 1, 1, atoms.as_const(), &mut canon, &mut globals, 0, None,),
+            CheckCanonNumberingCorrectness(
+                &mut heap,
+                1,
+                1,
+                atoms.as_const(),
+                &mut canon,
+                &mut globals,
+                0,
+                None,
+            ),
             Ok(0)
         );
 
@@ -8580,14 +8866,32 @@ mod tests {
         missing.nLenCanonOrd = 0;
         missing.nCanonOrd = SourceMutPointer::null();
         assert_eq!(
-            CheckCanonNumberingCorrectness(&mut heap, 1, 1, atoms.as_const(), &mut missing, &mut globals, 0, None,),
+            CheckCanonNumberingCorrectness(
+                &mut heap,
+                1,
+                1,
+                atoms.as_const(),
+                &mut missing,
+                &mut globals,
+                0,
+                None,
+            ),
             Ok(CT_CANON_ERR)
         );
 
         let (mut heap, atoms, mut mismatch, mut globals) = fixture(false);
         heap.slice_mut(mismatch.LinearCT).unwrap()[0] = 0;
         assert_eq!(
-            CheckCanonNumberingCorrectness(&mut heap, 1, 1, atoms.as_const(), &mut mismatch, &mut globals, 0, None,),
+            CheckCanonNumberingCorrectness(
+                &mut heap,
+                1,
+                1,
+                atoms.as_const(),
+                &mut mismatch,
+                &mut globals,
+                0,
+                None,
+            ),
             Ok(CT_CANON_ERR)
         );
         assert_eq!(heap.slice(mismatch.LinearCT.as_const()).unwrap(), &[0]);
@@ -8629,7 +8933,8 @@ mod tests {
     }
 
     #[test]
-    fn source_port__ichimake__copy_inp_atom_prefix__source_memcpy_paths() -> Result<(), SourceHeapError> {
+    fn source_port__ichimake__copy_inp_atom_prefix__source_memcpy_paths()
+    -> Result<(), SourceHeapError> {
         fn atom(number: AT_NUMB) -> inp_ATOM {
             inp_ATOM {
                 orig_at_number: number,
@@ -8638,8 +8943,12 @@ mod tests {
         }
 
         let mut heap = SourceHeap::default();
-        let source = heap.allocate_model_storage(vec![atom(1), atom(2), atom(3)]).unwrap();
-        let destination = heap.allocate_model_storage(vec![atom(8), atom(8), atom(8)]).unwrap();
+        let source = heap
+            .allocate_model_storage(vec![atom(1), atom(2), atom(3)])
+            .unwrap();
+        let destination = heap
+            .allocate_model_storage(vec![atom(8), atom(8), atom(8)])
+            .unwrap();
 
         copy_inp_atom_prefix(&mut heap, destination, source.as_const(), 2).unwrap();
         assert_eq!(
@@ -8667,7 +8976,12 @@ mod tests {
     fn source_port__ichimake__inp2spatom__line_119() {
         let mut heap = SourceHeap::default();
         assert_eq!(
-            inp2spATOM(&mut heap, SourceConstPointer::null(), 0, SourceMutPointer::null(),),
+            inp2spATOM(
+                &mut heap,
+                SourceConstPointer::null(),
+                0,
+                SourceMutPointer::null(),
+            ),
             Ok(0)
         );
 
@@ -8696,12 +9010,16 @@ mod tests {
         carbon.z = 3.75;
 
         let mut truncated = inp_ATOM::default();
-        truncated.elname = [b'A' as i8, b'b' as i8, b'c' as i8, b'd' as i8, b'e' as i8, b'f' as i8];
+        truncated.elname = [
+            b'A' as i8, b'b' as i8, b'c' as i8, b'd' as i8, b'e' as i8, b'f' as i8,
+        ];
         truncated.valence = -1;
         truncated.neighbor[0] = 88;
         truncated.bond_type[0] = 77;
 
-        let input = heap.allocate_model_storage(vec![carbon.clone(), truncated]).unwrap();
+        let input = heap
+            .allocate_model_storage(vec![carbon.clone(), truncated])
+            .unwrap();
         let mut sentinel = sp_ATOM::default();
         sentinel.elname = [9; 6];
         sentinel.orig_at_number = 999;
@@ -8732,7 +9050,9 @@ mod tests {
         assert_eq!(converted[0].bAmbiguousStereo, 0);
         assert_eq!(
             converted[1].elname,
-            [b'A' as i8, b'b' as i8, b'c' as i8, b'd' as i8, b'e' as i8, 0]
+            [
+                b'A' as i8, b'b' as i8, b'c' as i8, b'd' as i8, b'e' as i8, 0
+            ]
         );
         assert_eq!(converted[1].el_number, u8::MAX);
         assert_eq!(converted[1].valence, -1);
@@ -8748,8 +9068,13 @@ mod tests {
             maximum.bond_type[index] = index as u8 + 1;
         }
         let maximum = heap.allocate_model_storage(vec![maximum]).unwrap();
-        let maximum_output = heap.allocate_model_storage(vec![sp_ATOM::default()]).unwrap();
-        assert_eq!(inp2spATOM(&mut heap, maximum.as_const(), 1, maximum_output), Ok(0));
+        let maximum_output = heap
+            .allocate_model_storage(vec![sp_ATOM::default()])
+            .unwrap();
+        assert_eq!(
+            inp2spATOM(&mut heap, maximum.as_const(), 1, maximum_output),
+            Ok(0)
+        );
         assert_eq!(
             heap.slice(maximum_output.as_const()).unwrap()[0].neighbor,
             std::array::from_fn(|index| index as u16 + 100)
@@ -8763,7 +9088,10 @@ mod tests {
             inp2spATOM(&mut heap, invalid.as_const(), 1, invalid_output),
             Err(SourceHeapError::PointerOutOfBounds)
         );
-        assert_eq!(heap.slice(invalid_output.as_const()).unwrap()[0].valence, 21);
+        assert_eq!(
+            heap.slice(invalid_output.as_const()).unwrap()[0].valence,
+            21
+        );
         assert_eq!(
             inp2spATOM(&mut heap, invalid.as_const(), -1, invalid_output),
             Err(SourceHeapError::SourceIntegerOverflow)
@@ -8772,7 +9100,13 @@ mod tests {
 
     #[test]
     fn source_port__ichimake__mystrrev__line_2090() {
-        for (input, expected) in [("", ""), ("a", "a"), ("ab", "ba"), ("abc", "cba"), ("abcdef", "fedcba")] {
+        for (input, expected) in [
+            ("", ""),
+            ("a", "a"),
+            ("ab", "ba"),
+            ("abc", "cba"),
+            ("abcdef", "fedcba"),
+        ] {
             let mut heap = SourceHeap::default();
             let mut bytes: Vec<i8> = input.bytes().map(|byte| byte as i8).collect();
             bytes.push(0);
@@ -8799,7 +9133,9 @@ mod tests {
             Err(SourceHeapError::NullPointer)
         );
     }
-    use crate::source_types::{INChI_IsotopicAtom, INChI_IsotopicTGroup, tagMarkDiff_DIFV_NEQ2PRECED};
+    use crate::source_types::{
+        INChI_IsotopicAtom, INChI_IsotopicTGroup, tagMarkDiff_DIFV_NEQ2PRECED,
+    };
 
     fn inchi_fixture(heap: &mut SourceHeap) -> INChI {
         INChI {
@@ -8853,26 +9189,29 @@ mod tests {
         assert_eq!(MarkUnusedAndEmptyLayers(&mut exposed), 0);
         assert_eq!(exposed[0], main);
         assert_eq!(
-            exposed[tagDiffINChILayers_DIFL_FI as usize][tagDiffINChISegments_DIFS_i_IATOMS as usize],
+            exposed[tagDiffINChILayers_DIFL_FI as usize]
+                [tagDiffINChISegments_DIFS_i_IATOMS as usize],
             tagMarkDiff_DIFV_IS_EMPTY as i8
         );
         assert_eq!(
-            exposed[tagDiffINChILayers_DIFL_MI as usize][tagDiffINChISegments_DIFS_i_IATOMS as usize],
+            exposed[tagDiffINChILayers_DIFL_MI as usize]
+                [tagDiffINChISegments_DIFS_i_IATOMS as usize],
             tagMarkDiff_DIFV_IS_EMPTY as i8
         );
         assert_eq!(
-            exposed[tagDiffINChILayers_DIFL_F as usize][tagDiffINChISegments_DIFS_f_FORMULA as usize],
+            exposed[tagDiffINChILayers_DIFL_F as usize]
+                [tagDiffINChISegments_DIFS_f_FORMULA as usize],
             tagMarkDiff_DIFV_IS_EMPTY as i8
         );
 
         let mut preserved = [[0_i8; 11]; 4];
         preserved[0] = main;
-        preserved[tagDiffINChILayers_DIFL_FI as usize][tagDiffINChISegments_DIFS_i_IATOMS as usize] =
-            tagMarkDiff_DIFV_OUTPUT_OMIT_F as i8;
-        preserved[tagDiffINChILayers_DIFL_MI as usize][tagDiffINChISegments_DIFS_i_IATOMS as usize] =
-            tagMarkDiff_DIFV_OUTPUT_OMIT_F as i8;
-        preserved[tagDiffINChILayers_DIFL_F as usize][tagDiffINChISegments_DIFS_f_FORMULA as usize] =
-            tagMarkDiff_DIFV_OUTPUT_OMIT_F as i8;
+        preserved[tagDiffINChILayers_DIFL_FI as usize]
+            [tagDiffINChISegments_DIFS_i_IATOMS as usize] = tagMarkDiff_DIFV_OUTPUT_OMIT_F as i8;
+        preserved[tagDiffINChILayers_DIFL_MI as usize]
+            [tagDiffINChISegments_DIFS_i_IATOMS as usize] = tagMarkDiff_DIFV_OUTPUT_OMIT_F as i8;
+        preserved[tagDiffINChILayers_DIFL_F as usize]
+            [tagDiffINChISegments_DIFS_f_FORMULA as usize] = tagMarkDiff_DIFV_OUTPUT_OMIT_F as i8;
         let before = preserved;
         assert_eq!(MarkUnusedAndEmptyLayers(&mut preserved), 0);
         assert_eq!(preserved, before);
@@ -8885,32 +9224,65 @@ mod tests {
         let empty = INChI_Stereo::default();
         assert_eq!(CompareInchiStereo(&heap, Some(&empty), 0, None, 0), Ok(0));
         let nonempty = stereo_fixture(&mut heap, &[2], &[1], 1, &[3], &[4], &[1]);
-        assert_eq!(CompareInchiStereo(&heap, None, 0, Some(&nonempty), 0), Ok(1));
-        assert_eq!(CompareInchiStereo(&heap, Some(&nonempty), 0, None, 0), Ok(-1));
+        assert_eq!(
+            CompareInchiStereo(&heap, None, 0, Some(&nonempty), 0),
+            Ok(1)
+        );
+        assert_eq!(
+            CompareInchiStereo(&heap, Some(&nonempty), 0, None, 0),
+            Ok(-1)
+        );
 
         let equal = stereo_fixture(&mut heap, &[2], &[1], 1, &[3], &[4], &[1]);
-        assert_eq!(CompareInchiStereo(&heap, Some(&nonempty), 0, Some(&equal), 0), Ok(0));
+        assert_eq!(
+            CompareInchiStereo(&heap, Some(&nonempty), 0, Some(&equal), 0),
+            Ok(0)
+        );
         let mut changed = stereo_fixture(&mut heap, &[2], &[1], 1, &[5], &[4], &[1]);
-        assert_eq!(CompareInchiStereo(&heap, Some(&nonempty), 0, Some(&changed), 0), Ok(2));
+        assert_eq!(
+            CompareInchiStereo(&heap, Some(&nonempty), 0, Some(&changed), 0),
+            Ok(2)
+        );
         changed = stereo_fixture(&mut heap, &[2], &[1], 1, &[3], &[6], &[1]);
-        assert_eq!(CompareInchiStereo(&heap, Some(&nonempty), 0, Some(&changed), 0), Ok(2));
+        assert_eq!(
+            CompareInchiStereo(&heap, Some(&nonempty), 0, Some(&changed), 0),
+            Ok(2)
+        );
         changed = stereo_fixture(&mut heap, &[2], &[1], 1, &[3], &[4], &[3]);
-        assert_eq!(CompareInchiStereo(&heap, Some(&nonempty), 0, Some(&changed), 0), Ok(2));
+        assert_eq!(
+            CompareInchiStereo(&heap, Some(&nonempty), 0, Some(&changed), 0),
+            Ok(2)
+        );
         changed = equal.clone();
         changed.nNumberOfStereoBonds = 2;
-        assert_eq!(CompareInchiStereo(&heap, Some(&nonempty), 0, Some(&changed), 0), Ok(1));
+        assert_eq!(
+            CompareInchiStereo(&heap, Some(&nonempty), 0, Some(&changed), 0),
+            Ok(1)
+        );
 
         changed = stereo_fixture(&mut heap, &[5], &[1], 1, &[3], &[4], &[1]);
-        assert_eq!(CompareInchiStereo(&heap, Some(&nonempty), 0, Some(&changed), 0), Ok(3));
+        assert_eq!(
+            CompareInchiStereo(&heap, Some(&nonempty), 0, Some(&changed), 0),
+            Ok(3)
+        );
         changed = stereo_fixture(&mut heap, &[2], &[3], 1, &[3], &[4], &[1]);
-        assert_eq!(CompareInchiStereo(&heap, Some(&nonempty), 0, Some(&changed), 0), Ok(2));
+        assert_eq!(
+            CompareInchiStereo(&heap, Some(&nonempty), 0, Some(&changed), 0),
+            Ok(2)
+        );
         changed = equal.clone();
         changed.nNumberOfStereoCenters = 2;
-        assert_eq!(CompareInchiStereo(&heap, Some(&nonempty), 0, Some(&changed), 0), Ok(1));
+        assert_eq!(
+            CompareInchiStereo(&heap, Some(&nonempty), 0, Some(&changed), 0),
+            Ok(1)
+        );
 
         changed = equal.clone();
         changed.nCompInv2Abs = -1;
-        assert_eq!(CompareInchiStereo(&heap, Some(&nonempty), 0, Some(&changed), 0), Ok(1));
+        assert_eq!(
+            CompareInchiStereo(&heap, Some(&nonempty), 0, Some(&changed), 0),
+            Ok(1)
+        );
         assert_eq!(
             CompareInchiStereo(
                 &heap,
@@ -8965,7 +9337,9 @@ mod tests {
         assert_eq!(output, [90, 122, 122, 0, 99, 99]);
 
         let chlorine = heap
-            .allocate(vec![b'C' as i8, b'l' as i8, b'1' as i8, b'2' as i8, b'X' as i8, 0])
+            .allocate(vec![
+                b'C' as i8, b'l' as i8, b'1' as i8, b'2' as i8, b'X' as i8, 0,
+            ])
             .unwrap();
         cursor = chlorine.as_const();
         count = 0;
@@ -9009,7 +9383,12 @@ mod tests {
         assert_eq!(&output[..5], &[90, 122, 122, 0, 88]);
 
         let overflow = heap
-            .allocate(b"N9223372036854775808X\0".iter().map(|byte| *byte as i8).collect())
+            .allocate(
+                b"N9223372036854775808X\0"
+                    .iter()
+                    .map(|byte| *byte as i8)
+                    .collect(),
+            )
             .unwrap();
         cursor = overflow.as_const();
         assert_eq!(
@@ -9046,8 +9425,14 @@ mod tests {
         assert_eq!(CompareHillFormulas(&mut heap, oxygen, empty), Ok(-11));
         assert_eq!(CompareHillFormulas(&mut heap, empty, oxygen), Ok(11));
         assert_eq!(CompareHillFormulas(&mut heap, invalid, oxygen), Ok(0));
-        assert_eq!(CompareHillFormulas(&mut heap, SourceConstPointer::null(), empty), Ok(0));
-        assert_eq!(CompareHillFormulas(&mut heap, max_count, wrapped_count), Ok(1));
+        assert_eq!(
+            CompareHillFormulas(&mut heap, SourceConstPointer::null(), empty),
+            Ok(0)
+        );
+        assert_eq!(
+            CompareHillFormulas(&mut heap, max_count, wrapped_count),
+            Ok(1)
+        );
     }
 
     #[test]
@@ -9064,7 +9449,13 @@ mod tests {
             }
         }
 
-        fn compare(heap: &mut SourceHeap, left: INChI, right: INChI, taut: u32, isotopic: i32) -> i32 {
+        fn compare(
+            heap: &mut SourceHeap,
+            left: INChI,
+            right: INChI,
+            taut: u32,
+            isotopic: i32,
+        ) -> i32 {
             let mut first = INCHI_SORT::default();
             let mut second = INCHI_SORT::default();
             first.pINChI[TAUT_NON as usize] = heap.allocate(vec![left]).unwrap();
@@ -9080,12 +9471,21 @@ mod tests {
         let live = inchi(&mut heap, b"C", &[6], &[0]);
         let mut only_left = INCHI_SORT::default();
         only_left.pINChI[TAUT_NON as usize] = heap.allocate(vec![live.clone()]).unwrap();
-        assert_eq!(CompINChI2(&mut heap, &only_left, &empty2, TAUT_NON, 1), Ok(-1));
-        assert_eq!(CompINChI2(&mut heap, &empty1, &only_left, TAUT_NON, 1), Ok(1));
+        assert_eq!(
+            CompINChI2(&mut heap, &only_left, &empty2, TAUT_NON, 1),
+            Ok(-1)
+        );
+        assert_eq!(
+            CompINChI2(&mut heap, &empty1, &only_left, TAUT_NON, 1),
+            Ok(1)
+        );
 
         let mut deleted = live.clone();
         deleted.bDeleted = 1;
-        assert_eq!(compare(&mut heap, deleted.clone(), live.clone(), TAUT_NON, 1), 1);
+        assert_eq!(
+            compare(&mut heap, deleted.clone(), live.clone(), TAUT_NON, 1),
+            1
+        );
         assert_eq!(compare(&mut heap, live.clone(), deleted, TAUT_NON, 1), -1);
 
         let nitrogen = inchi(&mut heap, b"N", &[7], &[0]);
@@ -9102,7 +9502,10 @@ mod tests {
         let mut conn2 = live.clone();
         conn2.lenConnTable = 1;
         conn2.nConnTable = heap.allocate(vec![2_u16]).unwrap();
-        assert_eq!(compare(&mut heap, conn1.clone(), conn2.clone(), TAUT_NON, 1), 1);
+        assert_eq!(
+            compare(&mut heap, conn1.clone(), conn2.clone(), TAUT_NON, 1),
+            1
+        );
         conn2.lenConnTable = 2;
         conn2.nConnTable = heap.allocate(vec![1_u16, 2]).unwrap();
         assert_eq!(compare(&mut heap, conn1, conn2, TAUT_NON, 1), 1);
@@ -9132,7 +9535,10 @@ mod tests {
         let mut fixed_sort2 = INCHI_SORT::default();
         fixed_sort2.pINChI[TAUT_YES as usize] = heap.allocate(vec![live.clone()]).unwrap();
         fixed_sort2.pINChI[TAUT_NON as usize] = heap.allocate(vec![fixed2]).unwrap();
-        assert_eq!(CompINChI2(&mut heap, &fixed_sort1, &fixed_sort2, TAUT_NON, 1), Ok(1));
+        assert_eq!(
+            CompINChI2(&mut heap, &fixed_sort1, &fixed_sort2, TAUT_NON, 1),
+            Ok(1)
+        );
 
         let mut stereo_inchi = live.clone();
         let stereo = INChI_Stereo {
@@ -9143,7 +9549,10 @@ mod tests {
             ..INChI_Stereo::default()
         };
         stereo_inchi.Stereo = heap.allocate(vec![stereo]).unwrap();
-        assert_eq!(compare(&mut heap, live.clone(), stereo_inchi, TAUT_NON, 1), 1);
+        assert_eq!(
+            compare(&mut heap, live.clone(), stereo_inchi, TAUT_NON, 1),
+            1
+        );
 
         let mut isotope1 = live.clone();
         isotope1.nNumberOfIsotopicAtoms = 1;
@@ -9166,7 +9575,10 @@ mod tests {
                 nNum_T: 2,
             }])
             .unwrap();
-        assert_eq!(compare(&mut heap, isotope1.clone(), isotope2.clone(), TAUT_NON, 0), 0);
+        assert_eq!(
+            compare(&mut heap, isotope1.clone(), isotope2.clone(), TAUT_NON, 0),
+            0
+        );
         assert_eq!(compare(&mut heap, isotope1, isotope2, TAUT_NON, 1), 1);
 
         let mut group1 = live.clone();
@@ -9342,21 +9754,36 @@ mod tests {
         let invalid = formula(b"c2");
         let mut h1 = 10;
         let mut h2 = 20;
-        assert_eq!(CompareHillFormulasNoH(&mut heap, c2h6, c2h4, &mut h1, &mut h2), Ok(0));
+        assert_eq!(
+            CompareHillFormulasNoH(&mut heap, c2h6, c2h4, &mut h1, &mut h2),
+            Ok(0)
+        );
         assert_eq!((h1, h2), (16, 24));
 
         h1 = 0;
         h2 = 0;
-        assert_eq!(CompareHillFormulasNoH(&mut heap, c2n, c3n, &mut h1, &mut h2), Ok(1));
-        assert_eq!(CompareHillFormulasNoH(&mut heap, c2n, c2o, &mut h1, &mut h2), Ok(-1));
-        assert_eq!(CompareHillFormulasNoH(&mut heap, h2o, oxygen, &mut h1, &mut h2), Ok(0));
+        assert_eq!(
+            CompareHillFormulasNoH(&mut heap, c2n, c3n, &mut h1, &mut h2),
+            Ok(1)
+        );
+        assert_eq!(
+            CompareHillFormulasNoH(&mut heap, c2n, c2o, &mut h1, &mut h2),
+            Ok(-1)
+        );
+        assert_eq!(
+            CompareHillFormulasNoH(&mut heap, h2o, oxygen, &mut h1, &mut h2),
+            Ok(0)
+        );
         assert_eq!((h1, h2), (2, 0));
         assert_eq!(
             CompareHillFormulasNoH(&mut heap, hydrogen, empty, &mut h1, &mut h2),
             Ok(0)
         );
         assert_eq!(h1, 4);
-        assert_eq!(CompareHillFormulasNoH(&mut heap, empty, empty, &mut h1, &mut h2), Ok(0));
+        assert_eq!(
+            CompareHillFormulasNoH(&mut heap, empty, empty, &mut h1, &mut h2),
+            Ok(0)
+        );
         assert_eq!(
             CompareHillFormulasNoH(&mut heap, invalid, oxygen, &mut h1, &mut h2),
             Ok(0)
@@ -9385,7 +9812,10 @@ mod tests {
             nTautomer: zero_first2,
             ..INChI::default()
         };
-        assert_eq!(CompareTautNonIsoPartOfINChI(&heap, &ignored1, &ignored2), Ok(0));
+        assert_eq!(
+            CompareTautNonIsoPartOfINChI(&heap, &ignored1, &ignored2),
+            Ok(0)
+        );
 
         let values1 = heap.allocate(vec![2_u16, 3]).unwrap();
         let values2 = heap.allocate(vec![2_u16, 3]).unwrap();
@@ -9447,7 +9877,10 @@ mod tests {
         let mut heap = SourceHeap::default();
         let (mut i1, mut i2) = comp_taut_fixture(&mut heap);
         update(&mut heap, &mut i1, &mut i2);
-        assert_eq!(comp_taut_pair(&mut heap, i1, i2, compare_isotopic), Ok(expected));
+        assert_eq!(
+            comp_taut_pair(&mut heap, i1, i2, compare_isotopic),
+            Ok(expected)
+        );
     }
 
     #[test]
@@ -9474,8 +9907,12 @@ mod tests {
         assert_comp_taut(1, 0, |_, i1, _| i1.bDeleted = 1);
         assert_comp_taut(-1, 0, |_, _, i2| i2.bDeleted = 1);
         assert_comp_taut(1, 0, |heap, i1, i2| {
-            i1.szHillFormula = heap.allocate(vec![b'C' as i8, b'2' as i8, b'N' as i8, 0]).unwrap();
-            i2.szHillFormula = heap.allocate(vec![b'C' as i8, b'3' as i8, b'N' as i8, 0]).unwrap();
+            i1.szHillFormula = heap
+                .allocate(vec![b'C' as i8, b'2' as i8, b'N' as i8, 0])
+                .unwrap();
+            i2.szHillFormula = heap
+                .allocate(vec![b'C' as i8, b'3' as i8, b'N' as i8, 0])
+                .unwrap();
         });
         assert_comp_taut(1, 0, |heap, i1, i2| {
             i1.szHillFormula = heap
@@ -9682,16 +10119,26 @@ mod tests {
         let (result, segments) = run_layers(&mut heap, Some(first), Some(second), 0);
         assert_eq!(result, 0);
         let mut expected = [[0_i8; 11]; 4];
-        expected[tagDiffINChILayers_DIFL_M as usize][tagDiffINChISegments_DIFS_f_FORMULA as usize] = NEQ;
-        expected[tagDiffINChILayers_DIFL_F as usize][tagDiffINChISegments_DIFS_f_FORMULA as usize] = EQL;
-        expected[tagDiffINChILayers_DIFL_M as usize][tagDiffINChISegments_DIFS_h_H_ATOMS as usize] = NEQ;
-        expected[tagDiffINChILayers_DIFL_F as usize][tagDiffINChISegments_DIFS_h_H_ATOMS as usize] = NEQ;
-        expected[tagDiffINChILayers_DIFL_M as usize][tagDiffINChISegments_DIFS_q_CHARGE as usize] = NEQ;
-        expected[tagDiffINChILayers_DIFL_F as usize][tagDiffINChISegments_DIFS_q_CHARGE as usize] = EQL;
-        expected[tagDiffINChILayers_DIFL_M as usize][tagDiffINChISegments_DIFS_b_SBONDS as usize] = NEQ;
-        expected[tagDiffINChILayers_DIFL_F as usize][tagDiffINChISegments_DIFS_b_SBONDS as usize] = EQL;
-        expected[tagDiffINChILayers_DIFL_MI as usize][tagDiffINChISegments_DIFS_b_SBONDS as usize] = EQL;
-        expected[tagDiffINChILayers_DIFL_FI as usize][tagDiffINChISegments_DIFS_b_SBONDS as usize] = EQL;
+        expected[tagDiffINChILayers_DIFL_M as usize]
+            [tagDiffINChISegments_DIFS_f_FORMULA as usize] = NEQ;
+        expected[tagDiffINChILayers_DIFL_F as usize]
+            [tagDiffINChISegments_DIFS_f_FORMULA as usize] = EQL;
+        expected[tagDiffINChILayers_DIFL_M as usize]
+            [tagDiffINChISegments_DIFS_h_H_ATOMS as usize] = NEQ;
+        expected[tagDiffINChILayers_DIFL_F as usize]
+            [tagDiffINChISegments_DIFS_h_H_ATOMS as usize] = NEQ;
+        expected[tagDiffINChILayers_DIFL_M as usize][tagDiffINChISegments_DIFS_q_CHARGE as usize] =
+            NEQ;
+        expected[tagDiffINChILayers_DIFL_F as usize][tagDiffINChISegments_DIFS_q_CHARGE as usize] =
+            EQL;
+        expected[tagDiffINChILayers_DIFL_M as usize][tagDiffINChISegments_DIFS_b_SBONDS as usize] =
+            NEQ;
+        expected[tagDiffINChILayers_DIFL_F as usize][tagDiffINChISegments_DIFS_b_SBONDS as usize] =
+            EQL;
+        expected[tagDiffINChILayers_DIFL_MI as usize]
+            [tagDiffINChISegments_DIFS_b_SBONDS as usize] = EQL;
+        expected[tagDiffINChILayers_DIFL_FI as usize]
+            [tagDiffINChISegments_DIFS_b_SBONDS as usize] = EQL;
         for segment in [
             tagDiffINChISegments_DIFS_t_SATOMS,
             tagDiffINChISegments_DIFS_m_SP3INV,
@@ -9702,8 +10149,10 @@ mod tests {
             expected[tagDiffINChILayers_DIFL_MI as usize][segment as usize] = EQL;
             expected[tagDiffINChILayers_DIFL_FI as usize][segment as usize] = EQL;
         }
-        expected[tagDiffINChILayers_DIFL_MI as usize][tagDiffINChISegments_DIFS_i_IATOMS as usize] = NEQ;
-        expected[tagDiffINChILayers_DIFL_FI as usize][tagDiffINChISegments_DIFS_i_IATOMS as usize] = FI_MI;
+        expected[tagDiffINChILayers_DIFL_MI as usize]
+            [tagDiffINChISegments_DIFS_i_IATOMS as usize] = NEQ;
+        expected[tagDiffINChILayers_DIFL_FI as usize]
+            [tagDiffINChISegments_DIFS_i_IATOMS as usize] = FI_MI;
         assert_eq!(segments, expected);
 
         let first = layers_inchi(&mut heap);
@@ -9791,38 +10240,74 @@ mod tests {
             nNumberOfStereoCenters: 1,
             ..INChI_Stereo::default()
         };
-        assert_eq!(CompareReversedStereoINChI(&heap, None, Some(&center_only)), Ok(20));
+        assert_eq!(
+            CompareReversedStereoINChI(&heap, None, Some(&center_only)),
+            Ok(20)
+        );
         let bond_only = INChI_Stereo {
             nNumberOfStereoBonds: 1,
             ..INChI_Stereo::default()
         };
-        assert_eq!(CompareReversedStereoINChI(&heap, Some(&bond_only), None), Ok(20));
+        assert_eq!(
+            CompareReversedStereoINChI(&heap, Some(&bond_only), None),
+            Ok(20)
+        );
 
         let base = stereo_fixture(&mut heap, &[1, 3], &[1, 2], 1, &[2], &[4], &[2]);
         let equal = stereo_fixture(&mut heap, &[1, 3], &[1, 2], 1, &[2], &[4], &[2]);
-        assert_eq!(CompareReversedStereoINChI(&heap, Some(&base), Some(&equal)), Ok(0));
+        assert_eq!(
+            CompareReversedStereoINChI(&heap, Some(&base), Some(&equal)),
+            Ok(0)
+        );
 
         let mut changed = equal.clone();
         changed.nNumberOfStereoCenters = 1;
-        assert_eq!(CompareReversedStereoINChI(&heap, Some(&base), Some(&changed)), Ok(21));
+        assert_eq!(
+            CompareReversedStereoINChI(&heap, Some(&base), Some(&changed)),
+            Ok(21)
+        );
         changed = stereo_fixture(&mut heap, &[1, 4], &[1, 2], 1, &[2], &[4], &[2]);
-        assert_eq!(CompareReversedStereoINChI(&heap, Some(&base), Some(&changed)), Ok(22));
+        assert_eq!(
+            CompareReversedStereoINChI(&heap, Some(&base), Some(&changed)),
+            Ok(22)
+        );
         changed = stereo_fixture(&mut heap, &[1, 3], &[1, 1], 1, &[2], &[4], &[2]);
-        assert_eq!(CompareReversedStereoINChI(&heap, Some(&base), Some(&changed)), Ok(23));
+        assert_eq!(
+            CompareReversedStereoINChI(&heap, Some(&base), Some(&changed)),
+            Ok(23)
+        );
         changed = stereo_fixture(&mut heap, &[1, 3], &[1, 2], 2, &[2], &[4], &[2]);
-        assert_eq!(CompareReversedStereoINChI(&heap, Some(&base), Some(&changed)), Ok(24));
+        assert_eq!(
+            CompareReversedStereoINChI(&heap, Some(&base), Some(&changed)),
+            Ok(24)
+        );
         changed.nCompInv2Abs = 0;
-        assert_eq!(CompareReversedStereoINChI(&heap, Some(&base), Some(&changed)), Ok(0));
+        assert_eq!(
+            CompareReversedStereoINChI(&heap, Some(&base), Some(&changed)),
+            Ok(0)
+        );
 
         changed = equal.clone();
         changed.nNumberOfStereoBonds = 0;
-        assert_eq!(CompareReversedStereoINChI(&heap, Some(&base), Some(&changed)), Ok(25));
+        assert_eq!(
+            CompareReversedStereoINChI(&heap, Some(&base), Some(&changed)),
+            Ok(25)
+        );
         changed = stereo_fixture(&mut heap, &[1, 3], &[1, 2], 1, &[3], &[4], &[2]);
-        assert_eq!(CompareReversedStereoINChI(&heap, Some(&base), Some(&changed)), Ok(26));
+        assert_eq!(
+            CompareReversedStereoINChI(&heap, Some(&base), Some(&changed)),
+            Ok(26)
+        );
         changed = stereo_fixture(&mut heap, &[1, 3], &[1, 2], 1, &[2], &[5], &[2]);
-        assert_eq!(CompareReversedStereoINChI(&heap, Some(&base), Some(&changed)), Ok(27));
+        assert_eq!(
+            CompareReversedStereoINChI(&heap, Some(&base), Some(&changed)),
+            Ok(27)
+        );
         changed = stereo_fixture(&mut heap, &[1, 3], &[1, 2], 1, &[2], &[4], &[1]);
-        assert_eq!(CompareReversedStereoINChI(&heap, Some(&base), Some(&changed)), Ok(28));
+        assert_eq!(
+            CompareReversedStereoINChI(&heap, Some(&base), Some(&changed)),
+            Ok(28)
+        );
     }
 
     #[test]
@@ -9843,44 +10328,84 @@ mod tests {
         let one_center = stereo_fixture(&mut heap, &[1], &[1], 0, &[], &[], &[]);
         let mut zero_count_results = ICR::default();
         assert_eq!(
-            CompareReversedStereoINChI2(&heap, Some(&zero_count), Some(&one_center), &mut zero_count_results,),
+            CompareReversedStereoINChI2(
+                &heap,
+                Some(&zero_count),
+                Some(&one_center),
+                &mut zero_count_results,
+            ),
             Ok(tagInchiDiffBits_IDIF_SC_MISS as i32)
         );
         assert_eq!(
-            (zero_count_results.num_sc_in2_only, zero_count_results.sc_in2_only[0]),
+            (
+                zero_count_results.num_sc_in2_only,
+                zero_count_results.sc_in2_only[0]
+            ),
             (1, 0)
         );
         zero_count_results = ICR::default();
         assert_eq!(
-            CompareReversedStereoINChI2(&heap, Some(&one_center), Some(&zero_count), &mut zero_count_results,),
+            CompareReversedStereoINChI2(
+                &heap,
+                Some(&one_center),
+                Some(&zero_count),
+                &mut zero_count_results,
+            ),
             Ok(tagInchiDiffBits_IDIF_SC_EXTRA as i32)
         );
         assert_eq!(
-            (zero_count_results.num_sc_in1_only, zero_count_results.sc_in1_only[0]),
+            (
+                zero_count_results.num_sc_in1_only,
+                zero_count_results.sc_in1_only[0]
+            ),
             (1, 0)
         );
 
         let one_bond = stereo_fixture(&mut heap, &[], &[], 0, &[1], &[2], &[1]);
         zero_count_results = ICR::default();
         assert_eq!(
-            CompareReversedStereoINChI2(&heap, Some(&zero_count), Some(&one_bond), &mut zero_count_results,),
+            CompareReversedStereoINChI2(
+                &heap,
+                Some(&zero_count),
+                Some(&one_bond),
+                &mut zero_count_results,
+            ),
             Ok(tagInchiDiffBits_IDIF_SB_MISS as i32)
         );
         assert_eq!(
-            (zero_count_results.num_sb_in2_only, zero_count_results.sb_in2_only[0]),
+            (
+                zero_count_results.num_sb_in2_only,
+                zero_count_results.sb_in2_only[0]
+            ),
             (1, 0)
         );
         zero_count_results = ICR::default();
         assert_eq!(
-            CompareReversedStereoINChI2(&heap, Some(&one_bond), Some(&zero_count), &mut zero_count_results,),
+            CompareReversedStereoINChI2(
+                &heap,
+                Some(&one_bond),
+                Some(&zero_count),
+                &mut zero_count_results,
+            ),
             Ok(tagInchiDiffBits_IDIF_SB_EXTRA as i32)
         );
         assert_eq!(
-            (zero_count_results.num_sb_in1_only, zero_count_results.sb_in1_only[0]),
+            (
+                zero_count_results.num_sb_in1_only,
+                zero_count_results.sb_in1_only[0]
+            ),
             (1, 0)
         );
 
-        let center1 = stereo_fixture(&mut heap, &[1, 3, 5], &[AB_PARITY_UNDF as i8, 1, 2], 1, &[], &[], &[]);
+        let center1 = stereo_fixture(
+            &mut heap,
+            &[1, 3, 5],
+            &[AB_PARITY_UNDF as i8, 1, 2],
+            1,
+            &[],
+            &[],
+            &[],
+        );
         let center2 = stereo_fixture(
             &mut heap,
             &[2, 3, 6],
@@ -9994,8 +10519,16 @@ mod tests {
                 ..ICR::default()
             };
             let mut error = 77;
-            let difference =
-                CompareReversedINChI2(heap, left, right, aux_left, aux_right, &mut results, &mut error).unwrap();
+            let difference = CompareReversedINChI2(
+                heap,
+                left,
+                right,
+                aux_left,
+                aux_right,
+                &mut results,
+                &mut error,
+            )
+            .unwrap();
             (difference as u32, results, error)
         }
 
@@ -10011,7 +10544,8 @@ mod tests {
 
         let left = reversed_inchi2_fixture(&mut heap);
         let right = reversed_inchi2_fixture(&mut heap);
-        let (difference, results, error) = compare(&mut heap, Some(&left), Some(&right), None, None);
+        let (difference, results, error) =
+            compare(&mut heap, Some(&left), Some(&right), None, None);
         assert_eq!((difference, results.flags as u32, error), (0, 0, 0));
         assert_eq!((results.tot_num_H1, results.tot_num_H2), (6, 6));
 
@@ -10048,10 +10582,18 @@ mod tests {
         hydrogen_right.nNum_H = heap.allocate(vec![1_i8, 2]).unwrap();
         hydrogen_left.nNum_H_fixed = heap.allocate(vec![2_i8, -1]).unwrap();
         hydrogen_right.nNum_H_fixed = heap.allocate(vec![1_i8, 3]).unwrap();
-        let (difference, results, _) = compare(&mut heap, Some(&hydrogen_left), Some(&hydrogen_right), None, None);
+        let (difference, results, _) = compare(
+            &mut heap,
+            Some(&hydrogen_left),
+            Some(&hydrogen_right),
+            None,
+            None,
+        );
         assert_eq!(
             difference,
-            tagInchiDiffBits_IDIF_POSITION_H | tagInchiDiffBits_IDIF_MORE_FH | tagInchiDiffBits_IDIF_LESS_FH
+            tagInchiDiffBits_IDIF_POSITION_H
+                | tagInchiDiffBits_IDIF_MORE_FH
+                | tagInchiDiffBits_IDIF_LESS_FH
         );
         assert_eq!(results.num_diff_pos_H, 2);
         assert_eq!(&results.diff_pos_H_at[..2], &[0, 1]);
@@ -10075,7 +10617,8 @@ mod tests {
 
         let mut fixed_only = reversed_inchi2_fixture(&mut heap);
         fixed_only.nNum_H_fixed = heap.allocate(vec![0_i8, -3]).unwrap();
-        let (difference, results, _) = compare(&mut heap, Some(&fixed_only), Some(&right), None, None);
+        let (difference, results, _) =
+            compare(&mut heap, Some(&fixed_only), Some(&right), None, None);
         assert_eq!(difference, tagInchiDiffBits_IDIF_MORE_FH);
         assert_eq!(
             (
@@ -10085,7 +10628,8 @@ mod tests {
             ),
             (1, 1, -3)
         );
-        let (difference, results, _) = compare(&mut heap, Some(&right), Some(&fixed_only), None, None);
+        let (difference, results, _) =
+            compare(&mut heap, Some(&right), Some(&fixed_only), None, None);
         assert_eq!(difference, tagInchiDiffBits_IDIF_LESS_FH);
         assert_eq!(results.fixed_H_nH2_more[0], -3);
 
@@ -10105,7 +10649,8 @@ mod tests {
         different_element.szHillFormula = heap
             .allocate(vec![b'N' as i8, b'2' as i8, b'H' as i8, b'6' as i8, 0])
             .unwrap();
-        let (difference, results, _) = compare(&mut heap, Some(&left), Some(&different_element), None, None);
+        let (difference, results, _) =
+            compare(&mut heap, Some(&left), Some(&different_element), None, None);
         assert_eq!(difference, tagInchiDiffBits_IDIF_NUM_EL);
         assert_eq!((results.tot_num_H1, results.tot_num_H2), (0, 0));
 
@@ -10128,7 +10673,13 @@ mod tests {
         let mut tautomer_right = reversed_inchi2_fixture(&mut heap);
         tautomer_right.nTautomer = heap.allocate(vec![1_u16, 4, 1, 0, 2, 5]).unwrap();
         tautomer_right.lenTautomer = 6;
-        let (difference, results, _) = compare(&mut heap, Some(&tautomer_left), Some(&tautomer_right), None, None);
+        let (difference, results, _) = compare(
+            &mut heap,
+            Some(&tautomer_left),
+            Some(&tautomer_right),
+            None,
+            None,
+        );
         assert_eq!(
             difference,
             tagInchiDiffBits_IDIF_EXTRA_TG_ENDP
@@ -10159,38 +10710,74 @@ mod tests {
         two_groups.nTautomer = heap.allocate(vec![2_u16, 3, 1, 0, 2, 3, 1, 0, 4]).unwrap();
         two_groups.lenTautomer = 9;
         let mut three_groups = reversed_inchi2_fixture(&mut heap);
-        three_groups.nTautomer = heap.allocate(vec![3_u16, 3, 1, 0, 2, 3, 1, 0, 4, 3, 1, 0, 6]).unwrap();
+        three_groups.nTautomer = heap
+            .allocate(vec![3_u16, 3, 1, 0, 2, 3, 1, 0, 4, 3, 1, 0, 6])
+            .unwrap();
         three_groups.lenTautomer = 13;
         assert_ne!(
-            compare(&mut heap, Some(&tautomer_left), Some(&two_groups), None, None).0 & tagInchiDiffBits_IDIF_SINGLE_TG,
+            compare(
+                &mut heap,
+                Some(&tautomer_left),
+                Some(&two_groups),
+                None,
+                None
+            )
+            .0 & tagInchiDiffBits_IDIF_SINGLE_TG,
             0
         );
         assert_ne!(
-            compare(&mut heap, Some(&two_groups), Some(&tautomer_left), None, None).0
-                & tagInchiDiffBits_IDIF_MULTIPLE_TG,
+            compare(
+                &mut heap,
+                Some(&two_groups),
+                Some(&tautomer_left),
+                None,
+                None
+            )
+            .0 & tagInchiDiffBits_IDIF_MULTIPLE_TG,
             0
         );
         assert_ne!(
-            compare(&mut heap, Some(&two_groups), Some(&three_groups), None, None).0 & tagInchiDiffBits_IDIF_NUM_TG,
+            compare(
+                &mut heap,
+                Some(&two_groups),
+                Some(&three_groups),
+                None,
+                None
+            )
+            .0 & tagInchiDiffBits_IDIF_NUM_TG,
             0
         );
         assert_ne!(
-            compare(&mut heap, Some(&right), Some(&tautomer_left), None, None).0 & tagInchiDiffBits_IDIF_NO_TAUT,
+            compare(&mut heap, Some(&right), Some(&tautomer_left), None, None).0
+                & tagInchiDiffBits_IDIF_NO_TAUT,
             0
         );
         assert_ne!(
-            compare(&mut heap, Some(&tautomer_left), Some(&right), None, None).0 & tagInchiDiffBits_IDIF_WRONG_TAUT,
+            compare(&mut heap, Some(&tautomer_left), Some(&right), None, None).0
+                & tagInchiDiffBits_IDIF_WRONG_TAUT,
             0
         );
 
         let baseline_allocations = heap.live_allocation_count();
         heap.fail_after_allocations(0);
-        let (difference, results, error) = compare(&mut heap, Some(&tautomer_left), Some(&tautomer_right), None, None);
+        let (difference, results, error) = compare(
+            &mut heap,
+            Some(&tautomer_left),
+            Some(&tautomer_right),
+            None,
+            None,
+        );
         assert_eq!(error, -1);
         assert_eq!(results.flags as u32, difference);
         assert_eq!(heap.live_allocation_count(), baseline_allocations);
         heap.fail_after_allocations(1);
-        let (difference, results, error) = compare(&mut heap, Some(&tautomer_left), Some(&tautomer_right), None, None);
+        let (difference, results, error) = compare(
+            &mut heap,
+            Some(&tautomer_left),
+            Some(&tautomer_right),
+            None,
+            None,
+        );
         assert_eq!(error, -1);
         assert_eq!(results.flags as u32, difference);
         assert_eq!(heap.live_allocation_count(), baseline_allocations);
@@ -10205,7 +10792,14 @@ mod tests {
             .unwrap();
         let mut isotope_right = reversed_inchi2_fixture(&mut heap);
         assert_eq!(
-            compare(&mut heap, Some(&isotope_left), Some(&isotope_right), None, None).0,
+            compare(
+                &mut heap,
+                Some(&isotope_left),
+                Some(&isotope_right),
+                None,
+                None
+            )
+            .0,
             tagInchiDiffBits_IDIF_NUM_ISO_AT
         );
         isotope_right.nNumberOfIsotopicAtoms = 1;
@@ -10216,7 +10810,14 @@ mod tests {
             }])
             .unwrap();
         assert_eq!(
-            compare(&mut heap, Some(&isotope_left), Some(&isotope_right), None, None).0,
+            compare(
+                &mut heap,
+                Some(&isotope_left),
+                Some(&isotope_right),
+                None,
+                None
+            )
+            .0,
             tagInchiDiffBits_IDIF_ISO_AT
         );
 
@@ -10248,7 +10849,14 @@ mod tests {
         stereo_right.Stereo = heap.allocate(vec![regular_right]).unwrap();
         stereo_right.StereoIsotopic = heap.allocate(vec![empty_isotopic_right]).unwrap();
         assert_ne!(
-            compare(&mut heap, Some(&stereo_left), Some(&stereo_right), None, None).0 & tagInchiDiffBits_IDIF_SC_PARITY,
+            compare(
+                &mut heap,
+                Some(&stereo_left),
+                Some(&stereo_right),
+                None,
+                None
+            )
+            .0 & tagInchiDiffBits_IDIF_SC_PARITY,
             0
         );
 
@@ -10257,7 +10865,14 @@ mod tests {
         stereo_left.StereoIsotopic = heap.allocate(vec![isotopic_left]).unwrap();
         stereo_right.StereoIsotopic = heap.allocate(vec![isotopic_right]).unwrap();
         assert_ne!(
-            compare(&mut heap, Some(&stereo_left), Some(&stereo_right), None, None).0 & tagInchiDiffBits_IDIF_SC_PARITY,
+            compare(
+                &mut heap,
+                Some(&stereo_left),
+                Some(&stereo_right),
+                None,
+                None
+            )
+            .0 & tagInchiDiffBits_IDIF_SC_PARITY,
             0
         );
     }
@@ -10268,7 +10883,10 @@ mod tests {
         assert_eq!(CompareReversedINChI(&heap, None, None, None, None), Ok(0));
         let base = inchi_fixture(&mut heap);
         let equal = inchi_fixture(&mut heap);
-        assert_eq!(CompareReversedINChI(&heap, Some(&base), None, None, None), Ok(1));
+        assert_eq!(
+            CompareReversedINChI(&heap, Some(&base), None, None, None),
+            Ok(1)
+        );
         assert_eq!(
             CompareReversedINChI(&heap, Some(&base), Some(&equal), None, None),
             Ok(0)
@@ -10468,12 +11086,24 @@ mod tests {
                 _IS_FATAL as i32
             );
         }
-        assert_eq!(GetInpStructErrorType(None, 9, None, 0).unwrap(), _IS_ERROR as i32);
+        assert_eq!(
+            GetInpStructErrorType(None, 9, None, 0).unwrap(),
+            _IS_ERROR as i32
+        );
         for error in [30, 31, 97, 98, i32::MAX] {
-            assert_eq!(GetInpStructErrorType(None, error, None, 1).unwrap(), _IS_ERROR as i32);
+            assert_eq!(
+                GetInpStructErrorType(None, error, None, 1).unwrap(),
+                _IS_ERROR as i32
+            );
         }
-        assert_eq!(GetInpStructErrorType(None, 0, None, 0).unwrap(), _IS_ERROR as i32);
-        assert_eq!(GetInpStructErrorType(None, 0, None, -1).unwrap(), _IS_ERROR as i32);
+        assert_eq!(
+            GetInpStructErrorType(None, 0, None, 0).unwrap(),
+            _IS_ERROR as i32
+        );
+        assert_eq!(
+            GetInpStructErrorType(None, 0, None, -1).unwrap(),
+            _IS_ERROR as i32
+        );
 
         let mut parameters = INPUT_PARMS::default();
         assert_eq!(
@@ -10490,7 +11120,10 @@ mod tests {
             Err(SourceHeapError::NullPointer)
         );
 
-        assert_eq!(GetInpStructErrorType(None, 0, Some(&[0]), 1).unwrap(), _IS_OKAY as i32);
+        assert_eq!(
+            GetInpStructErrorType(None, 0, Some(&[0]), 1).unwrap(),
+            _IS_OKAY as i32
+        );
         assert_eq!(
             GetInpStructErrorType(None, 0, Some(&[b'x' as i8, 0]), 1).unwrap(),
             _IS_WARNING as i32
@@ -10512,7 +11145,10 @@ mod tests {
             current_atom: 0,
         };
 
-        assert_eq!(CompareDfsDescendants4CT(deleted, deleted + 1, &order), Ok(0));
+        assert_eq!(
+            CompareDfsDescendants4CT(deleted, deleted + 1, &order),
+            Ok(0)
+        );
         assert_eq!(CompareDfsDescendants4CT(deleted, 1, &order), Ok(1));
         assert_eq!(CompareDfsDescendants4CT(1, deleted, &order), Ok(-1));
         assert_eq!(CompareDfsDescendants4CT(1, 2, &order), Ok(2));
@@ -10532,7 +11168,8 @@ mod tests {
     fn source_port__ichimake__getdfsorder4ct__line_2154() {
         let mut heap = SourceHeap::default();
         let single = heap.allocate_model_storage(vec![1_u16]).unwrap();
-        let output = GetDfsOrder4CT(&mut heap, single, 1, SourceConstPointer::null(), 1, 0).unwrap();
+        let output =
+            GetDfsOrder4CT(&mut heap, single, 1, SourceConstPointer::null(), 1, 0).unwrap();
         assert_eq!(heap.slice(output.as_const()).unwrap(), &[1, 0, 0, 0, 0, 0]);
         inchi_free(&mut heap, output).unwrap();
 
@@ -10575,9 +11212,19 @@ mod tests {
 
         for failure_after in 0..8 {
             let mut failing_heap = SourceHeap::default();
-            let chain = failing_heap.allocate_model_storage(vec![2_u16, 1, 3, 2]).unwrap();
+            let chain = failing_heap
+                .allocate_model_storage(vec![2_u16, 1, 3, 2])
+                .unwrap();
             failing_heap.fail_after_allocations(failure_after);
-            let output = GetDfsOrder4CT(&mut failing_heap, chain, 4, SourceConstPointer::null(), 3, 0).unwrap();
+            let output = GetDfsOrder4CT(
+                &mut failing_heap,
+                chain,
+                4,
+                SourceConstPointer::null(),
+                3,
+                0,
+            )
+            .unwrap();
             assert!(output.is_null(), "allocation failure {failure_after}");
         }
     }
@@ -10586,7 +11233,9 @@ mod tests {
     fn source_port__ichimake__inchi_segmentaction__line_1486() {
         for value in i8::MIN..=i8::MAX {
             let promoted = i32::from(value);
-            let expected = if promoted & crate::source_types::tagMarkDiff_DIFV_OUTPUT_OMIT_F as i32 == 0 {
+            let expected = if promoted & crate::source_types::tagMarkDiff_DIFV_OUTPUT_OMIT_F as i32
+                == 0
+            {
                 crate::source_types::tagINChISegmAction_INCHI_SEGM_OMIT as i32
             } else if promoted & crate::source_types::tagMarkDiff_DIFV_OUTPUT_EMPTY_T as i32 != 0
                 && promoted & crate::source_types::tagMarkDiff_DIFV_OUTPUT_EMPTY_F as i32 == 0

@@ -198,6 +198,7 @@ dependencies = [
 name = "cosmolkit-core"
 version = "0.3.0"
 dependencies = [
+ "cosmolkit-cx",
  "cosmolkit-inchi",
  "cosmolkit-macros",
  "cosmolkit-model",
@@ -220,6 +221,10 @@ dependencies = [
  "tiny-skia",
  "usvg",
 ]
+
+[[package]]
+name = "cosmolkit-cx"
+version = "0.3.0"
 
 [[package]]
 name = "cosmolkit-inchi"

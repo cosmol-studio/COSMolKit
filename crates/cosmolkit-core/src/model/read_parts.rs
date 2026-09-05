@@ -53,7 +53,10 @@ impl<'a> MoleculeReadParts<'a> {
     }
 
     #[must_use]
-    pub(crate) fn from_molecule_with_access(molecule: &'a Molecule, access: MoleculeReadAccess) -> Self {
+    pub(crate) fn from_molecule_with_access(
+        molecule: &'a Molecule,
+        access: MoleculeReadAccess,
+    ) -> Self {
         Self {
             source: Some(molecule),
             topology: molecule.topology_block(),
@@ -254,7 +257,11 @@ impl<'a> MoleculeReadParts<'a> {
         include_dative_bonds: bool,
         include_hydrogen_bonds: bool,
     ) -> Result<crate::RingInfo, crate::RingFindingError> {
-        crate::rings::find_ring_families_from_read_parts(self, include_dative_bonds, include_hydrogen_bonds)
+        crate::rings::find_ring_families_from_read_parts(
+            self,
+            include_dative_bonds,
+            include_hydrogen_bonds,
+        )
     }
 
     pub(crate) fn set_aromaticity(

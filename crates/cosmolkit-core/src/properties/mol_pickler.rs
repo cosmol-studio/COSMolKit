@@ -14,11 +14,12 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    Atom, AtomId, Bond, BondDirection, BondId, BondOrder, BondStereo, ChiralTag, Conformer3D, CoordinateDimension,
-    Hybridization, Molecule, RingFindType, RingInfo, SGroupAttachPoint, SGroupBondRole, SGroupBracket,
-    SGroupBracketStyle, SGroupCState, SGroupConnection, SGroupData, SGroupDisplay, SdfPropertyList,
-    SdfPropertyListTarget, StereoGroup, StereoGroupKind, SubstanceGroup, SubstanceGroupId, SubstanceGroupKind,
-    TopologyTrust, ValenceAssignment, molecule::DerivedCacheBlock,
+    Atom, AtomId, Bond, BondDirection, BondId, BondOrder, BondStereo, ChiralTag, Conformer3D,
+    CoordinateDimension, Hybridization, Molecule, RingFindType, RingInfo, SGroupAttachPoint,
+    SGroupBondRole, SGroupBracket, SGroupBracketStyle, SGroupCState, SGroupConnection, SGroupData,
+    SGroupDisplay, SdfPropertyList, SdfPropertyListTarget, StereoGroup, StereoGroupKind,
+    SubstanceGroup, SubstanceGroupId, SubstanceGroupKind, TopologyTrust, ValenceAssignment,
+    molecule::DerivedCacheBlock,
 };
 
 // ──────────────────────────────────────────────
@@ -320,11 +321,18 @@ fn read_u32_le(r: &mut PickleReader<'_>) -> Result<u32, PickleError> {
 }
 
 fn checked_u32(value: usize, context: &str) -> Result<u32, PickleError> {
-    u32::try_from(value)
-        .map_err(|_| PickleError::InvalidArchive(format!("{context} exceeds the archive u32 boundary: {value}")))
+    u32::try_from(value).map_err(|_| {
+        PickleError::InvalidArchive(format!(
+            "{context} exceeds the archive u32 boundary: {value}"
+        ))
+    })
 }
 
-fn write_atom_id_rows(w: &mut PickleWriter, rows: &[Vec<AtomId>], context: &str) -> Result<(), PickleError> {
+fn write_atom_id_rows(
+    w: &mut PickleWriter,
+    rows: &[Vec<AtomId>],
+    context: &str,
+) -> Result<(), PickleError> {
     w.write_u32(checked_u32(rows.len(), context)?);
     for row in rows {
         w.write_u32(checked_u32(row.len(), context)?);
@@ -335,7 +343,11 @@ fn write_atom_id_rows(w: &mut PickleWriter, rows: &[Vec<AtomId>], context: &str)
     Ok(())
 }
 
-fn write_bond_id_rows(w: &mut PickleWriter, rows: &[Vec<BondId>], context: &str) -> Result<(), PickleError> {
+fn write_bond_id_rows(
+    w: &mut PickleWriter,
+    rows: &[Vec<BondId>],
+    context: &str,
+) -> Result<(), PickleError> {
     w.write_u32(checked_u32(rows.len(), context)?);
     for row in rows {
         w.write_u32(checked_u32(row.len(), context)?);
@@ -477,14 +489,21 @@ fn write_ring_info(w: &mut PickleWriter, ring_info: &RingInfo) -> Result<(), Pic
         }
     }
     let num_fused_bonds = ring_info.persisted_num_fused_bonds();
-    w.write_u32(checked_u32(num_fused_bonds.len(), "fused-bond count table")?);
+    w.write_u32(checked_u32(
+        num_fused_bonds.len(),
+        "fused-bond count table",
+    )?);
     for count in num_fused_bonds {
         w.write_u32(checked_u32(*count, "fused-bond count")?);
     }
     Ok(())
 }
 
-fn read_ring_info(r: &mut PickleReader<'_>, atom_count: usize, bond_count: usize) -> Result<RingInfo, PickleError> {
+fn read_ring_info(
+    r: &mut PickleReader<'_>,
+    atom_count: usize,
+    bond_count: usize,
+) -> Result<RingInfo, PickleError> {
     // RDKit✔️✔️: RingInfo *ringInfo = mol->getRingInfo();
     // RDKit✔️✔️: ringInfo->initialize(ringType);
     // RDKit✔️✔️: if (numRings > 0) {
@@ -569,14 +588,18 @@ fn encode_derived_state(mol: &Molecule) -> Result<Vec<u8>, PickleError> {
     // RDKit✔️✔️: }
     match &cache.valence {
         Some(valence) => {
-            if valence.explicit_valence.len() != mol.num_atoms() || valence.implicit_hydrogens.len() != mol.num_atoms()
+            if valence.explicit_valence.len() != mol.num_atoms()
+                || valence.implicit_hydrogens.len() != mol.num_atoms()
             {
                 return Err(PickleError::InvalidMolecule(
                     "valence cache row count does not match atom count".to_string(),
                 ));
             }
             w.write_bool(true);
-            w.write_u32(checked_u32(valence.explicit_valence.len(), "explicit valence table")?);
+            w.write_u32(checked_u32(
+                valence.explicit_valence.len(),
+                "explicit valence table",
+            )?);
             for value in &valence.explicit_valence {
                 w.write_i32(*value);
             }
@@ -713,11 +736,21 @@ fn write_archive_section(
     Ok(())
 }
 
-fn encode_sectioned_archive(molecule_state: Vec<u8>, derived_state: Vec<u8>) -> Result<Vec<u8>, PickleError> {
+fn encode_sectioned_archive(
+    molecule_state: Vec<u8>,
+    derived_state: Vec<u8>,
+) -> Result<Vec<u8>, PickleError> {
     let manifest = encode_manifest()?;
     let molecule_state = encode_molecule_state(molecule_state)?;
     let mut buf = Vec::with_capacity(
-        ARCHIVE_MAGIC.len() + 2 + 2 + 2 + 30 + manifest.len() + molecule_state.len() + derived_state.len(),
+        ARCHIVE_MAGIC.len()
+            + 2
+            + 2
+            + 2
+            + 30
+            + manifest.len()
+            + molecule_state.len()
+            + derived_state.len(),
     );
     buf.extend_from_slice(ARCHIVE_MAGIC);
     write_u16_le(&mut buf, ARCHIVE_MAJOR);
@@ -750,7 +783,9 @@ fn encode_sectioned_archive(molecule_state: Vec<u8>, derived_state: Vec<u8>) -> 
     Ok(buf)
 }
 
-fn read_archive_sections<'a>(data: &'a [u8]) -> Result<(u16, Vec<ArchiveSection<'a>>), PickleError> {
+fn read_archive_sections<'a>(
+    data: &'a [u8],
+) -> Result<(u16, Vec<ArchiveSection<'a>>), PickleError> {
     let mut r = PickleReader::new(data);
     let magic = r.read_exact_slice(ARCHIVE_MAGIC.len())?;
     if magic != ARCHIVE_MAGIC {
@@ -816,8 +851,10 @@ fn decode_sectioned_archive(data: &[u8]) -> Result<Molecule, PickleError> {
                         section.codec
                     )));
                 }
-                let manifest: ArchiveManifestV1 = postcard::from_bytes(section.payload)
-                    .map_err(|err| PickleError::InvalidArchive(format!("manifest decode failed: {err}")))?;
+                let manifest: ArchiveManifestV1 =
+                    postcard::from_bytes(section.payload).map_err(|err| {
+                        PickleError::InvalidArchive(format!("manifest decode failed: {err}"))
+                    })?;
                 if manifest.molecule_state_codec != SECTION_CODEC_POSTCARD {
                     return Err(PickleError::InvalidArchive(format!(
                         "manifest declares unsupported molecule state codec {}",
@@ -883,8 +920,9 @@ fn decode_sectioned_archive(data: &[u8]) -> Result<Molecule, PickleError> {
     if archive_minor >= 1 && derived_state.is_none() {
         return Err(PickleError::MissingRequiredSection(SECTION_DERIVED_STATE));
     }
-    let state: MoleculeStateV1 = postcard::from_bytes(molecule_state)
-        .map_err(|err| PickleError::InvalidArchive(format!("molecule state decode failed: {err}")))?;
+    let state: MoleculeStateV1 = postcard::from_bytes(molecule_state).map_err(|err| {
+        PickleError::InvalidArchive(format!("molecule state decode failed: {err}"))
+    })?;
     if state.encoding != SECTION_CODEC_RAW {
         return Err(PickleError::InvalidArchive(format!(
             "molecule state declares unsupported encoding {}",
@@ -1179,8 +1217,9 @@ fn write_atom(w: &mut PickleWriter, atom: &Atom) {
         w.write_u32(iso as u32);
     }
 
-    // Has query flag — we serialize presence but not the full query tree
-    w.write_bool(atom.query().is_some());
+    // Concrete atoms do not carry query state; query graphs have their own
+    // serialization path and are never encoded as molecule atom flags.
+    w.write_bool(false);
 
     // Properties
     w.write_props(atom.props());
@@ -1210,7 +1249,8 @@ fn read_bond(r: &mut PickleReader, version: u8) -> Result<Bond, PickleError> {
 
     let unknown_stereo = r.read_bool()?;
 
-    // Query presence flag (skip full query tree deserialization)
+    // Query presence flag from legacy molecule pickles (query graphs are now
+    // separate values and are not reconstructed into concrete atoms).
     let _has_query = r.read_bool()?;
 
     let props = r.read_props()?;
@@ -1279,8 +1319,8 @@ fn write_bond(w: &mut PickleWriter, bond: &Bond) {
 
     w.write_bool(bond.unknown_stereo());
 
-    // Query presence flag
-    w.write_bool(bond.query().is_some());
+    // Query graphs are separate values, not bond flags on concrete molecules.
+    w.write_bool(false);
 
     // Properties
     w.write_props(bond.props());
@@ -1382,7 +1422,9 @@ fn write_sgroup_bracket_style(w: &mut PickleWriter, style: Option<&SGroupBracket
     }
 }
 
-fn read_sgroup_bracket_style(r: &mut PickleReader) -> Result<Option<SGroupBracketStyle>, PickleError> {
+fn read_sgroup_bracket_style(
+    r: &mut PickleReader,
+) -> Result<Option<SGroupBracketStyle>, PickleError> {
     match r.read_u8()? {
         0 => Ok(None),
         1 => Ok(Some(SGroupBracketStyle::Bracket)),
@@ -1886,14 +1928,30 @@ fn mol_from_legacy_binary(data: &[u8]) -> Result<Molecule, PickleError> {
             None
         };
         let chiral_tag = read_chiral_tag(&mut r)?;
-        let chiral_perm = if r.read_bool()? { Some(r.read_u32()?) } else { None };
+        let chiral_perm = if r.read_bool()? {
+            Some(r.read_u32()?)
+        } else {
+            None
+        };
         let unknown_stereo = r.read_bool()?;
-        let mol_parity = if r.read_bool()? { Some(r.read_i32()?) } else { None };
-        let mol_inv_flag = if r.read_bool()? { Some(r.read_i32()?) } else { None };
+        let mol_parity = if r.read_bool()? {
+            Some(r.read_i32()?)
+        } else {
+            None
+        };
+        let mol_inv_flag = if r.read_bool()? {
+            Some(r.read_i32()?)
+        } else {
+            None
+        };
         let radical_electrons = r.read_u8()?;
         let is_aromatic = r.read_bool()?;
         let hybridization = read_hybridization(&mut r)?;
-        let atom_map = if r.read_bool()? { Some(r.read_u32()?) } else { None };
+        let atom_map = if r.read_bool()? {
+            Some(r.read_u32()?)
+        } else {
+            None
+        };
         let no_implicit = r.read_bool()?;
         let implicit_hydrogen = r.read_bool()?;
         let explicit_hydrogens = r.read_u8()?;
@@ -1911,7 +1969,8 @@ fn mol_from_legacy_binary(data: &[u8]) -> Result<Molecule, PickleError> {
         };
         let _has_pdb_info = r.read_bool()?;
 
-        let element = crate::Element::from_atomic_number(atomic_number).unwrap_or(crate::Element::DUMMY);
+        let element =
+            crate::Element::from_atomic_number(atomic_number).unwrap_or(crate::Element::DUMMY);
 
         let mut spec = crate::AtomSpec::new(element)
             .with_formal_charge(formal_charge)
@@ -2041,9 +2100,17 @@ fn mol_from_legacy_binary(data: &[u8]) -> Result<Molecule, PickleError> {
     for _ in 0..sgroup_count {
         let id = SubstanceGroupId::new(r.read_u32()? as usize);
         let has_rdkit_seq = r.read_bool()?;
-        let rdkit_seq = if has_rdkit_seq { Some(r.read_u32()?) } else { None };
+        let rdkit_seq = if has_rdkit_seq {
+            Some(r.read_u32()?)
+        } else {
+            None
+        };
         let has_ext_id = r.read_bool()?;
-        let ext_id = if has_ext_id { Some(r.read_u32()?) } else { None };
+        let ext_id = if has_ext_id {
+            Some(r.read_u32()?)
+        } else {
+            None
+        };
         let kind = read_substance_group_kind(&mut r)?;
         let atom_count_sg = r.read_u32()? as usize;
         let mut atoms_sg = Vec::with_capacity(atom_count_sg);
@@ -2099,7 +2166,11 @@ fn mol_from_legacy_binary(data: &[u8]) -> Result<Molecule, PickleError> {
             };
             let ap_label = r.read_option_string()?;
             let has_ap_order = r.read_bool()?;
-            let ap_order = if has_ap_order { Some(r.read_u32()?) } else { None };
+            let ap_order = if has_ap_order {
+                Some(r.read_u32()?)
+            } else {
+                None
+            };
             attach_points.push(SGroupAttachPoint {
                 atom: ap_atom,
                 leaving_atom: leaving,
@@ -2348,7 +2419,9 @@ fn mol_from_legacy_binary(data: &[u8]) -> Result<Molecule, PickleError> {
     builder = builder.with_properties(mol_props);
 
     // Build
-    builder.build().map_err(|e| PickleError::InvalidMolecule(e.to_string()))
+    builder
+        .build()
+        .map_err(|e| PickleError::InvalidMolecule(e.to_string()))
 }
 
 // ──────────────────────────────────────────────
@@ -2359,8 +2432,8 @@ fn mol_from_legacy_binary(data: &[u8]) -> Result<Molecule, PickleError> {
 mod tests {
     use super::*;
     use crate::{
-        AtomSpec, BondOrder, BondSpec, BondStereo, ChiralTag, Element, Hybridization, MoleculeBuilder, SdfPropertyList,
-        SdfPropertyListTarget, StereoGroup, StereoGroupKind,
+        AtomSpec, BondOrder, BondSpec, BondStereo, ChiralTag, Element, Hybridization,
+        MoleculeBuilder, SdfPropertyList, SdfPropertyListTarget, StereoGroup, StereoGroupKind,
     };
 
     fn build_simple_methane() -> Molecule {
@@ -2373,7 +2446,11 @@ mod tests {
         }
         for i in 0..4 {
             builder
-                .add_bond(BondSpec::new(AtomId::new(0), AtomId::new(i + 1), BondOrder::Single))
+                .add_bond(BondSpec::new(
+                    AtomId::new(0),
+                    AtomId::new(i + 1),
+                    BondOrder::Single,
+                ))
                 .unwrap();
         }
         builder.build().expect("build methane")
@@ -2406,31 +2483,55 @@ mod tests {
 
         // C-C single
         builder
-            .add_bond(BondSpec::new(AtomId::new(0), AtomId::new(1), BondOrder::Single))
+            .add_bond(BondSpec::new(
+                AtomId::new(0),
+                AtomId::new(1),
+                BondOrder::Single,
+            ))
             .unwrap();
         // C-O single
         builder
-            .add_bond(BondSpec::new(AtomId::new(1), AtomId::new(2), BondOrder::Single))
+            .add_bond(BondSpec::new(
+                AtomId::new(1),
+                AtomId::new(2),
+                BondOrder::Single,
+            ))
             .unwrap();
         // O-H single
         builder
-            .add_bond(BondSpec::new(AtomId::new(2), AtomId::new(3), BondOrder::Single))
+            .add_bond(BondSpec::new(
+                AtomId::new(2),
+                AtomId::new(3),
+                BondOrder::Single,
+            ))
             .unwrap();
         // 3 C-H on C0
         for i in 0..3 {
             builder
-                .add_bond(BondSpec::new(AtomId::new(0), AtomId::new(4 + i), BondOrder::Single))
+                .add_bond(BondSpec::new(
+                    AtomId::new(0),
+                    AtomId::new(4 + i),
+                    BondOrder::Single,
+                ))
                 .unwrap();
         }
         // 2 C-H on C1
         for i in 0..2 {
             builder
-                .add_bond(BondSpec::new(AtomId::new(1), AtomId::new(7 + i), BondOrder::Single))
+                .add_bond(BondSpec::new(
+                    AtomId::new(1),
+                    AtomId::new(7 + i),
+                    BondOrder::Single,
+                ))
                 .unwrap();
         }
         // O-H already on index 3
         builder
-            .add_bond(BondSpec::new(AtomId::new(2), AtomId::new(9), BondOrder::Single))
+            .add_bond(BondSpec::new(
+                AtomId::new(2),
+                AtomId::new(9),
+                BondOrder::Single,
+            ))
             .unwrap();
 
         builder.build().expect("build ethanol")
@@ -2438,9 +2539,10 @@ mod tests {
 
     fn encode_v1_0_sectioned_archive(mol: &Molecule) -> Vec<u8> {
         let manifest = encode_manifest().expect("encode v1.0 manifest");
-        let molecule_state =
-            encode_molecule_state(mol_to_legacy_binary(mol).expect("encode v1.0 legacy molecule state"))
-                .expect("encode v1.0 molecule-state envelope");
+        let molecule_state = encode_molecule_state(
+            mol_to_legacy_binary(mol).expect("encode v1.0 legacy molecule state"),
+        )
+        .expect("encode v1.0 molecule-state envelope");
         let mut data = Vec::new();
         data.extend_from_slice(ARCHIVE_MAGIC);
         write_u16_le(&mut data, ARCHIVE_MAJOR);
@@ -2533,10 +2635,12 @@ mod tests {
         // Retained from the ChEMBL 37 binary-roundtrip phase: the old archive
         // discarded valence state, so the restored graph could neither produce
         // its pre-archive molecular hash nor reproduce its Morgan fingerprint.
-        let mol = Molecule::from_smiles("CNC(=O)[C@H](CCCNC(=O)OC(C)(C)C)NC(=O)[C@H](CCCc1ccccc1)[C@@](C)(O)C(=O)NO")
-            .expect("parse retained ChEMBL binary-roundtrip molecule")
-            .with_2d_coordinates()
-            .expect("generate the audited pre-archive 2D state");
+        let mol = Molecule::from_smiles(
+            "CNC(=O)[C@H](CCCNC(=O)OC(C)(C)C)NC(=O)[C@H](CCCc1ccccc1)[C@@](C)(O)C(=O)NO",
+        )
+        .expect("parse retained ChEMBL binary-roundtrip molecule")
+        .with_2d_coordinates()
+        .expect("generate the audited pre-archive 2D state");
         let hash_before = crate::mol_hash::mol_hash(&mol).expect("hash before archive");
         let morgan_before = mol
             .morgan_fingerprint(&crate::MorganFingerprintParams::default())
@@ -2559,7 +2663,10 @@ mod tests {
                 .morgan_fingerprint(&crate::MorganFingerprintParams::default())
                 .expect("Morgan fingerprint after archive")
         );
-        assert_eq!(data, mol_to_binary(&restored).expect("re-encode restored molecule"));
+        assert_eq!(
+            data,
+            mol_to_binary(&restored).expect("re-encode restored molecule")
+        );
     }
 
     #[test]
@@ -2590,7 +2697,15 @@ mod tests {
             &molecule_state,
         )
         .unwrap();
-        write_archive_section(&mut data, 999, 1, SECTION_FLAG_REQUIRED, SECTION_CODEC_RAW, b"future").unwrap();
+        write_archive_section(
+            &mut data,
+            999,
+            1,
+            SECTION_FLAG_REQUIRED,
+            SECTION_CODEC_RAW,
+            b"future",
+        )
+        .unwrap();
 
         let err = mol_from_binary(&data).unwrap_err();
         assert!(matches!(err, PickleError::UnknownRequiredSection(999)));
@@ -2644,11 +2759,21 @@ mod tests {
         }
         for i in 0..4 {
             builder
-                .add_bond(BondSpec::new(AtomId::new(0), AtomId::new(i + 1), BondOrder::Single))
+                .add_bond(BondSpec::new(
+                    AtomId::new(0),
+                    AtomId::new(i + 1),
+                    BondOrder::Single,
+                ))
                 .unwrap();
         }
         builder
-            .set_2d_coordinates(vec![[0.0, 0.0], [1.0, 0.0], [-0.5, 0.866], [-0.5, -0.866], [0.0, 1.0]])
+            .set_2d_coordinates(vec![
+                [0.0, 0.0],
+                [1.0, 0.0],
+                [-0.5, 0.866],
+                [-0.5, -0.866],
+                [0.0, 1.0],
+            ])
             .unwrap();
         let mol = builder.build().expect("build methane with coords");
         assert!(mol.coordinates_2d().is_some());
@@ -2671,7 +2796,11 @@ mod tests {
         }
         for i in 0..4 {
             builder
-                .add_bond(BondSpec::new(AtomId::new(0), AtomId::new(i + 1), BondOrder::Single))
+                .add_bond(BondSpec::new(
+                    AtomId::new(0),
+                    AtomId::new(i + 1),
+                    BondOrder::Single,
+                ))
                 .unwrap();
         }
         builder
@@ -2749,7 +2878,11 @@ mod tests {
         );
         builder.add_atom(AtomSpec::new(h));
         builder
-            .add_bond(BondSpec::new(AtomId::new(0), AtomId::new(1), BondOrder::Single))
+            .add_bond(BondSpec::new(
+                AtomId::new(0),
+                AtomId::new(1),
+                BondOrder::Single,
+            ))
             .unwrap();
         let mol = builder.build().expect("build molecule");
 
@@ -2778,7 +2911,11 @@ mod tests {
         builder.add_atom(AtomSpec::new(c));
         builder.add_atom(AtomSpec::new(h));
         builder
-            .add_bond(BondSpec::new(AtomId::new(0), AtomId::new(1), BondOrder::Single))
+            .add_bond(BondSpec::new(
+                AtomId::new(0),
+                AtomId::new(1),
+                BondOrder::Single,
+            ))
             .unwrap();
 
         let plist = SdfPropertyList::new(
@@ -2805,8 +2942,8 @@ mod tests {
             conformers_3d: vec![],
             source_coordinate_dim: None,
         };
-        let mol =
-            crate::Molecule::from_blocks(topology, coord_block, mol_props).expect("build molecule with property lists");
+        let mol = crate::Molecule::from_blocks(topology, coord_block, mol_props)
+            .expect("build molecule with property lists");
         assert_eq!(mol.properties().sdf_property_lists().len(), 1);
 
         let data = mol_to_binary(&mol).unwrap();
@@ -2822,10 +2959,15 @@ mod tests {
         builder.add_atom(AtomSpec::new(c));
         builder.add_atom(AtomSpec::new(h));
         builder
-            .add_bond(BondSpec::new(AtomId::new(0), AtomId::new(1), BondOrder::Single))
+            .add_bond(BondSpec::new(
+                AtomId::new(0),
+                AtomId::new(1),
+                BondOrder::Single,
+            ))
             .unwrap();
 
-        let sg = StereoGroup::new(StereoGroupKind::Absolute, vec![AtomId::new(0)], vec![]).with_id(1);
+        let sg =
+            StereoGroup::new(StereoGroupKind::Absolute, vec![AtomId::new(0)], vec![]).with_id(1);
         builder.add_stereo_group(sg).unwrap();
 
         let mol = builder.build().expect("build molecule");
@@ -2869,7 +3011,11 @@ mod tests {
         }
         for i in 0..4 {
             builder
-                .add_bond(BondSpec::new(AtomId::new(0), AtomId::new(i + 1), BondOrder::Single))
+                .add_bond(BondSpec::new(
+                    AtomId::new(0),
+                    AtomId::new(i + 1),
+                    BondOrder::Single,
+                ))
                 .unwrap();
         }
         builder = builder.with_sdf_data_field("PUBCHEM_IUPAC_NAME", "methane");
@@ -2905,25 +3051,47 @@ mod tests {
             )
             .unwrap();
         builder
-            .add_bond(BondSpec::new(AtomId::new(0), AtomId::new(2), BondOrder::Single))
+            .add_bond(BondSpec::new(
+                AtomId::new(0),
+                AtomId::new(2),
+                BondOrder::Single,
+            ))
             .unwrap();
         builder
-            .add_bond(BondSpec::new(AtomId::new(0), AtomId::new(3), BondOrder::Single))
+            .add_bond(BondSpec::new(
+                AtomId::new(0),
+                AtomId::new(3),
+                BondOrder::Single,
+            ))
             .unwrap();
         builder
-            .add_bond(BondSpec::new(AtomId::new(1), AtomId::new(4), BondOrder::Single))
+            .add_bond(BondSpec::new(
+                AtomId::new(1),
+                AtomId::new(4),
+                BondOrder::Single,
+            ))
             .unwrap();
         builder
-            .add_bond(BondSpec::new(AtomId::new(1), AtomId::new(5), BondOrder::Single))
+            .add_bond(BondSpec::new(
+                AtomId::new(1),
+                AtomId::new(5),
+                BondOrder::Single,
+            ))
             .unwrap();
 
         let mol = builder.build().expect("build ethylene");
-        assert_eq!(mol.bonds()[0].stereo_atoms(), Some([AtomId::new(2), AtomId::new(4)]));
+        assert_eq!(
+            mol.bonds()[0].stereo_atoms(),
+            Some([AtomId::new(2), AtomId::new(4)])
+        );
 
         let data = mol_to_binary(&mol).unwrap();
         let mol2 = mol_from_binary(&data).unwrap();
         assert_eq!(mol, mol2, "ethylene roundtrip failed");
-        assert_eq!(mol2.bonds()[0].stereo_atoms(), Some([AtomId::new(2), AtomId::new(4)]));
+        assert_eq!(
+            mol2.bonds()[0].stereo_atoms(),
+            Some([AtomId::new(2), AtomId::new(4)])
+        );
     }
 
     #[test]
@@ -2934,7 +3102,11 @@ mod tests {
         builder.add_atom(AtomSpec::new(c));
         builder.add_atom(AtomSpec::new(h));
         builder
-            .add_bond(BondSpec::new(AtomId::new(0), AtomId::new(1), BondOrder::Single))
+            .add_bond(BondSpec::new(
+                AtomId::new(0),
+                AtomId::new(1),
+                BondOrder::Single,
+            ))
             .unwrap();
 
         builder

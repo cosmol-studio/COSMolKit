@@ -3,12 +3,14 @@
 use crate::FingerprintError;
 
 use super::AvalonFingerprintFlags;
-use super::fingerprint_state::{FingerprintPreprocessingState, avalon_atomic_number, with_prepared_fingerprint_state};
+use super::fingerprint_state::{
+    FingerprintPreprocessingState, avalon_atomic_number, with_prepared_fingerprint_state,
+};
 use super::hash::next_hash;
 use super::reaccs::MoleculeState;
 use super::traversal::{
-    ATOM_CLASS_PATH_SEED, ATOM_COUNT_SEED, ATOM_SYMBOL_PATH_SEED, PathFlags, RING_PATH_SEED, RING_PATTERN_SEED,
-    add_bit, add_bit_count, set_path_bits_rec,
+    ATOM_CLASS_PATH_SEED, ATOM_COUNT_SEED, ATOM_SYMBOL_PATH_SEED, PathFlags, RING_PATH_SEED,
+    RING_PATTERN_SEED, add_bit, add_bit_count, set_path_bits_rec,
 };
 
 const NCOUNT_HASH: usize = 128;
@@ -121,7 +123,10 @@ pub(super) fn prepare_ring_path_state(
         // Avalon❗✔️:       if (bond_status[i] <= 0  &&
         // Avalon❗✔️:           atom_status[bp->atoms[0]-1] == 0  &&
         // Avalon❗✔️:           atom_status[bp->atoms[1]-1] == 0) bp->color = 0;
-        if state.bond_status[bond_index] <= 0 && state.atom_status[first] == 0 && state.atom_status[second] == 0 {
+        if state.bond_status[bond_index] <= 0
+            && state.atom_status[first] == 0
+            && state.atom_status[second] == 0
+        {
             bond.color = 0;
         }
         // Avalon❗✔️:       if (bp->atoms[0] == exclude_atom) bp->color = 0;
@@ -295,7 +300,11 @@ pub(super) fn prepare_atom_class_state(molecule: &mut MoleculeState, exclude_ato
                 // Avalon❗✔️:                     !IsNULL(tokp);
                 // Avalon❗✔️:                     tokp = strtok((char *)NULL,","))
                 // Avalon❗✔️:                {
-                for token in symbol_list.symbols.split(',').filter(|token| !token.is_empty()) {
+                for token in symbol_list
+                    .symbols
+                    .split(',')
+                    .filter(|token| !token.is_empty())
+                {
                     // Avalon❗✔️: #define HYDROGEN_FOUND 1
                     // Avalon❗✔️: #define CARBON_FOUND   2
                     // Avalon❗✔️: #define ONS_FOUND      4
@@ -398,7 +407,9 @@ fn count_atom_class_paths_first_pass(
         // Avalon❗✔️:          if (ap->color <= 0) continue;
         // Avalon❗✔️:          if (i+1 == exclude_atom) continue;
         // Avalon❗✔️:          if (ap->color == 6  &&  degree[i] < 3) continue;
-        if atom.color <= 0 || atom_index as i32 + 1 == exclude_atom || (atom.color == 6 && state.degree[atom_index] < 3)
+        if atom.color <= 0
+            || atom_index as i32 + 1 == exclude_atom
+            || (atom.color == 6 && state.degree[atom_index] < 3)
         {
             continue;
         }
@@ -471,7 +482,9 @@ fn count_atom_class_paths_first_pass(
                 atom_index,
                 0,
                 -1,
-                PathFlags::FORCED_RING_PATH | PathFlags::PROCESS_RING_CLOSURES | PathFlags::PROCESS_CHAINS,
+                PathFlags::FORCED_RING_PATH
+                    | PathFlags::PROCESS_RING_CLOSURES
+                    | PathFlags::PROCESS_CHAINS,
                 exclude_atom,
             );
             // Avalon❗✔️:          }
@@ -606,7 +619,10 @@ fn count_atom_class_paths_second_pass(
         // Avalon❗✔️:          if (bp->color == 0) continue;
         // Avalon❗✔️:          if (bp->atoms[0] == exclude_atom) continue;
         // Avalon❗✔️:          if (bp->atoms[1] == exclude_atom) continue;
-        if state.bond_status[bond_index] == 0 || bond.color == 0 || bond.atoms.contains(&exclude_atom) {
+        if state.bond_status[bond_index] == 0
+            || bond.color == 0
+            || bond.atoms.contains(&exclude_atom)
+        {
             continue;
         }
         // Avalon❗✔️:          ai1 = mp->atom_array[bp->atoms[0]-1].color;
@@ -629,7 +645,10 @@ fn count_atom_class_paths_second_pass(
                 // Avalon❗✔️:                {
                 if bond.rsize_flags & (1 << ring_size) != 0 {
                     // Avalon❗✔️:                   ADD_BIT(fp_counts, ncounts, NEXT_SEED(ATOM_CLASS_PATH_SEED*17, j*8));
-                    add_bit(counts, next_hash(ATOM_CLASS_PATH_SEED * 17, (ring_size * 8) as u64));
+                    add_bit(
+                        counts,
+                        next_hash(ATOM_CLASS_PATH_SEED * 17, (ring_size * 8) as u64),
+                    );
                     // Avalon❗✔️:                   result++;
                     result += 1;
                     // Avalon❗✔️:                }
@@ -647,7 +666,10 @@ fn count_atom_class_paths_second_pass(
                 // Avalon❗✔️:                {
                 if bond.rsize_flags & (1 << ring_size) != 0 {
                     // Avalon❗✔️:                   ADD_BIT(fp_counts, ncounts, NEXT_SEED(ATOM_CLASS_PATH_SEED*19, j*8));
-                    add_bit(counts, next_hash(ATOM_CLASS_PATH_SEED * 19, (ring_size * 8) as u64));
+                    add_bit(
+                        counts,
+                        next_hash(ATOM_CLASS_PATH_SEED * 19, (ring_size * 8) as u64),
+                    );
                     // Avalon❗✔️:                   result++;
                     result += 1;
                     // Avalon❗✔️:                }
@@ -705,7 +727,11 @@ fn count_atom_class_paths_second_pass(
     result
 }
 
-fn prepare_ring_pattern_state(molecule: &mut MoleculeState, state: &FingerprintPreprocessingState, exclude_atom: i32) {
+fn prepare_ring_pattern_state(
+    molecule: &mut MoleculeState,
+    state: &FingerprintPreprocessingState,
+    exclude_atom: i32,
+) {
     // Avalon❗✔️:    /* Compute ring patters with at least one cycle */
     // Avalon❗✔️:    /* remove bonds from consideration that don't have at least one ring atom */
     // Avalon❗✔️:    for (i=0, bp=mp->bond_array; i<mp->n_bonds; i++, bp++)
@@ -1035,7 +1061,9 @@ fn count_atom_symbol_paths(
         if atom.color >= 10
             || (atom.color == 7 && state.degree[atom_index] > 0)
             || (atom.color == 8 && state.degree[atom_index] > 1)
-            || (atom.color == 6 && state.degree[atom_index] > 2 && state.atom_status[atom_index] > 0)
+            || (atom.color == 6
+                && state.degree[atom_index] > 2
+                && state.atom_status[atom_index] > 0)
         {
             // Avalon❗✔️:             result += SetPathBitsRec(mp, nbp,
             // Avalon❗✔️:                                      fp_counts, ncounts,
@@ -1060,7 +1088,9 @@ fn count_atom_symbol_paths(
                 atom_index,
                 0,
                 -1,
-                PathFlags::STOP_AT_HEAVY_ATOM | PathFlags::FORCED_HETERO_END | PathFlags::PROCESS_CHAINS,
+                PathFlags::STOP_AT_HEAVY_ATOM
+                    | PathFlags::FORCED_HETERO_END
+                    | PathFlags::PROCESS_CHAINS,
                 exclude_atom,
             );
         }
@@ -1166,7 +1196,9 @@ fn count_atom_symbol_paths(
                 atom_index,
                 0,
                 -1,
-                PathFlags::STOP_AT_HEAVY_ATOM | PathFlags::IGNORE_TERM_SYMBOL | PathFlags::PROCESS_CHAINS,
+                PathFlags::STOP_AT_HEAVY_ATOM
+                    | PathFlags::IGNORE_TERM_SYMBOL
+                    | PathFlags::PROCESS_CHAINS,
                 exclude_atom,
             );
             // Avalon❗✔️:          }
@@ -1205,7 +1237,9 @@ fn count_atom_symbol_paths(
                 atom_index,
                 0,
                 -1,
-                PathFlags::STOP_AT_HEAVY_ATOM | PathFlags::IGNORE_TERM_SYMBOL | PathFlags::PROCESS_CHAINS,
+                PathFlags::STOP_AT_HEAVY_ATOM
+                    | PathFlags::IGNORE_TERM_SYMBOL
+                    | PathFlags::PROCESS_CHAINS,
                 exclude_atom,
             );
         }
@@ -1308,7 +1342,9 @@ fn count_atom_symbol_paths(
                 neighbour_atom,
                 0,
                 atom_index as i32,
-                PathFlags::STOP_AT_HEAVY_ATOM | PathFlags::IGNORE_PATH_SYMBOL | PathFlags::PROCESS_RING_CLOSURES,
+                PathFlags::STOP_AT_HEAVY_ATOM
+                    | PathFlags::IGNORE_PATH_SYMBOL
+                    | PathFlags::PROCESS_RING_CLOSURES,
                 exclude_atom,
             );
             // Avalon❗✔️:             touched_indices[ai] = 0;    /* down-dating */
@@ -1676,12 +1712,24 @@ fn count_atom_types(
 }
 
 #[inline]
-fn add_count_bit_if_at_least(counts: &mut [i32], bit_count: &mut i32, value: i32, threshold: i32, increment: u64) {
+fn add_count_bit_if_at_least(
+    counts: &mut [i32],
+    bit_count: &mut i32,
+    value: i32,
+    threshold: i32,
+    increment: u64,
+) {
     add_count_bit_if_condition(counts, bit_count, value >= threshold, value, increment);
 }
 
 #[inline]
-fn add_count_bit_if_condition(counts: &mut [i32], bit_count: &mut i32, condition: bool, value: i32, increment: u64) {
+fn add_count_bit_if_condition(
+    counts: &mut [i32],
+    bit_count: &mut i32,
+    condition: bool,
+    value: i32,
+    increment: u64,
+) {
     if condition {
         add_bit_count(counts, next_hash(ATOM_COUNT_SEED, increment), value);
         *bit_count += 1;
@@ -1740,7 +1788,10 @@ mod tests {
                 bytes[index / 8] |= 1 << (index % 8);
             }
         }
-        bytes.into_iter().map(|byte| format!("{byte:02x}")).collect()
+        bytes
+            .into_iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect()
     }
 
     struct LowFlagGolden {
@@ -1955,7 +2006,12 @@ mod tests {
             let flags = AvalonFingerprintFlags::from_bits(golden.mask).unwrap();
             for as_query in [false, true] {
                 for (fpflags, expected_result, expected_counts, expected_bits) in [
-                    (0, golden.basic_result, golden.basic_counts, golden.basic_bits),
+                    (
+                        0,
+                        golden.basic_result,
+                        golden.basic_counts,
+                        golden.basic_bits,
+                    ),
                     (
                         super::super::fingerprint_state::USE_DY_AROMATICITY,
                         golden.daylight_result,
@@ -1965,8 +2021,15 @@ mod tests {
                 ] {
                     let mut molecule = low_flag_fixture();
                     let mut counts = vec![0; 64];
-                    let result =
-                        count_low_flag_families(&mut molecule, &mut counts, flags, as_query, fpflags, 0).unwrap();
+                    let result = count_low_flag_families(
+                        &mut molecule,
+                        &mut counts,
+                        flags,
+                        as_query,
+                        fpflags,
+                        0,
+                    )
+                    .unwrap();
                     let case = format!(
                         "mask={:#04x}, as_query={as_query}, daylight={}",
                         golden.mask,
@@ -1988,7 +2051,13 @@ mod tests {
             (0x04, true, 3, "0:1,27:1,57:1,", "0100000800000002"),
             (0x10, false, 1, "61:1,", "0000000000000020"),
             (0x10, true, 1, "61:1,", "0000000000000020"),
-            (0x14, false, 5, "0:1,27:1,49:1,57:1,61:1,", "0100000800000222"),
+            (
+                0x14,
+                false,
+                5,
+                "0:1,27:1,49:1,57:1,61:1,",
+                "0100000800000222",
+            ),
             (0x14, true, 4, "0:1,27:1,57:1,61:1,", "0100000800000022"),
         ];
 
@@ -2005,7 +2074,10 @@ mod tests {
                     0,
                 )
                 .unwrap();
-                let case = format!("mask={mask:#04x}, as_query={as_query}, daylight={}", fpflags != 0);
+                let case = format!(
+                    "mask={mask:#04x}, as_query={as_query}, daylight={}",
+                    fpflags != 0
+                );
 
                 assert_eq!(result, expected_result, "{case}");
                 assert_eq!(sparse_text(&counts), expected_counts, "{case}");
@@ -2112,7 +2184,8 @@ mod tests {
         for (flag, expected_result, expected_counts) in fixtures {
             let mut molecule = low_flag_fixture();
             let mut counts = vec![0; 64];
-            let result = count_low_flag_families(&mut molecule, &mut counts, flag, false, 0, 0).unwrap();
+            let result =
+                count_low_flag_families(&mut molecule, &mut counts, flag, false, 0, 0).unwrap();
             assert_eq!(result, expected_result, "flag {:#x}", flag.bits());
             assert_eq!(sparse(&counts), expected_counts, "flag {:#x}", flag.bits());
         }

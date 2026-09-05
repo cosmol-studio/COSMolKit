@@ -652,7 +652,10 @@ impl ResidueInfo {
         // Gemmi✔️✔️:        kind == ResidueKind::PAA || kind == ResidueKind::MAA;
         matches!(
             self.kind,
-            ResidueInfoKind::Aa | ResidueInfoKind::Aad | ResidueInfoKind::Paa | ResidueInfoKind::Maa
+            ResidueInfoKind::Aa
+                | ResidueInfoKind::Aad
+                | ResidueInfoKind::Paa
+                | ResidueInfoKind::Maa
         )
     }
     #[must_use]
@@ -668,7 +671,11 @@ impl ResidueInfo {
     #[must_use]
     pub const fn fasta_code(self) -> char {
         // Gemmi✔️✔️: char fasta_code() const { return is_standard() ? one_letter_code : 'X'; }
-        if self.is_standard() { self.one_letter_code } else { 'X' }
+        if self.is_standard() {
+            self.one_letter_code
+        } else {
+            'X'
+        }
     }
 
     /// Return the canonical one-letter amino-acid code when Gemmi provides
@@ -4551,7 +4558,11 @@ pub enum ResidueInfoSequenceError {
     #[error("unmatched '(' in sequence")]
     UnmatchedParenthesis,
     #[error("unexpected letter in {kind} sequence: {letter} ({code})")]
-    UnexpectedLetter { kind: &'static str, letter: char, code: u8 },
+    UnexpectedLetter {
+        kind: &'static str,
+        letter: char,
+        code: u8,
+    },
 }
 
 fn residue_sequence_kind_str(kind: ResidueInfoKind) -> &'static str {
@@ -4581,7 +4592,10 @@ pub fn expand_protein_one_letter(code: char) -> Option<&'static str> {
     expand_one_letter(code, ResidueInfoKind::Aa)
 }
 
-pub fn expand_one_letter_sequence(seq: &str, kind: ResidueInfoKind) -> Result<Vec<String>, ResidueInfoSequenceError> {
+pub fn expand_one_letter_sequence(
+    seq: &str,
+    kind: ResidueInfoKind,
+) -> Result<Vec<String>, ResidueInfoSequenceError> {
     // BEGIN GEMMI CPP FUNCTION gemmi::expand_one_letter_sequence
     // Gemmi✔️✔️: std::vector<std::string> expand_one_letter_sequence(const std::string& seq,
     // Gemmi✔️✔️:                                                     ResidueKind kind) {
@@ -4642,7 +4656,9 @@ pub fn expand_one_letter_sequence(seq: &str, kind: ResidueInfoKind) -> Result<Ve
     // END GEMMI CPP FUNCTION gemmi::expand_one_letter_sequence
 }
 
-pub fn expand_protein_one_letter_string(seq: &str) -> Result<Vec<String>, ResidueInfoSequenceError> {
+pub fn expand_protein_one_letter_string(
+    seq: &str,
+) -> Result<Vec<String>, ResidueInfoSequenceError> {
     // Gemmi✔️✔️: std::vector<std::string> expand_protein_one_letter_string(const std::string& s);
     expand_one_letter_sequence(seq, ResidueInfoKind::Aa)
 }
@@ -4696,9 +4712,18 @@ mod tests {
 
     #[test]
     fn residue_code_and_info_serde_use_stable_source_names() {
-        assert_eq!(serde_json::to_string(&ResidueCode::MSE).unwrap(), r#""MSE""#);
-        assert_eq!(serde_json::to_string(&ResidueCode::R3FG).unwrap(), r#""3FG""#);
-        assert_eq!(serde_json::to_string(&ResidueCode::UNKNOWN).unwrap(), r#""UNKNOWN""#);
+        assert_eq!(
+            serde_json::to_string(&ResidueCode::MSE).unwrap(),
+            r#""MSE""#
+        );
+        assert_eq!(
+            serde_json::to_string(&ResidueCode::R3FG).unwrap(),
+            r#""3FG""#
+        );
+        assert_eq!(
+            serde_json::to_string(&ResidueCode::UNKNOWN).unwrap(),
+            r#""UNKNOWN""#
+        );
         assert_eq!(
             serde_json::from_str::<ResidueCode>(r#""MSE""#).unwrap(),
             ResidueCode::MSE
@@ -4759,7 +4784,10 @@ mod tests {
         assert_eq!(unknown.code(), ResidueCode::UNKNOWN);
         assert!(!unknown.is_tabulated());
         assert_eq!(unknown.to_string(), "CUSTOM_COMPONENT");
-        assert_eq!(serde_json::to_string(&unknown).unwrap(), r#""CUSTOM_COMPONENT""#);
+        assert_eq!(
+            serde_json::to_string(&unknown).unwrap(),
+            r#""CUSTOM_COMPONENT""#
+        );
         assert_eq!(
             serde_json::from_str::<ResidueIdentity>(r#""CUSTOM_COMPONENT""#).unwrap(),
             unknown
@@ -4813,9 +4841,18 @@ mod tests {
         assert_eq!(find_tabulated_residue_idx("+A"), 335);
         assert_eq!(find_tabulated_residue_idx("DA"), 335);
 
-        assert_eq!(find_tabulated_residue_idx("ag"), UNKNOWN_TABULATED_RESIDUE_IDX);
-        assert_eq!(find_tabulated_residue_idx("da"), UNKNOWN_TABULATED_RESIDUE_IDX);
-        assert_eq!(find_tabulated_residue_idx("XYZ"), UNKNOWN_TABULATED_RESIDUE_IDX);
+        assert_eq!(
+            find_tabulated_residue_idx("ag"),
+            UNKNOWN_TABULATED_RESIDUE_IDX
+        );
+        assert_eq!(
+            find_tabulated_residue_idx("da"),
+            UNKNOWN_TABULATED_RESIDUE_IDX
+        );
+        assert_eq!(
+            find_tabulated_residue_idx("XYZ"),
+            UNKNOWN_TABULATED_RESIDUE_IDX
+        );
     }
 
     #[test]
@@ -4855,6 +4892,9 @@ mod tests {
             expand_one_letter_sequence("(MSE", ResidueInfoKind::Aa).unwrap_err(),
             ResidueInfoSequenceError::UnmatchedParenthesis
         );
-        assert_eq!(expand_protein_one_letter_string("m").unwrap(), ["MET".to_string()]);
+        assert_eq!(
+            expand_protein_one_letter_string("m").unwrap(),
+            ["MET".to_string()]
+        );
     }
 }

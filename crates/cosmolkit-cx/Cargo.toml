@@ -1,0 +1,16 @@
+[package]
+name = "cosmolkit-cx"
+description = "Shared CXSMILES extension syntax layer for COSMolKit parsers"
+keywords = ["chemistry", "cxsmiles", "smiles", "smarts", "parser"]
+categories = ["parsing", "science"]
+repository.workspace = true
+homepage.workspace = true
+license.workspace = true
+version.workspace = true
+edition.workspace = true
+
+[lib]
+name = "cosmolkit_cx"
+path = "src/lib.rs"
+
+[dependencies]

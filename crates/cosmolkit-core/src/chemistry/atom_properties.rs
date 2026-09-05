@@ -9,7 +9,9 @@ pub(crate) enum AtomPropertyError {
     AtomIndex { atom: AtomId },
     #[error("explicit valence has not been computed for atom {atom}")]
     MissingExplicitValence { atom: AtomId },
-    #[error("explicit valence {explicit_valence} is below physical bond count {physical_bonds} for atom {atom}")]
+    #[error(
+        "explicit valence {explicit_valence} is below physical bond count {physical_bonds} for atom {atom}"
+    )]
     ExplicitValenceBelowPhysicalBonds {
         atom: AtomId,
         explicit_valence: i32,
@@ -21,7 +23,10 @@ pub(crate) enum AtomPropertyError {
 
 /// Return RDKit's AtomPair pi-electron count for an atom whose explicit
 /// valence property cache has already been computed.
-pub(crate) fn num_pi_electrons(molecule: &Molecule, atom_id: AtomId) -> Result<u32, AtomPropertyError> {
+pub(crate) fn num_pi_electrons(
+    molecule: &Molecule,
+    atom_id: AtomId,
+) -> Result<u32, AtomPropertyError> {
     // RDKit✔️✔️: unsigned int numPiElectrons(const Atom &atom) {
     // RDKit✔️✔️:   unsigned int res = 0;
     // RDKit✔️✔️:   if (atom.getIsAromatic()) {
@@ -53,8 +58,8 @@ pub(crate) fn num_pi_electrons(molecule: &Molecule, atom_id: AtomId) -> Result<u
         return Ok(0);
     }
 
-    let assignment =
-        cached_valence_assignment(molecule).ok_or(AtomPropertyError::MissingExplicitValence { atom: atom_id })?;
+    let assignment = cached_valence_assignment(molecule)
+        .ok_or(AtomPropertyError::MissingExplicitValence { atom: atom_id })?;
     let explicit_valence = assignment
         .explicit_valence
         .get(atom_id.index())
@@ -77,7 +82,11 @@ fn num_pi_electrons_from_explicit_valence(
         .get(atom_id.index())
         .ok_or(AtomPropertyError::AtomIndex { atom: atom_id })?;
     let mut physical_bonds = u32::from(atom.explicit_hydrogens());
-    for neighbor in molecule.topology_block().adjacency.neighbors_of(atom_id.index()) {
+    for neighbor in molecule
+        .topology_block()
+        .adjacency
+        .neighbors_of(atom_id.index())
+    {
         let bond = &molecule.bonds()[neighbor.bond.index()];
         if bond_valence_contrib(bond, atom_id)? != 0.0 {
             physical_bonds += 1;
@@ -130,31 +139,46 @@ mod tests {
     #[test]
     fn source_port__atom__num_pi_electrons__line_934_zero_and_dative_valence_contributions() {
         let mut zero_builder = Molecule::builder();
-        let zero_left = zero_builder.add_atom(AtomSpec::new(Element::C).with_hybridization(Hybridization::Sp2));
+        let zero_left =
+            zero_builder.add_atom(AtomSpec::new(Element::C).with_hybridization(Hybridization::Sp2));
         let zero_right = zero_builder.add_atom(AtomSpec::new(Element::C));
         zero_builder
             .add_bond(BondSpec::new(zero_left, zero_right, BondOrder::Zero))
             .unwrap();
         let zero = zero_builder.build().unwrap();
-        assert_eq!(num_pi_electrons_from_explicit_valence(&zero, zero_left, 0), Ok(0));
+        assert_eq!(
+            num_pi_electrons_from_explicit_valence(&zero, zero_left, 0),
+            Ok(0)
+        );
 
         let mut dative_builder = Molecule::builder();
-        let donor = dative_builder.add_atom(AtomSpec::new(Element::N).with_hybridization(Hybridization::Sp2));
-        let acceptor = dative_builder.add_atom(AtomSpec::new(Element::FE).with_hybridization(Hybridization::Sp2));
+        let donor = dative_builder
+            .add_atom(AtomSpec::new(Element::N).with_hybridization(Hybridization::Sp2));
+        let acceptor = dative_builder
+            .add_atom(AtomSpec::new(Element::FE).with_hybridization(Hybridization::Sp2));
         dative_builder
             .add_bond(BondSpec::new(donor, acceptor, BondOrder::Dative))
             .unwrap();
         let dative = dative_builder.build().unwrap();
-        assert_eq!(num_pi_electrons_from_explicit_valence(&dative, donor, 0), Ok(0));
-        assert_eq!(num_pi_electrons_from_explicit_valence(&dative, acceptor, 1), Ok(0));
+        assert_eq!(
+            num_pi_electrons_from_explicit_valence(&dative, donor, 0),
+            Ok(0)
+        );
+        assert_eq!(
+            num_pi_electrons_from_explicit_valence(&dative, acceptor, 1),
+            Ok(0)
+        );
     }
 
     #[test]
     fn source_port__atom__num_pi_electrons__line_934_requires_valid_explicit_valence_state() {
         let mut builder = Molecule::builder();
-        let left = builder.add_atom(AtomSpec::new(Element::C).with_hybridization(Hybridization::Sp2));
+        let left =
+            builder.add_atom(AtomSpec::new(Element::C).with_hybridization(Hybridization::Sp2));
         let right = builder.add_atom(AtomSpec::new(Element::C));
-        builder.add_bond(BondSpec::new(left, right, BondOrder::Single)).unwrap();
+        builder
+            .add_bond(BondSpec::new(left, right, BondOrder::Single))
+            .unwrap();
         let molecule = builder.build().unwrap();
 
         assert_eq!(

@@ -19,7 +19,8 @@ use num_bigint::{BigInt, BigUint};
 use crate::{
     AdjacencyList, AtomId, BondDirection, BondId, BondStereo, ChiralTag, ControllingAtom, Molecule,
     PotentialStereoError, StereoCenter, StereoGroupKind, StereoInfo, StereoSpecified, StereoType,
-    molecule::DerivedCacheBlock, potential_stereo::find_potential_stereo_in_workspace, read_parts::MoleculeReadParts,
+    molecule::DerivedCacheBlock, potential_stereo::find_potential_stereo_in_workspace,
+    read_parts::MoleculeReadParts,
 };
 
 // ──────────────────────────────────────────────
@@ -116,7 +117,11 @@ impl StereoFlipper {
                     .bonds
                     .get_mut(bond.index())
                     .ok_or(EnumerationError::InvalidFlipperBond { bond: *bond })?;
-                bond_state.set_stereo(if flag { BondStereo::Cis } else { BondStereo::Trans });
+                bond_state.set_stereo(if flag {
+                    BondStereo::Cis
+                } else {
+                    BondStereo::Trans
+                });
             }
             Self::StereoGroup { original_parities } => {
                 // RDKit✔️✔️: class _StereoGroupFlipper(object):
@@ -287,7 +292,8 @@ impl PythonRandom {
         let mut key_index = 0;
         for _ in 0..PYTHON_MT_STATE_SIZE.max(key.len()) {
             self.state[state_index] = (self.state[state_index]
-                ^ (self.state[state_index - 1] ^ (self.state[state_index - 1] >> 30)).wrapping_mul(1_664_525))
+                ^ (self.state[state_index - 1] ^ (self.state[state_index - 1] >> 30))
+                    .wrapping_mul(1_664_525))
             .wrapping_add(key[key_index])
             .wrapping_add(key_index as u32);
             state_index += 1;
@@ -302,7 +308,8 @@ impl PythonRandom {
         }
         for _ in 0..PYTHON_MT_STATE_SIZE - 1 {
             self.state[state_index] = (self.state[state_index]
-                ^ (self.state[state_index - 1] ^ (self.state[state_index - 1] >> 30)).wrapping_mul(1_566_083_941))
+                ^ (self.state[state_index - 1] ^ (self.state[state_index - 1] >> 30))
+                    .wrapping_mul(1_566_083_941))
             .wrapping_sub(state_index as u32);
             state_index += 1;
             if state_index >= PYTHON_MT_STATE_SIZE {
@@ -330,22 +337,37 @@ impl PythonRandom {
         // CPython✔️✔️: }
         if self.index >= PYTHON_MT_STATE_SIZE {
             for index in 0..PYTHON_MT_STATE_SIZE - PYTHON_MT_MIDDLE_WORD {
-                let value = (self.state[index] & PYTHON_MT_UPPER_MASK) | (self.state[index + 1] & PYTHON_MT_LOWER_MASK);
+                let value = (self.state[index] & PYTHON_MT_UPPER_MASK)
+                    | (self.state[index + 1] & PYTHON_MT_LOWER_MASK);
                 self.state[index] = self.state[index + PYTHON_MT_MIDDLE_WORD]
                     ^ (value >> 1)
-                    ^ if value & 1 == 0 { 0 } else { PYTHON_MT_MATRIX_A };
+                    ^ if value & 1 == 0 {
+                        0
+                    } else {
+                        PYTHON_MT_MATRIX_A
+                    };
             }
             for index in PYTHON_MT_STATE_SIZE - PYTHON_MT_MIDDLE_WORD..PYTHON_MT_STATE_SIZE - 1 {
-                let value = (self.state[index] & PYTHON_MT_UPPER_MASK) | (self.state[index + 1] & PYTHON_MT_LOWER_MASK);
-                self.state[index] = self.state[index + PYTHON_MT_MIDDLE_WORD - PYTHON_MT_STATE_SIZE]
+                let value = (self.state[index] & PYTHON_MT_UPPER_MASK)
+                    | (self.state[index + 1] & PYTHON_MT_LOWER_MASK);
+                self.state[index] = self.state
+                    [index + PYTHON_MT_MIDDLE_WORD - PYTHON_MT_STATE_SIZE]
                     ^ (value >> 1)
-                    ^ if value & 1 == 0 { 0 } else { PYTHON_MT_MATRIX_A };
+                    ^ if value & 1 == 0 {
+                        0
+                    } else {
+                        PYTHON_MT_MATRIX_A
+                    };
             }
-            let value =
-                (self.state[PYTHON_MT_STATE_SIZE - 1] & PYTHON_MT_UPPER_MASK) | (self.state[0] & PYTHON_MT_LOWER_MASK);
+            let value = (self.state[PYTHON_MT_STATE_SIZE - 1] & PYTHON_MT_UPPER_MASK)
+                | (self.state[0] & PYTHON_MT_LOWER_MASK);
             self.state[PYTHON_MT_STATE_SIZE - 1] = self.state[PYTHON_MT_MIDDLE_WORD - 1]
                 ^ (value >> 1)
-                ^ if value & 1 == 0 { 0 } else { PYTHON_MT_MATRIX_A };
+                ^ if value & 1 == 0 {
+                    0
+                } else {
+                    PYTHON_MT_MATRIX_A
+                };
             self.index = 0;
         }
 
@@ -457,12 +479,19 @@ fn default_python_random_seed(molecule: &Molecule) -> BigInt {
     let mut atom_invariants = molecule
         .atoms()
         .iter()
-        .map(|atom| (adjacency.neighbors_of(atom.id().index()).len(), atom.atomic_number()))
+        .map(|atom| {
+            (
+                adjacency.neighbors_of(atom.id().index()).len(),
+                atom.atomic_number(),
+            )
+        })
         .collect::<Vec<_>>();
     atom_invariants.sort_unstable();
     let inner_hashes = atom_invariants
         .into_iter()
-        .map(|(degree, atomic_number)| cpython_tuple_hash(&[degree as i64, i64::from(atomic_number)]))
+        .map(|(degree, atomic_number)| {
+            cpython_tuple_hash(&[degree as i64, i64::from(atomic_number)])
+        })
         .collect::<Vec<_>>();
     BigInt::from(cpython_tuple_hash(&inner_hashes))
 }
@@ -631,11 +660,13 @@ fn select_stereo_flippers_from_info(
                         .get(bond.index())
                         .ok_or(EnumerationError::InvalidFlipperBond { bond })?;
                     if bond_state.stereo_atoms().is_none() {
-                        let Some(ControllingAtom::Atom(begin_controller)) = info.controlling_atoms().first().copied()
+                        let Some(ControllingAtom::Atom(begin_controller)) =
+                            info.controlling_atoms().first().copied()
                         else {
                             continue;
                         };
-                        let Some(ControllingAtom::Atom(end_controller)) = info.controlling_atoms().get(2).copied()
+                        let Some(ControllingAtom::Atom(end_controller)) =
+                            info.controlling_atoms().get(2).copied()
                         else {
                             continue;
                         };
@@ -682,7 +713,10 @@ pub(crate) struct EnumerationWorkspace {
 }
 
 impl EnumerationWorkspace {
-    pub(crate) fn prepare(source: &Molecule, options: FlipperSelectionOptions) -> Result<Self, EnumerationError> {
+    pub(crate) fn prepare(
+        source: &Molecule,
+        options: FlipperSelectionOptions,
+    ) -> Result<Self, EnumerationError> {
         // RDKit✔️✔️:   tm = Chem.Mol(m)
         let mut molecule = source.clone();
 
@@ -696,7 +730,10 @@ impl EnumerationWorkspace {
             atom.clear_prop("_CIPCode");
         }
         for bond in &mut topology.bonds {
-            if matches!(bond.direction(), BondDirection::EitherDouble | BondDirection::Unknown) {
+            if matches!(
+                bond.direction(),
+                BondDirection::EitherDouble | BondDirection::Unknown
+            ) {
                 bond.set_direction(BondDirection::None);
             }
         }
@@ -713,7 +750,9 @@ impl EnumerationWorkspace {
         // applying the chiral flag reserved for enumerated workspaces.
         if !flippers.is_empty() {
             // RDKit✔️✔️:   tm.SetProp('_MolFileChiralFlag', '1')
-            molecule.properties_mut().set_prop("_MolFileChiralFlag", "1");
+            molecule
+                .properties_mut()
+                .set_prop("_MolFileChiralFlag", "1");
         }
 
         Ok(Self { molecule, flippers })
@@ -731,7 +770,10 @@ impl EnumerationWorkspace {
         self.molecule
     }
 
-    pub(crate) fn apply_configuration(&mut self, configuration: &ConfigurationBits) -> Result<(), EnumerationError> {
+    pub(crate) fn apply_configuration(
+        &mut self,
+        configuration: &ConfigurationBits,
+    ) -> Result<(), EnumerationError> {
         // RDKit✔️✔️:   for bitflag in bitsource:
         // RDKit✔️✔️:     for i in range(nCenters):
         // RDKit✔️✔️:       flag = bool(bitflag & (1 << i))
@@ -779,7 +821,8 @@ impl EnumerationWorkspace {
         // RDKit✔️✔️:
         // RDKit✔️✔️:       isomersSeen.add(cansmi)
         if unique {
-            let canonical_isomeric_smiles = MoleculeReadParts::from_molecule(&isomer).canonical_isomeric_smiles()?;
+            let canonical_isomeric_smiles =
+                MoleculeReadParts::from_molecule(&isomer).canonical_isomeric_smiles()?;
             if !isomers_seen.insert(canonical_isomeric_smiles) {
                 return Ok(None);
             }
@@ -801,27 +844,28 @@ impl EnumerationWorkspace {
         // RDKit✔️✔️:       cid = EmbedMolecule(ntm, randomSeed=(bitflag & 0x7fffffff))
         // The Python call selects rdDistGeom's legacy keyword overload, whose
         // defaults differ from both bare `EmbedParameters` and ETKDGv3.
-        let (embedded_with_hydrogens, conformer_id) = crate::distgeom::rd_distgeom_embed_molecule_wrapper(
-            &with_hydrogens,
-            0,
-            configuration.embedding_seed(),
-            true,
-            false,
-            2.0,
-            true,
-            1,
-            std::collections::BTreeMap::new(),
-            1e-3,
-            false,
-            true,
-            true,
-            true,
-            false,
-            false,
-            true,
-            2,
-            true,
-        )?;
+        let (embedded_with_hydrogens, conformer_id) =
+            crate::distgeom::rd_distgeom_embed_molecule_wrapper(
+                &with_hydrogens,
+                0,
+                configuration.embedding_seed(),
+                true,
+                false,
+                2.0,
+                true,
+                1,
+                std::collections::BTreeMap::new(),
+                1e-3,
+                false,
+                true,
+                true,
+                true,
+                false,
+                false,
+                true,
+                2,
+                true,
+            )?;
 
         // RDKit✔️✔️:       if cid >= 0:
         if conformer_id < 0 {
@@ -840,13 +884,15 @@ impl EnumerationWorkspace {
             .first()
             .ok_or_else(|| {
                 crate::DgBoundsError::CoordinateUpdateFailed(
-                    "EmbedMolecule returned a nonnegative conformer id without coordinates".to_string(),
+                    "EmbedMolecule returned a nonnegative conformer id without coordinates"
+                        .to_string(),
                 )
             })?
             .coordinates();
         if embedded_coordinates.len() < heavy_atom_count {
             return Err(crate::DgBoundsError::CoordinateUpdateFailed(
-                "embedded hydrogen-expanded conformer has fewer rows than the source molecule".to_string(),
+                "embedded hydrogen-expanded conformer has fewer rows than the source molecule"
+                    .to_string(),
             )
             .into());
         }
@@ -1062,7 +1108,9 @@ impl StereoisomerIterator {
         // RDKit✔️✔️:       rand = random.Random(options.rand)
         // RDKit✔️✔️:     bitsource = _UniqueRandomBitsGenerator(nCenters, options.maxIsomers, rand)
         let configuration_count = theoretical_configuration_count(center_count);
-        let configurations = if options.max_isomers == 0 || configuration_count <= BigUint::from(options.max_isomers) {
+        let configurations = if options.max_isomers == 0
+            || configuration_count <= BigUint::from(options.max_isomers)
+        {
             ConfigurationSource::Exhaustive(RangeBitsGenerator::new(center_count))
         } else if let Some(callback) = callback {
             ConfigurationSource::Callback(Box::new(UniqueRandomBitsGenerator::new(
@@ -1181,7 +1229,10 @@ impl Iterator for StereoisomerIterator {
 impl std::iter::FusedIterator for StereoisomerIterator {}
 
 /// Return RDKit Python's upper-bound stereoisomer count for `molecule`.
-pub fn stereoisomer_count(molecule: &Molecule, options: &StereoisomerOptions) -> Result<BigUint, EnumerationError> {
+pub fn stereoisomer_count(
+    molecule: &Molecule,
+    options: &StereoisomerOptions,
+) -> Result<BigUint, EnumerationError> {
     // RDKit✔️✔️: def GetStereoisomerCount(m, options=StereoEnumerationOptions()):
     // RDKit✔️✔️:   tm = Chem.Mol(m)
     // RDKit✔️✔️:   flippers = _getFlippers(tm, options)
@@ -1223,7 +1274,8 @@ mod tests {
 
     use super::*;
     use crate::{
-        AtomSpec, BondOrder, BondSpec, Conformer3D, Element, Molecule, MoleculeBuilder, StereoDescriptor, StereoGroup,
+        AtomSpec, BondOrder, BondSpec, Conformer3D, Element, Molecule, MoleculeBuilder,
+        StereoDescriptor, StereoGroup,
     };
 
     fn stereo_info(
@@ -1251,7 +1303,10 @@ mod tests {
     impl ScriptedRandomBits {
         fn values(values: impl IntoIterator<Item = u64>) -> Self {
             Self {
-                values: values.into_iter().map(|value| Ok(BigUint::from(value))).collect(),
+                values: values
+                    .into_iter()
+                    .map(|value| Ok(BigUint::from(value)))
+                    .collect(),
                 requested_bit_counts: Vec::new(),
             }
         }
@@ -1269,7 +1324,9 @@ mod tests {
             self.requested_bit_counts.push(bit_count);
             match self.values.pop_front() {
                 Some(Ok(value)) => Ok(ConfigurationBits::from_biguint(value)),
-                Some(Err(message)) => Err(EnumerationError::RandomBitsSource { bit_count, message }),
+                Some(Err(message)) => {
+                    Err(EnumerationError::RandomBitsSource { bit_count, message })
+                }
                 None => Err(EnumerationError::RandomBitsSource {
                     bit_count,
                     message: "scripted source exhausted".to_owned(),
@@ -1297,7 +1354,10 @@ mod tests {
 
     #[test]
     fn python_range_bits_generator_preserves_arbitrary_width_counts_and_laziness() {
-        assert_eq!(theoretical_configuration_count(130), BigUint::from(1_u8) << 130);
+        assert_eq!(
+            theoretical_configuration_count(130),
+            BigUint::from(1_u8) << 130
+        );
 
         let prefix = RangeBitsGenerator::new(130)
             .take(4)
@@ -1305,7 +1365,10 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(
             prefix,
-            [0_u8, 1, 2, 3].into_iter().map(BigUint::from).collect::<Vec<_>>()
+            [0_u8, 1, 2, 3]
+                .into_iter()
+                .map(BigUint::from)
+                .collect::<Vec<_>>()
         );
 
         // Constructing a million-center range allocates only its arbitrary-width
@@ -1316,7 +1379,10 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(
             huge_prefix,
-            [0_u8, 1, 2].into_iter().map(BigUint::from).collect::<Vec<_>>()
+            [0_u8, 1, 2]
+                .into_iter()
+                .map(BigUint::from)
+                .collect::<Vec<_>>()
         );
     }
 
@@ -1330,20 +1396,28 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(
             values,
-            [3_u8, 1, 0, 2].into_iter().map(BigUint::from).collect::<Vec<_>>()
+            [3_u8, 1, 0, 2]
+                .into_iter()
+                .map(BigUint::from)
+                .collect::<Vec<_>>()
         );
         assert_eq!(generator.random.requested_bit_counts, vec![2; 5]);
         assert!(generator.next().is_none());
 
-        let mut zero_centers = UniqueRandomBitsGenerator::new(0, usize::MAX, ScriptedRandomBits::values([0, 0]));
-        assert_eq!(zero_centers.next().unwrap().unwrap().value(), &BigUint::from(0_u8));
+        let mut zero_centers =
+            UniqueRandomBitsGenerator::new(0, usize::MAX, ScriptedRandomBits::values([0, 0]));
+        assert_eq!(
+            zero_centers.next().unwrap().unwrap().value(),
+            &BigUint::from(0_u8)
+        );
         assert!(zero_centers.next().is_none());
         assert_eq!(zero_centers.random.requested_bit_counts, vec![0]);
     }
 
     #[test]
     fn python_unique_random_bits_generator_propagates_source_errors_structurally() {
-        let mut generator = UniqueRandomBitsGenerator::new(130, 1024, ScriptedRandomBits::error("fixture failure"));
+        let mut generator =
+            UniqueRandomBitsGenerator::new(130, 1024, ScriptedRandomBits::error("fixture failure"));
         assert_eq!(
             generator.next().unwrap().unwrap_err(),
             EnumerationError::RandomBitsSource {
@@ -1412,8 +1486,14 @@ mod tests {
         let cco = Molecule::from_smiles("CCO").unwrap();
         let occ = Molecule::from_smiles("OCC").unwrap();
         assert_ne!(
-            cco.atoms().iter().map(|atom| atom.atomic_number()).collect::<Vec<_>>(),
-            occ.atoms().iter().map(|atom| atom.atomic_number()).collect::<Vec<_>>()
+            cco.atoms()
+                .iter()
+                .map(|atom| atom.atomic_number())
+                .collect::<Vec<_>>(),
+            occ.atoms()
+                .iter()
+                .map(|atom| atom.atomic_number())
+                .collect::<Vec<_>>()
         );
 
         let cco_seed = default_python_random_seed(&cco);
@@ -1458,7 +1538,13 @@ mod tests {
             .take(3)
             .map(|result| result.unwrap().value().clone())
             .collect::<Vec<_>>();
-        assert_eq!(values, [0_u8, 1, 2].into_iter().map(BigUint::from).collect::<Vec<_>>());
+        assert_eq!(
+            values,
+            [0_u8, 1, 2]
+                .into_iter()
+                .map(BigUint::from)
+                .collect::<Vec<_>>()
+        );
     }
 
     #[test]
@@ -1482,7 +1568,11 @@ mod tests {
         assert_eq!(outputs, vec![expected; 8]);
     }
 
-    fn tetrahedral_center(builder: &mut MoleculeBuilder, tag: ChiralTag, cip_code: Option<&str>) -> AtomId {
+    fn tetrahedral_center(
+        builder: &mut MoleculeBuilder,
+        tag: ChiralTag,
+        cip_code: Option<&str>,
+    ) -> AtomId {
         let mut center = AtomSpec::new(Element::C)
             .with_no_implicit(true)
             .with_chiral_tag(tag)
@@ -1534,9 +1624,16 @@ mod tests {
                 )
                 .unwrap();
         }
-        let coordinates = vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [2.0, 1.0, 0.0], [3.0, 1.0, 1.0]];
+        let coordinates = vec![
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [2.0, 1.0, 0.0],
+            [3.0, 1.0, 1.0],
+        ];
         builder
-            .add_conformer(Conformer3D::new(7, coordinates.clone(), true).with_prop("keep_conf", "yes"))
+            .add_conformer(
+                Conformer3D::new(7, coordinates.clone(), true).with_prop("keep_conf", "yes"),
+            )
             .unwrap();
         let source = builder.build().unwrap();
         let source_before = source.clone();
@@ -1553,7 +1650,10 @@ mod tests {
         assert_eq!(source, source_before);
         assert_eq!(workspace.center_count(), 0);
         assert_eq!(workspace.molecule().atoms()[0].prop("_CIPCode"), None);
-        assert_eq!(workspace.molecule().atoms()[0].prop("keep_atom"), Some("yes"));
+        assert_eq!(
+            workspace.molecule().atoms()[0].prop("keep_atom"),
+            Some("yes")
+        );
         assert_eq!(
             workspace
                 .molecule()
@@ -1561,13 +1661,20 @@ mod tests {
                 .iter()
                 .map(crate::Bond::direction)
                 .collect::<Vec<_>>(),
-            vec![BondDirection::None, BondDirection::None, BondDirection::BeginWedge,]
+            vec![
+                BondDirection::None,
+                BondDirection::None,
+                BondDirection::BeginWedge,
+            ]
         );
         assert_eq!(workspace.molecule().bonds()[2].prop("keep_bond"), Some("2"));
         assert_eq!(workspace.molecule().prop("keep_molecule"), Some("yes"));
         assert_eq!(workspace.molecule().prop("_MolFileChiralFlag"), Some("0"));
         assert_eq!(workspace.molecule().conformers_3d().len(), 1);
-        assert_eq!(workspace.molecule().conformers_3d()[0].coordinates(), coordinates);
+        assert_eq!(
+            workspace.molecule().conformers_3d()[0].coordinates(),
+            coordinates
+        );
         assert_eq!(
             workspace.molecule().conformers_3d()[0]
                 .props()
@@ -1580,7 +1687,8 @@ mod tests {
     #[test]
     fn python_enumerator_preprocessing_filters_fully_assigned_and_partial_centers_exactly() {
         let mut assigned_builder = MoleculeBuilder::new();
-        let assigned = tetrahedral_center(&mut assigned_builder, ChiralTag::TetrahedralCw, Some("R"));
+        let assigned =
+            tetrahedral_center(&mut assigned_builder, ChiralTag::TetrahedralCw, Some("R"));
         let assigned_source = assigned_builder.build().unwrap();
         let assigned_before = assigned_source.clone();
         let assigned_only = EnumerationWorkspace::prepare(
@@ -1599,8 +1707,10 @@ mod tests {
         assert_eq!(assigned_source, assigned_before);
 
         let mut partial_builder = MoleculeBuilder::new();
-        let retained = tetrahedral_center(&mut partial_builder, ChiralTag::TetrahedralCw, Some("S"));
-        let enumerated = tetrahedral_center(&mut partial_builder, ChiralTag::Unspecified, Some("stale"));
+        let retained =
+            tetrahedral_center(&mut partial_builder, ChiralTag::TetrahedralCw, Some("S"));
+        let enumerated =
+            tetrahedral_center(&mut partial_builder, ChiralTag::Unspecified, Some("stale"));
         let partial_source = partial_builder.build().unwrap();
         let partial_before = partial_source.clone();
         let mut partial = EnumerationWorkspace::prepare(
@@ -1613,7 +1723,10 @@ mod tests {
         .unwrap();
 
         assert_eq!(partial.center_count(), 1);
-        assert_eq!(partial.flippers, vec![StereoFlipper::Atom { atom: enumerated }]);
+        assert_eq!(
+            partial.flippers,
+            vec![StereoFlipper::Atom { atom: enumerated }]
+        );
         assert_eq!(partial.molecule().prop("_MolFileChiralFlag"), Some("1"));
         partial
             .apply_configuration(&ConfigurationBits::from_biguint(BigUint::from(0_u8)))
@@ -1653,7 +1766,10 @@ mod tests {
             )
             .unwrap();
         builder
-            .add_bond(BondSpec::new(begin, begin_first, BondOrder::Single).with_direction(BondDirection::Unknown))
+            .add_bond(
+                BondSpec::new(begin, begin_first, BondOrder::Single)
+                    .with_direction(BondDirection::Unknown),
+            )
             .unwrap();
         builder
             .add_bond(BondSpec::new(begin, begin_second, BondOrder::Single))
@@ -1676,12 +1792,18 @@ mod tests {
         .unwrap();
 
         assert_eq!(workspace.center_count(), 1);
-        assert_eq!(workspace.flippers, vec![StereoFlipper::Bond { bond: double_bond }]);
+        assert_eq!(
+            workspace.flippers,
+            vec![StereoFlipper::Bond { bond: double_bond }]
+        );
         assert_eq!(
             workspace.molecule().bonds()[double_bond.index()].direction(),
             BondDirection::None
         );
-        assert_eq!(workspace.molecule().bonds()[1].direction(), BondDirection::None);
+        assert_eq!(
+            workspace.molecule().bonds()[1].direction(),
+            BondDirection::None
+        );
         assert_eq!(
             workspace.molecule().bonds()[double_bond.index()].stereo(),
             BondStereo::Any
@@ -1714,10 +1836,18 @@ mod tests {
         let first = tetrahedral_center(&mut builder, ChiralTag::TetrahedralCw, Some("R"));
         let second = tetrahedral_center(&mut builder, ChiralTag::TetrahedralCcw, Some("S"));
         builder
-            .add_stereo_group(StereoGroup::new(StereoGroupKind::Absolute, vec![first], Vec::new()))
+            .add_stereo_group(StereoGroup::new(
+                StereoGroupKind::Absolute,
+                vec![first],
+                Vec::new(),
+            ))
             .unwrap();
         builder
-            .add_stereo_group(StereoGroup::new(StereoGroupKind::Or, vec![first, second], Vec::new()))
+            .add_stereo_group(StereoGroup::new(
+                StereoGroupKind::Or,
+                vec![first, second],
+                Vec::new(),
+            ))
             .unwrap();
         let source = builder.build().unwrap();
         let source_before = source.clone();
@@ -1771,17 +1901,24 @@ mod tests {
             .unwrap()
             .with_assigned_rings()
             .unwrap();
-        source.properties_mut().set_prop("keep_molecule", "persistent");
-        source.properties_mut().set_computed_prop("drop_molecule", "computed");
+        source
+            .properties_mut()
+            .set_prop("keep_molecule", "persistent");
+        source
+            .properties_mut()
+            .set_computed_prop("drop_molecule", "computed");
         source.topology_block_mut().atoms[1].set_prop("keep_atom", "persistent");
         source.topology_block_mut().atoms[1].set_computed_prop("drop_atom", "computed");
         source.topology_block_mut().bonds[0].set_prop("keep_bond", "persistent");
         source.topology_block_mut().bonds[0].set_computed_prop("drop_bond", "computed");
-        source.topology_block_mut().stereo_groups.push(StereoGroup::new(
-            StereoGroupKind::Or,
-            vec![AtomId::new(1), AtomId::new(3)],
-            Vec::new(),
-        ));
+        source
+            .topology_block_mut()
+            .stereo_groups
+            .push(StereoGroup::new(
+                StereoGroupKind::Or,
+                vec![AtomId::new(1), AtomId::new(3)],
+                Vec::new(),
+            ));
         let source_before = source.clone();
         let source_rings = source.derived_cache().rings.clone();
 
@@ -1837,7 +1974,9 @@ mod tests {
         let mut emitted_by_configuration = Vec::new();
         for configuration in 0_u8..4 {
             workspace
-                .apply_configuration(&ConfigurationBits::from_biguint(BigUint::from(configuration)))
+                .apply_configuration(&ConfigurationBits::from_biguint(BigUint::from(
+                    configuration,
+                )))
                 .unwrap();
             let finalized = workspace.finalize_configuration(true, &mut seen).unwrap();
             emitted_by_configuration.push(finalized.is_some());
@@ -1864,7 +2003,9 @@ mod tests {
 
     #[test]
     fn python_enumerator_preserves_tetrahedral_center_when_double_bond_configurations_change() {
-        let source = Molecule::from_smiles("Cl.N=C(N)c1ccc(C=CC(=O)NCC(O)CNC(=O)C=Cc2ccc(C(=N)N)cc2)cc1").unwrap();
+        let source =
+            Molecule::from_smiles("Cl.N=C(N)c1ccc(C=CC(=O)NCC(O)CNC(=O)C=Cc2ccc(C(=N)N)cc2)cc1")
+                .unwrap();
         let source_before = source.clone();
 
         let non_unique = enumerate_stereoisomers(
@@ -1916,7 +2057,9 @@ mod tests {
         assert_eq!(
             unique
                 .iter()
-                .map(|isomer| { MoleculeReadParts::from_molecule(isomer).canonical_isomeric_smiles() })
+                .map(|isomer| {
+                    MoleculeReadParts::from_molecule(isomer).canonical_isomeric_smiles()
+                })
                 .collect::<Result<Vec<_>, _>>()
                 .unwrap(),
             vec![
@@ -2044,7 +2187,10 @@ mod tests {
             {
                 Some(isomer) => {
                     assert_eq!(isomer.conformers_3d().len(), 1);
-                    assert_eq!(isomer.conformers_3d()[0].coordinates().len(), source.num_atoms());
+                    assert_eq!(
+                        isomer.conformers_3d()[0].coordinates().len(),
+                        source.num_atoms()
+                    );
                     succeeded.push(configuration.value().clone());
                 }
                 None => rejected.push(configuration.value().clone()),
@@ -2129,10 +2275,16 @@ mod tests {
 
         assert_eq!(embedded_a.num_atoms(), source.num_atoms());
         assert_eq!(embedded_a.conformers_3d().len(), 2);
-        assert_eq!(embedded_a.conformers_3d()[0].coordinates(), existing_coordinates);
+        assert_eq!(
+            embedded_a.conformers_3d()[0].coordinates(),
+            existing_coordinates
+        );
         assert_eq!(embedded_a.conformers_3d()[0].id(), 0);
         assert_eq!(embedded_a.conformers_3d()[1].id(), 0);
-        assert_eq!(embedded_a.conformers_3d()[1].coordinates().len(), source.num_atoms());
+        assert_eq!(
+            embedded_a.conformers_3d()[1].coordinates().len(),
+            source.num_atoms()
+        );
         assert!(
             embedded_a.conformers_3d()[1]
                 .coordinates()
@@ -2151,12 +2303,18 @@ mod tests {
     #[test]
     fn python_flippers_repeat_exact_atom_bond_and_group_setter_directions() {
         let mut builder = MoleculeBuilder::new();
-        let atom = builder.add_atom(AtomSpec::new(Element::C).with_chiral_tag(ChiralTag::TetrahedralCw));
-        let other = builder.add_atom(AtomSpec::new(Element::C).with_chiral_tag(ChiralTag::TetrahedralCcw));
-        let untouched = builder.add_atom(AtomSpec::new(Element::F).with_chiral_tag(ChiralTag::Other));
+        let atom =
+            builder.add_atom(AtomSpec::new(Element::C).with_chiral_tag(ChiralTag::TetrahedralCw));
+        let other =
+            builder.add_atom(AtomSpec::new(Element::C).with_chiral_tag(ChiralTag::TetrahedralCcw));
+        let untouched =
+            builder.add_atom(AtomSpec::new(Element::F).with_chiral_tag(ChiralTag::Other));
         let end_controller = builder.add_atom(AtomSpec::new(Element::CL));
         let bond = builder
-            .add_bond(BondSpec::new(atom, other, BondOrder::Double).with_stereo_atoms(untouched, end_controller))
+            .add_bond(
+                BondSpec::new(atom, other, BondOrder::Double)
+                    .with_stereo_atoms(untouched, end_controller),
+            )
             .unwrap();
         builder
             .add_bond(BondSpec::new(atom, untouched, BondOrder::Single))
@@ -2168,10 +2326,16 @@ mod tests {
 
         let atom_flipper = StereoFlipper::Atom { atom };
         atom_flipper.flip(&mut molecule, false).unwrap();
-        assert_eq!(molecule.atoms()[atom.index()].chiral_tag(), ChiralTag::TetrahedralCcw);
+        assert_eq!(
+            molecule.atoms()[atom.index()].chiral_tag(),
+            ChiralTag::TetrahedralCcw
+        );
         atom_flipper.flip(&mut molecule, true).unwrap();
         atom_flipper.flip(&mut molecule, true).unwrap();
-        assert_eq!(molecule.atoms()[atom.index()].chiral_tag(), ChiralTag::TetrahedralCw);
+        assert_eq!(
+            molecule.atoms()[atom.index()].chiral_tag(),
+            ChiralTag::TetrahedralCw
+        );
 
         let bond_flipper = StereoFlipper::Bond { bond };
         bond_flipper.flip(&mut molecule, false).unwrap();
@@ -2188,21 +2352,41 @@ mod tests {
             ],
         };
         group_flipper.flip(&mut molecule, false).unwrap();
-        assert_eq!(molecule.atoms()[atom.index()].chiral_tag(), ChiralTag::TetrahedralCcw);
-        assert_eq!(molecule.atoms()[other.index()].chiral_tag(), ChiralTag::TetrahedralCw);
-        assert_eq!(molecule.atoms()[untouched.index()].chiral_tag(), ChiralTag::Other);
+        assert_eq!(
+            molecule.atoms()[atom.index()].chiral_tag(),
+            ChiralTag::TetrahedralCcw
+        );
+        assert_eq!(
+            molecule.atoms()[other.index()].chiral_tag(),
+            ChiralTag::TetrahedralCw
+        );
+        assert_eq!(
+            molecule.atoms()[untouched.index()].chiral_tag(),
+            ChiralTag::Other
+        );
         group_flipper.flip(&mut molecule, true).unwrap();
         group_flipper.flip(&mut molecule, true).unwrap();
-        assert_eq!(molecule.atoms()[atom.index()].chiral_tag(), ChiralTag::TetrahedralCw);
-        assert_eq!(molecule.atoms()[other.index()].chiral_tag(), ChiralTag::TetrahedralCcw);
-        assert_eq!(molecule.atoms()[untouched.index()].chiral_tag(), ChiralTag::Other);
+        assert_eq!(
+            molecule.atoms()[atom.index()].chiral_tag(),
+            ChiralTag::TetrahedralCw
+        );
+        assert_eq!(
+            molecule.atoms()[other.index()].chiral_tag(),
+            ChiralTag::TetrahedralCcw
+        );
+        assert_eq!(
+            molecule.atoms()[untouched.index()].chiral_tag(),
+            ChiralTag::Other
+        );
     }
 
     fn grouped_selection_molecule() -> (Molecule, AtomId, AtomId, AtomId, AtomId, BondId) {
         let mut builder = MoleculeBuilder::new();
-        let assigned = builder.add_atom(AtomSpec::new(Element::C).with_chiral_tag(ChiralTag::TetrahedralCw));
+        let assigned =
+            builder.add_atom(AtomSpec::new(Element::C).with_chiral_tag(ChiralTag::TetrahedralCw));
         let unassigned = builder.add_atom(AtomSpec::new(Element::C));
-        let begin_controller = builder.add_atom(AtomSpec::new(Element::F).with_chiral_tag(ChiralTag::TetrahedralCcw));
+        let begin_controller =
+            builder.add_atom(AtomSpec::new(Element::F).with_chiral_tag(ChiralTag::TetrahedralCcw));
         let end_controller = builder.add_atom(AtomSpec::new(Element::CL));
         let double_bond = builder
             .add_bond(BondSpec::new(assigned, unassigned, BondOrder::Double))
@@ -2214,7 +2398,11 @@ mod tests {
             .add_bond(BondSpec::new(unassigned, end_controller, BondOrder::Single))
             .unwrap();
         builder
-            .add_stereo_group(StereoGroup::new(StereoGroupKind::Absolute, vec![assigned], Vec::new()))
+            .add_stereo_group(StereoGroup::new(
+                StereoGroupKind::Absolute,
+                vec![assigned],
+                Vec::new(),
+            ))
             .unwrap();
         builder
             .add_stereo_group(StereoGroup::new(
@@ -2344,7 +2532,8 @@ mod tests {
 
     #[test]
     fn python_bond_flipper_selection_initializes_preserves_and_rejects_controllers_exactly() {
-        let (molecule, _, _, begin_controller, end_controller, double_bond) = grouped_selection_molecule();
+        let (molecule, _, _, begin_controller, end_controller, double_bond) =
+            grouped_selection_molecule();
         let complete = stereo_info(
             StereoType::BondDouble,
             StereoSpecified::Unspecified,
@@ -2362,8 +2551,12 @@ mod tests {
         };
 
         let mut initialized = molecule.clone();
-        let flippers =
-            select_stereo_flippers_from_info(&mut initialized, std::slice::from_ref(&complete), options).unwrap();
+        let flippers = select_stereo_flippers_from_info(
+            &mut initialized,
+            std::slice::from_ref(&complete),
+            options,
+        )
+        .unwrap();
         assert_eq!(flippers, vec![StereoFlipper::Bond { bond: double_bond }]);
         assert_eq!(
             initialized.bonds()[double_bond.index()].stereo_atoms(),
@@ -2373,7 +2566,12 @@ mod tests {
         let mut preinitialized = molecule.clone();
         preinitialized.topology_block_mut().bonds[double_bond.index()]
             .set_stereo_atoms(Some([end_controller, begin_controller]));
-        select_stereo_flippers_from_info(&mut preinitialized, std::slice::from_ref(&complete), options).unwrap();
+        select_stereo_flippers_from_info(
+            &mut preinitialized,
+            std::slice::from_ref(&complete),
+            options,
+        )
+        .unwrap();
         assert_eq!(
             preinitialized.bonds()[double_bond.index()].stereo_atoms(),
             Some([end_controller, begin_controller])
@@ -2389,8 +2587,12 @@ mod tests {
                 controllers,
             );
             let mut candidate = molecule.clone();
-            let flippers =
-                select_stereo_flippers_from_info(&mut candidate, std::slice::from_ref(&incomplete), options).unwrap();
+            let flippers = select_stereo_flippers_from_info(
+                &mut candidate,
+                std::slice::from_ref(&incomplete),
+                options,
+            )
+            .unwrap();
             assert!(flippers.is_empty());
             assert_eq!(candidate.bonds()[double_bond.index()].stereo_atoms(), None);
         }

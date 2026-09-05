@@ -34,14 +34,18 @@ fn fixture_root() -> PathBuf {
 
 fn load_inventory() -> Vec<ConformerGenerationFixtureRecord> {
     let path = inventory_path();
-    let file = File::open(&path).unwrap_or_else(|err| panic!("failed to open {}: {err}", path.display()));
+    let file =
+        File::open(&path).unwrap_or_else(|err| panic!("failed to open {}: {err}", path.display()));
     BufReader::new(file)
         .lines()
         .enumerate()
         .map(|(idx, line)| {
-            let line = line.unwrap_or_else(|err| panic!("failed to read {} line {}: {err}", path.display(), idx + 1));
-            serde_json::from_str(&line)
-                .unwrap_or_else(|err| panic!("failed to parse {} line {}: {err}", path.display(), idx + 1))
+            let line = line.unwrap_or_else(|err| {
+                panic!("failed to read {} line {}: {err}", path.display(), idx + 1)
+            });
+            serde_json::from_str(&line).unwrap_or_else(|err| {
+                panic!("failed to parse {} line {}: {err}", path.display(), idx + 1)
+            })
         })
         .collect()
 }
@@ -58,8 +62,12 @@ fn sha256sum(path: &std::path::Path) -> String {
         output.status.code(),
         String::from_utf8_lossy(&output.stderr)
     );
-    let stdout = String::from_utf8(output.stdout)
-        .unwrap_or_else(|err| panic!("sha256sum output for {} is not UTF-8: {err}", path.display()));
+    let stdout = String::from_utf8(output.stdout).unwrap_or_else(|err| {
+        panic!(
+            "sha256sum output for {} is not UTF-8: {err}",
+            path.display()
+        )
+    });
     stdout
         .split_whitespace()
         .next()
@@ -80,7 +88,12 @@ fn read_rdkit_mol_fixture(source: &str) -> cosmolkit_core::Molecule {
             ..Default::default()
         },
     )
-    .unwrap_or_else(|err| panic!("failed to parse RDKit mol fixture {}: {err}", path.display()))
+    .unwrap_or_else(|err| {
+        panic!(
+            "failed to parse RDKit mol fixture {}: {err}",
+            path.display()
+        )
+    })
     .molecule
 }
 
@@ -89,9 +102,9 @@ fn vendored_fixture_path(source: &str) -> PathBuf {
         .into_iter()
         .find(|record| record.source == source)
         .unwrap_or_else(|| panic!("fixture inventory missing source {source}"));
-    let fixture = record
-        .fixture
-        .unwrap_or_else(|| panic!("fixture inventory source {source} does not have a vendored fixture path"));
+    let fixture = record.fixture.unwrap_or_else(|| {
+        panic!("fixture inventory source {source} does not have a vendored fixture path")
+    });
     fixture_root().join(fixture)
 }
 
@@ -116,7 +129,10 @@ fn assert_all_conformer_coords_finite(label: &str, mol: &Molecule) {
 #[test]
 fn conformer_generation_fixture_inventory_has_required_rdkit_sources() {
     let records = load_inventory();
-    let sources = records.iter().map(|record| record.source.as_str()).collect::<Vec<_>>();
+    let sources = records
+        .iter()
+        .map(|record| record.source.as_str())
+        .collect::<Vec<_>>();
 
     for required in [
         "third_party/rdkit/Code/DistGeom/testDistGeom.cpp",
@@ -131,7 +147,10 @@ fn conformer_generation_fixture_inventory_has_required_rdkit_sources() {
     }
 
     assert_eq!(
-        records.iter().filter(|record| record.kind == "test_data").count(),
+        records
+            .iter()
+            .filter(|record| record.kind == "test_data")
+            .count(),
         22,
         "fixture inventory must include every DistGeomHelpers/test_data file"
     );
@@ -148,10 +167,12 @@ fn conformer_generation_fixture_inventory_has_vendored_test_data_paths() {
             );
             continue;
         }
-        let fixture = record
-            .fixture
-            .as_ref()
-            .unwrap_or_else(|| panic!("test_data record missing vendored fixture path: {}", record.source));
+        let fixture = record.fixture.as_ref().unwrap_or_else(|| {
+            panic!(
+                "test_data record missing vendored fixture path: {}",
+                record.source
+            )
+        });
         assert!(
             fixture.starts_with("rdkit/test_data/"),
             "unexpected vendored fixture layout for {}: {}",
@@ -214,8 +235,8 @@ fn conformer_generation_single_parity_embeds_rdkit_simple_torsion_fixtures() {
 
         let atom_count = mol.num_atoms();
         let original_conformer_count = mol.conformers_3d().len();
-        let (embedded, conf_id) =
-            embed_molecule(&mol, &mut params).unwrap_or_else(|err| panic!("{label} failed to embed {source}: {err}"));
+        let (embedded, conf_id) = embed_molecule(&mol, &mut params)
+            .unwrap_or_else(|err| panic!("{label} failed to embed {source}: {err}"));
         assert_eq!(
             conf_id, 0,
             "{label} should match RDKit source tests that expect EmbedMolecule(...) == 0"
@@ -249,7 +270,8 @@ fn conformer_generation_single_parity_embeds_rdkit_simple_torsion_fixtures() {
 
 #[test]
 fn conformer_generation_multi_parity_covers_rdkit_multi_conformer_controls() {
-    let source = "third_party/rdkit/Code/GraphMol/DistGeomHelpers/test_data/simple_torsion.etkdg.mol";
+    let source =
+        "third_party/rdkit/Code/GraphMol/DistGeomHelpers/test_data/simple_torsion.etkdg.mol";
     let mol = read_rdkit_mol_fixture(source);
 
     let mut params = EmbedParameters::etkdg();
@@ -292,10 +314,15 @@ fn conformer_generation_multi_parity_covers_rdkit_multi_conformer_controls() {
         .unwrap_or_else(|err| panic!("sequential-seed ETKDG embed failed for {source}: {err}"));
     assert_eq!(sequential_ids, vec![0, 1, 2, 3]);
     let mut sequential_repeat_params = sequential_params.clone();
-    let (sequential_repeat, sequential_repeat_ids) = embed_multiple_confs(&mol, 4, &mut sequential_repeat_params)
-        .unwrap_or_else(|err| panic!("repeat sequential-seed embed failed for {source}: {err}"));
+    let (sequential_repeat, sequential_repeat_ids) =
+        embed_multiple_confs(&mol, 4, &mut sequential_repeat_params).unwrap_or_else(|err| {
+            panic!("repeat sequential-seed embed failed for {source}: {err}")
+        });
     assert_eq!(sequential_repeat_ids, sequential_ids);
-    assert_eq!(conformer_coords(&sequential_repeat), conformer_coords(&sequential));
+    assert_eq!(
+        conformer_coords(&sequential_repeat),
+        conformer_coords(&sequential)
+    );
 
     let fragment_mol = Molecule::from_smiles("CC.CC").expect("fragment molecule");
     let mut fragment_params = EmbedParameters::etkdg();
@@ -303,14 +330,16 @@ fn conformer_generation_multi_parity_covers_rdkit_multi_conformer_controls() {
     fragment_params.num_threads = 1;
     fragment_params.embed_fragments_separately = true;
     let (fragment_embedded, fragment_ids) =
-        embed_multiple_confs(&fragment_mol, 3, &mut fragment_params).expect("fragment conformer embedding");
+        embed_multiple_confs(&fragment_mol, 3, &mut fragment_params)
+            .expect("fragment conformer embedding");
     assert_eq!(fragment_ids, vec![0, 1, 2]);
     assert_eq!(fragment_embedded.conformers_3d().len(), 3);
 }
 
 #[test]
 fn conformer_generation_parameter_parity_covers_public_parameter_controls() {
-    let source = "third_party/rdkit/Code/GraphMol/DistGeomHelpers/test_data/simple_torsion.etkdg.mol";
+    let source =
+        "third_party/rdkit/Code/GraphMol/DistGeomHelpers/test_data/simple_torsion.etkdg.mol";
     let mol = read_rdkit_mol_fixture(source);
 
     let mut coord_params = EmbedParameters::etkdg_v3();
@@ -334,8 +363,8 @@ fn conformer_generation_parameter_parity_covers_public_parameter_controls() {
     cpci_params.random_seed = 0xC0FFEE;
     cpci_params.num_threads = 1;
     cpci_params.cpci = Some(BTreeMap::from([((0, 3), 0.5), ((1, 4), -0.25)]));
-    let (cpci_embedded, cpci_id) =
-        embed_molecule(&mol, &mut cpci_params).unwrap_or_else(|err| panic!("CPCI embed failed: {err}"));
+    let (cpci_embedded, cpci_id) = embed_molecule(&mol, &mut cpci_params)
+        .unwrap_or_else(|err| panic!("CPCI embed failed: {err}"));
     assert_eq!(cpci_id, 0);
     assert_eq!(cpci_embedded.conformers_3d().len(), 1);
 
@@ -367,8 +396,9 @@ fn conformer_generation_parameter_parity_covers_public_parameter_controls() {
 
 #[test]
 fn conformer_generation_stereo_parity_covers_source_backed_stereo_and_torsion_paths() {
-    let chirality =
-        read_rdkit_mol_fixture("third_party/rdkit/Code/GraphMol/DistGeomHelpers/test_data/chirality_failure_test.mol");
+    let chirality = read_rdkit_mol_fixture(
+        "third_party/rdkit/Code/GraphMol/DistGeomHelpers/test_data/chirality_failure_test.mol",
+    );
     let mut chirality_params = EmbedParameters::etkdg_v3();
     chirality_params.random_seed = 0xf00d;
     chirality_params.num_threads = 1;
@@ -386,13 +416,15 @@ fn conformer_generation_stereo_parity_covers_source_backed_stereo_and_torsion_pa
         "RDKit tracks conformer-generation failures for the chirality fixture"
     );
 
-    let double_bond = Molecule::from_smiles("O=C1OCC/C=C/CC/C=C/C(=N/OCC(=O)N2CCCCC2)Cc2cc(O)cc(O)c21")
-        .expect("RDKit platinum-set double-bond stereo SMILES");
+    let double_bond =
+        Molecule::from_smiles("O=C1OCC/C=C/CC/C=C/C(=N/OCC(=O)N2CCCCC2)Cc2cc(O)cc(O)c21")
+            .expect("RDKit platinum-set double-bond stereo SMILES");
     let mut double_bond_params = EmbedParameters::etkdg_v3();
     double_bond_params.random_seed = 0xf00d + 81;
     double_bond_params.num_threads = 1;
-    let (double_bond_embedded, double_bond_id) = embed_molecule(&double_bond, &mut double_bond_params)
-        .unwrap_or_else(|err| panic!("double-bond stereo embed failed: {err}"));
+    let (double_bond_embedded, double_bond_id) =
+        embed_molecule(&double_bond, &mut double_bond_params)
+            .unwrap_or_else(|err| panic!("double-bond stereo embed failed: {err}"));
     assert!(
         double_bond_id >= 0,
         "RDKit catch_tests.cpp expects the platinum-set double-bond stereo molecule to embed"
@@ -466,15 +498,33 @@ fn conformer_generation_stereo_parity_covers_source_backed_stereo_and_torsion_pa
 #[test]
 fn conformer_generation_fixture_inventory_matches_vendored_fixtures() {
     let records = load_inventory();
-    assert_eq!(records.len(), 26, "unexpected conformer fixture inventory size");
+    assert_eq!(
+        records.len(),
+        26,
+        "unexpected conformer fixture inventory size"
+    );
     for record in records {
         let Some(fixture) = record.fixture.as_ref() else {
             continue;
         };
         let path = fixture_root().join(fixture);
-        let metadata = std::fs::metadata(&path)
-            .unwrap_or_else(|err| panic!("missing vendored RDKit conformer fixture {}: {err}", path.display()));
-        assert_eq!(metadata.len(), record.bytes, "byte length changed for {}", fixture);
-        assert_eq!(sha256sum(&path), record.sha256, "SHA-256 changed for {}", fixture);
+        let metadata = std::fs::metadata(&path).unwrap_or_else(|err| {
+            panic!(
+                "missing vendored RDKit conformer fixture {}: {err}",
+                path.display()
+            )
+        });
+        assert_eq!(
+            metadata.len(),
+            record.bytes,
+            "byte length changed for {}",
+            fixture
+        );
+        assert_eq!(
+            sha256sum(&path),
+            record.sha256,
+            "SHA-256 changed for {}",
+            fixture
+        );
     }
 }
