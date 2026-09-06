@@ -1,5 +1,7 @@
 # cosmolkit-inchi
 
+The primary user-facing API is documented in [`cosmolkit`](../cosmolkit/README.md).
+
 `cosmolkit-inchi` is a toolkit-neutral, pure Rust source port of the official
 IUPAC InChI engine for the four scalar operations used by COSMolKit:
 

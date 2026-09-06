@@ -48,3 +48,6 @@ RDL✔️✔️: behavior, performance, and complexity are considered equivalent
 
 Do not expand behavior without first copying the corresponding C function body
 inside a `BEGIN RDL C FUNCTION ...` / `END RDL C FUNCTION ...` frame.
+# cosmolkit-ringdecomposer
+
+The primary user-facing API is documented in [`cosmolkit`](../cosmolkit/README.md).

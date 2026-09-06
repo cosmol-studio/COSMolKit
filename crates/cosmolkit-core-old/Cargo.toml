@@ -1,0 +1,85 @@
+[package]
+name = "cosmolkit-core-old"
+description = "Redesigned COSMolKit core with value-style molecule state and explicit topology operation contracts"
+keywords = ["cheminformatics", "molecule", "graph", "chemistry"]
+categories = ["science", "data-structures"]
+repository = "https://github.com/cosmol-studio/COSMolKit"
+homepage = "https://tools.cosmol.org/"
+documentation = "https://docs.rs/cosmolkit"
+readme = "../../README.md"
+license.workspace = true
+version.workspace = true
+edition.workspace = true
+
+[lib]
+name = "cosmolkit_core"
+path = "src/lib.rs"
+
+[package.metadata.docs.rs]
+features = ["full"]
+no-default-features = true
+
+[features]
+default = ["full"]
+full = [
+    "batch",
+    "depict",
+    "descriptors",
+    "fingerprints",
+    "hashing",
+    "inchi",
+    "io",
+    "serialization",
+    "stereoisomers",
+    "confseq",
+]
+batch = ["dep:indicatif", "dep:rayon", "__batch_impl"]
+confseq = ["dep:rayon", "__io_impl"]
+depict = ["dep:glam", "dep:resvg", "dep:tiny-skia", "dep:usvg", "__depict_impl"]
+descriptors = []
+fingerprints = ["dep:rayon", "__fingerprint_impl"]
+hashing = ["__hashing_impl"]
+inchi = ["dep:cosmolkit-inchi"]
+io = ["__io_impl"]
+serialization = ["dep:postcard"]
+stereoisomers = ["dep:num-bigint"]
+
+# Internal implementation capabilities. Cargo has no private feature
+# namespace, so the double-underscore names are deliberately undocumented
+# and are only selected transitively by public capabilities. They preserve
+# colocated source reuse without making one public domain feature enable
+# another public API.
+__batch_impl = ["__depict_impl", "__fingerprint_impl", "__io_impl"]
+__depict_impl = ["dep:glam", "dep:resvg", "dep:tiny-skia", "dep:usvg", "__io_impl"]
+__fingerprint_impl = ["dep:rayon", "__io_impl"]
+__hashing_impl = ["__fingerprint_impl"]
+__io_impl = []
+runtime-invariants = []
+op-contracts = []
+op-contracts-strict = ["runtime-invariants", "op-contracts"]
+
+[dependencies]
+cosmolkit-cx = { version = "0.5.0-rc.1", path = "../cosmolkit-cx" }
+cosmolkit-inchi = { version = "0.5.0-rc.1", path = "../cosmolkit-inchi", optional = true }
+cosmolkit-macros = { package = "cosmolkit-macros-old", version = "0.5.0-rc.1", path = "../cosmolkit-macros-old" }
+cosmolkit-types = { version = "0.5.0-rc.1", path = "../cosmolkit-types" }
+cosmolkit-model = { version = "0.5.0-rc.1", path = "../cosmolkit-model" }
+cosmolkit-ringdecomposer = { version = "0.5.0-rc.1", path = "../cosmolkit-ringdecomposer" }
+glam = { version = "0.33.5", optional = true }
+indicatif = { version = "0.18", optional = true }
+libc = "0.2"
+log = "0.4.29"
+num-bigint = { version = "0.4.8", optional = true }
+rayon = { version = "1.12.0", optional = true }
+postcard = { version = "1", features = ["alloc"], optional = true }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2.0.18"
+tiny-skia = { version = "0.12.0", optional = true }
+usvg = { version = "0.48.1", optional = true }
+resvg = { version = "0.48.1", optional = true }
+
+[dev-dependencies]
+cosmolkit-test-support = { path = "../cosmolkit-test-support" }
+sha2 = "0.11"
+tempfile = "3"

@@ -1,14 +1,16 @@
 [package]
 name = "cosmolkit-macros"
-version.workspace = true
-edition.workspace = true
-license.workspace = true
-authors.workspace = true
-description = "Compile-time macros for COSMolKit"
+description = "Next-generation operation body macros for COSMolKit"
 repository.workspace = true
 homepage.workspace = true
+license.workspace = true
+version.workspace = true
+edition.workspace = true
+readme = "../cosmolkit/README.md"
+documentation = "https://docs.rs/cosmolkit"
 
 [lib]
+name = "cosmolkit_macros"
 proc-macro = true
 
 [dependencies]

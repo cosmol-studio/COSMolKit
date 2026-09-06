@@ -1,6 +1,6 @@
 # COSMolKit
 
-`cosmolkit` is the public Rust API for COSMolKit, a Rust-native cheminformatics and structural biology toolkit. It provides molecular graphs, SMILES/SMARTS processing, molecular file IO, fingerprints, descriptors, 2D depiction, native 3D conformer generation, UFF/MMFF optimization, InChI, substructure search, batch workflows, and protein structure APIs. In the current workspace it exposes implementation from `cosmolkit-core` and related COSMolKit components through the primary supported Rust import surface.
+`cosmolkit` is the public Rust API and runtime owner for COSMolKit, a Rust-native cheminformatics and structural biology toolkit. It is the sole supported Rust entrypoint for `Molecule`, operation contracts, and the feature APIs being migrated from the legacy implementation. Detached model values and source-backed algorithms are being moved into dedicated workspace crates behind this facade.
 
 For a concise Rust-native cheminformatics overview, see <https://tools.cosmol.org/rust-cheminformatics>.
 
@@ -35,7 +35,8 @@ build the complete `full` capability set.
 
 - Rust API documentation: <https://docs.rs/cosmolkit/latest/cosmolkit/>
 - Project validation: [`VALIDATION.md`](https://github.com/cosmol-studio/COSMolKit/blob/main/VALIDATION.md)
-- Core source layout: [`crates/cosmolkit-core/src/README.md`](https://github.com/cosmol-studio/COSMolKit/blob/main/crates/cosmolkit-core/src/README.md)
+- Validation scope and evidence: [`VALIDATION.md`](https://github.com/cosmol-studio/COSMolKit/blob/main/VALIDATION.md) · [COSMolKit Web Tools](https://tools.cosmol.org/tools)
+- Target crate architecture: [`dev/final_target_architecture.md`](https://github.com/cosmol-studio/COSMolKit/blob/main/dev/final_target_architecture.md)
 - Project overview and Python package notes: [`README.md`](https://github.com/cosmol-studio/COSMolKit/blob/main/README.md)
 
 ## Validation Status

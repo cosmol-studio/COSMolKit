@@ -9,7 +9,10 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use cosmolkit_types::{BondDirection, BondOrder, BondStereo, ChiralTag, Hybridization};
 
-use crate::{Atom, AtomId, Bond, BondId, Conformer2D, Conformer3D, StereoGroup};
+use crate::{
+    Atom, AtomId, Bond, BondId, Conformer2D, Conformer3D, CoordinateBlock,
+    CoordinateValidationError, StereoGroup,
+};
 
 /// A recursive Boolean query tree over a predicate type.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -506,7 +509,7 @@ impl QueryGraph {
             adjacency[begin].push((end, bond_index));
             adjacency[end].push((begin, bond_index));
         }
-        Ok(Self {
+        let graph = Self {
             atoms,
             bonds,
             adjacency,
@@ -514,7 +517,85 @@ impl QueryGraph {
             conformers_2d,
             conformers_3d,
             stereo_groups,
-        })
+        };
+        graph.validate()?;
+        Ok(graph)
+    }
+
+    /// Validate local query-graph structure without consulting a live
+    /// molecule or runtime cache.
+    pub fn validate(&self) -> Result<(), QueryGraphError> {
+        for (position, atom) in self.atoms.iter().enumerate() {
+            if atom.id() != AtomId::new(position) {
+                return Err(QueryGraphError::AtomIdMismatch {
+                    position,
+                    id: atom.id(),
+                });
+            }
+        }
+        for (position, bond) in self.bonds.iter().enumerate() {
+            if bond.id() != BondId::new(position) {
+                return Err(QueryGraphError::BondIdMismatch {
+                    position,
+                    id: bond.id(),
+                });
+            }
+            for atom in [bond.begin(), bond.end()] {
+                if atom.index() >= self.atoms.len() {
+                    return Err(QueryGraphError::InvalidBondEndpoint(position));
+                }
+            }
+            if let Some([begin, end]) = bond.bond().stereo_atoms()
+                && (begin.index() >= self.atoms.len() || end.index() >= self.atoms.len())
+            {
+                return Err(QueryGraphError::StereoAtomOutOfRange {
+                    bond: bond.id(),
+                    begin,
+                    end,
+                    atom_count: self.atoms.len(),
+                });
+            }
+        }
+
+        let coordinates = CoordinateBlock {
+            conformers_2d: self.conformers_2d.clone(),
+            conformers_3d: self.conformers_3d.clone(),
+            source_coordinate_dim: None,
+        };
+        coordinates
+            .validate_for_atom_count(self.atoms.len())
+            .map_err(QueryGraphError::CoordinateValidation)?;
+
+        for group in &self.stereo_groups {
+            for atom in group.atoms() {
+                if atom.index() >= self.atoms.len() {
+                    return Err(QueryGraphError::StereoGroupAtomOutOfRange {
+                        atom: *atom,
+                        atom_count: self.atoms.len(),
+                    });
+                }
+            }
+            for bond in group.bonds() {
+                if bond.index() >= self.bonds.len() {
+                    return Err(QueryGraphError::StereoGroupBondOutOfRange {
+                        bond: *bond,
+                        bond_count: self.bonds.len(),
+                    });
+                }
+            }
+        }
+
+        let mut expected_adjacency = vec![Vec::new(); self.atoms.len()];
+        for (bond_index, bond) in self.bonds.iter().enumerate() {
+            let begin = bond.begin().index();
+            let end = bond.end().index();
+            expected_adjacency[begin].push((end, bond_index));
+            expected_adjacency[end].push((begin, bond_index));
+        }
+        if self.adjacency != expected_adjacency {
+            return Err(QueryGraphError::AdjacencyMismatch);
+        }
+        Ok(())
     }
 
     #[must_use]
@@ -647,10 +728,117 @@ impl QueryGraph {
 /// Query graph construction failed because a graph-local constraint was invalid.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum QueryGraphError {
+    #[error("query atom at position {position} has id {id}, expected {position}")]
+    AtomIdMismatch { position: usize, id: AtomId },
+    #[error("query bond at position {position} has id {id}, expected {position}")]
+    BondIdMismatch { position: usize, id: BondId },
     #[error("query atom {0} has no atom predicate")]
     MissingAtomPredicate(usize),
     #[error("query bond {0} has no bond predicate")]
     MissingBondPredicate(usize),
     #[error("query bond {0} has an invalid atom endpoint")]
     InvalidBondEndpoint(usize),
+    #[error(
+        "query bond {bond} has stereo atom references {begin}-{end} outside {atom_count} atoms"
+    )]
+    StereoAtomOutOfRange {
+        bond: BondId,
+        begin: AtomId,
+        end: AtomId,
+        atom_count: usize,
+    },
+    #[error("query stereo group references atom {atom} outside {atom_count} atoms")]
+    StereoGroupAtomOutOfRange { atom: AtomId, atom_count: usize },
+    #[error("query stereo group references bond {bond} outside {bond_count} bonds")]
+    StereoGroupBondOutOfRange { bond: BondId, bond_count: usize },
+    #[error("query graph coordinate validation failed: {0}")]
+    CoordinateValidation(CoordinateValidationError),
+    #[error("query graph adjacency does not match its atom and bond rows")]
+    AdjacencyMismatch,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{AtomSpec, BondSpec, Element, StereoGroupKind};
+
+    fn carbon(id: usize) -> QueryAtom {
+        QueryAtom::new(AtomId::new(id), AtomSpec::new(Element::C))
+    }
+
+    #[test]
+    fn from_parts_rejects_noncanonical_query_atom_ids() {
+        let result = QueryGraph::from_parts(
+            vec![carbon(1)],
+            Vec::new(),
+            BTreeMap::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        );
+
+        assert!(matches!(
+            result,
+            Err(QueryGraphError::AtomIdMismatch {
+                position: 0,
+                id
+            }) if id == AtomId::new(1)
+        ));
+    }
+
+    #[test]
+    fn from_parts_rejects_coordinate_and_stereo_group_misalignment() {
+        let coordinate_result = QueryGraph::from_parts(
+            vec![carbon(0)],
+            Vec::new(),
+            BTreeMap::new(),
+            vec![Conformer2D::new(0, Vec::new())],
+            Vec::new(),
+            Vec::new(),
+        );
+        assert!(matches!(
+            coordinate_result,
+            Err(QueryGraphError::CoordinateValidation(
+                CoordinateValidationError::RowCount { .. }
+            ))
+        ));
+
+        let group_result = QueryGraph::from_parts(
+            vec![carbon(0)],
+            Vec::new(),
+            BTreeMap::new(),
+            Vec::new(),
+            Vec::new(),
+            vec![StereoGroup::new(
+                StereoGroupKind::Absolute,
+                vec![AtomId::new(1)],
+                Vec::new(),
+            )],
+        );
+        assert!(matches!(
+            group_result,
+            Err(QueryGraphError::StereoGroupAtomOutOfRange {
+                atom,
+                atom_count: 1
+            }) if atom == AtomId::new(1)
+        ));
+    }
+
+    #[test]
+    fn validate_rejects_stale_query_adjacency_after_detached_editing() {
+        let graph = QueryGraph {
+            atoms: vec![carbon(0), carbon(1)],
+            bonds: vec![QueryBond::new(
+                BondId::new(0),
+                BondSpec::new(AtomId::new(0), AtomId::new(1), BondOrder::Single),
+            )],
+            adjacency: vec![Vec::new(), Vec::new()],
+            props: BTreeMap::new(),
+            conformers_2d: Vec::new(),
+            conformers_3d: Vec::new(),
+            stereo_groups: Vec::new(),
+        };
+
+        assert_eq!(graph.validate(), Err(QueryGraphError::AdjacencyMismatch));
+    }
 }

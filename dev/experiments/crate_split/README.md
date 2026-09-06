@@ -71,12 +71,12 @@ include the depiction domain.
 The isolated `macros` crate supplies the same three compile-time surfaces used
 by the production design: `molecule_ops!` generates operation specs, registries,
 matrices, scalar wrappers, in-place wrappers, and operation-specific capability
-types; `mol_op_body` and `mol_multi_op_body` inject the operation-specific
-capability type. Each capability is a zero-sized marker used as the `Access`
-parameter of the single runtime transaction object, so the generated impl
-exposes only the block access declared by that operation. There is no wrapper
-context or second transaction container: `OpParts<'a, Access>` and
-`MultiOutputOpParts<'a, Access>` are the runtime objects themselves.
+types; `mol_op_body` and `mol_multi_op_body` inject a direct
+`OpParts<'_, OperationAccess>` or `MultiOutputOpParts<'_, OperationAccess>`
+parameter. Each capability is a zero-sized marker used as the `Access`
+parameter of the runtime transaction object, so the generated impl exposes only
+the block access declared by that operation. There is no wrapper context or
+second transaction container.
 
 The molecule-operation registry contains the five stateful or derived
 `Molecule` operations exercised here: hydrogen addition/removal, tautomer and
@@ -111,10 +111,11 @@ its own operation-contract lifecycle.
 Construction functions and ordinary block transformations return their
 explicit model values directly as `(TopologyBlock, CoordinateBlock,
 MoleculeProperties)`. Multiple-output algorithms return a vector of those
-tuples; the runtime validates each branch and constructs the public `Molecule`
-only at the trusted boundary. This experiment deliberately has no generic
-draft container: such a type would imply a partially valid molecule
-without adding a real contract or ownership guarantee.
+tuples and call `MultiOutputOpParts::emit_all`; the runtime validates every
+candidate and constructs the public `Molecule` only at the trusted boundary.
+The multiple-output runtime deliberately has no branch-id, source-derivation,
+or draft container because those would duplicate an algorithm’s own candidate
+enumeration without adding an authority boundary.
 
 When opening the repository root in Zed, the root `.zed/settings.json` links
 this nested Cargo workspace to rust-analyzer. Restart the language server after

@@ -5,6 +5,9 @@ workspace. It is a normative design document for new crate boundaries and for
 future migrations of existing implementation code. Historical plans in
 `dev/plans/` and `dev/archive/` are not rewritten by this document.
 
+The concrete final crate decomposition and the complete layer diagram are
+defined in [`final_target_architecture.md`](./final_target_architecture.md).
+
 ## 1. Ownership Model
 
 `cosmolkit` is the public API and molecule-runtime crate. It is intentionally
@@ -73,6 +76,12 @@ the runtime boundary enforceable by the type graph.
 facade crate is therefore the place where a `Molecule` operation is assembled:
 it extracts authorized values, calls the algorithm crate, validates the
 result, records contract effects, and commits the result.
+
+`cosmolkit-core` must not depend on `cosmolkit-cx`. CX is shared notation syntax
+owned by the SMILES and SMARTS/search layers; only those target-representation
+crates parse `ParsedCxExtensions` and lower them into a molecule or query. Any
+current core-to-CX edge is migration residue from colocated notation code and
+must be removed when those parsers are extracted.
 
 ## 3. Model Crate
 
@@ -144,6 +153,15 @@ The signature is a compile-time data-visibility boundary, not a replacement
 for semantic correctness. The parent runtime still enforces registry access,
 mapping obligations, derived effects, preconditions, source-preservation rules,
 unsupported errors, and final invariants.
+
+Search follows the same boundary while its implementation remains in the
+current core package. Predicate evaluation is generic over a read-only
+`SearchTargetAccess` view whose data comes from model blocks and explicit ring
+or valence assignments. The current `Molecule` implementation of that trait is
+only a migration adapter; it is not an algorithm-owned dependency and must be
+removed when search moves to its own crate. New search code must use the
+detached view or the block-level constructor, never add another `Molecule`
+parameter.
 
 ### Value and behaviour facades
 
@@ -224,6 +242,65 @@ the existing in-place error and panic policy remains the responsibility of
 the `cosmolkit` runtime and must not be delegated to a child crate. Contract
 obligations and final invariants must be validated before the transformed state
 becomes the authoritative, externally observable `Molecule` state.
+
+`cosmolkit` is the sole crate allowed to own or accept a live `Molecule`.
+`cosmolkit-core` and every other domain crate operate on detached
+`cosmolkit-model` values and return detached values, assignments, matches, or
+structured errors. They must not accept `Molecule`, `MoleculeBuilder`,
+`OpParts`, derived-cache blocks, or operation runtime types. Any crate-private
+adapter left during migration is transitional and must be removed before the
+architecture is complete; it cannot contain a second algorithm
+implementation.
+
+### Operation capability projection
+
+The generated operation declaration is the single source for both runtime
+metadata and compile-time block visibility. It generates a private zero-sized
+access marker and specialises the one transaction type directly:
+
+```rust
+#[mol_op_body(with_hydrogens, parts)]
+fn with_hydrogens_impl(
+    parts: &mut OpParts<'_, WithHydrogensAccess>,
+    params: AddHsParams,
+) -> Result<(), OperationError> {
+    let (topology, coordinates, properties) = parts.extract_all_writable()?;
+    let (topology, coordinates, properties) =
+        cosmolkit_core::hydrogens::transform(topology, coordinates, properties, &params)?;
+    parts.commit_all_writable(topology, coordinates, properties)
+}
+```
+
+There is no per-operation context wrapper around `OpParts`. The marker is the
+capability projection: generated inherent methods expose only the declared
+read and write blocks. Runtime internals may retain unrestricted helpers, but
+they remain private and cannot be passed to an algorithm crate.
+
+Multiple-output operations use the same rule with one distinct runtime object:
+
+```rust
+#[mol_multi_op_body(tautomers, parts)]
+fn tautomers_impl(
+    parts: &mut MultiOutputOpParts<'_, TautomersAccess>,
+    params: TautomerOptions,
+) -> Result<(), OperationError> {
+    let candidates = cosmolkit_core::tautomer::enumerate(
+        parts.topology()?,
+        parts.coordinates()?,
+        parts.properties()?,
+        &params,
+    )?;
+    parts.emit_all(candidates)
+}
+```
+
+The algorithm returns an ordered
+`Vec<(TopologyBlock, CoordinateBlock, MoleculeProperties)>`, not a
+`Molecule`, draft object, branch handle, or `OpParts`. `MultiOutputOpParts`
+validates every candidate, applies the operation’s contract effects, and only
+then constructs each public output molecule. It intentionally has no generic
+branch-id or source-derivation abstraction: candidate enumeration belongs to
+the algorithm, while authoritative installation belongs to the runtime.
 
 ## 6. Migration Constraints
 

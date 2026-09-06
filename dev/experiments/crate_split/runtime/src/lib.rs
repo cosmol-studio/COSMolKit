@@ -31,7 +31,6 @@ use cosmolkit_experiment_tautomer::enumerate_tautomers;
 #[cfg(feature = "batch")]
 use indicatif::ProgressBar;
 use std::marker::PhantomData;
-use std::sync::atomic::{AtomicU64, Ordering};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum OperationOutput {
@@ -404,31 +403,32 @@ pub struct Molecule {
 }
 
 impl Molecule {
-    fn from_parts(
+    fn try_from_parts(
         topology: TopologyBlock,
         coordinates: CoordinateBlock,
         properties: MoleculeProperties,
-    ) -> Self {
+    ) -> Result<Self, OperationError> {
         // The experiment keeps this constructor intentionally small to test
         // crate ownership. Production migration must validate every existing
         // topology, index, coordinate, property, adjacency, and cache
         // invariant before installing equivalent blocks.
-        Self {
+        topology
+            .validate()
+            .map_err(|error| OperationError::InvalidTopology(error.to_string()))?;
+        Ok(Self {
             topology,
             coordinates,
             properties,
-        }
+        })
     }
 
     #[must_use]
     #[cfg(feature = "smiles")]
     pub fn from_smiles(source: &str) -> Result<Self, OperationError> {
         validate_input("parse_smiles", source)?;
-        parse_smiles(source)
-            .map(|(topology, coordinates, properties)| {
-                Self::from_parts(topology, coordinates, properties)
-            })
-            .map_err(OperationError::Algorithm)
+        let (topology, coordinates, properties) =
+            parse_smiles(source).map_err(OperationError::Algorithm)?;
+        Self::try_from_parts(topology, coordinates, properties)
     }
 
     #[must_use]
@@ -436,37 +436,30 @@ impl Molecule {
     pub fn from_sdf(source: &str) -> Result<Vec<Self>, OperationError> {
         validate_input("read_sdf", source)?;
         read_sdf(source)
-            .map(|parts| {
-                parts
-                    .into_iter()
-                    .map(|(topology, coordinates, properties)| {
-                        Self::from_parts(topology, coordinates, properties)
-                    })
-                    .collect()
+            .map_err(OperationError::Algorithm)?
+            .into_iter()
+            .map(|(topology, coordinates, properties)| {
+                Self::try_from_parts(topology, coordinates, properties)
             })
-            .map_err(OperationError::Algorithm)
+            .collect()
     }
 
     #[must_use]
     #[cfg(feature = "pdb")]
     pub fn from_pdb(source: &str) -> Result<Self, OperationError> {
         validate_input("read_pdb", source)?;
-        read_pdb(source)
-            .map(|(topology, coordinates, properties)| {
-                Self::from_parts(topology, coordinates, properties)
-            })
-            .map_err(OperationError::Algorithm)
+        let (topology, coordinates, properties) =
+            read_pdb(source).map_err(OperationError::Algorithm)?;
+        Self::try_from_parts(topology, coordinates, properties)
     }
 
     #[must_use]
     #[cfg(feature = "xyz")]
     pub fn from_xyz(source: &str) -> Result<Self, OperationError> {
         validate_input("read_xyz", source)?;
-        read_xyz(source)
-            .map(|(topology, coordinates, properties)| {
-                Self::from_parts(topology, coordinates, properties)
-            })
-            .map_err(OperationError::Algorithm)
+        let (topology, coordinates, properties) =
+            read_xyz(source).map_err(OperationError::Algorithm)?;
+        Self::try_from_parts(topology, coordinates, properties)
     }
 
     #[must_use]
@@ -514,33 +507,25 @@ fn remove_hydrogens_impl() -> Result<(), OperationError> {
 #[cfg(feature = "tautomer")]
 #[mol_multi_op_body(tautomers, context)]
 fn tautomers_impl() -> Result<(), OperationError> {
-    let candidates = context.with_source_read_parts(|read| {
-        enumerate_tautomers(read.topology()?, read.coordinates()?, read.properties()?)
-            .map_err(OperationError::Algorithm)
-    })?;
-    for (topology, coordinates, properties) in candidates {
-        let branch = context.derive_from_source(move |branch| {
-            branch.commit_all_writable(topology, coordinates, properties)
-        })?;
-        context.emit(branch)?;
-    }
-    Ok(())
+    let candidates = enumerate_tautomers(
+        context.topology()?,
+        context.coordinates()?,
+        context.properties()?,
+    )
+    .map_err(OperationError::Algorithm)?;
+    context.emit_all(candidates)
 }
 
 #[cfg(feature = "stereoisomers")]
 #[mol_multi_op_body(stereoisomers, context)]
 fn stereoisomers_impl() -> Result<(), OperationError> {
-    let candidates = context.with_source_read_parts(|read| {
-        enumerate_stereoisomers(read.topology()?, read.coordinates()?, read.properties()?)
-            .map_err(OperationError::Algorithm)
-    })?;
-    for (topology, coordinates, properties) in candidates {
-        let branch = context.derive_from_source(move |branch| {
-            branch.commit_all_writable(topology, coordinates, properties)
-        })?;
-        context.emit(branch)?;
-    }
-    Ok(())
+    let candidates = enumerate_stereoisomers(
+        context.topology()?,
+        context.coordinates()?,
+        context.properties()?,
+    )
+    .map_err(OperationError::Algorithm)?;
+    context.emit_all(candidates)
 }
 
 #[cfg(feature = "conformer")]
@@ -591,9 +576,9 @@ impl MoleculeBatch {
             records: records
                 .into_iter()
                 .map(|record| {
-                    Molecule::from_parts(record.topology, record.coordinates, record.properties)
+                    Molecule::try_from_parts(record.topology, record.coordinates, record.properties)
                 })
-                .collect(),
+                .collect::<Result<Vec<_>, _>>()?,
             n_jobs,
             progress_bar,
         })
@@ -692,39 +677,11 @@ pub(crate) struct OpParts<'a, Access = UnrestrictedAccess> {
     _access: PhantomData<Access>,
 }
 
-struct MoleculeReadParts<'a, Access = UnrestrictedAccess> {
-    spec: &'static MoleculeOpSpec,
-    molecule: &'a Molecule,
-    _access: PhantomData<Access>,
-}
-
 impl<'a, Access> OpParts<'a, Access> {
     fn new(source: &'a Molecule, spec: &'static MoleculeOpSpec) -> Result<Self, OperationError> {
         if spec.output != OperationOutput::Single {
             return Err(OperationError::ContractViolation(
                 "single-output OpParts used with multiple-output operation",
-            ));
-        }
-        Ok(Self {
-            spec,
-            topology: Some(source.topology.clone()),
-            coordinates: Some(source.coordinates.clone()),
-            properties: Some(source.properties.clone()),
-            topology_checked_out: false,
-            coordinates_checked_out: false,
-            properties_checked_out: false,
-            in_place_target: None,
-            _access: PhantomData,
-        })
-    }
-
-    fn new_multi_branch(
-        source: &'a Molecule,
-        spec: &'static MoleculeOpSpec,
-    ) -> Result<Self, OperationError> {
-        if spec.output != OperationOutput::Multiple {
-            return Err(OperationError::ContractViolation(
-                "multiple-output branch used with single-output operation",
             ));
         }
         Ok(Self {
@@ -762,18 +719,36 @@ impl<'a, Access> OpParts<'a, Access> {
         })
     }
 
-    fn ensure_access(&self, mode: AccessMode, block: &'static str) -> Result<(), OperationError> {
-        if mode == AccessMode::None {
+    fn ensure_read_access(
+        &self,
+        block: BlockSet,
+        name: &'static str,
+    ) -> Result<(), OperationError> {
+        if !self.spec.access.can_read(block) {
             return Err(OperationError::AccessDenied {
                 operation: self.spec.method,
-                block,
+                block: name,
+            });
+        }
+        Ok(())
+    }
+
+    fn ensure_write_access(
+        &self,
+        block: BlockSet,
+        name: &'static str,
+    ) -> Result<(), OperationError> {
+        if !self.spec.access.can_write(block) {
+            return Err(OperationError::AccessDenied {
+                operation: self.spec.method,
+                block: name,
             });
         }
         Ok(())
     }
 
     fn read_topology_runtime(&self) -> Result<&TopologyBlock, OperationError> {
-        self.ensure_access(self.spec.access.topology, "topology")?;
+        self.ensure_read_access(BlockSet::TOPOLOGY, "topology")?;
         self.topology
             .as_ref()
             .ok_or(OperationError::BlockCheckedOut { block: "topology" })
@@ -781,7 +756,7 @@ impl<'a, Access> OpParts<'a, Access> {
 
     #[allow(dead_code)]
     fn read_coordinates_runtime(&self) -> Result<&CoordinateBlock, OperationError> {
-        self.ensure_access(self.spec.access.coordinates, "coordinates")?;
+        self.ensure_read_access(BlockSet::COORDINATES, "coordinates")?;
         self.coordinates
             .as_ref()
             .ok_or(OperationError::BlockCheckedOut {
@@ -791,7 +766,7 @@ impl<'a, Access> OpParts<'a, Access> {
 
     #[allow(dead_code)]
     fn read_properties_runtime(&self) -> Result<&MoleculeProperties, OperationError> {
-        self.ensure_access(self.spec.access.properties, "properties")?;
+        self.ensure_read_access(BlockSet::PROPERTIES, "properties")?;
         self.properties
             .as_ref()
             .ok_or(OperationError::BlockCheckedOut {
@@ -800,7 +775,7 @@ impl<'a, Access> OpParts<'a, Access> {
     }
 
     fn checkout_topology_mut(&mut self) -> Result<TopologyBlock, OperationError> {
-        self.ensure_access(self.spec.access.topology, "topology")?;
+        self.ensure_write_access(BlockSet::TOPOLOGY, "topology")?;
         let topology = self
             .topology
             .take()
@@ -811,6 +786,7 @@ impl<'a, Access> OpParts<'a, Access> {
 
     #[allow(dead_code)]
     fn install_topology(&mut self, topology: TopologyBlock) -> Result<(), OperationError> {
+        self.ensure_write_access(BlockSet::TOPOLOGY, "topology")?;
         topology
             .validate()
             .map_err(|error| OperationError::InvalidTopology(error.to_string()))?;
@@ -820,7 +796,7 @@ impl<'a, Access> OpParts<'a, Access> {
     }
 
     fn checkout_coordinates_mut(&mut self) -> Result<CoordinateBlock, OperationError> {
-        self.ensure_access(self.spec.access.coordinates, "coordinates")?;
+        self.ensure_write_access(BlockSet::COORDINATES, "coordinates")?;
         let coordinates = self
             .coordinates
             .take()
@@ -832,13 +808,14 @@ impl<'a, Access> OpParts<'a, Access> {
     }
 
     fn install_coordinates(&mut self, coordinates: CoordinateBlock) -> Result<(), OperationError> {
+        self.ensure_write_access(BlockSet::COORDINATES, "coordinates")?;
         self.coordinates = Some(coordinates);
         self.coordinates_checked_out = false;
         Ok(())
     }
 
     fn checkout_properties_mut(&mut self) -> Result<MoleculeProperties, OperationError> {
-        self.ensure_access(self.spec.access.properties, "properties")?;
+        self.ensure_write_access(BlockSet::PROPERTIES, "properties")?;
         let properties = self
             .properties
             .take()
@@ -851,6 +828,7 @@ impl<'a, Access> OpParts<'a, Access> {
 
     #[allow(dead_code)]
     fn install_properties(&mut self, properties: MoleculeProperties) -> Result<(), OperationError> {
+        self.ensure_write_access(BlockSet::PROPERTIES, "properties")?;
         self.properties = Some(properties);
         self.properties_checked_out = false;
         Ok(())
@@ -920,10 +898,7 @@ impl<'a, Access> OpParts<'a, Access> {
         let properties = self.properties.ok_or(OperationError::IncompleteCommit {
             block: "properties",
         })?;
-        topology
-            .validate()
-            .map_err(|error| OperationError::InvalidTopology(error.to_string()))?;
-        Ok(Molecule::from_parts(topology, coordinates, properties))
+        Molecule::try_from_parts(topology, coordinates, properties)
     }
 
     fn abort_in_place(&mut self) {}
@@ -942,20 +917,10 @@ impl<'a, Access> OpParts<'a, Access> {
     }
 }
 
-static NEXT_MULTI_OUTPUT_EXECUTOR_ID: AtomicU64 = AtomicU64::new(1);
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) struct MoleculeBranchId {
-    executor_id: u64,
-    index: usize,
-}
-
 struct MultiOutputOpParts<'a, Access = UnrestrictedAccess> {
     spec: &'static MoleculeOpSpec,
     source: &'a Molecule,
-    executor_id: u64,
-    candidates: Vec<Molecule>,
-    emitted: Vec<MoleculeBranchId>,
+    outputs: Option<Vec<Molecule>>,
     _access: PhantomData<Access>,
 }
 
@@ -966,134 +931,68 @@ impl<'a, Access> MultiOutputOpParts<'a, Access> {
                 "single-output operation used with multiple-output runtime",
             ));
         }
-        let executor_id = NEXT_MULTI_OUTPUT_EXECUTOR_ID
-            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |id| id.checked_add(1))
-            .map_err(|_| {
-                OperationError::ContractViolation("multi-output executor identity exhausted")
-            })?;
         Ok(Self {
             spec,
             source,
-            executor_id,
-            candidates: Vec::new(),
-            emitted: Vec::new(),
+            outputs: None,
             _access: PhantomData,
         })
     }
 
-    fn source_read_runtime<R>(
-        &self,
-        read: impl FnOnce(MoleculeReadParts<'_, Access>) -> Result<R, OperationError>,
-    ) -> Result<R, OperationError> {
-        read(MoleculeReadParts {
-            spec: self.spec,
-            molecule: self.source,
-            _access: PhantomData,
-        })
+    fn source_topology_runtime(&self) -> Result<&TopologyBlock, OperationError> {
+        if !self.spec.access.can_read(BlockSet::TOPOLOGY) {
+            return Err(OperationError::AccessDenied {
+                operation: self.spec.method,
+                block: "topology",
+            });
+        }
+        Ok(&self.source.topology)
     }
 
-    fn derive_source_runtime(
+    fn source_coordinates_runtime(&self) -> Result<&CoordinateBlock, OperationError> {
+        if !self.spec.access.can_read(BlockSet::COORDINATES) {
+            return Err(OperationError::AccessDenied {
+                operation: self.spec.method,
+                block: "coordinates",
+            });
+        }
+        Ok(&self.source.coordinates)
+    }
+
+    fn source_properties_runtime(&self) -> Result<&MoleculeProperties, OperationError> {
+        if !self.spec.access.can_read(BlockSet::PROPERTIES) {
+            return Err(OperationError::AccessDenied {
+                operation: self.spec.method,
+                block: "properties",
+            });
+        }
+        Ok(&self.source.properties)
+    }
+
+    fn emit_all_runtime(
         &mut self,
-        derive: impl FnOnce(&mut OpParts<'_, Access>) -> Result<(), OperationError>,
-    ) -> Result<MoleculeBranchId, OperationError> {
-        let mut parts = OpParts::new_multi_branch(self.source, self.spec)?;
-        derive(&mut parts)?;
-        let molecule = parts.finish()?;
-        let branch = MoleculeBranchId {
-            executor_id: self.executor_id,
-            index: self.candidates.len(),
-        };
-        self.candidates.push(molecule);
-        Ok(branch)
-    }
-
-    #[allow(dead_code)]
-    fn derive_branch_runtime(
-        &mut self,
-        parent: MoleculeBranchId,
-        derive: impl FnOnce(&mut OpParts<'_, Access>) -> Result<(), OperationError>,
-    ) -> Result<MoleculeBranchId, OperationError> {
-        let source = self.branch(parent)?.clone();
-        let mut parts = OpParts::new_multi_branch(&source, self.spec)?;
-        derive(&mut parts)?;
-        let molecule = parts.finish()?;
-        let branch = MoleculeBranchId {
-            executor_id: self.executor_id,
-            index: self.candidates.len(),
-        };
-        self.candidates.push(molecule);
-        Ok(branch)
-    }
-
-    fn branch(&self, branch: MoleculeBranchId) -> Result<&Molecule, OperationError> {
-        if branch.executor_id != self.executor_id {
+        candidates: Vec<(TopologyBlock, CoordinateBlock, MoleculeProperties)>,
+    ) -> Result<(), OperationError> {
+        if self.outputs.is_some() {
             return Err(OperationError::ContractViolation(
-                "multi-output operation used a branch from another execution",
+                "multiple-output operation emitted candidates more than once",
             ));
         }
-        self.candidates
-            .get(branch.index)
-            .ok_or(OperationError::ContractViolation(
-                "multi-output operation used an unknown branch",
-            ))
-    }
-
-    #[allow(dead_code)]
-    fn branch_read_runtime<R>(
-        &self,
-        branch: MoleculeBranchId,
-        read: impl FnOnce(MoleculeReadParts<'_, Access>) -> Result<R, OperationError>,
-    ) -> Result<R, OperationError> {
-        read(MoleculeReadParts {
-            spec: self.spec,
-            molecule: self.branch(branch)?,
-            _access: PhantomData,
-        })
-    }
-
-    fn emit_runtime(&mut self, branch: MoleculeBranchId) -> Result<(), OperationError> {
-        self.branch(branch)?;
-        self.emitted.push(branch);
+        self.outputs = Some(
+            candidates
+                .into_iter()
+                .map(|(topology, coordinates, properties)| {
+                    Molecule::try_from_parts(topology, coordinates, properties)
+                })
+                .collect::<Result<Vec<_>, _>>()?,
+        );
         Ok(())
     }
 
     fn finish_runtime(self) -> Result<Vec<Molecule>, OperationError> {
-        if self.emitted.is_empty() {
-            return Err(OperationError::ContractViolation(
-                "multiple-output operation produced no finalized branches",
-            ));
-        }
-        let mut remaining = vec![0usize; self.candidates.len()];
-        for branch in &self.emitted {
-            if branch.executor_id != self.executor_id {
-                return Err(OperationError::ContractViolation(
-                    "multi-output operation emitted a branch from another execution",
-                ));
-            }
-            let count =
-                remaining
-                    .get_mut(branch.index)
-                    .ok_or(OperationError::ContractViolation(
-                        "multi-output operation emitted unknown branch",
-                    ))?;
-            *count += 1;
-        }
-
-        let mut candidates = self.candidates.into_iter().map(Some).collect::<Vec<_>>();
-        let mut outputs = Vec::with_capacity(self.emitted.len());
-        for branch in self.emitted {
-            remaining[branch.index] -= 1;
-            if remaining[branch.index] == 0 {
-                outputs.push(candidates[branch.index].take().ok_or(
-                    OperationError::ContractViolation("multi-output branch was already consumed"),
-                )?);
-            } else {
-                outputs.push(candidates[branch.index].as_ref().cloned().ok_or(
-                    OperationError::ContractViolation("multi-output branch was already consumed"),
-                )?);
-            }
-        }
-        Ok(outputs)
+        self.outputs.ok_or(OperationError::ContractViolation(
+            "multiple-output operation did not emit candidate blocks",
+        ))
     }
 }
 
@@ -1237,14 +1136,14 @@ mod tests {
         assert!(source.contains("#[mol_multi_op_body(tautomers, context)]"));
         assert!(source.contains("context.extract_all_writable()"));
         assert!(source.contains("context.commit_all_writable(topology, coordinates, properties)"));
-        assert!(source.contains("context.with_source_read_parts"));
+        assert!(source.contains("context.emit_all(candidates)"));
         assert_eq!(ADD_HYDROGENS_SPEC.impl_fn, "add_hydrogens_impl");
         assert_eq!(TAUTOMERS_SPEC.output, OperationOutput::Multiple);
     }
 
     #[test]
     fn generated_contexts_expose_declared_capabilities() {
-        fn add_hydrogens_capabilities(context: &mut AddHydrogensContext<'_>) {
+        fn add_hydrogens_capabilities(context: &mut OpParts<'_, AddHydrogensAccess>) {
             let _ = context.begin_topology_mut();
             let _ = context.begin_coordinates_mut();
             let _ = context.begin_properties_mut();
@@ -1256,7 +1155,7 @@ mod tests {
             );
         }
 
-        fn conformer_capabilities(context: &mut ConformerContext<'_>) {
+        fn conformer_capabilities(context: &mut OpParts<'_, ConformerAccess>) {
             let _ = context.topology();
             let _ = context.properties();
             let _ = context.begin_coordinates_mut();
@@ -1264,31 +1163,33 @@ mod tests {
         }
 
         let molecule = Molecule::from_smiles("CC").unwrap();
-        let mut add_hydrogens = AddHydrogensContext::new(&molecule, &ADD_HYDROGENS_SPEC).unwrap();
+        let mut add_hydrogens =
+            OpParts::<AddHydrogensAccess>::new(&molecule, &ADD_HYDROGENS_SPEC).unwrap();
         add_hydrogens_capabilities(&mut add_hydrogens);
-        let mut conformer = ConformerContext::new(&molecule, &CONFORMER_SPEC).unwrap();
+        let mut conformer = OpParts::<ConformerAccess>::new(&molecule, &CONFORMER_SPEC).unwrap();
         conformer_capabilities(&mut conformer);
     }
 
     #[test]
-    fn multi_output_runtime_derives_reads_and_emits_validated_branches() {
+    fn multi_output_runtime_reads_source_and_emits_validated_candidates() {
         let molecule = Molecule::from_smiles("CC").unwrap();
         let mut outputs =
             MultiOutputOpParts::<TautomersAccess>::new(&molecule, &TAUTOMERS_SPEC).unwrap();
-        let first = outputs.derive_from_source(|_| Ok(())).unwrap();
-        assert_eq!(
-            outputs
-                .with_branch_read_parts(first, |read| Ok(read.topology()?.atom_count()))
-                .unwrap(),
-            2
-        );
-        let second = outputs.derive_from_branch(first, |_| Ok(())).unwrap();
-        outputs.emit(first).unwrap();
-        outputs.emit(second).unwrap();
+        assert_eq!(outputs.topology().unwrap().atom_count(), 2);
+        outputs
+            .emit_all(vec![
+                (
+                    molecule.topology.clone(),
+                    molecule.coordinates.clone(),
+                    molecule.properties.clone(),
+                ),
+                (
+                    molecule.topology.clone(),
+                    molecule.coordinates.clone(),
+                    molecule.properties.clone(),
+                ),
+            ])
+            .unwrap();
         assert_eq!(outputs.finish().unwrap().len(), 2);
-
-        let mut other =
-            MultiOutputOpParts::<TautomersAccess>::new(&molecule, &TAUTOMERS_SPEC).unwrap();
-        assert!(other.emit(first).is_err());
     }
 }

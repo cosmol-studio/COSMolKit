@@ -41,6 +41,7 @@ The target workspace crate ownership and dependency direction are defined in
 ## Current Design
 
 - [`crate_architecture.md`](./crate_architecture.md)
+- [`public_api_design.md`](./public_api_design.md)
 - [`topology_operations.md`](./topology_operations.md)
 - [`derived_effects_permission_model.md`](./derived_effects_permission_model.md)
 - [`inplace_operation_api_design.md`](./inplace_operation_api_design.md)

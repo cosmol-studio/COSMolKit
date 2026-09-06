@@ -36,7 +36,8 @@ pub use sgroup::{
 };
 pub use stereo_group::{StereoGroup, StereoGroupKind};
 pub use topology::{
-    AtomMapping, BondMapping, TopologyBlock, TopologyMapping, TopologyValidationError,
+    AtomMapping, BondMapping, MappingValidationError, TopologyBlock, TopologyMapping,
+    TopologyValidationError,
 };
 
 use std::fmt;

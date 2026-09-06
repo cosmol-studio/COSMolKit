@@ -24,15 +24,15 @@ impl Parse for BodyAttribute {
 
 #[proc_macro_attribute]
 pub fn mol_op_body(attribute: TokenStream, item: TokenStream) -> TokenStream {
-    expand_body(attribute, item)
+    expand_body(attribute, item, false)
 }
 
 #[proc_macro_attribute]
 pub fn mol_multi_op_body(attribute: TokenStream, item: TokenStream) -> TokenStream {
-    expand_body(attribute, item)
+    expand_body(attribute, item, true)
 }
 
-fn expand_body(attribute: TokenStream, item: TokenStream) -> TokenStream {
+fn expand_body(attribute: TokenStream, item: TokenStream, multiple_output: bool) -> TokenStream {
     let attribute = parse_macro_input!(attribute as BodyAttribute);
     let mut function = parse_macro_input!(item as ItemFn);
     for input in &function.sig.inputs {
@@ -45,8 +45,12 @@ fn expand_body(attribute: TokenStream, item: TokenStream) -> TokenStream {
     let operation = attribute.operation;
     let parts = attribute.parts;
     let parameters = std::mem::take(&mut function.sig.inputs);
-    let context = context_name(&operation, "Context");
-    let context_type: Type = parse_quote!(&mut crate::#context<'_>);
+    let access = context_name(&operation, "Access");
+    let context_type: Type = if multiple_output {
+        parse_quote!(&mut crate::MultiOutputOpParts<'_, crate::#access>)
+    } else {
+        parse_quote!(&mut crate::OpParts<'_, crate::#access>)
+    };
     function
         .sig
         .inputs
@@ -499,7 +503,6 @@ fn expand_registry(registry: Registry) -> syn::Result<proc_macro2::TokenStream> 
         spec_names.push(spec.clone());
 
         let access_marker = context_name(&name, "Access");
-        let access_context = context_name(&name, "Context");
         let can_read_topology = access
             .read
             .iter()
@@ -520,45 +523,6 @@ fn expand_registry(registry: Registry) -> syn::Result<proc_macro2::TokenStream> 
         let can_write_properties = access.write.iter().any(|block| block == "properties");
         let writes_all = can_write_topology && can_write_coordinates && can_write_properties;
 
-        let read_topology = can_read_topology.then(|| {
-            quote! {
-                pub(crate) fn topology(&self) -> Result<&crate::TopologyBlock, crate::OperationError> {
-                    if !self.spec.access.can_read(crate::BlockSet::TOPOLOGY) {
-                        return Err(crate::OperationError::AccessDenied {
-                            operation: self.spec.method,
-                            block: "topology",
-                        });
-                    }
-                    Ok(&self.molecule.topology)
-                }
-            }
-        });
-        let read_coordinates = can_read_coordinates.then(|| {
-            quote! {
-                pub(crate) fn coordinates(&self) -> Result<&crate::CoordinateBlock, crate::OperationError> {
-                    if !self.spec.access.can_read(crate::BlockSet::COORDINATES) {
-                        return Err(crate::OperationError::AccessDenied {
-                            operation: self.spec.method,
-                            block: "coordinates",
-                        });
-                    }
-                    Ok(&self.molecule.coordinates)
-                }
-            }
-        });
-        let read_properties = can_read_properties.then(|| {
-            quote! {
-                pub(crate) fn properties(&self) -> Result<&crate::MoleculeProperties, crate::OperationError> {
-                    if !self.spec.access.can_read(crate::BlockSet::PROPERTIES) {
-                        return Err(crate::OperationError::AccessDenied {
-                            operation: self.spec.method,
-                            block: "properties",
-                        });
-                    }
-                    Ok(&self.molecule.properties)
-                }
-            }
-        });
         let topology_read = access.read.iter().any(|block| block == "topology").then(|| {
             quote! {
                 pub(crate) fn topology(&self) -> Result<&crate::TopologyBlock, crate::OperationError> {
@@ -577,6 +541,27 @@ fn expand_registry(registry: Registry) -> syn::Result<proc_macro2::TokenStream> 
             quote! {
                 pub(crate) fn properties(&self) -> Result<&crate::MoleculeProperties, crate::OperationError> {
                     crate::OpParts::read_properties_runtime(self)
+                }
+            }
+        });
+        let multi_topology_read = can_read_topology.then(|| {
+            quote! {
+                pub(crate) fn topology(&self) -> Result<&crate::TopologyBlock, crate::OperationError> {
+                    crate::MultiOutputOpParts::source_topology_runtime(self)
+                }
+            }
+        });
+        let multi_coordinates_read = can_read_coordinates.then(|| {
+            quote! {
+                pub(crate) fn coordinates(&self) -> Result<&crate::CoordinateBlock, crate::OperationError> {
+                    crate::MultiOutputOpParts::source_coordinates_runtime(self)
+                }
+            }
+        });
+        let multi_properties_read = can_read_properties.then(|| {
+            quote! {
+                pub(crate) fn properties(&self) -> Result<&crate::MoleculeProperties, crate::OperationError> {
+                    crate::MultiOutputOpParts::source_properties_runtime(self)
                 }
             }
         });
@@ -623,46 +608,21 @@ fn expand_registry(registry: Registry) -> syn::Result<proc_macro2::TokenStream> 
         let capability_definition = if multiple {
             quote! {
                 pub(crate) struct #access_marker;
-                pub(crate) type #access_context<'a> = crate::MultiOutputOpParts<'a, #access_marker>;
                 impl<'a> crate::MultiOutputOpParts<'a, #access_marker> {
-                    pub(crate) fn with_source_read_parts<R>(&self, read: impl FnOnce(crate::MoleculeReadParts<'_, #access_marker>) -> Result<R, crate::OperationError>) -> Result<R, crate::OperationError> {
-                        crate::MultiOutputOpParts::source_read_runtime(self, read)
-                    }
-                    pub(crate) fn derive_from_source(&mut self, derive: impl FnOnce(&mut crate::OpParts<'_, #access_marker>) -> Result<(), crate::OperationError>) -> Result<crate::MoleculeBranchId, crate::OperationError> {
-                        crate::MultiOutputOpParts::derive_source_runtime(self, derive)
-                    }
-                    pub(crate) fn derive_from_branch(&mut self, parent: crate::MoleculeBranchId, derive: impl FnOnce(&mut crate::OpParts<'_, #access_marker>) -> Result<(), crate::OperationError>) -> Result<crate::MoleculeBranchId, crate::OperationError> {
-                        crate::MultiOutputOpParts::derive_branch_runtime(self, parent, derive)
-                    }
-                    pub(crate) fn with_branch_read_parts<R>(&self, branch: crate::MoleculeBranchId, read: impl FnOnce(crate::MoleculeReadParts<'_, #access_marker>) -> Result<R, crate::OperationError>) -> Result<R, crate::OperationError> {
-                        crate::MultiOutputOpParts::branch_read_runtime(self, branch, read)
-                    }
-                    pub(crate) fn emit(&mut self, branch: crate::MoleculeBranchId) -> Result<(), crate::OperationError> {
-                        crate::MultiOutputOpParts::emit_runtime(self, branch)
+                    #multi_topology_read
+                    #multi_coordinates_read
+                    #multi_properties_read
+                    pub(crate) fn emit_all(&mut self, candidates: Vec<(crate::TopologyBlock, crate::CoordinateBlock, crate::MoleculeProperties)>) -> Result<(), crate::OperationError> {
+                        crate::MultiOutputOpParts::emit_all_runtime(self, candidates)
                     }
                     pub(crate) fn finish(self) -> Result<Vec<crate::Molecule>, crate::OperationError> {
                         crate::MultiOutputOpParts::finish_runtime(self)
                     }
                 }
-                impl<'a> crate::MoleculeReadParts<'a, #access_marker> {
-                    #read_topology
-                    #read_coordinates
-                    #read_properties
-                }
-                impl<'a> crate::OpParts<'a, #access_marker> {
-                    #topology_read
-                    #coordinates_read
-                    #properties_read
-                    #topology_write
-                    #coordinates_write
-                    #properties_write
-                    #all_writable
-                }
             }
         } else {
             quote! {
                 pub(crate) struct #access_marker;
-                pub(crate) type #access_context<'a> = crate::OpParts<'a, #access_marker>;
                 impl<'a> crate::OpParts<'a, #access_marker> {
                     #topology_read
                     #coordinates_read
@@ -817,8 +777,8 @@ mod tests {
 
         let expanded = expand_registry(registry).expect("registry must expand");
         let expanded_text = expanded.to_string();
-        assert!(expanded_text.contains("type ConformerContext"));
-        assert!(!expanded_text.contains("struct ConformerContext"));
+        assert!(expanded_text.contains("OpParts < 'a , ConformerAccess >"));
+        assert!(!expanded_text.contains("ConformerContext"));
         let methods = context_methods(expanded, "ConformerAccess");
         for expected in [
             "topology",

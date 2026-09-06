@@ -1,7 +1,21 @@
 [workspace]
 members = [
     "crates/cosmolkit-core",
+    "crates/cosmolkit-core-old",
     "crates/cosmolkit-cx",
+    "crates/cosmolkit-smiles",
+    "crates/cosmolkit-search",
+    "crates/cosmolkit-io",
+    "crates/cosmolkit-descriptors",
+    "crates/cosmolkit-fingerprints",
+    "crates/cosmolkit-stereo",
+    "crates/cosmolkit-tautomer",
+    "crates/cosmolkit-conformer",
+    "crates/cosmolkit-forcefields",
+    "crates/cosmolkit-alignment",
+    "crates/cosmolkit-depict",
+    "crates/cosmolkit-batch",
+    "crates/cosmolkit-bio",
     "crates/cosmolkit-types",
     "crates/cosmolkit-model",
     "crates/cosmolkit-inchi",
@@ -10,6 +24,7 @@ members = [
     "crates/cosmolkit",
     "wasm",
     "crates/cosmolkit-macros",
+    "crates/cosmolkit-macros-old",
     "python",
     "dev/tools/chembl_parity/tautomer_oracle",
 ]
@@ -20,7 +35,7 @@ exclude = ["tmp/alef/wasm"]
 [workspace.package]
 edition = "2024"
 license = "MIT"
-version = "0.3.0"
+version = "0.5.0-rc.1"
 authors = ["COSMolKit Contributors"]
 description = "Core cheminformatics and structural biology toolkit in Rust"
 repository = "https://github.com/cosmol-studio/COSMolKit"

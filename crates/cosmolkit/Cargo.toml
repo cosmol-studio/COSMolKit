@@ -10,6 +10,7 @@ readme = "./README.md"
 license.workspace = true
 version.workspace = true
 edition.workspace = true
+autoexamples = false
 
 [lib]
 name = "cosmolkit"
@@ -20,71 +21,21 @@ features = ["full"]
 no-default-features = true
 
 [features]
-default = ["full"]
-full = [
-    "batch",
-    "depict",
-    "descriptors",
-    "fingerprints",
-    "hashing",
-    "inchi",
-    "io",
-    "serialization",
-    "stereoisomers",
-    "confseq",
-]
-batch = ["cosmolkit-core/batch"]
-confseq = ["cosmolkit-core/confseq"]
-depict = ["cosmolkit-core/depict"]
-descriptors = ["cosmolkit-core/descriptors"]
-fingerprints = ["cosmolkit-core/fingerprints"]
-hashing = ["cosmolkit-core/hashing"]
-inchi = ["cosmolkit-core/inchi"]
-io = ["cosmolkit-core/io"]
-serialization = ["cosmolkit-core/serialization"]
-stereoisomers = ["cosmolkit-core/stereoisomers"]
+default = []
+full = []
+batch = []
+hydrogens = []
+confseq = []
+depict = []
+descriptors = ["dep:cosmolkit-descriptors"]
+fingerprints = []
+hashing = []
+inchi = []
+io = []
+serialization = []
+stereoisomers = []
 
 [dependencies]
-cosmolkit-core = { version = "0.3.0", path = "../cosmolkit-core", default-features = false }
-cosmolkit-model = { version = "0.3.0", path = "../cosmolkit-model" }
-cosmolkit-types = { version = "0.3.0", path = "../cosmolkit-types" }
-
-[[example]]
-name = "confseq_decode_backends"
-required-features = ["confseq"]
-
-[[example]]
-name = "draw_png"
-required-features = ["depict"]
-
-[[example]]
-name = "draw_svg"
-required-features = ["depict"]
-
-[[example]]
-name = "layered_fingerprint"
-required-features = ["batch"]
-
-[[example]]
-name = "pattern_fingerprint"
-required-features = ["batch"]
-
-[[example]]
-name = "protein_from_pdb"
-required-features = ["io"]
-
-[[example]]
-name = "read_pdb_alpha_carbons"
-required-features = ["io"]
-
-[[example]]
-name = "read_xyz"
-required-features = ["io"]
-
-[[example]]
-name = "sdf_to_smiles"
-required-features = ["io"]
-
-[[example]]
-name = "topological_torsion_fingerprint"
-required-features = ["batch"]
+cosmolkit-model = { version = "0.5.0-rc.1", path = "../cosmolkit-model" }
+cosmolkit-macros = { version = "0.5.0-rc.1", path = "../cosmolkit-macros" }
+cosmolkit-descriptors = { version = "0.5.0-rc.1", path = "../cosmolkit-descriptors", optional = true }

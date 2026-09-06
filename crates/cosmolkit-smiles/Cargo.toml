@@ -1,0 +1,17 @@
+[package]
+name = "cosmolkit-smiles"
+description = "SMILES parsing and writing over the COSMolKit detached model"
+keywords = ["cheminformatics", "smiles", "parser"]
+categories = ["parsing", "science"]
+repository.workspace = true
+homepage.workspace = true
+license.workspace = true
+version.workspace = true
+edition.workspace = true
+readme = "../cosmolkit/README.md"
+documentation = "https://docs.rs/cosmolkit"
+
+[dependencies]
+cosmolkit-cx = { version = "0.5.0-rc.1", path = "../cosmolkit-cx" }
+cosmolkit-model = { version = "0.5.0-rc.1", path = "../cosmolkit-model" }
+cosmolkit-types = { version = "0.5.0-rc.1", path = "../cosmolkit-types" }

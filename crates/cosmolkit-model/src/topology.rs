@@ -70,6 +70,34 @@ pub enum TopologyValidationError {
     AdjacencyMismatch,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum MappingValidationError {
+    #[error("{entity} {direction} mapping has {actual} rows, expected {expected}")]
+    Length {
+        entity: &'static str,
+        direction: &'static str,
+        actual: usize,
+        expected: usize,
+    },
+    #[error(
+        "{entity} {direction} mapping row {row} refers to {mapped}, outside {target_count} rows"
+    )]
+    OutOfRange {
+        entity: &'static str,
+        direction: &'static str,
+        row: usize,
+        mapped: usize,
+        target_count: usize,
+    },
+    #[error("{entity} mappings disagree for {direction} row {row} and mapped row {mapped}")]
+    InverseMismatch {
+        entity: &'static str,
+        direction: &'static str,
+        row: usize,
+        mapped: usize,
+    },
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AtomMapping {
     pub old_to_new: Vec<Option<AtomId>>,
@@ -160,6 +188,155 @@ impl TopologyMapping {
             },
         }
     }
+
+    /// Validate that both directions of an atom/bond topology mapping agree
+    /// with the old and new table sizes.
+    pub fn validate_for_counts(
+        &self,
+        old_atom_count: usize,
+        new_atom_count: usize,
+        old_bond_count: usize,
+        new_bond_count: usize,
+    ) -> Result<(), MappingValidationError> {
+        validate_atom_mapping(&self.atoms, old_atom_count, new_atom_count)?;
+        validate_bond_mapping(&self.bonds, old_bond_count, new_bond_count)
+    }
+}
+
+fn validate_atom_mapping(
+    mapping: &AtomMapping,
+    old_count: usize,
+    new_count: usize,
+) -> Result<(), MappingValidationError> {
+    if mapping.old_to_new.len() != old_count {
+        return Err(MappingValidationError::Length {
+            entity: "atom",
+            direction: "old-to-new",
+            actual: mapping.old_to_new.len(),
+            expected: old_count,
+        });
+    }
+    if mapping.new_to_old.len() != new_count {
+        return Err(MappingValidationError::Length {
+            entity: "atom",
+            direction: "new-to-old",
+            actual: mapping.new_to_old.len(),
+            expected: new_count,
+        });
+    }
+    for (old, new) in mapping.old_to_new.iter().enumerate() {
+        let Some(new) = new else {
+            continue;
+        };
+        if new.index() >= new_count {
+            return Err(MappingValidationError::OutOfRange {
+                entity: "atom",
+                direction: "old-to-new",
+                row: old,
+                mapped: new.index(),
+                target_count: new_count,
+            });
+        }
+        if mapping.new_to_old[new.index()] != Some(AtomId::new(old)) {
+            return Err(MappingValidationError::InverseMismatch {
+                entity: "atom",
+                direction: "old-to-new",
+                row: old,
+                mapped: new.index(),
+            });
+        }
+    }
+    for (new, old) in mapping.new_to_old.iter().enumerate() {
+        let Some(old) = old else {
+            continue;
+        };
+        if old.index() >= old_count {
+            return Err(MappingValidationError::OutOfRange {
+                entity: "atom",
+                direction: "new-to-old",
+                row: new,
+                mapped: old.index(),
+                target_count: old_count,
+            });
+        }
+        if mapping.old_to_new[old.index()] != Some(AtomId::new(new)) {
+            return Err(MappingValidationError::InverseMismatch {
+                entity: "atom",
+                direction: "new-to-old",
+                row: new,
+                mapped: old.index(),
+            });
+        }
+    }
+    Ok(())
+}
+
+fn validate_bond_mapping(
+    mapping: &BondMapping,
+    old_count: usize,
+    new_count: usize,
+) -> Result<(), MappingValidationError> {
+    if mapping.old_to_new.len() != old_count {
+        return Err(MappingValidationError::Length {
+            entity: "bond",
+            direction: "old-to-new",
+            actual: mapping.old_to_new.len(),
+            expected: old_count,
+        });
+    }
+    if mapping.new_to_old.len() != new_count {
+        return Err(MappingValidationError::Length {
+            entity: "bond",
+            direction: "new-to-old",
+            actual: mapping.new_to_old.len(),
+            expected: new_count,
+        });
+    }
+    for (old, new) in mapping.old_to_new.iter().enumerate() {
+        let Some(new) = new else {
+            continue;
+        };
+        if new.index() >= new_count {
+            return Err(MappingValidationError::OutOfRange {
+                entity: "bond",
+                direction: "old-to-new",
+                row: old,
+                mapped: new.index(),
+                target_count: new_count,
+            });
+        }
+        if mapping.new_to_old[new.index()] != Some(BondId::new(old)) {
+            return Err(MappingValidationError::InverseMismatch {
+                entity: "bond",
+                direction: "old-to-new",
+                row: old,
+                mapped: new.index(),
+            });
+        }
+    }
+    for (new, old) in mapping.new_to_old.iter().enumerate() {
+        let Some(old) = old else {
+            continue;
+        };
+        if old.index() >= old_count {
+            return Err(MappingValidationError::OutOfRange {
+                entity: "bond",
+                direction: "new-to-old",
+                row: new,
+                mapped: old.index(),
+                target_count: old_count,
+            });
+        }
+        if mapping.old_to_new[old.index()] != Some(BondId::new(new)) {
+            return Err(MappingValidationError::InverseMismatch {
+                entity: "bond",
+                direction: "new-to-old",
+                row: new,
+                mapped: old.index(),
+            });
+        }
+    }
+    Ok(())
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -478,5 +655,55 @@ mod tests {
             block.validate(),
             Err(TopologyValidationError::AdjacencyMismatch)
         );
+    }
+
+    #[test]
+    fn topology_mapping_validates_bidirectional_atom_and_bond_rows() {
+        let mapping = TopologyMapping::with_appended(2, 1, 1, 1);
+        assert!(mapping.validate_for_counts(2, 3, 1, 2).is_ok());
+
+        let invalid = TopologyMapping {
+            atoms: AtomMapping {
+                old_to_new: vec![Some(AtomId::new(1)), Some(AtomId::new(1))],
+                new_to_old: vec![None, Some(AtomId::new(0))],
+            },
+            bonds: BondMapping {
+                old_to_new: vec![Some(BondId::new(0))],
+                new_to_old: vec![Some(BondId::new(0))],
+            },
+        };
+        assert!(matches!(
+            invalid.validate_for_counts(2, 2, 1, 1),
+            Err(MappingValidationError::InverseMismatch {
+                entity: "atom",
+                direction: "old-to-new",
+                row: 1,
+                mapped: 1,
+            })
+        ));
+    }
+
+    #[test]
+    fn topology_mapping_rejects_out_of_range_targets() {
+        let invalid = TopologyMapping {
+            atoms: AtomMapping {
+                old_to_new: vec![Some(AtomId::new(2))],
+                new_to_old: vec![Some(AtomId::new(0))],
+            },
+            bonds: BondMapping {
+                old_to_new: Vec::new(),
+                new_to_old: Vec::new(),
+            },
+        };
+        assert!(matches!(
+            invalid.validate_for_counts(1, 1, 0, 0),
+            Err(MappingValidationError::OutOfRange {
+                entity: "atom",
+                direction: "old-to-new",
+                row: 0,
+                mapped: 2,
+                target_count: 1,
+            })
+        ));
     }
 }

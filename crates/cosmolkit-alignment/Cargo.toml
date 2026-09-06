@@ -1,0 +1,16 @@
+[package]
+name = "cosmolkit-alignment"
+description = "Molecular and conformer alignment over detached model values"
+keywords = ["cheminformatics", "alignment", "rmsd"]
+categories = ["science", "algorithms"]
+repository.workspace = true
+homepage.workspace = true
+license.workspace = true
+version.workspace = true
+edition.workspace = true
+readme = "../cosmolkit/README.md"
+documentation = "https://docs.rs/cosmolkit"
+
+[dependencies]
+cosmolkit-conformer = { version = "0.5.0-rc.1", path = "../cosmolkit-conformer" }
+cosmolkit-model = { version = "0.5.0-rc.1", path = "../cosmolkit-model" }

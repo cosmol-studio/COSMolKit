@@ -8,6 +8,8 @@ homepage.workspace = true
 license.workspace = true
 version.workspace = true
 edition.workspace = true
+readme = "../cosmolkit/README.md"
+documentation = "https://docs.rs/cosmolkit"
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }

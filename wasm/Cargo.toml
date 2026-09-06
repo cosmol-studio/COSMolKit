@@ -41,4 +41,4 @@ serialization = ["cosmolkit/serialization"]
 stereoisomers = ["cosmolkit/stereoisomers"]
 
 [dependencies]
-cosmolkit = { version = "0.3.0", path = "../crates/cosmolkit", default-features = false }
+cosmolkit = { version = "0.5.0-rc.1", path = "../crates/cosmolkit", default-features = false }
