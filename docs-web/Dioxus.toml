@@ -1,0 +1,11 @@
+[application]
+
+[web.app]
+title = "COSMolKit Documentation — Rust-native cheminformatics"
+
+[web.resource]
+style = []
+script = []
+
+[web.resource.dev]
+script = []

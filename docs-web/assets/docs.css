@@ -1,0 +1,355 @@
+/* COSMolKit's Dioxus shell keeps the tools-web palette while the article body
+   remains the compiled Sphinx document. */
+.sphinx-content {
+    --color-foreground-primary: #e8edf5;
+    --color-foreground-secondary: #aebacd;
+    --color-foreground-muted: #8495aa;
+    --color-foreground-border: #2a3d57;
+    --color-background-primary: #0b1727;
+    --color-background-secondary: #101f33;
+    --color-background-hover: #13253b;
+    --color-background-border: #263a54;
+    --color-link: #7ab5ff;
+    --color-link--hover: #ffffff;
+    --color-brand-content: #7ab5ff;
+    color: #aebacd;
+    font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-size: 15px;
+    line-height: 1.6;
+    overflow-wrap: anywhere;
+    width: 100%;
+    max-width: 72rem;
+    margin-left: 0;
+    margin-right: 0;
+    padding: 1.75rem;
+}
+
+@media (max-width: 640px) {
+    .sphinx-content {
+        padding: 1.25rem;
+    }
+}
+
+.sphinx-content h1,
+.sphinx-content h2,
+.sphinx-content h3,
+.sphinx-content h4,
+.sphinx-content h5,
+.sphinx-content h6 {
+    color: #f8fbff;
+    font-family: inherit;
+    font-weight: 700;
+    line-height: 1.25;
+    margin: 1.75rem 0 1rem;
+}
+
+.sphinx-content h1 {
+    font-size: 2rem;
+    margin-top: 0;
+}
+
+.sphinx-content h2 {
+    font-size: 1.5rem;
+}
+
+.sphinx-content h3 {
+    font-size: 1.25rem;
+}
+
+.sphinx-content h4,
+.sphinx-content h5,
+.sphinx-content h6 {
+    font-size: 1rem;
+}
+
+/* Sphinx autodoc emits definition lists for the Python API. Keep each
+   signature visually distinct from its description without importing the
+   documentation theme's global layout rules into the Dioxus shell. */
+.sphinx-content dl[class]:not(.field-list):not(.option-list):not(.simple) {
+    margin: 1.25rem 0;
+}
+
+.sphinx-content dl.py.class {
+    margin-top: 0 !important;
+    margin-bottom: 0 !important;
+}
+
+.sphinx-content dl.py.method {
+    margin-bottom: 0 !important;
+}
+
+.sphinx-content dl.py.exception {
+    margin-bottom: 0 !important;
+}
+
+.sphinx-content dt {
+    margin-top: 0 !important;
+}
+
+.sphinx-content dl {
+    margin-top: 0 !important;
+}
+
+.sphinx-content dl[class]:not(.field-list):not(.option-list):not(.simple) > dt.sig {
+    margin: 1.25rem 0 0;
+    border: 1px solid #263a54;
+    border-radius: 0.25rem;
+    background: #07111f;
+    color: #d8e7ff;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.875rem;
+    font-weight: 700;
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+    padding: 0.55rem 0.75rem;
+}
+
+.sphinx-content dl[class]:not(.field-list):not(.option-list):not(.simple) > dd {
+    margin: 0 0 0 1rem;
+    border-left: 2px solid #263a54;
+    padding: 0.25rem 0 1rem 1rem;
+}
+
+.sphinx-content dl[class]:not(.field-list):not(.option-list):not(.simple) > dd > p:first-child {
+    margin-top: 0.25rem;
+}
+
+.sphinx-content dl[class]:not(.field-list):not(.option-list):not(.simple) > dd > p:last-child {
+    margin-bottom: 0.5rem;
+}
+
+/* A method definition is nested inside its owning class description. Extend
+   the final method guide line through the class description's bottom padding
+   so it meets the next top-level signature without changing the content gap. */
+.sphinx-content dl.py.class > dd > dl.py.method:last-child {
+    position: relative;
+}
+
+.sphinx-content dl.py.class > dd > dl.py.method:last-child::after {
+    position: absolute;
+    top: 100%;
+    bottom: -1rem;
+    left: 1rem;
+    border-left: 2px solid #263a54;
+    content: "";
+}
+
+.sphinx-content .sig-name {
+    color: #7ab5ff;
+}
+
+.sphinx-content .sig-prename,
+.sphinx-content .sig-param {
+    color: #aebacd;
+    font-weight: 400;
+}
+
+.sphinx-content .sig-paren {
+    color: #8495aa;
+}
+
+.sphinx-content a.headerlink {
+    color: #718299;
+    font-size: 0.8em;
+    font-weight: 400;
+    margin-left: 0.45rem;
+    opacity: 0;
+    text-decoration: none;
+}
+
+.sphinx-content h1:hover a.headerlink,
+.sphinx-content h2:hover a.headerlink,
+.sphinx-content h3:hover a.headerlink,
+.sphinx-content dt:hover a.headerlink {
+    opacity: 1;
+}
+
+.sphinx-content p {
+    margin: 0.5rem 0 0.75rem;
+}
+
+.sphinx-content ul,
+.sphinx-content ol {
+    margin: 0.75rem 0;
+    padding-left: 1.5rem;
+}
+
+.sphinx-content ul {
+    list-style: disc;
+}
+
+.sphinx-content ol {
+    list-style: decimal;
+}
+
+.sphinx-content li > p:first-child {
+    margin-top: 0.25rem;
+}
+
+.sphinx-content li > p:last-child {
+    margin-bottom: 0.25rem;
+}
+
+.sphinx-content a {
+    color: #7ab5ff;
+    text-decoration: none;
+}
+
+.sphinx-content a:hover {
+    color: #ffffff;
+}
+
+.sphinx-content code.literal,
+.sphinx-content code.docutils {
+    border: 1px solid #263a54;
+    border-radius: 0.2rem;
+    background: #101f33;
+    color: #d8e7ff;
+    font-size: 0.875em;
+    padding: 0.1em 0.25em;
+}
+
+.sphinx-content pre,
+.sphinx-content .highlight {
+    background: #07111f;
+    border-color: #263a54;
+}
+
+.sphinx-content pre {
+    margin: 1rem 0;
+    overflow-x: auto;
+    padding: 0.75rem 1rem;
+}
+
+/* The embedded Sphinx pygments sheet has a light default theme. Keep code
+   examples readable inside the documentation shell's dark surface. */
+.sphinx-content .highlight,
+.sphinx-content .highlight pre {
+    background: #07111f;
+    color: #d0d0d0;
+}
+
+.sphinx-content .highlight .c,
+.sphinx-content .highlight .ch,
+.sphinx-content .highlight .cm,
+.sphinx-content .highlight .cp,
+.sphinx-content .highlight .cpf,
+.sphinx-content .highlight .c1,
+.sphinx-content .highlight .cs {
+    color: #8f9baa;
+    font-style: italic;
+}
+
+.sphinx-content .highlight .k,
+.sphinx-content .highlight .kc,
+.sphinx-content .highlight .kd,
+.sphinx-content .highlight .kn,
+.sphinx-content .highlight .kp,
+.sphinx-content .highlight .kr,
+.sphinx-content .highlight .ow {
+    color: #6ebfda;
+    font-weight: 600;
+}
+
+.sphinx-content .highlight .l,
+.sphinx-content .highlight .m,
+.sphinx-content .highlight .mb,
+.sphinx-content .highlight .mf,
+.sphinx-content .highlight .mh,
+.sphinx-content .highlight .mi,
+.sphinx-content .highlight .mo,
+.sphinx-content .highlight .s,
+.sphinx-content .highlight .sa,
+.sphinx-content .highlight .sb,
+.sphinx-content .highlight .sc,
+.sphinx-content .highlight .dl,
+.sphinx-content .highlight .sd,
+.sphinx-content .highlight .s2,
+.sphinx-content .highlight .se,
+.sphinx-content .highlight .sh,
+.sphinx-content .highlight .si,
+.sphinx-content .highlight .sx,
+.sphinx-content .highlight .sr,
+.sphinx-content .highlight .s1,
+.sphinx-content .highlight .ss {
+    color: #edb35f;
+}
+
+.sphinx-content .highlight .n,
+.sphinx-content .highlight .p,
+.sphinx-content .highlight .o,
+.sphinx-content .highlight .x,
+.sphinx-content .highlight .w,
+.sphinx-content .highlight .nx,
+.sphinx-content .highlight .pm {
+    color: #d0d0d0;
+}
+
+.sphinx-content .highlight .nb,
+.sphinx-content .highlight .bp,
+.sphinx-content .highlight .nc,
+.sphinx-content .highlight .nf,
+.sphinx-content .highlight .fm,
+.sphinx-content .highlight .nn {
+    color: #71adff;
+}
+
+.sphinx-content .highlight .na,
+.sphinx-content .highlight .nd,
+.sphinx-content .highlight .nt,
+.sphinx-content .highlight .nv,
+.sphinx-content .highlight .vc,
+.sphinx-content .highlight .vg,
+.sphinx-content .highlight .vi,
+.sphinx-content .highlight .vm {
+    color: #8ed1c2;
+}
+
+.sphinx-content blockquote {
+    margin: 1rem 0;
+    border-left: 4px solid #2a3d57;
+    background: #101f33;
+    padding: 0.5rem 1rem;
+}
+
+.sphinx-content table.docutils {
+    width: 100%;
+    margin: 1rem 0;
+    overflow-x: auto;
+    border-collapse: collapse;
+}
+
+.sphinx-content .indextable {
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
+}
+
+@media (max-width: 640px) {
+    .sphinx-content .genindextable tr,
+    .sphinx-content .genindextable td {
+        display: block;
+        width: 100% !important;
+    }
+
+    .sphinx-content .genindextable td {
+        padding-bottom: 0;
+    }
+}
+
+.sphinx-content table.docutils th,
+.sphinx-content table.docutils td {
+    border: 1px solid #2a3d57;
+    padding: 0.35rem 0.5rem;
+    text-align: left;
+    vertical-align: top;
+}
+
+.sphinx-content table.docutils th {
+    background: #101f33;
+    color: #f8fbff;
+}
+
+.sphinx-content img {
+    max-width: 100%;
+}

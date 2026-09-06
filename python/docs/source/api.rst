@@ -24,7 +24,7 @@ allocation-failure path is undefined; COSMolKit returns a deterministic
 SDF/V3000, IXA, AuxInfo, INCHIGEN, version-query, and extended-polymer InChI
 entry points are not part of this public surface.
 
-Typical usage keeps molecule conversion on :class:`cosmolkit.Molecule`::
+Typical usage keeps molecule conversion on :class:`cosmolkit.Molecule`:
 
 .. code-block:: python
 

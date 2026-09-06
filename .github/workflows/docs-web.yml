@@ -1,0 +1,127 @@
+name: Dioxus documentation
+
+on:
+    workflow_dispatch:
+
+permissions:
+    contents: read
+    pages: write
+    id-token: write
+
+concurrency:
+    group: dioxus-documentation
+    cancel-in-progress: false
+
+jobs:
+    build:
+        # Temporarily disabled until the Dioxus deployment is explicitly enabled.
+        if: ${{ false }}
+        name: Build Dioxus documentation
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+
+            - uses: dtolnay/rust-toolchain@stable
+              with:
+                  targets: wasm32-unknown-unknown
+
+            - uses: actions/setup-python@v5
+              with:
+                  python-version: "3.11"
+
+            - uses: astral-sh/setup-uv@v6
+
+            - name: Sync documentation environment
+              run: uv sync --group dev
+
+            - name: Install package for autodoc
+              run: .venv/bin/maturin develop --manifest-path python/Cargo.toml
+
+            - name: Build Sphinx source
+              run: |
+                  rm -rf python/docs/build/html
+                  .venv/bin/python -m sphinx -W --keep-going -E -b html python/docs/source python/docs/build/html
+                  .venv/bin/python python/docs/check_seo.py python/docs/build/html
+
+            - name: Install Dioxus CLI
+              run: cargo install dioxus-cli --version 0.7.10 --locked
+
+            - name: Build static Dioxus site
+              working-directory: docs-web
+              run: dx build --release --web --fullstack true --ssg --features "ssg" --force-sequential
+
+            - name: Prepare deployment files
+              run: |
+                  public_dir="docs-web/target/dx/cosmolkit-docs-web/release/web/public"
+                  .venv/bin/python docs-web/scripts/flatten_html_routes.py "$public_dir"
+                  .venv/bin/python docs-web/scripts/strip_client_runtime.py "$public_dir"
+                  cp -R docs-web/deployment/public/. "$public_dir/"
+                  cp -R python/docs/build/html/_static "$public_dir/_static"
+                  cp -R python/docs/build/html/_sources "$public_dir/_sources"
+                  cp -R python/docs/build/html/_modules "$public_dir/_modules"
+                  cp python/docs/build/html/searchindex.js "$public_dir/searchindex.js"
+                  cp python/docs/build/html/objects.inv "$public_dir/objects.inv"
+                  cp python/docs/build/html/robots.txt "$public_dir/robots.txt"
+                  .venv/bin/python docs-web/scripts/generate_sitemap.py "$public_dir"
+                  for page in index.html installation.html quickstart.html confseq.html molecule.html batch.html fingerprints.html descriptors.html protein.html io.html api.html search.html genindex.html py-modindex.html javascript.html; do
+                      test -f "$public_dir/$page"
+                  done
+                  .venv/bin/python - "$public_dir" <<'PY'
+                  import pathlib
+                  import sys
+
+                  public = pathlib.Path(sys.argv[1])
+                  pages = [
+                      "index.html",
+                      "installation.html",
+                      "quickstart.html",
+                      "confseq.html",
+                      "molecule.html",
+                      "batch.html",
+                      "fingerprints.html",
+                      "descriptors.html",
+                      "protein.html",
+                      "io.html",
+                      "api.html",
+                      "search.html",
+                      "genindex.html",
+                      "py-modindex.html",
+                      "python/index.html",
+                      "javascript/index.html",
+                      "javascript.html",
+                      "benchmarks/index.html",
+                      "validation/index.html",
+                  ]
+                  for relative in pages:
+                      html = (public / relative).read_text(encoding="utf-8")
+                      main_count = html.count("<main")
+                      stylesheet_count = html.count('rel="stylesheet"') + html.count("rel='stylesheet'")
+                      if main_count != 1 or stylesheet_count != 3:
+                          raise SystemExit(
+                              f"invalid SSG shell for {relative}: "
+                              f"main={main_count}, stylesheets={stylesheet_count}"
+                          )
+                      if "cosmolkit-docs-web" in html or "hydrate_queue" in html:
+                          raise SystemExit(f"client runtime was not stripped from {relative}")
+                  PY
+
+            - name: Configure Pages
+              uses: actions/configure-pages@v5
+
+            - name: Upload Pages artifact
+              uses: actions/upload-pages-artifact@v3
+              with:
+                  path: docs-web/target/dx/cosmolkit-docs-web/release/web/public
+
+    deploy:
+        # Keep deployment closed while the documentation workflow is disabled.
+        if: ${{ false }}
+        needs: build
+        runs-on: ubuntu-latest
+        environment:
+            name: github-pages
+            url: ${{ steps.deployment.outputs.page_url }}
+        steps:
+            - name: Deploy to GitHub Pages
+              id: deployment
+              uses: actions/deploy-pages@v4

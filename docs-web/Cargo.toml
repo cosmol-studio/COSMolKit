@@ -1,0 +1,21 @@
+[package]
+name = "cosmolkit-docs-web"
+version = "0.3.0"
+edition = "2024"
+publish = false
+description = "Dioxus documentation site for COSMolKit"
+repository = "https://github.com/cosmol-studio/COSMolKit"
+license = "MIT"
+build = "build.rs"
+
+# This deployable site intentionally remains outside the chemistry workspace.
+[workspace]
+
+[dependencies]
+dioxus = { version = "=0.7.10", features = ["router"] }
+
+[features]
+default = ["web"]
+web = ["dioxus/web"]
+ssg = []
+server = ["dioxus/server", "dioxus/fullstack"]
