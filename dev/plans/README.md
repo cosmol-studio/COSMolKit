@@ -4,6 +4,12 @@ This directory contains executable plans that still have unchecked `Step`
 entries. A file belongs here because work remains, not merely because its name
 contains `plan` or `checklist`.
 
+The **only split-crate architecture migration plan and progress ledger** is
+[`crate_architecture_completion_plan.md`](./crate_architecture_completion_plan.md),
+with ownership defined by [`../crate_architecture.md`](../crate_architecture.md).
+The domain plans below are source-port references for that migration; they must
+not override its owners, naming/registration gates, or execution order.
+
 - [`coordinate_2d_rdkit_full_port_checklist.md`](./coordinate_2d_rdkit_full_port_checklist.md)
 - [`pdb_mmcif_gemmi_full_port_checklist.md`](./pdb_mmcif_gemmi_full_port_checklist.md)
 - [`rdkit_assign_atom_chiral_tags_from_structure_full_port_plan.md`](./rdkit_assign_atom_chiral_tags_from_structure_full_port_plan.md)

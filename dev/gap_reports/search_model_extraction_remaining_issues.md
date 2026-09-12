@@ -96,9 +96,10 @@ predicate vocabulary, range queries, recursive query data, `QueryAtom`,
 `QueryBond`, `QueryGraph`, and `QueryGraphError`. `cosmolkit-core/src/model/query.rs`
 and `core::search` only re-export those values for source compatibility.
 
-Search-side code retains `QueryGraphOperator`, parser/matcher/writer behavior,
-and no concrete-molecule lowering helper. Remaining behavior work is tracked
-by Q-02; none of these implementations makes the model depend on search.
+`cosmolkit-search` now owns `QueryGraphOperator`, parser/matcher/writer behavior,
+generic-group matching, and compiled-query planning, with no concrete-molecule
+lowering helper. The runtime retains only facade adapters; none of these
+implementations makes the model depend on search.
 
 ### Why this mattered
 
@@ -109,9 +110,9 @@ without importing parser, matcher, writer, valence, or molecule-runtime code.
 
 ### Remaining boundary
 
-The remaining work is behavior-side: complete the search operator boundary and
-compiled-query planning. Those issues are tracked by S-02 and Q-02; no second
-query data model should be introduced.
+The data and behavior ownership boundaries are complete. Future parity
+expansion stays inside `cosmolkit-search`; no second query data model or
+runtime matcher implementation may be introduced.
 
 ### Constraints for the fix
 
@@ -171,6 +172,12 @@ stereo, and radicals are applied directly to the query graph. Concrete-only
 LN/SGroup/variable-attachment records return a structured `UnsupportedFeature`
 error rather than being projected through a molecule. Plain suffix names retain
 the existing `parse_name` and strict-mode behavior.
+
+The detached `cosmolkit-search` crate owns the model-only parser and writer
+boundary (`parse_smarts`, `write_smarts`, `atom_to_smarts`, and
+`bond_to_smarts`). QueryGraph traversal includes ring labels, recursive
+predicates, boolean/range predicates, rooted writing, and fragment writing.
+Unsupported source branches continue to return structured errors.
 
 ### Why this matters
 

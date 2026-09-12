@@ -21,3 +21,4 @@ __pycache__/
 /rust-toolchain.toml
 /rustfmt.toml
 /.cargo/config.toml
+/dev/gap_reports/crate_migration/

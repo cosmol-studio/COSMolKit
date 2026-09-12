@@ -1,9 +1,9 @@
 //! Query values used by SMARTS, MCS, and substructure algorithms.
 //!
-//! This module contains only query data and local graph validation. Parsing,
-//! matching, serialization, and compilation belong to `cosmolkit-core` (or
-//! another domain implementation crate); query data is never lowered back to a
-//! concrete `Molecule`.
+//! This module contains only query data and local graph validation. SMARTS
+//! parsing, writing, matching, serialization, and compilation belong uniquely
+//! to `cosmolkit-search`; query data is never lowered back to a concrete
+//! `Molecule`.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -53,6 +53,10 @@ impl<T> QueryNode<T> {
     /// Append a child to a composite node.
     #[doc(hidden)]
     pub fn add_child(&mut self, child: Self) {
+        // BEGIN RDKIT CPP FUNCTION Queries::Query::addChild
+        // RDKit✔️✔️: //! adds a child to our list of children
+        // RDKit✔️✔️: void addChild(CHILD_TYPE child) { this->d_children.push_back(child); }
+        // END RDKIT CPP FUNCTION Queries::Query::addChild
         match self {
             Self::And(children) | Self::Or(children) | Self::Xor(children) => children.push(child),
             Self::Predicate(_) | Self::Not(_) => {
@@ -64,6 +68,11 @@ impl<T> QueryNode<T> {
     /// Toggle the canonical outer negation used by the source query merger.
     #[doc(hidden)]
     pub fn set_negation(&mut self, negated: bool) {
+        // BEGIN RDKIT CPP FUNCTION Queries::Query::setNegation
+        // RDKit✔️✔️: //! sets whether or not we are negated
+        // RDKit✔️✔️: void setNegation(bool what) { this->df_negate = what; }
+        // END RDKIT CPP FUNCTION Queries::Query::setNegation
+        // `Not` stores the same Boolean outer state in the Rust sum type.
         match (negated, matches!(self, Self::Not(_))) {
             (true, false) => {
                 let child = std::mem::replace(self, Self::And(Vec::new()));
@@ -130,6 +139,13 @@ pub struct AtomRangeQuery {
 impl AtomRangeQuery {
     #[must_use]
     pub const fn new(bounds: AtomRangeBounds, data_function: AtomRangeDataFunction) -> Self {
+        // BEGIN RDKIT CPP FUNCTION RangeQuery::RangeQuery
+        // RDKit✔️✔️: //! construct and set the lower and upper bounds
+        // RDKit✔️✔️: RangeQuery(MatchFuncArgType lower, MatchFuncArgType upper)
+        // RDKit✔️✔️:     : d_upper(upper), d_lower(lower), df_upperOpen(true), df_lowerOpen(true) {
+        // RDKit✔️✔️:   this->df_negate = false;
+        // RDKit✔️✔️: }
+        // END RDKIT CPP FUNCTION RangeQuery::RangeQuery
         Self {
             bounds,
             data_function,
@@ -242,9 +258,9 @@ pub enum BondQueryPredicate {
 }
 
 /// Recursive SMARTS query data.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub struct RecursiveStructureQuery {
-    query_mol: Option<Box<QueryGraph>>,
+    query_graph: Option<Box<QueryGraph>>,
     source_smarts: Option<String>,
     atom_indices: BTreeSet<i32>,
     serial_number: u32,
@@ -253,8 +269,14 @@ pub struct RecursiveStructureQuery {
 impl RecursiveStructureQuery {
     #[must_use]
     pub fn new() -> Self {
+        // BEGIN RDKIT CPP FUNCTION RecursiveStructureQuery::RecursiveStructureQuery
+        // RDKit✔️✔️: RecursiveStructureQuery() : Queries::SetQuery<int, Atom const *, true>() {
+        // RDKit✔️✔️:   setDataFunc(getAtIdx);
+        // RDKit✔️✔️:   setDescription("RecursiveStructure");
+        // RDKit✔️✔️: }
+        // END RDKIT CPP FUNCTION RecursiveStructureQuery::RecursiveStructureQuery
         Self {
-            query_mol: None,
+            query_graph: None,
             source_smarts: None,
             atom_indices: BTreeSet::new(),
             serial_number: 0,
@@ -262,47 +284,50 @@ impl RecursiveStructureQuery {
     }
 
     #[must_use]
-    pub fn from_query_graph(query: QueryGraph, serial_number: u32) -> Self {
+    pub fn from_query_graph(query_graph: QueryGraph, serial_number: u32) -> Self {
+        // BEGIN RDKIT CPP FUNCTION RecursiveStructureQuery::RecursiveStructureQuery
+        // RDKit✔️✔️: RecursiveStructureQuery(ROMol const *query, unsigned int serialNumber = 0)
+        // RDKit✔️✔️:     : Queries::SetQuery<int, Atom const *, true>(),
+        // RDKit✔️✔️:       d_serialNumber(serialNumber) {
+        // RDKit✔️✔️:   setQueryMol(query);
+        // RDKit✔️✔️:   setDataFunc(getAtIdx);
+        // RDKit✔️✔️:   setDescription("RecursiveStructure");
+        // RDKit✔️✔️: }
+        // END RDKIT CPP FUNCTION RecursiveStructureQuery::RecursiveStructureQuery
         Self {
-            query_mol: Some(Box::new(query)),
+            query_graph: Some(Box::new(query_graph)),
             source_smarts: None,
             atom_indices: BTreeSet::new(),
             serial_number,
         }
     }
 
-    /// Compatibility name for source-shaped recursive-query construction.
     #[must_use]
-    pub fn from_molecule(query: QueryGraph, serial_number: u32) -> Self {
-        Self::from_query_graph(query, serial_number)
+    pub fn with_source_smarts(mut self, smarts: impl Into<String>) -> Self {
+        self.source_smarts = Some(smarts.into());
+        self
+    }
+
+    #[must_use]
+    pub fn query_graph(&self) -> Option<&QueryGraph> {
+        // BEGIN RDKIT CPP FUNCTION RecursiveStructureQuery::getQueryMol
+        // RDKit✔️✔️: //! returns a pointer to our query molecule
+        // RDKit✔️✔️: ROMol const *getQueryMol() const { return dp_queryMol.get(); }
+        // END RDKIT CPP FUNCTION RecursiveStructureQuery::getQueryMol
+        self.query_graph.as_deref()
     }
 
     #[doc(hidden)]
-    #[must_use]
-    pub fn atom_index(atom: &Atom) -> i32 {
-        atom.id().index() as i32
-    }
-
-    #[must_use]
-    pub fn from_smarts(smarts: impl Into<String>, query: QueryGraph, serial_number: u32) -> Self {
-        let mut value = Self::from_query_graph(query, serial_number);
-        value.source_smarts = Some(smarts.into());
-        value
-    }
-
-    #[must_use]
-    pub fn query_mol(&self) -> Option<&QueryGraph> {
-        self.query_mol.as_deref()
+    pub fn set_query_graph(&mut self, query_graph: QueryGraph) {
+        // BEGIN RDKIT CPP FUNCTION RecursiveStructureQuery::setQueryMol
+        // RDKit✔️✔️: void setQueryMol(ROMol const *query) { dp_queryMol.reset(query); }
+        // END RDKIT CPP FUNCTION RecursiveStructureQuery::setQueryMol
+        self.query_graph = Some(Box::new(query_graph));
     }
 
     #[doc(hidden)]
-    pub fn set_query_mol(&mut self, query: QueryGraph) {
-        self.query_mol = Some(Box::new(query));
-    }
-
-    #[doc(hidden)]
-    pub fn query_mol_mut(&mut self) -> Option<&mut QueryGraph> {
-        self.query_mol.as_deref_mut()
+    pub fn query_graph_mut(&mut self) -> Option<&mut QueryGraph> {
+        self.query_graph.as_deref_mut()
     }
 
     #[must_use]
@@ -321,15 +346,28 @@ impl RecursiveStructureQuery {
         self.atom_indices.contains(&index)
     }
 
-    #[doc(hidden)]
-    #[must_use]
-    pub fn copy_query(&self) -> Self {
-        self.clone()
-    }
-
     #[must_use]
     pub const fn serial_number(&self) -> u32 {
         self.serial_number
+    }
+}
+
+impl Clone for RecursiveStructureQuery {
+    fn clone(&self) -> Self {
+        // BEGIN RDKIT CPP FUNCTION RecursiveStructureQuery::copy
+        // RDKit✔️✔️: RecursiveStructureQuery *res = new RecursiveStructureQuery();
+        // RDKit✔️✔️: res->dp_queryMol.reset(new ROMol(*dp_queryMol, true));
+        // RDKit✔️✔️: for (i = d_set.begin(); i != d_set.end(); i++) {
+        // RDKit✔️✔️:   res->insert(*i);
+        // RDKit✔️✔️: }
+        // RDKit✔️✔️: res->d_serialNumber = d_serialNumber;
+        // END RDKIT CPP FUNCTION RecursiveStructureQuery::copy
+        Self {
+            query_graph: self.query_graph.clone(),
+            source_smarts: self.source_smarts.clone(),
+            atom_indices: self.atom_indices.clone(),
+            serial_number: self.serial_number,
+        }
     }
 }
 
@@ -692,9 +730,16 @@ impl QueryGraph {
     }
 
     #[doc(hidden)]
-    pub fn add_conformer_3d(&mut self, conformer: Conformer3D) -> Result<(), String> {
+    pub fn add_conformer_3d(&mut self, conformer: Conformer3D) -> Result<(), QueryGraphError> {
         if conformer.coordinates().len() != self.num_atoms() {
-            return Err("query graph coordinate count does not match atom count".to_owned());
+            return Err(QueryGraphError::CoordinateValidation(
+                CoordinateValidationError::RowCount {
+                    dimension: "3D",
+                    conformer: conformer.id(),
+                    rows: conformer.coordinates().len(),
+                    atom_count: self.num_atoms(),
+                },
+            ));
         }
         self.conformers_3d.push(conformer);
         Ok(())
@@ -706,9 +751,19 @@ impl QueryGraph {
     }
 
     #[doc(hidden)]
-    pub fn with_2d_coordinate_block(mut self, coords: Vec<[f64; 2]>) -> Result<Self, String> {
+    pub fn with_2d_coordinate_block(
+        mut self,
+        coords: Vec<[f64; 2]>,
+    ) -> Result<Self, QueryGraphError> {
         if coords.len() != self.num_atoms() {
-            return Err("query graph coordinate count does not match atom count".to_owned());
+            return Err(QueryGraphError::CoordinateValidation(
+                CoordinateValidationError::RowCount {
+                    dimension: "2D",
+                    conformer: 0,
+                    rows: coords.len(),
+                    atom_count: self.num_atoms(),
+                },
+            ));
         }
         self.conformers_2d = vec![Conformer2D::new(0, coords)];
         Ok(self)
@@ -732,10 +787,6 @@ pub enum QueryGraphError {
     AtomIdMismatch { position: usize, id: AtomId },
     #[error("query bond at position {position} has id {id}, expected {position}")]
     BondIdMismatch { position: usize, id: BondId },
-    #[error("query atom {0} has no atom predicate")]
-    MissingAtomPredicate(usize),
-    #[error("query bond {0} has no bond predicate")]
-    MissingBondPredicate(usize),
     #[error("query bond {0} has an invalid atom endpoint")]
     InvalidBondEndpoint(usize),
     #[error(

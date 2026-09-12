@@ -4,4 +4,8 @@ mod registry;
 mod types;
 
 pub use registry::BINDING_CONTRACT;
-pub use types::{BindingContractEntry, BindingKind, BindingOwner, ReturnKind, StateModel};
+pub use types::{
+    BindingCallableContract, BindingContractEntry, BindingDefault, BindingExposure, BindingItem,
+    BindingKind, BindingOwner, BindingParameterContract, BindingParity, BindingSupport,
+    BindingTypeRole, StateModel,
+};

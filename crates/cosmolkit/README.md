@@ -36,7 +36,8 @@ build the complete `full` capability set.
 - Rust API documentation: <https://docs.rs/cosmolkit/latest/cosmolkit/>
 - Project validation: [`VALIDATION.md`](https://github.com/cosmol-studio/COSMolKit/blob/main/VALIDATION.md)
 - Validation scope and evidence: [`VALIDATION.md`](https://github.com/cosmol-studio/COSMolKit/blob/main/VALIDATION.md) · [COSMolKit Web Tools](https://tools.cosmol.org/tools)
-- Target crate architecture: [`dev/final_target_architecture.md`](https://github.com/cosmol-studio/COSMolKit/blob/main/dev/final_target_architecture.md)
+- Crate ownership and final decomposition: [`dev/crate_architecture.md`](../../dev/crate_architecture.md)
+- Sole crate migration plan and progress: [`crate_architecture_completion_plan.md`](../../dev/plans/crate_architecture_completion_plan.md)
 - Project overview and Python package notes: [`README.md`](https://github.com/cosmol-studio/COSMolKit/blob/main/README.md)
 
 ## Validation Status

@@ -2,6 +2,18 @@ use std::collections::BTreeMap;
 
 use crate::{AtomId, BondId};
 
+fn remove_first<T: PartialEq>(container: &mut Vec<T>, element: &T) -> bool {
+    // RDKit✔️✔️: auto pos = std::find(container.begin(), container.end(), element);
+    // RDKit✔️✔️: if (pos != container.end()) {
+    // RDKit✔️✔️:   container.erase(pos);
+    // RDKit✔️✔️: }
+    let Some(position) = container.iter().position(|candidate| candidate == element) else {
+        return false;
+    };
+    container.remove(position);
+    true
+}
+
 /// Substance-group identity inside a molecule.
 ///
 /// RDKit SDF/MolBlock parsing can produce SGroups before they are interpreted
@@ -415,16 +427,19 @@ impl SubstanceGroup {
     }
 
     pub fn remove_atom(&mut self, atom: AtomId) {
-        self.atoms.retain(|candidate| *candidate != atom);
+        remove_first(&mut self.atoms, &atom);
     }
 
     pub fn remove_bond(&mut self, bond: BondId) {
-        self.bonds.retain(|candidate| *candidate != bond);
-        self.bond_roles.remove(&bond);
+        if remove_first(&mut self.bonds, &bond)
+            && !self.bonds.iter().any(|candidate| *candidate == bond)
+        {
+            self.bond_roles.remove(&bond);
+        }
     }
 
     pub fn remove_parent_atom(&mut self, atom: AtomId) {
-        self.parent_atoms.retain(|candidate| *candidate != atom);
+        remove_first(&mut self.parent_atoms, &atom);
     }
 
     pub fn clear_attach_point_leaving_atom(&mut self, atom: AtomId) {
@@ -519,6 +534,41 @@ impl SubstanceGroup {
 
     pub fn clear_prop(&mut self, key: &str) {
         self.props.remove(key);
+    }
+
+    #[must_use]
+    pub fn includes_atom(&self, atom: AtomId) -> bool {
+        // RDKit✔️✔️: if (std::find(d_atoms.begin(), d_atoms.end(), atomIdx) != d_atoms.end()) {
+        // RDKit✔️✔️:   return true;
+        // RDKit✔️✔️: }
+        // RDKit✔️✔️: if (std::find(d_patoms.begin(), d_patoms.end(), atomIdx) != d_patoms.end()) {
+        // RDKit✔️✔️:   return true;
+        // RDKit✔️✔️: }
+        // RDKit✔️✔️: for (const auto &ap : d_saps) {
+        // RDKit✔️✔️:   if (ap.aIdx == atomIdx || ap.lvIdx == rdcast<int>(atomIdx)) {
+        // RDKit✔️✔️:     return true;
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️: }
+        // RDKit✔️✔️: return false;
+        self.atoms.contains(&atom)
+            || self.parent_atoms.contains(&atom)
+            || self.attach_points.iter().any(|attach_point| {
+                attach_point.atom == atom || attach_point.leaving_atom == Some(atom)
+            })
+    }
+
+    #[must_use]
+    pub fn includes_bond(&self, bond: BondId) -> bool {
+        // RDKit✔️✔️: if (std::find(d_bonds.begin(), d_bonds.end(), bondIdx) != d_bonds.end()) {
+        // RDKit✔️✔️:   return true;
+        // RDKit✔️✔️: }
+        // RDKit✔️✔️: for (const auto &cs : d_cstates) {
+        // RDKit✔️✔️:   if (cs.bondIdx == bondIdx) {
+        // RDKit✔️✔️:     return true;
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️: }
+        // RDKit✔️✔️: return false;
+        self.bonds.contains(&bond) || self.cstates.iter().any(|cstate| cstate.bond == bond)
     }
 
     pub fn can_remap_without_parent(
@@ -643,6 +693,117 @@ impl SubstanceGroup {
             cstates: cstates?,
             props: self.props.clone(),
             data_fields: self.data_fields.clone(),
+        })
+    }
+}
+
+/// Relationship between the configurations stored in an enhanced stereo group.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StereoGroupKind {
+    Absolute,
+    Or,
+    And,
+}
+
+/// Detached enhanced-stereo membership and source ID metadata.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StereoGroup {
+    id: Option<u32>,
+    kind: StereoGroupKind,
+    atoms: Vec<AtomId>,
+    bonds: Vec<BondId>,
+}
+
+impl StereoGroup {
+    #[must_use]
+    pub fn new(kind: StereoGroupKind, atoms: Vec<AtomId>, bonds: Vec<BondId>) -> Self {
+        Self {
+            id: None,
+            kind,
+            atoms,
+            bonds,
+        }
+    }
+
+    #[must_use]
+    pub const fn with_id(mut self, id: u32) -> Self {
+        self.id = Some(id);
+        self
+    }
+
+    #[must_use]
+    pub const fn id(&self) -> Option<u32> {
+        self.id
+    }
+
+    #[must_use]
+    pub const fn kind(&self) -> StereoGroupKind {
+        self.kind
+    }
+
+    #[must_use]
+    pub fn atoms(&self) -> &[AtomId] {
+        &self.atoms
+    }
+
+    #[must_use]
+    pub fn bonds(&self) -> &[BondId] {
+        &self.bonds
+    }
+
+    pub fn push_atom(&mut self, atom: AtomId) {
+        self.atoms.push(atom);
+    }
+
+    pub fn push_bond(&mut self, bond: BondId) {
+        self.bonds.push(bond);
+    }
+
+    pub fn remove_atom(&mut self, atom: AtomId) {
+        // RDKit✔️✔️: auto atomPos = findAtom(group);
+        // RDKit✔️✔️: if (atomPos != group.d_atoms.end()) {
+        // RDKit✔️✔️:   group.d_atoms.erase(atomPos);
+        // RDKit✔️✔️: }
+        remove_first(&mut self.atoms, &atom);
+    }
+
+    pub fn remove_bond(&mut self, bond: BondId) {
+        // RDKit✔️✔️: auto bondPos = findBond(group);
+        // RDKit✔️✔️: if (bondPos != group.d_bonds.end()) {
+        // RDKit✔️✔️:   group.d_bonds.erase(bondPos);
+        // RDKit✔️✔️: }
+        remove_first(&mut self.bonds, &bond);
+    }
+
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        // RDKit✔️✔️: return gp.getAtoms().empty() &&
+        // RDKit✔️✔️:        gp.getBonds().empty();
+        self.atoms.is_empty() && self.bonds.is_empty()
+    }
+
+    /// Returns a fully remapped group, or `None` if any membership is lost.
+    #[must_use]
+    pub fn remapped(
+        &self,
+        atom_map: &[Option<AtomId>],
+        bond_map: &[Option<BondId>],
+    ) -> Option<Self> {
+        let atoms: Option<Vec<_>> = self
+            .atoms
+            .iter()
+            .map(|atom| atom_map.get(atom.index()).and_then(|mapped| *mapped))
+            .collect();
+        let bonds: Option<Vec<_>> = self
+            .bonds
+            .iter()
+            .map(|bond| bond_map.get(bond.index()).and_then(|mapped| *mapped))
+            .collect();
+        Some(Self {
+            id: self.id,
+            kind: self.kind,
+            atoms: atoms?,
+            bonds: bonds?,
         })
     }
 }

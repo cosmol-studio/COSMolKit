@@ -6,11 +6,13 @@ operations, or macro-controlled operation machinery, read `dev/README.md`.
 
 ## Project Structure
 
-- `crates/cosmolkit-core/`: current molecular graph, state, operation, IO, and
-  chemistry core.
+- `crates/cosmolkit-core/`: source-backed foundational algorithms over detached
+  `cosmolkit-model` values; it does not own `Molecule` or the operation runtime.
 - `crates/cosmolkit-macros/`: proc macros for operation bodies, registries, and
   generated tables.
-- `crates/cosmolkit/`: Rust facade and top-level public API.
+- `crates/cosmolkit/`: the only live `Molecule` owner, private operation
+  runtime, and top-level public API. It must not contain domain algorithm
+  implementations.
 - `python/`: PyO3 bindings, Python packaging, examples, and docs.
 - `crates/<crate>/tests/`: public integration, regression, and parity tests for
   the owning crate.
@@ -21,6 +23,19 @@ operations, or macro-controlled operation machinery, read `dev/README.md`.
 
 Keep public APIs in `lib.rs` or narrow public modules. Keep implementation
 helpers private unless there is a deliberate public API reason.
+
+## Clean-Break Migration
+
+The old mixed runtime is removed rather than retained as a compatibility
+crate. `crates/cosmolkit-core-old/` and equivalent legacy runtime crates must
+not exist in the workspace or source tree. Missing behavior is reimplemented
+in its final algorithm owner and exposed through canonical APIs in `cosmolkit`.
+
+Do not copy old chemistry, notation, IO, search, descriptor, fingerprint, bio,
+or other domain implementations into `crates/cosmolkit/`. That crate may only
+own `Molecule` lifecycle state, operation contracts and registries, invariant
+and capability enforcement, detached-block extraction/commit, and thin public
+wrappers that call the owning algorithm crate.
 
 ## Source Reproduction
 

@@ -1,4 +1,5 @@
 use crate::{AtomId, Bond, BondId};
+use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum AdjacencyError {
@@ -8,6 +9,19 @@ pub enum AdjacencyError {
         endpoint: &'static str,
         atom: AtomId,
         atom_count: usize,
+    },
+    #[error("bond id {bond} is repeated at positions {first_position} and {second_position}")]
+    DuplicateBondId {
+        bond: BondId,
+        first_position: usize,
+        second_position: usize,
+    },
+    #[error("bonds {first_bond} and {second_bond} repeat edge {begin}-{end}")]
+    DuplicateEdge {
+        first_bond: BondId,
+        second_bond: BondId,
+        begin: AtomId,
+        end: AtomId,
     },
 }
 
@@ -26,7 +40,9 @@ pub struct AdjacencyList {
 impl AdjacencyList {
     pub fn try_from_topology(atom_count: usize, bonds: &[Bond]) -> Result<Self, AdjacencyError> {
         let mut degrees = vec![0usize; atom_count];
-        for bond in bonds {
+        let mut bond_positions = BTreeMap::new();
+        let mut edges = BTreeMap::new();
+        for (position, bond) in bonds.iter().enumerate() {
             let begin = bond.begin();
             let end = bond.end();
             if begin.index() >= atom_count {
@@ -43,6 +59,26 @@ impl AdjacencyList {
                     endpoint: "end",
                     atom: end,
                     atom_count,
+                });
+            }
+            if let Some(first_position) = bond_positions.insert(bond.id(), position) {
+                return Err(AdjacencyError::DuplicateBondId {
+                    bond: bond.id(),
+                    first_position,
+                    second_position: position,
+                });
+            }
+            let (edge_begin, edge_end) = if begin <= end {
+                (begin, end)
+            } else {
+                (end, begin)
+            };
+            if let Some(first_bond) = edges.insert((edge_begin, edge_end), bond.id()) {
+                return Err(AdjacencyError::DuplicateEdge {
+                    first_bond,
+                    second_bond: bond.id(),
+                    begin: edge_begin,
+                    end: edge_end,
                 });
             }
             degrees[begin.index()] += 1;
@@ -85,6 +121,7 @@ impl AdjacencyList {
     }
 
     #[must_use]
+    #[doc(hidden)]
     pub fn from_topology(atom_count: usize, bonds: &[Bond]) -> Self {
         Self::try_from_topology(atom_count, bonds)
             .expect("topology must be valid before building adjacency")

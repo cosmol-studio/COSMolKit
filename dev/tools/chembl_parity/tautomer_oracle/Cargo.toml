@@ -6,4 +6,5 @@ license.workspace = true
 publish = false
 
 [dependencies]
+cosmolkit = { version = "0.5.0-rc.1", path = "../../../../crates/cosmolkit" }
 serde_json = "1"

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::{BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
@@ -6,6 +6,108 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TestDataKind {
+    Fixture,
+    Corpus,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct KnownFailure {
+    pub case_id: String,
+    pub feature: Option<String>,
+    pub expected_failure_kind: String,
+    pub reason: String,
+    pub created_at: String,
+    pub operation: Option<String>,
+    pub invariant: Option<String>,
+    pub expected_error_kind: Option<String>,
+    pub rdkit_version: Option<String>,
+    pub branch: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct KnownFailureWire {
+    case_id: String,
+    feature: Option<String>,
+    expected_failure_kind: Option<String>,
+    reason: String,
+    created_at: String,
+    operation: Option<String>,
+    invariant: Option<String>,
+    expected_error_kind: Option<String>,
+    rdkit_version: Option<String>,
+    branch: Option<String>,
+}
+
+impl<'de> Deserialize<'de> for KnownFailure {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let wire = KnownFailureWire::deserialize(deserializer)?;
+        for (field, value) in [
+            ("case_id", wire.case_id.as_str()),
+            ("reason", wire.reason.as_str()),
+            ("created_at", wire.created_at.as_str()),
+        ] {
+            if value.trim().is_empty() {
+                return Err(serde::de::Error::custom(format!(
+                    "known-failure field '{field}' must not be empty"
+                )));
+            }
+        }
+
+        let (expected_failure_kind, expected_error_kind) = match (
+            wire.expected_failure_kind,
+            wire.expected_error_kind,
+        ) {
+            (Some(common), None) if !common.trim().is_empty() => (common, None),
+            (None, Some(domain)) if !domain.trim().is_empty() => (domain.clone(), Some(domain)),
+            (Some(common), Some(domain))
+                if !common.trim().is_empty() && !domain.trim().is_empty() && common == domain =>
+            {
+                (common, Some(domain))
+            }
+            (Some(common), Some(domain))
+                if !common.trim().is_empty() && !domain.trim().is_empty() =>
+            {
+                return Err(serde::de::Error::custom(format!(
+                    "conflicting expected failure kinds '{common}' and '{domain}'"
+                )));
+            }
+            _ => {
+                return Err(serde::de::Error::custom(
+                    "known failure requires one nonempty expected_failure_kind or expected_error_kind",
+                ));
+            }
+        };
+
+        Ok(Self {
+            case_id: wire.case_id,
+            feature: wire.feature,
+            expected_failure_kind,
+            reason: wire.reason,
+            created_at: wire.created_at,
+            operation: wire.operation,
+            invariant: wire.invariant,
+            expected_error_kind,
+            rdkit_version: wire.rdkit_version,
+            branch: wire.branch,
+        })
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum KnownFailureOutcome<'a> {
+    ExpectedFailure(&'a KnownFailure),
+    UnexpectedPass(&'a KnownFailure),
+    UnexpectedFailureKind {
+        record: &'a KnownFailure,
+        actual_failure_kind: &'a str,
+    },
+}
 
 #[derive(Debug, Deserialize)]
 struct ExpectedManifest {
@@ -79,6 +181,160 @@ static OUTPUT_SCAN_COUNTS: OnceLock<Mutex<HashMap<PathBuf, usize>>> = OnceLock::
 
 pub fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
+}
+
+pub fn testdata_path(
+    domain: &str,
+    kind: TestDataKind,
+    relative_path: impl AsRef<Path>,
+) -> Result<PathBuf, String> {
+    testdata_path_from_root(
+        &repo_root().join("testdata"),
+        domain,
+        kind,
+        relative_path.as_ref(),
+    )
+}
+
+fn testdata_path_from_root(
+    testdata_root: &Path,
+    domain: &str,
+    kind: TestDataKind,
+    relative_path: &Path,
+) -> Result<PathBuf, String> {
+    let domain_path = Path::new(domain);
+    let mut domain_components = domain_path.components();
+    if domain.trim().is_empty()
+        || !matches!(
+            domain_components.next(),
+            Some(std::path::Component::Normal(_))
+        )
+        || domain_components.next().is_some()
+    {
+        return Err(format!(
+            "testdata domain must be one normalized path component: {domain}"
+        ));
+    }
+
+    if relative_path.as_os_str().is_empty()
+        || relative_path.is_absolute()
+        || relative_path
+            .components()
+            .any(|component| !matches!(component, std::path::Component::Normal(_)))
+    {
+        return Err(format!(
+            "testdata path must be a nonempty normalized relative path: {}",
+            relative_path.display()
+        ));
+    }
+
+    let category = match kind {
+        TestDataKind::Fixture => "fixtures",
+        TestDataKind::Corpus => "corpus",
+    };
+    let base = testdata_root.join(domain).join(category);
+    let resolved_base = normalize_existing_path(&base).map_err(|error| {
+        format!("failed to resolve testdata {category} directory for domain '{domain}': {error}")
+    })?;
+    let requested = base.join(relative_path);
+    let resolved = normalize_existing_path(&requested).map_err(|error| {
+        format!("failed to resolve testdata {category} file for domain '{domain}': {error}")
+    })?;
+    if !resolved.starts_with(&resolved_base) {
+        return Err(format!(
+            "testdata path escapes the {domain}/{category} directory: {}",
+            relative_path.display()
+        ));
+    }
+    if !resolved.is_file() {
+        return Err(format!(
+            "testdata path is not a regular file: {}",
+            requested.display()
+        ));
+    }
+    Ok(resolved)
+}
+
+pub fn load_known_failures(file_name: &str) -> Result<Vec<KnownFailure>, String> {
+    let file_path = Path::new(file_name);
+    let mut components = file_path.components();
+    if file_name.trim().is_empty()
+        || !matches!(components.next(), Some(std::path::Component::Normal(_)))
+        || components.next().is_some()
+    {
+        return Err(format!(
+            "known-failure file name must be one normalized path component: {file_name}"
+        ));
+    }
+
+    let base = normalize_existing_path(&repo_root().join("testdata/known_failures"))?;
+    let requested = base.join(file_name);
+    let resolved = normalize_existing_path(&requested).map_err(|error| {
+        format!(
+            "failed to resolve known-failure file {}: {error}",
+            requested.display()
+        )
+    })?;
+    if !resolved.starts_with(&base) || !resolved.is_file() {
+        return Err(format!(
+            "known-failure path is not a regular file beneath {}: {}",
+            base.display(),
+            requested.display()
+        ));
+    }
+
+    load_known_failures_from_path(&resolved)
+}
+
+fn load_known_failures_from_path(resolved: &Path) -> Result<Vec<KnownFailure>, String> {
+    let file = File::open(resolved)
+        .map_err(|error| format!("failed to open {}: {error}", resolved.display()))?;
+    let mut records = Vec::new();
+    let mut case_ids = HashSet::new();
+    for (line_index, line) in BufReader::new(file).lines().enumerate() {
+        let line_number = line_index + 1;
+        let line = line.map_err(|error| {
+            format!(
+                "failed to read {} line {line_number}: {error}",
+                resolved.display()
+            )
+        })?;
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        let record: KnownFailure = serde_json::from_str(trimmed).map_err(|error| {
+            format!(
+                "failed to parse {} line {line_number}: {error}",
+                resolved.display()
+            )
+        })?;
+        if !case_ids.insert(record.case_id.clone()) {
+            return Err(format!(
+                "duplicate known-failure case_id '{}' at {} line {line_number}",
+                record.case_id,
+                resolved.display()
+            ));
+        }
+        records.push(record);
+    }
+    Ok(records)
+}
+
+pub fn classify_known_failure<'a>(
+    record: &'a KnownFailure,
+    actual_failure_kind: Option<&'a str>,
+) -> KnownFailureOutcome<'a> {
+    match actual_failure_kind {
+        None => KnownFailureOutcome::UnexpectedPass(record),
+        Some(actual) if actual == record.expected_failure_kind => {
+            KnownFailureOutcome::ExpectedFailure(record)
+        }
+        Some(actual_failure_kind) => KnownFailureOutcome::UnexpectedFailureKind {
+            record,
+            actual_failure_kind,
+        },
+    }
 }
 
 pub fn profile_name() -> String {
@@ -765,13 +1021,110 @@ mod tests {
     }
 
     #[test]
+    fn migration_sup_path_and_known_failure_private_boundaries_are_fail_closed() {
+        let (temporary_root, _) = temporary_family_dir("path-known-failure");
+        let testdata_root = temporary_root.join("testdata");
+        let fixture_dir = testdata_root.join("example/fixtures");
+        std::fs::create_dir_all(&fixture_dir).expect("fixture directory should be created");
+        let fixture = fixture_dir.join("inside.txt");
+        std::fs::write(&fixture, b"inside\n").expect("fixture should be written");
+        assert_eq!(
+            testdata_path_from_root(
+                &testdata_root,
+                "example",
+                TestDataKind::Fixture,
+                Path::new("inside.txt"),
+            )
+            .expect("contained fixture should resolve"),
+            fixture.canonicalize().expect("fixture should canonicalize")
+        );
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::symlink;
+
+            let outside = temporary_root.join("outside.txt");
+            std::fs::write(&outside, b"outside\n").expect("outside file should be written");
+            symlink(&outside, fixture_dir.join("escape.txt"))
+                .expect("escape symlink should be created");
+            let error = testdata_path_from_root(
+                &testdata_root,
+                "example",
+                TestDataKind::Fixture,
+                Path::new("escape.txt"),
+            )
+            .expect_err("a symlink outside the fixture root must be rejected");
+            assert!(error.contains("escapes"), "unexpected error: {error}");
+        }
+
+        let known_failures = temporary_root.join("known_failures.jsonl");
+        std::fs::write(
+            &known_failures,
+            concat!(
+                "# retained comment\n",
+                "\n",
+                r#"{"case_id":"first","feature":"smiles","expected_failure_kind":"Mismatch","reason":"first reason","created_at":"2026-01-01","rdkit_version":"2026.03.1","branch":"writer"}"#,
+                "\n",
+                r#"{"case_id":"second","expected_error_kind":"InvalidState","reason":"second reason","created_at":"2026-01-02","operation":"sanitize","invariant":"indices"}"#,
+                "\n",
+            ),
+        )
+        .expect("known-failure input should be written");
+        let records = load_known_failures_from_path(&known_failures)
+            .expect("valid known failures should parse");
+        assert_eq!(
+            records
+                .iter()
+                .map(|record| record.case_id.as_str())
+                .collect::<Vec<_>>(),
+            ["first", "second"]
+        );
+        assert_eq!(records[0].feature.as_deref(), Some("smiles"));
+        assert_eq!(records[0].rdkit_version.as_deref(), Some("2026.03.1"));
+        assert_eq!(records[0].branch.as_deref(), Some("writer"));
+        assert_eq!(records[1].operation.as_deref(), Some("sanitize"));
+        assert_eq!(records[1].invariant.as_deref(), Some("indices"));
+        assert_eq!(records[1].expected_failure_kind, "InvalidState");
+        assert_eq!(
+            records[1].expected_error_kind.as_deref(),
+            Some("InvalidState")
+        );
+
+        let duplicate = temporary_root.join("duplicate.jsonl");
+        std::fs::write(
+            &duplicate,
+            concat!(
+                r#"{"case_id":"same","expected_failure_kind":"A","reason":"one","created_at":"2026-01-01"}"#,
+                "\n",
+                r#"{"case_id":"same","expected_failure_kind":"B","reason":"two","created_at":"2026-01-02"}"#,
+                "\n",
+            ),
+        )
+        .expect("duplicate input should be written");
+        let duplicate_error = load_known_failures_from_path(&duplicate)
+            .expect_err("duplicate case ids must be rejected");
+        assert!(duplicate_error.contains("duplicate known-failure case_id 'same'"));
+        assert!(duplicate_error.contains("line 2"));
+
+        let malformed = temporary_root.join("malformed.jsonl");
+        std::fs::write(&malformed, b"# comment\n\n{not-json}\n")
+            .expect("malformed input should be written");
+        let malformed_error = load_known_failures_from_path(&malformed)
+            .expect_err("malformed JSONL must be rejected");
+        assert!(malformed_error.contains("line 3"));
+        assert!(malformed_error.contains("failed to parse"));
+
+        std::fs::remove_dir_all(temporary_root).expect("temporary root should be removed");
+    }
+
+    #[test]
     fn profile_paths_are_repository_owned() {
         assert!(smiles_path().starts_with(repo_root().join("testdata")));
         assert!(!smiles_path().starts_with(repo_root().join("third_party")));
     }
 
     #[test]
-    fn output_lookup_does_not_validate_unrelated_outputs() {
+    fn migration_sup_expected_data_does_not_validate_unrelated_outputs() {
         let (temporary_root, family_dir) = temporary_family_dir("unrelated-output");
 
         let requested_path = family_dir.join("requested.jsonl");
@@ -814,7 +1167,7 @@ mod tests {
     }
 
     #[test]
-    fn output_lookup_rejects_stale_generator_identity() {
+    fn migration_sup_expected_data_rejects_stale_generator_identity() {
         let (temporary_root, family_dir) = temporary_family_dir("stale-generator");
         let output_path = family_dir.join("requested.jsonl");
         std::fs::write(&output_path, b"{\"case\":1}\n").expect("output should be written");
@@ -838,35 +1191,128 @@ mod tests {
     }
 
     #[test]
-    fn cached_output_lookup_scans_requested_output_once() {
+    fn migration_sup_expected_data_cache_is_per_requested_output() {
         let (temporary_root, family_dir) = temporary_family_dir("cached-output");
-        let output_path = family_dir.join("requested.jsonl");
-        std::fs::write(&output_path, b"{\"case\":1}\n\n# comment\n")
-            .expect("output should be written");
+        let first_output_path = family_dir.join("first.jsonl");
+        std::fs::write(&first_output_path, b"{\"case\":1}\n\n# comment\n")
+            .expect("first output should be written");
+        let second_output_path = family_dir.join("second.jsonl");
+        std::fs::write(&second_output_path, b"{\"case\":2}\n")
+            .expect("second output should be written");
         let corpus = repo_root().join("testdata/smiles/corpus/smiles_small.smi");
-        let manifest = test_manifest(
+        let mut manifest = test_manifest(
             "test_domain",
-            "requested.jsonl",
-            &output_path,
+            "first.jsonl",
+            &first_output_path,
             sha256_file(&corpus).expect("corpus checksum should be available"),
         );
+        let mut second = manifest["outputs"][0].clone();
+        second["path"] = serde_json::Value::String("second.jsonl".to_string());
+        second["options"]["arguments"][3] = serde_json::Value::String("second.jsonl".to_string());
+        second["sha256"] = serde_json::Value::String(
+            sha256_file(&second_output_path).expect("second checksum should be available"),
+        );
+        manifest["outputs"]
+            .as_array_mut()
+            .expect("outputs should be an array")
+            .push(second);
         std::fs::write(
             family_dir.join("manifest.json"),
             serde_json::to_vec(&manifest).expect("manifest should serialize"),
         )
         .expect("manifest should be written");
 
-        validate_expected_output_cached(&family_dir, "test_domain", "rdkit", "requested.jsonl")
+        validate_expected_output_cached(&family_dir, "test_domain", "rdkit", "first.jsonl")
             .expect("first validation should pass");
-        validate_expected_output_cached(&family_dir, "test_domain", "rdkit", "requested.jsonl")
-            .expect("cached validation should pass");
+        validate_expected_output_cached(&family_dir, "test_domain", "rdkit", "first.jsonl")
+            .expect("cached first validation should pass");
+        validate_expected_output_cached(&family_dir, "test_domain", "rdkit", "second.jsonl")
+            .expect("second output should have an independent cache entry");
         let scans = OUTPUT_SCAN_COUNTS
             .get()
             .expect("scan counts should exist")
             .lock()
             .expect("scan-count lock should not be poisoned");
-        assert_eq!(scans.get(&output_path), Some(&1));
+        assert_eq!(scans.get(&first_output_path), Some(&1));
+        assert_eq!(scans.get(&second_output_path), Some(&1));
         drop(scans);
         std::fs::remove_dir_all(temporary_root).expect("temporary family should be removed");
+    }
+
+    #[test]
+    fn migration_sup_expected_data_rejects_missing_corrupt_and_mismatched_identities() {
+        let (missing_root, missing_family) = temporary_family_dir("missing-manifest");
+        let missing_error =
+            validate_expected_output(&missing_family, "test_domain", "rdkit", "output.jsonl")
+                .expect_err("a missing manifest must be rejected");
+        assert!(missing_error.contains("failed to read"), "{missing_error}");
+        std::fs::remove_dir_all(missing_root).expect("missing family should be removed");
+
+        let (corrupt_root, corrupt_family) = temporary_family_dir("corrupt-manifest");
+        std::fs::write(corrupt_family.join("manifest.json"), b"{not-json}\n")
+            .expect("corrupt manifest should be written");
+        let corrupt_error =
+            validate_expected_output(&corrupt_family, "test_domain", "rdkit", "output.jsonl")
+                .expect_err("a corrupt manifest must be rejected");
+        assert!(corrupt_error.contains("failed to parse"), "{corrupt_error}");
+        std::fs::remove_dir_all(corrupt_root).expect("corrupt family should be removed");
+
+        let (mismatch_root, mismatch_family) = temporary_family_dir("identity-mismatch");
+        let mismatch_output = mismatch_family.join("output.jsonl");
+        std::fs::write(&mismatch_output, b"{\"case\":1}\n")
+            .expect("mismatch output should be written");
+        let corpus = repo_root().join("testdata/smiles/corpus/smiles_small.smi");
+        let mismatch_manifest = test_manifest(
+            "actual_domain",
+            "output.jsonl",
+            &mismatch_output,
+            sha256_file(&corpus).expect("corpus checksum should be available"),
+        );
+        std::fs::write(
+            mismatch_family.join("manifest.json"),
+            serde_json::to_vec(&mismatch_manifest).expect("manifest should serialize"),
+        )
+        .expect("mismatch manifest should be written");
+        let mismatch_error =
+            validate_expected_output(&mismatch_family, "expected_domain", "rdkit", "output.jsonl")
+                .expect_err("a mismatched manifest identity must be rejected");
+        assert!(
+            mismatch_error.contains("identity does not match"),
+            "{mismatch_error}"
+        );
+        std::fs::remove_dir_all(mismatch_root).expect("mismatch family should be removed");
+
+        let (missing_identity_root, missing_identity_family) =
+            temporary_family_dir("missing-identity-file");
+        let missing_identity_output = missing_identity_family.join("output.jsonl");
+        std::fs::write(&missing_identity_output, b"{\"case\":1}\n")
+            .expect("missing-identity output should be written");
+        let mut missing_identity_manifest = test_manifest(
+            "test_domain",
+            "output.jsonl",
+            &missing_identity_output,
+            sha256_file(&corpus).expect("corpus checksum should be available"),
+        );
+        missing_identity_manifest["outputs"][0]["generator"][0]["path"] = serde_json::Value::String(
+            "testdata/smiles/corpus/missing-sup-identity.smi".to_string(),
+        );
+        std::fs::write(
+            missing_identity_family.join("manifest.json"),
+            serde_json::to_vec(&missing_identity_manifest).expect("manifest should serialize"),
+        )
+        .expect("missing-identity manifest should be written");
+        let missing_identity_error = validate_expected_output(
+            &missing_identity_family,
+            "test_domain",
+            "rdkit",
+            "output.jsonl",
+        )
+        .expect_err("a missing generator identity must be rejected");
+        assert!(
+            missing_identity_error.contains("failed to resolve"),
+            "{missing_identity_error}"
+        );
+        std::fs::remove_dir_all(missing_identity_root)
+            .expect("missing-identity family should be removed");
     }
 }

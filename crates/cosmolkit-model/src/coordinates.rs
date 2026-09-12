@@ -16,6 +16,13 @@ pub enum CoordinateValidationError {
     },
     #[error("duplicate {dimension} conformer id {id}")]
     DuplicateConformerId { dimension: &'static str, id: usize },
+    #[error("{dimension} conformer {conformer} atom row {atom} has a non-finite {axis} coordinate")]
+    NonFiniteCoordinate {
+        dimension: &'static str,
+        conformer: usize,
+        atom: usize,
+        axis: &'static str,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -43,6 +50,18 @@ impl Conformer2D {
                 rows: self.coords.len(),
                 atom_count,
             });
+        }
+        for (atom, coord) in self.coords.iter().enumerate() {
+            for (axis, value) in [("x", coord[0]), ("y", coord[1])] {
+                if !value.is_finite() {
+                    return Err(CoordinateValidationError::NonFiniteCoordinate {
+                        dimension: "2D",
+                        conformer: self.id,
+                        atom,
+                        axis,
+                    });
+                }
+            }
         }
         Ok(())
     }
@@ -87,22 +106,16 @@ impl Conformer2D {
         self
     }
 
-    #[allow(dead_code)]
-    pub fn remapped_to_kept_atoms(&self, kept_old_indices: &[usize], id: usize) -> Self {
+    fn remapped_to_kept_atoms(&self, kept_old_indices: &[usize], id: usize) -> Self {
         let coords = kept_old_indices
             .iter()
-            .filter_map(|old_idx| self.coords.get(*old_idx).copied())
+            .map(|old_idx| self.coords[*old_idx])
             .collect();
         Self {
             id,
             coords,
             props: self.props.clone(),
         }
-    }
-
-    #[allow(dead_code)]
-    pub fn push_coord(&mut self, coord: [f64; 2]) {
-        self.coords.push(coord);
     }
 }
 
@@ -127,6 +140,18 @@ impl Conformer3D {
                 atom_count,
             });
         }
+        for (atom, coord) in self.coords.iter().enumerate() {
+            for (axis, value) in [("x", coord[0]), ("y", coord[1]), ("z", coord[2])] {
+                if !value.is_finite() {
+                    return Err(CoordinateValidationError::NonFiniteCoordinate {
+                        dimension: "3D",
+                        conformer: self.id,
+                        atom,
+                        axis,
+                    });
+                }
+            }
+        }
         Ok(())
     }
 
@@ -142,21 +167,34 @@ impl Conformer3D {
 
     #[must_use]
     pub const fn id(&self) -> usize {
+        // RDKit✔️✔️: inline unsigned int getId() const { return d_id; }
         self.id
     }
 
     #[must_use]
     pub fn coordinates(&self) -> &[[f64; 3]] {
+        // RDKit✔️✔️: const RDGeom::POINT3D_VECT &Conformer::getPositions() const {
+        // RDKit✔️✔️:   if (dp_mol) {
+        // RDKit✔️✔️:     PRECONDITION(dp_mol->getNumAtoms() == d_positions.size(), "");
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️:   return d_positions;
+        // RDKit✔️✔️: }
+        // Detached model conformers have no owning-molecule pointer, so the
+        // source ownership precondition is unreachable in the modeled state.
         &self.coords
     }
 
-    /// Mutable access to coordinates (pub(crate) for conformer transforms).
     pub fn coordinates_mut(&mut self) -> &mut [[f64; 3]] {
+        // RDKit❗✔️: RDGeom::POINT3D_VECT &Conformer::getPositions() { return d_positions; }
+        // COSMolKit intentionally exposes a fixed-length mutable slice here;
+        // element mutation matches the source, while vector resizing is not
+        // reproduced by this detached value accessor.
         &mut self.coords
     }
 
     #[must_use]
     pub const fn is_3d(&self) -> bool {
+        // RDKit✔️✔️: inline bool is3D() const { return df_is3D; }
         self.is_3d
     }
 
@@ -173,15 +211,15 @@ impl Conformer3D {
 
     #[must_use]
     pub fn with_id(mut self, id: usize) -> Self {
+        // RDKit✔️✔️: inline void setId(unsigned int id) { d_id = id; }
         self.id = id;
         self
     }
 
-    #[allow(dead_code)]
-    pub fn remapped_to_kept_atoms(&self, kept_old_indices: &[usize], id: usize) -> Self {
+    fn remapped_to_kept_atoms(&self, kept_old_indices: &[usize], id: usize) -> Self {
         let coords = kept_old_indices
             .iter()
-            .filter_map(|old_idx| self.coords.get(*old_idx).copied())
+            .map(|old_idx| self.coords[*old_idx])
             .collect();
         Self {
             id,
@@ -190,17 +228,6 @@ impl Conformer3D {
             props: self.props.clone(),
         }
     }
-
-    #[allow(dead_code)]
-    pub fn push_coord(&mut self, coord: [f64; 3]) {
-        self.coords.push(coord);
-    }
-}
-#[derive(Debug, Clone, PartialEq, Default)]
-pub struct ConformerStore {
-    pub conformers_2d: Vec<Conformer2D>,
-    pub conformers_3d: Vec<Conformer3D>,
-    pub source_coordinate_dim: Option<CoordinateDimension>,
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]

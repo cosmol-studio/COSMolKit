@@ -5,7 +5,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use cosmolkit_core::{Molecule, TautomerEnumerator, TautomerOptions, score_tautomer};
+use cosmolkit::{Molecule, TautomerEnumerator, TautomerOptions, score_tautomer};
 use serde_json::{Value, json};
 
 fn error_value(error: &dyn std::error::Error) -> Value {

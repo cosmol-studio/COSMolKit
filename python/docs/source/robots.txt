@@ -1,4 +1,77 @@
 User-agent: *
 Allow: /
+Content-Signal: search=yes,ai-train=yes,ai-input=yes,use=full
+
+User-agent: OAI-SearchBot
+Allow: /
+Content-Signal: search=yes,ai-train=yes,ai-input=yes,use=full
+
+User-agent: GPTBot
+Allow: /
+Content-Signal: search=yes,ai-train=yes,ai-input=yes,use=full
+
+User-agent: ChatGPT-User
+Allow: /
+Content-Signal: search=yes,ai-train=yes,ai-input=yes,use=full
+
+User-agent: ClaudeBot
+Allow: /
+Content-Signal: search=yes,ai-train=yes,ai-input=yes,use=full
+
+User-agent: Claude-SearchBot
+Allow: /
+Content-Signal: search=yes,ai-train=yes,ai-input=yes,use=full
+
+User-agent: Claude-User
+Allow: /
+Content-Signal: search=yes,ai-train=yes,ai-input=yes,use=full
+
+User-agent: PerplexityBot
+Allow: /
+Content-Signal: search=yes,ai-train=yes,ai-input=yes,use=full
+
+User-agent: Perplexity-User
+Allow: /
+Content-Signal: search=yes,ai-train=yes,ai-input=yes,use=full
+
+User-agent: Googlebot
+Allow: /
+Content-Signal: search=yes,ai-train=yes,ai-input=yes,use=full
+
+User-agent: Google-Extended
+Allow: /
+Content-Signal: search=yes,ai-train=yes,ai-input=yes,use=full
+
+User-agent: bingbot
+Allow: /
+Content-Signal: search=yes,ai-train=yes,ai-input=yes,use=full
+
+User-agent: Applebot
+Allow: /
+Content-Signal: search=yes,ai-train=yes,ai-input=yes,use=full
+
+User-agent: Applebot-Extended
+Allow: /
+Content-Signal: search=yes,ai-train=yes,ai-input=yes,use=full
+
+User-agent: Amazonbot
+Allow: /
+Content-Signal: search=yes,ai-train=yes,ai-input=yes,use=full
+
+User-agent: Bytespider
+Allow: /
+Content-Signal: search=yes,ai-train=yes,ai-input=yes,use=full
+
+User-agent: CCBot
+Allow: /
+Content-Signal: search=yes,ai-train=yes,ai-input=yes,use=full
+
+User-agent: CloudflareBrowserRenderingCrawler
+Allow: /
+Content-Signal: search=yes,ai-train=yes,ai-input=yes,use=full
+
+User-agent: meta-externalagent
+Allow: /
+Content-Signal: search=yes,ai-train=yes,ai-input=yes,use=full
 
 Sitemap: https://kit.cosmol.org/sitemap.xml

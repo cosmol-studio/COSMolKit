@@ -4,8 +4,11 @@
 //! Topology remapping policies and live-molecule installation remain owned by
 //! the runtime crate.
 
-use crate::{AdjacencyList, Atom, Bond, StereoGroup, SubstanceGroup};
-use crate::{AtomId, BondId};
+use crate::{
+    AdjacencyList, Atom, AtomId, AtomMapping, AtomSpec, Bond, BondId, BondMapping, BondSpec,
+    BondStereo, BondValueError, MappingValidationError, StereoGroup, SubstanceGroup,
+    TopologyMapping,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum TopologyValidationError {
@@ -71,272 +74,45 @@ pub enum TopologyValidationError {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-pub enum MappingValidationError {
-    #[error("{entity} {direction} mapping has {actual} rows, expected {expected}")]
-    Length {
-        entity: &'static str,
-        direction: &'static str,
-        actual: usize,
-        expected: usize,
-    },
+pub enum TopologyEditError {
+    #[error("invalid source topology: {0}")]
+    InvalidSource(TopologyValidationError),
+    #[error("atom {atom} is out of range for {atom_count} atoms")]
+    AtomOutOfRange { atom: AtomId, atom_count: usize },
+    #[error("bond {bond} is out of range for {bond_count} bonds")]
+    BondOutOfRange { bond: BondId, bond_count: usize },
+    #[error("bond {begin}-{end} already exists")]
+    DuplicateBond { begin: AtomId, end: AtomId },
+    #[error("invalid bond: {0}")]
+    InvalidBond(BondValueError),
+    #[error("atom permutation has length {actual}, expected {expected}")]
+    PermutationLength { actual: usize, expected: usize },
     #[error(
-        "{entity} {direction} mapping row {row} refers to {mapped}, outside {target_count} rows"
+        "atom permutation position {position} references atom {atom}, out of range for {atom_count} atoms"
     )]
-    OutOfRange {
-        entity: &'static str,
-        direction: &'static str,
-        row: usize,
-        mapped: usize,
-        target_count: usize,
+    PermutationAtomOutOfRange {
+        position: usize,
+        atom: AtomId,
+        atom_count: usize,
     },
-    #[error("{entity} mappings disagree for {direction} row {row} and mapped row {mapped}")]
-    InverseMismatch {
-        entity: &'static str,
-        direction: &'static str,
-        row: usize,
-        mapped: usize,
-    },
+    #[error("atom permutation position {position} repeats atom {atom}")]
+    PermutationDuplicateAtom { position: usize, atom: AtomId },
+    #[error("invalid topology mapping: {0}")]
+    InvalidMapping(MappingValidationError),
+    #[error("invalid edited topology: {0}")]
+    InvalidResult(TopologyValidationError),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AtomMapping {
-    pub old_to_new: Vec<Option<AtomId>>,
-    pub new_to_old: Vec<Option<AtomId>>,
-}
-
-impl AtomMapping {
-    #[must_use]
-    pub fn old_to_new(&self) -> &[Option<AtomId>] {
-        &self.old_to_new
-    }
-    #[must_use]
-    pub fn new_to_old(&self) -> &[Option<AtomId>] {
-        &self.new_to_old
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct BondMapping {
-    pub old_to_new: Vec<Option<BondId>>,
-    pub new_to_old: Vec<Option<BondId>>,
-}
-
-impl BondMapping {
-    #[must_use]
-    pub fn old_to_new(&self) -> &[Option<BondId>] {
-        &self.old_to_new
-    }
-    #[must_use]
-    pub fn new_to_old(&self) -> &[Option<BondId>] {
-        &self.new_to_old
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TopologyMapping {
-    pub atoms: AtomMapping,
-    pub bonds: BondMapping,
-}
-
-impl TopologyMapping {
-    #[must_use]
-    pub fn atoms(&self) -> &AtomMapping {
-        &self.atoms
-    }
-    #[must_use]
-    pub fn bonds(&self) -> &BondMapping {
-        &self.bonds
-    }
-    #[must_use]
-    pub fn retained_atom_indices(&self) -> Vec<usize> {
-        self.atoms
-            .new_to_old
-            .iter()
-            .filter_map(|id| id.map(AtomId::index))
-            .collect()
-    }
-    pub fn identity(atom_count: usize, bond_count: usize) -> Self {
-        Self {
-            atoms: AtomMapping {
-                old_to_new: (0..atom_count).map(|i| Some(AtomId::new(i))).collect(),
-                new_to_old: (0..atom_count).map(|i| Some(AtomId::new(i))).collect(),
-            },
-            bonds: BondMapping {
-                old_to_new: (0..bond_count).map(|i| Some(BondId::new(i))).collect(),
-                new_to_old: (0..bond_count).map(|i| Some(BondId::new(i))).collect(),
-            },
-        }
-    }
-    pub fn with_appended(
-        old_atoms: usize,
-        old_bonds: usize,
-        added_atoms: usize,
-        added_bonds: usize,
-    ) -> Self {
-        let mut atom_new_to_old: Vec<_> = (0..old_atoms).map(|i| Some(AtomId::new(i))).collect();
-        atom_new_to_old.extend((0..added_atoms).map(|_| None));
-        let mut bond_new_to_old: Vec<_> = (0..old_bonds).map(|i| Some(BondId::new(i))).collect();
-        bond_new_to_old.extend((0..added_bonds).map(|_| None));
-        Self {
-            atoms: AtomMapping {
-                old_to_new: (0..old_atoms).map(|i| Some(AtomId::new(i))).collect(),
-                new_to_old: atom_new_to_old,
-            },
-            bonds: BondMapping {
-                old_to_new: (0..old_bonds).map(|i| Some(BondId::new(i))).collect(),
-                new_to_old: bond_new_to_old,
-            },
-        }
-    }
-
-    /// Validate that both directions of an atom/bond topology mapping agree
-    /// with the old and new table sizes.
-    pub fn validate_for_counts(
-        &self,
-        old_atom_count: usize,
-        new_atom_count: usize,
-        old_bond_count: usize,
-        new_bond_count: usize,
-    ) -> Result<(), MappingValidationError> {
-        validate_atom_mapping(&self.atoms, old_atom_count, new_atom_count)?;
-        validate_bond_mapping(&self.bonds, old_bond_count, new_bond_count)
-    }
-}
-
-fn validate_atom_mapping(
-    mapping: &AtomMapping,
-    old_count: usize,
-    new_count: usize,
-) -> Result<(), MappingValidationError> {
-    if mapping.old_to_new.len() != old_count {
-        return Err(MappingValidationError::Length {
-            entity: "atom",
-            direction: "old-to-new",
-            actual: mapping.old_to_new.len(),
-            expected: old_count,
-        });
-    }
-    if mapping.new_to_old.len() != new_count {
-        return Err(MappingValidationError::Length {
-            entity: "atom",
-            direction: "new-to-old",
-            actual: mapping.new_to_old.len(),
-            expected: new_count,
-        });
-    }
-    for (old, new) in mapping.old_to_new.iter().enumerate() {
-        let Some(new) = new else {
-            continue;
-        };
-        if new.index() >= new_count {
-            return Err(MappingValidationError::OutOfRange {
-                entity: "atom",
-                direction: "old-to-new",
-                row: old,
-                mapped: new.index(),
-                target_count: new_count,
-            });
-        }
-        if mapping.new_to_old[new.index()] != Some(AtomId::new(old)) {
-            return Err(MappingValidationError::InverseMismatch {
-                entity: "atom",
-                direction: "old-to-new",
-                row: old,
-                mapped: new.index(),
-            });
-        }
-    }
-    for (new, old) in mapping.new_to_old.iter().enumerate() {
-        let Some(old) = old else {
-            continue;
-        };
-        if old.index() >= old_count {
-            return Err(MappingValidationError::OutOfRange {
-                entity: "atom",
-                direction: "new-to-old",
-                row: new,
-                mapped: old.index(),
-                target_count: old_count,
-            });
-        }
-        if mapping.old_to_new[old.index()] != Some(AtomId::new(new)) {
-            return Err(MappingValidationError::InverseMismatch {
-                entity: "atom",
-                direction: "new-to-old",
-                row: new,
-                mapped: old.index(),
-            });
-        }
-    }
-    Ok(())
-}
-
-fn validate_bond_mapping(
-    mapping: &BondMapping,
-    old_count: usize,
-    new_count: usize,
-) -> Result<(), MappingValidationError> {
-    if mapping.old_to_new.len() != old_count {
-        return Err(MappingValidationError::Length {
-            entity: "bond",
-            direction: "old-to-new",
-            actual: mapping.old_to_new.len(),
-            expected: old_count,
-        });
-    }
-    if mapping.new_to_old.len() != new_count {
-        return Err(MappingValidationError::Length {
-            entity: "bond",
-            direction: "new-to-old",
-            actual: mapping.new_to_old.len(),
-            expected: new_count,
-        });
-    }
-    for (old, new) in mapping.old_to_new.iter().enumerate() {
-        let Some(new) = new else {
-            continue;
-        };
-        if new.index() >= new_count {
-            return Err(MappingValidationError::OutOfRange {
-                entity: "bond",
-                direction: "old-to-new",
-                row: old,
-                mapped: new.index(),
-                target_count: new_count,
-            });
-        }
-        if mapping.new_to_old[new.index()] != Some(BondId::new(old)) {
-            return Err(MappingValidationError::InverseMismatch {
-                entity: "bond",
-                direction: "old-to-new",
-                row: old,
-                mapped: new.index(),
-            });
-        }
-    }
-    for (new, old) in mapping.new_to_old.iter().enumerate() {
-        let Some(old) = old else {
-            continue;
-        };
-        if old.index() >= old_count {
-            return Err(MappingValidationError::OutOfRange {
-                entity: "bond",
-                direction: "new-to-old",
-                row: new,
-                mapped: old.index(),
-                target_count: old_count,
-            });
-        }
-        if mapping.old_to_new[old.index()] != Some(BondId::new(new)) {
-            return Err(MappingValidationError::InverseMismatch {
-                entity: "bond",
-                direction: "new-to-old",
-                row: new,
-                mapped: old.index(),
-            });
-        }
-    }
-    Ok(())
+/// Owned edit state for a detached topology value.
+///
+/// The source copy is retained only to establish the mapping and abort/failure
+/// isolation. This type has no authority over a live `Molecule`.
+#[derive(Debug, Clone)]
+pub struct TopologyBatchEdit {
+    source: TopologyBlock,
+    working: TopologyBlock,
+    remove_atoms: Vec<bool>,
+    remove_bonds: Vec<bool>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -361,6 +137,196 @@ impl Default for TopologyBlock {
 }
 
 impl TopologyBlock {
+    pub fn try_from_parts(
+        atoms: Vec<Atom>,
+        bonds: Vec<Bond>,
+        substance_groups: Vec<SubstanceGroup>,
+        stereo_groups: Vec<StereoGroup>,
+    ) -> Result<Self, TopologyValidationError> {
+        let adjacency =
+            AdjacencyList::try_from_topology(atoms.len(), &bonds).map_err(|error| match error {
+                crate::AdjacencyError::BondAtomOutOfRange {
+                    bond,
+                    endpoint,
+                    atom,
+                    atom_count,
+                } => TopologyValidationError::BondEndpointOutOfRange {
+                    bond,
+                    endpoint,
+                    atom,
+                    atom_count,
+                },
+                crate::AdjacencyError::DuplicateBondId { .. }
+                | crate::AdjacencyError::DuplicateEdge { .. } => {
+                    TopologyValidationError::AdjacencyMismatch
+                }
+            })?;
+        let topology = Self {
+            atoms,
+            bonds,
+            adjacency,
+            substance_groups,
+            stereo_groups,
+        };
+        topology.validate()?;
+        Ok(topology)
+    }
+
+    pub fn begin_batch_edit(&self) -> Result<TopologyBatchEdit, TopologyEditError> {
+        // RDKit✔️❌: dp_delAtoms.reset(new boost::dynamic_bitset<>(getNumAtoms()));
+        // RDKit✔️❌: dp_delBonds.reset(new boost::dynamic_bitset<>(getNumBonds()));
+        //
+        // The detached editor deliberately clones the source so failure and
+        // abort cannot publish partial state. This is O(n) instead of RDKit's
+        // in-place O(n) bitset setup, hence the performance marker.
+        self.validate().map_err(TopologyEditError::InvalidSource)?;
+        Ok(TopologyBatchEdit {
+            source: self.clone(),
+            working: self.clone(),
+            remove_atoms: vec![false; self.atoms.len()],
+            remove_bonds: vec![false; self.bonds.len()],
+        })
+    }
+
+    pub fn reordered_atoms(
+        &self,
+        old_atom_order: &[AtomId],
+    ) -> Result<(Self, TopologyMapping), TopologyEditError> {
+        self.validate().map_err(TopologyEditError::InvalidSource)?;
+        if old_atom_order.len() != self.atoms.len() {
+            return Err(TopologyEditError::PermutationLength {
+                actual: old_atom_order.len(),
+                expected: self.atoms.len(),
+            });
+        }
+        let mut seen = vec![false; self.atoms.len()];
+        for (position, atom) in old_atom_order.iter().copied().enumerate() {
+            if atom.index() >= self.atoms.len() {
+                return Err(TopologyEditError::PermutationAtomOutOfRange {
+                    position,
+                    atom,
+                    atom_count: self.atoms.len(),
+                });
+            }
+            if seen[atom.index()] {
+                return Err(TopologyEditError::PermutationDuplicateAtom { position, atom });
+            }
+            seen[atom.index()] = true;
+        }
+
+        let mut atom_old_to_new = vec![None; self.atoms.len()];
+        let mut atoms = Vec::with_capacity(self.atoms.len());
+        for (new_index, old_id) in old_atom_order.iter().copied().enumerate() {
+            let new_id = AtomId::new(new_index);
+            atom_old_to_new[old_id.index()] = Some(new_id);
+            atoms.push(self.atoms[old_id.index()].clone().with_id(new_id));
+        }
+        let atom_new_to_old = old_atom_order.iter().copied().map(Some).collect();
+        let bond_old_to_new = (0..self.bonds.len())
+            .map(|index| Some(BondId::new(index)))
+            .collect::<Vec<_>>();
+        let bond_new_to_old = bond_old_to_new.clone();
+        let mut bonds = Vec::with_capacity(self.bonds.len());
+        for bond in &self.bonds {
+            let begin = atom_old_to_new
+                .get(bond.begin().index())
+                .and_then(|mapped| *mapped)
+                .ok_or_else(|| {
+                    TopologyEditError::InvalidSource(
+                        TopologyValidationError::BondEndpointOutOfRange {
+                            bond: bond.id(),
+                            endpoint: "begin",
+                            atom: bond.begin(),
+                            atom_count: self.atoms.len(),
+                        },
+                    )
+                })?;
+            let end = atom_old_to_new
+                .get(bond.end().index())
+                .and_then(|mapped| *mapped)
+                .ok_or_else(|| {
+                    TopologyEditError::InvalidSource(
+                        TopologyValidationError::BondEndpointOutOfRange {
+                            bond: bond.id(),
+                            endpoint: "end",
+                            atom: bond.end(),
+                            atom_count: self.atoms.len(),
+                        },
+                    )
+                })?;
+            let stereo_atoms = match bond.stereo_atoms() {
+                Some([left, right]) => Some([
+                    atom_old_to_new
+                        .get(left.index())
+                        .and_then(|mapped| *mapped)
+                        .ok_or_else(|| {
+                            TopologyEditError::InvalidSource(
+                                TopologyValidationError::StereoAtomOutOfRange {
+                                    bond: bond.id(),
+                                    begin: left,
+                                    end: right,
+                                    atom_count: self.atoms.len(),
+                                },
+                            )
+                        })?,
+                    atom_old_to_new
+                        .get(right.index())
+                        .and_then(|mapped| *mapped)
+                        .ok_or_else(|| {
+                            TopologyEditError::InvalidSource(
+                                TopologyValidationError::StereoAtomOutOfRange {
+                                    bond: bond.id(),
+                                    begin: left,
+                                    end: right,
+                                    atom_count: self.atoms.len(),
+                                },
+                            )
+                        })?,
+                ]),
+                None => None,
+            };
+            bonds.push(bond.clone().remapped(bond.id(), begin, end, stereo_atoms));
+        }
+        let sgroup_map = (0..self.substance_groups.len())
+            .map(crate::SubstanceGroupId::new)
+            .map(Some)
+            .collect::<Vec<_>>();
+        let substance_groups = self
+            .substance_groups
+            .iter()
+            .enumerate()
+            .filter_map(|(index, group)| {
+                group.remapped(
+                    crate::SubstanceGroupId::new(index),
+                    &atom_old_to_new,
+                    &bond_old_to_new,
+                    &sgroup_map,
+                )
+            })
+            .collect();
+        let stereo_groups = self
+            .stereo_groups
+            .iter()
+            .filter_map(|group| group.remapped(&atom_old_to_new, &bond_old_to_new))
+            .collect();
+        let mapping = TopologyMapping {
+            atoms: AtomMapping {
+                old_to_new: atom_old_to_new,
+                new_to_old: atom_new_to_old,
+            },
+            bonds: BondMapping {
+                old_to_new: bond_old_to_new,
+                new_to_old: bond_new_to_old,
+            },
+        };
+        mapping
+            .validate_for_counts(self.atoms.len(), atoms.len(), self.bonds.len(), bonds.len())
+            .map_err(TopologyEditError::InvalidMapping)?;
+        let topology = Self::try_from_parts(atoms, bonds, substance_groups, stereo_groups)
+            .map_err(TopologyEditError::InvalidResult)?;
+        Ok((topology, mapping))
+    }
+
     pub fn validate(&self) -> Result<(), TopologyValidationError> {
         for (position, atom) in self.atoms.iter().enumerate() {
             if atom.id() != AtomId::new(position) {
@@ -498,6 +464,10 @@ impl TopologyBlock {
                         atom,
                         atom_count,
                     },
+                    crate::AdjacencyError::DuplicateBondId { .. }
+                    | crate::AdjacencyError::DuplicateEdge { .. } => {
+                        TopologyValidationError::AdjacencyMismatch
+                    }
                 }
             })?;
         if self.adjacency != expected {
@@ -505,57 +475,190 @@ impl TopologyBlock {
         }
         Ok(())
     }
+}
 
-    pub fn remove_atoms_with_mapping(&mut self, atoms_to_remove: &[AtomId]) -> TopologyMapping {
-        let mut remove_atom = vec![false; self.atoms.len()];
-        for atom in atoms_to_remove {
-            if let Some(slot) = remove_atom.get_mut(atom.index()) {
-                *slot = true;
+impl TopologyBatchEdit {
+    pub fn add_atom(&mut self, spec: AtomSpec) -> AtomId {
+        // RDKit✔️✔️: if (dp_delAtoms->size() < getNumAtoms()) {
+        // RDKit✔️✔️:   dp_delAtoms->resize(getNumAtoms());
+        // RDKit✔️✔️: }
+        let id = AtomId::new(self.working.atoms.len());
+        self.working.atoms.push(Atom::from_spec(id, spec));
+        self.remove_atoms.push(false);
+        id
+    }
+
+    pub fn add_bond(&mut self, spec: BondSpec) -> Result<BondId, TopologyEditError> {
+        spec.validate().map_err(TopologyEditError::InvalidBond)?;
+        for atom in [spec.begin(), spec.end()] {
+            if atom.index() >= self.working.atoms.len() {
+                return Err(TopologyEditError::AtomOutOfRange {
+                    atom,
+                    atom_count: self.working.atoms.len(),
+                });
             }
         }
-        let mut atom_old_to_new = vec![None; self.atoms.len()];
+        if let Some([begin, end]) = spec.stereo_atoms()
+            && (begin.index() >= self.working.atoms.len()
+                || end.index() >= self.working.atoms.len())
+        {
+            return Err(TopologyEditError::InvalidResult(
+                TopologyValidationError::StereoAtomOutOfRange {
+                    bond: BondId::new(self.working.bonds.len()),
+                    begin,
+                    end,
+                    atom_count: self.working.atoms.len(),
+                },
+            ));
+        }
+        if spec.begin() == spec.end() {
+            return Err(TopologyEditError::InvalidResult(
+                TopologyValidationError::SelfLoopBond {
+                    bond: BondId::new(self.working.bonds.len()),
+                    atom: spec.begin(),
+                },
+            ));
+        }
+        if self.working.bonds.iter().any(|bond| {
+            (bond.begin() == spec.begin() && bond.end() == spec.end())
+                || (bond.begin() == spec.end() && bond.end() == spec.begin())
+        }) {
+            return Err(TopologyEditError::DuplicateBond {
+                begin: spec.begin(),
+                end: spec.end(),
+            });
+        }
+        let id = BondId::new(self.working.bonds.len());
+        self.working.bonds.push(Bond::from_spec(id, spec));
+        self.remove_bonds.push(false);
+        Ok(id)
+    }
+
+    pub fn remove_atom(&mut self, atom: AtomId) -> Result<(), TopologyEditError> {
+        // RDKit✔️✔️: void RWMol::removeAtom(unsigned int idx) {
+        // RDKit✔️✔️:   removeAtom(getAtomWithIdx(idx));
+        // RDKit✔️✔️: }
+        let atom_count = self.working.atoms.len();
+        let Some(slot) = self.remove_atoms.get_mut(atom.index()) else {
+            return Err(TopologyEditError::AtomOutOfRange { atom, atom_count });
+        };
+        *slot = true;
+        Ok(())
+    }
+
+    pub fn remove_bond(&mut self, bond: BondId) -> Result<(), TopologyEditError> {
+        let bond_count = self.working.bonds.len();
+        let Some(slot) = self.remove_bonds.get_mut(bond.index()) else {
+            return Err(TopologyEditError::BondOutOfRange { bond, bond_count });
+        };
+        *slot = true;
+        Ok(())
+    }
+
+    pub fn abort(self) {
+        // RDKit✔️✔️: dp_delAtoms.reset();
+        // RDKit✔️✔️: dp_delBonds.reset();
+    }
+
+    pub fn finish(mut self) -> Result<(TopologyBlock, TopologyMapping), TopologyEditError> {
+        // RDKit✔️✔️: batchRemoveBonds();
+        // RDKit✔️✔️: batchRemoveAtoms();
+        for (index, bond) in self.working.bonds.iter().enumerate() {
+            if self.remove_atoms[bond.begin().index()] || self.remove_atoms[bond.end().index()] {
+                self.remove_bonds[index] = true;
+            }
+        }
+        let old_atom_count = self.source.atoms.len();
+        let old_bond_count = self.source.bonds.len();
+        let mut atom_old_to_new = vec![None; old_atom_count];
         let mut atom_new_to_old = Vec::new();
-        let mut atoms = Vec::with_capacity(self.atoms.len().saturating_sub(atoms_to_remove.len()));
-        for atom in &self.atoms {
-            if remove_atom[atom.id().index()] {
+        let mut all_atom_to_new = vec![None; self.working.atoms.len()];
+        let mut atoms = Vec::new();
+        for atom in &self.working.atoms {
+            let old_index = atom.id().index();
+            if self.remove_atoms[old_index] {
                 continue;
             }
             let new_id = AtomId::new(atoms.len());
-            atom_old_to_new[atom.id().index()] = Some(new_id);
-            atom_new_to_old.push(Some(atom.id()));
+            all_atom_to_new[old_index] = Some(new_id);
+            if old_index < old_atom_count {
+                atom_old_to_new[old_index] = Some(new_id);
+                atom_new_to_old.push(Some(atom.id()));
+            } else {
+                atom_new_to_old.push(None);
+            }
             atoms.push(atom.clone().with_id(new_id));
         }
-        let mut bond_old_to_new = vec![None; self.bonds.len()];
+        let mut bond_old_to_new = vec![None; old_bond_count];
         let mut bond_new_to_old = Vec::new();
         let mut bonds = Vec::new();
-        for bond in &self.bonds {
-            let Some(begin) = atom_old_to_new.get(bond.begin().index()).and_then(|x| *x) else {
+        for bond in &self.working.bonds {
+            let old_index = bond.id().index();
+            if self.remove_bonds[old_index] {
+                continue;
+            }
+            let Some(begin) = all_atom_to_new[bond.begin().index()] else {
                 continue;
             };
-            let Some(end) = atom_old_to_new.get(bond.end().index()).and_then(|x| *x) else {
+            let Some(end) = all_atom_to_new[bond.end().index()] else {
                 continue;
             };
-            let stereo_atoms = bond.stereo_atoms().and_then(|[left, right]| {
-                Some([
-                    atom_old_to_new.get(left.index()).and_then(|x| *x)?,
-                    atom_old_to_new.get(right.index()).and_then(|x| *x)?,
-                ])
+            let mut remapped_bond = bond.clone();
+            let lost_stereo_bond = bond.stereo_atoms().is_some_and(|[left, right]| {
+                self.working
+                    .bonds
+                    .iter()
+                    .enumerate()
+                    .any(|(candidate_index, candidate)| {
+                        self.remove_bonds[candidate_index]
+                            && (((candidate.begin() == bond.begin() && candidate.end() == left)
+                                || (candidate.end() == bond.begin() && candidate.begin() == left))
+                                || ((candidate.begin() == bond.end() && candidate.end() == right)
+                                    || (candidate.end() == bond.end()
+                                        && candidate.begin() == right)))
+                    })
             });
+            let stereo_atoms = (!lost_stereo_bond)
+                .then(|| {
+                    remapped_bond.stereo_atoms().and_then(|[left, right]| {
+                        Some([
+                            all_atom_to_new.get(left.index()).and_then(|x| *x)?,
+                            all_atom_to_new.get(right.index()).and_then(|x| *x)?,
+                        ])
+                    })
+                })
+                .flatten();
+            if stereo_atoms.is_none()
+                && matches!(remapped_bond.stereo(), BondStereo::Cis | BondStereo::Trans)
+            {
+                // RDKit✔️✔️: if (obnd->getStereo() == Bond::BondStereo::STEREOCIS ||
+                // RDKit✔️✔️:     obnd->getStereo() == Bond::BondStereo::STEREOTRANS) {
+                // RDKit✔️✔️:   obnd->setStereo(Bond::BondStereo::STEREONONE);
+                // RDKit✔️✔️: }
+                remapped_bond
+                    .set_stereo(BondStereo::None)
+                    .map_err(TopologyEditError::InvalidBond)?;
+            }
             let new_id = BondId::new(bonds.len());
-            bond_old_to_new[bond.id().index()] = Some(new_id);
-            bond_new_to_old.push(Some(bond.id()));
-            bonds.push(bond.clone().remapped(new_id, begin, end, stereo_atoms));
+            if old_index < old_bond_count {
+                bond_old_to_new[old_index] = Some(new_id);
+                bond_new_to_old.push(Some(bond.id()));
+            } else {
+                bond_new_to_old.push(None);
+            }
+            bonds.push(remapped_bond.remapped(new_id, begin, end, stereo_atoms));
         }
         let mut survives: Vec<_> = self
+            .working
             .substance_groups
             .iter()
-            .map(|sg| sg.can_remap_without_parent(&atom_old_to_new, &bond_old_to_new))
+            .map(|sg| sg.can_remap_without_parent(&all_atom_to_new, &bond_old_to_new))
             .collect();
         loop {
             let mut changed = false;
-            for idx in 0..self.substance_groups.len() {
+            for idx in 0..self.working.substance_groups.len() {
                 if survives[idx]
-                    && self.substance_groups[idx]
+                    && self.working.substance_groups[idx]
                         .parent()
                         .is_some_and(|p| !survives.get(p.index()).copied().unwrap_or(false))
                 {
@@ -567,7 +670,7 @@ impl TopologyBlock {
                 break;
             }
         }
-        let mut sgroup_map = vec![None; self.substance_groups.len()];
+        let mut sgroup_map = vec![None; self.working.substance_groups.len()];
         let mut next_sgroup_index = 0usize;
         for (idx, keep) in survives.iter().copied().enumerate() {
             if keep {
@@ -575,24 +678,38 @@ impl TopologyBlock {
                 next_sgroup_index += 1;
             }
         }
-        self.substance_groups = self
+        let substance_groups = self
+            .working
             .substance_groups
             .iter()
             .enumerate()
             .filter_map(|(idx, sg)| {
                 sgroup_map[idx]
-                    .and_then(|id| sg.remapped(id, &atom_old_to_new, &bond_old_to_new, &sgroup_map))
+                    .and_then(|id| sg.remapped(id, &all_atom_to_new, &bond_old_to_new, &sgroup_map))
             })
             .collect();
-        self.stereo_groups = self
+        let stereo_groups = self
+            .working
             .stereo_groups
             .iter()
-            .filter_map(|g| g.remapped(&atom_old_to_new, &bond_old_to_new))
+            .filter_map(|group| {
+                let mut group = group.clone();
+                for (index, removed) in self.remove_atoms.iter().copied().enumerate() {
+                    while removed && group.atoms().contains(&AtomId::new(index)) {
+                        group.remove_atom(AtomId::new(index));
+                    }
+                }
+                for (index, removed) in self.remove_bonds.iter().copied().enumerate() {
+                    while removed && group.bonds().contains(&BondId::new(index)) {
+                        group.remove_bond(BondId::new(index));
+                    }
+                }
+                (!group.is_empty())
+                    .then(|| group.remapped(&all_atom_to_new, &bond_old_to_new))
+                    .flatten()
+            })
             .collect();
-        self.atoms = atoms;
-        self.bonds = bonds;
-        self.adjacency = AdjacencyList::from_topology(self.atoms.len(), &self.bonds);
-        TopologyMapping {
+        let mapping = TopologyMapping {
             atoms: AtomMapping {
                 old_to_new: atom_old_to_new,
                 new_to_old: atom_new_to_old,
@@ -601,7 +718,13 @@ impl TopologyBlock {
                 old_to_new: bond_old_to_new,
                 new_to_old: bond_new_to_old,
             },
-        }
+        };
+        mapping
+            .validate_for_counts(old_atom_count, atoms.len(), old_bond_count, bonds.len())
+            .map_err(TopologyEditError::InvalidMapping)?;
+        let topology = TopologyBlock::try_from_parts(atoms, bonds, substance_groups, stereo_groups)
+            .map_err(TopologyEditError::InvalidResult)?;
+        Ok((topology, mapping))
     }
 }
 

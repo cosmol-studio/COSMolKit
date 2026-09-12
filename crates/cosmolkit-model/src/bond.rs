@@ -1,10 +1,68 @@
 // RDKit marker convention defined in dev/source_reproduction_protocol.md.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    fmt,
+};
 
-use crate::{AtomId, BondId};
+use crate::AtomId;
 
 pub use cosmolkit_types::{BondDirection, BondOrder, BondStereo};
+
+/// Stable bond-table index.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct BondId(usize);
+
+impl BondId {
+    #[must_use]
+    pub const fn new(index: usize) -> Self {
+        Self(index)
+    }
+
+    #[must_use]
+    pub const fn index(self) -> usize {
+        self.0
+    }
+}
+
+impl fmt::Display for BondId {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "{}", self.0)
+    }
+}
+
+/// A detached bond value violates a bond-local source constraint.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum BondValueError {
+    #[error("CIS/TRANS bond stereo requires two reference atoms")]
+    StereoAtomsRequired,
+    #[error("bond property key cannot be empty")]
+    EmptyPropertyKey,
+}
+
+fn validate_property_key(key: &str) -> Result<(), BondValueError> {
+    // BEGIN RDKIT CPP FUNCTION RDProps::setProp empty-key precondition
+    // RDKit✔️✔️: if(key.empty()) {
+    // RDKit✔️✔️:   throw ValueErrorException("Cannot set property with empty key");
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION RDProps::setProp empty-key precondition
+    if key.is_empty() {
+        Err(BondValueError::EmptyPropertyKey)
+    } else {
+        Ok(())
+    }
+}
+
+fn validate_stereo_references(
+    stereo: BondStereo,
+    stereo_atoms: Option<[AtomId; 2]>,
+) -> Result<(), BondValueError> {
+    if matches!(stereo, BondStereo::Cis | BondStereo::Trans) && stereo_atoms.is_none() {
+        Err(BondValueError::StereoAtomsRequired)
+    } else {
+        Ok(())
+    }
+}
 
 /// Bond construction payload. Builders assign `BondId`.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -134,17 +192,29 @@ impl BondSpec {
     }
 
     #[must_use]
-    pub fn with_prop(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
-        self.props.insert(key.into(), value.into());
-        self
+    pub fn with_prop(
+        mut self,
+        key: impl Into<String>,
+        value: impl Into<String>,
+    ) -> Result<Self, BondValueError> {
+        let key = key.into();
+        validate_property_key(&key)?;
+        // RDKit✔️✔️: d_props.setVal(key, val);
+        self.props.insert(key, value.into());
+        Ok(self)
     }
 
     #[must_use]
-    pub fn with_computed_prop(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
+    pub fn with_computed_prop(
+        mut self,
+        key: impl Into<String>,
+        value: impl Into<String>,
+    ) -> Result<Self, BondValueError> {
         let key = key.into();
+        validate_property_key(&key)?;
         self.props.insert(key.clone(), value.into());
         self.computed_props.insert(key);
-        self
+        Ok(self)
     }
 
     #[must_use]
@@ -160,6 +230,15 @@ impl BondSpec {
     #[must_use]
     pub fn is_prop_computed(&self, key: &str) -> bool {
         self.computed_props.contains(key)
+    }
+
+    #[must_use]
+    pub fn computed_prop_names(&self) -> &BTreeSet<String> {
+        &self.computed_props
+    }
+
+    pub fn validate(&self) -> Result<(), BondValueError> {
+        validate_stereo_references(self.stereo, self.stereo_atoms)
     }
 
     pub fn remapped_endpoints(
@@ -211,7 +290,11 @@ impl Bond {
         }
     }
 
-    #[allow(dead_code)]
+    pub fn validate(&self) -> Result<(), BondValueError> {
+        validate_stereo_references(self.stereo, self.stereo_atoms)
+    }
+
+    #[doc(hidden)]
     pub fn remapped(
         mut self,
         id: BondId,
@@ -228,50 +311,67 @@ impl Bond {
 
     #[must_use]
     pub const fn id(&self) -> BondId {
+        // RDKit✔️✔️: unsigned int getIdx() const { return d_index; }
         self.id
     }
 
+    #[doc(hidden)]
     pub fn set_id_for_construction(&mut self, id: BondId) {
+        // RDKit✔️✔️: void setIdx(unsigned int index) { d_index = index; }
         self.id = id;
     }
 
     #[must_use]
     pub const fn begin(&self) -> AtomId {
+        // RDKit✔️✔️: unsigned int getBeginAtomIdx() const { return d_beginAtomIdx; }
         self.begin
     }
 
     #[must_use]
     pub const fn end(&self) -> AtomId {
+        // RDKit✔️✔️: unsigned int getEndAtomIdx() const { return d_endAtomIdx; }
         self.end
     }
 
     #[must_use]
     pub const fn order(&self) -> BondOrder {
+        // RDKit✔️✔️: BondType getBondType() const { return static_cast<BondType>(d_bondType); }
         self.order
     }
 
     #[must_use]
     pub const fn is_aromatic(&self) -> bool {
+        // RDKit✔️✔️: bool getIsAromatic() const { return df_isAromatic; }
         self.is_aromatic
     }
 
     #[must_use]
     pub const fn is_conjugated(&self) -> bool {
+        // RDKit✔️✔️: bool getIsConjugated() const { return df_isConjugated; }
         self.is_conjugated
     }
 
     #[must_use]
     pub const fn direction(&self) -> BondDirection {
+        // RDKit✔️✔️: BondDir getBondDir() const { return static_cast<BondDir>(d_dirTag); }
         self.direction
     }
 
     #[must_use]
     pub const fn stereo(&self) -> BondStereo {
+        // RDKit✔️✔️: BondStereo getStereo() const { return static_cast<BondStereo>(d_stereo); }
         self.stereo
     }
 
     #[must_use]
     pub const fn stereo_atoms(&self) -> Option<[AtomId; 2]> {
+        // RDKit✔️✔️: const INT_VECT &getStereoAtoms() const {
+        // RDKit✔️✔️:   if (!dp_stereoAtoms) {
+        // RDKit✔️✔️:     const_cast<Bond *>(this)->dp_stereoAtoms = new INT_VECT();
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️:   return *dp_stereoAtoms;
+        // RDKit✔️✔️: }
+        // The empty source vector is projected as `None`.
         self.stereo_atoms
     }
 
@@ -308,34 +408,38 @@ impl Bond {
         crate::cip::descriptor_from_property(self.prop("_CIPCode"))
     }
 
-    #[allow(dead_code)]
+    #[doc(hidden)]
     pub fn set_order(&mut self, order: BondOrder) {
+        // RDKit✔️✔️: void setBondType(BondType bT) { d_bondType = bT; }
         self.order = order;
     }
 
-    #[allow(dead_code)]
+    #[doc(hidden)]
     pub fn set_endpoints(&mut self, begin: AtomId, end: AtomId) {
         self.begin = begin;
         self.end = end;
     }
 
-    #[allow(dead_code)]
+    #[doc(hidden)]
     pub fn set_aromatic(&mut self, is_aromatic: bool) {
+        // RDKit✔️✔️: void setIsAromatic(bool what) { df_isAromatic = what; }
         self.is_aromatic = is_aromatic;
     }
 
-    #[allow(dead_code)]
+    #[doc(hidden)]
     pub fn set_conjugated(&mut self, is_conjugated: bool) {
+        // RDKit✔️✔️: void setIsConjugated(bool what) { df_isConjugated = what; }
         self.is_conjugated = is_conjugated;
     }
 
-    #[allow(dead_code)]
+    #[doc(hidden)]
     pub fn set_direction(&mut self, direction: BondDirection) {
+        // RDKit✔️✔️: void setBondDir(BondDir what) { d_dirTag = what; }
         self.direction = direction;
     }
 
-    #[allow(dead_code)]
-    pub fn set_stereo(&mut self, stereo: BondStereo) {
+    #[doc(hidden)]
+    pub fn set_stereo(&mut self, stereo: BondStereo) -> Result<(), BondValueError> {
         // BEGIN RDKIT CPP FUNCTION Bond::setStereo
         // RDKit✔️✔️: void setStereo(BondStereo what) {
         // RDKit✔️✔️:   PRECONDITION(((what != STEREOCIS && what != STEREOTRANS) ||
@@ -345,32 +449,41 @@ impl Bond {
         // RDKit✔️✔️:   d_stereo = what;
         // RDKit✔️✔️: }
         // END RDKIT CPP FUNCTION Bond::setStereo
-        debug_assert!(
-            !matches!(stereo, BondStereo::Cis | BondStereo::Trans) || self.stereo_atoms.is_some(),
-            "stereo atoms should be specified before CIS/TRANS bond stereochemistry"
-        );
+        validate_stereo_references(stereo, self.stereo_atoms)?;
         self.stereo = stereo;
+        Ok(())
     }
 
-    #[allow(dead_code)]
+    #[doc(hidden)]
     pub fn set_stereo_atoms(&mut self, stereo_atoms: Option<[AtomId; 2]>) {
         self.stereo_atoms = stereo_atoms;
     }
 
-    #[allow(dead_code)]
+    #[doc(hidden)]
     pub fn set_unknown_stereo(&mut self, unknown_stereo: bool) {
         self.unknown_stereo = unknown_stereo;
     }
 
-    #[allow(dead_code)]
-    pub fn set_prop(&mut self, key: impl Into<String>, value: impl Into<String>) {
+    #[doc(hidden)]
+    pub fn set_prop(
+        &mut self,
+        key: impl Into<String>,
+        value: impl Into<String>,
+    ) -> Result<(), BondValueError> {
+        let key = key.into();
+        validate_property_key(&key)?;
         // RDKit✔️✔️: d_props.setVal(key, val);
         // A non-computed write does not remove an existing computed marker.
-        self.props.insert(key.into(), value.into());
+        self.props.insert(key, value.into());
+        Ok(())
     }
 
-    #[allow(dead_code)]
-    pub fn set_computed_prop(&mut self, key: impl Into<String>, value: impl Into<String>) {
+    #[doc(hidden)]
+    pub fn set_computed_prop(
+        &mut self,
+        key: impl Into<String>,
+        value: impl Into<String>,
+    ) -> Result<(), BondValueError> {
         // RDKit✔️🔝: if (computed) {
         // RDKit✔️🔝:   STR_VECT compLst;
         // RDKit✔️🔝:   getPropIfPresent(RDKit::detail::computedPropName, compLst);
@@ -383,11 +496,13 @@ impl Bond {
         // The ordered set preserves membership semantics while replacing the
         // source vector's linear duplicate scan with logarithmic insertion.
         let key = key.into();
+        validate_property_key(&key)?;
         self.props.insert(key.clone(), value.into());
         self.computed_props.insert(key);
+        Ok(())
     }
 
-    #[allow(dead_code)]
+    #[doc(hidden)]
     pub fn clear_prop(&mut self, key: &str) {
         // RDKit✔️🔝: auto svi = std::find(compLst.begin(), compLst.end(), key);
         // RDKit✔️🔝: if (svi != compLst.end()) {
@@ -401,6 +516,7 @@ impl Bond {
         self.computed_props.remove(key);
     }
 
+    #[doc(hidden)]
     pub fn clear_computed_props(&mut self) {
         // RDKit✔️🔝: for (const auto &key : compLst) {
         // RDKit✔️🔝:   d_props.clearVal(key);

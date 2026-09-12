@@ -12,10 +12,10 @@ pub enum RingDecomposerError {
     EmptyGraph,
     #[error("edge not found between node {from} and node {to}")]
     EdgeNotFound { from: usize, to: usize },
-    #[error("unsupported RingDecomposerLib branch: {reason}")]
-    UnsupportedBranch { reason: &'static str },
-    #[error("internal invariant violation: {message}")]
-    InvariantViolation { message: &'static str },
+    #[error("relevant-cycle count exceeds the finite RDL counting range")]
+    RelevantCycleCountOverflow,
+    #[error("invalid shortest-path DAG while counting paths from {root} to {target}")]
+    InvalidShortestPathDag { root: usize, target: usize },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -298,14 +298,14 @@ impl Graph {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DirectedPathGraph {
+struct DirectedPathGraph {
     node_count: usize,
     adjacency: Vec<Vec<usize>>,
 }
 
 impl DirectedPathGraph {
     #[must_use]
-    pub fn new(node_count: usize) -> Self {
+    fn new(node_count: usize) -> Self {
         Self {
             node_count,
             adjacency: vec![Vec::new(); node_count],
@@ -345,18 +345,18 @@ impl DirectedPathGraph {
     }
 
     #[must_use]
-    pub const fn node_count(&self) -> usize {
+    const fn node_count(&self) -> usize {
         self.node_count
     }
 
     #[must_use]
-    pub fn neighbors(&self, node: usize) -> Option<&[usize]> {
+    fn neighbors(&self, node: usize) -> Option<&[usize]> {
         self.adjacency.get(node).map(Vec::as_slice)
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct BiconnectedComponents {
+struct BiconnectedComponents {
     components: Vec<BiconnectedComponent>,
     edge_to_component: Vec<Option<(usize, usize)>>,
     node_to_components: Vec<Vec<(usize, usize)>>,
@@ -364,33 +364,33 @@ pub struct BiconnectedComponents {
 
 impl BiconnectedComponents {
     #[must_use]
-    pub fn calculate(graph: &Graph) -> Self {
+    fn calculate(graph: &Graph) -> Self {
         tarjan_biconnected_components(graph)
     }
 
     #[must_use]
-    pub fn components(&self) -> &[BiconnectedComponent] {
+    fn components(&self) -> &[BiconnectedComponent] {
         &self.components
     }
 
     #[must_use]
-    pub fn component_count(&self) -> usize {
+    fn component_count(&self) -> usize {
         self.components.len()
     }
 
     #[must_use]
-    pub fn edge_component(&self, edge: EdgeId) -> Option<(usize, usize)> {
+    fn edge_component(&self, edge: EdgeId) -> Option<(usize, usize)> {
         self.edge_to_component.get(edge.index()).copied().flatten()
     }
 
     #[must_use]
-    pub fn node_components(&self, node: usize) -> Option<&[(usize, usize)]> {
+    fn node_components(&self, node: usize) -> Option<&[(usize, usize)]> {
         self.node_to_components.get(node).map(Vec::as_slice)
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct BiconnectedComponent {
+struct BiconnectedComponent {
     graph: Graph,
     original_nodes: Vec<usize>,
     original_edges: Vec<EdgeId>,
@@ -398,23 +398,23 @@ pub struct BiconnectedComponent {
 
 impl BiconnectedComponent {
     #[must_use]
-    pub const fn graph(&self) -> &Graph {
+    const fn graph(&self) -> &Graph {
         &self.graph
     }
 
     #[must_use]
-    pub fn original_nodes(&self) -> &[usize] {
+    fn original_nodes(&self) -> &[usize] {
         &self.original_nodes
     }
 
     #[must_use]
-    pub fn original_edges(&self) -> &[EdgeId] {
+    fn original_edges(&self) -> &[EdgeId] {
         &self.original_edges
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ShortestPathInfo {
+struct ShortestPathInfo {
     predecessor: Vec<Vec<Option<usize>>>,
     distance: Vec<Vec<Option<usize>>>,
     reachable: Vec<Vec<bool>>,
@@ -423,7 +423,7 @@ pub struct ShortestPathInfo {
 
 impl ShortestPathInfo {
     #[must_use]
-    pub fn calculate(graph: &Graph) -> Self {
+    fn calculate(graph: &Graph) -> Self {
         // BEGIN RDL C FUNCTION RDL_AllPairsShortestPaths
         // RDL✔️✔️: RDL_sPathInfo *RDL_AllPairsShortestPaths(RDL_graph *gra)
         // RDL✔️✔️: {
@@ -603,7 +603,7 @@ impl ShortestPathInfo {
     }
 
     #[must_use]
-    pub fn predecessor(&self, from: usize, to: usize) -> Option<usize> {
+    fn predecessor(&self, from: usize, to: usize) -> Option<usize> {
         self.predecessor
             .get(from)
             .and_then(|row| row.get(to))
@@ -612,7 +612,7 @@ impl ShortestPathInfo {
     }
 
     #[must_use]
-    pub fn distance(&self, from: usize, to: usize) -> Option<usize> {
+    fn distance(&self, from: usize, to: usize) -> Option<usize> {
         self.distance
             .get(from)
             .and_then(|row| row.get(to))
@@ -621,7 +621,7 @@ impl ShortestPathInfo {
     }
 
     #[must_use]
-    pub fn reachable_preceding(&self, from: usize, to: usize) -> bool {
+    fn reachable_preceding(&self, from: usize, to: usize) -> bool {
         self.reachable
             .get(from)
             .and_then(|row| row.get(to))
@@ -630,13 +630,13 @@ impl ShortestPathInfo {
     }
 
     #[must_use]
-    pub fn directed_path_graphs(&self) -> &[DirectedPathGraph] {
+    fn directed_path_graphs(&self) -> &[DirectedPathGraph] {
         &self.directed_paths
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CycleFamily {
+struct CycleFamily {
     weight: usize,
     r: usize,
     p: usize,
@@ -648,64 +648,64 @@ pub struct CycleFamily {
 
 impl CycleFamily {
     #[must_use]
-    pub const fn weight(&self) -> usize {
+    const fn weight(&self) -> usize {
         self.weight
     }
 
     #[must_use]
-    pub const fn root(&self) -> usize {
+    const fn root(&self) -> usize {
         self.r
     }
 
     #[must_use]
-    pub const fn p(&self) -> usize {
+    const fn p(&self) -> usize {
         self.p
     }
 
     #[must_use]
-    pub const fn q(&self) -> usize {
+    const fn q(&self) -> usize {
         self.q
     }
 
     #[must_use]
-    pub const fn x(&self) -> Option<usize> {
+    const fn x(&self) -> Option<usize> {
         self.x
     }
 
     #[must_use]
-    pub fn prototype(&self) -> &[bool] {
+    fn prototype(&self) -> &[bool] {
         &self.prototype
     }
 
     #[must_use]
-    pub const fn is_relevant(&self) -> bool {
+    const fn is_relevant(&self) -> bool {
         self.relevant
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CycleFamilies {
+struct CycleFamilies {
     families: Vec<CycleFamily>,
 }
 
 impl CycleFamilies {
     #[must_use]
-    pub fn calculate(graph: &mut Graph, shortest_paths: &mut ShortestPathInfo) -> Self {
+    fn calculate(graph: &mut Graph, shortest_paths: &mut ShortestPathInfo) -> Self {
         find_cycle_families(graph, shortest_paths)
     }
 
     #[must_use]
-    pub fn families(&self) -> &[CycleFamily] {
+    fn families(&self) -> &[CycleFamily] {
         &self.families
     }
 
     #[must_use]
-    pub fn len(&self) -> usize {
+    fn len(&self) -> usize {
         self.families.len()
     }
 
     #[must_use]
-    pub fn is_empty(&self) -> bool {
+    fn is_empty(&self) -> bool {
         self.families.is_empty()
     }
 }
@@ -1099,6 +1099,109 @@ impl RingDecomposition {
         // RDL❗✔️:     RDL_outputFunc(RDL_ERROR, "The graph has no nodes.\n");
         // RDL❗✔️:     return NULL;
         // RDL❗✔️:   }
+        // RDL❗✔️:   data = malloc(sizeof(*data));
+        // RDL❗✔️:
+        // RDL❗✔️:   /* FIRST STEP: TARJAN */
+        // RDL❗✔️:   data->bccGraphs = RDL_tarjanBCC(gra);
+        // RDL❗✔️:   data->nofURFs = 0;
+        // RDL❗✔️:   data->nofRCFs = 0;
+        // RDL❗✔️:
+        // RDL❗✔️:   /* allocate result structures */
+        // RDL❗✔️:   data->spiPerBCC = malloc(data->bccGraphs->nof_bcc * sizeof(*data->spiPerBCC));
+        // RDL❗✔️:   data->CFsPerBCC = malloc(data->bccGraphs->nof_bcc * sizeof(*data->CFsPerBCC));
+        // RDL❗✔️:   data->urfInfoPerBCC = malloc(data->bccGraphs->nof_bcc * sizeof(*data->urfInfoPerBCC));
+        // RDL❗✔️:   data->nofURFsPerBCC = malloc(data->bccGraphs->nof_bcc * sizeof(*data->nofURFsPerBCC));
+        // RDL❗✔️:   data->nofRCFsPerBCC = malloc(data->bccGraphs->nof_bcc * sizeof(*data->nofRCFsPerBCC));
+        // RDL❗✔️:
+        // RDL❗✔️:   /* the followeing steps are performed for each BCC */
+        // RDL❗✔️:   for (i = 0; i < data->bccGraphs->nof_bcc; ++i) {
+        // RDL❗✔️:     /* solve APSP problem */
+        // RDL❗✔️:     data->spiPerBCC[i] = RDL_AllPairsShortestPaths(data->bccGraphs->bcc_graphs[i]);
+        // RDL❗✔️:     /* calculate RCFs with Vismara's algortihm */
+        // RDL❗✔️:     data->CFsPerBCC[i] = RDL_findCycleFams(data->bccGraphs->bcc_graphs[i], data->spiPerBCC[i]);
+        // RDL❗✔️:     /* this can fail if the BCC is to large */
+        // RDL❗✔️:     if (!data->CFsPerBCC[i]) {
+        // RDL❗✔️:       /* delete families and APSP information UPTO current index */
+        // RDL❗✔️:       for (j = 0; j < i; ++j) {
+        // RDL❗✔️:         RDL_deleteAPSP(data->spiPerBCC[j], data->bccGraphs->bcc_graphs[j]->V);
+        // RDL❗✔️:         RDL_deleteCycleFams(data->CFsPerBCC[j]);
+        // RDL❗✔️:         if (data->nofURFsPerBCC[j] > 0) {
+        // RDL❗✔️:           RDL_deleteURFInfo(data->urfInfoPerBCC[j]);
+        // RDL❗✔️:         }
+        // RDL❗✔️:       }
+        // RDL❗✔️:       /* delete APSP for current index (there is no RCF info) */
+        // RDL❗✔️:       RDL_deleteAPSP(data->spiPerBCC[i], data->bccGraphs->bcc_graphs[i]->V);
+        // RDL❗✔️:
+        // RDL❗✔️:       /* free alloced per BCC structures */
+        // RDL❗✔️:       free(data->spiPerBCC);
+        // RDL❗✔️:       free(data->CFsPerBCC);
+        // RDL❗✔️:       free(data->nofURFsPerBCC);
+        // RDL❗✔️:       free(data->nofRCFsPerBCC);
+        // RDL❗✔️:       free(data->urfInfoPerBCC);
+        // RDL❗✔️:       /* and of course the BCC graph */
+        // RDL❗✔️:       RDL_deleteBCCGraph(data->bccGraphs);
+        // RDL❗✔️:       /* free resulting struct */
+        // RDL❗✔️:       free(data);
+        // RDL❗✔️:
+        // RDL❗✔️:       return NULL;
+        // RDL❗✔️:     }
+        // RDL❗✔️:     if(data->CFsPerBCC[i]->nofFams > 0) {
+        // RDL❗✔️:       /* if there is at least one RCF, check URF relation */
+        // RDL❗✔️:       data->urfInfoPerBCC[i] = RDL_checkURFRelation(data->CFsPerBCC[i],
+        // RDL❗✔️:           data->bccGraphs->bcc_graphs[i], data->spiPerBCC[i]);
+        // RDL❗✔️:       data->nofURFsPerBCC[i] = data->urfInfoPerBCC[i]->nofURFs;
+        // RDL❗✔️:
+        // RDL❗✔️:       nof_relevant_fams = 0;
+        // RDL❗✔️:       /* count RCFs */
+        // RDL❗✔️:       for (j = 0; j < data->CFsPerBCC[i]->nofFams; ++j) {
+        // RDL❗✔️:         if (data->CFsPerBCC[i]->fams[j]->mark) {
+        // RDL❗✔️:           ++nof_relevant_fams;
+        // RDL❗✔️:         }
+        // RDL❗✔️:       }
+        // RDL❗✔️:
+        // RDL❗✔️:       nof_relevant_fams_sum = 0;
+        // RDL❗✔️:       for (j = 0; j < data->nofURFsPerBCC[i]; ++j) {
+        // RDL❗✔️:         nof_relevant_fams_sum += data->urfInfoPerBCC[i]->nofCFsPerURF[j];
+        // RDL❗✔️:       }
+        // RDL❗✔️:
+        // RDL❗✔️:       if (nof_relevant_fams != nof_relevant_fams_sum) {
+        // RDL❗✔️:         RDL_outputFunc(RDL_ERROR, "different number of relevant families!\n");
+        // RDL❗✔️:         /* internal check, should never happen */
+        // RDL❗✔️:         assert(0);
+        // RDL❗✔️:       }
+        // RDL❗✔️:       data->nofRCFsPerBCC[i] = nof_relevant_fams;
+        // RDL❗✔️:     }
+        // RDL❗✔️:     else {
+        // RDL❗✔️:       data->nofURFsPerBCC[i] = 0;
+        // RDL❗✔️:       data->nofRCFsPerBCC[i] = 0;
+        // RDL❗✔️:     }
+        // RDL❗✔️:     data->nofURFs += data->nofURFsPerBCC[i];
+        // RDL❗✔️:     data->nofRCFs += data->nofRCFsPerBCC[i];
+        // RDL❗✔️:   }
+        // RDL❗✔️:
+        // RDL❗✔️:   /* create a mapping from URFs to BCCs */
+        // RDL❗✔️:   data->urf_to_bcc = malloc(data->nofURFs * sizeof(*data->urf_to_bcc));
+        // RDL❗✔️:   /* create a mapping from RCFs to URFs */
+        // RDL❗✔️:   data->rcf_to_urf = malloc(data->nofRCFs * sizeof(*data->rcf_to_urf));
+        // RDL❗✔️:   urf_index = 0;
+        // RDL❗✔️:   rcf_index = 0;
+        // RDL❗✔️:   for (i = 0; i < data->bccGraphs->nof_bcc; ++i) {
+        // RDL❗✔️:     for (j = 0; j < data->nofURFsPerBCC[i]; ++j, ++urf_index) {
+        // RDL❗✔️:       data->urf_to_bcc[urf_index][0] = i;
+        // RDL❗✔️:       data->urf_to_bcc[urf_index][1] = j;
+        // RDL❗✔️:       for (k = 0; k < data->urfInfoPerBCC[i]->nofCFsPerURF[j]; ++k, ++rcf_index) {
+        // RDL❗✔️:         data->rcf_to_urf[rcf_index][0] = urf_index;
+        // RDL❗✔️:         data->rcf_to_urf[rcf_index][1] = k;
+        // RDL❗✔️:       }
+        // RDL❗✔️:     }
+        // RDL❗✔️:   }
+        // RDL❗✔️:
+        // RDL❗✔️:   data->graph = gra;
+        // RDL❗✔️:
+        // RDL❗✔️:   return data;
+        // RDL❗✔️: }
+        // END RDL C FUNCTION RDL_calculate
+
         if graph.node_count == 0 {
             return Err(RingDecomposerError::EmptyGraph);
         }
@@ -1111,10 +1214,7 @@ impl RingDecomposition {
                 relevant_cycle_count: 0.0,
             });
         }
-        // RDL❗✔️:   data = malloc(sizeof(*data));
-        // RDL❗✔️:
-        // RDL❗✔️:   /* FIRST STEP: TARJAN */
-        // RDL❗✔️:   data->bccGraphs = RDL_tarjanBCC(gra);
+
         let bcc = BiconnectedComponents::calculate(&graph);
         if bcc.component_count() == 0 {
             return Ok(Self {
@@ -1123,54 +1223,50 @@ impl RingDecomposition {
                 relevant_cycle_count: 0.0,
             });
         }
-        // RDL❗✔️:   data->nofURFs = 0;
-        // RDL❗✔️:   data->nofRCFs = 0;
-        // RDL❗✔️:
-        // RDL❗✔️:   /* allocate result structures */
-        // RDL❗✔️:   data->spiPerBCC = malloc(data->bccGraphs->nof_bcc * sizeof(*data->spiPerBCC));
-        // RDL❗✔️:   data->CFsPerBCC = malloc(data->bccGraphs->nof_bcc * sizeof(*data->CFsPerBCC));
-        // RDL❗✔️:   data->urfInfoPerBCC = malloc(data->bccGraphs->nof_bcc * sizeof(*data->urfInfoPerBCC));
-        // RDL❗✔️:   data->nofURFsPerBCC = malloc(data->bccGraphs->nof_bcc * sizeof(*data->nofURFsPerBCC));
-        // RDL❗✔️:   data->nofRCFsPerBCC = malloc(data->bccGraphs->nof_bcc * sizeof(*data->nofRCFsPerBCC));
+
         let mut urfs = Vec::new();
-        let mut relevant_cycle_count = 0usize;
+        let mut relevant_cycle_count = 0.0;
         for component in bcc.components() {
-            // RDL❗✔️:     /* solve APSP problem */
-            // RDL❗✔️:     data->spiPerBCC[i] = RDL_AllPairsShortestPaths(data->bccGraphs->bcc_graphs[i]);
             let mut component_graph = component.graph().clone();
             let mut shortest_paths = ShortestPathInfo::calculate(&component_graph);
-            // RDL❗✔️:     /* calculate RCFs with Vismara's algortihm */
-            // RDL❗✔️:     data->CFsPerBCC[i] = RDL_findCycleFams(data->bccGraphs->bcc_graphs[i], data->spiPerBCC[i]);
             let mut cycle_families =
                 CycleFamilies::calculate(&mut component_graph, &mut shortest_paths);
             if cycle_families.is_empty() {
                 continue;
             }
-            // RDL❗✔️:       data->urfInfoPerBCC[i] = RDL_checkURFRelation(data->CFsPerBCC[i],
-            // RDL❗✔️:           data->bccGraphs->bcc_graphs[i], data->spiPerBCC[i]);
             let urf_info =
                 UrfInfo::check_urf_relation(&mut cycle_families, &component_graph, &shortest_paths);
-            relevant_cycle_count += cycle_families
+            let marked_family_count = cycle_families
                 .families()
                 .iter()
                 .filter(|family| family.is_relevant())
                 .count();
+            let grouped_family_count = urf_info.urfs.iter().map(Vec::len).sum::<usize>();
+            debug_assert_eq!(marked_family_count, grouped_family_count);
+
+            let component_relevant_cycle_count = count_relevant_cycles(
+                &urf_info,
+                &cycle_families,
+                &component_graph,
+                &shortest_paths,
+            )?;
+            relevant_cycle_count += component_relevant_cycle_count;
+            if !relevant_cycle_count.is_finite() {
+                return Err(RingDecomposerError::RelevantCycleCountOverflow);
+            }
             for urf in &urf_info.urfs {
                 urfs.push(unique_ring_family_from_component_urf(
                     urf,
                     &cycle_families,
                     component,
+                    &shortest_paths,
                 ));
             }
         }
-        // RDL❗✔️:   ...
-        // RDL❗✔️:   return data;
-        // RDL❗✔️: }
-        // END RDL C FUNCTION RDL_calculate
         Ok(Self {
             graph,
             urfs,
-            relevant_cycle_count: relevant_cycle_count as f64,
+            relevant_cycle_count,
         })
     }
 
@@ -1186,6 +1282,16 @@ impl RingDecomposition {
 
     #[must_use]
     pub fn urf_count(&self) -> usize {
+        // BEGIN RDL C FUNCTION RDL_getNofURF
+        // RDL❗✔️: unsigned RDL_getNofURF(const RDL_data *data)
+        // RDL❗✔️: {
+        // RDL❗✔️:   if (!data) {
+        // RDL❗✔️:     RDL_outputFunc(RDL_ERROR, "RDL_data is NULL!\n");
+        // RDL❗✔️:     return RDL_INVALID_RESULT;
+        // RDL❗✔️:   }
+        // RDL❗✔️:   return data->nofURFs;
+        // RDL❗✔️: }
+        // END RDL C FUNCTION RDL_getNofURF
         self.urfs.len()
     }
 
@@ -1538,7 +1644,13 @@ fn add_odd_cycle_family(
     // RDL✔️✔️:     RDL_graph *gra, RDL_sPathInfo *spi, RDL_cfURF *rc)
     // RDL✔️✔️: {
     // RDL✔️✔️:   RDL_cfam *new;
-    // RDL✔️✔️:   ...
+    // RDL✔️✔️:   if (rc->alloced == rc->nofFams) {
+    // RDL✔️✔️:     rc->alloced *= 2;
+    // RDL✔️✔️:     rc->fams = realloc(rc->fams, rc->alloced * sizeof(*rc->fams));
+    // RDL✔️✔️:   }
+    // RDL✔️✔️:   /* skip if we're out of memory... */
+    // RDL✔️✔️:   if (rc->fams) {
+    // RDL✔️✔️:     new = malloc(sizeof(*new));
     // RDL✔️✔️:     new->r = r;
     // RDL✔️✔️:     new->p = y;
     // RDL✔️✔️:     new->q = z;
@@ -1547,6 +1659,7 @@ fn add_odd_cycle_family(
     // RDL✔️✔️:     new->prototype = RDL_findPrototype(r, y, z, UINT_MAX, gra, spi);
     // RDL✔️✔️:     new->weight = spi->dist[r][y] + spi->dist[r][z] + 1;
     // RDL✔️✔️:     rc->fams[rc->nofFams++] = new;
+    // RDL✔️✔️:   }
     // RDL✔️✔️: }
     // END RDL C FUNCTION RDL_addOdd
     families.push(CycleFamily {
@@ -1576,7 +1689,13 @@ fn add_even_cycle_family(
     // RDL✔️✔️:     unsigned z, RDL_graph *gra, RDL_sPathInfo *spi, RDL_cfURF *rc)
     // RDL✔️✔️: {
     // RDL✔️✔️:   RDL_cfam *new;
-    // RDL✔️✔️:   ...
+    // RDL✔️✔️:   if (rc->alloced == rc->nofFams) {
+    // RDL✔️✔️:     rc->alloced *= 2;
+    // RDL✔️✔️:     rc->fams = realloc(rc->fams, rc->alloced * sizeof(*rc->fams));
+    // RDL✔️✔️:   }
+    // RDL✔️✔️:   /* skip if we're out of memory... */
+    // RDL✔️✔️:   if (rc->fams) {
+    // RDL✔️✔️:     new = malloc(sizeof(**rc->fams));
     // RDL✔️✔️:     new->r = r;
     // RDL✔️✔️:     new->p = y;
     // RDL✔️✔️:     new->q = z;
@@ -1585,6 +1704,7 @@ fn add_even_cycle_family(
     // RDL✔️✔️:     new->prototype = RDL_findPrototype(r, y, z, x, gra, spi);
     // RDL✔️✔️:     new->weight = spi->dist[r][y] + spi->dist[r][z] + 2;
     // RDL✔️✔️:     rc->fams[rc->nofFams++] = new;
+    // RDL✔️✔️:   }
     // RDL✔️✔️: }
     // END RDL C FUNCTION RDL_addEven
     families.push(CycleFamily {
@@ -1724,6 +1844,45 @@ fn find_family_edges(
     graph: &Graph,
     shortest_paths: &ShortestPathInfo,
 ) {
+    // BEGIN RDL C FUNCTION RDL_getEdges_internal
+    // RDL❗✔️: static void RDL_getEdges_internal(const RDL_data *data,
+    // RDL❗✔️:     unsigned bcc_index, unsigned urf_internal_index,
+    // RDL❗✔️:     unsigned rcf_internal_index, char* edges)
+    // RDL❗✔️: {
+    // RDL❗✔️:   const RDL_cfam **URF;
+    // RDL❗✔️:   char *visited;
+    // RDL❗✔️:   const RDL_graph* graph;
+    // RDL❗✔️:
+    // RDL❗✔️:   graph = data->bccGraphs->bcc_graphs[bcc_index];
+    // RDL❗✔️:
+    // RDL❗✔️:   URF = (const RDL_cfam **)data->urfInfoPerBCC[bcc_index]->URFs[urf_internal_index];
+    // RDL❗✔️:
+    // RDL❗✔️:   /* perform BFS on both paths and collect edges */
+    // RDL❗✔️:   visited = malloc(graph->V *  sizeof(*visited));
+    // RDL❗✔️:   memset(visited, 0, graph->V *  sizeof(*visited));
+    // RDL❗✔️:
+    // RDL❗✔️:   RDL_giveEdges(URF[rcf_internal_index]->r, URF[rcf_internal_index]->q,
+    // RDL❗✔️:       edges, graph, data->spiPerBCC[bcc_index], visited);
+    // RDL❗✔️:
+    // RDL❗✔️:   memset(visited, 0, graph->V *  sizeof(*visited));
+    // RDL❗✔️:   RDL_giveEdges(URF[rcf_internal_index]->r, URF[rcf_internal_index]->p,
+    // RDL❗✔️:       edges, graph, data->spiPerBCC[bcc_index], visited);
+    // RDL❗✔️:
+    // RDL❗✔️:   /*
+    // RDL❗✔️:    * in contrast to the nodes, we have to add additional edges, because we're
+    // RDL❗✔️:    * looking at cycles...
+    // RDL❗✔️:    */
+    // RDL❗✔️:   if(URF[rcf_internal_index]->x < UINT_MAX) /*even cycle*/ {
+    // RDL❗✔️:     edges[RDL_edgeId(graph,URF[rcf_internal_index]->q,URF[rcf_internal_index]->x)] = 1;
+    // RDL❗✔️:     edges[RDL_edgeId(graph,URF[rcf_internal_index]->p,URF[rcf_internal_index]->x)] = 1;
+    // RDL❗✔️:   }
+    // RDL❗✔️:   else /*odd cycle*/ {
+    // RDL❗✔️:     edges[RDL_edgeId(graph,URF[rcf_internal_index]->q,URF[rcf_internal_index]->p)] = 1;
+    // RDL❗✔️:   }
+    // RDL❗✔️:   free(visited);
+    // RDL❗✔️: }
+    // END RDL C FUNCTION RDL_getEdges_internal
+    //
     // BEGIN RDL C FUNCTION RDL_findEdges
     // RDL❗✔️: void RDL_findEdges(char *edges, RDL_cfam *RCF, RDL_graph *gra, RDL_sPathInfo *spi)
     // RDL❗✔️: {
@@ -1800,31 +1959,598 @@ fn sorted_edge_lists_share_edge(left: &[usize], right: &[usize]) -> bool {
     false
 }
 
+fn find_indegree(
+    root: usize,
+    target: usize,
+    indegree: &mut [Option<usize>],
+    shortest_paths: &ShortestPathInfo,
+) {
+    // BEGIN RDL C FUNCTION RDL_findIndegree
+    // RDL❗✔️: static void RDL_findIndegree(unsigned a, unsigned b,
+    // RDL❗✔️:     unsigned *indegree, const RDL_sPathInfo *spi)
+    // RDL❗✔️: {
+    // RDL❗✔️: /* similar to the function "List_Paths" from Vismara*/
+    // RDL❗✔️:   unsigned i, vertex;
+    // RDL❗✔️:
+    // RDL❗✔️:   indegree[b] = 0;
+    indegree[target] = Some(0);
+    // RDL❗✔️:
+    // RDL❗✔️:   if(a==b)
+    // RDL❗✔️:   {
+    // RDL❗✔️:     return;
+    // RDL❗✔️:   }
+    if root == target {
+        return;
+    }
+    // RDL❗✔️:   /*for each vertex adjacent to b in U_a*/
+    // RDL❗✔️:   for(i=0; i<spi->dPaths[a]->degree[b]; ++i)
+    // RDL❗✔️:   {
+    for &vertex in shortest_paths.directed_paths[root]
+        .neighbors(target)
+        .unwrap_or_default()
+    {
+        // RDL❗✔️:     vertex = spi->dPaths[a]->adjList[b][i][0];
+        // RDL❗✔️:     if (indegree[vertex] == UINT_MAX) {
+        // RDL❗✔️:       RDL_findIndegree(a, vertex, indegree, spi);
+        // RDL❗✔️:     }
+        if indegree[vertex].is_none() {
+            find_indegree(root, vertex, indegree, shortest_paths);
+        }
+        // RDL❗✔️:     indegree[vertex] += 1;
+        let degree = indegree[vertex].expect("recursive visit initializes indegree");
+        indegree[vertex] = Some(degree + 1);
+        // RDL❗✔️:   }
+    }
+    // RDL❗✔️: }
+    // END RDL C FUNCTION RDL_findIndegree
+}
+
+fn count_paths(
+    root: usize,
+    target: usize,
+    node_count: usize,
+    shortest_paths: &ShortestPathInfo,
+) -> Result<f64, RingDecomposerError> {
+    // BEGIN RDL C FUNCTION RDL_countPaths
+    // RDL❗✔️: double RDL_countPaths(unsigned a, unsigned b,
+    // RDL❗✔️:     unsigned V, const RDL_sPathInfo *spi)
+    // RDL❗✔️: {
+    // RDL❗✔️:   unsigned i, curr, vertex, empty_end=0;
+    // RDL❗✔️:   unsigned *indegree, *empty_set;
+    // RDL❗✔️:   double *nof_paths, result;
+    // RDL❗✔️:
+    // RDL❗✔️:   nof_paths = malloc(V * sizeof(*nof_paths));
+    // RDL❗✔️:   indegree = malloc(V * sizeof(*indegree));
+    // RDL❗✔️:   empty_set = malloc(V * sizeof(*empty_set));
+    // RDL❗✔️:   for (i = 0; i < V; ++i) {
+    // RDL❗✔️:     nof_paths[i] = 0.0;
+    // RDL❗✔️:     indegree[i] = UINT_MAX;
+    // RDL❗✔️:   }
+    let mut number_of_paths = vec![0.0; node_count];
+    let mut indegree = vec![None; node_count];
+    let mut empty_set = Vec::new();
+    // RDL❗✔️:
+    // RDL❗✔️:   RDL_findIndegree(a, b, indegree, spi);
+    find_indegree(root, target, &mut indegree, shortest_paths);
+    // RDL❗✔️:
+    // RDL❗✔️:   for (i = 0; i < V; ++i) {
+    // RDL❗✔️:     if (indegree[i] == 0) {
+    // RDL❗✔️:       empty_set[empty_end] = i;
+    // RDL❗✔️:       ++empty_end;
+    // RDL❗✔️:       nof_paths[i] = 1.0;
+    // RDL❗✔️:     }
+    // RDL❗✔️:   }
+    for (node, degree) in indegree.iter().enumerate() {
+        if *degree == Some(0) {
+            empty_set.push(node);
+            number_of_paths[node] = 1.0;
+        }
+    }
+    // RDL❗✔️:
+    // RDL❗✔️:   if (empty_end != 1 || empty_set[0] != b) {
+    // RDL❗✔️:     RDL_outputFunc(RDL_ERROR, "invalid topological sort!");
+    // RDL❗✔️:     /* should never happen */
+    // RDL❗✔️:     assert(0);
+    // RDL❗✔️:     free(nof_paths);
+    // RDL❗✔️:     free(indegree);
+    // RDL❗✔️:     free(empty_set);
+    // RDL❗✔️:     return DBL_MAX;
+    // RDL❗✔️:   }
+    if empty_set.len() != 1 || empty_set[0] != target {
+        return Err(RingDecomposerError::InvalidShortestPathDag { root, target });
+    }
+    // RDL❗✔️:
+    // RDL❗✔️:   /* look at the nodes in an topological sort */
+    // RDL❗✔️:   while (empty_end) {
+    while let Some(current) = empty_set.pop() {
+        // RDL❗✔️:     curr = empty_set[empty_end-1];
+        // RDL❗✔️:     --empty_end;
+        // RDL❗✔️:     for(i=0; i<spi->dPaths[a]->degree[curr]; ++i) {
+        for &vertex in shortest_paths.directed_paths[root]
+            .neighbors(current)
+            .unwrap_or_default()
+        {
+            // RDL❗✔️:       vertex = spi->dPaths[a]->adjList[curr][i][0];
+            // RDL❗✔️:       --indegree[vertex];
+            let degree = indegree[vertex]
+                .ok_or(RingDecomposerError::InvalidShortestPathDag { root, target })?;
+            let next_degree = degree
+                .checked_sub(1)
+                .ok_or(RingDecomposerError::InvalidShortestPathDag { root, target })?;
+            indegree[vertex] = Some(next_degree);
+            // RDL❗✔️:       nof_paths[vertex] += nof_paths[curr];
+            number_of_paths[vertex] += number_of_paths[current];
+            // RDL❗✔️:       if (!indegree[vertex]) {
+            // RDL❗✔️:         empty_set[empty_end] = vertex;
+            // RDL❗✔️:         ++empty_end;
+            // RDL❗✔️:       }
+            if next_degree == 0 {
+                empty_set.push(vertex);
+            }
+            // RDL❗✔️:     }
+        }
+        // RDL❗✔️:   }
+    }
+    // RDL❗✔️:
+    // RDL❗✔️:   result = nof_paths[a];
+    // RDL❗✔️:
+    // RDL❗✔️:   free(nof_paths);
+    // RDL❗✔️:   free(indegree);
+    // RDL❗✔️:   free(empty_set);
+    // RDL❗✔️:
+    // RDL❗✔️:   return result;
+    // RDL❗✔️: }
+    // END RDL C FUNCTION RDL_countPaths
+    Ok(number_of_paths[root])
+}
+
+fn count_relevant_cycles_for_family(
+    family: &CycleFamily,
+    graph: &Graph,
+    shortest_paths: &ShortestPathInfo,
+) -> Result<f64, RingDecomposerError> {
+    // BEGIN RDL C FUNCTION RDL_getNofRCForRCF_internal
+    // RDL❗✔️: static double RDL_getNofRCForRCF_internal(const RDL_data *data,
+    // RDL❗✔️:     unsigned bcc_index, unsigned urf_internal_index,
+    // RDL❗✔️:     unsigned rcf_internal_index)
+    // RDL❗✔️: {
+    // RDL❗✔️:   double nofPaths1, nofPaths2, result;
+    // RDL❗✔️:   const double prod_limit = sqrt(DBL_MAX) - 1.0;
+    // RDL❗✔️:   const RDL_cfam** URF;
+    // RDL❗✔️:   const RDL_graph* graph;
+    // RDL❗✔️:
+    // RDL❗✔️:   result = 0.0;
+    // RDL❗✔️:
+    // RDL❗✔️:   graph = data->bccGraphs->bcc_graphs[bcc_index];
+    // RDL❗✔️:
+    // RDL❗✔️:   URF = (const RDL_cfam **)data->urfInfoPerBCC[bcc_index]->URFs[urf_internal_index];
+    // RDL❗✔️:
+    // RDL❗✔️:   /* count the number of paths one both sides */
+    // RDL❗✔️:   nofPaths1 = RDL_countPaths(URF[rcf_internal_index]->r, URF[rcf_internal_index]->q,
+    // RDL❗✔️:       graph->V, data->spiPerBCC[bcc_index]);
+    // RDL❗✔️:   nofPaths2 = RDL_countPaths(URF[rcf_internal_index]->r, URF[rcf_internal_index]->p,
+    // RDL❗✔️:       graph->V, data->spiPerBCC[bcc_index]);
+    let number_of_paths_1 = count_paths(
+        family.root(),
+        family.q(),
+        graph.node_count(),
+        shortest_paths,
+    )?;
+    let number_of_paths_2 = count_paths(
+        family.root(),
+        family.p(),
+        graph.node_count(),
+        shortest_paths,
+    )?;
+    // RDL❗✔️:
+    // RDL❗✔️:   result = nofPaths1 * nofPaths2;
+    // RDL❗✔️:
+    // RDL❗✔️:   /* check if either of the number paths is larger than what we can multiply */
+    // RDL❗✔️:   if (nofPaths1 >= prod_limit || nofPaths2 >= prod_limit) {
+    // RDL❗✔️:     RDL_outputFunc(RDL_WARNING, "result overflow when counting paths!\n");
+    // RDL❗✔️:     return RDL_INVALID_RC_COUNT;
+    // RDL❗✔️:   }
+    let product_limit = f64::MAX.sqrt() - 1.0;
+    if number_of_paths_1 >= product_limit || number_of_paths_2 >= product_limit {
+        return Err(RingDecomposerError::RelevantCycleCountOverflow);
+    }
+    let result = number_of_paths_1 * number_of_paths_2;
+    // RDL❗✔️:
+    // RDL❗✔️:   return result;
+    // RDL❗✔️: }
+    // END RDL C FUNCTION RDL_getNofRCForRCF_internal
+    Ok(result)
+}
+
+fn count_relevant_cycles_for_urf(
+    urf: &[usize],
+    cycle_families: &CycleFamilies,
+    graph: &Graph,
+    shortest_paths: &ShortestPathInfo,
+) -> Result<f64, RingDecomposerError> {
+    // BEGIN RDL C FUNCTION RDL_getNofRCForURF
+    // RDL❗✔️: double RDL_getNofRCForURF(const RDL_data *data, unsigned index)
+    // RDL❗✔️: {
+    // RDL❗✔️:   unsigned i,nofFams, bcc_index, internal_index;
+    // RDL❗✔️:   double result=0, prod;
+    // RDL❗✔️:
+    // RDL❗✔️:   const double sum_limit = DBL_MAX/2.0 - 1.0;
+    // RDL❗✔️:
+    // RDL❗✔️:   if (!data) {
+    // RDL❗✔️:     RDL_outputFunc(RDL_ERROR, "RDL_data is NULL!\n");
+    // RDL❗✔️:     return RDL_INVALID_RC_COUNT;
+    // RDL❗✔️:   }
+    // RDL❗✔️:
+    // RDL❗✔️:   if (index >= data->nofURFs) {
+    // RDL❗✔️:     RDL_outputFunc(RDL_ERROR, "invalid index: %u\n", index);
+    // RDL❗✔️:     return RDL_INVALID_RC_COUNT;
+    // RDL❗✔️:   }
+    // RDL❗✔️:
+    // RDL❗✔️:   /* map indices */
+    // RDL❗✔️:   bcc_index = data->urf_to_bcc[index][0];
+    // RDL❗✔️:   internal_index = data->urf_to_bcc[index][1];
+    // RDL❗✔️:
+    // RDL❗✔️:   nofFams = data->urfInfoPerBCC[bcc_index]->nofCFsPerURF[internal_index];
+    // RDL❗✔️:
+    // RDL❗✔️:   /* iterate all RCFs in this URF */
+    // RDL❗✔️:   for(i=0; i<nofFams; ++i) {
+    let mut result = 0.0;
+    let sum_limit = f64::MAX / 2.0 - 1.0;
+    for &family_index in urf {
+        // RDL❗✔️:     prod = RDL_getNofRCForRCF_internal(data, bcc_index, internal_index, i);
+        let product = count_relevant_cycles_for_family(
+            &cycle_families.families()[family_index],
+            graph,
+            shortest_paths,
+        )?;
+        // RDL❗✔️:
+        // RDL❗✔️:     /* check if any summand is larger than limit */
+        // RDL❗✔️:     if (prod >= sum_limit || result >= sum_limit) {
+        // RDL❗✔️:       RDL_outputFunc(RDL_WARNING, "result overflow when counting paths!\n");
+        // RDL❗✔️:       return RDL_INVALID_RC_COUNT;
+        // RDL❗✔️:     }
+        if product >= sum_limit || result >= sum_limit {
+            return Err(RingDecomposerError::RelevantCycleCountOverflow);
+        }
+        // RDL❗✔️:
+        // RDL❗✔️:     result += prod;
+        result += product;
+        // RDL❗✔️:   }
+    }
+    // RDL❗✔️:
+    // RDL❗✔️:   return result;
+    // RDL❗✔️: }
+    // END RDL C FUNCTION RDL_getNofRCForURF
+    Ok(result)
+}
+
+fn count_relevant_cycles(
+    urf_info: &UrfInfo,
+    cycle_families: &CycleFamilies,
+    graph: &Graph,
+    shortest_paths: &ShortestPathInfo,
+) -> Result<f64, RingDecomposerError> {
+    // BEGIN RDL C FUNCTION RDL_getNofRC
+    // RDL❗✔️: double RDL_getNofRC(const RDL_data *data)
+    // RDL❗✔️: {
+    // RDL❗✔️:   double result = 0, intermediate;
+    // RDL❗✔️:   unsigned i;
+    // RDL❗✔️:
+    // RDL❗✔️:   if (!data) {
+    // RDL❗✔️:     RDL_outputFunc(RDL_ERROR, "RDL_data is NULL!\n");
+    // RDL❗✔️:     return RDL_INVALID_RC_COUNT;
+    // RDL❗✔️:   }
+    // RDL❗✔️:
+    // RDL❗✔️:   /* add up results for URFs */
+    // RDL❗✔️:   for (i = 0; i < data->nofURFs; ++i) {
+    let mut result = 0.0;
+    for urf in &urf_info.urfs {
+        // RDL❗✔️:     intermediate = RDL_getNofRCForURF(data, i);
+        let intermediate =
+            count_relevant_cycles_for_urf(urf, cycle_families, graph, shortest_paths)?;
+        // RDL❗✔️:     if (intermediate == RDL_INVALID_RC_COUNT) {
+        // RDL❗✔️:       return RDL_INVALID_RC_COUNT;
+        // RDL❗✔️:     }
+        // RDL❗✔️:
+        // RDL❗✔️:     result += intermediate;
+        result += intermediate;
+        if !result.is_finite() {
+            return Err(RingDecomposerError::RelevantCycleCountOverflow);
+        }
+        // RDL❗✔️:   }
+    }
+    // RDL❗✔️:
+    // RDL❗✔️:   return result;
+    // RDL❗✔️: }
+    // END RDL C FUNCTION RDL_getNofRC
+    Ok(result)
+}
+
+fn find_vertices(
+    vertices: &mut [bool],
+    root: usize,
+    target: usize,
+    shortest_paths: &ShortestPathInfo,
+    visited: &mut [bool],
+) {
+    // BEGIN RDL C FUNCTION RDL_giveVertices
+    // RDL❗✔️: void RDL_giveVertices(unsigned a, unsigned b, char *array,
+    // RDL❗✔️:     const RDL_sPathInfo *spi, char *visited)
+    // RDL❗✔️: {
+    // RDL❗✔️:  /* similar to the function "List_Paths" from Vismara*/
+    // RDL❗✔️:   unsigned i, vertex;
+    // RDL❗✔️:
+    // RDL❗✔️:   visited[b] = 1;
+    visited[target] = true;
+    // RDL❗✔️:
+    // RDL❗✔️:   if(a==b)
+    // RDL❗✔️:   {
+    // RDL❗✔️:     array[a] = 1;
+    // RDL❗✔️:     return;
+    // RDL❗✔️:   }
+    if root == target {
+        vertices[root] = true;
+        return;
+    }
+    // RDL❗✔️:   array[b] = 1;
+    vertices[target] = true;
+    // RDL❗✔️:   /*for each vertex adjacent to b in U_a*/
+    // RDL❗✔️:   for(i=0; i<spi->dPaths[a]->degree[b]; ++i)
+    // RDL❗✔️:   {
+    if let Some(neighbors) = shortest_paths.directed_paths[root].neighbors(target) {
+        for &vertex in neighbors {
+            // RDL❗✔️:     vertex = spi->dPaths[a]->adjList[b][i][0];
+            // RDL❗✔️:     if (!visited[vertex]) {
+            if !visited[vertex] {
+                // RDL❗✔️:       RDL_giveVertices(a, vertex, array, spi, visited);
+                find_vertices(vertices, root, vertex, shortest_paths, visited);
+                // RDL❗✔️:     }
+            }
+            // RDL❗✔️:   }
+        }
+    }
+    // RDL❗✔️: }
+    // END RDL C FUNCTION RDL_giveVertices
+}
+
+fn find_family_nodes(
+    nodes: &mut [bool],
+    family: &CycleFamily,
+    graph: &Graph,
+    shortest_paths: &ShortestPathInfo,
+) {
+    // BEGIN RDL C FUNCTION RDL_getNodes_internal
+    // RDL❗✔️: static void RDL_getNodes_internal(const RDL_data *data, unsigned bcc_index,
+    // RDL❗✔️:     unsigned urf_internal_index, unsigned rcf_internal_index, char* atoms)
+    // RDL❗✔️: {
+    // RDL❗✔️:   const RDL_cfam **URF;
+    // RDL❗✔️:   char *visited;
+    // RDL❗✔️:   const RDL_graph* graph;
+    // RDL❗✔️:
+    // RDL❗✔️:   graph = data->bccGraphs->bcc_graphs[bcc_index];
+    // RDL❗✔️:
+    // RDL❗✔️:   URF = (const RDL_cfam **)data->urfInfoPerBCC[bcc_index]->URFs[urf_internal_index];
+    // RDL❗✔️:
+    // RDL❗✔️:   visited = malloc(graph->V *  sizeof(*visited));
+    let mut visited = vec![false; graph.node_count()];
+    // RDL❗✔️:
+    // RDL❗✔️:   /* BFS on both shortest path graphs */
+    // RDL❗✔️:   memset(visited, 0, graph->V *  sizeof(*visited));
+    // RDL❗✔️:   RDL_giveVertices(URF[rcf_internal_index]->r, URF[rcf_internal_index]->q,
+    // RDL❗✔️:       atoms, data->spiPerBCC[bcc_index], visited);
+    find_vertices(
+        nodes,
+        family.root(),
+        family.q(),
+        shortest_paths,
+        &mut visited,
+    );
+    // RDL❗✔️:
+    // RDL❗✔️:   memset(visited, 0, graph->V *  sizeof(*visited));
+    // RDL❗✔️:   RDL_giveVertices(URF[rcf_internal_index]->r, URF[rcf_internal_index]->p,
+    // RDL❗✔️:       atoms, data->spiPerBCC[bcc_index], visited);
+    visited.fill(false);
+    find_vertices(
+        nodes,
+        family.root(),
+        family.p(),
+        shortest_paths,
+        &mut visited,
+    );
+    // RDL❗✔️:
+    // RDL❗✔️:   if(URF[rcf_internal_index]->x < UINT_MAX) /*even cycle*/ {
+    // RDL❗✔️:     atoms[URF[rcf_internal_index]->x] = 1;
+    // RDL❗✔️:   }
+    if let Some(x) = family.x() {
+        nodes[x] = true;
+    }
+    // RDL❗✔️:   free(visited);
+    // RDL❗✔️: }
+    // END RDL C FUNCTION RDL_getNodes_internal
+}
+
 fn unique_ring_family_from_component_urf(
     urf: &[usize],
     cycle_families: &CycleFamilies,
     component: &BiconnectedComponent,
+    shortest_paths: &ShortestPathInfo,
 ) -> UniqueRingFamily {
+    // BEGIN RDL C FUNCTION RDL_getNodesURF
+    // RDL❗✔️: static RDL_node *RDL_getNodesURF(const RDL_data *data, unsigned index)
+    // RDL❗✔️: {
+    // RDL❗✔️:   unsigned i,nofFams,nextfree=0,alloced, bcc_index, internal_index;
+    // RDL❗✔️:   char *atoms;
+    // RDL❗✔️:   RDL_node *result;
+    // RDL❗✔️:   const RDL_graph* graph;
+    // RDL❗✔️:
+    // RDL❗✔️:   bcc_index = data->urf_to_bcc[index][0];
+    // RDL❗✔️:   internal_index = data->urf_to_bcc[index][1];
+    // RDL❗✔️:   graph = data->bccGraphs->bcc_graphs[bcc_index];
+    // RDL❗✔️:   atoms = malloc(graph->V * sizeof(*atoms));
+    // RDL❗✔️:   memset(atoms, 0, graph->V * sizeof(*atoms));
+    // RDL❗✔️:
+    // RDL❗✔️:   nofFams = data->urfInfoPerBCC[bcc_index]->nofCFsPerURF[internal_index];
+    // RDL❗✔️:   alloced = RDL_RESERVED_START;
+    // RDL❗✔️:   result = malloc(alloced * sizeof(*result));
+    // RDL❗✔️:
+    // RDL❗✔️:   /* iterate over all RCFs in this URFs and collect data in one bitset (atoms) */
+    // RDL❗✔️:   for(i=0; i<nofFams; ++i) {
+    // RDL❗✔️:     RDL_getNodes_internal(data, bcc_index, internal_index, i, atoms);
+    // RDL❗✔️:   }
+    // RDL❗✔️:
+    // RDL❗✔️:   /* translate into a dynamic table */
+    // RDL❗✔️:   for(i=0; i<graph->V; ++i) {
+    // RDL❗✔️:     if(atoms[i] == 1) {
+    // RDL❗✔️:       if(nextfree == alloced) {/*double the size*/
+    // RDL❗✔️:         alloced *= 2;
+    // RDL❗✔️:         result = realloc(result, alloced*sizeof(*result));
+    // RDL❗✔️:       }
+    // RDL❗✔️:       result[nextfree++] = data->bccGraphs->node_from_bcc_mapping[bcc_index][i];
+    // RDL❗✔️:     }
+    // RDL❗✔️:   }
+    // RDL❗✔️:
+    // RDL❗✔️:   result = realloc(result, (nextfree+1)*sizeof(*result));
+    // RDL❗✔️:
+    // RDL❗✔️:   result[nextfree] = UINT_MAX;
+    // RDL❗✔️:   free(atoms);
+    // RDL❗✔️:
+    // RDL❗✔️:   return result;
+    // RDL❗✔️: }
+    // END RDL C FUNCTION RDL_getNodesURF
+    //
+    // BEGIN RDL C FUNCTION RDL_getNodesForURF
+    // RDL❗✔️: unsigned RDL_getNodesForURF(const RDL_data *data, unsigned index, RDL_node **ptr)
+    // RDL❗✔️: {
+    // RDL❗✔️:   unsigned i;
+    // RDL❗✔️:
+    // RDL❗✔️:   if (!data) {
+    // RDL❗✔️:     RDL_outputFunc(RDL_ERROR, "RDL_data is NULL!\n");
+    // RDL❗✔️:     (*ptr) = malloc(sizeof(**ptr));
+    // RDL❗✔️:     return RDL_INVALID_RESULT;
+    // RDL❗✔️:   }
+    // RDL❗✔️:
+    // RDL❗✔️:   if (index >= data->nofURFs) {
+    // RDL❗✔️:     RDL_outputFunc(RDL_ERROR, "invalid index: %u\n", index);
+    // RDL❗✔️:     (*ptr) = malloc(sizeof(**ptr));
+    // RDL❗✔️:     return RDL_INVALID_RESULT;
+    // RDL❗✔️:   }
+    // RDL❗✔️:
+    // RDL❗✔️:   (*ptr) = RDL_getNodesURF(data, index);
+    // RDL❗✔️:   for(i=0; (*ptr)[i]<UINT_MAX; ++i); /*counts the number of atoms*/
+    // RDL❗✔️:   return i;
+    // RDL❗✔️: }
+    // END RDL C FUNCTION RDL_getNodesForURF
+    //
+    // BEGIN RDL C FUNCTION RDL_getEdgesURF
+    // RDL❗✔️: static unsigned *RDL_getEdgesURF(const RDL_data *data, unsigned index)
+    // RDL❗✔️: {
+    // RDL❗✔️:   unsigned i,nofFams,nextfree=0,alloced, bcc_index, internal_index;
+    // RDL❗✔️:   char *edges;
+    // RDL❗✔️:   unsigned *result;
+    // RDL❗✔️:   const RDL_graph* graph;
+    // RDL❗✔️:
+    // RDL❗✔️:   /* map indices */
+    // RDL❗✔️:   bcc_index = data->urf_to_bcc[index][0];
+    // RDL❗✔️:   internal_index = data->urf_to_bcc[index][1];
+    // RDL❗✔️:   graph = data->bccGraphs->bcc_graphs[bcc_index];
+    // RDL❗✔️:   edges = malloc(graph->E * sizeof(*edges));
+    // RDL❗✔️:   memset(edges, 0, graph->E * sizeof(*edges));
+    // RDL❗✔️:
+    // RDL❗✔️:   nofFams = data->urfInfoPerBCC[bcc_index]->nofCFsPerURF[internal_index];
+    // RDL❗✔️:   alloced = RDL_RESERVED_START;
+    // RDL❗✔️:   result = malloc(alloced * sizeof(*result));
+    // RDL❗✔️:
+    // RDL❗✔️:   /* iterate over all RCFs in this URF and collect results in bitset (edges) */
+    // RDL❗✔️:   for(i=0; i<nofFams; ++i) {
+    // RDL❗✔️:     RDL_getEdges_internal(data, bcc_index, internal_index, i, edges);
+    // RDL❗✔️:   }
+    // RDL❗✔️:
+    // RDL❗✔️:   /* translate into dynamic table */
+    // RDL❗✔️:   for(i=0; i<graph->E; ++i) {
+    // RDL❗✔️:     if(edges[i] == 1) {
+    // RDL❗✔️:       if(nextfree == alloced)
+    // RDL❗✔️:       {/*double the size*/
+    // RDL❗✔️:         alloced *= 2;
+    // RDL❗✔️:         result = realloc(result, alloced * sizeof(*result));
+    // RDL❗✔️:       }
+    // RDL❗✔️:       result[nextfree++] = data->bccGraphs->edge_from_bcc_mapping[bcc_index][i];
+    // RDL❗✔️:     }
+    // RDL❗✔️:   }
+    // RDL❗✔️:   result = realloc(result, (nextfree+1)*sizeof(*result));
+    // RDL❗✔️:
+    // RDL❗✔️:   result[nextfree] = UINT_MAX;
+    // RDL❗✔️:
+    // RDL❗✔️:   free(edges);
+    // RDL❗✔️:   return result;
+    // RDL❗✔️: }
+    // END RDL C FUNCTION RDL_getEdgesURF
+    //
+    // BEGIN RDL C FUNCTION RDL_getEdgesForURF
+    // RDL❗✔️: unsigned RDL_getEdgesForURF(const RDL_data *data, unsigned index, RDL_edge **ptr)
+    // RDL❗✔️: {
+    // RDL❗✔️:   unsigned nextfree, alloced;
+    // RDL❗✔️:   RDL_edge *result;
+    // RDL❗✔️:   unsigned *edgeIndices;
+    // RDL❗✔️:   unsigned i;
+    // RDL❗✔️:
+    // RDL❗✔️:   if (!data) {
+    // RDL❗✔️:     RDL_outputFunc(RDL_ERROR, "RDL_data is NULL!\n");
+    // RDL❗✔️:     (*ptr) = malloc(sizeof(**ptr));
+    // RDL❗✔️:     return RDL_INVALID_RESULT;
+    // RDL❗✔️:   }
+    // RDL❗✔️:
+    // RDL❗✔️:   if (index >= data->nofURFs) {
+    // RDL❗✔️:     RDL_outputFunc(RDL_ERROR, "invalid index: %u\n", index);
+    // RDL❗✔️:     (*ptr) = malloc(sizeof(**ptr));
+    // RDL❗✔️:     return RDL_INVALID_RESULT;
+    // RDL❗✔️:   }
+    // RDL❗✔️:
+    // RDL❗✔️:   nextfree = 0;
+    // RDL❗✔️:   alloced = RDL_RESERVED_START;
+    // RDL❗✔️:   result = malloc(alloced * sizeof(*result));
+    // RDL❗✔️:   edgeIndices = RDL_getEdgesURF(data, index);
+    // RDL❗✔️:   /* translate result from edge indices to edges */
+    // RDL❗✔️:   for(i=0; edgeIndices[i]<UINT_MAX; ++i)
+    // RDL❗✔️:   {
+    // RDL❗✔️:     if(nextfree == alloced)/*more space needed in result*/
+    // RDL❗✔️:     {
+    // RDL❗✔️:       alloced *= 2; /* double the space */
+    // RDL❗✔️:       result = realloc(result, alloced * sizeof(*result));
+    // RDL❗✔️:     }
+    // RDL❗✔️:     result[nextfree][0] = data->graph->edges[edgeIndices[i]][0];
+    // RDL❗✔️:     result[nextfree][1] = data->graph->edges[edgeIndices[i]][1];
+    // RDL❗✔️:     ++nextfree;
+    // RDL❗✔️:   }
+    // RDL❗✔️:   result = realloc(result, nextfree * sizeof(*result));
+    // RDL❗✔️:   free(edgeIndices);
+    // RDL❗✔️:   (*ptr) = result;
+    // RDL❗✔️:   return nextfree;
+    // RDL❗✔️: }
+    // END RDL C FUNCTION RDL_getEdgesForURF
+
     let mut edge_membership = vec![false; component.graph().edge_count()];
+    let mut node_membership = vec![false; component.original_nodes().len()];
     for &family_index in urf {
-        for (edge_index, &contains) in cycle_families.families()[family_index]
-            .prototype()
-            .iter()
-            .enumerate()
-        {
-            edge_membership[edge_index] |= contains;
-        }
+        let family = &cycle_families.families()[family_index];
+        find_family_edges(
+            &mut edge_membership,
+            family,
+            component.graph(),
+            shortest_paths,
+        );
+        find_family_nodes(
+            &mut node_membership,
+            family,
+            component.graph(),
+            shortest_paths,
+        );
     }
     let mut edges = Vec::new();
-    let mut node_membership = vec![false; component.original_nodes().len()];
     for (local_edge, &contains) in edge_membership.iter().enumerate() {
         if !contains {
             continue;
         }
         edges.push(component.original_edges()[local_edge]);
-        let edge = component.graph().edges()[local_edge];
-        node_membership[edge.from()] = true;
-        node_membership[edge.to()] = true;
     }
     let nodes = node_membership
         .iter()
@@ -2124,8 +2850,9 @@ fn tarjan_visit(
 #[cfg(test)]
 mod tests {
     use super::{
-        BiconnectedComponents, CycleFamilies, EdgeId, Graph, RingDecomposerError,
-        RingDecomposition, ShortestPathInfo,
+        BiconnectedComponents, CycleFamilies, CycleFamily, EdgeId, Graph, RingDecomposerError,
+        RingDecomposition, ShortestPathInfo, UrfInfo, count_paths,
+        count_relevant_cycles_for_family,
     };
 
     #[test]
@@ -2289,6 +3016,130 @@ mod tests {
     }
 
     #[test]
+    fn directed_path_graph_rejects_invalid_arcs_and_preserves_row_order() {
+        let mut graph = super::DirectedPathGraph::new(3);
+        graph.add_directed_edge(0, 2);
+        graph.add_directed_edge(0, 2);
+        graph.add_directed_edge(0, 0);
+        graph.add_directed_edge(3, 0);
+        graph.add_directed_edge(0, 3);
+        graph.add_directed_edge(0, 1);
+        graph.add_directed_edge(2, 1);
+
+        assert_eq!(graph.node_count(), 3);
+        assert_eq!(graph.neighbors(0), Some(&[2, 1][..]));
+        assert_eq!(graph.neighbors(1), Some(&[][..]));
+        assert_eq!(graph.neighbors(2), Some(&[1][..]));
+        assert_eq!(graph.neighbors(3), None);
+    }
+
+    #[test]
+    fn apsp_preserves_equal_path_predecessor_and_unreachable_rows() {
+        let mut graph = Graph::new(5);
+        graph.add_undirected_edge(0, 2).unwrap();
+        graph.add_undirected_edge(0, 1).unwrap();
+        graph.add_undirected_edge(2, 3).unwrap();
+        graph.add_undirected_edge(1, 3).unwrap();
+
+        let paths = ShortestPathInfo::calculate(&graph);
+
+        assert_eq!(paths.distance(0, 0), Some(0));
+        assert_eq!(paths.predecessor(0, 0), Some(0));
+        assert_eq!(paths.distance(0, 3), Some(2));
+        assert_eq!(paths.predecessor(0, 3), Some(2));
+        assert_eq!(paths.distance(3, 0), Some(2));
+        assert_eq!(paths.predecessor(3, 0), Some(2));
+        for connected in 0..4 {
+            assert_eq!(paths.distance(connected, 4), None);
+            assert_eq!(paths.predecessor(connected, 4), None);
+            assert!(!paths.reachable_preceding(connected, 4));
+            assert_eq!(paths.distance(4, connected), None);
+            assert_eq!(paths.predecessor(4, connected), None);
+            assert!(!paths.reachable_preceding(4, connected));
+        }
+        assert_eq!(paths.distance(4, 4), Some(0));
+        assert_eq!(paths.predecessor(4, 4), Some(4));
+        assert_eq!(paths.distance(99, 0), None);
+        assert_eq!(paths.predecessor(0, 99), None);
+        assert!(!paths.reachable_preceding(99, 0));
+    }
+
+    #[test]
+    fn tarjan_bcc_maps_every_row_for_disconnected_cycles() {
+        let mut graph = Graph::new(7);
+        for (from, to) in [(0, 1), (1, 2), (2, 0), (3, 4), (4, 5), (5, 3)] {
+            graph.add_undirected_edge(from, to).unwrap();
+        }
+
+        let bcc = BiconnectedComponents::calculate(&graph);
+
+        assert_eq!(bcc.component_count(), 2);
+        assert_eq!(bcc.components()[0].original_nodes(), &[0, 1, 2]);
+        assert_eq!(
+            bcc.components()[0].original_edges(),
+            &[EdgeId::new(0), EdgeId::new(1), EdgeId::new(2)]
+        );
+        assert_eq!(bcc.components()[1].original_nodes(), &[3, 4, 5]);
+        assert_eq!(
+            bcc.components()[1].original_edges(),
+            &[EdgeId::new(3), EdgeId::new(4), EdgeId::new(5)]
+        );
+        for edge in 0..3 {
+            assert_eq!(bcc.edge_component(EdgeId::new(edge)), Some((0, edge)));
+        }
+        for edge in 3..6 {
+            assert_eq!(bcc.edge_component(EdgeId::new(edge)), Some((1, edge - 3)));
+        }
+        assert_eq!(bcc.edge_component(EdgeId::new(6)), None);
+        assert_eq!(bcc.edge_component(EdgeId::new(99)), None);
+        assert_eq!(bcc.node_components(0), Some(&[(0, 0)][..]));
+        assert_eq!(bcc.node_components(1), Some(&[(0, 1)][..]));
+        assert_eq!(bcc.node_components(2), Some(&[(0, 2)][..]));
+        assert_eq!(bcc.node_components(3), Some(&[(1, 0)][..]));
+        assert_eq!(bcc.node_components(4), Some(&[(1, 1)][..]));
+        assert_eq!(bcc.node_components(5), Some(&[(1, 2)][..]));
+        assert_eq!(bcc.node_components(6), Some(&[][..]));
+        assert_eq!(bcc.node_components(7), None);
+    }
+
+    #[test]
+    fn tarjan_bcc_maps_articulation_into_both_local_index_spaces() {
+        let mut graph = Graph::new(5);
+        for (from, to) in [(0, 1), (1, 2), (2, 0), (2, 3), (3, 4), (4, 2)] {
+            graph.add_undirected_edge(from, to).unwrap();
+        }
+
+        let bcc = BiconnectedComponents::calculate(&graph);
+
+        assert_eq!(bcc.component_count(), 2);
+        assert_eq!(bcc.components()[0].original_nodes(), &[2, 3, 4]);
+        assert_eq!(
+            bcc.components()[0].original_edges(),
+            &[EdgeId::new(3), EdgeId::new(4), EdgeId::new(5)]
+        );
+        assert_eq!(bcc.components()[1].original_nodes(), &[0, 1, 2]);
+        assert_eq!(
+            bcc.components()[1].original_edges(),
+            &[EdgeId::new(0), EdgeId::new(1), EdgeId::new(2)]
+        );
+        assert_eq!(bcc.edge_component(EdgeId::new(0)), Some((1, 0)));
+        assert_eq!(bcc.edge_component(EdgeId::new(1)), Some((1, 1)));
+        assert_eq!(bcc.edge_component(EdgeId::new(2)), Some((1, 2)));
+        assert_eq!(bcc.edge_component(EdgeId::new(3)), Some((0, 0)));
+        assert_eq!(bcc.edge_component(EdgeId::new(4)), Some((0, 1)));
+        assert_eq!(bcc.edge_component(EdgeId::new(5)), Some((0, 2)));
+        assert_eq!(bcc.node_components(0), Some(&[(1, 0)][..]));
+        assert_eq!(bcc.node_components(1), Some(&[(1, 1)][..]));
+        assert_eq!(bcc.node_components(2), Some(&[(1, 2), (0, 0)][..]));
+        assert_eq!(bcc.node_components(3), Some(&[(0, 1)][..]));
+        assert_eq!(bcc.node_components(4), Some(&[(0, 2)][..]));
+        for component in bcc.components() {
+            assert_eq!(component.graph().node_count(), 3);
+            assert_eq!(component.graph().edge_count(), 3);
+        }
+    }
+
+    #[test]
     fn cycle_families_find_triangle_family() {
         let mut graph = Graph::new(3);
         graph.add_undirected_edge(0, 1).unwrap();
@@ -2355,5 +3206,235 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![0, 1, 2, 3]
         );
+    }
+
+    fn test_family(weight: usize, prototype: &[bool]) -> CycleFamily {
+        CycleFamily {
+            weight,
+            r: 0,
+            p: 0,
+            q: 0,
+            x: None,
+            prototype: prototype.to_vec(),
+            relevant: false,
+        }
+    }
+
+    #[test]
+    fn urf_fast_path_and_empty_initialization_keep_exact_private_state() {
+        let empty = CycleFamilies {
+            families: Vec::new(),
+        };
+        assert_eq!(
+            UrfInfo::init_urf_info(&empty),
+            UrfInfo {
+                nof_protos: Vec::new(),
+                relations: Vec::new(),
+                urfs: Vec::new(),
+            }
+        );
+
+        for family_count in 1..=2 {
+            let mut families = CycleFamilies {
+                families: (0..family_count)
+                    .map(|index| {
+                        let mut prototype = vec![false; 2];
+                        prototype[index] = true;
+                        test_family(3, &prototype)
+                    })
+                    .collect(),
+            };
+            let mut info = UrfInfo::init_urf_info(&families);
+            info.check_dependencies(&mut families, &Graph::new(2));
+            info.fill_urfs();
+            assert!(families.families().iter().all(CycleFamily::is_relevant));
+            assert_eq!(
+                info.urfs,
+                (0..family_count)
+                    .map(|index| vec![index])
+                    .collect::<Vec<_>>()
+            );
+        }
+    }
+
+    #[test]
+    fn transitive_closure_relates_complete_components_in_source_order() {
+        let mut info = UrfInfo {
+            nof_protos: vec![4],
+            relations: vec![vec![vec![false; 4]; 4]],
+            urfs: Vec::new(),
+        };
+        for index in 0..4 {
+            info.relations[0][index][index] = true;
+        }
+        info.relations[0][0][1] = true;
+        info.relations[0][1][0] = true;
+        info.relations[0][1][2] = true;
+        info.relations[0][2][1] = true;
+
+        info.find_transitive_closure();
+        assert!(info.relations[0][0][2]);
+        assert!(info.relations[0][2][0]);
+        assert!(!info.relations[0][0][3]);
+        info.fill_urfs();
+        assert_eq!(info.urfs, vec![vec![0, 1, 2], vec![3]]);
+    }
+
+    #[test]
+    fn gaussian_dependency_distinguishes_smaller_equal_and_new_pivots() {
+        let mut smaller_dependent = CycleFamilies {
+            families: vec![
+                test_family(3, &[true, true, false, false]),
+                test_family(3, &[true, false, true, false]),
+                test_family(4, &[false, true, true, false]),
+            ],
+        };
+        let mut smaller_info = UrfInfo::init_urf_info(&smaller_dependent);
+        smaller_info.check_dependencies(&mut smaller_dependent, &Graph::new(4));
+        assert_eq!(
+            smaller_dependent
+                .families()
+                .iter()
+                .map(CycleFamily::is_relevant)
+                .collect::<Vec<_>>(),
+            vec![true, true, false]
+        );
+
+        let mut equal_dependent = CycleFamilies {
+            families: vec![
+                test_family(3, &[true, true, false, false]),
+                test_family(3, &[true, false, true, false]),
+                test_family(3, &[false, true, true, false]),
+            ],
+        };
+        let mut equal_info = UrfInfo::init_urf_info(&equal_dependent);
+        equal_info.check_dependencies(&mut equal_dependent, &Graph::new(4));
+        assert!(
+            equal_dependent
+                .families()
+                .iter()
+                .all(CycleFamily::is_relevant)
+        );
+
+        let mut swapped_pivots = CycleFamilies {
+            families: vec![
+                test_family(3, &[false, true, false, false]),
+                test_family(3, &[false, false, true, false]),
+                test_family(3, &[false, false, false, true]),
+            ],
+        };
+        let mut swapped_info = UrfInfo::init_urf_info(&swapped_pivots);
+        swapped_info.check_dependencies(&mut swapped_pivots, &Graph::new(4));
+        assert!(
+            swapped_pivots
+                .families()
+                .iter()
+                .all(CycleFamily::is_relevant)
+        );
+    }
+
+    #[test]
+    fn complete_shortest_path_dag_counts_two_paths_and_rejects_a_cycle() {
+        let graph = Graph::new(4);
+        let mut paths = ShortestPathInfo::initialized_for_graph(&graph);
+        paths.directed_paths[0].add_directed_edge(3, 1);
+        paths.directed_paths[0].add_directed_edge(3, 2);
+        paths.directed_paths[0].add_directed_edge(1, 0);
+        paths.directed_paths[0].add_directed_edge(2, 0);
+        assert_eq!(count_paths(0, 3, 4, &paths), Ok(2.0));
+
+        let mut invalid = ShortestPathInfo::initialized_for_graph(&graph);
+        invalid.directed_paths[0].add_directed_edge(3, 1);
+        invalid.directed_paths[0].add_directed_edge(1, 3);
+        assert_eq!(
+            count_paths(0, 3, 4, &invalid),
+            Err(RingDecomposerError::InvalidShortestPathDag { root: 0, target: 3 })
+        );
+    }
+
+    #[test]
+    fn relevant_cycle_product_overflow_is_a_structured_error() {
+        let layer_count = 513usize;
+        let node_count = layer_count * 2 + 2;
+        let target = node_count - 1;
+        let graph = Graph::new(node_count);
+        let mut paths = ShortestPathInfo::initialized_for_graph(&graph);
+        let mut previous = vec![0usize];
+        for layer in 0..layer_count {
+            let current = vec![layer * 2 + 1, layer * 2 + 2];
+            for &node in &current {
+                for &predecessor in &previous {
+                    paths.directed_paths[0].add_directed_edge(node, predecessor);
+                }
+            }
+            previous = current;
+        }
+        for predecessor in previous {
+            paths.directed_paths[0].add_directed_edge(target, predecessor);
+        }
+        let family = CycleFamily {
+            weight: 3,
+            r: 0,
+            p: target,
+            q: target,
+            x: None,
+            prototype: Vec::new(),
+            relevant: true,
+        };
+
+        assert_eq!(
+            count_relevant_cycles_for_family(&family, &graph, &paths),
+            Err(RingDecomposerError::RelevantCycleCountOverflow)
+        );
+    }
+
+    #[test]
+    fn private_relation_pipeline_covers_smaller_and_equal_weight_cycles() {
+        let mut fused = Graph::new(4);
+        for (from, to) in [(0, 1), (1, 2), (2, 0), (1, 3), (3, 2)] {
+            fused.add_undirected_edge(from, to).unwrap();
+        }
+        let mut fused_paths = ShortestPathInfo::calculate(&fused);
+        let mut fused_families = CycleFamilies::calculate(&mut fused, &mut fused_paths);
+        assert_eq!(
+            fused_families
+                .families()
+                .iter()
+                .map(CycleFamily::weight)
+                .collect::<Vec<_>>(),
+            vec![3, 3]
+        );
+        let fused_info = UrfInfo::check_urf_relation(&mut fused_families, &fused, &fused_paths);
+        assert_eq!(
+            fused_families
+                .families()
+                .iter()
+                .map(CycleFamily::is_relevant)
+                .collect::<Vec<_>>(),
+            vec![true, true]
+        );
+        assert_eq!(fused_info.urfs, vec![vec![0], vec![1]]);
+
+        let mut theta = Graph::new(5);
+        for (from, to) in [(0, 1), (1, 4), (0, 2), (2, 4), (0, 3), (3, 4)] {
+            theta.add_undirected_edge(from, to).unwrap();
+        }
+        let mut theta_paths = ShortestPathInfo::calculate(&theta);
+        let mut theta_families = CycleFamilies::calculate(&mut theta, &mut theta_paths);
+        assert_eq!(theta_families.len(), 3);
+        assert!(
+            theta_families
+                .families()
+                .iter()
+                .all(|family| family.weight() == 4)
+        );
+        let theta_info = UrfInfo::check_urf_relation(&mut theta_families, &theta, &theta_paths);
+        assert!(
+            theta_families
+                .families()
+                .iter()
+                .all(CycleFamily::is_relevant)
+        );
+        assert_eq!(theta_info.urfs, vec![vec![0], vec![1], vec![2]]);
     }
 }

@@ -13,5 +13,8 @@ documentation = "https://docs.rs/cosmolkit"
 
 [dependencies]
 cosmolkit-cx = { version = "0.5.0-rc.1", path = "../cosmolkit-cx" }
+cosmolkit-core = { version = "0.5.0-rc.1", path = "../cosmolkit-core" }
 cosmolkit-model = { version = "0.5.0-rc.1", path = "../cosmolkit-model" }
 cosmolkit-types = { version = "0.5.0-rc.1", path = "../cosmolkit-types" }
+serde_json = "1"
+thiserror = "2"

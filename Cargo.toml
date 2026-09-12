@@ -1,7 +1,6 @@
 [workspace]
 members = [
     "crates/cosmolkit-core",
-    "crates/cosmolkit-core-old",
     "crates/cosmolkit-cx",
     "crates/cosmolkit-smiles",
     "crates/cosmolkit-search",
@@ -22,9 +21,9 @@ members = [
     "crates/cosmolkit-ringdecomposer",
     "crates/cosmolkit-test-support",
     "crates/cosmolkit",
-    "wasm",
     "crates/cosmolkit-macros",
     "crates/cosmolkit-macros-old",
+    "wasm",
     "python",
     "dev/tools/chembl_parity/tautomer_oracle",
 ]

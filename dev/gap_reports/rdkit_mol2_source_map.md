@@ -1,6 +1,52 @@
 # RDKit MOL2 Source Map And Gap Report
 
-## Step 3 Current COSMolKit MOL2 Support Audit
+## 2026-09-09 Detached-Owner Closure Update
+
+The initial audit below is retained as historical source inventory. The active
+implementation no longer lives in the former core/runtime parser location:
+
+- `crates/cosmolkit-io/src/mol2.rs` uniquely owns MOL2 section/header parsing,
+  atom and bond decoding, LP correspondence, aromatic flags,
+  `UNITY_ATOM_ATTR`, formal-charge guessing, nitro repair, and Tripos
+  `N.4`/`O.co2`/`C.cat` cleanup over detached model blocks.
+- The copied `crates/cosmolkit/src/runtime/io/mol2.rs` adapter has been deleted
+  with the old mixed runtime. A canonical `cosmolkit` public wrapper still needs
+  to install validated detached blocks and apply the registered 3D-chirality,
+  sanitize, remove-H, and stereo-finalization policy without duplicating MOL2
+  behavior.
+- Query atom types `ANY`, `Du`, `HEV`, `HET`, and `HAL` return a structured
+  unsupported error because concrete `TopologyBlock` has no query-predicate
+  payload. Unknown bond types remain source-compatible skipped bonds. The
+  one-invalid-endpoint form of RDKit's unsafe `||` bounds test is represented
+  by a safe parse error and keeps a partial first-axis marker.
+
+Parity evidence:
+
+- all 24 successfully readable pinned RDKit `.mol2` fixtures match Python
+  RDKit at `sanitize=False, removeHs=False, cleanupSubstructures=True` for atom
+  count, bond count, every nonzero formal charge, aromatic-atom count, and
+  aromatic-bond count;
+- `3505.mol2` separately matches the cleanup-enabled/disabled bond-order and
+  formal-charge difference;
+- `cargo test -p cosmolkit-io --release`: 40 passed;
+- the former copied-runtime facade test recorded 5 passing cases, but it is not
+  a current gate after clean-break removal; the canonical public wrapper needs
+  replacement coverage when implemented.
+
+Historical two-axis marker audit across the detached owner and the now-deleted
+runtime adapter:
+
+```text
+RDKit✔️✔️  594
+RDKit❗✔️    3
+RDKit❌❌   12
+```
+
+The 12 unsupported lines are exactly the five source query-atom families and
+their query construction bodies. The three partial lines are the unsafe source
+bond-index predicate. No parser or cleanup placeholder remains.
+
+## Step 3 Historical Pre-Port COSMolKit MOL2 Support Audit
 
 Date: 2026-05-28
 

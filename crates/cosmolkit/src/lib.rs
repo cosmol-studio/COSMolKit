@@ -10,22 +10,33 @@ pub mod binding_contract;
 #[cfg(feature = "descriptors")]
 mod descriptors;
 mod molecule;
+mod molecule_builder;
 pub mod ops;
+mod strict;
 
 pub use binding_contract::{
-    BINDING_CONTRACT, BindingContractEntry, BindingKind, BindingOwner, ReturnKind, StateModel,
+    BINDING_CONTRACT, BindingCallableContract, BindingContractEntry, BindingDefault,
+    BindingExposure, BindingItem, BindingKind, BindingOwner, BindingParameterContract,
+    BindingParity, BindingSupport, BindingTypeRole, StateModel,
 };
 pub use cosmolkit_model as model;
 pub use cosmolkit_model::*;
 pub use molecule::Molecule;
-#[cfg(feature = "hydrogens")]
-pub(crate) use ops::OpParts;
+pub use molecule_builder::MoleculeBuilder;
+pub(crate) use ops::DerivedState;
 pub use ops::{
-    AccessMode, BlockAccess, MOLECULE_OPS, MoleculeOpSpec, OperationError, OperationOutput,
-    TopologyEditKind,
+    BlockAccess, BlockSet, FeatureSpec, FeatureSpecIter, MOLECULE_OPS, MoleculeOpKind,
+    MoleculeOpOutput, MoleculeOpSpec, OPERATION_INVARIANT_MATRIX, OperationDomain, OperationError,
+    OperationInvariantEntry, PARITY_MATRIX, ParityMatrixEntry, ParityPolicy, SUPPORT_MATRIX,
+    SupportMatrixEntry, SupportStatus, TopologyEditKind, UnsupportedFeatureError, feature_spec,
+    feature_specs, operation_invariant, operation_invariant_matrix, operation_parity,
+    operation_spec, operation_specs, parity_matrix, support_matrix,
 };
+#[cfg(test)]
+pub(crate) use ops::{CowCoordinatesFailureForTestAccess, CowCoordinatesForTestAccess};
+pub(crate) use ops::{MultiOutputOpParts, OpParts, PreservationProof};
 #[cfg(feature = "hydrogens")]
-pub(crate) use ops::{AddHydrogensAccess, RemoveHydrogensAccess};
+pub(crate) use ops::{WithHydrogensAccess, WithoutHydrogensAccess};
 
 /// Returns the crate version at compile time.
 #[must_use]

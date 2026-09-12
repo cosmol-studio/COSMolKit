@@ -10,81 +10,35 @@ mod atom;
 mod bond;
 mod cip;
 mod coordinates;
+mod mapping;
 mod properties;
-pub mod query;
+mod query;
 mod sgroup;
-mod stereo_group;
 mod topology;
 
 pub use adjacency::{AdjacencyError, AdjacencyList, NeighborRef};
-pub use atom::{Atom, AtomPdbResidueInfo, AtomSpec};
-pub use bond::{Bond, BondSpec};
+pub use atom::{Atom, AtomId, AtomPdbResidueInfo, AtomPropertyError, AtomSpec};
+pub use bond::{Bond, BondId, BondSpec, BondValueError};
 pub use cip::{CipDescriptor, CipDescriptorError};
 pub use coordinates::{
-    Conformer2D, Conformer3D, ConformerStore, CoordinateBlock, CoordinateDimension,
-    CoordinateValidationError,
+    Conformer2D, Conformer3D, CoordinateBlock, CoordinateDimension, CoordinateValidationError,
 };
-pub use properties::{MoleculeProperties, PropertyStore, SdfPropertyList, SdfPropertyListTarget};
+pub use mapping::{AtomMapping, BondMapping, MappingValidationError, TopologyMapping};
+pub use properties::{
+    MoleculeProperties, MoleculePropertyError, SdfPropertyList, SdfPropertyListTarget,
+};
 pub use query::{
     AtomQueryPredicate, AtomRangeBounds, AtomRangeDataFunction, AtomRangeQuery, BondQueryPredicate,
     QueryAtom, QueryBond, QueryGraph, QueryGraphError, QueryNode, RecursiveStructureQuery,
 };
 pub use sgroup::{
     SGroupAttachPoint, SGroupBondRole, SGroupBracket, SGroupBracketStyle, SGroupCState,
-    SGroupConnection, SGroupData, SGroupDisplay, SubstanceGroup, SubstanceGroupId,
-    SubstanceGroupKind,
+    SGroupConnection, SGroupData, SGroupDisplay, StereoGroup, StereoGroupKind, SubstanceGroup,
+    SubstanceGroupId, SubstanceGroupKind,
 };
-pub use stereo_group::{StereoGroup, StereoGroupKind};
-pub use topology::{
-    AtomMapping, BondMapping, MappingValidationError, TopologyBlock, TopologyMapping,
-    TopologyValidationError,
-};
-
-use std::fmt;
+pub use topology::{TopologyBatchEdit, TopologyBlock, TopologyEditError, TopologyValidationError};
 
 pub use cosmolkit_types::{
     BondDirection, BondOrder, BondStereo, ChiralTag, ELEMENTS, ELEMENTS_WITH_DUMMY, Element,
     ElementInfo, ElementParseError, Hybridization,
 };
-
-/// Stable atom-table index.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct AtomId(usize);
-
-impl AtomId {
-    #[must_use]
-    pub const fn new(index: usize) -> Self {
-        Self(index)
-    }
-    #[must_use]
-    pub const fn index(self) -> usize {
-        self.0
-    }
-}
-
-impl fmt::Display for AtomId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-/// Stable bond-table index.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct BondId(usize);
-
-impl BondId {
-    #[must_use]
-    pub const fn new(index: usize) -> Self {
-        Self(index)
-    }
-    #[must_use]
-    pub const fn index(self) -> usize {
-        self.0
-    }
-}
-
-impl fmt::Display for BondId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}

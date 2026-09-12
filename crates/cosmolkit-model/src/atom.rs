@@ -1,7 +1,38 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    fmt,
+};
 
-use crate::AtomId;
 use cosmolkit_types::{ChiralTag, Element, Hybridization};
+
+/// Stable atom-table index.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct AtomId(usize);
+
+impl AtomId {
+    #[must_use]
+    pub const fn new(index: usize) -> Self {
+        Self(index)
+    }
+
+    #[must_use]
+    pub const fn index(self) -> usize {
+        self.0
+    }
+}
+
+impl fmt::Display for AtomId {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "{}", self.0)
+    }
+}
+
+/// An atom-local string property could not be stored.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum AtomPropertyError {
+    #[error("atom property key cannot be empty")]
+    EmptyKey,
+}
 
 /// Typed atom-level PDB residue metadata.
 ///
@@ -20,6 +51,9 @@ pub struct AtomPdbResidueInfo {
     occupancy: f64,
     temp_factor: f64,
     is_hetero_atom: bool,
+    secondary_structure: u32,
+    segment_number: u32,
+    monomer_class: String,
 }
 
 impl PartialEq for AtomPdbResidueInfo {
@@ -34,10 +68,20 @@ impl PartialEq for AtomPdbResidueInfo {
             && self.occupancy.to_bits() == other.occupancy.to_bits()
             && self.temp_factor.to_bits() == other.temp_factor.to_bits()
             && self.is_hetero_atom == other.is_hetero_atom
+            && self.secondary_structure == other.secondary_structure
+            && self.segment_number == other.segment_number
+            && self.monomer_class == other.monomer_class
     }
 }
 
 impl Eq for AtomPdbResidueInfo {}
+
+impl Default for AtomPdbResidueInfo {
+    fn default() -> Self {
+        // RDKit✔️✔️: AtomPDBResidueInfo() : AtomMonomerInfo(PDBRESIDUE) {}
+        Self::new("", 0, "", 0, "", false)
+    }
+}
 
 impl AtomPdbResidueInfo {
     #[must_use]
@@ -49,6 +93,26 @@ impl AtomPdbResidueInfo {
         chain_id: impl Into<String>,
         is_hetero_atom: bool,
     ) -> Self {
+        // BEGIN RDKIT CPP FUNCTION AtomPDBResidueInfo::AtomPDBResidueInfo
+        // RDKit✔️✔️: AtomPDBResidueInfo(const std::string &atomName, int serialNumber = 0,
+        // RDKit✔️✔️:                    std::string altLoc = "", std::string residueName = "",
+        // RDKit✔️✔️:                    int residueNumber = 0, std::string chainId = "",
+        // RDKit✔️✔️:                    std::string insertionCode = "", double occupancy = 1.0,
+        // RDKit✔️✔️:                    double tempFactor = 0.0, bool isHeteroAtom = false,
+        // RDKit✔️✔️:                    unsigned int secondaryStructure = 0,
+        // RDKit✔️✔️:                    unsigned int segmentNumber = 0,
+        // RDKit✔️✔️:                    std::string monomerClass = "")
+        // RDKit✔️✔️:     : AtomMonomerInfo(PDBRESIDUE, atomName, residueName, residueNumber, chainId,
+        // RDKit✔️✔️:                       monomerClass),
+        // RDKit✔️✔️:       d_serialNumber(serialNumber),
+        // RDKit✔️✔️:       d_altLoc(std::move(altLoc)),
+        // RDKit✔️✔️:       d_insertionCode(std::move(insertionCode)),
+        // RDKit✔️✔️:       d_occupancy(occupancy),
+        // RDKit✔️✔️:       d_tempFactor(tempFactor),
+        // RDKit✔️✔️:       df_heteroAtom(isHeteroAtom),
+        // RDKit✔️✔️:       d_secondaryStructure(secondaryStructure),
+        // RDKit✔️✔️:       d_segmentNumber(segmentNumber) {}
+        // END RDKIT CPP FUNCTION AtomPDBResidueInfo::AtomPDBResidueInfo
         Self {
             atom_name: atom_name.into(),
             serial_number,
@@ -60,81 +124,137 @@ impl AtomPdbResidueInfo {
             occupancy: 1.0,
             temp_factor: 0.0,
             is_hetero_atom,
+            secondary_structure: 0,
+            segment_number: 0,
+            monomer_class: String::new(),
         }
     }
 
     #[must_use]
     pub fn with_alt_loc(mut self, alt_loc: impl Into<String>) -> Self {
+        // RDKit✔️✔️: void setAltLoc(const std::string &val) { d_altLoc = val; }
         self.alt_loc = alt_loc.into();
         self
     }
 
     #[must_use]
     pub fn with_insertion_code(mut self, insertion_code: impl Into<String>) -> Self {
+        // RDKit✔️✔️: void setInsertionCode(const std::string &val) { d_insertionCode = val; }
         self.insertion_code = insertion_code.into();
         self
     }
 
     #[must_use]
     pub const fn with_occupancy(mut self, occupancy: f64) -> Self {
+        // RDKit✔️✔️: void setOccupancy(double val) { d_occupancy = val; }
         self.occupancy = occupancy;
         self
     }
 
     #[must_use]
     pub const fn with_temp_factor(mut self, temp_factor: f64) -> Self {
+        // RDKit✔️✔️: void setTempFactor(double val) { d_tempFactor = val; }
         self.temp_factor = temp_factor;
         self
     }
 
     #[must_use]
+    pub const fn with_secondary_structure(mut self, secondary_structure: u32) -> Self {
+        // RDKit✔️✔️: void setSecondaryStructure(unsigned int val) { d_secondaryStructure = val; }
+        self.secondary_structure = secondary_structure;
+        self
+    }
+
+    #[must_use]
+    pub const fn with_segment_number(mut self, segment_number: u32) -> Self {
+        // RDKit✔️✔️: void setSegmentNumber(unsigned int val) { d_segmentNumber = val; }
+        self.segment_number = segment_number;
+        self
+    }
+
+    #[must_use]
+    pub fn with_monomer_class(mut self, monomer_class: impl Into<String>) -> Self {
+        // RDKit✔️✔️: void setMonomerClass(const std::string &val) { d_monomerClass = val; }
+        self.monomer_class = monomer_class.into();
+        self
+    }
+
+    #[must_use]
     pub fn atom_name(&self) -> &str {
+        // RDKit✔️✔️: const std::string &getName() const { return d_name; }
         &self.atom_name
     }
 
     #[must_use]
     pub const fn serial_number(&self) -> i32 {
+        // RDKit✔️✔️: int getSerialNumber() const { return d_serialNumber; }
         self.serial_number
     }
 
     #[must_use]
     pub fn alt_loc(&self) -> &str {
+        // RDKit✔️✔️: const std::string &getAltLoc() const { return d_altLoc; }
         &self.alt_loc
     }
 
     #[must_use]
     pub fn residue_name(&self) -> &str {
+        // RDKit✔️✔️: const std::string &getResidueName() const { return d_residueName; }
         &self.residue_name
     }
 
     #[must_use]
     pub const fn residue_number(&self) -> i32 {
+        // RDKit✔️✔️: int getResidueNumber() const { return d_residueNumber; }
         self.residue_number
     }
 
     #[must_use]
     pub fn chain_id(&self) -> &str {
+        // RDKit✔️✔️: const std::string &getChainId() const { return d_chainId; }
         &self.chain_id
     }
 
     #[must_use]
     pub fn insertion_code(&self) -> &str {
+        // RDKit✔️✔️: const std::string &getInsertionCode() const { return d_insertionCode; }
         &self.insertion_code
     }
 
     #[must_use]
     pub const fn occupancy(&self) -> f64 {
+        // RDKit✔️✔️: double getOccupancy() const { return d_occupancy; }
         self.occupancy
     }
 
     #[must_use]
     pub const fn temp_factor(&self) -> f64 {
+        // RDKit✔️✔️: double getTempFactor() const { return d_tempFactor; }
         self.temp_factor
     }
 
     #[must_use]
     pub const fn is_hetero_atom(&self) -> bool {
+        // RDKit✔️✔️: bool getIsHeteroAtom() const { return df_heteroAtom; }
         self.is_hetero_atom
+    }
+
+    #[must_use]
+    pub const fn secondary_structure(&self) -> u32 {
+        // RDKit✔️✔️: unsigned int getSecondaryStructure() const { return d_secondaryStructure; }
+        self.secondary_structure
+    }
+
+    #[must_use]
+    pub const fn segment_number(&self) -> u32 {
+        // RDKit✔️✔️: unsigned int getSegmentNumber() const { return d_segmentNumber; }
+        self.segment_number
+    }
+
+    #[must_use]
+    pub fn monomer_class(&self) -> &str {
+        // RDKit✔️✔️: const std::string &getMonomerClass() const { return d_monomerClass; }
+        &self.monomer_class
     }
 }
 
@@ -324,17 +444,38 @@ impl AtomSpec {
     }
 
     #[must_use]
-    pub fn with_prop(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
-        self.props.insert(key.into(), value.into());
-        self
+    pub fn with_prop(
+        mut self,
+        key: impl Into<String>,
+        value: impl Into<String>,
+    ) -> Result<Self, AtomPropertyError> {
+        let key = key.into();
+        validate_property_key(&key)?;
+        // RDKit✔️✔️: d_props.setVal(key, val);
+        self.props.insert(key, value.into());
+        Ok(self)
     }
 
     #[must_use]
-    pub fn with_computed_prop(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
+    pub fn with_computed_prop(
+        mut self,
+        key: impl Into<String>,
+        value: impl Into<String>,
+    ) -> Result<Self, AtomPropertyError> {
         let key = key.into();
+        validate_property_key(&key)?;
+        // RDKit✔️✔️: if (computed) {
+        // RDKit✔️✔️:   STR_VECT compLst;
+        // RDKit✔️✔️:   getPropIfPresent(RDKit::detail::computedPropName, compLst);
+        // RDKit✔️✔️:   if (std::find(compLst.begin(), compLst.end(), key) == compLst.end()) {
+        // RDKit✔️✔️:     compLst.emplace_back(key);
+        // RDKit✔️✔️:     d_props.setVal(RDKit::detail::computedPropName, compLst);
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️: }
+        // RDKit✔️✔️: d_props.setVal(key, val);
         self.props.insert(key.clone(), value.into());
         self.computed_props.insert(key);
-        self
+        Ok(self)
     }
 
     #[must_use]
@@ -344,166 +485,14 @@ impl AtomSpec {
     }
 
     #[must_use]
-    pub const fn element(&self) -> Element {
-        self.element
-    }
-
-    #[must_use]
-    pub const fn formal_charge(&self) -> i8 {
-        self.formal_charge
-    }
-
-    #[must_use]
-    pub const fn chiral_tag(&self) -> ChiralTag {
-        self.chiral_tag
-    }
-
-    #[must_use]
-    pub const fn chiral_permutation(&self) -> Option<u32> {
-        self.chiral_permutation
-    }
-
-    #[must_use]
-    pub const fn unknown_stereo(&self) -> bool {
-        self.unknown_stereo
-    }
-
-    #[must_use]
-    pub const fn mol_parity(&self) -> Option<i32> {
-        self.mol_parity
-    }
-
-    #[must_use]
-    pub const fn mol_inversion_flag(&self) -> Option<i32> {
-        self.mol_inversion_flag
-    }
-
-    #[must_use]
-    pub const fn implicit_hydrogen(&self) -> bool {
-        self.implicit_hydrogen
-    }
-
-    #[must_use]
-    pub fn tracked_isotopic_hydrogens(&self) -> &[u16] {
-        &self.tracked_isotopic_hydrogens
-    }
-
-    #[must_use]
-    pub const fn is_aromatic(&self) -> bool {
-        self.is_aromatic
-    }
-
-    #[must_use]
-    pub const fn isotope(&self) -> Option<u16> {
-        self.isotope
-    }
-
-    #[must_use]
-    pub const fn atom_map(&self) -> Option<u32> {
-        self.atom_map
-    }
-
-    #[must_use]
-    pub const fn no_implicit(&self) -> bool {
-        self.no_implicit
-    }
-
-    #[must_use]
-    pub const fn radical_electrons(&self) -> u8 {
-        self.radical_electrons
-    }
-
-    #[must_use]
-    pub fn props(&self) -> &BTreeMap<String, String> {
-        &self.props
-    }
-
-    #[must_use]
-    pub fn prop(&self, key: &str) -> Option<&str> {
-        self.props.get(key).map(String::as_str)
-    }
-
-    #[must_use]
-    pub fn is_prop_computed(&self, key: &str) -> bool {
-        self.computed_props.contains(key)
-    }
-
-    #[must_use]
-    pub const fn pdb_residue_info(&self) -> Option<&AtomPdbResidueInfo> {
-        self.pdb_residue_info.as_ref()
-    }
-}
-
-/// Immutable atom record owned by `Molecule`.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Atom {
-    id: AtomId,
-    element: Element,
-    formal_charge: i8,
-    explicit_hydrogens: u8,
-    chiral_tag: ChiralTag,
-    chiral_permutation: Option<u32>,
-    unknown_stereo: bool,
-    mol_parity: Option<i32>,
-    mol_inversion_flag: Option<i32>,
-    implicit_hydrogen: bool,
-    tracked_isotopic_hydrogens: Vec<u16>,
-    is_aromatic: bool,
-    isotope: Option<u16>,
-    atom_map: Option<u32>,
-    no_implicit: bool,
-    radical_electrons: u8,
-    hybridization: Hybridization,
-    props: BTreeMap<String, String>,
-    computed_props: BTreeSet<String>,
-    pdb_residue_info: Option<AtomPdbResidueInfo>,
-}
-
-impl Atom {
-    pub fn from_spec(id: AtomId, spec: AtomSpec) -> Self {
-        Self {
-            id,
-            element: spec.element,
-            formal_charge: spec.formal_charge,
-            explicit_hydrogens: spec.explicit_hydrogens,
-            chiral_tag: spec.chiral_tag,
-            chiral_permutation: spec.chiral_permutation,
-            unknown_stereo: spec.unknown_stereo,
-            mol_parity: spec.mol_parity,
-            mol_inversion_flag: spec.mol_inversion_flag,
-            implicit_hydrogen: spec.implicit_hydrogen,
-            tracked_isotopic_hydrogens: spec.tracked_isotopic_hydrogens,
-            is_aromatic: spec.is_aromatic,
-            isotope: spec.isotope,
-            atom_map: spec.atom_map,
-            no_implicit: spec.no_implicit,
-            radical_electrons: spec.radical_electrons,
-            hybridization: spec.hybridization,
-            props: spec.props,
-            computed_props: spec.computed_props,
-            pdb_residue_info: spec.pdb_residue_info,
-        }
-    }
-
-    #[allow(dead_code)]
-    pub fn with_id(mut self, id: AtomId) -> Self {
-        self.id = id;
+    pub fn without_pdb_residue_info(mut self) -> Self {
+        self.pdb_residue_info = None;
         self
     }
 
     #[must_use]
-    pub const fn id(&self) -> AtomId {
-        self.id
-    }
-
-    #[must_use]
     pub const fn element(&self) -> Element {
         self.element
-    }
-
-    #[must_use]
-    pub const fn atomic_number(&self) -> u8 {
-        self.element.atomic_number()
     }
 
     #[must_use]
@@ -591,6 +580,213 @@ impl Atom {
         self.props.get(key).map(String::as_str)
     }
 
+    #[must_use]
+    pub fn is_prop_computed(&self, key: &str) -> bool {
+        self.computed_props.contains(key)
+    }
+
+    #[must_use]
+    pub fn computed_prop_names(&self) -> &BTreeSet<String> {
+        &self.computed_props
+    }
+
+    #[must_use]
+    pub const fn pdb_residue_info(&self) -> Option<&AtomPdbResidueInfo> {
+        self.pdb_residue_info.as_ref()
+    }
+}
+
+fn validate_property_key(key: &str) -> Result<(), AtomPropertyError> {
+    // BEGIN RDKIT CPP FUNCTION RDProps::setProp empty-key precondition
+    // RDKit✔️✔️: if(key.empty()) {
+    // RDKit✔️✔️:   throw ValueErrorException("Cannot set property with empty key");
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION RDProps::setProp empty-key precondition
+    if key.is_empty() {
+        Err(AtomPropertyError::EmptyKey)
+    } else {
+        Ok(())
+    }
+}
+
+/// Immutable atom record owned by `Molecule`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Atom {
+    id: AtomId,
+    element: Element,
+    formal_charge: i8,
+    explicit_hydrogens: u8,
+    chiral_tag: ChiralTag,
+    chiral_permutation: Option<u32>,
+    unknown_stereo: bool,
+    mol_parity: Option<i32>,
+    mol_inversion_flag: Option<i32>,
+    implicit_hydrogen: bool,
+    tracked_isotopic_hydrogens: Vec<u16>,
+    is_aromatic: bool,
+    isotope: Option<u16>,
+    atom_map: Option<u32>,
+    no_implicit: bool,
+    radical_electrons: u8,
+    hybridization: Hybridization,
+    props: BTreeMap<String, String>,
+    computed_props: BTreeSet<String>,
+    pdb_residue_info: Option<AtomPdbResidueInfo>,
+}
+
+impl Atom {
+    pub fn from_spec(id: AtomId, spec: AtomSpec) -> Self {
+        Self {
+            id,
+            element: spec.element,
+            formal_charge: spec.formal_charge,
+            explicit_hydrogens: spec.explicit_hydrogens,
+            chiral_tag: spec.chiral_tag,
+            chiral_permutation: spec.chiral_permutation,
+            unknown_stereo: spec.unknown_stereo,
+            mol_parity: spec.mol_parity,
+            mol_inversion_flag: spec.mol_inversion_flag,
+            implicit_hydrogen: spec.implicit_hydrogen,
+            tracked_isotopic_hydrogens: spec.tracked_isotopic_hydrogens,
+            is_aromatic: spec.is_aromatic,
+            isotope: spec.isotope,
+            atom_map: spec.atom_map,
+            no_implicit: spec.no_implicit,
+            radical_electrons: spec.radical_electrons,
+            hybridization: spec.hybridization,
+            props: spec.props,
+            computed_props: spec.computed_props,
+            pdb_residue_info: spec.pdb_residue_info,
+        }
+    }
+
+    #[doc(hidden)]
+    pub fn with_id(mut self, id: AtomId) -> Self {
+        self.id = id;
+        self
+    }
+
+    #[doc(hidden)]
+    pub fn set_element(&mut self, element: Element) {
+        // RDKit✔️✔️: void setAtomicNum(int newNum) { d_atomicNum = newNum; }
+        self.element = element;
+    }
+
+    #[must_use]
+    pub const fn id(&self) -> AtomId {
+        // RDKit✔️✔️: unsigned int getIdx() const { return d_index; }
+        self.id
+    }
+
+    #[must_use]
+    pub const fn element(&self) -> Element {
+        self.element
+    }
+
+    #[must_use]
+    pub const fn atomic_number(&self) -> u8 {
+        // RDKit✔️✔️: int getAtomicNum() const { return d_atomicNum; }
+        self.element.atomic_number()
+    }
+
+    #[must_use]
+    pub const fn formal_charge(&self) -> i8 {
+        // RDKit✔️✔️: int getFormalCharge() const { return d_formalCharge; }
+        self.formal_charge
+    }
+
+    #[must_use]
+    pub const fn explicit_hydrogens(&self) -> u8 {
+        // RDKit✔️✔️: unsigned int getNumExplicitHs() const { return d_numExplicitHs; }
+        self.explicit_hydrogens
+    }
+
+    #[must_use]
+    pub const fn chiral_tag(&self) -> ChiralTag {
+        // RDKit✔️✔️: ChiralType getChiralTag() const {
+        // RDKit✔️✔️:   return static_cast<ChiralType>(d_chiralTag);
+        // RDKit✔️✔️: }
+        self.chiral_tag
+    }
+
+    #[must_use]
+    pub const fn chiral_permutation(&self) -> Option<u32> {
+        self.chiral_permutation
+    }
+
+    #[must_use]
+    pub const fn unknown_stereo(&self) -> bool {
+        self.unknown_stereo
+    }
+
+    #[must_use]
+    pub const fn mol_parity(&self) -> Option<i32> {
+        self.mol_parity
+    }
+
+    #[must_use]
+    pub const fn mol_inversion_flag(&self) -> Option<i32> {
+        self.mol_inversion_flag
+    }
+
+    #[must_use]
+    pub const fn implicit_hydrogen(&self) -> bool {
+        self.implicit_hydrogen
+    }
+
+    #[must_use]
+    pub fn tracked_isotopic_hydrogens(&self) -> &[u16] {
+        &self.tracked_isotopic_hydrogens
+    }
+
+    #[must_use]
+    pub const fn is_aromatic(&self) -> bool {
+        // RDKit✔️✔️: bool getIsAromatic() const { return df_isAromatic; }
+        self.is_aromatic
+    }
+
+    #[must_use]
+    pub const fn isotope(&self) -> Option<u16> {
+        // RDKit✔️✔️: unsigned int getIsotope() const { return d_isotope; }
+        // Source zero is projected as absence in the detached value.
+        self.isotope
+    }
+
+    #[must_use]
+    pub const fn atom_map(&self) -> Option<u32> {
+        self.atom_map
+    }
+
+    #[must_use]
+    pub const fn no_implicit(&self) -> bool {
+        // RDKit✔️✔️: bool getNoImplicit() const { return df_noImplicit; }
+        self.no_implicit
+    }
+
+    #[must_use]
+    pub const fn radical_electrons(&self) -> u8 {
+        // RDKit✔️✔️: unsigned int getNumRadicalElectrons() const { return d_numRadicalElectrons; }
+        self.radical_electrons
+    }
+
+    #[must_use]
+    pub const fn hybridization(&self) -> Hybridization {
+        // RDKit✔️✔️: HybridizationType getHybridization() const {
+        // RDKit✔️✔️:   return static_cast<HybridizationType>(d_hybrid);
+        // RDKit✔️✔️: }
+        self.hybridization
+    }
+
+    #[must_use]
+    pub fn props(&self) -> &BTreeMap<String, String> {
+        &self.props
+    }
+
+    #[must_use]
+    pub fn prop(&self, key: &str) -> Option<&str> {
+        self.props.get(key).map(String::as_str)
+    }
+
     /// Returns whether a property is registered as computed state.
     #[must_use]
     pub fn is_prop_computed(&self, key: &str) -> bool {
@@ -614,85 +810,104 @@ impl Atom {
         self.pdb_residue_info.as_ref()
     }
 
-    #[allow(dead_code)]
+    #[doc(hidden)]
     pub fn set_chiral_tag(&mut self, chiral_tag: ChiralTag) {
+        // RDKit✔️✔️: void setChiralTag(ChiralType what) { d_chiralTag = what; }
         self.chiral_tag = chiral_tag;
     }
 
-    #[allow(dead_code)]
+    #[doc(hidden)]
     pub fn set_chiral_permutation(&mut self, chiral_permutation: Option<u32>) {
         self.chiral_permutation = chiral_permutation;
     }
 
-    #[allow(dead_code)]
+    #[doc(hidden)]
     pub fn set_unknown_stereo(&mut self, unknown_stereo: bool) {
         self.unknown_stereo = unknown_stereo;
     }
 
-    #[allow(dead_code)]
+    #[doc(hidden)]
     pub fn set_mol_parity(&mut self, mol_parity: Option<i32>) {
         self.mol_parity = mol_parity;
     }
 
-    #[allow(dead_code)]
+    #[doc(hidden)]
     pub fn set_mol_inversion_flag(&mut self, mol_inversion_flag: Option<i32>) {
         self.mol_inversion_flag = mol_inversion_flag;
     }
 
-    #[allow(dead_code)]
+    #[doc(hidden)]
     pub fn set_implicit_hydrogen(&mut self, implicit_hydrogen: bool) {
         self.implicit_hydrogen = implicit_hydrogen;
     }
 
-    #[allow(dead_code)]
+    #[doc(hidden)]
     pub fn set_tracked_isotopic_hydrogens(&mut self, isotopes: Vec<u16>) {
         self.tracked_isotopic_hydrogens = isotopes;
     }
 
-    #[allow(dead_code)]
+    #[doc(hidden)]
     pub fn set_aromatic(&mut self, is_aromatic: bool) {
+        // RDKit✔️✔️: void setIsAromatic(bool what) { df_isAromatic = what; }
         self.is_aromatic = is_aromatic;
     }
 
-    #[allow(dead_code)]
+    #[doc(hidden)]
     pub fn set_formal_charge(&mut self, formal_charge: i8) {
+        // RDKit✔️✔️: void setFormalCharge(int what) { d_formalCharge = what; }
         self.formal_charge = formal_charge;
     }
 
-    #[allow(dead_code)]
+    #[doc(hidden)]
     pub fn set_explicit_hydrogens(&mut self, explicit_hydrogens: u8) {
+        // RDKit✔️✔️: void setNumExplicitHs(unsigned int what) { d_numExplicitHs = what; }
         self.explicit_hydrogens = explicit_hydrogens;
     }
 
-    #[allow(dead_code)]
+    #[doc(hidden)]
     pub fn set_isotope(&mut self, isotope: Option<u16>) {
+        // RDKit✔️✔️: void Atom::setIsotope(unsigned int what) { d_isotope = what; }
+        // Source zero is projected as `None` in the detached value.
         self.isotope = isotope;
     }
 
-    #[allow(dead_code)]
+    #[doc(hidden)]
     pub fn set_atom_map(&mut self, atom_map: Option<u32>) {
         self.atom_map = atom_map;
     }
 
-    #[allow(dead_code)]
+    #[doc(hidden)]
     pub fn set_no_implicit(&mut self, no_implicit: bool) {
+        // RDKit✔️✔️: void setNoImplicit(bool what) { df_noImplicit = what; }
         self.no_implicit = no_implicit;
     }
 
-    #[allow(dead_code)]
+    #[doc(hidden)]
     pub fn set_radical_electrons(&mut self, radical_electrons: u8) {
+        // RDKit✔️✔️: void setNumRadicalElectrons(unsigned int num) { d_numRadicalElectrons = num; }
         self.radical_electrons = radical_electrons;
     }
 
-    #[allow(dead_code)]
-    pub fn set_prop(&mut self, key: impl Into<String>, value: impl Into<String>) {
+    #[doc(hidden)]
+    pub fn set_prop(
+        &mut self,
+        key: impl Into<String>,
+        value: impl Into<String>,
+    ) -> Result<(), AtomPropertyError> {
+        let key = key.into();
+        validate_property_key(&key)?;
         // RDKit✔️✔️: d_props.setVal(key, val);
         // A non-computed write does not remove an existing computed marker.
-        self.props.insert(key.into(), value.into());
+        self.props.insert(key, value.into());
+        Ok(())
     }
 
-    #[allow(dead_code)]
-    pub fn set_computed_prop(&mut self, key: impl Into<String>, value: impl Into<String>) {
+    #[doc(hidden)]
+    pub fn set_computed_prop(
+        &mut self,
+        key: impl Into<String>,
+        value: impl Into<String>,
+    ) -> Result<(), AtomPropertyError> {
         // RDKit✔️🔝: if (computed) {
         // RDKit✔️🔝:   STR_VECT compLst;
         // RDKit✔️🔝:   getPropIfPresent(RDKit::detail::computedPropName, compLst);
@@ -705,11 +920,13 @@ impl Atom {
         // The ordered set preserves membership semantics while replacing the
         // source vector's linear duplicate scan with logarithmic insertion.
         let key = key.into();
+        validate_property_key(&key)?;
         self.props.insert(key.clone(), value.into());
         self.computed_props.insert(key);
+        Ok(())
     }
 
-    #[allow(dead_code)]
+    #[doc(hidden)]
     pub fn clear_prop(&mut self, key: &str) {
         // RDKit✔️🔝: auto svi = std::find(compLst.begin(), compLst.end(), key);
         // RDKit✔️🔝: if (svi != compLst.end()) {
@@ -723,6 +940,7 @@ impl Atom {
         self.computed_props.remove(key);
     }
 
+    #[doc(hidden)]
     pub fn clear_computed_props(&mut self) {
         // RDKit✔️🔝: for (const auto &key : compLst) {
         // RDKit✔️🔝:   d_props.clearVal(key);
@@ -735,12 +953,13 @@ impl Atom {
         }
     }
 
-    #[allow(dead_code)]
+    #[doc(hidden)]
     pub fn set_hybridization(&mut self, hybridization: Hybridization) {
+        // RDKit✔️✔️: void setHybridization(HybridizationType what) { d_hybrid = what; }
         self.hybridization = hybridization;
     }
 
-    #[allow(dead_code)]
+    #[doc(hidden)]
     pub fn set_pdb_residue_info(&mut self, info: Option<AtomPdbResidueInfo>) {
         self.pdb_residue_info = info;
     }

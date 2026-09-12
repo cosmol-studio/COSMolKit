@@ -10,6 +10,14 @@ The target workspace crate ownership and dependency direction are defined in
 `cosmolkit` owns `Molecule` and the operation runtime, while
 `cosmolkit-core` provides source-backed algorithms over shared model values.
 
+The only active split-crate migration plan and progress ledger is
+[`plans/crate_architecture_completion_plan.md`](./plans/crate_architecture_completion_plan.md).
+It covers the complete historical core surface in dependency order. Domain port
+checklists remain source-behavior references, not alternative crate-migration
+queues. Crate ownership and the final transaction shape are defined only by
+`crate_architecture.md`; old colocated paths and transaction examples in operating
+notes must be reconciled before reuse, without weakening their invariant checks.
+
 ## Directory Map
 
 | Path | Role |

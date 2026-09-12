@@ -5,9 +5,11 @@
 //! bookkeeping, cache invalidation, and operation contracts deliberately do
 //! not appear here.
 
+use crate::{ValenceModel, assign_valence_with_options_for_topology};
 use cosmolkit_model::{
-    AdjacencyList, AtomId, AtomSpec, Bond, BondOrder, BondSpec, CoordinateBlock,
-    CoordinateValidationError, Element, MoleculeProperties, TopologyBlock, TopologyValidationError,
+    AdjacencyList, AtomId, AtomSpec, Bond, BondOrder, BondSpec, Conformer2D, Conformer3D,
+    CoordinateBlock, CoordinateValidationError, Element, MoleculeProperties, TopologyBlock,
+    TopologyEditError, TopologyValidationError,
 };
 
 /// Parameters corresponding to RDKit's `MolOps::AddHsParameters`.
@@ -69,6 +71,7 @@ impl Default for RemoveHsParams {
 pub enum CoreOperationError {
     InvalidTopology(TopologyValidationError),
     InvalidCoordinates(CoordinateValidationError),
+    TopologyEdit(TopologyEditError),
     Unsupported {
         operation: &'static str,
         reason: &'static str,
@@ -77,6 +80,7 @@ pub enum CoreOperationError {
         operation: &'static str,
         reason: &'static str,
     },
+    Valence(String),
 }
 
 impl std::fmt::Display for CoreOperationError {
@@ -85,6 +89,9 @@ impl std::fmt::Display for CoreOperationError {
             Self::InvalidTopology(error) => write!(formatter, "invalid detached topology: {error}"),
             Self::InvalidCoordinates(error) => {
                 write!(formatter, "invalid detached coordinates: {error}")
+            }
+            Self::TopologyEdit(error) => {
+                write!(formatter, "detached topology edit failed: {error}")
             }
             Self::Unsupported { operation, reason } => {
                 write!(
@@ -95,6 +102,7 @@ impl std::fmt::Display for CoreOperationError {
             Self::InvalidInput { operation, reason } => {
                 write!(formatter, "{operation} received invalid input: {reason}")
             }
+            Self::Valence(error) => write!(formatter, "valence assignment failed: {error}"),
         }
     }
 }
@@ -110,6 +118,12 @@ impl From<TopologyValidationError> for CoreOperationError {
 impl From<CoordinateValidationError> for CoreOperationError {
     fn from(error: CoordinateValidationError) -> Self {
         Self::InvalidCoordinates(error)
+    }
+}
+
+impl From<TopologyEditError> for CoreOperationError {
+    fn from(error: TopologyEditError) -> Self {
+        Self::TopologyEdit(error)
     }
 }
 
@@ -139,18 +153,29 @@ pub fn add_hydrogens_with_params(
         });
     }
     let selected = selected_atoms(&topology, params.only_on_atoms.as_deref())?;
-    if !params.explicit_only {
-        return Err(CoreOperationError::Unsupported {
-            operation: "add_hydrogens",
-            reason: "implicit-valence assignment has not yet moved below the runtime",
-        });
-    }
+    let valence = if params.explicit_only {
+        None
+    } else {
+        Some(
+            assign_valence_with_options_for_topology(&topology, ValenceModel::RdkitLike, false)
+                .map_err(|error| CoreOperationError::Valence(error.to_string()))?,
+        )
+    };
 
     let additions = topology
         .atoms
         .iter()
         .filter(|atom| selected[atom.id().index()])
-        .flat_map(|atom| std::iter::repeat_n(atom.id(), usize::from(atom.explicit_hydrogens())))
+        .flat_map(|atom| {
+            let implicit = valence
+                .as_ref()
+                .and_then(|assignment| assignment.implicit_hydrogens.get(atom.id().index()))
+                .copied()
+                .unwrap_or(0)
+                .max(0) as usize;
+            let count = usize::from(atom.explicit_hydrogens()) + implicit;
+            std::iter::repeat_n(atom.id(), count)
+        })
         .collect::<Vec<_>>();
     for atom in &mut topology.atoms {
         if selected[atom.id().index()] {
@@ -175,10 +200,22 @@ pub fn add_hydrogens_with_params(
         ));
         if params.add_coords {
             for conformer in &mut coordinates.conformers_2d {
-                conformer.push_coord([0.0, 0.0]);
+                let mut values = conformer.coordinates().to_vec();
+                values.push([0.0, 0.0]);
+                let mut replacement = Conformer2D::new(conformer.id(), values);
+                for (key, value) in conformer.props() {
+                    replacement = replacement.with_prop(key.clone(), value.clone());
+                }
+                *conformer = replacement;
             }
             for conformer in &mut coordinates.conformers_3d {
-                conformer.push_coord([0.0, 0.0, 0.0]);
+                let mut values = conformer.coordinates().to_vec();
+                values.push([0.0, 0.0, 0.0]);
+                let mut replacement = Conformer3D::new(conformer.id(), values, conformer.is_3d());
+                for (key, value) in conformer.props() {
+                    replacement = replacement.with_prop(key.clone(), value.clone());
+                }
+                *conformer = replacement;
             }
         }
     }
@@ -230,7 +267,12 @@ pub fn remove_hydrogens_with_params(
         // RDKit✔️❌: mol.removeAtom(atom, clearProps);
         // The model mapping performs the same detached compaction boundary;
         // stereo/cache side effects are intentionally still unsupported here.
-        let mapping = topology.remove_atoms_with_mapping(&atoms_to_remove);
+        let mut edit = topology.begin_batch_edit()?;
+        for atom in atoms_to_remove {
+            edit.remove_atom(atom)?;
+        }
+        let (edited_topology, mapping) = edit.finish()?;
+        topology = edited_topology;
         coordinates.remap_topology(&mapping.retained_atom_indices());
         properties.remap_topology(&mapping.atoms.new_to_old, &mapping.bonds.new_to_old);
     }
@@ -355,14 +397,14 @@ mod tests {
     }
 
     #[test]
-    fn default_add_hydrogens_reports_unmigrated_valence_boundary() {
-        let error = add_hydrogens_impl(
+    fn default_add_hydrogens_uses_detached_valence_boundary() {
+        let result = add_hydrogens_impl(
             TopologyBlock::default(),
             CoordinateBlock::default(),
             MoleculeProperties::default(),
         )
-        .expect_err("default AddHs still requires the valence port");
-        assert!(matches!(error, CoreOperationError::Unsupported { .. }));
+        .expect("default AddHs on empty topology");
+        assert!(result.0.atoms.is_empty());
     }
 
     #[test]

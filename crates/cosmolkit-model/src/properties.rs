@@ -4,12 +4,10 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{AtomId, BondId};
 
-#[derive(Debug, Clone, PartialEq, Default)]
-pub struct PropertyStore {
-    pub name: Option<String>,
-    pub sdf_data_fields: Vec<(String, String)>,
-    pub sdf_property_lists: Vec<SdfPropertyList>,
-    pub props: std::collections::BTreeMap<String, String>,
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum MoleculePropertyError {
+    #[error("property key must not be empty")]
+    EmptyKey,
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -107,18 +105,22 @@ impl MoleculeProperties {
         &self.computed_props
     }
 
-    #[must_use]
-    pub fn with_prop(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
-        self.props.insert(key.into(), value.into());
-        self
+    pub fn with_prop(
+        mut self,
+        key: impl Into<String>,
+        value: impl Into<String>,
+    ) -> Result<Self, MoleculePropertyError> {
+        self.set_prop(key, value)?;
+        Ok(self)
     }
 
-    #[must_use]
-    pub fn with_computed_prop(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
-        let key = key.into();
-        self.props.insert(key.clone(), value.into());
-        self.computed_props.insert(key);
-        self
+    pub fn with_computed_prop(
+        mut self,
+        key: impl Into<String>,
+        value: impl Into<String>,
+    ) -> Result<Self, MoleculePropertyError> {
+        self.set_computed_prop(key, value)?;
+        Ok(self)
     }
 
     #[must_use]
@@ -133,39 +135,65 @@ impl MoleculeProperties {
         self
     }
 
-    #[allow(dead_code)]
-    pub fn set_prop(&mut self, key: impl Into<String>, value: impl Into<String>) {
-        // RDKit✔️✔️: d_props.setVal(key, val);
+    pub fn set_prop(
+        &mut self,
+        key: impl Into<String>,
+        value: impl Into<String>,
+    ) -> Result<(), MoleculePropertyError> {
+        // RDKit✔️🔝:     if(key.empty()) {
+        // RDKit✔️🔝:       throw ValueErrorException("Cannot set property with empty key");
+        // RDKit✔️🔝:     }
+        // RDKit✔️🔝:     d_props.setVal(key, val);
+        // BTreeMap lookup and replacement are logarithmic, while the pinned
+        // RDKit Dict stores pairs in a vector and scans keys linearly. The
+        // modeled string-only state preserves replacement semantics.
+        let key = key.into();
+        if key.is_empty() {
+            return Err(MoleculePropertyError::EmptyKey);
+        }
         // A non-computed write does not remove an existing computed marker.
-        self.props.insert(key.into(), value.into());
+        self.props.insert(key, value.into());
+        Ok(())
     }
 
-    #[allow(dead_code)]
-    pub fn set_computed_prop(&mut self, key: impl Into<String>, value: impl Into<String>) {
-        // RDKit✔️🔝: if (computed) {
-        // RDKit✔️🔝:   STR_VECT compLst;
-        // RDKit✔️🔝:   getPropIfPresent(RDKit::detail::computedPropName, compLst);
-        // RDKit✔️🔝:   if (std::find(compLst.begin(), compLst.end(), key) == compLst.end()) {
-        // RDKit✔️🔝:     compLst.emplace_back(key);
-        // RDKit✔️🔝:     d_props.setVal(RDKit::detail::computedPropName, compLst);
-        // RDKit✔️🔝:   }
-        // RDKit✔️🔝: }
-        // RDKit✔️🔝: d_props.setVal(key, val);
+    pub fn set_computed_prop(
+        &mut self,
+        key: impl Into<String>,
+        value: impl Into<String>,
+    ) -> Result<(), MoleculePropertyError> {
+        // RDKit✔️🔝:     if(key.empty()) {
+        // RDKit✔️🔝:       throw ValueErrorException("Cannot set property with empty key");
+        // RDKit✔️🔝:     }
+        // RDKit✔️🔝:     if (computed) {
+        // RDKit✔️🔝:       STR_VECT compLst;
+        // RDKit✔️🔝:       getPropIfPresent(RDKit::detail::computedPropName, compLst);
+        // RDKit✔️🔝:       if (std::find(compLst.begin(), compLst.end(), key) == compLst.end()) {
+        // RDKit✔️🔝:         compLst.emplace_back(key);
+        // RDKit✔️🔝:         d_props.setVal(RDKit::detail::computedPropName, compLst);
+        // RDKit✔️🔝:       }
+        // RDKit✔️🔝:     }
+        // RDKit✔️🔝:     d_props.setVal(key, val);
         // The ordered set preserves membership semantics while replacing the
         // source vector's linear duplicate scan with logarithmic insertion.
         let key = key.into();
+        if key.is_empty() {
+            return Err(MoleculePropertyError::EmptyKey);
+        }
         self.props.insert(key.clone(), value.into());
         self.computed_props.insert(key);
+        Ok(())
     }
 
-    #[allow(dead_code)]
     pub fn clear_prop(&mut self, key: &str) {
-        // RDKit✔️🔝: auto svi = std::find(compLst.begin(), compLst.end(), key);
-        // RDKit✔️🔝: if (svi != compLst.end()) {
-        // RDKit✔️🔝:   compLst.erase(svi);
-        // RDKit✔️🔝:   d_props.setVal(RDKit::detail::computedPropName, compLst);
-        // RDKit✔️🔝: }
-        // RDKit✔️🔝: d_props.clearVal(key);
+        // RDKit✔️🔝:     STR_VECT compLst;
+        // RDKit✔️🔝:     if (getPropIfPresent(RDKit::detail::computedPropName, compLst)) {
+        // RDKit✔️🔝:       auto svi = std::find(compLst.begin(), compLst.end(), key);
+        // RDKit✔️🔝:       if (svi != compLst.end()) {
+        // RDKit✔️🔝:         compLst.erase(svi);
+        // RDKit✔️🔝:         d_props.setVal(RDKit::detail::computedPropName, compLst);
+        // RDKit✔️🔝:       }
+        // RDKit✔️🔝:     }
+        // RDKit✔️🔝:     d_props.clearVal(key);
         // BTreeSet removal preserves the source transition with logarithmic
         // lookup instead of the source vector's linear search and erase.
         self.props.remove(key);
@@ -173,9 +201,15 @@ impl MoleculeProperties {
     }
 
     pub fn clear_computed_props(&mut self) {
-        // RDKit✔️🔝: for (const auto &key : compLst) {
-        // RDKit✔️🔝:   d_props.clearVal(key);
-        // RDKit✔️🔝: }
+        // RDKit✔️🔝:     STR_VECT compLst;
+        // RDKit✔️🔝:     if (getPropIfPresent(RDKit::detail::computedPropName, compLst) &&
+        // RDKit✔️🔝:         !compLst.empty()) {
+        // RDKit✔️🔝:       for (const auto &sv : compLst) {
+        // RDKit✔️🔝:         d_props.clearVal(sv);
+        // RDKit✔️🔝:       }
+        // RDKit✔️🔝:       compLst.clear();
+        // RDKit✔️🔝:       d_props.setVal(RDKit::detail::computedPropName, compLst);
+        // RDKit✔️🔝:     }
         // Moving the set avoids the source vector copy while preserving exact
         // membership-based clearing.
         for key in std::mem::take(&mut self.computed_props) {
