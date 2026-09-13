@@ -48,6 +48,11 @@ RDL✔️✔️: behavior, performance, and complexity are considered equivalent
 
 Do not expand behavior without first copying the corresponding C function body
 inside a `BEGIN RDL C FUNCTION ...` / `END RDL C FUNCTION ...` frame.
-# cosmolkit-ringdecomposer
+## Documentation
 
-The primary user-facing API is documented in [`cosmolkit`](../cosmolkit/README.md).
+- [Rust API documentation](https://docs.rs/cosmolkit-ringdecomposer/) — graph and ring-decomposition types and algorithms.
+- [Python documentation](https://kit.cosmol.org/) — Python API reference and workflow examples.
+- [Python package on PyPI](https://pypi.org/project/cosmolkit/) — releases and installation downloads.
+- [COSMolKit Web Tools](https://tools.cosmol.org/tools) — browser-based molecular format conversion, SVG depiction, conformer generation, InChI/InChIKey conversion, and molecular property calculation.
+- [cosmolkit-ringdecomposer on crates.io](https://crates.io/crates/cosmolkit-ringdecomposer) — Rust package releases.
+- [COSMolKit Rust crate directory](https://crates.io/crates/cosmolkit#rust-crates) — the public molecule API and related algorithm packages.

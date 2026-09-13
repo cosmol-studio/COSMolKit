@@ -150,7 +150,8 @@ fn generated_tables_have_one_source_and_queries_do_not_define_parallel_rows() {
     ] {
         assert!(generator_source.contains(&format!("pub const {table}:")));
         assert!(!metadata_source.contains(&format!("pub const {table}:")));
-        assert!(metadata_source.contains(&format!("super::registry::{table}")));
+        assert!(metadata_source.contains(&format!("super::runtime::registry::{table}")));
+        assert!(!metadata_source.contains(&format!("super::registry::{table}")));
     }
     assert_eq!(registry_source.matches("molecule_ops!").count(), 1);
 }

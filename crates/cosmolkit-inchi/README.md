@@ -1,6 +1,13 @@
 # cosmolkit-inchi
 
-The primary user-facing API is documented in [`cosmolkit`](../cosmolkit/README.md).
+## Documentation
+
+- [Rust API documentation](https://docs.rs/cosmolkit-inchi/) — the neutral InChI engine API.
+- [Python documentation](https://kit.cosmol.org/) — Python API reference and workflow examples.
+- [Python package on PyPI](https://pypi.org/project/cosmolkit/) — releases and installation downloads.
+- [COSMolKit Web Tools](https://tools.cosmol.org/tools) — browser-based InChI/InChIKey conversion, molecular format conversion, depiction, conformer generation, and molecular property calculation.
+- [cosmolkit-inchi on crates.io](https://crates.io/crates/cosmolkit-inchi) — Rust package releases.
+- [COSMolKit Rust crate directory](https://crates.io/crates/cosmolkit#rust-crates) — the public molecule API and related algorithm packages.
 
 `cosmolkit-inchi` is a toolkit-neutral, pure Rust source port of the official
 IUPAC InChI engine for the four scalar operations used by COSMolKit:

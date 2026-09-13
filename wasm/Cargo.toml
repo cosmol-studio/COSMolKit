@@ -9,6 +9,7 @@ documentation = "https://docs.rs/cosmolkit-wasm"
 license.workspace = true
 version.workspace = true
 edition.workspace = true
+publish = false
 
 [lib]
 name = "cosmolkit_wasm"
@@ -41,4 +42,4 @@ serialization = ["cosmolkit/serialization"]
 stereoisomers = ["cosmolkit/stereoisomers"]
 
 [dependencies]
-cosmolkit = { version = "0.5.0-rc.1", path = "../crates/cosmolkit", default-features = false }
+cosmolkit = { version = "0.5.0-rc.3", path = "../crates/cosmolkit", default-features = false }

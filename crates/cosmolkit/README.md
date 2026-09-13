@@ -11,7 +11,7 @@ that need a smaller dependency surface can disable defaults and enable only the
 capabilities they use:
 
 ```toml
-cosmolkit = { version = "0.3.0", default-features = false, features = ["fingerprints"] }
+cosmolkit = { version = "0.5.0-rc.3", default-features = false, features = ["fingerprints"] }
 ```
 
 | Feature | Capability | Implied features |
@@ -33,12 +33,43 @@ build the complete `full` capability set.
 
 ## Documentation
 
-- Rust API documentation: <https://docs.rs/cosmolkit/latest/cosmolkit/>
-- Project validation: [`VALIDATION.md`](https://github.com/cosmol-studio/COSMolKit/blob/main/VALIDATION.md)
-- Validation scope and evidence: [`VALIDATION.md`](https://github.com/cosmol-studio/COSMolKit/blob/main/VALIDATION.md) · [COSMolKit Web Tools](https://tools.cosmol.org/tools)
-- Crate ownership and final decomposition: [`dev/crate_architecture.md`](../../dev/crate_architecture.md)
-- Sole crate migration plan and progress: [`crate_architecture_completion_plan.md`](../../dev/plans/crate_architecture_completion_plan.md)
-- Project overview and Python package notes: [`README.md`](https://github.com/cosmol-studio/COSMolKit/blob/main/README.md)
+- [Rust API documentation](https://docs.rs/cosmolkit/latest/cosmolkit/) — types, methods, and module reference.
+- [Python documentation](https://kit.cosmol.org/) — installation, API reference, and Python workflow examples.
+- [Python package on PyPI](https://pypi.org/project/cosmolkit/) — package releases and installation downloads.
+- [COSMolKit Web Tools](https://tools.cosmol.org/tools) — browser-based SMILES-to-SVG depiction, molecular format conversion, 3D conformer generation, InChI/InChIKey conversion, molecular property calculation, and SMILES canonicalization.
+- [Validation scope and evidence](https://github.com/cosmol-studio/COSMolKit/blob/main/VALIDATION.md) — reference versions, test corpora, and documented parity boundaries.
+
+## Rust Crates
+
+The COSMolKit packages below are published on crates.io. Start with
+`cosmolkit` for the public molecule API; the other crates separate shared values,
+algorithms, and code generation. The descriptions identify each package's area;
+publication does not imply that every capability in that area is implemented.
+Consult the package API and support status for the selected version.
+
+| Crate | Area |
+|---|---|
+| [cosmolkit](https://crates.io/crates/cosmolkit) | Public Molecule API, operation contracts, and runtime |
+| [cosmolkit-types](https://crates.io/crates/cosmolkit-types) | Element, bond, and stereochemistry vocabulary |
+| [cosmolkit-model](https://crates.io/crates/cosmolkit-model) | Detached atoms, bonds, topology, coordinates, properties, and query values |
+| [cosmolkit-core](https://crates.io/crates/cosmolkit-core) | Foundational chemistry, ring perception, valence, and shared graph algorithms |
+| [cosmolkit-macros](https://crates.io/crates/cosmolkit-macros) | Operation and binding-contract code generation |
+| [cosmolkit-ringdecomposer](https://crates.io/crates/cosmolkit-ringdecomposer) | Graph cycle decomposition and Unique Ring Families |
+| [cosmolkit-cx](https://crates.io/crates/cosmolkit-cx) | CX extension syntax and records |
+| [cosmolkit-smiles](https://crates.io/crates/cosmolkit-smiles) | SMILES parsing, writing, canonical ranking, and CXSMILES |
+| [cosmolkit-search](https://crates.io/crates/cosmolkit-search) | SMARTS queries and substructure matching |
+| [cosmolkit-io](https://crates.io/crates/cosmolkit-io) | Molecular file formats and detached structure IO |
+| [cosmolkit-inchi](https://crates.io/crates/cosmolkit-inchi) | InChI and InChIKey generation and conversion |
+| [cosmolkit-descriptors](https://crates.io/crates/cosmolkit-descriptors) | Molecular properties and descriptors |
+| [cosmolkit-fingerprints](https://crates.io/crates/cosmolkit-fingerprints) | Molecular fingerprints and similarity primitives |
+| [cosmolkit-stereo](https://crates.io/crates/cosmolkit-stereo) | Stereochemistry and stereoisomer operations |
+| [cosmolkit-tautomer](https://crates.io/crates/cosmolkit-tautomer) | Tautomer transformations and enumeration |
+| [cosmolkit-conformer](https://crates.io/crates/cosmolkit-conformer) | 3D conformer generation and selection |
+| [cosmolkit-forcefields](https://crates.io/crates/cosmolkit-forcefields) | Molecular force fields, energy, and optimization |
+| [cosmolkit-alignment](https://crates.io/crates/cosmolkit-alignment) | Coordinate alignment and RMSD |
+| [cosmolkit-depict](https://crates.io/crates/cosmolkit-depict) | 2D molecular layout and depiction |
+| [cosmolkit-batch](https://crates.io/crates/cosmolkit-batch) | Detached batch processing and ordered results |
+| [cosmolkit-bio](https://crates.io/crates/cosmolkit-bio) | Structural-biology values and hierarchy operations |
 
 ## Validation Status
 

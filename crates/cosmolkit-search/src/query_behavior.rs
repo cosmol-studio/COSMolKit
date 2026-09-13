@@ -29,7 +29,9 @@ pub use cosmolkit_model::{
     QueryNode, RecursiveStructureQuery,
 };
 
-use cosmolkit_core::{RingInfo, ValenceAssignment, ValenceModel, atomic_mass as rdkit_atomic_mass};
+use cosmolkit_core::{
+    PeriodicTableError, RingInfo, ValenceAssignment, ValenceModel, atomic_mass as rdkit_atomic_mass,
+};
 use cosmolkit_model::{AdjacencyList, Atom, AtomId, Bond, BondSpec};
 use cosmolkit_types::{BondOrder, BondStereo, ChiralTag, Hybridization};
 
@@ -1733,15 +1735,42 @@ pub(crate) fn complete_mol_queries(molecule: &mut crate::QueryGraph, magic_value
     }
 }
 
-fn rdkit_atom_mass(atom: &Atom) -> f64 {
+fn rdkit_atom_mass(atom: &Atom) -> Result<f64, PeriodicTableError> {
+    // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/Atom.cpp :: Atom::getMass
+    // RDKit✔️✔️: double Atom::getMass() const {
+    // RDKit✔️✔️:   if (d_isotope) {
+    // RDKit✔️✔️:     double res =
+    // RDKit✔️✔️:         PeriodicTable::getTable()->getMassForIsotope(d_atomicNum, d_isotope);
+    // RDKit✔️✔️:     if (d_atomicNum != 0 && res == 0.0) {
+    // RDKit✔️✔️:       res = d_isotope;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     return res;
+    // RDKit✔️✔️:   } else {
+    // RDKit✔️✔️:     return PeriodicTable::getTable()->getAtomicWeight(d_atomicNum);
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/Atom.cpp :: Atom::getMass
+    // Local complexity review: both implementations perform one O(1)
+    // atomic-weight access or one O(log I) isotope lookup and no allocation,
+    // cloning, graph traversal, or temporary collection. The source table
+    // reports a missing isotope as zero; the canonical core table reports the
+    // same condition as `UnknownIsotope`, which this query-layer reproduction
+    // alone maps to RDKit's isotope-number fallback. Any other structured
+    // lookup error remains an error instead of becoming a plausible mass.
     match rdkit_atomic_mass(atom.element(), atom.isotope()) {
-        Ok(mass) => mass,
-        Err(_) if atom.atomic_number() != 0 => atom.isotope().map_or(0.0, f64::from),
-        Err(_) => 0.0,
+        Ok(mass) => Ok(mass),
+        Err(PeriodicTableError::UnknownIsotope { .. }) if atom.atomic_number() != 0 => {
+            Ok(atom.isotope().map_or(0.0, f64::from))
+        }
+        Err(PeriodicTableError::UnknownIsotope { .. }) => Ok(0.0),
+        #[allow(unreachable_patterns)]
+        Err(error) => Err(error),
     }
 }
 
-pub(crate) fn replace_atom_with_query_atom(atom: Atom) -> crate::QueryAtom {
+pub(crate) fn replace_atom_with_query_atom(
+    atom: Atom,
+) -> Result<crate::QueryAtom, PeriodicTableError> {
     // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/QueryOps.cpp :: replaceAtomWithQueryAtom
     // RDKit✔️🔝: Atom *replaceAtomWithQueryAtom(RWMol *mol, Atom *atom) {
     // RDKit✔️🔝:   PRECONDITION(mol, "bad molecule");
@@ -1815,7 +1844,7 @@ pub(crate) fn replace_atom_with_query_atom(atom: Atom) -> crate::QueryAtom {
         );
     }
     if atom.prop("_hasMassQuery").is_some() {
-        let mass = rdkit_atom_mass(&atom) as u16;
+        let mass = rdkit_atom_mass(&atom)? as u16;
         query_atom_expand_query(
             &mut query,
             make_atom_mass_query(mass),
@@ -1823,7 +1852,7 @@ pub(crate) fn replace_atom_with_query_atom(atom: Atom) -> crate::QueryAtom {
             true,
         );
     }
-    crate::QueryAtom::from_parts(atom, query)
+    Ok(crate::QueryAtom::from_parts(atom, query))
 }
 
 #[inline]
@@ -3039,7 +3068,7 @@ pub(crate) fn atom_predicate_matches_from_blocks(
     stereo_groups: &[cosmolkit_model::StereoGroup],
     ring_info: Option<&RingInfo>,
     valence: Option<&ValenceAssignment>,
-) -> bool {
+) -> Result<bool, PeriodicTableError> {
     let target =
         super::target::SearchTarget::new(topology, coordinates, stereo_groups, ring_info, valence);
     let context = build_query_match_context_for_target(&target);
@@ -3569,32 +3598,16 @@ fn query_atom_type(at: &Atom) -> i32 {
 const MASS_INTEGER_CONVERSION_FACTOR: i32 = 1000;
 
 #[inline]
-fn query_atom_mass(at: &Atom) -> i32 {
+fn query_atom_mass(at: &Atom) -> Result<i32, PeriodicTableError> {
     // RDKit✔️✔️: const int massIntegerConversionFactor = 1000;
     // RDKit✔️✔️: static inline int queryAtomMass(Atom const *at) {
     // RDKit✔️✔️:   return static_cast<int>(
     // RDKit✔️✔️:       std::round(massIntegerConversionFactor * at->getMass()));
     // RDKit✔️✔️: };
-    // RDKit✔️✔️: double Atom::getMass() const {
-    // RDKit✔️✔️:   if (d_isotope) {
-    // RDKit✔️✔️:     double res =
-    // RDKit✔️✔️:         PeriodicTable::getTable()->getMassForIsotope(d_atomicNum, d_isotope);
-    // RDKit✔️✔️:     if (d_atomicNum != 0 && res == 0.0) {
-    // RDKit✔️✔️:       res = d_isotope;
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:     return res;
-    // RDKit✔️✔️:   } else {
-    // RDKit✔️✔️:     return PeriodicTable::getTable()->getAtomicWeight(d_atomicNum);
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️: }
-    // Local complexity review: both implementations perform O(1) atomic-
-    // weight access or O(log I) isotope lookup, followed by one multiplication
-    // and round, with no allocation, cloning, graph traversal, or temporary
-    // collection. Rust reuses the canonical full RDKit mass tables and
-    // `Atom::getMass` fallback port in `rdkit_atomic_mass`; its sorted-table
-    // binary search and RDKit's isotope map lookup have the same asymptotic
-    // complexity.
-    (f64::from(MASS_INTEGER_CONVERSION_FACTOR) * rdkit_atom_mass(at)).round() as i32
+    // Local complexity review: both implementations perform one multiplication
+    // and round after the same O(1)/O(log I) `Atom::getMass` helper, with no
+    // allocation, cloning, graph traversal, or temporary collection.
+    Ok((f64::from(MASS_INTEGER_CONVERSION_FACTOR) * rdkit_atom_mass(at)?).round() as i32)
 }
 
 #[inline]
@@ -4263,7 +4276,7 @@ pub fn atom_predicate_matches(
     atom: &Atom,
     pred: &AtomQueryPredicate,
     mol: &impl SearchTargetAccess,
-) -> bool {
+) -> Result<bool, PeriodicTableError> {
     let ctx = build_query_match_context(mol);
     atom_predicate_matches_with_target_context(atom, pred, mol, &ctx)
 }
@@ -4273,13 +4286,13 @@ pub(crate) fn atom_predicate_matches_with_target_context(
     pred: &AtomQueryPredicate,
     mol: &impl SearchTargetAccess,
     ctx: &QueryMatchContext,
-) -> bool {
+) -> Result<bool, PeriodicTableError> {
     let aidx = atom.id().index();
     let adj = &ctx.adj;
     let ring_info = &ctx.ring_info;
     let valence = &ctx.valence;
 
-    match pred {
+    Ok(match pred {
         // RDKit✔️✔️: `*` matches any atom — equivalent to AtomNull with no negation.
         AtomQueryPredicate::Any => true,
 
@@ -4537,7 +4550,7 @@ pub(crate) fn atom_predicate_matches_with_target_context(
         // RDKit✔️✔️: mass match — queryAtomMass. `Mass` retains the unscaled
         // integer query value accepted by RDKit's makeAtomMassQuery.
         AtomQueryPredicate::Mass(m) => {
-            query_atom_mass(atom) == i32::from(*m) * MASS_INTEGER_CONVERSION_FACTOR
+            query_atom_mass(atom)? == i32::from(*m) * MASS_INTEGER_CONVERSION_FACTOR
         }
 
         // RDKit✔️✔️: chiral tag match.
@@ -4588,7 +4601,7 @@ pub(crate) fn atom_predicate_matches_with_target_context(
             // the caller should check for UnsupportedFeature in the match tree.
             false
         }
-    }
+    })
 }
 
 pub fn atom_predicate_matches_with_context(
@@ -4596,7 +4609,7 @@ pub fn atom_predicate_matches_with_context(
     pred: &AtomQueryPredicate,
     mol: &impl SearchTargetAccess,
     ctx: &QueryMatchContext,
-) -> bool {
+) -> Result<bool, PeriodicTableError> {
     atom_predicate_matches_with_target_context(atom, pred, mol, ctx)
 }
 
@@ -5636,7 +5649,7 @@ fn query_atom_query_match(
     query: &QueryNode<AtomQueryPredicate>,
     what: &Atom,
     mol: &impl SearchTargetAccess,
-) -> bool {
+) -> Result<bool, PeriodicTableError> {
     // RDKit✔️❌: bool QueryAtom::QueryMatch(QueryAtom const *what) const {
     // RDKit✔️❌:   PRECONDITION(what, "bad query atom");
     // RDKit✔️❌:   PRECONDITION(dp_query, "no query set");
@@ -5826,7 +5839,7 @@ pub fn atom_matches_query(
     atom: &Atom,
     query: &QueryNode<AtomQueryPredicate>,
     mol: &impl SearchTargetAccess,
-) -> bool {
+) -> Result<bool, PeriodicTableError> {
     // RDKit✔️❌: bool QueryAtom::Match(Atom const *what) const {
     // RDKit✔️❌:   PRECONDITION(what, "bad query atom");
     // RDKit✔️❌:   PRECONDITION(dp_query, "no query set");
@@ -5848,28 +5861,52 @@ pub(crate) fn atom_matches_query_with_target_context(
     query: &QueryNode<AtomQueryPredicate>,
     mol: &impl SearchTargetAccess,
     ctx: &QueryMatchContext,
-) -> bool {
-    match query {
+) -> Result<bool, PeriodicTableError> {
+    Ok(match query {
         QueryNode::Predicate(pred) => {
-            atom_predicate_matches_with_target_context(atom, pred, mol, ctx)
+            atom_predicate_matches_with_target_context(atom, pred, mol, ctx)?
         }
 
-        QueryNode::And(children) => and_query_match(children, false, |child| {
-            atom_matches_query_with_target_context(atom, child, mol, ctx)
-        }),
+        QueryNode::And(children) => {
+            let mut matched = true;
+            for child in children {
+                if !atom_matches_query_with_target_context(atom, child, mol, ctx)? {
+                    matched = false;
+                    break;
+                }
+            }
+            matched
+        }
 
-        QueryNode::Or(children) => or_query_match(children, false, |child| {
-            atom_matches_query_with_target_context(atom, child, mol, ctx)
-        }),
+        QueryNode::Or(children) => {
+            let mut matched = false;
+            for child in children {
+                if atom_matches_query_with_target_context(atom, child, mol, ctx)? {
+                    matched = true;
+                    break;
+                }
+            }
+            matched
+        }
 
-        QueryNode::Xor(children) => xor_query_match(children, false, |child| {
-            atom_matches_query_with_target_context(atom, child, mol, ctx)
-        }),
+        QueryNode::Xor(children) => {
+            let mut matched = false;
+            for child in children {
+                if atom_matches_query_with_target_context(atom, child, mol, ctx)? {
+                    if matched {
+                        matched = false;
+                        break;
+                    }
+                    matched = true;
+                }
+            }
+            matched
+        }
 
         // RDKit✔️✔️: NOT — invert child match.
         // RDKit source: negation flips the result.
-        QueryNode::Not(child) => !atom_matches_query_with_target_context(atom, child, mol, ctx),
-    }
+        QueryNode::Not(child) => !atom_matches_query_with_target_context(atom, child, mol, ctx)?,
+    })
 }
 
 /// RDKit✔️✔️: Evaluate a `QueryNode<BondQueryPredicate>` tree against `bond`.
@@ -5927,7 +5964,7 @@ pub fn atom_matches_query_with_context(
     query: &QueryNode<AtomQueryPredicate>,
     mol: &impl SearchTargetAccess,
     ctx: &QueryMatchContext,
-) -> bool {
+) -> Result<bool, PeriodicTableError> {
     atom_matches_query_with_target_context(atom, query, mol, ctx)
 }
 
@@ -6011,3 +6048,118 @@ fn query_atom_heavy_atom_degree(
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod atom_mass_tests {
+    use super::*;
+    use cosmolkit_model::{AtomSpec, CoordinateBlock, TopologyBlock};
+    use cosmolkit_types::Element;
+
+    fn atom(element: Element, isotope: Option<u16>) -> Atom {
+        let spec = match isotope {
+            Some(isotope) => AtomSpec::new(element).with_isotope(isotope),
+            None => AtomSpec::new(element),
+        };
+        Atom::from_spec(AtomId::new(0), spec)
+    }
+
+    fn contains_mass(node: &QueryNode<AtomQueryPredicate>, expected: u16) -> bool {
+        match node {
+            QueryNode::Predicate(AtomQueryPredicate::Mass(value)) => *value == expected,
+            QueryNode::And(children) | QueryNode::Or(children) | QueryNode::Xor(children) => {
+                children.iter().any(|child| contains_mass(child, expected))
+            }
+            QueryNode::Not(child) => contains_mass(child, expected),
+            QueryNode::Predicate(_) => false,
+        }
+    }
+
+    #[test]
+    fn rdkit_atom_mass_covers_absent_known_missing_and_dummy_isotopes() {
+        let carbon = atom(Element::C, None);
+        assert_eq!(
+            rdkit_atom_mass(&carbon),
+            rdkit_atomic_mass(Element::C, None)
+        );
+
+        let carbon_13 = atom(Element::C, Some(13));
+        assert_eq!(
+            rdkit_atom_mass(&carbon_13),
+            rdkit_atomic_mass(Element::C, Some(13))
+        );
+
+        let missing_carbon = atom(Element::C, Some(999));
+        assert_eq!(rdkit_atom_mass(&missing_carbon), Ok(999.0));
+        assert_eq!(
+            rdkit_atomic_mass(Element::C, Some(999)),
+            Err(PeriodicTableError::UnknownIsotope {
+                element: Element::C,
+                isotope: 999,
+            })
+        );
+
+        let dummy = atom(Element::DUMMY, Some(999));
+        assert_eq!(rdkit_atom_mass(&dummy), Ok(0.0));
+        assert_eq!(
+            rdkit_atomic_mass(Element::DUMMY, Some(999)),
+            Err(PeriodicTableError::UnknownIsotope {
+                element: Element::DUMMY,
+                isotope: 999,
+            })
+        );
+    }
+
+    #[test]
+    fn query_atom_mass_applies_the_source_multiplier_and_rounding() {
+        for target in [
+            atom(Element::C, None),
+            atom(Element::C, Some(13)),
+            atom(Element::C, Some(999)),
+            atom(Element::DUMMY, Some(999)),
+        ] {
+            let expected = (f64::from(MASS_INTEGER_CONVERSION_FACTOR)
+                * rdkit_atom_mass(&target).unwrap())
+            .round() as i32;
+            assert_eq!(query_atom_mass(&target), Ok(expected));
+        }
+    }
+
+    #[test]
+    fn mass_predicate_call_path_uses_missing_and_dummy_fallbacks() {
+        for (target, expected_mass) in [
+            (atom(Element::C, Some(999)), 999),
+            (atom(Element::DUMMY, Some(999)), 0),
+        ] {
+            let topology =
+                TopologyBlock::try_from_parts(vec![target], Vec::new(), Vec::new(), Vec::new())
+                    .unwrap();
+            assert_eq!(
+                atom_predicate_matches_from_blocks(
+                    &topology.atoms[0],
+                    &AtomQueryPredicate::Mass(expected_mass),
+                    &topology,
+                    &CoordinateBlock::default(),
+                    &topology.stereo_groups,
+                    None,
+                    None,
+                ),
+                Ok(true)
+            );
+        }
+    }
+
+    #[test]
+    fn replacement_call_path_uses_rdkit_mass_before_building_the_query_leaf() {
+        for (target, expected_mass) in [
+            (atom(Element::C, None), 12),
+            (atom(Element::C, Some(13)), 13),
+            (atom(Element::C, Some(999)), 999),
+            (atom(Element::DUMMY, Some(999)), 0),
+        ] {
+            let mut target = target;
+            target.set_prop("_hasMassQuery", "1").unwrap();
+            let query_atom = replace_atom_with_query_atom(target).unwrap();
+            assert!(contains_mass(query_atom.predicate(), expected_mass));
+        }
+    }
+}

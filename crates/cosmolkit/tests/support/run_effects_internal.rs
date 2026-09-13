@@ -384,7 +384,7 @@ fn preservation_requires_an_objective_supported_proof() {
     assert!(matches!(
         parts.prove_preserved_runtime(DerivedState::RINGS, PreservationProof::LeafAtomAppend),
         Err(OperationError::DerivedEffectContract {
-            issue: "leaf-atom-append proof is not implemented by this runtime unit",
+            issue: "leaf-atom-append proof requires a recorded topology mapping",
             ..
         })
     ));

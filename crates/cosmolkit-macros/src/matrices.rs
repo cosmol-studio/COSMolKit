@@ -254,11 +254,18 @@ fn expand_bio_operation(operation: &BioOperation) -> syn::Result<MatrixRows> {
 
 fn molecule_result_type(operation: &MoleculeOperation) -> proc_macro2::TokenStream {
     let fields = &operation.fields;
-    match (fields.output, fields.result_type.as_ref()) {
-        (MoleculeOutput::Single, None) => quote!("Molecule"),
-        (MoleculeOutput::Single, Some(result)) => quote!(stringify!((crate::Molecule, #result))),
-        (MoleculeOutput::Multiple, None) => quote!("Vec<Molecule>"),
-        (MoleculeOutput::Multiple, Some(result)) => quote!(stringify!(#result)),
+    match (
+        fields.output,
+        fields.result_type.as_ref(),
+        fields.assemble_fn.as_ref(),
+    ) {
+        (MoleculeOutput::Single, None, _) => quote!("Molecule"),
+        (MoleculeOutput::Single, Some(result), None) => {
+            quote!(stringify!((crate::Molecule, #result)))
+        }
+        (MoleculeOutput::Single, Some(result), Some(_)) => quote!(stringify!(#result)),
+        (MoleculeOutput::Multiple, None, _) => quote!("Vec<Molecule>"),
+        (MoleculeOutput::Multiple, Some(result), _) => quote!(stringify!(#result)),
     }
 }
 

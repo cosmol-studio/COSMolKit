@@ -156,6 +156,43 @@ def package_features(metadata: dict[str, Any], package: str) -> set[str]:
     return set(features)
 
 
+def dependency_feature_selectors(metadata: dict[str, Any], package: str) -> set[str]:
+    packages = [
+        item
+        for item in metadata.get("packages", [])
+        if isinstance(item, dict) and item.get("name") == package
+    ]
+    if len(packages) != 1:
+        raise ConfigurationError(
+            f"package {package!r} must resolve exactly once in Cargo metadata; found {len(packages)}"
+        )
+    workspace_packages = {
+        item.get("name"): item
+        for item in metadata.get("packages", [])
+        if isinstance(item, dict) and isinstance(item.get("name"), str)
+    }
+    selectors: set[str] = set()
+    for dependency in packages[0].get("dependencies", []):
+        if not isinstance(dependency, dict):
+            continue
+        dependency_name = dependency.get("name")
+        dependency_alias = dependency.get("rename") or dependency_name
+        dependency_package = workspace_packages.get(dependency_name)
+        dependency_features = (
+            dependency_package.get("features")
+            if isinstance(dependency_package, dict)
+            else None
+        )
+        if not isinstance(dependency_alias, str) or not isinstance(
+            dependency_features, dict
+        ):
+            continue
+        selectors.update(
+            f"{dependency_alias}/{feature}" for feature in dependency_features
+        )
+    return selectors
+
+
 def validate_features(
     selected: SelectedValidation, available_features: set[str]
 ) -> None:
@@ -277,7 +314,10 @@ def execute_validation(
         return metadata_result.returncode or 1
     try:
         metadata = json.loads(metadata_result.stdout)
-        validate_features(selected, package_features(metadata, selected.package))
+        available_features = package_features(metadata, selected.package).union(
+            dependency_feature_selectors(metadata, selected.package)
+        )
+        validate_features(selected, available_features)
     except (json.JSONDecodeError, ConfigurationError) as error:
         evidence.update(
             status="configuration_failed",

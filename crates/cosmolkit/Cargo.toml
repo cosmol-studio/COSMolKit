@@ -25,9 +25,19 @@ default = []
 runtime-invariants = []
 op-contracts = []
 op-contracts-strict = ["runtime-invariants", "op-contracts"]
-full = []
+full = [
+    "valence",
+    "radicals",
+    "rings",
+    "matrices",
+    "transforms",
+    "stereo",
+    "kekulize",
+    "aromaticity",
+    "sanitize",
+]
 batch = []
-hydrogens = []
+hydrogens = ["dep:cosmolkit-core"]
 confseq = []
 depict = []
 descriptors = ["dep:cosmolkit-descriptors"]
@@ -35,10 +45,20 @@ fingerprints = []
 hashing = []
 inchi = []
 io = []
+matrices = ["dep:cosmolkit-core"]
+transforms = ["dep:cosmolkit-core"]
 serialization = []
+stereo = ["dep:cosmolkit-core"]
 stereoisomers = []
+valence = ["dep:cosmolkit-core"]
+radicals = ["dep:cosmolkit-core"]
+rings = ["dep:cosmolkit-core"]
+kekulize = ["dep:cosmolkit-core"]
+aromaticity = ["dep:cosmolkit-core"]
+sanitize = ["dep:cosmolkit-core"]
 
 [dependencies]
-cosmolkit-model = { version = "0.5.0-rc.1", path = "../cosmolkit-model" }
-cosmolkit-macros = { version = "0.5.0-rc.1", path = "../cosmolkit-macros" }
-cosmolkit-descriptors = { version = "0.5.0-rc.1", path = "../cosmolkit-descriptors", optional = true }
+cosmolkit-model = { version = "0.5.0-rc.3", path = "../cosmolkit-model" }
+cosmolkit-macros = { version = "0.5.0-rc.3", path = "../cosmolkit-macros" }
+cosmolkit-core = { version = "0.5.0-rc.3", path = "../cosmolkit-core", optional = true }
+cosmolkit-descriptors = { version = "0.5.0-rc.3", path = "../cosmolkit-descriptors", optional = true }

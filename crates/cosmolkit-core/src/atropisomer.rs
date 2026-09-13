@@ -3,12 +3,12 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use cosmolkit_model::{
-    AtomId, Bond, BondId, Conformer2D, Conformer3D, CoordinateValidationError, StereoGroup,
-    TopologyBlock, TopologyValidationError,
+    AtomId, Bond, BondId, BondValueError, Conformer2D, Conformer3D, CoordinateValidationError,
+    StereoGroup, TopologyBlock, TopologyValidationError,
 };
 use cosmolkit_types::{BondDirection, BondOrder, BondStereo, Hybridization};
 
-use crate::RingInfo;
+use crate::{HybridizationAssignment, RingInfo};
 
 const REALLY_SMALL_BOND_LEN: f64 = 0.000_000_1;
 
@@ -83,6 +83,17 @@ pub enum AtropisomerError {
     RingAtomOutOfRange { atom: AtomId, atom_count: usize },
     #[error("ring bond {bond} is out of range for {bond_count} bonds")]
     RingBondOutOfRange { bond: BondId, bond_count: usize },
+    #[error("ring atom membership has {actual} rows; expected {expected}")]
+    RingAtomRowCount { actual: usize, expected: usize },
+    #[error("ring bond membership has {actual} rows; expected {expected}")]
+    RingBondRowCount { actual: usize, expected: usize },
+    #[error("hybridization assignment has {actual} rows; expected {expected}")]
+    HybridizationAssignmentLength { actual: usize, expected: usize },
+    #[error("failed to clear atropisomer stereo from bond {bond}: {source}")]
+    BondUpdate {
+        bond: BondId,
+        source: BondValueError,
+    },
     #[error("stereo group atom {atom} is out of range for {atom_count} atoms")]
     StereoGroupAtomOutOfRange { atom: AtomId, atom_count: usize },
     #[error("stereo group bond {bond} is out of range for {bond_count} bonds")]
@@ -2006,6 +2017,18 @@ fn validate_rings(topology: &TopologyBlock, rings: &RingInfo) -> Result<(), Atro
     if !rings.is_sssr_or_better() {
         return Err(AtropisomerError::RingInfoNotSssr);
     }
+    if rings.atom_row_count() != topology.atoms.len() {
+        return Err(AtropisomerError::RingAtomRowCount {
+            actual: rings.atom_row_count(),
+            expected: topology.atoms.len(),
+        });
+    }
+    if rings.bond_row_count() != topology.bonds.len() {
+        return Err(AtropisomerError::RingBondRowCount {
+            actual: rings.bond_row_count(),
+            expected: topology.bonds.len(),
+        });
+    }
     for ring in rings.atom_rings() {
         for atom in ring {
             if atom.index() >= topology.atoms.len() {
@@ -2027,6 +2050,111 @@ fn validate_rings(topology: &TopologyBlock, rings: &RingInfo) -> Result<(), Atro
         }
     }
     Ok(())
+}
+
+fn check_invalid_atrop_bond(
+    bond: &mut Bond,
+    hybridization: &HybridizationAssignment,
+    rings: &RingInfo,
+) -> Result<bool, AtropisomerError> {
+    // Complete pinned source: MolOps.cpp anonymous-namespace checkBond.
+    // RDKit✔️✔️: bool checkBond(RWMol &mol, Bond *bond, MolOps::Hybridizations &hybs) {
+    // RDKit✔️✔️:   if (!mol.getRingInfo()->isSssrOrBetter()) {
+    // RDKit✔️✔️:     RDKit::MolOps::findSSSR(mol);
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   const RingInfo *ri = mol.getRingInfo();
+    // RDKit✔️✔️:   if (hybs[bond->getBeginAtomIdx()] != Atom::SP2 ||
+    // RDKit✔️✔️:       hybs[bond->getEndAtomIdx()] != Atom::SP2 ||
+    // RDKit✔️✔️:       // do not clear bonds that part of a macrocycle
+    // RDKit✔️✔️:       // because they can be linking actual atropisomeric portions
+    // RDKit✔️✔️:       (ri->numBondRings(bond->getIdx()) > 0 &&
+    // RDKit✔️✔️:        ri->minBondRingSize(bond->getIdx()) < 8)) {
+    // RDKit✔️✔️:     bond->setStereo(Bond::BondStereo::STEREONONE);
+    // RDKit✔️✔️:     return true;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   return false;
+    // RDKit✔️✔️: }
+    // Ring discovery is performed by the canonical ring owner before this
+    // detached primitive is called; `validate_rings()` enforces the same
+    // SSSR-or-better postcondition before any bond can be changed.
+    let invalid = hybridization.values[bond.begin().index()] != Hybridization::Sp2
+        || hybridization.values[bond.end().index()] != Hybridization::Sp2
+        || (rings.num_bond_rings(bond.id()) > 0 && rings.min_bond_ring_size(bond.id()) < 8);
+    if invalid {
+        let bond_id = bond.id();
+        bond.set_stereo(BondStereo::None)
+            .map_err(|source| AtropisomerError::BondUpdate {
+                bond: bond_id,
+                source,
+            })?;
+        return Ok(true);
+    }
+    Ok(false)
+}
+
+/// Clear source-invalid atropisomer bond stereo over detached topology values.
+///
+/// The caller supplies canonical hybridization and ring assignments from the
+/// immediately preceding sanitize stages. The borrowed topology is never
+/// modified; failure returns no partial result.
+pub fn cleanup_invalid_atropisomers(
+    topology: &TopologyBlock,
+    hybridization: &HybridizationAssignment,
+    rings: &RingInfo,
+) -> Result<TopologyBlock, AtropisomerError> {
+    topology
+        .validate()
+        .map_err(|source| AtropisomerError::InvalidTopology { source })?;
+    validate_rings(topology, rings)?;
+    if hybridization.values.len() != topology.atoms.len() {
+        return Err(AtropisomerError::HybridizationAssignmentLength {
+            actual: hybridization.values.len(),
+            expected: topology.atoms.len(),
+        });
+    }
+
+    // Complete pinned source: MolOps::cleanupAtropisomers(RWMol &, Hybridizations &).
+    // RDKit✔️❌: void cleanupAtropisomers(RWMol &mol, MolOps::Hybridizations &hybs) {
+    // RDKit✔️❌:   // make sure that ring info is available
+    // RDKit✔️❌:   // (defensive, current calls have it available)
+    // RDKit✔️❌:   bool needCleanupAtropisomerStereoGroups = false;
+    // RDKit✔️❌:   for (auto bond : mol.bonds()) {
+    // RDKit✔️❌:     switch (bond->getStereo()) {
+    // RDKit✔️❌:       case Bond::BondStereo::STEREOATROPCW:
+    // RDKit✔️❌:       case Bond::BondStereo::STEREOATROPCCW:
+    // RDKit✔️❌:         if (checkBond(mol, bond, hybs)) {
+    // RDKit✔️❌:           needCleanupAtropisomerStereoGroups = true;
+    // RDKit✔️❌:         }
+    // RDKit✔️❌:         break;
+    // RDKit✔️❌:       default:
+    // RDKit✔️❌:         break;
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:
+    // RDKit✔️❌:   if (needCleanupAtropisomerStereoGroups) {
+    // RDKit✔️❌:     Atropisomers::cleanupAtropisomerStereoGroups(mol);
+    // RDKit✔️❌:   }
+    // RDKit✔️❌: }
+    // Returning a detached owned value requires one O(atoms+bonds) clone that
+    // the source in-place operation does not perform; loop and lookup costs
+    // after that clone remain linear/direct-indexed.
+    let mut result = topology.clone();
+    let mut need_stereo_group_cleanup = false;
+    for bond in &mut result.bonds {
+        if matches!(bond.stereo(), BondStereo::AtropCw | BondStereo::AtropCcw)
+            && check_invalid_atrop_bond(bond, hybridization, rings)?
+        {
+            need_stereo_group_cleanup = true;
+        }
+    }
+    if need_stereo_group_cleanup {
+        result.stereo_groups =
+            cleanup_atropisomer_stereo_groups(&result, &AtropisomerAssignment::default())?.groups;
+    }
+    result
+        .validate()
+        .map_err(|source| AtropisomerError::InvalidTopology { source })?;
+    Ok(result)
 }
 
 pub fn wedge_bonds_from_atropisomers(

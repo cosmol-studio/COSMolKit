@@ -22,7 +22,7 @@ pub(crate) struct MultiOutputOpParts<'a, Access> {
 }
 
 impl<'a, Access> MultiOutputOpParts<'a, Access> {
-    pub(crate) fn new(
+    pub(super) fn new(
         source: &'a Molecule,
         spec: &'static MoleculeOpSpec,
     ) -> Result<Self, OperationError> {
@@ -116,7 +116,7 @@ impl<'a, Access> MultiOutputOpParts<'a, Access> {
             .collect()
     }
 
-    pub(crate) fn finish(self) -> Result<Vec<Molecule>, OperationError> {
+    pub(super) fn finish(self) -> Result<Vec<Molecule>, OperationError> {
         self.finish_runtime()
     }
 }

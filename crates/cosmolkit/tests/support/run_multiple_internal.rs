@@ -534,12 +534,16 @@ fn source_shape_has_one_private_owner_and_no_branch_runtime() {
     let multiple = include_str!("../../src/ops/multiple.rs");
     let context = include_str!("../../src/ops/context.rs");
     let ops = include_str!("../../src/ops/mod.rs");
+    let runtime = include_str!("../../src/ops/runtime/mod.rs");
     let lib = include_str!("../../src/lib.rs");
     let manifest = include_str!("../../Cargo.toml");
     assert_eq!(multiple.matches("struct MultiOutputOpParts").count(), 1);
     assert!(multiple.contains("pub(crate) struct MultiOutputOpParts"));
     assert!(!multiple.contains("pub struct MultiOutputOpParts"));
-    assert!(ops.contains("pub(crate) use multiple::MultiOutputOpParts"));
+    assert!(ops.contains("pub(crate) use runtime::multiple::MultiOutputOpParts"));
+    assert!(ops.contains("mod runtime;"));
+    assert!(!ops.contains("pub(crate) mod runtime;"));
+    assert!(runtime.contains("pub(super) mod multiple;"));
     let runtime_reexport = lib
         .lines()
         .find(|line| {

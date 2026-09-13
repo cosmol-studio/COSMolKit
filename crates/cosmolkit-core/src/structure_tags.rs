@@ -7,8 +7,9 @@ use std::f64::consts::PI;
 
 use cosmolkit_model::{
     AtomId, AtomPropertyError, Bond, BondDirection, BondOrder, ChiralTag, CoordinateBlock,
-    TopologyBlock, TopologyValidationError,
+    StereoGroup, TopologyBlock, TopologyValidationError,
 };
+use cosmolkit_types::{BondStereo, Hybridization};
 
 use crate::{StereoOrderError, ValenceAssignment, bond_affects_atom_chirality};
 
@@ -844,6 +845,211 @@ fn validate_valence(
         }
     }
     Ok(())
+}
+
+fn cleanup_stereo_groups(topology: &mut TopologyBlock) {
+    // Complete pinned source: Chirality.cpp::cleanupStereoGroups.
+    // RDKit✔️✔️: void cleanupStereoGroups(ROMol &mol) {
+    // RDKit✔️✔️:   std::vector<StereoGroup> newsgs;
+    // RDKit✔️✔️:   for (auto sg : mol.getStereoGroups()) {
+    // RDKit✔️✔️:     std::vector<Atom *> okatoms;
+    // RDKit✔️✔️:     std::vector<Bond *> okbonds;
+    // RDKit✔️✔️:     bool keep = true;
+    // RDKit✔️✔️:     for (const auto atom : sg.getAtoms()) {
+    // RDKit✔️✔️:       if (atom->getChiralTag() == Atom::ChiralType::CHI_UNSPECIFIED) {
+    // RDKit✔️✔️:         keep = false;
+    // RDKit✔️✔️:       } else {
+    // RDKit✔️✔️:         okatoms.push_back(atom);
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     for (const auto bond : sg.getBonds()) {
+    // RDKit✔️✔️:       if (bond->getStereo() != Bond::BondStereo::STEREOATROPCCW &&
+    // RDKit✔️✔️:           bond->getStereo() != Bond::BondStereo::STEREOATROPCW) {
+    // RDKit✔️✔️:         keep = false;
+    // RDKit✔️✔️:       } else {
+    // RDKit✔️✔️:         okbonds.push_back(bond);
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:     if (keep) {
+    // RDKit✔️✔️:       newsgs.push_back(sg);
+    // RDKit✔️✔️:     } else if (!okatoms.empty()) {
+    // RDKit✔️✔️:       newsgs.emplace_back(sg.getGroupType(), std::move(okatoms),
+    // RDKit✔️✔️:                           std::move(okbonds), sg.getReadId());
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   mol.setStereoGroups(std::move(newsgs));
+    // RDKit✔️✔️: }
+    let mut groups = Vec::with_capacity(topology.stereo_groups.len());
+    for group in &topology.stereo_groups {
+        let atoms = group
+            .atoms()
+            .iter()
+            .copied()
+            .filter(|atom| topology.atoms[atom.index()].chiral_tag() != ChiralTag::Unspecified)
+            .collect::<Vec<_>>();
+        let bonds = group
+            .bonds()
+            .iter()
+            .copied()
+            .filter(|bond| {
+                matches!(
+                    topology.bonds[bond.index()].stereo(),
+                    BondStereo::AtropCw | BondStereo::AtropCcw
+                )
+            })
+            .collect::<Vec<_>>();
+        let keep = atoms.len() == group.atoms().len() && bonds.len() == group.bonds().len();
+        if keep {
+            groups.push(group.clone());
+        } else if !atoms.is_empty() {
+            let mut replacement = StereoGroup::new(group.kind(), atoms, bonds);
+            if let Some(id) = group.id() {
+                replacement = replacement.with_id(id);
+            }
+            groups.push(replacement);
+        }
+    }
+    topology.stereo_groups = groups;
+}
+
+/// Remove source-invalid chirality markers from detached topology state.
+pub fn cleanup_chirality(
+    topology: &TopologyBlock,
+    valence: &ValenceAssignment,
+) -> Result<TopologyBlock, StereoError> {
+    topology.validate()?;
+    validate_valence(topology, valence)?;
+
+    // Complete pinned source: Chirality.cpp::cleanupChirality.
+    // RDKit✔️❌: void cleanupChirality(RWMol &mol) {
+    // RDKit✔️❌:   unsigned int degree, perm;
+    // RDKit✔️❌:   bool needCleanupStereoGroups = false;
+    // RDKit✔️❌:   for (auto atom : mol.atoms()) {
+    // RDKit✔️❌:     switch (atom->getChiralTag()) {
+    // RDKit✔️❌:       case Atom::CHI_TETRAHEDRAL_CW:
+    // RDKit✔️❌:       case Atom::CHI_TETRAHEDRAL_CCW:
+    // RDKit✔️❌:         if (atom->getHybridization() != Atom::SP3) {
+    // RDKit✔️❌:           atom->setChiralTag(Atom::CHI_UNSPECIFIED);
+    // RDKit✔️❌:           needCleanupStereoGroups = true;
+    // RDKit✔️❌:         }
+    // RDKit✔️❌:         break;
+    // RDKit✔️❌:
+    // RDKit✔️❌:       case Atom::CHI_TETRAHEDRAL:
+    // RDKit✔️❌:         if (atom->getHybridization() != Atom::SP3) {
+    // RDKit✔️❌:           atom->setChiralTag(Atom::CHI_UNSPECIFIED);
+    // RDKit✔️❌:           needCleanupStereoGroups = true;
+    // RDKit✔️❌:         } else {
+    // RDKit✔️❌:           perm = 0;
+    // RDKit✔️❌:           atom->getPropIfPresent(common_properties::_chiralPermutation, perm);
+    // RDKit✔️❌:           if (perm > 2) {
+    // RDKit✔️❌:             perm = 0;
+    // RDKit✔️❌:             atom->setProp(common_properties::_chiralPermutation, perm);
+    // RDKit✔️❌:           }
+    // RDKit✔️❌:         }
+    // RDKit✔️❌:         break;
+    // RDKit✔️❌:
+    // RDKit✔️❌:       case Atom::CHI_SQUAREPLANAR:
+    // RDKit✔️❌:         degree = atom->getTotalDegree();
+    // RDKit✔️❌:         if (degree < 2 || degree > 4) {
+    // RDKit✔️❌:           atom->setChiralTag(Atom::CHI_UNSPECIFIED);
+    // RDKit✔️❌:         } else {
+    // RDKit✔️❌:           perm = 0;
+    // RDKit✔️❌:           atom->getPropIfPresent(common_properties::_chiralPermutation, perm);
+    // RDKit✔️❌:           if (perm > 3) {
+    // RDKit✔️❌:             perm = 0;
+    // RDKit✔️❌:             atom->setProp(common_properties::_chiralPermutation, perm);
+    // RDKit✔️❌:           }
+    // RDKit✔️❌:         }
+    // RDKit✔️❌:         break;
+    // RDKit✔️❌:
+    // RDKit✔️❌:       case Atom::CHI_TRIGONALBIPYRAMIDAL:
+    // RDKit✔️❌:         degree = atom->getTotalDegree();
+    // RDKit✔️❌:         if (degree < 2 || degree > 5) {
+    // RDKit✔️❌:           atom->setChiralTag(Atom::CHI_UNSPECIFIED);
+    // RDKit✔️❌:         } else {
+    // RDKit✔️❌:           perm = 0;
+    // RDKit✔️❌:           atom->getPropIfPresent(common_properties::_chiralPermutation, perm);
+    // RDKit✔️❌:           if (perm > 20) {
+    // RDKit✔️❌:             perm = 0;
+    // RDKit✔️❌:             atom->setProp(common_properties::_chiralPermutation, perm);
+    // RDKit✔️❌:           }
+    // RDKit✔️❌:         }
+    // RDKit✔️❌:         break;
+    // RDKit✔️❌:
+    // RDKit✔️❌:       case Atom::CHI_OCTAHEDRAL:
+    // RDKit✔️❌:         degree = atom->getTotalDegree();
+    // RDKit✔️❌:         if (degree < 2 || degree > 6) {
+    // RDKit✔️❌:           atom->setChiralTag(Atom::CHI_UNSPECIFIED);
+    // RDKit✔️❌:         } else {
+    // RDKit✔️❌:           perm = 0;
+    // RDKit✔️❌:           atom->getPropIfPresent(common_properties::_chiralPermutation, perm);
+    // RDKit✔️❌:           if (perm > 30) {
+    // RDKit✔️❌:             perm = 0;
+    // RDKit✔️❌:             atom->setProp(common_properties::_chiralPermutation, perm);
+    // RDKit✔️❌:           }
+    // RDKit✔️❌:         }
+    // RDKit✔️❌:         break;
+    // RDKit✔️❌:
+    // RDKit✔️❌:       default:
+    // RDKit✔️❌:         /* ??? Handle other types in future.  */
+    // RDKit✔️❌:         break;
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   if (needCleanupStereoGroups) {
+    // RDKit✔️❌:     Chirality::cleanupStereoGroups(mol);
+    // RDKit✔️❌:   }
+    // RDKit✔️❌: }
+    // The detached owner clones the complete topology to preserve value and
+    // failure atomicity, adding O(atoms+bonds+properties) work over the source
+    // in-place function. Per-atom degree and permutation checks remain direct.
+    let mut result = topology.clone();
+    let mut need_cleanup_stereo_groups = false;
+    for index in 0..result.atoms.len() {
+        let tag = result.atoms[index].chiral_tag();
+        match tag {
+            ChiralTag::TetrahedralCw | ChiralTag::TetrahedralCcw => {
+                if result.atoms[index].hybridization() != Hybridization::Sp3 {
+                    result.atoms[index].set_chiral_tag(ChiralTag::Unspecified);
+                    need_cleanup_stereo_groups = true;
+                }
+            }
+            ChiralTag::Tetrahedral => {
+                if result.atoms[index].hybridization() != Hybridization::Sp3 {
+                    result.atoms[index].set_chiral_tag(ChiralTag::Unspecified);
+                    need_cleanup_stereo_groups = true;
+                } else if result.atoms[index].chiral_permutation().unwrap_or(0) > 2 {
+                    result.atoms[index].set_chiral_permutation(Some(0));
+                    result.atoms[index].set_prop("_chiralPermutation", "0")?;
+                }
+            }
+            ChiralTag::SquarePlanar | ChiralTag::TrigonalBipyramidal | ChiralTag::Octahedral => {
+                let atom = AtomId::new(index);
+                let degree = result.adjacency.neighbors_of(index).len()
+                    + total_hydrogens(&result, valence, atom);
+                let (maximum_degree, maximum_permutation) = match tag {
+                    ChiralTag::SquarePlanar => (4, 3),
+                    ChiralTag::TrigonalBipyramidal => (5, 20),
+                    ChiralTag::Octahedral => (6, 30),
+                    _ => continue,
+                };
+                if !(2..=maximum_degree).contains(&degree) {
+                    result.atoms[index].set_chiral_tag(ChiralTag::Unspecified);
+                } else if result.atoms[index].chiral_permutation().unwrap_or(0)
+                    > maximum_permutation
+                {
+                    result.atoms[index].set_chiral_permutation(Some(0));
+                    result.atoms[index].set_prop("_chiralPermutation", "0")?;
+                }
+            }
+            _ => {}
+        }
+    }
+    if need_cleanup_stereo_groups {
+        cleanup_stereo_groups(&mut result);
+    }
+    result.validate()?;
+    Ok(result)
 }
 
 fn total_hydrogens(topology: &TopologyBlock, valence: &ValenceAssignment, center: AtomId) -> usize {

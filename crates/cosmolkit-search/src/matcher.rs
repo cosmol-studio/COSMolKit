@@ -26,6 +26,7 @@ use crate::query_behavior::{
 };
 use crate::{AtomQueryPredicate, BondQueryPredicate, QueryAtom, QueryBond, QueryGraph, QueryNode};
 use crate::{SearchTarget, SearchTargetAccess};
+use cosmolkit_core::PeriodicTableError;
 use cosmolkit_model::{Atom, Bond, Conformer3D, StereoGroupKind};
 use cosmolkit_types::{BondOrder, BondStereo, ChiralTag};
 use std::borrow::Cow;
@@ -49,6 +50,8 @@ pub enum SubstructMatchError {
         branch: &'static str,
         rdkit_function: &'static str,
     },
+    #[error(transparent)]
+    PeriodicTable(#[from] PeriodicTableError),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -894,7 +897,7 @@ fn atom_label_matches(
     params: &SubstructMatchParams,
     recursive_cache: Option<&RecursiveQueryMatchCache>,
     query_ctx: &QueryMatchContext,
-) -> bool {
+) -> Result<bool, PeriodicTableError> {
     // RDKit✔️✔️: bool operator()(unsigned int i, unsigned int j) const {
     // RDKit✔️✔️:   bool res = false;
     // RDKit✔️✔️:     if (d_params.useChirality) {
@@ -922,7 +925,7 @@ fn atom_label_matches(
         && !params.specified_stereo_query_matches_unspecified
         && !has_chiral_label(mol_atom)
     {
-        return false;
+        return Ok(false);
     }
     atom_compat(
         query_atom,
@@ -1065,7 +1068,7 @@ fn atom_query_predicate_matches_for_substruct(
     params: &SubstructMatchParams,
     recursive_cache: Option<&RecursiveQueryMatchCache>,
     query_ctx: &QueryMatchContext,
-) -> bool {
+) -> Result<bool, PeriodicTableError> {
     match pred {
         // RDKit✔️✔️: Chiral SMARTS labels are not ordinary atom-compatibility
         // constraints when `useChirality` is false. AtomLabelFunctor and
@@ -1073,11 +1076,14 @@ fn atom_query_predicate_matches_for_substruct(
         AtomQueryPredicate::ChiralTagMatch(_) | AtomQueryPredicate::ChiralPermutationMatch(_)
             if !params.use_chirality =>
         {
-            true
+            Ok(true)
         }
-        AtomQueryPredicate::RecursiveSmarts(recursive_query) => {
-            recursive_smarts_root_matches(atom, recursive_query, mol, recursive_cache)
-        }
+        AtomQueryPredicate::RecursiveSmarts(recursive_query) => Ok(recursive_smarts_root_matches(
+            atom,
+            recursive_query,
+            mol,
+            recursive_cache,
+        )),
         _ => atom_predicate_matches_with_context(atom, pred, mol, query_ctx),
     }
 }
@@ -1094,7 +1100,7 @@ fn evaluate_atom_query(
     params: &SubstructMatchParams,
     recursive_cache: Option<&RecursiveQueryMatchCache>,
     query_ctx: &QueryMatchContext,
-) -> bool {
+) -> Result<bool, PeriodicTableError> {
     match query {
         crate::QueryNode::Predicate(pred) => atom_query_predicate_matches_for_substruct(
             atom,
@@ -1104,18 +1110,42 @@ fn evaluate_atom_query(
             recursive_cache,
             query_ctx,
         ),
-        crate::QueryNode::And(children) => and_query_match(children, false, |child| {
-            evaluate_atom_query(child, atom, mol, params, recursive_cache, query_ctx)
-        }),
-        crate::QueryNode::Or(children) => or_query_match(children, false, |child| {
-            evaluate_atom_query(child, atom, mol, params, recursive_cache, query_ctx)
-        }),
-        crate::QueryNode::Xor(children) => xor_query_match(children, false, |child| {
-            evaluate_atom_query(child, atom, mol, params, recursive_cache, query_ctx)
-        }),
-        crate::QueryNode::Not(child) => {
-            !evaluate_atom_query(child, atom, mol, params, recursive_cache, query_ctx)
+        crate::QueryNode::And(children) => {
+            for child in children {
+                if !evaluate_atom_query(child, atom, mol, params, recursive_cache, query_ctx)? {
+                    return Ok(false);
+                }
+            }
+            Ok(true)
         }
+        crate::QueryNode::Or(children) => {
+            for child in children {
+                if evaluate_atom_query(child, atom, mol, params, recursive_cache, query_ctx)? {
+                    return Ok(true);
+                }
+            }
+            Ok(false)
+        }
+        crate::QueryNode::Xor(children) => {
+            let mut matched = false;
+            for child in children {
+                if evaluate_atom_query(child, atom, mol, params, recursive_cache, query_ctx)? {
+                    if matched {
+                        return Ok(false);
+                    }
+                    matched = true;
+                }
+            }
+            Ok(matched)
+        }
+        crate::QueryNode::Not(child) => Ok(!evaluate_atom_query(
+            child,
+            atom,
+            mol,
+            params,
+            recursive_cache,
+            query_ctx,
+        )?),
     }
 }
 
@@ -3718,8 +3748,17 @@ fn substruct_match_impl_with_recursive_cache_and_context(
     //   detail::AtomLabelFunctor atomLabeler(query, mol, params);
     //   detail::BondLabelFunctor bondLabeler(query, mol, params);
     //   MolMatchFinalCheckFunctor matchChecker(query, mol, params);
+    let atom_match_error = std::cell::Cell::new(None);
     let atom_fn = |qi: usize, mj: usize| -> bool {
-        atom_label_matches(query, mol, qi, mj, params, recursive_cache, query_ctx)
+        match atom_label_matches(query, mol, qi, mj, params, recursive_cache, query_ctx) {
+            Ok(matched) => matched,
+            Err(error) => {
+                if atom_match_error.get().is_none() {
+                    atom_match_error.set(Some(error));
+                }
+                false
+            }
+        }
     };
 
     let bond_fn = |qei: usize, mei: usize| -> bool {
@@ -3762,6 +3801,9 @@ fn substruct_match_impl_with_recursive_cache_and_context(
         params.max_matches,
         query_order,
     );
+    if let Some(error) = atom_match_error.get() {
+        return Err(error.into());
+    }
     if let Some(err) = final_check_error {
         return Err(err);
     }
@@ -3833,7 +3875,7 @@ fn atom_compat(
     params: &SubstructMatchParams,
     recursive_cache: Option<&RecursiveQueryMatchCache>,
     query_ctx: &QueryMatchContext,
-) -> bool {
+) -> Result<bool, PeriodicTableError> {
     // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/Substruct/SubstructUtils.cpp :: atomCompat
     // RDKit✔️✔️: bool atomCompat(const Atom *a1, const Atom *a2,
     // RDKit✔️✔️:                 const SubstructMatchParameters &ps) {
@@ -3881,7 +3923,7 @@ fn atom_compat(
     if params.extra_atom_check_overrides_default_check
         && let Some(extra_atom_check) = &params.extra_atom_check
     {
-        return extra_atom_check(query_mol, query_atom, mol, mol_atom);
+        return Ok(extra_atom_check(query_mol, query_atom, mol, mol_atom));
     }
 
     let matches = evaluate_atom_query(
@@ -3891,9 +3933,9 @@ fn atom_compat(
         params,
         recursive_cache,
         query_ctx,
-    );
+    )?;
     if !matches {
-        return false;
+        return Ok(false);
     }
     if !params.atom_properties.is_empty()
         && !property_compat(
@@ -3902,14 +3944,14 @@ fn atom_compat(
             &params.atom_properties,
         )
     {
-        return false;
+        return Ok(false);
     }
     if let Some(extra_atom_check) = &params.extra_atom_check
         && !extra_atom_check(query_mol, query_atom, mol, mol_atom)
     {
-        return false;
+        return Ok(false);
     }
-    matches
+    Ok(matches)
 }
 
 #[allow(deprecated)]

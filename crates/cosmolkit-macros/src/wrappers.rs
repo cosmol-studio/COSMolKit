@@ -92,6 +92,17 @@ fn expand_molecule_operation(
                 Ok((molecule, result))
             }
         },
+        (MoleculeOutput::Single, Some(result), Some(assemble)) => quote! {
+            #(#cfg)*
+            #docs
+            pub fn #method(&self, #(#params),*) -> Result<#result, crate::ops::OperationError> {
+                #support_check
+                let mut parts = crate::OpParts::new(self, &#spec)?;
+                let metadata = #impl_fn(&mut parts, #(#call_args),*)?;
+                let molecule = parts.finish()?;
+                #assemble(molecule, metadata)
+            }
+        },
         (MoleculeOutput::Multiple, None, None) => quote! {
             #(#cfg)*
             #docs
@@ -232,11 +243,16 @@ fn expand_molecule_operation(
 fn molecule_value_return_type(
     fields: &crate::declaration::MoleculeFields,
 ) -> proc_macro2::TokenStream {
-    match (fields.output, fields.result_type.as_ref()) {
-        (MoleculeOutput::Single, None) => quote!(crate::Molecule),
-        (MoleculeOutput::Single, Some(result)) => quote!((crate::Molecule, #result)),
-        (MoleculeOutput::Multiple, None) => quote!(Vec<crate::Molecule>),
-        (MoleculeOutput::Multiple, Some(result)) => quote!(#result),
+    match (
+        fields.output,
+        fields.result_type.as_ref(),
+        fields.assemble_fn.as_ref(),
+    ) {
+        (MoleculeOutput::Single, None, _) => quote!(crate::Molecule),
+        (MoleculeOutput::Single, Some(result), None) => quote!((crate::Molecule, #result)),
+        (MoleculeOutput::Single, Some(result), Some(_)) => quote!(#result),
+        (MoleculeOutput::Multiple, None, _) => quote!(Vec<crate::Molecule>),
+        (MoleculeOutput::Multiple, Some(result), _) => quote!(#result),
     }
 }
 

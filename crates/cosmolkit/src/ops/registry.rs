@@ -4,24 +4,47 @@ use cosmolkit_macros::molecule_ops;
 
 use super::{FeatureSpec, SupportStatus};
 
+#[cfg(test)]
+pub(crate) const COW_TEST_FEATURE: FeatureSpec = FeatureSpec {
+    name: "cow-runtime-test",
+    category: "internal-test",
+    status: SupportStatus::Experimental,
+    rdkit_parity_sensitive: false,
+    docs: "Internal registered-operation coverage for block-level COW.",
+};
+
 #[cfg(feature = "hydrogens")]
 pub(crate) const HYDROGENS_FEATURE: FeatureSpec = FeatureSpec {
     name: "hydrogens",
     category: "chemistry",
-    status: SupportStatus::Unsupported {
-        reason: "hydrogen transforms have not yet been ported to their final algorithm owner",
-    },
+    status: SupportStatus::SupportedWithRdkitParity,
     rdkit_parity_sensitive: true,
     docs: "Explicit-hydrogen topology transformations.",
+};
+
+#[cfg(feature = "kekulize")]
+pub(crate) const KEKULIZE_FEATURE: FeatureSpec = FeatureSpec {
+    name: "kekulize",
+    category: "chemistry",
+    status: SupportStatus::SupportedWithRdkitParity,
+    rdkit_parity_sensitive: true,
+    docs: "RDKit-compatible Kekule bond assignment over molecule topology.",
+};
+
+#[cfg(feature = "aromaticity")]
+pub(crate) const AROMATICITY_FEATURE: FeatureSpec = FeatureSpec {
+    name: "aromaticity",
+    category: "chemistry",
+    status: SupportStatus::SupportedWithRdkitParity,
+    rdkit_parity_sensitive: true,
+    docs: "RDKit-compatible aromatic atom and bond assignment over molecule topology.",
 };
 
 #[cfg(feature = "valence")]
 pub(crate) const VALENCE_FEATURE: FeatureSpec = FeatureSpec {
     name: "valence",
     category: "chemistry",
-    status: SupportStatus::Unsupported {
-        reason: "valence assignment is registered but its live cache integration is not complete",
-    },
+    status: SupportStatus::SupportedWithRdkitParity,
     rdkit_parity_sensitive: true,
     docs: "Explicit- and implicit-valence assignment over molecule topology.",
 };
@@ -30,9 +53,7 @@ pub(crate) const VALENCE_FEATURE: FeatureSpec = FeatureSpec {
 pub(crate) const RADICALS_FEATURE: FeatureSpec = FeatureSpec {
     name: "radicals",
     category: "chemistry",
-    status: SupportStatus::Unsupported {
-        reason: "radical assignment is registered but its live topology integration is not complete",
-    },
+    status: SupportStatus::SupportedWithRdkitParity,
     rdkit_parity_sensitive: true,
     docs: "Automatic radical-electron assignment over molecule topology.",
 };
@@ -41,9 +62,7 @@ pub(crate) const RADICALS_FEATURE: FeatureSpec = FeatureSpec {
 pub(crate) const RINGS_FEATURE: FeatureSpec = FeatureSpec {
     name: "rings",
     category: "chemistry",
-    status: SupportStatus::Unsupported {
-        reason: "ring assignments are registered but their live cache integration is not complete",
-    },
+    status: SupportStatus::SupportedWithRdkitParity,
     rdkit_parity_sensitive: true,
     docs: "RDKit-compatible ring and ring-family assignment over molecule topology.",
 };
@@ -52,25 +71,137 @@ pub(crate) const RINGS_FEATURE: FeatureSpec = FeatureSpec {
 pub(crate) const STEREO_FEATURE: FeatureSpec = FeatureSpec {
     name: "stereo",
     category: "chemistry",
-    status: SupportStatus::Unsupported {
-        reason: "stereochemistry operations are registered but their detached implementations and live operation integrations are not complete",
-    },
+    status: SupportStatus::SupportedWithRdkitParity,
     rdkit_parity_sensitive: true,
-    docs: "RDKit-compatible atom structure-tag assignment, potential-stereochemistry perception, and weak topology-state cleanup.",
+    docs: "RDKit-compatible 3D chiral-tag assignment and potential-stereochemistry perception.",
 };
 
 #[cfg(feature = "transforms")]
 pub(crate) const TRANSFORMS_FEATURE: FeatureSpec = FeatureSpec {
     name: "transforms",
     category: "coordinates",
-    status: SupportStatus::Unsupported {
-        reason: "coordinate transforms are registered but their live operation integration is not complete",
-    },
+    status: SupportStatus::SupportedWithRdkitParity,
     rdkit_parity_sensitive: true,
     docs: "RDKit-compatible detached coordinate transforms and atom-position replacement.",
 };
 
+#[cfg(feature = "sanitize")]
+pub(crate) const SANITIZE_FEATURE: FeatureSpec = FeatureSpec {
+    name: "sanitize",
+    category: "chemistry",
+    status: SupportStatus::SupportedWithRdkitParity,
+    rdkit_parity_sensitive: true,
+    docs: "RDKit-compatible molecule sanitization and chemistry-problem detection.",
+};
+
 molecule_ops! {
+    #[cfg(feature = "sanitize")]
+    op sanitize(params: &cosmolkit_core::SanitizeParams) {
+        method: sanitize_with_params,
+        impl_fn: crate::ops::sanitize::sanitize_impl,
+        domain: topology,
+        kind: weak,
+        topology_edit: local,
+        access: {
+            read: [],
+            write: [topology, properties, derived_cache],
+        },
+        may_mutate: [topology, properties, derived_cache],
+        auto_remap: [],
+        derived_effects: {
+            recompute: [],
+            preserve: [coordinates],
+            invalidate: [
+                rings,
+                ring_families,
+                valence,
+                aromaticity,
+                stereo,
+                drawing,
+                fingerprint,
+            ],
+            operation_defined: [],
+        },
+        cip_state: clear,
+        semantic_preconditions: [],
+        requires_mapping: none,
+        feature: crate::ops::runtime::registry::SANITIZE_FEATURE,
+        parity: required_now,
+        parity_profile: "sanitize_rdkit",
+        io_roundtrip: true,
+        invariant_profile: "weak_sanitize_topology_state",
+        default_method: sanitize,
+        default_args: [&cosmolkit_core::SanitizeParams::default()],
+    }
+
+    #[cfg(feature = "kekulize")]
+    op with_kekulized_bonds(params: &cosmolkit_core::KekulizeParams) {
+        method: with_kekulized_bonds_with_params,
+        impl_fn: crate::ops::kekulize::kekulize_bonds_impl,
+        domain: topology,
+        kind: weak,
+        topology_edit: local,
+        access: {
+            read: [],
+            write: [topology, properties, derived_cache],
+        },
+        may_mutate: [topology, properties, derived_cache],
+        auto_remap: [],
+        derived_effects: {
+            recompute: [],
+            preserve: [rings, ring_families, coordinates],
+            invalidate: [valence, aromaticity, stereo, drawing, fingerprint],
+            operation_defined: [],
+        },
+        cip_state: clear,
+        semantic_preconditions: [],
+        requires_mapping: none,
+        feature: crate::ops::runtime::registry::KEKULIZE_FEATURE,
+        parity: required_now,
+        parity_profile: "kekulize_rdkit",
+        io_roundtrip: false,
+        invariant_profile: "weak_kekulize_bond_assignment",
+        default_method: with_kekulized_bonds,
+        default_args: [&cosmolkit_core::KekulizeParams::default()],
+        inplace: true,
+        inplace_method: kekulize_bonds_with_params_,
+        default_inplace_method: kekulize_bonds_,
+    }
+
+    #[cfg(feature = "aromaticity")]
+    op with_assigned_aromaticity(params: &cosmolkit_core::AromaticityParams) {
+        method: with_assigned_aromaticity_with_params,
+        impl_fn: crate::ops::aromaticity::assign_aromaticity_impl,
+        domain: topology,
+        kind: weak,
+        topology_edit: local,
+        access: {
+            read: [],
+            write: [topology, properties, derived_cache],
+        },
+        may_mutate: [topology, properties, derived_cache],
+        auto_remap: [],
+        derived_effects: {
+            recompute: [aromaticity],
+            preserve: [rings, ring_families, coordinates],
+            invalidate: [valence, stereo, drawing, fingerprint],
+            operation_defined: [],
+        },
+        cip_state: clear,
+        semantic_preconditions: [],
+        requires_mapping: none,
+        feature: crate::ops::runtime::registry::AROMATICITY_FEATURE,
+        parity: required_now,
+        parity_profile: "assign_aromaticity_rdkit",
+        io_roundtrip: false,
+        invariant_profile: "weak_aromaticity_assignment",
+        default_method: with_assigned_aromaticity,
+        default_args: [&cosmolkit_core::AromaticityParams::default()],
+        inplace: true,
+        inplace_method: assign_aromaticity_with_params_,
+        default_inplace_method: assign_aromaticity_,
+    }
+
     #[cfg(feature = "valence")]
     op with_assigned_valence(params: &cosmolkit_core::ValenceParams) {
         method: with_assigned_valence_with_params,
@@ -92,8 +223,8 @@ molecule_ops! {
         },
         cip_state: preserve,
         requires_mapping: none,
-        feature: crate::ops::registry::VALENCE_FEATURE,
-        parity: required_when_supported,
+        feature: crate::ops::runtime::registry::VALENCE_FEATURE,
+        parity: required_now,
         parity_profile: "assign_valence_rdkit",
         io_roundtrip: false,
         invariant_profile: "weak_valence_cache_assignment",
@@ -125,8 +256,8 @@ molecule_ops! {
         },
         cip_state: clear,
         requires_mapping: none,
-        feature: crate::ops::registry::RADICALS_FEATURE,
-        parity: required_when_supported,
+        feature: crate::ops::runtime::registry::RADICALS_FEATURE,
+        parity: required_now,
         parity_profile: "assign_radicals_rdkit",
         io_roundtrip: false,
         invariant_profile: "weak_radical_assignment",
@@ -155,8 +286,8 @@ molecule_ops! {
         },
         cip_state: preserve,
         requires_mapping: none,
-        feature: crate::ops::registry::RINGS_FEATURE,
-        parity: required_when_supported,
+        feature: crate::ops::runtime::registry::RINGS_FEATURE,
+        parity: required_now,
         parity_profile: "fast_find_rings_rdkit",
         io_roundtrip: false,
         invariant_profile: "weak_ring_cache_assignment",
@@ -185,8 +316,8 @@ molecule_ops! {
         },
         cip_state: preserve,
         requires_mapping: none,
-        feature: crate::ops::registry::RINGS_FEATURE,
-        parity: required_when_supported,
+        feature: crate::ops::runtime::registry::RINGS_FEATURE,
+        parity: required_now,
         parity_profile: "find_ring_families_rdkit",
         io_roundtrip: false,
         invariant_profile: "weak_ring_family_cache_assignment",
@@ -217,10 +348,10 @@ molecule_ops! {
             operation_defined: [],
         },
         cip_state: clear,
-        semantic_preconditions: [trusted_bond_topology, hydrogen_ownership_represented],
+        semantic_preconditions: [],
         requires_mapping: none,
-        feature: crate::ops::registry::STEREO_FEATURE,
-        parity: required_when_supported,
+        feature: crate::ops::runtime::registry::STEREO_FEATURE,
+        parity: required_now,
         parity_profile: "assign_chiral_tags_from_structure_rdkit",
         io_roundtrip: true,
         invariant_profile: "weak_structure_tag_assignment",
@@ -235,15 +366,16 @@ molecule_ops! {
     op potential_stereo(params: &cosmolkit_core::PotentialStereoParams) {
         method: potential_stereo_with_params,
         impl_fn: crate::ops::potential_stereo::potential_stereo_impl,
-        result_type: cosmolkit_core::PotentialStereoAssignment,
+        result_type: crate::PotentialStereoResult,
+        assemble_fn: crate::ops::potential_stereo::assemble_potential_stereo_result,
         domain: topology,
         kind: weak,
         topology_edit: none,
         access: {
             read: [],
-            write: [topology, derived_cache],
+            write: [topology, properties, derived_cache],
         },
-        may_mutate: [topology, derived_cache],
+        may_mutate: [topology, properties, derived_cache],
         auto_remap: [],
         derived_effects: {
             recompute: [],
@@ -252,10 +384,10 @@ molecule_ops! {
             operation_defined: [],
         },
         cip_state: clear,
-        semantic_preconditions: [trusted_bond_topology, hydrogen_ownership_represented],
+        semantic_preconditions: [],
         requires_mapping: none,
-        feature: crate::ops::registry::STEREO_FEATURE,
-        parity: required_when_supported,
+        feature: crate::ops::runtime::registry::STEREO_FEATURE,
+        parity: required_now,
         parity_profile: "find_potential_stereo_rdkit",
         io_roundtrip: true,
         invariant_profile: "weak_potential_stereo_cleanup",
@@ -264,8 +396,8 @@ molecule_ops! {
     }
 
     #[cfg(feature = "hydrogens")]
-    op with_hydrogens {
-        method: with_hydrogens,
+    op with_hydrogens(params: &cosmolkit_core::AddHsParams) {
+        method: with_hydrogens_with_params,
         impl_fn: crate::ops::hydrogens::add_hydrogens_impl,
         domain: topology,
         kind: strong,
@@ -278,24 +410,28 @@ molecule_ops! {
         auto_remap: [coordinates, properties],
         derived_effects: {
             recompute: [],
-            preserve: [],
-            invalidate: [rings, valence, stereo],
+            preserve: [rings, ring_families],
+            invalidate: [valence, aromaticity, stereo, drawing, fingerprint],
             operation_defined: [],
         },
         cip_state: clear,
+        semantic_preconditions: [],
         requires_mapping: required,
-        feature: crate::ops::registry::HYDROGENS_FEATURE,
-        parity: required_when_supported,
+        feature: crate::ops::runtime::registry::HYDROGENS_FEATURE,
+        parity: required_now,
         parity_profile: "add_hydrogens_rdkit",
         io_roundtrip: false,
         invariant_profile: "strong_topology_with_coordinates",
+        default_method: with_hydrogens,
+        default_args: [&cosmolkit_core::AddHsParams::default()],
         inplace: true,
-        inplace_method: add_hydrogens_,
+        inplace_method: add_hydrogens_with_params_,
+        default_inplace_method: add_hydrogens_,
     }
 
     #[cfg(feature = "hydrogens")]
-    op without_hydrogens {
-        method: without_hydrogens,
+    op without_hydrogens(params: &cosmolkit_core::RemoveHsParams) {
+        method: without_hydrogens_with_params,
         impl_fn: crate::ops::hydrogens::remove_hydrogens_impl,
         domain: topology,
         kind: strong,
@@ -309,18 +445,22 @@ molecule_ops! {
         derived_effects: {
             recompute: [],
             preserve: [],
-            invalidate: [rings, stereo],
+            invalidate: [rings, ring_families, aromaticity, stereo, drawing, fingerprint],
             operation_defined: [valence],
         },
         cip_state: clear,
+        semantic_preconditions: [],
         requires_mapping: required,
-        feature: crate::ops::registry::HYDROGENS_FEATURE,
-        parity: required_when_supported,
+        feature: crate::ops::runtime::registry::HYDROGENS_FEATURE,
+        parity: required_now,
         parity_profile: "remove_hydrogens_rdkit",
         io_roundtrip: false,
         invariant_profile: "strong_topology_with_coordinates",
+        default_method: without_hydrogens,
+        default_args: [&cosmolkit_core::RemoveHsParams::default()],
         inplace: true,
-        inplace_method: remove_hydrogens_,
+        inplace_method: remove_hydrogens_with_params_,
+        default_inplace_method: remove_hydrogens_,
     }
 
     #[cfg(feature = "transforms")]
@@ -335,10 +475,10 @@ molecule_ops! {
         kind: weak,
         topology_edit: none,
         access: {
-            read: [topology],
-            write: [coordinates, derived_cache],
+            read: [],
+            write: [topology, coordinates, properties, derived_cache],
         },
-        may_mutate: [coordinates, derived_cache],
+        may_mutate: [topology, coordinates, properties, derived_cache],
         auto_remap: [],
         derived_effects: {
             recompute: [],
@@ -348,8 +488,8 @@ molecule_ops! {
         },
         cip_state: clear,
         requires_mapping: none,
-        feature: crate::ops::registry::TRANSFORMS_FEATURE,
-        parity: required_when_supported,
+        feature: crate::ops::runtime::registry::TRANSFORMS_FEATURE,
+        parity: required_now,
         parity_profile: "set_atom_position_rdkit",
         io_roundtrip: true,
         invariant_profile: "coordinate_atom_position",
@@ -358,5 +498,51 @@ molecule_ops! {
         inplace: true,
         inplace_method: set_atom_position_with_params_,
         default_inplace_method: set_atom_position_,
+    }
+
+    #[cfg(test)]
+    op cow_coordinates_for_test {
+        method: cow_coordinates_for_test,
+        impl_fn: crate::ops::cow_tests::cow_coordinates_for_test_impl,
+        domain: coordinate,
+        kind: weak,
+        topology_edit: none,
+        access: { read: [], write: [coordinates] },
+        may_mutate: [coordinates],
+        auto_remap: [],
+        derived_effects: {
+            recompute: [], preserve: [], invalidate: [], operation_defined: [],
+        },
+        cip_state: preserve,
+        semantic_preconditions: [],
+        requires_mapping: none,
+        feature: crate::ops::runtime::registry::COW_TEST_FEATURE,
+        parity: not_applicable,
+        io_roundtrip: false,
+        invariant_profile: "cow-coordinate-write-test",
+    }
+
+    #[cfg(test)]
+    op cow_coordinates_failure_for_test {
+        method: cow_coordinates_failure_for_test,
+        impl_fn: crate::ops::cow_tests::cow_coordinates_failure_for_test_impl,
+        domain: coordinate,
+        kind: weak,
+        topology_edit: none,
+        access: { read: [], write: [coordinates] },
+        may_mutate: [coordinates],
+        auto_remap: [],
+        derived_effects: {
+            recompute: [], preserve: [], invalidate: [], operation_defined: [],
+        },
+        cip_state: preserve,
+        semantic_preconditions: [],
+        requires_mapping: none,
+        feature: crate::ops::runtime::registry::COW_TEST_FEATURE,
+        parity: not_applicable,
+        io_roundtrip: false,
+        invariant_profile: "cow-coordinate-failure-test",
+        inplace: true,
+        inplace_method: cow_coordinates_failure_for_test_,
     }
 }

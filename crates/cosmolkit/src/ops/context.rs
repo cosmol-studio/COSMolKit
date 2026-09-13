@@ -24,7 +24,14 @@ enum WorkingBlock<T> {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum PreservationProof {
     UnchangedInput,
+    CoordinateOnly,
+    StereoCleanup,
+    StructureTagAssignment { clear_stereochem_done: bool },
     LeafAtomAppend,
+    RadicalElectronAssignment,
+    KekulizeBondAssignment,
+    AromaticityAssignment,
+    SanitizeTopologyState,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -61,14 +68,14 @@ pub(crate) struct OpParts<'a, Access> {
 }
 
 impl<'a, Access> OpParts<'a, Access> {
-    pub(crate) fn new(
+    pub(super) fn new(
         source: &'a Molecule,
         spec: &'static MoleculeOpSpec,
     ) -> Result<Self, OperationError> {
         Self::from_source(source.clone(), None, spec)
     }
 
-    pub(crate) fn new_in_place(
+    pub(super) fn new_in_place(
         target: &'a mut Molecule,
         spec: &'static MoleculeOpSpec,
     ) -> Result<Self, OperationError> {
@@ -895,13 +902,435 @@ impl<'a, Access> OpParts<'a, Access> {
                     ));
                 }
             }
+            PreservationProof::CoordinateOnly => {
+                let non_coordinate_blocks_are_unchanged = self.current_topology_candidate()?
+                    == self.source.topology()
+                    && self.current_properties_candidate()? == self.source.properties();
+                let coordinates_are_valid = self
+                    .current_coordinates_candidate()?
+                    .validate_for_atom_count(self.source.num_atoms())
+                    .is_ok();
+                let preserved_cache_state_is_unchanged = self
+                    .current_cache_candidate()?
+                    .valid_states()
+                    .intersection(states)
+                    == self
+                        .source
+                        .derived_cache_runtime()
+                        .valid_states()
+                        .intersection(states);
+                if !non_coordinate_blocks_are_unchanged
+                    || !coordinates_are_valid
+                    || !preserved_cache_state_is_unchanged
+                {
+                    return Err(Self::effect_error(
+                        self.spec,
+                        "preserve",
+                        states,
+                        "coordinate-only proof failed",
+                    ));
+                }
+            }
+            PreservationProof::StereoCleanup => {
+                let candidate = self.current_topology_candidate()?;
+                let source = self.source.topology();
+                let mut normalized = candidate.clone();
+                let stable_shape = normalized.atoms.len() == source.atoms.len()
+                    && normalized.bonds.len() == source.bonds.len();
+                if stable_shape {
+                    for (atom, source_atom) in normalized.atoms.iter_mut().zip(&source.atoms) {
+                        atom.set_chiral_tag(source_atom.chiral_tag());
+                        atom.set_chiral_permutation(source_atom.chiral_permutation());
+                    }
+                    for (bond, source_bond) in normalized.bonds.iter_mut().zip(&source.bonds) {
+                        bond.set_direction(source_bond.direction());
+                        bond.set_stereo_atoms(source_bond.stereo_atoms());
+                        if bond.set_stereo(source_bond.stereo()).is_err() {
+                            return Err(Self::effect_error(
+                                self.spec,
+                                "preserve",
+                                states,
+                                "source stereo could not be restored for proof",
+                            ));
+                        }
+                    }
+                }
+                let only_stereo_changed = stable_shape && normalized == *source;
+                let preserved_blocks_are_unchanged = self.current_coordinates_candidate()?
+                    == self.source.coordinates()
+                    && self.current_properties_candidate()? == self.source.properties()
+                    && self
+                        .current_cache_candidate()?
+                        .valid_states()
+                        .intersection(states)
+                        == self
+                            .source
+                            .derived_cache_runtime()
+                            .valid_states()
+                            .intersection(states);
+                if !only_stereo_changed || !preserved_blocks_are_unchanged {
+                    return Err(Self::effect_error(
+                        self.spec,
+                        "preserve",
+                        states,
+                        "stereo-cleanup proof failed",
+                    ));
+                }
+            }
+            PreservationProof::StructureTagAssignment {
+                clear_stereochem_done,
+            } => {
+                const ASSIGNMENT_PROPERTIES: [&str; 2] =
+                    ["_chiralPermutation", "_NonExplicit3DChirality"];
+                let candidate = self.current_topology_candidate()?;
+                let source = self.source.topology();
+                let atoms_only_change_structure_tags = candidate.atoms.len() == source.atoms.len()
+                    && candidate.atoms.iter().zip(&source.atoms).all(
+                        |(candidate_atom, source_atom)| {
+                            let mut expected = source_atom.clone();
+                            expected.set_chiral_tag(candidate_atom.chiral_tag());
+                            expected.set_chiral_permutation(candidate_atom.chiral_permutation());
+                            for key in ASSIGNMENT_PROPERTIES {
+                                if let Some(value) = candidate_atom.prop(key) {
+                                    if expected.set_prop(key, value).is_err() {
+                                        return false;
+                                    }
+                                } else {
+                                    expected.clear_prop(key);
+                                }
+                            }
+                            expected == *candidate_atom
+                        },
+                    );
+                let topology_identity_is_stable = atoms_only_change_structure_tags
+                    && candidate.bonds == source.bonds
+                    && candidate.substance_groups == source.substance_groups
+                    && candidate.stereo_groups == source.stereo_groups
+                    && candidate.adjacency == source.adjacency;
+
+                let mut expected_properties = self.source.properties().clone();
+                if clear_stereochem_done {
+                    expected_properties.clear_prop("_StereochemDone");
+                }
+                let preserved_blocks_are_unchanged = self.current_coordinates_candidate()?
+                    == self.source.coordinates()
+                    && self.current_properties_candidate()? == &expected_properties
+                    && self
+                        .current_cache_candidate()?
+                        .valid_states()
+                        .intersection(states)
+                        == self
+                            .source
+                            .derived_cache_runtime()
+                            .valid_states()
+                            .intersection(states);
+                if !topology_identity_is_stable || !preserved_blocks_are_unchanged {
+                    return Err(Self::effect_error(
+                        self.spec,
+                        "preserve",
+                        states,
+                        "structure-tag-assignment proof failed",
+                    ));
+                }
+            }
             PreservationProof::LeafAtomAppend => {
-                return Err(Self::effect_error(
-                    self.spec,
-                    "preserve",
-                    states,
-                    "leaf-atom-append proof is not implemented by this runtime unit",
-                ));
+                let ring_states = DerivedState::RINGS.union(DerivedState::RING_FAMILIES);
+                if !states.difference(ring_states).is_empty() {
+                    return Err(Self::effect_error(
+                        self.spec,
+                        "preserve",
+                        states,
+                        "leaf-atom-append proof only applies to ring state",
+                    ));
+                }
+
+                let candidate = self.current_topology_candidate()?;
+                let source = self.source.topology();
+                let mapping = self.topology_mapping.as_ref().ok_or_else(|| {
+                    Self::effect_error(
+                        self.spec,
+                        "preserve",
+                        states,
+                        "leaf-atom-append proof requires a recorded topology mapping",
+                    )
+                })?;
+                mapping
+                    .validate_for_counts(
+                        source.atoms.len(),
+                        candidate.atoms.len(),
+                        source.bonds.len(),
+                        candidate.bonds.len(),
+                    )
+                    .map_err(|_| {
+                        Self::effect_error(
+                            self.spec,
+                            "preserve",
+                            states,
+                            "leaf-atom-append mapping is invalid",
+                        )
+                    })?;
+
+                let atom_prefix_is_identity =
+                    source.atoms.iter().enumerate().all(|(index, atom)| {
+                        candidate
+                            .atoms
+                            .get(index)
+                            .is_some_and(|candidate| candidate.id() == atom.id())
+                            && mapping.atoms().old_to_new()[index] == Some(atom.id())
+                            && mapping.atoms().new_to_old()[index] == Some(atom.id())
+                    });
+                let bond_prefix_is_identity =
+                    source.bonds.iter().enumerate().all(|(index, bond)| {
+                        candidate.bonds.get(index).is_some_and(|candidate| {
+                            candidate.id() == bond.id()
+                                && candidate.begin() == bond.begin()
+                                && candidate.end() == bond.end()
+                        }) && mapping.bonds().old_to_new()[index] == Some(bond.id())
+                            && mapping.bonds().new_to_old()[index] == Some(bond.id())
+                    });
+                let appended_atom_count = candidate.atoms.len().saturating_sub(source.atoms.len());
+                let appended_bond_count = candidate.bonds.len().saturating_sub(source.bonds.len());
+                let appended_mapping_is_none = mapping
+                    .atoms()
+                    .new_to_old()
+                    .get(source.atoms.len()..)
+                    .is_some_and(|rows| rows.iter().all(Option::is_none))
+                    && mapping
+                        .bonds()
+                        .new_to_old()
+                        .get(source.bonds.len()..)
+                        .is_some_and(|rows| rows.iter().all(Option::is_none));
+                let appended_atoms_are_terminal_hydrogens = candidate
+                    .atoms
+                    .get(source.atoms.len()..)
+                    .is_some_and(|atoms| {
+                        atoms.iter().all(|atom| {
+                            atom.atomic_number() == 1
+                                && candidate.adjacency.neighbors_of(atom.id().index()).len() == 1
+                        })
+                    });
+                let appended_bonds_attach_one_new_hydrogen = candidate
+                    .bonds
+                    .get(source.bonds.len()..)
+                    .is_some_and(|bonds| {
+                        bonds.iter().all(|bond| {
+                            let begin_is_new = bond.begin().index() >= source.atoms.len();
+                            let end_is_new = bond.end().index() >= source.atoms.len();
+                            begin_is_new != end_is_new
+                        })
+                    });
+                let extended_state_is_unchanged = candidate.substance_groups
+                    == source.substance_groups
+                    && candidate.stereo_groups == source.stereo_groups;
+
+                let all_states = DerivedState::RINGS
+                    .union(DerivedState::RING_FAMILIES)
+                    .union(DerivedState::VALENCE)
+                    .union(DerivedState::AROMATICITY)
+                    .union(DerivedState::STEREO)
+                    .union(DerivedState::COORDINATES)
+                    .union(DerivedState::DRAWING)
+                    .union(DerivedState::FINGERPRINT);
+                let mut candidate_cache = self.current_cache_candidate()?;
+                let mut source_cache = self.source.derived_cache_runtime().clone();
+                let non_preserved = all_states.difference(states);
+                candidate_cache.clear(non_preserved);
+                source_cache.clear(non_preserved);
+                let preserved_cache_is_unchanged = candidate_cache == source_cache;
+
+                if !atom_prefix_is_identity
+                    || !bond_prefix_is_identity
+                    || candidate.atoms.len() < source.atoms.len()
+                    || candidate.bonds.len() < source.bonds.len()
+                    || appended_atom_count != appended_bond_count
+                    || !appended_mapping_is_none
+                    || !appended_atoms_are_terminal_hydrogens
+                    || !appended_bonds_attach_one_new_hydrogen
+                    || !extended_state_is_unchanged
+                    || !preserved_cache_is_unchanged
+                {
+                    return Err(Self::effect_error(
+                        self.spec,
+                        "preserve",
+                        states,
+                        "leaf-atom-append proof failed",
+                    ));
+                }
+            }
+            PreservationProof::RadicalElectronAssignment => {
+                let candidate = self.current_topology_candidate()?;
+                let source = self.source.topology();
+                let atoms_only_change_radicals = candidate.atoms.len() == source.atoms.len()
+                    && candidate.atoms.iter().zip(&source.atoms).all(
+                        |(candidate_atom, source_atom)| {
+                            let mut expected = source_atom.clone();
+                            expected.set_radical_electrons(candidate_atom.radical_electrons());
+                            &expected == candidate_atom
+                        },
+                    );
+                let topology_identity_is_stable = atoms_only_change_radicals
+                    && candidate.bonds == source.bonds
+                    && candidate.substance_groups == source.substance_groups
+                    && candidate.stereo_groups == source.stereo_groups
+                    && candidate.adjacency == source.adjacency;
+                let preserved_blocks_are_unchanged = self.current_coordinates_candidate()?
+                    == self.source.coordinates()
+                    && self.current_properties_candidate()? == self.source.properties()
+                    && self
+                        .current_cache_candidate()?
+                        .valid_states()
+                        .intersection(states)
+                        == self
+                            .source
+                            .derived_cache_runtime()
+                            .valid_states()
+                            .intersection(states);
+                if !topology_identity_is_stable || !preserved_blocks_are_unchanged {
+                    return Err(Self::effect_error(
+                        self.spec,
+                        "preserve",
+                        states,
+                        "radical-electron-assignment proof failed",
+                    ));
+                }
+            }
+            PreservationProof::KekulizeBondAssignment => {
+                let candidate = self.current_topology_candidate()?;
+                let source = self.source.topology();
+                let atoms_only_change_kekulize_fields = candidate.atoms.len() == source.atoms.len()
+                    && candidate.atoms.iter().zip(&source.atoms).all(
+                        |(candidate_atom, source_atom)| {
+                            let mut expected = source_atom.clone();
+                            expected.set_aromatic(candidate_atom.is_aromatic());
+                            expected.set_no_implicit(candidate_atom.no_implicit());
+                            expected.set_explicit_hydrogens(candidate_atom.explicit_hydrogens());
+                            &expected == candidate_atom
+                        },
+                    );
+                let bonds_only_change_kekulize_fields = candidate.bonds.len() == source.bonds.len()
+                    && candidate.bonds.iter().zip(&source.bonds).all(
+                        |(candidate_bond, source_bond)| {
+                            let mut expected = source_bond.clone();
+                            expected.set_order(candidate_bond.order());
+                            expected.set_aromatic(candidate_bond.is_aromatic());
+                            expected.set_direction(candidate_bond.direction());
+                            &expected == candidate_bond
+                        },
+                    );
+                let topology_identity_is_stable = atoms_only_change_kekulize_fields
+                    && bonds_only_change_kekulize_fields
+                    && candidate.substance_groups == source.substance_groups
+                    && candidate.stereo_groups == source.stereo_groups
+                    && candidate.adjacency == source.adjacency;
+                let preserved_blocks_are_unchanged = self.current_coordinates_candidate()?
+                    == self.source.coordinates()
+                    && self.current_properties_candidate()? == self.source.properties()
+                    && self
+                        .current_cache_candidate()?
+                        .valid_states()
+                        .intersection(states)
+                        == self
+                            .source
+                            .derived_cache_runtime()
+                            .valid_states()
+                            .intersection(states);
+                if !topology_identity_is_stable || !preserved_blocks_are_unchanged {
+                    return Err(Self::effect_error(
+                        self.spec,
+                        "preserve",
+                        states,
+                        "kekulize-bond-assignment proof failed",
+                    ));
+                }
+            }
+            PreservationProof::AromaticityAssignment => {
+                let candidate = self.current_topology_candidate()?;
+                let source = self.source.topology();
+                let atoms_only_change_aromaticity_fields = candidate.atoms.len()
+                    == source.atoms.len()
+                    && candidate.atoms.iter().zip(&source.atoms).all(
+                        |(candidate_atom, source_atom)| {
+                            let mut expected = source_atom.clone();
+                            expected.set_aromatic(candidate_atom.is_aromatic());
+                            expected.set_explicit_hydrogens(candidate_atom.explicit_hydrogens());
+                            &expected == candidate_atom
+                        },
+                    );
+                let bonds_only_change_aromaticity_fields = candidate.bonds.len()
+                    == source.bonds.len()
+                    && candidate.bonds.iter().zip(&source.bonds).all(
+                        |(candidate_bond, source_bond)| {
+                            let mut expected = source_bond.clone();
+                            expected.set_order(candidate_bond.order());
+                            expected.set_aromatic(candidate_bond.is_aromatic());
+                            &expected == candidate_bond
+                        },
+                    );
+                let topology_identity_is_stable = atoms_only_change_aromaticity_fields
+                    && bonds_only_change_aromaticity_fields
+                    && candidate.substance_groups == source.substance_groups
+                    && candidate.stereo_groups == source.stereo_groups
+                    && candidate.adjacency == source.adjacency;
+                let preserved_blocks_are_unchanged = self.current_coordinates_candidate()?
+                    == self.source.coordinates()
+                    && self.current_properties_candidate()? == self.source.properties()
+                    && self
+                        .current_cache_candidate()?
+                        .valid_states()
+                        .intersection(states)
+                        == self
+                            .source
+                            .derived_cache_runtime()
+                            .valid_states()
+                            .intersection(states);
+                if !topology_identity_is_stable || !preserved_blocks_are_unchanged {
+                    return Err(Self::effect_error(
+                        self.spec,
+                        "preserve",
+                        states,
+                        "aromaticity-assignment proof failed",
+                    ));
+                }
+            }
+            PreservationProof::SanitizeTopologyState => {
+                let candidate = self.current_topology_candidate()?;
+                let source = self.source.topology();
+                let atom_identity_is_stable = candidate.atoms.len() == source.atoms.len()
+                    && candidate.atoms.iter().zip(&source.atoms).all(
+                        |(candidate_atom, source_atom)| candidate_atom.id() == source_atom.id(),
+                    );
+                let bond_identity_is_stable = candidate.bonds.len() == source.bonds.len()
+                    && candidate.bonds.iter().zip(&source.bonds).all(
+                        |(candidate_bond, source_bond)| {
+                            candidate_bond.id() == source_bond.id()
+                                && candidate_bond.begin() == source_bond.begin()
+                                && candidate_bond.end() == source_bond.end()
+                        },
+                    );
+                let topology_identity_is_stable = atom_identity_is_stable
+                    && bond_identity_is_stable
+                    && candidate.adjacency == source.adjacency
+                    && candidate.substance_groups == source.substance_groups;
+                let preserved_blocks_are_unchanged = self.current_coordinates_candidate()?
+                    == self.source.coordinates()
+                    && self.current_properties_candidate()? == self.source.properties()
+                    && self
+                        .current_cache_candidate()?
+                        .valid_states()
+                        .intersection(states)
+                        == self
+                            .source
+                            .derived_cache_runtime()
+                            .valid_states()
+                            .intersection(states);
+                if !topology_identity_is_stable || !preserved_blocks_are_unchanged {
+                    return Err(Self::effect_error(
+                        self.spec,
+                        "preserve",
+                        states,
+                        "sanitize topology-identity and coordinate-preservation proof failed",
+                    ));
+                }
             }
         }
         self.effect_trace.preserved = self.effect_trace.preserved.union(states);
@@ -1180,7 +1609,9 @@ impl<'a, Access> OpParts<'a, Access> {
             self.current_topology_candidate()?,
             self.current_coordinates_candidate()?,
             self.current_properties_candidate()?,
-        )
+        )?;
+        self.current_cache_candidate()?
+            .validate_for_topology(self.current_topology_candidate()?)
     }
 
     fn validate_candidate(&self) -> Result<(), OperationError> {
@@ -1209,7 +1640,7 @@ impl<'a, Access> OpParts<'a, Access> {
         }
     }
 
-    pub(crate) fn finish(self) -> Result<Molecule, OperationError> {
+    pub(super) fn finish(self) -> Result<Molecule, OperationError> {
         let (topology, coordinates, properties, derived_cache) = self.finish_parts()?;
         Molecule::from_runtime_parts(topology, coordinates, properties, derived_cache)
     }
@@ -1254,7 +1685,7 @@ impl<'a, Access> OpParts<'a, Access> {
         Ok((topology, coordinates, properties, derived_cache))
     }
 
-    pub(crate) fn abort_in_place(&mut self) {
+    pub(super) fn abort_in_place(&mut self) {
         if self.in_place_target.is_none() {
             return;
         }
@@ -1276,7 +1707,7 @@ impl<'a, Access> OpParts<'a, Access> {
         self.effect_trace = EffectTrace::default();
     }
 
-    pub(crate) fn finish_in_place(mut self) -> Result<(), OperationError> {
+    pub(super) fn finish_in_place(mut self) -> Result<(), OperationError> {
         let target = self
             .in_place_target
             .take()

@@ -510,10 +510,10 @@ fn validate_molecule_relationships(
                 "assemble_fn requires result_type",
             ));
         }
-        (MoleculeOutput::Single, _, Some(path)) => {
+        (MoleculeOutput::Single, None, Some(path)) => {
             return Err(syn::Error::new_spanned(
                 path,
-                "custom result assembly is available only for multiple-output operations",
+                "assemble_fn requires result_type",
             ));
         }
         _ => {}

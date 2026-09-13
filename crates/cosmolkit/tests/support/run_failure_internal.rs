@@ -396,8 +396,10 @@ fn wrapper_and_owner_source_guards_preserve_failure_ordering_and_boundaries() {
     assert!(wrappers.contains("parts.finish_in_place()"));
     assert!(!wrappers.contains("catch_unwind"));
 
-    assert_eq!(context.matches("pub(crate) fn abort_in_place").count(), 1);
-    assert_eq!(context.matches("pub(crate) fn finish_in_place").count(), 1);
+    assert_eq!(context.matches("pub(super) fn abort_in_place").count(), 1);
+    assert_eq!(context.matches("pub(super) fn finish_in_place").count(), 1);
+    assert!(!context.contains("pub(crate) fn abort_in_place"));
+    assert!(!context.contains("pub(crate) fn finish_in_place"));
     assert_eq!(
         context
             .matches("\n    in_place_target: Option<&'a mut Molecule>,")

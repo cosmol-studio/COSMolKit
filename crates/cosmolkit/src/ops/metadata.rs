@@ -353,7 +353,7 @@ impl Iterator for FeatureSpecIter {
 #[must_use]
 pub fn feature_specs() -> FeatureSpecIter {
     FeatureSpecIter {
-        entries: super::registry::SUPPORT_MATRIX,
+        entries: super::runtime::registry::SUPPORT_MATRIX,
         index: 0,
     }
 }
@@ -367,7 +367,7 @@ pub fn feature_spec(name: &str) -> Option<&'static FeatureSpec> {
 /// Returns the generated operation declarations in declaration order.
 #[must_use]
 pub fn operation_specs() -> &'static [&'static MoleculeOpSpec] {
-    super::registry::MOLECULE_OPS
+    super::runtime::registry::MOLECULE_OPS
 }
 
 /// Looks up a generated operation by its exact canonical method name.
@@ -382,19 +382,19 @@ pub fn operation_spec(method: &str) -> Option<&'static MoleculeOpSpec> {
 /// Returns the generated support matrix without copying its rows.
 #[must_use]
 pub fn support_matrix() -> &'static [SupportMatrixEntry] {
-    super::registry::SUPPORT_MATRIX
+    super::runtime::registry::SUPPORT_MATRIX
 }
 
 /// Returns the generated operation-invariant matrix without copying its rows.
 #[must_use]
 pub fn operation_invariant_matrix() -> &'static [OperationInvariantEntry] {
-    super::registry::OPERATION_INVARIANT_MATRIX
+    super::runtime::registry::OPERATION_INVARIANT_MATRIX
 }
 
 /// Returns the generated parity matrix without copying its rows.
 #[must_use]
 pub fn parity_matrix() -> &'static [ParityMatrixEntry] {
-    super::registry::PARITY_MATRIX
+    super::runtime::registry::PARITY_MATRIX
 }
 
 /// Looks up an invariant row by the exact generated operation method.

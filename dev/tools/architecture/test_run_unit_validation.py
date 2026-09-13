@@ -93,6 +93,39 @@ class RunUnitValidationRegressionTests(unittest.TestCase):
         with self.assertRaisesRegex(runner.ConfigurationError, "unknown"):
             runner.validate_features(validation, set())
 
+    def test_dependency_selectors_are_scoped_to_declared_dependencies(self) -> None:
+        metadata = {
+            "packages": [
+                {
+                    "name": "cosmolkit",
+                    "features": {"valence": []},
+                    "dependencies": [
+                        {"name": "cosmolkit-core", "rename": None},
+                        {"name": "renamed-package", "rename": "renamed"},
+                    ],
+                },
+                {
+                    "name": "cosmolkit-core",
+                    "features": {"op-contracts-strict": []},
+                    "dependencies": [],
+                },
+                {
+                    "name": "renamed-package",
+                    "features": {"strict": []},
+                    "dependencies": [],
+                },
+                {
+                    "name": "unrelated",
+                    "features": {"must-not-leak": []},
+                    "dependencies": [],
+                },
+            ]
+        }
+        self.assertEqual(
+            runner.dependency_feature_selectors(metadata, "cosmolkit"),
+            {"cosmolkit-core/op-contracts-strict", "renamed/strict"},
+        )
+
     def test_propagates_failing_test_subprocess_and_records_evidence(self) -> None:
         validation = selected()
         cargo_test = subprocess.CompletedProcess(

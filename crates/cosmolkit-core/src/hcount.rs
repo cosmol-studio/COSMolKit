@@ -1,8 +1,202 @@
 //! RDKit-aligned hydrogen-count composition over detached topology values.
 
-use cosmolkit_model::{Atom, AtomId, TopologyBlock};
+use cosmolkit_model::{Atom, AtomId, TopologyBlock, TopologyValidationError};
 
-use crate::{ValenceAssignment, ValenceError};
+use crate::{
+    ValenceAssignment, ValenceError, assign_explicit_valence_for_atom_from_parts,
+    assign_implicit_valence_for_atom_from_parts_with_explicit_valence,
+};
+
+/// Detached result of RDKit's post-aromaticity hydrogen adjustment.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AdjustHsAssignment {
+    pub topology: TopologyBlock,
+    pub valence: ValenceAssignment,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum AdjustHsError {
+    #[error("invalid topology: {source}")]
+    InvalidTopology { source: TopologyValidationError },
+    #[error("valence assignment field {field} has {actual} rows; expected {expected}")]
+    ValenceAssignmentLength {
+        field: &'static str,
+        actual: usize,
+        expected: usize,
+    },
+    #[error("invalid valence row for atom {atom}: {field}={value}")]
+    InvalidValenceRow {
+        atom: AtomId,
+        field: &'static str,
+        value: i32,
+    },
+    #[error(
+        "explicit hydrogen adjustment overflows at atom {atom}: explicit={original_explicit_hydrogens}, original implicit={original_implicit_valence}, recalculated implicit={recalculated_implicit_valence}"
+    )]
+    ExplicitHydrogenOverflow {
+        atom: AtomId,
+        original_explicit_hydrogens: u8,
+        original_implicit_valence: i32,
+        recalculated_implicit_valence: i32,
+    },
+    #[error(transparent)]
+    Valence(#[from] ValenceError),
+}
+
+fn validate_adjust_hs_valence(
+    topology: &TopologyBlock,
+    valence: &ValenceAssignment,
+) -> Result<(), AdjustHsError> {
+    let expected = topology.atoms.len();
+    for (field, rows) in [
+        ("explicit_valence", &valence.explicit_valence),
+        ("implicit_hydrogens", &valence.implicit_hydrogens),
+    ] {
+        if rows.len() != expected {
+            return Err(AdjustHsError::ValenceAssignmentLength {
+                field,
+                actual: rows.len(),
+                expected,
+            });
+        }
+        if let Some((row, &value)) = rows.iter().enumerate().find(|(_, value)| **value < 0) {
+            return Err(AdjustHsError::InvalidValenceRow {
+                atom: AtomId::new(row),
+                field,
+                value,
+            });
+        }
+    }
+    Ok(())
+}
+
+/// Transfer implicit hydrogens lost after aromaticity perception into the
+/// explicit-hydrogen field, preserving the source atom-row order.
+pub fn adjust_hs(
+    topology: &TopologyBlock,
+    original_valence: &ValenceAssignment,
+) -> Result<AdjustHsAssignment, AdjustHsError> {
+    topology
+        .validate()
+        .map_err(|source| AdjustHsError::InvalidTopology { source })?;
+    validate_adjust_hs_valence(topology, original_valence)?;
+
+    // BEGIN RDKIT CPP FUNCTION MolOps::adjustHs
+    // RDKit✔️❌: void adjustHs(RWMol &mol) {
+    // RDKit✔️❌:   //
+    // RDKit✔️❌:   //  Go through and adjust the number of implicit and explicit Hs
+    // RDKit✔️❌:   //  on each atom in the molecule.
+    // RDKit✔️❌:   //
+    // RDKit✔️❌:   //  Atoms that do not *need* explicit Hs
+    // RDKit✔️❌:   //
+    // RDKit✔️❌:   //  Assumptions: this is called after the molecule has been
+    // RDKit✔️❌:   //  sanitized, aromaticity has been perceived, and the implicit
+    // RDKit✔️❌:   //  valence of everything has been calculated.
+    // RDKit✔️❌:   //
+    // RDKit✔️❌:   for (auto atom : mol.atoms()) {
+    // RDKit✔️❌:     int origImplicitV = atom->getValence(Atom::ValenceType::IMPLICIT);
+    // RDKit✔️❌:     atom->calcExplicitValence(false);
+    // RDKit✔️❌:     int origExplicitV = atom->getNumExplicitHs();
+    // RDKit✔️❌:
+    // RDKit✔️❌:     int newImplicitV = atom->calcImplicitValence(false);
+    // RDKit✔️❌:     //
+    // RDKit✔️❌:     //  Case 1: The disappearing Hydrogen
+    // RDKit✔️❌:     //    Smiles:  O=C1NC=CC2=C1C=CC=C2
+    // RDKit✔️❌:     //
+    // RDKit✔️❌:     //    after perception is done, the N atom has two aromatic
+    // RDKit✔️❌:     //    bonds to it and a single implicit H.  When the Smiles is
+    // RDKit✔️❌:     //    written, we get: n1ccc2ccccc2c1=O.  Here the nitrogen has
+    // RDKit✔️❌:     //    no implicit Hs (because there are two aromatic bonds to
+    // RDKit✔️❌:     //    it, giving it a valence of 3).  Also: this SMILES is bogus
+    // RDKit✔️❌:     //    (un-kekulizable).  The correct SMILES would be:
+    // RDKit✔️❌:     //    [nH]1ccc2ccccc2c1=O.  So we need to loop through the atoms
+    // RDKit✔️❌:     //    and find those that have lost implicit H; we'll add those
+    // RDKit✔️❌:     //    back as explicit Hs.
+    // RDKit✔️❌:     //
+    // RDKit✔️❌:     //    <phew> that takes way longer to comment than it does to
+    // RDKit✔️❌:     //    write:
+    // RDKit✔️❌:     if (newImplicitV < origImplicitV) {
+    // RDKit✔️❌:       atom->setNumExplicitHs(origExplicitV + (origImplicitV - newImplicitV));
+    // RDKit✔️❌:       atom->calcExplicitValence(false);
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:   }
+    // RDKit✔️❌: }
+    // END RDKIT CPP FUNCTION MolOps::adjustHs
+    // The detached boundary must clone the full topology to preserve input
+    // immutability, unlike the source's in-place mutation. Per-atom valence
+    // calculations retain the source O(V + E) traversal shape, but the full
+    // topology clone is a material allocation difference.
+
+    let mut working = topology.clone();
+    let mut explicit_valence = Vec::with_capacity(working.atoms.len());
+    let mut implicit_hydrogens = Vec::with_capacity(working.atoms.len());
+
+    for atom_row in 0..working.atoms.len() {
+        let atom = AtomId::new(atom_row);
+        let original_implicit_valence = original_valence.implicit_hydrogens[atom_row];
+        let current_explicit_valence = assign_explicit_valence_for_atom_from_parts(
+            &working.atoms,
+            &working.bonds,
+            &working.adjacency,
+            atom,
+            false,
+        )?;
+        let original_explicit_hydrogens = working.atoms[atom_row].explicit_hydrogens();
+        let recalculated_implicit_valence =
+            assign_implicit_valence_for_atom_from_parts_with_explicit_valence(
+                &working.atoms,
+                &working.bonds,
+                &working.adjacency,
+                atom,
+                current_explicit_valence,
+                false,
+            )?;
+
+        let final_explicit_valence = if recalculated_implicit_valence < original_implicit_valence {
+            let lost = original_implicit_valence
+                .checked_sub(recalculated_implicit_valence)
+                .ok_or(AdjustHsError::ExplicitHydrogenOverflow {
+                    atom,
+                    original_explicit_hydrogens,
+                    original_implicit_valence,
+                    recalculated_implicit_valence,
+                })?;
+            let adjusted = i32::from(original_explicit_hydrogens)
+                .checked_add(lost)
+                .and_then(|value| u8::try_from(value).ok())
+                .ok_or(AdjustHsError::ExplicitHydrogenOverflow {
+                    atom,
+                    original_explicit_hydrogens,
+                    original_implicit_valence,
+                    recalculated_implicit_valence,
+                })?;
+            working.atoms[atom_row].set_explicit_hydrogens(adjusted);
+            assign_explicit_valence_for_atom_from_parts(
+                &working.atoms,
+                &working.bonds,
+                &working.adjacency,
+                atom,
+                false,
+            )?
+        } else {
+            current_explicit_valence
+        };
+
+        explicit_valence.push(final_explicit_valence);
+        implicit_hydrogens.push(recalculated_implicit_valence);
+    }
+
+    working
+        .validate()
+        .map_err(|source| AdjustHsError::InvalidTopology { source })?;
+    Ok(AdjustHsAssignment {
+        topology: working,
+        valence: ValenceAssignment {
+            explicit_valence,
+            implicit_hydrogens,
+        },
+    })
+}
 
 fn explicit_hydrogen_count(atom: &Atom) -> u32 {
     // BEGIN RDKIT CPP FUNCTION Atom::getNumExplicitHs
@@ -47,6 +241,18 @@ pub fn total_hydrogen_count(
     topology
         .validate()
         .map_err(|source| ValenceError::InvalidTopology { source })?;
+    total_hydrogen_count_from_validated(topology, valence, atom_id, include_neighbors)
+}
+
+/// Compose hydrogen counts after the caller has validated topology and
+/// assignment dimensions. This is the unique O(degree) implementation used by
+/// chemistry phases that would otherwise repeat a whole-topology scan.
+pub(crate) fn total_hydrogen_count_from_validated(
+    topology: &TopologyBlock,
+    valence: &ValenceAssignment,
+    atom_id: AtomId,
+    include_neighbors: bool,
+) -> Result<u32, ValenceError> {
     let atom = topology
         .atoms
         .get(atom_id.index())
@@ -56,21 +262,20 @@ pub fn total_hydrogen_count(
         })?;
 
     // BEGIN RDKIT CPP FUNCTION Atom::getTotalNumHs
-    // RDKit✔️❌: unsigned int Atom::getTotalNumHs(bool includeNeighbors) const {
-    // RDKit✔️❌:   int res = getNumExplicitHs() + getNumImplicitHs();
-    // RDKit✔️❌:   if (includeNeighbors && dp_mol) {
-    // RDKit✔️❌:     auto nbrs = dp_mol->atomNeighbors(this);
-    // RDKit✔️❌:     res += std::count_if(nbrs.begin(), nbrs.end(), [](const auto nbr) {
-    // RDKit✔️❌:       return (nbr->getAtomicNum() == 1);
-    // RDKit✔️❌:     });
-    // RDKit✔️❌:   }
-    // RDKit✔️❌:   return res;
-    // RDKit✔️❌: }
+    // RDKit✔️✔️: unsigned int Atom::getTotalNumHs(bool includeNeighbors) const {
+    // RDKit✔️✔️:   int res = getNumExplicitHs() + getNumImplicitHs();
+    // RDKit✔️✔️:   if (includeNeighbors && dp_mol) {
+    // RDKit✔️✔️:     auto nbrs = dp_mol->atomNeighbors(this);
+    // RDKit✔️✔️:     res += std::count_if(nbrs.begin(), nbrs.end(), [](const auto nbr) {
+    // RDKit✔️✔️:       return (nbr->getAtomicNum() == 1);
+    // RDKit✔️✔️:     });
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   return res;
+    // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION Atom::getTotalNumHs
-    // The detached public boundary validates the complete topology before
-    // trusting adjacency. This preserves behavior on valid input but adds an
-    // O(V + E) scan to the source's O(degree) lookup, so the second marker is
-    // deliberately `❌`.
+    // Validation is owned by the public wrapper or the already-validating
+    // chemistry phase; this inner composition retains the source O(degree)
+    // shape without duplicating the hydrogen algorithm.
     let explicit = explicit_hydrogen_count(atom);
     let implicit = implicit_hydrogen_count(atom, valence)?;
     let neighbor_hydrogens = if include_neighbors {

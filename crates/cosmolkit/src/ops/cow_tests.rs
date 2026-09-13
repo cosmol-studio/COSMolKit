@@ -1,24 +1,16 @@
 use std::sync::Arc;
 
-use cosmolkit_macros::{mol_op_body, molecule_ops};
+use cosmolkit_macros::mol_op_body;
 use cosmolkit_model::{
     Atom, AtomId, AtomSpec, Conformer2D, CoordinateBlock, Element, MoleculeProperties,
     TopologyBlock,
 };
 
-use super::{FeatureSpec, OperationError, SupportStatus};
+use super::OperationError;
 use crate::Molecule;
 
-const COW_TEST_FEATURE: FeatureSpec = FeatureSpec {
-    name: "cow-runtime-test",
-    category: "internal-test",
-    status: SupportStatus::Experimental,
-    rdkit_parity_sensitive: false,
-    docs: "Internal registered-operation coverage for block-level COW.",
-};
-
 #[mol_op_body(cow_coordinates_for_test, parts)]
-fn cow_coordinates_for_test_impl() -> Result<(), OperationError> {
+pub(crate) fn cow_coordinates_for_test_impl() -> Result<(), OperationError> {
     let mut coordinates = parts.checkout_coordinates()?;
     coordinates.conformers_2d[0].coordinates_mut()[0] = [9.0, 8.0];
     parts.install_coordinates(coordinates)?;
@@ -26,59 +18,13 @@ fn cow_coordinates_for_test_impl() -> Result<(), OperationError> {
 }
 
 #[mol_op_body(cow_coordinates_failure_for_test, parts)]
-fn cow_coordinates_failure_for_test_impl() -> Result<(), OperationError> {
+pub(crate) fn cow_coordinates_failure_for_test_impl() -> Result<(), OperationError> {
     let mut coordinates = parts.checkout_coordinates()?;
     coordinates.conformers_2d[0].coordinates_mut()[0] = [7.0, 6.0];
     Err(OperationError::Algorithm {
         operation: "cow_coordinates_failure_for_test",
         detail: "intentional failure after detachment".to_owned(),
     })
-}
-
-molecule_ops! {
-    op cow_coordinates_for_test {
-        method: cow_coordinates_for_test,
-        impl_fn: crate::ops::cow_tests::cow_coordinates_for_test_impl,
-        domain: coordinate,
-        kind: weak,
-        topology_edit: none,
-        access: { read: [], write: [coordinates] },
-        may_mutate: [coordinates],
-        auto_remap: [],
-        derived_effects: {
-            recompute: [], preserve: [], invalidate: [], operation_defined: [],
-        },
-        cip_state: preserve,
-        semantic_preconditions: [],
-        requires_mapping: none,
-        feature: crate::ops::cow_tests::COW_TEST_FEATURE,
-        parity: not_applicable,
-        io_roundtrip: false,
-        invariant_profile: "cow-coordinate-write-test",
-    }
-
-    op cow_coordinates_failure_for_test {
-        method: cow_coordinates_failure_for_test,
-        impl_fn: crate::ops::cow_tests::cow_coordinates_failure_for_test_impl,
-        domain: coordinate,
-        kind: weak,
-        topology_edit: none,
-        access: { read: [], write: [coordinates] },
-        may_mutate: [coordinates],
-        auto_remap: [],
-        derived_effects: {
-            recompute: [], preserve: [], invalidate: [], operation_defined: [],
-        },
-        cip_state: preserve,
-        semantic_preconditions: [],
-        requires_mapping: none,
-        feature: crate::ops::cow_tests::COW_TEST_FEATURE,
-        parity: not_applicable,
-        io_roundtrip: false,
-        invariant_profile: "cow-coordinate-failure-test",
-        inplace: true,
-        inplace_method: cow_coordinates_failure_for_test_,
-    }
 }
 
 fn molecule() -> Molecule {

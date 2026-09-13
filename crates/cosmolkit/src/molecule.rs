@@ -19,11 +19,37 @@ use crate::ops::{DerivedState, OperationError};
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(crate) struct DerivedCacheBlock {
     valid: DerivedState,
+    #[cfg(any(feature = "valence", feature = "hydrogens"))]
+    valence: Option<cosmolkit_core::ValenceAssignment>,
+    #[cfg(feature = "rings")]
+    rings: Option<cosmolkit_core::RingInfo>,
+    #[cfg(feature = "rings")]
+    ring_families: Option<cosmolkit_core::RingInfo>,
 }
 
 impl DerivedCacheBlock {
     fn is_empty(&self) -> bool {
         self.valid == DerivedState::NONE
+            && {
+                #[cfg(any(feature = "valence", feature = "hydrogens"))]
+                {
+                    self.valence.is_none()
+                }
+                #[cfg(not(any(feature = "valence", feature = "hydrogens")))]
+                {
+                    true
+                }
+            }
+            && {
+                #[cfg(feature = "rings")]
+                {
+                    self.rings.is_none() && self.ring_families.is_none()
+                }
+                #[cfg(not(feature = "rings"))]
+                {
+                    true
+                }
+            }
     }
 
     pub(crate) fn valid_states(&self) -> DerivedState {
@@ -36,6 +62,262 @@ impl DerivedCacheBlock {
 
     pub(crate) fn clear(&mut self, states: DerivedState) {
         self.valid = self.valid.difference(states);
+        #[cfg(any(feature = "valence", feature = "hydrogens"))]
+        if states.intersects(DerivedState::VALENCE) {
+            self.valence = None;
+        }
+        #[cfg(feature = "rings")]
+        if states.intersects(DerivedState::RINGS) {
+            self.rings = None;
+        }
+        #[cfg(feature = "rings")]
+        if states.intersects(DerivedState::RING_FAMILIES) {
+            self.ring_families = None;
+        }
+    }
+
+    #[cfg(any(feature = "valence", feature = "hydrogens"))]
+    pub(crate) fn install_valence_assignment(
+        &mut self,
+        assignment: cosmolkit_core::ValenceAssignment,
+    ) {
+        self.valence = Some(assignment);
+    }
+
+    #[cfg(any(feature = "valence", feature = "hydrogens"))]
+    pub(crate) fn valence_assignment(&self) -> Option<&cosmolkit_core::ValenceAssignment> {
+        self.valence.as_ref()
+    }
+
+    #[cfg(feature = "rings")]
+    pub(crate) fn install_ring_info(&mut self, rings: cosmolkit_core::RingInfo) {
+        self.rings = Some(rings);
+    }
+
+    #[cfg(feature = "rings")]
+    pub(crate) fn ring_info(&self) -> Option<&cosmolkit_core::RingInfo> {
+        self.rings.as_ref()
+    }
+
+    #[cfg(feature = "rings")]
+    pub(crate) fn install_ring_family_info(&mut self, families: cosmolkit_core::RingInfo) {
+        self.ring_families = Some(families);
+    }
+
+    #[cfg(feature = "rings")]
+    pub(crate) fn ring_family_info(&self) -> Option<&cosmolkit_core::RingInfo> {
+        self.ring_families.as_ref()
+    }
+
+    pub(crate) fn validate_for_atom_count(&self, atom_count: usize) -> Result<(), OperationError> {
+        #[cfg(any(feature = "valence", feature = "hydrogens"))]
+        {
+            let valid = self.valid.contains(DerivedState::VALENCE);
+            match (valid, self.valence.as_ref()) {
+                (false, None) => {}
+                (true, Some(assignment)) => {
+                    for (field, actual) in [
+                        ("explicit_valence", assignment.explicit_valence.len()),
+                        ("implicit_hydrogens", assignment.implicit_hydrogens.len()),
+                    ] {
+                        if actual != atom_count {
+                            return Err(OperationError::InvalidDerivedCache {
+                                state: "valence",
+                                field,
+                                actual,
+                                expected: atom_count,
+                            });
+                        }
+                    }
+                }
+                (true, None) => {
+                    return Err(OperationError::InvalidDerivedCache {
+                        state: "valence",
+                        field: "assignment",
+                        actual: 0,
+                        expected: 1,
+                    });
+                }
+                (false, Some(_)) => {
+                    return Err(OperationError::InvalidDerivedCache {
+                        state: "valence",
+                        field: "validity_bit",
+                        actual: 0,
+                        expected: 1,
+                    });
+                }
+            }
+        }
+        let _ = atom_count;
+        Ok(())
+    }
+
+    pub(crate) fn validate_for_topology(
+        &self,
+        topology: &TopologyBlock,
+    ) -> Result<(), OperationError> {
+        self.validate_for_atom_count(topology.atoms.len())?;
+        #[cfg(feature = "rings")]
+        {
+            let valid = self.valid.contains(DerivedState::RINGS);
+            match (valid, self.rings.as_ref()) {
+                (false, None) => {}
+                (true, Some(rings)) => {
+                    if !rings.is_initialized() {
+                        return Err(OperationError::InvalidDerivedCache {
+                            state: "rings",
+                            field: "initialized",
+                            actual: 0,
+                            expected: 1,
+                        });
+                    }
+                    if rings.atom_rings().len() != rings.bond_rings().len() {
+                        return Err(OperationError::InvalidDerivedCache {
+                            state: "rings",
+                            field: "ring_rows",
+                            actual: rings.bond_rings().len(),
+                            expected: rings.atom_rings().len(),
+                        });
+                    }
+                    if rings.are_ring_families_initialized()
+                        || !rings.atom_ring_families().is_empty()
+                        || !rings.bond_ring_families().is_empty()
+                    {
+                        return Err(OperationError::InvalidDerivedCache {
+                            state: "rings",
+                            field: "ring_families",
+                            actual: 1,
+                            expected: 0,
+                        });
+                    }
+                    for (atoms, bonds) in rings.atom_rings().iter().zip(rings.bond_rings()) {
+                        if atoms.len() != bonds.len() {
+                            return Err(OperationError::InvalidDerivedCache {
+                                state: "rings",
+                                field: "ring_size",
+                                actual: bonds.len(),
+                                expected: atoms.len(),
+                            });
+                        }
+                    }
+                    for atom in rings.atom_rings().iter().flatten() {
+                        if atom.index() >= topology.atoms.len() {
+                            return Err(OperationError::InvalidDerivedCache {
+                                state: "rings",
+                                field: "atom_id",
+                                actual: atom.index(),
+                                expected: topology.atoms.len(),
+                            });
+                        }
+                    }
+                    for bond in rings.bond_rings().iter().flatten() {
+                        if bond.index() >= topology.bonds.len() {
+                            return Err(OperationError::InvalidDerivedCache {
+                                state: "rings",
+                                field: "bond_id",
+                                actual: bond.index(),
+                                expected: topology.bonds.len(),
+                            });
+                        }
+                    }
+                }
+                (true, None) => {
+                    return Err(OperationError::InvalidDerivedCache {
+                        state: "rings",
+                        field: "assignment",
+                        actual: 0,
+                        expected: 1,
+                    });
+                }
+                (false, Some(_)) => {
+                    return Err(OperationError::InvalidDerivedCache {
+                        state: "rings",
+                        field: "validity_bit",
+                        actual: 0,
+                        expected: 1,
+                    });
+                }
+            }
+
+            let valid = self.valid.contains(DerivedState::RING_FAMILIES);
+            match (valid, self.ring_families.as_ref()) {
+                (false, None) => {}
+                (true, Some(families)) => {
+                    if !families.is_initialized() || !families.are_ring_families_initialized() {
+                        return Err(OperationError::InvalidDerivedCache {
+                            state: "ring_families",
+                            field: "initialized",
+                            actual: 0,
+                            expected: 1,
+                        });
+                    }
+                    if families.find_type() != cosmolkit_core::RingFindType::OtherOrUnknown {
+                        return Err(OperationError::InvalidDerivedCache {
+                            state: "ring_families",
+                            field: "find_type",
+                            actual: families.find_type() as usize,
+                            expected: cosmolkit_core::RingFindType::OtherOrUnknown as usize,
+                        });
+                    }
+                    if !families.atom_rings().is_empty() || !families.bond_rings().is_empty() {
+                        return Err(OperationError::InvalidDerivedCache {
+                            state: "ring_families",
+                            field: "ordinary_rings",
+                            actual: families.atom_rings().len() + families.bond_rings().len(),
+                            expected: 0,
+                        });
+                    }
+                    if families.atom_ring_families().len() != families.bond_ring_families().len() {
+                        return Err(OperationError::InvalidDerivedCache {
+                            state: "ring_families",
+                            field: "family_rows",
+                            actual: families.bond_ring_families().len(),
+                            expected: families.atom_ring_families().len(),
+                        });
+                    }
+                    for atom in families.atom_ring_families().iter().flatten() {
+                        if atom.index() >= topology.atoms.len() {
+                            return Err(OperationError::InvalidDerivedCache {
+                                state: "ring_families",
+                                field: "atom_id",
+                                actual: atom.index(),
+                                expected: topology.atoms.len(),
+                            });
+                        }
+                    }
+                    for bond in families.bond_ring_families().iter().flatten() {
+                        if bond.index() >= topology.bonds.len() {
+                            return Err(OperationError::InvalidDerivedCache {
+                                state: "ring_families",
+                                field: "bond_id",
+                                actual: bond.index(),
+                                expected: topology.bonds.len(),
+                            });
+                        }
+                    }
+                    families
+                        .num_relevant_cycles()
+                        .map_err(OperationError::Rings)?;
+                }
+                (true, None) => {
+                    return Err(OperationError::InvalidDerivedCache {
+                        state: "ring_families",
+                        field: "assignment",
+                        actual: 0,
+                        expected: 1,
+                    });
+                }
+                (false, Some(_)) => {
+                    return Err(OperationError::InvalidDerivedCache {
+                        state: "ring_families",
+                        field: "validity_bit",
+                        actual: 0,
+                        expected: 1,
+                    });
+                }
+            }
+        }
+        Ok(())
     }
 }
 
@@ -103,6 +385,7 @@ impl MoleculeState {
         derived_cache: Arc<DerivedCacheBlock>,
     ) -> Result<Self, OperationError> {
         Self::validate_parts(&topology, &coordinates, &properties)?;
+        derived_cache.validate_for_topology(&topology)?;
         Ok(Self {
             topology,
             coordinates,
@@ -300,5 +583,45 @@ impl Molecule {
 impl Default for Molecule {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(all(test, feature = "valence"))]
+mod valence_cache_tests {
+    use super::*;
+
+    #[test]
+    fn valence_payload_and_validity_bit_are_one_validated_cache_state() {
+        let mut cache = DerivedCacheBlock::default();
+        cache.install_valence_assignment(cosmolkit_core::ValenceAssignment {
+            explicit_valence: vec![1, 2],
+            implicit_hydrogens: vec![3, 2],
+        });
+        assert!(matches!(
+            cache.validate_for_atom_count(2),
+            Err(OperationError::InvalidDerivedCache {
+                state: "valence",
+                field: "validity_bit",
+                ..
+            })
+        ));
+        cache.mark_valid(DerivedState::VALENCE);
+        assert_eq!(cache.validate_for_atom_count(2), Ok(()));
+        assert_eq!(
+            cache.valence_assignment().unwrap().explicit_valence,
+            vec![1, 2]
+        );
+        assert!(matches!(
+            cache.validate_for_atom_count(3),
+            Err(OperationError::InvalidDerivedCache {
+                state: "valence",
+                field: "explicit_valence",
+                actual: 2,
+                expected: 3,
+            })
+        ));
+        cache.clear(DerivedState::VALENCE);
+        assert_eq!(cache.valence_assignment(), None);
+        assert_eq!(cache.validate_for_atom_count(2), Ok(()));
     }
 }

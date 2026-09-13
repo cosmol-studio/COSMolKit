@@ -730,7 +730,8 @@ fn source_guards_keep_one_private_non_domain_commit_owner() {
     let molecule = include_str!("../../src/molecule.rs");
     let lib = include_str!("../../src/lib.rs");
     assert_eq!(context.matches("fn validate_candidate(&self)").count(), 1);
-    assert_eq!(context.matches("pub(crate) fn finish(self)").count(), 1);
+    assert_eq!(context.matches("pub(super) fn finish(self)").count(), 1);
+    assert!(!context.contains("pub(crate) fn finish(self)"));
     assert_eq!(context.matches("*target = replacement;").count(), 1);
     assert!(context.contains("self.validate_candidate()?;"));
     assert!(!context.contains("pub struct OpParts"));
