@@ -403,10 +403,10 @@ fn finish_requires_exact_remap_completion_and_accepts_one_validated_application(
     let output = complete.finish().unwrap();
     assert_eq!(output.topology(), source.topology());
     assert_eq!(
-        output.coordinates().conformers_2d[0].coordinates(),
-        source.coordinates().conformers_2d[0].coordinates()
+        output.coordinate_block_runtime().conformers_2d[0].coordinates(),
+        source.coordinate_block_runtime().conformers_2d[0].coordinates()
     );
-    assert_eq!(output.coordinates().conformers_2d[0].id(), 0);
+    assert_eq!(output.coordinate_block_runtime().conformers_2d[0].id(), 0);
     assert_eq!(output.properties(), source.properties());
 }
 
@@ -504,6 +504,11 @@ fn finish_rejects_each_missing_effect_category_and_cip_then_accepts_full_trace()
         DerivedState::NONE,
     );
     let mut complete = OpParts::<CommitAccess>::new(&source, spec("full", full_fields)).unwrap();
+    let mut cache = complete.checkout_derived_cache_runtime().unwrap();
+    cache.install_valence_assignment(
+        cosmolkit_core::assign_valence(source.topology(), &Default::default()).unwrap(),
+    );
+    complete.install_derived_cache_runtime(cache).unwrap();
     complete
         .mark_cache_updated_runtime(DerivedState::VALENCE)
         .unwrap();
@@ -669,7 +674,10 @@ fn untouched_and_staged_value_success_construct_once_and_preserve_source() {
         .finish()
         .unwrap();
     assert_eq!(untouched.topology(), source.topology());
-    assert_eq!(untouched.coordinates(), source.coordinates());
+    assert_eq!(
+        untouched.coordinate_block_runtime(),
+        source.coordinate_block_runtime()
+    );
     assert_eq!(untouched.properties(), source.properties());
     assert_eq!(untouched.runtime_constructions(), 1);
     assert_eq!(source, before);

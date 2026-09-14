@@ -48,6 +48,8 @@ pub use cosmolkit_core::{
 pub use cosmolkit_core::{ValenceError, ValenceModel, ValenceParams};
 pub use cosmolkit_model as model;
 pub use cosmolkit_model::*;
+#[cfg(feature = "stereo")]
+pub use cosmolkit_stereo::{CipLabelOptions, CipLabelerError};
 #[cfg(feature = "matrices")]
 pub use matrices::DistanceMatrixParams;
 pub use molecule::Molecule;
@@ -69,6 +71,8 @@ pub(crate) use ops::WithAssignedValenceAccess;
 pub(crate) use ops::WithAtomPositionAccess;
 #[cfg(feature = "stereo")]
 pub(crate) use ops::WithChiralTagsFromStructureAccess;
+#[cfg(feature = "stereo")]
+pub(crate) use ops::WithCipLabelsAccess;
 #[cfg(feature = "kekulize")]
 pub(crate) use ops::WithKekulizedBondsAccess;
 pub use ops::{
@@ -82,6 +86,7 @@ pub use ops::{
 #[cfg(test)]
 pub(crate) use ops::{CowCoordinatesFailureForTestAccess, CowCoordinatesForTestAccess};
 pub(crate) use ops::{MultiOutputOpParts, OpParts, PreservationProof};
+pub(crate) use ops::{PendingMolecule, PendingResult, ResultFinalizer};
 #[cfg(feature = "rings")]
 pub(crate) use ops::{WithAssignedRingFamiliesAccess, WithAssignedRingsAccess};
 #[cfg(feature = "hydrogens")]

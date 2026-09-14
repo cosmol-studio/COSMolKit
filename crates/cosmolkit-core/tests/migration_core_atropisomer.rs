@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 
 use cosmolkit_core::{
     AtropisomerAssignment, AtropisomerBondUpdate, AtropisomerConformer, AtropisomerError,
-    AtropisomerRejectionKind, RingFindType, RingInfo, RingSearchParams,
+    AtropisomerRejectionKind, RingFindType, RingInfo, RingSearchParams, atropisomer_carriers,
     cleanup_atropisomer_stereo_groups, detect_atropisomer_chirality,
     does_topology_have_atropisomers, find_sssr, stereo_group_atom_ids,
     wedge_bonds_from_atropisomers,
@@ -70,6 +70,143 @@ fn axial(left: BondDirection, right: BondDirection, axial_stereo: BondStereo) ->
 
 fn sssr(topology: &TopologyBlock) -> RingInfo {
     find_sssr(topology, &RingSearchParams::default()).unwrap()
+}
+
+#[test]
+fn carrier_query_rejects_zero_and_preserves_single_carriers_in_endpoint_order() {
+    let no_carriers = topology_with_groups(
+        vec![atom(0, Hybridization::Sp2), atom(1, Hybridization::Sp2)],
+        vec![bond(
+            0,
+            0,
+            1,
+            BondOrder::Single,
+            BondDirection::None,
+            BondStereo::AtropCw,
+        )],
+        vec![],
+    );
+    assert_eq!(
+        atropisomer_carriers(&no_carriers, BondId::new(0)).unwrap(),
+        None
+    );
+
+    let one_each = axial(
+        BondDirection::None,
+        BondDirection::None,
+        BondStereo::AtropCw,
+    );
+    let ends = atropisomer_carriers(&one_each, BondId::new(1))
+        .unwrap()
+        .unwrap();
+    assert_eq!(ends[0].focus(), AtomId::new(1));
+    assert_eq!(ends[0].carrier_bonds(), &[BondId::new(0)]);
+    assert_eq!(ends[1].focus(), AtomId::new(2));
+    assert_eq!(ends[1].carrier_bonds(), &[BondId::new(2)]);
+}
+
+#[test]
+fn carrier_query_sorts_exactly_two_but_preserves_many_in_adjacency_order() {
+    let topology = topology_with_groups(
+        (0..8)
+            .map(|id| {
+                atom(
+                    id,
+                    if id == 1 || id == 2 {
+                        Hybridization::Sp2
+                    } else {
+                        Hybridization::Sp3
+                    },
+                )
+            })
+            .collect(),
+        vec![
+            bond(
+                0,
+                1,
+                7,
+                BondOrder::Single,
+                BondDirection::None,
+                BondStereo::None,
+            ),
+            bond(
+                1,
+                1,
+                3,
+                BondOrder::Single,
+                BondDirection::None,
+                BondStereo::None,
+            ),
+            bond(
+                2,
+                1,
+                2,
+                BondOrder::Single,
+                BondDirection::None,
+                BondStereo::AtropCw,
+            ),
+            bond(
+                3,
+                1,
+                5,
+                BondOrder::Single,
+                BondDirection::None,
+                BondStereo::None,
+            ),
+            bond(
+                4,
+                2,
+                6,
+                BondOrder::Single,
+                BondDirection::None,
+                BondStereo::None,
+            ),
+            bond(
+                5,
+                2,
+                4,
+                BondOrder::Single,
+                BondDirection::None,
+                BondStereo::None,
+            ),
+        ],
+        vec![],
+    );
+
+    let ends = atropisomer_carriers(&topology, BondId::new(2))
+        .unwrap()
+        .unwrap();
+    assert_eq!(ends[0].focus(), AtomId::new(1));
+    assert_eq!(
+        ends[0].carrier_bonds(),
+        &[BondId::new(0), BondId::new(1), BondId::new(3)]
+    );
+    assert_eq!(ends[1].focus(), AtomId::new(2));
+    assert_eq!(ends[1].carrier_bonds(), &[BondId::new(5), BondId::new(4)]);
+
+    assert!(
+        detect_atropisomer_chirality(&topology, None)
+            .unwrap()
+            .bond_updates
+            .is_empty()
+    );
+}
+
+#[test]
+fn carrier_query_reports_invalid_axial_bond_without_exposing_mutable_state() {
+    let topology = axial(
+        BondDirection::None,
+        BondDirection::None,
+        BondStereo::AtropCw,
+    );
+    let error = atropisomer_carriers(&topology, BondId::new(9)).unwrap_err();
+    assert_eq!(
+        error,
+        AtropisomerError::AxialBondOutOfRange {
+            bond: BondId::new(9),
+            bond_count: 3,
+        }
+    );
 }
 
 #[test]

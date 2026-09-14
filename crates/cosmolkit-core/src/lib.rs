@@ -6,6 +6,7 @@
 
 mod aromaticity;
 mod atropisomer;
+mod bond_dirs;
 mod cip_ranks;
 mod cleanup;
 mod conjugation;
@@ -27,9 +28,10 @@ mod transforms;
 mod valence;
 
 pub use atropisomer::{
-    AtropisomerAssignment, AtropisomerBondUpdate, AtropisomerConformer, AtropisomerDiagnostic,
-    AtropisomerError, AtropisomerRejectionKind, AtropisomerWedgeAssignment, AtropisomerWedgeUpdate,
-    StereoGroupAssignment, cleanup_atropisomer_stereo_groups, detect_atropisomer_chirality,
+    AtropisomerAssignment, AtropisomerBondUpdate, AtropisomerCarrierEnd, AtropisomerConformer,
+    AtropisomerDiagnostic, AtropisomerError, AtropisomerRejectionKind, AtropisomerWedgeAssignment,
+    AtropisomerWedgeUpdate, StereoGroupAssignment, atropisomer_carriers,
+    cleanup_atropisomer_stereo_groups, detect_atropisomer_chirality,
     does_topology_have_atropisomers, stereo_group_atom_ids, wedge_bonds_from_atropisomers,
 };
 
@@ -37,6 +39,8 @@ pub use aromaticity::{
     AromaticityAssignment, AromaticityError, AromaticityModel, AromaticityParams,
     assign_aromaticity,
 };
+
+pub use bond_dirs::{BondDirectionStereoError, assign_chiral_types_from_bond_dirs};
 
 pub use hydrogens::{
     AddHsParams, AddHydrogensResult, HydrogenError, HydrogenWarning, RemoveHsParams,

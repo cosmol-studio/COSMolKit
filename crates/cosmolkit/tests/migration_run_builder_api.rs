@@ -275,13 +275,16 @@ fn detached_bond_edit_remaps_typed_dependents_and_preserves_source_value() {
     assert_eq!(changed.topology().stereo_groups.len(), 1);
     assert!(changed.topology().stereo_groups[0].bonds().is_empty());
     assert_eq!(
-        source.coordinates().source_coordinate_dim,
+        source.to_builder().coordinates().source_coordinate_dim,
         Some(CoordinateDimension::TwoD)
     );
-    assert_eq!(changed.coordinates(), source.coordinates());
-    assert_eq!(changed.coordinates().conformers_2d[0].id(), 7);
     assert_eq!(
-        changed.coordinates().conformers_2d[0].coordinates(),
+        changed.to_builder().coordinates(),
+        source.to_builder().coordinates()
+    );
+    assert_eq!(changed.to_builder().coordinates().conformers_2d[0].id(), 7);
+    assert_eq!(
+        changed.to_builder().coordinates().conformers_2d[0].coordinates(),
         &[[0.0, 0.0], [1.0, 0.0]]
     );
     assert_eq!(

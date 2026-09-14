@@ -1,3 +1,6 @@
+#[path = "support/coordinate_views.rs"]
+mod coordinate_views;
+
 use std::error::Error as _;
 
 use cosmolkit::{
@@ -185,13 +188,16 @@ fn default_value_operation_updates_first_true_3d_conformer_and_clears_cip() {
         .with_atom_position(AtomId::new(1), [9.0, 8.0, 7.0])
         .unwrap();
 
-    assert_eq!(source.conformers().1[0], output.conformers().1[0]);
-    assert_eq!(output.conformers().1[1].coordinates()[1], [9.0, 8.0, 7.0]);
-    assert_eq!(source.conformers().1[2], output.conformers().1[2]);
-    assert_eq!(source.conformers().0, output.conformers().0);
-    assert_eq!(output.conformers().1[1].id(), 7);
+    assert_eq!(source.conformers_3d()[0], output.conformers_3d()[0]);
+    assert_eq!(output.conformers_3d()[1].coordinates()[1], [9.0, 8.0, 7.0]);
+    assert_eq!(source.conformers_3d()[2], output.conformers_3d()[2]);
     assert_eq!(
-        output.conformers().1[1]
+        source.to_builder().coordinates().conformers_2d,
+        output.to_builder().coordinates().conformers_2d
+    );
+    assert_eq!(output.conformers_3d()[1].id(), 7);
+    assert_eq!(
+        output.conformers_3d()[1]
             .props()
             .get("kind")
             .map(String::as_str),
@@ -218,14 +224,14 @@ fn default_value_operation_updates_first_true_3d_conformer_and_clears_cip() {
         None
     );
 
-    assert_eq!(source.conformers().1[1].coordinates()[1], [1.0, 1.0, 0.0]);
+    assert_eq!(source.conformers_3d()[1].coordinates()[1], [1.0, 1.0, 0.0]);
     assert_eq!(source.property("_CIPComputed"), Some("true"));
     assert_eq!(
         source.atom(AtomId::new(0)).unwrap().prop("_CIPCode"),
         Some("R")
     );
     assert!(!std::ptr::eq(source.topology(), output.topology()));
-    assert!(!std::ptr::eq(source.coordinates(), output.coordinates()));
+    coordinate_views::assert_detached_coordinates(&source, &output);
     assert!(!std::ptr::eq(source.properties(), output.properties()));
 }
 
@@ -238,16 +244,16 @@ fn explicit_conformer_id_updates_only_the_selected_row_set() {
     let output = source
         .with_atom_position_with_params(AtomId::new(0), [-1.0, -2.0, -3.0], &params)
         .unwrap();
-    assert_eq!(source.conformers().1[0], output.conformers().1[0]);
-    assert_eq!(source.conformers().1[1], output.conformers().1[1]);
+    assert_eq!(source.conformers_3d()[0], output.conformers_3d()[0]);
+    assert_eq!(source.conformers_3d()[1], output.conformers_3d()[1]);
     assert_eq!(
-        output.conformers().1[2].coordinates()[0],
+        output.conformers_3d()[2].coordinates()[0],
         [-1.0, -2.0, -3.0]
     );
-    assert_eq!(output.conformers().1[2].id(), 11);
-    assert!(output.conformers().1[2].is_3d());
+    assert_eq!(output.conformers_3d()[2].id(), 11);
+    assert!(output.conformers_3d()[2].is_3d());
     assert_eq!(
-        output.conformers().1[2]
+        output.conformers_3d()[2]
             .props()
             .get("kind")
             .map(String::as_str),
@@ -272,7 +278,7 @@ fn inplace_and_value_forms_commit_the_same_result_and_keep_observers_unchanged()
     assert_eq!(target, expected);
     assert_eq!(observer, source);
     assert!(std::ptr::eq(observer.topology(), source.topology()));
-    assert!(std::ptr::eq(observer.coordinates(), source.coordinates()));
+    coordinate_views::assert_shared_coordinates(&observer, &source);
     assert!(std::ptr::eq(observer.properties(), source.properties()));
 }
 
@@ -291,7 +297,7 @@ fn structured_algorithm_failures_are_atomic_for_value_and_inplace_forms() {
         })
     );
     assert!(value_error.source().is_some());
-    assert_eq!(source.conformers().1[1].coordinates()[0], [0.0, 1.0, 0.0]);
+    assert_eq!(source.conformers_3d()[1].coordinates()[0], [0.0, 1.0, 0.0]);
 
     let mut target = source.clone();
     let observer = target.clone();
@@ -308,7 +314,7 @@ fn structured_algorithm_failures_are_atomic_for_value_and_inplace_forms() {
     assert_eq!(target, source);
     assert_eq!(observer, source);
     assert!(std::ptr::eq(target.topology(), observer.topology()));
-    assert!(std::ptr::eq(target.coordinates(), observer.coordinates()));
+    coordinate_views::assert_shared_coordinates(&target, &observer);
     assert!(std::ptr::eq(target.properties(), observer.properties()));
 }
 
@@ -318,7 +324,7 @@ fn missing_default_and_explicit_conformers_remain_distinct_errors() {
     let no_3d = Molecule::from_parts(
         source.topology().clone(),
         CoordinateBlock {
-            conformers_2d: source.conformers().0.to_vec(),
+            conformers_2d: source.to_builder().coordinates().conformers_2d.to_vec(),
             conformers_3d: vec![Conformer3D::new(
                 3,
                 vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],

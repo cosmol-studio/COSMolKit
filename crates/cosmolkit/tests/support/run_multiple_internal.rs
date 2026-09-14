@@ -123,7 +123,7 @@ fn molecule() -> Molecule {
 fn tuple(source: &Molecule) -> DetachedCandidate {
     (
         source.topology().clone(),
-        source.coordinates().clone(),
+        source.coordinate_block_runtime().clone(),
         source.properties().clone(),
     )
 }
@@ -242,7 +242,7 @@ fn one_many_order_and_duplicate_candidates_are_preserved() {
     let mut one = MultiOutputOpParts::<MultipleAccess>::new(&source, operation).unwrap();
     one.emit_all_runtime(vec![(
         source.topology().clone(),
-        source.coordinates().clone(),
+        source.coordinate_block_runtime().clone(),
         properties("one"),
     )])
     .unwrap();
@@ -255,7 +255,7 @@ fn one_many_order_and_duplicate_candidates_are_preserved() {
         .map(|name| {
             (
                 source.topology().clone(),
-                source.coordinates().clone(),
+                source.coordinate_block_runtime().clone(),
                 properties(name),
             )
         })
@@ -284,7 +284,7 @@ fn invalid_topology_coordinate_and_property_rows_remain_structured() {
     let cases = [
         (
             bad_topology,
-            source.coordinates().clone(),
+            source.coordinate_block_runtime().clone(),
             source.properties().clone(),
             "topology",
         ),
@@ -299,7 +299,7 @@ fn invalid_topology_coordinate_and_property_rows_remain_structured() {
         ),
         (
             source.topology().clone(),
-            source.coordinates().clone(),
+            source.coordinate_block_runtime().clone(),
             MoleculeProperties::default().with_sdf_property_list(SdfPropertyList::new(
                 SdfPropertyListTarget::Bond,
                 "bad_bonds",
@@ -346,7 +346,7 @@ fn nonidentity_rows_fail_closed_without_mapping_payload() {
     parts
         .emit_all_runtime(vec![(
             reordered,
-            source.coordinates().clone(),
+            source.coordinate_block_runtime().clone(),
             source.properties().clone(),
         )])
         .unwrap();
@@ -368,7 +368,7 @@ fn changed_block_without_write_authority_is_rejected() {
     parts
         .emit_all_runtime(vec![(
             source.topology().clone(),
-            source.coordinates().clone(),
+            source.coordinate_block_runtime().clone(),
             properties("changed"),
         )])
         .unwrap();
@@ -385,10 +385,15 @@ fn changed_block_without_write_authority_is_rejected() {
 fn invalidate_clears_each_candidate_cache_without_touching_source() {
     let base = molecule();
     let mut cache = DerivedCacheBlock::default();
+    cache.install_ring_info(cosmolkit_core::RingInfo::new(
+        cosmolkit_core::RingFindType::SymmSssr,
+        base.topology().atoms.len(),
+        base.topology().bonds.len(),
+    ));
     cache.mark_valid(DerivedState::RINGS.union(DerivedState::STEREO));
     let source = Molecule::from_runtime_parts(
         Arc::new(base.topology().clone()),
-        Arc::new(base.coordinates().clone()),
+        Arc::new(base.coordinate_block_runtime().clone()),
         Arc::new(base.properties().clone()),
         Arc::new(cache),
     )
@@ -450,7 +455,7 @@ fn preserve_requires_unchanged_input_proof_per_candidate() {
     parts
         .emit_all_runtime(vec![(
             source.topology().clone(),
-            source.coordinates().clone(),
+            source.coordinate_block_runtime().clone(),
             properties("changed"),
         )])
         .unwrap();
@@ -486,7 +491,7 @@ fn cip_clear_and_tautomer_transition_are_applied_per_candidate() {
     clear
         .emit_all_runtime(vec![(
             source.topology().clone(),
-            source.coordinates().clone(),
+            source.coordinate_block_runtime().clone(),
             computed,
         )])
         .unwrap();

@@ -1,3 +1,6 @@
+#[path = "support/coordinate_views.rs"]
+mod coordinate_views;
+
 use cosmolkit::{
     Atom, AtomId, AtomSpec, BINDING_CONTRACT, BindingExposure, BindingItem, BindingOwner,
     BindingParity, BindingSupport, BlockSet, Bond, BondId, BondOrder, BondSpec, Conformer2D,
@@ -179,7 +182,7 @@ fn value_operation_installs_family_state_and_preserves_all_input_blocks() {
     let output = source.with_assigned_ring_families().unwrap();
 
     assert!(std::ptr::eq(source.topology(), output.topology()));
-    assert!(std::ptr::eq(source.coordinates(), output.coordinates()));
+    coordinate_views::assert_shared_coordinates(&source, &output);
     assert!(std::ptr::eq(source.properties(), output.properties()));
     assert_eq!(source.topology().adjacency, output.topology().adjacency);
     assert_eq!(
@@ -218,7 +221,7 @@ fn all_four_parameter_combinations_cross_the_live_boundary() {
                 .with_assigned_ring_families_with_params(&params)
                 .unwrap();
             assert!(std::ptr::eq(source.topology(), output.topology()));
-            assert!(std::ptr::eq(source.coordinates(), output.coordinates()));
+            coordinate_views::assert_shared_coordinates(&source, &output);
             assert!(std::ptr::eq(source.properties(), output.properties()));
             assert!(format!("{output:?}").contains("derived_cache_is_empty: false"));
         }
@@ -232,7 +235,7 @@ fn family_assignment_preserves_an_existing_ordinary_ring_assignment() {
     let rings = source.with_assigned_rings().unwrap();
     let families = rings.with_assigned_ring_families().unwrap();
     assert!(std::ptr::eq(rings.topology(), families.topology()));
-    assert!(std::ptr::eq(rings.coordinates(), families.coordinates()));
+    coordinate_views::assert_shared_coordinates(&rings, &families);
     assert!(std::ptr::eq(rings.properties(), families.properties()));
     assert!(format!("{rings:?}").contains("derived_cache_is_empty: false"));
     assert!(format!("{families:?}").contains("derived_cache_is_empty: false"));
@@ -249,7 +252,7 @@ fn inplace_success_matches_value_semantics_and_keeps_observers_unchanged() {
     assert_eq!(target, expected);
     assert_eq!(observer, source);
     assert!(std::ptr::eq(observer.topology(), source.topology()));
-    assert!(std::ptr::eq(observer.coordinates(), source.coordinates()));
+    coordinate_views::assert_shared_coordinates(&observer, &source);
     assert!(std::ptr::eq(observer.properties(), source.properties()));
     assert!(format!("{observer:?}").contains("derived_cache_is_empty: true"));
     assert!(format!("{target:?}").contains("derived_cache_is_empty: false"));
@@ -268,7 +271,7 @@ fn detached_failure_is_structured_and_inplace_failure_is_atomic() {
     assert!(matches!(inplace_error, OperationError::Rings(_)));
     assert_eq!(target, observer);
     assert!(std::ptr::eq(target.topology(), observer.topology()));
-    assert!(std::ptr::eq(target.coordinates(), observer.coordinates()));
+    coordinate_views::assert_shared_coordinates(&target, &observer);
     assert!(std::ptr::eq(target.properties(), observer.properties()));
     assert!(format!("{target:?}").contains("derived_cache_is_empty: true"));
 }

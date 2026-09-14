@@ -1,3 +1,6 @@
+#[path = "support/coordinate_views.rs"]
+mod coordinate_views;
+
 use std::mem::size_of;
 use std::sync::Arc;
 
@@ -30,7 +33,10 @@ fn empty_state_is_valid_and_has_one_pointer_sized_owner() {
     assert_eq!(molecule.num_atoms(), 0);
     assert_eq!(molecule.num_bonds(), 0);
     assert_eq!(molecule.topology(), &TopologyBlock::default());
-    assert_eq!(molecule.coordinates(), &CoordinateBlock::default());
+    assert_eq!(
+        molecule.to_builder().coordinates(),
+        &CoordinateBlock::default()
+    );
     assert_eq!(molecule.properties(), &MoleculeProperties::default());
     assert_eq!(size_of::<Molecule>(), size_of::<Arc<()>>());
     assert!(format!("{molecule:?}").contains("derived_cache_is_empty: true"));
@@ -51,7 +57,7 @@ fn clone_shares_state_without_exposing_aliasing() {
 
     assert_eq!(cloned, source);
     assert!(std::ptr::eq(cloned.topology(), source.topology()));
-    assert!(std::ptr::eq(cloned.coordinates(), source.coordinates()));
+    coordinate_views::assert_shared_coordinates(&cloned, &source);
     assert!(std::ptr::eq(cloned.properties(), source.properties()));
     drop(source);
     assert_eq!(cloned.num_atoms(), 2);

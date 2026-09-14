@@ -21,12 +21,68 @@ enum WorkingBlock<T> {
     Installed(T),
 }
 
+/// Opaque, single-use detached candidate for one registered transaction.
+/// No live Molecule, constructors, block accessors, or conversion methods are
+/// available to operation bodies. Shared slots are resolved by the wrapper.
+pub(crate) struct PendingMolecule<Access> {
+    identity: Arc<()>,
+    topology: WorkingBlock<TopologyBlock>,
+    coordinates: WorkingBlock<CoordinateBlock>,
+    properties: WorkingBlock<MoleculeProperties>,
+    derived_cache: WorkingBlock<DerivedCacheBlock>,
+    access: PhantomData<Access>,
+}
+
+/// Implemented by the result derive; the finalizer cannot be created by bodies.
+pub(crate) trait PendingResult<Access> {
+    type Finished;
+    fn resolve_pending(
+        self,
+        finalizer: &mut ResultFinalizer<'_, Access>,
+    ) -> Result<Self::Finished, OperationError>;
+}
+
+/// A wrapper-local capability, never passed to an operation body.
+pub(crate) struct ResultFinalizer<'a, Access> {
+    parts: Option<OpParts<'a, Access>>,
+    operation: &'static str,
+}
+
+impl<Access> ResultFinalizer<'_, Access> {
+    pub(crate) fn resolve(
+        &mut self,
+        pending: PendingMolecule<Access>,
+    ) -> Result<Molecule, OperationError> {
+        let mut parts = self.parts.take().ok_or(OperationError::IncompleteCommit {
+            operation: self.operation,
+            block: "pending molecule already finalized",
+        })?;
+        if !parts
+            .pending_identity
+            .as_ref()
+            .is_some_and(|id| Arc::ptr_eq(id, &pending.identity))
+        {
+            return Err(OperationError::IncompleteCommit {
+                operation: self.operation,
+                block: "foreign pending molecule",
+            });
+        }
+        parts.pending_identity = None;
+        parts.topology = pending.topology;
+        parts.coordinates = pending.coordinates;
+        parts.properties = pending.properties;
+        parts.derived_cache = pending.derived_cache;
+        parts.finish()
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum PreservationProof {
     UnchangedInput,
     CoordinateOnly,
     StereoCleanup,
     StructureTagAssignment { clear_stereochem_done: bool },
+    CipLabelAssignment,
     LeafAtomAppend,
     RadicalElectronAssignment,
     KekulizeBondAssignment,
@@ -65,6 +121,7 @@ pub(crate) struct OpParts<'a, Access> {
     effect_trace: EffectTrace,
     in_place_target: Option<&'a mut Molecule>,
     access: PhantomData<Access>,
+    pending_identity: Option<Arc<()>>,
 }
 
 impl<'a, Access> OpParts<'a, Access> {
@@ -109,7 +166,54 @@ impl<'a, Access> OpParts<'a, Access> {
             effect_trace: EffectTrace::default(),
             in_place_target,
             access: PhantomData,
+            pending_identity: None,
         })
+    }
+
+    pub(super) fn ensure_unsealed_runtime(&self) -> Result<(), OperationError> {
+        if self.pending_identity.is_some() {
+            return Err(OperationError::IncompleteCommit {
+                operation: self.spec.method,
+                block: "transaction already sealed as pending molecule",
+            });
+        }
+        Ok(())
+    }
+
+    pub(super) fn pending_molecule_runtime(
+        &mut self,
+    ) -> Result<PendingMolecule<Access>, OperationError> {
+        self.ensure_unsealed_runtime()?;
+        self.ensure_complete_blocks()?;
+        let identity = Arc::new(());
+        self.pending_identity = Some(identity.clone());
+        Ok(PendingMolecule {
+            identity,
+            topology: std::mem::replace(&mut self.topology, WorkingBlock::CheckedOut),
+            coordinates: std::mem::replace(&mut self.coordinates, WorkingBlock::CheckedOut),
+            properties: std::mem::replace(&mut self.properties, WorkingBlock::CheckedOut),
+            derived_cache: std::mem::replace(&mut self.derived_cache, WorkingBlock::CheckedOut),
+            access: PhantomData,
+        })
+    }
+
+    pub(super) fn finish_result<R: PendingResult<Access>>(
+        self,
+        result: R,
+    ) -> Result<R::Finished, OperationError> {
+        let operation = self.spec.method;
+        let mut finalizer = ResultFinalizer {
+            parts: Some(self),
+            operation,
+        };
+        let result = result.resolve_pending(&mut finalizer)?;
+        if let Some(parts) = finalizer.parts {
+            // None still completes the original transaction. A sealed value
+            // omitted from the returned result must not bypass finalization.
+            parts.ensure_unsealed_runtime()?;
+            parts.finish()?;
+        }
+        Ok(result)
     }
 
     pub(super) fn validate_semantic_preconditions(
@@ -170,7 +274,7 @@ impl<'a, Access> OpParts<'a, Access> {
     pub(super) fn read_coordinates_runtime(&self) -> Result<&CoordinateBlock, OperationError> {
         self.ensure_read_access(BlockSet::COORDINATES, "coordinates")?;
         match &self.coordinates {
-            WorkingBlock::Shared => Ok(self.source.coordinates()),
+            WorkingBlock::Shared => Ok(self.source.coordinate_block_runtime()),
             WorkingBlock::Installed(coordinates) => Ok(coordinates),
             WorkingBlock::CheckedOut => Err(OperationError::BlockCheckedOut {
                 operation: self.spec.method,
@@ -223,7 +327,7 @@ impl<'a, Access> OpParts<'a, Access> {
     ) -> Result<CoordinateBlock, OperationError> {
         self.ensure_write_access(BlockSet::COORDINATES, "coordinates")?;
         match std::mem::replace(&mut self.coordinates, WorkingBlock::CheckedOut) {
-            WorkingBlock::Shared => Ok(self.source.coordinates().clone()),
+            WorkingBlock::Shared => Ok(self.source.coordinate_block_runtime().clone()),
             WorkingBlock::Installed(coordinates) => Ok(coordinates),
             WorkingBlock::CheckedOut => {
                 self.coordinates = WorkingBlock::CheckedOut;
@@ -515,7 +619,7 @@ impl<'a, Access> OpParts<'a, Access> {
             .validate()
             .map_err(OperationError::InvalidTopology)?;
         self.source
-            .coordinates()
+            .coordinate_block_runtime()
             .validate_for_atom_count(source_topology.atoms.len())
             .map_err(OperationError::InvalidCoordinates)?;
         Self::validate_property_lists(
@@ -569,7 +673,7 @@ impl<'a, Access> OpParts<'a, Access> {
                 });
             }
             let mut coordinates = match &self.coordinates {
-                WorkingBlock::Shared => self.source.coordinates().clone(),
+                WorkingBlock::Shared => self.source.coordinate_block_runtime().clone(),
                 WorkingBlock::Installed(coordinates) => {
                     coordinates
                         .validate_for_atom_count(new_atom_count)
@@ -853,7 +957,7 @@ impl<'a, Access> OpParts<'a, Access> {
 
     fn current_coordinates_candidate(&self) -> Result<&CoordinateBlock, OperationError> {
         match &self.coordinates {
-            WorkingBlock::Shared => Ok(self.source.coordinates()),
+            WorkingBlock::Shared => Ok(self.source.coordinate_block_runtime()),
             WorkingBlock::Installed(coordinates) => Ok(coordinates),
             WorkingBlock::CheckedOut => Err(OperationError::BlockCheckedOut {
                 operation: self.spec.method,
@@ -882,7 +986,8 @@ impl<'a, Access> OpParts<'a, Access> {
         match proof {
             PreservationProof::UnchangedInput => {
                 let unchanged = self.current_topology_candidate()? == self.source.topology()
-                    && self.current_coordinates_candidate()? == self.source.coordinates()
+                    && self.current_coordinates_candidate()?
+                        == self.source.coordinate_block_runtime()
                     && self.current_properties_candidate()? == self.source.properties()
                     && self
                         .current_cache_candidate()?
@@ -957,7 +1062,7 @@ impl<'a, Access> OpParts<'a, Access> {
                 }
                 let only_stereo_changed = stable_shape && normalized == *source;
                 let preserved_blocks_are_unchanged = self.current_coordinates_candidate()?
-                    == self.source.coordinates()
+                    == self.source.coordinate_block_runtime()
                     && self.current_properties_candidate()? == self.source.properties()
                     && self
                         .current_cache_candidate()?
@@ -1013,7 +1118,7 @@ impl<'a, Access> OpParts<'a, Access> {
                     expected_properties.clear_prop("_StereochemDone");
                 }
                 let preserved_blocks_are_unchanged = self.current_coordinates_candidate()?
-                    == self.source.coordinates()
+                    == self.source.coordinate_block_runtime()
                     && self.current_properties_candidate()? == &expected_properties
                     && self
                         .current_cache_candidate()?
@@ -1030,6 +1135,130 @@ impl<'a, Access> OpParts<'a, Access> {
                         "preserve",
                         states,
                         "structure-tag-assignment proof failed",
+                    ));
+                }
+            }
+            PreservationProof::CipLabelAssignment => {
+                const ATOM_KEYS: [&str; 2] = ["_CIPCode", "_CIPNeighborOrder"];
+                const BOND_KEYS: [&str; 2] = ["_CIPCode", "_CIPNeighborOrder"];
+                let candidate = self.current_topology_candidate()?;
+                let source = self.source.topology();
+                let atoms_only_change_cip = candidate.atoms.len() == source.atoms.len()
+                    && candidate.atoms.iter().zip(&source.atoms).all(
+                        |(candidate_atom, source_atom)| {
+                            let mut expected = source_atom.clone();
+                            for key in ATOM_KEYS {
+                                expected.clear_prop(key);
+                                if let Some(value) = candidate_atom.prop(key) {
+                                    let result = if candidate_atom.is_prop_computed(key) {
+                                        expected.set_computed_prop(key, value)
+                                    } else {
+                                        expected.set_prop(key, value)
+                                    };
+                                    if result.is_err() {
+                                        return false;
+                                    }
+                                }
+                            }
+                            expected == *candidate_atom
+                        },
+                    );
+                let bonds_only_change_cip = candidate.bonds.len() == source.bonds.len()
+                    && candidate.bonds.iter().zip(&source.bonds).all(
+                        |(candidate_bond, source_bond)| {
+                            let normalized_stereo = match source_bond.stereo() {
+                                cosmolkit_model::BondStereo::E => {
+                                    candidate_bond.stereo() == cosmolkit_model::BondStereo::E
+                                        || candidate_bond.stereo()
+                                            == cosmolkit_model::BondStereo::Trans
+                                }
+                                cosmolkit_model::BondStereo::Z => {
+                                    candidate_bond.stereo() == cosmolkit_model::BondStereo::Z
+                                        || candidate_bond.stereo()
+                                            == cosmolkit_model::BondStereo::Cis
+                                }
+                                stereo => candidate_bond.stereo() == stereo,
+                            };
+                            let stereo_atoms_are_allowed = if matches!(
+                                source_bond.stereo(),
+                                cosmolkit_model::BondStereo::E
+                                    | cosmolkit_model::BondStereo::Z
+                                    | cosmolkit_model::BondStereo::Cis
+                                    | cosmolkit_model::BondStereo::Trans
+                            ) {
+                                true
+                            } else {
+                                candidate_bond.stereo_atoms() == source_bond.stereo_atoms()
+                            };
+                            if !normalized_stereo || !stereo_atoms_are_allowed {
+                                return false;
+                            }
+
+                            let mut expected = source_bond.clone();
+                            expected.set_stereo_atoms(candidate_bond.stereo_atoms());
+                            if expected.set_stereo(candidate_bond.stereo()).is_err() {
+                                return false;
+                            }
+                            for key in BOND_KEYS {
+                                expected.clear_prop(key);
+                                if let Some(value) = candidate_bond.prop(key) {
+                                    let result = if candidate_bond.is_prop_computed(key) {
+                                        expected.set_computed_prop(key, value)
+                                    } else {
+                                        expected.set_prop(key, value)
+                                    };
+                                    if result.is_err() {
+                                        return false;
+                                    }
+                                }
+                            }
+                            expected == *candidate_bond
+                        },
+                    );
+                let topology_identity_is_stable = atoms_only_change_cip
+                    && bonds_only_change_cip
+                    && candidate.adjacency == source.adjacency
+                    && candidate.substance_groups == source.substance_groups
+                    && candidate.stereo_groups == source.stereo_groups;
+
+                let mut expected_properties = self.source.properties().clone();
+                expected_properties.clear_prop("_CIPComputed");
+                if let Some(value) = self.current_properties_candidate()?.prop("_CIPComputed") {
+                    let result = if self
+                        .current_properties_candidate()?
+                        .is_prop_computed("_CIPComputed")
+                    {
+                        expected_properties.set_computed_prop("_CIPComputed", value)
+                    } else {
+                        expected_properties.set_prop("_CIPComputed", value)
+                    };
+                    if result.is_err() {
+                        return Err(Self::effect_error(
+                            self.spec,
+                            "preserve",
+                            states,
+                            "CIP-label property proof could not normalize completion state",
+                        ));
+                    }
+                }
+                let preserved_blocks_are_unchanged = self.current_coordinates_candidate()?
+                    == self.source.coordinate_block_runtime()
+                    && self.current_properties_candidate()? == &expected_properties
+                    && self
+                        .current_cache_candidate()?
+                        .valid_states()
+                        .intersection(states)
+                        == self
+                            .source
+                            .derived_cache_runtime()
+                            .valid_states()
+                            .intersection(states);
+                if !topology_identity_is_stable || !preserved_blocks_are_unchanged {
+                    return Err(Self::effect_error(
+                        self.spec,
+                        "preserve",
+                        states,
+                        "CIP-label assignment changed state outside its declared fields",
                     ));
                 }
             }
@@ -1174,7 +1403,7 @@ impl<'a, Access> OpParts<'a, Access> {
                     && candidate.stereo_groups == source.stereo_groups
                     && candidate.adjacency == source.adjacency;
                 let preserved_blocks_are_unchanged = self.current_coordinates_candidate()?
-                    == self.source.coordinates()
+                    == self.source.coordinate_block_runtime()
                     && self.current_properties_candidate()? == self.source.properties()
                     && self
                         .current_cache_candidate()?
@@ -1223,7 +1452,7 @@ impl<'a, Access> OpParts<'a, Access> {
                     && candidate.stereo_groups == source.stereo_groups
                     && candidate.adjacency == source.adjacency;
                 let preserved_blocks_are_unchanged = self.current_coordinates_candidate()?
-                    == self.source.coordinates()
+                    == self.source.coordinate_block_runtime()
                     && self.current_properties_candidate()? == self.source.properties()
                     && self
                         .current_cache_candidate()?
@@ -1272,7 +1501,7 @@ impl<'a, Access> OpParts<'a, Access> {
                     && candidate.stereo_groups == source.stereo_groups
                     && candidate.adjacency == source.adjacency;
                 let preserved_blocks_are_unchanged = self.current_coordinates_candidate()?
-                    == self.source.coordinates()
+                    == self.source.coordinate_block_runtime()
                     && self.current_properties_candidate()? == self.source.properties()
                     && self
                         .current_cache_candidate()?
@@ -1312,7 +1541,7 @@ impl<'a, Access> OpParts<'a, Access> {
                     && candidate.adjacency == source.adjacency
                     && candidate.substance_groups == source.substance_groups;
                 let preserved_blocks_are_unchanged = self.current_coordinates_candidate()?
-                    == self.source.coordinates()
+                    == self.source.coordinate_block_runtime()
                     && self.current_properties_candidate()? == self.source.properties()
                     && self
                         .current_cache_candidate()?
@@ -1788,7 +2017,7 @@ pub(super) fn validate_multiple_candidate(
             "topology",
         ),
         (
-            coordinates != *source.coordinates(),
+            coordinates != *source.coordinate_block_runtime(),
             BlockSet::COORDINATES,
             "coordinates",
         ),
@@ -1819,6 +2048,7 @@ pub(super) fn validate_multiple_candidate(
         effect_trace: EffectTrace::default(),
         in_place_target: None,
         access: PhantomData,
+        pending_identity: None,
     };
 
     OpParts::<()>::validate_effect_contract(spec)?;

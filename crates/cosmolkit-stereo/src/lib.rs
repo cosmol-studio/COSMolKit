@@ -1,8 +1,10 @@
 //! Detached stereochemistry and stereoisomer boundaries.
 
-mod bond_dirs;
+mod cip_graph;
+mod cip_labels;
 
-pub use bond_dirs::assign_chiral_types_from_bond_dirs;
+pub use cip_graph::CipLabelerError;
+pub use cip_labels::{CipLabelAssignment, CipLabelOptions, assign_cip_labels};
 use cosmolkit_core::ValenceError;
 use cosmolkit_model::{Conformer3D, TopologyBlock};
 
@@ -14,6 +16,20 @@ pub enum StereoError {
     InvalidState(String),
     #[error(transparent)]
     Valence(#[from] ValenceError),
+}
+
+pub fn assign_chiral_types_from_bond_dirs(
+    topology: &mut TopologyBlock,
+    conformer: &Conformer3D,
+    replace_existing_tags: bool,
+) -> Result<(), StereoError> {
+    cosmolkit_core::assign_chiral_types_from_bond_dirs(topology, conformer, replace_existing_tags)
+        .map_err(|error| match error {
+            cosmolkit_core::BondDirectionStereoError::InvalidState(message) => {
+                StereoError::InvalidState(message)
+            }
+            cosmolkit_core::BondDirectionStereoError::Valence(error) => StereoError::Valence(error),
+        })
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

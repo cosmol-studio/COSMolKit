@@ -147,8 +147,29 @@ Multiple-output operations that need status, provenance, or other domain
 metadata may declare `result_type` together with `assemble_fn`. The operation
 body returns metadata separately, all molecule values are finalized by
 `MultiMoleculeOpParts`, and the assembler receives only those finalized values
-plus the metadata. Supplying only one of these fields, or using them on a
-single-output operation, is a compile-time error.
+plus the metadata. Supplying only one of these fields on a multiple-output
+operation is a compile-time error. Single-output operations must not declare
+`assemble_fn`.
+
+Single-output value operations may register `result_type` without an assembler
+to return a `MoleculeResult`-derived result with one marked molecule field
+(`M` or `Option<M>`). Its public default is `Molecule`; the body returns the
+same result parameterized by private `PendingMolecule<Access>`. Only that
+registered operation receives the generated `pending_molecule()` capability.
+It seals the already staged detached blocks after the body's mapping/effect
+bookkeeping; it does not construct a live molecule. Further capability access,
+duplicate sealing, foreign-transaction pending values, and dropped pending
+values are rejected. Pending containers have no public constructor, extraction,
+clone, dereference, or molecule methods.
+
+The generated wrapper alone invokes result finalization. It uses the existing
+transaction's validation and commit path, then the derived field conversion
+replaces the pending value with the finished molecule. No domain assembler or
+registry closure receives a live molecule. An absent optional field still
+requires the transaction to complete successfully. This mechanism grants no
+new block permissions and is not available to in-place or multiple-output
+operations; their existing lifecycles are unchanged. Validation feature gates
+do not disable pending ownership, single-use, or module-privacy enforcement.
 
 Strong topology operations must also define their migration surface, including fields such as:
 

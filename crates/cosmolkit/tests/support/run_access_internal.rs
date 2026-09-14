@@ -11,6 +11,204 @@ use crate::ops::{
 
 struct TestAccess;
 
+#[derive(cosmolkit_macros::MoleculeResult)]
+struct PendingReport<M = Molecule> {
+    label: String,
+    #[pending_molecule]
+    molecule: Option<M>,
+}
+
+#[derive(cosmolkit_macros::MoleculeResult)]
+struct RequiredPendingReport<M = Molecule> {
+    #[pending_molecule]
+    molecule: M,
+}
+
+fn pending_spec() -> &'static MoleculeOpSpec {
+    spec(
+        "pending_test",
+        MoleculeOpOutput::Single,
+        BlockAccess::new(BlockSet::NONE, BlockSet::PROPERTIES),
+    )
+}
+
+#[test]
+fn pending_some_and_required_results_commit_detached_blocks_and_preserve_cow() {
+    let source = molecule();
+    let mut parts = OpParts::<TestAccess>::new(&source, pending_spec()).unwrap();
+    let properties = parts
+        .checkout_properties_runtime()
+        .unwrap()
+        .with_name("candidate");
+    parts.install_properties_runtime(properties).unwrap();
+    parts.apply_cip_policy_runtime().unwrap();
+    let pending = parts.pending_molecule_runtime().unwrap();
+    assert!(matches!(pending.topology, WorkingBlock::Shared));
+    let result = parts
+        .finish_result(PendingReport {
+            label: "metadata".into(),
+            molecule: Some(pending),
+        })
+        .unwrap();
+    assert_eq!(result.label, "metadata");
+    let finished = result.molecule.unwrap();
+    assert_eq!(finished.properties().name(), Some("candidate"));
+    assert_eq!(source.properties().name(), Some("source"));
+    assert!(std::ptr::eq(finished.topology(), source.topology()));
+    assert!(std::ptr::eq(
+        finished.coordinate_block_runtime(),
+        source.coordinate_block_runtime()
+    ));
+
+    let mut parts = OpParts::<TestAccess>::new(&source, pending_spec()).unwrap();
+    parts.apply_cip_policy_runtime().unwrap();
+    let molecule = parts.pending_molecule_runtime().unwrap();
+    let required = parts
+        .finish_result(RequiredPendingReport { molecule })
+        .unwrap();
+    assert!(std::ptr::eq(
+        required.molecule.topology(),
+        source.topology()
+    ));
+}
+
+#[test]
+fn pending_none_still_finishes_and_missing_blocks_cannot_be_hidden() {
+    let source = molecule();
+    let mut parts = OpParts::<TestAccess>::new(&source, pending_spec()).unwrap();
+    parts.apply_cip_policy_runtime().unwrap();
+    let result = parts
+        .finish_result(PendingReport::<PendingMolecule<TestAccess>> {
+            label: "analysis".into(),
+            molecule: None,
+        })
+        .unwrap();
+    assert_eq!(result.label, "analysis");
+    assert!(result.molecule.is_none());
+
+    let mut parts = OpParts::<TestAccess>::new(&source, pending_spec()).unwrap();
+    let _detached = parts.checkout_properties_runtime().unwrap();
+    assert!(parts.pending_molecule_runtime().is_err());
+    assert!(
+        parts
+            .finish_result(PendingReport::<PendingMolecule<TestAccess>> {
+                label: String::new(),
+                molecule: None,
+            })
+            .is_err()
+    );
+}
+
+#[test]
+fn pending_duplicate_seal_dropped_candidate_and_foreign_transaction_are_rejected() {
+    let source = molecule();
+    let declaration = pending_spec();
+    let mut parts = OpParts::<TestAccess>::new(&source, declaration).unwrap();
+    let pending = parts.pending_molecule_runtime().unwrap();
+    assert!(parts.pending_molecule_runtime().is_err());
+    assert!(parts.ensure_unsealed_runtime().is_err());
+    drop(pending);
+    assert!(
+        parts
+            .finish_result(PendingReport::<PendingMolecule<TestAccess>> {
+                label: String::new(),
+                molecule: None,
+            })
+            .is_err()
+    );
+
+    let mut first = OpParts::<TestAccess>::new(&source, declaration).unwrap();
+    let mut second = OpParts::<TestAccess>::new(&source, declaration).unwrap();
+    let first_pending = first.pending_molecule_runtime().unwrap();
+    let _second_pending = second.pending_molecule_runtime().unwrap();
+    let error = operation_error(second.finish_result(RequiredPendingReport {
+        molecule: first_pending,
+    }));
+    assert!(matches!(
+        error,
+        OperationError::IncompleteCommit {
+            block: "foreign pending molecule",
+            ..
+        }
+    ));
+    assert_eq!(source.properties().name(), Some("source"));
+}
+
+#[test]
+fn pending_body_error_drops_candidate_without_touching_source() {
+    let source = molecule();
+    let before = source.clone();
+    let failed = (|| -> Result<(), OperationError> {
+        let mut parts = OpParts::<TestAccess>::new(&source, pending_spec())?;
+        let properties = parts
+            .checkout_properties_runtime()?
+            .with_name("not committed");
+        parts.install_properties_runtime(properties)?;
+        let _pending = parts.pending_molecule_runtime()?;
+        Err(OperationError::IncompleteCommit {
+            operation: "pending_test",
+            block: "body failed",
+        })
+    })();
+    assert!(failed.is_err());
+    assert_eq!(source, before);
+    assert!(std::ptr::eq(source.properties(), before.properties()));
+}
+
+#[cfg(feature = "op-contracts-strict")]
+#[test]
+fn pending_some_and_none_cannot_skip_strict_contract_validation() {
+    let source = molecule();
+    let mut parts = OpParts::<TestAccess>::new(&source, pending_spec()).unwrap();
+    let properties = parts
+        .checkout_properties_runtime()
+        .unwrap()
+        .with_name("staged");
+    parts.install_properties_runtime(properties).unwrap();
+    // Intentionally omit mandatory CIP bookkeeping. Sealing is not validation.
+    let pending = parts.pending_molecule_runtime().unwrap();
+    assert!(
+        parts
+            .finish_result(RequiredPendingReport { molecule: pending })
+            .is_err()
+    );
+    let mut parts = OpParts::<TestAccess>::new(&source, pending_spec()).unwrap();
+    let properties = parts
+        .checkout_properties_runtime()
+        .unwrap()
+        .with_name("staged");
+    parts.install_properties_runtime(properties).unwrap();
+    assert!(
+        parts
+            .finish_result(PendingReport::<PendingMolecule<TestAccess>> {
+                label: String::new(),
+                molecule: None,
+            })
+            .is_err()
+    );
+}
+
+#[cfg(feature = "stereo")]
+#[test]
+fn pending_generated_capabilities_are_frozen_after_sealing() {
+    let source = molecule();
+    let mut parts =
+        OpParts::<crate::ops::PotentialStereoAccess>::new(&source, pending_spec()).unwrap();
+    let _pending = parts.pending_molecule().unwrap();
+    assert!(parts.pending_molecule().is_err());
+    assert!(parts.checkout_topology().is_err());
+    assert!(parts.install_topology(TopologyBlock::default()).is_err());
+    assert!(parts.checkout_properties().is_err());
+    assert!(parts.checkout_derived_cache().is_err());
+    assert!(parts.clear_cache(DerivedState::STEREO).is_err());
+    assert!(parts.apply_cip_policy().is_err());
+    assert!(
+        parts
+            .prove_preserved(DerivedState::RINGS, PreservationProof::UnchangedInput)
+            .is_err()
+    );
+}
+
 fn spec(
     method: &'static str,
     output: MoleculeOpOutput,
@@ -105,8 +303,8 @@ fn constructors_are_lazy_and_reject_multiple_output_before_exposure() {
     let parts = OpParts::<TestAccess>::new(&source, single).unwrap();
     assert!(std::ptr::eq(parts.source.topology(), source.topology()));
     assert!(std::ptr::eq(
-        parts.source.coordinates(),
-        source.coordinates()
+        parts.source.coordinate_block_runtime(),
+        source.coordinate_block_runtime()
     ));
     assert!(std::ptr::eq(parts.source.properties(), source.properties()));
     assert!(matches!(parts.topology, WorkingBlock::Shared));
@@ -550,5 +748,5 @@ fn invalid_replacements_are_rejected_without_replacing_working_or_live_state() {
         parts.read_coordinates_runtime().unwrap_err(),
         checked_out("invalid-coordinates", "coordinates")
     );
-    assert_eq!(source.coordinates().conformers_2d.len(), 1);
+    assert_eq!(source.coordinate_block_runtime().conformers_2d.len(), 1);
 }

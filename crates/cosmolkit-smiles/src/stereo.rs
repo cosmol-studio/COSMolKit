@@ -1,6 +1,24 @@
 use cosmolkit_model::BondId;
 use cosmolkit_types::{BondOrder, ChiralTag};
 
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub(crate) enum SmilesStereoOrderError {
+    #[error("bond index {bond_index} is out of bounds for bond count {bond_count}")]
+    BondIndexOutOfRange {
+        bond_index: usize,
+        bond_count: usize,
+    },
+    #[error(
+        "probe vector length {probe_count} does not match incident-bond length {incident_count}"
+    )]
+    ProbeLengthMismatch {
+        incident_count: usize,
+        probe_count: usize,
+    },
+    #[error("probe entry at position {probe_index} is missing from the incident-bond order")]
+    ProbeMemberMissing { probe_index: usize },
+}
+
 pub(crate) fn invert_tetrahedral_tag(tag: ChiralTag) -> ChiralTag {
     match tag {
         ChiralTag::TetrahedralCw => ChiralTag::TetrahedralCcw,
@@ -274,7 +292,7 @@ fn swap_squareplanar(perm: u32, x: usize, y: usize) -> u32 {
     // RDKit✔️✔️:   }
     // RDKit✔️✔️:   return perm < 4 ? swap_squareplanar_table[perm][swapidx] : 0;
     // RDKit✔️✔️: }
-    swap_nontetrahedral(perm, x, y, &[0, 2, 3], 3, |perm, swap_index| {
+    swap_nontetrahedral(perm, x, y, &[0, 2, 3], 3, 4, |perm, swap_index| {
         SWAP_SQUAREPLANAR_TABLE[perm][swap_index]
     })
 }
@@ -300,7 +318,7 @@ fn swap_trigonalbipyramidal(perm: u32, x: usize, y: usize) -> u32 {
     // RDKit✔️✔️:   }
     // RDKit✔️✔️:   return perm < 21 ? swap_trigonalbipyramidal_table[perm][swapidx] : 0;
     // RDKit✔️✔️: }
-    swap_nontetrahedral(perm, x, y, &[0, 3, 5, 6], 4, |perm, swap_index| {
+    swap_nontetrahedral(perm, x, y, &[0, 3, 5, 6], 4, 21, |perm, swap_index| {
         SWAP_TRIGONALBIPYRAMIDAL_TABLE[perm][swap_index]
     })
 }
@@ -326,7 +344,7 @@ fn swap_octahedral(perm: u32, x: usize, y: usize) -> u32 {
     // RDKit✔️✔️:   }
     // RDKit✔️✔️:   return perm < 31 ? swap_octahedral_table[perm][swapidx] : 0;
     // RDKit✔️✔️: }
-    swap_nontetrahedral(perm, x, y, &[0, 4, 7, 9, 10], 5, |perm, swap_index| {
+    swap_nontetrahedral(perm, x, y, &[0, 4, 7, 9, 10], 5, 31, |perm, swap_index| {
         SWAP_OCTAHEDRAL_TABLE[perm][swap_index]
     })
 }
@@ -337,6 +355,7 @@ fn swap_nontetrahedral(
     y: usize,
     offsets: &[usize],
     max_index: usize,
+    permutation_count: usize,
     table_lookup: impl Fn(usize, usize) -> u8,
 ) -> u32 {
     if x == y {
@@ -353,6 +372,9 @@ fn swap_nontetrahedral(
         }
         offsets[y] + x - 1
     };
+    if perm as usize >= permutation_count {
+        return 0;
+    }
     table_lookup(perm as usize, swap_index).into()
 }
 
@@ -419,7 +441,7 @@ pub(crate) fn nontetrahedral_chiral_permutation(
     incident_bonds: &[BondId],
     probe: &[Option<BondId>],
     inverse: bool,
-) -> Result<u32, &'static str> {
+) -> Result<u32, SmilesStereoOrderError> {
     // BEGIN RDKIT CPP FUNCTION Chirality::getChiralPermutation
     // RDKit✔️✔️: unsigned int getChiralPermutation(const Atom *cen, const INT_LIST &probe,
     // RDKit✔️✔️:                                   bool inverse) {
@@ -516,7 +538,10 @@ pub(crate) fn nontetrahedral_chiral_permutation(
     let mut order = vec![-1_isize; bond_count];
     for (neighbor_index, bond) in incident_bonds.iter().enumerate() {
         let Some(slot) = order.get_mut(bond.index()) else {
-            return Err("bond index out of bounds");
+            return Err(SmilesStereoOrderError::BondIndexOutOfRange {
+                bond_index: bond.index(),
+                bond_count,
+            });
         };
         *slot = neighbor_index as isize;
     }
@@ -526,7 +551,14 @@ pub(crate) fn nontetrahedral_chiral_permutation(
     let mut probe_permutation = Vec::with_capacity(probe.len());
     for bond in probe {
         let position = match bond {
-            Some(bond) => *order.get(bond.index()).ok_or("bond index out of bounds")?,
+            Some(bond) => {
+                *order
+                    .get(bond.index())
+                    .ok_or(SmilesStereoOrderError::BondIndexOutOfRange {
+                        bond_index: bond.index(),
+                        bond_count,
+                    })?
+            }
             None => -1,
         };
         probe_permutation.push(position);
@@ -538,7 +570,10 @@ pub(crate) fn nontetrahedral_chiral_permutation(
         ));
     }
     if neighbor_permutation.len() != probe_permutation.len() {
-        return Err("probe vector size does not match");
+        return Err(SmilesStereoOrderError::ProbeLengthMismatch {
+            incident_count: neighbor_permutation.len(),
+            probe_count: probe_permutation.len(),
+        });
     }
     if inverse {
         std::mem::swap(&mut neighbor_permutation, &mut probe_permutation);
@@ -552,9 +587,236 @@ pub(crate) fn nontetrahedral_chiral_permutation(
             .iter()
             .position(|value| *value == probe_value)
             .map(|offset| index + offset)
-            .ok_or("could not find probe element")?;
+            .ok_or(SmilesStereoOrderError::ProbeMemberMissing { probe_index: index })?;
         permutation = swap(permutation, index, target);
         neighbor_permutation.swap(index, target);
     }
     Ok(permutation)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn bond(index: usize) -> BondId {
+        BondId::new(index)
+    }
+
+    #[test]
+    fn source_swap_tables_cover_every_permutation_and_transposition() {
+        for (permutation, row) in SWAP_SQUAREPLANAR_TABLE.iter().enumerate() {
+            let mut swap_index = 0;
+            for x in 0..4 {
+                for y in x + 1..4 {
+                    assert_eq!(
+                        swap_squareplanar(permutation as u32, x, y),
+                        u32::from(row[swap_index])
+                    );
+                    assert_eq!(
+                        swap_squareplanar(permutation as u32, y, x),
+                        u32::from(row[swap_index])
+                    );
+                    swap_index += 1;
+                }
+            }
+        }
+        for (permutation, row) in SWAP_TRIGONALBIPYRAMIDAL_TABLE.iter().enumerate() {
+            let mut swap_index = 0;
+            for x in 0..5 {
+                for y in x + 1..5 {
+                    assert_eq!(
+                        swap_trigonalbipyramidal(permutation as u32, x, y),
+                        u32::from(row[swap_index])
+                    );
+                    assert_eq!(
+                        swap_trigonalbipyramidal(permutation as u32, y, x),
+                        u32::from(row[swap_index])
+                    );
+                    swap_index += 1;
+                }
+            }
+        }
+        for (permutation, row) in SWAP_OCTAHEDRAL_TABLE.iter().enumerate() {
+            let mut swap_index = 0;
+            for x in 0..6 {
+                for y in x + 1..6 {
+                    assert_eq!(
+                        swap_octahedral(permutation as u32, x, y),
+                        u32::from(row[swap_index])
+                    );
+                    assert_eq!(
+                        swap_octahedral(permutation as u32, y, x),
+                        u32::from(row[swap_index])
+                    );
+                    swap_index += 1;
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn source_swap_functions_return_zero_for_invalid_indices_and_permutations() {
+        assert_eq!(swap_squareplanar(4, 0, 1), 0);
+        assert_eq!(swap_trigonalbipyramidal(21, 0, 1), 0);
+        assert_eq!(swap_octahedral(31, 0, 1), 0);
+        assert_eq!(swap_squareplanar(1, 0, 4), 0);
+        assert_eq!(swap_squareplanar(1, 4, 0), 0);
+        assert_eq!(swap_trigonalbipyramidal(1, 0, 5), 0);
+        assert_eq!(swap_octahedral(1, 6, 0), 0);
+
+        // RDKit returns the unchanged value before validating the permutation
+        // when both ligand indices are identical.
+        assert_eq!(swap_squareplanar(99, 2, 2), 99);
+        assert_eq!(swap_trigonalbipyramidal(99, 3, 3), 99);
+        assert_eq!(swap_octahedral(99, 4, 4), 99);
+    }
+
+    #[test]
+    fn typed_order_errors_keep_structural_failures_distinct() {
+        assert_eq!(
+            nontetrahedral_chiral_permutation(
+                1,
+                ChiralTag::SquarePlanar,
+                1,
+                &[bond(1)],
+                &[Some(bond(1))],
+                false,
+            ),
+            Err(SmilesStereoOrderError::BondIndexOutOfRange {
+                bond_index: 1,
+                bond_count: 1,
+            })
+        );
+        assert_eq!(
+            nontetrahedral_chiral_permutation(
+                1,
+                ChiralTag::SquarePlanar,
+                1,
+                &[bond(0)],
+                &[Some(bond(1))],
+                false,
+            ),
+            Err(SmilesStereoOrderError::BondIndexOutOfRange {
+                bond_index: 1,
+                bond_count: 1,
+            })
+        );
+        assert_eq!(
+            nontetrahedral_chiral_permutation(
+                1,
+                ChiralTag::SquarePlanar,
+                2,
+                &[bond(0), bond(1)],
+                &[Some(bond(0))],
+                false,
+            ),
+            Err(SmilesStereoOrderError::ProbeLengthMismatch {
+                incident_count: 2,
+                probe_count: 1,
+            })
+        );
+        assert_eq!(
+            nontetrahedral_chiral_permutation(
+                1,
+                ChiralTag::SquarePlanar,
+                3,
+                &[bond(0), bond(1)],
+                &[Some(bond(2)), Some(bond(0))],
+                false,
+            ),
+            Err(SmilesStereoOrderError::ProbeMemberMissing { probe_index: 0 })
+        );
+        // The pinned source examines all but the final position. A duplicated
+        // member left in that final position therefore returns the accumulated
+        // permutation instead of raising its TEST_ASSERT branch.
+        assert_eq!(
+            nontetrahedral_chiral_permutation(
+                1,
+                ChiralTag::SquarePlanar,
+                2,
+                &[bond(0), bond(1)],
+                &[Some(bond(0)), Some(bond(0))],
+                false,
+            ),
+            Ok(1)
+        );
+    }
+
+    #[test]
+    fn nontetrahedral_permutation_preserves_source_zero_and_inverse_rules() {
+        let incident = [bond(0), bond(1), bond(2), bond(3)];
+        let probe = [Some(bond(2)), Some(bond(0)), Some(bond(3)), Some(bond(1))];
+        let forward = nontetrahedral_chiral_permutation(
+            1,
+            ChiralTag::SquarePlanar,
+            4,
+            &incident,
+            &probe,
+            false,
+        )
+        .unwrap();
+        let restored = nontetrahedral_chiral_permutation(
+            forward,
+            ChiralTag::SquarePlanar,
+            4,
+            &incident,
+            &probe,
+            true,
+        )
+        .unwrap();
+        assert_eq!(restored, 1);
+
+        assert_eq!(
+            nontetrahedral_chiral_permutation(
+                0,
+                ChiralTag::SquarePlanar,
+                0,
+                &[bond(9)],
+                &[Some(bond(9))],
+                false,
+            ),
+            Ok(0)
+        );
+        assert_eq!(
+            nontetrahedral_chiral_permutation(
+                1,
+                ChiralTag::TetrahedralCw,
+                4,
+                &incident,
+                &probe,
+                false,
+            ),
+            Ok(0)
+        );
+        assert_eq!(
+            nontetrahedral_chiral_permutation(
+                1,
+                ChiralTag::SquarePlanar,
+                5,
+                &[bond(0), bond(1), bond(2), bond(3), bond(4)],
+                &[
+                    Some(bond(0)),
+                    Some(bond(1)),
+                    Some(bond(2)),
+                    Some(bond(3)),
+                    Some(bond(4)),
+                ],
+                false,
+            ),
+            Ok(0)
+        );
+
+        let with_implicit = [Some(bond(0)), None, Some(bond(1)), None];
+        assert!(
+            nontetrahedral_chiral_permutation(
+                1,
+                ChiralTag::SquarePlanar,
+                2,
+                &[bond(0), bond(1)],
+                &with_implicit,
+                false,
+            )
+            .is_ok()
+        );
+    }
 }

@@ -14,9 +14,9 @@ fn cargo_check(case: &str, strict: bool) -> Output {
          --cfg=cosmolkit_runtime_privacy_case=\"{case}\""
     );
     let features = if strict {
-        "hydrogens,op-contracts-strict"
+        "hydrogens,stereo,op-contracts-strict"
     } else {
-        "hydrogens"
+        "hydrogens,stereo"
     };
 
     Command::new(std::env::var("CARGO").unwrap_or_else(|_| "cargo".into()))
@@ -35,6 +35,62 @@ fn cargo_check(case: &str, strict: bool) -> Output {
         ])
         .output()
         .expect("run the real cosmolkit compile-privacy probe")
+}
+
+#[test]
+fn pending_results_are_registry_scoped_and_finalization_is_wrapper_private() {
+    for strict in [false, true] {
+        let allowed = cargo_check("pending_allowed", strict);
+        assert!(
+            allowed.status.success(),
+            "{}",
+            String::from_utf8_lossy(&allowed.stderr)
+        );
+        let forbidden = cargo_check("pending_forbidden", strict);
+        assert!(!forbidden.status.success());
+        let errors = String::from_utf8_lossy(&forbidden.stderr);
+        for surface in [
+            "pending_molecule",
+            "pending_molecule_runtime",
+            "ensure_unsealed_runtime",
+            "finish_result",
+            "identity",
+            "topology",
+            "coordinates",
+            "properties",
+            "derived_cache",
+            "clone",
+            "num_atoms",
+            "Molecule",
+            "private",
+        ] {
+            assert!(
+                errors.contains(surface),
+                "missing rejection of {surface}: {errors}"
+            );
+        }
+        let wrong_marker = cargo_check("pending_wrong_marker", strict);
+        assert!(!wrong_marker.status.success());
+        let errors = String::from_utf8_lossy(&wrong_marker.stderr);
+        assert!(
+            errors.contains("mismatched types") && errors.contains("WithHydrogensAccess"),
+            "{errors}"
+        );
+        let finalizer = cargo_check("pending_finalizer", strict);
+        assert!(!finalizer.status.success());
+        let errors = String::from_utf8_lossy(&finalizer.stderr);
+        assert!(
+            errors.contains("private") && errors.contains("parts") && errors.contains("operation"),
+            "{errors}"
+        );
+        let reuse = cargo_check("pending_reuse", strict);
+        assert!(!reuse.status.success());
+        let errors = String::from_utf8_lossy(&reuse.stderr);
+        assert!(
+            errors.contains("use of moved value") && errors.contains("pending"),
+            "{errors}"
+        );
+    }
 }
 
 #[test]

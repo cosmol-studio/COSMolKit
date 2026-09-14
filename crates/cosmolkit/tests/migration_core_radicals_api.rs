@@ -1,3 +1,6 @@
+#[path = "support/coordinate_views.rs"]
+mod coordinate_views;
+
 use std::error::Error as _;
 
 use cosmolkit::{
@@ -183,8 +186,9 @@ fn value_operation_assigns_rows_and_preserves_mapping_coordinates_stereo_and_pro
         source.topology().stereo_groups,
         output.topology().stereo_groups
     );
-    assert!(std::ptr::eq(source.coordinates(), output.coordinates()));
-    assert_eq!(source.conformers(), output.conformers());
+    coordinate_views::assert_shared_coordinates(&source, &output);
+    assert_eq!(source.coordinates_2d(), output.coordinates_2d());
+    assert_eq!(source.conformers_3d(), output.conformers_3d());
     assert_eq!(output.property("source"), Some("preserved"));
     assert_eq!(
         output.atom(AtomId::new(0)).unwrap().prop("atom-label"),
@@ -248,7 +252,7 @@ fn typed_algorithm_failure_is_atomic_for_value_and_inplace_wrappers() {
     assert_eq!(target, source);
     assert_eq!(observer, source);
     assert!(std::ptr::eq(target.topology(), observer.topology()));
-    assert!(std::ptr::eq(target.coordinates(), observer.coordinates()));
+    coordinate_views::assert_shared_coordinates(&target, &observer);
     assert!(std::ptr::eq(target.properties(), observer.properties()));
 }
 

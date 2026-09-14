@@ -491,9 +491,35 @@ impl Molecule {
         self.state.topology.as_ref()
     }
 
-    /// Returns the immutable coordinate value.
+    /// Returns the coordinates of the first stored 2D conformer, if present.
+    ///
+    /// The rows follow atom order. This borrows existing coordinates without
+    /// generating a layout or falling back to a 3D conformer.
+    ///
+    /// Coordinate access on a molecule must specify the dimension:
+    ///
+    /// ```compile_fail,E0599
+    /// let molecule = cosmolkit::Molecule::new();
+    /// molecule.coordinates();
+    /// ```
+    ///
+    /// Complete coordinate blocks are private runtime state:
+    ///
+    /// ```compile_fail,E0624
+    /// let molecule = cosmolkit::Molecule::new();
+    /// molecule.coordinate_block_runtime();
+    /// ```
     #[must_use]
-    pub fn coordinates(&self) -> &CoordinateBlock {
+    pub fn coordinates_2d(&self) -> Option<&[[f64; 2]]> {
+        self.state
+            .coordinates
+            .conformers_2d
+            .first()
+            .map(Conformer2D::coordinates)
+    }
+
+    /// Complete block access for runtime validation and detached owner calls.
+    pub(crate) fn coordinate_block_runtime(&self) -> &CoordinateBlock {
         self.state.coordinates.as_ref()
     }
 
@@ -539,13 +565,17 @@ impl Molecule {
         self.state.topology.bonds.get(bond_id.index())
     }
 
-    /// Returns the ordered 2D and 3D conformer slices.
+    /// Returns all stored 3D conformers in their original order, without cloning.
+    ///
+    /// The public API has no dimension-ambiguous conformer tuple:
+    ///
+    /// ```compile_fail,E0599
+    /// let molecule = cosmolkit::Molecule::new();
+    /// molecule.conformers();
+    /// ```
     #[must_use]
-    pub fn conformers(&self) -> (&[Conformer2D], &[Conformer3D]) {
-        (
-            &self.state.coordinates.conformers_2d,
-            &self.state.coordinates.conformers_3d,
-        )
+    pub fn conformers_3d(&self) -> &[Conformer3D] {
+        &self.state.coordinates.conformers_3d
     }
 
     /// Returns an ordinary molecule property by key.

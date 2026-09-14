@@ -157,10 +157,16 @@ pub(crate) fn read_text_to(
                 ));
             }
             if next > entity_start + 2 {
+                // The pinned target has eight-bit signed `char`: RDKit first
+                // parses the full signed-int domain and its cast then retains
+                // the low byte (for example, 256 -> NUL and 321 -> `A`).
+                // `String` cannot hold RDKit's raw 0x80..=0xff bytes, so the
+                // detached text model lifts that byte reversibly to U+0080..=
+                // U+00FF instead of rejecting it or creating invalid UTF-8.
                 let value = text[entity_start + 2..next]
-                    .parse::<u8>()
+                    .parse::<i32>()
                     .map_err(|_| CxParseError::new(entity_start, "invalid CX character code"))?;
-                result.push(char::from(value));
+                result.push(char::from(value as u8));
             }
             *cursor = next + 1;
             segment_start = *cursor;

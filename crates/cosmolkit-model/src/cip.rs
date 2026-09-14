@@ -14,6 +14,8 @@ pub enum CipDescriptor {
     LowerS,
     E,
     Z,
+    LowerE,
+    LowerZ,
     M,
     P,
     LowerM,
@@ -37,6 +39,10 @@ impl CipDescriptor {
         // RDKit✔️✔️:       return "E";
         // RDKit✔️✔️:     case Descriptor::Z:
         // RDKit✔️✔️:       return "Z";
+        // RDKit✔️✔️:     case Descriptor::seqTrans:
+        // RDKit✔️✔️:       return "e";
+        // RDKit✔️✔️:     case Descriptor::seqCis:
+        // RDKit✔️✔️:       return "z";
         // RDKit✔️✔️:     case Descriptor::M:
         // RDKit✔️✔️:       return "M";
         // RDKit✔️✔️:     case Descriptor::P:
@@ -53,6 +59,8 @@ impl CipDescriptor {
             Self::LowerS => "s",
             Self::E => "E",
             Self::Z => "Z",
+            Self::LowerE => "e",
+            Self::LowerZ => "z",
             Self::M => "M",
             Self::P => "P",
             Self::LowerM => "m",
@@ -78,6 +86,8 @@ impl FromStr for CipDescriptor {
             "s" => Ok(Self::LowerS),
             "E" => Ok(Self::E),
             "Z" => Ok(Self::Z),
+            "e" => Ok(Self::LowerE),
+            "z" => Ok(Self::LowerZ),
             "M" => Ok(Self::M),
             "P" => Ok(Self::P),
             "m" => Ok(Self::LowerM),

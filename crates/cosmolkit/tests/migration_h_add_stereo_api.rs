@@ -1,3 +1,6 @@
+#[path = "support/coordinate_views.rs"]
+mod coordinate_views;
+
 use std::error::Error as _;
 
 use cosmolkit::{
@@ -302,25 +305,25 @@ fn live_value_commit_preserves_state_projects_rows_and_detaches_written_blocks()
     );
     assert_eq!(lists[1].values(), &[Some("b0".into()), None]);
 
-    assert_eq!(output.coordinates().conformers_2d[0].id(), 7);
+    assert_eq!(output.to_builder().coordinates().conformers_2d[0].id(), 7);
     assert_eq!(
-        output.coordinates().conformers_2d[0].coordinates(),
+        output.to_builder().coordinates().conformers_2d[0].coordinates(),
         &[[1.0, 2.0], [3.0, 4.0], [0.0, 0.0]]
     );
     assert_eq!(
-        output.coordinates().conformers_2d[0]
+        output.to_builder().coordinates().conformers_2d[0]
             .props()
             .get("plane")
             .map(String::as_str),
         Some("kept")
     );
-    assert_eq!(output.coordinates().conformers_3d[0].id(), 8);
+    assert_eq!(output.to_builder().coordinates().conformers_3d[0].id(), 8);
     assert_eq!(
-        output.coordinates().conformers_3d[0].coordinates(),
+        output.to_builder().coordinates().conformers_3d[0].coordinates(),
         &[[1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [0.0, 0.0, 0.0]]
     );
     assert!(!std::ptr::eq(source.topology(), output.topology()));
-    assert!(!std::ptr::eq(source.coordinates(), output.coordinates()));
+    coordinate_views::assert_detached_coordinates(&source, &output);
     assert!(!std::ptr::eq(source.properties(), output.properties()));
 }
 
@@ -384,7 +387,7 @@ fn structured_parameter_failure_is_atomic_for_value_and_inplace_wrappers() {
     assert!(error.source().is_some());
     assert_eq!(source, observer);
     assert!(std::ptr::eq(source.topology(), observer.topology()));
-    assert!(std::ptr::eq(source.coordinates(), observer.coordinates()));
+    coordinate_views::assert_shared_coordinates(&source, &observer);
     assert!(std::ptr::eq(source.properties(), observer.properties()));
 
     let mut target = source.clone();
@@ -396,10 +399,7 @@ fn structured_parameter_failure_is_atomic_for_value_and_inplace_wrappers() {
     ));
     assert_eq!(target, source);
     assert!(std::ptr::eq(target.topology(), target_observer.topology()));
-    assert!(std::ptr::eq(
-        target.coordinates(),
-        target_observer.coordinates()
-    ));
+    coordinate_views::assert_shared_coordinates(&target, &target_observer);
     assert!(std::ptr::eq(
         target.properties(),
         target_observer.properties()

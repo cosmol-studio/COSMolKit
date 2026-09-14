@@ -498,6 +498,28 @@ fn validate_molecule_relationships(
         ));
     }
     match (output, result_type, assemble_fn) {
+        (MoleculeOutput::Single, _, Some(path)) => {
+            return Err(syn::Error::new_spanned(
+                path,
+                "assemble_fn is only valid for multiple-output molecule operations",
+            ));
+        }
+        (MoleculeOutput::Single, Some(result), None) if inplace => {
+            return Err(syn::Error::new_spanned(
+                result,
+                "pending result_type cannot generate an in-place wrapper",
+            ));
+        }
+        (MoleculeOutput::Single, Some(result), None) => {
+            if !matches!(result, Type::Path(path) if path.qself.is_none()
+                && path.path.segments.iter().all(|segment| matches!(segment.arguments, syn::PathArguments::None)))
+            {
+                return Err(syn::Error::new_spanned(
+                    result,
+                    "pending result_type must be a plain type path without generic arguments",
+                ));
+            }
+        }
         (MoleculeOutput::Multiple, Some(_), None) => {
             return Err(syn::Error::new(
                 operation.span(),
@@ -505,12 +527,6 @@ fn validate_molecule_relationships(
             ));
         }
         (MoleculeOutput::Multiple, None, Some(path)) => {
-            return Err(syn::Error::new_spanned(
-                path,
-                "assemble_fn requires result_type",
-            ));
-        }
-        (MoleculeOutput::Single, None, Some(path)) => {
             return Err(syn::Error::new_spanned(
                 path,
                 "assemble_fn requires result_type",

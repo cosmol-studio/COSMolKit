@@ -1,3 +1,6 @@
+#[path = "support/coordinate_views.rs"]
+mod coordinate_views;
+
 use std::error::Error as _;
 
 use cosmolkit::{
@@ -90,7 +93,7 @@ fn detached_expected(source: &Molecule, params: &StructureTagParams) -> Topology
     .unwrap();
     let mut topology = assign_chiral_tags_from_structure(
         source.topology(),
-        source.coordinates(),
+        source.to_builder().coordinates(),
         &valence,
         params,
     )
@@ -251,8 +254,11 @@ fn value_and_inplace_defaults_match_the_detached_owner_and_are_deterministic() {
         short.atom(AtomId::new(0)).unwrap().chiral_tag(),
         ChiralTag::TetrahedralCcw
     );
-    assert_eq!(short.coordinates(), source.coordinates());
-    assert!(std::ptr::eq(short.coordinates(), source.coordinates()));
+    assert_eq!(
+        short.to_builder().coordinates(),
+        source.to_builder().coordinates()
+    );
+    coordinate_views::assert_shared_coordinates(&short, &source);
     assert_eq!(short.property("source"), Some("preserved"));
     assert_eq!(short.property("_StereochemDone"), None);
     assert_eq!(short.property("_CIPComputed"), None);
@@ -275,7 +281,7 @@ fn value_and_inplace_defaults_match_the_detached_owner_and_are_deterministic() {
 
     assert_eq!(source, observer);
     assert!(std::ptr::eq(source.topology(), observer.topology()));
-    assert!(std::ptr::eq(source.coordinates(), observer.coordinates()));
+    coordinate_views::assert_shared_coordinates(&source, &observer);
     assert!(std::ptr::eq(source.properties(), observer.properties()));
     assert_eq!(source.property("_StereochemDone"), Some("1"));
 }
@@ -283,7 +289,7 @@ fn value_and_inplace_defaults_match_the_detached_owner_and_are_deterministic() {
 #[test]
 fn explicit_conformer_selection_and_replace_flag_follow_source_order() {
     let mut source = molecule(ChiralTag::TetrahedralCw, 5, false);
-    let mut coordinate_block = source.coordinates().clone();
+    let mut coordinate_block = source.to_builder().coordinates().clone();
     coordinate_block.conformers_3d.push(Conformer3D::new(
         9,
         vec![
@@ -326,7 +332,10 @@ fn explicit_conformer_selection_and_replace_flag_follow_source_order() {
         replace.atom(AtomId::new(0)).unwrap().chiral_tag(),
         ChiralTag::TetrahedralCcw
     );
-    assert_eq!(replace.coordinates(), source.coordinates());
+    assert_eq!(
+        replace.to_builder().coordinates(),
+        source.to_builder().coordinates()
+    );
     assert_eq!(replace.property("source"), Some("preserved"));
 }
 
@@ -348,7 +357,7 @@ fn typed_stereo_failure_is_atomic_for_value_and_inplace_forms() {
     assert!(error.source().is_some());
     assert_eq!(source, observer);
     assert!(std::ptr::eq(source.topology(), observer.topology()));
-    assert!(std::ptr::eq(source.coordinates(), observer.coordinates()));
+    coordinate_views::assert_shared_coordinates(&source, &observer);
     assert!(std::ptr::eq(source.properties(), observer.properties()));
 
     let mut target = source.clone();
@@ -361,10 +370,7 @@ fn typed_stereo_failure_is_atomic_for_value_and_inplace_forms() {
     );
     assert_eq!(target, inplace_observer);
     assert!(std::ptr::eq(target.topology(), inplace_observer.topology()));
-    assert!(std::ptr::eq(
-        target.coordinates(),
-        inplace_observer.coordinates()
-    ));
+    coordinate_views::assert_shared_coordinates(&target, &inplace_observer);
     assert!(std::ptr::eq(
         target.properties(),
         inplace_observer.properties()

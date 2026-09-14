@@ -1,3 +1,6 @@
+#[path = "support/coordinate_views.rs"]
+mod coordinate_views;
+
 use cosmolkit::{
     Atom, AtomId, AtomSpec, BINDING_CONTRACT, BindingExposure, BindingItem, BindingOwner,
     BindingParity, BindingSupport, Bond, BondId, BondOrder, BondSpec, Conformer3D, CoordinateBlock,
@@ -198,7 +201,7 @@ fn topological_queries_match_full_detached_rows_and_do_not_mutate_live_state() {
         Some("R")
     );
     assert!(std::ptr::eq(source.topology(), before.topology()));
-    assert!(std::ptr::eq(source.coordinates(), before.coordinates()));
+    coordinate_views::assert_shared_coordinates(&source, &before);
     assert!(std::ptr::eq(source.properties(), before.properties()));
 }
 

@@ -201,7 +201,7 @@ fn molecule_rows_preserve_every_block_effect_precondition_and_profile() {
 fn molecule_output_result_and_topology_edit_branches_are_exact() {
     let single_typed = molecule(&molecule_operation("typed", "result_type: crate::Report,"));
     assert!(
-        single_typed.contains("result_type:stringify!((crate::Molecule,crate::Report))"),
+        single_typed.contains("result_type:stringify!(crate::Report)"),
         "{single_typed}"
     );
 

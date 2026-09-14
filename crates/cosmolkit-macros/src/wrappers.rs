@@ -81,28 +81,19 @@ fn expand_molecule_operation(
                 parts.finish()
             }
         },
-        (MoleculeOutput::Single, Some(result), None) => quote! {
-            #(#cfg)*
-            #docs
-            pub fn #method(&self, #(#params),*) -> Result<(crate::Molecule, #result), crate::ops::OperationError> {
-                #support_check
-                let mut parts = crate::OpParts::new(self, &#spec)?;
-                let result = #impl_fn(&mut parts, #(#call_args),*)?;
-                let molecule = parts.finish()?;
-                Ok((molecule, result))
+        (MoleculeOutput::Single, Some(result), None) => {
+            let marker = crate::projection::access_marker(name)?;
+            quote! {
+                #(#cfg)*
+                #docs
+                pub fn #method(&self, #(#params),*) -> Result<#result, crate::ops::OperationError> {
+                    #support_check
+                    let mut parts = crate::OpParts::new(self, &#spec)?;
+                    let pending: #result<crate::PendingMolecule<#marker>> = #impl_fn(&mut parts, #(#call_args),*)?;
+                    parts.finish_result(pending)
+                }
             }
-        },
-        (MoleculeOutput::Single, Some(result), Some(assemble)) => quote! {
-            #(#cfg)*
-            #docs
-            pub fn #method(&self, #(#params),*) -> Result<#result, crate::ops::OperationError> {
-                #support_check
-                let mut parts = crate::OpParts::new(self, &#spec)?;
-                let metadata = #impl_fn(&mut parts, #(#call_args),*)?;
-                let molecule = parts.finish()?;
-                #assemble(molecule, metadata)
-            }
-        },
+        }
         (MoleculeOutput::Multiple, None, None) => quote! {
             #(#cfg)*
             #docs
@@ -248,11 +239,11 @@ fn molecule_value_return_type(
         fields.result_type.as_ref(),
         fields.assemble_fn.as_ref(),
     ) {
-        (MoleculeOutput::Single, None, _) => quote!(crate::Molecule),
-        (MoleculeOutput::Single, Some(result), None) => quote!((crate::Molecule, #result)),
-        (MoleculeOutput::Single, Some(result), Some(_)) => quote!(#result),
-        (MoleculeOutput::Multiple, None, _) => quote!(Vec<crate::Molecule>),
-        (MoleculeOutput::Multiple, Some(result), _) => quote!(#result),
+        (MoleculeOutput::Single, None, None) => quote!(crate::Molecule),
+        (MoleculeOutput::Single, Some(result), None) => quote!(#result),
+        (MoleculeOutput::Multiple, None, None) => quote!(Vec<crate::Molecule>),
+        (MoleculeOutput::Multiple, Some(result), Some(_)) => quote!(#result),
+        _ => unreachable!("molecule result/assembler shape was validated before wrapper expansion"),
     }
 }
 

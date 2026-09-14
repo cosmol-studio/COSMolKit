@@ -351,7 +351,7 @@ fn in_place_body_panic_propagates_and_target_remains_complete() {
     assert_eq!(target.topology().validate(), Ok(()));
     assert_eq!(
         target
-            .coordinates()
+            .coordinate_block_runtime()
             .validate_for_atom_count(target.num_atoms()),
         Ok(())
     );

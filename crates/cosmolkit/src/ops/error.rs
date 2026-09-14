@@ -115,6 +115,8 @@ pub enum OperationError {
     PotentialStereo(cosmolkit_core::PotentialStereoError),
     #[cfg(feature = "stereo")]
     Stereo(cosmolkit_core::StereoError),
+    #[cfg(feature = "stereo")]
+    CipLabeler(cosmolkit_stereo::CipLabelerError),
     #[cfg(feature = "transforms")]
     Transform(cosmolkit_core::TransformError),
     #[cfg(feature = "kekulize")]
@@ -273,6 +275,8 @@ impl fmt::Display for OperationError {
             }
             #[cfg(feature = "stereo")]
             Self::Stereo(error) => write!(formatter, "structure-tag assignment failed: {error}"),
+            #[cfg(feature = "stereo")]
+            Self::CipLabeler(error) => write!(formatter, "CIP label assignment failed: {error}"),
             #[cfg(feature = "transforms")]
             Self::Transform(error) => write!(formatter, "coordinate transform failed: {error}"),
             #[cfg(feature = "kekulize")]
@@ -312,6 +316,8 @@ impl std::error::Error for OperationError {
             Self::PotentialStereo(error) => Some(error),
             #[cfg(feature = "stereo")]
             Self::Stereo(error) => Some(error),
+            #[cfg(feature = "stereo")]
+            Self::CipLabeler(error) => Some(error),
             #[cfg(feature = "transforms")]
             Self::Transform(error) => Some(error),
             #[cfg(feature = "kekulize")]

@@ -501,7 +501,7 @@ fn bond_mapping_failures_preserve_exact_direction_and_fields() {
 #[test]
 fn malformed_mapping_is_rejected_before_projection_or_any_installation() {
     let source = molecule_with_rows(true);
-    let original_coordinates = source.coordinates().clone();
+    let original_coordinates = source.coordinate_block_runtime().clone();
     let original_properties = source.properties().clone();
     let compact = spec(
         "invalid-before-helper",
@@ -542,7 +542,7 @@ fn malformed_mapping_is_rejected_before_projection_or_any_installation() {
     ));
     assert!(matches!(parts.coordinates, WorkingBlock::Shared));
     assert!(matches!(parts.properties, WorkingBlock::Shared));
-    assert_eq!(source.coordinates(), &original_coordinates);
+    assert_eq!(source.coordinate_block_runtime(), &original_coordinates);
     assert_eq!(source.properties(), &original_properties);
 }
 
@@ -578,11 +578,11 @@ fn deletion_and_reorder_remap_all_coordinate_and_property_rows_in_new_order() {
     let output = parts.finish().unwrap();
 
     assert_eq!(
-        output.coordinates().conformers_2d[0].coordinates(),
+        output.coordinate_block_runtime().conformers_2d[0].coordinates(),
         &[[30.0, 31.0], [10.0, 11.0]]
     );
     assert_eq!(
-        output.coordinates().conformers_3d[0].coordinates(),
+        output.coordinate_block_runtime().conformers_3d[0].coordinates(),
         &[[30.0, 31.0, 32.0], [10.0, 11.0, 12.0]]
     );
     assert_eq!(
@@ -636,7 +636,7 @@ fn append_distinguishes_empty_coordinates_owner_values_and_property_none_rows() 
     empty.apply_runtime_remap_runtime().unwrap();
     empty.apply_cip_policy_runtime().unwrap();
     let output = empty.finish().unwrap();
-    assert!(output.coordinates().conformers_2d.is_empty());
+    assert!(output.coordinate_block_runtime().conformers_2d.is_empty());
     assert_eq!(
         output.properties().sdf_property_lists()[0].values(),
         &[Some("c".to_owned()), None, Some("o".to_owned()), None]
@@ -665,7 +665,11 @@ fn append_distinguishes_empty_coordinates_owner_values_and_property_none_rows() 
     supplied.apply_runtime_remap_runtime().unwrap();
     supplied.apply_cip_policy_runtime().unwrap();
     assert_eq!(
-        supplied.finish().unwrap().coordinates().conformers_2d[0]
+        supplied
+            .finish()
+            .unwrap()
+            .coordinate_block_runtime()
+            .conformers_2d[0]
             .coordinates()
             .len(),
         4
@@ -761,7 +765,61 @@ fn source_guards_keep_mapping_runtime_private_and_algorithm_free() {
     let context = include_str!("../../src/ops/context.rs");
     let model_mapping = include_str!("../../../cosmolkit-model/src/mapping.rs");
     let registry = include_str!("../../src/ops/registry.rs");
-    assert_eq!(context.matches(".validate_for_counts(").count(), 1);
+
+    let obligation_start = context
+        .find("fn validate_mapping_obligation(")
+        .expect("mapping-obligation validator must remain present");
+    let obligation_end = context[obligation_start..]
+        .find("pub(super) fn apply_runtime_remap_runtime")
+        .map(|offset| obligation_start + offset)
+        .expect("mapping-obligation validator must end before remapping");
+    let obligation = &context[obligation_start..obligation_end];
+    let required_mapping = obligation
+        .find("required mapping was not recorded")
+        .expect("mapping obligation must first require the declared mapping");
+    let obligation_validation = obligation
+        .find(".validate_for_counts(")
+        .expect("mapping obligation must validate mapping dimensions");
+    let identity_validation = obligation
+        .find("mapping != TopologyMapping::identity")
+        .expect("identity mappings must receive the additional identity check");
+    assert!(required_mapping < obligation_validation);
+    assert!(obligation_validation < identity_validation);
+    assert_eq!(obligation.match_indices(".validate_for_counts(").count(), 1);
+
+    let leaf_start = context
+        .find("PreservationProof::LeafAtomAppend => {")
+        .expect("leaf-atom-append preservation proof must remain present");
+    let leaf_end = context[leaf_start..]
+        .find("PreservationProof::RadicalElectronAssignment => {")
+        .map(|offset| leaf_start + offset)
+        .expect("leaf-atom-append proof must end at the next proof arm");
+    let leaf_proof = &context[leaf_start..leaf_end];
+    let leaf_mapping = leaf_proof
+        .find("leaf-atom-append proof requires a recorded topology mapping")
+        .expect("leaf proof must require a recorded mapping");
+    let leaf_validation = leaf_proof
+        .find(".validate_for_counts(")
+        .expect("leaf proof must validate mapping dimensions");
+    let prefix_validation = leaf_proof
+        .find("let atom_prefix_is_identity")
+        .expect("leaf proof must validate preserved row identity");
+    assert!(leaf_mapping < leaf_validation);
+    assert!(leaf_validation < prefix_validation);
+    assert_eq!(leaf_proof.match_indices(".validate_for_counts(").count(), 1);
+
+    let authoritative_validations = context
+        .match_indices(".validate_for_counts(")
+        .map(|(position, _)| position)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        authoritative_validations,
+        vec![
+            obligation_start + obligation_validation,
+            leaf_start + leaf_validation,
+        ],
+        "every mapping-dimension validation must belong to an audited authority boundary"
+    );
     assert_eq!(context.matches(".remap_topology(").count(), 2);
     assert_eq!(
         model_mapping.matches("pub fn validate_for_counts(").count(),

@@ -17,6 +17,73 @@ use crate::SanitizeAccess;
 use crate::{MultiOutputOpParts, WithHydrogensAccess};
 use crate::{OpParts, OperationError};
 
+#[cfg(cosmolkit_runtime_privacy_case = "pending_allowed")]
+#[cosmolkit_macros::mol_op_body(potential_stereo, context)]
+fn pending_result_body() -> Result<
+    crate::PotentialStereoResult<crate::PendingMolecule<super::PotentialStereoAccess>>,
+    OperationError,
+> {
+    Ok(crate::PotentialStereoResult {
+        stereo: Vec::new(),
+        atom_ranks: Vec::new(),
+        ring_relations: Vec::new(),
+        cleaned_molecule: Some(context.pending_molecule()?),
+    })
+}
+
+#[cfg(cosmolkit_runtime_privacy_case = "pending_forbidden")]
+fn unregistered_pending_capability_is_hidden(parts: &mut OpParts<'_, crate::WithHydrogensAccess>) {
+    let _ = parts.pending_molecule();
+}
+
+#[cfg(cosmolkit_runtime_privacy_case = "pending_forbidden")]
+fn pending_runtime_lifecycle_is_hidden(mut parts: OpParts<'_, super::PotentialStereoAccess>) {
+    let _ = parts.pending_molecule_runtime();
+    let _ = parts.ensure_unsealed_runtime();
+    let _ = parts.finish_result(crate::PotentialStereoResult::<
+        crate::PendingMolecule<super::PotentialStereoAccess>,
+    > {
+        stereo: Vec::new(),
+        atom_ranks: Vec::new(),
+        ring_relations: Vec::new(),
+        cleaned_molecule: None,
+    });
+}
+
+#[cfg(cosmolkit_runtime_privacy_case = "pending_forbidden")]
+fn pending_is_not_a_molecule(pending: crate::PendingMolecule<super::PotentialStereoAccess>) {
+    let _ = &pending.identity;
+    let _ = &pending.topology;
+    let _ = &pending.coordinates;
+    let _ = &pending.properties;
+    let _ = &pending.derived_cache;
+    let _ = pending.clone();
+    let _ = pending.num_atoms();
+    let _: crate::Molecule = pending;
+}
+
+#[cfg(cosmolkit_runtime_privacy_case = "pending_finalizer")]
+fn finalizer_cannot_be_constructed() {
+    let _ = crate::ResultFinalizer::<super::PotentialStereoAccess> {
+        parts: None,
+        operation: "forged",
+    };
+}
+
+#[cfg(cosmolkit_runtime_privacy_case = "pending_wrong_marker")]
+fn pending_marker_cannot_be_changed(
+    pending: crate::PendingMolecule<super::PotentialStereoAccess>,
+) -> crate::PendingMolecule<crate::WithHydrogensAccess> {
+    pending
+}
+
+#[cfg(cosmolkit_runtime_privacy_case = "pending_reuse")]
+fn pending_cannot_be_used_twice(pending: crate::PendingMolecule<super::PotentialStereoAccess>) {
+    let first = Some(pending);
+    let second = Some(pending);
+    drop((first, second));
+}
+
 #[cfg(cosmolkit_runtime_privacy_case = "allowed")]
 fn declaration_generated_capabilities_are_visible(
     parts: &mut OpParts<'_, WithHydrogensAccess>,

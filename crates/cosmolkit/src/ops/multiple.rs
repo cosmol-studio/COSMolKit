@@ -64,7 +64,7 @@ impl<'a, Access> MultiOutputOpParts<'a, Access> {
 
     pub(super) fn source_coordinates_runtime(&self) -> Result<&CoordinateBlock, OperationError> {
         self.ensure_read_access(BlockSet::COORDINATES, "coordinates")?;
-        Ok(self.source.coordinates())
+        Ok(self.source.coordinate_block_runtime())
     }
 
     pub(super) fn source_properties_runtime(&self) -> Result<&MoleculeProperties, OperationError> {

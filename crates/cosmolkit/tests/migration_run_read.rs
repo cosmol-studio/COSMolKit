@@ -85,10 +85,8 @@ fn empty_views_are_consistent_and_all_lookups_are_absent() {
     assert!(molecule.bond(BondId::new(0)).is_none());
     assert!(molecule.topology().substance_groups.is_empty());
     assert!(molecule.topology().stereo_groups.is_empty());
-    assert_eq!(molecule.coordinates(), &CoordinateBlock::default());
-    let (two_d, three_d) = molecule.conformers();
-    assert!(two_d.is_empty());
-    assert!(three_d.is_empty());
+    assert!(molecule.coordinates_2d().is_none());
+    assert!(molecule.conformers_3d().is_empty());
     assert_eq!(molecule.properties(), &MoleculeProperties::default());
     assert_eq!(molecule.property("missing"), None);
 }
@@ -156,32 +154,38 @@ fn topology_view_is_the_same_canonical_typed_state() {
 #[test]
 fn conformer_view_preserves_dimensions_order_ids_and_rows() {
     let molecule = complete_molecule();
-    let (two_d, three_d) = molecule.conformers();
-    assert!(std::ptr::eq(
-        two_d,
-        molecule.coordinates().conformers_2d.as_slice()
-    ));
-    assert!(std::ptr::eq(
-        three_d,
-        molecule.coordinates().conformers_3d.as_slice()
-    ));
+    let two_d = molecule.coordinates_2d().unwrap();
+    let three_d = molecule.conformers_3d();
+    let observer = molecule.clone();
+    assert!(std::ptr::eq(two_d, observer.coordinates_2d().unwrap()));
+    assert!(std::ptr::eq(three_d, observer.conformers_3d()));
     assert_eq!(
-        two_d.iter().map(Conformer2D::id).collect::<Vec<_>>(),
+        molecule
+            .to_builder()
+            .coordinates()
+            .conformers_2d
+            .iter()
+            .map(Conformer2D::id)
+            .collect::<Vec<_>>(),
         vec![4, 7]
     );
     assert_eq!(
         three_d.iter().map(Conformer3D::id).collect::<Vec<_>>(),
         vec![9]
     );
-    assert_eq!(two_d[1].coordinates()[2], [10.0, 11.0]);
+    assert_eq!(two_d, &[[0.0, 1.0], [2.0, 3.0], [4.0, 5.0]]);
+    assert_eq!(
+        molecule.to_builder().coordinates().conformers_2d[1].coordinates()[2],
+        [10.0, 11.0]
+    );
     assert_eq!(three_d[0].coordinates()[2], [6.0, 7.0, 8.0]);
 
     let mut two_d_only = MoleculeBuilder::new();
     two_d_only.add_atom(AtomSpec::new(Element::C));
     two_d_only.add_2d_conformer(vec![[1.0, 2.0]]).unwrap();
     let two_d_only = two_d_only.build().unwrap();
-    assert_eq!(two_d_only.conformers().0.len(), 1);
-    assert!(two_d_only.conformers().1.is_empty());
+    assert_eq!(two_d_only.coordinates_2d().unwrap(), &[[1.0, 2.0]]);
+    assert!(two_d_only.conformers_3d().is_empty());
 
     let mut three_d_only = MoleculeBuilder::new();
     three_d_only.add_atom(AtomSpec::new(Element::C));
@@ -189,8 +193,49 @@ fn conformer_view_preserves_dimensions_order_ids_and_rows() {
         .add_3d_conformer(vec![[1.0, 2.0, 3.0]])
         .unwrap();
     let three_d_only = three_d_only.build().unwrap();
-    assert!(three_d_only.conformers().0.is_empty());
-    assert_eq!(three_d_only.conformers().1.len(), 1);
+    assert!(three_d_only.coordinates_2d().is_none());
+    assert_eq!(three_d_only.conformers_3d().len(), 1);
+}
+
+#[test]
+fn empty_2d_conformer_is_present_and_3d_order_is_not_reinterpreted() {
+    let empty_2d = Molecule::from_parts(
+        TopologyBlock::default(),
+        CoordinateBlock {
+            conformers_2d: vec![Conformer2D::new(9, vec![])],
+            ..Default::default()
+        },
+        MoleculeProperties::default(),
+    )
+    .unwrap();
+    assert_eq!(empty_2d.coordinates_2d(), Some([].as_slice()));
+    assert!(empty_2d.conformers_3d().is_empty());
+
+    let source = complete_molecule();
+    let mut coordinates = source.to_builder().coordinates().clone();
+    coordinates.conformers_2d.swap(0, 1);
+    coordinates
+        .conformers_3d
+        .push(Conformer3D::new(2, vec![[9.0, 8.0, 7.0]; 3], true));
+    let molecule = Molecule::from_parts(
+        source.topology().clone(),
+        coordinates,
+        source.properties().clone(),
+    )
+    .unwrap();
+    assert_eq!(molecule.coordinates_2d().unwrap()[0], [6.0, 7.0]);
+    assert_eq!(
+        molecule
+            .conformers_3d()
+            .iter()
+            .map(Conformer3D::id)
+            .collect::<Vec<_>>(),
+        vec![9, 2]
+    );
+    assert_eq!(
+        molecule.conformers_3d()[1].coordinates(),
+        &[[9.0, 8.0, 7.0]; 3]
+    );
 }
 
 #[test]
@@ -217,7 +262,7 @@ fn detached_builder_changes_cannot_mutate_read_views_of_the_source() {
     let source = complete_molecule();
     let original_atoms = source.atoms().to_vec();
     let original_bonds = source.bonds().to_vec();
-    let original_coordinates = source.coordinates().clone();
+    let original_coordinates = source.to_builder().coordinates().clone();
     let original_properties = source.properties().clone();
     let builder = source.clone().to_builder();
     let builder = builder
@@ -226,7 +271,7 @@ fn detached_builder_changes_cannot_mutate_read_views_of_the_source() {
     let changed = builder.build().unwrap();
     assert_eq!(source.atoms(), original_atoms);
     assert_eq!(source.bonds(), original_bonds);
-    assert_eq!(source.coordinates(), &original_coordinates);
+    assert_eq!(source.to_builder().coordinates(), &original_coordinates);
     assert_eq!(source.properties(), &original_properties);
     assert_eq!(source.property("detached"), None);
     assert_eq!(source.num_atoms(), 3);
@@ -244,8 +289,8 @@ fn read_binding_rows_and_source_guard_expose_no_mutation_or_operation() {
         "Molecule.atom",
         "Molecule.bond",
         "Molecule.topology",
-        "Molecule.coordinates",
-        "Molecule.conformers",
+        "Molecule.coordinates_2d",
+        "Molecule.conformers_3d",
         "Molecule.properties",
         "Molecule.property",
     ];
@@ -280,6 +325,9 @@ fn read_binding_rows_and_source_guard_expose_no_mutation_or_operation() {
     let source = include_str!("../src/molecule.rs");
     assert_eq!(source.matches("pub struct Molecule {").count(), 1);
     for forbidden in [
+        "pub fn coordinates(",
+        "pub fn conformers(",
+        "pub fn coordinate_block_runtime(",
         "pub fn topology_mut",
         "pub fn coordinates_mut",
         "pub fn properties_mut",

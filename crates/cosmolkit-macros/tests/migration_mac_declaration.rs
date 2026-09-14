@@ -443,6 +443,11 @@ fn molecule_rejects_unknown_typed_vocabulary() {
             "unknown CIP state policy",
         ),
         (
+            "cip_state: recompute",
+            "cip_state: assign",
+            "unknown CIP state policy",
+        ),
+        (
             "requires_mapping: identity",
             "requires_mapping: optional",
             "unknown mapping requirement",
@@ -530,7 +535,35 @@ fn molecule_output_result_and_assembler_relationships_are_enforced() {
         "            output: single,",
         "            output: single,\n            assemble_fn: crate::assemble,",
     );
-    assert!(molecule_error(&single_assembler).contains("only for multiple-output"));
+    assert!(
+        molecule_error(&single_assembler)
+            .contains("assemble_fn is only valid for multiple-output molecule operations")
+    );
+
+    let single_result = replace(
+        &molecule_source(),
+        "            output: single,",
+        "            output: single,\n            result_type: crate::ResultType,",
+    );
+    assert!(
+        molecule_error(&single_result)
+            .contains("pending result_type cannot generate an in-place wrapper")
+    );
+
+    parse_molecule(&without_inplace_fixture(&single_result));
+    let generic_result = without_inplace_fixture(&single_result)
+        .replace("crate::ResultType,", "crate::ResultType<Molecule>,");
+    assert!(molecule_error(&generic_result).contains("plain type path"));
+
+    let single_result_and_assembler = replace(
+        &molecule_source(),
+        "            output: single,",
+        "            output: single,\n            result_type: crate::ResultType,\n            assemble_fn: crate::assemble,",
+    );
+    assert!(
+        molecule_error(&single_result_and_assembler)
+            .contains("assemble_fn is only valid for multiple-output molecule operations")
+    );
 }
 
 #[test]
@@ -904,8 +937,8 @@ fn historical_declaration_shape_matrix_remains_parseable() {
 
 #[test]
 fn current_cosmolkit_operations_have_disjoint_access_for_every_cfg_gate() {
-    let file = syn::parse_file(include_str!("../../cosmolkit/src/ops/registry.rs"))
-        .expect("current operation registry parses as Rust");
+    let source = include_str!("../../cosmolkit/src/ops/registry.rs");
+    let file = syn::parse_file(source).expect("current operation registry parses as Rust");
     let tokens = file
         .items
         .into_iter()
@@ -916,8 +949,15 @@ fn current_cosmolkit_operations_have_disjoint_access_for_every_cfg_gate() {
             _ => None,
         })
         .expect("one molecule_ops invocation");
-    let registry: MoleculeRegistry =
-        syn::parse2(tokens).expect("all current operation declarations satisfy access validation");
+    let registry: MoleculeRegistry = syn::parse2(tokens)
+        .expect("the unmodified live registry must validate, including pending results");
+    let potential = registry
+        .operations
+        .iter()
+        .find(|op| op.name == "potential_stereo")
+        .unwrap();
+    assert!(potential.fields.result_type.is_some());
+    assert!(potential.fields.assemble_fn.is_none());
 
     for operation in &registry.operations {
         for block in &operation.fields.access.read {
@@ -937,6 +977,11 @@ fn current_cosmolkit_operations_have_disjoint_access_for_every_cfg_gate() {
     assert!(potential.fields.access.read.is_empty());
     assert_eq!(
         potential.fields.access.write,
-        vec![MoleculeBlock::Topology, MoleculeBlock::DerivedCache]
+        vec![
+            MoleculeBlock::Topology,
+            MoleculeBlock::Properties,
+            MoleculeBlock::DerivedCache,
+        ]
     );
+    assert_eq!(potential.fields.may_mutate, potential.fields.access.write);
 }

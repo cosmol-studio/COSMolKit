@@ -3,14 +3,19 @@ use cosmolkit_cx::{
     ParsedCxExtensions,
 };
 use cosmolkit_model::{
-    AdjacencyList, AtomId, BondDirection, BondId, BondOrder, BondStereo, ChiralTag, StereoGroup,
-    StereoGroupKind, SubstanceGroup, SubstanceGroupId, SubstanceGroupKind, TopologyBlock,
+    AdjacencyList, AtomId, BondDirection, BondId, BondOrder, BondStereo, ChiralTag, Conformer2D,
+    Conformer3D, CoordinateDimension, SGroupConnection, SGroupData, StereoGroup, StereoGroupKind,
+    SubstanceGroup, SubstanceGroupId, SubstanceGroupKind, TopologyBlock,
 };
 
 use crate::{CXSMILES_BOND_IDX_PROP, SmilesParseError, SmilesRecord};
 
 fn cx_failure() -> SmilesParseError {
     SmilesParseError::Cx("failure parsing CXSMILES extensions".to_owned())
+}
+
+fn model_failure(error: impl std::fmt::Display) -> SmilesParseError {
+    SmilesParseError::Model(error.to_string())
 }
 
 fn bond_with_smiles_index(topology: &TopologyBlock, index: usize) -> Option<BondId> {
@@ -125,8 +130,11 @@ fn set_double_bond_stereo(
         .get_mut(bond_id.index())
         .ok_or_else(cx_failure)?;
     bond.set_stereo_atoms(Some(stereo_atoms));
-    bond.set_stereo(stereo);
-    record.properties.set_prop("_needsDetectBondStereo", "1");
+    bond.set_stereo(stereo).map_err(model_failure)?;
+    record
+        .properties
+        .set_prop("_needsDetectBondStereo", "1")
+        .map_err(model_failure)?;
     Ok(())
 }
 
@@ -158,9 +166,193 @@ fn sgroup_kind(type_code: &str) -> Option<SubstanceGroupKind> {
     }
 }
 
+fn unsupported_query_label(label: &str) -> bool {
+    // BEGIN RDKIT CPP FUNCTION processCXSmilesLabels (query labels)
+    // RDKit❌❌: if (symb == "star_e") { addquery(makeAtomNullQuery(), symb, mol, atom->getIdx()); }
+    // RDKit❌❌: else if (symb == "Q_e") { addquery(makeQAtomQuery(), symb, mol, atom->getIdx()); }
+    // RDKit❌❌: else if (symb == "QH_p") { addquery(makeQHAtomQuery(), symb, mol, atom->getIdx()); }
+    // RDKit❌❌: else if (symb == "AH_p") { addquery(makeAHAtomQuery(), symb, mol, atom->getIdx()); }
+    // RDKit❌❌: else if (symb == "X_p") { addquery(makeXAtomQuery(), symb, mol, atom->getIdx()); }
+    // RDKit❌❌: else if (symb == "XH_p") { addquery(makeXHAtomQuery(), symb, mol, atom->getIdx()); }
+    // RDKit❌❌: else if (symb == "M_p") { addquery(makeMAtomQuery(), symb, mol, atom->getIdx()); }
+    // RDKit❌❌: else if (symb == "MH_p") { addquery(makeMHAtomQuery(), symb, mol, atom->getIdx()); }
+    // END RDKIT CPP FUNCTION processCXSmilesLabels (query labels)
+    // Concrete Atom values do not contain a QueryGraph. The caller returns a
+    // structured unsupported error instead of preserving a misleading label.
+    matches!(
+        label,
+        "star_e" | "Q_e" | "QH_p" | "AH_p" | "X_p" | "XH_p" | "M_p" | "MH_p"
+    )
+}
+
+fn normalize_source_coordinate_dimension(record: &mut SmilesRecord) {
+    record.coordinates.source_coordinate_dim = if record.coordinates.conformers_3d.is_empty() {
+        (!record.coordinates.conformers_2d.is_empty()).then_some(CoordinateDimension::TwoD)
+    } else {
+        Some(CoordinateDimension::ThreeD)
+    };
+}
+
+fn polymer_crossing_bond(
+    topology: &TopologyBlock,
+    source_index: usize,
+) -> Result<Option<BondId>, SmilesParseError> {
+    // RDKit validates these source values with VALID_ATIDX before later using
+    // them as bond indices. Preserve the source filter, then turn the unsafe
+    // downstream bond access into a structured detached-model failure.
+    if source_index >= topology.atoms.len() {
+        return Ok(None);
+    }
+    if source_index >= topology.bonds.len() {
+        return Err(cx_failure());
+    }
+    Ok(Some(BondId::new(source_index)))
+}
+
+fn infer_unmarked_polymer_crossings(
+    topology: &TopologyBlock,
+    atoms: &[AtomId],
+) -> Result<(Vec<BondId>, Vec<BondId>), SmilesParseError> {
+    if atoms.is_empty() {
+        return Err(cx_failure());
+    }
+    let mut head = Vec::new();
+    let mut tail = Vec::new();
+    let first = atoms[0];
+    for neighbor in atom_neighbors(topology, first) {
+        let neighbor_atom = AtomId::new(neighbor.atom_index);
+        if atoms.contains(&neighbor_atom) {
+            continue;
+        }
+        if atoms.len() > 1 || head.is_empty() {
+            head.push(neighbor.bond);
+        } else if tail.is_empty() {
+            tail.push(neighbor.bond);
+        }
+    }
+    if atoms.len() > 1 {
+        let last = *atoms.last().expect("polymer atoms are non-empty");
+        for neighbor in atom_neighbors(topology, last) {
+            if !atoms.contains(&AtomId::new(neighbor.atom_index)) {
+                tail.push(neighbor.bond);
+            }
+        }
+    }
+    Ok((head, tail))
+}
+
+fn normalize_polymer_connection(value: &str) -> (SGroupConnection, String, bool) {
+    let flipped = value.contains(",f");
+    let without_flip = value.replace(",f", "");
+    match without_flip.as_str() {
+        "hh" | "HH" => (SGroupConnection::HeadToHead, "HH".to_owned(), flipped),
+        "ht" | "HT" => (SGroupConnection::HeadToTail, "HT".to_owned(), flipped),
+        "eu" | "EU" | "" => (SGroupConnection::Either, "EU".to_owned(), flipped),
+        _ => (SGroupConnection::Either, "EU".to_owned(), flipped),
+    }
+}
+
+fn finalize_polymer_sgroup(
+    topology: &TopologyBlock,
+    group: &mut SubstanceGroup,
+    source_connect: &str,
+    source_head: &[usize],
+    source_tail: &[usize],
+) -> Result<bool, SmilesParseError> {
+    // BEGIN RDKIT CPP FUNCTION finalizePolymerSGroup
+    // RDKit✔️✔️: if (connect.find(",f") != std::string::npos) { isFlipped = true; }
+    // RDKit✔️✔️: if (connect == "hh") connect = "HH";
+    // RDKit✔️✔️: else if (connect == "ht") connect = "HT";
+    // RDKit✔️✔️: else if (connect == "eu") connect = "EU";
+    // RDKit✔️✔️: else connect = "EU";
+    // RDKit✔️✔️: if (headCrossings.empty() && tailCrossings.empty()) {
+    // RDKit✔️✔️:   setupUnmarkedPolymerSGroup(mol, sgroup, headCrossings, tailCrossings);
+    // RDKit✔️✔️: }
+    // RDKit✔️✔️: for (auto &bondIdx : headCrossings) sgroup.addBondWithIdx(bondIdx);
+    // RDKit✔️✔️: sgroup.setProp("XBHEAD", headCrossings);
+    // RDKit✔️✔️: for (auto &bondIdx : tailCrossings) sgroup.addBondWithIdx(bondIdx);
+    // RDKit✔️✔️: for (unsigned int i = 0;
+    // RDKit✔️✔️:      i < std::min(headCrossings.size(), tailCrossings.size()); ++i) {
+    // RDKit✔️✔️:   unsigned tailIdx = isFlipped
+    // RDKit✔️✔️:       ? tailCrossings[tailCrossings.size() - i - 1] : tailCrossings[i];
+    // RDKit✔️✔️:   xbcorr.push_back(headCrossings[i]); xbcorr.push_back(tailIdx);
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION finalizePolymerSGroup
+    let (connection, connect, flipped) = normalize_polymer_connection(source_connect);
+    group.set_connection(connection);
+    group.set_prop("CONNECT", connect);
+
+    let mut head = Vec::new();
+    let mut tail = Vec::new();
+    let mut valid = true;
+    for index in source_head {
+        match polymer_crossing_bond(topology, *index)? {
+            Some(bond) => head.push(bond),
+            None => valid = false,
+        }
+    }
+    for index in source_tail {
+        match polymer_crossing_bond(topology, *index)? {
+            Some(bond) => tail.push(bond),
+            None => valid = false,
+        }
+    }
+    if !valid {
+        return Ok(false);
+    }
+    if head.is_empty() && tail.is_empty() {
+        (head, tail) = infer_unmarked_polymer_crossings(topology, group.atoms())?;
+    }
+    if head.is_empty() && tail.is_empty() {
+        return Ok(true);
+    }
+    for bond in head.iter().chain(&tail) {
+        group.push_bond(*bond);
+    }
+    group.set_prop(
+        "XBHEAD",
+        head.iter()
+            .map(|bond| bond.index().to_string())
+            .collect::<Vec<_>>()
+            .join(","),
+    );
+    let mut xbcorr = Vec::with_capacity(head.len().min(tail.len()) * 2);
+    for index in 0..head.len().min(tail.len()) {
+        xbcorr.push(head[index]);
+        xbcorr.push(if flipped {
+            tail[tail.len() - index - 1]
+        } else {
+            tail[index]
+        });
+    }
+    group.set_prop(
+        "XBCORR",
+        xbcorr
+            .iter()
+            .map(|bond| bond.index().to_string())
+            .collect::<Vec<_>>()
+            .join(","),
+    );
+    Ok(true)
+}
+
 /// Apply representation-independent CX records to detached concrete model
 /// blocks. Query-only records are rejected before any destination mutation.
 pub(crate) fn apply_cx_to_smiles_record(
+    record: &mut SmilesRecord,
+    parsed: &ParsedCxExtensions,
+) -> Result<(), SmilesParseError> {
+    // RDKit✔️❌: parseCXExtensions mutates the destination while parsing.
+    // COSMolKit stages one detached clone so non-strict recovery cannot expose
+    // a partially installed CX record. This preserves behavior on success but
+    // adds one O(molecule-size) clone to the source's record-linear work.
+    let mut staged = record.clone();
+    apply_cx_to_smiles_record_in_place(&mut staged, parsed)?;
+    *record = staged;
+    Ok(())
+}
+
+fn apply_cx_to_smiles_record_in_place(
     record: &mut SmilesRecord,
     parsed: &ParsedCxExtensions,
 ) -> Result<(), SmilesParseError> {
@@ -226,6 +418,16 @@ pub(crate) fn apply_cx_to_smiles_record(
             CxRecord::Substitution(_) => Some(
                 "CX substitution query records require a QueryGraph and are not representable in a concrete Molecule",
             ),
+            CxRecord::AtomLabels(values)
+                if values
+                    .iter()
+                    .flatten()
+                    .any(|label| unsupported_query_label(label)) =>
+            {
+                Some(
+                    "CX special query-atom labels require a QueryGraph and are not representable in a concrete Molecule",
+                )
+            }
             _ => None,
         };
         if let Some(reason) = reason {
@@ -238,6 +440,12 @@ pub(crate) fn apply_cx_to_smiles_record(
     for item in parsed.records() {
         match item {
             CxRecord::Coordinates(coordinates) => {
+                // RDKit✔️✔️: auto *conf = new Conformer(mol.getNumAtoms());
+                // RDKit✔️✔️: mol.addConformer(conf);
+                // RDKit✔️✔️: conf->setId(confIdx);
+                // RDKit✔️✔️: conf->setAtomPos(atIdx - startAtomIdx, pt);
+                // RDKit✔️✔️: if (is3D && hasNonZeroZCoords(*conf)) conf->set3D(true);
+                // RDKit✔️✔️: else conf->set3D(false);
                 let mut points = vec![[0.0; 3]; atom_count];
                 for (index, value) in coordinates.values.iter().enumerate() {
                     if index >= atom_count {
@@ -247,48 +455,76 @@ pub(crate) fn apply_cx_to_smiles_record(
                         points[index] = *value;
                     }
                 }
-                record
-                    .coordinates
-                    .conformers_3d
-                    .push(cosmolkit_model::Conformer3D::new(
+                if coordinates.is_3d {
+                    record.coordinates.conformers_3d.push(Conformer3D::new(
                         coordinates.conformer,
                         points,
-                        coordinates.is_3d,
+                        true,
                     ));
+                } else {
+                    record.coordinates.conformers_2d.push(Conformer2D::new(
+                        coordinates.conformer,
+                        points
+                            .into_iter()
+                            .map(|point| [point[0], point[1]])
+                            .collect(),
+                    ));
+                }
             }
             CxRecord::AtomLabels(values) => {
+                // RDKit✔️✔️: mol.getAtomWithIdx(atIdx - startAtomIdx)
+                // RDKit✔️✔️:     ->setProp(RDKit::common_properties::atomLabel, tkn);
                 for (index, value) in values.iter().enumerate() {
                     if let Some(value) = value
                         && let Some(atom) = record.topology.atoms.get_mut(index)
                     {
-                        atom.set_prop("atomLabel", value);
+                        atom.set_prop("atomLabel", value).map_err(model_failure)?;
+                        if matches!(value.as_str(), "Pol_p" | "Mod_p") {
+                            // RDKit✔️✔️: atom->setProp(common_properties::dummyLabel,
+                            // RDKit✔️✔️:               symb.substr(0, symb.size() - 2));
+                            // RDKit✔️✔️: atom->clearProp(common_properties::atomLabel);
+                            atom.set_prop("dummyLabel", &value[..value.len() - 2])
+                                .map_err(model_failure)?;
+                            atom.clear_prop("atomLabel");
+                        }
                     }
                 }
             }
             CxRecord::AtomValues(values) => {
+                // RDKit✔️✔️: mol.getAtomWithIdx(atIdx)->setProp(
+                // RDKit✔️✔️:     RDKit::common_properties::molFileValue, tkn);
                 for (index, value) in values.iter().enumerate() {
                     if let Some(value) = value
                         && let Some(atom) = record.topology.atoms.get_mut(index)
                     {
-                        atom.set_prop("molFileValue", value);
+                        atom.set_prop("molFileValue", value)
+                            .map_err(model_failure)?;
                     }
                 }
             }
             CxRecord::AtomProperties(properties) => {
+                // RDKit✔️✔️: mol.getAtomWithIdx(atIdx - startAtomIdx)->setProp(pname, pval);
                 for property in properties {
                     if let Some(atom) = record.topology.atoms.get_mut(property.atom) {
-                        atom.set_prop(property.name.clone(), property.value.clone());
+                        atom.set_prop(property.name.clone(), property.value.clone())
+                            .map_err(model_failure)?;
                     }
                 }
             }
             CxRecord::CoordinateBonds(annotation) => {
+                // RDKit✔️✔️: bnd->setBondType(typ);
+                // RDKit✔️✔️: if (bnd->getBeginAtomIdx() != aidx - startAtomIdx) {
+                // RDKit✔️✔️:   unsigned int tmp = bnd->getBeginAtomIdx();
+                // RDKit✔️✔️:   bnd->setBeginAtomIdx(aidx - startAtomIdx);
+                // RDKit✔️✔️:   bnd->setEndAtomIdx(tmp);
+                // RDKit✔️✔️: }
                 let order = match annotation.kind {
                     CxCoordinateBondKind::Dative => BondOrder::Dative,
                     CxCoordinateBondKind::Hydrogen => BondOrder::Hydrogen,
                 };
                 for reference in &annotation.bonds {
                     let atom = AtomId::new(reference.atom);
-                    if atom.index() >= atom_count {
+                    if atom.index() >= atom_count || reference.bond >= record.topology.bonds.len() {
                         continue;
                     }
                     let bond_id = bond_with_smiles_index(&record.topology, reference.bond)
@@ -318,13 +554,24 @@ pub(crate) fn apply_cx_to_smiles_record(
                 );
             }
             CxRecord::ZeroBonds(indices) => {
+                // RDKit✔️✔️: bond->setBondType(Bond::ZERO);
                 for index in indices {
+                    if *index >= record.topology.bonds.len() {
+                        continue;
+                    }
                     let bond_id =
                         bond_with_smiles_index(&record.topology, *index).ok_or_else(cx_failure)?;
                     record.topology.bonds[bond_id.index()].set_order(BondOrder::Zero);
                 }
             }
             CxRecord::EnhancedStereo(stereo) => {
+                // RDKit✔️✔️: if (iter != sgTracker.end()) {
+                // RDKit✔️✔️:   auto gAtoms = mol_stereo_groups[index].getAtoms();
+                // RDKit✔️✔️:   gAtoms.insert(gAtoms.end(), atoms.begin(), atoms.end());
+                // RDKit✔️✔️: } else {
+                // RDKit✔️✔️:   mol_stereo_groups.emplace_back(group_type, std::move(atoms),
+                // RDKit✔️✔️:                                  std::move(bonds), group_id);
+                // RDKit✔️✔️: }
                 let kind = match stereo.kind {
                     CxStereoGroupKind::Absolute => StereoGroupKind::Absolute,
                     CxStereoGroupKind::Or => StereoGroupKind::Or,
@@ -333,14 +580,9 @@ pub(crate) fn apply_cx_to_smiles_record(
                 let atoms = stereo
                     .atoms
                     .iter()
-                    .map(|index| {
-                        if *index < atom_count {
-                            Ok(AtomId::new(*index))
-                        } else {
-                            Err(cx_failure())
-                        }
-                    })
-                    .collect::<Result<Vec<_>, _>>()?;
+                    .filter(|index| **index < atom_count)
+                    .map(|index| AtomId::new(*index))
+                    .collect::<Vec<_>>();
                 if atoms.is_empty() {
                     continue;
                 }
@@ -361,7 +603,19 @@ pub(crate) fn apply_cx_to_smiles_record(
                 }
             }
             CxRecord::WedgedBonds(wedges) => {
+                // RDKit✔️✔️: bond->setProp(common_properties::_MolFileBondCfg, cfg);
+                // RDKit✔️✔️: bond->setBondDir(state);
+                // RDKit✔️✔️: if (cfg == 2 && canHaveDirection(*bond)) {
+                // RDKit✔️✔️:   bond->getBeginAtom()->setChiralTag(Atom::CHI_UNSPECIFIED);
+                // RDKit✔️✔️:   mol.setProp(detail::_needsDetectBondStereo, 1);
+                // RDKit✔️✔️: }
+                // RDKit✔️✔️: if ((cfg == 1 || cfg == 3) && canHaveDirection(*bond)) {
+                // RDKit✔️✔️:   mol.setProp(detail::_needsDetectAtomStereo, 1);
+                // RDKit✔️✔️: }
                 for wedge in wedges {
+                    if wedge.atom >= atom_count || wedge.bond >= record.topology.bonds.len() {
+                        continue;
+                    }
                     let bond_id = bond_with_smiles_index(&record.topology, wedge.bond)
                         .ok_or_else(cx_failure)?;
                     let (begin, end, order, has_cfg) = record
@@ -393,14 +647,21 @@ pub(crate) fn apply_cx_to_smiles_record(
                     if begin != atom {
                         bond.set_endpoints(atom, begin);
                     }
-                    bond.set_prop("_MolFileBondCfg", cfg);
+                    bond.set_prop("_MolFileBondCfg", cfg)
+                        .map_err(model_failure)?;
                     bond.set_direction(direction);
                     if cfg == "2" && can_have_direction(order) {
                         record.topology.atoms[atom.index()].set_chiral_tag(ChiralTag::Unspecified);
-                        record.properties.set_prop("_needsDetectBondStereo", "1");
+                        record
+                            .properties
+                            .set_prop("_needsDetectBondStereo", "1")
+                            .map_err(model_failure)?;
                     }
                     if matches!(cfg, "1" | "3") && can_have_direction(order) {
-                        record.properties.set_prop("_needsDetectAtomStereo", "1");
+                        record
+                            .properties
+                            .set_prop("_needsDetectAtomStereo", "1")
+                            .map_err(model_failure)?;
                     }
                 }
                 record.topology.adjacency = AdjacencyList::from_topology(
@@ -415,12 +676,17 @@ pub(crate) fn apply_cx_to_smiles_record(
                     CxDoubleBondStereoKind::Trans => BondStereo::Trans,
                 };
                 for index in &stereo.bonds {
+                    if *index >= record.topology.bonds.len() {
+                        continue;
+                    }
                     let bond_id =
                         bond_with_smiles_index(&record.topology, *index).ok_or_else(cx_failure)?;
                     set_double_bond_stereo(record, bond_id, value)?;
                 }
             }
             CxRecord::Radicals(radicals) => {
+                // RDKit✔️✔️: mol.getAtomWithIdx(atIdx - startAtomIdx)
+                // RDKit✔️✔️:     ->setNumRadicalElectrons(numRadicalElectrons);
                 for radical in radicals {
                     if let Some(atom) = record.topology.atoms.get_mut(radical.atom) {
                         atom.set_radical_electrons(radical.electrons);
@@ -428,6 +694,11 @@ pub(crate) fn apply_cx_to_smiles_record(
                 }
             }
             CxRecord::LinkNodes(link_nodes) => {
+                // RDKit✔️✔️: accum += (boost::format("%d %d 2 %d %d %d %d") %
+                // RDKit✔️✔️:     startReps % endReps % (atidx - startAtomIdx + 1) %
+                // RDKit✔️✔️:     (idx1 - startAtomIdx + 1) % (atidx - startAtomIdx + 1) %
+                // RDKit✔️✔️:     (idx2 - startAtomIdx + 1)).str();
+                // RDKit✔️✔️: mol.setProp(common_properties::molFileLinkNodes, accum);
                 let mut lowered = Vec::new();
                 for link in link_nodes {
                     let atom = AtomId::new(link.atom);
@@ -456,10 +727,17 @@ pub(crate) fn apply_cx_to_smiles_record(
                 if !lowered.is_empty() {
                     record
                         .properties
-                        .set_prop("_MolFileLinkNodes", lowered.join("|"));
+                        .set_prop("_MolFileLinkNodes", lowered.join("|"))
+                        .map_err(model_failure)?;
                 }
             }
             CxRecord::DataSGroup(data) => {
+                // RDKit✔️✔️: SubstanceGroup sgroup(&mol, std::string("DAT"));
+                // RDKit✔️✔️: sgroup.setProp(cxsmilesindex, nSGroups);
+                // RDKit✔️✔️: sgroup.addAtomWithIdx(idx - startAtomIdx);
+                // RDKit✔️✔️: sgroup.setProp("FIELDDISP",
+                // RDKit✔️✔️:     "    0.0000    0.0000    DR    ALL  0       0");
+                // RDKit✔️✔️: addSubstanceGroup(mol, sgroup);
                 let atoms = data
                     .atoms
                     .iter()
@@ -467,11 +745,22 @@ pub(crate) fn apply_cx_to_smiles_record(
                     .map(|index| AtomId::new(*index))
                     .collect::<Vec<_>>();
                 if !atoms.is_empty() {
-                    let mut group = SubstanceGroup::new(
-                        SubstanceGroupId::new(sgroup_index),
-                        SubstanceGroupKind::Data,
-                    )
-                    .with_atoms(atoms);
+                    let group_id = SubstanceGroupId::new(record.topology.substance_groups.len());
+                    let typed_data = SGroupData {
+                        field_name: (!data.field_name.is_empty()).then(|| data.field_name.clone()),
+                        field_info: (!data.field_info.is_empty()).then(|| data.field_info.clone()),
+                        field_display: Some(
+                            "    0.0000    0.0000    DR    ALL  0       0".to_owned(),
+                        ),
+                        query_op: (!data.query_op.is_empty()).then(|| data.query_op.clone()),
+                        values: (!data.data.is_empty())
+                            .then(|| vec![data.data.clone()])
+                            .unwrap_or_default(),
+                        ..SGroupData::default()
+                    };
+                    let mut group = SubstanceGroup::new(group_id, SubstanceGroupKind::Data)
+                        .with_atoms(atoms)
+                        .with_data(typed_data);
                     group.set_prop("_cxsmilesindex", sgroup_index.to_string());
                     group.set_prop(
                         "index",
@@ -502,6 +791,13 @@ pub(crate) fn apply_cx_to_smiles_record(
                 sgroup_index += 1;
             }
             CxRecord::SGroupHierarchy(relationships) => {
+                // RDKit✔️✔️: auto psg = find_matching_sgroup(sgs, parentId);
+                // RDKit✔️✔️: psg->getPropIfPresent("index", parentId);
+                // RDKit✔️✔️: if (childId >= sgs.size()) {
+                // RDKit✔️✔️:   throw SmilesParseException(
+                // RDKit✔️✔️:       "child id references non-existent SGroup");
+                // RDKit✔️✔️: }
+                // RDKit✔️✔️: csg->setProp("PARENT", parentId);
                 let cx_indices = record
                     .topology
                     .substance_groups
@@ -515,13 +811,13 @@ pub(crate) fn apply_cx_to_smiles_record(
                             .get("index")
                             .and_then(|value| value.parse::<usize>().ok())
                             .unwrap_or(position);
-                        Some((cx_index, position, index))
+                        Some((cx_index, position, index, group.id()))
                     })
                     .collect::<Vec<_>>();
                 for relationship in relationships {
-                    let Some((_, _, parent_index)) = cx_indices
+                    let Some((_, _, parent_index, parent_id)) = cx_indices
                         .iter()
-                        .find(|(cx_index, _, _)| *cx_index == relationship.parent)
+                        .find(|(cx_index, _, _, _)| *cx_index == relationship.parent)
                     else {
                         continue;
                     };
@@ -531,11 +827,14 @@ pub(crate) fn apply_cx_to_smiles_record(
                                 "child id references non-existent SGroup".to_owned(),
                             ));
                         }
-                        if let Some((_, child_position, _)) =
-                            cx_indices.iter().find(|(cx_index, _, _)| cx_index == child)
+                        if let Some((_, child_position, _, _)) = cx_indices
+                            .iter()
+                            .find(|(cx_index, _, _, _)| cx_index == child)
                         {
-                            record.topology.substance_groups[*child_position]
-                                .set_prop("PARENT", parent_index.to_string());
+                            let child_group =
+                                &mut record.topology.substance_groups[*child_position];
+                            child_group.set_parent(*parent_id);
+                            child_group.set_prop("PARENT", parent_index.to_string());
                         }
                     }
                 }
@@ -549,52 +848,52 @@ pub(crate) fn apply_cx_to_smiles_record(
                     .map(|index| AtomId::new(*index))
                     .collect::<Vec<_>>();
                 if !atoms.is_empty() {
-                    let mut group = SubstanceGroup::new(SubstanceGroupId::new(sgroup_index), kind)
-                        .with_atoms(atoms);
+                    let mut group = SubstanceGroup::new(
+                        SubstanceGroupId::new(record.topology.substance_groups.len()),
+                        kind,
+                    )
+                    .with_atoms(atoms);
                     group.set_prop("_cxsmilesindex", sgroup_index.to_string());
                     group.set_prop(
                         "index",
                         (record.topology.substance_groups.len() + 1).to_string(),
                     );
                     match polymer.type_code.as_str() {
-                        "alt" => group.set_prop("SUBTYPE", "ALT"),
-                        "ran" => group.set_prop("SUBTYPE", "RAN"),
-                        "blk" => group.set_prop("SUBTYPE", "BLO"),
+                        "alt" => {
+                            group.set_prop("SUBTYPE", "ALT");
+                            group.set_subtype("ALT");
+                        }
+                        "ran" => {
+                            group.set_prop("SUBTYPE", "RAN");
+                            group.set_subtype("RAN");
+                        }
+                        "blk" => {
+                            group.set_prop("SUBTYPE", "BLO");
+                            group.set_subtype("BLO");
+                        }
                         _ => {}
                     }
                     if !polymer.label.is_empty() {
                         group.set_prop("LABEL", polymer.label.clone());
+                        group.set_label(polymer.label.clone());
                     }
-                    if !polymer.connect.is_empty() {
-                        group.set_prop("CONNECT", polymer.connect.clone());
+                    let keep_group = finalize_polymer_sgroup(
+                        &record.topology,
+                        &mut group,
+                        &polymer.connect,
+                        &polymer.head_crossings,
+                        &polymer.tail_crossings,
+                    )?;
+                    if keep_group {
+                        record.topology.substance_groups.push(group);
                     }
-                    if !polymer.head_crossings.is_empty() {
-                        group.set_prop(
-                            "_headCrossings",
-                            polymer
-                                .head_crossings
-                                .iter()
-                                .map(usize::to_string)
-                                .collect::<Vec<_>>()
-                                .join(","),
-                        );
-                    }
-                    if !polymer.tail_crossings.is_empty() {
-                        group.set_prop(
-                            "_tailCrossings",
-                            polymer
-                                .tail_crossings
-                                .iter()
-                                .map(usize::to_string)
-                                .collect::<Vec<_>>()
-                                .join(","),
-                        );
-                    }
-                    record.topology.substance_groups.push(group);
                 }
                 sgroup_index += 1;
             }
             CxRecord::VariableAttachments(attachments) => {
+                // RDKit✔️✔️: bnd->setProp(common_properties::_MolFileBondEndPts, endPts);
+                // RDKit✔️✔️: bnd->setProp(common_properties::_MolFileBondAttach,
+                // RDKit✔️✔️:              std::string("ANY"));
                 for attachment in attachments {
                     let atom = AtomId::new(attachment.atom);
                     if atom.index() >= atom_count {
@@ -623,8 +922,10 @@ pub(crate) fn apply_cx_to_smiles_record(
                         .collect::<Vec<_>>();
                     for bond_id in bond_ids {
                         let bond = &mut record.topology.bonds[bond_id.index()];
-                        bond.set_prop("_MolFileBondEndPts", value.clone());
-                        bond.set_prop("_MolFileBondAttach", "ANY");
+                        bond.set_prop("_MolFileBondEndPts", value.clone())
+                            .map_err(model_failure)?;
+                        bond.set_prop("_MolFileBondAttach", "ANY")
+                            .map_err(model_failure)?;
                     }
                 }
             }
@@ -644,20 +945,8 @@ pub(crate) fn apply_cx_to_smiles_record(
         // RDKit✔️✔️: }
         // END RDKIT CPP FUNCTION SmilesParse.cpp CX wedge post-processing
         record.properties.clear_prop("_needsDetectAtomStereo");
-        if let Some(conformer) = record
-            .coordinates
-            .conformers_3d
-            .iter()
-            .find(|conformer| !conformer.is_3d())
-        {
-            cosmolkit_stereo::assign_chiral_types_from_bond_dirs(
-                &mut record.topology,
-                conformer,
-                false,
-            )
-            .map_err(|error| SmilesParseError::WriterStereo(error.to_string()))?;
-        } else if let Some(conformer) = record.coordinates.conformers_2d.first() {
-            let conformer = cosmolkit_model::Conformer3D::new(
+        if let Some(conformer) = record.coordinates.conformers_2d.first() {
+            let conformer = Conformer3D::new(
                 conformer.id(),
                 conformer
                     .coordinates()
@@ -666,7 +955,7 @@ pub(crate) fn apply_cx_to_smiles_record(
                     .collect(),
                 false,
             );
-            cosmolkit_stereo::assign_chiral_types_from_bond_dirs(
+            cosmolkit_core::assign_chiral_types_from_bond_dirs(
                 &mut record.topology,
                 &conformer,
                 false,
@@ -676,6 +965,11 @@ pub(crate) fn apply_cx_to_smiles_record(
     }
     record.topology.adjacency =
         AdjacencyList::from_topology(record.topology.atoms.len(), &record.topology.bonds);
+    normalize_source_coordinate_dimension(record);
+    record
+        .coordinates
+        .validate_for_atom_count(record.topology.atoms.len())
+        .map_err(model_failure)?;
     record
         .topology
         .validate()

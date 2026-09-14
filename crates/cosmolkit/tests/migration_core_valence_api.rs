@@ -1,3 +1,6 @@
+#[path = "support/coordinate_views.rs"]
+mod coordinate_views;
+
 use std::error::Error as _;
 
 use cosmolkit::{
@@ -184,7 +187,7 @@ fn value_operation_commits_valid_cache_and_shares_every_untouched_block() {
     let output = source.with_assigned_valence().unwrap();
 
     assert!(std::ptr::eq(source.topology(), output.topology()));
-    assert!(std::ptr::eq(source.coordinates(), output.coordinates()));
+    coordinate_views::assert_shared_coordinates(&source, &output);
     assert!(std::ptr::eq(source.properties(), output.properties()));
     assert_eq!(source.property("source"), Some("preserved"));
     assert_eq!(output.property("source"), Some("preserved"));
@@ -244,7 +247,7 @@ fn typed_failure_is_atomic_and_read_only_predicate_keeps_exact_errors() {
     assert!(error.source().is_some());
     assert_eq!(target, source);
     assert!(std::ptr::eq(target.topology(), observer.topology()));
-    assert!(std::ptr::eq(target.coordinates(), observer.coordinates()));
+    coordinate_views::assert_shared_coordinates(&target, &observer);
     assert!(std::ptr::eq(target.properties(), observer.properties()));
     assert!(format!("{target:?}").contains("derived_cache_is_empty: true"));
 

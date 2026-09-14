@@ -1,3 +1,6 @@
+#[path = "support/coordinate_views.rs"]
+mod coordinate_views;
+
 use cosmolkit::{
     Atom, AtomId, AtomSpec, BINDING_CONTRACT, BindingExposure, BindingItem, BindingOwner,
     BindingParity, BindingSupport, BlockSet, Bond, BondId, BondOrder, BondSpec, Conformer2D,
@@ -145,7 +148,7 @@ fn value_operation_assigns_a_private_cache_and_preserves_every_input_block() {
     let output = source.with_assigned_rings().unwrap();
 
     assert!(std::ptr::eq(source.topology(), output.topology()));
-    assert!(std::ptr::eq(source.coordinates(), output.coordinates()));
+    coordinate_views::assert_shared_coordinates(&source, &output);
     assert!(std::ptr::eq(source.properties(), output.properties()));
     assert_eq!(source.num_atoms(), output.num_atoms());
     assert_eq!(source.num_bonds(), output.num_bonds());
@@ -183,7 +186,7 @@ fn repeated_value_and_inplace_forms_replace_the_assignment_idempotently() {
     let second = first.with_assigned_rings().unwrap();
     assert_eq!(first, second);
     assert!(std::ptr::eq(first.topology(), second.topology()));
-    assert!(std::ptr::eq(first.coordinates(), second.coordinates()));
+    coordinate_views::assert_shared_coordinates(&first, &second);
     assert!(std::ptr::eq(first.properties(), second.properties()));
     assert!(format!("{second:?}").contains("derived_cache_is_empty: false"));
 
@@ -210,7 +213,7 @@ fn invalid_topology_is_rejected_before_a_live_operation_can_observe_partial_stat
     assert!(format!("{error:?}").contains("SelfLoopBond"));
     assert_eq!(source, observer);
     assert!(std::ptr::eq(source.topology(), observer.topology()));
-    assert!(std::ptr::eq(source.coordinates(), observer.coordinates()));
+    coordinate_views::assert_shared_coordinates(&source, &observer);
     assert!(std::ptr::eq(source.properties(), observer.properties()));
     assert!(format!("{source:?}").contains("derived_cache_is_empty: true"));
 }

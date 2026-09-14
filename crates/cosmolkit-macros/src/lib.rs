@@ -8,11 +8,22 @@ mod declaration;
 mod matrices;
 #[allow(dead_code)]
 mod projection;
+mod result;
 #[allow(dead_code)]
 mod wrappers;
 
 use proc_macro::TokenStream;
 use quote::quote;
+
+/// Converts one marked pending molecule field after runtime finalization.
+/// This derive is for registry-owned result types in the runtime crate.
+#[proc_macro_derive(MoleculeResult, attributes(pending_molecule))]
+pub fn molecule_result(input: TokenStream) -> TokenStream {
+    match syn::parse(input).and_then(result::expand) {
+        Ok(tokens) => tokens.into(),
+        Err(error) => error.to_compile_error().into(),
+    }
+}
 
 /// Injects a single-output operation context into an operation body.
 ///

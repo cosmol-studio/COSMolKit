@@ -46,6 +46,6 @@ impl Molecule {
         &self,
         params: &cosmolkit_core::DistanceMatrix3dParams,
     ) -> Result<cosmolkit_core::DenseMatrix, cosmolkit_core::MatrixError> {
-        cosmolkit_core::distance_matrix_3d(self.topology(), self.coordinates(), params)
+        cosmolkit_core::distance_matrix_3d(self.topology(), self.coordinate_block_runtime(), params)
     }
 }

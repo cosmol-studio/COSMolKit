@@ -145,6 +145,46 @@ fn scanner_decodes_source_decimal_entities_in_every_text_family() {
 }
 
 #[test]
+fn scanner_reproduces_pinned_int_to_char_narrowing_and_string_lift() {
+    let input = "|$plain;x&#0;y;x&#256;y;x&#321;y;&#128;;&#255;;&#2147483647;;&#;$| suffix";
+    let parsed = parse_cx_extensions(input).unwrap();
+    assert_eq!(
+        parsed.records(),
+        &[CxRecord::AtomLabels(vec![
+            Some("plain".into()),
+            Some("x\0y".into()),
+            Some("x\0y".into()),
+            Some("xAy".into()),
+            Some("\u{80}".into()),
+            Some("\u{ff}".into()),
+            Some("\u{ff}".into()),
+            None,
+        ])]
+    );
+    assert_eq!(parsed.consumed(), input.find(" suffix").unwrap());
+}
+
+#[test]
+fn scanner_applies_entity_conversion_in_property_and_sgroup_text_consumers() {
+    let properties = parse_cx_extensions("|atomProp:0.n&#321;me.v&#256;x|").unwrap();
+    assert_eq!(
+        properties.records(),
+        &[CxRecord::AtomProperties(vec![CxAtomProperty {
+            atom: 0,
+            name: "nAme".into(),
+            value: "v\0x".into(),
+        }])]
+    );
+
+    let sgroup = parse_cx_extensions("|SgD:0:F&#255;:d&#321;ta::::|").unwrap();
+    let CxRecord::DataSGroup(sgroup) = &sgroup.records()[0] else {
+        panic!("expected data SGroup")
+    };
+    assert_eq!(sgroup.field_name, "F\u{ff}");
+    assert_eq!(sgroup.data, "dAta");
+}
+
+#[test]
 fn scanner_reports_exact_entity_integer_and_pair_failure_offsets() {
     let unterminated = parse_cx_extensions("|$x&#59$|").unwrap_err();
     assert_eq!(unterminated.offset, 3);
@@ -153,7 +193,7 @@ fn scanner_reports_exact_entity_integer_and_pair_failure_offsets() {
         "failure parsing CXSMILES extensions: quoted block not terminated with ';'"
     );
 
-    let character_overflow = parse_cx_extensions("|$x&#256;$|").unwrap_err();
+    let character_overflow = parse_cx_extensions("|$x&#2147483648;$|").unwrap_err();
     assert_eq!(character_overflow.offset, 3);
     assert_eq!(character_overflow.message, "invalid CX character code");
 

@@ -204,6 +204,13 @@ A multiple-output entry may additionally declare `result_type` and
 validated molecules, and the assembler combines those two values into the
 typed public result without gaining mutation authority.
 
+Single-output value operations may instead register `result_type` with a
+`MoleculeResult`-derived pending result. The body seals its staged detached
+blocks with generated `pending_molecule()` and returns the pending container
+in the marked result field. Only the runtime wrapper validates, commits, and
+converts it to `Molecule`; single-output `assemble_fn` remains forbidden.
+See `operation_system_standard.md` for the ownership and single-use rules.
+
 For molecule operations, `derived_effects` has four independent,
 pairwise-disjoint categories: `recompute`, `preserve`, `invalidate`, and the
 narrowly allow-listed `operation_defined`. The last category delegates the

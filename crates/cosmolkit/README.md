@@ -6,26 +6,45 @@ For a concise Rust-native cheminformatics overview, see <https://tools.cosmol.or
 
 ## Cargo features
 
-The default `full` feature preserves the complete COSMolKit API. Applications
-that need a smaller dependency surface can disable defaults and enable only the
-capabilities they use:
+The default `full` feature enables every capability feature and its domain
+dependencies. Dependency wiring does not imply that every corresponding public
+API or algorithm is implemented; consult the API and support status for the
+selected version. Runtime invariant and operation-contract checks remain opt-in
+via `op-contracts-strict`.
+
+Applications that need a smaller dependency surface can disable defaults and
+enable only the capabilities they use:
 
 ```toml
-cosmolkit = { version = "0.5.0-rc.3", default-features = false, features = ["fingerprints"] }
+cosmolkit = { version = "0.5.0-rc.3", default-features = false, features = ["kekulize"] }
 ```
 
-| Feature | Capability | Implied features |
+| Feature | Capability | Implementation crate(s) |
 |---|---|---|
-| `io` | MOL/SDF, MOL2, XYZ, PDB, and mmCIF IO | — |
-| `inchi` | InChI and InChIKey conversion | — |
-| `fingerprints` | Morgan, AtomPair, Pattern, Topological, MACCS, Layered, and Avalon fingerprints | `io` |
-| `descriptors` | Molecular descriptors | — |
-| `depict` | SVG and PNG molecule depiction | `io` |
-| `batch` | Ordered parallel batch APIs | `fingerprints`, `depict`, `io` |
-| `serialization` | Compact binary molecule serialization | — |
-| `stereoisomers` | Stereoisomer enumeration | — |
-| `hashing` | Molecular hashes and scaffolds | `fingerprints`, `io` |
-| `confseq` | ConfSeq decoding | — |
+| `hydrogens`, `valence`, `radicals`, `rings`, `matrices`, `transforms`, `kekulize`, `aromaticity`, `sanitize` | Foundational chemistry and graph operations | `cosmolkit-core` |
+| `smiles` | SMILES and CXSMILES | `cosmolkit-smiles` |
+| `search` | SMARTS and substructure search | `cosmolkit-search` |
+| `bio` | Structural biology values and operations | `cosmolkit-bio` |
+| `io` | Molecular and structural file IO | `cosmolkit-io` |
+| `inchi` | InChI and InChIKey conversion | `cosmolkit-inchi` |
+| `fingerprints` | Molecular fingerprints | `cosmolkit-fingerprints` |
+| `descriptors` | Molecular descriptors | `cosmolkit-descriptors` |
+| `depict` | 2D layout, SVG and PNG depiction | `cosmolkit-depict` |
+| `batch` | Ordered parallel batch processing | `cosmolkit-batch` |
+| `serialization` | Binary molecule serialization | `cosmolkit-io` |
+| `stereo` | Foundational stereochemistry and high-level labeling | `cosmolkit-core`, `cosmolkit-stereo` |
+| `stereoisomers` | Stereoisomer enumeration | `cosmolkit-stereo` |
+| `hashing` | Molecular hashes | `cosmolkit-fingerprints` |
+| `confseq` | ConfSeq decoding | `cosmolkit-conformer` |
+| `conformer` | 3D embedding and conformer selection | `cosmolkit-conformer` |
+| `forcefields` | Energy, gradients and optimization | `cosmolkit-forcefields` |
+| `alignment` | Coordinate alignment and RMSD | `cosmolkit-alignment` |
+| `tautomer` | Tautomer enumeration and canonicalization | `cosmolkit-tautomer` |
+
+Each fine-grained feature enables its implementation dependency directly, not
+another domain's public feature. Shared foundations such as `cosmolkit-types`,
+`cosmolkit-cx`, and `cosmolkit-ringdecomposer` remain transitive dependencies of
+their architectural consumers.
 
 Feature selection only controls compile-time API and dependency composition;
 it does not change the behavior of an enabled operation. Python wheels always

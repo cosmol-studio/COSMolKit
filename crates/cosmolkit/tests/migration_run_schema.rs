@@ -28,8 +28,8 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
         "Molecule.atom",
         "Molecule.bond",
         "Molecule.topology",
-        "Molecule.coordinates",
-        "Molecule.conformers",
+        "Molecule.coordinates_2d",
+        "Molecule.conformers_3d",
         "Molecule.properties",
         "Molecule.property",
         "MoleculeBuilder.new",
@@ -78,6 +78,114 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
         "module.operation_parity",
         "module.version",
     ];
+    if cfg!(feature = "matrices") {
+        expected.extend([
+            "types.DenseMatrix",
+            "types.DistanceMatrixParams",
+            "types.DistanceMatrix3dParams",
+            "types.MatrixError",
+            "Molecule.distance_matrix",
+            "Molecule.distance_matrix_with_params",
+            "Molecule.distance_matrix_3d",
+            "Molecule.distance_matrix_3d_with_params",
+        ]);
+    }
+    if cfg!(feature = "transforms") {
+        expected.extend([
+            "types.AtomPositionParams",
+            "types.TransformError",
+            "Molecule.with_atom_position",
+            "Molecule.with_atom_position_with_params",
+            "Molecule.set_atom_position_",
+            "Molecule.set_atom_position_with_params_",
+        ]);
+    }
+    if cfg!(feature = "sanitize") {
+        expected.extend([
+            "types.SanitizeOperations",
+            "types.SanitizeStage",
+            "types.SanitizeParams",
+            "types.SanitizeError",
+            "types.ChemistryProblemError",
+            "types.ChemistryProblem",
+            "types.ChemistryProblemReport",
+            "Molecule.sanitize",
+            "Molecule.sanitize_with_params",
+            "Molecule.detect_chemistry_problems",
+            "Molecule.detect_chemistry_problems_with_params",
+        ]);
+    }
+    if cfg!(feature = "kekulize") {
+        expected.extend([
+            "types.KekulizeParams",
+            "types.KekulizeError",
+            "Molecule.with_kekulized_bonds",
+            "Molecule.with_kekulized_bonds_with_params",
+            "Molecule.kekulize_bonds_",
+            "Molecule.kekulize_bonds_with_params_",
+        ]);
+    }
+    if cfg!(feature = "aromaticity") {
+        expected.extend([
+            "types.AromaticityModel",
+            "types.AromaticityParams",
+            "types.AromaticityError",
+            "Molecule.with_assigned_aromaticity",
+            "Molecule.with_assigned_aromaticity_with_params",
+            "Molecule.assign_aromaticity_",
+            "Molecule.assign_aromaticity_with_params_",
+        ]);
+    }
+    if cfg!(feature = "valence") {
+        expected.extend([
+            "types.ValenceModel",
+            "types.ValenceParams",
+            "types.ValenceError",
+            "Molecule.with_assigned_valence",
+            "Molecule.with_assigned_valence_with_params",
+            "Molecule.assign_valence_",
+            "Molecule.assign_valence_with_params_",
+            "Molecule.has_valence_violation",
+        ]);
+    }
+    if cfg!(feature = "radicals") {
+        expected.extend([
+            "Molecule.with_assigned_radicals",
+            "Molecule.assign_radicals_",
+        ]);
+    }
+    if cfg!(feature = "rings") {
+        expected.extend([
+            "types.RingSearchParams",
+            "Molecule.with_assigned_rings",
+            "Molecule.assign_rings_",
+            "Molecule.with_assigned_ring_families",
+            "Molecule.with_assigned_ring_families_with_params",
+            "Molecule.assign_ring_families_",
+            "Molecule.assign_ring_families_with_params_",
+        ]);
+    }
+    if cfg!(feature = "stereo") {
+        expected.extend([
+            "types.StructureTagParams",
+            "types.StereoError",
+            "Molecule.with_chiral_tags_from_structure",
+            "Molecule.with_chiral_tags_from_structure_with_params",
+            "Molecule.assign_chiral_tags_from_structure_",
+            "Molecule.assign_chiral_tags_from_structure_with_params_",
+            "types.PotentialStereoParams",
+            "types.PotentialStereoType",
+            "types.PotentialStereoSpecified",
+            "types.PotentialStereoDescriptor",
+            "types.PotentialStereoCenter",
+            "types.PotentialStereoInfo",
+            "types.RingStereoRelation",
+            "types.PotentialStereoResult",
+            "types.PotentialStereoError",
+            "Molecule.potential_stereo",
+            "Molecule.potential_stereo_with_params",
+        ]);
+    }
     if cfg!(feature = "descriptors") {
         expected.extend([
             "Molecule.molecular_weight",
@@ -87,10 +195,17 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
     }
     if cfg!(feature = "hydrogens") {
         expected.extend([
+            "types.AddHsParams",
+            "types.HydrogenError",
+            "types.RemoveHsParams",
             "Molecule.with_hydrogens",
+            "Molecule.with_hydrogens_with_params",
             "Molecule.add_hydrogens_",
+            "Molecule.add_hydrogens_with_params_",
             "Molecule.without_hydrogens",
+            "Molecule.without_hydrogens_with_params",
             "Molecule.remove_hydrogens_",
+            "Molecule.remove_hydrogens_with_params_",
         ]);
     }
 
@@ -203,7 +318,7 @@ fn descriptor_entries_are_exact_canonical_read_only_methods() {
 
 #[cfg(feature = "hydrogens")]
 #[test]
-fn hydrogen_entries_bind_value_and_in_place_names_without_claiming_support() {
+fn hydrogen_entries_bind_value_and_in_place_names_with_parity_support() {
     for (semantic_id, rust_name, javascript, output, state) in [
         (
             "Molecule.with_hydrogens",
@@ -241,8 +356,8 @@ fn hydrogen_entries_bind_value_and_in_place_names_without_claiming_support() {
         assert_eq!(entry.javascript_name, javascript);
         assert_eq!(entry.feature, "hydrogens");
         assert_eq!(entry.exposure, BindingExposure::Public);
-        assert_eq!(entry.support, BindingSupport::Unsupported);
-        assert_eq!(entry.parity, BindingParity::RequiredWhenSupported);
+        assert_eq!(entry.support, BindingSupport::SupportedWithRdkitParity);
+        assert_eq!(entry.parity, BindingParity::RequiredNow);
         let callable = entry.callable.expect("hydrogen callable metadata");
         assert_eq!(callable.kind, BindingKind::Instance);
         assert!(callable.parameters.is_empty());

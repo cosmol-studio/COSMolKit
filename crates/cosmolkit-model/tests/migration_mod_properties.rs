@@ -5,13 +5,15 @@ use cosmolkit_model::{
     Element, MoleculeProperties, MoleculePropertyError, SdfPropertyList, SdfPropertyListTarget,
 };
 
-const CIP_CASES: [(CipDescriptor, &str); 10] = [
+const CIP_CASES: [(CipDescriptor, &str); 12] = [
     (CipDescriptor::R, "R"),
     (CipDescriptor::S, "S"),
     (CipDescriptor::LowerR, "r"),
     (CipDescriptor::LowerS, "s"),
     (CipDescriptor::E, "E"),
     (CipDescriptor::Z, "Z"),
+    (CipDescriptor::LowerE, "e"),
+    (CipDescriptor::LowerZ, "z"),
     (CipDescriptor::M, "M"),
     (CipDescriptor::P, "P"),
     (CipDescriptor::LowerM, "m"),
@@ -215,7 +217,7 @@ fn sdf_property_lists_remap_each_target_in_order_and_preserve_metadata() {
 }
 
 #[test]
-fn cip_descriptor_ten_spelling_matrix_is_exact_and_case_sensitive() {
+fn cip_descriptor_twelve_spelling_matrix_is_exact_and_case_sensitive() {
     for (descriptor, spelling) in CIP_CASES {
         assert_eq!(descriptor.as_str(), spelling);
         assert_eq!(descriptor.to_string(), spelling);
@@ -223,6 +225,8 @@ fn cip_descriptor_ten_spelling_matrix_is_exact_and_case_sensitive() {
     }
     assert_ne!(CipDescriptor::R, CipDescriptor::LowerR);
     assert_ne!(CipDescriptor::S, CipDescriptor::LowerS);
+    assert_ne!(CipDescriptor::E, CipDescriptor::LowerE);
+    assert_ne!(CipDescriptor::Z, CipDescriptor::LowerZ);
     assert_ne!(CipDescriptor::M, CipDescriptor::LowerM);
     assert_ne!(CipDescriptor::P, CipDescriptor::LowerP);
 }
@@ -230,7 +234,7 @@ fn cip_descriptor_ten_spelling_matrix_is_exact_and_case_sensitive() {
 #[test]
 fn cip_descriptor_invalid_spellings_preserve_the_exact_input() {
     for value in [
-        "", " R", "R ", "rR", "NONE", "UNKNOWN", "e", "z", "SP_4", "TBPY_5", "OC_6", "ns",
+        "", " R", "R ", "rR", "eE", "zZ", "NONE", "UNKNOWN", "SP_4", "TBPY_5", "OC_6", "ns",
         "seqTrans", "seqCis",
     ] {
         assert_eq!(

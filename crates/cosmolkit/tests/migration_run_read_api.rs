@@ -60,15 +60,26 @@ fn all_eleven_canonical_read_signatures_compile_from_the_public_crate() {
     let _: for<'a> fn(&'a Molecule, AtomId) -> Option<&'a Atom> = Molecule::atom;
     let _: for<'a> fn(&'a Molecule, BondId) -> Option<&'a Bond> = Molecule::bond;
     let _: for<'a> fn(&'a Molecule) -> &'a TopologyBlock = Molecule::topology;
-    let _: for<'a> fn(&'a Molecule) -> &'a CoordinateBlock = Molecule::coordinates;
-    let _: for<'a> fn(&'a Molecule) -> (&'a [Conformer2D], &'a [Conformer3D]) =
-        Molecule::conformers;
+    let _: for<'a> fn(&'a Molecule) -> Option<&'a [[f64; 2]]> = Molecule::coordinates_2d;
+    let _: for<'a> fn(&'a Molecule) -> &'a [Conformer3D] = Molecule::conformers_3d;
     let _: for<'a> fn(&'a Molecule) -> &'a MoleculeProperties = Molecule::properties;
     let _: for<'a, 'b> fn(&'a Molecule, &'b str) -> Option<&'a str> = Molecule::property;
 }
 
 #[test]
 fn binding_rows_exactly_match_names_signatures_and_read_only_semantics() {
+    for forbidden in [
+        "Molecule.coordinates",
+        "Molecule.conformers",
+        "Molecule.coordinate_block_runtime",
+    ] {
+        assert!(
+            !BINDING_CONTRACT
+                .iter()
+                .any(|entry| entry.semantic_id == forbidden),
+            "unexpected aggregate/private coordinate binding: {forbidden}"
+        );
+    }
     let expected = [
         ("Molecule.num_atoms", "num_atoms", "numAtoms", "usize"),
         ("Molecule.num_bonds", "num_bonds", "numBonds", "usize"),
@@ -83,16 +94,16 @@ fn binding_rows_exactly_match_names_signatures_and_read_only_semantics() {
             "&crate::TopologyBlock",
         ),
         (
-            "Molecule.coordinates",
-            "coordinates",
-            "coordinates",
-            "&crate::CoordinateBlock",
+            "Molecule.coordinates_2d",
+            "coordinates_2d",
+            "coordinates2d",
+            "Option<&[[f64;2]]>",
         ),
         (
-            "Molecule.conformers",
-            "conformers",
-            "conformers",
-            "(&[crate::Conformer2D],&[crate::Conformer3D])",
+            "Molecule.conformers_3d",
+            "conformers_3d",
+            "conformers3d",
+            "&[crate::Conformer3D]",
         ),
         (
             "Molecule.properties",
@@ -190,16 +201,13 @@ fn public_views_preserve_canonical_rows_typed_state_and_absence() {
         &[BondId::new(0)]
     );
 
-    let (two_d, three_d) = molecule.conformers();
-    assert!(std::ptr::eq(
-        two_d,
-        molecule.coordinates().conformers_2d.as_slice()
-    ));
-    assert!(std::ptr::eq(
-        three_d,
-        molecule.coordinates().conformers_3d.as_slice()
-    ));
-    assert_eq!(two_d[0].id(), 4);
+    let two_d = molecule.coordinates_2d().unwrap();
+    let three_d = molecule.conformers_3d();
+    let observer = molecule.clone();
+    assert!(std::ptr::eq(two_d, observer.coordinates_2d().unwrap()));
+    assert!(std::ptr::eq(three_d, observer.conformers_3d()));
+    assert_eq!(two_d, &[[0.0, 1.0], [2.0, 3.0]]);
+    assert_eq!(molecule.to_builder().coordinates().conformers_2d[0].id(), 4);
     assert_eq!(three_d[0].id(), 8);
     assert_eq!(molecule.properties().name(), Some("read-public"));
     assert_eq!(molecule.property("empty"), Some(""));
@@ -211,7 +219,7 @@ fn public_views_preserve_canonical_rows_typed_state_and_absence() {
 fn invalid_detached_edit_cannot_mutate_the_live_source() {
     let source = read_fixture();
     let topology_before = source.topology().clone();
-    let coordinates_before = source.coordinates().clone();
+    let coordinates_before = source.to_builder().coordinates().clone();
     let properties_before = source.properties().clone();
     let mut builder = source.clone().to_builder();
     builder.add_atom(AtomSpec::new(Element::N));
@@ -226,7 +234,7 @@ fn invalid_detached_edit_cannot_mutate_the_live_source() {
         })
     );
     assert_eq!(source.topology(), &topology_before);
-    assert_eq!(source.coordinates(), &coordinates_before);
+    assert_eq!(source.to_builder().coordinates(), &coordinates_before);
     assert_eq!(source.properties(), &properties_before);
     assert_eq!(source.num_atoms(), 2);
 }
@@ -241,8 +249,8 @@ fn read_projection_has_no_operation_multioutput_cache_or_mutable_escape() {
         "atom",
         "bond",
         "topology",
-        "coordinates",
-        "conformers",
+        "coordinates_2d",
+        "conformers_3d",
         "properties",
         "property",
     ];
@@ -271,6 +279,9 @@ fn read_projection_has_no_operation_multioutput_cache_or_mutable_escape() {
     let source = include_str!("../src/molecule.rs");
     assert_eq!(source.matches("pub struct Molecule {").count(), 1);
     for forbidden in [
+        "pub fn coordinates(",
+        "pub fn conformers(",
+        "pub fn coordinate_block_runtime(",
         "pub fn topology_mut",
         "pub fn coordinates_mut",
         "pub fn properties_mut",

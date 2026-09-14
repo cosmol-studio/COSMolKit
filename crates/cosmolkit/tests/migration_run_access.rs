@@ -111,7 +111,7 @@ mod molecule {
             &self.state.topology
         }
 
-        pub fn coordinates(&self) -> &CoordinateBlock {
+        pub(crate) fn coordinate_block_runtime(&self) -> &CoordinateBlock {
             &self.state.coordinates
         }
 

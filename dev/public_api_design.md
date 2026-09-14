@@ -152,6 +152,21 @@ Boolean methods use `is_`, `has_`, or a domain-specific predicate. Methods may
 return `Result<bool, Error>` when source behavior can fail; they remain methods
 and must not be silently converted into properties in another language.
 
+Coordinate-reading methods on `Molecule` are dimension-specific:
+
+```rust
+coordinates_2d(&self) -> Option<&[[f64; 2]]>
+conformers_3d(&self) -> &[Conformer3D]
+```
+
+`coordinates_2d` borrows the first stored 2D conformer's atom-ordered rows;
+absence is `None`, while a stored empty conformer is `Some(&[])`. It never
+generates coordinates or falls back to 3D. `conformers_3d` borrows all stored
+3D conformers in order, preserving their IDs and metadata. Neither accessor
+permits mutation. Do not expose a public `Molecule::coordinates` block getter
+or a `Molecule::conformers` mixed-dimension tuple in place of these methods.
+The runtime's complete coordinate-block access remains private.
+
 ### 4.4 Transformations
 
 Value-style transformations use `with_*` and return a new molecule or result:

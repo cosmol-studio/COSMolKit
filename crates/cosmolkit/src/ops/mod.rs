@@ -2,6 +2,8 @@
 
 #[cfg(feature = "aromaticity")]
 mod aromaticity;
+#[cfg(feature = "stereo")]
+mod cip_labels;
 #[cfg(test)]
 mod cow_tests;
 mod error;
@@ -46,6 +48,7 @@ pub use runtime::registry::{
 };
 
 pub(crate) use runtime::context::{OpParts, PreservationProof};
+pub(crate) use runtime::context::{PendingMolecule, PendingResult, ResultFinalizer};
 pub(crate) use runtime::multiple::MultiOutputOpParts;
 #[cfg(feature = "stereo")]
 pub(crate) use runtime::registry::PotentialStereoAccess;
@@ -61,6 +64,8 @@ pub(crate) use runtime::registry::WithAssignedValenceAccess;
 pub(crate) use runtime::registry::WithAtomPositionAccess;
 #[cfg(feature = "stereo")]
 pub(crate) use runtime::registry::WithChiralTagsFromStructureAccess;
+#[cfg(feature = "stereo")]
+pub(crate) use runtime::registry::WithCipLabelsAccess;
 #[cfg(feature = "kekulize")]
 pub(crate) use runtime::registry::WithKekulizedBondsAccess;
 #[cfg(test)]

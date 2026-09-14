@@ -426,6 +426,24 @@ fn expand_molecule_marker(operation: &MoleculeOperation) -> syn::Result<proc_mac
         }
     });
 
+    if operation.fields.output == MoleculeOutput::Single && operation.fields.result_type.is_some() {
+        // A sealed candidate is immutable even when runtime strict checks are
+        // disabled. Only registered typed-result operations get this method.
+        for method in &mut methods {
+            let mut function: syn::ImplItemFn = syn::parse2(method.clone())?;
+            function
+                .block
+                .stmts
+                .insert(0, parse_quote!(self.ensure_unsealed_runtime()?;));
+            *method = quote!(#function);
+        }
+        methods.push(quote! {
+            pub(crate) fn pending_molecule(&mut self) -> Result<crate::PendingMolecule<#marker>, crate::OperationError> {
+                self.pending_molecule_runtime()
+            }
+        });
+    }
+
     let capability_impl = match operation.fields.output {
         MoleculeOutput::Single => quote! {
             #(#cfg_attrs)*

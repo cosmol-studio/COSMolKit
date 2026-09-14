@@ -1,3 +1,6 @@
+#[path = "support/coordinate_views.rs"]
+mod coordinate_views;
+
 use std::error::Error as _;
 use std::path::PathBuf;
 use std::process::{Command, Output};
@@ -284,8 +287,9 @@ fn value_sanitize_preserves_identity_coordinates_and_ordinary_properties() {
             })
     );
     assert_eq!(source.topology().adjacency, output.topology().adjacency);
-    assert!(std::ptr::eq(source.coordinates(), output.coordinates()));
-    assert_eq!(source.conformers(), output.conformers());
+    coordinate_views::assert_shared_coordinates(&source, &output);
+    assert_eq!(source.coordinates_2d(), output.coordinates_2d());
+    assert_eq!(source.conformers_3d(), output.conformers_3d());
     assert_eq!(output.property("source"), Some("preserved"));
     assert_eq!(output.atoms()[0].prop("atom-note"), Some("atom-0"));
     assert_eq!(output.bonds()[0].prop("bond-note"), Some("bond-0"));
@@ -314,8 +318,11 @@ fn none_selection_still_clears_only_computed_topology_and_cip_properties() {
     assert_eq!(output.bonds()[0].prop("bond-note"), Some("bond-0"));
     assert_eq!(output.atoms()[0].prop("_CIPCode"), None);
     assert_eq!(output.bonds()[0].prop("_CIPCode"), None);
-    assert_eq!(output.coordinates(), source.coordinates());
-    assert!(std::ptr::eq(output.coordinates(), source.coordinates()));
+    assert_eq!(
+        output.to_builder().coordinates(),
+        source.to_builder().coordinates()
+    );
+    coordinate_views::assert_shared_coordinates(&output, &source);
     assert!(output.atoms().iter().all(|atom| !atom.is_aromatic()));
     assert!(output.bonds().iter().all(|bond| !bond.is_aromatic()));
 }
@@ -347,7 +354,7 @@ fn read_only_problem_detection_preserves_source_and_exact_problem_order() {
     assert_eq!(report, explicit);
     assert_eq!(source, observer);
     assert!(std::ptr::eq(source.topology(), observer.topology()));
-    assert!(std::ptr::eq(source.coordinates(), observer.coordinates()));
+    coordinate_views::assert_shared_coordinates(&source, &observer);
     assert!(std::ptr::eq(source.properties(), observer.properties()));
 }
 
@@ -366,7 +373,7 @@ fn sanitize_failure_is_structured_and_atomic() {
     assert!(error.source().is_some());
     assert_eq!(source, observer);
     assert!(std::ptr::eq(source.topology(), observer.topology()));
-    assert!(std::ptr::eq(source.coordinates(), observer.coordinates()));
+    coordinate_views::assert_shared_coordinates(&source, &observer);
     assert!(std::ptr::eq(source.properties(), observer.properties()));
 }
 

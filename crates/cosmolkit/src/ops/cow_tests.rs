@@ -57,13 +57,16 @@ fn registered_value_operation_shares_untouched_blocks_and_detaches_only_the_writ
         &source.derived_cache_arc_runtime(),
         &output.derived_cache_arc_runtime()
     ));
-    assert!(!std::ptr::eq(source.coordinates(), output.coordinates()));
+    assert!(!std::ptr::eq(
+        source.coordinate_block_runtime(),
+        output.coordinate_block_runtime()
+    ));
     assert_eq!(
-        source.coordinates().conformers_2d[0].coordinates()[0],
+        source.coordinate_block_runtime().conformers_2d[0].coordinates()[0],
         [1.0, 2.0]
     );
     assert_eq!(
-        output.coordinates().conformers_2d[0].coordinates()[0],
+        output.coordinate_block_runtime().conformers_2d[0].coordinates()[0],
         [9.0, 8.0]
     );
 }
@@ -84,7 +87,10 @@ fn registered_in_place_failure_keeps_every_original_block_allocation_and_value()
     );
     assert_eq!(target, before);
     assert!(std::ptr::eq(target.topology(), observer.topology()));
-    assert!(std::ptr::eq(target.coordinates(), observer.coordinates()));
+    assert!(std::ptr::eq(
+        target.coordinate_block_runtime(),
+        observer.coordinate_block_runtime()
+    ));
     assert!(std::ptr::eq(target.properties(), observer.properties()));
     assert!(Arc::ptr_eq(
         &target.derived_cache_arc_runtime(),

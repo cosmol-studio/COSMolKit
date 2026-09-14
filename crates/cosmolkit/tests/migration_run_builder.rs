@@ -85,7 +85,7 @@ fn empty_and_complete_parts_build_through_one_checked_boundary() {
     assert_eq!(molecule.topology(), &topology);
     assert_eq!(molecule.properties(), &properties);
     assert_eq!(
-        molecule.coordinates().source_coordinate_dim,
+        molecule.to_builder().coordinates().source_coordinate_dim,
         Some(CoordinateDimension::ThreeD)
     );
 }
@@ -221,6 +221,7 @@ fn coordinate_methods_fail_closed_and_assign_dimension_local_ids() {
     let molecule = builder.build().unwrap();
     assert_eq!(
         molecule
+            .to_builder()
             .coordinates()
             .conformers_2d
             .iter()
@@ -229,7 +230,7 @@ fn coordinate_methods_fail_closed_and_assign_dimension_local_ids() {
         vec![0, 1]
     );
     assert_eq!(
-        molecule.coordinates().source_coordinate_dim,
+        molecule.to_builder().coordinates().source_coordinate_dim,
         Some(CoordinateDimension::ThreeD)
     );
 }

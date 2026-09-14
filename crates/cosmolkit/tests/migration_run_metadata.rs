@@ -13,6 +13,79 @@ fn binding_entry(semantic_id: &str) -> &'static cosmolkit::BindingContractEntry 
         .unwrap_or_else(|| panic!("missing binding contract entry {semantic_id}"))
 }
 
+fn expected_feature_names() -> Vec<&'static str> {
+    let mut expected = Vec::new();
+    if cfg!(feature = "sanitize") {
+        expected.push("sanitize");
+    }
+    if cfg!(feature = "kekulize") {
+        expected.push("kekulize");
+    }
+    if cfg!(feature = "aromaticity") {
+        expected.push("aromaticity");
+    }
+    if cfg!(feature = "valence") {
+        expected.push("valence");
+    }
+    if cfg!(feature = "radicals") {
+        expected.push("radicals");
+    }
+    if cfg!(feature = "rings") {
+        expected.push("rings");
+    }
+    if cfg!(feature = "stereo") {
+        expected.push("stereo");
+    }
+    if cfg!(feature = "hydrogens") {
+        expected.push("hydrogens");
+    }
+    if cfg!(feature = "transforms") {
+        expected.push("transforms");
+    }
+    expected
+}
+
+fn expected_operation_methods() -> Vec<&'static str> {
+    let mut expected = Vec::new();
+    if cfg!(feature = "sanitize") {
+        expected.push("sanitize_with_params");
+    }
+    if cfg!(feature = "kekulize") {
+        expected.push("with_kekulized_bonds_with_params");
+    }
+    if cfg!(feature = "aromaticity") {
+        expected.push("with_assigned_aromaticity_with_params");
+    }
+    if cfg!(feature = "valence") {
+        expected.push("with_assigned_valence_with_params");
+    }
+    if cfg!(feature = "radicals") {
+        expected.push("with_assigned_radicals");
+    }
+    if cfg!(feature = "rings") {
+        expected.extend([
+            "with_assigned_rings",
+            "with_assigned_ring_families_with_params",
+        ]);
+    }
+    if cfg!(feature = "stereo") {
+        expected.extend([
+            "with_chiral_tags_from_structure_with_params",
+            "potential_stereo_with_params",
+        ]);
+    }
+    if cfg!(feature = "hydrogens") {
+        expected.extend([
+            "with_hydrogens_with_params",
+            "without_hydrogens_with_params",
+        ]);
+    }
+    if cfg!(feature = "transforms") {
+        expected.push("with_atom_position_with_params");
+    }
+    expected
+}
+
 #[test]
 fn status_and_parity_values_preserve_every_public_branch() {
     let statuses = [
@@ -180,80 +253,99 @@ fn default_configuration_exposes_empty_generated_metadata_and_exact_misses() {
 #[test]
 fn hydrogens_configuration_preserves_order_profiles_and_pointer_identity() {
     let features = feature_specs().collect::<Vec<_>>();
-    assert_eq!(features.len(), 1);
-    assert_eq!(features[0].name, "hydrogens");
-    assert_eq!(features[0].category, "chemistry");
-    assert!(features[0].rdkit_parity_sensitive);
     assert_eq!(
-        features[0].status,
-        SupportStatus::Unsupported {
-            reason: "hydrogen transforms have not yet been ported to their final algorithm owner"
-        }
+        features
+            .iter()
+            .map(|feature| feature.name)
+            .collect::<Vec<_>>(),
+        expected_feature_names()
     );
+    let hydrogens = feature_spec("hydrogens").expect("hydrogens feature");
+    assert_eq!(hydrogens.category, "chemistry");
+    assert!(hydrogens.rdkit_parity_sensitive);
+    assert_eq!(hydrogens.status, SupportStatus::SupportedWithRdkitParity);
 
     let operations = operation_specs();
-    assert_eq!(operations.len(), 2);
-    assert_eq!(operations[0].method, "with_hydrogens");
-    assert_eq!(operations[1].method, "without_hydrogens");
-    assert_eq!(support_matrix().len(), 2);
-    assert_eq!(operation_invariant_matrix().len(), 2);
-    assert_eq!(parity_matrix().len(), 2);
+    assert_eq!(
+        operations
+            .iter()
+            .map(|operation| operation.method)
+            .collect::<Vec<_>>(),
+        expected_operation_methods()
+    );
+    assert_eq!(support_matrix().len(), operations.len());
+    assert_eq!(operation_invariant_matrix().len(), operations.len());
+    assert_eq!(parity_matrix().len(), operations.len());
 
-    for index in 0..2 {
+    for (index, operation) in operations.iter().enumerate() {
         assert!(core::ptr::eq(
-            operation_spec(operations[index].method).expect("operation lookup"),
-            operations[index]
+            operation_spec(operation.method).expect("operation lookup"),
+            *operation
         ));
         assert!(core::ptr::eq(
             support_matrix()[index]
                 .operation
                 .expect("support operation"),
-            operations[index]
+            *operation
         ));
         assert!(core::ptr::eq(
             operation_invariant_matrix()[index].operation,
-            operations[index]
+            *operation
+        ));
+        assert!(core::ptr::eq(parity_matrix()[index].operation, *operation));
+        assert!(core::ptr::eq(
+            support_matrix()[index].feature,
+            parity_matrix()[index].feature
         ));
         assert!(core::ptr::eq(
-            parity_matrix()[index].operation,
-            operations[index]
+            feature_spec(support_matrix()[index].feature.name).expect("feature lookup"),
+            support_matrix()[index].feature
         ));
-        assert!(core::ptr::eq(support_matrix()[index].feature, features[0]));
-        assert!(core::ptr::eq(parity_matrix()[index].feature, features[0]));
+        assert_eq!(operation.parity, ParityPolicy::RequiredNow);
         assert_eq!(
-            operations[index].parity,
-            ParityPolicy::RequiredWhenSupported
-        );
-        assert_eq!(
-            operation_invariant(operations[index].method).expect("invariant lookup"),
+            operation_invariant(operation.method).expect("invariant lookup"),
             &operation_invariant_matrix()[index]
         );
         assert_eq!(
-            operation_parity(operations[index].method).expect("parity lookup"),
+            operation_parity(operation.method).expect("parity lookup"),
             &parity_matrix()[index]
         );
     }
 
+    let add_index = operations
+        .iter()
+        .position(|operation| operation.method == "with_hydrogens_with_params")
+        .expect("add-hydrogen operation");
+    let remove_index = operations
+        .iter()
+        .position(|operation| operation.method == "without_hydrogens_with_params")
+        .expect("remove-hydrogen operation");
     assert_eq!(
-        operation_invariant_matrix()[0].profile,
+        operation_invariant_matrix()[add_index].profile,
         "strong_topology_with_coordinates"
     );
     assert_eq!(
-        operation_invariant_matrix()[1].profile,
+        operation_invariant_matrix()[remove_index].profile,
         "strong_topology_with_coordinates"
     );
-    assert_eq!(parity_matrix()[0].profile, "add_hydrogens_rdkit");
-    assert_eq!(parity_matrix()[1].profile, "remove_hydrogens_rdkit");
-    assert_eq!(parity_matrix()[0].rdkit_version, None);
-    assert_eq!(parity_matrix()[1].rdkit_version, None);
+    assert_eq!(parity_matrix()[add_index].profile, "add_hydrogens_rdkit");
+    assert_eq!(
+        parity_matrix()[remove_index].profile,
+        "remove_hydrogens_rdkit"
+    );
+    assert_eq!(parity_matrix()[add_index].rdkit_version, None);
+    assert_eq!(parity_matrix()[remove_index].rdkit_version, None);
 }
 
 #[cfg(feature = "hydrogens")]
 #[test]
 fn hydrogens_lookups_are_exact_and_reject_unknown_or_wrong_case_names() {
+    let generated_hydrogens = feature_specs()
+        .find(|feature| feature.name == "hydrogens")
+        .expect("feature iterator must contain hydrogens");
     assert!(core::ptr::eq(
         feature_spec("hydrogens").expect("feature lookup"),
-        feature_specs().next().expect("feature iterator")
+        generated_hydrogens
     ));
     for name in ["", "Hydrogens", "HYDROGENS", "unknown"] {
         assert_eq!(feature_spec(name), None);

@@ -1,8 +1,15 @@
-use cosmolkit_core::{ValenceModel, assign_valence_with_options_for_topology};
 use cosmolkit_model::{BondId, Conformer3D, TopologyBlock};
 use cosmolkit_types::{BondDirection, BondOrder, ChiralTag};
 
-use crate::StereoError;
+use crate::{ValenceError, ValenceModel, assign_valence_with_options_for_topology};
+
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum BondDirectionStereoError {
+    #[error("invalid stereochemistry state: {0}")]
+    InvalidState(String),
+    #[error(transparent)]
+    Valence(#[from] ValenceError),
+}
 
 #[derive(Clone, Copy)]
 struct Vector3 {
@@ -392,7 +399,7 @@ pub fn assign_chiral_types_from_bond_dirs(
     topology: &mut TopologyBlock,
     conformer: &Conformer3D,
     replace_existing_tags: bool,
-) -> Result<(), StereoError> {
+) -> Result<(), BondDirectionStereoError> {
     // BEGIN RDKIT CPP FUNCTION MolOps::assignChiralTypesFromBondDirs
     // RDKit✔️✔️: if (!mol.getNumConformers()) { return; }
     // RDKit✔️✔️: boost::dynamic_bitset<> atomsSet(mol.getNumAtoms(), 0);
@@ -422,7 +429,7 @@ pub fn assign_chiral_types_from_bond_dirs(
     // END RDKIT CPP FUNCTION MolOps::assignChiralTypesFromBondDirs
     conformer
         .validate_for_atom_count(topology.atoms.len())
-        .map_err(|error| StereoError::InvalidState(error.to_string()))?;
+        .map_err(|error| BondDirectionStereoError::InvalidState(error.to_string()))?;
     let valence =
         assign_valence_with_options_for_topology(topology, ValenceModel::RdkitLike, false)?;
     let mut assigned = vec![false; topology.atoms.len()];

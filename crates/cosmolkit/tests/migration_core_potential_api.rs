@@ -1,3 +1,6 @@
+#[path = "support/coordinate_views.rs"]
+mod coordinate_views;
+
 use std::error::Error as _;
 
 use cosmolkit::{
@@ -282,7 +285,12 @@ fn both_public_callers_match_the_detached_oracle_and_preserve_input_order() {
     );
     assert_eq!(short.stereo[0].controlling_atoms.len(), 4);
     assert_eq!(source.property("source"), Some("preserved"));
-    assert_eq!(source.conformers().0[0].coordinates().len(), 5);
+    assert_eq!(
+        source.to_builder().coordinates().conformers_2d[0]
+            .coordinates()
+            .len(),
+        5
+    );
 }
 
 #[test]
@@ -308,8 +316,11 @@ fn clean_result_commits_only_source_defined_stereo_cleanup_and_cip_effects() {
     assert_eq!(result.stereo, expected.stereo);
     assert_eq!(result.atom_ranks, expected.atom_ranks);
     assert_eq!(result.ring_relations, expected.ring_relations);
-    assert_eq!(cleaned.coordinates(), source.coordinates());
-    assert!(std::ptr::eq(cleaned.coordinates(), source.coordinates()));
+    assert_eq!(
+        cleaned.to_builder().coordinates(),
+        source.to_builder().coordinates()
+    );
+    coordinate_views::assert_shared_coordinates(&cleaned, &source);
     assert_eq!(cleaned.property("source"), Some("preserved"));
     assert_eq!(cleaned.property("_CIPComputed"), None);
     assert_eq!(
@@ -332,7 +343,7 @@ fn clean_result_commits_only_source_defined_stereo_cleanup_and_cip_effects() {
 
     assert_eq!(source, observer);
     assert!(std::ptr::eq(source.topology(), observer.topology()));
-    assert!(std::ptr::eq(source.coordinates(), observer.coordinates()));
+    coordinate_views::assert_shared_coordinates(&source, &observer);
     assert!(std::ptr::eq(source.properties(), observer.properties()));
     assert_eq!(
         source.atom(AtomId::new(0)).unwrap().chiral_tag(),

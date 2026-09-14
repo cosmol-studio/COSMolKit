@@ -87,10 +87,18 @@ fn molecule() -> Molecule {
 fn molecule_with_valid(states: DerivedState) -> Molecule {
     let source = molecule();
     let mut cache = DerivedCacheBlock::default();
+    #[cfg(feature = "rings")]
+    if states.intersects(DerivedState::RINGS) {
+        cache.install_ring_info(cosmolkit_core::RingInfo::new(
+            cosmolkit_core::RingFindType::SymmSssr,
+            source.topology().atoms.len(),
+            source.topology().bonds.len(),
+        ));
+    }
     cache.mark_valid(states);
     Molecule::from_runtime_parts(
         Arc::new(source.topology().clone()),
-        Arc::new(source.coordinates().clone()),
+        Arc::new(source.coordinate_block_runtime().clone()),
         Arc::new(source.properties().clone()),
         Arc::new(cache),
     )
@@ -299,6 +307,11 @@ fn update_and_clear_change_only_declared_cache_bits() {
         CipStatePolicy::Preserve,
     );
     let mut parts = OpParts::<EffectsAccess>::new(&source, operation).unwrap();
+    let mut cache = parts.checkout_derived_cache_runtime().unwrap();
+    cache.install_valence_assignment(
+        cosmolkit_core::assign_valence(source.topology(), &Default::default()).unwrap(),
+    );
+    parts.install_derived_cache_runtime(cache).unwrap();
     parts
         .mark_cache_updated_runtime(DerivedState::VALENCE)
         .unwrap();
@@ -684,6 +697,21 @@ fn tautomer_transition_guard_is_exact_and_single_output_cannot_apply_it() {
 
 #[test]
 fn source_shape_keeps_effect_authority_private_and_domain_free() {
+    fn contains_exact_callable(source: &str, name: &str) -> bool {
+        source.match_indices(name).any(|(start, _)| {
+            let before_is_ident = source[..start]
+                .chars()
+                .next_back()
+                .is_some_and(|ch| ch == '_' || ch.is_alphanumeric());
+            let end = start + name.len();
+            let after_is_ident = source[end..]
+                .chars()
+                .next()
+                .is_some_and(|ch| ch == '_' || ch.is_alphanumeric());
+            !before_is_ident && !after_is_ident && source[end..].trim_start().starts_with('(')
+        })
+    }
+
     let context = include_str!("../../src/ops/context.rs");
     let molecule = include_str!("../../src/molecule.rs");
     let manifest = include_str!("../../Cargo.toml");
@@ -694,7 +722,16 @@ fn source_shape_keeps_effect_authority_private_and_domain_free() {
     assert!(!context.contains("pub fn clear_cache"));
     assert!(!molecule.contains("pub struct DerivedCacheBlock"));
     assert!(!manifest.contains("cosmolkit ="));
+    assert!(!context.contains("cosmolkit_core::"));
+    for required_proof_text in [
+        "atoms_only_change_kekulize_fields",
+        "bonds_only_change_kekulize_fields",
+        "kekulize-bond-assignment proof failed",
+        "sanitize topology-identity and coordinate-preservation proof failed",
+    ] {
+        assert!(context.contains(required_proof_text));
+    }
     for forbidden in ["aromatize", "kekulize", "sanitize", "assign_valence"] {
-        assert!(!context.contains(forbidden));
+        assert!(!contains_exact_callable(context, forbidden));
     }
 }

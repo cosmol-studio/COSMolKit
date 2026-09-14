@@ -20,6 +20,79 @@ fn compact(text: &str) -> String {
         .collect()
 }
 
+fn expected_feature_names() -> Vec<&'static str> {
+    let mut expected = Vec::new();
+    if cfg!(feature = "sanitize") {
+        expected.push("sanitize");
+    }
+    if cfg!(feature = "kekulize") {
+        expected.push("kekulize");
+    }
+    if cfg!(feature = "aromaticity") {
+        expected.push("aromaticity");
+    }
+    if cfg!(feature = "valence") {
+        expected.push("valence");
+    }
+    if cfg!(feature = "radicals") {
+        expected.push("radicals");
+    }
+    if cfg!(feature = "rings") {
+        expected.push("rings");
+    }
+    if cfg!(feature = "stereo") {
+        expected.push("stereo");
+    }
+    if cfg!(feature = "hydrogens") {
+        expected.push("hydrogens");
+    }
+    if cfg!(feature = "transforms") {
+        expected.push("transforms");
+    }
+    expected
+}
+
+fn expected_operation_methods() -> Vec<&'static str> {
+    let mut expected = Vec::new();
+    if cfg!(feature = "sanitize") {
+        expected.push("sanitize_with_params");
+    }
+    if cfg!(feature = "kekulize") {
+        expected.push("with_kekulized_bonds_with_params");
+    }
+    if cfg!(feature = "aromaticity") {
+        expected.push("with_assigned_aromaticity_with_params");
+    }
+    if cfg!(feature = "valence") {
+        expected.push("with_assigned_valence_with_params");
+    }
+    if cfg!(feature = "radicals") {
+        expected.push("with_assigned_radicals");
+    }
+    if cfg!(feature = "rings") {
+        expected.extend([
+            "with_assigned_rings",
+            "with_assigned_ring_families_with_params",
+        ]);
+    }
+    if cfg!(feature = "stereo") {
+        expected.extend([
+            "with_chiral_tags_from_structure_with_params",
+            "potential_stereo_with_params",
+        ]);
+    }
+    if cfg!(feature = "hydrogens") {
+        expected.extend([
+            "with_hydrogens_with_params",
+            "without_hydrogens_with_params",
+        ]);
+    }
+    if cfg!(feature = "transforms") {
+        expected.push("with_atom_position_with_params");
+    }
+    expected
+}
+
 #[test]
 fn canonical_metadata_signatures_compile_from_the_public_crate() {
     let _: fn() -> FeatureSpecIter = feature_specs;
@@ -230,35 +303,61 @@ fn public_queries_preserve_generated_identity_and_fail_closed_misses() {
     ));
     assert!(core::ptr::eq(parity_matrix(), PARITY_MATRIX));
 
-    if cfg!(feature = "hydrogens") {
-        assert_eq!(
-            feature_specs()
-                .map(|feature| feature.name)
-                .collect::<Vec<_>>(),
-            ["hydrogens"]
-        );
-        assert_eq!(
-            operation_specs()
-                .iter()
-                .map(|operation| operation.method)
-                .collect::<Vec<_>>(),
-            ["with_hydrogens", "without_hydrogens"]
-        );
-        assert_eq!(support_matrix().len(), 2);
-        assert_eq!(operation_invariant_matrix().len(), 2);
-        assert_eq!(parity_matrix().len(), 2);
+    assert_eq!(
+        feature_specs()
+            .map(|feature| feature.name)
+            .collect::<Vec<_>>(),
+        expected_feature_names()
+    );
+    assert_eq!(
+        operation_specs()
+            .iter()
+            .map(|operation| operation.method)
+            .collect::<Vec<_>>(),
+        expected_operation_methods()
+    );
+    assert_eq!(support_matrix().len(), operation_specs().len());
+    assert_eq!(operation_invariant_matrix().len(), operation_specs().len());
+    assert_eq!(parity_matrix().len(), operation_specs().len());
+
+    for (index, operation) in operation_specs().iter().enumerate() {
         assert!(core::ptr::eq(
-            feature_spec("hydrogens").expect("hydrogen feature"),
-            support_matrix()[0].feature
+            operation_spec(operation.method).expect("registered operation"),
+            *operation
         ));
-        for (index, method) in ["with_hydrogens", "without_hydrogens"]
-            .into_iter()
-            .enumerate()
-        {
-            assert!(core::ptr::eq(
-                operation_spec(method).expect("registered hydrogen operation"),
-                operation_specs()[index]
-            ));
+        assert!(core::ptr::eq(
+            support_matrix()[index]
+                .operation
+                .expect("support operation"),
+            *operation
+        ));
+        assert!(core::ptr::eq(
+            operation_invariant(operation.method)
+                .expect("invariant row")
+                .operation,
+            *operation
+        ));
+        assert!(core::ptr::eq(
+            operation_parity(operation.method)
+                .expect("parity row")
+                .operation,
+            *operation
+        ));
+    }
+
+    if cfg!(feature = "hydrogens") {
+        let hydrogens = feature_spec("hydrogens").expect("hydrogen feature");
+        assert!(core::ptr::eq(
+            hydrogens,
+            feature_specs()
+                .find(|feature| feature.name == "hydrogens")
+                .expect("hydrogen feature iterator row")
+        ));
+        for method in [
+            "with_hydrogens_with_params",
+            "without_hydrogens_with_params",
+        ] {
+            assert_eq!(operation_spec(method).unwrap().method, method);
             assert_eq!(
                 operation_invariant(method).unwrap().operation.method,
                 method
@@ -266,15 +365,10 @@ fn public_queries_preserve_generated_identity_and_fail_closed_misses() {
             assert_eq!(operation_parity(method).unwrap().operation.method, method);
         }
     } else {
-        assert!(feature_specs().next().is_none());
-        assert!(operation_specs().is_empty());
-        assert!(support_matrix().is_empty());
-        assert!(operation_invariant_matrix().is_empty());
-        assert!(parity_matrix().is_empty());
         assert_eq!(feature_spec("hydrogens"), None);
-        assert_eq!(operation_spec("with_hydrogens"), None);
-        assert_eq!(operation_invariant("with_hydrogens"), None);
-        assert_eq!(operation_parity("with_hydrogens"), None);
+        assert_eq!(operation_spec("with_hydrogens_with_params"), None);
+        assert_eq!(operation_invariant("with_hydrogens_with_params"), None);
+        assert_eq!(operation_parity("with_hydrogens_with_params"), None);
     }
     for name in ["", "Hydrogens", "unknown"] {
         assert_eq!(feature_spec(name), None);

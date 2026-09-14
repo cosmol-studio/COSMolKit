@@ -259,13 +259,11 @@ fn molecule_result_type(operation: &MoleculeOperation) -> proc_macro2::TokenStre
         fields.result_type.as_ref(),
         fields.assemble_fn.as_ref(),
     ) {
-        (MoleculeOutput::Single, None, _) => quote!("Molecule"),
-        (MoleculeOutput::Single, Some(result), None) => {
-            quote!(stringify!((crate::Molecule, #result)))
-        }
-        (MoleculeOutput::Single, Some(result), Some(_)) => quote!(stringify!(#result)),
-        (MoleculeOutput::Multiple, None, _) => quote!("Vec<Molecule>"),
-        (MoleculeOutput::Multiple, Some(result), _) => quote!(stringify!(#result)),
+        (MoleculeOutput::Single, None, None) => quote!("Molecule"),
+        (MoleculeOutput::Single, Some(result), None) => quote!(stringify!(#result)),
+        (MoleculeOutput::Multiple, None, None) => quote!("Vec<Molecule>"),
+        (MoleculeOutput::Multiple, Some(result), Some(_)) => quote!(stringify!(#result)),
+        _ => unreachable!("molecule result/assembler shape was validated before matrix expansion"),
     }
 }
 

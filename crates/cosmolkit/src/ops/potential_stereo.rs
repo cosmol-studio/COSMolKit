@@ -1,6 +1,6 @@
 //! Thin potential-stereochemistry projection over the detached core owner.
 
-use cosmolkit_macros::mol_op_body;
+use cosmolkit_macros::{MoleculeResult, mol_op_body};
 
 use super::OperationError;
 use crate::{
@@ -13,25 +13,22 @@ use crate::{
 /// Analysis rows never contain a live runtime handle. A cleaned molecule is
 /// present only when `PotentialStereoParams::clean` requested the source
 /// cleanup branch and the complete detached result passed runtime validation.
-#[derive(Clone, Debug, PartialEq)]
-pub struct PotentialStereoResult {
+#[derive(Clone, Debug, PartialEq, MoleculeResult)]
+pub struct PotentialStereoResult<M = Molecule> {
     pub stereo: Vec<PotentialStereoInfo>,
     pub atom_ranks: Vec<u32>,
     pub ring_relations: Vec<RingStereoRelation>,
-    pub cleaned_molecule: Option<Molecule>,
-}
-
-pub(crate) struct PotentialStereoOperationMetadata {
-    stereo: Vec<PotentialStereoInfo>,
-    atom_ranks: Vec<u32>,
-    ring_relations: Vec<RingStereoRelation>,
-    clean_requested: bool,
+    #[pending_molecule]
+    pub cleaned_molecule: Option<M>,
 }
 
 #[mol_op_body(potential_stereo, parts)]
 pub(crate) fn potential_stereo_impl(
     params: &PotentialStereoParams,
-) -> Result<PotentialStereoOperationMetadata, OperationError> {
+) -> Result<
+    PotentialStereoResult<crate::PendingMolecule<super::PotentialStereoAccess>>,
+    OperationError,
+> {
     let topology = parts.checkout_topology()?;
     let valence = cosmolkit_core::assign_valence(
         &topology,
@@ -95,22 +92,14 @@ pub(crate) fn potential_stereo_impl(
     )?;
     parts.apply_cip_policy()?;
 
-    Ok(PotentialStereoOperationMetadata {
+    Ok(PotentialStereoResult {
         stereo: assignment.stereo,
         atom_ranks: assignment.atom_ranks,
         ring_relations: assignment.ring_relations,
-        clean_requested: params.clean,
-    })
-}
-
-pub(crate) fn assemble_potential_stereo_result(
-    molecule: Molecule,
-    metadata: PotentialStereoOperationMetadata,
-) -> Result<PotentialStereoResult, OperationError> {
-    Ok(PotentialStereoResult {
-        stereo: metadata.stereo,
-        atom_ranks: metadata.atom_ranks,
-        ring_relations: metadata.ring_relations,
-        cleaned_molecule: metadata.clean_requested.then_some(molecule),
+        cleaned_molecule: if params.clean {
+            Some(parts.pending_molecule()?)
+        } else {
+            None
+        },
     })
 }

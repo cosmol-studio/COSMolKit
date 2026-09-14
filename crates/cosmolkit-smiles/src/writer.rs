@@ -787,7 +787,7 @@ fn compute_chiral_adjustments(
                     &probe,
                     false,
                 )
-                .map_err(|message| SmilesParseError::WriterStereo(message.into()))?;
+                .map_err(|error| SmilesParseError::WriterStereo(error.to_string()))?;
                 if permutation != 0 {
                     adjustments[atom_index].nontetrahedral_permutation = Some(permutation);
                 }

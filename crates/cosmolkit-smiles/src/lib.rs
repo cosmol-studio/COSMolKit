@@ -1047,7 +1047,7 @@ fn adjust_atom_chirality_flags(
                         &probe,
                         true,
                     )
-                    .map_err(|message| SmilesParseError::Model(message.into()))?,
+                    .map_err(|error| SmilesParseError::Model(error.to_string()))?,
                 );
             }
             _ => {}

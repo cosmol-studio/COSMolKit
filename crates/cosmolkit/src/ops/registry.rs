@@ -73,7 +73,7 @@ pub(crate) const STEREO_FEATURE: FeatureSpec = FeatureSpec {
     category: "chemistry",
     status: SupportStatus::SupportedWithRdkitParity,
     rdkit_parity_sensitive: true,
-    docs: "RDKit-compatible 3D chiral-tag assignment and potential-stereochemistry perception.",
+    docs: "RDKit-compatible chiral-tag assignment, potential-stereochemistry perception, and modern CIP labeling.",
 };
 
 #[cfg(feature = "transforms")]
@@ -367,7 +367,6 @@ molecule_ops! {
         method: potential_stereo_with_params,
         impl_fn: crate::ops::potential_stereo::potential_stereo_impl,
         result_type: crate::PotentialStereoResult,
-        assemble_fn: crate::ops::potential_stereo::assemble_potential_stereo_result,
         domain: topology,
         kind: weak,
         topology_edit: none,
@@ -393,6 +392,40 @@ molecule_ops! {
         invariant_profile: "weak_potential_stereo_cleanup",
         default_method: potential_stereo,
         default_args: [&cosmolkit_core::PotentialStereoParams::default()],
+    }
+
+    #[cfg(feature = "stereo")]
+    op with_cip_labels(options: &cosmolkit_stereo::CipLabelOptions) {
+        method: with_cip_labels_with_options,
+        impl_fn: crate::ops::cip_labels::assign_cip_labels_impl,
+        domain: topology,
+        kind: weak,
+        topology_edit: local,
+        access: {
+            read: [],
+            write: [topology, properties, derived_cache],
+        },
+        may_mutate: [topology, properties, derived_cache],
+        auto_remap: [],
+        derived_effects: {
+            recompute: [],
+            preserve: [rings, ring_families, valence, aromaticity, coordinates],
+            invalidate: [stereo, drawing, fingerprint],
+            operation_defined: [],
+        },
+        cip_state: recompute,
+        semantic_preconditions: [],
+        requires_mapping: none,
+        feature: crate::ops::runtime::registry::STEREO_FEATURE,
+        parity: required_now,
+        parity_profile: "assign_cip_labels_rdkit",
+        io_roundtrip: false,
+        invariant_profile: "weak_cip_label_assignment",
+        default_method: with_cip_labels,
+        default_args: [&cosmolkit_stereo::CipLabelOptions::default()],
+        inplace: true,
+        inplace_method: assign_cip_labels_with_options_,
+        default_inplace_method: assign_cip_labels_,
     }
 
     #[cfg(feature = "hydrogens")]

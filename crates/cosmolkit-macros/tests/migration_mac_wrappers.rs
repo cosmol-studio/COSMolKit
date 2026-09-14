@@ -1,5 +1,9 @@
+extern crate proc_macro2 as proc_macro;
+
 #[path = "../src/declaration.rs"]
 mod declaration;
+#[path = "../src/projection.rs"]
+mod projection;
 #[path = "../src/wrappers.rs"]
 mod wrappers;
 
@@ -62,6 +66,17 @@ fn molecule_operation(name: &str, parameters: &str, extra: &str) -> String {
 }
 
 #[test]
+fn typed_single_output_is_pending_and_has_no_assembler() {
+    let source = molecule_operation("perceive", "", "result_type: crate::Report,");
+    let output = molecule(&source);
+    assert!(output.contains("Result<crate::Report,crate::ops::OperationError>"));
+    assert!(output.contains("crate::Report<crate::PendingMolecule<PerceiveAccess>>"));
+    assert!(output.contains("parts.finish_result(pending)"));
+    assert!(!output.contains("assemble"));
+    assert!(!output.contains("Vec<crate::Molecule>"));
+}
+
+#[test]
 fn empty_registries_emit_only_empty_runtime_owned_inherent_impls() {
     assert_eq!(molecule(""), "implcrate::Molecule{}");
     assert_eq!(bio(""), "implcrate::BioStructure{}");
@@ -94,8 +109,8 @@ fn single_untyped_value_wrapper_checks_support_forwards_once_and_finishes() {
 }
 
 #[test]
-fn single_typed_value_and_in_place_wrappers_finish_before_exposing_metadata() {
-    let output = molecule(&molecule_operation(
+fn single_typed_result_rejects_an_in_place_wrapper() {
+    let source = molecule_operation(
         "measure",
         "scale: usize",
         r#"
@@ -103,20 +118,10 @@ fn single_typed_value_and_in_place_wrappers_finish_before_exposing_metadata() {
             inplace: true,
             inplace_method: measure_,
         "#,
-    ));
-
-    assert!(output.contains(
-        "pubfnmeasure(&self,scale:usize)->Result<(crate::Molecule,crate::Report),crate::ops::OperationError>"
-    ));
-    assert!(output.contains("letresult=crate::operations::measure_impl(&mutparts,scale)?"));
-    assert!(output.contains("letmolecule=parts.finish()?;Ok((molecule,result))"));
-    assert!(output.contains(
-        "pubfnmeasure_(&mutself,scale:usize)->Result<crate::Report,crate::ops::OperationError>"
-    ));
-    assert!(output.contains("letmutparts=crate::OpParts::new_in_place(self,&MEASURE_SPEC)?"));
-    assert!(output.contains("Err(error)=>{parts.abort_in_place();returnErr(error);}"));
-    assert!(output.contains("parts.finish_in_place()?;Ok(result)"));
-    assert_eq!(output.matches("crate::operations::measure_impl").count(), 2);
+    );
+    assert!(
+        molecule_error(&source).contains("pending result_type cannot generate an in-place wrapper")
+    );
 }
 
 #[test]
@@ -306,7 +311,7 @@ fn invalid_in_place_multiple_and_assembler_combinations_fail_closed() {
         "",
         "assemble_fn: crate::assemble, result_type: crate::Report,",
     );
-    assert!(molecule_error(&single_assembler).contains("only for multiple-output"));
+    assert!(molecule_error(&single_assembler).contains("only valid for multiple-output"));
 }
 
 #[test]

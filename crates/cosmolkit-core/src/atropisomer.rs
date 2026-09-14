@@ -64,6 +64,24 @@ pub struct AtropisomerWedgeAssignment {
     pub diagnostics: Vec<AtropisomerDiagnostic>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AtropisomerCarrierEnd {
+    focus: AtomId,
+    carrier_bonds: Vec<BondId>,
+}
+
+impl AtropisomerCarrierEnd {
+    #[must_use]
+    pub const fn focus(&self) -> AtomId {
+        self.focus
+    }
+
+    #[must_use]
+    pub fn carrier_bonds(&self) -> &[BondId] {
+        &self.carrier_bonds
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct StereoGroupAssignment {
     pub groups: Vec<StereoGroup>,
@@ -100,6 +118,8 @@ pub enum AtropisomerError {
     StereoGroupBondOutOfRange { bond: BondId, bond_count: usize },
     #[error("atropisomer assignment bond {bond} is out of range for {bond_count} bonds")]
     AssignmentBondOutOfRange { bond: BondId, bond_count: usize },
+    #[error("atropisomer axial bond {bond} is out of range for {bond_count} bonds")]
+    AxialBondOutOfRange { bond: BondId, bond_count: usize },
     #[error("bond {bond} has invalid atropisomer stereo {stereo:?}")]
     InvalidAtropisomerStereo { bond: BondId, stereo: BondStereo },
 }
@@ -198,13 +218,40 @@ fn atropisomer_ends(topology: &TopologyBlock, bond: &Bond) -> Option<[AtropEnd; 
             .iter()
             .filter_map(|neighbor| (neighbor.bond != bond.id()).then_some(neighbor.bond))
             .collect();
-        if end.bonds.is_empty() || end.bonds.len() > 2 {
+        if end.bonds.is_empty() {
             return None;
         }
-        end.bonds
-            .sort_by_key(|id| other_atom(&topology.bonds[id.index()], end.atom).index());
+        if end.bonds.len() == 2
+            && other_atom(&topology.bonds[end.bonds[1].index()], end.atom).index()
+                < other_atom(&topology.bonds[end.bonds[0].index()], end.atom).index()
+        {
+            end.bonds.swap(0, 1);
+        }
     }
     Some(result)
+}
+
+pub fn atropisomer_carriers(
+    topology: &TopologyBlock,
+    axial_bond: BondId,
+) -> Result<Option<[AtropisomerCarrierEnd; 2]>, AtropisomerError> {
+    topology
+        .validate()
+        .map_err(|source| AtropisomerError::InvalidTopology { source })?;
+    let bond =
+        topology
+            .bonds
+            .get(axial_bond.index())
+            .ok_or(AtropisomerError::AxialBondOutOfRange {
+                bond: axial_bond,
+                bond_count: topology.bonds.len(),
+            })?;
+    Ok(atropisomer_ends(topology, bond).map(|ends| {
+        ends.map(|end| AtropisomerCarrierEnd {
+            focus: end.atom,
+            carrier_bonds: end.bonds,
+        })
+    }))
 }
 
 fn point(conformer: AtropisomerConformer<'_>, atom: AtomId) -> [f64; 3] {
