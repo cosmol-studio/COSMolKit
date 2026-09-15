@@ -10,7 +10,10 @@ from xml.etree import ElementTree
 
 BASE_URL = "https://kit.cosmol.org/"
 SITEMAP_NAMESPACE = "http://www.sitemaps.org/schemas/sitemap/0.9"
-EXCLUDED_FILES = {"search.html", "genindex.html", "py-modindex.html"}
+EXCLUDED_ROUTES = {"search", "genindex", "py-modindex"}
+EXCLUDED_FILES = {f"{route}.html" for route in EXCLUDED_ROUTES} | {
+    f"{route}/index.html" for route in EXCLUDED_ROUTES
+}
 
 
 class CanonicalParser(HTMLParser):
@@ -34,7 +37,7 @@ def iter_public_pages(public_dir: Path) -> list[Path]:
         relative = path.relative_to(public_dir)
         if relative.parts[0] == "_modules":
             continue
-        if len(relative.parts) == 1 and relative.name in EXCLUDED_FILES:
+        if relative.as_posix() in EXCLUDED_FILES:
             continue
         pages.append(path)
     return pages

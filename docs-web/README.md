@@ -14,11 +14,10 @@ the article bodies into the application at build time.
 
 - `/` — COSMolKit documentation home
 - `/python` — Python documentation landing page
-- `/installation.html`, `/quickstart.html`, `/confseq.html`,
-  `/molecule.html`, `/batch.html`, `/fingerprints.html`, `/descriptors.html`,
-  `/protein.html`, `/io.html`, `/api.html`, `/search.html`, `/genindex.html`,
-  `/py-modindex.html` — existing Sphinx page URLs served by Dioxus routes
-- `/javascript` and `/javascript.html` — reserved JavaScript/WebAssembly documentation page
+- `/installation`, `/quickstart`, `/confseq`, `/molecule`, `/batch`,
+  `/fingerprints`, `/descriptors`, `/protein`, `/io`, `/api`, `/search`,
+  `/genindex`, `/py-modindex` — Python documentation pages
+- `/javascript` — reserved JavaScript/WebAssembly documentation page
 - `/benchmarks` — reserved benchmark page
 - `/validation` — validation evidence entry point
 
@@ -28,8 +27,8 @@ Build the Python docs first when the local Sphinx output is absent:
 
 ```sh
 uv sync --group dev
-.venv/bin/maturin develop --manifest-path python/Cargo.toml
-.venv/bin/python -m sphinx -W --keep-going -E -b html python/docs/source python/docs/build/html
+uv run --group dev maturin develop --manifest-path python/Cargo.toml
+uv run --group dev python -m sphinx -W --keep-going -E -b html python/docs/source python/docs/build/html
 cargo check --manifest-path docs-web/Cargo.toml
 ```
 
@@ -39,8 +38,7 @@ With the Dioxus CLI installed, run the web app from this directory:
 dx serve --web
 ```
 
-The production deployment uses Dioxus SSG so every documented `.html` route is
-materialized as a static page. No COSMolKit service or tools-web instance is
-required to render documentation. The deployment preparation step derives
-`sitemap.xml` from the canonical links in the generated static pages, keeping
-the sitemap aligned with the Dioxus route surface.
+The production deployment uses Dioxus SSG and Cloudflare Pages. Pushes to
+`main` build and deploy through `.github/workflows/docs-web.yml`, using the
+published `cosmolkit==0.3.0` wheel for autodoc. URLs omit `.html` and trailing
+slashes; legacy addresses redirect to the canonical pages.

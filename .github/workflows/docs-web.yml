@@ -1,12 +1,13 @@
 name: Dioxus documentation
 
 on:
+    push:
+        branches: [main]
     workflow_dispatch:
 
 permissions:
     contents: read
-    pages: write
-    id-token: write
+
 
 concurrency:
     group: dioxus-documentation
@@ -14,8 +15,7 @@ concurrency:
 
 jobs:
     build:
-        # Temporarily disabled until the Dioxus deployment is explicitly enabled.
-        if: ${{ false }}
+
         name: Build Dioxus documentation
         runs-on: ubuntu-latest
         steps:
@@ -34,8 +34,15 @@ jobs:
             - name: Sync documentation environment
               run: uv sync --group dev
 
-            - name: Install package for autodoc
-              run: .venv/bin/maturin develop --manifest-path python/Cargo.toml
+            - name: Test deployment scripts
+              run: .venv/bin/python -m unittest discover -s docs-web/scripts -p 'test_*.py' -v
+
+            # - name: Install package for autodoc
+            #   run: .venv/bin/maturin develop --manifest-path python/Cargo.toml
+
+            - name: Install released package for autodoc
+              run: |
+                  uv pip install --python .venv/bin/python --only-binary=:all: cosmolkit==0.3.0
 
             - name: Build Sphinx source
               run: |
@@ -63,65 +70,30 @@ jobs:
                   cp python/docs/build/html/objects.inv "$public_dir/objects.inv"
                   cp python/docs/build/html/robots.txt "$public_dir/robots.txt"
                   .venv/bin/python docs-web/scripts/generate_sitemap.py "$public_dir"
-                  for page in index.html installation.html quickstart.html confseq.html molecule.html batch.html fingerprints.html descriptors.html protein.html io.html api.html search.html genindex.html py-modindex.html javascript.html; do
-                      test -f "$public_dir/$page"
-                  done
-                  .venv/bin/python - "$public_dir" <<'PY'
-                  import pathlib
-                  import sys
+                  .venv/bin/python docs-web/scripts/check_ssg_output.py "$public_dir"
 
-                  public = pathlib.Path(sys.argv[1])
-                  pages = [
-                      "index.html",
-                      "installation.html",
-                      "quickstart.html",
-                      "confseq.html",
-                      "molecule.html",
-                      "batch.html",
-                      "fingerprints.html",
-                      "descriptors.html",
-                      "protein.html",
-                      "io.html",
-                      "api.html",
-                      "search.html",
-                      "genindex.html",
-                      "py-modindex.html",
-                      "python/index.html",
-                      "javascript/index.html",
-                      "javascript.html",
-                      "benchmarks/index.html",
-                      "validation/index.html",
-                  ]
-                  for relative in pages:
-                      html = (public / relative).read_text(encoding="utf-8")
-                      main_count = html.count("<main")
-                      stylesheet_count = html.count('rel="stylesheet"') + html.count("rel='stylesheet'")
-                      if main_count != 1 or stylesheet_count != 3:
-                          raise SystemExit(
-                              f"invalid SSG shell for {relative}: "
-                              f"main={main_count}, stylesheets={stylesheet_count}"
-                          )
-                      if "cosmolkit-docs-web" in html or "hydrate_queue" in html:
-                          raise SystemExit(f"client runtime was not stripped from {relative}")
-                  PY
-
-            - name: Configure Pages
-              uses: actions/configure-pages@v5
-
-            - name: Upload Pages artifact
-              uses: actions/upload-pages-artifact@v3
+            - name: Upload Cloudflare Pages artifact
+              uses: actions/upload-artifact@v4
               with:
+                  name: docs-web-public
                   path: docs-web/target/dx/cosmolkit-docs-web/release/web/public
+                  include-hidden-files: true
+                  if-no-files-found: error
 
     deploy:
-        # Keep deployment closed while the documentation workflow is disabled.
-        if: ${{ false }}
+        # Manual runs on other branches may build, but must not publish production.
+        if: github.ref == 'refs/heads/main'
         needs: build
         runs-on: ubuntu-latest
-        environment:
-            name: github-pages
-            url: ${{ steps.deployment.outputs.page_url }}
         steps:
-            - name: Deploy to GitHub Pages
-              id: deployment
-              uses: actions/deploy-pages@v4
+            - uses: actions/download-artifact@v4
+              with:
+                  name: docs-web-public
+                  path: deploy/web/public
+
+            - name: Deploy to Cloudflare Pages
+              uses: cloudflare/wrangler-action@v3
+              with:
+                  apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+                  accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+                  command: pages deploy ./deploy/web/public/ --project-name=cosmolkit-docs-web --branch=main

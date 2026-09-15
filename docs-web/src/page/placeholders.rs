@@ -4,12 +4,7 @@ use crate::{component::Seo, route::Route};
 
 #[component]
 pub fn JavaScript() -> Element {
-    rsx! { Placeholder { eyebrow: "JAVASCRIPT API", title: "JavaScript documentation is reserved", body: "This route is reserved for the future JavaScript and WebAssembly API. The current browser tools remain available at tools.cosmol.org.", canonical: "https://kit.cosmol.org/javascript.html" } }
-}
-
-#[component]
-pub fn JavaScriptHtml() -> Element {
-    JavaScript()
+    rsx! { Placeholder { eyebrow: "JAVASCRIPT API", title: "JavaScript documentation is reserved", body: "This route is reserved for the future JavaScript and WebAssembly API. The current browser tools remain available at tools.cosmol.org.", canonical: "https://kit.cosmol.org/javascript" } }
 }
 
 #[component]

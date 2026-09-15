@@ -47,6 +47,45 @@ fn PythonCard(to: Route, title: &'static str, summary: &'static str) -> Element 
     }
 }
 
+#[component]
+fn DocumentationNavigation(current: &'static str) -> Element {
+    let pages = [
+        ("installation", "Installation", Route::Installation {}),
+        ("quickstart", "Quick Start", Route::Quickstart {}),
+        ("confseq", "ConfSeq", Route::Confseq {}),
+        ("molecule", "Molecule Values", Route::Molecule {}),
+        ("batch", "Batch Workflows", Route::Batch {}),
+        ("fingerprints", "Fingerprints", Route::Fingerprints {}),
+        (
+            "descriptors",
+            "Molecular Descriptors",
+            Route::Descriptors {},
+        ),
+        ("protein", "Protein Structures", Route::Protein {}),
+        ("io", "File IO and Arrays", Route::Io {}),
+        ("api", "API Reference", Route::Api {}),
+        ("genindex", "General Index", Route::Genindex {}),
+        ("py-modindex", "Module Index", Route::PyModindex {}),
+    ];
+    rsx! {
+        nav { class: "docs-navigation", aria_label: "Python documentation",
+            Link { class: "docs-sidebar-brand", to: Route::Python {},
+                span { class: "docs-eyebrow", "COSMOLKIT" }
+                span { "Python documentation" }
+            }
+            p { class: "docs-nav-label", "USER GUIDE & REFERENCE" }
+            for (slug, label, route) in pages {
+                Link {
+                    to: route,
+                    class: if current == slug { "docs-nav-link is-active" } else { "docs-nav-link" },
+                    aria_current: if current == slug { Some("page") } else { None },
+                    "{label}"
+                }
+            }
+        }
+    }
+}
+
 macro_rules! sphinx_page {
     ($name:ident, $constant:ident, $source:literal, $title:literal, $canonical:literal) => {
         #[component]
@@ -55,12 +94,34 @@ macro_rules! sphinx_page {
                 document::Style { "{STYLESHEET}" }
                 Seo { title: $title.to_string(), description: format!("{title} — COSMolKit Python documentation", title = $title), canonical: $canonical.to_string() }
                 div { class: "min-h-screen uu-backdrop m-0 pt-[74px]",
-                    main { class: "mx-auto w-full max-w-6xl px-6 py-10 font-sans text-[#e8edf5] max-[640px]:px-3.5 max-[640px]:py-7",
-                        div { class: "mb-7 flex items-center justify-between gap-4 border-b border-white/10 pb-5 max-[640px]:items-start max-[640px]:flex-col",
-                            Link { class: "text-[13px] font-semibold text-[#7ab5ff] no-underline hover:text-[#b4d6ff]", to: Route::Python {}, "Python documentation" }
-                            a { class: "text-[12px] text-[#718299] no-underline hover:text-white", href: concat!("https://github.com/cosmol-studio/COSMolKit/blob/main/python/docs/source/", $source, ".rst"), target: "_blank", rel: "noreferrer", "View source" }
+                    div { class: "docs-layout",
+                        a { class: "docs-skip-link", href: "#docs-article", "Skip to content" }
+                        aside { class: "docs-sidebar",
+                            DocumentationNavigation { current: $source }
                         }
-                        div { class: "sphinx-content w-full max-w-6xl rounded-lg border border-[#28415f] bg-[#0b1727] p-7 max-[640px]:p-5", dangerous_inner_html: $constant, }
+                        details { class: "docs-mobile-navigation",
+                            summary { "Browse Python documentation" }
+                            DocumentationNavigation { current: $source }
+                        }
+                        main { class: "docs-main", id: "docs-article", tabindex: "-1",
+                            div { class: "docs-article-toolbar",
+                                Link { to: Route::Python {}, "Python documentation" }
+                                a { href: concat!("https://github.com/cosmol-studio/COSMolKit/blob/main/python/docs/source/", $source, ".rst"), target: "_blank", rel: "noreferrer", "View source ↗" }
+                            }
+                            if !sphinx_toc($source).is_empty() {
+                                details { class: "docs-mobile-toc",
+                                    summary { "On this page" }
+                                    nav { class: "docs-toc-tree", aria_label: "On this page", dangerous_inner_html: sphinx_toc($source) }
+                                }
+                            }
+                            article { class: "sphinx-content docs-article", dangerous_inner_html: $constant }
+                        }
+                        if !sphinx_toc($source).is_empty() {
+                            aside { class: "docs-toc",
+                                p { class: "docs-nav-label", "ON THIS PAGE" }
+                                nav { class: "docs-toc-tree", aria_label: "On this page", dangerous_inner_html: sphinx_toc($source) }
+                            }
+                        }
                     }
                 }
             }
@@ -73,89 +134,89 @@ sphinx_page!(
     INSTALLATION,
     "installation",
     "Installation | COSMolKit",
-    "https://kit.cosmol.org/installation.html"
+    "https://kit.cosmol.org/installation"
 );
 sphinx_page!(
     Quickstart,
     QUICKSTART,
     "quickstart",
     "Quick Start | COSMolKit",
-    "https://kit.cosmol.org/quickstart.html"
+    "https://kit.cosmol.org/quickstart"
 );
 sphinx_page!(
     Confseq,
     CONFSEQ,
     "confseq",
     "ConfSeq | COSMolKit",
-    "https://kit.cosmol.org/confseq.html"
+    "https://kit.cosmol.org/confseq"
 );
 sphinx_page!(
     Molecule,
     MOLECULE,
     "molecule",
     "Molecule Values | COSMolKit",
-    "https://kit.cosmol.org/molecule.html"
+    "https://kit.cosmol.org/molecule"
 );
 sphinx_page!(
     Batch,
     BATCH,
     "batch",
     "Batch Workflows | COSMolKit",
-    "https://kit.cosmol.org/batch.html"
+    "https://kit.cosmol.org/batch"
 );
 sphinx_page!(
     Fingerprints,
     FINGERPRINTS,
     "fingerprints",
     "Fingerprints | COSMolKit",
-    "https://kit.cosmol.org/fingerprints.html"
+    "https://kit.cosmol.org/fingerprints"
 );
 sphinx_page!(
     Descriptors,
     DESCRIPTORS,
     "descriptors",
     "Molecular Descriptors | COSMolKit",
-    "https://kit.cosmol.org/descriptors.html"
+    "https://kit.cosmol.org/descriptors"
 );
 sphinx_page!(
     Protein,
     PROTEIN,
     "protein",
     "Protein Structures | COSMolKit",
-    "https://kit.cosmol.org/protein.html"
+    "https://kit.cosmol.org/protein"
 );
 sphinx_page!(
     Io,
     IO,
     "io",
     "File IO and Arrays | COSMolKit",
-    "https://kit.cosmol.org/io.html"
+    "https://kit.cosmol.org/io"
 );
 sphinx_page!(
     Api,
     API,
     "api",
     "API Reference | COSMolKit",
-    "https://kit.cosmol.org/api.html"
+    "https://kit.cosmol.org/api"
 );
 sphinx_page!(
     SearchPage,
     SEARCH,
     "search",
     "Search | COSMolKit",
-    "https://kit.cosmol.org/search.html"
+    "https://kit.cosmol.org/search"
 );
 sphinx_page!(
     Genindex,
     GENINDEX,
     "genindex",
     "General Index | COSMolKit",
-    "https://kit.cosmol.org/genindex.html"
+    "https://kit.cosmol.org/genindex"
 );
 sphinx_page!(
     PyModindex,
     PY_MODINDEX,
     "py-modindex",
     "Python Module Index | COSMolKit",
-    "https://kit.cosmol.org/py-modindex.html"
+    "https://kit.cosmol.org/py-modindex"
 );

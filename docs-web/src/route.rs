@@ -3,9 +3,8 @@ use dioxus::prelude::*;
 use crate::{
     component::Navbar,
     page::{
-        Api, Batch, Benchmarks, Confseq, Descriptors, Fingerprints, Genindex, Home, HomeHtml,
-        Installation, Io, JavaScript, JavaScriptHtml, Molecule, Protein, PyModindex, Python,
-        Quickstart, SearchPage, Validation,
+        Api, Batch, Benchmarks, Confseq, Descriptors, Fingerprints, Genindex, Home, Installation,
+        Io, JavaScript, Molecule, Protein, PyModindex, Python, Quickstart, SearchPage, Validation,
     },
 };
 
@@ -19,39 +18,37 @@ pub enum Route {
     Python {},
     #[route("/javascript")]
     JavaScript {},
-    #[route("/javascript.html")]
-    JavaScriptHtml {},
+
     #[route("/benchmarks")]
     Benchmarks {},
     #[route("/validation")]
     Validation {},
-    #[route("/api.html")]
+    #[route("/api")]
     Api {},
-    #[route("/installation.html")]
+    #[route("/installation")]
     Installation {},
-    #[route("/quickstart.html")]
+    #[route("/quickstart")]
     Quickstart {},
-    #[route("/confseq.html")]
+    #[route("/confseq")]
     Confseq {},
-    #[route("/molecule.html")]
+    #[route("/molecule")]
     Molecule {},
-    #[route("/batch.html")]
+    #[route("/batch")]
     Batch {},
-    #[route("/fingerprints.html")]
+    #[route("/fingerprints")]
     Fingerprints {},
-    #[route("/descriptors.html")]
+    #[route("/descriptors")]
     Descriptors {},
-    #[route("/protein.html")]
+    #[route("/protein")]
     Protein {},
-    #[route("/io.html")]
+    #[route("/io")]
     Io {},
-    #[route("/index.html")]
-    HomeHtml {},
-    #[route("/search.html")]
+
+    #[route("/search")]
     SearchPage {},
-    #[route("/genindex.html")]
+    #[route("/genindex")]
     Genindex {},
-    #[route("/py-modindex.html")]
+    #[route("/py-modindex")]
     PyModindex {},
 }
 
