@@ -14,12 +14,39 @@ the article bodies into the application at build time.
 
 - `/` — COSMolKit documentation home
 - `/python` — Python documentation landing page
-- `/installation`, `/quickstart`, `/confseq`, `/molecule`, `/batch`,
-  `/fingerprints`, `/descriptors`, `/protein`, `/io`, `/api`, `/search`,
-  `/genindex`, `/py-modindex` — Python documentation pages
+- `/python/...` — Python guides, API reference, search, and indexes
 - `/javascript` — reserved JavaScript/WebAssembly documentation page
 - `/benchmarks` — reserved benchmark page
 - `/validation` — validation evidence entry point
+
+`routes.toml` is the route contract. Each page declares its component, canonical
+path, binding, stable topic, publication status, indexing policy, and optional
+Sphinx source, navigation label/order, card summary, and legacy paths. Edit this
+manifest to add or move a page; do not maintain route lists in Rust or Python.
+Native page bodies still belong in `src/page/`; the existing Python Sphinx
+renderer generates its page wrappers automatically.
+
+The validated contract generates the typed Rust router, Sphinx source mapping,
+navigation/cards, topic counterparts, canonical URLs, and indexing policy.
+Dioxus obtains SSG pages from that generated router. Deployment preparation
+generates `_redirects`; the build embeds the search docname map. The final validator derives
+expected pages and sitemap membership from the same contract, then checks the
+actual HTML and files independently.
+
+Old `/api`, `/api.html`, and `/api/` URLs redirect directly to `/python/api`
+with 301; the same applies to every declared legacy Python path. Canonical
+`.html` and slash variants also redirect directly to the clean URL. The layout
+keeps `python.html` beside `python/api.html`, with no `python/index.html`.
+Sphinx assets, inventory, and source views live under `/python/`. The Sphinx
+search index is a build input only; search records are embedded in the WASM.
+
+Language switching pairs pages by `(binding, topic)`, not by URL spelling.
+A missing or placeholder counterpart links to that language's overview. The
+language switch uses native HTML links and CSS, with no click handlers. Shared
+pages have no active language and link to each language landing. JavaScript
+remains a non-indexable placeholder until real content is added. Python and
+JavaScript are API bindings, not translations; no cross-language canonical or
+`hreflang` is generated.
 
 ## Local development
 
@@ -35,10 +62,108 @@ cargo check --manifest-path docs-web/Cargo.toml
 With the Dioxus CLI installed, run the web app from this directory:
 
 ```sh
+python scripts/build_search_bundle.py --install-tools
 dx serve --web
 ```
+
+The search tool installer uses `cargo-binstall` and keeps the matching
+`wasm-bindgen-cli` under `target/search-tools`. Its version comes from this
+package's `Cargo.toml`; `COSMOLKIT_WASM_BINDGEN` can select an existing matching
+binary. The `wasm32-unknown-unknown` Rust target must also be installed.
 
 The production deployment uses Dioxus SSG and Cloudflare Pages. Pushes to
 `main` build and deploy through `.github/workflows/docs-web.yml`, using the
 published `cosmolkit==0.3.0` wheel for autodoc. URLs omit `.html` and trailing
 slashes; legacy addresses redirect to the canonical pages.
+
+Before rebuilding, the workflow moves any cached `public` directory into the
+runner's temporary directory. Compiler caches stay available, while old flat
+HTML files cannot conflict with the newly generated SSG routes. Likewise,
+local rebuilds should preserve the previous prepared `public` directory
+elsewhere before invoking `dx build` again.
+
+## SEO deployment artifacts
+
+- `deployment/public/404.html` supplies the Cloudflare Pages error page. It
+  includes `noindex` and a link back to the documentation homepage.
+- `python/docs/source/robots.txt` is the shared crawler policy. Sphinx copies
+  it into its HTML output, and the workflow copies it to the deployed site root.
+- `scripts/generate_sitemap.py` generates the deployed `sitemap.xml` from the
+  final Dioxus canonical URLs. Error pages, search/index utility pages,
+  JavaScript/benchmark placeholders, pages marked `noindex`, and Sphinx
+  source-module pages are excluded. Do not maintain a second static sitemap or
+  robots policy in this directory.
+- `scripts/extract_sphinx_metadata.py` carries each guide's authored description
+  into Dioxus. Utility and placeholder pages have `noindex, follow` metadata.
+- `routes.toml` declares the HTTPS `social_image_source` in Cloudflare object storage.
+  During CI, `prepare_deployment.py` downloads the complete PNG into the artifact
+  as `/social-card.png`. Open Graph and Twitter reference this site-local image.
+  The PNG is included in deployment but excluded from Git. Its editable source is
+  `assets/social-card.svg`; regenerate `target/social-card.png` for upload with
+  `uv run --no-project --with playwright python docs-web/scripts/render_social_card.py`
+  from the repository root (install Playwright Chromium first, or add
+  `--channel msedge` to use an installed Edge browser).
+  Preparation requires HTTP 200, PNG content type, and 1200 x 630 dimensions;
+  download failures stop deployment. `check_ssg_output.py PUBLIC_DIR` checks the
+  downloaded image and every page's site-local image URL entirely offline.
+- The workflow copies the public IndexNow verification file from the Sphinx
+  output to the deployment root. No automatic IndexNow submission is performed.
+
+Search is an optional library target in this same Cargo package, enabled by
+`search-engine`; it adds no workspace member or separate package. Rust owns
+matching, ranking, a 120 ms input debounce, pagination, history, and DOM updates.
+Sphinx content and symbols supply the data through `generate_search_index.py`;
+the Sphinx JavaScript search engine is not used. Matching is case-insensitive,
+supports partial names and multiple terms, and prioritizes exact API symbols.
+
+`build.rs` builds the library for WASM in a separate `target/search-engine`
+directory. The library's build-script branch generates only its index, avoiding
+recursive website builds. `wasm-bindgen` automatically generates JavaScript
+bindings, and Dioxus packages those bindings and the WASM as hashed assets.
+Only the search component includes their module loader. Entering search loads
+them once per client session, and later client visits reuse the module and index.
+Leaving search releases its DOM references and event listeners.
+This works in both `dx serve` and final static HTML without the Dioxus runtime.
+
+Typing updates results without a Search button. Results appear 30 at a time,
+with a Show more button, and require no per-result HTML fetch. Query support is
+declared in the manifest; Sphinx routes also accept fragment IDs for API-symbol
+links. Canonical URLs and the SSG page list contain neither queries nor fragments.
+
+The workflow runs `scripts/check_ssg_output.py` on the prepared artifact to
+check titles, descriptions, canonical URLs, indexing policy, homepage structured
+data, social cards, shared project links, redirects, sitemap, 404 page, crawler
+policy, IndexNow verification, and search dependencies. This is the sole SEO
+validation entry point; the old Sphinx-only checker has been removed. Run it
+after preparing the output of a fresh SSG build:
+
+```sh
+.venv/bin/python docs-web/scripts/prepare_deployment.py docs-web/target/dx/cosmolkit-docs-web/release/web/public python/docs/build/html
+.venv/bin/python docs-web/scripts/check_ssg_output.py docs-web/target/dx/cosmolkit-docs-web/release/web/public
+```
+
+For an end-to-end search check against the same final artifact, run:
+
+```sh
+uv run --no-project --with playwright python docs-web/scripts/check_search_browser.py docs-web/target/dx/cosmolkit-docs-web/release/web/public
+```
+
+With `dx serve --web --port 8080` running, test development mode too:
+
+```sh
+uv run --no-project --with playwright python docs-web/scripts/check_search_browser.py --url http://127.0.0.1:8080
+```
+
+This requires Playwright Chromium (or `--channel msedge`) and serves the
+artifact on localhost. It verifies real form submissions, matching and empty
+results, lazy WASM requests, live input, pagination, direct query URLs, clearing, history navigation, re-entering
+search, JavaScript errors, result URLs, and binding navigation without contacting
+the live site. Its local server exercises emitted redirect rules and verifies
+query/fragment retention; this is not a Cloudflare production routing test.
+
+Run the offline deployment regression tests from the repository root with:
+
+```sh
+.venv/bin/python -m unittest discover -s docs-web/scripts -p 'test_*.py' -v
+cargo test --manifest-path docs-web/Cargo.toml --lib --no-default-features --features search-engine --release --target-dir docs-web/target/search-engine
+```

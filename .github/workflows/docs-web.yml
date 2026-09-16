@@ -25,6 +25,20 @@ jobs:
               with:
                   targets: wasm32-unknown-unknown
 
+            - name: Restore Rust and Dioxus build cache
+              uses: Swatinem/rust-cache@v2
+              with:
+                  shared-key: docs-web-dioxus-0.7.10
+                  add-job-id-key: false
+                  workspaces: docs-web -> target
+                  cache-targets: true
+                  cache-bin: true
+                  cache-all-crates: true
+                  cache-workspace-crates: true
+                  cache-on-failure: true
+                  cache-directories: |
+                      ~/.local/share/.dx
+
             - uses: actions/setup-python@v5
               with:
                   python-version: "3.11"
@@ -48,28 +62,32 @@ jobs:
               run: |
                   rm -rf python/docs/build/html
                   .venv/bin/python -m sphinx -W --keep-going -E -b html python/docs/source python/docs/build/html
-                  .venv/bin/python python/docs/check_seo.py python/docs/build/html
+
+            - name: Install cargo-binstall
+              uses: cargo-bins/cargo-binstall@main
 
             - name: Install Dioxus CLI
-              run: cargo install dioxus-cli --version 0.7.10 --locked
+              run: cargo binstall dioxus-cli --version 0.7.10 --no-confirm --disable-strategies compile
+
+            - name: Install search WASM binding generator
+              run: .venv/bin/python docs-web/scripts/build_search_bundle.py --install-tools
+
+            - name: Test Rust search engine
+              run: cargo test --manifest-path docs-web/Cargo.toml --lib --no-default-features --features search-engine --release --target-dir docs-web/target/search-engine
 
             - name: Build static Dioxus site
               working-directory: docs-web
-              run: dx build --release --web --fullstack true --ssg --features "ssg" --force-sequential
+              run: |
+                  public_dir="target/dx/cosmolkit-docs-web/release/web/public"
+                  if [ -d "$public_dir" ]; then
+                      mv "$public_dir" "$RUNNER_TEMP/docs-web-public-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+                  fi
+                  dx build --release --web --fullstack true --ssg --features "ssg" --force-sequential
 
             - name: Prepare deployment files
               run: |
                   public_dir="docs-web/target/dx/cosmolkit-docs-web/release/web/public"
-                  .venv/bin/python docs-web/scripts/flatten_html_routes.py "$public_dir"
-                  .venv/bin/python docs-web/scripts/strip_client_runtime.py "$public_dir"
-                  cp -R docs-web/deployment/public/. "$public_dir/"
-                  cp -R python/docs/build/html/_static "$public_dir/_static"
-                  cp -R python/docs/build/html/_sources "$public_dir/_sources"
-                  cp -R python/docs/build/html/_modules "$public_dir/_modules"
-                  cp python/docs/build/html/searchindex.js "$public_dir/searchindex.js"
-                  cp python/docs/build/html/objects.inv "$public_dir/objects.inv"
-                  cp python/docs/build/html/robots.txt "$public_dir/robots.txt"
-                  .venv/bin/python docs-web/scripts/generate_sitemap.py "$public_dir"
+                  .venv/bin/python docs-web/scripts/prepare_deployment.py "$public_dir" python/docs/build/html
                   .venv/bin/python docs-web/scripts/check_ssg_output.py "$public_dir"
 
             - name: Upload Cloudflare Pages artifact

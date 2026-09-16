@@ -4,25 +4,76 @@ use std::{
     process::Command,
 };
 
-const PAGES: &[&str] = &[
-    "installation",
-    "quickstart",
-    "confseq",
-    "molecule",
-    "batch",
-    "fingerprints",
-    "descriptors",
-    "protein",
-    "io",
-    "api",
-    "search",
-    "genindex",
-    "py-modindex",
-];
+struct Page {
+    docname: String,
+    route: String,
+    source: String,
+}
+
+fn contract() -> &'static Vec<Page> {
+    static CONTRACT: std::sync::OnceLock<Vec<Page>> = std::sync::OnceLock::new();
+    CONTRACT.get_or_init(|| {
+        let manifest = env::var_os("CARGO_MANIFEST_DIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| {
+                if Path::new("docs-web/routes.toml").is_file() {
+                    PathBuf::from("docs-web")
+                } else {
+                    PathBuf::from(".")
+                }
+            });
+        let manifest = manifest.canonicalize().expect("documentation workspace");
+        let root = manifest.parent().expect("repository root");
+        let mut command = Command::new(docs_python(root));
+        command.arg(manifest.join("scripts/generate_routes.py"));
+        if let Some(out) = env::var_os("OUT_DIR") {
+            command.arg(out);
+        }
+        let output = command
+            .output()
+            .expect("generate documentation route contract");
+        assert!(
+            output.status.success(),
+            "route generation failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        String::from_utf8(output.stdout)
+            .expect("UTF-8 contract")
+            .lines()
+            .map(|line| {
+                let fields: Vec<_> = line.split('\t').collect();
+                assert_eq!(fields.len(), 3, "invalid route generator record");
+                Page {
+                    docname: fields[0].into(),
+                    route: fields[1].into(),
+                    source: fields[2].into(),
+                }
+            })
+            .collect()
+    })
+}
+
+fn pages() -> Vec<&'static str> {
+    contract()
+        .iter()
+        .filter(|p| p.source == "sphinx")
+        .map(|p| p.docname.as_str())
+        .collect()
+}
 
 fn main() {
     println!("cargo:rerun-if-changed=../python/docs/source");
     println!("cargo:rerun-if-changed=../python/docs/build/html");
+    println!("cargo:rerun-if-changed=scripts/extract_sphinx_metadata.py");
+    println!("cargo:rerun-if-changed=scripts/html_metadata.py");
+    println!("cargo:rerun-if-changed=routes.toml");
+    println!("cargo:rerun-if-changed=scripts/route_contract.py");
+    println!("cargo:rerun-if-changed=scripts/generate_routes.py");
+    println!("cargo:rerun-if-changed=scripts/build_search_bundle.py");
+    println!("cargo:rerun-if-changed=scripts/generate_search_index.py");
+    println!("cargo:rerun-if-changed=src/search");
+    println!("cargo:rerun-if-env-changed=COSMOLKIT_WASM_BINDGEN");
+    println!("cargo:rerun-if-env-changed=COSMOLKIT_DOCS_PYTHON");
 
     let manifest_dir =
         PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").expect("manifest directory"));
@@ -35,19 +86,51 @@ fn main() {
     }
 
     let out_dir = PathBuf::from(env::var_os("OUT_DIR").expect("OUT_DIR"));
-    let generated = generate_document_module(&docs_output);
+    // The library target builds only the search engine. It must not recursively
+    // build the website or generate browser bindings for itself.
+    if env::var_os("CARGO_FEATURE_SEARCH_ENGINE").is_some() {
+        let status = Command::new(docs_python(repository_root))
+            .arg(manifest_dir.join("scripts/generate_search_index.py"))
+            .arg(&docs_output)
+            .arg(out_dir.join("search_index.json"))
+            .status()
+            .expect("generate search records");
+        assert!(status.success(), "search index generation failed");
+        return;
+    }
+    let mut generated = generate_document_module(&docs_output);
+    let metadata = Command::new(docs_python(repository_root))
+        .arg(manifest_dir.join("scripts/extract_sphinx_metadata.py"))
+        .arg(&docs_output)
+        .args(pages())
+        .output()
+        .expect("extract Sphinx page metadata");
+    assert!(
+        metadata.status.success(),
+        "Sphinx metadata extraction failed: {}",
+        String::from_utf8_lossy(&metadata.stderr)
+    );
+    generated.push_str(&String::from_utf8(metadata.stdout).expect("UTF-8 Sphinx metadata"));
     fs::write(out_dir.join("sphinx_docs.rs"), generated).expect("write generated Sphinx module");
 }
 
-fn build_sphinx(repository_root: &Path, source: &Path, output: &Path) {
-    let python = env::var_os("COSMOLKIT_DOCS_PYTHON")
+fn docs_python(repository_root: &Path) -> PathBuf {
+    env::var_os("COSMOLKIT_DOCS_PYTHON")
         .map(PathBuf::from)
         .filter(|path| path.is_file())
         .or_else(|| {
-            let path = repository_root.join(".venv/bin/python");
+            let path = repository_root.join(if cfg!(windows) {
+                ".venv/Scripts/python.exe"
+            } else {
+                ".venv/bin/python"
+            });
             path.is_file().then_some(path)
         })
-        .unwrap_or_else(|| PathBuf::from("python3"));
+        .unwrap_or_else(|| PathBuf::from("python3"))
+}
+
+fn build_sphinx(repository_root: &Path, source: &Path, output: &Path) {
+    let python = docs_python(repository_root);
 
     let status = Command::new(&python)
         .args(["-m", "sphinx", "-W", "--keep-going", "-E", "-b", "html"])
@@ -66,7 +149,7 @@ fn generate_document_module(output: &Path) -> String {
     let mut module = String::from("// Generated by docs-web/build.rs; do not edit.\n");
     let mut toc =
         String::from("pub fn sphinx_toc(page: &str) -> &'static str {\n    match page {\n");
-    for page in PAGES {
+    for page in pages() {
         let path = output.join(format!("{page}.html"));
         let html = fs::read_to_string(&path).unwrap_or_else(|error| {
             panic!("read compiled Sphinx page {}: {error}", path.display())
@@ -109,13 +192,13 @@ fn canonical_page_link(href: &str) -> Option<String> {
         .or_else(|| path.strip_prefix('/'))
         .unwrap_or(path);
     let page = path.strip_suffix(".html").unwrap_or(path);
-    let route = match page {
-        "index" => "",
-        "javascript" => "javascript",
-        page if PAGES.contains(&page) => page,
-        _ => return None,
-    };
-    Some(format!("/{route}{suffix}"))
+    if page.is_empty() {
+        return None;
+    }
+    let route = contract()
+        .iter()
+        .find(|entry| entry.docname == page || entry.route.trim_start_matches('/') == page)?;
+    Some(format!("{}{suffix}", route.route))
 }
 
 fn rewrite_anchor(tag: &str) -> String {
@@ -244,7 +327,7 @@ fn rewrite_page_links(html: &str) -> String {
 }
 
 fn constant_name(page: &str) -> String {
-    page.replace('-', "_").to_ascii_uppercase()
+    page.replace(['-', '/'], "_").to_ascii_uppercase()
 }
 
 fn extract_article<'a>(html: &'a str, path: &Path) -> &'a str {
@@ -328,8 +411,14 @@ mod tests {
 
     #[test]
     fn rewrites_known_pages_and_preserves_suffixes() {
-        for page in PAGES.iter().copied().chain(["index", "javascript"]) {
-            let route = if page == "index" { "" } else { page };
+        for page in pages().into_iter().chain(["index", "javascript"]) {
+            let route = if page == "index" {
+                "python".to_string()
+            } else if page == "javascript" {
+                "javascript".to_string()
+            } else {
+                format!("python/{page}")
+            };
             for prefix in ["", "./", "/"] {
                 for extension in [".html", ""] {
                     let input = format!(
@@ -387,7 +476,7 @@ mod tests {
             let input = format!("{html}<a href='api.html'>API</a>");
             assert_eq!(
                 rewrite_page_links(&input),
-                format!("{html}<a href='/api'>API</a>")
+                format!("{html}<a href='/python/api'>API</a>")
             );
         }
     }
@@ -397,7 +486,7 @@ mod tests {
         let html = "<A title='x > y' HREF = 'api.html#atom' data-href='api.html'>分子</A><a href=quickstart.html>Start</a>";
         assert_eq!(
             rewrite_page_links(html),
-            "<A title='x > y' HREF = '/api#atom' data-href='api.html'>分子</A><a href=/quickstart>Start</a>"
+            "<A title='x > y' HREF = '/python/api#atom' data-href='api.html'>分子</A><a href=/python/quickstart>Start</a>"
         );
     }
 
@@ -465,10 +554,10 @@ mod tests {
         fs::create_dir(&directory).unwrap();
         let toc = "<ul><li><a href=\"api.html#cosmolkit.Atom\">Atom</a></li></ul>";
         let article = "<h1>Document</h1><a href=\"index.html?from=api#top\">Home</a>";
-        for page in PAGES {
+        for page in pages() {
             let mut html =
                 format!("<article role=\"main\" id=\"furo-main-content\">{article}</article>");
-            if *page == "api" {
+            if page == "api" {
                 html.push_str(&format!("<div class=\"toc-tree\">{toc}</div>"));
             }
             fs::write(directory.join(format!("{page}.html")), html).unwrap();
@@ -476,9 +565,9 @@ mod tests {
         let module = generate_document_module(&directory);
         fs::remove_dir_all(&directory).unwrap();
         assert!(module.contains("pub fn sphinx_toc(page: &str) -> &'static str {"));
-        for page in PAGES {
-            let expected = if *page == "api" {
-                "<ul><li><a href=\"/api#cosmolkit.Atom\">Atom</a></li></ul>"
+        for page in pages() {
+            let expected = if page == "api" {
+                "<ul><li><a href=\"/python/api#cosmolkit.Atom\">Atom</a></li></ul>"
             } else {
                 ""
             };
@@ -487,7 +576,7 @@ mod tests {
         assert!(module.contains("_ => \"\","));
         assert!(module.contains(&format!(
             "pub const API: &str = {};",
-            rust_literal("<h1>Document</h1><a href=\"/?from=api#top\">Home</a>")
+            rust_literal("<h1>Document</h1><a href=\"/python?from=api#top\">Home</a>")
         )));
     }
 

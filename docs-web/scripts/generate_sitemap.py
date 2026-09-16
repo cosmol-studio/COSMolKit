@@ -3,49 +3,35 @@
 from __future__ import annotations
 
 import sys
-from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import urlparse
 from xml.etree import ElementTree
 
-BASE_URL = "https://kit.cosmol.org/"
+from html_metadata import read_metadata
+
+from route_contract import BASE_URL, EXCLUDED_ROUTES
 SITEMAP_NAMESPACE = "http://www.sitemaps.org/schemas/sitemap/0.9"
-EXCLUDED_ROUTES = {"search", "genindex", "py-modindex"}
 EXCLUDED_FILES = {f"{route}.html" for route in EXCLUDED_ROUTES} | {
     f"{route}/index.html" for route in EXCLUDED_ROUTES
-}
-
-
-class CanonicalParser(HTMLParser):
-    """Read the canonical link without depending on the page renderer."""
-
-    def __init__(self) -> None:
-        super().__init__()
-        self.canonicals: list[str] = []
-
-    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        if tag != "link":
-            return
-        attributes = dict(attrs)
-        if attributes.get("rel") == "canonical" and attributes.get("href"):
-            self.canonicals.append(attributes["href"])
+} | {"404.html"}
 
 
 def iter_public_pages(public_dir: Path) -> list[Path]:
     pages = []
     for path in sorted(public_dir.rglob("*.html")):
         relative = path.relative_to(public_dir)
-        if relative.parts[0] == "_modules":
+        if "_modules" in relative.parts:
             continue
         if relative.as_posix() in EXCLUDED_FILES:
+            continue
+        if read_metadata(path).robots & {"noindex", "none"}:
             continue
         pages.append(path)
     return pages
 
 
 def canonical_for(path: Path) -> str:
-    parser = CanonicalParser()
-    parser.feed(path.read_text(encoding="utf-8"))
+    parser = read_metadata(path)
     if len(parser.canonicals) != 1:
         raise SystemExit(
             f"{path}: expected one canonical link, found {len(parser.canonicals)}"

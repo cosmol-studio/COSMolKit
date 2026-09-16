@@ -7,15 +7,32 @@ description = "Dioxus documentation site for COSMolKit"
 repository = "https://github.com/cosmol-studio/COSMolKit"
 license = "MIT"
 build = "build.rs"
+default-run = "cosmolkit-docs-web"
+
+[lib]
+name = "cosmolkit_docs_search"
+path = "src/search/lib.rs"
+crate-type = ["cdylib", "rlib"]
 
 # This deployable site intentionally remains outside the chemistry workspace.
 [workspace]
 
 [dependencies]
-dioxus = { version = "=0.7.10", features = ["router"] }
+dioxus = { version = "=0.7.10", features = ["router"], optional = true }
+serde = { version = "1", features = ["derive"], optional = true }
+serde_json = { version = "1", optional = true }
+wasm-bindgen = { version = "=0.2.128", optional = true }
+js-sys = { version = "=0.3.105", optional = true }
+web-sys = { version = "=0.3.105", optional = true, features = [
+    "Window", "Document", "Element", "HtmlElement", "HtmlInputElement",
+    "HtmlButtonElement", "Node", "Event", "EventTarget", "History", "Location",
+    "Url", "UrlSearchParams", "NodeList", "HtmlLinkElement", "StyleSheet", "console",
+    "MutationObserver", "MutationObserverInit",
+] }
 
 [features]
 default = ["web"]
-web = ["dioxus/web"]
+web = ["dep:dioxus", "dioxus/web", "dep:web-sys", "dep:wasm-bindgen", "dep:js-sys"]
 ssg = []
-server = ["dioxus/server", "dioxus/fullstack"]
+server = ["dep:dioxus", "dioxus/server", "dioxus/fullstack"]
+search-engine = ["dep:serde", "dep:serde_json", "dep:wasm-bindgen", "dep:js-sys", "dep:web-sys"]

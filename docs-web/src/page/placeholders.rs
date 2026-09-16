@@ -4,20 +4,20 @@ use crate::{component::Seo, route::Route};
 
 #[component]
 pub fn JavaScript() -> Element {
-    rsx! { Placeholder { eyebrow: "JAVASCRIPT API", title: "JavaScript documentation is reserved", body: "This route is reserved for the future JavaScript and WebAssembly API. The current browser tools remain available at tools.cosmol.org.", canonical: "https://kit.cosmol.org/javascript" } }
+    rsx! { Placeholder { eyebrow: "JAVASCRIPT API", title: "JavaScript documentation is reserved", body: "This route is reserved for the future JavaScript and WebAssembly API. The current browser tools remain available at tools.cosmol.org." } }
 }
 
 #[component]
 pub fn Benchmarks() -> Element {
-    rsx! { Placeholder { eyebrow: "BENCHMARKS", title: "Benchmark reports are reserved", body: "Reproducible benchmark reports will be published here as browser and native measurements are promoted into the maintained documentation surface.", canonical: "https://kit.cosmol.org/benchmarks" } }
+    rsx! { Placeholder { eyebrow: "BENCHMARKS", title: "Benchmark reports are reserved", body: "Reproducible benchmark reports will be published here as browser and native measurements are promoted into the maintained documentation surface." } }
 }
 
 #[component]
 pub fn Validation() -> Element {
     rsx! {
-        Seo { title: "COSMolKit Validation | ChEMBL 37 and RDKit parity", description: "COSMolKit validation scope, exact parity comparisons, ChEMBL 37 corpus coverage, and reproducible evidence.", canonical: "https://kit.cosmol.org/validation" }
+        Seo { title: "COSMolKit Validation | ChEMBL 37 and RDKit parity", description: "COSMolKit validation scope, exact parity comparisons, ChEMBL 37 corpus coverage, and reproducible evidence." }
         div { class: "min-h-screen uu-backdrop m-0 pt-[74px]",
-            main { class: "mx-auto w-full max-w-4xl px-6 py-10 font-sans text-[#e8edf5] max-[640px]:px-3.5 max-[640px]:py-7",
+            main { role: "main", class: "mx-auto w-full max-w-4xl px-6 py-10 font-sans text-[#e8edf5] max-[640px]:px-3.5 max-[640px]:py-7",
                 span { class: "text-xs font-bold tracking-[0.08em] text-[#4b96ff]", "VALIDATION" }
                 h1 { class: "mb-4 mt-3 text-[28px] leading-[1.35] font-bold text-white", "Source-backed parity evidence" }
                 p { class: "max-w-[760px] text-[16px] leading-7 text-[#aebacd]", "The maintained validation record covers exact source comparisons across chemistry, molecular state, fingerprints, descriptors, stereochemistry, coordinates, file IO, batch execution, and concurrency." }
@@ -37,16 +37,11 @@ pub fn Validation() -> Element {
 }
 
 #[component]
-fn Placeholder(
-    eyebrow: &'static str,
-    title: &'static str,
-    body: &'static str,
-    canonical: &'static str,
-) -> Element {
+fn Placeholder(eyebrow: &'static str, title: &'static str, body: &'static str) -> Element {
     rsx! {
-        Seo { title: "{title} | COSMolKit", description: "{body}", canonical: "{canonical}" }
+        Seo { title: "{title} | COSMolKit", description: "{body}" }
         div { class: "min-h-screen uu-backdrop m-0 pt-[74px]",
-            main { class: "mx-auto w-full max-w-4xl px-6 py-10 font-sans text-[#e8edf5] max-[640px]:px-3.5 max-[640px]:py-7",
+            main { role: "main", class: "mx-auto w-full max-w-4xl px-6 py-10 font-sans text-[#e8edf5] max-[640px]:px-3.5 max-[640px]:py-7",
                 Link { class: "text-[13px] font-semibold text-[#7ab5ff] no-underline hover:text-[#b4d6ff]", to: Route::Home {}, "Back to documentation" }
                 span { class: "mt-8 block text-xs font-bold tracking-[0.08em] text-[#4b96ff]", "{eyebrow}" }
                 h1 { class: "mb-4 mt-3 text-[28px] leading-[1.35] font-bold text-white", "{title}" }

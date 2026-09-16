@@ -5,6 +5,13 @@
         <meta content="text/html;charset=utf-8" http-equiv="Content-Type">
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <meta charset="UTF-8">
+        <script>
+            // Capture before the client router normalizes URL query parameters.
+            window.cosmolkitInitialSearch = {
+                path: location.pathname,
+                query: new URLSearchParams(location.search).get("q")
+            };
+        </script>
         <style>
             html,
             body,

@@ -16,26 +16,26 @@ pub fn Home() -> Element {
         Seo {
             title: "COSMolKit documentation — Guides and API reference",
             description: "Learn COSMolKit with installation instructions, Python guides, API reference, and source-backed validation evidence.",
-            canonical: "https://kit.cosmol.org/",
+
         }
         document::Script { r#type: "application/ld+json", "{WEBSITE_JSON_LD}" }
         div { class: "docs-home",
-            main { class: "docs-home-inner",
+            main { role: "main", class: "docs-home-inner",
                 section { class: "docs-intro", aria_label: "Documentation overview",
                     div {
                         p { class: "home-kicker", "THE COSMOLKIT HANDBOOK" }
                         h1 { "Documentation" }
                         p { class: "docs-intro-description", "A practical guide to the Rust-native chemistry toolkit. Learn the Python API, build molecular workflows, and find the details you need." }
                         div { class: "docs-intro-actions",
-                            Link { class: "docs-primary-action", to: Route::Quickstart {}, "Start the quick guide", span { aria_hidden: "true", "→" } }
-                            Link { class: "docs-text-action", to: Route::Api {}, "Browse API reference", span { aria_hidden: "true", "→" } }
+                            Link { class: "docs-primary-action", to: Route::Quickstart { fragment: String::new() }, "Start the quick guide", span { aria_hidden: "true", "→" } }
+                            Link { class: "docs-text-action", to: Route::Api { fragment: String::new() }, "Browse API reference", span { aria_hidden: "true", "→" } }
                         }
                     }
                     aside { class: "docs-reading-path", aria_label: "Getting started",
                         p { class: "home-kicker", "NEW TO COSMOLKIT?" }
-                        StartLink { number: "01", title: "Install the package", detail: "Set up your Python environment", to: Route::Installation {} }
-                        StartLink { number: "02", title: "Create your first molecule", detail: "Follow the quick start", to: Route::Quickstart {} }
-                        StartLink { number: "03", title: "Understand molecule values", detail: "Learn the core data model", to: Route::Molecule {} }
+                        StartLink { number: "01", title: "Install the package", detail: "Set up your Python environment", to: Route::Installation { fragment: String::new() } }
+                        StartLink { number: "02", title: "Create your first molecule", detail: "Follow the quick start", to: Route::Quickstart { fragment: String::new() } }
+                        StartLink { number: "03", title: "Understand molecule values", detail: "Learn the core data model", to: Route::Molecule { fragment: String::new() } }
                     }
                 }
                 section { class: "docs-guide-section", aria_label: "Explore the documentation",
@@ -45,19 +45,20 @@ pub fn Home() -> Element {
                     }
                     div { class: "docs-topic-grid",
                         TopicGroup { number: "01", title: "Molecules & data", description: "Build, inspect, and exchange molecular structures.",
-                            TopicLink { title: "Molecule values", to: Route::Molecule {} }
-                            TopicLink { title: "File IO and arrays", to: Route::Io {} }
-                            TopicLink { title: "Batch workflows", to: Route::Batch {} }
+                            TopicLink { title: "Molecule values", to: Route::Molecule { fragment: String::new() } }
+                            TopicLink { title: "File IO and arrays", to: Route::Io { fragment: String::new() } }
+                            TopicLink { title: "Batch workflows", to: Route::Batch { fragment: String::new() } }
                         }
                         TopicGroup { number: "02", title: "Chemical workflows", description: "Explore representations, properties, and 3D structures.",
-                            TopicLink { title: "Fingerprints", to: Route::Fingerprints {} }
-                            TopicLink { title: "Molecular descriptors", to: Route::Descriptors {} }
-                            TopicLink { title: "Conformers · ConfSeq", to: Route::Confseq {} }
-                            TopicLink { title: "Protein structures", to: Route::Protein {} }
+                            TopicLink { title: "Fingerprints", to: Route::Fingerprints { fragment: String::new() } }
+                            TopicLink { title: "Molecular descriptors", to: Route::Descriptors { fragment: String::new() } }
+                            TopicLink { title: "Conformers · ConfSeq", to: Route::Confseq { fragment: String::new() } }
+                            TopicLink { title: "Protein structures", to: Route::Protein { fragment: String::new() } }
                         }
                         TopicGroup { number: "03", title: "Look up the details", description: "Check signatures, locate symbols, and review evidence.",
-                            TopicLink { title: "Python API reference", to: Route::Api {} }
-                            TopicLink { title: "General index", to: Route::Genindex {} }
+                            TopicLink { title: "Search documentation", to: Route::SearchPage { q: String::new(), fragment: String::new() } }
+                            TopicLink { title: "Python API reference", to: Route::Api { fragment: String::new() } }
+                            TopicLink { title: "General index", to: Route::Genindex { fragment: String::new() } }
                             TopicLink { title: "Validation evidence", to: Route::Validation {} }
                         }
                     }

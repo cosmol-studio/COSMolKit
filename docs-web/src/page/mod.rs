@@ -4,7 +4,6 @@ mod python;
 
 pub(crate) use home::Home;
 pub(crate) use placeholders::{Benchmarks, JavaScript, Validation};
-pub(crate) use python::{
-    Api, Batch, Confseq, Descriptors, Fingerprints, Genindex, Installation, Io, Molecule, Protein,
-    PyModindex, Python, Quickstart, SearchPage,
-};
+include!(concat!(env!("OUT_DIR"), "/sphinx_exports.rs"));
+#[cfg(all(target_arch = "wasm32", feature = "web"))]
+mod anchor;

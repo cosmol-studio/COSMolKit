@@ -5,11 +5,7 @@ import shutil
 import sys
 
 
-ROUTES = (
-    "installation", "quickstart", "confseq", "molecule", "batch",
-    "fingerprints", "descriptors", "protein", "io", "api", "search",
-    "genindex", "py-modindex", "javascript", "python", "benchmarks", "validation",
-)
+from route_contract import ROUTES
 
 
 def flatten_html_routes(public_dir: Path) -> int:
@@ -22,17 +18,28 @@ def flatten_html_routes(public_dir: Path) -> int:
         if not route_dir.exists():
             continue
         index = route_dir / "index.html"
-        if not route_dir.is_dir() or not index.is_file():
+        children = {public_dir / other for other in ROUTES if Path(other).parent == Path(route)}
+        flat_children = {child.with_suffix(".html") for child in children}
+        if not route_dir.is_dir():
             raise ValueError(f"route must contain an SSG directory index: {route_dir}")
-        if list(route_dir.iterdir()) != [index]:
+        # A flattened parent still owns a directory containing its child pages
+        # and language-specific Sphinx resources. Never remove that container.
+        resources = {route_dir / name for name in ("_static", "_sources", "_modules", "_images", "_downloads", "objects.inv")} if children else set()
+        if set(route_dir.iterdir()) - {index} - children - flat_children - resources:
             raise ValueError(f"route directory contains unexpected files: {route_dir}")
+        if not index.is_file():
+            if children:
+                continue
+            raise ValueError(f"route must contain an SSG directory index: {route_dir}")
         if destination.exists():
             raise FileExistsError(f"cannot flatten {route_dir}: {destination} exists")
         pending.append((route_dir, index, destination))
 
     for route_dir, index, destination in pending:
         shutil.move(str(index), str(destination))
-        route_dir.rmdir()
+    for route_dir, _, _ in sorted(pending, key=lambda item: len(item[0].parts), reverse=True):
+        if not any(route_dir.iterdir()):
+            route_dir.rmdir()
     return len(pending)
 
 

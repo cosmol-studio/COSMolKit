@@ -518,3 +518,70 @@
 .sphinx-content img {
     max-width: 100%;
 }
+
+.docs-article form[role="search"] {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    margin: 1.5rem 0;
+}
+
+.docs-article form[role="search"] label {
+    flex-basis: 100%;
+}
+
+.docs-article input[type="search"] {
+    flex: 1 1 12rem;
+    min-width: 0;
+    padding: 0.6rem 0.8rem;
+    border: 1px solid #438ee9;
+    border-radius: 0.4rem;
+    background: #0b1727;
+    color: #e8edf5;
+}
+
+#docs-search-status {
+    color: #aebacd;
+    min-height: 1.5em;
+}
+
+#search-results .search {
+    list-style: none;
+    padding: 0;
+}
+
+#search-results .search li {
+    margin: 0;
+    padding: 1rem 0;
+    border-bottom: 1px solid #28415f;
+}
+
+#search-results .search li > a {
+    font-weight: 600;
+    overflow-wrap: anywhere;
+}
+
+#search-results small {
+    display: block;
+    color: #8495aa;
+    overflow-wrap: anywhere;
+}
+
+#search-results p {
+    margin: 0.4rem 0 0;
+    color: #aebacd;
+}
+
+.docs-search-more,
+#docs-search-form button[type="reset"] {
+    padding: 0.6rem 1rem;
+    border: 1px solid #438ee9;
+    border-radius: 0.4rem;
+    color: #e8edf5;
+    background: #0b1727;
+    cursor: pointer;
+}
+
+.docs-search-more[hidden] {
+    display: none;
+}

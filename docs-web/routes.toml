@@ -1,0 +1,237 @@
+# Documentation route contract. Generated Rust and deployment files are build outputs.
+base_url = "https://kit.cosmol.org/"
+social_image_source = "https://pub-0588ab5197fd48f28b5c91f067adf8f4.r2.dev/cosmol/social-card.png"
+
+[[pages]]
+component = "Home"
+path = "/"
+binding = "common"
+topic = "home"
+status = "ready"
+indexable = true
+
+[[pages]]
+component = "Python"
+path = "/python"
+binding = "python"
+topic = "landing"
+status = "ready"
+indexable = true
+docname = "index"
+
+[[pages]]
+component = "JavaScript"
+path = "/javascript"
+binding = "javascript"
+topic = "landing"
+status = "placeholder"
+indexable = false
+
+[[pages]]
+component = "Benchmarks"
+path = "/benchmarks"
+binding = "common"
+topic = "benchmarks"
+status = "placeholder"
+indexable = false
+
+[[pages]]
+component = "Validation"
+path = "/validation"
+binding = "common"
+topic = "validation"
+status = "ready"
+indexable = true
+
+[[pages]]
+component = "Installation"
+path = "/python/installation"
+binding = "python"
+topic = "installation"
+status = "ready"
+indexable = true
+docname = "installation"
+source = "sphinx"
+title = "Installation | COSMolKit"
+legacy_paths = ["/installation"]
+label = "Installation"
+order = 0
+summary = "Install COSMolKit and verify the Python package."
+
+[[pages]]
+component = "Quickstart"
+path = "/python/quickstart"
+binding = "python"
+topic = "quickstart"
+status = "ready"
+indexable = true
+docname = "quickstart"
+source = "sphinx"
+title = "Quick Start | COSMolKit"
+legacy_paths = ["/quickstart"]
+label = "Quick Start"
+order = 1
+summary = "Build molecules and run the first core workflows."
+
+[[pages]]
+component = "Confseq"
+path = "/python/confseq"
+binding = "python"
+topic = "confseq"
+status = "ready"
+indexable = true
+docname = "confseq"
+source = "sphinx"
+title = "ConfSeq | COSMolKit"
+legacy_paths = ["/confseq"]
+label = "ConfSeq"
+order = 2
+summary = "Generate and inspect reproducible conformers."
+
+[[pages]]
+component = "Molecule"
+path = "/python/molecule"
+binding = "python"
+topic = "molecule"
+status = "ready"
+indexable = true
+docname = "molecule"
+source = "sphinx"
+title = "Molecule Values | COSMolKit"
+legacy_paths = ["/molecule"]
+label = "Molecule Values"
+order = 3
+summary = "Work with molecular graphs, stereochemistry, and coordinates."
+
+[[pages]]
+component = "Batch"
+path = "/python/batch"
+binding = "python"
+topic = "batch"
+status = "ready"
+indexable = true
+docname = "batch"
+source = "sphinx"
+title = "Batch Workflows | COSMolKit"
+legacy_paths = ["/batch"]
+label = "Batch Workflows"
+order = 4
+summary = "Process ordered molecule collections with scalar parity."
+
+[[pages]]
+component = "Fingerprints"
+path = "/python/fingerprints"
+binding = "python"
+topic = "fingerprints"
+status = "ready"
+indexable = true
+docname = "fingerprints"
+source = "sphinx"
+title = "Fingerprints | COSMolKit"
+legacy_paths = ["/fingerprints"]
+label = "Fingerprints"
+order = 5
+summary = "Compute source-backed molecular fingerprint vectors."
+
+[[pages]]
+component = "Descriptors"
+path = "/python/descriptors"
+binding = "python"
+topic = "descriptors"
+status = "ready"
+indexable = true
+docname = "descriptors"
+source = "sphinx"
+title = "Molecular Descriptors | COSMolKit"
+legacy_paths = ["/descriptors"]
+label = "Molecular Descriptors"
+order = 6
+summary = "Calculate descriptors and composition properties."
+
+[[pages]]
+component = "Protein"
+path = "/python/protein"
+binding = "python"
+topic = "protein"
+status = "ready"
+indexable = true
+docname = "protein"
+source = "sphinx"
+title = "Protein Structures | COSMolKit"
+legacy_paths = ["/protein"]
+label = "Protein Structures"
+order = 7
+summary = "Read and inspect structural-biology values."
+
+[[pages]]
+component = "Io"
+path = "/python/io"
+binding = "python"
+topic = "io"
+status = "ready"
+indexable = true
+docname = "io"
+source = "sphinx"
+title = "File IO and Arrays | COSMolKit"
+legacy_paths = ["/io"]
+label = "File IO and Arrays"
+order = 8
+summary = "Use molecular file readers, writers, and NumPy arrays."
+
+[[pages]]
+component = "Api"
+path = "/python/api"
+binding = "python"
+topic = "api"
+status = "ready"
+indexable = true
+docname = "api"
+source = "sphinx"
+title = "API Reference | COSMolKit"
+legacy_paths = ["/api"]
+label = "API Reference"
+order = 9
+summary = "Browse the complete generated Python API reference."
+
+[[pages]]
+component = "SearchPage"
+query = "q"
+path = "/python/search"
+binding = "python"
+topic = "search"
+status = "ready"
+indexable = false
+docname = "search"
+source = "sphinx"
+title = "Search | COSMolKit"
+legacy_paths = ["/search"]
+label = "Search"
+order = 10
+
+[[pages]]
+component = "Genindex"
+path = "/python/genindex"
+binding = "python"
+topic = "genindex"
+status = "ready"
+indexable = false
+docname = "genindex"
+source = "sphinx"
+title = "General Index | COSMolKit"
+legacy_paths = ["/genindex"]
+label = "General Index"
+order = 11
+
+[[pages]]
+component = "PyModindex"
+path = "/python/py-modindex"
+binding = "python"
+topic = "py-modindex"
+status = "ready"
+indexable = false
+docname = "py-modindex"
+source = "sphinx"
+title = "Python Module Index | COSMolKit"
+legacy_paths = ["/py-modindex"]
+label = "Python Module Index"
+order = 12

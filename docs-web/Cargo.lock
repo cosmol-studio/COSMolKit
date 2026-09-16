@@ -497,6 +497,11 @@ name = "cosmolkit-docs-web"
 version = "0.3.0"
 dependencies = [
  "dioxus",
+ "js-sys",
+ "serde",
+ "serde_json",
+ "wasm-bindgen",
+ "web-sys",
 ]
 
 [[package]]
