@@ -1,8 +1,8 @@
 """Public Python API example: value-style transforms and explicit editing."""
 
-from cosmolkit import Molecule
+import cosmolkit as ck
 
-mol = Molecule.from_smiles("CCO", sanitize=True)
+mol = ck.Molecule.from_smiles("CCO", sanitize=True)
 
 mol_h = mol.with_hydrogens()
 mol_no_h = mol_h.without_hydrogens()

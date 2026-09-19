@@ -10,13 +10,20 @@ use crate::{
     fast_find_rings_from_parts,
 };
 use cosmolkit_model::{
-    AdjacencyList, Atom, AtomId, Bond, BondId, StereoGroupKind, TopologyBlock,
-    TopologyValidationError,
+    AdjacencyList, Atom, AtomId, Bond, BondId, StereoGroupKind, TemplateAttachmentOrderError,
+    TopologyBlock, TopologyValidationError,
 };
 use cosmolkit_types::{BondDirection, BondOrder, BondStereo, ChiralTag};
 
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum CanonicalRankError {
+    #[error("component atom index {atom_index} is outside topology atom count {atom_count}")]
+    ComponentAtomOutOfRange {
+        atom_index: usize,
+        atom_count: usize,
+    },
+    #[error("component atom index {atom_index} occurs more than once")]
+    DuplicateComponentAtom { atom_index: usize },
     #[error("atom mask length {actual} does not match topology atom count {expected}")]
     AtomMaskLength { expected: usize, actual: usize },
     #[error("bond mask length {actual} does not match topology bond count {expected}")]
@@ -25,6 +32,11 @@ pub enum CanonicalRankError {
     ProtocolDebt {
         branch: &'static str,
         reason: &'static str,
+    },
+    #[error("template attachment remap failed for carrier atom {carrier}: {source}")]
+    TemplateAttachmentRemap {
+        carrier: AtomId,
+        source: TemplateAttachmentOrderError,
     },
     #[error(transparent)]
     RingFinding(#[from] RingFindingError),
@@ -1961,31 +1973,35 @@ impl<'a> CanonRankReadView<'a> {
 }
 
 #[derive(Debug, Clone, Copy)]
-struct CanonicalRankOptions {
-    break_ties: bool,
-    include_chirality: bool,
-    include_isotopes: bool,
-    include_atom_maps: bool,
-    include_chiral_presence: bool,
-    use_non_stereo_ranks: bool,
-    include_ring_stereo: bool,
+pub struct CanonicalRankParams {
+    pub break_ties: bool,
+    pub include_chirality: bool,
+    pub include_isotopes: bool,
+    pub include_atom_maps: bool,
+    pub include_chiral_presence: bool,
+    pub include_stereo_groups: bool,
+    pub use_non_stereo_ranks: bool,
+    pub include_ring_stereo: bool,
     chirality_rings_use_ring_stereo: bool,
 }
 
-impl CanonicalRankOptions {
-    const fn molecule_default() -> Self {
+impl Default for CanonicalRankParams {
+    fn default() -> Self {
         Self {
             break_ties: true,
             include_chirality: true,
             include_isotopes: true,
             include_atom_maps: true,
             include_chiral_presence: false,
+            include_stereo_groups: true,
             use_non_stereo_ranks: false,
             include_ring_stereo: true,
             chirality_rings_use_ring_stereo: true,
         }
     }
+}
 
+impl CanonicalRankParams {
     const fn kekulize_fragment_default() -> Self {
         Self {
             break_ties: true,
@@ -1993,6 +2009,7 @@ impl CanonicalRankOptions {
             include_isotopes: true,
             include_atom_maps: true,
             include_chiral_presence: false,
+            include_stereo_groups: false,
             use_non_stereo_ranks: false,
             include_ring_stereo: true,
             // rankFragmentAtoms sets df_useChiralityRings directly from
@@ -2003,6 +2020,14 @@ impl CanonicalRankOptions {
 }
 
 pub(crate) fn rank_mol_atoms(topology: &TopologyBlock) -> Result<Vec<usize>, CanonicalRankError> {
+    rank_mol_atoms_with_params(topology, &CanonicalRankParams::default())
+}
+
+/// Returns RDKit-compatible canonical ranks for all atoms with explicit source options.
+pub fn rank_mol_atoms_with_params(
+    topology: &TopologyBlock,
+    params: &CanonicalRankParams,
+) -> Result<Vec<usize>, CanonicalRankError> {
     // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/new_canon.cpp :: rankMolAtoms
     // RDKit✔️✔️: void rankMolAtoms(const ROMol &mol, std::vector<unsigned int> &res,
     // RDKit✔️✔️:                   bool breakTies, bool includeChirality, bool includeIsotopes,
@@ -2025,8 +2050,12 @@ pub(crate) fn rank_mol_atoms(topology: &TopologyBlock) -> Result<Vec<usize>, Can
     // RDKit✔️✔️:   std::vector<Canon::canon_atom> atoms(mol.getNumAtoms());
     // RDKit✔️✔️:   initCanonAtoms(mol, atoms, includeChirality, includeStereoGroups);
     let view = CanonRankReadView::from_topology(topology)?;
-    let options = CanonicalRankOptions::molecule_default();
-    let mut atoms = init_canon_atoms(&view, topology, true, true)?;
+    let mut atoms = init_canon_atoms(
+        &view,
+        topology,
+        params.include_chirality,
+        params.include_stereo_groups,
+    )?;
     // RDKit✔️✔️:   AtomCompareFunctor ftor(&atoms.front(), mol);
     // RDKit✔️✔️:   ftor.df_useIsotopes = includeIsotopes;
     // RDKit✔️✔️:   ftor.df_useChirality = includeChirality;
@@ -2042,7 +2071,7 @@ pub(crate) fn rank_mol_atoms(topology: &TopologyBlock) -> Result<Vec<usize>, Can
     // RDKit✔️✔️:   for (unsigned int i = 0; i < mol.getNumAtoms(); ++i) {
     // RDKit✔️✔️:     res[order[i]] = atoms[order[i]].index;
     // RDKit✔️✔️:   }
-    let result = rank_initialized_atoms(&view, &mut atoms, options)?;
+    let result = rank_initialized_atoms(&view, &mut atoms, *params)?;
     // RDKit✔️✔️:
     // RDKit✔️✔️:   if (clearRings) {
     // RDKit✔️✔️:     mol.getRingInfo()->reset();
@@ -2105,12 +2134,12 @@ pub fn rank_fragment_atoms(
         &view,
         atoms_in_play,
         bonds_in_play,
-        CanonicalRankOptions::kekulize_fragment_default().include_chirality,
+        CanonicalRankParams::kekulize_fragment_default().include_chirality,
     )?;
     rank_initialized_atoms(
         &view,
         &mut atoms,
-        CanonicalRankOptions::kekulize_fragment_default(),
+        CanonicalRankParams::kekulize_fragment_default(),
     )
     // RDKit✔️✔️:   if (clearRings) {
     // RDKit✔️✔️:     mol.getRingInfo()->reset();
@@ -2131,7 +2160,7 @@ struct CanonRankFlags {
 }
 
 impl CanonRankFlags {
-    const fn from_fragment_options(options: CanonicalRankOptions) -> Self {
+    const fn from_fragment_options(options: CanonicalRankParams) -> Self {
         Self {
             use_isotopes: options.include_isotopes,
             use_chirality: options.include_chirality,
@@ -2151,7 +2180,7 @@ impl CanonRankFlags {
 fn rank_initialized_atoms(
     view: &CanonRankReadView<'_>,
     atoms: &mut [CanonAtom<'_>],
-    options: CanonicalRankOptions,
+    options: CanonicalRankParams,
 ) -> Result<Vec<usize>, CanonicalRankError> {
     // RDKit✔️✔️:   AtomCompareFunctor ftor(&atoms.front(), mol, &atomsInPlay, &bondsInPlay);
     // RDKit✔️✔️:   ftor.df_useIsotopes = includeIsotopes;
@@ -4810,7 +4839,7 @@ mod tests {
         );
         let view = CanonRankReadView::from_topology(&ethane).unwrap();
         let mut atoms = init_fragment_canon_atoms(&view, &[true, true], &[true], true).unwrap();
-        let mut options = CanonicalRankOptions::kekulize_fragment_default();
+        let mut options = CanonicalRankParams::kekulize_fragment_default();
         options.break_ties = false;
         assert_eq!(
             rank_initialized_atoms(&view, &mut atoms, options).unwrap(),
@@ -4845,7 +4874,7 @@ mod tests {
         );
         let view = CanonRankReadView::from_topology(&graph).unwrap();
         let mut inactive = init_fragment_canon_atoms(&view, &[false, false], &[], true).unwrap();
-        let mut no_tie_break = CanonicalRankOptions::kekulize_fragment_default();
+        let mut no_tie_break = CanonicalRankParams::kekulize_fragment_default();
         no_tie_break.break_ties = false;
         assert_eq!(
             rank_initialized_atoms(&view, &mut inactive, no_tie_break).unwrap(),

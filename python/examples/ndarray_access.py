@@ -2,9 +2,9 @@
 
 import numpy as np
 
-from cosmolkit import Molecule
+import cosmolkit as ck
 
-mol = Molecule.from_smiles("c1ccccc1O").with_2d_coordinates()
+mol = ck.Molecule.from_smiles("c1ccccc1O").with_2d_coordinates()
 
 coords = mol.coordinates_2d()
 bounds = mol.dg_bounds_matrix()

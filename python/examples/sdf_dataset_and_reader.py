@@ -6,7 +6,7 @@ import argparse
 from collections.abc import Iterable
 from pathlib import Path
 
-from cosmolkit import MoleculeBatch, SdfDataset, SdfReader
+import cosmolkit as ck
 
 
 SMALL_SDF = """carbon
@@ -44,7 +44,7 @@ def default_sdf_path() -> Path:
     return path
 
 
-def summarize_batches(batches: Iterable[MoleculeBatch]) -> tuple[int, int, int]:
+def summarize_batches(batches: Iterable[ck.MoleculeBatch]) -> tuple[int, int, int]:
     batch_count = 0
     record_count = 0
     valid_count = 0
@@ -68,7 +68,7 @@ def main() -> None:
     print("SDF:", path)
     print("file size bytes:", path.stat().st_size)
 
-    dataset = SdfDataset.open(str(path), coordinate_dim="auto")
+    dataset = ck.SdfDataset.open(str(path), coordinate_dim="auto")
     print("indexed records:", len(dataset))
 
     first_meta = dataset.metadata(0)
@@ -96,7 +96,7 @@ def main() -> None:
     print("dataset records read:", record_count)
     print("dataset valid records:", valid_count)
 
-    reader_batches = SdfReader.open(str(path), coordinate_dim="auto").batches(
+    reader_batches = ck.SdfReader.open(str(path), coordinate_dim="auto").batches(
         size=batch_size,
         errors="keep",
     )
@@ -106,7 +106,7 @@ def main() -> None:
     print("reader valid records:", valid_count)
 
     if path.stat().st_size <= 50 * 1024 * 1024:
-        all_records = MoleculeBatch.read_sdf(
+        all_records = ck.MoleculeBatch.read_sdf(
             str(path),
             errors="keep",
             progress_bar=args.progress_bar,

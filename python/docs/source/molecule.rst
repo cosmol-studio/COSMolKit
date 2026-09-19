@@ -12,9 +12,9 @@ workflows, where code often mutates an existing molecule or ``RWMol`` directly.
 
 .. code-block:: python
 
-   from cosmolkit import Molecule
+   import cosmolkit as ck
 
-   mol = Molecule.from_smiles("CCO")
+   mol = ck.Molecule.from_smiles("CCO")
    mol_h = mol.with_hydrogens()
 
    assert mol is not mol_h
@@ -42,12 +42,12 @@ used by the chemistry core:
 
 .. code-block:: python
 
-   from cosmolkit import Element, element_from_symbol, get_element_info
+   import cosmolkit as ck
 
-   assert Element.C == 6
-   assert element_from_symbol("Cl") == Element.CL
+   assert ck.Element.C == 6
+   assert ck.element_from_symbol("Cl") == ck.Element.CL
 
-   chlorine = get_element_info(Element.CL)
+   chlorine = ck.get_element_info(ck.Element.CL)
    assert chlorine.symbol() == "Cl"
    assert chlorine.atomic_number() == 17
 
@@ -69,7 +69,7 @@ value-style sanitize operation:
 
 .. code-block:: python
 
-   raw = Molecule.read_mol("input.mol", sanitize=False)
+   raw = ck.Molecule.read_mol("input.mol", sanitize=False)
    sanitized = raw.sanitize()
 
    assert raw is not sanitized
@@ -79,7 +79,7 @@ hydrogen removal:
 
 .. code-block:: python
 
-   with_h = Molecule.read_sdf("input.sdf", remove_hs=False)
+   with_h = ck.Molecule.read_sdf("input.sdf", remove_hs=False)
    heavy = with_h.without_hydrogens()
 
    assert with_h is not heavy
@@ -96,7 +96,7 @@ no other ``Molecule`` API meaning.
 
 .. code-block:: python
 
-   mol = Molecule.from_smiles("CCO")
+   mol = ck.Molecule.from_smiles("CCO")
    mol.add_hydrogens_()
    mol.compute_2d_coordinates_()
 
@@ -120,7 +120,7 @@ SMILES Output
 
 .. code-block:: python
 
-   mol = Molecule.from_smiles("F[C@H](Cl)Br")
+   mol = ck.Molecule.from_smiles("F[C@H](Cl)Br")
 
    print(mol.to_smiles())
    print(mol.to_smiles(isomeric_smiles=False))
@@ -129,8 +129,8 @@ SMILES writer options are available on both single molecules and batches:
 
 .. code-block:: python
 
-   benzene = Molecule.from_smiles("c1ccccc1")
-   ethanol = Molecule.from_smiles("CCO")
+   benzene = ck.Molecule.from_smiles("c1ccccc1")
+   ethanol = ck.Molecule.from_smiles("CCO")
 
    print(benzene.to_smiles(kekule=True))
    print(ethanol.to_smiles(all_bonds_explicit=True))
@@ -163,7 +163,7 @@ structure.
 
    import pickle
 
-   mol = Molecule.from_smiles("F[C@H](Cl)[13CH3:7]").with_2d_coordinates()
+   mol = ck.Molecule.from_smiles("F[C@H](Cl)[13CH3:7]").with_2d_coordinates()
    restored = pickle.loads(pickle.dumps(mol, protocol=pickle.HIGHEST_PROTOCOL))
 
    print(restored.to_smiles(canonical=False))
@@ -179,7 +179,7 @@ older payloads:
 .. code-block:: python
 
    payload = mol.mol_to_binary()
-   restored = Molecule.mol_from_binary(payload)
+   restored = ck.Molecule.mol_from_binary(payload)
 
    assert restored.to_smiles(canonical=False) == mol.to_smiles(canonical=False)
 
@@ -190,7 +190,7 @@ Molecules with 2D coordinates can be exported as SVG or PNG:
 
 .. code-block:: python
 
-   mol = Molecule.from_smiles("c1ccccc1O").with_2d_coordinates()
+   mol = ck.Molecule.from_smiles("c1ccccc1O").with_2d_coordinates()
 
    svg = mol.to_svg(width=400, height=300)
    mol.write_svg("python/examples/output/phenol.svg", width=400, height=300)
@@ -205,12 +205,12 @@ RDKit atoms:
 
 .. code-block:: python
 
-   from cosmolkit import ChiralTag, Molecule
+   import cosmolkit as ck
 
-   mol = Molecule.from_smiles("F[C@H](Cl)Br")
+   mol = ck.Molecule.from_smiles("F[C@H](Cl)Br")
 
    for atom in mol.atoms():
-       if atom.chiral_tag() != ChiralTag.CHI_UNSPECIFIED:
+       if atom.chiral_tag() != ck.ChiralTag.CHI_UNSPECIFIED:
            print(atom.idx(), atom.chiral_tag().name)
 
    print(mol.find_chiral_centers(include_unassigned=False))
@@ -231,13 +231,13 @@ canonicalized to one numeric representative. The precise contract is in
 
 .. code-block:: python
 
-   mol = Molecule.from_smiles("F[C@H](Cl)Br")
+   mol = ck.Molecule.from_smiles("F[C@H](Cl)Br")
 
    print(mol.tetrahedral_stereo())
-   print(Molecule.from_smiles("F[C@@H](Cl)Br").tetrahedral_stereo())
+   print(ck.Molecule.from_smiles("F[C@@H](Cl)Br").tetrahedral_stereo())
    print(mol.with_hydrogens().tetrahedral_stereo())
-   print(Molecule.from_smiles("F[C@](Cl)(Br)I").tetrahedral_stereo())
-   print(Molecule.from_smiles("F[C@@](Cl)(Br)I").tetrahedral_stereo())
+   print(ck.Molecule.from_smiles("F[C@](Cl)(Br)I").tetrahedral_stereo())
+   print(ck.Molecule.from_smiles("F[C@@](Cl)(Br)I").tetrahedral_stereo())
 
 ``None`` in the ligand list represents an implicit hydrogen ligand. It does
 not mean the ligand slot is empty. If hydrogens are materialized with
@@ -258,15 +258,15 @@ molecule with no selected center yields one isolated molecule value.
 
 .. code-block:: python
 
-   from cosmolkit import Molecule, StereoisomerOptions
+   import cosmolkit as ck
 
-   source = Molecule.from_smiles("CC(F)C(Cl)Br")
+   source = ck.Molecule.from_smiles("CC(F)C(Cl)Br")
    analysis = source.analyze_potential_stereo()
 
    print([(item.center_kind, item.center_index) for item in analysis.stereo_info])
    print(source.stereoisomer_count())
 
-   options = StereoisomerOptions(max_isomers=4, rand=0xF00D)
+   options = ck.StereoisomerOptions(max_isomers=4, rand=0xF00D)
    for isomer in source.stereoisomers(options):
        print(isomer.to_smiles())
 
@@ -301,9 +301,9 @@ unrelated properties are preserved.
 .. code-block:: python
 
    import numpy as np
-   from cosmolkit import Molecule
+   import cosmolkit as ck
 
-   mol = Molecule.from_smiles("C(F)(Cl)Br").with_only_3d_conformer(
+   mol = ck.Molecule.from_smiles("C(F)(Cl)Br").with_only_3d_conformer(
        np.array(
            [
                [0.0, 0.0, 0.0],
@@ -339,13 +339,13 @@ completion state.
 
 .. code-block:: python
 
-   from cosmolkit import Molecule
+   import cosmolkit as ck
 
-   mol = Molecule.from_smiles("C[C@H](F)Cl")
+   mol = ck.Molecule.from_smiles("C[C@H](F)Cl")
    labeled = mol.with_cip_labels()
    print(labeled.atoms()[1].cip_descriptor())
 
-   alkene = Molecule.from_smiles("F/C=C/F")
+   alkene = ck.Molecule.from_smiles("F/C=C/F")
    alkene.assign_cip_labels_()
    print(alkene.bonds()[1].cip_descriptor())
 
@@ -367,11 +367,11 @@ returns a new molecule value.
 
 .. code-block:: python
 
-   from cosmolkit import EmbedParameters, Molecule
+   import cosmolkit as ck
 
-   mol = Molecule.from_smiles("CC(=O)NC").with_hydrogens()
+   mol = ck.Molecule.from_smiles("CC(=O)NC").with_hydrogens()
 
-   params = EmbedParameters.etkdg_v3()
+   params = ck.EmbedParameters.etkdg_v3()
    params.random_seed = 0xF00D
    params.num_threads = 1
    params.track_failures = True
@@ -392,9 +392,9 @@ state through Python.
 .. code-block:: python
 
    import numpy as np
-   from cosmolkit import Molecule
+   import cosmolkit as ck
 
-   mol = Molecule.from_smiles("CCO")
+   mol = ck.Molecule.from_smiles("CCO")
 
    coords_2d = np.array(
        [
@@ -456,7 +456,7 @@ the source-ported RDKit path.
 
 .. code-block:: python
 
-   params = EmbedParameters.etkdg()
+   params = ck.EmbedParameters.etkdg()
    params.random_seed = 123
    params.num_threads = 1
    params.prune_rms_thresh = 0.5
@@ -477,16 +477,16 @@ their existing frames without alignment.
 .. code-block:: python
 
    import numpy as np
-   from cosmolkit import AlignmentAtomMap, AlignmentParameters, Molecule
+   import cosmolkit as ck
 
    reference_coords = np.array(
        [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 2.0, 0.0]]
    )
    probe_coords = reference_coords + np.array([3.0, -2.0, 1.0])
-   reference = Molecule.from_smiles("CCC").with_only_3d_conformer(reference_coords)
-   probe = Molecule.from_smiles("CCC").with_only_3d_conformer(probe_coords)
-   params = AlignmentParameters(
-       atom_map=[AlignmentAtomMap(index, index) for index in range(3)]
+   reference = ck.Molecule.from_smiles("CCC").with_only_3d_conformer(reference_coords)
+   probe = ck.Molecule.from_smiles("CCC").with_only_3d_conformer(probe_coords)
+   params = ck.AlignmentParameters(
+       atom_map=[ck.AlignmentAtomMap(index, index) for index in range(3)]
    )
 
    measured = probe.alignment_transform_to(reference, params)
@@ -515,9 +515,9 @@ source molecule.
 
 .. code-block:: python
 
-   from cosmolkit import Molecule
+   import cosmolkit as ck
 
-   mol = Molecule.from_smiles("CCO").with_hydrogens().with_3d_conformer()
+   mol = ck.Molecule.from_smiles("CCO").with_hydrogens().with_3d_conformer()
 
    if mol.has_uff_params():
        result = mol.with_uff_optimized(max_iters=200)
@@ -543,32 +543,32 @@ Substructure matching functions accept ordinary molecules or query-bearing
 
 .. code-block:: python
 
-   import cosmolkit
+   import cosmolkit as ck
 
-   mol = Molecule.from_smiles("CCO")
-   query = Molecule.from_smiles("CO")
+   mol = ck.Molecule.from_smiles("CCO")
+   query = ck.Molecule.from_smiles("CO")
 
-   print(cosmolkit.has_substruct_match(mol, query))
-   print(cosmolkit.get_substruct_match(mol, query).atom_mapping())
+   print(ck.has_substruct_match(mol, query))
+   print(ck.get_substruct_match(mol, query).atom_mapping())
 
 ``parse_smarts()`` returns an ordinary ``Molecule`` carrying the compiled query
 graph. The same value can be passed directly to the substructure functions.
 
 .. code-block:: python
 
-   smarts = cosmolkit.parse_smarts("[#6]-O")
+   smarts = ck.parse_smarts("[#6]-O")
 
    print(smarts.num_atoms())
    print(smarts.num_bonds())
    print(smarts.to_smarts())
-   print(cosmolkit.has_substruct_match(mol, smarts))
+   print(ck.has_substruct_match(mol, smarts))
 
 Query-bearing molecules can be written as ordinary SMARTS or CXSMARTS without
 converting them to a separate query type:
 
 .. code-block:: python
 
-   labeled = cosmolkit.parse_smarts("[#6] |$site$|")
+   labeled = ck.parse_smarts("[#6] |$site$|")
 
    print(labeled.to_smarts())
    print(labeled.to_cx_smarts())

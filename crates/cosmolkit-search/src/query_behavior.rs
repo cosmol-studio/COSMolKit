@@ -2987,6 +2987,11 @@ pub enum SmartsParseError {
     Parse(String),
     #[error("unsupported SMARTS feature: {0}")]
     UnsupportedFeature(&'static str),
+    #[error("template attachment remap failed for carrier atom {carrier}: {source}")]
+    TemplateAttachmentRemap {
+        carrier: usize,
+        source: cosmolkit_model::TemplateAttachmentOrderError,
+    },
 }
 
 // ---------------------------------------------------------------------------

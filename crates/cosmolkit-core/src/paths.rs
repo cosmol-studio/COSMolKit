@@ -8,8 +8,8 @@ use std::collections::{BTreeMap, VecDeque};
 use cosmolkit_model::{
     AtomId, AtomMapping, AtomQueryPredicate, BondId, BondMapping, BondQueryPredicate, BondStereo,
     MappingValidationError, QueryAtom, QueryBond, QueryGraph, QueryGraphError, QueryNode,
-    StereoGroup, SubstanceGroup, SubstanceGroupId, TopologyBlock, TopologyMapping,
-    TopologyValidationError,
+    StereoGroup, SubstanceGroup, SubstanceGroupId, TemplateAttachmentOrderError, TopologyBlock,
+    TopologyMapping, TopologyValidationError,
 };
 
 use crate::{PeriodicTableError, atomic_mass};
@@ -149,6 +149,11 @@ pub enum PathError {
     QueryGraph(QueryGraphError),
     #[error(transparent)]
     Mapping(MappingValidationError),
+    #[error("atom {carrier} template attachment remap failed: {source}")]
+    TemplateAttachmentRemap {
+        carrier: AtomId,
+        source: TemplateAttachmentOrderError,
+    },
     #[error(transparent)]
     Matrix(crate::MatrixError),
 }
@@ -750,6 +755,13 @@ pub fn subtopology_from_path(
             copied_bonds.len(),
         )
         .map_err(PathError::Mapping)?;
+
+    for atom in &mut copied_atoms {
+        let carrier = mapping.atoms.new_to_old[atom.id().index()]
+            .expect("copied atoms always have a source row");
+        atom.remap_template_attachment_order(&mapping.atoms.old_to_new)
+            .map_err(|source| PathError::TemplateAttachmentRemap { carrier, source })?;
+    }
 
     let substance_groups = remap_selected_substance_groups(topology, &mapping);
     let stereo_groups = remap_selected_stereo_groups(topology, &mapping);

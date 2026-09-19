@@ -1,28 +1,28 @@
 """Compose the source-backed molecular descriptor families."""
 
-import cosmolkit
+import cosmolkit as ck
 
 
-molecule = cosmolkit.Molecule.from_smiles("CC(O)c1ccncc1C(=O)NCCCl")
+molecule = ck.Molecule.from_smiles("CC(O)c1ccncc1C(=O)NCCCl")
 
 connectivity = {
-    "chi_0": cosmolkit.calc_chi_0(molecule),
-    "chi_3v": cosmolkit.calc_chi_3v(molecule),
-    "kappa_2": cosmolkit.calc_kappa_2(molecule),
-    "phi": cosmolkit.calc_phi(molecule),
+    "chi_0": ck.calc_chi_0(molecule),
+    "chi_3v": ck.calc_chi_3v(molecule),
+    "kappa_2": ck.calc_kappa_2(molecule),
+    "phi": ck.calc_phi(molecule),
 }
 
 counts = {
-    "heteroatoms": cosmolkit.calc_num_heteroatoms(molecule),
-    "rings": cosmolkit.calc_num_rings(molecule),
-    "heterocycles": cosmolkit.calc_num_heterocycles(molecule),
-    "stereocenters": cosmolkit.calc_num_atom_stereo_centers(molecule),
+    "heteroatoms": ck.calc_num_heteroatoms(molecule),
+    "rings": ck.calc_num_rings(molecule),
+    "heterocycles": ck.calc_num_heterocycles(molecule),
+    "stereocenters": ck.calc_num_atom_stereo_centers(molecule),
 }
 
-mqns = cosmolkit.calc_mqns(molecule)
-asa, atom_asa, hydrogen_asa = cosmolkit.calc_labute_asa_contributions(molecule)
-slogp_vsa = cosmolkit.calc_slogp_vsa(molecule)
-smr_vsa = cosmolkit.calc_smr_vsa(molecule)
+mqns = ck.calc_mqns(molecule)
+asa, atom_asa, hydrogen_asa = ck.calc_labute_asa_contributions(molecule)
+slogp_vsa = ck.calc_slogp_vsa(molecule)
+smr_vsa = ck.calc_smr_vsa(molecule)
 
 assert len(mqns) == 42
 assert len(atom_asa) == molecule.num_atoms()

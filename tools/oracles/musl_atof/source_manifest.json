@@ -1,0 +1,155 @@
+{
+  "schema_version": 1,
+  "project": "musl",
+  "version": "1.2.5",
+  "repository_url": "https://git.musl-libc.org/git/musl",
+  "git_tag": "v1.2.5",
+  "git_commit": "0784374d561435f7c787a555aeab8ede699ed298",
+  "source_root": "third_party/musl",
+  "acquisition": "git_submodule",
+  "archive_url": "https://musl.libc.org/releases/musl-1.2.5.tar.gz",
+  "archive_sha256": "a9a118bbe84d8764da0ea0d28b3ab3fae8477fc7e4085d90102b8596fc7c75e4",
+  "archive_root": "musl-1.2.5/",
+  "purpose": "Selected implementation-reference closure within the unmodified musl submodule; provenance only, not a production dependency or RDKit parity authority. The standalone C oracle has been removed.",
+  "precision_status": "Behavior acceptance uses the fixed RDKit coordinate parity tests under the documented ordinary-coordinate contract; source identity does not imply all-input equivalence.",
+  "files": [
+    {
+      "path": "COPYRIGHT",
+      "sha256": "f9bc4423732350eb0b3f7ed7e91d530298476f8fec0c6c427a1c04ade22655af",
+      "bytes": 6204,
+      "lines": 193
+    },
+    {
+      "path": "src/stdlib/atof.c",
+      "sha256": "2d5733fbc1ae1b50b0b0b5bd6533551a6e69dae5491b0150f3b4c459dd722e45",
+      "bytes": 74,
+      "lines": 6
+    },
+    {
+      "path": "src/stdlib/strtod.c",
+      "sha256": "4b1945084cb6bf53a6d5684ca3bfd0c824eab9cbdb2b2fdfc9811fb526dd67ab",
+      "bytes": 592,
+      "lines": 30
+    },
+    {
+      "path": "src/internal/floatscan.c",
+      "sha256": "13a007ee0be8682efa12c80e088a1758a425d8be1842980609f20c0f9d6d9ad5",
+      "bytes": 9847,
+      "lines": 507
+    },
+    {
+      "path": "src/internal/floatscan.h",
+      "sha256": "84b09ffb83d5bf7d0751f8cf21b7a1ab241576057b275339807b6a3af0f07f6b",
+      "bytes": 119,
+      "lines": 8
+    },
+    {
+      "path": "src/internal/shgetc.c",
+      "sha256": "0b076498bc7e64f0756692f431bf5d39ea3964a175b9eba4ce6cfe23d4c76dd2",
+      "bytes": 921,
+      "lines": 37
+    },
+    {
+      "path": "src/internal/shgetc.h",
+      "sha256": "8bf68f99a81d25c7a7b17b3f862498c94e5dbd6d2daa2a94765ef7a5d950563d",
+      "bytes": 1593,
+      "lines": 32
+    },
+    {
+      "path": "src/internal/stdio_impl.h",
+      "sha256": "08218110ff564226559854a3caab0209f411e8b3ee01d659d453f6c3c68da28d",
+      "bytes": 3054,
+      "lines": 112
+    },
+    {
+      "path": "src/internal/libm.h",
+      "sha256": "d5a11757541471030d8f4bf7a39a29de35732ecbb291b2f45bf03296be4f25a2",
+      "bytes": 7454,
+      "lines": 274
+    },
+    {
+      "path": "src/math/scalbn.c",
+      "sha256": "a2e766283ed30c2b30c71e01dbdabef58faf92cc9aa84a01c1ce1069b6625696",
+      "bytes": 576,
+      "lines": 33
+    },
+    {
+      "path": "src/math/scalbnl.c",
+      "sha256": "f4da2cc8aa06122ce93867a80516abf3f4002abb9fdaf2da826c2c1986759345",
+      "bytes": 669,
+      "lines": 36
+    },
+    {
+      "path": "src/math/fmod.c",
+      "sha256": "33fb61093e04783081b9e8f8a8a303456b2f919c215cd0c378c1ed0acf41934c",
+      "bytes": 1270,
+      "lines": 68
+    },
+    {
+      "path": "src/math/fmodl.c",
+      "sha256": "2e0331976ad4414bae10293befdb06a36b89cb8a7fcd66522cdb48c8485b97cb",
+      "bytes": 1908,
+      "lines": 105
+    },
+    {
+      "path": "src/math/copysign.c",
+      "sha256": "7a5ae1fbedc6da808c69b1769f21624c20709c93eaa846fdf89546ab6bccecae",
+      "bytes": 164,
+      "lines": 8
+    },
+    {
+      "path": "src/math/copysignl.c",
+      "sha256": "17851a8156e37d0c412e9347a48739b0c33b92ad7eb868a9825b865984b9534c",
+      "bytes": 386,
+      "lines": 16
+    },
+    {
+      "path": "src/math/fabs.c",
+      "sha256": "99880a7802d67077fa54a2bbb5d3388cf42b00c96d3e2b1c16d63f2918157754",
+      "bytes": 135,
+      "lines": 9
+    },
+    {
+      "path": "src/math/fabsl.c",
+      "sha256": "5837d6f134333ec433c14f46b09e0ebafbd86b7d2febce244bf6507ffa4c8c18",
+      "bytes": 298,
+      "lines": 15
+    },
+    {
+      "path": "src/ctype/isspace.c",
+      "sha256": "c1dbd26bc677fade40299d7a8383762143c4807aec3284e72a26a36c330cc539",
+      "bytes": 197,
+      "lines": 14
+    },
+    {
+      "path": "include/float.h",
+      "sha256": "d513aa2c48b2d60672ab10dbab0ab80347db9f1b353db4ea3fae2018907964c1",
+      "bytes": 1060,
+      "lines": 52
+    },
+    {
+      "path": "include/limits.h",
+      "sha256": "d6fb743478f7a8dd27f057db844a806165709641b0d0e78fbf0cabf5c88f1e12",
+      "bytes": 4179,
+      "lines": 166
+    },
+    {
+      "path": "include/math.h",
+      "sha256": "5559892c51d9625616fde0c4d25609f1e68e0aa3aee090d1842c6f894e63352a",
+      "bytes": 11491,
+      "lines": 442
+    },
+    {
+      "path": "include/ctype.h",
+      "sha256": "0bf45ee657538bf2033a9a17f286f5a4cbcba22a19667deb28d43ac8952c6d30",
+      "bytes": 1787,
+      "lines": 77
+    },
+    {
+      "path": "arch/arm/bits/float.h",
+      "sha256": "cbde7e32f07c8601516ad291b61a26264c77069c93026ab927eb91771964cfd7",
+      "bytes": 404,
+      "lines": 16
+    }
+  ]
+}

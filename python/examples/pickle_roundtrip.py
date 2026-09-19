@@ -8,24 +8,24 @@ from typing import cast
 
 import numpy as np
 
-from cosmolkit import Molecule
+import cosmolkit as ck
 
 
 OUTPUT_DIR = Path(__file__).resolve().parent / "output"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 mol = (
-    Molecule.from_smiles("F[C@H](Cl)[13CH3:7]", sanitize=True)
+    ck.Molecule.from_smiles("F[C@H](Cl)[13CH3:7]", sanitize=True)
     .with_hydrogens()
     .with_2d_coordinates()
 )
 
 payload = pickle.dumps(mol, protocol=pickle.HIGHEST_PROTOCOL)
-restored = cast(Molecule, pickle.loads(payload))
+restored = cast(ck.Molecule, pickle.loads(payload))
 
 pickle_path = OUTPUT_DIR / "molecule.pkl"
 _ = pickle_path.write_bytes(payload)
-restored_from_file = cast(Molecule, pickle.loads(pickle_path.read_bytes()))
+restored_from_file = cast(ck.Molecule, pickle.loads(pickle_path.read_bytes()))
 
 print("pickle bytes:", len(payload))
 print("original smiles:", mol.to_smiles(canonical=False))

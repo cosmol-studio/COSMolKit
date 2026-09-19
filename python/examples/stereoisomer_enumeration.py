@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from cosmolkit import Molecule, StereoisomerOptions
+import cosmolkit as ck
 
 
 def main() -> None:
-    source = Molecule.from_smiles("CC(F)C(Cl)Br")
+    source = ck.Molecule.from_smiles("CC(F)C(Cl)Br")
     source_smiles = source.to_smiles()
 
     analysis = source.analyze_potential_stereo()
@@ -15,7 +15,7 @@ def main() -> None:
         [(item.center_kind, item.center_index) for item in analysis.stereo_info],
     )
 
-    options = StereoisomerOptions(max_isomers=4, rand=0xF00D)
+    options = ck.StereoisomerOptions(max_isomers=4, rand=0xF00D)
     print("upper-bound count:", source.stereoisomer_count(options))
     print("outputs:", [isomer.to_smiles() for isomer in source.stereoisomers(options)])
 

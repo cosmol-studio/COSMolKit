@@ -1,9 +1,9 @@
 import numpy as np
 
-from cosmolkit import Molecule
+import cosmolkit as ck
 
 
-mol = Molecule.from_smiles("CCO")
+mol = ck.Molecule.from_smiles("CCO")
 
 coords_2d = np.array(
     [

@@ -94,9 +94,9 @@ users can reason about each transformation as a new value while COSMolKit can
 share unchanged internal storage efficiently.
 
 ```python
-from cosmolkit import Molecule
+import cosmolkit as ck
 
-mol = Molecule.from_smiles("CCO")
+mol = ck.Molecule.from_smiles("CCO")
 mol_h = mol.with_hydrogens()
 
 assert mol is not mol_h
@@ -105,9 +105,9 @@ assert mol is not mol_h
 ## Python Quick Start
 
 ```python
-from cosmolkit import Molecule, MoleculeBatch
+import cosmolkit as ck
 
-mol = Molecule.from_smiles("c1ccccc1O")
+mol = ck.Molecule.from_smiles("c1ccccc1O")
 mol_2d = mol.with_2d_coordinates()
 
 print(mol_2d.to_smiles())
@@ -131,11 +131,11 @@ print(layered.on_bits())
 pattern = mol.pattern_fingerprint(n_bits=2048, tautomeric=False)
 print(pattern.on_bits())
 
-stereoisomers = list(Molecule.from_smiles("FC(Cl)Br").stereoisomers())
+stereoisomers = list(ck.Molecule.from_smiles("FC(Cl)Br").stereoisomers())
 print([isomer.to_smiles() for isomer in stereoisomers])
 
 batch = (
-    MoleculeBatch.from_smiles_list(
+    ck.MoleculeBatch.from_smiles_list(
         ["CCO", "c1ccccc1", "CC(=O)O"],
         sanitize=True,
         errors="keep",
@@ -164,14 +164,14 @@ proteins, nucleic acids, ligands, waters, entities, models, and metadata. Use
 `Protein` only when an amino-acid-only projection is intended.
 
 ```python
-from cosmolkit import BioStructure
+import cosmolkit as ck
 
-structure = BioStructure.from_pdb("complex.pdb")
+structure = ck.BioStructure.from_pdb("complex.pdb")
 print(structure.num_models(), structure.num_chains(), structure.num_atoms())
 
 # Structural format conversion remains on the complete structural value.
 mmcif_text = structure.to_mmcif()
-roundtrip = BioStructure.from_mmcif_str(mmcif_text, path="complex.cif")
+roundtrip = ck.BioStructure.from_mmcif_str(mmcif_text, path="complex.cif")
 
 for model in structure.models():
     for chain in model.chains():
@@ -203,9 +203,9 @@ Molfile-only readers such as `Molecule.read_mol()` follow RDKit
 trailing SDF data fields to the SDF APIs.
 
 ```python
-from cosmolkit import SdfDataset
+import cosmolkit as ck
 
-dataset = SdfDataset.open("library.sdf")
+dataset = ck.SdfDataset.open("library.sdf")
 print(len(dataset))
 
 record = dataset[0]
@@ -218,11 +218,11 @@ for batch in dataset.batches(size=1024, errors="keep", n_jobs=8):
 ## Conformer Generation And Optimization
 
 ```python
-from cosmolkit import EmbedParameters, Molecule
+import cosmolkit as ck
 
-mol = Molecule.from_smiles("CC(=O)NC").with_hydrogens()
+mol = ck.Molecule.from_smiles("CC(=O)NC").with_hydrogens()
 
-params = EmbedParameters.etkdg_v3()
+params = ck.EmbedParameters.etkdg_v3()
 params.random_seed = 0xF00D
 params.num_threads = 1
 params.track_failures = True

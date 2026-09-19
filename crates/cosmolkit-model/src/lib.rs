@@ -17,7 +17,10 @@ mod sgroup;
 mod topology;
 
 pub use adjacency::{AdjacencyError, AdjacencyList, NeighborRef};
-pub use atom::{Atom, AtomId, AtomPdbResidueInfo, AtomPropertyError, AtomSpec};
+pub use atom::{
+    Atom, AtomId, AtomPdbResidueInfo, AtomPropertyError, AtomSpec, TemplateAttachment,
+    TemplateAttachmentOrder, TemplateAttachmentOrderError,
+};
 pub use bond::{Bond, BondId, BondSpec, BondValueError};
 pub use cip::{CipDescriptor, CipDescriptorError};
 pub use coordinates::{

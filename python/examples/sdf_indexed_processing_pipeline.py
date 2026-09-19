@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cosmolkit import BatchErrorMode, Molecule, MoleculeBatch, SdfDataset
+import cosmolkit as ck
 
 
 OUTPUT_DIR = Path(__file__).resolve().parent / "output" / "indexed_sdf"
@@ -31,7 +31,7 @@ SEED_SMILES = [
 def build_seed_sdf(path: Path) -> None:
     records: list[str] = []
     for idx, smiles in enumerate(SEED_SMILES):
-        mol = Molecule.from_smiles(smiles, sanitize=True).with_2d_coordinates()
+        mol = ck.Molecule.from_smiles(smiles, sanitize=True).with_2d_coordinates()
         record = mol.to_2d_sdf_string(format="v2000")
         record = record.replace(
             "$$$$\n",
@@ -43,7 +43,7 @@ def build_seed_sdf(path: Path) -> None:
 
 build_seed_sdf(SDF_PATH)
 
-dataset = SdfDataset.open(str(SDF_PATH), coordinate_dim="2d")
+dataset = ck.SdfDataset.open(str(SDF_PATH), coordinate_dim="2d")
 print("dataset path:", dataset.path())
 print("records:", len(dataset))
 
@@ -63,7 +63,7 @@ for index in range(len(dataset)):
 
 selected = dataset[[0, 2, 4]]
 selected = selected.with_2d_coordinates(
-    errors=BatchErrorMode.KEEP,
+    errors=ck.BatchErrorMode.KEEP,
     n_jobs=2,
 )
 print("selected valid mask:", selected.valid_mask())
@@ -74,10 +74,10 @@ for index, fingerprint in enumerate(fps):
     if fingerprint is not None:
         print("selected fingerprint:", index, "bits=", len(fingerprint.on_bits()))
 
-all_chunks: list[MoleculeBatch] = []
-for chunk in dataset.batches(size=2, errors=BatchErrorMode.KEEP, n_jobs=2):
-    prepared = chunk.sanitize(errors=BatchErrorMode.KEEP).with_2d_coordinates(
-        errors=BatchErrorMode.KEEP,
+all_chunks: list[ck.MoleculeBatch] = []
+for chunk in dataset.batches(size=2, errors=ck.BatchErrorMode.KEEP, n_jobs=2):
+    prepared = chunk.sanitize(errors=ck.BatchErrorMode.KEEP).with_2d_coordinates(
+        errors=ck.BatchErrorMode.KEEP,
     )
     all_chunks.append(prepared)
     print("chunk:", len(prepared), prepared.to_smiles_list())
@@ -87,7 +87,7 @@ report = selected.to_images(
     format="png",
     size=(320, 240),
     filenames=["ethanol", "benzene", "benzonitrile"],
-    errors=BatchErrorMode.KEEP,
+    errors=ck.BatchErrorMode.KEEP,
 )
 print("selected image export:", report)
 
@@ -95,6 +95,6 @@ sdf_report = selected.to_sdf_files(
     str(OUTPUT_DIR / "selected_sdf"),
     format="v2000",
     filenames=["ethanol", "benzene", "benzonitrile"],
-    errors=BatchErrorMode.KEEP,
+    errors=ck.BatchErrorMode.KEEP,
 )
 print("selected sdf export:", sdf_report)

@@ -1,7 +1,7 @@
 """Public Python API example: file IO and basic properties."""
 
 import numpy as np
-from cosmolkit import Molecule
+import cosmolkit as ck
 
 KEKULE_BENZENE_MOL = """kekule_benzene
   COSMolKit      2D
@@ -22,7 +22,7 @@ KEKULE_BENZENE_MOL = """kekule_benzene
 M  END
 """
 
-mol = Molecule.from_smiles("CCO", sanitize=True).with_2d_coordinates()
+mol = ck.Molecule.from_smiles("CCO", sanitize=True).with_2d_coordinates()
 coords = mol.coordinates_2d()
 print("coords shape:", coords.shape)
 print("centroid:", coords.mean(axis=0))
@@ -39,13 +39,13 @@ saved_path = mol.write_sdf_to_directory(
 )
 print("Saved:", saved_path)
 
-lig = Molecule.read_sdf(saved_path, sanitize=True, coordinate_dim="2d")
+lig = ck.Molecule.read_sdf(saved_path, sanitize=True, coordinate_dim="2d")
 print("Loaded:", lig)
 lig_coords = lig.coordinates_2d()
 print("loaded coords shape:", lig_coords.shape)
 print("max coordinate delta after SDF roundtrip:", np.abs(coords - lig_coords).max())
 
-raw_benzene = Molecule.read_mol_from_str(
+raw_benzene = ck.Molecule.read_mol_from_str(
     KEKULE_BENZENE_MOL,
     coordinate_dim="2d",
     sanitize=False,
@@ -54,9 +54,9 @@ sanitized_benzene = raw_benzene.sanitize()
 print("raw MolBlock bond orders:", [bond.bond_type().name for bond in raw_benzene.bonds()])
 print("delayed sanitize smiles:", sanitized_benzene.to_smiles())
 
-explicit_h_mol = Molecule.from_smiles("CCO").with_hydrogens().with_2d_coordinates()
+explicit_h_mol = ck.Molecule.from_smiles("CCO").with_hydrogens().with_2d_coordinates()
 explicit_h_sdf = explicit_h_mol.to_2d_sdf_string(format="v2000")
-kept_h = Molecule.read_sdf_from_str(
+kept_h = ck.Molecule.read_sdf_from_str(
     explicit_h_sdf,
     coordinate_dim="2d",
     remove_hs=False,

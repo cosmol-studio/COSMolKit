@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import numpy as np
 
-from cosmolkit import EmbedParameters, Molecule
+import cosmolkit as ck
 
 
-mol = Molecule.from_smiles("CC(=O)NC").with_hydrogens()
+mol = ck.Molecule.from_smiles("CC(=O)NC").with_hydrogens()
 
-single_params = EmbedParameters.etkdg_v3()
+single_params = ck.EmbedParameters.etkdg_v3()
 single_params.random_seed = 0xF00D
 single_params.num_threads = 1
 single_params.track_failures = True
@@ -20,7 +20,7 @@ print("single conformers:", embedded.num_conformers())
 print("single conf id:", single_result.conf_id())
 print("failure counters:", single_result.params().failures)
 
-multi_params = EmbedParameters.etkdg()
+multi_params = ck.EmbedParameters.etkdg()
 multi_params.random_seed = 123
 multi_params.num_threads = 1
 multi_params.prune_rms_thresh = 0.5

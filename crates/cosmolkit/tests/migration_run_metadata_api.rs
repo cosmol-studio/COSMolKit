@@ -79,6 +79,7 @@ fn expected_operation_methods() -> Vec<&'static str> {
         expected.extend([
             "with_chiral_tags_from_structure_with_params",
             "potential_stereo_with_params",
+            "with_cip_labels_with_options",
         ]);
     }
     if cfg!(feature = "hydrogens") {

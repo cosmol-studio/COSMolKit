@@ -10,7 +10,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from cosmolkit import Molecule
+import cosmolkit as ck
 
 
 DEMO_XYZ = """\
@@ -24,7 +24,7 @@ H -0.758 0.000 0.504
 
 def main() -> None:
     xyz = Path(sys.argv[1]).read_text(encoding="utf-8") if len(sys.argv) > 1 else DEMO_XYZ
-    mol = Molecule.from_xyz_block(xyz)
+    mol = ck.Molecule.from_xyz_block(xyz)
 
     print("atoms:", mol.num_atoms())
     print("bonds:", mol.num_bonds())

@@ -47,8 +47,14 @@ def build_search_bundle(out: Path):
     subprocess.run([tool, str(target / "wasm32-unknown-unknown/release/cosmolkit_docs_search.wasm"),
                     "--target", "web", "--out-dir", str(out), "--out-name", "docs_search", "--no-typescript"],
                    check=True, stdout=subprocess.PIPE)
-    bindings = rust_literal((out / "docs_search.js").resolve().as_posix())
-    wasm = rust_literal((out / "docs_search_bg.wasm").resolve().as_posix())
+    # asset!("/...") resolves from the crate root, not the filesystem root.
+    # Filesystem-absolute Unix paths are otherwise prefixed with the crate twice.
+    # build.rs can invoke this script through a Windows extended-length path.
+    asset_root = Path(str(root).removeprefix("\\\\?\\"))
+    asset_out = Path(str(out.resolve()).removeprefix("\\\\?\\"))
+    asset_dir = asset_out.relative_to(asset_root).as_posix()
+    bindings = rust_literal(f"/{asset_dir}/docs_search.js")
+    wasm = rust_literal(f"/{asset_dir}/docs_search_bg.wasm")
     (out / "search_asset.rs").write_text(
         f"const SEARCH_BINDINGS: Asset = asset!({bindings});\nconst SEARCH_WASM: Asset = asset!({wasm});\n",
         encoding="utf-8")

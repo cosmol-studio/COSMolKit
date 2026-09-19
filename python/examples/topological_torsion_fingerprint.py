@@ -1,13 +1,13 @@
 """Modern, provenance, bulk, and legacy Topological Torsion fingerprints."""
 
-import cosmolkit
+import cosmolkit as ck
 
 
 molecules = [
-    cosmolkit.Molecule.from_smiles("CCCCO"),
-    cosmolkit.Molecule.from_smiles("CCCCC"),
+    ck.Molecule.from_smiles("CCCCO"),
+    ck.Molecule.from_smiles("CCCCC"),
 ]
-generator = cosmolkit.get_topological_torsion_generator(fp_size=2048)
+generator = ck.get_topological_torsion_generator(fp_size=2048)
 
 sparse_count = generator.get_sparse_count_fingerprint(molecules[0])
 sparse_bit = generator.get_sparse_fingerprint(molecules[0])
@@ -19,7 +19,7 @@ print("sparse bit:", sparse_bit.on_bits())
 print("folded count:", count.nonzero_elements())
 print("explicit bit:", bit.on_bits())
 
-additional = cosmolkit.AdditionalOutput()
+additional = ck.AdditionalOutput()
 additional.allocate_atom_to_bits()
 additional.allocate_atom_counts()
 additional.allocate_bit_paths()
@@ -32,9 +32,9 @@ print("bit paths:", additional.bit_paths())
 bulk = generator.get_fingerprints(molecules, num_threads=2)
 assert bulk[0].on_bits() == bit.on_bits()
 
-legacy_unfolded = cosmolkit.get_topological_torsion_fingerprint(molecules[0])
-legacy_hashed_count = cosmolkit.get_hashed_topological_torsion_fingerprint(molecules[0])
-legacy_hashed_bit = cosmolkit.get_hashed_topological_torsion_fingerprint_as_bit_vect(
+legacy_unfolded = ck.get_topological_torsion_fingerprint(molecules[0])
+legacy_hashed_count = ck.get_hashed_topological_torsion_fingerprint(molecules[0])
+legacy_hashed_bit = ck.get_hashed_topological_torsion_fingerprint_as_bit_vect(
     molecules[0]
 )
 print("legacy unfolded:", legacy_unfolded.nonzero_elements())

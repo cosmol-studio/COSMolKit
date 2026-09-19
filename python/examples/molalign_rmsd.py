@@ -2,17 +2,17 @@
 
 import numpy as np
 
-from cosmolkit import AlignmentAtomMap, AlignmentParameters, Molecule
+import cosmolkit as ck
 
 reference_coordinates = np.array(
     [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 2.0, 0.0]]
 )
 probe_coordinates = reference_coordinates + np.array([3.0, -2.0, 1.0])
 
-reference = Molecule.from_smiles("CCC").with_only_3d_conformer(reference_coordinates)
-probe = Molecule.from_smiles("CCC").with_only_3d_conformer(probe_coordinates)
-params = AlignmentParameters(
-    atom_map=[AlignmentAtomMap(index, index) for index in range(3)]
+reference = ck.Molecule.from_smiles("CCC").with_only_3d_conformer(reference_coordinates)
+probe = ck.Molecule.from_smiles("CCC").with_only_3d_conformer(probe_coordinates)
+params = ck.AlignmentParameters(
+    atom_map=[ck.AlignmentAtomMap(index, index) for index in range(3)]
 )
 
 transform_result = probe.alignment_transform_to(reference, params)

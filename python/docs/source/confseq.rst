@@ -24,7 +24,7 @@ tokens, so normal callers pass only this one string.
 
 .. code-block:: python
 
-   import cosmolkit
+   import cosmolkit as ck
 
    confseq = (
        "N C <112> | ( = O ) <84> C <111> | <-45> n 1 c c ( <21> N <123> | "
@@ -32,7 +32,7 @@ tokens, so normal callers pass only this one string.
        "N 2 <-172> C ( = O ) <-2> C <0> N <3> C <174> 2 = O ) c n 1"
    )
 
-   mol = cosmolkit.confseq.decode(
+   mol = ck.confseq.decode(
        confseq,
        optimize_with_uff=False,
        template_backend="distance_geometry",
@@ -45,7 +45,7 @@ Decode the same record with FastGeometry:
 
 .. code-block:: python
 
-   fast = cosmolkit.confseq.decode(
+   fast = ck.confseq.decode(
        confseq,
        optimize_with_uff=False,
        template_backend="fast_geometry",
@@ -63,7 +63,7 @@ Batch decoding accepts the same backend option:
        "N 2 <176> C ( = O ) <6> C <-8> N <11> C <-176> 2 = O ) c n 1"
    )
 
-   mols = cosmolkit.confseq.decode_batch(
+   mols = ck.confseq.decode_batch(
        [confseq, confseq_1],
        errors="keep",
        n_jobs=8,

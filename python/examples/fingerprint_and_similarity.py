@@ -1,10 +1,10 @@
 """Public Python API example: exact-parity fingerprint families."""
 
-from cosmolkit import Molecule
+import cosmolkit as ck
 
-mol = Molecule.from_smiles("c1ccccc1CCO", sanitize=True)
+mol = ck.Molecule.from_smiles("c1ccccc1CCO", sanitize=True)
 fp1 = mol.fingerprint_morgan(radius=2, n_bits=2048)
-fp2 = Molecule.from_smiles("CCN", sanitize=True).fingerprint_morgan(
+fp2 = ck.Molecule.from_smiles("CCN", sanitize=True).fingerprint_morgan(
     radius=2, n_bits=2048
 )
 similarity = fp1.tanimoto(fp2)

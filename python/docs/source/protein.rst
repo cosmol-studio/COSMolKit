@@ -16,9 +16,9 @@ Read the complete structural value before selecting a projection:
 
 .. code-block:: python
 
-   from cosmolkit import BioStructure
+   import cosmolkit as ck
 
-   structure = BioStructure.from_pdb("complex.pdb")
+   structure = ck.BioStructure.from_pdb("complex.pdb")
    print(structure.num_models(), structure.num_entities())
 
    for model in structure.models():
@@ -51,9 +51,9 @@ Read a PDB file directly:
 
 .. code-block:: python
 
-   from cosmolkit import Protein, ResidueCode
+   import cosmolkit as ck
 
-   protein = Protein.from_pdb("1crn.pdb")
+   protein = ck.Protein.from_pdb("1crn.pdb")
 
    print(protein.num_models())
    print(protein.num_chains())
@@ -64,14 +64,14 @@ Read PDB text that is already in memory:
 
 .. code-block:: python
 
-   protein = Protein.from_pdb_str(pdb_text)
+   protein = ck.Protein.from_pdb_str(pdb_text)
 
 Read mmCIF input with the same high-level protein projection:
 
 .. code-block:: python
 
-   protein = Protein.from_mmcif("1crn.cif")
-   protein = Protein.from_mmcif_str(cif_text, path="1crn.cif")
+   protein = ck.Protein.from_mmcif("1crn.cif")
+   protein = ck.Protein.from_mmcif_str(cif_text, path="1crn.cif")
 
 ``Protein`` keeps amino-acid residues and excludes ligands, nucleic acids, and
 waters. Use it for protein-focused traversal rather than mixed structural
@@ -90,7 +90,7 @@ number of protein chains, and ``protein[i]`` returns a ``ProteinChain``.
 
    for chain in protein.chains():
        for residue in chain.residues():
-           if residue.code() == ResidueCode.MET:
+           if residue.code() == ck.ResidueCode.MET:
                print("methionine", residue.index(), residue.fasta_code())
            print(residue.index(), residue.name(), residue.code(), len(residue))
 
@@ -111,21 +111,16 @@ source-derived classification fields. Sequence expansion follows Gemmi's
 
 .. code-block:: python
 
-   from cosmolkit import (
-       ResidueCode,
-       ResidueInfoKind,
-       expand_one_letter_sequence,
-       find_tabulated_residue,
-   )
+   import cosmolkit as ck
 
-   info = find_tabulated_residue("MSE")
-   assert info.code() == ResidueCode.MSE
-   assert info.kind() == ResidueInfoKind.AA
+   info = ck.find_tabulated_residue("MSE")
+   assert info.code() == ck.ResidueCode.MSE
+   assert info.kind() == ck.ResidueInfoKind.AA
    assert info.fasta_code() == "X"
    assert info.canonical_one_letter_code() == "M"
-   assert info.parent_standard_code() == ResidueCode.MET
+   assert info.parent_standard_code() == ck.ResidueCode.MET
    assert info.is_modified_amino_acid()
-   assert expand_one_letter_sequence("ACD(MSE)", ResidueInfoKind.AA) == [
+   assert ck.expand_one_letter_sequence("ACD(MSE)", ck.ResidueInfoKind.AA) == [
        "ALA",
        "CYS",
        "ASP",
@@ -149,16 +144,16 @@ object is intentionally a protein-only structural view:
 
 .. code-block:: python
 
-   protein = Protein.from_pdb("input.pdb")
+   protein = ck.Protein.from_pdb("input.pdb")
 
 Use ``Molecule.from_pdb_block()`` only when the desired object is a
 RDKit-compatible molecule conversion from PDB text:
 
 .. code-block:: python
 
-   from cosmolkit import Molecule
+   import cosmolkit as ck
 
-   mol = Molecule.from_pdb_block(
+   mol = ck.Molecule.from_pdb_block(
        pdb_text,
        sanitize=True,
        remove_hs=True,

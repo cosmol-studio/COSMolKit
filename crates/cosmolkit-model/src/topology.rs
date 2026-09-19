@@ -7,13 +7,18 @@
 use crate::{
     AdjacencyList, Atom, AtomId, AtomMapping, AtomSpec, Bond, BondId, BondMapping, BondSpec,
     BondStereo, BondValueError, MappingValidationError, StereoGroup, SubstanceGroup,
-    TopologyMapping,
+    TemplateAttachmentOrderError, TopologyMapping,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum TopologyValidationError {
     #[error("atom at position {position} has id {id}, expected {position}")]
     AtomIdMismatch { position: usize, id: AtomId },
+    #[error("atom {atom} has invalid template attachment order: {source}")]
+    TemplateAttachmentOrder {
+        atom: AtomId,
+        source: TemplateAttachmentOrderError,
+    },
     #[error("bond at position {position} has id {id}, expected {position}")]
     BondIdMismatch { position: usize, id: BondId },
     #[error(
@@ -99,6 +104,11 @@ pub enum TopologyEditError {
     PermutationDuplicateAtom { position: usize, atom: AtomId },
     #[error("invalid topology mapping: {0}")]
     InvalidMapping(MappingValidationError),
+    #[error("atom {carrier} template attachment remap failed: {source}")]
+    TemplateAttachmentRemap {
+        carrier: AtomId,
+        source: TemplateAttachmentOrderError,
+    },
     #[error("invalid edited topology: {0}")]
     InvalidResult(TopologyValidationError),
 }
@@ -215,11 +225,21 @@ impl TopologyBlock {
         }
 
         let mut atom_old_to_new = vec![None; self.atoms.len()];
-        let mut atoms = Vec::with_capacity(self.atoms.len());
         for (new_index, old_id) in old_atom_order.iter().copied().enumerate() {
             let new_id = AtomId::new(new_index);
             atom_old_to_new[old_id.index()] = Some(new_id);
-            atoms.push(self.atoms[old_id.index()].clone().with_id(new_id));
+        }
+        let mut atoms = Vec::with_capacity(self.atoms.len());
+        for (new_index, old_id) in old_atom_order.iter().copied().enumerate() {
+            let mut atom = self.atoms[old_id.index()]
+                .clone()
+                .with_id(AtomId::new(new_index));
+            atom.remap_template_attachment_order(&atom_old_to_new)
+                .map_err(|source| TopologyEditError::TemplateAttachmentRemap {
+                    carrier: old_id,
+                    source,
+                })?;
+            atoms.push(atom);
         }
         let atom_new_to_old = old_atom_order.iter().copied().map(Some).collect();
         let bond_old_to_new = (0..self.bonds.len())
@@ -334,6 +354,14 @@ impl TopologyBlock {
                     position,
                     id: atom.id(),
                 });
+            }
+            if let Some(order) = atom.template_attachment_order() {
+                order
+                    .validate_for_atom_count(self.atoms.len())
+                    .map_err(|source| TopologyValidationError::TemplateAttachmentOrder {
+                        atom: atom.id(),
+                        source,
+                    })?;
             }
         }
         for (position, bond) in self.bonds.iter().enumerate() {
@@ -573,13 +601,13 @@ impl TopologyBatchEdit {
         let mut atom_old_to_new = vec![None; old_atom_count];
         let mut atom_new_to_old = Vec::new();
         let mut all_atom_to_new = vec![None; self.working.atoms.len()];
-        let mut atoms = Vec::new();
+        let mut next_atom_index = 0usize;
         for atom in &self.working.atoms {
             let old_index = atom.id().index();
             if self.remove_atoms[old_index] {
                 continue;
             }
-            let new_id = AtomId::new(atoms.len());
+            let new_id = AtomId::new(next_atom_index);
             all_atom_to_new[old_index] = Some(new_id);
             if old_index < old_atom_count {
                 atom_old_to_new[old_index] = Some(new_id);
@@ -587,7 +615,22 @@ impl TopologyBatchEdit {
             } else {
                 atom_new_to_old.push(None);
             }
-            atoms.push(atom.clone().with_id(new_id));
+            next_atom_index += 1;
+        }
+        let mut atoms = Vec::with_capacity(next_atom_index);
+        for atom in &self.working.atoms {
+            let old_index = atom.id().index();
+            let Some(new_id) = all_atom_to_new[old_index] else {
+                continue;
+            };
+            let mut remapped = atom.clone().with_id(new_id);
+            remapped
+                .remap_template_attachment_order(&all_atom_to_new)
+                .map_err(|source| TopologyEditError::TemplateAttachmentRemap {
+                    carrier: atom.id(),
+                    source,
+                })?;
+            atoms.push(remapped);
         }
         let mut bond_old_to_new = vec![None; old_bond_count];
         let mut bond_new_to_old = Vec::new();

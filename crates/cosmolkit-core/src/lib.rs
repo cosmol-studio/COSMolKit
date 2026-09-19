@@ -129,8 +129,9 @@ pub mod __migration_sanitize {
 }
 
 pub use kekulize::{
-    CanonicalRankError, KekulizeAssignment, KekulizeAttempt, KekulizeError, KekulizeParams,
-    kekulize, kekulize_if_possible, rank_fragment_atoms,
+    CanonicalRankError, CanonicalRankParams, KekulizeAssignment, KekulizeAttempt, KekulizeError,
+    KekulizeParams, kekulize, kekulize_if_possible, rank_fragment_atoms,
+    rank_mol_atoms_with_params,
 };
 
 pub use matrices::{

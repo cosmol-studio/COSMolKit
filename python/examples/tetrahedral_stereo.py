@@ -11,15 +11,15 @@ Specification:
 https://github.com/cosmol-studio/COSMolKit/blob/main/dev/tetrahedral_stereo.md
 """
 
-from cosmolkit import ChiralTag, Molecule
+import cosmolkit as ck
 
-mol = Molecule.from_smiles("[13CH3:7][C@H](F)Cl")
+mol = ck.Molecule.from_smiles("[13CH3:7][C@H](F)Cl")
 
 print("isomeric smiles:", mol.to_smiles())
 print("non-isomeric smiles:", mol.to_smiles(isomeric_smiles=False))
 
 for atom in mol.atoms():
-    if atom.chiral_tag() != ChiralTag.CHI_UNSPECIFIED:
+    if atom.chiral_tag() != ck.ChiralTag.CHI_UNSPECIFIED:
         print("chiral atom:", atom.idx(), atom.chiral_tag().name)
 
 print("chiral centers:", mol.find_chiral_centers(include_unassigned=False))
@@ -28,15 +28,15 @@ for center, ligands in mol.tetrahedral_stereo():
     print("center:", center)
     print("ordered ligands:", ligands)
 
-opposite = Molecule.from_smiles("[13CH3:7][C@@H](F)Cl")
+opposite = ck.Molecule.from_smiles("[13CH3:7][C@@H](F)Cl")
 print("opposite ordered ligands:", opposite.tetrahedral_stereo())
 
 with_explicit_h = mol.with_hydrogens()
 print("with explicit hydrogens:", with_explicit_h.tetrahedral_stereo())
 
-fully_substituted = Molecule.from_smiles("F[C@](Cl)(Br)I")
+fully_substituted = ck.Molecule.from_smiles("F[C@](Cl)(Br)I")
 print("fully substituted ordered ligands:", fully_substituted.tetrahedral_stereo())
-fully_substituted_opposite = Molecule.from_smiles("F[C@@](Cl)(Br)I")
+fully_substituted_opposite = ck.Molecule.from_smiles("F[C@@](Cl)(Br)I")
 print(
     "fully substituted opposite ordered ligands:",
     fully_substituted_opposite.tetrahedral_stereo(),

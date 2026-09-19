@@ -1488,35 +1488,55 @@ fn merge_query_hs_in_place(
     }
     removals.sort_unstable_by_key(|atom| atom.index());
     removals.dedup();
-    for (atom_index, count) in hydrogen_counts.into_iter().enumerate() {
-        let atom = molecule.atom_mut(atom_index).expect("existing query atom");
+    let removed = removals
+        .iter()
+        .map(|id| id.index())
+        .collect::<std::collections::BTreeSet<_>>();
+    // First pass: build the complete old-to-new map for every surviving atom
+    // before any predicate is touched or any carrier is remapped. A carrier
+    // may reference a later surviving atom, so remapping against a partially
+    // built map would falsely report that target as removed.
+    let mut atom_mapping = vec![None; molecule.num_atoms()];
+    let mut next_index = 0_usize;
+    for (atom_index, mapping) in atom_mapping.iter_mut().enumerate() {
+        if !removed.contains(&atom_index) {
+            *mapping = Some(cosmolkit_model::AtomId::new(next_index));
+            next_index += 1;
+        }
+    }
+    // Second pass: every predicate edit and remap is applied to a clone. The
+    // caller's graph is assigned only after the whole rebuild succeeds, so a
+    // failed remap leaves `molecule` unchanged.
+    let mut atoms = Vec::with_capacity(next_index);
+    for atom in molecule.atoms() {
+        let Some(new_id) = atom_mapping[atom.index()] else {
+            continue;
+        };
+        let mut predicate = atom.predicate().clone();
+        let count = hydrogen_counts[atom.index()];
         if count != 0 {
-            let mut children = vec![atom.predicate().clone()];
+            let mut children = vec![predicate];
             for hydrogen_count in 0..count {
                 children.push(QueryNode::Not(Box::new(QueryNode::Predicate(
                     AtomQueryPredicate::HydrogenCount(hydrogen_count),
                 ))));
             }
-            atom.set_predicate(QueryNode::And(children));
+            predicate = QueryNode::And(children);
         }
-        merge_recursive_query_hydrogens(atom.predicate_mut(), merge_unmapped_only, merge_isotopes)?;
-    }
-    let removed = removals
-        .iter()
-        .map(|id| id.index())
-        .collect::<std::collections::BTreeSet<_>>();
-    let mut atom_mapping = vec![None; molecule.num_atoms()];
-    let mut atoms = Vec::with_capacity(molecule.num_atoms().saturating_sub(removed.len()));
-    for atom in molecule.atoms() {
-        if removed.contains(&atom.index()) {
-            continue;
-        }
-        let new_id = cosmolkit_model::AtomId::new(atoms.len());
-        atom_mapping[atom.index()] = Some(new_id);
-        atoms.push(QueryAtom::from_parts(
-            atom.atom().clone().with_id(new_id),
-            atom.predicate().clone(),
-        ));
+        merge_recursive_query_hydrogens(&mut predicate, merge_unmapped_only, merge_isotopes)?;
+        let mut atom_value = atom.atom().clone().with_id(new_id);
+        // This compaction renumbers the query atom table, so surviving
+        // carriers remap their template attachment targets through the one
+        // shared primitive; a carrier whose referenced atom is a removed
+        // hydrogen fails under the established lost-target policy instead of
+        // keeping a stale row.
+        atom_value
+            .remap_template_attachment_order(&atom_mapping)
+            .map_err(|source| SmartsParseError::TemplateAttachmentRemap {
+                carrier: atom.index(),
+                source,
+            })?;
+        atoms.push(QueryAtom::from_parts(atom_value, predicate));
     }
     let mut bonds = Vec::new();
     for bond in molecule.bonds() {
@@ -4920,3 +4940,185 @@ fn element_symbol_to_atomic_number(symbol: &str) -> Option<u8> {
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod query_hydrogen_merge_tests {
+    use super::*;
+    use cosmolkit_model::{
+        AtomId, BondId, TemplateAttachment, TemplateAttachmentOrder, TemplateAttachmentOrderError,
+    };
+
+    // H-C-C chain: atom 0 is the carrier, atom 1 is a removable query
+    // hydrogen, atom 2 is a later surviving atom.
+    fn chain_h_c_c(carrier: Option<TemplateAttachmentOrder>) -> QueryGraph {
+        let atom_0 = match carrier {
+            Some(order) => QueryAtom::new(
+                AtomId::new(0),
+                AtomSpec::new(Element::C).with_template_attachment_order(order),
+            ),
+            None => QueryAtom::new(AtomId::new(0), AtomSpec::new(Element::C)),
+        };
+        let atom_1 = QueryAtom::new(AtomId::new(1), AtomSpec::new(Element::H));
+        let atom_2 = QueryAtom::new(AtomId::new(2), AtomSpec::new(Element::C));
+        let bonds = vec![
+            QueryBond::new(
+                BondId::new(0),
+                BondSpec::new(AtomId::new(0), AtomId::new(1), BondOrder::Single),
+            ),
+            QueryBond::new(
+                BondId::new(1),
+                BondSpec::new(AtomId::new(0), AtomId::new(2), BondOrder::Single),
+            ),
+        ];
+        QueryGraph::from_parts(
+            vec![atom_0, atom_1, atom_2],
+            bonds,
+            BTreeMap::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        )
+        .expect("valid H-C-C query graph")
+    }
+
+    // H-C(<)-C(-<C) with two later surviving targets for ordered labels.
+    fn branched_h_c_c_c(carrier: TemplateAttachmentOrder) -> QueryGraph {
+        let atom_0 = QueryAtom::new(
+            AtomId::new(0),
+            AtomSpec::new(Element::C).with_template_attachment_order(carrier),
+        );
+        let atom_1 = QueryAtom::new(AtomId::new(1), AtomSpec::new(Element::H));
+        let atom_2 = QueryAtom::new(AtomId::new(2), AtomSpec::new(Element::C));
+        let atom_3 = QueryAtom::new(AtomId::new(3), AtomSpec::new(Element::C));
+        let bonds = vec![
+            QueryBond::new(
+                BondId::new(0),
+                BondSpec::new(AtomId::new(0), AtomId::new(1), BondOrder::Single),
+            ),
+            QueryBond::new(
+                BondId::new(1),
+                BondSpec::new(AtomId::new(0), AtomId::new(2), BondOrder::Single),
+            ),
+            QueryBond::new(
+                BondId::new(2),
+                BondSpec::new(AtomId::new(0), AtomId::new(3), BondOrder::Single),
+            ),
+        ];
+        QueryGraph::from_parts(
+            vec![atom_0, atom_1, atom_2, atom_3],
+            bonds,
+            BTreeMap::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        )
+        .expect("valid branched query graph")
+    }
+
+    #[test]
+    fn carrier_referencing_a_later_surviving_atom_is_remapped() {
+        let order =
+            TemplateAttachmentOrder::new(vec![TemplateAttachment::new(AtomId::new(2), "Al")])
+                .expect("attachment order");
+        let graph = chain_h_c_c(Some(order));
+        let merged = merge_query_hs(&graph, false, false).expect("merge query hydrogens");
+        assert_eq!(merged.num_atoms(), 2);
+        let carrier = merged.atoms()[0]
+            .atom()
+            .template_attachment_order()
+            .expect("carrier keeps its attachment order");
+        assert_eq!(carrier.entries().len(), 1);
+        assert_eq!(carrier.entries()[0].target(), AtomId::new(1));
+        assert_eq!(carrier.entries()[0].label(), "Al");
+    }
+
+    #[test]
+    fn carrier_referencing_a_removed_target_fails_loudly() {
+        let order =
+            TemplateAttachmentOrder::new(vec![TemplateAttachment::new(AtomId::new(1), "H")])
+                .expect("attachment order");
+        let graph = chain_h_c_c(Some(order));
+        match merge_query_hs(&graph, false, false) {
+            Err(SmartsParseError::TemplateAttachmentRemap {
+                carrier,
+                source: TemplateAttachmentOrderError::TargetRemoved { target, .. },
+            }) => {
+                assert_eq!(carrier, 0);
+                assert_eq!(target, AtomId::new(1));
+            }
+            other => panic!("expected TargetRemoved for carrier 0, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn merge_without_attachments_keeps_the_source_predicate_expansion() {
+        let graph = chain_h_c_c(None);
+        let merged = merge_query_hs(&graph, false, false).expect("merge query hydrogens");
+        assert_eq!(merged.num_atoms(), 2);
+        assert_eq!(
+            merged.atoms()[0].predicate(),
+            &QueryNode::And(vec![
+                QueryNode::predicate(AtomQueryPredicate::AtomicNumber(6)),
+                QueryNode::Not(Box::new(QueryNode::Predicate(
+                    AtomQueryPredicate::HydrogenCount(0)
+                ))),
+            ])
+        );
+    }
+
+    #[test]
+    fn ordered_attachment_labels_are_preserved_through_renumbering() {
+        let order = TemplateAttachmentOrder::new(vec![
+            TemplateAttachment::new(AtomId::new(2), "Al"),
+            TemplateAttachment::new(AtomId::new(3), "Br"),
+        ])
+        .expect("attachment order");
+        let graph = branched_h_c_c_c(order);
+        let merged = merge_query_hs(&graph, false, false).expect("merge query hydrogens");
+        assert_eq!(merged.num_atoms(), 3);
+        let carrier = merged.atoms()[0]
+            .atom()
+            .template_attachment_order()
+            .expect("carrier keeps its attachment order");
+        assert_eq!(carrier.entries().len(), 2);
+        assert_eq!(carrier.entries()[0].target(), AtomId::new(1));
+        assert_eq!(carrier.entries()[0].label(), "Al");
+        assert_eq!(carrier.entries()[1].target(), AtomId::new(2));
+        assert_eq!(carrier.entries()[1].label(), "Br");
+    }
+
+    #[test]
+    fn failed_merge_leaves_the_in_place_graph_unchanged() {
+        let order =
+            TemplateAttachmentOrder::new(vec![TemplateAttachment::new(AtomId::new(1), "H")])
+                .expect("attachment order");
+        let mut graph = chain_h_c_c(Some(order));
+        let before = graph.clone();
+        assert!(merge_query_hs_in_place(&mut graph, false, false).is_err());
+        assert_eq!(graph, before);
+    }
+
+    #[test]
+    fn parse_smarts_merges_plain_query_hydrogens() {
+        let params = SmartsParseParams {
+            merge_hs: true,
+            ..SmartsParseParams::default()
+        };
+        let merged = parse_smarts("[C][H]", &params).expect("parse and merge");
+        assert_eq!(merged.num_atoms(), 1);
+        // The parser lowers a bracketed aliphatic atom to `AtomType`, so the
+        // merged predicate retains that node as the first `And` child.
+        assert_eq!(
+            merged.atoms()[0].predicate(),
+            &QueryNode::And(vec![
+                QueryNode::predicate(AtomQueryPredicate::AtomType {
+                    atomic_number: 6,
+                    aromatic: false,
+                }),
+                QueryNode::Not(Box::new(QueryNode::Predicate(
+                    AtomQueryPredicate::HydrogenCount(0)
+                ))),
+            ])
+        );
+    }
+}

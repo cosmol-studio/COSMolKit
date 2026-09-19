@@ -59,6 +59,13 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
         "MoleculeBuilder.with_sdf_data_field",
         "MoleculeBuilder.with_properties",
         "types.OperationError",
+        "types.TemplateAttachment",
+        "types.TemplateAttachmentOrder",
+        "types.TemplateAttachmentOrderError",
+        "TemplateAttachment.target",
+        "TemplateAttachment.label",
+        "TemplateAttachmentOrder.entries",
+        "Atom.template_attachment_order",
         "types.SupportStatus",
         "types.ParityPolicy",
         "types.FeatureSpec",
@@ -184,6 +191,14 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
             "types.PotentialStereoError",
             "Molecule.potential_stereo",
             "Molecule.potential_stereo_with_params",
+            "types.CipDescriptor",
+            "types.CipDescriptorError",
+            "types.CipLabelOptions",
+            "types.CipLabelerError",
+            "Molecule.with_cip_labels",
+            "Molecule.with_cip_labels_with_options",
+            "Molecule.assign_cip_labels_",
+            "Molecule.assign_cip_labels_with_options_",
         ]);
     }
     if cfg!(feature = "descriptors") {
@@ -206,6 +221,23 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
             "Molecule.without_hydrogens_with_params",
             "Molecule.remove_hydrogens_",
             "Molecule.remove_hydrogens_with_params_",
+        ]);
+    }
+    if cfg!(feature = "io") {
+        expected.extend([
+            "types.SdfCoordinateMode",
+            "types.MolBlockReadParams",
+            "types.MolBlockError",
+            "Molecule.from_molblock",
+            "Molecule.from_molblock_with_params",
+        ]);
+    }
+    if cfg!(feature = "smiles") {
+        expected.extend([
+            "types.SmilesParseParams",
+            "types.SmilesError",
+            "Molecule.from_smiles",
+            "Molecule.from_smiles_with_params",
         ]);
     }
 

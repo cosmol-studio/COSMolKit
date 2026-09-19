@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from cosmolkit import Molecule
+import cosmolkit as ck
 
 ethanol_3d = """ethanol_3d
   COSMolKit      3D
@@ -30,7 +30,7 @@ ethanol_3d = """ethanol_3d
 M  END
 """
 
-mol = Molecule.read_mol_from_str(ethanol_3d, coordinate_dim="3d")
+mol = ck.Molecule.read_mol_from_str(ethanol_3d, coordinate_dim="3d")
 start = mol.coordinates_3d().copy()
 
 if mol.has_uff_params():

@@ -1,6 +1,6 @@
 """Public Python API example: reading 3D molfile coordinates."""
 
-from cosmolkit import Molecule
+import cosmolkit as ck
 
 molblock = """ethane_heavy_atoms_3d
   COSMolKit      3D
@@ -12,7 +12,7 @@ molblock = """ethane_heavy_atoms_3d
 M  END
 """
 
-mol = Molecule.read_mol_from_str(molblock, coordinate_dim="3d")
+mol = ck.Molecule.read_mol_from_str(molblock, coordinate_dim="3d")
 coords = mol.coordinates_3d()
 
 print("atoms:", mol.num_atoms())

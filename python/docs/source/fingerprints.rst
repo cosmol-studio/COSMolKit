@@ -31,10 +31,10 @@ bit-domain and count-simulation rules, count output folds counts into
 
 .. code-block:: python
 
-   import cosmolkit
+   import cosmolkit as ck
 
-   mol = cosmolkit.Molecule.from_smiles("CCCCO")
-   generator = cosmolkit.get_topological_torsion_generator(
+   mol = ck.Molecule.from_smiles("CCCCO")
+   generator = ck.get_topological_torsion_generator(
        include_chirality=False,
        torsion_atom_count=4,
        count_simulation=True,
@@ -80,7 +80,7 @@ the absence of entries is verified rather than assumed.
 
 .. code-block:: python
 
-   output = cosmolkit.AdditionalOutput()
+   output = ck.AdditionalOutput()
    output.allocate_atom_to_bits()
    output.allocate_atom_counts()
    output.allocate_bit_paths()
@@ -97,8 +97,8 @@ Bulk generator methods preserve input order and accept ``num_threads``:
 .. code-block:: python
 
    molecules = [
-       cosmolkit.Molecule.from_smiles("CCCC"),
-       cosmolkit.Molecule.from_smiles("CCCCC"),
+       ck.Molecule.from_smiles("CCCC"),
+       ck.Molecule.from_smiles("CCCCC"),
    ]
    bits = generator.get_fingerprints(molecules, num_threads=2)
 
@@ -163,7 +163,7 @@ replacement is not an acceptance condition.
 
 .. code-block:: python
 
-   mol = Molecule.from_smiles("c1ccccc1O")
+   mol = ck.Molecule.from_smiles("c1ccccc1O")
 
    topological = mol.topological_fingerprint(
        min_path=1,
@@ -228,9 +228,9 @@ roots retain the source aggregation order.
 
 .. code-block:: python
 
-   import cosmolkit
+   import cosmolkit as ck
 
-   molecule = cosmolkit.Molecule.from_smiles("c1ccccc1O")
+   molecule = ck.Molecule.from_smiles("c1ccccc1O")
    substructure = molecule.fingerprint_layered(
        layers=0x07,
        min_path=1,
@@ -238,7 +238,7 @@ roots retain the source aggregation order.
        fp_size=2048,
    )
 
-   even_mask = cosmolkit.Fingerprint.from_on_bits(257, range(0, 257, 2))
+   even_mask = ck.Fingerprint.from_on_bits(257, range(0, 257, 2))
    counted = molecule.fingerprint_layered_with_output(
        layers=0x3F,
        min_path=2,
@@ -285,7 +285,7 @@ states:
 
 .. code-block:: python
 
-   mol = Molecule.from_smiles("c1ccccc1O")
+   mol = ck.Molecule.from_smiles("c1ccccc1O")
 
    pattern = mol.pattern_fingerprint()
    tautomeric_pattern = mol.pattern_fingerprint(
@@ -340,7 +340,7 @@ and custom atom invariants. A 3D call requires a conformer and sets
 
 .. code-block:: python
 
-   mol = Molecule.from_smiles("CCCO")
+   mol = ck.Molecule.from_smiles("CCCO")
 
    explicit = mol.fingerprint_atom_pair(n_bits=2048)
    sparse_count = mol.fingerprint_atom_pair_sparse_count()
@@ -395,9 +395,9 @@ Single Molecules
 
 .. code-block:: python
 
-   from cosmolkit import Molecule
+   import cosmolkit as ck
 
-   mol = Molecule.from_smiles("c1ccccc1O")
+   mol = ck.Molecule.from_smiles("c1ccccc1O")
    fp = mol.fingerprint_morgan(radius=2, n_bits=2048)
 
    print(fp.n_bits())
@@ -407,8 +407,8 @@ Tanimoto similarity is computed directly on ``Fingerprint`` values:
 
 .. code-block:: python
 
-   phenol = Molecule.from_smiles("c1ccccc1O").fingerprint_morgan()
-   benzene = Molecule.from_smiles("c1ccccc1").fingerprint_morgan()
+   phenol = ck.Molecule.from_smiles("c1ccccc1O").fingerprint_morgan()
+   benzene = ck.Molecule.from_smiles("c1ccccc1").fingerprint_morgan()
 
    print(phenol.tanimoto(benzene))
 
@@ -462,9 +462,9 @@ Batch Fingerprints
 
 .. code-block:: python
 
-   from cosmolkit import MoleculeBatch
+   import cosmolkit as ck
 
-   batch = MoleculeBatch.from_smiles_list(
+   batch = ck.MoleculeBatch.from_smiles_list(
        ["CCO", "not-smiles", "CCCO"],
        errors="keep",
    ).with_parallel_jobs(8)

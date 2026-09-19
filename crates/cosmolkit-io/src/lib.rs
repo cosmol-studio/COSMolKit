@@ -1,6 +1,7 @@
 //! File-format IO over detached `cosmolkit-model` values.
 
 pub mod mol2;
+mod numeric;
 pub mod pdb;
 mod pdb_chemistry;
 pub mod sdf;

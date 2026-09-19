@@ -2,12 +2,12 @@
 
 from pathlib import Path
 
-from cosmolkit import Molecule
+import cosmolkit as ck
 
 output_dir = Path(__file__).resolve().parent / "output"
 output_dir.mkdir(parents=True, exist_ok=True)
 
-mol = Molecule.from_smiles("c1ccccc1O", sanitize=True).with_2d_coordinates()
+mol = ck.Molecule.from_smiles("c1ccccc1O", sanitize=True).with_2d_coordinates()
 
 svg = mol.to_svg(width=400, height=300)
 print("SVG length:", len(svg))

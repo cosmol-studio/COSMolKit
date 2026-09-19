@@ -10,15 +10,15 @@ transform, export, and filtering steps.
 
 .. code-block:: python
 
-   from cosmolkit import BatchErrorMode, BatchValidationError, MoleculeBatch
+   import cosmolkit as ck
 
-   batch = MoleculeBatch.from_smiles_list(
+   batch = ck.MoleculeBatch.from_smiles_list(
        ["CCO", "c1ccccc1", "not-smiles"],
-       errors=BatchErrorMode.KEEP,
+       errors=ck.BatchErrorMode.KEEP,
    ).with_parallel_jobs(8)
 
-   prepared = batch.with_hydrogens(errors=BatchErrorMode.KEEP).with_2d_coordinates(
-       errors=BatchErrorMode.KEEP,
+   prepared = batch.with_hydrogens(errors=ck.BatchErrorMode.KEEP).with_2d_coordinates(
+       errors=ck.BatchErrorMode.KEEP,
    )
 
    print(prepared.valid_mask())
@@ -44,8 +44,8 @@ input index, operation name, and message:
        print(error.index(), error.operation(), error.message())
 
    try:
-       MoleculeBatch.from_smiles_list(["C1CC"], errors=BatchErrorMode.RAISE)
-   except BatchValidationError as exc:
+       ck.MoleculeBatch.from_smiles_list(["C1CC"], errors=ck.BatchErrorMode.RAISE)
+   except ck.BatchValidationError as exc:
        print(exc.error_count)
 
 The read-only ``BATCH_ERROR_MODE_MAP`` converts external string names to enum
@@ -186,7 +186,7 @@ Batch SMILES output preserves isomeric chirality by default:
 
 .. code-block:: python
 
-   chiral_batch = MoleculeBatch.from_smiles_list(
+   chiral_batch = ck.MoleculeBatch.from_smiles_list(
        ["F[C@H](Cl)Br", "F[C@@H](Cl)Br"],
        errors="raise",
    )

@@ -34,6 +34,157 @@ pub enum AtomPropertyError {
     EmptyKey,
 }
 
+/// One ordered template-attachment entry carried by an atom.
+///
+/// `target` is a canonical COSMolKit atom-table id. Source row numbers and
+/// bookmarks must be resolved before this value is constructed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TemplateAttachment {
+    target: AtomId,
+    label: String,
+}
+
+impl TemplateAttachment {
+    #[must_use]
+    pub fn new(target: AtomId, label: impl Into<String>) -> Self {
+        Self {
+            target,
+            label: label.into(),
+        }
+    }
+
+    #[must_use]
+    pub const fn target(&self) -> AtomId {
+        self.target
+    }
+
+    #[must_use]
+    pub fn label(&self) -> &str {
+        &self.label
+    }
+}
+
+/// Ordered template attachment state associated with one carrier atom.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TemplateAttachmentOrder {
+    entries: Vec<TemplateAttachment>,
+}
+
+/// A template attachment order violates its local structural invariants.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum TemplateAttachmentOrderError {
+    #[error("template attachment order must contain at least one entry")]
+    Empty,
+    #[error(
+        "template attachment entry {duplicate_position} repeats target {target} from entry {first_position}"
+    )]
+    DuplicateTarget {
+        first_position: usize,
+        duplicate_position: usize,
+        target: AtomId,
+    },
+    #[error(
+        "template attachment entry {duplicate_position} repeats label {label:?} from entry {first_position}"
+    )]
+    DuplicateLabel {
+        first_position: usize,
+        duplicate_position: usize,
+        label: String,
+    },
+    #[error(
+        "template attachment entry {position} references atom {target}, out of range for {atom_count} atoms"
+    )]
+    TargetOutOfRange {
+        position: usize,
+        target: AtomId,
+        atom_count: usize,
+    },
+    #[error(
+        "template attachment entry {position} references atom {target}, outside a mapping of length {mapping_len}"
+    )]
+    MappingTargetOutOfRange {
+        position: usize,
+        target: AtomId,
+        mapping_len: usize,
+    },
+    #[error("template attachment entry {position} loses referenced atom {target}")]
+    TargetRemoved { position: usize, target: AtomId },
+}
+
+impl TemplateAttachmentOrder {
+    pub fn new(entries: Vec<TemplateAttachment>) -> Result<Self, TemplateAttachmentOrderError> {
+        if entries.is_empty() {
+            return Err(TemplateAttachmentOrderError::Empty);
+        }
+        let mut targets = BTreeMap::new();
+        let mut labels = BTreeMap::new();
+        for (position, entry) in entries.iter().enumerate() {
+            if let Some(first_position) = targets.insert(entry.target(), position) {
+                return Err(TemplateAttachmentOrderError::DuplicateTarget {
+                    first_position,
+                    duplicate_position: position,
+                    target: entry.target(),
+                });
+            }
+            if let Some(first_position) = labels.insert(entry.label(), position) {
+                return Err(TemplateAttachmentOrderError::DuplicateLabel {
+                    first_position,
+                    duplicate_position: position,
+                    label: entry.label().to_owned(),
+                });
+            }
+        }
+        Ok(Self { entries })
+    }
+
+    #[must_use]
+    pub fn entries(&self) -> &[TemplateAttachment] {
+        &self.entries
+    }
+
+    pub fn validate_for_atom_count(
+        &self,
+        atom_count: usize,
+    ) -> Result<(), TemplateAttachmentOrderError> {
+        for (position, entry) in self.entries.iter().enumerate() {
+            if entry.target().index() >= atom_count {
+                return Err(TemplateAttachmentOrderError::TargetOutOfRange {
+                    position,
+                    target: entry.target(),
+                    atom_count,
+                });
+            }
+        }
+        Ok(())
+    }
+
+    /// Remap every referenced atom through one validated old-to-new index map.
+    #[doc(hidden)]
+    pub fn remapped(
+        &self,
+        old_to_new: &[Option<AtomId>],
+    ) -> Result<Self, TemplateAttachmentOrderError> {
+        let mut entries = Vec::with_capacity(self.entries.len());
+        for (position, entry) in self.entries.iter().enumerate() {
+            let Some(mapped) = old_to_new.get(entry.target().index()) else {
+                return Err(TemplateAttachmentOrderError::MappingTargetOutOfRange {
+                    position,
+                    target: entry.target(),
+                    mapping_len: old_to_new.len(),
+                });
+            };
+            let Some(target) = *mapped else {
+                return Err(TemplateAttachmentOrderError::TargetRemoved {
+                    position,
+                    target: entry.target(),
+                });
+            };
+            entries.push(TemplateAttachment::new(target, entry.label()));
+        }
+        Self::new(entries)
+    }
+}
+
 /// Typed atom-level PDB residue metadata.
 ///
 /// This models the RDKit `AtomPDBResidueInfo` subset needed by hydrogen
@@ -283,6 +434,7 @@ pub struct AtomSpec {
     props: BTreeMap<String, String>,
     computed_props: BTreeSet<String>,
     pdb_residue_info: Option<AtomPdbResidueInfo>,
+    template_attachment_order: Option<TemplateAttachmentOrder>,
 }
 
 impl AtomSpec {
@@ -308,6 +460,7 @@ impl AtomSpec {
             props: BTreeMap::new(),
             computed_props: BTreeSet::new(),
             pdb_residue_info: None,
+            template_attachment_order: None,
         }
     }
 
@@ -491,6 +644,18 @@ impl AtomSpec {
     }
 
     #[must_use]
+    pub fn with_template_attachment_order(mut self, order: TemplateAttachmentOrder) -> Self {
+        self.template_attachment_order = Some(order);
+        self
+    }
+
+    #[must_use]
+    pub fn without_template_attachment_order(mut self) -> Self {
+        self.template_attachment_order = None;
+        self
+    }
+
+    #[must_use]
     pub const fn element(&self) -> Element {
         self.element
     }
@@ -594,6 +759,11 @@ impl AtomSpec {
     pub const fn pdb_residue_info(&self) -> Option<&AtomPdbResidueInfo> {
         self.pdb_residue_info.as_ref()
     }
+
+    #[must_use]
+    pub const fn template_attachment_order(&self) -> Option<&TemplateAttachmentOrder> {
+        self.template_attachment_order.as_ref()
+    }
 }
 
 fn validate_property_key(key: &str) -> Result<(), AtomPropertyError> {
@@ -632,6 +802,7 @@ pub struct Atom {
     props: BTreeMap<String, String>,
     computed_props: BTreeSet<String>,
     pdb_residue_info: Option<AtomPdbResidueInfo>,
+    template_attachment_order: Option<TemplateAttachmentOrder>,
 }
 
 impl Atom {
@@ -657,6 +828,7 @@ impl Atom {
             props: spec.props,
             computed_props: spec.computed_props,
             pdb_residue_info: spec.pdb_residue_info,
+            template_attachment_order: spec.template_attachment_order,
         }
     }
 
@@ -808,6 +980,25 @@ impl Atom {
     #[must_use]
     pub const fn pdb_residue_info(&self) -> Option<&AtomPdbResidueInfo> {
         self.pdb_residue_info.as_ref()
+    }
+
+    #[must_use]
+    pub const fn template_attachment_order(&self) -> Option<&TemplateAttachmentOrder> {
+        self.template_attachment_order.as_ref()
+    }
+
+    /// Apply the shared detached atom-index remap to typed attachment state.
+    #[doc(hidden)]
+    pub fn remap_template_attachment_order(
+        &mut self,
+        old_to_new: &[Option<AtomId>],
+    ) -> Result<(), TemplateAttachmentOrderError> {
+        let Some(order) = &self.template_attachment_order else {
+            return Ok(());
+        };
+        let remapped = order.remapped(old_to_new)?;
+        self.template_attachment_order = Some(remapped);
+        Ok(())
     }
 
     #[doc(hidden)]

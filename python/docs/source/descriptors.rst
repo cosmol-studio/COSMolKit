@@ -19,14 +19,14 @@ Basic Descriptors
 
 .. code-block:: python
 
-   import cosmolkit
+   import cosmolkit as ck
 
-   molecule = cosmolkit.Molecule.from_smiles("c1ccccc1O")
+   molecule = ck.Molecule.from_smiles("c1ccccc1O")
 
-   formula = cosmolkit.calc_mol_formula(molecule)
-   average_weight = cosmolkit.calc_mol_wt(molecule)
-   exact_weight = cosmolkit.calc_exact_mol_wt(molecule)
-   aromatic_rings = cosmolkit.calc_num_aromatic_rings(molecule)
+   formula = ck.calc_mol_formula(molecule)
+   average_weight = ck.calc_mol_wt(molecule)
+   exact_weight = ck.calc_exact_mol_wt(molecule)
+   aromatic_rings = ck.calc_num_aromatic_rings(molecule)
 
    print(formula, average_weight, exact_weight, aromatic_rings)
 
@@ -87,14 +87,14 @@ entries. Scalar projections ``calc_slogp_vsa_1()`` through
 
 .. code-block:: python
 
-   import cosmolkit
+   import cosmolkit as ck
 
-   molecule = cosmolkit.Molecule.from_smiles("CC(O)c1ccncc1")
+   molecule = ck.Molecule.from_smiles("CC(O)c1ccncc1")
 
-   chi = [cosmolkit.calc_chi_nv(molecule, order) for order in range(5)]
-   mqns = cosmolkit.calc_mqns(molecule)
-   asa, atom_asa, hydrogen_asa = cosmolkit.calc_labute_asa_contributions(molecule)
-   slogp_vsa = cosmolkit.calc_slogp_vsa(molecule)
+   chi = [ck.calc_chi_nv(molecule, order) for order in range(5)]
+   mqns = ck.calc_mqns(molecule)
+   asa, atom_asa, hydrogen_asa = ck.calc_labute_asa_contributions(molecule)
+   slogp_vsa = ck.calc_slogp_vsa(molecule)
 
    assert len(mqns) == 42
    assert len(atom_asa) == molecule.num_atoms()

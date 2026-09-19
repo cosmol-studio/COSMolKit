@@ -10,8 +10,9 @@ use std::{
 use cosmolkit_model::{
     AdjacencyList, Atom, AtomId, AtomQueryPredicate, AtomSpec, Bond, BondId, BondQueryPredicate,
     BondSpec, Conformer2D, Conformer3D, CoordinateBlock, CoordinateDimension, MoleculeProperties,
-    QueryAtom, QueryBond, QueryGraph, QueryNode, SdfPropertyList, SdfPropertyListTarget,
-    SubstanceGroup, TopologyBlock,
+    QueryAtom, QueryBond, QueryGraph, QueryNode, RecursiveStructureQuery, SdfPropertyList,
+    SdfPropertyListTarget, SubstanceGroup, TemplateAttachment, TemplateAttachmentOrder,
+    TopologyBlock,
 };
 use cosmolkit_types::{BondDirection, BondOrder, BondStereo, Element};
 
@@ -405,7 +406,284 @@ pub(super) fn parse_rdkit_unsigned(text: &str) -> Result<u32, ()> {
     Ok(input[..digit_count].parse().unwrap_or(0))
 }
 
+/// Exact transliteration of pinned `FileParserUtils::toUnsigned(input,
+/// acceptSpaces=true)` as used by the V3000 outer counts line and the five
+/// V3000 `COUNTS` fields. It intentionally differs from
+/// `parse_rdkit_unsigned`: the text is passed to `std::from_chars` unchanged
+/// after leading-space removal, so a leading `+` is not recognized and leaves
+/// the initialized result at `0`; an out-of-range value also leaves the
+/// result at `0` because the conversion error is ignored.
+fn parse_rdkit_unsigned_counts(text: &str) -> Result<u32, ()> {
+    // BEGIN RDKIT CPP FUNCTION FileParserUtils::toUnsigned
+    // RDKit✔️✔️: const char *txt = input.data();
+    // RDKit✔️✔️: for (size_t i = 0u; i < input.size() && *txt != '\x00'; ++i) {
+    // RDKit✔️✔️:   if ((*txt >= '0' && *txt <= '9') || (acceptSpaces && *txt == ' ') ||
+    // RDKit✔️✔️:       *txt == '+') {
+    // RDKit✔️✔️:     ++txt;
+    // RDKit✔️✔️:   } else {
+    // RDKit✔️✔️:     throw boost::bad_lexical_cast();
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: }
+    // RDKit✔️✔️: // remove leading spaces
+    // RDKit✔️✔️: txt = input.data();
+    // RDKit✔️✔️: unsigned int sz = input.size();
+    // RDKit✔️✔️: if (acceptSpaces) {
+    // RDKit✔️✔️:   while (*txt == ' ') {
+    // RDKit✔️✔️:     ++txt;
+    // RDKit✔️✔️:     --sz;
+    // RDKit✔️✔️:     // have we run off the end of the view?
+    // RDKit✔️✔️:     if (sz < 1U) {
+    // RDKit✔️✔️:       return 0;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: }
+    // RDKit✔️✔️: unsigned int res = 0;
+    // RDKit✔️✔️: std::from_chars(txt, txt + sz, res);
+    // RDKit✔️✔️: return res;
+    // END RDKIT CPP FUNCTION
+    let checked = text.split_once('\0').map_or(text, |(prefix, _)| prefix);
+    if !checked
+        .bytes()
+        .all(|byte| byte.is_ascii_digit() || byte == b' ' || byte == b'+')
+    {
+        return Err(());
+    }
+    let input = checked.trim_start_matches(' ');
+    if input.is_empty() {
+        return Ok(0);
+    }
+    // `std::from_chars` consumes the maximal run of decimal digits starting at
+    // the first non-space character. A leading `+` is not a recognized sign,
+    // and overflow leaves the initialized `res` at `0`.
+    let mut res: u32 = 0;
+    for byte in input.bytes() {
+        if !byte.is_ascii_digit() {
+            break;
+        }
+        match res
+            .checked_mul(10)
+            .and_then(|value| value.checked_add(u32::from(byte - b'0')))
+        {
+            Some(value) => res = value,
+            None => return Ok(0),
+        }
+    }
+    Ok(res)
+}
+
+/// Minimal transliteration of a raw `std::from_chars(text, text + size,
+/// unsigned int)` call: parse the maximal leading decimal-digit run, ignore the
+/// remainder, and leave the initialized target at `0` when there is no leading
+/// decimal digit or the value is out of range.
+///
+/// This reproduces the V3000 atom/bond model-index calls (`molIdx`, `bondIdx`,
+/// `a1Idx`, `a2Idx`, `bType`, `cfg`) and is deliberately distinct from the
+/// screening `FileParserUtils::toUnsigned` counts helper above.
+fn parse_from_chars_unsigned(text: &str) -> u32 {
+    let mut result: u32 = 0;
+    for byte in text.bytes() {
+        if !byte.is_ascii_digit() {
+            break;
+        }
+        match result
+            .checked_mul(10)
+            .and_then(|value| value.checked_add(u32::from(byte - b'0')))
+        {
+            Some(value) => result = value,
+            None => return 0,
+        }
+    }
+    result
+}
+
+/// V3000's unscreened C-locale coordinate-prefix conversion.
+fn parse_rdkit_atof(text: &str) -> f64 {
+    // BEGIN RDKIT CPP FUNCTION ParseV3000AtomBlock (coordinate conversion)
+    // RDKit❗✔️: pos.x = atof(std::string(*token).c_str());
+    // RDKit❗✔️: pos.y = atof(std::string(*token).c_str());
+    // RDKit❗✔️: pos.z = atof(std::string(*token).c_str());
+    // END RDKIT CPP FUNCTION
+    // Required parity: ordinary finite decimal/scientific coordinates match
+    // the fixed RDKit environment bit-for-bit, including signs and -0.
+    // Preserve whitespace/prefix semantics; missing-token errors are checked
+    // by the atom loop BEFORE conversion. V2000's screened toDouble path is
+    // distinct and must still reject its source-forbidden characters.
+    // No exact-parity promise for very long significands, subnormal boundaries,
+    // hexadecimal floats or NaN payloads. Existing counterexamples and the
+    // model's nonfinite-coordinate errors stay intact. See the full reference
+    // profile in numeric::parse_rdkit_atof_prefix; this is not a glibc port.
+    // Local cost: a borrowed byte scan, no wrapper allocation or state clone.
+    crate::numeric::parse_rdkit_atof_prefix(text.as_bytes()).0
+}
+
+/// Reproduces the fixed RDKit/glibc atom-map conversion boundary.
+fn parse_rdkit_atoi(text: &str) -> i32 {
+    // BEGIN GLIBC FUNCTION atoi (glibc 2.43, stdlib/atoi.c; the installed
+    // fixed-reference headers expose the identical inline body)
+    // glibc✔️✔️: int
+    // glibc✔️✔️: atoi (const char *nptr)
+    // glibc✔️✔️: {
+    // glibc✔️✔️:   return (int) strtol (nptr, (char **) NULL, 10);
+    // glibc✔️✔️: }
+    // END GLIBC FUNCTION
+    // BEGIN GLIBC FUNCTION ____strtol_l_internal (glibc 2.43,
+    // stdlib/strtol_l.c; applicable base=10, group=0, narrow-char,
+    // 64-bit-long path)
+    // glibc✔️✔️: save = s = nptr;
+    // glibc✔️✔️:
+    // glibc✔️✔️: /* Skip white space.  */
+    // glibc✔️✔️: while (ISSPACE (*s))
+    // glibc✔️✔️:   ++s;
+    // glibc✔️✔️: if (__glibc_unlikely (*s == L_('\0')))
+    // glibc✔️✔️:   goto noconv;
+    // glibc✔️✔️:
+    // glibc✔️✔️: /* Check for a sign.  */
+    // glibc✔️✔️: negative = 0;
+    // glibc✔️✔️: if (*s == L_('-'))
+    // glibc✔️✔️:   {
+    // glibc✔️✔️:     negative = 1;
+    // glibc✔️✔️:     ++s;
+    // glibc✔️✔️:   }
+    // glibc✔️✔️: else if (*s == L_('+'))
+    // glibc✔️✔️:   ++s;
+    // glibc✔️✔️: save = s;
+    // glibc✔️✔️: cutoff = cutoff_tab[base - 2];
+    // glibc✔️✔️: cutlim = cutlim_tab[base - 2];
+    // glibc✔️✔️: overflow = 0;
+    // glibc✔️✔️: i = 0;
+    // glibc✔️✔️: c = *s;
+    // glibc✔️✔️: for (;c != L_('\0'); c = *++s)
+    // glibc✔️✔️:   {
+    // glibc✔️✔️:     if (s == end)
+    // glibc✔️✔️:       break;
+    // glibc✔️✔️:     if (c >= L_('0') && c <= L_('9'))
+    // glibc✔️✔️:       c -= L_('0');
+    // glibc✔️✔️:     else if (ISALPHA (c))
+    // glibc✔️✔️:       c = TOUPPER (c) - L_('A') + 10;
+    // glibc✔️✔️:     else
+    // glibc✔️✔️:       break;
+    // glibc✔️✔️:     if ((int) c >= base)
+    // glibc✔️✔️:       break;
+    // glibc✔️✔️:     if (i > cutoff || (i == cutoff && c > cutlim))
+    // glibc✔️✔️:       overflow = 1;
+    // glibc✔️✔️:     else
+    // glibc✔️✔️:       {
+    // glibc✔️✔️:         i *= (unsigned LONG int) base;
+    // glibc✔️✔️:         i += c;
+    // glibc✔️✔️:       }
+    // glibc✔️✔️:   }
+    // glibc✔️✔️: if (s == save)
+    // glibc✔️✔️:   goto noconv;
+    // glibc✔️✔️: if (overflow == 0
+    // glibc✔️✔️:     && i > (negative
+    // glibc✔️✔️:             ? -((unsigned LONG int) (STRTOL_LONG_MIN + 1)) + 1
+    // glibc✔️✔️:             : (unsigned LONG int) STRTOL_LONG_MAX))
+    // glibc✔️✔️:   overflow = 1;
+    // glibc✔️✔️: if (__glibc_unlikely (overflow))
+    // glibc✔️✔️:   {
+    // glibc✔️✔️:     __set_errno (ERANGE);
+    // glibc✔️✔️:     return negative ? STRTOL_LONG_MIN : STRTOL_LONG_MAX;
+    // glibc✔️✔️:   }
+    // glibc✔️✔️: return negative ? -i : i;
+    // glibc✔️✔️: noconv:
+    // glibc✔️✔️: return 0L;
+    // END GLIBC FUNCTION
+    // Defined source behavior covers a C-locale decimal prefix whose value is
+    // representable as `int`: skip SP/HT/LF/VT/FF/CR, accept one sign, consume
+    // the maximal digit run, and return zero when no conversion occurs.
+    // Outside `int` range, C leaves `atoi` behavior undefined. This helper does
+    // not claim portable source equivalence there; it deliberately reproduces
+    // the observed fixed x86_64 glibc 2.43 reference: `strtol` saturates at the
+    // signed 64-bit `long` limits and the ABI conversion keeps the low 32 bits.
+    // Only a resulting positive `i32` is stored by the caller, so every stored
+    // value fits the detached model's `u32` atom-map field without narrowing.
+    // Both implementations scan once, allocate nothing, and are O(n).
+    let bytes = text.as_bytes();
+    let mut index = 0;
+    while index < bytes.len() && matches!(bytes[index], b' ' | b'\t' | b'\n' | 0x0b | 0x0c | b'\r')
+    {
+        index += 1;
+    }
+    let mut negative = false;
+    if index < bytes.len() && (bytes[index] == b'+' || bytes[index] == b'-') {
+        negative = bytes[index] == b'-';
+        index += 1;
+    }
+    let digits_start = index;
+    let limit = if negative {
+        (i64::MAX as u64) + 1
+    } else {
+        i64::MAX as u64
+    };
+    let mut magnitude = 0_u64;
+    let mut overflow = false;
+    while index < bytes.len() && bytes[index].is_ascii_digit() {
+        let digit = u64::from(bytes[index] - b'0');
+        if !overflow {
+            match magnitude
+                .checked_mul(10)
+                .and_then(|value| value.checked_add(digit))
+            {
+                Some(value) if value <= limit => magnitude = value,
+                _ => overflow = true,
+            }
+        }
+        index += 1;
+    }
+    if index == digits_start {
+        return 0;
+    }
+    let long_value = if overflow {
+        if negative { i64::MIN } else { i64::MAX }
+    } else if negative {
+        if magnitude == (i64::MAX as u64) + 1 {
+            i64::MIN
+        } else {
+            -(magnitude as i64)
+        }
+    } else {
+        magnitude as i64
+    };
+    long_value as i32
+}
+
 pub(super) fn parse_rdkit_int(text: &str) -> Result<i32, ()> {
+    // BEGIN RDKIT CPP FUNCTION FileParserUtils::toInt(std::string_view, bool)
+    // RDKit✔️✔️: int toInt(const std::string_view input, bool acceptSpaces) {
+    // RDKit✔️✔️:   // don't need to worry about locale stuff here because
+    // RDKit✔️✔️:   // we're not going to have delimiters
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   // sanity check on the input since strtol doesn't do it for us:
+    // RDKit✔️✔️:   const char *txt = input.data();
+    // RDKit✔️✔️:   for (size_t i = 0u; i < input.size() && *txt != '\x00'; ++i) {
+    // RDKit✔️✔️:     if ((*txt >= '0' && *txt <= '9') || (acceptSpaces && *txt == ' ') ||
+    // RDKit✔️✔️:         *txt == '+' || *txt == '-') {
+    // RDKit✔️✔️:       ++txt;
+    // RDKit✔️✔️:     } else {
+    // RDKit✔️✔️:       throw boost::bad_lexical_cast();
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   // remove leading spaces
+    // RDKit✔️✔️:   txt = input.data();
+    // RDKit✔️✔️:   unsigned int sz = input.size();
+    // RDKit✔️✔️:   if (acceptSpaces) {
+    // RDKit✔️✔️:     while (*txt == ' ') {
+    // RDKit✔️✔️:       ++txt;
+    // RDKit✔️✔️:       --sz;
+    // RDKit✔️✔️:       // have we run off the end of the view?
+    // RDKit✔️✔️:       if (sz < 1U) {
+    // RDKit✔️✔️:         return 0;
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   int res = 0;
+    // RDKit✔️✔️:   std::from_chars(txt, txt + sz, res);
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   return res;
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION FileParserUtils::toInt(std::string_view, bool)
+    // This helper implements the source default `acceptSpaces=true`. Both
+    // versions perform one linear screening/conversion pass without allocating.
     let checked = text.split_once('\0').map_or(text, |(prefix, _)| prefix);
     if !checked
         .bytes()
@@ -414,10 +692,10 @@ pub(super) fn parse_rdkit_int(text: &str) -> Result<i32, ()> {
         return Err(());
     }
     let input = checked.trim_start_matches(' ');
-    if input.is_empty() {
+    if input.is_empty() || input.starts_with('+') {
         return Ok(0);
     }
-    let sign_len = usize::from(input.starts_with(['+', '-']));
+    let sign_len = usize::from(input.starts_with('-'));
     let digit_count = input[sign_len..]
         .bytes()
         .take_while(u8::is_ascii_digit)
@@ -429,6 +707,28 @@ pub(super) fn parse_rdkit_int(text: &str) -> Result<i32, ()> {
 }
 
 pub(super) fn parse_rdkit_double(text: &str) -> Result<f64, ()> {
+    // BEGIN RDKIT CPP FUNCTION FileParserUtils::toDouble
+    // RDKit❗✔️: const char *txt = input.data();
+    // RDKit❗✔️: for (size_t i = 0u; i < input.size() && *txt != '\x00'; ++i) {
+    // RDKit❗✔️:   // check for ',' and '.' because locale
+    // RDKit❗✔️:   if ((*txt >= '0' && *txt <= '9') || (acceptSpaces && *txt == ' ') ||
+    // RDKit❗✔️:       *txt == '+' || *txt == '-' || *txt == ',' || *txt == '.') {
+    // RDKit❗✔️:     ++txt;
+    // RDKit❗✔️:   } else {
+    // RDKit❗✔️:     throw boost::bad_lexical_cast();
+    // RDKit❗✔️:   }
+    // RDKit❗✔️: }
+    // RDKit❗✔️: // unfortunately from_chars() with doubles didn't work on g++ until v11.1
+    // RDKit❗✔️: // and the status with clang is hard to figure out... we remain old-school
+    // RDKit❗✔️: // remove leading spaces
+    // RDKit❗✔️: double res = atof(input.data());
+    // RDKit❗✔️: return res;
+    // END RDKIT CPP FUNCTION
+    // acceptSpaces=true: screening precedes prefix conversion. In particular,
+    // exponent letters/tabs are errors here even though raw V3000 atof accepts
+    // them. Trailing spaces or another source-allowed character after a valid
+    // numeric prefix do not make atof fail. The numeric compatibility scope
+    // above applies without relaxing this reader-specific screening boundary.
     let checked = text.split_once('\0').map_or(text, |(prefix, _)| prefix);
     if !checked
         .bytes()
@@ -436,12 +736,7 @@ pub(super) fn parse_rdkit_double(text: &str) -> Result<f64, ()> {
     {
         return Err(());
     }
-    let input = checked.trim_start_matches(' ');
-    let numeric_prefix = input.split_once(',').map_or(input, |(prefix, _)| prefix);
-    if numeric_prefix.is_empty() || matches!(numeric_prefix, "+" | "-" | ".") {
-        return Ok(0.0);
-    }
-    numeric_prefix.parse().map_err(|_| ())
+    Ok(parse_rdkit_atof(checked))
 }
 
 fn parse_required_int(
@@ -469,6 +764,31 @@ fn parse_required_unsigned(
         SdfReadError::Parse(format!(
             "Cannot convert '{value}' to unsigned int on line {line_number}"
         ))
+    })
+}
+
+/// V3000 counts counterpart of `parse_required_unsigned`, using the exact
+/// `FileParserUtils::toUnsigned` behavior. V2000 keeps `parse_required_unsigned`.
+fn parse_required_counts_unsigned(
+    line: &str,
+    start: usize,
+    len: usize,
+    line_number: usize,
+) -> Result<u32, SdfReadError> {
+    let value = rdkit_substr(line, start, len);
+    parse_rdkit_unsigned_counts(value).map_err(|()| {
+        SdfReadError::Parse(format!(
+            "Cannot convert '{value}' to unsigned int on line {line_number}"
+        ))
+    })
+}
+
+/// V3000 `COUNTS` field wrapper around the exact `toUnsigned` transliteration.
+fn counts_field(value: &str, kind: &'static str, line: usize) -> Result<u32, SdfReadError> {
+    parse_rdkit_unsigned_counts(value).map_err(|()| SdfReadError::Field {
+        kind,
+        line,
+        value: value.to_string(),
     })
 }
 
@@ -1169,28 +1489,272 @@ fn complex_molfile_atom_query(symbol: &str) -> Option<QueryNode<AtomQueryPredica
     // END RDKIT CPP FUNCTION
 }
 
-fn v2000_element(
-    symbol: &str,
-    strict_parsing: bool,
-) -> Result<
-    (
-        Element,
-        Option<u16>,
-        Option<QueryNode<AtomQueryPredicate>>,
-        Option<String>,
-    ),
-    SdfReadError,
-> {
+#[derive(Debug)]
+struct V2000ElementState {
+    element: Element,
+    shorthand_isotope: Option<u16>,
+    query: Option<QueryNode<AtomQueryPredicate>>,
+    dummy_label: Option<String>,
+    atom_label: Option<String>,
+    no_implicit: bool,
+}
+
+fn is_molfile_generic_group_symbol(symbol: &str) -> bool {
+    // BEGIN RDKIT CPP FUNCTION GenericGroups::genericMatchers
+    // V2000 can only carry the short aliases in its three-column symbol field;
+    // V3000 can carry both the long names and aliases from this same table.
+    // RDKit✔️✔️: const static std::map<
+    // RDKit✔️✔️:     std::string,
+    // RDKit✔️✔️:     std::function<bool(const ROMol &, const Atom &, boost::dynamic_bitset<>)>>
+    // RDKit✔️✔️:     genericMatchers = {
+    // RDKit✔️✔️:     {"Group", Matchers::GroupAtomMatcher},
+    // RDKit✔️✔️:     {"G", Matchers::GroupAtomMatcher},
+    // RDKit✔️✔️:     {"GroupH", Matchers::GroupHAtomMatcher},
+    // RDKit✔️✔️:     {"GH", Matchers::GroupHAtomMatcher},
+    // RDKit✔️✔️:     {"Group*", Matchers::GroupStarAtomMatcher},
+    // RDKit✔️✔️:     {"G*", Matchers::GroupStarAtomMatcher},
+    // RDKit✔️✔️:     {"GroupH*", Matchers::GroupStarHAtomMatcher},
+    // RDKit✔️✔️:     {"GH*", Matchers::GroupStarHAtomMatcher},
+    // RDKit✔️✔️:     {"Alkyl", Matchers::AlkylAtomMatcher},
+    // RDKit✔️✔️:     {"ALK", Matchers::AlkylAtomMatcher},
+    // RDKit✔️✔️:     {"AlkylH", Matchers::AlkylHAtomMatcher},
+    // RDKit✔️✔️:     {"ALH", Matchers::AlkylHAtomMatcher},
+    // RDKit✔️✔️:     {"Alkenyl", Matchers::AlkenylAtomMatcher},
+    // RDKit✔️✔️:     {"AEL", Matchers::AlkenylAtomMatcher},
+    // RDKit✔️✔️:     {"AlkenylH", Matchers::AlkenylHAtomMatcher},
+    // RDKit✔️✔️:     {"AEH", Matchers::AlkenylHAtomMatcher},
+    // RDKit✔️✔️:     {"Alkynyl", Matchers::AlkynylAtomMatcher},
+    // RDKit✔️✔️:     {"AYL", Matchers::AlkynylAtomMatcher},
+    // RDKit✔️✔️:     {"AlkynylH", Matchers::AlkynylHAtomMatcher},
+    // RDKit✔️✔️:     {"AYH", Matchers::AlkynylHAtomMatcher},
+    // RDKit✔️✔️:     {"Carbocyclic", Matchers::CarbocyclicAtomMatcher},
+    // RDKit✔️✔️:     {"CBC", Matchers::CarbocyclicAtomMatcher},
+    // RDKit✔️✔️:     {"CarbocyclicH", Matchers::CarbocyclicHAtomMatcher},
+    // RDKit✔️✔️:     {"CBH", Matchers::CarbocyclicHAtomMatcher},
+    // RDKit✔️✔️:     {"Carbocycloalkyl", Matchers::CarbocycloalkylAtomMatcher},
+    // RDKit✔️✔️:     {"CAL", Matchers::CarbocycloalkylAtomMatcher},
+    // RDKit✔️✔️:     {"CarbocycloalkylH", Matchers::CarbocycloalkylHAtomMatcher},
+    // RDKit✔️✔️:     {"CAH", Matchers::CarbocycloalkylHAtomMatcher},
+    // RDKit✔️✔️:     {"Carbocycloalkenyl", Matchers::CarbocycloalkenylAtomMatcher},
+    // RDKit✔️✔️:     {"CEL", Matchers::CarbocycloalkenylAtomMatcher},
+    // RDKit✔️✔️:     {"CarbocycloalkenylH", Matchers::CarbocycloalkenylHAtomMatcher},
+    // RDKit✔️✔️:     {"CEH", Matchers::CarbocycloalkenylHAtomMatcher},
+    // RDKit✔️✔️:     {"Carboaryl", Matchers::CarboarylAtomMatcher},
+    // RDKit✔️✔️:     {"ARY", Matchers::CarboarylAtomMatcher},
+    // RDKit✔️✔️:     {"CarboarylH", Matchers::CarboarylHAtomMatcher},
+    // RDKit✔️✔️:     {"ARH", Matchers::CarboarylHAtomMatcher},
+    // RDKit✔️✔️:     {"Cyclic", Matchers::CyclicAtomMatcher},
+    // RDKit✔️✔️:     {"CYC", Matchers::CyclicAtomMatcher},
+    // RDKit✔️✔️:     {"CyclicH", Matchers::CyclicHAtomMatcher},
+    // RDKit✔️✔️:     {"CYH", Matchers::CyclicHAtomMatcher},
+    // RDKit✔️✔️:     {"Acyclic", Matchers::AcyclicAtomMatcher},
+    // RDKit✔️✔️:     {"ACY", Matchers::AcyclicAtomMatcher},
+    // RDKit✔️✔️:     {"AcyclicH", Matchers::AcyclicHAtomMatcher},
+    // RDKit✔️✔️:     {"ACH", Matchers::AcyclicHAtomMatcher},
+    // RDKit✔️✔️:     {"Carboacyclic", Matchers::CarboacyclicAtomMatcher},
+    // RDKit✔️✔️:     {"ABC", Matchers::CarboacyclicAtomMatcher},
+    // RDKit✔️✔️:     {"CarboacyclicH", Matchers::CarboacyclicHAtomMatcher},
+    // RDKit✔️✔️:     {"ABH", Matchers::CarboacyclicHAtomMatcher},
+    // RDKit✔️✔️:     {"Heteroacyclic", Matchers::HeteroacyclicAtomMatcher},
+    // RDKit✔️✔️:     {"AHC", Matchers::HeteroacyclicAtomMatcher},
+    // RDKit✔️✔️:     {"HeteroacyclicH", Matchers::HeteroacyclicHAtomMatcher},
+    // RDKit✔️✔️:     {"AHH", Matchers::HeteroacyclicHAtomMatcher},
+    // RDKit✔️✔️:     {"Alkoxy", Matchers::AlkoxyacyclicAtomMatcher},
+    // RDKit✔️✔️:     {"AOX", Matchers::AlkoxyacyclicAtomMatcher},
+    // RDKit✔️✔️:     {"AlkoxyH", Matchers::AlkoxyacyclicHAtomMatcher},
+    // RDKit✔️✔️:     {"AOH", Matchers::AlkoxyacyclicHAtomMatcher},
+    // RDKit✔️✔️:     {"Heterocyclic", Matchers::HeterocyclicAtomMatcher},
+    // RDKit✔️✔️:     {"Heterocyclic", Matchers::HeterocyclicAtomMatcher},
+    // RDKit✔️✔️:     {"CHC", Matchers::HeterocyclicAtomMatcher},
+    // RDKit✔️✔️:     {"HeterocyclicH", Matchers::HeterocyclicHAtomMatcher},
+    // RDKit✔️✔️:     {"CHH", Matchers::HeterocyclicHAtomMatcher},
+    // RDKit✔️✔️:     {"Heteroaryl", Matchers::HeteroarylAtomMatcher},
+    // RDKit✔️✔️:     {"HAR", Matchers::HeteroarylAtomMatcher},
+    // RDKit✔️✔️:     {"HeteroarylH", Matchers::HeteroarylHAtomMatcher},
+    // RDKit✔️✔️:     {"HAH", Matchers::HeteroarylHAtomMatcher},
+    // RDKit✔️✔️:     {"NoCarbonRing", Matchers::NoCarbonRingAtomMatcher},
+    // RDKit✔️✔️:     {"CXX", Matchers::NoCarbonRingAtomMatcher},
+    // RDKit✔️✔️:     {"NoCarbonRingH", Matchers::NoCarbonRingHAtomMatcher},
+    // RDKit✔️✔️:     {"CXH", Matchers::NoCarbonRingHAtomMatcher}};
+    // END RDKIT CPP FUNCTION
+    matches!(
+        symbol,
+        "Group"
+            | "G"
+            | "GroupH"
+            | "GH"
+            | "Group*"
+            | "G*"
+            | "GroupH*"
+            | "GH*"
+            | "Alkyl"
+            | "ALK"
+            | "AlkylH"
+            | "ALH"
+            | "Alkenyl"
+            | "AEL"
+            | "AlkenylH"
+            | "AEH"
+            | "Alkynyl"
+            | "AYL"
+            | "AlkynylH"
+            | "AYH"
+            | "Carbocyclic"
+            | "CBC"
+            | "CarbocyclicH"
+            | "CBH"
+            | "Carbocycloalkyl"
+            | "CAL"
+            | "CarbocycloalkylH"
+            | "CAH"
+            | "Carbocycloalkenyl"
+            | "CEL"
+            | "CarbocycloalkenylH"
+            | "CEH"
+            | "Carboaryl"
+            | "ARY"
+            | "CarboarylH"
+            | "ARH"
+            | "Cyclic"
+            | "CYC"
+            | "CyclicH"
+            | "CYH"
+            | "Acyclic"
+            | "ACY"
+            | "AcyclicH"
+            | "ACH"
+            | "Carboacyclic"
+            | "ABC"
+            | "CarboacyclicH"
+            | "ABH"
+            | "Heteroacyclic"
+            | "AHC"
+            | "HeteroacyclicH"
+            | "AHH"
+            | "Alkoxy"
+            | "AOX"
+            | "AlkoxyH"
+            | "AOH"
+            | "Heterocyclic"
+            | "CHC"
+            | "HeterocyclicH"
+            | "CHH"
+            | "Heteroaryl"
+            | "HAR"
+            | "HeteroarylH"
+            | "HAH"
+            | "NoCarbonRing"
+            | "CXX"
+            | "NoCarbonRingH"
+            | "CXH"
+    )
+}
+
+fn query_from_concrete_atom(spec: &AtomSpec) -> QueryNode<AtomQueryPredicate> {
+    // BEGIN RDKIT CPP FUNCTION QueryAtom::QueryAtom(const Atom &other)
+    // RDKit✔️✔️: explicit QueryAtom(const Atom &other)
+    // RDKit✔️✔️:     : Atom(other), dp_query(makeAtomNumQuery(other.getAtomicNum())) {
+    // RDKit✔️✔️:   if (other.getIsotope()) {
+    // RDKit✔️✔️:     this->expandQuery(makeAtomIsotopeQuery(other.getIsotope()),
+    // RDKit✔️✔️:                       Queries::CompositeQueryType::COMPOSITE_AND);
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   if (other.getFormalCharge()) {
+    // RDKit✔️✔️:     this->expandQuery(makeAtomFormalChargeQuery(other.getFormalCharge()),
+    // RDKit✔️✔️:                       Queries::CompositeQueryType::COMPOSITE_AND);
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   if (other.getNumRadicalElectrons()) {
+    // RDKit✔️✔️:     this->expandQuery(
+    // RDKit✔️✔️:         makeAtomNumRadicalElectronsQuery(other.getNumRadicalElectrons()),
+    // RDKit✔️✔️:         Queries::CompositeQueryType::COMPOSITE_AND);
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION
+    // Behavior review: AtomSpec retains `Some(0)`, so the source's scalar
+    // truth test must be represented explicitly instead of testing Option
+    // presence. Nonzero isotope, charge, and radical predicates retain source
+    // order. This does not alter later MASS expansion on an existing query.
+    // Complexity review: all constructor checks and predicate appends remain
+    // constant-time and allocate only the source-corresponding query nodes.
+    let mut query = atomic_number_query(spec.element().atomic_number());
+    if let Some(isotope) = spec.isotope().filter(|isotope| *isotope != 0) {
+        query = QueryNode::and(vec![
+            query,
+            QueryNode::predicate(AtomQueryPredicate::Isotope(isotope)),
+        ]);
+    }
+    if spec.formal_charge() != 0 {
+        query = QueryNode::and(vec![
+            query,
+            QueryNode::predicate(AtomQueryPredicate::FormalCharge(spec.formal_charge())),
+        ]);
+    }
+    if spec.radical_electrons() != 0 {
+        query = QueryNode::and(vec![
+            query,
+            QueryNode::predicate(AtomQueryPredicate::NumRadicalElectrons(
+                spec.radical_electrons(),
+            )),
+        ]);
+    }
+    query
+}
+
+fn v2000_element(symbol: &str, strict_parsing: bool) -> Result<V2000ElementState, SdfReadError> {
+    // BEGIN RDKIT CPP FUNCTION ParseMolFileAtomLine (atom construction)
+    // RDKit✔️✔️:   if (isComplexQueryName || symb == "L" || symb == "*" || symb == "LP" ||
+    // RDKit✔️✔️:       symb == "R" || symb == "R#" ||
+    // RDKit✔️✔️:       (symb[0] == 'R' && symb >= "R0" && symb <= "R99")) {
+    // RDKit✔️✔️:     if (isComplexQueryName || symb == "*" || symb == "R") {
+    // RDKit✔️✔️:       auto *query = new QueryAtom(0);
+    // RDKit✔️✔️:       if (symb == "*" || symb == "R") {
+    // RDKit✔️✔️:         query->setQuery(makeAtomNullQuery());
+    // RDKit✔️✔️:       } else if (isComplexQueryName) {
+    // RDKit✔️✔️:         convertComplexNameToQuery(query, symb);
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:       res.reset(query);
+    // RDKit✔️✔️:       res->setNoImplicit(true);
+    // RDKit✔️✔️:     } else {
+    // RDKit✔️✔️:       res->setAtomicNum(0);
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     if (symb[0] == 'R') {
+    // RDKit✔️✔️:       setRGPProps(symb, res.get());
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   } else if (symb == "D") {
+    // RDKit✔️✔️:     res->setAtomicNum(1);
+    // RDKit✔️✔️:     res->setIsotope(2);
+    // RDKit✔️✔️:   } else if (symb == "T") {
+    // RDKit✔️✔️:     res->setAtomicNum(1);
+    // RDKit✔️✔️:     res->setIsotope(3);
+    // RDKit✔️✔️:   } else if (symb == "Pol" || symb == "Mod") {
+    // RDKit✔️✔️:     res->setAtomicNum(0);
+    // RDKit✔️✔️:     res->setProp(common_properties::dummyLabel, symb);
+    // RDKit✔️✔️:   } else if (GenericGroups::genericMatchers.find(symb) !=
+    // RDKit✔️✔️:              GenericGroups::genericMatchers.end()) {
+    // RDKit✔️✔️:     res.reset(new QueryAtom(0));
+    // RDKit✔️✔️:     res->setProp(common_properties::atomLabel, std::string(symb));
+    // RDKit✔️✔️:   } else {
+    // RDKit✔️✔️:     lookupAtomicNumber(res.get(), symb, strictParsing);
+    // RDKit✔️✔️:   }
+    // END RDKIT CPP FUNCTION
     if let Some(query) = complex_molfile_atom_query(symbol) {
-        return Ok((Element::DUMMY, None, Some(query), None));
+        return Ok(V2000ElementState {
+            element: Element::DUMMY,
+            shorthand_isotope: None,
+            query: Some(query),
+            dummy_label: None,
+            atom_label: None,
+            no_implicit: true,
+        });
     }
     if matches!(symbol, "*" | "R") {
-        return Ok((
-            Element::DUMMY,
-            None,
-            Some(QueryNode::predicate(AtomQueryPredicate::Any)),
-            None,
-        ));
+        return Ok(V2000ElementState {
+            element: Element::DUMMY,
+            shorthand_isotope: None,
+            query: Some(QueryNode::predicate(AtomQueryPredicate::Any)),
+            dummy_label: (symbol == "R").then(|| symbol.to_owned()),
+            atom_label: None,
+            no_implicit: true,
+        });
     }
     if let Some(label) = symbol.strip_prefix('R')
         && !label.is_empty()
@@ -1198,31 +1762,64 @@ fn v2000_element(
         && label.bytes().all(|byte| byte.is_ascii_digit())
     {
         let label = label.parse::<u32>().unwrap_or(0);
-        return Ok((
-            Element::DUMMY,
-            Some(label as u16),
-            Some(QueryNode::predicate(AtomQueryPredicate::RGroupLabel(label))),
-            Some(symbol.to_owned()),
-        ));
+        return Ok(V2000ElementState {
+            element: Element::DUMMY,
+            shorthand_isotope: Some(label as u16),
+            query: None,
+            dummy_label: Some(symbol.to_owned()),
+            atom_label: None,
+            no_implicit: false,
+        });
     }
     if matches!(symbol, "L" | "LP" | "R#") {
-        return Ok((
-            Element::DUMMY,
-            None,
-            Some(QueryNode::predicate(AtomQueryPredicate::MolFileAlias(
-                symbol.to_owned(),
-            ))),
-            (symbol.starts_with('R')).then(|| symbol.to_owned()),
-        ));
+        return Ok(V2000ElementState {
+            element: Element::DUMMY,
+            shorthand_isotope: None,
+            query: None,
+            dummy_label: (symbol == "R#").then(|| symbol.to_owned()),
+            atom_label: None,
+            no_implicit: false,
+        });
     }
     if symbol == "D" {
-        return Ok((Element::H, Some(2), None, None));
+        return Ok(V2000ElementState {
+            element: Element::H,
+            shorthand_isotope: Some(2),
+            query: None,
+            dummy_label: None,
+            atom_label: None,
+            no_implicit: false,
+        });
     }
     if symbol == "T" {
-        return Ok((Element::H, Some(3), None, None));
+        return Ok(V2000ElementState {
+            element: Element::H,
+            shorthand_isotope: Some(3),
+            query: None,
+            dummy_label: None,
+            atom_label: None,
+            no_implicit: false,
+        });
     }
     if matches!(symbol, "Pol" | "Mod") {
-        return Ok((Element::DUMMY, None, None, Some(symbol.to_owned())));
+        return Ok(V2000ElementState {
+            element: Element::DUMMY,
+            shorthand_isotope: None,
+            query: None,
+            dummy_label: Some(symbol.to_owned()),
+            atom_label: None,
+            no_implicit: false,
+        });
+    }
+    if is_molfile_generic_group_symbol(symbol) {
+        return Ok(V2000ElementState {
+            element: Element::DUMMY,
+            shorthand_isotope: None,
+            query: Some(QueryNode::predicate(AtomQueryPredicate::AtomicNumber(0))),
+            dummy_label: None,
+            atom_label: Some(symbol.to_owned()),
+            no_implicit: false,
+        });
     }
     let normalized;
     let lookup = if symbol.len() == 2 && symbol.as_bytes()[1].is_ascii_uppercase() {
@@ -1236,7 +1833,14 @@ fn v2000_element(
         symbol
     };
     match Element::from_symbol(lookup) {
-        Some(element) => Ok((element, None, None, None)),
+        Some(element) => Ok(V2000ElementState {
+            element,
+            shorthand_isotope: None,
+            query: None,
+            dummy_label: None,
+            atom_label: None,
+            no_implicit: false,
+        }),
         None if !strict_parsing && !symbol.is_empty() => {
             // BEGIN RDKIT CPP FUNCTION lookupAtomicNumber
             // RDKit✔️✔️:   } catch (const Invar::Invariant &e) {
@@ -1248,7 +1852,14 @@ fn v2000_element(
             // RDKit✔️✔️:     }
             // RDKit✔️✔️:   }
             // END RDKIT CPP FUNCTION
-            Ok((Element::DUMMY, None, None, Some(symbol.to_owned())))
+            Ok(V2000ElementState {
+                element: Element::DUMMY,
+                shorthand_isotope: None,
+                query: None,
+                dummy_label: Some(symbol.to_owned()),
+                atom_label: None,
+                no_implicit: false,
+            })
         }
         None => Err(SdfReadError::Parse(format!("Element '{symbol}' not found"))),
     }
@@ -1288,19 +1899,6 @@ fn parse_v2000_atom_line(
     // RDKit✔️✔️: symb = text.substr(31, 3);
     // RDKit✔️✔️: boost::trim(symb);
     let symbol = rdkit_substr(line, 31, 3).trim();
-    let (element, shorthand_isotope, mut query, dummy_label) =
-        v2000_element(symbol, strict_parsing)?;
-    let mut spec = AtomSpec::new(element);
-    if query.is_some() {
-        spec = spec.with_no_implicit(true);
-    }
-    if let Some(isotope) = shorthand_isotope {
-        spec = spec.with_isotope(isotope);
-    }
-    if let Some(dummy_label) = dummy_label {
-        spec = spec.with_prop("dummyLabel", dummy_label)?;
-    }
-
     // RDKit✔️✔️: massDiff = 0;
     // RDKit✔️✔️: if (text.size() >= 36 && text.substr(34, 2) != " 0") {
     // RDKit✔️✔️:   massDiff = FileParserUtils::toInt(text.substr(34, 2), true);
@@ -1310,26 +1908,115 @@ fn parse_v2000_atom_line(
     } else {
         0
     };
-    if mass_diff != 0 {
-        let base = cosmolkit_core::most_common_isotope(element) as i32;
-        let isotope = base + mass_diff;
-        if isotope >= 0 {
-            spec = spec.with_isotope(isotope as u16);
-        }
-    }
-
     // RDKit✔️✔️: chg = 0;
     // RDKit✔️✔️: if (text.size() >= 39 && text.substr(36, 3) != "  0") {
     // RDKit✔️✔️:   chg = FileParserUtils::toInt(text.substr(36, 3), true);
     // RDKit✔️✔️: }
+    let charge_code = if line.len() >= 39 && rdkit_substr(line, 36, 3) != "  0" {
+        parse_required_int(line, 36, 3, line_number)?
+    } else {
+        0
+    };
+    // RDKit✔️✔️: hCount = 0;
+    // RDKit✔️✔️: if (text.size() >= 45 && text.substr(42, 3) != "  0") {
+    // RDKit✔️✔️:   hCount = FileParserUtils::toInt(text.substr(42, 3), true);
+    // RDKit✔️✔️: }
+    let h_count = if line.len() >= 45 && rdkit_substr(line, 42, 3) != "  0" {
+        parse_required_int(line, 42, 3, line_number)?
+    } else {
+        0
+    };
+
+    let element_state = v2000_element(symbol, strict_parsing)?;
+    let element = element_state.element;
+    let mut query = element_state.query;
+    let mut spec = AtomSpec::new(element);
+    if element_state.no_implicit {
+        spec = spec.with_no_implicit(true);
+    }
+    if let Some(isotope) = element_state.shorthand_isotope {
+        spec = spec.with_isotope(isotope);
+    }
+    if let Some(dummy_label) = element_state.dummy_label {
+        spec = spec.with_prop("dummyLabel", dummy_label)?;
+    }
+    if let Some(atom_label) = element_state.atom_label {
+        spec = spec.with_prop("atomLabel", atom_label)?;
+    }
+
     // RDKit✔️✔️: if (chg != 0) {
     // RDKit✔️✔️:   res->setFormalCharge(4 - chg);
     // RDKit✔️✔️: }
-    if line.len() >= 39 && rdkit_substr(line, 36, 3) != "  0" {
-        let charge_code = parse_required_int(line, 36, 3, line_number)?;
-        if charge_code != 0 {
-            spec = spec.with_formal_charge((4 - charge_code) as i8);
-        }
+    if charge_code != 0 {
+        let formal_charge = i8::try_from(4 - charge_code).map_err(|_| {
+            SdfReadError::Unsupported(
+                "V2000 charge code is outside the detached formal-charge model",
+            )
+        })?;
+        spec = spec.with_formal_charge(formal_charge);
+    }
+
+    // RDKit✔️✔️: if (hCount >= 1) {
+    // RDKit✔️✔️:   if (!res->hasQuery()) {
+    // RDKit✔️✔️:     auto qatom = new QueryAtom(*res);
+    // RDKit✔️✔️:     res.reset(qatom);
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   res->setNoImplicit(true);
+    // RDKit✔️✔️:   if (hCount > 1) {
+    // RDKit✔️✔️:     ATOM_EQUALS_QUERY *oq = makeAtomImplicitHCountQuery(hCount - 1);
+    // RDKit✔️✔️:     auto nq = makeAtomSimpleQuery<ATOM_LESSEQUAL_QUERY>(
+    // RDKit✔️✔️:         hCount - 1, oq->getDataFunc(),
+    // RDKit✔️✔️:         std::string("less_") + oq->getDescription());
+    // RDKit✔️✔️:     res->expandQuery(nq);
+    // RDKit✔️✔️:     delete oq;
+    // RDKit✔️✔️:   } else {
+    // RDKit✔️✔️:     res->expandQuery(makeAtomImplicitHCountQuery(0));
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: }
+    if h_count >= 1 {
+        spec = spec.with_no_implicit(true);
+        let hydrogen_query = QueryNode::predicate(if h_count > 1 {
+            AtomQueryPredicate::ImplicitHydrogenCountLessEqual(u8::try_from(h_count - 1).map_err(
+                |_| {
+                    SdfReadError::Unsupported(
+                        "V2000 hydrogen count is outside the detached query model",
+                    )
+                },
+            )?)
+        } else {
+            AtomQueryPredicate::ImplicitHydrogenCount(0)
+        });
+        query = Some(match query {
+            Some(QueryNode::Predicate(AtomQueryPredicate::Any)) => hydrogen_query,
+            Some(existing) => QueryNode::and(vec![existing, hydrogen_query]),
+            None => QueryNode::and(vec![query_from_concrete_atom(&spec), hydrogen_query]),
+        });
+    }
+
+    if mass_diff != 0 {
+        // RDKit✔️✔️:   if (massDiff != 0) {
+        // RDKit✔️✔️:     int defIso =
+        // RDKit✔️✔️:         PeriodicTable::getTable()->getMostCommonIsotope(res->getAtomicNum());
+        // RDKit✔️✔️:     int dIso = defIso + massDiff;
+        // RDKit✔️✔️:     if (dIso < 0) {
+        // RDKit✔️✔️:       BOOST_LOG(rdWarningLog)
+        // RDKit✔️✔️:           << " atom " << res->getIdx()
+        // RDKit✔️✔️:           << " has a negative isotope offset. line:  " << line << std::endl;
+        // RDKit✔️✔️:     }
+        // RDKit✔️✔️:     res->setIsotope(dIso);
+        // RDKit✔️✔️:   }
+        let base = cosmolkit_core::most_common_isotope(element) as i32;
+        let isotope = base
+            .checked_add(mass_diff)
+            .ok_or(SdfReadError::Unsupported(
+                "V2000 isotope offset overflows the detached isotope model",
+            ))?;
+        let isotope = u16::try_from(isotope).map_err(|_| {
+            SdfReadError::Unsupported(
+                "V2000 negative isotope offset is not representable in the detached isotope model",
+            )
+        })?;
+        spec = spec.with_isotope(isotope);
     }
 
     // RDKit✔️✔️: if (text.size() >= 42 && text.substr(39, 3) != "  0") {
@@ -1341,27 +2028,6 @@ fn parse_v2000_atom_line(
         spec = spec
             .with_mol_parity(parity)
             .with_prop("molParity", parity.to_string())?;
-    }
-
-    // RDKit✔️✔️: hCount = 0;
-    // RDKit✔️✔️: if (text.size() >= 45 && text.substr(42, 3) != "  0") {
-    // RDKit✔️✔️:   hCount = FileParserUtils::toInt(text.substr(42, 3), true);
-    // RDKit✔️✔️: }
-    if line.len() >= 45 && rdkit_substr(line, 42, 3) != "  0" {
-        let h_count = parse_required_int(line, 42, 3, line_number)?;
-        if h_count >= 1 {
-            spec = spec.with_no_implicit(true);
-            let predicate = if h_count > 1 {
-                AtomQueryPredicate::ImplicitHydrogenCountLessEqual((h_count - 1) as u8)
-            } else {
-                AtomQueryPredicate::ImplicitHydrogenCount(0)
-            };
-            let predicate = QueryNode::predicate(predicate);
-            query = Some(match query {
-                Some(existing) => QueryNode::and(vec![existing, predicate]),
-                None => predicate,
-            });
-        }
     }
 
     for (start, key) in [
@@ -1382,8 +2048,13 @@ fn parse_v2000_atom_line(
     // RDKit✔️✔️: res->setProp(common_properties::molAtomMapNumber, atomMapNumber);
     if line.len() >= 63 && rdkit_substr(line, 60, 3) != "  0" {
         let atom_map = parse_required_int(line, 60, 3, line_number)?;
+        let typed_atom_map = u32::try_from(atom_map).map_err(|_| {
+            SdfReadError::Unsupported(
+                "negative V2000 atom-map number is not representable in the detached atom model",
+            )
+        })?;
         spec = spec
-            .with_atom_map(atom_map as u32)
+            .with_atom_map(typed_atom_map)
             .with_prop("molAtomMapNumber", atom_map.to_string())?;
     }
     // RDKit✔️✔️: inversionFlag = FileParserUtils::toInt(text.substr(63, 3), true);
@@ -1463,6 +2134,15 @@ fn parse_v2000_bond_line(
     // RDKit✔️✔️:       BOND_NULL_QUERY *q;
     // RDKit✔️✔️:       q = makeBondNullQuery();
     // RDKit✔️✔️:       res->setQuery(q);
+    // RDKit✔️✔️:     } else if (bType == 5) {
+    // RDKit✔️✔️:       res->setQuery(makeSingleOrDoubleBondQuery());
+    // RDKit✔️✔️:       res->setProp(common_properties::_MolFileBondQuery, 1);
+    // RDKit✔️✔️:     } else if (bType == 6) {
+    // RDKit✔️✔️:       res->setQuery(makeSingleOrAromaticBondQuery());
+    // RDKit✔️✔️:       res->setProp(common_properties::_MolFileBondQuery, 1);
+    // RDKit✔️✔️:     } else if (bType == 7) {
+    // RDKit✔️✔️:       res->setQuery(makeDoubleOrAromaticBondQuery());
+    // RDKit✔️✔️:       res->setProp(common_properties::_MolFileBondQuery, 1);
     // RDKit✔️✔️:     } else {
     // RDKit✔️✔️:       BOND_NULL_QUERY *q;
     // RDKit✔️✔️:       q = makeBondNullQuery();
@@ -1561,6 +2241,24 @@ fn parse_v2000_bond_line(
         && let Ok(topology) = parse_rdkit_int(rdkit_substr(line, 15, 3))
         && topology != 0
     {
+        // RDKit✔️✔️:       if (topology) {
+        // RDKit✔️✔️:         if (!res->hasQuery()) {
+        // RDKit✔️✔️:           auto *qBond = new QueryBond(*res);
+        // RDKit✔️✔️:           delete res;
+        // RDKit✔️✔️:           res = qBond;
+        // RDKit✔️✔️:         }
+        // RDKit✔️✔️:         BOND_EQUALS_QUERY *q = makeBondIsInRingQuery();
+        // RDKit✔️✔️:         switch (topology) {
+        // RDKit✔️✔️:           case 1:
+        // RDKit✔️✔️:             break;
+        // RDKit✔️✔️:           case 2:
+        // RDKit✔️✔️:             q->setNegation(true);
+        // RDKit✔️✔️:             break;
+        // RDKit✔️✔️:           default:
+        // RDKit✔️✔️:             throw FileParseException(errout.str());
+        // RDKit✔️✔️:         }
+        // RDKit✔️✔️:         res->expandQuery(q);
+        // RDKit✔️✔️:       }
         let topology_query = match topology {
             1 => QueryNode::predicate(BondQueryPredicate::IsInRing(true)),
             2 => QueryNode::predicate(BondQueryPredicate::IsInRing(false)),
@@ -1571,8 +2269,12 @@ fn parse_v2000_bond_line(
             }
         };
         query = Some(match query {
+            Some(QueryNode::Predicate(BondQueryPredicate::Any)) => topology_query,
             Some(existing) => QueryNode::and(vec![existing, topology_query]),
-            None => topology_query,
+            None => QueryNode::and(vec![
+                QueryNode::predicate(BondQueryPredicate::Order(order)),
+                topology_query,
+            ]),
         });
     }
     // END RDKIT CPP FUNCTION
@@ -1750,8 +2452,14 @@ fn parse_v2000_atom_list_line(
             )));
         }
     };
+    // ParseNewAtomList leaves the first atomic number on a one-member list,
+    // including a negated list, and resets it to zero only when a second OR
+    // child is appended.
     let element = match &predicate {
-        AtomQueryPredicate::AtomicNumberIn(numbers) if numbers.len() == 1 => {
+        AtomQueryPredicate::AtomicNumberIn(numbers)
+        | AtomQueryPredicate::AtomicNumberNotIn(numbers)
+            if numbers.len() == 1 =>
+        {
             Element::from_atomic_number(numbers[0]).unwrap_or(Element::DUMMY)
         }
         _ => Element::DUMMY,
@@ -2022,10 +2730,12 @@ fn parse_v2000_substitution_line(
     // RDKit❗✔️:   atom->expandQuery(q, Queries::COMPOSITE_AND);
     // RDKit❗✔️: }
     for (atom_id, count) in parse_v2000_query_count_entries(line, line_number)? {
+        // RDKit obtains the atom before testing the zero/no-op value, so an
+        // invalid atom bookmark is still an error for a zero entry.
+        let atom = v2000_atom_mut(atoms, atom_id as i32, line_number)?;
         if count == 0 {
             continue;
         }
-        let atom = v2000_atom_mut(atoms, atom_id as i32, line_number)?;
         let degree = match count {
             -1 => 0,
             -2 => explicit_degrees[atom_id as usize - 1],
@@ -2063,6 +2773,7 @@ fn parse_v2000_unsaturation_line(
     // RDKit❗✔️:   throw FileParseException(errout.str());
     // RDKit❗✔️: }
     for (atom_id, count) in parse_v2000_query_count_entries(line, line_number)? {
+        let atom = v2000_atom_mut(atoms, atom_id as i32, line_number)?;
         if count == 0 {
             continue;
         }
@@ -2071,7 +2782,6 @@ fn parse_v2000_unsaturation_line(
                 "Value {count} is not supported as an unsaturation query (only 0 and 1 are allowed). line: {line_number}"
             )));
         }
-        let atom = v2000_atom_mut(atoms, atom_id as i32, line_number)?;
         atom.query = Some(merge_v2000_atom_query(
             atom.query.take(),
             QueryNode::predicate(AtomQueryPredicate::IsUnsaturated),
@@ -2113,6 +2823,7 @@ fn parse_v2000_ring_bond_count_line(
     // RDKit❗✔️: }
     // RDKit❗✔️: atom->expandQuery(q, Queries::COMPOSITE_AND);
     for (atom_id, count) in parse_v2000_query_count_entries(line, line_number)? {
+        let atom = v2000_atom_mut(atoms, atom_id as i32, line_number)?;
         if count == 0 {
             continue;
         }
@@ -2130,7 +2841,6 @@ fn parse_v2000_ring_bond_count_line(
                 )));
             }
         };
-        let atom = v2000_atom_mut(atoms, atom_id as i32, line_number)?;
         update_v2000_atom_spec(atom, |spec| {
             spec.with_prop("molRingBondCount", count.to_string())
         })?;
@@ -2387,6 +3097,72 @@ fn parse_v2000_atom_value(
     Ok(())
 }
 
+fn parse_v2000_marvin_smarts_line(
+    line: &str,
+    line_number: usize,
+    atoms: &mut [ParsedV2000Atom],
+) -> Result<(), SdfReadError> {
+    // BEGIN RDKIT CPP FUNCTION ParseMarvinSmartsLine
+    // RDKit✔️✔️: const unsigned int atomNumStart = 10;
+    // RDKit✔️✔️: const unsigned int smartsStart = 15;
+    // RDKit✔️✔️: if (text.substr(0, 10) != "M  MRV SMA") {
+    // RDKit✔️✔️:   return;
+    // RDKit✔️✔️: }
+    // RDKit✔️✔️: std::string idxTxt = text.substr(atomNumStart, smartsStart - atomNumStart);
+    // RDKit✔️✔️: idx = FileParserUtils::stripSpacesAndCast<unsigned int>(idxTxt) - 1;
+    // RDKit✔️✔️: URANGE_CHECK(idx, mol->getNumAtoms());
+    // RDKit✔️✔️: std::string sma = text.substr(smartsStart);
+    // RDKit✔️✔️: Atom *at = mol->getAtomWithIdx(idx);
+    // RDKit✔️✔️: at->setProp(common_properties::MRV_SMA, sma);
+    // RDKit✔️✔️: RWMol *m = nullptr;
+    // RDKit✔️✔️: try {
+    // RDKit✔️✔️:   m = SmartsToMol(sma);
+    // RDKit✔️✔️: } catch (...) {
+    // RDKit✔️✔️: }
+    // RDKit✔️✔️: if (m) {
+    // RDKit✔️✔️:   QueryAtom::QUERYATOM_QUERY *query = new RecursiveStructureQuery(m);
+    // RDKit✔️✔️:   if (!at->hasQuery()) {
+    // RDKit✔️✔️:     QueryAtom qAt(*at);
+    // RDKit✔️✔️:     int oidx = at->getIdx();
+    // RDKit✔️✔️:     mol->replaceAtom(oidx, &qAt);
+    // RDKit✔️✔️:     at = mol->getAtomWithIdx(oidx);
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   at->expandQuery(query, Queries::COMPOSITE_AND);
+    // RDKit✔️✔️:   at->setProp(common_properties::_MolFileAtomQuery, 1);
+    // RDKit✔️✔️: } else {
+    // RDKit✔️✔️:   throw FileParseException(errout.str());
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION
+    if !line.starts_with("M  MRV SMA") {
+        return Ok(());
+    }
+    let atom_id = parse_required_unsigned(line, 10, 5, line_number)?;
+    // RDKit performs the bookmark range check before it extracts/parses the
+    // SMARTS. Preserve that observable error ordering without holding a
+    // mutable borrow across the canonical SMARTS parser call.
+    let _ = v2000_atom_mut(atoms, atom_id as i32, line_number)?;
+    let smarts = line.get(15..).unwrap_or_default();
+    let query_graph =
+        cosmolkit_search::parse_smarts(smarts, &cosmolkit_search::SmartsParseParams::default())
+            .map_err(|_| {
+                SdfReadError::Parse(format!(
+                    "Cannot parse smarts: '{smarts}' on line {line_number}"
+                ))
+            })?;
+    let recursive = RecursiveStructureQuery::from_query_graph(query_graph, 0)
+        .with_source_smarts(smarts.to_owned());
+    let atom = v2000_atom_mut(atoms, atom_id as i32, line_number)?;
+    update_v2000_atom_spec(atom, |spec| {
+        spec.with_prop("MRV SMA", smarts)?
+            .with_prop("_MolFileAtomQuery", "1")
+    })?;
+    atom.query = Some(merge_v2000_atom_query(
+        atom.query.take(),
+        QueryNode::predicate(AtomQueryPredicate::RecursiveSmarts(recursive)),
+    ));
+    Ok(())
+}
+
 fn parse_v2000_apo_line(
     line: &str,
     line_number: usize,
@@ -2437,19 +3213,20 @@ fn parse_v2000_apo_line(
             0
         };
         position += 4;
+        // ParseAttachPointLine validates the atom bookmark before it checks
+        // the attachment-point value range.
+        let atom = v2000_atom_mut(atoms, atom_id as i32, line_number)?;
         if !(0..=3).contains(&value) {
             return Err(SdfReadError::Parse(format!(
                 "Value {value} from APO specification on line {line_number} is invalid"
             )));
         }
         if value == 0 {
-            let _ = v2000_atom_mut(atoms, atom_id as i32, line_number)?;
             continue;
         }
         if value == 3 {
             value = -1;
         }
-        let atom = v2000_atom_mut(atoms, atom_id as i32, line_number)?;
         if atom.spec.prop("molAttachPoint").is_some() {
             if params.strict_parsing {
                 return Err(SdfReadError::Parse(format!(
@@ -2621,7 +3398,7 @@ fn apply_v2000_property_lines(
             // RDKit✔️✔️:     }
             // RDKit✔️✔️:   }
             // END RDKIT CPP FUNCTION
-            if params.strict_parsing {
+            if params.strict_parsing || cursor != start {
                 return Err(SdfReadError::Parse(format!(
                     "Problems encountered parsing Mol data, unexpected blank line found at line {line_number}"
                 )));
@@ -2708,8 +3485,13 @@ fn apply_v2000_property_lines(
                     position += 4;
                     let charge = parse_required_int(line, position, 4, line_number)?;
                     position += 4;
+                    let charge = i8::try_from(charge).map_err(|_| {
+                        SdfReadError::Unsupported(
+                            "V2000 CHG charge outside the detached i8 charge model",
+                        )
+                    })?;
                     let atom = v2000_atom_mut(atoms, atom_id, line_number)?;
-                    update_v2000_atom_spec(atom, |spec| Ok(spec.with_formal_charge(charge as i8)))?;
+                    update_v2000_atom_spec(atom, |spec| Ok(spec.with_formal_charge(charge)))?;
                 }
                 first_charge_line = false;
                 // END RDKIT CPP FUNCTION
@@ -2783,13 +3565,18 @@ fn apply_v2000_property_lines(
                 for _ in 0..count {
                     let atom_id = parse_required_unsigned(line, position, 4, line_number)?;
                     position += 4;
+                    // ParseIsotopeLine resolves the atom bookmark before
+                    // inspecting a blank or negative isotope field.
+                    let atom = v2000_atom_mut(atoms, atom_id as i32, line_number)?;
                     if line.len() >= position + 4 && rdkit_substr(line, position, 4) != "    " {
                         let isotope = parse_required_int(line, position, 4, line_number)?;
                         if isotope >= 0 {
-                            let atom = v2000_atom_mut(atoms, atom_id as i32, line_number)?;
-                            update_v2000_atom_spec(atom, |spec| {
-                                Ok(spec.with_isotope(isotope as u16))
+                            let isotope = u16::try_from(isotope).map_err(|_| {
+                                SdfReadError::Unsupported(
+                                    "V2000 isotope outside the detached u16 isotope model",
+                                )
                             })?;
+                            update_v2000_atom_spec(atom, |spec| Ok(spec.with_isotope(isotope)))?;
                         }
                     }
                     position += 4;
@@ -2800,6 +3587,11 @@ fn apply_v2000_property_lines(
             | "M  SPA" | "M  SMT" | "M  SDI" | "M  SBV" | "M  SDT" | "M  SDD" | "M  SCD"
             | "M  SED" | "M  SPL" | "M  SNC" | "M  SAP" | "M  SCL" | "M  SBT" => {
                 sgroup_state.parse_line(line, line_number, atoms.len(), &bond_endpoints)?;
+            }
+            "M  CRS" => {
+                return Err(SdfReadError::Parse(format!(
+                    "Unsupported SGroup subtype 'M  CRS' on line {line_number}"
+                )));
             }
             "M  ALS" => parse_v2000_atom_list_line(line, line_number, atoms)?,
             "M  RGP" => parse_v2000_rgroup_line(line, line_number, atoms)?,
@@ -2817,11 +3609,7 @@ fn apply_v2000_property_lines(
                 let value = parse_v2000_lin_line(line, line_number, atoms.len())?;
                 molfile_properties.insert("_MolFileLinkNodes".to_owned(), value);
             }
-            "M  MRV" => {
-                return Err(SdfReadError::Unsupported(
-                    "V2000 Marvin SMARTS requires the detached SMARTS parser contract",
-                ));
-            }
+            "M  MRV" => parse_v2000_marvin_smarts_line(line, line_number, atoms)?,
             _ => {}
         }
         cursor += 1;
@@ -2925,16 +3713,22 @@ fn read_v2000_record_detached(
     } else {
         0
     };
-    if lines.len() < 4 + atom_count + bond_count {
-        return Err(SdfReadError::Counts);
-    }
     let mut parsed_atoms = Vec::with_capacity(atom_count);
     let mut coords2 = Vec::with_capacity(atom_count);
     let mut coords3 = Vec::with_capacity(atom_count);
     let mut has_z = false;
     for index in 0..atom_count {
         let line_no = 5 + index;
-        let parsed = parse_v2000_atom_line(lines[4 + index], line_no, params.strict_parsing)?;
+        // BEGIN RDKIT CPP FUNCTION ParseMolBlockAtoms
+        // RDKit✔️✔️:     std::string tempStr = getLine(inStream);
+        // RDKit✔️✔️:     if (inStream->eof()) {
+        // RDKit✔️✔️:       throw FileParseException("EOF hit while reading atoms");
+        // RDKit✔️✔️:     }
+        // END RDKIT CPP FUNCTION
+        let atom_line = lines
+            .get(4 + index)
+            .ok_or_else(|| SdfReadError::Parse("EOF hit while reading atoms".to_owned()))?;
+        let parsed = parse_v2000_atom_line(atom_line, line_no, params.strict_parsing)?;
         has_z |= parsed.coordinate[2] != 0.0;
         coords2.push([parsed.coordinate[0], parsed.coordinate[1]]);
         coords3.push(parsed.coordinate);
@@ -2943,12 +3737,46 @@ fn read_v2000_record_detached(
     let mut bonds = Vec::with_capacity(bond_count);
     for index in 0..bond_count {
         let line_no = 5 + atom_count + index;
-        bonds.push(parse_v2000_bond_line(
-            lines[4 + atom_count + index],
-            line_no,
-            atom_count,
-            index,
-        )?);
+        // BEGIN RDKIT CPP FUNCTION ParseMolBlockBonds
+        // RDKit✔️✔️:     std::string tempStr = getLine(inStream);
+        // RDKit✔️✔️:     if (inStream->eof()) {
+        // RDKit✔️✔️:       throw FileParseException("EOF hit while reading bonds");
+        // RDKit✔️✔️:     }
+        // END RDKIT CPP FUNCTION
+        let bond_line = lines
+            .get(4 + atom_count + index)
+            .ok_or_else(|| SdfReadError::Parse("EOF hit while reading bonds".to_owned()))?;
+        let mut parsed = parse_v2000_bond_line(bond_line, line_no, atom_count, index)?;
+        // BEGIN RDKIT CPP FUNCTION ParseMolBlockBonds
+        // RDKit✔️✔️:     // v2k has no way to set stereoCare on bonds, so set the property if both
+        // RDKit✔️✔️:     // the beginning and end atoms have it set:
+        // RDKit✔️✔️:     int care1 = 0;
+        // RDKit✔️✔️:     int care2 = 0;
+        // RDKit✔️✔️:     if (!bond->hasProp(common_properties::molStereoCare) &&
+        // RDKit✔️✔️:         mol->getAtomWithIdx(bond->getBeginAtomIdx())
+        // RDKit✔️✔️:             ->getPropIfPresent(common_properties::molStereoCare, care1) &&
+        // RDKit✔️✔️:         mol->getAtomWithIdx(bond->getEndAtomIdx())
+        // RDKit✔️✔️:             ->getPropIfPresent(common_properties::molStereoCare, care2)) {
+        // RDKit✔️✔️:       if (care1 && care2) {
+        // RDKit✔️✔️:         bond->setProp(common_properties::molStereoCare, 1);
+        // RDKit✔️✔️:       }
+        // RDKit✔️✔️:     }
+        // END RDKIT CPP FUNCTION
+        let begin = parsed.bond.begin().index();
+        let end = parsed.bond.end().index();
+        let endpoint_requests_stereo_care = |atom: &ParsedV2000Atom| {
+            atom.spec
+                .prop("molStereoCare")
+                .and_then(|value| value.parse::<i32>().ok())
+                .is_some_and(|value| value != 0)
+        };
+        if parsed.bond.prop("molStereoCare").is_none()
+            && endpoint_requests_stereo_care(&parsed_atoms[begin])
+            && endpoint_requests_stereo_care(&parsed_atoms[end])
+        {
+            parsed.bond.set_prop("molStereoCare", "1")?;
+        }
+        bonds.push(parsed);
     }
     let (substance_groups, needs_query_scan, molfile_properties) = apply_v2000_property_lines(
         &lines,
@@ -3250,6 +4078,19 @@ fn tokenize_v3000_line(line: &str) -> Vec<&str> {
 }
 
 fn split_v3000_assignment(token: &str) -> Option<(String, &str)> {
+    // BEGIN RDKIT CPP FUNCTION splitAssignToken
+    // RDKit✔️✔️: bool splitAssignToken(std::string_view token, std::string &prop,
+    // RDKit✔️✔️:                       std::string_view &val) {
+    // RDKit✔️✔️:   auto equalsLoc = token.find("=");
+    // RDKit✔️✔️:   if (equalsLoc == token.npos || equalsLoc != token.rfind("=")) {
+    // RDKit✔️✔️:     return false;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   prop = token.substr(0, equalsLoc);
+    // RDKit✔️✔️:   boost::to_upper(prop);
+    // RDKit✔️✔️:   val = token.substr(equalsLoc + 1);
+    // RDKit✔️✔️:   return true;
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION splitAssignToken
     let position = token.find('=')?;
     if position != token.rfind('=')? {
         return None;
@@ -3268,25 +4109,166 @@ fn parse_v3000_i32(value: &str, kind: &'static str, line: usize) -> Result<i32, 
     })
 }
 
+fn parse_v3000_template_attachment_order(
+    value: &str,
+    atom_index: usize,
+    line: usize,
+) -> Result<TemplateAttachmentOrder, SdfReadError> {
+    // BEGIN RDKIT CPP FUNCTION ParseV3000AtomProps (ATTCHORD template branch)
+    // RDKit✔️✔️:       if (val.substr(0, 1) == "(") {
+    // RDKit✔️✔️:         val = val.substr(1, val.size() - 2);
+    // RDKit✔️✔️:         std::vector<std::string> splitToken;
+    // RDKit✔️✔️:         boost::split(splitToken, val, boost::is_any_of(" \t"));
+    // RDKit✔️✔️:         unsigned int itemCount = 0;
+    // RDKit✔️✔️:         if (splitToken.size() > 0) {
+    // RDKit✔️✔️:           itemCount = FileParserUtils::toInt(splitToken[0]);
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:         if (itemCount == 0 || itemCount % 2 != 0 ||
+    // RDKit✔️✔️:             splitToken.size() != itemCount + 1) {
+    // RDKit✔️✔️:           errout << "Invalid ATTCHORD value: '" << val << "' for atom "
+    // RDKit✔️✔️:                  << atom->getIdx() + 1 << " on line " << line << std::endl;
+    // RDKit✔️✔️:           throw FileParseException(errout.str());
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:         std::vector<std::pair<unsigned int, std::string>> attchOrds;
+    // RDKit✔️✔️:         for (unsigned int i = 1; i < itemCount; i += 2) {
+    // RDKit✔️✔️:           unsigned int idx = FileParserUtils::toInt(splitToken[i]);
+    // RDKit✔️✔️:           for (const auto &[aidx, lbl] : attchOrds) {
+    // RDKit✔️✔️:             if (idx == aidx + 1 || splitToken[i + 1] == lbl) {
+    // RDKit✔️✔️:               errout << "Invalid ATTCHORD value: '" << val << "' for atom "
+    // RDKit✔️✔️:                      << atom->getIdx() + 1 << " on line " << line << std::endl;
+    // RDKit✔️✔️:               throw FileParseException(errout.str());
+    // RDKit✔️✔️:             }
+    // RDKit✔️✔️:           }
+    // RDKit✔️✔️:           attchOrds.emplace_back(idx - 1, splitToken[i + 1]);
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:         atom->setProp(common_properties::molAttachOrderTemplate, attchOrds);
+    // RDKit✔️✔️:       }
+    // Lexical mapping notes: the source strips the first and last characters
+    // without verifying the closing parenthesis (`substr(1, size - 2)`;
+    // a one-character value fails the record like the source's
+    // `std::out_of_range`). `boost::split` with `is_any_of(" \t")` and no
+    // token compression keeps every empty field, so `(2 2 )` supplies the
+    // supported empty label while `(2  2 Al)` fails the token-count check.
+    // `FileParserUtils::toInt` rejects characters outside digits and signs,
+    // returns 0 for empty or all-space input, and ignores `from_chars`
+    // overflow (the zero result is returned); the source count checks then
+    // reject those records. Negative indices wrap in the source; the frozen
+    // project rule rejects both zero (before subtraction) and the unsigned
+    // wraparound at the structured IO parse boundary instead of persisting
+    // them. The canonical constructor keeps the ordered-map duplicate checks
+    // (O(n log n) against the source's quadratic scan) without changing pair
+    // order or labels.
+    let invalid = || {
+        SdfReadError::Parse(format!(
+            "Invalid ATTCHORD value: '{value}' for atom {} on line {line}",
+            atom_index + 1
+        ))
+    };
+    let Some(without_prefix) = value.strip_prefix('(') else {
+        return Err(invalid());
+    };
+    if value.len() < 2 {
+        return Err(invalid());
+    }
+    // C++ substr removes a byte, not a Unicode scalar. If that creates invalid
+    // UTF-8, the detached string model cannot retain the label: report a parse
+    // error instead of panicking or silently removing a whole character.
+    let inner = without_prefix
+        .get(..without_prefix.len() - 1)
+        .ok_or_else(invalid)?;
+    let fields = inner.split([' ', '\t']).collect::<Vec<_>>();
+    let item_count: u32 = match fields.first() {
+        Some(token) => parse_rdkit_int(token).map_err(|()| invalid())? as u32,
+        None => return Err(invalid()),
+    };
+    if item_count == 0 || item_count % 2 != 0 || fields.len() != item_count.wrapping_add(1) as usize
+    {
+        return Err(invalid());
+    }
+    let mut entries = Vec::with_capacity(item_count as usize / 2);
+    for pair in fields[1..item_count as usize + 1].chunks_exact(2) {
+        let index: u32 = match parse_rdkit_int(pair[0]) {
+            Ok(parsed) if parsed >= 0 => parsed as u32,
+            Ok(_) => return Err(invalid()),
+            Err(()) => return Err(invalid()),
+        };
+        let target_index = index.checked_sub(1).ok_or_else(invalid)?;
+        entries.push(TemplateAttachment::new(
+            AtomId::new(target_index as usize),
+            pair[1],
+        ));
+    }
+    TemplateAttachmentOrder::new(entries).map_err(|_| invalid())
+    // END RDKIT CPP FUNCTION ParseV3000AtomProps (ATTCHORD template branch)
+}
+
+#[derive(Debug)]
+struct V3000AtomSymbolState {
+    element: Element,
+    isotope: Option<u16>,
+    dummy_label: Option<String>,
+    atom_label: Option<String>,
+    query: Option<QueryNode<AtomQueryPredicate>>,
+    no_implicit: bool,
+}
+
 fn v3000_atom_symbol(
     symbol: &str,
     line: usize,
-) -> Result<
-    (
-        Element,
-        Option<u16>,
-        Option<String>,
-        Option<QueryNode<AtomQueryPredicate>>,
-    ),
-    SdfReadError,
-> {
+    strict_parsing: bool,
+) -> Result<V3000AtomSymbolState, SdfReadError> {
     let mut symbol = symbol.trim();
     let mut negate = false;
-    if symbol.len() > 3 && symbol[..3].eq_ignore_ascii_case("NOT") {
+    // Inspect the ASCII prefix as bytes so a multi-byte leading symbol cannot
+    // split a UTF-8 code point. Bytes 0..3 being ASCII makes index 3 a valid
+    // character boundary for the subsequent slice.
+    let prefix = symbol.as_bytes();
+    if prefix.len() > 3
+        && prefix[0].eq_ignore_ascii_case(&b'N')
+        && prefix[1].eq_ignore_ascii_case(&b'O')
+        && prefix[2].eq_ignore_ascii_case(&b'T')
+    {
         negate = true;
         symbol = symbol[3..].trim();
     }
     if symbol.starts_with('[') {
+        // BEGIN RDKIT CPP FUNCTION ParseV3000AtomSymbol (atom list)
+        // RDKit✔️✔️: if (token[0] == '[') {
+        // RDKit✔️✔️:   // atom list:
+        // RDKit✔️✔️:   if (token.back() != ']') {
+        // RDKit✔️✔️:     std::ostringstream errout;
+        // RDKit✔️✔️:     errout << "Bad atom token '" << token << "' on line: " << line;
+        // RDKit✔️✔️:     throw FileParseException(errout.str());
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️:   token = token.substr(1, token.size() - 2);
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:   std::vector<std::string> splitToken;
+        // RDKit✔️✔️:   boost::split(splitToken, token, boost::is_any_of(","));
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:   for (std::vector<std::string>::const_iterator stIt = splitToken.begin();
+        // RDKit✔️✔️:        stIt != splitToken.end(); ++stIt) {
+        // RDKit✔️✔️:     std::string_view stoken = *stIt;
+        // RDKit✔️✔️:     std::string atSymb(FileParserUtils::strip(stoken));
+        // RDKit✔️✔️:     if (atSymb.empty()) {
+        // RDKit✔️✔️:       continue;
+        // RDKit✔️✔️:     }
+        // RDKit✔️✔️:     if (atSymb.size() == 2 && atSymb[1] >= 'A' && atSymb[1] <= 'Z') {
+        // RDKit✔️✔️:       atSymb[1] = static_cast<char>(tolower(atSymb[1]));
+        // RDKit✔️✔️:     }
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:     int atNum = PeriodicTable::getTable()->getAtomicNumber(atSymb);
+        // RDKit✔️✔️:     if (!res) {
+        // RDKit✔️✔️:       res.reset(new QueryAtom(atNum));
+        // RDKit✔️✔️:     } else {
+        // RDKit✔️✔️:       res->expandQuery(makeAtomNumQuery(atNum), Queries::COMPOSITE_OR, true);
+        // RDKit✔️✔️:     }
+        // RDKit✔️✔️:     // we want the atomic number of the query itself to always be zero
+        // RDKit✔️✔️:     // this was Github #8820 and #8823
+        // RDKit✔️✔️:     res->setAtomicNum(0);
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️:   res->getQuery()->setNegation(negate);
+        // RDKit✔️✔️: }
+        // END RDKIT CPP FUNCTION
         if !symbol.ends_with(']') {
             return Err(SdfReadError::Parse(format!(
                 "Bad atom token '{symbol}' on line: {line}"
@@ -3314,58 +4296,190 @@ fn v3000_atom_symbol(
             })?;
             numbers.push(element.atomic_number());
         }
+        if numbers.is_empty() {
+            // With no usable entries RDKit dereferences the still-null
+            // `QueryAtom` (`res->getQuery()`) and crashes. Fail closed rather
+            // than fabricate an empty-match query for this malformed input.
+            return Err(SdfReadError::Parse(format!(
+                "Empty atom list '{symbol}' on line: {line}"
+            )));
+        }
         let predicate = if negate {
             AtomQueryPredicate::AtomicNumberNotIn(numbers)
         } else {
             AtomQueryPredicate::AtomicNumberIn(numbers)
         };
-        return Ok((
-            Element::DUMMY,
-            None,
-            None,
-            Some(QueryNode::predicate(predicate)),
-        ));
+        return Ok(V3000AtomSymbolState {
+            element: Element::DUMMY,
+            isotope: None,
+            dummy_label: None,
+            atom_label: None,
+            query: Some(QueryNode::predicate(predicate)),
+            no_implicit: false,
+        });
     }
     if negate {
         return Err(SdfReadError::Parse(format!(
             "NOT tokens only supported for atom lists. line {line}"
         )));
     }
+    // BEGIN RDKIT CPP FUNCTION ParseV3000AtomSymbol (query-symbol branch)
+    // RDKit✔️✔️: bool isComplexQueryName =
+    // RDKit✔️✔️:     std::find(complexQueries.begin(), complexQueries.end(), token) !=
+    // RDKit✔️✔️:     complexQueries.end();
+    // RDKit✔️✔️: if (isComplexQueryName || token == "R" ||
+    // RDKit✔️✔️:     (token[0] == 'R' && token >= "R0" && token <= "R99") || token == "R#" ||
+    // RDKit✔️✔️:     token == "*") {
+    // RDKit✔️✔️:   if (isComplexQueryName || token == "*") {
+    // RDKit✔️✔️:     res.reset(new QueryAtom(0));
+    // RDKit✔️✔️:     if (token == "*") {
+    // RDKit✔️✔️:       // according to the MDL spec, these match anything
+    // RDKit✔️✔️:       res->setQuery(makeAtomNullQuery());
+    // RDKit✔️✔️:     } else if (isComplexQueryName) {
+    // RDKit✔️✔️:       convertComplexNameToQuery(res.get(), token);
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     // queries have no implicit Hs:
+    // RDKit✔️✔️:     res->setNoImplicit(true);
+    // RDKit✔️✔️:   } else {
+    // RDKit✔️✔️:     res.reset(new Atom(1));
+    // RDKit✔️✔️:     res->setAtomicNum(0);
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   if (token[0] == 'R' && token >= "R0" && token <= "R99") {
+    // RDKit✔️✔️:     auto rlabel = token.substr(1, token.length() - 1);
+    // RDKit✔️✔️:     int rnumber;
+    // RDKit✔️✔️:     try {
+    // RDKit✔️✔️:       rnumber = boost::lexical_cast<int>(rlabel);
+    // RDKit✔️✔️:     } catch (boost::bad_lexical_cast &) {
+    // RDKit✔️✔️:       rnumber = -1;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     if (rnumber >= 0) {
+    // RDKit✔️✔️:       res->setIsotope(rnumber);
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   if (token[0] == 'R') {
+    // RDKit✔️✔️:     // we used to skip R# here because that really should be handled by an
+    // RDKit✔️✔️:     // RGP spec, but that turned out to not be permissive enough... <sigh>
+    // RDKit✔️✔️:     setRGPProps(token, res.get());
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION
     if let Some(query) = complex_molfile_atom_query(symbol) {
-        return Ok((Element::DUMMY, None, None, Some(query)));
+        return Ok(V3000AtomSymbolState {
+            element: Element::DUMMY,
+            isotope: None,
+            dummy_label: None,
+            atom_label: None,
+            query: Some(query),
+            no_implicit: true,
+        });
     }
     if symbol == "*" {
-        return Ok((
-            Element::DUMMY,
-            None,
-            None,
-            Some(QueryNode::predicate(AtomQueryPredicate::Any)),
-        ));
+        return Ok(V3000AtomSymbolState {
+            element: Element::DUMMY,
+            isotope: None,
+            dummy_label: None,
+            atom_label: None,
+            query: Some(QueryNode::predicate(AtomQueryPredicate::Any)),
+            no_implicit: true,
+        });
     }
-    if matches!(symbol, "R" | "R#") {
-        return Ok((Element::DUMMY, None, Some(symbol.to_owned()), None));
-    }
-    if let Some(label) = symbol.strip_prefix('R')
-        && !label.is_empty()
-        && label.len() <= 2
-        && label.bytes().all(|byte| byte.is_ascii_digit())
-    {
-        return Ok((
-            Element::DUMMY,
-            Some(label.parse::<u16>().unwrap_or(0)),
-            Some(symbol.to_owned()),
-            None,
-        ));
+    let is_source_r_group = matches!(symbol, "R" | "R#")
+        || (symbol.starts_with('R') && symbol >= "R0" && symbol <= "R99");
+    if is_source_r_group {
+        let isotope = if symbol.starts_with('R') && symbol >= "R0" && symbol <= "R99" {
+            symbol[1..]
+                .parse::<i32>()
+                .ok()
+                .filter(|number| *number > 0)
+                .map(|number| {
+                    u16::try_from(number).map_err(|_| {
+                        SdfReadError::Unsupported(
+                            "V3000 R-group isotope is outside the detached isotope model",
+                        )
+                    })
+                })
+                .transpose()?
+        } else {
+            None
+        };
+        // BEGIN RDKIT CPP FUNCTION setRGPProps
+        // RDKit✔️✔️: void setRGPProps(const std::string_view symb, Atom *res) {
+        // RDKit✔️✔️:   PRECONDITION(res, "bad atom pointer");
+        // RDKit✔️✔️:   // set the dummy label so that this is shown correctly
+        // RDKit✔️✔️:   // in other pieces of the code :
+        // RDKit✔️✔️:   std::string symbc(symb);
+        // RDKit✔️✔️:   res->setProp(common_properties::dummyLabel, symbc);
+        // RDKit✔️✔️: }
+        // END RDKIT CPP FUNCTION
+        return Ok(V3000AtomSymbolState {
+            element: Element::DUMMY,
+            isotope,
+            dummy_label: Some(symbol.to_owned()),
+            atom_label: None,
+            query: None,
+            no_implicit: false,
+        });
     }
     if symbol == "D" {
-        return Ok((Element::H, Some(2), None, None));
+        return Ok(V3000AtomSymbolState {
+            element: Element::H,
+            isotope: Some(2),
+            dummy_label: None,
+            atom_label: None,
+            query: None,
+            no_implicit: false,
+        });
     }
     if symbol == "T" {
-        return Ok((Element::H, Some(3), None, None));
+        return Ok(V3000AtomSymbolState {
+            element: Element::H,
+            isotope: Some(3),
+            dummy_label: None,
+            atom_label: None,
+            query: None,
+            no_implicit: false,
+        });
     }
     if matches!(symbol, "Pol" | "Mod") {
-        return Ok((Element::DUMMY, None, Some(symbol.to_owned()), None));
+        return Ok(V3000AtomSymbolState {
+            element: Element::DUMMY,
+            isotope: None,
+            dummy_label: Some(symbol.to_owned()),
+            atom_label: None,
+            query: None,
+            no_implicit: false,
+        });
     }
+    // RDKit✔️✔️: } else if (GenericGroups::genericMatchers.find(std::string(token)) !=
+    // RDKit✔️✔️:            GenericGroups::genericMatchers.end()) {
+    // RDKit✔️✔️:   res.reset(new QueryAtom(0));
+    // RDKit✔️✔️:   res->setProp(common_properties::atomLabel, std::string(token));
+    if is_molfile_generic_group_symbol(symbol) {
+        return Ok(V3000AtomSymbolState {
+            element: Element::DUMMY,
+            isotope: None,
+            dummy_label: None,
+            atom_label: Some(symbol.to_owned()),
+            query: Some(atomic_number_query(0)),
+            no_implicit: false,
+        });
+    }
+    // BEGIN RDKIT CPP FUNCTION lookupAtomicNumber / ParseV3000AtomSymbol
+    // RDKit✔️✔️: std::string tCopy(symb);
+    // RDKit✔️✔️: if (symb.size() == 2 && symb[1] >= 'A' && symb[1] <= 'Z') {
+    // RDKit✔️✔️:   tCopy[1] = static_cast<char>(tolower(symb[1]));
+    // RDKit✔️✔️: }
+    // RDKit✔️✔️: try {
+    // RDKit✔️✔️:   res->setAtomicNum(PeriodicTable::getTable()->getAtomicNumber(tCopy));
+    // RDKit✔️✔️: } catch (const Invar::Invariant &e) {
+    // RDKit✔️✔️:   if (strictParsing || symb.empty()) {
+    // RDKit✔️✔️:     throw FileParseException(e.what());
+    // RDKit✔️✔️:   } else {
+    // RDKit✔️✔️:     res->setAtomicNum(0);
+    // RDKit✔️✔️:     res->setProp(common_properties::dummyLabel, symb);
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION
     let normalized;
     let lookup = if symbol.len() == 2 && symbol.as_bytes()[1].is_ascii_uppercase() {
         normalized = format!(
@@ -3377,9 +4491,27 @@ fn v3000_atom_symbol(
     } else {
         symbol
     };
-    Element::from_symbol(lookup)
-        .map(|element| (element, None, None, None))
-        .ok_or_else(|| SdfReadError::Parse(format!("Element '{symbol}' not found")))
+    match Element::from_symbol(lookup) {
+        Some(element) => Ok(V3000AtomSymbolState {
+            element,
+            isotope: None,
+            dummy_label: None,
+            atom_label: None,
+            query: None,
+            no_implicit: false,
+        }),
+        None if strict_parsing || symbol.is_empty() => {
+            Err(SdfReadError::Parse(format!("Element '{symbol}' not found")))
+        }
+        None => Ok(V3000AtomSymbolState {
+            element: Element::DUMMY,
+            isotope: None,
+            dummy_label: Some(symbol.to_owned()),
+            atom_label: None,
+            query: None,
+            no_implicit: false,
+        }),
+    }
 }
 
 fn parse_v3000_atom_properties(
@@ -3388,7 +4520,8 @@ fn parse_v3000_atom_properties(
     tokens: &[&str],
     atom_index: usize,
     line: usize,
-) -> Result<(AtomSpec, Option<QueryNode<AtomQueryPredicate>>), SdfReadError> {
+    strict_parsing: bool,
+) -> Result<(AtomSpec, Option<QueryNode<AtomQueryPredicate>>, bool), SdfReadError> {
     // BEGIN RDKIT CPP FUNCTION ParseV3000AtomProps
     // RDKit❗✔️:   while (token != tokens.end()) {
     // RDKit❗✔️:     std::string prop;
@@ -3398,116 +4531,164 @@ fn parse_v3000_atom_properties(
     // RDKit❗✔️:              << atom->getIdx() + 1 << " on line " << line << std::endl;
     // RDKit❗✔️:       throw FileParseException(errout.str());
     // RDKit❗✔️:     }
-    // RDKit❗✔️:     if (prop == "CHG") {
-    // RDKit❗✔️:       auto charge = FileParserUtils::toInt(val);
-    // RDKit❗✔️:       if (!atom->hasQuery()) {
-    // RDKit❗✔️:         atom->setFormalCharge(charge);
-    // RDKit❗✔️:       } else {
-    // RDKit❌❌:         atom->expandQuery(makeAtomFormalChargeQuery(charge));
-    // RDKit❗✔️:       }
-    // RDKit❗✔️:     } else if (prop == "RAD") {
-    // RDKit❗✔️:       // FIX handle queries here
-    // RDKit❗✔️:       switch (FileParserUtils::toInt(val)) {
-    // RDKit❗✔️:         case 0:
-    // RDKit❗✔️:           break;
-    // RDKit❗✔️:         case 1:
-    // RDKit❗✔️:           atom->setNumRadicalElectrons(2);
-    // RDKit❗✔️:           break;
-    // RDKit❗✔️:         case 2:
-    // RDKit❗✔️:           atom->setNumRadicalElectrons(1);
-    // RDKit❗✔️:           break;
-    // RDKit❗✔️:         case 3:
-    // RDKit❗✔️:           atom->setNumRadicalElectrons(2);
-    // RDKit❗✔️:           break;
-    // RDKit❗✔️:         default:
-    // RDKit❗✔️:           errout << "Unrecognized RAD value " << val << " for atom "
-    // RDKit❗✔️:                  << atom->getIdx() + 1 << " on line " << line << std::endl;
-    // RDKit❗✔️:           throw FileParseException(errout.str());
-    // RDKit❗✔️:       }
-    // RDKit❗✔️:     } else if (prop == "MASS") {
-    // RDKit❗✔️:       int v;
-    // RDKit❗✔️:       double dv;
-    // RDKit❗✔️:       try {
-    // RDKit❗✔️:         v = FileParserUtils::toInt(val);
-    // RDKit❗✔️:       } catch (boost::bad_lexical_cast &) {
-    // RDKit❗✔️:         try {
-    // RDKit❗✔️:           dv = FileParserUtils::toDouble(val);
-    // RDKit❗✔️:           v = static_cast<int>(floor(dv));
-    // RDKit❗✔️:         } catch (boost::bad_lexical_cast &) {
-    // RDKit❗✔️:           v = -1;
-    // RDKit❗✔️:         }
-    // RDKit❗✔️:       }
-    // RDKit❗✔️:       if (v < 0) {
-    // RDKit❗✔️:         errout << "Bad value for MASS :" << val << " for atom "
-    // RDKit❗✔️:                << atom->getIdx() + 1 << " on line " << line << std::endl;
-    // RDKit❗✔️:         throw FileParseException(errout.str());
-    // RDKit❗✔️:       } else {
-    // RDKit❗✔️:         if (!atom->hasQuery()) {
-    // RDKit❗✔️:           atom->setIsotope(v);
-    // RDKit❗✔️:         } else {
-    // RDKit❌❌:           atom->expandQuery(makeAtomIsotopeQuery(v));
-    // RDKit❗✔️:         }
-    // RDKit❗✔️:       }
-    // RDKit❗✔️:     } else if (prop == "CFG") {
-    // RDKit❗✔️:       auto cfg = FileParserUtils::toInt(val);
-    // RDKit❗✔️:       switch (cfg) {
-    // RDKit❗✔️:         case 0:
-    // RDKit❗✔️:           break;
-    // RDKit❗✔️:         case 1:
-    // RDKit❗✔️:         case 2:
-    // RDKit❗✔️:         case 3:
-    // RDKit❗✔️:           atom->setProp(common_properties::molParity, cfg);
-    // RDKit❗✔️:           break;
-    // RDKit❗✔️:         default:
-    // RDKit❗✔️:           errout << "Unrecognized CFG value : " << val << " for atom "
-    // RDKit❗✔️:                  << atom->getIdx() + 1 << " on line " << line << std::endl;
-    // RDKit❗✔️:           throw FileParseException(errout.str());
-    // RDKit❗✔️:       }
-    // RDKit❌❌:     } else if (prop == "HCOUNT") {
-    // RDKit❌❌:       if (val != "0") {
-    // RDKit❌❌:         atom = QueryOps::replaceAtomWithQueryAtom(mol, atom);
-    // RDKit❌❌:         atom->expandQuery(makeAtomImplicitHCountQuery(0));
-    // RDKit❌❌:       }
-    // RDKit❌❌:     } else if (prop == "UNSAT") {
-    // RDKit❌❌:       if (val == "1") {
-    // RDKit❌❌:         atom->expandQuery(makeAtomUnsaturatedQuery());
-    // RDKit❌❌:       }
-    // RDKit❌❌:     } else if (prop == "RBCNT") {
-    // RDKit❌❌:       if (val != "0") {
-    // RDKit❌❌:         atom->expandQuery(makeAtomRingBondCountQuery(rbcount));
-    // RDKit❌❌:       }
-    // RDKit❗✔️:     } else if (prop == "VAL") {
-    // RDKit❗✔️:       if (val != "0") {
-    // RDKit❗✔️:         auto totval = FileParserUtils::toInt(val);
-    // RDKit❗✔️:         atom->setProp(common_properties::molTotValence, totval);
-    // RDKit❗✔️:       }
-    // RDKit❌❌:     } else if (prop == "RGROUPS") {
-    // RDKit❌❌:       ParseV3000RGroups(mol, atom, val, line);
-    // RDKit❗✔️:     } else if (prop == "STBOX") {
-    // RDKit❗✔️:       if (val != "0") {
-    // RDKit❗✔️:         auto ival = FileParserUtils::toInt(val);
-    // RDKit❗✔️:         atom->setProp(common_properties::molStereoCare, ival);
-    // RDKit❗✔️:       }
-    // RDKit❌❌:     } else if (prop == "SUBST") {
-    // RDKit❌❌:       if (val != "0") {
-    // RDKit❌❌:         auto ival = FileParserUtils::toInt(val);
-    // RDKit❌❌:         atom->setProp(common_properties::molSubstCount, ival);
-    // RDKit❌❌:       }
-    // RDKit❗✔️:     } else if (prop == "EXACHG") {
-    // RDKit❗✔️:       if (val != "0") {
-    // RDKit❗✔️:         auto ival = FileParserUtils::toInt(val);
-    // RDKit❗✔️:         atom->setProp(common_properties::molRxnExactChange, ival);
-    // RDKit❗✔️:       }
-    // RDKit❗✔️:     } else if (prop == "INVRET") {
-    // RDKit❗✔️:       if (val != "0") {
-    // RDKit❗✔️:         auto ival = FileParserUtils::toInt(val);
-    // RDKit❗✔️:         atom->setProp(common_properties::molInversionFlag, ival);
-    // RDKit❗✔️:       }
-    // RDKit❗✔️:     } else if (prop == "ATTCHPT") {
-    // RDKit❗✔️:       if (val != "0") {
-    // RDKit❗✔️:         auto ival = FileParserUtils::toInt(val);
-    // RDKit❗✔️:         atom->setProp(common_properties::molAttachPoint, ival);
-    // RDKit❗✔️:       }
+    // RDKit✔️✔️:     if (prop == "CHG") {
+    // RDKit✔️✔️:       auto charge = FileParserUtils::toInt(val);
+    // RDKit✔️✔️:       if (!atom->hasQuery()) {
+    // RDKit✔️✔️:         atom->setFormalCharge(charge);
+    // RDKit✔️✔️:       } else {
+    // RDKit✔️✔️:         atom->expandQuery(makeAtomFormalChargeQuery(charge));
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     } else if (prop == "RAD") {
+    // RDKit✔️✔️:       // FIX handle queries here
+    // RDKit✔️✔️:       switch (FileParserUtils::toInt(val)) {
+    // RDKit✔️✔️:         case 0:
+    // RDKit✔️✔️:           break;
+    // RDKit✔️✔️:         case 1:
+    // RDKit✔️✔️:           atom->setNumRadicalElectrons(2);
+    // RDKit✔️✔️:           break;
+    // RDKit✔️✔️:         case 2:
+    // RDKit✔️✔️:           atom->setNumRadicalElectrons(1);
+    // RDKit✔️✔️:           break;
+    // RDKit✔️✔️:         case 3:
+    // RDKit✔️✔️:           atom->setNumRadicalElectrons(2);
+    // RDKit✔️✔️:           break;
+    // RDKit✔️✔️:         default:
+    // RDKit✔️✔️:           errout << "Unrecognized RAD value " << val << " for atom "
+    // RDKit✔️✔️:                  << atom->getIdx() + 1 << " on line " << line << std::endl;
+    // RDKit✔️✔️:           throw FileParseException(errout.str());
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     } else if (prop == "MASS") {
+    // RDKit✔️✔️:       // the documentation for V3000 CTABs says that this should contain the
+    // RDKit✔️✔️:       // "absolute atomic weight" (whatever that means).
+    // RDKit✔️✔️:       // Online examples seem to have integer (isotope) values and Marvin
+    // RDKit✔️✔️:       // won't even read something that has a float. We'll go with the int
+    // RDKit✔️✔️:       int v;
+    // RDKit✔️✔️:       double dv;
+    // RDKit✔️✔️:       try {
+    // RDKit✔️✔️:         v = FileParserUtils::toInt(val);
+    // RDKit✔️✔️:       } catch (boost::bad_lexical_cast &) {
+    // RDKit✔️✔️:         try {
+    // RDKit✔️✔️:           dv = FileParserUtils::toDouble(val);
+    // RDKit✔️✔️:           v = static_cast<int>(floor(dv));
+    // RDKit✔️✔️:         } catch (boost::bad_lexical_cast &) {
+    // RDKit✔️✔️:           v = -1;
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:       if (v < 0) {
+    // RDKit✔️✔️:         errout << "Bad value for MASS :" << val << " for atom "
+    // RDKit✔️✔️:                << atom->getIdx() + 1 << " on line " << line << std::endl;
+    // RDKit✔️✔️:         throw FileParseException(errout.str());
+    // RDKit✔️✔️:       } else {
+    // RDKit✔️✔️:         if (!atom->hasQuery()) {
+    // RDKit✔️✔️:           atom->setIsotope(v);
+    // RDKit✔️✔️:         } else {
+    // RDKit✔️✔️:           atom->expandQuery(makeAtomIsotopeQuery(v));
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     } else if (prop == "CFG") {
+    // RDKit✔️✔️:       auto cfg = FileParserUtils::toInt(val);
+    // RDKit✔️✔️:       switch (cfg) {
+    // RDKit✔️✔️:         case 0:
+    // RDKit✔️✔️:           break;
+    // RDKit✔️✔️:         case 1:
+    // RDKit✔️✔️:         case 2:
+    // RDKit✔️✔️:         case 3:
+    // RDKit✔️✔️:           atom->setProp(common_properties::molParity, cfg);
+    // RDKit✔️✔️:           break;
+    // RDKit✔️✔️:         default:
+    // RDKit✔️✔️:           errout << "Unrecognized CFG value : " << val << " for atom "
+    // RDKit✔️✔️:                  << atom->getIdx() + 1 << " on line " << line << std::endl;
+    // RDKit✔️✔️:           throw FileParseException(errout.str());
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     } else if (prop == "HCOUNT") {
+    // RDKit✔️✔️:       if (val != "0") {
+    // RDKit✔️✔️:         auto hcount = FileParserUtils::toInt(val);
+    // RDKit✔️✔️:         if (!atom->hasQuery()) {
+    // RDKit✔️✔️:           atom = QueryOps::replaceAtomWithQueryAtom(mol, atom);
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:         if (hcount == -1) {
+    // RDKit✔️✔️:           hcount = 0;
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:         if (hcount > 0) {
+    // RDKit✔️✔️:           ATOM_EQUALS_QUERY *oq = makeAtomImplicitHCountQuery(hcount);
+    // RDKit✔️✔️:           auto nq = makeAtomSimpleQuery<ATOM_LESSEQUAL_QUERY>(
+    // RDKit✔️✔️:               hcount, oq->getDataFunc(),
+    // RDKit✔️✔️:               std::string("less_") + oq->getDescription());
+    // RDKit✔️✔️:           atom->expandQuery(nq);
+    // RDKit✔️✔️:           delete oq;
+    // RDKit✔️✔️:         } else {
+    // RDKit✔️✔️:           atom->expandQuery(makeAtomImplicitHCountQuery(0));
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     } else if (prop == "UNSAT") {
+    // RDKit✔️✔️:       if (val == "1") {
+    // RDKit✔️✔️:         if (!atom->hasQuery()) {
+    // RDKit✔️✔️:           atom = QueryOps::replaceAtomWithQueryAtom(mol, atom);
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:         atom->expandQuery(makeAtomUnsaturatedQuery());
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     } else if (prop == "RBCNT") {
+    // RDKit✔️✔️:       if (val != "0") {
+    // RDKit✔️✔️:         auto rbcount = FileParserUtils::toInt(val);
+    // RDKit✔️✔️:         if (!atom->hasQuery()) {
+    // RDKit✔️✔️:           atom = QueryOps::replaceAtomWithQueryAtom(mol, atom);
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:         atom->setProp(common_properties::molRingBondCount, rbcount);
+    // RDKit✔️✔️:         if (rbcount == -1) {
+    // RDKit✔️✔️:           rbcount = 0;
+    // RDKit✔️✔️:         } else if (rbcount == -2) {
+    // RDKit✔️✔️:           // Ring bonds can only be counted during post processing
+    // RDKit✔️✔️:           mol->setProp(common_properties::_NeedsQueryScan, 1);
+    // RDKit✔️✔️:           rbcount = 0xDEADBEEF;
+    // RDKit✔️✔️:         } else if (rbcount > 4) {
+    // RDKit✔️✔️:           rbcount = 4;
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:         atom->expandQuery(makeAtomRingBondCountQuery(rbcount));
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     } else if (prop == "VAL") {
+    // RDKit✔️✔️:       if (val != "0") {
+    // RDKit✔️✔️:         auto totval = FileParserUtils::toInt(val);
+    // RDKit✔️✔️:         atom->setProp(common_properties::molTotValence, totval);
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     } else if (prop == "RGROUPS") {
+    // RDKit✔️✔️:       ParseV3000RGroups(mol, atom, val, line);
+    // RDKit✔️✔️:       // FIX
+    // RDKit✔️✔️:     } else if (prop == "STBOX") {
+    // RDKit✔️✔️:       if (val != "0") {
+    // RDKit✔️✔️:         auto ival = FileParserUtils::toInt(val);
+    // RDKit✔️✔️:         atom->setProp(common_properties::molStereoCare, ival);
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     } else if (prop == "SUBST") {
+    // RDKit✔️✔️:       if (val != "0") {
+    // RDKit✔️✔️:         auto ival = FileParserUtils::toInt(val);
+    // RDKit✔️✔️:         atom->setProp(common_properties::molSubstCount, ival);
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     } else if (prop == "EXACHG") {
+    // RDKit✔️✔️:       if (val != "0") {
+    // RDKit✔️✔️:         auto ival = FileParserUtils::toInt(val);
+    // RDKit✔️✔️:         atom->setProp(common_properties::molRxnExactChange, ival);
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     } else if (prop == "INVRET") {
+    // RDKit✔️✔️:       if (val != "0") {
+    // RDKit✔️✔️:         auto ival = FileParserUtils::toInt(val);
+    // RDKit✔️✔️:         atom->setProp(common_properties::molInversionFlag, ival);
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     } else if (prop == "ATTCHPT") {
+    // RDKit✔️✔️:       if (val != "0") {
+    // RDKit✔️✔️:         auto ival = FileParserUtils::toInt(val);
+    // RDKit✔️✔️:         if (atom->hasProp(common_properties::molAttachPoint)) {
+    // RDKit✔️✔️:           errout << "Multiple ATTCHPT values for atom " << atom->getIdx() + 1
+    // RDKit✔️✔️:                  << " on line " << line;
+    // RDKit✔️✔️:           if (strictParsing) {
+    // RDKit✔️✔️:             throw FileParseException(errout.str());
+    // RDKit✔️✔️:           } else {
+    // RDKit✔️✔️:             BOOST_LOG(rdWarningLog) << errout.str() << std::endl;
+    // RDKit✔️✔️:             errout.str(std::string());
+    // RDKit✔️✔️:           }
+    // RDKit✔️✔️:         } else {
+    // RDKit✔️✔️:           atom->setProp(common_properties::molAttachPoint, ival);
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:       }
     // RDKit❗✔️:     } else if (prop == "ATTCHORD") {
     // RDKit❗✔️:       auto ival = FileParserUtils::toInt(val);
     // RDKit❗✔️:       atom->setProp(common_properties::molAttachOrder, ival);
@@ -3525,10 +4706,12 @@ fn parse_v3000_atom_properties(
     // RDKit❗✔️:     }
     // RDKit❗✔️:     ++token;
     // RDKit❗✔️:   }
-    // Concrete properties are reproduced. Query-generating branches fail
-    // explicitly because this detached API returns `TopologyBlock`, not query
-    // topology; this is the documented behavioral boundary for this function.
+    // Query-generating branches (CHG/MASS on query atoms, HCOUNT, UNSAT,
+    // RBCNT, RGROUPS) build typed `AtomQueryPredicate` state; the RBCNT=-2
+    // sentinel defers ring-bond counting exactly as the source's
+    // `_NeedsQueryScan` post-processing flag does.
     let mut has_attach_point = false;
+    let mut needs_query_scan = false;
     for token in tokens {
         let (property, value) = split_v3000_assignment(token).ok_or_else(|| {
             SdfReadError::Parse(format!(
@@ -3539,6 +4722,13 @@ fn parse_v3000_atom_properties(
         match property.as_str() {
             "CHG" => {
                 let charge = parse_v3000_i32(value, "V3000 atom charge", line)?;
+                // RDKit parses CHG into `int`: concrete `Atom` storage then
+                // narrows through its `std::int8_t d_formalCharge`, while the
+                // formal-charge query target remains `int`. COSMolKit's
+                // detached AtomSpec and typed predicate currently share an
+                // `i8` model, so the plan deliberately requires a checked
+                // representational boundary instead of either upstream
+                // concrete narrowing or an invented query widening.
                 let charge = i8::try_from(charge).map_err(|_| {
                     SdfReadError::Unsupported(
                         "V3000 atom charges outside the detached i8 charge model",
@@ -3556,29 +4746,55 @@ fn parse_v3000_atom_properties(
             }
             "RAD" => {
                 let radical = parse_v3000_i32(value, "V3000 radical", line)?;
-                let electrons = match radical {
-                    0 => 0,
-                    1 | 3 => 2,
-                    2 => 1,
+                match radical {
+                    0 => {}
+                    1 | 3 => spec = spec.with_radical_electrons(2),
+                    2 => spec = spec.with_radical_electrons(1),
                     _ => {
                         return Err(SdfReadError::Parse(format!(
                             "Unrecognized RAD value {value} for atom {} on line {line}",
                             atom_index + 1
                         )));
                     }
-                };
-                spec = spec.with_radical_electrons(electrons);
+                }
             }
             "MASS" => {
-                let isotope = value
-                    .parse::<i32>()
-                    .or_else(|_| parse_rdkit_double(value).map(|mass| mass.floor() as i32))
-                    .map_err(|_| {
-                        SdfReadError::Parse(format!(
-                            "Bad value for MASS :{value} for atom {} on line {line}",
-                            atom_index + 1
-                        ))
-                    })?;
+                // `toInt` returning zero after no conversion or overflow is a
+                // successful integer-first result in the source; only its
+                // character-screening exception activates the `toDouble`
+                // fallback. A floating result outside C++ `int` range makes
+                // the source cast undefined, so that independent input space
+                // is rejected explicitly rather than assigned invented parity.
+                let isotope = match parse_rdkit_int(value) {
+                    Ok(isotope) => isotope,
+                    Err(()) => match parse_rdkit_double(value) {
+                        Ok(mass)
+                            if mass.is_finite()
+                                && mass.floor() >= i32::MIN as f64
+                                && mass.floor() <= i32::MAX as f64 =>
+                        {
+                            mass.floor() as i32
+                        }
+                        Ok(_) => {
+                            return Err(SdfReadError::Unsupported(
+                                "V3000 fractional MASS outside the defined source int-conversion range",
+                            ));
+                        }
+                        Err(()) => -1,
+                    },
+                };
+                if isotope < 0 {
+                    return Err(SdfReadError::Parse(format!(
+                        "Bad value for MASS :{value} for atom {} on line {line}",
+                        atom_index + 1
+                    )));
+                }
+                // Upstream concrete `Atom::setIsotope(unsigned int)` narrows
+                // into `std::uint16_t d_isotope`, while the equality-query
+                // target retains `int`. COSMolKit currently represents both
+                // `AtomSpec::isotope` and the typed `Isotope` predicate as
+                // `u16`, so values above 65535 are a checked current model
+                // boundary, not a claim of source-equivalent behavior.
                 let isotope = u16::try_from(isotope).map_err(|_| {
                     SdfReadError::Unsupported(
                         "V3000 isotope mass outside the detached u16 isotope model",
@@ -3610,8 +4826,20 @@ fn parse_v3000_atom_properties(
             }
             "HCOUNT" if value != "0" => {
                 let mut count = parse_v3000_i32(value, "V3000 HCOUNT", line)?;
+                if query.is_none() {
+                    query = Some(query_from_concrete_atom(&spec));
+                }
                 if count == -1 {
                     count = 0;
+                }
+                // The source builds the LESS-EQUAL query with the untruncated
+                // int value; the detached u8 query model cannot represent
+                // counts above u8::MAX, so those fail closed instead of
+                // truncating through `as u8`.
+                if count > u8::MAX as i32 {
+                    return Err(SdfReadError::Unsupported(
+                        "V3000 HCOUNT values above 255 are outside the detached implicit-hydrogen-count query model",
+                    ));
                 }
                 let predicate = if count > 0 {
                     AtomQueryPredicate::ImplicitHydrogenCountLessEqual(count as u8)
@@ -3632,19 +4860,34 @@ fn parse_v3000_atom_properties(
                 });
             }
             "RBCNT" if value != "0" => {
-                let mut count = parse_v3000_i32(value, "V3000 RBCNT", line)?;
+                let count = parse_v3000_i32(value, "V3000 RBCNT", line)?;
                 spec = spec.with_prop("molRingBondCount", count.to_string())?;
-                if count == -1 {
-                    count = 0;
-                }
-                let predicate = if count == -2 {
-                    AtomQueryPredicate::RingBondCount(0xDEAD_BEEF)
+                // The V3000 branch uses equality ring-bond-count queries for
+                // every retained value; only the V2000 `M  RBC` line builds
+                // the LESS-EQUAL form for count 4. The source assigns the
+                // sentinel through `unsigned int` (`rbcount = 0xDEADBEEF`),
+                // so the Rust sentinel is computed directly in the u32
+                // predicate domain instead of routing 0xDEADBEEF through an
+                // `i32` variable.
+                let rbcount: u32 = if count == -1 {
+                    0
+                } else if count == -2 {
+                    // Ring bonds can only be counted during post processing
+                    needs_query_scan = true;
+                    0xDEAD_BEEF
                 } else if count > 4 {
-                    AtomQueryPredicate::RingBondCountLessEqual(4)
+                    4
+                } else if count < 0 {
+                    // The source builds a never-matching equality query for
+                    // other negative values; the detached u32 predicate model
+                    // cannot hold them, so the boundary fails closed.
+                    return Err(SdfReadError::Unsupported(
+                        "V3000 RBCNT values below -2 are outside the detached ring-bond-count query model",
+                    ));
                 } else {
-                    AtomQueryPredicate::RingBondCount(count as u32)
+                    count as u32
                 };
-                let predicate = QueryNode::predicate(predicate);
+                let predicate = QueryNode::predicate(AtomQueryPredicate::RingBondCount(rbcount));
                 query = Some(match query {
                     Some(existing) => QueryNode::and(vec![existing, predicate]),
                     None => predicate,
@@ -3686,20 +4929,24 @@ fn parse_v3000_atom_properties(
                 spec = spec.with_mol_inversion_flag(parsed);
             }
             "ATTCHPT" if value != "0" => {
-                if has_attach_point {
-                    return Err(SdfReadError::Parse(format!(
-                        "Multiple ATTCHPT values for atom {} on line {line}",
-                        atom_index + 1
-                    )));
-                }
                 let parsed = parse_v3000_i32(value, "V3000 attachment point", line)?;
-                spec = spec.with_prop("molAttachPoint", parsed.to_string())?;
-                has_attach_point = true;
+                if has_attach_point {
+                    // The source throws only in strict parsing; non-strict
+                    // parsing warns and keeps the first value.
+                    if strict_parsing {
+                        return Err(SdfReadError::Parse(format!(
+                            "Multiple ATTCHPT values for atom {} on line {line}",
+                            atom_index + 1
+                        )));
+                    }
+                } else {
+                    spec = spec.with_prop("molAttachPoint", parsed.to_string())?;
+                    has_attach_point = true;
+                }
             }
             "ATTCHORD" if value.starts_with('(') => {
-                return Err(SdfReadError::Unsupported(
-                    "V3000 template attachment order is not lowered into detached topology",
-                ));
+                let order = parse_v3000_template_attachment_order(value, atom_index, line)?;
+                spec = spec.with_template_attachment_order(order);
             }
             "ATTCHORD" => {
                 let parsed = parse_v3000_i32(value, "V3000 attachment order", line)?;
@@ -3715,7 +4962,7 @@ fn parse_v3000_atom_properties(
         }
     }
     // END RDKIT CPP FUNCTION
-    Ok((spec, query))
+    Ok((spec, query, needs_query_scan))
 }
 
 fn parse_v3000_rgroups(text: &str, line: usize) -> Result<Vec<u32>, SdfReadError> {
@@ -3960,8 +5207,11 @@ fn read_v3000_record_detached(
     if outer_counts.len() < 6 {
         return Err(SdfReadError::Counts);
     }
-    let outer_atom_count = parse_required_unsigned(outer_counts, 0, 3, 4)?;
-    let outer_bond_count = parse_required_unsigned(outer_counts, 3, 3, 4)?;
+    // RDKit✔️✔️: nAtoms = FileParserUtils::toUnsigned(tempStr.substr(spos, 3), true);
+    // RDKit✔️✔️: spos = 3;
+    // RDKit✔️✔️: nBonds = FileParserUtils::toUnsigned(tempStr.substr(spos, 3), true);
+    let outer_atom_count = parse_required_counts_unsigned(outer_counts, 0, 3, 4)?;
+    let outer_bond_count = parse_required_counts_unsigned(outer_counts, 3, 3, 4)?;
     // BEGIN RDKIT CPP FUNCTION MolFromMolDataStream (V3000 outer counts)
     // RDKit✔️✔️:       if (nAtoms != 0 || nBonds != 0) {
     // RDKit✔️✔️:         std::ostringstream errout;
@@ -4003,53 +5253,78 @@ fn read_v3000_record_detached(
     if count_fields.len() < 2 {
         return Err(SdfReadError::Counts);
     }
-    // RDKit❗✔️: nAtoms = FileParserUtils::toUnsigned(splitLine[0]);
-    // RDKit❗✔️: nBonds = FileParserUtils::toUnsigned(splitLine[1]);
-    // RDKit❗✔️: if (splitLine.size() > 2) {
-    // RDKit❗✔️:   nSgroups = FileParserUtils::toUnsigned(splitLine[2]);
-    // RDKit❗✔️: }
-    // RDKit❗✔️: if (splitLine.size() > 3) {
-    // RDKit❗✔️:   n3DConstraints = FileParserUtils::toUnsigned(splitLine[3]);
-    // RDKit❗✔️: }
-    // RDKit❗✔️: if (splitLine.size() > 4) {
-    // RDKit❗✔️:   chiralFlag = FileParserUtils::toUnsigned(splitLine[4]);
-    // RDKit❗✔️: }
-    let atom_count = field(count_fields[0], "atom count", counts_line)?;
-    let bond_count = field(count_fields[1], "bond count", counts_line)?;
-    let sgroup_count = count_fields
-        .get(2)
-        .map_or(Ok(0), |value| field(value, "SGroup count", counts_line))?;
+    // RDKit✔️✔️: nAtoms = FileParserUtils::toUnsigned(splitLine[0]);
+    // RDKit✔️✔️: nBonds = FileParserUtils::toUnsigned(splitLine[1]);
+    // RDKit✔️✔️: if (splitLine.size() > 2) {
+    // RDKit✔️✔️:   nSgroups = FileParserUtils::toUnsigned(splitLine[2]);
+    // RDKit✔️✔️: }
+    // RDKit✔️✔️: if (splitLine.size() > 3) {
+    // RDKit✔️✔️:   n3DConstraints = FileParserUtils::toUnsigned(splitLine[3]);
+    // RDKit✔️✔️: }
+    // RDKit✔️✔️: if (splitLine.size() > 4) {
+    // RDKit✔️✔️:   chiralFlag = FileParserUtils::toUnsigned(splitLine[4]);
+    // RDKit✔️✔️: }
+    // Counts are source `unsigned int` values; the detached model indexes with
+    // `usize`, mirroring the V2000 path's `as usize` conversion.
+    let atom_count = counts_field(count_fields[0], "atom count", counts_line)? as usize;
+    let bond_count = counts_field(count_fields[1], "bond count", counts_line)? as usize;
+    let sgroup_count = count_fields.get(2).map_or(Ok(0), |value| {
+        counts_field(value, "SGroup count", counts_line)
+    })? as usize;
     let constraint_count = count_fields.get(3).map_or(Ok(0), |value| {
-        field(value, "3D constraint count", counts_line)
+        counts_field(value, "3D constraint count", counts_line)
+    })? as usize;
+    let chiral_flag: u32 = count_fields.get(4).map_or(Ok(0), |value| {
+        counts_field(value, "chiral flag", counts_line)
     })?;
-    let chiral_flag: u32 = count_fields
-        .get(4)
-        .map_or(Ok(0), |value| field(value, "chiral flag", counts_line))?;
-    if constraint_count != 0 {
-        return Err(SdfReadError::Unsupported(
-            "V3000 OBJ3D constraints are not yet lowered into detached coordinates",
-        ));
-    }
+    // RDKit✔️✔️:   unsigned int nSgroups = 0, n3DConstraints = 0, chiralFlag = 0;
+    // RDKit✔️✔️:   if (splitLine.size() > 3) {
+    // RDKit✔️✔️:     n3DConstraints = FileParserUtils::toUnsigned(splitLine[3]);
+    // RDKit✔️✔️:   }
+    // The declared 3D-constraint count no longer fails the read here; the
+    // pinned CTAB loop consumes the OBJ3D block (or reports the declared but
+    // missing block) under the strictness policy below.
 
     let mut atoms = Vec::with_capacity(atom_count);
     let mut coordinates_3d = Vec::with_capacity(atom_count);
     let mut atom_by_bookmark = BTreeMap::new();
+    let mut needs_query_scan = false;
     if atom_count != 0 {
+        // BEGIN RDKIT CPP FUNCTION ParseV3000AtomBlock (markers)
+        // RDKit✔️✔️: if (tempStr.length() < 10 || tempStr.substr(0, 10) != "BEGIN ATOM") {
+        // RDKit✔️✔️:   errout << "BEGIN ATOM line not found on line " << line;
+        // RDKit✔️✔️:   throw FileParseException(errout.str());
+        // RDKit✔️✔️: }
         let (begin_atom, _) = get_v3000_line(&lines, &mut cursor)?;
         if !begin_atom.starts_with("BEGIN ATOM") {
             return Err(SdfReadError::Parse("BEGIN ATOM line not found".to_owned()));
         }
+        // END RDKIT CPP FUNCTION
         for atom_index in 0..atom_count {
-            // RDKit❗✔️: tokenizeV3000Line(trimmed, tokens);
-            // RDKit❗✔️: unsigned int molIdx = 0;
-            // RDKit❗✔️: std::from_chars(token->data(), token->data() + token->size(), molIdx);
-            // RDKit❗✔️: pos.x = atof(std::string(*token).c_str());
-            // RDKit❗✔️: pos.y = atof(std::string(*token).c_str());
-            // RDKit❗✔️: pos.z = atof(std::string(*token).c_str());
-            // RDKit❗✔️: int mapNum = atoi(std::string(*token).c_str());
-            // RDKit❗✔️: if (mapNum > 0) {
-            // RDKit❗✔️:   atom->setProp(common_properties::molAtomMapNumber, mapNum);
-            // RDKit❗✔️: }
+            // BEGIN RDKIT CPP FUNCTION ParseV3000AtomBlock
+            // RDKit✔️✔️: tokenizeV3000Line(trimmed, tokens);
+            // RDKit✔️✔️: token = tokens.begin();
+            // RDKit✔️✔️:
+            // RDKit✔️✔️: if (token == tokens.end()) {
+            // RDKit✔️✔️:   std::ostringstream errout;
+            // RDKit✔️✔️:   errout << "Bad atom line : '" << tempStr << "' on line" << line;
+            // RDKit✔️✔️:   throw FileParseException(errout.str());
+            // RDKit✔️✔️: }
+            // RDKit✔️✔️: unsigned int molIdx = 0;
+            // RDKit✔️✔️: std::from_chars(token->data(), token->data() + token->size(), molIdx);
+            // RDKit✔️✔️:
+            // RDKit✔️✔️: // start with the symbol:
+            // RDKit✔️✔️: ++token;
+            // RDKit✔️✔️: if (token == tokens.end()) {
+            // RDKit✔️✔️:   std::ostringstream errout;
+            // RDKit✔️✔️:   errout << "Bad atom line : '" << tempStr << "' on line " << line;
+            // RDKit✔️✔️:   throw FileParseException(errout.str());
+            // RDKit✔️✔️: }
+            // END RDKIT CPP FUNCTION
+            // The source repeats the identical `if (token == tokens.end())` guard
+            // before the x, y, z and map fields (lines 2614-2645 of the pinned
+            // file); the Rust reader enforces the same six-token minimum with one
+            // length check.
             let (atom_line, line_number) = get_v3000_line(&lines, &mut cursor)?;
             let tokens = tokenize_v3000_line(atom_line.trim());
             if tokens.len() < 6 {
@@ -4057,45 +5332,82 @@ fn read_v3000_record_detached(
                     "Bad atom line : '{atom_line}' on line {line_number}"
                 )));
             }
-            let bookmark = tokens[0].parse::<u32>().unwrap_or(0);
-            let (element, isotope, dummy_label, query) = v3000_atom_symbol(tokens[1], line_number)?;
-            let mut spec = AtomSpec::new(element);
-            if query.is_some() {
+            // RDKit✔️✔️: std::from_chars(..., molIdx); raw unsigned prefix parse.
+            let bookmark = parse_from_chars_unsigned(tokens[0]);
+            let symbol_state = v3000_atom_symbol(tokens[1], line_number, params.strict_parsing)?;
+            let mut spec = AtomSpec::new(symbol_state.element);
+            if symbol_state.no_implicit {
                 spec = spec.with_no_implicit(true);
             }
-            if let Some(isotope) = isotope {
+            if let Some(isotope) = symbol_state.isotope {
                 spec = spec.with_isotope(isotope);
             }
-            if let Some(label) = dummy_label {
+            if let Some(label) = symbol_state.dummy_label {
                 spec = spec.with_prop("dummyLabel", label)?;
             }
+            if let Some(label) = symbol_state.atom_label {
+                spec = spec.with_prop("atomLabel", label)?;
+            }
+            let query = symbol_state.query;
+            // BEGIN RDKIT CPP FUNCTION ParseV3000AtomBlock (coordinate/map conversion)
+            // RDKit✔️✔️: pos.x = atof(std::string(*token).c_str());
+            // RDKit✔️✔️: ++token;
+            // RDKit✔️✔️: pos.y = atof(std::string(*token).c_str());
+            // RDKit✔️✔️: ++token;
+            // RDKit✔️✔️: pos.z = atof(std::string(*token).c_str());
+            // RDKit✔️✔️: ++token;
+            // RDKit❗✔️: int mapNum = atoi(std::string(*token).c_str());
+            // RDKit❗✔️: if (mapNum > 0) {
+            // RDKit❗✔️:   atom->setProp(common_properties::molAtomMapNumber, mapNum);
+            // RDKit❗✔️: }
+            // END RDKIT CPP FUNCTION
             let point = [
-                tokens[2].parse::<f64>().unwrap_or(0.0),
-                tokens[3].parse::<f64>().unwrap_or(0.0),
-                tokens[4].parse::<f64>().unwrap_or(0.0),
+                parse_rdkit_atof(tokens[2]),
+                parse_rdkit_atof(tokens[3]),
+                parse_rdkit_atof(tokens[4]),
             ];
-            let atom_map = tokens[5].parse::<i64>().unwrap_or(0);
+            let atom_map = parse_rdkit_atoi(tokens[5]);
             if atom_map > 0 {
-                let atom_map = u32::try_from(atom_map).map_err(|_| {
-                    SdfReadError::Unsupported(
-                        "V3000 atom map outside the detached u32 atom-map model",
-                    )
-                })?;
+                let atom_map = atom_map as u32;
                 spec = spec
                     .with_atom_map(atom_map)
                     .with_prop("molAtomMapNumber", atom_map.to_string())?;
             }
-            let (spec, query) =
-                parse_v3000_atom_properties(spec, query, &tokens[6..], atom_index, line_number)?;
+            let (spec, query, atom_needs_query_scan) = parse_v3000_atom_properties(
+                spec,
+                query,
+                &tokens[6..],
+                atom_index,
+                line_number,
+                params.strict_parsing,
+            )?;
+            needs_query_scan |= atom_needs_query_scan;
             let atom_id = AtomId::new(atom_index);
-            if atom_by_bookmark.insert(bookmark, atom_id).is_some() {
-                return Err(SdfReadError::Parse(format!(
-                    "duplicate V3000 atom index {bookmark} on line {line_number}"
-                )));
-            }
+            // BEGIN RDKIT FUNCTION ROMol::setAtomBookmark / ROMol::getAtomWithBookmark
+            // RDKit✔️✔️: void setAtomBookmark(Atom *at, int mark) {
+            // RDKit✔️✔️:   d_atomBookmarks[mark].push_back(at);
+            // RDKit✔️✔️: }
+            // RDKit✔️✔️: // returns the first inserted atom with the given bookmark
+            // RDKit✔️✔️: Atom *ROMol::getAtomWithBookmark(int mark) {
+            // RDKit✔️✔️:   auto lu = d_atomBookmarks.find(mark);
+            // RDKit✔️✔️:   PRECONDITION((lu != d_atomBookmarks.end() && !lu->second.empty()),
+            // RDKit✔️✔️:                "atom bookmark not found");
+            // RDKit✔️✔️:   return lu->second.front();
+            // RDKit✔️✔️: };
+            // END RDKIT FUNCTION
+            // `getUniqueAtomWithBookmark` (ROMol.cpp:231-236) also returns
+            // `lu->second.front()`, so a duplicate bookmark resolves to the first
+            // inserted atom; independent ordinary-bond probes agree. Rust stores
+            // the association in a `BTreeMap`; for the bounded V3000 atom counts
+            // the insert/lookup cost is equivalent for the modeled input.
+            atom_by_bookmark.entry(bookmark).or_insert(atom_id);
             atoms.push((Atom::from_spec(atom_id, spec), query));
             coordinates_3d.push(point);
         }
+        // RDKit✔️✔️: if (tempStr.length() < 8 || tempStr.substr(0, 8) != "END ATOM") {
+        // RDKit✔️✔️:   errout << "END ATOM line not found on line " << line;
+        // RDKit✔️✔️:   throw FileParseException(errout.str());
+        // RDKit✔️✔️: }
         let (end_atom, line_number) = get_v3000_line(&lines, &mut cursor)?;
         if !end_atom.starts_with("END ATOM") {
             return Err(SdfReadError::Parse(format!(
@@ -4252,23 +5564,101 @@ fn read_v3000_record_detached(
         (trailing, trailing_line) = get_v3000_line(&lines, &mut cursor)?;
     }
     // BEGIN RDKIT CPP FUNCTION ParseV3000CTAB (trailing typed blocks)
-    // RDKit❗✔️: bool sgroupFound = false;
-    // RDKit❗✔️: bool obj3dFound = false;
-    // RDKit❗✔️: while (tempStr.length() > 5 && tempStr.substr(0, 5) == "BEGIN") {
-    // RDKit❗✔️:   if (tempStr.length() >= 12 && tempStr.substr(0, 12) == "BEGIN SGROUP") {
-    // RDKit❗✔️:     if (sgroupFound) { throw FileParseException(errout.str()); }
-    // RDKit❗✔️:     else if (!nSgroups && strictParsing) { throw FileParseException(errout.str()); }
-    // RDKit❗✔️:     sgroupFound = true;
-    // RDKit❗✔️:     tempStr = ParseV3000SGroupsBlock(inStream, line, nSgroups, mol, strictParsing);
-    // RDKit❗✔️:   } else if (tempStr.length() >= 16 &&
-    // RDKit❗✔️:              tempStr.substr(0, 16) == "BEGIN COLLECTION") {
-    // RDKit❗✔️:     tempStr = parseEnhancedStereo(inStream, line, mol, strictParsing);
-    // RDKit❗✔️:   }
-    // RDKit❗✔️: }
+    // RDKit✔️✔️: bool sgroupFound = false;
+    // RDKit✔️✔️: bool obj3dFound = false;
+    // RDKit✔️✔️: boost::to_upper(tempStr);
+    // RDKit✔️✔️: while (tempStr.length() > 5 && tempStr.substr(0, 5) == "BEGIN") {
+    // RDKit✔️✔️:   if (tempStr.length() >= 12 && tempStr.substr(0, 12) == "BEGIN SGROUP") {
+    // RDKit✔️✔️:     if (sgroupFound) {
+    // RDKit✔️✔️:       std::ostringstream errout;
+    // RDKit✔️✔️:       errout << "BEGIN SGROUP found more than once on line " << line;
+    // RDKit✔️✔️:       throw FileParseException(errout.str());
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:     } else if (!nSgroups) {
+    // RDKit✔️✔️:       std::ostringstream errout;
+    // RDKit✔️✔️:       errout << "BEGIN SGROUP  found but Sgroups NOT expected on line "
+    // RDKit✔️✔️:              << line;
+    // RDKit✔️✔️:       if (strictParsing) {
+    // RDKit✔️✔️:         throw FileParseException(errout.str());
+    // RDKit✔️✔️:       } else {
+    // RDKit✔️✔️:         BOOST_LOG(rdWarningLog) << errout.str() << std::endl;
+    // RDKit✔️✔️:         // Prepare to read a lot of sgroups
+    // RDKit✔️✔️:         nSgroups = std::numeric_limits<unsigned int>::max();
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     sgroupFound = true;
+    // RDKit✔️✔️:     tempStr =
+    // RDKit✔️✔️:         ParseV3000SGroupsBlock(inStream, line, nSgroups, mol, strictParsing);
+    // RDKit✔️✔️:     boost::to_upper(tempStr);
+    // RDKit✔️✔️:     if (tempStr.length() < 10 || tempStr.substr(0, 10) != "END SGROUP") {
+    // RDKit✔️✔️:       std::ostringstream errout;
+    // RDKit✔️✔️:       errout << "END SGROUP line not found on line " << line;
+    // RDKit✔️✔️:       if (strictParsing) {
+    // RDKit✔️✔️:         throw FileParseException(errout.str());
+    // RDKit✔️✔️:       } else {
+    // RDKit✔️✔️:         BOOST_LOG(rdWarningLog) << errout.str() << std::endl;
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     } else {
+    // RDKit✔️✔️:       tempStr = getV3000Line(inStream, line);
+    // RDKit✔️✔️:       boost::to_upper(tempStr);
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   } else if (tempStr.length() >= 15 &&
+    // RDKit✔️✔️:              tempStr.substr(6, 10) == "COLLECTION") {
+    // RDKit✔️✔️:     tempStr = parseEnhancedStereo(inStream, line, mol, strictParsing);
+    // RDKit✔️✔️:     boost::to_upper(tempStr);
+    // RDKit✔️✔️:   } else if (tempStr.length() >= 11 &&
+    // RDKit✔️✔️:              tempStr.substr(0, 11) == "BEGIN OBJ3D") {
+    // RDKit✔️✔️:     if (obj3dFound) {
+    // RDKit✔️✔️:       std::ostringstream errout;
+    // RDKit✔️✔️:       errout << "BEGIN OBJ3D found more than once on line " << line;
+    // RDKit✔️✔️:       throw FileParseException(errout.str());
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     if (!n3DConstraints) {
+    // RDKit✔️✔️:       std::ostringstream errout;
+    // RDKit✔️✔️:       errout << "BEGIN OBJ3D found but 3n3DConstraints NOT expected on line "
+    // RDKit✔️✔️:              << line;
+    // RDKit✔️✔️:       if (strictParsing) {
+    // RDKit✔️✔️:         throw FileParseException(errout.str());
+    // RDKit✔️✔️:       } else {
+    // RDKit✔️✔️:         BOOST_LOG(rdWarningLog) << errout.str() << std::endl;
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     BOOST_LOG(rdWarningLog)
+    // RDKit✔️✔️:         << "3D constraint information in mol block ignored at line " << line
+    // RDKit✔️✔️:         << std::endl;
+    // RDKit✔️✔️:     obj3dFound = true;
+    // RDKit✔️✔️:     for (unsigned int i = 0; i < n3DConstraints; ++i) {
+    // RDKit✔️✔️:       tempStr = getV3000Line(inStream, line);
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     tempStr = getV3000Line(inStream, line);
+    // RDKit✔️✔️:     boost::to_upper(tempStr);
+    // RDKit✔️✔️:     if (tempStr.length() < 9 || tempStr.substr(0, 9) != "END OBJ3D") {
+    // RDKit✔️✔️:       std::ostringstream errout;
+    // RDKit✔️✔️:       errout << "END OBJ3D line not found on line " << line;
+    // RDKit✔️✔️:       if (strictParsing) {
+    // RDKit✔️✔️:         throw FileParseException(errout.str());
+    // RDKit✔️✔️:       } else {
+    // RDKit✔️✔️:         BOOST_LOG(rdWarningLog) << errout.str() << std::endl;
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     tempStr = getV3000Line(inStream, line);
+    // RDKit✔️✔️:     boost::to_upper(tempStr);
+    // RDKit✔️✔️:   } else {
+    // RDKit✔️✔️:     // skip blocks we don't know how to read
+    // RDKit✔️✔️:     BOOST_LOG(rdWarningLog) << "skipping block at line " << line << ": '"
+    // RDKit✔️✔️:                             << tempStr << "'" << std::endl;
+    // RDKit✔️✔️:     while (tempStr.length() < 3 || tempStr.substr(0, 3) != "END") {
+    // RDKit✔️✔️:       tempStr = getV3000Line(inStream, line);
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     tempStr = getV3000Line(inStream, line);
+    // RDKit✔️✔️:     boost::to_upper(tempStr);
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: }
     let mut substance_groups = Vec::new();
     let mut stereo_groups = Vec::new();
     let mut sgroup_found = false;
-    let mut collection_found = false;
+    let mut obj3d_found = false;
     loop {
         let trailing_upper = trailing.to_ascii_uppercase();
         if !trailing_upper.starts_with("BEGIN") {
@@ -4299,26 +5689,62 @@ fn read_v3000_record_detached(
                 &bond_by_bookmark,
                 params.strict_parsing,
             )?;
-        } else if trailing_upper.starts_with("BEGIN COLLECTION") {
-            if collection_found {
-                return Err(SdfReadError::Parse(format!(
-                    "BEGIN COLLECTION found more than once on line {trailing_line}"
-                )));
-            }
-            collection_found = true;
-            stereo_groups = crate::sdf_sgroups::parse_v3000_collection_block(
+        } else if trailing_upper.as_bytes().get(6..16) == Some(b"COLLECTION") {
+            // The pinned dispatch matches `COLLECTION` at character positions
+            // 6..16 without requiring a word boundary after it.
+            let parsed_groups = crate::sdf_sgroups::parse_v3000_collection_block(
                 &lines,
                 &mut cursor,
-                &atom_by_bookmark,
+                atom_count,
+                params.strict_parsing,
             )?;
+            // RDKit✔️✔️:   if (!groups.empty()) {
+            // RDKit✔️✔️:     mol->setStereoGroups(std::move(groups));
+            // RDKit✔️✔️:   }
+            // Empty/HILITE-only collections do not erase preceding stereo.
+            if !parsed_groups.is_empty() {
+                stereo_groups = parsed_groups;
+            }
         } else if trailing_upper.starts_with("BEGIN OBJ3D") {
-            return Err(SdfReadError::Unsupported(
-                "V3000 OBJ3D constraints are not yet lowered into detached coordinates",
-            ));
+            if obj3d_found {
+                return Err(SdfReadError::Parse(format!(
+                    "BEGIN OBJ3D found more than once on line {trailing_line}"
+                )));
+            }
+            if constraint_count == 0 && params.strict_parsing {
+                return Err(SdfReadError::Parse(format!(
+                    "BEGIN OBJ3D found but 3n3DConstraints NOT expected on line {trailing_line}"
+                )));
+            }
+            // The pinned parser logs "3D constraint information in mol block
+            // ignored" and consumes the declared constraint lines without
+            // lowering them into coordinates.
+            obj3d_found = true;
+            for _ in 0..constraint_count {
+                get_v3000_line(&lines, &mut cursor)?;
+            }
+            let (end_obj3d, end_line) = get_v3000_line(&lines, &mut cursor)?;
+            if !end_obj3d.to_ascii_uppercase().starts_with("END OBJ3D") {
+                if params.strict_parsing {
+                    return Err(SdfReadError::Parse(format!(
+                        "END OBJ3D line not found on line {end_line}"
+                    )));
+                }
+            }
+            (trailing, trailing_line) = get_v3000_line(&lines, &mut cursor)?;
+            continue;
         } else {
-            return Err(SdfReadError::Parse(format!(
-                "Unrecognized V3000 block '{trailing}' on line {trailing_line}"
-            )));
+            // Unknown BEGIN blocks are skipped through their END marker. The
+            // pinned loop compares the freshly read line case-sensitively
+            // because it is not uppercased in this branch.
+            loop {
+                let (skipped, _) = get_v3000_line(&lines, &mut cursor)?;
+                if skipped.starts_with("END") {
+                    break;
+                }
+            }
+            (trailing, trailing_line) = get_v3000_line(&lines, &mut cursor)?;
+            continue;
         }
         (trailing, trailing_line) = get_v3000_line(&lines, &mut cursor)?;
     }
@@ -4327,11 +5753,18 @@ fn read_v3000_record_detached(
             "BEGIN SGROUP line not found on line {trailing_line}"
         )));
     }
+    if constraint_count != 0 && !obj3d_found && params.strict_parsing {
+        return Err(SdfReadError::Parse(format!(
+            "BEGIN OBJ3D line not found on line {trailing_line}"
+        )));
+    }
     let trailing_upper = trailing.to_ascii_uppercase();
     if !trailing_upper.starts_with("END CTAB") {
-        return Err(SdfReadError::Parse(format!(
-            "END CTAB line not found on line {trailing_line}"
-        )));
+        if params.strict_parsing {
+            return Err(SdfReadError::Parse(format!(
+                "END CTAB line not found on line {trailing_line}"
+            )));
+        }
     }
     let mend_line = cursor + 1;
     let mend = lines
@@ -4380,6 +5813,12 @@ fn read_v3000_record_detached(
         .with_prop("_MolFileInfo", info)?
         .with_prop("_MolFileComments", comments)?
         .with_prop("_MolFileChiralFlag", chiral_flag.to_string())?;
+    if needs_query_scan {
+        // RDKit✔️✔️:           mol->setProp(common_properties::_NeedsQueryScan, 1);
+        // The RBCNT=-2 sentinel defers ring-bond counting to post processing
+        // exactly as the V2000 `M  RBC` path does through the same property.
+        properties = properties.with_prop("_NeedsQueryScan", "1")?;
+    }
     if !link_nodes.is_empty() {
         // COSMolKit keeps the established cross-format key used by detached
         // CXSMILES and the live-molecule runtime for RDKit's `_molLinkNodes`.
@@ -5240,12 +6679,82 @@ mod tests {
 
     use super::{
         MolBlockReadParams, MolBlockRecord, SdfDataReadParams, SdfGraphDataset, SdfGraphReader,
-        read_mol_block_detached, read_mol_block_detached_with_params,
-        read_sdf_graph_record_detached, read_sdf_record_detached,
-        read_sdf_record_detached_with_params, read_sdf_records_detached, read_v2000_detached,
-        read_v2000_detached_with_params, read_v3000_detached, read_v3000_detached_with_params,
-        write_sdf_record_detached, write_v2000_detached, write_v3000_detached,
+        parse_rdkit_atoi, parse_rdkit_int, read_mol_block_detached,
+        read_mol_block_detached_with_params, read_sdf_graph_record_detached,
+        read_sdf_record_detached, read_sdf_record_detached_with_params, read_sdf_records_detached,
+        read_v2000_detached, read_v2000_detached_with_params, read_v3000_detached,
+        read_v3000_detached_with_params, write_sdf_record_detached, write_v2000_detached,
+        write_v3000_detached,
     };
+
+    #[test]
+    fn v3k_atom_numbers_atoi_c_locale_whitespace_and_prefixes() {
+        // glibc 2.43 ____strtol_l_internal, base=10/group=0: ISSPACE,
+        // optional sign, maximal digit prefix and zero on no conversion.
+        for text in [" 7", "\t7", "\n7", "\u{000b}7", "\u{000c}7", "\r7"] {
+            assert_eq!(parse_rdkit_atoi(text), 7, "{text:?}");
+        }
+        for text in ["", "+", "-", "abc", "+ 7", "\u{00a0}7"] {
+            assert_eq!(parse_rdkit_atoi(text), 0, "{text:?}");
+        }
+        assert_eq!(parse_rdkit_atoi("+7tail"), 7);
+        assert_eq!(parse_rdkit_atoi("-7tail"), -7);
+        assert_eq!(parse_rdkit_atoi("7.9"), 7);
+    }
+
+    #[test]
+    fn v3k_atom_numbers_atoi_fixed_glibc_int_width_boundaries() {
+        // Inputs outside C `int` range have undefined `atoi` behavior. These
+        // assertions reproduce only the pinned x86_64 glibc 2.43 reference:
+        // signed-64-bit strtol saturation followed by low-32-bit conversion.
+        for (text, expected) in [
+            ("2147483647", i32::MAX),
+            ("2147483648", i32::MIN),
+            ("4294967295", -1),
+            ("4294967296", 0),
+            ("4294967297", 1),
+            ("9223372036854775807", -1),
+            ("9223372036854775808", -1),
+            ("99999999999999999999", -1),
+            ("-2147483648", i32::MIN),
+            ("-2147483649", i32::MAX),
+            ("-4294967295", 1),
+            ("-4294967296", 0),
+            ("-4294967297", -1),
+            ("-9223372036854775808", 0),
+            ("-9223372036854775809", 0),
+            ("-99999999999999999999", 0),
+        ] {
+            assert_eq!(parse_rdkit_atoi(text), expected, "{text}");
+        }
+    }
+
+    #[test]
+    fn v3k_charge_shared_to_int_from_chars_contract() {
+        // Pinned FileParserUtils::toInt screens '+', '-', digits and optional
+        // spaces, strips leading spaces, then ignores std::from_chars' result.
+        for (text, expected) in [
+            ("", 0),
+            ("   ", 0),
+            ("7", 7),
+            ("-7", -7),
+            ("+7", 0),
+            ("   +7", 0),
+            ("   -7", -7),
+            ("7-", 7),
+            ("7 8", 7),
+            ("-2+9", -2),
+            ("--1", 0),
+            ("2147483648", 0),
+            ("-2147483649", 0),
+        ] {
+            assert_eq!(parse_rdkit_int(text), Ok(expected), "{text:?}");
+        }
+        for text in ["1x", "\t7", "7\n", "\u{000b}7"] {
+            assert_eq!(parse_rdkit_int(text), Err(()), "{text:?}");
+        }
+        assert_eq!(parse_rdkit_int("7\0x"), Ok(7));
+    }
 
     fn v2000_atom_line(
         symbol: &str,
@@ -6187,6 +7696,205 @@ mod tests {
     }
 
     #[test]
+    fn v3000_reader_numeric_property_boundaries_follow_source() {
+        let block = |atom_props: &str| {
+            format!(
+                concat!(
+                    "numeric bounds\n  test\n\n",
+                    "  0  0  0  0  0  0  0  0  0  0999 V3000\n",
+                    "M  V30 BEGIN CTAB\n",
+                    "M  V30 COUNTS 1 0 0 0 0\n",
+                    "M  V30 BEGIN ATOM\n",
+                    "M  V30 1 C 0 0 0 0 {}\n",
+                    "M  V30 END ATOM\n",
+                    "M  V30 END CTAB\n",
+                    "M  END\n",
+                ),
+                atom_props
+            )
+        };
+
+        // RBCNT=-2 keeps the 0xDEADBEEF sentinel equality query and defers
+        // ring-bond counting through `_NeedsQueryScan`, exactly as the source
+        // branch and the V2000 `M  RBC` path do.
+        let MolBlockRecord::Query(record) =
+            read_mol_block_detached(&block("RBCNT=-2")).expect("RBCNT=-2 stays a query record")
+        else {
+            panic!("RBCNT=-2 must produce query topology");
+        };
+        assert_eq!(
+            record.query.atoms()[0].predicate(),
+            &QueryNode::predicate(AtomQueryPredicate::RingBondCount(0xDEAD_BEEF))
+        );
+        assert_eq!(record.properties.prop("_NeedsQueryScan"), Some("1"));
+        assert_eq!(record.query.prop("_NeedsQueryScan"), Some("1"));
+
+        // RBCNT above 4 clamps to an EQUALITY query on 4 (only the V2000
+        // `M  RBC` line builds the LESS-EQUAL form).
+        let MolBlockRecord::Query(record) =
+            read_mol_block_detached(&block("RBCNT=7")).expect("RBCNT=7 stays a query record")
+        else {
+            panic!("RBCNT=7 must produce query topology");
+        };
+        assert_eq!(
+            record.query.atoms()[0].predicate(),
+            &QueryNode::predicate(AtomQueryPredicate::RingBondCount(4))
+        );
+
+        // Values below -2 build a never-matching query in the source; the
+        // detached u32 predicate model cannot hold them and fails closed.
+        assert!(matches!(
+            read_mol_block_detached(&block("RBCNT=-3")),
+            Err(super::SdfReadError::Unsupported(message))
+                if message.contains("RBCNT values below -2")
+        ));
+
+        // HCOUNT keeps the untruncated LESS-EQUAL value for representable
+        // counts. Converting a concrete atom first constructs RDKit's
+        // atomic-number base query; counts beyond the u8 query model fail
+        // closed instead of truncating through `as u8`.
+        let MolBlockRecord::Query(record) =
+            read_mol_block_detached(&block("HCOUNT=200")).expect("HCOUNT=200 stays a query record")
+        else {
+            panic!("HCOUNT=200 must produce query topology");
+        };
+        assert_eq!(
+            record.query.atoms()[0].predicate(),
+            &QueryNode::and(vec![
+                QueryNode::predicate(AtomQueryPredicate::AtomicNumber(6)),
+                QueryNode::predicate(AtomQueryPredicate::ImplicitHydrogenCountLessEqual(200)),
+            ])
+        );
+        assert!(matches!(
+            read_mol_block_detached(&block("HCOUNT=300")),
+            Err(super::SdfReadError::Unsupported(message))
+                if message.contains("outside the detached implicit-hydrogen-count query model")
+        ));
+
+        // Duplicate ATTCHPT throws only in strict parsing; non-strict parsing
+        // warns and keeps the first value.
+        let strict = block("ATTCHPT=1 ATTCHPT=2");
+        assert!(matches!(
+            read_mol_block_detached(&strict),
+            Err(super::SdfReadError::Parse(message)) if message.contains("Multiple ATTCHPT values")
+        ));
+        let mut non_strict_params = MolBlockReadParams::default();
+        non_strict_params.strict_parsing = false;
+        let MolBlockRecord::Concrete { topology, .. } =
+            read_mol_block_detached_with_params(&strict, non_strict_params)
+                .expect("non-strict duplicate ATTCHPT keeps the first value")
+        else {
+            panic!("non-strict duplicate ATTCHPT must produce concrete topology");
+        };
+        assert_eq!(topology.atoms[0].prop("molAttachPoint"), Some("1"));
+    }
+
+    fn v3000_collection_input(collection_lines: &[&str]) -> String {
+        // Nonsequential bookmarks 10/20 keep the bookmark and 1-based row
+        // index spaces observably distinct.
+        let mut block = String::from(
+            "collection\n  test\n\n  0  0  0  0  0  0  0  0  0  0999 V3000\n\
+             M  V30 BEGIN CTAB\nM  V30 COUNTS 2 1 0 0 0\nM  V30 BEGIN ATOM\n\
+             M  V30 10 C 0 0 0 0\nM  V30 20 O 1 0 0 0\nM  V30 END ATOM\n\
+             M  V30 BEGIN BOND\nM  V30 1 1 10 20\nM  V30 END BOND\n",
+        );
+        block.push_str("M  V30 BEGIN COLLECTION\n");
+        for line in collection_lines {
+            block.push_str("M  V30 ");
+            block.push_str(line);
+            block.push('\n');
+        }
+        block.push_str("M  V30 END COLLECTION\nM  V30 END CTAB\nM  END\n");
+        block
+    }
+
+    #[test]
+    fn v3000_collection_skips_unrecognized_lines_like_the_source() {
+        // Every non-matching line is skipped with the source's warning; only
+        // the fully matched ABS line becomes a stereo group.
+        let record = read_mol_block_detached(&v3000_collection_input(&[
+            "MDLV30/HILITE ATOMS=(1 1)",
+            "MDLV30/STEAB",
+            "MDLV30/STEABSATOMS=(1 1)",
+            "MDLV30/STEABS ATOMS=(1 1",
+            "MDLV30/STEABS ATOMS=(x 1)",
+            "MDLV30/STEABS ATOMS=(1 1)X",
+            "MDLV30/STEABS ATOMS=(1 1)",
+        ]))
+        .expect("recognized lines parse and the rest are skipped");
+        let MolBlockRecord::Concrete { topology, .. } = record else {
+            panic!("ordinary atoms must produce concrete topology");
+        };
+        assert_eq!(topology.stereo_groups.len(), 1);
+        assert_eq!(topology.stereo_groups[0].kind(), StereoGroupKind::Absolute);
+        assert_eq!(topology.stereo_groups[0].atoms(), &[AtomId::new(0)]);
+    }
+
+    #[test]
+    fn v3000_collection_group_ids_follow_source_tounsigned_rules() {
+        // ABS groups carry the source-initialized id 0 and never parse an id;
+        // REL/RAC ids go through `toUnsigned`, which resolves empty or
+        // overflowing digit strings to zero because the `from_chars` error
+        // code is ignored.
+        let record = read_mol_block_detached(&v3000_collection_input(&[
+            "MDLV30/STEABS ATOMS=(1 1)",
+            "MDLV30/STEREL ATOMS=(1 2)",
+            "MDLV30/STERAC3 ATOMS=(2 1 2)",
+            "MDLV30/STEREL99999999999 ATOMS=(1 1)",
+        ]))
+        .expect("collection group ids follow the source rules");
+        let MolBlockRecord::Concrete { topology, .. } = record else {
+            panic!("ordinary atoms must produce concrete topology");
+        };
+        let groups = &topology.stereo_groups;
+        assert_eq!(groups.len(), 4);
+        assert_eq!(groups[0].kind(), StereoGroupKind::Absolute);
+        assert_eq!(groups[0].id(), Some(0));
+        assert_eq!(groups[0].atoms(), &[AtomId::new(0)]);
+        assert_eq!(groups[1].kind(), StereoGroupKind::Or);
+        assert_eq!(groups[1].id(), Some(0));
+        assert_eq!(groups[1].atoms(), &[AtomId::new(1)]);
+        assert_eq!(groups[2].kind(), StereoGroupKind::And);
+        assert_eq!(groups[2].id(), Some(3));
+        assert_eq!(groups[2].atoms(), &[AtomId::new(0), AtomId::new(1)]);
+        assert_eq!(groups[3].kind(), StereoGroupKind::Or);
+        assert_eq!(groups[3].id(), Some(0));
+        assert_eq!(groups[3].atoms(), &[AtomId::new(0)]);
+    }
+
+    #[test]
+    fn v3000_collection_rejects_unknown_tags_and_duplicate_abs_by_strictness() {
+        // A fully matched line with an unknown STE tag is the source's thrown
+        // "Unrecognized stereogroup type" case.
+        assert!(matches!(
+            read_mol_block_detached(&v3000_collection_input(&[
+                "MDLV30/STEXYZ ATOMS=(1 1)"
+            ])),
+            Err(super::SdfReadError::Parse(message))
+                if message.contains("Unrecognized stereogroup type")
+        ));
+
+        // Duplicate ABS groups throw only in strict parsing; non-strict
+        // parsing warns and keeps both groups in source order.
+        let duplicate = ["MDLV30/STEABS ATOMS=(1 1)", "MDLV30/STEABS ATOMS=(1 2)"];
+        assert!(matches!(
+            read_mol_block_detached(&v3000_collection_input(&duplicate)),
+            Err(super::SdfReadError::Parse(message))
+                if message.contains("second ABS stereo group")
+        ));
+        let mut non_strict = MolBlockReadParams::default();
+        non_strict.strict_parsing = false;
+        let MolBlockRecord::Concrete { topology, .. } =
+            read_mol_block_detached_with_params(&v3000_collection_input(&duplicate), non_strict)
+                .expect("non-strict parsing keeps both ABS groups")
+        else {
+            panic!("ordinary atoms must produce concrete topology");
+        };
+        assert_eq!(topology.stereo_groups.len(), 2);
+        assert_eq!(topology.stereo_groups[1].atoms(), &[AtomId::new(1)]);
+    }
+
+    #[test]
     fn v3000_reader_preserves_continued_atom_bond_and_bookmark_state() {
         let input = concat!(
             "state\n",
@@ -6393,8 +8101,11 @@ mod tests {
             "M  V30 CSTATE=(4 99 0.5 0.25 0.0) SAP=(3 10 20 AP)\n",
             "M  V30 END SGROUP\n",
             "M  V30 BEGIN COLLECTION\n",
-            "M  V30 MDLV30/STEABS ATOMS=(1 10)\n",
-            "M  V30 MDLV30/STEREL2 ATOMS=(1 20)\n",
+            // COLLECTION atom values are 1-based row positions, not the
+            // nonsequential bookmarks 10/20 above: positions 1 and 2 select
+            // atom rows 0 and 1 exactly as `getAtomWithIdx(index - 1)` does.
+            "M  V30 MDLV30/STEABS ATOMS=(1 1)\n",
+            "M  V30 MDLV30/STEREL2 ATOMS=(1 2)\n",
             "M  V30 END COLLECTION\n",
             "M  V30 END CTAB\n",
             "M  END\n",
@@ -6770,6 +8481,60 @@ mod tests {
                 .unwrap_err()
                 .to_string()
                 .contains("Index error")
+        );
+    }
+}
+
+#[cfg(test)]
+mod v3k_tokens_tests {
+    use super::{split_v3000_assignment, tokenize_v3000_line};
+
+    #[test]
+    fn v3k_tokens_quoted_spaces_stay_in_one_token() {
+        assert_eq!(tokenize_v3000_line("\"a b\""), vec!["a b"]);
+    }
+
+    #[test]
+    fn v3k_tokens_doubled_quotes_do_not_close_and_text_is_retained() {
+        assert_eq!(tokenize_v3000_line("a\"\"b"), vec!["a\"\"b"]);
+    }
+
+    #[test]
+    fn v3k_tokens_parentheses_keep_inner_spaces() {
+        assert_eq!(tokenize_v3000_line("(a b) c"), vec!["(a b)", "c"]);
+    }
+
+    #[test]
+    fn v3k_tokens_tab_separates_tokens_outside_quotes() {
+        assert_eq!(tokenize_v3000_line("a\tb"), vec!["a", "b"]);
+    }
+
+    #[test]
+    fn v3k_tokens_nested_parentheses_with_tab_stay_one_token() {
+        assert_eq!(tokenize_v3000_line("((a\tb)) c"), vec!["((a\tb))", "c"]);
+    }
+
+    #[test]
+    fn v3k_tokens_doubled_quote_inside_quoted_token_is_retained() {
+        assert_eq!(tokenize_v3000_line("\"a\"\"b\""), vec!["a\"\"b"]);
+    }
+
+    #[test]
+    fn v3k_tokens_assignment_requires_exactly_one_equals_sign() {
+        assert_eq!(
+            split_v3000_assignment("CHG=1"),
+            Some(("CHG".to_owned(), "1"))
+        );
+        assert_eq!(split_v3000_assignment("foo="), Some(("FOO".to_owned(), "")));
+        assert_eq!(split_v3000_assignment("CHG"), None);
+        assert_eq!(split_v3000_assignment("A=B=C"), None);
+    }
+
+    #[test]
+    fn v3k_tokens_assignment_value_text_is_preserved() {
+        assert_eq!(
+            split_v3000_assignment("CLASS=hello world"),
+            Some(("CLASS".to_owned(), "hello world"))
         );
     }
 }

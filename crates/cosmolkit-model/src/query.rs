@@ -11,7 +11,7 @@ use cosmolkit_types::{BondDirection, BondOrder, BondStereo, ChiralTag, Hybridiza
 
 use crate::{
     Atom, AtomId, Bond, BondId, Conformer2D, Conformer3D, CoordinateBlock,
-    CoordinateValidationError, StereoGroup,
+    CoordinateValidationError, StereoGroup, TemplateAttachmentOrder, TemplateAttachmentOrderError,
 };
 
 /// A recursive Boolean query tree over a predicate type.
@@ -444,6 +444,11 @@ impl QueryAtom {
     pub fn prop(&self, key: &str) -> Option<&str> {
         self.atom.prop(key)
     }
+
+    #[must_use]
+    pub const fn template_attachment_order(&self) -> Option<&TemplateAttachmentOrder> {
+        self.atom.template_attachment_order()
+    }
 }
 
 /// A query bond combines concrete bond attributes with a query predicate tree.
@@ -569,6 +574,14 @@ impl QueryGraph {
                     position,
                     id: atom.id(),
                 });
+            }
+            if let Some(order) = atom.template_attachment_order() {
+                order
+                    .validate_for_atom_count(self.atoms.len())
+                    .map_err(|source| QueryGraphError::TemplateAttachmentOrder {
+                        atom: atom.id(),
+                        source,
+                    })?;
             }
         }
         for (position, bond) in self.bonds.iter().enumerate() {
@@ -785,6 +798,11 @@ impl QueryGraph {
 pub enum QueryGraphError {
     #[error("query atom at position {position} has id {id}, expected {position}")]
     AtomIdMismatch { position: usize, id: AtomId },
+    #[error("query atom {atom} has invalid template attachment order: {source}")]
+    TemplateAttachmentOrder {
+        atom: AtomId,
+        source: TemplateAttachmentOrderError,
+    },
     #[error("query bond at position {position} has id {id}, expected {position}")]
     BondIdMismatch { position: usize, id: BondId },
     #[error("query bond {0} has an invalid atom endpoint")]

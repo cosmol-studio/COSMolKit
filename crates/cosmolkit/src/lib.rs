@@ -14,6 +14,8 @@ mod matrices;
 mod molecule;
 mod molecule_builder;
 pub mod ops;
+#[cfg(feature = "smiles")]
+mod smiles;
 mod strict;
 
 pub use binding_contract::{
@@ -48,6 +50,8 @@ pub use cosmolkit_core::{
 pub use cosmolkit_core::{ValenceError, ValenceModel, ValenceParams};
 pub use cosmolkit_model as model;
 pub use cosmolkit_model::*;
+#[cfg(feature = "smiles")]
+pub use cosmolkit_smiles::SmilesParseParams;
 #[cfg(feature = "stereo")]
 pub use cosmolkit_stereo::{CipLabelOptions, CipLabelerError};
 #[cfg(feature = "matrices")]
@@ -91,6 +95,8 @@ pub(crate) use ops::{PendingMolecule, PendingResult, ResultFinalizer};
 pub(crate) use ops::{WithAssignedRingFamiliesAccess, WithAssignedRingsAccess};
 #[cfg(feature = "hydrogens")]
 pub(crate) use ops::{WithHydrogensAccess, WithoutHydrogensAccess};
+#[cfg(feature = "smiles")]
+pub use smiles::SmilesError;
 
 /// Returns the crate version at compile time.
 #[must_use]

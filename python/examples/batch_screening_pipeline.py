@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cosmolkit import BatchErrorMode, Molecule, MoleculeBatch
+import cosmolkit as ck
 
 
 OUTPUT_DIR = Path(__file__).resolve().parent / "output" / "screening"
@@ -29,21 +29,21 @@ SMILES = [
 ]
 
 
-def first_valid_fingerprint(batch: MoleculeBatch):
+def first_valid_fingerprint(batch: ck.MoleculeBatch):
     for fingerprint in batch.fingerprint_morgan_list(radius=2, n_bits=1024):
         if fingerprint is not None:
             return fingerprint
     raise RuntimeError("batch does not contain any valid molecules")
 
 
-query = Molecule.from_smiles("c1ccccc1O", sanitize=True)
+query = ck.Molecule.from_smiles("c1ccccc1O", sanitize=True)
 query_fp = query.fingerprint_morgan(radius=2, n_bits=1024)
 
 batch = (
-    MoleculeBatch.from_smiles_list(
+    ck.MoleculeBatch.from_smiles_list(
         SMILES,
         sanitize=True,
-        errors=BatchErrorMode.KEEP,
+        errors=ck.BatchErrorMode.KEEP,
         n_jobs=4,
     )
     .with_parallel_jobs(4)
@@ -51,8 +51,8 @@ batch = (
 )
 
 prepared = (
-    batch.sanitize(errors=BatchErrorMode.KEEP)
-    .with_2d_coordinates(errors=BatchErrorMode.KEEP)
+    batch.sanitize(errors=ck.BatchErrorMode.KEEP)
+    .with_2d_coordinates(errors=ck.BatchErrorMode.KEEP)
 )
 
 fingerprints = prepared.fingerprint_morgan_list(radius=2, n_bits=1024)
@@ -85,14 +85,14 @@ image_report = hits.to_images(
     format="svg",
     size=(360, 260),
     filenames=[f"hit_{index}" for index in hit_indices],
-    errors=BatchErrorMode.KEEP,
+    errors=ck.BatchErrorMode.KEEP,
 )
 print("image export:", image_report)
 
 sdf_report = hits.to_sdf(
     str(OUTPUT_DIR / "hits.sdf"),
     format="v2000",
-    errors=BatchErrorMode.KEEP,
+    errors=ck.BatchErrorMode.KEEP,
 )
 print("sdf export:", sdf_report)
 

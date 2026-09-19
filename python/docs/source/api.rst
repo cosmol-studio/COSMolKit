@@ -28,14 +28,14 @@ Typical usage keeps molecule conversion on :class:`cosmolkit.Molecule`:
 
 .. code-block:: python
 
-   from cosmolkit import Molecule, inchi_to_key
+   import cosmolkit as ck
 
-   molecule = Molecule.from_smiles("CCO")
+   molecule = ck.Molecule.from_smiles("CCO")
    inchi = molecule.to_inchi()
    key = molecule.to_inchi_key()
-   assert inchi_to_key(inchi) == key
+   assert ck.inchi_to_key(inchi) == key
 
-   restored = Molecule.from_inchi(inchi)
+   restored = ck.Molecule.from_inchi(inchi)
    assert restored is not None
 
 .. py:method:: cosmolkit.Molecule.to_inchi(options="")

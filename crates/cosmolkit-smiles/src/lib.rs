@@ -4,7 +4,7 @@
 //! does not construct a live `Molecule`; the facade is responsible for
 //! installing the returned values into its runtime state.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use cosmolkit_cx::parse_cx_extensions;
 use cosmolkit_model::{
@@ -35,8 +35,6 @@ pub struct SmilesRecord {
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum SmilesParseError {
-    #[error("SMILES is empty")]
-    Empty,
     #[error("unsupported SMILES token '{token}' at byte {offset}")]
     Unsupported { token: char, offset: usize },
     #[error("invalid SMILES syntax at byte {offset}: {message}")]
@@ -59,21 +57,45 @@ pub enum SmilesParseError {
     WriterStereo(String),
     #[error("invalid detached model: {0}")]
     Model(String),
+    #[error("SMILES replacement key must not be empty")]
+    EmptyReplacementKey,
+    #[error("SMILES replacements do not converge; cyclic key '{key}' remains active")]
+    ReplacementCycle { key: String },
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SmilesParseParams {
+    pub sanitize: bool,
     pub allow_cxsmiles: bool,
     pub strict_cxsmiles: bool,
     pub parse_name: bool,
+    pub remove_hydrogens: bool,
+    pub skip_cleanup: bool,
+    pub debug_parse: bool,
+    pub replacements: BTreeMap<String, String>,
 }
 
 impl Default for SmilesParseParams {
     fn default() -> Self {
+        // BEGIN RDKIT CPP TYPE v2::SmilesParse::SmilesParserParams
+        // RDKit✔️✔️:   bool sanitize = true;
+        // RDKit✔️✔️:   bool allowCXSMILES = true;
+        // RDKit✔️✔️:   bool strictCXSMILES = true;
+        // RDKit✔️✔️:   bool parseName = true;
+        // RDKit✔️✔️:   bool removeHs = true;
+        // RDKit✔️✔️:   bool skipCleanup = false;
+        // RDKit✔️✔️:   bool debugParse = false;
+        // RDKit✔️✔️:   std::map<std::string, std::string> replacements;
+        // END RDKIT CPP TYPE v2::SmilesParse::SmilesParserParams
         Self {
+            sanitize: true,
             allow_cxsmiles: true,
             strict_cxsmiles: true,
             parse_name: true,
+            remove_hydrogens: true,
+            skip_cleanup: false,
+            debug_parse: false,
+            replacements: BTreeMap::new(),
         }
     }
 }
@@ -85,7 +107,90 @@ struct PreprocessedSmiles {
     cx_part: String,
 }
 
-fn preprocess_smiles(input: &str, params: &SmilesParseParams) -> PreprocessedSmiles {
+fn replacement_key_is_cyclic(
+    start: &str,
+    current: &str,
+    replacements: &BTreeMap<String, String>,
+    visiting: &mut HashSet<String>,
+) -> bool {
+    if !visiting.insert(current.to_owned()) {
+        return current == start;
+    }
+    let cyclic = replacements.get(current).is_some_and(|replacement| {
+        replacements.keys().any(|next| {
+            replacement.contains(next)
+                && (next == start || replacement_key_is_cyclic(start, next, replacements, visiting))
+        })
+    });
+    visiting.remove(current);
+    cyclic
+}
+
+fn apply_replacements(
+    input: &str,
+    replacements: &BTreeMap<String, String>,
+) -> Result<String, SmilesParseError> {
+    // BEGIN RDKIT CPP FUNCTION preprocessSmiles (replacement loop)
+    // RDKit✔️✔️:   if (!params.replacements.empty()) {
+    // RDKit✔️✔️:     std::string smi = lsmiles;
+    // RDKit✔️✔️:     for (auto loopAgain = true; loopAgain;) {
+    // RDKit✔️✔️:       loopAgain = false;
+    // RDKit✔️✔️:       for (const auto &pr : params.replacements) {
+    // RDKit✔️✔️:         if (smi.find(pr.first) != std::string::npos) {
+    // RDKit✔️✔️:           loopAgain = true;
+    // RDKit✔️✔️:           boost::replace_all(smi, pr.first, pr.second);
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     lsmiles = smi;
+    // RDKit✔️✔️:   }
+    // END RDKIT CPP FUNCTION preprocessSmiles (replacement loop)
+    // BTreeMap preserves std::map's key ordering. RDKit assigns termination
+    // responsibility to callers; the Rust boundary rejects an active cyclic
+    // rewrite explicitly instead of hanging forever. Each convergent pass is
+    // otherwise the same ordered replace-all loop and remains O(p * r * n).
+    if replacements.keys().any(String::is_empty) {
+        return Err(SmilesParseError::EmptyReplacementKey);
+    }
+    if replacements.is_empty() {
+        return Ok(input.to_owned());
+    }
+    let cyclic_keys = replacements
+        .keys()
+        .filter(|key| replacement_key_is_cyclic(key, key, replacements, &mut HashSet::new()))
+        .cloned()
+        .collect::<Vec<_>>();
+    let mut smiles = input.to_owned();
+    let mut seen = HashSet::new();
+    loop {
+        if !seen.insert(smiles.clone()) {
+            let key = replacements
+                .keys()
+                .find(|key| smiles.contains(key.as_str()))
+                .cloned()
+                .unwrap_or_default();
+            return Err(SmilesParseError::ReplacementCycle { key });
+        }
+        let mut changed = false;
+        for (from, to) in replacements {
+            if smiles.contains(from) {
+                smiles = smiles.replace(from, to);
+                changed = true;
+            }
+        }
+        if !changed {
+            return Ok(smiles);
+        }
+        if let Some(key) = cyclic_keys.iter().find(|key| smiles.contains(key.as_str())) {
+            return Err(SmilesParseError::ReplacementCycle { key: key.clone() });
+        }
+    }
+}
+
+fn preprocess_smiles(
+    input: &str,
+    params: &SmilesParseParams,
+) -> Result<PreprocessedSmiles, SmilesParseError> {
     // BEGIN RDKIT CPP FUNCTION preprocessSmiles (name/CX partition)
     // RDKit✔️✔️:   cxPart = "";
     // RDKit✔️✔️:   name = "";
@@ -127,11 +232,12 @@ fn preprocess_smiles(input: &str, params: &SmilesParseParams) -> PreprocessedSmi
     if smiles.is_empty() {
         smiles = input.to_owned();
     }
-    PreprocessedSmiles {
+    smiles = apply_replacements(&smiles, &params.replacements)?;
+    Ok(PreprocessedSmiles {
         smiles,
         name,
         cx_part,
-    }
+    })
 }
 
 fn atom_error(text: &str, offset: usize) -> SmilesParseError {
@@ -1120,10 +1226,15 @@ pub fn parse_smiles(
     input: &str,
     params: &SmilesParseParams,
 ) -> Result<SmilesRecord, SmilesParseError> {
-    if input.trim().is_empty() {
-        return Err(SmilesParseError::Empty);
-    }
-    let preprocessed = preprocess_smiles(input, params);
+    // BEGIN RDKIT CPP FUNCTION MolFromSmiles (debug selection)
+    // RDKit✔️✔️:   if (yysmiles_debug != params.debugParse) {
+    // RDKit✔️✔️:     yysmiles_debug = params.debugParse;
+    // RDKit✔️✔️:   }
+    // END RDKIT CPP FUNCTION MolFromSmiles (debug selection)
+    // This hand-written parser has no process-global generated-parser trace
+    // switch. The option is therefore chemistry-neutral and thread-safe.
+    let _debug_parse = params.debug_parse;
+    let preprocessed = preprocess_smiles(input, params)?;
     let graph_text = preprocessed.smiles.trim();
     let bytes = graph_text.as_bytes();
     let mut atoms = Vec::<Atom>::new();
@@ -1344,7 +1455,8 @@ pub fn parse_smiles(
                     Ok(()) => {
                         record
                             .properties
-                            .set_prop("_CXSMILES_Data", &cx[..parsed.consumed()]);
+                            .set_prop("_CXSMILES_Data", &cx[..parsed.consumed()])
+                            .map_err(|error| SmilesParseError::Model(error.to_string()))?;
                         if params.parse_name
                             && let Some(parsed_name) = cx
                                 .get(parsed.consumed()..)
@@ -1379,7 +1491,27 @@ pub fn parse_smiles(
     if !name.is_empty() {
         record.properties = record.properties.with_name(&name);
     }
-    cleanup_after_parsing(&mut record);
+    // BEGIN RDKIT CPP FUNCTION MolFromSmiles (cleanup gate)
+    // RDKit✔️✔️:   if (res) {
+    // RDKit✔️✔️:     if (!params.skipCleanup) {
+    // RDKit✔️✔️:       SmilesParseOps::CleanupAfterParsing(res.get());
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     if (!name.empty()) {
+    // RDKit✔️✔️:       res->setProp(common_properties::_Name, name);
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // END RDKIT CPP FUNCTION MolFromSmiles (cleanup gate)
+    if !params.skip_cleanup {
+        cleanup_after_parsing(&mut record);
+    }
+    record
+        .topology
+        .validate()
+        .map_err(|error| SmilesParseError::Model(error.to_string()))?;
+    record
+        .coordinates
+        .validate_for_atom_count(record.topology.atoms.len())
+        .map_err(|error| SmilesParseError::Model(error.to_string()))?;
     Ok(record)
 }
 
@@ -1412,7 +1544,12 @@ mod tests {
         .expect("parse");
         assert_eq!(record.topology.atoms[0].isotope(), Some(13));
         assert_eq!(record.topology.atoms[0].formal_charge(), 1);
-        assert_eq!(record.coordinates.conformers_3d.len(), 1);
+        // Source: `parse_coords` sets `is3D = true` for a third token but then
+        // `conf->set3D(is3D && hasNonZeroZCoords(*conf))`, and
+        // `get_coords_block` emits Z only for `conf.is3D()`. An all-zero Z
+        // column is therefore a 2D conformer, not 3D.
+        assert_eq!(record.coordinates.conformers_3d.len(), 0);
+        assert_eq!(record.coordinates.conformers_2d.len(), 1);
         assert_eq!(record.properties.name(), Some("ethanol"));
     }
 

@@ -216,6 +216,7 @@ version = "0.5.0-rc.3"
 dependencies = [
  "cosmolkit-core",
  "cosmolkit-model",
+ "cosmolkit-search",
  "cosmolkit-types",
  "tempfile",
  "thiserror",
@@ -286,7 +287,6 @@ dependencies = [
  "cosmolkit-core",
  "cosmolkit-cx",
  "cosmolkit-model",
- "cosmolkit-stereo",
  "cosmolkit-types",
  "thiserror",
 ]

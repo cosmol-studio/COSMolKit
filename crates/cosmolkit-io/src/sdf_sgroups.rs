@@ -858,41 +858,78 @@ pub(super) fn parse_v3000_sgroup_block(
 fn parse_stereo_collection_line(
     line: &str,
     line_number: usize,
-    atoms: &BTreeMap<u32, AtomId>,
+    atom_count: usize,
 ) -> Result<Option<StereoGroup>, SdfReadError> {
+    // BEGIN RDKIT CPP FUNCTION parseEnhancedStereo (line recognition)
+    // RDKit✔️✔️: const regex stereo_label(
+    // RDKit✔️✔️:     R"regex(MDLV30/STE(...)([0-9]*) +ATOMS=\(([0-9]+) +(.*)\) *)regex");
+    // Recognition and the matched tag/index branches are reproduced below;
+    // the caller owns duplicate-ABS strictness and collection installation.
+    // Marker review: behavior verified by the closed collection regressions
+    // (skip/recognition, id rules, row positions, strictness); the manual
+    // single-pass scan replaces the source's per-call `std::regex`
+    // construction and match without changing any accept/reject outcome.
+    // `regex_match` requires the whole (uppercased) line to match: the tag is
+    // exactly three characters, the optional group id is digits only, one or
+    // more spaces separate it from `ATOMS=(`, the count is `[0-9]+` followed
+    // by spaces, and only spaces may follow the closing parenthesis.
+    // Non-matching lines are unrecognized collection types and are skipped,
+    // not parsed and not errors.
     let Some(rest) = line.strip_prefix("MDLV30/STE") else {
         return Ok(None);
     };
     if rest.len() < 3 {
-        return Err(SdfReadError::Parse(format!(
-            "Unrecognized stereogroup type : '{line}' on line{line_number}"
-        )));
+        return Ok(None);
     }
-    let tag = &rest[..3];
-    let after_tag = &rest[3..];
-    let digits = after_tag
-        .chars()
-        .take_while(char::is_ascii_digit)
-        .collect::<String>();
-    let after_digits = &after_tag[digits.len()..];
-    let Some(atoms_position) = after_digits.find("ATOMS=") else {
+    // The source regex consumes exactly three bytes before ASCII digits/spaces.
+    // A split inside UTF-8 cannot satisfy that suffix; it is an unrecognized
+    // collection line, not a Rust string slicing panic.
+    let Some(tag) = rest.get(..3) else {
         return Ok(None);
     };
-    let bookmarks = parse_u32_array(
-        &after_digits[atoms_position + 6..],
-        line_number,
-        Some(atoms.len()),
-    )?;
-    let group_atoms = bookmarks
-        .into_iter()
-        .map(|bookmark| {
-            atoms.get(&bookmark).copied().ok_or_else(|| {
-                SdfReadError::Parse(format!(
-                    "Stereo group atom index {bookmark} out of range on line {line_number}"
-                ))
-            })
-        })
-        .collect::<Result<Vec<_>, _>>()?;
+    let after_tag = &rest[3..];
+    let id_digits = after_tag.bytes().take_while(u8::is_ascii_digit).count();
+    let after_digits = &after_tag[id_digits..];
+    let after_id_separator = after_digits.trim_start_matches(' ');
+    if after_id_separator.len() == after_digits.len() {
+        return Ok(None);
+    }
+    let Some(after_atoms) = after_id_separator.strip_prefix("ATOMS=(") else {
+        return Ok(None);
+    };
+    let count_digits = after_atoms.bytes().take_while(u8::is_ascii_digit).count();
+    if count_digits == 0 {
+        return Ok(None);
+    }
+    let count_text = &after_atoms[..count_digits];
+    let after_count = &after_atoms[count_digits..];
+    let atoms_region = after_count.trim_start_matches(' ');
+    if atoms_region.len() == after_count.len() {
+        return Ok(None);
+    }
+    // `(.*)\)` is greedy: the group ends at the last ')' that is followed
+    // only by the regex's trailing spaces.
+    let Some(close) = atoms_region.rfind(')') else {
+        return Ok(None);
+    };
+    if !atoms_region[close + 1..].bytes().all(|byte| byte == b' ') {
+        return Ok(None);
+    }
+    let atoms_text = &atoms_region[..close];
+    // BEGIN RDKIT CPP FUNCTION parseEnhancedStereo (tag dispatch)
+    // RDKit✔️✔️:       if (match[1] == "ABS") {
+    // RDKit✔️✔️:         grouptype = RDKit::StereoGroupType::STEREO_ABSOLUTE;
+    // RDKit✔️✔️:       } else if (match[1] == "REL") {
+    // RDKit✔️✔️:         grouptype = RDKit::StereoGroupType::STEREO_OR;
+    // RDKit✔️✔️:         groupid = FileParserUtils::toUnsigned(match[2], true);
+    // RDKit✔️✔️:       } else if (match[1] == "RAC") {
+    // RDKit✔️✔️:         grouptype = RDKit::StereoGroupType::STEREO_AND;
+    // RDKit✔️✔️:         groupid = FileParserUtils::toUnsigned(match[2], true);
+    // RDKit✔️✔️:       } else {
+    // RDKit✔️✔️:         errout << "Unrecognized stereogroup type : '" << tempStr
+    // RDKit✔️✔️:                << "' on line" << line;
+    // RDKit✔️✔️:         throw FileParseException(errout.str());
+    // RDKit✔️✔️:       }
     let kind = match tag {
         "ABS" => StereoGroupKind::Absolute,
         "REL" => StereoGroupKind::Or,
@@ -903,66 +940,205 @@ fn parse_stereo_collection_line(
             )));
         }
     };
-    let mut group = StereoGroup::new(kind, group_atoms, Vec::new());
-    if !digits.is_empty() {
-        group = group.with_id(parse_rdkit_unsigned(&digits).unwrap_or(0));
-    }
-    Ok(Some(group))
+    // The source constructs every group with its `groupid`: ABS keeps the
+    // initialized zero, while REL/RAC run their digits through
+    // `FileParserUtils::toUnsigned` — which resolves empty or overflowing
+    // digit strings to zero because the `std::from_chars` error code is
+    // ignored (the regex already guarantees digits, so no cast throw exists).
+    let group_id = if tag == "ABS" {
+        0
+    } else {
+        parse_rdkit_unsigned(&after_tag[..id_digits]).map_err(|()| {
+            SdfReadError::Parse(format!(
+                "Cannot convert stereo group id on line {line_number}"
+            ))
+        })?
+    };
+    // RDKit✔️✔️:       const unsigned int count = FileParserUtils::toUnsigned(match[3], true);
+    // RDKit✔️✔️:       std::vector<Atom *> atoms;
+    // RDKit✔️✔️:       std::stringstream ss(match[4]);
+    // RDKit✔️✔️:       unsigned int index;
+    // RDKit✔️✔️:       for (size_t i = 0; i < count; ++i) {
+    // RDKit✔️✔️:         ss >> index;
+    // RDKit✔️✔️:         // atoms are 1 indexed in molfiles
+    // RDKit✔️✔️:         atoms.push_back(mol->getAtomWithIdx(index - 1));
+    // RDKit✔️✔️:       }
+    // COLLECTION atom values are 1-based main CTAB atom row positions
+    // (`getAtomWithIdx(index - 1)`), not V3000 atom bookmarks: a nonsequential
+    // bookmark table cannot change collection membership. `ss >> index`
+    // is decimal formatted extraction, not whitespace tokenization: it consumes
+    // a numeric prefix, so `1+2` supplies two values and `1x` supplies one.
+    // Its sentry skips C-locale whitespace; EOF leaves the previous index
+    // untouched. No digits produces zero, unsigned negation wraps, and overflow
+    // produces UINT_MAX/failbit. Zero/out-of-range indices fail immediately.
+    // EOF before the first index would use uninitialized C++ state: reject it
+    // structurally rather than fabricate an atom. Later EOF repeats the last
+    // initialized index, including when the declared count exceeds the text.
+    let count = parse_rdkit_unsigned(count_text).map_err(|()| {
+        SdfReadError::Parse(format!(
+            "Cannot convert '{count_text}' to unsigned int on line {line_number}"
+        ))
+    })? as usize;
+    let bytes = atoms_text.as_bytes();
+    let mut position_cursor = 0;
+    let mut previous_position = None;
+    let mut extraction_failed = false;
+    let group_atoms = (0..count)
+        .map(|_| {
+            let out_of_range = |value: String| {
+                SdfReadError::Parse(format!(
+                    "Stereo group atom index {value} out of range on line {line_number}"
+                ))
+            };
+            while bytes
+                .get(position_cursor)
+                .is_some_and(|byte| matches!(byte, b' ' | b'\t' | b'\n' | b'\r' | 0x0b | 0x0c))
+            {
+                position_cursor += 1;
+            }
+            let position = if extraction_failed || position_cursor == bytes.len() {
+                previous_position.ok_or_else(|| {
+                    SdfReadError::Parse(format!(
+                        "Stereo group has no initialized atom index on line {line_number}"
+                    ))
+                })?
+            } else {
+                let negative = bytes[position_cursor] == b'-';
+                if matches!(bytes[position_cursor], b'+' | b'-') {
+                    position_cursor += 1;
+                }
+                let digits_start = position_cursor;
+                let mut value = Some(0_u32);
+                while let Some(byte) = bytes.get(position_cursor).filter(|b| b.is_ascii_digit()) {
+                    value =
+                        value.and_then(|v| v.checked_mul(10)?.checked_add(u32::from(byte - b'0')));
+                    position_cursor += 1;
+                }
+                extraction_failed = value.is_none() || position_cursor == digits_start;
+                let value = match value {
+                    None => u32::MAX,
+                    Some(value) if negative => value.wrapping_neg(),
+                    Some(value) => value,
+                };
+                previous_position = Some(value);
+                value
+            };
+            let row = usize::try_from(
+                position
+                    .checked_sub(1)
+                    .ok_or_else(|| out_of_range(position.to_string()))?,
+            )
+            .map_err(|_| out_of_range(position.to_string()))?;
+            if row >= atom_count {
+                return Err(out_of_range(position.to_string()));
+            }
+            Ok(AtomId::new(row))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(Some(
+        StereoGroup::new(kind, group_atoms, Vec::new()).with_id(group_id),
+    ))
 }
 
 pub(super) fn parse_v3000_collection_block(
     lines: &[&str],
     cursor: &mut usize,
-    atoms: &BTreeMap<u32, AtomId>,
+    atom_count: usize,
+    strict_parsing: bool,
 ) -> Result<Vec<StereoGroup>, SdfReadError> {
     // BEGIN RDKIT CPP FUNCTION parseEnhancedStereo
-    // RDKit❗✔️: const regex stereo_label(
-    // RDKit❗✔️:     R"regex(MDLV30/STE(...)([0-9]*) +ATOMS=\(([0-9]+) +(.*)\) *)regex");
-    // RDKit❗✔️: auto tempStr = getV3000Line(inStream, line);
-    // RDKit❗✔️: boost::to_upper(tempStr);
-    // RDKit❗✔️: unsigned abs_group_seen = 0;
-    // RDKit❗✔️: while (!startsWith(tempStr, "END", 3)) {
-    // RDKit❗✔️:   if (regex_match(tempStr, match, stereo_label)) {
-    // RDKit❗✔️:     if (match[1] == "ABS") {
-    // RDKit❗✔️:       grouptype = RDKit::StereoGroupType::STEREO_ABSOLUTE;
-    // RDKit❗✔️:       if (abs_group_seen == 1) {
-    // RDKit❗✔️:         std::ostringstream errout;
-    // RDKit❗✔️:         errout << "Seen a second ABS stereo group on line " << line
-    // RDKit❗✔️:                << std::endl;
-    // RDKit❗✔️:         if (strictParsing) {
-    // RDKit❗✔️:           throw FileParseException(errout.str());
-    // RDKit❗✔️:         } else {
-    // RDKit❗✔️:           BOOST_LOG(rdWarningLog) << errout.str() << std::endl;
+    // RDKit❗✔️: std::string parseEnhancedStereo(std::istream *inStream, unsigned int &line,
+    // RDKit❗✔️:                                 RWMol *mol, bool strictParsing) {
+    // RDKit❗✔️:   // Lines like (absolute, relative, racemic):
+    // RDKit❗✔️:   // M  V30 MDLV30/STEABS ATOMS=(2 2 3)
+    // RDKit❗✔️:   // M  V30 MDLV30/STEREL1 ATOMS=(1 12)
+    // RDKit❗✔️:   // M  V30 MDLV30/STERAC1 ATOMS=(1 12)
+    // RDKit❗✔️:   const regex stereo_label(
+    // RDKit❗✔️:       R"regex(MDLV30/STE(...)([0-9]*) +ATOMS=\(([0-9]+) +(.*)\) *)regex");
+    // RDKit❗✔️:
+    // RDKit❗✔️:   smatch match;
+    // RDKit❗✔️:   std::vector<StereoGroup> groups;
+    // RDKit❗✔️:
+    // RDKit❗✔️:   // Read the collection until the end
+    // RDKit❗✔️:   auto tempStr = getV3000Line(inStream, line);
+    // RDKit❗✔️:   boost::to_upper(tempStr);
+    // RDKit❗✔️:   unsigned abs_group_seen = 0;
+    // RDKit❗✔️:   while (!startsWith(tempStr, "END", 3)) {
+    // RDKit❗✔️:     // If this line in the collection is part of a stereo group
+    // RDKit❗✔️:     if (regex_match(tempStr, match, stereo_label)) {
+    // RDKit❗✔️:       StereoGroupType grouptype = RDKit::StereoGroupType::STEREO_ABSOLUTE;
+    // RDKit❗✔️:       unsigned groupid = 0;
+    // RDKit❗✔️:
+    // RDKit❗✔️:       if (match[1] == "ABS") {
+    // RDKit❗✔️:         grouptype = RDKit::StereoGroupType::STEREO_ABSOLUTE;
+    // RDKit❗✔️:         // Warn only one per mol about multiple ABS groups
+    // RDKit❗✔️:         if (abs_group_seen == 1) {
+    // RDKit❗✔️:           std::ostringstream errout;
+    // RDKit❗✔️:           errout << "Seen a second ABS stereo group on line " << line
+    // RDKit❗✔️:                  << std::endl;
+    // RDKit❗✔️:           if (strictParsing) {
+    // RDKit❗✔️:             throw FileParseException(errout.str());
+    // RDKit❗✔️:           } else {
+    // RDKit❗✔️:             BOOST_LOG(rdWarningLog) << errout.str() << std::endl;
+    // RDKit❗✔️:           }
     // RDKit❗✔️:         }
+    // RDKit❗✔️:         ++abs_group_seen;
+    // RDKit❗✔️:       } else if (match[1] == "REL") {
+    // RDKit❗✔️:         grouptype = RDKit::StereoGroupType::STEREO_OR;
+    // RDKit❗✔️:         groupid = FileParserUtils::toUnsigned(match[2], true);
+    // RDKit❗✔️:       } else if (match[1] == "RAC") {
+    // RDKit❗✔️:         grouptype = RDKit::StereoGroupType::STEREO_AND;
+    // RDKit❗✔️:         groupid = FileParserUtils::toUnsigned(match[2], true);
+    // RDKit❗✔️:       } else {
+    // RDKit❗✔️:         std::ostringstream errout;
+    // RDKit❗✔️:         errout << "Unrecognized stereogroup type : '" << tempStr << "' on line"
+    // RDKit❗✔️:                << line;
+    // RDKit❗✔️:         throw FileParseException(errout.str());
     // RDKit❗✔️:       }
-    // RDKit❗✔️:       ++abs_group_seen;
-    // RDKit❗✔️:     } else if (match[1] == "REL") {
-    // RDKit❗✔️:       grouptype = RDKit::StereoGroupType::STEREO_OR;
-    // RDKit❗✔️:       groupid = FileParserUtils::toUnsigned(match[2], true);
-    // RDKit❗✔️:     } else if (match[1] == "RAC") {
-    // RDKit❗✔️:       grouptype = RDKit::StereoGroupType::STEREO_AND;
-    // RDKit❗✔️:       groupid = FileParserUtils::toUnsigned(match[2], true);
+    // RDKit❗✔️:
+    // RDKit❗✔️:       const unsigned int count = FileParserUtils::toUnsigned(match[3], true);
+    // RDKit❗✔️:       std::vector<Atom *> atoms;
+    // RDKit❗✔️:       std::stringstream ss(match[4]);
+    // RDKit❗✔️:       unsigned int index;
+    // RDKit❗✔️:       for (size_t i = 0; i < count; ++i) {
+    // RDKit❗✔️:         ss >> index;
+    // RDKit❗✔️:         // atoms are 1 indexed in molfiles
+    // RDKit❗✔️:         atoms.push_back(mol->getAtomWithIdx(index - 1));
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:       std::vector<Bond *> newBonds;
+    // RDKit❗✔️:       groups.emplace_back(grouptype, std::move(atoms), std::move(newBonds),
+    // RDKit❗✔️:                           groupid);
+    // RDKit❗✔️:     } else {
+    // RDKit❗✔️:       // skip collection types we don't know how to read. Only one documented
+    // RDKit❗✔️:       // is MDLV30/HILITE
+    // RDKit❗✔️:       BOOST_LOG(rdWarningLog) << "Skipping unrecognized collection type at "
+    // RDKit❗✔️:                                  "line "
+    // RDKit❗✔️:                               << line << ": " << tempStr << std::endl;
     // RDKit❗✔️:     }
-    // RDKit❗✔️:     for (size_t i = 0; i < count; ++i) {
-    // RDKit❗✔️:       ss >> index;
-    // RDKit❗✔️:       atoms.push_back(mol->getAtomWithIdx(index - 1));
-    // RDKit❗✔️:     }
-    // RDKit❗✔️:     groups.emplace_back(grouptype, std::move(atoms), std::move(newBonds), groupid);
+    // RDKit❗✔️:     tempStr = getV3000Line(inStream, line);
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:
+    // RDKit❗✔️:   if (!groups.empty()) {
+    // RDKit❗✔️:     mol->setStereoGroups(std::move(groups));
     // RDKit❗✔️:   }
     // RDKit❗✔️:   tempStr = getV3000Line(inStream, line);
+    // RDKit❗✔️:   return tempStr;
     // RDKit❗✔️: }
+    // The recognition/index extraction is delegated to the private helper;
+    // installation is owned by read_v3000_record_detached. The full source
+    // remains here; this correction does not certify every parser branch.
     let mut groups = Vec::new();
     let mut absolute_count = 0_usize;
     loop {
         let (line, line_number) = get_v3000_line(lines, cursor)?;
         let upper = line.to_ascii_uppercase();
-        if upper.starts_with("END COLLECTION") {
+        if upper.starts_with("END") {
             break;
         }
-        if let Some(group) = parse_stereo_collection_line(&upper, line_number, atoms)? {
+        if let Some(group) = parse_stereo_collection_line(&upper, line_number, atom_count)? {
             if group.kind() == StereoGroupKind::Absolute {
                 absolute_count += 1;
-                if absolute_count > 1 {
+                if absolute_count > 1 && strict_parsing {
                     return Err(SdfReadError::Parse(format!(
                         "Seen a second ABS stereo group on line {line_number}\n"
                     )));

@@ -14,9 +14,9 @@ Verify the installation:
 
 .. code-block:: python
 
-   import cosmolkit
+   import cosmolkit as ck
 
-   print(cosmolkit.__version__)
+   print(ck.__version__)
 
 COSMolKit depends on NumPy for array outputs such as coordinates and distance
 bounds matrices.

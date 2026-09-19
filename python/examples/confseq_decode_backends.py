@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import cosmolkit
+import cosmolkit as ck
 
 
 # Tokenized corpus record: dude_aa2ar__L021087 candidate 0.
@@ -13,13 +13,13 @@ confseq = (
     "N 2 <-172> C ( = O ) <-2> C <0> N <3> C <174> 2 = O ) c n 1"
 )
 
-reference = cosmolkit.confseq.decode(
+reference = ck.confseq.decode(
     confseq,
     optimize_with_uff=False,
     template_backend="distance_geometry",
 )
 
-fast = cosmolkit.confseq.decode(
+fast = ck.confseq.decode(
     confseq,
     optimize_with_uff=False,
     template_backend="fast_geometry",

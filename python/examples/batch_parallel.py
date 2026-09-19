@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from cosmolkit import BatchErrorMode, MoleculeBatch
+import cosmolkit as ck
 
 output_dir = Path(__file__).resolve().parent / "output" / "batch"
 output_dir.mkdir(parents=True, exist_ok=True)
@@ -16,9 +16,9 @@ smiles = [
 ]
 
 batch = (
-    MoleculeBatch.from_smiles_list(
+    ck.MoleculeBatch.from_smiles_list(
         smiles,
-        errors=BatchErrorMode.KEEP,
+        errors=ck.BatchErrorMode.KEEP,
     )
     .with_parallel_jobs(4)
     .with_progress_bar(True)
@@ -30,8 +30,8 @@ print("valid mask:", batch.valid_mask())
 for error in batch.errors():
     print("parse error:", error.index(), error.operation(), error.message())
 
-prepared = batch.with_hydrogens(errors=BatchErrorMode.KEEP).with_2d_coordinates(
-    errors=BatchErrorMode.KEEP
+prepared = batch.with_hydrogens(errors=ck.BatchErrorMode.KEEP).with_2d_coordinates(
+    errors=ck.BatchErrorMode.KEEP
 )
 
 canonical = prepared.to_smiles_list()
@@ -58,7 +58,7 @@ image_report = prepared.to_images(
     str(output_dir / "images"),
     format="svg",
     size=(320, 240),
-    errors=BatchErrorMode.KEEP,
+    errors=ck.BatchErrorMode.KEEP,
     filenames=["ethanol", "phenol.svg", "chiral", "invalid.svg", "acetate"],
     report_path=str(output_dir / "image_errors.json"),
 )
@@ -67,7 +67,7 @@ print("image report:", image_report)
 sdf_report = prepared.to_sdf(
     str(output_dir / "molecules.sdf"),
     format="v2000",
-    errors=BatchErrorMode.KEEP,
+    errors=ck.BatchErrorMode.KEEP,
     report_path=str(output_dir / "sdf_errors.json"),
 )
 print("sdf report:", sdf_report)
@@ -75,7 +75,7 @@ print("sdf report:", sdf_report)
 sdf_file_report = prepared.to_sdf_files(
     str(output_dir / "sdf_records"),
     format="v2000",
-    errors=BatchErrorMode.KEEP,
+    errors=ck.BatchErrorMode.KEEP,
     filenames=["ethanol", "phenol.sdf", "chiral", "invalid.sdf", "acetate"],
     report_path=str(output_dir / "sdf_file_errors.json"),
 )

@@ -16,7 +16,7 @@ from typing import cast
 import numpy as np
 import numpy.typing as npt
 
-from cosmolkit import Protein, ProteinAtom, ProteinResidue
+import cosmolkit as ck
 
 
 PDB = """\
@@ -37,19 +37,19 @@ HETATM   14  C1  LIG C   1      18.500  11.000   8.500  1.00 10.00           C
 """
 
 
-def atom_position(atom: ProteinAtom) -> tuple[float, float, float]:
+def atom_position(atom: ck.ProteinAtom) -> tuple[float, float, float]:
     position = atom.position()
     if position is None:
         raise ValueError(f"atom {atom.name()} has no coordinates")
     return position
 
 
-def residue_centroid(residue: ProteinResidue) -> npt.NDArray[np.float64]:
+def residue_centroid(residue: ck.ProteinResidue) -> npt.NDArray[np.float64]:
     coords = np.array([atom_position(atom) for atom in residue.atoms()])
     return cast(npt.NDArray[np.float64], coords.mean(axis=0))
 
 
-protein = Protein.from_pdb_str(PDB)
+protein = ck.Protein.from_pdb_str(PDB)
 
 print("models:", protein.num_models())
 print("chains:", protein.num_chains())

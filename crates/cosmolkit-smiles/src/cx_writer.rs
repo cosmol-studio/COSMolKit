@@ -1300,26 +1300,60 @@ fn write_sgroup_hierarchy(
     include_polymer: bool,
 ) -> String {
     // BEGIN RDKIT CPP FUNCTION get_sgroup_hierarchy_block
-    // RDKit✔️✔️: for (const auto &sg : sgs) {
-    // RDKit✔️✔️:   if (sg.hasProp("_cxsmilesOutputIndex")) {
-    // RDKit✔️✔️:     sgroupOrder[sg index] = sg output index;
+    // RDKit✔️✔️: std::string get_sgroup_hierarchy_block(const ROMol &mol) {
+    // RDKit✔️✔️:   const auto &sgs = getSubstanceGroups(mol);
+    // RDKit✔️✔️:   if (sgs.empty()) {
+    // RDKit✔️✔️:     return "";
     // RDKit✔️✔️:   }
-    // RDKit✔️✔️: }
-    // RDKit✔️✔️: if (sg.getPropIfPresent("PARENT", pidx) &&
-    // RDKit✔️✔️:     sgroupOrder.find(pidx) != sgroupOrder.end()) {
-    // RDKit✔️✔️:   unsigned int sgidx = sg.getIndexInMol();
-    // RDKit✔️✔️:   sg.getPropIfPresent("index", sgidx);
-    // RDKit✔️✔️:   if (sgroupOrder.find(sgidx) != sgroupOrder.end()) {
-    // RDKit✔️✔️:     accum[sgroupOrder[pidx]].push_back(sgroupOrder[sgidx]);
+    // RDKit✔️✔️:   std::stringstream res;
+    // RDKit✔️✔️:   // we need a map from sgroup index to output index;
+    // RDKit✔️✔️:   std::map<unsigned int, unsigned int> sgroupOrder;
+    // RDKit✔️✔️:   bool parentPresent = false;
+    // RDKit✔️✔️:   for (const auto &sg : sgs) {
+    // RDKit✔️✔️:     if (sg.hasProp("_cxsmilesOutputIndex")) {
+    // RDKit✔️✔️:       unsigned int sgidx = sg.getIndexInMol();
+    // RDKit✔️✔️:       sg.getPropIfPresent("index", sgidx);
+    // RDKit✔️✔️:       sgroupOrder[sgidx] = sg.getProp<unsigned int>("_cxsmilesOutputIndex");
+    // RDKit✔️✔️:       sg.clearProp("_cxsmilesOutputIndex");
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     if (sg.hasProp("PARENT")) {
+    // RDKit✔️✔️:       parentPresent = true;
+    // RDKit✔️✔️:     }
     // RDKit✔️✔️:   }
-    // RDKit✔️✔️: }
-    // RDKit✔️✔️: if (!accum.empty()) {
-    // RDKit✔️✔️:   res << "SgH:";
-    // RDKit✔️✔️:   for (const auto &pr : accum) {
-    // RDKit✔️✔️:     res << pr.first << ":";
-    // RDKit✔️✔️:     for (auto v : pr.second) { res << v << "."; }
-    // RDKit✔️✔️:     res.seekp(-1, res.cur);
-    // RDKit✔️✔️:     res << ",";
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   if (parentPresent) {
+    // RDKit✔️✔️:     // now loop over them and add the information
+    // RDKit✔️✔️:     std::map<unsigned int, std::vector<unsigned int>> accum;
+    // RDKit✔️✔️:     for (const auto &sg : sgs) {
+    // RDKit✔️✔️:       unsigned pidx;
+    // RDKit✔️✔️:       if (sg.getPropIfPresent("PARENT", pidx) &&
+    // RDKit✔️✔️:           sgroupOrder.find(pidx) != sgroupOrder.end()) {
+    // RDKit✔️✔️:         unsigned int sgidx = sg.getIndexInMol();
+    // RDKit✔️✔️:         sg.getPropIfPresent("index", sgidx);
+    // RDKit✔️✔️:         if (sgroupOrder.find(sgidx) != sgroupOrder.end()) {
+    // RDKit✔️✔️:           accum[sgroupOrder[pidx]].push_back(sgroupOrder[sgidx]);
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     if (!accum.empty()) {
+    // RDKit✔️✔️:       res << "SgH:";
+    // RDKit✔️✔️:       for (const auto &pr : accum) {
+    // RDKit✔️✔️:         res << pr.first << ":";
+    // RDKit✔️✔️:         for (auto v : pr.second) {
+    // RDKit✔️✔️:           res << v << ".";
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:         // remove the extra ".":
+    // RDKit✔️✔️:         res.seekp(-1, res.cur);
+    // RDKit✔️✔️:         res << ",";
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     std::string resStr = res.str();
+    // RDKit✔️✔️:     while (!resStr.empty() && resStr.back() == ',') {
+    // RDKit✔️✔️:       resStr.pop_back();
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     return resStr;
+    // RDKit✔️✔️:   } else {
+    // RDKit✔️✔️:     return "";
     // RDKit✔️✔️:   }
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION get_sgroup_hierarchy_block
@@ -1341,18 +1375,37 @@ fn write_sgroup_hierarchy(
             }
         }
     }
+    // Resolve typed IDs once, not by scanning all rows for every child. Both
+    // this map and RDKit's source-index/output-index map cost O(n log n) to
+    // build and O(log n) per lookup, with O(n) temporary storage overall.
+    let source_indices: BTreeMap<_, _> = record
+        .topology
+        .substance_groups
+        .iter()
+        .map(|group| (group.id(), sgroup_index(group)))
+        .collect();
     let mut hierarchy = BTreeMap::<usize, Vec<usize>>::new();
     for group in &record.topology.substance_groups {
         let Some(child) = output_indices.get(&sgroup_index(group)).copied() else {
             continue;
         };
-        let parent_id = group.parent().map(|parent| parent.index()).or_else(|| {
-            group
-                .props()
-                .get("PARENT")
-                .and_then(|value| value.parse::<usize>().ok())
-        });
-        let Some(parent) = parent_id.and_then(|parent| output_indices.get(&parent).copied()) else {
+        // RDKit resolves the parent through the `PARENT` property, which
+        // holds the parent's source `index`, and looks it up in the map keyed
+        // by that same `index` space. The typed `parent` stores the parent's
+        // `SubstanceGroupId`, so translate it through the parent row's own
+        // `index` rather than using the row id directly. Fall back to the
+        // preserved `PARENT` property when only that is available.
+        let parent_key = group
+            .parent()
+            .and_then(|parent_id| source_indices.get(&parent_id).copied())
+            .or_else(|| {
+                group
+                    .props()
+                    .get("PARENT")
+                    .and_then(|value| value.parse::<usize>().ok())
+            });
+        let Some(parent) = parent_key.and_then(|parent| output_indices.get(&parent).copied())
+        else {
             continue;
         };
         hierarchy.entry(parent).or_default().push(child);
@@ -1468,6 +1521,56 @@ mod tests {
         ] {
             assert_eq!(write_cx_smiles(&parse(input)).unwrap(), expected, "{input}");
         }
+    }
+
+    #[test]
+    fn review_hierarchy_resolves_sparse_source_indices_and_selected_outputs() {
+        use cosmolkit_model::SubstanceGroupId;
+        let mut record = parse("C");
+        let mut child = SubstanceGroup::new(SubstanceGroupId::new(0), SubstanceGroupKind::Data);
+        child.set_prop("index", "42");
+        child.set_parent(SubstanceGroupId::new(2));
+        let mut sibling = SubstanceGroup::new(SubstanceGroupId::new(1), SubstanceGroupKind::Data);
+        sibling.set_prop("index", "7");
+        // Preserve the existing raw-property path when no typed parent exists.
+        sibling.set_prop("PARENT", "900");
+        let mut parent = SubstanceGroup::new(
+            SubstanceGroupId::new(2),
+            SubstanceGroupKind::StructuralRepeatUnit,
+        );
+        parent.set_prop("index", "900");
+        record.topology.substance_groups = vec![child, sibling, parent];
+        assert_eq!(write_sgroup_hierarchy(&record, true, true), "SgH:2:0.1");
+        assert_eq!(write_sgroup_hierarchy(&record, true, false), "");
+        assert_eq!(write_sgroup_hierarchy(&record, false, true), "");
+        assert_eq!(write_sgroup_hierarchy(&record, false, false), "");
+    }
+
+    #[test]
+    fn review_hierarchy_many_typed_children_keep_row_order() {
+        use cosmolkit_model::SubstanceGroupId;
+        let mut record = parse("C");
+        let count = 512;
+        let parent_id = SubstanceGroupId::new(count - 1);
+        record.topology.substance_groups = (0..count)
+            .map(|row| {
+                let mut group =
+                    SubstanceGroup::new(SubstanceGroupId::new(row), SubstanceGroupKind::Data);
+                group.set_prop("index", (1000 + row * 7).to_string());
+                if row + 1 != count {
+                    group.set_parent(parent_id);
+                }
+                group
+            })
+            .collect();
+        let children = (0..count - 1)
+            .map(|row| row.to_string())
+            .collect::<Vec<_>>()
+            .join(".");
+        assert_eq!(
+            write_sgroup_hierarchy(&record, true, false),
+            format!("SgH:{}:{children}", count - 1)
+        );
     }
 
     #[test]

@@ -12,20 +12,20 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cosmolkit import Molecule
+import cosmolkit as ck
 
 
 OUTPUT_DIR = Path(__file__).resolve().parent / "output" / "edit_pipeline"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-base = Molecule.from_smiles("c1ccccc1", sanitize=True)
+base = ck.Molecule.from_smiles("c1ccccc1", sanitize=True)
 editor = base.edit()
 oxygen = editor.add_atom("O")
 editor.add_bond(0, oxygen, order="single")
 phenol = editor.commit(sanitize=True)
 
 payload = phenol.mol_to_binary()
-restored = Molecule.mol_from_binary(payload)
+restored = ck.Molecule.mol_from_binary(payload)
 prepared = restored.with_2d_coordinates()
 
 print("base smiles:", base.to_smiles())
