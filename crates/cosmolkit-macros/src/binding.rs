@@ -381,7 +381,7 @@ fn validate_registry(entries: &[BindingEntry]) -> syn::Result<()> {
     let mut python = HashSet::new();
     let mut javascript = HashSet::new();
     for entry in entries {
-        let owner = owner_key(entry.owner);
+        let owner = projection_owner_key(entry);
         insert_unique(
             &mut python,
             format!("{owner}:{}", entry.python.value()),
@@ -1091,6 +1091,23 @@ fn owner_key(owner: Owner) -> &'static str {
         Owner::Molecule => "molecule",
         Owner::Module => "module",
         Owner::Type => "type",
+    }
+}
+fn projection_owner_key(entry: &BindingEntry) -> String {
+    match entry.owner {
+        Owner::Molecule | Owner::Module => owner_key(entry.owner).to_owned(),
+        Owner::Type => {
+            if entry.callable.is_none() {
+                // Type declarations share the language-level exported type
+                // namespace; distinct Rust paths do not create distinct
+                // Python or JavaScript declaration scopes.
+                return owner_key(Owner::Type).to_owned();
+            }
+            let mut owner = entry.rust.clone();
+            owner.segments.pop();
+            owner.segments.pop_punct();
+            format!("type:{}", tokens(&owner))
+        }
     }
 }
 fn tokens(value: &impl ToTokens) -> String {

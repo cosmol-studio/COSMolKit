@@ -1344,7 +1344,7 @@ fn atom_is_candidate_for_ring_stereochemistry(
     })
 }
 
-fn special_ring_relations(
+pub(crate) fn special_ring_relations(
     topology: &TopologyBlock,
     valence: &ValenceAssignment,
     rings: &RingInfo,

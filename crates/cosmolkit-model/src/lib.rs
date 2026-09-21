@@ -32,7 +32,8 @@ pub use properties::{
 };
 pub use query::{
     AtomQueryPredicate, AtomRangeBounds, AtomRangeDataFunction, AtomRangeQuery, BondQueryPredicate,
-    QueryAtom, QueryBond, QueryGraph, QueryGraphError, QueryNode, RecursiveStructureQuery,
+    QueryAtom, QueryBond, QueryGraph, QueryGraphError, QueryNode, QueryStateError, QueryStateRef,
+    RecursiveStructureQuery, remap_query_rows,
 };
 pub use sgroup::{
     SGroupAttachPoint, SGroupBondRole, SGroupBracket, SGroupBracketStyle, SGroupCState,

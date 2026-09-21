@@ -85,6 +85,8 @@ fn substance_group_defaults_and_builders_preserve_all_typed_state() {
     assert_eq!(empty.external_id(), None);
     assert!(empty.atoms().is_empty());
     assert!(empty.bonds().is_empty());
+    assert!(empty.head_crossing_bonds().is_empty());
+    assert!(empty.crossing_bond_correspondence().is_empty());
     assert!(empty.parent_atoms().is_empty());
     assert_eq!(empty.parent(), None);
     assert_eq!(empty.label(), None);
@@ -103,8 +105,7 @@ fn substance_group_defaults_and_builders_preserve_all_typed_state() {
 
     let display = SGroupDisplay {
         brackets: vec![SGroupBracket {
-            p1: [1.0, 2.0],
-            p2: [3.0, 4.0],
+            points: [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [7.0, 8.0, 9.0]],
         }],
         field_position: Some([5.0, 6.0]),
         display_tag: Some("DA".into()),
@@ -127,7 +128,7 @@ fn substance_group_defaults_and_builders_preserve_all_typed_state() {
     };
     let cstate = SGroupCState {
         bond: bond(4),
-        vector: [8.0, 9.0],
+        vector: [8.0, 9.0, 10.0],
     };
     let group = SubstanceGroup::new(sgroup(1), SubstanceGroupKind::Generic("X".into()))
         .with_rdkit_sequence_id(101)
@@ -135,6 +136,8 @@ fn substance_group_defaults_and_builders_preserve_all_typed_state() {
         .with_atoms(vec![atom(2), atom(1)])
         .with_bonds(vec![bond(4), bond(3)])
         .with_bond_role(bond(4), SGroupBondRole::Contained)
+        .with_head_crossing_bonds(vec![bond(3), bond(4), bond(3)])
+        .with_crossing_bond_correspondence(vec![bond(4), bond(3)])
         .with_parent_atoms(vec![atom(1)])
         .with_parent(sgroup(0))
         .with_label("label")
@@ -158,6 +161,8 @@ fn substance_group_defaults_and_builders_preserve_all_typed_state() {
     assert_eq!(group.kind(), &SubstanceGroupKind::Generic("X".into()));
     assert_eq!(group.atoms(), &[atom(2), atom(1)]);
     assert_eq!(group.bonds(), &[bond(4), bond(3)]);
+    assert_eq!(group.head_crossing_bonds(), &[bond(3), bond(4), bond(3)]);
+    assert_eq!(group.crossing_bond_correspondence(), &[bond(4), bond(3)]);
     assert_eq!(group.bond_role(bond(4)), SGroupBondRole::Contained);
     assert_eq!(group.bond_role(bond(3)), SGroupBondRole::Crossing);
     assert_eq!(group.parent_atoms(), &[atom(1)]);
@@ -179,11 +184,44 @@ fn substance_group_defaults_and_builders_preserve_all_typed_state() {
     assert_eq!(group.data(), Some(&data));
     assert_eq!(group.attach_points(), &[attach_point]);
     assert_eq!(group.cstates(), &[cstate]);
+    assert_eq!(group.clone(), group);
     assert_eq!(
         group.props().get("vendor").map(String::as_str),
         Some("kept")
     );
     assert_eq!(group.data_fields(), &["raw-1", "raw-2"]);
+}
+
+#[test]
+fn canonical_sgroup_value_capacity_preserves_complete_xyz_and_ordered_bond_references() {
+    let bracket = SGroupBracket {
+        points: [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [7.0, 8.0, 9.0]],
+    };
+    let cstate = SGroupCState {
+        bond: bond(2),
+        vector: [-1.0, 0.0, 3.5],
+    };
+    let group = SubstanceGroup::new(sgroup(0), SubstanceGroupKind::StructuralRepeatUnit)
+        .with_bonds(vec![bond(0), bond(1), bond(2)])
+        .with_head_crossing_bonds(vec![bond(2), bond(0), bond(2)])
+        .with_crossing_bond_correspondence(vec![bond(1), bond(1), bond(0)])
+        .with_display(SGroupDisplay {
+            brackets: vec![bracket],
+            ..SGroupDisplay::default()
+        })
+        .with_cstates(vec![cstate]);
+
+    assert_eq!(group.display().expect("display").brackets, vec![bracket]);
+    assert_eq!(group.cstates(), &[cstate]);
+    assert_eq!(group.head_crossing_bonds(), &[bond(2), bond(0), bond(2)]);
+    assert_eq!(
+        group.crossing_bond_correspondence(),
+        &[bond(1), bond(1), bond(0)]
+    );
+    assert!(group.includes_bond(bond(0)));
+    assert!(group.includes_bond(bond(1)));
+    assert!(group.includes_bond(bond(2)));
+    assert_eq!(group.clone(), group);
 }
 
 #[test]
@@ -209,6 +247,9 @@ fn substance_group_mutators_preserve_order_and_remove_only_first_match() {
     group.push_bond_with_role(bond(1), SGroupBondRole::Contained);
     group.push_bond(bond(2));
     group.push_bond(bond(1));
+    group.push_head_crossing_bond(bond(2));
+    group.push_head_crossing_bond(bond(2));
+    group.push_crossing_bond_correspondence(bond(1));
     group.push_data_field("a");
     group.push_data_field("b");
     group.push_attach_point(SGroupAttachPoint {
@@ -225,7 +266,7 @@ fn substance_group_mutators_preserve_order_and_remove_only_first_match() {
     });
     group.push_cstate(SGroupCState {
         bond: bond(2),
-        vector: [2.0, 3.0],
+        vector: [2.0, 3.0, 4.0],
     });
     group.display_mut().display_tag = Some("tag".into());
     group.data_mut().values.push("value".into());
@@ -239,6 +280,8 @@ fn substance_group_mutators_preserve_order_and_remove_only_first_match() {
     assert_eq!(group.atoms(), &[atom(2), atom(1)]);
     assert_eq!(group.parent_atoms(), &[atom(2), atom(1)]);
     assert_eq!(group.bonds(), &[bond(2), bond(1)]);
+    assert_eq!(group.head_crossing_bonds(), &[bond(2), bond(2)]);
+    assert_eq!(group.crossing_bond_correspondence(), &[bond(1)]);
     assert_eq!(group.bond_role(bond(1)), SGroupBondRole::Contained);
 
     group.remove_bond(bond(1));
@@ -291,6 +334,8 @@ fn membership_predicates_include_every_reference_category() {
         .with_atoms(vec![atom(1)])
         .with_parent_atoms(vec![atom(2)])
         .with_bonds(vec![bond(3)])
+        .with_head_crossing_bonds(vec![bond(7), bond(7)])
+        .with_crossing_bond_correspondence(vec![bond(8)])
         .with_attach_points(vec![SGroupAttachPoint {
             atom: atom(4),
             leaving_atom: Some(atom(5)),
@@ -299,7 +344,7 @@ fn membership_predicates_include_every_reference_category() {
         }])
         .with_cstates(vec![SGroupCState {
             bond: bond(6),
-            vector: [0.0, 0.0],
+            vector: [0.0, 0.0, 0.0],
         }]);
 
     for referenced in [atom(1), atom(2), atom(4), atom(5)] {
@@ -308,6 +353,8 @@ fn membership_predicates_include_every_reference_category() {
     assert!(!group.includes_atom(atom(0)));
     assert!(group.includes_bond(bond(3)));
     assert!(group.includes_bond(bond(6)));
+    assert!(group.includes_bond(bond(7)));
+    assert!(group.includes_bond(bond(8)));
     assert!(!group.includes_bond(bond(0)));
 }
 
@@ -329,8 +376,7 @@ fn fully_populated_group() -> SubstanceGroup {
         .with_component_number(2)
         .with_display(SGroupDisplay {
             brackets: vec![SGroupBracket {
-                p1: [1.0, 1.5],
-                p2: [2.0, 2.5],
+                points: [[1.0, 1.5, 1.75], [2.0, 2.5, 2.75], [3.0, 3.5, 3.75]],
             }],
             field_position: Some([3.0, 3.5]),
             display_tag: Some("tag".into()),
@@ -353,7 +399,7 @@ fn fully_populated_group() -> SubstanceGroup {
         }])
         .with_cstates(vec![SGroupCState {
             bond: bond(0),
-            vector: [4.0, 5.0],
+            vector: [4.0, 5.0, 6.0],
         }])
         .with_prop("vendor", "property")
         .with_data_field("raw")
@@ -400,7 +446,7 @@ fn substance_group_remap_maps_every_reference_and_preserves_other_state() {
         }])
         .with_cstates(vec![SGroupCState {
             bond: bond(20),
-            vector: [4.0, 5.0],
+            vector: [4.0, 5.0, 6.0],
         }])
         .with_prop("vendor", "property")
         .with_data_field("raw");
@@ -443,7 +489,7 @@ fn substance_group_remap_rejects_each_missing_reference_category() {
             .with_bond_role(bond(3), SGroupBondRole::Contained),
         SubstanceGroup::new(sgroup(0), SubstanceGroupKind::Data).with_cstates(vec![SGroupCState {
             bond: bond(3),
-            vector: [0.0, 0.0],
+            vector: [0.0, 0.0, 0.0],
         }]),
     ];
     for (case_index, group) in cases.into_iter().enumerate() {

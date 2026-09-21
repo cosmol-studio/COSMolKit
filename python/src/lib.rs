@@ -4,7 +4,7 @@ use std::io::{BufReader, Write};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard};
 
-use cosmolkit_core::io::molblock::{self, SdfFormat};
+use ::cosmolkit::io::molblock::{self, SdfFormat};
 use cosmolkit_core::io::sdf::SdfReader;
 use cosmolkit_core::{BatchErrorMode, BatchRecord, BatchRecordError, SmilesWriteParams};
 use numpy::{

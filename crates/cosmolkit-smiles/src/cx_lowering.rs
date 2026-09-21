@@ -309,13 +309,9 @@ fn finalize_polymer_sgroup(
     for bond in head.iter().chain(&tail) {
         group.push_bond(*bond);
     }
-    group.set_prop(
-        "XBHEAD",
-        head.iter()
-            .map(|bond| bond.index().to_string())
-            .collect::<Vec<_>>()
-            .join(","),
-    );
+    for bond in &head {
+        group.push_head_crossing_bond(*bond);
+    }
     let mut xbcorr = Vec::with_capacity(head.len().min(tail.len()) * 2);
     for index in 0..head.len().min(tail.len()) {
         xbcorr.push(head[index]);
@@ -325,14 +321,9 @@ fn finalize_polymer_sgroup(
             tail[index]
         });
     }
-    group.set_prop(
-        "XBCORR",
-        xbcorr
-            .iter()
-            .map(|bond| bond.index().to_string())
-            .collect::<Vec<_>>()
-            .join(","),
-    );
+    for bond in xbcorr {
+        group.push_crossing_bond_correspondence(bond);
+    }
     Ok(true)
 }
 

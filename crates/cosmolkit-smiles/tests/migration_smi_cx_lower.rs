@@ -2,7 +2,7 @@ use cosmolkit_model::{
     AtomId, BondDirection, BondId, BondOrder, BondStereo, CoordinateDimension, SGroupBondRole,
     SGroupConnection, StereoGroupKind, SubstanceGroupKind,
 };
-use cosmolkit_smiles::{SmilesParseError, SmilesParseParams, parse_smiles};
+use cosmolkit_smiles::{SmilesParseError, SmilesParseParams, parse_smiles, write_cx_smiles};
 
 fn parse(input: &str) -> cosmolkit_smiles::SmilesRecord {
     parse_smiles(input, &SmilesParseParams::default()).unwrap_or_else(|error| {
@@ -308,6 +308,84 @@ fn polymer_crossings_are_typed_and_invalid_explicit_crossings_drop_the_group() {
 
     let dropped = parse("CCC |Sg:n:1::ht:9:|");
     assert!(dropped.topology.substance_groups.is_empty());
+}
+
+#[test]
+fn cx_polymer_crossings_lower_and_write_as_ordered_typed_references() {
+    let record = parse(concat!(
+        "CCCCC |atomProp:4.keep.value,",
+        "Sg:n:1,2,3:repeat:ht:0,0,3:3,3,0:|"
+    ));
+    let group = &record.topology.substance_groups[0];
+    assert_eq!(
+        group.head_crossing_bonds(),
+        &[BondId::new(0), BondId::new(0), BondId::new(3)]
+    );
+    assert_eq!(
+        group.crossing_bond_correspondence(),
+        &[
+            BondId::new(0),
+            BondId::new(3),
+            BondId::new(0),
+            BondId::new(3),
+            BondId::new(3),
+            BondId::new(0),
+        ]
+    );
+    assert_eq!(group.props().get("XBHEAD"), None);
+    assert_eq!(group.props().get("XBCORR"), None);
+    assert_eq!(group.props().get("_headCrossings"), None);
+    assert_eq!(group.props().get("_tailCrossings"), None);
+    assert_eq!(
+        group.props().get("LABEL").map(String::as_str),
+        Some("repeat")
+    );
+    assert_eq!(group.props().get("CONNECT").map(String::as_str), Some("HT"));
+    assert_eq!(record.topology.atoms[4].prop("keep"), Some("value"));
+
+    let output = write_cx_smiles(&record).expect("typed crossings write through CXSMILES");
+    assert!(
+        output.contains("Sg:n:1,2,3:repeat:ht:0,0,3:3,3,0:"),
+        "{output}"
+    );
+    assert!(output.contains("atomProp:4.keep.value"), "{output}");
+}
+
+#[test]
+fn cx_polymer_crossings_follow_batch_bond_remap_and_fail_structurally_if_stale() {
+    let mut record = parse("CCCCCC |Sg:n:2,3::ht:1,4:4,1:|");
+    let mut edit = record
+        .topology
+        .begin_batch_edit()
+        .expect("parsed topology is valid");
+    edit.remove_bond(BondId::new(0))
+        .expect("unrelated bond removal is valid");
+    let (remapped, _) = edit.finish().expect("typed crossings remap atomically");
+    let group = &remapped.substance_groups[0];
+    assert_eq!(
+        group.head_crossing_bonds(),
+        &[BondId::new(0), BondId::new(3)]
+    );
+    assert_eq!(
+        group.crossing_bond_correspondence(),
+        &[
+            BondId::new(0),
+            BondId::new(3),
+            BondId::new(3),
+            BondId::new(0),
+        ]
+    );
+    record.topology = remapped;
+    let output = write_cx_smiles(&record).expect("remapped crossings remain writable");
+    assert!(output.contains("Sg:n:"), "{output}");
+
+    record.topology.substance_groups[0].push_head_crossing_bond(BondId::new(99));
+    let error = write_cx_smiles(&record).expect_err("stale typed reference must be rejected");
+    assert!(
+        matches!(error, SmilesParseError::Model(ref message)
+            if message == "substance group SubstanceGroupId(0) references bond 99, out of range for 4 bonds"),
+        "{error:?}"
+    );
 }
 
 #[test]

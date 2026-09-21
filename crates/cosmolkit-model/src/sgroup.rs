@@ -30,7 +30,7 @@ impl SubstanceGroupId {
     }
 
     #[must_use]
-    pub const fn index(self) -> usize {
+    pub const fn index(&self) -> usize {
         self.0
     }
 }
@@ -62,14 +62,42 @@ pub enum SGroupBondRole {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SGroupBracket {
-    pub p1: [f64; 2],
-    pub p2: [f64; 2],
+    pub points: [[f64; 3]; 3],
+}
+
+impl SGroupBracket {
+    #[must_use]
+    pub const fn new(points: [[f64; 3]; 3]) -> Self {
+        Self { points }
+    }
+
+    #[must_use]
+    pub const fn points(&self) -> &[[f64; 3]; 3] {
+        &self.points
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SGroupCState {
     pub bond: BondId,
-    pub vector: [f64; 2],
+    pub vector: [f64; 3],
+}
+
+impl SGroupCState {
+    #[must_use]
+    pub const fn new(bond: BondId, vector: [f64; 3]) -> Self {
+        Self { bond, vector }
+    }
+
+    #[must_use]
+    pub const fn bond(&self) -> BondId {
+        self.bond
+    }
+
+    #[must_use]
+    pub const fn vector(&self) -> &[f64; 3] {
+        &self.vector
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -77,6 +105,13 @@ pub struct SGroupDisplay {
     pub brackets: Vec<SGroupBracket>,
     pub field_position: Option<[f64; 2]>,
     pub display_tag: Option<String>,
+}
+
+impl SGroupDisplay {
+    #[must_use]
+    pub fn brackets(&self) -> &[SGroupBracket] {
+        &self.brackets
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -124,6 +159,8 @@ pub struct SubstanceGroup {
     atoms: Vec<AtomId>,
     bonds: Vec<BondId>,
     bond_roles: BTreeMap<BondId, SGroupBondRole>,
+    head_crossing_bonds: Vec<BondId>,
+    crossing_bond_correspondence: Vec<BondId>,
     parent_atoms: Vec<AtomId>,
     parent: Option<SubstanceGroupId>,
     label: Option<String>,
@@ -152,6 +189,8 @@ impl SubstanceGroup {
             atoms: Vec::new(),
             bonds: Vec::new(),
             bond_roles: BTreeMap::new(),
+            head_crossing_bonds: Vec::new(),
+            crossing_bond_correspondence: Vec::new(),
             parent_atoms: Vec::new(),
             parent: None,
             label: None,
@@ -198,6 +237,20 @@ impl SubstanceGroup {
     #[must_use]
     pub fn bonds(&self) -> &[BondId] {
         &self.bonds
+    }
+
+    /// Ordered crossing-bond references encoded by V3000 `XBHEAD` and CX
+    /// polymer head-crossing state.
+    #[must_use]
+    pub fn head_crossing_bonds(&self) -> &[BondId] {
+        &self.head_crossing_bonds
+    }
+
+    /// Ordered crossing-bond correspondence references encoded by V3000
+    /// `XBCORR` and CX polymer tail-crossing state.
+    #[must_use]
+    pub fn crossing_bond_correspondence(&self) -> &[BondId] {
+        &self.crossing_bond_correspondence
     }
 
     #[must_use]
@@ -324,6 +377,18 @@ impl SubstanceGroup {
     }
 
     #[must_use]
+    pub fn with_head_crossing_bonds(mut self, bonds: Vec<BondId>) -> Self {
+        self.head_crossing_bonds = bonds;
+        self
+    }
+
+    #[must_use]
+    pub fn with_crossing_bond_correspondence(mut self, bonds: Vec<BondId>) -> Self {
+        self.crossing_bond_correspondence = bonds;
+        self
+    }
+
+    #[must_use]
     pub fn with_parent_atoms(mut self, parent_atoms: Vec<AtomId>) -> Self {
         self.parent_atoms = parent_atoms;
         self
@@ -424,6 +489,14 @@ impl SubstanceGroup {
         if role != SGroupBondRole::Crossing {
             self.bond_roles.insert(bond, role);
         }
+    }
+
+    pub fn push_head_crossing_bond(&mut self, bond: BondId) {
+        self.head_crossing_bonds.push(bond);
+    }
+
+    pub fn push_crossing_bond_correspondence(&mut self, bond: BondId) {
+        self.crossing_bond_correspondence.push(bond);
     }
 
     pub fn remove_atom(&mut self, atom: AtomId) {
@@ -568,7 +641,10 @@ impl SubstanceGroup {
         // RDKit✔️✔️:   }
         // RDKit✔️✔️: }
         // RDKit✔️✔️: return false;
-        self.bonds.contains(&bond) || self.cstates.iter().any(|cstate| cstate.bond == bond)
+        self.bonds.contains(&bond)
+            || self.cstates.iter().any(|cstate| cstate.bond == bond)
+            || self.head_crossing_bonds.contains(&bond)
+            || self.crossing_bond_correspondence.contains(&bond)
     }
 
     pub fn can_remap_without_parent(
@@ -581,6 +657,14 @@ impl SubstanceGroup {
             .all(|atom| atom_map.get(atom.index()).is_some_and(Option::is_some))
             && self
                 .bonds
+                .iter()
+                .all(|bond| bond_map.get(bond.index()).is_some_and(Option::is_some))
+            && self
+                .head_crossing_bonds
+                .iter()
+                .all(|bond| bond_map.get(bond.index()).is_some_and(Option::is_some))
+            && self
+                .crossing_bond_correspondence
                 .iter()
                 .all(|bond| bond_map.get(bond.index()).is_some_and(Option::is_some))
             && self
@@ -618,6 +702,16 @@ impl SubstanceGroup {
             .collect();
         let bonds: Option<Vec<_>> = self
             .bonds
+            .iter()
+            .map(|bond| bond_map.get(bond.index()).and_then(|x| *x))
+            .collect();
+        let head_crossing_bonds: Option<Vec<_>> = self
+            .head_crossing_bonds
+            .iter()
+            .map(|bond| bond_map.get(bond.index()).and_then(|x| *x))
+            .collect();
+        let crossing_bond_correspondence: Option<Vec<_>> = self
+            .crossing_bond_correspondence
             .iter()
             .map(|bond| bond_map.get(bond.index()).and_then(|x| *x))
             .collect();
@@ -678,6 +772,8 @@ impl SubstanceGroup {
             atoms: atoms?,
             bonds: bonds?,
             bond_roles,
+            head_crossing_bonds: head_crossing_bonds?,
+            crossing_bond_correspondence: crossing_bond_correspondence?,
             parent_atoms: parent_atoms?,
             parent,
             label: self.label.clone(),

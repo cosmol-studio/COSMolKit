@@ -10,8 +10,8 @@ use crate::{
     fast_find_rings_from_parts,
 };
 use cosmolkit_model::{
-    AdjacencyList, Atom, AtomId, Bond, BondId, StereoGroupKind, TemplateAttachmentOrderError,
-    TopologyBlock, TopologyValidationError,
+    AdjacencyList, Atom, AtomId, Bond, BondId, QueryStateError, QueryStateRef, StereoGroupKind,
+    TemplateAttachmentOrderError, TopologyBlock, TopologyValidationError,
 };
 use cosmolkit_types::{BondDirection, BondOrder, BondStereo, ChiralTag};
 
@@ -92,6 +92,8 @@ pub enum KekulizeError {
     },
     #[error("unsupported query state on bond {bond}: {detail}")]
     UnsupportedQueryState { bond: BondId, detail: &'static str },
+    #[error(transparent)]
+    InvalidQueryState(#[from] QueryStateError),
     #[error("integer overflow while computing {field} for atom {atom}")]
     IntegerOverflow { atom: AtomId, field: &'static str },
     #[error(transparent)]
@@ -193,14 +195,30 @@ fn atom_is_aromatic_for_kekulize(topology: &TopologyBlock, atom: AtomId) -> bool
         })
 }
 
-fn selected_bond_has_type_query(bond: &Bond) -> Result<bool, KekulizeError> {
-    if bond.prop("_MolFileBondQueryComplex").is_some() {
-        return Err(KekulizeError::UnsupportedQueryState {
-            bond: bond.id(),
-            detail: "concrete TopologyBlock cannot represent a recursive or composite bond query",
-        });
+fn selected_bond_has_type_query(
+    bond: &Bond,
+    query_state: Option<QueryStateRef<'_>>,
+) -> Result<bool, KekulizeError> {
+    // RDKit✔️✔️: inline bool hasBondTypeQuery(const Bond &bond) {
+    // RDKit✔️✔️:   if (!bond.hasQuery()) {
+    // RDKit✔️✔️:     return false;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   return hasBondTypeQuery(*bond.getQuery());
+    // RDKit✔️✔️: }
+    // Behavior review: typed Explicit origin is the source dynamic query-bond
+    // test; CarrierDerived and absent state are ordinary bonds. The shared
+    // QueryOps traversal owns complete recursive bond-type classification.
+    // Complexity review: two O(1) indexed origin/predicate accesses followed
+    // by the source-shaped O(query nodes) traversal, without allocation.
+    let Some(state) = query_state else {
+        return Ok(false);
+    };
+    if !state.bond_has_query(bond.id()) {
+        return Ok(false);
     }
-    Ok(bond.prop("_MolFileBondQuery").is_some())
+    Ok(crate::query_ops::bond_predicate_has_type_query(
+        state.bond_predicate(bond.id()),
+    ))
 }
 
 fn checked_total_valence(valence: &ValenceAssignment, atom: AtomId) -> Result<i32, KekulizeError> {
@@ -216,6 +234,7 @@ fn prepare_kekulize_selection(
     topology: &TopologyBlock,
     atoms_in_play: &[bool],
     bonds_in_play: &[bool],
+    query_state: Option<QueryStateRef<'_>>,
 ) -> Result<PreparedKekulizeSelection, KekulizeError> {
     topology.validate()?;
     // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/Kekulize.cpp :: KekulizeFragment selection
@@ -276,7 +295,7 @@ fn prepare_kekulize_selection(
         if !selected_bonds[bond.id().index()] {
             continue;
         }
-        if selected_bond_has_type_query(bond)? {
+        if selected_bond_has_type_query(bond, query_state)? {
             selected_bonds[bond.id().index()] = false;
             continue;
         }
@@ -1662,8 +1681,9 @@ fn kekulize_fragment(
     atoms_in_play: &[bool],
     bonds_in_play: &[bool],
     params: &KekulizeParams,
+    query_state: Option<QueryStateRef<'_>>,
 ) -> Result<TopologyBlock, KekulizeError> {
-    let prepared = prepare_kekulize_selection(topology, atoms_in_play, bonds_in_play)?;
+    let prepared = prepare_kekulize_selection(topology, atoms_in_play, bonds_in_play, query_state)?;
     if !prepared.found_aromatic {
         return Ok(topology.clone());
     }
@@ -1826,6 +1846,18 @@ pub fn kekulize(
     topology: &TopologyBlock,
     params: &KekulizeParams,
 ) -> Result<KekulizeAssignment, KekulizeError> {
+    kekulize_with_query_state(topology, params, None)
+}
+
+#[doc(hidden)]
+pub fn kekulize_with_query_state(
+    topology: &TopologyBlock,
+    params: &KekulizeParams,
+    query_state: Option<QueryStateRef<'_>>,
+) -> Result<KekulizeAssignment, KekulizeError> {
+    if let Some(state) = query_state {
+        QueryStateRef::try_for_topology(state.atoms(), state.bonds(), topology)?;
+    }
     // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/Kekulize.cpp :: MolOps::Kekulize
     // RDKit✔️✔️: void Kekulize(RWMol &mol, bool markAtomsBonds, bool canonical,
     // RDKit✔️✔️:               unsigned int maxBackTracks) {
@@ -1840,13 +1872,28 @@ pub fn kekulize(
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/Kekulize.cpp :: MolOps::Kekulize
     Ok(KekulizeAssignment {
-        topology: kekulize_fragment(topology, &atoms_in_play, &bonds_in_play, params)?,
+        topology: kekulize_fragment(
+            topology,
+            &atoms_in_play,
+            &bonds_in_play,
+            params,
+            query_state,
+        )?,
     })
 }
 
 pub fn kekulize_if_possible(
     topology: &TopologyBlock,
     params: &KekulizeParams,
+) -> Result<KekulizeAttempt, KekulizeError> {
+    kekulize_if_possible_with_query_state(topology, params, None)
+}
+
+#[doc(hidden)]
+pub fn kekulize_if_possible_with_query_state(
+    topology: &TopologyBlock,
+    params: &KekulizeParams,
+    query_state: Option<QueryStateRef<'_>>,
 ) -> Result<KekulizeAttempt, KekulizeError> {
     // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/Kekulize.cpp :: MolOps::KekulizeIfPossible
     // RDKit✔️✔️: bool KekulizeIfPossible(RWMol &mol, bool markAtomsBonds, bool canonical,
@@ -1867,7 +1914,7 @@ pub fn kekulize_if_possible(
     // RDKit✔️✔️:   bool res = true;
     // RDKit✔️✔️:   try {
     // RDKit✔️✔️:     Kekulize(mol, markAtomsBonds, canonical, maxBackTracks);
-    match kekulize(topology, params) {
+    match kekulize_with_query_state(topology, params, query_state) {
         Ok(assignment) => Ok(KekulizeAttempt::Applied(assignment)),
         // RDKit✔️✔️:   } catch (const MolSanitizeException &) {
         Err(KekulizeError::NotKekulizable { problem_atoms }) => {
@@ -4718,7 +4765,10 @@ fn rdkit_bond_stereo_rank(stereo: BondStereo) -> u8 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cosmolkit_model::{AtomSpec, BondSpec};
+    use cosmolkit_model::{
+        AtomQueryPredicate, AtomSpec, BondQueryPredicate, BondSpec, QueryAtom, QueryBond,
+        QueryNode, QueryStateRef,
+    };
     use cosmolkit_types::Element;
 
     fn atom(id: usize, spec: AtomSpec) -> Atom {
@@ -4761,6 +4811,56 @@ mod tests {
 
     fn topology(atoms: Vec<Atom>, bonds: Vec<Bond>) -> TopologyBlock {
         TopologyBlock::try_from_parts(atoms, bonds, vec![], vec![]).unwrap()
+    }
+
+    #[test]
+    fn q05_core_sanitize_query_consumers_kekulize_recurses_through_bond_type_queries() {
+        let graph = topology(
+            vec![
+                atom(0, AtomSpec::new(Element::C)),
+                atom(1, AtomSpec::new(Element::C)),
+            ],
+            vec![bond(0, 0, 1)],
+        );
+        let query_atoms = graph
+            .atoms
+            .iter()
+            .map(|carrier| {
+                QueryAtom::from_carrier_parts(
+                    carrier.clone(),
+                    QueryNode::predicate(AtomQueryPredicate::AtomicNumber(6)),
+                )
+            })
+            .collect::<Vec<_>>();
+        let explicit_bonds = vec![QueryBond::from_parts(
+            graph.bonds[0].clone(),
+            QueryNode::and(vec![
+                QueryNode::or(vec![
+                    QueryNode::predicate(BondQueryPredicate::Order(BondOrder::Single)),
+                    QueryNode::predicate(BondQueryPredicate::Order(BondOrder::Double)),
+                ]),
+                QueryNode::not(QueryNode::predicate(BondQueryPredicate::IsInRing(true))),
+            ]),
+        )];
+        let explicit_state =
+            QueryStateRef::try_for_topology(&query_atoms, &explicit_bonds, &graph).unwrap();
+        assert!(explicit_state.bond_has_query(BondId::new(0)));
+        assert_eq!(
+            selected_bond_has_type_query(&graph.bonds[0], Some(explicit_state)),
+            Ok(true)
+        );
+
+        let carrier_bonds = vec![QueryBond::from_carrier_parts(
+            graph.bonds[0].clone(),
+            QueryNode::predicate(BondQueryPredicate::Order(BondOrder::Single)),
+        )];
+        let carrier_state =
+            QueryStateRef::try_for_topology(&query_atoms, &carrier_bonds, &graph).unwrap();
+        assert!(!carrier_state.bond_has_query(BondId::new(0)));
+        assert_eq!(
+            selected_bond_has_type_query(&graph.bonds[0], Some(carrier_state)),
+            Ok(false)
+        );
     }
 
     #[test]
@@ -4923,66 +5023,107 @@ mod tests {
             ],
         );
         assert!(matches!(
-            prepare_kekulize_selection(&aromatic_ring, &[true, true], &[true; 3]),
+            prepare_kekulize_selection(&aromatic_ring, &[true, true], &[true; 3], None),
             Err(KekulizeError::AtomSelectionLength {
                 expected: 3,
                 actual: 2
             })
         ));
         assert!(matches!(
-            prepare_kekulize_selection(&aromatic_ring, &[true; 3], &[true; 2]),
+            prepare_kekulize_selection(&aromatic_ring, &[true; 3], &[true; 2], None),
             Err(KekulizeError::BondSelectionLength {
                 expected: 3,
                 actual: 2
             })
         ));
 
-        let empty = prepare_kekulize_selection(&aromatic_ring, &[false; 3], &[true; 3]).unwrap();
+        let empty =
+            prepare_kekulize_selection(&aromatic_ring, &[false; 3], &[true; 3], None).unwrap();
         assert!(!empty.found_aromatic);
         assert!(empty.candidate_atom_rings.is_empty());
         assert_eq!(empty.original_total_valences, vec![0; 3]);
 
         let crossing =
-            prepare_kekulize_selection(&aromatic_ring, &[true, true, false], &[true; 3]).unwrap();
+            prepare_kekulize_selection(&aromatic_ring, &[true, true, false], &[true; 3], None)
+                .unwrap();
         assert!(crossing.found_aromatic);
         assert!(crossing.candidate_atom_rings.is_empty());
         assert!(crossing.candidate_bond_rings.is_empty());
 
-        let query_bond = BondSpec::new(AtomId::new(0), AtomId::new(1), BondOrder::Aromatic)
-            .with_aromatic(true)
-            .with_prop("_MolFileBondQuery", "1")
-            .unwrap();
         let query_ring = topology(
             (0..3)
                 .map(|id| atom(id, AtomSpec::new(Element::C).with_aromatic(true)))
                 .collect(),
             vec![
-                bond_with_spec(0, query_bond),
+                aromatic_bond(0, 0, 1),
                 aromatic_bond(1, 1, 2),
                 aromatic_bond(2, 2, 0),
             ],
         );
-        let query = prepare_kekulize_selection(&query_ring, &[true; 3], &[true; 3]).unwrap();
+        let query_atoms = query_ring
+            .atoms
+            .iter()
+            .map(|carrier| {
+                QueryAtom::from_carrier_parts(
+                    carrier.clone(),
+                    QueryNode::predicate(AtomQueryPredicate::AtomicNumber(6)),
+                )
+            })
+            .collect::<Vec<_>>();
+        let mut query_bonds = query_ring
+            .bonds
+            .iter()
+            .map(|carrier| {
+                QueryBond::from_carrier_parts(
+                    carrier.clone(),
+                    QueryNode::predicate(BondQueryPredicate::Order(BondOrder::Aromatic)),
+                )
+            })
+            .collect::<Vec<_>>();
+        query_bonds[0] = QueryBond::from_parts(
+            query_ring.bonds[0].clone(),
+            QueryNode::or(vec![
+                QueryNode::predicate(BondQueryPredicate::Order(BondOrder::Aromatic)),
+                QueryNode::predicate(BondQueryPredicate::Order(BondOrder::Single)),
+            ]),
+        );
+        let query_state =
+            QueryStateRef::try_for_topology(&query_atoms, &query_bonds, &query_ring).unwrap();
+        let query =
+            prepare_kekulize_selection(&query_ring, &[true; 3], &[true; 3], Some(query_state))
+                .unwrap();
         assert_eq!(query.bonds_in_play, vec![false, true, true]);
         assert!(query.candidate_atom_rings.is_empty());
 
-        let complex_query = BondSpec::new(AtomId::new(0), AtomId::new(1), BondOrder::Single)
-            .with_prop("_MolFileBondQueryComplex", "recursive")
-            .unwrap();
         let complex = topology(
             vec![
                 atom(0, AtomSpec::new(Element::C)),
                 atom(1, AtomSpec::new(Element::C)),
             ],
-            vec![bond_with_spec(0, complex_query)],
+            vec![bond(0, 0, 1)],
         );
-        assert!(matches!(
-            prepare_kekulize_selection(&complex, &[true; 2], &[true]),
-            Err(KekulizeError::UnsupportedQueryState {
-                bond,
-                detail: "concrete TopologyBlock cannot represent a recursive or composite bond query"
-            }) if bond == BondId::new(0)
-        ));
+        let complex_atoms = complex
+            .atoms
+            .iter()
+            .map(|carrier| {
+                QueryAtom::from_carrier_parts(
+                    carrier.clone(),
+                    QueryNode::predicate(AtomQueryPredicate::AtomicNumber(6)),
+                )
+            })
+            .collect::<Vec<_>>();
+        let complex_bonds = vec![QueryBond::from_parts(
+            complex.bonds[0].clone(),
+            QueryNode::and(vec![
+                QueryNode::predicate(BondQueryPredicate::Any),
+                QueryNode::not(QueryNode::predicate(BondQueryPredicate::IsInRing(true))),
+            ]),
+        )];
+        let complex_state =
+            QueryStateRef::try_for_topology(&complex_atoms, &complex_bonds, &complex).unwrap();
+        let complex =
+            prepare_kekulize_selection(&complex, &[true; 2], &[true], Some(complex_state)).unwrap();
+        assert_eq!(complex.bonds_in_play, vec![true]);
     }
 
     #[test]
@@ -5524,7 +5665,7 @@ mod tests {
             ],
         );
         let dummy_selection =
-            prepare_kekulize_selection(&all_dummy, &[true; 3], &[true; 3]).unwrap();
+            prepare_kekulize_selection(&all_dummy, &[true; 3], &[true; 3], None).unwrap();
         assert!(dummy_selection.found_aromatic);
         assert!(dummy_selection.candidate_atom_rings.is_empty());
         assert!(dummy_selection.candidate_bond_rings.is_empty());
@@ -5552,7 +5693,7 @@ mod tests {
             ],
         );
         let crossing_selection =
-            prepare_kekulize_selection(&crossing, &[true, true, false], &[true; 3]).unwrap();
+            prepare_kekulize_selection(&crossing, &[true, true, false], &[true; 3], None).unwrap();
         assert!(crossing_selection.found_aromatic);
         assert!(crossing_selection.candidate_atom_rings.is_empty());
         assert!(crossing_selection.candidate_bond_rings.is_empty());
@@ -5588,7 +5729,7 @@ mod tests {
             .map(|(id, (begin, end))| aromatic_bond(id, begin, end))
             .collect(),
         );
-        let selection = prepare_kekulize_selection(&graph, &[true; 16], &[true; 17]).unwrap();
+        let selection = prepare_kekulize_selection(&graph, &[true; 16], &[true; 17], None).unwrap();
         assert_eq!(selection.candidate_atom_rings.len(), 3);
         let neighbors = make_ring_neighbor_map(&selection.candidate_bond_rings);
         assert_eq!(neighbors.iter().map(Vec::len).sum::<usize>(), 2);

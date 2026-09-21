@@ -1,11 +1,11 @@
 use std::collections::BTreeMap;
 
 use cosmolkit_model::{
-    AtomId, AtomQueryPredicate, AtomRangeBounds, AtomRangeDataFunction, AtomRangeQuery, AtomSpec,
-    Bond, BondDirection, BondId, BondOrder, BondQueryPredicate, BondSpec, BondStereo, ChiralTag,
-    Conformer2D, Conformer3D, CoordinateValidationError, Element, Hybridization, QueryAtom,
-    QueryBond, QueryGraph, QueryGraphError, QueryNode, RecursiveStructureQuery, StereoGroup,
-    StereoGroupKind,
+    Atom, AtomId, AtomQueryPredicate, AtomRangeBounds, AtomRangeDataFunction, AtomRangeQuery,
+    AtomSpec, Bond, BondDirection, BondId, BondOrder, BondQueryPredicate, BondSpec, BondStereo,
+    ChiralTag, Conformer2D, Conformer3D, CoordinateValidationError, Element, Hybridization,
+    QueryAtom, QueryBond, QueryGraph, QueryGraphError, QueryNode, QueryStateError, QueryStateRef,
+    RecursiveStructureQuery, StereoGroup, StereoGroupKind, TopologyBlock, remap_query_rows,
 };
 
 fn carbon(id: usize) -> QueryAtom {
@@ -29,6 +29,201 @@ fn graph(atom_count: usize, bonds: Vec<QueryBond>) -> QueryGraph {
         Vec::new(),
     )
     .unwrap()
+}
+
+#[test]
+fn q05_query_state_transport_preserves_explicit_and_carrier_origins_and_trees() {
+    let explicit_atom_tree = QueryNode::and(vec![
+        QueryNode::predicate(AtomQueryPredicate::AtomicNumber(7)),
+        QueryNode::not(QueryNode::predicate(AtomQueryPredicate::IsAromatic(true))),
+    ]);
+    let explicit_atom = QueryAtom::from_parts(
+        Atom::from_spec(AtomId::new(0), AtomSpec::new(Element::C)),
+        explicit_atom_tree.clone(),
+    );
+    let carrier_atom = QueryAtom::from_carrier_parts(
+        Atom::from_spec(AtomId::new(1), AtomSpec::new(Element::H)),
+        QueryNode::predicate(AtomQueryPredicate::AtomicNumber(1)),
+    );
+    let explicit_bond_tree = QueryNode::or(vec![
+        QueryNode::predicate(BondQueryPredicate::Order(BondOrder::Single)),
+        QueryNode::and(vec![
+            QueryNode::predicate(BondQueryPredicate::Order(BondOrder::Double)),
+            QueryNode::not(QueryNode::predicate(BondQueryPredicate::IsInRing(true))),
+        ]),
+    ]);
+    let explicit_bond = QueryBond::from_parts(
+        Bond::from_spec(
+            BondId::new(0),
+            BondSpec::new(AtomId::new(0), AtomId::new(1), BondOrder::Single),
+        ),
+        explicit_bond_tree.clone(),
+    );
+
+    let cloned_atom = explicit_atom.clone();
+    let cloned_carrier = carrier_atom.clone();
+    let cloned_bond = explicit_bond.clone();
+    let topology = TopologyBlock::try_from_parts(
+        vec![cloned_atom.atom().clone(), cloned_carrier.atom().clone()],
+        vec![cloned_bond.bond().clone()],
+        Vec::new(),
+        Vec::new(),
+    )
+    .unwrap();
+    let atom_rows = [cloned_atom.clone(), cloned_carrier.clone()];
+    let bond_rows = [cloned_bond.clone()];
+    let state = QueryStateRef::try_for_topology(&atom_rows, &bond_rows, &topology).unwrap();
+    assert!(!cloned_atom.predicate_is_carrier_derived());
+    assert!(cloned_carrier.predicate_is_carrier_derived());
+    assert!(!cloned_bond.predicate_is_carrier_derived());
+    assert_eq!(cloned_atom.predicate(), &explicit_atom_tree);
+    assert_eq!(cloned_bond.predicate(), &explicit_bond_tree);
+    assert!(state.atom_has_query(AtomId::new(0)));
+    assert!(!state.atom_has_query(AtomId::new(1)));
+    assert!(state.bond_has_query(BondId::new(0)));
+    assert_eq!(state.atom_predicate(AtomId::new(0)), &explicit_atom_tree);
+    assert_eq!(state.bond_predicate(BondId::new(0)), &explicit_bond_tree);
+
+    let wrong_atom_rows = [
+        QueryAtom::from_parts(
+            Atom::from_spec(AtomId::new(1), AtomSpec::new(Element::C)),
+            explicit_atom_tree.clone(),
+        ),
+        cloned_carrier.clone(),
+    ];
+    assert!(matches!(
+        QueryStateRef::try_for_topology(&wrong_atom_rows, &bond_rows, &topology),
+        Err(QueryStateError::AtomId { position: 0, .. })
+    ));
+
+    let mut promoted = cloned_carrier;
+    let prior = promoted.predicate().clone();
+    *promoted.predicate_mut() = QueryNode::and(vec![
+        prior,
+        QueryNode::predicate(AtomQueryPredicate::ExplicitDegree(1)),
+    ]);
+    assert!(!promoted.predicate_is_carrier_derived());
+    assert!(matches!(promoted.predicate(), QueryNode::And(_)));
+}
+
+#[test]
+fn q05_query_state_transport_distinguishes_explicit_query_h_from_ordinary_carrier_h() {
+    let hydrogen = Atom::from_spec(AtomId::new(0), AtomSpec::new(Element::H));
+    let explicit = QueryAtom::from_parts(
+        hydrogen.clone(),
+        QueryNode::predicate(AtomQueryPredicate::AtomicNumber(1)),
+    );
+    let carrier = QueryAtom::from_carrier_parts(
+        hydrogen,
+        QueryNode::predicate(AtomQueryPredicate::AtomicNumber(1)),
+    );
+
+    assert!(!explicit.predicate_is_carrier_derived());
+    assert!(carrier.predicate_is_carrier_derived());
+    assert_eq!(explicit.predicate(), carrier.predicate());
+    assert!(explicit.prop("_MolFileAtomQuery").is_none());
+    assert!(carrier.prop("_MolFileAtomQuery").is_none());
+}
+
+#[test]
+fn q05_query_state_transport_mapping_baseline_preserves_surviving_typed_rows() {
+    let atoms = [Element::C, Element::H, Element::N, Element::O]
+        .into_iter()
+        .enumerate()
+        .map(|(id, element)| Atom::from_spec(AtomId::new(id), AtomSpec::new(element)))
+        .collect::<Vec<_>>();
+    let bonds = [(0, 1), (0, 2), (2, 3)]
+        .into_iter()
+        .enumerate()
+        .map(|(id, (begin, end))| {
+            Bond::from_spec(
+                BondId::new(id),
+                BondSpec::new(AtomId::new(begin), AtomId::new(end), BondOrder::Single),
+            )
+        })
+        .collect::<Vec<_>>();
+    let source = TopologyBlock::try_from_parts(atoms, bonds, Vec::new(), Vec::new()).unwrap();
+    let atom_rows = source
+        .atoms
+        .iter()
+        .cloned()
+        .enumerate()
+        .map(|(index, atom)| {
+            if matches!(index, 0 | 3) {
+                QueryAtom::from_parts(
+                    atom,
+                    QueryNode::predicate(AtomQueryPredicate::AtomicNumber(if index == 0 {
+                        7
+                    } else {
+                        8
+                    })),
+                )
+            } else {
+                QueryAtom::from_carrier_parts(
+                    atom.clone(),
+                    QueryNode::predicate(AtomQueryPredicate::AtomicNumber(atom.atomic_number())),
+                )
+            }
+        })
+        .collect::<Vec<_>>();
+    let compound = QueryNode::and(vec![
+        QueryNode::or(vec![
+            QueryNode::predicate(BondQueryPredicate::Order(BondOrder::Single)),
+            QueryNode::predicate(BondQueryPredicate::Order(BondOrder::Double)),
+        ]),
+        QueryNode::not(QueryNode::predicate(BondQueryPredicate::IsInRing(true))),
+    ]);
+    let bond_rows = source
+        .bonds
+        .iter()
+        .cloned()
+        .enumerate()
+        .map(|(index, bond)| {
+            if index == 2 {
+                QueryBond::from_parts(bond, compound.clone())
+            } else {
+                QueryBond::from_carrier_parts(
+                    bond,
+                    QueryNode::predicate(BondQueryPredicate::Order(BondOrder::Single)),
+                )
+            }
+        })
+        .collect::<Vec<_>>();
+
+    let mut edit = source.begin_batch_edit().unwrap();
+    edit.remove_atom(AtomId::new(1)).unwrap();
+    let (compacted, mapping) = edit.finish().unwrap();
+    let state = QueryStateRef::try_for_topology(&atom_rows, &bond_rows, &source).unwrap();
+    let (remapped_atoms, remapped_bonds) = remap_query_rows(state, &compacted, &mapping).unwrap();
+    let remapped = QueryGraph::from_parts(
+        remapped_atoms,
+        remapped_bonds,
+        BTreeMap::new(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+    )
+    .unwrap();
+
+    assert_eq!(
+        mapping.atoms().new_to_old(),
+        &[
+            Some(AtomId::new(0)),
+            Some(AtomId::new(2)),
+            Some(AtomId::new(3))
+        ]
+    );
+    assert_eq!(
+        remapped.atom(0).unwrap().predicate(),
+        &QueryNode::predicate(AtomQueryPredicate::AtomicNumber(7))
+    );
+    assert!(!remapped.atom(0).unwrap().predicate_is_carrier_derived());
+    assert!(remapped.atom(1).unwrap().predicate_is_carrier_derived());
+    assert!(!remapped.atom(2).unwrap().predicate_is_carrier_derived());
+    assert_eq!(remapped.bond(1).unwrap().predicate(), &compound);
+    assert!(!remapped.bond(1).unwrap().predicate_is_carrier_derived());
+    assert_eq!(remapped.bond(1).unwrap().endpoints(), (1, 2));
+    assert_eq!(remapped.validate(), Ok(()));
 }
 
 #[test]

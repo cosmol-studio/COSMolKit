@@ -1,4 +1,6 @@
-use cosmolkit_model::{AtomId, BondId, TopologyBlock, TopologyValidationError};
+use cosmolkit_model::{
+    AtomId, BondId, QueryStateError, QueryStateRef, TopologyBlock, TopologyValidationError,
+};
 use cosmolkit_types::BondOrder;
 
 use crate::{ValenceAssignment, most_common_isotope};
@@ -9,6 +11,8 @@ const MAX_CIP_BONDS: usize = 16;
 pub enum CipRankError {
     #[error("invalid topology: {0}")]
     InvalidTopology(TopologyValidationError),
+    #[error(transparent)]
+    InvalidQueryState(#[from] QueryStateError),
     #[error("valence row {field} has length {actual}, expected {atom_count}")]
     ValenceRowCount {
         field: &'static str,
@@ -40,6 +44,15 @@ pub fn assign_atom_cip_ranks(
     topology: &TopologyBlock,
     valence: &ValenceAssignment,
 ) -> Result<Vec<u32>, CipRankError> {
+    assign_atom_cip_ranks_with_query_state(topology, valence, None)
+}
+
+#[doc(hidden)]
+pub fn assign_atom_cip_ranks_with_query_state(
+    topology: &TopologyBlock,
+    valence: &ValenceAssignment,
+    query_state: Option<QueryStateRef<'_>>,
+) -> Result<Vec<u32>, CipRankError> {
     // RDKit❗✔️: void assignAtomCIPRanks(const ROMol &mol, UINT_VECT &ranks) {
     // RDKit❗✔️:   PRECONDITION((!ranks.size() || ranks.size() >= mol.getNumAtoms()),
     // RDKit❗✔️:                "bad ranks size");
@@ -64,8 +77,11 @@ pub fn assign_atom_cip_ranks(
     // mutating caller storage or atom properties. The selected legacy branch
     // is otherwise implemented by the source-shaped helpers below.
     validate_inputs(topology, valence)?;
+    if let Some(state) = query_state {
+        QueryStateRef::try_for_topology(state.atoms(), state.bonds(), topology)?;
+    }
     let invariants = build_cip_invariants(topology)?;
-    iterate_cip_ranks(topology, valence, &invariants, false)
+    iterate_cip_ranks(topology, valence, &invariants, false, query_state)
 }
 
 /// Refines caller-built integer invariants using RDKit's legacy CIP kernel.
@@ -77,14 +93,27 @@ pub fn refine_atom_cip_ranks_from_invariants(
     valence: &ValenceAssignment,
     invariants: &[i64],
 ) -> Result<Vec<u32>, CipRankError> {
+    refine_atom_cip_ranks_from_invariants_with_query_state(topology, valence, invariants, None)
+}
+
+#[doc(hidden)]
+pub fn refine_atom_cip_ranks_from_invariants_with_query_state(
+    topology: &TopologyBlock,
+    valence: &ValenceAssignment,
+    invariants: &[i64],
+    query_state: Option<QueryStateRef<'_>>,
+) -> Result<Vec<u32>, CipRankError> {
     validate_inputs(topology, valence)?;
+    if let Some(state) = query_state {
+        QueryStateRef::try_for_topology(state.atoms(), state.bonds(), topology)?;
+    }
     if invariants.len() != topology.atoms.len() {
         return Err(CipRankError::InvariantCount {
             actual: invariants.len(),
             atom_count: topology.atoms.len(),
         });
     }
-    iterate_cip_ranks(topology, valence, invariants, true)
+    iterate_cip_ranks(topology, valence, invariants, true, query_state)
 }
 
 fn validate_inputs(
@@ -382,6 +411,7 @@ fn iterate_cip_ranks(
     valence: &ValenceAssignment,
     invariants: &[i64],
     seed_with_invariants: bool,
+    query_state: Option<QueryStateRef<'_>>,
 ) -> Result<Vec<u32>, CipRankError> {
     // RDKit❗✔️: void iterateCIPRanks(const ROMol &mol, const DOUBLE_VECT &invars,
     // RDKit❗✔️:                      UINT_VECT &ranks, bool seedWithInvars) {
@@ -552,7 +582,17 @@ fn iterate_cip_ranks(
             let total_hydrogens = usize::from(topology.atoms[atom_index].explicit_hydrogens())
                 + usize::try_from(valence.implicit_hydrogens[atom_index])
                     .expect("negative implicit hydrogen rejected before iteration");
-            entries[atom_index].extend(std::iter::repeat_n(0, total_hydrogens));
+            // RDKit✔️✔️:       // add a zero for each coordinated H as long as we're not a query atom
+            // RDKit✔️✔️:       if (!mol[index]->hasQuery()) {
+            // RDKit✔️✔️:         cipEntry.insert(cipEntry.end(), mol[index]->getTotalNumHs(), 0);
+            // RDKit✔️✔️:       }
+            // Behavior review: Explicit typed rows reproduce QueryAtom identity;
+            // CarrierDerived and absent state reproduce ordinary Atom identity.
+            // Complexity review: one O(1) origin lookup replaces the source
+            // virtual `hasQuery()` test and does not change entry allocation.
+            if !query_state.is_some_and(|state| state.atom_has_query(AtomId::new(atom_index))) {
+                entries[atom_index].extend(std::iter::repeat_n(0, total_hydrogens));
+            }
         }
         last_rank_count = Some(rank_count);
         for &(first, last) in &tied_ranges {
@@ -651,4 +691,79 @@ fn assign_cip_ranks(
         tied.push((first, order.len() - 1));
     }
     (tied, independent)
+}
+
+#[cfg(test)]
+mod q05_tests {
+    use super::*;
+    use cosmolkit_model::{
+        Atom, AtomQueryPredicate, AtomSpec, Bond, BondQueryPredicate, BondSpec, QueryAtom,
+        QueryBond, QueryNode, QueryStateRef,
+    };
+    use cosmolkit_types::Element;
+
+    #[test]
+    fn q05_core_sanitize_query_consumers_legacy_cip_omits_query_atom_hydrogen_zeros() {
+        let atoms = [Element::C, Element::F, Element::C, Element::C]
+            .into_iter()
+            .enumerate()
+            .map(|(index, element)| Atom::from_spec(AtomId::new(index), AtomSpec::new(element)))
+            .collect::<Vec<_>>();
+        let bonds = [(0, 1), (0, 2), (0, 3)]
+            .into_iter()
+            .enumerate()
+            .map(|(index, (begin, end))| {
+                Bond::from_spec(
+                    BondId::new(index),
+                    BondSpec::new(AtomId::new(begin), AtomId::new(end), BondOrder::Single),
+                )
+            })
+            .collect::<Vec<_>>();
+        let topology = TopologyBlock::try_from_parts(atoms, bonds, vec![], vec![]).unwrap();
+        let valence = ValenceAssignment {
+            explicit_valence: vec![3, 1, 1, 1],
+            implicit_hydrogens: vec![1, 0, 3, 3],
+        };
+        let carrier_atoms = topology
+            .atoms
+            .iter()
+            .map(|carrier| {
+                QueryAtom::from_carrier_parts(
+                    carrier.clone(),
+                    QueryNode::predicate(AtomQueryPredicate::AtomicNumber(carrier.atomic_number())),
+                )
+            })
+            .collect::<Vec<_>>();
+        let query_bonds = topology
+            .bonds
+            .iter()
+            .map(|carrier| {
+                QueryBond::from_carrier_parts(
+                    carrier.clone(),
+                    QueryNode::predicate(BondQueryPredicate::Order(carrier.order())),
+                )
+            })
+            .collect::<Vec<_>>();
+        let carrier_state =
+            QueryStateRef::try_for_topology(&carrier_atoms, &query_bonds, &topology).unwrap();
+        assert!(!carrier_state.atom_has_query(AtomId::new(2)));
+        assert_eq!(
+            assign_atom_cip_ranks(&topology, &valence).unwrap(),
+            vec![1, 2, 0, 0]
+        );
+
+        let mut explicit_atoms = carrier_atoms;
+        explicit_atoms[2] = QueryAtom::from_parts(
+            topology.atoms[2].clone(),
+            QueryNode::predicate(AtomQueryPredicate::AtomicNumber(6)),
+        );
+        let explicit_state =
+            QueryStateRef::try_for_topology(&explicit_atoms, &query_bonds, &topology).unwrap();
+        assert!(explicit_state.atom_has_query(AtomId::new(2)));
+        assert_eq!(
+            assign_atom_cip_ranks_with_query_state(&topology, &valence, Some(explicit_state))
+                .unwrap(),
+            vec![2, 3, 0, 1]
+        );
+    }
 }

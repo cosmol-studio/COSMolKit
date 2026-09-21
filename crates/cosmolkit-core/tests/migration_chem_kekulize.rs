@@ -1,8 +1,10 @@
 use cosmolkit_core::{
     KekulizeAttempt, KekulizeError, KekulizeParams, kekulize, kekulize_if_possible,
+    kekulize_if_possible_with_query_state, kekulize_with_query_state,
 };
 use cosmolkit_model::{
-    AdjacencyList, Atom, AtomId, AtomSpec, Bond, BondId, BondSpec, TopologyBlock,
+    AdjacencyList, Atom, AtomId, AtomQueryPredicate, AtomSpec, Bond, BondId, BondQueryPredicate,
+    BondSpec, QueryAtom, QueryBond, QueryNode, QueryStateRef, TopologyBlock,
     TopologyValidationError,
 };
 use cosmolkit_types::{BondDirection, BondOrder, Element};
@@ -235,25 +237,53 @@ fn source_fused_and_disconnected_systems_are_completed_in_stable_order() {
 
 #[test]
 fn query_bonds_and_all_dummy_rings_follow_source_exclusion_rules() {
-    let query = bond(
-        0,
-        BondSpec::new(AtomId::new(0), AtomId::new(1), BondOrder::Aromatic)
-            .with_aromatic(true)
-            .with_prop("_MolFileBondQuery", "1")
-            .unwrap(),
-    );
     let query_ring = topology(
         (0..3)
             .map(|id| atom(id, AtomSpec::new(Element::C).with_aromatic(true)))
             .collect(),
-        vec![query, aromatic_bond(1, 1, 2), aromatic_bond(2, 2, 0)],
+        vec![
+            aromatic_bond(0, 0, 1),
+            aromatic_bond(1, 1, 2),
+            aromatic_bond(2, 2, 0),
+        ],
     );
+    let query_atoms = query_ring
+        .atoms
+        .iter()
+        .map(|carrier| {
+            QueryAtom::from_carrier_parts(
+                carrier.clone(),
+                QueryNode::predicate(AtomQueryPredicate::AtomicNumber(6)),
+            )
+        })
+        .collect::<Vec<_>>();
+    let mut query_bonds = query_ring
+        .bonds
+        .iter()
+        .map(|carrier| {
+            QueryBond::from_carrier_parts(
+                carrier.clone(),
+                QueryNode::predicate(BondQueryPredicate::Order(BondOrder::Aromatic)),
+            )
+        })
+        .collect::<Vec<_>>();
+    query_bonds[0] = QueryBond::from_parts(
+        query_ring.bonds[0].clone(),
+        QueryNode::or(vec![
+            QueryNode::predicate(BondQueryPredicate::Order(BondOrder::Aromatic)),
+            QueryNode::predicate(BondQueryPredicate::Order(BondOrder::Single)),
+        ]),
+    );
+    let query_state =
+        QueryStateRef::try_for_topology(&query_atoms, &query_bonds, &query_ring).unwrap();
     let keep_flags = KekulizeParams {
         mark_atoms_bonds: false,
         ..KekulizeParams::default()
     };
     assert_eq!(
-        kekulize(&query_ring, &keep_flags).unwrap().topology,
+        kekulize_with_query_state(&query_ring, &keep_flags, Some(query_state))
+            .unwrap()
+            .topology,
         query_ring
     );
 
@@ -350,29 +380,54 @@ fn malformed_aromatic_query_and_topology_errors_are_exact_and_not_swallowed() {
         ));
     }
 
-    let complex_query = topology(
+    let compound_query = topology(
         vec![
             atom(0, AtomSpec::new(Element::C)),
             atom(1, AtomSpec::new(Element::C)),
         ],
         vec![bond(
             0,
-            BondSpec::new(AtomId::new(0), AtomId::new(1), BondOrder::Single)
-                .with_prop("_MolFileBondQueryComplex", "recursive")
-                .unwrap(),
+            BondSpec::new(AtomId::new(0), AtomId::new(1), BondOrder::Single),
         )],
     );
-    for result in [
-        kekulize(&complex_query, &KekulizeParams::default()).map(|_| ()),
-        kekulize_if_possible(&complex_query, &KekulizeParams::default()).map(|_| ()),
-    ] {
-        assert!(matches!(
-            result,
-            Err(KekulizeError::UnsupportedQueryState { bond, detail })
-                if bond == BondId::new(0)
-                    && detail == "concrete TopologyBlock cannot represent a recursive or composite bond query"
-        ));
-    }
+    let compound_atoms = compound_query
+        .atoms
+        .iter()
+        .map(|carrier| {
+            QueryAtom::from_carrier_parts(
+                carrier.clone(),
+                QueryNode::predicate(AtomQueryPredicate::AtomicNumber(6)),
+            )
+        })
+        .collect::<Vec<_>>();
+    let compound_bonds = vec![QueryBond::from_parts(
+        compound_query.bonds[0].clone(),
+        QueryNode::and(vec![
+            QueryNode::predicate(BondQueryPredicate::Any),
+            QueryNode::not(QueryNode::predicate(BondQueryPredicate::IsInRing(true))),
+        ]),
+    )];
+    let compound_state =
+        QueryStateRef::try_for_topology(&compound_atoms, &compound_bonds, &compound_query).unwrap();
+    assert_eq!(
+        kekulize_with_query_state(
+            &compound_query,
+            &KekulizeParams::default(),
+            Some(compound_state),
+        )
+        .unwrap()
+        .topology,
+        compound_query
+    );
+    assert!(matches!(
+        kekulize_if_possible_with_query_state(
+            &compound_query,
+            &KekulizeParams::default(),
+            Some(compound_state),
+        )
+        .unwrap(),
+        KekulizeAttempt::Applied(assignment) if assignment.topology == compound_query
+    ));
 
     let invalid = TopologyBlock {
         atoms: vec![atom(1, AtomSpec::new(Element::C))],

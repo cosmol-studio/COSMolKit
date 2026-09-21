@@ -1,8 +1,14 @@
 #![cfg(feature = "op-contracts-strict")]
 
-use cosmolkit_core::{__migration_hydrogens::remove_hydrogen_candidates, RemoveHsParams};
+use cosmolkit_core::{
+    __migration_hydrogens::{
+        remove_hydrogen_candidates, remove_hydrogen_candidates_with_query_state,
+    },
+    RemoveHsParams,
+};
 use cosmolkit_model::{
-    Atom, AtomId, AtomSpec, Bond, BondDirection, BondId, BondSpec, BondStereo, ChiralTag,
+    Atom, AtomId, AtomQueryPredicate, AtomSpec, Bond, BondDirection, BondId, BondQueryPredicate,
+    BondSpec, BondStereo, ChiralTag, QueryAtom, QueryBond, QueryNode, QueryStateRef,
     SGroupAttachPoint, SGroupBondRole, SGroupCState, SubstanceGroup, SubstanceGroupId,
     SubstanceGroupKind, TopologyBlock,
 };
@@ -182,19 +188,35 @@ fn isotope_flags_are_independent_candidate_permissions() {
 
 #[test]
 fn query_map_and_source_implicit_flags_follow_source_values() {
-    let query_h = AtomSpec::new(Element::H)
-        .with_prop("_MolFileAtomQuery", "1")
-        .unwrap();
-    let query = carbon_hydrogen(query_h);
-    assert!(selected(&query, &RemoveHsParams::default()).is_empty());
-    assert_eq!(
-        selected(
-            &query,
-            &RemoveHsParams {
-                remove_with_query: true,
-                ..Default::default()
-            }
+    let query = carbon_hydrogen(AtomSpec::new(Element::H));
+    let query_atoms = vec![
+        QueryAtom::from_carrier_parts(
+            query.atoms[0].clone(),
+            QueryNode::predicate(AtomQueryPredicate::AtomicNumber(6)),
         ),
+        QueryAtom::from_parts(
+            query.atoms[1].clone(),
+            QueryNode::predicate(AtomQueryPredicate::AtomicNumber(1)),
+        ),
+    ];
+    let query_bonds = vec![QueryBond::from_carrier_parts(
+        query.bonds[0].clone(),
+        QueryNode::predicate(BondQueryPredicate::Order(BondOrder::Single)),
+    )];
+    let query_state = QueryStateRef::try_for_topology(&query_atoms, &query_bonds, &query).unwrap();
+    assert!(query_state.atom_has_query(atom(1)));
+    let selected_with_state = |params: &RemoveHsParams| {
+        remove_hydrogen_candidates_with_query_state(&query, params, Some(query_state))
+            .into_iter()
+            .map(AtomId::index)
+            .collect::<Vec<_>>()
+    };
+    assert!(selected_with_state(&RemoveHsParams::default()).is_empty());
+    assert_eq!(
+        selected_with_state(&RemoveHsParams {
+            remove_with_query: true,
+            ..Default::default()
+        }),
         vec![1]
     );
 
@@ -447,7 +469,7 @@ fn sgroup_true_allows_ordinary_membership_but_protects_special_roles() {
     let cstate = SubstanceGroup::new(SubstanceGroupId::new(0), SubstanceGroupKind::Data)
         .with_cstates(vec![SGroupCState {
             bond: bond_id(0),
-            vector: [1.0, 0.0],
+            vector: [1.0, 0.0, 0.0],
         }]);
     let source = topology(
         vec![AtomSpec::new(Element::C), AtomSpec::new(Element::H)],

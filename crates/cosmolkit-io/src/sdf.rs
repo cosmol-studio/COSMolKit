@@ -3,7 +3,7 @@
 use std::{
     collections::BTreeMap,
     fs::File,
-    io::{BufRead, BufReader, Read, Seek, SeekFrom},
+    io::{BufRead, BufReader, Cursor, Read, Seek, SeekFrom},
     path::{Path, PathBuf},
 };
 
@@ -44,6 +44,24 @@ pub enum SdfReadError {
     BondValue(#[from] cosmolkit_model::BondValueError),
     #[error("invalid molecule property: {0}")]
     MoleculeProperty(#[from] cosmolkit_model::MoleculePropertyError),
+    #[error("SDF {target} property list '{name}' has {actual} values, expected {expected}")]
+    PropertyListCount {
+        target: &'static str,
+        name: String,
+        actual: usize,
+        expected: usize,
+    },
+    #[error(
+        "ERROR: Index error (idx = {index}) :  we do not have enough mol blocks ({record_count} records)"
+    )]
+    RecordIndexOutOfRange { index: usize, record_count: usize },
+    #[error("SDF record {index} at byte {byte_offset}, line {line_offset} failed: {source}")]
+    Record {
+        index: usize,
+        byte_offset: u64,
+        line_offset: usize,
+        source: Box<SdfReadError>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -122,11 +140,27 @@ pub struct SdfGraphRecord {
     pub data_fields: Vec<(String, String)>,
 }
 
+/// Explicit interpretation requested for the one conformer read from a
+/// MolBlock/SDF record.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SdfCoordinateMode {
+    /// Retain the dimension selected by RDKit-compatible MolBlock parsing.
+    #[default]
+    Preserve,
+    /// Interpret the source conformer as 2D and retain only its XY rows.
+    Require2D,
+    /// Interpret the source conformer as 3D, adding zero Z values when the
+    /// source was stored as XY.
+    Require3D,
+}
+
 /// Controls SDF data-field handling after a MolBlock has been parsed.
 ///
 /// Chemistry finalization options such as sanitization, hydrogen removal, and
 /// attachment-point expansion belong to the live-molecule runtime and are
-/// intentionally not represented at this detached syntax boundary.
+/// intentionally not represented at this detached syntax boundary. Coordinate
+/// interpretation is included because it must be selected before that
+/// finalization chooses its 2D or 3D stereochemistry branch.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SdfDataReadParams {
     /// Apply strict MolBlock checks and reject non-header content between SDF
@@ -134,6 +168,9 @@ pub struct SdfDataReadParams {
     pub strict_parsing: bool,
     /// Apply `atom.*prop.*` and `bond.*prop.*` lists to detached graph items.
     pub process_property_lists: bool,
+    /// Select how the parsed source conformer is interpreted and stored before
+    /// chemistry finalization.
+    pub coordinate_mode: SdfCoordinateMode,
 }
 
 impl Default for SdfDataReadParams {
@@ -145,6 +182,7 @@ impl Default for SdfDataReadParams {
         Self {
             strict_parsing: true,
             process_property_lists: true,
+            coordinate_mode: SdfCoordinateMode::Preserve,
         }
     }
 }
@@ -155,6 +193,127 @@ impl From<SdfDataReadParams> for MolBlockReadParams {
             strict_parsing: params.strict_parsing,
         }
     }
+}
+
+fn conformer_2d_from_3d(conformer: &Conformer3D) -> Conformer2D {
+    let converted = Conformer2D::new(
+        conformer.id(),
+        conformer
+            .coordinates()
+            .iter()
+            .map(|point| [point[0], point[1]])
+            .collect(),
+    );
+    conformer
+        .props()
+        .iter()
+        .fold(converted, |converted, (key, value)| {
+            converted.with_prop(key.clone(), value.clone())
+        })
+}
+
+fn conformer_3d_from_2d(conformer: &Conformer2D) -> Conformer3D {
+    let converted = Conformer3D::new(
+        conformer.id(),
+        conformer
+            .coordinates()
+            .iter()
+            .map(|point| [point[0], point[1], 0.0])
+            .collect(),
+        true,
+    );
+    conformer
+        .props()
+        .iter()
+        .fold(converted, |converted, (key, value)| {
+            converted.with_prop(key.clone(), value.clone())
+        })
+}
+
+fn conformer_3d_with_interpretation(conformer: &Conformer3D, is_3d: bool) -> Conformer3D {
+    let converted = Conformer3D::new(conformer.id(), conformer.coordinates().to_vec(), is_3d);
+    conformer
+        .props()
+        .iter()
+        .fold(converted, |converted, (key, value)| {
+            converted.with_prop(key.clone(), value.clone())
+        })
+}
+
+fn apply_coordinate_mode_to_block(coordinates: &mut CoordinateBlock, mode: SdfCoordinateMode) {
+    match mode {
+        SdfCoordinateMode::Preserve => return,
+        SdfCoordinateMode::Require2D => {
+            if coordinates.conformers_2d.is_empty() {
+                coordinates.conformers_2d = coordinates
+                    .conformers_3d
+                    .iter()
+                    .map(conformer_2d_from_3d)
+                    .collect();
+            }
+            coordinates.conformers_3d.clear();
+            coordinates.source_coordinate_dim = Some(CoordinateDimension::TwoD);
+        }
+        SdfCoordinateMode::Require3D => {
+            if coordinates.conformers_3d.is_empty() {
+                coordinates.conformers_3d = coordinates
+                    .conformers_2d
+                    .iter()
+                    .map(conformer_3d_from_2d)
+                    .collect();
+            } else {
+                coordinates.conformers_3d = coordinates
+                    .conformers_3d
+                    .iter()
+                    .map(|conformer| conformer_3d_with_interpretation(conformer, true))
+                    .collect();
+            }
+            coordinates.conformers_2d.clear();
+            coordinates.source_coordinate_dim = Some(CoordinateDimension::ThreeD);
+        }
+    }
+}
+
+fn apply_sdf_coordinate_mode(
+    record: &mut MolBlockRecord,
+    mode: SdfCoordinateMode,
+) -> Result<(), SdfReadError> {
+    if mode == SdfCoordinateMode::Preserve {
+        return Ok(());
+    }
+    match record {
+        MolBlockRecord::Concrete {
+            topology,
+            coordinates,
+            ..
+        } => {
+            apply_coordinate_mode_to_block(coordinates, mode);
+            coordinates.validate_for_atom_count(topology.atoms.len())?;
+        }
+        MolBlockRecord::Query(query_record) => {
+            let query = &query_record.query;
+            let mut coordinates = CoordinateBlock {
+                conformers_2d: query
+                    .coordinates_2d()
+                    .map(|rows| vec![Conformer2D::new(0, rows.to_vec())])
+                    .unwrap_or_default(),
+                conformers_3d: query.conformers_3d().to_vec(),
+                source_coordinate_dim: query_record.source_coordinate_dim,
+            };
+            apply_coordinate_mode_to_block(&mut coordinates, mode);
+            let rebuilt = QueryGraph::from_parts(
+                query.atoms().to_vec(),
+                query.bonds().to_vec(),
+                query.props().clone(),
+                coordinates.conformers_2d,
+                coordinates.conformers_3d,
+                query.stereo_groups().to_vec(),
+            )?;
+            query_record.query = rebuilt;
+            query_record.source_coordinate_dim = coordinates.source_coordinate_dim;
+        }
+    }
+    Ok(())
 }
 
 /// Location and title information for one indexed SDF record.
@@ -238,6 +397,9 @@ impl<R: BufRead> SdfGraphReader<R> {
         if self.end {
             return Ok(None);
         }
+        let record_index = self.next_index;
+        let record_byte_offset = self.byte_offset;
+        let record_line_offset = self.line_offset;
         let Some(raw) = read_sdf_record_text(&mut self.reader)? else {
             self.end = true;
             return Ok(None);
@@ -246,7 +408,14 @@ impl<R: BufRead> SdfGraphReader<R> {
         self.byte_offset += raw.byte_len;
         self.line_offset += raw.line_len;
         self.end = raw.hit_eof;
-        let record = read_sdf_graph_record_detached_with_params(&raw.text, self.params)?;
+        let record = read_sdf_graph_record_detached_with_params(&raw.text, self.params).map_err(
+            |source| SdfReadError::Record {
+                index: record_index,
+                byte_offset: record_byte_offset,
+                line_offset: record_line_offset,
+                source: Box::new(source),
+            },
+        )?;
         // END RDKIT CPP FUNCTION
         Ok(Some(record))
     }
@@ -338,8 +507,23 @@ impl SdfGraphDataset {
         // RDKit✔️✔️:   // get the molecule with index idx
         // RDKit✔️✔️:   moveTo(idx);
         // RDKit✔️✔️:   return next();
+        let metadata = self
+            .metadata
+            .get(index)
+            .ok_or(SdfReadError::RecordIndexOutOfRange {
+                index,
+                record_count: self.metadata.len(),
+            })?;
         let text = self.record_text(index)?;
-        let record = read_sdf_graph_record_detached_with_params(&text, params)?;
+        let record =
+            read_sdf_graph_record_detached_with_params(&text, params).map_err(|source| {
+                SdfReadError::Record {
+                    index,
+                    byte_offset: metadata.byte_offset,
+                    line_offset: metadata.line_offset,
+                    source: Box::new(source),
+                }
+            })?;
         // END RDKIT CPP FUNCTION
         Ok(record)
     }
@@ -349,11 +533,13 @@ impl SdfGraphDataset {
     /// This is the adapter boundary for runtimes that need to apply a
     /// different chemistry-finalization policy after detached record framing.
     pub fn record_text(&self, index: usize) -> Result<String, SdfReadError> {
-        let metadata = self.metadata.get(index).ok_or_else(|| {
-            SdfReadError::Parse(format!(
-                "ERROR: Index error (idx = {index}) :  we do not have enough mol blocks"
-            ))
-        })?;
+        let metadata = self
+            .metadata
+            .get(index)
+            .ok_or(SdfReadError::RecordIndexOutOfRange {
+                index,
+                record_count: self.metadata.len(),
+            })?;
         let mut file =
             File::open(&self.path).map_err(|error| SdfReadError::Parse(error.to_string()))?;
         file.seek(SeekFrom::Start(metadata.byte_offset))
@@ -497,7 +683,7 @@ fn parse_from_chars_unsigned(text: &str) -> u32 {
 }
 
 /// V3000's unscreened C-locale coordinate-prefix conversion.
-fn parse_rdkit_atof(text: &str) -> f64 {
+pub(super) fn parse_rdkit_atof(text: &str) -> f64 {
     // BEGIN RDKIT CPP FUNCTION ParseV3000AtomBlock (coordinate conversion)
     // RDKit❗✔️: pos.x = atof(std::string(*token).c_str());
     // RDKit❗✔️: pos.y = atof(std::string(*token).c_str());
@@ -1235,7 +1421,7 @@ fn parse_sdf_property_list_values(
     value: &str,
     item_count: usize,
     value_kind: SdfPropertyListValueKind,
-) -> Option<Vec<Option<String>>> {
+) -> Result<Vec<Option<String>>, usize> {
     // BEGIN RDKIT CPP FUNCTION applyMolListProp
     // RDKit✔️✔️: void applyMolListProp(ROMol &mol, const std::string &pn,
     // RDKit✔️✔️:                       const std::string &prefix,
@@ -1257,12 +1443,12 @@ fn parse_sdf_property_list_values(
     // RDKit❗✔️:     BOOST_LOG(rdWarningLog) << "Missing value marker for property " << pn
     // RDKit❗✔️:                             << " is empty." << std::endl;
     // RDKit❗✔️:   }
-    // RDKit✔️✔️:   if(tokens.size() - first_token != nItems) {
+    // RDKit❗✔️:   if(tokens.size() - first_token != nItems) {
     // RDKit❗✔️:     BOOST_LOG(rdWarningLog) << "Property list " << pn << " has incompatible size, "
     // RDKit❗✔️:                             << tokens.size() << " elements found; expecting "
     // RDKit❗✔️:                             << nItems << ". Ignoring it." << std::endl;
-    // RDKit✔️✔️:     return;
-    // RDKit✔️✔️:   }
+    // RDKit❗✔️:     return;
+    // RDKit❗✔️:   }
     // RDKit✔️✔️:   for (size_t i = first_token; i < tokens.size(); ++i) {
     // RDKit✔️✔️:     if (tokens[i] != mv) {
     // RDKit✔️✔️:       unsigned int itemid = i - first_token;
@@ -1289,7 +1475,12 @@ fn parse_sdf_property_list_values(
         first_token = 1;
     }
     if tokens.len().saturating_sub(first_token) != item_count {
-        return None;
+        // Behavior review: the returned count lets the sole caller reproduce
+        // RDKit's no-application result in non-strict mode and enforce the
+        // stronger project-mandated structured error in strict mode. That
+        // strict branch is an intentional documented difference, so the
+        // source mismatch lines above cannot carry a behavior-equivalent mark.
+        return Err(tokens.len().saturating_sub(first_token));
     }
     let values = tokens[first_token..]
         .iter()
@@ -1309,11 +1500,18 @@ fn parse_sdf_property_list_values(
             }
         })
         .collect();
+    // Complexity review: tokenization and conversion are each one linear pass
+    // over the payload/target values, with one token vector and one typed-state
+    // vector. There is no graph traversal or repeated item-table scan.
     // END RDKIT CPP FUNCTION
-    Some(values)
+    Ok(values)
 }
 
-fn apply_sdf_property_lists(record: &mut MolBlockRecord, data_fields: &[(String, String)]) {
+fn apply_sdf_property_lists(
+    record: &mut MolBlockRecord,
+    data_fields: &[(String, String)],
+    strict_parsing: bool,
+) -> Result<(), SdfReadError> {
     // BEGIN RDKIT CPP FUNCTION processMolPropertyLists
     // RDKit✔️✔️: inline void processMolPropertyLists(
     // RDKit✔️✔️:     ROMol &mol, const std::string &missingValueMarker = "n/a") {
@@ -1339,36 +1537,50 @@ fn apply_sdf_property_lists(record: &mut MolBlockRecord, data_fields: &[(String,
                 query.query.num_bonds()
             }
         };
-        let Some(values) = parse_sdf_property_list_values(field_value, item_count, value_kind)
-        else {
-            continue;
+        let values = match parse_sdf_property_list_values(field_value, item_count, value_kind) {
+            Ok(values) => values,
+            // RDKit's warning-only mismatch has the same graph state in the
+            // non-strict branch. Strict mode follows policy_invariants.md and
+            // rejects structurally instead of claiming upstream equivalence.
+            Err(actual) if !strict_parsing => continue,
+            Err(actual) => {
+                return Err(SdfReadError::PropertyListCount {
+                    target: match target {
+                        SdfPropertyListTarget::Atom => "atom",
+                        SdfPropertyListTarget::Bond => "bond",
+                    },
+                    name: field_name.clone(),
+                    actual,
+                    expected: item_count,
+                });
+            }
         };
         match (&mut *record, target) {
             (MolBlockRecord::Concrete { topology, .. }, SdfPropertyListTarget::Atom) => {
                 for (atom, value) in topology.atoms.iter_mut().zip(&values) {
                     if let Some(value) = value {
-                        atom.set_prop(property_name, value);
+                        atom.set_prop(property_name, value)?;
                     }
                 }
             }
             (MolBlockRecord::Concrete { topology, .. }, SdfPropertyListTarget::Bond) => {
                 for (bond, value) in topology.bonds.iter_mut().zip(&values) {
                     if let Some(value) = value {
-                        bond.set_prop(property_name, value);
+                        bond.set_prop(property_name, value)?;
                     }
                 }
             }
             (MolBlockRecord::Query(query, ..), SdfPropertyListTarget::Atom) => {
                 for (atom, value) in query.query.atoms_mut().iter_mut().zip(&values) {
                     if let Some(value) = value {
-                        atom.atom_mut().set_prop(property_name, value);
+                        atom.atom_mut().set_prop(property_name, value)?;
                     }
                 }
             }
             (MolBlockRecord::Query(query, ..), SdfPropertyListTarget::Bond) => {
                 for (bond, value) in query.query.bonds_mut().iter_mut().zip(&values) {
                     if let Some(value) = value {
-                        bond.bond_mut().set_prop(property_name, value);
+                        bond.bond_mut().set_prop(property_name, value)?;
                     }
                 }
             }
@@ -1386,52 +1598,32 @@ fn apply_sdf_property_lists(record: &mut MolBlockRecord, data_fields: &[(String,
             }
         }
     }
+    // Behavior review: recognized exact-length lists retain the source row
+    // order and per-item conversion behavior for concrete and query carriers;
+    // raw fields were installed before this helper. Setter failures propagate,
+    // and a strict mismatch cannot expose partially expanded record state.
+    // Complexity review: each recognized field performs one item-count lookup
+    // and one direct ordered application pass. Typed retention adds one linear
+    // value allocation required by the model without changing asymptotics.
     // END RDKIT CPP FUNCTION
+    Ok(())
 }
 
-fn sdf_data_lines(block: &str) -> Result<Vec<&str>, SdfReadError> {
+fn split_sdf_mol_block(block: &str) -> Result<(&str, Vec<&str>), SdfReadError> {
     let mut byte_offset = 0;
     for line in block.split_inclusive('\n') {
         let content = strip_terminal_cr(line.strip_suffix('\n').unwrap_or(line));
         byte_offset += line.len();
         if content.starts_with("M  END") {
-            return Ok(block[byte_offset..].lines().collect());
+            return Ok((
+                &block[..byte_offset],
+                block[byte_offset..].lines().collect(),
+            ));
         }
     }
     Err(SdfReadError::Parse(
         "mol block terminator 'M  END' not found".to_owned(),
     ))
-}
-
-fn sdf_record_slices(block: &str) -> Vec<&str> {
-    // RDKit✔️❌: while (!dp_inStream->eof() && !dp_inStream->fail() &&
-    // RDKit✔️❌:        (tempStr.empty() || tempStr.at(0) != '$' ||
-    // RDKit✔️❌:         tempStr.substr(0, 4) != "$$$$")) {
-    // RDKit✔️❌:   std::getline(*dp_inStream, tempStr);
-    // The source supplier reads incrementally. This detached convenience API
-    // keeps borrowed whole-record slices, adding one linear scan but no record
-    // string copies.
-    let mut records = Vec::new();
-    let mut record_start = 0;
-    let mut cursor = 0;
-    for line in block.split_inclusive('\n') {
-        let content = strip_terminal_cr(line.strip_suffix('\n').unwrap_or(line));
-        cursor += line.len();
-        if is_sdf_record_delimiter(content) {
-            let record = &block[record_start..cursor];
-            if !strip_sdf_line(record).is_empty() {
-                records.push(record);
-            }
-            record_start = cursor;
-        }
-    }
-    if record_start < block.len() {
-        let record = &block[record_start..];
-        if !strip_sdf_line(record).is_empty() {
-            records.push(record);
-        }
-    }
-    records
 }
 
 fn atomic_number_query(number: u8) -> QueryNode<AtomQueryPredicate> {
@@ -1650,7 +1842,12 @@ fn is_molfile_generic_group_symbol(symbol: &str) -> bool {
     )
 }
 
-fn query_from_concrete_atom(spec: &AtomSpec) -> QueryNode<AtomQueryPredicate> {
+fn query_from_concrete_atom_fields(
+    atomic_number: u8,
+    isotope: Option<u16>,
+    formal_charge: i8,
+    radical_electrons: u8,
+) -> QueryNode<AtomQueryPredicate> {
     // BEGIN RDKIT CPP FUNCTION QueryAtom::QueryAtom(const Atom &other)
     // RDKit✔️✔️: explicit QueryAtom(const Atom &other)
     // RDKit✔️✔️:     : Atom(other), dp_query(makeAtomNumQuery(other.getAtomicNum())) {
@@ -1675,28 +1872,44 @@ fn query_from_concrete_atom(spec: &AtomSpec) -> QueryNode<AtomQueryPredicate> {
     // order. This does not alter later MASS expansion on an existing query.
     // Complexity review: all constructor checks and predicate appends remain
     // constant-time and allocate only the source-corresponding query nodes.
-    let mut query = atomic_number_query(spec.element().atomic_number());
-    if let Some(isotope) = spec.isotope().filter(|isotope| *isotope != 0) {
+    let mut query = atomic_number_query(atomic_number);
+    if let Some(isotope) = isotope.filter(|isotope| *isotope != 0) {
         query = QueryNode::and(vec![
             query,
             QueryNode::predicate(AtomQueryPredicate::Isotope(isotope)),
         ]);
     }
-    if spec.formal_charge() != 0 {
+    if formal_charge != 0 {
         query = QueryNode::and(vec![
             query,
-            QueryNode::predicate(AtomQueryPredicate::FormalCharge(spec.formal_charge())),
+            QueryNode::predicate(AtomQueryPredicate::FormalCharge(formal_charge)),
         ]);
     }
-    if spec.radical_electrons() != 0 {
+    if radical_electrons != 0 {
         query = QueryNode::and(vec![
             query,
-            QueryNode::predicate(AtomQueryPredicate::NumRadicalElectrons(
-                spec.radical_electrons(),
-            )),
+            QueryNode::predicate(AtomQueryPredicate::NumRadicalElectrons(radical_electrons)),
         ]);
     }
     query
+}
+
+pub(crate) fn query_from_concrete_atom(spec: &AtomSpec) -> QueryNode<AtomQueryPredicate> {
+    query_from_concrete_atom_fields(
+        spec.element().atomic_number(),
+        spec.isotope(),
+        spec.formal_charge(),
+        spec.radical_electrons(),
+    )
+}
+
+pub(crate) fn query_from_concrete_atom_value(atom: &Atom) -> QueryNode<AtomQueryPredicate> {
+    query_from_concrete_atom_fields(
+        atom.atomic_number(),
+        atom.isotope(),
+        atom.formal_charge(),
+        atom.radical_electrons(),
+    )
 }
 
 fn v2000_element(symbol: &str, strict_parsing: bool) -> Result<V2000ElementState, SdfReadError> {
@@ -3825,13 +4038,22 @@ fn read_v2000_record_detached(
             .into_iter()
             .enumerate()
             .map(|(index, parsed)| match parsed.query {
-                Some(predicate) => QueryAtom::from_parts(
-                    Atom::from_spec(AtomId::new(index), parsed.spec),
-                    predicate,
-                ),
-                None => QueryAtom::new(AtomId::new(index), parsed.spec),
+                Some(predicate) => {
+                    let spec = parsed.spec.with_prop("_MolFileAtomQuery", "1")?;
+                    Ok(QueryAtom::from_parts(
+                        Atom::from_spec(AtomId::new(index), spec),
+                        predicate,
+                    ))
+                }
+                None => {
+                    let atom = Atom::from_spec(AtomId::new(index), parsed.spec);
+                    let predicate = QueryNode::predicate(AtomQueryPredicate::AtomicNumber(
+                        atom.element().atomic_number(),
+                    ));
+                    Ok(QueryAtom::from_carrier_parts(atom, predicate))
+                }
             })
-            .collect::<Vec<_>>();
+            .collect::<Result<Vec<_>, SdfReadError>>()?;
         let query_bonds = bonds
             .into_iter()
             .enumerate()
@@ -3844,7 +4066,7 @@ fn read_v2000_record_detached(
                         QueryNode::predicate(BondQueryPredicate::Order(parsed.bond.order()))
                     };
                     debug_assert_eq!(parsed.bond.id(), BondId::new(index));
-                    QueryBond::from_parts(parsed.bond, predicate)
+                    QueryBond::from_carrier_parts(parsed.bond, predicate)
                 }
             })
             .collect::<Vec<_>>();
@@ -4115,34 +4337,34 @@ fn parse_v3000_template_attachment_order(
     line: usize,
 ) -> Result<TemplateAttachmentOrder, SdfReadError> {
     // BEGIN RDKIT CPP FUNCTION ParseV3000AtomProps (ATTCHORD template branch)
-    // RDKit✔️✔️:       if (val.substr(0, 1) == "(") {
-    // RDKit✔️✔️:         val = val.substr(1, val.size() - 2);
-    // RDKit✔️✔️:         std::vector<std::string> splitToken;
-    // RDKit✔️✔️:         boost::split(splitToken, val, boost::is_any_of(" \t"));
-    // RDKit✔️✔️:         unsigned int itemCount = 0;
-    // RDKit✔️✔️:         if (splitToken.size() > 0) {
-    // RDKit✔️✔️:           itemCount = FileParserUtils::toInt(splitToken[0]);
-    // RDKit✔️✔️:         }
-    // RDKit✔️✔️:         if (itemCount == 0 || itemCount % 2 != 0 ||
-    // RDKit✔️✔️:             splitToken.size() != itemCount + 1) {
-    // RDKit✔️✔️:           errout << "Invalid ATTCHORD value: '" << val << "' for atom "
-    // RDKit✔️✔️:                  << atom->getIdx() + 1 << " on line " << line << std::endl;
-    // RDKit✔️✔️:           throw FileParseException(errout.str());
-    // RDKit✔️✔️:         }
-    // RDKit✔️✔️:         std::vector<std::pair<unsigned int, std::string>> attchOrds;
-    // RDKit✔️✔️:         for (unsigned int i = 1; i < itemCount; i += 2) {
-    // RDKit✔️✔️:           unsigned int idx = FileParserUtils::toInt(splitToken[i]);
-    // RDKit✔️✔️:           for (const auto &[aidx, lbl] : attchOrds) {
-    // RDKit✔️✔️:             if (idx == aidx + 1 || splitToken[i + 1] == lbl) {
-    // RDKit✔️✔️:               errout << "Invalid ATTCHORD value: '" << val << "' for atom "
-    // RDKit✔️✔️:                      << atom->getIdx() + 1 << " on line " << line << std::endl;
-    // RDKit✔️✔️:               throw FileParseException(errout.str());
-    // RDKit✔️✔️:             }
-    // RDKit✔️✔️:           }
-    // RDKit✔️✔️:           attchOrds.emplace_back(idx - 1, splitToken[i + 1]);
-    // RDKit✔️✔️:         }
-    // RDKit✔️✔️:         atom->setProp(common_properties::molAttachOrderTemplate, attchOrds);
-    // RDKit✔️✔️:       }
+    // RDKit✔️🔝:       if (val.substr(0, 1) == "(") {
+    // RDKit✔️🔝:         val = val.substr(1, val.size() - 2);
+    // RDKit✔️🔝:         std::vector<std::string> splitToken;
+    // RDKit✔️🔝:         boost::split(splitToken, val, boost::is_any_of(" \t"));
+    // RDKit✔️🔝:         unsigned int itemCount = 0;
+    // RDKit✔️🔝:         if (splitToken.size() > 0) {
+    // RDKit✔️🔝:           itemCount = FileParserUtils::toInt(splitToken[0]);
+    // RDKit✔️🔝:         }
+    // RDKit✔️🔝:         if (itemCount == 0 || itemCount % 2 != 0 ||
+    // RDKit✔️🔝:             splitToken.size() != itemCount + 1) {
+    // RDKit✔️🔝:           errout << "Invalid ATTCHORD value: '" << val << "' for atom "
+    // RDKit✔️🔝:                  << atom->getIdx() + 1 << " on line " << line << std::endl;
+    // RDKit✔️🔝:           throw FileParseException(errout.str());
+    // RDKit✔️🔝:         }
+    // RDKit✔️🔝:         std::vector<std::pair<unsigned int, std::string>> attchOrds;
+    // RDKit✔️🔝:         for (unsigned int i = 1; i < itemCount; i += 2) {
+    // RDKit✔️🔝:           unsigned int idx = FileParserUtils::toInt(splitToken[i]);
+    // RDKit✔️🔝:           for (const auto &[aidx, lbl] : attchOrds) {
+    // RDKit✔️🔝:             if (idx == aidx + 1 || splitToken[i + 1] == lbl) {
+    // RDKit✔️🔝:               errout << "Invalid ATTCHORD value: '" << val << "' for atom "
+    // RDKit✔️🔝:                      << atom->getIdx() + 1 << " on line " << line << std::endl;
+    // RDKit✔️🔝:               throw FileParseException(errout.str());
+    // RDKit✔️🔝:             }
+    // RDKit✔️🔝:           }
+    // RDKit✔️🔝:           attchOrds.emplace_back(idx - 1, splitToken[i + 1]);
+    // RDKit✔️🔝:         }
+    // RDKit✔️🔝:         atom->setProp(common_properties::molAttachOrderTemplate, attchOrds);
+    // RDKit✔️🔝:       }
     // Lexical mapping notes: the source strips the first and last characters
     // without verifying the closing parenthesis (`substr(1, size - 2)`;
     // a one-character value fails the record like the source's
@@ -4692,24 +4914,34 @@ fn parse_v3000_atom_properties(
     // RDKit❗✔️:     } else if (prop == "ATTCHORD") {
     // RDKit❗✔️:       auto ival = FileParserUtils::toInt(val);
     // RDKit❗✔️:       atom->setProp(common_properties::molAttachOrder, ival);
-    // RDKit❗✔️:     } else if (prop == "CLASS") {
-    // RDKit❗✔️:       atom->setProp(common_properties::molAtomClass, std::string(val));
+    // RDKit✔️✔️:     } else if (prop == "CLASS") {
+    // RDKit✔️✔️:       atom->setProp(common_properties::molAtomClass, std::string(val));
     // RDKit❗✔️:     } else if (prop == "SEQID") {
     // RDKit❗✔️:       if (val != "0") {
     // RDKit❗✔️:         auto ival = FileParserUtils::toInt(val);
     // RDKit❗✔️:         atom->setProp(common_properties::molAtomSeqId, ival);
     // RDKit❗✔️:       }
-    // RDKit❗✔️:     } else if (prop == "SEQNAME") {
-    // RDKit❗✔️:       if (val != "") {
-    // RDKit❗✔️:         atom->setProp(common_properties::molAtomSeqName, std::string(val));
-    // RDKit❗✔️:       }
-    // RDKit❗✔️:     }
-    // RDKit❗✔️:     ++token;
-    // RDKit❗✔️:   }
+    // RDKit✔️✔️:     } else if (prop == "SEQNAME") {
+    // RDKit✔️✔️:       if (val != "") {
+    // RDKit✔️✔️:         atom->setProp(common_properties::molAtomSeqName, std::string(val));
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     ++token;
+    // RDKit✔️✔️:   }
     // Query-generating branches (CHG/MASS on query atoms, HCOUNT, UNSAT,
     // RBCNT, RGROUPS) build typed `AtomQueryPredicate` state; the RBCNT=-2
     // sentinel defers ring-bond counting exactly as the source's
     // `_NeedsQueryScan` post-processing flag does.
+    // Tail behavior review: split_v3000_assignment enforces the source's
+    // exactly-one-'=' rule and ASCII-normalizes the modeled V3000 property
+    // names to uppercase. CLASS stores its raw token value even when empty;
+    // SEQNAME stores only a nonempty value; recognized spelling is therefore
+    // case-insensitive. A valid but unknown assignment advances with no state
+    // change, while a malformed assignment remains a structured parse error.
+    // These atom-local properties are retained on concrete and query carriers.
+    // Complexity review: both source and Rust scan each assignment a constant
+    // number of times, allocate one normalized property name, and perform at
+    // most one atom-property insertion, with linear cost in token length.
     let mut has_attach_point = false;
     let mut needs_query_scan = false;
     for token in tokens {
@@ -4848,15 +5080,115 @@ fn parse_v3000_atom_properties(
                 };
                 let predicate = QueryNode::predicate(predicate);
                 query = Some(match query {
+                    // QueryAtom::expandQuery delegates a non-negated
+                    // AtomNull AND a concrete predicate to mergeNullQFirst,
+                    // which replaces the null query with that predicate.
+                    Some(QueryNode::Predicate(AtomQueryPredicate::Any)) => predicate,
                     Some(existing) => QueryNode::and(vec![existing, predicate]),
                     None => predicate,
                 });
             }
             "UNSAT" if value == "1" => {
+                // BEGIN RDKIT CPP FUNCTION QueryAtom::expandQuery
+                // RDKit❗✔️: void QueryAtom::expandQuery(QUERYATOM_QUERY *what,
+                // RDKit❗✔️:                             Queries::CompositeQueryType how,
+                // RDKit❗✔️:                             bool maintainOrder) {
+                // RDKit❗✔️:   PRECONDITION(dp_query, "Can't expand empty query");
+                // RDKit❗✔️:   bool thisIsNullQuery = dp_query->getDescription() == "AtomNull";
+                // RDKit❗✔️:   bool otherIsNullQuery = what->getDescription() == "AtomNull";
+                // RDKit❗✔️:
+                // RDKit❗✔️:   if (thisIsNullQuery || otherIsNullQuery) {
+                // RDKit❗✔️:     mergeNullQueries(dp_query, thisIsNullQuery, what, otherIsNullQuery, how);
+                // RDKit❗✔️:     delete what;
+                // RDKit❗✔️:     return;
+                // RDKit❗✔️:   }
+                // RDKit❗✔️:
+                // RDKit❗✔️:   QUERYATOM_QUERY *origQ = dp_query;
+                // RDKit❗✔️:   std::string descrip;
+                // RDKit❗✔️:   switch (how) {
+                // RDKit❗✔️:     case Queries::COMPOSITE_AND:
+                // RDKit❗✔️:       dp_query = new ATOM_AND_QUERY;
+                // RDKit❗✔️:       descrip = "AtomAnd";
+                // RDKit❗✔️:       break;
+                // RDKit❗✔️:     case Queries::COMPOSITE_OR:
+                // RDKit❗✔️:       dp_query = new ATOM_OR_QUERY;
+                // RDKit❗✔️:       descrip = "AtomOr";
+                // RDKit❗✔️:       break;
+                // RDKit❗✔️:     case Queries::COMPOSITE_XOR:
+                // RDKit❗✔️:       dp_query = new ATOM_XOR_QUERY;
+                // RDKit❗✔️:       descrip = "AtomXor";
+                // RDKit❗✔️:       break;
+                // RDKit❗✔️:     default:
+                // RDKit❗✔️:       UNDER_CONSTRUCTION("unrecognized combination query");
+                // RDKit❗✔️:   }
+                // RDKit❗✔️:   dp_query->setDescription(descrip);
+                // RDKit❗✔️:   if (maintainOrder) {
+                // RDKit❗✔️:     dp_query->addChild(QUERYATOM_QUERY::CHILD_TYPE(origQ));
+                // RDKit❗✔️:     dp_query->addChild(QUERYATOM_QUERY::CHILD_TYPE(what));
+                // RDKit❗✔️:   } else {
+                // RDKit❗✔️:     dp_query->addChild(QUERYATOM_QUERY::CHILD_TYPE(what));
+                // RDKit❗✔️:     dp_query->addChild(QUERYATOM_QUERY::CHILD_TYPE(origQ));
+                // RDKit❗✔️:   }
+                // RDKit❗✔️: }
+                // END RDKIT CPP FUNCTION
+                // BEGIN RDKIT CPP FUNCTION mergeNullQFirst
+                // RDKit❗✔️: template <class T>
+                // RDKit❗✔️: void mergeNullQFirst(T *&returnQuery, T *&otherQ,
+                // RDKit❗✔️:                      Queries::CompositeQueryType how) {
+                // RDKit❗✔️:   bool negatedQ = returnQuery->getNegation();
+                // RDKit❗✔️:
+                // RDKit❗✔️:   if (how == Queries::COMPOSITE_AND) {
+                // RDKit❗✔️:     if (!negatedQ) {
+                // RDKit❗✔️:       std::swap(returnQuery, otherQ);
+                // RDKit❗✔️:     }
+                // RDKit❗✔️:   } else if (how == Queries::COMPOSITE_OR) {
+                // RDKit❗✔️:     if (negatedQ) {
+                // RDKit❗✔️:       std::swap(returnQuery, otherQ);
+                // RDKit❗✔️:     }
+                // RDKit❗✔️:   } else if (how == Queries::COMPOSITE_XOR) {
+                // RDKit❗✔️:     std::swap(returnQuery, otherQ);
+                // RDKit❗✔️:     if (!negatedQ) {
+                // RDKit❗✔️:       returnQuery->setNegation(!returnQuery->getNegation());
+                // RDKit❗✔️:     }
+                // RDKit❗✔️:   }
+                // RDKit❗✔️: }
+                // END RDKIT CPP FUNCTION
+                // BEGIN RDKIT CPP FUNCTION mergeNullQueries
+                // RDKit❗✔️: template <class T>
+                // RDKit❗✔️: void mergeNullQueries(T *&returnQuery, bool isQueryNull, T *&otherQuery,
+                // RDKit❗✔️:                       bool isOtherQNull, Queries::CompositeQueryType how) {
+                // RDKit❗✔️:   PRECONDITION(returnQuery, "bad query");
+                // RDKit❗✔️:   PRECONDITION(otherQuery, "bad query");
+                // RDKit❗✔️:   PRECONDITION(how == Queries::COMPOSITE_AND || how == Queries::COMPOSITE_OR ||
+                // RDKit❗✔️:                    how == Queries::COMPOSITE_XOR,
+                // RDKit❗✔️:                "bad combination op");
+                // RDKit❗✔️:
+                // RDKit❗✔️:   if (isQueryNull && isOtherQNull) {
+                // RDKit❗✔️:     mergeBothNullQ(returnQuery, otherQuery, how);
+                // RDKit❗✔️:   } else if (isQueryNull) {
+                // RDKit❗✔️:     mergeNullQFirst(returnQuery, otherQuery, how);
+                // RDKit❗✔️:   } else if (isOtherQNull) {
+                // RDKit❗✔️:     std::swap(returnQuery, otherQuery);
+                // RDKit❗✔️:     mergeNullQFirst(returnQuery, otherQuery, how);
+                // RDKit❗✔️:   }
+                // RDKit❗✔️: }
+                // END RDKIT CPP FUNCTION
+                // These general helpers are only partially reproduced here:
+                // this caller uses ordered AND with a non-null new predicate.
+                // OR, XOR, reverse order, negated-null and both-null branches
+                // are unreachable here, not implemented or certified by this
+                // specialization. The complete source is retained as context.
+                // Behavior review: source activation is the exact raw value
+                // "1". Concrete atoms use QueryAtom(const Atom&) before the
+                // UNSAT expansion, while a non-negated AtomNull wildcard is
+                // replaced by the added predicate under COMPOSITE_AND.
+                // Complexity review: conversion and expansion perform a
+                // constant number of scalar checks and query-node allocations.
                 let predicate = QueryNode::predicate(AtomQueryPredicate::IsUnsaturated);
                 query = Some(match query {
+                    Some(QueryNode::Predicate(AtomQueryPredicate::Any)) => predicate,
                     Some(existing) => QueryNode::and(vec![existing, predicate]),
-                    None => predicate,
+                    None => QueryNode::and(vec![query_from_concrete_atom(&spec), predicate]),
                 });
             }
             "RBCNT" if value != "0" => {
@@ -4887,10 +5219,23 @@ fn parse_v3000_atom_properties(
                 } else {
                     count as u32
                 };
+                // Behavior review: ParseV3000AtomProps first converts a
+                // concrete Atom with QueryAtom(const Atom&), retaining its
+                // nonzero constructor predicates in source order, and then
+                // expands the ring-bond-count query with COMPOSITE_AND. The
+                // QueryAtom null-query algebra replaces a non-negated
+                // AtomNull wildcard with the added predicate. The shared
+                // constructor helper also preserves the accepted zero-isotope
+                // omission rule. Values below -2 remain an explicit current
+                // model boundary because the typed predicate stores u32.
+                // Complexity review: conversion and expansion perform a
+                // constant number of scalar checks and query-node allocations;
+                // no atom, bond, or query-tree scan is introduced here.
                 let predicate = QueryNode::predicate(AtomQueryPredicate::RingBondCount(rbcount));
                 query = Some(match query {
+                    Some(QueryNode::Predicate(AtomQueryPredicate::Any)) => predicate,
                     Some(existing) => QueryNode::and(vec![existing, predicate]),
-                    None => predicate,
+                    None => QueryNode::and(vec![query_from_concrete_atom(&spec), predicate]),
                 });
             }
             "RGROUPS" => {
@@ -5015,6 +5360,36 @@ fn parse_v3000_rgroups(text: &str, line: usize) -> Result<Vec<u32>, SdfReadError
     // RDKit✔️✔️:     atom->setQuery(makeAtomNullQuery());
     // RDKit✔️✔️:   }
     // END RDKIT CPP FUNCTION
+    // Behavior review: `stripSpacesAndCast<unsigned int>` uses
+    // `boost::lexical_cast`, not the raw V2000 atoi/toUnsigned conversion
+    // contract. Each space-delimited token must therefore be consumed in
+    // full, an optional sign is accepted, and a negative magnitude within
+    // the unsigned range is represented modulo 2^32. The source's repeated
+    // atom updates are retained by returning labels in input order; the call
+    // site applies them in that order, so the last label supplies the final
+    // properties, isotope, and null query. A count parsed from `-1` reaches
+    // unsigned-overflow/unchecked-index behavior in the C++ size check and
+    // loop; Rust rejects it safely as an insufficient counted list and does
+    // not claim parity for that undefined source path.
+    // Complexity review: tokenization and conversion are linear in the
+    // RGROUPS field length and allocate one token vector plus the returned
+    // label vector, matching the source's split vector and result traversal.
+    let parse_lexical_u32 = |token: &str| -> Result<u32, ()> {
+        let (negative, digits) = match token.as_bytes().first() {
+            Some(b'+') => (false, &token[1..]),
+            Some(b'-') => (true, &token[1..]),
+            _ => (false, token),
+        };
+        if digits.is_empty() || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
+            return Err(());
+        }
+        let magnitude = digits.parse::<u32>().map_err(|_| ())?;
+        Ok(if negative {
+            magnitude.wrapping_neg()
+        } else {
+            magnitude
+        })
+    };
     if !text.starts_with('(') || !text.ends_with(')') {
         return Err(SdfReadError::Parse(format!(
             "Bad RGROUPS specification '{text}' on line {line}. Missing parens."
@@ -5023,7 +5398,7 @@ fn parse_v3000_rgroups(text: &str, line: usize) -> Result<Vec<u32>, SdfReadError
     let tokens = text[1..text.len() - 1].split(' ').collect::<Vec<_>>();
     let count = tokens
         .first()
-        .and_then(|token| parse_rdkit_unsigned(token).ok())
+        .and_then(|token| parse_lexical_u32(token).ok())
         .ok_or_else(|| {
             SdfReadError::Parse(format!(
                 "Cannot convert '{}' to int on line{line}",
@@ -5040,7 +5415,7 @@ fn parse_v3000_rgroups(text: &str, line: usize) -> Result<Vec<u32>, SdfReadError
         .skip(1)
         .take(count)
         .map(|token| {
-            parse_rdkit_unsigned(token).map_err(|()| {
+            parse_lexical_u32(token).map_err(|()| {
                 SdfReadError::Parse(format!("Cannot convert '{token}' to int on line{line}"))
             })
         })
@@ -5055,58 +5430,157 @@ fn parse_v3000_bond_properties(
     line: usize,
 ) -> Result<(BondSpec, Option<QueryNode<BondQueryPredicate>>, bool), SdfReadError> {
     // BEGIN RDKIT CPP FUNCTION ParseV3000BondBlock (property loop)
-    // RDKit❗✔️:     while (lPos < splitLine.size()) {
-    // RDKit❗✔️:       std::string prop;
-    // RDKit❗✔️:       std::string_view val;
-    // RDKit❗✔️:       if (!splitAssignToken(splitLine[lPos], prop, val)) {
-    // RDKit❗✔️:         errout << "bad bond property '" << splitLine[lPos] << "' on line "
-    // RDKit❗✔️:                << line;
-    // RDKit❗✔️:         throw FileParseException(errout.str());
-    // RDKit❗✔️:       }
-    // RDKit❗✔️:       if (prop == "CFG") {
-    // RDKit❗✔️:         unsigned int cfg = 0;
-    // RDKit❗✔️:         std::from_chars(val.data(), val.data() + val.size(), cfg);
-    // RDKit❗✔️:         switch (cfg) {
-    // RDKit❗✔️:           case 0:
-    // RDKit❗✔️:             break;
-    // RDKit❗✔️:           case 1:
-    // RDKit❗✔️:             bond->setBondDir(Bond::BEGINWEDGE);
-    // RDKit❗✔️:             chiralityPossible = true;
-    // RDKit❗✔️:             break;
-    // RDKit❗✔️:           case 2:
-    // RDKit❗✔️:             if (bType == 1) {
-    // RDKit❗✔️:               bond->setBondDir(Bond::UNKNOWN);
-    // RDKit❗✔️:             } else if (bType == 2) {
-    // RDKit❗✔️:               bond->setBondDir(Bond::EITHERDOUBLE);
-    // RDKit❗✔️:               bond->setStereo(Bond::STEREOANY);
-    // RDKit❗✔️:             }
-    // RDKit❗✔️:             break;
-    // RDKit❗✔️:           case 3:
-    // RDKit❗✔️:             bond->setBondDir(Bond::BEGINDASH);
-    // RDKit❗✔️:             chiralityPossible = true;
-    // RDKit❗✔️:             break;
-    // RDKit❗✔️:           default:
-    // RDKit❗✔️:             errout << "bad bond CFG " << val << "' on line " << line;
-    // RDKit❗✔️:             throw FileParseException(errout.str());
-    // RDKit❗✔️:         }
-    // RDKit❗✔️:         bond->setProp(common_properties::_MolFileBondCfg, cfg);
-    // RDKit❌❌:       } else if (prop == "TOPO") {
-    // RDKit❌❌:         if (val != "0") {
-    // RDKit❌❌:           BOND_EQUALS_QUERY *q = makeBondIsInRingQuery();
-    // RDKit❌❌:           bond->expandQuery(q);
-    // RDKit❌❌:         }
-    // RDKit❗✔️:       } else if (prop == "RXCTR") {
-    // RDKit❗✔️:         int reactStatus = FileParserUtils::toInt(val);
-    // RDKit❗✔️:         bond->setProp(common_properties::molReactStatus, reactStatus);
-    // RDKit❗✔️:       } else if (prop == "STBOX") {
-    // RDKit❗✔️:         bond->setProp(common_properties::molStereoCare, std::string(val));
-    // RDKit❗✔️:       } else if (prop == "ENDPTS") {
-    // RDKit❗✔️:         bond->setProp(common_properties::_MolFileBondEndPts, std::string(val));
-    // RDKit❗✔️:       } else if (prop == "ATTACH") {
-    // RDKit❗✔️:         bond->setProp(common_properties::_MolFileBondAttach, std::string(val));
-    // RDKit❗✔️:       }
-    // RDKit❗✔️:       ++lPos;
-    // RDKit❗✔️:     }
+    // RDKit✔️✔️:     while (lPos < splitLine.size()) {
+    // RDKit✔️✔️:       std::string prop;
+    // RDKit✔️✔️:       std::string_view val;
+    // RDKit✔️✔️:       if (!splitAssignToken(splitLine[lPos], prop, val)) {
+    // RDKit✔️✔️:         errout << "bad bond property '" << splitLine[lPos] << "' on line "
+    // RDKit✔️✔️:                << line;
+    // RDKit✔️✔️:         throw FileParseException(errout.str());
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:       if (prop == "CFG") {
+    // RDKit✔️✔️:         unsigned int cfg = 0;
+    // RDKit✔️✔️:         std::from_chars(val.data(), val.data() + val.size(), cfg);
+    // RDKit✔️✔️:         switch (cfg) {
+    // RDKit✔️✔️:           case 0:
+    // RDKit✔️✔️:             break;
+    // RDKit✔️✔️:           case 1:
+    // RDKit✔️✔️:             bond->setBondDir(Bond::BEGINWEDGE);
+    // RDKit✔️✔️:             chiralityPossible = true;
+    // RDKit✔️✔️:             break;
+    // RDKit✔️✔️:           case 2:
+    // RDKit✔️✔️:             if (bType == 1) {
+    // RDKit✔️✔️:               bond->setBondDir(Bond::UNKNOWN);
+    // RDKit✔️✔️:             } else if (bType == 2) {
+    // RDKit✔️✔️:               bond->setBondDir(Bond::EITHERDOUBLE);
+    // RDKit✔️✔️:               bond->setStereo(Bond::STEREOANY);
+    // RDKit✔️✔️:             }
+    // RDKit✔️✔️:             break;
+    // RDKit✔️✔️:           case 3:
+    // RDKit✔️✔️:             bond->setBondDir(Bond::BEGINDASH);
+    // RDKit✔️✔️:             chiralityPossible = true;
+    // RDKit✔️✔️:             break;
+    // RDKit✔️✔️:           default:
+    // RDKit✔️✔️:             errout << "bad bond CFG " << val << "' on line " << line;
+    // RDKit✔️✔️:             throw FileParseException(errout.str());
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:         bond->setProp(common_properties::_MolFileBondCfg, cfg);
+    // RDKit✔️✔️:       } else if (prop == "TOPO") {
+    // RDKit✔️✔️:         if (val != "0") {
+    // RDKit✔️✔️:           if (!bond->hasQuery()) {
+    // RDKit✔️✔️:             auto *qBond = new QueryBond(*bond);
+    // RDKit✔️✔️:             delete bond;
+    // RDKit✔️✔️:             bond = qBond;
+    // RDKit✔️✔️:           }
+    // RDKit✔️✔️:           BOND_EQUALS_QUERY *q = makeBondIsInRingQuery();
+    // RDKit✔️✔️:           if (val == "1") {
+    // RDKit✔️✔️:             // nothing
+    // RDKit✔️✔️:           } else if (val == "2") {
+    // RDKit✔️✔️:             q->setNegation(true);
+    // RDKit✔️✔️:           } else {
+    // RDKit✔️✔️:             errout << "bad bond TOPO " << val << "' on line " << line;
+    // RDKit✔️✔️:             throw FileParseException(errout.str());
+    // RDKit✔️✔️:           }
+    // RDKit✔️✔️:           bond->expandQuery(q);
+    // RDKit✔️✔️:         }
+    // BEGIN RDKIT CPP FUNCTION QueryBond::QueryBond(const Bond &)
+    // RDKit✔️✔️:   explicit QueryBond(const Bond &other)
+    // RDKit✔️✔️:       : Bond(other), dp_query(makeBondOrderEqualsQuery(other.getBondType())) {}
+    // END RDKIT CPP FUNCTION
+    // BEGIN RDKIT CPP FUNCTION QueryBond::expandQuery
+    // RDKit✔️✔️: void QueryBond::expandQuery(QUERYBOND_QUERY *what,
+    // RDKit✔️✔️:                             Queries::CompositeQueryType how,
+    // RDKit✔️✔️:                             bool maintainOrder) {
+    // RDKit✔️✔️:   bool thisIsNullQuery = dp_query->getDescription() == "BondNull";
+    // RDKit✔️✔️:   bool otherIsNullQuery = what->getDescription() == "BondNull";
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   if (thisIsNullQuery || otherIsNullQuery) {
+    // RDKit✔️✔️:     mergeNullQueries(dp_query, thisIsNullQuery, what, otherIsNullQuery, how);
+    // RDKit✔️✔️:     delete what;
+    // RDKit✔️✔️:     return;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   QUERYBOND_QUERY *origQ = dp_query;
+    // RDKit✔️✔️:   std::string descrip;
+    // RDKit✔️✔️:   switch (how) {
+    // RDKit✔️✔️:     case Queries::COMPOSITE_AND:
+    // RDKit✔️✔️:       dp_query = new BOND_AND_QUERY;
+    // RDKit✔️✔️:       descrip = "BondAnd";
+    // RDKit✔️✔️:       break;
+    // RDKit❌❌:     case Queries::COMPOSITE_OR:
+    // RDKit❌❌:       dp_query = new BOND_OR_QUERY;
+    // RDKit❌❌:       descrip = "BondOr";
+    // RDKit❌❌:       break;
+    // RDKit❌❌:     case Queries::COMPOSITE_XOR:
+    // RDKit❌❌:       dp_query = new BOND_XOR_QUERY;
+    // RDKit❌❌:       descrip = "BondXor";
+    // RDKit❌❌:       break;
+    // RDKit❌❌:     default:
+    // RDKit❌❌:       UNDER_CONSTRUCTION("unrecognized combination query");
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   dp_query->setDescription(descrip);
+    // RDKit✔️✔️:   if (maintainOrder) {
+    // RDKit✔️✔️:     dp_query->addChild(QUERYBOND_QUERY::CHILD_TYPE(origQ));
+    // RDKit✔️✔️:     dp_query->addChild(QUERYBOND_QUERY::CHILD_TYPE(what));
+    // RDKit❌❌:   } else {
+    // RDKit❌❌:     dp_query->addChild(QUERYBOND_QUERY::CHILD_TYPE(what));
+    // RDKit❌❌:     dp_query->addChild(QUERYBOND_QUERY::CHILD_TYPE(origQ));
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION
+    // BEGIN RDKIT CPP FUNCTION mergeNullQFirst / mergeNullQueries
+    // RDKit✔️✔️: template <class T>
+    // RDKit✔️✔️: void mergeNullQFirst(T *&returnQuery, T *&otherQ,
+    // RDKit✔️✔️:                      Queries::CompositeQueryType how) {
+    // RDKit✔️✔️:   bool negatedQ = returnQuery->getNegation();
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   if (how == Queries::COMPOSITE_AND) {
+    // RDKit✔️✔️:     if (!negatedQ) {
+    // RDKit✔️✔️:       std::swap(returnQuery, otherQ);
+    // RDKit✔️✔️:     }
+    // RDKit❌❌:   } else if (how == Queries::COMPOSITE_OR) {
+    // RDKit❌❌:     if (negatedQ) {
+    // RDKit❌❌:       std::swap(returnQuery, otherQ);
+    // RDKit❌❌:     }
+    // RDKit❌❌:   } else if (how == Queries::COMPOSITE_XOR) {
+    // RDKit❌❌:     std::swap(returnQuery, otherQ);
+    // RDKit❌❌:     if (!negatedQ) {
+    // RDKit❌❌:       returnQuery->setNegation(!returnQuery->getNegation());
+    // RDKit❌❌:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️: template <class T>
+    // RDKit✔️✔️: void mergeNullQueries(T *&returnQuery, bool isQueryNull, T *&otherQuery,
+    // RDKit✔️✔️:                       bool isOtherQNull, Queries::CompositeQueryType how) {
+    // RDKit✔️✔️:   PRECONDITION(returnQuery, "bad query");
+    // RDKit✔️✔️:   PRECONDITION(otherQuery, "bad query");
+    // RDKit✔️✔️:   PRECONDITION(how == Queries::COMPOSITE_AND || how == Queries::COMPOSITE_OR ||
+    // RDKit✔️✔️:                    how == Queries::COMPOSITE_XOR,
+    // RDKit✔️✔️:                "bad combination op");
+    // RDKit✔️✔️:
+    // RDKit❌❌:   if (isQueryNull && isOtherQNull) {
+    // RDKit❌❌:     mergeBothNullQ(returnQuery, otherQuery, how);
+    // RDKit✔️✔️:   } else if (isQueryNull) {
+    // RDKit✔️✔️:     mergeNullQFirst(returnQuery, otherQuery, how);
+    // RDKit❌❌:   } else if (isOtherQNull) {
+    // RDKit❌❌:     std::swap(returnQuery, otherQuery);
+    // RDKit❌❌:     mergeNullQFirst(returnQuery, otherQuery, how);
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION
+    // RDKit✔️✔️:       } else if (prop == "RXCTR") {
+    // RDKit✔️✔️:         int reactStatus = FileParserUtils::toInt(val);
+    // RDKit✔️✔️:         bond->setProp(common_properties::molReactStatus, reactStatus);
+    // RDKit✔️✔️:       } else if (prop == "STBOX") {
+    // RDKit✔️✔️:         bond->setProp(common_properties::molStereoCare, std::string(val));
+    // RDKit✔️✔️:       } else if (prop == "ENDPTS") {
+    // RDKit✔️✔️:         bond->setProp(common_properties::_MolFileBondEndPts, std::string(val));
+    // RDKit✔️✔️:       } else if (prop == "ATTACH") {
+    // RDKit✔️✔️:         bond->setProp(common_properties::_MolFileBondAttach, std::string(val));
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:       ++lPos;
+    // RDKit✔️✔️:     }
     let mut chirality_possible = false;
     for token in tokens {
         let (property, value) = split_v3000_assignment(token).ok_or_else(|| {
@@ -5114,7 +5588,7 @@ fn parse_v3000_bond_properties(
         })?;
         match property.as_str() {
             "CFG" => {
-                let configuration = parse_rdkit_unsigned(value).unwrap_or(0);
+                let configuration = parse_from_chars_unsigned(value);
                 spec = match configuration {
                     0 => spec,
                     1 => {
@@ -5139,19 +5613,27 @@ fn parse_v3000_bond_properties(
                 spec = spec.with_prop("_MolFileBondCfg", configuration.to_string())?;
             }
             "TOPO" if value != "0" => {
-                let predicate = match parse_v3000_i32(value, "V3000 bond topology", line)? {
-                    1 => BondQueryPredicate::IsInRing(true),
-                    2 => BondQueryPredicate::IsInRing(false),
-                    topology => {
+                let predicate = match value {
+                    "1" => BondQueryPredicate::IsInRing(true),
+                    "2" => BondQueryPredicate::IsInRing(false),
+                    _ => {
                         return Err(SdfReadError::Parse(format!(
-                            "Unrecognized bond topology specifier: {topology} on line {line}"
+                            "bad bond TOPO {value}' on line {line}"
                         )));
                     }
                 };
                 let predicate = QueryNode::predicate(predicate);
                 query = Some(match query {
+                    // QueryBond::expandQuery applies the source null-query
+                    // algebra: `BondNull AND q` becomes `q`.
+                    Some(QueryNode::Predicate(BondQueryPredicate::Any)) => predicate,
                     Some(existing) => QueryNode::and(vec![existing, predicate]),
-                    None => predicate,
+                    // QueryBond(const Bond &) first installs an equality
+                    // predicate for the concrete carrier's raw bond order.
+                    None => QueryNode::and(vec![
+                        QueryNode::predicate(BondQueryPredicate::Order(spec.order())),
+                        predicate,
+                    ]),
                 });
             }
             "RXCTR" => {
@@ -5164,6 +5646,27 @@ fn parse_v3000_bond_properties(
             _ => {}
         }
     }
+    // Behavior review (CFG): the raw initialized unsigned `from_chars`
+    // contract, 0/1/2/3 dispatch, raw bond-type-dependent CFG=2 behavior,
+    // chiralityPossible propagation, invalid-enum error, and stored converted
+    // value now map one-for-one. In particular, a leading sign is
+    // no-conversion zero; this path must not use screened `toUnsigned` rules.
+    // Complexity review (CFG): both implementations perform one bounded
+    // numeric prefix scan and a constant-time switch per CFG token, with no
+    // graph scan, additional collection, or detached-state clone.
+    // Behavior review (TOPO): literal 0/1/2 dispatch, concrete QueryBond
+    // construction with its order predicate, existing-query conjunction,
+    // BondNull algebra, negation, and invalid raw-text errors map one-for-one.
+    // Complexity review (TOPO): both paths allocate at most one constant-size
+    // predicate/composite tree per property and perform no graph traversal or
+    // detached-state clone.
+    // Behavior review (remaining bond properties): RXCTR delegates to the
+    // shared source-shaped `toInt` implementation, while STBOX, ENDPTS, and
+    // ATTACH preserve the tokenized raw value exactly. Assignment failure and
+    // unknown-property behavior also map one-for-one.
+    // Complexity review (remaining bond properties): each token is split once
+    // and stored once; RXCTR performs one bounded linear numeric scan. There
+    // is no graph traversal, repeated property scan, or detached-state clone.
     // END RDKIT CPP FUNCTION
     Ok((spec, query, chirality_possible))
 }
@@ -5173,23 +5676,73 @@ fn molfile_info_marks_3d(info: &str) -> bool {
 }
 
 fn v3000_is_3d(info: &str, coordinates: &[[f64; 3]], chirality_possible: bool) -> bool {
-    // BEGIN RDKIT CPP FUNCTION calculate3dFlag
-    // RDKit✔️✔️: bool nonzeroZ = hasNonZeroZCoords(conf);
-    // RDKit✔️✔️: if (!nonzeroZ && marked3d == 1) {
-    // RDKit✔️✔️:   if (chiralityPossible) {
-    // RDKit✔️✔️:     return false;
+    // BEGIN RDKIT CPP FUNCTION MolFromMolDataStream (dimension label)
+    // RDKit✔️✔️:   if (tempStr.length() >= 22) {
+    // RDKit✔️✔️:     std::string dimLabel = tempStr.substr(20, 2);
+    // RDKit✔️✔️:     // Unless labelled as 3D we assume 2D
+    // RDKit✔️✔️:     if (dimLabel == "3d" || dimLabel == "3D") {
+    // RDKit✔️✔️:       res->setProp(common_properties::_3DConf, 1);
+    // RDKit✔️✔️:     }
     // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   return true;
-    // RDKit✔️✔️: } else if (marked3d == 0 && nonzeroZ) {
-    // RDKit✔️✔️:   return true;
-    // RDKit✔️✔️: }
-    // RDKit✔️✔️: return nonzeroZ;
-    let nonzero_z = coordinates.iter().any(|coordinate| coordinate[2] != 0.0);
-    if !nonzero_z && molfile_info_marks_3d(info) {
-        return !chirality_possible;
-    }
-    nonzero_z
     // END RDKIT CPP FUNCTION
+    // BEGIN RDKIT CPP FUNCTION hasNonZeroZCoords
+    // RDKit✔️✔️: inline bool hasNonZeroZCoords(const Conformer &conf) {
+    // RDKit✔️✔️:   constexpr double zeroTol = 1e-3;
+    // RDKit✔️✔️:   for (auto p : conf.getPositions()) {
+    // RDKit✔️✔️:     if (std::abs(p.z) > zeroTol) {
+    // RDKit✔️✔️:       return true;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   return false;
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION
+    // BEGIN RDKIT CPP FUNCTION calculate3dFlag
+    // RDKit✔️✔️: bool calculate3dFlag(const RWMol &mol, const Conformer &conf,
+    // RDKit✔️✔️:                      bool chiralityPossible) {
+    // RDKit✔️✔️:   int marked3d = 0;
+    // RDKit✔️✔️:   if (mol.getPropIfPresent(common_properties::_3DConf, marked3d)) {
+    // RDKit✔️✔️:     mol.clearProp(common_properties::_3DConf);
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   bool nonzeroZ = hasNonZeroZCoords(conf);
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   if (!nonzeroZ && marked3d == 1) {
+    // RDKit✔️✔️:     // If we have no Z coordinates, mark the structure 2D if we see any
+    // RDKit✔️✔️:     // 2D stereo markers, or stay as 3D if
+    // RDKit✔️✔️:     if (chiralityPossible) {
+    // RDKit✔️✔️:       BOOST_LOG(rdWarningLog)
+    // RDKit✔️✔️:           << "Warning: molecule is tagged as 3D, but all Z coords are zero and 2D stereo "
+    // RDKit✔️✔️:              "markers have been found, marking the mol as 2D."
+    // RDKit✔️✔️:           << std::endl;
+    // RDKit✔️✔️:       return false;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     return true;
+    // RDKit✔️✔️:   } else if (marked3d == 0 && nonzeroZ) {
+    // RDKit✔️✔️:     BOOST_LOG(rdWarningLog)
+    // RDKit✔️✔️:         << "Warning: molecule is tagged as 2D, but at least one Z coordinate is not zero. "
+    // RDKit✔️✔️:            "Marking the mol as 3D."
+    // RDKit✔️✔️:         << std::endl;
+    // RDKit✔️✔️:     return true;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   return nonzeroZ;
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION
+    let nonzero_z = coordinates
+        .iter()
+        .any(|coordinate| coordinate[2].abs() > 1.0e-3);
+    let is_3d = if !nonzero_z && molfile_info_marks_3d(info) {
+        !chirality_possible
+    } else {
+        nonzero_z
+    };
+    // Behavior review: the exact byte-position 3D label, source 1e-3 strict
+    // Z tolerance, wedge/dash chirality override, and nonzero-Z override map
+    // one-for-one. The transient `_3DConf` property is represented directly
+    // by the header predicate and is therefore not leaked into molecule props.
+    // Complexity review: both implementations scan coordinate rows once with
+    // early exit, allocate nothing, and perform constant-time label/flag work.
+    is_3d
 }
 
 fn read_v3000_record_detached(
@@ -5418,13 +5971,31 @@ fn read_v3000_record_detached(
 
     let mut bonds = Vec::with_capacity(bond_count);
     let mut bond_by_bookmark = BTreeMap::new();
+    let mut bond_by_edge = BTreeMap::new();
     let mut chirality_possible = false;
     if bond_count != 0 {
+        // BEGIN RDKIT CPP FUNCTION ParseV3000BondBlock (envelope and row fields)
+        // RDKit✔️✔️:   auto inl = getV3000Line(inStream, line);
+        // RDKit✔️✔️:   std::string_view tempStr = inl;
+        // RDKit✔️✔️:   if (tempStr.length() < 10 || tempStr.substr(0, 10) != "BEGIN BOND") {
+        // RDKit✔️✔️:     throw FileParseException("BEGIN BOND line not found");
+        // RDKit✔️✔️:   }
         let (begin_bond, _) = get_v3000_line(&lines, &mut cursor)?;
         if !begin_bond.starts_with("BEGIN BOND") {
             return Err(SdfReadError::Parse("BEGIN BOND line not found".to_owned()));
         }
         for bond_index in 0..bond_count {
+            // RDKit✔️✔️:   for (unsigned int i = 0; i < nBonds; ++i) {
+            // RDKit✔️✔️:     inl = getV3000Line(inStream, line);
+            // RDKit✔️✔️:     tempStr = inl;
+            // RDKit✔️✔️:     tempStr = FileParserUtils::strip(tempStr);
+            // RDKit✔️✔️:     std::vector<std::string_view> splitLine;
+            // RDKit✔️✔️:     tokenizeV3000Line(tempStr, splitLine);
+            // RDKit✔️✔️:     if (splitLine.size() < 4) {
+            // RDKit✔️✔️:       std::ostringstream errout;
+            // RDKit✔️✔️:       errout << "bond line " << line << " is too short";
+            // RDKit✔️✔️:       throw FileParseException(errout.str());
+            // RDKit✔️✔️:     }
             let (bond_line, line_number) = get_v3000_line(&lines, &mut cursor)?;
             let tokens = tokenize_v3000_line(bond_line.trim());
             if tokens.len() < 4 {
@@ -5432,30 +6003,73 @@ fn read_v3000_record_detached(
                     "bond line {line_number} is too short"
                 )));
             }
-            let bookmark = tokens[0].parse::<u32>().unwrap_or(0);
-            let bond_type = tokens[1].parse::<u32>().unwrap_or(0);
+            // RDKit✔️✔️:     unsigned int bondIdx = 0;
+            // RDKit✔️✔️:     std::from_chars(splitLine[0].data(),
+            // RDKit✔️✔️:                     splitLine[0].data() + splitLine[0].size(), bondIdx);
+            // RDKit✔️✔️:     unsigned int bType = 0;
+            // RDKit✔️✔️:     std::from_chars(splitLine[1].data(),
+            // RDKit✔️✔️:                     splitLine[1].data() + splitLine[1].size(), bType);
+            // RDKit✔️✔️:     unsigned int a1Idx = 0;
+            // RDKit✔️✔️:     std::from_chars(splitLine[2].data(),
+            // RDKit✔️✔️:                     splitLine[2].data() + splitLine[2].size(), a1Idx);
+            // RDKit✔️✔️:     unsigned int a2Idx = 0;
+            // RDKit✔️✔️:     std::from_chars(splitLine[3].data(),
+            // RDKit✔️✔️:                     splitLine[3].data() + splitLine[3].size(), a2Idx);
+            let bookmark = parse_from_chars_unsigned(tokens[0]);
+            let bond_type = parse_from_chars_unsigned(tokens[1]);
             // BEGIN RDKIT CPP FUNCTION ParseV3000BondBlock (bond type switch)
-            // RDKit❗✔️:       case 1:
-            // RDKit❗✔️:         bond = new Bond(Bond::SINGLE);
-            // RDKit❗✔️:         break;
-            // RDKit❗✔️:       case 2:
-            // RDKit❗✔️:         bond = new Bond(Bond::DOUBLE);
-            // RDKit❗✔️:         break;
-            // RDKit❗✔️:       case 3:
-            // RDKit❗✔️:         bond = new Bond(Bond::TRIPLE);
-            // RDKit❗✔️:         break;
-            // RDKit❗✔️:       case 4:
-            // RDKit❗✔️:         bond = new Bond(Bond::AROMATIC);
-            // RDKit❗✔️:         bond->setIsAromatic(true);
-            // RDKit❗✔️:         break;
-            // RDKit❗✔️:       case 9:
-            // RDKit❗✔️:         bond = new Bond(Bond::DATIVE);
-            // RDKit❗✔️:         break;
-            // RDKit❗✔️:       case 10:
-            // RDKit❗✔️:         bond = new Bond(Bond::HYDROGEN);
-            // RDKit❗✔️:         break;
-            // RDKit❗✔️:       case 0:
-            // RDKit❗✔️:         bond = new Bond(Bond::UNSPECIFIED);
+            // RDKit✔️✔️:     switch (bType) {
+            // RDKit✔️✔️:       case 1:
+            // RDKit✔️✔️:         bond = new Bond(Bond::SINGLE);
+            // RDKit✔️✔️:         break;
+            // RDKit✔️✔️:       case 2:
+            // RDKit✔️✔️:         bond = new Bond(Bond::DOUBLE);
+            // RDKit✔️✔️:         break;
+            // RDKit✔️✔️:       case 3:
+            // RDKit✔️✔️:         bond = new Bond(Bond::TRIPLE);
+            // RDKit✔️✔️:         break;
+            // RDKit✔️✔️:       case 4:
+            // RDKit✔️✔️:         bond = new Bond(Bond::AROMATIC);
+            // RDKit✔️✔️:         bond->setIsAromatic(true);
+            // RDKit✔️✔️:         break;
+            // RDKit✔️✔️:       case 9:
+            // RDKit✔️✔️:         bond = new Bond(Bond::DATIVE);
+            // RDKit✔️✔️:         break;
+            // RDKit✔️✔️:       case 10:
+            // RDKit✔️✔️:         bond = new Bond(Bond::HYDROGEN);
+            // RDKit✔️✔️:         break;
+            // RDKit✔️✔️:       case 0:
+            // RDKit✔️✔️:         bond = new Bond(Bond::UNSPECIFIED);
+            // RDKit✔️✔️:         BOOST_LOG(rdWarningLog)
+            // RDKit✔️✔️:             << "bond with order 0 found on line " << line
+            // RDKit✔️✔️:             << ". This is not part of the MDL specification." << std::endl;
+            // RDKit✔️✔️:         break;
+            // RDKit✔️✔️:       default:
+            // RDKit✔️✔️:         // it's a query bond of some type
+            // RDKit✔️✔️:         bond = new QueryBond;
+            // RDKit✔️✔️:         if (bType == 8) {
+            // RDKit✔️✔️:           BOND_NULL_QUERY *q;
+            // RDKit✔️✔️:           q = makeBondNullQuery();
+            // RDKit✔️✔️:           bond->setQuery(q);
+            // RDKit✔️✔️:         } else if (bType == 5) {
+            // RDKit✔️✔️:           bond->setQuery(makeSingleOrDoubleBondQuery());
+            // RDKit✔️✔️:           bond->setProp(common_properties::_MolFileBondQuery, 1);
+            // RDKit✔️✔️:         } else if (bType == 6) {
+            // RDKit✔️✔️:           bond->setQuery(makeSingleOrAromaticBondQuery());
+            // RDKit✔️✔️:           bond->setProp(common_properties::_MolFileBondQuery, 1);
+            // RDKit✔️✔️:         } else if (bType == 7) {
+            // RDKit✔️✔️:           bond->setQuery(makeDoubleOrAromaticBondQuery());
+            // RDKit✔️✔️:           bond->setProp(common_properties::_MolFileBondQuery, 1);
+            // RDKit✔️✔️:         } else {
+            // RDKit✔️✔️:           BOND_NULL_QUERY *q;
+            // RDKit✔️✔️:           q = makeBondNullQuery();
+            // RDKit✔️✔️:           bond->setQuery(q);
+            // RDKit✔️✔️:           BOOST_LOG(rdWarningLog)
+            // RDKit✔️✔️:               << "unrecognized query bond type, " << bType << ", found on line "
+            // RDKit✔️✔️:               << line << ". Using an \"any\" query." << std::endl;
+            // RDKit✔️✔️:         }
+            // RDKit✔️✔️:         break;
+            // RDKit✔️✔️:     }
             let (order, query) = match bond_type {
                 0 => (BondOrder::Unspecified, None),
                 1 => (BondOrder::Single, None),
@@ -5494,8 +6108,8 @@ fn read_v3000_record_detached(
                     Some(QueryNode::predicate(BondQueryPredicate::Any)),
                 ),
             };
-            let begin_bookmark = tokens[2].parse::<u32>().unwrap_or(0);
-            let end_bookmark = tokens[3].parse::<u32>().unwrap_or(0);
+            let begin_bookmark = parse_from_chars_unsigned(tokens[2]);
+            let end_bookmark = parse_from_chars_unsigned(tokens[3]);
             let begin = atom_by_bookmark
                 .get(&begin_bookmark)
                 .copied()
@@ -5520,9 +6134,31 @@ fn read_v3000_record_detached(
             if matches!(bond_type, 5..=7) {
                 spec = spec.with_prop("_MolFileBondQuery", "1")?;
             }
+            // RDKit✔️✔️:     bond->setProp(common_properties::_MolFileBondType, bType);
+            // END RDKIT CPP FUNCTION
+            // Behavior review: every concrete type, aromatic flag, query
+            // predicate, and source property-presence branch maps one-for-one.
+            // Complexity review: the constant-time Rust match and small query
+            // allocations are equivalent to the source switch/constructors;
+            // neither scans the atom or bond tables or clones graph state.
             let (mut spec, query, bond_chirality) =
                 parse_v3000_bond_properties(spec, query, bond_type, &tokens[4..], line_number)?;
             chirality_possible |= bond_chirality;
+            // BEGIN RDKIT CPP FUNCTION ParseV3000BondBlock (stereo-care propagation)
+            // RDKit✔️✔️:     // set the stereoCare property on the bond if it's not set already and
+            // RDKit✔️✔️:     // both the beginning and end atoms have it set:
+            // RDKit✔️✔️:     int care1 = 0;
+            // RDKit✔️✔️:     int care2 = 0;
+            // RDKit✔️✔️:     if (!bond->hasProp(common_properties::molStereoCare) &&
+            // RDKit✔️✔️:         mol->getAtomWithIdx(bond->getBeginAtomIdx())
+            // RDKit✔️✔️:             ->getPropIfPresent(common_properties::molStereoCare, care1) &&
+            // RDKit✔️✔️:         mol->getAtomWithIdx(bond->getEndAtomIdx())
+            // RDKit✔️✔️:             ->getPropIfPresent(common_properties::molStereoCare, care2)) {
+            // RDKit✔️✔️:       if (care1 == care2) {
+            // RDKit✔️✔️:         bond->setProp(common_properties::molStereoCare, care1);
+            // RDKit✔️✔️:       }
+            // RDKit✔️✔️:     }
+            // END RDKIT CPP FUNCTION
             if spec.prop("molStereoCare").is_none()
                 && let (Some(begin_care), Some(end_care)) = (
                     atoms[begin.index()].0.prop("molStereoCare"),
@@ -5532,7 +6168,82 @@ fn read_v3000_record_detached(
             {
                 spec = spec.with_prop("molStereoCare", begin_care)?;
             }
+            // Behavior review: atom STBOX values have already passed the
+            // source `toInt` contract and are stored canonically as decimal
+            // strings, so equality is integer equality. An explicit bond
+            // STBOX, including an empty or otherwise raw value, suppresses
+            // endpoint propagation exactly as source `hasProp()` does.
+            // Complexity review: both implementations perform two indexed
+            // atom-property lookups and one scalar comparison per bond, with
+            // no atom-table scan, allocation beyond an installed property, or
+            // detached-state clone.
             let bond_id = BondId::new(bond_index);
+            // BEGIN RDKIT CPP FUNCTION ROMol::addBond
+            // RDKit✔️✔️: unsigned int ROMol::addBond(Bond *bond_pin, bool takeOwnership) {
+            // RDKit✔️✔️:   PRECONDITION(bond_pin, "null bond passed in");
+            // RDKit✔️✔️:   PRECONDITION(!takeOwnership || !bond_pin->hasOwningMol() ||
+            // RDKit✔️✔️:                    &bond_pin->getOwningMol() == this,
+            // RDKit✔️✔️:                "cannot take ownership of an bond which already has an owner");
+            // RDKit✔️✔️:   URANGE_CHECK(bond_pin->getBeginAtomIdx(), getNumAtoms());
+            // RDKit✔️✔️:   URANGE_CHECK(bond_pin->getEndAtomIdx(), getNumAtoms());
+            // RDKit✔️✔️:   PRECONDITION(bond_pin->getBeginAtomIdx() != bond_pin->getEndAtomIdx(),
+            // RDKit✔️✔️:                "attempt to add self-bond");
+            // RDKit✔️✔️:   PRECONDITION(!(boost::edge(bond_pin->getBeginAtomIdx(),
+            // RDKit✔️✔️:                              bond_pin->getEndAtomIdx(), d_graph)
+            // RDKit✔️✔️:                      .second),
+            // RDKit✔️✔️:                "bond already exists");
+            // RDKit✔️✔️:
+            // RDKit✔️✔️:   Bond *bond_p;
+            // RDKit✔️✔️:   if (!takeOwnership) {
+            // RDKit✔️✔️:     bond_p = bond_pin->copy();
+            // RDKit✔️✔️:   } else {
+            // RDKit✔️✔️:     bond_p = bond_pin;
+            // RDKit✔️✔️:   }
+            // RDKit✔️✔️:
+            // RDKit✔️✔️:   bond_p->setOwningMol(this);
+            // RDKit✔️✔️:   auto [which, ok] = boost::add_edge(bond_p->getBeginAtomIdx(),
+            // RDKit✔️✔️:                                      bond_p->getEndAtomIdx(), d_graph);
+            // RDKit✔️✔️:   CHECK_INVARIANT(ok, "bond could not be added");
+            // RDKit✔️✔️:   d_graph[which] = bond_p;
+            // RDKit✔️✔️:   bond_p->setIdx(numBonds);
+            // RDKit✔️✔️:   numBonds++;
+            // RDKit✔️✔️:   return numBonds;
+            // RDKit✔️✔️: }
+            // END RDKIT CPP FUNCTION
+            if begin == end {
+                return Err(SdfReadError::Parse(format!(
+                    "attempt to add self-bond on line {line_number}"
+                )));
+            }
+            let edge = if begin < end {
+                (begin, end)
+            } else {
+                (end, begin)
+            };
+            if let Some(first_bond) = bond_by_edge.insert(edge, bond_id) {
+                return Err(SdfReadError::Parse(format!(
+                    "bond already exists between atom rows {} and {} (first bond {}, line {line_number})",
+                    edge.0.index(),
+                    edge.1.index(),
+                    first_bond.index()
+                )));
+            }
+            // RDKit✔️✔️:     bond->setBeginAtomIdx(mol->getAtomWithBookmark(a1Idx)->getIdx());
+            // RDKit✔️✔️:     bond->setEndAtomIdx(mol->getAtomWithBookmark(a2Idx)->getIdx());
+            // RDKit✔️✔️:     mol->addBond(bond, true);
+            // RDKit❗✔️:     mol->setBondBookmark(bond, bondIdx);
+            // COSMolKit assigns the canonical `BondId` from row order, matching
+            // `addBond`, while retaining the external bookmark only for later
+            // references. Unlike RDKit's bookmark multimap, the frozen detached
+            // model policy requires external bond bookmarks to be unique, so a
+            // duplicate is rejected structurally instead of becoming ambiguous.
+            // Behavior review: the four source `from_chars` calls use the shared
+            // unsigned-prefix transliteration; endpoint lookup is by the atom
+            // bookmark map, never by row number, and the canonical id is the
+            // contiguous insertion position. Complexity review: tokenization is
+            // linear in row length and the ordered bookmark lookups/insertion are
+            // O(log n), matching RDKit's ordered bookmark-map access without an
+            // extra graph scan or whole-table clone.
             if bond_by_bookmark.insert(bookmark, bond_id).is_some() {
                 return Err(SdfReadError::Parse(format!(
                     "duplicate V3000 bond index {bookmark} on line {line_number}"
@@ -5543,6 +6254,14 @@ fn read_v3000_record_detached(
                 query,
             });
         }
+        // RDKit✔️✔️:   inl = getV3000Line(inStream, line);
+        // RDKit✔️✔️:   tempStr = inl;
+        // RDKit✔️✔️:   if (tempStr.length() < 8 || tempStr.substr(0, 8) != "END BOND") {
+        // RDKit✔️✔️:     std::ostringstream errout;
+        // RDKit✔️✔️:     errout << "END BOND line not found at line " << line;
+        // RDKit✔️✔️:     throw FileParseException(errout.str());
+        // RDKit✔️✔️:   }
+        // END RDKIT CPP FUNCTION
         let (end_bond, line_number) = get_v3000_line(&lines, &mut cursor)?;
         if !end_bond.starts_with("END BOND") {
             return Err(SdfReadError::Parse(format!(
@@ -5551,6 +6270,25 @@ fn read_v3000_record_detached(
         }
     }
 
+    // BEGIN RDKIT CPP FUNCTION ParseV3000CTAB (LINKNODE loop)
+    // RDKit✔️✔️:   tempStr = getV3000Line(inStream, line);
+    // RDKit✔️✔️:   // do link nodes:
+    // RDKit✔️✔️:   boost::to_upper(tempStr);
+    // RDKit✔️✔️:   while (tempStr.length() > 8 && tempStr.substr(0, 8) == "LINKNODE") {
+    // RDKit✔️✔️:     boost::to_upper(tempStr);
+    // RDKit✔️✔️:     // if the line has nothing on it we just ignore it
+    // RDKit✔️✔️:     if (tempStr.size() > 9) {
+    // RDKit✔️✔️:       std::string existing = "";
+    // RDKit✔️✔️:       if (mol->getPropIfPresent(common_properties::molFileLinkNodes,
+    // RDKit✔️✔️:                                 existing)) {
+    // RDKit✔️✔️:         existing += "|";
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:       existing += tempStr.substr(9);  // skip the "LINKNODE "
+    // RDKit✔️✔️:       mol->setProp(common_properties::molFileLinkNodes, existing);
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     tempStr = getV3000Line(inStream, line);
+    // RDKit✔️✔️:   }
+    // END RDKIT CPP FUNCTION
     let mut link_nodes = Vec::new();
     let (mut trailing, mut trailing_line) = get_v3000_line(&lines, &mut cursor)?;
     loop {
@@ -5563,6 +6301,13 @@ fn read_v3000_record_detached(
         }
         (trailing, trailing_line) = get_v3000_line(&lines, &mut cursor)?;
     }
+    // Behavior review: each logical LINKNODE line is uppercased before both
+    // recognition and payload extraction, empty payload lines are ignored,
+    // and nonempty payloads retain encounter order for the established
+    // pipe-delimited `_MolFileLinkNodes` property installed below.
+    // Complexity review: the loop consumes each logical line once and stores
+    // each accepted payload once; the final join is linear in total payload
+    // size, with no graph scan or detached topology clone.
     // BEGIN RDKIT CPP FUNCTION ParseV3000CTAB (trailing typed blocks)
     // RDKit✔️✔️: bool sgroupFound = false;
     // RDKit✔️✔️: bool obj3dFound = false;
@@ -5687,6 +6432,11 @@ fn read_v3000_record_detached(
                 expected_sgroups,
                 &atom_by_bookmark,
                 &bond_by_bookmark,
+                &|bond| {
+                    bonds
+                        .get(bond.index())
+                        .map(|entry| (entry.bond.begin(), entry.bond.end()))
+                },
                 params.strict_parsing,
             )?;
         } else if trailing_upper.as_bytes().get(6..16) == Some(b"COLLECTION") {
@@ -5758,6 +6508,26 @@ fn read_v3000_record_detached(
             "BEGIN OBJ3D line not found on line {trailing_line}"
         )));
     }
+    // BEGIN RDKIT CPP FUNCTION ParseV3000CTAB (CTAB/file termination)
+    // RDKit✔️✔️:   boost::to_upper(tempStr);
+    // RDKit✔️✔️:   if (tempStr.length() < 8 || tempStr.substr(0, 8) != "END CTAB") {
+    // RDKit✔️✔️:     if (strictParsing) {
+    // RDKit✔️✔️:       throw FileParseException("END CTAB line not found");
+    // RDKit✔️✔️:     } else {
+    // RDKit✔️✔️:       BOOST_LOG(rdWarningLog) << "END CTAB line not found." << std::endl;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   if (expectMEND) {
+    // RDKit✔️✔️:     tempStr = getLine(inStream);
+    // RDKit✔️✔️:     ++line;
+    // RDKit✔️✔️:     if (tempStr[0] == 'M' && tempStr.substr(0, 6) == "M  END") {
+    // RDKit✔️✔️:       fileComplete = true;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   } else {
+    // RDKit✔️✔️:     fileComplete = true;
+    // RDKit✔️✔️:   }
+    // END RDKIT CPP FUNCTION
     let trailing_upper = trailing.to_ascii_uppercase();
     if !trailing_upper.starts_with("END CTAB") {
         if params.strict_parsing {
@@ -5777,11 +6547,35 @@ fn read_v3000_record_detached(
             "M  END line not found on line {mend_line}"
         )));
     }
+    // Behavior review: this standalone MolBlock reader corresponds to the
+    // ordinary MolFromMolDataStream caller, which always passes
+    // `expectMEND=true`. The only pinned `expectMEND=false` caller is SCSR
+    // macro parsing (`parsingSCSRMol`), a distinct input mode that this API
+    // does not expose. Therefore both strict modes require the raw, exact-case
+    // `M  END` prefix after the current CTAB candidate. In non-strict mode a
+    // missing END CTAB candidate is warned about by the source, but that
+    // candidate is not reused as M END: the source reads the following raw
+    // line once, which is also the line inspected at `cursor` here.
+    // Complexity review: termination performs one uppercase conversion of
+    // the current logical line and one O(1) indexed lookup/prefix check of the
+    // following physical line, without rescanning or cloning record state.
     // END RDKIT CPP FUNCTION
 
+    // BEGIN RDKIT CPP FUNCTION ParseV3000CTAB (conformer attachment)
+    // RDKit✔️✔️:   auto is3d = calculate3dFlag(*mol, *conf, chiralityPossible);
+    // RDKit✔️✔️:   conf->set3D(is3d);
+    // RDKit✔️✔️:   mol->addConformer(conf, true);
+    // RDKit✔️✔️:   conf = nullptr;
+    // END RDKIT CPP FUNCTION
     let is_3d = v3000_is_3d(info, &coordinates_3d, chirality_possible);
+    // calculate3dFlag changes interpretation, never the stored XYZ rows.
+    // Use the existing XYZ carrier with its independent flag whenever an XY
+    // projection would lose Z bits (including negative zero). Only all-+0 Z
+    // rows in a 2D record can use the existing XY representation losslessly.
+    // This is a detached storage decision, not a second dimension classifier.
+    let retain_xyz = is_3d || coordinates_3d.iter().any(|point| point[2].to_bits() != 0);
     let coordinates = CoordinateBlock {
-        conformers_2d: if is_3d {
+        conformers_2d: if retain_xyz {
             Vec::new()
         } else {
             vec![Conformer2D::new(
@@ -5792,8 +6586,8 @@ fn read_v3000_record_detached(
                     .collect(),
             )]
         },
-        conformers_3d: if is_3d {
-            vec![Conformer3D::new(0, coordinates_3d, true)]
+        conformers_3d: if retain_xyz {
+            vec![Conformer3D::new(0, coordinates_3d, is_3d)]
         } else {
             Vec::new()
         },
@@ -5803,6 +6597,14 @@ fn read_v3000_record_detached(
             CoordinateDimension::TwoD
         }),
     };
+    // Behavior review: one source conformer is retained even for zero atoms;
+    // its atom-row order and all coordinate bits are retained. The effective
+    // parser dimension is recorded independently of XYZ carrier membership;
+    // raw file flags remain in _MolFileInfo. No later interpretation override
+    // or deferred public coordinate-model redesign is implemented here.
+    // Complexity review: classification and losslessness checking are linear
+    // scans; XY storage allocates once, while XYZ storage moves the parsed
+    // rows without cloning. No extra conformer or sidecar state is introduced.
     coordinates.validate_for_atom_count(atom_count)?;
     let mut properties = if title.is_empty() {
         MoleculeProperties::default()
@@ -5829,17 +6631,20 @@ fn read_v3000_record_detached(
     if has_query {
         let query_atoms = atoms
             .into_iter()
-            .map(|(atom, query)| match query {
-                Some(predicate) => QueryAtom::from_parts(atom, predicate),
+            .map(|(mut atom, query)| match query {
+                Some(predicate) => {
+                    atom.set_prop("_MolFileAtomQuery", "1")?;
+                    Ok(QueryAtom::from_parts(atom, predicate))
+                }
                 None => {
                     let atomic_number = atom.element().atomic_number();
-                    QueryAtom::from_parts(
+                    Ok(QueryAtom::from_carrier_parts(
                         atom,
                         QueryNode::predicate(AtomQueryPredicate::AtomicNumber(atomic_number)),
-                    )
+                    ))
                 }
             })
-            .collect::<Vec<_>>();
+            .collect::<Result<Vec<_>, SdfReadError>>()?;
         let query_bonds = bonds
             .into_iter()
             .map(|parsed| match parsed.query {
@@ -5850,7 +6655,7 @@ fn read_v3000_record_detached(
                     } else {
                         QueryNode::predicate(BondQueryPredicate::Order(parsed.bond.order()))
                     };
-                    QueryBond::from_parts(parsed.bond, predicate)
+                    QueryBond::from_carrier_parts(parsed.bond, predicate)
                 }
             })
             .collect::<Vec<_>>();
@@ -5928,10 +6733,10 @@ pub fn read_sdf_graph_record_detached_with_params(
     block: &str,
     params: SdfDataReadParams,
 ) -> Result<SdfGraphRecord, SdfReadError> {
-    let mol_text = block.split("M  END").next().ok_or(SdfReadError::Empty)?;
-    let mut mol_block =
-        read_mol_block_detached_with_params(&format!("{mol_text}M  END\n"), params.into())?;
-    let data_fields = parse_sdf_data_fields(&sdf_data_lines(block)?, params)?;
+    let (mol_text, data_lines) = split_sdf_mol_block(block)?;
+    let mut mol_block = read_mol_block_detached_with_params(mol_text, params.into())?;
+    apply_sdf_coordinate_mode(&mut mol_block, params.coordinate_mode)?;
+    let data_fields = parse_sdf_data_fields(&data_lines, params)?;
     match &mut mol_block {
         MolBlockRecord::Concrete { properties, .. } => {
             for (name, value) in &data_fields {
@@ -5953,7 +6758,7 @@ pub fn read_sdf_graph_record_detached_with_params(
         }
     }
     if params.process_property_lists {
-        apply_sdf_property_lists(&mut mol_block, &data_fields);
+        apply_sdf_property_lists(&mut mol_block, &data_fields, params.strict_parsing)?;
     }
     Ok(SdfGraphRecord {
         mol_block,
@@ -6000,10 +6805,37 @@ pub fn read_sdf_records_detached_with_params(
     block: &str,
     params: SdfDataReadParams,
 ) -> Result<Vec<SdfRecord>, SdfReadError> {
-    let records = sdf_record_slices(block)
-        .into_iter()
-        .map(|record| read_sdf_record_detached_with_params(record, params))
-        .collect::<Result<Vec<_>, _>>()?;
+    let mut reader = SdfGraphReader::with_params(Cursor::new(block.as_bytes()), params);
+    let mut records = Vec::new();
+    loop {
+        let index = reader.records_consumed();
+        let byte_offset = reader.bytes_consumed();
+        let line_offset = reader.lines_consumed();
+        let Some(record) = reader.next_record()? else {
+            break;
+        };
+        let MolBlockRecord::Concrete {
+            topology,
+            coordinates,
+            properties,
+        } = record.mol_block
+        else {
+            return Err(SdfReadError::Record {
+                index,
+                byte_offset,
+                line_offset,
+                source: Box::new(SdfReadError::Unsupported(
+                    "query-bearing SDF record; use SdfGraphReader",
+                )),
+            });
+        };
+        records.push(SdfRecord {
+            topology,
+            coordinates,
+            properties,
+            data_fields: record.data_fields,
+        });
+    }
     if records.is_empty() {
         return Err(SdfReadError::Empty);
     }
@@ -6672,8 +7504,9 @@ pub fn write_v3000_detached(
 mod tests {
     use cosmolkit_model::{
         AtomId, AtomQueryPredicate, BondId, BondQueryPredicate, CoordinateBlock,
-        MoleculeProperties, QueryNode, SGroupBondRole, SGroupConnection, SdfPropertyListTarget,
-        StereoGroupKind, SubstanceGroupKind,
+        MoleculeProperties, QueryNode, SGroupBondRole, SGroupBracket, SGroupCState,
+        SGroupConnection, SGroupDisplay, SdfPropertyListTarget, StereoGroupKind, SubstanceGroup,
+        SubstanceGroupId, SubstanceGroupKind,
     };
     use cosmolkit_types::{BondDirection, BondStereo};
 
@@ -7126,10 +7959,12 @@ mod tests {
         assert_eq!(sup.subtype(), Some("ALT"));
         assert_eq!(sup.connection(), Some(&SGroupConnection::HeadToTail));
         assert_eq!(sup.expansion_state(), Some("E"));
-        assert_eq!(sup.display().unwrap().brackets[0].p1, [0.0, 1.0]);
-        assert_eq!(sup.display().unwrap().brackets[0].p2, [2.0, 3.0]);
+        assert_eq!(
+            sup.display().unwrap().brackets[0].points,
+            [[0.0, 1.0, 0.0], [2.0, 3.0, 0.0], [0.0, 0.0, 0.0]]
+        );
         assert_eq!(sup.cstates()[0].bond, BondId::new(0));
-        assert_eq!(sup.cstates()[0].vector, [0.5, 0.25]);
+        assert_eq!(sup.cstates()[0].vector, [0.5, 0.25, 0.0]);
         assert_eq!(sup.attach_points()[0].atom, AtomId::new(0));
         assert_eq!(sup.attach_points()[0].leaving_atom, Some(AtomId::new(1)));
         assert_eq!(sup.attach_points()[0].label.as_deref(), Some("AP"));
@@ -7715,8 +8550,9 @@ mod tests {
         };
 
         // RBCNT=-2 keeps the 0xDEADBEEF sentinel equality query and defers
-        // ring-bond counting through `_NeedsQueryScan`, exactly as the source
-        // branch and the V2000 `M  RBC` path do.
+        // ring-bond counting through `_NeedsQueryScan`. Before expansion, the
+        // source's replaceAtomWithQueryAtom constructs the AtomicNumber base
+        // predicate from the concrete carbon atom.
         let MolBlockRecord::Query(record) =
             read_mol_block_detached(&block("RBCNT=-2")).expect("RBCNT=-2 stays a query record")
         else {
@@ -7724,7 +8560,10 @@ mod tests {
         };
         assert_eq!(
             record.query.atoms()[0].predicate(),
-            &QueryNode::predicate(AtomQueryPredicate::RingBondCount(0xDEAD_BEEF))
+            &QueryNode::and(vec![
+                QueryNode::predicate(AtomQueryPredicate::AtomicNumber(6)),
+                QueryNode::predicate(AtomQueryPredicate::RingBondCount(0xDEAD_BEEF)),
+            ])
         );
         assert_eq!(record.properties.prop("_NeedsQueryScan"), Some("1"));
         assert_eq!(record.query.prop("_NeedsQueryScan"), Some("1"));
@@ -7738,7 +8577,10 @@ mod tests {
         };
         assert_eq!(
             record.query.atoms()[0].predicate(),
-            &QueryNode::predicate(AtomQueryPredicate::RingBondCount(4))
+            &QueryNode::and(vec![
+                QueryNode::predicate(AtomQueryPredicate::AtomicNumber(6)),
+                QueryNode::predicate(AtomQueryPredicate::RingBondCount(4)),
+            ])
         );
 
         // Values below -2 build a never-matching query in the source; the
@@ -7944,8 +8786,19 @@ mod tests {
         assert_eq!(properties.prop("_MolFileComments"), Some("comment"));
         assert_eq!(properties.prop("_MolFileChiralFlag"), Some("1"));
         assert_eq!(properties.prop("_MolFileLinkNodes"), Some("1 2 2 10 20"));
-        assert_eq!(coordinates.conformers_2d.len(), 1);
-        assert!(coordinates.conformers_3d.is_empty());
+        // Pinned ParseV3000CTAB sets the flag without erasing the second
+        // atom's negative-zero Z. Preserve XYZ while retaining 2D perception.
+        assert!(coordinates.conformers_2d.is_empty());
+        assert_eq!(coordinates.conformers_3d.len(), 1);
+        assert!(!coordinates.conformers_3d[0].is_3d());
+        assert_eq!(
+            coordinates.source_coordinate_dim,
+            Some(cosmolkit_model::CoordinateDimension::TwoD)
+        );
+        assert_eq!(
+            coordinates.conformers_3d[0].coordinates()[1][2].to_bits(),
+            (-0.0_f64).to_bits()
+        );
 
         let output = write_v3000_detached(&topology, &coordinates, &properties)
             .expect("write preserved V3000 state");
@@ -8122,10 +8975,12 @@ mod tests {
         assert_eq!(sup.bond_role(BondId::new(0)), SGroupBondRole::Crossing);
         assert_eq!(sup.label(), Some("Me"));
         assert_eq!(sup.connection(), Some(&SGroupConnection::HeadToTail));
-        assert_eq!(sup.display().unwrap().brackets[0].p1, [0.0, 1.0]);
-        assert_eq!(sup.display().unwrap().brackets[0].p2, [2.0, 3.0]);
+        assert_eq!(
+            sup.display().unwrap().brackets[0].points,
+            [[0.0, 1.0, 0.0], [2.0, 3.0, 0.0], [0.0, 0.0, 0.0]]
+        );
         assert_eq!(sup.cstates()[0].bond, BondId::new(0));
-        assert_eq!(sup.cstates()[0].vector, [0.5, 0.25]);
+        assert_eq!(sup.cstates()[0].vector, [0.5, 0.25, 0.0]);
         assert_eq!(sup.attach_points()[0].atom, AtomId::new(0));
         assert_eq!(sup.attach_points()[0].leaving_atom, Some(AtomId::new(1)));
         assert_eq!(sup.attach_points()[0].label.as_deref(), Some("AP"));
@@ -8171,6 +9026,80 @@ mod tests {
             ["payload"]
         );
         assert_eq!(roundtrip.stereo_groups, topology.stereo_groups);
+    }
+
+    #[test]
+    fn v3000_sgroup_writer_uses_typed_crossing_references_and_projects_xyz_per_source() {
+        let input = concat!(
+            "typed-sgroup-writer\n  COSMolKit\n\n",
+            "  0  0  0  0  0  0  0  0  0  0999 V3000\n",
+            "M  V30 BEGIN CTAB\n",
+            "M  V30 COUNTS 4 3 0 0 0\n",
+            "M  V30 BEGIN ATOM\n",
+            "M  V30 1 C 0 0 0 0\n",
+            "M  V30 2 C 1 0 0 0\n",
+            "M  V30 3 C 2 0 0 0\n",
+            "M  V30 4 C 3 0 0 0\n",
+            "M  V30 END ATOM\n",
+            "M  V30 BEGIN BOND\n",
+            "M  V30 1 1 1 2\n",
+            "M  V30 2 1 2 3\n",
+            "M  V30 3 1 3 4\n",
+            "M  V30 END BOND\n",
+            "M  V30 END CTAB\n",
+            "M  END\n",
+        );
+        let (mut topology, coordinates, properties) =
+            read_v3000_detached(input).expect("read writer fixture");
+        let bracket = SGroupBracket {
+            points: [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [7.0, 8.0, 9.0]],
+        };
+        let group = SubstanceGroup::new(SubstanceGroupId::new(0), SubstanceGroupKind::Superatom)
+            .with_atoms(vec![AtomId::new(1), AtomId::new(2)])
+            .with_bonds(vec![BondId::new(0), BondId::new(1), BondId::new(2)])
+            .with_head_crossing_bonds(vec![BondId::new(2), BondId::new(0), BondId::new(2)])
+            .with_crossing_bond_correspondence(vec![BondId::new(1), BondId::new(1), BondId::new(0)])
+            .with_display(SGroupDisplay {
+                brackets: vec![bracket],
+                ..SGroupDisplay::default()
+            })
+            .with_cstates(vec![SGroupCState {
+                bond: BondId::new(0),
+                vector: [10.0, 11.0, 12.0],
+            }]);
+        assert_eq!(group.display().unwrap().brackets[0], bracket);
+        assert_eq!(group.cstates()[0].vector, [10.0, 11.0, 12.0]);
+        assert_eq!(
+            group.head_crossing_bonds(),
+            &[BondId::new(2), BondId::new(0), BondId::new(2)]
+        );
+        assert_eq!(
+            group.crossing_bond_correspondence(),
+            &[BondId::new(1), BondId::new(1), BondId::new(0)]
+        );
+        assert!(!group.props().contains_key("XBHEAD"));
+        assert!(!group.props().contains_key("XBCORR"));
+        topology.substance_groups = vec![group];
+        topology.validate().expect("canonical typed SGroup state");
+
+        let output = write_v3000_detached(&topology, &coordinates, &properties)
+            .expect("write canonical typed SGroup state");
+        assert!(output.contains(" XBHEAD=(3 3 1 3)"));
+        assert!(output.contains(" XBCORR=(3 2 2 1)"));
+        // Pinned RDKit's writer deliberately projects the canonical values:
+        // it writes only the first two bracket XY pairs, forces all bracket Z
+        // and the third point to zero, and writes only CSTATE XY with zero Z.
+        assert!(output.contains(" BRKXYZ=(9 1.0000 2.0000 0 4.0000 5.0000 0 0 0 0)"));
+        assert!(output.contains(" CSTATE=(4 1 10.0000 11.0000 0)"));
+
+        // Typed XBHEAD/XBCORR reader roundtrip is accepted by its later label
+        // task. This writer regression intentionally proves only the already
+        // owned serialization and the source-defined lossy geometry projection.
+        let (projected, _, _) = read_v3000_detached(&output).expect("read projected output");
+        assert_eq!(
+            projected.substance_groups[0].display().unwrap().brackets[0].points,
+            [[1.0, 2.0, 0.0], [4.0, 5.0, 0.0], [0.0, 0.0, 0.0]]
+        );
     }
 
     #[test]

@@ -694,7 +694,10 @@ fn cleanup_replaces_group_atoms_with_unique_atrop_bonds_and_preserves_other_grou
 
     let cleaned =
         cleanup_atropisomer_stereo_groups(&topology, &AtropisomerAssignment::default()).unwrap();
-    assert_eq!(cleaned.groups[0].id(), Some(17));
+    // Pinned `cleanupAtropisomerStereoGroups()` replaces an affected group
+    // with the three-argument `StereoGroup(type, atoms, bonds)` constructor;
+    // that constructor does not propagate the source read id.
+    assert_eq!(cleaned.groups[0].id(), None);
     assert!(cleaned.groups[0].atoms().is_empty());
     assert_eq!(cleaned.groups[0].bonds(), &[BondId::new(1)]);
     assert_eq!(cleaned.groups[1], unaffected);
@@ -905,8 +908,9 @@ fn structured_validation_rejects_coordinates_rings_assignments_and_group_ids() {
     ));
     let false_3d = Conformer3D::new(5, vec![[0.0; 3]; 4], false);
     assert_eq!(
-        detect_atropisomer_chirality(&topology, Some(AtropisomerConformer::ThreeD(&false_3d)),),
-        Err(AtropisomerError::ConformerNotThreeDimensional { conformer: 5 })
+        detect_atropisomer_chirality(&topology, Some(AtropisomerConformer::ThreeD(&false_3d)),)
+            .unwrap(),
+        AtropisomerAssignment::default()
     );
     assert_eq!(
         wedge_bonds_from_atropisomers(

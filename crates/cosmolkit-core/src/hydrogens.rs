@@ -7,14 +7,16 @@
 
 use crate::{
     SanitizeError, SanitizeParams, ValenceAssignment, ValenceError, ValenceModel,
-    assign_valence_with_options_for_topology, rdkit_rb0, rdkit_valence_list, sanitize_topology,
+    assign_valence_with_options_for_topology, rdkit_rb0, rdkit_valence_list,
+    sanitize_topology_with_query_state,
 };
 use cosmolkit_model::{
     AdjacencyList, Atom, AtomId, AtomMapping, AtomPdbResidueInfo, AtomSpec, Bond, BondDirection,
     BondId, BondMapping, BondOrder, BondSpec, BondStereo, ChiralTag, Conformer2D, Conformer3D,
     CoordinateBlock, CoordinateValidationError, Element, Hybridization, MappingValidationError,
-    MoleculeProperties, SGroupBondRole, SdfPropertyListTarget, SubstanceGroup, TopologyBlock,
-    TopologyEditError, TopologyMapping, TopologyValidationError,
+    MoleculeProperties, QueryAtom, QueryBond, QueryStateError, QueryStateRef, SGroupBondRole,
+    SdfPropertyListTarget, SubstanceGroup, TopologyBlock, TopologyEditError, TopologyMapping,
+    TopologyValidationError, remap_query_rows,
 };
 
 /// Parameters corresponding to RDKit's `MolOps::AddHsParameters`.
@@ -156,6 +158,7 @@ pub enum HydrogenError {
     InvalidCoordinates(CoordinateValidationError),
     TopologyEdit(TopologyEditError),
     InvalidMapping(MappingValidationError),
+    InvalidQueryState(QueryStateError),
     InvalidPropertyList {
         target: SdfPropertyListTarget,
         name: String,
@@ -214,6 +217,9 @@ impl std::fmt::Display for HydrogenError {
             }
             Self::InvalidMapping(error) => {
                 write!(formatter, "invalid detached hydrogen mapping: {error}")
+            }
+            Self::InvalidQueryState(error) => {
+                write!(formatter, "invalid detached hydrogen query state: {error}")
             }
             Self::InvalidPropertyList {
                 target,
@@ -316,6 +322,12 @@ impl From<MappingValidationError> for HydrogenError {
     }
 }
 
+impl From<QueryStateError> for HydrogenError {
+    fn from(error: QueryStateError) -> Self {
+        Self::InvalidQueryState(error)
+    }
+}
+
 impl From<ValenceError> for HydrogenError {
     fn from(error: ValenceError) -> Self {
         Self::Valence(error)
@@ -344,12 +356,28 @@ pub fn add_hydrogens_with_params(
     properties: MoleculeProperties,
     params: &AddHsParams,
 ) -> Result<AddHydrogensResult, HydrogenError> {
+    add_hydrogens_with_query_state(topology, coordinates, properties, params, None)
+}
+
+/// Internal typed-query variant used by detached owners that retain the
+/// source Atom/QueryAtom and Bond/QueryBond distinction.
+#[doc(hidden)]
+pub fn add_hydrogens_with_query_state(
+    topology: TopologyBlock,
+    coordinates: CoordinateBlock,
+    properties: MoleculeProperties,
+    params: &AddHsParams,
+    query_state: Option<QueryStateRef<'_>>,
+) -> Result<AddHydrogensResult, HydrogenError> {
     validate_blocks(&topology, &coordinates)?;
     validate_property_lists(&properties, topology.atoms.len(), topology.bonds.len())?;
+    if let Some(state) = query_state {
+        QueryStateRef::try_for_topology(state.atoms(), state.bonds(), &topology)?;
+    }
 
     let old_atom_count = topology.atoms.len();
     let old_bond_count = topology.bonds.len();
-    let processed_atoms = processed_add_hydrogen_atoms(&topology, params)?;
+    let processed_atoms = processed_add_hydrogen_atoms(&topology, params, query_state)?;
     let tracked_isotopes = processed_atoms
         .iter()
         .enumerate()
@@ -377,7 +405,7 @@ pub fn add_hydrogens_with_params(
     let mut properties = properties;
     properties.clear_computed_props();
 
-    let result = add_hydrogens_topology(topology, params)?;
+    let result = add_hydrogens_topology_with_query_state(topology, params, query_state)?;
     let mut result = add_hydrogen_coordinates(
         result,
         coordinates,
@@ -415,11 +443,12 @@ pub fn add_hydrogens_with_params(
 fn processed_add_hydrogen_atoms(
     topology: &TopologyBlock,
     params: &AddHsParams,
+    query_state: Option<QueryStateRef<'_>>,
 ) -> Result<Vec<bool>, HydrogenError> {
     let mut processed = selected_atoms(topology, params.only_on_atoms.as_deref())?;
     if params.skip_queries {
         for atom in 0..topology.atoms.len() {
-            if processed[atom] && is_query_atom(topology, AtomId::new(atom)) {
+            if processed[atom] && is_query_atom(topology, AtomId::new(atom), query_state) {
                 processed[atom] = false;
             }
         }
@@ -484,10 +513,23 @@ fn replay_tracked_isotopes(
 
 /// Apply the source AddHs selection and append rules to detached topology.
 pub fn add_hydrogens_topology(
-    mut topology: TopologyBlock,
+    topology: TopologyBlock,
     params: &AddHsParams,
 ) -> Result<AddHydrogensTopologyResult, HydrogenError> {
+    add_hydrogens_topology_with_query_state(topology, params, None)
+}
+
+/// Internal typed-query AddHs topology owner.
+#[doc(hidden)]
+pub fn add_hydrogens_topology_with_query_state(
+    mut topology: TopologyBlock,
+    params: &AddHsParams,
+    query_state: Option<QueryStateRef<'_>>,
+) -> Result<AddHydrogensTopologyResult, HydrogenError> {
     topology.validate()?;
+    if let Some(state) = query_state {
+        QueryStateRef::try_for_topology(state.atoms(), state.bonds(), &topology)?;
+    }
     let old_atom_count = topology.atoms.len();
     let old_bond_count = topology.bonds.len();
     let mut selected = selected_atoms(&topology, params.only_on_atoms.as_deref())?;
@@ -544,7 +586,9 @@ pub fn add_hydrogens_topology(
         .collect::<Vec<_>>();
     if params.skip_queries {
         for atom_index in 0..old_atom_count {
-            if selected[atom_index] && is_query_atom(&topology, AtomId::new(atom_index)) {
+            if selected[atom_index]
+                && is_query_atom(&topology, AtomId::new(atom_index), query_state)
+            {
                 selected[atom_index] = false;
             }
         }
@@ -1978,38 +2022,36 @@ fn append_hydrogen(
     });
 }
 
-fn is_query_atom(topology: &TopologyBlock, atom: AtomId) -> bool {
+fn is_query_atom(
+    topology: &TopologyBlock,
+    atom: AtomId,
+    query_state: Option<QueryStateRef<'_>>,
+) -> bool {
     // BEGIN RDKIT CPP FUNCTION isQueryAtom
-    // RDKit✔️❌: bool isQueryAtom(const RWMol &mol, const Atom &atom) {
-    // RDKit✔️❌:   if (atom.hasQuery()) {
-    // RDKit✔️❌:     return true;
-    // RDKit✔️❌:   }
-    // RDKit✔️❌:   for (const auto bnd : mol.atomBonds(&atom)) {
-    // RDKit✔️❌:     if (bnd->hasQuery()) {
-    // RDKit✔️❌:       return true;
-    // RDKit✔️❌:     }
-    // RDKit✔️❌:   }
-    // RDKit✔️❌:   return false;
-    // RDKit✔️❌: }
+    // RDKit✔️✔️: bool isQueryAtom(const RWMol &mol, const Atom &atom) {
+    // RDKit✔️✔️:   if (atom.hasQuery()) {
+    // RDKit✔️✔️:     return true;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   for (const auto bnd : mol.atomBonds(&atom)) {
+    // RDKit✔️✔️:     if (bnd->hasQuery()) {
+    // RDKit✔️✔️:       return true;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   return false;
+    // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION isQueryAtom
-    // Query presence is represented by the concrete molfile marker properties
-    // at this topology boundary. BTree property lookup is logarithmic instead
-    // of RDKit's direct query-pointer check, so the second marker is not parity.
-    topology.atoms[atom.index()]
-        .prop("_MolFileAtomQuery")
-        .is_some()
-        || topology
-            .adjacency
-            .neighbors_of(atom.index())
-            .iter()
-            .any(|neighbor| {
-                topology.bonds[neighbor.bond.index()]
-                    .prop("_MolFileBondQuery")
-                    .is_some()
-                    || topology.bonds[neighbor.bond.index()]
-                        .prop("_MolFileBondQueryComplex")
-                        .is_some()
-            })
+    // Behavior review: a typed Explicit row is the source query dynamic type;
+    // carrier-derived rows and the None path are ordinary source values.
+    // Complexity review: one O(1) atom test plus the source-shaped incident
+    // bond scan, with O(1) identity checks and no allocation.
+    query_state.is_some_and(|state| {
+        state.atom_has_query(atom)
+            || topology
+                .adjacency
+                .neighbors_of(atom.index())
+                .iter()
+                .any(|neighbor| state.bond_has_query(neighbor.bond))
+    })
 }
 
 /// Apply the default RemoveHs operation to detached blocks.
@@ -2043,13 +2085,29 @@ pub fn remove_hydrogens_impl(
 
 /// Apply the detached RemoveHs candidate selection and topology compaction.
 pub fn remove_hydrogens_with_params(
+    topology: TopologyBlock,
+    coordinates: CoordinateBlock,
+    properties: MoleculeProperties,
+    params: &RemoveHsParams,
+) -> Result<RemoveHydrogensResult, HydrogenError> {
+    remove_hydrogens_with_query_state(topology, coordinates, properties, params, None)
+}
+
+/// Internal typed-query RemoveHs owner.
+#[doc(hidden)]
+pub fn remove_hydrogens_with_query_state(
     mut topology: TopologyBlock,
     mut coordinates: CoordinateBlock,
     mut properties: MoleculeProperties,
     params: &RemoveHsParams,
+    query_state: Option<QueryStateRef<'_>>,
 ) -> Result<RemoveHydrogensResult, HydrogenError> {
     validate_blocks(&topology, &coordinates)?;
     validate_property_lists(&properties, topology.atoms.len(), topology.bonds.len())?;
+    if let Some(state) = query_state {
+        QueryStateRef::try_for_topology(state.atoms(), state.bonds(), &topology)?;
+    }
+    let mut query_rows = query_state.map(|state| (state.atoms().to_vec(), state.bonds().to_vec()));
     let original_atom_count = topology.atoms.len();
     let original_bond_count = topology.bonds.len();
     let mut mapping = TopologyMapping::identity(original_atom_count, original_bond_count);
@@ -2090,7 +2148,12 @@ pub fn remove_hydrogens_with_params(
         preliminary_params.sanitize = false;
         let intermediate_atom_count = topology.atoms.len();
         let intermediate_bond_count = topology.bonds.len();
-        let preliminary = remove_hydrogens_pass(topology, &mut properties, &preliminary_params)?;
+        let pass_state = query_rows
+            .as_ref()
+            .map(|(atoms, bonds)| QueryStateRef::try_for_topology(atoms, bonds, &topology))
+            .transpose()?;
+        let preliminary =
+            remove_hydrogens_pass(topology, &mut properties, &preliminary_params, pass_state)?;
         mapping = compose_topology_mappings(
             &mapping,
             &preliminary.mapping,
@@ -2102,12 +2165,17 @@ pub fn remove_hydrogens_with_params(
             preliminary.topology.bonds.len(),
         )?;
         topology = preliminary.topology;
+        query_rows = preliminary.query_rows;
         warnings.extend(preliminary.warnings);
     }
 
     let intermediate_atom_count = topology.atoms.len();
     let intermediate_bond_count = topology.bonds.len();
-    let final_pass = remove_hydrogens_pass(topology, &mut properties, params)?;
+    let pass_state = query_rows
+        .as_ref()
+        .map(|(atoms, bonds)| QueryStateRef::try_for_topology(atoms, bonds, &topology))
+        .transpose()?;
+    let final_pass = remove_hydrogens_pass(topology, &mut properties, params, pass_state)?;
     mapping = compose_topology_mappings(
         &mapping,
         &final_pass.mapping,
@@ -2119,7 +2187,12 @@ pub fn remove_hydrogens_with_params(
         final_pass.topology.bonds.len(),
     )?;
     topology = final_pass.topology;
+    query_rows = final_pass.query_rows;
     warnings.extend(final_pass.warnings);
+
+    if let Some((atoms, bonds)) = query_rows.as_ref() {
+        QueryStateRef::try_for_topology(atoms, bonds, &topology)?;
+    }
 
     coordinates.remap_topology(&mapping.retained_atom_indices());
     properties.remap_topology(mapping.atoms().new_to_old(), mapping.bonds().new_to_old());
@@ -2147,12 +2220,14 @@ struct RemoveHydrogensPassResult {
     topology: TopologyBlock,
     mapping: TopologyMapping,
     warnings: Vec<HydrogenWarning>,
+    query_rows: Option<(Vec<QueryAtom>, Vec<QueryBond>)>,
 }
 
 fn remove_hydrogens_pass(
     topology: TopologyBlock,
     properties: &mut MoleculeProperties,
     params: &RemoveHsParams,
+    query_state: Option<QueryStateRef<'_>>,
 ) -> Result<RemoveHydrogensPassResult, HydrogenError> {
     // BEGIN RDKIT CPP FUNCTION MolOps::removeHs single-pass state orchestration
     // RDKit✔️❌:   for (auto atom : mol.atoms()) {
@@ -2221,7 +2296,8 @@ fn remove_hydrogens_pass(
     let old_bond_count = topology.bonds.len();
     let valence =
         assign_valence_with_options_for_topology(&topology, ValenceModel::RdkitLike, false)?;
-    let (atoms_to_remove, warnings) = remove_hydrogen_candidates_with_warnings(&topology, params);
+    let (atoms_to_remove, warnings) =
+        remove_hydrogen_candidates_with_warnings(&topology, params, query_state);
     let removed_any = !atoms_to_remove.is_empty();
     let (mut topology, mapping) = if removed_any {
         let prepared =
@@ -2238,9 +2314,29 @@ fn remove_hydrogens_pass(
         )
     };
 
+    // Query rows follow the same authoritative compaction before any later
+    // source stage can inspect atom or bond query identity.
+    let mut query_rows = query_state
+        .map(|state| remap_query_rows(state, &topology, &mapping))
+        .transpose()?;
+
     clear_remove_hydrogen_computed_properties(&mut topology, properties);
     if removed_any && params.remove_nonimplicit && params.sanitize {
-        topology = sanitize_topology(&topology, &SanitizeParams::default())?.topology;
+        let sanitize_state = query_rows
+            .as_ref()
+            .map(|(atoms, bonds)| QueryStateRef::try_for_topology(atoms, bonds, &topology))
+            .transpose()?;
+        topology = sanitize_topology_with_query_state(
+            &topology,
+            &SanitizeParams::default(),
+            sanitize_state,
+        )?
+        .topology;
+        if let Some((atoms, bonds)) = query_rows.as_ref() {
+            let state = QueryStateRef::try_for_topology(atoms, bonds, &topology)?;
+            let identity = TopologyMapping::identity(topology.atoms.len(), topology.bonds.len());
+            query_rows = Some(remap_query_rows(state, &topology, &identity)?);
+        }
     }
     if removed_any {
         normalize_removed_hydrogen_chirality(&mut topology);
@@ -2256,6 +2352,7 @@ fn remove_hydrogens_pass(
         topology,
         mapping,
         warnings,
+        query_rows,
     })
 }
 
@@ -2476,12 +2573,24 @@ pub fn remove_hydrogen_candidates(
     topology: &TopologyBlock,
     params: &RemoveHsParams,
 ) -> Vec<AtomId> {
-    remove_hydrogen_candidates_with_warnings(topology, params).0
+    remove_hydrogen_candidates_with_warnings(topology, params, None).0
+}
+
+/// Internal typed-query candidate owner.
+#[doc(hidden)]
+#[must_use]
+pub fn remove_hydrogen_candidates_with_query_state(
+    topology: &TopologyBlock,
+    params: &RemoveHsParams,
+    query_state: Option<QueryStateRef<'_>>,
+) -> Vec<AtomId> {
+    remove_hydrogen_candidates_with_warnings(topology, params, query_state).0
 }
 
 fn remove_hydrogen_candidates_with_warnings(
     topology: &TopologyBlock,
     params: &RemoveHsParams,
+    query_state: Option<QueryStateRef<'_>>,
 ) -> (Vec<AtomId>, Vec<HydrogenWarning>) {
     // BEGIN RDKIT CPP FUNCTION removeHs candidate traversal
     // RDKit✔️✔️: boost::dynamic_bitset<> atomsToRemove{mol.getNumAtoms(), 0};
@@ -2501,7 +2610,7 @@ fn remove_hydrogen_candidates_with_warnings(
     let mut selected = vec![false; topology.atoms.len()];
     let mut warnings = Vec::new();
     for atom in &topology.atoms {
-        let decision = should_remove_hydrogen(topology, atom.id(), params);
+        let decision = should_remove_hydrogen(topology, atom.id(), params, query_state);
         if decision.remove {
             selected[atom.id().index()] = true;
         }
@@ -3422,6 +3531,7 @@ fn should_remove_hydrogen(
     topology: &TopologyBlock,
     atom: AtomId,
     params: &RemoveHsParams,
+    query_state: Option<QueryStateRef<'_>>,
 ) -> HydrogenCandidateDecision {
     // BEGIN RDKIT CPP FUNCTION shouldRemoveH
     // RDKit✔️❌: bool shouldRemoveH(const RWMol &mol, const Atom *atom,
@@ -3556,14 +3666,20 @@ fn should_remove_hydrogen(
     // RDKit✔️❌:   return removeIt;
     // RDKit✔️❌: }
     // END RDKIT CPP FUNCTION shouldRemoveH
-    // COSMolKit models Atom::hasQuery through the preserved molfile atom-query
-    // property. Its BTree lookup is logarithmic rather than RDKit's direct
-    // query-pointer check, so the performance axis remains non-parity.
     let atom_data = &topology.atoms[atom.index()];
     if atom_data.atomic_number() != 1 {
         return HydrogenCandidateDecision::keep(None);
     }
-    if !params.remove_with_query && atom_data.prop("_MolFileAtomQuery").is_some() {
+    // BEGIN RDKIT CPP FUNCTION shouldRemoveH typed query guard
+    // RDKit✔️✔️:   if (!ps.removeWithQuery && atom->hasQuery()) {
+    // RDKit✔️✔️:     return false;
+    // RDKit✔️✔️:   }
+    // END RDKIT CPP FUNCTION shouldRemoveH typed query guard
+    // Behavior review: only the hydrogen atom's typed source dynamic type is
+    // tested here; incident QueryBonds deliberately do not protect it.
+    // Complexity review: the typed identity lookup is allocation-free O(1),
+    // matching the source pointer test.
+    if !params.remove_with_query && query_state.is_some_and(|state| state.atom_has_query(atom)) {
         return HydrogenCandidateDecision::keep(None);
     }
     let neighbors = topology.adjacency.neighbors_of(atom.index());
@@ -3789,6 +3905,133 @@ fn filter_sgroup_emptying_hydrogens(topology: &TopologyBlock, selected: &mut [bo
 #[cfg(test)]
 mod tests {
     use super::*;
+    use cosmolkit_model::{
+        AtomQueryPredicate, BondQueryPredicate, QueryAtom, QueryBond, QueryNode, QueryStateRef,
+    };
+
+    fn q05_query_rows(
+        topology: &TopologyBlock,
+        explicit_atoms: &[usize],
+        explicit_bonds: &[usize],
+    ) -> (Vec<QueryAtom>, Vec<QueryBond>) {
+        let atoms = topology
+            .atoms
+            .iter()
+            .cloned()
+            .enumerate()
+            .map(|(index, atom)| {
+                let predicate =
+                    QueryNode::predicate(AtomQueryPredicate::AtomicNumber(atom.atomic_number()));
+                if explicit_atoms.contains(&index) {
+                    QueryAtom::from_parts(atom, predicate)
+                } else {
+                    QueryAtom::from_carrier_parts(atom, predicate)
+                }
+            })
+            .collect();
+        let bonds = topology
+            .bonds
+            .iter()
+            .cloned()
+            .enumerate()
+            .map(|(index, bond)| {
+                let predicate = QueryNode::predicate(if explicit_bonds.contains(&index) {
+                    BondQueryPredicate::Any
+                } else {
+                    BondQueryPredicate::Order(bond.order())
+                });
+                if explicit_bonds.contains(&index) {
+                    QueryBond::from_parts(bond, predicate)
+                } else {
+                    QueryBond::from_carrier_parts(bond, predicate)
+                }
+            })
+            .collect();
+        (atoms, bonds)
+    }
+
+    #[test]
+    fn q05_hydrogen_query_identity_retains_explicit_query_h_and_removes_carrier_h() {
+        let topology = bonded_ch_topology();
+        let (explicit_atoms, explicit_bonds) = q05_query_rows(&topology, &[1], &[0]);
+        let explicit_state =
+            QueryStateRef::try_for_topology(&explicit_atoms, &explicit_bonds, &topology).unwrap();
+        assert!(explicit_state.atom_has_query(AtomId::new(1)));
+        assert_eq!(
+            remove_hydrogen_candidates_with_query_state(
+                &topology,
+                &RemoveHsParams::default(),
+                Some(explicit_state),
+            ),
+            Vec::<AtomId>::new(),
+            "RDKit shouldRemoveH retains an explicit QueryAtom hydrogen"
+        );
+
+        let (carrier_atoms, carrier_bonds) = q05_query_rows(&topology, &[], &[]);
+        let carrier_state =
+            QueryStateRef::try_for_topology(&carrier_atoms, &carrier_bonds, &topology).unwrap();
+        assert!(!carrier_state.atom_has_query(AtomId::new(1)));
+        assert_eq!(
+            remove_hydrogen_candidates_with_query_state(
+                &topology,
+                &RemoveHsParams::default(),
+                Some(carrier_state),
+            ),
+            vec![AtomId::new(1)],
+            "an ordinary hydrogen represented by a carrier-derived row remains removable"
+        );
+    }
+
+    #[test]
+    fn q05_hydrogen_query_identity_add_hs_skips_explicit_atom_query() {
+        let topology = explicit_h_topology();
+        let (query_atoms, query_bonds) = q05_query_rows(&topology, &[0], &[]);
+        let state = QueryStateRef::try_for_topology(&query_atoms, &query_bonds, &topology).unwrap();
+        assert!(state.atom_has_query(AtomId::new(0)));
+
+        let result = add_hydrogens_topology_with_query_state(
+            topology,
+            &AddHsParams {
+                explicit_only: true,
+                skip_queries: true,
+                ..Default::default()
+            },
+            Some(state),
+        )
+        .unwrap();
+        assert_eq!(
+            result.topology.atoms.len(),
+            1,
+            "RDKit AddHs(skipQueries=true) must not add H to an explicit QueryAtom"
+        );
+    }
+
+    #[test]
+    fn q05_hydrogen_query_identity_add_hs_skips_explicit_incident_bond_query() {
+        let mut topology = bonded_ch_topology();
+        topology.atoms[0].set_explicit_hydrogens(1);
+        let (query_atoms, query_bonds) = q05_query_rows(&topology, &[], &[0]);
+        let state = QueryStateRef::try_for_topology(&query_atoms, &query_bonds, &topology).unwrap();
+        assert!(!state.atom_has_query(AtomId::new(0)));
+        assert!(state.bond_has_query(BondId::new(0)));
+
+        let result = add_hydrogens_topology_with_query_state(
+            topology,
+            &AddHsParams {
+                explicit_only: true,
+                skip_queries: true,
+                only_on_atoms: Some(vec![AtomId::new(0)]),
+                ..Default::default()
+            },
+            Some(state),
+        )
+        .unwrap();
+        assert_eq!(
+            result.topology.atoms.len(),
+            2,
+            "RDKit AddHs(skipQueries=true) must skip an atom incident to an explicit QueryBond"
+        );
+    }
 
     fn one_hydrogen_addition_result() -> AddHydrogensTopologyResult {
         add_hydrogens_topology(

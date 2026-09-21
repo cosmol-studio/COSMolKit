@@ -847,7 +847,7 @@ fn validate_valence(
     Ok(())
 }
 
-fn cleanup_stereo_groups(topology: &mut TopologyBlock) {
+pub(crate) fn cleanup_stereo_groups(topology: &mut TopologyBlock) {
     // Complete pinned source: Chirality.cpp::cleanupStereoGroups.
     // RDKit✔️✔️: void cleanupStereoGroups(ROMol &mol) {
     // RDKit✔️✔️:   std::vector<StereoGroup> newsgs;

@@ -12,9 +12,9 @@ readme = "../cosmolkit/README.md"
 documentation = "https://docs.rs/cosmolkit"
 
 [dependencies]
-cosmolkit-core = { version = "0.5.0-rc.3", path = "../cosmolkit-core" }
-cosmolkit-model = { version = "0.5.0-rc.3", path = "../cosmolkit-model" }
+cosmolkit-core = { version = "0.5.0-rc.4", path = "../cosmolkit-core" }
+cosmolkit-model = { version = "0.5.0-rc.4", path = "../cosmolkit-model" }
 thiserror = "2.0.18"
 
 [dev-dependencies]
-cosmolkit-smiles = { version = "0.5.0-rc.3", path = "../cosmolkit-smiles" }
+cosmolkit-smiles = { version = "0.5.0-rc.4", path = "../cosmolkit-smiles" }

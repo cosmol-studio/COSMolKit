@@ -247,7 +247,7 @@ fn validation_reports_every_substance_group_reference_family() {
         SubstanceGroup::new(SubstanceGroupId::new(0), SubstanceGroupKind::Data).with_cstates(vec![
             SGroupCState {
                 bond: invalid_bond,
-                vector: [1.0, 2.0],
+                vector: [1.0, 2.0, 3.0],
             },
         ]),
     ] {
@@ -559,7 +559,7 @@ fn batch_remaps_retained_sgroups_and_drops_direct_and_transitive_dependents() {
             }])
             .with_cstates(vec![SGroupCState {
                 bond: bond_id(2),
-                vector: [3.0, 4.0],
+                vector: [3.0, 4.0, 5.0],
             }]),
         SubstanceGroup::new(SubstanceGroupId::new(1), SubstanceGroupKind::Superatom)
             .with_atoms(vec![atom_id(1)]),
@@ -582,6 +582,115 @@ fn batch_remaps_retained_sgroups_and_drops_direct_and_transitive_dependents() {
     assert_eq!(retained.attach_points()[0].leaving_atom, Some(atom_id(2)));
     assert_eq!(retained.cstates()[0].bond, bond_id(0));
     result.validate().unwrap();
+}
+
+#[test]
+fn typed_sgroup_bond_references_validate_and_preserve_order_through_compaction() {
+    let mut source = topology(6, &[(0, 1), (1, 2), (2, 3), (3, 4)]);
+    source.substance_groups = vec![
+        SubstanceGroup::new(
+            SubstanceGroupId::new(0),
+            SubstanceGroupKind::StructuralRepeatUnit,
+        )
+        .with_atoms(vec![atom_id(3), atom_id(4)])
+        .with_bonds(vec![bond_id(2), bond_id(3)])
+        .with_head_crossing_bonds(vec![bond_id(3), bond_id(2), bond_id(3)])
+        .with_crossing_bond_correspondence(vec![bond_id(2), bond_id(3), bond_id(2)])
+        .with_cstates(vec![SGroupCState {
+            bond: bond_id(3),
+            vector: [1.0, 2.0, 3.0],
+        }]),
+    ];
+    source
+        .validate()
+        .expect("all typed references are in range");
+
+    let mut compact = source.begin_batch_edit().expect("valid source");
+    compact.remove_atom(atom_id(0)).expect("valid removal");
+    let (compacted, mapping) = compact.finish().expect("surviving references remap");
+    assert_eq!(
+        mapping.bonds().old_to_new(),
+        &[None, Some(bond_id(0)), Some(bond_id(1)), Some(bond_id(2))]
+    );
+    let group = &compacted.substance_groups[0];
+    assert_eq!(group.bonds(), &[bond_id(1), bond_id(2)]);
+    assert_eq!(
+        group.head_crossing_bonds(),
+        &[bond_id(2), bond_id(1), bond_id(2)]
+    );
+    assert_eq!(
+        group.crossing_bond_correspondence(),
+        &[bond_id(1), bond_id(2), bond_id(1)]
+    );
+    assert_eq!(group.cstates()[0].bond, bond_id(2));
+    compacted.validate().expect("remapped topology is valid");
+
+    let isolated_atom_order = [
+        atom_id(5),
+        atom_id(0),
+        atom_id(1),
+        atom_id(2),
+        atom_id(3),
+        atom_id(4),
+    ];
+    let (reordered, _) = source
+        .reordered_atoms(&isolated_atom_order)
+        .expect("atom-only reorder preserves the bond table");
+    assert_eq!(
+        reordered.substance_groups[0].head_crossing_bonds(),
+        &[bond_id(3), bond_id(2), bond_id(3)]
+    );
+    assert_eq!(
+        reordered.substance_groups[0].crossing_bond_correspondence(),
+        &[bond_id(2), bond_id(3), bond_id(2)]
+    );
+}
+
+#[test]
+fn typed_sgroup_bond_reference_removal_drops_the_complete_group() {
+    for group in [
+        SubstanceGroup::new(SubstanceGroupId::new(0), SubstanceGroupKind::Data)
+            .with_atoms(vec![atom_id(0)])
+            .with_head_crossing_bonds(vec![bond_id(1)]),
+        SubstanceGroup::new(SubstanceGroupId::new(0), SubstanceGroupKind::Data)
+            .with_atoms(vec![atom_id(0)])
+            .with_crossing_bond_correspondence(vec![bond_id(1)]),
+    ] {
+        let mut source = topology(4, &[(0, 1), (1, 2), (2, 3)]);
+        source.substance_groups = vec![group];
+        source.validate().expect("reference begins valid");
+        let mut edit = source.begin_batch_edit().expect("valid source");
+        edit.remove_bond(bond_id(1)).expect("valid bond removal");
+        let (result, _) = edit.finish().expect("group removal is atomic");
+        assert!(result.substance_groups.is_empty());
+        result.validate().expect("no stale reference survives");
+    }
+}
+
+#[test]
+fn typed_sgroup_bond_references_reject_each_out_of_range_category() {
+    let invalid = bond_id(1);
+    for group in [
+        SubstanceGroup::new(SubstanceGroupId::new(0), SubstanceGroupKind::Data)
+            .with_head_crossing_bonds(vec![invalid]),
+        SubstanceGroup::new(SubstanceGroupId::new(0), SubstanceGroupKind::Data)
+            .with_crossing_bond_correspondence(vec![invalid]),
+    ] {
+        let result = TopologyBlock::try_from_parts(
+            vec![atom(0), atom(1)],
+            vec![bond(0, 0, 1)],
+            vec![group],
+            vec![],
+        );
+        assert_eq!(
+            result,
+            Err(TopologyValidationError::SubstanceGroupBondOutOfRange {
+                sgroup: SubstanceGroupId::new(0),
+                bond: invalid,
+                bond_count: 1,
+            })
+        );
+    }
 }
 
 #[test]
@@ -679,7 +788,7 @@ fn reorder_remaps_all_references_preserves_bond_order_and_reports_every_permutat
         }])
         .with_cstates(vec![SGroupCState {
             bond: bond_id(1),
-            vector: [1.0, 0.0],
+            vector: [1.0, 0.0, -0.0],
         }]);
     let source = TopologyBlock::try_from_parts(
         atoms,

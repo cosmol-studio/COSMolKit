@@ -442,6 +442,8 @@ impl TopologyBlock {
                 .bonds()
                 .iter()
                 .chain(group.cstates().iter().map(|state| &state.bond))
+                .chain(group.head_crossing_bonds())
+                .chain(group.crossing_bond_correspondence())
             {
                 if bond.index() >= bond_count {
                     return Err(TopologyValidationError::SubstanceGroupBondOutOfRange {

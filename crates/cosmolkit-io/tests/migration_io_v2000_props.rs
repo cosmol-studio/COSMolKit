@@ -399,8 +399,11 @@ fn every_typed_v2000_sgroup_record_resolves_ids_and_ordered_state() {
     assert_eq!(sup.subtype(), Some("ALT"));
     assert_eq!(sup.connection(), Some(&SGroupConnection::HeadToTail));
     assert_eq!(sup.expansion_state(), Some("E"));
-    assert_eq!(sup.display().unwrap().brackets[0].p1, [0.0, 1.0]);
-    assert_eq!(sup.cstates()[0].vector, [0.5, 0.25]);
+    assert_eq!(
+        sup.display().unwrap().brackets[0].points,
+        [[0.0, 1.0, 0.0], [2.0, 3.0, 0.0], [0.0, 0.0, 0.0]]
+    );
+    assert_eq!(sup.cstates()[0].vector, [0.5, 0.25, 0.0]);
     assert_eq!(sup.attach_points()[0].atom, AtomId::new(0));
     assert_eq!(sup.attach_points()[0].leaving_atom, Some(AtomId::new(1)));
 

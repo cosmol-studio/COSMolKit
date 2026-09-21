@@ -2196,12 +2196,25 @@ fn is_linear(left: [f64; 3], right: [f64; 3]) -> bool {
 }
 
 fn dihedral(i: [f64; 3], j: [f64; 3], k: [f64; 3], l: [f64; 3]) -> f64 {
-    let ij = sub(j, i);
-    let jk = sub(k, j);
-    let kl = sub(l, k);
-    let first = cross(ij, jk);
-    let second = cross(jk, kl);
-    let m = cross(first, jk);
-    -(dot(m, second) / (norm_squared(second) * norm_squared(m)).sqrt())
-        .atan2(dot(first, second) / (norm_squared(first) * norm_squared(second)).sqrt())
+    // BEGIN RDKIT CPP FUNCTION computeDihedralAngle
+    // RDKit✔️✔️: Point3D begEndVec = pt3 - pt2;
+    // RDKit✔️✔️: Point3D begNbrVec = pt1 - pt2;
+    // RDKit✔️✔️: Point3D crs1 = begNbrVec.crossProduct(begEndVec);
+    // RDKit✔️✔️: Point3D endNbrVec = pt4 - pt3;
+    // RDKit✔️✔️: Point3D crs2 = endNbrVec.crossProduct(begEndVec);
+    // RDKit✔️✔️: double ang = crs1.angleTo(crs2);
+    // RDKit✔️✔️: return ang;
+    // END RDKIT CPP FUNCTION computeDihedralAngle
+    // Behavior review: unlike computeSignedDihedralAngle, this source helper
+    // returns the unsigned angle in [0, pi]; clamping only contains floating
+    // roundoff before acos and does not alter an in-range cosine.
+    // Complexity review: two cross products, one dot product and one acos are
+    // the same constant-time arithmetic shape as Point3D::angleTo.
+    let begin_end = sub(k, j);
+    let begin_neighbor = sub(i, j);
+    let first = cross(begin_neighbor, begin_end);
+    let end_neighbor = sub(l, k);
+    let second = cross(end_neighbor, begin_end);
+    let cosine = dot(first, second) / (norm_squared(first) * norm_squared(second)).sqrt();
+    cosine.clamp(-1.0, 1.0).acos()
 }

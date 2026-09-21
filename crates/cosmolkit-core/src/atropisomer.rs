@@ -18,6 +18,26 @@ pub enum AtropisomerConformer<'a> {
     ThreeD(&'a Conformer3D),
 }
 
+fn conformer_is_3d(conformer: AtropisomerConformer<'_>) -> bool {
+    // BEGIN RDKIT CPP FUNCTION getBondFrameOfReference
+    // RDKit✔️✔️:   if (!conf->is3D()) {
+    // RDKit✔️✔️:     yAxis = RDGeom::Point3D(-xAxis.y, xAxis.x, 0);
+    // RDKit✔️✔️:     yAxis.normalize();
+    // RDKit✔️✔️:     zAxis = RDGeom::Point3D(0.0, 0.0, 1.0);
+    // RDKit✔️✔️:     return true;
+    // RDKit✔️✔️:   }
+    // END RDKIT CPP FUNCTION
+    // Behavior review: a Conformer3D is a lossless XYZ storage carrier, not
+    // proof that the source conformer flag is 3D. The independent is_3d bit
+    // selects the same source branch while all XYZ bits remain available.
+    // Complexity review: one enum match and one flag read are constant-time
+    // and introduce no allocation or coordinate projection.
+    match conformer {
+        AtropisomerConformer::TwoD(_) => false,
+        AtropisomerConformer::ThreeD(value) => value.is_3d(),
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AtropisomerRejectionKind {
     MissingCarrier,
@@ -342,7 +362,7 @@ fn frame_of_reference(bond: &Bond, conformer: AtropisomerConformer<'_>) -> Optio
         return None;
     }
     let x = normalized(axis);
-    if matches!(conformer, AtropisomerConformer::TwoD(_)) {
+    if !conformer_is_3d(conformer) {
         return Some(Frame {
             y: normalized([-x[1], x[0], 0.0]),
             z: [0.0, 0.0, 1.0],
@@ -526,17 +546,9 @@ fn validate_conformer(
         AtropisomerConformer::TwoD(value) => value
             .validate_for_atom_count(atom_count)
             .map_err(|source| AtropisomerError::InvalidCoordinates { source }),
-        AtropisomerConformer::ThreeD(value) => {
-            value
-                .validate_for_atom_count(atom_count)
-                .map_err(|source| AtropisomerError::InvalidCoordinates { source })?;
-            if !value.is_3d() {
-                return Err(AtropisomerError::ConformerNotThreeDimensional {
-                    conformer: value.id(),
-                });
-            }
-            Ok(())
-        }
+        AtropisomerConformer::ThreeD(value) => value
+            .validate_for_atom_count(atom_count)
+            .map_err(|source| AtropisomerError::InvalidCoordinates { source }),
     }
 }
 
@@ -773,7 +785,7 @@ fn detect_one(
         end_vector(topology, &ends[0], frame, conformer)?,
         end_vector(topology, &ends[1], frame, conformer)?,
     ];
-    if matches!(conformer, AtropisomerConformer::TwoD(_)) {
+    if !conformer_is_3d(conformer) {
         for (index, end) in ends.iter().enumerate() {
             match interpreted_end_direction(topology, end, &no_updates)? {
                 BondDirection::BeginWedge => {
@@ -1031,11 +1043,10 @@ pub fn cleanup_atropisomer_stereo_groups(
         if bonds.is_empty() {
             groups.push(group.clone());
         } else {
-            let mut replacement = StereoGroup::new(group.kind(), atoms, bonds);
-            if let Some(id) = group.id() {
-                replacement = replacement.with_id(id);
-            }
-            groups.push(replacement);
+            // The pinned three-argument constructor does not propagate the
+            // source group's read id; preserving it here would differ from
+            // `cleanupAtropisomerStereoGroups()`.
+            groups.push(StereoGroup::new(group.kind(), atoms, bonds));
         }
     }
     Ok(StereoGroupAssignment { groups })
@@ -1315,7 +1326,7 @@ fn wedge_one(
     }
     let mode = match conformer {
         None => WedgeMode::NoConformer,
-        Some(value @ AtropisomerConformer::TwoD(_)) => {
+        Some(value) if !conformer_is_3d(value) => {
             let frame =
                 frame_of_reference(axial, value).ok_or(AtropisomerRejectionKind::ZeroLengthAxis)?;
             WedgeMode::TwoD {
@@ -1325,7 +1336,7 @@ fn wedge_one(
                 ],
             }
         }
-        Some(value @ AtropisomerConformer::ThreeD(_)) => WedgeMode::ThreeD(value),
+        Some(value) => WedgeMode::ThreeD(value),
     };
     // The three source functions first reuse every wedge/hash carrier whose
     // narrow end is the axial endpoint.

@@ -5,7 +5,10 @@
 
 use std::collections::BTreeSet;
 
-use cosmolkit_model::{Atom, AtomId, Bond, BondId, TopologyBlock, TopologyValidationError};
+use cosmolkit_model::{
+    Atom, AtomId, Bond, BondId, QueryStateError, QueryStateRef, TopologyBlock,
+    TopologyValidationError,
+};
 use cosmolkit_types::{BondOrder, Hybridization};
 
 use crate::{
@@ -46,6 +49,8 @@ pub struct AromaticityAssignment {
 pub enum AromaticityError {
     #[error("invalid topology: {0}")]
     InvalidTopology(#[from] TopologyValidationError),
+    #[error(transparent)]
+    InvalidQueryState(#[from] QueryStateError),
     #[error("ring information is not initialized")]
     RingInfoNotInitialized,
     #[error(
@@ -418,7 +423,7 @@ fn incident_multiple_bond(
     Ok(valence_row(valence, atom_id)?.0 != degree)
 }
 
-fn is_bond_order_query(_bond: &Bond) -> bool {
+fn is_bond_order_query(bond: &Bond, query_state: Option<QueryStateRef<'_>>) -> bool {
     // BEGIN RDKIT CPP FUNCTION isBondOrderQuery
     // RDKit✔️✔️: bool isBondOrderQuery(const Bond *bond) {
     // RDKit✔️✔️:   if (bond->hasQuery()) {
@@ -432,16 +437,31 @@ fn is_bond_order_query(_bond: &Bond) -> bool {
     // RDKit✔️✔️:   return false;
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION isBondOrderQuery
-    // `TopologyBlock` contains concrete `Bond` values. Query bonds belong to
-    // `QueryGraph`, so the source `hasQuery()` branch is absent from this
-    // function's modeled state space rather than silently approximated.
-    false
+    // Behavior review: Explicit typed rows reproduce `hasQuery()`. The shared
+    // traversal reproduces root and complex order-query recognition; Any and
+    // unrelated explicit queries remain false. CarrierDerived rows are source
+    // ordinary bonds despite uniform Rust query-row storage.
+    // Complexity review: O(1) typed-row lookup plus O(query nodes) recursive
+    // inspection matches the source and allocates no temporary tree.
+    query_state.is_some_and(|state| {
+        state.bond_has_query(bond.id())
+            && crate::query_ops::bond_predicate_is_order_query(state.bond_predicate(bond.id()))
+    })
 }
 
 pub(crate) fn count_atom_electrons(
     topology: &TopologyBlock,
     valence: &ValenceAssignment,
     atom_id: AtomId,
+) -> Result<i32, AromaticityError> {
+    count_atom_electrons_with_query_state(topology, valence, atom_id, None)
+}
+
+fn count_atom_electrons_with_query_state(
+    topology: &TopologyBlock,
+    valence: &ValenceAssignment,
+    atom_id: AtomId,
+    query_state: Option<QueryStateRef<'_>>,
 ) -> Result<i32, AromaticityError> {
     // BEGIN RDKIT CPP FUNCTION MolOps::countAtomElec
     // RDKit✔️✔️: int countAtomElec(const Atom *at) {
@@ -518,7 +538,9 @@ pub(crate) fn count_atom_electrons(
         })?;
     for neighbor in topology.adjacency.neighbors_of(atom_id.index()) {
         let incident = bond(topology, neighbor.bond)?;
-        if bond_valence_contrib(incident, atom_id)? == 0.0 && !is_bond_order_query(incident) {
+        if bond_valence_contrib(incident, atom_id)? == 0.0
+            && !is_bond_order_query(incident, query_state)
+        {
             degree = degree
                 .checked_sub(1)
                 .ok_or(AromaticityError::IntegerOverflow {
@@ -737,6 +759,24 @@ fn atom_donor_type(
     atom_id: AtomId,
     exocyclic_bonds_steal_electrons: bool,
 ) -> Result<ElectronDonorType, AromaticityError> {
+    atom_donor_type_with_query_state(
+        topology,
+        rings,
+        valence,
+        atom_id,
+        exocyclic_bonds_steal_electrons,
+        None,
+    )
+}
+
+fn atom_donor_type_with_query_state(
+    topology: &TopologyBlock,
+    rings: &RingInfo,
+    valence: &ValenceAssignment,
+    atom_id: AtomId,
+    exocyclic_bonds_steal_electrons: bool,
+    query_state: Option<QueryStateRef<'_>>,
+) -> Result<ElectronDonorType, AromaticityError> {
     // BEGIN RDKIT CPP FUNCTION getAtomDonorTypeArom
     // RDKit✔️✔️: ElectronDonorType getAtomDonorTypeArom(
     // RDKit✔️✔️:     const Atom *at, bool exocyclicBondsStealElectrons = true) {
@@ -823,7 +863,8 @@ fn atom_donor_type(
             },
         );
     }
-    let mut electrons = count_atom_electrons(topology, valence, atom_id)?;
+    let mut electrons =
+        count_atom_electrons_with_query_state(topology, valence, atom_id, query_state)?;
     let external = incident_noncyclic_multiple_bond(topology, rings, atom_id)?;
     let donor = if electrons < 0 {
         ElectronDonorType::None
@@ -1528,6 +1569,24 @@ fn aromaticity_helper(
     max_ring_size: usize,
     include_fused: bool,
 ) -> Result<AromaticityAssignment, AromaticityError> {
+    aromaticity_helper_with_query_state(
+        topology,
+        rings,
+        min_ring_size,
+        max_ring_size,
+        include_fused,
+        None,
+    )
+}
+
+fn aromaticity_helper_with_query_state(
+    topology: &TopologyBlock,
+    rings: &RingInfo,
+    min_ring_size: usize,
+    max_ring_size: usize,
+    include_fused: bool,
+    query_state: Option<QueryStateRef<'_>>,
+) -> Result<AromaticityAssignment, AromaticityError> {
     // BEGIN RDKIT CPP FUNCTION aromaticityHelper
     // RDKit✔️✔️: int aromaticityHelper(RWMol &mol, const VECT_INT_VECT &srings,
     // RDKit✔️✔️:                       unsigned int minRingSize, unsigned int maxRingSize,
@@ -1653,7 +1712,14 @@ fn aromaticity_helper(
                 continue;
             }
             seen[atom_id.index()] = true;
-            donors[atom_id.index()] = atom_donor_type(topology, rings, &valence, atom_id, true)?;
+            donors[atom_id.index()] = atom_donor_type_with_query_state(
+                topology,
+                rings,
+                &valence,
+                atom_id,
+                true,
+                query_state,
+            )?;
             candidates[atom_id.index()] = is_atom_candidate(
                 topology,
                 rings,
@@ -1721,6 +1787,14 @@ fn aromaticity_helper(
 fn mdl_aromaticity_helper(
     topology: &TopologyBlock,
     rings: &RingInfo,
+) -> Result<AromaticityAssignment, AromaticityError> {
+    mdl_aromaticity_helper_with_query_state(topology, rings, None)
+}
+
+fn mdl_aromaticity_helper_with_query_state(
+    topology: &TopologyBlock,
+    rings: &RingInfo,
+    query_state: Option<QueryStateRef<'_>>,
 ) -> Result<AromaticityAssignment, AromaticityError> {
     // BEGIN RDKIT CPP FUNCTION mdlAromaticityHelper
     // RDKit✔️✔️: int mdlAromaticityHelper(RWMol &mol, const VECT_INT_VECT &srings) {
@@ -1843,7 +1917,14 @@ fn mdl_aromaticity_helper(
                 continue;
             }
             seen[atom_id.index()] = true;
-            donors[atom_id.index()] = atom_donor_type(topology, rings, &valence, atom_id, false)?;
+            donors[atom_id.index()] = atom_donor_type_with_query_state(
+                topology,
+                rings,
+                &valence,
+                atom_id,
+                false,
+                query_state,
+            )?;
             if donors[atom_id.index()] != ElectronDonorType::One {
                 all_aromatic = false;
                 continue;
@@ -2267,6 +2348,14 @@ fn mmff94_aromaticity_helper(
     topology: &TopologyBlock,
     rings: &RingInfo,
 ) -> Result<AromaticityAssignment, AromaticityError> {
+    mmff94_aromaticity_helper_with_query_state(topology, rings, None)
+}
+
+fn mmff94_aromaticity_helper_with_query_state(
+    topology: &TopologyBlock,
+    rings: &RingInfo,
+    query_state: Option<QueryStateRef<'_>>,
+) -> Result<AromaticityAssignment, AromaticityError> {
     // BEGIN RDKIT CPP FUNCTION mmff94AromaticityHelper
     // RDKit✔️✔️: int mmff94AromaticityHelper(RWMol &mol, const VECT_INT_VECT &srings) {
     // RDKit✔️✔️:   // set aromaticity as done in MMFF94 init
@@ -2307,7 +2396,12 @@ fn mmff94_aromaticity_helper(
     validate_inputs(topology, rings)?;
     let mut working = topology.clone();
     if working.atoms.iter().any(Atom::is_aromatic) {
-        working = crate::kekulize(&working, &crate::KekulizeParams::default())?.topology;
+        working = crate::kekulize::kekulize_with_query_state(
+            &working,
+            &crate::KekulizeParams::default(),
+            query_state,
+        )?
+        .topology;
     }
     // The source's private `_MMFFSanitized` cache flag has no detached-model
     // meaning. Each call owns a fresh working topology, so the source's guarded
@@ -2339,6 +2433,16 @@ pub fn assign_aromaticity(
     topology: &TopologyBlock,
     rings: &RingInfo,
     params: &AromaticityParams,
+) -> Result<AromaticityAssignment, AromaticityError> {
+    assign_aromaticity_with_query_state(topology, rings, params, None)
+}
+
+#[doc(hidden)]
+pub fn assign_aromaticity_with_query_state(
+    topology: &TopologyBlock,
+    rings: &RingInfo,
+    params: &AromaticityParams,
+    query_state: Option<QueryStateRef<'_>>,
 ) -> Result<AromaticityAssignment, AromaticityError> {
     // BEGIN RDKIT CPP FUNCTION MolOps::setAromaticity
     // RDKit✔️✔️: int setAromaticity(RWMol &mol, AromaticityModel model, int (*func)(RWMol &)) {
@@ -2382,11 +2486,22 @@ pub fn assign_aromaticity(
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION MolOps::setAromaticity
     validate_inputs(topology, rings)?;
+    if let Some(state) = query_state {
+        QueryStateRef::try_for_topology(state.atoms(), state.bonds(), topology)?;
+    }
     let assignment = match params.model {
-        AromaticityModel::Rdkit => aromaticity_helper(topology, rings, 0, 0, true)?,
-        AromaticityModel::Simple => aromaticity_helper(topology, rings, 5, 6, false)?,
-        AromaticityModel::Mdl => mdl_aromaticity_helper(topology, rings)?,
-        AromaticityModel::Mmff94 => mmff94_aromaticity_helper(topology, rings)?,
+        AromaticityModel::Rdkit => {
+            aromaticity_helper_with_query_state(topology, rings, 0, 0, true, query_state)?
+        }
+        AromaticityModel::Simple => {
+            aromaticity_helper_with_query_state(topology, rings, 5, 6, false, query_state)?
+        }
+        AromaticityModel::Mdl => {
+            mdl_aromaticity_helper_with_query_state(topology, rings, query_state)?
+        }
+        AromaticityModel::Mmff94 => {
+            mmff94_aromaticity_helper_with_query_state(topology, rings, query_state)?
+        }
         AromaticityModel::Custom => {
             return Err(AromaticityError::UnsupportedModel {
                 model: AromaticityModel::Custom,
@@ -2459,7 +2574,10 @@ pub fn assign_aromaticity(
 mod tests {
     use super::*;
     use crate::RingFindType;
-    use cosmolkit_model::{AtomSpec, BondSpec};
+    use cosmolkit_model::{
+        AtomQueryPredicate, AtomSpec, BondQueryPredicate, BondSpec, QueryAtom, QueryBond,
+        QueryNode, QueryStateRef,
+    };
     use cosmolkit_types::Element;
 
     fn topology(atom_specs: Vec<AtomSpec>, bonds: Vec<(usize, usize, BondOrder)>) -> TopologyBlock {
@@ -2500,6 +2618,53 @@ mod tests {
         let mut rings = no_rings(topology);
         rings.add_ring(&[0, 1, 2], &[0, 1, 2]).unwrap();
         rings
+    }
+
+    #[test]
+    fn q05_core_sanitize_query_consumers_aromaticity_uses_typed_order_query_tree() {
+        let graph = topology(
+            vec![AtomSpec::new(Element::C), AtomSpec::new(Element::C)],
+            vec![(0, 1, BondOrder::Zero)],
+        );
+        let query_atoms = graph
+            .atoms
+            .iter()
+            .map(|carrier| {
+                QueryAtom::from_carrier_parts(
+                    carrier.clone(),
+                    QueryNode::predicate(AtomQueryPredicate::AtomicNumber(6)),
+                )
+            })
+            .collect::<Vec<_>>();
+        let explicit_order_bonds = vec![QueryBond::from_parts(
+            graph.bonds[0].clone(),
+            QueryNode::or(vec![
+                QueryNode::predicate(BondQueryPredicate::Order(BondOrder::Single)),
+                QueryNode::predicate(BondQueryPredicate::Order(BondOrder::Double)),
+            ]),
+        )];
+        let explicit_state =
+            QueryStateRef::try_for_topology(&query_atoms, &explicit_order_bonds, &graph).unwrap();
+        assert!(explicit_state.bond_has_query(BondId::new(0)));
+        assert!(is_bond_order_query(&graph.bonds[0], Some(explicit_state)));
+
+        let explicit_any_bonds = vec![QueryBond::from_parts(
+            graph.bonds[0].clone(),
+            QueryNode::predicate(BondQueryPredicate::Any),
+        )];
+        let any_state =
+            QueryStateRef::try_for_topology(&query_atoms, &explicit_any_bonds, &graph).unwrap();
+        assert!(any_state.bond_has_query(BondId::new(0)));
+        assert!(!is_bond_order_query(&graph.bonds[0], Some(any_state)));
+
+        let carrier_bonds = vec![QueryBond::from_carrier_parts(
+            graph.bonds[0].clone(),
+            QueryNode::predicate(BondQueryPredicate::Order(BondOrder::Zero)),
+        )];
+        let carrier_state =
+            QueryStateRef::try_for_topology(&query_atoms, &carrier_bonds, &graph).unwrap();
+        assert!(!carrier_state.bond_has_query(BondId::new(0)));
+        assert!(!is_bond_order_query(&graph.bonds[0], Some(carrier_state)));
     }
 
     #[test]
@@ -2633,8 +2798,8 @@ mod tests {
             .unwrap(),
             4
         );
-        assert!(!is_bond_order_query(&zero_and_dative.bonds[0]));
-        assert!(!is_bond_order_query(&zero_and_dative.bonds[1]));
+        assert!(!is_bond_order_query(&zero_and_dative.bonds[0], None));
+        assert!(!is_bond_order_query(&zero_and_dative.bonds[1], None));
 
         let fluorine = topology(vec![AtomSpec::new(Element::F)], vec![]);
         assert_eq!(

@@ -83,20 +83,20 @@ aromaticity = ["dep:cosmolkit-core"]
 sanitize = ["dep:cosmolkit-core"]
 
 [dependencies]
-cosmolkit-model = { version = "0.5.0-rc.3", path = "../cosmolkit-model" }
-cosmolkit-macros = { version = "0.5.0-rc.3", path = "../cosmolkit-macros" }
-cosmolkit-core = { version = "0.5.0-rc.3", path = "../cosmolkit-core", optional = true }
-cosmolkit-descriptors = { version = "0.5.0-rc.3", path = "../cosmolkit-descriptors", optional = true }
-cosmolkit-alignment = { version = "0.5.0-rc.3", path = "../cosmolkit-alignment", optional = true }
-cosmolkit-batch = { version = "0.5.0-rc.3", path = "../cosmolkit-batch", optional = true }
-cosmolkit-bio = { version = "0.5.0-rc.3", path = "../cosmolkit-bio", optional = true }
-cosmolkit-conformer = { version = "0.5.0-rc.3", path = "../cosmolkit-conformer", optional = true }
-cosmolkit-depict = { version = "0.5.0-rc.3", path = "../cosmolkit-depict", optional = true }
-cosmolkit-fingerprints = { version = "0.5.0-rc.3", path = "../cosmolkit-fingerprints", optional = true }
-cosmolkit-forcefields = { version = "0.5.0-rc.3", path = "../cosmolkit-forcefields", optional = true }
-cosmolkit-inchi = { version = "0.5.0-rc.3", path = "../cosmolkit-inchi", optional = true }
-cosmolkit-io = { version = "0.5.0-rc.3", path = "../cosmolkit-io", optional = true }
-cosmolkit-search = { version = "0.5.0-rc.3", path = "../cosmolkit-search", optional = true }
-cosmolkit-smiles = { version = "0.5.0-rc.3", path = "../cosmolkit-smiles", optional = true }
-cosmolkit-stereo = { version = "0.5.0-rc.3", path = "../cosmolkit-stereo", optional = true }
-cosmolkit-tautomer = { version = "0.5.0-rc.3", path = "../cosmolkit-tautomer", optional = true }
+cosmolkit-model = { version = "0.5.0-rc.4", path = "../cosmolkit-model" }
+cosmolkit-macros = { version = "0.5.0-rc.4", path = "../cosmolkit-macros" }
+cosmolkit-core = { version = "0.5.0-rc.4", path = "../cosmolkit-core", optional = true }
+cosmolkit-descriptors = { version = "0.5.0-rc.4", path = "../cosmolkit-descriptors", optional = true }
+cosmolkit-alignment = { version = "0.5.0-rc.4", path = "../cosmolkit-alignment", optional = true }
+cosmolkit-batch = { version = "0.5.0-rc.4", path = "../cosmolkit-batch", optional = true }
+cosmolkit-bio = { version = "0.5.0-rc.4", path = "../cosmolkit-bio", optional = true }
+cosmolkit-conformer = { version = "0.5.0-rc.4", path = "../cosmolkit-conformer", optional = true }
+cosmolkit-depict = { version = "0.5.0-rc.4", path = "../cosmolkit-depict", optional = true }
+cosmolkit-fingerprints = { version = "0.5.0-rc.4", path = "../cosmolkit-fingerprints", optional = true }
+cosmolkit-forcefields = { version = "0.5.0-rc.4", path = "../cosmolkit-forcefields", optional = true }
+cosmolkit-inchi = { version = "0.5.0-rc.4", path = "../cosmolkit-inchi", optional = true }
+cosmolkit-io = { version = "0.5.0-rc.4", path = "../cosmolkit-io", optional = true }
+cosmolkit-search = { version = "0.5.0-rc.4", path = "../cosmolkit-search", optional = true }
+cosmolkit-smiles = { version = "0.5.0-rc.4", path = "../cosmolkit-smiles", optional = true }
+cosmolkit-stereo = { version = "0.5.0-rc.4", path = "../cosmolkit-stereo", optional = true }
+cosmolkit-tautomer = { version = "0.5.0-rc.4", path = "../cosmolkit-tautomer", optional = true }

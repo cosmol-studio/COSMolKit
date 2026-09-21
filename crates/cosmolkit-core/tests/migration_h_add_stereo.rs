@@ -2,12 +2,13 @@
 
 use cosmolkit_core::{
     AddHsParams, HydrogenError, HydrogenWarning, add_hydrogens_impl, add_hydrogens_with_params,
+    add_hydrogens_with_query_state,
 };
 use cosmolkit_model::{
-    Atom, AtomId, AtomPdbResidueInfo, AtomSpec, Bond, BondId, BondOrder, BondSpec, ChiralTag,
-    Conformer3D, CoordinateBlock, Element, MoleculeProperties, SdfPropertyList,
-    SdfPropertyListTarget, StereoGroup, StereoGroupKind, SubstanceGroup, SubstanceGroupId,
-    SubstanceGroupKind, TopologyBlock,
+    Atom, AtomId, AtomPdbResidueInfo, AtomQueryPredicate, AtomSpec, Bond, BondId, BondOrder,
+    BondSpec, ChiralTag, Conformer3D, CoordinateBlock, Element, MoleculeProperties, QueryAtom,
+    QueryBond, QueryNode, QueryStateRef, SdfPropertyList, SdfPropertyListTarget, StereoGroup,
+    StereoGroupKind, SubstanceGroup, SubstanceGroupId, SubstanceGroupKind, TopologyBlock,
 };
 
 fn topology(atom_specs: Vec<AtomSpec>, bond_specs: Vec<BondSpec>) -> TopologyBlock {
@@ -188,13 +189,26 @@ fn selected_atom_additions_are_incremental_and_excluded_tracking_is_retained() {
 
 #[test]
 fn skipped_query_parent_retains_explicit_count_tracking_and_computed_state() {
-    let query = explicit_parent(1, vec![2])
-        .with_prop("_MolFileAtomQuery", "1")
-        .unwrap()
-        .with_computed_prop("query-cache", "keep")
-        .unwrap();
-    let output = add_hydrogens_with_params(
-        topology(vec![query], Vec::new()),
+    let source = topology(
+        vec![
+            explicit_parent(1, vec![2])
+                .with_computed_prop("query-cache", "keep")
+                .unwrap(),
+        ],
+        Vec::new(),
+    );
+    let query_atoms = vec![QueryAtom::from_parts(
+        source.atoms[0].clone(),
+        QueryNode::predicate(AtomQueryPredicate::AtomicNumber(6)),
+    )];
+    let query_bonds: Vec<QueryBond> = Vec::new();
+    let query_state = QueryStateRef::try_for_topology(&query_atoms, &query_bonds, &source).unwrap();
+    assert!(
+        query_state.atom_has_query(AtomId::new(0)),
+        "the parent must be an explicit QueryAtom without Molfile metadata"
+    );
+    let output = add_hydrogens_with_query_state(
+        source,
         CoordinateBlock::default(),
         MoleculeProperties::default(),
         &AddHsParams {
@@ -202,6 +216,7 @@ fn skipped_query_parent_retains_explicit_count_tracking_and_computed_state() {
             skip_queries: true,
             ..Default::default()
         },
+        Some(query_state),
     )
     .unwrap();
 

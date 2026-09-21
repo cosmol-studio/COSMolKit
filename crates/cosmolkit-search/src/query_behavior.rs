@@ -1688,7 +1688,8 @@ pub fn atom_query_has_magic_value(query: &QueryNode<AtomQueryPredicate>, magic_v
     }
 }
 
-pub(crate) fn complete_mol_queries(molecule: &mut crate::QueryGraph, magic_value: u32) {
+#[doc(hidden)]
+pub fn complete_mol_queries(molecule: &mut crate::QueryGraph, magic_value: u32) {
     // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/QueryOps.cpp :: completeMolQueries
     // RDKit✔️✔️: void completeMolQueries(RWMol *mol, unsigned int magicVal) {
     // RDKit✔️✔️:   PRECONDITION(mol, "bad molecule");

@@ -288,7 +288,7 @@ fn write_cx_extensions(
     }
     if fields.contains(CxSmilesFields::POLYMER) {
         append_extension(
-            write_polymer_sgroups(record, atom_order, bond_order),
+            write_polymer_sgroups(record, atom_order, bond_order)?,
             &mut result,
         );
     }
@@ -1167,20 +1167,6 @@ fn polymer_type(group: &SubstanceGroup) -> Option<&'static str> {
     }
 }
 
-fn parse_crossings(group: &SubstanceGroup, primary: &str, fallback: &str) -> Vec<usize> {
-    group
-        .props()
-        .get(primary)
-        .or_else(|| group.props().get(fallback))
-        .map(|value| {
-            value
-                .split(',')
-                .filter_map(|part| part.trim().parse::<usize>().ok())
-                .collect()
-        })
-        .unwrap_or_default()
-}
-
 fn connection_text(group: &SubstanceGroup) -> String {
     group
         .connection()
@@ -1203,7 +1189,7 @@ fn write_polymer_sgroups(
     record: &SmilesRecord,
     atom_order: &[AtomId],
     bond_order: &[BondId],
-) -> String {
+) -> Result<String, SmilesParseError> {
     // BEGIN RDKIT CPP FUNCTION get_sgroup_polymer_block
     // RDKit✔️✔️: for (const auto &sg : sgs) {
     // RDKit✔️✔️:   std::string typ;
@@ -1233,57 +1219,74 @@ fn write_polymer_sgroups(
     // END RDKIT CPP FUNCTION get_sgroup_polymer_block
     let atom_positions = atom_positions(atom_order, record.topology.atoms.len());
     let bond_positions = bond_positions(bond_order, record.topology.bonds.len());
-    record
-        .topology
-        .substance_groups
-        .iter()
-        .filter_map(|group| {
-            let kind = polymer_type(group)?;
-            let atoms = group
-                .atoms()
+    let mut blocks = Vec::new();
+    for group in &record.topology.substance_groups {
+        let Some(kind) = polymer_type(group) else {
+            continue;
+        };
+        let atoms = group
+            .atoms()
+            .iter()
+            .filter_map(|atom| atom_positions[atom.index()])
+            .map(|position| position.to_string())
+            .collect::<Vec<_>>();
+        if atoms.is_empty() {
+            continue;
+        }
+        let crossing_position = |bond: BondId| {
+            bond_positions
+                .get(bond.index())
+                .copied()
+                .flatten()
+                .ok_or_else(|| {
+                    SmilesParseError::Model(format!(
+                        "SGroup {} crossing bond {} is absent from CX bond order",
+                        group.id().index(),
+                        bond.index()
+                    ))
+                })
+        };
+        let head_text = if group.head_crossing_bonds().len() > 1 {
+            group
+                .head_crossing_bonds()
                 .iter()
-                .filter_map(|atom| atom_positions[atom.index()])
+                .copied()
+                .map(crossing_position)
+                .collect::<Result<Vec<_>, _>>()?
+                .into_iter()
                 .map(|position| position.to_string())
-                .collect::<Vec<_>>();
-            if atoms.is_empty() {
-                return None;
-            }
-            let heads = parse_crossings(group, "_headCrossings", "XBHEAD");
-            let tails = parse_crossings(group, "_tailCrossings", "XBCORR");
-            let head_text = (heads.len() > 1)
-                .then(|| {
-                    heads
-                        .iter()
-                        .filter_map(|bond| bond_positions.get(*bond).copied().flatten())
-                        .map(|position| position.to_string())
-                        .collect::<Vec<_>>()
-                        .join(",")
-                })
-                .unwrap_or_default();
-            let tail_text = (tails.len() > 2)
-                .then(|| {
-                    tails
-                        .iter()
-                        .skip(1)
-                        .step_by(2)
-                        .filter_map(|bond| bond_positions.get(*bond).copied().flatten())
-                        .map(|position| position.to_string())
-                        .collect::<Vec<_>>()
-                        .join(",")
-                })
-                .unwrap_or_default();
-            Some(format!(
-                "Sg:{kind}:{}:{}:{}:{head_text}:{tail_text}:",
-                atoms.join(","),
-                group
-                    .label()
-                    .or_else(|| group.props().get("LABEL").map(String::as_str))
-                    .unwrap_or_default(),
-                connection_text(group)
-            ))
-        })
-        .collect::<Vec<_>>()
-        .join(",")
+                .collect::<Vec<_>>()
+                .join(",")
+        } else {
+            String::new()
+        };
+        let tail_text = if group.crossing_bond_correspondence().len() > 2 {
+            group
+                .crossing_bond_correspondence()
+                .iter()
+                .skip(1)
+                .step_by(2)
+                .copied()
+                .map(crossing_position)
+                .collect::<Result<Vec<_>, _>>()?
+                .into_iter()
+                .map(|position| position.to_string())
+                .collect::<Vec<_>>()
+                .join(",")
+        } else {
+            String::new()
+        };
+        blocks.push(format!(
+            "Sg:{kind}:{}:{}:{}:{head_text}:{tail_text}:",
+            atoms.join(","),
+            group
+                .label()
+                .or_else(|| group.props().get("LABEL").map(String::as_str))
+                .unwrap_or_default(),
+            connection_text(group)
+        ));
+    }
+    Ok(blocks.join(","))
 }
 
 fn sgroup_index(group: &SubstanceGroup) -> usize {
@@ -1521,6 +1524,25 @@ mod tests {
         ] {
             assert_eq!(write_cx_smiles(&parse(input)).unwrap(), expected, "{input}");
         }
+    }
+
+    #[test]
+    fn cx_sgroup_typed_crossings_follow_explicit_bond_traversal_order() {
+        let record = parse("CCCCC |Sg:n:1,2,3:repeat:ht:0,0,3:3,3,0:|");
+        let atom_order = (0..record.topology.atoms.len())
+            .map(AtomId::new)
+            .collect::<Vec<_>>();
+        let bond_order = [
+            BondId::new(3),
+            BondId::new(2),
+            BondId::new(1),
+            BondId::new(0),
+        ];
+        assert_eq!(
+            write_polymer_sgroups(&record, &atom_order, &bond_order)
+                .expect("typed crossings map through traversal order"),
+            "Sg:n:1,2,3:repeat:ht:3,3,0:0,0,3:"
+        );
     }
 
     #[test]

@@ -2,10 +2,11 @@
 
 use cosmolkit_core::{
     __migration_hydrogens::{AddedHydrogenKind, HydrogenError, add_hydrogens_topology},
-    AddHsParams,
+    AddHsParams, add_hydrogens_topology_with_query_state,
 };
 use cosmolkit_model::{
-    AdjacencyList, Atom, AtomId, AtomSpec, Bond, BondId, BondSpec, StereoGroup, StereoGroupKind,
+    AdjacencyList, Atom, AtomId, AtomQueryPredicate, AtomSpec, Bond, BondId, BondQueryPredicate,
+    BondSpec, QueryAtom, QueryBond, QueryNode, QueryStateRef, StereoGroup, StereoGroupKind,
     SubstanceGroup, SubstanceGroupId, SubstanceGroupKind, TopologyBlock, TopologyValidationError,
 };
 use cosmolkit_types::{BondOrder, Element};
@@ -165,16 +166,20 @@ fn only_on_atoms_is_idempotent_ordered_and_reports_exact_bad_id() {
 
 #[test]
 fn skip_queries_obeys_atom_marker_for_true_and_false_modes() {
-    let marked = AtomSpec::new(Element::C)
-        .with_prop("_MolFileAtomQuery", "1")
-        .unwrap();
-    let source = topology(vec![marked], Vec::new());
-    let skipped = add_hydrogens_topology(
+    let source = topology(vec![AtomSpec::new(Element::C)], Vec::new());
+    let query_atoms = vec![QueryAtom::from_parts(
+        source.atoms[0].clone(),
+        QueryNode::predicate(AtomQueryPredicate::AtomicNumber(6)),
+    )];
+    let query_state = QueryStateRef::try_for_topology(&query_atoms, &[], &source).unwrap();
+    assert!(query_state.atom_has_query(AtomId::new(0)));
+    let skipped = add_hydrogens_topology_with_query_state(
         source.clone(),
         &AddHsParams {
             skip_queries: true,
             ..Default::default()
         },
+        Some(query_state),
     )
     .unwrap();
     assert!(skipped.additions.is_empty());
@@ -184,23 +189,47 @@ fn skip_queries_obeys_atom_marker_for_true_and_false_modes() {
 
 #[test]
 fn skip_queries_obeys_each_incident_bond_marker() {
-    for key in ["_MolFileBondQuery", "_MolFileBondQueryComplex"] {
-        let query_bond = bond(0, 1).with_prop(key, "1").unwrap();
+    for explicit_predicate in [
+        QueryNode::predicate(BondQueryPredicate::Any),
+        QueryNode::and(vec![
+            QueryNode::predicate(BondQueryPredicate::Any),
+            QueryNode::not(QueryNode::predicate(BondQueryPredicate::IsInRing(true))),
+        ]),
+    ] {
         let source = topology(
             vec![AtomSpec::new(Element::C), AtomSpec::new(Element::C)],
-            vec![query_bond],
+            vec![bond(0, 1)],
         );
-        let skipped = add_hydrogens_topology(
+        let query_atoms = source
+            .atoms
+            .iter()
+            .map(|carrier| {
+                QueryAtom::from_carrier_parts(
+                    carrier.clone(),
+                    QueryNode::predicate(AtomQueryPredicate::AtomicNumber(6)),
+                )
+            })
+            .collect::<Vec<_>>();
+        let query_bonds = vec![QueryBond::from_parts(
+            source.bonds[0].clone(),
+            explicit_predicate,
+        )];
+        let query_state =
+            QueryStateRef::try_for_topology(&query_atoms, &query_bonds, &source).unwrap();
+        assert!(!query_state.atom_has_query(AtomId::new(0)));
+        assert!(query_state.bond_has_query(BondId::new(0)));
+        let skipped = add_hydrogens_topology_with_query_state(
             source.clone(),
             &AddHsParams {
                 skip_queries: true,
                 ..Default::default()
             },
+            Some(query_state),
         )
         .unwrap();
-        assert!(skipped.additions.is_empty(), "marker {key}");
+        assert!(skipped.additions.is_empty());
         let included = add_hydrogens_topology(source, &AddHsParams::default()).unwrap();
-        assert_eq!(included.additions.len(), 6, "marker {key}");
+        assert_eq!(included.additions.len(), 6);
     }
 }
 

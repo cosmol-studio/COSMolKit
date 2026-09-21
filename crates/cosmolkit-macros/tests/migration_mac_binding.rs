@@ -411,6 +411,67 @@ fn receiver_state_and_trailing_underscore_contracts_fail_closed() {
 }
 
 #[test]
+fn type_owned_constructor_names_are_scoped_to_the_actual_receiver_type() {
+    let constructor = |type_name: &str| {
+        format!(
+            r#"{{
+                semantic_id: "{type_name}.new", item: callable, owner: type_,
+                rust: crate::{type_name}::new, python: "new", javascript: "new",
+                feature: "test", exposure: public, support: supported,
+                parity: not_applicable, kind: static_, parameters: [],
+                output: crate::{type_name}, error: none, state: value_returning,
+                operation: none, signature: fn() -> crate::{type_name}
+            }}"#
+        )
+    };
+    let input = format!(
+        "pub static API = [{},{}];",
+        constructor("FirstValue"),
+        constructor("SecondValue")
+    );
+    assert!(expand_binding_contract(input.parse().unwrap()).is_ok());
+}
+
+#[test]
+fn type_declaration_projection_collision_is_rejected_in_the_export_scope() {
+    let first = r#"{
+        semantic_id:"first.Value",item:type,owner:type_,rust:crate::first::Value,
+        python:"Value",javascript:"Value",feature:"test",exposure:registered,
+        support:unsupported,parity:required_when_supported,role:value
+    }"#;
+    let second = r#"{
+        semantic_id:"second.Value",item:type,owner:type_,rust:crate::second::Value,
+        python:"Value",javascript:"Value",feature:"test",exposure:registered,
+        support:unsupported,parity:required_when_supported,role:value
+    }"#;
+    let error = error_for(format!("pub static API = [{first},{second}];"));
+    assert!(
+        error.contains("duplicate Python binding projection")
+            || error.contains("duplicate JavaScript binding projection"),
+        "unexpected error: {error}"
+    );
+}
+
+#[test]
+fn same_receiver_callable_projection_collision_is_rejected() {
+    let constructor = r#"{
+        semantic_id:"FirstValue.new",item:callable,owner:type_,
+        rust:crate::FirstValue::new,python:"new",javascript:"new",
+        feature:"test",exposure:public,support:supported,parity:not_applicable,
+        kind:static_,parameters:[],output:crate::FirstValue,error:none,
+        state:value_returning,operation:none,signature:fn()->crate::FirstValue
+    }"#;
+    let error = error_for(format!("pub static API = [{constructor},{constructor}];"));
+    assert!(
+        error.contains("duplicate binding semantic_id")
+            || error.contains("duplicate Rust binding projection")
+            || error.contains("duplicate Python binding projection")
+            || error.contains("duplicate JavaScript binding projection"),
+        "unexpected error: {error}"
+    );
+}
+
+#[test]
 fn parameter_default_and_full_signature_disagreements_fail_closed() {
     let parameterized = r#"pub static API = [{
         semantic_id:"Molecule.configured",item:callable,owner:molecule,

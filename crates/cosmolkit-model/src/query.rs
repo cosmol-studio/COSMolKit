@@ -11,7 +11,8 @@ use cosmolkit_types::{BondDirection, BondOrder, BondStereo, ChiralTag, Hybridiza
 
 use crate::{
     Atom, AtomId, Bond, BondId, Conformer2D, Conformer3D, CoordinateBlock,
-    CoordinateValidationError, StereoGroup, TemplateAttachmentOrder, TemplateAttachmentOrderError,
+    CoordinateValidationError, MappingValidationError, StereoGroup, TemplateAttachmentOrder,
+    TemplateAttachmentOrderError, TopologyBlock, TopologyMapping,
 };
 
 /// A recursive Boolean query tree over a predicate type.
@@ -380,10 +381,17 @@ impl Default for RecursiveStructureQuery {
 impl Eq for RecursiveStructureQuery {}
 
 /// A query atom combines concrete atom attributes with a query predicate tree.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum QueryPredicateOrigin {
+    Explicit,
+    CarrierDerived,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct QueryAtom {
     atom: Atom,
     predicate: QueryNode<AtomQueryPredicate>,
+    predicate_origin: QueryPredicateOrigin,
 }
 
 impl QueryAtom {
@@ -397,7 +405,23 @@ impl QueryAtom {
 
     #[must_use]
     pub fn from_parts(atom: Atom, predicate: QueryNode<AtomQueryPredicate>) -> Self {
-        Self { atom, predicate }
+        Self {
+            atom,
+            predicate,
+            predicate_origin: QueryPredicateOrigin::Explicit,
+        }
+    }
+
+    /// Construct the uniform query carrier used internally when Molfile input
+    /// contains a mixture of ordinary and query atoms.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn from_carrier_parts(atom: Atom, predicate: QueryNode<AtomQueryPredicate>) -> Self {
+        Self {
+            atom,
+            predicate,
+            predicate_origin: QueryPredicateOrigin::CarrierDerived,
+        }
     }
 
     #[must_use]
@@ -417,12 +441,20 @@ impl QueryAtom {
 
     #[doc(hidden)]
     pub fn predicate_mut(&mut self) -> &mut QueryNode<AtomQueryPredicate> {
+        self.predicate_origin = QueryPredicateOrigin::Explicit;
         &mut self.predicate
     }
 
     #[doc(hidden)]
     pub fn set_predicate(&mut self, predicate: QueryNode<AtomQueryPredicate>) {
         self.predicate = predicate;
+        self.predicate_origin = QueryPredicateOrigin::Explicit;
+    }
+
+    #[doc(hidden)]
+    #[must_use]
+    pub const fn predicate_is_carrier_derived(&self) -> bool {
+        matches!(self.predicate_origin, QueryPredicateOrigin::CarrierDerived)
     }
 
     #[must_use]
@@ -456,6 +488,205 @@ impl QueryAtom {
 pub struct QueryBond {
     bond: Bond,
     predicate: QueryNode<BondQueryPredicate>,
+    predicate_origin: QueryPredicateOrigin,
+}
+
+/// Structural errors while borrowing or remapping typed query rows alongside
+/// a detached concrete topology.
+#[doc(hidden)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum QueryStateError {
+    #[error("query atom state has {actual} rows, expected {expected}")]
+    AtomCount { actual: usize, expected: usize },
+    #[error("query bond state has {actual} rows, expected {expected}")]
+    BondCount { actual: usize, expected: usize },
+    #[error("query atom row {position} has id {actual:?}, expected {expected:?}")]
+    AtomId {
+        position: usize,
+        actual: AtomId,
+        expected: AtomId,
+    },
+    #[error("query bond row {position} has id {actual:?}, expected {expected:?}")]
+    BondId {
+        position: usize,
+        actual: BondId,
+        expected: BondId,
+    },
+    #[error(
+        "query bond row {position} has endpoints {actual:?}, expected topology endpoints {expected:?}"
+    )]
+    BondEndpoints {
+        position: usize,
+        actual: (AtomId, AtomId),
+        expected: (AtomId, AtomId),
+    },
+    #[error("query-state mapping is invalid: {0}")]
+    Mapping(#[from] MappingValidationError),
+    #[error("query-state mapping appends {entity} row {position}, which has no source query row")]
+    AppendedRow {
+        entity: &'static str,
+        position: usize,
+    },
+}
+
+/// A validated, non-owning view of typed query identity and predicates aligned
+/// one-for-one with a detached concrete topology.
+#[doc(hidden)]
+#[derive(Debug, Clone, Copy)]
+pub struct QueryStateRef<'a> {
+    atoms: &'a [QueryAtom],
+    bonds: &'a [QueryBond],
+}
+
+impl<'a> QueryStateRef<'a> {
+    pub fn try_for_topology(
+        atoms: &'a [QueryAtom],
+        bonds: &'a [QueryBond],
+        topology: &TopologyBlock,
+    ) -> Result<Self, QueryStateError> {
+        if atoms.len() != topology.atoms.len() {
+            return Err(QueryStateError::AtomCount {
+                actual: atoms.len(),
+                expected: topology.atoms.len(),
+            });
+        }
+        if bonds.len() != topology.bonds.len() {
+            return Err(QueryStateError::BondCount {
+                actual: bonds.len(),
+                expected: topology.bonds.len(),
+            });
+        }
+        for (position, (query, carrier)) in atoms.iter().zip(&topology.atoms).enumerate() {
+            if query.id() != carrier.id() {
+                return Err(QueryStateError::AtomId {
+                    position,
+                    actual: query.id(),
+                    expected: carrier.id(),
+                });
+            }
+        }
+        for (position, (query, carrier)) in bonds.iter().zip(&topology.bonds).enumerate() {
+            if query.id() != carrier.id() {
+                return Err(QueryStateError::BondId {
+                    position,
+                    actual: query.id(),
+                    expected: carrier.id(),
+                });
+            }
+            let actual = (query.begin(), query.end());
+            let expected = (carrier.begin(), carrier.end());
+            if actual != expected {
+                return Err(QueryStateError::BondEndpoints {
+                    position,
+                    actual,
+                    expected,
+                });
+            }
+        }
+        Ok(Self { atoms, bonds })
+    }
+
+    #[must_use]
+    pub const fn atoms(self) -> &'a [QueryAtom] {
+        self.atoms
+    }
+
+    #[must_use]
+    pub const fn bonds(self) -> &'a [QueryBond] {
+        self.bonds
+    }
+
+    #[must_use]
+    pub fn atom_has_query(self, atom: AtomId) -> bool {
+        // BEGIN RDKIT CPP FUNCTION QueryAtom::hasQuery
+        // RDKit✔️✔️: // This method can be used to distinguish query atoms from standard atoms:
+        // RDKit✔️✔️: bool hasQuery() const override { return dp_query != nullptr; }
+        // END RDKIT CPP FUNCTION QueryAtom::hasQuery
+        // Behavior review: Explicit rows model source QueryAtom values; carrier-derived
+        // rows model ordinary Atom values lifted only for uniform Rust storage.
+        // Complexity review: one checked slice lookup and one enum comparison are O(1),
+        // matching the source null-pointer test without allocation or cloning.
+        !self.atoms[atom.index()].predicate_is_carrier_derived()
+    }
+
+    #[must_use]
+    pub fn bond_has_query(self, bond: BondId) -> bool {
+        // BEGIN RDKIT CPP FUNCTION QueryBond::hasQuery
+        // RDKit✔️✔️: // This method can be used to distinguish query bonds from standard bonds
+        // RDKit✔️✔️: bool hasQuery() const override { return dp_query != nullptr; }
+        // END RDKIT CPP FUNCTION QueryBond::hasQuery
+        // Behavior review: Explicit and carrier-derived rows retain the same source
+        // dynamic-type distinction as atom rows.
+        // Complexity review: this is an allocation-free O(1) indexed test.
+        !self.bonds[bond.index()].predicate_is_carrier_derived()
+    }
+
+    #[must_use]
+    pub fn atom_predicate(self, atom: AtomId) -> &'a QueryNode<AtomQueryPredicate> {
+        self.atoms[atom.index()].predicate()
+    }
+
+    #[must_use]
+    pub fn bond_predicate(self, bond: BondId) -> &'a QueryNode<BondQueryPredicate> {
+        self.bonds[bond.index()].predicate()
+    }
+}
+
+/// Remap canonical typed query rows with the same validated topology mapping
+/// used for every other atom- and bond-indexed detached block.
+#[doc(hidden)]
+pub fn remap_query_rows(
+    state: QueryStateRef<'_>,
+    topology: &TopologyBlock,
+    mapping: &TopologyMapping,
+) -> Result<(Vec<QueryAtom>, Vec<QueryBond>), QueryStateError> {
+    mapping.validate_for_counts(
+        state.atoms.len(),
+        topology.atoms.len(),
+        state.bonds.len(),
+        topology.bonds.len(),
+    )?;
+
+    let mut atoms = Vec::with_capacity(topology.atoms.len());
+    for (position, (carrier, old)) in topology
+        .atoms
+        .iter()
+        .zip(mapping.atoms().new_to_old())
+        .enumerate()
+    {
+        let old = old.ok_or(QueryStateError::AppendedRow {
+            entity: "atom",
+            position,
+        })?;
+        let source = &state.atoms[old.index()];
+        atoms.push(QueryAtom {
+            atom: carrier.clone(),
+            predicate: source.predicate.clone(),
+            predicate_origin: source.predicate_origin,
+        });
+    }
+
+    let mut bonds = Vec::with_capacity(topology.bonds.len());
+    for (position, (carrier, old)) in topology
+        .bonds
+        .iter()
+        .zip(mapping.bonds().new_to_old())
+        .enumerate()
+    {
+        let old = old.ok_or(QueryStateError::AppendedRow {
+            entity: "bond",
+            position,
+        })?;
+        let source = &state.bonds[old.index()];
+        bonds.push(QueryBond {
+            bond: carrier.clone(),
+            predicate: source.predicate.clone(),
+            predicate_origin: source.predicate_origin,
+        });
+    }
+
+    QueryStateRef::try_for_topology(&atoms, &bonds, topology)?;
+    Ok((atoms, bonds))
 }
 
 impl QueryBond {
@@ -471,7 +702,23 @@ impl QueryBond {
 
     #[must_use]
     pub fn from_parts(bond: Bond, predicate: QueryNode<BondQueryPredicate>) -> Self {
-        Self { bond, predicate }
+        Self {
+            bond,
+            predicate,
+            predicate_origin: QueryPredicateOrigin::Explicit,
+        }
+    }
+
+    /// Construct the uniform query carrier used internally when Molfile input
+    /// contains a mixture of ordinary and query bonds.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn from_carrier_parts(bond: Bond, predicate: QueryNode<BondQueryPredicate>) -> Self {
+        Self {
+            bond,
+            predicate,
+            predicate_origin: QueryPredicateOrigin::CarrierDerived,
+        }
     }
 
     #[must_use]
@@ -491,12 +738,20 @@ impl QueryBond {
 
     #[doc(hidden)]
     pub fn predicate_mut(&mut self) -> &mut QueryNode<BondQueryPredicate> {
+        self.predicate_origin = QueryPredicateOrigin::Explicit;
         &mut self.predicate
     }
 
     #[doc(hidden)]
     pub fn set_predicate(&mut self, predicate: QueryNode<BondQueryPredicate>) {
         self.predicate = predicate;
+        self.predicate_origin = QueryPredicateOrigin::Explicit;
+    }
+
+    #[doc(hidden)]
+    #[must_use]
+    pub const fn predicate_is_carrier_derived(&self) -> bool {
+        matches!(self.predicate_origin, QueryPredicateOrigin::CarrierDerived)
     }
 
     #[must_use]
@@ -740,6 +995,21 @@ impl QueryGraph {
     #[must_use]
     pub fn conformers_3d(&self) -> &[Conformer3D] {
         &self.conformers_3d
+    }
+
+    /// Clone the complete detached coordinate carrier for a domain owner that
+    /// must apply an index-changing transform and rebuild this query value.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn coordinate_block(
+        &self,
+        source_coordinate_dim: Option<crate::CoordinateDimension>,
+    ) -> CoordinateBlock {
+        CoordinateBlock {
+            conformers_2d: self.conformers_2d.clone(),
+            conformers_3d: self.conformers_3d.clone(),
+            source_coordinate_dim,
+        }
     }
 
     #[doc(hidden)]

@@ -244,7 +244,10 @@ fn invalid_atropisomer_cleanup_updates_only_affected_group_content_and_preserves
     );
     assert_eq!(output.bonds[0].stereo(), BondStereo::None);
     assert_eq!(output.bonds[1].stereo(), BondStereo::AtropCcw);
-    assert_eq!(output.stereo_groups[0].id(), Some(17));
+    // cleanupAtropisomerStereoGroups constructs an affected replacement with
+    // the three-argument StereoGroup constructor, so its source read id is not
+    // retained; the untouched group retains its id below.
+    assert_eq!(output.stereo_groups[0].id(), None);
     assert_eq!(output.stereo_groups[0].atoms(), &[AtomId::new(0)]);
     assert_eq!(output.stereo_groups[0].bonds(), &[BondId::new(1)]);
     assert_eq!(output.stereo_groups[1], unaffected);

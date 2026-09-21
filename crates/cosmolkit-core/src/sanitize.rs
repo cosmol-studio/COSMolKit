@@ -7,16 +7,19 @@
 
 use std::ops::{BitAnd, BitOr, BitOrAssign};
 
-use cosmolkit_model::{AtomId, TopologyBlock, TopologyValidationError};
+use cosmolkit_model::{
+    AtomId, QueryStateError, QueryStateRef, TopologyBlock, TopologyValidationError,
+};
 use cosmolkit_types::Hybridization;
 
 use crate::{
     AromaticityError, AromaticityParams, AtropisomerError, CleanupError, CleanupParams,
     ConjugationError, HybridizationAssignment, HybridizationError, KekulizeError, KekulizeParams,
     RadicalError, RingFindingError, RingInfo, RingSearchParams, StereoError, ValenceAssignment,
-    ValenceError, ValenceModel, ValenceParams, assign_aromaticity, assign_conjugation,
-    assign_hybridization, assign_radicals, assign_valence,
-    assign_valence_state_for_atom_from_parts, cleanup, find_sssr, kekulize, symmetrized_sssr,
+    ValenceError, ValenceModel, ValenceParams, assign_aromaticity_with_query_state,
+    assign_conjugation, assign_hybridization, assign_radicals, assign_valence,
+    assign_valence_state_for_atom_from_parts, cleanup, find_sssr, kekulize,
+    kekulize_with_query_state, symmetrized_sssr,
 };
 
 use crate::hcount::{AdjustHsError, adjust_hs};
@@ -163,6 +166,11 @@ pub enum SanitizeError {
     InvalidTopology {
         stage: SanitizeStage,
         source: TopologyValidationError,
+    },
+    #[error("sanitization failed at {stage:?}: invalid query state: {source}")]
+    InvalidQueryState {
+        stage: SanitizeStage,
+        source: QueryStateError,
     },
     #[error("sanitization failed at {stage:?}: {source}")]
     Cleanup {
@@ -368,12 +376,29 @@ pub fn sanitize_topology(
     topology: &TopologyBlock,
     params: &SanitizeParams,
 ) -> Result<SanitizeAssignment, SanitizeError> {
+    sanitize_topology_with_query_state(topology, params, None)
+}
+
+#[doc(hidden)]
+pub fn sanitize_topology_with_query_state(
+    topology: &TopologyBlock,
+    params: &SanitizeParams,
+    query_state: Option<QueryStateRef<'_>>,
+) -> Result<SanitizeAssignment, SanitizeError> {
     topology
         .validate()
         .map_err(|source| SanitizeError::InvalidTopology {
             stage: SanitizeStage::None,
             source,
         })?;
+    if let Some(state) = query_state {
+        QueryStateRef::try_for_topology(state.atoms(), state.bonds(), topology).map_err(
+            |source| SanitizeError::InvalidQueryState {
+                stage: SanitizeStage::None,
+                source,
+            },
+        )?;
+    }
 
     // Complete pinned source: MolOps.cpp::sanitizeMol(RWMol &, unsigned int &, unsigned int).
     // RDKit✔️❌: void sanitizeMol(RWMol &mol, unsigned int &operationThatFailed,
@@ -531,13 +556,14 @@ pub fn sanitize_topology(
     }
 
     if operations.contains(SanitizeOperations::KEKULIZE) {
-        working = kekulize(
+        working = kekulize_with_query_state(
             &working,
             &KekulizeParams {
                 mark_atoms_bonds: true,
                 canonical: false,
                 max_backtracks: KekulizeParams::default().max_backtracks,
             },
+            query_state,
         )
         .map_err(|source| SanitizeError::Kekulize {
             stage: SanitizeStage::Kekulize,
@@ -568,12 +594,17 @@ pub fn sanitize_topology(
             rings = Some(calculated.clone());
             calculated
         };
-        working = assign_aromaticity(&working, &ring_assignment, &AromaticityParams::default())
-            .map_err(|source| SanitizeError::Aromaticity {
-                stage: SanitizeStage::SetAromaticity,
-                source,
-            })?
-            .topology;
+        working = assign_aromaticity_with_query_state(
+            &working,
+            &ring_assignment,
+            &AromaticityParams::default(),
+            query_state,
+        )
+        .map_err(|source| SanitizeError::Aromaticity {
+            stage: SanitizeStage::SetAromaticity,
+            source,
+        })?
+        .topology;
     }
 
     if operations.contains(SanitizeOperations::SET_CONJUGATION) {

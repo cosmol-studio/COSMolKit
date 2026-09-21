@@ -15,10 +15,12 @@ mod hcount;
 mod hybridization;
 mod hydrogens;
 mod kekulize;
+mod legacy_stereo;
 mod matrices;
 mod paths;
 mod periodic_table;
 mod potential_stereo;
+mod query_ops;
 mod radicals;
 mod rings;
 mod sanitize;
@@ -37,15 +39,16 @@ pub use atropisomer::{
 
 pub use aromaticity::{
     AromaticityAssignment, AromaticityError, AromaticityModel, AromaticityParams,
-    assign_aromaticity,
+    assign_aromaticity, assign_aromaticity_with_query_state,
 };
 
 pub use bond_dirs::{BondDirectionStereoError, assign_chiral_types_from_bond_dirs};
 
 pub use hydrogens::{
     AddHsParams, AddHydrogensResult, HydrogenError, HydrogenWarning, RemoveHsParams,
-    RemoveHydrogensResult, add_hydrogens_impl, add_hydrogens_with_params, remove_hydrogens_impl,
-    remove_hydrogens_with_params,
+    RemoveHydrogensResult, add_hydrogens_impl, add_hydrogens_topology_with_query_state,
+    add_hydrogens_with_params, add_hydrogens_with_query_state, remove_hydrogens_impl,
+    remove_hydrogens_with_params, remove_hydrogens_with_query_state,
 };
 
 /// Strict-build-only bridge for the detached AddHs topology migration target.
@@ -59,10 +62,14 @@ pub mod __migration_hydrogens {
         AddHydrogensCoordinateResult, AddHydrogensTopologyResult, AddedHydrogen, AddedHydrogenKind,
         HydrogenError, PreparedHydrogenRemoval, add_hydrogen_coordinates, add_hydrogens_topology,
         prepare_hydrogen_removal_stereo, remove_hydrogen_candidates,
+        remove_hydrogen_candidates_with_query_state,
     };
 }
 
-pub use cip_ranks::{CipRankError, assign_atom_cip_ranks, refine_atom_cip_ranks_from_invariants};
+pub use cip_ranks::{
+    CipRankError, assign_atom_cip_ranks, assign_atom_cip_ranks_with_query_state,
+    refine_atom_cip_ranks_from_invariants, refine_atom_cip_ranks_from_invariants_with_query_state,
+};
 pub(crate) use cleanup::{CleanupError, CleanupParams, cleanup};
 
 /// Strict-build-only bridge for detached cleanup migration validation.
@@ -130,8 +137,13 @@ pub mod __migration_sanitize {
 
 pub use kekulize::{
     CanonicalRankError, CanonicalRankParams, KekulizeAssignment, KekulizeAttempt, KekulizeError,
-    KekulizeParams, kekulize, kekulize_if_possible, rank_fragment_atoms,
-    rank_mol_atoms_with_params,
+    KekulizeParams, kekulize, kekulize_if_possible, kekulize_if_possible_with_query_state,
+    kekulize_with_query_state, rank_fragment_atoms, rank_mol_atoms_with_params,
+};
+
+pub use legacy_stereo::{
+    LegacyStereoError, assign_legacy_stereochemistry,
+    assign_legacy_stereochemistry_with_query_state,
 };
 
 pub use matrices::{
@@ -171,7 +183,7 @@ pub use rings::{
 pub use sanitize::{
     ChemistryProblem, ChemistryProblemError, ChemistryProblemReport, SanitizeAssignment,
     SanitizeError, SanitizeOperations, SanitizeParams, SanitizeStage, detect_chemistry_problems,
-    sanitize_topology,
+    sanitize_topology, sanitize_topology_with_query_state,
 };
 pub(crate) use sanitize::{
     PropertyCacheAssignment, PropertyCacheError, PropertyCacheParams, assign_property_cache,

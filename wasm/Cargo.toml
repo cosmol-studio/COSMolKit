@@ -7,7 +7,7 @@ repository = "https://github.com/cosmol-studio/COSMolKit"
 homepage = "https://tools.cosmol.org/"
 documentation = "https://docs.rs/cosmolkit-wasm"
 license.workspace = true
-version.workspace = true
+version = "0.5.0-rc.3"
 edition.workspace = true
 publish = false
 
@@ -42,4 +42,4 @@ serialization = ["cosmolkit/serialization"]
 stereoisomers = ["cosmolkit/stereoisomers"]
 
 [dependencies]
-cosmolkit = { version = "0.5.0-rc.3", path = "../crates/cosmolkit", default-features = false }
+cosmolkit = { version = "0.5.0-rc.4", path = "../crates/cosmolkit", default-features = false }

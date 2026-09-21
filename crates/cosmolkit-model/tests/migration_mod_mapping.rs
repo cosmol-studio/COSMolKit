@@ -498,7 +498,7 @@ fn removal_mapping_covers_bonds_sgroups_stereo_and_adjacency_references() {
                 }])
                 .with_cstates(vec![SGroupCState {
                     bond: bond_id(0),
-                    vector: [1.0, 2.0],
+                    vector: [1.0, 2.0, 3.0],
                 }]),
             SubstanceGroup::new(SubstanceGroupId::new(1), SubstanceGroupKind::Data)
                 .with_atoms(vec![atom_id(2)])
