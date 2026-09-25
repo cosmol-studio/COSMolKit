@@ -607,6 +607,42 @@ pub fn assign_legacy_stereochemistry_for_depiction(
     assign_legacy_stereochemistry_impl(topology, valence, rings, None, false, false)
 }
 
+/// Apply the fixed RDKit legacy assignment to detached topology state with
+/// independent cleanup and possible-center flags.
+///
+/// The caller owns the source molecule-level `force=false` property guard and
+/// property effects; detached topology does not contain `_StereochemDone`.
+#[doc(hidden)]
+pub fn assign_legacy_stereochemistry_with_flags(
+    topology: TopologyBlock,
+    valence: &ValenceAssignment,
+    rings: &RingInfo,
+    clean_it: bool,
+    flag_possible_stereo_centers: bool,
+) -> Result<TopologyBlock, LegacyStereoError> {
+    // BEGIN RDKIT CPP FUNCTION MolOps::assignStereochemistry legacy flag dispatch
+    // RDKit❗✔️:   } else {
+    // RDKit❗✔️:     Chirality::legacyStereoPerception(mol, cleanIt, flagPossibleStereoCenters);
+    // RDKit❗✔️:   }
+    // END RDKIT CPP FUNCTION MolOps::assignStereochemistry legacy flag dispatch
+    // Behavior review: the pinned parity profile selects the existing legacy
+    // implementation, and this adapter forwards both independent flags. The
+    // false/false and true/true profiles remain available through their
+    // unchanged wrappers; the CX caller supplies true/false after its own
+    // force=false presence guard. Exact profile regressions are scheduled in
+    // the owning core test target.
+    // Complexity review: this O(1) adapter adds no clone, allocation, graph
+    // scan, or lookup; all work remains in the existing implementation.
+    assign_legacy_stereochemistry_impl(
+        topology,
+        valence,
+        rings,
+        None,
+        clean_it,
+        flag_possible_stereo_centers,
+    )
+}
+
 #[doc(hidden)]
 pub fn assign_legacy_stereochemistry_with_query_state(
     topology: TopologyBlock,

@@ -1620,7 +1620,7 @@ fn apply_sdf_property_lists(
             (MolBlockRecord::Query(query, ..), SdfPropertyListTarget::Atom) => {
                 for (atom, value) in query.query.atoms_mut().iter_mut().zip(&values) {
                     if let Some(value) = value {
-                        atom.atom_mut().set_prop(property_name, value)?;
+                        atom.set_prop(property_name, value)?;
                     }
                 }
             }
@@ -1923,13 +1923,13 @@ fn query_from_concrete_atom_fields(
     if let Some(isotope) = isotope.filter(|isotope| *isotope != 0) {
         query = QueryNode::and(vec![
             query,
-            QueryNode::predicate(AtomQueryPredicate::Isotope(isotope)),
+            QueryNode::predicate(AtomQueryPredicate::Isotope(i32::from(isotope))),
         ]);
     }
     if formal_charge != 0 {
         query = QueryNode::and(vec![
             query,
-            QueryNode::predicate(AtomQueryPredicate::FormalCharge(formal_charge)),
+            QueryNode::predicate(AtomQueryPredicate::FormalCharge(i32::from(formal_charge))),
         ]);
     }
     if radical_electrons != 0 {
@@ -3011,7 +3011,7 @@ fn parse_v2000_substitution_line(
         })?;
         atom.query = Some(merge_v2000_atom_query(
             atom.query.take(),
-            QueryNode::predicate(AtomQueryPredicate::ExplicitDegree(degree)),
+            QueryNode::predicate(AtomQueryPredicate::ExplicitDegree(i32::from(degree))),
         ));
     }
     // END RDKIT CPP FUNCTION
@@ -3091,9 +3091,9 @@ fn parse_v2000_ring_bond_count_line(
             -1 => AtomQueryPredicate::RingBondCount(0),
             -2 => {
                 *needs_query_scan = true;
-                AtomQueryPredicate::RingBondCount(0xDEAD_BEEF)
+                AtomQueryPredicate::RingBondCount(0xDEAD_BEEF_u32 as i32)
             }
-            1..=3 => AtomQueryPredicate::RingBondCount(count as u32),
+            1..=3 => AtomQueryPredicate::RingBondCount(count as i32),
             4 => AtomQueryPredicate::RingBondCountLessEqual(4),
             _ => {
                 return Err(SdfReadError::Parse(format!(
@@ -5022,25 +5022,21 @@ fn parse_v3000_atom_properties(
         match property.as_str() {
             "CHG" => {
                 let charge = parse_v3000_i32(value, "V3000 atom charge", line)?;
-                // RDKit parses CHG into `int`: concrete `Atom` storage then
-                // narrows through its `std::int8_t d_formalCharge`, while the
-                // formal-charge query target remains `int`. COSMolKit's
-                // detached AtomSpec and typed predicate currently share an
-                // `i8` model, so the plan deliberately requires a checked
-                // representational boundary instead of either upstream
-                // concrete narrowing or an invented query widening.
-                let charge = i8::try_from(charge).map_err(|_| {
-                    SdfReadError::Unsupported(
-                        "V3000 atom charges outside the detached i8 charge model",
-                    )
-                })?;
                 if query.is_some() {
+                    // Keep the source int as query state; QueryAtom's narrow
+                    // formal-charge carrier is not assigned by this branch.
                     let predicate = QueryNode::predicate(AtomQueryPredicate::FormalCharge(charge));
                     query = Some(match query {
                         Some(existing) => QueryNode::and(vec![existing, predicate]),
                         None => predicate,
                     });
                 } else {
+                    // The ordinary detached AtomSpec remains i8-bounded.
+                    let charge = i8::try_from(charge).map_err(|_| {
+                        SdfReadError::Unsupported(
+                            "V3000 atom charges outside the detached i8 charge model",
+                        )
+                    })?;
                     spec = spec.with_formal_charge(charge);
                 }
             }
@@ -5089,24 +5085,21 @@ fn parse_v3000_atom_properties(
                         atom_index + 1
                     )));
                 }
-                // Upstream concrete `Atom::setIsotope(unsigned int)` narrows
-                // into `std::uint16_t d_isotope`, while the equality-query
-                // target retains `int`. COSMolKit currently represents both
-                // `AtomSpec::isotope` and the typed `Isotope` predicate as
-                // `u16`, so values above 65535 are a checked current model
-                // boundary, not a claim of source-equivalent behavior.
-                let isotope = u16::try_from(isotope).map_err(|_| {
-                    SdfReadError::Unsupported(
-                        "V3000 isotope mass outside the detached u16 isotope model",
-                    )
-                })?;
                 if query.is_some() {
+                    // Keep the source int as query state; no isotope carrier
+                    // assignment occurs in this branch.
                     let predicate = QueryNode::predicate(AtomQueryPredicate::Isotope(isotope));
                     query = Some(match query {
                         Some(existing) => QueryNode::and(vec![existing, predicate]),
                         None => predicate,
                     });
                 } else {
+                    // The ordinary detached AtomSpec remains u16-bounded.
+                    let isotope = u16::try_from(isotope).map_err(|_| {
+                        SdfReadError::Unsupported(
+                            "V3000 isotope mass outside the detached u16 isotope model",
+                        )
+                    })?;
                     spec = spec.with_isotope(isotope);
                 }
             }
@@ -5266,26 +5259,19 @@ fn parse_v3000_atom_properties(
                 // every retained value; only the V2000 `M  RBC` line builds
                 // the LESS-EQUAL form for count 4. The source assigns the
                 // sentinel through `unsigned int` (`rbcount = 0xDEADBEEF`),
-                // so the Rust sentinel is computed directly in the u32
-                // predicate domain instead of routing 0xDEADBEEF through an
-                // `i32` variable.
-                let rbcount: u32 = if count == -1 {
+                // and AtomRingQuery observes that same 32-bit pattern after
+                // its signed integer conversion. Preserve it in the widened
+                // signed query target while retaining the unsigned scan key.
+                let rbcount: i32 = if count == -1 {
                     0
                 } else if count == -2 {
                     // Ring bonds can only be counted during post processing
                     needs_query_scan = true;
-                    0xDEAD_BEEF
+                    0xDEAD_BEEF_u32 as i32
                 } else if count > 4 {
                     4
-                } else if count < 0 {
-                    // The source builds a never-matching equality query for
-                    // other negative values; the detached u32 predicate model
-                    // cannot hold them, so the boundary fails closed.
-                    return Err(SdfReadError::Unsupported(
-                        "V3000 RBCNT values below -2 are outside the detached ring-bond-count query model",
-                    ));
                 } else {
-                    count as u32
+                    count
                 };
                 // Behavior review: ParseV3000AtomProps first converts a
                 // concrete Atom with QueryAtom(const Atom&), retaining its
@@ -5294,8 +5280,9 @@ fn parse_v3000_atom_properties(
                 // QueryAtom null-query algebra replaces a non-negated
                 // AtomNull wildcard with the added predicate. The shared
                 // constructor helper also preserves the accepted zero-isotope
-                // omission rule. Values below -2 remain an explicit current
-                // model boundary because the typed predicate stores u32.
+                // omission rule. Negative equality targets retain source
+                // AtomRingQuery behavior: any negative value tests whether at
+                // least one ring bond is present.
                 // Complexity review: conversion and expansion perform a
                 // constant number of scalar checks and query-node allocations;
                 // no atom, bond, or query-tree scan is introduced here.
@@ -8313,14 +8300,16 @@ mod tests {
             &QueryNode::and(vec![
                 QueryNode::and(vec![
                     QueryNode::predicate(AtomQueryPredicate::AtomicNumberIn(vec![6, 7])),
-                    QueryNode::predicate(AtomQueryPredicate::RingBondCount(0xDEAD_BEEF)),
+                    QueryNode::predicate(
+                        AtomQueryPredicate::RingBondCount(0xDEAD_BEEF_u32 as i32,)
+                    ),
                 ]),
                 QueryNode::predicate(AtomQueryPredicate::IsUnsaturated),
             ])
         );
         assert_eq!(record.query.atoms()[1].prop("_MolFileRLabel"), Some("7"));
         assert_eq!(record.query.atoms()[1].prop("dummyLabel"), Some("R7"));
-        assert_eq!(record.query.atoms()[1].atom().isotope(), Some(7));
+        assert_eq!(record.query.atoms()[1].isotope(), Some(7));
         assert_eq!(
             record.query.atoms()[1].predicate(),
             &QueryNode::and(vec![
@@ -8345,7 +8334,7 @@ mod tests {
             record.query.atoms()[3].predicate(),
             &QueryNode::predicate(AtomQueryPredicate::AtomicNumberNotIn(vec![7, 8]))
         );
-        assert_eq!(record.query.atoms()[3].atom().element().atomic_number(), 7);
+        assert_eq!(record.query.atoms()[3].atomic_number(), 7);
 
         let conflicting = include_str!(
             "../../../third_party/rdkit/Code/GraphMol/FileParsers/test_data/conflicting-list-query.mol"
@@ -8542,9 +8531,9 @@ mod tests {
             atom.predicate(),
             &QueryNode::predicate(AtomQueryPredicate::Any)
         );
-        assert_eq!(atom.atom().prop("_MolFileRLabel"), Some("12"));
-        assert_eq!(atom.atom().prop("dummyLabel"), Some("R12"));
-        assert_eq!(atom.atom().isotope(), Some(12));
+        assert_eq!(atom.prop("_MolFileRLabel"), Some("12"));
+        assert_eq!(atom.prop("dummyLabel"), Some("R12"));
+        assert_eq!(atom.isotope(), Some(12));
     }
 
     #[test]
@@ -8608,7 +8597,7 @@ mod tests {
             record.query.atoms()[0].predicate(),
             &QueryNode::and(vec![
                 QueryNode::predicate(AtomQueryPredicate::AtomicNumber(6)),
-                QueryNode::predicate(AtomQueryPredicate::RingBondCount(0xDEAD_BEEF)),
+                QueryNode::predicate(AtomQueryPredicate::RingBondCount(0xDEAD_BEEF_u32 as i32,)),
             ])
         );
         assert_eq!(record.properties.prop("_NeedsQueryScan"), Some("1"));
@@ -8629,13 +8618,22 @@ mod tests {
             ])
         );
 
-        // Values below -2 build a never-matching query in the source; the
-        // detached u32 predicate model cannot hold them and fails closed.
-        assert!(matches!(
-            read_mol_block_detached(&block("RBCNT=-3")),
-            Err(super::SdfReadError::Unsupported(message))
-                if message.contains("RBCNT values below -2")
-        ));
+        // Every negative source target uses AtomRingQuery's source-defined
+        // nonzero-count branch; retain values outside the SMARTS number range.
+        for (raw, target) in [("RBCNT=-3", -3), ("RBCNT=-2147483648", i32::MIN)] {
+            let MolBlockRecord::Query(record) =
+                read_mol_block_detached(&block(raw)).expect("signed RBCNT query")
+            else {
+                panic!("{raw} must produce query topology");
+            };
+            assert_eq!(
+                record.query.atoms()[0].predicate(),
+                &QueryNode::and(vec![
+                    QueryNode::predicate(AtomQueryPredicate::AtomicNumber(6)),
+                    QueryNode::predicate(AtomQueryPredicate::RingBondCount(target)),
+                ])
+            );
+        }
 
         // HCOUNT keeps the untruncated LESS-EQUAL value for representable
         // counts. Converting a concrete atom first constructs RDKit's
@@ -8675,6 +8673,73 @@ mod tests {
             panic!("non-strict duplicate ATTCHPT must produce concrete topology");
         };
         assert_eq!(topology.atoms[0].prop("molAttachPoint"), Some("1"));
+    }
+
+    #[test]
+    fn v3000_query_charge_and_mass_keep_i32_targets_separate_from_carriers() {
+        fn contains_predicate(
+            node: &QueryNode<AtomQueryPredicate>,
+            expected: &AtomQueryPredicate,
+        ) -> bool {
+            match node {
+                QueryNode::Predicate(predicate) => predicate == expected,
+                QueryNode::And(children) | QueryNode::Or(children) | QueryNode::Xor(children) => {
+                    children
+                        .iter()
+                        .any(|child| contains_predicate(child, expected))
+                }
+                QueryNode::Not(child) => contains_predicate(child, expected),
+            }
+        }
+
+        let block = |symbol: &str, atom_properties: &str| {
+            format!(
+                concat!(
+                    "wide query properties\n  test\n\n",
+                    "  0  0  0  0  0  0  0  0  0  0999 V3000\n",
+                    "M  V30 BEGIN CTAB\n",
+                    "M  V30 COUNTS 1 0 0 0 0\n",
+                    "M  V30 BEGIN ATOM\n",
+                    "M  V30 1 {symbol} 0 0 0 0 {atom_properties}\n",
+                    "M  V30 END ATOM\n",
+                    "M  V30 END CTAB\n",
+                    "M  END\n",
+                ),
+                symbol = symbol,
+                atom_properties = atom_properties,
+            )
+        };
+
+        for (atom_properties, expected) in [
+            ("CHG=128", AtomQueryPredicate::FormalCharge(128)),
+            ("CHG=-129", AtomQueryPredicate::FormalCharge(-129)),
+            ("MASS=65536", AtomQueryPredicate::Isotope(65536)),
+        ] {
+            let MolBlockRecord::Query(record) =
+                read_mol_block_detached(&block("*", atom_properties))
+                    .expect("wide V3000 query targets remain representable")
+            else {
+                panic!("query wildcard with {atom_properties} must remain a query record");
+            };
+            let atom = &record.query.atoms()[0];
+            assert!(
+                contains_predicate(atom.predicate(), &expected),
+                "{atom_properties}: {:?} must retain {expected:?}",
+                atom.predicate()
+            );
+            assert_eq!(atom.formal_charge(), 0, "{atom_properties}");
+            assert_eq!(atom.isotope(), None, "{atom_properties}");
+        }
+
+        for (atom_properties, carrier_boundary) in
+            [("CHG=128", "i8"), ("CHG=-129", "i8"), ("MASS=65536", "u16")]
+        {
+            assert!(matches!(
+                read_mol_block_detached(&block("C", atom_properties)),
+                Err(super::SdfReadError::Unsupported(message))
+                    if message.contains(carrier_boundary)
+            ));
+        }
     }
 
     fn v3000_collection_input(collection_lines: &[&str]) -> String {

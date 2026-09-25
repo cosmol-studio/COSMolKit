@@ -154,8 +154,10 @@ pub use kekulize::{
 
 pub use legacy_stereo::{
     LegacyStereoError, assign_legacy_stereochemistry, assign_legacy_stereochemistry_for_depiction,
-    assign_legacy_stereochemistry_with_query_state,
+    assign_legacy_stereochemistry_with_flags, assign_legacy_stereochemistry_with_query_state,
 };
+
+pub use structure_tags::cleanup_stereo_groups;
 
 pub use matrices::{
     AdjacencyMatrixParams, DenseMatrix, DistanceMatrix3dParams, MatrixError,

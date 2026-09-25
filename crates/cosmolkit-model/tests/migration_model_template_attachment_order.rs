@@ -127,10 +127,7 @@ fn query_atoms_share_the_concrete_carrier_and_range_validation() {
     )
     .expect("query graph uses the same valid atom-table references");
     assert_eq!(graph.atoms()[0].template_attachment_order(), Some(&order));
-    assert_eq!(
-        graph.atoms()[0].atom().template_attachment_order(),
-        Some(&order)
-    );
+    assert_eq!(graph.atoms()[0].template_attachment_order(), Some(&order));
 
     let invalid = TemplateAttachmentOrder::new(vec![TemplateAttachment::new(AtomId::new(3), "Al")])
         .expect("local order is valid before graph-range validation");

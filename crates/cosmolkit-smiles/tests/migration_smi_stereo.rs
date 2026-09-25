@@ -185,7 +185,14 @@ fn parser_and_writer_preserve_tetrahedral_storage_and_traversal_order() {
             "{input}"
         );
         assert_eq!(
-            write_smiles_with_params(&record, &SmilesWriteParams { canonical: false }).unwrap(),
+            write_smiles_with_params(
+                &record,
+                &SmilesWriteParams {
+                    canonical: false,
+                    ..Default::default()
+                },
+            )
+            .unwrap(),
             noncanonical,
             "{input}"
         );

@@ -193,9 +193,7 @@ fn sdf_parse_state_post_handoff_v2000_preserves_parser_stereo_bit() {
                 MolBlockRecord::Concrete { topology, .. } if !query => {
                     topology.atoms[0].chiral_tag()
                 }
-                MolBlockRecord::Query(record) if query => {
-                    record.query.atoms()[0].atom().chiral_tag()
-                }
+                MolBlockRecord::Query(record) if query => record.query.atoms()[0].chiral_tag(),
                 other => panic!("unexpected graph kind: {other:?}"),
             };
             assert_eq!(tag, expected_tag, "symbol={symbol}, mode={mode:?}");
@@ -234,9 +232,7 @@ fn sdf_parse_state_post_handoff_v3000_cfg_modes_and_errors() {
                     MolBlockRecord::Concrete { topology, .. } if !query => {
                         topology.atoms[0].chiral_tag()
                     }
-                    MolBlockRecord::Query(record) if query => {
-                        record.query.atoms()[0].atom().chiral_tag()
-                    }
+                    MolBlockRecord::Query(record) if query => record.query.atoms()[0].chiral_tag(),
                     other => panic!("unexpected graph kind: {other:?}"),
                 };
                 let expected = if mode == SdfCoordinateMode::Require3D {

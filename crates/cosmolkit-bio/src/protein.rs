@@ -163,6 +163,7 @@ impl Protein {
                             projected_residue_id,
                             source_atom.name(),
                             source_atom.element(),
+                            source_atom.isotope_mass_number(),
                             source_atom.altloc(),
                             source_atom.formal_charge(),
                             source_atom.calc_flag(),
@@ -211,6 +212,42 @@ impl Protein {
             residues,
             atoms,
             entities,
+            // Gemmi✔️✔️:     st.name = name;
+            // Gemmi✔️✔️:     st.connections = connections;
+            // Gemmi✔️✔️:     st.cispeps = cispeps;
+            // Gemmi✔️✔️:     st.mod_residues = mod_residues;
+            // Gemmi✔️✔️:     st.helices = helices;
+            // Gemmi✔️✔️:     st.sheets = sheets;
+            // Gemmi✔️✔️:     st.meta = meta;
+            // Gemmi✔️✔️:     st.info = info;
+            // Gemmi✔️✔️:     st.raw_remarks = raw_remarks;
+            // Gemmi✔️✔️:     st.has_origx = has_origx;
+            // Gemmi✔️✔️:     st.origx = origx;
+            // Gemmi✔️✔️:     st.resolution = resolution;
+            // Behavior review: M23 preserves source-address relationships and
+            // source metadata verbatim through the projection, even when an
+            // address names a row excluded by the protein-only hierarchy.
+            // Assemblies remain omitted above under the existing projection
+            // rule; source serial connectivity remains metadata, not bonds.
+            // Complexity review: these clones are linear in their retained
+            // owned values, as Gemmi's `empty_copy` deep-copies the same
+            // aggregates; no full BioStructure clone or remapping scan occurs.
+            connections: source.connections().to_vec(),
+            cispeps: source.cispeps().to_vec(),
+            mod_residues: source.mod_residues().to_vec(),
+            helices: source.helices().to_vec(),
+            sheets: source.sheets().to_vec(),
+            metadata: source.metadata().clone(),
+            // Gemmi❗✔️:   std::map<int, std::vector<int>> conect_map;
+            // Gemmi❗✔️:   bool has_d_fraction = false;  // uses Refmac's ccp4_deuterium_fraction
+            // Gemmi❗✔️:   int non_ascii_line = 0;  // first PDB line with non-ASCII bytes, or 0
+            // Gemmi❗✔️:   char ter_status = '\0';
+            // M23 explicitly freezes preservation of these source-state fields
+            // although `Structure::empty_copy` does not copy all of them. This
+            // is the approved BIO projection contract, not a claim of exact
+            // Gemmi empty_copy behavior. In particular, CONECT serial ids are
+            // never reinterpreted as projected row ids or chemical bonds.
+            source_state: source.source_state().clone(),
             coordinates: BioCoordinateBlock::new(positions),
             crystal: source.crystal().cloned(),
             ncs_operators: source.ncs_operators().to_vec(),

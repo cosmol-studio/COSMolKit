@@ -793,7 +793,7 @@ fn property_compat(
 //   useChirality specified/unspecified precheck is wired below; the final
 //   tetrahedral parity check remains in MolMatchFinalCheckFunctor.
 
-fn has_chiral_label(atom: &Atom) -> bool {
+fn has_chiral_label(chiral_tag: ChiralTag) -> bool {
     // RDKit✔️✔️: bool hasChiralLabel(const Atom *at) {
     // RDKit✔️✔️:   PRECONDITION(at, "bad atom");
     // RDKit✔️✔️:   return at->getChiralTag() == Atom::CHI_TETRAHEDRAL_CW ||
@@ -803,7 +803,7 @@ fn has_chiral_label(atom: &Atom) -> bool {
     // review: both implementations read one enum and perform at most two O(1)
     // comparisons without allocation.
     matches!(
-        atom.chiral_tag(),
+        chiral_tag,
         ChiralTag::TetrahedralCw | ChiralTag::TetrahedralCcw
     )
 }
@@ -921,9 +921,9 @@ fn atom_label_matches(
     let query_atom = &query.atoms()[query_index];
     let mol_atom = &mol.atoms()[mol_index];
     if params.use_chirality
-        && has_chiral_label(query_atom.atom())
+        && has_chiral_label(query_atom.chiral_tag())
         && !params.specified_stereo_query_matches_unspecified
-        && !has_chiral_label(mol_atom)
+        && !has_chiral_label(mol_atom.chiral_tag())
     {
         return Ok(false);
     }
@@ -975,7 +975,6 @@ fn atom_matches(query_atom: &QueryAtom, mol_atom: &Atom, _mol: &SearchTarget<'_>
     // Local complexity review: the plain-atom path is constant time and uses
     // only scalar field reads, exactly as the source. No allocation, cloning,
     // molecule scan, keyed lookup, or temporary collection is introduced.
-    let query_atom = query_atom.atom();
     if query_atom.atomic_number() != mol_atom.atomic_number() {
         return false;
     }
@@ -3092,7 +3091,8 @@ fn rdkit_match_final_check(
     // RDKit✔️✔️:     }
     for qi in 0..query.num_atoms() {
         let q_at = &query.atoms()[qi];
-        if query.adjacency().get(qi).map_or(0, Vec::len) < 3 || !has_chiral_label(q_at.atom()) {
+        if query.adjacency().get(qi).map_or(0, Vec::len) < 3 || !has_chiral_label(q_at.chiral_tag())
+        {
             continue;
         }
         let mi = q_to_mol[qi];
@@ -3103,7 +3103,7 @@ fn rdkit_match_final_check(
         // RDKit✔️✔️:       }
         // RDKit✔️✔️:       return false;
         // RDKit✔️✔️:     }
-        if !has_chiral_label(m_at) {
+        if !has_chiral_label(m_at.chiral_tag()) {
             if params.specified_stereo_query_matches_unspecified {
                 continue;
             }
@@ -3228,7 +3228,7 @@ fn rdkit_match_final_check(
         // RDKit✔️✔️:       matches[m_c[i]] = matchOK;
         // RDKit✔️✔️:     }
         let require_match = q_perm_count % 2 == m_perm_count % 2;
-        let labels_match = q_at.atom().chiral_tag() == m_at.chiral_tag();
+        let labels_match = q_at.chiral_tag() == m_at.chiral_tag();
         let match_ok = require_match == labels_match;
         if mol_stereo_groups[mi].is_some() {
             stereo_matches[mi] = Some(match_ok);
@@ -3939,7 +3939,7 @@ fn atom_compat(
     }
     if !params.atom_properties.is_empty()
         && !property_compat(
-            query_atom.atom().props(),
+            query_atom.props(),
             mol_atom.props(),
             &params.atom_properties,
         )

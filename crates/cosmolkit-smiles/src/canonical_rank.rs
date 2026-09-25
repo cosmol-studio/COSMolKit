@@ -86,6 +86,29 @@ fn build_ranking_fragment(
     topology: &TopologyBlock,
     component_atoms: &[usize],
 ) -> Result<TopologyBlock, CanonicalRankError> {
+    // BEGIN RDKIT CPP FUNCTION SmilesWrite::detail::MolToSmiles fragment bond mapping
+    // RDKit❗✔️:   // we got the mapping between fragments and atoms; repeat that for bonds
+    // RDKit❗✔️:   for (const auto &atsInFrag : fragsMolAtomMapping) {
+    // RDKit❗✔️:     atsPresent.reset();
+    // RDKit❗✔️:     bondsInFrag.clear();
+    // RDKit❗✔️:     for (auto aidx : atsInFrag) {
+    // RDKit❗✔️:       atsPresent.set(aidx);
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:     for (const auto bnd : mol.bonds()) {
+    // RDKit❗✔️:       if (atsPresent[bnd->getBeginAtomIdx()] &&
+    // RDKit❗✔️:           atsPresent[bnd->getEndAtomIdx()]) {
+    // RDKit❗✔️:         bondsInFrag.push_back(bnd->getIdx());
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:   }
+    // END RDKIT CPP FUNCTION SmilesWrite::detail::MolToSmiles fragment bond mapping
+    // Behavior review: source-derived component atom order is retained; each
+    // induced source bond is copied once when both endpoints are selected.
+    // This helper also reports duplicate and out-of-range atom selections
+    // before indexing. RDKit supplies no caller bond-ID selection.
+    // Complexity review: the adapter builds O(V) atom and O(E) bond maps and
+    // scans the bond table once, matching the source's one-component O(V+E)
+    // selection/mapping shape; the detached result requires new local rows.
     // Pass 1: validate every selected index and build the complete
     // old-to-new mapping before any atom is remapped. Forward references
     // (for example old atom 1 targeting the later retained old atom 2) must
@@ -293,6 +316,97 @@ mod tests {
         assert_eq!(remapped[0].bonds(), &[BondId::new(0)]);
     }
 
+    fn stereo_group_component_topology() -> TopologyBlock {
+        let atoms = vec![
+            Atom::from_spec(AtomId::new(0), AtomSpec::new(Element::C)),
+            Atom::from_spec(AtomId::new(1), AtomSpec::new(Element::N)),
+            Atom::from_spec(AtomId::new(2), AtomSpec::new(Element::O)),
+            Atom::from_spec(AtomId::new(3), AtomSpec::new(Element::C)),
+        ];
+        let bonds = vec![
+            Bond::from_spec(
+                BondId::new(0),
+                BondSpec::new(AtomId::new(0), AtomId::new(1), BondOrder::Single),
+            ),
+            Bond::from_spec(
+                BondId::new(1),
+                BondSpec::new(AtomId::new(2), AtomId::new(3), BondOrder::Single),
+            ),
+        ];
+        let groups = vec![
+            StereoGroup::new(
+                StereoGroupKind::Or,
+                vec![AtomId::new(1), AtomId::new(0), AtomId::new(2)],
+                Vec::new(),
+            )
+            .with_id(17),
+            StereoGroup::new(
+                StereoGroupKind::And,
+                Vec::new(),
+                vec![BondId::new(1), BondId::new(0)],
+            )
+            .with_id(23),
+            StereoGroup::new(StereoGroupKind::Absolute, vec![AtomId::new(2)], Vec::new())
+                .with_id(29),
+            StereoGroup::new(
+                StereoGroupKind::Or,
+                vec![AtomId::new(3), AtomId::new(0)],
+                vec![BondId::new(1), BondId::new(0)],
+            )
+            .with_id(31),
+            StereoGroup::new(
+                StereoGroupKind::And,
+                vec![AtomId::new(0)],
+                vec![BondId::new(1)],
+            )
+            .with_id(35),
+            StereoGroup::new(
+                StereoGroupKind::Absolute,
+                vec![AtomId::new(3)],
+                vec![BondId::new(0)],
+            )
+            .with_id(37),
+        ];
+        TopologyBlock::try_from_parts(atoms, bonds, Vec::new(), groups)
+            .expect("all source stereo-group atom and bond references are valid")
+    }
+
+    #[test]
+    fn ranking_fragment_selects_atom_and_bond_stereo_groups_in_source_order() {
+        // Pinned Subset.cpp::copySelectedStereoGroups includes a group only
+        // when every nonempty member class has a selected member, then filters
+        // atom and bond members without changing their source order.
+        let topology = stereo_group_component_topology();
+        let fragment = build_ranking_fragment(&topology, &[0, 1])
+            .expect("the selected source component maps to a valid fragment");
+
+        assert_eq!(
+            fragment
+                .stereo_groups
+                .iter()
+                .map(StereoGroup::id)
+                .collect::<Vec<_>>(),
+            vec![Some(17), Some(23), Some(31)]
+        );
+        assert_eq!(fragment.stereo_groups[0].kind(), StereoGroupKind::Or);
+        assert_eq!(
+            fragment.stereo_groups[0].atoms(),
+            &[AtomId::new(1), AtomId::new(0)]
+        );
+        assert!(fragment.stereo_groups[0].bonds().is_empty());
+
+        assert_eq!(fragment.stereo_groups[1].kind(), StereoGroupKind::And);
+        assert!(fragment.stereo_groups[1].atoms().is_empty());
+        assert_eq!(fragment.stereo_groups[1].bonds(), &[BondId::new(0)]);
+
+        assert_eq!(fragment.stereo_groups[2].kind(), StereoGroupKind::Or);
+        assert_eq!(fragment.stereo_groups[2].atoms(), &[AtomId::new(0)]);
+        assert_eq!(fragment.stereo_groups[2].bonds(), &[BondId::new(0)]);
+        fragment
+            .validate()
+            .expect("selected group members remain valid local topology IDs");
+    }
+
     fn two_component_topology() -> TopologyBlock {
         // Component A: old atom 0. Component B: old atoms 1, 2. The carrier at
         // old atom 1 targets old atom 2 (inside its own component).
@@ -312,6 +426,57 @@ mod tests {
             BondSpec::new(AtomId::new(1), AtomId::new(2), BondOrder::Single),
         )];
         TopologyBlock::try_from_parts(atoms, bonds, Vec::new(), Vec::new()).unwrap()
+    }
+
+    fn source_row_order_topology() -> TopologyBlock {
+        let attachment =
+            TemplateAttachmentOrder::new(vec![TemplateAttachment::new(AtomId::new(2), "forward")])
+                .unwrap();
+        let atoms = vec![
+            Atom::from_spec(
+                AtomId::new(0),
+                AtomSpec::new(Element::C).with_template_attachment_order(attachment),
+            ),
+            Atom::from_spec(AtomId::new(1), AtomSpec::new(Element::N)),
+            Atom::from_spec(AtomId::new(2), AtomSpec::new(Element::O)),
+            Atom::from_spec(AtomId::new(3), AtomSpec::new(Element::C)),
+        ];
+        // The source bond rows intentionally order 2-1 before 0-1.
+        let bonds = vec![
+            Bond::from_spec(
+                BondId::new(0),
+                BondSpec::new(AtomId::new(2), AtomId::new(1), BondOrder::Single),
+            ),
+            Bond::from_spec(
+                BondId::new(1),
+                BondSpec::new(AtomId::new(0), AtomId::new(1), BondOrder::Single),
+            ),
+        ];
+        TopologyBlock::try_from_parts(atoms, bonds, Vec::new(), Vec::new()).unwrap()
+    }
+
+    #[test]
+    fn ranking_fragment_keeps_forward_attachment_and_source_bond_row_order() {
+        let topology = source_row_order_topology();
+        let fragment = build_ranking_fragment(&topology, &[0, 1, 2])
+            .expect("valid connected component maps to a fragment");
+
+        let attachment = fragment.atoms[0]
+            .template_attachment_order()
+            .expect("carrier keeps its typed attachment order");
+        assert_eq!(attachment.entries()[0].target(), AtomId::new(2));
+        assert_eq!(attachment.entries()[0].label(), "forward");
+
+        assert_eq!(fragment.bonds.len(), 2);
+        assert_eq!(fragment.bonds[0].id(), BondId::new(0));
+        assert_eq!(fragment.bonds[0].begin(), AtomId::new(2));
+        assert_eq!(fragment.bonds[0].end(), AtomId::new(1));
+        assert_eq!(fragment.bonds[1].id(), BondId::new(1));
+        assert_eq!(fragment.bonds[1].begin(), AtomId::new(0));
+        assert_eq!(fragment.bonds[1].end(), AtomId::new(1));
+        fragment
+            .validate()
+            .expect("source-order fragment has unique ids and topology edges");
     }
 
     #[test]

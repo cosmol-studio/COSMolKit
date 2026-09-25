@@ -576,7 +576,9 @@ fn query_subset_uses_exact_predicates_and_source_table_order() {
         graph
             .atoms()
             .iter()
-            .map(|atom| atom.atom().element())
+            .map(|atom| atom
+                .element()
+                .expect("query carrier has an Element identity"))
             .collect::<Vec<_>>(),
         vec![Element::N, Element::C, Element::O, Element::S]
     );

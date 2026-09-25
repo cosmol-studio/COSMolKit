@@ -5,7 +5,8 @@ use std::{fmt, marker::PhantomData};
 use cosmolkit_types::Element;
 
 use crate::{
-    AltLocLabel, AtomName, AtomSourceIds, ChainSourceIds, EntitySourceIds, PdbSeqId,
+    AltLocLabel, AtomName, AtomSourceIds, BioCisPep, BioConnection, BioHelix, BioMetadata,
+    BioModRes, BioSheet, BioStructureSourceState, ChainSourceIds, EntitySourceIds, PdbSeqId,
     ResidueInfoKind, ResidueName, ResidueSourceIds,
 };
 
@@ -234,6 +235,7 @@ pub struct BioAtomRow {
     residue_id: BioResidueId,
     name: AtomName,
     element: Element,
+    isotope_mass_number: Option<u16>,
     altloc: Option<AltLocLabel>,
     formal_charge: i8,
     calc_flag: BioCalcFlag,
@@ -246,12 +248,16 @@ pub struct BioAtomRow {
 }
 
 impl BioAtomRow {
+    /// `isotope_mass_number` is independent of `element` and `name`. `None`
+    /// means that no isotope mass is specified; it does not mean explicit
+    /// protium. This value constructor does not impose physical isotope rules.
     #[allow(clippy::too_many_arguments)]
     #[must_use]
     pub fn new(
         residue_id: BioResidueId,
         name: AtomName,
         element: Element,
+        isotope_mass_number: Option<u16>,
         altloc: Option<AltLocLabel>,
         formal_charge: i8,
         calc_flag: BioCalcFlag,
@@ -276,6 +282,7 @@ impl BioAtomRow {
             residue_id,
             name,
             element,
+            isotope_mass_number,
             altloc,
             formal_charge,
             calc_flag,
@@ -299,6 +306,12 @@ impl BioAtomRow {
     #[must_use]
     pub const fn element(&self) -> Element {
         self.element
+    }
+    /// Returns the represented isotope mass number, if one was specified.
+    /// `None` means unspecified, not explicit mass number 1.
+    #[must_use]
+    pub const fn isotope_mass_number(&self) -> Option<u16> {
+        self.isotope_mass_number
     }
     #[must_use]
     pub const fn altloc(&self) -> Option<AltLocLabel> {
@@ -1147,6 +1160,13 @@ pub struct BioStructureParts {
     pub residues: Vec<BioResidueRow>,
     pub atoms: Vec<BioAtomRow>,
     pub entities: Vec<BioEntityRow>,
+    pub connections: Vec<BioConnection>,
+    pub cispeps: Vec<BioCisPep>,
+    pub mod_residues: Vec<BioModRes>,
+    pub helices: Vec<BioHelix>,
+    pub sheets: Vec<BioSheet>,
+    pub metadata: BioMetadata,
+    pub source_state: BioStructureSourceState,
     pub coordinates: BioCoordinateBlock,
     pub crystal: Option<BioCrystalInfo>,
     pub ncs_operators: Vec<BioNcsOperator>,
@@ -1161,6 +1181,13 @@ pub struct BioStructure {
     residues: Vec<BioResidueRow>,
     atoms: Vec<BioAtomRow>,
     entities: Vec<BioEntityRow>,
+    connections: Vec<BioConnection>,
+    cispeps: Vec<BioCisPep>,
+    mod_residues: Vec<BioModRes>,
+    helices: Vec<BioHelix>,
+    sheets: Vec<BioSheet>,
+    metadata: BioMetadata,
+    source_state: BioStructureSourceState,
     coordinates: BioCoordinateBlock,
     crystal: Option<BioCrystalInfo>,
     ncs_operators: Vec<BioNcsOperator>,
@@ -1170,6 +1197,25 @@ pub struct BioStructure {
 impl BioStructure {
     pub fn from_parts(parts: BioStructureParts) -> Result<Self, BioStructureError> {
         Self::validate_parts(&parts)?;
+        // Gemmi✔️🔝:     st.connections = connections;
+        // Gemmi✔️🔝:     st.cispeps = cispeps;
+        // Gemmi✔️🔝:     st.mod_residues = mod_residues;
+        // Gemmi✔️🔝:     st.helices = helices;
+        // Gemmi✔️🔝:     st.sheets = sheets;
+        // Gemmi✔️🔝:     st.meta = meta;
+        // Gemmi✔️🔝:     st.input_format = input_format;
+        // Gemmi✔️🔝:     st.has_origx = has_origx;
+        // Gemmi✔️🔝:     st.origx = origx;
+        // Gemmi✔️🔝:     st.info = info;
+        // Gemmi✔️🔝:     st.raw_remarks = raw_remarks;
+        // Gemmi✔️🔝:     st.resolution = resolution;
+        // Behavior review: after full existing structure validation, each
+        // owned source relationship/metadata value moves intact into the
+        // validated BioStructure. Its source-address references are not
+        // reinterpreted as BIO row ids.
+        // Complexity review: moving the vectors and aggregate values is O(1)
+        // per field and avoids deep element copies performed by Gemmi's
+        // `empty_copy`; validation retains its existing independent cost.
         Ok(Self {
             input_format: parts.input_format,
             models: parts.models,
@@ -1177,6 +1223,13 @@ impl BioStructure {
             residues: parts.residues,
             atoms: parts.atoms,
             entities: parts.entities,
+            connections: parts.connections,
+            cispeps: parts.cispeps,
+            mod_residues: parts.mod_residues,
+            helices: parts.helices,
+            sheets: parts.sheets,
+            metadata: parts.metadata,
+            source_state: parts.source_state,
             coordinates: parts.coordinates,
             crystal: parts.crystal,
             ncs_operators: parts.ncs_operators,
@@ -1201,6 +1254,13 @@ impl BioStructure {
             residues: self.residues,
             atoms: self.atoms,
             entities: self.entities,
+            connections: self.connections,
+            cispeps: self.cispeps,
+            mod_residues: self.mod_residues,
+            helices: self.helices,
+            sheets: self.sheets,
+            metadata: self.metadata,
+            source_state: self.source_state,
             coordinates: self.coordinates,
             crystal: self.crystal,
             ncs_operators: self.ncs_operators,
@@ -1231,6 +1291,34 @@ impl BioStructure {
     #[must_use]
     pub fn entities(&self) -> &[BioEntityRow] {
         &self.entities
+    }
+    #[must_use]
+    pub fn connections(&self) -> &[BioConnection] {
+        &self.connections
+    }
+    #[must_use]
+    pub fn cispeps(&self) -> &[BioCisPep] {
+        &self.cispeps
+    }
+    #[must_use]
+    pub fn mod_residues(&self) -> &[BioModRes] {
+        &self.mod_residues
+    }
+    #[must_use]
+    pub fn helices(&self) -> &[BioHelix] {
+        &self.helices
+    }
+    #[must_use]
+    pub fn sheets(&self) -> &[BioSheet] {
+        &self.sheets
+    }
+    #[must_use]
+    pub const fn metadata(&self) -> &BioMetadata {
+        &self.metadata
+    }
+    #[must_use]
+    pub const fn source_state(&self) -> &BioStructureSourceState {
+        &self.source_state
     }
     #[must_use]
     pub const fn coordinates(&self) -> &BioCoordinateBlock {

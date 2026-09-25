@@ -175,14 +175,14 @@ fn mol_post_attachment_v3000_value_and_final_classification() {
                     &QueryNode::predicate(AtomQueryPredicate::Any)
                 );
                 assert!(!atom.predicate_is_carrier_derived());
-                assert_eq!(atom.atom().prop("_fromAttchpt"), Some(*label));
+                assert_eq!(atom.prop("_fromAttchpt"), Some(*label));
                 assert_eq!(
                     record.query.bonds()[1 + offset].bond().order(),
                     BondOrder::Single
                 );
                 assert!(record.query.bonds()[1 + offset].predicate_is_carrier_derived());
             }
-            assert_eq!(record.query.atoms()[1].atom().prop("molAttachPoint"), None);
+            assert_eq!(record.query.atoms()[1].prop("molAttachPoint"), None);
             let coordinate_rows = record.query.coordinates_2d().map(<[_]>::len).or_else(|| {
                 record
                     .query
@@ -234,7 +234,7 @@ fn mol_post_attachment_v2000_and_existing_query_obey_source_order() {
         record.query.atoms()[2].predicate(),
         &QueryNode::predicate(AtomQueryPredicate::Any)
     );
-    assert_eq!(record.query.atoms()[1].atom().prop("molAttachPoint"), None);
+    assert_eq!(record.query.atoms()[1].prop("molAttachPoint"), None);
 
     // ProcessMolProps maps SUBST=-2 to the degree *after* attachment expansion.
     let parsed = read_mol_block_detached(&v3000_attachment(Some("1"), Some(-2))).unwrap();
@@ -482,7 +482,7 @@ fn finished_center_tag_and_group_count(
             coordinates,
         ),
         MolBlockRecord::Query(record) => (
-            record.query.atoms()[0].atom().chiral_tag(),
+            record.query.atoms()[0].chiral_tag(),
             record.query.stereo_groups().len(),
             record.query.coordinate_block(record.source_coordinate_dim),
         ),
@@ -789,13 +789,13 @@ fn mol_post_legacy_closure_iteratively_reranks_resolved_stereo_for_concrete_and_
                     .query
                     .atoms()
                     .iter()
-                    .map(|atom| atom.atom().chiral_tag())
+                    .map(|atom| atom.chiral_tag())
                     .collect::<Vec<_>>(),
                 record
                     .query
                     .atoms()
                     .iter()
-                    .map(|atom| atom.atom().prop("_CIPCode").map(str::to_owned))
+                    .map(|atom| atom.prop("_CIPCode").map(str::to_owned))
                     .collect::<Vec<_>>(),
             ),
         };
@@ -847,21 +847,15 @@ fn mol_post_legacy_closure_retains_source_ring_special_cases_for_concrete_and_qu
             MolBlockRecord::Query(record) => {
                 assert_eq!(record.query.atoms().len(), 8);
                 assert_eq!(
-                    record.query.atoms()[1].atom().chiral_tag(),
+                    record.query.atoms()[1].chiral_tag(),
                     ChiralTag::TetrahedralCw
                 );
                 assert_eq!(
-                    record.query.atoms()[4].atom().chiral_tag(),
+                    record.query.atoms()[4].chiral_tag(),
                     ChiralTag::TetrahedralCw
                 );
-                assert_eq!(
-                    record.query.atoms()[1].atom().prop("_ringStereoAtoms"),
-                    Some("5")
-                );
-                assert_eq!(
-                    record.query.atoms()[4].atom().prop("_ringStereoAtoms"),
-                    Some("2")
-                );
+                assert_eq!(record.query.atoms()[1].prop("_ringStereoAtoms"), Some("5"));
+                assert_eq!(record.query.atoms()[4].prop("_ringStereoAtoms"), Some("2"));
                 continue;
             }
         };
@@ -1115,7 +1109,7 @@ fn mol_post_query_closure_false_flag_xyz_runs_stereo_before_direction_clearing()
         panic!("RBCNT must retain a query record")
     };
     assert_eq!(
-        record.query.atoms()[0].atom().chiral_tag(),
+        record.query.atoms()[0].chiral_tag(),
         ChiralTag::TetrahedralCcw
     );
     assert_eq!(
@@ -1357,7 +1351,7 @@ fn mol_post_query_closure_failure_is_atomic_for_query_records() {
     let MolBlockRecord::Query(snapshot) = snapshot else {
         unreachable!()
     };
-    assert_eq!(snapshot.query.atoms()[0].atom().explicit_hydrogens(), 0);
+    assert_eq!(snapshot.query.atoms()[0].explicit_hydrogens(), 0);
     assert_eq!(snapshot.substance_groups.len(), 1);
 }
 
@@ -1403,7 +1397,7 @@ fn mol_post_query_closure_atom_and_dat_queries_follow_source_order_then_complete
         record.query.atoms()[0].predicate(),
         &QueryNode::predicate(AtomQueryPredicate::AtomicNumber(7))
     );
-    assert_eq!(record.query.atoms()[0].atom().formal_charge(), -1);
+    assert_eq!(record.query.atoms()[0].formal_charge(), -1);
     assert_eq!(record.query.prop("_NeedsQueryScan"), None);
     assert!(record.substance_groups.is_empty());
 }
@@ -1664,11 +1658,8 @@ fn mol_post_smartsq_builds_typed_query_and_preserves_unconsumed_groups() {
         record.query.atoms()[0].predicate(),
         &QueryNode::predicate(AtomQueryPredicate::AtomicNumber(7))
     );
-    assert_eq!(record.query.atoms()[0].atom().prop("MRV SMA"), Some("[#7]"));
-    assert_eq!(
-        record.query.atoms()[0].atom().prop("_MolFileAtomQuery"),
-        Some("1")
-    );
+    assert_eq!(record.query.atoms()[0].prop("MRV SMA"), Some("[#7]"));
+    assert_eq!(record.query.atoms()[0].prop("_MolFileAtomQuery"), Some("1"));
     assert_eq!(record.substance_groups.len(), 1);
     assert_eq!(record.substance_groups[0].id(), SubstanceGroupId::new(0));
 }
@@ -2064,7 +2055,7 @@ fn mol_post_query_predicate_sync_rebuilds_synthesized_aromatic_carriers() {
             atom.predicate(),
             &QueryNode::predicate(AtomQueryPredicate::AtomicNumber(6))
         );
-        assert!(atom.atom().is_aromatic());
+        assert!(atom.is_aromatic());
     }
     for bond in record.query.bonds() {
         assert_eq!(bond.bond().order(), BondOrder::Aromatic);
@@ -2079,7 +2070,10 @@ fn mol_post_query_predicate_sync_rebuilds_synthesized_aromatic_carriers() {
             .query
             .atoms()
             .iter()
-            .map(|atom| atom.atom().clone())
+            .map(|atom| {
+                atom.try_to_atom()
+                    .expect("these concrete query carriers retain Element identity")
+            })
             .collect(),
         record
             .query

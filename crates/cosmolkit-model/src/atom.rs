@@ -409,39 +409,36 @@ impl AtomPdbResidueInfo {
     }
 }
 
-/// Atom construction payload.
+/// Non-identity atom carrier state shared by ordinary and query atoms.
 ///
-/// `AtomSpec` is deliberately separate from `Atom`: callers provide facts, and
-/// builders assign indices. Future agents must not add an `index` field here.
+/// Keeping this bundle in one place prevents query-only numeric identity from
+/// requiring a dummy `Atom` or a second implementation of atom properties.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AtomSpec {
-    element: Element,
-    formal_charge: i8,
-    explicit_hydrogens: u8,
-    chiral_tag: ChiralTag,
-    chiral_permutation: Option<u32>,
-    unknown_stereo: bool,
-    mol_parity: Option<i32>,
-    mol_inversion_flag: Option<i32>,
-    implicit_hydrogen: bool,
-    tracked_isotopic_hydrogens: Vec<u16>,
-    is_aromatic: bool,
-    isotope: Option<u16>,
-    atom_map: Option<u32>,
-    no_implicit: bool,
-    radical_electrons: u8,
-    hybridization: Hybridization,
-    props: BTreeMap<String, String>,
-    computed_props: BTreeSet<String>,
-    pdb_residue_info: Option<AtomPdbResidueInfo>,
-    template_attachment_order: Option<TemplateAttachmentOrder>,
+pub(crate) struct AtomProperties {
+    pub(crate) formal_charge: i8,
+    pub(crate) explicit_hydrogens: u8,
+    pub(crate) chiral_tag: ChiralTag,
+    pub(crate) chiral_permutation: Option<u32>,
+    pub(crate) unknown_stereo: bool,
+    pub(crate) mol_parity: Option<i32>,
+    pub(crate) mol_inversion_flag: Option<i32>,
+    pub(crate) implicit_hydrogen: bool,
+    pub(crate) tracked_isotopic_hydrogens: Vec<u16>,
+    pub(crate) is_aromatic: bool,
+    pub(crate) isotope: Option<u16>,
+    pub(crate) atom_map: Option<u32>,
+    pub(crate) no_implicit: bool,
+    pub(crate) radical_electrons: u8,
+    pub(crate) hybridization: Hybridization,
+    pub(crate) props: BTreeMap<String, String>,
+    pub(crate) computed_props: BTreeSet<String>,
+    pub(crate) pdb_residue_info: Option<AtomPdbResidueInfo>,
+    pub(crate) template_attachment_order: Option<TemplateAttachmentOrder>,
 }
 
-impl AtomSpec {
-    #[must_use]
-    pub const fn new(element: Element) -> Self {
+impl AtomProperties {
+    pub(crate) const fn new() -> Self {
         Self {
-            element,
             formal_charge: 0,
             explicit_hydrogens: 0,
             chiral_tag: ChiralTag::Unspecified,
@@ -464,6 +461,99 @@ impl AtomSpec {
         }
     }
 
+    pub(crate) fn set_prop(
+        &mut self,
+        key: impl Into<String>,
+        value: impl Into<String>,
+    ) -> Result<(), AtomPropertyError> {
+        let key = key.into();
+        validate_property_key(&key)?;
+        // RDKit✔️✔️: d_props.setVal(key, val);
+        // A non-computed write does not remove an existing computed marker.
+        self.props.insert(key, value.into());
+        Ok(())
+    }
+
+    pub(crate) fn set_computed_prop(
+        &mut self,
+        key: impl Into<String>,
+        value: impl Into<String>,
+    ) -> Result<(), AtomPropertyError> {
+        // RDKit✔️🔝: if (computed) {
+        // RDKit✔️🔝:   STR_VECT compLst;
+        // RDKit✔️🔝:   getPropIfPresent(RDKit::detail::computedPropName, compLst);
+        // RDKit✔️🔝:   if (std::find(compLst.begin(), compLst.end(), key) == compLst.end()) {
+        // RDKit✔️🔝:     compLst.emplace_back(key);
+        // RDKit✔️🔝:     d_props.setVal(RDKit::detail::computedPropName, compLst);
+        // RDKit✔️🔝:   }
+        // RDKit✔️🔝: }
+        // RDKit✔️🔝: d_props.setVal(key, val);
+        // The ordered set preserves membership semantics while replacing the
+        // source vector's linear duplicate scan with logarithmic insertion.
+        let key = key.into();
+        validate_property_key(&key)?;
+        self.props.insert(key.clone(), value.into());
+        self.computed_props.insert(key);
+        Ok(())
+    }
+
+    pub(crate) fn clear_prop(&mut self, key: &str) {
+        // RDKit✔️🔝: auto svi = std::find(compLst.begin(), compLst.end(), key);
+        // RDKit✔️🔝: if (svi != compLst.end()) {
+        // RDKit✔️🔝:   compLst.erase(svi);
+        // RDKit✔️🔝:   d_props.setVal(RDKit::detail::computedPropName, compLst);
+        // RDKit✔️🔝: }
+        // RDKit✔️🔝: d_props.clearVal(key);
+        // BTreeSet removal preserves the source transition with logarithmic
+        // lookup instead of the source vector's linear search and erase.
+        self.props.remove(key);
+        self.computed_props.remove(key);
+    }
+
+    pub(crate) fn clear_computed_props(&mut self) {
+        // RDKit✔️🔝: for (const auto &key : compLst) {
+        // RDKit✔️🔝:   d_props.clearVal(key);
+        // RDKit✔️🔝: }
+        // Moving the set avoids the source vector copy while preserving exact
+        // membership-based clearing, including non-computed properties that
+        // happen to use a conventional computed-property name.
+        for key in std::mem::take(&mut self.computed_props) {
+            self.props.remove(&key);
+        }
+    }
+
+    pub(crate) fn remap_template_attachment_order(
+        &mut self,
+        old_to_new: &[Option<AtomId>],
+    ) -> Result<(), TemplateAttachmentOrderError> {
+        let Some(order) = &self.template_attachment_order else {
+            return Ok(());
+        };
+        let remapped = order.remapped(old_to_new)?;
+        self.template_attachment_order = Some(remapped);
+        Ok(())
+    }
+}
+
+/// Atom construction payload.
+///
+/// `AtomSpec` is deliberately separate from `Atom`: callers provide facts, and
+/// builders assign indices. Future agents must not add an `index` field here.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AtomSpec {
+    element: Element,
+    properties: AtomProperties,
+}
+
+impl AtomSpec {
+    #[must_use]
+    pub const fn new(element: Element) -> Self {
+        Self {
+            element,
+            properties: AtomProperties::new(),
+        }
+    }
+
     #[must_use]
     pub const fn with_element(mut self, element: Element) -> Self {
         self.element = element;
@@ -472,85 +562,85 @@ impl AtomSpec {
 
     #[must_use]
     pub const fn with_formal_charge(mut self, formal_charge: i8) -> Self {
-        self.formal_charge = formal_charge;
+        self.properties.formal_charge = formal_charge;
         self
     }
 
     #[must_use]
     pub const fn with_explicit_hydrogens(mut self, explicit_hydrogens: u8) -> Self {
-        self.explicit_hydrogens = explicit_hydrogens;
+        self.properties.explicit_hydrogens = explicit_hydrogens;
         self
     }
 
     #[must_use]
     pub const fn with_chiral_tag(mut self, chiral_tag: ChiralTag) -> Self {
-        self.chiral_tag = chiral_tag;
+        self.properties.chiral_tag = chiral_tag;
         self
     }
 
     #[must_use]
     pub const fn with_chiral_permutation(mut self, chiral_permutation: u32) -> Self {
-        self.chiral_permutation = Some(chiral_permutation);
+        self.properties.chiral_permutation = Some(chiral_permutation);
         self
     }
 
     #[must_use]
     pub const fn without_chiral_permutation(mut self) -> Self {
-        self.chiral_permutation = None;
+        self.properties.chiral_permutation = None;
         self
     }
 
     #[must_use]
     pub const fn with_unknown_stereo(mut self, unknown_stereo: bool) -> Self {
-        self.unknown_stereo = unknown_stereo;
+        self.properties.unknown_stereo = unknown_stereo;
         self
     }
 
     #[must_use]
     pub const fn with_mol_parity(mut self, mol_parity: i32) -> Self {
-        self.mol_parity = Some(mol_parity);
+        self.properties.mol_parity = Some(mol_parity);
         self
     }
 
     #[must_use]
     pub const fn without_mol_parity(mut self) -> Self {
-        self.mol_parity = None;
+        self.properties.mol_parity = None;
         self
     }
 
     #[must_use]
     pub const fn with_mol_inversion_flag(mut self, mol_inversion_flag: i32) -> Self {
-        self.mol_inversion_flag = Some(mol_inversion_flag);
+        self.properties.mol_inversion_flag = Some(mol_inversion_flag);
         self
     }
 
     #[must_use]
     pub const fn without_mol_inversion_flag(mut self) -> Self {
-        self.mol_inversion_flag = None;
+        self.properties.mol_inversion_flag = None;
         self
     }
 
     #[must_use]
     pub const fn with_implicit_hydrogen(mut self, implicit_hydrogen: bool) -> Self {
-        self.implicit_hydrogen = implicit_hydrogen;
+        self.properties.implicit_hydrogen = implicit_hydrogen;
         self
     }
 
     #[must_use]
     pub fn with_tracked_isotopic_hydrogens(mut self, isotopes: Vec<u16>) -> Self {
-        self.tracked_isotopic_hydrogens = isotopes;
+        self.properties.tracked_isotopic_hydrogens = isotopes;
         self
     }
 
     #[must_use]
     pub fn without_tracked_isotopic_hydrogens(mut self) -> Self {
-        self.tracked_isotopic_hydrogens.clear();
+        self.properties.tracked_isotopic_hydrogens.clear();
         self
     }
 
     #[must_use]
     pub const fn with_aromatic(mut self, is_aromatic: bool) -> Self {
-        self.is_aromatic = is_aromatic;
+        self.properties.is_aromatic = is_aromatic;
         self
     }
 
@@ -559,43 +649,43 @@ impl AtomSpec {
         // RDKit✔️✔️: unsigned int getIsotope() const { return d_isotope; }
         // Preserve the model's zero-as-absence projection at construction,
         // not just at the getter. This is a constant-time sentinel conversion.
-        self.isotope = if isotope == 0 { None } else { Some(isotope) };
+        self.properties.isotope = if isotope == 0 { None } else { Some(isotope) };
         self
     }
 
     #[must_use]
     pub const fn without_isotope(mut self) -> Self {
-        self.isotope = None;
+        self.properties.isotope = None;
         self
     }
 
     #[must_use]
     pub const fn with_atom_map(mut self, atom_map: u32) -> Self {
-        self.atom_map = Some(atom_map);
+        self.properties.atom_map = Some(atom_map);
         self
     }
 
     #[must_use]
     pub const fn without_atom_map(mut self) -> Self {
-        self.atom_map = None;
+        self.properties.atom_map = None;
         self
     }
 
     #[must_use]
     pub const fn with_no_implicit(mut self, no_implicit: bool) -> Self {
-        self.no_implicit = no_implicit;
+        self.properties.no_implicit = no_implicit;
         self
     }
 
     #[must_use]
     pub const fn with_radical_electrons(mut self, radical_electrons: u8) -> Self {
-        self.radical_electrons = radical_electrons;
+        self.properties.radical_electrons = radical_electrons;
         self
     }
 
     #[must_use]
     pub const fn with_hybridization(mut self, hybridization: Hybridization) -> Self {
-        self.hybridization = hybridization;
+        self.properties.hybridization = hybridization;
         self
     }
 
@@ -605,10 +695,7 @@ impl AtomSpec {
         key: impl Into<String>,
         value: impl Into<String>,
     ) -> Result<Self, AtomPropertyError> {
-        let key = key.into();
-        validate_property_key(&key)?;
-        // RDKit✔️✔️: d_props.setVal(key, val);
-        self.props.insert(key, value.into());
+        self.properties.set_prop(key, value)?;
         Ok(self)
     }
 
@@ -618,43 +705,31 @@ impl AtomSpec {
         key: impl Into<String>,
         value: impl Into<String>,
     ) -> Result<Self, AtomPropertyError> {
-        let key = key.into();
-        validate_property_key(&key)?;
-        // RDKit✔️✔️: if (computed) {
-        // RDKit✔️✔️:   STR_VECT compLst;
-        // RDKit✔️✔️:   getPropIfPresent(RDKit::detail::computedPropName, compLst);
-        // RDKit✔️✔️:   if (std::find(compLst.begin(), compLst.end(), key) == compLst.end()) {
-        // RDKit✔️✔️:     compLst.emplace_back(key);
-        // RDKit✔️✔️:     d_props.setVal(RDKit::detail::computedPropName, compLst);
-        // RDKit✔️✔️:   }
-        // RDKit✔️✔️: }
-        // RDKit✔️✔️: d_props.setVal(key, val);
-        self.props.insert(key.clone(), value.into());
-        self.computed_props.insert(key);
+        self.properties.set_computed_prop(key, value)?;
         Ok(self)
     }
 
     #[must_use]
     pub fn with_pdb_residue_info(mut self, info: AtomPdbResidueInfo) -> Self {
-        self.pdb_residue_info = Some(info);
+        self.properties.pdb_residue_info = Some(info);
         self
     }
 
     #[must_use]
     pub fn without_pdb_residue_info(mut self) -> Self {
-        self.pdb_residue_info = None;
+        self.properties.pdb_residue_info = None;
         self
     }
 
     #[must_use]
     pub fn with_template_attachment_order(mut self, order: TemplateAttachmentOrder) -> Self {
-        self.template_attachment_order = Some(order);
+        self.properties.template_attachment_order = Some(order);
         self
     }
 
     #[must_use]
     pub fn without_template_attachment_order(mut self) -> Self {
-        self.template_attachment_order = None;
+        self.properties.template_attachment_order = None;
         self
     }
 
@@ -665,107 +740,111 @@ impl AtomSpec {
 
     #[must_use]
     pub const fn formal_charge(&self) -> i8 {
-        self.formal_charge
+        self.properties.formal_charge
     }
 
     #[must_use]
     pub const fn explicit_hydrogens(&self) -> u8 {
-        self.explicit_hydrogens
+        self.properties.explicit_hydrogens
     }
 
     #[must_use]
     pub const fn chiral_tag(&self) -> ChiralTag {
-        self.chiral_tag
+        self.properties.chiral_tag
     }
 
     #[must_use]
     pub const fn chiral_permutation(&self) -> Option<u32> {
-        self.chiral_permutation
+        self.properties.chiral_permutation
     }
 
     #[must_use]
     pub const fn unknown_stereo(&self) -> bool {
-        self.unknown_stereo
+        self.properties.unknown_stereo
     }
 
     #[must_use]
     pub const fn mol_parity(&self) -> Option<i32> {
-        self.mol_parity
+        self.properties.mol_parity
     }
 
     #[must_use]
     pub const fn mol_inversion_flag(&self) -> Option<i32> {
-        self.mol_inversion_flag
+        self.properties.mol_inversion_flag
     }
 
     #[must_use]
     pub const fn implicit_hydrogen(&self) -> bool {
-        self.implicit_hydrogen
+        self.properties.implicit_hydrogen
     }
 
     #[must_use]
     pub fn tracked_isotopic_hydrogens(&self) -> &[u16] {
-        &self.tracked_isotopic_hydrogens
+        &self.properties.tracked_isotopic_hydrogens
     }
 
     #[must_use]
     pub const fn is_aromatic(&self) -> bool {
-        self.is_aromatic
+        self.properties.is_aromatic
     }
 
     #[must_use]
     pub const fn isotope(&self) -> Option<u16> {
-        self.isotope
+        self.properties.isotope
     }
 
     #[must_use]
     pub const fn atom_map(&self) -> Option<u32> {
-        self.atom_map
+        self.properties.atom_map
     }
 
     #[must_use]
     pub const fn no_implicit(&self) -> bool {
-        self.no_implicit
+        self.properties.no_implicit
     }
 
     #[must_use]
     pub const fn radical_electrons(&self) -> u8 {
-        self.radical_electrons
+        self.properties.radical_electrons
     }
 
     #[must_use]
     pub const fn hybridization(&self) -> Hybridization {
-        self.hybridization
+        self.properties.hybridization
     }
 
     #[must_use]
     pub fn props(&self) -> &BTreeMap<String, String> {
-        &self.props
+        &self.properties.props
     }
 
     #[must_use]
     pub fn prop(&self, key: &str) -> Option<&str> {
-        self.props.get(key).map(String::as_str)
+        self.properties.props.get(key).map(String::as_str)
     }
 
     #[must_use]
     pub fn is_prop_computed(&self, key: &str) -> bool {
-        self.computed_props.contains(key)
+        self.properties.computed_props.contains(key)
     }
 
     #[must_use]
     pub fn computed_prop_names(&self) -> &BTreeSet<String> {
-        &self.computed_props
+        &self.properties.computed_props
     }
 
     #[must_use]
     pub const fn pdb_residue_info(&self) -> Option<&AtomPdbResidueInfo> {
-        self.pdb_residue_info.as_ref()
+        self.properties.pdb_residue_info.as_ref()
     }
 
     #[must_use]
     pub const fn template_attachment_order(&self) -> Option<&TemplateAttachmentOrder> {
-        self.template_attachment_order.as_ref()
+        self.properties.template_attachment_order.as_ref()
+    }
+
+    pub(crate) fn into_query_parts(self) -> (Element, AtomProperties) {
+        (self.element, self.properties)
     }
 }
 
@@ -787,52 +866,33 @@ fn validate_property_key(key: &str) -> Result<(), AtomPropertyError> {
 pub struct Atom {
     id: AtomId,
     element: Element,
-    formal_charge: i8,
-    explicit_hydrogens: u8,
-    chiral_tag: ChiralTag,
-    chiral_permutation: Option<u32>,
-    unknown_stereo: bool,
-    mol_parity: Option<i32>,
-    mol_inversion_flag: Option<i32>,
-    implicit_hydrogen: bool,
-    tracked_isotopic_hydrogens: Vec<u16>,
-    is_aromatic: bool,
-    isotope: Option<u16>,
-    atom_map: Option<u32>,
-    no_implicit: bool,
-    radical_electrons: u8,
-    hybridization: Hybridization,
-    props: BTreeMap<String, String>,
-    computed_props: BTreeSet<String>,
-    pdb_residue_info: Option<AtomPdbResidueInfo>,
-    template_attachment_order: Option<TemplateAttachmentOrder>,
+    properties: AtomProperties,
 }
 
 impl Atom {
     pub fn from_spec(id: AtomId, spec: AtomSpec) -> Self {
+        let (element, properties) = spec.into_query_parts();
         Self {
             id,
-            element: spec.element,
-            formal_charge: spec.formal_charge,
-            explicit_hydrogens: spec.explicit_hydrogens,
-            chiral_tag: spec.chiral_tag,
-            chiral_permutation: spec.chiral_permutation,
-            unknown_stereo: spec.unknown_stereo,
-            mol_parity: spec.mol_parity,
-            mol_inversion_flag: spec.mol_inversion_flag,
-            implicit_hydrogen: spec.implicit_hydrogen,
-            tracked_isotopic_hydrogens: spec.tracked_isotopic_hydrogens,
-            is_aromatic: spec.is_aromatic,
-            isotope: spec.isotope,
-            atom_map: spec.atom_map,
-            no_implicit: spec.no_implicit,
-            radical_electrons: spec.radical_electrons,
-            hybridization: spec.hybridization,
-            props: spec.props,
-            computed_props: spec.computed_props,
-            pdb_residue_info: spec.pdb_residue_info,
-            template_attachment_order: spec.template_attachment_order,
+            element,
+            properties,
         }
+    }
+
+    pub(crate) fn from_query_parts(
+        id: AtomId,
+        element: Element,
+        properties: AtomProperties,
+    ) -> Self {
+        Self {
+            id,
+            element,
+            properties,
+        }
+    }
+
+    pub(crate) fn into_query_parts(self) -> (AtomId, Element, AtomProperties) {
+        (self.id, self.element, self.properties)
     }
 
     #[doc(hidden)]
@@ -867,13 +927,13 @@ impl Atom {
     #[must_use]
     pub const fn formal_charge(&self) -> i8 {
         // RDKit✔️✔️: int getFormalCharge() const { return d_formalCharge; }
-        self.formal_charge
+        self.properties.formal_charge
     }
 
     #[must_use]
     pub const fn explicit_hydrogens(&self) -> u8 {
         // RDKit✔️✔️: unsigned int getNumExplicitHs() const { return d_numExplicitHs; }
-        self.explicit_hydrogens
+        self.properties.explicit_hydrogens
     }
 
     #[must_use]
@@ -881,67 +941,67 @@ impl Atom {
         // RDKit✔️✔️: ChiralType getChiralTag() const {
         // RDKit✔️✔️:   return static_cast<ChiralType>(d_chiralTag);
         // RDKit✔️✔️: }
-        self.chiral_tag
+        self.properties.chiral_tag
     }
 
     #[must_use]
     pub const fn chiral_permutation(&self) -> Option<u32> {
-        self.chiral_permutation
+        self.properties.chiral_permutation
     }
 
     #[must_use]
     pub const fn unknown_stereo(&self) -> bool {
-        self.unknown_stereo
+        self.properties.unknown_stereo
     }
 
     #[must_use]
     pub const fn mol_parity(&self) -> Option<i32> {
-        self.mol_parity
+        self.properties.mol_parity
     }
 
     #[must_use]
     pub const fn mol_inversion_flag(&self) -> Option<i32> {
-        self.mol_inversion_flag
+        self.properties.mol_inversion_flag
     }
 
     #[must_use]
     pub const fn implicit_hydrogen(&self) -> bool {
-        self.implicit_hydrogen
+        self.properties.implicit_hydrogen
     }
 
     #[must_use]
     pub fn tracked_isotopic_hydrogens(&self) -> &[u16] {
-        &self.tracked_isotopic_hydrogens
+        &self.properties.tracked_isotopic_hydrogens
     }
 
     #[must_use]
     pub const fn is_aromatic(&self) -> bool {
         // RDKit✔️✔️: bool getIsAromatic() const { return df_isAromatic; }
-        self.is_aromatic
+        self.properties.is_aromatic
     }
 
     #[must_use]
     pub const fn isotope(&self) -> Option<u16> {
         // RDKit✔️✔️: unsigned int getIsotope() const { return d_isotope; }
         // Source zero is projected as absence in the detached value.
-        self.isotope
+        self.properties.isotope
     }
 
     #[must_use]
     pub const fn atom_map(&self) -> Option<u32> {
-        self.atom_map
+        self.properties.atom_map
     }
 
     #[must_use]
     pub const fn no_implicit(&self) -> bool {
         // RDKit✔️✔️: bool getNoImplicit() const { return df_noImplicit; }
-        self.no_implicit
+        self.properties.no_implicit
     }
 
     #[must_use]
     pub const fn radical_electrons(&self) -> u8 {
         // RDKit✔️✔️: unsigned int getNumRadicalElectrons() const { return d_numRadicalElectrons; }
-        self.radical_electrons
+        self.properties.radical_electrons
     }
 
     #[must_use]
@@ -949,28 +1009,28 @@ impl Atom {
         // RDKit✔️✔️: HybridizationType getHybridization() const {
         // RDKit✔️✔️:   return static_cast<HybridizationType>(d_hybrid);
         // RDKit✔️✔️: }
-        self.hybridization
+        self.properties.hybridization
     }
 
     #[must_use]
     pub fn props(&self) -> &BTreeMap<String, String> {
-        &self.props
+        &self.properties.props
     }
 
     #[must_use]
     pub fn prop(&self, key: &str) -> Option<&str> {
-        self.props.get(key).map(String::as_str)
+        self.properties.props.get(key).map(String::as_str)
     }
 
     /// Returns whether a property is registered as computed state.
     #[must_use]
     pub fn is_prop_computed(&self, key: &str) -> bool {
-        self.computed_props.contains(key)
+        self.properties.computed_props.contains(key)
     }
 
     #[must_use]
     pub fn computed_prop_names(&self) -> &BTreeSet<String> {
-        &self.computed_props
+        &self.properties.computed_props
     }
 
     /// Returns the modern CIP descriptor persisted on this atom, if present.
@@ -982,12 +1042,12 @@ impl Atom {
 
     #[must_use]
     pub const fn pdb_residue_info(&self) -> Option<&AtomPdbResidueInfo> {
-        self.pdb_residue_info.as_ref()
+        self.properties.pdb_residue_info.as_ref()
     }
 
     #[must_use]
     pub const fn template_attachment_order(&self) -> Option<&TemplateAttachmentOrder> {
-        self.template_attachment_order.as_ref()
+        self.properties.template_attachment_order.as_ref()
     }
 
     /// Apply the shared detached atom-index remap to typed attachment state.
@@ -996,90 +1056,85 @@ impl Atom {
         &mut self,
         old_to_new: &[Option<AtomId>],
     ) -> Result<(), TemplateAttachmentOrderError> {
-        let Some(order) = &self.template_attachment_order else {
-            return Ok(());
-        };
-        let remapped = order.remapped(old_to_new)?;
-        self.template_attachment_order = Some(remapped);
-        Ok(())
+        self.properties.remap_template_attachment_order(old_to_new)
     }
 
     #[doc(hidden)]
     pub fn set_chiral_tag(&mut self, chiral_tag: ChiralTag) {
         // RDKit✔️✔️: void setChiralTag(ChiralType what) { d_chiralTag = what; }
-        self.chiral_tag = chiral_tag;
+        self.properties.chiral_tag = chiral_tag;
     }
 
     #[doc(hidden)]
     pub fn set_chiral_permutation(&mut self, chiral_permutation: Option<u32>) {
-        self.chiral_permutation = chiral_permutation;
+        self.properties.chiral_permutation = chiral_permutation;
     }
 
     #[doc(hidden)]
     pub fn set_unknown_stereo(&mut self, unknown_stereo: bool) {
-        self.unknown_stereo = unknown_stereo;
+        self.properties.unknown_stereo = unknown_stereo;
     }
 
     #[doc(hidden)]
     pub fn set_mol_parity(&mut self, mol_parity: Option<i32>) {
-        self.mol_parity = mol_parity;
+        self.properties.mol_parity = mol_parity;
     }
 
     #[doc(hidden)]
     pub fn set_mol_inversion_flag(&mut self, mol_inversion_flag: Option<i32>) {
-        self.mol_inversion_flag = mol_inversion_flag;
+        self.properties.mol_inversion_flag = mol_inversion_flag;
     }
 
     #[doc(hidden)]
     pub fn set_implicit_hydrogen(&mut self, implicit_hydrogen: bool) {
-        self.implicit_hydrogen = implicit_hydrogen;
+        self.properties.implicit_hydrogen = implicit_hydrogen;
     }
 
     #[doc(hidden)]
     pub fn set_tracked_isotopic_hydrogens(&mut self, isotopes: Vec<u16>) {
-        self.tracked_isotopic_hydrogens = isotopes;
+        self.properties.tracked_isotopic_hydrogens = isotopes;
     }
 
     #[doc(hidden)]
     pub fn set_aromatic(&mut self, is_aromatic: bool) {
         // RDKit✔️✔️: void setIsAromatic(bool what) { df_isAromatic = what; }
-        self.is_aromatic = is_aromatic;
+        self.properties.is_aromatic = is_aromatic;
     }
 
     #[doc(hidden)]
     pub fn set_formal_charge(&mut self, formal_charge: i8) {
         // RDKit✔️✔️: void setFormalCharge(int what) { d_formalCharge = what; }
-        self.formal_charge = formal_charge;
+        self.properties.formal_charge = formal_charge;
     }
 
     #[doc(hidden)]
     pub fn set_explicit_hydrogens(&mut self, explicit_hydrogens: u8) {
         // RDKit✔️✔️: void setNumExplicitHs(unsigned int what) { d_numExplicitHs = what; }
-        self.explicit_hydrogens = explicit_hydrogens;
+        self.properties.explicit_hydrogens = explicit_hydrogens;
     }
 
     #[doc(hidden)]
     pub fn set_isotope(&mut self, isotope: Option<u16>) {
         // RDKit✔️✔️: void Atom::setIsotope(unsigned int what) { d_isotope = what; }
         // Source zero is projected as `None` in the detached value.
-        self.isotope = isotope.filter(|value| *value != 0);
+        self.properties.isotope = isotope.filter(|value| *value != 0);
     }
 
     #[doc(hidden)]
     pub fn set_atom_map(&mut self, atom_map: Option<u32>) {
-        self.atom_map = atom_map;
+        self.properties.atom_map = atom_map;
     }
 
     #[doc(hidden)]
     pub fn set_no_implicit(&mut self, no_implicit: bool) {
         // RDKit✔️✔️: void setNoImplicit(bool what) { df_noImplicit = what; }
-        self.no_implicit = no_implicit;
+        self.properties.no_implicit = no_implicit;
     }
 
     #[doc(hidden)]
     pub fn set_radical_electrons(&mut self, radical_electrons: u8) {
         // RDKit✔️✔️: void setNumRadicalElectrons(unsigned int num) { d_numRadicalElectrons = num; }
-        self.radical_electrons = radical_electrons;
+        self.properties.radical_electrons = radical_electrons;
     }
 
     #[doc(hidden)]
@@ -1088,12 +1143,7 @@ impl Atom {
         key: impl Into<String>,
         value: impl Into<String>,
     ) -> Result<(), AtomPropertyError> {
-        let key = key.into();
-        validate_property_key(&key)?;
-        // RDKit✔️✔️: d_props.setVal(key, val);
-        // A non-computed write does not remove an existing computed marker.
-        self.props.insert(key, value.into());
-        Ok(())
+        self.properties.set_prop(key, value)
     }
 
     #[doc(hidden)]
@@ -1102,59 +1152,27 @@ impl Atom {
         key: impl Into<String>,
         value: impl Into<String>,
     ) -> Result<(), AtomPropertyError> {
-        // RDKit✔️🔝: if (computed) {
-        // RDKit✔️🔝:   STR_VECT compLst;
-        // RDKit✔️🔝:   getPropIfPresent(RDKit::detail::computedPropName, compLst);
-        // RDKit✔️🔝:   if (std::find(compLst.begin(), compLst.end(), key) == compLst.end()) {
-        // RDKit✔️🔝:     compLst.emplace_back(key);
-        // RDKit✔️🔝:     d_props.setVal(RDKit::detail::computedPropName, compLst);
-        // RDKit✔️🔝:   }
-        // RDKit✔️🔝: }
-        // RDKit✔️🔝: d_props.setVal(key, val);
-        // The ordered set preserves membership semantics while replacing the
-        // source vector's linear duplicate scan with logarithmic insertion.
-        let key = key.into();
-        validate_property_key(&key)?;
-        self.props.insert(key.clone(), value.into());
-        self.computed_props.insert(key);
-        Ok(())
+        self.properties.set_computed_prop(key, value)
     }
 
     #[doc(hidden)]
     pub fn clear_prop(&mut self, key: &str) {
-        // RDKit✔️🔝: auto svi = std::find(compLst.begin(), compLst.end(), key);
-        // RDKit✔️🔝: if (svi != compLst.end()) {
-        // RDKit✔️🔝:   compLst.erase(svi);
-        // RDKit✔️🔝:   d_props.setVal(RDKit::detail::computedPropName, compLst);
-        // RDKit✔️🔝: }
-        // RDKit✔️🔝: d_props.clearVal(key);
-        // BTreeSet removal preserves the source transition with logarithmic
-        // lookup instead of the source vector's linear search and erase.
-        self.props.remove(key);
-        self.computed_props.remove(key);
+        self.properties.clear_prop(key);
     }
 
     #[doc(hidden)]
     pub fn clear_computed_props(&mut self) {
-        // RDKit✔️🔝: for (const auto &key : compLst) {
-        // RDKit✔️🔝:   d_props.clearVal(key);
-        // RDKit✔️🔝: }
-        // Moving the set avoids the source vector copy while preserving exact
-        // membership-based clearing, including non-computed properties that
-        // happen to use a conventional computed-property name.
-        for key in std::mem::take(&mut self.computed_props) {
-            self.props.remove(&key);
-        }
+        self.properties.clear_computed_props();
     }
 
     #[doc(hidden)]
     pub fn set_hybridization(&mut self, hybridization: Hybridization) {
         // RDKit✔️✔️: void setHybridization(HybridizationType what) { d_hybrid = what; }
-        self.hybridization = hybridization;
+        self.properties.hybridization = hybridization;
     }
 
     #[doc(hidden)]
     pub fn set_pdb_residue_info(&mut self, info: Option<AtomPdbResidueInfo>) {
-        self.pdb_residue_info = info;
+        self.properties.pdb_residue_info = info;
     }
 }

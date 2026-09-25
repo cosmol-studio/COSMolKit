@@ -79,7 +79,7 @@ fn match_atom_range_query(
         AtomRangeDataFunction::MinRingSize => context
             .ring_info
             .as_ref()
-            .map(|ring_info| query_atom_min_ring_size(atom, ring_info) as i32),
+            .and_then(|ring_info| i32::try_from(query_atom_min_ring_size(atom, ring_info)).ok()),
         AtomRangeDataFunction::RingBondCount => context
             .ring_info
             .as_ref()
@@ -515,16 +515,32 @@ fn finalize_atom_ring_size_query(
             Ok(query)
         }
         (RangeQueryType::Less, QueryNode::Predicate(AtomQueryPredicate::InRingOfSize(value))) => {
-            Ok(QueryNode::predicate(
-                AtomQueryPredicate::InRingOfSizeLessEqual(value),
-            ))
+            Ok(QueryNode::predicate(AtomQueryPredicate::Range(
+                AtomRangeQuery::new(
+                    AtomRangeBounds::GreaterEqual(value),
+                    AtomRangeDataFunction::AtomRingSize {
+                        lower: value,
+                        upper: -1,
+                        lower_open: false,
+                        upper_open: false,
+                    },
+                ),
+            )))
         }
         (
             RangeQueryType::Greater,
             QueryNode::Predicate(AtomQueryPredicate::InRingOfSize(value)),
-        ) => Ok(QueryNode::predicate(
-            AtomQueryPredicate::InRingOfSizeGreaterEqual(value),
-        )),
+        ) => Ok(QueryNode::predicate(AtomQueryPredicate::Range(
+            AtomRangeQuery::new(
+                AtomRangeBounds::LessEqual(value),
+                AtomRangeDataFunction::AtomRingSize {
+                    lower: -1,
+                    upper: value,
+                    lower_open: false,
+                    upper_open: false,
+                },
+            ),
+        ))),
         _ => Err(QueryFinalizationError::BadRangeQueryType),
     }
 }
@@ -1129,9 +1145,35 @@ pub(crate) fn make_atom_possible_range_query(
     upper: Option<i32>,
     data_function: AtomRangeDataFunction,
 ) -> Option<QueryNode<AtomQueryPredicate>> {
+    // RDKit source: third_party/rdkit/Code/GraphMol/SmilesParse/smarts.yy
+    // RDKit✔️✔️: | possible_range_query RANGE_OPEN_TOKEN MINUS_TOKEN number RANGE_CLOSE_TOKEN {
+    // RDKit✔️✔️:   ATOM_EQUALS_QUERY *oq = static_cast<ATOM_EQUALS_QUERY *>($1->getQuery());
+    // RDKit✔️✔️:   ATOM_GREATEREQUAL_QUERY *nq = makeAtomSimpleQuery<ATOM_GREATEREQUAL_QUERY>($4,oq->getDataFunc(),
+    // RDKit✔️✔️:     std::string("greater_")+oq->getDescription());
+    // RDKit✔️✔️:   $1->setQuery(nq);
+    // RDKit✔️✔️:   $$ = $1;
+    // RDKit✔️✔️: }
+    // RDKit✔️✔️: | possible_range_query RANGE_OPEN_TOKEN number MINUS_TOKEN RANGE_CLOSE_TOKEN {
+    // RDKit✔️✔️:   ATOM_EQUALS_QUERY *oq = static_cast<ATOM_EQUALS_QUERY *>($1->getQuery());
+    // RDKit✔️✔️:   ATOM_LESSEQUAL_QUERY *nq = makeAtomSimpleQuery<ATOM_LESSEQUAL_QUERY>($3,oq->getDataFunc(),
+    // RDKit✔️✔️:     std::string("less_")+oq->getDescription());
+    // RDKit✔️✔️:   $1->setQuery(nq);
+    // RDKit✔️✔️:   $$ = $1;
+    // RDKit✔️✔️: }
+    // RDKit✔️✔️: | possible_range_query RANGE_OPEN_TOKEN number MINUS_TOKEN number RANGE_CLOSE_TOKEN {
+    // RDKit✔️✔️:   ATOM_EQUALS_QUERY *oq = static_cast<ATOM_EQUALS_QUERY *>($1->getQuery());
+    // RDKit✔️✔️:   ATOM_RANGE_QUERY *nq = makeAtomRangeQuery($3,$5,false,false,
+    // RDKit✔️✔️:     oq->getDataFunc(),
+    // RDKit✔️✔️:     std::string("range_")+oq->getDescription());
+    // RDKit✔️✔️:   $1->setQuery(nq);
+    // RDKit✔️✔️:   $$ = $1;
+    // RDKit✔️✔️: }
+    //
+    // Local complexity review: selecting a bound variant and constructing one
+    // typed leaf are O(1), with no traversal, lookup, allocation, or cloning.
     let bounds = match (lower, upper) {
-        (None, Some(upper)) => AtomRangeBounds::LessEqual(upper),
-        (Some(lower), None) => AtomRangeBounds::GreaterEqual(lower),
+        (None, Some(lower)) => AtomRangeBounds::GreaterEqual(lower),
+        (Some(upper), None) => AtomRangeBounds::LessEqual(upper),
         (Some(lower), Some(upper)) => {
             return Some(make_atom_range_query(
                 lower,
@@ -1143,6 +1185,81 @@ pub(crate) fn make_atom_possible_range_query(
         }
         (None, None) => return None,
     };
+    Some(make_atom_simple_query(AtomQueryPredicate::Range(
+        AtomRangeQuery::new(bounds, data_function),
+    )))
+}
+
+#[inline]
+pub(crate) fn make_atom_possible_ring_range_query(
+    lower: Option<i32>,
+    upper: Option<i32>,
+    data_function: AtomRangeDataFunction,
+) -> Option<QueryNode<AtomQueryPredicate>> {
+    // RDKit source: third_party/rdkit/Code/GraphMol/SmilesParse/smarts.yy
+    // RDKit✔️✔️: | possible_range_query RANGE_OPEN_TOKEN MINUS_TOKEN number RANGE_CLOSE_TOKEN {
+    // RDKit✔️✔️:   ATOM_GREATEREQUAL_QUERY *nq = makeAtomSimpleQuery<ATOM_GREATEREQUAL_QUERY>($4,oq->getDataFunc(),
+    // RDKit✔️✔️:     std::string("greater_")+oq->getDescription());
+    // RDKit✔️✔️: }
+    // RDKit✔️✔️: | possible_range_query RANGE_OPEN_TOKEN number MINUS_TOKEN RANGE_CLOSE_TOKEN {
+    // RDKit✔️✔️:   ATOM_LESSEQUAL_QUERY *nq = makeAtomSimpleQuery<ATOM_LESSEQUAL_QUERY>($3,oq->getDataFunc(),
+    // RDKit✔️✔️:     std::string("less_")+oq->getDescription());
+    // RDKit✔️✔️: }
+    // RDKit✔️✔️: | possible_range_query RANGE_OPEN_TOKEN number MINUS_TOKEN number RANGE_CLOSE_TOKEN {
+    // RDKit✔️✔️:   ATOM_RANGE_QUERY *nq = makeAtomRangeQuery($3,$5,false,false,
+    // RDKit✔️✔️:     oq->getDataFunc(),
+    // RDKit✔️✔️:     std::string("range_")+oq->getDescription());
+    // RDKit✔️✔️: }
+    // RDKit✔️✔️: | RINGSIZE_ATOM_QUERY_TOKEN RANGE_OPEN_TOKEN MINUS_TOKEN number RANGE_CLOSE_TOKEN {
+    // RDKit✔️✔️:   int lv = -1;
+    // RDKit✔️✔️:   int uv = $4;
+    // RDKit✔️✔️:   ATOM_GREATEREQUAL_QUERY *nq = makeAtomSimpleQuery<ATOM_GREATEREQUAL_QUERY>(uv,[lv,uv](Atom const *at) {
+    // RDKit✔️✔️:     return queryAtomIsInRingOfSize(at, lv, uv);
+    // RDKit✔️✔️:   },std::string("greater_AtomRingSize"));
+    // RDKit✔️✔️: }
+    // RDKit✔️✔️: | RINGSIZE_ATOM_QUERY_TOKEN RANGE_OPEN_TOKEN number MINUS_TOKEN RANGE_CLOSE_TOKEN {
+    // RDKit✔️✔️:   int lv = $3;
+    // RDKit✔️✔️:   int uv = -1;
+    // RDKit✔️✔️:   ATOM_LESSEQUAL_QUERY *nq = makeAtomSimpleQuery<ATOM_LESSEQUAL_QUERY>(lv,[lv,uv](Atom const *at) {
+    // RDKit✔️✔️:     return queryAtomIsInRingOfSize(at, lv, uv);
+    // RDKit✔️✔️:   },std::string("less_AtomRingSize"));
+    // RDKit✔️✔️: }
+    // RDKit✔️✔️: | RINGSIZE_ATOM_QUERY_TOKEN RANGE_OPEN_TOKEN number MINUS_TOKEN number RANGE_CLOSE_TOKEN {
+    // RDKit✔️✔️:   int lv = $3;
+    // RDKit✔️✔️:   int uv = $5;
+    // RDKit✔️✔️:   ATOM_RANGE_QUERY *nq = makeAtomRangeQuery(lv,uv,false,false,[lv,uv](Atom const *at) {
+    // RDKit✔️✔️:     return queryAtomIsInRingOfSize(at, lv, uv);
+    // RDKit✔️✔️:   },std::string("range_AtomRingSize"));
+    // RDKit✔️✔️: }
+    //
+    // The bounded ring leaves retain their source data-function identity;
+    // `AtomRingSize` additionally carries the original k bounds. The named
+    // range variants encode RDKit's source query classes while the data
+    // function evaluates the target ring metric. Local complexity review:
+    // bound selection and construction are constant-time, with no lookup,
+    // allocation, traversal, or clone.
+    if !matches!(
+        &data_function,
+        AtomRangeDataFunction::NumAtomRings
+            | AtomRangeDataFunction::MinRingSize
+            | AtomRangeDataFunction::RingBondCount
+            | AtomRangeDataFunction::AtomRingSize { .. }
+    ) {
+        return None;
+    }
+
+    let bounds = match (lower, upper) {
+        (None, Some(value)) => AtomRangeBounds::LessEqual(value),
+        (Some(value), None) => AtomRangeBounds::GreaterEqual(value),
+        (Some(lower), Some(upper)) => AtomRangeBounds::Inclusive {
+            lower,
+            upper,
+            lower_open: false,
+            upper_open: false,
+        },
+        (None, None) => return None,
+    };
+
     Some(make_atom_simple_query(AtomQueryPredicate::Range(
         AtomRangeQuery::new(bounds, data_function),
     )))
@@ -1244,7 +1361,7 @@ fn make_atom_explicit_valence_query(what: i32) -> QueryNode<AtomQueryPredicate> 
 }
 
 #[inline]
-fn make_atom_total_valence_query(what: u8) -> QueryNode<AtomQueryPredicate> {
+fn make_atom_total_valence_query(what: i32) -> QueryNode<AtomQueryPredicate> {
     // RDKit✔️🔝: template <class T>
     // RDKit✔️🔝: T *makeAtomTotalValenceQuery(int what, const std::string &descr) {
     // RDKit✔️🔝:   return makeAtomSimpleQuery<T>(what, queryAtomTotalValence, descr);
@@ -1267,7 +1384,7 @@ fn make_atom_total_valence_query(what: u8) -> QueryNode<AtomQueryPredicate> {
 }
 
 #[inline]
-pub(crate) fn make_atom_explicit_degree_query(what: u8) -> QueryNode<AtomQueryPredicate> {
+pub(crate) fn make_atom_explicit_degree_query(what: i32) -> QueryNode<AtomQueryPredicate> {
     // RDKit✔️🔝: template <class T>
     // RDKit✔️🔝: T *makeAtomExplicitDegreeQuery(int what, const std::string &descr) {
     // RDKit✔️🔝:   return makeAtomSimpleQuery<T>(what, queryAtomExplicitDegree, descr);
@@ -1290,7 +1407,7 @@ pub(crate) fn make_atom_explicit_degree_query(what: u8) -> QueryNode<AtomQueryPr
 }
 
 #[inline]
-pub(crate) fn make_atom_total_degree_query(what: u8) -> QueryNode<AtomQueryPredicate> {
+pub(crate) fn make_atom_total_degree_query(what: i32) -> QueryNode<AtomQueryPredicate> {
     // RDKit✔️🔝: template <class T>
     // RDKit✔️🔝: T *makeAtomTotalDegreeQuery(int what, const std::string &descr) {
     // RDKit✔️🔝:   return makeAtomSimpleQuery<T>(what, queryAtomTotalDegree, descr);
@@ -1336,7 +1453,7 @@ fn make_atom_heavy_atom_degree_query(what: u32) -> QueryNode<AtomQueryPredicate>
 }
 
 #[inline]
-pub(crate) fn make_atom_h_count_query(what: u8) -> QueryNode<AtomQueryPredicate> {
+pub(crate) fn make_atom_h_count_query(what: i32) -> QueryNode<AtomQueryPredicate> {
     // RDKit✔️🔝: template <class T>
     // RDKit✔️🔝: T *makeAtomHCountQuery(int what, const std::string &descr) {
     // RDKit✔️🔝:   return makeAtomSimpleQuery<T>(what, queryAtomHCount, descr);
@@ -1381,7 +1498,7 @@ pub(crate) fn make_atom_has_implicit_h_query() -> QueryNode<AtomQueryPredicate> 
 }
 
 #[inline]
-pub(crate) fn make_atom_implicit_h_count_query(what: u8) -> QueryNode<AtomQueryPredicate> {
+pub(crate) fn make_atom_implicit_h_count_query(what: i32) -> QueryNode<AtomQueryPredicate> {
     // RDKit✔️🔝: template <class T>
     // RDKit✔️🔝: T *makeAtomImplicitHCountQuery(int what, const std::string &descr) {
     // RDKit✔️🔝:   return makeAtomSimpleQuery<T>(what, queryAtomImplicitHCount, descr);
@@ -1466,7 +1583,7 @@ fn make_atom_unsaturated_query() -> QueryNode<AtomQueryPredicate> {
 }
 
 #[inline]
-fn make_atom_in_ring_query() -> QueryNode<AtomQueryPredicate> {
+pub(crate) fn make_atom_in_ring_query() -> QueryNode<AtomQueryPredicate> {
     // RDKit✔️🔝: ATOM_EQUALS_QUERY *makeAtomInRingQuery() {
     // RDKit✔️🔝:   auto *res = makeAtomSimpleQuery<ATOM_EQUALS_QUERY>(true, queryIsAtomInRing);
     // RDKit✔️🔝:   res->setDescription("AtomInRing");
@@ -1499,7 +1616,7 @@ fn make_atom_in_n_rings_query(what: u8) -> QueryNode<AtomQueryPredicate> {
     make_atom_simple_query(AtomQueryPredicate::NumAtomRings(i32::from(what)))
 }
 
-fn make_atom_ring_query(value: i32) -> QueryNode<AtomQueryPredicate> {
+pub(crate) fn make_atom_ring_query(value: i32) -> QueryNode<AtomQueryPredicate> {
     // RDKit✔️🔝: bool Match(const ConstAtomPtr what) const override {
     // RDKit✔️🔝:   int v = this->TypeConvert(what, Queries::Int2Type<true>());
     // RDKit✔️🔝:   bool res;
@@ -1518,7 +1635,7 @@ fn make_atom_ring_query(value: i32) -> QueryNode<AtomQueryPredicate> {
 }
 
 #[inline]
-fn make_atom_in_ring_of_size_query(target: u8) -> QueryNode<AtomQueryPredicate> {
+pub(crate) fn make_atom_in_ring_of_size_query(target: i32) -> QueryNode<AtomQueryPredicate> {
     // RDKit✔️🔝: ATOM_EQUALS_QUERY *makeAtomInRingOfSizeQuery(int tgt) {
     // RDKit✔️🔝:   auto *res = new ATOM_EQUALS_QUERY;
     // RDKit✔️🔝:   res->setVal(tgt);
@@ -1578,7 +1695,7 @@ fn make_atom_in_ring_of_size_range_query(
 }
 
 #[inline]
-fn make_atom_min_ring_size_query(target: u8) -> QueryNode<AtomQueryPredicate> {
+pub(crate) fn make_atom_min_ring_size_query(target: i32) -> QueryNode<AtomQueryPredicate> {
     // RDKit✔️🔝: ATOM_EQUALS_QUERY *makeAtomMinRingSizeQuery(int tgt) {
     // RDKit✔️🔝:   auto *res = new ATOM_EQUALS_QUERY;
     // RDKit✔️🔝:   res->setVal(tgt);
@@ -1597,7 +1714,7 @@ fn make_atom_min_ring_size_query(target: u8) -> QueryNode<AtomQueryPredicate> {
 }
 
 #[inline]
-pub(crate) fn make_atom_ring_bond_count_query(what: u8) -> QueryNode<AtomQueryPredicate> {
+pub(crate) fn make_atom_ring_bond_count_query(what: i32) -> QueryNode<AtomQueryPredicate> {
     // RDKit✔️🔝: ATOM_EQUALS_QUERY *makeAtomRingBondCountQuery(int what) {
     // RDKit✔️🔝:   ATOM_EQUALS_QUERY *res = new AtomRingQuery(what);
     // RDKit✔️🔝:   res->setDescription("AtomRingBondCount");
@@ -1611,7 +1728,7 @@ pub(crate) fn make_atom_ring_bond_count_query(what: u8) -> QueryNode<AtomQueryPr
     // complexity review: both factories store one scalar in O(1), without
     // traversal, lookup, or cloning. Rust removes the source heap allocation
     // and virtual dispatch while preserving the shared O(degree) match scan.
-    make_atom_simple_query(AtomQueryPredicate::RingBondCount(u32::from(what)))
+    make_atom_simple_query(AtomQueryPredicate::RingBondCount(what))
 }
 
 #[doc(hidden)]
@@ -1619,7 +1736,7 @@ pub const QUERY_SCAN_MAGIC_VALUE: u32 = 0xDEADBEEF;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct AtomQueryCompletionValues {
-    pub(crate) ring_bond_count: u32,
+    pub(crate) ring_bond_count: i32,
     pub(crate) non_hydrogen_degree: u32,
 }
 
@@ -1655,7 +1772,9 @@ pub(crate) fn complete_query_and_children(
     // implementation allocates, clones, performs keyed lookup, or creates a
     // temporary collection during traversal.
     match query {
-        QueryNode::Predicate(AtomQueryPredicate::RingBondCount(value)) if *value == magic_value => {
+        QueryNode::Predicate(AtomQueryPredicate::RingBondCount(value))
+            if *value as u32 == magic_value =>
+        {
             *value = values.ring_bond_count;
         }
         QueryNode::Predicate(AtomQueryPredicate::NonHydrogenDegree(value))
@@ -1676,10 +1795,10 @@ pub(crate) fn complete_query_and_children(
 #[doc(hidden)]
 pub fn atom_query_has_magic_value(query: &QueryNode<AtomQueryPredicate>, magic_value: u32) -> bool {
     match query {
-        QueryNode::Predicate(AtomQueryPredicate::RingBondCount(value))
-        | QueryNode::Predicate(AtomQueryPredicate::NonHydrogenDegree(value)) => {
-            *value == magic_value
+        QueryNode::Predicate(AtomQueryPredicate::RingBondCount(value)) => {
+            *value as u32 == magic_value
         }
+        QueryNode::Predicate(AtomQueryPredicate::NonHydrogenDegree(value)) => *value == magic_value,
         QueryNode::Predicate(_) => false,
         QueryNode::And(children) | QueryNode::Or(children) | QueryNode::Xor(children) => children
             .iter()
@@ -1711,15 +1830,12 @@ pub fn complete_mol_queries(molecule: &mut crate::QueryGraph, magic_value: u32) 
     // collection, clones no query tree, and performs no repeated whole-graph
     // traversal.
     for atom_idx in 0..molecule.num_atoms() {
-        let ring_bond_count = 0_u32;
+        let ring_bond_count = 0_i32;
         let mut non_hydrogen_degree = 0_u32;
         for &(neighbor_index, _) in &molecule.adjacency()[atom_idx] {
             let neighbor_atom = &molecule.atoms()[neighbor_index];
-            if neighbor_atom.atom().atomic_number() != 1
-                || neighbor_atom
-                    .atom()
-                    .isotope()
-                    .is_some_and(|isotope| isotope > 1)
+            if neighbor_atom.atomic_number() != 1
+                || neighbor_atom.isotope().is_some_and(|isotope| isotope > 1)
             {
                 non_hydrogen_degree += 1;
             }
@@ -1823,7 +1939,7 @@ pub(crate) fn replace_atom_with_query_atom(
     {
         query_atom_expand_query(
             &mut query,
-            make_atom_isotope_query(isotope),
+            make_atom_isotope_query(i32::from(isotope)),
             CompositeQueryType::And,
             true,
         );
@@ -1831,7 +1947,7 @@ pub(crate) fn replace_atom_with_query_atom(
     if atom.formal_charge() != 0 {
         query_atom_expand_query(
             &mut query,
-            make_atom_formal_charge_query(atom.formal_charge()),
+            make_atom_formal_charge_query(i32::from(atom.formal_charge())),
             CompositeQueryType::And,
             true,
         );
@@ -1875,7 +1991,7 @@ pub(crate) fn make_atom_has_ring_bond_query() -> QueryNode<AtomQueryPredicate> {
 }
 
 #[inline]
-pub(crate) fn make_atom_num_heteroatom_nbrs_query(what: u8) -> QueryNode<AtomQueryPredicate> {
+pub(crate) fn make_atom_num_heteroatom_nbrs_query(what: i32) -> QueryNode<AtomQueryPredicate> {
     // RDKit✔️🔝: ATOM_EQUALS_QUERY *makeAtomNumHeteroatomNbrsQuery(int what) {
     // RDKit✔️🔝:   auto *res =
     // RDKit✔️🔝:       makeAtomSimpleQuery<ATOM_EQUALS_QUERY>(what, queryAtomNumHeteroatomNbrs);
@@ -1911,7 +2027,7 @@ pub(crate) fn make_atom_has_heteroatom_nbrs_query() -> QueryNode<AtomQueryPredic
 
 #[inline]
 pub(crate) fn make_atom_num_aliphatic_heteroatom_nbrs_query(
-    what: u8,
+    what: i32,
 ) -> QueryNode<AtomQueryPredicate> {
     // RDKit✔️🔝: ATOM_EQUALS_QUERY *makeAtomNumAliphaticHeteroatomNbrsQuery(int what) {
     // RDKit✔️🔝:   auto *res = makeAtomSimpleQuery<ATOM_EQUALS_QUERY>(
@@ -2321,7 +2437,7 @@ fn make_atom_mass_query(what: u16) -> QueryNode<AtomQueryPredicate> {
 }
 
 #[inline]
-pub(crate) fn make_atom_isotope_query(what: u16) -> QueryNode<AtomQueryPredicate> {
+pub(crate) fn make_atom_isotope_query(what: i32) -> QueryNode<AtomQueryPredicate> {
     // RDKit✔️🔝: template <class T>
     // RDKit✔️🔝: T *makeAtomIsotopeQuery(int what, const std::string &descr) {
     // RDKit✔️🔝:   return makeAtomSimpleQuery<T>(what, queryAtomIsotope, descr);
@@ -2343,7 +2459,7 @@ pub(crate) fn make_atom_isotope_query(what: u16) -> QueryNode<AtomQueryPredicate
 }
 
 #[inline]
-pub(crate) fn make_atom_formal_charge_query(what: i8) -> QueryNode<AtomQueryPredicate> {
+pub(crate) fn make_atom_formal_charge_query(what: i32) -> QueryNode<AtomQueryPredicate> {
     // RDKit✔️🔝: template <class T>
     // RDKit✔️🔝: T *makeAtomFormalChargeQuery(int what, const std::string &descr) {
     // RDKit✔️🔝:   return makeAtomSimpleQuery<T>(what, queryAtomFormalCharge, descr);
@@ -2366,7 +2482,7 @@ pub(crate) fn make_atom_formal_charge_query(what: i8) -> QueryNode<AtomQueryPred
 }
 
 #[inline]
-fn make_atom_negative_formal_charge_query(what: i8) -> QueryNode<AtomQueryPredicate> {
+fn make_atom_negative_formal_charge_query(what: i32) -> QueryNode<AtomQueryPredicate> {
     // RDKit✔️🔝: template <class T>
     // RDKit✔️🔝: T *makeAtomNegativeFormalChargeQuery(int what, const std::string &descr) {
     // RDKit✔️🔝:   return makeAtomSimpleQuery<T>(what, queryAtomNegativeFormalCharge, descr);
@@ -3404,7 +3520,7 @@ fn is_atom_dummy(atom: &crate::QueryAtom) -> bool {
     // canonical representation of RDKit's non-negated `AtomNull` query; `Not`
     // and `Or` roots therefore retain the source distinction without relying
     // on the query atom's zero atomic number.
-    if atom.atom().atomic_number() == 0 {
+    if atom.atomic_number() == 0 {
         return true;
     }
     matches!(
@@ -4327,10 +4443,10 @@ pub(crate) fn atom_predicate_matches_with_target_context(
         }
 
         // RDKit✔️✔️: `[+N]` / `[-N]` — queryAtomFormalCharge matches charge.
-        AtomQueryPredicate::FormalCharge(c) => query_atom_formal_charge(atom) == i32::from(*c),
+        AtomQueryPredicate::FormalCharge(c) => query_atom_formal_charge(atom) == *c,
 
         AtomQueryPredicate::NegativeFormalCharge(c) => {
-            query_atom_negative_formal_charge(atom) == i32::from(*c)
+            query_atom_negative_formal_charge(atom) == *c
         }
 
         AtomQueryPredicate::NumRadicalElectrons(n) => {
@@ -4342,11 +4458,11 @@ pub(crate) fn atom_predicate_matches_with_target_context(
         AtomQueryPredicate::MissingChiralTag => query_atom_missing_chiral_tag(atom) != 0,
 
         // RDKit✔️✔️: isotope match — queryAtomIsotope.
-        AtomQueryPredicate::Isotope(i) => query_atom_isotope(atom) == i32::from(*i),
+        AtomQueryPredicate::Isotope(i) => query_atom_isotope(atom) == *i,
 
-        AtomQueryPredicate::HydrogenCount(n) => {
-            query_atom_h_count(adj, valence.as_ref(), atom, mol) == Some(usize::from(*n))
-        }
+        AtomQueryPredicate::HydrogenCount(n) => usize::try_from(*n).ok().is_some_and(|target| {
+            query_atom_h_count(adj, valence.as_ref(), atom, mol) == Some(target)
+        }),
 
         AtomQueryPredicate::HasImplicitHydrogen => {
             query_atom_has_implicit_h(valence.as_ref(), atom)
@@ -4361,7 +4477,9 @@ pub(crate) fn atom_predicate_matches_with_target_context(
         }
 
         AtomQueryPredicate::ImplicitHydrogenCount(n) => {
-            query_atom_implicit_h_count(valence.as_ref(), atom) == Some(usize::from(*n))
+            usize::try_from(*n).ok().is_some_and(|target| {
+                query_atom_implicit_h_count(valence.as_ref(), atom) == Some(target)
+            })
         }
 
         AtomQueryPredicate::ImplicitHydrogenCountLessEqual(n) => {
@@ -4369,9 +4487,9 @@ pub(crate) fn atom_predicate_matches_with_target_context(
                 .is_some_and(|count| count <= usize::from(*n))
         }
 
-        AtomQueryPredicate::ExplicitDegree(n) => {
-            query_atom_explicit_degree(atom, adj) == usize::from(*n)
-        }
+        AtomQueryPredicate::ExplicitDegree(n) => usize::try_from(*n)
+            .ok()
+            .is_some_and(|target| query_atom_explicit_degree(atom, adj) == target),
 
         // RDKit✔️✔️: explicit degree ≤ N.
         AtomQueryPredicate::ExplicitDegreeLessEqual(n) => {
@@ -4391,13 +4509,13 @@ pub(crate) fn atom_predicate_matches_with_target_context(
             query_atom_heavy_atom_degree(atom, adj, mol) == *n
         }
         AtomQueryPredicate::NumHeteroatomNeighbors(n) => {
-            query_atom_num_heteroatom_nbrs(atom, adj, mol) == i32::from(*n)
+            query_atom_num_heteroatom_nbrs(atom, adj, mol) == *n
         }
         AtomQueryPredicate::HasHeteroatomNeighbors => {
             query_atom_has_heteroatom_nbrs(atom, adj, mol) != 0
         }
         AtomQueryPredicate::NumAliphaticHeteroatomNeighbors(n) => {
-            query_atom_num_aliphatic_heteroatom_nbrs(atom, adj, mol) == i32::from(*n)
+            query_atom_num_aliphatic_heteroatom_nbrs(atom, adj, mol) == *n
         }
         AtomQueryPredicate::HasAliphaticHeteroatomNeighbors => {
             query_atom_has_aliphatic_heteroatom_nbrs(atom, adj, mol) != 0
@@ -4413,7 +4531,8 @@ pub(crate) fn atom_predicate_matches_with_target_context(
         //   }
         AtomQueryPredicate::RingBondCount(n) => {
             if let Some(ri) = &ring_info {
-                query_atom_ring_bond_count(atom, adj, mol, ri) as u32 == *n
+                let count = query_atom_ring_bond_count(atom, adj, mol, ri);
+                if *n < 0 { count != 0 } else { count == *n }
             } else {
                 false
             }
@@ -4455,9 +4574,9 @@ pub(crate) fn atom_predicate_matches_with_target_context(
         // RDKit✔️✔️: hybridization match — queryAtomHybridization.
         AtomQueryPredicate::HybridizationMatch(h) => query_atom_hybridization(atom) == *h as i32,
 
-        AtomQueryPredicate::TotalDegree(n) => {
-            query_atom_total_degree(adj, valence.as_ref(), atom) == Some(usize::from(*n))
-        }
+        AtomQueryPredicate::TotalDegree(n) => usize::try_from(*n).ok().is_some_and(|target| {
+            query_atom_total_degree(adj, valence.as_ref(), atom) == Some(target)
+        }),
         AtomQueryPredicate::TotalDegreeLessEqual(n) => {
             query_atom_total_degree(adj, valence.as_ref(), atom)
                 .is_some_and(|total| total <= usize::from(*n))
@@ -4468,7 +4587,7 @@ pub(crate) fn atom_predicate_matches_with_target_context(
         }
 
         AtomQueryPredicate::TotalValence(n) => {
-            query_atom_total_valence(valence.as_ref(), atom) == Some(i32::from(*n))
+            query_atom_total_valence(valence.as_ref(), atom) == Some(*n)
         }
         AtomQueryPredicate::TotalValenceLessEqual(n) => {
             query_atom_total_valence(valence.as_ref(), atom)
@@ -4510,7 +4629,7 @@ pub(crate) fn atom_predicate_matches_with_target_context(
         // RDKit✔️✔️: in ring of size N — isAtomInRingOfSize.
         AtomQueryPredicate::InRingOfSize(n) => {
             if let Some(ri) = &ring_info {
-                query_atom_is_in_ring_of_size(atom, i32::from(*n), ri) == i32::from(*n)
+                query_atom_is_in_ring_of_size(atom, *n, ri) == *n
             } else {
                 false
             }
@@ -4538,7 +4657,7 @@ pub(crate) fn atom_predicate_matches_with_target_context(
         // }
         AtomQueryPredicate::SmallestRingSize(n) => {
             if let Some(ri) = &ring_info {
-                query_atom_min_ring_size(atom, ri) as u8 == *n
+                i32::try_from(query_atom_min_ring_size(atom, ri)).ok() == Some(*n)
             } else {
                 false
             }

@@ -11,8 +11,9 @@ use cosmolkit_core::{
 };
 use cosmolkit_model::{
     AdjacencyList, AtomId, AtomQueryPredicate, BondQueryPredicate, Conformer3D, CoordinateBlock,
-    QueryAtom, QueryBond, QueryGraph, QueryNode, QueryStateRef, RecursiveStructureQuery,
-    SubstanceGroup, SubstanceGroupId, TopologyBlock, TopologyMapping, remap_query_rows,
+    QueryAtom, QueryAtomConversionError, QueryBond, QueryGraph, QueryNode, QueryStateRef,
+    RecursiveStructureQuery, SubstanceGroup, SubstanceGroupId, TopologyBlock, TopologyMapping,
+    remap_query_rows,
 };
 use cosmolkit_types::BondOrder;
 
@@ -52,6 +53,8 @@ pub enum MolPostError {
     AttachmentExpansion(String),
     #[error("Molfile postprocessing property is outside the detached model: {0}")]
     Representation(&'static str),
+    #[error(transparent)]
+    QueryAtomConversion(#[from] QueryAtomConversionError),
     #[error("Molfile postprocessing failed: {0}")]
     Processing(String),
 }
@@ -300,12 +303,15 @@ fn process_atom_properties(
             } else {
                 i64::from(substitution)
             };
-            let degree = u8::try_from(degree).map_err(|_| {
-                MolPostError::Representation("molSubstCount query target outside u8")
-            })?;
             let predicate = if substitution >= 6 {
+                let degree = u8::try_from(degree).map_err(|_| {
+                    MolPostError::Representation("molSubstCount range target outside u8")
+                })?;
                 AtomQueryPredicate::ExplicitDegreeLessEqual(degree)
             } else {
+                let degree = i32::try_from(degree).map_err(|_| {
+                    MolPostError::Representation("molSubstCount query target outside i32")
+                })?;
                 AtomQueryPredicate::ExplicitDegree(degree)
             };
             let current = atoms[index].predicate().clone();
@@ -317,7 +323,6 @@ fn process_atom_properties(
                 .set_prop("_MolFileAtomQuery", "1")
                 .map_err(|error| MolPostError::Processing(error.to_string()))?;
             atoms[index]
-                .atom_mut()
                 .set_prop("_MolFileAtomQuery", "1")
                 .map_err(|error| MolPostError::Processing(error.to_string()))?;
         }
@@ -644,7 +649,7 @@ fn is_source_query_bond(bond: &QueryBond) -> bool {
     !bond.predicate_is_carrier_derived()
 }
 
-fn synchronize_query_atom(mut source: QueryAtom, carrier: cosmolkit_model::Atom) -> QueryAtom {
+fn synchronize_query_atom(source: &mut QueryAtom, carrier: cosmolkit_model::Atom) {
     // BEGIN RDKIT CPP FUNCTION QueryOps::replaceAtomWithQueryAtom
     // RDKit✔️✔️: if (!atom->hasQuery()) {
     // RDKit✔️✔️:   auto *newAt = new QueryAtom(*atom);
@@ -657,14 +662,15 @@ fn synchronize_query_atom(mut source: QueryAtom, carrier: cosmolkit_model::Atom)
     // explicit detached query from Molfile IO's uniform wrapper around an
     // ordinary atom. Only the latter receives the constructor snapshot of the
     // final carrier; optional Molfile properties are not provenance.
-    // Complexity review: one enum test and, for synthesized carriers, the same
-    // bounded constructor predicate allocation as the source conversion.
-    if is_source_query_atom(&source) {
-        *source.atom_mut() = carrier;
-        source
+    // Complexity review: one enum test; explicit carriers move the existing
+    // predicate and the processed Atom into the new QueryAtom without cloning
+    // the query tree. Synthesized carriers build one bounded predicate leaf.
+    if is_source_query_atom(source) {
+        let predicate = std::mem::replace(source.predicate_mut(), QueryNode::and(Vec::new()));
+        *source = QueryAtom::from_parts(carrier, predicate);
     } else {
         let predicate = query_from_concrete_atom_value(&carrier);
-        QueryAtom::from_carrier_parts(carrier, predicate)
+        *source = QueryAtom::from_carrier_parts(carrier, predicate);
     }
 }
 
@@ -768,14 +774,11 @@ fn process_smarts_groups(record: &mut MolBlockRecord) -> Result<(), MolPostError
         for atom_id in group.atoms() {
             if let Some(atom) = query_record.query.atom_mut(atom_id.index()) {
                 atom.set_predicate(predicate.clone());
-                atom.atom_mut()
-                    .set_prop("_MolFileAtomQuery", "1")
+                atom.set_prop("_MolFileAtomQuery", "1")
                     .map_err(|error| MolPostError::Processing(error.to_string()))?;
-                atom.atom_mut()
-                    .set_prop("MRV SMA", smarts)
+                atom.set_prop("MRV SMA", smarts)
                     .map_err(|error| MolPostError::Processing(error.to_string()))?;
-                atom.atom_mut()
-                    .set_prop("_MolFileAtomQuery", "1")
+                atom.set_prop("_MolFileAtomQuery", "1")
                     .map_err(|error| MolPostError::Processing(error.to_string()))?;
             }
         }
@@ -856,7 +859,10 @@ fn expand_record_attachment_points(record: MolBlockRecord) -> Result<MolBlockRec
             let old_atoms = query_record.query.atoms().to_vec();
             let old_bonds = query_record.query.bonds().to_vec();
             let topology = TopologyBlock::try_from_parts(
-                old_atoms.iter().map(|atom| atom.atom().clone()).collect(),
+                old_atoms
+                    .iter()
+                    .map(QueryAtom::try_to_atom)
+                    .collect::<Result<Vec<_>, _>>()?,
                 old_bonds.iter().map(|bond| bond.bond().clone()).collect(),
                 query_record.substance_groups,
                 query_record.query.stereo_groups().to_vec(),
@@ -926,8 +932,8 @@ fn calculate_record_explicit_valence(record: &MolBlockRecord) -> Result<(), MolP
                     .query
                     .atoms()
                     .iter()
-                    .map(|row| row.atom().clone())
-                    .collect(),
+                    .map(QueryAtom::try_to_atom)
+                    .collect::<Result<Vec<_>, _>>()?,
                 query
                     .query
                     .bonds()
@@ -992,8 +998,8 @@ pub fn finish_mol_block_record(
                     .query
                     .atoms()
                     .iter()
-                    .map(|atom| atom.atom().clone())
-                    .collect(),
+                    .map(QueryAtom::try_to_atom)
+                    .collect::<Result<Vec<_>, _>>()?,
                 bonds: query_record
                     .query
                     .bonds()
@@ -1020,7 +1026,7 @@ pub fn finish_mol_block_record(
                 .iter_mut()
                 .zip(&topology.atoms)
             {
-                *query_atom.atom_mut() = atom.clone();
+                synchronize_query_atom(query_atom, atom.clone());
             }
             for (query_bond, bond) in query_record
                 .query
@@ -1036,15 +1042,8 @@ pub fn finish_mol_block_record(
             let MolBlockRecord::Query(mut query_record) = wrapped else {
                 unreachable!()
             };
-            for (query_atom, atom) in query_record
-                .query
-                .atoms()
-                .iter()
-                .map(QueryAtom::atom)
-                .cloned()
-                .enumerate()
-            {
-                topology.atoms[query_atom] = atom;
+            for (index, query_atom) in query_record.query.atoms().iter().enumerate() {
+                topology.atoms[index] = query_atom.try_to_atom()?;
             }
             topology.substance_groups = query_record.substance_groups.clone();
 
@@ -1071,7 +1070,10 @@ pub fn finish_mol_block_record(
             let query_atoms = query_atoms
                 .into_iter()
                 .zip(&topology.atoms)
-                .map(|(query, carrier)| synchronize_query_atom(query, carrier.clone()))
+                .map(|(mut query, carrier)| {
+                    synchronize_query_atom(&mut query, carrier.clone());
+                    query
+                })
                 .collect();
             let query_bonds = query_bonds
                 .into_iter()

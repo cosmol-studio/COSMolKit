@@ -1,5 +1,6 @@
 //! File-format IO over detached `cosmolkit-model` values.
 
+mod bio_pdb;
 #[doc(hidden)]
 pub mod cif;
 pub mod mol2;

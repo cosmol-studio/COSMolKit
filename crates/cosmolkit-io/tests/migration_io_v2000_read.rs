@@ -277,9 +277,9 @@ fn complex_wildcard_and_generic_symbols_remain_typed_queries() {
             &QueryNode::predicate(AtomQueryPredicate::Any),
             "{symbol}"
         );
-        assert!(atom.atom().no_implicit(), "{symbol}");
+        assert!(atom.no_implicit(), "{symbol}");
         assert_eq!(
-            atom.atom().prop("dummyLabel"),
+            atom.prop("dummyLabel"),
             (symbol == "R").then_some("R"),
             "{symbol}"
         );
@@ -287,7 +287,7 @@ fn complex_wildcard_and_generic_symbols_remain_typed_queries() {
 
     for symbol in ["Q", "QH", "A", "AH", "X", "XH", "M", "MH"] {
         let record = query(&molblock(symbol, &[plain_atom(symbol)], &[]));
-        assert!(record.query.atoms()[0].atom().no_implicit(), "{symbol}");
+        assert!(record.query.atoms()[0].no_implicit(), "{symbol}");
     }
 
     for symbol in [
@@ -302,8 +302,8 @@ fn complex_wildcard_and_generic_symbols_remain_typed_queries() {
             &QueryNode::predicate(AtomQueryPredicate::AtomicNumber(0)),
             "{symbol}"
         );
-        assert_eq!(atom.atom().prop("atomLabel"), Some(symbol), "{symbol}");
-        assert!(!atom.atom().no_implicit(), "{symbol}");
+        assert_eq!(atom.prop("atomLabel"), Some(symbol), "{symbol}");
+        assert!(!atom.no_implicit(), "{symbol}");
     }
 }
 
@@ -312,17 +312,17 @@ fn mass_charge_hcount_and_optional_atom_fields_preserve_order_and_ranges() {
     let rich = atom_line(1.25, -2.5, 3.75, "C", 1, 3, 2, 2, 1, 4, 2, 3, 12, 1, 5);
     let record = query(&molblock("rich", &[rich], &[]));
     let atom = &record.query.atoms()[0];
-    assert_eq!(atom.atom().formal_charge(), 1);
-    assert_eq!(atom.atom().isotope(), Some(13));
-    assert_eq!(atom.atom().mol_parity(), Some(2));
-    assert_eq!(atom.atom().atom_map(), Some(12));
-    assert_eq!(atom.atom().mol_inversion_flag(), Some(1));
-    assert_eq!(atom.atom().prop("molStereoCare"), Some("1"));
-    assert_eq!(atom.atom().prop("molTotValence"), Some("4"));
-    assert_eq!(atom.atom().prop("molRxnRole"), Some("2"));
-    assert_eq!(atom.atom().prop("molRxnComponent"), Some("3"));
-    assert_eq!(atom.atom().prop("molRxnExactChange"), Some("5"));
-    assert!(atom.atom().no_implicit());
+    assert_eq!(atom.formal_charge(), 1);
+    assert_eq!(atom.isotope(), Some(13));
+    assert_eq!(atom.mol_parity(), Some(2));
+    assert_eq!(atom.atom_map(), Some(12));
+    assert_eq!(atom.mol_inversion_flag(), Some(1));
+    assert_eq!(atom.prop("molStereoCare"), Some("1"));
+    assert_eq!(atom.prop("molTotValence"), Some("4"));
+    assert_eq!(atom.prop("molRxnRole"), Some("2"));
+    assert_eq!(atom.prop("molRxnComponent"), Some("3"));
+    assert_eq!(atom.prop("molRxnExactChange"), Some("5"));
+    assert!(atom.no_implicit());
     assert!(atom_query_contains(
         atom.predicate(),
         &AtomQueryPredicate::AtomicNumber(6)

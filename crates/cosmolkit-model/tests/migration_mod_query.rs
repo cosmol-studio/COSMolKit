@@ -1,11 +1,13 @@
 use std::collections::BTreeMap;
 
 use cosmolkit_model::{
-    Atom, AtomId, AtomQueryPredicate, AtomRangeBounds, AtomRangeDataFunction, AtomRangeQuery,
-    AtomSpec, Bond, BondDirection, BondId, BondOrder, BondQueryPredicate, BondSpec, BondStereo,
-    ChiralTag, Conformer2D, Conformer3D, CoordinateValidationError, Element, Hybridization,
-    QueryAtom, QueryBond, QueryGraph, QueryGraphError, QueryNode, QueryStateError, QueryStateRef,
-    RecursiveStructureQuery, StereoGroup, StereoGroupKind, TopologyBlock, remap_query_rows,
+    Atom, AtomId, AtomPdbResidueInfo, AtomQueryPredicate, AtomRangeBounds, AtomRangeDataFunction,
+    AtomRangeQuery, AtomSpec, Bond, BondDirection, BondId, BondOrder, BondQueryPredicate, BondSpec,
+    BondStereo, ChiralTag, Conformer2D, Conformer3D, CoordinateValidationError, Element,
+    Hybridization, QueryAtom, QueryAtomConversionError, QueryAtomIdentity, QueryBond, QueryGraph,
+    QueryGraphError, QueryNode, QueryStateError, QueryStateRef, RecursiveStructureQuery,
+    StereoGroup, StereoGroupKind, TemplateAttachment, TemplateAttachmentOrder, TopologyBlock,
+    remap_query_rows,
 };
 
 fn carbon(id: usize) -> QueryAtom {
@@ -18,7 +20,10 @@ fn query_origin_equality_compares_representation_not_matching_equivalence() {
     let predicate = QueryNode::predicate(AtomQueryPredicate::AtomicNumber(6));
     let explicit = QueryAtom::from_parts(atom.clone(), predicate.clone());
     let carrier = QueryAtom::from_carrier_parts(atom, predicate);
-    assert_eq!(explicit.atom(), carrier.atom());
+    assert_eq!(
+        explicit.try_to_atom().unwrap(),
+        carrier.try_to_atom().unwrap()
+    );
     assert_eq!(explicit.predicate(), carrier.predicate());
     assert_ne!(explicit, carrier);
     assert_eq!(explicit, explicit.clone());
@@ -48,7 +53,7 @@ fn query_overlay_remap_uses_current_carriers_without_rewriting_explicit_predicat
     let atoms = vec![carbon(0), carbon(1)];
     let bonds = vec![single_bond(0, 0, 1)];
     let mut current = TopologyBlock::try_from_parts(
-        atoms.iter().map(|a| a.atom().clone()).collect(),
+        atoms.iter().map(|a| a.try_to_atom().unwrap()).collect(),
         bonds.iter().map(|b| b.bond().clone()).collect(),
         vec![],
         vec![],
@@ -66,8 +71,11 @@ fn query_overlay_remap_uses_current_carriers_without_rewriting_explicit_predicat
         &cosmolkit_model::TopologyMapping::identity(2, 1),
     )
     .unwrap();
-    assert_eq!(updated_atoms[0].atom(), &current.atoms[0]);
-    assert_ne!(updated_atoms[0].atom(), atoms[0].atom());
+    assert_eq!(updated_atoms[0].try_to_atom().unwrap(), current.atoms[0]);
+    assert_ne!(
+        updated_atoms[0].try_to_atom().unwrap(),
+        atoms[0].try_to_atom().unwrap()
+    );
     assert_eq!(updated_bonds[0].bond(), &current.bonds[0]);
     assert_ne!(updated_bonds[0].bond(), bonds[0].bond());
     assert_eq!(updated_atoms[0].predicate(), atoms[0].predicate());
@@ -130,7 +138,10 @@ fn q05_query_state_transport_preserves_explicit_and_carrier_origins_and_trees() 
     let cloned_carrier = carrier_atom.clone();
     let cloned_bond = explicit_bond.clone();
     let topology = TopologyBlock::try_from_parts(
-        vec![cloned_atom.atom().clone(), cloned_carrier.atom().clone()],
+        vec![
+            cloned_atom.try_to_atom().unwrap(),
+            cloned_carrier.try_to_atom().unwrap(),
+        ],
         vec![cloned_bond.bond().clone()],
         Vec::new(),
         Vec::new(),
@@ -369,6 +380,60 @@ fn range_query_covers_every_bound_and_data_function_value() {
 }
 
 #[test]
+fn q07e_ring_equality_targets_keep_full_i32_identity_and_carrier_provenance() {
+    let atom = Atom::from_spec(AtomId::new(0), AtomSpec::new(Element::C));
+    for target in [0, 255, 256, 2_147_483_639] {
+        let predicates = [
+            AtomQueryPredicate::SmallestRingSize(target),
+            AtomQueryPredicate::InRingOfSize(target),
+            AtomQueryPredicate::RingBondCount(target),
+        ];
+        assert_ne!(predicates[0], predicates[1], "target {target}");
+        assert_ne!(predicates[0], predicates[2], "target {target}");
+        assert_ne!(predicates[1], predicates[2], "target {target}");
+
+        for predicate in predicates {
+            let query = QueryNode::predicate(predicate.clone());
+            assert_eq!(query.clone(), query, "target {target}");
+            let explicit = QueryAtom::from_parts(atom.clone(), query.clone());
+            let carrier_derived = QueryAtom::from_carrier_parts(atom.clone(), query.clone());
+            assert_eq!(explicit.try_to_atom().unwrap(), atom, "target {target}");
+            assert_eq!(
+                carrier_derived.try_to_atom().unwrap(),
+                atom,
+                "target {target}"
+            );
+            assert_eq!(explicit.predicate(), &query, "target {target}");
+            assert_eq!(carrier_derived.predicate(), &query, "target {target}");
+            assert!(!explicit.predicate_is_carrier_derived(), "target {target}");
+            assert!(
+                carrier_derived.predicate_is_carrier_derived(),
+                "target {target}"
+            );
+            assert_eq!(explicit.clone(), explicit, "target {target}");
+            assert_eq!(carrier_derived.clone(), carrier_derived, "target {target}");
+        }
+    }
+
+    let bounds = AtomRangeBounds::Inclusive {
+        lower: 256,
+        upper: 2_147_483_639,
+        lower_open: false,
+        upper_open: true,
+    };
+    let data_function = AtomRangeDataFunction::AtomRingSize {
+        lower: 256,
+        upper: 2_147_483_639,
+        lower_open: false,
+        upper_open: true,
+    };
+    let range = AtomRangeQuery::new(bounds, data_function);
+    assert_eq!(range.bounds(), bounds);
+    assert_eq!(range.data_function(), data_function);
+    assert_eq!(range.writer_parts(), (bounds, data_function));
+}
+
+#[test]
 fn atom_predicate_family_has_all_audited_variants() {
     let range = AtomRangeQuery::new(
         AtomRangeBounds::LessEqual(2),
@@ -489,7 +554,7 @@ fn query_atom_and_bond_cover_default_parts_access_and_mutation() {
         atom.predicate(),
         &QueryNode::predicate(AtomQueryPredicate::AtomicNumber(7))
     );
-    atom.atom_mut().set_atom_map(Some(9));
+    atom.set_atom_map(Some(9));
     atom.set_predicate(QueryNode::predicate(AtomQueryPredicate::Any));
     *atom.predicate_mut() = QueryNode::not(QueryNode::predicate(AtomQueryPredicate::Any));
     assert_eq!(atom.atom_map(), Some(9));
@@ -777,4 +842,336 @@ fn query_graph_coordinate_builders_return_structured_errors() {
             atom_count: 2,
         })
     ));
+}
+
+#[test]
+fn query_atom_keeps_raw_identity_separate_from_predicate_and_fails_concrete_conversion() {
+    let id = AtomId::new(4);
+    let predicate = QueryNode::and(vec![
+        QueryNode::predicate(AtomQueryPredicate::AtomicNumber(119)),
+        QueryNode::predicate(AtomQueryPredicate::Isotope(13)),
+    ]);
+    let mut atom =
+        QueryAtom::from_identity_parts(id, QueryAtomIdentity::AtomicNumber(119), predicate.clone());
+    atom.set_isotope(Some(13));
+    atom.set_formal_charge(1);
+
+    assert_eq!(atom.id(), id);
+    assert_eq!(atom.identity(), QueryAtomIdentity::AtomicNumber(119));
+    assert_eq!(atom.atomic_number(), 119);
+    assert_eq!(atom.element(), None);
+    assert_eq!(atom.isotope(), Some(13));
+    assert_eq!(atom.formal_charge(), 1);
+    assert_eq!(atom.predicate(), &predicate);
+    assert!(!atom.predicate_is_carrier_derived());
+    assert_eq!(
+        atom.try_to_atom(),
+        Err(QueryAtomConversionError::NonElementAtomicNumber {
+            atom: id,
+            atomic_number: 119,
+        })
+    );
+
+    assert_eq!(Element::from_atomic_number(119), None);
+    let ordinary = Atom::from_spec(AtomId::new(0), AtomSpec::new(Element::C));
+    assert_eq!(ordinary.element(), Element::C);
+}
+
+#[test]
+fn widened_query_targets_remain_separate_from_narrow_carriers() {
+    let mut positive_charge = QueryAtom::from_identity_parts(
+        AtomId::new(10),
+        QueryAtomIdentity::AtomicNumber(6),
+        QueryNode::predicate(AtomQueryPredicate::FormalCharge(128)),
+    );
+    positive_charge.set_formal_charge(-128);
+    assert_eq!(
+        positive_charge.predicate(),
+        &QueryNode::predicate(AtomQueryPredicate::FormalCharge(128))
+    );
+    assert_eq!(positive_charge.formal_charge(), -128);
+    assert!(!positive_charge.predicate_is_carrier_derived());
+    assert_eq!(positive_charge.clone(), positive_charge);
+
+    let mut negative_charge = QueryAtom::from_identity_parts(
+        AtomId::new(11),
+        QueryAtomIdentity::AtomicNumber(6),
+        QueryNode::predicate(AtomQueryPredicate::FormalCharge(-129)),
+    );
+    negative_charge.set_formal_charge(127);
+    assert_eq!(
+        negative_charge.predicate(),
+        &QueryNode::predicate(AtomQueryPredicate::FormalCharge(-129))
+    );
+    assert_eq!(negative_charge.formal_charge(), 127);
+    assert!(!negative_charge.predicate_is_carrier_derived());
+    assert_eq!(negative_charge.clone(), negative_charge);
+
+    let mut negative_predicate = QueryAtom::from_identity_parts(
+        AtomId::new(12),
+        QueryAtomIdentity::AtomicNumber(6),
+        QueryNode::predicate(AtomQueryPredicate::NegativeFormalCharge(129)),
+    );
+    negative_predicate.set_formal_charge(-128);
+    assert_eq!(
+        negative_predicate.predicate(),
+        &QueryNode::predicate(AtomQueryPredicate::NegativeFormalCharge(129))
+    );
+    assert_eq!(negative_predicate.formal_charge(), -128);
+    assert!(!negative_predicate.predicate_is_carrier_derived());
+    assert_eq!(negative_predicate.clone(), negative_predicate);
+
+    let mut isotope = QueryAtom::from_identity_parts(
+        AtomId::new(13),
+        QueryAtomIdentity::AtomicNumber(6),
+        QueryNode::predicate(AtomQueryPredicate::Isotope(65_536)),
+    );
+    isotope.set_isotope(Some(0));
+    assert_eq!(
+        isotope.predicate(),
+        &QueryNode::predicate(AtomQueryPredicate::Isotope(65_536))
+    );
+    assert_eq!(isotope.isotope(), None);
+    assert!(!isotope.predicate_is_carrier_derived());
+    assert_eq!(isotope.clone(), isotope);
+
+    let ordinary = AtomSpec::new(Element::C)
+        .with_formal_charge(-128)
+        .with_isotope(u16::MAX);
+    assert_eq!(ordinary.formal_charge(), -128);
+    assert_eq!(ordinary.isotope(), Some(u16::MAX));
+}
+
+#[test]
+fn seven_equality_query_targets_store_i32_without_changing_carriers() {
+    let targets = [0, 255, 256, 2_147_483_639];
+    let predicates: [fn(i32) -> AtomQueryPredicate; 7] = [
+        AtomQueryPredicate::HydrogenCount,
+        AtomQueryPredicate::ImplicitHydrogenCount,
+        AtomQueryPredicate::ExplicitDegree,
+        AtomQueryPredicate::NumHeteroatomNeighbors,
+        AtomQueryPredicate::NumAliphaticHeteroatomNeighbors,
+        AtomQueryPredicate::TotalDegree,
+        AtomQueryPredicate::TotalValence,
+    ];
+
+    for (target_index, target) in targets.into_iter().enumerate() {
+        for (predicate_index, make_predicate) in predicates.into_iter().enumerate() {
+            let predicate = make_predicate(target);
+            let mut atom = QueryAtom::from_identity_parts(
+                AtomId::new(target_index * predicates.len() + predicate_index),
+                QueryAtomIdentity::AtomicNumber(6),
+                QueryNode::predicate(predicate.clone()),
+            );
+            atom.set_formal_charge(-7);
+            atom.set_isotope(Some(13));
+            atom.set_explicit_hydrogens(u8::MAX);
+            atom.set_no_implicit(true);
+
+            assert_eq!(atom.predicate(), &QueryNode::predicate(predicate));
+            assert!(!atom.predicate_is_carrier_derived());
+            assert_eq!(atom.formal_charge(), -7);
+            assert_eq!(atom.isotope(), Some(13));
+            assert_eq!(atom.explicit_hydrogens(), u8::MAX);
+            assert!(atom.no_implicit());
+
+            let cloned = atom.clone();
+            assert_eq!(cloned, atom);
+            assert_eq!(cloned.predicate(), atom.predicate());
+            assert!(!cloned.predicate_is_carrier_derived());
+            assert_eq!(cloned.formal_charge(), -7);
+            assert_eq!(cloned.isotope(), Some(13));
+            assert_eq!(cloned.explicit_hydrogens(), u8::MAX);
+            assert!(cloned.no_implicit());
+        }
+    }
+}
+
+#[test]
+fn query_graph_retains_raw_identity_and_rejects_concrete_topology_alignment() {
+    let query_atom = QueryAtom::from_identity_parts(
+        AtomId::new(0),
+        QueryAtomIdentity::AtomicNumber(119),
+        QueryNode::predicate(AtomQueryPredicate::AtomicNumber(119)),
+    );
+    let graph = QueryGraph::from_parts(
+        vec![query_atom],
+        Vec::new(),
+        BTreeMap::new(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+    )
+    .unwrap();
+    let carrier = graph.atom(0).expect("raw identity remains a query row");
+    assert_eq!(carrier.identity(), QueryAtomIdentity::AtomicNumber(119));
+    assert_eq!(carrier.atomic_number(), 119);
+    assert_eq!(
+        carrier.predicate(),
+        &QueryNode::predicate(AtomQueryPredicate::AtomicNumber(119))
+    );
+
+    let concrete_topology = TopologyBlock::try_from_parts(
+        vec![Atom::from_spec(AtomId::new(0), AtomSpec::new(Element::C))],
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+    )
+    .unwrap();
+    assert!(matches!(
+        QueryStateRef::try_for_topology(graph.atoms(), &[], &concrete_topology),
+        Err(QueryStateError::NonElementAtomIdentity {
+            position: 0,
+            atom,
+            atomic_number: 119,
+        }) if atom == AtomId::new(0)
+    ));
+    assert_eq!(
+        carrier.try_to_atom(),
+        Err(QueryAtomConversionError::NonElementAtomicNumber {
+            atom: AtomId::new(0),
+            atomic_number: 119,
+        })
+    );
+}
+
+#[test]
+fn query_atom_identity_canonicalizes_element_and_wildcard_numbers() {
+    let carbon_predicate = QueryNode::predicate(AtomQueryPredicate::AtomicNumber(6));
+    let carbon = QueryAtom::from_identity_parts(
+        AtomId::new(0),
+        QueryAtomIdentity::AtomicNumber(6),
+        carbon_predicate,
+    );
+    assert_eq!(carbon.identity(), QueryAtomIdentity::Element(Element::C));
+    assert_eq!(carbon.atomic_number(), 6);
+    assert_eq!(carbon.element(), Some(Element::C));
+    assert_eq!(carbon.try_to_atom().unwrap().element(), Element::C);
+
+    let wildcard = QueryAtom::from_identity_parts(
+        AtomId::new(0),
+        QueryAtomIdentity::from_atomic_number(0),
+        QueryNode::predicate(AtomQueryPredicate::Any),
+    );
+    let dummy = Element::from_atomic_number(0).unwrap();
+    assert_eq!(wildcard.identity(), QueryAtomIdentity::Element(dummy));
+    assert_eq!(wildcard.atomic_number(), 0);
+    assert_eq!(wildcard.element(), Some(dummy));
+    assert_eq!(wildcard.try_to_atom().unwrap().element(), dummy);
+}
+
+#[test]
+fn query_atom_identity_change_clone_mapping_and_common_mutation_preserve_carrier_state() {
+    let id = AtomId::new(0);
+    let attachment_order =
+        TemplateAttachmentOrder::new(vec![TemplateAttachment::new(id, "self")]).unwrap();
+    let spec = AtomSpec::new(Element::C)
+        .with_formal_charge(1)
+        .with_explicit_hydrogens(2)
+        .with_chiral_tag(ChiralTag::TetrahedralCw)
+        .with_chiral_permutation(3)
+        .with_unknown_stereo(true)
+        .with_mol_parity(7)
+        .with_mol_inversion_flag(1)
+        .with_implicit_hydrogen(true)
+        .with_tracked_isotopic_hydrogens(vec![2, 3])
+        .with_aromatic(true)
+        .with_isotope(13)
+        .with_atom_map(41)
+        .with_no_implicit(true)
+        .with_radical_electrons(1)
+        .with_hybridization(Hybridization::Sp2)
+        .with_prop("user", "kept")
+        .unwrap()
+        .with_computed_prop("computed", "kept")
+        .unwrap()
+        .with_pdb_residue_info(
+            AtomPdbResidueInfo::new("CA", 12, "GLY", 3, "A", true)
+                .with_alt_loc("B")
+                .with_insertion_code("C")
+                .with_occupancy(0.75)
+                .with_temp_factor(12.5)
+                .with_secondary_structure(4)
+                .with_segment_number(5)
+                .with_monomer_class("protein"),
+        )
+        .with_template_attachment_order(attachment_order.clone());
+    let predicate = QueryNode::and(vec![
+        QueryNode::predicate(AtomQueryPredicate::AtomicNumber(119)),
+        QueryNode::not(QueryNode::predicate(AtomQueryPredicate::IsAromatic(false))),
+    ]);
+    let element_carrier = Atom::from_spec(id, spec);
+    let explicit = QueryAtom::from_parts(element_carrier.clone(), predicate.clone());
+    let mut raw = explicit
+        .clone()
+        .with_identity(QueryAtomIdentity::AtomicNumber(119));
+
+    assert_eq!(raw.identity(), QueryAtomIdentity::AtomicNumber(119));
+    assert_eq!(raw.id(), id);
+    assert_eq!(raw.formal_charge(), 1);
+    assert_eq!(raw.explicit_hydrogens(), 2);
+    assert_eq!(raw.chiral_tag(), ChiralTag::TetrahedralCw);
+    assert_eq!(raw.chiral_permutation(), Some(3));
+    assert!(raw.unknown_stereo());
+    assert_eq!(raw.mol_parity(), Some(7));
+    assert_eq!(raw.mol_inversion_flag(), Some(1));
+    assert!(raw.implicit_hydrogen());
+    assert_eq!(raw.tracked_isotopic_hydrogens(), &[2, 3]);
+    assert!(raw.is_aromatic());
+    assert_eq!(raw.isotope(), Some(13));
+    assert_eq!(raw.atom_map(), Some(41));
+    assert!(raw.no_implicit());
+    assert_eq!(raw.radical_electrons(), 1);
+    assert_eq!(raw.hybridization(), Hybridization::Sp2);
+    assert_eq!(raw.prop("user"), Some("kept"));
+    assert_eq!(raw.prop("computed"), Some("kept"));
+    assert!(raw.is_prop_computed("computed"));
+    assert_eq!(
+        raw.computed_prop_names()
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>(),
+        ["computed"]
+    );
+    assert_eq!(raw.pdb_residue_info(), element_carrier.pdb_residue_info());
+    assert_eq!(raw.template_attachment_order(), Some(&attachment_order));
+    assert_eq!(raw.predicate(), &predicate);
+    assert!(!raw.predicate_is_carrier_derived());
+
+    let cloned = raw.clone();
+    assert_eq!(cloned, raw);
+    let query_graph = QueryGraph::from_parts(
+        vec![raw.clone()],
+        Vec::new(),
+        BTreeMap::new(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+    )
+    .unwrap();
+    let cloned_graph = query_graph.clone();
+    assert_eq!(cloned_graph, query_graph);
+    assert_eq!(
+        cloned_graph.atom(0).unwrap().identity(),
+        QueryAtomIdentity::AtomicNumber(119)
+    );
+
+    raw.set_isotope(Some(14));
+    raw.set_formal_charge(-2);
+    raw.set_prop("added", "value").unwrap();
+    assert_eq!(raw.identity(), QueryAtomIdentity::AtomicNumber(119));
+    assert_eq!(raw.atomic_number(), 119);
+    assert_eq!(raw.isotope(), Some(14));
+    assert_eq!(raw.formal_charge(), -2);
+    assert_eq!(raw.prop("added"), Some("value"));
+    assert_eq!(raw.predicate(), &predicate);
+    assert!(!raw.predicate_is_carrier_derived());
+
+    let remapped_id = AtomId::new(1);
+    let moved = raw.clone().with_id(remapped_id);
+    assert_eq!(moved.id(), remapped_id);
+    assert_eq!(moved.identity(), QueryAtomIdentity::AtomicNumber(119));
+    assert_eq!(moved.isotope(), Some(14));
+    assert_eq!(moved.formal_charge(), -2);
+    assert_eq!(moved.predicate(), &predicate);
 }

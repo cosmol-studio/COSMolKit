@@ -383,6 +383,7 @@ fn gemmi_cif_row_one_of_preserves_source_presence_and_null_branches() {
         "a1 ? fallback1\n",
         "a2 ? ?\n",
         "a3 ? .\n",
+        "a4 . fallback4\n",
     );
     let document = read_cif_document(input, "one-of.cif", CifCheckLevel::Syntax).unwrap();
     let block = document.sole_block().unwrap();
@@ -395,6 +396,7 @@ fn gemmi_cif_row_one_of_preserves_source_presence_and_null_branches() {
     // Gemmi checks column presence for the fallback, not its nullness.
     assert_eq!(selected(2), "?");
     assert_eq!(selected(3), ".");
+    assert_eq!(selected(4), "fallback4");
 
     let pair_input = concat!(
         "data_pair_choices\n",
@@ -428,8 +430,8 @@ fn gemmi_cif_row_one_of_preserves_source_presence_and_null_branches() {
             &["anchor", "?missing_primary", "?missing_fallback"],
         )
         .unwrap();
-    assert_eq!((absent_positions.width(), absent_positions.len()), (3, 4));
-    for row_index in 0..4 {
+    assert_eq!((absent_positions.width(), absent_positions.len()), (3, 5));
+    for row_index in 0..5 {
         let row = absent_positions.row(row_index).unwrap();
         assert!(!row.has(1));
         assert!(!row.has(2));
@@ -614,6 +616,7 @@ fn gemmi_cif_underflow_range_errors_fall_back_but_exact_zero_and_subnormals_surv
         ("1e-323(4)", 0x0000_0000_0000_0002),
         ("1e-999(4)", null_bits),
         ("0e-999(4)", 0x0000_0000_0000_0000),
+        ("-0e-999(4)", 0x8000_0000_0000_0000),
     ] {
         let actual = cif_as_f64(input, null).unwrap();
         assert_eq!(actual.to_bits(), expected_bits, "{input:?}");

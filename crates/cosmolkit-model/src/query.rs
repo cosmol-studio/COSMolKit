@@ -7,10 +7,11 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use cosmolkit_types::{BondDirection, BondOrder, BondStereo, ChiralTag, Hybridization};
+use cosmolkit_types::{BondDirection, BondOrder, BondStereo, ChiralTag, Element, Hybridization};
 
+use crate::atom::AtomProperties;
 use crate::{
-    Atom, AtomId, Bond, BondId, Conformer2D, Conformer3D, CoordinateBlock,
+    Atom, AtomId, AtomPropertyError, Bond, BondId, Conformer2D, Conformer3D, CoordinateBlock,
     CoordinateValidationError, MappingValidationError, StereoGroup, TemplateAttachmentOrder,
     TemplateAttachmentOrderError, TopologyBlock, TopologyMapping,
 };
@@ -178,29 +179,29 @@ pub enum AtomQueryPredicate {
     AtomType { atomic_number: u8, aromatic: bool },
     AtomicNumberIn(Vec<u8>),
     AtomicNumberNotIn(Vec<u8>),
-    FormalCharge(i8),
-    NegativeFormalCharge(i8),
+    FormalCharge(i32),
+    NegativeFormalCharge(i32),
     NumRadicalElectrons(u8),
     HasChiralTag,
     MissingChiralTag,
-    Isotope(u16),
-    HydrogenCount(u8),
+    Isotope(i32),
+    HydrogenCount(i32),
     HasImplicitHydrogen,
-    ImplicitHydrogenCount(u8),
+    ImplicitHydrogenCount(i32),
     ImplicitHydrogenCountLessEqual(u8),
     ImplicitValence(i32),
     ExplicitValence(i32),
-    ExplicitDegree(u8),
+    ExplicitDegree(i32),
     ExplicitDegreeLessEqual(u8),
     NonHydrogenDegree(u32),
     NonHydrogenDegreeLessEqual(u32),
     NonHydrogenDegreeGreaterEqual(u32),
     HeavyAtomDegree(u32),
-    NumHeteroatomNeighbors(u8),
+    NumHeteroatomNeighbors(i32),
     HasHeteroatomNeighbors,
-    NumAliphaticHeteroatomNeighbors(u8),
+    NumAliphaticHeteroatomNeighbors(i32),
     HasAliphaticHeteroatomNeighbors,
-    RingBondCount(u32),
+    RingBondCount(i32),
     RingBondCountLessEqual(u8),
     HasRingBond,
     IsBridgehead,
@@ -212,18 +213,18 @@ pub enum AtomQueryPredicate {
     RGroupLabel(u32),
     MolFileAlias(String),
     HybridizationMatch(Hybridization),
-    TotalDegree(u8),
+    TotalDegree(i32),
     TotalDegreeLessEqual(u8),
     TotalDegreeGreaterEqual(u8),
-    TotalValence(u8),
+    TotalValence(i32),
     TotalValenceLessEqual(u8),
     TotalValenceGreaterEqual(u8),
     InRing,
     NumAtomRings(i32),
-    InRingOfSize(u8),
+    InRingOfSize(i32),
     InRingOfSizeLessEqual(u8),
     InRingOfSizeGreaterEqual(u8),
-    SmallestRingSize(u8),
+    SmallestRingSize(i32),
     SmallestRingSizeLessEqual(u8),
     SmallestRingSizeGreaterEqual(u8),
     Mass(u16),
@@ -387,6 +388,57 @@ enum QueryPredicateOrigin {
     CarrierDerived,
 }
 
+/// Chemical identity carried by one query atom.
+///
+/// Ordinary [`Atom`] values remain `Element`-constrained. Query carriers may
+/// retain a source numeric atomic number that has no corresponding Element.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum QueryAtomIdentity {
+    Element(Element),
+    AtomicNumber(u8),
+}
+
+impl QueryAtomIdentity {
+    /// Store representable atomic numbers canonically as Elements.
+    #[must_use]
+    pub const fn from_atomic_number(atomic_number: u8) -> Self {
+        match Element::from_atomic_number(atomic_number) {
+            Some(element) => Self::Element(element),
+            None => Self::AtomicNumber(atomic_number),
+        }
+    }
+
+    #[must_use]
+    pub const fn atomic_number(self) -> u8 {
+        match self {
+            Self::Element(element) => element.atomic_number(),
+            Self::AtomicNumber(atomic_number) => atomic_number,
+        }
+    }
+
+    #[must_use]
+    pub const fn element(self) -> Option<Element> {
+        match self {
+            Self::Element(element) => Some(element),
+            Self::AtomicNumber(_) => None,
+        }
+    }
+
+    const fn canonicalized(self) -> Self {
+        match self {
+            Self::Element(element) => Self::Element(element),
+            Self::AtomicNumber(atomic_number) => Self::from_atomic_number(atomic_number),
+        }
+    }
+}
+
+/// A query carrier cannot be represented as an ordinary Element-only Atom.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum QueryAtomConversionError {
+    #[error("query atom {atom} has non-Element atomic number {atomic_number}")]
+    NonElementAtomicNumber { atom: AtomId, atomic_number: u8 },
+}
+
 /// A query atom combines carrier attributes, a predicate tree, and its origin.
 ///
 /// Equality compares stored representation, including predicate origin. An
@@ -395,7 +447,9 @@ enum QueryPredicateOrigin {
 /// does not establish chemical or query-matching equivalence.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct QueryAtom {
-    atom: Atom,
+    id: AtomId,
+    identity: QueryAtomIdentity,
+    properties: AtomProperties,
     predicate: QueryNode<AtomQueryPredicate>,
     predicate_origin: QueryPredicateOrigin,
 }
@@ -403,19 +457,28 @@ pub struct QueryAtom {
 impl QueryAtom {
     #[must_use]
     pub fn new(id: AtomId, spec: crate::AtomSpec) -> Self {
-        let predicate = QueryNode::predicate(AtomQueryPredicate::AtomicNumber(
-            spec.element().atomic_number(),
-        ));
-        Self::from_parts(Atom::from_spec(id, spec), predicate)
+        let (element, properties) = spec.into_query_parts();
+        let predicate =
+            QueryNode::predicate(AtomQueryPredicate::AtomicNumber(element.atomic_number()));
+        Self::from_properties(
+            id,
+            QueryAtomIdentity::Element(element),
+            properties,
+            predicate,
+            QueryPredicateOrigin::Explicit,
+        )
     }
 
     #[must_use]
     pub fn from_parts(atom: Atom, predicate: QueryNode<AtomQueryPredicate>) -> Self {
-        Self {
-            atom,
+        let (id, element, properties) = atom.into_query_parts();
+        Self::from_properties(
+            id,
+            QueryAtomIdentity::Element(element),
+            properties,
             predicate,
-            predicate_origin: QueryPredicateOrigin::Explicit,
-        }
+            QueryPredicateOrigin::Explicit,
+        )
     }
 
     /// Construct the uniform query carrier used internally when Molfile input
@@ -423,21 +486,97 @@ impl QueryAtom {
     #[doc(hidden)]
     #[must_use]
     pub fn from_carrier_parts(atom: Atom, predicate: QueryNode<AtomQueryPredicate>) -> Self {
-        Self {
-            atom,
+        let (id, element, properties) = atom.into_query_parts();
+        Self::from_properties(
+            id,
+            QueryAtomIdentity::Element(element),
+            properties,
             predicate,
-            predicate_origin: QueryPredicateOrigin::CarrierDerived,
+            QueryPredicateOrigin::CarrierDerived,
+        )
+    }
+
+    /// Construct a query carrier with independent typed identity and predicate.
+    #[must_use]
+    pub fn from_identity_parts(
+        id: AtomId,
+        identity: QueryAtomIdentity,
+        predicate: QueryNode<AtomQueryPredicate>,
+    ) -> Self {
+        // BEGIN RDKIT CPP FUNCTION Atom::Atom(unsigned int)
+        // RDKit❗✔️: Atom::Atom(unsigned int num) : RDProps() {
+        // RDKit❗✔️:   d_atomicNum = num;
+        // RDKit❗✔️:   initAtom();
+        // RDKit❗✔️: };
+        // END RDKIT CPP FUNCTION Atom::Atom(unsigned int)
+        // The typed identity preserves the source u8 value while canonicalizing
+        // values with an Element; the predicate remains the caller's separate AST.
+        Self::from_properties(
+            id,
+            identity,
+            AtomProperties::new(),
+            predicate,
+            QueryPredicateOrigin::Explicit,
+        )
+    }
+
+    #[doc(hidden)]
+    pub fn with_identity(mut self, identity: QueryAtomIdentity) -> Self {
+        self.identity = identity.canonicalized();
+        self
+    }
+
+    #[doc(hidden)]
+    pub fn with_id(mut self, id: AtomId) -> Self {
+        self.id = id;
+        self
+    }
+
+    fn from_properties(
+        id: AtomId,
+        identity: QueryAtomIdentity,
+        properties: AtomProperties,
+        predicate: QueryNode<AtomQueryPredicate>,
+        predicate_origin: QueryPredicateOrigin,
+    ) -> Self {
+        Self {
+            id,
+            identity: identity.canonicalized(),
+            properties,
+            predicate,
+            predicate_origin,
         }
     }
 
     #[must_use]
-    pub fn atom(&self) -> &Atom {
-        &self.atom
+    pub const fn identity(&self) -> QueryAtomIdentity {
+        self.identity
     }
 
-    #[doc(hidden)]
-    pub fn atom_mut(&mut self) -> &mut Atom {
-        &mut self.atom
+    #[must_use]
+    pub const fn atomic_number(&self) -> u8 {
+        self.identity.atomic_number()
+    }
+
+    #[must_use]
+    pub const fn element(&self) -> Option<Element> {
+        self.identity.element()
+    }
+
+    /// Convert at an explicit Element-only boundary, preserving all common
+    /// carrier state when conversion is representable.
+    pub fn try_to_atom(&self) -> Result<Atom, QueryAtomConversionError> {
+        let Some(element) = self.identity.element() else {
+            return Err(QueryAtomConversionError::NonElementAtomicNumber {
+                atom: self.id,
+                atomic_number: self.atomic_number(),
+            });
+        };
+        Ok(Atom::from_query_parts(
+            self.id,
+            element,
+            self.properties.clone(),
+        ))
     }
 
     #[must_use]
@@ -464,28 +603,239 @@ impl QueryAtom {
     }
 
     #[must_use]
-    pub fn index(&self) -> usize {
-        self.atom.id().index()
+    pub const fn index(&self) -> usize {
+        self.id.index()
     }
 
     #[must_use]
-    pub fn id(&self) -> AtomId {
-        self.atom.id()
+    pub const fn id(&self) -> AtomId {
+        self.id
     }
 
     #[must_use]
-    pub fn atom_map(&self) -> Option<u32> {
-        self.atom.atom_map()
+    pub const fn formal_charge(&self) -> i8 {
+        self.properties.formal_charge
+    }
+
+    #[must_use]
+    pub const fn explicit_hydrogens(&self) -> u8 {
+        self.properties.explicit_hydrogens
+    }
+
+    #[must_use]
+    pub const fn chiral_tag(&self) -> ChiralTag {
+        self.properties.chiral_tag
+    }
+
+    #[must_use]
+    pub const fn chiral_permutation(&self) -> Option<u32> {
+        self.properties.chiral_permutation
+    }
+
+    #[must_use]
+    pub const fn unknown_stereo(&self) -> bool {
+        self.properties.unknown_stereo
+    }
+
+    #[must_use]
+    pub const fn mol_parity(&self) -> Option<i32> {
+        self.properties.mol_parity
+    }
+
+    #[must_use]
+    pub const fn mol_inversion_flag(&self) -> Option<i32> {
+        self.properties.mol_inversion_flag
+    }
+
+    #[must_use]
+    pub const fn implicit_hydrogen(&self) -> bool {
+        self.properties.implicit_hydrogen
+    }
+
+    #[must_use]
+    pub fn tracked_isotopic_hydrogens(&self) -> &[u16] {
+        &self.properties.tracked_isotopic_hydrogens
+    }
+
+    #[must_use]
+    pub const fn is_aromatic(&self) -> bool {
+        self.properties.is_aromatic
+    }
+
+    #[must_use]
+    pub const fn isotope(&self) -> Option<u16> {
+        self.properties.isotope
+    }
+
+    #[must_use]
+    pub const fn atom_map(&self) -> Option<u32> {
+        self.properties.atom_map
+    }
+
+    #[must_use]
+    pub const fn no_implicit(&self) -> bool {
+        self.properties.no_implicit
+    }
+
+    #[must_use]
+    pub const fn radical_electrons(&self) -> u8 {
+        self.properties.radical_electrons
+    }
+
+    #[must_use]
+    pub const fn hybridization(&self) -> Hybridization {
+        self.properties.hybridization
+    }
+
+    #[must_use]
+    pub fn props(&self) -> &BTreeMap<String, String> {
+        &self.properties.props
     }
 
     #[must_use]
     pub fn prop(&self, key: &str) -> Option<&str> {
-        self.atom.prop(key)
+        self.properties.props.get(key).map(String::as_str)
+    }
+
+    #[must_use]
+    pub fn is_prop_computed(&self, key: &str) -> bool {
+        self.properties.computed_props.contains(key)
+    }
+
+    #[must_use]
+    pub fn computed_prop_names(&self) -> &BTreeSet<String> {
+        &self.properties.computed_props
+    }
+
+    #[must_use]
+    pub const fn pdb_residue_info(&self) -> Option<&crate::AtomPdbResidueInfo> {
+        self.properties.pdb_residue_info.as_ref()
     }
 
     #[must_use]
     pub const fn template_attachment_order(&self) -> Option<&TemplateAttachmentOrder> {
-        self.atom.template_attachment_order()
+        self.properties.template_attachment_order.as_ref()
+    }
+
+    #[doc(hidden)]
+    pub fn set_chiral_tag(&mut self, value: ChiralTag) {
+        self.properties.chiral_tag = value;
+    }
+
+    #[doc(hidden)]
+    pub fn set_chiral_permutation(&mut self, value: Option<u32>) {
+        self.properties.chiral_permutation = value;
+    }
+
+    #[doc(hidden)]
+    pub fn set_unknown_stereo(&mut self, value: bool) {
+        self.properties.unknown_stereo = value;
+    }
+
+    #[doc(hidden)]
+    pub fn set_mol_parity(&mut self, value: Option<i32>) {
+        self.properties.mol_parity = value;
+    }
+
+    #[doc(hidden)]
+    pub fn set_mol_inversion_flag(&mut self, value: Option<i32>) {
+        self.properties.mol_inversion_flag = value;
+    }
+
+    #[doc(hidden)]
+    pub fn set_implicit_hydrogen(&mut self, value: bool) {
+        self.properties.implicit_hydrogen = value;
+    }
+
+    #[doc(hidden)]
+    pub fn set_tracked_isotopic_hydrogens(&mut self, value: Vec<u16>) {
+        self.properties.tracked_isotopic_hydrogens = value;
+    }
+
+    #[doc(hidden)]
+    pub fn set_aromatic(&mut self, value: bool) {
+        self.properties.is_aromatic = value;
+    }
+
+    #[doc(hidden)]
+    pub fn set_formal_charge(&mut self, value: i8) {
+        self.properties.formal_charge = value;
+    }
+
+    #[doc(hidden)]
+    pub fn set_explicit_hydrogens(&mut self, value: u8) {
+        self.properties.explicit_hydrogens = value;
+    }
+
+    #[doc(hidden)]
+    pub fn set_isotope(&mut self, value: Option<u16>) {
+        self.properties.isotope = value.filter(|value| *value != 0);
+    }
+
+    #[doc(hidden)]
+    pub fn set_atom_map(&mut self, value: Option<u32>) {
+        self.properties.atom_map = value;
+    }
+
+    #[doc(hidden)]
+    pub fn set_no_implicit(&mut self, value: bool) {
+        self.properties.no_implicit = value;
+    }
+
+    #[doc(hidden)]
+    pub fn set_radical_electrons(&mut self, value: u8) {
+        self.properties.radical_electrons = value;
+    }
+
+    #[doc(hidden)]
+    pub fn set_hybridization(&mut self, value: Hybridization) {
+        self.properties.hybridization = value;
+    }
+
+    #[doc(hidden)]
+    pub fn set_prop(
+        &mut self,
+        key: impl Into<String>,
+        value: impl Into<String>,
+    ) -> Result<(), AtomPropertyError> {
+        self.properties.set_prop(key, value)
+    }
+
+    #[doc(hidden)]
+    pub fn set_computed_prop(
+        &mut self,
+        key: impl Into<String>,
+        value: impl Into<String>,
+    ) -> Result<(), AtomPropertyError> {
+        self.properties.set_computed_prop(key, value)
+    }
+
+    #[doc(hidden)]
+    pub fn clear_prop(&mut self, key: &str) {
+        self.properties.clear_prop(key);
+    }
+
+    #[doc(hidden)]
+    pub fn clear_computed_props(&mut self) {
+        self.properties.clear_computed_props();
+    }
+
+    #[doc(hidden)]
+    pub fn set_pdb_residue_info(&mut self, value: Option<crate::AtomPdbResidueInfo>) {
+        self.properties.pdb_residue_info = value;
+    }
+
+    #[doc(hidden)]
+    pub fn set_template_attachment_order(&mut self, value: Option<TemplateAttachmentOrder>) {
+        self.properties.template_attachment_order = value;
+    }
+
+    #[doc(hidden)]
+    pub fn remap_template_attachment_order(
+        &mut self,
+        old_to_new: &[Option<AtomId>],
+    ) -> Result<(), TemplateAttachmentOrderError> {
+        self.properties.remap_template_attachment_order(old_to_new)
     }
 }
 
@@ -504,6 +854,14 @@ pub struct QueryBond {
 #[doc(hidden)]
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum QueryStateError {
+    #[error(
+        "query atom row {position} (id {atom}) has non-Element atomic number {atomic_number}, which cannot align with concrete topology"
+    )]
+    NonElementAtomIdentity {
+        position: usize,
+        atom: AtomId,
+        atomic_number: u8,
+    },
     #[error("query atom state has {actual} rows, expected {expected}")]
     AtomCount { actual: usize, expected: usize },
     #[error("query bond state has {actual} rows, expected {expected}")]
@@ -586,6 +944,15 @@ impl<'a> QueryStateRef<'a> {
                 actual: bonds.len(),
                 expected: topology.bonds.len(),
             });
+        }
+        for (position, query) in atoms.iter().enumerate() {
+            if let QueryAtomIdentity::AtomicNumber(atomic_number) = query.identity() {
+                return Err(QueryStateError::NonElementAtomIdentity {
+                    position,
+                    atom: query.id(),
+                    atomic_number,
+                });
+            }
         }
         for (position, (query, carrier)) in atoms.iter().zip(&topology.atoms).enumerate() {
             if query.id() != carrier.id() {
@@ -715,13 +1082,20 @@ pub fn remap_query_rows_with_appended(
                     expected: carrier.id(),
                 });
             }
+            if old.is_none()
+                && let QueryAtomIdentity::AtomicNumber(atomic_number) = source.identity()
+            {
+                return Err(QueryStateError::NonElementAtomIdentity {
+                    position,
+                    atom: source.id(),
+                    atomic_number,
+                });
+            }
             source
         };
-        atoms.push(QueryAtom {
-            atom: carrier.clone(),
-            predicate: source.predicate.clone(),
-            predicate_origin: source.predicate_origin,
-        });
+        let mut mapped = QueryAtom::from_parts(carrier.clone(), source.predicate.clone());
+        mapped.predicate_origin = source.predicate_origin;
+        atoms.push(mapped);
     }
     if next_appended_atom != appended_atoms.len() {
         return Err(QueryStateError::AppendedRowCount {

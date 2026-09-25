@@ -73,7 +73,6 @@ fn v3000_query_atom_carries_canonical_template_attchord_state() {
         panic!("wildcard atom must remain query topology");
     };
     let order = record.query.atoms()[0]
-        .atom()
         .template_attachment_order()
         .expect("query carrier preserves canonical atom state");
     let observed = order

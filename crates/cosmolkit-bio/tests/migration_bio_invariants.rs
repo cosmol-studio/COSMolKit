@@ -39,6 +39,7 @@ fn atom(residue_id: u32) -> BioAtomRow {
         atom_name(),
         Element::C,
         None,
+        None,
         0,
         BioCalcFlag::NotSet,
         1.0,
@@ -107,6 +108,13 @@ fn one_atom_parts() -> BioStructureParts {
         )],
         atoms: vec![atom(0)],
         entities: vec![entity(&["LONG_LABEL"])],
+        connections: Vec::new(),
+        cispeps: Vec::new(),
+        mod_residues: Vec::new(),
+        helices: Vec::new(),
+        sheets: Vec::new(),
+        metadata: Default::default(),
+        source_state: Default::default(),
         coordinates: BioCoordinateBlock::new(vec![[1.0, 2.0, 3.0]]),
         crystal: None,
         ncs_operators: Vec::new(),
@@ -153,6 +161,13 @@ fn bio_invariants_accept_consecutive_empty_parents_and_validate_all_entrypoints(
         residues: Vec::new(),
         atoms: Vec::new(),
         entities: Vec::new(),
+        connections: Vec::new(),
+        cispeps: Vec::new(),
+        mod_residues: Vec::new(),
+        helices: Vec::new(),
+        sheets: Vec::new(),
+        metadata: Default::default(),
+        source_state: Default::default(),
         coordinates: BioCoordinateBlock::default(),
         crystal: None,
         ncs_operators: Vec::new(),
@@ -311,6 +326,36 @@ fn bio_invariants_preserve_coordinate_bits_and_require_exact_row_count() {
             coordinate_count: 0,
         },
     );
+}
+
+#[test]
+fn bio_invariants_accept_deuterium_without_normalizing_the_row() {
+    let mut parts = one_atom_parts();
+    parts.atoms[0] = BioAtomRow::new(
+        BioResidueId::new(0),
+        atom_name(),
+        Element::H,
+        Some(2),
+        None,
+        0,
+        BioCalcFlag::NotSet,
+        1.0,
+        20.0,
+        [0.0; 6],
+        -1,
+        0.0,
+        AtomSourceIds::new(None),
+    );
+    let before = parts.clone();
+
+    assert_eq!(BioStructure::validate_parts(&parts), Ok(()));
+    assert_eq!(parts, before);
+
+    let structure = BioStructure::from_parts(parts).unwrap();
+    assert_eq!(structure.atoms()[0].element(), Element::H);
+    assert_eq!(structure.atoms()[0].isotope_mass_number(), Some(2));
+    let rebuilt = structure.into_parts();
+    assert_eq!(rebuilt.atoms[0].isotope_mass_number(), Some(2));
 }
 
 #[test]

@@ -81,6 +81,7 @@ fn one_atom_parts(position: [f64; 3]) -> BioStructureParts {
             atom_name(b" CA "),
             Element::C,
             None,
+            None,
             0,
             BioCalcFlag::NotSet,
             1.0,
@@ -91,6 +92,13 @@ fn one_atom_parts(position: [f64; 3]) -> BioStructureParts {
             AtomSourceIds::new(Some(PdbAtomSerial::new(99))),
         )],
         entities: vec![entity("1", &["LABEL_LONG"])],
+        connections: Vec::new(),
+        cispeps: Vec::new(),
+        mod_residues: Vec::new(),
+        helices: Vec::new(),
+        sheets: Vec::new(),
+        metadata: Default::default(),
+        source_state: Default::default(),
         coordinates: BioCoordinateBlock::new(vec![position]),
         crystal: None,
         ncs_operators: Vec::new(),
@@ -107,6 +115,13 @@ fn bio_hierarchy_validates_empty_single_and_multi_model_contiguous_spans() {
         residues: Vec::new(),
         atoms: Vec::new(),
         entities: Vec::new(),
+        connections: Vec::new(),
+        cispeps: Vec::new(),
+        mod_residues: Vec::new(),
+        helices: Vec::new(),
+        sheets: Vec::new(),
+        metadata: Default::default(),
+        source_state: Default::default(),
         coordinates: BioCoordinateBlock::default(),
         crystal: None,
         ncs_operators: Vec::new(),
@@ -138,6 +153,7 @@ fn bio_hierarchy_validates_empty_single_and_multi_model_contiguous_spans() {
         BioResidueId::new(1),
         atom_name(b" CA "),
         Element::C,
+        None,
         None,
         0,
         BioCalcFlag::NotSet,
@@ -183,6 +199,115 @@ fn bio_hierarchy_preserves_coordinate_bits_and_rejects_misalignment() {
 }
 
 #[test]
+fn bio_hierarchy_parts_roundtrip_preserves_hydrogen_isotope_rows_and_order() {
+    let mut parts = one_atom_parts([1.0, 2.0, 3.0]);
+    parts.residues[0] = BioResidueRow::new(
+        BioChainId::new(0),
+        span(0, 2),
+        residue_name("ALA"),
+        ResidueInfoKind::Aa,
+        EntityKind::Polymer,
+        Some(BioEntityId::new(0)),
+        Some(b'A'),
+        ResidueSourceIds::new(
+            Some(PdbSeqId::new(4, Some(b'B'))),
+            Some(1),
+            Some(*b"SEG "),
+            Some("LABEL_LONG".to_owned()),
+            Some("1".to_owned()),
+        )
+        .unwrap(),
+        BioSiftsUnpResidue::new(Some(b'A'), 0, 10),
+    );
+
+    let make_hydrogen = |isotope_mass_number, serial| {
+        BioAtomRow::new(
+            BioResidueId::new(0),
+            atom_name(b" CA "),
+            Element::H,
+            isotope_mass_number,
+            None,
+            0,
+            BioCalcFlag::NotSet,
+            1.0,
+            20.0,
+            [0.0; 6],
+            -1,
+            0.0,
+            AtomSourceIds::new(Some(PdbAtomSerial::new(serial))),
+        )
+    };
+    parts.atoms = vec![make_hydrogen(None, 99), make_hydrogen(Some(2), 100)];
+
+    let expected_positions = vec![
+        [-0.0, 4.0, 5.0],
+        [6.0, f64::from_bits(0x7ff8_0000_0000_0042), -8.0],
+    ];
+    parts.coordinates = BioCoordinateBlock::new(expected_positions.clone());
+
+    let structure = BioStructure::from_parts(parts).unwrap();
+    assert_eq!(structure.atoms()[0].name(), structure.atoms()[1].name());
+    assert_eq!(structure.atoms()[0].isotope_mass_number(), None);
+    assert_eq!(structure.atoms()[1].isotope_mass_number(), Some(2));
+
+    let parts = structure.into_parts();
+    assert_eq!(parts.atoms[0].name(), parts.atoms[1].name());
+    assert_eq!(
+        parts
+            .atoms
+            .iter()
+            .map(BioAtomRow::isotope_mass_number)
+            .collect::<Vec<_>>(),
+        vec![None, Some(2)]
+    );
+    assert_eq!(
+        parts
+            .atoms
+            .iter()
+            .map(|atom| atom.source().serial().unwrap().value())
+            .collect::<Vec<_>>(),
+        vec![99, 100]
+    );
+    assert_eq!(
+        parts
+            .coordinates
+            .positions()
+            .iter()
+            .map(|position| position.map(f64::to_bits))
+            .collect::<Vec<_>>(),
+        expected_positions
+            .iter()
+            .map(|position| position.map(f64::to_bits))
+            .collect::<Vec<_>>()
+    );
+
+    let rebuilt = BioStructure::from_parts(parts).unwrap().into_parts();
+    assert_eq!(rebuilt.atoms[0].name(), rebuilt.atoms[1].name());
+    assert_eq!(rebuilt.atoms[0].isotope_mass_number(), None);
+    assert_eq!(rebuilt.atoms[1].isotope_mass_number(), Some(2));
+    assert_eq!(
+        rebuilt
+            .atoms
+            .iter()
+            .map(|atom| atom.source().serial().unwrap().value())
+            .collect::<Vec<_>>(),
+        vec![99, 100]
+    );
+    assert_eq!(
+        rebuilt
+            .coordinates
+            .positions()
+            .iter()
+            .map(|position| position.map(f64::to_bits))
+            .collect::<Vec<_>>(),
+        expected_positions
+            .iter()
+            .map(|position| position.map(f64::to_bits))
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
 fn bio_hierarchy_altloc_matrix_and_source_order_lookup_match_gemmi() {
     let a = Some(AltLocLabel::new(b'A'));
     let b = Some(AltLocLabel::new(b'B'));
@@ -212,6 +337,7 @@ fn bio_hierarchy_altloc_matrix_and_source_order_lookup_match_gemmi() {
             BioResidueId::new(0),
             atom_name(b" CA "),
             Element::C,
+            None,
             a,
             0,
             BioCalcFlag::NotSet,
@@ -226,6 +352,7 @@ fn bio_hierarchy_altloc_matrix_and_source_order_lookup_match_gemmi() {
             BioResidueId::new(0),
             atom_name(b" CA "),
             Element::C,
+            None,
             b,
             0,
             BioCalcFlag::NotSet,

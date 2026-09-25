@@ -40,8 +40,8 @@ fn attachment_query_transport_retains_explicit_parent_and_new_null_query() {
         remap_query_rows_with_appended(state, &new, &mapping, &[new_atom], &[new_bond]).unwrap();
     assert_eq!(atoms[0].predicate(), old_atom.predicate());
     assert!(!atoms[0].predicate_is_carrier_derived());
-    assert_eq!(atoms[0].atom(), &new.atoms[0]);
-    assert_eq!(atoms[1].atom(), &new.atoms[1]);
+    assert_eq!(atoms[0].try_to_atom().unwrap(), new.atoms[0]);
+    assert_eq!(atoms[1].try_to_atom().unwrap(), new.atoms[1]);
     assert_eq!(bonds[0].bond(), &new.bonds[0]);
     assert!(
         QueryStateRef::try_for_topology(&atoms, &bonds, &new)
@@ -49,7 +49,7 @@ fn attachment_query_transport_retains_explicit_parent_and_new_null_query() {
             .atom_has_query(AtomId::new(1))
     );
     assert_eq!(old.atoms.len(), 1);
-    assert_eq!(old_atom.atom(), &old.atoms[0]);
+    assert_eq!(old_atom.try_to_atom().unwrap(), old.atoms[0]);
 }
 
 #[test]
@@ -86,7 +86,7 @@ fn attachment_query_transport_ordinary_rows_and_explicit_append_validation() {
     )
     .unwrap();
     assert!(atoms.iter().all(QueryAtom::predicate_is_carrier_derived));
-    assert_eq!(atoms[1].atom().prop("_fromAttchpt"), Some("2"));
+    assert_eq!(atoms[1].prop("_fromAttchpt"), Some("2"));
     assert!(bonds[0].predicate_is_carrier_derived());
     assert!(matches!(
         remap_query_rows_with_appended(
@@ -287,7 +287,7 @@ fn attachment_expansion_preserves_explicit_query_and_rejects_invalid_inputs_atom
     let (atoms, bonds) = result.query_rows.unwrap();
     assert_eq!(atoms[0].predicate(), old_query.predicate());
     assert!(!atoms[0].predicate_is_carrier_derived());
-    assert_eq!(atoms[0].atom().prop("molAttachPoint"), None);
+    assert_eq!(atoms[0].prop("molAttachPoint"), None);
     assert_eq!(
         atoms[1].predicate(),
         &QueryNode::predicate(AtomQueryPredicate::Any)

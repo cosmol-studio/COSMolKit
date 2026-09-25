@@ -96,6 +96,10 @@ pub enum Coordinate2DTemplateError {
         index: usize,
         source: cosmolkit_model::TopologyValidationError,
     },
+    NonElementIdentity {
+        index: usize,
+        source: cosmolkit_model::QueryAtomConversionError,
+    },
     RingInitialization {
         index: usize,
         source: cosmolkit_core::RingFindingError,
@@ -151,6 +155,16 @@ impl PartialEq for Coordinate2DTemplateError {
                     source: left_source,
                 },
                 Error::InvalidTopology {
+                    index: right_index,
+                    source: right_source,
+                },
+            ) => left_index == right_index && left_source == right_source,
+            (
+                Error::NonElementIdentity {
+                    index: left_index,
+                    source: left_source,
+                },
+                Error::NonElementIdentity {
                     index: right_index,
                     source: right_source,
                 },
@@ -238,6 +252,10 @@ impl fmt::Display for Coordinate2DTemplateError {
                     "invalid topology for template row {index}: {source}"
                 )
             }
+            Self::NonElementIdentity { index, source } => write!(
+                formatter,
+                "non-Element atom identity in template row {index}: {source}"
+            ),
             Self::RingInitialization { index, source } => {
                 write!(
                     formatter,
@@ -283,6 +301,7 @@ impl Error for Coordinate2DTemplateError {
                 Some(source)
             }
             Self::InvalidTopology { source, .. } => Some(source),
+            Self::NonElementIdentity { source, .. } => Some(source),
             Self::RingInitialization { source, .. } => Some(source),
             Self::ConnectedComponents { source, .. } => Some(source),
             Self::ExternalOpen { source, .. } | Self::ExternalRead { source, .. } => {
@@ -304,6 +323,9 @@ impl From<TemplateError> for Coordinate2DTemplateError {
             }
             TemplateError::InvalidTopology { index, source } => {
                 Self::InvalidTopology { index, source }
+            }
+            TemplateError::NonElementIdentity { index, source } => {
+                Self::NonElementIdentity { index, source }
             }
             TemplateError::RingInitialization { index, source } => {
                 Self::RingInitialization { index, source }
@@ -852,4 +874,56 @@ pub fn render_svg(
     _options: &DepictOptions,
 ) -> Result<String, DepictError> {
     Err(DepictError::CoordGenUnavailable)
+}
+
+#[cfg(test)]
+mod error_projection_tests {
+    use super::*;
+    use cosmolkit_model::QueryAtomConversionError;
+
+    #[test]
+    fn non_element_template_identity_projects_typed_row_error() {
+        let source = QueryAtomConversionError::NonElementAtomicNumber {
+            atom: cosmolkit_model::AtomId::new(0),
+            atomic_number: 119,
+        };
+        let projected = crate::Coordinate2DTemplateError::from(TemplateError::NonElementIdentity {
+            index: 7,
+            source,
+        });
+        assert_eq!(
+            projected,
+            crate::Coordinate2DTemplateError::NonElementIdentity { index: 7, source }
+        );
+
+        let same = crate::Coordinate2DTemplateError::from(TemplateError::NonElementIdentity {
+            index: 7,
+            source,
+        });
+        let different_row =
+            crate::Coordinate2DTemplateError::from(TemplateError::NonElementIdentity {
+                index: 8,
+                source,
+            });
+        let different_source =
+            crate::Coordinate2DTemplateError::from(TemplateError::NonElementIdentity {
+                index: 7,
+                source: QueryAtomConversionError::NonElementAtomicNumber {
+                    atom: cosmolkit_model::AtomId::new(0),
+                    atomic_number: 118,
+                },
+            });
+        assert_eq!(projected, same);
+        assert_ne!(projected, different_row);
+        assert_ne!(projected, different_source);
+        assert!(projected.to_string().contains("template row 7"));
+        assert!(projected.to_string().contains("119"));
+
+        let public_source = std::error::Error::source(&projected)
+            .expect("typed conversion cause is retained as the public source");
+        assert_eq!(
+            public_source.downcast_ref::<QueryAtomConversionError>(),
+            Some(&source)
+        );
+    }
 }

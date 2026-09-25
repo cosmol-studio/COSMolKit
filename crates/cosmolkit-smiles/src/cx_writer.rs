@@ -81,10 +81,113 @@ pub fn write_cx_smiles_with_params(
         .coordinates
         .validate_for_atom_count(record.topology.atoms.len())
         .map_err(|error| SmilesParseError::Model(error.to_string()))?;
-    let output = write_smiles_for_cx(record, &params.smiles)?;
+
+    // BEGIN RDKIT CPP FUNCTION SmilesWrite.cpp::MolToCXSmiles copy and kekulization order
+    // RDKit❗✔️:   RWMol trwmol(romol);
+    // RDKit❗✔️:   SmilesWriteParams params = paramsInput;
+    // RDKit❗✔️:   if (params.doKekule) {
+    // RDKit❗✔️:     MolOps::Kekulize(trwmol);
+    // RDKit❗✔️:     params.doKekule = false;
+    // RDKit❗✔️:   }
+    // END RDKIT CPP FUNCTION SmilesWrite.cpp::MolToCXSmiles copy and kekulization order
+    // The CX wrapper kekulizes its private full input before writer stereo
+    // preparation. Keep the caller's detached record unchanged and prevent
+    // the later fragment writer from repeating that phase after preparation.
+    let mut writer_params = params.smiles;
+    let mut prepared_record = record.clone();
+    if writer_params.do_kekule {
+        prepared_record.topology = cosmolkit_core::kekulize(
+            &prepared_record.topology,
+            &cosmolkit_core::KekulizeParams::default(),
+        )
+        .map_err(SmilesParseError::WriterKekulize)?
+        .topology;
+        writer_params.do_kekule = false;
+    }
+    let output = write_smiles_for_cx(&prepared_record, &writer_params)?;
+
+    // BEGIN RDKIT CPP FUNCTION SmilesWrite.cpp::MolToCXSmiles empty SMILES return
+    // RDKit❗✔️:   if (res.empty()) {
+    // RDKit❗✔️:     return res;
+    // RDKit❗✔️:   }
+    // END RDKIT CPP FUNCTION SmilesWrite.cpp::MolToCXSmiles empty SMILES return
+    if output.text.is_empty() {
+        return Ok(output.text);
+    }
+
+    // BEGIN RDKIT CPP FUNCTION SmilesWrite.cpp::MolToCXSmiles bond direction restoration
+    // RDKit❌❌:   if (restoreBondDirs == RestoreBondDirOptionTrue) {
+    // RDKit❌❌:     RDKit::Chirality::reapplyMolBlockWedging(trwmol);
+    // RDKit❌❌:   } else if (restoreBondDirs == RestoreBondDirOptionClear) {
+    // RDKit❗✔️:     for (auto bond : trwmol.bonds()) {
+    // RDKit❗✔️:       if (!canHaveDirection(*bond)) {
+    // RDKit❗✔️:         continue;
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:       using RDKit::common_properties::_MolFileBondCfg;
+    // RDKit❗✔️:       if (auto cfg = 0u;
+    // RDKit❗✔️:           bond->getPropIfPresent<unsigned int>(_MolFileBondCfg, cfg) &&
+    // RDKit❗✔️:           cfg == 2) {
+    // RDKit❗✔️:         bond->setBondDir(Bond::BondDir::UNKNOWN);
+    // RDKit❗✔️:       } else {
+    // RDKit❗✔️:         if (bond->getBondDir() != Bond::BondDir::NONE) {
+    // RDKit❗✔️:           bond->setBondDir(Bond::BondDir::NONE);
+    // RDKit❗✔️:         }
+    // RDKit❗✔️:         bond->clearProp(_MolFileBondCfg);
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:   }
+    // END RDKIT CPP FUNCTION SmilesWrite.cpp::MolToCXSmiles bond direction restoration
+    // This API carries RDKit's default Clear choice. Its explicit True choice
+    // requires the absent shared reapplyMolBlockWedging owner and is not
+    // replaced here by a writer-local chemistry implementation.
+    for bond in &mut prepared_record.topology.bonds {
+        if !can_have_direction(bond) {
+            continue;
+        }
+        let cfg = bond
+            .prop("_MolFileBondCfg")
+            .map(|value| {
+                value.parse::<u32>().map_err(|_| {
+                    SmilesParseError::WriterStereo(
+                        "bad_any_cast reading _MolFileBondCfg as unsigned int".to_owned(),
+                    )
+                })
+            })
+            .transpose()?;
+        if cfg == Some(2) {
+            bond.set_direction(BondDirection::Unknown);
+        } else {
+            if bond.direction() != BondDirection::None {
+                bond.set_direction(BondDirection::None);
+            }
+            bond.clear_prop("_MolFileBondCfg");
+        }
+    }
+
+    // BEGIN RDKIT CPP FUNCTION SmilesWrite.cpp::MolToCXSmiles nonisomeric CX field mask
+    // RDKit❗✔️:   if (!params.doIsomericSmiles) {
+    // RDKit❗✔️:     flags &= ~(SmilesWrite::CXSmilesFields::CX_ENHANCEDSTEREO |
+    // RDKit❗✔️:                  SmilesWrite::CXSmilesFields::CX_BOND_CFG);
+    // RDKit❗✔️:   }
+    // END RDKIT CPP FUNCTION SmilesWrite.cpp::MolToCXSmiles nonisomeric CX field mask
+    let mut fields = params.fields;
+    if !writer_params.do_isomeric_smiles {
+        fields.0 &= !(CxSmilesFields::ENHANCED_STEREO.0 | CxSmilesFields::BOND_CFG.0);
+    }
+
+    // The source's outer cleanStereo cache update occurs after the field mask
+    // and before assignment/extension writing. The resulting detached valence
+    // assignment is consumed by the remaining stage on this same prepared
+    // record; extensions still use the maps emitted by the base write.
+    let post_base_valence =
+        prepare_cx_post_base_valence(&prepared_record, writer_params.clean_stereo)?;
+    if let Some(valence) = post_base_valence {
+        apply_cx_post_base_stereochemistry(&mut prepared_record, &valence)?;
+    }
+
     let extension = write_cx_extensions(
-        record,
-        params.fields,
+        &prepared_record,
+        fields,
         &output.atom_order,
         &output.bond_order,
     )?;
@@ -95,6 +198,91 @@ pub fn write_cx_smiles_with_params(
     } else {
         Ok(format!("{} {}", output.text, extension))
     }
+}
+
+fn prepare_cx_post_base_valence(
+    record: &SmilesRecord,
+    clean_stereo: bool,
+) -> Result<Option<cosmolkit_core::ValenceAssignment>, SmilesParseError> {
+    // BEGIN RDKIT CPP FUNCTION SmilesWrite.cpp::MolToCXSmiles cleanStereo outer cache update
+    // RDKit❗❌:   if (params.cleanStereo) {
+    // RDKit❗❌:     if (trwmol.needsUpdatePropertyCache()) {
+    // RDKit❗❌:       trwmol.updatePropertyCache(false);
+    // RDKit❗❌:     }
+    // END RDKIT CPP FUNCTION SmilesWrite.cpp::MolToCXSmiles cleanStereo outer cache update
+    if !clean_stereo {
+        return Ok(None);
+    }
+
+    // Behavior review: SmilesRecord has no source valence-cache values or
+    // validity bit, so every supported nonempty record reaching this stage
+    // maps the source predicate to needs-update. Keep the non-strict owner
+    // assignment available for the exact later cleanStereo call; a property
+    // string or computed-property marker does not imply cache validity.
+    // Complexity review: the detached owner validates topology and allocates
+    // row-aligned valence vectors before its atom scan, while ROMol updates
+    // atom caches in place and then scans bonds. This preserves the required
+    // detached assignment shape but has extra allocation and validation work.
+    let valence = cosmolkit_core::assign_valence_with_options_for_topology(
+        &record.topology,
+        cosmolkit_core::ValenceModel::RdkitLike,
+        false,
+    )
+    .map_err(|error| SmilesParseError::WriterValence(error.to_string()))?;
+    Ok(Some(valence))
+}
+
+fn apply_cx_post_base_stereochemistry(
+    prepared_record: &mut SmilesRecord,
+    valence: &cosmolkit_core::ValenceAssignment,
+) -> Result<(), SmilesParseError> {
+    // BEGIN RDKIT CPP FUNCTION SmilesWrite.cpp::MolToCXSmiles cleanStereo assignment and cleanup
+    // RDKit❗❌:   if (params.cleanStereo) {
+    // RDKit❗❌:     MolOps::assignStereochemistry(trwmol, true);
+    // RDKit❗❌:     Chirality::cleanupStereoGroups(trwmol);
+    // RDKit❗❌:   }
+    // END RDKIT CPP FUNCTION SmilesWrite.cpp::MolToCXSmiles cleanStereo assignment and cleanup
+    // BEGIN RDKIT CPP FUNCTION Chirality.cpp::assignStereochemistry done-property effects
+    // RDKit❗❌:   if (!force && mol.hasProp(common_properties::_StereochemDone)) {
+    // RDKit❗❌:     return;
+    // RDKit❗❌:   }
+    // RDKit❗❌:   mol.setProp(common_properties::_StereochemDone, 1, true);
+    // END RDKIT CPP FUNCTION Chirality.cpp::assignStereochemistry done-property effects
+    // Behavior review: property presence is the force=false skip guard. An
+    // absent marker runs the fixed legacy owner with clean=true and
+    // possible=false, clears the legacy pending marker, and stores the
+    // computed done marker. Explicit group cleanup remains outside that guard.
+    // Complexity review: ring and valence assignments use row-aligned
+    // detached storage while RDKit updates its molecule in place. This moves
+    // the existing topology through the owner without another record clone,
+    // but retains the additional linear storage cost.
+    if prepared_record.properties.prop("_StereochemDone").is_none() {
+        // BEGIN RDKIT CPP FUNCTION Chirality.cpp::legacyStereoPerception molecule property effect
+        // RDKit❗❌: void legacyStereoPerception(ROMol &mol, bool cleanIt,
+        // RDKit❗❌:                             bool flagPossibleStereoCenters) {
+        // RDKit❗❌:   mol.clearProp("_needsDetectBondStereo");
+        // END RDKIT CPP FUNCTION Chirality.cpp::legacyStereoPerception molecule property effect
+        prepared_record
+            .properties
+            .clear_prop("_needsDetectBondStereo");
+        let rings = fast_find_rings_from_parts(
+            prepared_record.topology.atoms.len(),
+            &prepared_record.topology.bonds,
+            &prepared_record.topology.adjacency,
+        )
+        .map_err(|error| SmilesParseError::WriterStereo(error.to_string()))?;
+        let topology = std::mem::take(&mut prepared_record.topology);
+        prepared_record.topology = cosmolkit_core::assign_legacy_stereochemistry_with_flags(
+            topology, valence, &rings, true, false,
+        )
+        .map_err(|error| SmilesParseError::WriterStereo(error.to_string()))?;
+        prepared_record
+            .properties
+            .set_computed_prop("_StereochemDone", "1")
+            .map_err(|error| SmilesParseError::Model(error.to_string()))?;
+    }
+    cosmolkit_core::cleanup_stereo_groups(&mut prepared_record.topology);
+    Ok(())
 }
 
 fn append_extension(addition: String, output: &mut String) {
@@ -1447,7 +1635,10 @@ mod tests {
         write_cx_smiles_with_params(
             &parse(input),
             &CxSmilesWriteParams {
-                smiles: SmilesWriteParams { canonical: false },
+                smiles: SmilesWriteParams {
+                    canonical: false,
+                    ..Default::default()
+                },
                 ..Default::default()
             },
         )
@@ -1597,9 +1788,14 @@ mod tests {
 
     #[test]
     fn writes_large_ring_cis_trans_and_unknown_blocks() {
+        // The input remains raw CX state at this writer boundary. Pinned
+        // RDKit 2026.03.1 with sanitize=false/removeHs=false, legacy stereo,
+        // canonical/isomeric/cleanStereo=true, CX_ALL and default Clear runs
+        // the post-base clean stage before extension emission: explicit ring
+        // cis/trans annotations are removed when that stage resolves them.
         for (input, expected) in [
-            ("C1CCCC/C=C/CCC1 |t:5|", "C1=C/CCCCCCCC/1 |t:0|"),
-            ("C1CCCCC=CCCC1 |c:5|", "C1=C\\CCCCCCCC/1 |c:0|"),
+            ("C1CCCC/C=C/CCC1 |t:5|", "C1=C/CCCCCCCC/1"),
+            ("C1CCCCC=CCCC1 |c:5|", "C1=CCCCCCCCC1"),
             ("C1=CCCCCCCCC1 |ctu:0|", "C1=CCCCCCCCC1 |ctu:0|"),
         ] {
             assert_eq!(write_cx_smiles(&parse(input)).unwrap(), expected, "{input}");
@@ -1632,6 +1828,213 @@ mod tests {
         )
         .unwrap();
         assert_eq!(result, "CC |$_AV:left;right$|");
+    }
+
+    #[test]
+    fn cx_post_base_cache_preparation_skips_when_clean_stereo_is_disabled() {
+        let record = parse("CC");
+        let before = record.clone();
+
+        assert!(
+            prepare_cx_post_base_valence(&record, false)
+                .expect("cleanStereo=false skips the outer cache update")
+                .is_none()
+        );
+        assert_eq!(record, before, "cache preparation must borrow its record");
+    }
+
+    #[test]
+    fn cx_post_base_cache_preparation_runs_for_present_done_property() {
+        // The pinned wrapper performs its outer needsUpdatePropertyCache check
+        // before assignStereochemistry's force=false _StereochemDone presence
+        // guard. The detached input has no cache fields; a zero-like marker,
+        // whether registered computed or ordinary, cannot stand in for them.
+        for computed in [false, true] {
+            let mut record = parse("CC");
+            if computed {
+                record
+                    .properties
+                    .set_computed_prop("_StereochemDone", "0")
+                    .expect("set computed done marker");
+            } else {
+                record
+                    .properties
+                    .set_prop("_StereochemDone", "0")
+                    .expect("set ordinary done marker");
+            }
+            let before = record.clone();
+
+            let assignment = prepare_cx_post_base_valence(&record, true)
+                .expect("missing detached cache is recomputed non-strictly")
+                .expect("cleanStereo=true prepares valence");
+            assert_eq!(assignment.explicit_valence, [1, 1]);
+            assert_eq!(assignment.implicit_hydrogens, [3, 3]);
+            assert_eq!(record, before, "cache preparation must not mutate input");
+        }
+    }
+
+    #[test]
+    fn cx_post_base_cache_preparation_uses_update_property_cache_false_value() {
+        // Pinned Atom::updatePropertyCache(false) calls
+        // calculateExplicitValence(false), whose checkIt=false path skips the
+        // `strict || checkIt` validation gate and keeps explicit valence 5.
+        let parser = SmilesParseParams {
+            sanitize: false,
+            remove_hydrogens: false,
+            ..Default::default()
+        };
+        let record = parse_smiles("C(F)(F)(F)(F)F", &parser).expect("parse raw pentavalent C");
+
+        let assignment = prepare_cx_post_base_valence(&record, true)
+            .expect("non-strict cache preparation keeps calculated overvalence")
+            .expect("cleanStereo=true prepares valence");
+        assert_eq!(assignment.explicit_valence[0], 5);
+    }
+
+    #[test]
+    fn cx_post_base_assignment_clears_pending_and_sets_computed_done_marker() {
+        let parser = SmilesParseParams {
+            sanitize: false,
+            remove_hydrogens: false,
+            ..Default::default()
+        };
+        let input = parse_smiles("C1CCCCC=CCCC1 |c:5|", &parser).expect("parse raw ring CXSMILES");
+        assert_eq!(input.properties.prop("_needsDetectBondStereo"), Some("1"));
+        assert_eq!(input.properties.prop("_StereochemDone"), None);
+        let input_before = input.clone();
+        let mut prepared_record = input.clone();
+
+        let valence = prepare_cx_post_base_valence(&prepared_record, true)
+            .expect("outer cache preparation succeeds")
+            .expect("cleanStereo=true prepares valence");
+        apply_cx_post_base_stereochemistry(&mut prepared_record, &valence)
+            .expect("absent done marker runs legacy assignment");
+
+        assert_eq!(
+            prepared_record.properties.prop("_needsDetectBondStereo"),
+            None
+        );
+        assert_eq!(
+            prepared_record.properties.prop("_StereochemDone"),
+            Some("1")
+        );
+        assert!(
+            prepared_record
+                .properties
+                .is_prop_computed("_StereochemDone")
+        );
+        assert!(
+            !prepared_record
+                .properties
+                .is_prop_computed("_needsDetectBondStereo")
+        );
+        assert_eq!(
+            input, input_before,
+            "post-base work must preserve the caller"
+        );
+    }
+
+    #[test]
+    fn cx_post_base_zero_done_marker_skips_assignment_but_cleans_groups() {
+        let mut input = parse("F[C@](Cl)(Br)I.F[C@](Cl)(Br)I");
+        input.topology.atoms[6].set_chiral_tag(cosmolkit_types::ChiralTag::Unspecified);
+        input.topology.stereo_groups = vec![
+            StereoGroup::new(
+                StereoGroupKind::And,
+                vec![AtomId::new(1), AtomId::new(6)],
+                Vec::new(),
+            )
+            .with_id(7),
+        ];
+        input
+            .properties
+            .set_prop("_needsDetectBondStereo", "1")
+            .expect("set pending source marker");
+        input
+            .properties
+            .set_prop("_StereochemDone", "0")
+            .expect("set present zero-like source marker");
+        let input_before = input.clone();
+        let original_first_tag = input.topology.atoms[1].chiral_tag();
+        let mut prepared_record = input.clone();
+
+        let valence = prepare_cx_post_base_valence(&prepared_record, true)
+            .expect("outer cache preparation precedes the guard")
+            .expect("cleanStereo=true prepares valence");
+        apply_cx_post_base_stereochemistry(&mut prepared_record, &valence)
+            .expect("zero-like present marker skips assignment and reaches cleanup");
+
+        assert_eq!(
+            prepared_record.properties.prop("_StereochemDone"),
+            Some("0")
+        );
+        assert!(
+            !prepared_record
+                .properties
+                .is_prop_computed("_StereochemDone")
+        );
+        assert_eq!(
+            prepared_record.properties.prop("_needsDetectBondStereo"),
+            Some("1"),
+            "the legacy perception clear occurs only when assignment runs"
+        );
+        assert_eq!(
+            prepared_record.topology.atoms[1].chiral_tag(),
+            original_first_tag,
+            "the force=false presence guard skips atom assignment"
+        );
+        assert_eq!(
+            prepared_record.topology.atoms[6].chiral_tag(),
+            cosmolkit_types::ChiralTag::Unspecified
+        );
+        assert_eq!(prepared_record.topology.stereo_groups.len(), 1);
+        let group = &prepared_record.topology.stereo_groups[0];
+        assert_eq!(group.kind(), StereoGroupKind::And);
+        assert_eq!(group.id(), Some(7));
+        assert_eq!(group.atoms(), &[AtomId::new(1)]);
+        assert!(group.bonds().is_empty());
+        assert_eq!(
+            input, input_before,
+            "post-base work must preserve the caller"
+        );
+    }
+
+    #[test]
+    fn cx_post_base_cache_preparation_propagates_owner_errors() {
+        // This malformed detached topology is not a valid source ROMol; this
+        // owner-boundary test only verifies that the existing typed valence
+        // validation error is not replaced with a guessed assignment.
+        let mut record = parse("CC");
+        record.topology.atoms.swap(0, 1);
+        let before = record.clone();
+
+        let error = prepare_cx_post_base_valence(&record, true)
+            .expect_err("invalid detached row identities must propagate");
+        assert!(matches!(error, SmilesParseError::WriterValence(_)));
+        assert_eq!(
+            record, before,
+            "failed cache preparation must not mutate input"
+        );
+    }
+
+    #[test]
+    fn cx_post_base_empty_output_skips_the_post_base_stage() {
+        let record = SmilesRecord {
+            topology: cosmolkit_model::TopologyBlock::default(),
+            coordinates: cosmolkit_model::CoordinateBlock::default(),
+            properties: cosmolkit_model::MoleculeProperties::default(),
+        };
+        let before = record.clone();
+        let params = CxSmilesWriteParams {
+            smiles: SmilesWriteParams {
+                clean_stereo: true,
+                ..Default::default()
+            },
+            fields: CxSmilesFields::ALL,
+        };
+
+        assert_eq!(write_cx_smiles_with_params(&record, &params).unwrap(), "");
+        assert_eq!(record, before, "empty CX writing must preserve its caller");
     }
 
     #[test]

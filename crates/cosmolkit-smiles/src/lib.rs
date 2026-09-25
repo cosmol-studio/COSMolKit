@@ -55,8 +55,15 @@ pub enum SmilesParseError {
     CanonicalRank(String),
     #[error("SMILES writer valence preparation failed: {0}")]
     WriterValence(String),
+    #[error("SMILES writer kekulization failed: {0}")]
+    WriterKekulize(#[source] cosmolkit_core::KekulizeError),
     #[error("SMILES writer stereochemistry preparation failed: {0}")]
     WriterStereo(String),
+    #[error("root atom index {atom_index} is out of range for {atom_count} atoms")]
+    WriterRootAtomOutOfRange {
+        atom_index: usize,
+        atom_count: usize,
+    },
     #[error("invalid detached model: {0}")]
     Model(String),
     #[error("SMILES replacement key must not be empty")]

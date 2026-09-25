@@ -77,7 +77,7 @@ pub fn apply_cx_to_query_graph(
                         let atom = graph
                             .atom_mut(index)
                             .ok_or(CxQueryLoweringError::AtomIndex { index })?;
-                        atom.atom_mut().set_prop("atomLabel", value);
+                        atom.set_prop("atomLabel", value);
                     }
                 }
             }
@@ -87,7 +87,7 @@ pub fn apply_cx_to_query_graph(
                         let atom = graph
                             .atom_mut(index)
                             .ok_or(CxQueryLoweringError::AtomIndex { index })?;
-                        atom.atom_mut().set_prop("molFileValue", value);
+                        atom.set_prop("molFileValue", value);
                     }
                 }
             }
@@ -99,8 +99,7 @@ pub fn apply_cx_to_query_graph(
                             .ok_or(CxQueryLoweringError::AtomIndex {
                                 index: property.atom,
                             })?;
-                    atom.atom_mut()
-                        .set_prop(property.name.clone(), property.value.clone());
+                    atom.set_prop(property.name.clone(), property.value.clone());
                 }
             }
             CxRecord::CoordinateBonds(annotation) => {
@@ -142,12 +141,15 @@ pub fn apply_cx_to_query_graph(
             CxRecord::RingBonds(constraints) => {
                 for constraint in constraints {
                     let predicate = match constraint.constraint {
-                        CxCountConstraint::Exact(value) => AtomQueryPredicate::RingBondCount(value),
+                        CxCountConstraint::Exact(value) => AtomQueryPredicate::RingBondCount(
+                            i32::try_from(value)
+                                .expect("CX ring-bond equality is parser-bounded to 0, 2, or 3"),
+                        ),
                         CxCountConstraint::LessEqual(value) => {
                             AtomQueryPredicate::RingBondCountLessEqual(value as u8)
                         }
                         CxCountConstraint::QueryScan => {
-                            AtomQueryPredicate::RingBondCount(QUERY_SCAN_MAGIC_VALUE)
+                            AtomQueryPredicate::RingBondCount(QUERY_SCAN_MAGIC_VALUE as i32)
                         }
                     };
                     append_atom_predicate(graph, constraint.atom, predicate)?;
@@ -238,7 +240,7 @@ pub fn apply_cx_to_query_graph(
                             .ok_or(CxQueryLoweringError::AtomIndex {
                                 index: radical.atom,
                             })?;
-                    atom.atom_mut().set_radical_electrons(radical.electrons);
+                    atom.set_radical_electrons(radical.electrons);
                 }
             }
             CxRecord::LinkNodes(_) => {
@@ -277,7 +279,11 @@ pub fn apply_cx_to_query_graph(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cosmolkit_cx::{CxAtomConstraint, CxCountConstraint, ParsedCxExtensions};
+    use crate::query_behavior::{
+        make_atom_in_ring_of_size_query, make_atom_min_ring_size_query,
+        make_atom_ring_bond_count_query, make_atom_ring_query,
+    };
+    use cosmolkit_cx::{CxAtomConstraint, CxCountConstraint, CxRingBond, ParsedCxExtensions};
     use cosmolkit_model::{AtomSpec, BondId, BondSpec};
     use cosmolkit_types::Element;
 
@@ -316,10 +322,7 @@ mod tests {
         );
         let mut query = graph();
         apply_cx_to_query_graph(&mut query, &parsed).unwrap();
-        assert_eq!(
-            query.atom(0).unwrap().atom().prop("atomLabel"),
-            Some("left")
-        );
+        assert_eq!(query.atom(0).unwrap().prop("atomLabel"), Some("left"));
         assert!(matches!(
             query.atom(0).unwrap().predicate(),
             QueryNode::And(children) if children.len() == 2
@@ -327,6 +330,87 @@ mod tests {
         assert!(matches!(
             query.atom(1).unwrap().predicate(),
             QueryNode::And(children) if children.len() == 2
+        ));
+    }
+
+    #[test]
+    fn q07e_ring_factories_and_cx_lowering_preserve_i32_targets_and_sentinels() {
+        let maximum = 2_147_483_639;
+        for target in [0, 255, 256, maximum] {
+            assert_eq!(
+                make_atom_ring_query(target),
+                QueryNode::predicate(AtomQueryPredicate::NumAtomRings(target))
+            );
+            assert_eq!(
+                make_atom_in_ring_of_size_query(target),
+                QueryNode::predicate(AtomQueryPredicate::InRingOfSize(target))
+            );
+            assert_eq!(
+                make_atom_min_ring_size_query(target),
+                QueryNode::predicate(AtomQueryPredicate::SmallestRingSize(target))
+            );
+            assert_eq!(
+                make_atom_ring_bond_count_query(target),
+                QueryNode::predicate(AtomQueryPredicate::RingBondCount(target))
+            );
+        }
+        assert_eq!(
+            make_atom_ring_query(-1),
+            QueryNode::predicate(AtomQueryPredicate::NumAtomRings(-1))
+        );
+        assert_eq!(
+            make_atom_ring_bond_count_query(i32::MIN),
+            QueryNode::predicate(AtomQueryPredicate::RingBondCount(i32::MIN))
+        );
+
+        fn contains_predicate(
+            node: &QueryNode<AtomQueryPredicate>,
+            expected: &AtomQueryPredicate,
+        ) -> bool {
+            match node {
+                QueryNode::Predicate(predicate) => predicate == expected,
+                QueryNode::And(children) | QueryNode::Or(children) => children
+                    .iter()
+                    .any(|child| contains_predicate(child, expected)),
+                _ => false,
+            }
+        }
+
+        let mut query = graph();
+        let carrier_before = query.atom(0).unwrap().try_to_atom().unwrap();
+        let parsed = ParsedCxExtensions::new(
+            vec![CxRecord::RingBonds(vec![
+                CxRingBond {
+                    atom: 0,
+                    constraint: CxCountConstraint::Exact(3),
+                },
+                CxRingBond {
+                    atom: 0,
+                    constraint: CxCountConstraint::QueryScan,
+                },
+                CxRingBond {
+                    atom: 1,
+                    constraint: CxCountConstraint::LessEqual(4),
+                },
+            ])],
+            8,
+        );
+        apply_cx_to_query_graph(&mut query, &parsed).unwrap();
+
+        let atom_zero = query.atom(0).unwrap();
+        assert!(contains_predicate(
+            atom_zero.predicate(),
+            &AtomQueryPredicate::RingBondCount(3)
+        ));
+        assert!(contains_predicate(
+            atom_zero.predicate(),
+            &AtomQueryPredicate::RingBondCount(0xDEAD_BEEF_u32 as i32)
+        ));
+        assert_eq!(atom_zero.try_to_atom().unwrap(), carrier_before);
+        assert!(!atom_zero.predicate_is_carrier_derived());
+        assert!(contains_predicate(
+            query.atom(1).unwrap().predicate(),
+            &AtomQueryPredicate::RingBondCountLessEqual(4)
         ));
     }
 

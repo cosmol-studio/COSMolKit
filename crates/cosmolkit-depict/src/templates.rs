@@ -9,7 +9,9 @@ use cosmolkit_core::{
     PathError, RingFindingError, RingInfo, connected_components,
     symmetrize_sssr_with_options_from_parts,
 };
-use cosmolkit_model::{QueryGraph, TopologyBlock, TopologyValidationError};
+use cosmolkit_model::{
+    QueryAtom, QueryAtomConversionError, QueryGraph, TopologyBlock, TopologyValidationError,
+};
 use cosmolkit_search::{SmartsParseError, SmartsParseParams, parse_smarts};
 
 const DEFAULT_TEMPLATE_ROWS: &str = include_str!("../assets/default_templates.cxsmarts");
@@ -23,6 +25,10 @@ pub(crate) enum TemplateError {
     InvalidTopology {
         index: usize,
         source: TopologyValidationError,
+    },
+    NonElementIdentity {
+        index: usize,
+        source: QueryAtomConversionError,
     },
     RingInitialization {
         index: usize,
@@ -239,8 +245,9 @@ impl CoordinateTemplates {
         let atoms = query
             .atoms()
             .iter()
-            .map(|atom| atom.atom().clone())
-            .collect();
+            .map(QueryAtom::try_to_atom)
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|source| TemplateError::NonElementIdentity { index, source })?;
         let bonds = query
             .bonds()
             .iter()
@@ -494,6 +501,29 @@ mod tests {
         templates.load_default_rows("C1CC1\n[\nN1CC1\n").unwrap();
         assert_eq!(templates.template_count(), 2);
         assert_eq!(templates.templates_of_size(3).unwrap().len(), 2);
+    }
+
+    #[test]
+    fn non_element_template_identity_preserves_typed_row_error() {
+        match CoordinateTemplates::parse_template_row("[#119]", 7) {
+            Err(TemplateError::NonElementIdentity { index, source }) => {
+                assert_eq!(index, 7);
+                assert_eq!(
+                    source,
+                    QueryAtomConversionError::NonElementAtomicNumber {
+                        atom: cosmolkit_model::AtomId::new(0),
+                        atomic_number: 119,
+                    }
+                );
+            }
+            Err(error) => panic!("expected typed non-Element identity error, got {error:?}"),
+            Ok(_) => panic!("non-Element query carrier unexpectedly became a topology"),
+        };
+
+        assert!(
+            CoordinateTemplates::parse_template_row("C1CC1 |(0,0,;1,0,;0.5,0.866,)|", 6).is_ok(),
+            "ordinary Element-backed template remains representable"
+        );
     }
 
     #[test]

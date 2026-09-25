@@ -9,8 +9,8 @@ pub(crate) const UNSPECIFIED_ORDER_PROP: &str = "_unspecifiedOrder";
 
 pub(crate) fn cleanup_query_graph_parser_state(graph: &mut QueryGraph) {
     for atom in graph.atoms_mut() {
-        atom.atom_mut().clear_prop("_RingClosures");
-        atom.atom_mut().clear_prop(SMILES_START_PROP);
+        atom.clear_prop("_RingClosures");
+        atom.clear_prop(SMILES_START_PROP);
     }
     for bond in graph.bonds_mut() {
         bond.bond_mut().clear_prop(UNSPECIFIED_ORDER_PROP);

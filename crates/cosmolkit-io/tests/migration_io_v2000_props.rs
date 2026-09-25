@@ -153,8 +153,8 @@ fn new_and_old_atom_lists_preserve_source_element_negation_and_constraints() {
         "M  ALS   1  1 T N   \nM  END\n",
     ));
     let atom = &one_member.query.atoms()[0];
-    assert_eq!(atom.atom().element(), Element::N);
-    assert_eq!(atom.atom().prop("_MolFileAtomQuery"), Some("1"));
+    assert_eq!(atom.element(), Some(Element::N));
+    assert_eq!(atom.prop("_MolFileAtomQuery"), Some("1"));
     assert!(query_contains(atom.predicate(), &|predicate| {
         predicate == &AtomQueryPredicate::AtomicNumberNotIn(vec![7])
     }));
@@ -168,8 +168,8 @@ fn new_and_old_atom_lists_preserve_source_element_negation_and_constraints() {
         "M  ALS   1  2 F N   O   \nM  END\n",
     ));
     assert_eq!(
-        multi_member.query.atoms()[0].atom().element(),
-        Element::DUMMY
+        multi_member.query.atoms()[0].element(),
+        Some(Element::DUMMY)
     );
     assert!(query_contains(
         multi_member.query.atoms()[0].predicate(),
@@ -181,7 +181,7 @@ fn new_and_old_atom_lists_preserve_source_element_negation_and_constraints() {
         &[],
         "  1 T    2   6   8\nM  END\n",
     ));
-    assert_eq!(old.query.atoms()[0].atom().element(), Element::C);
+    assert_eq!(old.query.atoms()[0].element(), Some(Element::C));
     assert!(query_contains(
         old.query.atoms()[0].predicate(),
         &|predicate| { predicate == &AtomQueryPredicate::AtomicNumberNotIn(vec![6, 8]) }
@@ -216,7 +216,7 @@ fn substitution_unsaturation_and_ring_count_cover_every_source_branch() {
     assert!(query_contains(predicates[4], &|predicate| {
         predicate == &AtomQueryPredicate::IsUnsaturated
     }));
-    for (index, expected) in [(3, 0), (4, 0xDEAD_BEEF), (5, 1), (6, 3)] {
+    for (index, expected) in [(3, 0), (4, 0xDEAD_BEEF_u32 as i32), (5, 1), (6, 3)] {
         assert!(query_contains(predicates[index], &|predicate| {
             predicate == &AtomQueryPredicate::RingBondCount(expected)
         }));
@@ -243,7 +243,7 @@ fn rgroup_and_marvin_smarts_records_create_canonical_typed_queries() {
         &[],
         "M  RGP  1   1   7\nM  END\n",
     ));
-    let atom = rgroup.query.atoms()[0].atom();
+    let atom = &rgroup.query.atoms()[0];
     assert_eq!(atom.prop("_MolFileRLabel"), Some("7"));
     assert_eq!(atom.prop("dummyLabel"), Some("R7"));
     assert_eq!(atom.isotope(), Some(7));
@@ -254,8 +254,8 @@ fn rgroup_and_marvin_smarts_records_create_canonical_typed_queries() {
         "M  MRV SMA   1 [#6,#7]\nM  END\n",
     ));
     let atom = &marvin.query.atoms()[0];
-    assert_eq!(atom.atom().prop("MRV SMA"), Some("[#6,#7]"));
-    assert_eq!(atom.atom().prop("_MolFileAtomQuery"), Some("1"));
+    assert_eq!(atom.prop("MRV SMA"), Some("[#6,#7]"));
+    assert_eq!(atom.prop("_MolFileAtomQuery"), Some("1"));
     assert!(query_contains(atom.predicate(), &|predicate| {
         matches!(
             predicate,

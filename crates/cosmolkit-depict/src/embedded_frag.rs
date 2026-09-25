@@ -297,14 +297,12 @@ fn template_degree_counts(template: &RingTemplate) -> [usize; 5] {
     // Complexity: one adjacency scan per participating atom, as in source.
     let mut counts = [0; 5];
     for (index, atom) in template.query.atoms().iter().enumerate() {
-        if atom.atom().atomic_number() == 200 {
+        if atom.atomic_number() == 200 {
             continue;
         }
         let degree = template.query.adjacency()[index]
             .iter()
-            .filter(|&&(neighbor, _)| {
-                template.query.atoms()[neighbor].atom().atomic_number() != 200
-            })
+            .filter(|&&(neighbor, _)| template.query.atoms()[neighbor].atomic_number() != 200)
             .take(4)
             .count();
         counts[degree] += 1;

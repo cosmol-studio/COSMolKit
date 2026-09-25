@@ -77,6 +77,7 @@ fn atom(residue_id: u32, altloc: Option<u8>, serial: i32) -> BioAtomRow {
         BioResidueId::new(residue_id),
         atom_name(b" CA "),
         Element::C,
+        None,
         altloc.map(AltLocLabel::new),
         -3,
         BioCalcFlag::Calculated,
@@ -101,6 +102,13 @@ fn empty_parts() -> BioStructureParts {
         residues: Vec::new(),
         atoms: Vec::new(),
         entities: Vec::new(),
+        connections: Vec::new(),
+        cispeps: Vec::new(),
+        mod_residues: Vec::new(),
+        helices: Vec::new(),
+        sheets: Vec::new(),
+        metadata: Default::default(),
+        source_state: Default::default(),
         coordinates: BioCoordinateBlock::default(),
         crystal: None,
         ncs_operators: Vec::new(),
@@ -131,6 +139,13 @@ fn one_residue_parts(kind: ResidueInfoKind, name: &str) -> BioStructureParts {
         )],
         atoms: Vec::new(),
         entities: Vec::new(),
+        connections: Vec::new(),
+        cispeps: Vec::new(),
+        mod_residues: Vec::new(),
+        helices: Vec::new(),
+        sheets: Vec::new(),
+        metadata: Default::default(),
+        source_state: Default::default(),
         coordinates: BioCoordinateBlock::default(),
         crystal: None,
         ncs_operators: Vec::new(),
@@ -266,6 +281,13 @@ fn protein_projection_rebuilds_dense_hierarchy_and_retains_empty_residues() {
         ],
         atoms: vec![atom(1, None, 101), atom(2, None, 102)],
         entities: Vec::new(),
+        connections: Vec::new(),
+        cispeps: Vec::new(),
+        mod_residues: Vec::new(),
+        helices: Vec::new(),
+        sheets: Vec::new(),
+        metadata: Default::default(),
+        source_state: Default::default(),
         coordinates: BioCoordinateBlock::new(vec![[1.0, 2.0, 3.0], [9.0, 9.0, 9.0]]),
         crystal: None,
         ncs_operators: Vec::new(),
@@ -358,6 +380,136 @@ fn protein_projection_preserves_atom_state_altloc_sources_and_coordinate_bits() 
         f64::NEG_INFINITY.to_bits()
     );
     assert_eq!(atoms[2].position()[2].to_bits(), 6.0_f64.to_bits());
+}
+
+#[test]
+fn protein_projection_preserves_isotope_state_through_dense_atom_and_residue_remapping() {
+    let mut parts = one_residue_parts(ResidueInfoKind::Aa, "ALA");
+    parts.chains[0] = BioChainRow::new(
+        BioModelId::new(0),
+        None,
+        span(0, 2),
+        ChainKind::Mixed,
+        chain_source(b"A", "label-A"),
+    );
+    parts.residues = vec![
+        residue(
+            0,
+            0,
+            1,
+            "HOH",
+            ResidueInfoKind::Hoh,
+            None,
+            None,
+            Some("label-A"),
+        ),
+        residue(
+            0,
+            1,
+            2,
+            "ALA",
+            ResidueInfoKind::Aa,
+            None,
+            Some(7),
+            Some("label-A"),
+        ),
+    ];
+    let isotope_hydrogen = |name: &[u8; 4],
+                            isotope_mass_number: Option<u16>,
+                            altloc: Option<u8>,
+                            formal_charge: i8,
+                            occupancy: f64,
+                            b_iso: f64,
+                            anisou: [f64; 6],
+                            tls_group_id: i16,
+                            fraction: f64,
+                            serial: i32| {
+        BioAtomRow::new(
+            BioResidueId::new(1),
+            atom_name(name),
+            Element::H,
+            isotope_mass_number,
+            altloc.map(AltLocLabel::new),
+            formal_charge,
+            BioCalcFlag::Calculated,
+            occupancy,
+            b_iso,
+            anisou,
+            tls_group_id,
+            fraction,
+            AtomSourceIds::new(Some(PdbAtomSerial::new(serial))),
+        )
+    };
+    parts.atoms = vec![
+        atom(0, None, 110),
+        isotope_hydrogen(
+            b" H1 ",
+            None,
+            Some(b'B'),
+            0,
+            0.625,
+            17.25,
+            [1.0, -2.0, 3.0, -4.0, 5.0, -6.0],
+            9,
+            0.375,
+            111,
+        ),
+        isotope_hydrogen(
+            b" D1 ",
+            Some(2),
+            Some(b'A'),
+            1,
+            0.875,
+            23.5,
+            [-1.0, 2.0, -3.0, 4.0, -5.0, 6.0],
+            3,
+            0.25,
+            112,
+        ),
+    ];
+    parts.coordinates =
+        BioCoordinateBlock::new(vec![[9.0, 8.0, 7.0], [-0.0, 2.0, 3.0], [4.0, 5.0, 6.0]]);
+
+    let source = structure(parts);
+    let source_before = source.clone();
+    let protein = source.protein().unwrap();
+
+    assert_eq!(source, source_before);
+    assert_eq!(protein.num_residues(), 1);
+    assert_eq!(protein.num_atoms(), 2);
+    assert_eq!(protein.residues()[0].id(), BioResidueId::new(0));
+
+    let atoms = protein.atoms();
+    assert_eq!(atoms[0].id(), BioAtomId::new(0));
+    assert_eq!(atoms[1].id(), BioAtomId::new(1));
+    assert_eq!(atoms[0].row().residue_id(), BioResidueId::new(0));
+    assert_eq!(atoms[1].row().residue_id(), BioResidueId::new(0));
+    assert_eq!(atoms[0].row().element(), Element::H);
+    assert_eq!(atoms[1].row().element(), Element::H);
+    assert_eq!(atoms[0].row().isotope_mass_number(), None);
+    assert_eq!(atoms[1].row().isotope_mass_number(), Some(2));
+    assert_eq!(atoms[0].name().as_str(), " H1 ");
+    assert_eq!(atoms[1].name().as_str(), " D1 ");
+    assert_eq!(atoms[0].altloc().unwrap().value(), b'B');
+    assert_eq!(atoms[1].altloc().unwrap().value(), b'A');
+    assert_eq!(atoms[0].row().formal_charge(), 0);
+    assert_eq!(atoms[1].row().formal_charge(), 1);
+    assert_eq!(atoms[0].row().occupancy().to_bits(), 0.625_f64.to_bits());
+    assert_eq!(atoms[1].row().occupancy().to_bits(), 0.875_f64.to_bits());
+    assert_eq!(atoms[0].row().b_iso().to_bits(), 17.25_f64.to_bits());
+    assert_eq!(atoms[1].row().b_iso().to_bits(), 23.5_f64.to_bits());
+    assert_eq!(atoms[0].row().anisou(), &[1.0, -2.0, 3.0, -4.0, 5.0, -6.0]);
+    assert_eq!(atoms[1].row().anisou(), &[-1.0, 2.0, -3.0, 4.0, -5.0, 6.0]);
+    assert_eq!(atoms[0].row().tls_group_id(), 9);
+    assert_eq!(atoms[1].row().tls_group_id(), 3);
+    assert_eq!(atoms[0].row().fraction().to_bits(), 0.375_f64.to_bits());
+    assert_eq!(atoms[1].row().fraction().to_bits(), 0.25_f64.to_bits());
+    assert_eq!(atoms[0].row().source().serial().unwrap().value(), 111);
+    assert_eq!(atoms[1].row().source().serial().unwrap().value(), 112);
+    assert_eq!(atoms[0].position()[0].to_bits(), (-0.0_f64).to_bits());
+    assert_eq!(atoms[0].position()[1].to_bits(), 2.0_f64.to_bits());
+    assert_eq!(atoms[0].position()[2].to_bits(), 3.0_f64.to_bits());
+    assert_eq!(atoms[1].position(), [4.0, 5.0, 6.0]);
 }
 
 #[test]

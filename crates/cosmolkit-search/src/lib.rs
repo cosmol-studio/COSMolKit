@@ -439,8 +439,8 @@ mod tests {
     fn complete_matcher_applies_generic_group_labels() {
         let mut query = parse_smarts("C*", &SmartsParseParams::default()).expect("parse query");
         query.atoms_mut()[1]
-            .atom_mut()
-            .set_prop("_QueryAtomGenericLabel", "ALK");
+            .set_prop("_QueryAtomGenericLabel", "ALK")
+            .expect("set generic group label");
         let params = SubstructMatchParams {
             use_generic_matchers: true,
             ..SubstructMatchParams::default()

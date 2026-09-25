@@ -1,7 +1,7 @@
 //! RDKit SMARTS serialization for canonical [`QueryGraph`] values.
 
 use cosmolkit_model::{
-    Atom, AtomId, AtomQueryPredicate, AtomRangeBounds, AtomRangeDataFunction, Bond, BondId,
+    AtomId, AtomQueryPredicate, AtomRangeBounds, AtomRangeDataFunction, Bond, BondId,
     BondQueryPredicate, QueryAtom, QueryBond, QueryGraph, QueryNode, RecursiveStructureQuery,
 };
 use cosmolkit_types::{BondDirection, BondOrder, ChiralTag, Element, Hybridization};
@@ -470,7 +470,7 @@ pub fn query_atom_to_smarts(
         QueryNode::And(_) | QueryNode::Or(_) => {
             needs_brackets = true;
             recurse_get_smarts(
-                atom.atom(),
+                atom,
                 atom.predicate(),
                 false,
                 &mut features,
@@ -483,7 +483,7 @@ pub fn query_atom_to_smarts(
         QueryNode::Predicate(predicate) => {
             let mut need_paren = false;
             let result = get_atom_smarts_simple(
-                atom.atom(),
+                atom,
                 predicate,
                 &mut need_paren,
                 true,
@@ -508,7 +508,7 @@ pub fn query_atom_to_smarts(
                     )?
                 }
                 QueryNode::Predicate(predicate) => get_atom_smarts_simple(
-                    atom.atom(),
+                    atom,
                     predicate,
                     &mut need_paren,
                     true,
@@ -516,7 +516,7 @@ pub fn query_atom_to_smarts(
                     &mut stereo_written,
                 ),
                 _ => recurse_get_smarts(
-                    atom.atom(),
+                    atom,
                     child.as_ref(),
                     false,
                     &mut features,
@@ -736,7 +736,7 @@ fn range_prefix(data_function: AtomRangeDataFunction) -> &'static str {
 }
 
 fn get_atom_smarts_simple(
-    atom: &Atom,
+    atom: &QueryAtom,
     query: &AtomQueryPredicate,
     need_paren: &mut bool,
     check_for_symbol: bool,
@@ -1354,7 +1354,7 @@ fn atom_query_without_not<'a>(
 }
 
 fn recurse_get_smarts<F>(
-    atom: &Atom,
+    atom: &QueryAtom,
     node: &QueryNode<AtomQueryPredicate>,
     negate: bool,
     features: &mut QueryBoolFeatures,

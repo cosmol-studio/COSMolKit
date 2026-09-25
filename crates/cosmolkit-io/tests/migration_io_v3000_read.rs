@@ -2031,7 +2031,7 @@ fn v3k_attachment_props_targets_and_query_carriers_are_typed_or_fail_structurall
     else {
         panic!("wildcard carrier must produce query topology");
     };
-    let carrier = record.query.atoms()[0].atom();
+    let carrier = &record.query.atoms()[0];
     assert_eq!(carrier.prop("molAttachPoint"), Some("5"));
     let entries = carrier
         .template_attachment_order()
@@ -4644,8 +4644,8 @@ fn v3k_symbols_lists_positive_with_spaces_and_empty_members() {
     let query_atom = record.query.atom(0).expect("query atom");
     let debug = format!("{:?}", query_atom.predicate());
     assert!(debug.contains("AtomicNumberIn([6, 7])"), "{debug}");
-    assert_eq!(query_atom.atom().element().atomic_number(), 0);
-    assert!(!query_atom.atom().no_implicit());
+    assert_eq!(query_atom.atomic_number(), 0);
+    assert!(!query_atom.no_implicit());
 }
 
 #[test]
@@ -4728,8 +4728,8 @@ fn v3k_symbols_queries_complex_names_and_wildcard_are_queries_without_implicit_h
     };
     for (index, symbol) in symbols.iter().enumerate() {
         let atom = record.query.atom(index).expect("query atom");
-        assert!(atom.atom().no_implicit(), "{symbol}");
-        assert_eq!(atom.atom().element().atomic_number(), 0, "{symbol}");
+        assert!(atom.no_implicit(), "{symbol}");
+        assert_eq!(atom.atomic_number(), 0, "{symbol}");
     }
     let wildcard = format!("{:?}", record.query.atom(8).unwrap().predicate());
     assert!(wildcard.contains("Any"), "{wildcard}");
@@ -4761,7 +4761,7 @@ fn v3k_symbols_queries_r_groups_remain_concrete_with_source_metadata() {
     for ((atom, symbol), expected_isotope) in
         topology.atoms.iter().zip(symbols).zip(expected_isotopes)
     {
-        assert_eq!(atom.element().atomic_number(), 0, "{symbol}");
+        assert_eq!(atom.atomic_number(), 0, "{symbol}");
         assert_eq!(atom.prop("dummyLabel"), Some(symbol), "{symbol}");
         assert_eq!(atom.isotope(), expected_isotope, "{symbol}");
         assert!(!atom.no_implicit(), "{symbol}");
@@ -4858,9 +4858,9 @@ fn v3k_symbols_queries_generic_labels_preserve_the_complete_source_key_set() {
     };
     for (index, label) in labels.iter().enumerate() {
         let atom = record.query.atom(index).expect("generic query atom");
-        assert_eq!(atom.atom().prop("atomLabel"), Some(*label), "{label}");
-        assert_eq!(atom.atom().element().atomic_number(), 0, "{label}");
-        assert!(!atom.atom().no_implicit(), "{label}");
+        assert_eq!(atom.prop("atomLabel"), Some(*label), "{label}");
+        assert_eq!(atom.atomic_number(), 0, "{label}");
+        assert!(!atom.no_implicit(), "{label}");
         let debug = format!("{:?}", atom.predicate());
         assert!(debug.contains("AtomicNumber(0)"), "{label}: {debug}");
     }
@@ -4926,7 +4926,7 @@ fn v3k_charge_leading_plus_is_screened_but_not_converted_for_concrete_and_query_
         panic!("wildcard row must remain a query");
     };
     let atom = record.query.atom(0).expect("query atom");
-    assert_eq!(atom.atom().formal_charge(), 0);
+    assert_eq!(atom.formal_charge(), 0);
     let QueryNode::And(children) = atom.predicate() else {
         panic!("expandQuery must conjoin the formal-charge predicate");
     };
@@ -4952,7 +4952,7 @@ fn v3k_charge_query_atoms_expand_the_query_without_setting_concrete_charge() {
         panic!("wildcard with CHG must remain a query record");
     };
     let atom = record.query.atom(0).expect("query atom");
-    assert_eq!(atom.atom().formal_charge(), 0);
+    assert_eq!(atom.formal_charge(), 0);
     let QueryNode::And(children) = atom.predicate() else {
         panic!("expandQuery must conjoin the formal-charge predicate");
     };
@@ -5009,19 +5009,36 @@ fn v3k_charge_to_int_empty_invalid_and_source_overflow_behavior() {
 
 #[test]
 fn v3k_charge_rejects_unrepresentable_concrete_and_query_values_without_narrowing() {
-    // RDKit concrete atoms narrow through int8_t while its equality-query
-    // target remains int. COSMolKit currently uses a checked i8 model for both
-    // and deliberately rejects these rows instead of copying source narrowing
-    // or silently narrowing a full-width query target.
-    for (symbol, charge) in [("C", "128"), ("C", "-129"), ("*", "128"), ("*", "-129")] {
-        let atom = format!("M  V30 1 {symbol} 0 0 0 0 CHG={charge}");
-        let block = v3000_block(&[&atom], 1);
+    // Pinned MolFileParser.cpp::ParseV3000AtomProps parses CHG into int,
+    // narrows only through concrete Atom::setFormalCharge, and passes the
+    // original int to makeAtomFormalChargeQuery for existing query atoms.
+    for (charge, expected) in [("128", 128), ("-129", -129)] {
+        let concrete_atom = format!("M  V30 1 C 0 0 0 0 CHG={charge}");
+        let concrete_block = v3000_block(&[&concrete_atom], 1);
         assert!(
             matches!(
-                read_mol_block_detached(&block),
+                read_mol_block_detached(&concrete_block),
                 Err(SdfReadError::Unsupported(_))
             ),
-            "{symbol} CHG={charge} must not narrow"
+            "concrete CHG={charge} keeps the existing i8 model boundary"
+        );
+
+        let query_atom = format!("M  V30 1 * 0 0 0 0 CHG={charge}");
+        let query_block = v3000_block(&[&query_atom], 1);
+        let MolBlockRecord::Query(record) =
+            read_mol_block_detached(&query_block).expect("wide query charge remains representable")
+        else {
+            panic!("wildcard CHG={charge} must remain a query record");
+        };
+        let atom = record.query.atom(0).expect("query atom");
+        assert_eq!(atom.formal_charge(), 0, "query carrier for CHG={charge}");
+        assert_eq!(
+            atom.predicate(),
+            &QueryNode::and(vec![
+                QueryNode::predicate(AtomQueryPredicate::Any),
+                QueryNode::predicate(AtomQueryPredicate::FormalCharge(expected)),
+            ]),
+            "full-width query target for CHG={charge}"
         );
     }
 }
@@ -5085,7 +5102,7 @@ fn v3k_radical_repeats_zero_noop_and_query_atoms_do_not_gain_query_chemistry() {
         panic!("wildcard row must remain a query");
     };
     let atom = record.query.atom(0).expect("query atom");
-    assert_eq!(atom.atom().radical_electrons(), 1);
+    assert_eq!(atom.radical_electrons(), 1);
     assert!(matches!(
         atom.predicate(),
         QueryNode::Predicate(AtomQueryPredicate::Any)
@@ -5171,7 +5188,7 @@ fn v3k_mass_query_atoms_expand_typed_isotope_predicates() {
             panic!("{property}: wildcard row must remain a query");
         };
         let atom = record.query.atom(0).expect("query atom");
-        assert_eq!(atom.atom().isotope(), None, "{property}");
+        assert_eq!(atom.isotope(), None, "{property}");
         let QueryNode::And(children) = atom.predicate() else {
             panic!("{property}: isotope expansion must conjoin the predicate");
         };
@@ -5206,22 +5223,37 @@ fn v3k_mass_negative_and_malformed_values_are_parse_errors() {
 
 #[test]
 fn v3k_mass_unrepresentable_model_values_are_checked_without_narrowing() {
-    // Upstream concrete isotope storage is uint16_t but query equality keeps
-    // an int target. COSMolKit's concrete and typed-query isotope models are
-    // both u16, so representationally valid source integers above 65535 are
-    // an explicit current model boundary, not silently narrowed parity.
-    for symbol in ["C", "*"] {
-        for value in ["65536", "2147483647"] {
-            let atom_line = format!("M  V30 1 {symbol} 0 0 0 0 MASS={value}");
-            let block = v3000_block(&[&atom_line], 1);
-            assert!(
-                matches!(
-                    read_mol_block_detached(&block),
-                    Err(SdfReadError::Unsupported(_))
-                ),
-                "{symbol} MASS={value} must not narrow into the u16 model"
-            );
-        }
+    // Pinned MolFileParser.cpp::ParseV3000AtomProps parses MASS to int,
+    // narrows only through concrete Atom::setIsotope, and passes the original
+    // int to makeAtomIsotopeQuery for existing query atoms.
+    for (value, expected) in [("65536", 65_536), ("2147483647", i32::MAX)] {
+        let concrete_atom = format!("M  V30 1 C 0 0 0 0 MASS={value}");
+        let concrete_block = v3000_block(&[&concrete_atom], 1);
+        assert!(
+            matches!(
+                read_mol_block_detached(&concrete_block),
+                Err(SdfReadError::Unsupported(_))
+            ),
+            "concrete MASS={value} keeps the existing u16 model boundary"
+        );
+
+        let query_atom = format!("M  V30 1 * 0 0 0 0 MASS={value}");
+        let query_block = v3000_block(&[&query_atom], 1);
+        let MolBlockRecord::Query(record) = read_mol_block_detached(&query_block)
+            .expect("wide query isotope remains representable")
+        else {
+            panic!("wildcard MASS={value} must remain a query record");
+        };
+        let atom = record.query.atom(0).expect("query atom");
+        assert_eq!(atom.isotope(), None, "query carrier for MASS={value}");
+        assert_eq!(
+            atom.predicate(),
+            &QueryNode::and(vec![
+                QueryNode::predicate(AtomQueryPredicate::Any),
+                QueryNode::predicate(AtomQueryPredicate::Isotope(expected)),
+            ]),
+            "full-width query target for MASS={value}"
+        );
     }
 }
 
@@ -5257,8 +5289,8 @@ fn v3k_atom_cfg_all_source_values_store_only_typed_parity_metadata() {
         panic!("wildcard row must remain a query");
     };
     let atom = record.query.atom(0).expect("query atom");
-    assert_eq!(atom.atom().mol_parity(), Some(2));
-    assert_eq!(atom.atom().prop("molParity"), Some("2"));
+    assert_eq!(atom.mol_parity(), Some(2));
+    assert_eq!(atom.prop("molParity"), Some("2"));
     assert!(matches!(
         atom.predicate(),
         QueryNode::Predicate(AtomQueryPredicate::Any)
@@ -5739,7 +5771,7 @@ fn v3k_rbcnt_minus_two_sets_deferred_scan_state_and_unsigned_sentinel() {
         record.query.atoms()[0].predicate(),
         &QueryNode::and(vec![
             QueryNode::predicate(AtomQueryPredicate::AtomicNumber(6)),
-            QueryNode::predicate(AtomQueryPredicate::RingBondCount(0xDEAD_BEEF)),
+            QueryNode::predicate(AtomQueryPredicate::RingBondCount(0xDEAD_BEEF_u32 as i32)),
         ])
     );
     assert_eq!(record.query.atoms()[0].prop("molRingBondCount"), Some("-2"));
@@ -5810,7 +5842,7 @@ fn v3k_rbcnt_preserves_constructor_and_property_order_semantics() {
 }
 
 #[test]
-fn v3k_rbcnt_wildcard_null_query_is_replaced_and_lower_negatives_fail_closed() {
+fn v3k_rbcnt_wildcard_null_query_and_signed_negative_targets_match_source() {
     // QueryAtom null-query algebra replaces wildcard AtomNull under AND.
     let block = v3000_block(&["M  V30 1 * 0 0 0 0 RBCNT=1"], 1);
     let MolBlockRecord::Query(record) = read_mol_block_detached(&block).expect("wildcard RBCNT")
@@ -5822,17 +5854,23 @@ fn v3k_rbcnt_wildcard_null_query_is_replaced_and_lower_negatives_fail_closed() {
         &QueryNode::predicate(AtomQueryPredicate::RingBondCount(1))
     );
 
-    // RDKit can construct signed negative equality targets below -2. The
-    // current typed predicate stores u32, so this independent source state is
-    // an explicit structured support boundary rather than silent narrowing.
-    for value in ["-3", "-2147483648"] {
+    // Negative targets use AtomRingQuery's source-defined nonzero-count
+    // branch and remain signed all the way through the detached query target.
+    for (value, target) in [("-3", -3), ("-2147483648", i32::MIN)] {
         let atom_line = format!("M  V30 1 C 0 0 0 0 RBCNT={value}");
         let block = v3000_block(&[&atom_line], 1);
-        assert!(matches!(
-            read_mol_block_detached(&block),
-            Err(SdfReadError::Unsupported(message))
-                if message.contains("RBCNT values below -2")
-        ));
+        let MolBlockRecord::Query(record) =
+            read_mol_block_detached(&block).expect("signed RBCNT query")
+        else {
+            panic!("RBCNT={value} must produce query topology");
+        };
+        assert_eq!(
+            record.query.atoms()[0].predicate(),
+            &QueryNode::and(vec![
+                QueryNode::predicate(AtomQueryPredicate::AtomicNumber(6)),
+                QueryNode::predicate(AtomQueryPredicate::RingBondCount(target)),
+            ])
+        );
     }
 }
 
@@ -6007,7 +6045,7 @@ fn v3k_rgroups_zero_count_is_an_exact_noop_for_concrete_and_query_atoms() {
         record.query.atoms()[0].predicate(),
         &QueryNode::predicate(AtomQueryPredicate::Any)
     );
-    assert_eq!(record.query.atoms()[0].atom().isotope(), None);
+    assert_eq!(record.query.atoms()[0].isotope(), None);
 }
 
 #[test]
@@ -6024,15 +6062,11 @@ fn v3k_rgroups_one_and_multiple_labels_apply_source_order_with_last_label_winnin
             panic!("nonempty RGROUPS must construct query state");
         };
         let atom = &record.query.atoms()[0];
-        assert_eq!(atom.atom().atomic_number(), 6, "{value}");
-        assert_eq!(atom.atom().isotope(), Some(isotope), "{value}");
-        assert_eq!(atom.atom().prop("_MolFileRLabel"), Some(label), "{value}");
+        assert_eq!(atom.atomic_number(), 6, "{value}");
+        assert_eq!(atom.isotope(), Some(isotope), "{value}");
+        assert_eq!(atom.prop("_MolFileRLabel"), Some(label), "{value}");
         let dummy = format!("R{label}");
-        assert_eq!(
-            atom.atom().prop("dummyLabel"),
-            Some(dummy.as_str()),
-            "{value}"
-        );
+        assert_eq!(atom.prop("dummyLabel"), Some(dummy.as_str()), "{value}");
         assert_eq!(
             atom.predicate(),
             &QueryNode::predicate(AtomQueryPredicate::Any),
@@ -6052,9 +6086,9 @@ fn v3k_rgroups_uses_unsigned_lexical_cast_sign_semantics_and_checked_isotope_wid
         panic!("nonempty RGROUPS must construct query state");
     };
     let atom = &record.query.atoms()[0];
-    assert_eq!(atom.atom().isotope(), Some(1));
-    assert_eq!(atom.atom().prop("_MolFileRLabel"), Some("1"));
-    assert_eq!(atom.atom().prop("dummyLabel"), Some("R1"));
+    assert_eq!(atom.isotope(), Some(1));
+    assert_eq!(atom.prop("_MolFileRLabel"), Some("1"));
+    assert_eq!(atom.prop("dummyLabel"), Some("R1"));
 
     // RDKit narrows larger unsigned labels into Atom::d_isotope (uint16_t).
     // The detached model intentionally keeps a checked boundary instead of
@@ -6094,8 +6128,8 @@ fn v3k_rgroups_replaces_existing_query_state_and_later_properties_expand_from_nu
         panic!("HCOUNT/RGROUPS record must be a query");
     };
     let atom = &record.query.atoms()[0];
-    assert_eq!(atom.atom().isotope(), Some(7));
-    assert_eq!(atom.atom().prop("dummyLabel"), Some("R7"));
+    assert_eq!(atom.isotope(), Some(7));
+    assert_eq!(atom.prop("dummyLabel"), Some("R7"));
     assert_eq!(
         atom.predicate(),
         &QueryNode::predicate(AtomQueryPredicate::Any)
@@ -6108,7 +6142,7 @@ fn v3k_rgroups_replaces_existing_query_state_and_later_properties_expand_from_nu
         panic!("RGROUPS/HCOUNT record must be a query");
     };
     let atom = &record.query.atoms()[0];
-    assert_eq!(atom.atom().isotope(), Some(7));
+    assert_eq!(atom.isotope(), Some(7));
     assert_eq!(
         atom.predicate(),
         &QueryNode::predicate(AtomQueryPredicate::ImplicitHydrogenCountLessEqual(1))
