@@ -168,7 +168,7 @@ fn generated_registry_and_all_four_matrices_share_one_exact_operation() {
         spec.derived_effects.invalidate.bits(),
         (1 << 2) | (1 << 3) | (1 << 4) | (1 << 6) | (1 << 7)
     );
-    assert_eq!(format!("{:?}", spec.cip_state), "ClearComputed");
+    assert_eq!(format!("{:?}", spec.cip_state), "Preserve");
     assert_eq!(spec.support, SupportStatus::SupportedWithRdkitParity);
     assert_eq!(spec.parity, ParityPolicy::RequiredNow);
     assert_eq!(
@@ -220,9 +220,9 @@ fn value_operation_preserves_identity_coordinates_stereo_and_ordinary_props() {
     assert_eq!(output.property("source"), Some("preserved"));
     assert_eq!(output.atoms()[0].prop("atom-note"), Some("atom-0"));
     assert_eq!(output.bonds()[0].prop("bond-note"), Some("bond-0"));
-    assert_eq!(output.property("_CIPComputed"), None);
-    assert_eq!(output.atoms()[0].prop("_CIPCode"), None);
-    assert_eq!(output.bonds()[0].prop("_CIPCode"), None);
+    assert_eq!(output.property("_CIPComputed"), Some("true"));
+    assert_eq!(output.atoms()[0].prop("_CIPCode"), Some("R"));
+    assert_eq!(output.bonds()[0].prop("_CIPCode"), Some("E"));
     assert!(output.atoms().iter().all(|atom| !atom.is_aromatic()));
     assert!(output.bonds().iter().all(|bond| !bond.is_aromatic()));
     assert_eq!(
@@ -239,7 +239,7 @@ fn value_operation_preserves_identity_coordinates_stereo_and_ordinary_props() {
     assert!(source.bonds().iter().all(Bond::is_aromatic));
     assert_eq!(source.property("_CIPComputed"), Some("true"));
     assert!(!std::ptr::eq(source.topology(), output.topology()));
-    assert!(!std::ptr::eq(source.properties(), output.properties()));
+    assert!(std::ptr::eq(source.properties(), output.properties()));
 }
 
 #[test]

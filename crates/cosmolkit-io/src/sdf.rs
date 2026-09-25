@@ -18,6 +18,10 @@ use cosmolkit_types::{BondDirection, BondOrder, BondStereo, Element};
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum SdfReadError {
+    #[error(
+        "query-bearing SDF record cannot be represented as a concrete molecule; use a query-preserving record reader"
+    )]
+    QueryRecord,
     #[error("empty molfile block")]
     Empty,
     #[error("invalid V2000 counts line")]
@@ -138,6 +142,49 @@ impl Default for MolBlockReadParams {
 pub struct SdfGraphRecord {
     pub mol_block: MolBlockRecord,
     pub data_fields: Vec<(String, String)>,
+    chirality_possible: bool,
+}
+
+impl SdfGraphRecord {
+    /// Finalize this parsed record using the parser's original stereo marker
+    /// bit, before any caller can mistake final bond directions for that bit.
+    pub fn finish_mol_post(
+        mut self,
+        params: crate::MolPostParams,
+    ) -> Result<Self, crate::MolPostError> {
+        // BEGIN RDKIT CPP FUNCTION MolFromMolDataStream
+        // RDKit✔️✔️:   if (res) {
+        // RDKit✔️✔️:     FileParserUtils::finishMolProcessing(res.get(), chiralityPossible, params);
+        // RDKit✔️✔️:   }
+        // END RDKIT CPP FUNCTION
+        self.mol_block =
+            crate::finish_mol_block_record(self.mol_block, self.chirality_possible, params)?;
+        // Behavior review: the bit comes from the same bond-row parse that
+        // produced this record and is not reconstructed after finalization.
+        // Complexity review: this moves one record and passes one boolean;
+        // no graph scan or additional detached clone is introduced here.
+        Ok(self)
+    }
+
+    /// Require a concrete payload without discarding query semantics.
+    ///
+    /// Classification uses the payload supplied here. A finalizing caller must
+    /// apply this check after finalization, since chemistry may introduce queries.
+    pub fn into_concrete(self) -> Result<SdfRecord, SdfReadError> {
+        match self.mol_block {
+            MolBlockRecord::Concrete {
+                topology,
+                coordinates,
+                properties,
+            } => Ok(SdfRecord {
+                topology,
+                coordinates,
+                properties,
+                data_fields: self.data_fields,
+            }),
+            MolBlockRecord::Query(_) => Err(SdfReadError::QueryRecord),
+        }
+    }
 }
 
 /// Explicit interpretation requested for the one conformer read from a
@@ -3882,6 +3929,7 @@ fn molblock_ctab_version(counts: &str, params: MolBlockReadParams) -> Result<u16
 fn read_v2000_record_detached(
     block: &str,
     params: MolBlockReadParams,
+    chirality_possible: &mut bool,
 ) -> Result<MolBlockRecord, SdfReadError> {
     // BEGIN RDKIT CPP FUNCTION MolFromMolDataStream / ParseV2000CTAB
     // RDKit✔️❌: // mol name
@@ -3914,7 +3962,7 @@ fn read_v2000_record_detached(
         return Err(SdfReadError::Counts);
     }
     if molblock_ctab_version(counts, params)? == 3000 {
-        return read_v3000_record_detached(block, params);
+        return read_v3000_record_detached(block, params, chirality_possible);
     }
     // RDKit✔️✔️:     nAtoms = FileParserUtils::toUnsigned(tempStr.substr(spos, 3), true);
     // RDKit✔️✔️:     spos = 3;
@@ -3929,7 +3977,6 @@ fn read_v2000_record_detached(
     let mut parsed_atoms = Vec::with_capacity(atom_count);
     let mut coords2 = Vec::with_capacity(atom_count);
     let mut coords3 = Vec::with_capacity(atom_count);
-    let mut has_z = false;
     for index in 0..atom_count {
         let line_no = 5 + index;
         // BEGIN RDKIT CPP FUNCTION ParseMolBlockAtoms
@@ -3942,7 +3989,6 @@ fn read_v2000_record_detached(
             .get(4 + index)
             .ok_or_else(|| SdfReadError::Parse("EOF hit while reading atoms".to_owned()))?;
         let parsed = parse_v2000_atom_line(atom_line, line_no, params.strict_parsing)?;
-        has_z |= parsed.coordinate[2] != 0.0;
         coords2.push([parsed.coordinate[0], parsed.coordinate[1]]);
         coords3.push(parsed.coordinate);
         parsed_atoms.push(parsed);
@@ -3960,6 +4006,19 @@ fn read_v2000_record_detached(
             .get(4 + atom_count + index)
             .ok_or_else(|| SdfReadError::Parse("EOF hit while reading bonds".to_owned()))?;
         let mut parsed = parse_v2000_bond_line(bond_line, line_no, atom_count, index)?;
+        // BEGIN RDKIT CPP FUNCTION ParseMolBlockBonds
+        // RDKit✔️✔️:     // if the bond might have chirality info associated with it, set a flag:
+        // RDKit✔️✔️:     if (bond->getBondDir() != Bond::NONE &&
+        // RDKit✔️✔️:         bond->getBondDir() != Bond::UNKNOWN) {
+        // RDKit✔️✔️:       chiralityPossible = true;
+        // RDKit✔️✔️:     }
+        // END RDKIT CPP FUNCTION
+        if !matches!(
+            parsed.bond.direction(),
+            BondDirection::None | BondDirection::Unknown
+        ) {
+            *chirality_possible = true;
+        }
         // BEGIN RDKIT CPP FUNCTION ParseMolBlockBonds
         // RDKit✔️✔️:     // v2k has no way to set stereoCare on bonds, so set the property if both
         // RDKit✔️✔️:     // the beginning and end atoms have it set:
@@ -3998,23 +4057,32 @@ fn read_v2000_record_detached(
         &mut bonds,
         params,
     )?;
+    // `calculate3dFlag` is shared with V3000; retain the independent source
+    // bit and use an XYZ carrier whenever projecting to XY would lose Z bits.
+    let is_3d = molfile_is_3d(info, &coords3, *chirality_possible);
+    let retain_xyz = is_3d || coords3.iter().any(|point| point[2].to_bits() != 0);
     let coordinates = CoordinateBlock {
-        conformers_2d: if has_z {
+        conformers_2d: if retain_xyz {
             Vec::new()
         } else {
             vec![Conformer2D::new(0, coords2)]
         },
-        conformers_3d: if has_z {
-            vec![Conformer3D::new(0, coords3, true)]
+        conformers_3d: if retain_xyz {
+            vec![Conformer3D::new(0, coords3, is_3d)]
         } else {
             Vec::new()
         },
-        source_coordinate_dim: Some(if has_z {
+        source_coordinate_dim: Some(if is_3d {
             CoordinateDimension::ThreeD
         } else {
             CoordinateDimension::TwoD
         }),
     };
+    // Behavior review: the source 1e-3 test and header/stereo precedence set
+    // the effective flag; an XYZ carrier with false flag preserves sub-tolerance
+    // and signed-zero Z exactly, independently of that interpretation.
+    // Complexity review: the source scans Z once; losslessness makes one more
+    // linear scan, with no additional coordinate block or whole-graph copy.
     coordinates.validate_for_atom_count(atom_count)?;
     let mut properties = if title.is_empty() {
         MoleculeProperties::default()
@@ -4126,7 +4194,7 @@ pub fn read_mol_block_detached_with_params(
     block: &str,
     params: MolBlockReadParams,
 ) -> Result<MolBlockRecord, SdfReadError> {
-    read_v2000_record_detached(block, params)
+    read_v2000_record_detached(block, params, &mut false)
 }
 
 /// Read a concrete V2000 mol block into detached model values.
@@ -4141,7 +4209,7 @@ pub fn read_v2000_detached_with_params(
     block: &str,
     params: MolBlockReadParams,
 ) -> Result<(TopologyBlock, CoordinateBlock, MoleculeProperties), SdfReadError> {
-    match read_v2000_record_detached(block, params)? {
+    match read_v2000_record_detached(block, params, &mut false)? {
         MolBlockRecord::Concrete {
             topology,
             coordinates,
@@ -5675,7 +5743,7 @@ fn molfile_info_marks_3d(info: &str) -> bool {
     info.len() >= 22 && matches!(rdkit_substr(info, 20, 2), "3d" | "3D")
 }
 
-fn v3000_is_3d(info: &str, coordinates: &[[f64; 3]], chirality_possible: bool) -> bool {
+fn molfile_is_3d(info: &str, coordinates: &[[f64; 3]], chirality_possible: bool) -> bool {
     // BEGIN RDKIT CPP FUNCTION MolFromMolDataStream (dimension label)
     // RDKit✔️✔️:   if (tempStr.length() >= 22) {
     // RDKit✔️✔️:     std::string dimLabel = tempStr.substr(20, 2);
@@ -5748,6 +5816,7 @@ fn v3000_is_3d(info: &str, coordinates: &[[f64; 3]], chirality_possible: bool) -
 fn read_v3000_record_detached(
     block: &str,
     params: MolBlockReadParams,
+    parsed_chirality_possible: &mut bool,
 ) -> Result<MolBlockRecord, SdfReadError> {
     let lines = block.lines().collect::<Vec<_>>();
     if lines.len() < 4 {
@@ -6567,7 +6636,8 @@ fn read_v3000_record_detached(
     // RDKit✔️✔️:   mol->addConformer(conf, true);
     // RDKit✔️✔️:   conf = nullptr;
     // END RDKIT CPP FUNCTION
-    let is_3d = v3000_is_3d(info, &coordinates_3d, chirality_possible);
+    let is_3d = molfile_is_3d(info, &coordinates_3d, chirality_possible);
+    *parsed_chirality_possible = chirality_possible;
     // calculate3dFlag changes interpretation, never the stored XYZ rows.
     // Use the existing XYZ carrier with its independent flag whenever an XY
     // projection would lose Z bits (including negative zero). Only all-+0 Z
@@ -6711,7 +6781,7 @@ pub fn read_v3000_detached_with_params(
     block: &str,
     params: MolBlockReadParams,
 ) -> Result<(TopologyBlock, CoordinateBlock, MoleculeProperties), SdfReadError> {
-    match read_v3000_record_detached(block, params)? {
+    match read_v3000_record_detached(block, params, &mut false)? {
         MolBlockRecord::Concrete {
             topology,
             coordinates,
@@ -6734,7 +6804,9 @@ pub fn read_sdf_graph_record_detached_with_params(
     params: SdfDataReadParams,
 ) -> Result<SdfGraphRecord, SdfReadError> {
     let (mol_text, data_lines) = split_sdf_mol_block(block)?;
-    let mut mol_block = read_mol_block_detached_with_params(mol_text, params.into())?;
+    let mut chirality_possible = false;
+    let mut mol_block =
+        read_v2000_record_detached(mol_text, params.into(), &mut chirality_possible)?;
     apply_sdf_coordinate_mode(&mut mol_block, params.coordinate_mode)?;
     let data_fields = parse_sdf_data_fields(&data_lines, params)?;
     match &mut mol_block {
@@ -6763,6 +6835,7 @@ pub fn read_sdf_graph_record_detached_with_params(
     Ok(SdfGraphRecord {
         mol_block,
         data_fields,
+        chirality_possible,
     })
 }
 
@@ -6776,23 +6849,7 @@ pub fn read_sdf_record_detached_with_params(
     block: &str,
     params: SdfDataReadParams,
 ) -> Result<SdfRecord, SdfReadError> {
-    let record = read_sdf_graph_record_detached_with_params(block, params)?;
-    let MolBlockRecord::Concrete {
-        topology,
-        coordinates,
-        properties,
-    } = record.mol_block
-    else {
-        return Err(SdfReadError::Unsupported(
-            "query-bearing SDF record; use read_sdf_graph_record_detached",
-        ));
-    };
-    Ok(SdfRecord {
-        topology,
-        coordinates,
-        properties,
-        data_fields: record.data_fields,
-    })
+    read_sdf_graph_record_detached_with_params(block, params)?.into_concrete()
 }
 
 /// Read every non-empty record in an SDF stream into detached values.
@@ -6814,27 +6871,16 @@ pub fn read_sdf_records_detached_with_params(
         let Some(record) = reader.next_record()? else {
             break;
         };
-        let MolBlockRecord::Concrete {
-            topology,
-            coordinates,
-            properties,
-        } = record.mol_block
-        else {
-            return Err(SdfReadError::Record {
-                index,
-                byte_offset,
-                line_offset,
-                source: Box::new(SdfReadError::Unsupported(
-                    "query-bearing SDF record; use SdfGraphReader",
-                )),
-            });
-        };
-        records.push(SdfRecord {
-            topology,
-            coordinates,
-            properties,
-            data_fields: record.data_fields,
-        });
+        records.push(
+            record
+                .into_concrete()
+                .map_err(|source| SdfReadError::Record {
+                    index,
+                    byte_offset,
+                    line_offset,
+                    source: Box::new(source),
+                })?,
+        );
     }
     if records.is_empty() {
         return Err(SdfReadError::Empty);

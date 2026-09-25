@@ -172,7 +172,9 @@ version = "0.5.0-rc.4"
 name = "cosmolkit-depict"
 version = "0.5.0-rc.4"
 dependencies = [
+ "cosmolkit-core",
  "cosmolkit-model",
+ "cosmolkit-search",
 ]
 
 [[package]]
@@ -214,6 +216,7 @@ dependencies = [
 name = "cosmolkit-io"
 version = "0.5.0-rc.4"
 dependencies = [
+ "cosmolkit-bio",
  "cosmolkit-core",
  "cosmolkit-model",
  "cosmolkit-search",
@@ -246,6 +249,17 @@ version = "0.5.0-rc.4"
 dependencies = [
  "cosmolkit-types",
  "thiserror",
+]
+
+[[package]]
+name = "cosmolkit-parity-tests"
+version = "0.1.0"
+dependencies = [
+ "cosmolkit",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
 ]
 
 [[package]]
@@ -310,15 +324,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "cosmolkit-test-support"
-version = "0.5.0-rc.2"
-dependencies = [
- "serde",
- "serde_json",
- "sha2",
-]
-
-[[package]]
 name = "cosmolkit-types"
 version = "0.5.0-rc.4"
 dependencies = [
@@ -329,7 +334,7 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-wasm"
-version = "0.5.0-rc.3"
+version = "0.5.0-rc.4"
 dependencies = [
  "cosmolkit",
 ]

@@ -15,7 +15,7 @@ JavaScript: mol.molecularWeight()
 ```
 
 The spelling may follow language convention, but the operation, inputs,
-outputs, defaults, support status, and error category must remain the same.
+outputs, defaults, behavior commitment, and error category must remain the same.
 
 ## 1. Public Boundary
 
@@ -132,7 +132,7 @@ mol.to_inchi()
 mol.to_sdf(&params)
 ```
 
-`mol_to_*` is an internal source-port or migration name only. It must not be
+`mol_to_*` is an internal source-port name only. It must not be
 the name of a new public method.
 
 ### 4.3 Queries and descriptors
@@ -189,6 +189,14 @@ The trailing underscore must never be used for a non-mutating or unrelated
 meaning. New APIs should prefer value-style methods unless in-place mutation is
 required for a documented performance or compatibility reason.
 
+Eligible value and in-place entry points share the same registered operation
+implementation; they are not separate algorithm families. The generated
+in-place name defaults to `{method}_`, with explicit semantic overrides such
+as `with_hydrogens` -> `add_hydrogens_` and `without_hydrogens` ->
+`remove_hydrogens_`. These names grant no mutable-storage access.
+In-place COW and failure guarantees are defined in
+[the operation standard](./operation_system_standard.md#in-place-execution-and-failure-semantics).
+
 ### 4.5 Parameters and overloads
 
 The default behavior is the short method. Explicit configuration uses either
@@ -219,8 +227,10 @@ DescriptorSet
 Conformer
 ```
 
-They may expose accessors and local validation, but must not depend on parser,
-matcher, serializer, runtime cache, or operation-registry implementation.
+Detached canonical values expose accessors and local validation without
+depending on parsers, matchers or runtime machinery. The live `Molecule` is
+owned by the public runtime and exposes domain behavior through thin methods;
+it is not subject to the detached model's dependency restriction.
 
 ### 5.2 Inputs
 
@@ -291,7 +301,8 @@ Vec<T>             -> list / array
 ```
 
 They must not differ in operation semantics, default options, result field
-meaning, or support status.
+meaning, or behavior commitment. A declared projection specifies how a binding
+must behave when implemented; it does not claim that the binding already exists.
 
 JavaScript bindings should use `camelCase` only at the language boundary. The
 Rust logical name remains the stable identifier used in manifests and tests.
@@ -310,7 +321,7 @@ feature capability
 input and output types
 error category
 value-style or in-place behavior
-support and parity status
+function status
 ```
 
 Fine-grained Cargo features gate capabilities, not unrelated implementation
@@ -318,19 +329,52 @@ dependencies. A feature may make its own `Molecule` method available, but it
 must not expose another domain's public methods merely because the
 implementation reuses an internal crate.
 
-User-facing bundles such as `common_api`, `chemistry_api`, `3d_api`, and
-`full` are explicit compositions of fine-grained capabilities.
+The user-facing `full` bundle is an explicit composition of fine-grained
+capabilities and is enabled by default.
 
 The operation registry remains the source of truth for topology mutation and
 contract metadata. The public API manifest is the source of truth for naming,
 receiver classification, and language projections. The two registries must
 refer to the same logical operation rather than define duplicate behavior.
 
-## 8. Migration Rules
+### Function status
 
-During migration, old free functions may remain only as deliberate temporary
-forwarders with an explicit removal decision. They must delegate to the single
-`Molecule` method and must not contain a second implementation.
+Each function has one behavior status, shared by its operation metadata and
+language projections rather than independently assigned in each registry:
+
+| Status | Meaning |
+|---|---|
+| `Parity` | Follows the pinned upstream behavior, including options, boundary cases and errors. |
+| `ParityWithDifferences` | Follows the pinned upstream except for explicitly approved, documented differences. |
+| `Native` | Implements project-defined behavior with no upstream equivalence claim, such as ConfSeq. |
+| `Experimental` | Offers an actual callable implementation whose behavior or API is not yet a settled commitment; limitations must be documented. |
+
+`Parity` and `ParityWithDifferences` identify their reference library, such as
+RDKit or Gemmi. `ParityWithDifferences` carries one explanation string stating
+the affected conditions, the different behavior and its deliberate rationale.
+It needs no separate difference ID or three-part explanation schema. Unlisted
+behavior remains subject to the upstream contract.
+
+Parity is the default development requirement for upstream ports, but the
+default registry label is `Experimental` until explicitly changed. These are
+different decisions: what to implement, and what commitment to publish.
+Labels are maintained manually; test execution does not modify them or grant
+runtime permissions. An experimental label does not relax signature checks,
+operation capabilities, state validation or explicit error handling.
+
+The registry contains real public functions and their associated public types.
+Every entry must resolve to its declared Rust item; callable signatures must
+be checked by the compiler. There is no separate exposure classification and
+no registry placeholder for an unimplemented interface. Planned APIs belong
+in the implementation plan. Data preservation is part of a function's behavior,
+not another support level; structured unsupported errors remain errors, not
+function status labels.
+
+## 8. API Development Workflow
+
+Implement each behavior once in its owning crate and expose it through the
+canonical public entry point. Compatibility aliases require an explicit
+decision; they must not become separate implementations.
 
 New code must not add any of these public patterns:
 
@@ -343,26 +387,24 @@ public OpParts or capability objects
 binding-specific chemistry implementations
 ```
 
-The migration order for an existing free function is:
+When adding or revising an API:
 
-1. Define its logical API entry and type classification.
-2. Register the logical entry in the canonical naming/binding registry before
-   exposing it from the facade.
-3. If the old public name violates this document, use the canonical new name
-   during migration. Do not add a legacy alias unless a separate compatibility
-   decision explicitly requires it.
-4. Add the `cosmolkit::Molecule` method or justified domain function.
+1. Define the logical name, signature, type classification and behavior contract
+   in the implementation plan before implementing the API.
+2. Declare any required operation contract before implementing its body.
+3. Use the canonical public name, even when the upstream function has a
+   different name. Do not automatically reproduce upstream aliases.
+4. Add the `cosmolkit::Molecule` method or justified domain function together
+   with its canonical binding-registry entry and compiler-checked signature.
 5. Make the method extract authorized model blocks and call the algorithm
    crate.
-6. Add language projections in the later binding phase; Python and
-   JavaScript/WASM checks are not a blocker for the current Rust migration.
-7. Keep any compatibility forwarder only until the planned removal point.
-8. Remove the old public export after downstream adapters and documentation
-   use the canonical method.
+6. Define consistent language projections. Implement bindings when they are
+   within the task's scope; do not claim delivery from a projected name alone.
+7. Update public documentation and examples to match the delivered API.
 
 ## 9. Review Checklist
 
-Before adding or migrating a public API, verify:
+Before adding or revising a public API, verify:
 
 - Does the operation have a natural `Molecule` receiver?
 - If yes, is it a `Molecule` method rather than a new free function?
@@ -371,12 +413,30 @@ Before adding or migrating a public API, verify:
 - Are parameters, results, and errors separate public types?
 - Does the implementation receive detached model blocks rather than `Molecule`?
 - Is the operation registered with the runtime contract when it mutates state?
-- Does the logical API entry have Rust, Python, and JavaScript projections?
+- Does the registry entry resolve to a real Rust item with the declared signature?
+- Does the function have one behavior status and consistent language projections?
 - Are feature gates scoped to the owning capability?
 - Does unsupported behavior fail with a structured error?
 - Is there exactly one implementation and one authoritative `Molecule`?
 
-This document describes the target public surface. It does not claim that every
-listed method is implemented today. Current implementation and parity status
-remain tracked by the operation registry, support matrices, and validation
-documents.
+Examples illustrate API design, not an inventory of implemented functions.
+The registry describes the actual public Rust surface. Behavior declarations
+and validation results are distinct; neither substitutes for the other.
+
+## 10. Registry Correction Guide
+
+The four-state design above is approved but has not yet been implemented in
+the registry code. Apply these corrections without changing chemical algorithms
+or operation authority:
+
+- Replace the old support/parity combinations with the single function status;
+  remove `exposure` and require actual-item/signature checks for every entry.
+- Keep unimplemented interfaces outside the registry. The four placeholder
+  entries for `MolBlockReadParams`, `MolBlockError`, `Molecule::from_molblock`
+  and `Molecule::from_molblock_with_params` have been removed.
+- For this correction, mark only `fuzzy_and` and `fuzzy_or` as `Parity` against
+  RDKit, on both `SparseCountFingerprint` and `SparseCountFingerprint32`.
+  Initialize all other function entries as `Experimental`; do not mechanically
+  preserve earlier parity claims.
+- Keep status declarations independent of test execution. This correction does
+  not introduce a test-to-registry promotion mechanism.

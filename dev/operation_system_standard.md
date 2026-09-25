@@ -2,7 +2,7 @@
 
 This document defines the operation-system standard for COSMolKit.
 
-It is a binding project rule and target architecture standard. New core operation code must follow this standard unless the human author explicitly approves an exception.
+It is a binding project rule and target architecture standard. New operation code must follow this standard unless the human author explicitly approves an exception.
 
 Implementation gaps must be tracked in plans or checklists. This document describes the desired operation system, not temporary implementation status.
 
@@ -30,6 +30,10 @@ It prevents topology edits, cache invalidation, stereo updates, property remappi
 ## 2. Policy Relationship
 
 This standard implements the project-level invariants in `policy_invariants.md`.
+Crate ownership and the final capability/transaction shape are defined by
+[crate_architecture.md](./crate_architecture.md); public names are defined by
+[public_api_design.md](./public_api_design.md). This document owns operational
+contracts, not a second runtime architecture.
 
 It must preserve:
 
@@ -80,7 +84,7 @@ Responsibilities are separated:
 - the registry declares allowed and required behavior
 - the wrapper constructs `OpParts` and calls the implementation
 - `OpParts` controls copy-on-write mutation, remap, mapping, trace, and invalidation
-- the operation body implements chemistry or domain logic
+- the operation body delegates chemistry to its unique detached algorithm owner
 - `finish()` validates the contract in strict builds and returns the result
 
 No layer may silently take over another layer’s responsibility.
@@ -146,7 +150,7 @@ derived-state authority.
 Multiple-output operations that need status, provenance, or other domain
 metadata may declare `result_type` together with `assemble_fn`. The operation
 body returns metadata separately, all molecule values are finalized by
-`MultiMoleculeOpParts`, and the assembler receives only those finalized values
+`MultiOutputOpParts`, and the assembler receives only those finalized values
 plus the metadata. Supplying only one of these fields on a multiple-output
 operation is a compile-time error. Single-output operations must not declare
 `assemble_fn`.
@@ -208,8 +212,8 @@ current ownership is:
 | Field | Execution or evidence owner |
 |---|---|
 | `output` | macro-selected single or multiple capability lifecycle; compile-time rejection of multiple-output in-place wrappers |
-| `result_type` / `assemble_fn` | macro-generated typed assembly after every emitted molecule has completed branch finalization |
-| `access` | `OpParts` capability construction; strict runtime access checks |
+| `result_type` / `assemble_fn` | registered single-output pending-field finalization, or multiple-output assembly after runtime candidate validation |
+| `access` | marker-specific generated capabilities and module privacy; additional strict runtime access checks |
 | `may_mutate` | strict runtime consistency and mutation-trace checks |
 | `derived_effects` | strict cache APIs, preservation proofs, and `finish()` trace validation |
 | `requires_mapping` | strict `finish()` validation of the mapping artifact |
@@ -291,179 +295,84 @@ Weak operations may begin and commit `topology` only when atom and bond tables r
 
 ## 8. Operation Lifecycle
 
-The lifecycle is:
+The canonical transaction shapes are defined in
+[Crate Architecture, Parent Operation Flow](./crate_architecture.md#5-parent-operation-flow).
+The generated wrapper owns transaction creation, finalization, and abort;
+the operation body uses only generated marker-specific capabilities to
+extract or read authorized values, call the unique domain owner, stage results,
+and record mappings and effects. It cannot construct or commit a live molecule.
 
-```text
-public method entry
-registry spec selection
-OpParts::new(source, spec)
-begin each write-owned block through OpParts
-read and mutate the local owned working blocks
-return current blocks through the scoped mutation capability on success or error
-record topology edit kind when topology identity/state changed
-return `Result<(), OperationError>`
-parts.finish()
-strict validation
-return Molecule
-```
-
-Fallible operation bodies must use registry-derived scoped mutation
-capabilities rather than free `read_parts()` and independent mutation
-accessors. The scoped capability owns the begin/commit lifecycle and returns
-the current block to the working molecule on both `Ok` and `Err`.
-
-For a write-owned block, reads and writes come from the same local owned
-working value:
-
-```rust
-let changed = parts.with_topology_coordinates_properties_mut(
-    |parts, topology, coordinates, properties| {
-        let assignment = parts.with_block_read_parts(
-            topology.clone(),
-            coordinates.clone(),
-            properties.clone(),
-            |read| read.add_hs_assignment(&params).map_err(map_add_hs_error),
-        )?;
-        apply_add_hs_assignment(
-            parts,
-            topology,
-            coordinates,
-            properties,
-            &assignment,
-        )
-    },
-)?;
-
-parts.record_topology_edit(TopologyEditKind::Appending)?;
-parts.record_topology_mapping(mapping);
-parts.prove_preserved(
-    DerivedState::RINGS | DerivedState::RING_FAMILIES,
-    PreservationProof::LeafAtomAppend,
-)?;
-parts.clear_cache(WITH_HYDROGENS_SPEC.needs_update());
-```
-
-The operation must not keep a separate read view of a write-owned block while
-also owning the mutable working value for that block.
-
-For a read-owned block, `OpParts` may expose a read-begin method. For a
-write-owned block, operation bodies use scoped `with_*_mut()` capabilities.
-Low-level `begin_*_mut()` and `commit_*()` methods implement and test that
-lifecycle, but a block obtained from `begin_*_mut()` must not remain checked
-out across a fallible return. For an inaccessible block, no begin or scoped
-mutation method is legal.
-
-Strong operations must record the declared topology edit kind after the edit.
-Weak operations may record only local stable-index topology edits.
+Read and write access to a write-owned block use the same local working value,
+not an independent read view. Every required block must be returned through
+the authorized lifecycle before a fallible return. Scoped mutation restores
+runtime-owned blocks on both success and error; raw checkout/install helpers
+are not an escape hatch for operation bodies.
 
 ### Multiple-output lifecycle
 
-A registry entry with `output: multiple` uses this lifecycle:
+The domain owner produces an ordered collection of detached candidates.
+`MultiOutputOpParts<'_, Access>` validates each candidate and applies the
+declared effects before constructing public outputs. There is no parallel
+branch-ID graph, parent-candidate derivation framework, or domain-side live
+molecule constructor. Ordering, duplication, empty-result behavior, and domain
+metadata follow the selected source behavior and its tests. Multiple-output
+operations do not have an in-place form.
 
-```text
-public method entry
-registry spec selection
-MultiMoleculeOpParts::new(source, spec)
-derive a branch from the immutable source or a validated parent branch
-run one complete OpParts mutation and finish lifecycle for that branch
-retain the resulting opaque MoleculeBranchId
-emit selected validated branch handles in result order
-MultiMoleculeOpParts::finish()
-return Vec<Molecule>
-```
+### In-place execution and failure semantics
 
-`MultiMoleculeOpParts` stores candidate molecules privately. Operation bodies
-cannot insert raw molecules, recover raw molecule references, or emit an
-unknown handle. Candidate reads use registry-derived `MoleculeReadParts`.
-Intermediate branches need not be emitted, while an unchanged source result is
-represented by a no-write branch that still completes `OpParts::finish()`.
+Eligible value and in-place entry points share one registered implementation.
+The in-place form may reuse uniquely owned storage; shared blocks require COW
+to preserve other values. Algorithm-internal copies remain the algorithm's
+responsibility, not a promise eliminated by the operation wrapper.
 
-Each child branch validates its contract against its immediate validated
-parent, so a later branch cannot inherit an unclosed write lifecycle, missing
-topology edit, missing mapping, missing derived-state handling, or invariant
-failure from an earlier candidate. The immutable public input is never an
-in-place target. Ordering, duplication, empty-result policy, algorithm status,
-and operation-specific result metadata remain responsibilities of the domain
-operation and its tests. Typed result assembly cannot observe or recover
-unemitted intermediate branches.
+The general in-place guarantee is basic failure safety, not rollback:
+
+- A returned error may leave completed partial changes in the receiver.
+- Internal block storage must be complete and structurally usable; checked-out,
+  placeholder, or default replacement blocks must not escape.
+- Storage completeness does not imply successful sanitization, kekulization,
+  or stereochemistry assignment. The error remains visible.
+- Affected derived state must be invalidated or updated under the contract.
+- Do not keep a full old `Molecule` or clone writable blocks solely for rollback.
+
+Fallible operation bodies use generated scoped mutation capabilities. A raw
+begin/check-out value cannot cross a fallible return without its corresponding
+return of ownership. Runtime cleanup and unwind behavior remain framework
+responsibilities; domain algorithms do not gain abort authority.
+
+Callers needing source-preserving failure semantics use the value form.
+An operation may guarantee stronger atomicity when its fallible work precedes
+mutation, but that does not redefine the general in-place contract.
+
+Contract validation in in-place mode uses only the lightweight old-state fields
+it needs, not a full old molecule that forces shared ownership. Contract-only
+snapshots are compiled only with `op-contracts`. Default release omits these
+snapshots and diagnostic preservation/access/edit/lifecycle assertions, not
+required correctness or compile-time capability boundaries.
+
+Eligible declarations use `inplace: true` and, when needed, an explicit
+`inplace_method`. Naming is governed by the public API standard; neither form
+exposes mutable storage.
 
 ---
 
 ## 9. OpParts
 
-`OpParts` is the only mutable capability object for molecule operation bodies.
+The runtime boundary is `ops::runtime::{context,multiple,registry}` inside
+`cosmolkit`. Operation bodies live outside that semantic module subtree and
+receive marker-specialized capabilities generated from their declaration.
+Physical file placement alone is not a Rust privacy boundary.
 
-`OpParts` is defined in the private molecule-operation runtime module. That
-module is the only module allowed to own or touch the internal working
-`Molecule`. `#[mol_op_body]` implementation functions live in sibling modules
-and receive only `&mut OpParts`; they must not share a module with the runtime
-state.
+The runtime owns COW, access enforcement, mapping artifacts, derived-state
+tracking, validation, and finalization. It contains no chemistry or
+operation-specific algorithm. Domain crates receive explicit detached values,
+slices, or assignments, never `Molecule`, `OpParts`, runtime views, or commit
+authority.
 
-It owns:
-
-```text
-cheap working clone creation
-copy-on-write block detachment
-registry-derived block access construction
-mutation permission checks
-registry-driven remap and topology mapping
-cache invalidation
-derived-effect tracing
-topology mapping storage
-operation finalization
-```
-
-It must not contain chemistry rules, sanitization policy, stereo perception, ring perception, operation-specific branching, or source-library guesses.
-
-Operation bodies may mutate molecule state only through `OpParts` methods or references obtained from them.
-
-`OpParts` must not expose a whole-molecule read view that overlaps with an
-actively begun write-owned block. Read access to a write-owned block is allowed
-only through the local owned working value.
-
-Operation-body helpers must not accept raw `Molecule` or `&Molecule` as a
-convenience path. Use `MoleculeReadParts`, slices, coordinate blocks, or typed
-assignment/update plans instead. If an algorithm historically consumed a whole
-molecule, operations must use a two-stage shape: read-only calculation from
-narrowed inputs, followed by block-level writeback through `OpParts`.
-
-Canonical operation-body shape:
-
-```rust
-#[mol_op_body(with_example_state, parts)]
-fn with_example_state_impl(args: ExampleArgs) -> Result<(), OperationError> {
-    parts.with_topology_mut(|parts, topology| {
-        let plan = parts.with_topology_read_parts(topology.clone(), |read| {
-            crate::example_domain::compute_plan(read, &args).map_err(|source| {
-                OperationError::Example {
-                    operation: &WITH_EXAMPLE_STATE_SPEC,
-                    source,
-                }
-            })
-        })?;
-        crate::example_domain::apply_plan(topology, &plan);
-        Ok(())
-    })?;
-    parts.record_topology_edit(TopologyEditKind::Local)?;
-    parts.clear_cache(DerivedState::DRAWING);
-    Ok(())
-}
-```
-
-Forbidden operation-body shape:
-
-```rust
-fn with_example_state_impl(...) -> Result<(), OperationError> {
-    let molecule = parts.working.clone();
-    helper_that_accepts_whole_molecule(&molecule);
-    Ok(())
-}
-```
-
-The operation source tree carries guard tests for this boundary. If a new
-operation appears to need direct `parts.working`, a raw molecule escape, or an
-operation body inside the runtime module, treat that as a design exception and
-stop for human-author approval instead of weakening the guards.
+Bodies cannot reach runtime fields, unrestricted read/write primitives, or
+constructor/finish/abort methods. Helpers cannot recover a raw molecule or
+broader capability than the declaration grants. Real-module compile-pass and
+compile-fail tests must enforce this boundary in default and strict builds.
 
 ---
 
@@ -482,50 +391,20 @@ Release optimization must not bypass `OpParts`, skip required remap, or weaken i
 
 ---
 
-## 11. Begin/Commit APIs
+## 11. Authorized Block Lifecycle
 
-The framework must provide operation-scoped begin/commit methods derived from
-the registry declaration:
+The operation declaration generates the accessible read/write surface.
+A block declared `none` has no capability; a read-owned block cannot be
+mutated; a write-owned block is inspected and changed through the same
+authorized working value. Concrete generated extraction/staging APIs follow
+the architecture's capability projection, not an independent handwritten list.
 
-```rust
-let mut topology = parts.begin_topology_mut()?;
-parts.commit_topology(topology)?;
-```
-
-The begin/commit API is the only route to mutable operation state. It exposes
-methods according to block access mode:
-
-```text
-none  -> no method
-read  -> begin_*_read()
-write -> begin_*_mut(), commit_*()
-```
-
-For write-owned blocks, the operation receives an owned working block. Reads
-and writes both happen through that same local value.
-
-The begin/commit API must:
-
-- remain internal to the operation framework
-- respect registry access and mutation permissions
-- avoid chemistry logic
-- preserve cheap `OpParts::new()`
-- materialize only write-owned blocks
-- keep mapping, remap, and invalidation under framework control
-
-Strong topology operations must record the edit kind declared by the registry:
-
-```text
-record_topology_edit(TopologyEditKind::Appending)
-record_topology_edit(TopologyEditKind::Compacting)
-record_topology_edit(TopologyEditKind::Renumbering)
-record_topology_edit(TopologyEditKind::Merge)
-```
-
-The operation body owns chemistry and row-level mutation of its write-owned
-blocks, including applying a topology mapping to other write-owned local blocks.
-The framework owns access validation, topology mapping artifact storage, cache
-invalidation tracing, derived-effect tracing, and operation finalization.
+Block lifecycle machinery remains internal, materializes only write-owned
+blocks, and keeps access, remapping, and finalization under runtime control.
+A strong operation records its declared appending, compacting, renumbering,
+or merge edit and required mapping; a weak topology edit records only local
+stable-identity changes. The domain owner computes row changes and detached
+mappings, while the thin body stages them and records the required artifacts.
 
 ---
 
@@ -552,96 +431,16 @@ If more mutation authority is needed, update the registry and framework API firs
 
 ## 13. Derived State
 
-Every operation must explicitly classify affected derived state through
-`derived_effects`.
+[derived_effects_permission_model.md](./derived_effects_permission_model.md)
+defines the four pairwise-disjoint effect categories, permitted cache actions,
+proof requirements, materialized versus invalidation-only state, and the
+narrow `operation_defined` allow-list. Keep that contract in one place.
 
-`derived_effects` is the primary registry contract. `needs_update()` is a
-derived compatibility view and must not be declared directly in new
-molecule-operation registry entries.
-
-The contract dimensions are:
-
-```text
-recompute
-preserve
-invalidate
-operation_defined
-```
-
-### `invalidate`
-
-`invalidate` means old derived state becomes stale and must be cleared.
-
-Invalidated states contribute to the derived compatibility view
-`needs_update()`.
-
-### `recompute`
-
-`recompute` means the operation must produce a fresh framework-visible value
-for the state, or explicitly clear it when reproduced source behavior leaves
-no materialized replacement.
-
-Recomputed states contribute to the derived compatibility view:
-
-```text
-needs_update()
-```
-
-### `preserve`
-
-`preserve` means the old derived state remains valid after the operation.
-
-Preservation is not a label-only shortcut. If a topology operation declares
-preserved derived state, the operation body must call an approved
-framework-checked preservation proof, for example:
-
-```text
-PreservationProof::LeafAtomAppend
-```
-
-The proof must validate objective structural conditions, such as old atom and
-bond identity preservation plus appended degree-one leaf atoms. Silent
-preservation without proof is invalid in strict builds.
-
-### `operation_defined`
-
-`operation_defined` is an explicit escape hatch for a source-required state
-transition that cannot be classified truthfully as preserve, recompute, or
-invalidate. It delegates the transition mechanism, not the correctness
-obligation. The operation may use the normal cache set, validity-update, and
-clear APIs, while strict finalization still requires the declared state to be
-updated or cleared. Source alignment, focused regression coverage, and the
-declared parity profile remain responsible for proving the value semantics.
-
-This exception is currently allow-listed only for `valence` in the
-hydrogen-removal operation family. The registry macro, strict runtime, and a
-registry-wide test reject every other use. Expanding the allow-list requires an
-explicit design decision and coordinated guardrail changes; it is not a
-general-purpose alternative to selecting one of the standard categories.
-
-### Read authority is separate
-
-The effect categories do not grant cache-read authority. Reading derived cache
-state requires block-level authority from `access.read: [derived_cache]` (or a
-write-owned derived-cache block). `preserve` is a proof obligation, not read
-permission.
-
-The current capability model controls the derived-cache block as a whole. It
-does not enforce separate read permissions for rings, valence, aromaticity,
-stereo, or other individual cache entries.
-
-`needs_update()` remains the only molecule-operation compatibility view and is
-derived as `recompute | invalidate | operation_defined`. Molecule operations have no
-`must_handle()` view or `must_handle`/`require_handle` registry input.
-
-Unsupported behavior is not a derived effect. It must be returned as a
-structured operation error and must not be encoded as cache metadata.
-
-### Materialized vs invalidation-only state
-
-Some states are stored caches. Others are invalidation-only downstream products, such as drawing or fingerprint output.
-
-Invalidation-only states may be invalidated, but must not be marked recomputed unless the operation actually produces a new value.
+Every operation declares its affected state through `derived_effects`.
+Cache read authority comes from block access, not from an effect label.
+The runtime records and validates the operation's actual handling; metadata
+alone does not prove preservation or successful recomputation. Unsupported
+capabilities remain structured errors, never effect categories.
 
 ---
 
@@ -712,44 +511,33 @@ This means:
 
 ---
 
-## 18. Testing
-
-Every registered operation must have tests derived from:
-
-```text
-kind
-domain
-access
-may_mutate
-derived_effects
-semantic_preconditions
-requires_mapping
-support
-parity
-io_roundtrip
-invariant_profile
-parity_profile when parity is required
-```
-
-Minimum requirements:
-
-- strong operations need mapping, remap, invariant, source-unchanged, and cache-state tests
-- weak operations need stable-index, derived-state, invariant, and source-unchanged tests
-- parity-required operations need executable parity tests or executable known failures
-- unsupported operations need explicit-error and source-unchanged tests
-
-Invariant profiles must map to meaningful check sets. Different profiles must not silently collapse into one global default unless documented.
-
----
-
 ## 19. Strict And Release Builds
 
-Core operation work must pass:
+Core algorithm work must pass:
 
 ```bash
 cargo check -p cosmolkit-core --features op-contracts-strict
 cargo test -p cosmolkit-core --release --features op-contracts-strict
 ```
+
+Runtime, operation integration, and macro work also require affected-crate
+checks with the affected capability features enabled:
+
+```bash
+cargo check -p cosmolkit --features op-contracts-strict
+cargo test -p cosmolkit --release --features op-contracts-strict
+cargo test -p cosmolkit --release --test migration_run_privacy
+```
+
+Final cross-crate validation uses:
+
+```bash
+cargo test --workspace --release --features cosmolkit/op-contracts-strict,cosmolkit-core/op-contracts-strict
+```
+
+Core strict alone is not runtime validation. Preserve exact commands, exits,
+nonzero counts, and failures; only plan-prescribed stage exclusions are allowed.
+A stage pass is not a workspace pass.
 
 Small focused test filters may use the default debug profile during iteration.
 Large local runs, parity suites, and CI test runs should use release mode with

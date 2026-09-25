@@ -620,6 +620,98 @@ impl Default for Molecule {
 mod valence_cache_tests {
     use super::*;
 
+    #[cfg(feature = "hydrogens")]
+    #[test]
+    fn removal_final_valence_obeys_sanitize_and_preserves_source_cache() {
+        let topology = TopologyBlock::try_from_parts(
+            vec![
+                Atom::from_spec(
+                    AtomId::new(0),
+                    cosmolkit_model::AtomSpec::new(cosmolkit_model::Element::C),
+                ),
+                Atom::from_spec(
+                    AtomId::new(1),
+                    cosmolkit_model::AtomSpec::new(cosmolkit_model::Element::H),
+                ),
+            ],
+            vec![Bond::from_spec(
+                BondId::new(0),
+                cosmolkit_model::BondSpec::new(
+                    AtomId::new(0),
+                    AtomId::new(1),
+                    cosmolkit_model::BondOrder::Single,
+                ),
+            )],
+            vec![],
+            vec![],
+        )
+        .unwrap();
+        let source = Molecule::from_parts(
+            topology,
+            CoordinateBlock::default(),
+            MoleculeProperties::default(),
+        )
+        .unwrap()
+        .with_assigned_valence()
+        .unwrap();
+        let original_cache = source.derived_cache_arc_runtime();
+        assert_eq!(
+            original_cache
+                .valence_assignment()
+                .unwrap()
+                .explicit_valence,
+            [1, 1]
+        );
+        for sanitize in [false, true] {
+            let params = cosmolkit_core::RemoveHsParams {
+                sanitize,
+                ..Default::default()
+            };
+            let output = source.without_hydrogens_with_params(&params).unwrap();
+            let cache = output.derived_cache_runtime();
+            assert_eq!(
+                cache.valid_states().contains(DerivedState::VALENCE),
+                sanitize
+            );
+            if sanitize {
+                let expected =
+                    cosmolkit_core::assign_valence(output.topology(), &Default::default()).unwrap();
+                assert_eq!(cache.valence_assignment(), Some(&expected));
+            } else {
+                assert!(cache.valence_assignment().is_none());
+                // Repeating a no-op deletion must not revive an invalid cache.
+                let repeated = output.without_hydrogens_with_params(&params).unwrap();
+                assert!(
+                    repeated
+                        .derived_cache_runtime()
+                        .valence_assignment()
+                        .is_none()
+                );
+                let recomputed = output.with_assigned_valence().unwrap();
+                assert!(
+                    recomputed
+                        .derived_cache_runtime()
+                        .valid_states()
+                        .contains(DerivedState::VALENCE)
+                );
+                assert!(
+                    output
+                        .derived_cache_runtime()
+                        .valence_assignment()
+                        .is_none()
+                );
+            }
+            cache.validate_for_atom_count(output.num_atoms()).unwrap();
+            let mut in_place = source.clone();
+            in_place.remove_hydrogens_with_params_(&params).unwrap();
+            assert_eq!(in_place.derived_cache_runtime(), cache);
+            assert!(Arc::ptr_eq(
+                &source.derived_cache_arc_runtime(),
+                &original_cache
+            ));
+        }
+    }
+
     #[test]
     fn valence_payload_and_validity_bit_are_one_validated_cache_state() {
         let mut cache = DerivedCacheBlock::default();

@@ -35,6 +35,121 @@ fn public_parameters_preserve_every_pinned_default() {
 }
 
 #[test]
+fn public_zero_isotope_projects_to_absence_without_losing_nonzero_isotopes() {
+    for (input, isotope) in [("[C]", None), ("[0C]", None), ("[13C]", Some(13))] {
+        for sanitize in [false, true] {
+            let molecule = Molecule::from_smiles_with_params(
+                input,
+                &SmilesParseParams {
+                    sanitize,
+                    remove_hydrogens: false,
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            assert_eq!(molecule.topology().atoms[0].isotope(), isotope, "{input}");
+        }
+    }
+}
+
+#[test]
+fn public_cx_double_bond_stereo_finishes_after_sanitize_or_remove_hydrogens() {
+    use cosmolkit::{AtomId, BondDirection as D, BondStereo as S};
+    // Fixed RDKit 2026.03.1 MolFromSmiles: c/t/ctu through all four
+    // sanitize/removeHs combinations, including both conformer dimensions.
+    let cases = [
+        (
+            "CC=CC |c:1|",
+            S::Cis,
+            S::Z,
+            [D::EndUpRight, D::None, D::EndDownRight],
+        ),
+        (
+            "CC=CC |t:1|",
+            S::Trans,
+            S::E,
+            [D::EndUpRight, D::None, D::EndUpRight],
+        ),
+        ("CC=CC |ctu:1|", S::Any, S::Any, [D::None; 3]),
+        (
+            "CC=CC |(0,1,;0,0,;1,0,;1,1,),c:1|",
+            S::Cis,
+            S::Z,
+            [D::EndUpRight, D::None, D::EndDownRight],
+        ),
+        (
+            "CC=CC |(0,1,1;0,0,1;1,0,1;1,1,1),c:1|",
+            S::Cis,
+            S::Z,
+            [D::EndUpRight, D::None, D::EndDownRight],
+        ),
+    ];
+    for (input, raw_stereo, final_stereo, final_directions) in cases {
+        for sanitize in [false, true] {
+            for remove_hydrogens in [false, true] {
+                let params = SmilesParseParams {
+                    sanitize,
+                    remove_hydrogens,
+                    ..Default::default()
+                };
+                let molecule = Molecule::from_smiles_with_params(input, &params).unwrap();
+                let finalized = sanitize || remove_hydrogens;
+                assert_eq!(
+                    molecule.properties().prop("_needsDetectBondStereo"),
+                    if finalized { None } else { Some("1") },
+                    "{input} {params:?}"
+                );
+                let bonds = &molecule.topology().bonds;
+                assert_eq!(
+                    bonds[1].stereo(),
+                    if finalized { final_stereo } else { raw_stereo },
+                    "{input} {params:?}"
+                );
+                assert_eq!(
+                    bonds[1].stereo_atoms(),
+                    Some([AtomId::new(0), AtomId::new(3)])
+                );
+                assert_eq!(
+                    bonds
+                        .iter()
+                        .map(|bond| bond.direction())
+                        .collect::<Vec<_>>(),
+                    if finalized {
+                        final_directions
+                    } else {
+                        [D::None; 3]
+                    },
+                    "{input} {params:?}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn public_cx_stereo_completion_uses_post_removal_atom_references() {
+    use cosmolkit::{AtomId, BondDirection as D, BondStereo};
+    // Source reference atom 0 is removed. Direction reconstruction must use
+    // the remapped controls, never the pre-removal CX row indices.
+    let molecule = Molecule::from_smiles("[H]C(C)=CC |c:2|").unwrap();
+    assert_eq!(molecule.num_atoms(), 4);
+    let bonds = &molecule.topology().bonds;
+    assert_eq!(bonds[1].stereo(), BondStereo::E);
+    assert_eq!(
+        bonds[1].stereo_atoms(),
+        Some([AtomId::new(1), AtomId::new(3)])
+    );
+    assert_eq!(
+        bonds
+            .iter()
+            .map(|bond| bond.direction())
+            .collect::<Vec<_>>(),
+        [D::EndDownRight, D::None, D::EndUpRight]
+    );
+    assert_eq!(molecule.properties().prop("_needsDetectBondStereo"), None);
+}
+
+#[test]
 fn parameterized_constructor_applies_replacements_and_post_parse_policy() {
     let retained = Molecule::from_smiles_with_params(
         "{W}",
@@ -95,17 +210,19 @@ fn binding_contract_matches_public_smiles_surface() {
                 row.semantic_id,
                 "types.SmilesParseParams"
                     | "types.SmilesError"
+                    | "types.SmilesStereoError"
                     | "Molecule.from_smiles"
                     | "Molecule.from_smiles_with_params"
             )
         })
         .collect::<Vec<_>>();
-    assert_eq!(rows.len(), 4);
+    assert_eq!(rows.len(), 5);
     assert_eq!(
         rows.iter().map(|row| row.semantic_id).collect::<Vec<_>>(),
         [
             "types.SmilesParseParams",
             "types.SmilesError",
+            "types.SmilesStereoError",
             "Molecule.from_smiles",
             "Molecule.from_smiles_with_params",
         ]
@@ -117,19 +234,19 @@ fn binding_contract_matches_public_smiles_surface() {
         assert_eq!(row.support, BindingSupport::SupportedWithRdkitParity);
         assert_eq!(row.parity, BindingParity::RequiredNow);
     }
-    for row in &rows[..2] {
+    for row in &rows[..3] {
         assert_eq!(row.item, BindingItem::Type);
         assert_eq!(row.owner, BindingOwner::Type);
     }
-    for row in &rows[2..] {
+    for row in &rows[3..] {
         assert_eq!(row.item, BindingItem::Callable);
         assert_eq!(row.owner, BindingOwner::Molecule);
         let callable = row.callable.expect("callable metadata");
         assert_eq!(callable.kind, BindingKind::Static);
         assert_eq!(callable.operation_semantic_id, None);
     }
-    assert_eq!(rows[2].python_name, "from_smiles");
-    assert_eq!(rows[2].javascript_name, "fromSmiles");
-    assert_eq!(rows[3].python_name, "from_smiles_with_params");
-    assert_eq!(rows[3].javascript_name, "fromSmilesWithParams");
+    assert_eq!(rows[3].python_name, "from_smiles");
+    assert_eq!(rows[3].javascript_name, "fromSmiles");
+    assert_eq!(rows[4].python_name, "from_smiles_with_params");
+    assert_eq!(rows[4].javascript_name, "fromSmilesWithParams");
 }

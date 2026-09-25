@@ -35,8 +35,10 @@ derived_effects: {
 ## Block-Level Read Access
 
 An operation may read the derived-cache block only when its registry access
-includes `derived_cache` as a readable or write-owned block. `OpParts` converts
-the registry declaration into `MoleculeReadParts` block capabilities.
+includes `derived_cache` as a readable or write-owned block. The declaration
+generates marker-specific block capabilities in the private runtime. Runtime
+views and cache authority never cross into domain algorithm crates; see
+[the architecture](./crate_architecture.md#operation-capability-projection).
 
 The current model has only block-level derived-cache read authority. It does
 not independently authorize reads of individual cache entries such as rings,

@@ -456,10 +456,12 @@ Goal: make validated COSMolKit functionality usable without requiring a local Py
 * 🚧 Broader JavaScript bindings
 * 🚧 Expansion of browser-native chemistry and structural-biology workflows
 
-## Respect for RDKit
+## Acknowledgments
 
-COSMolKit is developed with deep respect for RDKit and the broader open-source
-cheminformatics community. The goal is a Rust-native implementation that preserves interoperability and faithfully ports reference behavior where appropriate, while offering a deterministic Python API and AI-native extension surface.
+COSMolKit includes Rust ports of code and algorithms from:
+
+- [RDKit](https://github.com/rdkit/rdkit)
+- [Gemmi](https://github.com/project-gemmi/gemmi)
 
 ## License
 

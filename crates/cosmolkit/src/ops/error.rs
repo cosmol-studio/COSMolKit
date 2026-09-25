@@ -119,6 +119,8 @@ pub enum OperationError {
     CipLabeler(cosmolkit_stereo::CipLabelerError),
     #[cfg(feature = "transforms")]
     Transform(cosmolkit_core::TransformError),
+    #[cfg(feature = "depict")]
+    Coordinate2D(cosmolkit_depict::DepictError),
     #[cfg(feature = "kekulize")]
     Kekulize(cosmolkit_core::KekulizeError),
     #[cfg(feature = "aromaticity")]
@@ -279,6 +281,10 @@ impl fmt::Display for OperationError {
             Self::CipLabeler(error) => write!(formatter, "CIP label assignment failed: {error}"),
             #[cfg(feature = "transforms")]
             Self::Transform(error) => write!(formatter, "coordinate transform failed: {error}"),
+            #[cfg(feature = "depict")]
+            Self::Coordinate2D(error) => {
+                write!(formatter, "2D coordinate generation failed: {error}")
+            }
             #[cfg(feature = "kekulize")]
             Self::Kekulize(error) => write!(formatter, "kekulization failed: {error}"),
             #[cfg(feature = "aromaticity")]
@@ -320,6 +326,8 @@ impl std::error::Error for OperationError {
             Self::CipLabeler(error) => Some(error),
             #[cfg(feature = "transforms")]
             Self::Transform(error) => Some(error),
+            #[cfg(feature = "depict")]
+            Self::Coordinate2D(error) => Some(error),
             #[cfg(feature = "kekulize")]
             Self::Kekulize(error) => Some(error),
             #[cfg(feature = "aromaticity")]

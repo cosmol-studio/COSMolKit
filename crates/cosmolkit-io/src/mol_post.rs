@@ -5,8 +5,9 @@ use cosmolkit_core::{
     StructureTagParams, ValenceModel, assign_chiral_tags_from_structure,
     assign_chiral_types_from_bond_dirs, assign_legacy_stereochemistry_with_query_state,
     assign_valence_for_topology, calculate_explicit_valence_for_topology,
-    clear_single_bond_directions, detect_atropisomer_chirality, remove_hydrogens_with_query_state,
-    sanitize_topology_with_query_state, set_double_bond_neighbor_directions, symmetrized_sssr,
+    clear_single_bond_directions, detect_atropisomer_chirality, expand_attachment_points,
+    remove_hydrogens_with_query_state, sanitize_topology_with_query_state,
+    set_double_bond_neighbor_directions, symmetrized_sssr,
 };
 use cosmolkit_model::{
     AdjacencyList, AtomId, AtomQueryPredicate, BondQueryPredicate, Conformer3D, CoordinateBlock,
@@ -45,8 +46,10 @@ impl Default for MolPostParams {
 
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum MolPostError {
-    #[error("attachment-point expansion is not representable at the current detached boundary")]
-    AttachmentPointExpansion,
+    #[error("invalid attachment value on atom {atom}: {value:?}")]
+    AttachmentValue { atom: AtomId, value: String },
+    #[error("attachment-point expansion failed: {0}")]
+    AttachmentExpansion(String),
     #[error("Molfile postprocessing property is outside the detached model: {0}")]
     Representation(&'static str),
     #[error("Molfile postprocessing failed: {0}")]
@@ -782,19 +785,184 @@ fn process_smarts_groups(record: &mut MolBlockRecord) -> Result<(), MolPostError
     Ok(())
 }
 
+fn attachment_values(topology: &TopologyBlock) -> Result<Vec<Option<i32>>, MolPostError> {
+    topology
+        .atoms
+        .iter()
+        .map(|atom| {
+            atom.prop("molAttachPoint")
+                .map(|value| {
+                    parse_rdkit_int(value).map_err(|()| MolPostError::AttachmentValue {
+                        atom: atom.id(),
+                        value: value.to_owned(),
+                    })
+                })
+                .transpose()
+        })
+        .collect()
+}
+
+fn expand_record_attachment_points(record: MolBlockRecord) -> Result<MolBlockRecord, MolPostError> {
+    // BEGIN RDKIT CPP FUNCTION finishMolProcessing
+    // RDKit❗❌:   res->clearAllAtomBookmarks();
+    // RDKit❗❌:   res->clearAllBondBookmarks();
+    // RDKit❗❌:
+    // RDKit❗❌:   if (params.expandAttachmentPoints) {
+    // RDKit❗❌:     MolOps::expandAttachmentPoints(*res);
+    // RDKit❗❌:   }
+    // RDKit❗❌:
+    // RDKit❗❌:   // calculate explicit valence on each atom:
+    // RDKit❗❌:   for (auto atom : res->atoms()) {
+    // RDKit❗❌:     atom->calcExplicitValence(false);
+    // RDKit❗❌:   }
+    // END RDKIT CPP FUNCTION finishMolProcessing
+    // Behavior review: this dispatcher runs before the existing property,
+    // stereo and sanitize pipeline. The source logger is projected to stderr;
+    // CK-COORD-001 intentionally isolates mixed-conformer degree-one direction.
+    // Complexity review: conversion to detached query rows and validated block
+    // reconstruction add allocations compared with RDKit's mutable RWMol.
+    match record {
+        MolBlockRecord::Concrete {
+            topology,
+            coordinates,
+            properties,
+        } => {
+            let values = attachment_values(&topology)?;
+            if !values
+                .iter()
+                .flatten()
+                .any(|value| matches!(value, 1 | 2 | -1))
+            {
+                let result =
+                    expand_attachment_points(topology, coordinates, None, &values, true, true)
+                        .map_err(|error| MolPostError::AttachmentExpansion(error.to_string()))?;
+                for warning in result.warnings {
+                    eprintln!(
+                        "Invalid value for molAttachPoint: {} on atom {}. Not expanding this atttachment point.",
+                        warning.value,
+                        warning.atom.index()
+                    );
+                }
+                return Ok(MolBlockRecord::Concrete {
+                    topology: result.topology,
+                    coordinates: result.coordinates,
+                    properties,
+                });
+            }
+            let query = concrete_to_query(topology, coordinates, properties)?;
+            expand_record_attachment_points(MolBlockRecord::Query(query))
+        }
+        MolBlockRecord::Query(query_record) => {
+            let old_atoms = query_record.query.atoms().to_vec();
+            let old_bonds = query_record.query.bonds().to_vec();
+            let topology = TopologyBlock::try_from_parts(
+                old_atoms.iter().map(|atom| atom.atom().clone()).collect(),
+                old_bonds.iter().map(|bond| bond.bond().clone()).collect(),
+                query_record.substance_groups,
+                query_record.query.stereo_groups().to_vec(),
+            )
+            .map_err(|error| MolPostError::AttachmentExpansion(error.to_string()))?;
+            let values = attachment_values(&topology)?;
+            let state = QueryStateRef::try_for_topology(&old_atoms, &old_bonds, &topology)
+                .map_err(|error| MolPostError::AttachmentExpansion(error.to_string()))?;
+            let result = expand_attachment_points(
+                topology,
+                query_record
+                    .query
+                    .coordinate_block(query_record.source_coordinate_dim),
+                Some(state),
+                &values,
+                true,
+                true,
+            )
+            .map_err(|error| MolPostError::AttachmentExpansion(error.to_string()))?;
+            for warning in result.warnings {
+                eprintln!(
+                    "Invalid value for molAttachPoint: {} on atom {}. Not expanding this atttachment point.",
+                    warning.value,
+                    warning.atom.index()
+                );
+            }
+            let (atoms, bonds) = result.query_rows.ok_or(MolPostError::Representation(
+                "attachment query rows missing after expansion",
+            ))?;
+            let query = QueryGraph::from_parts(
+                atoms,
+                bonds,
+                query_record.query.props().clone(),
+                result.coordinates.conformers_2d,
+                result.coordinates.conformers_3d,
+                result.topology.stereo_groups,
+            )
+            .map_err(|error| MolPostError::AttachmentExpansion(error.to_string()))?;
+            Ok(MolBlockRecord::Query(QueryMolBlockRecord {
+                query,
+                substance_groups: result.topology.substance_groups,
+                properties: query_record.properties,
+                source_coordinate_dim: result.coordinates.source_coordinate_dim,
+            }))
+        }
+    }
+}
+
+fn calculate_record_explicit_valence(record: &MolBlockRecord) -> Result<(), MolPostError> {
+    // BEGIN RDKIT CPP FUNCTION finishMolProcessing explicit-valence prepass
+    // RDKit❗❌:   // calculate explicit valence on each atom:
+    // RDKit❗❌:   for (auto atom : res->atoms()) {
+    // RDKit❗❌:     atom->calcExplicitValence(false);
+    // RDKit❗❌:   }
+    // END RDKIT CPP FUNCTION
+    // Behavior review: the core valence owner checks each current carrier row
+    // in source order with strict=false. RDKit also caches the result on each
+    // atom; detached consumers instead recompute it from the same topology.
+    // Complexity review: Concrete borrows its topology, while Query must
+    // materialize a validated topology from its carrier rows. The latter adds
+    // a full O(V+E) clone/allocation not present in RWMol's in-place pass.
+    let query_topology = match record {
+        MolBlockRecord::Concrete { .. } => None,
+        MolBlockRecord::Query(query) => Some(
+            TopologyBlock::try_from_parts(
+                query
+                    .query
+                    .atoms()
+                    .iter()
+                    .map(|row| row.atom().clone())
+                    .collect(),
+                query
+                    .query
+                    .bonds()
+                    .iter()
+                    .map(|row| row.bond().clone())
+                    .collect(),
+                query.substance_groups.clone(),
+                query.query.stereo_groups().to_vec(),
+            )
+            .map_err(|error| MolPostError::Processing(error.to_string()))?,
+        ),
+    };
+    let topology = match record {
+        MolBlockRecord::Concrete { topology, .. } => topology,
+        MolBlockRecord::Query(_) => query_topology
+            .as_ref()
+            .expect("query topology was materialized"),
+    };
+    for atom in &topology.atoms {
+        calculate_explicit_valence_for_topology(topology, atom.id(), false, false)
+            .map_err(|error| MolPostError::Processing(error.to_string()))?;
+    }
+    Ok(())
+}
+
 /// Apply the ordered Molfile postprocessing closure to a detached record.
 pub fn finish_mol_block_record(
     mut record: MolBlockRecord,
     chirality_possible: bool,
     params: MolPostParams,
 ) -> Result<MolBlockRecord, MolPostError> {
-    // `expandAttachmentPoints` is a strong topology edit whose source also
-    // creates null-query atoms and terminal coordinates. Returning a typed
-    // boundary error is the only honest behavior until that complete detached
-    // transform is installed; no plausible partial graph is emitted.
     if params.expand_attachment_points {
-        return Err(MolPostError::AttachmentPointExpansion);
+        record = expand_record_attachment_points(record)?;
     }
+    calculate_record_explicit_valence(&record)?;
     promote_record_to_query(&mut record)?;
     match record {
         MolBlockRecord::Concrete {

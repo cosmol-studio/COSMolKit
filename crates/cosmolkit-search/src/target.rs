@@ -16,6 +16,13 @@ pub trait SearchTargetAccess {
     fn ring_info(&self) -> Option<&RingInfo>;
     fn valence(&self) -> Option<&ValenceAssignment>;
 
+    /// Atomic number visible to query evaluation. Ordinary targets use the
+    /// validated model value; a detached depiction target may carry RDKit's
+    /// temporary non-element sentinel without changing its topology.
+    fn query_atomic_number(&self, atom: &Atom) -> u8 {
+        atom.atomic_number()
+    }
+
     fn stereo_groups(&self) -> &[StereoGroup] {
         &self.topology_block().stereo_groups
     }
@@ -53,6 +60,7 @@ pub struct SearchTarget<'a> {
     stereo_groups: &'a [StereoGroup],
     ring_info: Option<&'a RingInfo>,
     valence: Option<&'a ValenceAssignment>,
+    atomic_number_overrides: Option<&'a [Option<u8>]>,
 }
 
 impl<'a> SearchTarget<'a> {
@@ -70,7 +78,16 @@ impl<'a> SearchTarget<'a> {
             stereo_groups,
             ring_info,
             valence,
+            atomic_number_overrides: None,
         }
+    }
+
+    /// Attach temporary query-visible atomic numbers aligned with target atom
+    /// indices. This does not modify canonical `Element` or the target block.
+    pub fn with_atomic_number_overrides(mut self, overrides: &'a [Option<u8>]) -> Self {
+        assert_eq!(overrides.len(), self.topology.atoms.len());
+        self.atomic_number_overrides = Some(overrides);
+        self
     }
 }
 
@@ -89,6 +106,23 @@ impl SearchTargetAccess for SearchTarget<'_> {
 
     fn valence(&self) -> Option<&ValenceAssignment> {
         self.valence
+    }
+
+    fn query_atomic_number(&self, atom: &Atom) -> u8 {
+        // RDKit❗✔️: constexpr int DUMMY_ATOMIC_NUM = 200;
+        // RDKit❗✔️: for (auto &at : rs_mol.atoms()) {
+        // RDKit❗✔️:   if (!rs_atoms.test(at->getIdx())) {
+        // RDKit❗✔️:     at->setAtomicNum(DUMMY_ATOMIC_NUM);
+        // RDKit❗✔️:   }
+        // RDKit❗✔️: }
+        // Behavior: only the query-visible number changes; unlike the source
+        // clone, the typed model atom remains a valid element. Other source
+        // effects of setAtomicNum must be audited by the owning caller.
+        // Complexity: one indexed optional read per query atom, with no clone
+        // or allocation in this hot path, versus an O(V+E) source mol clone.
+        self.atomic_number_overrides
+            .and_then(|overrides| overrides[atom.id().index()])
+            .unwrap_or_else(|| atom.atomic_number())
     }
 
     fn stereo_groups(&self) -> &[StereoGroup] {

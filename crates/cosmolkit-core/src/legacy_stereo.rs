@@ -582,22 +582,52 @@ fn clean_directional_state(topology: &mut TopologyBlock) {
 /// Apply the fixed RDKit legacy `assignStereochemistry(true, true, true)`
 /// closure to detached topology state.
 pub fn assign_legacy_stereochemistry(
-    mut topology: TopologyBlock,
+    topology: TopologyBlock,
     valence: &ValenceAssignment,
     rings: &RingInfo,
 ) -> Result<TopologyBlock, LegacyStereoError> {
     assign_legacy_stereochemistry_with_query_state(topology, valence, rings, None)
 }
 
+/// Run the fixed-profile legacy assignment used by RDKit depiction.
+///
+/// This is the `assignStereochemistry(mol, false)` path: existing stereo is
+/// assigned/ranked but the cleanup-only branches are not executed.
+#[doc(hidden)]
+pub fn assign_legacy_stereochemistry_for_depiction(
+    topology: TopologyBlock,
+    valence: &ValenceAssignment,
+    rings: &RingInfo,
+) -> Result<TopologyBlock, LegacyStereoError> {
+    // RDKit❗✔️:   RDKit::MolOps::assignStereochemistry(mol, false);
+    // Behavior review: the one explicit argument is `cleanIt=false`; default
+    // `force=false` cannot short-circuit here because detached topology has no
+    // molecule-level `_StereochemDone` cache property.
+    // Complexity review: this wrapper only selects the existing owner branch.
+    assign_legacy_stereochemistry_impl(topology, valence, rings, None, false, false)
+}
+
 #[doc(hidden)]
 pub fn assign_legacy_stereochemistry_with_query_state(
-    mut topology: TopologyBlock,
+    topology: TopologyBlock,
     valence: &ValenceAssignment,
     rings: &RingInfo,
     query_state: Option<QueryStateRef<'_>>,
 ) -> Result<TopologyBlock, LegacyStereoError> {
+    assign_legacy_stereochemistry_impl(topology, valence, rings, query_state, true, true)
+}
+
+fn assign_legacy_stereochemistry_impl(
+    mut topology: TopologyBlock,
+    valence: &ValenceAssignment,
+    rings: &RingInfo,
+    query_state: Option<QueryStateRef<'_>>,
+    clean_it: bool,
+    flag_possible_stereo_centers: bool,
+) -> Result<TopologyBlock, LegacyStereoError> {
     if let Some(state) = query_state {
-        QueryStateRef::try_for_topology(state.atoms(), state.bonds(), &topology)
+        state
+            .validate_for_topology(&topology)
             .map_err(CipRankError::InvalidQueryState)?;
     }
     // BEGIN RDKIT CPP FUNCTION assignStereochemistry
@@ -641,10 +671,12 @@ pub fn assign_legacy_stereochemistry_with_query_state(
     // refinements; no eager whole-graph clone is introduced here.
     topology.validate()?;
     for atom in &mut topology.atoms {
-        atom.clear_prop("_CIPCode");
-        atom.clear_prop("_ChiralityPossible");
-        atom.clear_prop("_ringStereochemCand");
-        atom.clear_prop("_ringStereoAtoms");
+        if clean_it {
+            atom.clear_prop("_CIPCode");
+            atom.clear_prop("_ChiralityPossible");
+            atom.clear_prop("_ringStereochemCand");
+            atom.clear_prop("_ringStereoAtoms");
+        }
     }
     // RDKit✔️✔️: bool hasStereoAtoms = false;  // flagPossibleStereoCenters;
     // RDKit✔️✔️: bool hasPotentialStereoAtoms = false;
@@ -700,27 +732,32 @@ pub fn assign_legacy_stereochemistry_with_query_state(
     // RDKit✔️✔️:     }
     // RDKit✔️✔️:   }
     for bond_index in 0..topology.bonds.len() {
-        topology.bonds[bond_index].clear_prop("_CIPCode");
+        if clean_it {
+            topology.bonds[bond_index].clear_prop("_CIPCode");
+        }
         let bond = topology.bonds[bond_index].clone();
         let source_should_detect =
             rings.num_bond_rings(bond.id()) == 0 || rings.min_bond_ring_size(bond.id()) >= 8;
-        if matches!(bond.order(), BondOrder::Double | BondOrder::Aromatic) && !source_should_detect
-        {
-            if bond.direction() == BondDirection::EitherDouble {
-                topology.bonds[bond_index].set_direction(BondDirection::None);
-            }
-            if bond.stereo() != BondStereo::None {
-                topology.bonds[bond_index].set_stereo_atoms(None);
-                topology.bonds[bond_index].set_stereo(BondStereo::None)?;
-            }
-        } else if bond.order() == BondOrder::Double {
-            if bond.direction() == BondDirection::EitherDouble {
-                topology.bonds[bond_index].set_stereo_atoms(None);
-                topology.bonds[bond_index].set_stereo(BondStereo::Any)?;
-                topology.bonds[bond_index].set_direction(BondDirection::None);
-            } else if bond.stereo() != BondStereo::Any {
-                topology.bonds[bond_index].set_stereo_atoms(None);
-                topology.bonds[bond_index].set_stereo(BondStereo::None)?;
+        if clean_it {
+            if matches!(bond.order(), BondOrder::Double | BondOrder::Aromatic)
+                && !source_should_detect
+            {
+                if bond.direction() == BondDirection::EitherDouble {
+                    topology.bonds[bond_index].set_direction(BondDirection::None);
+                }
+                if bond.stereo() != BondStereo::None {
+                    topology.bonds[bond_index].set_stereo_atoms(None);
+                    topology.bonds[bond_index].set_stereo(BondStereo::None)?;
+                }
+            } else if bond.order() == BondOrder::Double {
+                if bond.direction() == BondDirection::EitherDouble {
+                    topology.bonds[bond_index].set_stereo_atoms(None);
+                    topology.bonds[bond_index].set_stereo(BondStereo::Any)?;
+                    topology.bonds[bond_index].set_direction(BondDirection::None);
+                } else if bond.stereo() != BondStereo::Any {
+                    topology.bonds[bond_index].set_stereo_atoms(None);
+                    topology.bonds[bond_index].set_stereo(BondStereo::None)?;
+                }
             }
         }
         // RDKit✔️✔️: if (!hasStereoBonds && bond->getBondType() == Bond::DOUBLE) {
@@ -788,7 +825,7 @@ pub fn assign_legacy_stereochemistry_with_query_state(
     // RDKit✔️✔️: }
     let mut ranks = Vec::new();
     let mut keep_going = has_stereo_atoms || has_stereo_bonds;
-    if !keep_going {
+    if !keep_going && flag_possible_stereo_centers {
         keep_going = has_potential_stereo_atoms || has_potential_stereo_bonds;
     }
     while keep_going {
@@ -816,6 +853,17 @@ pub fn assign_legacy_stereochemistry_with_query_state(
         if keep_going {
             ranks = rerank_atoms(&mut topology, valence, &ranks, query_state)?;
         }
+    }
+
+    // RDKit✔️✔️:   if (cleanIt) {
+    // Behavior review: the depiction call passes `cleanIt=false`, so it ends
+    // after source assignment/ranking. Existing public sanitize/finalization
+    // callers retain the complete cleanup path below.
+    // Complexity review: this is the source constant-time branch around the
+    // existing cleanup passes and introduces no extra allocation or scan.
+    if !clean_it {
+        topology.validate()?;
+        return Ok(topology);
     }
 
     // RDKit✔️❌: boost::dynamic_bitset<> possibleSpecialCases(mol.getNumAtoms());

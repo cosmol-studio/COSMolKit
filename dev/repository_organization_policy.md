@@ -14,11 +14,9 @@ Tests MAY be defined inside `src/` when they verify private functions, local
 algorithms, source-port functions, or module-local invariants. Inline tests
 SHOULD use small inputs defined directly in test code.
 
-A focused source-level parity test MAY remain inline when moving it would
-require widening production visibility. This includes official C/C++ oracle
-tests for private ported functions. Shared file inputs and generated expected
-data used by such tests MUST still be resolved through the shared test-support
-API.
+A fixed source-backed regression MAY remain inline when moving it would
+require widening production visibility. Its expected values must be fixed;
+ordinary tests must not invoke reference implementations or prepare corpora.
 
 Tests that exercise only public cross-module behavior, complete shared
 corpora, or a public file-format workflow MUST NOT be implemented as inline
@@ -32,10 +30,11 @@ Tests that exercise a crate through its public interface MUST be placed under:
 crates/<crate>/tests/
 ```
 
-This includes public API behavior, cross-module workflows, operation
-contracts, complete shared corpora, and public comparison with external
-reference outputs. A test belongs to the crate whose public behavior it
-verifies.
+This includes fixed regressions for public API behavior, cross-module
+workflows and operation contracts. Fixed upstream-derived tables are fixtures,
+not corpus parity merely because they contain many rows. Corpus preparation,
+reference execution and corpus comparison belong to the top-level
+`parity-tests/` crate, not to owning crates.
 
 Facade crates MUST NOT repeat complete suites already covered by an underlying
 crate. They SHOULD test only facade-specific exports and behavior.
@@ -57,9 +56,11 @@ Committed reusable test inputs MUST be stored under the repository-level
 `testdata/` directory. This includes fixtures, corpora, known-failure
 declarations, schemas, source manifests, and generation configuration.
 
-Crates and bindings MUST reference these files through shared test support and
-MUST NOT maintain convenience copies in crate-local or Python-local fixture
-directories.
+Fixed regressions MAY use `include_str!`/`include_bytes!` or a path anchored
+at `CARGO_MANIFEST_DIR` to access repository-level fixtures. They MUST NOT
+depend on the process working directory or maintain convenience copies in
+crate-local or Python-local fixture directories. A shared support crate is
+not required for reading fixed files.
 
 `third_party/` and submodule working trees MUST NOT be used as test-data
 locations. Tests MUST remain runnable when optional submodules and external
@@ -200,8 +201,8 @@ protocol changes, not merely when generator inputs change.
 
 RDKit, Gemmi, official InChI, and similar implementations MAY generate or
 verify expected data. They MUST NOT become production runtime dependencies.
-Reference dependencies MAY be required by an explicit preparation command or
-oracle suite, but ordinary test binaries MUST NOT silently invoke generators.
+Reference dependencies MAY be required by the top-level parity pipeline,
+but ordinary regression test binaries MUST NOT invoke generators or oracles.
 
 ### 4.6 Known failures
 
@@ -212,68 +213,47 @@ removal.
 
 ## 5. Expected Data Preparation
 
-Normal test execution MUST NOT generate, replace, or repair expected data.
-Preparation is an explicit step that runs before tests locally or in CI.
+The top-level Rust parity `run` command owns preparation before comparison:
 
-Each reference implementation for which the repository defines generated
-expected data MUST expose one documented public preparation entrypoint. The
-currently defined generated family is:
+1. Select all registered tasks by default, or the explicitly requested tasks.
+2. Validate the complete selected input/variant set.
+3. Reuse only reference generations whose full identity and checksums match.
+4. Generate missing or invalid references with the pinned oracle, publishing
+   each validated generation atomically. Preserve invalid evidence.
+5. Preflight ALL selected references before the first COSMolKit operation.
+6. Execute Rust comparisons and report every selected result.
 
-```text
-tools/testdata/rdkit/generate_all.py
-```
+A failure in preparation or global preflight prevents all selected operation
+calls. A comparison mismatch must never regenerate references to fit CK.
+Standalone preparation/preflight commands are optional diagnostics, not
+prerequisites users must manually sequence. Ordinary `cargo test` regressions
+never generate or modify committed fixtures or reference results.
 
-If generated Gemmi or official InChI expected-data families are added, their
-public entrypoints MUST be `tools/testdata/gemmi/generate_all.py` and
-`tools/testdata/official_inchi/generate_all.py`, respectively. A live oracle
-alone does not require a generated-data entrypoint.
+Reference adapters and existing preparation scripts are implementation tools,
+not independent task registries. Keep task/variant selection and result schemas
+in Rust. Generated corpora, caches and reports stay in ignored output paths;
+committed fixture snapshots remain read-only. The current runner's actual
+coverage and limits are documented in [parity-tests/README.md](../parity-tests/README.md).
 
-Feature-specific helpers MAY exist but MUST be private implementation details,
-for example `_generate_inchi.py`. Documentation and agent instructions MUST
-point to the family entrypoint.
+Validate generated output schemas, input identity, reference version,
+generator identity, exact case counts and checksums before comparison.
+Load validated snapshots so subsequent file changes cannot alter a run's
+expected results. Missing data must never first be discovered halfway through
+chemistry execution. Do not duplicate these mechanisms in domain crates.
 
-Preparation MUST:
+## 6. Rust Parity Pipeline Ownership
 
-1. compute the complete expected cache identity;
-2. validate an existing manifest and every output checksum;
-3. reuse the family only after exact validation;
-4. otherwise generate into a temporary sibling directory;
-5. validate schema, record counts, and output checksums;
-6. atomically replace the stale family only after complete success.
+`parity-tests/` (`cosmolkit-parity-tests`, unpublished) is the sole home for
+new corpus parity orchestration. Its chemistry dependency is public
+`cosmolkit` with `full`, not individual domain crates. Its Rust registry
+declares operations, variants, typed inputs/results and reference identity.
+Do not create a parallel test-support crate, registry or owner-local corpus
+runner. Fixed regressions remain independent of the parity runner.
 
-Complete-family checksum validation belongs to preparation, not to ordinary
-test lookup. A preparation process MUST read and validate every output in the
-family once before publishing or reusing it. A test process MUST validate only
-the manifest entry and output file that the test actually consumes. It SHOULD
-combine checksum and record validation with its normal sequential read when
-the loader API permits that. It MUST NOT rescan unrelated outputs in the same
-family. In particular, separate test binaries MUST NOT each hash a complete
-multi-gigabyte expected-data family.
-
-Input checksums determine whether preparation may reuse a cached family.
-Output checksums detect incomplete or corrupt generated files. Ordinary tests
-rely on the successfully prepared family identity and validate their requested
-output; they do not repeat preparation's full input-and-output audit.
-
-A generator MUST NOT modify fixtures, corpora, known-failure declarations,
-production source, or unrelated expected-data families.
-
-Live official-source oracle runners are not expected-data generators. They
-belong under `tools/oracles/<reference>/` and MAY be called by focused tests
-when the required compiler and vendored oracle source are available.
-
-## 6. Shared Test Support
-
-Repository-root discovery, `testdata/` path resolution, profile selection,
-manifest validation, checksum validation, and shared loading MUST have one Rust
-implementation in a `publish = false` test-support crate.
-
-The support crate MUST be used only as a dev-dependency, MUST NOT depend on a
-production chemistry crate, and MUST NOT become a production runtime
-dependency. Inline tests MAY use it under `cfg(test)`.
-
-Python MAY use a separate thin loader when required by the language boundary,
-but it MUST resolve and validate the same data and manifests.
+Python/JS binding verification may later consume the complete Rust-validated
+case set or an explicitly selected subset, with extra coverage for FFI/WASM
+and language-boundary differences. This is a design requirement, not a claim
+that these projections or large-corpus execution are already implemented.
 
 ## 7. Cross-Layer Coverage
 
@@ -281,7 +261,7 @@ The same fixture, corpus, or expected output MAY be consumed by multiple
 layers, but the same behavior SHOULD NOT be exhaustively retested at every
 layer.
 
-- Rust core tests MAY run complete chemistry parity corpora.
+- The top-level Rust parity runner owns complete chemistry parity corpora.
 - Python tests SHOULD use representative cases for binding-specific behavior.
 - Facade crates SHOULD verify exports without repeating core suites.
 - Private source-port tests SHOULD verify private branch and field behavior at

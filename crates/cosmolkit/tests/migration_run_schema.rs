@@ -13,6 +13,96 @@ fn entry(semantic_id: &str) -> &'static cosmolkit::BindingContractEntry {
         .unwrap_or_else(|| panic!("missing binding contract entry {semantic_id}"))
 }
 
+#[cfg(feature = "io")]
+#[test]
+fn sdf_reader_contracts_distinguish_concrete_and_preserving_results() {
+    for (id, output) in [
+        ("Molecule.from_sdf", "crate::Molecule"),
+        ("Molecule.from_sdf_with_params", "crate::Molecule"),
+        ("SdfRecord.from_sdf", "crate::SdfRecord"),
+        ("SdfRecord.from_sdf_with_params", "crate::SdfRecord"),
+    ] {
+        let contract = entry(id);
+        assert_eq!(contract.feature, "io");
+        assert_eq!(contract.exposure, BindingExposure::Public);
+        assert_eq!(contract.support, BindingSupport::Supported);
+        assert_eq!(contract.parity, BindingParity::RequiredWhenSupported);
+        let callable = contract.callable.unwrap();
+        assert_eq!(callable.output_type.replace(' ', ""), output);
+        assert_eq!(
+            callable.error_type.unwrap().replace(' ', ""),
+            "crate::SdfError"
+        );
+        assert_eq!(callable.state_model, StateModel::ValueReturning);
+        assert_eq!(callable.kind, BindingKind::Static);
+    }
+    for (id, role) in [
+        ("types.SdfRecord", BindingTypeRole::Result),
+        ("types.SdfGraph", BindingTypeRole::Result),
+        ("types.SdfCoordinateMode", BindingTypeRole::Parameter),
+        ("types.SdfReadParams", BindingTypeRole::Parameter),
+        ("types.SdfError", BindingTypeRole::Error),
+    ] {
+        let contract = entry(id);
+        assert_eq!(contract.type_role, Some(role));
+        assert_eq!(contract.feature, "io");
+        assert_eq!(contract.exposure, BindingExposure::Public);
+        assert_eq!(contract.support, BindingSupport::Supported);
+        assert_eq!(contract.parity, BindingParity::RequiredWhenSupported);
+    }
+    for (id, output, error) in [
+        ("SdfRecord.graph", "&crate::SdfGraph", None),
+        (
+            "SdfRecord.molecule",
+            "&crate::Molecule",
+            Some("crate::SdfError"),
+        ),
+        (
+            "SdfRecord.query_graph",
+            "&crate::QueryGraph",
+            Some("crate::SdfError"),
+        ),
+        ("SdfRecord.data_fields", "&[(String,String)]", None),
+        ("SdfRecord.properties", "&crate::MoleculeProperties", None),
+        (
+            "SdfRecord.substance_groups",
+            "&[crate::SubstanceGroup]",
+            None,
+        ),
+        (
+            "SdfRecord.source_coordinate_dim",
+            "Option<crate::CoordinateDimension>",
+            None,
+        ),
+    ] {
+        let contract = entry(id);
+        assert_eq!(contract.owner, BindingOwner::Type);
+        assert_eq!(contract.exposure, BindingExposure::Public);
+        assert_eq!(contract.support, BindingSupport::Supported);
+        assert_eq!(contract.parity, BindingParity::RequiredWhenSupported);
+        let callable = contract.callable.unwrap();
+        assert_eq!(callable.kind, BindingKind::Instance);
+        assert_eq!(callable.state_model, StateModel::ReadOnly);
+        assert_eq!(callable.operation_semantic_id, None);
+        assert_eq!(callable.output_type.replace(' ', ""), output);
+        assert_eq!(
+            callable.error_type.map(|name| name.replace(' ', "")),
+            error.map(str::to_owned)
+        );
+    }
+    for id in [
+        "types.MolBlockReadParams",
+        "types.MolBlockError",
+        "Molecule.from_molblock",
+        "Molecule.from_molblock_with_params",
+    ] {
+        assert!(
+            BINDING_CONTRACT.iter().all(|entry| entry.semantic_id != id),
+            "unimplemented interface must not appear in the public registry: {id}",
+        );
+    }
+}
+
 #[test]
 fn canonical_registry_preserves_order_and_feature_local_subsets() {
     let mut expected = vec![
@@ -116,6 +206,16 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
             "Molecule.distance_matrix_with_params",
             "Molecule.distance_matrix_3d",
             "Molecule.distance_matrix_3d_with_params",
+        ]);
+    }
+    if cfg!(feature = "depict") {
+        expected.extend([
+            "types.Coordinate2DParams",
+            "types.Coordinate2DError",
+            "types.Coordinate2DTemplateError",
+            "types.Coordinate2DLayoutError",
+            "Molecule.with_2d_coordinates",
+            "Molecule.with_2d_coordinates_with_params",
         ]);
     }
     if cfg!(feature = "transforms") {
@@ -244,24 +344,172 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
             "Molecule.remove_hydrogens_with_params_",
         ]);
     }
+    if cfg!(feature = "bio") {
+        expected.extend([
+            "types.ResidueInfoKind",
+            "types.ResidueCode",
+            "types.ResidueInfo",
+            "types.PdbAtomSerial",
+            "types.PdbChainId",
+            "types.PdbSeqId",
+            "types.AtomName",
+            "types.ResidueName",
+            "types.AltLocLabel",
+            "types.AtomSourceIds",
+            "types.ResidueSourceIds",
+            "types.ChainSourceIds",
+            "types.EntitySourceIds",
+            "types.ResidueSequenceError",
+            "module.residue_info",
+            "module.residue_info_checked",
+            "module.find_residue_info_index",
+            "module.find_residue_info",
+            "module.residue_code",
+            "module.expand_one_letter",
+            "module.expand_one_letter_sequence",
+            "types.BioStructure",
+            "types.BioStructureParts",
+            "types.BioStructureError",
+            "types.BioCoordinateFormat",
+            "types.BioCalcFlag",
+            "types.EntityKind",
+            "types.PolymerKind",
+            "types.ResidueKind",
+            "types.ChainKind",
+            "types.BioRowSpan",
+            "types.BioAtomId",
+            "types.BioResidueId",
+            "types.BioChainId",
+            "types.BioEntityId",
+            "types.BioModelId",
+            "types.BioAssemblyId",
+            "types.BioAltLocGroupId",
+            "types.BioAtomRow",
+            "types.BioResidueRow",
+            "types.BioChainRow",
+            "types.BioEntityRow",
+            "types.BioModelRow",
+            "types.BioCoordinateBlock",
+            "types.BioTransform",
+            "types.BioCrystalCell",
+            "types.BioCrystalInfo",
+            "types.BioNcsOperator",
+            "types.BioAssemblyOperator",
+            "types.BioAssemblyGenerator",
+            "types.BioAssemblySpecialKind",
+            "types.BioAssembly",
+            "types.AltLocRequest",
+            "types.BioEntityDbRef",
+            "types.BioSiftsUnpResidue",
+            "types.Protein",
+            "types.ProteinProjectionError",
+            "types.ProteinChainRef",
+            "types.ProteinResidueRef",
+            "types.ProteinAtomRef",
+            "BioStructure.protein",
+            "Protein.num_models",
+            "Protein.num_chains",
+            "Protein.num_residues",
+            "Protein.num_atoms",
+            "Protein.chains",
+            "Protein.chain",
+            "Protein.residues",
+            "Protein.atoms",
+            "ProteinChainRef.id",
+            "ProteinChainRef.row",
+            "ProteinChainRef.kind",
+            "ProteinChainRef.source",
+            "ProteinChainRef.residues",
+            "ProteinChainRef.atoms",
+            "ProteinResidueRef.id",
+            "ProteinResidueRef.row",
+            "ProteinResidueRef.name",
+            "ProteinResidueRef.kind",
+            "ProteinResidueRef.info",
+            "ProteinResidueRef.code",
+            "ProteinResidueRef.one_letter_code",
+            "ProteinResidueRef.fasta_code",
+            "ProteinResidueRef.is_standard",
+            "ProteinResidueRef.chain",
+            "ProteinResidueRef.atoms",
+            "ProteinAtomRef.id",
+            "ProteinAtomRef.row",
+            "ProteinAtomRef.name",
+            "ProteinAtomRef.element",
+            "ProteinAtomRef.altloc",
+            "ProteinAtomRef.residue",
+            "ProteinAtomRef.position",
+        ]);
+    }
     if cfg!(feature = "io") {
         expected.extend([
+            "types.SdfRecord",
+            "types.SdfGraph",
+            "SdfRecord.graph",
+            "SdfRecord.molecule",
+            "SdfRecord.query_graph",
+            "SdfRecord.data_fields",
+            "SdfRecord.properties",
+            "SdfRecord.substance_groups",
+            "SdfRecord.source_coordinate_dim",
+            "SdfRecord.from_sdf",
+            "SdfRecord.from_sdf_with_params",
             "types.SdfCoordinateMode",
-            "types.MolBlockReadParams",
-            "types.MolBlockError",
-            "Molecule.from_molblock",
-            "Molecule.from_molblock_with_params",
+            "types.SdfReadParams",
+            "types.SdfError",
+            "Molecule.from_sdf",
+            "Molecule.from_sdf_with_params",
         ]);
     }
     if cfg!(feature = "smiles") {
         expected.extend([
             "types.SmilesParseParams",
             "types.SmilesError",
+            "types.SmilesStereoError",
             "Molecule.from_smiles",
             "Molecule.from_smiles_with_params",
         ]);
     }
 
+    if cfg!(feature = "fingerprints") {
+        // Exact newly registered public sparse-count surface, in registry order.
+        expected.splice(
+            0..0,
+            [
+                "types.SparseCountFingerprint",
+                "types.SparseCountFingerprint32",
+                "types.FingerprintError",
+                "SparseCountFingerprint.new",
+                "SparseCountFingerprint.length",
+                "SparseCountFingerprint.value",
+                "SparseCountFingerprint.set_value",
+                "SparseCountFingerprint.nonzero_elements",
+                "SparseCountFingerprint.total_value",
+                "SparseCountFingerprint.fuzzy_and",
+                "SparseCountFingerprint.fuzzy_or",
+                "SparseCountFingerprint.with_added",
+                "SparseCountFingerprint.with_subtracted",
+                "SparseCountFingerprint.with_added_scalar",
+                "SparseCountFingerprint.with_subtracted_scalar",
+                "SparseCountFingerprint.with_multiplied_scalar",
+                "SparseCountFingerprint.with_divided_scalar",
+                "SparseCountFingerprint32.new",
+                "SparseCountFingerprint32.length",
+                "SparseCountFingerprint32.value",
+                "SparseCountFingerprint32.set_value",
+                "SparseCountFingerprint32.nonzero_elements",
+                "SparseCountFingerprint32.total_value",
+                "SparseCountFingerprint32.fuzzy_and",
+                "SparseCountFingerprint32.fuzzy_or",
+                "SparseCountFingerprint32.with_added",
+                "SparseCountFingerprint32.with_subtracted",
+                "SparseCountFingerprint32.with_added_scalar",
+                "SparseCountFingerprint32.with_subtracted_scalar",
+                "SparseCountFingerprint32.with_multiplied_scalar",
+                "SparseCountFingerprint32.with_divided_scalar",
+            ],
+        );
+    }
     assert_eq!(
         BINDING_CONTRACT
             .iter()

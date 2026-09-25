@@ -22,3 +22,5 @@ __pycache__/
 /rustfmt.toml
 /.cargo/config.toml
 /dev/gap_reports/crate_migration/
+dev/gap_reports/parallel/
+dev/plans/parallel/

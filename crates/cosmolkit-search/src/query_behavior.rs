@@ -3278,7 +3278,7 @@ fn query_atom_h_count(
     // `u8` representation limit.
     let mut res = total_hydrogen_count(valence, at)?;
     for nbr in adj.neighbors_of(at.id().index()) {
-        if mol.atoms()[nbr.atom_index].atomic_number() == 1 {
+        if mol.query_atomic_number(&mol.atoms()[nbr.atom_index]) == 1 {
             res += 1;
         }
     }
@@ -3590,7 +3590,7 @@ fn get_atom_type_atomic_num(val: i32) -> i32 {
 }
 
 #[inline]
-fn query_atom_type(at: &Atom) -> i32 {
+fn query_atom_type(at: &Atom, mol: &impl SearchTargetAccess) -> i32 {
     // RDKit✔️✔️: static inline int queryAtomType(Atom const *at) {
     // RDKit✔️✔️:   return makeAtomType(at->getAtomicNum(), at->getIsAromatic());
     // RDKit✔️✔️: };
@@ -3598,7 +3598,10 @@ fn query_atom_type(at: &Atom) -> i32 {
     // atom-field reads followed by the same scalar atom-type encoding, with no
     // traversal, lookup, allocation, cloning, or temporary collection. Reuse
     // of the inline query and encoding helpers keeps one core implementation.
-    make_atom_type(i32::from(query_atom_num(at)), query_atom_aromatic(at))
+    make_atom_type(
+        i32::from(mol.query_atomic_number(at)),
+        query_atom_aromatic(at),
+    )
 }
 
 const MASS_INTEGER_CONVERSION_FACTOR: i32 = 1000;
@@ -3773,7 +3776,7 @@ fn query_atom_has_heteroatom_nbrs(
     // helper; caching the scalar avoids a repeated field read without changing
     // asymptotic complexity or source behavior.
     for nbr in adj.neighbors_of(at.id().index()) {
-        let atomic_number = query_atom_num(&mol.atoms()[nbr.atom_index]);
+        let atomic_number = mol.query_atomic_number(&mol.atoms()[nbr.atom_index]);
         if atomic_number != 6 && atomic_number != 1 {
             return 1;
         }
@@ -3808,7 +3811,7 @@ fn query_atom_num_heteroatom_nbrs(
     // scalar atomic number without changing the result or asymptotic cost.
     let mut res = 0;
     for nbr in adj.neighbors_of(at.id().index()) {
-        let atomic_number = query_atom_num(&mol.atoms()[nbr.atom_index]);
+        let atomic_number = mol.query_atomic_number(&mol.atoms()[nbr.atom_index]);
         if atomic_number != 6 && atomic_number != 1 {
             res += 1;
         }
@@ -3843,7 +3846,7 @@ fn query_atom_has_aliphatic_heteroatom_nbrs(
     // adjacency; caching the scalar atomic number does not alter behavior.
     for nbr in adj.neighbors_of(at.id().index()) {
         let neighbor = &mol.atoms()[nbr.atom_index];
-        let atomic_number = query_atom_num(neighbor);
+        let atomic_number = mol.query_atomic_number(neighbor);
         if !neighbor.is_aromatic() && atomic_number != 6 && atomic_number != 1 {
             return 1;
         }
@@ -3880,7 +3883,7 @@ fn query_atom_num_aliphatic_heteroatom_nbrs(
     let mut res = 0;
     for nbr in adj.neighbors_of(at.id().index()) {
         let neighbor = &mol.atoms()[nbr.atom_index];
-        let atomic_number = query_atom_num(neighbor);
+        let atomic_number = mol.query_atomic_number(neighbor);
         if !neighbor.is_aromatic() && atomic_number != 6 && atomic_number != 1 {
             res += 1;
         }
@@ -4304,7 +4307,7 @@ pub(crate) fn atom_predicate_matches_with_target_context(
 
         AtomQueryPredicate::AtomicNumber(n) => {
             equality_query_match(i32::from(*n), atom, 0, false, |atom| {
-                i32::from(query_atom_num(atom))
+                i32::from(mol.query_atomic_number(atom))
             })
         }
 
@@ -4313,13 +4316,15 @@ pub(crate) fn atom_predicate_matches_with_target_context(
         AtomQueryPredicate::AtomType {
             atomic_number,
             aromatic,
-        } => query_atom_type(atom) == make_atom_type(i32::from(*atomic_number), *aromatic),
+        } => query_atom_type(atom, mol) == make_atom_type(i32::from(*atomic_number), *aromatic),
 
         // RDKit✔️✔️: `[#N,#M]` — atomic number in list.
-        AtomQueryPredicate::AtomicNumberIn(vals) => vals.contains(&query_atom_num(atom)),
+        AtomQueryPredicate::AtomicNumberIn(vals) => vals.contains(&mol.query_atomic_number(atom)),
 
         // RDKit✔️✔️: `[!#N;!#M]` — atomic number not in list.
-        AtomQueryPredicate::AtomicNumberNotIn(vals) => !vals.contains(&query_atom_num(atom)),
+        AtomQueryPredicate::AtomicNumberNotIn(vals) => {
+            !vals.contains(&mol.query_atomic_number(atom))
+        }
 
         // RDKit✔️✔️: `[+N]` / `[-N]` — queryAtomFormalCharge matches charge.
         AtomQueryPredicate::FormalCharge(c) => query_atom_formal_charge(atom) == i32::from(*c),
@@ -6012,7 +6017,7 @@ fn query_atom_non_hydrogen_degree(
     let mut res = 0u32;
     for nbri in adj.neighbors_of(at.id().index()) {
         let nbr = &mol.atoms()[nbri.atom_index];
-        if nbr.atomic_number() != 1 || nbr.isotope().is_some_and(|isotope| isotope > 1) {
+        if mol.query_atomic_number(nbr) != 1 || nbr.isotope().is_some_and(|isotope| isotope > 1) {
             res += 1;
         }
     }
@@ -6044,7 +6049,7 @@ fn query_atom_heavy_atom_degree(
     let mut heavy_degree = 0u32;
     for nbri in adj.neighbors_of(at.id().index()) {
         let nbr = &mol.atoms()[nbri.atom_index];
-        if nbr.atomic_number() > 1 {
+        if mol.query_atomic_number(nbr) > 1 {
             heavy_degree += 1;
         }
     }

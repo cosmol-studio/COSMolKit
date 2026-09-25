@@ -9,3 +9,7 @@ copies from Gemmi or from real PDB entries: identifiers such as `1ABC` and
 The files were preserved byte-for-byte from the pre-migration COSMolKit test
 suite and use the repository's license context. `source_manifest.jsonl`
 records each byte length and SHA-256.
+
+The separate [`gemmi_residues/`](gemmi_residues/README.md) directory contains
+an upstream-derived fixed residue-table snapshot with its own provenance,
+checksums and license. It is not one of the three synthetic structures above.

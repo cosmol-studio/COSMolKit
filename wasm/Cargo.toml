@@ -7,7 +7,7 @@ repository = "https://github.com/cosmol-studio/COSMolKit"
 homepage = "https://tools.cosmol.org/"
 documentation = "https://docs.rs/cosmolkit-wasm"
 license.workspace = true
-version = "0.5.0-rc.3"
+version = "0.5.0-rc.4"
 edition.workspace = true
 publish = false
 
@@ -19,27 +19,29 @@ crate-type = ["cdylib", "rlib"]
 [features]
 default = ["full"]
 full = [
-    "batch",
-    "confseq",
+    "aromaticity",
     "depict",
     "descriptors",
-    "fingerprints",
-    "hashing",
-    "inchi",
+    "hydrogens",
     "io",
-    "serialization",
-    "stereoisomers",
+    "kekulize",
+    "radicals",
+    "rings",
+    "sanitize",
+    "smiles",
+    "valence",
 ]
-batch = ["cosmolkit/batch"]
-confseq = ["cosmolkit/confseq"]
+aromaticity = ["cosmolkit/aromaticity"]
 depict = ["cosmolkit/depict"]
 descriptors = ["cosmolkit/descriptors"]
-fingerprints = ["cosmolkit/fingerprints"]
-hashing = ["cosmolkit/hashing"]
-inchi = ["cosmolkit/inchi"]
+hydrogens = ["cosmolkit/hydrogens"]
 io = ["cosmolkit/io"]
-serialization = ["cosmolkit/serialization"]
-stereoisomers = ["cosmolkit/stereoisomers"]
+kekulize = ["cosmolkit/kekulize"]
+radicals = ["cosmolkit/radicals"]
+rings = ["cosmolkit/rings"]
+sanitize = ["cosmolkit/sanitize"]
+smiles = ["cosmolkit/smiles"]
+valence = ["cosmolkit/valence"]
 
 [dependencies]
 cosmolkit = { version = "0.5.0-rc.4", path = "../crates/cosmolkit", default-features = false }

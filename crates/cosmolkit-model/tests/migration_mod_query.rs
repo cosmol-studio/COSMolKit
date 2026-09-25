@@ -12,6 +12,72 @@ fn carbon(id: usize) -> QueryAtom {
     QueryAtom::new(AtomId::new(id), AtomSpec::new(Element::C))
 }
 
+#[test]
+fn query_origin_equality_compares_representation_not_matching_equivalence() {
+    let atom = Atom::from_spec(AtomId::new(0), AtomSpec::new(Element::C));
+    let predicate = QueryNode::predicate(AtomQueryPredicate::AtomicNumber(6));
+    let explicit = QueryAtom::from_parts(atom.clone(), predicate.clone());
+    let carrier = QueryAtom::from_carrier_parts(atom, predicate);
+    assert_eq!(explicit.atom(), carrier.atom());
+    assert_eq!(explicit.predicate(), carrier.predicate());
+    assert_ne!(explicit, carrier);
+    assert_eq!(explicit, explicit.clone());
+    let make_graph = |row| {
+        QueryGraph::from_parts(vec![row], vec![], BTreeMap::new(), vec![], vec![], vec![]).unwrap()
+    };
+    let explicit_graph = make_graph(explicit);
+    let carrier_graph = make_graph(carrier);
+    assert_ne!(explicit_graph, carrier_graph);
+    assert_eq!(explicit_graph, explicit_graph.clone());
+
+    let bond = Bond::from_spec(
+        BondId::new(0),
+        BondSpec::new(AtomId::new(0), AtomId::new(1), BondOrder::Single),
+    );
+    let predicate = QueryNode::predicate(BondQueryPredicate::Order(BondOrder::Single));
+    let explicit = QueryBond::from_parts(bond.clone(), predicate.clone());
+    let carrier = QueryBond::from_carrier_parts(bond, predicate);
+    assert_eq!(explicit.bond(), carrier.bond());
+    assert_eq!(explicit.predicate(), carrier.predicate());
+    assert_ne!(explicit, carrier);
+    assert_eq!(explicit, explicit.clone());
+}
+
+#[test]
+fn query_overlay_remap_uses_current_carriers_without_rewriting_explicit_predicates() {
+    let atoms = vec![carbon(0), carbon(1)];
+    let bonds = vec![single_bond(0, 0, 1)];
+    let mut current = TopologyBlock::try_from_parts(
+        atoms.iter().map(|a| a.atom().clone()).collect(),
+        bonds.iter().map(|b| b.bond().clone()).collect(),
+        vec![],
+        vec![],
+    )
+    .unwrap();
+    let state = QueryStateRef::try_for_topology(&atoms, &bonds, &current).unwrap();
+    current.atoms[0].set_formal_charge(1);
+    current.bonds[0].set_order(BondOrder::Double);
+    state.validate_for_topology(&current).unwrap();
+    assert_eq!(state.atom_predicate(AtomId::new(0)), atoms[0].predicate());
+    assert_eq!(state.bond_predicate(BondId::new(0)), bonds[0].predicate());
+    let (updated_atoms, updated_bonds) = remap_query_rows(
+        state,
+        &current,
+        &cosmolkit_model::TopologyMapping::identity(2, 1),
+    )
+    .unwrap();
+    assert_eq!(updated_atoms[0].atom(), &current.atoms[0]);
+    assert_ne!(updated_atoms[0].atom(), atoms[0].atom());
+    assert_eq!(updated_bonds[0].bond(), &current.bonds[0]);
+    assert_ne!(updated_bonds[0].bond(), bonds[0].bond());
+    assert_eq!(updated_atoms[0].predicate(), atoms[0].predicate());
+    assert_eq!(updated_bonds[0].predicate(), bonds[0].predicate());
+    let updated =
+        QueryStateRef::try_for_topology(&updated_atoms, &updated_bonds, &current).unwrap();
+    assert!(updated.atom_has_query(AtomId::new(0)));
+    assert!(updated.bond_has_query(BondId::new(0)));
+}
+
 fn single_bond(id: usize, begin: usize, end: usize) -> QueryBond {
     QueryBond::new(
         BondId::new(id),

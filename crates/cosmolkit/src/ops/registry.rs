@@ -85,6 +85,15 @@ pub(crate) const TRANSFORMS_FEATURE: FeatureSpec = FeatureSpec {
     docs: "RDKit-compatible detached coordinate transforms and atom-position replacement.",
 };
 
+#[cfg(feature = "depict")]
+pub(crate) const DEPICT_FEATURE: FeatureSpec = FeatureSpec {
+    name: "depict",
+    category: "coordinates",
+    status: SupportStatus::Experimental,
+    rdkit_parity_sensitive: true,
+    docs: "Source-backed 2D coordinate generation without changing existing 3D conformers; full parity remains open for an upstream-undefined partial-fragment sampling path.",
+};
+
 #[cfg(feature = "sanitize")]
 pub(crate) const SANITIZE_FEATURE: FeatureSpec = FeatureSpec {
     name: "sanitize",
@@ -153,7 +162,7 @@ molecule_ops! {
             invalidate: [valence, aromaticity, stereo, drawing, fingerprint],
             operation_defined: [],
         },
-        cip_state: clear,
+        cip_state: preserve,
         semantic_preconditions: [],
         requires_mapping: none,
         feature: crate::ops::runtime::registry::KEKULIZE_FEATURE,
@@ -531,6 +540,37 @@ molecule_ops! {
         inplace: true,
         inplace_method: set_atom_position_with_params_,
         default_inplace_method: set_atom_position_,
+    }
+
+    #[cfg(feature = "depict")]
+    op with_2d_coordinates(params: &crate::Coordinate2DParams) {
+        method: with_2d_coordinates_with_params,
+        impl_fn: crate::ops::depict::with_2d_coordinates_impl,
+        domain: coordinate,
+        kind: weak,
+        topology_edit: none,
+        access: {
+            read: [topology],
+            write: [coordinates, derived_cache],
+        },
+        may_mutate: [coordinates, derived_cache],
+        auto_remap: [],
+        derived_effects: {
+            recompute: [],
+            preserve: [rings, ring_families, valence, aromaticity, fingerprint],
+            invalidate: [stereo, drawing],
+            operation_defined: [],
+        },
+        cip_state: preserve,
+        semantic_preconditions: [],
+        requires_mapping: none,
+        feature: crate::ops::runtime::registry::DEPICT_FEATURE,
+        parity: required_when_supported,
+        parity_profile: "compute_2d_coordinates_rdkit",
+        io_roundtrip: true,
+        invariant_profile: "coordinate_2d_layout",
+        default_method: with_2d_coordinates,
+        default_args: [&crate::Coordinate2DParams::default()],
     }
 
     #[cfg(test)]

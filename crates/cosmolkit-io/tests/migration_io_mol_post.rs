@@ -98,6 +98,304 @@ fn unsanitized() -> MolPostParams {
     }
 }
 
+fn v3000_attachment(value: Option<&str>, subst: Option<i32>) -> String {
+    let attachment = value.map_or(String::new(), |value| format!(" ATTCHPT={value}"));
+    let subst = subst.map_or(String::new(), |value| format!(" SUBST={value}"));
+    format!(
+        "attachment\n  COSMolKit\n\n  0  0  0     0  0            999 V3000\n\
+M  V30 BEGIN CTAB\n\
+M  V30 COUNTS 2 1 0 0 0\n\
+M  V30 BEGIN ATOM\n\
+M  V30 1 C 0 0 0 0\n\
+M  V30 2 O 1 0 0 0{attachment}{subst}\n\
+M  V30 END ATOM\n\
+M  V30 BEGIN BOND\n\
+M  V30 1 1 1 2\n\
+M  V30 END BOND\n\
+M  V30 END CTAB\n\
+M  END\n"
+    )
+}
+
+fn v2000_attachment(value: u8) -> String {
+    let carbon = format!(
+        "{:>10.4}{:>10.4}{:>10.4} C   0  0  0  0  0  0  0  0  0  0  0  0",
+        0.0, 0.0, 0.0
+    );
+    let oxygen = format!(
+        "{:>10.4}{:>10.4}{:>10.4} O   0  0  0  0  0  0  0  0  0  0  0  0",
+        1.0, 0.0, 0.0
+    );
+    format!(
+        "attachment\n  COSMolKit\n\n  2  1  0  0  0  0            999 V2000\n{carbon}\n{oxygen}\n  1  2  1  0  0  0  0\nM  APO  1   2 {:>3}\nM  END\n",
+        value
+    )
+}
+
+#[test]
+fn mol_post_attachment_v3000_value_and_final_classification() {
+    for (value, labels) in [
+        (None, &[][..]),
+        (Some("0"), &[][..]),
+        (Some("1"), &["1"][..]),
+        (Some("2"), &["2"][..]),
+        (Some("-1"), &["1", "2"][..]),
+        (Some("3"), &[][..]),
+        (Some("+1"), &[][..]),
+    ] {
+        let input = v3000_attachment(value, None);
+        let parsed = read_mol_block_detached(&input).unwrap();
+        let original = parsed.clone();
+        let finished = finish_mol_block_record(
+            parsed,
+            false,
+            MolPostParams {
+                sanitize: false,
+                remove_hs: false,
+                expand_attachment_points: true,
+            },
+        )
+        .unwrap();
+        if labels.is_empty() {
+            let MolBlockRecord::Concrete { topology, .. } = finished else {
+                panic!("no append must not promote: {value:?}");
+            };
+            assert_eq!(topology.atoms.len(), 2);
+            assert_eq!(topology.bonds.len(), 1);
+        } else {
+            let MolBlockRecord::Query(record) = finished else {
+                panic!("source null query must promote: {value:?}");
+            };
+            assert_eq!(record.query.num_atoms(), 2 + labels.len());
+            assert_eq!(record.query.num_bonds(), 1 + labels.len());
+            for (offset, label) in labels.iter().enumerate() {
+                let atom = &record.query.atoms()[2 + offset];
+                assert_eq!(
+                    atom.predicate(),
+                    &QueryNode::predicate(AtomQueryPredicate::Any)
+                );
+                assert!(!atom.predicate_is_carrier_derived());
+                assert_eq!(atom.atom().prop("_fromAttchpt"), Some(*label));
+                assert_eq!(
+                    record.query.bonds()[1 + offset].bond().order(),
+                    BondOrder::Single
+                );
+                assert!(record.query.bonds()[1 + offset].predicate_is_carrier_derived());
+            }
+            assert_eq!(record.query.atoms()[1].atom().prop("molAttachPoint"), None);
+            let coordinate_rows = record.query.coordinates_2d().map(<[_]>::len).or_else(|| {
+                record
+                    .query
+                    .conformers_3d()
+                    .first()
+                    .map(|conformer| conformer.coordinates().len())
+            });
+            assert_eq!(coordinate_rows, Some(2 + labels.len()));
+        }
+        assert_eq!(original, read_mol_block_detached(&input).unwrap());
+    }
+}
+
+#[test]
+fn mol_post_attachment_v2000_and_existing_query_obey_source_order() {
+    for (value, count) in [(1, 3), (2, 3), (3, 4)] {
+        let parsed = read_mol_block_detached(&v2000_attachment(value)).unwrap();
+        let finished = finish_mol_block_record(
+            parsed,
+            false,
+            MolPostParams {
+                sanitize: false,
+                remove_hs: false,
+                expand_attachment_points: true,
+            },
+        )
+        .unwrap();
+        let MolBlockRecord::Query(record) = finished else {
+            panic!("V2000 APO must append source null-query atoms");
+        };
+        assert_eq!(record.query.num_atoms(), count);
+    }
+    let parsed = read_mol_block_detached(&v3000_attachment(Some("1"), Some(1))).unwrap();
+    let finished = finish_mol_block_record(
+        parsed,
+        false,
+        MolPostParams {
+            sanitize: false,
+            remove_hs: false,
+            expand_attachment_points: true,
+        },
+    )
+    .unwrap();
+    let MolBlockRecord::Query(record) = finished else {
+        panic!("SUBST is a query");
+    };
+    assert_eq!(record.query.num_atoms(), 3);
+    assert_eq!(
+        record.query.atoms()[2].predicate(),
+        &QueryNode::predicate(AtomQueryPredicate::Any)
+    );
+    assert_eq!(record.query.atoms()[1].atom().prop("molAttachPoint"), None);
+
+    // ProcessMolProps maps SUBST=-2 to the degree *after* attachment expansion.
+    let parsed = read_mol_block_detached(&v3000_attachment(Some("1"), Some(-2))).unwrap();
+    let finished = finish_mol_block_record(
+        parsed,
+        false,
+        MolPostParams {
+            sanitize: false,
+            remove_hs: false,
+            expand_attachment_points: true,
+        },
+    )
+    .unwrap();
+    let MolBlockRecord::Query(record) = finished else {
+        panic!("SUBST is a query");
+    };
+    assert_eq!(record.query.num_atoms(), 3);
+    assert_eq!(
+        record.query.atoms()[1].predicate(),
+        &QueryNode::and(vec![
+            QueryNode::predicate(AtomQueryPredicate::AtomicNumber(8)),
+            QueryNode::predicate(AtomQueryPredicate::ExplicitDegree(2)),
+        ]),
+    );
+}
+
+#[test]
+fn mol_post_attachment_options_and_invalid_local_value_are_atomic() {
+    for sanitize in [false, true] {
+        for remove_hs in [false, true] {
+            let parsed = read_mol_block_detached(&v3000_attachment(Some("1"), None)).unwrap();
+            let source = parsed.clone();
+            let expanded = finish_mol_block_record(
+                parsed,
+                false,
+                MolPostParams {
+                    sanitize,
+                    remove_hs,
+                    expand_attachment_points: true,
+                },
+            )
+            .unwrap();
+            let MolBlockRecord::Query(record) = expanded else {
+                panic!("attachment must promote");
+            };
+            assert_eq!(
+                record.query.num_atoms(),
+                3,
+                "sanitize={sanitize} remove_hs={remove_hs}"
+            );
+            assert_eq!(
+                source,
+                read_mol_block_detached(&v3000_attachment(Some("1"), None)).unwrap()
+            );
+            let disabled = finish_mol_block_record(
+                source,
+                false,
+                MolPostParams {
+                    sanitize,
+                    remove_hs,
+                    expand_attachment_points: false,
+                },
+            )
+            .unwrap();
+            assert!(matches!(disabled, MolBlockRecord::Concrete { .. }));
+        }
+    }
+    let mut invalid = concrete(topology(vec![atom(0, Element::C)], vec![], vec![]));
+    if let MolBlockRecord::Concrete { topology, .. } = &mut invalid {
+        topology.atoms[0]
+            .set_prop("molAttachPoint", "nonsense")
+            .unwrap();
+    }
+    let original = invalid.clone();
+    assert!(matches!(
+        finish_mol_block_record(invalid.clone(), false, MolPostParams { expand_attachment_points: true, ..MolPostParams::default() }),
+        Err(MolPostError::AttachmentValue { atom, value }) if atom == AtomId::new(0) && value == "nonsense"
+    ));
+    assert_eq!(invalid, original);
+}
+
+#[test]
+fn mol_post_explicit_valence_prepass_runs_for_concrete_and_query_before_properties() {
+    // MolFileParser.cpp::finishMolProcessing calls calcExplicitValence(false)
+    // for every atom before ProcessMolProps, regardless of sanitize/removeHs.
+    // Bond.cpp::getBondTypeAsDouble rejects OTHER with "Bad bond type".
+    for query in [false, true] {
+        for substitution in [None, Some("300")] {
+            let mut first = atom(0, Element::C);
+            if let Some(value) = substitution {
+                first.set_prop("molSubstCount", value).unwrap();
+            }
+            let input = concrete_or_explicit_query(
+                topology(
+                    vec![first, atom(1, Element::C)],
+                    vec![Bond::from_spec(
+                        BondId::new(0),
+                        BondSpec::new(AtomId::new(0), AtomId::new(1), BondOrder::Other),
+                    )],
+                    vec![],
+                ),
+                query,
+            );
+            for sanitize in [false, true] {
+                for remove_hs in [false, true] {
+                    let result = finish_mol_block_record(
+                        input.clone(),
+                        false,
+                        MolPostParams {
+                            sanitize,
+                            remove_hs,
+                            expand_attachment_points: false,
+                        },
+                    );
+                    assert!(
+                        matches!(result, Err(MolPostError::Processing(ref message)) if message == "Bad bond type"),
+                        "query={query} substitution={substitution:?} sanitize={sanitize} remove_hs={remove_hs}: {result:?}"
+                    );
+                    assert_eq!(
+                        input,
+                        concrete_or_explicit_query(
+                            topology(
+                                vec![
+                                    {
+                                        let mut atom = atom(0, Element::C);
+                                        if let Some(value) = substitution {
+                                            atom.set_prop("molSubstCount", value).unwrap();
+                                        }
+                                        atom
+                                    },
+                                    atom(1, Element::C),
+                                ],
+                                vec![Bond::from_spec(
+                                    BondId::new(0),
+                                    BondSpec::new(AtomId::new(0), AtomId::new(1), BondOrder::Other),
+                                )],
+                                vec![],
+                            ),
+                            query,
+                        ),
+                    );
+                }
+            }
+        }
+    }
+
+    // An ordinary, source-valid attachment input must still reach expansion.
+    let valid = read_mol_block_detached(&v3000_attachment(Some("1"), None)).unwrap();
+    let result = finish_mol_block_record(
+        valid,
+        false,
+        MolPostParams {
+            sanitize: false,
+            remove_hs: false,
+            expand_attachment_points: true,
+        },
+    )
+    .unwrap();
+    assert!(matches!(result, MolBlockRecord::Query(record) if record.query.num_atoms() == 3));
+}
+
 fn v3000_tetrahedral_wedge(z: &str, cfg: u8) -> String {
     format!(
         "test\n  COSMolKit\n\n  0  0  0     0  0            999 V3000\n\
@@ -1111,7 +1409,7 @@ fn mol_post_query_closure_atom_and_dat_queries_follow_source_order_then_complete
 }
 
 #[test]
-fn mol_post_params_match_source_defaults_and_expansion_fails_closed() {
+fn mol_post_params_match_source_defaults_and_noop_expansion() {
     assert_eq!(
         MolPostParams::default(),
         MolPostParams {
@@ -1122,7 +1420,7 @@ fn mol_post_params_match_source_defaults_and_expansion_fails_closed() {
     );
     let record = concrete(topology(vec![atom(0, Element::C)], vec![], vec![]));
     let source = record.clone();
-    assert_eq!(
+    assert!(matches!(
         finish_mol_block_record(
             record,
             false,
@@ -1131,8 +1429,8 @@ fn mol_post_params_match_source_defaults_and_expansion_fails_closed() {
                 ..MolPostParams::default()
             }
         ),
-        Err(MolPostError::AttachmentPointExpansion)
-    );
+        Ok(MolBlockRecord::Concrete { .. })
+    ));
     assert_eq!(
         source,
         concrete(topology(vec![atom(0, Element::C)], vec![], vec![]))
@@ -1638,7 +1936,7 @@ fn q05_query_identity_composition_explicit_query_provenance_survives_remapping_a
         }
     }
 
-    assert_eq!(
+    assert!(matches!(
         finish_mol_block_record(
             source.clone(),
             false,
@@ -1648,8 +1946,8 @@ fn q05_query_identity_composition_explicit_query_provenance_survives_remapping_a
                 expand_attachment_points: true,
             },
         ),
-        Err(MolPostError::AttachmentPointExpansion)
-    );
+        Ok(MolBlockRecord::Query(_))
+    ));
     let MolBlockRecord::Query(source_record) = source else {
         unreachable!()
     };

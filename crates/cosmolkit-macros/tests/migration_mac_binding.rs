@@ -8,6 +8,17 @@ struct Molecule {
     value: String,
 }
 
+#[derive(Clone, Copy)]
+struct BorrowedView<'a> {
+    value: &'a str,
+}
+
+impl<'a> BorrowedView<'a> {
+    fn value(self) -> &'a str {
+        self.value
+    }
+}
+
 impl Molecule {
     fn property<'a>(&'a self, key: &str) -> Option<&'a str> {
         (key == "value").then_some(self.value.as_str())
@@ -107,6 +118,30 @@ cosmolkit_macros::binding_contract! {
             state: read_only,
             operation: none,
             signature: for<'a, 'b> fn(&'a crate::Molecule, &'b str) -> Option<&'a str>,
+        }
+    ];
+}
+
+cosmolkit_macros::binding_contract! {
+    static GENERIC_RECEIVER_BINDINGS = [
+        {
+            semantic_id: "BorrowedView.value",
+            item: callable,
+            owner: type_,
+            rust: crate::BorrowedView::value,
+            python: "value",
+            javascript: "value",
+            feature: "test",
+            exposure: public,
+            support: supported,
+            parity: not_applicable,
+            kind: instance,
+            parameters: [],
+            output: &str,
+            error: none,
+            state: value_returning,
+            operation: none,
+            signature: for<'a> fn(crate::BorrowedView<'a>) -> &'a str,
         }
     ];
 }
@@ -235,6 +270,38 @@ fn higher_ranked_borrowed_instance_output_compiles_with_exact_signature() {
     assert_eq!(property(&molecule, "value"), Some("kept"));
     assert_eq!(HRTB_BINDINGS.len(), 1);
     assert_eq!(HRTB_BINDINGS[0].semantic_id, "Molecule.property");
+}
+
+#[test]
+fn lifetime_parameterized_type_owned_receiver_keeps_exact_public_signature() {
+    fn assert_value_signature<'a>() {
+        let _: fn(BorrowedView<'a>) -> &'a str = BorrowedView::value;
+    }
+
+    let view = BorrowedView { value: "kept" };
+    assert_value_signature();
+    assert_eq!(BorrowedView::value(view), "kept");
+    assert_eq!(GENERIC_RECEIVER_BINDINGS.len(), 1);
+    assert_eq!(
+        GENERIC_RECEIVER_BINDINGS[0].semantic_id,
+        "BorrowedView.value"
+    );
+}
+
+#[test]
+fn lifetime_parameterized_type_owned_receiver_still_rejects_wrong_base_type() {
+    let invalid = r#"{
+        semantic_id: "BorrowedView.value", item: callable, owner: type_,
+        rust: crate::BorrowedView::value, python: "value", javascript: "value",
+        feature: "test", exposure: registered, support: supported,
+        parity: not_applicable, kind: instance, parameters: [], output: &str,
+        error: none, state: value_returning, operation: none,
+        signature: for<'a> fn(crate::Molecule) -> &'a str,
+    }"#;
+    assert!(
+        error_for(registry_with(invalid))
+            .contains("binding signature has the wrong instance receiver")
+    );
 }
 
 #[test]

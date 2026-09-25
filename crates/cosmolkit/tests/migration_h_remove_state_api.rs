@@ -406,7 +406,7 @@ fn live_compacting_commit_remaps_rows_and_preserves_typed_references() {
 }
 
 #[test]
-fn strict_commit_installs_valence_and_invalidates_ring_state_before_recomputation() {
+fn strict_commit_invalidates_unsanitized_valence_and_ring_state_before_recomputation() {
     let source = ring_source_with_explicit_hydrogen();
     assert!(format!("{source:?}").contains("derived_cache_is_empty: false"));
     let output = source
@@ -414,7 +414,8 @@ fn strict_commit_installs_valence_and_invalidates_ring_state_before_recomputatio
         .unwrap();
     assert_eq!(output.num_atoms(), 3);
     assert_eq!(output.num_bonds(), 3);
-    assert!(format!("{output:?}").contains("derived_cache_is_empty: false"));
+    // CK-VALENCE-001: sanitize=false clears both payload and validity.
+    assert!(format!("{output:?}").contains("derived_cache_is_empty: true"));
 
     let valence_rechecked = output.with_assigned_valence().unwrap();
     assert_eq!(valence_rechecked, output);

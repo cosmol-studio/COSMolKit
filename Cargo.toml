@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "parity-tests",
     "crates/cosmolkit-core",
     "crates/cosmolkit-cx",
     "crates/cosmolkit-smiles",
@@ -19,7 +20,6 @@ members = [
     "crates/cosmolkit-model",
     "crates/cosmolkit-inchi",
     "crates/cosmolkit-ringdecomposer",
-    "crates/cosmolkit-test-support",
     "crates/cosmolkit",
     "crates/cosmolkit-macros",
     "crates/cosmolkit-macros-old",

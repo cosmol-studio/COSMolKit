@@ -52,6 +52,9 @@ pub struct RemoveHsParams {
     /// non-implicit removal. RDKit exposes this as the overload's separate
     /// `sanitize` argument; the canonical COSMolKit parameter value keeps the
     /// observable option explicit across languages.
+    /// When false, no final valence cache is produced (CK-VALENCE-001);
+    /// intermediate calculations needed by removal still run. True alone is
+    /// not proof of strict chemical validity when no sanitize branch executes.
     pub sanitize: bool,
 }
 
@@ -137,7 +140,9 @@ pub struct RemoveHydrogensResult {
     pub coordinates: CoordinateBlock,
     pub properties: MoleculeProperties,
     pub mapping: TopologyMapping,
-    pub valence: ValenceAssignment,
+    /// Complete final-topology assignment, not an intermediate RDKit cache.
+    /// Absent when sanitize=false: the runtime must invalidate its old value.
+    pub final_valence: Option<ValenceAssignment>,
     pub warnings: Vec<HydrogenWarning>,
 }
 
@@ -372,7 +377,7 @@ pub fn add_hydrogens_with_query_state(
     validate_blocks(&topology, &coordinates)?;
     validate_property_lists(&properties, topology.atoms.len(), topology.bonds.len())?;
     if let Some(state) = query_state {
-        QueryStateRef::try_for_topology(state.atoms(), state.bonds(), &topology)?;
+        state.validate_for_topology(&topology)?;
     }
 
     let old_atom_count = topology.atoms.len();
@@ -528,7 +533,7 @@ pub fn add_hydrogens_topology_with_query_state(
 ) -> Result<AddHydrogensTopologyResult, HydrogenError> {
     topology.validate()?;
     if let Some(state) = query_state {
-        QueryStateRef::try_for_topology(state.atoms(), state.bonds(), &topology)?;
+        state.validate_for_topology(&topology)?;
     }
     let old_atom_count = topology.atoms.len();
     let old_bond_count = topology.bonds.len();
@@ -907,6 +912,81 @@ fn place_added_hydrogens(
     Ok(())
 }
 
+/// Place a newly appended attachment dummy using the same terminal-atom
+/// geometry owner as AddHs. The input already has a zero-initialized row for
+/// `atom`, as RWMol::addAtom does for each conformer. Taking the detached block
+/// by value keeps a failed placement from exposing partially written rows.
+pub fn place_terminal_attachment_coordinates(
+    topology: &TopologyBlock,
+    mut coordinates: CoordinateBlock,
+    atom: AtomId,
+    parent: AtomId,
+    bond: BondId,
+) -> Result<CoordinateBlock, HydrogenError> {
+    // BEGIN RDKIT CPP FUNCTION details::addExplicitAttachmentPoint coordinate call
+    // RDKit❗❌:   if (addCoords) {
+    // RDKit❗❌:     setTerminalAtomCoords(mol, idx, atomIdx);
+    // RDKit❗❌:   }
+    // END RDKIT CPP FUNCTION details::addExplicitAttachmentPoint coordinate call
+    topology.validate()?;
+    coordinates.validate_for_atom_count(topology.atoms.len())?;
+    let attachment_bond =
+        topology
+            .bonds
+            .get(bond.index())
+            .ok_or(HydrogenError::InvalidAdditionPlan {
+                addition: None,
+                reason: "attachment bond is missing",
+            })?;
+    if atom == parent
+        || atom.index() >= topology.atoms.len()
+        || attachment_bond.begin() != parent
+        || attachment_bond.end() != atom
+        || active_neighbors(topology, atom, bond) != [parent]
+    {
+        return Err(HydrogenError::InvalidAdditionPlan {
+            addition: None,
+            reason: "terminal attachment preconditions are not satisfied",
+        });
+    }
+    let addition = AddedHydrogen {
+        atom,
+        bond,
+        parent,
+        kind: AddedHydrogenKind::Explicit,
+    };
+    for conformer in &mut coordinates.conformers_2d {
+        let values = conformer
+            .coordinates()
+            .iter()
+            .copied()
+            .map(AddHsPoint3D::from_2d)
+            .collect::<Vec<_>>();
+        let position =
+            terminal_position(topology, &addition, 0, conformer.id(), "2D", false, &values)?;
+        conformer.coordinates_mut()[atom.index()] = position.to_2d();
+    }
+    for conformer in &mut coordinates.conformers_3d {
+        let values = conformer
+            .coordinates()
+            .iter()
+            .copied()
+            .map(AddHsPoint3D::from_3d)
+            .collect::<Vec<_>>();
+        let position = terminal_position(
+            topology,
+            &addition,
+            0,
+            conformer.id(),
+            "3D",
+            conformer.is_3d(),
+            &values,
+        )?;
+        conformer.coordinates_mut()[atom.index()] = position.to_3d();
+    }
+    Ok(coordinates)
+}
+
 fn active_neighbors(topology: &TopologyBlock, atom: AtomId, through_bond: BondId) -> Vec<AtomId> {
     topology
         .adjacency
@@ -1135,9 +1215,21 @@ fn terminal_position_degree_one_two(
     };
     match active.len() {
         1 => {
-            // COSMolKit stores 2D and 3D conformers separately, so scratch
-            // direction is reset per conformer. This preserves each source
-            // branch without depending on an unavailable mixed iterator order.
+            // INTENTIONAL RDKIT DESIGN DIVERGENCE CK-COORD-001 (approved
+            // 2026-09-21): initialize the direction independently per conformer.
+            // RDKit 2026.03.1 AddHs.cpp::setTerminalAtomCoords case 1 keeps
+            // dirVect outside the conformer loop and only assigns x OR z.
+            // Mixed flags therefore leak the preceding direction into later
+            // conformers, changing both the axis and the displacement length.
+            // This is a deliberate correctness/design optimization, NOT exact
+            // RDKit parity or a heuristic fallback: false -> +X at unit length;
+            // true -> +Z at the source rb0 distance. Preserve the parent's XYZ,
+            // including existing nonzero Z on false-flag XYZ input. No legacy
+            // contamination mode is offered. Scope: this degree-one branch
+            // only; do not generalize the exception to other source branches.
+            // Complexity: constant scratch space/work, no extra allocation.
+            // Keep the source behavior marker non-exact and the counterexample
+            // in IO-mol_post.md; attachment reuse must retain this contract.
             let direction = if is_3d {
                 AddHsPoint3D::new(0.0, 0.0, 1.0)
             } else {
@@ -1727,7 +1819,10 @@ fn validate_addition_plan(
     Ok(old_atom_count)
 }
 
-fn grow_coordinate_rows(mut coordinates: CoordinateBlock, count: usize) -> CoordinateBlock {
+pub(crate) fn grow_coordinate_rows(
+    mut coordinates: CoordinateBlock,
+    count: usize,
+) -> CoordinateBlock {
     // BEGIN RDKIT CPP FUNCTION MolOps::addHs conformer preparation
     // RDKit✔️✔️: unsigned int nSize = mol.getNumAtoms() + numAddHyds;
     // RDKit✔️✔️: // loop over the conformations of the molecule and allocate new space
@@ -2105,12 +2200,16 @@ pub fn remove_hydrogens_with_query_state(
     validate_blocks(&topology, &coordinates)?;
     validate_property_lists(&properties, topology.atoms.len(), topology.bonds.len())?;
     if let Some(state) = query_state {
-        QueryStateRef::try_for_topology(state.atoms(), state.bonds(), &topology)?;
+        state.validate_for_topology(&topology)?;
     }
-    let mut query_rows = query_state.map(|state| (state.atoms().to_vec(), state.bonds().to_vec()));
     let original_atom_count = topology.atoms.len();
     let original_bond_count = topology.bonds.len();
     let mut mapping = TopologyMapping::identity(original_atom_count, original_bond_count);
+    // Materialize transport rows with current carriers, not the overlay's
+    // potentially stale snapshots. Predicate trees and origins are preserved.
+    let mut query_rows = query_state
+        .map(|state| remap_query_rows(state, &topology, &mapping))
+        .transpose()?;
     let mut warnings = Vec::new();
 
     // BEGIN RDKIT CPP FUNCTION MolOps::removeHs preliminary isotope pass
@@ -2204,14 +2303,28 @@ pub fn remove_hydrogens_with_query_state(
     )?;
     validate_blocks(&topology, &coordinates)?;
     validate_property_lists(&properties, topology.atoms.len(), topology.bonds.len())?;
-    let valence =
-        assign_valence_with_options_for_topology(&topology, ValenceModel::RdkitLike, false)?;
+    // CK-VALENCE-001 (approved 2026-09-22): sanitize=false deliberately leaves
+    // no final cache assignment. Preserve all intermediate calculations needed
+    // by removal, but do not perform an extra final pass merely to fill a cache.
+    // Unlike RDKit's observable pre-removal cache, a valid CK cache must describe
+    // the final topology. Sanitized results are calculated after every removal
+    // and chiral-H normalization; calculation errors propagate, never become None.
+    // This is an intentional cache-semantics divergence, not all-state parity.
+    let final_valence = if params.sanitize {
+        Some(assign_valence_with_options_for_topology(
+            &topology,
+            ValenceModel::RdkitLike,
+            false,
+        )?)
+    } else {
+        None
+    };
     Ok(RemoveHydrogensResult {
         topology,
         coordinates,
         properties,
         mapping,
-        valence,
+        final_valence,
         warnings,
     })
 }
@@ -4576,6 +4689,56 @@ mod tests {
             output.coordinates.conformers_3d[1].coordinates()[1],
             [8.0, 8.0, 9.0]
         );
+    }
+
+    #[test]
+    fn terminal_coordinate_approved_divergence_is_independent_of_conformer_order() {
+        // CK-COORD-001: pinned reference reproduction and raw output are in
+        // IO-mol_post.md, Step 2583. These are intentional-difference tests,
+        // not a claim that the mixed-conformer RDKit oracle passes.
+        let result = explicit_only_addition(explicit_h_topology());
+        let inputs = [
+            (false, AddHsPoint3D::new(1.0, 2.0, 0.0)),
+            (true, AddHsPoint3D::new(2.0, 2.0, 0.0)),
+            (false, AddHsPoint3D::new(4.0, 5.0, 7.0)),
+        ];
+        let distance = rdkit_rb0(1) + rdkit_rb0(6);
+        let expected = [
+            AddHsPoint3D::new(2.0, 2.0, 0.0),
+            AddHsPoint3D::new(2.0, 2.0, distance),
+            AddHsPoint3D::new(5.0, 5.0, 7.0),
+        ];
+        let place = |index: usize| {
+            let (flag, parent) = inputs[index];
+            terminal_position(
+                &result.topology,
+                &result.additions[0],
+                0,
+                index,
+                "XYZ",
+                flag,
+                &[parent, AddHsPoint3D::new(0.0, 0.0, 0.0)],
+            )
+            .expect("degree-one placement")
+        };
+        let isolated = [place(0), place(1), place(2)];
+        assert_eq!(isolated, expected);
+        for order in [
+            [0, 1, 2],
+            [0, 2, 1],
+            [1, 0, 2],
+            [1, 2, 0],
+            [2, 0, 1],
+            [2, 1, 0],
+        ] {
+            for index in order {
+                assert_eq!(place(index), isolated[index]);
+            }
+        }
+        // Explicitly retain disagreement with BOTH source insertion orders:
+        // false->true contaminates true's X; true->false contaminates false's Z.
+        assert_ne!(isolated[1], AddHsPoint3D::new(3.1, 2.0, 1.1));
+        assert_ne!(isolated[0], AddHsPoint3D::new(2.0, 2.0, 1.0));
     }
 
     #[test]

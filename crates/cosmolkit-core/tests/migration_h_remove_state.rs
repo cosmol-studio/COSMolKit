@@ -167,8 +167,9 @@ fn default_and_parameterized_entrypoints_are_equivalent_and_atomic() {
     assert_eq!(short.mapping.atoms().new_to_old(), &[Some(atom(0))]);
     assert_eq!(short.mapping.bonds().old_to_new(), &[None]);
     assert!(short.mapping.bonds().new_to_old().is_empty());
-    assert_eq!(short.valence.explicit_valence.len(), 1);
-    assert_eq!(short.valence.implicit_hydrogens.len(), 1);
+    let final_valence = short.final_valence.as_ref().unwrap();
+    assert_eq!(final_valence.explicit_valence.len(), 1);
+    assert_eq!(final_valence.implicit_hydrogens.len(), 1);
 }
 
 #[test]
@@ -519,7 +520,9 @@ fn post_removal_chiral_explicit_h_normalization_respects_no_implicit() {
         )
         .unwrap();
         assert_eq!(output.topology.atoms[0].explicit_hydrogens(), expected);
-        assert_eq!(output.valence.explicit_valence.len(), 1);
+        // CK-VALENCE-001: intermediate chiral-H normalization remains active,
+        // but sanitize=false must not manufacture a final cache assignment.
+        assert!(output.final_valence.is_none());
     }
 }
 

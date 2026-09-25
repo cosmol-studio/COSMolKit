@@ -7,13 +7,24 @@
 //! molecule.
 
 pub mod binding_contract;
+#[cfg(feature = "fingerprints")]
+pub use cosmolkit_fingerprints::{
+    FingerprintError, SparseCountFingerprint, SparseCountFingerprint32,
+};
 #[cfg(feature = "descriptors")]
 mod descriptors;
+#[cfg(feature = "depict")]
+pub use cosmolkit_depict::{
+    Compute2DCoordinatesParams as Coordinate2DParams, Coordinate2DLayoutError,
+    Coordinate2DTemplateError, DepictError as Coordinate2DError,
+};
 #[cfg(feature = "matrices")]
 mod matrices;
 mod molecule;
 mod molecule_builder;
 pub mod ops;
+#[cfg(feature = "io")]
+mod sdf;
 #[cfg(feature = "smiles")]
 mod smiles;
 mod strict;
@@ -22,6 +33,20 @@ pub use binding_contract::{
     BINDING_CONTRACT, BindingCallableContract, BindingContractEntry, BindingDefault,
     BindingExposure, BindingItem, BindingKind, BindingOwner, BindingParameterContract,
     BindingParity, BindingSupport, BindingTypeRole, StateModel,
+};
+#[cfg(feature = "bio")]
+pub use cosmolkit_bio::{
+    AltLocLabel, AltLocRequest, AtomName, AtomSourceIds, BioAltLocGroupId, BioAssembly,
+    BioAssemblyGenerator, BioAssemblyId, BioAssemblyOperator, BioAssemblySpecialKind, BioAtomId,
+    BioAtomRow, BioCalcFlag, BioChainId, BioChainRow, BioCoordinateBlock, BioCoordinateFormat,
+    BioCrystalCell, BioCrystalInfo, BioEntityDbRef, BioEntityId, BioEntityRow, BioModelId,
+    BioModelRow, BioNcsOperator, BioResidueId, BioResidueRow, BioRowSpan, BioSiftsUnpResidue,
+    BioStructure, BioStructureError, BioStructureParts, BioTransform, ChainKind, ChainSourceIds,
+    EntityKind, EntitySourceIds, PdbAtomSerial, PdbChainId, PdbSeqId, PolymerKind, Protein,
+    ProteinAtomRef, ProteinChainRef, ProteinProjectionError, ProteinResidueRef, ResidueCode,
+    ResidueInfo, ResidueInfoKind, ResidueKind, ResidueName, ResidueSequenceError, ResidueSourceIds,
+    UNKNOWN_TABULATED_RESIDUE_INDEX, expand_one_letter, expand_one_letter_sequence,
+    find_residue_info, find_residue_info_index, residue_code, residue_info, residue_info_checked,
 };
 #[cfg(feature = "rings")]
 pub use cosmolkit_core::RingSearchParams;
@@ -51,7 +76,7 @@ pub use cosmolkit_core::{ValenceError, ValenceModel, ValenceParams};
 pub use cosmolkit_model as model;
 pub use cosmolkit_model::*;
 #[cfg(feature = "smiles")]
-pub use cosmolkit_smiles::SmilesParseParams;
+pub use cosmolkit_smiles::{SmilesParseParams, SmilesStereoError};
 #[cfg(feature = "stereo")]
 pub use cosmolkit_stereo::{CipLabelOptions, CipLabelerError};
 #[cfg(feature = "matrices")]
@@ -65,6 +90,8 @@ pub(crate) use ops::PotentialStereoAccess;
 pub use ops::PotentialStereoResult;
 #[cfg(feature = "sanitize")]
 pub(crate) use ops::SanitizeAccess;
+#[cfg(feature = "depict")]
+pub(crate) use ops::With2dCoordinatesAccess;
 #[cfg(feature = "aromaticity")]
 pub(crate) use ops::WithAssignedAromaticityAccess;
 #[cfg(feature = "radicals")]
@@ -95,6 +122,8 @@ pub(crate) use ops::{PendingMolecule, PendingResult, ResultFinalizer};
 pub(crate) use ops::{WithAssignedRingFamiliesAccess, WithAssignedRingsAccess};
 #[cfg(feature = "hydrogens")]
 pub(crate) use ops::{WithHydrogensAccess, WithoutHydrogensAccess};
+#[cfg(feature = "io")]
+pub use sdf::{SdfCoordinateMode, SdfError, SdfGraph, SdfReadParams, SdfRecord};
 #[cfg(feature = "smiles")]
 pub use smiles::SmilesError;
 

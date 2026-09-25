@@ -2487,7 +2487,7 @@ pub fn assign_aromaticity_with_query_state(
     // END RDKIT CPP FUNCTION MolOps::setAromaticity
     validate_inputs(topology, rings)?;
     if let Some(state) = query_state {
-        QueryStateRef::try_for_topology(state.atoms(), state.bonds(), topology)?;
+        state.validate_for_topology(topology)?;
     }
     let assignment = match params.model {
         AromaticityModel::Rdkit => {

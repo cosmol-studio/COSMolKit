@@ -18,6 +18,73 @@ fn defaults_match_the_pinned_v2_constructor() {
 }
 
 #[test]
+fn zero_isotope_is_canonical_in_detached_parser_rows() {
+    for (input, expected) in [("[0C]", None), ("[0H]", None), ("[13C]", Some(13))] {
+        let record = parse_smiles(input, &Default::default()).unwrap();
+        assert_eq!(record.topology.atoms[0].isotope(), expected, "{input}");
+    }
+}
+
+#[test]
+fn stereo_finalization_prefers_two_d_coordinates_and_keeps_stored_state() {
+    use cosmolkit_model::{Conformer2D, Conformer3D};
+    use cosmolkit_smiles::finalize_smiles_stereo;
+    use cosmolkit_types::{BondDirection as D, BondStereo};
+    let params = SmilesParseParams::default();
+    let mut record = parse_smiles("CC=CC |c:1| sample", &params).unwrap();
+    // Conflicting conformers prove first-2D precedence; the core geometry
+    // consumes lifted XY without replacing the original coordinate tables.
+    record.coordinates.conformers_2d.push(Conformer2D::new(
+        3,
+        vec![[0.0, 1.0], [0.0, 0.0], [1.0, 0.0], [1.0, 1.0]],
+    ));
+    record.coordinates.conformers_3d.push(Conformer3D::new(
+        8,
+        vec![
+            [0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [1.0, -1.0, 0.0],
+        ],
+        true,
+    ));
+    let source = record.clone();
+    let output = finalize_smiles_stereo(record, &params).unwrap();
+    assert_eq!(output.coordinates, source.coordinates);
+    assert_eq!(output.properties.name(), Some("sample"));
+    assert_eq!(source.properties.prop("_needsDetectBondStereo"), Some("1"));
+    assert_eq!(output.properties.prop("_needsDetectBondStereo"), None);
+    assert_eq!(output.topology.bonds[1].stereo(), BondStereo::Z);
+    assert_eq!(
+        output
+            .topology
+            .bonds
+            .iter()
+            .map(|bond| bond.direction())
+            .collect::<Vec<_>>(),
+        [D::EndUpRight, D::None, D::EndDownRight]
+    );
+}
+
+#[test]
+fn stereo_finalization_propagates_typed_coordinate_failure() {
+    use cosmolkit_core::DoubleBondStereoError;
+    use cosmolkit_model::Conformer2D;
+    use cosmolkit_smiles::{SmilesStereoError, finalize_smiles_stereo};
+    let params = SmilesParseParams::default();
+    let mut record = parse_smiles("CC=CC |c:1|", &params).unwrap();
+    record
+        .coordinates
+        .conformers_2d
+        .push(Conformer2D::new(0, vec![[0.0, 0.0]]));
+    let error = finalize_smiles_stereo(record, &params).unwrap_err();
+    assert!(matches!(
+        error,
+        SmilesStereoError::Directions(DoubleBondStereoError::InvalidConformer(_))
+    ));
+}
+
+#[test]
 fn empty_and_whitespace_graphs_are_valid_detached_records() {
     for input in ["", " \t\r\n"] {
         let record = parse_smiles(input, &Default::default()).expect("empty graph");

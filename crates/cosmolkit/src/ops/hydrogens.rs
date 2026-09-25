@@ -52,10 +52,22 @@ pub(crate) fn remove_hydrogens_impl(
     parts.record_topology_mapping(result.mapping)?;
     parts.apply_runtime_remap()?;
 
-    let mut cache = parts.checkout_derived_cache()?;
-    cache.install_valence_assignment(result.valence);
-    parts.install_derived_cache(cache)?;
-    parts.mark_cache_updated(DerivedState::VALENCE)?;
+    // CK-VALENCE-001: sanitize=false allows an unsanitized molecule, not a stale
+    // cache advertised as valid. Clear both the validity bit and stored value.
+    // For sanitize=true, only a complete final-topology assignment may be
+    // installed. None means unavailable, never a swallowed calculation error.
+    // The existing operation_defined effect permits both update and clear;
+    // it does not make historical RDKit cache values valid for current state.
+    if !params.sanitize {
+        parts.clear_cache(DerivedState::VALENCE)?;
+    } else if let Some(valence) = result.final_valence {
+        let mut cache = parts.checkout_derived_cache()?;
+        cache.install_valence_assignment(valence);
+        parts.install_derived_cache(cache)?;
+        parts.mark_cache_updated(DerivedState::VALENCE)?;
+    } else {
+        parts.clear_cache(DerivedState::VALENCE)?;
+    }
     parts.clear_cache(
         DerivedState::RINGS
             .union(DerivedState::RING_FAMILIES)

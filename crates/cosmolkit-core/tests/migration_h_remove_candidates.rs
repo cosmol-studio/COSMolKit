@@ -60,6 +60,44 @@ fn carbon_hydrogen(hydrogen: AtomSpec) -> TopologyBlock {
 }
 
 #[test]
+fn query_overlay_hydrogen_selection_reads_current_isotope_not_old_carrier() {
+    // The existing source-backed isotope rule keeps isotope-labelled hydrogen
+    // by default. Query identity comes from the overlay, isotope from topology.
+    let old = carbon_hydrogen(AtomSpec::new(Element::H));
+    let atoms: Vec<_> = old
+        .atoms
+        .iter()
+        .map(|atom| {
+            QueryAtom::from_carrier_parts(
+                atom.clone(),
+                QueryNode::predicate(AtomQueryPredicate::AtomicNumber(atom.atomic_number())),
+            )
+        })
+        .collect();
+    let bonds = vec![QueryBond::from_carrier_parts(
+        old.bonds[0].clone(),
+        QueryNode::predicate(BondQueryPredicate::Order(BondOrder::Single)),
+    )];
+    let overlay = QueryStateRef::try_for_topology(&atoms, &bonds, &old).unwrap();
+    let current = carbon_hydrogen(AtomSpec::new(Element::H).with_isotope(2));
+    overlay.validate_for_topology(&current).unwrap();
+    let defaults = RemoveHsParams::default();
+    assert_eq!(selected(&old, &defaults), vec![1]);
+    assert!(selected(&current, &defaults).is_empty());
+    assert!(
+        remove_hydrogen_candidates_with_query_state(&current, &defaults, Some(overlay)).is_empty()
+    );
+    let remove_isotopes = RemoveHsParams {
+        remove_isotopes: true,
+        ..defaults
+    };
+    assert_eq!(
+        remove_hydrogen_candidates_with_query_state(&current, &remove_isotopes, Some(overlay)),
+        vec![atom(1)]
+    );
+}
+
+#[test]
 fn defaults_match_all_remove_hs_parameter_source_fields() {
     let params = RemoveHsParams::default();
     assert!(!params.remove_degree_zero);

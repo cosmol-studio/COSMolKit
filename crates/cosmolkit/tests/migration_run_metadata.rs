@@ -42,6 +42,9 @@ fn expected_feature_names() -> Vec<&'static str> {
     if cfg!(feature = "transforms") {
         expected.push("transforms");
     }
+    if cfg!(feature = "depict") {
+        expected.push("depict");
+    }
     expected
 }
 
@@ -83,6 +86,9 @@ fn expected_operation_methods() -> Vec<&'static str> {
     }
     if cfg!(feature = "transforms") {
         expected.push("with_atom_position_with_params");
+    }
+    if cfg!(feature = "depict") {
+        expected.push("with_2d_coordinates_with_params");
     }
     expected
 }
@@ -302,7 +308,12 @@ fn hydrogens_configuration_preserves_order_profiles_and_pointer_identity() {
             feature_spec(support_matrix()[index].feature.name).expect("feature lookup"),
             support_matrix()[index].feature
         ));
-        assert_eq!(operation.parity, ParityPolicy::RequiredNow);
+        let expected_parity = if operation.method == "with_2d_coordinates_with_params" {
+            ParityPolicy::RequiredWhenSupported
+        } else {
+            ParityPolicy::RequiredNow
+        };
+        assert_eq!(operation.parity, expected_parity);
         assert_eq!(
             operation_invariant(operation.method).expect("invariant lookup"),
             &operation_invariant_matrix()[index]

@@ -49,6 +49,27 @@ fn atom_id_is_a_stable_ordered_display_value() {
 }
 
 #[test]
+fn zero_isotope_is_absent_at_every_atom_construction_and_update_boundary() {
+    // RDKit Atom::getIsotope() uses zero for an unspecified isotope. The
+    // detached model projects that sentinel to None, including explicit zero.
+    let unspecified = AtomSpec::new(Element::C);
+    let zero = AtomSpec::new(Element::C).with_isotope(13).with_isotope(0);
+    assert_eq!(zero.isotope(), None);
+    assert_eq!(zero, unspecified);
+    let mut atom = Atom::from_spec(AtomId::new(0), zero);
+    assert_eq!(atom.isotope(), None);
+    for isotope in [1, 13, u16::MAX] {
+        atom.set_isotope(Some(isotope));
+        assert_eq!(atom.isotope(), Some(isotope));
+        atom.set_isotope(Some(0));
+        assert_eq!(atom.isotope(), None);
+        assert_eq!(atom, Atom::from_spec(AtomId::new(0), unspecified.clone()));
+    }
+    atom.set_isotope(None);
+    assert_eq!(atom.isotope(), None);
+}
+
+#[test]
 fn pdb_residue_info_covers_source_defaults_and_all_fields() {
     let default = AtomPdbResidueInfo::default();
     assert_eq!(default.atom_name(), "");

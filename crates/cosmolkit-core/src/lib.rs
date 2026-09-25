@@ -6,6 +6,7 @@
 
 mod aromaticity;
 mod atropisomer;
+mod attachment_points;
 mod bond_dirs;
 mod cip_ranks;
 mod cleanup;
@@ -17,6 +18,7 @@ mod hydrogens;
 mod kekulize;
 mod legacy_stereo;
 mod matrices;
+mod nontetrahedral_stereo;
 mod paths;
 mod periodic_table;
 mod potential_stereo;
@@ -28,6 +30,11 @@ mod stereo_order;
 mod structure_tags;
 mod transforms;
 mod valence;
+
+pub use attachment_points::{
+    AttachmentExpansionError, AttachmentExpansionResult, AttachmentWarning,
+    expand_attachment_points,
+};
 
 pub use atropisomer::{
     AtropisomerAssignment, AtropisomerBondUpdate, AtropisomerCarrierEnd, AtropisomerConformer,
@@ -58,11 +65,12 @@ pub use hydrogens::{
 #[cfg(feature = "op-contracts-strict")]
 #[doc(hidden)]
 pub mod __migration_hydrogens {
+    pub use crate::attachment_points::{attachment_query_rows, expand_attachment_points};
     pub use crate::hydrogens::{
         AddHydrogensCoordinateResult, AddHydrogensTopologyResult, AddedHydrogen, AddedHydrogenKind,
         HydrogenError, PreparedHydrogenRemoval, add_hydrogen_coordinates, add_hydrogens_topology,
-        prepare_hydrogen_removal_stereo, remove_hydrogen_candidates,
-        remove_hydrogen_candidates_with_query_state,
+        place_terminal_attachment_coordinates, prepare_hydrogen_removal_stereo,
+        remove_hydrogen_candidates, remove_hydrogen_candidates_with_query_state,
     };
 }
 
@@ -104,6 +112,9 @@ pub use double_stereo::{
 
 pub use hcount::total_hydrogen_count;
 pub(crate) use hybridization::{HybridizationAssignment, HybridizationError, assign_hybridization};
+pub use nontetrahedral_stereo::{
+    non_tetrahedral_across_ligand, non_tetrahedral_ideal_angle, trigonal_bipyramidal_axial_ligand,
+};
 
 /// Strict-build-only bridge for detached hybridization migration validation.
 ///
@@ -142,7 +153,7 @@ pub use kekulize::{
 };
 
 pub use legacy_stereo::{
-    LegacyStereoError, assign_legacy_stereochemistry,
+    LegacyStereoError, assign_legacy_stereochemistry, assign_legacy_stereochemistry_for_depiction,
     assign_legacy_stereochemistry_with_query_state,
 };
 

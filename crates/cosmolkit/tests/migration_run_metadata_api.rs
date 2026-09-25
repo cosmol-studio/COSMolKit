@@ -49,6 +49,9 @@ fn expected_feature_names() -> Vec<&'static str> {
     if cfg!(feature = "transforms") {
         expected.push("transforms");
     }
+    if cfg!(feature = "depict") {
+        expected.push("depict");
+    }
     expected
 }
 
@@ -90,6 +93,9 @@ fn expected_operation_methods() -> Vec<&'static str> {
     }
     if cfg!(feature = "transforms") {
         expected.push("with_atom_position_with_params");
+    }
+    if cfg!(feature = "depict") {
+        expected.push("with_2d_coordinates_with_params");
     }
     expected
 }

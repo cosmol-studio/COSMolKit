@@ -380,13 +380,19 @@ impl Default for RecursiveStructureQuery {
 
 impl Eq for RecursiveStructureQuery {}
 
-/// A query atom combines concrete atom attributes with a query predicate tree.
+/// Distinguishes source queries from ordinary carriers in uniform query storage.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum QueryPredicateOrigin {
     Explicit,
     CarrierDerived,
 }
 
+/// A query atom combines carrier attributes, a predicate tree, and its origin.
+///
+/// Equality compares stored representation, including predicate origin. An
+/// explicit query and an ordinary carrier with identical attributes and trees
+/// are unequal because their source `hasQuery()` behavior differs. Equality
+/// does not establish chemical or query-matching equivalence.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct QueryAtom {
     atom: Atom,
@@ -484,6 +490,8 @@ impl QueryAtom {
 }
 
 /// A query bond combines concrete bond attributes with a query predicate tree.
+/// Equality includes predicate origin, as for [`QueryAtom`]; it is not a
+/// chemical or query-matching equivalence test.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct QueryBond {
     bond: Bond,
@@ -527,10 +535,33 @@ pub enum QueryStateError {
         entity: &'static str,
         position: usize,
     },
+    #[error("query-state mapping supplied {actual} appended {entity} rows, expected {expected}")]
+    AppendedRowCount {
+        entity: &'static str,
+        actual: usize,
+        expected: usize,
+    },
 }
 
 /// A validated, non-owning view of typed query identity and predicates aligned
 /// one-for-one with a detached concrete topology.
+///
+/// This is an overlay, not a current carrier snapshot. Alignment covers row
+/// counts, IDs and bond endpoints only. After chemistry transforms, carrier
+/// attributes must be read from the current `TopologyBlock`, never from the
+/// query rows retained here. Predicates and origins remain available without
+/// exposing those potentially stale carriers.
+///
+/// ```compile_fail
+/// fn cannot_read_old_atoms(state: cosmolkit_model::QueryStateRef<'_>) {
+///     let _ = state.atoms();
+/// }
+/// ```
+/// ```compile_fail
+/// fn cannot_read_old_bonds(state: cosmolkit_model::QueryStateRef<'_>) {
+///     let _ = state.bonds();
+/// }
+/// ```
 #[doc(hidden)]
 #[derive(Debug, Clone, Copy)]
 pub struct QueryStateRef<'a> {
@@ -586,14 +617,10 @@ impl<'a> QueryStateRef<'a> {
         Ok(Self { atoms, bonds })
     }
 
-    #[must_use]
-    pub const fn atoms(self) -> &'a [QueryAtom] {
-        self.atoms
-    }
-
-    #[must_use]
-    pub const fn bonds(self) -> &'a [QueryBond] {
-        self.bonds
+    /// Revalidate row alignment against the current topology without exposing
+    /// carrier snapshots or requiring chemistry attributes to remain unchanged.
+    pub fn validate_for_topology(self, topology: &TopologyBlock) -> Result<(), QueryStateError> {
+        Self::try_for_topology(self.atoms, self.bonds, topology).map(|_| ())
     }
 
     #[must_use]
@@ -640,6 +667,21 @@ pub fn remap_query_rows(
     topology: &TopologyBlock,
     mapping: &TopologyMapping,
 ) -> Result<(Vec<QueryAtom>, Vec<QueryBond>), QueryStateError> {
+    remap_query_rows_with_appended(state, topology, mapping, &[], &[])
+}
+
+/// Transport existing predicate/origin rows and explicitly supplied appended
+/// rows onto the *current* topology carriers. Generic remapping never infers
+/// what a new query means: the owning append algorithm must provide one row
+/// for each `None` in the topology mapping, in new-row order.
+#[doc(hidden)]
+pub fn remap_query_rows_with_appended(
+    state: QueryStateRef<'_>,
+    topology: &TopologyBlock,
+    mapping: &TopologyMapping,
+    appended_atoms: &[QueryAtom],
+    appended_bonds: &[QueryBond],
+) -> Result<(Vec<QueryAtom>, Vec<QueryBond>), QueryStateError> {
     mapping.validate_for_counts(
         state.atoms.len(),
         topology.atoms.len(),
@@ -647,6 +689,7 @@ pub fn remap_query_rows(
         topology.bonds.len(),
     )?;
 
+    let mut next_appended_atom = 0;
     let mut atoms = Vec::with_capacity(topology.atoms.len());
     for (position, (carrier, old)) in topology
         .atoms
@@ -654,18 +697,41 @@ pub fn remap_query_rows(
         .zip(mapping.atoms().new_to_old())
         .enumerate()
     {
-        let old = old.ok_or(QueryStateError::AppendedRow {
-            entity: "atom",
-            position,
-        })?;
-        let source = &state.atoms[old.index()];
+        let source = if let Some(old) = old {
+            &state.atoms[old.index()]
+        } else {
+            let source =
+                appended_atoms
+                    .get(next_appended_atom)
+                    .ok_or(QueryStateError::AppendedRow {
+                        entity: "atom",
+                        position,
+                    })?;
+            next_appended_atom += 1;
+            if source.id() != carrier.id() {
+                return Err(QueryStateError::AtomId {
+                    position,
+                    actual: source.id(),
+                    expected: carrier.id(),
+                });
+            }
+            source
+        };
         atoms.push(QueryAtom {
             atom: carrier.clone(),
             predicate: source.predicate.clone(),
             predicate_origin: source.predicate_origin,
         });
     }
+    if next_appended_atom != appended_atoms.len() {
+        return Err(QueryStateError::AppendedRowCount {
+            entity: "atom",
+            actual: appended_atoms.len(),
+            expected: next_appended_atom,
+        });
+    }
 
+    let mut next_appended_bond = 0;
     let mut bonds = Vec::with_capacity(topology.bonds.len());
     for (position, (carrier, old)) in topology
         .bonds
@@ -673,15 +739,46 @@ pub fn remap_query_rows(
         .zip(mapping.bonds().new_to_old())
         .enumerate()
     {
-        let old = old.ok_or(QueryStateError::AppendedRow {
-            entity: "bond",
-            position,
-        })?;
-        let source = &state.bonds[old.index()];
+        let source = if let Some(old) = old {
+            &state.bonds[old.index()]
+        } else {
+            let source =
+                appended_bonds
+                    .get(next_appended_bond)
+                    .ok_or(QueryStateError::AppendedRow {
+                        entity: "bond",
+                        position,
+                    })?;
+            next_appended_bond += 1;
+            if source.id() != carrier.id() {
+                return Err(QueryStateError::BondId {
+                    position,
+                    actual: source.id(),
+                    expected: carrier.id(),
+                });
+            }
+            let actual = (source.begin(), source.end());
+            let expected = (carrier.begin(), carrier.end());
+            if actual != expected {
+                return Err(QueryStateError::BondEndpoints {
+                    position,
+                    actual,
+                    expected,
+                });
+            }
+            source
+        };
         bonds.push(QueryBond {
             bond: carrier.clone(),
             predicate: source.predicate.clone(),
             predicate_origin: source.predicate_origin,
+        });
+    }
+    if next_appended_bond != appended_bonds.len() {
+        return Err(QueryStateError::AppendedRowCount {
+            entity: "bond",
+            actual: appended_bonds.len(),
+            expected: next_appended_bond,
         });
     }
 
@@ -776,6 +873,9 @@ impl QueryBond {
 }
 
 /// First-class SMARTS/MCS query graph value.
+///
+/// `PartialEq` compares stored representation, including atom/bond predicate
+/// origins and metadata. It is not graph isomorphism or matching equivalence.
 #[derive(Debug, Clone, PartialEq)]
 pub struct QueryGraph {
     atoms: Vec<QueryAtom>,

@@ -1856,7 +1856,7 @@ pub fn kekulize_with_query_state(
     query_state: Option<QueryStateRef<'_>>,
 ) -> Result<KekulizeAssignment, KekulizeError> {
     if let Some(state) = query_state {
-        QueryStateRef::try_for_topology(state.atoms(), state.bonds(), topology)?;
+        state.validate_for_topology(topology)?;
     }
     // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/Kekulize.cpp :: MolOps::Kekulize
     // RDKit✔️✔️: void Kekulize(RWMol &mol, bool markAtomsBonds, bool canonical,

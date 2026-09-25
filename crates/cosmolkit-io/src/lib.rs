@@ -1,5 +1,7 @@
 //! File-format IO over detached `cosmolkit-model` values.
 
+#[doc(hidden)]
+pub mod cif;
 pub mod mol2;
 mod mol_post;
 mod numeric;

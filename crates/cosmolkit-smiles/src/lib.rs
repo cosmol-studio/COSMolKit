@@ -16,12 +16,14 @@ use cosmolkit_types::{BondOrder, ChiralTag, Element};
 mod canonical_rank;
 mod cx_lowering;
 mod cx_writer;
+mod finalize_stereo;
 mod stereo;
 mod writer;
 
 pub use cx_writer::{
     CxSmilesFields, CxSmilesWriteParams, write_cx_smiles, write_cx_smiles_with_params,
 };
+pub use finalize_stereo::{SmilesStereoError, finalize_smiles_stereo};
 pub use writer::{SmilesWriteParams, write_smiles, write_smiles_with_params};
 
 const CXSMILES_BOND_IDX_PROP: &str = "_cxsmilesBondIdx";

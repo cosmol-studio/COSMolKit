@@ -6,6 +6,8 @@ mod aromaticity;
 mod cip_labels;
 #[cfg(test)]
 mod cow_tests;
+#[cfg(feature = "depict")]
+mod depict;
 mod error;
 #[cfg(feature = "hydrogens")]
 mod hydrogens;
@@ -54,6 +56,8 @@ pub(crate) use runtime::multiple::MultiOutputOpParts;
 pub(crate) use runtime::registry::PotentialStereoAccess;
 #[cfg(feature = "sanitize")]
 pub(crate) use runtime::registry::SanitizeAccess;
+#[cfg(feature = "depict")]
+pub(crate) use runtime::registry::With2dCoordinatesAccess;
 #[cfg(feature = "aromaticity")]
 pub(crate) use runtime::registry::WithAssignedAromaticityAccess;
 #[cfg(feature = "radicals")]

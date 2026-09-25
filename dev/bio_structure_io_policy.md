@@ -1,220 +1,135 @@
 # BioStructure PDB/mmCIF IO Policy
 
-This document fixes the project-level boundary between Gemmi-derived structural
-IO and RDKit-derived molecule compatibility behavior. The detailed execution
-plan is [`pdb_mmcif_gemmi_primary_plan.md`](pdb_mmcif_gemmi_primary_plan.md).
+This policy defines the boundary between Gemmi structural IO and RDKit molecule
+compatibility. Ownership follows [crate_architecture.md](./crate_architecture.md);
+execution and acceptance belong only to the
+[split-crate plan](./plans/crate_architecture_completion_plan.md).
+This document does not claim that a reader, writer, or conversion is implemented.
 
-The short rule is:
+## Models and owners
 
-```text
-BioStructure owns complete structural IO. Protein is an explicit amino-acid
-projection. Molecule owns chemical-graph compatibility behavior.
-```
+| Model | Preserved state and role |
+|---|---|
+| `BioStructure` | Complete modeled structural hierarchy, mixed residue kinds, entities, coordinates, assemblies, and crystallographic metadata |
+| `Protein` | Explicit amino-acid projection and ergonomic traversal; not lossless structural IO |
+| `Molecule` | Chemical graph, chemical state, properties, and conformers; not the full biomolecular hierarchy |
 
-COSMolKit must not expose two parallel public parser families for the same user
-task. In particular, do not create competing public APIs such as
-`pdb_parser_gemmi`, `pdb_parser_rdkit`, `mmcif_parser_gemmi`, and
-`mmcif_parser_rdkit`.
+Structural values and Protein projection belong to `cosmolkit-bio`.
+Gemmi parsing, format handling, and structural serialization belong to
+`cosmolkit-io`. RDKit molecule conversion also belongs to IO, reusing core
+chemistry algorithms. Only `cosmolkit` constructs or accepts live molecules.
 
-## Public Model
+Read-only structural child views must not deep-clone the complete structure.
+Structural mutation follows
+[bio_structure_operation_contract_design.md](./bio_structure_operation_contract_design.md)
+and [policy_invariants.md](./policy_invariants.md); it is not permission to
+edit hierarchy rows through an unrestricted public storage interface.
 
-The public structural model is COSMolKit's own `BioStructure` hierarchy:
+## One structural reader
 
-- `BioStructure`
-- `ModelRow`
-- `ChainRow`
-- `ResidueRow`
-- `AtomRow`
-- `CoordinateBlock`
-- registered `BioStructure` operations
-
-Public structural IO should read into this model. Mutation of this model must
-follow the BioStructure operation rules in `dev/README.md`,
-`dev/policy_invariants.md`, and `dev/topology_operations.md`.
-
-The public object boundary is:
-
-| Object | Preserved state | Owns | Must not imply |
-|---|---|---|---|
-| `BioStructure` | complete modeled hierarchy, entities, mixed residue kinds, coordinates, assemblies, and crystallographic metadata | structural PDB/mmCIF/mmJSON reading and Gemmi-aligned mmCIF writing | RDKit molecule-graph semantics |
-| `Protein` | an amino-acid-only projection of `BioStructure` | ergonomic protein chain/residue/atom traversal | lossless structural format conversion |
-| `Molecule` | chemical graph, chemical state, properties, and conformers | RDKit-compatible molecule parsing, conversion, and molecule writers | preservation of the complete biomolecular hierarchy |
-
-Rust exposes `BioStructure` directly. Python must expose the same complete
-structural concept rather than forcing full-structure workflows through
-`Protein`. Child model/chain/residue/atom/entity values are read-only shared
-views; producing them must not deep-clone the complete structure.
-
-## Canonical Structural IO Source
-
-Gemmi is the canonical upstream source for PDB/mmCIF structure-file IO.
-
-The Gemmi-aligned path owns:
-
-- PDB/mmCIF coordinate hierarchy parsing
-- model, chain, residue, atom, altloc, occupancy, B-factor, formal charge, and
-  coordinate rows
-- mmCIF `_atom_site` column handling
-- structural unsupported-feature boundaries
-- entity, assembly, secondary-structure, symmetry, and crystallographic
-  metadata represented by `BioStructure`
-- canonical mmCIF document construction, category groups, and CIF serialization
-
-The current source-identifier representation stores chain and subchain
-hierarchy references in `PdbChainId`, which is limited to four bytes. A longer
-mmCIF chain or subchain identifier returns a structured unsupported error; it
-is never truncated, hashed, or replaced with an invented alias. Entity source
-identifiers themselves remain variable-length strings. This is a declared
-model boundary, not a parser fallback.
-
-The current Rust implementation of this path lives in:
+The data path is:
 
 ```text
-crates/cosmolkit-core/src/io/bio.rs
+PDB/mmCIF text -> Gemmi-aligned parsing -> BioStructure
+                                          |
+                                explicit conversion profile
+                                          |
+                             detached chemical graph + postprocessing
+                                          |
+                              cosmolkit validated Molecule construction
 ```
 
-The canonical Rust structural read methods are:
+There is no competing public RDKit structural parser. Do not expose parallel
+Gemmi/RDKit parser modules or place RDKit molecule rules inside the Gemmi parser.
+RDKit's PDB reader specifies molecule compatibility behavior; it is not a
+replacement structural reader or a pure subset of Gemmi.
 
-```text
-BioStructure::from_pdb
-BioStructure::from_mmcif
-BioStructure::from_structure_str
-BioStructure::from_str_with_format
-BioStructure::from_pdb_str
-BioStructure::from_pdb_str_with_params
-BioStructure::from_mmcif_str
-```
+Gemmi sources include `src/pdb.cpp`, `src/mmcif.cpp`,
+`include/gemmi/mmcif.hpp`, and `include/gemmi/mmread.hpp` under the pinned
+`third_party/gemmi` checkout. The structural scope includes:
 
-`BioStructure::from_structure_str(...)`,
-`BioStructure::from_str_with_format(...)`, and
-`BioStructure::from_pdb_str(...)` are the canonical public dispatch entry
-points for Gemmi-aligned structural reads. Format helpers are exposed as
-`BioStructure` constructors so callers choose the target data model explicitly
-instead of invoking ambiguous free functions.
+- model/chain/residue/atom order and hierarchy; serials, names, insertion codes;
+- altloc, occupancy, B factors, formal charge, XYZ and ANISOU;
+- header records, entity/sequence/DBREF and author/label source identities;
+- HELIX, SHEET, SSBOND, LINK, CISPEP, MODRES, TER and connection records;
+- CRYST1, SCALE, ORIGX, MTRIX, cell, space group, NCS and assembly metadata;
+- mmCIF atom-site, entity, sequence, connectivity and crystallographic categories.
 
-`read_mmcif_atom_site_subset_from_str(...)` is a deprecated historical name.
-The implementation now reads the declared Gemmi-aligned structural surface,
-not only `_atom_site`, so it must not be presented as the primary API.
+A complete declared source profile must be implemented and validated before
+acceptance. This inventory is not permission to skip a required category.
 
-## RDKit PDB/mmCIF Scope
+## Public construction and identifiers
 
-RDKit PDB behavior is not the canonical structural reader for COSMolKit, and it
-must not become an independent text parser that competes with the Gemmi path.
+Public naming, defaults and format/error dispatch are declared in
+[`crates/cosmolkit/src/binding_contract/registry.rs`](../crates/cosmolkit/src/binding_contract/registry.rs)
+under the [public API design](./public_api_design.md).
+The split-crate structural text constructors are model-qualified functions in
+`cosmolkit::bio`, not a second public parser and not inherent IO methods added
+to an externally owned `BioStructure`. Neither a `bio -> io` reverse
+dependency nor an illegal cross-crate inherent implementation is acceptable.
 
-RDKit-derived code may be ported only for Molecule compatibility tasks after
-the PDB/mmCIF text has gone through the Gemmi-primary structural path, for
-example:
+The old constructor spellings and old core IO paths are historical locators,
+not canonical aliases. Registration precedes public exposure. In particular,
+a subset-reader name must not be used to imply complete structural reading.
 
-- RDKit-compatible PDB block writing from `Molecule`
-- RDKit-compatible `Molecule::from_pdb_block` behavior built on
-  `BioStructure` conversion
-- RDKit-compatible `AtomPDBResidueInfo` attachment to molecule atoms
-- RDKit-compatible bond perception, sanitization, and residue metadata behavior
-  for molecule graph construction
+The declared source-ID boundary uses at-most-four-byte `PdbChainId` values
+for chain/subchain hierarchy references. Over-width identifiers return the
+documented structured boundary error, never truncation, hashing or invented
+aliases. Entity source identifiers remain variable-length strings. Author and
+label chain identities remain distinct. Exact AtomName whitespace and length,
+altloc, source order and coordinate behavior follow the frozen source/profile
+mapping; no convenient lossy normalization is allowed.
 
-RDKit-derived PDB code must output or operate on `Molecule`, not a competing
-protein hierarchy. The molecule readers are layered over the Gemmi-primary
-`BioStructure` parse rather than a separate public structural parser.
+## Molecule conversion
 
-Current primary API shape:
+Conversion is explicit because structural and chemical models preserve
+different invariants. Its contract must identify:
 
-```text
-Molecule::from_pdb_block(input)
-Molecule::from_pdb_block_with_options(input, StructureMoleculeOptions)
-Molecule::from_mmcif_block(input)
-Molecule::from_mmcif_block_with_options(input, StructureMoleculeOptions)
-BioStructure::to_molecule()
-BioStructure::to_molecule_with_options(StructureMoleculeOptions)
-Molecule::to_pdb_block(...)
-```
+- retained/filtered atoms and source model/altloc selection;
+- preserved, synthesized and intentionally lost fields;
+- source identifiers and PDB residue information attached to molecule atoms;
+- imported CONECT/mmCIF connections versus source-backed proximity bonding;
+- atom/residue mappings, sanitization and hydrogen-removal order;
+- structured errors for independently unmodeled capabilities.
 
-`StructureMoleculeOptions` and `StructureMoleculeConversionError` are named for
-the model boundary because the same conversion policy applies after PDB or
-mmCIF structural parsing. Historical `RdkitPdbMolProfile` and
-`PdbMoleculeConversionError` names are deprecated compatibility aliases.
-Top-level conversion functions are likewise compatibility shims; new code
-should use methods on the destination or source value.
+Do not guess chemistry or relabel supported-input failures as unsupported.
+A protein-only projection cannot claim `Chem.MolFromPDBBlock()` equivalence:
+it can discard ligands, water, ions, nucleic acids and connection context.
 
-Unacceptable future API shape:
+Detailed filtering and atom/bond behavior must be reproduced from the pinned
+RDKit PDB reader and its reached helpers, with source anchors in the owning
+implementation and regression coverage for the conversion profile above.
+The facade may expose destination/source-oriented conversion APIs only through
+the canonical public contract. Historical `RdkitPdbMolProfile`,
+`PdbMoleculeConversionError`, old `_with_options` examples and free-function
+shims do not authorize compatibility aliases or override current naming rules.
 
-```text
-pdb_parser_rdkit::read_structure(input)
-mmcif_parser_rdkit::read_biostructure(input)
-```
+There is no independent RDKit mmCIF parser. Molecule input from mmCIF applies
+the documented conversion profile after the Gemmi structural parse.
 
-There is no independent RDKit mmCIF parser. `Molecule::from_mmcif_block()`
-starts from the Gemmi-primary structural parse and deliberately applies the
-documented structure-to-molecule conversion options.
+## Structural writers
 
-## Conversion Boundary
+Structural serialization targets `BioStructure` and uses one Gemmi-aligned
+document builder and CIF serializer. A PDB-to-mmCIF workflow is composition of
+the public reader and writer, not a separate format-pair parser.
 
-Conversions between `BioStructure` and `Molecule` must be explicit because the
-two models preserve different invariants.
+A writer emits represented structural state. It cannot promise preservation of
+unmodeled/private CIF categories unless the model explicitly retains them.
+Canonical writer names, parameter types and language projections must be
+registered under [public_api_design.md](./public_api_design.md), not copied
+from historical signatures.
 
-`BioStructure` preserves structural hierarchy and source identifiers. `Molecule`
-preserves chemical graph state, valence/sanitization state, conformers, and
-atom/bond metadata.
+Do not expose `Protein::to_mmcif()` as lossless structural conversion or
+`Molecule::to_mmcif()` as complete structural serialization. RDKit-based
+`Molecule` PDB writing is a separate chemical-graph writer, not structural IO.
 
-The conversion API must define:
+## Completion and change boundaries
 
-- which structural fields are preserved
-- which molecule fields are synthesized
-- whether bonds are imported, inferred, or unsupported
-- whether sanitization runs
-- how atom/residue mappings are reported
-- what information is intentionally lost
+The structural reader must close its declared Gemmi profile. Molecule input
+must additionally close the conversion and RDKit postprocessing profile.
+These are separate acceptance obligations, not independent execution queues.
 
-Do not hide conversion behind structural parser names. A PDB/mmCIF structural
-read is not the same operation as molecule graph construction.
-`Molecule::from_pdb_block` is allowed only as a molecule compatibility API
-whose internal pipeline is Gemmi structural parse, explicit conversion, then
-RDKit-compatible molecule post-processing.
-
-## Structural Writer Boundary
-
-Structural writers belong only to `BioStructure`. A PDB-to-mmCIF workflow is
-composition through the public model, not a separate format-pair function:
-
-```text
-BioStructure::from_pdb_str(input)?.to_mmcif()
-```
-
-The implemented structural writer API is:
-
-```text
-BioStructure::to_mmcif()
-BioStructure::to_mmcif_with_options(MmcifWriteOptions)
-BioStructure::write_mmcif(path)
-BioStructure::write_mmcif_with_options(path, MmcifWriteOptions)
-```
-
-These methods are backed by the single Gemmi-aligned document-builder and CIF
-serializer path. They emit represented `BioStructure` state and do not claim
-to preserve arbitrary unmodeled source categories.
-
-Do not add `Protein::to_mmcif()`: `Protein` has already discarded non-protein
-rows, so that name would look like lossless format conversion while silently
-writing a projection. Do not add `Molecule::to_mmcif()`: `Molecule` does not
-represent the complete structural hierarchy or mmCIF metadata.
-
-The structural writer generates a canonical mmCIF document from
-the state modeled by `BioStructure`. It must not claim to preserve arbitrary
-unmodeled or private categories from an input CIF document unless the public
-model later retains that source document explicitly.
-
-## Planning Rule
-
-When porting README-claimed PDB/mmCIF/protein behavior:
-
-1. Use `io::bio` and `BioStructure` for all PDB/mmCIF reading.
-2. Use RDKit source only for Molecule compatibility behavior layered after
-   `BioStructure` exists.
-3. Keep unsupported branches explicit.
-4. Do not expose quarantined `pdb_parser.rs` or `mmcif_parser.rs` as public
-   modules.
-5. Do not merge Gemmi and RDKit code into one large mixed parser. Keep the
-   Gemmi parser source-scoped and keep RDKit rules in the conversion or molecule
-   compatibility layer.
-
-This policy is binding for future agents. If a task appears to require a public
-parallel parser API, stop and ask the human author before implementing it.
+Source scope, test evidence and unresolved dependencies belong to the owning
+unit reports. The sole plan schedules structural prerequisites before their
+consumers. A task that genuinely requires a parallel parser, new ownership
+boundary, or changed model support limit must stop for explicit approval.

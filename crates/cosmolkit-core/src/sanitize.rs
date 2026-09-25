@@ -392,12 +392,12 @@ pub fn sanitize_topology_with_query_state(
             source,
         })?;
     if let Some(state) = query_state {
-        QueryStateRef::try_for_topology(state.atoms(), state.bonds(), topology).map_err(
-            |source| SanitizeError::InvalidQueryState {
+        state.validate_for_topology(topology).map_err(|source| {
+            SanitizeError::InvalidQueryState {
                 stage: SanitizeStage::None,
                 source,
-            },
-        )?;
+            }
+        })?;
     }
 
     // Complete pinned source: MolOps.cpp::sanitizeMol(RWMol &, unsigned int &, unsigned int).

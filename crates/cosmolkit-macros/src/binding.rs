@@ -539,7 +539,7 @@ fn validate_signature(owner: Owner, rust: &Path, payload: &CallablePayload) -> s
                 ));
             }
         };
-        if signature_metadata_tokens(inputs[0]) != signature_metadata_tokens(&expected) {
+        if receiver_metadata_tokens(inputs[0]) != receiver_metadata_tokens(&expected) {
             return Err(syn::Error::new_spanned(
                 inputs[0],
                 "binding signature has the wrong instance receiver",
@@ -583,10 +583,12 @@ fn validate_signature(owner: Owner, rust: &Path, payload: &CallablePayload) -> s
 }
 
 /// Binding metadata records public value types, while an explicit bare-fn
-/// binder records which borrowed input owns a borrowed output. Erase only
-/// reference lifetime spellings for metadata agreement; the generated const
-/// assertion retains the complete declared signature and asks rustc to verify
-/// the exact higher-ranked relationship against the public item.
+/// binder records which borrowed input owns a borrowed output. Erase lifetime
+/// spellings (including lifetime arguments on borrowed view types) only for
+/// metadata agreement; the generated const assertion retains the complete
+/// declared signature and asks rustc to verify the exact higher-ranked
+/// relationship against the public item. Type and const arguments remain
+/// exact.
 fn signature_metadata_tokens(ty: &Type) -> String {
     struct ElideReferenceLifetimes;
 
@@ -595,11 +597,39 @@ fn signature_metadata_tokens(ty: &Type) -> String {
             reference.lifetime = None;
             visit_mut::visit_type_reference_mut(self, reference);
         }
+
+        fn visit_lifetime_mut(&mut self, lifetime: &mut syn::Lifetime) {
+            *lifetime = syn::parse_quote!('_);
+        }
     }
 
     let mut normalized = ty.clone();
     ElideReferenceLifetimes.visit_type_mut(&mut normalized);
     tokens(&normalized)
+}
+
+/// A type-owned method path names its receiver as `path::Type::method` and
+/// therefore cannot carry the receiver type's generic arguments. Compare the
+/// receiver's ownership/reference shape and canonical base path here; keep
+/// the complete declared type for the generated public signature assertion.
+fn receiver_metadata_tokens(ty: &Type) -> String {
+    fn erase_terminal_path_arguments(ty: &mut Type) {
+        match ty {
+            Type::Reference(reference) => erase_terminal_path_arguments(&mut reference.elem),
+            Type::Paren(paren) => erase_terminal_path_arguments(&mut paren.elem),
+            Type::Group(group) => erase_terminal_path_arguments(&mut group.elem),
+            Type::Path(path) if path.qself.is_none() => {
+                if let Some(segment) = path.path.segments.last_mut() {
+                    segment.arguments = syn::PathArguments::None;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    let mut normalized = ty.clone();
+    erase_terminal_path_arguments(&mut normalized);
+    signature_metadata_tokens(&normalized)
 }
 
 fn validate_type_names(
@@ -771,7 +801,20 @@ fn expand_registry(registry: BindingRegistry) -> syn::Result<proc_macro2::TokenS
             let assertion = format_ident!("__BINDING_ASSERT_{}_{}", name, index);
             if let Some(payload) = &entry.callable {
                 let signature = &payload.signature;
-                assertions.push(quote! { #(#cfg)* const #assertion: #signature = #rust; });
+                if let Some(bound_lifetimes) = &signature.lifetimes {
+                    let parameters = &bound_lifetimes.lifetimes;
+                    let mut instantiated_signature = signature.clone();
+                    instantiated_signature.lifetimes = None;
+                    assertions.push(quote! {
+                        #(#cfg)* const #assertion: fn() = || {
+                            fn assert_signature<#parameters>() {
+                                let _: #instantiated_signature = #rust;
+                            }
+                        };
+                    });
+                } else {
+                    assertions.push(quote! { #(#cfg)* const #assertion: #signature = #rust; });
+                }
             } else {
                 assertions.push(quote! { #(#cfg)* const #assertion: fn() = || {
                     fn assert_public_type<T>() {} assert_public_type::<#rust>();

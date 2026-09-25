@@ -556,7 +556,10 @@ impl AtomSpec {
 
     #[must_use]
     pub const fn with_isotope(mut self, isotope: u16) -> Self {
-        self.isotope = Some(isotope);
+        // RDKit✔️✔️: unsigned int getIsotope() const { return d_isotope; }
+        // Preserve the model's zero-as-absence projection at construction,
+        // not just at the getter. This is a constant-time sentinel conversion.
+        self.isotope = if isotope == 0 { None } else { Some(isotope) };
         self
     }
 
@@ -1059,7 +1062,7 @@ impl Atom {
     pub fn set_isotope(&mut self, isotope: Option<u16>) {
         // RDKit✔️✔️: void Atom::setIsotope(unsigned int what) { d_isotope = what; }
         // Source zero is projected as `None` in the detached value.
-        self.isotope = isotope;
+        self.isotope = isotope.filter(|value| *value != 0);
     }
 
     #[doc(hidden)]

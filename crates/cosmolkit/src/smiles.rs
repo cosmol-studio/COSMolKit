@@ -13,6 +13,8 @@ pub enum SmilesError {
     Hydrogen(cosmolkit_core::HydrogenError),
     /// Source-defined sanitization failed.
     Sanitize(cosmolkit_core::SanitizeError),
+    /// Source-defined post-chemistry stereo completion failed.
+    Stereo(cosmolkit_smiles::SmilesStereoError),
     /// Final live-state validation failed.
     Construction(OperationError),
 }
@@ -23,6 +25,7 @@ impl fmt::Display for SmilesError {
             Self::Parse(error) => write!(formatter, "SMILES parsing failed: {error}"),
             Self::Hydrogen(error) => write!(formatter, "SMILES hydrogen removal failed: {error}"),
             Self::Sanitize(error) => write!(formatter, "SMILES sanitization failed: {error}"),
+            Self::Stereo(error) => write!(formatter, "SMILES stereo completion failed: {error}"),
             Self::Construction(error) => {
                 write!(formatter, "SMILES molecule construction failed: {error}")
             }
@@ -36,6 +39,7 @@ impl std::error::Error for SmilesError {
             Self::Parse(error) => Some(error),
             Self::Hydrogen(error) => Some(error),
             Self::Sanitize(error) => Some(error),
+            Self::Stereo(error) => Some(error),
             Self::Construction(error) => Some(error),
         }
     }
@@ -62,6 +66,12 @@ impl From<cosmolkit_core::SanitizeError> for SmilesError {
 impl From<OperationError> for SmilesError {
     fn from(error: OperationError) -> Self {
         Self::Construction(error)
+    }
+}
+
+impl From<cosmolkit_smiles::SmilesStereoError> for SmilesError {
+    fn from(error: cosmolkit_smiles::SmilesStereoError) -> Self {
+        Self::Stereo(error)
     }
 }
 
@@ -109,6 +119,15 @@ impl Molecule {
             .topology;
         }
 
-        Self::from_parts(topology, coordinates, properties).map_err(SmilesError::Construction)
+        let record = cosmolkit_smiles::finalize_smiles_stereo(
+            cosmolkit_smiles::SmilesRecord {
+                topology,
+                coordinates,
+                properties,
+            },
+            params,
+        )?;
+        Self::from_parts(record.topology, record.coordinates, record.properties)
+            .map_err(SmilesError::Construction)
     }
 }
