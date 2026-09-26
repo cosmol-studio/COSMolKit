@@ -716,6 +716,7 @@ pub(crate) fn add_explicit_H(
             removed_index = removed_index.wrapping_add(1);
         }
         if added > 0 && added <= num_removed_h {
+            panic!("INCHI-AUDIT-0011: confirmed source allocation/copy divergence; see dev/audits/inchi/findings.md");
             let temporary_atoms = heap
                 .slice(temporary.as_const())?
                 .get(..usize::try_from(added).map_err(|_| SourceHeapError::PointerOutOfBounds)?)

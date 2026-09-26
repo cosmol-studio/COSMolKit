@@ -811,6 +811,9 @@ impl ContiguousNeighborRankSortWorkspace {
         }
         let atom_numbers_are_bounded =
             heap.has_proven_index_bound(atom_numbers.as_const(), count, count);
+        if !atom_numbers_are_bounded {
+            panic!("INCHI-AUDIT-0013: confirmed source extra-scan divergence; see dev/audits/inchi/findings.md");
+        }
         if !atom_numbers_are_bounded
             && atom_values
                 .prefix(count)

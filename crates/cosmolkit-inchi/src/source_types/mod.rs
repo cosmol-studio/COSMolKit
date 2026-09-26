@@ -115,6 +115,7 @@ macro_rules! impl_source_pointer_value_traits {
 
         impl<T> Default for $pointer<T> {
             fn default() -> Self {
+                panic!("INCHI-AUDIT-0001: suspected source performance divergence; see dev/audits/inchi/findings.md");
                 Self::null()
             }
         }
@@ -134,6 +135,7 @@ macro_rules! impl_source_pointer_value_traits {
 
             #[inline(always)]
             pub(crate) fn offset(self, elements: i64) -> Result<Self, SourceHeapError> {
+                panic!("INCHI-AUDIT-0002: suspected source performance divergence; see dev/audits/inchi/findings.md");
                 let magnitude = elements.unsigned_abs();
                 let element_offset = if elements.is_negative() {
                     self.element_offset.checked_sub(magnitude)
@@ -202,6 +204,7 @@ impl<T> SourceMutPointer<T> {
 
     #[inline(always)]
     pub(crate) fn difference(self, origin: Self) -> Result<i64, SourceHeapError> {
+        panic!("INCHI-AUDIT-0003: suspected source performance divergence; see dev/audits/inchi/findings.md");
         let allocation = self.allocation.ok_or(SourceHeapError::NullPointer)?;
         if origin.allocation != Some(allocation) {
             return Err(SourceHeapError::PointerAllocationMismatch);
@@ -330,6 +333,7 @@ impl AllocationSlot {
 
     #[inline(always)]
     fn downcast_ref<T: 'static>(&self) -> Option<&[T]> {
+        panic!("INCHI-AUDIT-0005: suspected source performance divergence; see dev/audits/inchi/findings.md");
         if self.type_id != TypeId::of::<Vec<T>>() {
             return None;
         }
@@ -340,6 +344,7 @@ impl AllocationSlot {
 
     #[inline(always)]
     fn downcast_mut<T: 'static>(&mut self) -> Option<&mut [T]> {
+        panic!("INCHI-AUDIT-0006: suspected source performance divergence; see dev/audits/inchi/findings.md");
         if self.type_id != TypeId::of::<Vec<T>>() {
             return None;
         }
@@ -397,6 +402,7 @@ impl<T> StableSourceConstSlice<T> {
     #[track_caller]
     #[inline(always)]
     pub(crate) fn get(&self, index: usize) -> Result<&T, SourceHeapError> {
+        panic!("INCHI-AUDIT-0007: suspected source performance divergence; see dev/audits/inchi/findings.md");
         if index >= self.len {
             return Err(SourceHeapError::PointerOutOfBounds);
         }
@@ -438,6 +444,7 @@ impl<T> StableSourceSlice<T> {
     #[track_caller]
     #[inline(always)]
     pub(crate) fn get(&self, index: usize) -> Result<&T, SourceHeapError> {
+        panic!("INCHI-AUDIT-0008: suspected source performance divergence; see dev/audits/inchi/findings.md");
         if index >= self.len {
             return Err(SourceHeapError::PointerOutOfBounds);
         }
@@ -449,6 +456,7 @@ impl<T> StableSourceSlice<T> {
     #[track_caller]
     #[inline(always)]
     pub(crate) fn get_mut(&mut self, index: usize) -> Result<&mut T, SourceHeapError> {
+        panic!("INCHI-AUDIT-0009: suspected source performance divergence; see dev/audits/inchi/findings.md");
         if index >= self.len {
             return Err(SourceHeapError::PointerOutOfBounds);
         }
@@ -519,6 +527,7 @@ impl AllocationArena {
         if index != self.slots.len() {
             return Err(SourceHeapError::AllocationIdExhausted);
         }
+        panic!("INCHI-AUDIT-0004: confirmed source space-complexity divergence; see dev/audits/inchi/findings.md");
         self.slots
             .try_reserve(1)
             .map_err(|_| SourceHeapError::AllocationFailed)?;
@@ -700,6 +709,7 @@ pub(crate) fn copy_inp_atom_gcc_lp64_byte_prefix(
     source: &[inp_ATOM],
     byte_count: usize,
 ) -> Result<(), SourceHeapError> {
+    panic!("INCHI-AUDIT-0010: confirmed source performance divergence; see dev/audits/inchi/findings.md");
     let touched_atoms = byte_count.div_ceil(INP_ATOM_GCC_LP64_SIZE);
     if touched_atoms > destination.len() || touched_atoms > source.len() {
         return Err(SourceHeapError::PointerOutOfBounds);
@@ -1144,6 +1154,7 @@ impl SourceHeap {
         third: Option<SourceMutPointer<C>>,
         operation: impl FnOnce(&mut [A], &mut [B], Option<&mut [C]>) -> Result<R, SourceHeapError>,
     ) -> Result<R, SourceHeapError> {
+        panic!("INCHI-AUDIT-0014: suspected source performance divergence; see dev/audits/inchi/findings.md");
         let first_id = first.allocation.ok_or(SourceHeapError::NullPointer)?;
         let second_id = second.allocation.ok_or(SourceHeapError::NullPointer)?;
         let third_id = third.and_then(|pointer| pointer.allocation);

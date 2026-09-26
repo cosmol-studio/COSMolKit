@@ -59,6 +59,7 @@ pub(crate) fn inchi_malloc(
     bytes
         .try_reserve_exact(byte_count)
         .map_err(|_| SourceHeapError::AllocationFailed)?;
+    panic!("INCHI-AUDIT-0012: confirmed source initialization-cost divergence; see dev/audits/inchi/findings.md");
     bytes.resize(byte_count, 0_i8);
     heap.allocate(bytes)
 }
@@ -110,6 +111,7 @@ pub(crate) fn inchi_realloc<T: Clone + Default + 'static>(
     let old = if pointer.is_null() {
         Vec::new()
     } else {
+        panic!("INCHI-AUDIT-0015: confirmed source reallocation-clone cost divergence; see dev/audits/inchi/findings.md");
         heap.slice(pointer.as_const())?.to_vec()
     };
     let mut replacement = Vec::new();
@@ -117,6 +119,7 @@ pub(crate) fn inchi_realloc<T: Clone + Default + 'static>(
         .try_reserve_exact(count)
         .map_err(|_| SourceHeapError::AllocationFailed)?;
     // INCHI✔️✔️: realloc preserves the old prefix and zero-fills any grown tail.
+    panic!("INCHI-AUDIT-0016: confirmed source replacement-initialization cost divergence; see dev/audits/inchi/findings.md");
     replacement.resize(count, T::default());
     let copied = old.len().min(count);
     replacement[..copied].clone_from_slice(&old[..copied]);
@@ -775,6 +778,7 @@ pub(crate) fn extract_inchi_substring(
         .checked_add(1)
         .ok_or(SourceHeapError::AllocationSizeOverflow)?;
     let extracted = inchi_calloc::<i8>(heap, allocation_count, 1)?;
+    panic!("INCHI-AUDIT-0018: confirmed source substring-clone cost divergence; see dev/audits/inchi/findings.md");
     let source = heap.slice(string)?[start..start + length].to_vec();
     heap.slice_mut(extracted)?[..length].copy_from_slice(&source);
     heap.slice_mut(extracted)?[length] = 0;
@@ -878,6 +882,7 @@ void extract_auxinfo_substring( char ** buf, const char *str, size_t slen )
         }
         length += 1;
     }
+    panic!("INCHI-AUDIT-0019: confirmed source AuxInfo-clone cost divergence; see dev/audits/inchi/findings.md");
     let source = bytes
         .get(start..start + length)
         .ok_or(SourceHeapError::PointerOutOfBounds)?
@@ -964,6 +969,7 @@ pub(crate) fn mystrncpy(
         } else {
             maximum_length - 1
         };
+        panic!("INCHI-AUDIT-0017: confirmed source string-copy allocation divergence; see dev/audits/inchi/findings.md");
         let mut copied = Vec::new();
         copied
             .try_reserve_exact(copied_length + 1)
@@ -1013,6 +1019,7 @@ fn source_is_ascii_space(value: i8) -> bool {
 fn source_is_ascii_lower(value: i8) -> Result<bool, SourceHeapError> {
     let value = value as u8;
     if !value.is_ascii() {
+        panic!("INCHI-AUDIT-0020: suspected source high-bit alias behavior divergence; see dev/audits/inchi/findings.md");
         return Err(SourceHeapError::InvalidSourceTextEncoding);
     }
     Ok(value.is_ascii_lowercase())
@@ -2137,6 +2144,9 @@ pub(crate) fn if_skip_add_H(periodic_number: i32) -> Result<i32, SourceHeapError
     };
     let table_index =
         usize::try_from(table_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    if (82..=89).contains(&table_index) {
+        panic!("INCHI-AUDIT-0021: confirmed source hydrogen-skip table divergence; see dev/audits/inchi/findings.md");
+    }
     EL_DATA_SKIP_ADDING_H
         .get(table_index)
         .copied()
@@ -3084,6 +3094,9 @@ pub(crate) fn get_el_type(periodic_number: i32) -> Result<i32, SourceHeapError> 
     if table_index == EL_DATA_TYPES.len() {
         return Ok(0);
     }
+    if matches!(table_index, 69 | 71) {
+        panic!("INCHI-AUDIT-0022: confirmed source element-type table divergence; see dev/audits/inchi/findings.md");
+    }
     EL_DATA_TYPES
         .get(table_index)
         .copied()
@@ -3258,6 +3271,7 @@ pub(crate) fn get_num_H(
     // is valid source text, so these lookups cannot reach the parser error
     // cases accepted for caller-provided `element_name` below.
     let cached_element = |slot: &OnceLock<i32>, symbol: i8| {
+        panic!("INCHI-AUDIT-0023: suspected source per-atom cache-probe cost divergence; see dev/audits/inchi/findings.md");
         *slot.get_or_init(|| {
             el_number_in_internal_ref_table(Some(&[symbol, 0]))
                 .expect("an ASCII element literal is valid source text")
@@ -3281,6 +3295,9 @@ pub(crate) fn get_num_H(
         return Ok(input_hydrogens);
     }
     let element = el_number_in_internal_ref_table(element_name)?;
+    if (82..=89).contains(&(element as usize)) {
+        panic!("INCHI-AUDIT-0021: confirmed source hydrogen-skip table divergence in get_num_H; see dev/audits/inchi/findings.md");
+    }
     if element == ERR_ELEM || EL_DATA_SKIP_ADDING_H[element as usize] || do_not_add_hydrogen != 0 {
         return Ok(input_hydrogens);
     }
@@ -3370,6 +3387,7 @@ pub(crate) fn num_of_H(atoms: &[inp_ATOM], iat: i32) -> Result<i32, SourceHeapEr
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
     let mut explicit_h = 0_i32;
     for index in 0..i32::from(atom.valence) {
+        panic!("INCHI-AUDIT-0024: suspected source per-neighbor checked-access cost divergence; see dev/audits/inchi/findings.md");
         let neighbor_index =
             usize::try_from(index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         let neighbor_atom_index = usize::from(
@@ -3794,6 +3812,7 @@ pub(crate) fn is_in_the_list(
         usize::try_from(path_length).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
     let path = path_atom.ok_or(SourceHeapError::NullPointer)?;
     for index in 0..path_length {
+        panic!("INCHI-AUDIT-0025: suspected per-neighbor lookup cost regression; see dev/audits/inchi/findings.md");
         let candidate = path.get(index).ok_or(SourceHeapError::PointerOutOfBounds)?;
         if *candidate == next_atom {
             return Ok(Some(index));
@@ -3828,6 +3847,7 @@ pub(crate) fn is_in_the_ilist(
         usize::try_from(path_length).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
     let path = path_atom.ok_or(SourceHeapError::NullPointer)?;
     for index in 0..path_length {
+        panic!("INCHI-AUDIT-0025: suspected per-item lookup cost regression; see dev/audits/inchi/findings.md");
         let candidate = path.get(index).ok_or(SourceHeapError::PointerOutOfBounds)?;
         if *candidate == next_atom {
             return Ok(Some(index));
@@ -3920,6 +3940,7 @@ pub(crate) fn n_bonds_val_to_metal(
     let mut valence_to_metal = 0_i32;
 
     for index in 0..i32::from(atom.valence) {
+        panic!("INCHI-AUDIT-0026: suspected per-neighbor access cost regression; see dev/audits/inchi/findings.md");
         let index = usize::try_from(index).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
         let neighbor_index = *atom
             .neighbor
@@ -4041,6 +4062,7 @@ pub(crate) fn n_no_metal_num_bonds(
         let mut valence_to_metal = 0_i32;
         let mut num_bonds_to_metal = 0_i32;
         for index in 0..i32::from(atom.valence) {
+            panic!("INCHI-AUDIT-0026: suspected per-neighbor access cost regression; see dev/audits/inchi/findings.md");
             let index =
                 usize::try_from(index).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
             let neighbor_index = *atom
@@ -4074,6 +4096,7 @@ pub(crate) fn n_no_metal_num_bonds(
         let mut valence_to_metal = 0_i32;
         let mut num_bonds_to_metal = 0_i32;
         for index in 0..i32::from(atom.valence) {
+            panic!("INCHI-AUDIT-0026: suspected per-neighbor access cost regression; see dev/audits/inchi/findings.md");
             let index =
                 usize::try_from(index).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
             let neighbor_index = *atom
@@ -4197,6 +4220,7 @@ pub(crate) fn n_no_metal_bonds_valence(
     if atom_chem_valence + num_h > std_chem_bonds_valence {
         let mut valence_to_metal = 0_i32;
         for index in 0..i32::from(atom.valence) {
+            panic!("INCHI-AUDIT-0026: suspected per-neighbor access cost regression; see dev/audits/inchi/findings.md");
             let index =
                 usize::try_from(index).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
             let neighbor_index = *atom
@@ -4228,6 +4252,7 @@ pub(crate) fn n_no_metal_bonds_valence(
     {
         let mut valence_to_metal = 0_i32;
         for index in 0..i32::from(atom.valence) {
+            panic!("INCHI-AUDIT-0026: suspected per-neighbor access cost regression; see dev/audits/inchi/findings.md");
             let index =
                 usize::try_from(index).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
             let neighbor_index = *atom
@@ -4288,6 +4313,7 @@ pub(crate) fn n_no_metal_neigh_index(
         .get(atom_index)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
     for index in 0..i32::from(atom.valence) {
+        panic!("INCHI-AUDIT-0026: suspected per-neighbor access cost regression; see dev/audits/inchi/findings.md");
         let index_usize =
             usize::try_from(index).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
         let neighbor_index = *atom
@@ -4337,6 +4363,7 @@ pub(crate) fn n_no_metal_other_neigh_index(
         .get(atom_index)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
     for index in 0..i32::from(atom.valence) {
+        panic!("INCHI-AUDIT-0026: suspected per-neighbor access cost regression; see dev/audits/inchi/findings.md");
         let index_usize =
             usize::try_from(index).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
         let neigh = i32::from(
@@ -4394,6 +4421,7 @@ pub(crate) fn n_no_metal_other_neigh_index2(
         .get(atom_index)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
     for index in 0..i32::from(atom.valence) {
+        panic!("INCHI-AUDIT-0026: suspected per-neighbor access cost regression; see dev/audits/inchi/findings.md");
         let index_usize =
             usize::try_from(index).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
         let neigh = i32::from(
@@ -4454,6 +4482,7 @@ pub(crate) fn inchi_memicmp(
     let mut index = 0_usize;
     while length != 0 {
         length -= 1;
+        panic!("INCHI-AUDIT-0027: suspected repeated heap-resolution cost; see dev/audits/inchi/findings.md");
         let left = *heap
             .slice(first)?
             .get(index)
@@ -4516,6 +4545,7 @@ pub(crate) fn inchi_stricmp(
     let second_bytes = heap.slice(second)?;
     let mut index = 0_usize;
     loop {
+        panic!("INCHI-AUDIT-0028: suspected per-character access cost regression; see dev/audits/inchi/findings.md");
         let left = *first_bytes
             .get(index)
             .ok_or(SourceHeapError::MissingNulTerminator)?;
@@ -4568,6 +4598,7 @@ pub(crate) fn inchi__strdup(
             .iter()
             .position(|byte| *byte == 0)
             .ok_or(SourceHeapError::MissingNulTerminator)?;
+        panic!("INCHI-AUDIT-0029: suspected extra full-string allocation and copy; see dev/audits/inchi/findings.md");
         source[..=length].to_vec()
     };
     let byte_count = u64::try_from(copied.len())

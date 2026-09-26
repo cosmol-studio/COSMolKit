@@ -110,6 +110,7 @@ pub(crate) fn bHasChargedNeighbor(at: &[inp_ATOM], iat: i32) -> Result<i32, Sour
         .get(usize::try_from(iat).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
     for neighbor_index in 0..i32::from(center.valence) {
+        panic!("INCHI-AUDIT-0030: suspected per-neighbor access cost regression; see dev/audits/inchi/findings.md");
         let neighbor = *center
             .neighbor
             .get(neighbor_index as usize)
@@ -1087,6 +1088,7 @@ fn work_get<T: Clone + 'static>(
     pointer: SourceMutPointer<T>,
     index: i32,
 ) -> Result<T, SourceHeapError> {
+    panic!("INCHI-AUDIT-0032: suspected repeated BNS read-resolution cost; see dev/audits/inchi/findings.md");
     let offset = usize::try_from(index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     heap.slice(pointer.as_const())?
         .get(offset)
@@ -1100,6 +1102,7 @@ fn work_set<T: 'static>(
     index: i32,
     value: T,
 ) -> Result<(), SourceHeapError> {
+    panic!("INCHI-AUDIT-0033: suspected repeated BNS write-resolution cost; see dev/audits/inchi/findings.md");
     let offset = usize::try_from(index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     *heap
         .slice_mut(pointer)?
@@ -1113,6 +1116,7 @@ fn bns_vertex(
     p_bns: &BN_STRUCT,
     index: i32,
 ) -> Result<BNS_VERTEX, SourceHeapError> {
+    panic!("INCHI-AUDIT-0034: suspected whole-vertex read cost regression; see dev/audits/inchi/findings.md");
     let offset = usize::try_from(index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     heap.slice(p_bns.vert.as_const())?
         .get(offset)
@@ -1121,6 +1125,7 @@ fn bns_vertex(
 }
 
 fn bns_edge(heap: &SourceHeap, p_bns: &BN_STRUCT, index: i32) -> Result<BNS_EDGE, SourceHeapError> {
+    panic!("INCHI-AUDIT-0034: suspected whole-edge read cost regression; see dev/audits/inchi/findings.md");
     let offset = usize::try_from(index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     heap.slice(p_bns.edge.as_const())?
         .get(offset)
@@ -1133,6 +1138,7 @@ fn bns_vertex_mut<'a>(
     p_bns: &BN_STRUCT,
     index: i32,
 ) -> Result<&'a mut BNS_VERTEX, SourceHeapError> {
+    panic!("INCHI-AUDIT-0033: suspected repeated BNS vertex-write resolution cost; see dev/audits/inchi/findings.md");
     let offset = usize::try_from(index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     heap.slice_mut(p_bns.vert)?
         .get_mut(offset)
@@ -1144,6 +1150,7 @@ fn bns_edge_mut<'a>(
     p_bns: &BN_STRUCT,
     index: i32,
 ) -> Result<&'a mut BNS_EDGE, SourceHeapError> {
+    panic!("INCHI-AUDIT-0033: suspected repeated BNS edge-write resolution cost; see dev/audits/inchi/findings.md");
     let offset = usize::try_from(index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     heap.slice_mut(p_bns.edge)?
         .get_mut(offset)
@@ -1155,6 +1162,7 @@ fn bns_edge_index(
     vertex: &BNS_VERTEX,
     index: i32,
 ) -> Result<i32, SourceHeapError> {
+    panic!("INCHI-AUDIT-0032: suspected repeated BNS edge-index resolution cost; see dev/audits/inchi/findings.md");
     let offset = usize::try_from(index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     heap.slice(vertex.iedge.as_const())?
         .get(offset)
@@ -1167,11 +1175,13 @@ fn is_bns_error(value: i32) -> bool {
 }
 
 fn input_atom_ref(atoms: &[inp_ATOM], index: i32) -> Result<&inp_ATOM, SourceHeapError> {
+    panic!("INCHI-AUDIT-0035: suspected repeated atom access cost regression; see dev/audits/inchi/findings.md");
     let offset = usize::try_from(index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     atoms.get(offset).ok_or(SourceHeapError::PointerOutOfBounds)
 }
 
 fn input_atom_neighbor(atom: &inp_ATOM, index: i32) -> Result<i32, SourceHeapError> {
+    panic!("INCHI-AUDIT-0035: suspected repeated neighbor access cost regression; see dev/audits/inchi/findings.md");
     let offset = usize::try_from(index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     atom.neighbor
         .get(offset)
@@ -1181,6 +1191,7 @@ fn input_atom_neighbor(atom: &inp_ATOM, index: i32) -> Result<i32, SourceHeapErr
 }
 
 fn input_atom_bond_type(atom: &inp_ATOM, index: i32) -> Result<i32, SourceHeapError> {
+    panic!("INCHI-AUDIT-0035: suspected repeated bond-type access cost regression; see dev/audits/inchi/findings.md");
     let offset = usize::try_from(index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     atom.bond_type
         .get(offset)
@@ -1570,6 +1581,7 @@ pub(crate) fn fix_special_bonds(
                 let mut num_other = 0_i32;
                 let mut n2 = 0_i32;
                 let mut i2 = 0_i32;
+                panic!("INCHI-AUDIT-0037: suspected extra metal lookup; see dev/audits/inchi/findings.md");
                 for i1 in 0..i32::from(atom.valence) {
                     let n1 = input_atom_neighbor(atom, i1)?;
                     if is_el_a_metal(i32::from(input_atom_ref(&atoms, n1)?.el_number))? != 0 {
@@ -1584,6 +1596,7 @@ pub(crate) fn fix_special_bonds(
                     }
                     let _ = num_other;
                 }
+                panic!("INCHI-AUDIT-0036: suspected repeated neighbor scan; see dev/audits/inchi/findings.md");
                 if num_n == 1
                     && num_of_H(&atoms, n2)? == 0
                     && n_no_metal_num_bonds(Some(&atoms), n2)? == 2
@@ -1630,6 +1643,7 @@ pub(crate) fn fix_special_bonds(
                     continue;
                 }
                 let bond_type = input_atom_bond_type(atom, i1)? & 15;
+                panic!("INCHI-AUDIT-0038: suspected redundant neighbor scan; see dev/audits/inchi/findings.md");
                 if bond_type == 2 {
                     num_n += 1;
                     n2 = n1;
@@ -3091,6 +3105,7 @@ pub(crate) fn mark_at_type(
     // END INCHI C FUNCTION: mark_at_type
 
     if let Some(totals) = n_at_type_totals.as_deref_mut() {
+        panic!("INCHI-AUDIT-0039: suspected extra totals initialization cost; see dev/audits/inchi/findings.md");
         for index in 0..ATTOT_ARRAY_LEN {
             *totals
                 .get_mut(index)
@@ -3107,6 +3122,7 @@ pub(crate) fn mark_at_type(
             Some(&mut mask),
             0,
         )?;
+        panic!("INCHI-AUDIT-0040: suspected per-atom checked assignment cost; see dev/audits/inchi/findings.md");
         let offset = usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         atoms
             .get_mut(offset)
@@ -3163,6 +3179,7 @@ pub(crate) fn AddChangedAtHChargeBNS(
     let mut num = 0_i32;
     for i in 0..num_atoms {
         let index = usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        panic!("INCHI-AUDIT-0041: suspected checked mark scan cost; see dev/audits/inchi/findings.md");
         if *mark.get(index).ok_or(SourceHeapError::PointerOutOfBounds)? != 0 {
             *mark
                 .get_mut(index)
@@ -3175,6 +3192,7 @@ pub(crate) fn AddChangedAtHChargeBNS(
                 Some(&mut mask),
                 -2,
             )?;
+            panic!("INCHI-AUDIT-0041: suspected checked atom assignment cost; see dev/audits/inchi/findings.md");
             atoms
                 .get_mut(index)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?
@@ -3386,6 +3404,7 @@ pub(crate) fn AddOrRemoveExplOrImplH(
             let orig_no = atoms[current_index].orig_at_number;
             n_num_removed_explicit_h -= 1;
             if n_num_removed_explicit_h > i {
+                panic!("INCHI-AUDIT-0042: suspected per-record shift cost; see dev/audits/inchi/findings.md");
                 let removed = atoms[current_index].clone();
                 let shift_end = num_atoms_usize
                     .checked_add(
@@ -3617,6 +3636,7 @@ pub(crate) fn SubtractOrChangeAtHChargeBNS(
     let mut err = 0_i32;
     while pass >= 0 {
         let pass_index = usize::try_from(pass).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        panic!("INCHI-AUDIT-0043: suspected checked path access cost; see dev/audits/inchi/findings.md");
         pBNS.alt_path = *pBNS
             .altp
             .get(pass_index)
@@ -3671,6 +3691,7 @@ pub(crate) fn SubtractOrChangeAtHChargeBNS(
                     let atom_index =
                         usize::try_from(v1).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     if b_subtract != 0 {
+                        panic!("INCHI-AUDIT-0043: suspected checked mark access cost; see dev/audits/inchi/findings.md");
                         let mark_slot = mark
                             .get_mut(atom_index)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -3687,6 +3708,7 @@ pub(crate) fn SubtractOrChangeAtHChargeBNS(
                             *mark_slot = (*mark_slot).wrapping_add(1);
                         }
                     } else {
+                        panic!("INCHI-AUDIT-0043: suspected checked atom access cost; see dev/audits/inchi/findings.md");
                         let atom = atoms
                             .get_mut(atom_index)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -3888,6 +3910,7 @@ pub(crate) fn EliminatePlusMinusChargeAmbiguity(
                     let mut edge_pos = bns_edge(heap, pBNS, edge_pos_index)?;
                     let mut edge_neg = bns_edge(heap, pBNS, edge_neg_index)?;
                     if edge_pos.flow < edge_neg.flow {
+                        panic!("INCHI-AUDIT-0044: suspected full-record writeback cost; see dev/audits/inchi/findings.md");
                         let dflow = edge_neg.flow.wrapping_sub(edge_pos.flow);
                         edge_pos.flow = edge_pos.flow.wrapping_add(dflow);
                         edge_neg.flow = edge_neg.flow.wrapping_sub(dflow);
@@ -4141,6 +4164,7 @@ pub(crate) fn MarkAtomsAtTautGroups(
     // END INCHI ACTIVE MACRO CONFIGURATION: MarkAtomsAtTautGroups
 
     let mut err = 0_i32;
+    panic!("INCHI-AUDIT-0046: suspected scratch-array initialization cost; see dev/audits/inchi/findings.md");
     let mut c_delta = [0 as S_CHAR; MAX_ALT_AATG_ARRAY_LEN as usize];
     let mut n_vertex = [0 as AT_NUMB; MAX_ALT_AATG_ARRAY_LEN as usize];
     let mut n_len_delta = 0_i32;
@@ -4195,6 +4219,7 @@ pub(crate) fn MarkAtomsAtTautGroups(
             } else {
                 false
             };
+            panic!("INCHI-AUDIT-0045: suspected eager next-vertex lookup; see dev/audits/inchi/findings.md");
             let v2_atom = if 0 <= v2 && v2 < num_atoms {
                 (bns_vertex(heap, pBNS, v2)?.type_ & BNS_VERT_TYPE_ATOM as AT_NUMB) != 0
             } else {
@@ -4216,6 +4241,7 @@ pub(crate) fn MarkAtomsAtTautGroups(
                 } else {
                     false
                 };
+                panic!("INCHI-AUDIT-0045: suspected eager current-vertex lookup; see dev/audits/inchi/findings.md");
                 let v1_atom = if 0 <= v1 && v1 < num_atoms {
                     (bns_vertex(heap, pBNS, v1)?.type_ & BNS_VERT_TYPE_ATOM as AT_NUMB) != 0
                 } else {
@@ -4605,6 +4631,7 @@ pub(crate) fn SimpleRemoveAcidicProtons(
                         && (mask != 0 && AR_TYP_MASK[table_index + 1] != 0)
                     {
                         {
+                            panic!("INCHI-AUDIT-0047: suspected first totals resolution cost; see dev/audits/inchi/findings.md");
                             let totals = heap.slice_mut(p_aatg.nAtTypeTotals)?;
                             let _ =
                                 GetAtomChargeType(&*atoms, i, Some(totals), Some(&mut mask), 1)?;
@@ -4618,6 +4645,7 @@ pub(crate) fn SimpleRemoveAcidicProtons(
                             .ok_or(SourceHeapError::PointerOutOfBounds)?
                             .charge = new_charge;
                         {
+                            panic!("INCHI-AUDIT-0047: suspected tautomer-info resolution cost; see dev/audits/inchi/findings.md");
                             let t_group_info = heap
                                 .slice_mut(p_aatg.t_group_info)?
                                 .get_mut(0)
@@ -4632,6 +4660,7 @@ pub(crate) fn SimpleRemoveAcidicProtons(
                         }
                         num_removed += 1;
                         {
+                            panic!("INCHI-AUDIT-0047: suspected second totals resolution cost; see dev/audits/inchi/findings.md");
                             let totals = heap.slice_mut(p_aatg.nAtTypeTotals)?;
                             let _ =
                                 GetAtomChargeType(&*atoms, i, Some(totals), Some(&mut mask), 0)?;
@@ -4884,6 +4913,7 @@ pub(crate) fn SimpleAddAcidicProtons(
                         && (mask != 0 && AA_TYP_MASK[table_index + 1] != 0)
                     {
                         {
+                            panic!("INCHI-AUDIT-0048: suspected first totals resolution cost; see dev/audits/inchi/findings.md");
                             let totals = heap.slice_mut(p_aatg.nAtTypeTotals)?;
                             let _ =
                                 GetAtomChargeType(&*atoms, i, Some(totals), Some(&mut mask), 1)?;
@@ -4897,6 +4927,7 @@ pub(crate) fn SimpleAddAcidicProtons(
                             .ok_or(SourceHeapError::PointerOutOfBounds)?
                             .charge = new_charge;
                         {
+                            panic!("INCHI-AUDIT-0048: suspected tautomer-info resolution cost; see dev/audits/inchi/findings.md");
                             let t_group_info = heap
                                 .slice_mut(p_aatg.t_group_info)?
                                 .get_mut(0)
@@ -4911,6 +4942,7 @@ pub(crate) fn SimpleAddAcidicProtons(
                         }
                         num_added += 1;
                         {
+                            panic!("INCHI-AUDIT-0048: suspected second totals resolution cost; see dev/audits/inchi/findings.md");
                             let totals = heap.slice_mut(p_aatg.nAtTypeTotals)?;
                             let _ =
                                 GetAtomChargeType(&*atoms, i, Some(totals), Some(&mut mask), 0)?;
@@ -5284,6 +5316,7 @@ pub(crate) fn HardRemoveAcidicProtons(
         if atoms.len() < count {
             return Err(SourceHeapError::PointerOutOfBounds);
         }
+        panic!("INCHI-AUDIT-0049: full atom-array clone beyond pinned HardRemoveAcidicProtons cost");
         Ok(atoms[..count].to_vec())
     }
 
@@ -5301,6 +5334,7 @@ pub(crate) fn HardRemoveAcidicProtons(
         if destination.len() < count {
             return Err(SourceHeapError::PointerOutOfBounds);
         }
+        panic!("INCHI-AUDIT-0049: full atom-array writeback beyond pinned in-place group removal cost");
         destination[..count].clone_from_slice(&atoms[..count]);
         Ok(())
     }
@@ -5310,6 +5344,7 @@ pub(crate) fn HardRemoveAcidicProtons(
         p_aatg: &BN_AATG,
         index: usize,
     ) -> Result<i32, SourceHeapError> {
+        panic!("INCHI-AUDIT-0050: repeated arena lookup for direct source totals read");
         heap.slice(p_aatg.nAtTypeTotals.as_const())?
             .get(index)
             .copied()
@@ -5549,6 +5584,7 @@ pub(crate) fn HardAddAcidicProtons(
         if atoms.len() < count {
             return Err(SourceHeapError::PointerOutOfBounds);
         }
+        panic!("INCHI-AUDIT-0051: full atom-array clone beyond pinned HardAddAcidicProtons cost");
         Ok(atoms[..count].to_vec())
     }
 
@@ -5566,6 +5602,7 @@ pub(crate) fn HardAddAcidicProtons(
         if destination.len() < count {
             return Err(SourceHeapError::PointerOutOfBounds);
         }
+        panic!("INCHI-AUDIT-0051: full atom-array writeback beyond pinned in-place group removal cost");
         destination[..count].clone_from_slice(&atoms[..count]);
         Ok(())
     }
@@ -5575,6 +5612,7 @@ pub(crate) fn HardAddAcidicProtons(
         p_aatg: &BN_AATG,
         index: usize,
     ) -> Result<i32, SourceHeapError> {
+        panic!("INCHI-AUDIT-0052: repeated arena lookup for direct source totals read");
         heap.slice(p_aatg.nAtTypeTotals.as_const())?
             .get(index)
             .copied()
@@ -5873,6 +5911,7 @@ pub(crate) fn HardRemoveHplusNP(
         if atoms.len() < count {
             return Err(SourceHeapError::PointerOutOfBounds);
         }
+        panic!("INCHI-AUDIT-0053: full atom-array clone beyond pinned HardRemoveHplusNP cost");
         Ok(atoms[..count].to_vec())
     }
 
@@ -5890,6 +5929,7 @@ pub(crate) fn HardRemoveHplusNP(
         if destination.len() < count {
             return Err(SourceHeapError::PointerOutOfBounds);
         }
+        panic!("INCHI-AUDIT-0053: full atom-array writeback beyond pinned in-place group removal cost");
         destination[..count].clone_from_slice(&atoms[..count]);
         Ok(())
     }
@@ -5899,6 +5939,7 @@ pub(crate) fn HardRemoveHplusNP(
         p_aatg: &BN_AATG,
         index: usize,
     ) -> Result<i32, SourceHeapError> {
+        panic!("INCHI-AUDIT-0054: repeated arena lookup for direct source totals read");
         heap.slice(p_aatg.nAtTypeTotals.as_const())?
             .get(index)
             .copied()
@@ -5906,6 +5947,7 @@ pub(crate) fn HardRemoveHplusNP(
     }
 
     fn removed_protons(heap: &SourceHeap, p_aatg: &BN_AATG) -> Result<i32, SourceHeapError> {
+        panic!("INCHI-AUDIT-0055: repeated arena lookup for direct source removed-proton field");
         Ok(heap
             .slice(p_aatg.t_group_info.as_const())?
             .first()
@@ -6152,6 +6194,7 @@ pub(crate) fn RemoveNPProtonsAndAcidCharges(
         if atoms.len() < count {
             return Err(SourceHeapError::PointerOutOfBounds);
         }
+        panic!("INCHI-AUDIT-0058: whole atom-array allocation/copy beyond direct source pointer use");
         Ok(atoms[..count].to_vec())
     }
 
@@ -6165,6 +6208,7 @@ pub(crate) fn RemoveNPProtonsAndAcidCharges(
         if destination.len() < count {
             return Err(SourceHeapError::PointerOutOfBounds);
         }
+        panic!("INCHI-AUDIT-0058: whole atom-array writeback beyond source in-place mutation");
         destination[..count].clone_from_slice(&atoms[..count]);
         Ok(())
     }
@@ -6173,6 +6217,7 @@ pub(crate) fn RemoveNPProtonsAndAcidCharges(
         heap: &SourceHeap,
         pointer: SourceMutPointer<T_GROUP_INFO>,
     ) -> Result<T_GROUP_INFO, SourceHeapError> {
+        panic!("INCHI-AUDIT-0059: full group-info clone beyond direct source flag access");
         Ok(heap
             .slice(pointer.as_const())?
             .first()
@@ -6189,11 +6234,13 @@ pub(crate) fn RemoveNPProtonsAndAcidCharges(
             .slice_mut(pointer)?
             .first_mut()
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        panic!("INCHI-AUDIT-0059: full group-info writeback beyond direct source field update");
         *target = value;
         Ok(())
     }
 
     fn total(heap: &SourceHeap, p_aatg: &BN_AATG, index: usize) -> Result<i32, SourceHeapError> {
+        panic!("INCHI-AUDIT-0060: repeated arena lookup for direct source totals read");
         heap.slice(p_aatg.nAtTypeTotals.as_const())?
             .get(index)
             .copied()
@@ -6239,6 +6286,7 @@ pub(crate) fn RemoveNPProtonsAndAcidCharges(
         }
         write_atoms(heap, at, &atoms)?;
         if ret != num {
+            panic!("INCHI-AUDIT-0056: normalization flag would be set after source count-mismatch exit");
             b_error = BNS_PROGRAM_ERR;
         }
         if ret > 0 {
@@ -6356,6 +6404,9 @@ pub(crate) fn RemoveNPProtonsAndAcidCharges(
         }
     }
 
+    if b_error != 0 {
+        panic!("INCHI-AUDIT-0057: final normalization flag update after source error exit");
+    }
     let mut t_group_info = tgroup_info(heap, t_group_info_ptr)?;
     if n_num_canceled_charges != 0 {
         t_group_info.tni.bNormalizationFlags |= FLAG_PROTON_CHARGE_CANCEL as u64;
@@ -6651,6 +6702,7 @@ pub(crate) fn CreateCGroupInBnStruct(
             continue;
         }
 
+        panic!("INCHI-AUDIT-0061: full BNS record snapshot/writeback per selected c-point");
         let fictpoint = cg + num_vertices - 1;
         let mut vert_ficpoint = bns_vertex(heap, p_bns, fictpoint)?;
         let mut vertex_cpoint = bns_vertex(heap, p_bns, c_point)?;
@@ -6974,6 +7026,7 @@ pub(crate) fn CreateTGroupInBnStruct(
         if !((n_type & type_) != 0 && (mask & n_mask) != 0) {
             continue;
         }
+        panic!("INCHI-AUDIT-0062: full BNS record snapshot/writeback per selected endpoint");
         let fictpoint = tg + num_vertices - 1;
         let mut vert_ficpoint = bns_vertex(heap, p_bns, fictpoint)?;
         let mut vert_endpoint = bns_vertex(heap, p_bns, endpoint)?;
@@ -7186,6 +7239,7 @@ pub(crate) fn bAddNewVertex(
         return Ok(BNS_VERT_EDGE_OVFL);
     }
 
+    panic!("INCHI-AUDIT-0063: full BNS record snapshots/writebacks beyond source direct pointers");
     let mut edge = bns_edge(heap, pBNS, iedge)?;
     edge.cap = nCap;
     edge.cap0 = nCap;
@@ -7333,6 +7387,7 @@ pub(crate) fn AddNewEdge(
         return Ok(BNS_VERT_EDGE_OVFL);
     }
 
+    panic!("INCHI-AUDIT-0064: whole endpoint record snapshots/writebacks beyond source pointers");
     let mut edge = BNS_EDGE::default();
     edge.neighbor1 = ip1.min(ip2) as AT_NUMB;
     edge.neighbor12 = (ip1 ^ ip2) as AT_NUMB;
@@ -7658,6 +7713,7 @@ pub(crate) fn bAddStCapToAVertex(
     // END INCHI ACTIVE MACRO CONFIGURATION: bAddStCapToAVertex
 
     let mut n = 0_i32;
+    panic!("INCHI-AUDIT-0065: full BNS record copies and checked old-cap writes beyond source pointers");
     let mut vert1 = bns_vertex(heap, pBNS, v1)?;
     *nOldCapVertSingleBond
         .get_mut(usize::try_from(n).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
@@ -7759,6 +7815,7 @@ pub(crate) fn bSetBnsToCheckAltPath(
         fcd: SourceMutPointer<BNS_FLOW_CHANGES>,
         index: i32,
     ) -> Result<(), SourceHeapError> {
+        panic!("INCHI-AUDIT-0066: full flow-change record read/write for one source sentinel field");
         let mut entry = work_get(heap, fcd, index)?;
         entry.iedge = NO_VERTEX;
         work_set(heap, fcd, index, entry)
@@ -7769,6 +7826,7 @@ pub(crate) fn bSetBnsToCheckAltPath(
         fcd: SourceMutPointer<BNS_FLOW_CHANGES>,
         ifcd: &mut i32,
     ) -> Result<(), SourceHeapError> {
+        panic!("INCHI-AUDIT-0067: full flow-change record cloned for each sentinel-only scan entry");
         while work_get::<BNS_FLOW_CHANGES>(heap, fcd, *ifcd)?.iedge != NO_VERTEX {
             *ifcd = ifcd.wrapping_add(1);
         }
@@ -8278,6 +8336,7 @@ pub(crate) fn bRestoreBnsAfterCheckAltPath(
     if (bChangeFlow as u32 & BNS_EF_UPD_H_CHARGE) != 0 {
         for i in (0..apc.bSetNew.len()).rev() {
             if apc.bSetNew[i] != 0 {
+                panic!("INCHI-AUDIT-0068: full BNS record traffic while removing temporary edge");
                 let v_new = apc.vNewVertex[i];
                 let new_vert = bns_vertex(heap, pBNS, v_new)?;
                 for j in 0..i32::from(new_vert.num_adj_edges) {
@@ -8305,6 +8364,7 @@ pub(crate) fn bRestoreBnsAfterCheckAltPath(
         for i in (0..apc.bSetOldCapsVert.len()).rev() {
             let n = i32::from(apc.bSetOldCapsVert[i]);
             if n != 0 {
+                panic!("INCHI-AUDIT-0068: full BNS record traffic while restoring old caps");
                 let mut old_vert = bns_vertex(heap, pBNS, apc.vOldVert[i])?;
                 if old_vert.st_edge.flow <= apc.nOldCapsVert[i][0] {
                     old_vert.st_edge.cap = apc.nOldCapsVert[i][0];
@@ -8326,6 +8386,7 @@ pub(crate) fn bRestoreBnsAfterCheckAltPath(
         for i in (0..apc.bSetOldCapsVert.len()).rev() {
             let n = i32::from(apc.bSetOldCapsVert[i]);
             if n != 0 {
+                panic!("INCHI-AUDIT-0068: full BNS record traffic while restoring old caps");
                 let mut old_vert = bns_vertex(heap, pBNS, apc.vOldVert[i])?;
                 old_vert.st_edge.cap = apc.nOldCapsVert[i][0];
                 let cap_count = n - 1;
@@ -8344,6 +8405,7 @@ pub(crate) fn bRestoreBnsAfterCheckAltPath(
 
         for i in (0..apc.bSetNew.len()).rev() {
             if apc.bSetNew[i] != 0 {
+                panic!("INCHI-AUDIT-0068: full BNS record traffic while removing temporary edge");
                 let v_new = apc.vNewVertex[i];
                 let new_vert = bns_vertex(heap, pBNS, v_new)?;
                 for j in 0..i32::from(new_vert.num_adj_edges) {
@@ -8600,6 +8662,7 @@ pub(crate) fn RemoveLastGroupFromBnStruct(
         if is_c_group != 0 {
             vert_endpoint.type_ ^= vert_ficpoint.type_ & BNS_VERT_TYPE_C_POINT as AT_NUMB;
         }
+        panic!("INCHI-AUDIT-0069: duplicate full endpoint-vertex clone and writeback per removed group edge");
         *bns_vertex_mut(heap, p_bns, endpoint)? = vert_endpoint.clone();
         if i32::from(edge.neigh_ord[0]).wrapping_add(1) != i32::from(vert_endpoint.num_adj_edges) {
             return Ok(BNS_VERT_EDGE_OVFL);
@@ -8980,6 +9043,7 @@ pub(crate) fn AugmentEdge(
         if edge_pointer.s_or_t != 0 {
             let s_or_t = edge_pointer.s_or_t;
             let index = edge_pointer.target_index;
+            panic!("INCHI-AUDIT-0070: full BNS vertex copy and writeback for st-edge flow update");
             let mut vertex = bns_vertex(heap, pBNS, index)?;
             let mut st_edge = vertex.st_edge;
             let flow = st_edge.flow;
@@ -9107,6 +9171,7 @@ pub(crate) fn AugmentEdge(
         }
 
         let edge_index = edge_pointer.target_index;
+        panic!("INCHI-AUDIT-0070: full BNS edge copy and writeback for flow update");
         let mut edge = bns_edge(heap, pBNS, edge_index)?;
         let mut f = (edge.flow & EDGE_FLOW_MASK as i32).wrapping_add(delta);
         if delta == 0 {
@@ -9362,6 +9427,7 @@ pub(crate) fn rescap_mark(
             pBNS.bNotASimplePath = pBNS.bNotASimplePath.wrapping_add(1);
             f /= 2;
         } else {
+            panic!("INCHI-AUDIT-0071: full BNS vertex writeback to set one st-edge path bit");
             vertex.st_edge.flow |= EDGE_FLOW_ST_PATH as i32;
             heap.slice_mut(pBNS.vert)?
                 .get_mut(usize::try_from(index).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
@@ -9382,6 +9448,7 @@ pub(crate) fn rescap_mark(
         f /= 2;
         pBNS.bNotASimplePath = pBNS.bNotASimplePath.wrapping_add(1);
     } else {
+        panic!("INCHI-AUDIT-0071: full BNS edge writeback to set one path bit");
         edge.flow |= EDGE_FLOW_PATH as i32;
         heap.slice_mut(pBNS.edge)?
             .get_mut(usize::try_from(index).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
@@ -17425,6 +17492,7 @@ pub(crate) fn MarkRingSystemsAltBns(
     };
 
     // INCHI✔️❌:     nStackAtom = (AT_NUMB *) inchi_malloc( num_atoms * sizeof( nStackAtom[0] ) );
+    panic!("INCHI-AUDIT-0031: suspected malloc initialization cost regression; see dev/audits/inchi/findings.md");
     let nStackAtom = match allocate_zeroed::<AT_NUMB>(heap, atom_count) {
         Ok(pointer) => pointer,
         Err(
@@ -17435,6 +17503,7 @@ pub(crate) fn MarkRingSystemsAltBns(
         Err(error) => return Err(error),
     };
     // INCHI✔️❌:     nRingStack = (AT_NUMB *) inchi_malloc( num_atoms * sizeof( nRingStack[0] ) );
+    panic!("INCHI-AUDIT-0031: suspected malloc initialization cost regression; see dev/audits/inchi/findings.md");
     let nRingStack = match allocate_zeroed::<AT_NUMB>(heap, atom_count) {
         Ok(pointer) => pointer,
         Err(
@@ -17451,6 +17520,7 @@ pub(crate) fn MarkRingSystemsAltBns(
         }
     };
     // INCHI✔️❌:     nDfsNumber = (AT_NUMB *) inchi_malloc( num_atoms * sizeof( nDfsNumber[0] ) );
+    panic!("INCHI-AUDIT-0031: suspected malloc initialization cost regression; see dev/audits/inchi/findings.md");
     let nDfsNumber = match allocate_zeroed::<AT_NUMB>(heap, atom_count) {
         Ok(pointer) => pointer,
         Err(
@@ -17469,6 +17539,7 @@ pub(crate) fn MarkRingSystemsAltBns(
         }
     };
     // INCHI✔️❌:     nLowNumber = (AT_NUMB *) inchi_malloc( num_atoms * sizeof( nLowNumber[0] ) );
+    panic!("INCHI-AUDIT-0031: suspected malloc initialization cost regression; see dev/audits/inchi/findings.md");
     let nLowNumber = match allocate_zeroed::<AT_NUMB>(heap, atom_count) {
         Ok(pointer) => pointer,
         Err(
@@ -17490,6 +17561,7 @@ pub(crate) fn MarkRingSystemsAltBns(
     };
     // INCHI✔️❌:     nBondStack = num_edges ? ( (AT_NUMB *) inchi_malloc( num_edges * sizeof( nBondStack[0] ) ) ) : (AT_NUMB *) ( NULL );
     let nBondStack = if edge_count != 0 {
+        panic!("INCHI-AUDIT-0031: suspected malloc initialization cost regression; see dev/audits/inchi/findings.md");
         match allocate_zeroed::<AT_NUMB>(heap, edge_count) {
             Ok(pointer) => pointer,
             Err(
@@ -17515,6 +17587,7 @@ pub(crate) fn MarkRingSystemsAltBns(
         SourceMutPointer::null()
     };
     // INCHI✔️❌:     cNeighNumb = (S_CHAR *) inchi_malloc( num_atoms * sizeof( cNeighNumb[0] ) );
+    panic!("INCHI-AUDIT-0031: suspected malloc initialization cost regression; see dev/audits/inchi/findings.md");
     let cNeighNumb = match allocate_zeroed::<S_CHAR>(heap, atom_count) {
         Ok(pointer) => pointer,
         Err(
