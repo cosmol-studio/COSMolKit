@@ -824,6 +824,34 @@ fn fused_ring_match(
     bond_per_ring: Option<&BondMatcher<'_>>,
     at_least_one_atom: Option<&AtomMatcher<'_>>,
 ) -> bool {
+    let Ok(rings) = find_sssr_detached(molecule) else {
+        return false;
+    };
+    fused_ring_match_with_ring_info(
+        molecule,
+        atom_index,
+        ignore,
+        atom_matcher,
+        bond_matcher,
+        atom_per_ring,
+        bond_per_ring,
+        at_least_one_atom,
+        &rings,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn fused_ring_match_with_ring_info(
+    molecule: &SearchTarget<'_>,
+    atom_index: usize,
+    ignore: Vec<bool>,
+    atom_matcher: Option<&AtomMatcher<'_>>,
+    bond_matcher: Option<&BondMatcher<'_>>,
+    atom_per_ring: Option<&AtomMatcher<'_>>,
+    bond_per_ring: Option<&BondMatcher<'_>>,
+    at_least_one_atom: Option<&AtomMatcher<'_>>,
+    ring_info: &RingInfo,
+) -> bool {
     // RDKit✔️✔️: bool FusedRingMatch(const ROMol &mol, const Atom &atom,
     // RDKit✔️✔️:                     boost::dynamic_bitset<> ignore,
     // RDKit✔️✔️:                     AtomMatcherFunc atomMatcher = nullptr,
@@ -883,14 +911,11 @@ fn fused_ring_match(
     if atom_matcher.is_some_and(|matches| !matches(atom)) {
         return false;
     }
-    let Ok(rings) = find_sssr_detached(molecule) else {
-        return false;
-    };
-    if rings.num_atom_rings(atom.id()) == 0 {
+    if ring_info.num_atom_rings(atom.id()) == 0 {
         return false;
     }
     let mut seen = BTreeSet::new();
-    for (i, ring) in rings.atom_rings().iter().enumerate() {
+    for (i, ring) in ring_info.atom_rings().iter().enumerate() {
         if ring.iter().any(|id| id.index() == atom_index) {
             if !check_atom_ring(
                 molecule,
@@ -901,7 +926,7 @@ fn fused_ring_match(
                 atom_per_ring,
             ) || !check_bond_ring(
                 molecule,
-                &rings.bond_rings()[i],
+                &ring_info.bond_rings()[i],
                 bond_matcher,
                 bond_per_ring,
             ) {
@@ -911,7 +936,7 @@ fn fused_ring_match(
             break;
         }
     }
-    for (i, ring) in rings.atom_rings().iter().enumerate() {
+    for (i, ring) in ring_info.atom_rings().iter().enumerate() {
         let current: BTreeSet<_> = ring.iter().map(|id| id.index()).collect();
         let difference: Vec<_> = current.difference(&seen).copied().collect();
         if difference.is_empty() || current.len() - difference.len() < 2 {
@@ -926,7 +951,7 @@ fn fused_ring_match(
             atom_per_ring,
         ) || !check_bond_ring(
             molecule,
-            &rings.bond_rings()[i],
+            &ring_info.bond_rings()[i],
             bond_matcher,
             bond_per_ring,
         ) {
@@ -1182,7 +1207,17 @@ fn cyclic_atom_matcher(mol: &SearchTarget<'_>, atom: usize, ignore: Vec<bool>) -
         return false;
     };
     let cyclic = |a: &Atom| rings.num_atom_rings(a.id()) > 0;
-    fused_ring_match(mol, atom, ignore, Some(&cyclic), None, None, None, None)
+    fused_ring_match_with_ring_info(
+        mol,
+        atom,
+        ignore,
+        Some(&cyclic),
+        None,
+        None,
+        None,
+        None,
+        &rings,
+    )
 }
 
 fn cyclic_h_atom_matcher(mol: &SearchTarget<'_>, atom: usize, ignore: Vec<bool>) -> bool {
@@ -1468,4 +1503,135 @@ pub(super) fn generic_atom_matcher(
         }
     }
     true
+}
+
+#[cfg(test)]
+mod q43_hydrogen_helper_tests {
+    use super::{
+        SearchTarget, SearchTargetAccess, d_atom_matcher, hplus_atom_matcher, is_hydrogen,
+        t_atom_matcher,
+    };
+    use cosmolkit_model::{
+        Atom, AtomId, AtomSpec, Bond, BondId, BondSpec, CoordinateBlock, TopologyBlock,
+    };
+    use cosmolkit_types::{BondOrder, Element};
+
+    fn atom(index: usize, element: Element, isotope: Option<u16>, charge: i8) -> Atom {
+        let mut spec = AtomSpec::new(element).with_formal_charge(charge);
+        if let Some(isotope) = isotope {
+            spec = spec.with_isotope(isotope);
+        }
+        Atom::from_spec(AtomId::new(index), spec)
+    }
+
+    fn target() -> (TopologyBlock, CoordinateBlock) {
+        let atoms = vec![
+            atom(0, Element::H, None, 0),
+            atom(1, Element::H, None, 0),
+            atom(2, Element::C, None, 0),
+            atom(3, Element::H, None, 0),
+            atom(4, Element::C, None, 0),
+            atom(5, Element::C, None, 0),
+            atom(6, Element::H, Some(2), 0),
+            atom(7, Element::H, Some(2), 0),
+            atom(8, Element::C, None, 0),
+            atom(9, Element::C, None, 0),
+            atom(10, Element::H, Some(3), 0),
+            atom(11, Element::H, Some(3), 0),
+            atom(12, Element::C, None, 0),
+            atom(13, Element::C, None, 0),
+            atom(14, Element::C, Some(2), 0),
+            atom(15, Element::C, Some(3), 0),
+            atom(16, Element::H, None, 1),
+            atom(17, Element::H, None, 1),
+            atom(18, Element::C, None, 0),
+            atom(19, Element::C, None, 0),
+            atom(20, Element::H, None, 0),
+            atom(21, Element::H, None, -1),
+            atom(22, Element::C, None, 1),
+            atom(23, Element::C, None, 0),
+        ];
+        let edges = [
+            (1, 2),
+            (3, 4),
+            (3, 5),
+            (7, 8),
+            (7, 9),
+            (11, 12),
+            (11, 13),
+            (17, 18),
+            (17, 19),
+            (22, 23),
+        ];
+        let bonds = edges
+            .into_iter()
+            .enumerate()
+            .map(|(index, (begin, end))| {
+                Bond::from_spec(
+                    BondId::new(index),
+                    BondSpec::new(AtomId::new(begin), AtomId::new(end), BondOrder::Single),
+                )
+            })
+            .collect();
+        let topology = TopologyBlock::try_from_parts(atoms, bonds, Vec::new(), Vec::new())
+            .expect("fixed Q43 helper topology is valid");
+        (topology, CoordinateBlock::default())
+    }
+
+    fn assert_result_and_mask_unchanged(
+        target: &SearchTarget<'_>,
+        atom_index: usize,
+        expected: bool,
+        matcher: fn(&SearchTarget<'_>, usize, Vec<bool>) -> bool,
+    ) {
+        let mut ignore = vec![false; target.num_atoms()];
+        ignore[if atom_index == 0 { 1 } else { 0 }] = true;
+        let original = ignore.clone();
+        assert_eq!(matcher(target, atom_index, ignore.clone()), expected);
+        assert_eq!(ignore, original, "by-value ignore input was changed");
+    }
+
+    #[test]
+    fn q43_hydrogen_helpers_is_hydrogen_requires_degree_one() {
+        let (topology, coordinates) = target();
+        let target =
+            SearchTarget::new(&topology, &coordinates, &topology.stereo_groups, None, None);
+
+        assert_result_and_mask_unchanged(&target, 0, false, is_hydrogen);
+        assert_result_and_mask_unchanged(&target, 1, true, is_hydrogen);
+        assert_result_and_mask_unchanged(&target, 3, false, is_hydrogen);
+        assert_result_and_mask_unchanged(&target, 22, false, is_hydrogen);
+    }
+
+    #[test]
+    fn q43_hydrogen_helpers_d_and_t_use_exact_isotopes_without_degree_gate() {
+        let (topology, coordinates) = target();
+        let target =
+            SearchTarget::new(&topology, &coordinates, &topology.stereo_groups, None, None);
+
+        assert_result_and_mask_unchanged(&target, 6, true, d_atom_matcher);
+        assert_result_and_mask_unchanged(&target, 7, true, d_atom_matcher);
+        assert_result_and_mask_unchanged(&target, 0, false, d_atom_matcher);
+        assert_result_and_mask_unchanged(&target, 10, false, d_atom_matcher);
+        assert_result_and_mask_unchanged(&target, 14, false, d_atom_matcher);
+
+        assert_result_and_mask_unchanged(&target, 10, true, t_atom_matcher);
+        assert_result_and_mask_unchanged(&target, 11, true, t_atom_matcher);
+        assert_result_and_mask_unchanged(&target, 0, false, t_atom_matcher);
+        assert_result_and_mask_unchanged(&target, 6, false, t_atom_matcher);
+        assert_result_and_mask_unchanged(&target, 15, false, t_atom_matcher);
+    }
+
+    #[test]
+    fn q43_hydrogen_helpers_hplus_uses_exact_charge_without_degree_gate() {
+        let (topology, coordinates) = target();
+        let target =
+            SearchTarget::new(&topology, &coordinates, &topology.stereo_groups, None, None);
+
+        assert_result_and_mask_unchanged(&target, 16, true, hplus_atom_matcher);
+        assert_result_and_mask_unchanged(&target, 17, true, hplus_atom_matcher);
+        assert_result_and_mask_unchanged(&target, 20, false, hplus_atom_matcher);
+        assert_result_and_mask_unchanged(&target, 21, false, hplus_atom_matcher);
+        assert_result_and_mask_unchanged(&target, 22, false, hplus_atom_matcher);
+    }
 }

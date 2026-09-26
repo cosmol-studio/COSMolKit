@@ -12,7 +12,7 @@ use cosmolkit_model::{
     BondSpec, Conformer2D, Conformer3D, CoordinateBlock, CoordinateDimension, MoleculeProperties,
     QueryAtom, QueryBond, QueryGraph, QueryNode, RecursiveStructureQuery, SdfPropertyList,
     SdfPropertyListTarget, SubstanceGroup, TemplateAttachment, TemplateAttachmentOrder,
-    TopologyBlock,
+    TopologyBlock, query_substance_groups, replace_query_substance_groups,
 };
 use cosmolkit_types::{BondDirection, BondOrder, BondStereo, Element};
 
@@ -97,7 +97,6 @@ pub struct SdfRecord {
 #[derive(Debug, Clone, PartialEq)]
 pub struct QueryMolBlockRecord {
     pub query: QueryGraph,
-    pub substance_groups: Vec<SubstanceGroup>,
     pub properties: MoleculeProperties,
     pub source_coordinate_dim: Option<CoordinateDimension>,
 }
@@ -339,6 +338,7 @@ fn apply_sdf_coordinate_mode(
         }
         MolBlockRecord::Query(query_record) => {
             let query = &query_record.query;
+            let substance_groups = query_substance_groups(query).to_vec();
             let mut coordinates = CoordinateBlock {
                 conformers_2d: query
                     .coordinates_2d()
@@ -348,7 +348,7 @@ fn apply_sdf_coordinate_mode(
                 source_coordinate_dim: query_record.source_coordinate_dim,
             };
             apply_coordinate_mode_to_block(&mut coordinates, mode);
-            let rebuilt = QueryGraph::from_parts(
+            let mut rebuilt = QueryGraph::from_parts(
                 query.atoms().to_vec(),
                 query.bonds().to_vec(),
                 query.props().clone(),
@@ -356,6 +356,7 @@ fn apply_sdf_coordinate_mode(
                 coordinates.conformers_3d,
                 query.stereo_groups().to_vec(),
             )?;
+            replace_query_substance_groups(&mut rebuilt, substance_groups)?;
             query_record.query = rebuilt;
             query_record.source_coordinate_dim = coordinates.source_coordinate_dim;
         }
@@ -4142,7 +4143,7 @@ fn read_v2000_record_detached(
         if let Some(name) = properties.name() {
             query_props.insert("_Name".to_owned(), name.to_owned());
         }
-        let query = QueryGraph::from_parts(
+        let mut query = QueryGraph::from_parts(
             query_atoms,
             query_bonds,
             query_props,
@@ -4150,10 +4151,10 @@ fn read_v2000_record_detached(
             coordinates.conformers_3d.clone(),
             Vec::new(),
         )?;
+        replace_query_substance_groups(&mut query, substance_groups)?;
         // END RDKIT CPP FUNCTION
         return Ok(MolBlockRecord::Query(QueryMolBlockRecord {
             query,
-            substance_groups,
             properties,
             source_coordinate_dim: coordinates.source_coordinate_dim,
         }));
@@ -6720,7 +6721,7 @@ fn read_v3000_record_detached(
         if let Some(name) = properties.name() {
             query_props.insert("_Name".to_owned(), name.to_owned());
         }
-        let query = QueryGraph::from_parts(
+        let mut query = QueryGraph::from_parts(
             query_atoms,
             query_bonds,
             query_props,
@@ -6728,9 +6729,9 @@ fn read_v3000_record_detached(
             coordinates.conformers_3d.clone(),
             stereo_groups,
         )?;
+        replace_query_substance_groups(&mut query, substance_groups)?;
         return Ok(MolBlockRecord::Query(QueryMolBlockRecord {
             query,
-            substance_groups,
             properties,
             source_coordinate_dim: coordinates.source_coordinate_dim,
         }));
@@ -7537,20 +7538,20 @@ pub fn write_v3000_detached(
 mod tests {
     use cosmolkit_model::{
         AtomId, AtomQueryPredicate, BondId, BondQueryPredicate, CoordinateBlock,
-        MoleculeProperties, QueryNode, SGroupBondRole, SGroupBracket, SGroupCState,
-        SGroupConnection, SGroupDisplay, SdfPropertyListTarget, StereoGroupKind, SubstanceGroup,
-        SubstanceGroupId, SubstanceGroupKind,
+        CoordinateDimension, MoleculeProperties, QueryNode, SGroupBondRole, SGroupBracket,
+        SGroupCState, SGroupConnection, SGroupDisplay, SdfPropertyListTarget, StereoGroupKind,
+        SubstanceGroup, SubstanceGroupId, SubstanceGroupKind, query_substance_groups,
     };
     use cosmolkit_types::{BondDirection, BondStereo};
 
     use super::{
-        MolBlockReadParams, MolBlockRecord, SdfDataReadParams, SdfGraphDataset, SdfGraphReader,
-        parse_rdkit_atoi, parse_rdkit_int, read_mol_block_detached,
-        read_mol_block_detached_with_params, read_sdf_graph_record_detached,
-        read_sdf_record_detached, read_sdf_record_detached_with_params, read_sdf_records_detached,
-        read_v2000_detached, read_v2000_detached_with_params, read_v3000_detached,
-        read_v3000_detached_with_params, write_sdf_record_detached, write_v2000_detached,
-        write_v3000_detached,
+        MolBlockReadParams, MolBlockRecord, SdfCoordinateMode, SdfDataReadParams, SdfGraphDataset,
+        SdfGraphReader, SdfReadError, apply_sdf_coordinate_mode, parse_rdkit_atoi, parse_rdkit_int,
+        read_mol_block_detached, read_mol_block_detached_with_params,
+        read_sdf_graph_record_detached, read_sdf_record_detached,
+        read_sdf_record_detached_with_params, read_sdf_records_detached, read_v2000_detached,
+        read_v2000_detached_with_params, read_v3000_detached, read_v3000_detached_with_params,
+        write_sdf_record_detached, write_v2000_detached, write_v3000_detached,
     };
 
     #[test]
@@ -9137,6 +9138,126 @@ mod tests {
             ["payload"]
         );
         assert_eq!(roundtrip.stereo_groups, topology.stereo_groups);
+    }
+
+    fn v3000_query_sgroup_fixture() -> String {
+        concat!(
+            "query-sgroup\n  COSMolKit\n\n",
+            "  0  0  0  0  0  0  0  0  0  0999 V3000\n",
+            "M  V30 BEGIN CTAB\n",
+            "M  V30 COUNTS 2 1 2 0 0\n",
+            "M  V30 BEGIN ATOM\n",
+            "M  V30 10 R# 0.0 0.0 0.0 0 RGROUPS=(2 7 12)\n",
+            "M  V30 20 C 1.0 0.0 0.0 0\n",
+            "M  V30 END ATOM\n",
+            "M  V30 BEGIN BOND\n",
+            "M  V30 99 1 10 20\n",
+            "M  V30 END BOND\n",
+            "M  V30 BEGIN SGROUP\n",
+            "M  V30 1 SRU 7 ATOMS=(2 10 10) XBONDS=(1 99) CONNECT=HT LABEL=repeat\n",
+            "M  V30 2 DAT 9 ATOMS=(1 20) FIELDNAME=FIELD FIELDTYPE=T -\n",
+            "M  V30 FIELDINFO=INFO QUERYTYPE=Q QUERYOP=OP FIELDDISP=\"display\" -\n",
+            "M  V30 FIELDDATA=\"payload\" PARENT=1 COMPNO=5\n",
+            "M  V30 END SGROUP\n",
+            "M  V30 END CTAB\n",
+            "M  END\n",
+        )
+        .to_owned()
+    }
+
+    #[test]
+    fn query_sgroups_v3000_parse_keeps_dat_polymer_and_hierarchy_in_query_graph() {
+        let MolBlockRecord::Query(record) = read_mol_block_detached(&v3000_query_sgroup_fixture())
+            .expect("typed query SGroups parse into the query-bearing record")
+        else {
+            panic!("R-group atom must keep the parsed record query-bearing");
+        };
+        let groups = query_substance_groups(&record.query);
+
+        assert_eq!(record.query.num_atoms(), 2);
+        assert_eq!(groups.len(), 2);
+        assert_eq!(groups[0].kind(), &SubstanceGroupKind::StructuralRepeatUnit);
+        assert_eq!(groups[0].rdkit_sequence_id(), Some(1));
+        assert_eq!(groups[0].external_id(), Some(7));
+        assert_eq!(groups[0].atoms(), &[AtomId::new(0), AtomId::new(0)]);
+        assert_eq!(groups[0].bonds(), &[BondId::new(0)]);
+        assert_eq!(groups[0].connection(), Some(&SGroupConnection::HeadToTail));
+        assert_eq!(groups[1].kind(), &SubstanceGroupKind::Data);
+        assert_eq!(groups[1].parent(), Some(groups[0].id()));
+        assert_eq!(groups[1].atoms(), &[AtomId::new(1)]);
+        let data = groups[1].data().expect("typed DAT payload");
+        assert_eq!(data.field_name.as_deref(), Some("FIELD"));
+        assert_eq!(data.field_type.as_deref(), Some("T"));
+        assert_eq!(data.field_info.as_deref(), Some("INFO"));
+        assert_eq!(data.query_type.as_deref(), Some("Q"));
+        assert_eq!(data.query_op.as_deref(), Some("OP"));
+        assert_eq!(data.field_display.as_deref(), Some("display"));
+        assert_eq!(data.values, ["payload"]);
+    }
+
+    #[test]
+    fn query_sgroups_v3000_parse_rejects_invalid_local_atom_and_bond_references() {
+        let valid = v3000_query_sgroup_fixture();
+        for invalid in [
+            valid.replace("ATOMS=(2 10 10)", "ATOMS=(2 10 30)"),
+            valid.replace("XBONDS=(1 99)", "XBONDS=(1 100)"),
+        ] {
+            let error = read_mol_block_detached(&invalid)
+                .expect_err("invalid SGroup references must fail during detached parsing");
+            assert!(
+                matches!(error, SdfReadError::Parse(_) | SdfReadError::QueryGraph(_)),
+                "unexpected structural error category: {error:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn query_sgroups_coordinate_modes_preserve_exact_group_collection() {
+        let run = |input: &str, mode: SdfCoordinateMode| {
+            let mut record = read_mol_block_detached(input).expect("read query SGroup fixture");
+            let expected_groups = match &record {
+                MolBlockRecord::Query(record) => query_substance_groups(&record.query).to_vec(),
+                MolBlockRecord::Concrete { .. } => {
+                    panic!("R-group fixture must remain a QueryGraph")
+                }
+            };
+
+            apply_sdf_coordinate_mode(&mut record, mode)
+                .expect("coordinate mode preserves a structurally valid query");
+
+            let MolBlockRecord::Query(record) = record else {
+                panic!("coordinate mode must retain the query record variant");
+            };
+            assert_eq!(query_substance_groups(&record.query), expected_groups);
+            match mode {
+                SdfCoordinateMode::Preserve => {}
+                SdfCoordinateMode::Require2D => {
+                    assert_eq!(
+                        record.source_coordinate_dim,
+                        Some(CoordinateDimension::TwoD)
+                    );
+                    assert!(record.query.coordinates_2d().is_some());
+                    assert!(record.query.conformers_3d().is_empty());
+                }
+                SdfCoordinateMode::Require3D => {
+                    assert_eq!(
+                        record.source_coordinate_dim,
+                        Some(CoordinateDimension::ThreeD)
+                    );
+                    assert!(record.query.coordinates_2d().is_none());
+                    assert_eq!(record.query.conformers_3d().len(), 1);
+                }
+            }
+        };
+
+        let source_2d = v3000_query_sgroup_fixture();
+        let source_3d = source_2d
+            .replace("R# 0.0 0.0 0.0", "R# 0.0 0.0 0.5")
+            .replace("C 1.0 0.0 0.0", "C 1.0 0.0 -0.5");
+
+        run(&source_2d, SdfCoordinateMode::Preserve);
+        run(&source_3d, SdfCoordinateMode::Require2D);
+        run(&source_2d, SdfCoordinateMode::Require3D);
     }
 
     #[test]

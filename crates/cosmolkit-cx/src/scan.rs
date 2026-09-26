@@ -89,13 +89,6 @@ pub(crate) fn parse_delimited_number_list(
     Ok(values)
 }
 
-pub(crate) fn parse_number_list(
-    text: &str,
-    cursor: &mut usize,
-) -> Result<Vec<usize>, CxParseError> {
-    parse_delimited_number_list(text, cursor, b',')
-}
-
 pub(crate) fn read_text_to(
     text: &str,
     cursor: &mut usize,
@@ -176,55 +169,6 @@ pub(crate) fn read_text_to(
     }
     result.push_str(&text[segment_start..*cursor]);
     Ok(result)
-}
-
-pub(crate) fn read_colon_field(text: &str, cursor: &mut usize) -> Result<String, CxParseError> {
-    let value = read_text_to(text, cursor, b":,|")?;
-    if text.as_bytes().get(*cursor) == Some(&b':') {
-        *cursor += 1;
-    }
-    Ok(value)
-}
-
-pub(crate) fn consume_until_record_boundary(text: &str, cursor: &mut usize) -> String {
-    let start = *cursor;
-    while *cursor < text.len() && text.as_bytes()[*cursor] != b'|' {
-        if text.as_bytes()[*cursor] == b',' {
-            let next = *cursor + 1;
-            if next < text.len() && is_record_start(&text[next..]) {
-                break;
-            }
-        }
-        *cursor += 1;
-    }
-    text[start..*cursor].to_owned()
-}
-
-fn is_record_start(text: &str) -> bool {
-    text.starts_with('(')
-        || text.starts_with('$')
-        || text.starts_with("atomProp:")
-        || text.starts_with("C:")
-        || text.starts_with("H:")
-        || text.starts_with("Z:")
-        || text.starts_with('^')
-        || text.starts_with('a')
-        || text.starts_with('o')
-        || text.starts_with('&')
-        || text.starts_with("rb:")
-        || text.starts_with("LN:")
-        || text.starts_with("SgD:")
-        || text.starts_with("SgH:")
-        || text.starts_with("Sg:")
-        || text.starts_with("u:")
-        || text.starts_with("s:")
-        || text.starts_with("m:")
-        || text.starts_with("w:")
-        || text.starts_with("wU:")
-        || text.starts_with("wD:")
-        || text.starts_with("ctu:")
-        || text.starts_with("c:")
-        || text.starts_with("t:")
 }
 
 pub(crate) fn expect_byte(

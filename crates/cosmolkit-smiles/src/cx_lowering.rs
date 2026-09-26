@@ -4,8 +4,8 @@ use cosmolkit_cx::{
 };
 use cosmolkit_model::{
     AdjacencyList, AtomId, BondDirection, BondId, BondOrder, BondStereo, ChiralTag, Conformer2D,
-    Conformer3D, CoordinateDimension, SGroupConnection, SGroupData, StereoGroup, StereoGroupKind,
-    SubstanceGroup, SubstanceGroupId, SubstanceGroupKind, TopologyBlock,
+    Conformer3D, CoordinateDimension, SGroupData, StereoGroup, StereoGroupKind, SubstanceGroup,
+    SubstanceGroupId, SubstanceGroupKind, TopologyBlock,
 };
 
 use crate::{CXSMILES_BOND_IDX_PROP, SmilesParseError, SmilesRecord};
@@ -209,49 +209,6 @@ fn polymer_crossing_bond(
     Ok(Some(BondId::new(source_index)))
 }
 
-fn infer_unmarked_polymer_crossings(
-    topology: &TopologyBlock,
-    atoms: &[AtomId],
-) -> Result<(Vec<BondId>, Vec<BondId>), SmilesParseError> {
-    if atoms.is_empty() {
-        return Err(cx_failure());
-    }
-    let mut head = Vec::new();
-    let mut tail = Vec::new();
-    let first = atoms[0];
-    for neighbor in atom_neighbors(topology, first) {
-        let neighbor_atom = AtomId::new(neighbor.atom_index);
-        if atoms.contains(&neighbor_atom) {
-            continue;
-        }
-        if atoms.len() > 1 || head.is_empty() {
-            head.push(neighbor.bond);
-        } else if tail.is_empty() {
-            tail.push(neighbor.bond);
-        }
-    }
-    if atoms.len() > 1 {
-        let last = *atoms.last().expect("polymer atoms are non-empty");
-        for neighbor in atom_neighbors(topology, last) {
-            if !atoms.contains(&AtomId::new(neighbor.atom_index)) {
-                tail.push(neighbor.bond);
-            }
-        }
-    }
-    Ok((head, tail))
-}
-
-fn normalize_polymer_connection(value: &str) -> (SGroupConnection, String, bool) {
-    let flipped = value.contains(",f");
-    let without_flip = value.replace(",f", "");
-    match without_flip.as_str() {
-        "hh" | "HH" => (SGroupConnection::HeadToHead, "HH".to_owned(), flipped),
-        "ht" | "HT" => (SGroupConnection::HeadToTail, "HT".to_owned(), flipped),
-        "eu" | "EU" | "" => (SGroupConnection::Either, "EU".to_owned(), flipped),
-        _ => (SGroupConnection::Either, "EU".to_owned(), flipped),
-    }
-}
-
 fn finalize_polymer_sgroup(
     topology: &TopologyBlock,
     group: &mut SubstanceGroup,
@@ -259,29 +216,6 @@ fn finalize_polymer_sgroup(
     source_head: &[usize],
     source_tail: &[usize],
 ) -> Result<bool, SmilesParseError> {
-    // BEGIN RDKIT CPP FUNCTION finalizePolymerSGroup
-    // RDKit✔️✔️: if (connect.find(",f") != std::string::npos) { isFlipped = true; }
-    // RDKit✔️✔️: if (connect == "hh") connect = "HH";
-    // RDKit✔️✔️: else if (connect == "ht") connect = "HT";
-    // RDKit✔️✔️: else if (connect == "eu") connect = "EU";
-    // RDKit✔️✔️: else connect = "EU";
-    // RDKit✔️✔️: if (headCrossings.empty() && tailCrossings.empty()) {
-    // RDKit✔️✔️:   setupUnmarkedPolymerSGroup(mol, sgroup, headCrossings, tailCrossings);
-    // RDKit✔️✔️: }
-    // RDKit✔️✔️: for (auto &bondIdx : headCrossings) sgroup.addBondWithIdx(bondIdx);
-    // RDKit✔️✔️: sgroup.setProp("XBHEAD", headCrossings);
-    // RDKit✔️✔️: for (auto &bondIdx : tailCrossings) sgroup.addBondWithIdx(bondIdx);
-    // RDKit✔️✔️: for (unsigned int i = 0;
-    // RDKit✔️✔️:      i < std::min(headCrossings.size(), tailCrossings.size()); ++i) {
-    // RDKit✔️✔️:   unsigned tailIdx = isFlipped
-    // RDKit✔️✔️:       ? tailCrossings[tailCrossings.size() - i - 1] : tailCrossings[i];
-    // RDKit✔️✔️:   xbcorr.push_back(headCrossings[i]); xbcorr.push_back(tailIdx);
-    // RDKit✔️✔️: }
-    // END RDKIT CPP FUNCTION finalizePolymerSGroup
-    let (connection, connect, flipped) = normalize_polymer_connection(source_connect);
-    group.set_connection(connection);
-    group.set_prop("CONNECT", connect);
-
     let mut head = Vec::new();
     let mut tail = Vec::new();
     let mut valid = true;
@@ -300,30 +234,25 @@ fn finalize_polymer_sgroup(
     if !valid {
         return Ok(false);
     }
-    if head.is_empty() && tail.is_empty() {
-        (head, tail) = infer_unmarked_polymer_crossings(topology, group.atoms())?;
-    }
-    if head.is_empty() && tail.is_empty() {
-        return Ok(true);
-    }
-    for bond in head.iter().chain(&tail) {
-        group.push_bond(*bond);
-    }
-    for bond in &head {
-        group.push_head_crossing_bond(*bond);
-    }
-    let mut xbcorr = Vec::with_capacity(head.len().min(tail.len()) * 2);
-    for index in 0..head.len().min(tail.len()) {
-        xbcorr.push(head[index]);
-        xbcorr.push(if flipped {
-            tail[tail.len() - index - 1]
-        } else {
-            tail[index]
-        });
-    }
-    for bond in xbcorr {
-        group.push_crossing_bond_correspondence(bond);
-    }
+    // CX parsing stores CONNECT only when the source superscript is nonempty.
+    // The core helper owns source normalization, inferred crossings, and the
+    // ordered typed SGroup updates shared with the SMARTS lowerer.
+    cosmolkit_core::finalize_polymer_sgroup(
+        group,
+        (!source_connect.is_empty()).then_some(source_connect),
+        &head,
+        &tail,
+        topology.atoms.len(),
+        topology.bonds.len(),
+        |atom| {
+            topology
+                .adjacency
+                .neighbors_of(atom.index())
+                .iter()
+                .map(|neighbor| (AtomId::new(neighbor.atom_index), neighbor.bond))
+        },
+    )
+    .map_err(model_failure)?;
     Ok(true)
 }
 
@@ -341,6 +270,110 @@ pub(crate) fn apply_cx_to_smiles_record(
     apply_cx_to_smiles_record_in_place(&mut staged, parsed)?;
     *record = staged;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parse(input: &str) -> crate::SmilesRecord {
+        crate::parse_smiles(input, &Default::default())
+            .unwrap_or_else(|error| panic!("failed to parse {input:?}: {error}"))
+    }
+
+    #[test]
+    fn query_sgroups_smiles_polymer_accepted_crossings_keep_existing_output() {
+        let record = parse("CCCCC |Sg:n:1,2,3:repeat:ht:0,0,3:3,3,0:|");
+        let group = &record.topology.substance_groups[0];
+        assert_eq!(
+            group.bonds(),
+            &[
+                BondId::new(0),
+                BondId::new(0),
+                BondId::new(3),
+                BondId::new(3),
+                BondId::new(3),
+                BondId::new(0),
+            ]
+        );
+        assert_eq!(
+            group.head_crossing_bonds(),
+            &[BondId::new(0), BondId::new(0), BondId::new(3)]
+        );
+        assert_eq!(
+            group.crossing_bond_correspondence(),
+            &[
+                BondId::new(0),
+                BondId::new(3),
+                BondId::new(0),
+                BondId::new(3),
+                BondId::new(3),
+                BondId::new(0),
+            ]
+        );
+        assert_eq!(group.props().get("CONNECT").map(String::as_str), Some("HT"));
+
+        let output = crate::write_cx_smiles(&record).expect("accepted SGroup remains writable");
+        assert!(
+            output.contains("Sg:n:1,2,3:repeat:ht:0,0,3:3,3,0:"),
+            "{output}"
+        );
+    }
+
+    #[test]
+    fn query_sgroups_smiles_polymer_uppercase_connect_uses_source_fallback() {
+        let record = parse("CCCCC |Sg:n:1,2,3:repeat:HH:0,0,3:2,3,1:|");
+        let group = &record.topology.substance_groups[0];
+        assert_eq!(
+            group.connection(),
+            Some(&cosmolkit_model::SGroupConnection::Either)
+        );
+        assert_eq!(group.props().get("CONNECT").map(String::as_str), Some("EU"));
+        assert_eq!(
+            group.crossing_bond_correspondence(),
+            &[
+                BondId::new(0),
+                BondId::new(2),
+                BondId::new(0),
+                BondId::new(3),
+                BondId::new(3),
+                BondId::new(1),
+            ]
+        );
+    }
+
+    #[test]
+    fn query_sgroups_smiles_polymer_repeated_flip_markers_reverse_tail_pairs() {
+        let record = parse("CCCCC |Sg:n:1,2,3:repeat:hh&#44;f&#44;f:0,0,3:2,3,1:|");
+        let group = &record.topology.substance_groups[0];
+        assert_eq!(
+            group.connection(),
+            Some(&cosmolkit_model::SGroupConnection::HeadToHead)
+        );
+        assert_eq!(group.props().get("CONNECT").map(String::as_str), Some("HH"));
+        assert_eq!(
+            group.crossing_bond_correspondence(),
+            &[
+                BondId::new(0),
+                BondId::new(1),
+                BondId::new(0),
+                BondId::new(3),
+                BondId::new(3),
+                BondId::new(2),
+            ]
+        );
+    }
+
+    #[test]
+    fn query_sgroups_smiles_polymer_keeps_source_crossing_index_filter() {
+        let dropped = parse("CCCCC |Sg:n:1,2,3::ht:9:|");
+        assert!(dropped.topology.substance_groups.is_empty());
+
+        let bond_out_of_range =
+            crate::parse_smiles("CCCCC |Sg:n:1,2,3::ht:4:|", &Default::default())
+                .expect_err("source-valid atom index is still checked as a bond index");
+        assert!(matches!(bond_out_of_range, crate::SmilesParseError::Cx(_)));
+    }
 }
 
 fn apply_cx_to_smiles_record_in_place(

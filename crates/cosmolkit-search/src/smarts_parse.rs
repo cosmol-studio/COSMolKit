@@ -20,11 +20,10 @@
 //! serialization; concrete molecules remain query-free at the public API
 //! boundary.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use cosmolkit_cx::{
-    CxAtomConstraint, CxCoordinateBondKind, CxCountConstraint, CxDoubleBondStereoKind, CxRecord,
-    CxStereoGroupKind, CxWedgeDirection,
+    CxCoordinateBondKind, CxParseProgress, CxProgressPhase, CxRecord, CxSGroupHierarchy,
 };
 
 use crate::query_behavior::SmartsParseError;
@@ -36,10 +35,11 @@ use crate::query_behavior::{
 };
 use crate::{QueryAtom, QueryBond, QueryGraph};
 use cosmolkit_model::{
-    AtomId, AtomQueryPredicate, Bond, BondQueryPredicate, BondSpec, QueryAtomIdentity, QueryNode,
-    StereoGroup, StereoGroupKind,
+    AtomId, AtomMapping, AtomQueryPredicate, Bond, BondId, BondMapping, BondQueryPredicate,
+    BondSpec, QueryAtomIdentity, QueryNode, StereoGroup, SubstanceGroup, SubstanceGroupId,
+    TopologyMapping, query_substance_groups, replace_query_substance_groups,
 };
-use cosmolkit_types::{BondDirection, BondOrder, BondStereo, ChiralTag, Element, Hybridization};
+use cosmolkit_types::{BondDirection, BondOrder, ChiralTag, Element, Hybridization};
 
 #[cfg(test)]
 use cosmolkit_model::AtomSpec;
@@ -519,45 +519,19 @@ fn parse_smarts_with_params(
     smarts_parse_entry(&input)
 }
 
-fn append_atom_query_predicate(
-    graph: &mut QueryGraph,
-    atom: usize,
-    predicate: AtomQueryPredicate,
-) -> Result<(), SmartsParseError> {
-    let Some(query_atom) = graph.atom_mut(atom) else {
-        return Err(SmartsParseError::CxSmiles(format!(
-            "CX atom index {atom} is outside the SMARTS graph"
-        )));
-    };
-    let current = std::mem::replace(query_atom.predicate_mut(), QueryNode::and(Vec::new()));
-    *query_atom.predicate_mut() = QueryNode::and(vec![current, QueryNode::predicate(predicate)]);
-    Ok(())
-}
-
 /// Apply representation-independent CX records directly to the canonical
 /// SMARTS query graph. This is deliberately separate from the SMILES lowerer:
 /// query predicates must never be materialized through a concrete molecule.
-fn apply_cx_to_query(graph: &mut QueryGraph, records: &[CxRecord]) -> Result<(), SmartsParseError> {
+fn apply_cx_to_query(
+    graph: &mut QueryGraph,
+    records: &[CxRecord],
+    stereo_tracker: &mut crate::cx_lowering::CxStereoGroupTracker,
+    cx_sequence_id: &mut u32,
+) -> Result<(), SmartsParseError> {
     for record in records {
         match record {
             CxRecord::Coordinates(coordinates) => {
-                let values = coordinates
-                    .values
-                    .iter()
-                    .map(|value| value.unwrap_or([0.0; 3]))
-                    .collect::<Vec<_>>();
-                if values.len() != graph.num_atoms() {
-                    return Err(SmartsParseError::CxSmiles(
-                        "CX coordinate count does not match the SMARTS graph".to_owned(),
-                    ));
-                }
-                graph
-                    .add_conformer_3d(cosmolkit_model::Conformer3D::new(
-                        coordinates.conformer,
-                        values,
-                        coordinates.is_3d,
-                    ))
-                    .map_err(|error| SmartsParseError::CxSmiles(error.to_string()))?;
+                append_query_conformer(graph, coordinates)?;
             }
             CxRecord::AtomLabels(values) => {
                 for (index, value) in values.iter().enumerate() {
@@ -579,176 +553,1217 @@ fn apply_cx_to_query(graph: &mut QueryGraph, records: &[CxRecord]) -> Result<(),
             }
             CxRecord::AtomProperties(properties) => {
                 for property in properties {
-                    let Some(atom) = graph.atom_mut(property.atom) else {
-                        return Err(SmartsParseError::CxSmiles(format!(
-                            "CX atomProp index {} is outside the SMARTS graph",
-                            property.atom
-                        )));
-                    };
-                    atom.set_prop(property.name.clone(), property.value.clone());
+                    if let Some(atom) = graph.atom_mut(property.atom) {
+                        atom.set_prop(property.name.clone(), property.value.clone())
+                            .map_err(|error| SmartsParseError::CxSmiles(error.to_string()))?;
+                    }
                 }
             }
             CxRecord::CoordinateBonds(annotation) => {
-                let order = match annotation.kind {
-                    CxCoordinateBondKind::Dative => BondOrder::Dative,
-                    CxCoordinateBondKind::Hydrogen => BondOrder::Hydrogen,
-                };
                 for reference in &annotation.bonds {
-                    let Some(bond) = graph.bonds_mut().get_mut(reference.bond) else {
-                        return Err(SmartsParseError::CxSmiles(format!(
-                            "CX bond index {} is outside the SMARTS graph",
-                            reference.bond
-                        )));
-                    };
-                    if bond.begin().index() != reference.atom
-                        && bond.end().index() != reference.atom
-                    {
-                        return Err(SmartsParseError::CxSmiles(
-                            "CX coordinate bond atom does not match its bond".to_owned(),
-                        ));
-                    }
-                    bond.bond_mut().set_order(order);
+                    apply_cx_coordinate_bond_to_query(graph, *reference, annotation.kind)?;
                 }
             }
             CxRecord::ZeroBonds(indices) => {
                 for index in indices {
-                    let Some(bond) = graph.bonds_mut().get_mut(*index) else {
-                        return Err(SmartsParseError::CxSmiles(format!(
-                            "CX zero-bond index {index} is outside the SMARTS graph"
-                        )));
-                    };
-                    bond.bond_mut().set_order(BondOrder::Zero);
+                    apply_cx_zero_bond_to_query(graph, *index)?;
                 }
             }
             CxRecord::Unsaturation(indices) => {
-                for index in indices {
-                    append_atom_query_predicate(graph, *index, AtomQueryPredicate::IsUnsaturated)?;
+                for item_index in 0..indices.len() {
+                    crate::cx_lowering::apply_cx_query_constraint_item(graph, record, item_index)
+                        .map_err(|error| SmartsParseError::CxSmiles(error.to_string()))?;
                 }
             }
             CxRecord::RingBonds(constraints) => {
-                for constraint in constraints {
-                    let predicate = match constraint.constraint {
-                        CxCountConstraint::Exact(value) => AtomQueryPredicate::RingBondCount(
-                            i32::try_from(value)
-                                .expect("CX ring-bond equality is parser-bounded to 0, 2, or 3"),
-                        ),
-                        CxCountConstraint::LessEqual(value) => {
-                            AtomQueryPredicate::RingBondCountLessEqual(value as u8)
-                        }
-                        CxCountConstraint::QueryScan => AtomQueryPredicate::RingBondCount(
-                            crate::query_behavior::QUERY_SCAN_MAGIC_VALUE as i32,
-                        ),
-                    };
-                    append_atom_query_predicate(graph, constraint.atom, predicate)?;
+                for item_index in 0..constraints.len() {
+                    crate::cx_lowering::apply_cx_query_constraint_item(graph, record, item_index)
+                        .map_err(|error| SmartsParseError::CxSmiles(error.to_string()))?;
                 }
             }
             CxRecord::Substitution(constraints) => {
-                for CxAtomConstraint { atom, constraint } in constraints {
-                    let predicate = match constraint {
-                        CxCountConstraint::Exact(value) => {
-                            AtomQueryPredicate::NonHydrogenDegree(*value)
-                        }
-                        CxCountConstraint::LessEqual(value) => {
-                            AtomQueryPredicate::NonHydrogenDegreeLessEqual(*value)
-                        }
-                        CxCountConstraint::QueryScan => AtomQueryPredicate::NonHydrogenDegree(
-                            crate::query_behavior::QUERY_SCAN_MAGIC_VALUE,
-                        ),
-                    };
-                    append_atom_query_predicate(graph, *atom, predicate)?;
+                for item_index in 0..constraints.len() {
+                    crate::cx_lowering::apply_cx_query_constraint_item(graph, record, item_index)
+                        .map_err(|error| SmartsParseError::CxSmiles(error.to_string()))?;
                 }
             }
             CxRecord::EnhancedStereo(stereo) => {
-                let kind = match stereo.kind {
-                    CxStereoGroupKind::Absolute => StereoGroupKind::Absolute,
-                    CxStereoGroupKind::Or => StereoGroupKind::Or,
-                    CxStereoGroupKind::And => StereoGroupKind::And,
-                };
-                let atoms = stereo
-                    .atoms
-                    .iter()
-                    .map(|index| {
-                        if *index < graph.num_atoms() {
-                            Ok(cosmolkit_model::AtomId::new(*index))
-                        } else {
-                            Err(SmartsParseError::CxSmiles(format!(
-                                "CX stereo atom index {index} is outside the SMARTS graph"
-                            )))
-                        }
-                    })
-                    .collect::<Result<Vec<_>, _>>()?;
-                if !atoms.is_empty() {
-                    graph.add_stereo_group(
-                        StereoGroup::new(kind, atoms, Vec::new()).with_id(stereo.group_id),
-                    );
-                }
+                crate::cx_lowering::merge_cx_enhanced_stereo(graph, stereo_tracker, stereo)
+                    .map_err(|error| SmartsParseError::CxSmiles(error.to_string()))?;
             }
             CxRecord::WedgedBonds(wedges) => {
                 for wedge in wedges {
-                    let Some(bond) = graph.bonds_mut().get_mut(wedge.bond) else {
-                        return Err(SmartsParseError::CxSmiles(format!(
-                            "CX wedge bond index {} is outside the SMARTS graph",
-                            wedge.bond
-                        )));
-                    };
-                    let atom = cosmolkit_model::AtomId::new(wedge.atom);
-                    if bond.begin() != atom && bond.end() != atom {
-                        return Err(SmartsParseError::CxSmiles(
-                            "CX wedge atom does not match its bond".to_owned(),
-                        ));
-                    }
-                    if bond.begin() != atom {
-                        let begin = bond.begin();
-                        bond.bond_mut().set_endpoints(atom, begin);
-                    }
-                    let (cfg, direction) = match wedge.direction {
-                        CxWedgeDirection::Unknown => ("2", BondDirection::Unknown),
-                        CxWedgeDirection::BeginWedge => ("1", BondDirection::BeginWedge),
-                        CxWedgeDirection::BeginDash => ("3", BondDirection::BeginDash),
-                    };
-                    bond.bond_mut().set_prop("_MolFileBondCfg", cfg);
-                    bond.bond_mut().set_direction(direction);
+                    crate::cx_lowering::apply_cx_wedge_bond_to_query(graph, wedge)
+                        .map_err(|error| SmartsParseError::CxSmiles(error.to_string()))?;
                 }
             }
             CxRecord::DoubleBondStereo(stereo) => {
-                let value = match stereo.stereo {
-                    CxDoubleBondStereoKind::Any => BondStereo::Any,
-                    CxDoubleBondStereoKind::Cis => BondStereo::Cis,
-                    CxDoubleBondStereoKind::Trans => BondStereo::Trans,
-                };
-                for index in &stereo.bonds {
-                    let Some(bond) = graph.bonds_mut().get_mut(*index) else {
-                        return Err(SmartsParseError::CxSmiles(format!(
-                            "CX stereo bond index {index} is outside the SMARTS graph"
-                        )));
-                    };
-                    bond.bond_mut().set_stereo(value);
+                for &index in &stereo.bonds {
+                    crate::cx_lowering::apply_cx_double_bond_stereo_to_query(
+                        graph,
+                        index,
+                        stereo.stereo,
+                    )
+                    .map_err(|error| SmartsParseError::CxSmiles(error.to_string()))?;
                 }
             }
             CxRecord::Radicals(radicals) => {
                 for radical in radicals {
-                    let Some(atom) = graph.atom_mut(radical.atom) else {
-                        return Err(SmartsParseError::CxSmiles(format!(
-                            "CX radical atom index {} is outside the SMARTS graph",
-                            radical.atom
-                        )));
-                    };
-                    atom.set_radical_electrons(radical.electrons);
+                    apply_cx_radical_to_query(graph, *radical)?;
                 }
             }
-            CxRecord::LinkNodes(_)
-            | CxRecord::DataSGroup(_)
-            | CxRecord::SGroupHierarchy(_)
-            | CxRecord::PolymerSGroup(_)
-            | CxRecord::VariableAttachments(_) => {
-                return Err(SmartsParseError::UnsupportedFeature(
-                    "CX record has no QueryGraph representation",
-                ));
+            CxRecord::LinkNodes(nodes) => {
+                crate::cx_lowering::apply_cx_link_nodes_to_query(graph, nodes)
+                    .map_err(|error| SmartsParseError::CxSmiles(error.to_string()))?;
+            }
+            CxRecord::DataSGroup(data) => {
+                crate::cx_lowering::apply_cx_data_sgroup_to_query(graph, data, *cx_sequence_id)
+                    .map_err(|error| SmartsParseError::CxSmiles(error.to_string()))?;
+                *cx_sequence_id = cx_sequence_id.wrapping_add(1);
+            }
+            CxRecord::SGroupHierarchy(hierarchies) => {
+                crate::cx_lowering::apply_cx_sgroup_hierarchy_to_query(graph, hierarchies)
+                    .map_err(|error| SmartsParseError::CxSmiles(error.to_string()))?;
+            }
+            CxRecord::PolymerSGroup(polymer) => {
+                crate::cx_lowering::apply_cx_polymer_sgroup_to_query(
+                    graph,
+                    polymer,
+                    *cx_sequence_id,
+                )
+                .map_err(|error| SmartsParseError::CxSmiles(error.to_string()))?;
+                *cx_sequence_id = cx_sequence_id.wrapping_add(1);
+            }
+            CxRecord::VariableAttachments(attachments) => {
+                for attachment in attachments {
+                    crate::cx_lowering::apply_cx_variable_attachment_to_query(graph, attachment)
+                        .map_err(|error| SmartsParseError::CxSmiles(error.to_string()))?;
+                }
             }
             CxRecord::Unknown(_) => {}
         }
     }
     Ok(())
+}
+
+struct PendingCxSGroupHierarchy {
+    record_index: usize,
+    next_item_index: usize,
+    hierarchy_index: usize,
+    child_index: usize,
+    parent_resolved: bool,
+    resolved_parent: Option<(SubstanceGroupId, u32)>,
+    groups: Vec<SubstanceGroup>,
+    dirty: bool,
+}
+
+fn apply_cx_sgroup_hierarchy_progress_item(
+    pending: &mut PendingCxSGroupHierarchy,
+    hierarchies: &[CxSGroupHierarchy],
+    item_index: usize,
+) -> Result<(), crate::cx_lowering::CxQueryLoweringError> {
+    if pending.next_item_index != item_index {
+        return Err(crate::cx_lowering::CxQueryLoweringError::InvalidGraph(
+            "CX SGroup hierarchy item checkpoints are out of order".to_owned(),
+        ));
+    }
+    while pending.hierarchy_index < hierarchies.len()
+        && pending.child_index >= hierarchies[pending.hierarchy_index].children.len()
+    {
+        pending.hierarchy_index += 1;
+        pending.child_index = 0;
+        pending.parent_resolved = false;
+        pending.resolved_parent = None;
+    }
+    let hierarchy = hierarchies.get(pending.hierarchy_index).ok_or_else(|| {
+        crate::cx_lowering::CxQueryLoweringError::InvalidGraph(
+            "CX SGroup hierarchy item checkpoint references a missing child".to_owned(),
+        )
+    })?;
+    if !pending.parent_resolved {
+        pending.resolved_parent = crate::cx_lowering::resolve_cx_sgroup_hierarchy_parent(
+            &pending.groups,
+            hierarchy.parent,
+        )?;
+        pending.parent_resolved = true;
+    }
+    let child_id = hierarchy.children[pending.child_index];
+    let changed = crate::cx_lowering::apply_cx_sgroup_hierarchy_child(
+        &mut pending.groups,
+        pending.resolved_parent,
+        child_id,
+    )?;
+    pending.dirty |= changed;
+    pending.next_item_index += 1;
+    pending.child_index += 1;
+    Ok(())
+}
+
+fn commit_pending_cx_sgroup_hierarchy(
+    graph: &mut QueryGraph,
+    pending: PendingCxSGroupHierarchy,
+) -> Result<(), SmartsParseError> {
+    if pending.dirty {
+        replace_query_substance_groups(graph, pending.groups)
+            .map_err(|error| SmartsParseError::CxSmiles(error.to_string()))?;
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+fn apply_cx_progress_to_query(
+    graph: &mut QueryGraph,
+    progress: &CxParseProgress,
+) -> Result<(), SmartsParseError> {
+    let mut source_cursor = progress.consumed();
+    apply_cx_progress_to_query_with_cursor(graph, progress, &mut source_cursor)
+}
+
+fn apply_cx_progress_to_query_with_cursor(
+    graph: &mut QueryGraph,
+    progress: &CxParseProgress,
+    source_cursor: &mut usize,
+) -> Result<(), SmartsParseError> {
+    let mut pending_coordinates: Option<(usize, cosmolkit_cx::CxCoordinates)> = None;
+    let mut pending_stereo: Option<(usize, usize)> = None;
+    let mut pending_query_constraints: Option<(usize, usize)> = None;
+    let mut pending_link_nodes: Option<(usize, usize)> = None;
+    let mut pending_data_sgroup: Option<(usize, usize)> = None;
+    let mut pending_polymer_sgroup: Option<(usize, usize)> = None;
+    let mut pending_variable_attachments: Option<(usize, usize)> = None;
+    let mut pending_wedges: Option<(usize, usize)> = None;
+    let mut pending_double_bond_stereo: Option<(usize, usize)> = None;
+    let mut pending_sgroup_hierarchy: Option<PendingCxSGroupHierarchy> = None;
+    let mut cx_sequence_id = 0_u32;
+    let mut stereo_tracker = crate::cx_lowering::CxStereoGroupTracker::new(graph);
+    for checkpoint in progress.checkpoints() {
+        // Source helpers commit the current item before consuming its next
+        // delimiter. Preserve that iterator position if graph lowering fails.
+        *source_cursor = checkpoint.cursor;
+        let record = progress
+            .records()
+            .get(checkpoint.record_index)
+            .ok_or_else(|| {
+                SmartsParseError::CxSmiles(
+                    "CX progress checkpoint references a missing record".to_owned(),
+                )
+            })?;
+        if let CxRecord::DataSGroup(data) = record {
+            match checkpoint.phase {
+                CxProgressPhase::Begin => {
+                    if checkpoint.item_index.is_some() || pending_data_sgroup.is_some() {
+                        return Err(SmartsParseError::CxSmiles(
+                            "CX data SGroup progress has an invalid begin checkpoint".to_owned(),
+                        ));
+                    }
+                    pending_data_sgroup = Some((checkpoint.record_index, 0));
+                }
+                CxProgressPhase::Item => {
+                    let item_index = checkpoint.item_index.ok_or_else(|| {
+                        SmartsParseError::CxSmiles(
+                            "CX data SGroup item checkpoint has no field index".to_owned(),
+                        )
+                    })?;
+                    let Some((record_index, committed)) = &mut pending_data_sgroup else {
+                        return Err(SmartsParseError::CxSmiles(
+                            "CX data SGroup item has no begin checkpoint".to_owned(),
+                        ));
+                    };
+                    if *record_index != checkpoint.record_index
+                        || *committed != item_index
+                        || item_index > 5
+                        || (item_index == 5 && data.coordinates.is_none())
+                    {
+                        return Err(SmartsParseError::CxSmiles(
+                            "CX data SGroup field checkpoints are out of order".to_owned(),
+                        ));
+                    }
+                    *committed += 1;
+                }
+                CxProgressPhase::Complete => {
+                    let Some((record_index, committed)) = pending_data_sgroup.take() else {
+                        return Err(SmartsParseError::CxSmiles(
+                            "CX data SGroup completion has no begin checkpoint".to_owned(),
+                        ));
+                    };
+                    let expected_fields = 5 + usize::from(data.coordinates.is_some());
+                    if record_index != checkpoint.record_index
+                        || checkpoint.item_index.is_some()
+                        || committed != expected_fields
+                    {
+                        return Err(SmartsParseError::CxSmiles(
+                            "CX data SGroup completion does not match parsed fields".to_owned(),
+                        ));
+                    }
+                    crate::cx_lowering::apply_cx_data_sgroup_to_query(graph, data, cx_sequence_id)
+                        .map_err(|error| SmartsParseError::CxSmiles(error.to_string()))?;
+                    cx_sequence_id = cx_sequence_id.wrapping_add(1);
+                }
+            }
+            continue;
+        }
+        if let CxRecord::PolymerSGroup(polymer) = record {
+            match checkpoint.phase {
+                CxProgressPhase::Begin => {
+                    if checkpoint.item_index.is_some() || pending_polymer_sgroup.is_some() {
+                        return Err(SmartsParseError::CxSmiles(
+                            "CX polymer SGroup progress has an invalid begin checkpoint".to_owned(),
+                        ));
+                    }
+                    pending_polymer_sgroup = Some((checkpoint.record_index, 0));
+                }
+                CxProgressPhase::Item => {
+                    let item_index = checkpoint.item_index.ok_or_else(|| {
+                        SmartsParseError::CxSmiles(
+                            "CX polymer SGroup item checkpoint has no field index".to_owned(),
+                        )
+                    })?;
+                    let Some((record_index, committed)) = &mut pending_polymer_sgroup else {
+                        return Err(SmartsParseError::CxSmiles(
+                            "CX polymer SGroup item has no begin checkpoint".to_owned(),
+                        ));
+                    };
+                    if *record_index != checkpoint.record_index || *committed != item_index {
+                        return Err(SmartsParseError::CxSmiles(
+                            "CX polymer SGroup field checkpoints are out of order".to_owned(),
+                        ));
+                    }
+                    *committed += 1;
+                }
+                CxProgressPhase::Complete => {
+                    let Some((record_index, committed)) = pending_polymer_sgroup.take() else {
+                        return Err(SmartsParseError::CxSmiles(
+                            "CX polymer SGroup completion has no begin checkpoint".to_owned(),
+                        ));
+                    };
+                    let expected_items = polymer.atoms.len()
+                        + polymer.head_crossings.len()
+                        + polymer.tail_crossings.len()
+                        + usize::from(!polymer.label.is_empty())
+                        + usize::from(!polymer.connect.is_empty());
+                    if record_index != checkpoint.record_index
+                        || checkpoint.item_index.is_some()
+                        || committed != expected_items
+                    {
+                        return Err(SmartsParseError::CxSmiles(
+                            "CX polymer SGroup completion does not match parsed fields".to_owned(),
+                        ));
+                    }
+                    crate::cx_lowering::apply_cx_polymer_sgroup_to_query(
+                        graph,
+                        polymer,
+                        cx_sequence_id,
+                    )
+                    .map_err(|error| SmartsParseError::CxSmiles(error.to_string()))?;
+                    cx_sequence_id = cx_sequence_id.wrapping_add(1);
+                }
+            }
+            continue;
+        }
+        if let CxRecord::WedgedBonds(wedges) = record {
+            match checkpoint.phase {
+                CxProgressPhase::Begin => {
+                    if checkpoint.item_index.is_some() || pending_wedges.is_some() {
+                        return Err(SmartsParseError::CxSmiles(
+                            "CX wedge progress has an invalid begin checkpoint".to_owned(),
+                        ));
+                    }
+                    pending_wedges = Some((checkpoint.record_index, 0));
+                }
+                CxProgressPhase::Item => {
+                    let item_index = checkpoint.item_index.ok_or_else(|| {
+                        SmartsParseError::CxSmiles(
+                            "CX wedge item checkpoint has no pair index".to_owned(),
+                        )
+                    })?;
+                    let Some((record_index, committed)) = &mut pending_wedges else {
+                        return Err(SmartsParseError::CxSmiles(
+                            "CX wedge item has no begin checkpoint".to_owned(),
+                        ));
+                    };
+                    if *record_index != checkpoint.record_index || *committed != item_index {
+                        return Err(SmartsParseError::CxSmiles(
+                            "CX wedge item checkpoints are out of order".to_owned(),
+                        ));
+                    }
+                    let wedge = wedges.get(item_index).ok_or_else(|| {
+                        SmartsParseError::CxSmiles(
+                            "CX wedge item references a missing pair".to_owned(),
+                        )
+                    })?;
+                    crate::cx_lowering::apply_cx_wedge_bond_to_query(graph, wedge)
+                        .map_err(|error| SmartsParseError::CxSmiles(error.to_string()))?;
+                    *committed += 1;
+                }
+                CxProgressPhase::Complete => {
+                    let Some((record_index, committed)) = pending_wedges.take() else {
+                        return Err(SmartsParseError::CxSmiles(
+                            "CX wedge completion has no begin checkpoint".to_owned(),
+                        ));
+                    };
+                    if record_index != checkpoint.record_index
+                        || checkpoint.item_index.is_some()
+                        || committed != wedges.len()
+                    {
+                        return Err(SmartsParseError::CxSmiles(
+                            "CX wedge completion does not match parsed pairs".to_owned(),
+                        ));
+                    }
+                }
+            }
+            continue;
+        }
+        if let CxRecord::DoubleBondStereo(stereo) = record {
+            match checkpoint.phase {
+                CxProgressPhase::Begin => {
+                    if checkpoint.item_index.is_some() || pending_double_bond_stereo.is_some() {
+                        return Err(SmartsParseError::CxSmiles(
+                            "CX double-bond stereo progress has an invalid begin checkpoint"
+                                .to_owned(),
+                        ));
+                    }
+                    pending_double_bond_stereo = Some((checkpoint.record_index, 0));
+                }
+                CxProgressPhase::Item => {
+                    let item_index = checkpoint.item_index.ok_or_else(|| {
+                        SmartsParseError::CxSmiles(
+                            "CX double-bond stereo item checkpoint has no bond index".to_owned(),
+                        )
+                    })?;
+                    let Some((record_index, committed)) = &mut pending_double_bond_stereo else {
+                        return Err(SmartsParseError::CxSmiles(
+                            "CX double-bond stereo item has no begin checkpoint".to_owned(),
+                        ));
+                    };
+                    if *record_index != checkpoint.record_index || *committed != item_index {
+                        return Err(SmartsParseError::CxSmiles(
+                            "CX double-bond stereo item checkpoints are out of order".to_owned(),
+                        ));
+                    }
+                    let bond_index = *stereo.bonds.get(item_index).ok_or_else(|| {
+                        SmartsParseError::CxSmiles(
+                            "CX double-bond stereo item references a missing bond".to_owned(),
+                        )
+                    })?;
+                    crate::cx_lowering::apply_cx_double_bond_stereo_to_query(
+                        graph,
+                        bond_index,
+                        stereo.stereo,
+                    )
+                    .map_err(|error| SmartsParseError::CxSmiles(error.to_string()))?;
+                    *committed += 1;
+                }
+                CxProgressPhase::Complete => {
+                    let Some((record_index, committed)) = pending_double_bond_stereo.take() else {
+                        return Err(SmartsParseError::CxSmiles(
+                            "CX double-bond stereo completion has no begin checkpoint".to_owned(),
+                        ));
+                    };
+                    if record_index != checkpoint.record_index
+                        || checkpoint.item_index.is_some()
+                        || committed != stereo.bonds.len()
+                    {
+                        return Err(SmartsParseError::CxSmiles(
+                            "CX double-bond stereo completion does not match parsed bonds"
+                                .to_owned(),
+                        ));
+                    }
+                }
+            }
+            continue;
+        }
+        if let CxRecord::VariableAttachments(attachments) = record {
+            match checkpoint.phase {
+                CxProgressPhase::Begin => {
+                    if checkpoint.item_index.is_some() || pending_variable_attachments.is_some() {
+                        return Err(SmartsParseError::CxSmiles(
+                            "CX variable-attachment progress has an invalid begin checkpoint"
+                                .to_owned(),
+                        ));
+                    }
+                    pending_variable_attachments = Some((checkpoint.record_index, 0));
+                }
+                CxProgressPhase::Item => {
+                    let item_index = checkpoint.item_index.ok_or_else(|| {
+                        SmartsParseError::CxSmiles(
+                            "CX variable-attachment item checkpoint has no field index".to_owned(),
+                        )
+                    })?;
+                    let Some((record_index, committed)) = &mut pending_variable_attachments else {
+                        return Err(SmartsParseError::CxSmiles(
+                            "CX variable-attachment item has no begin checkpoint".to_owned(),
+                        ));
+                    };
+                    if *record_index != checkpoint.record_index || *committed != item_index {
+                        return Err(SmartsParseError::CxSmiles(
+                            "CX variable-attachment item checkpoints are out of order".to_owned(),
+                        ));
+                    }
+                    let attachment = attachments.get(item_index / 2).ok_or_else(|| {
+                        SmartsParseError::CxSmiles(
+                            "CX variable-attachment item references a missing row".to_owned(),
+                        )
+                    })?;
+                    if item_index % 2 == 0 {
+                        // Source degree validation occurs after at1idx and before its colon.
+                        crate::cx_lowering::validate_cx_variable_attachment_atom_to_query(
+                            graph, attachment,
+                        )
+                        .map_err(|error| SmartsParseError::CxSmiles(error.to_string()))?;
+                    } else {
+                        // The source installs bond properties only after the full endpoint list.
+                        crate::cx_lowering::apply_cx_variable_attachment_effect_to_query(
+                            graph, attachment,
+                        )
+                        .map_err(|error| SmartsParseError::CxSmiles(error.to_string()))?;
+                    }
+                    *committed += 1;
+                }
+                CxProgressPhase::Complete => {
+                    let Some((record_index, committed)) = pending_variable_attachments.take()
+                    else {
+                        return Err(SmartsParseError::CxSmiles(
+                            "CX variable-attachment completion has no begin checkpoint".to_owned(),
+                        ));
+                    };
+                    if record_index != checkpoint.record_index
+                        || checkpoint.item_index.is_some()
+                        || committed != attachments.len() * 2
+                    {
+                        return Err(SmartsParseError::CxSmiles(
+                            "CX variable-attachment completion does not match parsed rows"
+                                .to_owned(),
+                        ));
+                    }
+                }
+            }
+            continue;
+        }
+        if let CxRecord::SGroupHierarchy(hierarchies) = record {
+            match checkpoint.phase {
+                CxProgressPhase::Begin => {
+                    if checkpoint.item_index.is_some() || pending_sgroup_hierarchy.is_some() {
+                        if let Some(pending) = pending_sgroup_hierarchy.take() {
+                            commit_pending_cx_sgroup_hierarchy(graph, pending)?;
+                        }
+                        return Err(SmartsParseError::CxSmiles(
+                            "CX SGroup hierarchy progress has an invalid begin checkpoint"
+                                .to_owned(),
+                        ));
+                    }
+                    pending_sgroup_hierarchy = Some(PendingCxSGroupHierarchy {
+                        record_index: checkpoint.record_index,
+                        next_item_index: 0,
+                        hierarchy_index: 0,
+                        child_index: 0,
+                        parent_resolved: false,
+                        resolved_parent: None,
+                        groups: query_substance_groups(graph).to_vec(),
+                        dirty: false,
+                    });
+                }
+                CxProgressPhase::Item => {
+                    let item_index = checkpoint.item_index.ok_or_else(|| {
+                        SmartsParseError::CxSmiles(
+                            "CX SGroup hierarchy item checkpoint has no child index".to_owned(),
+                        )
+                    })?;
+                    let Some(pending) = pending_sgroup_hierarchy.as_mut() else {
+                        return Err(SmartsParseError::CxSmiles(
+                            "CX SGroup hierarchy item has no begin checkpoint".to_owned(),
+                        ));
+                    };
+                    if pending.record_index != checkpoint.record_index {
+                        let pending = pending_sgroup_hierarchy
+                            .take()
+                            .expect("pending hierarchy was just checked");
+                        commit_pending_cx_sgroup_hierarchy(graph, pending)?;
+                        return Err(SmartsParseError::CxSmiles(
+                            "CX SGroup hierarchy item references another record".to_owned(),
+                        ));
+                    }
+                    let apply_result =
+                        apply_cx_sgroup_hierarchy_progress_item(pending, hierarchies, item_index);
+                    if let Err(error) = apply_result {
+                        let pending = pending_sgroup_hierarchy
+                            .take()
+                            .expect("pending hierarchy was just checked");
+                        commit_pending_cx_sgroup_hierarchy(graph, pending)?;
+                        return Err(SmartsParseError::CxSmiles(error.to_string()));
+                    }
+                }
+                CxProgressPhase::Complete => {
+                    let Some(pending) = pending_sgroup_hierarchy.take() else {
+                        return Err(SmartsParseError::CxSmiles(
+                            "CX SGroup hierarchy completion has no begin checkpoint".to_owned(),
+                        ));
+                    };
+                    let expected_items = hierarchies
+                        .iter()
+                        .map(|hierarchy| hierarchy.children.len())
+                        .sum::<usize>();
+                    if pending.record_index != checkpoint.record_index
+                        || checkpoint.item_index.is_some()
+                        || pending.next_item_index != expected_items
+                    {
+                        commit_pending_cx_sgroup_hierarchy(graph, pending)?;
+                        return Err(SmartsParseError::CxSmiles(
+                            "CX SGroup hierarchy completion does not match parsed children"
+                                .to_owned(),
+                        ));
+                    }
+                    commit_pending_cx_sgroup_hierarchy(graph, pending)?;
+                }
+            }
+            continue;
+        }
+        if let CxRecord::EnhancedStereo(stereo) = record {
+            match checkpoint.phase {
+                CxProgressPhase::Begin => {
+                    if checkpoint.item_index.is_some() || pending_stereo.is_some() {
+                        return Err(SmartsParseError::CxSmiles(
+                            "CX enhanced-stereo progress has an invalid begin checkpoint"
+                                .to_owned(),
+                        ));
+                    }
+                    pending_stereo = Some((checkpoint.record_index, 0));
+                }
+                CxProgressPhase::Item => {
+                    let item_index = checkpoint.item_index.ok_or_else(|| {
+                        SmartsParseError::CxSmiles(
+                            "CX enhanced-stereo item checkpoint has no item index".to_owned(),
+                        )
+                    })?;
+                    let Some((record_index, committed)) = &mut pending_stereo else {
+                        return Err(SmartsParseError::CxSmiles(
+                            "CX enhanced-stereo item has no begin checkpoint".to_owned(),
+                        ));
+                    };
+                    if *record_index != checkpoint.record_index
+                        || *committed != item_index
+                        || stereo.atoms.get(item_index).is_none()
+                    {
+                        return Err(SmartsParseError::CxSmiles(
+                            "CX enhanced-stereo item checkpoints are out of order".to_owned(),
+                        ));
+                    }
+                    *committed += 1;
+                }
+                CxProgressPhase::Complete => {
+                    let Some((record_index, committed)) = pending_stereo.take() else {
+                        return Err(SmartsParseError::CxSmiles(
+                            "CX enhanced-stereo completion has no begin checkpoint".to_owned(),
+                        ));
+                    };
+                    if record_index != checkpoint.record_index
+                        || checkpoint.item_index.is_some()
+                        || committed != stereo.atoms.len()
+                    {
+                        return Err(SmartsParseError::CxSmiles(
+                            "CX enhanced-stereo completion does not match committed indices"
+                                .to_owned(),
+                        ));
+                    }
+                    crate::cx_lowering::merge_cx_enhanced_stereo(
+                        graph,
+                        &mut stereo_tracker,
+                        stereo,
+                    )
+                    .map_err(|error| SmartsParseError::CxSmiles(error.to_string()))?;
+                }
+            }
+            continue;
+        }
+        if let CxRecord::LinkNodes(nodes) = record {
+            match checkpoint.phase {
+                CxProgressPhase::Begin => {
+                    if checkpoint.item_index.is_some() || pending_link_nodes.is_some() {
+                        return Err(SmartsParseError::CxSmiles(
+                            "CX link-node progress has an invalid begin checkpoint".to_owned(),
+                        ));
+                    }
+                    pending_link_nodes = Some((checkpoint.record_index, 0));
+                }
+                CxProgressPhase::Item => {
+                    let item_index = checkpoint.item_index.ok_or_else(|| {
+                        SmartsParseError::CxSmiles(
+                            "CX link-node item checkpoint has no item index".to_owned(),
+                        )
+                    })?;
+                    let Some((record_index, committed)) = &mut pending_link_nodes else {
+                        return Err(SmartsParseError::CxSmiles(
+                            "CX link-node item has no begin checkpoint".to_owned(),
+                        ));
+                    };
+                    if *record_index != checkpoint.record_index
+                        || *committed != item_index
+                        || nodes.get(item_index).is_none()
+                    {
+                        return Err(SmartsParseError::CxSmiles(
+                            "CX link-node item checkpoints are out of order".to_owned(),
+                        ));
+                    }
+                    *committed += 1;
+                }
+                CxProgressPhase::Complete => {
+                    let Some((record_index, committed)) = pending_link_nodes.take() else {
+                        return Err(SmartsParseError::CxSmiles(
+                            "CX link-node completion has no begin checkpoint".to_owned(),
+                        ));
+                    };
+                    if record_index != checkpoint.record_index
+                        || checkpoint.item_index.is_some()
+                        || committed != nodes.len()
+                    {
+                        return Err(SmartsParseError::CxSmiles(
+                            "CX link-node completion does not match committed items".to_owned(),
+                        ));
+                    }
+                    crate::cx_lowering::apply_cx_link_nodes_to_query(graph, nodes)
+                        .map_err(|error| SmartsParseError::CxSmiles(error.to_string()))?;
+                }
+            }
+            continue;
+        }
+        if matches!(
+            record,
+            CxRecord::Unsaturation(_) | CxRecord::RingBonds(_) | CxRecord::Substitution(_)
+        ) {
+            match checkpoint.phase {
+                CxProgressPhase::Begin => {
+                    if checkpoint.item_index.is_some() || pending_query_constraints.is_some() {
+                        return Err(SmartsParseError::CxSmiles(
+                            "CX query-constraint progress has an invalid begin checkpoint"
+                                .to_owned(),
+                        ));
+                    }
+                    pending_query_constraints = Some((checkpoint.record_index, 0));
+                }
+                CxProgressPhase::Item => {
+                    let item_index = checkpoint.item_index.ok_or_else(|| {
+                        SmartsParseError::CxSmiles(
+                            "CX query-constraint item checkpoint has no item index".to_owned(),
+                        )
+                    })?;
+                    let Some((record_index, committed)) = &mut pending_query_constraints else {
+                        return Err(SmartsParseError::CxSmiles(
+                            "CX query-constraint item has no begin checkpoint".to_owned(),
+                        ));
+                    };
+                    if *record_index != checkpoint.record_index || *committed != item_index {
+                        return Err(SmartsParseError::CxSmiles(
+                            "CX query-constraint item checkpoints are out of order".to_owned(),
+                        ));
+                    }
+                    crate::cx_lowering::apply_cx_query_constraint_item(graph, record, item_index)
+                        .map_err(|error| SmartsParseError::CxSmiles(error.to_string()))?;
+                    *committed += 1;
+                }
+                CxProgressPhase::Complete => {
+                    let Some((record_index, committed)) = pending_query_constraints.take() else {
+                        return Err(SmartsParseError::CxSmiles(
+                            "CX query-constraint completion has no begin checkpoint".to_owned(),
+                        ));
+                    };
+                    let item_count = match record {
+                        CxRecord::Unsaturation(indices) => indices.len(),
+                        CxRecord::RingBonds(constraints) => constraints.len(),
+                        CxRecord::Substitution(constraints) => constraints.len(),
+                        _ => unreachable!("query-constraint progress kind changed"),
+                    };
+                    if record_index != checkpoint.record_index
+                        || checkpoint.item_index.is_some()
+                        || committed != item_count
+                    {
+                        return Err(SmartsParseError::CxSmiles(
+                            "CX query-constraint completion does not match committed items"
+                                .to_owned(),
+                        ));
+                    }
+                }
+            }
+            continue;
+        }
+        if let CxRecord::Coordinates(coordinates) = record {
+            match checkpoint.phase {
+                CxProgressPhase::Begin => {
+                    if pending_coordinates.is_some() {
+                        return Err(SmartsParseError::CxSmiles(
+                            "nested CX coordinate progress record".to_owned(),
+                        ));
+                    }
+                    pending_coordinates = Some((
+                        checkpoint.record_index,
+                        cosmolkit_cx::CxCoordinates {
+                            conformer: coordinates.conformer,
+                            values: Vec::new(),
+                            is_3d: true,
+                        },
+                    ));
+                }
+                CxProgressPhase::Item => {
+                    let item_index = checkpoint.item_index.ok_or_else(|| {
+                        SmartsParseError::CxSmiles(
+                            "CX coordinate item checkpoint has no item index".to_owned(),
+                        )
+                    })?;
+                    let Some((record_index, pending)) = &mut pending_coordinates else {
+                        return Err(SmartsParseError::CxSmiles(
+                            "CX coordinate item has no begin checkpoint".to_owned(),
+                        ));
+                    };
+                    if *record_index != checkpoint.record_index
+                        || pending.values.len() != item_index
+                    {
+                        return Err(SmartsParseError::CxSmiles(
+                            "CX coordinate item checkpoints are out of order".to_owned(),
+                        ));
+                    }
+                    let value = coordinates.values.get(item_index).copied().ok_or_else(|| {
+                        SmartsParseError::CxSmiles(
+                            "CX coordinate item checkpoint references a missing row".to_owned(),
+                        )
+                    })?;
+                    pending.values.push(value);
+                }
+                CxProgressPhase::Complete => {
+                    let Some((record_index, mut pending)) = pending_coordinates.take() else {
+                        return Err(SmartsParseError::CxSmiles(
+                            "CX coordinate completion has no begin checkpoint".to_owned(),
+                        ));
+                    };
+                    if record_index != checkpoint.record_index
+                        || pending.values.len() != coordinates.values.len()
+                    {
+                        return Err(SmartsParseError::CxSmiles(
+                            "CX coordinate completion does not match committed rows".to_owned(),
+                        ));
+                    }
+                    pending.is_3d = coordinates.is_3d;
+                    append_query_conformer(graph, &pending)?;
+                }
+            }
+            continue;
+        }
+        if matches!(record, CxRecord::AtomLabels(_) | CxRecord::AtomValues(_)) {
+            match checkpoint.phase {
+                CxProgressPhase::Item => {
+                    let item_index = checkpoint.item_index.ok_or_else(|| {
+                        SmartsParseError::CxSmiles(
+                            "CX atom slot checkpoint has no atom index".to_owned(),
+                        )
+                    })?;
+                    apply_cx_atom_slot_to_query(graph, record, item_index)?;
+                }
+                CxProgressPhase::Complete if checkpoint.item_index.is_none() => {}
+                CxProgressPhase::Begin | CxProgressPhase::Complete => {
+                    return Err(SmartsParseError::CxSmiles(
+                        "CX atom slot progress has an invalid checkpoint".to_owned(),
+                    ));
+                }
+            }
+            continue;
+        }
+        if matches!(record, CxRecord::AtomProperties(_)) {
+            match checkpoint.phase {
+                CxProgressPhase::Item => {
+                    let item_index = checkpoint.item_index.ok_or_else(|| {
+                        SmartsParseError::CxSmiles(
+                            "CX atomProp item checkpoint has no item index".to_owned(),
+                        )
+                    })?;
+                    apply_cx_atom_property_to_query(graph, record, item_index)?;
+                }
+                CxProgressPhase::Complete if checkpoint.item_index.is_none() => {}
+                CxProgressPhase::Begin | CxProgressPhase::Complete => {
+                    return Err(SmartsParseError::CxSmiles(
+                        "CX atomProp progress has an invalid checkpoint".to_owned(),
+                    ));
+                }
+            }
+            continue;
+        }
+        if matches!(
+            record,
+            CxRecord::CoordinateBonds(_) | CxRecord::ZeroBonds(_)
+        ) {
+            match checkpoint.phase {
+                CxProgressPhase::Item => {
+                    let item_index = checkpoint.item_index.ok_or_else(|| {
+                        SmartsParseError::CxSmiles(
+                            "CX bond item checkpoint has no item index".to_owned(),
+                        )
+                    })?;
+                    apply_cx_bond_item_to_query(graph, record, item_index)?;
+                }
+                CxProgressPhase::Complete if checkpoint.item_index.is_none() => {}
+                CxProgressPhase::Begin | CxProgressPhase::Complete => {
+                    return Err(SmartsParseError::CxSmiles(
+                        "CX bond progress has an invalid checkpoint".to_owned(),
+                    ));
+                }
+            }
+            continue;
+        }
+        if matches!(record, CxRecord::Radicals(_)) {
+            match checkpoint.phase {
+                CxProgressPhase::Item => {
+                    let item_index = checkpoint.item_index.ok_or_else(|| {
+                        SmartsParseError::CxSmiles(
+                            "CX radical item checkpoint has no item index".to_owned(),
+                        )
+                    })?;
+                    apply_cx_radical_item_to_query(graph, record, item_index)?;
+                }
+                CxProgressPhase::Complete if checkpoint.item_index.is_none() => {}
+                CxProgressPhase::Begin | CxProgressPhase::Complete => {
+                    return Err(SmartsParseError::CxSmiles(
+                        "CX radical progress has an invalid checkpoint".to_owned(),
+                    ));
+                }
+            }
+            continue;
+        }
+        match checkpoint.phase {
+            CxProgressPhase::Complete if checkpoint.item_index.is_none() => {
+                if pending_coordinates.is_some() {
+                    return Err(SmartsParseError::CxSmiles(
+                        "CX record completed before coordinate progress".to_owned(),
+                    ));
+                }
+                apply_cx_to_query(
+                    graph,
+                    std::slice::from_ref(record),
+                    &mut stereo_tracker,
+                    &mut cx_sequence_id,
+                )?;
+            }
+            CxProgressPhase::Begin | CxProgressPhase::Item | CxProgressPhase::Complete => {
+                unreachable!("the dispatcher currently emits record-complete checkpoints only")
+            }
+        }
+    }
+    if let Some((record_index, mut pending)) = pending_coordinates {
+        let Some(CxRecord::Coordinates(coordinates)) = progress.records().get(record_index) else {
+            return Err(SmartsParseError::CxSmiles(
+                "CX coordinate progress references a missing record".to_owned(),
+            ));
+        };
+        if pending.values.len() != coordinates.values.len() {
+            return Err(SmartsParseError::CxSmiles(
+                "CX coordinate progress lost a committed row".to_owned(),
+            ));
+        }
+        pending.is_3d = coordinates.is_3d;
+        append_query_conformer(graph, &pending)?;
+    }
+    if let Some(pending) = pending_sgroup_hierarchy {
+        commit_pending_cx_sgroup_hierarchy(graph, pending)?;
+    }
+    if progress.is_complete() {
+        // parseCXExtensions advances past the closing pipe before its
+        // successful-only CX label processing and tracker cleanup.
+        *source_cursor = progress.consumed();
+        crate::cx_lowering::finish_cx_smiles_labels(graph)
+            .map_err(|error| SmartsParseError::CxSmiles(error.to_string()))?;
+    }
+    Ok(())
+}
+
+fn apply_cx_atom_slot_to_query(
+    graph: &mut QueryGraph,
+    record: &CxRecord,
+    atom_index: usize,
+) -> Result<(), SmartsParseError> {
+    let (property, value) = match record {
+        CxRecord::AtomLabels(values) => ("atomLabel", values.get(atom_index)),
+        CxRecord::AtomValues(values) => ("molFileValue", values.get(atom_index)),
+        _ => {
+            return Err(SmartsParseError::CxSmiles(
+                "CX atom slot checkpoint references a non-slot record".to_owned(),
+            ));
+        }
+    };
+    let Some(value) = value.and_then(Option::as_deref) else {
+        return Err(SmartsParseError::CxSmiles(
+            "CX atom slot checkpoint references an empty slot".to_owned(),
+        ));
+    };
+    // RDKit: the pinned helper writes the nonempty label/value immediately
+    // after `read_text_to`; `VALID_ATIDX` skips indices outside the graph.
+    if let Some(atom) = graph.atom_mut(atom_index) {
+        atom.set_prop(property, value)
+            .map_err(|error| SmartsParseError::CxSmiles(error.to_string()))?;
+    }
+    Ok(())
+}
+
+fn apply_cx_atom_property_to_query(
+    graph: &mut QueryGraph,
+    record: &CxRecord,
+    item_index: usize,
+) -> Result<(), SmartsParseError> {
+    let CxRecord::AtomProperties(properties) = record else {
+        return Err(SmartsParseError::CxSmiles(
+            "CX atomProp checkpoint references a non-property record".to_owned(),
+        ));
+    };
+    let property = properties.get(item_index).ok_or_else(|| {
+        SmartsParseError::CxSmiles(
+            "CX atomProp checkpoint references a missing property".to_owned(),
+        )
+    })?;
+    // RDKit: valid atom indices commit nonempty properties before the helper
+    // advances a following colon; out-of-range indices have no effect.
+    if let Some(atom) = graph.atom_mut(property.atom) {
+        atom.set_prop(property.name.clone(), property.value.clone())
+            .map_err(|error| SmartsParseError::CxSmiles(error.to_string()))?;
+    }
+    Ok(())
+}
+
+fn apply_cx_bond_item_to_query(
+    graph: &mut QueryGraph,
+    record: &CxRecord,
+    item_index: usize,
+) -> Result<(), SmartsParseError> {
+    match record {
+        CxRecord::CoordinateBonds(annotation) => {
+            let reference = annotation.bonds.get(item_index).ok_or_else(|| {
+                SmartsParseError::CxSmiles(
+                    "CX coordinate bond checkpoint references a missing item".to_owned(),
+                )
+            })?;
+            apply_cx_coordinate_bond_to_query(graph, *reference, annotation.kind)
+        }
+        CxRecord::ZeroBonds(indices) => {
+            let index = indices.get(item_index).copied().ok_or_else(|| {
+                SmartsParseError::CxSmiles(
+                    "CX zero-bond checkpoint references a missing item".to_owned(),
+                )
+            })?;
+            apply_cx_zero_bond_to_query(graph, index)
+        }
+        _ => Err(SmartsParseError::CxSmiles(
+            "CX bond item checkpoint references a non-bond record".to_owned(),
+        )),
+    }
+}
+
+fn apply_cx_coordinate_bond_to_query(
+    graph: &mut QueryGraph,
+    reference: cosmolkit_cx::CxBondReference,
+    kind: CxCoordinateBondKind,
+) -> Result<(), SmartsParseError> {
+    // RDKit source (verbatim; parse_coordinate_bonds mutates each validated pair):
+    /*
+    template <typename Iterator>
+    bool parse_coordinate_bonds(Iterator &first, Iterator last, RDKit::RWMol &mol,
+                                Bond::BondType typ, unsigned int startAtomIdx,
+                                unsigned int startBondIdx) {
+      if (first >= last || (*first != 'C' && *first != 'H')) {
+        return false;
+      }
+      ++first;
+      if (first >= last || *first != ':') {
+        return false;
+      }
+      ++first;
+      while (first <= last && *first >= '0' && *first <= '9') {
+        unsigned int aidx;
+        unsigned int bidx;
+        if (read_int_pair(first, last, aidx, bidx)) {
+          if (VALID_ATIDX(aidx) && VALID_BNDIDX(bidx)) {
+            auto bnd = get_bond_with_smiles_idx(mol, bidx - startBondIdx);
+            if (!bnd || (bnd->getBeginAtomIdx() != aidx - startAtomIdx &&
+                         bnd->getEndAtomIdx() != aidx - startAtomIdx)) {
+              BOOST_LOG(rdWarningLog) << "BOND NOT FOUND! " << bidx
+                                      << " involving atom " << aidx << std::endl;
+              return false;
+            }
+            bnd->setBondType(typ);
+            if (bnd->getBeginAtomIdx() != aidx - startAtomIdx) {
+              unsigned int tmp = bnd->getBeginAtomIdx();
+              bnd->setBeginAtomIdx(aidx - startAtomIdx);
+              bnd->setEndAtomIdx(tmp);
+            }
+          }
+        } else {
+          return false;
+        }
+        if (first < last && *first == ',') {
+          ++first;
+        }
+      }
+      return true;
+    }
+    */
+    // RDKit source helper (verbatim):
+    /*
+    Bond *get_bond_with_smiles_idx(const ROMol &mol, unsigned idx) {
+      for (auto bnd : mol.bonds()) {
+        unsigned int smilesIdx;
+        if (bnd->getPropIfPresent("_cxsmilesBondIdx", smilesIdx) &&
+            smilesIdx == idx) {
+          return bnd;
+        }
+      }
+      return nullptr;
+    }
+    */
+    // RDKit❗❌: item checkpoints retain O(n) source references; each graph
+    // lookup/update remains constant-time and follows the source commit order.
+    // The parser assigns `_cxsmilesBondIdx` from `numBondsParsed++` as bonds
+    // enter QueryGraph order; direct indexing removes the source linear scan.
+    if reference.atom >= graph.num_atoms() || reference.bond >= graph.num_bonds() {
+        return Ok(());
+    }
+    let Some(bond) = graph.bonds_mut().get_mut(reference.bond) else {
+        return Err(SmartsParseError::CxSmiles(format!(
+            "CX bond index {} is outside the SMARTS graph",
+            reference.bond
+        )));
+    };
+    let begin = bond.begin();
+    let end = bond.end();
+    if begin.index() != reference.atom && end.index() != reference.atom {
+        return Err(SmartsParseError::CxSmiles(
+            "CX coordinate bond atom does not match its bond".to_owned(),
+        ));
+    }
+    let order = match kind {
+        CxCoordinateBondKind::Dative => BondOrder::Dative,
+        CxCoordinateBondKind::Hydrogen => BondOrder::Hydrogen,
+    };
+    bond.bond_mut().set_order(order);
+    if begin.index() != reference.atom {
+        bond.bond_mut()
+            .set_endpoints(cosmolkit_model::AtomId::new(reference.atom), begin);
+    }
+    Ok(())
+}
+
+fn apply_cx_zero_bond_to_query(
+    graph: &mut QueryGraph,
+    index: usize,
+) -> Result<(), SmartsParseError> {
+    // RDKit source (verbatim; parse_zero_bonds marks each valid bond in order):
+    /*
+    template <typename Iterator>
+    bool parse_zero_bonds(Iterator &first, Iterator last, RDKit::RWMol &mol,
+                          unsigned int, unsigned int startBondIdx) {
+      // these look like: C1CCCCC~CCCC1 |Z:5|
+      if (first >= last || *first != 'Z') {
+        return false;
+      }
+      ++first;
+      if (first >= last || *first != ':') {
+        return false;
+      }
+      ++first;
+
+      while (first < last && *first >= '0' && *first <= '9') {
+        unsigned int bondIdx;
+        if (!read_int(first, last, bondIdx)) {
+          return false;
+        }
+        if (VALID_BNDIDX(bondIdx)) {
+          auto bond = get_bond_with_smiles_idx(mol, bondIdx - startBondIdx);
+
+          if (!bond) {
+            BOOST_LOG(rdWarningLog)
+                << "bond " << bondIdx
+                << " not found, cannot mark as zero order bond." << std::endl;
+            return false;
+          }
+          bond->setBondType(Bond::ZERO);
+        }
+        if (first < last && *first == ',') {
+          ++first;
+        }
+      }
+      return true;
+    }
+    */
+    // RDKit source helper (verbatim):
+    /*
+    Bond *get_bond_with_smiles_idx(const ROMol &mol, unsigned idx) {
+      for (auto bnd : mol.bonds()) {
+        unsigned int smilesIdx;
+        if (bnd->getPropIfPresent("_cxsmilesBondIdx", smilesIdx) &&
+            smilesIdx == idx) {
+          return bnd;
+        }
+      }
+      return nullptr;
+    }
+    */
+    // RDKit❗❌: item checkpoints retain O(n) indices for partial effects;
+    // valid graph indices mutate one bond and invalid indices are source skips.
+    // Parser-order bond IDs make this vector lookup the direct form of the
+    // pinned `_cxsmilesBondIdx` lookup, whose source helper scans all bonds.
+    if index >= graph.num_bonds() {
+        return Ok(());
+    }
+    let Some(bond) = graph.bonds_mut().get_mut(index) else {
+        return Ok(());
+    };
+    bond.bond_mut().set_order(BondOrder::Zero);
+    Ok(())
+}
+
+fn apply_cx_radical_item_to_query(
+    graph: &mut QueryGraph,
+    record: &CxRecord,
+    item_index: usize,
+) -> Result<(), SmartsParseError> {
+    let CxRecord::Radicals(radicals) = record else {
+        return Err(SmartsParseError::CxSmiles(
+            "CX radical checkpoint references a non-radical record".to_owned(),
+        ));
+    };
+    let radical = radicals.get(item_index).ok_or_else(|| {
+        SmartsParseError::CxSmiles("CX radical checkpoint references a missing item".to_owned())
+    })?;
+    apply_cx_radical_to_query(graph, *radical)
+}
+
+fn apply_cx_radical_to_query(
+    graph: &mut QueryGraph,
+    radical: cosmolkit_cx::CxRadical,
+) -> Result<(), SmartsParseError> {
+    // RDKit source (verbatim; processRadicalSection assigns each valid atom):
+    /*
+    if (VALID_ATIDX(atIdx)) {
+      mol.getAtomWithIdx(atIdx - startAtomIdx)
+          ->setNumRadicalElectrons(numRadicalElectrons);
+    }
+    */
+    // RDKit❗✔️: this direct atom lookup and one-field assignment match the
+    // source; out-of-range atom indices are its explicit no-op case.
+    if let Some(atom) = graph.atom_mut(radical.atom) {
+        atom.set_radical_electrons(radical.electrons);
+    }
+    Ok(())
+}
+
+fn append_query_conformer(
+    graph: &mut QueryGraph,
+    coordinates: &cosmolkit_cx::CxCoordinates,
+) -> Result<(), SmartsParseError> {
+    let mut values = vec![[0.0; 3]; graph.num_atoms()];
+    for (destination, source) in values.iter_mut().zip(&coordinates.values) {
+        if let Some(source) = source {
+            *destination = *source;
+        }
+    }
+    graph
+        .add_conformer_3d(cosmolkit_model::Conformer3D::new(
+            coordinates.conformer,
+            values,
+            coordinates.is_3d,
+        ))
+        .map_err(|error| SmartsParseError::CxSmiles(error.to_string()))
 }
 
 pub fn parse_smarts(
@@ -836,29 +1851,65 @@ pub fn parse_smarts(
     // RDKit❗❌:   }
     // RDKit❗❌: }
     // END RDKIT CPP FUNCTION handleCXPartAndName
-    // CX syntax errors expose their diagnostic offsets through the CX crate,
-    // but not the source iterator or records already applied by RDKit.
-    // Preserve strict errors and name suppression; exact lenient-prefix and
-    // partial-record effects remain blocked at that owner boundary.
+    // BEGIN RDKIT CPP FUNCTION parseCXExtensions
+    // RDKit❗❌: void parseCXExtensions(RDKit::RWMol &mol, const std::string &extText,
+    // RDKit❗❌:                        std::string::const_iterator &first,
+    // RDKit❗❌:                        unsigned int startAtomIdx, unsigned int startBondIdx) {
+    // RDKit❗❌:   if (extText.empty()) {
+    // RDKit❗❌:     return;
+    // RDKit❗❌:   }
+    // RDKit❗❌:   if (extText[0] != '|') {
+    // RDKit❗❌:     throw RDKit::SmilesParseException(
+    // RDKit❗❌:         "CXSMILES extension does not start with |");
+    // RDKit❗❌:   }
+    // RDKit❗❌:   first = extText.begin();
+    // RDKit❗❌:   bool ok =
+    // RDKit❗❌:       parser::parse_it(first, extText.end(), mol, startAtomIdx, startBondIdx);
+    // RDKit❗❌:   if (!ok) {
+    // RDKit❗❌:     throw RDKit::SmilesParseException("failure parsing CXSMILES extensions");
+    // RDKit❗❌:   }
+    // RDKit❗❌:   processCXSmilesLabels(mol);
+    // RDKit❗❌:   mol.clearProp("_cxsmilesLabelsProcessed");
+    // RDKit❗❌:   mol.clearProp(cxsgTracker);
+    // RDKit❗❌: }
+    // END RDKIT CPP FUNCTION parseCXExtensions
+    // The CX progress boundary preserves the source iterator independently
+    // from helper diagnostics and orders destination commits before failure.
     let mut name = preprocessed.name;
     if !preprocessed.cx_part.is_empty() {
         let mut cx_failed = false;
         let mut consumed = 0;
         if params.allow_cxsmiles {
             if preprocessed.cx_part.starts_with('|') {
-                match cosmolkit_cx::parse_cx_extensions(&preprocessed.cx_part) {
-                    Ok(parsed_cx) => {
-                        apply_cx_to_query(&mut parsed_graph, parsed_cx.records())?;
-                        consumed = parsed_cx.consumed();
-                        parsed_graph.set_prop("_CXSMILES_Data", &preprocessed.cx_part[..consumed]);
+                let progress = cosmolkit_cx::parse_cx_extensions_progress(&preprocessed.cx_part);
+                consumed = progress.consumed();
+                let mut lowering_cursor = consumed;
+                if let Err(error) = apply_cx_progress_to_query_with_cursor(
+                    &mut parsed_graph,
+                    &progress,
+                    &mut lowering_cursor,
+                ) {
+                    cx_failed = true;
+                    if params.strict_cxsmiles {
+                        return Err(error);
                     }
-                    Err(error) => {
-                        cx_failed = true;
-                        if params.strict_cxsmiles {
-                            return Err(SmartsParseError::CxSmiles(error.to_string()));
-                        }
+                    consumed = lowering_cursor;
+                } else if !progress.is_complete() {
+                    cx_failed = true;
+                    if params.strict_cxsmiles {
+                        let error = progress.error().map_or_else(
+                            || "failure parsing CXSMILES extensions".to_owned(),
+                            ToString::to_string,
+                        );
+                        return Err(SmartsParseError::CxSmiles(error));
                     }
                 }
+                let prefix = preprocessed.cx_part.get(..consumed).ok_or_else(|| {
+                    SmartsParseError::CxSmiles(
+                        "CX source cursor is not a UTF-8 boundary".to_owned(),
+                    )
+                })?;
+                parsed_graph.set_prop("_CXSMILES_Data", prefix);
             } else if params.strict_cxsmiles && !params.parse_name {
                 return Err(SmartsParseError::CxSmiles(
                     "CXSMILES extension does not start with | and parseName=false".to_owned(),
@@ -875,9 +1926,7 @@ pub fn parse_smarts(
     if params.merge_hs {
         merge_query_hs_in_place(&mut parsed_graph, false, false)?;
     }
-    if crate::query_graph_behavior::query_graph_has_directional_bonds(&parsed_graph) {
-        crate::query_graph_behavior::set_bond_stereo_from_directions(&mut parsed_graph);
-    }
+    crate::query_graph_behavior::set_bond_stereo_from_directions(&mut parsed_graph);
     if !params.skip_cleanup {
         crate::query_graph_behavior::cleanup_query_graph_parser_state(&mut parsed_graph);
     }
@@ -1337,6 +2386,225 @@ fn merge_recursive_query_hydrogens(
     Ok(())
 }
 
+fn remap_query_substance_groups_after_removal(
+    groups: &[cosmolkit_model::SubstanceGroup],
+    mapping: &TopologyMapping,
+) -> Result<Vec<cosmolkit_model::SubstanceGroup>, SmartsParseError> {
+    // BEGIN RDKIT CPP FUNCTION removedParentInHierarchy
+    // RDKit❗❌: bool removedParentInHierarchy(
+    // RDKit❗❌:     unsigned int idx, const std::vector<SubstanceGroup> &sgs,
+    // RDKit❗❌:     const boost::dynamic_bitset<> &toRemove,
+    // RDKit❗❌:     const std::map<unsigned int, unsigned int> &indexLookup) {
+    // RDKit❗❌:   PRECONDITION(idx < sgs.size(), "cannot find SubstanceGroup");
+    // RDKit❗❌:   if (toRemove[idx]) {
+    // RDKit❗❌:     return true;
+    // RDKit❗❌:   }
+    // RDKit❗❌:   unsigned int parent;
+    // RDKit❗❌:   if (sgs[idx].getPropIfPresent("PARENT", parent)) {
+    // RDKit❗❌:     auto piter = indexLookup.find(parent);
+    // RDKit❗❌:     if (piter != indexLookup.end()) {
+    // RDKit❗❌:       return removedParentInHierarchy(piter->second, sgs, toRemove,
+    // RDKit❗❌:                                       indexLookup);
+    // RDKit❗❌:     }
+    // RDKit❗❌:   }
+    // RDKit❗❌:   return false;
+    // RDKit❗❌: }
+    // END RDKIT CPP FUNCTION removedParentInHierarchy
+    // Source hierarchy closure is equivalent here because QueryGraph validation
+    // requires dense group IDs and in-range parents. The queue avoids recursive
+    // stack growth while preserving the source's ancestor-removal result.
+    let atom_map = mapping.atoms().old_to_new();
+    let bond_map = mapping.bonds().old_to_new();
+    let mut removed_groups = vec![false; groups.len()];
+
+    // BEGIN RDKIT CPP FUNCTION SubstanceGroup::includesAtom and includesBond
+    // RDKit❗❌: bool SubstanceGroup::includesAtom(unsigned int atomIdx) const {
+    // RDKit❗❌:   if (std::find(d_atoms.begin(), d_atoms.end(), atomIdx) != d_atoms.end()) {
+    // RDKit❗❌:     return true;
+    // RDKit❗❌:   }
+    // RDKit❗❌:   if (std::find(d_patoms.begin(), d_patoms.end(), atomIdx) != d_patoms.end()) {
+    // RDKit❗❌:     return true;
+    // RDKit❗❌:   }
+    // RDKit❗❌:   for (const auto &ap : d_saps) {
+    // RDKit❗❌:     if (ap.aIdx == atomIdx || ap.lvIdx == rdcast<int>(atomIdx)) {
+    // RDKit❗❌:       return true;
+    // RDKit❗❌:     }
+    // RDKit❗❌:   }
+    // RDKit❗❌:   return false;
+    // RDKit❗❌: }
+    // RDKit❗❌: bool SubstanceGroup::includesBond(unsigned int bondIdx) const {
+    // RDKit❗❌:   if (std::find(d_bonds.begin(), d_bonds.end(), bondIdx) != d_bonds.end()) {
+    // RDKit❗❌:     return true;
+    // RDKit❗❌:   }
+    // RDKit❗❌:   for (const auto &cs : d_cstates) {
+    // RDKit❗❌:     if (cs.bondIdx == bondIdx) {
+    // RDKit❗❌:       return true;
+    // RDKit❗❌:     }
+    // RDKit❗❌:   }
+    // RDKit❗❗:   return false;
+    // RDKit❗❗: }
+    // END RDKIT CPP FUNCTION SubstanceGroup::includesAtom and includesBond
+    for (index, mapped) in atom_map.iter().enumerate() {
+        if mapped.is_some() {
+            continue;
+        }
+        let atom = AtomId::new(index);
+        for group in groups {
+            if group.includes_atom(atom) {
+                removed_groups[group.id().index()] = true;
+            }
+        }
+    }
+    for (index, mapped) in bond_map.iter().enumerate() {
+        if mapped.is_some() {
+            continue;
+        }
+        let bond = BondId::new(index);
+        for group in groups {
+            // The pinned includesBond helper checks only d_bonds and cstates;
+            // model includes_bond also sees XBHEAD/XBCORR and is wider here.
+            if group.bonds().contains(&bond)
+                || group.cstates().iter().any(|cstate| cstate.bond == bond)
+            {
+                removed_groups[group.id().index()] = true;
+            }
+        }
+    }
+
+    // BEGIN RDKIT CPP FUNCTION removeSubstanceGroupsReferencing parent propagation
+    // RDKit❗❌: // now go through and keep everything that shouldn't be removed
+    // RDKit❗❌: // and who doesn't have a PARENT that should be removed in their hierarchy
+    // RDKit❗❌: if (piter != indexLookup.end() && !toRemove[piter->second]) {
+    // RDKit❗❌:   if (!removedParentInHierarchy(piter->second, sgs, toRemove,
+    // RDKit❗❌:                               indexLookup)) {
+    // RDKit❗❌:     keepIt = true;
+    // RDKit❗❌:   }
+    // RDKit❗❌: }
+    // END RDKIT CPP FUNCTION removeSubstanceGroupsReferencing parent propagation
+    let mut children = vec![Vec::new(); groups.len()];
+    for group in groups {
+        if let Some(parent) = group.parent() {
+            children[parent.index()].push(group.id().index());
+        }
+    }
+    let mut pending = removed_groups
+        .iter()
+        .enumerate()
+        .filter_map(|(index, is_removed)| is_removed.then_some(index))
+        .collect::<VecDeque<_>>();
+    while let Some(parent) = pending.pop_front() {
+        for &child in &children[parent] {
+            if !removed_groups[child] {
+                removed_groups[child] = true;
+                pending.push_back(child);
+            }
+        }
+    }
+
+    let mut group_map = vec![None; groups.len()];
+    let mut next_id = 0;
+    for group in groups {
+        let index = group.id().index();
+        if !removed_groups[index] {
+            group_map[index] = Some(SubstanceGroupId::new(next_id));
+            next_id += 1;
+        }
+    }
+
+    let mut remapped = Vec::with_capacity(next_id);
+    for group in groups {
+        let index = group.id().index();
+        let Some(new_id) = group_map[index] else {
+            continue;
+        };
+        let Some(group) = group.remapped(new_id, atom_map, bond_map, &group_map) else {
+            return Err(SmartsParseError::Parse(format!(
+                "query SGroup {} retains a reference to a removed graph row",
+                group.id().index()
+            )));
+        };
+        remapped.push(group);
+    }
+    Ok(remapped)
+}
+
+fn remap_query_stereo_groups_after_removal(
+    groups: &[StereoGroup],
+    mapping: &TopologyMapping,
+) -> Result<Vec<StereoGroup>, SmartsParseError> {
+    // BEGIN RDKIT CPP FUNCTION removeAtomFromGroups/removeBondFromGroups
+    // RDKit❗❌: auto atomPos = findAtom(group);
+    // RDKit❗❌: if (atomPos != group.d_atoms.end()) {
+    // RDKit❗❌:   group.d_atoms.erase(atomPos);
+    // RDKit❗❌: }
+    // RDKit❗❌: auto bondPos = findBond(group);
+    // RDKit❗❌: if (bondPos != group.d_bonds.end()) {
+    // RDKit❗❌:   group.d_bonds.erase(bondPos);
+    // RDKit❗❌: }
+    // RDKit❗❌: groups.erase(std::remove_if(groups.begin(), groups.end(),
+    // RDKit❗❌:                             [](const auto &gp) {
+    // RDKit❗❌:                               return gp.getAtoms().empty() &&
+    // RDKit❗❌:                                      gp.getBonds().empty();
+    // RDKit❗❌:                             }),
+    // RDKit❗❌:              groups.end());
+    // END RDKIT CPP FUNCTION removeAtomFromGroups/removeBondFromGroups
+    let mut groups = groups.to_vec();
+    for (index, mapped) in mapping.bonds().old_to_new().iter().enumerate().rev() {
+        if mapped.is_none() {
+            let removed = BondId::new(index);
+            for group in &mut groups {
+                group.remove_bond(removed);
+            }
+            groups.retain(|group| !group.is_empty());
+        }
+    }
+    for (index, mapped) in mapping.atoms().old_to_new().iter().enumerate().rev() {
+        if mapped.is_none() {
+            let removed = AtomId::new(index);
+            for group in &mut groups {
+                group.remove_atom(removed);
+            }
+            groups.retain(|group| !group.is_empty());
+        }
+    }
+
+    groups
+        .into_iter()
+        .map(|group| {
+            let atoms = group
+                .atoms()
+                .iter()
+                .map(|atom| {
+                    mapping.atoms().old_to_new()[atom.index()].ok_or_else(|| {
+                        SmartsParseError::Parse(format!(
+                            "stereo group retains removed atom {} after source removal",
+                            atom.index()
+                        ))
+                    })
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            let bonds = group
+                .bonds()
+                .iter()
+                .map(|bond| {
+                    mapping.bonds().old_to_new()[bond.index()].ok_or_else(|| {
+                        SmartsParseError::Parse(format!(
+                            "stereo group retains removed bond {} after source removal",
+                            bond.index()
+                        ))
+                    })
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            let remapped = StereoGroup::new(group.kind(), atoms, bonds);
+            Ok(if let Some(id) = group.id() {
+                remapped.with_id(id)
+            } else {
+                remapped
+            })
+        })
+        .collect()
+}
+
 fn merge_query_hs_in_place(
     molecule: &mut QueryGraph,
     merge_unmapped_only: bool,
@@ -1456,7 +2724,9 @@ fn merge_query_hs_in_place(
         })
         .collect::<Vec<_>>();
     let mut removals = Vec::new();
-    let mut hydrogen_counts = vec![0_u8; molecule.num_atoms()];
+    // RDKit uses an unsigned int for numHsToRemove; keep counts wider than a
+    // byte so every accepted neighboring H contributes its source !H<i> term.
+    let mut hydrogen_counts = vec![0_u32; molecule.num_atoms()];
     for atom_index in 0..molecule.num_atoms() {
         if hydrogen_types[atom_index] == QueryHydrogenType::QueryHydrogen {
             continue;
@@ -1471,34 +2741,74 @@ fn merge_query_hs_in_place(
                 merge_isotopes || hydrogen.isotope().is_none_or(|isotope| isotope == 0);
             if map_ok && isotope_ok {
                 removals.push(hydrogen.id());
-                hydrogen_counts[atom_index] = hydrogen_counts[atom_index].saturating_add(1);
+                hydrogen_counts[atom_index] = hydrogen_counts[atom_index].wrapping_add(1);
             }
         }
     }
     removals.sort_unstable_by_key(|atom| atom.index());
     removals.dedup();
-    let removed = removals
-        .iter()
-        .map(|id| id.index())
-        .collect::<std::collections::BTreeSet<_>>();
+    let mut removed_atoms = vec![false; molecule.num_atoms()];
+    for atom in &removals {
+        removed_atoms[atom.index()] = true;
+    }
     // First pass: build the complete old-to-new map for every surviving atom
     // before any predicate is touched or any carrier is remapped. A carrier
     // may reference a later surviving atom, so remapping against a partially
     // built map would falsely report that target as removed.
-    let mut atom_mapping = vec![None; molecule.num_atoms()];
+    let mut atom_old_to_new = vec![None; molecule.num_atoms()];
     let mut next_index = 0_usize;
-    for (atom_index, mapping) in atom_mapping.iter_mut().enumerate() {
-        if !removed.contains(&atom_index) {
-            *mapping = Some(cosmolkit_model::AtomId::new(next_index));
+    for (atom_index, mapping) in atom_old_to_new.iter_mut().enumerate() {
+        if !removed_atoms[atom_index] {
+            *mapping = Some(AtomId::new(next_index));
             next_index += 1;
         }
     }
+    let mut atom_new_to_old = vec![None; next_index];
+    for (old_index, new_id) in atom_old_to_new.iter().enumerate() {
+        if let Some(new_id) = new_id {
+            atom_new_to_old[new_id.index()] = Some(AtomId::new(old_index));
+        }
+    }
+
+    let mut bond_old_to_new = vec![None; molecule.num_bonds()];
+    let mut bond_new_to_old = Vec::new();
+    for bond in molecule.bonds() {
+        if atom_old_to_new[bond.begin().index()].is_none()
+            || atom_old_to_new[bond.end().index()].is_none()
+        {
+            continue;
+        }
+        let new_id = BondId::new(bond_new_to_old.len());
+        bond_old_to_new[bond.id().index()] = Some(new_id);
+        bond_new_to_old.push(Some(bond.id()));
+    }
+    let mapping = TopologyMapping {
+        atoms: AtomMapping {
+            old_to_new: atom_old_to_new,
+            new_to_old: atom_new_to_old,
+        },
+        bonds: BondMapping {
+            old_to_new: bond_old_to_new,
+            new_to_old: bond_new_to_old,
+        },
+    };
+    mapping
+        .validate_for_counts(
+            molecule.num_atoms(),
+            next_index,
+            molecule.num_bonds(),
+            mapping.bonds().new_to_old().len(),
+        )
+        .map_err(|error| {
+            SmartsParseError::Parse(format!("query-H removal produced invalid mapping: {error}"))
+        })?;
+
     // Second pass: every predicate edit and remap is applied to a clone. The
     // caller's graph is assigned only after the whole rebuild succeeds, so a
     // failed remap leaves `molecule` unchanged.
     let mut atoms = Vec::with_capacity(next_index);
     for atom in molecule.atoms() {
-        let Some(new_id) = atom_mapping[atom.index()] else {
+        let Some(new_id) = mapping.atoms().old_to_new()[atom.index()] else {
             continue;
         };
         let mut atom_value = atom.clone().with_id(new_id);
@@ -1509,7 +2819,7 @@ fn merge_query_hs_in_place(
             let mut children = vec![predicate];
             for hydrogen_count in 0..count {
                 children.push(QueryNode::Not(Box::new(QueryNode::Predicate(
-                    AtomQueryPredicate::HydrogenCount(i32::from(hydrogen_count)),
+                    AtomQueryPredicate::HydrogenCount(hydrogen_count as i32),
                 ))));
             }
             predicate = QueryNode::And(children);
@@ -1521,7 +2831,7 @@ fn merge_query_hs_in_place(
         // hydrogen fails under the established lost-target policy instead of
         // keeping a stale row.
         atom_value
-            .remap_template_attachment_order(&atom_mapping)
+            .remap_template_attachment_order(mapping.atoms().old_to_new())
             .map_err(|source| SmartsParseError::TemplateAttachmentRemap {
                 carrier: atom.index(),
                 source,
@@ -1531,65 +2841,105 @@ fn merge_query_hs_in_place(
     }
     let mut bonds = Vec::new();
     for bond in molecule.bonds() {
-        let Some(begin) = atom_mapping[bond.begin().index()] else {
+        let Some(new_id) = mapping.bonds().old_to_new()[bond.id().index()] else {
             continue;
         };
-        let Some(end) = atom_mapping[bond.end().index()] else {
-            continue;
-        };
+        let begin = mapping.atoms().old_to_new()[bond.begin().index()].ok_or_else(|| {
+            SmartsParseError::Parse(format!(
+                "retained query bond {} has removed begin atom",
+                bond.id().index()
+            ))
+        })?;
+        let end = mapping.atoms().old_to_new()[bond.end().index()].ok_or_else(|| {
+            SmartsParseError::Parse(format!(
+                "retained query bond {} has removed end atom",
+                bond.id().index()
+            ))
+        })?;
         let stereo_atoms = bond.bond().stereo_atoms().and_then(|[first, second]| {
-            Some([atom_mapping[first.index()]?, atom_mapping[second.index()]?])
+            Some([
+                mapping.atoms().old_to_new()[first.index()]?,
+                mapping.atoms().old_to_new()[second.index()]?,
+            ])
         });
         bonds.push(QueryBond::from_parts(
-            bond.bond().clone().remapped(
-                cosmolkit_model::BondId::new(bonds.len()),
-                begin,
-                end,
-                stereo_atoms,
-            ),
+            bond.bond()
+                .clone()
+                .remapped(new_id, begin, end, stereo_atoms),
             bond.predicate().clone(),
         ));
     }
+
+    let substance_groups =
+        remap_query_substance_groups_after_removal(query_substance_groups(molecule), &mapping)?;
+    let stereo_groups =
+        remap_query_stereo_groups_after_removal(molecule.stereo_groups(), &mapping)?;
     let props = molecule.props().clone();
-    let conformers_2d = molecule
-        .coordinates_2d()
-        .map_or_else(Vec::new, |coordinates| {
-            let coordinates = coordinates
-                .iter()
-                .enumerate()
-                .filter_map(|(index, coordinate)| {
-                    (!removed.contains(&index)).then_some(*coordinate)
-                })
-                .collect();
-            vec![cosmolkit_model::Conformer2D::new(0, coordinates)]
-        });
-    let conformers_3d = molecule
-        .conformers_3d()
+    // RDKit source RWMol.cpp::batchRemoveAtoms preserves every conformer and
+    // removes the coordinates whose old atoms were deleted:
+    // RDKit❗❌: // do the same with the coordinates in the conformations
+    // RDKit❗❌: for (auto conf : d_confs) {
+    // RDKit❗❌:   RDGeom::POINT3D_VECT &positions = conf->getPositions();
+    // RDKit❗❌:   RDGeom::POINT3D_VECT newPositions;
+    // RDKit❗❌:   newPositions.reserve(getNumAtoms());
+    // RDKit❗❌:   for (RDGeom::POINT3D_VECT::size_type i = 0; i < positions.size(); ++i) {
+    // RDKit❗❌:     if (oldIndices[i] != nullptr) {
+    // RDKit❗❌:       newPositions.push_back(positions[i]);
+    // RDKit❗❌:     }
+    // RDKit❗❌:   }
+    // RDKit❗❌:   CHECK_INVARIANT(newPositions.size() == getNumAtoms(), "Lost coordinates!");
+    // RDKit❗❌:   positions.swap(newPositions);
+    // RDKit❗❌: }
+    let coordinates = molecule.coordinate_block(None);
+    let conformers_2d = coordinates
+        .conformers_2d
         .iter()
         .map(|conformer| {
-            cosmolkit_model::Conformer3D::new(
-                conformer.id(),
-                conformer
-                    .coordinates()
-                    .iter()
-                    .enumerate()
-                    .filter_map(|(index, coordinate)| {
-                        (!removed.contains(&index)).then_some(*coordinate)
-                    })
-                    .collect(),
-                conformer.is_3d(),
-            )
+            let coordinates = mapping
+                .atoms()
+                .old_to_new()
+                .iter()
+                .enumerate()
+                .filter_map(|(index, new_id)| new_id.map(|_| conformer.coordinates()[index]))
+                .collect();
+            let mut remapped = cosmolkit_model::Conformer2D::new(conformer.id(), coordinates);
+            for (key, value) in conformer.props() {
+                remapped = remapped.with_prop(key.clone(), value.clone());
+            }
+            remapped
         })
         .collect();
-    *molecule = QueryGraph::from_parts(
+    let conformers_3d = coordinates
+        .conformers_3d
+        .iter()
+        .map(|conformer| {
+            let coordinates = mapping
+                .atoms()
+                .old_to_new()
+                .iter()
+                .enumerate()
+                .filter_map(|(index, new_id)| new_id.map(|_| conformer.coordinates()[index]))
+                .collect();
+            let mut remapped =
+                cosmolkit_model::Conformer3D::new(conformer.id(), coordinates, conformer.is_3d());
+            for (key, value) in conformer.props() {
+                remapped = remapped.with_prop(key.clone(), value.clone());
+            }
+            remapped
+        })
+        .collect();
+    let mut rebuilt = QueryGraph::from_parts(
         atoms,
         bonds,
         props,
         conformers_2d,
         conformers_3d,
-        Vec::new(),
+        stereo_groups,
     )
     .map_err(|error| SmartsParseError::Parse(error.to_string()))?;
+    replace_query_substance_groups(&mut rebuilt, substance_groups)
+        .map_err(|error| SmartsParseError::Parse(error.to_string()))?;
+    *molecule = rebuilt;
     Ok(())
 }
 
@@ -6224,7 +7574,11 @@ fn element_symbol_to_atomic_number(symbol: &str) -> Option<u8> {
 mod query_hydrogen_merge_tests {
     use super::*;
     use cosmolkit_model::{
-        AtomId, BondId, TemplateAttachment, TemplateAttachmentOrder, TemplateAttachmentOrderError,
+        AtomId, BondId, Conformer2D, Conformer3D, SGroupAttachPoint, SGroupBondRole, SGroupBracket,
+        SGroupBracketStyle, SGroupCState, SGroupConnection, SGroupData, SGroupDisplay, StereoGroup,
+        StereoGroupKind, SubstanceGroup, SubstanceGroupId, SubstanceGroupKind, TemplateAttachment,
+        TemplateAttachmentOrder, TemplateAttachmentOrderError, query_substance_groups,
+        replace_query_substance_groups,
     };
 
     // H-C-C chain: atom 0 is the carrier, atom 1 is a removable query
@@ -6292,6 +7646,47 @@ mod query_hydrogen_merge_tests {
             Vec::new(),
         )
         .expect("valid branched query graph")
+    }
+
+    fn query_hydrogen_graph_with_conformers() -> QueryGraph {
+        let source =
+            parse_smarts("[C]([H])[C]", &SmartsParseParams::default()).expect("source query graph");
+        let mut props = source.props().clone();
+        props.insert("_CXSMILES_Data".into(), "|source-prefix|".into());
+        QueryGraph::from_parts(
+            source.atoms().to_vec(),
+            source.bonds().to_vec(),
+            props,
+            vec![
+                Conformer2D::new(9, vec![[0.0, 0.0], [1.0, 0.5], [2.0, 1.0]])
+                    .with_prop("frame", "first-2d"),
+                Conformer2D::new(11, vec![[0.0, 1.0], [1.0, 1.5], [2.0, 2.0]])
+                    .with_prop("frame", "second-2d"),
+            ],
+            vec![
+                Conformer3D::new(
+                    17,
+                    vec![[0.0, 0.0, 0.0], [1.0, 0.5, 0.0], [2.0, 1.0, 0.0]],
+                    true,
+                )
+                .with_prop("frame", "first-3d"),
+                Conformer3D::new(
+                    19,
+                    vec![[0.0, 1.0, 0.0], [1.0, 1.5, 0.0], [2.0, 2.0, 0.0]],
+                    false,
+                )
+                .with_prop("frame", "second-3d"),
+            ],
+            vec![
+                StereoGroup::new(
+                    StereoGroupKind::Or,
+                    vec![AtomId::new(0), AtomId::new(1), AtomId::new(2)],
+                    vec![BondId::new(0), BondId::new(1)],
+                )
+                .with_id(17),
+            ],
+        )
+        .expect("query graph with complete conformer and stereo state")
     }
 
     #[test]
@@ -6397,6 +7792,292 @@ mod query_hydrogen_merge_tests {
                 ))),
             ])
         );
+    }
+
+    #[test]
+    fn merge_query_hydrogens_match_map_presence_and_isotope_flags() {
+        let source = parse_smarts(
+            "[C]([H])([H:0])([H:5])([2H])([2H:0])",
+            &SmartsParseParams::default(),
+        )
+        .expect("parse mapped and isotopic query H atoms without merging");
+        assert_eq!(source.num_atoms(), 6);
+        assert_eq!(source.atoms()[1].atom_map(), None);
+        assert_eq!(source.atoms()[2].atom_map(), Some(0));
+        assert_eq!(source.atoms()[3].atom_map(), Some(5));
+        assert_eq!(source.atoms()[4].isotope(), Some(2));
+        assert_eq!(source.atoms()[4].atom_map(), None);
+        assert_eq!(source.atoms()[5].isotope(), Some(2));
+        assert_eq!(source.atoms()[5].atom_map(), Some(0));
+        let source_before = source.clone();
+
+        let cases = [
+            (false, false, vec![0, 4, 5]),
+            (false, true, vec![0]),
+            (true, false, vec![0, 2, 3, 4, 5]),
+            (true, true, vec![0, 2, 3, 5]),
+        ];
+        for (merge_unmapped_only, merge_isotopes, expected_source_atoms) in cases {
+            let merged = merge_query_hs(&source, merge_unmapped_only, merge_isotopes)
+                .expect("copying wrapper merges source-selected H atoms");
+            assert_eq!(
+                source, source_before,
+                "copying wrapper input must be unchanged"
+            );
+            assert_eq!(merged.num_atoms(), expected_source_atoms.len());
+            assert_eq!(merged.num_bonds(), expected_source_atoms.len() - 1);
+
+            let removed_hydrogen_count = source.num_atoms() - expected_source_atoms.len();
+            let mut expected_predicate = vec![QueryNode::predicate(AtomQueryPredicate::AtomType {
+                atomic_number: 6,
+                aromatic: false,
+            })];
+            for hydrogen_count in 0..removed_hydrogen_count {
+                expected_predicate.push(QueryNode::Not(Box::new(QueryNode::Predicate(
+                    AtomQueryPredicate::HydrogenCount(hydrogen_count as i32),
+                ))));
+            }
+            assert_eq!(
+                merged.atoms()[0].predicate(),
+                &QueryNode::And(expected_predicate),
+                "flags: merge_unmapped_only={merge_unmapped_only}, merge_isotopes={merge_isotopes}"
+            );
+
+            for (new_index, &old_index) in expected_source_atoms.iter().enumerate() {
+                let actual = &merged.atoms()[new_index];
+                let original = &source.atoms()[old_index];
+                assert_eq!(actual.id(), AtomId::new(new_index));
+                assert_eq!(actual.identity(), original.identity());
+                assert_eq!(actual.atomic_number(), original.atomic_number());
+                assert_eq!(actual.isotope(), original.isotope());
+                assert_eq!(actual.atom_map(), original.atom_map());
+                if old_index != 0 {
+                    assert_eq!(actual.predicate(), original.predicate());
+                    let mapped_bond = &merged.bonds()[new_index - 1];
+                    let source_bond = source
+                        .bonds()
+                        .iter()
+                        .find(|bond| {
+                            bond.begin() == AtomId::new(0) && bond.end() == AtomId::new(old_index)
+                        })
+                        .expect("source bond to retained hydrogen");
+                    assert_eq!(mapped_bond.id(), BondId::new(new_index - 1));
+                    assert_eq!(mapped_bond.begin(), AtomId::new(0));
+                    assert_eq!(mapped_bond.end(), AtomId::new(new_index));
+                    assert_eq!(mapped_bond.predicate(), source_bond.predicate());
+                }
+            }
+
+            let mut in_place = source.clone();
+            merge_query_hs_in_place(&mut in_place, merge_unmapped_only, merge_isotopes)
+                .expect("in-place helper applies identical source flags");
+            assert_eq!(in_place, merged);
+        }
+    }
+
+    #[test]
+    fn query_sgroups_hydrogen_remap_preserves_typed_references_and_all_graph_state() {
+        let mut graph = query_hydrogen_graph_with_conformers();
+        let group = SubstanceGroup::new(SubstanceGroupId::new(0), SubstanceGroupKind::Superatom)
+            .with_rdkit_sequence_id(23)
+            .with_external_id(41)
+            .with_atoms(vec![AtomId::new(0), AtomId::new(2), AtomId::new(0)])
+            .with_bonds(vec![BondId::new(1), BondId::new(1)])
+            .with_bond_role(BondId::new(1), SGroupBondRole::Contained)
+            .with_head_crossing_bonds(vec![BondId::new(1), BondId::new(1)])
+            .with_crossing_bond_correspondence(vec![BondId::new(1)])
+            .with_parent_atoms(vec![AtomId::new(2)])
+            .with_label("typed polymer data")
+            .with_connection(SGroupConnection::HeadToTail)
+            .with_subtype("SUP")
+            .with_bracket_style(SGroupBracketStyle::Bracket)
+            .with_display(SGroupDisplay {
+                brackets: vec![SGroupBracket::new([
+                    [0.0, 0.0, 0.0],
+                    [1.0, 0.0, 0.0],
+                    [0.0, 1.0, 0.0],
+                ])],
+                field_position: Some([0.25, 0.75]),
+                display_tag: Some("typed-display".into()),
+            })
+            .with_expansion_state("expanded")
+            .with_class("polymer-class")
+            .with_component_number(4)
+            .with_data(SGroupData {
+                field_name: Some("FIELD".into()),
+                field_type: Some("S".into()),
+                values: vec!["one".into(), "two".into()],
+                ..SGroupData::default()
+            })
+            .with_attach_points(vec![SGroupAttachPoint {
+                atom: AtomId::new(0),
+                leaving_atom: Some(AtomId::new(2)),
+                label: Some("R".into()),
+                order: Some(2),
+            }])
+            .with_cstates(vec![SGroupCState::new(BondId::new(1), [0.25, 0.5, 0.75])])
+            .with_prop("custom", "preserved")
+            .with_data_field("first raw row")
+            .with_data_field("second raw row");
+        replace_query_substance_groups(&mut graph, vec![group])
+            .expect("typed query SGroup is valid for the source graph");
+        let source = graph.clone();
+
+        let merged = merge_query_hs(&graph, false, false).expect("merge query hydrogens");
+
+        let expected_group =
+            SubstanceGroup::new(SubstanceGroupId::new(0), SubstanceGroupKind::Superatom)
+                .with_rdkit_sequence_id(23)
+                .with_external_id(41)
+                .with_atoms(vec![AtomId::new(0), AtomId::new(1), AtomId::new(0)])
+                .with_bonds(vec![BondId::new(0), BondId::new(0)])
+                .with_bond_role(BondId::new(0), SGroupBondRole::Contained)
+                .with_head_crossing_bonds(vec![BondId::new(0), BondId::new(0)])
+                .with_crossing_bond_correspondence(vec![BondId::new(0)])
+                .with_parent_atoms(vec![AtomId::new(1)])
+                .with_label("typed polymer data")
+                .with_connection(SGroupConnection::HeadToTail)
+                .with_subtype("SUP")
+                .with_bracket_style(SGroupBracketStyle::Bracket)
+                .with_display(SGroupDisplay {
+                    brackets: vec![SGroupBracket::new([
+                        [0.0, 0.0, 0.0],
+                        [1.0, 0.0, 0.0],
+                        [0.0, 1.0, 0.0],
+                    ])],
+                    field_position: Some([0.25, 0.75]),
+                    display_tag: Some("typed-display".into()),
+                })
+                .with_expansion_state("expanded")
+                .with_class("polymer-class")
+                .with_component_number(4)
+                .with_data(SGroupData {
+                    field_name: Some("FIELD".into()),
+                    field_type: Some("S".into()),
+                    values: vec!["one".into(), "two".into()],
+                    ..SGroupData::default()
+                })
+                .with_attach_points(vec![SGroupAttachPoint {
+                    atom: AtomId::new(0),
+                    leaving_atom: Some(AtomId::new(1)),
+                    label: Some("R".into()),
+                    order: Some(2),
+                }])
+                .with_cstates(vec![SGroupCState::new(BondId::new(0), [0.25, 0.5, 0.75])])
+                .with_prop("custom", "preserved")
+                .with_data_field("first raw row")
+                .with_data_field("second raw row");
+
+        assert_eq!(merged.num_atoms(), 2);
+        assert_eq!(merged.num_bonds(), 1);
+        assert_eq!(query_substance_groups(&merged), &[expected_group]);
+        assert_eq!(
+            merged.stereo_groups(),
+            &[StereoGroup::new(
+                StereoGroupKind::Or,
+                vec![AtomId::new(0), AtomId::new(1)],
+                vec![BondId::new(0)],
+            )
+            .with_id(17),]
+        );
+        assert_eq!(merged.props(), source.props());
+        for (new, old) in [(0, 0), (1, 2)] {
+            assert_eq!(
+                merged.atoms()[new].predicate_is_carrier_derived(),
+                source.atoms()[old].predicate_is_carrier_derived()
+            );
+        }
+        assert_eq!(
+            merged.bonds()[0].predicate_is_carrier_derived(),
+            source.bonds()[1].predicate_is_carrier_derived()
+        );
+        assert_eq!(merged.bonds()[0].predicate(), source.bonds()[1].predicate());
+
+        let coordinates = merged.coordinate_block(None);
+        assert_eq!(coordinates.conformers_2d.len(), 2);
+        assert_eq!(coordinates.conformers_2d[0].id(), 9);
+        assert_eq!(
+            coordinates.conformers_2d[0]
+                .props()
+                .get("frame")
+                .map(String::as_str),
+            Some("first-2d")
+        );
+        assert_eq!(
+            coordinates.conformers_2d[0].coordinates(),
+            &[[0.0, 0.0], [2.0, 1.0]]
+        );
+        assert_eq!(coordinates.conformers_2d[1].id(), 11);
+        assert_eq!(
+            coordinates.conformers_2d[1]
+                .props()
+                .get("frame")
+                .map(String::as_str),
+            Some("second-2d")
+        );
+        assert_eq!(
+            coordinates.conformers_2d[1].coordinates(),
+            &[[0.0, 1.0], [2.0, 2.0]]
+        );
+        assert_eq!(coordinates.conformers_3d.len(), 2);
+        assert_eq!(coordinates.conformers_3d[0].id(), 17);
+        assert!(coordinates.conformers_3d[0].is_3d());
+        assert_eq!(
+            coordinates.conformers_3d[0]
+                .props()
+                .get("frame")
+                .map(String::as_str),
+            Some("first-3d")
+        );
+        assert_eq!(
+            coordinates.conformers_3d[0].coordinates(),
+            &[[0.0, 0.0, 0.0], [2.0, 1.0, 0.0]]
+        );
+        assert_eq!(coordinates.conformers_3d[1].id(), 19);
+        assert!(!coordinates.conformers_3d[1].is_3d());
+        assert_eq!(
+            coordinates.conformers_3d[1]
+                .props()
+                .get("frame")
+                .map(String::as_str),
+            Some("second-3d")
+        );
+        assert_eq!(
+            coordinates.conformers_3d[1].coordinates(),
+            &[[0.0, 1.0, 0.0], [2.0, 2.0, 0.0]]
+        );
+    }
+
+    #[test]
+    fn query_sgroups_hydrogen_deletion_cascades_parents_and_compacts_ids() {
+        let mut graph = chain_h_c_c(None);
+        let groups = vec![
+            SubstanceGroup::new(SubstanceGroupId::new(0), SubstanceGroupKind::Data)
+                .with_atoms(vec![AtomId::new(1)]),
+            SubstanceGroup::new(SubstanceGroupId::new(1), SubstanceGroupKind::Data)
+                .with_parent(SubstanceGroupId::new(2))
+                .with_atoms(vec![AtomId::new(0)]),
+            SubstanceGroup::new(SubstanceGroupId::new(2), SubstanceGroupKind::Data)
+                .with_atoms(vec![AtomId::new(2)]),
+            SubstanceGroup::new(SubstanceGroupId::new(3), SubstanceGroupKind::Data)
+                .with_bonds(vec![BondId::new(0)]),
+            SubstanceGroup::new(SubstanceGroupId::new(4), SubstanceGroupKind::Data)
+                .with_parent(SubstanceGroupId::new(0))
+                .with_atoms(vec![AtomId::new(0)]),
+        ];
+        replace_query_substance_groups(&mut graph, groups)
+            .expect("source graph SGroup references are valid");
+
+        let merged = merge_query_hs(&graph, false, false).expect("merge query hydrogens");
+
+        let groups = query_substance_groups(&merged);
+        assert_eq!(groups.len(), 2);
+        assert_eq!(groups[0].id(), SubstanceGroupId::new(0));
+        assert_eq!(groups[0].parent(), Some(SubstanceGroupId::new(1)));
+        assert_eq!(groups[0].atoms(), &[AtomId::new(0)]);
+        assert_eq!(groups[1].id(), SubstanceGroupId::new(1));
+        assert_eq!(groups[1].parent(), None);
+        assert_eq!(groups[1].atoms(), &[AtomId::new(1)]);
     }
 }
 
@@ -6678,5 +8359,1403 @@ mod q03_setup_tests {
                 context: "unexpected character in SMARTS string".to_owned(),
             }
         );
+    }
+}
+
+#[cfg(test)]
+mod cx_progress_coordinate_tests {
+    use super::{apply_cx_progress_to_query, parse_smarts_graph};
+
+    #[test]
+    fn cx_progress_coordinates_retains_committed_rows_and_pads_graph_atoms() {
+        let mut graph = parse_smarts_graph("CC")
+            .expect("SMARTS syntax")
+            .finish()
+            .expect("query graph");
+        let progress = cosmolkit_cx::parse_cx_extensions_progress("|(1,2,3;bad,0,0)|");
+        assert!(!progress.is_complete());
+        apply_cx_progress_to_query(&mut graph, &progress).expect("committed CX effects");
+
+        assert_eq!(graph.conformers_3d().len(), 1);
+        let conformer = &graph.conformers_3d()[0];
+        assert_eq!(conformer.coordinates(), &[[1.0, 2.0, 3.0], [0.0, 0.0, 0.0]]);
+        assert!(conformer.is_3d());
+    }
+
+    #[test]
+    fn cx_progress_coordinates_projects_complete_rows_to_graph_atom_count() {
+        let mut graph = parse_smarts_graph("CC")
+            .expect("SMARTS syntax")
+            .finish()
+            .expect("query graph");
+        let progress = cosmolkit_cx::parse_cx_extensions_progress("|(1,2,3;4,5,6;7,8,9)|");
+        assert!(progress.is_complete());
+        apply_cx_progress_to_query(&mut graph, &progress).expect("complete CX effects");
+
+        assert_eq!(graph.conformers_3d().len(), 1);
+        assert_eq!(
+            graph.conformers_3d()[0].coordinates(),
+            &[[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]
+        );
+    }
+}
+
+#[cfg(test)]
+mod cx_progress_label_tests {
+    use super::{apply_cx_progress_to_query, parse_smarts_graph};
+    use cosmolkit_model::{
+        AtomId, BondId, SubstanceGroup, SubstanceGroupId, SubstanceGroupKind,
+        query_substance_groups, replace_query_substance_groups,
+    };
+
+    #[test]
+    fn cx_progress_labels_and_values_apply_written_slots_and_decoded_text() {
+        let mut graph = parse_smarts_graph("CCC")
+            .expect("SMARTS syntax")
+            .finish()
+            .expect("query graph");
+        let labels = cosmolkit_cx::parse_cx_extensions_progress("|$a&#321;b;;last$|");
+        assert!(labels.is_complete());
+        apply_cx_progress_to_query(&mut graph, &labels).expect("label effects");
+        assert_eq!(
+            graph.atom(0).and_then(|atom| atom.prop("atomLabel")),
+            Some("aAb")
+        );
+        assert_eq!(graph.atom(1).and_then(|atom| atom.prop("atomLabel")), None);
+        assert_eq!(
+            graph.atom(2).and_then(|atom| atom.prop("atomLabel")),
+            Some("last")
+        );
+
+        let values = cosmolkit_cx::parse_cx_extensions_progress("|$_AV:v0;;v2$|");
+        assert!(values.is_complete());
+        apply_cx_progress_to_query(&mut graph, &values).expect("value effects");
+        assert_eq!(
+            graph.atom(0).and_then(|atom| atom.prop("molFileValue")),
+            Some("v0")
+        );
+        assert_eq!(
+            graph.atom(1).and_then(|atom| atom.prop("molFileValue")),
+            None
+        );
+        assert_eq!(
+            graph.atom(2).and_then(|atom| atom.prop("molFileValue")),
+            Some("v2")
+        );
+    }
+
+    #[test]
+    fn cx_progress_labels_apply_items_before_a_missing_closing_delimiter() {
+        let mut graph = parse_smarts_graph("CC")
+            .expect("SMARTS syntax")
+            .finish()
+            .expect("query graph");
+        let progress = cosmolkit_cx::parse_cx_extensions_progress("|$first;second");
+        assert!(!progress.is_complete());
+        apply_cx_progress_to_query(&mut graph, &progress).expect("committed label effects");
+        assert_eq!(
+            graph.atom(0).and_then(|atom| atom.prop("atomLabel")),
+            Some("first")
+        );
+        assert_eq!(
+            graph.atom(1).and_then(|atom| atom.prop("atomLabel")),
+            Some("second")
+        );
+    }
+
+    #[test]
+    fn query_sgroups_cx_progress_labels_replace_atom_and_preserve_existing_groups() {
+        let mut graph = parse_smarts_graph("CC")
+            .expect("SMARTS syntax")
+            .finish()
+            .expect("query graph");
+        let substance_group = SubstanceGroup::new(
+            SubstanceGroupId::new(0),
+            SubstanceGroupKind::StructuralRepeatUnit,
+        )
+        .with_rdkit_sequence_id(31)
+        .with_atoms(vec![AtomId::new(0), AtomId::new(1), AtomId::new(0)])
+        .with_bonds(vec![BondId::new(0), BondId::new(0)])
+        .with_head_crossing_bonds(vec![BondId::new(0), BondId::new(0)])
+        .with_crossing_bond_correspondence(vec![BondId::new(0)])
+        .with_label("existing polymer group");
+        replace_query_substance_groups(&mut graph, vec![substance_group.clone()])
+            .expect("typed group references are valid");
+        let stereo_group = cosmolkit_model::StereoGroup::new(
+            cosmolkit_model::StereoGroupKind::And,
+            vec![AtomId::new(0), AtomId::new(1)],
+            vec![BondId::new(0)],
+        )
+        .with_id(73);
+        graph.add_stereo_group(stereo_group.clone());
+
+        let progress = cosmolkit_cx::parse_cx_extensions_progress("|$Q_e;$|");
+        assert!(progress.is_complete());
+        apply_cx_progress_to_query(&mut graph, &progress).expect("source progress label pass");
+
+        let atom = graph.atom(0).expect("replaced query atom");
+        assert_eq!(
+            atom.predicate(),
+            &crate::query_behavior::make_q_atom_query()
+        );
+        assert_eq!(
+            atom.identity(),
+            cosmolkit_model::QueryAtomIdentity::Element(cosmolkit_types::Element::DUMMY)
+        );
+        assert!(atom.no_implicit());
+        assert_eq!(atom.prop("atomLabel"), Some("Q_e"));
+        assert_eq!(query_substance_groups(&graph), &[substance_group]);
+        assert_eq!(graph.stereo_groups(), &[stereo_group]);
+        assert_eq!(graph.prop("_cxsmilesLabelsProcessed"), None);
+    }
+
+    #[test]
+    fn query_sgroups_cx_progress_keeps_special_label_unprocessed_until_block_completion() {
+        let mut graph = parse_smarts_graph("C")
+            .expect("SMARTS syntax")
+            .finish()
+            .expect("query graph");
+        let original_predicate = graph.atom(0).expect("source atom").predicate().clone();
+        let progress = cosmolkit_cx::parse_cx_extensions_progress("|$Q_e;");
+        assert!(!progress.is_complete());
+
+        apply_cx_progress_to_query(&mut graph, &progress).expect("committed label property");
+
+        let atom = graph.atom(0).expect("partial query atom");
+        assert_eq!(atom.prop("atomLabel"), Some("Q_e"));
+        assert_eq!(atom.predicate(), &original_predicate);
+        assert_eq!(atom.element(), Some(cosmolkit_types::Element::C));
+        assert_eq!(graph.prop("_cxsmilesLabelsProcessed"), None);
+    }
+}
+
+#[cfg(test)]
+mod cx_progress_properties_tests {
+    use super::{apply_cx_progress_to_query, parse_smarts_graph};
+
+    #[test]
+    fn cx_progress_properties_applies_items_and_skips_out_of_graph_indices() {
+        let mut graph = parse_smarts_graph("CC")
+            .expect("SMARTS syntax")
+            .finish()
+            .expect("query graph");
+        let progress = cosmolkit_cx::parse_cx_extensions_progress(
+            "|atomProp:0.label.first:1.kind.second:9.outside.skip|",
+        );
+        assert!(progress.is_complete());
+        apply_cx_progress_to_query(&mut graph, &progress).expect("atomProp effects");
+        assert_eq!(
+            graph.atom(0).and_then(|atom| atom.prop("label")),
+            Some("first")
+        );
+        assert_eq!(
+            graph.atom(1).and_then(|atom| atom.prop("kind")),
+            Some("second")
+        );
+    }
+
+    #[test]
+    fn cx_progress_properties_keeps_prior_item_after_later_parse_failure() {
+        let mut graph = parse_smarts_graph("C")
+            .expect("SMARTS syntax")
+            .finish()
+            .expect("query graph");
+        let progress =
+            cosmolkit_cx::parse_cx_extensions_progress("|atomProp:0.kept.value:0.later.&#oops|");
+        assert!(!progress.is_complete());
+        apply_cx_progress_to_query(&mut graph, &progress).expect("committed property effect");
+        assert_eq!(
+            graph.atom(0).and_then(|atom| atom.prop("kept")),
+            Some("value")
+        );
+        assert_eq!(graph.atom(0).and_then(|atom| atom.prop("later")), None);
+    }
+}
+
+#[cfg(test)]
+mod cx_progress_bond_tests {
+    use super::{BondOrder, apply_cx_progress_to_query, parse_smarts_graph};
+
+    #[test]
+    fn cx_progress_bonds_applies_kinds_orients_pairs_and_skips_out_of_graph_indices() {
+        let mut graph = parse_smarts_graph("C-C")
+            .expect("SMARTS syntax")
+            .finish()
+            .expect("query graph");
+
+        let coordinate = cosmolkit_cx::parse_cx_extensions_progress("|C:1.0,9.0,0.9|");
+        assert!(coordinate.is_complete());
+        apply_cx_progress_to_query(&mut graph, &coordinate).expect("coordinate-bond effects");
+        let bond = graph.bonds_mut().first().expect("one query bond");
+        assert_eq!(bond.bond().order(), BondOrder::Dative);
+        assert_eq!(bond.endpoints(), (1, 0));
+
+        let hydrogen = cosmolkit_cx::parse_cx_extensions_progress("|H:0.0|");
+        apply_cx_progress_to_query(&mut graph, &hydrogen).expect("hydrogen-bond effect");
+        let bond = graph.bonds_mut().first().expect("one query bond");
+        assert_eq!(bond.bond().order(), BondOrder::Hydrogen);
+        assert_eq!(bond.endpoints(), (0, 1));
+
+        let zero = cosmolkit_cx::parse_cx_extensions_progress("|Z:0,9|");
+        apply_cx_progress_to_query(&mut graph, &zero).expect("zero-bond effect");
+        let bond = graph.bonds_mut().first().expect("one query bond");
+        assert_eq!(bond.bond().order(), BondOrder::Zero);
+    }
+
+    #[test]
+    fn cx_progress_bonds_keeps_prior_effects_before_syntax_or_target_failure() {
+        let mut graph = parse_smarts_graph("C-C")
+            .expect("SMARTS syntax")
+            .finish()
+            .expect("query graph");
+        let malformed = cosmolkit_cx::parse_cx_extensions_progress("|C:1.0,0x.1|");
+        assert!(!malformed.is_complete());
+        apply_cx_progress_to_query(&mut graph, &malformed).expect("prior pair effect");
+        let bond = graph.bonds_mut().first().expect("one query bond");
+        assert_eq!(bond.bond().order(), BondOrder::Dative);
+        assert_eq!(bond.endpoints(), (1, 0));
+
+        let mut graph = parse_smarts_graph("C-C-C")
+            .expect("SMARTS syntax")
+            .finish()
+            .expect("query graph");
+        let mismatch = cosmolkit_cx::parse_cx_extensions_progress("|C:1.0,2.0|");
+        assert!(mismatch.is_complete());
+        assert!(apply_cx_progress_to_query(&mut graph, &mismatch).is_err());
+        let bond = graph.bonds_mut().first().expect("first query bond");
+        assert_eq!(bond.bond().order(), BondOrder::Dative);
+        assert_eq!(bond.endpoints(), (1, 0));
+
+        let mut graph = parse_smarts_graph("C-C")
+            .expect("SMARTS syntax")
+            .finish()
+            .expect("query graph");
+        let zero_overflow = cosmolkit_cx::parse_cx_extensions_progress("|Z:0,4294967296|");
+        assert!(!zero_overflow.is_complete());
+        apply_cx_progress_to_query(&mut graph, &zero_overflow).expect("prior zero-bond effect");
+        assert_eq!(graph.bonds_mut()[0].bond().order(), BondOrder::Zero);
+    }
+}
+
+#[cfg(test)]
+mod cx_progress_radical_tests {
+    use super::{apply_cx_progress_to_query, parse_smarts_graph};
+
+    #[test]
+    fn cx_progress_radicals_applies_electron_classes_and_skips_invalid_atoms() {
+        let mut graph = parse_smarts_graph("C-C")
+            .expect("SMARTS syntax")
+            .finish()
+            .expect("query graph");
+        let progress = cosmolkit_cx::parse_cx_extensions_progress("|^1:0,9^5:1|");
+        assert!(progress.is_complete());
+        apply_cx_progress_to_query(&mut graph, &progress).expect("radical effects");
+        assert_eq!(graph.atom(0).expect("first atom").radical_electrons(), 1);
+        assert_eq!(graph.atom(1).expect("second atom").radical_electrons(), 3);
+    }
+
+    #[test]
+    fn cx_progress_radicals_keeps_prior_effect_after_later_parse_failure() {
+        let text = "|^1:0,4294967296|";
+        let progress = cosmolkit_cx::parse_cx_extensions_progress(text);
+        assert!(!progress.is_complete());
+        assert!(progress.error().is_some());
+        assert_eq!(progress.consumed(), text.rfind('|').expect("closing pipe"));
+
+        let mut graph = parse_smarts_graph("C-C")
+            .expect("SMARTS syntax")
+            .finish()
+            .expect("query graph");
+        apply_cx_progress_to_query(&mut graph, &progress).expect("committed radical effect");
+        assert_eq!(graph.atom(0).expect("first atom").radical_electrons(), 1);
+        assert_eq!(graph.atom(1).expect("second atom").radical_electrons(), 0);
+    }
+}
+
+#[cfg(test)]
+mod cx_progress_stereo_merge_tests {
+    use super::{QueryGraph, apply_cx_progress_to_query, parse_smarts_graph};
+    use cosmolkit_model::{AtomId, StereoGroup, StereoGroupKind, replace_query_stereo_groups};
+
+    fn query_graph(smarts: &str) -> QueryGraph {
+        parse_smarts_graph(smarts)
+            .expect("SMARTS syntax")
+            .finish()
+            .expect("query graph")
+    }
+
+    #[test]
+    fn cx_progress_stereo_merge_matches_both_consumers_and_source_order() {
+        let input = "|a:0,1,0,o1:1,2,o1:2,2,&3:0,99,&3:1,a:99,o4:,o4:2,&858993459:2|";
+        let parsed = cosmolkit_cx::parse_cx_extensions(input).expect("complete CX records");
+        let progress = cosmolkit_cx::parse_cx_extensions_progress(input);
+        assert!(progress.is_complete());
+        assert_eq!(parsed.records(), progress.records());
+
+        let initial = query_graph("CCO");
+        let mut direct = initial.clone();
+        crate::apply_cx_to_query_graph(&mut direct, &parsed).expect("direct record lowering");
+        let mut progressed = initial.clone();
+        apply_cx_progress_to_query(&mut progressed, &progress).expect("progress record lowering");
+
+        let expected_groups = vec![
+            StereoGroup::new(
+                StereoGroupKind::Absolute,
+                vec![
+                    AtomId::new(0),
+                    AtomId::new(1),
+                    AtomId::new(0),
+                    AtomId::new(2),
+                ],
+                Vec::new(),
+            )
+            .with_id(858_993_459),
+            StereoGroup::new(
+                StereoGroupKind::Or,
+                vec![
+                    AtomId::new(1),
+                    AtomId::new(2),
+                    AtomId::new(2),
+                    AtomId::new(2),
+                ],
+                Vec::new(),
+            )
+            .with_id(1),
+            StereoGroup::new(
+                StereoGroupKind::And,
+                vec![AtomId::new(0), AtomId::new(1)],
+                Vec::new(),
+            )
+            .with_id(3),
+            StereoGroup::new(StereoGroupKind::Or, vec![AtomId::new(2)], Vec::new()).with_id(4),
+        ];
+        assert_eq!(direct.stereo_groups(), expected_groups);
+        assert_eq!(progressed.stereo_groups(), expected_groups);
+
+        let mut expected_graph = initial;
+        replace_query_stereo_groups(&mut expected_graph, expected_groups)
+            .expect("validated expected groups");
+        assert_eq!(direct, expected_graph);
+        assert_eq!(progressed, expected_graph);
+    }
+
+    #[test]
+    fn cx_progress_stereo_merge_tracker_resets_after_successful_application() {
+        let input = "|o7:0|";
+        let parsed = cosmolkit_cx::parse_cx_extensions(input).expect("complete CX records");
+        let initial = query_graph("CC");
+
+        let mut direct = initial.clone();
+        crate::apply_cx_to_query_graph(&mut direct, &parsed).expect("first direct parse");
+        crate::apply_cx_to_query_graph(&mut direct, &parsed).expect("second direct parse");
+
+        let mut progressed = initial;
+        for _ in 0..2 {
+            let progress = cosmolkit_cx::parse_cx_extensions_progress(input);
+            assert!(progress.is_complete());
+            apply_cx_progress_to_query(&mut progressed, &progress)
+                .expect("independent successful parse session");
+        }
+
+        assert_eq!(direct.stereo_groups().len(), 2);
+        assert_eq!(progressed.stereo_groups().len(), 2);
+        assert_eq!(direct.stereo_groups(), progressed.stereo_groups());
+        assert_eq!(direct.stereo_groups()[0].atoms(), &[AtomId::new(0)]);
+        assert_eq!(direct.stereo_groups()[1].atoms(), &[AtomId::new(0)]);
+    }
+
+    #[test]
+    fn cx_progress_stereo_keeps_completed_group_before_later_index_failure() {
+        let input = "|o7:0,&3:1,4294967296|";
+        let progress = cosmolkit_cx::parse_cx_extensions_progress(input);
+        assert!(!progress.is_complete());
+        let number_start = input.find("4294967296").expect("later index overflow");
+        assert_eq!(progress.consumed(), number_start + "4294967296".len());
+        assert!(progress.error().is_some());
+
+        let initial = query_graph("CC");
+        let mut graph = initial.clone();
+        apply_cx_progress_to_query(&mut graph, &progress)
+            .expect("completed source group before failed group");
+
+        let expected_group =
+            StereoGroup::new(StereoGroupKind::Or, vec![AtomId::new(0)], Vec::new()).with_id(7);
+        assert_eq!(graph.stereo_groups(), &[expected_group.clone()]);
+        let mut expected = initial;
+        replace_query_stereo_groups(&mut expected, vec![expected_group])
+            .expect("valid completed group");
+        assert_eq!(graph, expected);
+    }
+
+    #[test]
+    fn cx_progress_stereo_commits_completed_helper_before_missing_pipe() {
+        let input = "|&3:0,1";
+        let progress = cosmolkit_cx::parse_cx_extensions_progress(input);
+        assert!(!progress.is_complete());
+        assert_eq!(progress.consumed(), input.len());
+        assert_eq!(
+            progress.error().map(|error| error.offset),
+            Some(input.len())
+        );
+
+        let initial = query_graph("CC");
+        let mut graph = initial.clone();
+        apply_cx_progress_to_query(&mut graph, &progress)
+            .expect("completed enhanced-stereo helper before outer delimiter failure");
+
+        let expected_group = StereoGroup::new(
+            StereoGroupKind::And,
+            vec![AtomId::new(0), AtomId::new(1)],
+            Vec::new(),
+        )
+        .with_id(3);
+        let mut expected = initial;
+        replace_query_stereo_groups(&mut expected, vec![expected_group])
+            .expect("valid completed group");
+        assert_eq!(graph, expected);
+    }
+}
+
+#[cfg(test)]
+mod cx_progress_constraints_tests {
+    use super::{QueryGraph, apply_cx_progress_to_query, parse_smarts_graph};
+    use cosmolkit_model::{AtomQueryPredicate, QueryNode};
+
+    fn query_graph(smarts: &str) -> QueryGraph {
+        parse_smarts_graph(smarts)
+            .expect("SMARTS syntax")
+            .finish()
+            .expect("query graph")
+    }
+
+    fn contains_predicate(
+        node: &QueryNode<AtomQueryPredicate>,
+        expected: &AtomQueryPredicate,
+    ) -> bool {
+        match node {
+            QueryNode::Predicate(predicate) => predicate == expected,
+            QueryNode::And(children) | QueryNode::Or(children) => children
+                .iter()
+                .any(|child| contains_predicate(child, expected)),
+            _ => false,
+        }
+    }
+
+    fn apply_complete(graph: &mut QueryGraph, input: &str) {
+        let parsed = cosmolkit_cx::parse_cx_extensions(input).expect("complete CX record");
+        crate::apply_cx_to_query_graph(graph, &parsed).expect("direct CX lowering");
+    }
+
+    #[test]
+    fn cx_progress_constraints_apply_query_scan_and_skip_source_invalid_atoms() {
+        let input = "|u:0,99,rb:1:4,1:*,99:3,s:0:2,1:*|";
+        let parsed = cosmolkit_cx::parse_cx_extensions(input).expect("complete CX records");
+        let progress = cosmolkit_cx::parse_cx_extensions_progress(input);
+        assert!(progress.is_complete());
+        assert_eq!(parsed.records(), progress.records());
+
+        let initial = query_graph("CC");
+        let mut direct = initial.clone();
+        crate::apply_cx_to_query_graph(&mut direct, &parsed).expect("direct lowering");
+        let mut progressed = initial;
+        apply_cx_progress_to_query(&mut progressed, &progress).expect("progress lowering");
+        assert_eq!(progressed, direct);
+
+        assert!(contains_predicate(
+            progressed.atom(0).expect("first atom").predicate(),
+            &AtomQueryPredicate::IsUnsaturated
+        ));
+        assert!(contains_predicate(
+            progressed.atom(0).expect("first atom").predicate(),
+            &AtomQueryPredicate::NonHydrogenDegree(2)
+        ));
+        assert!(contains_predicate(
+            progressed.atom(1).expect("second atom").predicate(),
+            &AtomQueryPredicate::RingBondCountLessEqual(4)
+        ));
+        assert!(contains_predicate(
+            progressed.atom(1).expect("second atom").predicate(),
+            &AtomQueryPredicate::RingBondCount(
+                crate::query_behavior::QUERY_SCAN_MAGIC_VALUE as i32
+            )
+        ));
+        assert!(contains_predicate(
+            progressed.atom(1).expect("second atom").predicate(),
+            &AtomQueryPredicate::NonHydrogenDegree(crate::query_behavior::QUERY_SCAN_MAGIC_VALUE)
+        ));
+    }
+
+    #[test]
+    fn cx_progress_constraints_keep_prior_items_before_later_failure() {
+        for (input, valid_prefix) in [
+            ("|u:0,4294967296|", "|u:0|"),
+            ("|rb:0:3,1:1|", "|rb:0:3|"),
+            ("|s:0:2,1:x|", "|s:0:2|"),
+        ] {
+            let progress = cosmolkit_cx::parse_cx_extensions_progress(input);
+            assert!(!progress.is_complete(), "{input:?}");
+            assert!(progress.error().is_some(), "{input:?}");
+
+            let initial = query_graph("CC");
+            let mut expected = initial.clone();
+            apply_complete(&mut expected, valid_prefix);
+            let mut progressed = initial;
+            apply_cx_progress_to_query(&mut progressed, &progress)
+                .expect("apply source-committed query items");
+            assert_eq!(progressed, expected, "{input:?}");
+        }
+    }
+
+    #[test]
+    fn cx_progress_constraints_recognizes_malformed_empty_substitution_without_effect() {
+        let input = "|s:0:x|";
+        let failure = input.find('x').expect("malformed substitution value");
+        let progress = cosmolkit_cx::parse_cx_extensions_progress(input);
+        assert!(!progress.is_complete());
+        assert_eq!(progress.consumed(), failure);
+        assert_eq!(progress.error().map(|error| error.offset), Some(failure));
+        assert!(matches!(
+            progress.records(),
+            [cosmolkit_cx::CxRecord::Substitution(constraints)] if constraints.is_empty()
+        ));
+
+        let initial = query_graph("CC");
+        let mut graph = initial.clone();
+        apply_cx_progress_to_query(&mut graph, &progress)
+            .expect("recognized incomplete substitution has no completed item");
+        assert_eq!(graph, initial);
+    }
+}
+
+#[cfg(test)]
+mod cx_progress_linknodes_tests {
+    use super::{QueryGraph, apply_cx_progress_to_query, parse_smarts_graph};
+
+    fn query_graph(smarts: &str) -> QueryGraph {
+        parse_smarts_graph(smarts)
+            .expect("SMARTS syntax")
+            .finish()
+            .expect("query graph")
+    }
+
+    #[test]
+    fn cx_progress_linknodes_direct_and_progress_lowering_match_source_property() {
+        let text = "|LN:0:1.3.1.2,1:2.4.2.0|";
+        let parsed = cosmolkit_cx::parse_cx_extensions(text).expect("complete link-node record");
+        let progress = cosmolkit_cx::parse_cx_extensions_progress(text);
+        assert!(progress.is_complete());
+        assert_eq!(parsed.records(), progress.records());
+
+        let initial = query_graph("C(C)C");
+        let mut direct = initial.clone();
+        crate::apply_cx_to_query_graph(&mut direct, &parsed).expect("direct lowering");
+        let mut progressed = initial;
+        apply_cx_progress_to_query(&mut progressed, &progress).expect("progress lowering");
+
+        assert_eq!(progressed, direct);
+        assert_eq!(
+            direct.prop("molFileLinkNodes"),
+            Some("1 3 2 1 2 1 3|2 4 2 2 3 2 1")
+        );
+    }
+
+    #[test]
+    fn cx_progress_linknodes_does_not_commit_a_partial_helper() {
+        let text = "|$left$LN:0:1.2.0.0,4294967296:1.2.0.0|";
+        let progress = cosmolkit_cx::parse_cx_extensions_progress(text);
+        assert!(!progress.is_complete());
+        assert!(progress.error().is_some());
+        assert!(
+            progress
+                .checkpoints()
+                .iter()
+                .any(|checkpoint| checkpoint.phase == cosmolkit_cx::CxProgressPhase::Item)
+        );
+        assert!(
+            progress
+                .checkpoints()
+                .iter()
+                .all(
+                    |checkpoint| checkpoint.phase != cosmolkit_cx::CxProgressPhase::Complete
+                        || checkpoint.record_index == 0
+                )
+        );
+
+        let mut graph = query_graph("C");
+        apply_cx_progress_to_query(&mut graph, &progress).expect("source partial effects");
+        assert_eq!(
+            graph.atom(0).and_then(|atom| atom.prop("atomLabel")),
+            Some("left")
+        );
+        assert_eq!(graph.prop("molFileLinkNodes"), None);
+    }
+
+    #[test]
+    fn cx_progress_linknodes_commits_complete_helper_before_missing_pipe() {
+        let text = "|LN:0:1.2.0.0";
+        let progress = cosmolkit_cx::parse_cx_extensions_progress(text);
+        assert!(!progress.is_complete());
+        assert_eq!(progress.consumed(), text.len());
+        assert!(
+            progress
+                .checkpoints()
+                .iter()
+                .any(|checkpoint| { checkpoint.phase == cosmolkit_cx::CxProgressPhase::Complete })
+        );
+
+        let mut graph = query_graph("C");
+        apply_cx_progress_to_query(&mut graph, &progress)
+            .expect("link-node helper completed before outer delimiter failure");
+        assert_eq!(graph.prop("molFileLinkNodes"), Some("1 2 2 1 1 1 1"));
+    }
+
+    #[test]
+    fn cx_progress_linknodes_degree_error_preserves_existing_property() {
+        let progress = cosmolkit_cx::parse_cx_extensions_progress("|LN:0:1.2|");
+        assert!(progress.is_complete());
+
+        let mut graph = query_graph("CC").with_prop("molFileLinkNodes", "prior");
+        assert!(apply_cx_progress_to_query(&mut graph, &progress).is_err());
+        assert_eq!(graph.prop("molFileLinkNodes"), Some("prior"));
+    }
+}
+
+#[cfg(test)]
+mod cx_progress_sgroups_tests {
+    use super::{QueryGraph, apply_cx_progress_to_query, parse_smarts_graph};
+    use cosmolkit_cx::{CxRecord, CxSGroupHierarchy};
+    use cosmolkit_model::{
+        AtomId, QueryAtomIdentity, SubstanceGroup, SubstanceGroupId, SubstanceGroupKind,
+        query_substance_groups, replace_query_substance_groups,
+    };
+    use cosmolkit_types::Element;
+
+    fn query_graph(smarts: &str) -> QueryGraph {
+        parse_smarts_graph(smarts)
+            .expect("SMARTS syntax")
+            .finish()
+            .expect("query graph")
+    }
+
+    fn query_graph_with_existing_groups() -> QueryGraph {
+        let mut graph = query_graph("CC");
+        let groups = vec![
+            SubstanceGroup::new(SubstanceGroupId::new(0), SubstanceGroupKind::Data)
+                .with_atoms(vec![AtomId::new(0)]),
+            SubstanceGroup::new(SubstanceGroupId::new(1), SubstanceGroupKind::Data)
+                .with_atoms(vec![AtomId::new(1)]),
+        ];
+        replace_query_substance_groups(&mut graph, groups).expect("valid initial groups");
+        graph
+    }
+
+    fn query_graph_with_hierarchy_groups() -> QueryGraph {
+        let mut graph = query_graph("CC");
+        let groups = vec![
+            SubstanceGroup::new(SubstanceGroupId::new(0), SubstanceGroupKind::Data)
+                .with_rdkit_sequence_id(5)
+                .with_prop("_cxsmilesindex", "5")
+                .with_prop("index", "71"),
+            SubstanceGroup::new(SubstanceGroupId::new(1), SubstanceGroupKind::Data)
+                .with_rdkit_sequence_id(0)
+                .with_prop("_cxsmilesindex", "0")
+                .with_prop("index", "92"),
+            SubstanceGroup::new(SubstanceGroupId::new(2), SubstanceGroupKind::Data)
+                .with_rdkit_sequence_id(1)
+                .with_prop("_cxsmilesindex", "1")
+                .with_prop("index", "93"),
+        ];
+        replace_query_substance_groups(&mut graph, groups).expect("valid hierarchy groups");
+        graph
+    }
+
+    #[test]
+    fn cx_progress_sgroups_direct_and_progress_lowering_keep_source_and_storage_ids() {
+        let text = "|SgD:9:IGNORED:::::SgD:1,0:FIELD:value,with,comma:=:unit:tag:(1,2)|";
+        let parsed = cosmolkit_cx::parse_cx_extensions(text).expect("complete data SGroups");
+        let progress = cosmolkit_cx::parse_cx_extensions_progress(text);
+        assert!(progress.is_complete());
+        assert_eq!(parsed.records(), progress.records());
+
+        let initial = query_graph_with_existing_groups();
+        let mut direct = initial.clone();
+        crate::apply_cx_to_query_graph(&mut direct, &parsed).expect("direct lowering");
+        let mut progressed = initial;
+        apply_cx_progress_to_query(&mut progressed, &progress).expect("progress lowering");
+        assert_eq!(progressed, direct);
+
+        let groups = query_substance_groups(&progressed);
+        assert_eq!(groups.len(), 3);
+        let data_group = &groups[2];
+        assert_eq!(data_group.id(), SubstanceGroupId::new(2));
+        assert_eq!(data_group.rdkit_sequence_id(), Some(1));
+        assert_eq!(data_group.atoms(), &[AtomId::new(1), AtomId::new(0)]);
+        assert_eq!(
+            data_group.props().get("_cxsmilesindex").map(String::as_str),
+            Some("1")
+        );
+        assert_eq!(
+            data_group.props().get("index").map(String::as_str),
+            Some("3")
+        );
+        assert_eq!(
+            data_group.props().get("DATAFIELDS").map(String::as_str),
+            Some("value,with,comma")
+        );
+        assert_eq!(
+            data_group.props().get("COORDS").map(String::as_str),
+            Some("(1,2")
+        );
+        assert_eq!(data_group.data_fields(), &["value,with,comma"]);
+        let typed_data = data_group.data().expect("typed DAT payload");
+        assert_eq!(typed_data.field_name.as_deref(), Some("FIELD"));
+        assert_eq!(typed_data.query_op.as_deref(), Some("="));
+        assert_eq!(typed_data.field_info.as_deref(), Some("unit"));
+        assert_eq!(typed_data.values, ["value,with,comma"]);
+        assert_eq!(
+            typed_data.field_display.as_deref(),
+            Some("    0.0000    0.0000    DR    ALL  0       0")
+        );
+    }
+
+    #[test]
+    fn cx_progress_sgroups_failure_before_complete_has_no_search_effect() {
+        let text = "|SgD:0:FIELD:bad&#oops:QUERY:INFO:TAG:|";
+        let progress = cosmolkit_cx::parse_cx_extensions_progress(text);
+        assert!(!progress.is_complete());
+        assert!(progress.error().is_some());
+
+        let mut graph = query_graph("C");
+        graph
+            .atom_mut(0)
+            .expect("first atom")
+            .set_prop("atomLabel", "Q_e")
+            .expect("atom label property");
+        let initial = graph.clone();
+        apply_cx_progress_to_query(&mut graph, &progress)
+            .expect("incomplete local DAT state has no destination effect");
+
+        assert_eq!(graph, initial);
+        assert!(query_substance_groups(&graph).is_empty());
+        assert_eq!(
+            graph.atom(0).and_then(|atom| atom.prop("atomLabel")),
+            Some("Q_e")
+        );
+    }
+
+    #[test]
+    fn cx_progress_sgroups_attach_before_later_failure_after_source_label_processing() {
+        let text = "|SgD:0:FIELD:one::::SgD:0:NEXT:bad&#oops:QUERY:INFO:TAG:|";
+        let progress = cosmolkit_cx::parse_cx_extensions_progress(text);
+        assert!(!progress.is_complete());
+        assert!(progress.error().is_some());
+
+        let mut graph = query_graph("C");
+        graph
+            .atom_mut(0)
+            .expect("first atom")
+            .set_prop("atomLabel", "Q_e")
+            .expect("atom label property");
+        apply_cx_progress_to_query(&mut graph, &progress)
+            .expect("first completed data group commits before the later parse error");
+
+        assert_eq!(
+            graph.atom(0).expect("first atom").identity(),
+            QueryAtomIdentity::Element(Element::DUMMY)
+        );
+        assert_eq!(graph.prop("_cxsmilesLabelsProcessed"), Some("1"));
+        let groups = query_substance_groups(&graph);
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].id(), SubstanceGroupId::new(0));
+        assert_eq!(groups[0].rdkit_sequence_id(), Some(0));
+        assert_eq!(
+            groups[0].props().get("index").map(String::as_str),
+            Some("1")
+        );
+        assert_eq!(groups[0].data_fields(), &["one"]);
+    }
+
+    #[test]
+    fn cx_progress_sgroups_commit_completed_helper_before_missing_outer_pipe() {
+        let text = "|SgD:0:FIELD:DATA:QUERY:INFO:TAG:(raw|";
+        let progress = cosmolkit_cx::parse_cx_extensions_progress(text);
+        assert!(!progress.is_complete());
+        assert_eq!(progress.consumed(), text.len());
+        assert!(
+            progress
+                .checkpoints()
+                .iter()
+                .any(|checkpoint| { checkpoint.phase == cosmolkit_cx::CxProgressPhase::Complete })
+        );
+
+        let mut graph = query_graph("C");
+        apply_cx_progress_to_query(&mut graph, &progress)
+            .expect("complete source helper commits before outer delimiter failure");
+        let groups = query_substance_groups(&graph);
+        assert_eq!(groups.len(), 1);
+        assert_eq!(
+            groups[0].props().get("COORDS").map(String::as_str),
+            Some("(raw|")
+        );
+    }
+
+    #[test]
+    fn cx_progress_hierarchy_direct_and_progress_paths_preserve_source_identity() {
+        let text = "|SgH:5:0.1.0|";
+        let parsed = cosmolkit_cx::parse_cx_extensions(text).expect("complete hierarchy");
+        let progress = cosmolkit_cx::parse_cx_extensions_progress(text);
+        assert!(progress.is_complete());
+        assert_eq!(parsed.records(), progress.records());
+
+        let initial = query_graph_with_hierarchy_groups();
+        let mut direct = initial.clone();
+        crate::apply_cx_to_query_graph(&mut direct, &parsed).expect("direct hierarchy lowering");
+        let mut progressed = initial;
+        apply_cx_progress_to_query(&mut progressed, &progress)
+            .expect("progress hierarchy lowering");
+
+        assert_eq!(progressed, direct);
+        let groups = query_substance_groups(&progressed);
+        assert_eq!(groups[0].parent(), None);
+        assert_eq!(groups[1].parent(), Some(SubstanceGroupId::new(0)));
+        assert_eq!(
+            groups[1].props().get("PARENT").map(String::as_str),
+            Some("71")
+        );
+        assert_eq!(groups[2].parent(), Some(SubstanceGroupId::new(0)));
+        assert_eq!(
+            groups[2].props().get("PARENT").map(String::as_str),
+            Some("71")
+        );
+        assert_eq!(groups[1].rdkit_sequence_id(), Some(0));
+        assert_eq!(groups[2].rdkit_sequence_id(), Some(1));
+    }
+
+    #[test]
+    fn cx_progress_hierarchy_keeps_prior_mutation_after_later_syntax_error() {
+        let text = "|SgH:5:0,77x:1|";
+        let error_cursor = text.find('x').expect("bad later parent delimiter");
+        let progress = cosmolkit_cx::parse_cx_extensions_progress(text);
+        assert!(!progress.is_complete());
+        assert_eq!(progress.consumed(), error_cursor);
+        assert_eq!(
+            progress.error().map(|error| error.offset),
+            Some(error_cursor)
+        );
+        assert!(matches!(
+            progress.records(),
+            [CxRecord::SGroupHierarchy(hierarchies)] if hierarchies == &[
+                CxSGroupHierarchy { parent: 5, children: vec![0] },
+                CxSGroupHierarchy { parent: 77, children: Vec::new() },
+            ]
+        ));
+        assert_eq!(progress.checkpoints().len(), 2);
+        assert_eq!(progress.checkpoints()[1].item_index, Some(0));
+
+        let mut graph = query_graph_with_hierarchy_groups();
+        apply_cx_progress_to_query(&mut graph, &progress)
+            .expect("prior source relationship commits before later syntax failure");
+
+        let groups = query_substance_groups(&graph);
+        assert_eq!(groups[1].parent(), Some(SubstanceGroupId::new(0)));
+        assert_eq!(
+            groups[1].props().get("PARENT").map(String::as_str),
+            Some("71")
+        );
+        assert_eq!(groups[2].parent(), None);
+    }
+
+    #[test]
+    fn cx_progress_hierarchy_keeps_prior_mutation_after_lowering_error() {
+        let progress = cosmolkit_cx::parse_cx_extensions_progress("|SgH:5:0.9|");
+        assert!(progress.is_complete());
+
+        let mut graph = query_graph_with_hierarchy_groups();
+        let error = apply_cx_progress_to_query(&mut graph, &progress)
+            .expect_err("valid parent with out-of-range later child fails");
+
+        assert!(
+            error
+                .to_string()
+                .contains("child id references non-existent SGroup")
+        );
+        let groups = query_substance_groups(&graph);
+        assert_eq!(groups[1].parent(), Some(SubstanceGroupId::new(0)));
+        assert_eq!(
+            groups[1].props().get("PARENT").map(String::as_str),
+            Some("71")
+        );
+        assert_eq!(groups[2].parent(), None);
+    }
+}
+
+#[cfg(test)]
+mod cx_progress_polymer_tests {
+    use super::{QueryGraph, apply_cx_progress_to_query, parse_smarts_graph};
+    use cosmolkit_model::{
+        AtomId, BondId, QueryAtomIdentity, SGroupConnection, SubstanceGroup, SubstanceGroupId,
+        SubstanceGroupKind, query_substance_groups, replace_query_substance_groups,
+    };
+    use cosmolkit_types::Element;
+
+    fn query_graph(smarts: &str) -> QueryGraph {
+        parse_smarts_graph(smarts)
+            .expect("SMARTS syntax")
+            .finish()
+            .expect("query graph")
+    }
+
+    fn set_query_label(graph: &mut QueryGraph) {
+        graph
+            .atom_mut(0)
+            .expect("first query atom")
+            .set_prop("atomLabel", "Q_e")
+            .expect("query atom label property");
+    }
+
+    #[test]
+    fn cx_progress_polymer_direct_and_progress_preserve_typed_order_and_ids() {
+        let text = "|Sg:alt:1,0,1:repeat:hh&#44;f:0,2:1:|";
+        let parsed = cosmolkit_cx::parse_cx_extensions(text).expect("complete polymer SGroup");
+        let progress = cosmolkit_cx::parse_cx_extensions_progress(text);
+        assert!(progress.is_complete());
+        assert_eq!(parsed.records(), progress.records());
+
+        let mut initial = query_graph("CCCC");
+        let existing = SubstanceGroup::new(SubstanceGroupId::new(0), SubstanceGroupKind::Data)
+            .with_rdkit_sequence_id(77)
+            .with_atoms(vec![AtomId::new(3)]);
+        replace_query_substance_groups(&mut initial, vec![existing])
+            .expect("valid preexisting query SGroup");
+
+        let mut direct = initial.clone();
+        crate::apply_cx_to_query_graph(&mut direct, &parsed).expect("direct polymer lowering");
+        let mut progressed = initial;
+        apply_cx_progress_to_query(&mut progressed, &progress).expect("progress polymer lowering");
+        assert_eq!(progressed, direct);
+
+        let groups = query_substance_groups(&progressed);
+        assert_eq!(groups.len(), 2);
+        let group = &groups[1];
+        assert_eq!(group.id(), SubstanceGroupId::new(1));
+        assert_eq!(group.rdkit_sequence_id(), Some(0));
+        assert_eq!(group.kind(), &SubstanceGroupKind::Copolymer);
+        assert_eq!(group.subtype(), Some("ALT"));
+        assert_eq!(group.label(), Some("repeat"));
+        assert_eq!(group.connection(), Some(&SGroupConnection::HeadToHead));
+        assert_eq!(
+            group.atoms(),
+            &[AtomId::new(1), AtomId::new(0), AtomId::new(1)]
+        );
+        assert_eq!(
+            group.bonds(),
+            &[BondId::new(0), BondId::new(2), BondId::new(1)]
+        );
+        assert_eq!(
+            group.head_crossing_bonds(),
+            &[BondId::new(0), BondId::new(2)]
+        );
+        assert_eq!(
+            group.crossing_bond_correspondence(),
+            &[BondId::new(0), BondId::new(1)]
+        );
+        assert_eq!(
+            group.props().get("_cxsmilesindex").map(String::as_str),
+            Some("0")
+        );
+        assert_eq!(group.props().get("index").map(String::as_str), Some("2"));
+        assert_eq!(group.props().get("CONNECT").map(String::as_str), Some("HH"));
+        assert_eq!(
+            group.props().get("SUBTYPE").map(String::as_str),
+            Some("ALT")
+        );
+    }
+
+    #[test]
+    fn cx_progress_polymer_maps_all_source_types_and_keeps_skipped_sequence_ids() {
+        let cases = [
+            ("n", SubstanceGroupKind::StructuralRepeatUnit, None),
+            ("mon", SubstanceGroupKind::Monomer, None),
+            ("mer", SubstanceGroupKind::Mer, None),
+            ("co", SubstanceGroupKind::Copolymer, None),
+            ("xl", SubstanceGroupKind::Crosslink, None),
+            ("mod", SubstanceGroupKind::Modification, None),
+            ("mix", SubstanceGroupKind::MixtureComponent, None),
+            ("f", SubstanceGroupKind::Formulation, None),
+            ("any", SubstanceGroupKind::AnyPolymer, None),
+            ("gen", SubstanceGroupKind::Generic("GEN".to_owned()), None),
+            ("c", SubstanceGroupKind::Generic("COM".to_owned()), None),
+            ("grf", SubstanceGroupKind::Graft, None),
+            ("alt", SubstanceGroupKind::Copolymer, Some("ALT")),
+            ("ran", SubstanceGroupKind::Copolymer, Some("RAN")),
+            ("blk", SubstanceGroupKind::Copolymer, Some("BLO")),
+        ];
+        let mut source_records = vec!["Sg:n:99".to_owned()];
+        source_records.extend(
+            cases
+                .iter()
+                .map(|(type_code, _, _)| format!("Sg:{type_code}:0")),
+        );
+        let text = format!("|{}|", source_records.join(","));
+        let progress = cosmolkit_cx::parse_cx_extensions_progress(&text);
+        assert!(progress.is_complete());
+
+        let mut graph = query_graph("CC");
+        apply_cx_progress_to_query(&mut graph, &progress).expect("source polymer records lower");
+        let groups = query_substance_groups(&graph);
+        assert_eq!(groups.len(), cases.len());
+        for (index, (group, (type_code, kind, subtype))) in groups.iter().zip(cases).enumerate() {
+            assert_eq!(group.id(), SubstanceGroupId::new(index));
+            assert_eq!(group.rdkit_sequence_id(), Some(index as u32 + 1));
+            assert_eq!(group.kind(), &kind, "{type_code}");
+            assert_eq!(group.subtype(), subtype, "{type_code}");
+            assert_eq!(
+                group.props().get("_cxsmilesindex").map(String::as_str),
+                Some((index + 1).to_string().as_str())
+            );
+            assert_eq!(
+                group.props().get("index").map(String::as_str),
+                Some((index + 1).to_string().as_str())
+            );
+            assert_eq!(group.atoms(), &[AtomId::new(0)], "{type_code}");
+        }
+    }
+
+    #[test]
+    fn cx_progress_polymer_partial_syntax_has_no_search_effect() {
+        let text = "|Sg:n:0:repeat:eu:1:4294967296|";
+        let progress = cosmolkit_cx::parse_cx_extensions_progress(text);
+        assert!(!progress.is_complete());
+        assert!(progress.error().is_some());
+
+        let mut graph = query_graph("CCC");
+        set_query_label(&mut graph);
+        let initial = graph.clone();
+        apply_cx_progress_to_query(&mut graph, &progress)
+            .expect("incomplete local polymer state has no graph effect");
+        assert_eq!(graph, initial);
+        assert!(query_substance_groups(&graph).is_empty());
+        assert_eq!(
+            graph.atom(0).and_then(|atom| atom.prop("atomLabel")),
+            Some("Q_e")
+        );
+    }
+
+    #[test]
+    fn cx_progress_polymer_skip_and_error_follow_source_commit_order() {
+        let skipped_then_bad = "|Sg:n:0::eu:3,Sg:unknown:1|";
+        let progress = cosmolkit_cx::parse_cx_extensions_progress(skipped_then_bad);
+        assert!(!progress.is_complete());
+        let mut skipped_graph = query_graph("CCC");
+        set_query_label(&mut skipped_graph);
+        let skipped_initial = skipped_graph.clone();
+        apply_cx_progress_to_query(&mut skipped_graph, &progress)
+            .expect("invalid crossing atom skips group before source label processing");
+        assert_eq!(skipped_graph, skipped_initial);
+        assert!(query_substance_groups(&skipped_graph).is_empty());
+
+        let invalid_bond = cosmolkit_cx::parse_cx_extensions_progress("|Sg:n:0:label:eu:2|");
+        assert!(invalid_bond.is_complete());
+        let mut graph = query_graph("CCC");
+        set_query_label(&mut graph);
+        let error = apply_cx_progress_to_query(&mut graph, &invalid_bond)
+            .expect_err("source-valid crossing atom reaches checked bond insertion");
+        assert!(
+            error
+                .to_string()
+                .contains("outside the topology with 2 bonds")
+        );
+        assert!(query_substance_groups(&graph).is_empty());
+        assert_eq!(
+            graph.atom(0).unwrap().identity(),
+            QueryAtomIdentity::Element(Element::DUMMY)
+        );
+        assert_eq!(graph.prop("_cxsmilesLabelsProcessed"), Some("1"));
+    }
+
+    #[test]
+    fn cx_progress_polymer_commits_completed_group_before_later_or_outer_failure() {
+        let later_error = "|Sg:n:0,Sg:unknown:1|";
+        let progress = cosmolkit_cx::parse_cx_extensions_progress(later_error);
+        assert!(!progress.is_complete());
+        let mut graph = query_graph("CC");
+        apply_cx_progress_to_query(&mut graph, &progress)
+            .expect("first complete helper commits before later parser error");
+        let groups = query_substance_groups(&graph);
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].rdkit_sequence_id(), Some(0));
+        assert_eq!(
+            groups[0].props().get("index").map(String::as_str),
+            Some("1")
+        );
+
+        let missing_outer_pipe = "|Sg:n:0:repeat:hh";
+        let progress = cosmolkit_cx::parse_cx_extensions_progress(missing_outer_pipe);
+        assert!(!progress.is_complete());
+        assert!(
+            progress
+                .checkpoints()
+                .iter()
+                .any(|checkpoint| { checkpoint.phase == cosmolkit_cx::CxProgressPhase::Complete })
+        );
+        let mut graph = query_graph("CC");
+        apply_cx_progress_to_query(&mut graph, &progress)
+            .expect("completed polymer helper commits before missing outer pipe");
+        let groups = query_substance_groups(&graph);
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].label(), Some("repeat"));
+        assert_eq!(
+            groups[0].props().get("CONNECT").map(String::as_str),
+            Some("HH")
+        );
+        assert_eq!(groups[0].head_crossing_bonds(), &[BondId::new(0)]);
+    }
+}
+
+#[cfg(test)]
+mod cx_progress_attachments_tests {
+    use super::{QueryGraph, apply_cx_progress_to_query, parse_smarts_graph};
+
+    fn query_graph(smarts: &str) -> QueryGraph {
+        parse_smarts_graph(smarts)
+            .expect("SMARTS syntax")
+            .finish()
+            .expect("query graph")
+    }
+
+    fn bond_prop<'a>(graph: &'a QueryGraph, bond_index: usize, key: &str) -> Option<&'a str> {
+        graph
+            .bond(bond_index)
+            .and_then(|bond| bond.bond().prop(key))
+    }
+
+    #[test]
+    fn cx_progress_attachments_direct_and_progress_preserve_source_values() {
+        let text = "|m:0:1.1.99,3:0.|";
+        let parsed = cosmolkit_cx::parse_cx_extensions(text).expect("complete attachments");
+        let progress = cosmolkit_cx::parse_cx_extensions_progress(text);
+        assert!(progress.is_complete());
+        assert_eq!(parsed.records(), progress.records());
+
+        let initial = query_graph("CCCC");
+        let mut direct = initial.clone();
+        crate::apply_cx_to_query_graph(&mut direct, &parsed).expect("direct attachment lowering");
+        let mut progressed = initial;
+        apply_cx_progress_to_query(&mut progressed, &progress)
+            .expect("progress attachment lowering");
+        assert_eq!(progressed, direct);
+
+        assert_eq!(
+            bond_prop(&progressed, 0, "_MolFileBondEndPts"),
+            Some("(2 2 2)")
+        );
+        assert_eq!(bond_prop(&progressed, 0, "_MolFileBondAttach"), Some("ANY"));
+        assert_eq!(
+            bond_prop(&progressed, 2, "_MolFileBondEndPts"),
+            Some("(1 1)")
+        );
+        assert_eq!(bond_prop(&progressed, 2, "_MolFileBondAttach"), Some("ANY"));
+        assert_eq!(bond_prop(&progressed, 1, "_MolFileBondEndPts"), None);
+    }
+
+    #[test]
+    fn cx_progress_attachments_skip_invalid_atoms_and_keep_empty_endpoint_count() {
+        let empty_endpoints = cosmolkit_cx::parse_cx_extensions_progress("|m:0:|");
+        assert!(empty_endpoints.is_complete());
+        let mut graph = query_graph("CC");
+        apply_cx_progress_to_query(&mut graph, &empty_endpoints)
+            .expect("empty nested list still commits an empty source endpoint list");
+        assert_eq!(bond_prop(&graph, 0, "_MolFileBondEndPts"), Some("(0)"));
+        assert_eq!(bond_prop(&graph, 0, "_MolFileBondAttach"), Some("ANY"));
+
+        let invalid_primary = cosmolkit_cx::parse_cx_extensions_progress("|m:99:0|");
+        assert!(invalid_primary.is_complete());
+        let mut graph = query_graph("CC");
+        apply_cx_progress_to_query(&mut graph, &invalid_primary)
+            .expect("source-invalid primary atom is skipped");
+        assert_eq!(bond_prop(&graph, 0, "_MolFileBondEndPts"), None);
+        assert_eq!(bond_prop(&graph, 0, "_MolFileBondAttach"), None);
+    }
+
+    #[test]
+    fn cx_progress_attachments_keep_prior_rows_and_reject_later_source_degree() {
+        let later_syntax_error = "|m:0:2,3x:1|";
+        let error_offset = later_syntax_error.find('x').unwrap();
+        let progress = cosmolkit_cx::parse_cx_extensions_progress(later_syntax_error);
+        assert!(!progress.is_complete());
+        assert_eq!(progress.consumed(), error_offset);
+        let mut graph = query_graph("CCCC");
+        apply_cx_progress_to_query(&mut graph, &progress)
+            .expect("the first complete attachment row survives later syntax failure");
+        assert_eq!(bond_prop(&graph, 0, "_MolFileBondEndPts"), Some("(1 3)"));
+        assert_eq!(bond_prop(&graph, 0, "_MolFileBondAttach"), Some("ANY"));
+        assert_eq!(bond_prop(&graph, 2, "_MolFileBondEndPts"), None);
+
+        let partial_endpoint = cosmolkit_cx::parse_cx_extensions_progress("|m:0:2.4294967296|");
+        assert!(!partial_endpoint.is_complete());
+        let mut graph = query_graph("CCC");
+        apply_cx_progress_to_query(&mut graph, &partial_endpoint)
+            .expect("an incomplete nested list does not commit its row");
+        assert_eq!(bond_prop(&graph, 0, "_MolFileBondEndPts"), None);
+        assert_eq!(bond_prop(&graph, 0, "_MolFileBondAttach"), None);
+
+        let later_degree_error = cosmolkit_cx::parse_cx_extensions_progress("|m:0:2,1:0|");
+        assert!(later_degree_error.is_complete());
+        let mut graph = query_graph("CCC");
+        let error = apply_cx_progress_to_query(&mut graph, &later_degree_error)
+            .expect_err("source rejects a position-variation atom with degree two");
+        assert!(
+            error
+                .to_string()
+                .contains("position variation bond to atom with more than one bond")
+        );
+        assert_eq!(bond_prop(&graph, 0, "_MolFileBondEndPts"), Some("(1 3)"));
+        assert_eq!(bond_prop(&graph, 0, "_MolFileBondAttach"), Some("ANY"));
+        assert_eq!(bond_prop(&graph, 1, "_MolFileBondEndPts"), None);
+    }
+}
+
+#[cfg(test)]
+mod cx_progress_directions_tests {
+    use super::{QueryGraph, apply_cx_progress_to_query, parse_smarts_graph};
+    use cosmolkit_model::AtomId;
+    use cosmolkit_types::{BondDirection, BondStereo, ChiralTag};
+
+    fn query_graph(smarts: &str) -> QueryGraph {
+        parse_smarts_graph(smarts)
+            .expect("SMARTS syntax")
+            .finish()
+            .expect("query graph")
+    }
+
+    fn bond_prop<'a>(graph: &'a QueryGraph, bond_index: usize, key: &str) -> Option<&'a str> {
+        graph
+            .bond(bond_index)
+            .and_then(|bond| bond.bond().prop(key))
+    }
+
+    #[test]
+    fn cx_progress_directions_direct_and_progress_preserve_effects() {
+        let wedge_text = "|wU:1.0,wD:2.1|";
+        let parsed = cosmolkit_cx::parse_cx_extensions(wedge_text).expect("complete wedges");
+        let progress = cosmolkit_cx::parse_cx_extensions_progress(wedge_text);
+        assert!(progress.is_complete());
+        assert_eq!(parsed.records(), progress.records());
+
+        let initial = query_graph("C-C-C");
+        let mut direct = initial.clone();
+        crate::apply_cx_to_query_graph(&mut direct, &parsed).expect("direct wedge lowering");
+        let mut progressed = initial;
+        apply_cx_progress_to_query(&mut progressed, &progress).expect("progress wedge lowering");
+        assert_eq!(progressed, direct);
+        assert_eq!(progressed.bond(0).unwrap().endpoints(), (1, 0));
+        assert_eq!(progressed.bond(1).unwrap().endpoints(), (2, 1));
+        assert_eq!(
+            progressed.bond(0).unwrap().bond().direction(),
+            BondDirection::BeginWedge
+        );
+        assert_eq!(
+            progressed.bond(1).unwrap().bond().direction(),
+            BondDirection::BeginDash
+        );
+        assert_eq!(bond_prop(&progressed, 0, "_MolFileBondCfg"), Some("1"));
+        assert_eq!(bond_prop(&progressed, 1, "_MolFileBondCfg"), Some("3"));
+        assert_eq!(progressed.prop("_needsDetectAtomStereo"), Some("1"));
+
+        let mut unknown = query_graph("C-C");
+        unknown.atoms_mut()[1].set_chiral_tag(ChiralTag::TetrahedralCw);
+        let unknown_progress = cosmolkit_cx::parse_cx_extensions_progress("|w:1.0|");
+        apply_cx_progress_to_query(&mut unknown, &unknown_progress)
+            .expect("unknown wedge lowering");
+        assert_eq!(
+            unknown.bond(0).unwrap().bond().direction(),
+            BondDirection::Unknown
+        );
+        assert_eq!(
+            unknown.atom(1).unwrap().chiral_tag(),
+            ChiralTag::Unspecified
+        );
+        assert_eq!(unknown.prop("_needsDetectBondStereo"), Some("1"));
+
+        for (text, expected) in [
+            ("|ctu:1|", BondStereo::Any),
+            ("|c:1|", BondStereo::Cis),
+            ("|t:1|", BondStereo::Trans),
+        ] {
+            let parsed = cosmolkit_cx::parse_cx_extensions(text).expect("complete stereo record");
+            let progress = cosmolkit_cx::parse_cx_extensions_progress(text);
+            let mut initial = query_graph("FC=CF");
+            initial.bonds_mut()[1]
+                .bond_mut()
+                .set_endpoints(AtomId::new(2), AtomId::new(1));
+            let mut direct = initial.clone();
+            crate::apply_cx_to_query_graph(&mut direct, &parsed)
+                .expect("direct double-bond stereo lowering");
+            let mut progressed = initial;
+            apply_cx_progress_to_query(&mut progressed, &progress)
+                .expect("progress double-bond stereo lowering");
+            assert_eq!(progressed, direct);
+            let bond = progressed.bond(1).unwrap().bond();
+            assert_eq!(bond.stereo(), expected);
+            assert_eq!(bond.stereo_atoms(), Some([AtomId::new(3), AtomId::new(0)]));
+            assert_eq!(progressed.prop("_needsDetectBondStereo"), Some("1"));
+        }
+    }
+
+    #[test]
+    fn cx_progress_directions_keeps_prior_effects_on_parse_and_target_failures() {
+        let malformed = "|wU:0.0,1x.1|";
+        let failure = malformed.find('x').unwrap();
+        let progress = cosmolkit_cx::parse_cx_extensions_progress(malformed);
+        assert!(!progress.is_complete());
+        assert_eq!(progress.consumed(), failure);
+        let mut graph = query_graph("C-C");
+        apply_cx_progress_to_query(&mut graph, &progress)
+            .expect("the complete first wedge pair survives later syntax failure");
+        assert_eq!(bond_prop(&graph, 0, "_MolFileBondCfg"), Some("1"));
+        assert_eq!(
+            graph.bond(0).unwrap().bond().direction(),
+            BondDirection::BeginWedge
+        );
+
+        let duplicate = cosmolkit_cx::parse_cx_extensions_progress("|wU:0.0,1.0|");
+        assert!(duplicate.is_complete());
+        let mut graph = query_graph("C-C");
+        assert!(apply_cx_progress_to_query(&mut graph, &duplicate).is_err());
+        assert_eq!(bond_prop(&graph, 0, "_MolFileBondCfg"), Some("1"));
+
+        let mut graph = query_graph("C(C)(C)C");
+        assert_eq!(graph.bond(0).unwrap().endpoints(), (0, 1));
+        assert_eq!(graph.bond(1).unwrap().endpoints(), (0, 2));
+        assert_eq!(graph.bond(2).unwrap().endpoints(), (0, 3));
+        let mismatch = cosmolkit_cx::parse_cx_extensions_progress("|wU:0.0,3.1|");
+        assert!(apply_cx_progress_to_query(&mut graph, &mismatch).is_err());
+        assert_eq!(bond_prop(&graph, 0, "_MolFileBondCfg"), Some("1"));
+        assert_eq!(bond_prop(&graph, 1, "_MolFileBondCfg"), None);
+
+        let stereo_overflow = cosmolkit_cx::parse_cx_extensions_progress("|ctu:1,4294967296|");
+        assert!(!stereo_overflow.is_complete());
+        let mut graph = query_graph("FC=CF");
+        apply_cx_progress_to_query(&mut graph, &stereo_overflow)
+            .expect("the completed double-bond item survives later integer overflow");
+        assert_eq!(graph.bond(1).unwrap().bond().stereo(), BondStereo::Any);
+        assert_eq!(
+            graph.bond(1).unwrap().bond().stereo_atoms(),
+            Some([AtomId::new(0), AtomId::new(3)])
+        );
+
+        let invalid = cosmolkit_cx::parse_cx_extensions_progress("|wD:99.0ctu:99|");
+        let mut graph = query_graph("C-C");
+        apply_cx_progress_to_query(&mut graph, &invalid)
+            .expect("source-invalid atom and bond indices are skipped");
+        assert_eq!(bond_prop(&graph, 0, "_MolFileBondCfg"), None);
+        assert_eq!(graph.bond(0).unwrap().bond().stereo(), BondStereo::None);
+
+        let degree_limited = cosmolkit_cx::parse_cx_extensions_progress("|c:0|");
+        let mut graph = query_graph("C=C");
+        apply_cx_progress_to_query(&mut graph, &degree_limited)
+            .expect("source does not set stereo without two endpoint neighbors");
+        assert_eq!(graph.bond(0).unwrap().bond().stereo(), BondStereo::None);
+        assert_eq!(graph.bond(0).unwrap().bond().stereo_atoms(), None);
     }
 }

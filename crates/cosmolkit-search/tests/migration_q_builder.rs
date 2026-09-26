@@ -674,17 +674,30 @@ fn q07d_primitive_targets_match_and_write_without_narrowing() {
         );
     }
 
-    // Range predicates remain their separately modeled narrow variants and
-    // retain the pinned inclusive open-end comparisons at degree zero.
+    // Pinned GreaterEqualQuery compares its stored threshold with the observed
+    // degree in that order. Thus D{-1} matches degree zero (1 >= 0), while
+    // D{-0} is its exact-bound control; D{1-} rejects degree zero (1 <= 0).
     assert_eq!(
         match_query(&parse("[C&D{0-}]"), &zero_target)
             .expect("evaluate explicit-degree upper range")
             .len(),
         1
     );
-    assert!(
+    assert_eq!(
         match_query(&parse("[C&D{-1}]"), &zero_target)
-            .expect("evaluate explicit-degree lower range")
+            .expect("evaluate source GreaterEqual threshold")
+            .len(),
+        1
+    );
+    assert_eq!(
+        match_query(&parse("[C&D{-0}]"), &zero_target)
+            .expect("evaluate zero threshold")
+            .len(),
+        1
+    );
+    assert!(
+        match_query(&parse("[C&D{1-}]"), &zero_target)
+            .expect("evaluate source LessEqual threshold")
             .is_empty()
     );
     assert_eq!(

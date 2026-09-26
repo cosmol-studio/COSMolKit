@@ -16,7 +16,7 @@
 //! `search::smarts_parse` and reuses these types.
 //!
 //! - Atom adjacency is built on-the-fly from `mol.bonds()` when not cached.
-//! - Ring info is built on-the-fly from `mol.atoms()`/`mol.bonds()` when not cached.
+//! - Ring info is rebuilt from the current target topology for each detached match context.
 //! - The SMARTS parser is a recursive-descent parser reproducing the Daylon
 //!   Wilkins / RDKit SMARTS grammar.
 
@@ -32,7 +32,7 @@ pub use cosmolkit_model::{
 use cosmolkit_core::{
     PeriodicTableError, RingInfo, ValenceAssignment, ValenceModel, atomic_mass as rdkit_atomic_mass,
 };
-use cosmolkit_model::{AdjacencyList, Atom, AtomId, Bond, BondSpec};
+use cosmolkit_model::{AdjacencyList, Atom, AtomId, Bond, BondSpec, QueryAtom, QueryBond};
 use cosmolkit_types::{BondOrder, BondStereo, ChiralTag, Hybridization};
 
 #[derive(Clone)]
@@ -117,11 +117,13 @@ fn match_atom_range_query(
         return false;
     };
     match range.bounds() {
-        AtomRangeBounds::LessEqual(upper) => {
-            greater_equal_query_match(upper, value, 0, false, |observed| observed)
+        AtomRangeBounds::LessEqual(threshold) => {
+            // RDKit✔️✔️: LessEqualQuery.h::Match compares queryCmp(d_val, mfArg, tol) <= 0.
+            less_equal_query_match(threshold, value, 0, false, |observed| observed)
         }
-        AtomRangeBounds::GreaterEqual(lower) => {
-            less_equal_query_match(lower, value, 0, false, |observed| observed)
+        AtomRangeBounds::GreaterEqual(threshold) => {
+            // RDKit✔️✔️: GreaterEqualQuery.h::Match compares queryCmp(d_val, mfArg, tol) >= 0.
+            greater_equal_query_match(threshold, value, 0, false, |observed| observed)
         }
         AtomRangeBounds::Inclusive {
             lower,
@@ -517,7 +519,7 @@ fn finalize_atom_ring_size_query(
         (RangeQueryType::Less, QueryNode::Predicate(AtomQueryPredicate::InRingOfSize(value))) => {
             Ok(QueryNode::predicate(AtomQueryPredicate::Range(
                 AtomRangeQuery::new(
-                    AtomRangeBounds::GreaterEqual(value),
+                    AtomRangeBounds::LessEqual(value),
                     AtomRangeDataFunction::AtomRingSize {
                         lower: value,
                         upper: -1,
@@ -532,7 +534,7 @@ fn finalize_atom_ring_size_query(
             QueryNode::Predicate(AtomQueryPredicate::InRingOfSize(value)),
         ) => Ok(QueryNode::predicate(AtomQueryPredicate::Range(
             AtomRangeQuery::new(
-                AtomRangeBounds::LessEqual(value),
+                AtomRangeBounds::GreaterEqual(value),
                 AtomRangeDataFunction::AtomRingSize {
                     lower: -1,
                     upper: value,
@@ -1249,8 +1251,8 @@ pub(crate) fn make_atom_possible_ring_range_query(
     }
 
     let bounds = match (lower, upper) {
-        (None, Some(value)) => AtomRangeBounds::LessEqual(value),
-        (Some(value), None) => AtomRangeBounds::GreaterEqual(value),
+        (None, Some(value)) => AtomRangeBounds::GreaterEqual(value),
+        (Some(value), None) => AtomRangeBounds::LessEqual(value),
         (Some(lower), Some(upper)) => AtomRangeBounds::Inclusive {
             lower,
             upper,
@@ -3121,22 +3123,32 @@ fn ensure_adjacency(mol: &impl SearchTargetAccess) -> AdjacencyList {
     mol.adjacency().clone()
 }
 
-/// RDKit✔️❌: Returns a `RingInfo` for `mol`, using the cached copy if
-/// available. When absent we build fresh from the molecule topology — this is
-/// O(atoms × SSSR) and guaranteed to match RDKit's SSSR perception.
+/// Build current-target ring information for detached query evaluation.
 fn ensure_ring_info(mol: &impl SearchTargetAccess) -> Option<RingInfo> {
-    // RDKit✔️❌: RDKit stores ring info inline; COSMolKit caches optionally.
-    if let Some(cached) = mol.ring_info() {
-        return Some(cached.clone());
-    }
-    // Ring info not cached - compute from the detached topology.
-    cosmolkit_core::find_sssr_from_parts(mol.num_atoms(), mol.bonds(), mol.adjacency()).ok()
+    // RDKit✔️❌: static inline int queryIsAtomInRing(Atom const *at) {
+    // RDKit✔️❌:   return at->getOwningMol().getRingInfo()->numAtomRings(at->getIdx()) != 0;
+    // RDKit✔️❌: };
+    // The source reads RingInfo attached to the current owning molecule. A
+    // detached optional RingInfo has no topology identity, so rebuild from the
+    // canonical current topology instead of trusting potentially stale state.
+    // Complexity: source ring perception is prepared once and then queried;
+    // this builds SSSR state per match context (O(V × SSSR), O(V+E) storage).
+    let topology = mol.topology_block();
+    cosmolkit_core::find_sssr_from_parts(topology.atoms.len(), &topology.bonds, &topology.adjacency)
+        .ok()
 }
 
 fn ensure_valence_assignment(mol: &impl SearchTargetAccess) -> Option<ValenceAssignment> {
-    if let Some(cached) = mol.valence() {
-        return Some(cached.clone());
-    }
+    // RDKit✔️❌: void Atom::updatePropertyCache(bool strict) {
+    // RDKit✔️❌:   calcExplicitValence(strict);
+    // RDKit✔️❌:   calcImplicitValence(strict);
+    // RDKit✔️❌: }
+    // A detached target's optional valence vector carries no topology identity,
+    // so it cannot prove that its cached fields describe this current topology.
+    // Recompute the source property-cache values from the target topology.
+    // Complexity: RDKit updates the attached atom cache once before matching;
+    // this detached context assigns the values in O(V+E) with O(V) output
+    // storage. It avoids trusting stale data, at the cost of recomputation.
     cosmolkit_core::assign_valence_with_options_for_topology(
         mol.topology_block(),
         ValenceModel::RdkitLike,
@@ -4541,7 +4553,7 @@ pub(crate) fn atom_predicate_matches_with_target_context(
         // RDKit✔️✔️: ring bond count ≤ N.
         AtomQueryPredicate::RingBondCountLessEqual(n) => {
             if let Some(ri) = &ring_info {
-                query_atom_ring_bond_count(atom, adj, mol, ri) as u8 <= *n
+                query_atom_ring_bond_count(atom, adj, mol, ri) <= i32::from(*n)
             } else {
                 false
             }
@@ -4664,14 +4676,14 @@ pub(crate) fn atom_predicate_matches_with_target_context(
         }
         AtomQueryPredicate::SmallestRingSizeLessEqual(n) => {
             if let Some(ri) = &ring_info {
-                query_atom_min_ring_size(atom, ri) as u8 <= *n
+                query_atom_min_ring_size(atom, ri) <= usize::from(*n)
             } else {
                 false
             }
         }
         AtomQueryPredicate::SmallestRingSizeGreaterEqual(n) => {
             if let Some(ri) = &ring_info {
-                query_atom_min_ring_size(atom, ri) as u8 >= *n
+                query_atom_min_ring_size(atom, ri) >= usize::from(*n)
             } else {
                 false
             }
@@ -4946,14 +4958,14 @@ pub(crate) fn bond_predicate_matches_with_target_context(
         }
         BondQueryPredicate::NumRingBondsGreaterEqual(n) => {
             if let Some(ri) = &ring_info {
-                query_is_bond_in_n_rings(bond, ri) as u8 >= *n
+                query_is_bond_in_n_rings(bond, ri) >= usize::from(*n)
             } else {
                 false
             }
         }
         BondQueryPredicate::NumRingBondsLessEqual(n) => {
             if let Some(ri) = &ring_info {
-                query_is_bond_in_n_rings(bond, ri) as u8 <= *n
+                query_is_bond_in_n_rings(bond, ri) <= usize::from(*n)
             } else {
                 false
             }
@@ -4997,10 +5009,10 @@ fn query_cmp(target: i32, observed: i32, tolerance: i32) -> i32 {
     // Local complexity review: both implementations perform one subtraction,
     // at most two ordered comparisons, and return in O(1) time and O(1)
     // space. The Rust integer representation matches the `int` query aliases
-    // used by RDKit's atom and bond queries. No allocation, clone, lookup,
-    // collection, scan, or extra hot-path branch is introduced. Modeled
-    // SMARTS query/data values are bounded well inside the i32 subtraction
-    // range, so C++ signed-overflow behavior is outside the supported state.
+    // used by RDKit's atom and bond queries. C++ signed subtraction (including
+    // `-tol`) is undefined if it overflows; equivalence is claimed on the
+    // source-defined domain where those operations are representable. No
+    // wider arithmetic is substituted for behavior RDKit does not define.
     let difference = target - observed;
     if difference <= tolerance {
         if difference >= -tolerance { 0 } else { -1 }
@@ -5775,53 +5787,65 @@ pub(crate) fn bond_queries_match(
     bond_query_local_match(&first_value, first_negated, &second_value, second_negated)
 }
 
-fn query_atom_query_match(
+pub(crate) fn query_atom_query_match(
     query: &QueryNode<AtomQueryPredicate>,
-    what: &Atom,
+    what_query: Option<&QueryNode<AtomQueryPredicate>>,
+    what_atom: &Atom,
     mol: &impl SearchTargetAccess,
+    ctx: &QueryMatchContext,
 ) -> Result<bool, PeriodicTableError> {
-    // RDKit✔️❌: bool QueryAtom::QueryMatch(QueryAtom const *what) const {
-    // RDKit✔️❌:   PRECONDITION(what, "bad query atom");
-    // RDKit✔️❌:   PRECONDITION(dp_query, "no query set");
-    // RDKit✔️❌:   if (!what->hasQuery()) {
-    // RDKit✔️❌:     return dp_query->Match(what);
-    // RDKit✔️❌:   } else {
-    // RDKit✔️❌:     return queriesMatch(dp_query, what->getQuery());
-    // RDKit✔️❌:   }
-    // RDKit✔️❌: }
-    // Local complexity review: both implementations inspect target query
-    // presence once and dispatch to the canonical ordinary matcher or query
-    // compatibility matcher without cloning or allocating. Query-to-query
-    // matching retains RDKit's query-tree complexity. The ordinary-target
-    // branch inherits atom_matches_query's additional O(V+E) context build,
-    // so this entry is behavior-equivalent but performance-worse until
-    // molecule-derived state is reused canonically.
-    let context = build_query_match_context_for_target(mol);
-    atom_matches_query_with_target_context(what, query, mol, &context)
+    // RDKit✔️✔️: bool QueryAtom::QueryMatch(QueryAtom const *what) const {
+    // RDKit✔️✔️:   PRECONDITION(what, "bad query atom");
+    // RDKit✔️✔️:   PRECONDITION(dp_query, "no query set");
+    // RDKit✔️✔️:   if (!what->hasQuery()) {
+    // RDKit✔️✔️:     return dp_query->Match(what);
+    // RDKit✔️✔️:   } else {
+    // RDKit✔️✔️:     return queriesMatch(dp_query, what->getQuery());
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: }
+    // Local complexity review: the caller maps the canonical target origin to
+    // Some only for source hasQuery. None reuses the ordinary evaluator with
+    // the current target Atom and prebuilt molecule context; Some reuses the
+    // source-shaped query relation. Both branches borrow inputs and add no
+    // per-match
+    // clone, allocation, graph conversion, or target scan. The typed equality
+    // kind lookup in atom_queries_match is O(1); recursive composite traversal
+    // has the source's same child-loop complexity.
+    if let Some(what_query) = what_query {
+        Ok(atom_queries_match(query, what_query))
+    } else {
+        atom_matches_query_with_target_context(what_atom, query, mol, ctx)
+    }
 }
 
-fn query_bond_query_match(
+pub(crate) fn query_bond_query_match(
     query: &QueryNode<BondQueryPredicate>,
-    what: &Bond,
+    what_query: Option<&QueryNode<BondQueryPredicate>>,
+    what_bond: &Bond,
     mol: &impl SearchTargetAccess,
+    ctx: &QueryMatchContext,
 ) -> bool {
-    // RDKit✔️❌: bool QueryBond::QueryMatch(QueryBond const *what) const {
-    // RDKit✔️❌:   PRECONDITION(what, "bad query bond");
-    // RDKit✔️❌:   PRECONDITION(dp_query, "no query set");
-    // RDKit✔️❌:   if (!what->hasQuery()) {
-    // RDKit✔️❌:     return dp_query->Match(what);
-    // RDKit✔️❌:   } else {
-    // RDKit✔️❌:     return queriesMatch(dp_query, what->getQuery());
-    // RDKit✔️❌:   }
-    // RDKit✔️❌: }
-    // Local complexity review: both implementations inspect target query
-    // presence once and dispatch to the canonical ordinary matcher or query
-    // compatibility matcher without cloning or allocating. Query-to-query
-    // matching retains RDKit's query-tree complexity. The ordinary-target
-    // branch inherits bond_matches_query's additional O(V+E) context build,
-    // so performance remains worse until derived state is reused canonically.
-    let context = build_query_match_context_for_target(mol);
-    bond_matches_query_with_target_context(what, query, mol, &context)
+    // RDKit✔️✔️: bool QueryBond::QueryMatch(QueryBond const *what) const {
+    // RDKit✔️✔️:   PRECONDITION(what, "bad query bond");
+    // RDKit✔️✔️:   PRECONDITION(dp_query, "no query set");
+    // RDKit✔️✔️:   if (!what->hasQuery()) {
+    // RDKit✔️✔️:     return dp_query->Match(what);
+    // RDKit✔️✔️:   } else {
+    // RDKit✔️✔️:     return queriesMatch(dp_query, what->getQuery());
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: }
+    // Local complexity review: the caller maps the canonical target origin to
+    // Some only for source hasQuery. None uses the current target Bond and
+    // prebuilt context; Some reuses the source-shaped relation. Both borrow
+    // inputs and add no per-match clone, allocation, graph conversion, or
+    // target scan. The typed equality mapping is O(1); composite matching
+    // retains RDKit's child-loop bounds, including BondAnd's source-specific
+    // second-operand !any branch.
+    if let Some(what_query) = what_query {
+        bond_queries_match(query, what_query)
+    } else {
+        bond_matches_query_with_target_context(what_bond, query, mol, ctx)
+    }
 }
 
 pub(crate) fn and_query_match<T>(
@@ -6291,5 +6315,608 @@ mod atom_mass_tests {
             let query_atom = replace_atom_with_query_atom(target).unwrap();
             assert!(contains_mass(query_atom.predicate(), expected_mass));
         }
+    }
+}
+
+#[cfg(test)]
+mod q40_query_query_tests {
+    use super::*;
+    use crate::target::SearchTarget;
+    use cosmolkit_model::{AtomSpec, CoordinateBlock, TopologyBlock};
+    use cosmolkit_types::Element;
+
+    fn carrier() -> Atom {
+        Atom::from_spec(AtomId::new(0), AtomSpec::new(Element::C))
+    }
+
+    fn relation(
+        first: &QueryNode<AtomQueryPredicate>,
+        second: &QueryNode<AtomQueryPredicate>,
+    ) -> bool {
+        let target_carrier = carrier();
+        let target_query = QueryAtom::from_parts(target_carrier.clone(), second.clone());
+        let topology =
+            TopologyBlock::try_from_parts(vec![target_carrier], Vec::new(), Vec::new(), Vec::new())
+                .expect("fixed query relation target is valid");
+        let coordinates = CoordinateBlock::default();
+        let target =
+            SearchTarget::new(&topology, &coordinates, &topology.stereo_groups, None, None);
+        let context = build_query_match_context(&target);
+        query_atom_query_match(
+            first,
+            Some(target_query.predicate()),
+            &topology.atoms[0],
+            &target,
+            &context,
+        )
+        .expect("explicit query relation does not evaluate atom properties")
+    }
+
+    fn predicate(value: AtomQueryPredicate) -> QueryNode<AtomQueryPredicate> {
+        QueryNode::predicate(value)
+    }
+
+    fn negated(query: QueryNode<AtomQueryPredicate>) -> QueryNode<AtomQueryPredicate> {
+        QueryNode::not(query)
+    }
+
+    fn assert_equal_leaf_relation(query: QueryNode<AtomQueryPredicate>) {
+        assert!(relation(&query, &query), "equal leaf must match: {query:?}");
+        assert!(
+            !relation(&negated(query.clone()), &query),
+            "equal leaves with different negation must not match: {query:?}"
+        );
+        assert!(
+            !relation(&query, &negated(query.clone())),
+            "equal leaves with different negation must not match: {query:?}"
+        );
+        assert!(
+            relation(&negated(query.clone()), &negated(query.clone())),
+            "equal leaves with the same negation must match: {query:?}"
+        );
+    }
+
+    fn assert_unequal_leaf_relation(
+        first: QueryNode<AtomQueryPredicate>,
+        second: QueryNode<AtomQueryPredicate>,
+    ) {
+        assert!(!relation(&first, &second));
+        assert!(!relation(&second, &first));
+        assert!(relation(&negated(first.clone()), &second));
+        assert!(relation(&first, &negated(second.clone())));
+        assert!(relation(&negated(second.clone()), &first));
+        assert!(relation(&second, &negated(first.clone())));
+        assert!(!relation(&negated(first.clone()), &negated(second.clone())));
+    }
+
+    #[test]
+    fn q40_query_query_dispatch_uses_origin_and_current_carrier_identity() {
+        let query = predicate(AtomQueryPredicate::AtomicNumber(8));
+        let target_predicate = QueryNode::or(vec![
+            predicate(AtomQueryPredicate::AtomicNumber(6)),
+            predicate(AtomQueryPredicate::AtomicNumber(8)),
+        ]);
+        let target_carrier = carrier();
+        let explicit = QueryAtom::from_parts(target_carrier.clone(), target_predicate.clone());
+        let carrier_derived =
+            QueryAtom::from_carrier_parts(target_carrier.clone(), target_predicate.clone());
+        assert!(!explicit.predicate_is_carrier_derived());
+        assert!(carrier_derived.predicate_is_carrier_derived());
+        assert_eq!(
+            explicit.try_to_atom().unwrap(),
+            carrier_derived.try_to_atom().unwrap()
+        );
+
+        let topology = TopologyBlock::try_from_parts(
+            vec![target_carrier.clone()],
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        )
+        .expect("fixed query dispatch target is valid");
+        let coordinates = CoordinateBlock::default();
+        let target =
+            SearchTarget::new(&topology, &coordinates, &topology.stereo_groups, None, None);
+        let context = build_query_match_context(&target);
+        let query_before = query.clone();
+        let explicit_before = explicit.clone();
+        let carrier_derived_before = carrier_derived.clone();
+        let carrier_before = target_carrier.clone();
+
+        assert!(
+            query_atom_query_match(
+                &query,
+                Some(explicit.predicate()),
+                &topology.atoms[0],
+                &target,
+                &context,
+            )
+            .unwrap()
+        );
+        assert!(
+            !query_atom_query_match(&query, None, &topology.atoms[0], &target, &context,).unwrap()
+        );
+
+        let effective_oxygen = [Some(8)];
+        let reidentified_target = target.with_atomic_number_overrides(&effective_oxygen);
+        let reidentified_context = build_query_match_context(&reidentified_target);
+        assert!(
+            query_atom_query_match(
+                &query,
+                None,
+                &topology.atoms[0],
+                &reidentified_target,
+                &reidentified_context,
+            )
+            .unwrap()
+        );
+
+        assert_eq!(query, query_before);
+        assert_eq!(explicit, explicit_before);
+        assert_eq!(carrier_derived, carrier_derived_before);
+        assert_eq!(target_carrier, carrier_before);
+    }
+
+    #[test]
+    fn q40_query_query_matches_every_source_equality_description_and_leaf_negation() {
+        let whitelist = [
+            predicate(AtomQueryPredicate::AtomType {
+                atomic_number: 6,
+                aromatic: false,
+            }),
+            predicate(AtomQueryPredicate::RingBondCount(2)),
+            predicate(AtomQueryPredicate::InRingOfSize(5)),
+            predicate(AtomQueryPredicate::SmallestRingSize(4)),
+            predicate(AtomQueryPredicate::ImplicitValence(4)),
+            predicate(AtomQueryPredicate::ExplicitValence(4)),
+            predicate(AtomQueryPredicate::TotalValence(4)),
+            predicate(AtomQueryPredicate::AtomicNumber(6)),
+            predicate(AtomQueryPredicate::ExplicitDegree(3)),
+            predicate(AtomQueryPredicate::TotalDegree(4)),
+            predicate(AtomQueryPredicate::HydrogenCount(2)),
+            predicate(AtomQueryPredicate::IsAromatic(true)),
+            predicate(AtomQueryPredicate::IsAromatic(false)),
+            predicate(AtomQueryPredicate::IsUnsaturated),
+            predicate(AtomQueryPredicate::Mass(12)),
+            predicate(AtomQueryPredicate::FormalCharge(1)),
+            predicate(AtomQueryPredicate::NegativeFormalCharge(1)),
+            predicate(AtomQueryPredicate::HybridizationMatch(Hybridization::Sp2)),
+            predicate(AtomQueryPredicate::InRing),
+            predicate(AtomQueryPredicate::NumAtomRings(2)),
+        ];
+        assert_eq!(whitelist.len(), 20);
+        for query in whitelist {
+            assert_equal_leaf_relation(query);
+        }
+    }
+
+    #[test]
+    fn q40_query_query_uses_source_inequality_for_unequal_whitelisted_values() {
+        let unequal_values = [
+            (
+                AtomQueryPredicate::AtomType {
+                    atomic_number: 6,
+                    aromatic: false,
+                },
+                AtomQueryPredicate::AtomType {
+                    atomic_number: 7,
+                    aromatic: false,
+                },
+            ),
+            (
+                AtomQueryPredicate::RingBondCount(2),
+                AtomQueryPredicate::RingBondCount(3),
+            ),
+            (
+                AtomQueryPredicate::InRingOfSize(5),
+                AtomQueryPredicate::InRingOfSize(6),
+            ),
+            (
+                AtomQueryPredicate::SmallestRingSize(4),
+                AtomQueryPredicate::SmallestRingSize(5),
+            ),
+            (
+                AtomQueryPredicate::ImplicitValence(4),
+                AtomQueryPredicate::ImplicitValence(5),
+            ),
+            (
+                AtomQueryPredicate::ExplicitValence(4),
+                AtomQueryPredicate::ExplicitValence(5),
+            ),
+            (
+                AtomQueryPredicate::TotalValence(4),
+                AtomQueryPredicate::TotalValence(5),
+            ),
+            (
+                AtomQueryPredicate::AtomicNumber(6),
+                AtomQueryPredicate::AtomicNumber(7),
+            ),
+            (
+                AtomQueryPredicate::ExplicitDegree(3),
+                AtomQueryPredicate::ExplicitDegree(4),
+            ),
+            (
+                AtomQueryPredicate::TotalDegree(4),
+                AtomQueryPredicate::TotalDegree(5),
+            ),
+            (
+                AtomQueryPredicate::HydrogenCount(2),
+                AtomQueryPredicate::HydrogenCount(3),
+            ),
+            (AtomQueryPredicate::Mass(12), AtomQueryPredicate::Mass(13)),
+            (
+                AtomQueryPredicate::FormalCharge(1),
+                AtomQueryPredicate::FormalCharge(2),
+            ),
+            (
+                AtomQueryPredicate::NegativeFormalCharge(1),
+                AtomQueryPredicate::NegativeFormalCharge(2),
+            ),
+            (
+                AtomQueryPredicate::HybridizationMatch(Hybridization::Sp2),
+                AtomQueryPredicate::HybridizationMatch(Hybridization::Sp3),
+            ),
+            (
+                AtomQueryPredicate::NumAtomRings(2),
+                AtomQueryPredicate::NumAtomRings(3),
+            ),
+        ];
+        assert_eq!(unequal_values.len(), 16);
+        for (first, second) in unequal_values {
+            assert_unequal_leaf_relation(predicate(first), predicate(second));
+        }
+    }
+
+    #[test]
+    fn q40_query_query_preserves_null_composite_order_and_source_defaults() {
+        let carbon = predicate(AtomQueryPredicate::AtomicNumber(6));
+        let oxygen = predicate(AtomQueryPredicate::AtomicNumber(8));
+        let nitrogen = predicate(AtomQueryPredicate::AtomicNumber(7));
+        let null = predicate(AtomQueryPredicate::Any);
+        assert!(relation(&null, &carbon));
+        assert!(relation(&carbon, &null));
+        assert!(relation(&negated(null.clone()), &carbon));
+        assert!(relation(&carbon, &negated(null)));
+
+        let empty_or = QueryNode::or(Vec::new());
+        let empty_and = QueryNode::and(Vec::new());
+        assert!(!relation(&empty_or, &carbon));
+        assert!(!relation(&carbon, &empty_or));
+        assert!(relation(&empty_and, &carbon));
+        assert!(relation(&carbon, &empty_and));
+
+        let nested_or = QueryNode::or(vec![
+            QueryNode::or(vec![carbon.clone(), oxygen.clone()]),
+            nitrogen.clone(),
+        ]);
+        assert!(relation(&nested_or, &oxygen));
+        assert!(relation(&oxygen, &nested_or));
+
+        let first_and = QueryNode::and(vec![carbon.clone(), oxygen.clone()]);
+        let second_and = QueryNode::and(vec![carbon.clone()]);
+        assert!(!relation(&first_and, &second_and));
+        assert!(relation(&second_and, &first_and));
+
+        let ordered_and = QueryNode::and(vec![carbon.clone(), oxygen.clone()]);
+        let ordered_or = QueryNode::or(vec![carbon.clone(), oxygen.clone()]);
+        assert!(relation(&ordered_and, &ordered_or));
+        assert!(!relation(&ordered_or, &ordered_and));
+
+        let negated_or = negated(QueryNode::or(vec![carbon.clone(), oxygen.clone()]));
+        let negated_and = negated(QueryNode::and(vec![carbon.clone(), oxygen.clone()]));
+        assert!(relation(&negated_or, &oxygen));
+        assert!(relation(
+            &negated_and,
+            &QueryNode::and(vec![carbon.clone(), oxygen.clone()])
+        ));
+
+        let xor = QueryNode::xor(vec![carbon.clone(), oxygen.clone()]);
+        assert!(!relation(&xor, &xor));
+        assert!(!relation(&carbon, &xor));
+        let unlisted = predicate(AtomQueryPredicate::Isotope(13));
+        assert!(!relation(&unlisted, &unlisted));
+        assert!(!relation(&negated(unlisted.clone()), &unlisted));
+        assert!(!relation(
+            &carbon,
+            &predicate(AtomQueryPredicate::FormalCharge(0))
+        ));
+
+        let first_before = nested_or.clone();
+        let second_before = oxygen.clone();
+        assert!(relation(&nested_or, &oxygen));
+        assert_eq!(nested_or, first_before);
+        assert_eq!(oxygen, second_before);
+    }
+}
+
+#[cfg(test)]
+mod q41_query_query_tests {
+    use super::*;
+    use crate::target::SearchTarget;
+    use cosmolkit_model::{AtomSpec, BondId, BondSpec, CoordinateBlock, TopologyBlock};
+    use cosmolkit_types::Element;
+
+    fn atom(index: usize) -> Atom {
+        Atom::from_spec(AtomId::new(index), AtomSpec::new(Element::C))
+    }
+
+    fn bond(order: BondOrder) -> Bond {
+        Bond::from_spec(
+            BondId::new(0),
+            BondSpec::new(AtomId::new(0), AtomId::new(1), order),
+        )
+    }
+
+    fn predicate(value: BondQueryPredicate) -> QueryNode<BondQueryPredicate> {
+        QueryNode::predicate(value)
+    }
+
+    fn negated(query: QueryNode<BondQueryPredicate>) -> QueryNode<BondQueryPredicate> {
+        QueryNode::not(query)
+    }
+
+    fn evaluate(
+        query: &QueryNode<BondQueryPredicate>,
+        target_query_bond: &QueryBond,
+        target_bond: &Bond,
+    ) -> bool {
+        let topology = TopologyBlock::try_from_parts(
+            vec![atom(0), atom(1)],
+            vec![target_bond.clone()],
+            Vec::new(),
+            Vec::new(),
+        )
+        .expect("fixed query bond target is valid");
+        let coordinates = CoordinateBlock::default();
+        let target =
+            SearchTarget::new(&topology, &coordinates, &topology.stereo_groups, None, None);
+        let context = build_query_match_context(&target);
+        query_bond_query_match(
+            query,
+            (!target_query_bond.predicate_is_carrier_derived())
+                .then_some(target_query_bond.predicate()),
+            &topology.bonds[0],
+            &target,
+            &context,
+        )
+    }
+
+    fn relation(
+        first: &QueryNode<BondQueryPredicate>,
+        second: &QueryNode<BondQueryPredicate>,
+    ) -> bool {
+        let carrier = bond(BondOrder::Single);
+        let target_query_bond = QueryBond::from_parts(carrier.clone(), second.clone());
+        evaluate(first, &target_query_bond, &carrier)
+    }
+
+    fn assert_equal_leaf_relation(query: QueryNode<BondQueryPredicate>) {
+        assert!(
+            relation(&query, &query),
+            "equal leaves must match: {query:?}"
+        );
+        assert!(
+            !relation(&negated(query.clone()), &query),
+            "equal leaves with different negation must not match: {query:?}"
+        );
+        assert!(
+            !relation(&query, &negated(query.clone())),
+            "equal leaves with different negation must not match: {query:?}"
+        );
+        assert!(
+            relation(&negated(query.clone()), &negated(query.clone())),
+            "equal leaves with the same negation must match: {query:?}"
+        );
+    }
+
+    fn assert_unequal_leaf_relation(
+        first: QueryNode<BondQueryPredicate>,
+        second: QueryNode<BondQueryPredicate>,
+    ) {
+        assert!(!relation(&first, &second));
+        assert!(!relation(&second, &first));
+        assert!(relation(&negated(first.clone()), &second));
+        assert!(relation(&first, &negated(second.clone())));
+        assert!(relation(&negated(second.clone()), &first));
+        assert!(relation(&second, &negated(first.clone())));
+        assert!(!relation(&negated(first.clone()), &negated(second.clone())));
+    }
+
+    #[test]
+    fn q41_query_query_dispatch_uses_origin_and_current_bond_carrier() {
+        let query = predicate(BondQueryPredicate::Order(BondOrder::Single));
+        let explicit_predicate = predicate(BondQueryPredicate::Order(BondOrder::Double));
+        let carrier_predicate = predicate(BondQueryPredicate::Order(BondOrder::Single));
+        let single_bond = bond(BondOrder::Single);
+        let explicit = QueryBond::from_parts(single_bond.clone(), explicit_predicate.clone());
+        let carrier_derived =
+            QueryBond::from_carrier_parts(single_bond.clone(), carrier_predicate.clone());
+        assert!(!explicit.predicate_is_carrier_derived());
+        assert!(carrier_derived.predicate_is_carrier_derived());
+        assert_eq!(explicit.bond(), carrier_derived.bond());
+        assert_ne!(explicit.predicate(), carrier_derived.predicate());
+
+        let query_before = query.clone();
+        let explicit_before = explicit.clone();
+        let carrier_derived_before = carrier_derived.clone();
+        let single_before = single_bond.clone();
+        assert!(!evaluate(&query, &explicit, &single_bond));
+        assert!(evaluate(&query, &carrier_derived, &single_bond));
+
+        let double_bond = bond(BondOrder::Double);
+        let current_double_carrier =
+            QueryBond::from_carrier_parts(double_bond.clone(), carrier_predicate.clone());
+        assert!(!evaluate(&query, &current_double_carrier, &double_bond));
+        assert_eq!(query, query_before);
+        assert_eq!(explicit, explicit_before);
+        assert_eq!(carrier_derived, carrier_derived_before);
+        assert_eq!(single_bond, single_before);
+    }
+
+    #[test]
+    fn q41_query_query_matches_all_six_equality_descriptions_and_order_values() {
+        for query in [
+            predicate(BondQueryPredicate::InRingOfSize(6)),
+            predicate(BondQueryPredicate::MinRingSize(4)),
+            predicate(BondQueryPredicate::Order(BondOrder::Single)),
+            predicate(BondQueryPredicate::Direction(
+                crate::BondDirection::BeginWedge,
+            )),
+            predicate(BondQueryPredicate::IsInRing(true)),
+            predicate(BondQueryPredicate::NumRingBonds(2)),
+        ] {
+            assert_equal_leaf_relation(query);
+        }
+
+        let orders = [
+            BondOrder::Unspecified,
+            BondOrder::Single,
+            BondOrder::Double,
+            BondOrder::Triple,
+            BondOrder::Quadruple,
+            BondOrder::Quintuple,
+            BondOrder::Hextuple,
+            BondOrder::OneAndHalf,
+            BondOrder::TwoAndHalf,
+            BondOrder::ThreeAndHalf,
+            BondOrder::FourAndHalf,
+            BondOrder::FiveAndHalf,
+            BondOrder::Aromatic,
+            BondOrder::Ionic,
+            BondOrder::Hydrogen,
+            BondOrder::ThreeCenter,
+            BondOrder::DativeOne,
+            BondOrder::Dative,
+            BondOrder::DativeLeft,
+            BondOrder::DativeRight,
+            BondOrder::Other,
+            BondOrder::Zero,
+        ];
+        for order in orders {
+            assert_equal_leaf_relation(predicate(BondQueryPredicate::Order(order)));
+        }
+        for (first_index, first_order) in orders.iter().enumerate() {
+            for (second_index, second_order) in orders.iter().enumerate() {
+                let first = predicate(BondQueryPredicate::Order(*first_order));
+                let second = predicate(BondQueryPredicate::Order(*second_order));
+                assert_eq!(
+                    relation(&first, &second),
+                    first_index == second_index,
+                    "source order values must compare by their pinned enum ordinal: {first_order:?} vs {second_order:?}"
+                );
+            }
+        }
+        assert_unequal_leaf_relation(
+            predicate(BondQueryPredicate::InRingOfSize(5)),
+            predicate(BondQueryPredicate::InRingOfSize(6)),
+        );
+        assert_unequal_leaf_relation(
+            predicate(BondQueryPredicate::MinRingSize(4)),
+            predicate(BondQueryPredicate::MinRingSize(5)),
+        );
+        assert_unequal_leaf_relation(
+            predicate(BondQueryPredicate::Direction(
+                crate::BondDirection::BeginWedge,
+            )),
+            predicate(BondQueryPredicate::Direction(
+                crate::BondDirection::BeginDash,
+            )),
+        );
+        assert_unequal_leaf_relation(
+            predicate(BondQueryPredicate::IsInRing(true)),
+            predicate(BondQueryPredicate::IsInRing(false)),
+        );
+        assert_unequal_leaf_relation(
+            predicate(BondQueryPredicate::NumRingBonds(2)),
+            predicate(BondQueryPredicate::NumRingBonds(3)),
+        );
+    }
+
+    #[test]
+    fn q41_query_query_preserves_source_integer_relation_across_leaf_descriptions() {
+        let single = predicate(BondQueryPredicate::Order(BondOrder::Single));
+        let wedge = predicate(BondQueryPredicate::Direction(
+            crate::BondDirection::BeginWedge,
+        ));
+        let double = predicate(BondQueryPredicate::Order(BondOrder::Double));
+        let dash = predicate(BondQueryPredicate::Direction(
+            crate::BondDirection::BeginDash,
+        ));
+        let one_ring = predicate(BondQueryPredicate::NumRingBonds(1));
+
+        // QueryBond.cpp checks the first description against the six-name list,
+        // then compares BOND_EQUALS_QUERY integer values without checking the
+        // second description. Keep this source behavior; it is not SAT.
+        assert!(relation(&single, &wedge));
+        assert!(relation(&wedge, &single));
+        assert!(!relation(&double, &wedge));
+        assert!(relation(&single, &one_ring));
+        assert!(!relation(&negated(single.clone()), &wedge));
+        assert!(relation(&negated(single), &dash));
+    }
+
+    #[test]
+    fn q41_query_query_preserves_null_composite_order_and_bond_second_and() {
+        let single = predicate(BondQueryPredicate::Order(BondOrder::Single));
+        let double = predicate(BondQueryPredicate::Order(BondOrder::Double));
+        let triple = predicate(BondQueryPredicate::Order(BondOrder::Triple));
+        let null = predicate(BondQueryPredicate::Any);
+        assert!(relation(&null, &single));
+        assert!(relation(&single, &null));
+        assert!(relation(&negated(null.clone()), &single));
+        assert!(relation(&single, &negated(null)));
+
+        let empty_or = QueryNode::or(Vec::new());
+        let empty_and = QueryNode::and(Vec::new());
+        assert!(!relation(&empty_or, &single));
+        assert!(!relation(&single, &empty_or));
+        assert!(relation(&empty_and, &single));
+        assert!(relation(&single, &empty_and));
+
+        let nested_or = QueryNode::or(vec![
+            QueryNode::or(vec![single.clone(), double.clone()]),
+            triple.clone(),
+        ]);
+        assert!(relation(&nested_or, &double));
+        assert!(relation(&double, &nested_or));
+
+        let first_and = QueryNode::and(vec![single.clone(), double.clone()]);
+        let second_and = QueryNode::and(vec![single.clone()]);
+        assert!(!relation(&first_and, &second_and));
+        assert!(relation(&second_and, &first_and));
+
+        let ordered_and = QueryNode::and(vec![single.clone(), double.clone()]);
+        let ordered_or = QueryNode::or(vec![single.clone(), double.clone()]);
+        assert!(relation(&ordered_and, &ordered_or));
+        assert!(!relation(&ordered_or, &ordered_and));
+
+        let matching_second_and = QueryNode::and(vec![single.clone(), single.clone()]);
+        let nonmatching_second_and = QueryNode::and(vec![double.clone(), triple.clone()]);
+        assert!(!relation(&single, &matching_second_and));
+        assert!(relation(&single, &nonmatching_second_and));
+        let atom_single = QueryNode::predicate(AtomQueryPredicate::AtomicNumber(6));
+        let atom_and = QueryNode::and(vec![atom_single.clone(), atom_single.clone()]);
+        assert!(atom_queries_match(&atom_single, &atom_and));
+
+        let ignored_negation = negated(QueryNode::or(vec![single.clone(), double.clone()]));
+        assert!(relation(&ignored_negation, &double));
+        let ignored_and_negation = negated(QueryNode::and(vec![single.clone(), double.clone()]));
+        assert!(relation(
+            &ignored_and_negation,
+            &QueryNode::and(vec![single.clone(), double.clone()])
+        ));
+
+        let xor = QueryNode::xor(vec![single.clone(), double.clone()]);
+        assert!(!relation(&xor, &xor));
+        let unlisted = predicate(BondQueryPredicate::HasStereo);
+        assert!(!relation(&unlisted, &unlisted));
+        assert!(!relation(&negated(unlisted.clone()), &unlisted));
+        assert!(!relation(&unlisted, &single));
+
+        let first_before = first_and.clone();
+        let second_before = second_and.clone();
+        assert!(!relation(&first_and, &second_and));
+        assert_eq!(first_and, first_before);
+        assert_eq!(second_and, second_before);
     }
 }

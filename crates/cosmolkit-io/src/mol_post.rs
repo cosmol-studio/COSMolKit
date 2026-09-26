@@ -13,7 +13,7 @@ use cosmolkit_model::{
     AdjacencyList, AtomId, AtomQueryPredicate, BondQueryPredicate, Conformer3D, CoordinateBlock,
     QueryAtom, QueryAtomConversionError, QueryBond, QueryGraph, QueryNode, QueryStateRef,
     RecursiveStructureQuery, SubstanceGroup, SubstanceGroupId, TopologyBlock, TopologyMapping,
-    remap_query_rows,
+    query_substance_groups, remap_query_rows, replace_query_substance_groups,
 };
 use cosmolkit_types::BondOrder;
 
@@ -600,6 +600,7 @@ fn concrete_to_query(
     coordinates: CoordinateBlock,
     properties: cosmolkit_model::MoleculeProperties,
 ) -> Result<QueryMolBlockRecord, MolPostError> {
+    let substance_groups = topology.substance_groups;
     let atoms = topology
         .atoms
         .into_iter()
@@ -624,7 +625,7 @@ fn concrete_to_query(
     if let Some(name) = properties.name() {
         props.insert("_Name".to_owned(), name.to_owned());
     }
-    let query = QueryGraph::from_parts(
+    let mut query = QueryGraph::from_parts(
         atoms,
         bonds,
         props,
@@ -633,9 +634,10 @@ fn concrete_to_query(
         topology.stereo_groups,
     )
     .map_err(|error| MolPostError::Processing(error.to_string()))?;
+    replace_query_substance_groups(&mut query, substance_groups)
+        .map_err(|error| MolPostError::Processing(error.to_string()))?;
     Ok(QueryMolBlockRecord {
         query,
-        substance_groups: topology.substance_groups,
         properties,
         source_coordinate_dim: coordinates.source_coordinate_dim,
     })
@@ -742,8 +744,9 @@ fn process_smarts_groups(record: &mut MolBlockRecord) -> Result<(), MolPostError
     let MolBlockRecord::Query(query_record) = record else {
         return Ok(());
     };
-    let mut remove = vec![false; query_record.substance_groups.len()];
-    for (index, group) in query_record.substance_groups.iter().enumerate() {
+    let mut groups = query_substance_groups(&query_record.query).to_vec();
+    let mut remove = vec![false; groups.len()];
+    for (index, group) in groups.iter().enumerate() {
         let Some(data) = group.data() else { continue };
         if !matches!(data.query_type.as_deref(), Some("SMARTSQ" | "SQ")) {
             continue;
@@ -783,8 +786,9 @@ fn process_smarts_groups(record: &mut MolBlockRecord) -> Result<(), MolPostError
             }
         }
     }
-    query_record.substance_groups =
-        retain_substance_groups(std::mem::take(&mut query_record.substance_groups), &remove)?;
+    groups = retain_substance_groups(groups, &remove)?;
+    replace_query_substance_groups(&mut query_record.query, groups)
+        .map_err(|error| MolPostError::Processing(error.to_string()))?;
     Ok(())
 }
 
@@ -864,7 +868,7 @@ fn expand_record_attachment_points(record: MolBlockRecord) -> Result<MolBlockRec
                     .map(QueryAtom::try_to_atom)
                     .collect::<Result<Vec<_>, _>>()?,
                 old_bonds.iter().map(|bond| bond.bond().clone()).collect(),
-                query_record.substance_groups,
+                query_substance_groups(&query_record.query).to_vec(),
                 query_record.query.stereo_groups().to_vec(),
             )
             .map_err(|error| MolPostError::AttachmentExpansion(error.to_string()))?;
@@ -892,18 +896,21 @@ fn expand_record_attachment_points(record: MolBlockRecord) -> Result<MolBlockRec
             let (atoms, bonds) = result.query_rows.ok_or(MolPostError::Representation(
                 "attachment query rows missing after expansion",
             ))?;
-            let query = QueryGraph::from_parts(
+            let substance_groups = result.topology.substance_groups;
+            let stereo_groups = result.topology.stereo_groups;
+            let mut query = QueryGraph::from_parts(
                 atoms,
                 bonds,
                 query_record.query.props().clone(),
                 result.coordinates.conformers_2d,
                 result.coordinates.conformers_3d,
-                result.topology.stereo_groups,
+                stereo_groups,
             )
             .map_err(|error| MolPostError::AttachmentExpansion(error.to_string()))?;
+            replace_query_substance_groups(&mut query, substance_groups)
+                .map_err(|error| MolPostError::AttachmentExpansion(error.to_string()))?;
             Ok(MolBlockRecord::Query(QueryMolBlockRecord {
                 query,
-                substance_groups: result.topology.substance_groups,
                 properties: query_record.properties,
                 source_coordinate_dim: result.coordinates.source_coordinate_dim,
             }))
@@ -940,7 +947,7 @@ fn calculate_record_explicit_valence(record: &MolBlockRecord) -> Result<(), MolP
                     .iter()
                     .map(|row| row.bond().clone())
                     .collect(),
-                query.substance_groups.clone(),
+                query_substance_groups(&query.query).to_vec(),
                 query.query.stereo_groups().to_vec(),
             )
             .map_err(|error| MolPostError::Processing(error.to_string()))?,
@@ -1015,7 +1022,7 @@ pub fn finish_mol_block_record(
                         .map(|bond| bond.bond().clone())
                         .collect::<Vec<_>>(),
                 ),
-                substance_groups: query_record.substance_groups.clone(),
+                substance_groups: query_substance_groups(&query_record.query).to_vec(),
                 stereo_groups: query_record.query.stereo_groups().to_vec(),
             };
             process_atom_properties(&mut topology, Some(query_record.query.atoms_mut()))?;
@@ -1036,7 +1043,11 @@ pub fn finish_mol_block_record(
             {
                 *query_bond.bond_mut() = bond.clone();
             }
-            query_record.substance_groups = topology.substance_groups;
+            replace_query_substance_groups(
+                &mut query_record.query,
+                topology.substance_groups.clone(),
+            )
+            .map_err(|error| MolPostError::Processing(error.to_string()))?;
             let mut wrapped = MolBlockRecord::Query(query_record);
             process_smarts_groups(&mut wrapped)?;
             let MolBlockRecord::Query(mut query_record) = wrapped else {
@@ -1045,7 +1056,7 @@ pub fn finish_mol_block_record(
             for (index, query_atom) in query_record.query.atoms().iter().enumerate() {
                 topology.atoms[index] = query_atom.try_to_atom()?;
             }
-            topology.substance_groups = query_record.substance_groups.clone();
+            topology.substance_groups = query_substance_groups(&query_record.query).to_vec();
 
             let coordinates = query_record
                 .query
@@ -1081,7 +1092,7 @@ pub fn finish_mol_block_record(
                 .map(|(query, carrier)| synchronize_query_bond(query, carrier.clone()))
                 .collect();
             let source_coordinate_dim = coordinates.source_coordinate_dim;
-            query_record.query = QueryGraph::from_parts(
+            let mut query = QueryGraph::from_parts(
                 query_atoms,
                 query_bonds,
                 query_props,
@@ -1090,7 +1101,9 @@ pub fn finish_mol_block_record(
                 topology.stereo_groups,
             )
             .map_err(|error| MolPostError::Processing(error.to_string()))?;
-            query_record.substance_groups = topology.substance_groups;
+            replace_query_substance_groups(&mut query, topology.substance_groups)
+                .map_err(|error| MolPostError::Processing(error.to_string()))?;
+            query_record.query = query;
             query_record.properties = properties;
             query_record.source_coordinate_dim = source_coordinate_dim;
             if query_record.query.prop("_NeedsQueryScan").is_some() {

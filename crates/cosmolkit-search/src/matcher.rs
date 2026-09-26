@@ -22,7 +22,7 @@
 use crate::query_behavior::{
     QueryMatchContext, and_query_match, atom_predicate_matches_with_context,
     bond_predicate_matches_with_context, build_query_match_context, or_query_match,
-    xor_query_match,
+    query_atom_query_match, query_bond_query_match, xor_query_match,
 };
 use crate::{AtomQueryPredicate, BondQueryPredicate, QueryAtom, QueryBond, QueryGraph, QueryNode};
 use crate::{SearchTarget, SearchTargetAccess};
@@ -419,6 +419,8 @@ fn json_param_bool(
     };
     match value {
         serde_json::Value::Bool(value) => Ok(Some(*value)),
+        serde_json::Value::Number(value) if value.as_u64() == Some(1) => Ok(Some(true)),
+        serde_json::Value::Number(value) if value.as_u64() == Some(0) => Ok(Some(false)),
         serde_json::Value::String(value) if value == "true" || value == "1" => Ok(Some(true)),
         serde_json::Value::String(value) if value == "false" || value == "0" => Ok(Some(false)),
         _ => Err(SubstructMatchParamsJsonError::InvalidField { field }),
@@ -433,10 +435,11 @@ fn json_param_usize(
         return Ok(None);
     };
     let parsed = match value {
-        serde_json::Value::Number(value) => {
-            value.as_u64().and_then(|value| usize::try_from(value).ok())
-        }
-        serde_json::Value::String(value) => value.parse().ok(),
+        serde_json::Value::Number(value) => value
+            .as_u64()
+            .and_then(|value| u32::try_from(value).ok())
+            .map(|value| value as usize),
+        serde_json::Value::String(value) => value.parse::<u32>().ok().map(|value| value as usize),
         _ => None,
     };
     parsed
@@ -493,7 +496,8 @@ pub fn update_substruct_match_params_from_json(
     //
     // Local complexity review: both parsers are O(input length), followed by
     // eleven expected O(1) object lookups. No molecule/query data is touched
-    // or cloned. Staging prevents partial mutation on malformed input.
+    // or cloned. Each successful field is assigned immediately in the source
+    // PT_OPT_GET order, so a later conversion error preserves earlier updates.
     if json.is_empty() {
         return Ok(());
     }
@@ -501,50 +505,37 @@ pub fn update_substruct_match_params_from_json(
     let object = value
         .as_object()
         .ok_or(SubstructMatchParamsJsonError::InvalidField { field: "root" })?;
-    let use_chirality = json_param_bool(object, "useChirality")?;
-    let use_enhanced_stereo = json_param_bool(object, "useEnhancedStereo")?;
-    let aromatic_matches_conjugated = json_param_bool(object, "aromaticMatchesConjugated")?;
-    let use_query_query_matches = json_param_bool(object, "useQueryQueryMatches")?;
-    let recursion_possible = json_param_bool(object, "recursionPossible")?;
-    let uniquify = json_param_bool(object, "uniquify")?;
-    let max_matches = json_param_usize(object, "maxMatches")?;
-    let max_recursive_matches = json_param_usize(object, "maxRecursiveMatches")?;
-    let num_threads = json_param_i32(object, "numThreads")?;
-    let specified_stereo = json_param_bool(object, "specifiedStereoQueryMatchesUnspecified")?;
-    let aromatic_matches_single_or_double =
-        json_param_bool(object, "aromaticMatchesSingleOrDouble")?;
-
-    if let Some(value) = use_chirality {
+    if let Some(value) = json_param_bool(object, "useChirality")? {
         params.use_chirality = value;
     }
-    if let Some(value) = use_enhanced_stereo {
+    if let Some(value) = json_param_bool(object, "useEnhancedStereo")? {
         params.use_enhanced_stereo = value;
     }
-    if let Some(value) = aromatic_matches_conjugated {
+    if let Some(value) = json_param_bool(object, "aromaticMatchesConjugated")? {
         params.aromatic_matches_conjugated = value;
     }
-    if let Some(value) = use_query_query_matches {
+    if let Some(value) = json_param_bool(object, "useQueryQueryMatches")? {
         params.use_query_query_matches = value;
     }
-    if let Some(value) = recursion_possible {
+    if let Some(value) = json_param_bool(object, "recursionPossible")? {
         params.recursion_possible = value;
     }
-    if let Some(value) = uniquify {
+    if let Some(value) = json_param_bool(object, "uniquify")? {
         params.uniquify = value;
     }
-    if let Some(value) = max_matches {
+    if let Some(value) = json_param_usize(object, "maxMatches")? {
         params.max_matches = value;
     }
-    if let Some(value) = max_recursive_matches {
+    if let Some(value) = json_param_usize(object, "maxRecursiveMatches")? {
         params.max_recursive_matches = value;
     }
-    if let Some(value) = num_threads {
+    if let Some(value) = json_param_i32(object, "numThreads")? {
         params.num_threads = value;
     }
-    if let Some(value) = specified_stereo {
+    if let Some(value) = json_param_bool(object, "specifiedStereoQueryMatchesUnspecified")? {
         params.specified_stereo_query_matches_unspecified = value;
     }
-    if let Some(value) = aromatic_matches_single_or_double {
+    if let Some(value) = json_param_bool(object, "aromaticMatchesSingleOrDouble")? {
         params.aromatic_matches_single_or_double = value;
     }
     Ok(())
@@ -575,21 +566,34 @@ pub fn substruct_match_params_to_json(params: &SubstructMatchParams) -> String {
     //
     // Local complexity review: both implementations serialize the same fixed
     // eleven scalar fields in O(output length), without molecule/query work.
-    let fields = serde_json::json!({
-        "useChirality": params.use_chirality.to_string(),
-        "useEnhancedStereo": params.use_enhanced_stereo.to_string(),
-        "aromaticMatchesConjugated": params.aromatic_matches_conjugated.to_string(),
-        "useQueryQueryMatches": params.use_query_query_matches.to_string(),
-        "recursionPossible": params.recursion_possible.to_string(),
-        "uniquify": params.uniquify.to_string(),
-        "maxMatches": params.max_matches.to_string(),
-        "maxRecursiveMatches": params.max_recursive_matches.to_string(),
-        "numThreads": params.num_threads.to_string(),
-        "specifiedStereoQueryMatchesUnspecified": params.specified_stereo_query_matches_unspecified.to_string(),
-        "aromaticMatchesSingleOrDouble": params.aromatic_matches_single_or_double.to_string(),
-    });
-    serde_json::to_string_pretty(&fields).expect("fixed scalar JSON serialization cannot fail")
-        + "\n"
+    format!(
+        concat!(
+            "{{\n",
+            "    \"useChirality\": \"{}\",\n",
+            "    \"useEnhancedStereo\": \"{}\",\n",
+            "    \"aromaticMatchesConjugated\": \"{}\",\n",
+            "    \"useQueryQueryMatches\": \"{}\",\n",
+            "    \"recursionPossible\": \"{}\",\n",
+            "    \"uniquify\": \"{}\",\n",
+            "    \"maxMatches\": \"{}\",\n",
+            "    \"maxRecursiveMatches\": \"{}\",\n",
+            "    \"numThreads\": \"{}\",\n",
+            "    \"specifiedStereoQueryMatchesUnspecified\": \"{}\",\n",
+            "    \"aromaticMatchesSingleOrDouble\": \"{}\"\n",
+            "}}\n",
+        ),
+        params.use_chirality,
+        params.use_enhanced_stereo,
+        params.aromatic_matches_conjugated,
+        params.use_query_query_matches,
+        params.recursion_possible,
+        params.uniquify,
+        params.max_matches,
+        params.max_recursive_matches,
+        params.num_threads,
+        params.specified_stereo_query_matches_unspecified,
+        params.aromatic_matches_single_or_double,
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -938,7 +942,7 @@ fn atom_label_matches(
     )
 }
 
-fn atom_matches(query_atom: &QueryAtom, mol_atom: &Atom, _mol: &SearchTarget<'_>) -> bool {
+fn atom_matches(query_atom: &QueryAtom, mol_atom: &Atom, mol: &SearchTarget<'_>) -> bool {
     // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/Atom.cpp :: Atom::Match
     // RDKit✔️✔️: bool Atom::Match(Atom const *what) const {
     // RDKit✔️✔️:   PRECONDITION(what, "bad query atom");
@@ -972,20 +976,24 @@ fn atom_matches(query_atom: &QueryAtom, mol_atom: &Atom, _mol: &SearchTarget<'_>
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION
     //
-    // Local complexity review: the plain-atom path is constant time and uses
-    // only scalar field reads, exactly as the source. No allocation, cloning,
-    // molecule scan, keyed lookup, or temporary collection is introduced.
-    if query_atom.atomic_number() != mol_atom.atomic_number() {
+    // Behavior: `None` and an explicit zero isotope both represent RDKit's
+    // `getIsotope() == 0`. The target atomic-number accessor also preserves the
+    // effective source identity used by detached matching overrides.
+    // Complexity: the source performs constant-time scalar reads. This path
+    // adds one O(1) target-identity access (an optional indexed override read),
+    // with no allocation, cloning, molecule scan, keyed lookup, or collection.
+    let query_atomic_number = query_atom.atomic_number();
+    let target_atomic_number = mol.query_atomic_number(mol_atom);
+    if query_atomic_number != target_atomic_number {
         return false;
     }
-    if query_atom.atomic_number() == 0 {
-        return match (query_atom.isotope(), mol_atom.isotope()) {
-            (Some(query_isotope), Some(mol_isotope)) => query_isotope == mol_isotope,
-            _ => true,
-        };
+    let query_isotope = query_atom.isotope().unwrap_or(0);
+    let target_isotope = mol_atom.isotope().unwrap_or(0);
+    if query_atomic_number == 0 {
+        return query_isotope == 0 || target_isotope == 0 || query_isotope == target_isotope;
     }
     (query_atom.formal_charge() == 0 || query_atom.formal_charge() == mol_atom.formal_charge())
-        && (query_atom.isotope().is_none() || query_atom.isotope() == mol_atom.isotope())
+        && (query_isotope == 0 || query_isotope == target_isotope)
         && (query_atom.radical_electrons() == 0
             || query_atom.radical_electrons() == mol_atom.radical_electrons())
 }
@@ -1320,9 +1328,9 @@ impl Vf2Pair {
 
 #[derive(Debug, Clone, Copy)]
 struct NodeInfo {
-    id: usize,
-    in_deg: usize,
-    out_deg: usize,
+    id: u32,
+    in_deg: u32,
+    out_deg: u32,
 }
 
 fn node_info_cmp1(a: &NodeInfo, b: &NodeInfo) -> std::cmp::Ordering {
@@ -1410,9 +1418,12 @@ fn sort_nodes_by_frequency(g: &Vf2Graph) -> Vec<NodeId> {
     // RDKit✔️✔️:   std::sort(vect.begin(), vect.end(), nodeInfoComp1);
     let mut vect: Vec<NodeInfo> = (0..g.n_atoms)
         .map(|i| {
-            let deg = g.out_degree(i);
+            // RDKit's NodeInfo uses node_id (uint32_t) for all three fields.
+            // The detached graph uses usize indices, so convert at this
+            // source-width metadata boundary and widen IDs when returning.
+            let deg = g.out_degree(i) as u32;
             NodeInfo {
-                id: i,
+                id: i as u32,
                 in_deg: deg,
                 out_deg: deg,
             }
@@ -1442,13 +1453,17 @@ fn sort_nodes_by_frequency(g: &Vf2Graph) -> Vec<NodeId> {
             run += 1;
         }
         for j in 0..run {
-            vect[i + j].in_deg += vect[i + j].out_deg; // valence sum
-            vect[i + j].out_deg = run; // frequency
+            // `NodeInfo::in` is uint32_t upstream, so unsigned overflow wraps
+            // even in debug builds where ordinary Rust addition would panic.
+            vect[i + j].in_deg = vect[i + j].in_deg.wrapping_add(vect[i + j].out_deg); // valence sum
+            vect[i + j].out_deg = run as u32; // frequency
         }
         i += run;
     }
 
     // RDKit✔️✔️:   std::sort(vect.begin(), vect.end(), nodeInfoComp2);
+    // The source comparator has no node-ID tiebreak; equal records remain
+    // unordered just as with std::sort, so do not add a stable ID key here.
     vect.sort_unstable_by(node_info_cmp2);
 
     // RDKit✔️✔️:   node_id *nodes = new node_id[vect.size()];
@@ -1461,7 +1476,7 @@ fn sort_nodes_by_frequency(g: &Vf2Graph) -> Vec<NodeId> {
     // Complexity review: both versions allocate O(V) node metadata and an
     // O(V) result, perform two O(V log V) unstable sorts, and scan runs in
     // O(V). Degree lookup and all loop bodies remain O(1) per visited node.
-    vect.iter().map(|ni| ni.id).collect()
+    vect.iter().map(|ni| ni.id as usize).collect()
 }
 
 // RDKit source (vf2.hpp), VF2SubState class:
@@ -3012,7 +3027,7 @@ fn rdkit_match_final_check(
     c1: &[NodeId],
     c2: &[NodeId],
     setup: &MolMatchFinalCheckSetup,
-    matches_seen: &mut Vec<Vec<bool>>,
+    matches_seen: &mut HashSet<Vec<bool>>,
 ) -> Result<bool, SubstructMatchError> {
     // BEGIN RDKIT CPP FUNCTION MolMatchFinalCheckFunctor::operator()
     // RDKit✔️✔️: bool MolMatchFinalCheckFunctor::operator()(const std::uint32_t q_c[],
@@ -3058,7 +3073,10 @@ fn rdkit_match_final_check(
     }
     let match_key = if params.uniquify {
         let mask = match_mask(&q_to_mol, mol.num_atoms());
-        if matches_seen.iter().any(|existing| *existing == mask) {
+        // RDKit's unordered_set gives expected constant-time membership after
+        // hashing the target-atom mask. HashSet mirrors that lookup; only
+        // membership is observed, while raw_matches retains VF2 result order.
+        if matches_seen.contains(&mask) {
             return Ok(false);
         }
         Some(mask)
@@ -3074,7 +3092,7 @@ fn rdkit_match_final_check(
     // RDKit✔️✔️:   }
     if !params.use_chirality {
         if let Some(mask) = match_key {
-            matches_seen.push(mask);
+            matches_seen.insert(mask);
         }
         return Ok(true);
     }
@@ -3370,7 +3388,7 @@ fn rdkit_match_final_check(
     // RDKit✔️✔️:   }
     // RDKit✔️✔️:   return true;
     if let Some(mask) = match_key {
-        matches_seen.push(mask);
+        matches_seen.insert(mask);
     }
     Ok(true)
 }
@@ -3588,8 +3606,8 @@ fn recursive_matcher(
     )?;
     let root_index = query
         .prop("_queryRootAtom")
-        .and_then(|value| value.parse::<usize>().ok())
-        .unwrap_or(0);
+        .and_then(|value| value.parse::<i32>().ok())
+        .map_or(0, |root_index| root_index as u32 as usize);
     let mut match_starts = vec![false; mol.num_atoms()];
     for matched in matches.into_iter().take(local_params.max_matches) {
         if let Some(&root_atom_idx) = matched.atom_mapping.get(root_index)
@@ -3737,10 +3755,16 @@ fn substruct_match_impl_with_recursive_cache_and_context(
         return Ok(Vec::new());
     }
 
-    // Build VF2 graphs.
-    let q_graph = compiled_graph
-        .cloned()
-        .unwrap_or_else(|| build_vf2_graph(query));
+    // RDKit passes query.getTopology() directly to boost::vf2_all. A compiled
+    // query therefore borrows its prebuilt graph instead of cloning O(Q+E)
+    // adjacency state on each use; the ordinary path still builds a local one.
+    let owned_q_graph;
+    let q_graph = if let Some(compiled_graph) = compiled_graph {
+        compiled_graph
+    } else {
+        owned_q_graph = build_vf2_graph(query);
+        &owned_q_graph
+    };
     let m_graph = build_vf2_graph(mol);
 
     // Build atom matching closure.
@@ -3770,7 +3794,7 @@ fn substruct_match_impl_with_recursive_cache_and_context(
     //                               atomLabeler, bondLabeler, matchChecker,
     //                               pms, params.maxMatches);
     let mut raw_matches: Vec<(Vec<NodeId>, Vec<NodeId>)> = Vec::new();
-    let mut matches_seen: Vec<Vec<bool>> = Vec::new();
+    let mut matches_seen: HashSet<Vec<bool>> = HashSet::new();
     let final_check_setup = MolMatchFinalCheckSetup::new(query, mol, params);
     let mut final_check_error: Option<SubstructMatchError> = None;
     let mut check_fn = |c1: &[NodeId], c2: &[NodeId]| -> bool {
@@ -3792,7 +3816,7 @@ fn substruct_match_impl_with_recursive_cache_and_context(
     };
 
     vf2_entry_all_ordered(
-        &q_graph,
+        q_graph,
         &m_graph,
         &atom_fn,
         &bond_fn,
@@ -3912,7 +3936,7 @@ fn atom_compat(
     //
     // Typed references make the source pointer preconditions
     // unrepresentable. Local complexity review: both implementations perform
-    // the same constant-time option/flag dispatch, one default query or atom
+    // the same constant-time origin/option dispatch, one default atom or query
     // match, the requested property scan, and at most one callback invocation
     // after the default match. Arc callback dispatch is the Rust equivalent of
     // std::function dispatch and allocates nothing per match. Query-tree
@@ -3926,14 +3950,41 @@ fn atom_compat(
         return Ok(extra_atom_check(query_mol, query_atom, mol, mol_atom));
     }
 
-    let matches = evaluate_atom_query(
-        query_atom.predicate(),
-        mol_atom,
-        mol,
-        params,
-        recursive_cache,
-        query_ctx,
-    )?;
+    let target_query = (params.use_query_query_matches
+        && !query_atom.predicate_is_carrier_derived()
+        && mol.atom_has_query(mol_atom.id()))
+    .then(|| mol.atom_query_predicate(mol_atom.id()))
+    .flatten();
+    let matches = if let Some(target_query) = target_query {
+        query_atom_query_match(
+            query_atom.predicate(),
+            Some(target_query),
+            mol_atom,
+            mol,
+            query_ctx,
+        )?
+    } else if query_atom.predicate_is_carrier_derived() {
+        atom_matches(query_atom, mol_atom, mol)
+    } else {
+        // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/QueryAtom.cpp :: QueryAtom::Match
+        // RDKit❗✔️: bool QueryAtom::Match(Atom const *what) const {
+        // RDKit❗✔️:   PRECONDITION(what, "bad query atom");
+        // RDKit❗✔️:   PRECONDITION(dp_query, "no query set");
+        // RDKit❗✔️:   return dp_query->Match(what);
+        // RDKit❗✔️: }
+        // END RDKIT CPP FUNCTION
+        // The existing predicate evaluator applies that explicit query tree
+        // to this ordinary target atom. Carrier-derived rows use Atom::Match
+        // above.
+        evaluate_atom_query(
+            query_atom.predicate(),
+            mol_atom,
+            mol,
+            params,
+            recursive_cache,
+            query_ctx,
+        )?
+    };
     if !matches {
         return Ok(false);
     }
@@ -4108,17 +4159,28 @@ fn bond_compat(
             || (mol_bond.order() == BondOrder::Aromatic && other_matches(query_bond.bond()))
     };
 
-    let plain_order_query = matches!(
-        query_bond.predicate(),
-        QueryNode::Predicate(BondQueryPredicate::Order(_))
-    );
-    let matches = if params.aromatic_matches_conjugated
-        && plain_order_query
+    let query_has_query = !query_bond.predicate_is_carrier_derived();
+    let target_has_query = mol.bond_has_query(mol_bond.id());
+    let matches = if params.use_query_query_matches && query_has_query && target_has_query {
+        let target_query = mol
+            .bond_query_predicate(mol_bond.id())
+            .expect("validated query target exposes each explicit bond predicate");
+        query_bond_query_match(
+            query_bond.predicate(),
+            Some(target_query),
+            mol_bond,
+            mol,
+            query_ctx,
+        )
+    } else if params.aromatic_matches_conjugated
+        && !query_has_query
+        && !target_has_query
         && aromatic_pair_matches(&is_conjugated_single_or_double)
     {
         true
     } else if params.aromatic_matches_single_or_double
-        && plain_order_query
+        && !query_has_query
+        && !target_has_query
         && aromatic_pair_matches(&is_single_or_double)
     {
         true
@@ -4390,6 +4452,463 @@ fn get_most_substituted_core_match<'a>(
         .expect("non-empty matches")
 }
 
+#[cfg(test)]
+mod q86_atom_dispatch_tests {
+    use super::*;
+    use cosmolkit_model::{AtomId, AtomSpec, CoordinateBlock, QueryStateRef, TopologyBlock};
+    use cosmolkit_types::Element;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    fn atom(element: Element, charge: i8, isotope: Option<u16>) -> Atom {
+        let mut spec = AtomSpec::new(element).with_formal_charge(charge);
+        if let Some(isotope) = isotope {
+            spec = spec.with_isotope(isotope);
+        }
+        Atom::from_spec(AtomId::new(0), spec)
+    }
+
+    fn topology(atom: Atom) -> TopologyBlock {
+        TopologyBlock::try_from_parts(vec![atom], Vec::new(), Vec::new(), Vec::new()).unwrap()
+    }
+
+    fn graph(atom: QueryAtom) -> QueryGraph {
+        QueryGraph::from_parts(
+            vec![atom],
+            Vec::new(),
+            Default::default(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        )
+        .unwrap()
+    }
+
+    fn compat(
+        query: &QueryGraph,
+        topology: &TopologyBlock,
+        coordinates: &CoordinateBlock,
+        rows: &[QueryAtom],
+        params: &SubstructMatchParams,
+    ) -> bool {
+        let state = QueryStateRef::try_for_topology(rows, &[], topology).unwrap();
+        let target = SearchTarget::new(topology, coordinates, &topology.stereo_groups, None, None)
+            .try_with_query_state(state)
+            .unwrap();
+        let context = build_query_match_context(&target);
+        atom_compat(
+            &query.atoms()[0],
+            query,
+            &topology.atoms[0],
+            &target,
+            params,
+            None,
+            &context,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn q86_atom_dispatch_requires_option_and_both_explicit_origins() {
+        let carrier = atom(Element::C, 0, None);
+        let topology = topology(carrier.clone());
+        let coordinates = CoordinateBlock::default();
+        let oxygen = QueryNode::predicate(AtomQueryPredicate::AtomicNumber(8));
+        let query = graph(QueryAtom::from_parts(carrier.clone(), oxygen.clone()));
+        let explicit_rows = vec![QueryAtom::from_parts(carrier.clone(), oxygen.clone())];
+        let carrier_rows = vec![QueryAtom::from_carrier_parts(
+            carrier.clone(),
+            oxygen.clone(),
+        )];
+
+        let mut params = SubstructMatchParams::default();
+        assert!(!compat(
+            &query,
+            &topology,
+            &coordinates,
+            &explicit_rows,
+            &params,
+        ));
+        params.use_query_query_matches = true;
+        assert!(compat(
+            &query,
+            &topology,
+            &coordinates,
+            &explicit_rows,
+            &params,
+        ));
+        assert!(!compat(
+            &query,
+            &topology,
+            &coordinates,
+            &carrier_rows,
+            &params,
+        ));
+
+        let carrier_query = graph(QueryAtom::from_carrier_parts(
+            carrier.clone(),
+            oxygen.clone(),
+        ));
+        assert!(compat(
+            &carrier_query,
+            &topology,
+            &coordinates,
+            &explicit_rows,
+            &params,
+        ));
+    }
+
+    #[test]
+    fn q86_atom_dispatch_uses_current_target_carrier_for_fallbacks() {
+        let current_oxygen = atom(Element::O, 1, Some(14));
+        let oxygen_topology = topology(current_oxygen.clone());
+        let coordinates = CoordinateBlock::default();
+        let old_carrier = atom(Element::C, 0, Some(13));
+        let target_rows = vec![QueryAtom::from_parts(
+            old_carrier,
+            QueryNode::predicate(AtomQueryPredicate::AtomicNumber(6)),
+        )];
+        let oxygen_query = graph(QueryAtom::from_parts(
+            atom(Element::C, 0, None),
+            QueryNode::predicate(AtomQueryPredicate::AtomicNumber(8)),
+        ));
+
+        let mut params = SubstructMatchParams::default();
+        assert!(compat(
+            &oxygen_query,
+            &oxygen_topology,
+            &coordinates,
+            &target_rows,
+            &params,
+        ));
+        params.use_query_query_matches = true;
+        assert!(!compat(
+            &oxygen_query,
+            &oxygen_topology,
+            &coordinates,
+            &target_rows,
+            &params,
+        ));
+
+        let constrained_carrier = atom(Element::C, 1, Some(13));
+        let carrier_query = graph(QueryAtom::from_carrier_parts(
+            constrained_carrier.clone(),
+            QueryNode::predicate(AtomQueryPredicate::Any),
+        ));
+        let target_rows = vec![QueryAtom::from_parts(
+            constrained_carrier.clone(),
+            QueryNode::predicate(AtomQueryPredicate::Any),
+        )];
+        let matching_topology = topology(constrained_carrier);
+        assert!(compat(
+            &carrier_query,
+            &matching_topology,
+            &coordinates,
+            &target_rows,
+            &params,
+        ));
+        let mismatching_topology = topology(atom(Element::C, 0, Some(14)));
+        let mismatching_rows = vec![QueryAtom::from_parts(
+            atom(Element::C, 0, None),
+            QueryNode::predicate(AtomQueryPredicate::Any),
+        )];
+        assert!(!compat(
+            &carrier_query,
+            &mismatching_topology,
+            &coordinates,
+            &mismatching_rows,
+            &params,
+        ));
+    }
+
+    #[test]
+    fn q86_atom_dispatch_preserves_override_property_and_post_callback_order() {
+        let mut query_atom = QueryAtom::from_parts(
+            atom(Element::C, 0, None),
+            QueryNode::predicate(AtomQueryPredicate::Any),
+        );
+        query_atom.set_prop("gate", "query").unwrap();
+        let query = graph(query_atom);
+        let mut target_atom = atom(Element::C, 0, None);
+        target_atom.set_prop("gate", "target").unwrap();
+        let topology = topology(target_atom.clone());
+        let coordinates = CoordinateBlock::default();
+        let rows = vec![QueryAtom::from_parts(
+            target_atom,
+            QueryNode::predicate(AtomQueryPredicate::Any),
+        )];
+
+        let calls = Arc::new(AtomicUsize::new(0));
+        let callback_calls = Arc::clone(&calls);
+        let mut params = SubstructMatchParams::default();
+        params.use_query_query_matches = true;
+        params.atom_properties = vec!["gate".to_owned()];
+        params.extra_atom_check = Some(Arc::new(move |_, _, _, _| {
+            callback_calls.fetch_add(1, Ordering::SeqCst);
+            true
+        }));
+        assert!(!compat(&query, &topology, &coordinates, &rows, &params));
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+
+        params.extra_atom_check_overrides_default_check = true;
+        assert!(compat(&query, &topology, &coordinates, &rows, &params));
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+
+        params.extra_atom_check_overrides_default_check = false;
+        params.atom_properties.clear();
+        let rejecting_calls = Arc::new(AtomicUsize::new(0));
+        let callback_calls = Arc::clone(&rejecting_calls);
+        params.extra_atom_check = Some(Arc::new(move |_, _, _, _| {
+            callback_calls.fetch_add(1, Ordering::SeqCst);
+            false
+        }));
+        assert!(!compat(&query, &topology, &coordinates, &rows, &params));
+        assert_eq!(rejecting_calls.load(Ordering::SeqCst), 1);
+    }
+}
+
+#[cfg(test)]
+mod q86_bond_dispatch_tests {
+    use super::*;
+    use cosmolkit_model::{
+        AtomId, AtomSpec, BondId, BondSpec, CoordinateBlock, QueryStateRef, TopologyBlock,
+    };
+    use cosmolkit_types::Element;
+
+    fn atom(index: usize) -> Atom {
+        Atom::from_spec(AtomId::new(index), AtomSpec::new(Element::C))
+    }
+
+    fn bond(order: BondOrder, conjugated: bool) -> Bond {
+        Bond::from_spec(
+            BondId::new(0),
+            BondSpec::new(AtomId::new(0), AtomId::new(1), order).with_conjugated(conjugated),
+        )
+    }
+
+    fn topology(bond: Bond) -> TopologyBlock {
+        TopologyBlock::try_from_parts(vec![atom(0), atom(1)], vec![bond], Vec::new(), Vec::new())
+            .unwrap()
+    }
+
+    fn graph(bond: QueryBond) -> QueryGraph {
+        let atoms = vec![
+            QueryAtom::from_carrier_parts(
+                atom(0),
+                QueryNode::predicate(AtomQueryPredicate::AtomicNumber(6)),
+            ),
+            QueryAtom::from_carrier_parts(
+                atom(1),
+                QueryNode::predicate(AtomQueryPredicate::AtomicNumber(6)),
+            ),
+        ];
+        QueryGraph::from_parts(
+            atoms,
+            vec![bond],
+            Default::default(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        )
+        .unwrap()
+    }
+
+    fn compat(
+        query: &QueryGraph,
+        topology: &TopologyBlock,
+        coordinates: &CoordinateBlock,
+        target_bond: QueryBond,
+        params: &SubstructMatchParams,
+    ) -> bool {
+        let atom_rows: Vec<_> = topology
+            .atoms
+            .iter()
+            .cloned()
+            .map(|atom| {
+                let atomic_number = atom.atomic_number();
+                QueryAtom::from_carrier_parts(
+                    atom,
+                    QueryNode::predicate(AtomQueryPredicate::AtomicNumber(atomic_number)),
+                )
+            })
+            .collect();
+        let bond_rows = [target_bond];
+        let state = QueryStateRef::try_for_topology(&atom_rows, &bond_rows, topology).unwrap();
+        let target = SearchTarget::new(topology, coordinates, &topology.stereo_groups, None, None)
+            .try_with_query_state(state)
+            .unwrap();
+        let context = build_query_match_context(&target);
+        bond_compat(
+            &query.bonds()[0],
+            query,
+            &topology.bonds[0],
+            &target,
+            params,
+            &context,
+        )
+    }
+
+    #[test]
+    fn q86_bond_dispatch_requires_option_and_both_explicit_origins() {
+        let current = bond(BondOrder::Single, false);
+        let topology = topology(current.clone());
+        let coordinates = CoordinateBlock::default();
+        let query = graph(QueryBond::from_parts(
+            current.clone(),
+            QueryNode::predicate(BondQueryPredicate::Order(BondOrder::Single)),
+        ));
+        let explicit_double = QueryBond::from_parts(
+            current.clone(),
+            QueryNode::predicate(BondQueryPredicate::Order(BondOrder::Double)),
+        );
+        let carrier_double = QueryBond::from_carrier_parts(
+            current.clone(),
+            QueryNode::predicate(BondQueryPredicate::Order(BondOrder::Double)),
+        );
+
+        let mut params = SubstructMatchParams::default();
+        assert!(compat(
+            &query,
+            &topology,
+            &coordinates,
+            explicit_double.clone(),
+            &params,
+        ));
+        params.use_query_query_matches = true;
+        assert!(!compat(
+            &query,
+            &topology,
+            &coordinates,
+            explicit_double,
+            &params,
+        ));
+        assert!(compat(
+            &query,
+            &topology,
+            &coordinates,
+            carrier_double,
+            &params,
+        ));
+
+        let carrier_query = graph(QueryBond::from_carrier_parts(
+            current.clone(),
+            QueryNode::predicate(BondQueryPredicate::Order(BondOrder::Aromatic)),
+        ));
+        let explicit_target =
+            QueryBond::from_parts(current, QueryNode::predicate(BondQueryPredicate::Any));
+        assert!(!compat(
+            &carrier_query,
+            &topology,
+            &coordinates,
+            explicit_target,
+            &params,
+        ));
+    }
+
+    #[test]
+    fn q86_bond_dispatch_uses_bond_null_and_source_second_and_relation() {
+        let current = bond(BondOrder::Single, false);
+        let topology = topology(current.clone());
+        let coordinates = CoordinateBlock::default();
+        let query = graph(QueryBond::from_parts(
+            current.clone(),
+            QueryNode::predicate(BondQueryPredicate::Order(BondOrder::Single)),
+        ));
+        let mut params = SubstructMatchParams::default();
+        params.use_query_query_matches = true;
+
+        for (target_predicate, expected) in [
+            (QueryNode::predicate(BondQueryPredicate::Any), true),
+            (
+                QueryNode::and(vec![QueryNode::predicate(BondQueryPredicate::Order(
+                    BondOrder::Double,
+                ))]),
+                true,
+            ),
+            (
+                QueryNode::and(vec![QueryNode::predicate(BondQueryPredicate::Order(
+                    BondOrder::Single,
+                ))]),
+                false,
+            ),
+        ] {
+            let target_bond = QueryBond::from_parts(current.clone(), target_predicate);
+            assert_eq!(
+                compat(&query, &topology, &coordinates, target_bond, &params),
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn q86_bond_dispatch_preserves_aromatic_and_current_property_precedence() {
+        let aromatic = bond(BondOrder::Aromatic, false);
+        let query = graph(QueryBond::from_carrier_parts(
+            aromatic.clone(),
+            QueryNode::predicate(BondQueryPredicate::Order(BondOrder::Aromatic)),
+        ));
+        let conjugated_single = bond(BondOrder::Single, true);
+        let conjugated_topology = topology(conjugated_single.clone());
+        let coordinates = CoordinateBlock::default();
+        let carrier_target = QueryBond::from_carrier_parts(
+            conjugated_single.clone(),
+            QueryNode::predicate(BondQueryPredicate::Order(BondOrder::Single)),
+        );
+        let mut params = SubstructMatchParams::default();
+        params.aromatic_matches_conjugated = true;
+        assert!(compat(
+            &query,
+            &conjugated_topology,
+            &coordinates,
+            carrier_target,
+            &params,
+        ));
+        let explicit_target = QueryBond::from_parts(
+            conjugated_single,
+            QueryNode::predicate(BondQueryPredicate::Order(BondOrder::Single)),
+        );
+        assert!(!compat(
+            &query,
+            &conjugated_topology,
+            &coordinates,
+            explicit_target,
+            &params,
+        ));
+
+        let mut current_single = bond(BondOrder::Single, false);
+        current_single.set_prop("gate", "current").unwrap();
+        let current_topology = topology(current_single);
+        let mut query_double = QueryBond::from_parts(
+            bond(BondOrder::Double, false),
+            QueryNode::predicate(BondQueryPredicate::Order(BondOrder::Double)),
+        );
+        query_double.bond_mut().set_prop("gate", "query").unwrap();
+        let query = graph(query_double);
+        let mut old_double = bond(BondOrder::Double, false);
+        old_double.set_prop("gate", "query").unwrap();
+        let target_row = QueryBond::from_parts(
+            old_double,
+            QueryNode::predicate(BondQueryPredicate::Order(BondOrder::Double)),
+        );
+        params.use_query_query_matches = true;
+        params.bond_properties.clear();
+        assert!(compat(
+            &query,
+            &current_topology,
+            &coordinates,
+            target_row.clone(),
+            &params,
+        ));
+        params.bond_properties = vec!["gate".to_owned()];
+        assert!(!compat(
+            &query,
+            &current_topology,
+            &coordinates,
+            target_row,
+            &params,
+        ));
+    }
+}
+
 fn sort_matches_by_degree_of_core_substitution(
     molecule: &SearchTarget<'_>,
     query: &SearchTarget<'_>,
@@ -4603,7 +5122,6 @@ pub(crate) fn get_substruct_matches_with_compiled_query(
     query: &QueryGraph,
     params: &SubstructMatchParams,
     compiled_graph: &CompiledQueryGraph,
-    query_order: &[usize],
 ) -> SubstructMatchResultList {
     preflight_query_molecule(query)?;
     if mol.num_atoms() == 0 || query.num_atoms() == 0 || query.num_atoms() > mol.num_atoms() {
@@ -4614,13 +5132,16 @@ pub(crate) fn get_substruct_matches_with_compiled_query(
         populate_recursive_query_match_cache(mol, query, params, &mut recursive_locker.cache)?;
     }
     let query_ctx = build_query_match_context(mol);
+    // RDKit's `vf2_all` creates its initial state with `sortNodes=false`.
+    // Keep source graph order for deterministic enumeration even though the
+    // compiled plan retains its separate atom-order metadata.
     substruct_match_impl_with_recursive_cache_and_context(
         mol,
         query,
         params,
         Some(&recursive_locker.cache),
         &query_ctx,
-        Some(query_order),
+        None,
         Some(compiled_graph),
     )
 }
@@ -4628,3 +5149,373 @@ pub(crate) fn get_substruct_matches_with_compiled_query(
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod q66_node_info_comparator_tests {
+    use super::{NodeInfo, node_info_cmp1, node_info_cmp2};
+    use std::cmp::Ordering;
+
+    const fn info(id: u32, in_deg: u32, out_deg: u32) -> NodeInfo {
+        NodeInfo {
+            id,
+            in_deg,
+            out_deg,
+        }
+    }
+
+    #[test]
+    fn q66_node_info_cmp1_orders_out_then_in_and_preserves_ties() {
+        assert_eq!(
+            node_info_cmp1(&info(0, u32::MAX, 1), &info(1, 0, 2)),
+            Ordering::Less
+        );
+        assert_eq!(
+            node_info_cmp1(&info(0, 0, 2), &info(1, u32::MAX, 1)),
+            Ordering::Greater
+        );
+        assert_eq!(
+            node_info_cmp1(&info(0, 1, u32::MAX), &info(1, 2, u32::MAX)),
+            Ordering::Less
+        );
+        assert_eq!(
+            node_info_cmp1(&info(0, 2, u32::MAX), &info(1, 1, u32::MAX)),
+            Ordering::Greater
+        );
+        assert_eq!(
+            node_info_cmp1(
+                &info(u32::MAX, u32::MAX, u32::MAX),
+                &info(0, u32::MAX, u32::MAX)
+            ),
+            Ordering::Equal
+        );
+    }
+
+    #[test]
+    fn q66_node_info_cmp2_orders_zero_frequency_then_out_then_in() {
+        assert_eq!(
+            node_info_cmp2(&info(0, 0, 0), &info(1, 1, u32::MAX)),
+            Ordering::Greater
+        );
+        assert_eq!(
+            node_info_cmp2(&info(0, 1, u32::MAX), &info(1, 0, 0)),
+            Ordering::Less
+        );
+        assert_eq!(
+            node_info_cmp2(&info(0, 0, 1), &info(1, 0, 2)),
+            Ordering::Less
+        );
+        assert_eq!(
+            node_info_cmp2(&info(0, 0, u32::MAX), &info(1, 0, 0)),
+            Ordering::Greater
+        );
+        assert_eq!(
+            node_info_cmp2(&info(0, 1, 1), &info(1, 2, 1)),
+            Ordering::Less
+        );
+        assert_eq!(
+            node_info_cmp2(&info(0, 2, 1), &info(1, 1, 1)),
+            Ordering::Greater
+        );
+        assert_eq!(
+            node_info_cmp2(
+                &info(u32::MAX, u32::MAX, u32::MAX),
+                &info(0, u32::MAX, u32::MAX)
+            ),
+            Ordering::Equal
+        );
+    }
+}
+
+#[cfg(test)]
+mod q33_plain_atom_tests {
+    use super::*;
+    use cosmolkit_model::{
+        AtomId, AtomSpec, BondId, BondSpec, CoordinateBlock, QueryAtomIdentity, QueryBond,
+        TopologyBlock,
+    };
+    use cosmolkit_types::Element;
+
+    fn atom(
+        index: usize,
+        element: Element,
+        formal_charge: i8,
+        isotope: Option<u16>,
+        radical_electrons: u8,
+        aromatic: bool,
+        explicit_hydrogens: u8,
+    ) -> Atom {
+        let mut spec = AtomSpec::new(element)
+            .with_formal_charge(formal_charge)
+            .with_radical_electrons(radical_electrons)
+            .with_aromatic(aromatic)
+            .with_explicit_hydrogens(explicit_hydrogens);
+        if let Some(isotope) = isotope {
+            spec = spec.with_isotope(isotope);
+        }
+        Atom::from_spec(AtomId::new(index), spec)
+    }
+
+    fn carrier_query(atom: Atom) -> QueryAtom {
+        QueryAtom::from_carrier_parts(
+            atom.clone(),
+            QueryNode::predicate(AtomQueryPredicate::AtomicNumber(atom.atomic_number())),
+        )
+    }
+
+    fn topology(atoms: Vec<Atom>, bonds: Vec<Bond>) -> TopologyBlock {
+        TopologyBlock::try_from_parts(atoms, bonds, Vec::new(), Vec::new())
+            .expect("fixed query-matching topology is valid")
+    }
+
+    fn plain_match(
+        query_atom: &QueryAtom,
+        target_atom: Atom,
+        target_atomic_number: Option<u8>,
+    ) -> bool {
+        let topology = topology(vec![target_atom], Vec::new());
+        let coordinates = CoordinateBlock::default();
+        if let Some(atomic_number) = target_atomic_number {
+            let overrides = [Some(atomic_number)];
+            let target =
+                SearchTarget::new(&topology, &coordinates, &topology.stereo_groups, None, None)
+                    .with_atomic_number_overrides(&overrides);
+            atom_matches(query_atom, &topology.atoms[0], &target)
+        } else {
+            let target =
+                SearchTarget::new(&topology, &coordinates, &topology.stereo_groups, None, None);
+            atom_matches(query_atom, &topology.atoms[0], &target)
+        }
+    }
+
+    fn query_graph(atoms: Vec<QueryAtom>, bonds: Vec<QueryBond>) -> QueryGraph {
+        QueryGraph::from_parts(
+            atoms,
+            bonds,
+            Default::default(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        )
+        .expect("fixed detached query graph is valid")
+    }
+
+    #[test]
+    fn q33_plain_atom_uses_current_query_and_effective_target_identity() {
+        let query = carrier_query(atom(0, Element::C, 0, None, 0, false, 0));
+        assert!(plain_match(
+            &query,
+            atom(0, Element::C, 0, None, 0, false, 0),
+            None
+        ));
+        assert!(!plain_match(
+            &query,
+            atom(0, Element::N, 0, None, 0, false, 0),
+            None
+        ));
+        assert!(!plain_match(
+            &query,
+            atom(0, Element::C, 0, None, 0, false, 0),
+            Some(7)
+        ));
+
+        // The ordinary carrier's current identity controls Atom::Match even
+        // when its preserved query-tree snapshot still says atomic number 6.
+        let reidentified = query
+            .clone()
+            .with_identity(QueryAtomIdentity::AtomicNumber(7));
+        assert!(reidentified.predicate_is_carrier_derived());
+        assert_eq!(
+            reidentified.predicate(),
+            &QueryNode::predicate(AtomQueryPredicate::AtomicNumber(6))
+        );
+        assert!(plain_match(
+            &reidentified,
+            atom(0, Element::C, 0, None, 0, false, 0),
+            Some(7)
+        ));
+    }
+
+    #[test]
+    fn q33_plain_atom_dummy_isotopes_use_nonzero_source_defaults() {
+        let mut zero_query = carrier_query(atom(0, Element::DUMMY, 0, None, 0, false, 0));
+        zero_query.set_isotope(Some(0));
+        assert_eq!(zero_query.isotope(), None);
+        let mut zero_target = atom(0, Element::DUMMY, 0, None, 0, false, 0);
+        zero_target.set_isotope(Some(0));
+        assert_eq!(zero_target.isotope(), None);
+
+        let wildcard_query = carrier_query(atom(0, Element::DUMMY, 0, None, 0, false, 0));
+        for target_isotope in [None, Some(13)] {
+            assert!(plain_match(
+                &wildcard_query,
+                atom(0, Element::DUMMY, 0, target_isotope, 0, false, 0),
+                None
+            ));
+        }
+
+        let labeled_query = carrier_query(atom(0, Element::DUMMY, 0, Some(12), 0, false, 0));
+        for (target_isotope, expected) in [(None, true), (Some(12), true), (Some(13), false)] {
+            assert_eq!(
+                plain_match(
+                    &labeled_query,
+                    atom(0, Element::DUMMY, 0, target_isotope, 0, false, 0),
+                    None
+                ),
+                expected,
+                "target isotope {target_isotope:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn q33_plain_atom_nondefault_charge_isotope_and_radical_constraints_are_asymmetric() {
+        for (query_charge, target_charge, expected) in [(1, 1, true), (1, 0, false), (0, 1, true)] {
+            let query = carrier_query(atom(0, Element::C, query_charge, None, 0, false, 0));
+            assert_eq!(
+                plain_match(
+                    &query,
+                    atom(0, Element::C, target_charge, None, 0, false, 0),
+                    None
+                ),
+                expected,
+                "charge query={query_charge}, target={target_charge}"
+            );
+        }
+
+        for (query_isotope, target_isotope, expected) in [
+            (Some(13), Some(13), true),
+            (Some(13), Some(14), false),
+            (None, Some(13), true),
+        ] {
+            let query = carrier_query(atom(0, Element::C, 0, query_isotope, 0, false, 0));
+            assert_eq!(
+                plain_match(
+                    &query,
+                    atom(0, Element::C, 0, target_isotope, 0, false, 0),
+                    None
+                ),
+                expected,
+                "isotope query={query_isotope:?}, target={target_isotope:?}"
+            );
+        }
+
+        for (query_radicals, target_radicals, expected) in
+            [(2, 2, true), (2, 1, false), (0, 1, true)]
+        {
+            let query = carrier_query(atom(0, Element::C, 0, None, query_radicals, false, 0));
+            assert_eq!(
+                plain_match(
+                    &query,
+                    atom(0, Element::C, 0, None, target_radicals, false, 0),
+                    None
+                ),
+                expected,
+                "radicals query={query_radicals}, target={target_radicals}"
+            );
+        }
+
+        let query = carrier_query(atom(0, Element::C, 0, None, 0, true, 4));
+        assert!(plain_match(
+            &query,
+            atom(0, Element::C, 0, None, 0, false, 0),
+            None
+        ));
+    }
+
+    #[test]
+    fn q33_plain_atom_current_identity_reaches_chiral_and_dative_callers() {
+        let query_atom = carrier_query(atom(0, Element::C, 0, None, 0, false, 0));
+        let query = query_graph(vec![query_atom.clone()], Vec::new());
+        let single_topology = topology(vec![atom(0, Element::C, 0, None, 0, false, 0)], Vec::new());
+        let coordinates = CoordinateBlock::default();
+        let target = SearchTarget::new(
+            &single_topology,
+            &coordinates,
+            &single_topology.stereo_groups,
+            None,
+            None,
+        );
+        assert!(chiral_atom_compat(
+            &query_atom,
+            &query,
+            &single_topology.atoms[0],
+            &target
+        ));
+        let overrides = [Some(7)];
+        let target_with_override = SearchTarget::new(
+            &single_topology,
+            &coordinates,
+            &single_topology.stereo_groups,
+            None,
+            None,
+        )
+        .with_atomic_number_overrides(&overrides);
+        assert!(!chiral_atom_compat(
+            &query_atom,
+            &query,
+            &single_topology.atoms[0],
+            &target_with_override
+        ));
+
+        let query_atoms = vec![
+            carrier_query(atom(0, Element::C, 0, None, 0, false, 0)),
+            carrier_query(atom(1, Element::N, 0, None, 0, false, 0)),
+        ];
+        let query_dative = Bond::from_spec(
+            BondId::new(0),
+            BondSpec::new(AtomId::new(0), AtomId::new(1), BondOrder::Dative),
+        );
+        let query_bond = QueryBond::from_carrier_parts(
+            query_dative,
+            QueryNode::predicate(BondQueryPredicate::Order(BondOrder::Dative)),
+        );
+        let query_graph = query_graph(query_atoms, vec![query_bond]);
+        let target_bond = Bond::from_spec(
+            BondId::new(0),
+            BondSpec::new(AtomId::new(0), AtomId::new(1), BondOrder::Dative),
+        );
+        let target_topology = topology(
+            vec![
+                atom(0, Element::C, 0, None, 0, false, 0),
+                atom(1, Element::N, 0, None, 0, false, 0),
+            ],
+            vec![target_bond],
+        );
+        let target_coordinates = CoordinateBlock::default();
+        let target = SearchTarget::new(
+            &target_topology,
+            &target_coordinates,
+            &target_topology.stereo_groups,
+            None,
+            None,
+        );
+        let target_context = build_query_match_context(&target);
+        assert!(bond_compat(
+            query_graph.bond(0).expect("query dative bond"),
+            &query_graph,
+            &target_topology.bonds[0],
+            &target,
+            &SubstructMatchParams::default(),
+            &target_context,
+        ));
+
+        let endpoint_overrides = [Some(7), None];
+        let target_with_override = SearchTarget::new(
+            &target_topology,
+            &target_coordinates,
+            &target_topology.stereo_groups,
+            None,
+            None,
+        )
+        .with_atomic_number_overrides(&endpoint_overrides);
+        let target_context = build_query_match_context(&target_with_override);
+        assert!(!bond_compat(
+            query_graph.bond(0).expect("query dative bond"),
+            &query_graph,
+            &target_topology.bonds[0],
+            &target_with_override,
+            &SubstructMatchParams::default(),
+            &target_context,
+        ));
+    }
+}

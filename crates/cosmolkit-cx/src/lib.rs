@@ -9,5 +9,5 @@ mod parse;
 mod records;
 mod scan;
 
-pub use parse::parse_cx_extensions;
+pub use parse::{parse_cx_extensions, parse_cx_extensions_progress};
 pub use records::*;

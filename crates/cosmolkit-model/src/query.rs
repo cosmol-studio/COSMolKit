@@ -10,10 +10,11 @@ use std::collections::{BTreeMap, BTreeSet};
 use cosmolkit_types::{BondDirection, BondOrder, BondStereo, ChiralTag, Element, Hybridization};
 
 use crate::atom::AtomProperties;
+use crate::sgroup::{SubstanceGroupValidationError, validate_substance_groups};
 use crate::{
     Atom, AtomId, AtomPropertyError, Bond, BondId, Conformer2D, Conformer3D, CoordinateBlock,
-    CoordinateValidationError, MappingValidationError, StereoGroup, TemplateAttachmentOrder,
-    TemplateAttachmentOrderError, TopologyBlock, TopologyMapping,
+    CoordinateValidationError, MappingValidationError, StereoGroup, SubstanceGroup,
+    TemplateAttachmentOrder, TemplateAttachmentOrderError, TopologyBlock, TopologyMapping,
 };
 
 /// A recursive Boolean query tree over a predicate type.
@@ -1259,6 +1260,7 @@ pub struct QueryGraph {
     conformers_2d: Vec<Conformer2D>,
     conformers_3d: Vec<Conformer3D>,
     stereo_groups: Vec<StereoGroup>,
+    substance_groups: Vec<SubstanceGroup>,
 }
 
 impl QueryGraph {
@@ -1289,6 +1291,7 @@ impl QueryGraph {
             conformers_2d,
             conformers_3d,
             stereo_groups,
+            substance_groups: Vec::new(),
         };
         graph.validate()?;
         Ok(graph)
@@ -1345,6 +1348,8 @@ impl QueryGraph {
         coordinates
             .validate_for_atom_count(self.atoms.len())
             .map_err(QueryGraphError::CoordinateValidation)?;
+
+        validate_substance_groups(&self.substance_groups, self.atoms.len(), self.bonds.len())?;
 
         for group in &self.stereo_groups {
             for atom in group.atoms() {
@@ -1537,6 +1542,51 @@ impl QueryGraph {
     }
 }
 
+/// Replace a detached query graph's enhanced-stereo groups after validating
+/// every atom and bond reference against the graph's current rows.
+pub fn replace_query_stereo_groups(
+    graph: &mut QueryGraph,
+    groups: Vec<StereoGroup>,
+) -> Result<(), QueryGraphError> {
+    for group in &groups {
+        for atom in group.atoms() {
+            if atom.index() >= graph.atoms.len() {
+                return Err(QueryGraphError::StereoGroupAtomOutOfRange {
+                    atom: *atom,
+                    atom_count: graph.atoms.len(),
+                });
+            }
+        }
+        for bond in group.bonds() {
+            if bond.index() >= graph.bonds.len() {
+                return Err(QueryGraphError::StereoGroupBondOutOfRange {
+                    bond: *bond,
+                    bond_count: graph.bonds.len(),
+                });
+            }
+        }
+    }
+
+    graph.stereo_groups = groups;
+    Ok(())
+}
+
+/// Borrow the ordered typed substance groups owned by a detached query graph.
+#[must_use]
+pub fn query_substance_groups(graph: &QueryGraph) -> &[SubstanceGroup] {
+    &graph.substance_groups
+}
+
+/// Replace only the ordered typed substance groups owned by a detached query graph.
+pub fn replace_query_substance_groups(
+    graph: &mut QueryGraph,
+    groups: Vec<SubstanceGroup>,
+) -> Result<(), QueryGraphError> {
+    validate_substance_groups(&groups, graph.atoms.len(), graph.bonds.len())?;
+    graph.substance_groups = groups;
+    Ok(())
+}
+
 /// Query graph construction failed because a graph-local constraint was invalid.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum QueryGraphError {
@@ -1564,19 +1614,590 @@ pub enum QueryGraphError {
     StereoGroupAtomOutOfRange { atom: AtomId, atom_count: usize },
     #[error("query stereo group references bond {bond} outside {bond_count} bonds")]
     StereoGroupBondOutOfRange { bond: BondId, bond_count: usize },
+    #[error("query substance group at position {position} has id {id:?}, expected {position}")]
+    SubstanceGroupIdMismatch {
+        position: usize,
+        id: crate::SubstanceGroupId,
+    },
+    #[error(
+        "query substance group {sgroup:?} references atom {atom}, out of range for {atom_count} atoms"
+    )]
+    SubstanceGroupAtomOutOfRange {
+        sgroup: crate::SubstanceGroupId,
+        atom: AtomId,
+        atom_count: usize,
+    },
+    #[error(
+        "query substance group {sgroup:?} references bond {bond}, out of range for {bond_count} bonds"
+    )]
+    SubstanceGroupBondOutOfRange {
+        sgroup: crate::SubstanceGroupId,
+        bond: BondId,
+        bond_count: usize,
+    },
+    #[error("query substance group {sgroup:?} has parent {parent:?} out of range")]
+    SubstanceGroupParentOutOfRange {
+        sgroup: crate::SubstanceGroupId,
+        parent: crate::SubstanceGroupId,
+    },
     #[error("query graph coordinate validation failed: {0}")]
     CoordinateValidation(CoordinateValidationError),
     #[error("query graph adjacency does not match its atom and bond rows")]
     AdjacencyMismatch,
 }
 
+impl From<SubstanceGroupValidationError> for QueryGraphError {
+    fn from(error: SubstanceGroupValidationError) -> Self {
+        match error {
+            SubstanceGroupValidationError::IdMismatch { position, id } => {
+                Self::SubstanceGroupIdMismatch { position, id }
+            }
+            SubstanceGroupValidationError::AtomOutOfRange {
+                sgroup,
+                atom,
+                atom_count,
+            } => Self::SubstanceGroupAtomOutOfRange {
+                sgroup,
+                atom,
+                atom_count,
+            },
+            SubstanceGroupValidationError::BondOutOfRange {
+                sgroup,
+                bond,
+                bond_count,
+            } => Self::SubstanceGroupBondOutOfRange {
+                sgroup,
+                bond,
+                bond_count,
+            },
+            SubstanceGroupValidationError::ParentOutOfRange { sgroup, parent } => {
+                Self::SubstanceGroupParentOutOfRange { sgroup, parent }
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{AtomSpec, BondSpec, Element, StereoGroupKind};
+    use crate::{
+        AtomSpec, BondSpec, Element, SGroupAttachPoint, SGroupBondRole, SGroupBracket,
+        SGroupBracketStyle, SGroupCState, SGroupConnection, SGroupData, SGroupDisplay,
+        StereoGroupKind, SubstanceGroupId, SubstanceGroupKind,
+    };
 
     fn carbon(id: usize) -> QueryAtom {
         QueryAtom::new(AtomId::new(id), AtomSpec::new(Element::C))
+    }
+
+    fn stereo_test_graph() -> QueryGraph {
+        let mut atom0 = QueryAtom::from_identity_parts(
+            AtomId::new(0),
+            QueryAtomIdentity::Element(Element::C),
+            QueryNode::predicate(AtomQueryPredicate::FormalCharge(-1)),
+        );
+        atom0
+            .set_prop("atom-note", "preserved")
+            .expect("valid atom property");
+        let atom1 = QueryAtom::from_carrier_parts(
+            Atom::from_spec(AtomId::new(1), AtomSpec::new(Element::N)),
+            QueryNode::predicate(AtomQueryPredicate::Any),
+        );
+        let bond = QueryBond::from_carrier_parts(
+            Bond::from_spec(
+                BondId::new(0),
+                BondSpec::new(AtomId::new(0), AtomId::new(1), BondOrder::Single),
+            ),
+            QueryNode::predicate(BondQueryPredicate::Order(BondOrder::Single)),
+        );
+
+        QueryGraph::from_parts(
+            vec![atom0, atom1],
+            vec![bond],
+            BTreeMap::from([("graph-note".to_owned(), "preserved".to_owned())]),
+            vec![
+                Conformer2D::new(9, vec![[0.0, 1.0], [2.0, 3.0]]).with_prop("frame", "first"),
+                Conformer2D::new(11, vec![[4.0, 5.0], [6.0, 7.0]]).with_prop("frame", "second"),
+            ],
+            vec![
+                Conformer3D::new(17, vec![[0.0, 1.0, 2.0], [3.0, 4.0, 5.0]], true)
+                    .with_prop("frame", "three-dimensional"),
+                Conformer3D::new(19, vec![[6.0, 7.0, 8.0], [9.0, 10.0, 11.0]], false)
+                    .with_prop("frame", "two-dimensional"),
+            ],
+            vec![
+                StereoGroup::new(
+                    StereoGroupKind::And,
+                    vec![AtomId::new(0)],
+                    vec![BondId::new(0)],
+                )
+                .with_id(7),
+            ],
+        )
+        .expect("valid stereo test graph")
+    }
+
+    #[test]
+    fn query_sgroups_empty_on_new_graph() {
+        let graph = QueryGraph::from_parts(
+            Vec::new(),
+            Vec::new(),
+            BTreeMap::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        )
+        .expect("empty detached query graph is valid");
+
+        assert!(query_substance_groups(&graph).is_empty());
+    }
+
+    #[test]
+    fn query_sgroups_ordered_replace_preserves_typed_and_graph_state() {
+        let mut graph = stereo_test_graph();
+        let original = graph.clone();
+        let groups = vec![
+            SubstanceGroup::new(SubstanceGroupId::new(0), SubstanceGroupKind::Data)
+                .with_rdkit_sequence_id(7)
+                .with_external_id(31)
+                .with_atoms(vec![AtomId::new(0), AtomId::new(0)])
+                .with_label("ordered-first"),
+            SubstanceGroup::new(SubstanceGroupId::new(1), SubstanceGroupKind::Superatom)
+                .with_parent(SubstanceGroupId::new(0))
+                .with_atoms(vec![AtomId::new(1)])
+                .with_label("ordered-second"),
+        ];
+
+        replace_query_substance_groups(&mut graph, groups.clone())
+            .expect("typed query SGroups are replaceable");
+
+        assert_eq!(query_substance_groups(&graph), groups);
+        assert_eq!(graph.clone(), graph);
+        assert_eq!(graph.atoms, original.atoms);
+        assert_eq!(graph.bonds, original.bonds);
+        assert_eq!(graph.adjacency, original.adjacency);
+        assert_eq!(graph.props, original.props);
+        assert_eq!(graph.stereo_groups, original.stereo_groups);
+        assert_eq!(graph.conformers_2d, original.conformers_2d);
+        assert_eq!(graph.conformers_3d, original.conformers_3d);
+        assert_eq!(graph.atoms[0].predicate(), original.atoms[0].predicate());
+        assert_eq!(
+            graph.atoms[0].predicate_is_carrier_derived(),
+            original.atoms[0].predicate_is_carrier_derived()
+        );
+        assert_eq!(graph.atoms[1].predicate(), original.atoms[1].predicate());
+        assert_eq!(
+            graph.atoms[1].predicate_is_carrier_derived(),
+            original.atoms[1].predicate_is_carrier_derived()
+        );
+        assert_eq!(graph.bonds[0].predicate(), original.bonds[0].predicate());
+        assert_eq!(
+            graph.bonds[0].predicate_is_carrier_derived(),
+            original.bonds[0].predicate_is_carrier_derived()
+        );
+    }
+
+    #[test]
+    fn query_sgroups_explicit_transport_survives_graph_reconstruction() {
+        let mut original = stereo_test_graph();
+        let groups = vec![
+            SubstanceGroup::new(SubstanceGroupId::new(0), SubstanceGroupKind::Data)
+                .with_rdkit_sequence_id(23)
+                .with_external_id(41)
+                .with_atoms(vec![AtomId::new(1), AtomId::new(0), AtomId::new(1)])
+                .with_label("transported query data"),
+        ];
+        replace_query_substance_groups(&mut original, groups.clone())
+            .expect("source query SGroups are structurally valid");
+
+        // Rebuilding an existing graph keeps from_parts' new-graph semantics,
+        // then explicitly transports the typed groups into the reconstruction.
+        let mut rebuilt = QueryGraph::from_parts(
+            original.atoms.clone(),
+            original.bonds.clone(),
+            original.props.clone(),
+            original.conformers_2d.clone(),
+            original.conformers_3d.clone(),
+            original.stereo_groups.clone(),
+        )
+        .expect("existing non-SGroup query state reconstructs");
+        replace_query_substance_groups(&mut rebuilt, query_substance_groups(&original).to_vec())
+            .expect("typed SGroups explicitly transport through reconstruction");
+
+        assert_eq!(query_substance_groups(&rebuilt), groups);
+        assert_eq!(rebuilt, original);
+        assert_eq!(rebuilt.atoms, original.atoms);
+        assert_eq!(rebuilt.bonds, original.bonds);
+        assert_eq!(rebuilt.adjacency, original.adjacency);
+        assert_eq!(rebuilt.props, original.props);
+        assert_eq!(rebuilt.stereo_groups, original.stereo_groups);
+        assert_eq!(rebuilt.conformers_2d, original.conformers_2d);
+        assert_eq!(rebuilt.conformers_3d, original.conformers_3d);
+        assert_eq!(
+            rebuilt.atoms[0].predicate_is_carrier_derived(),
+            original.atoms[0].predicate_is_carrier_derived()
+        );
+        assert_eq!(
+            rebuilt.atoms[1].predicate_is_carrier_derived(),
+            original.atoms[1].predicate_is_carrier_derived()
+        );
+        assert_eq!(
+            rebuilt.bonds[0].predicate_is_carrier_derived(),
+            original.bonds[0].predicate_is_carrier_derived()
+        );
+    }
+
+    #[test]
+    fn query_sgroups_preserve_dat_polymer_metadata_and_ordered_references() {
+        let mut graph = stereo_test_graph();
+        let original_atoms = graph.atoms.clone();
+        let original_bonds = graph.bonds.clone();
+        let original_adjacency = graph.adjacency.clone();
+        let original_props = graph.props.clone();
+        let original_stereo_groups = graph.stereo_groups.clone();
+        let original_conformers_2d = graph.conformers_2d.clone();
+        let original_conformers_3d = graph.conformers_3d.clone();
+        let bracket = SGroupBracket::new([[1.25, 2.5, 3.75], [4.5, 5.25, 6.75], [7.0, 8.5, 9.25]]);
+        let groups = vec![
+            SubstanceGroup::new(SubstanceGroupId::new(0), SubstanceGroupKind::Data)
+                .with_external_id(40)
+                .with_atoms(vec![AtomId::new(0), AtomId::new(0)])
+                .with_data(SGroupData {
+                    field_name: Some("FIELD".to_owned()),
+                    field_type: Some("T".to_owned()),
+                    field_info: Some("typed data".to_owned()),
+                    field_display: Some("display specification".to_owned()),
+                    units: Some("ppm".to_owned()),
+                    query_type: Some("Q".to_owned()),
+                    query_op: Some("OP".to_owned()),
+                    values: vec!["first".to_owned(), "second".to_owned()],
+                })
+                .with_data_field("field row one")
+                .with_data_field("field row two")
+                .with_prop("custom", "retained"),
+            SubstanceGroup::new(
+                SubstanceGroupId::new(1),
+                SubstanceGroupKind::StructuralRepeatUnit,
+            )
+            .with_rdkit_sequence_id(73)
+            .with_external_id(91)
+            .with_parent(SubstanceGroupId::new(0))
+            .with_atoms(vec![AtomId::new(1), AtomId::new(0), AtomId::new(1)])
+            .with_parent_atoms(vec![AtomId::new(0), AtomId::new(0)])
+            .with_bonds(vec![BondId::new(0)])
+            .with_bond_role(BondId::new(0), SGroupBondRole::Contained)
+            .with_head_crossing_bonds(vec![BondId::new(0), BondId::new(0)])
+            .with_crossing_bond_correspondence(vec![BondId::new(0), BondId::new(0)])
+            .with_cstates(vec![
+                SGroupCState::new(BondId::new(0), [0.25, 0.5, 0.75]),
+                SGroupCState::new(BondId::new(0), [1.25, 1.5, 1.75]),
+            ])
+            .with_display(SGroupDisplay {
+                brackets: vec![bracket],
+                field_position: Some([10.5, 11.75]),
+                display_tag: Some("polymer-display".to_owned()),
+            })
+            .with_bracket_style(SGroupBracketStyle::Parenthesis)
+            .with_connection(SGroupConnection::HeadToTail)
+            .with_label("repeat unit")
+            .with_subtype("SRU")
+            .with_expansion_state("expanded")
+            .with_class("polymer-class")
+            .with_component_number(6)
+            .with_data_field("polymer field"),
+        ];
+
+        replace_query_substance_groups(&mut graph, groups.clone())
+            .expect("DAT and polymer group state is structurally valid");
+
+        assert_eq!(query_substance_groups(&graph), groups);
+        assert_eq!(
+            query_substance_groups(&graph)[0].kind(),
+            &SubstanceGroupKind::Data
+        );
+        assert_eq!(
+            query_substance_groups(&graph)[1].kind(),
+            &SubstanceGroupKind::StructuralRepeatUnit
+        );
+        assert_eq!(
+            query_substance_groups(&graph)[1].parent(),
+            Some(SubstanceGroupId::new(0))
+        );
+        assert_eq!(
+            query_substance_groups(&graph)[1].atoms(),
+            &[AtomId::new(1), AtomId::new(0), AtomId::new(1)]
+        );
+        assert_eq!(
+            query_substance_groups(&graph)[1].crossing_bond_correspondence(),
+            &[BondId::new(0), BondId::new(0)]
+        );
+        assert_eq!(
+            query_substance_groups(&graph)[1].head_crossing_bonds(),
+            &[BondId::new(0), BondId::new(0)]
+        );
+        assert_eq!(
+            query_substance_groups(&graph)[1].cstates(),
+            &[
+                SGroupCState::new(BondId::new(0), [0.25, 0.5, 0.75]),
+                SGroupCState::new(BondId::new(0), [1.25, 1.5, 1.75]),
+            ]
+        );
+        assert_eq!(
+            query_substance_groups(&graph)[1]
+                .display()
+                .expect("typed polymer display")
+                .brackets,
+            vec![bracket]
+        );
+        assert_eq!(
+            query_substance_groups(&graph)[0].data().unwrap().values,
+            ["first", "second"]
+        );
+        assert_eq!(
+            query_substance_groups(&graph)[0].data_fields(),
+            &["field row one", "field row two"]
+        );
+        assert_eq!(
+            query_substance_groups(&graph)[1].data_fields(),
+            &["polymer field"]
+        );
+        assert_eq!(graph.atoms, original_atoms);
+        assert_eq!(graph.bonds, original_bonds);
+        assert_eq!(graph.adjacency, original_adjacency);
+        assert_eq!(graph.props, original_props);
+        assert_eq!(graph.stereo_groups, original_stereo_groups);
+        assert_eq!(graph.conformers_2d, original_conformers_2d);
+        assert_eq!(graph.conformers_3d, original_conformers_3d);
+        assert_eq!(graph.conformers_2d.len(), 2);
+        assert_eq!(graph.conformers_3d.len(), 2);
+        assert_eq!(graph.conformers_3d[0].id(), 17);
+        assert!(graph.conformers_3d[0].is_3d());
+        assert_eq!(graph.conformers_3d[1].id(), 19);
+        assert!(!graph.conformers_3d[1].is_3d());
+    }
+
+    fn assert_query_sgroup_replacement_is_atomic(
+        invalid: SubstanceGroup,
+        expected: QueryGraphError,
+    ) {
+        let mut graph = stereo_test_graph();
+        let existing = vec![
+            SubstanceGroup::new(SubstanceGroupId::new(0), SubstanceGroupKind::Data)
+                .with_atoms(vec![AtomId::new(0)]),
+        ];
+        replace_query_substance_groups(&mut graph, existing).expect("valid existing SGroup state");
+        let original = graph.clone();
+
+        assert_eq!(
+            replace_query_substance_groups(&mut graph, vec![invalid]),
+            Err(expected)
+        );
+        assert_eq!(graph, original);
+    }
+
+    #[test]
+    fn query_sgroups_replacement_rejects_each_invalid_reference_atomically() {
+        let id = SubstanceGroupId::new(0);
+        let invalid_atom = AtomId::new(2);
+        let invalid_bond = BondId::new(1);
+
+        assert_query_sgroup_replacement_is_atomic(
+            SubstanceGroup::new(SubstanceGroupId::new(1), SubstanceGroupKind::Data),
+            QueryGraphError::SubstanceGroupIdMismatch {
+                position: 0,
+                id: SubstanceGroupId::new(1),
+            },
+        );
+        for invalid in [
+            SubstanceGroup::new(id, SubstanceGroupKind::Data).with_atoms(vec![invalid_atom]),
+            SubstanceGroup::new(id, SubstanceGroupKind::Data).with_parent_atoms(vec![invalid_atom]),
+            SubstanceGroup::new(id, SubstanceGroupKind::Data).with_attach_points(vec![
+                SGroupAttachPoint {
+                    atom: invalid_atom,
+                    leaving_atom: None,
+                    label: None,
+                    order: None,
+                },
+            ]),
+            SubstanceGroup::new(id, SubstanceGroupKind::Data).with_attach_points(vec![
+                SGroupAttachPoint {
+                    atom: AtomId::new(0),
+                    leaving_atom: Some(invalid_atom),
+                    label: None,
+                    order: None,
+                },
+            ]),
+        ] {
+            assert_query_sgroup_replacement_is_atomic(
+                invalid,
+                QueryGraphError::SubstanceGroupAtomOutOfRange {
+                    sgroup: id,
+                    atom: invalid_atom,
+                    atom_count: 2,
+                },
+            );
+        }
+        for invalid in [
+            SubstanceGroup::new(id, SubstanceGroupKind::Data).with_bonds(vec![invalid_bond]),
+            SubstanceGroup::new(id, SubstanceGroupKind::Data)
+                .with_cstates(vec![SGroupCState::new(invalid_bond, [1.0, 2.0, 3.0])]),
+            SubstanceGroup::new(id, SubstanceGroupKind::Data)
+                .with_head_crossing_bonds(vec![invalid_bond]),
+            SubstanceGroup::new(id, SubstanceGroupKind::Data)
+                .with_crossing_bond_correspondence(vec![invalid_bond]),
+        ] {
+            assert_query_sgroup_replacement_is_atomic(
+                invalid,
+                QueryGraphError::SubstanceGroupBondOutOfRange {
+                    sgroup: id,
+                    bond: invalid_bond,
+                    bond_count: 1,
+                },
+            );
+        }
+        assert_query_sgroup_replacement_is_atomic(
+            SubstanceGroup::new(id, SubstanceGroupKind::Data).with_parent(SubstanceGroupId::new(1)),
+            QueryGraphError::SubstanceGroupParentOutOfRange {
+                sgroup: id,
+                parent: SubstanceGroupId::new(1),
+            },
+        );
+    }
+
+    #[test]
+    fn query_sgroups_valid_parent_cycles_are_not_rejected() {
+        let groups = vec![
+            SubstanceGroup::new(SubstanceGroupId::new(0), SubstanceGroupKind::Data)
+                .with_parent(SubstanceGroupId::new(1)),
+            SubstanceGroup::new(SubstanceGroupId::new(1), SubstanceGroupKind::Data)
+                .with_parent(SubstanceGroupId::new(0)),
+        ];
+        let mut graph = stereo_test_graph();
+
+        replace_query_substance_groups(&mut graph, groups.clone())
+            .expect("in-range parent references are structurally valid");
+
+        assert_eq!(query_substance_groups(&graph), groups);
+        graph
+            .validate()
+            .expect("parent cycles are not a model rule");
+    }
+
+    #[test]
+    fn query_stereo_replace_preserves_order_duplicates_and_graph_state() {
+        let mut graph = stereo_test_graph();
+        let original = graph.clone();
+        let replacement = vec![
+            StereoGroup::new(
+                StereoGroupKind::Or,
+                vec![AtomId::new(1), AtomId::new(0), AtomId::new(1)],
+                vec![BondId::new(0)],
+            )
+            .with_id(12),
+            StereoGroup::new(
+                StereoGroupKind::Absolute,
+                vec![AtomId::new(0), AtomId::new(1)],
+                Vec::new(),
+            ),
+        ];
+
+        replace_query_stereo_groups(&mut graph, replacement.clone())
+            .expect("valid ordered stereo replacement");
+
+        assert_eq!(graph.stereo_groups, replacement);
+        assert_eq!(graph.atoms, original.atoms);
+        assert_eq!(graph.bonds, original.bonds);
+        assert_eq!(graph.adjacency, original.adjacency);
+        assert_eq!(graph.props, original.props);
+        assert_eq!(graph.conformers_2d, original.conformers_2d);
+        assert_eq!(graph.conformers_3d, original.conformers_3d);
+        assert_eq!(graph.atoms[0].predicate(), original.atoms[0].predicate());
+        assert!(!graph.atoms[0].predicate_is_carrier_derived());
+        assert_eq!(graph.atoms[1].predicate(), original.atoms[1].predicate());
+        assert!(graph.atoms[1].predicate_is_carrier_derived());
+        assert!(graph.bonds[0].predicate_is_carrier_derived());
+        assert_eq!(graph.conformers_2d[0].id(), 9);
+        assert_eq!(
+            graph.conformers_2d[0].props().get("frame").unwrap(),
+            "first"
+        );
+        assert_eq!(graph.conformers_2d[1].id(), 11);
+        assert_eq!(graph.conformers_3d[0].id(), 17);
+        assert!(graph.conformers_3d[0].is_3d());
+        assert_eq!(
+            graph.conformers_3d[0].props().get("frame").unwrap(),
+            "three-dimensional"
+        );
+        assert_eq!(graph.conformers_3d[1].id(), 19);
+        assert!(!graph.conformers_3d[1].is_3d());
+        assert_eq!(
+            graph.conformers_3d[1].props().get("frame").unwrap(),
+            "two-dimensional"
+        );
+    }
+
+    #[test]
+    fn query_stereo_replace_accepts_empty_replacement() {
+        let mut graph = stereo_test_graph();
+        let original = graph.clone();
+
+        replace_query_stereo_groups(&mut graph, Vec::new()).expect("empty replacement");
+
+        assert!(graph.stereo_groups.is_empty());
+        assert_eq!(graph.atoms, original.atoms);
+        assert_eq!(graph.bonds, original.bonds);
+        assert_eq!(graph.adjacency, original.adjacency);
+        assert_eq!(graph.props, original.props);
+        assert_eq!(graph.conformers_2d, original.conformers_2d);
+        assert_eq!(graph.conformers_3d, original.conformers_3d);
+    }
+
+    #[test]
+    fn query_stereo_replace_rejects_invalid_atom_without_mutation() {
+        let mut graph = stereo_test_graph();
+        let original = graph.clone();
+
+        let result = replace_query_stereo_groups(
+            &mut graph,
+            vec![StereoGroup::new(
+                StereoGroupKind::Absolute,
+                vec![AtomId::new(2)],
+                Vec::new(),
+            )],
+        );
+
+        assert_eq!(
+            result,
+            Err(QueryGraphError::StereoGroupAtomOutOfRange {
+                atom: AtomId::new(2),
+                atom_count: 2,
+            })
+        );
+        assert_eq!(graph, original);
+    }
+
+    #[test]
+    fn query_stereo_replace_rejects_invalid_bond_without_mutation() {
+        let mut graph = stereo_test_graph();
+        let original = graph.clone();
+
+        let result = replace_query_stereo_groups(
+            &mut graph,
+            vec![StereoGroup::new(
+                StereoGroupKind::Absolute,
+                Vec::new(),
+                vec![BondId::new(1)],
+            )],
+        );
+
+        assert_eq!(
+            result,
+            Err(QueryGraphError::StereoGroupBondOutOfRange {
+                bond: BondId::new(1),
+                bond_count: 1,
+            })
+        );
+        assert_eq!(graph, original);
     }
 
     #[test]
@@ -1650,6 +2271,7 @@ mod tests {
             conformers_2d: Vec::new(),
             conformers_3d: Vec::new(),
             stereo_groups: Vec::new(),
+            substance_groups: Vec::new(),
         };
 
         assert_eq!(graph.validate(), Err(QueryGraphError::AdjacencyMismatch));

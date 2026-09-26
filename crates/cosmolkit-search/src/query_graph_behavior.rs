@@ -18,13 +18,6 @@ pub(crate) fn cleanup_query_graph_parser_state(graph: &mut QueryGraph) {
     }
 }
 
-pub(crate) fn query_graph_has_directional_bonds(graph: &QueryGraph) -> bool {
-    graph
-        .bonds()
-        .iter()
-        .any(|bond| bond.bond().direction() != BondDirection::None)
-}
-
 fn neighboring_directed_bond(graph: &QueryGraph, atom: AtomId) -> Option<BondId> {
     // RDKit✔️✔️: for (const auto &bondIdx :
     // RDKit✔️✔️:      boost::make_iterator_range(mol.getAtomBonds(atom))) {
@@ -55,6 +48,7 @@ fn opposite_direction(direction: BondDirection) -> BondDirection {
 }
 
 pub(crate) fn set_bond_stereo_from_directions(graph: &mut QueryGraph) {
+    // RDKit✔️✔️: mol.clearProp("_needsDetectBondStereo");
     // RDKit✔️✔️: if (bond->getBondType() == Bond::DOUBLE &&
     // RDKit✔️✔️:     bond->getStereo() != Bond::STEREOANY) {
     // RDKit✔️✔️:   const Bond *directedBondAtBegin =

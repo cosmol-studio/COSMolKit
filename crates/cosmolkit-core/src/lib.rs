@@ -21,6 +21,7 @@ mod matrices;
 mod nontetrahedral_stereo;
 mod paths;
 mod periodic_table;
+mod polymer_sgroup;
 mod potential_stereo;
 mod query_ops;
 mod radicals;
@@ -182,6 +183,10 @@ pub use potential_stereo::{
     PotentialStereoAssignment, PotentialStereoCenter, PotentialStereoDescriptor,
     PotentialStereoError, PotentialStereoInfo, PotentialStereoParams, PotentialStereoSpecified,
     PotentialStereoType, RingStereoRelation, potential_stereo,
+};
+
+pub use polymer_sgroup::{
+    PolymerSGroupError, finalize_polymer_sgroup, setup_unmarked_polymer_sgroup,
 };
 
 pub use radicals::{RadicalAssignment, RadicalDiagnostic, RadicalError, assign_radicals};

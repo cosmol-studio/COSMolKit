@@ -83,6 +83,7 @@ fn labels_and_values_preserve_slots_whitespace_and_decoded_entities() {
                 Some("b,c".to_owned()),
                 Some(" space ".to_owned()),
             ]),
+            CxRecord::Unknown(",".to_owned()),
             CxRecord::AtomValues(vec![Some("x:y".to_owned()), None, Some("z".to_owned()),]),
         ]
     );
@@ -231,7 +232,7 @@ fn link_nodes_preserve_explicit_and_deferred_outer_atoms() {
     );
     assert_eq!(rows[0].outer_atoms, None);
     assert_eq!(rows[1].outer_atoms, Some([3, 6]));
-    assert_error("|LN:1:1.3.2|", 11, "expected '.', found CX syntax mismatch");
+    assert_error("|LN:1:1.3.2|", 12, "invalid CX integer");
 }
 
 #[test]
@@ -250,7 +251,11 @@ fn data_and_hierarchy_sgroups_preserve_all_fields_and_order() {
     assert_eq!(data.field_tag, "t");
     assert_eq!(data.coordinates.as_deref(), Some("(1.,1."));
 
-    let CxRecord::SGroupHierarchy(hierarchy) = &parsed.records()[1] else {
+    let CxRecord::Unknown(separator) = &parsed.records()[1] else {
+        panic!("expected source-advanced separator byte");
+    };
+    assert_eq!(separator, ",");
+    let CxRecord::SGroupHierarchy(hierarchy) = &parsed.records()[2] else {
         panic!("expected SGroup hierarchy");
     };
     assert_eq!(hierarchy.len(), 2);
@@ -259,6 +264,7 @@ fn data_and_hierarchy_sgroups_preserve_all_fields_and_order() {
         (1, &vec![0, 2])
     );
     assert_eq!((hierarchy[1].parent, &hierarchy[1].children), (3, &vec![4]));
+    assert_error("|SgH:1:0,Sg:n:8|", 9, "invalid CX integer");
 
     let omitted = parse_cx_extensions("|SgD:2,1:FIELD:info::::|").unwrap();
     let CxRecord::DataSGroup(omitted) = &omitted.records()[0] else {
@@ -267,8 +273,8 @@ fn data_and_hierarchy_sgroups_preserve_all_fields_and_order() {
     assert_eq!(omitted.coordinates, None);
     assert_error(
         "|SgD:0:a:b:c:d:e:(x|",
-        17,
-        "unterminated CX SGroup coordinates",
+        20,
+        "failure parsing CXSMILES extensions",
     );
 }
 
@@ -347,57 +353,68 @@ fn attachments_wedges_and_double_bonds_cover_every_source_form() {
 fn mixed_every_family_block_preserves_complete_dispatch_order() {
     let input = concat!(
         "|(0,0),$L$,$_AV:V$,atomProp:0.p.v,C:0.0,H:1.1,Z:2,^1:3,a:4,",
-        "rb:5:2,LN:6:1.2,SgD:7:F:D:Q:I:T:,SgH:1:0,Sg:n:8,u:9,s:10:*,",
-        "m:11:12,w:13.14,ctu:15,c:16,t:17|suffix"
+        "rb:5:2,LN:6:1.2,SgD:7:F:D:Q:I:T:,Sg:n:8,u:9,s:10:*,",
+        "m:11:12,w:13.14,ctu:15,c:16,t:17,SgH:1:0|suffix"
     );
     let parsed = parse_cx_extensions(input).unwrap();
     assert_eq!(parsed.consumed(), input.find("suffix").unwrap());
-    assert_eq!(parsed.records().len(), 21);
-    assert!(matches!(parsed.records()[0], CxRecord::Coordinates(_)));
-    assert!(matches!(parsed.records()[1], CxRecord::AtomLabels(_)));
-    assert!(matches!(parsed.records()[2], CxRecord::AtomValues(_)));
-    assert!(matches!(parsed.records()[3], CxRecord::AtomProperties(_)));
-    assert!(matches!(parsed.records()[4], CxRecord::CoordinateBonds(_)));
-    assert!(matches!(parsed.records()[5], CxRecord::CoordinateBonds(_)));
-    assert!(matches!(parsed.records()[6], CxRecord::ZeroBonds(_)));
-    assert!(matches!(parsed.records()[7], CxRecord::Radicals(_)));
-    assert!(matches!(parsed.records()[8], CxRecord::EnhancedStereo(_)));
-    assert!(matches!(parsed.records()[9], CxRecord::RingBonds(_)));
-    assert!(matches!(parsed.records()[10], CxRecord::LinkNodes(_)));
-    assert!(matches!(parsed.records()[11], CxRecord::DataSGroup(_)));
-    assert!(matches!(parsed.records()[12], CxRecord::SGroupHierarchy(_)));
-    assert!(matches!(parsed.records()[13], CxRecord::PolymerSGroup(_)));
-    assert!(matches!(parsed.records()[14], CxRecord::Unsaturation(_)));
-    assert!(matches!(parsed.records()[15], CxRecord::Substitution(_)));
+    let typed_records = parsed
+        .records()
+        .iter()
+        .filter(|record| !matches!(record, CxRecord::Unknown(_)))
+        .collect::<Vec<_>>();
+    assert_eq!(typed_records.len(), 21);
+    assert!(
+        parsed
+            .records()
+            .iter()
+            .filter_map(|record| match record {
+                CxRecord::Unknown(raw) => Some(raw.as_str()),
+                _ => None,
+            })
+            .all(|raw| raw == ",")
+    );
+    assert!(matches!(typed_records[0], CxRecord::Coordinates(_)));
+    assert!(matches!(typed_records[1], CxRecord::AtomLabels(_)));
+    assert!(matches!(typed_records[2], CxRecord::AtomValues(_)));
+    assert!(matches!(typed_records[3], CxRecord::AtomProperties(_)));
+    assert!(matches!(typed_records[4], CxRecord::CoordinateBonds(_)));
+    assert!(matches!(typed_records[5], CxRecord::CoordinateBonds(_)));
+    assert!(matches!(typed_records[6], CxRecord::ZeroBonds(_)));
+    assert!(matches!(typed_records[7], CxRecord::Radicals(_)));
+    assert!(matches!(typed_records[8], CxRecord::EnhancedStereo(_)));
+    assert!(matches!(typed_records[9], CxRecord::RingBonds(_)));
+    assert!(matches!(typed_records[10], CxRecord::LinkNodes(_)));
+    assert!(matches!(typed_records[11], CxRecord::DataSGroup(_)));
+    assert!(matches!(typed_records[12], CxRecord::PolymerSGroup(_)));
+    assert!(matches!(typed_records[13], CxRecord::Unsaturation(_)));
+    assert!(matches!(typed_records[14], CxRecord::Substitution(_)));
     assert!(matches!(
-        parsed.records()[16],
+        typed_records[15],
         CxRecord::VariableAttachments(_)
     ));
-    assert!(matches!(parsed.records()[17], CxRecord::WedgedBonds(_)));
-    assert!(matches!(
-        parsed.records()[18],
-        CxRecord::DoubleBondStereo(_)
-    ));
-    assert!(matches!(
-        parsed.records()[19],
-        CxRecord::DoubleBondStereo(_)
-    ));
-    assert!(matches!(
-        parsed.records()[20],
-        CxRecord::DoubleBondStereo(_)
-    ));
+    assert!(matches!(typed_records[16], CxRecord::WedgedBonds(_)));
+    assert!(matches!(typed_records[17], CxRecord::DoubleBondStereo(_)));
+    assert!(matches!(typed_records[18], CxRecord::DoubleBondStereo(_)));
+    assert!(matches!(typed_records[19], CxRecord::DoubleBondStereo(_)));
+    assert!(matches!(typed_records[20], CxRecord::SGroupHierarchy(_)));
 }
 
 #[test]
 fn unknown_records_are_lossless_interleaved_and_always_make_progress() {
-    let input = "|vendor:α,rb:0:2,blob,z,s:1:*|tail";
+    let input = "|###:α,rb:0:2,???,z,s:1:*|tail";
     let parsed = parse_cx_extensions(input).unwrap();
     assert_eq!(parsed.consumed(), input.find("tail").unwrap());
     assert_eq!(parsed.records().len(), 4);
-    assert!(matches!(parsed.records()[0], CxRecord::Unknown(ref raw) if raw == "vendor:α"));
+    assert!(matches!(parsed.records()[0], CxRecord::Unknown(ref raw) if raw == "###:α,"));
     assert!(matches!(parsed.records()[1], CxRecord::RingBonds(_)));
-    assert!(matches!(parsed.records()[2], CxRecord::Unknown(ref raw) if raw == "blob,z"));
+    assert!(matches!(parsed.records()[2], CxRecord::Unknown(ref raw) if raw == "???,z,"));
     assert!(matches!(parsed.records()[3], CxRecord::Substitution(_)));
+    assert_error(
+        "|vendor:α,rb:0:2|",
+        6,
+        "expected ':', found CX syntax mismatch",
+    );
 }
 
 #[test]

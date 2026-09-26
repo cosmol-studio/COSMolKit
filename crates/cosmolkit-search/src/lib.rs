@@ -3,6 +3,7 @@
 mod cx_lowering;
 mod generic_groups;
 mod matcher;
+mod mcs;
 mod query_behavior;
 mod query_graph_behavior;
 mod smarts_parse;
@@ -17,6 +18,11 @@ pub use matcher::{
     get_substruct_match, get_substruct_matches, get_substruct_matches_with_params,
     has_substruct_match, substruct_match_params_to_json, try_get_substruct_matches_with_params,
     try_get_substruct_matches_with_params_and_context, update_substruct_match_params_from_json,
+};
+pub use mcs::{
+    AtomComparator, BondComparator, McsAtomCompareParameters, McsBondCompareParameters,
+    McsCandidateMatchError, McsError, McsParameters, McsParametersJsonError, McsProgressError,
+    RingComparator, find_mcs, update_mcs_parameters_from_json,
 };
 pub use query_behavior::{
     QUERY_SCAN_MAGIC_VALUE, QueryConstructionError, QueryMatchContext, SmartsParseError,
@@ -121,7 +127,6 @@ impl CompiledQuery {
             &self.query,
             &SubstructMatchParams::default(),
             &self.compiled_graph,
-            &self.atom_order,
         )
         .map_err(MatchError::from)
     }
@@ -197,20 +202,24 @@ impl MatchResult {
 /// Result metadata for a maximum-common-substructure search.
 #[derive(Debug, Clone, PartialEq)]
 pub struct McsResult {
-    pub query: QueryGraph,
+    pub query: Option<QueryGraph>,
     pub atom_count: usize,
     pub bond_count: usize,
     pub completed: bool,
+    pub smarts: String,
+    pub degenerate: std::collections::BTreeMap<String, QueryGraph>,
 }
 
 impl McsResult {
     #[must_use]
     pub fn new(query: QueryGraph, atom_count: usize, bond_count: usize, completed: bool) -> Self {
         Self {
-            query,
+            query: Some(query),
             atom_count,
             bond_count,
             completed,
+            smarts: String::new(),
+            degenerate: std::collections::BTreeMap::new(),
         }
     }
 }

@@ -249,8 +249,7 @@ fn data_polymer_and_hierarchy_records_install_typed_sgroups() {
     }
 
     let hierarchy = parse(concat!(
-        "CC |SgD:0:PARENT:p::::,SgD:1:CHILD:c::::,SgH:0:1,",
-        "SgH:9:1|"
+        "CC |SgD:0:PARENT:p::::,SgD:1:CHILD:c::::,SgH:0:1,9:1|"
     ));
     assert_eq!(
         hierarchy.topology.substance_groups[1]

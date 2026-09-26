@@ -6,7 +6,7 @@ use cosmolkit_search::{
     AtomQueryPredicate, BondQueryPredicate, QueryGraph, QueryNode, SmartsParseError,
     SmartsParseParams, SmartsWriteParams, match_query, parse_smarts, write_smarts,
 };
-use cosmolkit_types::{BondDirection, BondOrder, Hybridization};
+use cosmolkit_types::{BondDirection, BondOrder, BondStereo, ChiralTag, Hybridization};
 
 fn parse_source_case(smarts: &str) -> QueryGraph {
     parse_smarts(smarts, &SmartsParseParams::default())
@@ -795,6 +795,36 @@ fn q20_lenient_cx_failure_retains_prior_record_effects() {
 }
 
 #[test]
+fn q20_lenient_cx_lowering_failure_retains_record_effects_and_cursor() {
+    let params = SmartsParseParams {
+        strict_cxsmiles: false,
+        ..SmartsParseParams::default()
+    };
+    // The second source pair fails the duplicate-wedge check after its bond
+    // index is read, so the prefix excludes the closing pipe and later name.
+    let graph = parse_smarts("C-C |$label$ wU:0.0,1.0| ignored", &params)
+        .expect("lenient lowering failure preserves earlier source mutations");
+    assert_eq!(
+        graph.atom(0).and_then(|atom| atom.prop("atomLabel")),
+        Some("label")
+    );
+    let bond = graph.bond(0).expect("first wedge bond remains");
+    assert_eq!(bond.endpoints(), (0, 1));
+    assert_eq!(bond.bond().direction(), BondDirection::BeginWedge);
+    assert_eq!(bond.bond().prop("_MolFileBondCfg"), Some("1"));
+    assert_eq!(graph.prop("_CXSMILES_Data"), Some("|$label$ wU:0.0,1.0"));
+    assert_eq!(graph.name(), None);
+}
+
+#[test]
+fn q20_strict_cx_lowering_failure_returns_cx_error() {
+    assert!(matches!(
+        parse_smarts("C-C |wU:0.0,1.0| ignored", &SmartsParseParams::default()),
+        Err(SmartsParseError::CxSmiles(_))
+    ));
+}
+
+#[test]
 fn q03_bad_character_dispatch_preserves_byte_position_and_parser_priority() {
     let raw_smarts = SmartsParseParams {
         allow_cxsmiles: false,
@@ -1399,10 +1429,13 @@ fn q07e_ring_ranges_keep_source_query_classes_bounds_and_matching() {
         assert_eq!(range.data_function(), expected_data_function, "{smarts}");
         assert_eq!(atom.try_to_atom().unwrap(), baseline_carrier, "{smarts}");
         assert!(!atom.predicate_is_carrier_derived(), "{smarts}");
+        let written = write_smarts(&graph, &SmartsWriteParams::default()).unwrap();
+        assert_eq!(written, smarts, "{smarts}");
+        let reparsed = parse_source_case(&written);
         assert_eq!(
-            write_smarts(&graph, &SmartsWriteParams::default()).unwrap(),
-            smarts,
-            "{smarts}"
+            reparsed.atom(0).unwrap().predicate(),
+            atom.predicate(),
+            "{smarts} source class and k data survive write/reparse"
         );
     };
 
@@ -1412,14 +1445,14 @@ fn q07e_ring_ranges_keep_source_query_classes_bounds_and_matching() {
             let open_lower = format!("[{token}{{-{value}}}]");
             assert_range(
                 &open_lower,
-                AtomRangeBounds::LessEqual(value),
+                AtomRangeBounds::GreaterEqual(value),
                 range_data_function(token, None, Some(value)),
             );
 
             let open_upper = format!("[{token}{{{value}-}}]");
             assert_range(
                 &open_upper,
-                AtomRangeBounds::GreaterEqual(value),
+                AtomRangeBounds::LessEqual(value),
                 range_data_function(token, Some(value), None),
             );
         }
@@ -1508,18 +1541,48 @@ fn q07e_ring_ranges_keep_source_query_classes_bounds_and_matching() {
     };
 
     for (smarts, ring_match, acyclic_match) in [
+        // GreaterEqualQuery compares stored threshold >= observed; LessEqual
+        // compares stored threshold <= observed (pinned Query headers).
+        ("[R{-0}]", false, true),
+        ("[R{-1}]", true, true),
+        ("[R{-2}]", true, true),
+        ("[R{0-}]", true, true),
         ("[R{1-}]", true, false),
+        ("[R{2-}]", false, false),
         ("[R{1-1}]", true, false),
+        ("[r{-255}]", false, true),
         ("[r{-256}]", true, true),
+        ("[r{-257}]", true, true),
+        ("[r{255-}]", true, false),
         ("[r{256-}]", true, false),
+        ("[r{257-}]", false, false),
         ("[r{256-256}]", true, false),
+        ("[k{-255}]", false, false),
         ("[k{-256}]", true, false),
+        ("[k{-257}]", true, false),
+        ("[k{255-}]", true, false),
         ("[k{256-}]", true, false),
-        ("[k{256-256}]", true, false),
         ("[k{257-}]", false, false),
+        ("[k{256-256}]", true, false),
+        ("[x{-1}]", false, true),
         ("[x{-2}]", true, true),
+        ("[x{-3}]", true, true),
+        ("[x{1-}]", true, false),
+        ("[x{2-}]", true, false),
         ("[x{3-}]", false, false),
         ("[x{2-2}]", true, false),
+        ("[!R{-1}]", false, false),
+        ("[!r{256-}]", false, true),
+        ("[!k{-256}]", false, true),
+        ("[!x{2-}]", false, true),
+        ("[D{-1}]", false, true),
+        ("[D{-2}]", true, true),
+        ("[D{-3}]", true, true),
+        ("[D{1-}]", true, false),
+        ("[D{2-}]", true, false),
+        ("[D{3-}]", false, false),
+        ("[D{2-2}]", true, false),
+        ("[!D{-2}]", false, false),
     ] {
         assert_eq!(matches(smarts, &ring_256), ring_match, "{smarts} in ring");
         assert_eq!(
@@ -2156,6 +2219,406 @@ fn q09_hydrogen_atom_and_h_count_forms_follow_distinct_source_reductions() {
     assert_eq!(carbon_hydrogen_atom.explicit_hydrogens(), 1);
     assert!(carbon_hydrogen_atom.no_implicit());
     assert!(!carbon_hydrogen_atom.predicate_is_carrier_derived());
+}
+
+#[test]
+fn q21_hydrogen_atom_and_count_queries_keep_source_classification() {
+    let merge_hs = SmartsParseParams {
+        merge_hs: true,
+        ..SmartsParseParams::default()
+    };
+
+    for smarts in ["[C][H]", "[C][#1]"] {
+        let graph = parse_smarts(smarts, &merge_hs)
+            .unwrap_or_else(|error| panic!("pinned RDKit SMARTS {smarts:?}: {error}"));
+        assert_eq!(graph.num_atoms(), 1, "{smarts}");
+    }
+
+    for smarts in ["[C][H1]", "[C][13H1]"] {
+        let graph = parse_smarts(smarts, &merge_hs)
+            .unwrap_or_else(|error| panic!("pinned RDKit SMARTS {smarts:?}: {error}"));
+        assert_eq!(graph.num_atoms(), 2, "{smarts}");
+    }
+
+    let count_query = parse_smarts("[C][H1]", &merge_hs).expect("hydrogen-count query");
+    assert_eq!(
+        count_query
+            .atom(1)
+            .expect("hydrogen-count atom")
+            .predicate(),
+        &QueryNode::predicate(AtomQueryPredicate::HydrogenCount(1))
+    );
+    let isotope_count_query =
+        parse_smarts("[C][13H1]", &merge_hs).expect("isotopic hydrogen-count query");
+    assert_eq!(
+        isotope_count_query
+            .atom(1)
+            .expect("isotopic hydrogen-count atom")
+            .isotope(),
+        Some(13)
+    );
+}
+
+#[test]
+fn q21_hydrogens_found_through_or_queries_are_unmergeable() {
+    let merge_hs = SmartsParseParams {
+        merge_hs: true,
+        ..SmartsParseParams::default()
+    };
+
+    let disjunction = parse_smarts("[C][#1,#17]", &merge_hs).expect("hydrogen OR query");
+    assert_eq!(disjunction.num_atoms(), 2);
+    assert!(matches!(
+        disjunction.atom(1).expect("hydrogen OR atom").predicate(),
+        QueryNode::Or(_)
+    ));
+
+    let nested_disjunction =
+        parse_smarts("[C][#6;#1,#17]", &merge_hs).expect("nested hydrogen OR query");
+    assert_eq!(nested_disjunction.num_atoms(), 2);
+    assert!(matches!(
+        nested_disjunction
+            .atom(1)
+            .expect("nested hydrogen OR atom")
+            .predicate(),
+        QueryNode::And(children)
+            if children.iter().any(|child| matches!(child, QueryNode::Or(_)))
+    ));
+}
+
+#[test]
+fn q21_recursive_smarts_hydrogen_predicates_are_not_atom_hydrogens() {
+    let merge_hs = SmartsParseParams {
+        merge_hs: true,
+        ..SmartsParseParams::default()
+    };
+    let graph = parse_smarts("[C][$([#1])]", &merge_hs)
+        .unwrap_or_else(|error| panic!("pinned recursive SMARTS: {error}"));
+    assert_eq!(graph.num_atoms(), 2);
+    assert!(matches!(
+        graph.atom(1).expect("recursive query atom").predicate(),
+        QueryNode::Predicate(AtomQueryPredicate::RecursiveSmarts(_))
+    ));
+}
+
+#[test]
+fn q22_nonrecursive_merge_counts_mapped_hydrogen_and_retains_isotope_by_default() {
+    let merge_hs = SmartsParseParams {
+        merge_hs: true,
+        ..SmartsParseParams::default()
+    };
+    let graph = parse_smarts("[C]([H])([H:0])([2H])", &merge_hs)
+        .expect("source-default query-H merge keeps isotope filtering");
+
+    assert_eq!(graph.num_atoms(), 2);
+    assert_eq!(
+        graph.atom(0).expect("merged carbon").predicate(),
+        &QueryNode::And(vec![
+            QueryNode::predicate(AtomQueryPredicate::AtomType {
+                atomic_number: 6,
+                aromatic: false,
+            }),
+            QueryNode::Not(Box::new(QueryNode::Predicate(
+                AtomQueryPredicate::HydrogenCount(0),
+            ))),
+            QueryNode::Not(Box::new(QueryNode::Predicate(
+                AtomQueryPredicate::HydrogenCount(1),
+            ))),
+        ])
+    );
+    assert_eq!(
+        graph
+            .atom(1)
+            .expect("isotopic hydrogen retained by default")
+            .isotope(),
+        Some(2)
+    );
+}
+
+#[test]
+fn q22_merge_hydrogen_neighbor_count_uses_source_unsigned_width() {
+    let merge_hs = SmartsParseParams {
+        merge_hs: true,
+        ..SmartsParseParams::default()
+    };
+    let smarts = format!("[C]{}", "([H])".repeat(256));
+    let graph = parse_smarts(&smarts, &merge_hs).expect("merge all 256 neighboring query H atoms");
+
+    assert_eq!(graph.num_atoms(), 1);
+    let QueryNode::And(children) = graph.atom(0).expect("merged carbon").predicate() else {
+        panic!("source merge should add one H-count predicate per removed atom");
+    };
+    assert_eq!(children.len(), 257);
+    for (hydrogen_count, child) in children.iter().skip(1).enumerate() {
+        assert_eq!(
+            child,
+            &QueryNode::Not(Box::new(QueryNode::Predicate(
+                AtomQueryPredicate::HydrogenCount(hydrogen_count as i32),
+            )))
+        );
+    }
+}
+
+#[test]
+fn q23_recursive_query_hydrogen_merge_descends_without_aliasing_or_losing_serials() {
+    let smarts = "[$([C]([H])[$([N][H])_8])_7]";
+    let source = parse_source_case(smarts);
+    let source_before = source.clone();
+    let QueryNode::Predicate(AtomQueryPredicate::RecursiveSmarts(source_outer)) = source
+        .atom(0)
+        .expect("outer recursive SMARTS atom")
+        .predicate()
+    else {
+        panic!("outer atom should be a recursive SMARTS predicate");
+    };
+    assert_eq!(source_outer.serial_number(), 7);
+    assert_eq!(
+        source_outer.source_smarts(),
+        Some("$([C]([H])[$([N][H])_8])")
+    );
+    assert_eq!(
+        source_outer
+            .query_graph()
+            .expect("source outer recursive graph")
+            .num_atoms(),
+        3
+    );
+
+    // RecursiveStructureQuery::clone owns a detached nested graph; changing
+    // the cloned query graph must not mutate the source query or its IDs.
+    let mut cloned_outer = source_outer.clone();
+    let cloned_graph = cloned_outer
+        .query_graph_mut()
+        .expect("cloned outer recursive graph");
+    cloned_graph.set_prop("_q23_clone_probe", "detached");
+    assert_eq!(cloned_graph.prop("_q23_clone_probe"), Some("detached"));
+    assert_eq!(
+        source_outer.query_graph().unwrap().prop("_q23_clone_probe"),
+        None
+    );
+    assert_eq!(cloned_outer.serial_number(), source_outer.serial_number());
+    assert_eq!(cloned_outer.source_smarts(), source_outer.source_smarts());
+    assert_eq!(source, source_before);
+
+    let merge_hs = SmartsParseParams {
+        merge_hs: true,
+        ..SmartsParseParams::default()
+    };
+    let merged = parse_smarts(smarts, &merge_hs).expect("merge query H through nested graphs");
+    assert_eq!(source, source_before);
+    assert_eq!(merged.num_atoms(), 1);
+    let QueryNode::Predicate(AtomQueryPredicate::RecursiveSmarts(outer)) = merged
+        .atom(0)
+        .expect("merged outer recursive SMARTS atom")
+        .predicate()
+    else {
+        panic!("merged outer atom should retain its recursive predicate");
+    };
+    assert_eq!(outer.serial_number(), 7);
+    assert_eq!(outer.source_smarts(), source_outer.source_smarts());
+
+    let inner = outer.query_graph().expect("merged outer recursive graph");
+    assert_eq!(inner.num_atoms(), 2);
+    assert_eq!(inner.num_bonds(), 1);
+    assert_eq!(inner.atoms()[0].id(), AtomId::new(0));
+    assert_eq!(inner.atoms()[1].id(), AtomId::new(1));
+    assert_eq!(inner.bonds()[0].id(), BondId::new(0));
+    assert_eq!(inner.bonds()[0].endpoints(), (0, 1));
+    assert_eq!(
+        inner.atoms()[0].predicate(),
+        &QueryNode::And(vec![
+            QueryNode::predicate(AtomQueryPredicate::AtomType {
+                atomic_number: 6,
+                aromatic: false,
+            }),
+            QueryNode::Not(Box::new(QueryNode::Predicate(
+                AtomQueryPredicate::HydrogenCount(0),
+            ))),
+        ])
+    );
+
+    let QueryNode::Predicate(AtomQueryPredicate::RecursiveSmarts(nested)) =
+        inner.atoms()[1].predicate()
+    else {
+        panic!("nested recursive atom should retain its recursive predicate");
+    };
+    assert_eq!(nested.serial_number(), 8);
+    assert_eq!(nested.source_smarts(), Some("$([N][H])"));
+    let deepest = nested
+        .query_graph()
+        .expect("merged deepest recursive graph");
+    assert_eq!(deepest.num_atoms(), 1);
+    assert_eq!(deepest.num_bonds(), 0);
+    assert_eq!(deepest.atoms()[0].id(), AtomId::new(0));
+    assert_eq!(
+        deepest.atoms()[0].predicate(),
+        &QueryNode::And(vec![
+            QueryNode::predicate(AtomQueryPredicate::AtomType {
+                atomic_number: 7,
+                aromatic: false,
+            }),
+            QueryNode::Not(Box::new(QueryNode::Predicate(
+                AtomQueryPredicate::HydrogenCount(0),
+            ))),
+        ])
+    );
+}
+
+#[test]
+fn q24_direction_pairs_missing_neighbors_and_query_carrier_provenance() {
+    for (smarts, expected_stereo, expected_end_direction) in [
+        ("C/C=C/C", BondStereo::Trans, BondDirection::EndUpRight),
+        ("C/C=C\\C", BondStereo::Cis, BondDirection::EndDownRight),
+    ] {
+        let graph = parse_source_case(smarts);
+        assert_eq!((graph.num_atoms(), graph.num_bonds()), (4, 3), "{smarts}");
+        let double_bond = graph.bond(1).expect("central double bond");
+        assert_eq!(double_bond.bond().order(), BondOrder::Double, "{smarts}");
+        assert_eq!(double_bond.bond().stereo(), expected_stereo, "{smarts}");
+        assert_eq!(
+            double_bond.bond().stereo_atoms(),
+            Some([AtomId::new(0), AtomId::new(3)]),
+            "{smarts}"
+        );
+        assert_eq!(
+            double_bond.predicate(),
+            &QueryNode::predicate(BondQueryPredicate::Order(BondOrder::Double)),
+            "{smarts}"
+        );
+        assert!(!double_bond.predicate_is_carrier_derived(), "{smarts}");
+        assert_eq!(
+            graph.bond(0).unwrap().bond().direction(),
+            BondDirection::EndUpRight,
+            "{smarts}"
+        );
+        assert_eq!(
+            graph.bond(2).unwrap().bond().direction(),
+            expected_end_direction,
+            "{smarts}"
+        );
+    }
+
+    for (smarts, double_bond_index, directed_bond_index) in [("C=C/C", 0, 1), ("C/C=C", 1, 0)] {
+        let graph = parse_source_case(smarts);
+        let double_bond = graph.bond(double_bond_index).expect("double bond");
+        assert_eq!(double_bond.bond().stereo(), BondStereo::None, "{smarts}");
+        assert_eq!(double_bond.bond().stereo_atoms(), None, "{smarts}");
+        assert_eq!(
+            graph
+                .bond(directed_bond_index)
+                .expect("one directed neighbor")
+                .bond()
+                .direction(),
+            BondDirection::EndUpRight,
+            "{smarts}"
+        );
+    }
+
+    // MolFromSmarts invokes setBondStereoFromDirections even when CX supplied
+    // stereo and no slash direction exists; the finalizer clears its marker
+    // while retaining the query bond predicate and CX stereo carrier.
+    let cx_stereo = parse_source_case("FC=CF |c:1|");
+    let cx_double_bond = cx_stereo.bond(1).expect("CX double bond");
+    assert_eq!(cx_double_bond.bond().stereo(), BondStereo::Cis);
+    assert_eq!(
+        cx_double_bond.bond().stereo_atoms(),
+        Some([AtomId::new(0), AtomId::new(3)])
+    );
+    assert_eq!(
+        cx_double_bond.predicate(),
+        &QueryNode::predicate(BondQueryPredicate::Order(BondOrder::Double))
+    );
+    assert!(!cx_double_bond.predicate_is_carrier_derived());
+    assert_eq!(cx_stereo.prop("_needsDetectBondStereo"), None);
+}
+
+#[test]
+fn q25_chiral_permutation_boundaries_are_query_native_and_source_ordered() {
+    let carbon_query = QueryNode::predicate(AtomQueryPredicate::AtomType {
+        atomic_number: 6,
+        aromatic: false,
+    });
+    let valid = [
+        ("[C@TH]", ChiralTag::TetrahedralCcw, None),
+        ("[C@TH1]", ChiralTag::TetrahedralCcw, None),
+        ("[C@TH2]", ChiralTag::TetrahedralCw, None),
+        ("[C@AL]", ChiralTag::Allene, Some(0)),
+        ("[C@AL2]", ChiralTag::Allene, Some(2)),
+        ("[C@SP]", ChiralTag::SquarePlanar, Some(0)),
+        ("[C@SP3]", ChiralTag::SquarePlanar, Some(3)),
+        ("[C@TB]", ChiralTag::TrigonalBipyramidal, Some(0)),
+        ("[C@TB20]", ChiralTag::TrigonalBipyramidal, Some(20)),
+        ("[C@OH]", ChiralTag::Octahedral, Some(0)),
+        ("[C@OH30]", ChiralTag::Octahedral, Some(30)),
+    ];
+    for (smarts, expected_tag, expected_permutation) in valid {
+        let graph = parse_source_case(smarts);
+        assert_eq!(graph.num_atoms(), 1, "{smarts}");
+        let atom = graph.atom(0).expect("query atom");
+        assert_eq!(
+            atom.identity(),
+            QueryAtomIdentity::Element(Element::C),
+            "{smarts}"
+        );
+        assert_eq!(atom.predicate(), &carbon_query, "{smarts}");
+        assert!(!atom.predicate_is_carrier_derived(), "{smarts}");
+        assert_eq!(atom.chiral_tag(), expected_tag, "{smarts}");
+        assert_eq!(atom.chiral_permutation(), expected_permutation, "{smarts}");
+    }
+
+    for (smarts, expected_error) in [
+        (
+            "[C@TH3]",
+            "invalid chiral permutation 3 for CHI_TETRAHEDRAL",
+        ),
+        ("[C@AL3]", "invalid chiral permutation 3 for CHI_ALLENE"),
+        (
+            "[C@SP4]",
+            "invalid chiral permutation 4 for CHI_SQUAREPLANAR",
+        ),
+        (
+            "[C@TB21]",
+            "invalid chiral permutation 21 for CHI_TRIGONALBIPYRAMIDAL",
+        ),
+        (
+            "[C@OH31]",
+            "invalid chiral permutation 31 for CHI_OCTAHEDRAL",
+        ),
+    ] {
+        let error = parse_smarts(smarts, &SmartsParseParams::default())
+            .expect_err("permutation above the pinned limit must fail");
+        assert!(
+            error.to_string().contains(expected_error),
+            "{smarts}: {error}"
+        );
+    }
+
+    let explicit_zero = parse_smarts("[C@SP0]", &SmartsParseParams::default())
+        .expect_err("an explicit zero is rejected by the SMARTS grammar");
+    assert!(
+        explicit_zero
+            .to_string()
+            .contains("chiral permutation cannot be zero"),
+        "{explicit_zero}"
+    );
+
+    for (smarts, expected_error) in [
+        (
+            "[C@SP4][C@TB21]",
+            "invalid chiral permutation 4 for CHI_SQUAREPLANAR",
+        ),
+        (
+            "[C@TB21][C@SP4]",
+            "invalid chiral permutation 21 for CHI_TRIGONALBIPYRAMIDAL",
+        ),
+    ] {
+        let error = parse_smarts(smarts, &SmartsParseParams::default())
+            .expect_err("the first invalid source atom determines the error");
+        assert!(
+            error.to_string().contains(expected_error),
+            "{smarts}: {error}"
+        );
+    }
 }
 
 #[test]

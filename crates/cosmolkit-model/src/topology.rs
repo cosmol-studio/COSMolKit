@@ -4,6 +4,7 @@
 //! Topology remapping policies and live-molecule installation remain owned by
 //! the runtime crate.
 
+use crate::sgroup::{SubstanceGroupValidationError, validate_substance_groups};
 use crate::{
     AdjacencyList, Atom, AtomId, AtomMapping, AtomSpec, Bond, BondId, BondMapping, BondSpec,
     BondStereo, BondValueError, MappingValidationError, StereoGroup, SubstanceGroup,
@@ -76,6 +77,37 @@ pub enum TopologyValidationError {
     StereoGroupBondOutOfRange { bond: BondId, bond_count: usize },
     #[error("adjacency does not match topology")]
     AdjacencyMismatch,
+}
+
+impl From<SubstanceGroupValidationError> for TopologyValidationError {
+    fn from(error: SubstanceGroupValidationError) -> Self {
+        match error {
+            SubstanceGroupValidationError::IdMismatch { position, id } => {
+                Self::SubstanceGroupIdMismatch { position, id }
+            }
+            SubstanceGroupValidationError::AtomOutOfRange {
+                sgroup,
+                atom,
+                atom_count,
+            } => Self::SubstanceGroupAtomOutOfRange {
+                sgroup,
+                atom,
+                atom_count,
+            },
+            SubstanceGroupValidationError::BondOutOfRange {
+                sgroup,
+                bond,
+                bond_count,
+            } => Self::SubstanceGroupBondOutOfRange {
+                sgroup,
+                bond,
+                bond_count,
+            },
+            SubstanceGroupValidationError::ParentOutOfRange { sgroup, parent } => {
+                Self::SubstanceGroupParentOutOfRange { sgroup, parent }
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -410,58 +442,7 @@ impl TopologyBlock {
         }
         let atom_count = self.atoms.len();
         let bond_count = self.bonds.len();
-        let sgroup_count = self.substance_groups.len();
-        for (position, group) in self.substance_groups.iter().enumerate() {
-            if group.id() != crate::SubstanceGroupId::new(position) {
-                return Err(TopologyValidationError::SubstanceGroupIdMismatch {
-                    position,
-                    id: group.id(),
-                });
-            }
-            for atom in group.atoms().iter().chain(group.parent_atoms()) {
-                if atom.index() >= atom_count {
-                    return Err(TopologyValidationError::SubstanceGroupAtomOutOfRange {
-                        sgroup: group.id(),
-                        atom: *atom,
-                        atom_count,
-                    });
-                }
-            }
-            for point in group.attach_points() {
-                for atom in std::iter::once(point.atom).chain(point.leaving_atom) {
-                    if atom.index() >= atom_count {
-                        return Err(TopologyValidationError::SubstanceGroupAtomOutOfRange {
-                            sgroup: group.id(),
-                            atom,
-                            atom_count,
-                        });
-                    }
-                }
-            }
-            for bond in group
-                .bonds()
-                .iter()
-                .chain(group.cstates().iter().map(|state| &state.bond))
-                .chain(group.head_crossing_bonds())
-                .chain(group.crossing_bond_correspondence())
-            {
-                if bond.index() >= bond_count {
-                    return Err(TopologyValidationError::SubstanceGroupBondOutOfRange {
-                        sgroup: group.id(),
-                        bond: *bond,
-                        bond_count,
-                    });
-                }
-            }
-            if let Some(parent) = group.parent()
-                && parent.index() >= sgroup_count
-            {
-                return Err(TopologyValidationError::SubstanceGroupParentOutOfRange {
-                    sgroup: group.id(),
-                    parent,
-                });
-            }
-        }
+        validate_substance_groups(&self.substance_groups, atom_count, bond_count)?;
         for group in &self.stereo_groups {
             for atom in group.atoms() {
                 if atom.index() >= atom_count {
@@ -776,7 +757,10 @@ impl TopologyBatchEdit {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{AtomSpec, BondOrder, BondSpec};
+    use crate::{
+        AtomSpec, BondOrder, BondSpec, SGroupAttachPoint, SGroupCState, SubstanceGroupId,
+        SubstanceGroupKind,
+    };
 
     fn atom(id: usize) -> Atom {
         Atom::from_spec(AtomId::new(id), AtomSpec::new(crate::Element::C))
@@ -806,6 +790,103 @@ mod tests {
             block.validate(),
             Err(TopologyValidationError::BondEndpointOutOfRange { .. })
         ));
+    }
+
+    #[test]
+    fn query_sgroups_shared_validation_preserves_topology_error_categories() {
+        let id = SubstanceGroupId::new(0);
+        let invalid_atom = AtomId::new(2);
+        let invalid_bond = BondId::new(1);
+        let atoms = vec![atom(0), atom(1)];
+        let bonds = vec![Bond::from_spec(
+            BondId::new(0),
+            BondSpec::new(AtomId::new(0), AtomId::new(1), BondOrder::Single),
+        )];
+        let validate = |group| {
+            TopologyBlock::try_from_parts(atoms.clone(), bonds.clone(), vec![group], Vec::new())
+        };
+
+        assert_eq!(
+            validate(SubstanceGroup::new(
+                SubstanceGroupId::new(1),
+                SubstanceGroupKind::Data,
+            )),
+            Err(TopologyValidationError::SubstanceGroupIdMismatch {
+                position: 0,
+                id: SubstanceGroupId::new(1),
+            })
+        );
+        for invalid in [
+            SubstanceGroup::new(id, SubstanceGroupKind::Data).with_atoms(vec![invalid_atom]),
+            SubstanceGroup::new(id, SubstanceGroupKind::Data).with_parent_atoms(vec![invalid_atom]),
+            SubstanceGroup::new(id, SubstanceGroupKind::Data).with_attach_points(vec![
+                SGroupAttachPoint {
+                    atom: invalid_atom,
+                    leaving_atom: None,
+                    label: None,
+                    order: None,
+                },
+            ]),
+            SubstanceGroup::new(id, SubstanceGroupKind::Data).with_attach_points(vec![
+                SGroupAttachPoint {
+                    atom: AtomId::new(0),
+                    leaving_atom: Some(invalid_atom),
+                    label: None,
+                    order: None,
+                },
+            ]),
+        ] {
+            assert_eq!(
+                validate(invalid),
+                Err(TopologyValidationError::SubstanceGroupAtomOutOfRange {
+                    sgroup: id,
+                    atom: invalid_atom,
+                    atom_count: 2,
+                })
+            );
+        }
+        for invalid in [
+            SubstanceGroup::new(id, SubstanceGroupKind::Data).with_bonds(vec![invalid_bond]),
+            SubstanceGroup::new(id, SubstanceGroupKind::Data)
+                .with_cstates(vec![SGroupCState::new(invalid_bond, [1.0, 2.0, 3.0])]),
+            SubstanceGroup::new(id, SubstanceGroupKind::Data)
+                .with_head_crossing_bonds(vec![invalid_bond]),
+            SubstanceGroup::new(id, SubstanceGroupKind::Data)
+                .with_crossing_bond_correspondence(vec![invalid_bond]),
+        ] {
+            assert_eq!(
+                validate(invalid),
+                Err(TopologyValidationError::SubstanceGroupBondOutOfRange {
+                    sgroup: id,
+                    bond: invalid_bond,
+                    bond_count: 1,
+                })
+            );
+        }
+        assert_eq!(
+            validate(
+                SubstanceGroup::new(id, SubstanceGroupKind::Data)
+                    .with_parent(SubstanceGroupId::new(1)),
+            ),
+            Err(TopologyValidationError::SubstanceGroupParentOutOfRange {
+                sgroup: id,
+                parent: SubstanceGroupId::new(1),
+            })
+        );
+        assert!(
+            TopologyBlock::try_from_parts(
+                atoms,
+                bonds,
+                vec![
+                    SubstanceGroup::new(id, SubstanceGroupKind::Data)
+                        .with_parent(SubstanceGroupId::new(1)),
+                    SubstanceGroup::new(SubstanceGroupId::new(1), SubstanceGroupKind::Data)
+                        .with_parent(id),
+                ],
+                Vec::new(),
+            )
+            .is_ok()
+        );
     }
 
     #[test]

@@ -2,6 +2,88 @@ use std::collections::BTreeMap;
 
 use crate::{AtomId, BondId};
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum SubstanceGroupValidationError {
+    IdMismatch {
+        position: usize,
+        id: SubstanceGroupId,
+    },
+    AtomOutOfRange {
+        sgroup: SubstanceGroupId,
+        atom: AtomId,
+        atom_count: usize,
+    },
+    BondOutOfRange {
+        sgroup: SubstanceGroupId,
+        bond: BondId,
+        bond_count: usize,
+    },
+    ParentOutOfRange {
+        sgroup: SubstanceGroupId,
+        parent: SubstanceGroupId,
+    },
+}
+
+pub(crate) fn validate_substance_groups(
+    groups: &[SubstanceGroup],
+    atom_count: usize,
+    bond_count: usize,
+) -> Result<(), SubstanceGroupValidationError> {
+    let group_count = groups.len();
+    for (position, group) in groups.iter().enumerate() {
+        if group.id() != SubstanceGroupId::new(position) {
+            return Err(SubstanceGroupValidationError::IdMismatch {
+                position,
+                id: group.id(),
+            });
+        }
+        for atom in group.atoms().iter().chain(group.parent_atoms()) {
+            if atom.index() >= atom_count {
+                return Err(SubstanceGroupValidationError::AtomOutOfRange {
+                    sgroup: group.id(),
+                    atom: *atom,
+                    atom_count,
+                });
+            }
+        }
+        for point in group.attach_points() {
+            for atom in std::iter::once(point.atom).chain(point.leaving_atom) {
+                if atom.index() >= atom_count {
+                    return Err(SubstanceGroupValidationError::AtomOutOfRange {
+                        sgroup: group.id(),
+                        atom,
+                        atom_count,
+                    });
+                }
+            }
+        }
+        for bond in group
+            .bonds()
+            .iter()
+            .chain(group.cstates().iter().map(|state| &state.bond))
+            .chain(group.head_crossing_bonds())
+            .chain(group.crossing_bond_correspondence())
+        {
+            if bond.index() >= bond_count {
+                return Err(SubstanceGroupValidationError::BondOutOfRange {
+                    sgroup: group.id(),
+                    bond: *bond,
+                    bond_count,
+                });
+            }
+        }
+        if let Some(parent) = group.parent()
+            && parent.index() >= group_count
+        {
+            return Err(SubstanceGroupValidationError::ParentOutOfRange {
+                sgroup: group.id(),
+                parent,
+            });
+        }
+    }
+    Ok(())
+}
+
 fn remove_first<T: PartialEq>(container: &mut Vec<T>, element: &T) -> bool {
     // RDKit✔️✔️: auto pos = std::find(container.begin(), container.end(), element);
     // RDKit✔️✔️: if (pos != container.end()) {

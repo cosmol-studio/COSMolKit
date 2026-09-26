@@ -27,6 +27,111 @@ impl fmt::Display for CxParseError {
 
 impl std::error::Error for CxParseError {}
 
+/// Ordered parser progress, including source-committed checkpoints on failure.
+///
+/// `consumed` is the parser's actual byte iterator position. It is independent
+/// of any diagnostic offset carried by `error`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CxParseProgress {
+    records: Vec<CxRecord>,
+    checkpoints: Vec<CxProgressCheckpoint>,
+    consumed: usize,
+    complete: bool,
+    error: Option<CxParseError>,
+}
+
+impl CxParseProgress {
+    pub(crate) fn from_parts(
+        records: Vec<CxRecord>,
+        checkpoints: Vec<CxProgressCheckpoint>,
+        consumed: usize,
+        complete: bool,
+        error: Option<CxParseError>,
+    ) -> Self {
+        Self {
+            records,
+            checkpoints,
+            consumed,
+            complete,
+            error,
+        }
+    }
+
+    /// Parsed record state in source order. On failure, the final record may
+    /// contain only the prefix that was scanned before the failure.
+    #[must_use]
+    pub fn records(&self) -> &[CxRecord] {
+        &self.records
+    }
+
+    /// Source-ordered mutation checkpoints referencing `records()`.
+    #[must_use]
+    pub fn checkpoints(&self) -> &[CxProgressCheckpoint] {
+        &self.checkpoints
+    }
+
+    /// Actual byte position of the CX iterator, not an error diagnostic offset.
+    #[must_use]
+    pub fn consumed(&self) -> usize {
+        self.consumed
+    }
+
+    /// Whether the parser consumed a complete CX block.
+    #[must_use]
+    pub fn is_complete(&self) -> bool {
+        self.complete
+    }
+
+    /// Syntax failure, if parsing stopped before the closing pipe.
+    #[must_use]
+    pub fn error(&self) -> Option<&CxParseError> {
+        self.error.as_ref()
+    }
+
+    pub(crate) fn into_parts(
+        self,
+    ) -> (
+        Vec<CxRecord>,
+        Vec<CxProgressCheckpoint>,
+        usize,
+        bool,
+        Option<CxParseError>,
+    ) {
+        (
+            self.records,
+            self.checkpoints,
+            self.consumed,
+            self.complete,
+            self.error,
+        )
+    }
+}
+
+/// A source-ordered checkpoint for a destination effect.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CxProgressCheckpoint {
+    /// Index into [`CxParseProgress::records`].
+    pub record_index: usize,
+    /// Item index within a record when the source commits one item at a time.
+    pub item_index: Option<usize>,
+    /// Actual source iterator byte position at this commit.
+    pub cursor: usize,
+    /// Source commit point represented by this checkpoint.
+    pub phase: CxProgressPhase,
+}
+
+/// Commit phase reported by a CX progress checkpoint.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CxProgressPhase {
+    /// The source helper began and its initial progress record is available.
+    Begin,
+    /// The progress record received one item; its destination effect may be
+    /// deferred until the helper completes.
+    Item,
+    /// The source helper completed and its final destination effect is ready.
+    Complete,
+}
+
 /// Parsed CX extension records and the byte position after the closing pipe.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ParsedCxExtensions {

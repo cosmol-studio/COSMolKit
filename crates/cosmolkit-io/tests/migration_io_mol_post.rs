@@ -7,8 +7,9 @@ use cosmolkit_io::{
 use cosmolkit_model::{
     Atom, AtomId, AtomQueryPredicate, AtomSpec, Bond, BondId, BondQueryPredicate, BondSpec,
     Conformer3D, CoordinateBlock, CoordinateDimension, MoleculeProperties, QueryAtom, QueryBond,
-    QueryGraph, QueryNode, RecursiveStructureQuery, SGroupData, StereoGroup, StereoGroupKind,
-    SubstanceGroup, SubstanceGroupId, SubstanceGroupKind, TopologyBlock,
+    QueryGraph, QueryNode, RecursiveStructureQuery, SGroupConnection, SGroupData, StereoGroup,
+    StereoGroupKind, SubstanceGroup, SubstanceGroupId, SubstanceGroupKind, TopologyBlock,
+    query_substance_groups, replace_query_substance_groups,
 };
 use cosmolkit_types::{BondDirection, BondOrder, BondStereo, ChiralTag, Element, Hybridization};
 
@@ -32,6 +33,7 @@ fn concrete_or_explicit_query(topology: TopologyBlock, query: bool) -> MolBlockR
     if !query {
         return concrete(topology);
     }
+    let substance_groups = topology.substance_groups;
     let atoms = topology
         .atoms
         .into_iter()
@@ -53,17 +55,19 @@ fn concrete_or_explicit_query(topology: TopologyBlock, query: bool) -> MolBlockR
         .into_iter()
         .map(|bond| QueryBond::from_parts(bond, QueryNode::predicate(BondQueryPredicate::Any)))
         .collect();
+    let mut query = QueryGraph::from_parts(
+        atoms,
+        bonds,
+        Default::default(),
+        vec![],
+        vec![],
+        topology.stereo_groups,
+    )
+    .unwrap();
+    replace_query_substance_groups(&mut query, substance_groups)
+        .expect("canonical groups transport into explicit query fixture");
     MolBlockRecord::Query(QueryMolBlockRecord {
-        query: QueryGraph::from_parts(
-            atoms,
-            bonds,
-            Default::default(),
-            vec![],
-            vec![],
-            topology.stereo_groups,
-        )
-        .unwrap(),
-        substance_groups: topology.substance_groups,
+        query,
         properties: MoleculeProperties::default(),
         source_coordinate_dim: None,
     })
@@ -1191,7 +1195,8 @@ fn q05_query_identity_composition_mol_post_parameter_matrix_preserves_state_and_
                 *properties = properties.clone().with_prop("retained", "matrix").unwrap();
             }
             MolBlockRecord::Query(record) => {
-                record.substance_groups = vec![retained_group.clone()];
+                replace_query_substance_groups(&mut record.query, vec![retained_group.clone()])
+                    .expect("valid query SGroup fixture");
                 record.properties = record
                     .properties
                     .clone()
@@ -1241,8 +1246,9 @@ fn q05_query_identity_composition_mol_post_parameter_matrix_preserves_state_and_
                         assert_eq!(record.query.num_atoms(), expected_atoms);
                         assert_eq!(record.query.coordinates_2d().unwrap().len(), expected_atoms);
                         assert_eq!(record.properties.prop("retained"), Some("matrix"));
-                        assert_eq!(record.substance_groups.len(), 1);
-                        assert_eq!(record.substance_groups[0].atoms(), expected_group_atoms);
+                        let groups = query_substance_groups(&record.query);
+                        assert_eq!(groups.len(), 1);
+                        assert_eq!(groups[0].atoms(), expected_group_atoms);
                     }
                 }
                 assert_eq!(
@@ -1261,13 +1267,17 @@ fn q05_query_identity_composition_ordinary_hydrogen_removal_remaps_typed_sgroups
     let MolBlockRecord::Query(mut record) = parsed else {
         panic!("query record expected")
     };
-    record.substance_groups = vec![
-        SubstanceGroup::new(
-            SubstanceGroupId::new(0),
-            SubstanceGroupKind::Generic("SUP".to_owned()),
-        )
-        .with_atoms(vec![AtomId::new(0), AtomId::new(1)]),
-    ];
+    replace_query_substance_groups(
+        &mut record.query,
+        vec![
+            SubstanceGroup::new(
+                SubstanceGroupId::new(0),
+                SubstanceGroupKind::Generic("SUP".to_owned()),
+            )
+            .with_atoms(vec![AtomId::new(0), AtomId::new(1)]),
+        ],
+    )
+    .expect("valid query hydrogen-removal SGroup fixture");
     let MolBlockRecord::Query(record) = finish_mol_block_record(
         MolBlockRecord::Query(record),
         false,
@@ -1281,8 +1291,214 @@ fn q05_query_identity_composition_ordinary_hydrogen_removal_remaps_typed_sgroups
         panic!("query record expected")
     };
     assert_eq!(record.query.num_atoms(), 1);
-    assert_eq!(record.substance_groups.len(), 1);
-    assert_eq!(record.substance_groups[0].atoms(), [AtomId::new(0)]);
+    let groups = query_substance_groups(&record.query);
+    assert_eq!(groups.len(), 1);
+    assert_eq!(groups[0].atoms(), [AtomId::new(0)]);
+}
+
+#[test]
+fn query_sgroups_concrete_promotion_installs_complete_groups_on_query_graph() {
+    let atom = Atom::from_spec(
+        AtomId::new(0),
+        AtomSpec::new(Element::C)
+            .with_prop("molSubstCount", "1")
+            .unwrap(),
+    );
+    let groups = vec![
+        SubstanceGroup::new(
+            SubstanceGroupId::new(0),
+            SubstanceGroupKind::Generic("SUP".to_owned()),
+        )
+        .with_atoms(vec![AtomId::new(0)])
+        .with_label("promoted"),
+        dat_group(
+            1,
+            Some("FIELD"),
+            None,
+            None,
+            vec![AtomId::new(0)],
+            vec![],
+            &["payload"],
+        )
+        .with_parent(SubstanceGroupId::new(0)),
+    ];
+    let record = concrete(topology(vec![atom], vec![], groups.clone()));
+
+    let MolBlockRecord::Query(record) =
+        finish_mol_block_record(record, false, unsanitized()).expect("concrete promotion")
+    else {
+        panic!("molSubstCount must promote the concrete record to QueryGraph");
+    };
+
+    assert_eq!(query_substance_groups(&record.query), groups);
+    assert_eq!(
+        query_substance_groups(&record.query)[1].parent(),
+        Some(SubstanceGroupId::new(0))
+    );
+}
+
+#[test]
+fn query_sgroups_identity_finalization_preserves_groups_and_ordered_crossing_state() {
+    let bond = Bond::from_spec(
+        BondId::new(0),
+        BondSpec::new(AtomId::new(0), AtomId::new(1), BondOrder::Single),
+    );
+    let groups = vec![
+        SubstanceGroup::new(
+            SubstanceGroupId::new(0),
+            SubstanceGroupKind::StructuralRepeatUnit,
+        )
+        .with_atoms(vec![AtomId::new(0), AtomId::new(1)])
+        .with_bonds(vec![BondId::new(0)])
+        .with_head_crossing_bonds(vec![BondId::new(0)])
+        .with_crossing_bond_correspondence(vec![BondId::new(0)])
+        .with_label("repeat")
+        .with_connection(SGroupConnection::HeadToTail),
+        dat_group(
+            1,
+            Some("FIELD"),
+            None,
+            None,
+            vec![AtomId::new(1)],
+            vec![],
+            &["child payload"],
+        )
+        .with_parent(SubstanceGroupId::new(0)),
+    ];
+    let source = concrete_or_explicit_query(
+        topology(
+            vec![atom(0, Element::C), atom(1, Element::N)],
+            vec![bond],
+            groups.clone(),
+        ),
+        true,
+    );
+
+    let MolBlockRecord::Query(record) =
+        finish_mol_block_record(source, false, unsanitized()).expect("identity finalization")
+    else {
+        panic!("explicit query finalization must retain QueryGraph");
+    };
+
+    assert_eq!(query_substance_groups(&record.query), groups);
+}
+
+#[test]
+fn query_sgroups_hydrogen_removal_updates_groups_and_consumes_source_smart_groups() {
+    let input = concat!(
+        "query hydrogen SGroup chain\n  COSMolKit\n\n",
+        "  0  0  0     0  0            999 V3000\n",
+        "M  V30 BEGIN CTAB\n",
+        "M  V30 COUNTS 3 2 0 0 0\n",
+        "M  V30 BEGIN ATOM\n",
+        "M  V30 1 C 0 0 0 0 RBCNT=1\n",
+        "M  V30 2 C 1 0 0 0\n",
+        "M  V30 3 H -1 0 0 0\n",
+        "M  V30 END ATOM\n",
+        "M  V30 BEGIN BOND\n",
+        "M  V30 1 1 1 2\n",
+        "M  V30 2 1 1 3\n",
+        "M  V30 END BOND\n",
+        "M  V30 END CTAB\n",
+        "M  END\n",
+    );
+    let MolBlockRecord::Query(mut record) = read_mol_block_detached(input).unwrap() else {
+        panic!("RBCNT source predicate must create a query record");
+    };
+    replace_query_substance_groups(
+        &mut record.query,
+        vec![
+            dat_group(
+                0,
+                None,
+                Some("SMARTSQ"),
+                Some("="),
+                vec![AtomId::new(0)],
+                vec![],
+                &["[#6]"],
+            ),
+            SubstanceGroup::new(
+                SubstanceGroupId::new(1),
+                SubstanceGroupKind::Generic("SUP".to_owned()),
+            )
+            .with_atoms(vec![AtomId::new(0), AtomId::new(2)])
+            .with_label("removed with H"),
+            dat_group(
+                2,
+                Some("FIELD"),
+                None,
+                None,
+                vec![AtomId::new(1)],
+                vec![],
+                &["child of removed group"],
+            )
+            .with_parent(SubstanceGroupId::new(1)),
+            SubstanceGroup::new(
+                SubstanceGroupId::new(3),
+                SubstanceGroupKind::StructuralRepeatUnit,
+            )
+            .with_atoms(vec![AtomId::new(0), AtomId::new(1)])
+            .with_bonds(vec![BondId::new(0)])
+            .with_head_crossing_bonds(vec![BondId::new(0)])
+            .with_crossing_bond_correspondence(vec![BondId::new(0)])
+            .with_label("survivor"),
+            dat_group(
+                4,
+                Some("FIELD"),
+                None,
+                None,
+                vec![AtomId::new(1)],
+                vec![],
+                &["surviving child"],
+            )
+            .with_parent(SubstanceGroupId::new(3)),
+        ],
+    )
+    .expect("valid SGroup hierarchy and crossing references");
+
+    let MolBlockRecord::Query(record) = finish_mol_block_record(
+        MolBlockRecord::Query(record),
+        false,
+        MolPostParams {
+            sanitize: true,
+            remove_hs: true,
+            expand_attachment_points: false,
+        },
+    )
+    .expect("source-shaped hydrogen and SGroup removal") else {
+        panic!("hydrogen-removal query must remain a QueryGraph");
+    };
+
+    assert_eq!(record.query.num_atoms(), 2);
+    assert_eq!(record.query.num_bonds(), 1);
+    assert_eq!(
+        record.query.atoms()[0].predicate(),
+        &QueryNode::predicate(AtomQueryPredicate::AtomicNumber(6))
+    );
+    let groups = query_substance_groups(&record.query);
+    assert_eq!(groups.len(), 4, "unexpected retained SGroups: {groups:#?}");
+    assert_eq!(groups[0].id(), SubstanceGroupId::new(0));
+    assert_eq!(groups[0].atoms(), &[AtomId::new(0)]);
+    assert_eq!(groups[0].label(), Some("removed with H"));
+    assert_eq!(groups[1].id(), SubstanceGroupId::new(1));
+    assert_eq!(groups[1].parent(), Some(SubstanceGroupId::new(0)));
+    assert_eq!(groups[1].atoms(), &[AtomId::new(1)]);
+    assert_eq!(groups[1].data().unwrap().values, ["child of removed group"]);
+    assert_eq!(groups[2].id(), SubstanceGroupId::new(2));
+    assert_eq!(groups[2].atoms(), &[AtomId::new(0), AtomId::new(1)]);
+    assert_eq!(groups[2].bonds(), &[BondId::new(0)]);
+    assert_eq!(groups[2].head_crossing_bonds(), &[BondId::new(0)]);
+    assert_eq!(groups[2].crossing_bond_correspondence(), &[BondId::new(0)]);
+    assert_eq!(groups[2].label(), Some("survivor"));
+    assert_eq!(groups[3].id(), SubstanceGroupId::new(3));
+    assert_eq!(groups[3].parent(), Some(SubstanceGroupId::new(2)));
+    assert_eq!(groups[3].atoms(), &[AtomId::new(1)]);
+    assert_eq!(groups[3].data().unwrap().values, ["surviving child"]);
+    assert!(groups.iter().all(|group| {
+        group
+            .data()
+            .is_none_or(|data| data.query_type.as_deref() != Some("SMARTSQ"))
+    }));
 }
 
 #[test]
@@ -1337,9 +1553,10 @@ fn mol_post_query_closure_failure_is_atomic_for_query_records() {
         vec![],
     )
     .unwrap();
+    let mut query = query;
+    replace_query_substance_groups(&mut query, vec![group]).expect("valid query SGroup fixture");
     let source = MolBlockRecord::Query(QueryMolBlockRecord {
         query,
-        substance_groups: vec![group],
         properties: MoleculeProperties::default(),
         source_coordinate_dim: None,
     });
@@ -1352,7 +1569,7 @@ fn mol_post_query_closure_failure_is_atomic_for_query_records() {
         unreachable!()
     };
     assert_eq!(snapshot.query.atoms()[0].explicit_hydrogens(), 0);
-    assert_eq!(snapshot.substance_groups.len(), 1);
+    assert_eq!(query_substance_groups(&snapshot.query).len(), 1);
 }
 
 #[test]
@@ -1399,7 +1616,7 @@ fn mol_post_query_closure_atom_and_dat_queries_follow_source_order_then_complete
     );
     assert_eq!(record.query.atoms()[0].formal_charge(), -1);
     assert_eq!(record.query.prop("_NeedsQueryScan"), None);
-    assert!(record.substance_groups.is_empty());
+    assert!(query_substance_groups(&record.query).is_empty());
 }
 
 #[test]
@@ -1660,8 +1877,9 @@ fn mol_post_smartsq_builds_typed_query_and_preserves_unconsumed_groups() {
     );
     assert_eq!(record.query.atoms()[0].prop("MRV SMA"), Some("[#7]"));
     assert_eq!(record.query.atoms()[0].prop("_MolFileAtomQuery"), Some("1"));
-    assert_eq!(record.substance_groups.len(), 1);
-    assert_eq!(record.substance_groups[0].id(), SubstanceGroupId::new(0));
+    let groups = query_substance_groups(&record.query);
+    assert_eq!(groups.len(), 1);
+    assert_eq!(groups[0].id(), SubstanceGroupId::new(0));
 }
 
 #[test]
@@ -1685,7 +1903,7 @@ fn mol_post_smartsq_non_equals_is_consumed_without_replacing_predicate() {
         record.query.atoms()[0].predicate(),
         &QueryNode::predicate(AtomQueryPredicate::AtomicNumber(6))
     );
-    assert!(record.substance_groups.is_empty());
+    assert!(query_substance_groups(&record.query).is_empty());
 }
 
 #[test]
@@ -1708,7 +1926,6 @@ fn mol_post_query_scan_is_cleared_and_completed() {
     .unwrap();
     let record = MolBlockRecord::Query(QueryMolBlockRecord {
         query,
-        substance_groups: vec![],
         properties: MoleculeProperties::default(),
         source_coordinate_dim: None,
     });
@@ -1725,7 +1942,6 @@ fn explicit_query_record(atoms: Vec<QueryAtom>, bonds: Vec<QueryBond>) -> MolBlo
     MolBlockRecord::Query(QueryMolBlockRecord {
         query: QueryGraph::from_parts(atoms, bonds, Default::default(), vec![], vec![], vec![])
             .unwrap(),
-        substance_groups: vec![],
         properties: MoleculeProperties::default(),
         source_coordinate_dim: None,
     })
@@ -2009,9 +2225,10 @@ fn mol_post_query_bond_state_survives_dat_processing() {
         vec![],
         &["1"],
     );
+    let mut query = query;
+    replace_query_substance_groups(&mut query, vec![group]).expect("valid query SGroup fixture");
     let record = MolBlockRecord::Query(QueryMolBlockRecord {
         query,
-        substance_groups: vec![group],
         properties: MoleculeProperties::default(),
         source_coordinate_dim: None,
     });
@@ -2025,7 +2242,7 @@ fn mol_post_query_bond_state_survives_dat_processing() {
         record.query.bonds()[0].predicate(),
         &QueryNode::predicate(BondQueryPredicate::Any)
     );
-    assert!(record.substance_groups.is_empty());
+    assert!(query_substance_groups(&record.query).is_empty());
 }
 
 #[test]

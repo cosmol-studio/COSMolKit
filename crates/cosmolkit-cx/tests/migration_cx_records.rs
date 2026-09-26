@@ -213,6 +213,7 @@ fn list_scans_preserve_order_and_separate_adjacent_records() {
         parsed.records(),
         &[
             CxRecord::Unsaturation(vec![3, 1]),
+            CxRecord::Unknown(",".into()),
             CxRecord::RingBonds(vec![CxRingBond {
                 atom: 2,
                 constraint: CxCountConstraint::Exact(0),
@@ -227,11 +228,11 @@ fn list_scans_preserve_order_and_separate_adjacent_records() {
 
 #[test]
 fn unknown_records_are_lossless_stop_before_known_records_and_make_progress() {
-    let parsed = parse_cx_extensions("|future:a,b,rb:2:3|").unwrap();
+    let parsed = parse_cx_extensions("|###:x,y,rb:2:3|").unwrap();
     assert_eq!(
         parsed.records(),
         &[
-            CxRecord::Unknown("future:a,b".into()),
+            CxRecord::Unknown("###:x,y,".into()),
             CxRecord::RingBonds(vec![CxRingBond {
                 atom: 2,
                 constraint: CxCountConstraint::Exact(3),
@@ -239,10 +240,17 @@ fn unknown_records_are_lossless_stop_before_known_records_and_make_progress() {
         ]
     );
 
-    let consecutive = parse_cx_extensions("|,,,future,,,|").unwrap();
+    let consecutive = parse_cx_extensions("|,,,###,,,|").unwrap();
     assert_eq!(
         consecutive.records(),
-        &[CxRecord::Unknown("future,,,".into())]
+        &[CxRecord::Unknown(",,,###,,,".into())]
+    );
+
+    let embedded_dispatch = parse_cx_extensions("|future:a,b,rb:2:3|").unwrap_err();
+    assert_eq!(embedded_dispatch.offset, 3);
+    assert_eq!(
+        embedded_dispatch.message,
+        "expected ':', found CX syntax mismatch"
     );
 }
 

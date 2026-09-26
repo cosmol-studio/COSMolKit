@@ -3,6 +3,8 @@
 
 use std::fmt;
 
+use cosmolkit_model::query_substance_groups;
+
 use crate::{
     CoordinateDimension, Molecule, MoleculeProperties, OperationError, QueryGraph, SubstanceGroup,
 };
@@ -125,7 +127,6 @@ pub struct SdfRecord {
     graph: SdfGraph,
     data_fields: Vec<(String, String)>,
     properties: MoleculeProperties,
-    substance_groups: Vec<SubstanceGroup>,
     source_coordinate_dim: Option<CoordinateDimension>,
 }
 
@@ -160,7 +161,6 @@ impl SdfRecord {
                 coordinates,
                 properties,
             } => {
-                let substance_groups = topology.substance_groups.clone();
                 let source_coordinate_dim = coordinates.source_coordinate_dim;
                 let graph = SdfGraph::Molecule(Molecule::from_validated_parts(
                     topology,
@@ -171,7 +171,6 @@ impl SdfRecord {
                     graph,
                     data_fields,
                     properties,
-                    substance_groups,
                     source_coordinate_dim,
                 ))
             }
@@ -179,7 +178,6 @@ impl SdfRecord {
                 SdfGraph::Query(record.query),
                 data_fields,
                 record.properties,
-                record.substance_groups,
                 record.source_coordinate_dim,
             )),
         }
@@ -191,14 +189,12 @@ impl SdfRecord {
         graph: SdfGraph,
         data_fields: Vec<(String, String)>,
         properties: MoleculeProperties,
-        substance_groups: Vec<SubstanceGroup>,
         source_coordinate_dim: Option<CoordinateDimension>,
     ) -> Self {
         Self {
             graph,
             data_fields,
             properties,
-            substance_groups,
             source_coordinate_dim,
         }
     }
@@ -240,7 +236,10 @@ impl SdfRecord {
 
     #[must_use]
     pub fn substance_groups(&self) -> &[SubstanceGroup] {
-        &self.substance_groups
+        match &self.graph {
+            SdfGraph::Molecule(molecule) => &molecule.topology().substance_groups,
+            SdfGraph::Query(query) => query_substance_groups(query),
+        }
     }
 
     #[must_use]
@@ -268,9 +267,114 @@ impl Molecule {
 mod tests {
     use std::collections::BTreeMap;
 
-    use crate::{CoordinateBlock, SubstanceGroupId, SubstanceGroupKind, TopologyBlock};
+    use crate::{
+        CoordinateBlock, SGroupData, SubstanceGroupId, SubstanceGroupKind, TopologyBlock,
+        replace_query_substance_groups,
+    };
 
     use super::*;
+
+    fn query_sgroups_typed_data_group() -> SubstanceGroup {
+        SubstanceGroup::new(SubstanceGroupId::new(0), SubstanceGroupKind::Data)
+            .with_external_id(42)
+            .with_rdkit_sequence_id(7)
+            .with_label("finalized data group")
+            .with_data(SGroupData {
+                field_name: Some("FIELD".into()),
+                values: vec!["first".into(), "second".into()],
+                ..SGroupData::default()
+            })
+            .with_data_field("raw data row")
+    }
+
+    #[test]
+    fn query_sgroups_sdf_record_concrete_accessor_borrows_topology_payload() {
+        let group = query_sgroups_typed_data_group();
+        let topology = TopologyBlock::try_from_parts(vec![], vec![], vec![group.clone()], vec![])
+            .expect("typed data group has valid empty-graph references");
+        let molecule = Molecule::from_validated_parts(
+            topology,
+            CoordinateBlock::default(),
+            MoleculeProperties::default(),
+        )
+        .expect("private validated construction");
+        let record = SdfRecord::from_finalized_graph(
+            SdfGraph::Molecule(molecule),
+            vec![],
+            MoleculeProperties::default(),
+            None,
+        );
+
+        let topology_groups = &record
+            .molecule()
+            .expect("concrete graph payload")
+            .topology()
+            .substance_groups;
+        assert_eq!(record.substance_groups(), &[group]);
+        assert!(std::ptr::eq(
+            record.substance_groups().as_ptr(),
+            topology_groups.as_ptr()
+        ));
+        assert_eq!(record.substance_groups()[0].external_id(), Some(42));
+        assert_eq!(record.substance_groups()[0].rdkit_sequence_id(), Some(7));
+        assert_eq!(
+            record.substance_groups()[0].label(),
+            Some("finalized data group")
+        );
+        assert_eq!(
+            record.substance_groups()[0]
+                .data()
+                .expect("typed DAT data")
+                .values,
+            ["first", "second"]
+        );
+        assert_eq!(
+            record.substance_groups()[0].data_fields(),
+            &["raw data row"]
+        );
+    }
+
+    #[test]
+    fn query_sgroups_sdf_record_query_accessor_borrows_query_payload() {
+        let group = query_sgroups_typed_data_group();
+        let mut query =
+            QueryGraph::from_parts(vec![], vec![], BTreeMap::new(), vec![], vec![], vec![])
+                .expect("empty detached query graph is valid");
+        replace_query_substance_groups(&mut query, vec![group.clone()])
+            .expect("typed data group has valid empty-graph references");
+        let record = SdfRecord::from_finalized_graph(
+            SdfGraph::Query(query),
+            vec![],
+            MoleculeProperties::default(),
+            None,
+        );
+
+        let query_groups = cosmolkit_model::query_substance_groups(
+            record.query_graph().expect("query graph payload"),
+        );
+        assert_eq!(record.substance_groups(), &[group]);
+        assert!(std::ptr::eq(
+            record.substance_groups().as_ptr(),
+            query_groups.as_ptr()
+        ));
+        assert_eq!(record.substance_groups()[0].external_id(), Some(42));
+        assert_eq!(record.substance_groups()[0].rdkit_sequence_id(), Some(7));
+        assert_eq!(
+            record.substance_groups()[0].label(),
+            Some("finalized data group")
+        );
+        assert_eq!(
+            record.substance_groups()[0]
+                .data()
+                .expect("typed DAT data")
+                .values,
+            ["first", "second"]
+        );
+        assert_eq!(
+            record.substance_groups()[0].data_fields(),
+            &["raw data row"]
+        );
+    }
 
     #[test]
     fn sdf_record_result_boundary_concrete_preserves_ordered_typed_state() {
@@ -282,19 +386,19 @@ mod tests {
             .with_name("record")
             .with_sdf_data_field("ID", "first")
             .with_sdf_data_field("ID", "second");
+        let group = SubstanceGroup::new(SubstanceGroupId::new(0), SubstanceGroupKind::Data)
+            .with_label("typed");
         let molecule = Molecule::from_validated_parts(
-            TopologyBlock::default(),
+            TopologyBlock::try_from_parts(vec![], vec![], vec![group.clone()], vec![])
+                .expect("validated SGroup topology"),
             CoordinateBlock::default(),
             properties.clone(),
         )
         .expect("private validated construction");
-        let group = SubstanceGroup::new(SubstanceGroupId::new(0), SubstanceGroupKind::Data)
-            .with_label("typed");
         let record = SdfRecord::from_finalized_graph(
             SdfGraph::Molecule(molecule),
             fields.clone(),
             properties.clone(),
-            vec![group.clone()],
             Some(CoordinateDimension::TwoD),
         );
 
@@ -330,7 +434,6 @@ mod tests {
             SdfGraph::Query(query.clone()),
             vec![("Q".into(), "one".into())],
             MoleculeProperties::default(),
-            vec![],
             Some(CoordinateDimension::ThreeD),
         );
 

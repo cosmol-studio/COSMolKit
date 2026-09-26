@@ -7,7 +7,7 @@
 use cosmolkit_io::{MolBlockRecord, SdfReadError, read_mol_block_detached};
 use cosmolkit_model::{
     AtomId, AtomQueryPredicate, BondId, BondQueryPredicate, CoordinateDimension, QueryNode,
-    SGroupBondRole, SGroupBracketStyle, SGroupConnection, StereoGroupKind,
+    SGroupBondRole, SGroupBracketStyle, SGroupConnection, StereoGroupKind, query_substance_groups,
 };
 use cosmolkit_types::{BondDirection, BondOrder, BondStereo};
 
@@ -6647,16 +6647,13 @@ fn v3k_record_finish_query_retains_carriers_metadata_and_deferred_scan_state() {
     );
     assert_eq!(record.query.stereo_groups()[0].kind(), StereoGroupKind::And);
     assert_eq!(record.query.stereo_groups()[0].atoms(), [AtomId::new(0)]);
-    assert_eq!(record.substance_groups[0].atoms(), [AtomId::new(0)]);
+    let groups = query_substance_groups(&record.query);
+    assert_eq!(groups[0].atoms(), [AtomId::new(0)]);
     assert_eq!(
-        record.substance_groups[0]
-            .data()
-            .unwrap()
-            .field_name
-            .as_deref(),
+        groups[0].data().unwrap().field_name.as_deref(),
         Some("note")
     );
-    assert_eq!(record.substance_groups[0].data().unwrap().values, ["value"]);
+    assert_eq!(groups[0].data().unwrap().values, ["value"]);
     assert_eq!(record.properties.name(), Some("query finish"));
     assert_eq!(
         record.properties.prop("_MolFileInfo"),
