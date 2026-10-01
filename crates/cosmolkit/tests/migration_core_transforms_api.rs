@@ -4,12 +4,12 @@ mod coordinate_views;
 use std::error::Error as _;
 
 use cosmolkit::{
-    Atom, AtomId, AtomPositionParams, AtomSpec, BINDING_CONTRACT, BindingExposure, BindingItem,
-    BindingOwner, BindingParity, BindingSupport, BlockSet, Bond, BondId, BondOrder, BondSpec,
-    Conformer2D, Conformer3D, CoordinateBlock, Element, Molecule, MoleculeOpKind, MoleculeOpOutput,
-    MoleculeProperties, OperationDomain, OperationError, ParityPolicy, StateModel, StereoGroup,
-    StereoGroupKind, SupportStatus, TopologyBlock, TopologyEditKind, TransformError, feature_spec,
-    operation_invariant, operation_parity, operation_spec, support_matrix,
+    Atom, AtomId, AtomPositionParams, AtomSpec, BINDING_CONTRACT, BindingItem, BindingOwner,
+    BlockSet, Bond, BondId, BondOrder, BondSpec, Conformer2D, Conformer3D, CoordinateBlock,
+    Element, FunctionStatus, Molecule, MoleculeOpKind, MoleculeOpOutput, MoleculeProperties,
+    OperationDomain, OperationError, ParityPolicy, StateModel, StereoGroup, StereoGroupKind,
+    TopologyBlock, TopologyEditKind, TransformError, feature_spec, operation_invariant,
+    operation_parity, operation_spec, support_matrix,
 };
 
 fn transform_molecule() -> Molecule {
@@ -97,16 +97,14 @@ fn binding_contract_exposes_exactly_two_types_and_four_callables() {
     ];
     let rows = BINDING_CONTRACT
         .iter()
-        .filter(|row| row.feature == "transforms")
+        .filter(|row| row.feature == "cap-transforms")
         .collect::<Vec<_>>();
     assert_eq!(
         rows.iter().map(|row| row.semantic_id).collect::<Vec<_>>(),
         expected
     );
     for row in &rows {
-        assert_eq!(row.exposure, BindingExposure::Public);
-        assert_eq!(row.support, BindingSupport::SupportedWithRdkitParity);
-        assert_eq!(row.parity, BindingParity::RequiredNow);
+        assert_eq!(row.status, FunctionStatus::Experimental);
     }
     for row in &rows[..2] {
         assert_eq!(row.item, BindingItem::Type);
@@ -136,9 +134,8 @@ fn binding_contract_exposes_exactly_two_types_and_four_callables() {
 
 #[test]
 fn generated_registry_and_all_four_matrices_share_the_coordinate_operation() {
-    let feature = feature_spec("transforms").unwrap();
-    assert_eq!(feature.status, SupportStatus::SupportedWithRdkitParity);
-    assert!(feature.rdkit_parity_sensitive);
+    let feature = feature_spec("cap-transforms").unwrap();
+    assert_eq!(feature.name, "cap-transforms");
 
     let spec = operation_spec("with_atom_position_with_params").unwrap();
     assert_eq!(spec.domain, OperationDomain::Coordinate);
@@ -163,7 +160,7 @@ fn generated_registry_and_all_four_matrices_share_the_coordinate_operation() {
     );
     assert_eq!(spec.derived_effects.invalidate.bits(), (1 << 4) | (1 << 6));
     assert_eq!(format!("{:?}", spec.cip_state), "ClearComputed");
-    assert_eq!(spec.support, SupportStatus::SupportedWithRdkitParity);
+    assert_eq!(spec.status, FunctionStatus::Experimental);
     assert_eq!(spec.parity, ParityPolicy::RequiredNow);
     assert!(spec.io_roundtrip);
     assert_eq!(
@@ -176,7 +173,7 @@ fn generated_registry_and_all_four_matrices_share_the_coordinate_operation() {
     );
     let support = support_matrix()
         .iter()
-        .find(|row| row.feature.name == "transforms")
+        .find(|row| row.feature.name == "cap-transforms")
         .unwrap();
     assert!(std::ptr::eq(support.operation.unwrap(), spec));
 }

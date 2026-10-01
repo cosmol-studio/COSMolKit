@@ -26,61 +26,61 @@ runtime-invariants = []
 op-contracts = []
 op-contracts-strict = ["runtime-invariants", "op-contracts"]
 full = [
-    "alignment",
+    "core",
     "batch",
     "bio",
     "conformer",
-    "confseq",
     "depict",
     "fingerprints",
     "forcefields",
-    "hashing",
     "inchi",
-    "io",
     "search",
-    "serialization",
-    "smiles",
-    "stereoisomers",
-    "tautomer",
-    "hydrogens",
-    "descriptors",
-    "valence",
-    "radicals",
-    "rings",
-    "matrices",
-    "transforms",
-    "stereo",
-    "kekulize",
-    "aromaticity",
-    "sanitize",
 ]
-alignment = ["dep:cosmolkit-alignment"]
-batch = ["dep:cosmolkit-batch"]
-bio = ["dep:cosmolkit-bio", "dep:cosmolkit-io", "cosmolkit-io/bio"]
-conformer = ["dep:cosmolkit-conformer"]
-hydrogens = ["dep:cosmolkit-core"]
-confseq = ["dep:cosmolkit-conformer"]
-depict = ["dep:cosmolkit-depict"]
-descriptors = ["dep:cosmolkit-descriptors"]
-fingerprints = ["dep:cosmolkit-fingerprints"]
-forcefields = ["dep:cosmolkit-forcefields"]
-hashing = ["dep:cosmolkit-fingerprints"]
-inchi = ["dep:cosmolkit-inchi"]
-io = ["dep:cosmolkit-io"]
-matrices = ["dep:cosmolkit-core"]
-transforms = ["dep:cosmolkit-core"]
-search = ["dep:cosmolkit-search"]
-serialization = ["dep:cosmolkit-io"]
-smiles = ["dep:cosmolkit-smiles", "dep:cosmolkit-core"]
-stereo = ["dep:cosmolkit-core", "dep:cosmolkit-stereo"]
-stereoisomers = ["dep:cosmolkit-stereo"]
-tautomer = ["dep:cosmolkit-tautomer"]
-valence = ["dep:cosmolkit-core"]
-radicals = ["dep:cosmolkit-core"]
-rings = ["dep:cosmolkit-core"]
-kekulize = ["dep:cosmolkit-core"]
-aromaticity = ["dep:cosmolkit-core"]
-sanitize = ["dep:cosmolkit-core"]
+
+# User bundles: explicit API composition, not implementation dependencies.
+core = [
+    "cap-smiles", "cap-io", "cap-serialization", "cap-descriptors",
+    "cap-hydrogens", "cap-valence", "cap-radicals", "cap-rings",
+    "cap-matrices", "cap-transforms", "cap-stereo", "cap-kekulize",
+    "cap-aromaticity", "cap-sanitize", "cap-stereoisomers", "cap-tautomer",
+]
+bio = ["cap-bio"]
+conformer = ["cap-conformer", "cap-confseq", "cap-alignment"]
+forcefields = ["cap-forcefields"]
+fingerprints = ["cap-fingerprints", "cap-hashing"]
+search = ["cap-search"]
+depict = ["cap-depict"]
+inchi = ["cap-inchi"]
+batch = ["cap-batch"]
+
+# Advanced capabilities: gate only their own API and direct dependency edges.
+cap-alignment = ["dep:cosmolkit-alignment"]
+cap-batch = ["dep:cosmolkit-batch"]
+cap-bio = ["dep:cosmolkit-bio", "dep:cosmolkit-io", "cosmolkit-io/bio"]
+cap-conformer = ["dep:cosmolkit-conformer"]
+cap-hydrogens = ["dep:cosmolkit-core"]
+cap-confseq = ["dep:cosmolkit-conformer"]
+cap-depict = ["dep:cosmolkit-depict"]
+cap-descriptors = ["dep:cosmolkit-descriptors"]
+cap-fingerprints = ["dep:cosmolkit-fingerprints"]
+cap-forcefields = ["dep:cosmolkit-forcefields"]
+cap-hashing = ["dep:cosmolkit-fingerprints"]
+cap-inchi = ["dep:cosmolkit-inchi"]
+cap-io = ["dep:cosmolkit-io"]
+cap-matrices = ["dep:cosmolkit-core"]
+cap-transforms = ["dep:cosmolkit-core"]
+cap-search = ["dep:cosmolkit-search"]
+cap-serialization = ["dep:cosmolkit-io"]
+cap-smiles = ["dep:cosmolkit-smiles", "dep:cosmolkit-core"]
+cap-stereo = ["dep:cosmolkit-core", "dep:cosmolkit-stereo"]
+cap-stereoisomers = ["dep:cosmolkit-stereo"]
+cap-tautomer = ["dep:cosmolkit-tautomer"]
+cap-valence = ["dep:cosmolkit-core"]
+cap-radicals = ["dep:cosmolkit-core"]
+cap-rings = ["dep:cosmolkit-core"]
+cap-kekulize = ["dep:cosmolkit-core"]
+cap-aromaticity = ["dep:cosmolkit-core"]
+cap-sanitize = ["dep:cosmolkit-core"]
 
 [dependencies]
 cosmolkit-model = { version = "0.5.0-rc.8", path = "../cosmolkit-model" }
@@ -101,30 +101,33 @@ cosmolkit-smiles = { version = "0.5.0-rc.8", path = "../cosmolkit-smiles", optio
 cosmolkit-stereo = { version = "0.5.0-rc.8", path = "../cosmolkit-stereo", optional = true }
 cosmolkit-tautomer = { version = "0.5.0-rc.8", path = "../cosmolkit-tautomer", optional = true }
 
+[dev-dependencies]
+serde_json = "1"
+
 [[test]]
 name = "migration_bio_read_api"
-required-features = ["bio"]
+required-features = ["cap-bio"]
 
 [[test]]
 name = "migration_bio_residue_api"
-required-features = ["bio"]
+required-features = ["cap-bio"]
 
 [[test]]
 name = "migration_bio_hierarchy_api"
-required-features = ["bio"]
+required-features = ["cap-bio"]
 
 [[test]]
 name = "migration_bio_protein_api"
-required-features = ["bio"]
+required-features = ["cap-bio"]
 
 [[test]]
 name = "migration_io_bio_pdb_api"
-required-features = ["bio"]
+required-features = ["cap-bio"]
 
 [[test]]
 name = "migration_io_bio_mmcif_api"
-required-features = ["bio"]
+required-features = ["cap-bio"]
 
 [[test]]
 name = "migration_bio_privacy"
-required-features = ["bio"]
+required-features = ["cap-bio"]

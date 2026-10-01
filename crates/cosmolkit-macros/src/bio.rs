@@ -1,6 +1,6 @@
 //! Lightweight BIO transactions: field references, COW and one body per pair.
 use proc_macro2::TokenStream;
-use quote::quote;
+use quote::{format_ident, quote};
 use std::collections::BTreeSet;
 use syn::{
     Ident, Path, Token, Type, braced, bracketed, parenthesized,
@@ -33,6 +33,7 @@ struct Operation {
     access: Ident,
     read: Vec<Field>,
     write: Vec<Field>,
+    replace: Vec<Field>,
 }
 fn key(input: ParseStream<'_>, expected: &str) -> syn::Result<()> {
     let found: Ident = input.parse()?;
@@ -90,10 +91,16 @@ impl Parse for Registry {
             let read = fields(&inner)?;
             key(&inner, "write")?;
             let write = fields(&inner)?;
+            let replace = if inner.is_empty() {
+                Vec::new()
+            } else {
+                key(&inner, "replace")?;
+                fields(&inner)?
+            };
             if !inner.is_empty() {
                 return Err(inner.error("unexpected BIO operation field"));
             }
-            if targets.is_empty() || read.is_empty() && write.is_empty() {
+            if targets.is_empty() || read.is_empty() && write.is_empty() && replace.is_empty() {
                 return Err(syn::Error::new(
                     name.span(),
                     "BIO operation requires targets and field access",
@@ -112,7 +119,7 @@ impl Parse for Registry {
                 ));
             }
             let mut names = BTreeSet::new();
-            for f in read.iter().chain(write.iter()) {
+            for f in read.iter().chain(write.iter()).chain(replace.iter()) {
                 if !names.insert(f.name.to_string()) {
                     return Err(syn::Error::new(
                         f.name.span(),
@@ -158,6 +165,7 @@ impl Parse for Registry {
                 access,
                 read,
                 write,
+                replace,
             });
         }
         Ok(Self(ops))
@@ -178,33 +186,61 @@ pub fn expand(registry: Registry) -> TokenStream {
             access,
             read,
             write,
+            replace,
         } = op;
         let rn: Vec<_> = read.iter().map(|f| &f.name).collect();
         let rt: Vec<_> = read.iter().map(|f| &f.ty).collect();
         let wn: Vec<_> = write.iter().map(|f| &f.name).collect();
         let wt: Vec<_> = write.iter().map(|f| &f.ty).collect();
+        let xn: Vec<_> = replace.iter().map(|f| &f.name).collect();
+        let xt: Vec<_> = replace.iter().map(|f| &f.ty).collect();
+        let replacement = format_ident!("{}Replacement", access);
         let an: Vec<_> = args.iter().map(|f| &f.name).collect();
         let at: Vec<_> = args.iter().map(|f| &f.ty).collect();
         definitions.push(quote! {
             pub(super) struct #access<'a> {
                 #(pub(super) #rn: &'a #rt,)*
                 #(pub(super) #wn: &'a mut #wt,)*
+                #(pub(super) #xn: &'a std::sync::Arc<#xt>,)*
             }
         });
+        if !replace.is_empty() {
+            definitions.push(quote! {
+                pub(super) struct #replacement {
+                    #(pub(super) #xn: std::sync::Arc<#xt>,)*
+                }
+            });
+        }
+        // Replacement permissions produce a typed output, not mutable access
+        // to old blocks. Installation stays here, within the storage module;
+        // no body receives a setter or a complete detached input object.
+        let invoke = quote! {
+            let data = working.operation_data_mut();
+            let access = #access {
+                #(#rn: &data.#rn,)*
+                #(#wn: std::sync::Arc::make_mut(&mut data.#wn),)*
+                #(#xn: &data.#xn,)*
+            };
+            #body(access, #(#an),*)?
+        };
+        let execute = if replace.is_empty() {
+            quote! { { #invoke; } }
+        } else {
+            quote! {
+                let replacement: #replacement = { #invoke };
+                {
+                    let data = working.operation_data_mut();
+                    #(data.#xn = replacement.#xn;)*
+                }
+            }
+        };
         for target in targets {
             definitions.push(quote! {
                 impl #target {
                     /// Return a new value; unchanged blocks remain shared.
                     pub fn #value(&self, #(#an: #at),*) -> Result<Self, crate::BioOperationError> {
                         let mut working = self.clone();
-                        {
-                            let data = working.operation_data_mut();
-                            let access = #access {
-                                #(#rn: &data.#rn,)*
-                                #(#wn: std::sync::Arc::make_mut(&mut data.#wn),)*
-                            };
-                            #body(access, #(#an),*)?;
-                        }
+                        #execute
                         working.validate_operation()?;
                         Ok(working)
                     }
@@ -220,6 +256,7 @@ pub fn expand(registry: Registry) -> TokenStream {
                 id: stringify!(#name), target: stringify!(#target),
                 value_method: stringify!(#value), inplace_method: stringify!(#inplace),
                 read: &[#(stringify!(#rn)),*], write: &[#(stringify!(#wn)),*],
+                replace: &[#(stringify!(#xn)),*],
             } });
         }
     }
@@ -248,6 +285,49 @@ mod tests {
             VALID.replace("BioStructure, Protein", "BioStructure, BioStructure"),
             VALID.replace("BioStructure, Protein", "Molecule"),
             VALID.replace("offset:", "working:"),
+        ] {
+            assert!(syn::parse_str::<Registry>(&bad).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn replacement_is_declared_generic_and_never_materializes_old_blocks() {
+        let declaration = VALID.replace(
+            "write: [coordinates: Coordinates],",
+            "write: [], replace: [coordinates: Coordinates, atoms: Vec<Atom>],",
+        );
+        let output = expand(syn::parse_str(&declaration).unwrap()).to_string();
+        assert!(output.contains("TranslationAccessReplacement"));
+        assert!(output.contains("coordinates : & 'a std :: sync :: Arc < Coordinates >"));
+        assert!(output.contains("atoms : std :: sync :: Arc < Vec < Atom > >"));
+        assert_eq!(
+            output
+                .matches("data . coordinates = replacement . coordinates")
+                .count(),
+            2
+        );
+        assert_eq!(
+            output.matches("data . atoms = replacement . atoms").count(),
+            2
+        );
+        assert_eq!(output.matches("Arc :: make_mut").count(), 0);
+        assert_eq!(output.matches("super :: translate").count(), 2);
+        assert_eq!(output.matches("validate_operation").count(), 2);
+    }
+
+    #[test]
+    fn replacement_permissions_must_be_disjoint_and_nonduplicated() {
+        let good = VALID.replace(
+            "write: [coordinates: Coordinates],",
+            "write: [], replace: [coordinates: Coordinates],",
+        );
+        for bad in [
+            good.replace("read: []", "read: [coordinates: Coordinates]"),
+            good.replace("write: []", "write: [coordinates: Coordinates]"),
+            good.replace(
+                "replace: [coordinates: Coordinates]",
+                "replace: [coordinates: Coordinates, coordinates: Coordinates]",
+            ),
         ] {
             assert!(syn::parse_str::<Registry>(&bad).is_err(), "{bad}");
         }

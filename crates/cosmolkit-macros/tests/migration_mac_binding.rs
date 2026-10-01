@@ -1,3 +1,6 @@
+#[path = "../src/status.rs"]
+mod status;
+
 #[path = "../src/binding.rs"]
 mod binding;
 
@@ -43,10 +46,6 @@ enum BindingOwner {
     Module,
     Type,
 }
-enum BindingExposure {
-    Registered,
-    Public,
-}
 enum BindingKind {
     Instance,
     Static,
@@ -81,17 +80,16 @@ enum BindingTypeRole {
     Result,
     Error,
 }
-enum BindingSupport {
-    Unsupported,
-    PreservedOnly,
+enum FunctionStatus {
+    Parity {
+        reference: &'static str,
+    },
+    ParityWithDifferences {
+        reference: &'static str,
+        explanation: &'static str,
+    },
+    Native,
     Experimental,
-    Supported,
-    SupportedWithRdkitParity,
-}
-enum BindingParity {
-    NotApplicable,
-    RequiredWhenSupported,
-    RequiredNow,
 }
 enum StateModel {
     ValueReturning,
@@ -106,9 +104,7 @@ struct BindingContractEntry {
     python_name: &'static str,
     javascript_name: &'static str,
     feature: &'static str,
-    exposure: BindingExposure,
-    support: BindingSupport,
-    parity: BindingParity,
+    status: FunctionStatus,
     callable: Option<BindingCallableContract>,
     type_role: Option<BindingTypeRole>,
 }
@@ -123,9 +119,6 @@ cosmolkit_macros::binding_contract! {
             python: "property",
             javascript: "property",
             feature: "runtime",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
             kind: instance,
             parameters: [{ name: key, type: &str, default: required }],
             output: Option<&str>,
@@ -147,9 +140,6 @@ cosmolkit_macros::binding_contract! {
             python: "value",
             javascript: "value",
             feature: "test",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
             kind: instance, receiver: owned,
             parameters: [],
             output: &str,
@@ -170,10 +160,7 @@ cosmolkit_macros::binding_contract! {
             rust: crate::Protein::into_bio_structure,
             python: "into_bio_structure",
             javascript: "intoBioStructure",
-            feature: "bio",
-            exposure: public,
-            support: experimental,
-            parity: required_when_supported,
+            feature: "cap-bio",
             kind: instance, receiver: owned,
             parameters: [],
             output: crate::BioStructure,
@@ -194,7 +181,7 @@ fn compact(tokens: proc_macro2::TokenStream) -> String {
 }
 
 fn callable_entry() -> &'static str {
-    r#"#[cfg(feature = "descriptors")]
+    r#"#[cfg(feature = "cap-descriptors")]
     {
         semantic_id: "Molecule.molecular_weight",
         item: callable,
@@ -202,10 +189,7 @@ fn callable_entry() -> &'static str {
         rust: crate::Molecule::molecular_weight,
         python: "molecular_weight",
         javascript: "molecularWeight",
-        feature: "descriptors",
-        exposure: public,
-        support: supported,
-        parity: not_applicable,
+        feature: "cap-descriptors",
         kind: instance,
         parameters: [],
         output: f64,
@@ -263,12 +247,11 @@ fn empty_registry_emits_one_empty_canonical_slice() {
 
 #[test]
 fn mixed_callable_and_type_entries_preserve_order_and_entry_local_cfg() {
-    let type_entry = r#"#[cfg(feature = "search")]
+    let type_entry = r#"#[cfg(feature = "cap-search")]
     {
         semantic_id: "types.QueryGraph", item: type, owner: type_,
         rust: crate::QueryGraph, python: "QueryGraph", javascript: "QueryGraph",
-        feature: "search", exposure: registered, support: unsupported,
-        parity: required_when_supported, role: value,
+        feature: "cap-search", role: value,
     }"#;
     let generated = compact(
         expand_binding_contract(registry_with(&format!(
@@ -281,23 +264,38 @@ fn mixed_callable_and_type_entries_preserve_order_and_entry_local_cfg() {
     let callable = generated.find("Molecule.molecular_weight").unwrap();
     let value_type = generated.find("types.QueryGraph").unwrap();
     assert!(callable < value_type);
-    assert!(generated.contains("#[cfg(feature=\"descriptors\")]crate::BindingContractEntry"));
-    assert!(generated.contains("#[cfg(feature=\"search\")]crate::BindingContractEntry"));
+    assert!(generated.contains("#[cfg(feature=\"cap-descriptors\")]crate::BindingContractEntry"));
+    assert!(generated.contains("#[cfg(feature=\"cap-search\")]crate::BindingContractEntry"));
     assert!(generated.contains("item:crate::BindingItem::Callable"));
     assert!(generated.contains("item:crate::BindingItem::Type"));
     assert!(generated.contains("type_role:Some(crate::BindingTypeRole::Value)"));
 }
 
 #[test]
-fn registered_entries_omit_assertions_and_public_entries_use_the_full_signature() {
-    let registered = callable_entry().replace("exposure: public", "exposure: registered");
-    let generated = compact(expand_binding_contract(registry_with(&registered)).unwrap());
-    assert!(!generated.contains("__BINDING_ASSERT"));
-
+fn every_entry_uses_the_full_signature_without_an_exposure_switch() {
     let generated = compact(expand_binding_contract(registry_with(callable_entry())).unwrap());
     assert!(generated.contains(
         "const__BINDING_ASSERT_API_0:fn(&crate::Molecule)->Result<f64,crate::OperationError>=crate::Molecule::molecular_weight;"
     ));
+}
+
+#[test]
+fn linked_molecule_status_is_generated_from_the_operation_not_redeclared() {
+    let source = callable_entry().replace("operation: none", "operation: \"molecular_weight\"");
+    let generated = compact(expand_binding_contract(registry_with(&source)).unwrap());
+    assert!(generated.contains("status:crate::Molecule::__FUNCTION_STATUS_MOLECULAR_WEIGHT"));
+    for status in [
+        "experimental",
+        "native",
+        "parity(\"RDKit\")",
+        "parity_with_differences(\"RDKit\", \"approved conditions\")",
+    ] {
+        let repeated = source.replace(
+            "feature: \"cap-descriptors\",",
+            &format!("feature: \"cap-descriptors\", status: {status},"),
+        );
+        assert!(error_for(registry_with(&repeated)).contains("status is inherited"));
+    }
 }
 
 #[test]
@@ -332,8 +330,7 @@ fn lifetime_parameterized_type_owned_receiver_still_rejects_wrong_base_type() {
     let invalid = r#"{
         semantic_id: "BorrowedView.value", item: callable, owner: type_,
         rust: crate::BorrowedView::value, python: "value", javascript: "value",
-        feature: "test", exposure: registered, support: supported,
-        parity: not_applicable, kind: instance, receiver: owned, parameters: [], output: &str,
+        feature: "test", kind: instance, receiver: owned, parameters: [], output: &str,
         error: none, state: value_returning, operation: none,
         signature: for<'a> fn(crate::Molecule) -> &'a str,
     }"#;
@@ -363,8 +360,7 @@ fn instance_static_and_module_signatures_cover_parameters_defaults_and_direct_ou
     let constructor = r#"{
         semantic_id: "Molecule.from_smiles", item: callable, owner: molecule,
         rust: crate::Molecule::from_smiles, python: "from_smiles", javascript: "fromSmiles",
-        feature: "smiles", exposure: public, support: supported_with_rdkit_parity,
-        parity: required_now, kind: static_,
+        feature: "cap-smiles", kind: static_,
         parameters: [{ name: text, type: &str, default: required }],
         output: crate::Molecule, error: crate::OperationError, state: value_returning,
         operation: none,
@@ -374,8 +370,7 @@ fn instance_static_and_module_signatures_cover_parameters_defaults_and_direct_ou
         semantic_id: "Molecule.to_smiles_with_params", item: callable, owner: molecule,
         rust: crate::Molecule::to_smiles_with_params,
         python: "to_smiles_with_params", javascript: "toSmilesWithParams",
-        feature: "smiles", exposure: registered, support: experimental,
-        parity: required_when_supported, kind: instance,
+        feature: "cap-smiles", kind: instance,
         parameters: [
             { name: params, type: &crate::SmilesWriteParams, default: required },
             { name: include_cx, type: bool, default: false },
@@ -387,8 +382,7 @@ fn instance_static_and_module_signatures_cover_parameters_defaults_and_direct_ou
     let module = r#"{
         semantic_id: "module.version", item: callable, owner: module,
         rust: crate::version, python: "version", javascript: "version",
-        feature: "metadata", exposure: public, support: supported,
-        parity: not_applicable, kind: module, parameters: [],
+        feature: "metadata", kind: module, parameters: [],
         output: &'static str, error: none, state: read_only, operation: none,
         signature: fn() -> &'static str,
     }"#;
@@ -407,32 +401,33 @@ fn instance_static_and_module_signatures_cover_parameters_defaults_and_direct_ou
 }
 
 #[test]
-fn all_type_roles_and_support_parity_branches_are_structured() {
+fn all_type_roles_and_four_function_statuses_are_structured() {
     let roles = ["value", "parameter", "result", "error"];
-    let support = [
-        ("unsupported", "required_when_supported"),
-        ("preserved_only", "not_applicable"),
-        ("experimental", "required_when_supported"),
-        ("supported", "not_applicable"),
+    let statuses = [
+        "parity(\"RDKit\")",
+        "parity_with_differences(\"Gemmi\", \"Approved difference under explicitly documented conditions\")",
+        "native",
+        "experimental",
     ];
-    let entries = roles
-        .iter()
-        .enumerate()
-        .map(|(index, role)| {
-            let (status, parity) = support[index];
-            format!(
-                "{{semantic_id:\"types.Type{index}\",item:type,owner:type_,rust:crate::Type{index},python:\"Type{index}\",javascript:\"Type{index}\",feature:\"types\",exposure:registered,support:{status},parity:{parity},role:{role}}}"
-            )
-        })
-        .collect::<Vec<_>>()
-        .join(",");
+    let mut entries = Vec::new();
+    for role in roles {
+        for status in statuses {
+            let index = entries.len();
+            entries.push(format!("{{semantic_id:\"types.Type{index}\",item:type,owner:type_,rust:crate::Type{index},python:\"Type{index}\",javascript:\"Type{index}\",feature:\"types\",status:{status},role:{role}}}"));
+        }
+    }
+    assert_eq!(entries.len(), 16);
+    let entries = entries.join(",");
     let generated = compact(expand_binding_contract(registry_with(&entries)).unwrap());
     for variant in ["Value", "Parameter", "Result", "Error"] {
         assert!(generated.contains(&format!("BindingTypeRole::{variant}")));
     }
-    for variant in ["Unsupported", "PreservedOnly", "Experimental", "Supported"] {
-        assert!(generated.contains(&format!("BindingSupport::{variant}")));
+    for variant in ["Parity", "ParityWithDifferences", "Native", "Experimental"] {
+        assert!(generated.contains(&format!("FunctionStatus::{variant}")));
     }
+    assert!(generated.contains("reference:\"RDKit\""));
+    assert!(generated.contains("reference:\"Gemmi\""));
+    assert_eq!(generated.matches("assert_public_type::<").count(), 16);
 }
 
 #[test]
@@ -446,7 +441,7 @@ fn unknown_missing_duplicate_and_wrong_item_fields_fail_closed() {
     );
     assert!(
         error_for(registry_with(
-            &base.replace("feature: \"descriptors\",", "")
+            &base.replace("feature: \"cap-descriptors\",", "")
         ))
         .contains("missing `feature`")
     );
@@ -456,7 +451,7 @@ fn unknown_missing_duplicate_and_wrong_item_fields_fail_closed() {
         ))
         .contains("duplicate binding field `item`")
     );
-    let type_with_kind = r#"pub static API = [{semantic_id:"types.QueryGraph",item:type,owner:type_,rust:crate::QueryGraph,python:"QueryGraph",javascript:"QueryGraph",feature:"search",exposure:registered,support:unsupported,parity:required_when_supported,role:value,kind:instance}];"#;
+    let type_with_kind = r#"pub static API = [{semantic_id:"types.QueryGraph",item:type,owner:type_,rust:crate::QueryGraph,python:"QueryGraph",javascript:"QueryGraph",feature:"cap-search",role:value,kind:instance}];"#;
     assert!(error_for(type_with_kind).contains("type binding entry cannot declare `kind`"));
 }
 
@@ -523,8 +518,7 @@ fn type_owned_constructor_names_are_scoped_to_the_actual_receiver_type() {
             r#"{{
                 semantic_id: "{type_name}.new", item: callable, owner: type_,
                 rust: crate::{type_name}::new, python: "new", javascript: "new",
-                feature: "test", exposure: public, support: supported,
-                parity: not_applicable, kind: static_, parameters: [],
+                feature: "test", kind: static_, parameters: [],
                 output: crate::{type_name}, error: none, state: value_returning,
                 operation: none, signature: fn() -> crate::{type_name}
             }}"#
@@ -542,13 +536,11 @@ fn type_owned_constructor_names_are_scoped_to_the_actual_receiver_type() {
 fn type_declaration_projection_collision_is_rejected_in_the_export_scope() {
     let first = r#"{
         semantic_id:"first.Value",item:type,owner:type_,rust:crate::first::Value,
-        python:"Value",javascript:"Value",feature:"test",exposure:registered,
-        support:unsupported,parity:required_when_supported,role:value
+        python:"Value",javascript:"Value",feature:"test",role:value
     }"#;
     let second = r#"{
         semantic_id:"second.Value",item:type,owner:type_,rust:crate::second::Value,
-        python:"Value",javascript:"Value",feature:"test",exposure:registered,
-        support:unsupported,parity:required_when_supported,role:value
+        python:"Value",javascript:"Value",feature:"test",role:value
     }"#;
     let error = error_for(format!("pub static API = [{first},{second}];"));
     assert!(
@@ -563,8 +555,7 @@ fn same_receiver_callable_projection_collision_is_rejected() {
     let constructor = r#"{
         semantic_id:"FirstValue.new",item:callable,owner:type_,
         rust:crate::FirstValue::new,python:"new",javascript:"new",
-        feature:"test",exposure:public,support:supported,parity:not_applicable,
-        kind:static_,parameters:[],output:crate::FirstValue,error:none,
+        feature:"test",kind:static_,parameters:[],output:crate::FirstValue,error:none,
         state:value_returning,operation:none,signature:fn()->crate::FirstValue
     }"#;
     let error = error_for(format!("pub static API = [{constructor},{constructor}];"));
@@ -582,8 +573,7 @@ fn parameter_default_and_full_signature_disagreements_fail_closed() {
     let parameterized = r#"pub static API = [{
         semantic_id:"Molecule.configured",item:callable,owner:molecule,
         rust:crate::Molecule::configured,python:"configured",javascript:"configured",
-        feature:"test",exposure:registered,support:supported,parity:not_applicable,
-        kind:instance,parameters:[
+        feature:"test",kind:instance,parameters:[
             {name:first,type:usize,default:1usize},
             {name:second,type:bool,default:required}
         ],output:usize,error:none,state:read_only,operation:none,
@@ -616,23 +606,60 @@ fn operation_identity_canonical_names_and_projections_fail_closed() {
 }
 
 #[test]
-fn cfg_feature_and_support_parity_mismatches_fail_closed() {
-    let cfg = callable_entry().replace("feature = \"descriptors\"", "feature = \"other\"");
+fn cfg_features_and_invalid_function_statuses_fail_closed() {
+    let cfg = callable_entry().replace("feature = \"cap-descriptors\"", "feature = \"other\"");
     assert!(error_for(registry_with(&cfg)).contains("cfg feature disagrees"));
     let compound = callable_entry().replace(
-        "feature = \"descriptors\"",
-        "all(feature = \"descriptors\")",
+        "feature = \"cap-descriptors\"",
+        "all(feature = \"cap-descriptors\")",
     );
     assert!(error_for(registry_with(&compound)).contains("compound or non-feature"));
-    let parity = callable_entry().replace("parity: not_applicable", "parity: required_now");
-    assert!(
-        error_for(registry_with(&parity)).contains("required_now and supported_with_rdkit_parity")
-    );
-    let support =
-        callable_entry().replace("support: supported", "support: supported_with_rdkit_parity");
-    assert!(
-        error_for(registry_with(&support)).contains("required_now and supported_with_rdkit_parity")
-    );
+    for invalid in [
+        "supported",
+        "supported_with_rdkit_parity",
+        "unsupported",
+        "preserved_only",
+    ] {
+        let source = callable_entry().replace(
+            "feature: \"cap-descriptors\",",
+            &format!("feature: \"cap-descriptors\", status: {invalid},"),
+        );
+        assert!(error_for(registry_with(&source)).contains("status must be"));
+    }
+    for (status, expected) in [
+        ("parity(\"\")", "reference must not be empty"),
+        ("parity(\"  \")", "reference must not be empty"),
+        (
+            "parity_with_differences(\"Gemmi\", \"\")",
+            "explanation must not be empty",
+        ),
+        (
+            "parity_with_differences(\"\", \"reason\")",
+            "reference must not be empty",
+        ),
+        (
+            "parity(\"RDKit\", \"extra\")",
+            "unexpected function status arguments",
+        ),
+    ] {
+        let source = callable_entry().replace(
+            "feature: \"cap-descriptors\",",
+            &format!("feature: \"cap-descriptors\", status: {status},"),
+        );
+        assert!(error_for(registry_with(&source)).contains(expected));
+    }
+    for field in [
+        "exposure: registered",
+        "exposure: public",
+        "support: experimental",
+        "parity: required_now",
+    ] {
+        let source = callable_entry().replace(
+            "feature: \"cap-descriptors\",",
+            &format!("feature: \"cap-descriptors\", {field},"),
+        );
+        assert!(error_for(registry_with(&source)).contains("unknown binding entry field"));
+    }
 }
 
 #[test]
@@ -658,31 +685,27 @@ fn type_owned_callables_cover_static_borrowed_mutable_and_consuming_receivers() 
     {
         semantic_id:"MoleculeBuilder.new",item:callable,owner:type_,
         rust:crate::MoleculeBuilder::new,python:"new",javascript:"new",
-        feature:"runtime",exposure:public,support:supported,parity:not_applicable,
-        kind:static_,parameters:[],output:crate::MoleculeBuilder,error:none,
+        feature:"runtime",kind:static_,parameters:[],output:crate::MoleculeBuilder,error:none,
         state:value_returning,operation:none,
         signature:fn()->crate::MoleculeBuilder
     },
     {
         semantic_id:"MoleculeBuilder.len",item:callable,owner:type_,
         rust:crate::MoleculeBuilder::len,python:"len",javascript:"len",
-        feature:"runtime",exposure:public,support:supported,parity:not_applicable,
-        kind:instance,parameters:[],output:usize,error:none,state:read_only,
+        feature:"runtime",kind:instance,parameters:[],output:usize,error:none,state:read_only,
         operation:none,signature:fn(&crate::MoleculeBuilder)->usize
     },
     {
         semantic_id:"MoleculeBuilder.push",item:callable,owner:type_,
         rust:crate::MoleculeBuilder::push,python:"push",javascript:"push",
-        feature:"runtime",exposure:public,support:supported,parity:not_applicable,
-        kind:instance,parameters:[{name:value,type:usize,default:required}],
+        feature:"runtime",kind:instance,parameters:[{name:value,type:usize,default:required}],
         output:(),error:none,state:in_place,operation:none,
         signature:fn(&mut crate::MoleculeBuilder,usize)->()
     },
     {
         semantic_id:"MoleculeBuilder.build",item:callable,owner:type_,
         rust:crate::MoleculeBuilder::build,python:"build",javascript:"build",
-        feature:"runtime",exposure:public,support:supported,parity:not_applicable,
-        kind: instance, receiver: owned,parameters:[],output:crate::Molecule,
+        feature:"runtime",kind: instance, receiver: owned,parameters:[],output:crate::Molecule,
         error:crate::OperationError,state:value_returning,operation:none,
         signature:fn(crate::MoleculeBuilder)->Result<crate::Molecule,crate::OperationError>
     }"#;
@@ -702,8 +725,7 @@ fn invalid_type_owned_kind_and_receiver_shapes_fail_closed() {
     let valid = r#"{
         semantic_id:"MoleculeBuilder.push",item:callable,owner:type_,
         rust:crate::MoleculeBuilder::push,python:"push",javascript:"push",
-        feature:"runtime",exposure:registered,support:supported,parity:not_applicable,
-        kind:instance,parameters:[{name:value,type:usize,default:required}],
+        feature:"runtime",kind:instance,parameters:[{name:value,type:usize,default:required}],
         output:(),error:none,state:in_place,operation:none,
         signature:fn(&mut crate::MoleculeBuilder,usize)->()
     }"#;
@@ -728,8 +750,7 @@ fn in_place_javascript_projection_strips_only_the_rust_python_suffix() {
     let entry = r#"{
         semantic_id:"Molecule.set_atom_position_",item:callable,owner:molecule,
         rust:crate::Molecule::set_atom_position_,python:"set_atom_position_",
-        javascript:"setAtomPosition",feature:"transforms",exposure:registered,
-        support:unsupported,parity:required_when_supported,kind:instance,
+        javascript:"setAtomPosition",feature:"cap-transforms",kind:instance,
         parameters:[{name:atom,type:usize,default:required}],output:(),
         error:crate::OperationError,state:in_place,operation:"set_atom_position_",
         signature:fn(&mut crate::Molecule,usize)->Result<(),crate::OperationError>
@@ -772,8 +793,7 @@ fn bio_objects_require_inplace_suffix_and_mutable_receiver() {
             r#"{{
             semantic_id:"{target}.translate_",item:callable,owner:type_,
             rust:crate::{target}::translate_,python:"translate_",javascript:"translate",
-            feature:"bio",exposure:public,support:experimental,parity:not_applicable,
-            kind:instance,parameters:[],output:(),error:none,state:in_place,operation:none,
+            feature:"cap-bio",kind:instance,parameters:[],output:(),error:none,state:in_place,operation:none,
             signature:fn(&mut crate::{target})->()
         }}"#
         );
@@ -802,8 +822,7 @@ fn receiver_capability_is_independent_of_business_type() {
             r#"{{
             semantic_id:"{target}.convert", item:callable, owner:type_,
             rust:crate::{target}::convert, python:"convert", javascript:"convert",
-            feature:"bio", exposure:public, support:experimental, parity:not_applicable,
-            kind:instance, receiver:owned, parameters:[], output:crate::{target}, error:none,
+            feature:"cap-bio", kind:instance, receiver:owned, parameters:[], output:crate::{target}, error:none,
             state:value_returning, operation:none, signature:fn(crate::{target})->crate::{target}
         }}"#
         );

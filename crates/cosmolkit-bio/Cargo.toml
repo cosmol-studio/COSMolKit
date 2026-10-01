@@ -11,6 +11,12 @@ edition.workspace = true
 readme = "../cosmolkit/README.md"
 documentation = "https://docs.rs/cosmolkit"
 
+[features]
+# Narrowly authorized test infrastructure (BIO-ROWS-PROBE): exposes the
+# doc-hidden __bio_rows_probe bridge for the owning IO integration tests
+# ONLY when explicitly enabled. Never default; never production.
+test-probes = []
+
 [dependencies]
 cosmolkit-model = { version = "0.5.0-rc.8", path = "../cosmolkit-model" }
 cosmolkit-types = { version = "0.5.0-rc.8", path = "../cosmolkit-types" }

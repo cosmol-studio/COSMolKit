@@ -50,21 +50,8 @@ fn expand_molecule_operation(
     let params = &operation.params;
     let call_args = call_arguments(operation)?;
     let impl_fn = &fields.impl_fn;
-    let feature = &fields.feature;
     let spec = format_ident!("{}_SPEC", name.to_string().to_ascii_uppercase());
     let docs = fields.docs.as_ref().map(|text| quote!(#[doc = #text]));
-
-    let support_check = quote! {
-        if matches!(
-            #spec.support,
-            crate::SupportStatus::Unsupported { .. }
-        ) {
-            return Err(crate::ops::OperationError::UnsupportedFeature {
-                operation: &#spec,
-                source: crate::UnsupportedFeatureError::from_spec(&#feature),
-            });
-        }
-    };
 
     let primary = match (
         fields.output,
@@ -75,7 +62,7 @@ fn expand_molecule_operation(
             #(#cfg)*
             #docs
             pub fn #method(&self, #(#params),*) -> Result<crate::Molecule, crate::ops::OperationError> {
-                #support_check
+
                 let mut parts = crate::OpParts::new(self, &#spec)?;
                 #impl_fn(&mut parts, #(#call_args),*)?;
                 parts.finish()
@@ -87,7 +74,7 @@ fn expand_molecule_operation(
                 #(#cfg)*
                 #docs
                 pub fn #method(&self, #(#params),*) -> Result<#result, crate::ops::OperationError> {
-                    #support_check
+
                     let mut parts = crate::OpParts::new(self, &#spec)?;
                     let pending: #result<crate::PendingMolecule<#marker>> = #impl_fn(&mut parts, #(#call_args),*)?;
                     parts.finish_result(pending)
@@ -98,7 +85,7 @@ fn expand_molecule_operation(
             #(#cfg)*
             #docs
             pub fn #method(&self, #(#params),*) -> Result<Vec<crate::Molecule>, crate::ops::OperationError> {
-                #support_check
+
                 let mut parts = crate::MultiOutputOpParts::new(self, &#spec)?;
                 #impl_fn(&mut parts, #(#call_args),*)?;
                 parts.finish()
@@ -108,7 +95,7 @@ fn expand_molecule_operation(
             #(#cfg)*
             #docs
             pub fn #method(&self, #(#params),*) -> Result<#result, crate::ops::OperationError> {
-                #support_check
+
                 let mut parts = crate::MultiOutputOpParts::new(self, &#spec)?;
                 let metadata = #impl_fn(&mut parts, #(#call_args),*)?;
                 let molecules = parts.finish()?;
@@ -136,7 +123,7 @@ fn expand_molecule_operation(
                 #(#cfg)*
                 #inplace_docs
                 pub fn #inplace_method(&mut self, #(#params),*) -> Result<#result, crate::ops::OperationError> {
-                    #support_check
+
                     let mut parts = crate::OpParts::new_in_place(self, &#spec)?;
                     let result = match #impl_fn(&mut parts, #(#call_args),*) {
                         Ok(result) => result,
@@ -154,7 +141,7 @@ fn expand_molecule_operation(
                 #(#cfg)*
                 #inplace_docs
                 pub fn #inplace_method(&mut self, #(#params),*) -> Result<(), crate::ops::OperationError> {
-                    #support_check
+
                     let mut parts = crate::OpParts::new_in_place(self, &#spec)?;
                     if let Err(error) = #impl_fn(&mut parts, #(#call_args),*) {
                         parts.abort_in_place();
@@ -223,10 +210,26 @@ fn expand_molecule_operation(
         }
     };
 
+    let statuses = [
+        Some(&fields.method),
+        fields.default_method.as_ref(),
+        fields.inplace_method.as_ref(),
+        fields.default_inplace_method.as_ref(),
+    ]
+    .into_iter()
+    .flatten()
+    .map(|method| {
+        let constant = format_ident!(
+            "__FUNCTION_STATUS_{}",
+            method.to_string().to_ascii_uppercase()
+        );
+        quote! { #(#cfg)* pub(crate) const #constant: crate::FunctionStatus = #spec.status; }
+    });
     Ok(quote! {
+        #(#statuses)*
         #primary
-        #default
         #inplace
+        #default
         #default_inplace
     })
 }
@@ -260,12 +263,6 @@ fn expand_bio_operation(operation: &BioOperation) -> syn::Result<proc_macro2::To
     Ok(quote! {
         #(#cfg)*
         pub fn #method(&self, #(#params),*) -> Result<crate::BioStructure, crate::bio_ops::BioOperationError> {
-            if let crate::SupportStatus::Unsupported { reason } = #spec.support {
-                return Err(crate::bio_ops::BioOperationError::Unsupported {
-                    operation: &#spec,
-                    reason,
-                });
-            }
             let _feature = &#feature;
             let mut parts = crate::BioOpParts::new(self, &#spec);
             #impl_fn(&mut parts, #(#call_args),*)?;

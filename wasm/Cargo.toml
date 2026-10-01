@@ -31,17 +31,17 @@ full = [
     "smiles",
     "valence",
 ]
-aromaticity = ["cosmolkit/aromaticity"]
-depict = ["cosmolkit/depict"]
-descriptors = ["cosmolkit/descriptors"]
-hydrogens = ["cosmolkit/hydrogens"]
-io = ["cosmolkit/io"]
-kekulize = ["cosmolkit/kekulize"]
-radicals = ["cosmolkit/radicals"]
-rings = ["cosmolkit/rings"]
-sanitize = ["cosmolkit/sanitize"]
-smiles = ["cosmolkit/smiles"]
-valence = ["cosmolkit/valence"]
+aromaticity = ["cosmolkit/cap-aromaticity"]
+depict = ["cosmolkit/cap-depict"]
+descriptors = ["cosmolkit/cap-descriptors"]
+hydrogens = ["cosmolkit/cap-hydrogens"]
+io = ["cosmolkit/cap-io"]
+kekulize = ["cosmolkit/cap-kekulize"]
+radicals = ["cosmolkit/cap-radicals"]
+rings = ["cosmolkit/cap-rings"]
+sanitize = ["cosmolkit/cap-sanitize"]
+smiles = ["cosmolkit/cap-smiles"]
+valence = ["cosmolkit/cap-valence"]
 
 [dependencies]
 cosmolkit = { version = "0.5.0-rc.8", path = "../crates/cosmolkit", default-features = false }

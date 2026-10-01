@@ -2,11 +2,11 @@
 mod coordinate_views;
 
 use cosmolkit::{
-    Atom, AtomId, AtomSpec, BINDING_CONTRACT, BindingExposure, BindingItem, BindingOwner,
-    BindingParity, BindingSupport, Bond, BondId, BondOrder, BondSpec, Conformer3D, CoordinateBlock,
-    DenseMatrix, DistanceMatrix3dParams, DistanceMatrixParams, Element, MatrixError, Molecule,
-    MoleculeProperties, StateModel, StereoGroup, StereoGroupKind, TopologyBlock,
-    operation_invariant, operation_parity, operation_spec, support_matrix,
+    Atom, AtomId, AtomSpec, BINDING_CONTRACT, BindingItem, BindingOwner, Bond, BondId, BondOrder,
+    BondSpec, Conformer3D, CoordinateBlock, DenseMatrix, DistanceMatrix3dParams,
+    DistanceMatrixParams, Element, FunctionStatus, MatrixError, Molecule, MoleculeProperties,
+    StateModel, StereoGroup, StereoGroupKind, TopologyBlock, operation_invariant, operation_parity,
+    operation_spec, support_matrix,
 };
 
 fn molecule_with_coordinates(coordinates: CoordinateBlock) -> Molecule {
@@ -125,18 +125,14 @@ fn binding_contract_has_exact_types_and_four_read_only_callables() {
     for row in &rows[..4] {
         assert_eq!(row.item, BindingItem::Type);
         assert_eq!(row.owner, BindingOwner::Type);
-        assert_eq!(row.exposure, BindingExposure::Public);
-        assert_eq!(row.support, BindingSupport::SupportedWithRdkitParity);
-        assert_eq!(row.parity, BindingParity::RequiredNow);
-        assert_eq!(row.feature, "matrices");
+        assert_eq!(row.status, FunctionStatus::Experimental);
+        assert_eq!(row.feature, "cap-matrices");
     }
     for row in &rows[4..] {
         assert_eq!(row.item, BindingItem::Callable);
         assert_eq!(row.owner, BindingOwner::Molecule);
-        assert_eq!(row.exposure, BindingExposure::Public);
-        assert_eq!(row.support, BindingSupport::SupportedWithRdkitParity);
-        assert_eq!(row.parity, BindingParity::RequiredNow);
-        assert_eq!(row.feature, "matrices");
+        assert_eq!(row.status, FunctionStatus::Experimental);
+        assert_eq!(row.feature, "cap-matrices");
         assert_eq!(row.callable.unwrap().state_model, StateModel::ReadOnly);
         assert_eq!(row.callable.unwrap().operation_semantic_id, None);
     }

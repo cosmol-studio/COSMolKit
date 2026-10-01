@@ -1,7 +1,7 @@
 use cosmolkit::{
-    Atom, AtomId, AtomSpec, BINDING_CONTRACT, BindingExposure, BindingItem, BindingOwner,
-    BindingParity, BindingSupport, BindingTypeRole, StateModel, TemplateAttachment,
-    TemplateAttachmentOrder, TemplateAttachmentOrderError,
+    Atom, AtomId, AtomSpec, BINDING_CONTRACT, BindingItem, BindingOwner, BindingTypeRole,
+    FunctionStatus, StateModel, TemplateAttachment, TemplateAttachmentOrder,
+    TemplateAttachmentOrderError,
 };
 
 #[test]
@@ -38,16 +38,16 @@ fn binding_contract_has_exact_template_attachment_value_and_accessor_rows() {
     assert!(rows.iter().all(|row| row.owner == BindingOwner::Type));
     assert!(
         rows.iter()
-            .all(|row| row.exposure == BindingExposure::Public)
+            .all(|row| row.status == FunctionStatus::Experimental)
     );
     assert!(rows.iter().all(|row| row.feature == "runtime"));
     assert!(
         rows.iter()
-            .all(|row| row.support == BindingSupport::Supported)
+            .all(|row| row.status == FunctionStatus::Experimental)
     );
     assert!(
         rows.iter()
-            .all(|row| row.parity == BindingParity::NotApplicable)
+            .all(|row| row.status == FunctionStatus::Experimental)
     );
     assert_eq!(rows[0].item, BindingItem::Type);
     assert_eq!(rows[0].type_role, Some(BindingTypeRole::Value));

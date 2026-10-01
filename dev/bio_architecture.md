@@ -59,6 +59,18 @@ names describe future projections, not implemented adapters.
 
 ## Source and format contracts
 
+Selection copying follows pinned Gemmi `Selection::copy_selection` and
+`Structure::empty_copy`. Retain source-assigned assembly and other metadata,
+including chain/subchain names absent from the selected hierarchy. These names
+are source metadata, not local row references; construction must not reject,
+prune or rewrite them merely because selection omitted rows. A consumer needing
+actual targets must resolve names and explicitly handle absence. Local row IDs,
+parent/spans, entity-row references and coordinate alignment remain validated.
+Accepted parents remain present even when no children match. Fields not assigned
+by `empty_copy` follow its defaults; this is not whole-object cloning or the
+separate Protein projection contract. This rule does not authorize assembly
+expansion, symmetry calculations or an alternate validation-bypass constructor.
+
 Preserve the pinned reader's order, options, errors, source identifiers,
 metadata, coordinates, altlocs, crystal/NCS and assemblies across its declared
 scope. Existing representational limits return structured errors, never

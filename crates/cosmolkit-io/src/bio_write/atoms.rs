@@ -1,13 +1,13 @@
 //! `_atom_site` column discovery for the coordinate writer.
 
-use cosmolkit_bio::{BioAtomRow, BioCalcFlag, BioStructureData};
+use cosmolkit_bio::{BioCalcFlag, BioStructureData};
 
 use super::BioMmcifWriteParams;
 use super::value::{
     atom_name_text, coordinate_text, float_field_text, pdbx_icode, qchain, residue_name_text,
     subchain_or_dot,
 };
-use crate::cif::quote_cif_value;
+use crate::cif::{CifBlock, quote_cif_value};
 
 /// The discovered `_atom_site` tag list and the scanned atom-row count.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -363,11 +363,106 @@ pub(crate) fn emit_atom_site_rows(
     Ok((values, aniso))
 }
 
-/// Gemmi atom-row facts shared by row emission (kept beside the schema so
-/// the emission phase never rescans for them).
-#[allow(dead_code)] // consumed by A02 in the next unit
-pub(crate) struct AtomRowFacts<'a> {
-    pub(crate) atom: &'a BioAtomRow,
+/// Gemmi `add_cif_atoms` (complete): write the `_atom_site` loop from the
+/// A01 schema and A02 row emission, then the conditional
+/// `_atom_site_anisotrop` tail, into a mutable CIF block.
+///
+/// The two phases stay separate functions because the source splits tag
+/// discovery/emission only conceptually; composition here follows
+/// to_mmcif.cpp:164-187 verbatim for the tail.
+pub(crate) fn add_cif_atoms(
+    block: &mut CifBlock,
+    data: &BioStructureData,
+    params: &BioMmcifWriteParams,
+) -> Result<(), super::BioMmcifWriteError> {
+    // Gemmi✔️✔️:   if (aniso.empty()) {
+    // Gemmi✔️✔️:     block.find_mmcif_category("_atom_site_anisotrop.").erase();
+    // Gemmi✔️✔️:   } else {
+    // Gemmi✔️✔️:     cif::Loop& aniso_loop = block.init_mmcif_loop("_atom_site_anisotrop.", {
+    // Gemmi✔️✔️:                                   "id", "type_symbol", "U[1][1]", "U[2][2]",
+    // Gemmi✔️✔️:                                   "U[3][3]", "U[1][2]", "U[1][3]", "U[2][3]"});
+    // Gemmi✔️✔️:     if (st.models.size() > 1)
+    // Gemmi✔️✔️:       aniso_loop.tags.push_back("_atom_site_anisotrop.pdbx_PDB_model_num");
+    // Gemmi✔️✔️:     std::vector<std::string>& aniso_val = aniso_loop.values;
+    // Gemmi✔️✔️:     aniso_val.reserve(aniso_loop.tags.size() * aniso.size());
+    // Gemmi✔️✔️:     for (const auto& a : aniso) {
+    // Gemmi✔️✔️:       aniso_val.emplace_back(std::to_string(std::get<0>(a)));
+    // Gemmi✔️✔️:       const Atom* atom = std::get<2>(a);
+    // Gemmi✔️✔️:       aniso_val.emplace_back(atom->element.uname());
+    // Gemmi✔️✔️:       aniso_val.emplace_back(to_str(atom->aniso.u11));
+    // Gemmi✔️✔️:       aniso_val.emplace_back(to_str(atom->aniso.u22));
+    // Gemmi✔️✔️:       aniso_val.emplace_back(to_str(atom->aniso.u33));
+    // Gemmi✔️✔️:       aniso_val.emplace_back(to_str(atom->aniso.u12));
+    // Gemmi✔️✔️:       aniso_val.emplace_back(to_str(atom->aniso.u13));
+    // Gemmi✔️✔️:       aniso_val.emplace_back(to_str(atom->aniso.u23));
+    // Gemmi✔️✔️:       if (st.models.size() > 1)
+    // Gemmi✔️✔️:         aniso_loop.values.push_back(std::to_string(std::get<1>(a)));
+    // Gemmi✔️✔️:     }
+    // Gemmi✔️✔️:   }
+    // Behavior: the `_atom_site` loop is initialized with the A01 schema
+    // suffixes and filled with the A02 flat value vector in one bulk move
+    // (the source writes directly into `atom_loop.values`). The anisotropic
+    // tail is erased when the A02 selection is empty; otherwise it carries
+    // the fixed eight base columns in source order plus
+    // `pdbx_PDB_model_num` only when the structure has more than one model.
+    // Each anisotropic row links back to the emitting atom through the A02
+    // serial (id) and, for multimodel structures, the Gemmi model number;
+    // the type symbol and the six SMat33 components (u11, u22, u33, u12,
+    // u13, u23 — the same order the mmCIF reader stores) use the float
+    // profile because Gemmi's aniso is SMat33<float>.
+    // Complexity: one schema discovery, one row emission and one linear tail
+    // pass; the atom values move once with no per-row copies, and the empty
+    // tail is a single category erase like the source.
+    let schema = discover_atom_site_schema(data, params);
+    let (values, aniso) = emit_atom_site_rows(data, params, &schema)?;
+    let suffixes: Vec<&str> = schema
+        .tags()
+        .iter()
+        .map(|tag| tag.strip_prefix("_atom_site.").unwrap_or(tag.as_str()))
+        .collect();
+    block
+        .init_mmcif_loop("_atom_site.", &suffixes)?
+        .set_string_values(values)?;
+
+    if aniso.is_empty() {
+        block.erase_mmcif_category("_atom_site_anisotrop.");
+    } else {
+        let multiple_models = data.models().len() > 1;
+        let aniso_loop = block.init_mmcif_loop(
+            "_atom_site_anisotrop.",
+            &[
+                "id",
+                "type_symbol",
+                "U[1][1]",
+                "U[2][2]",
+                "U[3][3]",
+                "U[1][2]",
+                "U[1][3]",
+                "U[2][3]",
+            ],
+        )?;
+        if multiple_models {
+            aniso_loop.push_tag("_atom_site_anisotrop.pdbx_PDB_model_num".to_string());
+        }
+        let width = aniso_loop.tags().len();
+        let mut aniso_values = Vec::with_capacity(width * aniso.len());
+        for row in &aniso {
+            let atom = &data.atoms()[row.atom_index];
+            aniso_values.push(row.serial.to_string());
+            aniso_values.push(atom.element().symbol().to_string());
+            aniso_values.push(float_field_text(atom.anisou()[0]));
+            aniso_values.push(float_field_text(atom.anisou()[1]));
+            aniso_values.push(float_field_text(atom.anisou()[2]));
+            aniso_values.push(float_field_text(atom.anisou()[3]));
+            aniso_values.push(float_field_text(atom.anisou()[4]));
+            aniso_values.push(float_field_text(atom.anisou()[5]));
+            if multiple_models {
+                aniso_values.push(row.model_num.to_string());
+            }
+        }
+        aniso_loop.set_string_values(aniso_values)?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -820,6 +915,275 @@ mod tests {
                 .tags()
                 .iter()
                 .any(|tag| tag.ends_with("pdbx_tls_group_id"))
+        );
+    }
+
+    fn anisou_atom(residue: u32, anisou: [f64; 6]) -> BioAtomRow {
+        BioAtomRow::new(
+            BioResidueId::new(residue),
+            AtomName::from_ascii(b"CA").unwrap(),
+            Element::C,
+            None,
+            None,
+            0,
+            BioCalcFlag::NotSet,
+            1.0,
+            20.0,
+            anisou,
+            -1,
+            0.0,
+            AtomSourceIds::default(),
+        )
+    }
+
+    /// Two models (numbers 1 and 3), one residue per model: model 1 has a
+    /// nonzero-tensor atom followed by a zero-tensor atom, model 2 has one
+    /// nonzero-tensor atom. Expected columns/values derive from
+    /// to_mmcif.cpp:164-187.
+    fn a03_structure(model_nums: Option<(i32, i32)>, tensors: [[f64; 6]; 3]) -> BioStructureData {
+        let mut parts = empty_parts();
+        parts.input_format = BioCoordinateFormat::Mmcif;
+        let (models, chains, residues) = match model_nums {
+            Some((first, second)) => (
+                vec![
+                    BioModelRow::new(BioRowSpan::new(0, 1).unwrap(), Some(first)),
+                    BioModelRow::new(BioRowSpan::new(1, 1).unwrap(), Some(second)),
+                ],
+                vec![
+                    BioChainRow::new(
+                        BioModelId::new(0),
+                        None,
+                        BioRowSpan::new(0, 1).unwrap(),
+                        ChainKind::Protein,
+                        ChainSourceIds::default(),
+                    ),
+                    BioChainRow::new(
+                        BioModelId::new(1),
+                        None,
+                        BioRowSpan::new(1, 1).unwrap(),
+                        ChainKind::Protein,
+                        ChainSourceIds::default(),
+                    ),
+                ],
+                vec![
+                    BioResidueRow::new(
+                        BioChainId::new(0),
+                        BioRowSpan::new(0, 2).unwrap(),
+                        ResidueName::from_ascii(b"ALA").unwrap(),
+                        ResidueInfoKind::Aa,
+                        EntityKind::Polymer,
+                        None,
+                        None,
+                        ResidueSourceIds::default(),
+                        BioSiftsUnpResidue::default(),
+                    ),
+                    BioResidueRow::new(
+                        BioChainId::new(1),
+                        BioRowSpan::new(2, 1).unwrap(),
+                        ResidueName::from_ascii(b"GLY").unwrap(),
+                        ResidueInfoKind::Aa,
+                        EntityKind::Polymer,
+                        None,
+                        None,
+                        ResidueSourceIds::default(),
+                        BioSiftsUnpResidue::default(),
+                    ),
+                ],
+            ),
+            None => (
+                vec![BioModelRow::new(BioRowSpan::new(0, 1).unwrap(), Some(1))],
+                vec![BioChainRow::new(
+                    BioModelId::new(0),
+                    None,
+                    BioRowSpan::new(0, 1).unwrap(),
+                    ChainKind::Protein,
+                    ChainSourceIds::default(),
+                )],
+                vec![BioResidueRow::new(
+                    BioChainId::new(0),
+                    BioRowSpan::new(0, 3).unwrap(),
+                    ResidueName::from_ascii(b"ALA").unwrap(),
+                    ResidueInfoKind::Aa,
+                    EntityKind::Polymer,
+                    None,
+                    None,
+                    ResidueSourceIds::default(),
+                    BioSiftsUnpResidue::default(),
+                )],
+            ),
+        };
+        parts.models = models;
+        parts.chains = chains;
+        parts.residues = residues;
+        parts.atoms = vec![
+            anisou_atom(0, tensors[0]),
+            anisou_atom(0, tensors[1]),
+            anisou_atom(if model_nums.is_some() { 1 } else { 0 }, tensors[2]),
+        ];
+        parts.coordinates = BioCoordinateBlock::new(vec![[1.0, 2.0, 3.0]; 3]);
+        BioStructureData::from_parts(parts).unwrap()
+    }
+
+    fn anisotrop_loop(block: &crate::cif::CifBlock) -> &crate::cif::CifLoop {
+        block
+            .items()
+            .iter()
+            .find_map(|item| match item {
+                crate::cif::CifItem::Loop(loop_)
+                    if loop_
+                        .tags()
+                        .first()
+                        .is_some_and(|tag| tag.starts_with("_atom_site_anisotrop.")) =>
+                {
+                    Some(loop_)
+                }
+                _ => None,
+            })
+            .expect("_atom_site_anisotrop loop present")
+    }
+
+    fn loop_values(loop_: &crate::cif::CifLoop) -> Vec<String> {
+        loop_
+            .values()
+            .iter()
+            .map(|value| value.raw().to_string())
+            .collect()
+    }
+
+    #[test]
+    fn bio_pdbscope_a03_multimodel_tail_order_ids_and_tensor_profiles() {
+        let data = a03_structure(
+            Some((1, 3)),
+            [
+                [0.05, 0.01, 0.02, 0.03, 0.04, 0.06],
+                [0.0; 6],
+                [0.11, 0.12, 0.13, 0.14, 0.15, 0.16],
+            ],
+        );
+        let mut document =
+            crate::cif::read_cif_document("data_a03\n", "a03", crate::cif::CifCheckLevel::Syntax)
+                .unwrap();
+        super::add_cif_atoms(
+            document.sole_block_mut().unwrap(),
+            &data,
+            &BioMmcifWriteParams::default(),
+        )
+        .unwrap();
+        let block = document.sole_block().unwrap();
+        assert!(
+            block
+                .find_mmcif_category("_atom_site.")
+                .unwrap()
+                .is_present()
+        );
+        let aniso_loop = anisotrop_loop(block);
+        // Multimodel: the eight base columns plus pdbx_PDB_model_num, last.
+        assert_eq!(
+            aniso_loop
+                .tags()
+                .iter()
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
+            vec![
+                "_atom_site_anisotrop.id",
+                "_atom_site_anisotrop.type_symbol",
+                "_atom_site_anisotrop.U[1][1]",
+                "_atom_site_anisotrop.U[2][2]",
+                "_atom_site_anisotrop.U[3][3]",
+                "_atom_site_anisotrop.U[1][2]",
+                "_atom_site_anisotrop.U[1][3]",
+                "_atom_site_anisotrop.U[2][3]",
+                "_atom_site_anisotrop.pdbx_PDB_model_num",
+            ]
+        );
+        // Rows follow emission order: serial 1 (model 1) then serial 3
+        // (model 3); the zero-tensor serial 2 is suppressed. Tensor values
+        // use the float profile (SMat33<float> to_str).
+        assert_eq!(
+            loop_values(aniso_loop),
+            vec![
+                "1", "C", "0.05", "0.01", "0.02", "0.03", "0.04", "0.06", "1", "3", "C", "0.11",
+                "0.12", "0.13", "0.14", "0.15", "0.16", "3",
+            ]
+        );
+    }
+
+    #[test]
+    fn bio_pdbscope_a03_single_model_omits_model_num_column() {
+        let data = a03_structure(
+            None,
+            [
+                [0.05, 0.01, 0.02, 0.03, 0.04, 0.06],
+                [0.0; 6],
+                [0.07, 0.08, 0.09, 0.1, 0.11, 0.12],
+            ],
+        );
+        let mut document =
+            crate::cif::read_cif_document("data_a03\n", "a03", crate::cif::CifCheckLevel::Syntax)
+                .unwrap();
+        super::add_cif_atoms(
+            document.sole_block_mut().unwrap(),
+            &data,
+            &BioMmcifWriteParams::default(),
+        )
+        .unwrap();
+        let block = document.sole_block().unwrap();
+        let aniso_loop = anisotrop_loop(block);
+        assert_eq!(aniso_loop.tags().len(), 8);
+        assert!(
+            aniso_loop
+                .tags()
+                .iter()
+                .all(|tag| !tag.ends_with("pdbx_PDB_model_num"))
+        );
+        assert_eq!(
+            loop_values(aniso_loop),
+            vec![
+                "1", "C", "0.05", "0.01", "0.02", "0.03", "0.04", "0.06", "3", "C", "0.07", "0.08",
+                "0.09", "0.1", "0.11", "0.12",
+            ]
+        );
+    }
+
+    #[test]
+    fn bio_pdbscope_a03_all_zero_tensors_erase_existing_category() {
+        // A pre-existing _atom_site_anisotrop pair proves the source's erase
+        // branch actually removes the category from the parsed block.
+        let data = a03_structure(Some((1, 3)), [[0.0; 6], [0.0; 6], [0.0; 6]]);
+        let mut document = crate::cif::read_cif_document(
+            "data_a03\n_atom_site_anisotrop.id 1\n",
+            "a03",
+            crate::cif::CifCheckLevel::Syntax,
+        )
+        .unwrap();
+        assert!(
+            document
+                .sole_block()
+                .unwrap()
+                .find_mmcif_category("_atom_site_anisotrop.")
+                .unwrap()
+                .is_present()
+        );
+        super::add_cif_atoms(
+            document.sole_block_mut().unwrap(),
+            &data,
+            &BioMmcifWriteParams::default(),
+        )
+        .unwrap();
+        let block = document.sole_block().unwrap();
+        assert!(
+            !block
+                .find_mmcif_category("_atom_site_anisotrop.")
+                .unwrap()
+                .is_present(),
+            "empty aniso selection must erase the category"
+        );
+        assert!(
+            block
+                .find_mmcif_category("_atom_site.")
+                .unwrap()
+                .is_present(),
+            "the atom loop is still written"
         );
     }
 }

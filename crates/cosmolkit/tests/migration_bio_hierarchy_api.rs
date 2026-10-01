@@ -1,12 +1,12 @@
 use cosmolkit::{
-    AtomName, AtomSourceIds, BINDING_CONTRACT, BindingExposure, BindingItem, BindingParity,
-    BindingSupport, BioAltLocGroupId, BioAssembly, BioAssemblyGenerator, BioAssemblyId,
-    BioAssemblyOperator, BioAssemblySpecialKind, BioAtomId, BioAtomRow, BioCalcFlag, BioChainId,
-    BioChainRow, BioCoordinateBlock, BioCoordinateFormat, BioCrystalCell, BioCrystalInfo,
-    BioEntityDbRef, BioEntityId, BioEntityRow, BioModelId, BioModelRow, BioNcsOperator,
-    BioResidueId, BioResidueRow, BioRowSpan, BioSiftsUnpResidue, BioStructure, BioStructureError,
-    BioStructureParts, BioTransform, ChainKind, ChainSourceIds, Element, EntityKind,
-    EntitySourceIds, PolymerKind, ResidueInfoKind, ResidueKind, ResidueName, ResidueSourceIds,
+    AtomName, AtomSourceIds, BINDING_CONTRACT, BindingItem, BioAltLocGroupId, BioAssembly,
+    BioAssemblyGenerator, BioAssemblyId, BioAssemblyOperator, BioAssemblySpecialKind, BioAtomId,
+    BioAtomRow, BioCalcFlag, BioChainId, BioChainRow, BioCoordinateBlock, BioCoordinateFormat,
+    BioCrystalCell, BioCrystalInfo, BioEntityDbRef, BioEntityId, BioEntityRow, BioModelId,
+    BioModelRow, BioNcsOperator, BioResidueId, BioResidueRow, BioRowSpan, BioSiftsUnpResidue,
+    BioStructure, BioStructureError, BioStructureParts, BioTransform, ChainKind, ChainSourceIds,
+    Element, EntityKind, EntitySourceIds, FunctionStatus, PolymerKind, ResidueInfoKind,
+    ResidueKind, ResidueName, ResidueSourceIds,
 };
 
 fn empty_parts() -> BioStructureParts {
@@ -66,7 +66,7 @@ fn bio_registry_covers_existing_accessors_and_owned_conversion() {
             .filter(|row| row.semantic_id == id)
             .collect();
         assert_eq!(rows.len(), 1, "{id}");
-        assert_eq!(rows[0].support, BindingSupport::Experimental, "{id}");
+        assert_eq!(rows[0].status, FunctionStatus::Experimental, "{id}");
         let expected = match name {
             "from_parts" | "validate_parts" => None,
             "into_parts" => Some(cosmolkit::BindingReceiver::Owned),
@@ -76,11 +76,11 @@ fn bio_registry_covers_existing_accessors_and_owned_conversion() {
     }
     for row in BINDING_CONTRACT
         .iter()
-        .filter(|row| row.feature == "bio" && row.item == BindingItem::Callable)
+        .filter(|row| row.feature == "cap-bio" && row.item == BindingItem::Callable)
     {
         assert_eq!(
-            row.support,
-            BindingSupport::Experimental,
+            row.status,
+            FunctionStatus::Experimental,
             "{}",
             row.semantic_id
         );
@@ -141,8 +141,8 @@ fn bio_public_source_state_metadata_is_borrowed_and_bit_exact() {
             .filter(|row| row.semantic_id == format!("BioStructure.{id}"))
             .collect::<Vec<_>>();
         assert_eq!(rows.len(), 1, "{id}");
-        assert_eq!(rows[0].support, BindingSupport::Experimental);
-        assert_eq!(rows[0].feature, "bio");
+        assert_eq!(rows[0].status, FunctionStatus::Experimental);
+        assert_eq!(rows[0].feature, "cap-bio");
     }
 }
 
@@ -295,8 +295,8 @@ fn bio_public_counts_use_authoritative_blocks_and_filtered_protein_view() {
             .find(|row| row.semantic_id == format!("BioStructure.{name}"))
             .unwrap();
         assert_eq!(row.item, BindingItem::Callable);
-        assert_eq!(row.feature, "bio");
-        assert_eq!(row.exposure, BindingExposure::Public);
+        assert_eq!(row.feature, "cap-bio");
+        assert_eq!(row.status, FunctionStatus::Experimental);
         assert_eq!(
             method(&source),
             match name {
@@ -385,8 +385,8 @@ fn bio_public_navigation_preserves_bits_borrows_and_empty_residues() {
             .find(|row| row.semantic_id == format!("BioStructure.{name}"))
             .unwrap();
         assert_eq!(row.item, BindingItem::Callable);
-        assert_eq!(row.feature, "bio");
-        assert_eq!(row.exposure, BindingExposure::Public);
+        assert_eq!(row.feature, "cap-bio");
+        assert_eq!(row.status, FunctionStatus::Experimental);
     }
 }
 
@@ -532,10 +532,8 @@ fn hierarchy_binding_contract_matches_the_public_type_projection() {
             .find(|row| row.semantic_id == format!("types.{name}"))
             .unwrap();
         assert_eq!(row.item, BindingItem::Type);
-        assert_eq!(row.feature, "bio");
-        assert_eq!(row.exposure, BindingExposure::Public);
-        assert_eq!(row.support, BindingSupport::Experimental);
-        assert_eq!(row.parity, BindingParity::RequiredWhenSupported);
+        assert_eq!(row.feature, "cap-bio");
+        assert_eq!(row.status, FunctionStatus::Experimental);
         assert!(row.callable.is_none());
     }
     for name in native_ids {
@@ -544,10 +542,8 @@ fn hierarchy_binding_contract_matches_the_public_type_projection() {
             .find(|row| row.semantic_id == format!("types.{name}"))
             .unwrap();
         assert_eq!(row.item, BindingItem::Type);
-        assert_eq!(row.feature, "bio");
-        assert_eq!(row.exposure, BindingExposure::Public);
-        assert_eq!(row.support, BindingSupport::Supported);
-        assert_eq!(row.parity, BindingParity::NotApplicable);
+        assert_eq!(row.feature, "cap-bio");
+        assert_eq!(row.status, FunctionStatus::Experimental);
         assert!(row.callable.is_none());
     }
 

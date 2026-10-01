@@ -8,8 +8,8 @@ use cosmolkit_model::{
 
 use super::*;
 use crate::ops::{
-    BlockAccess, CipStatePolicy, DerivedEffects, DerivedState, MappingRequirement, MoleculeOpKind,
-    OperationDomain, ParityPolicy, SemanticPreconditionSet, SupportStatus, TopologyEditKind,
+    BlockAccess, CipStatePolicy, DerivedEffects, DerivedState, FunctionStatus, MappingRequirement,
+    MoleculeOpKind, OperationDomain, ParityPolicy, SemanticPreconditionSet, TopologyEditKind,
 };
 
 struct FailureAccess;
@@ -44,7 +44,7 @@ fn spec(
         cip_state: CipStatePolicy::Preserve,
         semantic_preconditions: preconditions,
         requires_mapping: MappingRequirement::None,
-        support: SupportStatus::Experimental,
+        status: FunctionStatus::Experimental,
         parity: ParityPolicy::NotApplicable,
         io_roundtrip: false,
     }))

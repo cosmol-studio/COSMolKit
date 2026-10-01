@@ -1,8 +1,8 @@
 use std::fmt::Debug;
 
 use cosmolkit::{
-    BINDING_CONTRACT, BindingExposure, BindingItem, BindingOwner, BindingParity, BindingSupport,
-    BindingTypeRole, MOLECULE_OPS, Molecule,
+    BINDING_CONTRACT, BindingItem, BindingOwner, BindingTypeRole, FunctionStatus, MOLECULE_OPS,
+    Molecule,
 };
 
 #[cfg(not(feature = "op-contracts-strict"))]
@@ -38,9 +38,7 @@ fn binding_row_exactly_describes_the_run_state_type_surface() {
     assert_eq!(entry.python_name, "Molecule");
     assert_eq!(entry.javascript_name, "Molecule");
     assert_eq!(entry.feature, "runtime");
-    assert_eq!(entry.exposure, BindingExposure::Public);
-    assert_eq!(entry.support, BindingSupport::Supported);
-    assert_eq!(entry.parity, BindingParity::NotApplicable);
+    assert_eq!(entry.status, FunctionStatus::Experimental);
     assert_eq!(entry.type_role, Some(BindingTypeRole::Value));
 }
 

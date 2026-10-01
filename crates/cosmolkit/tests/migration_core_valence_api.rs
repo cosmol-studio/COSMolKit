@@ -4,12 +4,12 @@ mod coordinate_views;
 use std::error::Error as _;
 
 use cosmolkit::{
-    Atom, AtomId, AtomSpec, BINDING_CONTRACT, BindingExposure, BindingItem, BindingOwner,
-    BindingParity, BindingSupport, BlockSet, Bond, BondId, BondOrder, BondSpec, Conformer2D,
-    CoordinateBlock, Element, Molecule, MoleculeOpKind, MoleculeOpOutput, MoleculeProperties,
-    OperationDomain, OperationError, ParityPolicy, StateModel, StereoGroup, StereoGroupKind,
-    SupportStatus, TopologyBlock, TopologyEditKind, ValenceError, ValenceModel, ValenceParams,
-    feature_spec, operation_invariant, operation_parity, operation_spec, support_matrix,
+    Atom, AtomId, AtomSpec, BINDING_CONTRACT, BindingItem, BindingOwner, BlockSet, Bond, BondId,
+    BondOrder, BondSpec, Conformer2D, CoordinateBlock, Element, FunctionStatus, Molecule,
+    MoleculeOpKind, MoleculeOpOutput, MoleculeProperties, OperationDomain, OperationError,
+    ParityPolicy, StateModel, StereoGroup, StereoGroupKind, TopologyBlock, TopologyEditKind,
+    ValenceError, ValenceModel, ValenceParams, feature_spec, operation_invariant, operation_parity,
+    operation_spec, support_matrix,
 };
 
 fn atom(index: usize, element: Element) -> Atom {
@@ -114,7 +114,7 @@ fn binding_contract_exposes_the_frozen_eight_entries() {
     ];
     let rows = BINDING_CONTRACT
         .iter()
-        .filter(|row| row.feature == "valence")
+        .filter(|row| row.feature == "cap-valence")
         .collect::<Vec<_>>();
     assert_eq!(
         rows.iter().map(|row| row.semantic_id).collect::<Vec<_>>(),
@@ -123,16 +123,12 @@ fn binding_contract_exposes_the_frozen_eight_entries() {
     for row in &rows[..3] {
         assert_eq!(row.item, BindingItem::Type);
         assert_eq!(row.owner, BindingOwner::Type);
-        assert_eq!(row.exposure, BindingExposure::Public);
-        assert_eq!(row.support, BindingSupport::Supported);
-        assert_eq!(row.parity, BindingParity::NotApplicable);
+        assert_eq!(row.status, FunctionStatus::Experimental);
     }
     for row in &rows[3..] {
         assert_eq!(row.item, BindingItem::Callable);
         assert_eq!(row.owner, BindingOwner::Molecule);
-        assert_eq!(row.exposure, BindingExposure::Public);
-        assert_eq!(row.support, BindingSupport::SupportedWithRdkitParity);
-        assert_eq!(row.parity, BindingParity::RequiredNow);
+        assert_eq!(row.status, FunctionStatus::Experimental);
     }
     assert_eq!(
         rows[3].callable.unwrap().state_model,
@@ -144,9 +140,8 @@ fn binding_contract_exposes_the_frozen_eight_entries() {
 
 #[test]
 fn generated_registry_and_all_four_matrices_share_one_operation() {
-    let feature = feature_spec("valence").unwrap();
-    assert_eq!(feature.status, SupportStatus::SupportedWithRdkitParity);
-    assert!(feature.rdkit_parity_sensitive);
+    let feature = feature_spec("cap-valence").unwrap();
+    assert_eq!(feature.name, "cap-valence");
 
     let spec = operation_spec("with_assigned_valence_with_params").unwrap();
     assert_eq!(spec.domain, OperationDomain::Topology);
@@ -164,7 +159,7 @@ fn generated_registry_and_all_four_matrices_share_one_operation() {
     assert_eq!(spec.derived_effects.preserve.bits(), (1 << 0) | (1 << 4));
     assert_eq!(spec.derived_effects.invalidate.bits(), 0);
     assert_eq!(format!("{:?}", spec.cip_state), "Preserve");
-    assert_eq!(spec.support, SupportStatus::SupportedWithRdkitParity);
+    assert_eq!(spec.status, FunctionStatus::Experimental);
     assert_eq!(spec.parity, ParityPolicy::RequiredNow);
     assert_eq!(
         operation_invariant(spec.method).unwrap().profile,
@@ -176,7 +171,7 @@ fn generated_registry_and_all_four_matrices_share_one_operation() {
     );
     let support = support_matrix()
         .iter()
-        .find(|row| row.feature.name == "valence")
+        .find(|row| row.feature.name == "cap-valence")
         .unwrap();
     assert!(std::ptr::eq(support.operation.unwrap(), spec));
 }

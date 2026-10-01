@@ -5,8 +5,8 @@ use cosmolkit_model::{
 
 use super::*;
 use crate::ops::{
-    BlockAccess, CipStatePolicy, DerivedEffects, DerivedState, MappingRequirement, MoleculeOpKind,
-    OperationDomain, ParityPolicy, SemanticPreconditionSet, SupportStatus, TopologyEditKind,
+    BlockAccess, CipStatePolicy, DerivedEffects, DerivedState, FunctionStatus, MappingRequirement,
+    MoleculeOpKind, OperationDomain, ParityPolicy, SemanticPreconditionSet, TopologyEditKind,
 };
 
 struct TestAccess;
@@ -188,7 +188,7 @@ fn pending_some_and_none_cannot_skip_strict_contract_validation() {
     );
 }
 
-#[cfg(feature = "stereo")]
+#[cfg(feature = "cap-stereo")]
 #[test]
 fn pending_generated_capabilities_are_frozen_after_sealing() {
     let source = molecule();
@@ -234,7 +234,7 @@ fn spec(
         cip_state: CipStatePolicy::Preserve,
         semantic_preconditions: SemanticPreconditionSet::NONE,
         requires_mapping: MappingRequirement::None,
-        support: SupportStatus::Experimental,
+        status: FunctionStatus::Experimental,
         parity: ParityPolicy::NotApplicable,
         io_roundtrip: false,
     }))

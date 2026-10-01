@@ -2,109 +2,87 @@
 
 use cosmolkit_macros::molecule_ops;
 
-use super::{FeatureSpec, SupportStatus};
+use super::FeatureSpec;
 
 #[cfg(test)]
 pub(crate) const COW_TEST_FEATURE: FeatureSpec = FeatureSpec {
     name: "cow-runtime-test",
     category: "internal-test",
-    status: SupportStatus::Experimental,
-    rdkit_parity_sensitive: false,
     docs: "Internal registered-operation coverage for block-level COW.",
 };
 
-#[cfg(feature = "hydrogens")]
+#[cfg(feature = "cap-hydrogens")]
 pub(crate) const HYDROGENS_FEATURE: FeatureSpec = FeatureSpec {
-    name: "hydrogens",
+    name: "cap-hydrogens",
     category: "chemistry",
-    status: SupportStatus::SupportedWithRdkitParity,
-    rdkit_parity_sensitive: true,
     docs: "Explicit-hydrogen topology transformations.",
 };
 
-#[cfg(feature = "kekulize")]
+#[cfg(feature = "cap-kekulize")]
 pub(crate) const KEKULIZE_FEATURE: FeatureSpec = FeatureSpec {
-    name: "kekulize",
+    name: "cap-kekulize",
     category: "chemistry",
-    status: SupportStatus::SupportedWithRdkitParity,
-    rdkit_parity_sensitive: true,
     docs: "RDKit-compatible Kekule bond assignment over molecule topology.",
 };
 
-#[cfg(feature = "aromaticity")]
+#[cfg(feature = "cap-aromaticity")]
 pub(crate) const AROMATICITY_FEATURE: FeatureSpec = FeatureSpec {
-    name: "aromaticity",
+    name: "cap-aromaticity",
     category: "chemistry",
-    status: SupportStatus::SupportedWithRdkitParity,
-    rdkit_parity_sensitive: true,
     docs: "RDKit-compatible aromatic atom and bond assignment over molecule topology.",
 };
 
-#[cfg(feature = "valence")]
+#[cfg(feature = "cap-valence")]
 pub(crate) const VALENCE_FEATURE: FeatureSpec = FeatureSpec {
-    name: "valence",
+    name: "cap-valence",
     category: "chemistry",
-    status: SupportStatus::SupportedWithRdkitParity,
-    rdkit_parity_sensitive: true,
     docs: "Explicit- and implicit-valence assignment over molecule topology.",
 };
 
-#[cfg(feature = "radicals")]
+#[cfg(feature = "cap-radicals")]
 pub(crate) const RADICALS_FEATURE: FeatureSpec = FeatureSpec {
-    name: "radicals",
+    name: "cap-radicals",
     category: "chemistry",
-    status: SupportStatus::SupportedWithRdkitParity,
-    rdkit_parity_sensitive: true,
     docs: "Automatic radical-electron assignment over molecule topology.",
 };
 
-#[cfg(feature = "rings")]
+#[cfg(feature = "cap-rings")]
 pub(crate) const RINGS_FEATURE: FeatureSpec = FeatureSpec {
-    name: "rings",
+    name: "cap-rings",
     category: "chemistry",
-    status: SupportStatus::SupportedWithRdkitParity,
-    rdkit_parity_sensitive: true,
     docs: "RDKit-compatible ring and ring-family assignment over molecule topology.",
 };
 
-#[cfg(feature = "stereo")]
+#[cfg(feature = "cap-stereo")]
 pub(crate) const STEREO_FEATURE: FeatureSpec = FeatureSpec {
-    name: "stereo",
+    name: "cap-stereo",
     category: "chemistry",
-    status: SupportStatus::SupportedWithRdkitParity,
-    rdkit_parity_sensitive: true,
     docs: "RDKit-compatible chiral-tag assignment, potential-stereochemistry perception, and modern CIP labeling.",
 };
 
-#[cfg(feature = "transforms")]
+#[cfg(feature = "cap-transforms")]
 pub(crate) const TRANSFORMS_FEATURE: FeatureSpec = FeatureSpec {
-    name: "transforms",
+    name: "cap-transforms",
     category: "coordinates",
-    status: SupportStatus::SupportedWithRdkitParity,
-    rdkit_parity_sensitive: true,
     docs: "RDKit-compatible detached coordinate transforms and atom-position replacement.",
 };
 
-#[cfg(feature = "depict")]
+#[cfg(feature = "cap-depict")]
 pub(crate) const DEPICT_FEATURE: FeatureSpec = FeatureSpec {
-    name: "depict",
+    name: "cap-depict",
     category: "coordinates",
-    status: SupportStatus::Experimental,
-    rdkit_parity_sensitive: true,
     docs: "Source-backed 2D coordinate generation without changing existing 3D conformers; full parity remains open for an upstream-undefined partial-fragment sampling path.",
 };
 
-#[cfg(feature = "sanitize")]
+#[cfg(feature = "cap-sanitize")]
 pub(crate) const SANITIZE_FEATURE: FeatureSpec = FeatureSpec {
-    name: "sanitize",
+    name: "cap-sanitize",
     category: "chemistry",
-    status: SupportStatus::SupportedWithRdkitParity,
-    rdkit_parity_sensitive: true,
     docs: "RDKit-compatible molecule sanitization and chemistry-problem detection.",
 };
 
 molecule_ops! {
-    #[cfg(feature = "sanitize")]
+    #[cfg(feature = "cap-sanitize")]
     op sanitize(params: &cosmolkit_core::SanitizeParams) {
         method: sanitize_with_params,
         impl_fn: crate::ops::sanitize::sanitize_impl,
@@ -143,7 +121,7 @@ molecule_ops! {
         default_args: [&cosmolkit_core::SanitizeParams::default()],
     }
 
-    #[cfg(feature = "kekulize")]
+    #[cfg(feature = "cap-kekulize")]
     op with_kekulized_bonds(params: &cosmolkit_core::KekulizeParams) {
         method: with_kekulized_bonds_with_params,
         impl_fn: crate::ops::kekulize::kekulize_bonds_impl,
@@ -177,7 +155,7 @@ molecule_ops! {
         default_inplace_method: kekulize_bonds_,
     }
 
-    #[cfg(feature = "aromaticity")]
+    #[cfg(feature = "cap-aromaticity")]
     op with_assigned_aromaticity(params: &cosmolkit_core::AromaticityParams) {
         method: with_assigned_aromaticity_with_params,
         impl_fn: crate::ops::aromaticity::assign_aromaticity_impl,
@@ -211,7 +189,7 @@ molecule_ops! {
         default_inplace_method: assign_aromaticity_,
     }
 
-    #[cfg(feature = "valence")]
+    #[cfg(feature = "cap-valence")]
     op with_assigned_valence(params: &cosmolkit_core::ValenceParams) {
         method: with_assigned_valence_with_params,
         impl_fn: crate::ops::valence::assign_valence_impl,
@@ -244,7 +222,7 @@ molecule_ops! {
         default_inplace_method: assign_valence_,
     }
 
-    #[cfg(feature = "radicals")]
+    #[cfg(feature = "cap-radicals")]
     op with_assigned_radicals {
         method: with_assigned_radicals,
         impl_fn: crate::ops::radicals::assign_radicals_impl,
@@ -274,7 +252,7 @@ molecule_ops! {
         inplace_method: assign_radicals_,
     }
 
-    #[cfg(feature = "rings")]
+    #[cfg(feature = "cap-rings")]
     op with_assigned_rings {
         method: with_assigned_rings,
         impl_fn: crate::ops::rings::assign_rings_impl,
@@ -304,7 +282,7 @@ molecule_ops! {
         inplace_method: assign_rings_,
     }
 
-    #[cfg(feature = "rings")]
+    #[cfg(feature = "cap-rings")]
     op with_assigned_ring_families(params: &cosmolkit_core::RingSearchParams) {
         method: with_assigned_ring_families_with_params,
         impl_fn: crate::ops::rings::assign_ring_families_impl,
@@ -337,7 +315,7 @@ molecule_ops! {
         default_inplace_method: assign_ring_families_,
     }
 
-    #[cfg(feature = "stereo")]
+    #[cfg(feature = "cap-stereo")]
     op with_chiral_tags_from_structure(params: &cosmolkit_core::StructureTagParams) {
         method: with_chiral_tags_from_structure_with_params,
         impl_fn: crate::ops::structure_tags::assign_chiral_tags_from_structure_impl,
@@ -371,7 +349,7 @@ molecule_ops! {
         default_inplace_method: assign_chiral_tags_from_structure_,
     }
 
-    #[cfg(feature = "stereo")]
+    #[cfg(feature = "cap-stereo")]
     op potential_stereo(params: &cosmolkit_core::PotentialStereoParams) {
         method: potential_stereo_with_params,
         impl_fn: crate::ops::potential_stereo::potential_stereo_impl,
@@ -403,7 +381,7 @@ molecule_ops! {
         default_args: [&cosmolkit_core::PotentialStereoParams::default()],
     }
 
-    #[cfg(feature = "stereo")]
+    #[cfg(feature = "cap-stereo")]
     op with_cip_labels(options: &cosmolkit_stereo::CipLabelOptions) {
         method: with_cip_labels_with_options,
         impl_fn: crate::ops::cip_labels::assign_cip_labels_impl,
@@ -437,7 +415,7 @@ molecule_ops! {
         default_inplace_method: assign_cip_labels_,
     }
 
-    #[cfg(feature = "hydrogens")]
+    #[cfg(feature = "cap-hydrogens")]
     op with_hydrogens(params: &cosmolkit_core::AddHsParams) {
         method: with_hydrogens_with_params,
         impl_fn: crate::ops::hydrogens::add_hydrogens_impl,
@@ -471,7 +449,7 @@ molecule_ops! {
         default_inplace_method: add_hydrogens_,
     }
 
-    #[cfg(feature = "hydrogens")]
+    #[cfg(feature = "cap-hydrogens")]
     op without_hydrogens(params: &cosmolkit_core::RemoveHsParams) {
         method: without_hydrogens_with_params,
         impl_fn: crate::ops::hydrogens::remove_hydrogens_impl,
@@ -505,7 +483,7 @@ molecule_ops! {
         default_inplace_method: remove_hydrogens_,
     }
 
-    #[cfg(feature = "transforms")]
+    #[cfg(feature = "cap-transforms")]
     op with_atom_position(
         atom: cosmolkit_model::AtomId,
         position: [f64; 3],
@@ -542,7 +520,7 @@ molecule_ops! {
         default_inplace_method: set_atom_position_,
     }
 
-    #[cfg(feature = "depict")]
+    #[cfg(feature = "cap-depict")]
     op with_2d_coordinates(params: &crate::Coordinate2DParams) {
         method: with_2d_coordinates_with_params,
         impl_fn: crate::ops::depict::with_2d_coordinates_impl,

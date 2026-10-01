@@ -1,3 +1,6 @@
+#[path = "../src/status.rs"]
+mod status;
+
 extern crate proc_macro2 as proc_macro;
 
 #[path = "../src/declaration.rs"]

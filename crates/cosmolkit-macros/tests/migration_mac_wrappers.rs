@@ -1,3 +1,6 @@
+#[path = "../src/status.rs"]
+mod status;
+
 extern crate proc_macro2 as proc_macro;
 
 #[path = "../src/declaration.rs"]
@@ -83,7 +86,7 @@ fn empty_registries_emit_only_empty_runtime_owned_inherent_impls() {
 }
 
 #[test]
-fn single_untyped_value_wrapper_checks_support_forwards_once_and_finishes() {
+fn single_untyped_value_wrapper_shares_status_forwards_once_and_finishes() {
     let output = molecule(&molecule_operation(
         "inspect",
         "first: usize, second: Option<&'static str>",
@@ -94,7 +97,7 @@ fn single_untyped_value_wrapper_checks_support_forwards_once_and_finishes() {
         "implcrate::Molecule",
         "#[doc=\"inspectdocs\"]",
         "pubfninspect(&self,first:usize,second:Option<&'staticstr>)->Result<crate::Molecule,crate::ops::OperationError>",
-        "crate::UnsupportedFeatureError::from_spec(&crate::capabilities::inspect_FEATURE)",
+        "pub(crate)const__FUNCTION_STATUS_INSPECT:crate::FunctionStatus=INSPECT_SPEC.status",
         "letmutparts=crate::OpParts::new(self,&INSPECT_SPEC)?",
         "crate::operations::inspect_impl(&mutparts,first,second)?",
         "parts.finish()",
@@ -104,7 +107,7 @@ fn single_untyped_value_wrapper_checks_support_forwards_once_and_finishes() {
     }
     assert_eq!(output.matches("crate::operations::inspect_impl").count(), 1);
     assert_eq!(output.matches("crate::OpParts::new(").count(), 1);
-    assert!(output.find("UnsupportedFeature").unwrap() < output.find("OpParts::new").unwrap());
+    assert!(!output.contains("UnsupportedFeature"));
     assert!(output.find("inspect_impl").unwrap() < output.find("parts.finish").unwrap());
 }
 
@@ -217,7 +220,7 @@ fn typed_multiple_output_assembles_only_after_validated_finish() {
 }
 
 #[test]
-fn bio_value_wrapper_checks_support_before_one_typed_transaction() {
+fn bio_value_wrapper_uses_one_typed_transaction_without_status_permissions() {
     let output = bio(r#"
         #[cfg(all(feature = "bio-a", not(feature = "bio-b")))]
         op remove_waters(selector: &crate::Selector, keep: bool) {
@@ -239,7 +242,6 @@ fn bio_value_wrapper_checks_support_before_one_typed_transaction() {
     for expected in [
         "implcrate::BioStructure",
         "pubfnremove_waters(&self,selector:&crate::Selector,keep:bool)->Result<crate::BioStructure,crate::bio_ops::BioOperationError>",
-        "BIO_REMOVE_WATERS_SPEC.support",
         "let_feature=&crate::bio::features::REMOVE_WATERS",
         "letmutparts=crate::BioOpParts::new(self,&BIO_REMOVE_WATERS_SPEC)",
         "crate::bio_operations::remove_waters_impl(&mutparts,selector,keep)?",
@@ -247,12 +249,12 @@ fn bio_value_wrapper_checks_support_before_one_typed_transaction() {
     ] {
         assert!(output.contains(expected), "missing {expected} in {output}");
     }
-    assert!(output.find("SPEC.support").unwrap() < output.find("BioOpParts::new").unwrap());
+    assert!(!output.contains("SPEC.support"));
     assert_eq!(output.matches("remove_waters_impl").count(), 1);
 }
 
 #[test]
-fn cfg_attributes_and_complete_feature_paths_stay_operation_local() {
+fn cfg_attributes_gate_both_the_method_and_its_shared_status() {
     let source = format!(
         "{}{}",
         molecule_operation(
@@ -273,9 +275,10 @@ fn cfg_attributes_and_complete_feature_paths_stay_operation_local() {
         output
             .matches("#[cfg(all(feature=\"first-a\",not(feature=\"first-b\")))]")
             .count(),
-        1
+        2
     );
-    assert!(output.contains("from_spec(&external::SECOND_FEATURE)"));
+    assert!(!output.contains("from_spec"));
+    assert!(output.contains("__FUNCTION_STATUS_SECOND:crate::FunctionStatus=SECOND_SPEC.status"));
     assert!(!output.contains("crate::external::SECOND_FEATURE"));
     let first_cfg = output.find("#[cfg(all").unwrap();
     let first_method = output.find("pubfnfirst").unwrap();

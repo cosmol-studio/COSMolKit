@@ -6,51 +6,47 @@ For a concise Rust-native cheminformatics overview, see <https://tools.cosmol.or
 
 ## Cargo features
 
-The default `full` feature enables every capability feature and its domain
-dependencies. Dependency wiring does not imply that every corresponding public
-API or algorithm is implemented; consult the API and support status for the
-selected version. Runtime invariant and operation-contract checks remain opt-in
-via `op-contracts-strict`.
-
-Applications that need a smaller dependency surface can disable defaults and
-enable only the capabilities they use:
+Default features enable `full`. Most users can keep the default or select
+plain-name bundles such as `core`, `bio`, or `fingerprints`:
 
 <!-- rust-install-version:start -->
 ```toml
-cosmolkit = { version = "0.5.0-rc.8", default-features = false, features = ["kekulize"] }
+cosmolkit = { version = "0.5.0-rc.8", default-features = false, features = ["core", "bio"] }
 ```
 <!-- rust-install-version:end -->
 
-| Feature | Capability | Implementation crate(s) |
-|---|---|---|
-| `hydrogens`, `valence`, `radicals`, `rings`, `matrices`, `transforms`, `kekulize`, `aromaticity`, `sanitize` | Foundational chemistry and graph operations | `cosmolkit-core` |
-| `smiles` | SMILES and CXSMILES | `cosmolkit-smiles` |
-| `search` | SMARTS and substructure search | `cosmolkit-search` |
-| `bio` | Structural biology values and operations | `cosmolkit-bio` |
-| `io` | Molecular and structural file IO | `cosmolkit-io` |
-| `inchi` | InChI and InChIKey conversion | `cosmolkit-inchi` |
-| `fingerprints` | Molecular fingerprints | `cosmolkit-fingerprints` |
-| `descriptors` | Molecular descriptors | `cosmolkit-descriptors` |
-| `depict` | 2D layout, SVG and PNG depiction | `cosmolkit-depict` |
-| `batch` | Ordered parallel batch processing | `cosmolkit-batch` |
-| `serialization` | Binary molecule serialization | `cosmolkit-io` |
-| `stereo` | Foundational stereochemistry and high-level labeling | `cosmolkit-core`, `cosmolkit-stereo` |
-| `stereoisomers` | Stereoisomer enumeration | `cosmolkit-stereo` |
-| `hashing` | Molecular hashes | `cosmolkit-fingerprints` |
-| `confseq` | ConfSeq decoding | `cosmolkit-conformer` |
-| `conformer` | 3D embedding and conformer selection | `cosmolkit-conformer` |
-| `forcefields` | Energy, gradients and optimization | `cosmolkit-forcefields` |
-| `alignment` | Coordinate alignment and RMSD | `cosmolkit-alignment` |
-| `tautomer` | Tautomer enumeration and canonicalization | `cosmolkit-tautomer` |
+| Bundle | Area |
+|---|---|
+| `core` | SMILES, molecular IO/serialization, descriptors, foundational chemistry, stereo, matrices, transforms and tautomers |
+| `bio` | Structural biology readers, values, selection and operations |
+| `conformer` | 3D conformers, ConfSeq and coordinate alignment |
+| `forcefields` | Energy, gradients and optimization |
+| `fingerprints` | Fingerprints and molecular hashing |
+| `search` | SMARTS and substructure search |
+| `depict` | 2D layout and depiction |
+| `inchi` | InChI and InChIKey conversion |
+| `batch` | Ordered batch processing |
+| `full` | All bundles above |
 
-Each fine-grained feature enables its implementation dependency directly, not
-another domain's public feature. Shared foundations such as `cosmolkit-types`,
-`cosmolkit-cx`, and `cosmolkit-ringdecomposer` remain transitive dependencies of
-their architectural consumers.
+Advanced selectors always start with `cap-`. For example, to select only
+molecular IO, kekulization, sanitization and hydrogen operations:
 
-Feature selection only controls compile-time API and dependency composition;
-it does not change the behavior of an enabled operation. Python wheels always
-build the complete `full` capability set.
+```sh
+cargo add cosmolkit --no-default-features --features cap-io,cap-kekulize,cap-sanitize,cap-hydrogens
+```
+
+With defaults disabled, neither `full` nor `core` is implicit. Bundles and
+individual selectors can be combined; adding features without disabling
+defaults keeps `full` enabled. Cargo features are additive across dependencies.
+
+Each capability gates its own public APIs and required dependencies. Sharing
+an implementation crate does not expose its other capabilities, nor does a
+selector promise to compile only individual functions inside that crate.
+Feature selection does not change an enabled operation's behavior or status.
+`op-contracts-strict` separately enables runtime and operation-contract checks.
+
+For exact bundle membership and registry rules, see
+[Cargo feature selection](https://github.com/cosmol-studio/COSMolKit/blob/main/dev/public_api_design.md#cargo-feature-selection).
 
 ## Documentation
 

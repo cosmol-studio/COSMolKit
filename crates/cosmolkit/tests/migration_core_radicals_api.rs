@@ -4,12 +4,11 @@ mod coordinate_views;
 use std::error::Error as _;
 
 use cosmolkit::{
-    Atom, AtomId, AtomSpec, BINDING_CONTRACT, BindingExposure, BindingItem, BindingOwner,
-    BindingParity, BindingSupport, BlockSet, Bond, BondId, BondOrder, BondSpec, Conformer2D,
-    CoordinateBlock, Element, Molecule, MoleculeOpKind, MoleculeOpOutput, MoleculeProperties,
-    OperationDomain, OperationError, ParityPolicy, StateModel, StereoGroup, StereoGroupKind,
-    SupportStatus, TopologyBlock, TopologyEditKind, feature_spec, operation_invariant,
-    operation_parity, operation_spec, support_matrix,
+    Atom, AtomId, AtomSpec, BINDING_CONTRACT, BindingItem, BindingOwner, BlockSet, Bond, BondId,
+    BondOrder, BondSpec, Conformer2D, CoordinateBlock, Element, FunctionStatus, Molecule,
+    MoleculeOpKind, MoleculeOpOutput, MoleculeProperties, OperationDomain, OperationError,
+    ParityPolicy, StateModel, StereoGroup, StereoGroupKind, TopologyBlock, TopologyEditKind,
+    feature_spec, operation_invariant, operation_parity, operation_spec, support_matrix,
 };
 
 fn radical_molecule() -> Molecule {
@@ -101,7 +100,7 @@ fn binding_contract_exposes_exactly_the_frozen_two_callables() {
     ];
     let rows = BINDING_CONTRACT
         .iter()
-        .filter(|row| row.feature == "radicals")
+        .filter(|row| row.feature == "cap-radicals")
         .collect::<Vec<_>>();
     assert_eq!(
         rows.iter().map(|row| row.semantic_id).collect::<Vec<_>>(),
@@ -110,9 +109,7 @@ fn binding_contract_exposes_exactly_the_frozen_two_callables() {
     for row in &rows {
         assert_eq!(row.item, BindingItem::Callable);
         assert_eq!(row.owner, BindingOwner::Molecule);
-        assert_eq!(row.exposure, BindingExposure::Public);
-        assert_eq!(row.support, BindingSupport::SupportedWithRdkitParity);
-        assert_eq!(row.parity, BindingParity::RequiredNow);
+        assert_eq!(row.status, FunctionStatus::Experimental);
         assert_eq!(row.callable.unwrap().parameters.len(), 0);
     }
     assert_eq!(
@@ -124,9 +121,8 @@ fn binding_contract_exposes_exactly_the_frozen_two_callables() {
 
 #[test]
 fn generated_registry_and_all_four_matrices_share_the_exact_operation() {
-    let feature = feature_spec("radicals").unwrap();
-    assert_eq!(feature.status, SupportStatus::SupportedWithRdkitParity);
-    assert!(feature.rdkit_parity_sensitive);
+    let feature = feature_spec("cap-radicals").unwrap();
+    assert_eq!(feature.name, "cap-radicals");
 
     let spec = operation_spec("with_assigned_radicals").unwrap();
     assert_eq!(spec.domain, OperationDomain::Topology);
@@ -153,7 +149,7 @@ fn generated_registry_and_all_four_matrices_share_the_exact_operation() {
         (1 << 2) | (1 << 3) | (1 << 4) | (1 << 6) | (1 << 7)
     );
     assert_eq!(format!("{:?}", spec.cip_state), "ClearComputed");
-    assert_eq!(spec.support, SupportStatus::SupportedWithRdkitParity);
+    assert_eq!(spec.status, FunctionStatus::Experimental);
     assert_eq!(spec.parity, ParityPolicy::RequiredNow);
     assert_eq!(
         operation_invariant(spec.method).unwrap().profile,
@@ -165,7 +161,7 @@ fn generated_registry_and_all_four_matrices_share_the_exact_operation() {
     );
     let support = support_matrix()
         .iter()
-        .find(|row| row.feature.name == "radicals")
+        .find(|row| row.feature.name == "cap-radicals")
         .unwrap();
     assert!(std::ptr::eq(support.operation.unwrap(), spec));
 }

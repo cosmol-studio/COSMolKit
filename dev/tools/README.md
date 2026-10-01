@@ -15,7 +15,7 @@ python3 dev/tools/bump_rust_version.py 0.5.0-rc.8
 Updates the shared Rust crate version, explicitly listed internal dependencies,
 and the marked installation example in `crates/cosmolkit/README.md`.
 Also updates `python/pyproject.toml` project.version: `0.5.0-rc.8` becomes
-`0.5.0.dev8`; stable `0.5.0` stays `0.5.0`.
+`0.5.0rc8`; stable `0.5.0` stays `0.5.0`.
 Then `cargo update` refreshes the lockfile, including third-party dependencies.
 Python/WASM Cargo package versions, npm/Python release pins and historical
 records remain unchanged.

@@ -19,11 +19,11 @@ use crate::ops::{DerivedState, OperationError};
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(crate) struct DerivedCacheBlock {
     valid: DerivedState,
-    #[cfg(any(feature = "valence", feature = "hydrogens"))]
+    #[cfg(any(feature = "cap-valence", feature = "cap-hydrogens"))]
     valence: Option<cosmolkit_core::ValenceAssignment>,
-    #[cfg(feature = "rings")]
+    #[cfg(feature = "cap-rings")]
     rings: Option<cosmolkit_core::RingInfo>,
-    #[cfg(feature = "rings")]
+    #[cfg(feature = "cap-rings")]
     ring_families: Option<cosmolkit_core::RingInfo>,
 }
 
@@ -31,21 +31,21 @@ impl DerivedCacheBlock {
     fn is_empty(&self) -> bool {
         self.valid == DerivedState::NONE
             && {
-                #[cfg(any(feature = "valence", feature = "hydrogens"))]
+                #[cfg(any(feature = "cap-valence", feature = "cap-hydrogens"))]
                 {
                     self.valence.is_none()
                 }
-                #[cfg(not(any(feature = "valence", feature = "hydrogens")))]
+                #[cfg(not(any(feature = "cap-valence", feature = "cap-hydrogens")))]
                 {
                     true
                 }
             }
             && {
-                #[cfg(feature = "rings")]
+                #[cfg(feature = "cap-rings")]
                 {
                     self.rings.is_none() && self.ring_families.is_none()
                 }
-                #[cfg(not(feature = "rings"))]
+                #[cfg(not(feature = "cap-rings"))]
                 {
                     true
                 }
@@ -62,21 +62,21 @@ impl DerivedCacheBlock {
 
     pub(crate) fn clear(&mut self, states: DerivedState) {
         self.valid = self.valid.difference(states);
-        #[cfg(any(feature = "valence", feature = "hydrogens"))]
+        #[cfg(any(feature = "cap-valence", feature = "cap-hydrogens"))]
         if states.intersects(DerivedState::VALENCE) {
             self.valence = None;
         }
-        #[cfg(feature = "rings")]
+        #[cfg(feature = "cap-rings")]
         if states.intersects(DerivedState::RINGS) {
             self.rings = None;
         }
-        #[cfg(feature = "rings")]
+        #[cfg(feature = "cap-rings")]
         if states.intersects(DerivedState::RING_FAMILIES) {
             self.ring_families = None;
         }
     }
 
-    #[cfg(any(feature = "valence", feature = "hydrogens"))]
+    #[cfg(any(feature = "cap-valence", feature = "cap-hydrogens"))]
     pub(crate) fn install_valence_assignment(
         &mut self,
         assignment: cosmolkit_core::ValenceAssignment,
@@ -84,33 +84,33 @@ impl DerivedCacheBlock {
         self.valence = Some(assignment);
     }
 
-    #[cfg(any(feature = "valence", feature = "hydrogens"))]
+    #[cfg(any(feature = "cap-valence", feature = "cap-hydrogens"))]
     pub(crate) fn valence_assignment(&self) -> Option<&cosmolkit_core::ValenceAssignment> {
         self.valence.as_ref()
     }
 
-    #[cfg(feature = "rings")]
+    #[cfg(feature = "cap-rings")]
     pub(crate) fn install_ring_info(&mut self, rings: cosmolkit_core::RingInfo) {
         self.rings = Some(rings);
     }
 
-    #[cfg(feature = "rings")]
+    #[cfg(feature = "cap-rings")]
     pub(crate) fn ring_info(&self) -> Option<&cosmolkit_core::RingInfo> {
         self.rings.as_ref()
     }
 
-    #[cfg(feature = "rings")]
+    #[cfg(feature = "cap-rings")]
     pub(crate) fn install_ring_family_info(&mut self, families: cosmolkit_core::RingInfo) {
         self.ring_families = Some(families);
     }
 
-    #[cfg(feature = "rings")]
+    #[cfg(feature = "cap-rings")]
     pub(crate) fn ring_family_info(&self) -> Option<&cosmolkit_core::RingInfo> {
         self.ring_families.as_ref()
     }
 
     pub(crate) fn validate_for_atom_count(&self, atom_count: usize) -> Result<(), OperationError> {
-        #[cfg(any(feature = "valence", feature = "hydrogens"))]
+        #[cfg(any(feature = "cap-valence", feature = "cap-hydrogens"))]
         {
             let valid = self.valid.contains(DerivedState::VALENCE);
             match (valid, self.valence.as_ref()) {
@@ -157,7 +157,7 @@ impl DerivedCacheBlock {
         topology: &TopologyBlock,
     ) -> Result<(), OperationError> {
         self.validate_for_atom_count(topology.atoms.len())?;
-        #[cfg(feature = "rings")]
+        #[cfg(feature = "cap-rings")]
         {
             let valid = self.valid.contains(DerivedState::RINGS);
             match (valid, self.rings.as_ref()) {
@@ -616,11 +616,11 @@ impl Default for Molecule {
     }
 }
 
-#[cfg(all(test, feature = "valence"))]
+#[cfg(all(test, feature = "cap-valence"))]
 mod valence_cache_tests {
     use super::*;
 
-    #[cfg(feature = "hydrogens")]
+    #[cfg(feature = "cap-hydrogens")]
     #[test]
     fn removal_final_valence_obeys_sanitize_and_preserves_source_cache() {
         let topology = TopologyBlock::try_from_parts(

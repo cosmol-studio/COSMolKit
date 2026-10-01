@@ -1,20 +1,9 @@
 //! Stable operation metadata values generated from `molecule_ops!`.
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum SupportStatus {
-    Supported,
-    SupportedWithRdkitParity,
-    PreservedOnly,
-    Experimental,
-    Unsupported { reason: &'static str },
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct FeatureSpec {
     pub name: &'static str,
     pub category: &'static str,
-    pub status: SupportStatus,
-    pub rdkit_parity_sensitive: bool,
     pub docs: &'static str,
 }
 
@@ -22,20 +11,6 @@ pub struct FeatureSpec {
 pub struct UnsupportedFeatureError {
     pub feature: &'static str,
     pub reason: &'static str,
-}
-
-impl UnsupportedFeatureError {
-    #[must_use]
-    pub const fn from_spec(spec: &'static FeatureSpec) -> Self {
-        let reason = match spec.status {
-            SupportStatus::Unsupported { reason } => reason,
-            _ => "feature is not marked unsupported",
-        };
-        Self {
-            feature: spec.name,
-            reason,
-        }
-    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -291,7 +266,7 @@ pub struct MoleculeOpSpec {
     pub cip_state: CipStatePolicy,
     pub semantic_preconditions: SemanticPreconditionSet,
     pub requires_mapping: MappingRequirement,
-    pub support: SupportStatus,
+    pub status: crate::FunctionStatus,
     pub parity: ParityPolicy,
     pub io_roundtrip: bool,
 }

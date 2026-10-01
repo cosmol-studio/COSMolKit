@@ -14,9 +14,9 @@ fn cargo_check(case: &str, strict: bool) -> Output {
          --cfg=cosmolkit_runtime_privacy_case=\"{case}\""
     );
     let features = if strict {
-        "hydrogens,stereo,op-contracts-strict"
+        "cap-hydrogens,cap-stereo,op-contracts-strict"
     } else {
-        "hydrogens,stereo"
+        "cap-hydrogens,cap-stereo"
     };
 
     Command::new(std::env::var("CARGO").unwrap_or_else(|_| "cargo".into()))

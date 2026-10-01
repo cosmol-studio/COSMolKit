@@ -1,7 +1,7 @@
-#![cfg(feature = "bio")]
+#![cfg(feature = "cap-bio")]
 
 use cosmolkit::{
-    BINDING_CONTRACT, BindingSupport, BioCoordinateFormat, BioPdbReadParams, BioStructure, Protein,
+    BINDING_CONTRACT, BioCoordinateFormat, BioPdbReadParams, BioStructure, FunctionStatus, Protein,
     ProteinReadError,
 };
 use std::error::Error;
@@ -126,8 +126,8 @@ fn public_pdb_registry_has_real_experimental_signatures() {
                 .collect();
             assert_eq!(entries.len(), 1);
             let entry = entries[0];
-            assert_eq!(entry.support, BindingSupport::Experimental);
-            assert_eq!(entry.feature, "bio");
+            assert_eq!(entry.status, FunctionStatus::Experimental);
+            assert_eq!(entry.feature, "cap-bio");
             assert_eq!(entry.python_name, name);
             let callable = entry.callable.unwrap();
             assert_eq!(callable.operation_semantic_id, None);

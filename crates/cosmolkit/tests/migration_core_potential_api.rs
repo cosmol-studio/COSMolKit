@@ -4,14 +4,13 @@ mod coordinate_views;
 use std::error::Error as _;
 
 use cosmolkit::{
-    Atom, AtomId, AtomSpec, BINDING_CONTRACT, BindingExposure, BindingItem, BindingOwner,
-    BindingParity, BindingSupport, BlockSet, Bond, BondDirection, BondId, BondOrder, BondSpec,
-    BondStereo, ChiralTag, Conformer2D, CoordinateBlock, Element, Molecule, MoleculeOpKind,
-    MoleculeOpOutput, MoleculeProperties, OperationDomain, OperationError, ParityPolicy,
-    PotentialStereoCenter, PotentialStereoError, PotentialStereoParams, PotentialStereoResult,
-    PotentialStereoSpecified, StateModel, StereoGroup, StereoGroupKind, SupportStatus,
-    TopologyBlock, TopologyEditKind, feature_spec, operation_invariant, operation_parity,
-    operation_spec, support_matrix,
+    Atom, AtomId, AtomSpec, BINDING_CONTRACT, BindingItem, BindingOwner, BlockSet, Bond,
+    BondDirection, BondId, BondOrder, BondSpec, BondStereo, ChiralTag, Conformer2D,
+    CoordinateBlock, Element, FunctionStatus, Molecule, MoleculeOpKind, MoleculeOpOutput,
+    MoleculeProperties, OperationDomain, OperationError, ParityPolicy, PotentialStereoCenter,
+    PotentialStereoError, PotentialStereoParams, PotentialStereoResult, PotentialStereoSpecified,
+    StateModel, StereoGroup, StereoGroupKind, TopologyBlock, TopologyEditKind, feature_spec,
+    operation_invariant, operation_parity, operation_spec, support_matrix,
 };
 use cosmolkit_core::{
     RingSearchParams, ValenceModel, ValenceParams, assign_valence, potential_stereo,
@@ -177,26 +176,23 @@ fn binding_contract_exposes_exactly_nine_types_and_two_callables() {
         rows.iter().map(|row| row.semantic_id).collect::<Vec<_>>(),
         expected
     );
-    assert!(rows.iter().all(|row| row.feature == "stereo"));
+    assert!(rows.iter().all(|row| row.feature == "cap-stereo"));
     assert!(
         rows.iter()
-            .all(|row| row.exposure == BindingExposure::Public)
+            .all(|row| row.status == FunctionStatus::Experimental)
     );
     for row in &rows[..8] {
         assert_eq!(row.item, BindingItem::Type);
         assert_eq!(row.owner, BindingOwner::Type);
-        assert_eq!(row.support, BindingSupport::SupportedWithRdkitParity);
-        assert_eq!(row.parity, BindingParity::RequiredNow);
+        assert_eq!(row.status, FunctionStatus::Experimental);
     }
     assert_eq!(rows[8].item, BindingItem::Type);
     assert_eq!(rows[8].owner, BindingOwner::Type);
-    assert_eq!(rows[8].support, BindingSupport::Supported);
-    assert_eq!(rows[8].parity, BindingParity::NotApplicable);
+    assert_eq!(rows[8].status, FunctionStatus::Experimental);
     for row in &rows[9..] {
         assert_eq!(row.item, BindingItem::Callable);
         assert_eq!(row.owner, BindingOwner::Molecule);
-        assert_eq!(row.support, BindingSupport::SupportedWithRdkitParity);
-        assert_eq!(row.parity, BindingParity::RequiredNow);
+        assert_eq!(row.status, FunctionStatus::Experimental);
     }
     assert_eq!(rows[9].javascript_name, "potentialStereo");
     assert_eq!(rows[10].javascript_name, "potentialStereoWithParams");
@@ -211,9 +207,8 @@ fn binding_contract_exposes_exactly_nine_types_and_two_callables() {
 
 #[test]
 fn generated_registry_and_all_four_matrices_share_one_single_result_operation() {
-    let feature = feature_spec("stereo").unwrap();
-    assert_eq!(feature.status, SupportStatus::SupportedWithRdkitParity);
-    assert!(feature.rdkit_parity_sensitive);
+    let feature = feature_spec("cap-stereo").unwrap();
+    assert_eq!(feature.name, "cap-stereo");
 
     let spec = operation_spec("potential_stereo_with_params").unwrap();
     assert_eq!(spec.output, MoleculeOpOutput::Single);
@@ -241,7 +236,7 @@ fn generated_registry_and_all_four_matrices_share_one_single_result_operation() 
         (1 << 4) | (1 << 6) | (1 << 7)
     );
     assert_eq!(format!("{:?}", spec.cip_state), "ClearComputed");
-    assert_eq!(spec.support, SupportStatus::SupportedWithRdkitParity);
+    assert_eq!(spec.status, FunctionStatus::Experimental);
     assert_eq!(spec.parity, ParityPolicy::RequiredNow);
     assert!(spec.io_roundtrip);
     assert_eq!(

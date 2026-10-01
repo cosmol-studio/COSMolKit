@@ -1,4 +1,4 @@
-#![cfg(feature = "smiles")]
+#![cfg(feature = "cap-smiles")]
 
 use cosmolkit as ck;
 use cosmolkit_smiles as owner;
@@ -118,10 +118,10 @@ fn default_strings_errors_and_registry_are_public_contracts() {
             .filter(|entry| entry.semantic_id == id)
             .collect();
         assert_eq!(entries.len(), 1, "{id}");
-        assert_eq!(entries[0].feature, "smiles");
+        assert_eq!(entries[0].feature, "cap-smiles");
         assert_eq!(
-            entries[0].support,
-            ck::binding_contract::BindingSupport::Experimental
+            entries[0].status,
+            ck::binding_contract::FunctionStatus::Experimental
         );
     }
 }

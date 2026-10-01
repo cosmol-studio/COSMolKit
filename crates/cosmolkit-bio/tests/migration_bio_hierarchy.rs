@@ -585,6 +585,10 @@ fn bio_hierarchy_assembly_ncs_and_reference_validation_preserve_order() {
     );
     assert_eq!(structure.ncs_operators()[0].id, "ncs1");
 
+    // Approved contract (BIO-COPY A01): assembly chain/subchain names are
+    // source metadata, not enforced live row references — the previously
+    // rejected "missing" chain now constructs successfully with its raw
+    // reference preserved verbatim.
     let mut bad = one_atom_parts([0.0; 3]);
     bad.assemblies.push(BioAssembly::new(
         "bad".to_owned(),
@@ -603,10 +607,8 @@ fn bio_hierarchy_assembly_ncs_and_reference_validation_preserve_order() {
             Vec::new(),
         )],
     ));
-    assert!(matches!(
-        BioStructureData::from_parts(bad),
-        Err(BioStructureError::AssemblyReferenceMissing { kind: "chain", .. })
-    ));
+    let structure = BioStructureData::from_parts(bad).unwrap();
+    assert_eq!(structure.assemblies()[0].generators[0].chains, ["missing"]);
 }
 
 #[test]

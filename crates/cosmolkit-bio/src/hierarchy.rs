@@ -1395,6 +1395,68 @@ pub struct BioStructureData {
     pub assemblies: std::sync::Arc<Vec<BioAssembly>>,
 }
 
+/// Borrowed detached input for the selection copier; no live object or mutation authority.
+///
+/// Arc references preserve unchanged metadata without cloning the source tables.
+#[derive(Clone, Copy)]
+pub struct BioStructureCopySource<'a> {
+    pub input_format: BioCoordinateFormat,
+    pub models: &'a std::sync::Arc<Vec<BioModelRow>>,
+    pub chains: &'a std::sync::Arc<Vec<BioChainRow>>,
+    pub residues: &'a std::sync::Arc<Vec<BioResidueRow>>,
+    pub atoms: &'a std::sync::Arc<Vec<BioAtomRow>>,
+    pub entities: &'a std::sync::Arc<Vec<BioEntityRow>>,
+    pub connections: &'a std::sync::Arc<Vec<BioConnection>>,
+    pub cispeps: &'a std::sync::Arc<Vec<BioCisPep>>,
+    pub mod_residues: &'a std::sync::Arc<Vec<BioModRes>>,
+    pub helices: &'a std::sync::Arc<Vec<BioHelix>>,
+    pub sheets: &'a std::sync::Arc<Vec<BioSheet>>,
+    pub metadata: &'a std::sync::Arc<BioMetadata>,
+    pub source_state: &'a std::sync::Arc<BioStructureSourceState>,
+    pub coordinates: &'a std::sync::Arc<BioCoordinateBlock>,
+    pub crystal: &'a std::sync::Arc<Option<BioCrystalInfo>>,
+    pub ncs_operators: &'a std::sync::Arc<Vec<BioNcsOperator>>,
+    pub assemblies: &'a std::sync::Arc<Vec<BioAssembly>>,
+}
+
+impl<'a> From<&'a BioStructureData> for BioStructureCopySource<'a> {
+    fn from(data: &'a BioStructureData) -> Self {
+        Self {
+            input_format: data.input_format,
+            models: &data.models,
+            chains: &data.chains,
+            residues: &data.residues,
+            atoms: &data.atoms,
+            entities: &data.entities,
+            connections: &data.connections,
+            cispeps: &data.cispeps,
+            mod_residues: &data.mod_residues,
+            helices: &data.helices,
+            sheets: &data.sheets,
+            metadata: &data.metadata,
+            source_state: &data.source_state,
+            coordinates: &data.coordinates,
+            crystal: &data.crystal,
+            ncs_operators: &data.ncs_operators,
+            assemblies: &data.assemblies,
+        }
+    }
+}
+
+impl BioStructureCopySource<'_> {
+    pub(crate) fn validate(&self) -> Result<(), BioStructureError> {
+        validate_structure(BioStructureView {
+            models: self.models,
+            chains: self.chains,
+            residues: self.residues,
+            atoms: self.atoms,
+            entities: self.entities,
+            coordinates: self.coordinates,
+            assemblies: self.assemblies,
+        })
+    }
+}
+
 impl BioStructureData {
     pub fn from_parts(parts: BioStructureParts) -> Result<Self, BioStructureError> {
         Self::validate_parts(&parts)?;
@@ -1780,47 +1842,15 @@ fn validate_hierarchy(view: BioStructureView<'_>) -> Result<(), BioStructureErro
             coordinate_count: view.coordinates.len(),
         });
     }
-    validate_assembly_references(view)?;
-    Ok(())
-}
-
-fn validate_assembly_references(view: BioStructureView<'_>) -> Result<(), BioStructureError> {
-    for (assembly_index, assembly) in view.assemblies.iter().enumerate() {
-        for generator in &assembly.generators {
-            for requested in &generator.chains {
-                let present = view.chains.iter().any(|chain| {
-                    chain
-                        .source()
-                        .auth_chain_id()
-                        .is_some_and(|id| id.as_str() == requested)
-                });
-                if !present {
-                    return Err(BioStructureError::AssemblyReferenceMissing {
-                        assembly: BioAssemblyId::new(assembly_index as u32),
-                        kind: "chain",
-                        value: requested.clone(),
-                    });
-                }
-            }
-            for requested in &generator.subchains {
-                let chain_present = view
-                    .chains
-                    .iter()
-                    .any(|chain| chain.source().label_asym_id() == Some(requested.as_str()));
-                let residue_present = view
-                    .residues
-                    .iter()
-                    .any(|residue| residue.source().subchain_id() == Some(requested.as_str()));
-                if !chain_present && !residue_present {
-                    return Err(BioStructureError::AssemblyReferenceMissing {
-                        assembly: BioAssemblyId::new(assembly_index as u32),
-                        kind: "subchain",
-                        value: requested.clone(),
-                    });
-                }
-            }
-        }
-    }
+    // Assembly chain/subchain names are SOURCE METADATA, not live CK row
+    // references (approved contract, bio_architecture.md "Selection copying
+    // follows pinned Gemmi"): construction must not reject, prune or
+    // rewrite them merely because rows are absent — selection copying can
+    // legitimately drop every named row while retaining the assigned
+    // assembly. Local row IDs, parents/spans, entity-row references and
+    // coordinate alignment remain validated above; a consumer needing
+    // actual assembly targets must resolve the names itself and handle
+    // absence explicitly (no such consumer exists yet).
     Ok(())
 }
 
@@ -1938,11 +1968,6 @@ pub enum BioStructureError {
         entity_id: BioEntityId,
         subchain: String,
     },
-    AssemblyReferenceMissing {
-        assembly: BioAssemblyId,
-        kind: &'static str,
-        value: String,
-    },
     ImpossibleCrystalAngle,
     AtomNotFound,
 }
@@ -1954,6 +1979,351 @@ impl fmt::Display for BioStructureError {
 }
 
 impl std::error::Error for BioStructureError {}
+
+/// Shared private `read_string` logical view over raw stored ASCII bytes
+/// (ROW-NAME Step 2): reproduces the pinned PDB reader helper in exact
+/// source order — is_space left trim (bytes 9-13 and 32), LF/CR/NUL
+/// termination of the remaining field, then is_space right trim. Borrowed,
+/// allocation-free.
+pub(crate) fn pdb_read_string_view(stored: &str) -> &str {
+    // Gemmi✔️✔️: inline bool is_space(char c) {
+    // Gemmi✔️✔️:   static const std::uint8_t table[256] = { // 1 for 9-13 and 32
+    // Gemmi✔️✔️:     0,0,0,0,0,0,0,0, 0,1,1,1,1,1,0,0, 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,
+    // Gemmi✔️✔️:     1,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0, ... remaining rows all zero ... };
+    // Gemmi✔️✔️: }
+    // Gemmi✔️✔️: std::string read_string(const char* p, int field_length) {
+    // Gemmi✔️✔️:   // left trim
+    // Gemmi✔️✔️:   while (field_length != 0 && is_space(*p)) {
+    // Gemmi✔️✔️:     ++p;
+    // Gemmi✔️✔️:     --field_length;
+    // Gemmi✔️✔️:   }
+    // Gemmi✔️✔️:   // EOL/EOF ends the string
+    // Gemmi✔️✔️:   for (int i = 0; i < field_length; ++i)
+    // Gemmi✔️✔️:     if (p[i] == '\n' || p[i] == '\r' || p[i] == '\0') {
+    // Gemmi✔️✔️:       field_length = i;
+    // Gemmi✔️✔️:       break;
+    // Gemmi✔️✔️:     }
+    // Gemmi✔️✔️:   // right trim
+    // Gemmi✔️✔️:   while (field_length != 0 && is_space(p[field_length-1]))
+    // Gemmi✔️✔️:     --field_length;
+    // Gemmi✔️✔️:   return std::string(p, field_length);
+    // Gemmi✔️✔️: }
+    // Behavior: exact source order. The left trim consumes bytes 9-13 and
+    // 32; the termination scan runs over the REMAINING field (p advanced
+    // by the left trim) and cuts at the first NUL/LF/CR, discarding
+    // everything after it; the right trim then removes trailing is_space
+    // bytes of the cut field. Interior TAB/VT/FF (9/11/12) are is_space
+    // but NOT terminators, so an interior TAB is preserved while an
+    // interior LF/CR or NUL truncates. The stored name is
+    // constructor-guaranteed ASCII (<= 4 bytes), so the byte view is valid
+    // UTF-8; the debug_assert documents that invariant rather than
+    // substituting for it.
+    // Complexity: at most two linear passes over <= 4 bytes, borrowed
+    // output, no allocation.
+    fn is_space(b: u8) -> bool {
+        matches!(b, 9..=13 | 32)
+    }
+    let bytes = stored.as_bytes();
+    // left trim
+    let mut start = 0;
+    while start != bytes.len() && is_space(bytes[start]) {
+        start += 1;
+    }
+    // EOL/EOF ends the string (scan the remaining field only)
+    let mut end = bytes.len();
+    for (i, &b) in bytes[start..].iter().enumerate() {
+        if b == b'\n' || b == b'\r' || b == 0 {
+            end = start + i;
+            break;
+        }
+    }
+    // right trim
+    while end != start && is_space(bytes[end - 1]) {
+        end -= 1;
+    }
+    debug_assert!(stored.is_ascii());
+    std::str::from_utf8(&bytes[start..end]).unwrap_or("")
+}
+
+/// Exact PDB four-column atom-name logical view (BIO-ROWS R01).
+///
+/// Borrowed helper owning the name conversion that Gemmi performs at READ
+/// time via `read_string`: only PDB-provenance documents carry raw
+/// four-column names; every CIF-family format stores the decoded logical
+/// name that must be preserved byte-for-byte. The IO writer delegates
+/// here instead of maintaining a duplicate.
+#[must_use]
+pub fn atom_name_logical_view(
+    name: &crate::source_ids::AtomName,
+    input_format: BioCoordinateFormat,
+) -> &str {
+    // Gemmi✔️✔️: atom.name = read_string(line+12, 4);          // PDB reader
+    // Gemmi✔️✔️: a.atom_name = row.str(kLabelAtomId+i);         // mmCIF reader
+    // Behavior: Gemmi's stored name for PDB input is the read_string
+    // view of the raw four columns (is_space bytes 9-13/32 trimmed at the
+    // edges, first NUL/LF/CR terminating), while CIF-family readers store
+    // the decoded logical name verbatim. CK's PDB reader keeps the RAW
+    // four columns, so this view applies the exact read_string sequence
+    // (shared private `pdb_read_string_view`, which carries the verbatim
+    // anchors) only for Pdb provenance; every other format (and Unknown,
+    // which never has PDB column padding) preserves the stored bytes
+    // verbatim. No length/shape inference: input_format is the
+    // authoritative per-document discriminator.
+    // Complexity: O(1) over at most four bytes, borrowed output — no
+    // allocation.
+    if input_format == BioCoordinateFormat::Pdb {
+        pdb_read_string_view(name.as_str())
+    } else {
+        name.as_str()
+    }
+}
+
+/// Exact residue-name logical view (BIO-ROWS R02): the same provenance
+/// rule as [`atom_name_logical_view`], applied to the stored residue
+/// name. CK's PDB reader already stores the trimmed residue name, so the
+/// Pdb branch is the identity there, but the rule is applied explicitly;
+/// CIF-family logical names (e.g. quoted `' A '`) preserve their spaces
+/// byte-for-byte.
+#[must_use]
+pub fn residue_name_logical_view(
+    name: &crate::source_ids::ResidueName,
+    input_format: BioCoordinateFormat,
+) -> &str {
+    // Gemmi✔️✔️: return {read_seq_id(seq_id), {}, read_string(name, 3)};  // PDB reader
+    // Gemmi✔️✔️: vv.emplace_back(cif::quote(res.name));                   // writer
+    // Behavior: identical provenance discriminator and the same exact
+    // read_string sequence (shared private `pdb_read_string_view`);
+    // borrowed output, O(1) over at most four bytes.
+    if input_format == BioCoordinateFormat::Pdb {
+        pdb_read_string_view(name.as_str())
+    } else {
+        name.as_str()
+    }
+}
+
+#[cfg(test)]
+mod bio_rows_namefix_tests {
+    use super::{BioCoordinateFormat, atom_name_logical_view, residue_name_logical_view};
+    use crate::source_ids::{AtomName, ResidueName};
+
+    fn aname(bytes: &[u8]) -> AtomName {
+        AtomName::from_ascii(bytes).unwrap()
+    }
+    fn rname(bytes: &[u8]) -> ResidueName {
+        ResidueName::from_ascii(bytes).unwrap()
+    }
+
+    #[test]
+    fn bio_rows_namefix_all_whitespace_bytes_at_each_edge() {
+        // is_space table (atox.hpp) marks bytes 9-13 and 32; the left and
+        // right trim loops consume exactly those at the field edges.
+        let pdb = BioCoordinateFormat::Pdb;
+        for ws in [9u8, 10, 11, 12, 13, 32] {
+            let w = [ws];
+            // leading: trim consumes it, no terminator, no right trim
+            let leading = [&w[..], b"CA"].concat();
+            assert_eq!(
+                atom_name_logical_view(&aname(&leading), pdb),
+                "CA",
+                "leading byte {ws}"
+            );
+            // trailing: bytes 9/11/12 fall to the right trim; 10/13 hit the
+            // termination scan first — the pinned source yields "CA" either
+            // way (field cut at the byte, nothing after it).
+            let trailing = [b"CA".as_slice(), &w].concat();
+            assert_eq!(
+                atom_name_logical_view(&aname(&trailing), pdb),
+                "CA",
+                "trailing byte {ws}"
+            );
+            assert_eq!(
+                residue_name_logical_view(&rname(&leading), pdb),
+                "CA",
+                "residue leading byte {ws}"
+            );
+            assert_eq!(
+                residue_name_logical_view(&rname(&trailing), pdb),
+                "CA",
+                "residue trailing byte {ws}"
+            );
+        }
+        // A field made only of whitespace bytes trims to empty.
+        assert_eq!(atom_name_logical_view(&aname(b"\t\n\x0b\x0c"), pdb), "");
+        assert_eq!(residue_name_logical_view(&rname(b" \t\r "), pdb), "");
+        // Full-width name with no whitespace survives intact.
+        assert_eq!(atom_name_logical_view(&aname(b"ABCD"), pdb), "ABCD");
+    }
+
+    #[test]
+    fn bio_rows_namefix_interior_terminators_and_tab_family() {
+        let pdb = BioCoordinateFormat::Pdb;
+        // The EOL/EOF scan cuts at the FIRST NUL/LF/CR in the remaining
+        // field; everything after it is discarded.
+        assert_eq!(atom_name_logical_view(&aname(b"AB\nC"), pdb), "AB");
+        assert_eq!(atom_name_logical_view(&aname(b"A\rBC"), pdb), "A");
+        assert_eq!(atom_name_logical_view(&aname(b"A\0BC"), pdb), "A");
+        assert_eq!(residue_name_logical_view(&rname(b"AL\nA"), pdb), "AL");
+        // NUL as the first byte of the remaining field yields the empty
+        // string (left trim does not consume NUL; is_space(0) == 0).
+        assert_eq!(atom_name_logical_view(&aname(b"\0ABC"), pdb), "");
+        // Interior TAB/VT/FF are is_space but NOT terminators: interior
+        // whitespace survives because the trims only touch the edges.
+        assert_eq!(atom_name_logical_view(&aname(b"A\tB"), pdb), "A\tB");
+        assert_eq!(atom_name_logical_view(&aname(b"A\x0bB"), pdb), "A\x0bB");
+        assert_eq!(residue_name_logical_view(&rname(b"A\x0cB"), pdb), "A\x0cB");
+        // A leading LF is whitespace for the LEFT trim (is_space) and is
+        // consumed there — termination only applies to interior bytes.
+        assert_eq!(atom_name_logical_view(&aname(b"\n CA"), pdb), "CA");
+        // Leading trim advancing past whitespace keeps a later terminator
+        // interior: "\tA\nC" -> field "A\nC" -> cut at LF -> "A".
+        assert_eq!(atom_name_logical_view(&aname(b"\tA\nC"), pdb), "A");
+    }
+
+    #[test]
+    fn bio_rows_namefix_non_pdb_preserves_these_bytes_verbatim() {
+        // CIF-family/Unknown provenance never applies read_string: the very
+        // same stored bytes are returned untouched.
+        for format in [
+            BioCoordinateFormat::Unknown,
+            BioCoordinateFormat::Detect,
+            BioCoordinateFormat::Mmcif,
+            BioCoordinateFormat::Mmjson,
+            BioCoordinateFormat::ChemComp,
+        ] {
+            for stored in [&b"\tCA"[..], b"CA\n", b"AB\0C", b"A\tB", b"\n CA", b" CA "] {
+                assert_eq!(
+                    atom_name_logical_view(&aname(stored), format),
+                    std::str::from_utf8(stored).unwrap(),
+                    "{format:?} atom {stored:?}"
+                );
+                assert_eq!(
+                    residue_name_logical_view(&rname(stored), format),
+                    std::str::from_utf8(stored).unwrap(),
+                    "{format:?} residue {stored:?}"
+                );
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod bio_rows_r02_tests {
+    use super::{BioCoordinateFormat, residue_name_logical_view};
+    use crate::source_ids::ResidueName;
+
+    fn name(bytes: &[u8]) -> ResidueName {
+        ResidueName::from_ascii(bytes).unwrap()
+    }
+
+    #[test]
+    fn bio_rows_r02_pdb_padding_versus_cif_spaces() {
+        let pdb = BioCoordinateFormat::Pdb;
+        // PDB three-column provenance: read_string trims outer spaces.
+        assert_eq!(residue_name_logical_view(&name(b"ALA "), pdb), "ALA");
+        assert_eq!(residue_name_logical_view(&name(b" ALA"), pdb), "ALA");
+        assert_eq!(residue_name_logical_view(&name(b"   "), pdb), "");
+        // CIF-family logical names keep literal spaces byte-for-byte.
+        for format in [
+            BioCoordinateFormat::Unknown,
+            BioCoordinateFormat::Detect,
+            BioCoordinateFormat::Mmcif,
+            BioCoordinateFormat::Mmjson,
+            BioCoordinateFormat::ChemComp,
+        ] {
+            assert_eq!(
+                residue_name_logical_view(&name(b" ALA"), format),
+                " ALA",
+                "{format:?}"
+            );
+            assert_eq!(
+                residue_name_logical_view(&name(b"   "), format),
+                "   ",
+                "{format:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn bio_rows_r02_blank_and_maximal_stored_names() {
+        let pdb = BioCoordinateFormat::Pdb;
+        // Blank stored name stays blank in both provenances.
+        assert_eq!(residue_name_logical_view(&name(b""), pdb), "");
+        assert_eq!(
+            residue_name_logical_view(&name(b""), BioCoordinateFormat::Mmcif),
+            ""
+        );
+        // Maximal four-byte stored names keep every byte except the PDB
+        // outer-space trim; embedded spaces are preserved in both.
+        assert_eq!(residue_name_logical_view(&name(b"MSE "), pdb), "MSE");
+        assert_eq!(
+            residue_name_logical_view(&name(b"AB D"), BioCoordinateFormat::Mmcif),
+            "AB D"
+        );
+        assert_eq!(residue_name_logical_view(&name(b"A B "), pdb), "A B");
+        // An all-space CIF name is a literal logical name, not blanked.
+        assert_eq!(
+            residue_name_logical_view(&name(b" "), BioCoordinateFormat::Mmcif),
+            " "
+        );
+    }
+}
+
+#[cfg(test)]
+mod bio_rows_r01_tests {
+    use super::{BioCoordinateFormat, atom_name_logical_view};
+    use crate::source_ids::AtomName;
+
+    fn name(bytes: &[u8]) -> AtomName {
+        AtomName::from_ascii(bytes).unwrap()
+    }
+
+    #[test]
+    fn bio_rows_r01_pdb_padding_rules() {
+        // read_string trims leading and trailing spaces of the raw four
+        // columns (pdb.cpp read_string), independently derived from the
+        // pinned left-trim/EOL/right-trim sequence.
+        let pdb = BioCoordinateFormat::Pdb;
+        assert_eq!(atom_name_logical_view(&name(b" CA "), pdb), "CA");
+        assert_eq!(atom_name_logical_view(&name(b"CA  "), pdb), "CA");
+        assert_eq!(atom_name_logical_view(&name(b"  CA"), pdb), "CA");
+        assert_eq!(atom_name_logical_view(&name(b"    "), pdb), "");
+        assert_eq!(atom_name_logical_view(&name(b"CA"), pdb), "CA");
+        // Embedded spaces are NOT trimmed: only the outer run.
+        assert_eq!(atom_name_logical_view(&name(b"C A "), pdb), "C A");
+        assert_eq!(atom_name_logical_view(&name(b" C A"), pdb), "C A");
+        // A name that is entirely spaces between letters stays verbatim.
+        assert_eq!(atom_name_logical_view(&name(b"HB1 "), pdb), "HB1");
+    }
+
+    #[test]
+    fn bio_rows_r01_non_pdb_preserves_bytes() {
+        // Every CIF-family format and Unknown/Detect preserve the stored
+        // logical name byte-for-byte — no trims at all.
+        for format in [
+            BioCoordinateFormat::Unknown,
+            BioCoordinateFormat::Detect,
+            BioCoordinateFormat::Mmcif,
+            BioCoordinateFormat::Mmjson,
+            BioCoordinateFormat::ChemComp,
+        ] {
+            assert_eq!(
+                atom_name_logical_view(&name(b" CA "), format),
+                " CA ",
+                "{format:?}"
+            );
+            assert_eq!(
+                atom_name_logical_view(&name(b"  "), format),
+                "  ",
+                "{format:?}"
+            );
+            assert_eq!(
+                atom_name_logical_view(&name(b"C A"), format),
+                "C A",
+                "{format:?}"
+            );
+        }
+    }
+}
 
 #[cfg(test)]
 mod bio_legacy_n01_tests {

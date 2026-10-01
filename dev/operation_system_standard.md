@@ -131,7 +131,7 @@ auto_remap
 derived_effects
 semantic_preconditions
 requires_mapping
-support
+status
 parity
 io_roundtrip
 ```
@@ -144,6 +144,13 @@ as `domain`, `topology_edit`, `may_mutate`, `auto_remap`,
 `semantic_preconditions`, `requires_mapping`, and `io_roundtrip`; entries
 should still spell out behaviorally meaningful values when omission would make
 review ambiguous.
+
+`status` is the single function commitment defined by `public_api_design.md`
+and defaults to `Experimental`. Generated binding entries for linked Molecule
+methods inherit it, including short/configured and value/in-place forms.
+It does not grant or revoke execution authority. Feature declarations carry
+no behavior status. `parity` and `parity_profile` below describe reference
+validation obligations, not another public support label or automatic promotion.
 
 `output` declares wrapper cardinality. Its default is `single`; `multiple`
 generates an ordered `Vec<Molecule>` wrapper and cannot be combined with an
@@ -221,7 +228,7 @@ current ownership is:
 | `derived_effects` | strict cache APIs, preservation proofs, and `finish()` trace validation |
 | `requires_mapping` | strict `finish()` validation of the mapping artifact |
 | `semantic_preconditions` | `OpParts::new` / `new_in_place` entry validation in strict and default release builds |
-| `support` | macro-generated public-wrapper rejection and `SUPPORT_MATRIX` |
+| `status` | one operation declaration, generated method metadata and inherited binding contract; never a runtime permission |
 | `parity` / `parity_profile` | macro-generated `PARITY_MATRIX`; separate parity tests and CI must provide behavioral evidence |
 | `io_roundtrip` | registry metadata only today; operation-specific tests are required but are not selected by a universal field-driven runner |
 | `invariant_profile` | macro-generated `OPERATION_INVARIANT_MATRIX` plus invariant tests and CI evidence |

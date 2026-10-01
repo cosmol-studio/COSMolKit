@@ -1,11 +1,10 @@
 use cosmolkit::{
-    Atom, AtomId, AtomSpec, BINDING_CONTRACT, BindingDefault, BindingExposure, BindingItem,
-    BindingKind, BindingOwner, BindingParity, BindingSupport, BindingTypeRole, Bond, BondId,
-    BondOrder, BondSpec, Conformer2D, CoordinateBlock, CoordinateDimension,
-    CoordinateValidationError, Element, Molecule, MoleculeBuilder, MoleculeProperties,
-    OperationError, SdfPropertyList, SdfPropertyListTarget, StateModel, StereoGroup,
-    StereoGroupKind, SubstanceGroup, SubstanceGroupId, SubstanceGroupKind, TopologyBlock,
-    TopologyValidationError,
+    Atom, AtomId, AtomSpec, BINDING_CONTRACT, BindingDefault, BindingItem, BindingKind,
+    BindingOwner, BindingTypeRole, Bond, BondId, BondOrder, BondSpec, Conformer2D, CoordinateBlock,
+    CoordinateDimension, CoordinateValidationError, Element, FunctionStatus, Molecule,
+    MoleculeBuilder, MoleculeProperties, OperationError, SdfPropertyList, SdfPropertyListTarget,
+    StateModel, StereoGroup, StereoGroupKind, SubstanceGroup, SubstanceGroupId, SubstanceGroupKind,
+    TopologyBlock, TopologyValidationError,
 };
 
 fn atom(index: usize, element: Element) -> Atom {
@@ -159,9 +158,9 @@ fn registry_exactly_matches_the_builder_receiver_defaults_feature_and_state_cont
     );
     assert!(entries.iter().all(|entry| {
         entry.feature == "runtime"
-            && entry.exposure == BindingExposure::Public
-            && entry.support == BindingSupport::Supported
-            && entry.parity == BindingParity::NotApplicable
+            && entry.status == FunctionStatus::Experimental
+            && entry.status == FunctionStatus::Experimental
+            && entry.status == FunctionStatus::Experimental
     }));
 
     let type_entry = entries[0];

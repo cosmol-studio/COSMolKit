@@ -1,4 +1,4 @@
-#![cfg(not(feature = "hydrogens"))]
+#![cfg(not(feature = "cap-hydrogens"))]
 
 use std::sync::Arc;
 
@@ -9,15 +9,15 @@ pub use cosmolkit::ops::{
     SemanticPreconditionSet,
 };
 pub use cosmolkit::{
-    BlockAccess, BlockSet, MoleculeOpKind, MoleculeOpOutput, MoleculeOpSpec, OperationDomain,
-    OperationError, SupportStatus, TopologyEditKind,
+    BlockAccess, BlockSet, FunctionStatus, MoleculeOpKind, MoleculeOpOutput, MoleculeOpSpec,
+    OperationDomain, OperationError, TopologyEditKind,
 };
 
 mod ops {
     pub use crate::{
-        BlockAccess, BlockSet, CipStatePolicy, DerivedEffects, DerivedState, MappingRequirement,
-        MoleculeOpKind, MoleculeOpOutput, MoleculeOpSpec, OperationDomain, OperationError,
-        ParityPolicy, SemanticPreconditionSet, SupportStatus, TopologyEditKind,
+        BlockAccess, BlockSet, CipStatePolicy, DerivedEffects, DerivedState, FunctionStatus,
+        MappingRequirement, MoleculeOpKind, MoleculeOpOutput, MoleculeOpSpec, OperationDomain,
+        OperationError, ParityPolicy, SemanticPreconditionSet, TopologyEditKind,
     };
 }
 

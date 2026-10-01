@@ -10,6 +10,7 @@ mod matrices;
 #[allow(dead_code)]
 mod projection;
 mod result;
+mod status;
 #[allow(dead_code)]
 mod wrappers;
 

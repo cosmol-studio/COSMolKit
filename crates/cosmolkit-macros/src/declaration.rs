@@ -3,6 +3,7 @@
 //! This is native proc-macro infrastructure. Runtime values and domain
 //! behavior remain owned by the crate in which generated tokens expand.
 
+use crate::status::FunctionStatus;
 use std::collections::HashSet;
 
 use quote::format_ident;
@@ -119,6 +120,7 @@ pub(crate) struct MoleculeFields {
     pub(crate) semantic_preconditions: Vec<SemanticPrecondition>,
     pub(crate) requires_mapping: MappingRequirement,
     pub(crate) feature: Path,
+    pub(crate) status: FunctionStatus,
     pub(crate) parity: MoleculeParity,
     pub(crate) io_roundtrip: bool,
     pub(crate) invariant_profile: LitStr,
@@ -177,6 +179,7 @@ struct RawMoleculeFields {
     semantic_preconditions: Option<Vec<Ident>>,
     requires_mapping: Option<Ident>,
     feature: Option<Path>,
+    status: Option<FunctionStatus>,
     parity: Option<Ident>,
     io_roundtrip: Option<LitBool>,
     invariant_profile: Option<LitStr>,
@@ -247,6 +250,9 @@ impl Parse for MoleculeOperation {
                         Some(parse_ident_list(&content, "semantic_preconditions")?)
                 }
                 "requires_mapping" => raw.requires_mapping = Some(content.parse()?),
+                "status" => {
+                    raw.status = Some(content.parse()?);
+                }
                 "feature" => raw.feature = Some(content.parse()?),
                 "parity" => raw.parity = Some(content.parse()?),
                 "io_roundtrip" => raw.io_roundtrip = Some(content.parse()?),
@@ -399,6 +405,7 @@ fn finish_molecule_fields(
         semantic_preconditions,
         requires_mapping,
         feature,
+        status: raw.status.unwrap_or_default(),
         parity,
         io_roundtrip,
         invariant_profile,

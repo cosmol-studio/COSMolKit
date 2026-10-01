@@ -13,7 +13,8 @@ This is not a performance suite.
    `src/registry/molecule_plan.rs`: molecular task profiles and future catalog.
 2. `src/lib.rs`: `run` automatically prepares data, performs complete preflight,
    then executes and compares exact typed results.
-3. `src/execute.rs`: calls the public Rust API; no chemistry reimplementation.
+3. `src/execute.rs` and `src/molecular.rs`: public Rust calls and typed observations;
+   no chemistry reimplementation.
 4. `src/tests.rs`: tests the runner itself, including missing final-task data
    preventing **all** Rust operation calls.
 
@@ -169,6 +170,12 @@ by deterministic owner regressions. No speed equivalence is inferred.
 
 ## Coverage CI and reference caching
 
+Before fetching third-party test sources, coverage CI builds the selected
+libraries with the same strict features, release profile and instrumentation
+used by regression tests. A build failure prevents source initialization and
+testing. Successful builds are reused from `target/coverage-build`; only raw
+coverage measurements are cleared, not compiled artifacts.
+
 `.github/workflows/coverage.yml` runs default regression suites from every
 current publishable Rust library and this runner, with runtime strict checks.
 Python/WASM wrappers, the historical macro package and development tools are
@@ -250,3 +257,69 @@ the 31 new entries. The expected list was extended explicitly without removing
 its exact order/count assertions; the focused 7-test schema target and full
 runtime rerun then passed. Existing compiler warnings remain. These results
 are not a whole-workspace, Python/JS, performance or million-corpus claim.
+
+## Historical molecular execution evidence — 2026-09-26
+
+These results describe the earlier nine-task molecular runner and six-pair
+fingerprint corpus. They are retained as historical failure evidence, not the
+current registry, corpus size, or acceptance status. Later implementations may
+have corrected the reported failures; rerun current tasks to establish that.
+
+
+This is a test-integration result, not acceptance of the chemical operations.
+The release runner was built with both runtime and core `op-contracts-strict`
+using the build command above. Build exited 0; runner regressions passed 23/23
+(exit 0, none ignored). Reference: RDKit 2026.03.1, local x86_64 Linux.
+
+Final runs:
+
+```bash
+target/release/cosmolkit-parity-tests run --data target/parity-tests/molecular-small
+target/release/cosmolkit-parity-tests run \
+  --corpus testdata/smiles/corpus/smiles_5000.smi \
+  --data target/parity-tests/molecular-5000
+```
+
+Both exited 1 due to retained parity failures. Each also ran the default six
+fingerprint pairs at both widths (24/24 matched); a SMILES corpus does not
+become 5,000 fingerprint pairs.
+
+| Molecular task | Small corpus matched / compared | 5,000 corpus matched / compared |
+|---|---:|---:|
+| SMILES read | 439 / 608 | 14,447 / 20,000 |
+| Sanitize ALL | 135 / 152 | 4,447 / 5,000 |
+| Kekulize | 14 / 304 | 0 / 10,000 |
+| Molecular weight | 280 / 304 | 10,000 / 10,000 |
+| Exact molecular weight | 280 / 304 | 10,000 / 10,000 |
+| Molecular formula | 560 / 608 | 20,000 / 20,000 |
+| Add hydrogens | 14 / 304 | 0 / 10,000 |
+| Remove hydrogens | 132 / 304 | 4,411 / 10,000 |
+| 2D coordinates and topology | 7 / 152 | 0 / 5,000 |
+
+Totals including fingerprint rows: small 3,064 comparisons / 1,179 non-passes;
+5,000 corpus 100,024 comparisons / 36,695 non-passes. Small-corpus reference
+rejections are included as non-passes, not declared equivalent errors. The
+5,000 run's failing rows are observed value/state differences, not oracle or
+CK exceptions. The counts describe the full result schema: a topology mismatch
+also fails a coordinate task, and a parser mismatch can propagate downstream.
+They do not isolate the faulty algorithm or prove every operation is wrong.
+
+Concrete observations retained in the small report include `C=C` with
+sanitize=true/remove_hydrogens=true: RDKit hybridization is SP2 (3), CK is
+Unspecified (0); raw `[nH]1cccc1` followed by sanitize retains explicit H=1 in
+RDKit but yields 0 in CK. No chemistry implementation, approved-difference
+policy, expectation or tolerance was changed to hide these observations.
+
+The small corpus currently contains 152 records (its older corpus README says
+150); no rows were filtered. Input SHA-256:
+
+- Small: `47380e477dc2ab4b3c2b7cd62754e52b718bb9f3f0b977d47eb97db45074442e`
+- 5,000: `a4d579cd72621af27772256bb23ba796452276bb924fd20aac83625ffa67d849`
+
+Full typed expected/actual records and identity manifests remain under the
+ignored output directories above. The 5,000 `rust-report.json` is approximately
+2.7 GiB and must not enter Git. A repeated small run reused all 11 validated
+reference generations, generated none and reproduced the same non-passes.
+This in-memory pilot is not a claim of million-row scalability. CIP, potential
+stereo and full valence comparisons remain explicitly unregistered as described
+in TASKS.md; successful descriptor cases do not automatically promote API labels.

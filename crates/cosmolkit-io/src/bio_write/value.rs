@@ -167,56 +167,18 @@ pub(crate) fn pdbx_icode(seq_id: Option<PdbSeqId>) -> String {
 /// format carries decoded logical names that must be preserved verbatim
 /// (quoted mmCIF `' CA '` keeps its spaces).
 pub(crate) fn atom_name_text(name: AtomName, input_format: BioCoordinateFormat) -> String {
-    // Gemmi✔️✔️: atom.name = read_string(line+12, 4);          // PDB reader
-    // Gemmi✔️✔️: a.atom_name = row.str(kLabelAtomId+i);         // mmCIF reader
-    // Gemmi✔️✔️: vv.emplace_back(cif::quote(atom.name));        // writer
-    // Gemmi✔️✔️: std::string read_string(const char* p, int field_length) {
-    // Gemmi✔️✔️:   // left trim
-    // Gemmi✔️✔️:   while (field_length != 0 && is_space(*p)) {
-    // Gemmi✔️✔️:     ++p;
-    // Gemmi✔️✔️:     --field_length;
-    // Gemmi✔️✔️:   }
-    // Gemmi✔️✔️:   // EOL/EOF ends the string
-    // Gemmi✔️✔️:   for (int i = 0; i < field_length; ++i)
-    // Gemmi✔️✔️:     if (p[i] == '\n' || p[i] == '\r' || p[i] == '\0') {
-    // Gemmi✔️✔️:       field_length = i;
-    // Gemmi✔️✔️:       break;
-    // Gemmi✔️✔️:     }
-    // Gemmi✔️✔️:   // right trim
-    // Gemmi✔️✔️:   while (field_length != 0 && is_space(p[field_length-1]))
-    // Gemmi✔️✔️:     --field_length;
-    // Gemmi✔️✔️:   return std::string(p, field_length);
-    // Gemmi✔️✔️: }
-    // Behavior: Gemmi's stored name for PDB input is the read_string-trimmed
-    // spelling, while the CIF-family readers store the decoded logical name
-    // verbatim; the writer quotes whichever spelling is stored. CK's PDB
-    // reader keeps the RAW four columns, so the writer applies the same
-    // leading/trailing space trim only for Pdb-provenance documents. Every
-    // other format (and Unknown, which never has PDB column padding)
-    // preserves the stored bytes verbatim. No length/shape inference is
-    // used: input_format is the authoritative per-document discriminator.
-    // Complexity: O(1) over at most four bytes.
-    if input_format == BioCoordinateFormat::Pdb {
-        name.as_str().trim_matches(' ').to_string()
-    } else {
-        name.as_str().to_string()
-    }
+    // BIO-ROWS R01: delegated to the canonical BIO owner
+    // (`cosmolkit_bio::atom_name_logical_view`, which carries the pinned
+    // `read_string` anchors); this wrapper only materializes the String
+    // the writer loop appends to.
+    cosmolkit_bio::atom_name_logical_view(&name, input_format).to_string()
 }
 
 /// Residue-name text for the writer, keyed on the same provenance rule.
 pub(crate) fn residue_name_text(name: &ResidueName, input_format: BioCoordinateFormat) -> &str {
-    // Gemmi✔️✔️: return {read_seq_id(seq_id), {}, read_string(name, 3)};  // PDB reader
-    // Gemmi✔️✔️: vv.emplace_back(cif::quote(res.name));                   // writer
-    // Behavior: CK's PDB reader already stores the trimmed residue name, so
-    // the Pdb branch is the identity there, but the same provenance rule is
-    // applied explicitly; CIF-family logical names (e.g. quoted ' A ')
-    // preserve their spaces verbatim.
-    // Complexity: O(1) over at most four bytes.
-    if input_format == BioCoordinateFormat::Pdb {
-        name.as_str().trim_matches(' ')
-    } else {
-        name.as_str()
-    }
+    // BIO-ROWS R02: delegated to the canonical BIO owner
+    // (`cosmolkit_bio::residue_name_logical_view`).
+    cosmolkit_bio::residue_name_logical_view(name, input_format)
 }
 
 #[cfg(test)]

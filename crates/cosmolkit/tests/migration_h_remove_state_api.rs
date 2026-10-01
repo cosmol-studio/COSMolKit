@@ -4,12 +4,11 @@ mod coordinate_views;
 use std::error::Error as _;
 
 use cosmolkit::{
-    Atom, AtomId, AtomSpec, BINDING_CONTRACT, BindingExposure, BindingItem, BindingOwner,
-    BindingParity, BindingSupport, BlockSet, Bond, BondId, BondOrder, BondSpec, Conformer2D,
-    Conformer3D, CoordinateBlock, Element, HydrogenError, Molecule, MoleculeOpKind,
-    MoleculeOpOutput, MoleculeProperties, OperationDomain, OperationError, ParityPolicy,
-    RemoveHsParams, SdfPropertyList, SdfPropertyListTarget, StateModel, StereoGroup,
-    StereoGroupKind, SubstanceGroup, SubstanceGroupId, SubstanceGroupKind, SupportStatus,
+    Atom, AtomId, AtomSpec, BINDING_CONTRACT, BindingItem, BindingOwner, BlockSet, Bond, BondId,
+    BondOrder, BondSpec, Conformer2D, Conformer3D, CoordinateBlock, Element, FunctionStatus,
+    HydrogenError, Molecule, MoleculeOpKind, MoleculeOpOutput, MoleculeProperties, OperationDomain,
+    OperationError, ParityPolicy, RemoveHsParams, SdfPropertyList, SdfPropertyListTarget,
+    StateModel, StereoGroup, StereoGroupKind, SubstanceGroup, SubstanceGroupId, SubstanceGroupKind,
     TopologyBlock, TopologyEditKind, feature_spec, operation_invariant, operation_parity,
     operation_spec, support_matrix,
 };
@@ -240,17 +239,13 @@ fn binding_contract_has_exact_remove_hydrogen_type_and_callables() {
     for row in &rows[..2] {
         assert_eq!(row.item, BindingItem::Type);
         assert_eq!(row.owner, BindingOwner::Type);
-        assert_eq!(row.exposure, BindingExposure::Public);
-        assert_eq!(row.support, BindingSupport::Supported);
-        assert_eq!(row.parity, BindingParity::NotApplicable);
+        assert_eq!(row.status, FunctionStatus::Experimental);
     }
     for row in &rows[2..] {
         assert_eq!(row.item, BindingItem::Callable);
         assert_eq!(row.owner, BindingOwner::Molecule);
-        assert_eq!(row.feature, "hydrogens");
-        assert_eq!(row.exposure, BindingExposure::Public);
-        assert_eq!(row.support, BindingSupport::SupportedWithRdkitParity);
-        assert_eq!(row.parity, BindingParity::RequiredNow);
+        assert_eq!(row.feature, "cap-hydrogens");
+        assert_eq!(row.status, FunctionStatus::Experimental);
     }
     assert_eq!(
         rows[2].callable.unwrap().state_model,
@@ -266,9 +261,8 @@ fn binding_contract_has_exact_remove_hydrogen_type_and_callables() {
 
 #[test]
 fn generated_registry_and_four_matrices_share_the_strong_compacting_operation() {
-    let feature = feature_spec("hydrogens").unwrap();
-    assert_eq!(feature.status, SupportStatus::SupportedWithRdkitParity);
-    assert!(feature.rdkit_parity_sensitive);
+    let feature = feature_spec("cap-hydrogens").unwrap();
+    assert_eq!(feature.name, "cap-hydrogens");
 
     let spec = operation_spec("without_hydrogens_with_params").unwrap();
     assert_eq!(spec.domain, OperationDomain::Topology);
@@ -297,7 +291,7 @@ fn generated_registry_and_four_matrices_share_the_strong_compacting_operation() 
     );
     assert_eq!(spec.derived_effects.operation_defined.bits(), 1 << 2);
     assert_eq!(format!("{:?}", spec.cip_state), "ClearComputed");
-    assert_eq!(spec.support, SupportStatus::SupportedWithRdkitParity);
+    assert_eq!(spec.status, FunctionStatus::Experimental);
     assert_eq!(spec.parity, ParityPolicy::RequiredNow);
     assert_eq!(
         operation_invariant(spec.method).unwrap().profile,

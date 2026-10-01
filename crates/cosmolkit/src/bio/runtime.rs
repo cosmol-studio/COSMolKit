@@ -46,6 +46,24 @@ impl BioStructure {
     pub fn input_format(&self) -> BioCoordinateFormat {
         self.data.input_format()
     }
+
+    /// Registered Experimental detached query (BIO-CID C29): original
+    /// atom IDs accepted by `selection`, in source order, through the
+    /// canonical BIO-CID C24 lazy cursor over this structure's borrowed
+    /// row tables. Read-only — no mutation operation, no COW; the thin
+    /// root delegate never duplicates the matcher.
+    pub fn selected_atom_ids(
+        &self,
+        selection: &crate::BioSelection,
+    ) -> Result<Vec<cosmolkit_bio::BioAtomId>, crate::BioSelectionMatchError> {
+        selection.data.selected_bio_atom_ids(
+            self.data.models(),
+            self.data.chains(),
+            self.data.residues(),
+            self.data.atoms(),
+            self.data.input_format(),
+        )
+    }
     /// Read structural text with the IO owner's explicit dispatch and source context.
     pub fn from_text_with_params(text: &str, params: &BioReadParams) -> Result<Self, BioReadError> {
         Ok(Self {
@@ -86,6 +104,46 @@ impl BioStructure {
         Ok(Self {
             data: cosmolkit_io::read_mmcif_bio_structure(text, "<string>")?,
         })
+    }
+    /// Serialize structure coordinates to mmCIF text with explicit options.
+    ///
+    /// Experimental: this emits ONLY the coordinate profile — the block
+    /// name/`_entry.id`, `_atom_site` and the conditional
+    /// `_atom_site_anisotrop`. Crystal/symmetry, NCS, assembly, connection,
+    /// cis-peptide, refinement and all other source categories are never
+    /// written; no lossless roundtrip is claimed.
+    pub fn to_mmcif_with_params(
+        &self,
+        params: &crate::BioMmcifWriteParams,
+    ) -> Result<String, crate::BioMmcifWriteError> {
+        cosmolkit_io::bio_structure_to_mmcif_text(&self.data, params)
+    }
+    /// Serialize structure coordinates to mmCIF text with default options.
+    ///
+    /// Experimental: same coordinate-only category set and exclusions as
+    /// [`BioStructure::to_mmcif_with_params`].
+    pub fn to_mmcif(&self) -> Result<String, crate::BioMmcifWriteError> {
+        self.to_mmcif_with_params(&crate::BioMmcifWriteParams::default())
+    }
+    /// Write structure coordinates to an mmCIF file with explicit options.
+    ///
+    /// Experimental: same coordinate-only category set and exclusions as
+    /// [`BioStructure::to_mmcif_with_params`]; the document is fully
+    /// serialized before the destination is created or truncated, and write
+    /// failures retain the path and underlying IO error.
+    pub fn write_mmcif_with_params(
+        &self,
+        path: &std::path::Path,
+        params: &crate::BioMmcifWriteParams,
+    ) -> Result<(), crate::BioMmcifWriteError> {
+        cosmolkit_io::write_bio_structure_mmcif_file(&self.data, params, path)
+    }
+    /// Write structure coordinates to an mmCIF file with default options.
+    ///
+    /// Experimental: same coordinate-only category set and exclusions as
+    /// [`BioStructure::to_mmcif_with_params`].
+    pub fn write_mmcif(&self, path: &std::path::Path) -> Result<(), crate::BioMmcifWriteError> {
+        self.write_mmcif_with_params(path, &crate::BioMmcifWriteParams::default())
     }
     pub fn protein(&self) -> Result<Protein, ProteinProjectionError> {
         Ok(Protein {
@@ -235,6 +293,17 @@ impl Protein {
         &self.structure
     }
 
+    /// Registered Experimental detached query (BIO-CID C30): the SAME
+    /// canonical query as BioStructure::selected_atom_ids (C29), reached
+    /// through the protein's existing borrowed BioStructure — never a
+    /// duplicate matcher.
+    pub fn selected_atom_ids(
+        &self,
+        selection: &crate::BioSelection,
+    ) -> Result<Vec<cosmolkit_bio::BioAtomId>, crate::BioSelectionMatchError> {
+        self.as_bio_structure().selected_atom_ids(selection)
+    }
+
     /// Consume this protein and return its already filtered structural hierarchy.
     pub fn into_bio_structure(self) -> BioStructure {
         self.structure
@@ -337,8 +406,39 @@ pub(super) struct BioOperationSpec {
     pub inplace_method: &'static str,
     pub read: &'static [&'static str],
     pub write: &'static [&'static str],
+    pub replace: &'static [&'static str],
 }
 cosmolkit_macros::bio_structure_ops! {
+    selection(selection: &crate::BioSelection) {
+        targets: [BioStructure, Protein],
+        value: with_selection,
+        inplace: retain_selection_,
+        body: super::selection_impl,
+        access: SelectionAccess,
+        read: [
+            input_format: cosmolkit_bio::BioCoordinateFormat,
+            entities: std::sync::Arc<Vec<cosmolkit_bio::BioEntityRow>>,
+            connections: std::sync::Arc<Vec<cosmolkit_bio::BioConnection>>,
+            cispeps: std::sync::Arc<Vec<cosmolkit_bio::BioCisPep>>,
+            mod_residues: std::sync::Arc<Vec<cosmolkit_bio::BioModRes>>,
+            helices: std::sync::Arc<Vec<cosmolkit_bio::BioHelix>>,
+            sheets: std::sync::Arc<Vec<cosmolkit_bio::BioSheet>>,
+            metadata: std::sync::Arc<cosmolkit_bio::BioMetadata>,
+            crystal: std::sync::Arc<Option<cosmolkit_bio::BioCrystalInfo>>,
+            ncs_operators: std::sync::Arc<Vec<cosmolkit_bio::BioNcsOperator>>,
+            assemblies: std::sync::Arc<Vec<cosmolkit_bio::BioAssembly>>,
+        ],
+        write: [],
+        replace: [
+            models: Vec<cosmolkit_bio::BioModelRow>,
+            chains: Vec<cosmolkit_bio::BioChainRow>,
+            residues: Vec<cosmolkit_bio::BioResidueRow>,
+            atoms: Vec<cosmolkit_bio::BioAtomRow>,
+            source_state: cosmolkit_bio::BioStructureSourceState,
+            coordinates: cosmolkit_bio::BioCoordinateBlock,
+        ],
+    }
+
     translate_coordinates(offset: [f64; 3]) {
         targets: [BioStructure, Protein],
         value: with_translated_coordinates,
@@ -360,6 +460,16 @@ mod tests {
     mod probes {
         use super::*;
         cosmolkit_macros::bio_structure_ops! {
+            replacement_failure(mode: u8) {
+                targets: [BioStructure, Protein],
+                value: probe_replacement,
+                inplace: probe_replacement_,
+                body: super::replacement_failure_body,
+                access: ReplacementFailureAccess,
+                read: [],
+                write: [],
+                replace: [coordinates: BioCoordinateBlock],
+            }
             failure(mode: u8) {
                 targets: [BioStructure, Protein],
                 value: probe_failure,
@@ -380,6 +490,63 @@ mod tests {
             }
         }
     }
+    fn replacement_failure_body(
+        access: probes::ReplacementFailureAccess<'_>,
+        mode: u8,
+    ) -> Result<probes::ReplacementFailureAccessReplacement, BioOperationError> {
+        match mode {
+            0 => Ok(probes::ReplacementFailureAccessReplacement {
+                coordinates: Arc::clone(access.coordinates),
+            }),
+            1 => Err(BioOperationError::Structure(
+                BioStructureError::AtomNotFound,
+            )),
+            2 => Ok(probes::ReplacementFailureAccessReplacement {
+                coordinates: Arc::new(BioCoordinateBlock::default()),
+            }),
+            _ => panic!("intentional replacement rollback probe"),
+        }
+    }
+
+    #[test]
+    fn bio_selection_public_replacement_error_validation_unwind_are_atomic() {
+        let source = BioStructure::from_pdb(ATOM).unwrap();
+        let protein = source.protein().unwrap();
+        assert_eq!(source.probe_replacement(0).unwrap(), source);
+        assert_eq!(protein.probe_replacement(0).unwrap(), protein);
+        for mode in [1, 2, 3] {
+            let mut value = source.clone();
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                value.probe_replacement_(mode)
+            }));
+            if mode == 3 {
+                assert!(result.is_err());
+            } else {
+                assert!(result.unwrap().is_err());
+            }
+            assert_eq!(value, source);
+            assert!(Arc::ptr_eq(
+                &value.data.coordinates,
+                &source.data.coordinates
+            ));
+            assert!(Arc::ptr_eq(&value.data.atoms, &source.data.atoms));
+            let mut value = protein.clone();
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                value.probe_replacement_(mode)
+            }));
+            if mode == 3 {
+                assert!(result.is_err());
+            } else {
+                assert!(result.unwrap().is_err());
+            }
+            assert_eq!(value, protein);
+            assert!(Arc::ptr_eq(
+                &value.structure.data.coordinates,
+                &protein.structure.data.coordinates
+            ));
+        }
+    }
+
     fn fail_body(access: probes::FailureAccess<'_>, mode: u8) -> Result<(), BioOperationError> {
         assert_eq!(access.atoms.len(), access.coordinates.len());
         if mode == 0 {
@@ -482,8 +649,11 @@ mod tests {
             &source.structure.data.coordinates,
             &transformed.structure.data.coordinates
         ));
-        assert_eq!(BIO_STRUCTURE_OPS.len(), 2);
-        for spec in BIO_STRUCTURE_OPS {
+        assert_eq!(BIO_STRUCTURE_OPS.len(), 4);
+        for spec in BIO_STRUCTURE_OPS
+            .iter()
+            .filter(|spec| spec.id == "translate_coordinates")
+        {
             assert_eq!(spec.write, ["coordinates"]);
             assert!(spec.read.is_empty());
             for method in [spec.value_method, spec.inplace_method] {
@@ -502,6 +672,213 @@ mod tests {
                     }
                 );
             }
+        }
+    }
+
+    #[test]
+    fn bio_selection_public_both_types_value_inplace_metadata_and_empty_parents() {
+        let pdb = concat!(
+            "MODEL        1\n",
+            "ATOM     41  CA  ALA A   1       1.000   2.000   3.000  1.00 20.00           C  \n",
+            "ENDMDL\nMODEL        2\n",
+            "ATOM     42  N   GLY B   2       4.000   5.000   6.000  1.00 20.00           N  \n",
+            "ENDMDL\nEND\n"
+        );
+        let mut source = BioStructure::from_pdb(pdb).unwrap();
+        Arc::make_mut(&mut source.data.assemblies).push(BioAssembly::new(
+            "assembly".into(),
+            true,
+            false,
+            BioAssemblySpecialKind::NotApplicable,
+            2,
+            "dimer".into(),
+            "source".into(),
+            f64::NAN,
+            -0.0,
+            f64::MIN_POSITIVE,
+            vec![BioAssemblyGenerator::new(
+                vec!["A".into(), "NEVER_SELECTED".into()],
+                vec![],
+                vec![],
+            )],
+        ));
+        let state = Arc::make_mut(&mut source.data.source_state);
+        state.name = "source".into();
+        state.conect_map.insert(41, vec![42]);
+        state.has_d_fraction = true;
+        state.non_ascii_line = 3;
+        state.ter_status = b'Z';
+        state.raw_remarks = vec!["duplicate".into(), "duplicate".into()];
+        state.resolution = -0.0;
+        let peer = source.clone();
+        let positions = source.data.coordinates.positions().to_vec();
+        // Literal source hierarchy: two models, each with one chain/residue/atom.
+        // Gemmi retains selected empty parents, even when no atoms survive.
+        let profiles = [
+            ("/", [2, 2, 2, 2], vec![0, 1]),
+            ("/99", [0, 0, 0, 0], vec![]),
+            ("//A", [2, 1, 1, 1], vec![0]),
+            ("//Z", [2, 0, 0, 0], vec![]),
+            ("//*/(ALA)", [2, 2, 1, 1], vec![0]),
+            ("//*//CA", [2, 2, 2, 1], vec![0]),
+            ("//*//ZZ", [2, 2, 2, 0], vec![]),
+        ];
+        for protein_target in [false, true] {
+            for (cid, counts, indices) in &profiles {
+                let selection = crate::BioSelection::from_cid(cid).unwrap();
+                let protein = Protein {
+                    structure: source.clone(),
+                };
+                let output = if protein_target {
+                    let value = protein.with_selection(&selection).unwrap();
+                    let mut inplace = protein.clone();
+                    inplace.retain_selection_(&selection).unwrap();
+                    assert_eq!(inplace.num_atoms(), value.num_atoms());
+                    assert_eq!(
+                        inplace.as_bio_structure().coordinates(),
+                        value.as_bio_structure().coordinates()
+                    );
+                    value.into_bio_structure()
+                } else {
+                    let value = source.with_selection(&selection).unwrap();
+                    let mut inplace = source.clone();
+                    inplace.retain_selection_(&selection).unwrap();
+                    assert_eq!(inplace.models(), value.models());
+                    assert_eq!(inplace.chains(), value.chains());
+                    assert_eq!(inplace.residues(), value.residues());
+                    assert_eq!(inplace.atoms(), value.atoms());
+                    assert_eq!(inplace.coordinates(), value.coordinates());
+                    value
+                };
+                assert_eq!(
+                    [
+                        output.num_models(),
+                        output.num_chains(),
+                        output.num_residues(),
+                        output.num_atoms()
+                    ],
+                    *counts,
+                    "{cid}"
+                );
+                assert_eq!(output.input_format(), source.input_format());
+                for (i, original) in indices.iter().enumerate() {
+                    assert_eq!(
+                        output.data.coordinates.positions()[i].map(f64::to_bits),
+                        positions[*original].map(f64::to_bits)
+                    );
+                    assert_eq!(
+                        output.data.atoms[i].source(),
+                        source.data.atoms[*original].source()
+                    );
+                }
+                assert!(Arc::ptr_eq(&output.data.entities, &source.data.entities));
+                assert!(Arc::ptr_eq(
+                    &output.data.connections,
+                    &source.data.connections
+                ));
+                assert!(Arc::ptr_eq(&output.data.cispeps, &source.data.cispeps));
+                assert!(Arc::ptr_eq(
+                    &output.data.mod_residues,
+                    &source.data.mod_residues
+                ));
+                assert!(Arc::ptr_eq(&output.data.helices, &source.data.helices));
+                assert!(Arc::ptr_eq(&output.data.sheets, &source.data.sheets));
+                assert!(Arc::ptr_eq(&output.data.metadata, &source.data.metadata));
+                assert!(Arc::ptr_eq(&output.data.crystal, &source.data.crystal));
+                assert!(Arc::ptr_eq(
+                    &output.data.ncs_operators,
+                    &source.data.ncs_operators
+                ));
+                assert!(Arc::ptr_eq(
+                    &output.data.assemblies,
+                    &source.data.assemblies
+                ));
+                assert_eq!(
+                    output.data.assemblies[0].generators[0].chains,
+                    ["A", "NEVER_SELECTED"]
+                );
+                assert_eq!(
+                    output.data.source_state.raw_remarks,
+                    ["duplicate", "duplicate"]
+                );
+                assert_eq!(
+                    output.data.source_state.resolution.to_bits(),
+                    (-0.0f64).to_bits()
+                );
+                assert!(output.data.source_state.conect_map.is_empty());
+                assert!(!output.data.source_state.has_d_fraction);
+                assert_eq!(output.data.source_state.non_ascii_line, 0);
+                assert_eq!(output.data.source_state.ter_status, 0);
+                output.validate().unwrap();
+                assert!(Arc::ptr_eq(&source.data.atoms, &peer.data.atoms));
+                assert!(Arc::ptr_eq(
+                    &source.data.coordinates,
+                    &peer.data.coordinates
+                ));
+                assert_eq!(source.data.coordinates.positions(), positions);
+                assert_eq!(
+                    source.data.source_state.conect_map.get(&41),
+                    Some(&vec![42])
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn bio_selection_public_typed_errors_rollback_both_receivers() {
+        use std::error::Error;
+        let mut source = BioStructure::from_pdb(ATOM).unwrap();
+        Arc::make_mut(&mut source.data.models)[0] =
+            BioModelRow::new(BioRowSpan::new(0, 1).unwrap(), None);
+        let peer = source.clone();
+        let selection = crate::BioSelection::from_cid("/").unwrap();
+        for inplace in [false, true] {
+            let mut value = source.clone();
+            let error = if inplace {
+                value.retain_selection_(&selection).unwrap_err()
+            } else {
+                value.with_selection(&selection).unwrap_err()
+            };
+            let BioOperationError::Selection(copy) = &error else {
+                panic!("{error}")
+            };
+            assert!(matches!(
+                copy.cause(),
+                crate::BioSelectionCopyCause::Traverse(crate::BioRowTraverseError::Model(
+                    crate::BioRowModelError::MissingModelNumber
+                ))
+            ));
+            assert!(
+                error
+                    .source()
+                    .unwrap()
+                    .downcast_ref::<crate::BioSelectionCopyError>()
+                    .is_some()
+            );
+            assert!(
+                copy.source()
+                    .unwrap()
+                    .source()
+                    .unwrap()
+                    .downcast_ref::<crate::BioRowModelError>()
+                    .is_some()
+            );
+            assert_eq!(value, source);
+            assert!(Arc::ptr_eq(&value.data.atoms, &peer.data.atoms));
+            let mut protein = Protein {
+                structure: source.clone(),
+            };
+            let error = if inplace {
+                protein.retain_selection_(&selection).unwrap_err()
+            } else {
+                protein.with_selection(&selection).unwrap_err()
+            };
+            assert!(matches!(error, BioOperationError::Selection(_)));
+            assert_eq!(protein.structure, source);
+            assert!(Arc::ptr_eq(
+                &protein.structure.data.coordinates,
+                &peer.data.coordinates
+            ));
         }
     }
 

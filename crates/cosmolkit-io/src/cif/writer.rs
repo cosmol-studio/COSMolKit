@@ -49,7 +49,7 @@ impl Default for CifWriteLayout {
     }
 }
 
-fn write_spaces<W: Write>(writer: &mut W, count: usize) -> io::Result<()> {
+fn write_spaces<W: Write + ?Sized>(writer: &mut W, count: usize) -> io::Result<()> {
     // Gemmi✔️✔️: void pad(size_t n) {
     // Gemmi✔️✔️:   std::memset(ptr, ' ', n);
     // Gemmi✔️✔️:   ptr += n;
@@ -68,7 +68,7 @@ fn write_spaces<W: Write>(writer: &mut W, count: usize) -> io::Result<()> {
 
 /// Gemmi `cif::write_out_pair`: emit one tag/value pair; `value` must
 /// already be CIF-quoted by the caller.
-pub(super) fn write_out_pair<W: Write>(
+pub(super) fn write_out_pair<W: Write + ?Sized>(
     writer: &mut W,
     tag: &str,
     value: &str,
@@ -115,7 +115,7 @@ pub(super) fn write_out_pair<W: Write>(
 
 /// Gemmi `cif::write_out_loop`: emit one loop, honoring single-row
 /// `prefer_pairs`, `align_loops` column widths and empty-loop suppression.
-pub(super) fn write_out_loop<W: Write>(
+pub(super) fn write_out_loop<W: Write + ?Sized>(
     writer: &mut W,
     loop_: &CifLoop,
     layout: &CifWriteLayout,
@@ -237,7 +237,7 @@ pub(super) fn write_out_loop<W: Write>(
 }
 
 /// Gemmi `cif::write_out_item`: dispatch one stored item to its emitter.
-pub(super) fn write_out_item<W: Write>(
+pub(super) fn write_out_item<W: Write + ?Sized>(
     writer: &mut W,
     item: &CifItem,
     layout: &CifWriteLayout,
@@ -327,7 +327,7 @@ pub(super) fn should_be_separated(first: &CifItem, second: &CifItem) -> bool {
 
 /// Gemmi `cif::write_cif_block_to_stream`: emit one complete block with
 /// its header, optional hash fences and category blank-line separation.
-pub(super) fn write_cif_block_to_stream<W: Write>(
+pub(super) fn write_cif_block_to_stream<W: Write + ?Sized>(
     writer: &mut W,
     block: &CifBlock,
     layout: &CifWriteLayout,
@@ -390,7 +390,7 @@ pub(super) fn write_cif_block_to_stream<W: Write>(
 
 /// Gemmi `cif::write_cif_to_stream`: serialize every block in document
 /// order, one blank line between blocks.
-pub(super) fn write_cif_document<W: Write>(
+pub(super) fn write_cif_document<W: Write + ?Sized>(
     writer: &mut W,
     document: &CifDocument,
     layout: &CifWriteLayout,
@@ -450,7 +450,7 @@ pub(super) fn is_text_field(value: &str) -> bool {
 
 /// Gemmi `cif::write_text_field`: copy a multiline field, dropping the `\r`
 /// of every `\r\n` pair; every sink error propagates unchanged.
-pub(super) fn write_text_field<W: Write>(writer: &mut W, value: &str) -> io::Result<()> {
+pub(super) fn write_text_field<W: Write + ?Sized>(writer: &mut W, value: &str) -> io::Result<()> {
     // Gemmi✔️✔️: inline void write_text_field(BufOstream& os, const std::string& value) {
     // Gemmi✔️✔️:   for (size_t pos = 0, end = 0; end != std::string::npos; pos = end + 1) {
     // Gemmi✔️✔️:     end = value.find("\r\n", pos);

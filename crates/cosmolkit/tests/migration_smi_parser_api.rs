@@ -1,8 +1,8 @@
 use std::collections::BTreeMap;
 
 use cosmolkit::{
-    BINDING_CONTRACT, BindingExposure, BindingItem, BindingKind, BindingOwner, BindingParity,
-    BindingSupport, ChiralTag, Element, Molecule, SmilesError, SmilesParseParams,
+    BINDING_CONTRACT, BindingItem, BindingKind, BindingOwner, ChiralTag, Element, FunctionStatus,
+    Molecule, SmilesError, SmilesParseParams,
 };
 
 #[test]
@@ -263,10 +263,8 @@ fn binding_contract_matches_public_smiles_surface() {
     );
 
     for row in &rows {
-        assert_eq!(row.feature, "smiles");
-        assert_eq!(row.exposure, BindingExposure::Public);
-        assert_eq!(row.support, BindingSupport::SupportedWithRdkitParity);
-        assert_eq!(row.parity, BindingParity::RequiredNow);
+        assert_eq!(row.feature, "cap-smiles");
+        assert_eq!(row.status, FunctionStatus::Experimental);
     }
     for row in &rows[..3] {
         assert_eq!(row.item, BindingItem::Type);

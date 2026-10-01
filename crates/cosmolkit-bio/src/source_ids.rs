@@ -285,6 +285,33 @@ impl ChainSourceIds {
         self.auth_chain_id
     }
 
+    /// Borrowed variant of [`auth_chain_id`](Self::auth_chain_id) for
+    /// allocation-free chain-name resolution (BIO-CID C23, narrowed by
+    /// BIO-C22-NAME). Crate-private: `ChainSourceIds` is re-exported
+    /// through the root crate, so any `pub` method here would be
+    /// publicly exposed there — this internal helper stays unreachable
+    /// from outside the crate (proved below).
+    ///
+    /// ```compile_fail
+    /// // E0624: `auth_chain_id_ref` is crate-private and cannot be
+    /// // referenced from an external crate, even as a method item.
+    /// let method: fn(
+    ///     &cosmolkit_bio::ChainSourceIds,
+    /// ) -> Option<&cosmolkit_bio::PdbChainId> =
+    ///     cosmolkit_bio::ChainSourceIds::auth_chain_id_ref;
+    /// let _ = method;
+    /// ```
+    ///
+    /// ```no_run
+    /// // Control: the existing PUBLIC by-value accessor compiles.
+    /// let ids = cosmolkit_bio::ChainSourceIds::new(None, None);
+    /// let _ = ids.auth_chain_id();
+    /// ```
+    #[must_use]
+    pub(crate) fn auth_chain_id_ref(&self) -> Option<&PdbChainId> {
+        self.auth_chain_id.as_ref()
+    }
+
     #[must_use]
     pub fn label_asym_id(&self) -> Option<&str> {
         self.label_asym_id.as_deref()

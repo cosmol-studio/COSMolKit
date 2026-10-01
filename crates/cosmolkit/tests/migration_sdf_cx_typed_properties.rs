@@ -1,4 +1,4 @@
-#![cfg(all(feature = "io", feature = "smiles"))]
+#![cfg(all(feature = "cap-io", feature = "cap-smiles"))]
 
 use cosmolkit::{CxSmilesFields, CxSmilesWriteParams, Molecule, PropertyValue, SmilesWriteParams};
 

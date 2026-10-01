@@ -82,8 +82,8 @@ def main():
     updated = original.copy()
     # All current publishable crate versions inherit this single field.
     updated["Cargo.toml"] = update_field(updated["Cargo.toml"], "workspace.package", "version", args.version)
-    # Python development releases use .devN; stable versions stay X.Y.Z.
-    python_version = base + ".dev" + rc if separator else base
+    # Python release candidates use rcN; stable versions stay X.Y.Z.
+    python_version = base + "rc" + rc if separator else base
     updated["python/pyproject.toml"] = update_field(
         updated["python/pyproject.toml"], "project", "version", python_version
     )

@@ -334,27 +334,27 @@ substitute for the crate-level ownership boundary.
 
 Feature selection follows two distinct layers:
 
-- Fine-grained features gate one public capability and its optional
-  implementation dependency, such as `smiles`, `tautomer`, or `conformer`.
-- User-facing bundles such as `common_api`, `chemistry_api`, `3d_api`, and
-  `full` are explicit compositions of fine-grained features.
+- User bundles have plain names: `core`, `bio`, `conformer`, `forcefields`,
+  `fingerprints`, `search`, `depict`, `inchi`, `batch`, and `full`.
+- Advanced capability selectors always start with `cap-`, such as
+  `cap-smiles`, `cap-kekulize`, or `cap-conformer`. Each gates its own public
+  APIs and required implementation dependencies.
 
-A fine-grained feature must not depend on another domain's public feature just
-  because its implementation happens to reuse code. Shared implementation
-  belongs in a lower-level internal crate or an explicit algorithm dependency;
-  it must not make unrelated facade methods appear. The operation registry may
-  retain complete contract metadata for review, while generated public
-  wrappers, operation bodies, and optional domain dependencies are gated by
-  their owning fine-grained feature.
+`full` is enabled by default. With `default-features = false`, neither `full`
+nor `core` is implicit: callers can select bundles, individual capabilities,
+or both. Always-present model values and the live runtime remain available.
 
-While implementations remain colocated in `cosmolkit-core`, Cargo's lack of
-private features is handled with double-underscore implementation features
-(`__io_impl`, `__fingerprint_impl`, `__depict_impl`, `__hashing_impl`, and
-`__batch_impl`). Public features select only their own implementation feature;
-an internal edge records shared code reuse without enabling the other domain's
-public feature or its facade re-exports. These aliases are migration
-scaffolding and should disappear when the corresponding implementation crates
-are separated.
+Cargo.toml defines bundle composition; bundles introduce no separate registry,
+algorithm or operation permissions. Public cfg gates and registry feature
+fields use `cap-*`, not bundle names. A capability activates implementation
+dependencies directly and must not enable an unrelated public capability merely
+because algorithms reuse the same crate. For example, `cap-kekulize` activates
+the optional `cosmolkit-core` dependency without exposing hydrogen APIs.
+
+Features select APIs and optional dependency edges, not individual functions
+inside a dependency crate. Strict runtime checks are orthogonal to capability
+selection. See [Public API Design](./public_api_design.md#cargo-feature-selection)
+for exact membership and usage.
 
 ## 7. Public Compatibility
 

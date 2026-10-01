@@ -1,10 +1,10 @@
 use cosmolkit::{
-    AltLocLabel, AtomName, AtomSourceIds, BINDING_CONTRACT, BindingExposure, BindingItem,
-    BindingKind, BindingOwner, BindingParity, BindingSupport, BindingTypeRole, ChainSourceIds,
-    EntitySourceIds, PdbAtomSerial, PdbChainId, PdbSeqId, ResidueCode, ResidueInfo,
-    ResidueInfoKind, ResidueName, ResidueSequenceError, ResidueSourceIds, StateModel,
-    UNKNOWN_TABULATED_RESIDUE_INDEX, expand_one_letter, expand_one_letter_sequence,
-    find_residue_info, find_residue_info_index, residue_code, residue_info, residue_info_checked,
+    AltLocLabel, AtomName, AtomSourceIds, BINDING_CONTRACT, BindingItem, BindingKind, BindingOwner,
+    BindingTypeRole, ChainSourceIds, EntitySourceIds, FunctionStatus, PdbAtomSerial, PdbChainId,
+    PdbSeqId, ResidueCode, ResidueInfo, ResidueInfoKind, ResidueName, ResidueSequenceError,
+    ResidueSourceIds, StateModel, UNKNOWN_TABULATED_RESIDUE_INDEX, expand_one_letter,
+    expand_one_letter_sequence, find_residue_info, find_residue_info_index, residue_code,
+    residue_info, residue_info_checked,
 };
 
 fn compact(value: &str) -> String {
@@ -174,10 +174,8 @@ fn binding_contract_matches_the_public_bio_residue_surface() {
         assert_eq!(compact(row.rust_path), format!("crate::{rust_name}"));
         assert_eq!(row.python_name, rust_name);
         assert_eq!(row.javascript_name, rust_name);
-        assert_eq!(row.feature, "bio");
-        assert_eq!(row.exposure, BindingExposure::Public);
-        assert_eq!(row.support, BindingSupport::Experimental);
-        assert_eq!(row.parity, BindingParity::RequiredWhenSupported);
+        assert_eq!(row.feature, "cap-bio");
+        assert_eq!(row.status, FunctionStatus::Experimental);
         assert!(row.callable.is_none());
     }
 
@@ -249,10 +247,8 @@ fn binding_contract_matches_the_public_bio_residue_surface() {
         assert_eq!(compact(row.rust_path), format!("crate::{rust_name}"));
         assert_eq!(row.python_name, rust_name);
         assert_eq!(row.javascript_name, javascript);
-        assert_eq!(row.feature, "bio");
-        assert_eq!(row.exposure, BindingExposure::Public);
-        assert_eq!(row.support, BindingSupport::Experimental);
-        assert_eq!(row.parity, BindingParity::RequiredWhenSupported);
+        assert_eq!(row.feature, "cap-bio");
+        assert_eq!(row.status, FunctionStatus::Experimental);
         assert!(row.type_role.is_none());
         let callable = row.callable.unwrap();
         assert_eq!(callable.kind, BindingKind::Module);

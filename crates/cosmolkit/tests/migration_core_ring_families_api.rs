@@ -2,12 +2,12 @@
 mod coordinate_views;
 
 use cosmolkit::{
-    Atom, AtomId, AtomSpec, BINDING_CONTRACT, BindingExposure, BindingItem, BindingOwner,
-    BindingParity, BindingSupport, BlockSet, Bond, BondId, BondOrder, BondSpec, Conformer2D,
-    CoordinateBlock, Element, Molecule, MoleculeOpKind, MoleculeOpOutput, MoleculeProperties,
-    OperationDomain, OperationError, ParityPolicy, RingSearchParams, StateModel, StereoGroup,
-    StereoGroupKind, SupportStatus, TopologyBlock, TopologyEditKind, feature_spec,
-    operation_invariant, operation_parity, operation_spec, support_matrix,
+    Atom, AtomId, AtomSpec, BINDING_CONTRACT, BindingItem, BindingOwner, BlockSet, Bond, BondId,
+    BondOrder, BondSpec, Conformer2D, CoordinateBlock, Element, FunctionStatus, Molecule,
+    MoleculeOpKind, MoleculeOpOutput, MoleculeProperties, OperationDomain, OperationError,
+    ParityPolicy, RingSearchParams, StateModel, StereoGroup, StereoGroupKind, TopologyBlock,
+    TopologyEditKind, feature_spec, operation_invariant, operation_parity, operation_spec,
+    support_matrix,
 };
 
 fn molecule_with_bond_orders(orders: [BondOrder; 4]) -> Molecule {
@@ -106,16 +106,12 @@ fn binding_contract_has_the_parameter_type_and_exact_four_family_callables() {
     );
     assert_eq!(rows[0].item, BindingItem::Type);
     assert_eq!(rows[0].owner, BindingOwner::Type);
-    assert_eq!(rows[0].exposure, BindingExposure::Public);
-    assert_eq!(rows[0].support, BindingSupport::Supported);
-    assert_eq!(rows[0].parity, BindingParity::NotApplicable);
+    assert_eq!(rows[0].status, FunctionStatus::Experimental);
     for row in &rows[1..] {
         assert_eq!(row.item, BindingItem::Callable);
         assert_eq!(row.owner, BindingOwner::Molecule);
-        assert_eq!(row.feature, "rings");
-        assert_eq!(row.exposure, BindingExposure::Public);
-        assert_eq!(row.support, BindingSupport::SupportedWithRdkitParity);
-        assert_eq!(row.parity, BindingParity::RequiredNow);
+        assert_eq!(row.feature, "cap-rings");
+        assert_eq!(row.status, FunctionStatus::Experimental);
     }
     assert_eq!(rows[1].callable.unwrap().parameters.len(), 0);
     assert_eq!(rows[2].callable.unwrap().parameters.len(), 1);
@@ -135,9 +131,8 @@ fn binding_contract_has_the_parameter_type_and_exact_four_family_callables() {
 
 #[test]
 fn generated_registry_and_all_four_matrices_share_the_family_operation() {
-    let feature = feature_spec("rings").unwrap();
-    assert_eq!(feature.status, SupportStatus::SupportedWithRdkitParity);
-    assert!(feature.rdkit_parity_sensitive);
+    let feature = feature_spec("cap-rings").unwrap();
+    assert_eq!(feature.name, "cap-rings");
 
     let spec = operation_spec("with_assigned_ring_families_with_params").unwrap();
     assert_eq!(spec.domain, OperationDomain::Topology);
@@ -156,7 +151,7 @@ fn generated_registry_and_all_four_matrices_share_the_family_operation() {
     );
     assert_eq!(spec.derived_effects.invalidate.bits(), 0);
     assert_eq!(format!("{:?}", spec.cip_state), "Preserve");
-    assert_eq!(spec.support, SupportStatus::SupportedWithRdkitParity);
+    assert_eq!(spec.status, FunctionStatus::Experimental);
     assert_eq!(spec.parity, ParityPolicy::RequiredNow);
     assert_eq!(
         operation_invariant(spec.method).unwrap().profile,

@@ -4,12 +4,12 @@ mod coordinate_views;
 use std::error::Error as _;
 
 use cosmolkit::{
-    Atom, AtomId, AtomSpec, BINDING_CONTRACT, BindingExposure, BindingItem, BindingOwner,
-    BindingParity, BindingSupport, BlockSet, Bond, BondId, BondOrder, BondSpec, ChiralTag,
-    Conformer3D, CoordinateBlock, Element, Molecule, MoleculeOpKind, MoleculeOpOutput,
-    MoleculeProperties, OperationDomain, OperationError, ParityPolicy, StateModel, StereoError,
-    StructureTagParams, SupportStatus, TopologyBlock, TopologyEditKind, feature_spec,
-    operation_invariant, operation_parity, operation_spec, support_matrix,
+    Atom, AtomId, AtomSpec, BINDING_CONTRACT, BindingItem, BindingOwner, BlockSet, Bond, BondId,
+    BondOrder, BondSpec, ChiralTag, Conformer3D, CoordinateBlock, Element, FunctionStatus,
+    Molecule, MoleculeOpKind, MoleculeOpOutput, MoleculeProperties, OperationDomain,
+    OperationError, ParityPolicy, StateModel, StereoError, StructureTagParams, TopologyBlock,
+    TopologyEditKind, feature_spec, operation_invariant, operation_parity, operation_spec,
+    support_matrix,
 };
 use cosmolkit_core::{
     ValenceModel, ValenceParams, assign_chiral_tags_from_structure, assign_valence,
@@ -147,24 +147,21 @@ fn binding_contract_has_two_types_and_four_canonical_callables() {
         rows.iter().map(|row| row.semantic_id).collect::<Vec<_>>(),
         expected
     );
-    assert!(rows.iter().all(|row| row.feature == "stereo"));
+    assert!(rows.iter().all(|row| row.feature == "cap-stereo"));
     assert!(
         rows.iter()
-            .all(|row| row.exposure == BindingExposure::Public)
+            .all(|row| row.status == FunctionStatus::Experimental)
     );
     assert_eq!(rows[0].item, BindingItem::Type);
     assert_eq!(rows[0].owner, BindingOwner::Type);
-    assert_eq!(rows[0].support, BindingSupport::SupportedWithRdkitParity);
-    assert_eq!(rows[0].parity, BindingParity::RequiredNow);
+    assert_eq!(rows[0].status, FunctionStatus::Experimental);
     assert_eq!(rows[1].item, BindingItem::Type);
     assert_eq!(rows[1].owner, BindingOwner::Type);
-    assert_eq!(rows[1].support, BindingSupport::Supported);
-    assert_eq!(rows[1].parity, BindingParity::NotApplicable);
+    assert_eq!(rows[1].status, FunctionStatus::Experimental);
     for row in &rows[2..] {
         assert_eq!(row.item, BindingItem::Callable);
         assert_eq!(row.owner, BindingOwner::Molecule);
-        assert_eq!(row.support, BindingSupport::SupportedWithRdkitParity);
-        assert_eq!(row.parity, BindingParity::RequiredNow);
+        assert_eq!(row.status, FunctionStatus::Experimental);
     }
     assert_eq!(rows[2].javascript_name, "withChiralTagsFromStructure");
     assert_eq!(
@@ -187,9 +184,8 @@ fn binding_contract_has_two_types_and_four_canonical_callables() {
 
 #[test]
 fn generated_registry_and_all_four_matrices_describe_one_weak_operation() {
-    let feature = feature_spec("stereo").unwrap();
-    assert_eq!(feature.status, SupportStatus::SupportedWithRdkitParity);
-    assert!(feature.rdkit_parity_sensitive);
+    let feature = feature_spec("cap-stereo").unwrap();
+    assert_eq!(feature.name, "cap-stereo");
 
     let spec = operation_spec("with_chiral_tags_from_structure_with_params").unwrap();
     assert_eq!(spec.output, MoleculeOpOutput::Single);
@@ -217,7 +213,7 @@ fn generated_registry_and_all_four_matrices_describe_one_weak_operation() {
         (1 << 4) | (1 << 6) | (1 << 7)
     );
     assert_eq!(format!("{:?}", spec.cip_state), "ClearComputed");
-    assert_eq!(spec.support, SupportStatus::SupportedWithRdkitParity);
+    assert_eq!(spec.status, FunctionStatus::Experimental);
     assert_eq!(spec.parity, ParityPolicy::RequiredNow);
     assert!(spec.io_roundtrip);
     assert_eq!(

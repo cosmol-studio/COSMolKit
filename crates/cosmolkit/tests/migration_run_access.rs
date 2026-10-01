@@ -1,4 +1,4 @@
-#![cfg(not(feature = "hydrogens"))]
+#![cfg(not(feature = "cap-hydrogens"))]
 
 use std::sync::Arc;
 
@@ -10,16 +10,16 @@ pub use cosmolkit::ops::{
     ParityMatrixEntry, ParityPolicy, SemanticPreconditionSet, SupportMatrixEntry,
 };
 pub use cosmolkit::{
-    BlockAccess, BlockSet, FeatureSpec, MoleculeOpKind, MoleculeOpOutput, MoleculeOpSpec,
-    OperationDomain, OperationError, SupportStatus, TopologyEditKind, UnsupportedFeatureError,
+    BlockAccess, BlockSet, FeatureSpec, FunctionStatus, MoleculeOpKind, MoleculeOpOutput,
+    MoleculeOpSpec, OperationDomain, OperationError, TopologyEditKind, UnsupportedFeatureError,
 };
 
 mod ops {
     pub use crate::{
-        BlockAccess, BlockSet, CipStatePolicy, DerivedEffects, DerivedState, MappingRequirement,
-        MoleculeOpKind, MoleculeOpOutput, MoleculeOpSpec, OperationDomain, OperationError,
-        OperationInvariantEntry, ParityMatrixEntry, ParityPolicy, SemanticPreconditionSet,
-        SupportMatrixEntry, SupportStatus, TopologyEditKind, UnsupportedFeatureError,
+        BlockAccess, BlockSet, CipStatePolicy, DerivedEffects, DerivedState, FunctionStatus,
+        MappingRequirement, MoleculeOpKind, MoleculeOpOutput, MoleculeOpSpec, OperationDomain,
+        OperationError, OperationInvariantEntry, ParityMatrixEntry, ParityPolicy,
+        SemanticPreconditionSet, SupportMatrixEntry, TopologyEditKind, UnsupportedFeatureError,
     };
 }
 
@@ -158,8 +158,7 @@ pub(crate) use context::{OpParts, PreservationProof};
 pub const SYNTHETIC_FEATURE: FeatureSpec = FeatureSpec {
     name: "synthetic-runtime-access",
     category: "internal-test",
-    status: SupportStatus::Experimental,
-    rdkit_parity_sensitive: false,
+
     docs: "Compile-only operation projection used by RUN-access tests.",
 };
 

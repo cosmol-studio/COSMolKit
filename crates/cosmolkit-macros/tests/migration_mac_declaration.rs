@@ -1,3 +1,6 @@
+#[path = "../src/status.rs"]
+mod status;
+
 #[path = "../src/declaration.rs"]
 mod declaration;
 
@@ -138,6 +141,58 @@ fn without_inplace_fixture(source: &str) -> String {
         "            default_inplace_method: inspect_,\n",
         "",
     )
+}
+
+#[test]
+fn function_status_defaults_and_all_four_explicit_commitments_are_independent_metadata() {
+    let source = molecule_source();
+    assert!(matches!(
+        parse_molecule(&source).operations[0].fields.status,
+        status::FunctionStatus::Experimental
+    ));
+    for (declaration, variant) in [
+        ("experimental", "Experimental"),
+        ("native", "Native"),
+        ("parity(\"RDKit\")", "Parity"),
+        (
+            "parity_with_differences(\"RDKit\", \"Explicitly approved conditions, behavior and rationale\")",
+            "ParityWithDifferences",
+        ),
+    ] {
+        let candidate = source.replace(
+            "feature: crate::INSPECT_FEATURE,",
+            &format!("feature: crate::INSPECT_FEATURE, status: {declaration},"),
+        );
+        let operation = parse_molecule(&candidate).operations.remove(0);
+        assert!(
+            operation
+                .fields
+                .status
+                .tokens()
+                .to_string()
+                .contains(variant)
+        );
+        assert_eq!(operation.fields.access.read.len(), 2);
+        assert_eq!(operation.fields.access.write.len(), 2);
+        assert_eq!(operation.fields.parity, MoleculeParity::RequiredNow);
+    }
+    for invalid in [
+        "supported",
+        "supported_with_rdkit_parity",
+        "unsupported",
+        "preserved_only",
+    ] {
+        let candidate = source.replace(
+            "feature: crate::INSPECT_FEATURE,",
+            &format!("feature: crate::INSPECT_FEATURE, status: {invalid},"),
+        );
+        assert!(molecule_error(&candidate).contains("status must be"));
+    }
+    let duplicate = source.replace(
+        "feature: crate::INSPECT_FEATURE,",
+        "feature: crate::INSPECT_FEATURE, status: native, status: experimental,",
+    );
+    assert!(molecule_error(&duplicate).contains("duplicate molecule_ops field 'status'"));
 }
 
 #[test]

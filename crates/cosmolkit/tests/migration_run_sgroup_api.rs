@@ -1,8 +1,7 @@
 use cosmolkit::{
-    AtomId, AtomSpec, BINDING_CONTRACT, BindingExposure, BindingItem, BindingOwner, BindingParity,
-    BindingSupport, BindingTypeRole, BondId, BondOrder, BondSpec, Element, MoleculeBuilder,
-    OperationError, SGroupBracket, SGroupCState, SGroupDisplay, StateModel, SubstanceGroup,
-    SubstanceGroupId, SubstanceGroupKind,
+    AtomId, AtomSpec, BINDING_CONTRACT, BindingItem, BindingOwner, BindingTypeRole, BondId,
+    BondOrder, BondSpec, Element, FunctionStatus, MoleculeBuilder, OperationError, SGroupBracket,
+    SGroupCState, SGroupDisplay, StateModel, SubstanceGroup, SubstanceGroupId, SubstanceGroupKind,
 };
 
 #[test]
@@ -107,16 +106,16 @@ fn binding_contract_has_only_canonical_sgroup_values_constructors_and_readers() 
     assert!(rows.iter().all(|row| row.owner == BindingOwner::Type));
     assert!(
         rows.iter()
-            .all(|row| row.exposure == BindingExposure::Public)
+            .all(|row| row.status == FunctionStatus::Experimental)
     );
     assert!(rows.iter().all(|row| row.feature == "runtime"));
     assert!(
         rows.iter()
-            .all(|row| row.support == BindingSupport::Supported)
+            .all(|row| row.status == FunctionStatus::Experimental)
     );
     assert!(
         rows.iter()
-            .all(|row| row.parity == BindingParity::NotApplicable)
+            .all(|row| row.status == FunctionStatus::Experimental)
     );
     assert!(rows[..6].iter().all(|row| {
         row.item == BindingItem::Type && row.type_role == Some(BindingTypeRole::Value)

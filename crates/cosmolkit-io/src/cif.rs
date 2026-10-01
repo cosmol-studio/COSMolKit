@@ -9,6 +9,32 @@ use std::fmt;
 
 mod mmjson;
 mod writer;
+
+/// Crate-internal serializer entry for the BIO coordinate writer: the
+/// private `cif::writer` document pipeline with layout controls taken from
+/// the BIO writer params.
+pub(crate) fn write_bio_coordinate_document(
+    writer: &mut dyn std::io::Write,
+    document: &CifDocument,
+    params: &crate::bio_write::BioMmcifWriteParams,
+) -> std::io::Result<()> {
+    // Behavior: delegates to the c09 document writer with the five layout
+    // controls mapped one-to-one from BioMmcifWriteParams (c05 From impl).
+    // Complexity: one serialization pass, no reparse or document copy.
+    writer::write_cif_document(
+        &mut *writer,
+        document,
+        &writer::CifWriteLayout::from(params),
+    )
+}
+
+/// Crate-internal owned-string variant of [`write_bio_coordinate_document`].
+pub(crate) fn bio_coordinate_document_to_string(
+    document: &CifDocument,
+    params: &crate::bio_write::BioMmcifWriteParams,
+) -> std::io::Result<String> {
+    writer::cif_document_to_string(document, &writer::CifWriteLayout::from(params))
+}
 pub(crate) use mmjson::{MmjsonReadError, read_mmjson_insitu};
 
 /// Validation performed after the CIF grammar has been parsed.
@@ -191,6 +217,50 @@ impl CifLoop {
         &self.tags
     }
 
+    /// Gemmi's structure writer appends the conditional model column directly:
+    /// `aniso_loop.tags.push_back("_atom_site_anisotrop.pdbx_PDB_model_num")`.
+    pub(crate) fn push_tag(&mut self, tag: String) {
+        // Gemmi✔️✔️: aniso_loop.tags.push_back("_atom_site_anisotrop.pdbx_PDB_model_num");
+        self.tags.push(tag);
+    }
+
+    /// Gemmi's structure writer fills loop values by direct vector access
+    /// (`std::vector<std::string>& vv = atom_loop.values; vv.reserve(...)`);
+    /// this bulk entry moves an already row-aligned value vector in one pass.
+    pub(crate) fn set_string_values(&mut self, values: Vec<String>) -> Result<(), CifReadError> {
+        // Gemmi✔️✔️: std::vector<std::string>& vv = atom_loop.values;
+        // Gemmi✔️✔️: vv.reserve(atom_site_count * atom_loop.tags.size());
+        // Gemmi✔️✔️: std::vector<std::string>& aniso_val = aniso_loop.values;
+        // Gemmi✔️✔️: aniso_val.reserve(aniso_loop.tags.size() * aniso.size());
+        // Behavior: move a row-aligned flat value vector into the loop in a
+        // single pass; misaligned widths are rejected before mutation.
+        // Complexity: O(values) one move-and-map with no per-row copies or
+        // repeated reallocation (the writer pre-reserves like the source).
+        if self.tags.is_empty() {
+            return Err(CifReadError::new(
+                CifReadErrorKind::InvalidLoop,
+                "cif",
+                0,
+                0,
+                "set_string_values(): loop without tags.",
+            ));
+        }
+        if values.len() % self.tags.len() != 0 {
+            return Err(CifReadError::new(
+                CifReadErrorKind::InvalidLoop,
+                "cif",
+                0,
+                0,
+                "set_string_values(): value count not a multiple of the tag count.",
+            ));
+        }
+        self.values = values
+            .into_iter()
+            .map(|raw| CifValue::new(raw, 0, 0))
+            .collect();
+        Ok(())
+    }
+
     pub fn values(&self) -> &[CifValue] {
         &self.values
     }
@@ -337,6 +407,57 @@ mod bio_legacy_c02_tests {
         assert_eq!(*loop_, before);
         loop_.add_row(vec!["1".into(), "polymer".into()]).unwrap();
         assert_eq!(loop_.value(0, 1).unwrap().raw(), "polymer");
+    }
+}
+
+#[cfg(test)]
+mod bio_cid_num_n10_tests {
+    use super::format_cif_f64;
+
+    // %.9g expectations derived from the pinned stb_sprintf general
+    // format (sprintf.hpp:36-40 to_str(double)): 9 significant digits,
+    // %e style when the decimal exponent is < -4 or >= 9, trailing
+    // zeros stripped, and the bundled stb's CAPITALIZED specials
+    // ("Inf"/"NaN"/"-Inf", stb_sprintf.h:1720) with signs.
+    #[test]
+    fn bio_cid_num_n10_specials_and_signed_zero() {
+        // The BUNDLED stb_sprintf (what sprintf_z actually calls) spells
+        // the specials capitalized — stb_sprintf.h:1720 `? "NaN" : "Inf"`
+        // — unlike glibc's lowercase; to_str(double) therefore produces
+        // "Inf"/"-Inf"/"NaN". The owner matches the pinned profile; an
+        // earlier draft of this test wrongly expected glibc spellings.
+        assert_eq!(format_cif_f64(f64::INFINITY), "Inf");
+        assert_eq!(format_cif_f64(f64::NEG_INFINITY), "-Inf");
+        assert_eq!(format_cif_f64(f64::NAN), "NaN");
+        assert_eq!(format_cif_f64(0.0), "0");
+        assert_eq!(format_cif_f64(-0.0), "-0");
+    }
+
+    #[test]
+    fn bio_cid_num_n10_notation_thresholds() {
+        // %f style while the decimal exponent stays in [-4, 9).
+        assert_eq!(format_cif_f64(0.0001), "0.0001");
+        assert_eq!(format_cif_f64(0.00001), "1e-05");
+        assert_eq!(format_cif_f64(123456789.0), "123456789");
+        assert_eq!(format_cif_f64(1234567891.0), "1.23456789e+09");
+        assert_eq!(format_cif_f64(0.1), "0.1");
+        assert_eq!(format_cif_f64(-3.5), "-3.5");
+        // Nine significant digits then trailing-zero stripping.
+        assert_eq!(format_cif_f64(1.0 / 3.0), "0.333333333");
+        assert_eq!(format_cif_f64(150.0), "150");
+    }
+
+    #[test]
+    fn bio_cid_num_n10_rounding_carry_neighborhoods() {
+        // Carries into the next digit at the 9-digit rounding point.
+        assert_eq!(format_cif_f64(0.9999999994), "0.999999999");
+        assert_eq!(format_cif_f64(0.99999999996), "1");
+        assert_eq!(format_cif_f64(999999999.4), "999999999");
+        assert_eq!(format_cif_f64(999999999.96), "1e+09");
+        // Subnormal and boundary neighborhoods stay in the pinned
+        // digit pipeline.
+        assert_eq!(format_cif_f64(5e-324), "4.94065646e-324");
+        assert_eq!(format_cif_f64(f64::MAX), "1.79769313e+308");
     }
 }
 
@@ -641,6 +762,12 @@ impl CifBlock {
         &self.name
     }
 
+    /// Direct assignment of the block name, as in Gemmi's
+    /// `block.name = is_valid_block_name(st.name) ? st.name : "model";`.
+    pub(crate) fn set_name(&mut self, name: String) {
+        self.name = name;
+    }
+
     pub fn items(&self) -> &[CifItem] {
         &self.items
     }
@@ -910,6 +1037,20 @@ pub struct CifDocument {
 }
 
 impl CifDocument {
+    /// Gemmi's `make_mmcif_document` opens with `cif::Document doc;
+    /// doc.blocks.resize(1);` — a fresh document holding one empty block
+    /// (Gemmi's default block name is the empty string).
+    pub(crate) fn with_single_block(name: &str) -> Self {
+        Self {
+            source: String::new(),
+            blocks: vec![CifBlock {
+                name: name.to_owned(),
+                items: Vec::new(),
+                line: 1,
+            }],
+        }
+    }
+
     pub fn source(&self) -> &str {
         &self.source
     }
@@ -941,6 +1082,30 @@ impl CifDocument {
 
     pub fn find_block(&self, name: &str) -> Option<&CifBlock> {
         self.blocks.iter().find(|block| block.name == name)
+    }
+
+    /// Mutable mirror of [`CifDocument::sole_block`] for the crate-internal
+    /// structure writer, which fills loops in the parsed block like Gemmi's
+    /// `add_cif_atoms`.
+    pub(crate) fn sole_block_mut(&mut self) -> Result<&mut CifBlock, CifReadError> {
+        if self.blocks.len() > 1 {
+            return Err(CifReadError::new(
+                CifReadErrorKind::InvalidValue,
+                &self.source,
+                1,
+                1,
+                format!("single data block expected, got {}", self.blocks.len()),
+            ));
+        }
+        self.blocks.first_mut().ok_or_else(|| {
+            CifReadError::new(
+                CifReadErrorKind::InvalidValue,
+                &self.source,
+                1,
+                1,
+                "single data block expected, got 0",
+            )
+        })
     }
 }
 
@@ -2230,8 +2395,19 @@ pub fn format_cif_f64(value: f64) -> String {
     // Gemmi❗❌: }
     // Behavior review: the fixed profile uses the pinned bundled-stb
     // significant-digit conversion; B22 establishes the recorded cases, not
-    // a blanket all-input claim. Complexity review: Rust allocates digit and
-    // output Strings instead of using the source's fixed stack buffer.
+    // a blanket all-input claim. Complexity review (BIO-CID C20, corrected
+    // by BIO-C20-EVID): the composed RUST path makes exactly ONE heap
+    // allocation (the final returned String) with no intermediate strings —
+    // allocation-free stack carrier (C16/C17), bounded stack sinks (C18/
+    // C19), Special arm format! likewise one — and that count is
+    // runtime-measured per branch by bio_cid_c20_allocation_count. This is
+    // a Rust-only measurement, NOT cross-language allocation parity: the
+    // source returns std::string(buf, len), and this host's libstdc++15
+    // std::string has a 15-byte inline capacity (basic_string.h:218;
+    // basic_string.tcc:233 allocates only beyond it), so the source-side
+    // allocation count is ABI/SSO-dependent (0 for outputs up to 15 bytes,
+    // 1 beyond) and is not measured here. Sampled oracle output evidence
+    // does not become a blanket equivalence claim.
     format_general(value, 9)
 }
 
@@ -2669,10 +2845,146 @@ enum StbGeneralValue {
         negative: bool,
     },
     Finite {
-        digits: String,
+        digits: [u8; STB_GENERAL_DIGIT_CAPACITY],
+        length: u8,
         decimal_position: i32,
         negative: bool,
     },
+}
+
+/// Fixed capacity of the STB general-conversion digit carrier (BIO-CID
+/// C16). The pinned source significand is a u64 bounded by the
+/// `stbsp__powten` guard (`if (dg == 20) goto noround;`) and the undershoot
+/// check against `stbsp__tento19th`, so its decimal expansion never exceeds
+/// u64's maximal 20 digits.
+const STB_GENERAL_DIGIT_CAPACITY: usize = 20;
+
+/// Fixed-capacity digit carrier (BIO-CID C16/C17): source-exact chunked
+/// `stbsp__digitpair` emission of the rounded u64 significand into
+/// `[u8; STB_GENERAL_DIGIT_CAPACITY]` — no heap transport, no per-digit
+/// u64 division. C17 closed emission against the pinned body.
+fn stb_fixed_digit_carrier(bits: u64) -> ([u8; STB_GENERAL_DIGIT_CAPACITY], u8) {
+    // Gemmi✔️✔️: static char stbsp__period = '.';
+    // Gemmi✔️✔️: static char stbsp__comma = ',';
+    // Gemmi✔️✔️: static struct
+    // Gemmi✔️✔️: {
+    // Gemmi✔️✔️:    short temp; // force next field to be 2-byte aligned
+    // Gemmi✔️✔️:    char pair[201];
+    // Gemmi✔️✔️: } stbsp__digitpair =
+    // Gemmi✔️✔️: {
+    // Gemmi✔️✔️:   0,
+    // Gemmi✔️✔️:    "00010203040506070809101112131415161718192021222324"
+    // Gemmi✔️✔️:    "25262728293031323334353637383940414243444546474849"
+    // Gemmi✔️✔️:    "50515253545556575859606162636465666768697071727374"
+    // Gemmi✔️✔️:    "75767778798081828384858687888990919293949596979899"
+    // Gemmi✔️✔️: };
+    // (stb_sprintf.h:259-272, verbatim; the Rust DIGIT_PAIR table below is
+    // the same 100 two-digit ASCII pairs as one flat [u8; 200].)
+    // Gemmi✔️✔️:    // convert to string
+    // Gemmi✔️✔️:    out += 64;
+    // Gemmi✔️✔️:    e = 0;
+    // Gemmi✔️✔️:    for (;;) {
+    // Gemmi✔️✔️:       stbsp__uint32 n;
+    // Gemmi✔️✔️:       char *o = out - 8;
+    // Gemmi✔️✔️:       // do the conversion in chunks of U32s (avoid most 64-bit divides, worth it, constant denomiators be damned)
+    // Gemmi✔️✔️:       if (bits >= 100000000) {
+    // Gemmi✔️✔️:          n = (stbsp__uint32)(bits % 100000000);
+    // Gemmi✔️✔️:          bits /= 100000000;
+    // Gemmi✔️✔️:       } else {
+    // Gemmi✔️✔️:          n = (stbsp__uint32)bits;
+    // Gemmi✔️✔️:          bits = 0;
+    // Gemmi✔️✔️:       }
+    // Gemmi✔️✔️:       while (n) {
+    // Gemmi✔️✔️:          out -= 2;
+    // Gemmi✔️✔️:          *(stbsp__uint16 *)out = *(stbsp__uint16 *)&stbsp__digitpair.pair[(n % 100) * 2];
+    // Gemmi✔️✔️:          n /= 100;
+    // Gemmi✔️✔️:          e += 2;
+    // Gemmi✔️✔️:       }
+    // Gemmi✔️✔️:       if (bits == 0) {
+    // Gemmi✔️✔️:          if ((e) && (out[0] == '0')) {
+    // Gemmi✔️✔️:             ++out;
+    // Gemmi✔️✔️:             --e;
+    // Gemmi✔️✔️:          }
+    // Gemmi✔️✔️:          break;
+    // Gemmi✔️✔️:       }
+    // Gemmi✔️✔️:       while (out != o) {
+    // Gemmi✔️✔️:          *--out = '0';
+    // Gemmi✔️✔️:          ++e;
+    // Gemmi✔️✔️:       }
+    // Gemmi✔️✔️:    }
+    //
+    // Behavior review: identical chunked emission, pair writes, single
+    // leading-'0' trim of the top pair, and 8-byte chunk zero padding;
+    // the source's interior-pointer handoff is replaced by emitting into
+    // the tail of the fixed carrier and then one bounded (<= 20 bytes)
+    // `copy_within` slide so the enum keeps its digits[..length] window
+    // convention — output bytes are identical for every nonzero u64
+    // (widths 1..20 and the chunk boundaries are regression-covered; the
+    // compiled-source public-output sweep is sampled evidence, not an
+    // all-input proof). A significand of ZERO at this point yields the
+    // source's EMPTY window (len 0, e stays 0): no invented "0" fallback
+    // (BIO-C17-SOURCE); the literal +/-0 values never reach this helper
+    // because stb_real_to_str returns its own earlier zero branch. The
+    // two bounds are distinct and must not be conflated: stbsp__tento19th
+    // (1000000000000000000 = 1e18, stb_sprintf.h:1572/1596) is the
+    // UNDERSHOOT test inside the exponent estimation; the carrier
+    // capacity 20 is the u64 decimal-width bound that the dg == 20
+    // noround guard mirrors. Complexity review: same division structure
+    // as the source (per-chunk 64-bit division by 1e8 plus per-pair
+    // 32-bit division by 100, table lookups instead of digit arithmetic),
+    // no allocation, plus the bounded slide.
+    const DIGIT_PAIR: [u8; 200] = *b"00010203040506070809101112131415161718192021222324252627282930313233343536373839404142434445464748495051525354555657585960616263646566676869707172737475767778798081828384858687888990919293949596979899";
+    let mut carrier = [0_u8; STB_GENERAL_DIGIT_CAPACITY];
+    if bits == 0 {
+        // Source zero-window semantics (BIO-C17-SOURCE): the emission
+        // loop below would leave e == 0 and never enter the pair loop,
+        // so the window is EMPTY (len 0) — no invented "0" digit. The
+        // literal +/-0 values return from stb_real_to_str's earlier
+        // zero branch and never reach this helper.
+        return (carrier, 0);
+    }
+    let mut bits = bits;
+    let mut end = STB_GENERAL_DIGIT_CAPACITY; // exclusive end; writes go backward
+    let mut count = 0_usize;
+    loop {
+        // Chunk of up to 8 decimal digits from the low end.
+        let count_before_chunk = count;
+        let mut chunk = if bits >= 100_000_000 {
+            let remainder = (bits % 100_000_000) as u32;
+            bits /= 100_000_000;
+            remainder
+        } else {
+            let remainder = bits as u32;
+            bits = 0;
+            remainder
+        };
+        while chunk != 0 {
+            end -= 2;
+            let pair = (chunk % 100) as usize * 2;
+            carrier[end] = DIGIT_PAIR[pair];
+            carrier[end + 1] = DIGIT_PAIR[pair + 1];
+            chunk /= 100;
+            count += 2;
+        }
+        if bits == 0 {
+            // Single leading-'0' trim of the top pair (odd digit count).
+            if count != 0 && carrier[end] == b'0' {
+                end += 1;
+                count -= 1;
+            }
+            break;
+        }
+        // Pad the remainder of this 8-digit chunk with '0' (the source
+        // fills the full 8-byte window even when the chunk emitted none).
+        while count - count_before_chunk < 8 {
+            end -= 1;
+            carrier[end] = b'0';
+            count += 1;
+        }
+    }
+    debug_assert!(count <= STB_GENERAL_DIGIT_CAPACITY);
+    carrier.copy_within(end..STB_GENERAL_DIGIT_CAPACITY, 0);
+    (carrier, count as u8)
 }
 
 fn general_sign(negative: bool) -> &'static str {
@@ -2841,9 +3153,14 @@ fn stb_real_to_str(value: f64, mut fraction_digits: u32) -> StbGeneralValue {
     // Gemmi❗❌: }
     // Behavior review: the finite decimal-significand and half-up steps
     // follow the pinned stb body; error/carry branches are covered by B22's
-    // fixed oracle matrix. Complexity review: Rust materializes a `String`
-    // for the digits instead of writing into stb's caller buffer, increasing
-    // allocation; integer scaling and significant-digit work remain bounded.
+    // fixed oracle matrix, and C17 closed the digitpair emission and the
+    // dg == 20 noround guard at their implementing sites (compiled-source
+    // public-output sweeps are sampled evidence, not all-input proof, and
+    // imply nothing about branch reachability). Complexity review (BIO-CID
+    // C16/C17): the digit transport is a fixed-capacity stack carrier with
+    // the source's chunked division structure (no heap String, no per-digit
+    // u64 division); the estimate/ddtoS64 internals keep the conservative
+    // whole-function anchors above.
     const POWTEN: [u64; 20] = [
         1,
         10,
@@ -2884,7 +3201,10 @@ fn stb_real_to_str(value: f64, mut fraction_digits: u32) -> StbGeneralValue {
     if exponent == 0 {
         if raw_bits << 1 == 0 {
             return StbGeneralValue::Finite {
-                digits: "0".to_owned(),
+                digits: [
+                    b'0', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                ],
+                length: 1,
                 decimal_position: 1,
                 negative,
             };
@@ -2915,13 +3235,28 @@ fn stb_real_to_str(value: f64, mut fraction_digits: u32) -> StbGeneralValue {
     };
     if fraction_digits < 24 {
         let mut digit_count = if bits >= POWTEN[9] { 10 } else { 1 };
+        // Source-exact guard (BIO-CID C17): the dg == 20 exit jumps to
+        // noround, skipping the half-up block entirely; it also protects
+        // the stbsp__powten[20] table bound. The two magnitudes involved
+        // are distinct: this guard is the u64 20-decimal-digit capacity
+        // bound (powten[19] == 1e19), while stbsp__tento19th == 1e18 is
+        // the separate undershoot test above — no reachability claim is
+        // made from sampled sweeps; the mirror simply keeps the block
+        // source-exact.
+        // Gemmi✔️✔️:          while ((stbsp__uint64)bits >= stbsp__powten[dg]) {
+        // Gemmi✔️✔️:             ++dg;
+        // Gemmi✔️✔️:             if (dg == 20)
+        // Gemmi✔️✔️:                goto noround;
+        // Gemmi✔️✔️:          }
+        let mut noround = false;
         while bits >= POWTEN[digit_count as usize] {
             digit_count += 1;
             if digit_count == 20 {
+                noround = true;
                 break;
             }
         }
-        if fraction_digits < digit_count {
+        if !noround && fraction_digits < digit_count {
             let exponent = digit_count - fraction_digits;
             if exponent < 24 {
                 let divisor = POWTEN[exponent as usize];
@@ -2942,9 +3277,10 @@ fn stb_real_to_str(value: f64, mut fraction_digits: u32) -> StbGeneralValue {
             bits /= 1000;
         }
     }
-    let digits = bits.to_string();
+    let (digits, length) = stb_fixed_digit_carrier(bits);
     StbGeneralValue::Finite {
         digits,
+        length,
         decimal_position: tens,
         negative,
     }
@@ -2989,29 +3325,40 @@ fn format_general(value: f64, precision: usize) -> String {
     // Gemmi❗❌:          goto dofloatfromg;
     // Behavior review: this is the fixed Gemmi `%g` profile only (no width,
     // grouping, alternate-form, or locale flags); B22 is the frozen oracle
-    // matrix. Complexity review: conversion uses bounded arithmetic but
-    // materializes digit and output strings rather than stb's stack buffer.
+    // matrix. Complexity review (BIO-CID C20, corrected by BIO-C20-EVID):
+    // conversion uses bounded arithmetic with NO intermediate strings —
+    // stb_real_to_str produces allocation-free fixed-carrier state (C16/C17)
+    // and both notation sinks are bounded stack buffers (C18/C19); the only
+    // heap allocation on the RUST side is the single returned String,
+    // runtime-measured per branch (bio_cid_c20_allocation_count). That is a
+    // Rust-only count, not source allocation parity: the source std::string
+    // return allocation is ABI/SSO-dependent (host libstdc++15 inline
+    // capacity 15 — basic_string.h:218 / basic_string.tcc:233) and is not
+    // measured here. Sampled output evidence stays sampled, not a blanket
+    // equivalence claim.
     assert!(precision > 0);
     let significant_digits = precision as u32;
     let parts = stb_real_to_str(value, ((significant_digits - 1) | 0x8000_0000) as u32);
-    let (mut digits, decimal_position, negative) = match parts {
+    let (digit_buffer, buffer_length, decimal_position, negative) = match parts {
         StbGeneralValue::Special { text, negative } => {
             return format!("{}{text}", general_sign(negative));
         }
         StbGeneralValue::Finite {
             digits,
+            length,
             decimal_position,
             negative,
-        } => (digits, decimal_position, negative),
+        } => (digits, length, decimal_position, negative),
     };
+    let digits = &digit_buffer[..buffer_length as usize];
     let mut length = digits.len().min(precision);
-    digits.truncate(length);
+    let digits = &digits[..length];
     let mut significant_precision = precision;
-    while length > 1 && significant_precision > 0 && digits.as_bytes()[length - 1] == b'0' {
+    while length > 1 && significant_precision > 0 && digits[length - 1] == b'0' {
         significant_precision -= 1;
         length -= 1;
-        digits.truncate(length);
     }
+    let digits = &digits[..length];
 
     if decimal_position <= -4 || decimal_position > precision as i32 {
         let fractional_precision = if significant_precision > length {
@@ -3021,12 +3368,7 @@ fn format_general(value: f64, precision: usize) -> String {
         } else {
             0
         };
-        format_general_exponent(
-            &digits,
-            decimal_position - 1,
-            fractional_precision,
-            negative,
-        )
+        format_general_exponent(digits, decimal_position - 1, fractional_precision, negative)
     } else {
         let fractional_precision = if decimal_position > 0 {
             if decimal_position < length as i32 {
@@ -3037,12 +3379,12 @@ fn format_general(value: f64, precision: usize) -> String {
         } else {
             (-decimal_position) as usize + significant_precision.min(length)
         };
-        format_general_fixed(&digits, decimal_position, fractional_precision, negative)
+        format_general_fixed(digits, decimal_position, fractional_precision, negative)
     }
 }
 
 fn format_general_exponent(
-    digits: &str,
+    digits: &[u8],
     exponent: i32,
     fractional_precision: usize,
     negative: bool,
@@ -3100,33 +3442,68 @@ fn format_general_exponent(
     // Gemmi❗❌:          goto scopy;
     // Behavior review: fixed Gemmi uses lowercase `e`, a signed exponent, at
     // least two exponent digits, and a source sign bit for the mantissa.
-    // Complexity review: output-sized formatting in one allocation; no scan
-    // beyond the digit string.
-    let mut output = String::with_capacity(digits.len() + 8);
-    output.push_str(general_sign(negative));
-    output.push(digits.as_bytes()[0] as char);
+    // Complexity review (BIO-CID C18): all bytes are written into a bounded
+    // stack sink (24 bytes, matching the source's bounded scratch/tail
+    // regions; the mantissa is at most 9 digits in the fixed profile) and
+    // the ONLY allocation is the final returned String — no intermediate
+    // digit strings, no reallocation path.
+    const EXPONENT_SINK_CAPACITY: usize = 24;
+    let mut sink = [0_u8; EXPONENT_SINK_CAPACITY];
+    let mut length = 0_usize;
+    let sign = general_sign(negative);
+    sink[..sign.len()].copy_from_slice(sign.as_bytes());
+    length += sign.len();
+    // Leading mantissa digit.
+    sink[length] = digits[0];
+    length += 1;
     let emitted_fraction = fractional_precision.min(digits.len().saturating_sub(1));
     if fractional_precision > 0 {
-        output.push('.');
-        output.push_str(&digits[1..1 + emitted_fraction]);
-        output.extend(std::iter::repeat('0').take(fractional_precision - emitted_fraction));
+        sink[length] = b'.';
+        length += 1;
+        sink[length..length + emitted_fraction].copy_from_slice(&digits[1..1 + emitted_fraction]);
+        length += emitted_fraction;
+        // Trailing zeros to reach the requested precision (source `tz`).
+        for _ in 0..fractional_precision - emitted_fraction {
+            sink[length] = b'0';
+            length += 1;
+        }
     }
-    output.push('e');
-    if exponent < 0 {
-        output.push('-');
-    } else {
-        output.push('+');
+    sink[length] = b'e';
+    length += 1;
+    sink[length] = if exponent < 0 { b'-' } else { b'+' };
+    length += 1;
+    // At least two exponent digits (source tail dump starts at n == 4).
+    let magnitude = exponent.unsigned_abs();
+    if magnitude < 10 {
+        sink[length] = b'0';
+        length += 1;
     }
-    let exponent_digits = exponent.unsigned_abs().to_string();
-    if exponent_digits.len() < 2 {
-        output.push('0');
+    let mut exponent_buffer = [0_u8; 3];
+    let mut exponent_length = 0_usize;
+    let mut remaining = magnitude;
+    loop {
+        exponent_buffer[exponent_length] = b'0' + (remaining % 10) as u8;
+        exponent_length += 1;
+        remaining /= 10;
+        if remaining == 0 {
+            break;
+        }
     }
-    output.push_str(&exponent_digits);
-    output
+    while exponent_length > 0 {
+        exponent_length -= 1;
+        sink[length] = exponent_buffer[exponent_length];
+        length += 1;
+    }
+    debug_assert!(length <= EXPONENT_SINK_CAPACITY);
+    // The sink is pure ASCII by construction; the single allocation is the
+    // returned String itself.
+    std::str::from_utf8(&sink[..length])
+        .expect("general exponent sink is ASCII")
+        .to_owned()
 }
 
 fn format_general_fixed(
-    digits: &str,
+    digits: &[u8],
     decimal_position: i32,
     fractional_precision: usize,
     negative: bool,
@@ -3282,42 +3659,659 @@ fn format_general_fixed(
     // Gemmi❗❌:          goto scopy;
     // Behavior review: this is the fixed-point branch selected by `%g` for
     // the frozen profile; the source's alignment/vector writes are reduced
-    // to equivalent string appends. Complexity review: linear in output size
-    // with one output allocation, versus stb's stack buffer.
-    let mut output = String::with_capacity(digits.len() + fractional_precision + 2);
-    output.push_str(general_sign(negative));
+    // to equivalent byte appends. Complexity review (BIO-CID C19): all
+    // bytes go into a bounded stack sink (24 bytes; the fixed profile has
+    // decimal_position <= 9 and at most 9 fraction digits) and the ONLY
+    // allocation is the final returned String — no intermediate Strings.
+    const FIXED_SINK_CAPACITY: usize = 24;
+    let mut sink = [0_u8; FIXED_SINK_CAPACITY];
+    let mut length = 0_usize;
+    let sign = general_sign(negative);
+    sink[..sign.len()].copy_from_slice(sign.as_bytes());
+    length += sign.len();
     if decimal_position <= 0 {
-        output.push('0');
+        // 0.000*000xxxx: leading zeros, then available digits, then fill.
+        sink[length] = b'0';
+        length += 1;
         if fractional_precision > 0 {
-            output.push('.');
+            sink[length] = b'.';
+            length += 1;
         }
         let leading_zeros = (-decimal_position).max(0) as usize;
         let leading_zeros = leading_zeros.min(fractional_precision);
-        output.extend(std::iter::repeat('0').take(leading_zeros));
+        for _ in 0..leading_zeros {
+            sink[length] = b'0';
+            length += 1;
+        }
         let digit_count = digits.len().min(fractional_precision - leading_zeros);
-        output.push_str(&digits[..digit_count]);
-        output.extend(
-            std::iter::repeat('0').take(fractional_precision - leading_zeros - digit_count),
-        );
+        sink[length..length + digit_count].copy_from_slice(&digits[..digit_count]);
+        length += digit_count;
+        for _ in 0..fractional_precision - leading_zeros - digit_count {
+            sink[length] = b'0';
+            length += 1;
+        }
     } else if decimal_position as usize >= digits.len() {
-        output.push_str(digits);
-        output.extend(std::iter::repeat('0').take(decimal_position as usize - digits.len()));
+        // xxxx000*000.0: all digits, then zero padding to the point.
+        let digit_span = digits.len();
+        sink[length..length + digit_span].copy_from_slice(digits);
+        length += digit_span;
+        for _ in 0..decimal_position as usize - digits.len() {
+            sink[length] = b'0';
+            length += 1;
+        }
         if fractional_precision > 0 {
-            output.push('.');
-            output.extend(std::iter::repeat('0').take(fractional_precision));
+            sink[length] = b'.';
+            length += 1;
+            for _ in 0..fractional_precision {
+                sink[length] = b'0';
+                length += 1;
+            }
         }
     } else {
+        // xxxxx.xxxx000*000: split digits at the decimal point.
         let integer_digits = decimal_position as usize;
-        output.push_str(&digits[..integer_digits]);
+        sink[length..length + integer_digits].copy_from_slice(&digits[..integer_digits]);
+        length += integer_digits;
         if fractional_precision > 0 {
-            output.push('.');
+            sink[length] = b'.';
+            length += 1;
             let available_fraction = digits.len() - integer_digits;
             let emitted_fraction = available_fraction.min(fractional_precision);
-            output.push_str(&digits[integer_digits..integer_digits + emitted_fraction]);
-            output.extend(std::iter::repeat('0').take(fractional_precision - emitted_fraction));
+            sink[length..length + emitted_fraction]
+                .copy_from_slice(&digits[integer_digits..integer_digits + emitted_fraction]);
+            length += emitted_fraction;
+            for _ in 0..fractional_precision - emitted_fraction {
+                sink[length] = b'0';
+                length += 1;
+            }
         }
     }
-    output
+    debug_assert!(length <= FIXED_SINK_CAPACITY);
+    // The sink is pure ASCII by construction; the single allocation is the
+    // returned String itself.
+    std::str::from_utf8(&sink[..length])
+        .expect("general fixed sink is ASCII")
+        .to_owned()
+}
+
+#[cfg(test)]
+mod bio_cid_c16_tests {
+    // BIO-CID C16 regressions: fixed-capacity digit carrier in the STB
+    // general conversion owner. Expectations are derived independently from
+    // the pinned stb_sprintf.h `stbsp__real_to_str` digit output: the
+    // significand integer is the 9-significant-digit half-up rounded
+    // decimal significand with trailing zeros killed in 1000 groups, and
+    // decimal_position is the integer-digit count of the rounded value (0
+    // when the first significant digit sits immediately after the point).
+    // Prior coverage (B22 oracle in migration_io_cif) is retained.
+
+    use super::{
+        STB_GENERAL_DIGIT_CAPACITY, StbGeneralValue, stb_fixed_digit_carrier, stb_real_to_str,
+    };
+
+    #[test]
+    fn bio_cid_c16_stb_real_to_str_zero_integer_fraction_rows() {
+        // (value, expected digits, expected decimal_position, negative)
+        // 0.0/-0.0: source zero branch writes out[0]='0', decimal_pos 1,
+        // and returns the sign bit (source `return ng;`).
+        // Integers: 9-sig rounding of 1/2/10/100/1000 leaves a significand
+        // of 100000000, zero-kill (1000-groups) trims it to "100"; dp is the
+        // integer-digit count (1/1/2/3/4).
+        // 1.5/9.5: significands 150000000/950000000 -> "150"/"950", dp 1.
+        // 0.5/0.25: significands 500000000/250000000 -> "500"/"250", dp 0.
+        let rows: [(f64, &[u8], i32, bool); 12] = [
+            (0.0, b"0", 1, false),
+            (-0.0, b"0", 1, true),
+            (1.0, b"100", 1, false),
+            (2.0, b"200", 1, false),
+            (10.0, b"100", 2, false),
+            (100.0, b"100", 3, false),
+            (1000.0, b"100", 4, false),
+            (1.5, b"150", 1, false),
+            (9.5, b"950", 1, false),
+            (0.5, b"500", 0, false),
+            (0.25, b"250", 0, false),
+            (-1.5, b"150", 1, true),
+        ];
+        for (value, expected_digits, expected_dp, expected_negative) in rows {
+            match stb_real_to_str(value, 0x8000_0008) {
+                StbGeneralValue::Finite {
+                    digits,
+                    length,
+                    decimal_position,
+                    negative,
+                } => {
+                    assert_eq!(&digits[..length as usize], expected_digits, "{value}");
+                    assert_eq!(decimal_position, expected_dp, "{value}");
+                    assert_eq!(negative, expected_negative, "{value}");
+                }
+                other => panic!("expected finite parts for {value}: {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn bio_cid_c16_stb_real_to_str_specials() {
+        // Source special branch: mantissa != 0 -> "NaN", else "Inf";
+        // decimal_pos = STBSP__SPECIAL; the sign bit is carried on `negative`.
+        assert_eq!(
+            stb_real_to_str(f64::INFINITY, 0x8000_0008),
+            StbGeneralValue::Special {
+                text: "Inf",
+                negative: false
+            }
+        );
+        assert_eq!(
+            stb_real_to_str(f64::NEG_INFINITY, 0x8000_0008),
+            StbGeneralValue::Special {
+                text: "Inf",
+                negative: true
+            }
+        );
+        assert_eq!(
+            stb_real_to_str(f64::NAN, 0x8000_0008),
+            StbGeneralValue::Special {
+                text: "NaN",
+                negative: false
+            }
+        );
+        assert_eq!(
+            stb_real_to_str(-f64::NAN, 0x8000_0008),
+            StbGeneralValue::Special {
+                text: "NaN",
+                negative: true
+            }
+        );
+    }
+
+    #[test]
+    fn bio_cid_c16_digit_carrier_capacity_all_widths() {
+        // Independent derivation: exact decimal expansion of the u64
+        // significand; the carrier capacity is the u64 decimal width bound
+        // (20) tied to the source `dg == 20` noround guard. A zero
+        // significand yields the source's EMPTY window (len 0) — the
+        // literal +/-0 values return from stb_real_to_str's earlier zero
+        // branch with digit "0", decimal_position 1 and the sign bit
+        // (asserted here together per BIO-C17-SOURCE Step 4).
+        assert_eq!(STB_GENERAL_DIGIT_CAPACITY, 20);
+        let (zero_carrier, zero_length) = stb_fixed_digit_carrier(0);
+        assert_eq!(zero_length, 0);
+        assert!(zero_carrier.iter().all(|&b| b == 0));
+        for (value, sign) in [(0.0_f64, false), (-0.0_f64, true)] {
+            match stb_real_to_str(value, 0x8000_0008) {
+                StbGeneralValue::Finite {
+                    digits,
+                    length,
+                    decimal_position,
+                    negative,
+                } => {
+                    assert_eq!(length, 1, "{value}");
+                    assert_eq!(&digits[..1], b"0", "{value}");
+                    assert_eq!(decimal_position, 1, "{value}");
+                    assert_eq!(negative, sign, "{value}");
+                }
+                other => panic!("expected finite zero parts for {value}: {other:?}"),
+            }
+        }
+        let rows: [(u64, &str); 12] = [
+            (1, "1"),
+            (9, "9"),
+            (10, "10"),
+            (99, "99"),
+            (100, "100"),
+            (999_999_999, "999999999"),
+            (1_000_000_000_000_000_000, "1000000000000000000"),
+            (1_234_567_890_123_456_789, "1234567890123456789"),
+            (9_223_372_036_854_775_807, "9223372036854775807"),
+            (9_999_999_999_999_999_999, "9999999999999999999"),
+            (18_446_744_073_709_551_615, "18446744073709551615"),
+            (10_000_000_000_000_000_000, "10000000000000000000"),
+        ];
+        for (bits, expected) in rows {
+            let (carrier, length) = stb_fixed_digit_carrier(bits);
+            assert_eq!(length as usize, expected.len(), "{bits}");
+            assert!(length as usize <= STB_GENERAL_DIGIT_CAPACITY, "{bits}");
+            assert_eq!(&carrier[..length as usize], expected.as_bytes(), "{bits}");
+        }
+    }
+
+    #[test]
+    fn bio_cid_c16_digit_carrier_complete_width_minmax_table() {
+        // Exactly 40 rows: every decimal width 1..20 crossed with its
+        // minimum (10^(w-1), a '1' followed by w-1 zeros) and maximum
+        // (10^w - 1, w nines) u64. Expectations are independently fixed
+        // literal decimal expansions — no production formatter generates
+        // them. Width 20 endpoints: 10000000000000000000 and u64::MAX.
+        let mut rows = 0_usize;
+        for width in 1_usize..=20 {
+            let mut minimum = String::with_capacity(width);
+            minimum.push('1');
+            for _ in 1..width {
+                minimum.push('0');
+            }
+            let mut maximum = String::with_capacity(width);
+            if width == 20 {
+                // The maximum 20-digit u64 IS u64::MAX (not 10^20 - 1,
+                // which is not representable): literal decimal expectation.
+                maximum.push_str("18446744073709551615");
+            } else {
+                for _ in 0..width {
+                    maximum.push('9');
+                }
+            }
+            let min_bits: u64 = 10_u64.pow((width - 1) as u32);
+            let max_bits: u64 = if width == 20 {
+                u64::MAX
+            } else {
+                10_u64.pow(width as u32) - 1
+            };
+            for (bits, expected) in [(min_bits, minimum), (max_bits, maximum)] {
+                let (carrier, length) = stb_fixed_digit_carrier(bits);
+                assert_eq!(length as usize, width, "{bits}");
+                assert_eq!(&carrier[..length as usize], expected.as_bytes(), "{bits}");
+                rows += 1;
+            }
+        }
+        assert_eq!(rows, 40);
+    }
+
+    #[test]
+    fn bio_cid_c16_stb_real_to_str_subnormal_and_extrema_no_panic() {
+        // Structural proofs on the source scratch bound: the carrier window
+        // holds at most 20 ASCII digit bytes and the sign flag matches the
+        // sign bit for finite extrema, subnormals included (denormal path
+        // shifts the exponent; digits remain bounded decimals).
+        let rows = [
+            f64::MAX,
+            -f64::MAX,
+            f64::MIN_POSITIVE,
+            -f64::MIN_POSITIVE,
+            f64::from_bits(1),
+            f64::from_bits(1 | (1_u64 << 63)),
+            5e-324,
+            1e308,
+            -1e-308,
+        ];
+        for value in rows {
+            match stb_real_to_str(value, 0x8000_0008) {
+                StbGeneralValue::Finite {
+                    digits,
+                    length,
+                    negative,
+                    ..
+                } => {
+                    assert!(
+                        length as usize <= STB_GENERAL_DIGIT_CAPACITY,
+                        "{value} length {length}"
+                    );
+                    assert!(
+                        digits[..length as usize].iter().all(|b| b.is_ascii_digit()),
+                        "{value} digits {:?}",
+                        &digits[..length as usize]
+                    );
+                    assert_eq!(negative, value.is_sign_negative(), "{value}");
+                }
+                other => panic!("expected finite parts for {value}: {other:?}"),
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod bio_cid_c17_tests {
+    // BIO-CID C17 regressions: source-exact digit emission/rounding closure.
+    // Expectations derived independently from the pinned stb_sprintf.h
+    // `stbsp__real_to_str`: digits = 9-significant-digit half-up rounded
+    // decimal significand with trailing zeros killed in 1000 groups,
+    // decimal_position = integer-digit count (negative when the first
+    // significant digit sits left of the point). Cross-checked against a
+    // compiled-source oracle (gcc -O2 over third_party/gemmi/third_party/
+    // stb_sprintf.h with STB_SPRINTF_IMPLEMENTATION, 8050-output sweep:
+    // 0 differences). Prior coverage retained.
+
+    use super::{
+        STB_GENERAL_DIGIT_CAPACITY, StbGeneralValue, format_cif_f64, stb_fixed_digit_carrier,
+        stb_real_to_str,
+    };
+
+    fn finite_parts(value: f64) -> (Vec<u8>, i32, bool) {
+        match stb_real_to_str(value, 0x8000_0008) {
+            StbGeneralValue::Special { text, negative } => {
+                panic!("expected finite parts for {value:?}: {text}/{negative}")
+            }
+            StbGeneralValue::Finite {
+                digits,
+                length,
+                decimal_position,
+                negative,
+            } => (
+                digits[..length as usize].to_vec(),
+                decimal_position,
+                negative,
+            ),
+        }
+    }
+
+    #[test]
+    fn bio_cid_c17_rounding_carry_and_midpoints() {
+        // Carry: 999999999.5 half-up rounds to 1000000000, zero-kill
+        // reduces it to "1" with dp 10 (public "1e+09"); the neighbor
+        // below the midpoint stays 9 digits. 4095.999999 rounds up to
+        // 409600000 -> "409600" (public "4096"). 1.000000005e18 rounds
+        // half-up at the 9th digit to 100000001 (public "1.00000001e+18").
+        let rows: [(f64, &[u8], i32, bool); 11] = [
+            (999_999_999.5, b"1", 10, false),
+            (-999_999_999.5, b"1", 10, true),
+            (999_999_999.499_999_88, b"999999999", 9, false),
+            (4095.999_999, b"409600", 4, false),
+            (1.000_000_005e18, b"100000001", 19, false),
+            (9.999_999_99e17, b"999999999", 18, false),
+            (2.5, b"250", 1, false),
+            (3.5, b"350", 1, false),
+            (0.5, b"500", 0, false),
+            (1.5, b"150", 1, false),
+            (10.0, b"100", 2, false),
+        ];
+        for (value, expected_digits, expected_dp, expected_negative) in rows {
+            let (digits, dp, negative) = finite_parts(value);
+            assert_eq!(digits, expected_digits, "{value}");
+            assert_eq!(dp, expected_dp, "{value}");
+            assert_eq!(negative, expected_negative, "{value}");
+        }
+    }
+
+    #[test]
+    fn bio_cid_c17_powers_of_ten_and_extrema() {
+        // Powers of ten: significand collapses to "100" with dp =
+        // exponent + 1 (dp 19 for 1e18, -299 for 1e-300); 9.99999999e17 =
+        // 999999999000000000 keeps digits "999999999" with dp 18;
+        // 1e-320 is subnormal (stored nearest double is
+        // 9.99988867182683e-321).
+        // Extrema: f64::MAX -> 179769313/dp 309; the minimum subnormal
+        // 4.9406564584124654e-324 -> 494065646/dp -323; the minimum
+        // normal -> 222507386/dp -307 (public "2.22507386e-308").
+        let rows: [(f64, &[u8], i32, bool); 12] = [
+            (1e18, b"100", 19, false),
+            (1e19, b"100", 20, false),
+            (1e20, b"100", 21, false),
+            (1e21, b"100", 22, false),
+            (1e30, b"100", 31, false),
+            (1e-300, b"100", -299, false),
+            (1e-320, b"999988867", -320, false),
+            (5e-324, b"494065646", -323, false),
+            (-5e-324, b"494065646", -323, true),
+            (f64::MAX, b"179769313", 309, false),
+            (-f64::MAX, b"179769313", 309, true),
+            (f64::MIN_POSITIVE, b"222507386", -307, false),
+        ];
+        for (value, expected_digits, expected_dp, expected_negative) in rows {
+            let (digits, dp, negative) = finite_parts(value);
+            assert_eq!(digits, expected_digits, "{value}");
+            assert_eq!(dp, expected_dp, "{value}");
+            assert_eq!(negative, expected_negative, "{value}");
+        }
+    }
+
+    #[test]
+    fn bio_cid_c17_digitpair_emission_all_chunk_boundaries() {
+        // Chunked digitpair emission across every width class and the
+        // 8-digit chunk boundaries, including all-zero low chunks (the
+        // 8-byte window must be padded even when a chunk emits no pairs)
+        // and the top-pair leading-'0' trim (odd widths).
+        let rows: [(u64, &str); 20] = [
+            (1, "1"),
+            (9, "9"),
+            (10, "10"),
+            (99, "99"),
+            (100, "100"),
+            (99_999_999, "99999999"),
+            (100_000_000, "100000000"),
+            (100_000_001, "100000001"),
+            (123_456_789, "123456789"),
+            (999_999_999, "999999999"),
+            (1_000_000_000, "1000000000"),
+            (12_345_678_901_234_567, "12345678901234567"),
+            (123_456_789_012_345_678, "123456789012345678"),
+            (1_000_000_000_000_000_000, "1000000000000000000"),
+            (1_234_567_890_123_456_789, "1234567890123456789"),
+            (2_000_000_000_000_000_000, "2000000000000000000"),
+            (9_999_999_999_999_999_999, "9999999999999999999"),
+            (10_000_000_000_000_000_000, "10000000000000000000"),
+            (18_446_744_073_709_551_614, "18446744073709551614"),
+            (u64::MAX, "18446744073709551615"),
+        ];
+        for (bits, expected) in rows {
+            let (carrier, length) = stb_fixed_digit_carrier(bits);
+            assert_eq!(length as usize, expected.len(), "{bits}");
+            assert!(length as usize <= STB_GENERAL_DIGIT_CAPACITY);
+            assert_eq!(&carrier[..length as usize], expected.as_bytes(), "{bits}");
+        }
+    }
+
+    #[test]
+    fn bio_cid_c17_public_parity_oracle_rows() {
+        // Public %.9g strings from the compiled-source oracle run
+        // (/tmp/c17oracle/oracle.c, gcc -O2 over the pinned header).
+        let rows: [(f64, &str); 12] = [
+            (0.0, "0"),
+            (-0.0, "-0"),
+            (999_999_999.5, "1e+09"),
+            (999_999_999.499_999_88, "999999999"),
+            (4095.999_999, "4096"),
+            (1.000_000_005e18, "1.00000001e+18"),
+            (1e19, "1e+19"),
+            (1023.0, "1023"),
+            (f64::MAX, "1.79769313e+308"),
+            (f64::MIN_POSITIVE, "2.22507386e-308"),
+            (5e-324, "4.94065646e-324"),
+            (1e-320, "9.99988867e-321"),
+        ];
+        for (value, expected) in rows {
+            assert_eq!(format_cif_f64(value), expected, "{value}");
+        }
+    }
+}
+
+#[cfg(test)]
+mod bio_cid_c18_tests {
+    // BIO-CID C18 regressions: format_general_exponent as a bounded stack
+    // sink with a single final allocation. Expectations derived
+    // independently from the pinned stb_sprintf.h doexpfromg/doexp blocks
+    // (lowercase `e`, signed exponent, at least two exponent digits,
+    // trailing-zero fill to the requested precision, source spellings
+    // "Inf"/"NaN" with sign) and cross-checked against the compiled-source
+    // oracle (/tmp/c17oracle/inf.c). Prior coverage retained.
+
+    use super::{format_cif_f32, format_cif_f64, format_general_exponent};
+
+    #[test]
+    fn bio_cid_c18_exponent_spelling_and_minimum_two_digits() {
+        // Direct sink rows: (digits, exponent, precision, negative).
+        // Exponent zero still prints two digits; negative exponents keep
+        // the sign; fraction truncates to available digits then pads.
+        let rows: [(&[u8], i32, usize, bool, &str); 10] = [
+            (b"1", 0, 0, false, "1e+00"),
+            (b"1", 9, 0, false, "1e+09"),
+            (b"1", -5, 0, false, "1e-05"),
+            (b"25", -7, 1, false, "2.5e-07"),
+            (b"25", -7, 1, true, "-2.5e-07"),
+            (b"123456789", 18, 8, false, "1.23456789e+18"),
+            (b"15", 0, 4, false, "1.5000e+00"),
+            (b"150", 2, 8, false, "1.50000000e+02"),
+            (b"9", 308, 0, false, "9e+308"),
+            (b"1", -323, 0, true, "-1e-323"),
+        ];
+        for (digits, exponent, precision, negative, expected) in rows {
+            assert_eq!(
+                format_general_exponent(digits, exponent, precision, negative),
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn bio_cid_c18_exponent_thresholds_and_carry_public() {
+        // %g exponent selection: dp <= -4 switches to e-notation (1e-4
+        // stays fixed, 1e-5 switches); the 999999999.5 carry lands on
+        // 1e+09; magnitudes spanning f64 range keep 3-digit exponents.
+        let rows: [(f64, &str); 10] = [
+            (1e-4, "0.0001"),
+            (1e-5, "1e-05"),
+            (9.999999999e-5, "0.0001"),
+            (999_999_999.5, "1e+09"),
+            (1.23456789e18, "1.23456789e+18"),
+            (-2.5e-7, "-2.5e-07"),
+            (1e-300, "1e-300"),
+            (1.7976931348623157e308, "1.79769313e+308"),
+            (5e-324, "4.94065646e-324"),
+            (1.5, "1.5"),
+        ];
+        for (value, expected) in rows {
+            assert_eq!(format_cif_f64(value), expected, "{value}");
+        }
+        assert_eq!(format_cif_f32(1.5), "1.5");
+    }
+
+    #[test]
+    fn bio_cid_c18_special_spellings() {
+        // Source special branch spellings, sign carried separately
+        // (compiled-source oracle: Inf/-Inf/NaN/-NaN).
+        assert_eq!(format_cif_f64(f64::INFINITY), "Inf");
+        assert_eq!(format_cif_f64(f64::NEG_INFINITY), "-Inf");
+        assert_eq!(format_cif_f64(f64::NAN), "NaN");
+        assert_eq!(format_cif_f64(-f64::NAN), "-NaN");
+    }
+}
+
+#[cfg(test)]
+mod bio_cid_c19_tests {
+    // BIO-CID C19 regressions: format_general_fixed as a bounded stack sink
+    // with a single final allocation. Expectations derived independently
+    // from the pinned stb_sprintf.h dofloatfromg/dofloat blocks (three
+    // decimal varieties: 0.000*000xxxx, xxxx000*000.0, xxxxx.xxxx000*000)
+    // and cross-checked against the compiled-source oracle. Prior coverage
+    // retained.
+
+    use super::{format_cif_f64, format_general_fixed};
+
+    #[test]
+    fn bio_cid_c19_fixed_three_decimal_varieties() {
+        // Direct sink rows: (digits, dp, precision, negative).
+        // dp <= 0: leading zeros then digits then fill; dp >= len: digits
+        // then zero padding then optional .000; else split at the point.
+        let rows: [(&[u8], i32, usize, bool, &str); 12] = [
+            (b"5", 0, 1, false, "0.5"),
+            (b"250", 0, 2, false, "0.25"),
+            (b"1", -3, 4, false, "0.0001"),
+            (b"123", -2, 7, false, "0.0012300"),
+            (b"25", -1, 3, true, "-0.025"),
+            (b"100", 4, 0, false, "1000"),
+            (b"100", 4, 3, false, "1000.000"),
+            (b"1", 9, 2, false, "100000000.00"),
+            (b"15", 1, 1, false, "1.5"),
+            (b"123456789", 4, 5, false, "1234.56789"),
+            (b"9999", 2, 8, true, "-99.99000000"),
+            (b"5", 0, 0, false, "0"),
+        ];
+        for (digits, dp, precision, negative, expected) in rows {
+            assert_eq!(
+                format_general_fixed(digits, dp, precision, negative),
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn bio_cid_c19_notation_thresholds_and_zeros() {
+        // Both %g thresholds from the fixed side: dp = -3 stays fixed
+        // (1e-4), dp = -4 would route to the exponent branch; leading and
+        // trailing zero runs; negative zero keeps its sign.
+        let rows: [(f64, &str); 12] = [
+            (1e-4, "0.0001"),
+            (0.001, "0.001"),
+            (0.010, "0.01"),
+            (100.0, "100"),
+            (1000.0, "1000"),
+            (0.5, "0.5"),
+            (0.25, "0.25"),
+            (1234.5, "1234.5"),
+            (1.5, "1.5"),
+            (-0.0, "-0"),
+            (0.0, "0"),
+            (-1e-4, "-0.0001"),
+        ];
+        for (value, expected) in rows {
+            assert_eq!(format_cif_f64(value), expected, "{value}");
+        }
+    }
+
+    #[test]
+    fn bio_cid_c19_maximum_profile_output_length() {
+        // Longest fixed-branch output of the %.9g profile: 9 integer digits
+        // (dp = 9 with all nine significant digits) has no fraction; the
+        // widest total stays well inside the 24-byte sink.
+        assert_eq!(format_cif_f64(123456789.0), "123456789");
+        assert_eq!(format_cif_f64(999999999.0), "999999999");
+        // Fractional max: dp = 1 with 8 fraction digits + point.
+        assert_eq!(format_cif_f64(1.23456789), "1.23456789");
+        assert_eq!(format_general_fixed(b"123456789", 9, 0, false), "123456789");
+    }
+}
+
+#[cfg(test)]
+mod bio_cid_c20_tests {
+    // BIO-CID C20 regressions: composed %.9g profile through the C16-C19
+    // owners. Expectations derived independently from the pinned stb
+    // general dispatch (clamp, trailing-zero strip, dp <= -4 || dp > pr
+    // threshold, dofloat/doexp selection) and sprintf.hpp to_str; every
+    // public row was cross-checked against the compiled-source oracle.
+    // The single-final-allocation proof lives in
+    // tests/migration_io_cif_alloc.rs (isolated process, counting global
+    // allocator). Prior coverage retained.
+
+    use super::{format_cif_f32, format_cif_f64, format_cif_f64_precision};
+
+    #[test]
+    fn bio_cid_c20_representative_boundary_matrix() {
+        // Boundary/special matrix spanning every dispatch branch: zero,
+        // negative zero, subnormal, both notation thresholds, carry,
+        // powers of ten, fixed-branch maxima, specials, f32 profile.
+        let rows: [(f64, &str); 22] = [
+            (0.0, "0"),
+            (-0.0, "-0"),
+            (1.0, "1"),
+            (-1.0, "-1"),
+            (0.5, "0.5"),
+            (1.5, "1.5"),
+            (9.5, "9.5"),
+            (1023.0, "1023"),
+            (999_999_999.0, "999999999"),
+            (999_999_999.5, "1e+09"),
+            (1e-4, "0.0001"),
+            (1e-5, "1e-05"),
+            (1234.5, "1234.5"),
+            (1.23456789, "1.23456789"),
+            (123456789.0, "123456789"),
+            (1e18, "1e+18"),
+            (1.23456789e18, "1.23456789e+18"),
+            (1e-300, "1e-300"),
+            (5e-324, "4.94065646e-324"),
+            (1.7976931348623157e308, "1.79769313e+308"),
+            (f64::INFINITY, "Inf"),
+            (f64::NEG_INFINITY, "-Inf"),
+        ];
+        for (value, expected) in rows {
+            assert_eq!(format_cif_f64(value), expected, "{value}");
+        }
+        assert_eq!(format_cif_f64(f64::NAN), "NaN");
+        assert_eq!(format_cif_f64(-f64::NAN), "-NaN");
+        // %.6g caller behavior preserved (f32 six-digit profile).
+        assert_eq!(format_cif_f32(0.5), "0.5");
+        assert_eq!(format_cif_f32(1234567.0), "1.23457e+06");
+        // Precision callers preserved.
+        assert_eq!(format_cif_f64_precision::<3>(1.23456), "1.235");
+        assert_eq!(format_cif_f64_precision::<0>(-0.0), "-0");
+    }
 }
 
 fn value_error(value: &str, message: &str) -> CifReadError {

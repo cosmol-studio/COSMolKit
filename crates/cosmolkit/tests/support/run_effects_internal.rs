@@ -8,8 +8,8 @@ use cosmolkit_model::{
 use super::*;
 use crate::molecule::DerivedCacheBlock;
 use crate::ops::{
-    BlockAccess, CipStatePolicy, DerivedEffects, DerivedState, MappingRequirement, MoleculeOpKind,
-    OperationDomain, ParityPolicy, SemanticPreconditionSet, SupportStatus, TopologyEditKind,
+    BlockAccess, CipStatePolicy, DerivedEffects, DerivedState, FunctionStatus, MappingRequirement,
+    MoleculeOpKind, OperationDomain, ParityPolicy, SemanticPreconditionSet, TopologyEditKind,
 };
 
 struct EffectsAccess;
@@ -46,7 +46,7 @@ fn spec(
         cip_state,
         semantic_preconditions: SemanticPreconditionSet::NONE,
         requires_mapping: MappingRequirement::None,
-        support: SupportStatus::Experimental,
+        status: FunctionStatus::Experimental,
         parity: ParityPolicy::NotApplicable,
         io_roundtrip: false,
     }))
@@ -87,7 +87,7 @@ fn molecule() -> Molecule {
 fn molecule_with_valid(states: DerivedState) -> Molecule {
     let source = molecule();
     let mut cache = DerivedCacheBlock::default();
-    #[cfg(feature = "rings")]
+    #[cfg(feature = "cap-rings")]
     if states.intersects(DerivedState::RINGS) {
         cache.install_ring_info(cosmolkit_core::RingInfo::new(
             cosmolkit_core::RingFindType::SymmSssr,
@@ -291,7 +291,7 @@ fn operation_defined_allow_list_is_exact() {
 }
 
 #[test]
-#[cfg(any(feature = "valence", feature = "hydrogens"))]
+#[cfg(any(feature = "cap-valence", feature = "cap-hydrogens"))]
 fn update_and_clear_change_only_declared_cache_bits() {
     let source = molecule_with_valid(DerivedState::RINGS.union(DerivedState::DRAWING));
     let operation = spec(

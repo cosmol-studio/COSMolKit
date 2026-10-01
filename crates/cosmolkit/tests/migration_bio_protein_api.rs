@@ -1,12 +1,12 @@
 use cosmolkit::{
-    AltLocLabel, AtomName, AtomSourceIds, BINDING_CONTRACT, BindingDefault, BindingExposure,
-    BindingItem, BindingKind, BindingOwner, BindingParity, BindingSupport, BindingTypeRole,
-    BioAtomId, BioAtomRow, BioCalcFlag, BioChainId, BioChainRow, BioCoordinateBlock,
-    BioCoordinateFormat, BioModelId, BioModelRow, BioResidueId, BioResidueRow, BioRowSpan,
-    BioSiftsUnpResidue, BioStructure, BioStructureParts, ChainKind, ChainSourceIds, Element,
-    EntityKind, PdbAtomSerial, PdbChainId, PdbSeqId, Protein, ProteinAtomRef, ProteinChainRef,
-    ProteinProjectionError, ProteinResidueRef, ProteinSelectionSummary, ResidueCode,
-    ResidueInfoKind, ResidueName, ResidueSourceIds, StateModel,
+    AltLocLabel, AtomName, AtomSourceIds, BINDING_CONTRACT, BindingDefault, BindingItem,
+    BindingKind, BindingOwner, BindingTypeRole, BioAtomId, BioAtomRow, BioCalcFlag, BioChainId,
+    BioChainRow, BioCoordinateBlock, BioCoordinateFormat, BioModelId, BioModelRow, BioResidueId,
+    BioResidueRow, BioRowSpan, BioSiftsUnpResidue, BioStructure, BioStructureParts, ChainKind,
+    ChainSourceIds, Element, EntityKind, FunctionStatus, PdbAtomSerial, PdbChainId, PdbSeqId,
+    Protein, ProteinAtomRef, ProteinChainRef, ProteinProjectionError, ProteinResidueRef,
+    ProteinSelectionSummary, ResidueCode, ResidueInfoKind, ResidueName, ResidueSourceIds,
+    StateModel,
 };
 
 fn span<I>(start: u32, len: u32) -> BioRowSpan<I> {
@@ -134,8 +134,8 @@ fn protein_input_format_contract_is_exact() {
     let row = rows[0];
     assert_eq!(row.item, BindingItem::Callable);
     assert_eq!(row.owner, BindingOwner::Type);
-    assert_eq!(row.feature, "bio");
-    assert_eq!(row.support, BindingSupport::Experimental);
+    assert_eq!(row.feature, "cap-bio");
+    assert_eq!(row.status, FunctionStatus::Experimental);
     assert_eq!(row.python_name, "input_format");
     assert_eq!(row.javascript_name, "inputFormat");
     let callable = row.callable.unwrap();
@@ -314,8 +314,8 @@ fn protein_selection_summary_counts_only_filtered_rows() {
             .filter(|row| row.semantic_id == id)
             .collect::<Vec<_>>();
         assert_eq!(rows.len(), 1, "{id}");
-        assert_eq!(rows[0].support, BindingSupport::Experimental);
-        assert_eq!(rows[0].feature, "bio");
+        assert_eq!(rows[0].status, FunctionStatus::Experimental);
+        assert_eq!(rows[0].feature, "cap-bio");
     }
 }
 
@@ -345,10 +345,8 @@ fn protein_structure_conversion_registry_is_experimental_and_exact() {
         let row = rows[0];
         assert_eq!(row.item, BindingItem::Callable);
         assert_eq!(row.owner, BindingOwner::Type);
-        assert_eq!(row.feature, "bio");
-        assert_eq!(row.exposure, BindingExposure::Public);
-        assert_eq!(row.support, BindingSupport::Experimental);
-        assert_eq!(row.parity, BindingParity::RequiredWhenSupported);
+        assert_eq!(row.feature, "cap-bio");
+        assert_eq!(row.status, FunctionStatus::Experimental);
         assert_eq!(row.python_name, python);
         assert_eq!(row.javascript_name, javascript);
         assert!(row.rust_path.contains(rust_name));
@@ -498,26 +496,6 @@ fn protein_binding_contract_matches_the_detached_public_surface() {
         "ProteinAtomRef.residue",
         "ProteinAtomRef.position",
     ];
-    let experimental_iterators = [
-        "types.ProteinChainIter",
-        "types.ProteinResidueIter",
-        "types.ProteinAtomIter",
-        "Protein.chains",
-        "Protein.residues",
-        "Protein.atoms",
-        "ProteinChainRef.residues",
-        "ProteinChainRef.atoms",
-        "ProteinResidueRef.atoms",
-    ];
-    let native_accessors = [
-        "ProteinChainRef.id",
-        "ProteinChainRef.row",
-        "ProteinResidueRef.id",
-        "ProteinResidueRef.row",
-        "ProteinAtomRef.id",
-        "ProteinAtomRef.row",
-    ];
-
     let rows = BINDING_CONTRACT
         .iter()
         .filter(|row| semantic_ids.contains(&row.semantic_id))
@@ -535,26 +513,8 @@ fn protein_binding_contract_matches_the_detached_public_surface() {
 
     for row in rows {
         assert_eq!(row.owner, BindingOwner::Type);
-        assert_eq!(row.feature, "bio");
-        assert_eq!(row.exposure, BindingExposure::Public);
-        if native_accessors.contains(&row.semantic_id) {
-            assert_eq!(
-                row.support,
-                if row.item == BindingItem::Callable {
-                    BindingSupport::Experimental
-                } else {
-                    BindingSupport::Supported
-                }
-            );
-            assert_eq!(row.parity, BindingParity::NotApplicable);
-        } else if experimental_iterators.contains(&row.semantic_id) {
-            assert_eq!(row.support, BindingSupport::Experimental);
-            assert_eq!(row.parity, BindingParity::RequiredWhenSupported);
-        } else {
-            assert_eq!(row.support, BindingSupport::Experimental);
-            assert_eq!(row.parity, BindingParity::RequiredWhenSupported);
-        }
-
+        assert_eq!(row.feature, "cap-bio");
+        assert_eq!(row.status, FunctionStatus::Experimental);
         if row.semantic_id.starts_with("types.") {
             assert_eq!(row.item, BindingItem::Type);
             assert!(row.callable.is_none());

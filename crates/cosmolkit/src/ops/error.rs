@@ -105,29 +105,33 @@ pub enum OperationError {
         actual: usize,
         expected: usize,
     },
-    #[cfg(any(feature = "valence", feature = "stereo"))]
+    #[cfg(any(feature = "cap-valence", feature = "cap-stereo"))]
     Valence(cosmolkit_core::ValenceError),
-    #[cfg(feature = "radicals")]
+    #[cfg(feature = "cap-radicals")]
     Radical(cosmolkit_core::RadicalError),
-    #[cfg(any(feature = "rings", feature = "stereo", feature = "aromaticity"))]
+    #[cfg(any(
+        feature = "cap-rings",
+        feature = "cap-stereo",
+        feature = "cap-aromaticity"
+    ))]
     Rings(cosmolkit_core::RingFindingError),
-    #[cfg(feature = "stereo")]
+    #[cfg(feature = "cap-stereo")]
     PotentialStereo(cosmolkit_core::PotentialStereoError),
-    #[cfg(feature = "stereo")]
+    #[cfg(feature = "cap-stereo")]
     Stereo(cosmolkit_core::StereoError),
-    #[cfg(feature = "stereo")]
+    #[cfg(feature = "cap-stereo")]
     CipLabeler(cosmolkit_stereo::CipLabelerError),
-    #[cfg(feature = "transforms")]
+    #[cfg(feature = "cap-transforms")]
     Transform(cosmolkit_core::TransformError),
-    #[cfg(feature = "depict")]
+    #[cfg(feature = "cap-depict")]
     Coordinate2D(cosmolkit_depict::DepictError),
-    #[cfg(feature = "kekulize")]
+    #[cfg(feature = "cap-kekulize")]
     Kekulize(cosmolkit_core::KekulizeError),
-    #[cfg(feature = "aromaticity")]
+    #[cfg(feature = "cap-aromaticity")]
     Aromaticity(cosmolkit_core::AromaticityError),
-    #[cfg(feature = "sanitize")]
+    #[cfg(feature = "cap-sanitize")]
     Sanitize(cosmolkit_core::SanitizeError),
-    #[cfg(feature = "hydrogens")]
+    #[cfg(feature = "cap-hydrogens")]
     Hydrogen(cosmolkit_core::HydrogenError),
     InvalidAlgorithmResult {
         operation: &'static str,
@@ -265,33 +269,37 @@ impl fmt::Display for OperationError {
                 formatter,
                 "derived cache state `{state}` field `{field}` has {actual} entries, expected {expected}"
             ),
-            #[cfg(any(feature = "valence", feature = "stereo"))]
+            #[cfg(any(feature = "cap-valence", feature = "cap-stereo"))]
             Self::Valence(error) => write!(formatter, "valence assignment failed: {error}"),
-            #[cfg(feature = "radicals")]
+            #[cfg(feature = "cap-radicals")]
             Self::Radical(error) => write!(formatter, "radical assignment failed: {error}"),
-            #[cfg(any(feature = "rings", feature = "stereo", feature = "aromaticity"))]
+            #[cfg(any(
+                feature = "cap-rings",
+                feature = "cap-stereo",
+                feature = "cap-aromaticity"
+            ))]
             Self::Rings(error) => write!(formatter, "ring assignment failed: {error}"),
-            #[cfg(feature = "stereo")]
+            #[cfg(feature = "cap-stereo")]
             Self::PotentialStereo(error) => {
                 write!(formatter, "potential-stereo perception failed: {error}")
             }
-            #[cfg(feature = "stereo")]
+            #[cfg(feature = "cap-stereo")]
             Self::Stereo(error) => write!(formatter, "structure-tag assignment failed: {error}"),
-            #[cfg(feature = "stereo")]
+            #[cfg(feature = "cap-stereo")]
             Self::CipLabeler(error) => write!(formatter, "CIP label assignment failed: {error}"),
-            #[cfg(feature = "transforms")]
+            #[cfg(feature = "cap-transforms")]
             Self::Transform(error) => write!(formatter, "coordinate transform failed: {error}"),
-            #[cfg(feature = "depict")]
+            #[cfg(feature = "cap-depict")]
             Self::Coordinate2D(error) => {
                 write!(formatter, "2D coordinate generation failed: {error}")
             }
-            #[cfg(feature = "kekulize")]
+            #[cfg(feature = "cap-kekulize")]
             Self::Kekulize(error) => write!(formatter, "kekulization failed: {error}"),
-            #[cfg(feature = "aromaticity")]
+            #[cfg(feature = "cap-aromaticity")]
             Self::Aromaticity(error) => write!(formatter, "aromaticity assignment failed: {error}"),
-            #[cfg(feature = "sanitize")]
+            #[cfg(feature = "cap-sanitize")]
             Self::Sanitize(error) => write!(formatter, "sanitization failed: {error}"),
-            #[cfg(feature = "hydrogens")]
+            #[cfg(feature = "cap-hydrogens")]
             Self::Hydrogen(error) => write!(formatter, "hydrogen transformation failed: {error}"),
             Self::InvalidAlgorithmResult {
                 operation,
@@ -312,29 +320,33 @@ impl fmt::Display for OperationError {
 impl std::error::Error for OperationError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
-            #[cfg(any(feature = "valence", feature = "stereo"))]
+            #[cfg(any(feature = "cap-valence", feature = "cap-stereo"))]
             Self::Valence(error) => Some(error),
-            #[cfg(feature = "radicals")]
+            #[cfg(feature = "cap-radicals")]
             Self::Radical(error) => Some(error),
-            #[cfg(any(feature = "rings", feature = "stereo", feature = "aromaticity"))]
+            #[cfg(any(
+                feature = "cap-rings",
+                feature = "cap-stereo",
+                feature = "cap-aromaticity"
+            ))]
             Self::Rings(error) => Some(error),
-            #[cfg(feature = "stereo")]
+            #[cfg(feature = "cap-stereo")]
             Self::PotentialStereo(error) => Some(error),
-            #[cfg(feature = "stereo")]
+            #[cfg(feature = "cap-stereo")]
             Self::Stereo(error) => Some(error),
-            #[cfg(feature = "stereo")]
+            #[cfg(feature = "cap-stereo")]
             Self::CipLabeler(error) => Some(error),
-            #[cfg(feature = "transforms")]
+            #[cfg(feature = "cap-transforms")]
             Self::Transform(error) => Some(error),
-            #[cfg(feature = "depict")]
+            #[cfg(feature = "cap-depict")]
             Self::Coordinate2D(error) => Some(error),
-            #[cfg(feature = "kekulize")]
+            #[cfg(feature = "cap-kekulize")]
             Self::Kekulize(error) => Some(error),
-            #[cfg(feature = "aromaticity")]
+            #[cfg(feature = "cap-aromaticity")]
             Self::Aromaticity(error) => Some(error),
-            #[cfg(feature = "sanitize")]
+            #[cfg(feature = "cap-sanitize")]
             Self::Sanitize(error) => Some(error),
-            #[cfg(feature = "hydrogens")]
+            #[cfg(feature = "cap-hydrogens")]
             Self::Hydrogen(error) => Some(error),
             _ => None,
         }

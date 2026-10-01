@@ -1,8 +1,8 @@
-#![cfg(feature = "bio")]
+#![cfg(feature = "cap-bio")]
 use cosmolkit::{
-    BINDING_CONTRACT, BindingDefault, BindingExposure, BindingItem, BindingKind, BindingOwner,
-    BindingSupport, BindingTypeRole, BioCoordinateFormat as F, BioReadError, BioReadParams,
-    BioStructure, Protein, ProteinReadError,
+    BINDING_CONTRACT, BindingDefault, BindingItem, BindingKind, BindingOwner, BindingTypeRole,
+    BioCoordinateFormat as F, BioReadError, BioReadParams, BioStructure, FunctionStatus, Protein,
+    ProteinReadError,
 };
 use std::error::Error;
 
@@ -528,9 +528,9 @@ fn bio_read_registry_all_eight_real_constructors_and_supporting_types() {
             let row = rows[0];
             assert_eq!(row.item, BindingItem::Callable);
             assert_eq!(row.owner, BindingOwner::Type);
-            assert_eq!(row.exposure, BindingExposure::Public);
-            assert_eq!(row.feature, "bio");
-            assert_eq!(row.support, BindingSupport::Experimental);
+            assert_eq!(row.status, FunctionStatus::Experimental);
+            assert_eq!(row.feature, "cap-bio");
+            assert_eq!(row.status, FunctionStatus::Experimental);
             assert_eq!(row.python_name, name);
             assert_eq!(row.javascript_name, js);
             let callable = row.callable.unwrap();
@@ -557,7 +557,7 @@ fn bio_read_registry_all_eight_real_constructors_and_supporting_types() {
         assert_eq!(row.item, BindingItem::Type);
         assert_eq!(row.owner, BindingOwner::Type);
         assert_eq!(row.type_role, Some(role));
-        assert_eq!(row.feature, "bio");
+        assert_eq!(row.feature, "cap-bio");
     }
     let _: fn(&str) -> Result<BioStructure, BioReadError> = BioStructure::from_text;
     let _: fn(&str) -> Result<Protein, ProteinReadError> = Protein::from_text;

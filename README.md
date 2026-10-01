@@ -35,6 +35,9 @@ COSMolKit combines a native Rust API with Python interfaces designed for array-o
 
 - **Modular Rust architecture:** separate crates own model values and domain
   algorithms; `cosmolkit` remains the public entry point and molecule runtime.
+- **Two-level Cargo features:** use bundles such as `core`, `bio`, and
+  `fingerprints`, or `cap-*` selectors for precise control. Default is `full`;
+  see the [Rust feature guide](crates/cosmolkit/README.md#cargo-features).
 - **WebAssembly support:** run the same Rust chemistry engine in the browser
   through JavaScript bindings, without a separate algorithm implementation.
 - **One API, three languages:** shared operations, defaults, results, and error

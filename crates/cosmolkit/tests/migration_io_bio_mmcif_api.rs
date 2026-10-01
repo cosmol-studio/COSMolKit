@@ -1,6 +1,6 @@
-#![cfg(feature = "bio")]
+#![cfg(feature = "cap-bio")]
 use cosmolkit::{
-    BINDING_CONTRACT, BindingSupport, BioCoordinateFormat, BioMmcifReadStage, BioStructure,
+    BINDING_CONTRACT, BioCoordinateFormat, BioMmcifReadStage, BioStructure, FunctionStatus,
     Protein, ProteinReadError,
 };
 use std::error::Error;
@@ -56,7 +56,7 @@ fn public_mmcif_registry_names_match_both_associated_constructors() {
             .unwrap();
         assert_eq!(row.python_name, "from_mmcif");
         assert_eq!(row.javascript_name, "fromMmcif");
-        assert_eq!(row.support, BindingSupport::Experimental);
+        assert_eq!(row.status, FunctionStatus::Experimental);
         assert_eq!(row.callable.unwrap().parameters.len(), 1);
     }
     assert!(

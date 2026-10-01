@@ -2,13 +2,12 @@ use std::collections::BTreeMap;
 use std::error::Error as _;
 
 use cosmolkit::{
-    Atom, AtomId, AtomSpec, BINDING_CONTRACT, BindingExposure, BindingItem, BindingOwner,
-    BindingParity, BindingSupport, BlockSet, Bond, BondId, BondOrder, BondSpec, Conformer2D,
-    Conformer3D, Coordinate2DError, Coordinate2DLayoutError, Coordinate2DParams, CoordinateBlock,
-    CoordinateDimension, Element, Molecule, MoleculeOpKind, MoleculeOpOutput, MoleculeProperties,
-    OperationDomain, OperationError, ParityPolicy, StateModel, SupportStatus, TopologyBlock,
-    TopologyEditKind, feature_spec, operation_invariant, operation_parity, operation_spec,
-    support_matrix,
+    Atom, AtomId, AtomSpec, BINDING_CONTRACT, BindingItem, BindingOwner, BlockSet, Bond, BondId,
+    BondOrder, BondSpec, Conformer2D, Conformer3D, Coordinate2DError, Coordinate2DLayoutError,
+    Coordinate2DParams, CoordinateBlock, CoordinateDimension, Element, FunctionStatus, Molecule,
+    MoleculeOpKind, MoleculeOpOutput, MoleculeProperties, OperationDomain, OperationError,
+    ParityPolicy, StateModel, TopologyBlock, TopologyEditKind, feature_spec, operation_invariant,
+    operation_parity, operation_spec, support_matrix,
 };
 
 fn find_error_source<'a, T: std::error::Error + 'static>(
@@ -376,7 +375,7 @@ fn live_coordinate_failure_after_checkout_is_atomic_and_typed() {
 fn binding_registry_operation_contract_and_feature_isolation() {
     let rows = BINDING_CONTRACT
         .iter()
-        .filter(|row| row.feature == "depict")
+        .filter(|row| row.feature == "cap-depict")
         .collect::<Vec<_>>();
     assert_eq!(
         rows.iter().map(|row| row.semantic_id).collect::<Vec<_>>(),
@@ -390,9 +389,7 @@ fn binding_registry_operation_contract_and_feature_isolation() {
         ]
     );
     for row in &rows {
-        assert_eq!(row.exposure, BindingExposure::Public);
-        assert_eq!(row.support, BindingSupport::Experimental);
-        assert_eq!(row.parity, BindingParity::RequiredWhenSupported);
+        assert_eq!(row.status, FunctionStatus::Experimental);
     }
     for row in &rows[..4] {
         assert_eq!(row.item, BindingItem::Type);
@@ -409,8 +406,9 @@ fn binding_registry_operation_contract_and_feature_isolation() {
     assert_eq!(rows[4].callable.unwrap().parameters.len(), 0);
     assert_eq!(rows[5].callable.unwrap().parameters.len(), 1);
 
-    let feature = feature_spec("depict").unwrap();
-    assert_eq!(feature.status, SupportStatus::Experimental);
+    let feature = feature_spec("cap-depict").unwrap();
+    assert_eq!(feature.name, "cap-depict");
+
     let spec = operation_spec("with_2d_coordinates_with_params").unwrap();
     assert_eq!(spec.domain, OperationDomain::Coordinate);
     assert_eq!(spec.kind, MoleculeOpKind::Weak);
@@ -425,7 +423,7 @@ fn binding_registry_operation_contract_and_feature_isolation() {
     assert_eq!(spec.auto_remap, BlockSet::NONE);
     assert_eq!(spec.derived_effects.invalidate.bits(), (1 << 4) | (1 << 6));
     assert_eq!(format!("{:?}", spec.cip_state), "Preserve");
-    assert_eq!(spec.support, SupportStatus::Experimental);
+    assert_eq!(spec.status, FunctionStatus::Experimental);
     assert_eq!(spec.parity, ParityPolicy::RequiredWhenSupported);
     assert_eq!(
         operation_invariant(spec.method).unwrap().profile,
@@ -437,7 +435,7 @@ fn binding_registry_operation_contract_and_feature_isolation() {
     );
     let support = support_matrix()
         .iter()
-        .find(|row| row.feature.name == "depict")
+        .find(|row| row.feature.name == "cap-depict")
         .unwrap();
     assert!(std::ptr::eq(support.operation.unwrap(), spec));
 
@@ -445,7 +443,7 @@ fn binding_registry_operation_contract_and_feature_isolation() {
     assert!(
         BINDING_CONTRACT
             .iter()
-            .filter(|row| row.feature == "depict")
+            .filter(|row| row.feature == "cap-depict")
             .all(|row| !row.semantic_id.contains("svg") && !row.semantic_id.contains("png"))
     );
 }

@@ -112,6 +112,7 @@ dependencies = [
  "cosmolkit-smiles",
  "cosmolkit-stereo",
  "cosmolkit-tautomer",
+ "serde_json",
 ]
 
 [[package]]

@@ -1,9 +1,8 @@
 use std::collections::HashSet;
 
 use cosmolkit::{
-    BINDING_CONTRACT, BindingCallableContract, BindingDefault, BindingExposure, BindingItem,
-    BindingKind, BindingOwner, BindingParameterContract, BindingParity, BindingSupport,
-    BindingTypeRole, StateModel,
+    BINDING_CONTRACT, BindingCallableContract, BindingDefault, BindingItem, BindingKind,
+    BindingOwner, BindingParameterContract, BindingTypeRole, FunctionStatus, StateModel,
 };
 
 fn entry(semantic_id: &str) -> &'static cosmolkit::BindingContractEntry {
@@ -13,7 +12,7 @@ fn entry(semantic_id: &str) -> &'static cosmolkit::BindingContractEntry {
         .unwrap_or_else(|| panic!("missing binding contract entry {semantic_id}"))
 }
 
-#[cfg(feature = "io")]
+#[cfg(feature = "cap-io")]
 #[test]
 fn sdf_reader_contracts_distinguish_concrete_and_preserving_results() {
     for (id, output) in [
@@ -23,10 +22,8 @@ fn sdf_reader_contracts_distinguish_concrete_and_preserving_results() {
         ("SdfRecord.from_sdf_with_params", "crate::SdfRecord"),
     ] {
         let contract = entry(id);
-        assert_eq!(contract.feature, "io");
-        assert_eq!(contract.exposure, BindingExposure::Public);
-        assert_eq!(contract.support, BindingSupport::Supported);
-        assert_eq!(contract.parity, BindingParity::RequiredWhenSupported);
+        assert_eq!(contract.feature, "cap-io");
+        assert_eq!(contract.status, FunctionStatus::Experimental);
         let callable = contract.callable.unwrap();
         assert_eq!(callable.output_type.replace(' ', ""), output);
         assert_eq!(
@@ -45,10 +42,8 @@ fn sdf_reader_contracts_distinguish_concrete_and_preserving_results() {
     ] {
         let contract = entry(id);
         assert_eq!(contract.type_role, Some(role));
-        assert_eq!(contract.feature, "io");
-        assert_eq!(contract.exposure, BindingExposure::Public);
-        assert_eq!(contract.support, BindingSupport::Supported);
-        assert_eq!(contract.parity, BindingParity::RequiredWhenSupported);
+        assert_eq!(contract.feature, "cap-io");
+        assert_eq!(contract.status, FunctionStatus::Experimental);
     }
     for (id, output, error) in [
         ("SdfRecord.graph", "&crate::SdfGraph", None),
@@ -77,9 +72,7 @@ fn sdf_reader_contracts_distinguish_concrete_and_preserving_results() {
     ] {
         let contract = entry(id);
         assert_eq!(contract.owner, BindingOwner::Type);
-        assert_eq!(contract.exposure, BindingExposure::Public);
-        assert_eq!(contract.support, BindingSupport::Supported);
-        assert_eq!(contract.parity, BindingParity::RequiredWhenSupported);
+        assert_eq!(contract.status, FunctionStatus::Experimental);
         let callable = contract.callable.unwrap();
         assert_eq!(callable.kind, BindingKind::Instance);
         assert_eq!(callable.state_model, StateModel::ReadOnly);
@@ -187,7 +180,7 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
         "TemplateAttachment.label",
         "TemplateAttachmentOrder.entries",
         "Atom.template_attachment_order",
-        "types.SupportStatus",
+        "types.FunctionStatus",
         "types.ParityPolicy",
         "types.FeatureSpec",
         "types.MoleculeOpSpec",
@@ -206,7 +199,7 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
         "module.operation_parity",
         "module.version",
     ];
-    if cfg!(feature = "matrices") {
+    if cfg!(feature = "cap-matrices") {
         expected.extend([
             "types.DenseMatrix",
             "types.DistanceMatrixParams",
@@ -218,7 +211,7 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
             "Molecule.distance_matrix_3d_with_params",
         ]);
     }
-    if cfg!(feature = "depict") {
+    if cfg!(feature = "cap-depict") {
         expected.extend([
             "types.Coordinate2DParams",
             "types.Coordinate2DError",
@@ -228,7 +221,7 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
             "Molecule.with_2d_coordinates_with_params",
         ]);
     }
-    if cfg!(feature = "transforms") {
+    if cfg!(feature = "cap-transforms") {
         expected.extend([
             "types.AtomPositionParams",
             "types.TransformError",
@@ -238,7 +231,7 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
             "Molecule.set_atom_position_with_params_",
         ]);
     }
-    if cfg!(feature = "sanitize") {
+    if cfg!(feature = "cap-sanitize") {
         expected.extend([
             "types.SanitizeOperations",
             "types.SanitizeStage",
@@ -253,7 +246,7 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
             "Molecule.detect_chemistry_problems_with_params",
         ]);
     }
-    if cfg!(feature = "kekulize") {
+    if cfg!(feature = "cap-kekulize") {
         expected.extend([
             "types.KekulizeParams",
             "types.KekulizeError",
@@ -263,7 +256,7 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
             "Molecule.kekulize_bonds_with_params_",
         ]);
     }
-    if cfg!(feature = "aromaticity") {
+    if cfg!(feature = "cap-aromaticity") {
         expected.extend([
             "types.AromaticityModel",
             "types.AromaticityParams",
@@ -274,7 +267,7 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
             "Molecule.assign_aromaticity_with_params_",
         ]);
     }
-    if cfg!(feature = "valence") {
+    if cfg!(feature = "cap-valence") {
         expected.extend([
             "types.ValenceModel",
             "types.ValenceParams",
@@ -286,13 +279,13 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
             "Molecule.has_valence_violation",
         ]);
     }
-    if cfg!(feature = "radicals") {
+    if cfg!(feature = "cap-radicals") {
         expected.extend([
             "Molecule.with_assigned_radicals",
             "Molecule.assign_radicals_",
         ]);
     }
-    if cfg!(feature = "rings") {
+    if cfg!(feature = "cap-rings") {
         expected.extend([
             "types.RingSearchParams",
             "Molecule.with_assigned_rings",
@@ -303,7 +296,7 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
             "Molecule.assign_ring_families_with_params_",
         ]);
     }
-    if cfg!(feature = "stereo") {
+    if cfg!(feature = "cap-stereo") {
         expected.extend([
             "types.StructureTagParams",
             "types.StereoError",
@@ -332,14 +325,14 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
             "Molecule.assign_cip_labels_with_options_",
         ]);
     }
-    if cfg!(feature = "descriptors") {
+    if cfg!(feature = "cap-descriptors") {
         expected.extend([
             "Molecule.molecular_weight",
             "Molecule.exact_molecular_weight",
             "Molecule.molecular_formula",
         ]);
     }
-    if cfg!(feature = "hydrogens") {
+    if cfg!(feature = "cap-hydrogens") {
         expected.extend([
             "types.AddHsParams",
             "types.HydrogenError",
@@ -354,7 +347,7 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
             "Molecule.remove_hydrogens_with_params_",
         ]);
     }
-    if cfg!(feature = "bio") {
+    if cfg!(feature = "cap-bio") {
         expected.extend([
             "types.ResidueInfoKind",
             "types.ResidueCode",
@@ -504,7 +497,7 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
             "ProteinAtomRef.position",
         ]);
     }
-    if cfg!(feature = "io") {
+    if cfg!(feature = "cap-io") {
         expected.extend([
             "types.SdfRecord",
             "types.SdfGraph",
@@ -524,7 +517,7 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
             "Molecule.from_sdf_with_params",
         ]);
     }
-    if cfg!(feature = "smiles") {
+    if cfg!(feature = "cap-smiles") {
         expected.extend([
             "types.SmilesParseParams",
             "types.SmilesError",
@@ -534,7 +527,7 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
         ]);
     }
 
-    if cfg!(feature = "fingerprints") {
+    if cfg!(feature = "cap-fingerprints") {
         // Exact newly registered public sparse-count surface, in registry order.
         expected.splice(
             0..0,
@@ -573,7 +566,7 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
             ],
         );
     }
-    if cfg!(feature = "bio") {
+    if cfg!(feature = "cap-bio") {
         // Approved associated readers and lightweight operations precede the
         // existing registry. Preserve exact ordering and feature-local coverage.
         expected.splice(
@@ -584,6 +577,15 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
                 "BioStructure.translate_",
                 "Protein.with_translated_coordinates",
                 "Protein.translate_",
+                "BioStructure.with_selection",
+                "BioStructure.retain_selection_",
+                "Protein.with_selection",
+                "Protein.retain_selection_",
+                "types.BioSelectionCopyError",
+                "types.BioSelectionCopyCause",
+                "types.BioRowTraverseError",
+                "types.BioRowModelError",
+                "types.BioRowChainError",
                 "types.BioPdbReadParams",
                 "types.BioPdbReadError",
                 "types.BioPdbReadStage",
@@ -592,6 +594,12 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
                 "types.BioReadParams",
                 "types.BioReadError",
                 "types.ProteinReadError",
+                "types.BioMmcifWriteParams",
+                "types.BioMmcifWriteError",
+                "BioStructure.to_mmcif_with_params",
+                "BioStructure.to_mmcif",
+                "BioStructure.write_mmcif_with_params",
+                "BioStructure.write_mmcif",
                 "BioStructure.from_text_with_params",
                 "BioStructure.from_text",
                 "BioStructure.read_with_format",
@@ -613,7 +621,7 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
             ],
         );
     }
-    if cfg!(feature = "smiles") {
+    if cfg!(feature = "cap-smiles") {
         expected.splice(
             0..0,
             [
@@ -635,6 +643,13 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
                 "Molecule.to_fragment_cx_smiles_with_params",
                 "Molecule.to_random_smiles",
                 "Molecule.to_random_smiles_with_params",
+                "types.BioSelection",
+                "BioSelection.from_cid",
+                "Protein.selected_atom_ids",
+                "BioStructure.selected_atom_ids",
+                "BioSelection.to_cid",
+                "types.BioSelectionParseError",
+                "types.BioSelectionMatchError",
             ],
         );
     }
@@ -665,9 +680,7 @@ fn always_present_entries_have_exact_type_and_module_payloads() {
     assert_eq!(molecule.python_name, "Molecule");
     assert_eq!(molecule.javascript_name, "Molecule");
     assert_eq!(molecule.feature, "runtime");
-    assert_eq!(molecule.exposure, BindingExposure::Public);
-    assert_eq!(molecule.support, BindingSupport::Supported);
-    assert_eq!(molecule.parity, BindingParity::NotApplicable);
+    assert_eq!(molecule.status, FunctionStatus::Experimental);
     assert_eq!(molecule.callable, None);
     assert_eq!(molecule.type_role, Some(BindingTypeRole::Value));
 
@@ -685,9 +698,7 @@ fn always_present_entries_have_exact_type_and_module_payloads() {
     assert_eq!(version.python_name, "version");
     assert_eq!(version.javascript_name, "version");
     assert_eq!(version.feature, "metadata");
-    assert_eq!(version.exposure, BindingExposure::Public);
-    assert_eq!(version.support, BindingSupport::Supported);
-    assert_eq!(version.parity, BindingParity::NotApplicable);
+    assert_eq!(version.status, FunctionStatus::Experimental);
     assert_eq!(version.type_role, None);
     let callable = version.callable.expect("version callable metadata");
     assert_eq!(callable.kind, BindingKind::Module);
@@ -698,7 +709,7 @@ fn always_present_entries_have_exact_type_and_module_payloads() {
     assert_eq!(callable.operation_semantic_id, None);
 }
 
-#[cfg(feature = "descriptors")]
+#[cfg(feature = "cap-descriptors")]
 #[test]
 fn descriptor_entries_are_exact_canonical_read_only_methods() {
     for (semantic_id, rust_name, javascript, output) in [
@@ -727,10 +738,8 @@ fn descriptor_entries_are_exact_canonical_read_only_methods() {
         assert!(entry.rust_path.replace(' ', "").ends_with(rust_name));
         assert_eq!(entry.python_name, rust_name);
         assert_eq!(entry.javascript_name, javascript);
-        assert_eq!(entry.feature, "descriptors");
-        assert_eq!(entry.exposure, BindingExposure::Public);
-        assert_eq!(entry.support, BindingSupport::Experimental);
-        assert_eq!(entry.parity, BindingParity::RequiredWhenSupported);
+        assert_eq!(entry.feature, "cap-descriptors");
+        assert_eq!(entry.status, FunctionStatus::Experimental);
         assert_eq!(entry.type_role, None);
         let callable = entry.callable.expect("descriptor callable metadata");
         assert_eq!(callable.kind, BindingKind::Instance);
@@ -745,7 +754,7 @@ fn descriptor_entries_are_exact_canonical_read_only_methods() {
     }
 }
 
-#[cfg(feature = "hydrogens")]
+#[cfg(feature = "cap-hydrogens")]
 #[test]
 fn hydrogen_entries_bind_value_and_in_place_names_with_parity_support() {
     for (semantic_id, rust_name, javascript, output, state) in [
@@ -783,10 +792,8 @@ fn hydrogen_entries_bind_value_and_in_place_names_with_parity_support() {
         assert!(entry.rust_path.replace(' ', "").ends_with(rust_name));
         assert_eq!(entry.python_name, rust_name);
         assert_eq!(entry.javascript_name, javascript);
-        assert_eq!(entry.feature, "hydrogens");
-        assert_eq!(entry.exposure, BindingExposure::Public);
-        assert_eq!(entry.support, BindingSupport::SupportedWithRdkitParity);
-        assert_eq!(entry.parity, BindingParity::RequiredNow);
+        assert_eq!(entry.feature, "cap-hydrogens");
+        assert_eq!(entry.status, FunctionStatus::Experimental);
         let callable = entry.callable.expect("hydrogen callable metadata");
         assert_eq!(callable.kind, BindingKind::Instance);
         assert!(callable.parameters.is_empty());
@@ -851,10 +858,6 @@ fn schema_represents_every_closed_enum_and_parameter_payload_branch() {
         3
     );
     assert_eq!(
-        [BindingExposure::Registered, BindingExposure::Public].len(),
-        2
-    );
-    assert_eq!(
         [
             BindingTypeRole::Value,
             BindingTypeRole::Parameter,
@@ -866,23 +869,16 @@ fn schema_represents_every_closed_enum_and_parameter_payload_branch() {
     );
     assert_eq!(
         [
-            BindingSupport::Unsupported,
-            BindingSupport::PreservedOnly,
-            BindingSupport::Experimental,
-            BindingSupport::Supported,
-            BindingSupport::SupportedWithRdkitParity
+            FunctionStatus::Parity { reference: "RDKit" },
+            FunctionStatus::ParityWithDifferences {
+                reference: "Gemmi",
+                explanation: "Approved difference for the documented boundary"
+            },
+            FunctionStatus::Native,
+            FunctionStatus::Experimental
         ]
         .len(),
-        5
-    );
-    assert_eq!(
-        [
-            BindingParity::NotApplicable,
-            BindingParity::RequiredWhenSupported,
-            BindingParity::RequiredNow
-        ]
-        .len(),
-        3
+        4
     );
     assert_eq!(
         [
@@ -907,4 +903,42 @@ fn registry_source_has_one_declaration_and_no_legacy_schema_or_cfg_products() {
     assert!(!registry.contains("ReturnKind"));
     assert!(!types.contains("ReturnKind"));
     assert!(!types.contains("type Binding"));
+    for old_field in ["exposure:", "support:", "parity:"] {
+        assert!(!registry.contains(old_field));
+    }
+}
+
+#[test]
+fn status_commitments_are_per_function_and_shared_with_registered_operations() {
+    let mut parity = Vec::new();
+    for contract in BINDING_CONTRACT {
+        let fuzzy = matches!(
+            contract.semantic_id,
+            "SparseCountFingerprint.fuzzy_and"
+                | "SparseCountFingerprint.fuzzy_or"
+                | "SparseCountFingerprint32.fuzzy_and"
+                | "SparseCountFingerprint32.fuzzy_or"
+        );
+        let expected = if fuzzy {
+            FunctionStatus::Parity { reference: "RDKit" }
+        } else {
+            FunctionStatus::Experimental
+        };
+        assert_eq!(contract.status, expected, "{}", contract.semantic_id);
+        if fuzzy {
+            parity.push(contract.semantic_id);
+        }
+    }
+    assert_eq!(
+        parity.len(),
+        if cfg!(feature = "cap-fingerprints") {
+            4
+        } else {
+            0
+        }
+    );
+    for operation in cosmolkit::operation_specs() {
+        let binding = entry(&format!("Molecule.{}", operation.method));
+        assert_eq!(operation.status, binding.status);
+    }
 }

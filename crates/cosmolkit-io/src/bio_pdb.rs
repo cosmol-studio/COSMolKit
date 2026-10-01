@@ -3851,7 +3851,8 @@ fn gemmi_add_restraint_count_weight(
 
     if let Some(weight_separator) = find_separator(count_end) {
         let weight_start = weight_separator + 1;
-        let (weight, consumed) = gemmi_fast_atof_with_end(&value[weight_start..]);
+        let (weight, consumed) =
+            crate::bio_numeric::gemmi_fast_atof_with_end(&value[weight_start..]);
         restraint.weight = weight;
         if let Some(function_separator) = find_separator(weight_start + consumed) {
             let function_start = function_separator + 1;
@@ -6985,7 +6986,7 @@ fn gemmi_ialpha3_id(line: &[u8], offset: usize) -> u32 {
     ((first << 16) | (second << 8) | third) & !0x0020_2020
 }
 
-fn gemmi_is_space(byte: u8) -> bool {
+pub(crate) fn gemmi_is_space(byte: u8) -> bool {
     // Gemmi source: third_party/gemmi/include/gemmi/atox.hpp
     // Gemmi❗✔️: inline bool is_space(char c) {
     // Gemmi❗✔️:   static const std::uint8_t table[256] = { // 1 for 9-13 and 32
@@ -7696,49 +7697,8 @@ fn read_double(field: &[u8]) -> f64 {
     // performs an additional linear pass relative to fast_float. The short,
     // fixed field bounds show no clear material cost difference by inspection;
     // the performance marker remains unresolved after that review.
-    gemmi_fast_atof_with_end(field).0
-}
-
-fn gemmi_fast_atof_with_end(field: &[u8]) -> (f64, usize) {
-    // Gemmi source: third_party/gemmi/include/gemmi/atof.hpp.
-    // Gemmi❗✔️: inline from_chars_result fast_from_chars(const char* start, const char* end, double& d) {
-    // Gemmi❗✔️:   while (start < end && is_space(*start))
-    // Gemmi❗✔️:     ++start;
-    // Gemmi❗✔️:   if (start < end && *start == '+')
-    // Gemmi❗✔️:     ++start;
-    // Gemmi❗✔️:   return fast_float::from_chars(start, end, d);
-    // Gemmi❗✔️: }
-    // Gemmi❗✔️: inline double fast_atof(const char* p, const char** endptr=nullptr) {
-    // Gemmi❗✔️:   double d = 0;
-    // Gemmi❗✔️:   auto result = fast_from_chars(p, d);
-    // Gemmi❗✔️:   if (endptr)
-    // Gemmi❗✔️:     *endptr = result.ptr;
-    // Gemmi❗✔️:   return d;
-    // Gemmi❗✔️: }
-    // Behavior review: stop at the first source NUL, skip Gemmi C-locale
-    // whitespace and at most one leading plus, and report the parser's actual
-    // end position even when no number converts. Invalid input keeps +0.0;
-    // numeric range status is not exposed by fast_atof's returned value.
-    // Complexity review: one prefix whitespace scan plus the existing
-    // source-shaped fast-float prefix scan/conversion; no allocation and
-    // linear work in this PDB record's bounded line length.
-    let c_end = field
-        .iter()
-        .position(|byte| *byte == 0)
-        .unwrap_or(field.len());
-    let c_string = &field[..c_end];
-    let mut start = 0;
-    while start < c_string.len() && gemmi_is_space(c_string[start]) {
-        start += 1;
-    }
-    if c_string.get(start) == Some(&b'+') {
-        start += 1;
-    }
-
-    match parse_fast_float_prefix(&c_string[start..]) {
-        Some((parsed, consumed)) => (parsed, start + consumed),
-        None => (0.0, start),
-    }
+    // BIO-CID-NUM N02: delegated to the canonical bio-gated numeric owner.
+    crate::bio_numeric::gemmi_fast_atof_with_end(field).0
 }
 
 fn read_matrix(transform: &mut BioTransform, line: &[u8]) -> i32 {
@@ -8078,175 +8038,6 @@ fn read_charge(digit: u8, sign: u8) -> Result<i8, PdbChargeError> {
     Ok(0)
 }
 
-fn parse_fast_float_prefix(input: &[u8]) -> Option<(f64, usize)> {
-    let negative = input.first() == Some(&b'-');
-    let unsigned = if negative { &input[1..] } else { input };
-
-    // fast_float source: third_party/gemmi/include/gemmi/third_party/fast_float.h
-    // fast_float❗❗: if (fastfloat_strncasecmp3(first, str_const_nan<UC>())) {
-    // fast_float❗❗:   answer.ptr = (first += 3);
-    // fast_float❗❗:   value = minusSign ? -std::numeric_limits<T>::quiet_NaN()
-    // fast_float❗❗:                     : std::numeric_limits<T>::quiet_NaN();
-    // fast_float❗❗:   if (first != last && *first == UC('(')) {
-    // fast_float❗❗:     for (UC const *ptr = first + 1; ptr != last; ++ptr) {
-    // fast_float❗❗:       if (*ptr == UC(')')) {
-    // fast_float❗❗:         answer.ptr = ptr + 1; // valid nan(n-char-seq-opt)
-    // fast_float❗❗:         break;
-    // fast_float❗❗:       } else if (!((UC('a') <= *ptr && *ptr <= UC('z')) ||
-    // fast_float❗❗:                  (UC('A') <= *ptr && *ptr <= UC('Z')) ||
-    // fast_float❗❗:                  (UC('0') <= *ptr && *ptr <= UC('9')) || *ptr == UC('_')))
-    // fast_float❗❗:         break; // forbidden char, not nan(n-char-seq-opt)
-    // fast_float❗❗:     }
-    // fast_float❗❗:   }
-    // fast_float❗❗:   return answer;
-    // fast_float❗❗: }
-    // fast_float❗❗: if (fastfloat_strncasecmp3(first, str_const_inf<UC>())) {
-    // fast_float❗❗:   if ((last - first >= 8) &&
-    // fast_float❗❗:       fastfloat_strncasecmp5(first + 3, str_const_inf<UC>() + 3)) {
-    // fast_float❗❗:     answer.ptr = first + 8;
-    // fast_float❗❗:   } else {
-    // fast_float❗❗:     answer.ptr = first + 3;
-    // fast_float❗❗:   }
-    // fast_float❗❗:   value = minusSign ? -std::numeric_limits<T>::infinity()
-    // fast_float❗❗:                     : std::numeric_limits<T>::infinity();
-    // fast_float❗❗:   return answer;
-    // fast_float❗❗: }
-    if unsigned
-        .get(..3)
-        .is_some_and(|prefix| prefix.eq_ignore_ascii_case(b"nan"))
-    {
-        let sign_length = usize::from(negative);
-        let mut consumed = 3;
-        if unsigned.get(consumed) == Some(&b'(') {
-            let mut position = consumed + 1;
-            while let Some(&byte) = unsigned.get(position) {
-                if byte == b')' {
-                    consumed = position + 1;
-                    break;
-                }
-                if !byte.is_ascii_alphanumeric() && byte != b'_' {
-                    break;
-                }
-                position += 1;
-            }
-        }
-        return Some((
-            if negative { -f64::NAN } else { f64::NAN },
-            sign_length + consumed,
-        ));
-    }
-    if unsigned
-        .get(..3)
-        .is_some_and(|prefix| prefix.eq_ignore_ascii_case(b"inf"))
-    {
-        let consumed = if unsigned
-            .get(..8)
-            .is_some_and(|prefix| prefix.eq_ignore_ascii_case(b"infinity"))
-        {
-            8
-        } else {
-            3
-        };
-        return Some((
-            if negative {
-                f64::NEG_INFINITY
-            } else {
-                f64::INFINITY
-            },
-            consumed + usize::from(negative),
-        ));
-    }
-
-    // fast_float source: third_party/gemmi/include/gemmi/third_party/fast_float.h
-    // fast_float❗❗: answer.negative = (*p == UC('-'));
-    // fast_float❗❗: if ((*p == UC('-')) || (uint64_t(fmt & chars_format::allow_leading_plus) &&
-    // fast_float❗❗:                           !basic_json_fmt && *p == UC('+'))) {
-    // fast_float❗❗:   ++p;
-    // fast_float❗❗: }
-    // fast_float❗❗: uint64_t i = 0; // an unsigned int avoids signed overflows (which are bad)
-    // fast_float❗❗: while ((p != pend) && is_integer(*p)) {
-    // fast_float❗❗:   i = 10 * i +
-    // fast_float❗❗:       uint64_t(*p - UC('0')); // might overflow, we will handle the overflow later
-    // fast_float❗❗:   ++p;
-    // fast_float❗❗: }
-    // fast_float❗❗: bool const has_decimal_point = (p != pend) && (*p == decimal_point);
-    // fast_float❗❗: if (has_decimal_point) {
-    // fast_float❗❗:   ++p;
-    // fast_float❗❗:   while ((p != pend) && is_integer(*p)) {
-    // fast_float❗❗:     uint8_t digit = uint8_t(*p - UC('0'));
-    // fast_float❗❗:     ++p;
-    // fast_float❗❗:     i = i * 10 + digit;
-    // fast_float❗❗:   }
-    // fast_float❗❗: }
-    // fast_float❗❗: if ((uint64_t(fmt & chars_format::scientific) && (p != pend) &&
-    // fast_float❗❗:      ((UC('e') == *p) || (UC('E') == *p))) ||
-    // fast_float❗❗:     (uint64_t(fmt & detail::basic_fortran_fmt) && (p != pend) &&
-    // fast_float❗❗:      ((UC('+') == *p) || (UC('-') == *p) || (UC('d') == *p) ||
-    // fast_float❗❗:       (UC('D') == *p)))) {
-    // fast_float❗❗:   UC const *location_of_e = p;
-    // fast_float❗❗:   if ((p == pend) || !is_integer(*p)) {
-    // fast_float❗❗:     if (!uint64_t(fmt & chars_format::fixed)) {
-    // fast_float❗❗:       return report_parse_error<UC>(p,
-    // fast_float❗❗:                                     parse_error::missing_exponential_part);
-    // fast_float❗❗:     }
-    // fast_float❗❗:     // Otherwise, we will be ignoring the 'e'.
-    // fast_float❗❗:     p = location_of_e;
-    // fast_float❗❗:   }
-    // fast_float❗❗:   answer.lastmatch = p;
-    // fast_float❗❗:   answer.valid = true;
-    // fast_float source: third_party/gemmi/include/gemmi/third_party/fast_float.h,
-    // `from_chars_advanced(parsed_number_string_t&, T&)`.
-    // fast_float❗❗:   answer.ptr = pns.lastmatch;
-    // Behavior review: `fast_from_chars` has already removed at most one `+`.
-    // This scan accepts the source general-format decimal prefix and leaves an
-    // incomplete `e/E` suffix unconsumed; `FromStr` receives only the proven
-    // ASCII token and supplies correctly rounded binary64 conversion.
-    // Complexity review: one bounded byte scan and one standard-library parse
-    // are both linear in the fixed field width, with no owned string buffer.
-    let mut index = usize::from(negative);
-    let integer_start = index;
-    while input.get(index).is_some_and(u8::is_ascii_digit) {
-        index += 1;
-    }
-    let mut has_digits = index != integer_start;
-
-    if input.get(index) == Some(&b'.') {
-        index += 1;
-        let fraction_start = index;
-        while input.get(index).is_some_and(u8::is_ascii_digit) {
-            index += 1;
-        }
-        has_digits |= index != fraction_start;
-    }
-    if !has_digits {
-        return None;
-    }
-
-    if matches!(input.get(index), Some(b'e' | b'E')) {
-        let exponent_start = index;
-        index += 1;
-        if matches!(input.get(index), Some(b'+' | b'-')) {
-            index += 1;
-        }
-        let exponent_digits_start = index;
-        while input.get(index).is_some_and(u8::is_ascii_digit) {
-            index += 1;
-        }
-        if index == exponent_digits_start {
-            index = exponent_start;
-        }
-    }
-
-    let token = std::str::from_utf8(&input[..index])
-        .expect("the source numeric grammar accepts ASCII bytes only");
-    Some((
-        token
-            .parse::<f64>()
-            .expect("the validated source decimal prefix parses as binary64"),
-        index,
-    ))
-}
-
 fn read_base36<const N: usize>(field: &[u8; N]) -> Option<i32> {
     // Gemmi source: third_party/gemmi/src/pdb.cpp
     // Gemmi❗✔️: template<int N> int read_base36(const char* p) {
@@ -8512,6 +8303,109 @@ impl<'a> PdbLineCursor<'a> {
 
     fn source_line_buffer(&self) -> &[u8; 122] {
         &self.line_buffer
+    }
+}
+
+#[cfg(test)]
+mod bio_cid_num_n01_tests {
+    use crate::bio_numeric::parse_fast_float_prefix;
+
+    // Expectations derived from pinned fast_float.h:4469-4522
+    // (parse_infnan) and :4760-4774 (from_chars_advanced fallback), not
+    // from the implementation under test.
+    #[test]
+    fn bio_cid_num_n01_inf_spellings_and_offsets() {
+        // +inf / -inf: sign consumed inside parse_infnan, value signed.
+        assert_eq!(parse_fast_float_prefix(b"inf"), Some((f64::INFINITY, 3)));
+        assert_eq!(
+            parse_fast_float_prefix(b"-inf"),
+            Some((f64::NEG_INFINITY, 4))
+        );
+        // Case-insensitive 3-letter and full 8-letter spellings.
+        assert_eq!(parse_fast_float_prefix(b"INF"), Some((f64::INFINITY, 3)));
+        assert_eq!(parse_fast_float_prefix(b"iNf"), Some((f64::INFINITY, 3)));
+        assert_eq!(
+            parse_fast_float_prefix(b"Infinity"),
+            Some((f64::INFINITY, 8))
+        );
+        assert_eq!(
+            parse_fast_float_prefix(b"-INFINITY"),
+            Some((f64::NEG_INFINITY, 9))
+        );
+        // Partial "infinit" (7 bytes) takes the short form: ptr = +3.
+        assert_eq!(
+            parse_fast_float_prefix(b"infinit"),
+            Some((f64::INFINITY, 3))
+        );
+        // "infin" is 5 bytes: "ini" does not match -> the inf branch
+        // fails (not strncasecmp "inf"? it does match inf...) -> 3 bytes
+        // then trailing 'i','n' left unconsumed.
+        assert_eq!(parse_fast_float_prefix(b"infin"), Some((f64::INFINITY, 3)));
+    }
+
+    #[test]
+    fn bio_cid_num_n01_nan_spellings_and_payloads() {
+        // Plain nan, all case classes, with sign.
+        assert!(matches!(parse_fast_float_prefix(b"nan"), Some((v, 3)) if v.is_nan()));
+        assert!(matches!(parse_fast_float_prefix(b"NAN"), Some((v, 3)) if v.is_nan()));
+        assert!(matches!(parse_fast_float_prefix(b"-NaN"), Some((v, 4)) if v.is_nan()));
+        // Closed alnum/underscore payload consumes through ')'.
+        assert!(matches!(parse_fast_float_prefix(b"nan(ind)"), Some((v, 8)) if v.is_nan()));
+        assert!(matches!(parse_fast_float_prefix(b"nan(x_9)"), Some((v, 8)) if v.is_nan()));
+        // Unclosed payload: end stays at +3 (payload not consumed), the
+        // NaN is still assigned with success status.
+        assert!(matches!(parse_fast_float_prefix(b"nan(x"), Some((v, 3)) if v.is_nan()));
+        // Forbidden payload character stops the scan at the same +3.
+        assert!(matches!(parse_fast_float_prefix(b"nan(x!)"), Some((v, 3)) if v.is_nan()));
+        // Empty payload "nan()" closes immediately at 5.
+        assert!(matches!(parse_fast_float_prefix(b"nan()"), Some((v, 5)) if v.is_nan()));
+        // "na" alone (fewer than 3 bytes) is not special: decimal scan.
+        assert_eq!(parse_fast_float_prefix(b"na"), None);
+    }
+
+    #[test]
+    fn bio_cid_num_n01_decimal_prefix_still_default() {
+        // Default flags keep the ordinary decimal grammar ahead of the
+        // inf/nan fallback: a valid decimal prefix consumes exactly the
+        // digits; the fallback is reached only when it fails.
+        assert_eq!(parse_fast_float_prefix(b"1.5e2x"), Some((150.0, 5)));
+        assert_eq!(parse_fast_float_prefix(b"-.25"), Some((-0.25, 4)));
+        // Incomplete exponent rolls back to the 'e'.
+        assert_eq!(parse_fast_float_prefix(b"1e+"), Some((1.0, 1)));
+        // Nothing decimal and nothing special -> None (source reports
+        // invalid_argument through the wrapper).
+        assert_eq!(parse_fast_float_prefix(b"x"), None);
+    }
+}
+
+#[cfg(test)]
+mod bio_cid_num_n09_tests {
+    use super::read_double;
+
+    // Fixed-field read_double regressions through the typed numeric
+    // owner: the pinned source ignores the error status and returns d
+    // (pdb.cpp:26-31 "we don't check for errors here"), so a range error
+    // still yields the ASSIGNED extreme and a blank/invalid field the
+    // initial +0.0.
+    #[test]
+    fn bio_cid_num_n09_fixed_field_statuses() {
+        // Success.
+        assert_eq!(read_double(b"  1.5    "), 1.5);
+        assert_eq!(read_double(b"-2.25e2  "), -225.0);
+        // Blank and invalid fields keep the initialized +0.0.
+        assert_eq!(read_double(b"         "), 0.0);
+        assert_eq!(read_double(b"  junk   "), 0.0);
+        // Prefix conversion inside a fixed field stops at the field.
+        assert_eq!(read_double(b"  1.5x   "), 1.5);
+        // Range error with assigned infinity (status deliberately
+        // ignored by read_double, exactly as the source).
+        assert_eq!(read_double(b" 1.8e308 "), f64::INFINITY);
+        assert_eq!(read_double(b"-1.8e308 "), f64::NEG_INFINITY);
+        // Nonzero underflow: assigned signed zero, status ignored.
+        assert_eq!(read_double(b" 1e-400  "), 0.0);
+        // Literal specials inside a fixed field.
+        assert_eq!(read_double(b"  inf    "), f64::INFINITY);
+        assert!(read_double(b"  nan    ").is_nan());
     }
 }
 

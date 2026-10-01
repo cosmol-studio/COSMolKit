@@ -6,13 +6,12 @@ use std::path::PathBuf;
 use std::process::{Command, Output};
 
 use cosmolkit::{
-    Atom, AtomId, AtomSpec, BINDING_CONTRACT, BindingExposure, BindingItem, BindingOwner,
-    BindingParity, BindingSupport, BlockSet, Bond, BondId, BondOrder, BondSpec,
-    ChemistryProblemError, Conformer2D, CoordinateBlock, Element, Molecule, MoleculeOpKind,
-    MoleculeOpOutput, MoleculeProperties, OperationDomain, OperationError, ParityPolicy,
-    SanitizeError, SanitizeOperations, SanitizeParams, SanitizeStage, StateModel, SupportStatus,
-    TopologyBlock, TopologyEditKind, feature_spec, operation_invariant, operation_parity,
-    operation_spec, support_matrix,
+    Atom, AtomId, AtomSpec, BINDING_CONTRACT, BindingItem, BindingOwner, BlockSet, Bond, BondId,
+    BondOrder, BondSpec, ChemistryProblemError, Conformer2D, CoordinateBlock, Element,
+    FunctionStatus, Molecule, MoleculeOpKind, MoleculeOpOutput, MoleculeProperties,
+    OperationDomain, OperationError, ParityPolicy, SanitizeError, SanitizeOperations,
+    SanitizeParams, SanitizeStage, StateModel, TopologyBlock, TopologyEditKind, feature_spec,
+    operation_invariant, operation_parity, operation_spec, support_matrix,
 };
 
 fn topology_from_specs(atom_specs: Vec<AtomSpec>, bond_specs: Vec<BondSpec>) -> TopologyBlock {
@@ -179,16 +178,14 @@ fn binding_contract_exposes_exactly_the_frozen_eleven_entries() {
     ];
     let rows = BINDING_CONTRACT
         .iter()
-        .filter(|row| row.feature == "sanitize")
+        .filter(|row| row.feature == "cap-sanitize")
         .collect::<Vec<_>>();
     assert_eq!(
         rows.iter().map(|row| row.semantic_id).collect::<Vec<_>>(),
         expected
     );
     for row in &rows {
-        assert_eq!(row.exposure, BindingExposure::Public);
-        assert_eq!(row.support, BindingSupport::SupportedWithRdkitParity);
-        assert_eq!(row.parity, BindingParity::RequiredNow);
+        assert_eq!(row.status, FunctionStatus::Experimental);
     }
     for row in &rows[..7] {
         assert_eq!(row.item, BindingItem::Type);
@@ -214,9 +211,8 @@ fn binding_contract_exposes_exactly_the_frozen_eleven_entries() {
 
 #[test]
 fn generated_registry_and_all_four_matrices_share_one_exact_operation() {
-    let feature = feature_spec("sanitize").unwrap();
-    assert_eq!(feature.status, SupportStatus::SupportedWithRdkitParity);
-    assert!(feature.rdkit_parity_sensitive);
+    let feature = feature_spec("cap-sanitize").unwrap();
+    assert_eq!(feature.name, "cap-sanitize");
 
     let spec = operation_spec("sanitize_with_params").unwrap();
     assert_eq!(spec.domain, OperationDomain::Topology);
@@ -238,7 +234,7 @@ fn generated_registry_and_all_four_matrices_share_one_exact_operation() {
     assert_eq!(spec.derived_effects.invalidate.bits(), 0xdf);
     assert_eq!(format!("{:?}", spec.cip_state), "ClearComputed");
     assert!(spec.io_roundtrip);
-    assert_eq!(spec.support, SupportStatus::SupportedWithRdkitParity);
+    assert_eq!(spec.status, FunctionStatus::Experimental);
     assert_eq!(spec.parity, ParityPolicy::RequiredNow);
     assert_eq!(
         operation_invariant(spec.method).unwrap().profile,
@@ -250,7 +246,7 @@ fn generated_registry_and_all_four_matrices_share_one_exact_operation() {
     );
     let support = support_matrix()
         .iter()
-        .find(|row| row.feature.name == "sanitize")
+        .find(|row| row.feature.name == "cap-sanitize")
         .unwrap();
     assert!(std::ptr::eq(support.operation.unwrap(), spec));
 }
@@ -402,9 +398,9 @@ fn privacy_cargo_check(case: &str, strict: bool) -> Output {
          --cfg=cosmolkit_runtime_privacy_case=\"{case}\""
     );
     let features = if strict {
-        "sanitize,op-contracts-strict,cosmolkit-core/op-contracts-strict"
+        "cap-sanitize,op-contracts-strict,cosmolkit-core/op-contracts-strict"
     } else {
-        "sanitize"
+        "cap-sanitize"
     };
     Command::new(std::env::var("CARGO").unwrap_or_else(|_| "cargo".into()))
         .current_dir(workspace)
@@ -475,7 +471,7 @@ fn sanitize_has_no_mapping_multiple_output_or_inplace_alias() {
     assert!(
         BINDING_CONTRACT
             .iter()
-            .filter(|row| row.feature == "sanitize")
+            .filter(|row| row.feature == "cap-sanitize")
             .all(|row| !row.semantic_id.ends_with('_'))
     );
 }

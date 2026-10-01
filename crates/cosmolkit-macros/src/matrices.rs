@@ -105,6 +105,7 @@ fn expand_molecule_operation(operation: &MoleculeOperation) -> syn::Result<Matri
     let preconditions = semantic_preconditions(&fields.semantic_preconditions);
     let mapping = mapping_requirement(fields.requires_mapping, false);
     let feature = &fields.feature;
+    let status = fields.status.tokens();
     let parity = molecule_parity(fields.parity);
     let io_roundtrip = fields.io_roundtrip;
     let invariant_profile = &fields.invariant_profile;
@@ -131,7 +132,7 @@ fn expand_molecule_operation(operation: &MoleculeOperation) -> syn::Result<Matri
             cip_state: #cip_state,
             semantic_preconditions: #preconditions,
             requires_mapping: #mapping,
-            support: #feature.status,
+            status: #status,
             parity: #parity,
             io_roundtrip: #io_roundtrip,
         };
@@ -208,7 +209,7 @@ fn expand_bio_operation(operation: &BioOperation) -> syn::Result<MatrixRows> {
             must_handle: #must_handle,
             needs_update: #needs_update,
             requires_mapping: #mapping,
-            support: #feature.status,
+            status: crate::FunctionStatus::Experimental,
             parity: #parity,
             io_roundtrip: #io_roundtrip,
         };

@@ -66,22 +66,22 @@ impl From<cosmolkit_smiles::FragmentWriteInputError> for SmilesWriteError {
 
 impl Molecule {
     fn smiles_ring_state(&self) -> Option<&cosmolkit_core::RingInfo> {
-        #[cfg(feature = "rings")]
+        #[cfg(feature = "cap-rings")]
         {
             self.derived_cache_runtime().ring_info()
         }
-        #[cfg(not(feature = "rings"))]
+        #[cfg(not(feature = "cap-rings"))]
         {
             None
         }
     }
 
     fn smiles_valence_state(&self) -> Option<&cosmolkit_core::ValenceAssignment> {
-        #[cfg(any(feature = "valence", feature = "hydrogens"))]
+        #[cfg(any(feature = "cap-valence", feature = "cap-hydrogens"))]
         {
             self.derived_cache_runtime().valence_assignment()
         }
-        #[cfg(not(any(feature = "valence", feature = "hydrogens")))]
+        #[cfg(not(any(feature = "cap-valence", feature = "cap-hydrogens")))]
         {
             None
         }

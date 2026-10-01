@@ -8,7 +8,15 @@ fn bio_real_operation_modules_expose_only_declared_fields_in_default_and_strict(
         .parent()
         .unwrap();
     for strict in [false, true] {
-        for case in ["allowed", "undeclared", "storage"] {
+        for case in [
+            "allowed",
+            "undeclared",
+            "storage",
+            "replacement_readonly",
+            "metadata_readonly",
+            "replacement_undeclared",
+            "replacement_required",
+        ] {
             let flags = format!(
                 "{} --cfg cosmolkit_bio_privacy_probe --cfg=cosmolkit_bio_privacy_case=\"{case}\"",
                 std::env::var("RUSTFLAGS").unwrap_or_default()
@@ -27,7 +35,7 @@ fn bio_real_operation_modules_expose_only_declared_fields_in_default_and_strict(
                     "--no-default-features",
                     "--features",
                     if strict {
-                        "bio,op-contracts-strict"
+                        "cap-bio,op-contracts-strict"
                     } else {
                         "bio"
                     },
@@ -41,13 +49,23 @@ fn bio_real_operation_modules_expose_only_declared_fields_in_default_and_strict(
                 assert!(!output.status.success(), "{case} unexpectedly compiled");
                 if case == "undeclared" {
                     assert!(errors.contains("no field `atoms`"), "{errors}");
-                } else {
+                } else if case == "storage" {
                     assert!(
                         errors.contains("private")
                             && errors.contains("BioStructure")
                             && errors.contains("Protein"),
                         "{errors}"
                     );
+                } else {
+                    let expected = match case {
+                        "replacement_readonly" => "E0594",
+                        "metadata_readonly" => "E0308",
+                        "replacement_undeclared" => "no field `assemblies`",
+                        "replacement_required" => "missing field `source_state`",
+                        _ => unreachable!(),
+                    };
+                    assert!(errors.contains(expected), "{case}: {errors}");
+                    assert!(errors.contains("bio.rs"), "{errors}");
                 }
             }
         }
