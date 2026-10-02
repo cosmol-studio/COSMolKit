@@ -606,6 +606,11 @@ impl TaskId {
             Self::Coordinates2d => "coordinates_2d",
             Self::Valence => "valence",
             Self::DistanceMatrix => "distance_matrix",
+            Self::NumHeavyAtoms => "num_heavy_atoms",
+            Self::TotalAtomCount => "total_atom_count",
+            Self::LipinskiHBA => "lipinski_hba",
+            Self::LipinskiHBD => "lipinski_hbd",
+            Self::FractionCSP3 => "fraction_csp3",
         }
     }
     pub const fn category(self) -> Category {
@@ -619,6 +624,9 @@ impl TaskId {
             Self::MolecularWeight | Self::ExactMolecularWeight | Self::MolecularFormula => {
                 Category::Descriptors
             }
+            Self::NumHeavyAtoms => Category::Descriptors,
+            Self::TotalAtomCount => Category::Descriptors,
+            Self::LipinskiHBA | Self::LipinskiHBD | Self::FractionCSP3 => Category::Descriptors,
             Self::CipLabels | Self::PotentialStereo => Category::Stereo,
             Self::Coordinates2d => Category::Depiction,
             Self::DistanceMatrix => Category::Chemistry,
@@ -674,6 +682,11 @@ pub enum TaskId {
     PotentialStereo,
     Coordinates2d,
     Valence,
+    NumHeavyAtoms,
+    TotalAtomCount,
+    LipinskiHBA,
+    LipinskiHBD,
+    FractionCSP3,
 }
 
 /// `None` and an explicitly empty selection must never be conflated.
@@ -728,6 +741,21 @@ pub enum Profile {
     Valence {
         strict: bool,
     },
+    NumHeavyAtoms {
+        remove_hydrogens: bool,
+    },
+    TotalAtomCount {
+        remove_hydrogens: bool,
+    },
+    LipinskiHBA {
+        remove_hydrogens: bool,
+    },
+    LipinskiHBD {
+        remove_hydrogens: bool,
+    },
+    FractionCSP3 {
+        remove_hydrogens: bool,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -736,6 +764,7 @@ pub enum InputState {
     UnsanitizedHydrogensRetained,
     SanitizedHydrogensRemoved,
     SanitizedThenAddAllHydrogens,
+    SanitizedHydrogensPerProfile,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -748,6 +777,7 @@ pub enum Comparison {
     StereoInfoAndCleanedTopology,
     CoordinatesAndTopology,
     ValenceRowsAndOutcome,
+    Unsigned,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -812,6 +842,36 @@ pub const TASKS: &[Task] = &[
         id: MolecularFormula,
         input: SanitizedHydrogensRemoved,
         comparison: ExactText,
+        prerequisite: MolecularPipeline,
+    },
+    Task {
+        id: NumHeavyAtoms,
+        input: SanitizedHydrogensPerProfile,
+        comparison: Unsigned,
+        prerequisite: MolecularPipeline,
+    },
+    Task {
+        id: TotalAtomCount,
+        input: SanitizedHydrogensPerProfile,
+        comparison: Unsigned,
+        prerequisite: MolecularPipeline,
+    },
+    Task {
+        id: LipinskiHBA,
+        input: SanitizedHydrogensPerProfile,
+        comparison: Unsigned,
+        prerequisite: MolecularPipeline,
+    },
+    Task {
+        id: LipinskiHBD,
+        input: SanitizedHydrogensPerProfile,
+        comparison: Unsigned,
+        prerequisite: MolecularPipeline,
+    },
+    Task {
+        id: FractionCSP3,
+        input: SanitizedHydrogensPerProfile,
+        comparison: Float64Bits,
         prerequisite: MolecularPipeline,
     },
     Task {
@@ -935,6 +995,21 @@ impl TaskId {
                 .collect(),
             Coordinates2d => vec![Profile::Coordinates2dDefault],
             Valence => booleans.map(|strict| Profile::Valence { strict }).into(),
+            NumHeavyAtoms => booleans
+                .map(|remove_hydrogens| Profile::NumHeavyAtoms { remove_hydrogens })
+                .into(),
+            TotalAtomCount => booleans
+                .map(|remove_hydrogens| Profile::TotalAtomCount { remove_hydrogens })
+                .into(),
+            LipinskiHBA => booleans
+                .map(|remove_hydrogens| Profile::LipinskiHBA { remove_hydrogens })
+                .into(),
+            LipinskiHBD => booleans
+                .map(|remove_hydrogens| Profile::LipinskiHBD { remove_hydrogens })
+                .into(),
+            FractionCSP3 => booleans
+                .map(|remove_hydrogens| Profile::FractionCSP3 { remove_hydrogens })
+                .into(),
         }
     }
 }
@@ -962,7 +1037,7 @@ mod tests {
                 .iter()
                 .map(|t| t.id.profiles().len())
                 .collect::<Vec<_>>(),
-            [4, 4, 1, 2, 2, 2, 4, 2, 2, 4, 8, 1, 2]
+            [4, 4, 1, 2, 2, 2, 4, 2, 2, 2, 2, 2, 2, 2, 4, 8, 1, 2]
         );
         assert_eq!(
             TASKS
@@ -977,7 +1052,7 @@ mod tests {
     #[test]
     fn molecular_plan_does_not_silently_register_unimplemented_runners() {
         let executable = super::super::select(None).unwrap();
-        assert_eq!(executable.len(), 12);
+        assert_eq!(executable.len(), 17);
         assert_eq!(executable[0].operation, super::super::Operation::FuzzyAnd);
         assert_eq!(executable[1].operation, super::super::Operation::FuzzyOr);
     }

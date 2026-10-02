@@ -791,19 +791,21 @@ impl<'a, Access> OpParts<'a, Access> {
             ));
         }
 
-        let all = effects
+        // Effects describe obligations; access describes storage authority.
+        // A preservation proof does not modify the cache and therefore does
+        // not require its checkout/install capability.
+        let mutations = effects
             .recompute
-            .union(effects.preserve)
             .union(effects.invalidate)
             .union(effects.operation_defined);
-        if !all.is_empty()
+        if !mutations.is_empty()
             && (!spec.access.can_write(BlockSet::DERIVED_CACHE)
                 || !spec.may_mutate.contains(BlockSet::DERIVED_CACHE))
         {
             return Err(Self::effect_error(
                 spec,
                 "declaration",
-                all,
+                mutations,
                 "derived effects require derived_cache write and may_mutate authority",
             ));
         }
@@ -896,10 +898,12 @@ impl<'a, Access> OpParts<'a, Access> {
         Ok(())
     }
 
-    fn current_cache_candidate(&self) -> Result<DerivedCacheBlock, OperationError> {
+    // Internal proof/invariant inspection borrows storage. This is not an
+    // operation-body read capability: that is still generated from access.
+    fn current_cache_candidate(&self) -> Result<&DerivedCacheBlock, OperationError> {
         match &self.derived_cache {
-            WorkingBlock::Shared => Ok(self.source.derived_cache_runtime().clone()),
-            WorkingBlock::Installed(cache) => Ok(cache.clone()),
+            WorkingBlock::Shared => Ok(self.source.derived_cache_runtime()),
+            WorkingBlock::Installed(cache) => Ok(cache),
             WorkingBlock::CheckedOut => Err(OperationError::BlockCheckedOut {
                 operation: self.spec.method,
                 block: "derived_cache",
@@ -918,7 +922,7 @@ impl<'a, Access> OpParts<'a, Access> {
             .union(self.spec.derived_effects.operation_defined);
         self.validate_effect_action("update", states, allowed)?;
         self.ensure_write_access(BlockSet::DERIVED_CACHE, "derived_cache")?;
-        let mut candidate = self.current_cache_candidate()?;
+        let mut candidate = self.current_cache_candidate()?.clone();
         candidate.mark_valid(states);
         self.derived_cache = WorkingBlock::Installed(candidate);
         self.effect_trace.updated = self.effect_trace.updated.union(states);
@@ -937,7 +941,7 @@ impl<'a, Access> OpParts<'a, Access> {
             .union(self.spec.derived_effects.operation_defined);
         self.validate_effect_action("clear", states, allowed)?;
         self.ensure_write_access(BlockSet::DERIVED_CACHE, "derived_cache")?;
-        let mut candidate = self.current_cache_candidate()?;
+        let mut candidate = self.current_cache_candidate()?.clone();
         candidate.clear(states);
         self.derived_cache = WorkingBlock::Installed(candidate);
         self.effect_trace.cleared = self.effect_trace.cleared.union(states);
@@ -1349,7 +1353,7 @@ impl<'a, Access> OpParts<'a, Access> {
                     .union(DerivedState::COORDINATES)
                     .union(DerivedState::DRAWING)
                     .union(DerivedState::FINGERPRINT);
-                let mut candidate_cache = self.current_cache_candidate()?;
+                let mut candidate_cache = self.current_cache_candidate()?.clone();
                 let mut source_cache = self.source.derived_cache_runtime().clone();
                 let non_preserved = all_states.difference(states);
                 candidate_cache.clear(non_preserved);

@@ -4,6 +4,14 @@ use cosmolkit_macros::molecule_ops;
 
 use super::FeatureSpec;
 
+#[allow(unexpected_cfgs)]
+#[cfg(cosmolkit_runtime_privacy_probe)]
+pub(crate) const PRESERVE_PROBE_FEATURE: FeatureSpec = FeatureSpec {
+    name: "preserve-privacy-probe",
+    category: "internal-test",
+    docs: "Compile-only proof that preservation grants no cache access.",
+};
+
 #[cfg(test)]
 pub(crate) const COW_TEST_FEATURE: FeatureSpec = FeatureSpec {
     name: "cow-runtime-test",
@@ -82,6 +90,32 @@ pub(crate) const SANITIZE_FEATURE: FeatureSpec = FeatureSpec {
 };
 
 molecule_ops! {
+    #[cfg(cosmolkit_runtime_privacy_probe)]
+    op preserve_cache_read_probe {
+        method: preserve_cache_read_probe,
+        impl_fn: crate::ops::runtime_privacy_probe::preserve_cache_read_probe_impl,
+        kind: weak,
+        access: { read: [derived_cache], write: [coordinates] },
+        may_mutate: [coordinates],
+        derived_effects: { recompute: [], preserve: [rings], invalidate: [], operation_defined: [] },
+        cip_state: preserve,
+        feature: crate::ops::runtime::registry::PRESERVE_PROBE_FEATURE,
+        parity: not_applicable,
+        invariant_profile: "preserve-cache-read-compile-probe",
+    }
+    #[cfg(cosmolkit_runtime_privacy_probe)]
+    op preserve_cache_none_probe {
+        method: preserve_cache_none_probe,
+        impl_fn: crate::ops::runtime_privacy_probe::preserve_cache_none_probe_impl,
+        kind: weak,
+        access: { read: [], write: [coordinates] },
+        may_mutate: [coordinates],
+        derived_effects: { recompute: [], preserve: [rings], invalidate: [], operation_defined: [] },
+        cip_state: preserve,
+        feature: crate::ops::runtime::registry::PRESERVE_PROBE_FEATURE,
+        parity: not_applicable,
+        invariant_profile: "preserve-cache-none-compile-probe",
+    }
     #[cfg(feature = "cap-sanitize")]
     op sanitize(params: &cosmolkit_core::SanitizeParams) {
         method: sanitize_with_params,
@@ -96,12 +130,11 @@ molecule_ops! {
         may_mutate: [topology, properties, derived_cache],
         auto_remap: [],
         derived_effects: {
-            recompute: [],
+            recompute: [valence],
             preserve: [coordinates],
             invalidate: [
                 rings,
                 ring_families,
-                valence,
                 aromaticity,
                 stereo,
                 drawing,

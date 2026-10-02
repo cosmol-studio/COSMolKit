@@ -1,4 +1,7 @@
-use cosmolkit_parity_tests::{self as pilot, registry};
+use cosmolkit_parity_tests::{
+    self as parity, CorpusSource,
+    registry::{self, CorpusType},
+};
 use std::path::PathBuf;
 
 fn main() {
@@ -13,17 +16,20 @@ fn entry() -> Result<(), String> {
     let command = args.next().unwrap_or_else(|| "help".into());
     if command == "help" || command == "--help" {
         println!(
-            "run | prepare | preflight | list\n  run automatically prepares missing/invalid references before global preflight\n  --task NAME (default: all executable tasks; see list)\n  --corpus FILE (.smi molecular records or .json fingerprint pairs; other family keeps its default)\n  --data DIR (default: target/parity-tests)\n  --python PATH (run/prepare; default: .venv/bin/python)\nNo Python/JS binding or performance verification."
+            "prepare | preflight | list\n  --task FUNCTION_CORPUS (default all)\n  --smiles FILE (default smiles_small.smi)\n  --fingerprint-pairs FILE (default deterministic 5000 pairs)\n  --data DIR (default target/parity-tests)\n  --python PATH (prepare only; default .venv/bin/python)\n  --threads N (prepare only; default 4)\nAfter prepare: cargo test -p cosmolkit-parity-tests --release --test reference_parity\nTests never generate reference values."
         );
         return Ok(());
     }
-    if !["prepare", "preflight", "run", "list"].contains(&command.as_str()) {
-        return Err(format!("unknown command: {command}"));
+    if !["prepare", "preflight", "list"].contains(&command.as_str()) {
+        return Err(format!(
+            "unknown command: {command}; comparison uses cargo test"
+        ));
     }
     let mut task = None;
-    let mut corpus = None;
-    let mut data = pilot::root().join("target/parity-tests");
-    let mut python = pilot::root().join(".venv/bin/python");
+    let mut sources = Vec::new();
+    let mut data = parity::root().join("target/parity-tests");
+    let mut python = parity::root().join(".venv/bin/python");
+    let mut threads = 4;
     let mut seen = std::collections::BTreeSet::new();
     while let Some(flag) = args.next() {
         if !seen.insert(flag.clone()) {
@@ -34,55 +40,58 @@ fn entry() -> Result<(), String> {
             .ok_or_else(|| format!("missing value: {flag}"))?;
         match flag.as_str() {
             "--task" => task = Some(value),
-            "--corpus" => corpus = Some(PathBuf::from(value)),
-            "--data" => data = PathBuf::from(value),
-            "--python" if command == "prepare" || command == "run" => python = PathBuf::from(value),
+            "--smiles" => sources.push(CorpusSource {
+                corpus_type: CorpusType::Smiles,
+                path: value.into(),
+            }),
+            "--fingerprint-pairs" => sources.push(CorpusSource {
+                corpus_type: CorpusType::FingerprintPairs,
+                path: value.into(),
+            }),
+            "--data" => data = value.into(),
+            "--python" if command == "prepare" => python = PathBuf::from(value),
+            "--threads" if command == "prepare" => {
+                threads = value
+                    .parse()
+                    .map_err(|_| "threads must be a positive integer")?;
+                if threads == 0 {
+                    return Err("threads must be positive".into());
+                }
+            }
             _ => return Err(format!("unsupported option: {flag}")),
         }
     }
+    // With no new selection, validate exactly the persisted prepared suite.
+    if command == "preflight" && task.is_none() && sources.is_empty() {
+        let (_, ready) = parity::load_suite(&data)?;
+        println!("Ready: {} cases; 0 Rust operation calls", ready.len());
+        return Ok(());
+    }
     let tasks = registry::select(task.as_deref())?;
-    let cases = pilot::corpus(corpus.as_deref(), &tasks)?;
+    let cases = parity::corpus(&sources, &tasks)?;
     registry::validate(&cases, &tasks)?;
-    for t in &tasks {
-        println!("{}: {} cases", t.operation.name(), t.count(&cases));
+    for task in &tasks {
+        println!(
+            "{}: {} cases; {}",
+            task.key(),
+            task.count(&cases),
+            task.generator
+        );
     }
     match command.as_str() {
         "list" => {}
-        "prepare" => println!(
-            "Preparation: {:?}",
-            pilot::prepare(&tasks, &cases, &data, &python)?
-        ),
+        "prepare" => {
+            let preparation = parity::prepare(&tasks, &cases, &data, &python, threads)?;
+            parity::save_suite(&data, &tasks, &sources)?;
+            println!(
+                "Preparation complete: {} reused tasks, {} generated tasks; {} ready cases",
+                preparation.reused_tasks, preparation.generated_tasks, preparation.rows
+            );
+        }
         "preflight" => println!(
             "Ready: {} cases; 0 Rust operation calls",
-            pilot::preflight(&tasks, &cases, &data)?.len()
+            parity::preflight(&tasks, &cases, &data)?.len()
         ),
-        "run" => {
-            let report = pilot::run(&tasks, &cases, &data, &python, pilot::execute::run)?;
-            let failed = report.iter().filter(|row| !row.matches).count();
-            let output = data.join("rust-report.json");
-            pilot::write_report(&output, &report)?;
-            for task in &tasks {
-                let selected: Vec<_> = report
-                    .iter()
-                    .filter(|row| row.input.task_name() == task.operation.name())
-                    .collect();
-                println!(
-                    "{}: {}/{} matched",
-                    task.operation.name(),
-                    selected.iter().filter(|row| row.matches).count(),
-                    selected.len()
-                );
-            }
-            println!(
-                "{} compared, {} failed; {}",
-                report.len(),
-                failed,
-                output.display()
-            );
-            if failed != 0 {
-                return Err("parity mismatch; see typed expected/actual results".into());
-            }
-        }
         _ => unreachable!(),
     }
     Ok(())

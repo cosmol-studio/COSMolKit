@@ -155,6 +155,10 @@ impl Default for SanitizeParams {
 #[derive(Debug, Clone, PartialEq)]
 pub struct SanitizeAssignment {
     pub topology: TopologyBlock,
+    /// The existing final strict property-cache result for the returned topology.
+    /// Absent when PROPERTIES is disabled; earlier intermediate assignments do
+    /// not establish a valid final-topology cache.
+    pub final_valence: Option<ValenceAssignment>,
 }
 
 /// A sanitization failure with the exact active source stage and typed cause.
@@ -531,7 +535,7 @@ pub fn sanitize_topology_with_query_state(
         })?;
     }
 
-    let valence = assign_property_cache(
+    let mut valence = assign_property_cache(
         &working,
         &PropertyCacheParams {
             strict: operations.contains(SanitizeOperations::PROPERTIES),
@@ -556,7 +560,7 @@ pub fn sanitize_topology_with_query_state(
     }
 
     if operations.contains(SanitizeOperations::KEKULIZE) {
-        working = kekulize_with_query_state(
+        let assignment = kekulize_with_query_state(
             &working,
             &KekulizeParams {
                 mark_atoms_bonds: true,
@@ -568,8 +572,20 @@ pub fn sanitize_topology_with_query_state(
         .map_err(|source| SanitizeError::Kekulize {
             stage: SanitizeStage::Kekulize,
             source,
-        })?
-        .topology;
+        })?;
+        // RDKit✔️✔️:           atom->updatePropertyCache(false);
+        // Behavior: Kekulize refreshes only its neutral aromatic N/P-H rows.
+        // Retain that state for later consumers, particularly adjustHs; do
+        // not replace ordinary rows with an unsolicited full cache refresh.
+        // Complexity: indexed copies over just those source-refreshed rows;
+        // use the assignment already computed by the Kekulize owner.
+        if let Some(updated) = assignment.final_valence {
+            for atom in assignment.refreshed_valence_atoms {
+                valence.explicit_valence[atom.index()] = updated.explicit_valence[atom.index()];
+                valence.implicit_hydrogens[atom.index()] = updated.implicit_hydrogens[atom.index()];
+            }
+        }
+        working = assignment.topology;
     }
 
     if operations.contains(SanitizeOperations::FIND_RADICALS) {
@@ -693,22 +709,35 @@ pub fn sanitize_topology_with_query_state(
     }
 
     if operations.contains(SanitizeOperations::ADJUST_HS) {
-        working = adjust_hs(&working, &valence)
-            .map_err(|source| SanitizeError::AdjustHs {
+        let assignment =
+            adjust_hs(&working, &valence).map_err(|source| SanitizeError::AdjustHs {
                 stage: SanitizeStage::AdjustHs,
                 source,
-            })?
-            .topology;
+            })?;
+        working = assignment.topology;
+        valence = assignment.valence;
     }
 
+    // RDKit✔️✔️:   operationThatFailed = SANITIZE_PROPERTIES;
+    // RDKit✔️✔️:   if (sanitizeOps & operationThatFailed) {
+    // RDKit✔️✔️:     mol.updatePropertyCache(true);
+    // RDKit✔️✔️:   }
+    // Behavior review: transport the final source-stage assignment already
+    // computed here, never the earlier intermediate property-cache state.
+    // PROPERTIES disabled leaves no final assignment to certify or install.
+    // Complexity review: move the existing assignment into the return value;
+    // no new property-cache evaluation, traversal, or vector clone is added.
     if operations.contains(SanitizeOperations::PROPERTIES) {
-        assign_property_cache(&working, &PropertyCacheParams { strict: true }).map_err(
-            |source| SanitizeError::Properties {
+        valence = assign_property_cache(&working, &PropertyCacheParams { strict: true })
+            .map_err(|source| SanitizeError::Properties {
                 stage: SanitizeStage::Properties,
                 source,
-            },
-        )?;
+            })?
+            .into_valence();
     }
+    let final_valence = operations
+        .contains(SanitizeOperations::PROPERTIES)
+        .then_some(valence);
 
     working
         .validate()
@@ -716,7 +745,10 @@ pub fn sanitize_topology_with_query_state(
             stage: SanitizeStage::None,
             source,
         })?;
-    Ok(SanitizeAssignment { topology: working })
+    Ok(SanitizeAssignment {
+        topology: working,
+        final_valence,
+    })
 }
 
 fn is_source_kekulize_problem(error: &KekulizeError) -> bool {

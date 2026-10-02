@@ -552,6 +552,68 @@ fn molecule_permission_relationships_are_enforced() {
 }
 
 #[test]
+fn preserve_only_access_and_effect_category_product() {
+    let mut rows = 0;
+    for category in ["preserve", "recompute", "invalidate", "operation_defined"] {
+        for mode in ["none", "read", "write"] {
+            let (read, write) = match mode {
+                "none" => ("[]", "[coordinates]"),
+                "read" => ("[derived_cache]", "[coordinates]"),
+                "write" => ("[]", "[coordinates, derived_cache]"),
+                _ => unreachable!(),
+            };
+            let mask = |name| if category == name { "[valence]" } else { "[]" };
+            let source = format!(
+                r#"
+                op without_hydrogens {{
+                    method: without_hydrogens,
+                    impl_fn: crate::probe_impl,
+                    kind: weak,
+                    access: {{ read: {read}, write: {write} }},
+                    may_mutate: {write},
+                    derived_effects: {{
+                        recompute: {}, preserve: {}, invalidate: {}, operation_defined: {},
+                    }},
+                    cip_state: preserve,
+                    feature: crate::PROBE_FEATURE,
+                    parity: not_applicable,
+                    invariant_profile: "access-effect-product",
+                }}
+                "#,
+                mask("recompute"),
+                mask("preserve"),
+                mask("invalidate"),
+                mask("operation_defined"),
+            );
+            let result = syn::parse_str::<MoleculeRegistry>(&source);
+            let permitted = category == "preserve" || mode == "write";
+            assert_eq!(result.is_ok(), permitted, "{category}/{mode}");
+            if let Ok(registry) = result {
+                let access = &registry.operations[0].fields.access;
+                assert_eq!(
+                    access.read.contains(&MoleculeBlock::DerivedCache),
+                    mode == "read"
+                );
+                assert_eq!(
+                    access.write.contains(&MoleculeBlock::DerivedCache),
+                    mode == "write"
+                );
+            } else {
+                assert!(
+                    result
+                        .err()
+                        .unwrap()
+                        .to_string()
+                        .contains("derived_cache write access")
+                );
+            }
+            rows += 1;
+        }
+    }
+    assert_eq!(rows, 12);
+}
+
+#[test]
 fn molecule_edit_mapping_relationships_are_enforced() {
     let weak_index_change = replace(
         &molecule_source(),

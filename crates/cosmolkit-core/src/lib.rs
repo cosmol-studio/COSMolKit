@@ -119,7 +119,7 @@ pub use double_stereo::{
     should_detect_double_bond_stereo, translate_ez_to_cis_trans, with_double_bond_stereo_reference,
 };
 
-pub use hcount::total_hydrogen_count;
+pub use hcount::{total_hydrogen_count, total_hydrogen_count_from_validated};
 pub(crate) use hybridization::{HybridizationAssignment, HybridizationError, assign_hybridization};
 pub use nontetrahedral_stereo::{
     non_tetrahedral_across_ligand, non_tetrahedral_ideal_angle, trigonal_bipyramidal_axial_ligand,

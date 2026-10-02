@@ -88,11 +88,15 @@ impl RingInfo {
         self.initialized
     }
 
-    pub(crate) fn atom_row_count(&self) -> usize {
+    /// Number of atom membership rows. This is structural size information,
+    /// not evidence of runtime cache validity or chemical correspondence.
+    pub fn atom_row_count(&self) -> usize {
         self.atom_members.len()
     }
 
-    pub(crate) fn bond_row_count(&self) -> usize {
+    /// Number of bond membership rows. This is structural size information,
+    /// not evidence of runtime cache validity or chemical correspondence.
+    pub fn bond_row_count(&self) -> usize {
         self.bond_members.len()
     }
 

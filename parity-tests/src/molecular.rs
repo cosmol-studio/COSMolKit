@@ -59,6 +59,7 @@ pub enum Outcome {
         values_bits: Vec<u64>,
     },
     Float64Bits(u64),
+    Unsigned(u32),
     Text(String),
     Topology(Topology),
     Coordinates2d {
@@ -143,6 +144,15 @@ pub fn validate_output(profile: &Profile, output: &Outcome) -> Result<(), String
             f64::from_bits(*bits).is_finite()
         }
         (MolecularFormula { .. }, Outcome::Text(_)) => true,
+        (NumHeavyAtoms { .. }, Outcome::Unsigned(_)) => true,
+        (TotalAtomCount { .. }, Outcome::Unsigned(_)) => true,
+        (LipinskiHBA { .. } | LipinskiHBD { .. }, Outcome::Unsigned(_)) => true,
+        // CSP3 uses the existing exact-bits observation with a finite
+        // [0,1] validation band.
+        (FractionCSP3 { .. }, Outcome::Float64Bits(bits)) => {
+            let value = f64::from_bits(*bits);
+            (0.0..=1.0).contains(&value)
+        }
         (Coordinates2dDefault, Outcome::Coordinates2d { topology, xy_bits }) => {
             valid_topology(topology)
                 && topology.atoms.len() == xy_bits.len()
@@ -191,6 +201,11 @@ pub fn run(input: &Input) -> Result<Record, String> {
                 remove_hydrogens,
             } => (*sanitize, *remove_hydrogens),
             Profile::SanitizeAll => (false, false),
+            Profile::NumHeavyAtoms { remove_hydrogens } => (true, *remove_hydrogens),
+            Profile::TotalAtomCount { remove_hydrogens } => (true, *remove_hydrogens),
+            Profile::LipinskiHBA { remove_hydrogens }
+            | Profile::LipinskiHBD { remove_hydrogens }
+            | Profile::FractionCSP3 { remove_hydrogens } => (true, *remove_hydrogens),
             _ => (true, true),
         };
         let mol = Molecule::from_smiles_with_params(
@@ -244,6 +259,36 @@ pub fn run(input: &Input) -> Result<Record, String> {
                 return mol
                     .molecular_formula_with_options(*separate_isotopes, *abbreviate_h_isotopes)
                     .map(Outcome::Text)
+                    .map_err(|e| e.to_string());
+            }
+            NumHeavyAtoms { .. } => {
+                return mol
+                    .num_heavy_atoms()
+                    .map(Outcome::Unsigned)
+                    .map_err(|e| e.to_string());
+            }
+            TotalAtomCount { .. } => {
+                return mol
+                    .total_atom_count()
+                    .map(Outcome::Unsigned)
+                    .map_err(|e| e.to_string());
+            }
+            LipinskiHBA { .. } => {
+                return mol
+                    .lipinski_hba()
+                    .map(Outcome::Unsigned)
+                    .map_err(|e| e.to_string());
+            }
+            LipinskiHBD { .. } => {
+                return mol
+                    .lipinski_hbd()
+                    .map(Outcome::Unsigned)
+                    .map_err(|e| e.to_string());
+            }
+            FractionCSP3 { .. } => {
+                return mol
+                    .fraction_csp3()
+                    .map(|value| Outcome::Float64Bits(value.to_bits()))
                     .map_err(|e| e.to_string());
             }
             SmilesRead { .. } => mol,

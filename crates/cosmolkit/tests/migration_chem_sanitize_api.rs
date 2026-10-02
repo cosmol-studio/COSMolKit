@@ -229,9 +229,11 @@ fn generated_registry_and_all_four_matrices_share_one_exact_operation() {
     assert_eq!(spec.may_mutate, spec.access.write());
     assert_eq!(spec.auto_remap, BlockSet::NONE);
     assert_eq!(format!("{:?}", spec.requires_mapping), "None");
-    assert_eq!(spec.derived_effects.recompute.bits(), 0);
+    assert_eq!(spec.derived_effects.recompute.bits(), 1 << 2);
     assert_eq!(spec.derived_effects.preserve.bits(), 1 << 5);
-    assert_eq!(spec.derived_effects.invalidate.bits(), 0xdf);
+    // The same downstream states remain invalidated; VALENCE alone is now
+    // recomputed or cleared from the detached owner's final stage result.
+    assert_eq!(spec.derived_effects.invalidate.bits(), 0xdb);
     assert_eq!(format!("{:?}", spec.cip_state), "ClearComputed");
     assert!(spec.io_roundtrip);
     assert_eq!(spec.status, FunctionStatus::Experimental);
@@ -300,7 +302,9 @@ fn value_sanitize_preserves_identity_coordinates_and_ordinary_properties() {
     assert_eq!(output.bonds()[0].prop("_CIPCode"), None);
     assert!(output.atoms().iter().all(Atom::is_aromatic));
     assert!(output.bonds().iter().all(Bond::is_aromatic));
-    assert!(format!("{output:?}").contains("derived_cache_is_empty: true"));
+    // The final PROPERTIES stage now transports its existing assignment into
+    // the runtime cache instead of discarding it after successful sanitization.
+    assert!(format!("{output:?}").contains("derived_cache_is_empty: false"));
     assert!(!std::ptr::eq(source.topology(), output.topology()));
     assert!(!std::ptr::eq(source.properties(), output.properties()));
     assert_eq!(source.property("_CIPComputed"), Some("true"));

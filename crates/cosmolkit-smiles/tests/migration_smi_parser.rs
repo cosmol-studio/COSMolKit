@@ -18,6 +18,94 @@ fn defaults_match_the_pinned_v2_constructor() {
 }
 
 #[test]
+fn valence_transport_stereo_completion_marker_follows_source_flag_product() {
+    use cosmolkit_smiles::finalize_smiles_stereo;
+    for input in ["CCO", "[C@H](C)C", ""] {
+        for sanitize in [false, true] {
+            for remove_hydrogens in [false, true] {
+                for initial in [None, Some("0"), Some("1")] {
+                    let params = SmilesParseParams {
+                        sanitize,
+                        remove_hydrogens,
+                        ..Default::default()
+                    };
+                    let mut record = parse_smiles(input, &params).unwrap();
+                    record.properties.clear_prop("_StereochemDone");
+                    if let Some(value) = initial {
+                        record
+                            .properties
+                            .set_prop("_StereochemDone", value)
+                            .unwrap();
+                    }
+                    let output = finalize_smiles_stereo(record, &params, &mut None).unwrap();
+                    if sanitize || remove_hydrogens {
+                        assert_eq!(output.properties.prop("_StereochemDone"), Some("1"));
+                        assert!(output.properties.is_prop_computed("_StereochemDone"));
+                    } else {
+                        assert_eq!(output.properties.prop("_StereochemDone"), initial);
+                        assert!(!output.properties.is_prop_computed("_StereochemDone"));
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn valence_transport_stereo_reuses_buffers_and_rejects_malformed_rows() {
+    use cosmolkit_core::{
+        ValenceAssignment, ValenceModel, assign_valence_with_options_for_topology,
+    };
+    use cosmolkit_smiles::{SmilesStereoError, finalize_smiles_stereo};
+    for input in ["CCO", "[C@H](C)C", "S(C)(C)C", ""] {
+        let params = SmilesParseParams::default();
+        let record = parse_smiles(input, &params).unwrap();
+        let assignment = assign_valence_with_options_for_topology(
+            &record.topology,
+            ValenceModel::RdkitLike,
+            false,
+        )
+        .unwrap();
+        for field in ["explicit_valence", "implicit_hydrogens"] {
+            for length in [0, record.topology.atoms.len() + 1] {
+                if length == record.topology.atoms.len() {
+                    continue;
+                }
+                let mut malformed = assignment.clone();
+                if field == "explicit_valence" {
+                    malformed.explicit_valence.resize(length, 0);
+                } else {
+                    malformed.implicit_hydrogens.resize(length, 0);
+                }
+                assert!(
+                    matches!(finalize_smiles_stereo(record.clone(),&params,&mut Some(malformed)),
+                    Err(SmilesStereoError::ValenceRows{field:observed,actual,expected})
+                    if observed==field && actual==length && expected==record.topology.atoms.len())
+                );
+            }
+        }
+        let (explicit_ptr, implicit_ptr) = (
+            assignment.explicit_valence.as_ptr(),
+            assignment.implicit_hydrogens.as_ptr(),
+        );
+        let mut prepared: Option<ValenceAssignment> = Some(assignment);
+        let output = finalize_smiles_stereo(record, &params, &mut prepared).unwrap();
+        let final_assignment = prepared.unwrap();
+        assert_eq!(final_assignment.explicit_valence.as_ptr(), explicit_ptr);
+        assert_eq!(final_assignment.implicit_hydrogens.as_ptr(), implicit_ptr);
+        assert_eq!(
+            final_assignment,
+            assign_valence_with_options_for_topology(
+                &output.topology,
+                ValenceModel::RdkitLike,
+                false
+            )
+            .unwrap()
+        );
+    }
+}
+
+#[test]
 fn zero_isotope_is_canonical_in_detached_parser_rows() {
     for (input, expected) in [("[0C]", None), ("[0H]", None), ("[13C]", Some(13))] {
         let record = parse_smiles(input, &Default::default()).unwrap();
@@ -49,7 +137,7 @@ fn stereo_finalization_prefers_two_d_coordinates_and_keeps_stored_state() {
         true,
     ));
     let source = record.clone();
-    let output = finalize_smiles_stereo(record, &params).unwrap();
+    let output = finalize_smiles_stereo(record, &params, &mut None).unwrap();
     assert_eq!(output.coordinates, source.coordinates);
     assert_eq!(output.properties.name(), Some("sample"));
     assert_eq!(source.properties.prop("_needsDetectBondStereo"), Some("1"));
@@ -77,7 +165,7 @@ fn stereo_finalization_propagates_typed_coordinate_failure() {
         .coordinates
         .conformers_2d
         .push(Conformer2D::new(0, vec![[0.0, 0.0]]));
-    let error = finalize_smiles_stereo(record, &params).unwrap_err();
+    let error = finalize_smiles_stereo(record, &params, &mut None).unwrap_err();
     assert!(matches!(
         error,
         SmilesStereoError::Directions(DoubleBondStereoError::InvalidConformer(_))

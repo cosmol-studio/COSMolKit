@@ -2,12 +2,11 @@
 import json
 import sys
 import struct
+from concurrent.futures import ProcessPoolExecutor
+from functools import partial
 from rdkit import Chem, DataStructs, rdBase
 from rdkit.Chem import Descriptors, rdMolDescriptors, rdDepictor
 
-expected_version = sys.argv[1]
-if rdBase.rdkitVersion != expected_version:
-    raise RuntimeError(f"RDKit {rdBase.rdkitVersion} != {expected_version}")
 
 def topology(mol):
     return {"atoms": [{
@@ -33,7 +32,7 @@ def molecular(row):
     try:
         params = Chem.SmilesParserParams()
         params.sanitize = options["sanitize"] if name == "SmilesRead" else name != "SanitizeAll"
-        params.removeHs = options["remove_hydrogens"] if name == "SmilesRead" else name != "SanitizeAll"
+        params.removeHs = options["remove_hydrogens"] if name in ("SmilesRead", "NumHeavyAtoms", "TotalAtomCount", "LipinskiHBA", "LipinskiHBD", "FractionCSP3") else name != "SanitizeAll"
         params.allowCXSMILES = True
         params.strictCXSMILES = True
         params.parseName = True
@@ -59,6 +58,16 @@ def molecular(row):
             return {"Text": rdMolDescriptors.CalcMolFormula(mol,
                 separateIsotopes=options["separate_isotopes"],
                 abbreviateHIsotopes=options["abbreviate_h_isotopes"])}
+        if name == "NumHeavyAtoms":
+            return {"Unsigned": rdMolDescriptors.CalcNumHeavyAtoms(mol)}
+        if name == "TotalAtomCount":
+            return {"Unsigned": rdMolDescriptors.CalcNumAtoms(mol)}
+        if name == "LipinskiHBA":
+            return {"Unsigned": rdMolDescriptors.CalcNumLipinskiHBA(mol)}
+        if name == "LipinskiHBD":
+            return {"Unsigned": rdMolDescriptors.CalcNumLipinskiHBD(mol)}
+        if name == "FractionCSP3":
+            return {"Float64Bits": struct.unpack(">Q", struct.pack(">d", rdMolDescriptors.CalcFractionCSP3(mol)))[0]}
         if name == "SanitizeAll":
             Chem.SanitizeMol(mol, sanitizeOps=Chem.SanitizeFlags.SANITIZE_ALL)
         elif name == "Kekulize":
@@ -106,11 +115,7 @@ def molecular(row):
         return {"Error": {"stage": stage, "detail": f"{type(error).__name__}: {error}"}}
 
 
-results = []
-for envelope in json.load(sys.stdin):
-    if "Molecular" in envelope:
-        results.append({"input": envelope, "output": {"Molecular": molecular(envelope["Molecular"])}})
-        continue
+def fingerprint(envelope):
     row = envelope["Fingerprint"]
     ctor = {"U32": DataStructs.UIntSparseIntVect,
             "U64": DataStructs.ULongSparseIntVect}[row["width"]]
@@ -135,8 +140,138 @@ for envelope in json.load(sys.stdin):
     else:
         raise ValueError(op)
     assert before == (dict(left.GetNonzeroElements()), dict(right.GetNonzeroElements()))
-    results.append({"input": envelope, "output": {"Fingerprint": {
+    return {"input": envelope, "output": {"Fingerprint": {
         "length": result.GetLength(),
         "entries": sorted(result.GetNonzeroElements().items()),
-    }}})
-json.dump(results, sys.stdout, sort_keys=True)
+    }}}
+
+
+def _molecular_case(case, parameters):
+    rows = []
+    for profile in parameters:
+        envelope = {"Molecular": {"case": case, "profile": profile}}
+        rows.append({"input": envelope, "output": {"Molecular": molecular(envelope["Molecular"])}})
+    return rows
+
+
+def _fingerprint_case(case, parameters):
+    return [fingerprint({"Fingerprint": {"case": case, **parameter}}) for parameter in parameters]
+
+
+def _generate(corpus, parameters, threads, worker):
+    if isinstance(threads, bool) or not isinstance(threads, int) or threads < 1:
+        raise ValueError("threads must be a positive integer")
+    if not corpus or not parameters:
+        raise ValueError("empty corpus or parameter matrix")
+    work = partial(worker, parameters=parameters)
+    if threads == 1:
+        batches = map(work, corpus)
+        return [row for batch in batches for row in batch]
+    # Parallelize independent cases, keeping every parameter for one case
+    # together. map preserves source order; completion order never labels rows.
+    with ProcessPoolExecutor(max_workers=threads) as pool:
+        batches = pool.map(work, corpus, chunksize=max(1, len(corpus) // (threads * 4)))
+        return [row for batch in batches for row in batch]
+
+
+def generate_fuzzy_and(corpus, parameters, threads):
+    return _generate(corpus, parameters, threads, _fingerprint_case)
+
+
+def generate_fuzzy_or(corpus, parameters, threads):
+    return _generate(corpus, parameters, threads, _fingerprint_case)
+
+
+def generate_smiles_read(corpus, parameters, threads):
+    return _generate(corpus, parameters, threads, _molecular_case)
+
+
+def generate_sanitize(corpus, parameters, threads):
+    return _generate(corpus, parameters, threads, _molecular_case)
+
+
+def generate_kekulize(corpus, parameters, threads):
+    return _generate(corpus, parameters, threads, _molecular_case)
+
+
+def generate_molecular_weight(corpus, parameters, threads):
+    return _generate(corpus, parameters, threads, _molecular_case)
+
+
+def generate_exact_molecular_weight(corpus, parameters, threads):
+    return _generate(corpus, parameters, threads, _molecular_case)
+
+
+def generate_molecular_formula(corpus, parameters, threads):
+    return _generate(corpus, parameters, threads, _molecular_case)
+
+
+def generate_num_heavy_atoms(corpus, parameters, threads):
+    return _generate(corpus, parameters, threads, _molecular_case)
+
+
+def generate_total_atom_count(corpus, parameters, threads):
+    return _generate(corpus, parameters, threads, _molecular_case)
+
+
+def generate_lipinski_hba(corpus, parameters, threads):
+    return _generate(corpus, parameters, threads, _molecular_case)
+
+
+def generate_lipinski_hbd(corpus, parameters, threads):
+    return _generate(corpus, parameters, threads, _molecular_case)
+
+
+def generate_fraction_csp3(corpus, parameters, threads):
+    return _generate(corpus, parameters, threads, _molecular_case)
+
+
+def generate_add_hydrogens(corpus, parameters, threads):
+    return _generate(corpus, parameters, threads, _molecular_case)
+
+
+def generate_remove_hydrogens(corpus, parameters, threads):
+    return _generate(corpus, parameters, threads, _molecular_case)
+
+
+def generate_coordinates_2d(corpus, parameters, threads):
+    return _generate(corpus, parameters, threads, _molecular_case)
+
+
+def generate_distance_matrix(corpus, parameters, threads):
+    return _generate(corpus, parameters, threads, _molecular_case)
+
+
+GENERATORS = {
+    "generate_fuzzy_and": generate_fuzzy_and,
+    "generate_fuzzy_or": generate_fuzzy_or,
+    "generate_smiles_read": generate_smiles_read,
+    "generate_sanitize": generate_sanitize,
+    "generate_kekulize": generate_kekulize,
+    "generate_molecular_weight": generate_molecular_weight,
+    "generate_exact_molecular_weight": generate_exact_molecular_weight,
+    "generate_molecular_formula": generate_molecular_formula,
+    "generate_num_heavy_atoms": generate_num_heavy_atoms,
+    "generate_total_atom_count": generate_total_atom_count,
+    "generate_lipinski_hba": generate_lipinski_hba,
+    "generate_lipinski_hbd": generate_lipinski_hbd,
+    "generate_fraction_csp3": generate_fraction_csp3,
+    "generate_add_hydrogens": generate_add_hydrogens,
+    "generate_remove_hydrogens": generate_remove_hydrogens,
+    "generate_coordinates_2d": generate_coordinates_2d,
+    "generate_distance_matrix": generate_distance_matrix,
+}
+
+
+def main():
+    expected_version = sys.argv[1]
+    if rdBase.rdkitVersion != expected_version:
+        raise RuntimeError(f"RDKit {rdBase.rdkitVersion} != {expected_version}")
+    request = json.load(sys.stdin)
+    generator = GENERATORS[request["generator"]]
+    rows = generator(request["corpus"], request["parameters"], request["threads"])
+    json.dump(rows, sys.stdout, sort_keys=True)
+
+
+if __name__ == "__main__":
+    main()

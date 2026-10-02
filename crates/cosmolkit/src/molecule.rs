@@ -19,7 +19,13 @@ use crate::ops::{DerivedState, OperationError};
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(crate) struct DerivedCacheBlock {
     valid: DerivedState,
-    #[cfg(any(feature = "cap-valence", feature = "cap-hydrogens"))]
+    #[cfg(any(
+        feature = "cap-valence",
+        feature = "cap-hydrogens",
+        feature = "cap-smiles",
+        feature = "cap-sanitize",
+        feature = "cap-descriptors"
+    ))]
     valence: Option<cosmolkit_core::ValenceAssignment>,
     #[cfg(feature = "cap-rings")]
     rings: Option<cosmolkit_core::RingInfo>,
@@ -31,11 +37,23 @@ impl DerivedCacheBlock {
     fn is_empty(&self) -> bool {
         self.valid == DerivedState::NONE
             && {
-                #[cfg(any(feature = "cap-valence", feature = "cap-hydrogens"))]
+                #[cfg(any(
+                    feature = "cap-valence",
+                    feature = "cap-hydrogens",
+                    feature = "cap-smiles",
+                    feature = "cap-sanitize",
+                    feature = "cap-descriptors"
+                ))]
                 {
                     self.valence.is_none()
                 }
-                #[cfg(not(any(feature = "cap-valence", feature = "cap-hydrogens")))]
+                #[cfg(not(any(
+                    feature = "cap-valence",
+                    feature = "cap-hydrogens",
+                    feature = "cap-smiles",
+                    feature = "cap-sanitize",
+                    feature = "cap-descriptors"
+                )))]
                 {
                     true
                 }
@@ -62,7 +80,13 @@ impl DerivedCacheBlock {
 
     pub(crate) fn clear(&mut self, states: DerivedState) {
         self.valid = self.valid.difference(states);
-        #[cfg(any(feature = "cap-valence", feature = "cap-hydrogens"))]
+        #[cfg(any(
+            feature = "cap-valence",
+            feature = "cap-hydrogens",
+            feature = "cap-smiles",
+            feature = "cap-sanitize",
+            feature = "cap-descriptors"
+        ))]
         if states.intersects(DerivedState::VALENCE) {
             self.valence = None;
         }
@@ -76,7 +100,13 @@ impl DerivedCacheBlock {
         }
     }
 
-    #[cfg(any(feature = "cap-valence", feature = "cap-hydrogens"))]
+    #[cfg(any(
+        feature = "cap-valence",
+        feature = "cap-hydrogens",
+        feature = "cap-smiles",
+        feature = "cap-sanitize",
+        feature = "cap-descriptors"
+    ))]
     pub(crate) fn install_valence_assignment(
         &mut self,
         assignment: cosmolkit_core::ValenceAssignment,
@@ -84,9 +114,19 @@ impl DerivedCacheBlock {
         self.valence = Some(assignment);
     }
 
-    #[cfg(any(feature = "cap-valence", feature = "cap-hydrogens"))]
+    #[cfg(any(
+        feature = "cap-valence",
+        feature = "cap-hydrogens",
+        feature = "cap-smiles",
+        feature = "cap-sanitize",
+        feature = "cap-descriptors"
+    ))]
     pub(crate) fn valence_assignment(&self) -> Option<&cosmolkit_core::ValenceAssignment> {
-        self.valence.as_ref()
+        if self.valid.contains(DerivedState::VALENCE) {
+            self.valence.as_ref()
+        } else {
+            None
+        }
     }
 
     #[cfg(feature = "cap-rings")]
@@ -110,7 +150,13 @@ impl DerivedCacheBlock {
     }
 
     pub(crate) fn validate_for_atom_count(&self, atom_count: usize) -> Result<(), OperationError> {
-        #[cfg(any(feature = "cap-valence", feature = "cap-hydrogens"))]
+        #[cfg(any(
+            feature = "cap-valence",
+            feature = "cap-hydrogens",
+            feature = "cap-smiles",
+            feature = "cap-sanitize",
+            feature = "cap-descriptors"
+        ))]
         {
             let valid = self.valid.contains(DerivedState::VALENCE);
             match (valid, self.valence.as_ref()) {
@@ -475,6 +521,28 @@ impl Molecule {
         })
     }
 
+    /// Constructor-only transport of final detached chemistry state. Cache
+    /// authority remains here, not in the parser or algorithm owner.
+    #[cfg(feature = "cap-smiles")]
+    pub(super) fn from_smiles_parts_with_valence(
+        topology: TopologyBlock,
+        coordinates: CoordinateBlock,
+        properties: MoleculeProperties,
+        valence: Option<cosmolkit_core::ValenceAssignment>,
+    ) -> Result<Self, OperationError> {
+        let mut state = MoleculeState::try_new(topology, coordinates, properties)?;
+        let mut cache = DerivedCacheBlock::default();
+        if let Some(assignment) = valence {
+            cache.install_valence_assignment(assignment);
+            cache.mark_valid(DerivedState::VALENCE);
+        }
+        cache.validate_for_topology(&state.topology)?;
+        state.derived_cache = Arc::new(cache);
+        Ok(Self {
+            state: Arc::new(state),
+        })
+    }
+
     /// Returns detached semantic blocks for checked construction of a new value.
     #[must_use]
     pub fn to_builder(&self) -> MoleculeBuilder {
@@ -619,6 +687,85 @@ impl Default for Molecule {
 #[cfg(all(test, feature = "cap-valence"))]
 mod valence_cache_tests {
     use super::*;
+
+    #[cfg(all(feature = "cap-smiles", feature = "cap-descriptors"))]
+    #[test]
+    fn valence_transport_smiles_flag_product_and_read_only_descriptors() {
+        // Fixed 2026.03.1 rows, including a falsely tagged radical center whose
+        // stereo cleanup removes its explicit H and refreshes its valence.
+        for (smiles, formula, mass) in [
+            ("CCO", "C2H6O", 46.069),
+            ("[C@H](C)C", "C3H7", 43.089),
+            ("C[C@H](F)C", "C3H7F", 62.087),
+            ("[13CH3][NH3+]", "CH6N+", 33.05835484),
+            ("c1cc[nH]c1", "C4H5N", 67.091),
+            ("[H]OC", "CH4O", 32.042),
+            ("", "", 0.0),
+        ] {
+            for sanitize in [false, true] {
+                for remove_hydrogens in [false, true] {
+                    let molecule = Molecule::from_smiles_with_params(
+                        smiles,
+                        &cosmolkit_smiles::SmilesParseParams {
+                            sanitize,
+                            remove_hydrogens,
+                            ..Default::default()
+                        },
+                    )
+                    .unwrap();
+                    let cache = molecule.derived_cache_arc_runtime();
+                    assert_eq!(
+                        cache.valid_states().contains(DerivedState::VALENCE),
+                        sanitize,
+                        "{smiles} sanitize={sanitize} remove_hydrogens={remove_hydrogens}"
+                    );
+                    if sanitize {
+                        let expected = cosmolkit_core::assign_valence_with_options_for_topology(
+                            molecule.topology(),
+                            cosmolkit_core::ValenceModel::RdkitLike,
+                            false,
+                        )
+                        .unwrap();
+                        assert_eq!(cache.valence_assignment(), Some(&expected), "{smiles}");
+                        assert_eq!(
+                            molecule.molecular_formula().unwrap(),
+                            formula,
+                            "{smiles} sanitize={sanitize} remove_hydrogens={remove_hydrogens} atoms={:?}",
+                            molecule.atoms()
+                        );
+                        assert!((molecule.molecular_weight().unwrap() - mass).abs() < 1e-9);
+                        let peer = molecule.clone();
+                        let topology = molecule.topology_arc_runtime();
+                        let coordinates = molecule.coordinates_arc_runtime();
+                        let properties = molecule.properties_arc_runtime();
+                        for only_heavy in [false, true] {
+                            molecule.molecular_weight_with_options(only_heavy).unwrap();
+                            molecule
+                                .exact_molecular_weight_with_options(only_heavy)
+                                .unwrap();
+                        }
+                        for separate in [false, true] {
+                            for abbreviate in [false, true] {
+                                molecule
+                                    .molecular_formula_with_options(separate, abbreviate)
+                                    .unwrap();
+                            }
+                        }
+                        assert!(Arc::ptr_eq(&cache, &molecule.derived_cache_arc_runtime()));
+                        assert!(Arc::ptr_eq(&cache, &peer.derived_cache_arc_runtime()));
+                        assert!(Arc::ptr_eq(&topology, &molecule.topology_arc_runtime()));
+                        assert!(Arc::ptr_eq(
+                            &coordinates,
+                            &molecule.coordinates_arc_runtime()
+                        ));
+                        assert!(Arc::ptr_eq(&properties, &molecule.properties_arc_runtime()));
+                    } else {
+                        assert!(cache.valence_assignment().is_none());
+                    }
+                }
+            }
+        }
+    }
 
     #[cfg(feature = "cap-hydrogens")]
     #[test]

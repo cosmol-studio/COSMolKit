@@ -396,3 +396,94 @@ fn public_methods_compile_only_with_their_own_capability_default_and_strict() {
         }
     }
 }
+
+#[test]
+fn descriptor_query_feature_gates_are_exact_for_five_queries_and_errors() {
+    // Real external Rust method-item lookups with positive controls: the
+    // five descriptor count queries and both public error types compile
+    // under cap-descriptors ALONE (defaults disabled), fail as missing
+    // API with NO capabilities (E0599 for methods, E0412/E0432 as
+    // applicable for the error types), and cap-descriptors does not
+    // accidentally expose SMILES, hydrogen, stereo, ring or search
+    // public methods.
+    const QUERIES: &[&str] = &[
+        "num_heavy_atoms",
+        "total_atom_count",
+        "lipinski_hba",
+        "lipinski_hbd",
+        "fraction_csp3",
+    ];
+    const UNRELATED: &[&str] = &[
+        "from_smiles",
+        "with_hydrogens",
+        "with_kekulized_bonds",
+        "sanitize",
+        "potential_stereo",
+        "symmorph",
+    ];
+    let probe = Probe::new();
+
+    // Compile-pass under cap-descriptors alone, defaults disabled: the
+    // five method items plus both error types as real type paths.
+    probe.configure(false, &["cap-descriptors"]);
+    let mut source = String::from("pub fn probe() {\n");
+    for method in QUERIES {
+        source.push_str(&format!("let _ = cosmolkit::Molecule::{method};\n"));
+    }
+    source.push_str("let _: Option<cosmolkit::DescriptorError> = None;\n");
+    source.push_str("let _: Option<cosmolkit::DescriptorReadError> = None;\n");
+    source.push_str("}\n");
+    let output = probe.check_source(&source);
+    assert!(
+        output.status.success(),
+        "cap-descriptors alone must compile the five queries + errors: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    // Unrelated capability methods stay absent under cap-descriptors.
+    let mut source = String::from("pub fn probe() {\n");
+    for method in UNRELATED {
+        source.push_str(&format!("let _ = cosmolkit::Molecule::{method};\n"));
+    }
+    source.push_str("}\n");
+    let output = probe.check_source(&source);
+    assert!(
+        !output.status.success(),
+        "cap-descriptors must not expose unrelated capability methods"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(
+        stderr.matches("error[E0599]").count(),
+        UNRELATED.len(),
+        "{stderr}"
+    );
+
+    // No capabilities at all: the five methods fail E0599 and both error
+    // types fail as unresolved paths (E0412/E0432 as applicable).
+    probe.configure(false, &[]);
+    let mut source = String::from("pub fn probe() {\n");
+    for method in QUERIES {
+        source.push_str(&format!("let _ = cosmolkit::Molecule::{method};\n"));
+    }
+    source.push_str("let _: Option<cosmolkit::DescriptorError> = None;\n");
+    source.push_str("let _: Option<cosmolkit::DescriptorReadError> = None;\n");
+    source.push_str("}\n");
+    let output = probe.check_source(&source);
+    assert!(
+        !output.status.success(),
+        "no capabilities must not compile the queries or error types"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(
+        stderr.matches("error[E0599]").count(),
+        QUERIES.len(),
+        "{stderr}"
+    );
+    for method in QUERIES {
+        assert!(stderr.contains(&format!("`{method}`")), "{stderr}");
+    }
+    assert!(
+        stderr.contains("DescriptorError") && stderr.contains("DescriptorReadError"),
+        "both error types must fail as unresolved: {stderr}"
+    );
+}

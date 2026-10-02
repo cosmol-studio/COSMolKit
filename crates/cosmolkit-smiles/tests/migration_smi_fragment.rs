@@ -34,6 +34,7 @@ fn finalized_record(smiles: &str) -> SmilesRecord {
             properties: prepared.properties,
         },
         &parse_params,
+        &mut None,
     )
     .unwrap_or_else(|error| panic!("failed pinned stereo finalization: {error}"))
 }
@@ -66,6 +67,7 @@ fn sanitized_finalized_record(smiles: &str) -> SmilesRecord {
             properties: prepared.properties,
         },
         &parse_params,
+        &mut None,
     )
     .unwrap_or_else(|error| panic!("failed pinned stereo finalization: {error}"))
 }

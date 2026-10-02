@@ -38,6 +38,50 @@ fn cargo_check(case: &str, strict: bool) -> Output {
 }
 
 #[test]
+fn preserve_only_capabilities_separate_borrows_proofs_and_mutation() {
+    for strict in [false, true] {
+        let allowed = cargo_check("preserve_allowed", strict);
+        assert!(
+            allowed.status.success(),
+            "{}",
+            String::from_utf8_lossy(&allowed.stderr)
+        );
+        let forbidden = cargo_check("preserve_forbidden", strict);
+        assert!(!forbidden.status.success());
+        let errors = String::from_utf8_lossy(&forbidden.stderr);
+        for surface in [
+            "checkout_derived_cache",
+            "install_derived_cache",
+            "clear_cache",
+            "mark_cache_updated",
+            "read_derived_cache_runtime",
+            "checkout_derived_cache_runtime",
+            "prove_preserved_runtime",
+        ] {
+            assert!(
+                errors.contains(surface),
+                "missing rejection of {surface}: {errors}"
+            );
+        }
+        assert!(errors.contains("private"), "{errors}");
+        let no_read = cargo_check("preserve_no_read", strict);
+        assert!(!no_read.status.success());
+        let errors = String::from_utf8_lossy(&no_read.stderr);
+        assert!(
+            errors.contains("E0599") && errors.contains("derived_cache"),
+            "{errors}"
+        );
+        let immutable = cargo_check("preserve_immutable", strict);
+        assert!(!immutable.status.success());
+        let errors = String::from_utf8_lossy(&immutable.stderr);
+        assert!(
+            errors.contains("E0596") && errors.contains("mutable"),
+            "{errors}"
+        );
+    }
+}
+
+#[test]
 fn pending_results_are_registry_scoped_and_finalization_is_wrapper_private() {
     for strict in [false, true] {
         let allowed = cargo_check("pending_allowed", strict);

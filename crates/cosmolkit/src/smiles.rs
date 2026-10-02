@@ -77,14 +77,7 @@ impl Molecule {
     }
 
     fn smiles_valence_state(&self) -> Option<&cosmolkit_core::ValenceAssignment> {
-        #[cfg(any(feature = "cap-valence", feature = "cap-hydrogens"))]
-        {
-            self.derived_cache_runtime().valence_assignment()
-        }
-        #[cfg(not(any(feature = "cap-valence", feature = "cap-hydrogens")))]
-        {
-            None
-        }
+        self.derived_cache_runtime().valence_assignment()
     }
 
     fn smiles_view(&self) -> cosmolkit_smiles::SmilesRecordView<'_> {
@@ -302,6 +295,7 @@ impl Molecule {
             mut properties,
         } = cosmolkit_smiles::parse_smiles(input, params)?;
 
+        let mut final_valence = None;
         if params.remove_hydrogens {
             let remove_params = cosmolkit_core::RemoveHsParams {
                 update_explicit_count: true,
@@ -317,12 +311,14 @@ impl Molecule {
             topology = result.topology;
             coordinates = result.coordinates;
             properties = result.properties;
+            final_valence = result.final_valence;
         } else if params.sanitize {
-            topology = cosmolkit_core::sanitize_topology(
+            let result = cosmolkit_core::sanitize_topology(
                 &topology,
                 &cosmolkit_core::SanitizeParams::default(),
-            )?
-            .topology;
+            )?;
+            topology = result.topology;
+            final_valence = result.final_valence;
         }
 
         let record = cosmolkit_smiles::finalize_smiles_stereo(
@@ -332,8 +328,16 @@ impl Molecule {
                 properties,
             },
             params,
+            &mut final_valence,
         )?;
-        Self::from_parts(record.topology, record.coordinates, record.properties)
-            .map_err(SmilesError::Construction)
+        // Stereo may need local non-strict values, but sanitize=false must not
+        // revive runtime validity after CK-VALENCE-001 hydrogen removal.
+        Self::from_smiles_parts_with_valence(
+            record.topology,
+            record.coordinates,
+            record.properties,
+            if params.sanitize { final_valence } else { None },
+        )
+        .map_err(SmilesError::Construction)
     }
 }

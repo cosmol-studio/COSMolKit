@@ -1,5 +1,6 @@
 //! Executable tasks, typed input families and parameter matrices.
 //! Future catalog rows are not executable registration or parity claims.
+pub mod fingerprint;
 pub mod fingerprint_corpus;
 pub mod molecule_plan;
 use serde::{Deserialize, Serialize};
@@ -27,59 +28,123 @@ pub enum Width {
     U64,
 }
 
+/// Input format is part of test identity, never inferred from a filename.
+/// Only registered formats have executable loaders and tests.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CorpusType {
+    Smiles,
+    FingerprintPairs,
+    Pdb,
+    Cif,
+    Mmcif,
+    Sdf,
+}
+
+impl CorpusType {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Smiles => "smiles",
+            Self::FingerprintPairs => "fingerprint_pairs",
+            Self::Pdb => "pdb",
+            Self::Cif => "cif",
+            Self::Mmcif => "mmcif",
+            Self::Sdf => "sdf",
+        }
+    }
+}
+
 pub struct Task {
     pub operation: Operation,
-    pub widths: &'static [Width],
+    pub corpus_type: CorpusType,
+    pub generator: &'static str,
 }
 
 pub const TASKS: &[Task] = &[
     Task {
         operation: Operation::FuzzyAnd,
-        widths: &[Width::U32, Width::U64],
+        corpus_type: CorpusType::FingerprintPairs,
+        generator: "generate_fuzzy_and",
     },
     Task {
         operation: Operation::FuzzyOr,
-        widths: &[Width::U32, Width::U64],
+        corpus_type: CorpusType::FingerprintPairs,
+        generator: "generate_fuzzy_or",
     },
     Task {
         operation: Operation::Molecular(molecule_plan::TaskId::SmilesRead),
-        widths: &[],
+        corpus_type: CorpusType::Smiles,
+        generator: "generate_smiles_read",
     },
     Task {
         operation: Operation::Molecular(molecule_plan::TaskId::Sanitize),
-        widths: &[],
+        corpus_type: CorpusType::Smiles,
+        generator: "generate_sanitize",
     },
     Task {
         operation: Operation::Molecular(molecule_plan::TaskId::Kekulize),
-        widths: &[],
+        corpus_type: CorpusType::Smiles,
+        generator: "generate_kekulize",
     },
     Task {
         operation: Operation::Molecular(molecule_plan::TaskId::MolecularWeight),
-        widths: &[],
+        corpus_type: CorpusType::Smiles,
+        generator: "generate_molecular_weight",
     },
     Task {
         operation: Operation::Molecular(molecule_plan::TaskId::ExactMolecularWeight),
-        widths: &[],
+        corpus_type: CorpusType::Smiles,
+        generator: "generate_exact_molecular_weight",
     },
     Task {
         operation: Operation::Molecular(molecule_plan::TaskId::MolecularFormula),
-        widths: &[],
+        corpus_type: CorpusType::Smiles,
+        generator: "generate_molecular_formula",
+    },
+    Task {
+        operation: Operation::Molecular(molecule_plan::TaskId::NumHeavyAtoms),
+        corpus_type: CorpusType::Smiles,
+        generator: "generate_num_heavy_atoms",
+    },
+    Task {
+        operation: Operation::Molecular(molecule_plan::TaskId::TotalAtomCount),
+        corpus_type: CorpusType::Smiles,
+        generator: "generate_total_atom_count",
+    },
+    Task {
+        operation: Operation::Molecular(molecule_plan::TaskId::LipinskiHBA),
+        corpus_type: CorpusType::Smiles,
+        generator: "generate_lipinski_hba",
+    },
+    Task {
+        operation: Operation::Molecular(molecule_plan::TaskId::LipinskiHBD),
+        corpus_type: CorpusType::Smiles,
+        generator: "generate_lipinski_hbd",
+    },
+    Task {
+        operation: Operation::Molecular(molecule_plan::TaskId::FractionCSP3),
+        corpus_type: CorpusType::Smiles,
+        generator: "generate_fraction_csp3",
     },
     Task {
         operation: Operation::Molecular(molecule_plan::TaskId::AddHydrogens),
-        widths: &[],
+        corpus_type: CorpusType::Smiles,
+        generator: "generate_add_hydrogens",
     },
     Task {
         operation: Operation::Molecular(molecule_plan::TaskId::RemoveHydrogens),
-        widths: &[],
+        corpus_type: CorpusType::Smiles,
+        generator: "generate_remove_hydrogens",
     },
     Task {
         operation: Operation::Molecular(molecule_plan::TaskId::Coordinates2d),
-        widths: &[],
+        corpus_type: CorpusType::Smiles,
+        generator: "generate_coordinates_2d",
     },
     Task {
         operation: Operation::Molecular(molecule_plan::TaskId::DistanceMatrix),
-        widths: &[],
+        corpus_type: CorpusType::Smiles,
+        generator: "generate_distance_matrix",
     },
 ];
 
@@ -146,6 +211,11 @@ impl Input {
                     MolecularWeight { .. } => "molecular_weight",
                     ExactMolecularWeight { .. } => "exact_molecular_weight",
                     MolecularFormula { .. } => "molecular_formula",
+                    NumHeavyAtoms { .. } => "num_heavy_atoms",
+                    TotalAtomCount { .. } => "total_atom_count",
+                    LipinskiHBA { .. } => "lipinski_hba",
+                    LipinskiHBD { .. } => "lipinski_hbd",
+                    FractionCSP3 { .. } => "fraction_csp3",
                     AddHydrogens { .. } => "add_hydrogens",
                     RemoveHydrogens { .. } => "remove_hydrogens",
                     Coordinates2dDefault => "coordinates_2d",
@@ -172,10 +242,26 @@ pub struct Corpus {
 }
 
 impl Task {
+    pub fn key(&self) -> String {
+        format!("{}_{}", self.operation.name(), self.corpus_type.name())
+    }
+    pub fn validate_reference(&self, input: &Input, output: &Value) -> Result<(), String> {
+        match (self.corpus_type, input, output) {
+            (
+                CorpusType::FingerprintPairs,
+                Input::Fingerprint(input),
+                Value::Fingerprint(output),
+            ) => fingerprint::validate_output(input, output),
+            (CorpusType::Smiles, Input::Molecular { profile, .. }, Value::Molecular(output)) => {
+                crate::molecular::validate_output(profile, output)
+            }
+            _ => Err("reference input/output kind mismatch".into()),
+        }
+    }
     pub fn count(&self, cases: &Corpus) -> usize {
         match self.operation {
             Operation::Molecular(id) => cases.molecules.len() * id.profiles().len(),
-            _ => cases.fingerprints.len() * self.widths.len(),
+            _ => cases.fingerprints.len() * fingerprint::WIDTHS.len(),
         }
     }
 }
@@ -183,7 +269,7 @@ impl Task {
 pub fn select(name: Option<&str>) -> Result<Vec<&'static Task>, String> {
     let selected: Vec<_> = TASKS
         .iter()
-        .filter(|t| name.is_none_or(|n| n == t.operation.name()))
+        .filter(|t| name.is_none_or(|n| n == t.key() || n == t.operation.name()))
         .collect();
     if selected.is_empty() {
         return Err(format!("unknown task: {name:?}"));
@@ -210,28 +296,11 @@ pub fn validate(corpus: &Corpus, tasks: &[&Task]) -> Result<(), String> {
             return Err("empty/duplicate molecular case ID".into());
         }
     }
-    let mut ids = BTreeSet::new();
-    for c in &corpus.fingerprints {
-        if c.id.is_empty() || !ids.insert(&c.id) {
-            return Err("empty/duplicate case ID".into());
-        }
-        for width in tasks.iter().flat_map(|t| t.widths) {
-            let max = match width {
-                Width::U32 => u32::MAX as u64,
-                Width::U64 => u64::MAX,
-            };
-            if c.length > max {
-                return Err(format!("{}: length does not fit {width:?}", c.id));
-            }
-            for values in [&c.left, &c.right] {
-                let mut keys = BTreeSet::new();
-                for &(key, _) in values {
-                    if !keys.insert(key) || key >= c.length {
-                        return Err(format!("{}: invalid/duplicate index", c.id));
-                    }
-                }
-            }
-        }
+    if tasks
+        .iter()
+        .any(|t| t.corpus_type == CorpusType::FingerprintPairs)
+    {
+        fingerprint::validate(&corpus.fingerprints)?;
     }
     Ok(())
 }
@@ -251,19 +320,7 @@ pub fn expand(cases: &Corpus, task: &Task) -> Vec<Input> {
             })
             .collect();
     }
-    cases
-        .fingerprints
-        .iter()
-        .flat_map(|case| {
-            task.widths.iter().map(move |&width| {
-                Input::Fingerprint(FingerprintInput {
-                    case: case.clone(),
-                    operation: task.operation,
-                    width,
-                })
-            })
-        })
-        .collect()
+    fingerprint::expand(&cases.fingerprints, task.operation)
 }
 
 pub fn builtin() -> Vec<Pair> {

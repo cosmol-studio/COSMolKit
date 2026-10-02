@@ -4962,6 +4962,7 @@ mod tests {
                 properties: prepared.properties,
             },
             &parse_params,
+            &mut None,
         )
         .unwrap()
     }

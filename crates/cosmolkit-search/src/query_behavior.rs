@@ -16,10 +16,12 @@
 //! `search::smarts_parse` and reuses these types.
 //!
 //! - Atom adjacency is built on-the-fly from `mol.bonds()` when not cached.
-//! - Ring info is rebuilt from the current target topology for each detached match context.
+//! - Cold match contexts rebuild ring information; prepared contexts borrow
+//!   explicit final-topology assignments without copying or recomputation.
 //! - The SMARTS parser is a recursive-descent parser reproducing the Daylon
 //!   Wilkins / RDKit SMARTS grammar.
 
+use std::borrow::Cow;
 use std::collections::BTreeSet;
 
 use super::target::SearchTargetAccess;
@@ -30,16 +32,381 @@ pub use cosmolkit_model::{
 };
 
 use cosmolkit_core::{
-    PeriodicTableError, RingInfo, ValenceAssignment, ValenceModel, atomic_mass as rdkit_atomic_mass,
+    PeriodicTableError, RingFindingError, RingInfo, ValenceAssignment, ValenceModel,
+    atomic_mass as rdkit_atomic_mass,
 };
 use cosmolkit_model::{AdjacencyList, Atom, AtomId, Bond, BondSpec, QueryAtom, QueryBond};
 use cosmolkit_types::{BondOrder, BondStereo, ChiralTag, Hybridization};
 
 #[derive(Clone)]
-pub struct QueryMatchContext {
-    adj: AdjacencyList,
-    ring_info: Option<RingInfo>,
-    valence: Option<ValenceAssignment>,
+pub struct QueryMatchContext<'a> {
+    adj: Cow<'a, AdjacencyList>,
+    ring_info: Option<Cow<'a, RingInfo>>,
+    valence: Option<Cow<'a, ValenceAssignment>>,
+}
+
+#[cfg(test)]
+thread_local! {
+    static COLD_QUERY_CONTEXT_BUILDS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// Invalid detached inputs supplied to the prepared query-context boundary.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum QueryMatchContextError {
+    #[error("invalid prepared target topology: {0}")]
+    InvalidTopology(#[from] cosmolkit_model::TopologyValidationError),
+    #[error("valence field {field} has {actual} rows; expected {expected}")]
+    ValenceRows {
+        field: &'static str,
+        expected: usize,
+        actual: usize,
+    },
+    #[error("prepared ring information is not initialized")]
+    UninitializedRings,
+    #[error("ring membership table {field} has {actual} rows; expected {expected}")]
+    RingMembershipRows {
+        field: &'static str,
+        expected: usize,
+        actual: usize,
+    },
+    #[error("invalid prepared rings: {0}")]
+    Rings(#[from] RingFindingError),
+}
+
+/// Borrow chemistry already prepared for the final target topology.
+///
+/// The caller owns correspondence to the final topology. This constructor
+/// validates structural alignment, not chemical provenance, and never copies
+/// or recomputes adjacency, rings or valence. Cold context builders retain
+/// their existing independent preparation/error behavior.
+pub fn build_prepared_query_match_context<'a>(
+    topology: &'a cosmolkit_model::TopologyBlock,
+    ring_info: &'a RingInfo,
+    valence: &'a ValenceAssignment,
+) -> Result<QueryMatchContext<'a>, QueryMatchContextError> {
+    topology.validate()?;
+    let atom_count = topology.atoms.len();
+    let bond_count = topology.bonds.len();
+    for (field, actual) in [
+        ("explicit_valence", valence.explicit_valence.len()),
+        ("implicit_hydrogens", valence.implicit_hydrogens.len()),
+    ] {
+        if actual != atom_count {
+            return Err(QueryMatchContextError::ValenceRows {
+                field,
+                expected: atom_count,
+                actual,
+            });
+        }
+    }
+    if !ring_info.is_initialized() {
+        return Err(QueryMatchContextError::UninitializedRings);
+    }
+    for (field, actual, expected) in [
+        ("atoms", ring_info.atom_row_count(), atom_count),
+        ("bonds", ring_info.bond_row_count(), bond_count),
+    ] {
+        if actual != expected {
+            return Err(QueryMatchContextError::RingMembershipRows {
+                field,
+                expected,
+                actual,
+            });
+        }
+    }
+    if ring_info.atom_rings().len() != ring_info.bond_rings().len() {
+        return Err(RingFindingError::Value {
+            message: "ring atom/bond table length mismatch",
+        }
+        .into());
+    }
+    for (atoms, bonds) in ring_info.atom_rings().iter().zip(ring_info.bond_rings()) {
+        if atoms.len() != bonds.len() {
+            return Err(RingFindingError::Value {
+                message: "length mismatch",
+            }
+            .into());
+        }
+        for atom in atoms {
+            if atom.index() >= atom_count {
+                return Err(RingFindingError::RingAtomOutOfRange {
+                    atom: atom.index(),
+                    atom_count,
+                }
+                .into());
+            }
+        }
+        for bond in bonds {
+            if bond.index() >= bond_count {
+                return Err(RingFindingError::RingBondOutOfRange {
+                    bond: bond.index(),
+                    bond_count,
+                }
+                .into());
+            }
+        }
+    }
+    if ring_info.atom_ring_families().len() != ring_info.bond_ring_families().len() {
+        return Err(RingFindingError::Value {
+            message: "ring-family atom/bond table length mismatch",
+        }
+        .into());
+    }
+    for atoms in ring_info.atom_ring_families() {
+        for atom in atoms {
+            if atom.index() >= atom_count {
+                return Err(RingFindingError::RingAtomOutOfRange {
+                    atom: atom.index(),
+                    atom_count,
+                }
+                .into());
+            }
+        }
+    }
+    for bonds in ring_info.bond_ring_families() {
+        for bond in bonds {
+            if bond.index() >= bond_count {
+                return Err(RingFindingError::RingBondOutOfRange {
+                    bond: bond.index(),
+                    bond_count,
+                }
+                .into());
+            }
+        }
+    }
+    Ok(QueryMatchContext {
+        adj: Cow::Borrowed(&topology.adjacency),
+        ring_info: Some(Cow::Borrowed(ring_info)),
+        valence: Some(Cow::Borrowed(valence)),
+    })
+}
+
+#[cfg(test)]
+mod prepared_query_context_tests {
+    use super::*;
+    use cosmolkit_core::{RingFindType, RingSearchParams, find_sssr};
+    use cosmolkit_model::{AtomSpec, BondId, CoordinateBlock, TopologyBlock};
+    use cosmolkit_types::Element;
+    use std::error::Error;
+
+    fn chain(elements: &[Element]) -> TopologyBlock {
+        let atoms = elements
+            .iter()
+            .enumerate()
+            .map(|(index, element)| Atom::from_spec(AtomId::new(index), AtomSpec::new(*element)))
+            .collect();
+        let bonds = (0..elements.len().saturating_sub(1))
+            .map(|index| {
+                Bond::from_spec(
+                    BondId::new(index),
+                    BondSpec::new(
+                        AtomId::new(index),
+                        AtomId::new(index + 1),
+                        BondOrder::Single,
+                    ),
+                )
+            })
+            .collect();
+        TopologyBlock::try_from_parts(atoms, bonds, Vec::new(), Vec::new()).unwrap()
+    }
+
+    fn prepare(topology: &TopologyBlock) -> (RingInfo, ValenceAssignment) {
+        (
+            find_sssr(topology, &RingSearchParams::default()).unwrap(),
+            cosmolkit_core::assign_valence_for_topology(topology, ValenceModel::RdkitLike).unwrap(),
+        )
+    }
+
+    #[test]
+    fn prepared_query_context_borrows_every_input_and_keeps_cold_ownership() {
+        let topology = chain(&[Element::C, Element::C, Element::O]);
+        let (rings, valence) = prepare(&topology);
+        let context = build_prepared_query_match_context(&topology, &rings, &valence).unwrap();
+        assert!(
+            matches!(&context.adj, Cow::Borrowed(value) if std::ptr::eq(*value, &topology.adjacency))
+        );
+        assert!(
+            matches!(&context.ring_info, Some(Cow::Borrowed(value)) if std::ptr::eq(*value, &rings))
+        );
+        assert!(
+            matches!(&context.valence, Some(Cow::Borrowed(value)) if std::ptr::eq(*value, &valence))
+        );
+        let coordinates = CoordinateBlock::default();
+        let target = super::super::SearchTarget::new(
+            &topology,
+            &coordinates,
+            &topology.stereo_groups,
+            Some(&rings),
+            Some(&valence),
+        );
+        let cold = build_query_match_context(&target);
+        assert!(matches!(cold.adj, Cow::Owned(_)));
+        assert!(matches!(cold.ring_info, Some(Cow::Owned(_))));
+        assert!(matches!(cold.valence, Some(Cow::Owned(_))));
+    }
+
+    #[test]
+    fn prepared_query_context_rejects_both_valence_field_lengths() {
+        let topology = chain(&[Element::C, Element::C]);
+        let (rings, original) = prepare(&topology);
+        let mut count = 0;
+        for field in ["explicit_valence", "implicit_hydrogens"] {
+            for actual in [1, 3] {
+                let mut valence = original.clone();
+                match field {
+                    "explicit_valence" => valence.explicit_valence.resize(actual, 0),
+                    "implicit_hydrogens" => valence.implicit_hydrogens.resize(actual, 0),
+                    _ => unreachable!(),
+                }
+                assert_eq!(
+                    build_prepared_query_match_context(&topology, &rings, &valence).err(),
+                    Some(QueryMatchContextError::ValenceRows {
+                        field,
+                        expected: 2,
+                        actual,
+                    })
+                );
+                count += 1;
+            }
+        }
+        assert_eq!(count, 4);
+    }
+
+    #[test]
+    fn prepared_query_context_rejects_ring_membership_dimensions() {
+        let topology = chain(&[Element::C, Element::C, Element::O]);
+        let (_, valence) = prepare(&topology);
+        let mut count = 0;
+        for (field, expected, sizes) in [("atoms", 3, [2, 4]), ("bonds", 2, [1, 3])] {
+            for actual in sizes {
+                let (atoms, bonds) = if field == "atoms" {
+                    (actual, 2)
+                } else {
+                    (3, actual)
+                };
+                let rings = RingInfo::new(RingFindType::Sssr, atoms, bonds);
+                assert_eq!(
+                    build_prepared_query_match_context(&topology, &rings, &valence).err(),
+                    Some(QueryMatchContextError::RingMembershipRows {
+                        field,
+                        expected,
+                        actual,
+                    })
+                );
+                count += 1;
+            }
+        }
+        assert_eq!(count, 4);
+    }
+
+    #[test]
+    fn prepared_query_context_preserves_topology_error_source() {
+        let mut topology = chain(&[Element::C, Element::C]);
+        let (rings, valence) = prepare(&topology);
+        topology.adjacency = AdjacencyList::default();
+        let error = build_prepared_query_match_context(&topology, &rings, &valence)
+            .err()
+            .unwrap();
+        assert_eq!(
+            error,
+            QueryMatchContextError::InvalidTopology(
+                cosmolkit_model::TopologyValidationError::AdjacencyMismatch
+            )
+        );
+        assert_eq!(
+            error
+                .source()
+                .unwrap()
+                .downcast_ref::<cosmolkit_model::TopologyValidationError>(),
+            Some(&cosmolkit_model::TopologyValidationError::AdjacencyMismatch)
+        );
+    }
+
+    #[test]
+    fn prepared_query_context_matches_ethane_and_ethanol_through_existing_matcher() {
+        let params = super::super::SubstructMatchParams::default();
+        let mut count = 0;
+        for (elements, expectations) in [
+            (vec![Element::C, Element::C], [1, 0, 2, 0]),
+            (vec![Element::C, Element::C, Element::O], [1, 1, 1, 1]),
+        ] {
+            let topology = chain(&elements);
+            let (rings, valence) = prepare(&topology);
+            let context = build_prepared_query_match_context(&topology, &rings, &valence).unwrap();
+            let coordinates = CoordinateBlock::default();
+            let target = super::super::SearchTarget::new(
+                &topology,
+                &coordinates,
+                &topology.stereo_groups,
+                Some(&rings),
+                Some(&valence),
+            );
+            for (smarts, expected_count) in ["CC", "CO", "[#6;H3]", "[#8;H1]"]
+                .into_iter()
+                .zip(expectations)
+            {
+                let query = super::super::parse_smarts(smarts, &Default::default()).unwrap();
+                let prepared = super::super::try_get_substruct_matches_with_params_and_context(
+                    &target, &query, &params, &context,
+                )
+                .unwrap();
+                let cold =
+                    super::super::try_get_substruct_matches_with_params(&target, &query, &params)
+                        .unwrap();
+                assert_eq!(prepared, cold, "{elements:?} / {smarts}");
+                assert_eq!(prepared.len(), expected_count, "{elements:?} / {smarts}");
+                count += 1;
+            }
+        }
+        assert_eq!(count, 8);
+    }
+
+    #[test]
+    fn prepared_query_context_reuses_context_through_nested_recursive_smarts() {
+        let params = super::super::SubstructMatchParams::default();
+        let mut count = 0;
+        for (elements, expected_count) in [
+            (vec![Element::C, Element::C], 0),
+            (vec![Element::C, Element::C, Element::O], 1),
+        ] {
+            let topology = chain(&elements);
+            let (rings, valence) = prepare(&topology);
+            let context = build_prepared_query_match_context(&topology, &rings, &valence).unwrap();
+            let coordinates = CoordinateBlock::default();
+            let target = super::super::SearchTarget::new(
+                &topology,
+                &coordinates,
+                &topology.stereo_groups,
+                Some(&rings),
+                Some(&valence),
+            );
+            for smarts in [
+                "[$([#6]-[#8;H1])]",
+                "[$([#6]-[$([#8;H1])])]",
+                "[$([#6]-[$([#8;H1])]);!$([#6]=[#8])]",
+            ] {
+                let query = super::super::parse_smarts(smarts, &Default::default()).unwrap();
+                COLD_QUERY_CONTEXT_BUILDS.with(|calls| calls.set(0));
+                let prepared = super::super::try_get_substruct_matches_with_params_and_context(
+                    &target, &query, &params, &context,
+                )
+                .unwrap();
+                assert_eq!(
+                    COLD_QUERY_CONTEXT_BUILDS.with(std::cell::Cell::get),
+                    0,
+                    "{smarts}"
+                );
+                let cold =
+                    super::super::try_get_substruct_matches_with_params(&target, &query, &params)
+                        .unwrap();
+                assert!(COLD_QUERY_CONTEXT_BUILDS.with(std::cell::Cell::get) > 0);
+                assert_eq!(prepared, cold, "{elements:?} / {smarts}");
+                assert_eq!(prepared.len(), expected_count, "{elements:?} / {smarts}");
+                count += 1;
+            }
+        }
+        assert_eq!(count, 6);
+    }
 }
 
 pub(crate) const MH_EXCLUDED_ATOMIC_NUMBERS: [u8; 22] = [
@@ -60,11 +427,11 @@ fn match_atom_range_query(
             Some(query_atom_non_hydrogen_degree(atom, &context.adj, mol) as i32)
         }
         AtomRangeDataFunction::TotalDegree => {
-            query_atom_total_degree(&context.adj, context.valence.as_ref(), atom)
+            query_atom_total_degree(&context.adj, context.valence.as_deref(), atom)
                 .map(|value| value as i32)
         }
         AtomRangeDataFunction::TotalValence => {
-            query_atom_total_valence(context.valence.as_ref(), atom)
+            query_atom_total_valence(context.valence.as_deref(), atom)
         }
         AtomRangeDataFunction::NumAtomRings => context
             .ring_info
@@ -85,7 +452,7 @@ fn match_atom_range_query(
             .as_ref()
             .map(|ring_info| query_atom_ring_bond_count(atom, &context.adj, mol, ring_info)),
         AtomRangeDataFunction::ImplicitHydrogenCount => {
-            query_atom_implicit_h_count(context.valence.as_ref(), atom).map(|value| value as i32)
+            query_atom_implicit_h_count(context.valence.as_deref(), atom).map(|value| value as i32)
         }
         AtomRangeDataFunction::FormalCharge => Some(query_atom_formal_charge(atom)),
         AtomRangeDataFunction::NegativeFormalCharge => {
@@ -3160,11 +3527,13 @@ fn ensure_valence_assignment(mol: &impl SearchTargetAccess) -> Option<ValenceAss
 #[must_use]
 pub(crate) fn build_query_match_context_for_target(
     mol: &impl SearchTargetAccess,
-) -> QueryMatchContext {
+) -> QueryMatchContext<'static> {
+    #[cfg(test)]
+    COLD_QUERY_CONTEXT_BUILDS.with(|count| count.set(count.get() + 1));
     QueryMatchContext {
-        adj: ensure_adjacency(mol),
-        ring_info: ensure_ring_info(mol),
-        valence: ensure_valence_assignment(mol),
+        adj: Cow::Owned(ensure_adjacency(mol)),
+        ring_info: ensure_ring_info(mol).map(Cow::Owned),
+        valence: ensure_valence_assignment(mol).map(Cow::Owned),
     }
 }
 
@@ -3172,7 +3541,7 @@ pub(crate) fn build_query_match_context_for_target(
 /// The matching implementation itself uses `build_query_match_context_for_target`
 /// and therefore only requires detached search data.
 #[must_use]
-pub fn build_query_match_context(mol: &impl SearchTargetAccess) -> QueryMatchContext {
+pub fn build_query_match_context(mol: &impl SearchTargetAccess) -> QueryMatchContext<'static> {
     build_query_match_context_for_target(mol)
 }
 
@@ -3187,7 +3556,7 @@ pub(crate) fn build_query_match_context_from_blocks(
     stereo_groups: &[cosmolkit_model::StereoGroup],
     ring_info: Option<&RingInfo>,
     valence: Option<&ValenceAssignment>,
-) -> QueryMatchContext {
+) -> QueryMatchContext<'static> {
     let target =
         super::target::SearchTarget::new(topology, coordinates, stereo_groups, ring_info, valence);
     build_query_match_context_for_target(&target)
@@ -4427,7 +4796,7 @@ pub(crate) fn atom_predicate_matches_with_target_context(
     let aidx = atom.id().index();
     let adj = &ctx.adj;
     let ring_info = &ctx.ring_info;
-    let valence = &ctx.valence;
+    let valence = ctx.valence.as_deref();
 
     Ok(match pred {
         // RDKit✔️✔️: `*` matches any atom — equivalent to AtomNull with no negation.
@@ -4472,31 +4841,26 @@ pub(crate) fn atom_predicate_matches_with_target_context(
         // RDKit✔️✔️: isotope match — queryAtomIsotope.
         AtomQueryPredicate::Isotope(i) => query_atom_isotope(atom) == *i,
 
-        AtomQueryPredicate::HydrogenCount(n) => usize::try_from(*n).ok().is_some_and(|target| {
-            query_atom_h_count(adj, valence.as_ref(), atom, mol) == Some(target)
-        }),
+        AtomQueryPredicate::HydrogenCount(n) => usize::try_from(*n)
+            .ok()
+            .is_some_and(|target| query_atom_h_count(adj, valence, atom, mol) == Some(target)),
 
-        AtomQueryPredicate::HasImplicitHydrogen => {
-            query_atom_has_implicit_h(valence.as_ref(), atom)
-        }
+        AtomQueryPredicate::HasImplicitHydrogen => query_atom_has_implicit_h(valence, atom),
 
         AtomQueryPredicate::ImplicitValence(n) => {
-            query_atom_implicit_valence(valence.as_ref(), atom) == Some(*n)
+            query_atom_implicit_valence(valence, atom) == Some(*n)
         }
 
         AtomQueryPredicate::ExplicitValence(n) => {
-            query_atom_explicit_valence(valence.as_ref(), atom) == Some(*n)
+            query_atom_explicit_valence(valence, atom) == Some(*n)
         }
 
-        AtomQueryPredicate::ImplicitHydrogenCount(n) => {
-            usize::try_from(*n).ok().is_some_and(|target| {
-                query_atom_implicit_h_count(valence.as_ref(), atom) == Some(target)
-            })
-        }
+        AtomQueryPredicate::ImplicitHydrogenCount(n) => usize::try_from(*n)
+            .ok()
+            .is_some_and(|target| query_atom_implicit_h_count(valence, atom) == Some(target)),
 
         AtomQueryPredicate::ImplicitHydrogenCountLessEqual(n) => {
-            query_atom_implicit_h_count(valence.as_ref(), atom)
-                .is_some_and(|count| count <= usize::from(*n))
+            query_atom_implicit_h_count(valence, atom).is_some_and(|count| count <= usize::from(*n))
         }
 
         AtomQueryPredicate::ExplicitDegree(n) => usize::try_from(*n)
@@ -4580,34 +4944,28 @@ pub(crate) fn atom_predicate_matches_with_target_context(
         }
 
         AtomQueryPredicate::IsUnsaturated => {
-            query_atom_unsaturated(adj, valence.as_ref(), atom).unwrap_or(false)
+            query_atom_unsaturated(adj, valence, atom).unwrap_or(false)
         }
 
         // RDKit✔️✔️: hybridization match — queryAtomHybridization.
         AtomQueryPredicate::HybridizationMatch(h) => query_atom_hybridization(atom) == *h as i32,
 
-        AtomQueryPredicate::TotalDegree(n) => usize::try_from(*n).ok().is_some_and(|target| {
-            query_atom_total_degree(adj, valence.as_ref(), atom) == Some(target)
-        }),
-        AtomQueryPredicate::TotalDegreeLessEqual(n) => {
-            query_atom_total_degree(adj, valence.as_ref(), atom)
-                .is_some_and(|total| total <= usize::from(*n))
-        }
+        AtomQueryPredicate::TotalDegree(n) => usize::try_from(*n)
+            .ok()
+            .is_some_and(|target| query_atom_total_degree(adj, valence, atom) == Some(target)),
+        AtomQueryPredicate::TotalDegreeLessEqual(n) => query_atom_total_degree(adj, valence, atom)
+            .is_some_and(|total| total <= usize::from(*n)),
         AtomQueryPredicate::TotalDegreeGreaterEqual(n) => {
-            query_atom_total_degree(adj, valence.as_ref(), atom)
+            query_atom_total_degree(adj, valence, atom)
                 .is_some_and(|total| total >= usize::from(*n))
         }
 
-        AtomQueryPredicate::TotalValence(n) => {
-            query_atom_total_valence(valence.as_ref(), atom) == Some(*n)
-        }
+        AtomQueryPredicate::TotalValence(n) => query_atom_total_valence(valence, atom) == Some(*n),
         AtomQueryPredicate::TotalValenceLessEqual(n) => {
-            query_atom_total_valence(valence.as_ref(), atom)
-                .is_some_and(|total| total <= i32::from(*n))
+            query_atom_total_valence(valence, atom).is_some_and(|total| total <= i32::from(*n))
         }
         AtomQueryPredicate::TotalValenceGreaterEqual(n) => {
-            query_atom_total_valence(valence.as_ref(), atom)
-                .is_some_and(|total| total >= i32::from(*n))
+            query_atom_total_valence(valence, atom).is_some_and(|total| total >= i32::from(*n))
         }
 
         // RDKit✔️✔️: in ring — queryIsAtomInRing.

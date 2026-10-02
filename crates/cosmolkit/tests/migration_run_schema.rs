@@ -330,6 +330,13 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
             "Molecule.molecular_weight",
             "Molecule.exact_molecular_weight",
             "Molecule.molecular_formula",
+            "types.DescriptorError",
+            "types.DescriptorReadError",
+            "Molecule.num_heavy_atoms",
+            "Molecule.total_atom_count",
+            "Molecule.lipinski_hba",
+            "Molecule.lipinski_hbd",
+            "Molecule.fraction_csp3",
         ]);
     }
     if cfg!(feature = "cap-hydrogens") {
@@ -712,24 +719,62 @@ fn always_present_entries_have_exact_type_and_module_payloads() {
 #[cfg(feature = "cap-descriptors")]
 #[test]
 fn descriptor_entries_are_exact_canonical_read_only_methods() {
-    for (semantic_id, rust_name, javascript, output) in [
+    for (semantic_id, rust_name, javascript, output, error) in [
         (
             "Molecule.molecular_weight",
             "molecular_weight",
             "molecularWeight",
             "f64",
+            "crate::OperationError",
         ),
         (
             "Molecule.exact_molecular_weight",
             "exact_molecular_weight",
             "exactMolecularWeight",
             "f64",
+            "crate::OperationError",
         ),
         (
             "Molecule.molecular_formula",
             "molecular_formula",
             "molecularFormula",
             "String",
+            "crate::OperationError",
+        ),
+        (
+            "Molecule.num_heavy_atoms",
+            "num_heavy_atoms",
+            "numHeavyAtoms",
+            "u32",
+            "crate::DescriptorReadError",
+        ),
+        (
+            "Molecule.total_atom_count",
+            "total_atom_count",
+            "totalAtomCount",
+            "u32",
+            "crate::DescriptorReadError",
+        ),
+        (
+            "Molecule.lipinski_hba",
+            "lipinski_hba",
+            "lipinskiHba",
+            "u32",
+            "crate::DescriptorReadError",
+        ),
+        (
+            "Molecule.lipinski_hbd",
+            "lipinski_hbd",
+            "lipinskiHbd",
+            "u32",
+            "crate::DescriptorReadError",
+        ),
+        (
+            "Molecule.fraction_csp3",
+            "fraction_csp3",
+            "fractionCsp3",
+            "f64",
+            "crate::DescriptorReadError",
         ),
     ] {
         let entry = entry(semantic_id);
@@ -747,10 +792,38 @@ fn descriptor_entries_are_exact_canonical_read_only_methods() {
         assert_eq!(callable.output_type, output);
         assert_eq!(
             callable.error_type.map(|name| name.replace(' ', "")),
-            Some("crate::OperationError".to_owned())
+            Some(error.replace(' ', ""))
         );
         assert_eq!(callable.state_model, StateModel::ReadOnly);
         assert_eq!(callable.operation_semantic_id, None);
+    }
+}
+
+#[cfg(feature = "cap-descriptors")]
+#[test]
+fn descriptor_error_type_entries_carry_error_roles_and_exact_names() {
+    for (semantic_id, rust_type, projection) in [
+        (
+            "types.DescriptorError",
+            "DescriptorError",
+            "DescriptorError",
+        ),
+        (
+            "types.DescriptorReadError",
+            "DescriptorReadError",
+            "DescriptorReadError",
+        ),
+    ] {
+        let entry = entry(semantic_id);
+        assert_eq!(entry.item, BindingItem::Type);
+        assert_eq!(entry.owner, BindingOwner::Type);
+        assert!(entry.rust_path.replace(' ', "").ends_with(rust_type));
+        assert_eq!(entry.python_name, projection);
+        assert_eq!(entry.javascript_name, projection);
+        assert_eq!(entry.feature, "cap-descriptors");
+        assert_eq!(entry.status, FunctionStatus::Experimental);
+        assert_eq!(entry.type_role, Some(BindingTypeRole::Error));
+        assert!(entry.callable.is_none());
     }
 }
 

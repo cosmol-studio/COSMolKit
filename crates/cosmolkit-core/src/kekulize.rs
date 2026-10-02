@@ -148,6 +148,11 @@ impl Default for KekulizeParams {
 #[derive(Debug, Clone, PartialEq)]
 pub struct KekulizeAssignment {
     pub topology: TopologyBlock,
+    /// Existing postcondition calculation, absent on the source early return.
+    /// Only `refreshed_valence_atoms` were refreshed by the source operation;
+    /// other rows must not replace a caller's intermediate property cache.
+    pub final_valence: Option<ValenceAssignment>,
+    pub refreshed_valence_atoms: Vec<AtomId>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1716,10 +1721,14 @@ fn kekulize_fragment(
     bonds_in_play: &[bool],
     params: &KekulizeParams,
     query_state: Option<QueryStateRef<'_>>,
-) -> Result<TopologyBlock, KekulizeError> {
+) -> Result<KekulizeAssignment, KekulizeError> {
     let prepared = prepare_kekulize_selection(topology, atoms_in_play, bonds_in_play, query_state)?;
     if !prepared.found_aromatic {
-        return Ok(topology.clone());
+        return Ok(KekulizeAssignment {
+            topology: topology.clone(),
+            final_valence: None,
+            refreshed_valence_atoms: Vec::new(),
+        });
     }
 
     // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/Kekulize.cpp :: KekulizeFragment ranking and dispatch
@@ -1767,6 +1776,7 @@ fn kekulize_fragment(
     // END RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/Kekulize.cpp :: KekulizeFragment ranking and dispatch
 
     // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/Kekulize.cpp :: KekulizeFragment finalization
+    let mut refreshed_valence_atoms = Vec::new();
     // RDKit✔️✔️:   if (markAtomsBonds) {
     // RDKit✔️✔️:     // if we want the atoms and bonds to be marked non-aromatic do
     // RDKit✔️✔️:     // that here.
@@ -1824,6 +1834,7 @@ fn kekulize_fragment(
             {
                 working.atoms[atom_idx].set_no_implicit(false);
                 working.atoms[atom_idx].set_explicit_hydrogens(0);
+                refreshed_valence_atoms.push(atom_id);
             }
             // RDKit✔️✔️:       }
             // RDKit✔️✔️:     }
@@ -1873,7 +1884,23 @@ fn kekulize_fragment(
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/Kekulize.cpp :: KekulizeFragment finalization
     working.validate()?;
-    Ok(working)
+    // RDKit✔️✔️: void Atom::updatePropertyCache(bool strict) {
+    // RDKit✔️✔️:   calcExplicitValence(strict);
+    // RDKit✔️✔️:   calcImplicitValence(strict);
+    // RDKit✔️✔️: }
+    // RDKit✔️✔️: unsigned int Atom::getTotalValence() const {
+    // RDKit✔️✔️:   return getValence(ValenceType::EXPLICIT) + getValence(ValenceType::IMPLICIT);
+    // RDKit✔️✔️: }
+    // Behavior: the final getter does not refresh ordinary rows. Transport the
+    // already-computed assignment with exactly the N/P updatePropertyCache
+    // rows, so callers can retain source-stale intermediate rows unchanged.
+    // Complexity: move both existing valence vectors; the row list is built
+    // inside the existing atom loop. No additional chemistry evaluation.
+    Ok(KekulizeAssignment {
+        topology: working,
+        final_valence: Some(final_valence),
+        refreshed_valence_atoms,
+    })
 }
 
 pub fn kekulize(
@@ -1902,9 +1929,7 @@ pub fn kekulize_selected_fragment(
     // core masked owner performs source validation and all selected chemistry.
     // Cost: detached return ownership clones the topology, including the
     // source early-return path; the upstream caller mutates its private copy.
-    Ok(KekulizeAssignment {
-        topology: kekulize_fragment(topology, atoms_in_play, bonds_in_play, params, None)?,
-    })
+    kekulize_fragment(topology, atoms_in_play, bonds_in_play, params, None)
 }
 
 #[doc(hidden)]
@@ -1929,15 +1954,13 @@ pub fn kekulize_with_query_state(
     // RDKit✔️✔️:                             canonical, maxBackTracks);
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/Kekulize.cpp :: MolOps::Kekulize
-    Ok(KekulizeAssignment {
-        topology: kekulize_fragment(
-            topology,
-            &atoms_in_play,
-            &bonds_in_play,
-            params,
-            query_state,
-        )?,
-    })
+    kekulize_fragment(
+        topology,
+        &atoms_in_play,
+        &bonds_in_play,
+        params,
+        query_state,
+    )
 }
 
 pub fn kekulize_if_possible(

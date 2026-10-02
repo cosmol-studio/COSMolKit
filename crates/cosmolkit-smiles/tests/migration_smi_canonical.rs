@@ -49,6 +49,7 @@ fn s33_standard_writer_input(input: &str) -> SmilesRecord {
             properties: prepared.properties,
         },
         &parse_params,
+        &mut None,
     )
     .unwrap()
 }

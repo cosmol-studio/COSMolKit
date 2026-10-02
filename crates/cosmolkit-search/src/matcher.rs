@@ -3533,6 +3533,7 @@ fn recursive_matcher(
     query: &QueryGraph,
     params: &SubstructMatchParams,
     recursive_cache: &mut RecursiveQueryMatchCache,
+    query_context: Option<&QueryMatchContext<'_>>,
 ) -> Result<Vec<bool>, SubstructMatchError> {
     // RDKit✔️❌: unsigned int RecursiveMatcher(const ROMol &mol, const ROMol &query,
     // RDKit✔️❌:                               std::vector<int> &matches,
@@ -3595,15 +3596,35 @@ fn recursive_matcher(
     local_params.max_matches = params.max_recursive_matches.max(params.max_matches);
     local_params.uniquify = false;
     for atom in query.atoms() {
-        match_subqueries(mol, atom.predicate(), &local_params, recursive_cache)?;
+        match_subqueries(
+            mol,
+            atom.predicate(),
+            &local_params,
+            recursive_cache,
+            query_context,
+        )?;
     }
 
-    let matches = substruct_match_impl_with_recursive_cache(
-        mol,
-        query,
-        &local_params,
-        Some(recursive_cache),
-    )?;
+    // The source recursive matcher sees the same owning target's chemistry.
+    // Forward an explicitly supplied detached context through every depth;
+    // ordinary callers preserve the existing cold preparation path.
+    let matches = match query_context {
+        Some(context) => substruct_match_impl_with_recursive_cache_and_context(
+            mol,
+            query,
+            &local_params,
+            Some(recursive_cache),
+            context,
+            None,
+            None,
+        ),
+        None => substruct_match_impl_with_recursive_cache(
+            mol,
+            query,
+            &local_params,
+            Some(recursive_cache),
+        ),
+    }?;
     let root_index = query
         .prop("_queryRootAtom")
         .and_then(|value| value.parse::<i32>().ok())
@@ -3625,6 +3646,7 @@ fn match_subqueries(
     query: &crate::QueryNode<AtomQueryPredicate>,
     params: &SubstructMatchParams,
     recursive_cache: &mut RecursiveQueryMatchCache,
+    query_context: Option<&QueryMatchContext<'_>>,
 ) -> Result<(), SubstructMatchError> {
     // RDKit✔️❌: void MatchSubqueries(const ROMol &mol, QueryAtom::QUERYATOM_QUERY *query,
     // RDKit✔️❌:                      const SubstructMatchParameters &params,
@@ -3683,7 +3705,7 @@ fn match_subqueries(
             if !recursive_cache.contains_key(&cache_key) {
                 let match_starts = match recursive_query.query_graph() {
                     Some(inner_query) => {
-                        recursive_matcher(mol, inner_query, params, recursive_cache)?
+                        recursive_matcher(mol, inner_query, params, recursive_cache, query_context)?
                     }
                     None => vec![false; mol.num_atoms()],
                 };
@@ -3695,11 +3717,11 @@ fn match_subqueries(
         | crate::QueryNode::Or(children)
         | crate::QueryNode::Xor(children) => {
             for child in children {
-                match_subqueries(mol, child, params, recursive_cache)?;
+                match_subqueries(mol, child, params, recursive_cache, query_context)?;
             }
         }
         crate::QueryNode::Not(child) => {
-            match_subqueries(mol, child, params, recursive_cache)?;
+            match_subqueries(mol, child, params, recursive_cache, query_context)?;
         }
     }
     Ok(())
@@ -3710,9 +3732,16 @@ fn populate_recursive_query_match_cache(
     query: &QueryGraph,
     params: &SubstructMatchParams,
     recursive_cache: &mut RecursiveQueryMatchCache,
+    query_context: Option<&QueryMatchContext<'_>>,
 ) -> Result<(), SubstructMatchError> {
     for atom in query.atoms() {
-        match_subqueries(mol, atom.predicate(), params, recursive_cache)?;
+        match_subqueries(
+            mol,
+            atom.predicate(),
+            params,
+            recursive_cache,
+            query_context,
+        )?;
     }
     Ok(())
 }
@@ -5000,7 +5029,13 @@ fn substruct_match_impl(
     }
     let mut recursive_locker = RecursiveLocker::new(query, params.recursion_possible);
     if params.recursion_possible {
-        populate_recursive_query_match_cache(mol, query, params, &mut recursive_locker.cache)?;
+        populate_recursive_query_match_cache(
+            mol,
+            query,
+            params,
+            &mut recursive_locker.cache,
+            None,
+        )?;
     }
     substruct_match_impl_with_recursive_cache(mol, query, params, Some(&recursive_locker.cache))
 }
@@ -5096,7 +5131,13 @@ pub fn try_get_substruct_matches_with_params_and_context(
     }
     let mut recursive_locker = RecursiveLocker::new(query, params.recursion_possible);
     if params.recursion_possible {
-        populate_recursive_query_match_cache(mol, query, params, &mut recursive_locker.cache)?;
+        populate_recursive_query_match_cache(
+            mol,
+            query,
+            params,
+            &mut recursive_locker.cache,
+            Some(query_context),
+        )?;
     }
     substruct_match_impl_with_recursive_cache_and_context(
         mol,
@@ -5129,7 +5170,13 @@ pub(crate) fn get_substruct_matches_with_compiled_query(
     }
     let mut recursive_locker = RecursiveLocker::new(query, params.recursion_possible);
     if params.recursion_possible {
-        populate_recursive_query_match_cache(mol, query, params, &mut recursive_locker.cache)?;
+        populate_recursive_query_match_cache(
+            mol,
+            query,
+            params,
+            &mut recursive_locker.cache,
+            None,
+        )?;
     }
     let query_ctx = build_query_match_context(mol);
     // RDKit's `vf2_all` creates its initial state with `sortNodes=false`.

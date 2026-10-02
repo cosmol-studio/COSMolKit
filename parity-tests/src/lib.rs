@@ -2,8 +2,9 @@
 pub mod execute;
 pub mod molecular;
 pub mod registry;
+pub mod testing;
 
-use registry::{Corpus, Input, RDKIT_VERSION, Record, Task};
+use registry::{Corpus, CorpusType, Input, RDKIT_VERSION, Record, Task};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
@@ -36,32 +37,43 @@ fn read(path: &Path) -> Result<Vec<u8>> {
     fs::read(path).map_err(|e| format!("{}: {e}", path.display()))
 }
 
-pub fn corpus(path: Option<&Path>, tasks: &[&Task]) -> Result<Corpus> {
-    let fingerprint_tasks = tasks
-        .iter()
-        .any(|t| !matches!(t.operation, registry::Operation::Molecular(_)));
-    let molecular_tasks = tasks
-        .iter()
-        .any(|t| matches!(t.operation, registry::Operation::Molecular(_)));
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CorpusSource {
+    pub corpus_type: CorpusType,
+    pub path: PathBuf,
+}
+
+/// Sources are explicitly typed. A suffix never selects a loader.
+pub fn corpus(sources: &[CorpusSource], tasks: &[&Task]) -> Result<Corpus> {
+    let mut seen = std::collections::BTreeSet::new();
+    for source in sources {
+        if !seen.insert(source.corpus_type.name()) {
+            return Err("duplicate corpus type".into());
+        }
+        if !tasks.iter().any(|t| t.corpus_type == source.corpus_type) {
+            return Err("selected tasks do not consume the supplied corpus input family".into());
+        }
+    }
     let mut corpus = Corpus::default();
-    let default = root().join("testdata/smiles/corpus/smiles_small.smi");
-    let is_json = path.is_some_and(|p| p.extension().is_some_and(|ext| ext == "json"));
-    if path.is_some() && ((is_json && !fingerprint_tasks) || (!is_json && !molecular_tasks)) {
-        return Err("selected tasks do not consume the supplied corpus input family".into());
-    }
-    if fingerprint_tasks {
-        corpus.fingerprints = if is_json {
-            serde_json::from_slice(&read(path.unwrap())?).map_err(|e| e.to_string())?
-        } else {
-            registry::fingerprint_corpus::generate()
-        };
-    }
-    if molecular_tasks {
-        corpus.molecules = molecular::read_corpus(if is_json {
-            &default
-        } else {
-            path.unwrap_or(&default)
-        })?;
+    for task in tasks {
+        let source = sources.iter().find(|s| s.corpus_type == task.corpus_type);
+        match task.corpus_type {
+            CorpusType::Smiles if corpus.molecules.is_empty() => {
+                let default = root().join("testdata/smiles/corpus/smiles_small.smi");
+                corpus.molecules =
+                    molecular::read_corpus(source.map_or(default.as_path(), |s| &s.path))?;
+            }
+            CorpusType::FingerprintPairs if corpus.fingerprints.is_empty() => {
+                corpus.fingerprints = if let Some(source) = source {
+                    serde_json::from_slice(&read(&source.path)?).map_err(|e| e.to_string())?
+                } else {
+                    registry::fingerprint_corpus::generate()
+                };
+            }
+            CorpusType::Smiles | CorpusType::FingerprintPairs => {}
+            kind => return Err(format!("unimplemented corpus loader: {}", kind.name())),
+        }
     }
     Ok(corpus)
 }
@@ -72,6 +84,7 @@ fn registry_digest() -> String {
             include_str!("registry.rs"),
             include_str!("registry/molecule_plan.rs"),
             include_str!("registry/fingerprint_corpus.rs"),
+            include_str!("registry/fingerprint.rs"),
             include_str!("molecular.rs")
         )
         .as_bytes(),
@@ -83,6 +96,8 @@ fn registry_digest() -> String {
 struct Manifest {
     schema: u32,
     task: String,
+    corpus_type: CorpusType,
+    generator: String,
     rdkit_version: String,
     reference_platform: String,
     registry_sha256: String,
@@ -94,8 +109,10 @@ struct Manifest {
 
 fn identity(task: &Task, input: &[u8], reference: &[u8], rows: usize) -> Manifest {
     Manifest {
-        schema: 2,
-        task: task.operation.name().into(),
+        schema: 3,
+        task: task.key(),
+        corpus_type: task.corpus_type,
+        generator: task.generator.into(),
         rdkit_version: RDKIT_VERSION.into(),
         reference_platform: format!("{}-{}", std::env::consts::ARCH, std::env::consts::OS),
         registry_sha256: registry_digest(),
@@ -106,45 +123,105 @@ fn identity(task: &Task, input: &[u8], reference: &[u8], rows: usize) -> Manifes
     }
 }
 
-fn check_records(inputs: &[Input], records: &[Record]) -> Result<()> {
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ReferenceLabel {
+    pub test: String,
+    pub corpus_type: CorpusType,
+    pub case_id: String,
+    pub parameters: serde_json::Value,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct LabeledRecord {
+    label: ReferenceLabel,
+    record: Record,
+}
+
+fn reference_label(task: &Task, input: &Input) -> Result<ReferenceLabel> {
+    let (case_id, parameters) = match input {
+        Input::Fingerprint(row) => (
+            &row.case.id,
+            serde_json::json!({ "operation": row.operation, "width": row.width }),
+        ),
+        Input::Molecular { case, profile } => (
+            &case.id,
+            serde_json::to_value(profile).map_err(|e| e.to_string())?,
+        ),
+    };
+    Ok(ReferenceLabel {
+        test: task.key(),
+        corpus_type: task.corpus_type,
+        case_id: case_id.clone(),
+        parameters,
+    })
+}
+
+fn label_records(task: &Task, records: &[Record]) -> Result<Vec<LabeledRecord>> {
+    records
+        .iter()
+        .map(|record| {
+            Ok(LabeledRecord {
+                label: reference_label(task, &record.input)?,
+                record: record.clone(),
+            })
+        })
+        .collect()
+}
+
+fn check_records(task: &Task, inputs: &[Input], records: &[Record]) -> Result<()> {
     if inputs.len() != records.len() {
         return Err("reference row count mismatch".into());
     }
     for (input, record) in inputs.iter().zip(records) {
         if input != &record.input {
-            return Err("reference case/operation/width mismatch".into());
+            return Err("reference case/parameter mismatch".into());
         }
-        if let (Input::Fingerprint(input), registry::Value::Fingerprint(output)) =
-            (input, &record.output)
-        {
-            let entries = &output.entries;
-            if output.length != input.case.length
-                || entries.windows(2).any(|w| w[0].0 >= w[1].0)
-                || entries.iter().any(|&(key, _)| key >= input.case.length)
-            {
-                return Err(format!("{}: malformed reference output", input.case.id));
-            }
-        } else if let (Input::Molecular { profile, .. }, registry::Value::Molecular(output)) =
-            (input, &record.output)
-        {
-            molecular::validate_output(profile, output)?;
-        } else {
-            return Err("reference input/output kind mismatch".into());
-        }
+        task.validate_reference(input, &record.output)?;
     }
     Ok(())
 }
 
-fn oracle(inputs: &[Input], python: &Path) -> Result<Vec<Record>> {
+fn oracle(task: &Task, cases: &Corpus, python: &Path, threads: usize) -> Result<Vec<Record>> {
+    if threads == 0 {
+        return Err("threads must be positive".into());
+    }
+    let script = root().join("tools/oracles/rdkit/fingerprint_values_pilot.py");
+    // Run the exact checksummed source, from a real file so process workers
+    // can import their module on spawn-based platforms too.
+    if read(&script)? != ORACLE.as_bytes() {
+        return Err("oracle source changed; rebuild the preparation binary".into());
+    }
+    let (corpus, parameters) = match task.operation {
+        registry::Operation::Molecular(id) => (
+            serde_json::to_value(&cases.molecules),
+            serde_json::to_value(id.profiles()),
+        ),
+        operation => (
+            serde_json::to_value(&cases.fingerprints),
+            Ok(serde_json::Value::Array(
+                registry::fingerprint::WIDTHS
+                    .iter()
+                    .map(|width| serde_json::json!({"operation":operation,"width":width}))
+                    .collect(),
+            )),
+        ),
+    };
+    let request = serde_json::json!({
+        "generator":task.generator, "corpus":corpus.map_err(|e|e.to_string())?,
+        "parameters":parameters.map_err(|e:serde_json::Error|e.to_string())?, "threads":threads,
+    });
     // Python is solely the pinned RDKit adapter, never the CK executor.
     let mut child = Command::new(python)
-        .args(["-c", ORACLE, RDKIT_VERSION])
+        .arg(script)
+        .arg(RDKIT_VERSION)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
         .map_err(|e| format!("RDKit adapter: {e}"))?;
-    let payload = encode(&inputs)?;
+    let payload = encode(&request)?;
     let mut stdin = child.stdin.take().ok_or("oracle stdin unavailable")?;
     // Write concurrently so a larger corpus cannot deadlock stdout/stderr pipes.
     let writer = std::thread::spawn(move || stdin.write_all(&payload));
@@ -170,21 +247,32 @@ pub struct Preparation {
 }
 
 /// Reuse verified references and prepare missing or invalid generations.
-/// Ordinary cargo tests inject a synthetic generator, never the real oracle.
-pub fn prepare(tasks: &[&Task], cases: &Corpus, data: &Path, python: &Path) -> Result<Preparation> {
-    ensure_ready_with(tasks, cases, data, |inputs| oracle(inputs, python))
-        .map(|(_, preparation)| preparation)
-}
-
-fn ensure_ready_with(
+/// Framework regressions inject synthetic values; corpus tests never generate.
+pub fn prepare(
     tasks: &[&Task],
     cases: &Corpus,
     data: &Path,
-    mut generate: impl FnMut(&[Input]) -> Result<Vec<Record>>,
+    python: &Path,
+    threads: usize,
+) -> Result<Preparation> {
+    if threads == 0 {
+        return Err("threads must be positive".into());
+    }
+    prepare_with(tasks, cases, data, |task, _| {
+        oracle(task, cases, python, threads)
+    })
+    .map(|(_, preparation)| preparation)
+}
+
+fn prepare_with(
+    tasks: &[&Task],
+    cases: &Corpus,
+    data: &Path,
+    mut generate: impl FnMut(&Task, &[Input]) -> Result<Vec<Record>>,
 ) -> Result<(Ready, Preparation)> {
     registry::validate(cases, tasks)?;
     if tasks.is_empty() {
-        return Err("empty task/width selection; 0 Rust operation calls".into());
+        return Err("empty task selection; 0 Rust operation calls".into());
     }
     fs::create_dir_all(data).map_err(|e| e.to_string())?;
     // Serialize publishers; the OS releases this lock even after interruption.
@@ -211,9 +299,9 @@ fn ensure_ready_with(
     for (task, needs_data) in tasks.iter().zip(missing) {
         if needs_data {
             let inputs = registry::expand(cases, task);
-            let records = generate(&inputs)
+            let records = generate(task, &inputs)
                 .and_then(|records| {
-                    check_records(&inputs, &records)?;
+                    check_records(task, &inputs, &records)?;
                     Ok(records)
                 })
                 .map_err(|e| {
@@ -236,7 +324,7 @@ fn ensure_ready_with(
 
 fn publish(data: &Path, task: &Task, inputs: &[Input], records: &[Record]) -> Result<()> {
     let input = encode(&inputs)?;
-    let reference = encode(&records)?;
+    let reference = encode(&label_records(task, records)?)?;
     let manifest = encode(&identity(task, &input, &reference, inputs.len()))?;
     let destination = generation(data, task, &input);
     let temporary = tempfile::Builder::new()
@@ -278,20 +366,18 @@ fn publish(data: &Path, task: &Task, inputs: &[Input], records: &[Record]) -> Re
 
 fn generation(data: &Path, task: &Task, input: &[u8]) -> PathBuf {
     let identity = format!(
-        "{}{}{}",
+        "schema3{}{}{}{}",
+        task.key(),
         digest(input),
         digest(ORACLE.as_bytes()),
         registry_digest()
     );
-    data.join(format!(
-        "{}-{}",
-        task.operation.name(),
-        digest(identity.as_bytes())
-    ))
+    data.join(format!("{}-{}", task.key(), digest(identity.as_bytes())))
 }
 
+#[derive(Clone)]
 pub struct Ready {
-    records: Vec<Record>,
+    records: Vec<LabeledRecord>,
 }
 
 impl Ready {
@@ -300,6 +386,13 @@ impl Ready {
     }
     pub fn is_empty(&self) -> bool {
         self.records.is_empty()
+    }
+
+    pub fn compare_task(&self, key: &str) -> Vec<Comparison> {
+        compare_rows(
+            self.records.iter().filter(|row| row.label.test == key),
+            execute::run,
+        )
     }
 }
 
@@ -310,7 +403,7 @@ pub fn preflight(tasks: &[&Task], cases: &Corpus, data: &Path) -> Result<Ready> 
     let mut all = Vec::new();
     let mut errors = Vec::new();
     for task in tasks {
-        let load = || -> Result<Vec<Record>> {
+        let load = || -> Result<Vec<LabeledRecord>> {
             let inputs = registry::expand(cases, task);
             let expected_input = encode(&inputs)?;
             let dir = generation(data, task, &expected_input);
@@ -323,9 +416,21 @@ pub fn preflight(tasks: &[&Task], cases: &Corpus, data: &Path) -> Result<Ready> 
             {
                 return Err("stale or corrupted manifest/input/reference".into());
             }
-            let records: Vec<Record> =
+            let records: Vec<LabeledRecord> =
                 serde_json::from_slice(&reference).map_err(|e| e.to_string())?;
-            check_records(&inputs, &records)?;
+            if records.len() != inputs.len() {
+                return Err("reference row count mismatch".into());
+            }
+            for (input, row) in inputs.iter().zip(&records) {
+                if row.label != reference_label(task, input)? {
+                    return Err("reference label mismatch".into());
+                }
+                check_records(
+                    task,
+                    std::slice::from_ref(input),
+                    std::slice::from_ref(&row.record),
+                )?;
+            }
             Ok(records)
         };
         match load() {
@@ -335,7 +440,7 @@ pub fn preflight(tasks: &[&Task], cases: &Corpus, data: &Path) -> Result<Ready> 
     }
     if !errors.is_empty() {
         return Err(format!(
-            "preflight failed; 0 Rust operation calls\n{}",
+            "preflight failed; 0 Rust operation calls\nPrepare references first: cargo run -p cosmolkit-parity-tests --release -- prepare\n{}",
             errors.join("\n")
         ));
     }
@@ -344,6 +449,7 @@ pub fn preflight(tasks: &[&Task], cases: &Corpus, data: &Path) -> Result<Ready> 
 
 #[derive(Debug, Serialize)]
 pub struct Comparison {
+    pub label: ReferenceLabel,
     pub input: Input,
     pub expected: registry::Value,
     pub actual: std::result::Result<registry::Value, String>,
@@ -352,65 +458,103 @@ pub struct Comparison {
 
 /// Exact typed comparison, except the registry's declared 2D numeric tolerance.
 pub fn compare(ready: Ready, mut run: impl FnMut(&Input) -> Result<Record>) -> Vec<Comparison> {
-    ready
-        .records
-        .into_iter()
-        .map(|reference| {
-            let actual = run(&reference.input).and_then(|record| {
-                if record.input != reference.input {
-                    return Err("executor changed case identity".into());
-                }
-                Ok(record.output)
-            });
-            let matches = match (&reference.output, &actual) {
-                (registry::Value::Molecular(expected), Ok(registry::Value::Molecular(actual))) => {
-                    molecular::matches(expected, actual)
-                }
-                _ => actual.as_ref() == Ok(&reference.output),
-            };
-            Comparison {
-                input: reference.input,
-                expected: reference.output,
-                actual,
-                matches,
-            }
-        })
-        .collect()
+    compare_rows(ready.records.iter(), &mut run)
 }
 
+fn compare_rows<'a>(
+    rows: impl Iterator<Item = &'a LabeledRecord>,
+    mut run: impl FnMut(&Input) -> Result<Record>,
+) -> Vec<Comparison> {
+    rows.map(|row| {
+        let reference = &row.record;
+        let actual = run(&reference.input).and_then(|record| {
+            if record.input != reference.input {
+                return Err("executor changed case identity".into());
+            }
+            Ok(record.output)
+        });
+        let matches = match (&reference.output, &actual) {
+            (registry::Value::Molecular(expected), Ok(registry::Value::Molecular(actual))) => {
+                molecular::matches(expected, actual)
+            }
+            _ => actual.as_ref() == Ok(&reference.output),
+        };
+        Comparison {
+            label: row.label.clone(),
+            input: reference.input.clone(),
+            expected: reference.output.clone(),
+            actual,
+            matches,
+        }
+    })
+    .collect()
+}
+
+/// Read-only test stage. No interpreter or generator is accepted here.
 pub fn run(
     tasks: &[&Task],
     cases: &Corpus,
     data: &Path,
-    python: &Path,
     executor: impl FnMut(&Input) -> Result<Record>,
 ) -> Result<Vec<Comparison>> {
-    run_with(
-        tasks,
-        cases,
-        data,
-        |inputs| oracle(inputs, python),
-        executor,
-    )
-}
-
-fn run_with(
-    tasks: &[&Task],
-    cases: &Corpus,
-    data: &Path,
-    generate: impl FnMut(&[Input]) -> Result<Vec<Record>>,
-    executor: impl FnMut(&Input) -> Result<Record>,
-) -> Result<Vec<Comparison>> {
-    let (ready, preparation) = ensure_ready_with(tasks, cases, data, generate)?;
-    eprintln!(
-        "Preparation complete: {} reused tasks, {} generated tasks; {} ready cases",
-        preparation.reused_tasks, preparation.generated_tasks, preparation.rows
-    );
-    Ok(compare(ready, executor))
+    Ok(compare(preflight(tasks, cases, data)?, executor))
 }
 
 pub fn write_report(path: &Path, report: &[Comparison]) -> Result<()> {
     fs::write(path, encode(&report)?).map_err(|e| e.to_string())
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Suite {
+    pub tasks: Vec<String>,
+    pub sources: Vec<CorpusSource>,
+}
+
+/// Save the prepared selection, not a validity certificate: tests revalidate it.
+pub fn save_suite(data: &Path, tasks: &[&Task], sources: &[CorpusSource]) -> Result<()> {
+    let sources = sources
+        .iter()
+        .map(|source| {
+            Ok(CorpusSource {
+                corpus_type: source.corpus_type,
+                path: fs::canonicalize(&source.path).map_err(|e| e.to_string())?,
+            })
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let suite = Suite {
+        tasks: tasks.iter().map(|task| task.key()).collect(),
+        sources,
+    };
+    let mut file = tempfile::NamedTempFile::new_in(data).map_err(|e| e.to_string())?;
+    file.write_all(&encode(&suite)?)
+        .map_err(|e| e.to_string())?;
+    file.persist(data.join("suite.json"))
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+pub fn load_suite(data: &Path) -> Result<(Vec<&'static Task>, Ready)> {
+    let suite: Suite =
+        serde_json::from_slice(&read(&data.join("suite.json"))?).map_err(|e| e.to_string())?;
+    let mut keys = std::collections::BTreeSet::new();
+    let tasks = suite
+        .tasks
+        .iter()
+        .map(|key| {
+            if !keys.insert(key) {
+                return Err("duplicate suite test".into());
+            }
+            let task = registry::select(Some(key))?.remove(0);
+            if task.key() != *key {
+                return Err("suite requires function/corpus-type keys".into());
+            }
+            Ok(task)
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let cases = corpus(&suite.sources, &tasks)?;
+    let ready = preflight(&tasks, &cases, data)?;
+    Ok((tasks, ready))
 }
 
 #[cfg(test)]

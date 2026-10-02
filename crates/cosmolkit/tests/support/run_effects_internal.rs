@@ -367,7 +367,7 @@ fn empty_wrong_category_and_duplicate_actions_are_atomic() {
     parts
         .mark_cache_updated_runtime(DerivedState::VALENCE)
         .unwrap();
-    let before = parts.current_cache_candidate().unwrap();
+    let before = parts.current_cache_candidate().unwrap().clone();
     assert!(matches!(
         parts.mark_cache_updated_runtime(DerivedState::VALENCE),
         Err(OperationError::DerivedEffectContract {
@@ -375,7 +375,216 @@ fn empty_wrong_category_and_duplicate_actions_are_atomic() {
             ..
         })
     ));
-    assert_eq!(parts.current_cache_candidate().unwrap(), before);
+    assert_eq!(parts.current_cache_candidate().unwrap(), &before);
+}
+
+#[test]
+fn preserve_only_runtime_category_access_product() {
+    let mut rows = 0;
+    for category in 0..4 {
+        let mut masks = [DerivedState::NONE; 4];
+        masks[category] = DerivedState::VALENCE;
+        for mode in 0..3 {
+            let read = if mode == 1 {
+                BlockSet::DERIVED_CACHE
+            } else {
+                BlockSet::NONE
+            };
+            let write = if mode == 2 {
+                BlockSet::DERIVED_CACHE
+            } else {
+                BlockSet::NONE
+            };
+            let operation = spec(
+                "without_hydrogens",
+                MoleculeOpOutput::Single,
+                BlockAccess::new(read, write),
+                write,
+                effects(masks[0], masks[1], masks[2], masks[3]),
+                CipStatePolicy::Preserve,
+            );
+            assert_eq!(
+                OpParts::<EffectsAccess>::validate_effect_contract(operation).is_ok(),
+                category == 1 || mode == 2,
+                "category={category}, access={mode}",
+            );
+            rows += 1;
+        }
+    }
+    assert_eq!(rows, 12);
+    for mutation in [0, 2, 3] {
+        let mut masks = [DerivedState::NONE; 4];
+        masks[1] = DerivedState::RINGS;
+        masks[mutation] = DerivedState::VALENCE;
+        let operation = spec(
+            "without_hydrogens",
+            MoleculeOpOutput::Single,
+            BlockAccess::new(BlockSet::DERIVED_CACHE, BlockSet::NONE),
+            BlockSet::NONE,
+            effects(masks[0], masks[1], masks[2], masks[3]),
+            CipStatePolicy::Preserve,
+        );
+        assert!(matches!(
+            OpParts::<EffectsAccess>::validate_effect_contract(operation),
+            Err(OperationError::DerivedEffectContract {
+                states: DerivedState::VALENCE,
+                ..
+            })
+        ));
+    }
+}
+
+#[test]
+fn preserve_only_borrow_proof_and_commit_keep_cache_storage() {
+    let mut rows = 0;
+    for read in [BlockSet::NONE, BlockSet::DERIVED_CACHE] {
+        for valid in [false, true] {
+            let source = molecule_with_valid(if valid {
+                DerivedState::RINGS
+            } else {
+                DerivedState::NONE
+            });
+            let peer = source.clone();
+            let operation = spec(
+                "preserve_only",
+                MoleculeOpOutput::Single,
+                BlockAccess::new(read, BlockSet::COORDINATES),
+                BlockSet::COORDINATES,
+                effects(
+                    DerivedState::NONE,
+                    DerivedState::RINGS,
+                    DerivedState::NONE,
+                    DerivedState::NONE,
+                ),
+                CipStatePolicy::Preserve,
+            );
+            let mut parts = OpParts::<EffectsAccess>::new(&source, operation).unwrap();
+            assert!(std::ptr::eq(
+                parts.current_cache_candidate().unwrap(),
+                source.derived_cache_runtime()
+            ));
+            if read.is_empty() {
+                assert!(matches!(
+                    parts.read_derived_cache_runtime(),
+                    Err(OperationError::AccessDenied {
+                        block: "derived_cache",
+                        ..
+                    })
+                ));
+            } else {
+                assert!(std::ptr::eq(
+                    parts.read_derived_cache_runtime().unwrap(),
+                    source.derived_cache_runtime()
+                ));
+            }
+            assert!(matches!(
+                parts.checkout_derived_cache_runtime(),
+                Err(OperationError::AccessDenied {
+                    block: "derived_cache",
+                    ..
+                })
+            ));
+            assert!(matches!(
+                parts.clear_cache_runtime(DerivedState::RINGS),
+                Err(OperationError::DerivedEffectContract { .. })
+            ));
+            assert!(matches!(
+                parts.mark_cache_updated_runtime(DerivedState::RINGS),
+                Err(OperationError::DerivedEffectContract { .. })
+            ));
+            assert_eq!(parts.effect_trace, EffectTrace::default());
+            let mut coordinates = parts.checkout_coordinates_runtime().unwrap();
+            coordinates
+                .conformers_3d
+                .push(cosmolkit_model::Conformer3D::new(
+                    9,
+                    vec![[1.0, 2.0, 3.0]; 2],
+                    true,
+                ));
+            parts.install_coordinates_runtime(coordinates).unwrap();
+            assert!(matches!(
+                parts.validate_effect_completion(),
+                Err(OperationError::DerivedEffectContract {
+                    action: "preserve",
+                    ..
+                })
+            ));
+            assert!(matches!(
+                parts.prove_preserved_runtime(
+                    DerivedState::RINGS,
+                    PreservationProof::UnchangedInput
+                ),
+                Err(OperationError::DerivedEffectContract {
+                    issue: "unchanged-input proof failed",
+                    ..
+                })
+            ));
+            assert_eq!(parts.effect_trace, EffectTrace::default());
+            parts
+                .prove_preserved_runtime(DerivedState::RINGS, PreservationProof::CoordinateOnly)
+                .unwrap();
+            parts.apply_cip_policy_runtime().unwrap();
+            parts.validate_effect_completion().unwrap();
+            assert!(matches!(parts.derived_cache, WorkingBlock::Shared));
+            let output = parts.finish().unwrap();
+            assert!(Arc::ptr_eq(
+                &source.derived_cache_arc_runtime(),
+                &output.derived_cache_arc_runtime()
+            ));
+            assert!(Arc::ptr_eq(
+                &source.derived_cache_arc_runtime(),
+                &peer.derived_cache_arc_runtime()
+            ));
+            assert!(std::ptr::eq(source.topology(), output.topology()));
+            assert!(std::ptr::eq(source.properties(), output.properties()));
+            assert_eq!(
+                output.derived_cache_runtime().valid_states(),
+                source.derived_cache_runtime().valid_states()
+            );
+            assert!(source.conformers_3d().is_empty());
+            assert_eq!(output.conformers_3d()[0].id(), 9);
+            rows += 1;
+        }
+    }
+    assert_eq!(rows, 4);
+}
+
+#[test]
+fn preserve_only_cache_inspection_borrows_installed_values_and_rejects_checkout() {
+    let source = molecule_with_valid(DerivedState::RINGS);
+    let operation = spec(
+        "cache_borrow",
+        MoleculeOpOutput::Single,
+        all_effect_access(),
+        all_effect_access().write(),
+        effects(
+            DerivedState::NONE,
+            DerivedState::RINGS,
+            DerivedState::NONE,
+            DerivedState::NONE,
+        ),
+        CipStatePolicy::Preserve,
+    );
+    let mut parts = OpParts::<EffectsAccess>::new(&source, operation).unwrap();
+    let cache = parts.checkout_derived_cache_runtime().unwrap();
+    assert!(matches!(
+        parts.current_cache_candidate(),
+        Err(OperationError::BlockCheckedOut {
+            block: "derived_cache",
+            ..
+        })
+    ));
+    parts.install_derived_cache_runtime(cache).unwrap();
+    let WorkingBlock::Installed(stored) = &parts.derived_cache else {
+        panic!("installed cache expected")
+    };
+    assert!(std::ptr::eq(
+        parts.current_cache_candidate().unwrap(),
+        stored
+    ));
+    parts
+        .prove_preserved_runtime(DerivedState::RINGS, PreservationProof::UnchangedInput)
+        .unwrap();
 }
 
 #[test]

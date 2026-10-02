@@ -25,13 +25,13 @@ pub use mcs::{
     RingComparator, find_mcs, update_mcs_parameters_from_json,
 };
 pub use query_behavior::{
-    QUERY_SCAN_MAGIC_VALUE, QueryConstructionError, QueryMatchContext, SmartsParseError,
-    atom_matches_query, atom_matches_query_with_context, atom_predicate_matches,
+    QUERY_SCAN_MAGIC_VALUE, QueryConstructionError, QueryMatchContext, QueryMatchContextError,
+    SmartsParseError, atom_matches_query, atom_matches_query_with_context, atom_predicate_matches,
     atom_predicate_matches_with_context, atom_query_has_magic_value, bond_matches_query,
     bond_matches_query_with_context, bond_predicate_matches, bond_predicate_matches_with_context,
-    build_query_match_context, complete_mol_queries, convert_complex_name_to_query,
-    is_atom_aromatic, make_single_or_aromatic_bond_query, query_bond_min_ring_size,
-    query_is_bond_in_ring,
+    build_prepared_query_match_context, build_query_match_context, complete_mol_queries,
+    convert_complex_name_to_query, is_atom_aromatic, make_single_or_aromatic_bond_query,
+    query_bond_min_ring_size, query_is_bond_in_ring,
 };
 pub use smarts_parse::{SmartsParseParams, compile_query_fixture, parse_smarts};
 pub use smarts_write::{

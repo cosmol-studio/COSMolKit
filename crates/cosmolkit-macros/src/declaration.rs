@@ -460,11 +460,13 @@ fn validate_molecule_relationships(
             ));
         }
     }
-    let has_derived_effect = !derived_effects.recompute.is_empty()
-        || !derived_effects.preserve.is_empty()
+    // Preservation is a proof obligation, not permission to mutate storage.
+    // Only effects that actually update/clear cache state require block write
+    // access. Cache borrows still come exclusively from access.read.
+    let mutates_derived_state = !derived_effects.recompute.is_empty()
         || !derived_effects.invalidate.is_empty()
         || !derived_effects.operation_defined.is_empty();
-    if has_derived_effect && !access.write.contains(&MoleculeBlock::DerivedCache) {
+    if mutates_derived_state && !access.write.contains(&MoleculeBlock::DerivedCache) {
         return Err(syn::Error::new(
             operation.span(),
             "declared derived effects require derived_cache write access",

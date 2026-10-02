@@ -25,6 +25,10 @@ pub use cosmolkit_depict::{
     Compute2DCoordinatesParams as Coordinate2DParams, Coordinate2DLayoutError,
     Coordinate2DTemplateError, DepictError as Coordinate2DError,
 };
+#[cfg(feature = "cap-descriptors")]
+pub use cosmolkit_descriptors::DescriptorError;
+#[cfg(feature = "cap-descriptors")]
+pub use descriptors::DescriptorReadError;
 #[cfg(feature = "cap-matrices")]
 mod matrices;
 mod molecule;

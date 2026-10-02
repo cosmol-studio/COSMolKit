@@ -16,7 +16,7 @@ jobs:
         env:
             # Use the workspace release profile unchanged for both test stages.
             RUST_MIN_STACK: "8388608"
-            PARITY_CACHE_SCHEMA: v1
+            PARITY_CACHE_SCHEMA: v2
             PARITY_DATA: target/parity-tests-ci
             CARGO_TARGET_DIR: target/rust-build
             CARGO_LLVM_COV_TARGET_DIR: target/coverage-build
@@ -71,11 +71,20 @@ jobs:
               shell: bash
               run: |
                   packages=()
-                  while IFS= read -r package; do packages+=(-p "$package"); done < "$RUNNER_TEMP/test-packages.txt"
+                  while IFS= read -r package; do
+                      if [[ "$package" != cosmolkit-parity-tests ]]; then packages+=(-p "$package"); fi
+                  done < "$RUNNER_TEMP/test-packages.txt"
                   # Reuse the instrumented libraries built before submodule initialization.
+                  status=0
                   cargo llvm-cov "${packages[@]}" --release \
                       --features cosmolkit/op-contracts-strict,cosmolkit-core/op-contracts-strict \
-                      --no-clean --no-report --no-fail-fast
+                      --no-clean --no-report --no-fail-fast || status=$?
+                  # The runner's corpus target belongs AFTER reference preparation.
+                  # Select core too to enable its strict feature (its lib tests repeat).
+                  cargo llvm-cov -p cosmolkit-parity-tests -p cosmolkit-core --lib --bins --release \
+                      --features cosmolkit/op-contracts-strict,cosmolkit-core/op-contracts-strict \
+                      --no-clean --no-report --no-fail-fast || status=$?
+                  exit "$status"
 
             - name: Run documentation tests
               id: doctests
@@ -110,32 +119,53 @@ jobs:
                   restore-keys: |
                       parity-${{ env.PARITY_CACHE_SCHEMA }}-${{ runner.os }}-${{ runner.arch }}-py${{ steps.python.outputs.python-version }}-${{ hashFiles('uv.lock', 'pyproject.toml', 'parity-tests/Cargo.toml', 'parity-tests/src/**', 'tools/oracles/rdkit/fingerprint_values_pilot.py', 'testdata/smiles/corpus/smiles_5000.smi') }}-
 
-            - name: Run every registered task on the 5000 molecular corpus
-              id: parity
+            - name: Prepare and validate all reference values
+              id: prepare
               continue-on-error: true
               shell: bash
               run: |
-                  # No --task filter: Rust owns all task and parameter selection.
-                  # Fuzzy tasks use the Rust-defined 5000-pair matrix (20000 comparisons).
-                  # run prepares/reuses references and globally preflights before CK.
+                  set -euo pipefail
+                  # Reuse the same instrumented libraries and release/strict features.
+                  coverage_env="$(cargo llvm-cov show-env --sh)"
+                  eval "$coverage_env"
+                  export CARGO_TARGET_DIR="$CARGO_LLVM_COV_TARGET_DIR"
+                  cargo build -p cosmolkit-parity-tests -p cosmolkit-core --release \
+                      --bin cosmolkit-parity-tests \
+                      --features cosmolkit/op-contracts-strict,cosmolkit-core/op-contracts-strict
+                  # Sequential generator calls; each Python function parallelizes cases.
                   set +e
-                  cargo llvm-cov run -p cosmolkit-parity-tests --release --no-clean --no-report \
-                      --features cosmolkit/op-contracts-strict,cosmolkit-core/op-contracts-strict \
-                      -- run --corpus testdata/smiles/corpus/smiles_5000.smi \
-                      --data "$PARITY_DATA" --python .venv/bin/python \
-                      2>&1 | tee "$RUNNER_TEMP/parity-5000.log"
+                  "$CARGO_TARGET_DIR/release/cosmolkit-parity-tests" prepare \
+                      --smiles testdata/smiles/corpus/smiles_5000.smi \
+                      --data "$PARITY_DATA" --python .venv/bin/python --threads "$(nproc)" \
+                      2>&1 | tee "$RUNNER_TEMP/parity-prepare.log"
                   statuses=("${PIPESTATUS[@]}")
                   status=${statuses[0]}
                   if [[ ${statuses[1]} != 0 ]]; then status=${statuses[1]}; fi
                   set -e
                   # This message is emitted only after successful global preflight.
-                  if grep -Eq '^Preparation complete: [0-9]+ reused tasks, [1-9][0-9]* generated tasks; [0-9]+ ready cases$' "$RUNNER_TEMP/parity-5000.log"; then
+                  if grep -Eq '^Preparation complete: [0-9]+ reused tasks, [1-9][0-9]* generated tasks; [0-9]+ ready cases$' "$RUNNER_TEMP/parity-prepare.log"; then
                       echo "regenerated=true" >> "$GITHUB_OUTPUT"
+                  fi
+                  if [[ "$status" == 0 ]]; then
+                      "$CARGO_TARGET_DIR/release/cosmolkit-parity-tests" preflight --data "$PARITY_DATA"
                   fi
                   exit "$status"
 
+            - name: Run independent Cargo corpus tests with coverage
+              id: parity
+              if: ${{ !cancelled() && steps.prepare.outcome == 'success' }}
+              continue-on-error: true
+              shell: bash
+              run: |
+                  set -o pipefail
+                  # No filter or thread override: Cargo parallelizes function/corpus tests.
+                  cargo llvm-cov -p cosmolkit-parity-tests -p cosmolkit-core \
+                      --release --test reference_parity --no-clean --no-report --no-fail-fast \
+                      --features cosmolkit/op-contracts-strict,cosmolkit-core/op-contracts-strict \
+                      2>&1 | tee "$RUNNER_TEMP/parity-5000.log"
+
             - name: Save validated reference generations
-              if: ${{ !cancelled() && steps.parity.outputs.regenerated == 'true' }}
+              if: ${{ !cancelled() && steps.prepare.outputs.regenerated == 'true' }}
               uses: actions/cache/save@v4
               with:
                   path: |
@@ -145,13 +175,15 @@ jobs:
                   key: ${{ steps.reference_cache.outputs.cache-primary-key }}
 
             - name: Upload parity results
-              if: ${{ !cancelled() && steps.parity.outcome != 'skipped' }}
+              if: ${{ !cancelled() && steps.prepare.outcome != 'skipped' }}
               uses: actions/upload-artifact@v4
               with:
                   name: parity-5000-results
                   path: |
+                      ${{ runner.temp }}/parity-prepare.log
                       ${{ runner.temp }}/parity-5000.log
                       ${{ env.PARITY_DATA }}/rust-report.json
+                      ${{ env.PARITY_DATA }}/run-*/*.json
                   if-no-files-found: error
 
             - name: Generate coverage reports
@@ -198,5 +230,5 @@ jobs:
               run: cargo llvm-cov clean --workspace --profraw-only
 
             - name: Preserve test failure status
-              if: ${{ !cancelled() && (steps.regression.outcome == 'failure' || steps.doctests.outcome == 'failure' || steps.parity.outcome == 'failure') }}
+              if: ${{ !cancelled() && (steps.regression.outcome == 'failure' || steps.doctests.outcome == 'failure' || steps.prepare.outcome == 'failure' || steps.parity.outcome == 'failure') }}
               run: exit 1
