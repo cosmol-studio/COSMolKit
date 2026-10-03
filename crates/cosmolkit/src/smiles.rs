@@ -66,11 +66,30 @@ impl From<cosmolkit_smiles::FragmentWriteInputError> for SmilesWriteError {
 
 impl Molecule {
     fn smiles_ring_state(&self) -> Option<&cosmolkit_core::RingInfo> {
-        #[cfg(feature = "cap-rings")]
+        // Ordinary ring storage exists under any capability that can
+        // install it (L2 list); reads are VALID-gated so an installed
+        // payload without the RINGS bit is never served to the writers.
+        #[cfg(any(
+            feature = "cap-rings",
+            feature = "cap-descriptors",
+            feature = "cap-smiles",
+            feature = "cap-sanitize",
+            feature = "cap-hydrogens",
+            feature = "cap-kekulize",
+            feature = "cap-aromaticity"
+        ))]
         {
-            self.derived_cache_runtime().ring_info()
+            self.derived_cache_runtime().valid_ring_info()
         }
-        #[cfg(not(feature = "cap-rings"))]
+        #[cfg(not(any(
+            feature = "cap-rings",
+            feature = "cap-descriptors",
+            feature = "cap-smiles",
+            feature = "cap-sanitize",
+            feature = "cap-hydrogens",
+            feature = "cap-kekulize",
+            feature = "cap-aromaticity"
+        )))]
         {
             None
         }
@@ -296,6 +315,11 @@ impl Molecule {
         } = cosmolkit_smiles::parse_smiles(input, params)?;
 
         let mut final_valence = None;
+        // Local ring-state carrier: the RH/SAN result's final_rings is moved
+        // in on its existing branch; the finalizer consumes/replaces it per
+        // the source quality guards, and the final carrier is MOVED into the
+        // constructor seam below for validated live installation.
+        let mut final_rings = None;
         if params.remove_hydrogens {
             let remove_params = cosmolkit_core::RemoveHsParams {
                 update_explicit_count: true,
@@ -312,6 +336,7 @@ impl Molecule {
             coordinates = result.coordinates;
             properties = result.properties;
             final_valence = result.final_valence;
+            final_rings = result.final_rings;
         } else if params.sanitize {
             let result = cosmolkit_core::sanitize_topology(
                 &topology,
@@ -319,6 +344,7 @@ impl Molecule {
             )?;
             topology = result.topology;
             final_valence = result.final_valence;
+            final_rings = result.final_rings;
         }
 
         let record = cosmolkit_smiles::finalize_smiles_stereo(
@@ -329,14 +355,16 @@ impl Molecule {
             },
             params,
             &mut final_valence,
+            &mut final_rings,
         )?;
         // Stereo may need local non-strict values, but sanitize=false must not
         // revive runtime validity after CK-VALENCE-001 hydrogen removal.
-        Self::from_smiles_parts_with_valence(
+        Self::from_smiles_parts_with_derived_state(
             record.topology,
             record.coordinates,
             record.properties,
             if params.sanitize { final_valence } else { None },
+            final_rings,
         )
         .map_err(SmilesError::Construction)
     }

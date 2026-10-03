@@ -922,9 +922,27 @@ impl<'a, Access> OpParts<'a, Access> {
             .union(self.spec.derived_effects.operation_defined);
         self.validate_effect_action("update", states, allowed)?;
         self.ensure_write_access(BlockSet::DERIVED_CACHE, "derived_cache")?;
-        let mut candidate = self.current_cache_candidate()?.clone();
-        candidate.mark_valid(states);
-        self.derived_cache = WorkingBlock::Installed(candidate);
+        // An already-Installed cache mutates IN PLACE: a previously moved
+        // ring cache keeps its row-buffer allocations across later validity
+        // marks. Only a still-Shared slot detaches through the existing
+        // one-time COW clone before its first mutation; CheckedOut keeps
+        // the same structural error. Cost review: no cache-size clone on
+        // the Installed path; the Shared clone is the pre-existing detach.
+        if matches!(self.derived_cache, WorkingBlock::CheckedOut) {
+            return Err(OperationError::BlockCheckedOut {
+                operation: self.spec.method,
+                block: "derived_cache",
+            });
+        }
+        if matches!(self.derived_cache, WorkingBlock::Shared) {
+            let candidate = self.source.derived_cache_runtime().clone();
+            self.derived_cache = WorkingBlock::Installed(candidate);
+        }
+        match &mut self.derived_cache {
+            WorkingBlock::Installed(cache) => cache.mark_valid(states),
+            // Materialized above; CheckedOut returned early.
+            _ => unreachable!("derived_cache materialized before update"),
+        }
         self.effect_trace.updated = self.effect_trace.updated.union(states);
         Ok(())
     }
@@ -941,9 +959,26 @@ impl<'a, Access> OpParts<'a, Access> {
             .union(self.spec.derived_effects.operation_defined);
         self.validate_effect_action("clear", states, allowed)?;
         self.ensure_write_access(BlockSet::DERIVED_CACHE, "derived_cache")?;
-        let mut candidate = self.current_cache_candidate()?.clone();
-        candidate.clear(states);
-        self.derived_cache = WorkingBlock::Installed(candidate);
+        // Same Installed-versus-Shared discipline as mark_cache_updated_
+        // runtime: in-place mutation for the owned cache, the existing
+        // one-time COW detach for a still-Shared slot, and the unchanged
+        // structural error for CheckedOut. Unrelated states cleared here
+        // never touch the installed ring row buffers.
+        if matches!(self.derived_cache, WorkingBlock::CheckedOut) {
+            return Err(OperationError::BlockCheckedOut {
+                operation: self.spec.method,
+                block: "derived_cache",
+            });
+        }
+        if matches!(self.derived_cache, WorkingBlock::Shared) {
+            let candidate = self.source.derived_cache_runtime().clone();
+            self.derived_cache = WorkingBlock::Installed(candidate);
+        }
+        match &mut self.derived_cache {
+            WorkingBlock::Installed(cache) => cache.clear(states),
+            // Materialized above; CheckedOut returned early.
+            _ => unreachable!("derived_cache materialized before clear"),
+        }
         self.effect_trace.cleared = self.effect_trace.cleared.union(states);
         Ok(())
     }

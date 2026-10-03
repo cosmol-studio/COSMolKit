@@ -1377,7 +1377,9 @@ fn current_stereo_wrapper_candidates_preserve_pinned_large_ring_cx_output() {
         coordinates: parsed.coordinates.clone(),
         properties: parsed.properties.clone(),
     };
-    let finalized = finalize_smiles_stereo(post_chemistry, &parser, &mut None).unwrap();
+    let mut ring_carrier: Option<cosmolkit_core::RingInfo> = None;
+    let finalized =
+        finalize_smiles_stereo(post_chemistry, &parser, &mut None, &mut ring_carrier).unwrap();
     assert_eq!(finalized.properties.prop("_needsDetectBondStereo"), None);
     // Chirality.cpp::assignStereochemistry writes this computed property after
     // successful perception; the detached wrapper must transport that effect.
@@ -1496,7 +1498,9 @@ fn pending_cx_direction_phase_is_the_first_large_ring_writer_divergence() {
         cosmolkit_types::BondDirection::None
     );
     let post_chemistry_snapshot = post_chemistry.clone();
-    let finalized = finalize_smiles_stereo(post_chemistry, &parser, &mut None).unwrap();
+    let mut ring_carrier: Option<cosmolkit_core::RingInfo> = None;
+    let finalized =
+        finalize_smiles_stereo(post_chemistry, &parser, &mut None, &mut ring_carrier).unwrap();
     assert_eq!(
         post_chemistry_snapshot
             .properties
@@ -1692,7 +1696,8 @@ fn cx_write_after_sanitize_and_smiles_finalization_uses_finalized_state() {
         cosmolkit_types::BondDirection::None
     );
 
-    let finalized = finalize_smiles_stereo(record, &parser, &mut None).unwrap();
+    let mut ring_carrier: Option<cosmolkit_core::RingInfo> = None;
+    let finalized = finalize_smiles_stereo(record, &parser, &mut None, &mut ring_carrier).unwrap();
     assert_eq!(finalized.properties.prop("_needsDetectBondStereo"), None);
     assert_eq!(
         finalized.topology.bonds[4].direction(),
@@ -1745,7 +1750,8 @@ fn both_false_smiles_finalization_retains_pending_marker_and_clears_directions()
         cosmolkit_types::BondDirection::EndUpRight
     );
 
-    let both_false = finalize_smiles_stereo(raw, &parser, &mut None).unwrap();
+    let mut ring_carrier: Option<cosmolkit_core::RingInfo> = None;
+    let both_false = finalize_smiles_stereo(raw, &parser, &mut None, &mut ring_carrier).unwrap();
     assert_eq!(
         both_false.properties.prop("_needsDetectBondStereo"),
         Some("1")
@@ -1784,7 +1790,8 @@ fn both_false_finalization_clears_begin_wedge_and_dash_flags() {
 
     // Pinned Chirality.cpp::clearSingleBondDirFlags(mol, true) clears
     // BEGINWEDGE/BEGINDASH while retaining ENDDOWNRIGHT/ENDUPRIGHT slash flags.
-    let finalized = finalize_smiles_stereo(raw, &parser, &mut None).unwrap();
+    let mut ring_carrier: Option<cosmolkit_core::RingInfo> = None;
+    let finalized = finalize_smiles_stereo(raw, &parser, &mut None, &mut ring_carrier).unwrap();
     assert_eq!(
         finalized.topology.bonds[0].direction(),
         cosmolkit_types::BondDirection::None
@@ -1808,7 +1815,8 @@ fn both_false_finalization_clears_unknown_direction_and_records_unknown_stereo()
     raw.topology.bonds[0].set_direction(cosmolkit_types::BondDirection::Unknown);
 
     // The source sets _UnknownStereo before clearing BondDir::UNKNOWN.
-    let finalized = finalize_smiles_stereo(raw, &parser, &mut None).unwrap();
+    let mut ring_carrier: Option<cosmolkit_core::RingInfo> = None;
+    let finalized = finalize_smiles_stereo(raw, &parser, &mut None, &mut ring_carrier).unwrap();
     assert_eq!(
         finalized.topology.bonds[0].direction(),
         cosmolkit_types::BondDirection::None

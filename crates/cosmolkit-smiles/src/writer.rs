@@ -4955,6 +4955,11 @@ mod tests {
             &remove_params,
         )
         .unwrap();
+        // Move the real RH-prepared ring state into the finalizer carrier
+        // (fourth argument); the root constructor installs the final carrier
+        // in its validated live cache, while this writer helper only borrows
+        // the prepared state for its detached record.
+        let mut prepared_rings = prepared.final_rings;
         crate::finalize_smiles_stereo(
             SmilesRecord {
                 topology: prepared.topology,
@@ -4963,6 +4968,7 @@ mod tests {
             },
             &parse_params,
             &mut None,
+            &mut prepared_rings,
         )
         .unwrap()
     }

@@ -1240,7 +1240,8 @@ pub fn symmetrize_sssr_with_options_from_parts(
         // RDKit✔️✔️:   for (auto &extraAtomRing : extras) {
         for extra_atom_ring in &sssr.extra_rings {
             // RDKit✔️✔️:     RingUtils::convertToBonds(extraAtomRing, extraRing, mol);
-            let extra_ring = convert_to_bonds(&context, extra_atom_ring)?;
+            let extra_ring =
+                convert_to_bonds(&context, extra_atom_ring, |atom| *atom, BondId::index)?;
             // RDKit✔️✔️:     for (auto &ring : bondsssrs) {
             for ring in &bond_sssrs {
                 // RDKit✔️✔️:       if (shareBond && replacesAllUniqueBonds) {
@@ -1887,17 +1888,20 @@ fn compute_ring_invariant(ring: &[usize], num_atoms: usize) -> RingInvariant {
     }
 }
 
-fn convert_to_bonds(
+fn convert_to_bonds<A, B>(
     context: &RingSearchContext<'_>,
-    ring: &[usize],
-) -> Result<Vec<usize>, RingFindingError> {
+    ring: &[A],
+    atom_index: impl Fn(&A) -> usize,
+    bond_index: impl Fn(BondId) -> B,
+) -> Result<Vec<B>, RingFindingError> {
     // BEGIN RDKIT CPP FUNCTION RingUtils::convertToBonds
     // RDKit✔️✔️: void convertToBonds(const INT_VECT &ring, INT_VECT &bondRing,
     // RDKit✔️✔️:                     const ROMol &mol) {
     // RDKit✔️✔️:   const auto rsiz = rdcast<unsigned int>(ring.size());
     // RDKit✔️✔️:   bondRing.resize(rsiz);
     let ring_size = ring.len();
-    let mut bond_ring = vec![0usize; ring_size];
+    // One reserved output row; no input-index or output-ID staging vectors.
+    let mut bond_ring = Vec::with_capacity(ring_size);
     if ring_size == 0 {
         return Ok(bond_ring);
     }
@@ -1907,29 +1911,64 @@ fn convert_to_bonds(
         // RDKit✔️✔️:     if (!bnd) {
         // RDKit✔️✔️:       throw ValueErrorException("expected bond not found");
         // RDKit✔️✔️:     }
-        let Some(bond) = context.bond_between_atoms(ring[i], ring[i + 1]) else {
+        let begin = atom_index(&ring[i]);
+        let end = atom_index(&ring[i + 1]);
+        let Some(bond) = context.bond_between_atoms(begin, end) else {
             return Err(RingFindingError::ExpectedBondNotFound {
-                begin: AtomId::new(ring[i]),
-                end: AtomId::new(ring[i + 1]),
+                begin: AtomId::new(begin),
+                end: AtomId::new(end),
             });
         };
         // RDKit✔️✔️:     bondRing[i] = bnd->getIdx();
-        bond_ring[i] = bond.index();
+        bond_ring.push(bond_index(bond));
     }
+    // RDKit✔️✔️:   // bond from last to first atom
     // RDKit✔️✔️:   const Bond *bnd = mol.getBondBetweenAtoms(ring[rsiz - 1], ring[0]);
     // RDKit✔️✔️:   if (!bnd) {
     // RDKit✔️✔️:     throw ValueErrorException("expected bond not found");
     // RDKit✔️✔️:   }
-    let Some(bond) = context.bond_between_atoms(ring[ring_size - 1], ring[0]) else {
+    let closing_begin = atom_index(&ring[ring_size - 1]);
+    let closing_end = atom_index(&ring[0]);
+    let Some(bond) = context.bond_between_atoms(closing_begin, closing_end) else {
         return Err(RingFindingError::ExpectedBondNotFound {
-            begin: AtomId::new(ring[ring_size - 1]),
-            end: AtomId::new(ring[0]),
+            begin: AtomId::new(closing_begin),
+            end: AtomId::new(closing_end),
         });
     };
     // RDKit✔️✔️:   bondRing[rsiz - 1] = bnd->getIdx();
     // RDKit✔️✔️: }
-    bond_ring[ring_size - 1] = bond.index();
+    bond_ring.push(bond_index(bond));
+    // Behavior review (actual loop, both representations): each adjacent
+    // and closing edge resolves through bond_between_atoms, which SCANS the
+    // begin atom's neighbor rows (neighbors(begin).iter().find) until the
+    // end index matches; a miss raises the typed ExpectedBondNotFound{begin,
+    // end} cause the source raises as ValueErrorException("expected bond
+    // not found"). The empty-row early return is this owner's explicit
+    // zero-length boundary — a CK-added guard, NOT a claim of source
+    // empty-subtraction equivalence (the source loops themselves are
+    // entered only with rsiz-1 == UINT_MAX on a zero row; no claim is made
+    // about upstream behavior there).
+    // Complexity review (actual loop): ONE reserved output Vec with exactly
+    // one push per row entry; borrowed inputs/context; per-edge cost is
+    // O(degree(begin)) neighbor-row scanning (NOT O(1)), so the total is the
+    // sum of visited neighbor-row scan costs over all consecutive pairs plus
+    // the closing edge; no input-index staging vector, no output-ID
+    // conversion vector, no second graph traversal, and no grow-only pushes.
     Ok(bond_ring)
+}
+
+/// Convert one borrowed typed atom ring to its graph-derived typed bond row.
+///
+/// The ONE conversion owner (RingUtils::convertToBonds) is reused through
+/// scalar projections; the existing borrowed RingSearchContext is built in
+/// O(1) and no staging or output-conversion vectors are introduced.
+pub(crate) fn ring_atom_ids_to_bond_ids(
+    topology: &TopologyBlock,
+    ring: &[AtomId],
+) -> Result<Vec<BondId>, RingFindingError> {
+    let context =
+        RingSearchContext::from_parts(topology.atoms.len(), &topology.bonds, &topology.adjacency);
+    convert_to_bonds(&context, ring, |atom| atom.index(), |bond| bond)
 }
 
 fn convert_rings_to_bonds(
@@ -1938,7 +1977,12 @@ fn convert_rings_to_bonds(
 ) -> Result<Vec<Vec<usize>>, RingFindingError> {
     let mut bond_rings = Vec::with_capacity(rings.len());
     for ring in rings {
-        bond_rings.push(convert_to_bonds(context, ring)?);
+        bond_rings.push(convert_to_bonds(
+            context,
+            ring,
+            |atom| *atom,
+            BondId::index,
+        )?);
     }
     Ok(bond_rings)
 }
@@ -1949,7 +1993,7 @@ fn store_rings_info(
     info: &mut RingInfo,
 ) -> Result<(), RingFindingError> {
     for ring in rings {
-        let bond_indices = convert_to_bonds(context, ring)?;
+        let bond_indices = convert_to_bonds(context, ring, |atom| *atom, BondId::index)?;
         info.add_ring(ring, &bond_indices)?;
     }
     Ok(())
@@ -3086,6 +3130,252 @@ fn dfs_fast_find_rings(
 #[cfg(test)]
 mod selected_row_tests {
     use super::*;
+
+    use cosmolkit_model::{Atom, AtomSpec, Bond, BondSpec};
+    use cosmolkit_types::{BondOrder, Element};
+
+    fn six_cycle_topology() -> TopologyBlock {
+        let atoms = (0..6)
+            .map(|id| Atom::from_spec(AtomId::new(id), AtomSpec::new(Element::C)))
+            .collect::<Vec<_>>();
+        let bonds = (0..6)
+            .map(|id| {
+                Bond::from_spec(
+                    BondId::new(id),
+                    BondSpec::new(
+                        AtomId::new(id),
+                        AtomId::new((id + 1) % 6),
+                        BondOrder::Single,
+                    ),
+                )
+            })
+            .collect::<Vec<_>>();
+        TopologyBlock::try_from_parts(atoms, bonds, vec![], vec![]).unwrap()
+    }
+
+    // The exact K-CONVERT 8-call converter product: {F,R,[0,1,3],[0,1,2]}
+    // atom rows EACH through the usize projection route (the internal owner
+    // with identity atom projection and index output) and the typed
+    // projection route (ring_atom_ids_to_bond_ids). Valid F derives
+    // [0,1,2,3,4,5]; R derives [4,3,2,1,0,5]; the broken rows derive the
+    // exact typed ExpectedBondNotFound causes. Full input stability and
+    // output shape are asserted in BOTH representations.
+    #[test]
+    fn ring_conversion_typed_two_representations() {
+        let graph = six_cycle_topology();
+        let context =
+            RingSearchContext::from_parts(graph.atoms.len(), &graph.bonds, &graph.adjacency);
+        struct Case {
+            name: &'static str,
+            row: [usize; 6],
+            expected: Result<[usize; 6], (usize, usize)>,
+        }
+        let cases = [
+            Case {
+                name: "F",
+                row: [0, 1, 2, 3, 4, 5],
+                expected: Ok([0, 1, 2, 3, 4, 5]),
+            },
+            Case {
+                name: "R",
+                row: [5, 4, 3, 2, 1, 0],
+                expected: Ok([4, 3, 2, 1, 0, 5]),
+            },
+            Case {
+                name: "gap-1-3",
+                row: [0, 1, 3, 0, 1, 3],
+                expected: Err((1, 3)),
+            },
+            Case {
+                name: "gap-2-0",
+                row: [0, 1, 2, 0, 1, 2],
+                expected: Err((2, 0)),
+            },
+        ];
+        let mut calls = 0usize;
+        for case in &cases {
+            // usize representation.
+            calls += 1;
+            let row_snapshot = case.row;
+            let usize_result = convert_to_bonds(&context, &case.row, |atom| *atom, BondId::index);
+            // typed representation.
+            calls += 1;
+            let typed_row: Vec<AtomId> = case.row.iter().map(|i| AtomId::new(*i)).collect();
+            let typed_snapshot = typed_row.clone();
+            let typed_result = ring_atom_ids_to_bond_ids(&graph, &typed_row);
+            assert_eq!(case.row, row_snapshot, "{}: usize input mutated", case.name);
+            assert_eq!(
+                typed_row, typed_snapshot,
+                "{}: typed input mutated",
+                case.name
+            );
+            match case.expected {
+                Ok(expected) => {
+                    let usize_bonds = usize_result.unwrap();
+                    let typed_bonds = typed_result.unwrap();
+                    assert_eq!(usize_bonds.len(), case.row.len(), "{}: shape", case.name);
+                    assert_eq!(typed_bonds.len(), case.row.len(), "{}: shape", case.name);
+                    assert_eq!(usize_bonds, expected.to_vec(), "{}: usize", case.name);
+                    assert_eq!(
+                        typed_bonds
+                            .iter()
+                            .map(|bond| bond.index())
+                            .collect::<Vec<_>>(),
+                        expected.to_vec(),
+                        "{}: typed",
+                        case.name
+                    );
+                }
+                Err((begin, end)) => {
+                    assert_eq!(
+                        usize_result.err(),
+                        Some(RingFindingError::ExpectedBondNotFound {
+                            begin: AtomId::new(begin),
+                            end: AtomId::new(end),
+                        }),
+                        "{}: usize error",
+                        case.name
+                    );
+                    assert_eq!(
+                        typed_result.err(),
+                        Some(RingFindingError::ExpectedBondNotFound {
+                            begin: AtomId::new(begin),
+                            end: AtomId::new(end),
+                        }),
+                        "{}: typed error",
+                        case.name
+                    );
+                }
+            }
+        }
+        assert_eq!(calls, 8, "exact census");
+    }
+
+    // The EXACT frozen converter product: three-element literal rows with a
+    // REAL missing edge, unpadded. &[0,1,3] fails on the ADJACENT 1->3 gap;
+    // &[0,1,2] fails on the CLOSING 2->0 edge. Each row runs through the
+    // usize projection and the typed entry = 8 calls; fresh graph/row
+    // preservation is compared immediately after EACH route (including
+    // Err), BEFORE the second route.
+    #[test]
+    fn ring_conversion_typed_exact_closing() {
+        struct Case {
+            name: &'static str,
+            row: &'static [usize],
+            expected: Result<&'static [usize], (usize, usize)>,
+        }
+        let cases = [
+            Case {
+                name: "F",
+                row: &[0, 1, 2, 3, 4, 5],
+                expected: Ok(&[0, 1, 2, 3, 4, 5]),
+            },
+            Case {
+                name: "R",
+                row: &[5, 4, 3, 2, 1, 0],
+                expected: Ok(&[4, 3, 2, 1, 0, 5]),
+            },
+            Case {
+                name: "adjacent-gap-1-3",
+                row: &[0, 1, 3],
+                expected: Err((1, 3)),
+            },
+            Case {
+                name: "closing-gap-2-0",
+                row: &[0, 1, 2],
+                expected: Err((2, 0)),
+            },
+        ];
+        let mut calls = 0usize;
+        for case in &cases {
+            // Route 1: usize projection.
+            // Fresh per-call graph and row baselines for THIS invocation.
+            let graph = six_cycle_topology();
+            assert_eq!(graph.bonds[5].begin().index(), 5);
+            assert_eq!(graph.bonds[5].end().index(), 0, "closing b5=(5,0) exists");
+            let graph_snapshot = graph.clone();
+            let context =
+                RingSearchContext::from_parts(graph.atoms.len(), &graph.bonds, &graph.adjacency);
+            let row_snapshot: Vec<usize> = case.row.to_vec();
+            if case.expected.is_err() {
+                assert_eq!(case.row.len(), 3, "{}: gap row prerequisite", case.name);
+            }
+            let usize_result = convert_to_bonds(&context, case.row, |atom| *atom, BondId::index);
+            calls += 1;
+            assert_eq!(
+                case.row,
+                row_snapshot.as_slice(),
+                "{}: usize row mutated",
+                case.name
+            );
+            assert_eq!(
+                &graph, &graph_snapshot,
+                "{}: graph mutated (usize)",
+                case.name
+            );
+            // Route 2: typed entry.
+            // Fresh per-route graph and typed-row baselines BEFORE this
+            // invocation; compared immediately after THIS route (including
+            // Err), BEFORE any further work.
+            let graph = six_cycle_topology();
+            let graph_snapshot = graph.clone();
+            let typed_row: Vec<AtomId> = case.row.iter().map(|i| AtomId::new(*i)).collect();
+            let typed_snapshot = typed_row.clone();
+            let typed_result = ring_atom_ids_to_bond_ids(&graph, &typed_row);
+            calls += 1;
+            assert_eq!(
+                typed_row, typed_snapshot,
+                "{}: typed row mutated",
+                case.name
+            );
+            assert_eq!(
+                &graph, &graph_snapshot,
+                "{}: graph mutated (typed)",
+                case.name
+            );
+            match case.expected {
+                Ok(expected) => {
+                    assert_eq!(
+                        usize_result.unwrap(),
+                        expected.to_vec(),
+                        "{}: usize",
+                        case.name
+                    );
+                    assert_eq!(
+                        typed_result
+                            .unwrap()
+                            .iter()
+                            .map(|b| b.index())
+                            .collect::<Vec<_>>(),
+                        expected.to_vec(),
+                        "{}: typed",
+                        case.name
+                    );
+                }
+                Err((begin, end)) => {
+                    assert_eq!(
+                        usize_result.err(),
+                        Some(RingFindingError::ExpectedBondNotFound {
+                            begin: AtomId::new(begin),
+                            end: AtomId::new(end),
+                        }),
+                        "{}: usize error",
+                        case.name
+                    );
+                    assert_eq!(
+                        typed_result.err(),
+                        Some(RingFindingError::ExpectedBondNotFound {
+                            begin: AtomId::new(begin),
+                            end: AtomId::new(end),
+                        }),
+                        "{}: typed error",
+                        case.name
+                    );
+                }
+            }
+        }
+        assert_eq!(calls, 8, "exact census");
+    }
 
     #[test]
     fn ring_info_from_selected_rows_keeps_initialized_empty_membership() {

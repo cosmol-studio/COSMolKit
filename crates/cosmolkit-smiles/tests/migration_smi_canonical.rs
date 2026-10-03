@@ -42,6 +42,7 @@ fn s33_standard_writer_input(input: &str) -> SmilesRecord {
         &remove_params,
     )
     .unwrap();
+    let mut ring_carrier = prepared.final_rings;
     finalize_smiles_stereo(
         SmilesRecord {
             topology: prepared.topology,
@@ -50,6 +51,7 @@ fn s33_standard_writer_input(input: &str) -> SmilesRecord {
         },
         &parse_params,
         &mut None,
+        &mut ring_carrier,
     )
     .unwrap()
 }

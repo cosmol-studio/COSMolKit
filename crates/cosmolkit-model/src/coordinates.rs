@@ -106,13 +106,13 @@ impl Conformer2D {
         self
     }
 
-    fn remapped_to_kept_atoms(&self, kept_old_indices: &[usize], id: usize) -> Self {
+    fn remapped_to_kept_atoms(&self, kept_old_indices: &[usize]) -> Self {
         let coords = kept_old_indices
             .iter()
             .map(|old_idx| self.coords[*old_idx])
             .collect();
         Self {
-            id,
+            id: self.id,
             coords,
             props: self.props.clone(),
         }
@@ -216,13 +216,13 @@ impl Conformer3D {
         self
     }
 
-    fn remapped_to_kept_atoms(&self, kept_old_indices: &[usize], id: usize) -> Self {
+    fn remapped_to_kept_atoms(&self, kept_old_indices: &[usize]) -> Self {
         let coords = kept_old_indices
             .iter()
             .map(|old_idx| self.coords[*old_idx])
             .collect();
         Self {
-            id,
+            id: self.id,
             coords,
             is_3d: self.is_3d,
             props: self.props.clone(),
@@ -274,19 +274,41 @@ impl CoordinateBlock {
     ///
     /// The runtime computes the authoritative topology mapping and passes only
     /// the retained old atom rows into this local value operation.
+    /// Conformer IDs, collection order, properties and dimensionality are retained.
     pub fn remap_topology(&mut self, kept_old_indices: &[usize]) {
+        // Pinned RDKit RWMol.cpp:901-913 (batchRemoveAtoms coordinate stage).
+        // RDKit✔️❌: positions-only edit; existing conformer identity is unchanged.
+        //   for (auto conf : d_confs) {
+        //     RDGeom::POINT3D_VECT &positions = conf->getPositions();
+        //     RDGeom::POINT3D_VECT newPositions;
+        //     newPositions.reserve(getNumAtoms());
+        //
+        //     for (RDGeom::POINT3D_VECT::size_type i = 0; i < positions.size(); ++i) {
+        //       if (oldIndices[i] != nullptr) {
+        //         newPositions.push_back(positions[i]);
+        //       }
+        //     }
+        //     CHECK_INVARIANT(newPositions.size() == getNumAtoms(), "Lost coordinates!");
+        //     positions.swap(newPositions);
+        //   }
+        // Behavior review: project only atom rows, retaining each conformer's
+        // ID/properties/is_3d and the block's source dimension. CK's authoritative
+        // mapping additionally permits atom reordering; this is not a claim that
+        // RDKit batch deletion reorders atoms. Mapping validation remains upstream.
+        // Cost review: the existing implementation rebuilds both conformer Vecs,
+        // allocates one coordinate Vec per conformer and clones its properties,
+        // unlike the source's in-place conformer objects. This fix removes only
+        // ID reassignment, not those existing allocation/copy costs.
         self.conformers_2d = self
             .conformers_2d
             .iter()
-            .enumerate()
-            .map(|(id, conformer)| conformer.remapped_to_kept_atoms(kept_old_indices, id))
+            .map(|conformer| conformer.remapped_to_kept_atoms(kept_old_indices))
             .collect();
 
         self.conformers_3d = self
             .conformers_3d
             .iter()
-            .enumerate()
-            .map(|(id, conformer)| conformer.remapped_to_kept_atoms(kept_old_indices, id))
+            .map(|conformer| conformer.remapped_to_kept_atoms(kept_old_indices))
             .collect();
     }
 }

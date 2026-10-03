@@ -229,11 +229,13 @@ fn generated_registry_and_all_four_matrices_share_one_exact_operation() {
     assert_eq!(spec.may_mutate, spec.access.write());
     assert_eq!(spec.auto_remap, BlockSet::NONE);
     assert_eq!(format!("{:?}", spec.requires_mapping), "None");
-    assert_eq!(spec.derived_effects.recompute.bits(), 1 << 2);
+    // L3: ordinary rings moved invalidate -> recompute (final_rings
+    // replacement-or-clear transport); every other effect is unchanged.
+    assert_eq!(spec.derived_effects.recompute.bits(), (1 << 2) | (1 << 0));
     assert_eq!(spec.derived_effects.preserve.bits(), 1 << 5);
     // The same downstream states remain invalidated; VALENCE alone is now
     // recomputed or cleared from the detached owner's final stage result.
-    assert_eq!(spec.derived_effects.invalidate.bits(), 0xdb);
+    assert_eq!(spec.derived_effects.invalidate.bits(), 0xda);
     assert_eq!(format!("{:?}", spec.cip_state), "ClearComputed");
     assert!(spec.io_roundtrip);
     assert_eq!(spec.status, FunctionStatus::Experimental);

@@ -480,6 +480,212 @@ fn descriptor_query_parity_heavy_registry_matrix_expands_both_policies_in_order(
     assert_eq!(task[0].count(&cases), 4);
 }
 
+/// RING-LIVE-PUBLIC T1 synthetic coverage: eleven registrations x two
+/// profiles, keys/generators/outcome kinds, actual adapter routing on
+/// fixed benzene/pyridine/cyclohexane/dummy/H/D inputs, missing-data
+/// global barrier, wrong-kind rejection, and every original registered
+/// task retained.
+#[test]
+fn ring_descriptor_framework_registers_eleven_tasks_with_two_profiles_each() {
+    use registry::molecule_plan::{Category, Profile, TaskId};
+    const RING_TASKS: [(&str, TaskId); 11] = [
+        ("num_rings", TaskId::NumRings),
+        ("num_heterocycles", TaskId::NumHeterocycles),
+        ("num_aromatic_rings", TaskId::NumAromaticRings),
+        ("num_saturated_rings", TaskId::NumSaturatedRings),
+        ("num_aliphatic_rings", TaskId::NumAliphaticRings),
+        ("num_aromatic_heterocycles", TaskId::NumAromaticHeterocycles),
+        ("num_aromatic_carbocycles", TaskId::NumAromaticCarbocycles),
+        (
+            "num_aliphatic_heterocycles",
+            TaskId::NumAliphaticHeterocycles,
+        ),
+        ("num_aliphatic_carbocycles", TaskId::NumAliphaticCarbocycles),
+        (
+            "num_saturated_heterocycles",
+            TaskId::NumSaturatedHeterocycles,
+        ),
+        ("num_saturated_carbocycles", TaskId::NumSaturatedCarbocycles),
+    ];
+    const GENERATORS: [&str; 11] = [
+        "generate_num_rings",
+        "generate_num_heterocycles",
+        "generate_num_aromatic_rings",
+        "generate_num_saturated_rings",
+        "generate_num_aliphatic_rings",
+        "generate_num_aromatic_heterocycles",
+        "generate_num_aromatic_carbocycles",
+        "generate_num_aliphatic_heterocycles",
+        "generate_num_aliphatic_carbocycles",
+        "generate_num_saturated_heterocycles",
+        "generate_num_saturated_carbocycles",
+    ];
+    // 11 tasks x 2 profiles = 22 registrations; every original task
+    // (fingerprint, notation, chemistry, descriptor, stereo, depiction)
+    // is still present.
+    let total_ring = RING_TASKS
+        .iter()
+        .map(|(name, _)| registry::select(Some(name)).unwrap().len())
+        .sum::<usize>();
+    assert_eq!(total_ring, 11);
+    for (index, (name, id)) in RING_TASKS.iter().enumerate() {
+        let task = &registry::select(Some(name)).unwrap()[0];
+        assert_eq!(task.operation.name(), *name);
+        assert_eq!(task.generator, GENERATORS[index]);
+        assert!(matches!(task.corpus_type, registry::CorpusType::Smiles));
+        assert_eq!(id.name(), *name);
+        assert_eq!(id.category(), Category::Descriptors);
+        // Two explicit profiles: remove_hydrogens false then true,
+        // sanitize=true handled by the public runner.
+        assert_eq!(id.profiles().len(), 2);
+    }
+    // Original registered tasks retained.
+    assert!(
+        registry::TASKS
+            .iter()
+            .any(|t| t.operation.name() == "num_heavy_atoms")
+    );
+    assert!(
+        registry::TASKS
+            .iter()
+            .any(|t| t.operation.name() == "sanitize")
+    );
+    assert!(
+        registry::TASKS
+            .iter()
+            .any(|t| t.operation.name() == "fuzzy_and")
+    );
+}
+
+#[test]
+fn ring_descriptor_framework_execution_routes_public_queries_and_rejects_wrong_kind() {
+    use registry::molecule_plan::Profile;
+    // Fixed inputs: benzene (aromatic carbocycle), pyridine (aromatic
+    // heterocycle), cyclohexane (saturated carbocycle), dummy ring,
+    // explicit-H and deuterated cycles.
+    let inputs = [
+        (
+            "benzene",
+            "c1ccccc1",
+            Profile::NumRings {
+                remove_hydrogens: false,
+            },
+            1,
+        ),
+        (
+            "pyridine",
+            "n1ccccc1",
+            Profile::NumHeterocycles {
+                remove_hydrogens: false,
+            },
+            1,
+        ),
+        (
+            "cyclohexane",
+            "C1CCCCC1",
+            Profile::NumSaturatedRings {
+                remove_hydrogens: false,
+            },
+            1,
+        ),
+        (
+            "benzene-aromatic",
+            "c1ccccc1",
+            Profile::NumAromaticCarbocycles {
+                remove_hydrogens: false,
+            },
+            1,
+        ),
+        (
+            "pyridine-aromatic-hetero",
+            "n1ccccc1",
+            Profile::NumAromaticHeterocycles {
+                remove_hydrogens: false,
+            },
+            1,
+        ),
+        (
+            "cyclohexane-aliphatic-carbo",
+            "C1CCCCC1",
+            Profile::NumAliphaticCarbocycles {
+                remove_hydrogens: false,
+            },
+            1,
+        ),
+        (
+            "dummy-hetero",
+            "*1CCCC1",
+            Profile::NumSaturatedHeterocycles {
+                remove_hydrogens: false,
+            },
+            1,
+        ),
+        (
+            "dummy-aliphatic-hetero",
+            "*1CCCC1",
+            Profile::NumAliphaticHeterocycles {
+                remove_hydrogens: false,
+            },
+            1,
+        ),
+        (
+            "h-cycle-rings",
+            "[H]C1CCCCC1",
+            Profile::NumRings {
+                remove_hydrogens: false,
+            },
+            1,
+        ),
+        (
+            "h-cycle-rings-removed",
+            "[H]C1CCCCC1",
+            Profile::NumRings {
+                remove_hydrogens: true,
+            },
+            1,
+        ),
+        (
+            "d-cycle-saturated-carbo",
+            "[2H]C1CCCCC1",
+            Profile::NumSaturatedCarbocycles {
+                remove_hydrogens: false,
+            },
+            1,
+        ),
+        (
+            "benzene-aliphatic",
+            "c1ccccc1",
+            Profile::NumAliphaticRings {
+                remove_hydrogens: false,
+            },
+            0,
+        ),
+    ];
+    for (label, smiles, profile, expected) in inputs {
+        let input = Input::Molecular {
+            case: registry::SmilesCase {
+                id: label.into(),
+                smiles: smiles.into(),
+            },
+            profile,
+        };
+        let record = molecular::run(&input).unwrap();
+        let registry::Value::Molecular(molecular::Outcome::Unsigned(actual)) = record.output else {
+            panic!("{label}: expected Unsigned outcome");
+        };
+        assert_eq!(actual, expected, "{label}");
+        // Wrong-kind outputs stay rejected for every ring profile shape.
+        assert!(
+            molecular::validate_output(&profile, &molecular::Outcome::Float64Bits(0)).is_err(),
+            "{label}: wrong kind must be rejected"
+        );
+        assert!(
+            molecular::validate_output(&profile, &molecular::Outcome::Unsigned(expected)).is_ok(),
+            "{label}: unsigned accepted"
+        );
+    }
+}
+
 #[test]
 fn descriptor_query_parity_heavy_execution_uses_public_query_and_typed_unsigned() {
     use registry::molecule_plan::Profile;

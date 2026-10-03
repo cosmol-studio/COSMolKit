@@ -27,6 +27,8 @@ fn finalized_record(smiles: &str) -> SmilesRecord {
         &remove_params,
     )
     .unwrap_or_else(|error| panic!("failed source-order H preparation: {error}"));
+    // Move the REAL RH-prepared ring state into the finalizer carrier.
+    let mut ring_carrier = prepared.final_rings;
     finalize_smiles_stereo(
         SmilesRecord {
             topology: prepared.topology,
@@ -35,6 +37,7 @@ fn finalized_record(smiles: &str) -> SmilesRecord {
         },
         &parse_params,
         &mut None,
+        &mut ring_carrier,
     )
     .unwrap_or_else(|error| panic!("failed pinned stereo finalization: {error}"))
 }
@@ -60,6 +63,7 @@ fn sanitized_finalized_record(smiles: &str) -> SmilesRecord {
         &remove_params,
     )
     .unwrap_or_else(|error| panic!("failed source-order H preparation: {error}"));
+    let mut ring_carrier = prepared.final_rings;
     finalize_smiles_stereo(
         SmilesRecord {
             topology: prepared.topology,
@@ -68,6 +72,7 @@ fn sanitized_finalized_record(smiles: &str) -> SmilesRecord {
         },
         &parse_params,
         &mut None,
+        &mut ring_carrier,
     )
     .unwrap_or_else(|error| panic!("failed pinned stereo finalization: {error}"))
 }

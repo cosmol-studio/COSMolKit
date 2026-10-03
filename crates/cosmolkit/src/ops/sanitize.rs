@@ -113,9 +113,20 @@ pub(crate) fn sanitize_impl(params: &SanitizeParams) -> Result<(), OperationErro
     } else {
         parts.clear_cache(DerivedState::VALENCE)?;
     }
+    // Moved final ring state: the owner's final stage either supplies an
+    // initialized result (stored and marked valid) or the state is
+    // explicitly cleared. No local finder, no stale-row retention.
+    match assignment.final_rings {
+        Some(rings) => {
+            let mut cache = parts.checkout_derived_cache()?;
+            cache.install_ring_info(rings);
+            parts.install_derived_cache(cache)?;
+            parts.mark_cache_updated(DerivedState::RINGS)?;
+        }
+        None => parts.clear_cache(DerivedState::RINGS)?,
+    }
     parts.clear_cache(
-        DerivedState::RINGS
-            .union(DerivedState::RING_FAMILIES)
+        DerivedState::RING_FAMILIES
             .union(DerivedState::AROMATICITY)
             .union(DerivedState::STEREO)
             .union(DerivedState::DRAWING)
@@ -140,6 +151,210 @@ impl Molecule {
         params: &SanitizeParams,
     ) -> Result<ChemistryProblemReport, SanitizeError> {
         cosmolkit_core::detect_chemistry_problems(self.topology(), params)
+    }
+}
+
+/// C2: 24 real sanitize operations (3 shapes x ALL/NONE/PROPERTIES/
+/// SYMM_RINGS x raw/already-sanitized) proving moved final ring state,
+/// explicit clearing with no stale rows, and a typed owner error that
+/// preserves the source value including its installed rings.
+#[cfg(all(
+    test,
+    feature = "cap-smiles",
+    feature = "cap-sanitize",
+    feature = "cap-rings"
+))]
+mod ring_live_tests {
+    use super::*;
+    use crate::{
+        Atom, AtomId, AtomSpec, Bond, BondId, BondOrder, BondSpec, CoordinateBlock, DerivedState,
+        Element, MoleculeProperties, SanitizeOperations, TopologyBlock,
+    };
+
+    fn raw(input: &str) -> Molecule {
+        Molecule::from_smiles_with_params(
+            input,
+            &cosmolkit_smiles::SmilesParseParams {
+                sanitize: false,
+                remove_hydrogens: false,
+                ..cosmolkit_smiles::SmilesParseParams::default()
+            },
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn ring_live_sanitize_state_product() {
+        let mut calls = 0usize;
+        for input in ["", "CC", "c1ccccc1"] {
+            for (mask, operations) in [
+                ("ALL", SanitizeOperations::ALL),
+                ("NONE", SanitizeOperations::NONE),
+                ("PROPERTIES", SanitizeOperations::PROPERTIES),
+                ("SYMM_RINGS", SanitizeOperations::SYMM_RINGS),
+            ] {
+                for prepared in [false, true] {
+                    let label = format!("{mask}/{input:?}/prepared={prepared}");
+                    let source = if prepared {
+                        raw(input)
+                            .sanitize_with_params(&SanitizeParams {
+                                operations: SanitizeOperations::ALL,
+                            })
+                            .unwrap()
+                    } else {
+                        raw(input)
+                    };
+                    let observer = source.clone();
+                    let original_cache = source.derived_cache_arc_runtime();
+                    let output = source
+                        .sanitize_with_params(&SanitizeParams { operations })
+                        .unwrap();
+                    calls += 1;
+                    let cache = output.derived_cache_runtime();
+
+                    let symm = matches!(mask, "ALL" | "SYMM_RINGS");
+                    assert_eq!(
+                        cache.valid_states().contains(DerivedState::RINGS),
+                        symm,
+                        "{label}: RINGS validity"
+                    );
+                    assert_eq!(
+                        cache.valid_states().contains(DerivedState::VALENCE),
+                        operations.contains(SanitizeOperations::PROPERTIES),
+                        "{label}: VALENCE validity"
+                    );
+                    if symm {
+                        let rings = cache.valid_ring_info().expect("{label}: installed");
+                        assert!(rings.is_initialized(), "{label}: initialized");
+                        assert_eq!(
+                            rings.find_type(),
+                            cosmolkit_core::RingFindType::SymmSssr,
+                            "{label}: find type"
+                        );
+                        let (want_atoms, want_bonds) = match input {
+                            "" => (0usize, 0usize),
+                            "CC" => (2, 1),
+                            _ => (6, 6),
+                        };
+                        assert_eq!(rings.atom_row_count(), want_atoms, "{label}: dims");
+                        assert_eq!(rings.bond_row_count(), want_bonds, "{label}: dims");
+                        if input == "c1ccccc1" {
+                            assert_eq!(rings.atom_rings().len(), 1, "{label}: rows");
+                            assert_eq!(rings.bond_rings().len(), 1, "{label}: bond rows");
+                            let mut atoms_row: Vec<usize> = rings.atom_rings()[0]
+                                .iter()
+                                .map(|atom| atom.index())
+                                .collect();
+                            atoms_row.sort_unstable();
+                            let mut bonds_row: Vec<usize> = rings.bond_rings()[0]
+                                .iter()
+                                .map(|bond| bond.index())
+                                .collect();
+                            bonds_row.sort_unstable();
+                            assert_eq!(atoms_row, vec![0, 1, 2, 3, 4, 5], "{label}");
+                            assert_eq!(bonds_row, vec![0, 1, 2, 3, 4, 5], "{label}");
+                            for index in 0..6usize {
+                                assert_eq!(
+                                    rings.atom_members(AtomId::new(index)),
+                                    &[0],
+                                    "{label}: member {index}"
+                                );
+                                assert_eq!(
+                                    rings.bond_members(BondId::new(index)),
+                                    &[0],
+                                    "{label}: bond member {index}"
+                                );
+                            }
+                        } else {
+                            assert!(rings.atom_rings().is_empty(), "{label}: rows");
+                            assert!(rings.bond_rings().is_empty(), "{label}: bond rows");
+                            for index in 0..want_atoms {
+                                assert_eq!(
+                                    rings.atom_members(AtomId::new(index)),
+                                    &[] as &[usize],
+                                    "{label}: member {index}"
+                                );
+                            }
+                            for index in 0..want_bonds {
+                                assert_eq!(
+                                    rings.bond_members(BondId::new(index)),
+                                    &[] as &[usize],
+                                    "{label}: bond member {index}"
+                                );
+                            }
+                        }
+                    } else {
+                        // Explicit clear: no stale old rows even when the
+                        // already-sanitized source carried a valid Symm
+                        // payload.
+                        assert!(cache.valid_ring_info().is_none(), "{label}: absent");
+                        assert!(cache.ring_info().is_none(), "{label}: storage cleared");
+                    }
+                    // Value semantics: the source and its cache are intact.
+                    assert_eq!(source, observer, "{label}: source value");
+                    assert!(std::sync::Arc::ptr_eq(
+                        &source.derived_cache_arc_runtime(),
+                        &original_cache
+                    ));
+                }
+            }
+        }
+        assert_eq!(calls, 24, "exact census");
+    }
+
+    #[test]
+    fn ring_live_sanitize_typed_error_preserves_source_ring_state() {
+        // Real invalid valence (oxygen with three single bonds): the owner
+        // fails in the PROPERTIES stage; the value form must preserve the
+        // source molecule INCLUDING its installed Fast rings.
+        let source = Molecule::from_parts(
+            TopologyBlock::try_from_parts(
+                [Element::O, Element::C, Element::C, Element::C]
+                    .into_iter()
+                    .enumerate()
+                    .map(|(id, element)| Atom::from_spec(AtomId::new(id), AtomSpec::new(element)))
+                    .collect(),
+                (1..4)
+                    .map(|id| {
+                        Bond::from_spec(
+                            BondId::new(id - 1),
+                            BondSpec::new(AtomId::new(0), AtomId::new(id), BondOrder::Single),
+                        )
+                    })
+                    .collect(),
+                Vec::new(),
+                Vec::new(),
+            )
+            .unwrap(),
+            CoordinateBlock::default(),
+            MoleculeProperties::default(),
+        )
+        .unwrap()
+        .with_assigned_rings()
+        .unwrap();
+        let observer = source.clone();
+        let original_cache = source.derived_cache_arc_runtime();
+        let error = source
+            .sanitize_with_params(&SanitizeParams {
+                operations: SanitizeOperations::ALL,
+            })
+            .unwrap_err();
+        assert!(
+            matches!(
+                &error,
+                OperationError::Sanitize(SanitizeError::Properties { .. })
+            ),
+            "got {error:?}"
+        );
+        assert_eq!(source, observer);
+        assert!(std::sync::Arc::ptr_eq(
+            &source.derived_cache_arc_runtime(),
+            &original_cache
+        ));
+        let cache = source.derived_cache_runtime();
+        assert!(cache.valid_states().contains(DerivedState::RINGS));
+        let rings = cache.valid_ring_info().unwrap();
+        assert_eq!(rings.find_type(), cosmolkit_core::RingFindType::Fast);
     }
 }
 
@@ -235,10 +450,44 @@ mod tests {
                         )
                         .unwrap();
                         assert_eq!(cache.valence_assignment(), Some(&expected));
-                        assert_eq!(cache.valid_states(), DerivedState::VALENCE);
+                        if operations.contains(SanitizeOperations::SYMM_RINGS) {
+                            // ALL runs the symmetrized ring stage: the final
+                            // moved SymmSssr state (real rows on the aromatic
+                            // cycle, initialized-empty on the acyclic form)
+                            // is stored and marked valid.
+                            assert_eq!(
+                                cache.valid_states(),
+                                DerivedState::VALENCE.union(DerivedState::RINGS)
+                            );
+                            let rings = cache.valid_ring_info().unwrap();
+                            assert!(rings.is_initialized());
+                            assert_eq!(rings.find_type(), cosmolkit_core::RingFindType::SymmSssr);
+                            assert_eq!(rings.atom_rings().len(), usize::from(aromatic));
+                        } else {
+                            assert_eq!(cache.valid_states(), DerivedState::VALENCE);
+                            assert!(cache.valid_ring_info().is_none());
+                        }
                     } else {
                         assert_eq!(cache.valence_assignment(), None);
-                        assert_eq!(cache.valid_states(), DerivedState::NONE);
+                        // KEKULIZE-only: the ring-aware owner acquires SSSR
+                        // exactly when aromatic kekulization work runs
+                        // (K-RING frozen table: absent + mark=true acquires
+                        // SSSR once); the acyclic form early-returns with
+                        // the carrier absent. NONE never touches rings.
+                        if operations == SanitizeOperations::KEKULIZE && aromatic {
+                            assert_eq!(
+                                cache.valid_states(),
+                                DerivedState::RINGS,
+                                "kekulize-only aromatic installs SSSR"
+                            );
+                            let rings = cache.valid_ring_info().unwrap();
+                            assert!(rings.is_initialized());
+                            assert_eq!(rings.find_type(), cosmolkit_core::RingFindType::Sssr);
+                            assert_eq!(rings.atom_rings().len(), 1);
+                        } else {
+                            assert_eq!(cache.valid_states(), DerivedState::NONE);
+                            assert!(cache.valid_ring_info().is_none());
+                        }
                     }
                     assert_eq!(output.property("source"), Some("retained"));
                     assert_eq!(source, observer);

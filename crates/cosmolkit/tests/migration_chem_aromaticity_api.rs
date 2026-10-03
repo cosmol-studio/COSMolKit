@@ -155,11 +155,10 @@ fn generated_registry_and_all_four_matrices_share_one_exact_operation() {
     assert_eq!(spec.may_mutate, spec.access.write());
     assert_eq!(spec.auto_remap, BlockSet::NONE);
     assert_eq!(format!("{:?}", spec.requires_mapping), "None");
-    assert_eq!(spec.derived_effects.recompute.bits(), 1 << 3);
-    assert_eq!(
-        spec.derived_effects.preserve.bits(),
-        (1 << 0) | (1 << 1) | (1 << 5)
-    );
+    // L6: ordinary rings moved preserve -> recompute (initialized reuse vs
+    // absent-only Symm acquisition); every other effect is unchanged.
+    assert_eq!(spec.derived_effects.recompute.bits(), (1 << 3) | (1 << 0));
+    assert_eq!(spec.derived_effects.preserve.bits(), (1 << 1) | (1 << 5));
     assert_eq!(
         spec.derived_effects.invalidate.bits(),
         (1 << 2) | (1 << 4) | (1 << 6) | (1 << 7)

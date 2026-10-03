@@ -32,7 +32,7 @@ def molecular(row):
     try:
         params = Chem.SmilesParserParams()
         params.sanitize = options["sanitize"] if name == "SmilesRead" else name != "SanitizeAll"
-        params.removeHs = options["remove_hydrogens"] if name in ("SmilesRead", "NumHeavyAtoms", "TotalAtomCount", "LipinskiHBA", "LipinskiHBD", "FractionCSP3") else name != "SanitizeAll"
+        params.removeHs = options["remove_hydrogens"] if name in ("SmilesRead", "NumHeavyAtoms", "TotalAtomCount", "LipinskiHBA", "LipinskiHBD", "FractionCSP3", "NumRings", "NumHeterocycles", "NumAromaticRings", "NumSaturatedRings", "NumAliphaticRings", "NumAromaticHeterocycles", "NumAromaticCarbocycles", "NumAliphaticHeterocycles", "NumAliphaticCarbocycles", "NumSaturatedHeterocycles", "NumSaturatedCarbocycles") else name != "SanitizeAll"
         params.allowCXSMILES = True
         params.strictCXSMILES = True
         params.parseName = True
@@ -68,6 +68,28 @@ def molecular(row):
             return {"Unsigned": rdMolDescriptors.CalcNumLipinskiHBD(mol)}
         if name == "FractionCSP3":
             return {"Float64Bits": struct.unpack(">Q", struct.pack(">d", rdMolDescriptors.CalcFractionCSP3(mol)))[0]}
+        if name == "NumRings":
+            return {"Unsigned": rdMolDescriptors.CalcNumRings(mol)}
+        if name == "NumHeterocycles":
+            return {"Unsigned": rdMolDescriptors.CalcNumHeterocycles(mol)}
+        if name == "NumAromaticRings":
+            return {"Unsigned": rdMolDescriptors.CalcNumAromaticRings(mol)}
+        if name == "NumSaturatedRings":
+            return {"Unsigned": rdMolDescriptors.CalcNumSaturatedRings(mol)}
+        if name == "NumAliphaticRings":
+            return {"Unsigned": rdMolDescriptors.CalcNumAliphaticRings(mol)}
+        if name == "NumAromaticHeterocycles":
+            return {"Unsigned": rdMolDescriptors.CalcNumAromaticHeterocycles(mol)}
+        if name == "NumAromaticCarbocycles":
+            return {"Unsigned": rdMolDescriptors.CalcNumAromaticCarbocycles(mol)}
+        if name == "NumAliphaticHeterocycles":
+            return {"Unsigned": rdMolDescriptors.CalcNumAliphaticHeterocycles(mol)}
+        if name == "NumAliphaticCarbocycles":
+            return {"Unsigned": rdMolDescriptors.CalcNumAliphaticCarbocycles(mol)}
+        if name == "NumSaturatedHeterocycles":
+            return {"Unsigned": rdMolDescriptors.CalcNumSaturatedHeterocycles(mol)}
+        if name == "NumSaturatedCarbocycles":
+            return {"Unsigned": rdMolDescriptors.CalcNumSaturatedCarbocycles(mol)}
         if name == "SanitizeAll":
             Chem.SanitizeMol(mol, sanitizeOps=Chem.SanitizeFlags.SANITIZE_ALL)
         elif name == "Kekulize":
@@ -226,6 +248,50 @@ def generate_fraction_csp3(corpus, parameters, threads):
     return _generate(corpus, parameters, threads, _molecular_case)
 
 
+def generate_num_rings(corpus, parameters, threads):
+    return _generate(corpus, parameters, threads, _molecular_case)
+
+
+def generate_num_heterocycles(corpus, parameters, threads):
+    return _generate(corpus, parameters, threads, _molecular_case)
+
+
+def generate_num_aromatic_rings(corpus, parameters, threads):
+    return _generate(corpus, parameters, threads, _molecular_case)
+
+
+def generate_num_saturated_rings(corpus, parameters, threads):
+    return _generate(corpus, parameters, threads, _molecular_case)
+
+
+def generate_num_aliphatic_rings(corpus, parameters, threads):
+    return _generate(corpus, parameters, threads, _molecular_case)
+
+
+def generate_num_aromatic_heterocycles(corpus, parameters, threads):
+    return _generate(corpus, parameters, threads, _molecular_case)
+
+
+def generate_num_aromatic_carbocycles(corpus, parameters, threads):
+    return _generate(corpus, parameters, threads, _molecular_case)
+
+
+def generate_num_aliphatic_heterocycles(corpus, parameters, threads):
+    return _generate(corpus, parameters, threads, _molecular_case)
+
+
+def generate_num_aliphatic_carbocycles(corpus, parameters, threads):
+    return _generate(corpus, parameters, threads, _molecular_case)
+
+
+def generate_num_saturated_heterocycles(corpus, parameters, threads):
+    return _generate(corpus, parameters, threads, _molecular_case)
+
+
+def generate_num_saturated_carbocycles(corpus, parameters, threads):
+    return _generate(corpus, parameters, threads, _molecular_case)
+
+
 def generate_add_hydrogens(corpus, parameters, threads):
     return _generate(corpus, parameters, threads, _molecular_case)
 
@@ -256,6 +322,17 @@ GENERATORS = {
     "generate_lipinski_hba": generate_lipinski_hba,
     "generate_lipinski_hbd": generate_lipinski_hbd,
     "generate_fraction_csp3": generate_fraction_csp3,
+    "generate_num_rings": generate_num_rings,
+    "generate_num_heterocycles": generate_num_heterocycles,
+    "generate_num_aromatic_rings": generate_num_aromatic_rings,
+    "generate_num_saturated_rings": generate_num_saturated_rings,
+    "generate_num_aliphatic_rings": generate_num_aliphatic_rings,
+    "generate_num_aromatic_heterocycles": generate_num_aromatic_heterocycles,
+    "generate_num_aromatic_carbocycles": generate_num_aromatic_carbocycles,
+    "generate_num_aliphatic_heterocycles": generate_num_aliphatic_heterocycles,
+    "generate_num_aliphatic_carbocycles": generate_num_aliphatic_carbocycles,
+    "generate_num_saturated_heterocycles": generate_num_saturated_heterocycles,
+    "generate_num_saturated_carbocycles": generate_num_saturated_carbocycles,
     "generate_add_hydrogens": generate_add_hydrogens,
     "generate_remove_hydrogens": generate_remove_hydrogens,
     "generate_coordinates_2d": generate_coordinates_2d,

@@ -1,4 +1,16 @@
 //! Descriptor methods on the canonical runtime molecule.
+//!
+//! # Ring-state queries
+//!
+//! The eleven `num_*ring*` queries are ring-STATE reads over the molecule's
+//! derived-cache ordinary ring assignment: they never calculate, install or
+//! upgrade rings, clone the cache, or require a prepared valence. A
+//! sanitize-enabled constructor (or `with_assigned_rings`) installs valid
+//! rows. `num_rings` requires initialized rows and fails with
+//! [`DescriptorReadError::MissingInitializedRings`] on absence/reset; the
+//! ten classifiers return the source-defined EMPTY-ROW `0` on absence — a
+//! documented empty input, not a swallowed error. These are Experimental
+//! commitments; Python/JS projections are declared, not implemented.
 
 use crate::{Molecule, OperationError};
 
@@ -15,6 +27,10 @@ pub enum DescriptorReadError {
     /// No valid prepared valence assignment is installed in the runtime
     /// cache; these queries never create or install one themselves.
     MissingPreparedValence,
+    /// No valid initialized ordinary ring state is installed in the
+    /// runtime cache; the ring-count query never creates, installs or
+    /// upgrades one. It has no child error.
+    MissingInitializedRings,
     /// The domain owner returned its typed error; borrowed as the source.
     Algorithm {
         source: cosmolkit_descriptors::DescriptorError,
@@ -27,6 +43,10 @@ impl std::fmt::Display for DescriptorReadError {
                 f,
                 "descriptor query requires a prepared valence assignment; the molecule has no valid cached assignment"
             ),
+            Self::MissingInitializedRings => write!(
+                f,
+                "ring query requires initialized ring state; the molecule has no valid cached ring assignment"
+            ),
             Self::Algorithm { .. } => write!(f, "descriptor query failed"),
         }
     }
@@ -34,7 +54,7 @@ impl std::fmt::Display for DescriptorReadError {
 impl std::error::Error for DescriptorReadError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
-            Self::MissingPreparedValence => None,
+            Self::MissingPreparedValence | Self::MissingInitializedRings => None,
             Self::Algorithm { source } => Some(source),
         }
     }
@@ -129,6 +149,189 @@ impl Molecule {
         let assignment = required_descriptor_valence(self)?;
         cosmolkit_descriptors::fraction_csp3_with_valence(self.topology(), assignment)
             .map_err(|source| DescriptorReadError::Algorithm { source })
+    }
+
+    /// Returns the number of rings (RDKit `CalcNumRings`).
+    ///
+    /// Ring-state read-only query: requires the molecule's VALID
+    /// initialized ordinary ring state and delegates exactly once to the
+    /// narrow borrowed-row owner. Legitimate absence/reset maps to the
+    /// typed [`DescriptorReadError::MissingInitializedRings`]; an
+    /// initialized EMPTY row set is the literal 0. This query never
+    /// calculates, installs or upgrades rings, clones no cache and reads
+    /// no valence.
+    #[cfg(feature = "cap-descriptors")]
+    #[must_use]
+    pub fn num_rings(&self) -> Result<u32, DescriptorReadError> {
+        let rings = self
+            .derived_cache_runtime()
+            .valid_ring_info()
+            .ok_or(DescriptorReadError::MissingInitializedRings)?;
+        cosmolkit_descriptors::num_rings_with_ring_info(rings)
+            .map_err(|source| DescriptorReadError::Algorithm { source })
+    }
+
+    /// Returns the number of heterocycles (RDKit `CalcNumHeterocycles`).
+    ///
+    /// Borrows the molecule's EXISTING initialized ordinary ring rows into
+    /// the narrow owner; it never finds, installs or upgrades rings,
+    /// clones no cache and reads no valence. Legitimate absence/reset
+    /// returns the source-defined EMPTY-ROW result 0 (the pinned
+    /// classifier scans the stored rows only) — an explicitly documented
+    /// empty input, not a swallowed error.
+    #[cfg(feature = "cap-descriptors")]
+    #[must_use]
+    pub fn num_heterocycles(&self) -> Result<u32, DescriptorReadError> {
+        match self.derived_cache_runtime().valid_ring_info() {
+            Some(rings) => {
+                cosmolkit_descriptors::num_heterocycles_with_ring_info(self.topology(), rings)
+                    .map_err(|source| DescriptorReadError::Algorithm { source })
+            }
+            None => Ok(0),
+        }
+    }
+
+    /// Returns the number of aromatic rings (RDKit `CalcNumAromaticRings`).
+    ///
+    /// Borrows the molecule's EXISTING initialized ordinary ring rows into
+    /// the narrow owner; it never finds, installs or upgrades rings, clones
+    /// no cache and reads no valence. Legitimate absence/reset returns the
+    /// source-defined EMPTY-ROW result 0 — an explicitly documented empty
+    /// input, not a swallowed error.
+    #[cfg(feature = "cap-descriptors")]
+    #[must_use]
+    pub fn num_aromatic_rings(&self) -> Result<u32, DescriptorReadError> {
+        match self.derived_cache_runtime().valid_ring_info() {
+            Some(rings) => {
+                cosmolkit_descriptors::num_aromatic_rings_with_ring_info(self.topology(), rings)
+                    .map_err(|source| DescriptorReadError::Algorithm { source })
+            }
+            None => Ok(0),
+        }
+    }
+
+    /// Returns the number of saturated rings
+    /// (RDKit `CalcNumSaturatedRings`).
+    ///
+    /// Borrows the molecule's EXISTING initialized ordinary ring rows into
+    /// the narrow owner; it never finds, installs or upgrades rings, clones
+    /// no cache and reads no valence. Legitimate absence/reset returns the
+    /// source-defined EMPTY-ROW result 0 — an explicitly documented empty
+    /// input, not a swallowed error.
+    #[cfg(feature = "cap-descriptors")]
+    #[must_use]
+    pub fn num_saturated_rings(&self) -> Result<u32, DescriptorReadError> {
+        match self.derived_cache_runtime().valid_ring_info() {
+            Some(rings) => {
+                cosmolkit_descriptors::num_saturated_rings_with_ring_info(self.topology(), rings)
+                    .map_err(|source| DescriptorReadError::Algorithm { source })
+            }
+            None => Ok(0),
+        }
+    }
+
+    /// Returns the number of aliphatic rings
+    /// (RDKit `CalcNumAliphaticRings`).
+    ///
+    /// Borrows the molecule's EXISTING initialized ordinary ring rows into
+    /// the narrow owner; it never finds, installs or upgrades rings, clones
+    /// no cache and reads no valence. Legitimate absence/reset returns the
+    /// source-defined EMPTY-ROW result 0 — an explicitly documented empty
+    /// input, not a swallowed error.
+    #[cfg(feature = "cap-descriptors")]
+    #[must_use]
+    pub fn num_aliphatic_rings(&self) -> Result<u32, DescriptorReadError> {
+        match self.derived_cache_runtime().valid_ring_info() {
+            Some(rings) => {
+                cosmolkit_descriptors::num_aliphatic_rings_with_ring_info(self.topology(), rings)
+                    .map_err(|source| DescriptorReadError::Algorithm { source })
+            }
+            None => Ok(0),
+        }
+    }
+
+    // The six combined heterocycle/carbocycle queries share one thin
+    // borrowed-read shape: delegate to the matching narrow owner with the
+    // EXISTING initialized rows; absence/reset is the documented
+    // source-defined empty-row 0, never a swallowed error; no query
+    // finds, installs or upgrades rings, clones the cache or reads
+    // valence.
+    #[cfg(feature = "cap-descriptors")]
+    #[must_use]
+    pub fn num_aromatic_heterocycles(&self) -> Result<u32, DescriptorReadError> {
+        match self.derived_cache_runtime().valid_ring_info() {
+            Some(rings) => cosmolkit_descriptors::num_aromatic_heterocycles_with_ring_info(
+                self.topology(),
+                rings,
+            )
+            .map_err(|source| DescriptorReadError::Algorithm { source }),
+            None => Ok(0),
+        }
+    }
+
+    #[cfg(feature = "cap-descriptors")]
+    #[must_use]
+    pub fn num_aromatic_carbocycles(&self) -> Result<u32, DescriptorReadError> {
+        match self.derived_cache_runtime().valid_ring_info() {
+            Some(rings) => cosmolkit_descriptors::num_aromatic_carbocycles_with_ring_info(
+                self.topology(),
+                rings,
+            )
+            .map_err(|source| DescriptorReadError::Algorithm { source }),
+            None => Ok(0),
+        }
+    }
+
+    #[cfg(feature = "cap-descriptors")]
+    #[must_use]
+    pub fn num_aliphatic_heterocycles(&self) -> Result<u32, DescriptorReadError> {
+        match self.derived_cache_runtime().valid_ring_info() {
+            Some(rings) => cosmolkit_descriptors::num_aliphatic_heterocycles_with_ring_info(
+                self.topology(),
+                rings,
+            )
+            .map_err(|source| DescriptorReadError::Algorithm { source }),
+            None => Ok(0),
+        }
+    }
+
+    #[cfg(feature = "cap-descriptors")]
+    #[must_use]
+    pub fn num_aliphatic_carbocycles(&self) -> Result<u32, DescriptorReadError> {
+        match self.derived_cache_runtime().valid_ring_info() {
+            Some(rings) => cosmolkit_descriptors::num_aliphatic_carbocycles_with_ring_info(
+                self.topology(),
+                rings,
+            )
+            .map_err(|source| DescriptorReadError::Algorithm { source }),
+            None => Ok(0),
+        }
+    }
+
+    #[cfg(feature = "cap-descriptors")]
+    #[must_use]
+    pub fn num_saturated_heterocycles(&self) -> Result<u32, DescriptorReadError> {
+        match self.derived_cache_runtime().valid_ring_info() {
+            Some(rings) => cosmolkit_descriptors::num_saturated_heterocycles_with_ring_info(
+                self.topology(),
+                rings,
+            )
+            .map_err(|source| DescriptorReadError::Algorithm { source }),
+            None => Ok(0),
+        }
+    }
+
+    #[cfg(feature = "cap-descriptors")]
+    #[must_use]
+    pub fn num_saturated_carbocycles(&self) -> Result<u32, DescriptorReadError> {
+        match self.derived_cache_runtime().valid_ring_info() {
+            Some(rings) => cosmolkit_descriptors::num_saturated_carbocycles_with_ring_info(
+                self.topology(),
+                rings,
+            )
+            .map_err(|source| DescriptorReadError::Algorithm { source }),
+            None => Ok(0),
+        }
     }
 
     /// Returns the RDKit-compatible average molecular weight.
@@ -264,6 +467,258 @@ mod descriptor_public_error_tests {
                 actual: 2,
                 expected: 3,
             }
+        );
+    }
+}
+
+/// Q1 state discriminators on the SAME cube topology: public absence
+/// semantics split by query class (num_rings requires initialized rows;
+/// num_heterocycles returns the source-defined empty-row 0), plus the
+/// real Fast5/Sssr5/Symm6 row sets through the private constructor seam.
+#[cfg(all(test, feature = "cap-smiles", feature = "cap-rings"))]
+mod ring_live_public_q1_tests {
+    use super::*;
+
+    fn raw(input: &str) -> Molecule {
+        Molecule::from_smiles_with_params(
+            input,
+            &cosmolkit_smiles::SmilesParseParams {
+                sanitize: false,
+                remove_hydrogens: false,
+                ..cosmolkit_smiles::SmilesParseParams::default()
+            },
+        )
+        .unwrap()
+    }
+
+    fn supplied(input: &str, rings: Option<cosmolkit_core::RingInfo>) -> Molecule {
+        let base = raw(input);
+        Molecule::from_smiles_parts_with_derived_state(
+            base.topology().clone(),
+            base.coordinate_block_runtime().clone(),
+            base.properties().clone(),
+            None,
+            rings,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn ring_live_public_q1_state_discriminators() {
+        // C7 on the cube topology (E-V+1 = 5 SSSR rings, 6 symmetrized).
+        // NOTE: the Some(reset/uninitialized) arm is structurally
+        // unreachable outside cosmolkit-core (no public constructor leaves
+        // initialized == false; RingInfo::reset is pub(crate)); the seam
+        // clears it by construction, making it observationally identical
+        // to the absent arm proven here. No fake reset API is introduced.
+        let topology = raw("C12C3C4C1C5C2C3C45").topology().clone();
+        let fast5 = cosmolkit_core::fast_find_rings(&topology).unwrap();
+        let sssr5 =
+            cosmolkit_core::find_sssr(&topology, &cosmolkit_core::RingSearchParams::default())
+                .unwrap();
+        let symm6 = cosmolkit_core::symmetrized_sssr(
+            &topology,
+            &cosmolkit_core::RingSearchParams::default(),
+        )
+        .unwrap();
+        assert_eq!(fast5.atom_rings().len(), 5);
+        assert_eq!(sssr5.atom_rings().len(), 5);
+        assert_eq!(symm6.atom_rings().len(), 6);
+        let mut calls = 0usize;
+        for (name, supply, want_rings) in [
+            ("absent", None, None),
+            (
+                "other-empty",
+                Some(cosmolkit_core::RingInfo::new(
+                    cosmolkit_core::RingFindType::OtherOrUnknown,
+                    8,
+                    12,
+                )),
+                Some(0),
+            ),
+            ("fast5", Some(fast5.clone()), Some(5)),
+            ("sssr5", Some(sssr5.clone()), Some(5)),
+            ("symm6", Some(symm6.clone()), Some(6)),
+        ] {
+            let label = name.to_string();
+            let molecule = supplied("C12C3C4C1C5C2C3C45", supply);
+            calls += 1;
+            match want_rings {
+                None => {
+                    // num_rings: legitimate absence/reset is the typed
+                    // MissingInitializedRings with no child error.
+                    let error = molecule.num_rings().unwrap_err();
+                    assert!(
+                        matches!(error, DescriptorReadError::MissingInitializedRings),
+                        "{label}: got {error:?}"
+                    );
+                }
+                Some(expected) => {
+                    assert_eq!(molecule.num_rings().unwrap(), expected, "{label}");
+                }
+            }
+            calls += 1;
+            // num_heterocycles: absence is the source-defined empty-row 0;
+            // the all-carbon cube also yields 0 with real rows installed.
+            assert_eq!(molecule.num_heterocycles().unwrap(), 0, "{label}");
+        }
+        assert_eq!(calls, 10, "exact census");
+    }
+}
+
+/// C9: one default benzene and its peer, each eleven methods x two repeats
+/// = 44 real queries. The four Arc blocks and full values/validity/quality/
+/// paired rows/memberships are checked before AND after EACH call against
+/// never-refreshed baselines; the root acquisition counter proves no query
+/// ran a finder.
+#[cfg(all(
+    test,
+    feature = "cap-smiles",
+    feature = "cap-rings",
+    feature = "cap-descriptors"
+))]
+mod ring_live_public_storage_tests {
+    use super::*;
+    use crate::AtomId;
+    use crate::BondId;
+    use crate::DerivedState;
+
+    #[test]
+    fn ring_live_public_storage_four_block_repeat_peer_proof() {
+        let molecule = Molecule::from_smiles("c1ccccc1").unwrap();
+        let peer = molecule.clone();
+        // Never-refreshed baselines.
+        let topology_arc = molecule.topology_arc_runtime();
+        let coordinates_arc = molecule.coordinates_arc_runtime();
+        let properties_arc = molecule.properties_arc_runtime();
+        let cache_arc = molecule.derived_cache_arc_runtime();
+        let topology_value = molecule.topology().clone();
+        let coordinates_value = molecule.coordinate_block_runtime().clone();
+        let properties_value = molecule.properties().clone();
+        let cache_value = cache_arc.as_ref().clone();
+
+        let queries: [(&str, fn(&Molecule) -> Result<u32, DescriptorReadError>, u32); 11] = [
+            ("num_rings", Molecule::num_rings, 1),
+            ("num_heterocycles", Molecule::num_heterocycles, 0),
+            ("num_aromatic_rings", Molecule::num_aromatic_rings, 1),
+            ("num_saturated_rings", Molecule::num_saturated_rings, 0),
+            ("num_aliphatic_rings", Molecule::num_aliphatic_rings, 0),
+            (
+                "num_aromatic_heterocycles",
+                Molecule::num_aromatic_heterocycles,
+                0,
+            ),
+            (
+                "num_aromatic_carbocycles",
+                Molecule::num_aromatic_carbocycles,
+                1,
+            ),
+            (
+                "num_aliphatic_heterocycles",
+                Molecule::num_aliphatic_heterocycles,
+                0,
+            ),
+            (
+                "num_aliphatic_carbocycles",
+                Molecule::num_aliphatic_carbocycles,
+                0,
+            ),
+            (
+                "num_saturated_heterocycles",
+                Molecule::num_saturated_heterocycles,
+                0,
+            ),
+            (
+                "num_saturated_carbocycles",
+                Molecule::num_saturated_carbocycles,
+                0,
+            ),
+        ];
+
+        let check_state = |target: &Molecule, label: &str| {
+            assert!(
+                std::sync::Arc::ptr_eq(&target.topology_arc_runtime(), &topology_arc),
+                "{label}"
+            );
+            assert!(
+                std::sync::Arc::ptr_eq(&target.coordinates_arc_runtime(), &coordinates_arc),
+                "{label}"
+            );
+            assert!(
+                std::sync::Arc::ptr_eq(&target.properties_arc_runtime(), &properties_arc),
+                "{label}"
+            );
+            assert!(
+                std::sync::Arc::ptr_eq(&target.derived_cache_arc_runtime(), &cache_arc),
+                "{label}"
+            );
+            assert_eq!(target.topology(), &topology_value, "{label}");
+            assert_eq!(
+                target.coordinate_block_runtime(),
+                &coordinates_value,
+                "{label}"
+            );
+            assert_eq!(target.properties(), &properties_value, "{label}");
+            let cache = target.derived_cache_runtime();
+            assert_eq!(cache, &cache_value, "{label}");
+            assert!(
+                cache.valid_states().contains(DerivedState::RINGS),
+                "{label}"
+            );
+            let rings = cache.valid_ring_info().expect("{label}: installed");
+            assert!(rings.is_initialized(), "{label}");
+            assert_eq!(
+                rings.find_type(),
+                cosmolkit_core::RingFindType::SymmSssr,
+                "{label}"
+            );
+            assert_eq!(rings.atom_rings().len(), 1, "{label}: rows");
+            assert_eq!(rings.bond_rings().len(), 1, "{label}: bond rows");
+            let mut atoms_row: Vec<usize> = rings.atom_rings()[0]
+                .iter()
+                .map(|atom| atom.index())
+                .collect();
+            atoms_row.sort_unstable();
+            let mut bonds_row: Vec<usize> = rings.bond_rings()[0]
+                .iter()
+                .map(|bond| bond.index())
+                .collect();
+            bonds_row.sort_unstable();
+            assert_eq!(atoms_row, vec![0, 1, 2, 3, 4, 5], "{label}");
+            assert_eq!(bonds_row, vec![0, 1, 2, 3, 4, 5], "{label}");
+            for index in 0..6usize {
+                assert_eq!(
+                    rings.atom_members(AtomId::new(index)),
+                    &[0],
+                    "{label}: member {index}"
+                );
+                assert_eq!(
+                    rings.bond_members(BondId::new(index)),
+                    &[0],
+                    "{label}: bond member {index}"
+                );
+            }
+        };
+
+        let mut calls = 0usize;
+        let acquisitions_before = crate::ops::ring_aromaticity_probe::acquisitions();
+        for target in [&molecule, &peer] {
+            for (name, query, expected) in queries {
+                for repeat in 0..2 {
+                    let label = format!("{name}/rep{repeat}");
+                    check_state(target, &format!("{label}: before"));
+                    assert_eq!(query(target).unwrap(), expected, "{label}");
+                    calls += 1;
+                    check_state(target, &format!("{label}: after"));
+                }
+            }
+        }
+        assert_eq!(calls, 44, "exact census");
+        // No query ran a root finder (code shape plus actual counter).
+        assert_eq!(
+            crate::ops::ring_aromaticity_probe::acquisitions() - acquisitions_before,
+            0,
+            "no query-local finder"
         );
     }
 }

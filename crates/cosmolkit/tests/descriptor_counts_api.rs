@@ -1,4 +1,5 @@
 //! Public descriptor count-query API regressions (DQ-PUBLIC).
+#![cfg(all(feature = "cap-descriptors", feature = "cap-smiles"))]
 
 use cosmolkit::DescriptorReadError;
 use cosmolkit::{Molecule, SmilesParseParams};

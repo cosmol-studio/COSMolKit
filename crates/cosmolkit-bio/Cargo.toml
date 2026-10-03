@@ -18,5 +18,5 @@ documentation = "https://docs.rs/cosmolkit"
 test-probes = []
 
 [dependencies]
-cosmolkit-model = { version = "0.5.0-rc.8", path = "../cosmolkit-model" }
-cosmolkit-types = { version = "0.5.0-rc.8", path = "../cosmolkit-types" }
+cosmolkit-model = { version = "0.5.0-rc.9", path = "../cosmolkit-model" }
+cosmolkit-types = { version = "0.5.0-rc.9", path = "../cosmolkit-types" }

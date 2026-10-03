@@ -520,7 +520,8 @@ fn coordinates_property_lists_and_row_properties_follow_one_final_mapping() {
     let output =
         remove_hydrogens_with_params(source, coordinates, properties, &no_sanitize()).unwrap();
 
-    assert_eq!(output.coordinates.conformers_2d[0].id(), 0);
+    assert_eq!(output.coordinates.conformers_2d[0].id(), 7);
+    assert_eq!(output.coordinates.conformers_3d[0].id(), 9);
     assert_eq!(
         output.coordinates.conformers_2d[0]
             .props()

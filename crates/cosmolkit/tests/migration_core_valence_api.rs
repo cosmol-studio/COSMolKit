@@ -1,3 +1,5 @@
+#![cfg(feature = "cap-valence")]
+
 #[path = "support/coordinate_views.rs"]
 mod coordinate_views;
 

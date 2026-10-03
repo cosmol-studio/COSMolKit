@@ -147,6 +147,20 @@ pub fn validate_output(profile: &Profile, output: &Outcome) -> Result<(), String
         (NumHeavyAtoms { .. }, Outcome::Unsigned(_)) => true,
         (TotalAtomCount { .. }, Outcome::Unsigned(_)) => true,
         (LipinskiHBA { .. } | LipinskiHBD { .. }, Outcome::Unsigned(_)) => true,
+        (
+            NumRings { .. }
+            | NumHeterocycles { .. }
+            | NumAromaticRings { .. }
+            | NumSaturatedRings { .. }
+            | NumAliphaticRings { .. }
+            | NumAromaticHeterocycles { .. }
+            | NumAromaticCarbocycles { .. }
+            | NumAliphaticHeterocycles { .. }
+            | NumAliphaticCarbocycles { .. }
+            | NumSaturatedHeterocycles { .. }
+            | NumSaturatedCarbocycles { .. },
+            Outcome::Unsigned(_),
+        ) => true,
         // CSP3 uses the existing exact-bits observation with a finite
         // [0,1] validation band.
         (FractionCSP3 { .. }, Outcome::Float64Bits(bits)) => {
@@ -205,7 +219,18 @@ pub fn run(input: &Input) -> Result<Record, String> {
             Profile::TotalAtomCount { remove_hydrogens } => (true, *remove_hydrogens),
             Profile::LipinskiHBA { remove_hydrogens }
             | Profile::LipinskiHBD { remove_hydrogens }
-            | Profile::FractionCSP3 { remove_hydrogens } => (true, *remove_hydrogens),
+            | Profile::FractionCSP3 { remove_hydrogens }
+            | Profile::NumRings { remove_hydrogens }
+            | Profile::NumHeterocycles { remove_hydrogens }
+            | Profile::NumAromaticRings { remove_hydrogens }
+            | Profile::NumSaturatedRings { remove_hydrogens }
+            | Profile::NumAliphaticRings { remove_hydrogens }
+            | Profile::NumAromaticHeterocycles { remove_hydrogens }
+            | Profile::NumAromaticCarbocycles { remove_hydrogens }
+            | Profile::NumAliphaticHeterocycles { remove_hydrogens }
+            | Profile::NumAliphaticCarbocycles { remove_hydrogens }
+            | Profile::NumSaturatedHeterocycles { remove_hydrogens }
+            | Profile::NumSaturatedCarbocycles { remove_hydrogens } => (true, *remove_hydrogens),
             _ => (true, true),
         };
         let mol = Molecule::from_smiles_with_params(
@@ -289,6 +314,72 @@ pub fn run(input: &Input) -> Result<Record, String> {
                 return mol
                     .fraction_csp3()
                     .map(|value| Outcome::Float64Bits(value.to_bits()))
+                    .map_err(|e| e.to_string());
+            }
+            NumRings { .. } => {
+                return mol
+                    .num_rings()
+                    .map(Outcome::Unsigned)
+                    .map_err(|e| e.to_string());
+            }
+            NumHeterocycles { .. } => {
+                return mol
+                    .num_heterocycles()
+                    .map(Outcome::Unsigned)
+                    .map_err(|e| e.to_string());
+            }
+            NumAromaticRings { .. } => {
+                return mol
+                    .num_aromatic_rings()
+                    .map(Outcome::Unsigned)
+                    .map_err(|e| e.to_string());
+            }
+            NumSaturatedRings { .. } => {
+                return mol
+                    .num_saturated_rings()
+                    .map(Outcome::Unsigned)
+                    .map_err(|e| e.to_string());
+            }
+            NumAliphaticRings { .. } => {
+                return mol
+                    .num_aliphatic_rings()
+                    .map(Outcome::Unsigned)
+                    .map_err(|e| e.to_string());
+            }
+            NumAromaticHeterocycles { .. } => {
+                return mol
+                    .num_aromatic_heterocycles()
+                    .map(Outcome::Unsigned)
+                    .map_err(|e| e.to_string());
+            }
+            NumAromaticCarbocycles { .. } => {
+                return mol
+                    .num_aromatic_carbocycles()
+                    .map(Outcome::Unsigned)
+                    .map_err(|e| e.to_string());
+            }
+            NumAliphaticHeterocycles { .. } => {
+                return mol
+                    .num_aliphatic_heterocycles()
+                    .map(Outcome::Unsigned)
+                    .map_err(|e| e.to_string());
+            }
+            NumAliphaticCarbocycles { .. } => {
+                return mol
+                    .num_aliphatic_carbocycles()
+                    .map(Outcome::Unsigned)
+                    .map_err(|e| e.to_string());
+            }
+            NumSaturatedHeterocycles { .. } => {
+                return mol
+                    .num_saturated_heterocycles()
+                    .map(Outcome::Unsigned)
+                    .map_err(|e| e.to_string());
+            }
+            NumSaturatedCarbocycles { .. } => {
+                return mol
+                    .num_saturated_carbocycles()
+                    .map(Outcome::Unsigned)
                     .map_err(|e| e.to_string());
             }
             SmilesRead { .. } => mol,

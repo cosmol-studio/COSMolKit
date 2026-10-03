@@ -283,11 +283,14 @@ fn generated_registry_and_four_matrices_share_the_strong_compacting_operation() 
         BlockSet::COORDINATES.union(BlockSet::PROPERTIES)
     );
     assert_eq!(format!("{:?}", spec.requires_mapping), "Required");
-    assert_eq!(spec.derived_effects.recompute.bits(), 0);
+    // L4: ordinary rings moved invalidate -> recompute (final-pass
+    // result.final_rings replacement-or-clear); every other effect,
+    // including the valence-only operation_defined allow-list, is unchanged.
+    assert_eq!(spec.derived_effects.recompute.bits(), 1 << 0);
     assert_eq!(spec.derived_effects.preserve.bits(), 0);
     assert_eq!(
         spec.derived_effects.invalidate.bits(),
-        (1 << 0) | (1 << 1) | (1 << 3) | (1 << 4) | (1 << 6) | (1 << 7)
+        (1 << 1) | (1 << 3) | (1 << 4) | (1 << 6) | (1 << 7)
     );
     assert_eq!(spec.derived_effects.operation_defined.bits(), 1 << 2);
     assert_eq!(format!("{:?}", spec.cip_state), "ClearComputed");

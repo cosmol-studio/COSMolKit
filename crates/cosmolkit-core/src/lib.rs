@@ -158,8 +158,8 @@ pub mod __migration_sanitize {
 pub use kekulize::{
     CanonicalRankError, CanonicalRankParams, KekulizeAssignment, KekulizeAttempt, KekulizeError,
     KekulizeParams, kekulize, kekulize_if_possible, kekulize_if_possible_with_query_state,
-    kekulize_selected_fragment, kekulize_with_query_state, rank_fragment_atoms,
-    rank_fragment_atoms_with_params, rank_fragment_atoms_with_prepared_state,
+    kekulize_selected_fragment, kekulize_with_query_state, kekulize_with_query_state_and_ring_info,
+    rank_fragment_atoms, rank_fragment_atoms_with_params, rank_fragment_atoms_with_prepared_state,
     rank_mol_atoms_with_params,
 };
 

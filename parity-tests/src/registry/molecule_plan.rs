@@ -611,6 +611,17 @@ impl TaskId {
             Self::LipinskiHBA => "lipinski_hba",
             Self::LipinskiHBD => "lipinski_hbd",
             Self::FractionCSP3 => "fraction_csp3",
+            Self::NumRings => "num_rings",
+            Self::NumHeterocycles => "num_heterocycles",
+            Self::NumAromaticRings => "num_aromatic_rings",
+            Self::NumSaturatedRings => "num_saturated_rings",
+            Self::NumAliphaticRings => "num_aliphatic_rings",
+            Self::NumAromaticHeterocycles => "num_aromatic_heterocycles",
+            Self::NumAromaticCarbocycles => "num_aromatic_carbocycles",
+            Self::NumAliphaticHeterocycles => "num_aliphatic_heterocycles",
+            Self::NumAliphaticCarbocycles => "num_aliphatic_carbocycles",
+            Self::NumSaturatedHeterocycles => "num_saturated_heterocycles",
+            Self::NumSaturatedCarbocycles => "num_saturated_carbocycles",
         }
     }
     pub const fn category(self) -> Category {
@@ -627,6 +638,17 @@ impl TaskId {
             Self::NumHeavyAtoms => Category::Descriptors,
             Self::TotalAtomCount => Category::Descriptors,
             Self::LipinskiHBA | Self::LipinskiHBD | Self::FractionCSP3 => Category::Descriptors,
+            Self::NumRings
+            | Self::NumHeterocycles
+            | Self::NumAromaticRings
+            | Self::NumSaturatedRings
+            | Self::NumAliphaticRings
+            | Self::NumAromaticHeterocycles
+            | Self::NumAromaticCarbocycles
+            | Self::NumAliphaticHeterocycles
+            | Self::NumAliphaticCarbocycles
+            | Self::NumSaturatedHeterocycles
+            | Self::NumSaturatedCarbocycles => Category::Descriptors,
             Self::CipLabels | Self::PotentialStereo => Category::Stereo,
             Self::Coordinates2d => Category::Depiction,
             Self::DistanceMatrix => Category::Chemistry,
@@ -687,6 +709,17 @@ pub enum TaskId {
     LipinskiHBA,
     LipinskiHBD,
     FractionCSP3,
+    NumRings,
+    NumHeterocycles,
+    NumAromaticRings,
+    NumSaturatedRings,
+    NumAliphaticRings,
+    NumAromaticHeterocycles,
+    NumAromaticCarbocycles,
+    NumAliphaticHeterocycles,
+    NumAliphaticCarbocycles,
+    NumSaturatedHeterocycles,
+    NumSaturatedCarbocycles,
 }
 
 /// `None` and an explicitly empty selection must never be conflated.
@@ -754,6 +787,39 @@ pub enum Profile {
         remove_hydrogens: bool,
     },
     FractionCSP3 {
+        remove_hydrogens: bool,
+    },
+    NumRings {
+        remove_hydrogens: bool,
+    },
+    NumHeterocycles {
+        remove_hydrogens: bool,
+    },
+    NumAromaticRings {
+        remove_hydrogens: bool,
+    },
+    NumSaturatedRings {
+        remove_hydrogens: bool,
+    },
+    NumAliphaticRings {
+        remove_hydrogens: bool,
+    },
+    NumAromaticHeterocycles {
+        remove_hydrogens: bool,
+    },
+    NumAromaticCarbocycles {
+        remove_hydrogens: bool,
+    },
+    NumAliphaticHeterocycles {
+        remove_hydrogens: bool,
+    },
+    NumAliphaticCarbocycles {
+        remove_hydrogens: bool,
+    },
+    NumSaturatedHeterocycles {
+        remove_hydrogens: bool,
+    },
+    NumSaturatedCarbocycles {
         remove_hydrogens: bool,
     },
 }
@@ -872,6 +938,72 @@ pub const TASKS: &[Task] = &[
         id: FractionCSP3,
         input: SanitizedHydrogensPerProfile,
         comparison: Float64Bits,
+        prerequisite: MolecularPipeline,
+    },
+    Task {
+        id: NumRings,
+        input: SanitizedHydrogensPerProfile,
+        comparison: Unsigned,
+        prerequisite: MolecularPipeline,
+    },
+    Task {
+        id: NumHeterocycles,
+        input: SanitizedHydrogensPerProfile,
+        comparison: Unsigned,
+        prerequisite: MolecularPipeline,
+    },
+    Task {
+        id: NumAromaticRings,
+        input: SanitizedHydrogensPerProfile,
+        comparison: Unsigned,
+        prerequisite: MolecularPipeline,
+    },
+    Task {
+        id: NumSaturatedRings,
+        input: SanitizedHydrogensPerProfile,
+        comparison: Unsigned,
+        prerequisite: MolecularPipeline,
+    },
+    Task {
+        id: NumAliphaticRings,
+        input: SanitizedHydrogensPerProfile,
+        comparison: Unsigned,
+        prerequisite: MolecularPipeline,
+    },
+    Task {
+        id: NumAromaticHeterocycles,
+        input: SanitizedHydrogensPerProfile,
+        comparison: Unsigned,
+        prerequisite: MolecularPipeline,
+    },
+    Task {
+        id: NumAromaticCarbocycles,
+        input: SanitizedHydrogensPerProfile,
+        comparison: Unsigned,
+        prerequisite: MolecularPipeline,
+    },
+    Task {
+        id: NumAliphaticHeterocycles,
+        input: SanitizedHydrogensPerProfile,
+        comparison: Unsigned,
+        prerequisite: MolecularPipeline,
+    },
+    Task {
+        id: NumAliphaticCarbocycles,
+        input: SanitizedHydrogensPerProfile,
+        comparison: Unsigned,
+        prerequisite: MolecularPipeline,
+    },
+    Task {
+        id: NumSaturatedHeterocycles,
+        input: SanitizedHydrogensPerProfile,
+        comparison: Unsigned,
+        prerequisite: MolecularPipeline,
+    },
+    Task {
+        id: NumSaturatedCarbocycles,
+        input: SanitizedHydrogensPerProfile,
+        comparison: Unsigned,
         prerequisite: MolecularPipeline,
     },
     Task {
@@ -1010,6 +1142,39 @@ impl TaskId {
             FractionCSP3 => booleans
                 .map(|remove_hydrogens| Profile::FractionCSP3 { remove_hydrogens })
                 .into(),
+            NumRings => booleans
+                .map(|remove_hydrogens| Profile::NumRings { remove_hydrogens })
+                .into(),
+            NumHeterocycles => booleans
+                .map(|remove_hydrogens| Profile::NumHeterocycles { remove_hydrogens })
+                .into(),
+            NumAromaticRings => booleans
+                .map(|remove_hydrogens| Profile::NumAromaticRings { remove_hydrogens })
+                .into(),
+            NumSaturatedRings => booleans
+                .map(|remove_hydrogens| Profile::NumSaturatedRings { remove_hydrogens })
+                .into(),
+            NumAliphaticRings => booleans
+                .map(|remove_hydrogens| Profile::NumAliphaticRings { remove_hydrogens })
+                .into(),
+            NumAromaticHeterocycles => booleans
+                .map(|remove_hydrogens| Profile::NumAromaticHeterocycles { remove_hydrogens })
+                .into(),
+            NumAromaticCarbocycles => booleans
+                .map(|remove_hydrogens| Profile::NumAromaticCarbocycles { remove_hydrogens })
+                .into(),
+            NumAliphaticHeterocycles => booleans
+                .map(|remove_hydrogens| Profile::NumAliphaticHeterocycles { remove_hydrogens })
+                .into(),
+            NumAliphaticCarbocycles => booleans
+                .map(|remove_hydrogens| Profile::NumAliphaticCarbocycles { remove_hydrogens })
+                .into(),
+            NumSaturatedHeterocycles => booleans
+                .map(|remove_hydrogens| Profile::NumSaturatedHeterocycles { remove_hydrogens })
+                .into(),
+            NumSaturatedCarbocycles => booleans
+                .map(|remove_hydrogens| Profile::NumSaturatedCarbocycles { remove_hydrogens })
+                .into(),
         }
     }
 }
@@ -1037,7 +1202,12 @@ mod tests {
                 .iter()
                 .map(|t| t.id.profiles().len())
                 .collect::<Vec<_>>(),
-            [4, 4, 1, 2, 2, 2, 4, 2, 2, 2, 2, 2, 2, 2, 4, 8, 1, 2]
+            // RING-LIVE-PUBLIC T1: eleven ring-state tasks, each with the
+            // two explicit remove_hydrogens profiles.
+            [
+                4, 4, 1, 2, 2, 2, 4, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 4, 8, 1,
+                2
+            ]
         );
         assert_eq!(
             TASKS
@@ -1052,7 +1222,7 @@ mod tests {
     #[test]
     fn molecular_plan_does_not_silently_register_unimplemented_runners() {
         let executable = super::super::select(None).unwrap();
-        assert_eq!(executable.len(), 17);
+        assert_eq!(executable.len(), 28);
         assert_eq!(executable[0].operation, super::super::Operation::FuzzyAnd);
         assert_eq!(executable[1].operation, super::super::Operation::FuzzyOr);
     }

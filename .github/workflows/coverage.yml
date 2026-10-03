@@ -18,7 +18,9 @@ jobs:
             RUST_MIN_STACK: "8388608"
             PARITY_CACHE_SCHEMA: v2
             PARITY_DATA: target/parity-tests-ci
-            CARGO_TARGET_DIR: target/rust-build
+            # show-env derives its build directory from CARGO_TARGET_DIR.
+            # Keep it equal to the profile directory before evaluating show-env.
+            CARGO_TARGET_DIR: target/coverage-build
             CARGO_LLVM_COV_TARGET_DIR: target/coverage-build
         steps:
             - uses: actions/checkout@v4
@@ -74,16 +76,20 @@ jobs:
                   while IFS= read -r package; do
                       if [[ "$package" != cosmolkit-parity-tests ]]; then packages+=(-p "$package"); fi
                   done < "$RUNNER_TEMP/test-packages.txt"
-                  # Reuse the instrumented libraries built before submodule initialization.
+                  # show-env instrumentation is shared by every ordinary Cargo stage.
+                  # Do not combine it with cargo-llvm-cov's separate test wrapper.
+                  coverage_env="$(cargo llvm-cov show-env --sh)"
+                  eval "$coverage_env"
+                  export CARGO_TARGET_DIR="$CARGO_LLVM_COV_TARGET_DIR"
                   status=0
-                  cargo llvm-cov "${packages[@]}" --release \
+                  cargo test "${packages[@]}" --release \
                       --features cosmolkit/op-contracts-strict,cosmolkit-core/op-contracts-strict \
-                      --no-clean --no-report --no-fail-fast || status=$?
+                      --no-fail-fast || status=$?
                   # The runner's corpus target belongs AFTER reference preparation.
                   # Select core too to enable its strict feature (its lib tests repeat).
-                  cargo llvm-cov -p cosmolkit-parity-tests -p cosmolkit-core --lib --bins --release \
+                  cargo test -p cosmolkit-parity-tests -p cosmolkit-core --lib --bins --release \
                       --features cosmolkit/op-contracts-strict,cosmolkit-core/op-contracts-strict \
-                      --no-clean --no-report --no-fail-fast || status=$?
+                      --no-fail-fast || status=$?
                   exit "$status"
 
             - name: Run documentation tests
@@ -92,6 +98,7 @@ jobs:
               continue-on-error: true
               shell: bash
               run: |
+                  export CARGO_TARGET_DIR=target/rust-build
                   packages=()
                   while IFS= read -r package; do packages+=(-p "$package"); done < "$RUNNER_TEMP/test-packages.txt"
                   cargo test "${packages[@]}" --release --doc --no-fail-fast \
@@ -158,9 +165,12 @@ jobs:
               shell: bash
               run: |
                   set -o pipefail
+                  coverage_env="$(cargo llvm-cov show-env --sh)"
+                  eval "$coverage_env"
+                  export CARGO_TARGET_DIR="$CARGO_LLVM_COV_TARGET_DIR"
                   # No filter or thread override: Cargo parallelizes function/corpus tests.
-                  cargo llvm-cov -p cosmolkit-parity-tests -p cosmolkit-core \
-                      --release --test reference_parity --no-clean --no-report --no-fail-fast \
+                  cargo test -p cosmolkit-parity-tests -p cosmolkit-core \
+                      --release --test reference_parity --no-fail-fast \
                       --features cosmolkit/op-contracts-strict,cosmolkit-core/op-contracts-strict \
                       2>&1 | tee "$RUNNER_TEMP/parity-5000.log"
 

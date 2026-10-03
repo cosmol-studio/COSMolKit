@@ -144,7 +144,10 @@ pub use ops::{
     operation_specs, parity_matrix, support_matrix,
 };
 #[cfg(test)]
-pub(crate) use ops::{CowCoordinatesFailureForTestAccess, CowCoordinatesForTestAccess};
+pub(crate) use ops::{
+    CowCoordinatesFailureForTestAccess, CowCoordinatesForTestAccess,
+    RingLiveCowCheckoutConflictForTestAccess,
+};
 pub(crate) use ops::{MultiOutputOpParts, OpParts, PreservationProof};
 pub(crate) use ops::{PendingMolecule, PendingResult, ResultFinalizer};
 #[cfg(feature = "cap-rings")]

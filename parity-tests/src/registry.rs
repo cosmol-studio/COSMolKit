@@ -146,6 +146,61 @@ pub const TASKS: &[Task] = &[
         corpus_type: CorpusType::Smiles,
         generator: "generate_distance_matrix",
     },
+    Task {
+        operation: Operation::Molecular(molecule_plan::TaskId::NumRings),
+        corpus_type: CorpusType::Smiles,
+        generator: "generate_num_rings",
+    },
+    Task {
+        operation: Operation::Molecular(molecule_plan::TaskId::NumHeterocycles),
+        corpus_type: CorpusType::Smiles,
+        generator: "generate_num_heterocycles",
+    },
+    Task {
+        operation: Operation::Molecular(molecule_plan::TaskId::NumAromaticRings),
+        corpus_type: CorpusType::Smiles,
+        generator: "generate_num_aromatic_rings",
+    },
+    Task {
+        operation: Operation::Molecular(molecule_plan::TaskId::NumSaturatedRings),
+        corpus_type: CorpusType::Smiles,
+        generator: "generate_num_saturated_rings",
+    },
+    Task {
+        operation: Operation::Molecular(molecule_plan::TaskId::NumAliphaticRings),
+        corpus_type: CorpusType::Smiles,
+        generator: "generate_num_aliphatic_rings",
+    },
+    Task {
+        operation: Operation::Molecular(molecule_plan::TaskId::NumAromaticHeterocycles),
+        corpus_type: CorpusType::Smiles,
+        generator: "generate_num_aromatic_heterocycles",
+    },
+    Task {
+        operation: Operation::Molecular(molecule_plan::TaskId::NumAromaticCarbocycles),
+        corpus_type: CorpusType::Smiles,
+        generator: "generate_num_aromatic_carbocycles",
+    },
+    Task {
+        operation: Operation::Molecular(molecule_plan::TaskId::NumAliphaticHeterocycles),
+        corpus_type: CorpusType::Smiles,
+        generator: "generate_num_aliphatic_heterocycles",
+    },
+    Task {
+        operation: Operation::Molecular(molecule_plan::TaskId::NumAliphaticCarbocycles),
+        corpus_type: CorpusType::Smiles,
+        generator: "generate_num_aliphatic_carbocycles",
+    },
+    Task {
+        operation: Operation::Molecular(molecule_plan::TaskId::NumSaturatedHeterocycles),
+        corpus_type: CorpusType::Smiles,
+        generator: "generate_num_saturated_heterocycles",
+    },
+    Task {
+        operation: Operation::Molecular(molecule_plan::TaskId::NumSaturatedCarbocycles),
+        corpus_type: CorpusType::Smiles,
+        generator: "generate_num_saturated_carbocycles",
+    },
 ];
 
 pub const RDKIT_VERSION: &str = "2026.03.1";
@@ -216,6 +271,17 @@ impl Input {
                     LipinskiHBA { .. } => "lipinski_hba",
                     LipinskiHBD { .. } => "lipinski_hbd",
                     FractionCSP3 { .. } => "fraction_csp3",
+                    NumRings { .. } => "num_rings",
+                    NumHeterocycles { .. } => "num_heterocycles",
+                    NumAromaticRings { .. } => "num_aromatic_rings",
+                    NumSaturatedRings { .. } => "num_saturated_rings",
+                    NumAliphaticRings { .. } => "num_aliphatic_rings",
+                    NumAromaticHeterocycles { .. } => "num_aromatic_heterocycles",
+                    NumAromaticCarbocycles { .. } => "num_aromatic_carbocycles",
+                    NumAliphaticHeterocycles { .. } => "num_aliphatic_heterocycles",
+                    NumAliphaticCarbocycles { .. } => "num_aliphatic_carbocycles",
+                    NumSaturatedHeterocycles { .. } => "num_saturated_heterocycles",
+                    NumSaturatedCarbocycles { .. } => "num_saturated_carbocycles",
                     AddHydrogens { .. } => "add_hydrogens",
                     RemoveHydrogens { .. } => "remove_hydrogens",
                     Coordinates2dDefault => "coordinates_2d",

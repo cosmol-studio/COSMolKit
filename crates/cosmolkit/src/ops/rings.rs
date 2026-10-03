@@ -46,6 +46,10 @@ pub(crate) fn assign_rings_impl() -> Result<(), OperationError> {
             expected: atoms.len(),
         });
     }
+    // Actual-site cfg(test) observation of the finder-return row buffers,
+    // captured BEFORE the value is moved into the derived cache.
+    #[cfg(test)]
+    crate::ops::cow_tests::ring_live_probe::record_install(&rings);
     let mut cache = parts.checkout_derived_cache()?;
     cache.install_ring_info(rings);
     parts.install_derived_cache(cache)?;

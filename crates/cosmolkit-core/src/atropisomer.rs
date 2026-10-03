@@ -2621,6 +2621,28 @@ pub fn cleanup_invalid_atropisomers(
         });
     }
 
+    // The one private engine below owns the clone/tag-loop/group-cleanup/
+    // final-validation body; this wrapper keeps the source wrapper-before-
+    // loop prevalidation and supplies the existing detached check primitive.
+    cleanup_invalid_atropisomers_engine(topology, |bond| {
+        check_invalid_atrop_bond(bond, hybridization, rings)
+    })
+}
+
+/// One private error-generic cleanup engine shared by the public detached
+/// wrapper and the owned-ring-state sanitize wrapper.
+///
+/// `check` is called ONLY for AtropCw/AtropCcw bonds; it reports whether it
+/// cleared the tag. Stereo-group cleanup inspects the RESULT topology after
+/// tag updates and runs only if a tag was cleared, exactly as the source
+/// does after its bond loop.
+fn cleanup_invalid_atropisomers_engine<E>(
+    topology: &TopologyBlock,
+    mut check: impl FnMut(&mut Bond) -> Result<bool, E>,
+) -> Result<TopologyBlock, E>
+where
+    E: From<AtropisomerError>,
+{
     // Complete pinned source: MolOps::cleanupAtropisomers(RWMol &, Hybridizations &).
     // RDKit✔️❌: void cleanupAtropisomers(RWMol &mol, MolOps::Hybridizations &hybs) {
     // RDKit✔️❌:   // make sure that ring info is available
@@ -2649,20 +2671,146 @@ pub fn cleanup_invalid_atropisomers(
     let mut result = topology.clone();
     let mut need_stereo_group_cleanup = false;
     for bond in &mut result.bonds {
-        if matches!(bond.stereo(), BondStereo::AtropCw | BondStereo::AtropCcw)
-            && check_invalid_atrop_bond(bond, hybridization, rings)?
-        {
+        if matches!(bond.stereo(), BondStereo::AtropCw | BondStereo::AtropCcw) && check(bond)? {
             need_stereo_group_cleanup = true;
         }
     }
     if need_stereo_group_cleanup {
+        #[cfg(test)]
+        cleanup_ring_state_probe::record_group_cleanup();
         result.stereo_groups =
-            cleanup_atropisomer_stereo_groups(&result, &AtropisomerAssignment::default())?.groups;
+            cleanup_atropisomer_stereo_groups(&result, &AtropisomerAssignment::default())
+                .map_err(E::from)?
+                .groups;
     }
     result
         .validate()
-        .map_err(|source| AtropisomerError::InvalidTopology { source })?;
+        .map_err(|source| E::from(AtropisomerError::InvalidTopology { source }))?;
     Ok(result)
+}
+
+/// Private two-cause error for the owned-ring-state cleanup wrapper.
+///
+/// `Rings` carries the canonical finder failure raised while lazily
+/// acquiring SSSR for a tagged bond; `Algorithm` carries the existing
+/// detached atropisomer causes. `source()` borrows the inner error.
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum AtropisomerCleanupError {
+    #[error("ring finding failed during atropisomer cleanup: {0}")]
+    Rings(#[from] crate::RingFindingError),
+    #[error("atropisomer cleanup failed: {0}")]
+    Algorithm(#[from] AtropisomerError),
+}
+
+/// Test-only observation points at the actual wrapper acquisition site.
+/// Counters are never reset by production code; production builds contain
+/// no counters or hooks.
+#[cfg(test)]
+pub(crate) mod cleanup_ring_state_probe {
+    use std::cell::Cell;
+
+    thread_local! {
+        static FIND_CALLS: Cell<u64> = const { Cell::new(0) };
+        static CONSUMED_CALLS: Cell<u64> = const { Cell::new(0) };
+        static GROUP_CLEANUP_CALLS: Cell<u64> = const { Cell::new(0) };
+        static ACQUIRED_ATOM_ROW_PTRS: Cell<Vec<usize>> = const { Cell::new(Vec::new()) };
+    }
+
+    pub(crate) fn record_find() {
+        FIND_CALLS.with(|calls| calls.set(calls.get() + 1));
+    }
+
+    pub(crate) fn record_consumed() {
+        CONSUMED_CALLS.with(|calls| calls.set(calls.get() + 1));
+    }
+
+    pub(crate) fn record_group_cleanup() {
+        GROUP_CLEANUP_CALLS.with(|calls| calls.set(calls.get() + 1));
+    }
+
+    pub(crate) fn record_acquired_atom_rows(rows: *const Vec<cosmolkit_model::AtomId>) {
+        ACQUIRED_ATOM_ROW_PTRS.with(|buffer| {
+            let mut buffer = buffer.take();
+            buffer.push(rows as usize);
+            ACQUIRED_ATOM_ROW_PTRS.with(|cell| cell.set(buffer));
+        });
+    }
+
+    pub(crate) fn find_calls() -> u64 {
+        FIND_CALLS.with(Cell::get)
+    }
+
+    pub(crate) fn consumed_calls() -> u64 {
+        CONSUMED_CALLS.with(Cell::get)
+    }
+
+    pub(crate) fn group_cleanup_calls() -> u64 {
+        GROUP_CLEANUP_CALLS.with(Cell::get)
+    }
+
+    pub(crate) fn acquired_atom_row_pointers() -> Vec<usize> {
+        ACQUIRED_ATOM_ROW_PTRS.with(Cell::take)
+    }
+}
+
+/// Owned-ring-state cleanup used by the sanitize CLEANUP_ATROPISOMERS stage.
+///
+/// The supplied `Option<RingInfo>` is the one state carrier: it is moved in
+/// and moved back out; no full RingInfo clone serves this path. With no
+/// AtropCw/AtropCcw bonds the callback never runs: NO ring acquisition or
+/// validation happens and the supplied state is preserved exactly (a
+/// malformed no-tag state remains unconsumed). For a tagged bond the source
+/// checkBond guard runs first: a state below SSSR-or-better acquires ONE
+/// canonical find_sssr from the ORIGINAL topology (cleanup changes only
+/// stereo tags in its clone, never graph/bond orders/endpoints/IDs) and
+/// replaces the carrier by move BEFORE any Sp2 endpoint short-circuit; an
+/// initialized-empty SSSR/Symm satisfies the guard and is never re-found.
+/// The consumed state is then dimension/index validated and the existing
+/// detached check primitive decides the tag.
+pub(crate) fn cleanup_invalid_atropisomers_with_ring_state(
+    topology: &TopologyBlock,
+    hybridization: &HybridizationAssignment,
+    rings: Option<RingInfo>,
+) -> Result<(TopologyBlock, Option<RingInfo>), AtropisomerCleanupError> {
+    topology
+        .validate()
+        .map_err(|source| AtropisomerError::InvalidTopology { source })?;
+    if hybridization.values.len() != topology.atoms.len() {
+        return Err(AtropisomerError::HybridizationAssignmentLength {
+            actual: hybridization.values.len(),
+            expected: topology.atoms.len(),
+        }
+        .into());
+    }
+    let mut state = rings;
+    let output =
+        cleanup_invalid_atropisomers_engine::<AtropisomerCleanupError>(topology, |bond| {
+            #[cfg(test)]
+            cleanup_ring_state_probe::record_consumed();
+            // Complete pinned source: MolOps.cpp anonymous-namespace checkBond
+            // ring-state guard, applied to the owned carrier.
+            // RDKit✔️✔️:   if (!mol.getRingInfo()->isSssrOrBetter()) {
+            // RDKit✔️✔️:     RDKit::MolOps::findSSSR(mol);
+            // RDKit✔️✔️:   }
+            let below_quality = !state
+                .as_ref()
+                .is_some_and(|carrier| carrier.is_sssr_or_better());
+            if below_quality {
+                let fresh = crate::rings::find_sssr(topology, &crate::RingSearchParams::default())?;
+                #[cfg(test)]
+                cleanup_ring_state_probe::record_find();
+                #[cfg(test)]
+                cleanup_ring_state_probe::record_acquired_atom_rows(fresh.atom_rings().as_ptr());
+                state = Some(fresh);
+            }
+            let carrier = state
+                .as_ref()
+                .expect("ring state present after the guard branch");
+            validate_rings(topology, carrier)?;
+            check_invalid_atrop_bond(bond, hybridization, carrier)
+                .map_err(AtropisomerCleanupError::from)
+        })?;
+    Ok((output, state))
 }
 
 pub fn wedge_bonds_from_atropisomers(
@@ -2751,6 +2899,424 @@ pub fn wedge_bonds_from_atropisomers(
         bond_updates: updates.into_values().collect(),
         diagnostics,
     })
+}
+
+// L05: the owned-ring-state cleanup wrapper products. Counters are
+// thread-local and never reset; all observations are per-call deltas.
+// Probe pointers prove MOVE preservation of the one carrier (supplied
+// buffers survive with the same heap address; the acquired SSSR address
+// recorded at the real acquisition site is the address returned).
+#[cfg(test)]
+mod cleanup_ring_state_tests {
+    use super::cleanup_invalid_atropisomers_with_ring_state;
+    use super::cleanup_ring_state_probe as probe;
+    use crate::atropisomer::AtropisomerError;
+    use crate::{HybridizationAssignment, RingFindType, RingInfo};
+    use cosmolkit_model::{
+        Atom, AtomId, AtomSpec, Bond, BondId, BondSpec, StereoGroup, StereoGroupKind, TopologyBlock,
+    };
+    use cosmolkit_types::{BondOrder, BondStereo, Element, Hybridization};
+
+    fn cycle(n: usize, stereo: BondStereo) -> TopologyBlock {
+        let atoms = (0..n)
+            .map(|id| Atom::from_spec(AtomId::new(id), AtomSpec::new(Element::C)))
+            .collect::<Vec<_>>();
+        let bonds = (0..n)
+            .map(|id| {
+                let mut spec = BondSpec::new(
+                    AtomId::new(id),
+                    AtomId::new((id + 1) % n),
+                    BondOrder::Single,
+                );
+                if id == 0 {
+                    spec = spec.with_stereo(stereo);
+                }
+                Bond::from_spec(BondId::new(id), spec)
+            })
+            .collect::<Vec<_>>();
+        // Source-shaped sentinel: one ordered stereo group over all cycle
+        // atoms; complete ordered group output is asserted every call.
+        let sentinel = StereoGroup::new(
+            StereoGroupKind::Or,
+            (0..n).map(AtomId::new).collect(),
+            Vec::new(),
+        )
+        .with_id(7);
+        TopologyBlock::try_from_parts(atoms, bonds, Vec::new(), vec![sentinel]).unwrap()
+    }
+
+    fn hybs(values: Vec<Hybridization>) -> HybridizationAssignment {
+        HybridizationAssignment { values }
+    }
+
+    fn all(n: usize, value: Hybridization) -> Vec<Hybridization> {
+        vec![value; n]
+    }
+
+    fn full_ring(find_type: RingFindType, n: usize) -> RingInfo {
+        // Frozen full-row convention: reversed atom/bond order, e.g. the
+        // six-cycle rows atoms[0,5,4,3,2,1], bonds[5,4,3,2,1,0].
+        let mut info = RingInfo::new(find_type, n, n);
+        let rows: Vec<usize> = (0..n).rev().collect();
+        info.add_ring(&rows, &rows).unwrap();
+        info
+    }
+
+    fn reset_state() -> RingInfo {
+        let mut info = RingInfo::new(RingFindType::Sssr, 6, 6);
+        info.reset();
+        info
+    }
+
+    fn row_indices(rings: &RingInfo) -> Vec<Vec<usize>> {
+        rings
+            .atom_rings()
+            .iter()
+            .map(|row| row.iter().map(|atom| atom.index()).collect())
+            .collect()
+    }
+
+    fn bond_row_indices(rings: &RingInfo) -> Vec<Vec<usize>> {
+        rings
+            .bond_rings()
+            .iter()
+            .map(|row| row.iter().map(|bond| bond.index()).collect())
+            .collect()
+    }
+
+    #[test]
+    fn sanitize_ring_l05_lazy_quality_sixty_call_product() {
+        let states: Vec<(&'static str, Option<RingInfo>)> = vec![
+            ("none", None),
+            ("reset", Some(reset_state())),
+            (
+                "other-empty",
+                Some(RingInfo::new(RingFindType::OtherOrUnknown, 6, 6)),
+            ),
+            ("fast-empty", Some(RingInfo::new(RingFindType::Fast, 6, 6))),
+            ("sssr-empty", Some(RingInfo::new(RingFindType::Sssr, 6, 6))),
+            (
+                "symm-empty",
+                Some(RingInfo::new(RingFindType::SymmSssr, 6, 6)),
+            ),
+            (
+                "other-full6",
+                Some(full_ring(RingFindType::OtherOrUnknown, 6)),
+            ),
+            ("fast-full6", Some(full_ring(RingFindType::Fast, 6))),
+            ("sssr-full6", Some(full_ring(RingFindType::Sssr, 6))),
+            ("symm-full6", Some(full_ring(RingFindType::SymmSssr, 6))),
+        ];
+        let mut calls = 0usize;
+        for (state_name, state) in states {
+            for stereo in [BondStereo::None, BondStereo::AtropCw, BondStereo::AtropCcw] {
+                for endpoint in [Hybridization::Sp2, Hybridization::Sp3] {
+                    let label = format!("{state_name}/{stereo:?}/{endpoint:?}");
+                    let topology = cycle(6, stereo);
+                    let groups_snapshot = topology.stereo_groups.clone();
+                    let topology_snapshot = topology.clone();
+                    let hybridization = hybs(all(6, endpoint));
+                    let hybs_snapshot = hybridization.clone();
+                    let state_snapshot = state.clone();
+                    // The pointer must be captured from the value actually
+                    // PASSED (the moved-in carrier), not the loop-local
+                    // original, for a real move-preservation proof.
+                    let supplied = state.clone();
+                    let supplied_ptr = supplied.as_ref().map(|rings| rings.atom_rings().as_ptr());
+                    let find_before = probe::find_calls();
+                    let consumed_before = probe::consumed_calls();
+                    let group_before = probe::group_cleanup_calls();
+                    let acquired_before = probe::acquired_atom_row_pointers().len();
+                    let (output, returned) = cleanup_invalid_atropisomers_with_ring_state(
+                        &topology,
+                        &hybridization,
+                        supplied,
+                    )
+                    .unwrap_or_else(|error| panic!("{label}: unexpected error {error:?}"));
+                    calls += 1;
+                    let find_delta = probe::find_calls() - find_before;
+                    let consumed_delta = probe::consumed_calls() - consumed_before;
+                    let group_delta = probe::group_cleanup_calls() - group_before;
+                    let acquired = probe::acquired_atom_row_pointers();
+                    assert_eq!(topology, topology_snapshot, "{label}: input mutated");
+                    assert_eq!(hybridization, hybs_snapshot, "{label}: hybs mutated");
+                    let tagged = !matches!(stereo, BondStereo::None);
+                    let quality = state_snapshot
+                        .as_ref()
+                        .is_some_and(|rings| rings.is_sssr_or_better());
+                    if !tagged {
+                        // No tags: NO acquisition, NO validation, NO group
+                        // cleanup; the supplied state is preserved exactly.
+                        assert_eq!(consumed_delta, 0, "{label}: consumed");
+                        assert_eq!(find_delta, 0, "{label}: find");
+                        assert_eq!(group_delta, 0, "{label}: group cleanup");
+                        assert_eq!(returned, state_snapshot, "{label}: state changed");
+                        assert_eq!(output.bonds[0].stereo(), BondStereo::None, "{label}");
+                    } else {
+                        assert!(consumed_delta >= 1, "{label}: tagged bond not consumed");
+                        // Disposition on the six-cycle: Sp3 always clears;
+                        // Sp2 clears whenever b0 sits in a size-6 ring
+                        // (acquired full6 or supplied full6) and retains only
+                        // for supplied initialized-EMPTY SSSR/Symm.
+                        let supplied_empty = quality
+                            && state_snapshot
+                                .as_ref()
+                                .is_some_and(|r| r.atom_rings().is_empty());
+                        let retains = endpoint == Hybridization::Sp2 && supplied_empty;
+                        if quality {
+                            assert_eq!(find_delta, 0, "{label}: re-found supplied quality state");
+                            assert_eq!(returned, state_snapshot, "{label}: borrowed state changed");
+                            assert_eq!(
+                                returned.as_ref().map(|r| r.atom_rings().as_ptr()),
+                                supplied_ptr,
+                                "{label}: supplied buffer not move-preserved"
+                            );
+                        } else {
+                            // Below SSSR: ONE canonical full6 SSSR acquisition
+                            // replaces the carrier by move BEFORE the Sp2
+                            // short-circuit, whatever the endpoint value.
+                            assert_eq!(find_delta, 1, "{label}: acquisition count");
+                            let acquired_state = returned
+                                .as_ref()
+                                .unwrap_or_else(|| panic!("{label}: acquired state missing"));
+                            assert_eq!(acquired_state.find_type(), RingFindType::Sssr, "{label}");
+                            assert_eq!(
+                                row_indices(acquired_state),
+                                vec![vec![0, 5, 4, 3, 2, 1]],
+                                "{label}"
+                            );
+                            assert_eq!(
+                                bond_row_indices(acquired_state),
+                                vec![vec![5, 4, 3, 2, 1, 0]],
+                                "{label}"
+                            );
+                            assert_eq!(acquired.len(), acquired_before + 1, "{label}");
+                            assert_eq!(
+                                acquired_state.atom_rings().as_ptr() as usize,
+                                acquired[acquired_before],
+                                "{label}: returned buffer differs from real acquisition site"
+                            );
+                        }
+                        if retains {
+                            assert_eq!(output.bonds[0].stereo(), stereo, "{label}");
+                            assert_eq!(group_delta, 0, "{label}: group cleanup ran");
+                        } else {
+                            assert_eq!(output.bonds[0].stereo(), BondStereo::None, "{label}");
+                            // Cleared tags alone trigger group cleanup; with
+                            // no remaining atrop bonds the ordered group
+                            // output is unchanged.
+                            assert_eq!(group_delta, 1, "{label}: group cleanup missing");
+                            assert_eq!(output.stereo_groups, groups_snapshot, "{label}: groups");
+                        }
+                    }
+                }
+            }
+        }
+        assert_eq!(calls, 60, "exact census");
+    }
+
+    #[test]
+    fn sanitize_ring_l05_macrocycle_endpoint_forty_eight_call_product() {
+        let mk_state = |name: &str, n: usize| -> Option<RingInfo> {
+            match name {
+                "none" => None,
+                "fast-full" => Some(full_ring(RingFindType::Fast, n)),
+                "sssr-full" => Some(full_ring(RingFindType::Sssr, n)),
+                _ => Some(full_ring(RingFindType::SymmSssr, n)),
+            }
+        };
+        let mut calls = 0usize;
+        for (state_name, quality) in [
+            ("none", false),
+            ("fast-full", false),
+            ("sssr-full", true),
+            ("symm-full", true),
+        ] {
+            for stereo in [BondStereo::AtropCw, BondStereo::AtropCcw] {
+                for n in [6usize, 8usize] {
+                    for endpoint in [0usize, 1usize, 2usize] {
+                        let label = format!("{state_name}/{stereo:?}/c{n}/ep{endpoint}");
+                        let mut values = all(n, Hybridization::Sp2);
+                        if endpoint == 1 {
+                            values[0] = Hybridization::Sp3;
+                        }
+                        if endpoint == 2 {
+                            values[1] = Hybridization::Sp3;
+                        }
+                        let topology = cycle(n, stereo);
+                        let groups_snapshot = topology.stereo_groups.clone();
+                        let topology_snapshot = topology.clone();
+                        let hybridization = hybs(values);
+                        let hybs_snapshot = hybridization.clone();
+                        let state = mk_state(state_name, n);
+                        let state_snapshot = state.clone();
+                        let supplied = state.clone();
+                        let supplied_ptr = supplied.as_ref().map(|r| r.atom_rings().as_ptr());
+                        let find_before = probe::find_calls();
+                        let group_before = probe::group_cleanup_calls();
+                        let acquired_before = probe::acquired_atom_row_pointers().len();
+                        let (output, returned) = cleanup_invalid_atropisomers_with_ring_state(
+                            &topology,
+                            &hybridization,
+                            supplied,
+                        )
+                        .unwrap_or_else(|error| panic!("{label}: unexpected error {error:?}"));
+                        calls += 1;
+                        let find_delta = probe::find_calls() - find_before;
+                        let group_delta = probe::group_cleanup_calls() - group_before;
+                        let acquired = probe::acquired_atom_row_pointers();
+                        assert_eq!(topology, topology_snapshot, "{label}: input mutated");
+                        assert_eq!(hybridization, hybs_snapshot, "{label}: hybs mutated");
+                        if quality {
+                            assert_eq!(find_delta, 0, "{label}: re-found");
+                            assert_eq!(returned, state_snapshot, "{label}: state changed");
+                            assert_eq!(
+                                returned.as_ref().map(|r| r.atom_rings().as_ptr()),
+                                supplied_ptr,
+                                "{label}: buffer not move-preserved"
+                            );
+                        } else {
+                            assert_eq!(find_delta, 1, "{label}: acquisition count");
+                            let acquired_state = returned.as_ref().unwrap();
+                            assert_eq!(acquired_state.find_type(), RingFindType::Sssr, "{label}");
+                            // Frozen row convention: atoms start at 0 and
+                            // run backwards to 1; bonds run n-1..0.
+                            let expected_atoms: Vec<usize> =
+                                std::iter::once(0).chain((1..n).rev()).collect();
+                            let expected_bonds: Vec<usize> = (0..n).rev().collect();
+                            assert_eq!(
+                                row_indices(acquired_state),
+                                vec![expected_atoms],
+                                "{label}"
+                            );
+                            assert_eq!(
+                                bond_row_indices(acquired_state),
+                                vec![expected_bonds],
+                                "{label}"
+                            );
+                            assert_eq!(acquired.len(), acquired_before + 1, "{label}");
+                            assert_eq!(
+                                acquired_state.atom_rings().as_ptr() as usize,
+                                acquired[acquired_before],
+                                "{label}: acquired buffer mismatch"
+                            );
+                        }
+                        // Six-cycle always clears; eight-cycle retains only
+                        // with BOTH endpoints Sp2.
+                        let retains = n == 8 && endpoint == 0;
+                        if retains {
+                            assert_eq!(output.bonds[0].stereo(), stereo, "{label}");
+                            assert_eq!(group_delta, 0, "{label}: group cleanup ran");
+                        } else {
+                            assert_eq!(output.bonds[0].stereo(), BondStereo::None, "{label}");
+                            assert_eq!(group_delta, 1, "{label}: group cleanup missing");
+                            assert_eq!(output.stereo_groups, groups_snapshot, "{label}: groups");
+                        }
+                    }
+                }
+            }
+        }
+        assert_eq!(calls, 48, "exact census");
+    }
+
+    #[test]
+    fn sanitize_ring_l05_malformed_inputs_and_vocabulary_controls() {
+        // Bad hybridization length is rejected before the engine runs.
+        let tagged = cycle(6, BondStereo::AtropCw);
+        let short = hybs(all(5, Hybridization::Sp2));
+        assert!(matches!(
+            cleanup_invalid_atropisomers_with_ring_state(&tagged, &short, None),
+            Err(super::AtropisomerCleanupError::Algorithm(
+                AtropisomerError::HybridizationAssignmentLength {
+                    actual: 5,
+                    expected: 6
+                }
+            ))
+        ));
+        // Invalid topology is rejected first in the existing order.
+        let invalid = TopologyBlock {
+            adjacency: cosmolkit_model::AdjacencyList::from_topology(0, &[]),
+            ..tagged.clone()
+        };
+        assert!(matches!(
+            cleanup_invalid_atropisomers_with_ring_state(
+                &invalid,
+                &hybs(all(6, Hybridization::Sp2)),
+                None
+            ),
+            Err(super::AtropisomerCleanupError::Algorithm(
+                AtropisomerError::InvalidTopology { .. }
+            ))
+        ));
+        // A CONSUMED SSSR with wrong membership dimensions is rejected by
+        // the existing validate_rings causes.
+        let atom_rows_wrong = RingInfo::new(RingFindType::Sssr, 7, 6);
+        assert!(matches!(
+            cleanup_invalid_atropisomers_with_ring_state(
+                &tagged,
+                &hybs(all(6, Hybridization::Sp2)),
+                Some(atom_rows_wrong)
+            ),
+            Err(super::AtropisomerCleanupError::Algorithm(
+                AtropisomerError::RingAtomRowCount {
+                    actual: 7,
+                    expected: 6
+                }
+            ))
+        ));
+        let bond_rows_wrong = RingInfo::new(RingFindType::Sssr, 6, 5);
+        assert!(matches!(
+            cleanup_invalid_atropisomers_with_ring_state(
+                &tagged,
+                &hybs(all(6, Hybridization::Sp2)),
+                Some(bond_rows_wrong)
+            ),
+            Err(super::AtropisomerCleanupError::Algorithm(
+                AtropisomerError::RingBondRowCount {
+                    actual: 5,
+                    expected: 6
+                }
+            ))
+        ));
+        // Out-of-range membership cannot reach the wrapper from valid
+        // RingInfo values: add_ring GROWS membership rows, and the
+        // persisted-components constructor rejects out-of-range rows at
+        // construction, so the dimension check above always fires first.
+        // That structural fact is recorded here instead of an unreachable
+        // assertion.
+        // No-tag malformed supplied state stays unconsumed and is returned
+        // exactly.
+        let untagged = cycle(6, BondStereo::None);
+        let malformed = RingInfo::new(RingFindType::Sssr, 7, 6);
+        let malformed_snapshot = malformed.clone();
+        let find_before = probe::find_calls();
+        let (output, returned) = cleanup_invalid_atropisomers_with_ring_state(
+            &untagged,
+            &hybs(all(6, Hybridization::Sp2)),
+            Some(malformed),
+        )
+        .unwrap();
+        assert_eq!(returned, Some(malformed_snapshot), "no-tag state consumed");
+        assert_eq!(probe::find_calls() - find_before, 0, "no-tag find");
+        assert_eq!(output.bonds[0].stereo(), BondStereo::None);
+        // Vocabulary control ONLY: constructed errors prove Display and the
+        // borrowed Error::source chain, never a real acquisition failure.
+        // A canonical find failure is unreachable from these valid inputs.
+        let rings_error = crate::RingFindingError::Value { message: "probe" };
+        let cleanup_error = super::AtropisomerCleanupError::Rings(rings_error);
+        assert_eq!(
+            cleanup_error.to_string(),
+            "ring finding failed during atropisomer cleanup: probe"
+        );
+        assert!(std::error::Error::source(&cleanup_error).is_some());
+        let algorithm_error =
+            super::AtropisomerCleanupError::Algorithm(AtropisomerError::RingInfoNotSssr);
+        assert_eq!(
+            algorithm_error.to_string(),
+            "atropisomer cleanup failed: ring information must be SSSR or better"
+        );
+        assert!(std::error::Error::source(&algorithm_error).is_some());
+    }
 }
 
 #[must_use]

@@ -130,10 +130,9 @@ molecule_ops! {
         may_mutate: [topology, properties, derived_cache],
         auto_remap: [],
         derived_effects: {
-            recompute: [valence],
+            recompute: [valence, rings],
             preserve: [coordinates],
             invalidate: [
-                rings,
                 ring_families,
                 aromaticity,
                 stereo,
@@ -168,8 +167,8 @@ molecule_ops! {
         may_mutate: [topology, properties, derived_cache],
         auto_remap: [],
         derived_effects: {
-            recompute: [],
-            preserve: [rings, ring_families, coordinates],
+            recompute: [rings],
+            preserve: [ring_families, coordinates],
             invalidate: [valence, aromaticity, stereo, drawing, fingerprint],
             operation_defined: [],
         },
@@ -202,8 +201,8 @@ molecule_ops! {
         may_mutate: [topology, properties, derived_cache],
         auto_remap: [],
         derived_effects: {
-            recompute: [aromaticity],
-            preserve: [rings, ring_families, coordinates],
+            recompute: [aromaticity, rings],
+            preserve: [ring_families, coordinates],
             invalidate: [valence, stereo, drawing, fingerprint],
             operation_defined: [],
         },
@@ -496,9 +495,9 @@ molecule_ops! {
         may_mutate: [topology, coordinates, properties, derived_cache],
         auto_remap: [coordinates, properties],
         derived_effects: {
-            recompute: [],
+            recompute: [rings],
             preserve: [],
-            invalidate: [rings, ring_families, aromaticity, stereo, drawing, fingerprint],
+            invalidate: [ring_families, aromaticity, stereo, drawing, fingerprint],
             operation_defined: [valence],
         },
         cip_state: clear,
@@ -604,6 +603,30 @@ molecule_ops! {
         parity: not_applicable,
         io_roundtrip: false,
         invariant_profile: "cow-coordinate-write-test",
+    }
+
+    #[cfg(test)]
+    op ring_live_cow_checkout_conflict_for_test {
+        method: ring_live_cow_checkout_conflict_for_test,
+        impl_fn: crate::ops::cow_tests::ring_live_cow_checkout_conflict_for_test_impl,
+        domain: topology,
+        kind: weak,
+        topology_edit: none,
+        access: { read: [], write: [derived_cache] },
+        may_mutate: [derived_cache],
+        auto_remap: [],
+        derived_effects: {
+            recompute: [], preserve: [], invalidate: [ring_families], operation_defined: [],
+        },
+        cip_state: preserve,
+        semantic_preconditions: [],
+        requires_mapping: none,
+        feature: crate::ops::runtime::registry::COW_TEST_FEATURE,
+        parity: not_applicable,
+        io_roundtrip: false,
+        invariant_profile: "ring-live-cow-checkout-conflict-test",
+        inplace: true,
+        inplace_method: ring_live_cow_checkout_conflict_for_test_,
     }
 
     #[cfg(test)]

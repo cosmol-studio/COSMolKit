@@ -83,23 +83,23 @@ cap-aromaticity = ["dep:cosmolkit-core"]
 cap-sanitize = ["dep:cosmolkit-core"]
 
 [dependencies]
-cosmolkit-model = { version = "0.5.0-rc.8", path = "../cosmolkit-model" }
-cosmolkit-macros = { version = "0.5.0-rc.8", path = "../cosmolkit-macros" }
-cosmolkit-core = { version = "0.5.0-rc.8", path = "../cosmolkit-core", optional = true }
-cosmolkit-descriptors = { version = "0.5.0-rc.8", path = "../cosmolkit-descriptors", optional = true }
-cosmolkit-alignment = { version = "0.5.0-rc.8", path = "../cosmolkit-alignment", optional = true }
-cosmolkit-batch = { version = "0.5.0-rc.8", path = "../cosmolkit-batch", optional = true }
-cosmolkit-bio = { version = "0.5.0-rc.8", path = "../cosmolkit-bio", optional = true }
-cosmolkit-conformer = { version = "0.5.0-rc.8", path = "../cosmolkit-conformer", optional = true }
-cosmolkit-depict = { version = "0.5.0-rc.8", path = "../cosmolkit-depict", optional = true }
-cosmolkit-fingerprints = { version = "0.5.0-rc.8", path = "../cosmolkit-fingerprints", optional = true }
-cosmolkit-forcefields = { version = "0.5.0-rc.8", path = "../cosmolkit-forcefields", optional = true }
-cosmolkit-inchi = { version = "0.5.0-rc.8", path = "../cosmolkit-inchi", optional = true }
-cosmolkit-io = { version = "0.5.0-rc.8", path = "../cosmolkit-io", optional = true }
-cosmolkit-search = { version = "0.5.0-rc.8", path = "../cosmolkit-search", optional = true }
-cosmolkit-smiles = { version = "0.5.0-rc.8", path = "../cosmolkit-smiles", optional = true }
-cosmolkit-stereo = { version = "0.5.0-rc.8", path = "../cosmolkit-stereo", optional = true }
-cosmolkit-tautomer = { version = "0.5.0-rc.8", path = "../cosmolkit-tautomer", optional = true }
+cosmolkit-model = { version = "0.5.0-rc.9", path = "../cosmolkit-model" }
+cosmolkit-macros = { version = "0.5.0-rc.9", path = "../cosmolkit-macros" }
+cosmolkit-core = { version = "0.5.0-rc.9", path = "../cosmolkit-core", optional = true }
+cosmolkit-descriptors = { version = "0.5.0-rc.9", path = "../cosmolkit-descriptors", optional = true }
+cosmolkit-alignment = { version = "0.5.0-rc.9", path = "../cosmolkit-alignment", optional = true }
+cosmolkit-batch = { version = "0.5.0-rc.9", path = "../cosmolkit-batch", optional = true }
+cosmolkit-bio = { version = "0.5.0-rc.9", path = "../cosmolkit-bio", optional = true }
+cosmolkit-conformer = { version = "0.5.0-rc.9", path = "../cosmolkit-conformer", optional = true }
+cosmolkit-depict = { version = "0.5.0-rc.9", path = "../cosmolkit-depict", optional = true }
+cosmolkit-fingerprints = { version = "0.5.0-rc.9", path = "../cosmolkit-fingerprints", optional = true }
+cosmolkit-forcefields = { version = "0.5.0-rc.9", path = "../cosmolkit-forcefields", optional = true }
+cosmolkit-inchi = { version = "0.5.0-rc.9", path = "../cosmolkit-inchi", optional = true }
+cosmolkit-io = { version = "0.5.0-rc.9", path = "../cosmolkit-io", optional = true }
+cosmolkit-search = { version = "0.5.0-rc.9", path = "../cosmolkit-search", optional = true }
+cosmolkit-smiles = { version = "0.5.0-rc.9", path = "../cosmolkit-smiles", optional = true }
+cosmolkit-stereo = { version = "0.5.0-rc.9", path = "../cosmolkit-stereo", optional = true }
+cosmolkit-tautomer = { version = "0.5.0-rc.9", path = "../cosmolkit-tautomer", optional = true }
 
 [dev-dependencies]
 serde_json = "1"
@@ -131,3 +131,85 @@ required-features = ["cap-bio"]
 [[test]]
 name = "migration_bio_privacy"
 required-features = ["cap-bio"]
+
+# Facade API regressions must request the capability whose API they exercise.
+# Minimal builds still run capability-independent model/runtime regressions.
+[[test]]
+name = "migration_bio_selection_api"
+required-features = ["cap-bio"]
+
+[[test]]
+name = "migration_chem_aromaticity_api"
+required-features = ["cap-aromaticity"]
+
+[[test]]
+name = "migration_chem_kekulize_api"
+required-features = ["cap-kekulize"]
+
+[[test]]
+name = "migration_chem_sanitize_api"
+required-features = ["cap-sanitize"]
+
+[[test]]
+name = "migration_core_fast_rings_api"
+required-features = ["cap-rings"]
+
+[[test]]
+name = "migration_core_ring_families_api"
+required-features = ["cap-rings"]
+
+[[test]]
+name = "migration_core_matrices_api"
+required-features = ["cap-matrices"]
+
+[[test]]
+name = "migration_core_potential_api"
+required-features = ["cap-stereo"]
+
+[[test]]
+name = "migration_core_structure_tags_api"
+required-features = ["cap-stereo"]
+
+[[test]]
+name = "migration_st_cip_labels_api"
+required-features = ["cap-stereo"]
+
+[[test]]
+name = "migration_core_radicals_api"
+required-features = ["cap-radicals"]
+
+[[test]]
+name = "migration_core_transforms_api"
+required-features = ["cap-transforms"]
+
+[[test]]
+name = "migration_core_valence_api"
+required-features = ["cap-valence"]
+
+[[test]]
+name = "migration_draw_layout_api"
+required-features = ["cap-depict"]
+
+[[test]]
+name = "migration_h_add_stereo_api"
+required-features = ["cap-hydrogens"]
+
+[[test]]
+name = "migration_h_remove_state_api"
+required-features = ["cap-hydrogens"]
+
+[[test]]
+name = "migration_io_sdf_read_api"
+required-features = ["cap-io"]
+
+[[test]]
+name = "migration_smi_parser_api"
+required-features = ["cap-smiles"]
+
+[[test]]
+name = "migration_run_state_api"
+required-features = ["op-contracts-strict"]
+
+[[test]]
+name = "migration_run_multiple"
+required-features = ["op-contracts-strict"]

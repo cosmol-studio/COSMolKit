@@ -1,3 +1,5 @@
+#![cfg(feature = "cap-stereo")]
+
 #[path = "support/coordinate_views.rs"]
 mod coordinate_views;
 

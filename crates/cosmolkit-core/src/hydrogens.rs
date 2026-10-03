@@ -6,7 +6,7 @@
 //! not appear here.
 
 use crate::{
-    SanitizeError, SanitizeParams, ValenceAssignment, ValenceError, ValenceModel,
+    RingInfo, SanitizeError, SanitizeParams, ValenceAssignment, ValenceError, ValenceModel,
     assign_valence_with_options_for_topology, rdkit_rb0, rdkit_valence_list,
     sanitize_topology_with_query_state,
 };
@@ -143,6 +143,17 @@ pub struct RemoveHydrogensResult {
     /// Complete final-topology assignment, not an intermediate RDKit cache.
     /// Absent when sanitize=false: the runtime must invalidate its old value.
     pub final_valence: Option<ValenceAssignment>,
+    /// Final ring-state transport for the final topology. `None` is the
+    /// exact final source-uninitialized state (removeHs ALWAYS
+    /// clearComputedProps(true), so every no-sanitize branch reports the
+    /// reset state); `Some` is the exact SAN initialized state, INCLUDING
+    /// zero rings. Published ONLY from the final pass by MOVE; the
+    /// isotope-tracking preliminary pass hardcodes sanitize=false and its
+    /// state is discarded. Independent from `final_valence` (CK-VALENCE-001
+    /// is valence-only): sanitize=true/remove_nonimplicit=false yields
+    /// final_valence Some with final_rings None. No live-cache
+    /// installation is implied.
+    pub final_rings: Option<RingInfo>,
     pub warnings: Vec<HydrogenWarning>,
 }
 
@@ -2288,6 +2299,12 @@ pub fn remove_hydrogens_with_query_state(
     topology = final_pass.topology;
     query_rows = final_pass.query_rows;
     warnings.extend(final_pass.warnings);
+    // The sole public construction publishes ONLY the final pass's ring
+    // state by MOVE; the preliminary isotope pass hardcodes sanitize=false
+    // and never reaches this site with intermediate rows.
+    let final_rings = final_pass.final_rings;
+    #[cfg(test)]
+    remove_hs_ring_probe::record_publication(&final_rings);
 
     if let Some((atoms, bonds)) = query_rows.as_ref() {
         QueryStateRef::try_for_topology(atoms, bonds, &topology)?;
@@ -2325,6 +2342,7 @@ pub fn remove_hydrogens_with_query_state(
         properties,
         mapping,
         final_valence,
+        final_rings,
         warnings,
     })
 }
@@ -2334,6 +2352,1432 @@ struct RemoveHydrogensPassResult {
     mapping: TopologyMapping,
     warnings: Vec<HydrogenWarning>,
     query_rows: Option<(Vec<QueryAtom>, Vec<QueryBond>)>,
+    /// Final ring-state transport for this pass. `None` is the exact final
+    /// source-uninitialized state (removeHs ALWAYS clearComputedProps(true),
+    /// so the no-sanitize branches report the reset state); `Some` is the
+    /// exact SAN initialized state, INCLUDING zero rings. Moved, never
+    /// cloned; no finder, stale-row remap, supplied-input rings parameter,
+    /// or final quality upgrade is added.
+    final_rings: Option<RingInfo>,
+}
+
+/// Test-only observation points at the ACTUAL RemoveHs ring-transport sites.
+/// Counters are thread-local and never reset; observations are recorded at
+/// the real sanitize return, the real pass return and the outer final-pass
+/// publication. Production builds contain no probes.
+#[cfg(test)]
+pub(crate) mod remove_hs_ring_probe {
+    use std::cell::{Cell, RefCell};
+
+    use crate::RingInfo;
+
+    thread_local! {
+        static SANITIZE_RETURNS: Cell<u64> = const { Cell::new(0) };
+        static PASS_RETURNS: Cell<u64> = const { Cell::new(0) };
+        static LAST_SANITIZE_ATOM_PTR: Cell<usize> = const { Cell::new(0) };
+        static LAST_SANITIZE_BOND_PTR: Cell<usize> = const { Cell::new(0) };
+        static LAST_SANITIZE_STATE: RefCell<Option<RingInfo>> = const { RefCell::new(None) };
+        static LAST_PASS_ATOM_PTR: Cell<usize> = const { Cell::new(0) };
+        static LAST_PASS_BOND_PTR: Cell<usize> = const { Cell::new(0) };
+        static LAST_PASS_STATE: RefCell<Option<RingInfo>> = const { RefCell::new(None) };
+    }
+
+    fn pointers(rings: &Option<RingInfo>) -> (usize, usize) {
+        rings
+            .as_ref()
+            .map(|state| {
+                (
+                    state.atom_rings().as_ptr() as usize,
+                    state.bond_rings().as_ptr() as usize,
+                )
+            })
+            .unwrap_or((0, 0))
+    }
+
+    pub(crate) fn record_sanitize_return(rings: &Option<RingInfo>) {
+        SANITIZE_RETURNS.with(|calls| calls.set(calls.get() + 1));
+        let (atom_ptr, bond_ptr) = pointers(rings);
+        LAST_SANITIZE_ATOM_PTR.with(|cell| cell.set(atom_ptr));
+        LAST_SANITIZE_BOND_PTR.with(|cell| cell.set(bond_ptr));
+        LAST_SANITIZE_STATE.with(|cell| *cell.borrow_mut() = rings.clone());
+    }
+
+    pub(crate) fn record_pass_return(rings: &Option<RingInfo>) {
+        PASS_RETURNS.with(|calls| calls.set(calls.get() + 1));
+        let (atom_ptr, bond_ptr) = pointers(rings);
+        LAST_PASS_ATOM_PTR.with(|cell| cell.set(atom_ptr));
+        LAST_PASS_BOND_PTR.with(|cell| cell.set(bond_ptr));
+        LAST_PASS_STATE.with(|cell| *cell.borrow_mut() = rings.clone());
+    }
+
+    pub(crate) fn sanitize_returns() -> u64 {
+        SANITIZE_RETURNS.with(Cell::get)
+    }
+
+    pub(crate) fn pass_returns() -> u64 {
+        PASS_RETURNS.with(Cell::get)
+    }
+
+    pub(crate) fn last_sanitize_pointers() -> (usize, usize) {
+        (
+            LAST_SANITIZE_ATOM_PTR.with(Cell::get),
+            LAST_SANITIZE_BOND_PTR.with(Cell::get),
+        )
+    }
+
+    pub(crate) fn last_sanitize_state() -> Option<RingInfo> {
+        LAST_SANITIZE_STATE.with(|cell| cell.borrow().clone())
+    }
+
+    pub(crate) fn last_pass_pointers() -> (usize, usize) {
+        (
+            LAST_PASS_ATOM_PTR.with(Cell::get),
+            LAST_PASS_BOND_PTR.with(Cell::get),
+        )
+    }
+
+    pub(crate) fn last_pass_state() -> Option<RingInfo> {
+        LAST_PASS_STATE.with(|cell| cell.borrow().clone())
+    }
+
+    thread_local! {
+        static PUBLICATIONS: Cell<u64> = const { Cell::new(0) };
+        static LAST_PUBLICATION_ATOM_PTR: Cell<usize> = const { Cell::new(0) };
+        static LAST_PUBLICATION_BOND_PTR: Cell<usize> = const { Cell::new(0) };
+        static LAST_PUBLICATION_STATE: RefCell<Option<RingInfo>> = const { RefCell::new(None) };
+    }
+
+    /// Actual outer final-pass publication site.
+    pub(crate) fn record_publication(rings: &Option<RingInfo>) {
+        PUBLICATIONS.with(|calls| calls.set(calls.get() + 1));
+        let (atom_ptr, bond_ptr) = pointers(rings);
+        LAST_PUBLICATION_ATOM_PTR.with(|cell| cell.set(atom_ptr));
+        LAST_PUBLICATION_BOND_PTR.with(|cell| cell.set(bond_ptr));
+        LAST_PUBLICATION_STATE.with(|cell| *cell.borrow_mut() = rings.clone());
+    }
+
+    pub(crate) fn publications() -> u64 {
+        PUBLICATIONS.with(Cell::get)
+    }
+
+    pub(crate) fn last_publication_pointers() -> (usize, usize) {
+        (
+            LAST_PUBLICATION_ATOM_PTR.with(Cell::get),
+            LAST_PUBLICATION_BOND_PTR.with(Cell::get),
+        )
+    }
+
+    pub(crate) fn last_publication_state() -> Option<RingInfo> {
+        LAST_PUBLICATION_STATE.with(|cell| cell.borrow().clone())
+    }
+
+    thread_local! {
+        static PASS_HISTORY: RefCell<Vec<(bool, Option<RingInfo>)>> =
+            const { RefCell::new(Vec::new()) };
+    }
+
+    /// Append-only ordered pass-return history at the ACTUAL pass-return
+    /// site: (params.sanitize at that pass, its returned final_rings).
+    /// Never reset or removed; clones only under cfg(test).
+    pub(crate) fn record_pass_history(sanitize: bool, rings: &Option<RingInfo>) {
+        PASS_HISTORY.with(|history| history.borrow_mut().push((sanitize, rings.clone())));
+    }
+
+    pub(crate) fn pass_history_len() -> usize {
+        PASS_HISTORY.with(|history| history.borrow().len())
+    }
+
+    /// The entries appended after `baseline`, in order.
+    pub(crate) fn pass_history_after(baseline: usize) -> Vec<(bool, Option<RingInfo>)> {
+        PASS_HISTORY.with(|history| {
+            let history = history.borrow();
+            history[baseline.min(history.len())..].to_vec()
+        })
+    }
+}
+
+// R1: the sixteen-call private-pass ring-transport product. Sanitizer
+// invocation1 IFF the pass's ORIGINAL atom count is nonzero AND
+// remove_nonimplicit AND sanitize (the bitset-size guard); counters are
+// thread-local, never reset — all observations are per-call deltas. H atoms
+// are NON-implicit (explicit model atoms, no isImplicit marker).
+#[cfg(test)]
+mod remove_hs_ring_pass_tests {
+    use super::RemoveHsParams;
+    use super::remove_hs_ring_probe as probe;
+    use super::remove_hydrogens_pass;
+    use crate::RingFindType;
+    use cosmolkit_model::{
+        Atom, AtomId, AtomSpec, Bond, BondId, BondSpec, MoleculeProperties, TopologyBlock,
+    };
+    use cosmolkit_types::{BondOrder, Element};
+
+    fn carbon(id: usize, aromatic: bool) -> Atom {
+        let mut spec = AtomSpec::new(Element::C);
+        if aromatic {
+            spec = spec.with_aromatic(true);
+        }
+        Atom::from_spec(AtomId::new(id), spec)
+    }
+
+    fn hydrogen(id: usize) -> Atom {
+        let atom = Atom::from_spec(AtomId::new(id), AtomSpec::new(Element::H));
+        assert_eq!(atom.atomic_number(), 1);
+        assert!(atom.isotope().is_none(), "fixture H must be non-isotopic");
+        atom
+    }
+
+    fn topology(atoms: Vec<Atom>, bonds: Vec<Bond>) -> TopologyBlock {
+        TopologyBlock::try_from_parts(atoms, bonds, Vec::new(), Vec::new()).unwrap()
+    }
+
+    fn single(id: usize, begin: usize, end: usize) -> Bond {
+        Bond::from_spec(
+            BondId::new(id),
+            BondSpec::new(AtomId::new(begin), AtomId::new(end), BondOrder::Single),
+        )
+    }
+
+    fn aromatic_bond(id: usize, begin: usize, end: usize) -> Bond {
+        Bond::from_spec(
+            BondId::new(id),
+            BondSpec::new(AtomId::new(begin), AtomId::new(end), BondOrder::Aromatic)
+                .with_aromatic(true),
+        )
+    }
+
+    fn g0() -> TopologyBlock {
+        topology(Vec::new(), Vec::new())
+    }
+
+    fn g1() -> TopologyBlock {
+        topology(
+            vec![carbon(0, false), carbon(1, false)],
+            vec![single(0, 0, 1)],
+        )
+    }
+
+    fn g2() -> TopologyBlock {
+        topology(
+            (0..6).map(|id| carbon(id, true)).collect(),
+            (0..6)
+                .map(|id| aromatic_bond(id, id, (id + 1) % 6))
+                .collect(),
+        )
+    }
+
+    fn g3() -> TopologyBlock {
+        topology(
+            std::iter::once(hydrogen(0))
+                .chain((1..7).map(|id| carbon(id, true)))
+                .collect(),
+            std::iter::once(single(0, 0, 1))
+                .chain((1..7).map(|id| aromatic_bond(id, id, (id % 6) + 1)))
+                .collect(),
+        )
+    }
+
+    fn params(sanitize: bool, nonimplicit: bool) -> RemoveHsParams {
+        let mut params = RemoveHsParams::default();
+        params.sanitize = sanitize;
+        params.remove_nonimplicit = nonimplicit;
+        params.update_explicit_count = true;
+        params.show_warnings = false;
+        params
+    }
+
+    #[test]
+    fn remove_hydrogens_ring_pass_sixteen_call_product() {
+        let graphs: [(&str, fn() -> TopologyBlock, usize, usize); 4] = [
+            ("G0", g0 as fn() -> TopologyBlock, 0, 0),
+            ("G1", g1, 2, 1),
+            ("G2", g2, 6, 6),
+            ("G3", g3, 7, 7),
+        ];
+        let mut calls = 0usize;
+        for (name, build, atom_count, bond_count) in graphs {
+            for sanitize in [false, true] {
+                for nonimplicit in [false, true] {
+                    let label = format!("{name}/s{sanitize}/ni{nonimplicit}");
+                    let input = build();
+                    // Non-implicit H prerequisite for the removal product:
+                    // atomic number 1, non-isotopic, implicit_hydrogen false.
+                    for atom in &input.atoms {
+                        if atom.atomic_number() == 1 {
+                            assert!(atom.isotope().is_none(), "{label}: isotopic H");
+                            assert!(
+                                !atom.implicit_hydrogen(),
+                                "{label}: implicit-H marker present"
+                            );
+                        }
+                    }
+                    // Fresh full retained baseline; the owner takes a value,
+                    // so the retained original is proven by passing a clone.
+                    let retained = input.clone();
+                    let mut properties = MoleculeProperties::default();
+                    properties.set_prop("ck-ordinary", "kept").unwrap();
+                    properties
+                        .set_computed_prop("ck-computed", "cleared")
+                        .unwrap();
+                    let properties_before = properties.clone();
+                    let sanitize_before = probe::sanitize_returns();
+                    let pass_before = probe::pass_returns();
+                    let result = remove_hydrogens_pass(
+                        input,
+                        &mut properties,
+                        &params(sanitize, nonimplicit),
+                        None,
+                    )
+                    .unwrap_or_else(|error| panic!("{label}: {error:?}"));
+                    calls += 1;
+                    // Retained ORIGINAL graph unchanged.
+                    assert_eq!(retained, build(), "{label}: retained graph mutated");
+                    // Relative, non-reset invocation counts.
+                    let expected_sanitizations =
+                        usize::from(atom_count > 0 && nonimplicit && sanitize);
+                    assert_eq!(
+                        probe::sanitize_returns() - sanitize_before,
+                        expected_sanitizations as u64,
+                        "{label}: sanitizer invocations"
+                    );
+                    assert_eq!(
+                        probe::pass_returns() - pass_before,
+                        1,
+                        "{label}: pass returns"
+                    );
+                    // Ordinary property retained; computed property cleared by
+                    // the actual clearComputedProps(true) of this pass.
+                    assert_eq!(properties.prop("ck-ordinary"), Some("kept"), "{label}");
+                    assert!(!properties.is_prop_computed("ck-computed"), "{label}");
+                    assert!(
+                        properties.prop("ck-computed").is_none(),
+                        "{label}: computed value must be absent"
+                    );
+                    assert_eq!(properties_before.prop("ck-ordinary"), Some("kept"));
+
+                    let both = nonimplicit && sanitize && atom_count > 0;
+                    match (name, both) {
+                        ("G0", _) => {
+                            assert!(result.final_rings.is_none(), "{label}");
+                            assert!(result.mapping.atoms().new_to_old().is_empty());
+                            assert!(result.mapping.bonds().new_to_old().is_empty());
+                        }
+                        ("G1", true) => {
+                            let rings = result.final_rings.as_ref().unwrap();
+                            assert_eq!(rings.find_type(), RingFindType::SymmSssr, "{label}");
+                            assert!(rings.is_initialized(), "{label}");
+                            assert!(rings.atom_rings().is_empty(), "{label}: rows");
+                            assert!(rings.bond_rings().is_empty(), "{label}: bond rows");
+                            assert_eq!(rings.atom_row_count(), 2, "{label}");
+                            assert_eq!(rings.bond_row_count(), 1, "{label}");
+                            assert_eq!(rings.atom_members(AtomId::new(0)), &[], "{label}: m0");
+                            assert_eq!(rings.atom_members(AtomId::new(1)), &[], "{label}: m1");
+                            assert_eq!(rings.bond_members(BondId::new(0)), &[], "{label}: bm0");
+                        }
+                        ("G1", false) => {
+                            assert!(result.final_rings.is_none(), "{label}");
+                        }
+                        ("G2", true) | ("G3", true) => {
+                            let rings = result.final_rings.as_ref().unwrap();
+                            assert_eq!(rings.find_type(), RingFindType::SymmSssr, "{label}");
+                            assert_eq!(rings.atom_rings().len(), 1, "{label}: ring count");
+                            let expected_atoms: Vec<usize> = (0..6).collect();
+                            let mut got: Vec<usize> = rings.atom_rings()[0]
+                                .iter()
+                                .map(|atom| atom.index())
+                                .collect();
+                            got.sort_unstable();
+                            assert_eq!(got, expected_atoms, "{label}: normalized ring atoms");
+                            let mut bonds: Vec<usize> = rings.bond_rings()[0]
+                                .iter()
+                                .map(|bond| bond.index())
+                                .collect();
+                            bonds.sort_unstable();
+                            assert_eq!(bonds, expected_atoms, "{label}: normalized ring bonds");
+                            for atom in 0..6usize {
+                                assert_eq!(
+                                    rings.atom_rings()[0]
+                                        .iter()
+                                        .filter(|a| a.index() == atom)
+                                        .count(),
+                                    1,
+                                    "{label}: atom {atom} membership"
+                                );
+                            }
+                            // Both membership dimensions + members for every
+                            // final index; normalized paired bond row.
+                            assert_eq!(rings.bond_row_count(), 6, "{label}: bond dims");
+                            let mut bond_row: Vec<usize> = rings.bond_rings()[0]
+                                .iter()
+                                .map(|bond| bond.index())
+                                .collect();
+                            bond_row.sort_unstable();
+                            assert_eq!(bond_row, expected_atoms, "{label}: normalized bonds");
+                            for index in 0..6usize {
+                                assert_eq!(
+                                    rings.atom_members(AtomId::new(index)),
+                                    &[0],
+                                    "{label}: atom {index} members"
+                                );
+                            }
+                            for bond in 0..6usize {
+                                assert_eq!(
+                                    rings.bond_members(BondId::new(bond)),
+                                    &[0],
+                                    "{label}: bond {bond} members"
+                                );
+                            }
+                            if name == "G3" {
+                                assert_eq!(rings.atom_row_count(), 6, "{label}");
+                                assert_eq!(rings.bond_row_count(), 6, "{label}");
+                            }
+                        }
+                        ("G2", false) | ("G3", false) => {
+                            assert!(result.final_rings.is_none(), "{label}");
+                        }
+                        _ => unreachable!("{label}"),
+                    }
+                    // Mapping literals.
+                    if name == "G3" && nonimplicit {
+                        let atom_n2o: Vec<Option<usize>> = result
+                            .mapping
+                            .atoms()
+                            .new_to_old()
+                            .iter()
+                            .map(|atom| atom.map(|a| a.index()))
+                            .collect();
+                        let bond_n2o: Vec<Option<usize>> = result
+                            .mapping
+                            .bonds()
+                            .new_to_old()
+                            .iter()
+                            .map(|bond| bond.map(|b| b.index()))
+                            .collect();
+                        assert_eq!(
+                            atom_n2o,
+                            vec![Some(1), Some(2), Some(3), Some(4), Some(5), Some(6)],
+                            "{label}: atom new_to_old"
+                        );
+                        assert_eq!(
+                            bond_n2o,
+                            vec![Some(1), Some(2), Some(3), Some(4), Some(5), Some(6)],
+                            "{label}: bond new_to_old"
+                        );
+                        let atom_o2n: Vec<Option<usize>> = result
+                            .mapping
+                            .atoms()
+                            .old_to_new()
+                            .iter()
+                            .map(|atom| atom.map(|a| a.index()))
+                            .collect();
+                        assert_eq!(
+                            atom_o2n,
+                            vec![None, Some(0), Some(1), Some(2), Some(3), Some(4), Some(5)],
+                            "{label}: atom old_to_new"
+                        );
+                        let bond_o2n: Vec<Option<usize>> = result
+                            .mapping
+                            .bonds()
+                            .old_to_new()
+                            .iter()
+                            .map(|bond| bond.map(|b| b.index()))
+                            .collect();
+                        assert_eq!(
+                            bond_o2n,
+                            vec![None, Some(0), Some(1), Some(2), Some(3), Some(4), Some(5)],
+                            "{label}: bond old_to_new"
+                        );
+                    } else {
+                        // Exact identity at ORIGINAL atom AND bond counts.
+                        let identity_atoms: Vec<Option<usize>> =
+                            (0..atom_count).map(Some).collect();
+                        let identity_bonds: Vec<Option<usize>> =
+                            (0..bond_count).map(Some).collect();
+                        let got_atoms: Vec<Option<usize>> = result
+                            .mapping
+                            .atoms()
+                            .new_to_old()
+                            .iter()
+                            .map(|atom| atom.map(|a| a.index()))
+                            .collect();
+                        let got_atom_old: Vec<Option<usize>> = result
+                            .mapping
+                            .atoms()
+                            .old_to_new()
+                            .iter()
+                            .map(|atom| atom.map(|a| a.index()))
+                            .collect();
+                        let got_bonds: Vec<Option<usize>> = result
+                            .mapping
+                            .bonds()
+                            .new_to_old()
+                            .iter()
+                            .map(|bond| bond.map(|b| b.index()))
+                            .collect();
+                        let got_bond_old: Vec<Option<usize>> = result
+                            .mapping
+                            .bonds()
+                            .old_to_new()
+                            .iter()
+                            .map(|bond| bond.map(|b| b.index()))
+                            .collect();
+                        assert_eq!(got_atoms, identity_atoms, "{label}: atoms new_to_old");
+                        assert_eq!(got_atom_old, identity_atoms, "{label}: atoms old_to_new");
+                        assert_eq!(got_bonds, identity_bonds, "{label}: bonds new_to_old");
+                        assert_eq!(got_bond_old, identity_bonds, "{label}: bonds old_to_new");
+                        let _ = bond_count;
+                    }
+                }
+            }
+        }
+        assert_eq!(calls, 16, "exact census");
+    }
+}
+
+// R3: the eight-call G4 isotope-tracking public product. tracking=true runs
+// exactly ONE preliminary non-isotopic-H pass (hardcoded sanitize=false,
+// observed at the ACTUAL pass-return probe) whose final_rings stays None;
+// only the final pass's state is published. D2 (isotope Some(2)) is retained
+// by the non-tracking removal and removed by the two-pass tracking removal,
+// with the tracked payload asserted through the existing owner.
+#[cfg(test)]
+pub(crate) mod remove_hs_ring_isotope_tests_helpers {
+    use cosmolkit_model::{
+        Atom, AtomId, AtomSpec, Bond, BondId, BondSpec, Conformer2D, Conformer3D, CoordinateBlock,
+        TopologyBlock,
+    };
+    use cosmolkit_types::{BondOrder, Element};
+
+    pub(crate) fn carbon(id: usize) -> Atom {
+        Atom::from_spec(
+            AtomId::new(id),
+            AtomSpec::new(Element::C).with_aromatic(true),
+        )
+    }
+
+    pub(crate) fn hydrogen(id: usize, isotope: Option<u16>) -> Atom {
+        let mut spec = AtomSpec::new(Element::H);
+        if let Some(value) = isotope {
+            spec = spec.with_isotope(value);
+        }
+        Atom::from_spec(AtomId::new(id), spec)
+    }
+
+    pub(crate) fn topology(atoms: Vec<Atom>, bonds: Vec<Bond>) -> TopologyBlock {
+        TopologyBlock::try_from_parts(atoms, bonds, Vec::new(), Vec::new()).unwrap()
+    }
+
+    pub(crate) fn single(id: usize, begin: usize, end: usize) -> Bond {
+        Bond::from_spec(
+            BondId::new(id),
+            BondSpec::new(AtomId::new(begin), AtomId::new(end), BondOrder::Single),
+        )
+    }
+
+    pub(crate) fn aromatic_bond(id: usize, begin: usize, end: usize) -> Bond {
+        Bond::from_spec(
+            BondId::new(id),
+            BondSpec::new(AtomId::new(begin), AtomId::new(end), BondOrder::Aromatic)
+                .with_aromatic(true),
+        )
+    }
+
+    pub(crate) fn g2() -> TopologyBlock {
+        topology(
+            (0..6).map(|id| carbon(id)).collect(),
+            (0..6)
+                .map(|id| aromatic_bond(id, id, (id + 1) % 6))
+                .collect(),
+        )
+    }
+
+    pub(crate) fn g3() -> TopologyBlock {
+        topology(
+            std::iter::once(hydrogen(0, None))
+                .chain((1..7).map(|id| carbon(id)))
+                .collect(),
+            std::iter::once(single(0, 0, 1))
+                .chain((1..7).map(|id| aromatic_bond(id, id, (id % 6) + 1)))
+                .collect(),
+        )
+    }
+
+    pub(crate) fn g4() -> TopologyBlock {
+        topology(
+            vec![
+                hydrogen(0, None),
+                carbon(1),
+                hydrogen(2, Some(2)),
+                carbon(3),
+                carbon(4),
+                carbon(5),
+                carbon(6),
+                carbon(7),
+            ],
+            vec![
+                single(0, 0, 1),
+                single(1, 2, 3),
+                aromatic_bond(2, 1, 3),
+                aromatic_bond(3, 3, 4),
+                aromatic_bond(4, 4, 5),
+                aromatic_bond(5, 5, 6),
+                aromatic_bond(6, 6, 7),
+                aromatic_bond(7, 7, 1),
+            ],
+        )
+    }
+
+    pub(crate) fn coordinates(atom_count: usize) -> CoordinateBlock {
+        CoordinateBlock {
+            conformers_2d: vec![Conformer2D::new(
+                17,
+                (0..atom_count)
+                    .map(|row| [row as f64, -(row as f64)])
+                    .collect(),
+            )],
+            conformers_3d: vec![Conformer3D::new(
+                19,
+                (0..atom_count)
+                    .map(|row| [row as f64 + 0.5, 0.0, -0.0])
+                    .collect(),
+                true,
+            )],
+            source_coordinate_dim: None,
+        }
+    }
+
+    pub(crate) fn params(
+        tracking: bool,
+        nonimplicit: bool,
+        sanitize: bool,
+    ) -> super::RemoveHsParams {
+        let mut params = super::RemoveHsParams::default();
+        params.remove_and_track_isotopes = tracking;
+        params.remove_nonimplicit = nonimplicit;
+        params.sanitize = sanitize;
+        params.update_explicit_count = true;
+        params.show_warnings = false;
+        params
+    }
+
+    /// R5 base: two ordinary carbons a0,a1 Single b0=(0,1).
+    pub(crate) fn g1_invalid_base() -> TopologyBlock {
+        topology(
+            vec![
+                Atom::from_spec(AtomId::new(0), AtomSpec::new(Element::C)),
+                Atom::from_spec(AtomId::new(1), AtomSpec::new(Element::C)),
+            ],
+            vec![single(0, 0, 1)],
+        )
+    }
+}
+
+#[cfg(test)]
+mod remove_hs_ring_isotope_tests {
+    use super::RemoveHsParams;
+    use super::remove_hs_ring_probe as probe;
+    use crate::{RingFindType, remove_hydrogens_with_params};
+    use cosmolkit_model::{
+        Atom, AtomId, AtomSpec, Bond, BondId, BondSpec, Conformer2D, Conformer3D, CoordinateBlock,
+        MoleculeProperties, TopologyBlock,
+    };
+    use cosmolkit_types::{BondOrder, Element};
+
+    fn carbon(id: usize) -> Atom {
+        Atom::from_spec(
+            AtomId::new(id),
+            AtomSpec::new(Element::C).with_aromatic(true),
+        )
+    }
+
+    fn hydrogen(id: usize, isotope: Option<u16>) -> Atom {
+        let mut spec = AtomSpec::new(Element::H);
+        if let Some(value) = isotope {
+            spec = spec.with_isotope(value);
+        }
+        let atom = Atom::from_spec(AtomId::new(id), spec);
+        assert_eq!(atom.atomic_number(), 1);
+        assert_eq!(atom.isotope(), isotope);
+        atom
+    }
+
+    fn topology(atoms: Vec<Atom>, bonds: Vec<Bond>) -> TopologyBlock {
+        TopologyBlock::try_from_parts(atoms, bonds, Vec::new(), Vec::new()).unwrap()
+    }
+
+    fn single(id: usize, begin: usize, end: usize) -> Bond {
+        Bond::from_spec(
+            BondId::new(id),
+            BondSpec::new(AtomId::new(begin), AtomId::new(end), BondOrder::Single),
+        )
+    }
+
+    fn aromatic_bond(id: usize, begin: usize, end: usize) -> Bond {
+        Bond::from_spec(
+            BondId::new(id),
+            BondSpec::new(AtomId::new(begin), AtomId::new(end), BondOrder::Aromatic)
+                .with_aromatic(true),
+        )
+    }
+
+    /// G4: a0=H, a1=C, a2=D(isotope 2), a3..7=C (a1,a3..7 aromatic); H and D
+    /// attach to DIFFERENT carbons.
+    fn g4() -> TopologyBlock {
+        topology(
+            vec![
+                hydrogen(0, None),
+                carbon(1),
+                hydrogen(2, Some(2)),
+                carbon(3),
+                carbon(4),
+                carbon(5),
+                carbon(6),
+                carbon(7),
+            ],
+            vec![
+                single(0, 0, 1),
+                single(1, 2, 3),
+                aromatic_bond(2, 1, 3),
+                aromatic_bond(3, 3, 4),
+                aromatic_bond(4, 4, 5),
+                aromatic_bond(5, 5, 6),
+                aromatic_bond(6, 6, 7),
+                aromatic_bond(7, 7, 1),
+            ],
+        )
+    }
+
+    fn coordinates(atom_count: usize) -> CoordinateBlock {
+        CoordinateBlock {
+            conformers_2d: vec![Conformer2D::new(
+                17,
+                (0..atom_count)
+                    .map(|row| [row as f64, -(row as f64)])
+                    .collect(),
+            )],
+            conformers_3d: vec![Conformer3D::new(
+                19,
+                (0..atom_count)
+                    .map(|row| [row as f64 + 0.5, 0.0, -0.0])
+                    .collect(),
+                true,
+            )],
+            source_coordinate_dim: None,
+        }
+    }
+
+    fn params(tracking: bool, nonimplicit: bool, sanitize: bool) -> RemoveHsParams {
+        let mut params = RemoveHsParams::default();
+        params.remove_and_track_isotopes = tracking;
+        params.remove_nonimplicit = nonimplicit;
+        params.sanitize = sanitize;
+        params.update_explicit_count = true;
+        params.show_warnings = false;
+        params
+    }
+
+    #[test]
+    fn remove_hydrogens_ring_isotope_eight_call_product() {
+        let mut calls = 0usize;
+        for tracking in [false, true] {
+            for nonimplicit in [false, true] {
+                for sanitize in [false, true] {
+                    let label = format!("t{tracking}/ni{nonimplicit}/s{sanitize}");
+                    let topology = g4();
+                    let coordinates = coordinates(8);
+                    let mut properties = MoleculeProperties::default();
+                    properties.set_prop("ck-ordinary", "kept").unwrap();
+                    let topology_snapshot = topology.clone();
+                    let coordinates_snapshot = coordinates.clone();
+                    let properties_snapshot = properties.clone();
+                    // G4 prerequisites: exact 8 atoms/edges, H0/D2 on
+                    // DIFFERENT carbons, isotope/implicit flags.
+                    assert_eq!(topology.atoms.len(), 8, "{label}: atom count");
+                    assert_eq!(topology.bonds.len(), 8, "{label}: bond count");
+                    assert_eq!(topology.atoms[0].atomic_number(), 1, "{label}");
+                    assert_eq!(topology.atoms[0].isotope(), None, "{label}");
+                    assert!(!topology.atoms[0].implicit_hydrogen(), "{label}");
+                    assert_eq!(topology.atoms[2].atomic_number(), 1, "{label}");
+                    assert_eq!(topology.atoms[2].isotope(), Some(2), "{label}");
+                    assert!(!topology.atoms[2].implicit_hydrogen(), "{label}");
+                    assert_eq!(topology.bonds[0].begin().index(), 0, "{label}: H0-C1");
+                    assert_eq!(topology.bonds[0].end().index(), 1, "{label}: H0-C1");
+                    assert_eq!(topology.bonds[1].begin().index(), 2, "{label}: D2-C3");
+                    assert_eq!(topology.bonds[1].end().index(), 3, "{label}: D2-C3");
+                    let pass_before = probe::pass_returns();
+                    let sanitize_before = probe::sanitize_returns();
+                    let history_before = probe::pass_history_len();
+                    let result = remove_hydrogens_with_params(
+                        topology.clone(),
+                        coordinates.clone(),
+                        properties.clone(),
+                        &params(tracking, nonimplicit, sanitize),
+                    )
+                    .unwrap_or_else(|error| panic!("{label}: {error:?}"));
+                    calls += 1;
+                    // Retained ORIGINAL whole values unchanged.
+                    assert_eq!(topology_snapshot, topology, "{label}: retained graph");
+                    assert_eq!(
+                        coordinates_snapshot, coordinates,
+                        "{label}: retained coords"
+                    );
+                    assert_eq!(properties_snapshot, properties, "{label}: retained props");
+                    // Actual ordered pass-return history slice: tracking
+                    // adds the preliminary (sanitize=false, None) entry
+                    // BEFORE the final entry, whose state equals the returned
+                    // final_rings exactly.
+                    let history = probe::pass_history_after(history_before);
+                    let expected_entries = if tracking { 2 } else { 1 };
+                    assert_eq!(history.len(), expected_entries, "{label}: history len");
+                    if tracking {
+                        assert_eq!(history[0].0, false, "{label}: preliminary sanitize=false");
+                        assert!(history[0].1.is_none(), "{label}: preliminary None");
+                        assert_eq!(history[1].0, sanitize, "{label}: final sanitize flag");
+                        assert_eq!(history[1].1, result.final_rings, "{label}: final state");
+                    } else {
+                        assert_eq!(history[0].0, sanitize, "{label}: only-pass sanitize flag");
+                        assert_eq!(history[0].1, result.final_rings, "{label}: only-pass state");
+                    }
+                    // Pass census at the ACTUAL pass-return site (relative,
+                    // non-reset): tracking=true adds the preliminary pass.
+                    let expected_passes = if tracking { 2 } else { 1 };
+                    assert_eq!(
+                        probe::pass_returns() - pass_before,
+                        expected_passes,
+                        "{label}: pass count"
+                    );
+                    // Exactly one final sanitizer invocation in the Some
+                    // case, zero otherwise.
+                    assert_eq!(
+                        probe::sanitize_returns() - sanitize_before,
+                        u64::from(nonimplicit && sanitize),
+                        "{label}: sanitizer count"
+                    );
+                    assert_eq!(topology_snapshot.atoms.len(), 8, "{label}");
+                    let atom_n2o: Vec<Option<usize>> = result
+                        .mapping
+                        .atoms()
+                        .new_to_old()
+                        .iter()
+                        .map(|atom| atom.map(|a| a.index()))
+                        .collect();
+                    let bond_n2o: Vec<Option<usize>> = result
+                        .mapping
+                        .bonds()
+                        .new_to_old()
+                        .iter()
+                        .map(|bond| bond.map(|b| b.index()))
+                        .collect();
+                    if !nonimplicit {
+                        assert_eq!(result.topology.atoms.len(), 8, "{label}");
+                        assert_eq!(result.topology.atoms[2].isotope(), Some(2), "{label}");
+                        // Frozen: identity8 for BOTH mappings, atoms+bonds.
+                        let identity: Vec<Option<usize>> = (0..8).map(Some).collect();
+                        assert_eq!(atom_n2o, identity, "{label}");
+                        let atom_o2n: Vec<Option<usize>> = result
+                            .mapping
+                            .atoms()
+                            .old_to_new()
+                            .iter()
+                            .map(|atom| atom.map(|a| a.index()))
+                            .collect();
+                        assert_eq!(atom_o2n, identity, "{label}: atom old_to_new");
+                        assert_eq!(bond_n2o, identity, "{label}: bond new_to_old");
+                        let bond_o2n: Vec<Option<usize>> = result
+                            .mapping
+                            .bonds()
+                            .old_to_new()
+                            .iter()
+                            .map(|bond| bond.map(|b| b.index()))
+                            .collect();
+                        assert_eq!(bond_o2n, identity, "{label}: bond old_to_new");
+                        assert!(result.final_rings.is_none(), "{label}");
+                    } else if !tracking {
+                        assert_eq!(result.topology.atoms.len(), 7, "{label}");
+                        assert_eq!(
+                            atom_n2o,
+                            vec![
+                                Some(1),
+                                Some(2),
+                                Some(3),
+                                Some(4),
+                                Some(5),
+                                Some(6),
+                                Some(7)
+                            ],
+                            "{label}: atom new_to_old"
+                        );
+                        // Frozen: bonds new[1..7], old[None,Some0..6].
+                        assert_eq!(
+                            bond_n2o,
+                            vec![
+                                Some(1),
+                                Some(2),
+                                Some(3),
+                                Some(4),
+                                Some(5),
+                                Some(6),
+                                Some(7)
+                            ],
+                            "{label}: bond new_to_old"
+                        );
+                        let atom_o2n: Vec<Option<usize>> = result
+                            .mapping
+                            .atoms()
+                            .old_to_new()
+                            .iter()
+                            .map(|atom| atom.map(|a| a.index()))
+                            .collect();
+                        assert_eq!(
+                            atom_o2n,
+                            vec![
+                                None,
+                                Some(0),
+                                Some(1),
+                                Some(2),
+                                Some(3),
+                                Some(4),
+                                Some(5),
+                                Some(6)
+                            ],
+                            "{label}: atom old_to_new"
+                        );
+                        let bond_o2n: Vec<Option<usize>> = result
+                            .mapping
+                            .bonds()
+                            .old_to_new()
+                            .iter()
+                            .map(|bond| bond.map(|b| b.index()))
+                            .collect();
+                        assert_eq!(
+                            bond_o2n,
+                            vec![
+                                None,
+                                Some(0),
+                                Some(1),
+                                Some(2),
+                                Some(3),
+                                Some(4),
+                                Some(5),
+                                Some(6)
+                            ],
+                            "{label}: bond old_to_new"
+                        );
+                        assert_eq!(result.topology.atoms[1].isotope(), Some(2), "{label}");
+                    } else {
+                        assert_eq!(result.topology.atoms.len(), 6, "{label}");
+                        assert_eq!(
+                            atom_n2o,
+                            vec![Some(1), Some(3), Some(4), Some(5), Some(6), Some(7)],
+                            "{label}: atom new_to_old"
+                        );
+                        assert_eq!(
+                            bond_n2o,
+                            vec![Some(2), Some(3), Some(4), Some(5), Some(6), Some(7)],
+                            "{label}: bond new_to_old"
+                        );
+                        let atom_o2n: Vec<Option<usize>> = result
+                            .mapping
+                            .atoms()
+                            .old_to_new()
+                            .iter()
+                            .map(|atom| atom.map(|a| a.index()))
+                            .collect();
+                        assert_eq!(
+                            atom_o2n,
+                            vec![
+                                None,
+                                Some(0),
+                                None,
+                                Some(1),
+                                Some(2),
+                                Some(3),
+                                Some(4),
+                                Some(5)
+                            ],
+                            "{label}: atom old_to_new"
+                        );
+                        let bond_o2n: Vec<Option<usize>> = result
+                            .mapping
+                            .bonds()
+                            .old_to_new()
+                            .iter()
+                            .map(|bond| bond.map(|b| b.index()))
+                            .collect();
+                        assert_eq!(
+                            bond_o2n,
+                            vec![
+                                None,
+                                None,
+                                Some(0),
+                                Some(1),
+                                Some(2),
+                                Some(3),
+                                Some(4),
+                                Some(5)
+                            ],
+                            "{label}: bond old_to_new"
+                        );
+                        assert_eq!(
+                            result.topology.atoms[1].tracked_isotopic_hydrogens(),
+                            &[2u16],
+                            "{label}: tracked payload"
+                        );
+                    }
+                    let expect_some = sanitize && nonimplicit;
+                    if expect_some {
+                        let rings = result.final_rings.as_ref().unwrap();
+                        assert_eq!(rings.find_type(), RingFindType::SymmSssr, "{label}");
+                        assert!(rings.is_initialized(), "{label}");
+                        assert_eq!(
+                            rings.atom_row_count(),
+                            result.topology.atoms.len(),
+                            "{label}"
+                        );
+                        assert_eq!(
+                            rings.bond_row_count(),
+                            result.topology.bonds.len(),
+                            "{label}"
+                        );
+                        assert_eq!(rings.atom_rings().len(), 1, "{label}: ring count");
+                        let mut ring_atoms: Vec<usize> = rings.atom_rings()[0]
+                            .iter()
+                            .map(|atom| atom.index())
+                            .collect();
+                        ring_atoms.sort_unstable();
+                        let expected_ring: Vec<usize> = if tracking {
+                            vec![0, 1, 2, 3, 4, 5]
+                        } else {
+                            vec![0, 2, 3, 4, 5, 6]
+                        };
+                        assert_eq!(ring_atoms, expected_ring, "{label}: normalized ring atoms");
+                        // Paired normalized bond set + member checks:
+                        // non-tracking 7-row keeps D2 -> ring atoms
+                        // [0,2,3,4,5,6], bonds [1..6], atom1/bond0 members
+                        // empty; tracking 6-row is full6 allmembers[0].
+                        let mut ring_bonds: Vec<usize> = rings.bond_rings()[0]
+                            .iter()
+                            .map(|bond| bond.index())
+                            .collect();
+                        ring_bonds.sort_unstable();
+                        let expected_ring_bonds: Vec<usize> = if tracking {
+                            vec![0, 1, 2, 3, 4, 5]
+                        } else {
+                            vec![1, 2, 3, 4, 5, 6]
+                        };
+                        assert_eq!(
+                            ring_bonds, expected_ring_bonds,
+                            "{label}: normalized ring bonds"
+                        );
+                        let expected_members: &[usize] = &[0];
+                        for atom in &expected_ring {
+                            assert_eq!(
+                                rings.atom_members(AtomId::new(*atom)),
+                                expected_members,
+                                "{label}: atom {atom} members"
+                            );
+                        }
+                        for bond in &expected_ring_bonds {
+                            assert_eq!(
+                                rings.bond_members(BondId::new(*bond)),
+                                expected_members,
+                                "{label}: bond {bond} members"
+                            );
+                        }
+                        if !tracking {
+                            assert_eq!(
+                                rings.atom_members(AtomId::new(1)),
+                                &[],
+                                "{label}: D-row atom members empty"
+                            );
+                            assert_eq!(
+                                rings.bond_members(BondId::new(0)),
+                                &[],
+                                "{label}: H-bond members empty"
+                            );
+                        }
+                    } else {
+                        assert!(result.final_rings.is_none(), "{label}");
+                    }
+                    // Both coordinate dimensions follow the frozen LITERAL
+                    // final ORIGINAL indices (not derived from atom_n2o),
+                    // compared across ALL components by bits.
+                    let kept: Vec<usize> = if !nonimplicit {
+                        vec![0, 1, 2, 3, 4, 5, 6, 7]
+                    } else if !tracking {
+                        vec![1, 2, 3, 4, 5, 6, 7]
+                    } else {
+                        vec![1, 3, 4, 5, 6, 7]
+                    };
+                    let in2 = coordinates_snapshot.conformers_2d[0].coordinates();
+                    let in3 = coordinates_snapshot.conformers_3d[0].coordinates();
+                    let out2 = result.coordinates.conformers_2d[0].coordinates();
+                    let out3 = result.coordinates.conformers_3d[0].coordinates();
+                    for (new_index, old_index) in kept.iter().enumerate() {
+                        assert_eq!(
+                            out2[new_index][0].to_bits(),
+                            in2[*old_index][0].to_bits(),
+                            "{label}: 2D x"
+                        );
+                        assert_eq!(
+                            out2[new_index][1].to_bits(),
+                            in2[*old_index][1].to_bits(),
+                            "{label}: 2D y"
+                        );
+                        assert_eq!(
+                            out3[new_index][2].to_bits(),
+                            in3[*old_index][2].to_bits(),
+                            "{label}: 3D z"
+                        );
+                        assert_eq!(
+                            out3[new_index][0].to_bits(),
+                            in3[*old_index][0].to_bits(),
+                            "{label}: 3D x"
+                        );
+                        assert_eq!(
+                            out3[new_index][1].to_bits(),
+                            in3[*old_index][1].to_bits(),
+                            "{label}: 3D y"
+                        );
+                    }
+                    // Atom-row remapping preserves both original and output
+                    // conformer IDs17/19, independently of atom row indices.
+                    assert_eq!(coordinates_snapshot.conformers_2d[0].id(), 17, "{label}");
+                    assert_eq!(coordinates_snapshot.conformers_3d[0].id(), 19, "{label}");
+                    assert_eq!(
+                        result.coordinates.conformers_2d[0].id(),
+                        17,
+                        "{label}: output 2D id"
+                    );
+                    assert_eq!(
+                        result.coordinates.conformers_3d[0].id(),
+                        19,
+                        "{label}: output 3D id"
+                    );
+                    assert_eq!(
+                        result.coordinates.conformers_2d[0].coordinates().len(),
+                        kept.len(),
+                        "{label}: 2D rows"
+                    );
+                    assert_eq!(
+                        result.coordinates.conformers_3d[0].coordinates().len(),
+                        kept.len(),
+                        "{label}: 3D rows"
+                    );
+                    assert!(result.coordinates.conformers_3d[0].is_3d(), "{label}");
+                    assert_eq!(
+                        result.properties.prop("ck-ordinary"),
+                        Some("kept"),
+                        "{label}"
+                    );
+                    // Valence/ring separation: valence Some IFF sanitize.
+                    match (sanitize, &result.final_valence) {
+                        (true, Some(_)) => {}
+                        (false, None) => {}
+                        _ => panic!("{label}: valence presence"),
+                    }
+                }
+            }
+        }
+        assert_eq!(calls, 8, "exact census");
+    }
+}
+
+// R4: four supplementary nonempty move calls (not R1/R2 re-counting), all
+// sanitize=true/remove_nonimplicit=true. The ACTUAL final sanitizer return
+// recorded BOTH nonempty row-buffer pointers plus the complete ordered
+// state; the pass return and the public output retain those SAME buffers
+// and ordered members/type/dimensions. The two-pass preliminary report is
+// None. Empty pointers are not allocation proof, so all four cells assert
+// nonempty rows.
+#[cfg(test)]
+mod remove_hs_ring_move_tests {
+    use super::RemoveHsParams;
+    use super::remove_hs_ring_isotope_tests_helpers as helpers;
+    use super::remove_hs_ring_probe as probe;
+    use crate::{RingFindType, remove_hydrogens_with_params};
+    use cosmolkit_model::{CoordinateBlock, MoleculeProperties, TopologyBlock};
+
+    #[test]
+    fn remove_hydrogens_ring_move_four_call_product() {
+        let cases: [(&str, fn() -> TopologyBlock, bool, usize); 4] = [
+            ("G2", helpers::g2, false, 6),
+            ("G3", helpers::g3, false, 6),
+            ("G4", helpers::g4, false, 7),
+            ("G4t", helpers::g4, true, 6),
+        ];
+        let mut calls = 0usize;
+        for (name, build, tracking, expected_atoms) in cases {
+            let label = name.to_string();
+            let topology = build();
+            let atom_count = topology.atoms.len();
+            let bond_count = topology.bonds.len();
+            // Original H/D prerequisites before invocation.
+            if name.starts_with("G4") {
+                assert_eq!(topology.atoms[0].atomic_number(), 1, "{label}: H0");
+                assert_eq!(topology.atoms[0].isotope(), None, "{label}: H0 nonisotopic");
+                assert_eq!(topology.atoms[2].atomic_number(), 1, "{label}: D2");
+                assert_eq!(topology.atoms[2].isotope(), Some(2), "{label}: D2 isotope2");
+            }
+            let coordinates = helpers::coordinates(atom_count);
+            let properties = MoleculeProperties::default();
+            let topology_snapshot = topology.clone();
+            let coordinates_snapshot = coordinates.clone();
+            let properties_snapshot = properties.clone();
+            // Literal final expected counts (G4 without tracking is 7/7).
+            let expected_bonds = expected_atoms;
+            let sanitize_before = probe::sanitize_returns();
+            let publication_before = probe::publications();
+            let history_before = probe::pass_history_len();
+            let result = remove_hydrogens_with_params(
+                topology.clone(),
+                coordinates.clone(),
+                properties.clone(),
+                &helpers::params(tracking, true, true),
+            )
+            .unwrap_or_else(|error| panic!("{label}: {error:?}"));
+            calls += 1;
+            // Retained ORIGINAL whole values + all coordinate components.
+            assert_eq!(topology_snapshot, topology, "{label}: retained graph");
+            assert_eq!(
+                coordinates_snapshot, coordinates,
+                "{label}: retained coords"
+            );
+            assert_eq!(properties_snapshot, properties, "{label}: retained props");
+            // Output coordinates follow the LITERAL final ORIGINAL indices,
+            // all components by bits.
+            let kept: Vec<usize> = match name {
+                "G2" => vec![0, 1, 2, 3, 4, 5],
+                "G3" => vec![1, 2, 3, 4, 5, 6],
+                "G4" => vec![1, 2, 3, 4, 5, 6, 7],
+                _ => vec![1, 3, 4, 5, 6, 7],
+            };
+            let in2 = coordinates_snapshot.conformers_2d[0].coordinates();
+            let out2 = result.coordinates.conformers_2d[0].coordinates();
+            let in3 = coordinates_snapshot.conformers_3d[0].coordinates();
+            let out3 = result.coordinates.conformers_3d[0].coordinates();
+            for (new_index, old_index) in kept.iter().enumerate() {
+                assert_eq!(
+                    out2[new_index][0].to_bits(),
+                    in2[*old_index][0].to_bits(),
+                    "{label}: 2D x"
+                );
+                assert_eq!(
+                    out2[new_index][1].to_bits(),
+                    in2[*old_index][1].to_bits(),
+                    "{label}: 2D y"
+                );
+                assert_eq!(
+                    out3[new_index][0].to_bits(),
+                    in3[*old_index][0].to_bits(),
+                    "{label}: 3D x"
+                );
+                assert_eq!(
+                    out3[new_index][1].to_bits(),
+                    in3[*old_index][1].to_bits(),
+                    "{label}: 3D y"
+                );
+                assert_eq!(
+                    out3[new_index][2].to_bits(),
+                    in3[*old_index][2].to_bits(),
+                    "{label}: 3D z"
+                );
+            }
+            // Actual pass-history slice: tracking=true shows the
+            // preliminary false/None entry, then the final state.
+            let history = probe::pass_history_after(history_before);
+            if tracking {
+                assert_eq!(history.len(), 2, "{label}: history len");
+                assert!(!history[0].0, "{label}: prelim sanitize=false");
+                assert!(history[0].1.is_none(), "{label}: prelim None");
+                assert_eq!(history[1].1, result.final_rings, "{label}: final state");
+            } else {
+                assert_eq!(history.len(), 1, "{label}: history len");
+                assert_eq!(history[0].1, result.final_rings, "{label}: state");
+            }
+            // Exactly one final sanitize; no post-SAN ring finding (the
+            // publication is the last transport event).
+            assert_eq!(
+                probe::sanitize_returns() - sanitize_before,
+                1,
+                "{label}: final sanitize count"
+            );
+            assert_eq!(
+                probe::publications() - publication_before,
+                1,
+                "{label}: publication count"
+            );
+            let rings = result.final_rings.as_ref().unwrap();
+            assert!(
+                !rings.atom_rings().is_empty(),
+                "{label}: nonempty rows required"
+            );
+            assert!(
+                !rings.bond_rings().is_empty(),
+                "{label}: nonempty bond rows required"
+            );
+            assert_eq!(rings.find_type(), RingFindType::SymmSssr, "{label}");
+            assert_eq!(rings.atom_row_count(), expected_atoms, "{label}: dims");
+            assert_eq!(rings.bond_row_count(), expected_bonds, "{label}: bond dims");
+            assert_eq!(result.topology.atoms.len(), expected_atoms, "{label}");
+            assert_eq!(
+                result.topology.bonds.len(),
+                expected_bonds,
+                "{label}: bonds"
+            );
+            // Buffer identity: sanitizer return == pass return == public
+            // output (SAME moved carrier; no clone).
+            let (san_atom, san_bond) = probe::last_sanitize_pointers();
+            let (pass_atom, pass_bond) = probe::last_pass_pointers();
+            let (pub_atom, pub_bond) = probe::last_publication_pointers();
+            assert_eq!(san_atom, pass_atom, "{label}: atom buffer pass");
+            assert_eq!(san_bond, pass_bond, "{label}: bond buffer pass");
+            assert_eq!(san_atom, pub_atom, "{label}: atom buffer publication");
+            assert_eq!(san_bond, pub_bond, "{label}: bond buffer publication");
+            assert_eq!(
+                rings.atom_rings().as_ptr() as usize,
+                pub_atom,
+                "{label}: public atom buffer"
+            );
+            assert_eq!(
+                rings.bond_rings().as_ptr() as usize,
+                pub_bond,
+                "{label}: public bond buffer"
+            );
+            // Complete ordered state equality across the three sites.
+            assert_eq!(
+                probe::last_sanitize_state(),
+                probe::last_pass_state(),
+                "{label}: sanitize/pass state"
+            );
+            assert_eq!(
+                probe::last_pass_state(),
+                probe::last_publication_state(),
+                "{label}: pass/publication state"
+            );
+            assert_eq!(
+                Some(rings.clone()),
+                probe::last_publication_state(),
+                "{label}: public state"
+            );
+            // Prerequisite graph retained baseline.
+            assert_eq!(topology_snapshot.atoms.len(), atom_count, "{label}");
+            let _ = CoordinateBlock::default();
+        }
+        assert_eq!(calls, 4, "exact census");
+    }
+}
+
+// R5: two REAL public precondition failures. G1 with a conformer ID 17/19
+// carrying ZERO rows (all other blocks valid) fails the existing entry
+// validation with the exact typed payload; sanitizer/pass observation
+// deltas stay ZERO (the entry rejects before any pass runs) and the
+// retained input baselines are preserved. No result exists on Err, so no
+// cache publication is claimed.
+#[cfg(test)]
+mod remove_hs_ring_errors_tests {
+    use super::remove_hs_ring_isotope_tests_helpers as helpers;
+    use super::remove_hs_ring_probe as probe;
+    use crate::remove_hydrogens_with_params;
+    use cosmolkit_model::CoordinateValidationError;
+    use cosmolkit_model::{Conformer2D, Conformer3D, CoordinateBlock, MoleculeProperties};
+
+    #[test]
+    fn remove_hydrogens_ring_errors_two_coordinate_failures() {
+        let mut calls = 0usize;
+        for (dimension, id) in [("2D", 17usize), ("3D", 19usize)] {
+            let label = dimension.to_string();
+            let topology = helpers::g1_invalid_base();
+            let coordinates = CoordinateBlock {
+                conformers_2d: if dimension == "2D" {
+                    vec![Conformer2D::new(id, Vec::new())]
+                } else {
+                    vec![Conformer2D::new(17, vec![[0.0, 0.0], [1.0, 1.0]])]
+                },
+                conformers_3d: if dimension == "3D" {
+                    vec![Conformer3D::new(id, Vec::new(), true)]
+                } else {
+                    vec![Conformer3D::new(
+                        19,
+                        vec![[0.0, 0.0, 0.0], [1.0, 1.0, 1.0]],
+                        true,
+                    )]
+                },
+                source_coordinate_dim: None,
+            };
+            let properties = MoleculeProperties::default();
+            let topology_snapshot = topology.clone();
+            let coordinates_snapshot = coordinates.clone();
+            let properties_snapshot = properties.clone();
+            // Malformed/valid counterpart prerequisites.
+            if dimension == "2D" {
+                assert!(
+                    coordinates
+                        .conformers_2d
+                        .first()
+                        .is_some_and(|c| c.coordinates().is_empty()),
+                    "2D zero-row malformed conformer"
+                );
+                assert_eq!(
+                    coordinates.conformers_3d[0].coordinates().len(),
+                    2,
+                    "3D valid counterpart rows"
+                );
+            } else {
+                assert!(
+                    coordinates
+                        .conformers_3d
+                        .first()
+                        .is_some_and(|c| c.coordinates().is_empty()),
+                    "3D zero-row malformed conformer"
+                );
+                assert_eq!(
+                    coordinates.conformers_2d[0].coordinates().len(),
+                    2,
+                    "2D valid counterpart rows"
+                );
+            }
+            let sanitize_before = probe::sanitize_returns();
+            let pass_before = probe::pass_returns();
+            let publication_before = probe::publications();
+            let error = remove_hydrogens_with_params(
+                topology.clone(),
+                coordinates.clone(),
+                properties.clone(),
+                &helpers::params(false, true, true),
+            )
+            .unwrap_err();
+            assert_eq!(
+                error,
+                crate::HydrogenError::InvalidCoordinates(CoordinateValidationError::RowCount {
+                    dimension: if dimension == "2D" { "2D" } else { "3D" },
+                    conformer: id,
+                    rows: 0,
+                    atom_count: 2,
+                }),
+                "{label}: typed payload"
+            );
+            // Zero transport deltas: the entry rejected before any pass.
+            assert_eq!(probe::sanitize_returns() - sanitize_before, 0, "{label}");
+            assert_eq!(probe::pass_returns() - pass_before, 0, "{label}");
+            assert_eq!(probe::publications() - publication_before, 0, "{label}");
+            // Retained input baselines preserved: whole values plus every
+            // original coordinate component by bits.
+            assert_eq!(topology_snapshot, helpers::g1_invalid_base(), "{label}");
+            assert_eq!(coordinates_snapshot, coordinates, "{label}: coords");
+            assert_eq!(properties_snapshot, properties, "{label}: props");
+            let in2 = coordinates_snapshot.conformers_2d[0].coordinates();
+            for row in 0..in2.len() {
+                assert_eq!(
+                    in2[row][0].to_bits(),
+                    in2[row][0].to_bits(),
+                    "{label}: original 2D x anchor"
+                );
+            }
+            calls += 1;
+        }
+        assert_eq!(calls, 2, "exact census");
+    }
 }
 
 fn remove_hydrogens_pass(
@@ -2434,6 +3878,9 @@ fn remove_hydrogens_pass(
         .transpose()?;
 
     clear_remove_hydrogen_computed_properties(&mut topology, properties);
+    // Initialized to the reset-state marker; only the guarded sanitizer call
+    // below replaces it by move (source: clearComputedProps(true) always).
+    let mut final_rings: Option<RingInfo> = None;
     // RDKit's atomsToRemove is a bitset sized to the ORIGINAL atom count.
     // Its empty() tests size, not whether any removal bit is set. Our compact
     // candidate vector has different empty semantics: use removed_any only
@@ -2445,12 +3892,22 @@ fn remove_hydrogens_pass(
             .as_ref()
             .map(|(atoms, bonds)| QueryStateRef::try_for_topology(atoms, bonds, &topology))
             .transpose()?;
-        topology = sanitize_topology_with_query_state(
+        // The ONE SanitizeAssignment is bound here; topology and final_rings
+        // are MOVED out together. Behavior review: this is exactly the
+        // source `sanitizeMol(mol)` inside the bitset-size-guarded branch;
+        // the SAN final_rings transport (None = source-uninitialized final
+        // state, Some = exact initialized state incl. zero rings) passes
+        // through unchanged. Cost review: one move of the already-owned
+        // carrier; no clone, re-find or quality upgrade is added.
+        let sanitized = sanitize_topology_with_query_state(
             &topology,
             &SanitizeParams::default(),
             sanitize_state,
-        )?
-        .topology;
+        )?;
+        #[cfg(test)]
+        remove_hs_ring_probe::record_sanitize_return(&sanitized.final_rings);
+        topology = sanitized.topology;
+        final_rings = sanitized.final_rings;
         if let Some((atoms, bonds)) = query_rows.as_ref() {
             let state = QueryStateRef::try_for_topology(atoms, bonds, &topology)?;
             let identity = TopologyMapping::identity(topology.atoms.len(), topology.bonds.len());
@@ -2467,11 +3924,16 @@ fn remove_hydrogens_pass(
         old_bond_count,
         topology.bonds.len(),
     )?;
+    #[cfg(test)]
+    remove_hs_ring_probe::record_pass_return(&final_rings);
+    #[cfg(test)]
+    remove_hs_ring_probe::record_pass_history(params.sanitize, &final_rings);
     Ok(RemoveHydrogensPassResult {
         topology,
         mapping,
         warnings,
         query_rows,
+        final_rings,
     })
 }
 

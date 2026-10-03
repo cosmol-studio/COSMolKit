@@ -1,7 +1,5 @@
 #![cfg(not(feature = "cap-hydrogens"))]
 
-use std::sync::Arc;
-
 use cosmolkit_macros::{mol_op_body, molecule_ops};
 use cosmolkit_model::{CoordinateBlock, MoleculeProperties, TopologyBlock};
 
@@ -28,132 +26,16 @@ mod strict {
     pub(crate) const OPERATION_CONTRACTS_ENABLED: bool = cfg!(feature = "op-contracts");
 }
 
-mod molecule {
-    use super::*;
-
-    #[derive(Clone, Debug, Default, Eq, PartialEq)]
-    pub(crate) struct DerivedCacheBlock {
-        valid: DerivedState,
-    }
-
-    impl DerivedCacheBlock {
-        pub(crate) fn valid_states(&self) -> DerivedState {
-            self.valid
-        }
-
-        pub(crate) fn mark_valid(&mut self, states: DerivedState) {
-            self.valid = self.valid.union(states);
-        }
-
-        pub(crate) fn clear(&mut self, states: DerivedState) {
-            self.valid = self.valid.difference(states);
-        }
-    }
-
-    #[derive(Clone, Debug, PartialEq)]
-    struct MoleculeState {
-        topology: TopologyBlock,
-        coordinates: CoordinateBlock,
-        properties: MoleculeProperties,
-        derived_cache: DerivedCacheBlock,
-        runtime_constructions: usize,
-    }
-
-    #[derive(Clone, Debug, PartialEq)]
-    pub struct Molecule {
-        state: Arc<MoleculeState>,
-    }
-
-    impl Molecule {
-        pub fn from_parts(
-            topology: TopologyBlock,
-            coordinates: CoordinateBlock,
-            properties: MoleculeProperties,
-        ) -> Result<Self, OperationError> {
-            topology
-                .validate()
-                .map_err(OperationError::InvalidTopology)?;
-            coordinates
-                .validate_for_atom_count(topology.atoms.len())
-                .map_err(OperationError::InvalidCoordinates)?;
-            Ok(Self {
-                state: Arc::new(MoleculeState {
-                    topology,
-                    coordinates,
-                    properties,
-                    derived_cache: DerivedCacheBlock::default(),
-                    runtime_constructions: 0,
-                }),
-            })
-        }
-
-        pub(crate) fn from_runtime_parts(
-            topology: Arc<TopologyBlock>,
-            coordinates: Arc<CoordinateBlock>,
-            properties: Arc<MoleculeProperties>,
-            derived_cache: Arc<DerivedCacheBlock>,
-        ) -> Result<Self, OperationError> {
-            let mut molecule = Self::from_parts(
-                topology.as_ref().clone(),
-                coordinates.as_ref().clone(),
-                properties.as_ref().clone(),
-            )?;
-            Arc::get_mut(&mut molecule.state)
-                .expect("new runtime state is uniquely owned")
-                .derived_cache = derived_cache.as_ref().clone();
-            Arc::get_mut(&mut molecule.state)
-                .expect("new runtime state is uniquely owned")
-                .runtime_constructions = 1;
-            Ok(molecule)
-        }
-
-        pub fn topology(&self) -> &TopologyBlock {
-            &self.state.topology
-        }
-
-        pub(crate) fn coordinate_block_runtime(&self) -> &CoordinateBlock {
-            &self.state.coordinates
-        }
-
-        pub fn properties(&self) -> &MoleculeProperties {
-            &self.state.properties
-        }
-
-        pub fn num_atoms(&self) -> usize {
-            self.state.topology.atoms.len()
-        }
-
-        pub(crate) fn derived_cache_runtime(&self) -> &DerivedCacheBlock {
-            &self.state.derived_cache
-        }
-
-        pub(crate) fn topology_arc_runtime(&self) -> Arc<TopologyBlock> {
-            Arc::new(self.state.topology.clone())
-        }
-
-        pub(crate) fn coordinates_arc_runtime(&self) -> Arc<CoordinateBlock> {
-            Arc::new(self.state.coordinates.clone())
-        }
-
-        pub(crate) fn properties_arc_runtime(&self) -> Arc<MoleculeProperties> {
-            Arc::new(self.state.properties.clone())
-        }
-
-        pub(crate) fn derived_cache_arc_runtime(&self) -> Arc<DerivedCacheBlock> {
-            Arc::new(self.state.derived_cache.clone())
-        }
-
-        pub(crate) fn runtime_constructions(&self) -> usize {
-            self.state.runtime_constructions
-        }
-    }
-}
+#[path = "support/minimal_runtime_molecule.rs"]
+mod molecule;
 
 pub use molecule::Molecule;
 
 #[path = "../src/ops/context.rs"]
 mod context;
-pub(crate) use context::{OpParts, PreservationProof};
+pub(crate) use context::{
+    OpParts, PendingMolecule, PendingResult, PreservationProof, ResultFinalizer,
+};
 
 pub const SYNTHETIC_FEATURE: FeatureSpec = FeatureSpec {
     name: "synthetic-runtime-access",

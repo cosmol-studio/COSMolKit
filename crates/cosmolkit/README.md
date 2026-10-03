@@ -11,7 +11,7 @@ plain-name bundles such as `core`, `bio`, or `fingerprints`:
 
 <!-- rust-install-version:start -->
 ```toml
-cosmolkit = { version = "0.5.0-rc.8", default-features = false, features = ["core", "bio"] }
+cosmolkit = { version = "0.5.0-rc.9", default-features = false, features = ["core", "bio"] }
 ```
 <!-- rust-install-version:end -->
 
@@ -243,6 +243,33 @@ and shape indices, Lipinski and ring/stereo counts, MQN, Labute ASA, and
 SlogP/SMR VSA. Supported rows and parameter combinations are checked
 field-by-field against pinned RDKit golden data; unmodeled source states return
 an explicit descriptor error.
+
+### Descriptor count queries
+
+Five read-only `Molecule` queries return RDKit-compatible count values and
+are gated by `cap-descriptors`:
+
+```rust
+let mol = Molecule::from_smiles("CCO")?;
+assert_eq!(mol.num_heavy_atoms()?, 3);
+assert_eq!(mol.total_atom_count()?, 9);
+assert_eq!(mol.lipinski_hba()?, 1);
+assert_eq!(mol.lipinski_hbd()?, 1);
+assert_eq!(mol.fraction_csp3()?.to_bits(), 1.0_f64.to_bits());
+```
+
+`num_heavy_atoms` and `lipinski_hba` read only the topology;
+`total_atom_count`, `lipinski_hbd` and `fraction_csp3` require the prepared
+valence assignment cached by a sanitizing constructor and return the typed
+`DescriptorReadError::MissingPreparedValence` otherwise — the queries never
+create or install cache values themselves, and algorithm failures retain the
+owned domain error through `Error::source`. `Molecule::num_atoms` keeps its
+separate explicit-atom-row meaning; `total_atom_count` includes implicit and
+explicit-property hydrogens (`includeNeighbors=false`). `lipinski_hba` is the
+direct N/O count (not the general recursive `NumHBA`) and `lipinski_hbd` is
+the donor-hydrogen sum on N/O (not the donor-atom count). All five run in
+the parity pipeline over the 5000-record SMILES corpus under both
+`remove_hydrogens` parser policies (10000 observations per task).
 
 ## Fingerprints
 

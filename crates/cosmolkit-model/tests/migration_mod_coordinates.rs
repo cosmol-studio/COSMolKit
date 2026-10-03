@@ -313,7 +313,7 @@ fn remap_preserves_order_bits_properties_flags_and_source_dimension() {
             .iter()
             .map(Conformer2D::id)
             .collect::<Vec<_>>(),
-        vec![0, 1]
+        vec![70, 90]
     );
     assert_eq!(
         block
@@ -321,7 +321,7 @@ fn remap_preserves_order_bits_properties_flags_and_source_dimension() {
             .iter()
             .map(Conformer3D::id)
             .collect::<Vec<_>>(),
-        vec![0, 1]
+        vec![80, 99]
     );
     assert_eq!(
         bits_2d(block.conformers_2d[0].coordinates()),
@@ -370,4 +370,88 @@ fn remap_preserves_order_bits_properties_flags_and_source_dimension() {
     assert!(block.conformers_3d[0].is_3d());
     assert!(!block.conformers_3d[1].is_3d());
     assert_eq!(block.validate_for_atom_count(2), Ok(()));
+}
+
+#[test]
+fn remap_preserves_ids_for_identity_removal_reorder_and_empty_projection() {
+    // Unsorted, noncontiguous IDs are independent of collection positions;
+    // the same ID may exist in both dimensions.
+    let original = CoordinateBlock {
+        conformers_2d: vec![
+            Conformer2D::new(91, vec![[-0.0, 1.0], [2.0, 3.0], [4.0, f64::MAX]])
+                .with_prop("label", "2d-first"),
+            Conformer2D::new(17, vec![[5.0, 6.0], [7.0, -0.0], [8.0, f64::MIN]])
+                .with_prop("label", "2d-second"),
+        ],
+        conformers_3d: vec![
+            Conformer3D::new(
+                17,
+                vec![[9.0, 10.0, -0.0], [11.0, 12.0, 13.0], [14.0, 15.0, 16.0]],
+                false,
+            )
+            .with_prop("label", "3d-first"),
+            Conformer3D::new(
+                91,
+                vec![
+                    [17.0, 18.0, 19.0],
+                    [20.0, f64::MAX, 21.0],
+                    [22.0, 23.0, f64::MIN],
+                ],
+                true,
+            )
+            .with_prop("label", "3d-second"),
+        ],
+        source_coordinate_dim: Some(CoordinateDimension::TwoD),
+    };
+    original.validate_for_atom_count(3).unwrap();
+    for kept in [&[0, 1, 2][..], &[0, 2], &[2, 0, 1], &[]] {
+        let mut mapped = original.clone();
+        mapped.remap_topology(kept);
+        assert_eq!(mapped.source_coordinate_dim, original.source_coordinate_dim);
+        assert_eq!(mapped.conformers_2d.len(), 2);
+        assert_eq!(mapped.conformers_3d.len(), 2);
+        assert_eq!(
+            mapped
+                .conformers_2d
+                .iter()
+                .map(Conformer2D::id)
+                .collect::<Vec<_>>(),
+            [91, 17]
+        );
+        assert_eq!(
+            mapped
+                .conformers_3d
+                .iter()
+                .map(Conformer3D::id)
+                .collect::<Vec<_>>(),
+            [17, 91]
+        );
+        for (output, input) in mapped.conformers_2d.iter().zip(&original.conformers_2d) {
+            assert_eq!(output.props(), input.props());
+            let expected: Vec<_> = kept
+                .iter()
+                .map(|&index| input.coordinates()[index])
+                .collect();
+            assert_eq!(bits_2d(output.coordinates()), bits_2d(&expected));
+        }
+        for (output, input) in mapped.conformers_3d.iter().zip(&original.conformers_3d) {
+            assert_eq!(output.props(), input.props());
+            assert_eq!(output.is_3d(), input.is_3d());
+            let expected: Vec<_> = kept
+                .iter()
+                .map(|&index| input.coordinates()[index])
+                .collect();
+            assert_eq!(bits_3d(output.coordinates()), bits_3d(&expected));
+        }
+        mapped.validate_for_atom_count(kept.len()).unwrap();
+    }
+    // Identity mapping of already-empty conformers also retains their IDs.
+    let mut empty = original.clone();
+    empty.remap_topology(&[]);
+    let before = empty.clone();
+    empty.remap_topology(&[]);
+    assert_eq!(empty, before);
+    let mut absent = CoordinateBlock::default();
+    absent.remap_topology(&[]);
+    assert_eq!(absent, CoordinateBlock::default());
 }

@@ -37,7 +37,10 @@ fn valence_transport_stereo_completion_marker_follows_source_flag_product() {
                             .set_prop("_StereochemDone", value)
                             .unwrap();
                     }
-                    let output = finalize_smiles_stereo(record, &params, &mut None).unwrap();
+                    let mut ring_carrier: Option<cosmolkit_core::RingInfo> = None;
+                    let output =
+                        finalize_smiles_stereo(record, &params, &mut None, &mut ring_carrier)
+                            .unwrap();
                     if sanitize || remove_hydrogens {
                         assert_eq!(output.properties.prop("_StereochemDone"), Some("1"));
                         assert!(output.properties.is_prop_computed("_StereochemDone"));
@@ -59,6 +62,7 @@ fn valence_transport_stereo_reuses_buffers_and_rejects_malformed_rows() {
     use cosmolkit_smiles::{SmilesStereoError, finalize_smiles_stereo};
     for input in ["CCO", "[C@H](C)C", "S(C)(C)C", ""] {
         let params = SmilesParseParams::default();
+        let mut ring_carrier: Option<cosmolkit_core::RingInfo> = None;
         let record = parse_smiles(input, &params).unwrap();
         let assignment = assign_valence_with_options_for_topology(
             &record.topology,
@@ -78,7 +82,7 @@ fn valence_transport_stereo_reuses_buffers_and_rejects_malformed_rows() {
                     malformed.implicit_hydrogens.resize(length, 0);
                 }
                 assert!(
-                    matches!(finalize_smiles_stereo(record.clone(),&params,&mut Some(malformed)),
+                    matches!(finalize_smiles_stereo(record.clone(),&params,&mut Some(malformed), &mut ring_carrier),
                     Err(SmilesStereoError::ValenceRows{field:observed,actual,expected})
                     if observed==field && actual==length && expected==record.topology.atoms.len())
                 );
@@ -89,7 +93,8 @@ fn valence_transport_stereo_reuses_buffers_and_rejects_malformed_rows() {
             assignment.implicit_hydrogens.as_ptr(),
         );
         let mut prepared: Option<ValenceAssignment> = Some(assignment);
-        let output = finalize_smiles_stereo(record, &params, &mut prepared).unwrap();
+        let output =
+            finalize_smiles_stereo(record, &params, &mut prepared, &mut ring_carrier).unwrap();
         let final_assignment = prepared.unwrap();
         assert_eq!(final_assignment.explicit_valence.as_ptr(), explicit_ptr);
         assert_eq!(final_assignment.implicit_hydrogens.as_ptr(), implicit_ptr);
@@ -137,7 +142,52 @@ fn stereo_finalization_prefers_two_d_coordinates_and_keeps_stored_state() {
         true,
     ));
     let source = record.clone();
-    let output = finalize_smiles_stereo(record, &params, &mut None).unwrap();
+    let mut ring_carrier: Option<cosmolkit_core::RingInfo> = None;
+    let output = finalize_smiles_stereo(record, &params, &mut None, &mut ring_carrier).unwrap();
+    // F04 retention checkpoints: ALL stored coordinate components by bits
+    // (including the signed zero in the 3D row), IDs, dimensionality and
+    // properties against the original retained record.
+    assert_eq!(output.coordinates.conformers_2d.len(), 1, "2D count");
+    assert_eq!(output.coordinates.conformers_2d[0].id(), 3, "2D id");
+    let stored_2d = output.coordinates.conformers_2d[0].coordinates();
+    let source_2d = source.coordinates.conformers_2d[0].coordinates();
+    for row in 0..stored_2d.len() {
+        assert_eq!(
+            stored_2d[row][0].to_bits(),
+            source_2d[row][0].to_bits(),
+            "2D x"
+        );
+        assert_eq!(
+            stored_2d[row][1].to_bits(),
+            source_2d[row][1].to_bits(),
+            "2D y"
+        );
+    }
+    assert_eq!(output.coordinates.conformers_3d.len(), 1, "3D count");
+    assert_eq!(output.coordinates.conformers_3d[0].id(), 8, "3D id");
+    assert!(
+        output.coordinates.conformers_3d[0].is_3d(),
+        "3D dimensionality"
+    );
+    let stored_3d = output.coordinates.conformers_3d[0].coordinates();
+    let source_3d = source.coordinates.conformers_3d[0].coordinates();
+    for row in 0..stored_3d.len() {
+        assert_eq!(
+            stored_3d[row][0].to_bits(),
+            source_3d[row][0].to_bits(),
+            "3D x"
+        );
+        assert_eq!(
+            stored_3d[row][1].to_bits(),
+            source_3d[row][1].to_bits(),
+            "3D y"
+        );
+        assert_eq!(
+            stored_3d[row][2].to_bits(),
+            source_3d[row][2].to_bits(),
+            "3D z"
+        );
+    }
     assert_eq!(output.coordinates, source.coordinates);
     assert_eq!(output.properties.name(), Some("sample"));
     assert_eq!(source.properties.prop("_needsDetectBondStereo"), Some("1"));
@@ -165,7 +215,8 @@ fn stereo_finalization_propagates_typed_coordinate_failure() {
         .coordinates
         .conformers_2d
         .push(Conformer2D::new(0, vec![[0.0, 0.0]]));
-    let error = finalize_smiles_stereo(record, &params, &mut None).unwrap_err();
+    let mut ring_carrier: Option<cosmolkit_core::RingInfo> = None;
+    let error = finalize_smiles_stereo(record, &params, &mut None, &mut ring_carrier).unwrap_err();
     assert!(matches!(
         error,
         SmilesStereoError::Directions(DoubleBondStereoError::InvalidConformer(_))

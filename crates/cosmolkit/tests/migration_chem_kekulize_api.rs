@@ -154,11 +154,10 @@ fn generated_registry_and_all_four_matrices_share_one_exact_operation() {
     assert_eq!(spec.may_mutate, spec.access.write());
     assert_eq!(spec.auto_remap, BlockSet::NONE);
     assert_eq!(format!("{:?}", spec.requires_mapping), "None");
-    assert_eq!(spec.derived_effects.recompute.bits(), 0);
-    assert_eq!(
-        spec.derived_effects.preserve.bits(),
-        (1 << 0) | (1 << 1) | (1 << 5)
-    );
+    // L5: ordinary rings moved preserve -> recompute (ring_update
+    // replacement-or-clear transport); every other effect is unchanged.
+    assert_eq!(spec.derived_effects.recompute.bits(), 1 << 0);
+    assert_eq!(spec.derived_effects.preserve.bits(), (1 << 1) | (1 << 5));
     assert_eq!(
         spec.derived_effects.invalidate.bits(),
         (1 << 2) | (1 << 3) | (1 << 4) | (1 << 6) | (1 << 7)
@@ -240,7 +239,10 @@ fn value_operation_preserves_identity_coordinates_stereo_and_ordinary_props() {
             .count(),
         3
     );
-    assert!(format!("{output:?}").contains("derived_cache_is_empty: true"));
+    // L5: the ring-aware Kekulize acquires SSSR for an absent carrier and
+    // the transported result is installed, so the output cache is NOT
+    // empty anymore; the ordinary-rings rows are present and valid.
+    assert!(format!("{output:?}").contains("derived_cache_is_empty: false"));
 
     assert!(source.atoms().iter().all(Atom::is_aromatic));
     assert!(source.bonds().iter().all(Bond::is_aromatic));

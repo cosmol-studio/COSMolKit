@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Update explicitly listed Rust version locations, then run cargo update."""
+"""Update explicitly listed release versions, then refresh workspace lock entries."""
 
 import argparse
 import difflib
@@ -21,7 +21,7 @@ DEPENDENCIES = [
     ("crates/cosmolkit-conformer/Cargo.toml", "dependencies", "cosmolkit-model"),
     ("crates/cosmolkit-core/Cargo.toml", "dependencies", "cosmolkit-model cosmolkit-ringdecomposer cosmolkit-types"),
     ("crates/cosmolkit-depict/Cargo.toml", "dependencies", "cosmolkit-core cosmolkit-model cosmolkit-search"),
-    ("crates/cosmolkit-descriptors/Cargo.toml", "dependencies", "cosmolkit-core cosmolkit-model"),
+    ("crates/cosmolkit-descriptors/Cargo.toml", "dependencies", "cosmolkit-core cosmolkit-model cosmolkit-search"),
     ("crates/cosmolkit-descriptors/Cargo.toml", "dev-dependencies", "cosmolkit-smiles"),
     ("crates/cosmolkit-fingerprints/Cargo.toml", "dependencies", "cosmolkit-model"),
     ("crates/cosmolkit-forcefields/Cargo.toml", "dependencies", "cosmolkit-conformer cosmolkit-model"),
@@ -36,8 +36,11 @@ DEPENDENCIES = [
     ("dev/tools/chembl_parity/tautomer_oracle/Cargo.toml", "dependencies", "cosmolkit"),
 ]
 README = "crates/cosmolkit/README.md"
+# Binding crate package version is separate from its cosmolkit dependency.
+PACKAGE_VERSIONS = ["python/Cargo.toml"]
 BEGIN = "<!-- rust-install-version:start -->"
 END = "<!-- rust-install-version:end -->"
+LOCK_REFRESH = ["cargo", "update", "--workspace"]
 
 
 def update_field(text, section, key, version):
@@ -63,9 +66,40 @@ def update_field(text, section, key, version):
     return before + header + "".join(lines)
 
 
+def prepare_updates(original, version):
+    """Prepare the complete release edit set before any file is changed."""
+    base, separator, rc = version.partition("-rc.")
+    updated = original.copy()
+    # All current publishable crate versions inherit this single field.
+    updated["Cargo.toml"] = update_field(updated["Cargo.toml"], "workspace.package", "version", version)
+    for file in PACKAGE_VERSIONS:
+        updated[file] = update_field(updated[file], "package", "version", version)
+    # Python release candidates use rcN; stable versions stay X.Y.Z.
+    python_version = base + "rc" + rc if separator else base
+    updated["python/pyproject.toml"] = update_field(
+        updated["python/pyproject.toml"], "project", "version", python_version
+    )
+    for file, section, names in DEPENDENCIES:
+        for name in names.split():
+            updated[file] = update_field(updated[file], section, name, version)
+
+    # Only this explicitly marked installation example; historical prose is untouched.
+    text = updated[README]
+    if text.count(BEGIN) != 1 or text.count(END) != 1:
+        raise ValueError("README installation markers must each occur once")
+    before, example = text.split(BEGIN)
+    example, after = example.split(END)
+    old = tomllib.loads(example.strip().removeprefix("```toml").removesuffix("```").strip())["cosmolkit"]["version"]
+    token = 'version = "' + old + '"'
+    if example.count(token) != 1:
+        raise ValueError("expected exactly one installation version")
+    updated[README] = before + BEGIN + example.replace(token, 'version = "' + version + '"') + END + after
+    return updated
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("version", help="for example: 0.5.0-rc.8")
+    parser.add_argument("version", help="for example: 0.5.0-rc.9")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
     base, separator, rc = args.version.partition("-rc.")
@@ -77,31 +111,12 @@ def main():
         parser.error("expected X.Y.Z or X.Y.Z-rc.N")
 
     root = Path(__file__).resolve().parents[2]
-    files = ["Cargo.toml", "python/pyproject.toml", README] + [file for file, _, _ in DEPENDENCIES]
+    files = ["Cargo.toml", "python/pyproject.toml", README] + PACKAGE_VERSIONS + [file for file, _, _ in DEPENDENCIES]
     original = {file: (root / file).read_text() for file in files}
-    updated = original.copy()
-    # All current publishable crate versions inherit this single field.
-    updated["Cargo.toml"] = update_field(updated["Cargo.toml"], "workspace.package", "version", args.version)
-    # Python release candidates use rcN; stable versions stay X.Y.Z.
-    python_version = base + "rc" + rc if separator else base
-    updated["python/pyproject.toml"] = update_field(
-        updated["python/pyproject.toml"], "project", "version", python_version
-    )
-    for file, section, names in DEPENDENCIES:
-        for name in names.split():
-            updated[file] = update_field(updated[file], section, name, args.version)
-
-    # Only this explicitly marked installation example; historical prose is untouched.
-    text = updated[README]
-    if text.count(BEGIN) != 1 or text.count(END) != 1:
-        parser.error("README installation markers must each occur once")
-    before, example = text.split(BEGIN)
-    example, after = example.split(END)
-    old = tomllib.loads(example.strip().removeprefix("```toml").removesuffix("```").strip())["cosmolkit"]["version"]
-    token = 'version = "' + old + '"'
-    if example.count(token) != 1:
-        parser.error("expected exactly one installation version")
-    updated[README] = before + BEGIN + example.replace(token, 'version = "' + args.version + '"') + END + after
+    try:
+        updated = prepare_updates(original, args.version)
+    except ValueError as error:
+        parser.error(str(error))
 
     # Prepare all edits before writing any file.
     for file in original:
@@ -113,9 +128,9 @@ def main():
             (root / file).write_text(updated[file])
             print(f"Updated {file}")
     if args.dry_run:
-        print("Would then run cargo update.")
-    elif subprocess.run(["cargo", "update"], cwd=root).returncode:
-        parser.exit(1, "cargo update failed; version edits remain.\n")
+        print("Would then run cargo update --workspace.")
+    elif subprocess.run(LOCK_REFRESH, cwd=root).returncode:
+        parser.exit(1, "cargo update --workspace failed; version edits remain.\n")
 
 
 if __name__ == "__main__":

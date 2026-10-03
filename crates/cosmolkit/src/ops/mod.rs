@@ -6,6 +6,8 @@ mod aromaticity;
 mod cip_labels;
 #[cfg(test)]
 mod cow_tests;
+#[cfg(all(test, feature = "cap-aromaticity"))]
+pub(crate) use cow_tests::ring_aromaticity_probe;
 #[cfg(feature = "cap-depict")]
 mod depict;
 mod error;
@@ -75,6 +77,7 @@ pub(crate) use runtime::registry::WithKekulizedBondsAccess;
 #[cfg(test)]
 pub(crate) use runtime::registry::{
     CowCoordinatesFailureForTestAccess, CowCoordinatesForTestAccess,
+    RingLiveCowCheckoutConflictForTestAccess,
 };
 #[cfg(feature = "cap-rings")]
 pub(crate) use runtime::registry::{WithAssignedRingFamiliesAccess, WithAssignedRingsAccess};

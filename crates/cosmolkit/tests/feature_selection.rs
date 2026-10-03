@@ -85,7 +85,13 @@ impl Probe {
             .current_dir(&self.0)
             .env(
                 "CARGO_TARGET_DIR",
-                root.join("target/feature-selection-compile"),
+                // Each independently mutable probe needs its own artifacts.
+                // Parallel tests use the same package/crate name and rewrite
+                // src/lib.rs between positive and negative compilation checks.
+                // Sharing their target directory cannot establish source
+                // freshness for an individual check.
+                root.join("target/feature-selection-compile")
+                    .join(self.0.file_name().expect("named probe directory")),
             )
             .env("CARGO_BUILD_JOBS", "4")
             .args(args)
@@ -485,5 +491,136 @@ fn descriptor_query_feature_gates_are_exact_for_five_queries_and_errors() {
     assert!(
         stderr.contains("DescriptorError") && stderr.contains("DescriptorReadError"),
         "both error types must fail as unresolved: {stderr}"
+    );
+}
+
+/// RING-LIVE-PUBLIC F1: the eleven ring queries follow the exact same
+/// capability discipline with real external compiler evidence, and the
+/// neighboring capabilities stay independently gated.
+#[test]
+fn ring_query_feature_gates_are_exact_for_eleven_queries_and_errors() {
+    const RING_QUERIES: &[&str] = &[
+        "num_rings",
+        "num_heterocycles",
+        "num_aromatic_rings",
+        "num_saturated_rings",
+        "num_aliphatic_rings",
+        "num_aromatic_heterocycles",
+        "num_aromatic_carbocycles",
+        "num_aliphatic_heterocycles",
+        "num_aliphatic_carbocycles",
+        "num_saturated_heterocycles",
+        "num_saturated_carbocycles",
+    ];
+    let probe = Probe::new();
+
+    // cap-descriptors ALONE (defaults disabled): all eleven compile with
+    // the typed error; constructor/assignment/mutator APIs stay absent.
+    probe.configure(false, &["cap-descriptors"]);
+    let mut source = String::from("pub fn probe() {\n");
+    for method in RING_QUERIES {
+        source.push_str(&format!("let _ = cosmolkit::Molecule::{method};\n"));
+    }
+    source.push_str("let _: Option<cosmolkit::DescriptorReadError> = None;\n");
+    source.push_str("}\n");
+    let output = probe.check_source(&source);
+    assert!(
+        output.status.success(),
+        "cap-descriptors alone must compile the eleven ring queries: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    const NOT_DESCRIPTORS: &[&str] = &["from_smiles", "with_assigned_rings", "add_hydrogens_"];
+    let mut source = String::from("pub fn probe() {\n");
+    for method in NOT_DESCRIPTORS {
+        source.push_str(&format!("let _ = cosmolkit::Molecule::{method};\n"));
+    }
+    source.push_str("}\n");
+    let output = probe.check_source(&source);
+    assert!(
+        !output.status.success(),
+        "cap-descriptors must not expose constructor/assignment/mutators"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(
+        stderr.matches("error[E0599]").count(),
+        NOT_DESCRIPTORS.len(),
+        "{stderr}"
+    );
+
+    // Empty selection: the eleven methods fail E0599.
+    probe.configure(false, &[]);
+    let mut source = String::from("pub fn probe() {\n");
+    for method in RING_QUERIES {
+        source.push_str(&format!("let _ = cosmolkit::Molecule::{method};\n"));
+    }
+    source.push_str("}\n");
+    let output = probe.check_source(&source);
+    assert!(
+        !output.status.success(),
+        "empty selection must not compile the ring queries"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(
+        stderr.matches("error[E0599]").count(),
+        RING_QUERIES.len(),
+        "{stderr}"
+    );
+
+    // cap-smiles ALONE: the constructor compiles while the ring queries
+    // and the hydrogen API stay absent.
+    probe.configure(false, &["cap-smiles"]);
+    let mut source = String::from("pub fn probe() {\n");
+    source.push_str("let _ = cosmolkit::Molecule::from_smiles;\n");
+    source.push_str("}\n");
+    let output = probe.check_source(&source);
+    assert!(
+        output.status.success(),
+        "cap-smiles alone must compile the constructor: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let mut source = String::from("pub fn probe() {\n");
+    for method in RING_QUERIES {
+        source.push_str(&format!("let _ = cosmolkit::Molecule::{method};\n"));
+    }
+    source.push_str("let _ = cosmolkit::Molecule::with_hydrogens;\n");
+    source.push_str("}\n");
+    let output = probe.check_source(&source);
+    assert!(
+        !output.status.success(),
+        "cap-smiles alone must not expose the queries or hydrogen API: stdout={} stderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr),
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(
+        stderr.matches("error[E0599]").count(),
+        RING_QUERIES.len() + 1,
+        "{stderr}"
+    );
+
+    // cap-rings ALONE: the assignment API still compiles.
+    probe.configure(false, &["cap-rings"]);
+    let source = "pub fn probe() {\nlet _ = cosmolkit::Molecule::with_assigned_rings;\n}\n";
+    let output = probe.check_source(source);
+    assert!(
+        output.status.success(),
+        "cap-rings alone must compile the assignment API: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    // cap-smiles + cap-descriptors WITHOUT cap-rings: constructor and all
+    // eleven queries compile together.
+    probe.configure(false, &["cap-smiles", "cap-descriptors"]);
+    let mut source = String::from("pub fn probe() {\n");
+    source.push_str("let _ = cosmolkit::Molecule::from_smiles;\n");
+    for method in RING_QUERIES {
+        source.push_str(&format!("let _ = cosmolkit::Molecule::{method};\n"));
+    }
+    source.push_str("}\n");
+    let output = probe.check_source(&source);
+    assert!(
+        output.status.success(),
+        "cap-smiles+cap-descriptors must compile constructor + queries: {}",
+        String::from_utf8_lossy(&output.stderr)
     );
 }
