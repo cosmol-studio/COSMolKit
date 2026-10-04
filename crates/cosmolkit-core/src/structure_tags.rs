@@ -74,7 +74,7 @@ pub enum StereoError {
 }
 
 #[derive(Clone, Copy)]
-struct Vec3([f64; 3]);
+pub(crate) struct Vec3([f64; 3]);
 
 impl Vec3 {
     fn between(from: [f64; 3], to: [f64; 3]) -> Self {
@@ -90,7 +90,7 @@ impl Vec3 {
         Self([to[0] - from[0], to[1] - from[1], to[2] - from[2]])
     }
 
-    fn normalized_between(
+    pub(crate) fn normalized_between(
         from: [f64; 3],
         to: [f64; 3],
         center: AtomId,
@@ -186,6 +186,28 @@ impl Vec3 {
             0.0
         } else {
             dot.acos()
+        }
+    }
+
+    pub(crate) fn signed_projected_angle_to(self, other: Self) -> f64 {
+        // BEGIN RDKIT CPP FUNCTION Point3D::signedAngleTo
+        // RDKit❗✔️:   double signedAngleTo(const Point3D &other) const {
+        // RDKit❗✔️:     double res = this->angleTo(other);
+        // RDKit❗✔️:     // check the sign of the z component of the cross product:
+        // RDKit❗✔️:     if ((this->x * other.y - this->y * other.x) < -zero_tolerance) {
+        // RDKit❗✔️:       res = 2.0 * M_PI - res;
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:     return res;
+        // RDKit❗✔️:   }
+        // END RDKIT CPP FUNCTION Point3D::signedAngleTo
+        // Behavior remains pending the WEDGE angle-order regressions. Complexity
+        // matches the source's constant-time angle/cross-product arithmetic with
+        // no allocation or additional coordinate scan.
+        let angle = self.angle_to(other);
+        if self.0[0] * other.0[1] - self.0[1] * other.0[0] < -ZERO_VECTOR_TOLERANCE {
+            2.0 * PI - angle
+        } else {
+            angle
         }
     }
 }

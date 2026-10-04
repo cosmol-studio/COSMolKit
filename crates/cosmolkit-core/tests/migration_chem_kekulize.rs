@@ -4,7 +4,7 @@ use cosmolkit_core::{
 };
 use cosmolkit_model::{
     AdjacencyList, Atom, AtomId, AtomQueryPredicate, AtomSpec, Bond, BondId, BondQueryPredicate,
-    BondSpec, QueryAtom, QueryBond, QueryNode, QueryStateRef, TopologyBlock,
+    BondSpec, PropertyValue, QueryAtom, QueryBond, QueryNode, QueryStateRef, TopologyBlock,
     TopologyValidationError,
 };
 use cosmolkit_types::{BondDirection, BondOrder, Element};
@@ -138,8 +138,14 @@ fn mark_true_kekulizes_benzene_and_preserves_unrelated_rows_and_input() {
     assert_kekule_ring(&output, 6, 3);
     assert!(output.atoms[..6].iter().all(|atom| !atom.is_aromatic()));
     assert!(output.bonds[..6].iter().all(|bond| !bond.is_aromatic()));
-    assert_eq!(output.atoms[0].prop("atom-note"), Some("preserved"));
-    assert_eq!(output.bonds[0].prop("ring-note"), Some("preserved"));
+    assert_eq!(
+        output.atoms[0].prop("atom-note"),
+        Some(&PropertyValue::String("preserved".to_owned()))
+    );
+    assert_eq!(
+        output.bonds[0].prop("ring-note"),
+        Some(&PropertyValue::String("preserved".to_owned()))
+    );
     assert_eq!(output.bonds[6], snapshot.bonds[6]);
     assert_eq!(output.adjacency, snapshot.adjacency);
     assert_eq!(input, snapshot);

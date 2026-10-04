@@ -12,6 +12,7 @@ mod cip;
 mod coordinates;
 mod mapping;
 mod properties;
+mod property_value;
 mod query;
 mod sgroup;
 mod topology;
@@ -19,7 +20,7 @@ mod topology;
 pub use adjacency::{AdjacencyError, AdjacencyList, NeighborRef};
 pub use atom::{
     Atom, AtomId, AtomPdbResidueInfo, AtomPropertyError, AtomSpec, TemplateAttachment,
-    TemplateAttachmentOrder, TemplateAttachmentOrderError,
+    TemplateAttachmentOrder, TemplateAttachmentOrderError, ordered_atom_properties,
 };
 pub use bond::{Bond, BondId, BondSpec, BondValueError};
 pub use cip::{CipDescriptor, CipDescriptorError};
@@ -30,17 +31,18 @@ pub use mapping::{AtomMapping, BondMapping, MappingValidationError, TopologyMapp
 pub use properties::{
     MoleculeProperties, MoleculePropertyError, SdfPropertyList, SdfPropertyListTarget,
 };
+pub use property_value::{PropertyValue, PropertyValueError, PropertyValueKind};
 pub use query::{
     AtomQueryPredicate, AtomRangeBounds, AtomRangeDataFunction, AtomRangeQuery, BondQueryPredicate,
     QueryAtom, QueryAtomConversionError, QueryAtomIdentity, QueryBond, QueryGraph, QueryGraphError,
-    QueryNode, QueryStateError, QueryStateRef, RecursiveStructureQuery, query_substance_groups,
-    remap_query_rows, remap_query_rows_with_appended, replace_query_stereo_groups,
-    replace_query_substance_groups,
+    QueryNode, QueryStateError, QueryStateRef, RecursiveStructureQuery,
+    ordered_query_atom_properties, query_substance_groups, remap_query_rows,
+    remap_query_rows_with_appended, replace_query_stereo_groups, replace_query_substance_groups,
 };
 pub use sgroup::{
     SGroupAttachPoint, SGroupBondRole, SGroupBracket, SGroupBracketStyle, SGroupCState,
     SGroupConnection, SGroupData, SGroupDisplay, StereoGroup, StereoGroupKind, SubstanceGroup,
-    SubstanceGroupId, SubstanceGroupKind,
+    SubstanceGroupId, SubstanceGroupKind, set_stereo_group_write_id, stereo_group_write_id,
 };
 pub use topology::{TopologyBatchEdit, TopologyBlock, TopologyEditError, TopologyValidationError};
 

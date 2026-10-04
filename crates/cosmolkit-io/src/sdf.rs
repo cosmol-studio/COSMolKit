@@ -10,9 +10,9 @@ use std::{
 use cosmolkit_model::{
     AdjacencyList, Atom, AtomId, AtomQueryPredicate, AtomSpec, Bond, BondId, BondQueryPredicate,
     BondSpec, Conformer2D, Conformer3D, CoordinateBlock, CoordinateDimension, MoleculeProperties,
-    QueryAtom, QueryBond, QueryGraph, QueryNode, RecursiveStructureQuery, SdfPropertyList,
-    SdfPropertyListTarget, SubstanceGroup, TemplateAttachment, TemplateAttachmentOrder,
-    TopologyBlock, query_substance_groups, replace_query_substance_groups,
+    PropertyValue, QueryAtom, QueryBond, QueryGraph, QueryNode, RecursiveStructureQuery,
+    SdfPropertyList, SdfPropertyListTarget, SubstanceGroup, TemplateAttachment,
+    TemplateAttachmentOrder, TopologyBlock, query_substance_groups, replace_query_substance_groups,
 };
 use cosmolkit_types::{BondDirection, BondOrder, BondStereo, Element};
 
@@ -82,6 +82,20 @@ pub enum SdfWriteError {
     Atom(&'static str),
     #[error("unsupported detached substance-group state: {0}")]
     SubstanceGroup(String),
+}
+
+fn model_int_property(value: &PropertyValue) -> Result<i32, ()> {
+    match value {
+        PropertyValue::Int(value) => Ok(*value),
+        PropertyValue::String(value) => parse_rdkit_int(value),
+        PropertyValue::Double(_) | PropertyValue::Bool(_) => Err(()),
+    }
+}
+
+fn model_string_property(value: &PropertyValue) -> Result<&str, SdfWriteError> {
+    value
+        .as_string()
+        .map_err(|_| SdfWriteError::Atom("molfile property has a non-string value kind"))
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1457,10 +1471,10 @@ fn split_sdf_property_list_tokens(value: &str) -> Vec<&str> {
     tokens
 }
 
-fn parse_sdf_bool_property(value: &str) -> Option<String> {
+fn parse_sdf_bool_property(value: &str) -> Option<PropertyValue> {
     match value {
-        "1" => Some("true".to_owned()),
-        "0" => Some("false".to_owned()),
+        "1" => Some(PropertyValue::Bool(true)),
+        "0" => Some(PropertyValue::Bool(false)),
         _ => None,
     }
 }
@@ -1469,7 +1483,7 @@ fn parse_sdf_property_list_values(
     value: &str,
     item_count: usize,
     value_kind: SdfPropertyListValueKind,
-) -> Result<Vec<Option<String>>, usize> {
+) -> Result<Vec<Option<PropertyValue>>, usize> {
     // BEGIN RDKIT CPP FUNCTION applyMolListProp
     // RDKit✔️✔️: void applyMolListProp(ROMol &mol, const std::string &pn,
     // RDKit✔️✔️:                       const std::string &prefix,
@@ -1537,20 +1551,22 @@ fn parse_sdf_property_list_values(
                 return None;
             }
             match value_kind {
-                SdfPropertyListValueKind::String => Some((*token).to_owned()),
-                SdfPropertyListValueKind::Int => {
-                    token.parse::<i32>().ok().map(|_| (*token).to_owned())
+                SdfPropertyListValueKind::String => {
+                    Some(PropertyValue::String((*token).to_owned()))
                 }
+                SdfPropertyListValueKind::Int => token.parse::<i32>().ok().map(PropertyValue::Int),
                 SdfPropertyListValueKind::Double => {
-                    token.parse::<f64>().ok().map(|_| (*token).to_owned())
+                    token.parse::<f64>().ok().map(PropertyValue::Double)
                 }
                 SdfPropertyListValueKind::Bool => parse_sdf_bool_property(token),
             }
         })
         .collect();
     // Complexity review: tokenization and conversion are each one linear pass
-    // over the payload/target values, with one token vector and one typed-state
-    // vector. There is no graph traversal or repeated item-table scan.
+    // over the payload/target values, with one token vector and one canonical
+    // typed-value vector. Parsed numeric/bool values are moved directly into
+    // the carrier and retained list without a second text representation.
+    // There is no graph traversal or repeated item-table scan.
     // END RDKIT CPP FUNCTION
     Ok(values)
 }
@@ -4040,7 +4056,7 @@ fn read_v2000_record_detached(
         let endpoint_requests_stereo_care = |atom: &ParsedV2000Atom| {
             atom.spec
                 .prop("molStereoCare")
-                .and_then(|value| value.parse::<i32>().ok())
+                .and_then(|value| model_int_property(value).ok())
                 .is_some_and(|value| value != 0)
         };
         if parsed.bond.prop("molStereoCare").is_none()
@@ -6880,7 +6896,10 @@ fn v2000_writer_atom_symbol(atom: &Atom) -> Result<&str, SdfWriteError> {
     if atom.element() != Element::DUMMY {
         return Ok(atom.element().symbol());
     }
-    match atom.prop("dummyLabel") {
+    match atom
+        .prop("dummyLabel")
+        .and_then(|value| value.as_string().ok())
+    {
         Some(label @ ("Pol" | "Mod")) => Ok(label),
         _ => Err(SdfWriteError::Atom(
             "dummy/query atoms require query-aware V2000 serialization",
@@ -6891,7 +6910,10 @@ fn v2000_writer_atom_symbol(atom: &Atom) -> Result<&str, SdfWriteError> {
 fn atom_int_prop(atom: &Atom, names: &[&str]) -> i32 {
     names
         .iter()
-        .find_map(|name| atom.prop(name).and_then(|value| value.parse().ok()))
+        .find_map(|name| {
+            atom.prop(name)
+                .and_then(|value| model_int_property(value).ok())
+        })
         .unwrap_or(0)
 }
 
@@ -7156,7 +7178,10 @@ fn v3000_writer_atom_symbol(atom: &Atom) -> Result<&str, SdfWriteError> {
     if atom.element() != Element::DUMMY {
         return Ok(atom.element().symbol());
     }
-    match atom.prop("dummyLabel") {
+    match atom
+        .prop("dummyLabel")
+        .and_then(|value| value.as_string().ok())
+    {
         Some(label @ ("Pol" | "Mod")) => Ok(label),
         _ => Err(SdfWriteError::Atom(
             "dummy/query atoms require query-aware V3000 serialization",
@@ -7164,12 +7189,20 @@ fn v3000_writer_atom_symbol(atom: &Atom) -> Result<&str, SdfWriteError> {
     }
 }
 
-fn append_v3000_atom_int_prop(output: &mut String, atom: &Atom, key: &str, label: &str) {
-    if let Some(value) = atom.prop(key)
-        && value != "0"
-    {
-        output.push_str(&format!(" {label}={value}"));
+fn append_v3000_atom_int_prop(
+    output: &mut String,
+    atom: &Atom,
+    key: &str,
+    label: &str,
+) -> Result<(), SdfWriteError> {
+    if let Some(value) = atom.prop(key) {
+        let value = model_int_property(value)
+            .map_err(|()| SdfWriteError::Atom("molfile integer property has an invalid value"))?;
+        if value != 0 {
+            output.push_str(&format!(" {label}={value}"));
+        }
     }
+    Ok(())
 }
 
 fn v3000_writer_atom_line(
@@ -7298,40 +7331,48 @@ fn v3000_writer_atom_line(
             if radical_electrons % 2 == 1 { 2 } else { 3 }
         ));
     }
-    if let Some(total_valence) = atom.prop("molTotValence")
-        && total_valence != "0"
-    {
-        output.push_str(" VAL=");
-        output.push_str(if total_valence == "15" {
-            "-1"
-        } else {
-            total_valence
-        });
+    if let Some(total_valence) = atom.prop("molTotValence") {
+        let total_valence = model_int_property(total_valence)
+            .map_err(|()| SdfWriteError::Atom("molTotValence has an invalid value"))?;
+        if total_valence != 0 {
+            output.push_str(&format!(
+                " VAL={}",
+                if total_valence == 15 {
+                    -1
+                } else {
+                    total_valence
+                }
+            ));
+        }
     }
-    append_v3000_atom_int_prop(&mut output, atom, "molAttachOrder", "ATTCHORD");
-    append_v3000_atom_int_prop(&mut output, atom, "molAttachPoint", "ATTCHPT");
-    append_v3000_atom_int_prop(&mut output, atom, "molAtomSeqId", "SEQID");
+    append_v3000_atom_int_prop(&mut output, atom, "molAttachOrder", "ATTCHORD")?;
+    append_v3000_atom_int_prop(&mut output, atom, "molAttachPoint", "ATTCHPT")?;
+    append_v3000_atom_int_prop(&mut output, atom, "molAtomSeqId", "SEQID")?;
     if let Some(value) = atom.prop("molAtomSeqName") {
-        output.push_str(&format!(" SEQNAME={value}"));
+        output.push_str(&format!(" SEQNAME={}", model_string_property(value)?));
     }
-    append_v3000_atom_int_prop(&mut output, atom, "molRxnExactChange", "EXACHG");
+    append_v3000_atom_int_prop(&mut output, atom, "molRxnExactChange", "EXACHG")?;
     if let Some(value) = atom.mol_inversion_flag()
         && matches!(value, 1 | 2)
     {
         output.push_str(&format!(" INVRET={value}"));
     }
-    append_v3000_atom_int_prop(&mut output, atom, "molStereoCare", "STBOX");
-    if atom.prop("molSubstCount").is_some_and(|value| value != "0")
+    append_v3000_atom_int_prop(&mut output, atom, "molStereoCare", "STBOX")?;
+    if atom
+        .prop("molSubstCount")
+        .and_then(|value| model_int_property(value).ok())
+        .is_some_and(|value| value != 0)
         || atom
             .prop("molRingBondCount")
-            .is_some_and(|value| value != "0")
+            .and_then(|value| model_int_property(value).ok())
+            .is_some_and(|value| value != 0)
     {
         return Err(SdfWriteError::Atom(
             "substitution/ring-bond-count query atoms require query-aware V3000 serialization",
         ));
     }
     if let Some(value) = atom.prop("molAtomClass") {
-        output.push_str(&format!(" CLASS={value}"));
+        output.push_str(&format!(" CLASS={}", model_string_property(value)?));
     }
     // END RDKIT CPP FUNCTION
     Ok(output)
@@ -7401,10 +7442,11 @@ fn v3000_writer_bond_line(bond: &Bond) -> Result<String, SdfWriteError> {
         ("_MolFileBondEndPts", "ENDPTS"),
         ("_MolFileBondAttach", "ATTACH"),
     ] {
-        if let Some(value) = bond.prop(key)
-            && value != "0"
-        {
-            output.push_str(&format!(" {label}={value}"));
+        if let Some(value) = bond.prop(key) {
+            let value = model_string_property(value)?;
+            if value != "0" {
+                output.push_str(&format!(" {label}={value}"));
+            }
         }
     }
     // END RDKIT CPP FUNCTION
@@ -7538,9 +7580,10 @@ pub fn write_v3000_detached(
 mod tests {
     use cosmolkit_model::{
         AtomId, AtomQueryPredicate, BondId, BondQueryPredicate, CoordinateBlock,
-        CoordinateDimension, MoleculeProperties, QueryNode, SGroupBondRole, SGroupBracket,
-        SGroupCState, SGroupConnection, SGroupDisplay, SdfPropertyListTarget, StereoGroupKind,
-        SubstanceGroup, SubstanceGroupId, SubstanceGroupKind, query_substance_groups,
+        CoordinateDimension, MoleculeProperties, PropertyValue, QueryNode, SGroupBondRole,
+        SGroupBracket, SGroupCState, SGroupConnection, SGroupDisplay, SdfPropertyListTarget,
+        StereoGroupKind, SubstanceGroup, SubstanceGroupId, SubstanceGroupKind,
+        query_substance_groups,
     };
     use cosmolkit_types::{BondDirection, BondStereo};
 
@@ -7553,6 +7596,13 @@ mod tests {
         read_v2000_detached_with_params, read_v3000_detached, read_v3000_detached_with_params,
         write_sdf_record_detached, write_v2000_detached, write_v3000_detached,
     };
+
+    fn string_property(value: Option<&PropertyValue>) -> Option<&str> {
+        match value {
+            Some(PropertyValue::String(value)) => Some(value),
+            _ => None,
+        }
+    }
 
     #[test]
     fn v3k_atom_numbers_atoi_c_locale_whitespace_and_prefixes() {
@@ -7739,7 +7789,10 @@ mod tests {
         )
         .expect("non-strict unknown symbol becomes a labeled dummy");
         assert_eq!(unknown_topology.atoms[0].element().atomic_number(), 0);
-        assert_eq!(unknown_topology.atoms[0].prop("dummyLabel"), Some("Zz"));
+        assert_eq!(
+            string_property(unknown_topology.atoms[0].prop("dummyLabel")),
+            Some("Zz")
+        );
     }
 
     #[test]
@@ -7781,7 +7834,7 @@ mod tests {
         assert_eq!(topology.atoms[0].formal_charge(), 0);
         assert_eq!(topology.atoms[1].formal_charge(), 0);
         assert_eq!(topology.atoms[0].explicit_hydrogens(), 3);
-        assert_eq!(topology.atoms[0].prop("_ZBO_H"), Some("1"));
+        assert_eq!(string_property(topology.atoms[0].prop("_ZBO_H")), Some("1"));
         assert_eq!(topology.bonds[0].order(), cosmolkit_types::BondOrder::Zero);
         assert!(!topology.bonds[0].is_aromatic());
     }
@@ -7838,11 +7891,26 @@ mod tests {
             atom_one, atom_two, 1, 2, 1,
         );
         let (topology, _, properties) = read_v2000_detached(&input).expect("read legacy records");
-        assert_eq!(topology.atoms[0].prop("molFileAlias"), Some("carbon alias"));
-        assert_eq!(topology.atoms[1].prop("molFileValue"), Some("atom value"));
-        assert_eq!(topology.atoms[0].prop("_MolFile_PXA"), Some(" pxa payload"));
-        assert_eq!(topology.atoms[0].prop("molAttachPoint"), Some("2"));
-        assert_eq!(topology.atoms[1].prop("molAttachPoint"), Some("1"));
+        assert_eq!(
+            string_property(topology.atoms[0].prop("molFileAlias")),
+            Some("carbon alias")
+        );
+        assert_eq!(
+            string_property(topology.atoms[1].prop("molFileValue")),
+            Some("atom value")
+        );
+        assert_eq!(
+            string_property(topology.atoms[0].prop("_MolFile_PXA")),
+            Some(" pxa payload")
+        );
+        assert_eq!(
+            string_property(topology.atoms[0].prop("molAttachPoint")),
+            Some("2")
+        );
+        assert_eq!(
+            string_property(topology.atoms[1].prop("molAttachPoint")),
+            Some("1")
+        );
         assert_eq!(topology.atoms[0].formal_charge(), 0);
         assert_eq!(properties.prop("_MolFileLinkNodes"), Some("1 3 1 1 2"));
     }
@@ -7874,7 +7942,10 @@ mod tests {
             },
         )
         .expect("non-strict duplicate APO keeps the first value");
-        assert_eq!(topology.atoms[0].prop("molAttachPoint"), Some("2"));
+        assert_eq!(
+            string_property(topology.atoms[0].prop("molAttachPoint")),
+            Some("2")
+        );
     }
 
     #[test]
@@ -7917,15 +7988,21 @@ mod tests {
         assert_eq!(carbon.mol_parity(), Some(1));
         assert_eq!(carbon.atom_map(), Some(12));
         assert_eq!(carbon.mol_inversion_flag(), Some(1));
-        assert_eq!(carbon.prop("molStereoCare"), Some("1"));
-        assert_eq!(carbon.prop("molTotValence"), Some("4"));
-        assert_eq!(carbon.prop("molRxnRole"), Some("2"));
-        assert_eq!(carbon.prop("molRxnComponent"), Some("3"));
-        assert_eq!(carbon.prop("molRxnExactChange"), Some("1"));
+        assert_eq!(string_property(carbon.prop("molStereoCare")), Some("1"));
+        assert_eq!(string_property(carbon.prop("molTotValence")), Some("4"));
+        assert_eq!(string_property(carbon.prop("molRxnRole")), Some("2"));
+        assert_eq!(string_property(carbon.prop("molRxnComponent")), Some("3"));
+        assert_eq!(string_property(carbon.prop("molRxnExactChange")), Some("1"));
         assert_eq!(topology.bonds[0].direction(), BondDirection::EitherDouble);
         assert_eq!(topology.bonds[0].stereo(), BondStereo::Any);
-        assert_eq!(topology.bonds[0].prop("_MolFileBondType"), Some("2"));
-        assert_eq!(topology.bonds[0].prop("_MolFileBondStereo"), Some("3"));
+        assert_eq!(
+            string_property(topology.bonds[0].prop("_MolFileBondType")),
+            Some("2")
+        );
+        assert_eq!(
+            string_property(topology.bonds[0].prop("_MolFileBondStereo")),
+            Some("3")
+        );
         assert_eq!(
             properties.prop("_MolFileInfo"),
             Some("  source            2D")
@@ -8308,8 +8385,14 @@ mod tests {
                 QueryNode::predicate(AtomQueryPredicate::IsUnsaturated),
             ])
         );
-        assert_eq!(record.query.atoms()[1].prop("_MolFileRLabel"), Some("7"));
-        assert_eq!(record.query.atoms()[1].prop("dummyLabel"), Some("R7"));
+        assert_eq!(
+            string_property(record.query.atoms()[1].prop("_MolFileRLabel")),
+            Some("7")
+        );
+        assert_eq!(
+            string_property(record.query.atoms()[1].prop("dummyLabel")),
+            Some("R7")
+        );
         assert_eq!(record.query.atoms()[1].isotope(), Some(7));
         assert_eq!(
             record.query.atoms()[1].predicate(),
@@ -8400,15 +8483,36 @@ mod tests {
             carbon, oxygen
         );
         let record = read_sdf_record_detached(&input).expect("read property lists");
-        assert_eq!(record.topology.atoms[0].prop("Label"), Some("C1"));
-        assert_eq!(record.topology.atoms[1].prop("Label"), Some("O1"));
-        assert_eq!(record.topology.atoms[0].prop("Score"), Some("7"));
+        assert_eq!(
+            record.topology.atoms[0].prop("Label"),
+            Some(&PropertyValue::String("C1".to_owned()))
+        );
+        assert_eq!(
+            record.topology.atoms[1].prop("Label"),
+            Some(&PropertyValue::String("O1".to_owned()))
+        );
+        assert_eq!(
+            record.topology.atoms[0].prop("Score"),
+            Some(&PropertyValue::Int(7))
+        );
         assert_eq!(record.topology.atoms[1].prop("Score"), None);
-        assert_eq!(record.topology.atoms[0].prop("Partial"), Some("0.25"));
+        assert_eq!(
+            record.topology.atoms[0].prop("Partial"),
+            Some(&PropertyValue::Double(0.25))
+        );
         assert_eq!(record.topology.atoms[1].prop("Partial"), None);
-        assert_eq!(record.topology.atoms[0].prop("Active"), Some("true"));
-        assert_eq!(record.topology.atoms[1].prop("Active"), Some("false"));
-        assert_eq!(record.topology.bonds[0].prop("Label"), Some("single"));
+        assert_eq!(
+            record.topology.atoms[0].prop("Active"),
+            Some(&PropertyValue::Bool(true))
+        );
+        assert_eq!(
+            record.topology.atoms[1].prop("Active"),
+            Some(&PropertyValue::Bool(false))
+        );
+        assert_eq!(
+            record.topology.bonds[0].prop("Label"),
+            Some(&PropertyValue::String("single".to_owned()))
+        );
         assert_eq!(record.properties.sdf_property_lists().len(), 5);
         assert_eq!(
             record.properties.sdf_property_lists()[0].target(),
@@ -8416,7 +8520,7 @@ mod tests {
         );
         assert_eq!(
             record.properties.sdf_property_lists()[1].values(),
-            &[Some("7".to_owned()), None]
+            &[Some(PropertyValue::Int(7)), None]
         );
     }
 
@@ -8471,11 +8575,17 @@ mod tests {
         let MolBlockRecord::Query(query_record) = record.mol_block else {
             panic!("query property list record must remain a query graph");
         };
-        assert_eq!(query_record.query.atoms()[0].prop("Label"), Some("any"));
-        assert_eq!(query_record.query.atoms()[1].prop("Label"), Some("oxygen"));
+        assert_eq!(
+            query_record.query.atoms()[0].prop("Label"),
+            Some(&PropertyValue::String("any".to_owned()))
+        );
+        assert_eq!(
+            query_record.query.atoms()[1].prop("Label"),
+            Some(&PropertyValue::String("oxygen".to_owned()))
+        );
         assert_eq!(
             query_record.query.bonds()[0].bond().prop("Score"),
-            Some("4")
+            Some(&PropertyValue::Int(4))
         );
         assert_eq!(query_record.properties.sdf_property_lists().len(), 2);
     }
@@ -8532,8 +8642,8 @@ mod tests {
             atom.predicate(),
             &QueryNode::predicate(AtomQueryPredicate::Any)
         );
-        assert_eq!(atom.prop("_MolFileRLabel"), Some("12"));
-        assert_eq!(atom.prop("dummyLabel"), Some("R12"));
+        assert_eq!(string_property(atom.prop("_MolFileRLabel")), Some("12"));
+        assert_eq!(string_property(atom.prop("dummyLabel")), Some("R12"));
         assert_eq!(atom.isotope(), Some(12));
     }
 
@@ -8673,7 +8783,10 @@ mod tests {
         else {
             panic!("non-strict duplicate ATTCHPT must produce concrete topology");
         };
-        assert_eq!(topology.atoms[0].prop("molAttachPoint"), Some("1"));
+        assert_eq!(
+            string_property(topology.atoms[0].prop("molAttachPoint")),
+            Some("1")
+        );
     }
 
     #[test]
@@ -8880,21 +8993,27 @@ mod tests {
         assert_eq!(carbon.atom_map(), Some(7));
         assert_eq!(carbon.mol_parity(), Some(1));
         assert_eq!(carbon.mol_inversion_flag(), Some(1));
-        assert_eq!(carbon.prop("molTotValence"), Some("4"));
-        assert_eq!(carbon.prop("molStereoCare"), Some("1"));
-        assert_eq!(carbon.prop("molAttachPoint"), Some("3"));
-        assert_eq!(carbon.prop("molAttachOrder"), Some("2"));
-        assert_eq!(carbon.prop("molAtomClass"), Some("AA"));
-        assert_eq!(carbon.prop("molAtomSeqId"), Some("9"));
-        assert_eq!(carbon.prop("molAtomSeqName"), Some("GLY"));
+        assert_eq!(string_property(carbon.prop("molTotValence")), Some("4"));
+        assert_eq!(string_property(carbon.prop("molStereoCare")), Some("1"));
+        assert_eq!(string_property(carbon.prop("molAttachPoint")), Some("3"));
+        assert_eq!(string_property(carbon.prop("molAttachOrder")), Some("2"));
+        assert_eq!(string_property(carbon.prop("molAtomClass")), Some("AA"));
+        assert_eq!(string_property(carbon.prop("molAtomSeqId")), Some("9"));
+        assert_eq!(string_property(carbon.prop("molAtomSeqName")), Some("GLY"));
         let bond = &topology.bonds[0];
         assert_eq!(bond.begin().index(), 1);
         assert_eq!(bond.end().index(), 0);
         assert_eq!(bond.direction(), BondDirection::BeginDash);
-        assert_eq!(bond.prop("_MolFileBondCfg"), Some("3"));
-        assert_eq!(bond.prop("molReactStatus"), Some("4"));
-        assert_eq!(bond.prop("_MolFileBondEndPts"), Some("(2 20 10)"));
-        assert_eq!(bond.prop("_MolFileBondAttach"), Some("ANY"));
+        assert_eq!(string_property(bond.prop("_MolFileBondCfg")), Some("3"));
+        assert_eq!(string_property(bond.prop("molReactStatus")), Some("4"));
+        assert_eq!(
+            string_property(bond.prop("_MolFileBondEndPts")),
+            Some("(2 20 10)")
+        );
+        assert_eq!(
+            string_property(bond.prop("_MolFileBondAttach")),
+            Some("ANY")
+        );
         assert_eq!(properties.prop("_MolFileComments"), Some("comment"));
         assert_eq!(properties.prop("_MolFileChiralFlag"), Some("1"));
         assert_eq!(properties.prop("_MolFileLinkNodes"), Some("1 2 2 10 20"));

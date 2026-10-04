@@ -2,7 +2,9 @@ use cosmolkit_core::{
     AromaticityError, AromaticityModel, AromaticityParams, RingFindType, RingInfo,
     RingSearchParams, assign_aromaticity, symmetrized_sssr,
 };
-use cosmolkit_model::{Atom, AtomId, AtomSpec, Bond, BondId, BondSpec, TopologyBlock};
+use cosmolkit_model::{
+    Atom, AtomId, AtomSpec, Bond, BondId, BondSpec, PropertyValue, TopologyBlock,
+};
 use cosmolkit_types::{BondOrder, Element, Hybridization};
 
 fn topology(specs: Vec<AtomSpec>, edges: &[(usize, usize, BondOrder)]) -> TopologyBlock {
@@ -457,7 +459,13 @@ fn all_successful_models_preserve_row_identity_validate_and_are_deterministic() 
                 .enumerate()
                 .all(|(row, bond)| bond.id() == BondId::new(row))
         );
-        assert_eq!(first.topology.atoms[2].prop("atom-note"), Some("kept"));
-        assert_eq!(first.topology.bonds[4].prop("bond-note"), Some("kept"));
+        assert_eq!(
+            first.topology.atoms[2].prop("atom-note"),
+            Some(&PropertyValue::String("kept".to_owned()))
+        );
+        assert_eq!(
+            first.topology.bonds[4].prop("bond-note"),
+            Some(&PropertyValue::String("kept".to_owned()))
+        );
     }
 }

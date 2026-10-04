@@ -5,7 +5,7 @@ use cosmolkit_bio::{
     BioExperimentInfo, BioExperimentalCrystalInfo, BioHelix, BioHelixClass, BioMetadata, BioModRes,
     BioModelId, BioModelRow, BioRefinementInfo, BioRefinementRestraint, BioReflectionsInfo,
     BioResidueId, BioResidueRow, BioRowSpan, BioSheet, BioSiftsUnpResidue,
-    BioSoftwareClassification, BioSoftwareItem, BioStrand, BioStructure, BioStructureError,
+    BioSoftwareClassification, BioSoftwareItem, BioStrand, BioStructureData, BioStructureError,
     BioStructureParts, BioStructureSourceState, BioTlsGroup, BioTlsSelection, BioTransform,
     ChainKind, ChainSourceIds, EntityKind, PdbAtomSerial, PdbChainId, PdbSeqId, ResidueAddress,
     ResidueInfoKind, ResidueName, ResidueSourceIds,
@@ -16,7 +16,7 @@ use std::collections::BTreeMap;
 fn atom_row_with_isotope(name: [u8; 4], isotope_mass_number: Option<u16>) -> BioAtomRow {
     BioAtomRow::new(
         BioResidueId::new(7),
-        AtomName::from_ascii(name).unwrap(),
+        AtomName::from_ascii(&name).unwrap(),
         Element::H,
         isotope_mass_number,
         Some(AltLocLabel::new(b'B')),
@@ -1137,7 +1137,7 @@ fn one_finite_coordinate_parts() -> BioStructureParts {
     ));
     parts.atoms.push(BioAtomRow::new(
         BioResidueId::new(0),
-        AtomName::from_ascii(*b" CA ").unwrap(),
+        AtomName::from_ascii(b" CA ").unwrap(),
         Element::C,
         None,
         None,
@@ -1288,7 +1288,7 @@ fn bio_structure_round_trips_source_metadata_and_clone_is_independent() {
     parts.metadata = metadata;
     parts.source_state = source_state.clone();
 
-    let structure = BioStructure::from_parts(parts).unwrap();
+    let structure = BioStructureData::from_parts(parts).unwrap();
     let returned = structure.clone().into_parts();
     assert_eq!(returned.connections, [connection]);
     assert_eq!(returned.cispeps.len(), 1);
@@ -1339,7 +1339,7 @@ fn bio_structure_round_trips_source_metadata_and_clone_is_independent() {
 
 #[test]
 fn bio_structure_metadata_defaults_and_nan_sentinels_survive_transport() {
-    let empty = BioStructure::from_parts(empty_bio_structure_parts()).unwrap();
+    let empty = BioStructureData::from_parts(empty_bio_structure_parts()).unwrap();
     assert!(empty.connections().is_empty());
     assert!(empty.cispeps().is_empty());
     assert!(empty.mod_residues().is_empty());
@@ -1360,7 +1360,7 @@ fn bio_structure_metadata_defaults_and_nan_sentinels_survive_transport() {
         .push(BioExperimentalCrystalInfo::default());
     parts.metadata.refinement.push(BioRefinementInfo::default());
     parts.metadata.software.push(BioSoftwareItem::default());
-    let structure = BioStructure::from_parts(parts).unwrap();
+    let structure = BioStructureData::from_parts(parts).unwrap();
     let returned = structure.into_parts();
 
     assert!(returned.cispeps[0].reported_angle.is_nan());
@@ -1441,8 +1441,8 @@ fn bio_structure_validation_keeps_unresolved_source_addresses_and_nan_sentinels(
     });
     parts.metadata.refinement.push(BioRefinementInfo::default());
 
-    assert_eq!(BioStructure::validate_parts(&parts), Ok(()));
-    let structure = BioStructure::from_parts(parts).unwrap();
+    assert_eq!(BioStructureData::validate_parts(&parts), Ok(()));
+    let structure = BioStructureData::from_parts(parts).unwrap();
     assert_eq!(structure.validate(), Ok(()));
     assert_eq!(structure.coordinates().positions(), &[[1.25, -2.5, 4.0]]);
     assert!(structure.cispeps()[0].reported_angle.is_nan());
@@ -1458,7 +1458,7 @@ fn bio_structure_validation_keeps_unresolved_source_addresses_and_nan_sentinels(
     invalid_span.models[0] =
         BioModelRow::new(BioRowSpan::<BioChainId>::new(1, 1).unwrap(), Some(1));
     assert_eq!(
-        BioStructure::validate_parts(&invalid_span),
+        BioStructureData::validate_parts(&invalid_span),
         Err(BioStructureError::NonContiguousSpan {
             table: "models->chains",
             expected_start: 0,

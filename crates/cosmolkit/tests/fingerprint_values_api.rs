@@ -1,6 +1,6 @@
-#![cfg(feature = "fingerprints")]
+#![cfg(feature = "cap-fingerprints")]
 
-use cosmolkit::{BINDING_CONTRACT, BindingExposure, BindingItem, BindingParity, BindingSupport};
+use cosmolkit::{BINDING_CONTRACT, BindingItem, FunctionStatus};
 
 #[test]
 fn sparse_count_public_contract_has_exact_registered_surface() {
@@ -33,10 +33,13 @@ fn sparse_count_public_contract_has_exact_registered_surface() {
                 .find(|e| e.semantic_id == format!("{name}.{method}"))
                 .unwrap();
             assert_eq!(row.item, BindingItem::Callable);
-            assert_eq!(row.feature, "fingerprints");
-            assert_eq!(row.exposure, BindingExposure::Public);
-            assert_eq!(row.support, BindingSupport::SupportedWithRdkitParity);
-            assert_eq!(row.parity, BindingParity::RequiredNow);
+            assert_eq!(row.feature, "cap-fingerprints");
+            let expected = if matches!(method, "fuzzy_and" | "fuzzy_or") {
+                FunctionStatus::Parity { reference: "RDKit" }
+            } else {
+                FunctionStatus::Experimental
+            };
+            assert_eq!(row.status, expected);
             assert_eq!(row.python_name, method);
             assert!(row.callable.unwrap().operation_semantic_id.is_none());
         }

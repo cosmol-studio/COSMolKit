@@ -5,8 +5,8 @@ use std::mem::size_of;
 use std::sync::Arc;
 
 use cosmolkit::{
-    BINDING_CONTRACT, BindingItem, BindingOwner, BindingParity, BindingSupport, BindingTypeRole,
-    Molecule, OperationError,
+    BINDING_CONTRACT, BindingItem, BindingOwner, BindingTypeRole, FunctionStatus, Molecule,
+    OperationError,
 };
 use cosmolkit_model::{
     AdjacencyList, Atom, AtomId, AtomSpec, Conformer2D, CoordinateBlock, CoordinateValidationError,
@@ -142,8 +142,7 @@ fn molecule_binding_is_the_only_run_state_public_entry() {
     assert_eq!(entry.python_name, "Molecule");
     assert_eq!(entry.javascript_name, "Molecule");
     assert_eq!(entry.feature, "runtime");
-    assert_eq!(entry.support, BindingSupport::Supported);
-    assert_eq!(entry.parity, BindingParity::NotApplicable);
+    assert_eq!(entry.status, FunctionStatus::Experimental);
     assert_eq!(entry.type_role, Some(BindingTypeRole::Value));
     assert_eq!(entry.callable, None);
     assert!(

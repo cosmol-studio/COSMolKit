@@ -2,33 +2,10 @@ name: coverage
 
 on:
     push:
-        branches:
-            - main
+        branches: [main]
     pull_request:
-        branches:
-            - main
+        branches: [main]
     workflow_dispatch:
-        inputs:
-            parity_profile:
-                description: "SMILES parity profile"
-                required: false
-                default: "smiles_small"
-                type: choice
-                options:
-                    - smiles_small
-                    - smiles_5000
-            golden_suite:
-                description: "RDKit golden generator suite"
-                required: false
-                default: "all"
-                type: choice
-                options:
-                    - all
-            run_exhaustive_parity:
-                description: "Run ignored exhaustive parity suites"
-                required: false
-                default: false
-                type: boolean
 
 permissions:
     contents: read
@@ -37,576 +14,211 @@ jobs:
     rust-coverage:
         runs-on: ubuntu-latest
         env:
-            COSMOLKIT_PARITY_PROFILE: ${{ github.event.inputs.parity_profile || 'smiles_small' }}
-            COSMOLKIT_GOLDEN_SUITE: ${{ github.event.inputs.golden_suite || 'all' }}
-            COSMOLKIT_RUN_EXHAUSTIVE_PARITY: ${{ github.event.inputs.run_exhaustive_parity || 'false' }}
-            RDKIT_EXPECTED_CACHE_SCHEMA: v4
-            # Optimization and fat LTO can emit zero-hash coverage mappings
-            # that disagree with records from static test binaries.
-            CARGO_PROFILE_RELEASE_OPT_LEVEL: "0"
-            CARGO_PROFILE_RELEASE_LTO: "false"
-            # The source-faithful InChI stereo mapper recurses once per stereo
-            # feature. At opt-level=0 its Rust stack frame is much larger than
-            # the optimized frame; the 5000-row corpus includes 63 centers.
+            # Use the workspace release profile unchanged for both test stages.
             RUST_MIN_STACK: "8388608"
-
+            PARITY_CACHE_SCHEMA: v2
+            PARITY_DATA: target/parity-tests-ci
+            # show-env derives its build directory from CARGO_TARGET_DIR.
+            # Keep it equal to the profile directory before evaluating show-env.
+            CARGO_TARGET_DIR: target/coverage-build
+            CARGO_LLVM_COV_TARGET_DIR: target/coverage-build
         steps:
-            - name: Checkout
-              uses: actions/checkout@v4
+            - uses: actions/checkout@v4
+              with:
+                  submodules: false
+            - uses: dtolnay/rust-toolchain@stable
+              with:
+                  components: llvm-tools-preview
+            - uses: Swatinem/rust-cache@v2
+              with:
+                  shared-key: unified-release-coverage-v2
+                  key: ${{ hashFiles('crates/**/*.rs', 'parity-tests/**/*.rs') }}
+                  workspaces: |
+                      . -> target/rust-build
+                      . -> target/coverage-build
+                  cache-workspace-crates: true
+                  cache-on-failure: true
+            - uses: taiki-e/install-action@cargo-llvm-cov
 
-            - name: Initialize pinned Gemmi source
-              run: git submodule update --init --depth 1 third_party/gemmi
+            - name: Select current Rust libraries and runner regressions
+              shell: bash
+              run: |
+                  cargo metadata --format-version 1 --no-deps > "$RUNNER_TEMP/workspace.json"
+                  jq -r '. as $workspace | .packages[] |
+                      select(.id as $id | $workspace.workspace_members | index($id)) |
+                      select(.publish != [] or .name == "cosmolkit-parity-tests") |
+                      .name' "$RUNNER_TEMP/workspace.json" > "$RUNNER_TEMP/test-packages.txt"
+                  test -s "$RUNNER_TEMP/test-packages.txt"
+                  cat "$RUNNER_TEMP/test-packages.txt"
 
-            - name: Initialize pinned RDKit source
-              run: git submodule update --init --depth 1 third_party/rdkit
+            - name: Build libraries before fetching third-party test sources
+              shell: bash
+              run: |
+                  set -euo pipefail
+                  packages=()
+                  while IFS= read -r package; do packages+=(-p "$package"); done < "$RUNNER_TEMP/test-packages.txt"
+                  cargo llvm-cov clean --workspace --profraw-only
+                  coverage_env="$(cargo llvm-cov show-env --sh)"
+                  eval "$coverage_env"
+                  export CARGO_TARGET_DIR="$CARGO_LLVM_COV_TARGET_DIR"
+                  cargo build "${packages[@]}" --lib --release \
+                      --features cosmolkit/op-contracts-strict,cosmolkit-core/op-contracts-strict
 
-            - name: Setup Rust
-              uses: dtolnay/rust-toolchain@stable
+            - name: Fetch pinned test sources only after successful compilation
+              run: git submodule update --init --depth 1 third_party/gemmi third_party/rdkit
 
-            - name: Setup Rust cache
-              uses: Swatinem/rust-cache@v2
+            - name: Run all default crate regression suites with coverage
+              id: regression
+              continue-on-error: true
+              shell: bash
+              run: |
+                  packages=()
+                  while IFS= read -r package; do
+                      if [[ "$package" != cosmolkit-parity-tests ]]; then packages+=(-p "$package"); fi
+                  done < "$RUNNER_TEMP/test-packages.txt"
+                  # show-env instrumentation is shared by every ordinary Cargo stage.
+                  # Do not combine it with cargo-llvm-cov's separate test wrapper.
+                  coverage_env="$(cargo llvm-cov show-env --sh)"
+                  eval "$coverage_env"
+                  export CARGO_TARGET_DIR="$CARGO_LLVM_COV_TARGET_DIR"
+                  status=0
+                  cargo test "${packages[@]}" --release \
+                      --features cosmolkit/op-contracts-strict,cosmolkit-core/op-contracts-strict \
+                      --no-fail-fast || status=$?
+                  # The runner's corpus target belongs AFTER reference preparation.
+                  # Select core too to enable its strict feature (its lib tests repeat).
+                  cargo test -p cosmolkit-parity-tests -p cosmolkit-core --lib --bins --release \
+                      --features cosmolkit/op-contracts-strict,cosmolkit-core/op-contracts-strict \
+                      --no-fail-fast || status=$?
+                  exit "$status"
 
-            - name: Install cargo-llvm-cov
-              uses: taiki-e/install-action@cargo-llvm-cov
+            - name: Run documentation tests
+              id: doctests
+              if: ${{ !cancelled() && steps.regression.outcome != 'skipped' }}
+              continue-on-error: true
+              shell: bash
+              run: |
+                  export CARGO_TARGET_DIR=target/rust-build
+                  packages=()
+                  while IFS= read -r package; do packages+=(-p "$package"); done < "$RUNNER_TEMP/test-packages.txt"
+                  cargo test "${packages[@]}" --release --doc --no-fail-fast \
+                      --features cosmolkit/op-contracts-strict,cosmolkit-core/op-contracts-strict
 
-            - name: Setup Python
-              id: setup_python
-              uses: actions/setup-python@v5
+            - uses: actions/setup-python@v5
+              id: python
               with:
                   python-version: "3.13.12"
+            - uses: astral-sh/setup-uv@v6
+            - name: Install pinned reference environment
+              run: uv sync --locked --group dev
 
-            - name: Setup uv
-              uses: astral-sh/setup-uv@v6
-
-            - name: Sync dev environment
-              run: uv sync --group dev
-
-            - name: Prepare and validate Gemmi mmCIF writer expected data
-              run: |
-                  .venv/bin/python tools/testdata/gemmi/generate_all.py \
-                      --profile bio_mmcif_writer \
-                      --suite mmcif_writer \
-                      --jobs 4
-
-            - name: Restore RDKit golden cache
-              id: rdkit_golden_cache
+            # Exact identity prefix only: never restore another corpus/environment.
+            # A unique suffix lets a repaired generation replace a corrupt cache.
+            - name: Restore reference generations
+              id: reference_cache
               uses: actions/cache/restore@v4
               with:
-                  path: testdata/*/expected/rdkit/${{ env.COSMOLKIT_PARITY_PROFILE }}
-                  key: rdkit-expected-${{ env.RDKIT_EXPECTED_CACHE_SCHEMA }}-${{ runner.os }}-${{ runner.arch }}-py${{ steps.setup_python.outputs.python-version }}-${{ env.COSMOLKIT_PARITY_PROFILE }}-${{ env.COSMOLKIT_GOLDEN_SUITE }}-${{ hashFiles('uv.lock', 'pyproject.toml', 'testdata/reference/rdkit.json', 'testdata/smiles/corpus/*.smi', 'testdata/**/fixtures/**', 'tools/testdata/rdkit/*.py') }}-${{ github.run_id }}-${{ github.run_attempt }}
+                  path: |
+                      ${{ env.PARITY_DATA }}/*/input.json
+                      ${{ env.PARITY_DATA }}/*/reference.json
+                      ${{ env.PARITY_DATA }}/*/manifest.json
+                  key: parity-${{ env.PARITY_CACHE_SCHEMA }}-${{ runner.os }}-${{ runner.arch }}-py${{ steps.python.outputs.python-version }}-${{ hashFiles('uv.lock', 'pyproject.toml', 'parity-tests/Cargo.toml', 'parity-tests/src/**', 'tools/oracles/rdkit/fingerprint_values_pilot.py', 'testdata/smiles/corpus/smiles_5000.smi') }}-${{ github.run_id }}-${{ github.run_attempt }}
                   restore-keys: |
-                      rdkit-expected-${{ env.RDKIT_EXPECTED_CACHE_SCHEMA }}-${{ runner.os }}-${{ runner.arch }}-py${{ steps.setup_python.outputs.python-version }}-${{ env.COSMOLKIT_PARITY_PROFILE }}-${{ env.COSMOLKIT_GOLDEN_SUITE }}-${{ hashFiles('uv.lock', 'pyproject.toml', 'testdata/reference/rdkit.json', 'testdata/smiles/corpus/*.smi', 'testdata/**/fixtures/**', 'tools/testdata/rdkit/*.py') }}-
+                      parity-${{ env.PARITY_CACHE_SCHEMA }}-${{ runner.os }}-${{ runner.arch }}-py${{ steps.python.outputs.python-version }}-${{ hashFiles('uv.lock', 'pyproject.toml', 'parity-tests/Cargo.toml', 'parity-tests/src/**', 'tools/oracles/rdkit/fingerprint_values_pilot.py', 'testdata/smiles/corpus/smiles_5000.smi') }}-
 
-            - name: Prepare and validate RDKit expected data for selected parity profile
-              id: prepare_rdkit_expected
-              shell: bash
-              run: |
-                  set -o pipefail
-                  prepare_log="$(mktemp)"
-                  .venv/bin/python tools/testdata/rdkit/generate_all.py --python .venv/bin/python --profile "$COSMOLKIT_PARITY_PROFILE" --suite "$COSMOLKIT_GOLDEN_SUITE" --jobs 4 | tee "$prepare_log"
-                  if grep -q '^\[expected\] regenerate ' "$prepare_log"; then
-                      echo "regenerated=true" >> "$GITHUB_OUTPUT"
-                  else
-                      echo "regenerated=false" >> "$GITHUB_OUTPUT"
-                  fi
-
-            - name: Prepare and validate RDKit SMARTS source expected data
-              run: |
-                  .venv/bin/python tools/testdata/rdkit/generate_all.py \
-                      --python .venv/bin/python \
-                      --profile smarts_source \
-                      --suite smarts \
-                      --jobs 4
-
-            - name: Prepare and validate focused RDKit tautomer expected data
-              run: |
-                  .venv/bin/python tools/testdata/rdkit/generate_all.py \
-                      --python .venv/bin/python \
-                      --profile tautomer_focused \
-                      --suite tautomer \
-                      --jobs 4
-
-            - name: Prepare and validate focused Python stereoisomer expected data
-              run: |
-                  .venv/bin/python tools/testdata/rdkit/generate_all.py \
-                      --python .venv/bin/python \
-                      --profile python_stereoisomer_focused \
-                      --suite python-stereoisomer \
-                      --jobs 4
-
-            - name: Prepare exhaustive RDKit tautomer expected data
-              if: env.COSMOLKIT_RUN_EXHAUSTIVE_PARITY == 'true' && env.COSMOLKIT_PARITY_PROFILE != 'smiles_5000'
-              run: |
-                  .venv/bin/python tools/testdata/rdkit/generate_all.py \
-                      --python .venv/bin/python \
-                      --profile smiles_5000 \
-                      --suite tautomer \
-                      --jobs 4
-
-            - name: Prepare exhaustive RDKit PCS tautomer expected data
-              if: env.COSMOLKIT_RUN_EXHAUSTIVE_PARITY == 'true'
-              run: |
-                  .venv/bin/python tools/testdata/rdkit/generate_all.py \
-                      --python .venv/bin/python \
-                      --profile tautomer_pcs_1k \
-                      --suite tautomer \
-                      --jobs 4
-                  .venv/bin/python tools/testdata/rdkit/generate_all.py \
-                      --python .venv/bin/python \
-                      --profile tautomer_pcs_100k \
-                      --suite tautomer \
-                      --jobs 4
-
-            - name: Save validated RDKit expected-data cache
-              if: steps.prepare_rdkit_expected.outputs.regenerated == 'true'
-              uses: actions/cache/save@v4
-              with:
-                  path: testdata/*/expected/rdkit/${{ env.COSMOLKIT_PARITY_PROFILE }}
-                  key: ${{ steps.rdkit_golden_cache.outputs.cache-primary-key }}
-
-            - name: Restore focused AtomPair golden cache
-              id: focused_atom_pair_golden_cache
-              uses: actions/cache/restore@v4
-              with:
-                  path: testdata/fingerprint/expected/rdkit/atom_pair_focused
-                  key: rdkit-expected-${{ env.RDKIT_EXPECTED_CACHE_SCHEMA }}-${{ runner.os }}-${{ runner.arch }}-py${{ steps.setup_python.outputs.python-version }}-atom-pair-focused-${{ hashFiles('uv.lock', 'pyproject.toml', 'testdata/reference/rdkit.json', 'testdata/fingerprint/fixtures/rdkit/atom_pair_fingerprint_focused.smi', 'tools/testdata/rdkit/generate_all.py', 'tools/testdata/rdkit/_expected_schema.py', 'tools/testdata/rdkit/_generate_atom_pair_fingerprint_golden.py', 'tools/testdata/rdkit/atom_pair_fingerprint_profile.json') }}-${{ github.run_id }}-${{ github.run_attempt }}
-                  restore-keys: |
-                      rdkit-expected-${{ env.RDKIT_EXPECTED_CACHE_SCHEMA }}-${{ runner.os }}-${{ runner.arch }}-py${{ steps.setup_python.outputs.python-version }}-atom-pair-focused-${{ hashFiles('uv.lock', 'pyproject.toml', 'testdata/reference/rdkit.json', 'testdata/fingerprint/fixtures/rdkit/atom_pair_fingerprint_focused.smi', 'tools/testdata/rdkit/generate_all.py', 'tools/testdata/rdkit/_expected_schema.py', 'tools/testdata/rdkit/_generate_atom_pair_fingerprint_golden.py', 'tools/testdata/rdkit/atom_pair_fingerprint_profile.json') }}-
-
-            - name: Prepare and validate focused AtomPair expected data
-              id: prepare_focused_atom_pair_expected
-              shell: bash
-              run: |
-                  set -o pipefail
-                  prepare_log="$(mktemp)"
-                  .venv/bin/python tools/testdata/rdkit/generate_all.py --python .venv/bin/python --profile atom_pair_focused --suite atom-pair --jobs 1 | tee "$prepare_log"
-                  if grep -q '^\[expected\] regenerate ' "$prepare_log"; then
-                      echo "regenerated=true" >> "$GITHUB_OUTPUT"
-                  else
-                      echo "regenerated=false" >> "$GITHUB_OUTPUT"
-                  fi
-
-            - name: Save validated focused AtomPair expected-data cache
-              if: steps.prepare_focused_atom_pair_expected.outputs.regenerated == 'true'
-              uses: actions/cache/save@v4
-              with:
-                  path: testdata/fingerprint/expected/rdkit/atom_pair_focused
-                  key: ${{ steps.focused_atom_pair_golden_cache.outputs.cache-primary-key }}
-
-            - name: Restore focused CIPLabeler golden cache
-              id: focused_ciplabeler_golden_cache
-              uses: actions/cache/restore@v4
-              with:
-                  path: testdata/stereo/expected/rdkit/ciplabeler_focused
-                  key: rdkit-expected-${{ env.RDKIT_EXPECTED_CACHE_SCHEMA }}-${{ runner.os }}-${{ runner.arch }}-py${{ steps.setup_python.outputs.python-version }}-ciplabeler-focused-${{ hashFiles('uv.lock', 'pyproject.toml', 'testdata/reference/rdkit.json', 'testdata/stereo/fixtures/**', 'tools/testdata/rdkit/generate_all.py', 'tools/testdata/rdkit/_expected_schema.py', 'tools/testdata/rdkit/_generate_ciplabeler_golden.py') }}-${{ github.run_id }}-${{ github.run_attempt }}
-                  restore-keys: |
-                      rdkit-expected-${{ env.RDKIT_EXPECTED_CACHE_SCHEMA }}-${{ runner.os }}-${{ runner.arch }}-py${{ steps.setup_python.outputs.python-version }}-ciplabeler-focused-${{ hashFiles('uv.lock', 'pyproject.toml', 'testdata/reference/rdkit.json', 'testdata/stereo/fixtures/**', 'tools/testdata/rdkit/generate_all.py', 'tools/testdata/rdkit/_expected_schema.py', 'tools/testdata/rdkit/_generate_ciplabeler_golden.py') }}-
-
-            - name: Prepare and validate focused CIPLabeler expected data
-              id: prepare_focused_ciplabeler_expected
-              shell: bash
-              run: |
-                  set -o pipefail
-                  prepare_log="$(mktemp)"
-                  .venv/bin/python tools/testdata/rdkit/generate_all.py --python .venv/bin/python --profile ciplabeler_focused --suite ciplabeler --jobs 4 | tee "$prepare_log"
-                  if grep -q '^\[expected\] regenerate ' "$prepare_log"; then
-                      echo "regenerated=true" >> "$GITHUB_OUTPUT"
-                  else
-                      echo "regenerated=false" >> "$GITHUB_OUTPUT"
-                  fi
-
-            - name: Save validated focused CIPLabeler expected-data cache
-              if: steps.prepare_focused_ciplabeler_expected.outputs.regenerated == 'true'
-              uses: actions/cache/save@v4
-              with:
-                  path: testdata/stereo/expected/rdkit/ciplabeler_focused
-                  key: ${{ steps.focused_ciplabeler_golden_cache.outputs.cache-primary-key }}
-
-            - name: Restore focused MolAlign golden cache
-              id: focused_molalign_golden_cache
-              uses: actions/cache/restore@v4
-              with:
-                  path: testdata/alignment/expected/rdkit/molalign_focused
-                  key: rdkit-expected-${{ env.RDKIT_EXPECTED_CACHE_SCHEMA }}-${{ runner.os }}-${{ runner.arch }}-py${{ steps.setup_python.outputs.python-version }}-molalign-focused-${{ hashFiles('uv.lock', 'pyproject.toml', 'testdata/reference/rdkit.json', 'testdata/alignment/fixtures/molalign_focused.json', 'tools/testdata/rdkit/generate_all.py', 'tools/testdata/rdkit/_expected_schema.py', 'tools/testdata/rdkit/_generate_molalign_golden.py') }}-${{ github.run_id }}-${{ github.run_attempt }}
-                  restore-keys: |
-                      rdkit-expected-${{ env.RDKIT_EXPECTED_CACHE_SCHEMA }}-${{ runner.os }}-${{ runner.arch }}-py${{ steps.setup_python.outputs.python-version }}-molalign-focused-${{ hashFiles('uv.lock', 'pyproject.toml', 'testdata/reference/rdkit.json', 'testdata/alignment/fixtures/molalign_focused.json', 'tools/testdata/rdkit/generate_all.py', 'tools/testdata/rdkit/_expected_schema.py', 'tools/testdata/rdkit/_generate_molalign_golden.py') }}-
-
-            - name: Prepare and validate focused MolAlign expected data
-              id: prepare_focused_molalign_expected
-              shell: bash
-              run: |
-                  set -o pipefail
-                  prepare_log="$(mktemp)"
-                  .venv/bin/python tools/testdata/rdkit/generate_all.py --python .venv/bin/python --profile molalign_focused --suite molalign --jobs 1 | tee "$prepare_log"
-                  if grep -q '^\[expected\] regenerate ' "$prepare_log"; then
-                      echo "regenerated=true" >> "$GITHUB_OUTPUT"
-                  else
-                      echo "regenerated=false" >> "$GITHUB_OUTPUT"
-                  fi
-
-            - name: Save validated focused MolAlign expected-data cache
-              if: steps.prepare_focused_molalign_expected.outputs.regenerated == 'true'
-              uses: actions/cache/save@v4
-              with:
-                  path: testdata/alignment/expected/rdkit/molalign_focused
-                  key: ${{ steps.focused_molalign_golden_cache.outputs.cache-primary-key }}
-
-            - name: Restore focused Layered fingerprint golden cache
-              id: focused_layered_golden_cache
-              uses: actions/cache/restore@v4
-              with:
-                  path: testdata/fingerprint/expected/rdkit/layered_focused
-                  key: rdkit-expected-${{ env.RDKIT_EXPECTED_CACHE_SCHEMA }}-${{ runner.os }}-${{ runner.arch }}-py${{ steps.setup_python.outputs.python-version }}-layered-focused-${{ hashFiles('uv.lock', 'pyproject.toml', 'testdata/reference/rdkit.json', 'testdata/fingerprint/fixtures/rdkit/layered_fingerprint_focused.smi', 'tools/testdata/rdkit/generate_all.py', 'tools/testdata/rdkit/_expected_schema.py', 'tools/testdata/rdkit/_generate_layered_fingerprint_golden.py', 'tools/testdata/rdkit/layered_fingerprint_profile.json') }}-${{ github.run_id }}-${{ github.run_attempt }}
-                  restore-keys: |
-                      rdkit-expected-${{ env.RDKIT_EXPECTED_CACHE_SCHEMA }}-${{ runner.os }}-${{ runner.arch }}-py${{ steps.setup_python.outputs.python-version }}-layered-focused-${{ hashFiles('uv.lock', 'pyproject.toml', 'testdata/reference/rdkit.json', 'testdata/fingerprint/fixtures/rdkit/layered_fingerprint_focused.smi', 'tools/testdata/rdkit/generate_all.py', 'tools/testdata/rdkit/_expected_schema.py', 'tools/testdata/rdkit/_generate_layered_fingerprint_golden.py', 'tools/testdata/rdkit/layered_fingerprint_profile.json') }}-
-
-            - name: Prepare and validate focused Layered fingerprint expected data
-              id: prepare_focused_layered_expected
-              shell: bash
-              run: |
-                  set -o pipefail
-                  prepare_log="$(mktemp)"
-                  .venv/bin/python tools/testdata/rdkit/generate_all.py --python .venv/bin/python --profile layered_focused --suite layered --jobs 1 | tee "$prepare_log"
-                  if grep -q '^\[expected\] regenerate ' "$prepare_log"; then
-                      echo "regenerated=true" >> "$GITHUB_OUTPUT"
-                  else
-                      echo "regenerated=false" >> "$GITHUB_OUTPUT"
-                  fi
-
-            - name: Save validated focused Layered fingerprint expected-data cache
-              if: steps.prepare_focused_layered_expected.outputs.regenerated == 'true'
-              uses: actions/cache/save@v4
-              with:
-                  path: testdata/fingerprint/expected/rdkit/layered_focused
-                  key: ${{ steps.focused_layered_golden_cache.outputs.cache-primary-key }}
-
-            - name: Restore focused Pattern fingerprint golden cache
-              id: focused_pattern_golden_cache
-              uses: actions/cache/restore@v4
-              with:
-                  path: testdata/fingerprint/expected/rdkit/pattern_focused
-                  key: rdkit-expected-${{ env.RDKIT_EXPECTED_CACHE_SCHEMA }}-${{ runner.os }}-${{ runner.arch }}-py${{ steps.setup_python.outputs.python-version }}-pattern-focused-${{ hashFiles('uv.lock', 'pyproject.toml', 'testdata/reference/rdkit.json', 'testdata/fingerprint/fixtures/rdkit/pattern_fingerprint_focused.smi', 'tools/testdata/rdkit/generate_all.py', 'tools/testdata/rdkit/_expected_schema.py', 'tools/testdata/rdkit/_generate_pattern_fingerprint_golden.py', 'tools/testdata/rdkit/pattern_fingerprint_profile.json') }}-${{ github.run_id }}-${{ github.run_attempt }}
-                  restore-keys: |
-                      rdkit-expected-${{ env.RDKIT_EXPECTED_CACHE_SCHEMA }}-${{ runner.os }}-${{ runner.arch }}-py${{ steps.setup_python.outputs.python-version }}-pattern-focused-${{ hashFiles('uv.lock', 'pyproject.toml', 'testdata/reference/rdkit.json', 'testdata/fingerprint/fixtures/rdkit/pattern_fingerprint_focused.smi', 'tools/testdata/rdkit/generate_all.py', 'tools/testdata/rdkit/_expected_schema.py', 'tools/testdata/rdkit/_generate_pattern_fingerprint_golden.py', 'tools/testdata/rdkit/pattern_fingerprint_profile.json') }}-
-
-            - name: Prepare and validate focused Pattern fingerprint expected data
-              id: prepare_focused_pattern_expected
-              shell: bash
-              run: |
-                  set -o pipefail
-                  prepare_log="$(mktemp)"
-                  .venv/bin/python tools/testdata/rdkit/generate_all.py --python .venv/bin/python --profile pattern_focused --suite pattern --jobs 1 | tee "$prepare_log"
-                  if grep -q '^\[expected\] regenerate ' "$prepare_log"; then
-                      echo "regenerated=true" >> "$GITHUB_OUTPUT"
-                  else
-                      echo "regenerated=false" >> "$GITHUB_OUTPUT"
-                  fi
-
-            - name: Save validated focused Pattern fingerprint expected-data cache
-              if: steps.prepare_focused_pattern_expected.outputs.regenerated == 'true'
-              uses: actions/cache/save@v4
-              with:
-                  path: testdata/fingerprint/expected/rdkit/pattern_focused
-                  key: ${{ steps.focused_pattern_golden_cache.outputs.cache-primary-key }}
-
-            - name: Restore focused descriptor golden cache
-              id: focused_descriptor_golden_cache
-              uses: actions/cache/restore@v4
-              with:
-                  path: testdata/descriptors/expected/rdkit/descriptors_focused
-                  key: rdkit-expected-${{ env.RDKIT_EXPECTED_CACHE_SCHEMA }}-${{ runner.os }}-${{ runner.arch }}-py${{ steps.setup_python.outputs.python-version }}-descriptors-focused-${{ hashFiles('uv.lock', 'pyproject.toml', 'testdata/reference/rdkit.json', 'testdata/descriptors/fixtures/rdkit/high_feasibility_descriptor_focused.smi', 'tools/testdata/rdkit/generate_all.py', 'tools/testdata/rdkit/_expected_schema.py', 'tools/testdata/rdkit/_generate_molecular_descriptors_golden.py') }}-${{ github.run_id }}-${{ github.run_attempt }}
-                  restore-keys: |
-                      rdkit-expected-${{ env.RDKIT_EXPECTED_CACHE_SCHEMA }}-${{ runner.os }}-${{ runner.arch }}-py${{ steps.setup_python.outputs.python-version }}-descriptors-focused-${{ hashFiles('uv.lock', 'pyproject.toml', 'testdata/reference/rdkit.json', 'testdata/descriptors/fixtures/rdkit/high_feasibility_descriptor_focused.smi', 'tools/testdata/rdkit/generate_all.py', 'tools/testdata/rdkit/_expected_schema.py', 'tools/testdata/rdkit/_generate_molecular_descriptors_golden.py') }}-
-
-            - name: Prepare and validate focused descriptor expected data
-              id: prepare_focused_descriptor_expected
-              shell: bash
-              run: |
-                  set -o pipefail
-                  prepare_log="$(mktemp)"
-                  .venv/bin/python tools/testdata/rdkit/generate_all.py --python .venv/bin/python --profile descriptors_focused --suite descriptors --jobs 4 | tee "$prepare_log"
-                  if grep -q '^\[expected\] regenerate ' "$prepare_log"; then
-                      echo "regenerated=true" >> "$GITHUB_OUTPUT"
-                  else
-                      echo "regenerated=false" >> "$GITHUB_OUTPUT"
-                  fi
-
-            - name: Save validated focused descriptor expected-data cache
-              if: steps.prepare_focused_descriptor_expected.outputs.regenerated == 'true'
-              uses: actions/cache/save@v4
-              with:
-                  path: testdata/descriptors/expected/rdkit/descriptors_focused
-                  key: ${{ steps.focused_descriptor_golden_cache.outputs.cache-primary-key }}
-
-            - name: Restore strict 5000 descriptor golden cache
-              id: strict_5000_descriptor_golden_cache
-              if: env.COSMOLKIT_PARITY_PROFILE != 'smiles_5000'
-              uses: actions/cache/restore@v4
-              with:
-                  path: testdata/descriptors/expected/rdkit/smiles_5000
-                  key: rdkit-expected-${{ env.RDKIT_EXPECTED_CACHE_SCHEMA }}-${{ runner.os }}-${{ runner.arch }}-py${{ steps.setup_python.outputs.python-version }}-smiles_5000-descriptors-${{ hashFiles('uv.lock', 'pyproject.toml', 'testdata/reference/rdkit.json', 'testdata/smiles/corpus/smiles_5000.smi', 'tools/testdata/rdkit/generate_all.py', 'tools/testdata/rdkit/_expected_schema.py', 'tools/testdata/rdkit/_generate_molecular_descriptors_golden.py') }}-${{ github.run_id }}-${{ github.run_attempt }}
-                  restore-keys: |
-                      rdkit-expected-${{ env.RDKIT_EXPECTED_CACHE_SCHEMA }}-${{ runner.os }}-${{ runner.arch }}-py${{ steps.setup_python.outputs.python-version }}-smiles_5000-descriptors-${{ hashFiles('uv.lock', 'pyproject.toml', 'testdata/reference/rdkit.json', 'testdata/smiles/corpus/smiles_5000.smi', 'tools/testdata/rdkit/generate_all.py', 'tools/testdata/rdkit/_expected_schema.py', 'tools/testdata/rdkit/_generate_molecular_descriptors_golden.py') }}-
-
-            - name: Prepare and validate strict 5000 descriptor expected data
-              id: prepare_strict_5000_descriptor_expected
-              if: env.COSMOLKIT_PARITY_PROFILE != 'smiles_5000'
-              shell: bash
-              run: |
-                  set -o pipefail
-                  prepare_log="$(mktemp)"
-                  .venv/bin/python tools/testdata/rdkit/generate_all.py --python .venv/bin/python --profile smiles_5000 --suite descriptors --jobs 4 | tee "$prepare_log"
-                  if grep -q '^\[expected\] regenerate ' "$prepare_log"; then
-                      echo "regenerated=true" >> "$GITHUB_OUTPUT"
-                  else
-                      echo "regenerated=false" >> "$GITHUB_OUTPUT"
-                  fi
-
-            - name: Save validated strict 5000 descriptor expected-data cache
-              if: env.COSMOLKIT_PARITY_PROFILE != 'smiles_5000' && steps.prepare_strict_5000_descriptor_expected.outputs.regenerated == 'true'
-              uses: actions/cache/save@v4
-              with:
-                  path: testdata/descriptors/expected/rdkit/smiles_5000
-                  key: ${{ steps.strict_5000_descriptor_golden_cache.outputs.cache-primary-key }}
-
-            - name: Restore strict 5000 InChI golden cache
-              id: strict_5000_inchi_golden_cache
-              uses: actions/cache/restore@v4
-              with:
-                  path: testdata/inchi/expected/rdkit/smiles_5000
-                  key: rdkit-expected-${{ env.RDKIT_EXPECTED_CACHE_SCHEMA }}-${{ runner.os }}-${{ runner.arch }}-py${{ steps.setup_python.outputs.python-version }}-smiles_5000-inchi-${{ hashFiles('uv.lock', 'pyproject.toml', 'testdata/reference/rdkit.json', 'testdata/smiles/corpus/smiles_5000.smi', 'tools/testdata/rdkit/generate_all.py', 'tools/testdata/rdkit/_expected_schema.py', 'tools/testdata/rdkit/_generate_inchi_golden.py') }}-${{ github.run_id }}-${{ github.run_attempt }}
-                  restore-keys: |
-                      rdkit-expected-${{ env.RDKIT_EXPECTED_CACHE_SCHEMA }}-${{ runner.os }}-${{ runner.arch }}-py${{ steps.setup_python.outputs.python-version }}-smiles_5000-inchi-${{ hashFiles('uv.lock', 'pyproject.toml', 'testdata/reference/rdkit.json', 'testdata/smiles/corpus/smiles_5000.smi', 'tools/testdata/rdkit/generate_all.py', 'tools/testdata/rdkit/_expected_schema.py', 'tools/testdata/rdkit/_generate_inchi_golden.py') }}-
-
-            - name: Prepare and validate strict 5000 InChI expected data
-              id: prepare_strict_5000_inchi_expected
-              shell: bash
-              run: |
-                  set -o pipefail
-                  prepare_log="$(mktemp)"
-                  .venv/bin/python tools/testdata/rdkit/generate_all.py --python .venv/bin/python --profile smiles_5000 --suite inchi --jobs 1 | tee "$prepare_log"
-                  if grep -q '^\[expected\] regenerate ' "$prepare_log"; then
-                      echo "regenerated=true" >> "$GITHUB_OUTPUT"
-                  else
-                      echo "regenerated=false" >> "$GITHUB_OUTPUT"
-                  fi
-
-            - name: Save validated strict 5000 InChI expected-data cache
-              if: steps.prepare_strict_5000_inchi_expected.outputs.regenerated == 'true'
-              uses: actions/cache/save@v4
-              with:
-                  path: testdata/inchi/expected/rdkit/smiles_5000
-                  key: ${{ steps.strict_5000_inchi_golden_cache.outputs.cache-primary-key }}
-
-            - name: Restore strict 5000 CIPLabeler golden cache
-              id: strict_5000_ciplabeler_golden_cache
-              if: env.COSMOLKIT_PARITY_PROFILE != 'smiles_5000'
-              uses: actions/cache/restore@v4
-              with:
-                  path: testdata/stereo/expected/rdkit/smiles_5000
-                  key: rdkit-expected-${{ env.RDKIT_EXPECTED_CACHE_SCHEMA }}-${{ runner.os }}-${{ runner.arch }}-py${{ steps.setup_python.outputs.python-version }}-smiles_5000-ciplabeler-${{ hashFiles('uv.lock', 'pyproject.toml', 'testdata/reference/rdkit.json', 'testdata/smiles/corpus/smiles_5000.smi', 'tools/testdata/rdkit/generate_all.py', 'tools/testdata/rdkit/_expected_schema.py', 'tools/testdata/rdkit/_generate_ciplabeler_golden.py') }}-${{ github.run_id }}-${{ github.run_attempt }}
-                  restore-keys: |
-                      rdkit-expected-${{ env.RDKIT_EXPECTED_CACHE_SCHEMA }}-${{ runner.os }}-${{ runner.arch }}-py${{ steps.setup_python.outputs.python-version }}-smiles_5000-ciplabeler-${{ hashFiles('uv.lock', 'pyproject.toml', 'testdata/reference/rdkit.json', 'testdata/smiles/corpus/smiles_5000.smi', 'tools/testdata/rdkit/generate_all.py', 'tools/testdata/rdkit/_expected_schema.py', 'tools/testdata/rdkit/_generate_ciplabeler_golden.py') }}-
-
-            - name: Prepare and validate strict 5000 CIPLabeler expected data
-              id: prepare_strict_5000_ciplabeler_expected
-              if: env.COSMOLKIT_PARITY_PROFILE != 'smiles_5000'
-              shell: bash
-              run: |
-                  set -o pipefail
-                  prepare_log="$(mktemp)"
-                  .venv/bin/python tools/testdata/rdkit/generate_all.py --python .venv/bin/python --profile smiles_5000 --suite ciplabeler --jobs 4 | tee "$prepare_log"
-                  if grep -q '^\[expected\] regenerate ' "$prepare_log"; then
-                      echo "regenerated=true" >> "$GITHUB_OUTPUT"
-                  else
-                      echo "regenerated=false" >> "$GITHUB_OUTPUT"
-                  fi
-
-            - name: Save validated strict 5000 CIPLabeler expected-data cache
-              if: env.COSMOLKIT_PARITY_PROFILE != 'smiles_5000' && steps.prepare_strict_5000_ciplabeler_expected.outputs.regenerated == 'true'
-              uses: actions/cache/save@v4
-              with:
-                  path: testdata/stereo/expected/rdkit/smiles_5000
-                  key: ${{ steps.strict_5000_ciplabeler_golden_cache.outputs.cache-primary-key }}
-
-            - name: Restore strict 5000 MolAlign golden cache
-              id: strict_5000_molalign_golden_cache
-              if: env.COSMOLKIT_PARITY_PROFILE != 'smiles_5000' && env.COSMOLKIT_RUN_EXHAUSTIVE_PARITY == 'true'
-              uses: actions/cache/restore@v4
-              with:
-                  path: testdata/alignment/expected/rdkit/smiles_5000
-                  key: rdkit-expected-${{ env.RDKIT_EXPECTED_CACHE_SCHEMA }}-${{ runner.os }}-${{ runner.arch }}-py${{ steps.setup_python.outputs.python-version }}-smiles_5000-molalign-${{ hashFiles('uv.lock', 'pyproject.toml', 'testdata/reference/rdkit.json', 'testdata/smiles/corpus/smiles_5000.smi', 'tools/testdata/rdkit/generate_all.py', 'tools/testdata/rdkit/_expected_schema.py', 'tools/testdata/rdkit/_generate_molalign_golden.py') }}-${{ github.run_id }}-${{ github.run_attempt }}
-                  restore-keys: |
-                      rdkit-expected-${{ env.RDKIT_EXPECTED_CACHE_SCHEMA }}-${{ runner.os }}-${{ runner.arch }}-py${{ steps.setup_python.outputs.python-version }}-smiles_5000-molalign-${{ hashFiles('uv.lock', 'pyproject.toml', 'testdata/reference/rdkit.json', 'testdata/smiles/corpus/smiles_5000.smi', 'tools/testdata/rdkit/generate_all.py', 'tools/testdata/rdkit/_expected_schema.py', 'tools/testdata/rdkit/_generate_molalign_golden.py') }}-
-
-            - name: Prepare and validate strict 5000 MolAlign expected data
-              id: prepare_strict_5000_molalign_expected
-              if: env.COSMOLKIT_PARITY_PROFILE != 'smiles_5000' && env.COSMOLKIT_RUN_EXHAUSTIVE_PARITY == 'true'
-              shell: bash
-              run: |
-                  set -o pipefail
-                  prepare_log="$(mktemp)"
-                  .venv/bin/python tools/testdata/rdkit/generate_all.py --python .venv/bin/python --profile smiles_5000 --suite molalign --jobs 4 | tee "$prepare_log"
-                  if grep -q '^\[expected\] regenerate ' "$prepare_log"; then
-                      echo "regenerated=true" >> "$GITHUB_OUTPUT"
-                  else
-                      echo "regenerated=false" >> "$GITHUB_OUTPUT"
-                  fi
-
-            - name: Save validated strict 5000 MolAlign expected-data cache
-              if: env.COSMOLKIT_PARITY_PROFILE != 'smiles_5000' && env.COSMOLKIT_RUN_EXHAUSTIVE_PARITY == 'true' && steps.prepare_strict_5000_molalign_expected.outputs.regenerated == 'true'
-              uses: actions/cache/save@v4
-              with:
-                  path: testdata/alignment/expected/rdkit/smiles_5000
-                  key: ${{ steps.strict_5000_molalign_golden_cache.outputs.cache-primary-key }}
-
-            - name: Restore strict 5000 fingerprint golden cache
-              id: strict_5000_fingerprint_golden_cache
-              if: env.COSMOLKIT_PARITY_PROFILE != 'smiles_5000'
-              uses: actions/cache/restore@v4
-              with:
-                  path: testdata/fingerprint/expected/rdkit/smiles_5000
-                  key: rdkit-expected-${{ env.RDKIT_EXPECTED_CACHE_SCHEMA }}-${{ runner.os }}-${{ runner.arch }}-py${{ steps.setup_python.outputs.python-version }}-smiles_5000-fingerprint-${{ hashFiles('uv.lock', 'pyproject.toml', 'testdata/reference/rdkit.json', 'testdata/smiles/corpus/smiles_5000.smi', 'tools/testdata/rdkit/generate_all.py', 'tools/testdata/rdkit/_expected_schema.py', 'tools/testdata/rdkit/_generate_*fingerprint*.py', 'tools/testdata/rdkit/*fingerprint*_profile.json') }}-${{ github.run_id }}-${{ github.run_attempt }}
-                  restore-keys: |
-                      rdkit-expected-${{ env.RDKIT_EXPECTED_CACHE_SCHEMA }}-${{ runner.os }}-${{ runner.arch }}-py${{ steps.setup_python.outputs.python-version }}-smiles_5000-fingerprint-${{ hashFiles('uv.lock', 'pyproject.toml', 'testdata/reference/rdkit.json', 'testdata/smiles/corpus/smiles_5000.smi', 'tools/testdata/rdkit/generate_all.py', 'tools/testdata/rdkit/_expected_schema.py', 'tools/testdata/rdkit/_generate_*fingerprint*.py', 'tools/testdata/rdkit/*fingerprint*_profile.json') }}-
-
-            - name: Prepare and validate strict 5000 fingerprint expected data
-              id: prepare_strict_5000_fingerprint_expected
-              shell: bash
-              run: |
-                  set -o pipefail
-                  prepare_log="$(mktemp)"
-                  .venv/bin/python tools/testdata/rdkit/generate_all.py --python .venv/bin/python --profile smiles_5000 --suite fingerprint --jobs 4 | tee "$prepare_log"
-                  if grep -q '^\[expected\] regenerate ' "$prepare_log"; then
-                      echo "regenerated=true" >> "$GITHUB_OUTPUT"
-                  else
-                      echo "regenerated=false" >> "$GITHUB_OUTPUT"
-                  fi
-
-            - name: Save validated strict 5000 fingerprint expected-data cache
-              if: env.COSMOLKIT_PARITY_PROFILE != 'smiles_5000' && steps.prepare_strict_5000_fingerprint_expected.outputs.regenerated == 'true'
-              uses: actions/cache/save@v4
-              with:
-                  path: testdata/fingerprint/expected/rdkit/smiles_5000
-                  key: ${{ steps.strict_5000_fingerprint_golden_cache.outputs.cache-primary-key }}
-
-            - name: Run core, InChI, and ring tests with coverage instrumentation
-              id: cov_run
+            - name: Prepare and validate all reference values
+              id: prepare
               continue-on-error: true
               shell: bash
               run: |
-                  cargo llvm-cov clean --workspace
-                  cargo llvm-cov -p cosmolkit-core -p cosmolkit-inchi -p cosmolkit-ringdecomposer --release --features cosmolkit-core/op-contracts-strict --no-report
+                  set -euo pipefail
+                  # Reuse the same instrumented libraries and release/strict features.
+                  coverage_env="$(cargo llvm-cov show-env --sh)"
+                  eval "$coverage_env"
+                  export CARGO_TARGET_DIR="$CARGO_LLVM_COV_TARGET_DIR"
+                  cargo build -p cosmolkit-parity-tests -p cosmolkit-core --release \
+                      --bin cosmolkit-parity-tests \
+                      --features cosmolkit/op-contracts-strict,cosmolkit-core/op-contracts-strict
+                  # Sequential generator calls; each Python function parallelizes cases.
+                  set +e
+                  "$CARGO_TARGET_DIR/release/cosmolkit-parity-tests" prepare \
+                      --smiles testdata/smiles/corpus/smiles_5000.smi \
+                      --data "$PARITY_DATA" --python .venv/bin/python --threads "$(nproc)" \
+                      2>&1 | tee "$RUNNER_TEMP/parity-prepare.log"
+                  statuses=("${PIPESTATUS[@]}")
+                  status=${statuses[0]}
+                  if [[ ${statuses[1]} != 0 ]]; then status=${statuses[1]}; fi
+                  set -e
+                  # This message is emitted only after successful global preflight.
+                  if grep -Eq '^Preparation complete: [0-9]+ reused tasks, [1-9][0-9]* generated tasks; [0-9]+ ready cases$' "$RUNNER_TEMP/parity-prepare.log"; then
+                      echo "regenerated=true" >> "$GITHUB_OUTPUT"
+                  fi
+                  if [[ "$status" == 0 ]]; then
+                      "$CARGO_TARGET_DIR/release/cosmolkit-parity-tests" preflight --data "$PARITY_DATA"
+                  fi
+                  exit "$status"
 
-            - name: Run exhaustive SMILES writer parity with coverage instrumentation
-              id: smiles_writer_full
-              if: env.COSMOLKIT_RUN_EXHAUSTIVE_PARITY == 'true'
+            - name: Run independent Cargo corpus tests with coverage
+              id: parity
+              if: ${{ !cancelled() && steps.prepare.outcome == 'success' }}
               continue-on-error: true
               shell: bash
               run: |
-                  cargo llvm-cov -p cosmolkit-core --release --features op-contracts-strict --test rdkit_smiles_writer_parity --no-report -- --ignored smiles_writer_matches_rdkit_golden_across_param_branches
+                  set -o pipefail
+                  coverage_env="$(cargo llvm-cov show-env --sh)"
+                  eval "$coverage_env"
+                  export CARGO_TARGET_DIR="$CARGO_LLVM_COV_TARGET_DIR"
+                  # No filter or thread override: Cargo parallelizes function/corpus tests.
+                  cargo test -p cosmolkit-parity-tests -p cosmolkit-core \
+                      --release --test reference_parity --no-fail-fast \
+                      --features cosmolkit/op-contracts-strict,cosmolkit-core/op-contracts-strict \
+                      2>&1 | tee "$RUNNER_TEMP/parity-5000.log"
 
-            - name: Run exhaustive SDF reader parity with coverage instrumentation
-              id: sdf_reader_full
-              if: env.COSMOLKIT_RUN_EXHAUSTIVE_PARITY == 'true'
-              continue-on-error: true
+            - name: Save validated reference generations
+              if: ${{ !cancelled() && steps.prepare.outputs.regenerated == 'true' }}
+              uses: actions/cache/save@v4
+              with:
+                  path: |
+                      ${{ env.PARITY_DATA }}/*/input.json
+                      ${{ env.PARITY_DATA }}/*/reference.json
+                      ${{ env.PARITY_DATA }}/*/manifest.json
+                  key: ${{ steps.reference_cache.outputs.cache-primary-key }}
+
+            - name: Upload parity results
+              if: ${{ !cancelled() && steps.prepare.outcome != 'skipped' }}
+              uses: actions/upload-artifact@v4
+              with:
+                  name: parity-5000-results
+                  path: |
+                      ${{ runner.temp }}/parity-prepare.log
+                      ${{ runner.temp }}/parity-5000.log
+                      ${{ env.PARITY_DATA }}/rust-report.json
+                      ${{ env.PARITY_DATA }}/run-*/*.json
+                  if-no-files-found: error
+
+            - name: Generate coverage reports
+              if: ${{ !cancelled() && steps.regression.outcome != 'skipped' }}
               shell: bash
               run: |
-                  cargo llvm-cov -p cosmolkit-core --release --features op-contracts-strict --test rdkit_sdf_read_parity --no-report -- --ignored sdf_read_all_apis_and_parameters_match_rdkit
-
-            - name: Run exhaustive scalar tautomer parity with coverage instrumentation
-              id: tautomer_scalar_full
-              if: env.COSMOLKIT_RUN_EXHAUSTIVE_PARITY == 'true'
-              continue-on-error: true
-              shell: bash
-              run: |
-                  cargo llvm-cov -p cosmolkit-core --release --features op-contracts-strict --test rdkit_tautomer_corpus_parity --no-report -- --ignored smiles_5000_profiles_match_every_pinned_rdkit_observation --exact
-
-            - name: Run exhaustive batch tautomer parity with coverage instrumentation
-              id: tautomer_batch_full
-              if: env.COSMOLKIT_RUN_EXHAUSTIVE_PARITY == 'true'
-              continue-on-error: true
-              shell: bash
-              run: |
-                  cargo llvm-cov -p cosmolkit-core --release --features op-contracts-strict --test rdkit_tautomer_corpus_parity --no-report -- --ignored smiles_5000_parallel_batches_preserve_order_and_exact_results --exact
-
-            - name: Run exhaustive PCS tautomer parity with coverage instrumentation
-              id: tautomer_pcs_full
-              if: env.COSMOLKIT_RUN_EXHAUSTIVE_PARITY == 'true'
-              continue-on-error: true
-              shell: bash
-              run: |
-                  cargo llvm-cov -p cosmolkit-core --release --features op-contracts-strict --test rdkit_tautomer_pcs_parity --no-report -- --ignored
-
-            - name: Run exhaustive MolAlign parity with coverage instrumentation
-              id: molalign_full
-              if: env.COSMOLKIT_RUN_EXHAUSTIVE_PARITY == 'true'
-              continue-on-error: true
-              shell: bash
-              run: |
-                  cargo llvm-cov -p cosmolkit-core --release --features op-contracts-strict --test rdkit_molalign_parity --no-report -- --ignored molalign_matches_all_5000_rows_and_rotated_operation_branches --exact
-
-            - name: Run strict 5000 InChI parity with coverage instrumentation
-              id: strict_5000_inchi
-              continue-on-error: true
-              shell: bash
-              run: |
-                  COSMOLKIT_PARITY_PROFILE=smiles_5000 cargo llvm-cov -p cosmolkit-core --release --features op-contracts-strict --test rdkit_inchi_parity --no-report -- inchi_matches_pinned_rdkit_for_every_active_profile_row --exact
-
-            - name: Run strict 5000 Topological Torsion parity with coverage instrumentation
-              id: strict_5000_topological_torsion
-              continue-on-error: true
-              shell: bash
-              run: |
-                  COSMOLKIT_PARITY_PROFILE=smiles_5000 cargo llvm-cov -p cosmolkit-core --release --features op-contracts-strict --test rdkit_topological_torsion_fingerprint_parity --no-report -- --ignored topological_torsion_matches_all_5000_rows_and_profiles_exactly --exact
-
-            - name: Run strict 5000 CIPLabeler parity with coverage instrumentation
-              id: strict_5000_ciplabeler
-              continue-on-error: true
-              shell: bash
-              run: |
-                  COSMOLKIT_PARITY_PROFILE=smiles_5000 cargo llvm-cov -p cosmolkit-core --release --features op-contracts-strict --test rdkit_ciplabeler_parity --no-report -- --ignored modern_ciplabeler_matches_all_5000_rows_exactly --exact
-
-            - name: Run strict 5000 descriptor parity with coverage instrumentation
-              id: strict_5000_descriptors
-              if: env.COSMOLKIT_PARITY_PROFILE != 'smiles_5000'
-              continue-on-error: true
-              shell: bash
-              run: |
-                  COSMOLKIT_PARITY_PROFILE=smiles_5000 cargo llvm-cov -p cosmolkit-core --release --features op-contracts-strict --test rdkit_high_feasibility_descriptor_parity --no-report -- active_corpus_high_feasibility_descriptors_match_pinned_rdkit_exactly --exact
-
-            - name: Generate HTML coverage report
-              if: always()
-              shell: bash
-              run: |
-                  report_log="$(mktemp)"
-                  if ! cargo llvm-cov report -p cosmolkit-core -p cosmolkit-inchi -p cosmolkit-ringdecomposer --release --html --output-dir target/llvm-cov/html 2>"$report_log"; then
+                  packages=()
+                  while IFS= read -r package; do packages+=(-p "$package"); done < "$RUNNER_TEMP/test-packages.txt"
+                  for format in html lcov; do
+                      report_log="$(mktemp)"
+                      output=(--html --output-dir target/llvm-cov/html)
+                      if [[ "$format" == lcov ]]; then output=(--lcov --output-path lcov.info); fi
+                      if ! cargo llvm-cov report "${packages[@]}" --release "${output[@]}" 2>"$report_log"; then
+                          cat "$report_log" >&2
+                          exit 1
+                      fi
                       cat "$report_log" >&2
-                      exit 1
-                  fi
-                  cat "$report_log" >&2
-                  if grep -Eq '[0-9]+ functions have mismatched data' "$report_log"; then
-                      echo "Coverage profile data do not match the instrumented objects." >&2
-                      exit 1
-                  fi
+                      if grep -Eq '[0-9]+ functions have mismatched data' "$report_log"; then
+                          echo "Coverage profiles do not match the instrumented objects." >&2
+                          exit 1
+                      fi
+                  done
 
-            - name: Generate LCOV coverage report
-              if: always()
-              shell: bash
-              run: |
-                  report_log="$(mktemp)"
-                  if ! cargo llvm-cov report -p cosmolkit-core -p cosmolkit-inchi -p cosmolkit-ringdecomposer --release --lcov --output-path lcov.info 2>"$report_log"; then
-                      cat "$report_log" >&2
-                      exit 1
-                  fi
-                  cat "$report_log" >&2
-                  if grep -Eq '[0-9]+ functions have mismatched data' "$report_log"; then
-                      echo "Coverage profile data do not match the instrumented objects." >&2
-                      exit 1
-                  fi
-
-            - name: Upload HTML coverage artifact
-              if: always()
+            - name: Upload HTML coverage
+              if: ${{ !cancelled() && steps.regression.outcome != 'skipped' }}
               uses: actions/upload-artifact@v4
               with:
                   name: llvm-cov-html
@@ -614,18 +226,19 @@ jobs:
                   if-no-files-found: error
 
             - name: Upload coverage to Codecov
-              if: always()
+              if: ${{ !cancelled() && steps.regression.outcome != 'skipped' }}
               uses: codecov/codecov-action@v6
               with:
                   token: ${{ secrets.CODECOV_TOKEN }}
                   files: lcov.info
                   flags: rust
-                  name: rust-llvm-cov
+                  name: rust-regressions-and-parity
                   fail_ci_if_error: false
-                  verbose: true
 
-            - name: Fail workflow if tests failed
-              if: steps.cov_run.outcome == 'failure' || steps.smiles_writer_full.outcome == 'failure' || steps.sdf_reader_full.outcome == 'failure' || steps.tautomer_scalar_full.outcome == 'failure' || steps.tautomer_batch_full.outcome == 'failure' || steps.tautomer_pcs_full.outcome == 'failure' || steps.molalign_full.outcome == 'failure' || steps.strict_5000_inchi.outcome == 'failure' || steps.strict_5000_topological_torsion.outcome == 'failure' || steps.strict_5000_ciplabeler.outcome == 'failure' || steps.strict_5000_descriptors.outcome == 'failure'
-              run: |
-                  echo "Rust tests failed. Coverage artifacts were still generated and uploaded."
-                  exit 1
+            - name: Remove raw coverage measurements before caching builds
+              if: ${{ always() }}
+              run: cargo llvm-cov clean --workspace --profraw-only
+
+            - name: Preserve test failure status
+              if: ${{ !cancelled() && (steps.regression.outcome == 'failure' || steps.doctests.outcome == 'failure' || steps.prepare.outcome == 'failure' || steps.parity.outcome == 'failure') }}
+              run: exit 1

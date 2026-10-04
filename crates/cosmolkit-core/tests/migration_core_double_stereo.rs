@@ -9,7 +9,7 @@ use cosmolkit_core::{
 };
 use cosmolkit_model::{
     Atom, AtomId, AtomSpec, Bond, BondId, BondSpec, Conformer3D, CoordinateValidationError,
-    TopologyBlock, TopologyValidationError,
+    PropertyValue, TopologyBlock, TopologyValidationError,
 };
 use cosmolkit_types::{BondDirection, BondOrder, BondStereo, Element};
 
@@ -616,7 +616,10 @@ fn cleanup_modes_preserve_unknown_metadata_and_requested_slashes() {
     );
     let single = clear_single_bond_directions(topology.clone(), true).unwrap();
     assert_eq!(single.bonds[0].direction(), BondDirection::None);
-    assert_eq!(single.bonds[0].prop("_UnknownStereo"), Some("1"));
+    assert_eq!(
+        single.bonds[0].prop("_UnknownStereo"),
+        Some(&PropertyValue::String("1".to_owned()))
+    );
     assert_eq!(single.bonds[1].direction(), BondDirection::EndDownRight);
     assert_eq!(single.bonds[2].direction(), BondDirection::EitherDouble);
 
@@ -631,7 +634,7 @@ fn cleanup_modes_preserve_unknown_metadata_and_requested_slashes() {
     );
     assert_eq!(
         all_preserve_slashes.bonds[2].prop("_UnknownStereo"),
-        Some("1")
+        Some(&PropertyValue::String("1".to_owned()))
     );
 
     topology.bonds[1].set_direction(BondDirection::BeginWedge);

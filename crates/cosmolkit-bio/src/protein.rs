@@ -6,25 +6,46 @@ use cosmolkit_types::Element;
 
 use crate::{
     AltLocLabel, AtomName, BioAtomId, BioAtomRow, BioChainId, BioChainRow, BioCoordinateBlock,
-    BioEntityId, BioModelId, BioModelRow, BioResidueId, BioResidueRow, BioRowSpan, BioStructure,
-    BioStructureError, BioStructureParts, ChainKind, ChainSourceIds, ResidueCode, ResidueInfo,
-    ResidueInfoKind, ResidueKind, ResidueName, find_residue_info,
+    BioEntityId, BioModelId, BioModelRow, BioResidueId, BioResidueRow, BioRowSpan,
+    BioStructureData, BioStructureError, BioStructureParts, ChainKind, ChainSourceIds, ResidueCode,
+    ResidueInfo, ResidueInfoKind, ResidueKind, ResidueName, find_residue_info,
 };
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct Protein {
-    structure: BioStructure,
+pub struct ProteinData {
+    structure: BioStructureData,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ProteinSelectionSummary {
+    pub chains: usize,
+    pub residues: usize,
+    pub atoms: usize,
+}
+
+#[must_use]
+pub fn protein_selection_summary(structure: &BioStructureData) -> ProteinSelectionSummary {
+    ProteinSelectionSummary {
+        chains: structure.chains().len(),
+        residues: structure.residues().len(),
+        atoms: structure.atoms().len(),
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProteinProjectionError {
     Structure(BioStructureError),
     MissingEntityMapping { source: BioEntityId },
+    NonAminoAcidResidue { index: usize },
 }
 
 impl fmt::Display for ProteinProjectionError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::NonAminoAcidResidue { index } => write!(
+                formatter,
+                "protein contains non-amino-acid residue at row {index}"
+            ),
             Self::Structure(error) => write!(formatter, "protein projection failed: {error}"),
             Self::MissingEntityMapping { source } => write!(
                 formatter,
@@ -39,7 +60,7 @@ impl std::error::Error for ProteinProjectionError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::Structure(error) => Some(error),
-            Self::MissingEntityMapping { .. } => None,
+            Self::MissingEntityMapping { .. } | Self::NonAminoAcidResidue { .. } => None,
         }
     }
 }
@@ -50,32 +71,405 @@ impl From<BioStructureError> for ProteinProjectionError {
     }
 }
 
+/// Source-ordered borrowed protein chains without an intermediate collection.
+#[derive(Debug, Clone)]
+pub struct ProteinChainIter<'a> {
+    structure: &'a BioStructureData,
+    cursor: std::ops::Range<usize>,
+}
+
+impl<'a> ProteinChainIter<'a> {
+    fn new(structure: &'a BioStructureData, cursor: std::ops::Range<usize>) -> Self {
+        Self { structure, cursor }
+    }
+}
+
+impl<'a> Iterator for ProteinChainIter<'a> {
+    type Item = ProteinChainRef<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        // Legacy: (0..self.structure.chains().len()).map(|index| ProteinChainRef {
+        // Legacy:     protein: self,
+        // Legacy:     chain_id: ChainId::new(index as u32),
+        // Legacy: })
+        // Behavior: one borrowed row reference per source-order cursor step.
+        // Complexity: constant-time next, no materialized Vec or heap allocation.
+        self.cursor.next().map(|index| ProteinChainRef {
+            structure: self.structure,
+            chain_id: BioChainId::new(index as u32),
+        })
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.cursor.size_hint()
+    }
+}
+
+impl ExactSizeIterator for ProteinChainIter<'_> {}
+impl std::iter::FusedIterator for ProteinChainIter<'_> {}
+
+/// Borrowed source-ordered protein residues over one contiguous hierarchy span.
+#[derive(Debug, Clone)]
+pub struct ProteinResidueIter<'a> {
+    structure: &'a BioStructureData,
+    cursor: std::ops::Range<usize>,
+}
+
+impl<'a> ProteinResidueIter<'a> {
+    fn new(structure: &'a BioStructureData, cursor: std::ops::Range<usize>) -> Self {
+        Self { structure, cursor }
+    }
+}
+
+impl<'a> Iterator for ProteinResidueIter<'a> {
+    type Item = ProteinResidueRef<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        // Legacy: (span.start as usize..span.end() as usize).map(move |index| ProteinResidueRef {
+        // Legacy:     protein,
+        // Legacy:     residue_id: ResidueId::new(index as u32),
+        // Legacy: })
+        // Behavior: the validated chain span and whole-structure range share
+        // the same source-order traversal without collecting skipped rows.
+        // Complexity: constant time per row and no per-next allocations.
+        self.cursor.next().map(|index| ProteinResidueRef {
+            structure: self.structure,
+            residue_id: BioResidueId::new(index as u32),
+        })
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.cursor.size_hint()
+    }
+}
+
+impl ExactSizeIterator for ProteinResidueIter<'_> {}
+impl std::iter::FusedIterator for ProteinResidueIter<'_> {}
+
+/// Borrowed atom traversal over a validated contiguous residue or chain span.
+#[derive(Debug, Clone)]
+pub struct ProteinAtomIter<'a> {
+    structure: &'a BioStructureData,
+    cursor: std::ops::Range<usize>,
+}
+
+impl<'a> ProteinAtomIter<'a> {
+    fn new(structure: &'a BioStructureData, cursor: std::ops::Range<usize>) -> Self {
+        Self { structure, cursor }
+    }
+
+    fn from_residues(structure: &'a BioStructureData, residues: std::ops::Range<usize>) -> Self {
+        let start = structure
+            .residues()
+            .get(residues.start)
+            .map_or(0, |row| row.atom_span().start() as usize);
+        let end = if residues.is_empty() {
+            start
+        } else {
+            structure.residues()[residues.end - 1].atom_span().end() as usize
+        };
+        Self::new(structure, start..end)
+    }
+}
+
+impl<'a> Iterator for ProteinAtomIter<'a> {
+    type Item = ProteinAtomRef<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        // Legacy: (span.start as usize..span.end() as usize).map(move |index| ProteinAtomRef {
+        // Legacy:     protein,
+        // Legacy:     atom_id: AtomId::new(index as u32),
+        // Legacy: })
+        // Behavior: validated contiguous atom spans preserve source order,
+        // including zero-width residue spans between populated residues.
+        // Complexity: O(1) per row, no per-residue Vec or heap allocation.
+        self.cursor.next().map(|index| ProteinAtomRef {
+            structure: self.structure,
+            atom_id: BioAtomId::new(index as u32),
+        })
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.cursor.size_hint()
+    }
+}
+
+impl ExactSizeIterator for ProteinAtomIter<'_> {}
+impl std::iter::FusedIterator for ProteinAtomIter<'_> {}
+
+#[cfg(test)]
+mod bio_legacy_iterator_tests {
+    use super::{BioStructureData, ProteinAtomIter, ProteinChainIter, ProteinResidueIter};
+    use crate::{
+        AtomName, AtomSourceIds, BioAtomRow, BioCalcFlag, BioChainId, BioChainRow,
+        BioCoordinateBlock, BioCoordinateFormat, BioModelId, BioModelRow, BioResidueId,
+        BioResidueRow, BioRowSpan, BioSiftsUnpResidue, BioStructureParts, ChainKind,
+        ChainSourceIds, EntityKind, ResidueInfoKind, ResidueName, ResidueSourceIds,
+    };
+    use cosmolkit_types::Element;
+
+    fn structure(chain_count: usize) -> BioStructureData {
+        let span = |start, len| BioRowSpan::new(start, len).unwrap();
+        BioStructureData::from_parts(BioStructureParts {
+            input_format: BioCoordinateFormat::Unknown,
+            models: if chain_count == 0 {
+                vec![]
+            } else {
+                vec![BioModelRow::new(span(0, chain_count as u32), Some(1))]
+            },
+            chains: (0..chain_count)
+                .map(|_| {
+                    BioChainRow::new(
+                        BioModelId::new(0),
+                        None,
+                        BioRowSpan::new(0, 0).unwrap(),
+                        ChainKind::Protein,
+                        ChainSourceIds::default(),
+                    )
+                })
+                .collect(),
+            residues: vec![],
+            atoms: vec![],
+            entities: vec![],
+            connections: vec![],
+            cispeps: vec![],
+            mod_residues: vec![],
+            helices: vec![],
+            sheets: vec![],
+            metadata: Default::default(),
+            source_state: Default::default(),
+            coordinates: BioCoordinateBlock::default(),
+            crystal: None,
+            ncs_operators: vec![],
+            assemblies: vec![],
+        })
+        .unwrap()
+    }
+
+    fn with_residues() -> BioStructureData {
+        let mut parts = structure(0).into_parts();
+        parts.models = vec![
+            BioModelRow::new(BioRowSpan::new(0, 2).unwrap(), Some(1)),
+            BioModelRow::new(BioRowSpan::new(2, 1).unwrap(), Some(2)),
+        ];
+        parts.chains = [(0, 0, 2), (0, 2, 0), (1, 2, 1)]
+            .into_iter()
+            .map(|(model, start, len)| {
+                BioChainRow::new(
+                    BioModelId::new(model),
+                    None,
+                    BioRowSpan::new(start, len).unwrap(),
+                    ChainKind::Protein,
+                    ChainSourceIds::default(),
+                )
+            })
+            .collect();
+        parts.residues = [(0, "ALA"), (0, "GLY"), (2, "SER")]
+            .into_iter()
+            .map(|(chain, name)| {
+                BioResidueRow::new(
+                    BioChainId::new(chain),
+                    BioRowSpan::new(0, 0).unwrap(),
+                    ResidueName::from_ascii(name.as_bytes()).unwrap(),
+                    ResidueInfoKind::Aa,
+                    EntityKind::Polymer,
+                    None,
+                    None,
+                    ResidueSourceIds::default(),
+                    BioSiftsUnpResidue::default(),
+                )
+            })
+            .collect();
+        BioStructureData::from_parts(parts).unwrap()
+    }
+
+    fn with_atoms() -> BioStructureData {
+        let mut parts = with_residues().into_parts();
+        for (index, (start, len)) in [(0, 1), (1, 0), (1, 1)].into_iter().enumerate() {
+            parts.residues[index] = BioResidueRow::new(
+                BioChainId::new(if index == 2 { 2 } else { 0 }),
+                BioRowSpan::new(start, len).unwrap(),
+                ResidueName::from_ascii(if index == 0 {
+                    b"ALA"
+                } else if index == 1 {
+                    b"GLY"
+                } else {
+                    b"SER"
+                })
+                .unwrap(),
+                ResidueInfoKind::Aa,
+                EntityKind::Polymer,
+                None,
+                None,
+                ResidueSourceIds::default(),
+                BioSiftsUnpResidue::default(),
+            );
+        }
+        parts.atoms = [(0, b"CA".as_slice()), (2, b"CB".as_slice())]
+            .into_iter()
+            .map(|(residue, name)| {
+                BioAtomRow::new(
+                    BioResidueId::new(residue),
+                    AtomName::from_ascii(name).unwrap(),
+                    Element::C,
+                    None,
+                    None,
+                    0,
+                    BioCalcFlag::NotSet,
+                    1.0,
+                    20.0,
+                    [0.0; 6],
+                    -1,
+                    0.0,
+                    AtomSourceIds::default(),
+                )
+            })
+            .collect();
+        parts.coordinates = BioCoordinateBlock::new(vec![[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]);
+        BioStructureData::from_parts(parts).unwrap()
+    }
+
+    #[test]
+    fn bio_legacy_i03_atom_iterator_empty_interspersed_and_borrowed_positions() {
+        let data = with_atoms();
+        let mut empty = ProteinAtomIter::from_residues(&data, 1..2);
+        assert!(empty.next().is_none());
+        assert!(empty.next().is_none());
+        let mut first_chain = ProteinAtomIter::from_residues(&data, 0..2);
+        assert_eq!(first_chain.next().unwrap().position(), [1.0, 2.0, 3.0]);
+        assert!(first_chain.next().is_none());
+        let mut all = ProteinAtomIter::new(&data, 0..2);
+        assert_eq!(all.next().unwrap().id().value(), 0);
+        let last = all.next().unwrap();
+        assert_eq!(last.id().value(), 1);
+        assert_eq!(last.position(), [4.0, 5.0, 6.0]);
+        assert!(all.next().is_none());
+        assert!(all.next().is_none());
+    }
+
+    #[test]
+    fn bio_legacy_i04_six_borrowed_traversals_are_source_ordered_and_interleavable() {
+        let data = with_atoms();
+        let protein = data.protein().unwrap();
+        let mut chains = protein.chains();
+        assert_eq!(chains.next().unwrap().id().value(), 0);
+        let chain = protein.chain(0).unwrap();
+        let mut chain_residues = chain.residues();
+        assert_eq!(chain_residues.next().unwrap().id().value(), 0);
+        let residue = protein.residues().next().unwrap();
+        assert_eq!(residue.id().value(), 0);
+        assert_eq!(residue.atoms().next().unwrap().position(), [1.0, 2.0, 3.0]);
+        assert_eq!(
+            protein
+                .atoms()
+                .map(|atom| atom.id().value())
+                .collect::<Vec<_>>(),
+            [0, 1]
+        );
+        assert_eq!(chain.atoms().next().unwrap().position(), [1.0, 2.0, 3.0]);
+        assert_eq!(chain_residues.next().unwrap().id().value(), 1);
+        assert_eq!(chains.next().unwrap().id().value(), 1);
+        assert!(chains.next().is_none());
+        assert_eq!(
+            protein.chain(1).unwrap().atoms().next().unwrap().position(),
+            [4.0, 5.0, 6.0]
+        );
+        assert!(std::ptr::eq(
+            residue.row(),
+            &protein.structure().residues()[0]
+        ));
+    }
+
+    #[test]
+    fn bio_legacy_i02_residue_iterator_whole_empty_chain_and_model_gap() {
+        let data = with_residues();
+        let mut all = ProteinResidueIter::new(&data, 0..data.residues().len());
+        let mut copy = all.clone();
+        assert_eq!(all.next().unwrap().id().value(), 0);
+        assert_eq!(copy.next().unwrap().id().value(), 0);
+        assert_eq!(
+            all.map(|residue| residue.id().value()).collect::<Vec<_>>(),
+            [1, 2]
+        );
+        assert_eq!(
+            copy.map(|residue| residue.id().value()).collect::<Vec<_>>(),
+            [1, 2]
+        );
+        let mut empty = ProteinResidueIter::new(&data, 2..2);
+        assert!(empty.next().is_none());
+        assert!(empty.next().is_none());
+        let mut last = ProteinResidueIter::new(&data, 2..3);
+        assert_eq!(last.next().unwrap().name().as_str(), "SER");
+        assert!(last.next().is_none());
+        assert!(last.next().is_none());
+    }
+
+    #[test]
+    fn bio_legacy_i01_chain_iterator_empty_single_many_and_independent_cursors() {
+        for count in [0, 1, 3] {
+            let data = structure(count);
+            let mut first = ProteinChainIter::new(&data, 0..data.chains().len());
+            let mut second = first.clone();
+            for index in 0..count {
+                assert_eq!(first.next().unwrap().id().value(), index as u32);
+                assert_eq!(second.next().unwrap().id().value(), index as u32);
+            }
+            assert!(first.next().is_none());
+            assert!(first.next().is_none());
+            assert!(second.next().is_none());
+        }
+        let data = structure(3);
+        let mut partial = ProteinChainIter::new(&data, 0..3);
+        assert_eq!(partial.next().unwrap().id().value(), 0);
+        assert_eq!(partial.next().unwrap().id().value(), 1);
+        assert_eq!(partial.size_hint(), (1, Some(1)));
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct ProteinChainRef<'a> {
-    protein: &'a Protein,
+    structure: &'a BioStructureData,
     chain_id: BioChainId,
 }
 
 #[derive(Debug, Clone, Copy)]
 pub struct ProteinResidueRef<'a> {
-    protein: &'a Protein,
+    structure: &'a BioStructureData,
     residue_id: BioResidueId,
 }
 
 #[derive(Debug, Clone, Copy)]
 pub struct ProteinAtomRef<'a> {
-    protein: &'a Protein,
+    structure: &'a BioStructureData,
     atom_id: BioAtomId,
 }
 
-impl BioStructure {
-    pub fn protein(&self) -> Result<Protein, ProteinProjectionError> {
-        Protein::project(self)
+impl BioStructureData {
+    pub fn protein(&self) -> Result<ProteinData, ProteinProjectionError> {
+        ProteinData::project(self)
     }
 }
 
-impl Protein {
-    fn project(source: &BioStructure) -> Result<Self, ProteinProjectionError> {
+impl ProteinData {
+    /// Detached editing only; callers must validate before publishing a result.
+    pub fn structure_mut(&mut self) -> &mut BioStructureData {
+        &mut self.structure
+    }
+
+    pub fn structure(&self) -> &BioStructureData {
+        &self.structure
+    }
+
+    #[must_use]
+    pub fn into_structure(self) -> BioStructureData {
+        self.structure
+    }
+
+    pub fn validate(&self) -> Result<(), ProteinProjectionError> {
+        validate_protein_structure(&self.structure)
+    }
+
+    fn project(source: &BioStructureData) -> Result<Self, ProteinProjectionError> {
         let retained_residues: Vec<bool> = source
             .residues()
             .iter()
@@ -205,7 +599,7 @@ impl Protein {
             ));
         }
 
-        let structure = BioStructure::from_parts(BioStructureParts {
+        let structure = BioStructureData::from_parts(BioStructureParts {
             input_format: source.input_format(),
             models,
             chains,
@@ -231,7 +625,7 @@ impl Protein {
             // rule; source serial connectivity remains metadata, not bonds.
             // Complexity review: these clones are linear in their retained
             // owned values, as Gemmi's `empty_copy` deep-copies the same
-            // aggregates; no full BioStructure clone or remapping scan occurs.
+            // aggregates; no full BioStructureData clone or remapping scan occurs.
             connections: source.connections().to_vec(),
             cispeps: source.cispeps().to_vec(),
             mod_residues: source.mod_residues().to_vec(),
@@ -252,7 +646,7 @@ impl Protein {
             crystal: source.crystal().cloned(),
             ncs_operators: source.ncs_operators().to_vec(),
             // A generator referencing an excluded chain is not a valid
-            // biological assembly of the projection. Protein is deliberately
+            // biological assembly of the projection. ProteinData is deliberately
             // not a lossless structure/writer value, so assemblies are absent
             // instead of being guessed or partially rewritten.
             assemblies: Vec::new(),
@@ -282,42 +676,65 @@ impl Protein {
     }
 
     #[must_use]
-    pub fn chains(&self) -> Vec<ProteinChainRef<'_>> {
-        (0..self.num_chains())
-            .map(|index| ProteinChainRef {
-                protein: self,
-                chain_id: BioChainId::new(index as u32),
-            })
-            .collect()
+    pub fn selection_summary(&self) -> ProteinSelectionSummary {
+        protein_selection_summary(&self.structure)
+    }
+
+    #[must_use]
+    pub fn chains(&self) -> ProteinChainIter<'_> {
+        protein_chains(&self.structure)
     }
 
     #[must_use]
     pub fn chain(&self, index: usize) -> Option<ProteinChainRef<'_>> {
-        (index < self.num_chains()).then(|| ProteinChainRef {
-            protein: self,
-            chain_id: BioChainId::new(index as u32),
-        })
+        protein_chain(&self.structure, index)
     }
 
     #[must_use]
-    pub fn residues(&self) -> Vec<ProteinResidueRef<'_>> {
-        (0..self.num_residues())
-            .map(|index| ProteinResidueRef {
-                protein: self,
-                residue_id: BioResidueId::new(index as u32),
-            })
-            .collect()
+    pub fn residues(&self) -> ProteinResidueIter<'_> {
+        protein_residues(&self.structure)
     }
 
     #[must_use]
-    pub fn atoms(&self) -> Vec<ProteinAtomRef<'_>> {
-        (0..self.num_atoms())
-            .map(|index| ProteinAtomRef {
-                protein: self,
-                atom_id: BioAtomId::new(index as u32),
-            })
-            .collect()
+    pub fn atoms(&self) -> ProteinAtomIter<'_> {
+        protein_atoms(&self.structure)
     }
+}
+
+#[must_use]
+pub fn protein_chains(structure: &BioStructureData) -> ProteinChainIter<'_> {
+    ProteinChainIter::new(structure, 0..structure.chains().len())
+}
+
+#[must_use]
+pub fn protein_chain(structure: &BioStructureData, index: usize) -> Option<ProteinChainRef<'_>> {
+    (index < structure.chains().len()).then(|| ProteinChainRef {
+        structure,
+        chain_id: BioChainId::new(index as u32),
+    })
+}
+
+#[must_use]
+pub fn protein_residues(structure: &BioStructureData) -> ProteinResidueIter<'_> {
+    ProteinResidueIter::new(structure, 0..structure.residues().len())
+}
+
+#[must_use]
+pub fn protein_atoms(structure: &BioStructureData) -> ProteinAtomIter<'_> {
+    ProteinAtomIter::new(structure, 0..structure.atoms().len())
+}
+
+/// Validate the already-projected hierarchy without constructing another owner.
+pub fn validate_protein_structure(
+    structure: &BioStructureData,
+) -> Result<(), ProteinProjectionError> {
+    structure.validate()?;
+    for (index, residue) in structure.residues().iter().enumerate() {
+        if !is_amino_acid_kind(residue.residue_info_kind()) {
+            return Err(ProteinProjectionError::NonAminoAcidResidue { index });
+        }
+    }
+    Ok(())
 }
 
 impl<'a> ProteinChainRef<'a> {
@@ -328,7 +745,7 @@ impl<'a> ProteinChainRef<'a> {
 
     #[must_use]
     pub fn row(self) -> &'a BioChainRow {
-        &self.protein.structure.chains()[self.chain_id.index()]
+        &self.structure.chains()[self.chain_id.index()]
     }
 
     #[must_use]
@@ -342,22 +759,15 @@ impl<'a> ProteinChainRef<'a> {
     }
 
     #[must_use]
-    pub fn residues(self) -> Vec<ProteinResidueRef<'a>> {
+    pub fn residues(self) -> ProteinResidueIter<'a> {
         let span = self.row().residue_span();
-        (span.start() as usize..span.end() as usize)
-            .map(|index| ProteinResidueRef {
-                protein: self.protein,
-                residue_id: BioResidueId::new(index as u32),
-            })
-            .collect()
+        ProteinResidueIter::new(self.structure, span.start() as usize..span.end() as usize)
     }
 
     #[must_use]
-    pub fn atoms(self) -> Vec<ProteinAtomRef<'a>> {
-        self.residues()
-            .into_iter()
-            .flat_map(ProteinResidueRef::atoms)
-            .collect()
+    pub fn atoms(self) -> ProteinAtomIter<'a> {
+        let span = self.row().residue_span();
+        ProteinAtomIter::from_residues(self.structure, span.start() as usize..span.end() as usize)
     }
 }
 
@@ -369,7 +779,7 @@ impl<'a> ProteinResidueRef<'a> {
 
     #[must_use]
     pub fn row(self) -> &'a BioResidueRow {
-        &self.protein.structure.residues()[self.residue_id.index()]
+        &self.structure.residues()[self.residue_id.index()]
     }
 
     #[must_use]
@@ -410,20 +820,15 @@ impl<'a> ProteinResidueRef<'a> {
     #[must_use]
     pub fn chain(self) -> ProteinChainRef<'a> {
         ProteinChainRef {
-            protein: self.protein,
+            structure: self.structure,
             chain_id: self.row().chain_id(),
         }
     }
 
     #[must_use]
-    pub fn atoms(self) -> Vec<ProteinAtomRef<'a>> {
+    pub fn atoms(self) -> ProteinAtomIter<'a> {
         let span = self.row().atom_span();
-        (span.start() as usize..span.end() as usize)
-            .map(|index| ProteinAtomRef {
-                protein: self.protein,
-                atom_id: BioAtomId::new(index as u32),
-            })
-            .collect()
+        ProteinAtomIter::new(self.structure, span.start() as usize..span.end() as usize)
     }
 }
 
@@ -435,7 +840,7 @@ impl<'a> ProteinAtomRef<'a> {
 
     #[must_use]
     pub fn row(self) -> &'a BioAtomRow {
-        &self.protein.structure.atoms()[self.atom_id.index()]
+        &self.structure.atoms()[self.atom_id.index()]
     }
 
     #[must_use]
@@ -456,14 +861,14 @@ impl<'a> ProteinAtomRef<'a> {
     #[must_use]
     pub fn residue(self) -> ProteinResidueRef<'a> {
         ProteinResidueRef {
-            protein: self.protein,
+            structure: self.structure,
             residue_id: self.row().residue_id(),
         }
     }
 
     #[must_use]
     pub fn position(self) -> [f64; 3] {
-        self.protein.structure.coordinates().positions()[self.atom_id.index()]
+        self.structure.coordinates().positions()[self.atom_id.index()]
     }
 }
 

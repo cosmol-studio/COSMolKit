@@ -8,7 +8,7 @@ use cosmolkit_model::{
 };
 use cosmolkit_types::{BondDirection, BondOrder, BondStereo, Hybridization};
 
-use crate::{HybridizationAssignment, RingInfo};
+use crate::{HybridizationAssignment, RingInfo, WedgeAssignments, WedgeInfo};
 
 const REALLY_SMALL_BOND_LEN: f64 = 0.000_000_1;
 
@@ -272,6 +272,38 @@ pub fn atropisomer_carriers(
             carrier_bonds: end.bonds,
         })
     }))
+}
+
+/// Returns carrier ends for requested axial bonds after validating topology once.
+pub fn atropisomer_carriers_for_bonds(
+    topology: &TopologyBlock,
+    axial_bonds: &[BondId],
+) -> Result<Vec<(BondId, Option<[AtropisomerCarrierEnd; 2]>)>, AtropisomerError> {
+    // Validate once, then reuse the source-shaped `atropisomer_ends` owner
+    // helper for each requested bond instead of repeating a whole-topology
+    // scan for every atropisomer neighbor in the CX bond-config writer.
+    topology
+        .validate()
+        .map_err(|source| AtropisomerError::InvalidTopology { source })?;
+    axial_bonds
+        .iter()
+        .copied()
+        .map(|axial_bond| {
+            let bond = topology.bonds.get(axial_bond.index()).ok_or(
+                AtropisomerError::AxialBondOutOfRange {
+                    bond: axial_bond,
+                    bond_count: topology.bonds.len(),
+                },
+            )?;
+            let carriers = atropisomer_ends(topology, bond).map(|ends| {
+                ends.map(|end| AtropisomerCarrierEnd {
+                    focus: end.atom,
+                    carrier_bonds: end.bonds,
+                })
+            });
+            Ok((axial_bond, carriers))
+        })
+        .collect()
 }
 
 fn point(conformer: AtropisomerConformer<'_>, atom: AtomId) -> [f64; 3] {
@@ -1137,6 +1169,424 @@ pub fn stereo_group_atom_ids(
         }
     }
     Ok(ids)
+}
+
+pub fn get_all_atom_ids_for_stereo_group(
+    topology: &TopologyBlock,
+    group: &StereoGroup,
+    wedge_bonds: &WedgeAssignments,
+) -> Result<Vec<AtomId>, AtropisomerError> {
+    validate_stereo_group_topology(topology)?;
+    validate_stereo_group_members(topology, group)?;
+    Ok(collect_stereo_group_atom_ids(topology, group, wedge_bonds))
+}
+
+/// Collects source-ordered atom IDs for each checked stereo group.
+///
+/// The topology is validated once for the batch. Group membership is checked
+/// in input order before each source collection pass.
+pub fn get_all_atom_ids_for_stereo_groups(
+    topology: &TopologyBlock,
+    groups: &[StereoGroup],
+    wedge_bonds: &WedgeAssignments,
+) -> Result<Vec<Vec<AtomId>>, AtropisomerError> {
+    validate_stereo_group_topology(topology)?;
+
+    let mut atom_ids_by_group = Vec::with_capacity(groups.len());
+    for group in groups {
+        validate_stereo_group_members(topology, group)?;
+        atom_ids_by_group.push(collect_stereo_group_atom_ids(topology, group, wedge_bonds));
+    }
+    Ok(atom_ids_by_group)
+}
+
+#[cfg(test)]
+std::thread_local! {
+    static STEREO_GROUP_TOPOLOGY_VALIDATION_CALLS: std::cell::Cell<usize> = const {
+        std::cell::Cell::new(0)
+    };
+}
+
+fn validate_stereo_group_topology(topology: &TopologyBlock) -> Result<(), AtropisomerError> {
+    #[cfg(test)]
+    STEREO_GROUP_TOPOLOGY_VALIDATION_CALLS.with(|calls| calls.set(calls.get() + 1));
+
+    topology
+        .validate()
+        .map_err(|source| AtropisomerError::InvalidTopology { source })
+}
+
+fn validate_stereo_group_members(
+    topology: &TopologyBlock,
+    group: &StereoGroup,
+) -> Result<(), AtropisomerError> {
+    for atom in group.atoms() {
+        if atom.index() >= topology.atoms.len() {
+            return Err(AtropisomerError::StereoGroupAtomOutOfRange {
+                atom: *atom,
+                atom_count: topology.atoms.len(),
+            });
+        }
+    }
+    for bond in group.bonds() {
+        if bond.index() >= topology.bonds.len() {
+            return Err(AtropisomerError::StereoGroupBondOutOfRange {
+                bond: *bond,
+                bond_count: topology.bonds.len(),
+            });
+        }
+    }
+    Ok(())
+}
+
+fn collect_stereo_group_atom_ids(
+    topology: &TopologyBlock,
+    group: &StereoGroup,
+    wedge_bonds: &WedgeAssignments,
+) -> Vec<AtomId> {
+    // Complete pinned source: Atropisomers::getAllAtomIdsForStereoGroup.
+    // RDKit❗❌: void getAllAtomIdsForStereoGroup(
+    // RDKit❗❌:     const ROMol &mol, const StereoGroup &group,
+    // RDKit❗❌:     std::vector<unsigned int> &atomIds,
+    // RDKit❗❌:     const std::map<int, std::unique_ptr<RDKit::Chirality::WedgeInfoBase>>
+    // RDKit❗❌:         &wedgeBonds) {
+    // RDKit❗❌:   atomIds.clear();
+    // RDKit❗❌:   for (auto &&atom : group.getAtoms()) {
+    // RDKit❗❌:     atomIds.push_back(atom->getIdx());
+    // RDKit❗❌:   }
+    // RDKit❗❌:
+    // RDKit❗❌:   for (auto &&bond : group.getBonds()) {
+    // RDKit❗❌:     // figure out which atoms of the bond get wedge/hash indications
+    // RDKit❗❌:     // mark the atom with the wedge/hash
+    // RDKit❗❌:
+    // RDKit❗❌:     for (auto atom : {bond->getBeginAtom(), bond->getEndAtom()}) {
+    // RDKit❗❌:       for (const auto atomBond : mol.atomBonds(atom)) {
+    // RDKit❗❌:         if (atomBond->getIdx() == bond->getIdx()) {
+    // RDKit❗❌:           continue;
+    // RDKit❗❌:         }
+    // RDKit❗❌:
+    // RDKit❗❌:         if (atomBond->getBondDir() == Bond::BEGINWEDGE ||
+    // RDKit❗❌:             atomBond->getBondDir() == Bond::BEGINDASH ||
+    // RDKit❗❌:             (wedgeBonds.find(atomBond->getIdx()) != wedgeBonds.end() &&
+    // RDKit❗❌:              (wedgeBonds.at(atomBond->getIdx())->getType()) ==
+    // RDKit❗❌:                  Chirality::WedgeInfoType::WedgeInfoTypeAtropisomer)) {
+    // RDKit❗❌:           if (std::find(atomIds.begin(), atomIds.end(), atom->getIdx()) ==
+    // RDKit❗❌:               atomIds.end()) {
+    // RDKit❗❌:             atomIds.push_back(atom->getIdx());
+    // RDKit❗❌:           }
+    // RDKit❗❌:         }
+    // RDKit❗❌:       }
+    // RDKit❗❌:     }
+    // RDKit❗❌:   }
+    // RDKit❗❌: }
+    // Behavior review: the shared wedge map contributes only Atropisomer entries;
+    // existing BEGINWEDGE/BEGINDASH directions, group member order and adjacency
+    // source order are preserved, and newly found endpoint IDs are appended once.
+    // Complexity review: adjacency and BTreeMap lookups avoid rescanning wedge
+    // updates; linear Vec membership matches source std::find. Full detached
+    // topology validation adds an O(V+E) pass absent from the pointer-valid source.
+    let mut atom_ids = group.atoms().to_vec();
+    for group_bond_id in group.bonds() {
+        let group_bond = &topology.bonds[group_bond_id.index()];
+        for atom in [group_bond.begin(), group_bond.end()] {
+            for adjacent in topology.adjacency.neighbors_of(atom.index()) {
+                if adjacent.bond == *group_bond_id {
+                    continue;
+                }
+
+                let adjacent_bond = &topology.bonds[adjacent.bond.index()];
+                if matches!(
+                    adjacent_bond.direction(),
+                    BondDirection::BeginWedge | BondDirection::BeginDash
+                ) || matches!(
+                    wedge_bonds.get(adjacent.bond),
+                    Some(WedgeInfo::Atropisomer { .. })
+                ) {
+                    if !atom_ids.contains(&atom) {
+                        atom_ids.push(atom);
+                    }
+                }
+            }
+        }
+    }
+    atom_ids
+}
+
+#[cfg(test)]
+mod stereo_group_batch_tests {
+    use super::*;
+    use crate::{WedgeAssignments, pick_bonds_to_wedge};
+    use cosmolkit_model::{Atom, AtomSpec, BondSpec, StereoGroupKind, TopologyValidationError};
+    use cosmolkit_types::{BondOrder, ChiralTag, Element};
+
+    fn group_topology(directions: [BondDirection; 3]) -> TopologyBlock {
+        let atoms = (0..4)
+            .map(|index| {
+                Atom::from_spec(
+                    AtomId::new(index),
+                    AtomSpec::new(Element::C).with_chiral_tag(ChiralTag::Unspecified),
+                )
+            })
+            .collect();
+        let edges = [(0, 1), (1, 2), (1, 3)];
+        let bonds = edges
+            .into_iter()
+            .zip(directions)
+            .enumerate()
+            .map(|(index, ((begin, end), direction))| {
+                Bond::from_spec(
+                    BondId::new(index),
+                    BondSpec::new(AtomId::new(begin), AtomId::new(end), BondOrder::Single)
+                        .with_direction(direction),
+                )
+            })
+            .collect();
+        TopologyBlock::try_from_parts(atoms, bonds, Vec::new(), Vec::new())
+            .expect("valid stereo-group test topology")
+    }
+
+    fn tetrahedral_wedge_topology() -> TopologyBlock {
+        let atoms = (0..5)
+            .map(|index| {
+                let tag = if index == 0 {
+                    ChiralTag::TetrahedralCw
+                } else {
+                    ChiralTag::Unspecified
+                };
+                Atom::from_spec(
+                    AtomId::new(index),
+                    AtomSpec::new(Element::C).with_chiral_tag(tag),
+                )
+            })
+            .collect();
+        let bonds = (0..4)
+            .map(|index| {
+                Bond::from_spec(
+                    BondId::new(index),
+                    BondSpec::new(AtomId::new(0), AtomId::new(index + 1), BondOrder::Single),
+                )
+            })
+            .collect();
+        TopologyBlock::try_from_parts(atoms, bonds, Vec::new(), Vec::new())
+            .expect("valid tetrahedral wedge topology")
+    }
+
+    fn reset_validation_count() {
+        STEREO_GROUP_TOPOLOGY_VALIDATION_CALLS.with(|calls| calls.set(0));
+    }
+
+    fn validation_count() -> usize {
+        STEREO_GROUP_TOPOLOGY_VALIDATION_CALLS.with(std::cell::Cell::get)
+    }
+
+    #[test]
+    fn cf_smi_groups_batch_preserves_member_order_duplicates_and_overlaps() {
+        let topology = group_topology([
+            BondDirection::None,
+            BondDirection::BeginWedge,
+            BondDirection::BeginDash,
+        ]);
+        let groups = vec![
+            StereoGroup::new(
+                StereoGroupKind::Absolute,
+                vec![AtomId::new(2), AtomId::new(0), AtomId::new(2)],
+                Vec::new(),
+            ),
+            StereoGroup::new(
+                StereoGroupKind::Or,
+                vec![AtomId::new(0), AtomId::new(1)],
+                Vec::new(),
+            ),
+            StereoGroup::new(
+                StereoGroupKind::And,
+                vec![AtomId::new(3)],
+                vec![BondId::new(0)],
+            ),
+            StereoGroup::new(
+                StereoGroupKind::Or,
+                vec![AtomId::new(1)],
+                vec![BondId::new(0)],
+            ),
+        ];
+
+        let expected = vec![
+            vec![AtomId::new(2), AtomId::new(0), AtomId::new(2)],
+            vec![AtomId::new(0), AtomId::new(1)],
+            vec![AtomId::new(3), AtomId::new(1)],
+            vec![AtomId::new(1)],
+        ];
+        let batch =
+            get_all_atom_ids_for_stereo_groups(&topology, &groups, &WedgeAssignments::default())
+                .expect("collect all valid groups");
+        let independent = groups
+            .iter()
+            .map(|group| {
+                get_all_atom_ids_for_stereo_group(&topology, group, &WedgeAssignments::default())
+                    .expect("collect one valid group")
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(batch, expected);
+        assert_eq!(batch, independent);
+    }
+
+    #[test]
+    fn cf_smi_groups_batch_handles_empty_and_single_group() {
+        let topology = group_topology([BondDirection::None; 3]);
+        let empty =
+            get_all_atom_ids_for_stereo_groups(&topology, &[], &WedgeAssignments::default())
+                .expect("empty checked batch");
+        assert!(empty.is_empty());
+
+        let group = StereoGroup::new(
+            StereoGroupKind::Absolute,
+            vec![AtomId::new(3), AtomId::new(0)],
+            Vec::new(),
+        );
+        assert_eq!(
+            get_all_atom_ids_for_stereo_groups(
+                &topology,
+                std::slice::from_ref(&group),
+                &WedgeAssignments::default(),
+            )
+            .expect("one checked group"),
+            vec![vec![AtomId::new(3), AtomId::new(0)]]
+        );
+    }
+
+    #[test]
+    fn cf_smi_groups_wedge_map_accepts_only_atropisomer_entries() {
+        let topology = group_topology([BondDirection::None; 3]);
+        let axial_group =
+            StereoGroup::new(StereoGroupKind::Absolute, Vec::new(), vec![BondId::new(0)]);
+        let update = AtropisomerWedgeUpdate {
+            bond: BondId::new(1),
+            begin: AtomId::new(1),
+            end: AtomId::new(2),
+            direction: BondDirection::None,
+            atropisomer_bond: BondId::new(0),
+        };
+        let atrop_map =
+            WedgeAssignments::from_atropisomer_wedge_assignment(AtropisomerWedgeAssignment {
+                bond_updates: vec![update],
+                diagnostics: Vec::new(),
+            });
+        assert_eq!(
+            get_all_atom_ids_for_stereo_group(&topology, &axial_group, &atrop_map)
+                .expect("Atropisomer map entry expands its endpoint"),
+            vec![AtomId::new(1)]
+        );
+
+        let tetrahedral = tetrahedral_wedge_topology();
+        let chiral_map = pick_bonds_to_wedge(&tetrahedral, None)
+            .expect("valid tetrahedral topology receives a Chiral wedge map entry");
+        let (chiral_bond, entry) = chiral_map
+            .iter()
+            .find(|(_, entry)| matches!(entry, WedgeInfo::Chiral { .. }))
+            .expect("a tetrahedral center receives a Chiral map entry");
+        assert!(matches!(entry, WedgeInfo::Chiral { .. }));
+        let group_bond = (0..4)
+            .map(BondId::new)
+            .find(|bond| *bond != chiral_bond)
+            .expect("a second central bond remains for the group");
+        let chiral_group =
+            StereoGroup::new(StereoGroupKind::Absolute, Vec::new(), vec![group_bond]);
+        assert_eq!(
+            get_all_atom_ids_for_stereo_group(&tetrahedral, &chiral_group, &chiral_map)
+                .expect("Chiral map entries do not expand an enhanced group"),
+            Vec::<AtomId>::new()
+        );
+    }
+
+    #[test]
+    fn cf_smi_groups_batch_preserves_typed_errors_and_precedence() {
+        let topology = group_topology([BondDirection::None; 3]);
+        let invalid_members = StereoGroup::new(
+            StereoGroupKind::Absolute,
+            vec![AtomId::new(99)],
+            vec![BondId::new(99)],
+        );
+        assert_eq!(
+            get_all_atom_ids_for_stereo_groups(
+                &topology,
+                std::slice::from_ref(&invalid_members),
+                &WedgeAssignments::default(),
+            ),
+            Err(AtropisomerError::StereoGroupAtomOutOfRange {
+                atom: AtomId::new(99),
+                atom_count: 4,
+            })
+        );
+
+        let invalid_bond = StereoGroup::new(StereoGroupKind::Or, Vec::new(), vec![BondId::new(99)]);
+        assert_eq!(
+            get_all_atom_ids_for_stereo_groups(
+                &topology,
+                &[
+                    StereoGroup::new(StereoGroupKind::Absolute, vec![AtomId::new(0)], Vec::new(),),
+                    invalid_bond
+                ],
+                &WedgeAssignments::default(),
+            ),
+            Err(AtropisomerError::StereoGroupBondOutOfRange {
+                bond: BondId::new(99),
+                bond_count: 3,
+            })
+        );
+
+        let mut invalid_topology = group_topology([BondDirection::None; 3]);
+        invalid_topology.bonds[0] = Bond::from_spec(
+            BondId::new(0),
+            BondSpec::new(AtomId::new(99), AtomId::new(1), BondOrder::Single),
+        );
+        assert!(matches!(
+            get_all_atom_ids_for_stereo_groups(
+                &invalid_topology,
+                &[StereoGroup::new(
+                    StereoGroupKind::Absolute,
+                    vec![AtomId::new(0)],
+                    Vec::new(),
+                )],
+                &WedgeAssignments::default(),
+            ),
+            Err(AtropisomerError::InvalidTopology {
+                source: TopologyValidationError::BondEndpointOutOfRange {
+                    bond,
+                    ..
+                }
+            })
+                if bond == BondId::new(0)
+        ));
+    }
+
+    #[test]
+    fn cf_smi_groups_batch_validates_topology_once_per_call() {
+        let topology = group_topology([BondDirection::None; 3]);
+        let groups = (0..12)
+            .map(|index| {
+                StereoGroup::new(
+                    StereoGroupKind::Or,
+                    vec![AtomId::new(index % 4)],
+                    Vec::new(),
+                )
+            })
+            .collect::<Vec<_>>();
+
+        reset_validation_count();
+        get_all_atom_ids_for_stereo_groups(&topology, &groups, &WedgeAssignments::default())
+            .expect("batch of twelve groups");
+        assert_eq!(validation_count(), 1);
+
+        reset_validation_count();
+        get_all_atom_ids_for_stereo_group(&topology, &groups[0], &WedgeAssignments::default())
+            .expect("checked singular group");
+        assert_eq!(validation_count(), 1);
+
+        reset_validation_count();
+        get_all_atom_ids_for_stereo_groups(&topology, &[], &WedgeAssignments::default())
+            .expect("empty checked batch still validates the topology");
+        assert_eq!(validation_count(), 1);
+    }
 }
 
 fn no_conf_direction(stereo: BondStereo, which_end: usize, which_bond: usize) -> BondDirection {
@@ -2171,6 +2621,28 @@ pub fn cleanup_invalid_atropisomers(
         });
     }
 
+    // The one private engine below owns the clone/tag-loop/group-cleanup/
+    // final-validation body; this wrapper keeps the source wrapper-before-
+    // loop prevalidation and supplies the existing detached check primitive.
+    cleanup_invalid_atropisomers_engine(topology, |bond| {
+        check_invalid_atrop_bond(bond, hybridization, rings)
+    })
+}
+
+/// One private error-generic cleanup engine shared by the public detached
+/// wrapper and the owned-ring-state sanitize wrapper.
+///
+/// `check` is called ONLY for AtropCw/AtropCcw bonds; it reports whether it
+/// cleared the tag. Stereo-group cleanup inspects the RESULT topology after
+/// tag updates and runs only if a tag was cleared, exactly as the source
+/// does after its bond loop.
+fn cleanup_invalid_atropisomers_engine<E>(
+    topology: &TopologyBlock,
+    mut check: impl FnMut(&mut Bond) -> Result<bool, E>,
+) -> Result<TopologyBlock, E>
+where
+    E: From<AtropisomerError>,
+{
     // Complete pinned source: MolOps::cleanupAtropisomers(RWMol &, Hybridizations &).
     // RDKit✔️❌: void cleanupAtropisomers(RWMol &mol, MolOps::Hybridizations &hybs) {
     // RDKit✔️❌:   // make sure that ring info is available
@@ -2199,20 +2671,146 @@ pub fn cleanup_invalid_atropisomers(
     let mut result = topology.clone();
     let mut need_stereo_group_cleanup = false;
     for bond in &mut result.bonds {
-        if matches!(bond.stereo(), BondStereo::AtropCw | BondStereo::AtropCcw)
-            && check_invalid_atrop_bond(bond, hybridization, rings)?
-        {
+        if matches!(bond.stereo(), BondStereo::AtropCw | BondStereo::AtropCcw) && check(bond)? {
             need_stereo_group_cleanup = true;
         }
     }
     if need_stereo_group_cleanup {
+        #[cfg(test)]
+        cleanup_ring_state_probe::record_group_cleanup();
         result.stereo_groups =
-            cleanup_atropisomer_stereo_groups(&result, &AtropisomerAssignment::default())?.groups;
+            cleanup_atropisomer_stereo_groups(&result, &AtropisomerAssignment::default())
+                .map_err(E::from)?
+                .groups;
     }
     result
         .validate()
-        .map_err(|source| AtropisomerError::InvalidTopology { source })?;
+        .map_err(|source| E::from(AtropisomerError::InvalidTopology { source }))?;
     Ok(result)
+}
+
+/// Private two-cause error for the owned-ring-state cleanup wrapper.
+///
+/// `Rings` carries the canonical finder failure raised while lazily
+/// acquiring SSSR for a tagged bond; `Algorithm` carries the existing
+/// detached atropisomer causes. `source()` borrows the inner error.
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum AtropisomerCleanupError {
+    #[error("ring finding failed during atropisomer cleanup: {0}")]
+    Rings(#[from] crate::RingFindingError),
+    #[error("atropisomer cleanup failed: {0}")]
+    Algorithm(#[from] AtropisomerError),
+}
+
+/// Test-only observation points at the actual wrapper acquisition site.
+/// Counters are never reset by production code; production builds contain
+/// no counters or hooks.
+#[cfg(test)]
+pub(crate) mod cleanup_ring_state_probe {
+    use std::cell::Cell;
+
+    thread_local! {
+        static FIND_CALLS: Cell<u64> = const { Cell::new(0) };
+        static CONSUMED_CALLS: Cell<u64> = const { Cell::new(0) };
+        static GROUP_CLEANUP_CALLS: Cell<u64> = const { Cell::new(0) };
+        static ACQUIRED_ATOM_ROW_PTRS: Cell<Vec<usize>> = const { Cell::new(Vec::new()) };
+    }
+
+    pub(crate) fn record_find() {
+        FIND_CALLS.with(|calls| calls.set(calls.get() + 1));
+    }
+
+    pub(crate) fn record_consumed() {
+        CONSUMED_CALLS.with(|calls| calls.set(calls.get() + 1));
+    }
+
+    pub(crate) fn record_group_cleanup() {
+        GROUP_CLEANUP_CALLS.with(|calls| calls.set(calls.get() + 1));
+    }
+
+    pub(crate) fn record_acquired_atom_rows(rows: *const Vec<cosmolkit_model::AtomId>) {
+        ACQUIRED_ATOM_ROW_PTRS.with(|buffer| {
+            let mut buffer = buffer.take();
+            buffer.push(rows as usize);
+            ACQUIRED_ATOM_ROW_PTRS.with(|cell| cell.set(buffer));
+        });
+    }
+
+    pub(crate) fn find_calls() -> u64 {
+        FIND_CALLS.with(Cell::get)
+    }
+
+    pub(crate) fn consumed_calls() -> u64 {
+        CONSUMED_CALLS.with(Cell::get)
+    }
+
+    pub(crate) fn group_cleanup_calls() -> u64 {
+        GROUP_CLEANUP_CALLS.with(Cell::get)
+    }
+
+    pub(crate) fn acquired_atom_row_pointers() -> Vec<usize> {
+        ACQUIRED_ATOM_ROW_PTRS.with(Cell::take)
+    }
+}
+
+/// Owned-ring-state cleanup used by the sanitize CLEANUP_ATROPISOMERS stage.
+///
+/// The supplied `Option<RingInfo>` is the one state carrier: it is moved in
+/// and moved back out; no full RingInfo clone serves this path. With no
+/// AtropCw/AtropCcw bonds the callback never runs: NO ring acquisition or
+/// validation happens and the supplied state is preserved exactly (a
+/// malformed no-tag state remains unconsumed). For a tagged bond the source
+/// checkBond guard runs first: a state below SSSR-or-better acquires ONE
+/// canonical find_sssr from the ORIGINAL topology (cleanup changes only
+/// stereo tags in its clone, never graph/bond orders/endpoints/IDs) and
+/// replaces the carrier by move BEFORE any Sp2 endpoint short-circuit; an
+/// initialized-empty SSSR/Symm satisfies the guard and is never re-found.
+/// The consumed state is then dimension/index validated and the existing
+/// detached check primitive decides the tag.
+pub(crate) fn cleanup_invalid_atropisomers_with_ring_state(
+    topology: &TopologyBlock,
+    hybridization: &HybridizationAssignment,
+    rings: Option<RingInfo>,
+) -> Result<(TopologyBlock, Option<RingInfo>), AtropisomerCleanupError> {
+    topology
+        .validate()
+        .map_err(|source| AtropisomerError::InvalidTopology { source })?;
+    if hybridization.values.len() != topology.atoms.len() {
+        return Err(AtropisomerError::HybridizationAssignmentLength {
+            actual: hybridization.values.len(),
+            expected: topology.atoms.len(),
+        }
+        .into());
+    }
+    let mut state = rings;
+    let output =
+        cleanup_invalid_atropisomers_engine::<AtropisomerCleanupError>(topology, |bond| {
+            #[cfg(test)]
+            cleanup_ring_state_probe::record_consumed();
+            // Complete pinned source: MolOps.cpp anonymous-namespace checkBond
+            // ring-state guard, applied to the owned carrier.
+            // RDKit✔️✔️:   if (!mol.getRingInfo()->isSssrOrBetter()) {
+            // RDKit✔️✔️:     RDKit::MolOps::findSSSR(mol);
+            // RDKit✔️✔️:   }
+            let below_quality = !state
+                .as_ref()
+                .is_some_and(|carrier| carrier.is_sssr_or_better());
+            if below_quality {
+                let fresh = crate::rings::find_sssr(topology, &crate::RingSearchParams::default())?;
+                #[cfg(test)]
+                cleanup_ring_state_probe::record_find();
+                #[cfg(test)]
+                cleanup_ring_state_probe::record_acquired_atom_rows(fresh.atom_rings().as_ptr());
+                state = Some(fresh);
+            }
+            let carrier = state
+                .as_ref()
+                .expect("ring state present after the guard branch");
+            validate_rings(topology, carrier)?;
+            check_invalid_atrop_bond(bond, hybridization, carrier)
+                .map_err(AtropisomerCleanupError::from)
+        })?;
+    Ok((output, state))
 }
 
 pub fn wedge_bonds_from_atropisomers(
@@ -2301,6 +2899,424 @@ pub fn wedge_bonds_from_atropisomers(
         bond_updates: updates.into_values().collect(),
         diagnostics,
     })
+}
+
+// L05: the owned-ring-state cleanup wrapper products. Counters are
+// thread-local and never reset; all observations are per-call deltas.
+// Probe pointers prove MOVE preservation of the one carrier (supplied
+// buffers survive with the same heap address; the acquired SSSR address
+// recorded at the real acquisition site is the address returned).
+#[cfg(test)]
+mod cleanup_ring_state_tests {
+    use super::cleanup_invalid_atropisomers_with_ring_state;
+    use super::cleanup_ring_state_probe as probe;
+    use crate::atropisomer::AtropisomerError;
+    use crate::{HybridizationAssignment, RingFindType, RingInfo};
+    use cosmolkit_model::{
+        Atom, AtomId, AtomSpec, Bond, BondId, BondSpec, StereoGroup, StereoGroupKind, TopologyBlock,
+    };
+    use cosmolkit_types::{BondOrder, BondStereo, Element, Hybridization};
+
+    fn cycle(n: usize, stereo: BondStereo) -> TopologyBlock {
+        let atoms = (0..n)
+            .map(|id| Atom::from_spec(AtomId::new(id), AtomSpec::new(Element::C)))
+            .collect::<Vec<_>>();
+        let bonds = (0..n)
+            .map(|id| {
+                let mut spec = BondSpec::new(
+                    AtomId::new(id),
+                    AtomId::new((id + 1) % n),
+                    BondOrder::Single,
+                );
+                if id == 0 {
+                    spec = spec.with_stereo(stereo);
+                }
+                Bond::from_spec(BondId::new(id), spec)
+            })
+            .collect::<Vec<_>>();
+        // Source-shaped sentinel: one ordered stereo group over all cycle
+        // atoms; complete ordered group output is asserted every call.
+        let sentinel = StereoGroup::new(
+            StereoGroupKind::Or,
+            (0..n).map(AtomId::new).collect(),
+            Vec::new(),
+        )
+        .with_id(7);
+        TopologyBlock::try_from_parts(atoms, bonds, Vec::new(), vec![sentinel]).unwrap()
+    }
+
+    fn hybs(values: Vec<Hybridization>) -> HybridizationAssignment {
+        HybridizationAssignment { values }
+    }
+
+    fn all(n: usize, value: Hybridization) -> Vec<Hybridization> {
+        vec![value; n]
+    }
+
+    fn full_ring(find_type: RingFindType, n: usize) -> RingInfo {
+        // Frozen full-row convention: reversed atom/bond order, e.g. the
+        // six-cycle rows atoms[0,5,4,3,2,1], bonds[5,4,3,2,1,0].
+        let mut info = RingInfo::new(find_type, n, n);
+        let rows: Vec<usize> = (0..n).rev().collect();
+        info.add_ring(&rows, &rows).unwrap();
+        info
+    }
+
+    fn reset_state() -> RingInfo {
+        let mut info = RingInfo::new(RingFindType::Sssr, 6, 6);
+        info.reset();
+        info
+    }
+
+    fn row_indices(rings: &RingInfo) -> Vec<Vec<usize>> {
+        rings
+            .atom_rings()
+            .iter()
+            .map(|row| row.iter().map(|atom| atom.index()).collect())
+            .collect()
+    }
+
+    fn bond_row_indices(rings: &RingInfo) -> Vec<Vec<usize>> {
+        rings
+            .bond_rings()
+            .iter()
+            .map(|row| row.iter().map(|bond| bond.index()).collect())
+            .collect()
+    }
+
+    #[test]
+    fn sanitize_ring_l05_lazy_quality_sixty_call_product() {
+        let states: Vec<(&'static str, Option<RingInfo>)> = vec![
+            ("none", None),
+            ("reset", Some(reset_state())),
+            (
+                "other-empty",
+                Some(RingInfo::new(RingFindType::OtherOrUnknown, 6, 6)),
+            ),
+            ("fast-empty", Some(RingInfo::new(RingFindType::Fast, 6, 6))),
+            ("sssr-empty", Some(RingInfo::new(RingFindType::Sssr, 6, 6))),
+            (
+                "symm-empty",
+                Some(RingInfo::new(RingFindType::SymmSssr, 6, 6)),
+            ),
+            (
+                "other-full6",
+                Some(full_ring(RingFindType::OtherOrUnknown, 6)),
+            ),
+            ("fast-full6", Some(full_ring(RingFindType::Fast, 6))),
+            ("sssr-full6", Some(full_ring(RingFindType::Sssr, 6))),
+            ("symm-full6", Some(full_ring(RingFindType::SymmSssr, 6))),
+        ];
+        let mut calls = 0usize;
+        for (state_name, state) in states {
+            for stereo in [BondStereo::None, BondStereo::AtropCw, BondStereo::AtropCcw] {
+                for endpoint in [Hybridization::Sp2, Hybridization::Sp3] {
+                    let label = format!("{state_name}/{stereo:?}/{endpoint:?}");
+                    let topology = cycle(6, stereo);
+                    let groups_snapshot = topology.stereo_groups.clone();
+                    let topology_snapshot = topology.clone();
+                    let hybridization = hybs(all(6, endpoint));
+                    let hybs_snapshot = hybridization.clone();
+                    let state_snapshot = state.clone();
+                    // The pointer must be captured from the value actually
+                    // PASSED (the moved-in carrier), not the loop-local
+                    // original, for a real move-preservation proof.
+                    let supplied = state.clone();
+                    let supplied_ptr = supplied.as_ref().map(|rings| rings.atom_rings().as_ptr());
+                    let find_before = probe::find_calls();
+                    let consumed_before = probe::consumed_calls();
+                    let group_before = probe::group_cleanup_calls();
+                    let acquired_before = probe::acquired_atom_row_pointers().len();
+                    let (output, returned) = cleanup_invalid_atropisomers_with_ring_state(
+                        &topology,
+                        &hybridization,
+                        supplied,
+                    )
+                    .unwrap_or_else(|error| panic!("{label}: unexpected error {error:?}"));
+                    calls += 1;
+                    let find_delta = probe::find_calls() - find_before;
+                    let consumed_delta = probe::consumed_calls() - consumed_before;
+                    let group_delta = probe::group_cleanup_calls() - group_before;
+                    let acquired = probe::acquired_atom_row_pointers();
+                    assert_eq!(topology, topology_snapshot, "{label}: input mutated");
+                    assert_eq!(hybridization, hybs_snapshot, "{label}: hybs mutated");
+                    let tagged = !matches!(stereo, BondStereo::None);
+                    let quality = state_snapshot
+                        .as_ref()
+                        .is_some_and(|rings| rings.is_sssr_or_better());
+                    if !tagged {
+                        // No tags: NO acquisition, NO validation, NO group
+                        // cleanup; the supplied state is preserved exactly.
+                        assert_eq!(consumed_delta, 0, "{label}: consumed");
+                        assert_eq!(find_delta, 0, "{label}: find");
+                        assert_eq!(group_delta, 0, "{label}: group cleanup");
+                        assert_eq!(returned, state_snapshot, "{label}: state changed");
+                        assert_eq!(output.bonds[0].stereo(), BondStereo::None, "{label}");
+                    } else {
+                        assert!(consumed_delta >= 1, "{label}: tagged bond not consumed");
+                        // Disposition on the six-cycle: Sp3 always clears;
+                        // Sp2 clears whenever b0 sits in a size-6 ring
+                        // (acquired full6 or supplied full6) and retains only
+                        // for supplied initialized-EMPTY SSSR/Symm.
+                        let supplied_empty = quality
+                            && state_snapshot
+                                .as_ref()
+                                .is_some_and(|r| r.atom_rings().is_empty());
+                        let retains = endpoint == Hybridization::Sp2 && supplied_empty;
+                        if quality {
+                            assert_eq!(find_delta, 0, "{label}: re-found supplied quality state");
+                            assert_eq!(returned, state_snapshot, "{label}: borrowed state changed");
+                            assert_eq!(
+                                returned.as_ref().map(|r| r.atom_rings().as_ptr()),
+                                supplied_ptr,
+                                "{label}: supplied buffer not move-preserved"
+                            );
+                        } else {
+                            // Below SSSR: ONE canonical full6 SSSR acquisition
+                            // replaces the carrier by move BEFORE the Sp2
+                            // short-circuit, whatever the endpoint value.
+                            assert_eq!(find_delta, 1, "{label}: acquisition count");
+                            let acquired_state = returned
+                                .as_ref()
+                                .unwrap_or_else(|| panic!("{label}: acquired state missing"));
+                            assert_eq!(acquired_state.find_type(), RingFindType::Sssr, "{label}");
+                            assert_eq!(
+                                row_indices(acquired_state),
+                                vec![vec![0, 5, 4, 3, 2, 1]],
+                                "{label}"
+                            );
+                            assert_eq!(
+                                bond_row_indices(acquired_state),
+                                vec![vec![5, 4, 3, 2, 1, 0]],
+                                "{label}"
+                            );
+                            assert_eq!(acquired.len(), acquired_before + 1, "{label}");
+                            assert_eq!(
+                                acquired_state.atom_rings().as_ptr() as usize,
+                                acquired[acquired_before],
+                                "{label}: returned buffer differs from real acquisition site"
+                            );
+                        }
+                        if retains {
+                            assert_eq!(output.bonds[0].stereo(), stereo, "{label}");
+                            assert_eq!(group_delta, 0, "{label}: group cleanup ran");
+                        } else {
+                            assert_eq!(output.bonds[0].stereo(), BondStereo::None, "{label}");
+                            // Cleared tags alone trigger group cleanup; with
+                            // no remaining atrop bonds the ordered group
+                            // output is unchanged.
+                            assert_eq!(group_delta, 1, "{label}: group cleanup missing");
+                            assert_eq!(output.stereo_groups, groups_snapshot, "{label}: groups");
+                        }
+                    }
+                }
+            }
+        }
+        assert_eq!(calls, 60, "exact census");
+    }
+
+    #[test]
+    fn sanitize_ring_l05_macrocycle_endpoint_forty_eight_call_product() {
+        let mk_state = |name: &str, n: usize| -> Option<RingInfo> {
+            match name {
+                "none" => None,
+                "fast-full" => Some(full_ring(RingFindType::Fast, n)),
+                "sssr-full" => Some(full_ring(RingFindType::Sssr, n)),
+                _ => Some(full_ring(RingFindType::SymmSssr, n)),
+            }
+        };
+        let mut calls = 0usize;
+        for (state_name, quality) in [
+            ("none", false),
+            ("fast-full", false),
+            ("sssr-full", true),
+            ("symm-full", true),
+        ] {
+            for stereo in [BondStereo::AtropCw, BondStereo::AtropCcw] {
+                for n in [6usize, 8usize] {
+                    for endpoint in [0usize, 1usize, 2usize] {
+                        let label = format!("{state_name}/{stereo:?}/c{n}/ep{endpoint}");
+                        let mut values = all(n, Hybridization::Sp2);
+                        if endpoint == 1 {
+                            values[0] = Hybridization::Sp3;
+                        }
+                        if endpoint == 2 {
+                            values[1] = Hybridization::Sp3;
+                        }
+                        let topology = cycle(n, stereo);
+                        let groups_snapshot = topology.stereo_groups.clone();
+                        let topology_snapshot = topology.clone();
+                        let hybridization = hybs(values);
+                        let hybs_snapshot = hybridization.clone();
+                        let state = mk_state(state_name, n);
+                        let state_snapshot = state.clone();
+                        let supplied = state.clone();
+                        let supplied_ptr = supplied.as_ref().map(|r| r.atom_rings().as_ptr());
+                        let find_before = probe::find_calls();
+                        let group_before = probe::group_cleanup_calls();
+                        let acquired_before = probe::acquired_atom_row_pointers().len();
+                        let (output, returned) = cleanup_invalid_atropisomers_with_ring_state(
+                            &topology,
+                            &hybridization,
+                            supplied,
+                        )
+                        .unwrap_or_else(|error| panic!("{label}: unexpected error {error:?}"));
+                        calls += 1;
+                        let find_delta = probe::find_calls() - find_before;
+                        let group_delta = probe::group_cleanup_calls() - group_before;
+                        let acquired = probe::acquired_atom_row_pointers();
+                        assert_eq!(topology, topology_snapshot, "{label}: input mutated");
+                        assert_eq!(hybridization, hybs_snapshot, "{label}: hybs mutated");
+                        if quality {
+                            assert_eq!(find_delta, 0, "{label}: re-found");
+                            assert_eq!(returned, state_snapshot, "{label}: state changed");
+                            assert_eq!(
+                                returned.as_ref().map(|r| r.atom_rings().as_ptr()),
+                                supplied_ptr,
+                                "{label}: buffer not move-preserved"
+                            );
+                        } else {
+                            assert_eq!(find_delta, 1, "{label}: acquisition count");
+                            let acquired_state = returned.as_ref().unwrap();
+                            assert_eq!(acquired_state.find_type(), RingFindType::Sssr, "{label}");
+                            // Frozen row convention: atoms start at 0 and
+                            // run backwards to 1; bonds run n-1..0.
+                            let expected_atoms: Vec<usize> =
+                                std::iter::once(0).chain((1..n).rev()).collect();
+                            let expected_bonds: Vec<usize> = (0..n).rev().collect();
+                            assert_eq!(
+                                row_indices(acquired_state),
+                                vec![expected_atoms],
+                                "{label}"
+                            );
+                            assert_eq!(
+                                bond_row_indices(acquired_state),
+                                vec![expected_bonds],
+                                "{label}"
+                            );
+                            assert_eq!(acquired.len(), acquired_before + 1, "{label}");
+                            assert_eq!(
+                                acquired_state.atom_rings().as_ptr() as usize,
+                                acquired[acquired_before],
+                                "{label}: acquired buffer mismatch"
+                            );
+                        }
+                        // Six-cycle always clears; eight-cycle retains only
+                        // with BOTH endpoints Sp2.
+                        let retains = n == 8 && endpoint == 0;
+                        if retains {
+                            assert_eq!(output.bonds[0].stereo(), stereo, "{label}");
+                            assert_eq!(group_delta, 0, "{label}: group cleanup ran");
+                        } else {
+                            assert_eq!(output.bonds[0].stereo(), BondStereo::None, "{label}");
+                            assert_eq!(group_delta, 1, "{label}: group cleanup missing");
+                            assert_eq!(output.stereo_groups, groups_snapshot, "{label}: groups");
+                        }
+                    }
+                }
+            }
+        }
+        assert_eq!(calls, 48, "exact census");
+    }
+
+    #[test]
+    fn sanitize_ring_l05_malformed_inputs_and_vocabulary_controls() {
+        // Bad hybridization length is rejected before the engine runs.
+        let tagged = cycle(6, BondStereo::AtropCw);
+        let short = hybs(all(5, Hybridization::Sp2));
+        assert!(matches!(
+            cleanup_invalid_atropisomers_with_ring_state(&tagged, &short, None),
+            Err(super::AtropisomerCleanupError::Algorithm(
+                AtropisomerError::HybridizationAssignmentLength {
+                    actual: 5,
+                    expected: 6
+                }
+            ))
+        ));
+        // Invalid topology is rejected first in the existing order.
+        let invalid = TopologyBlock {
+            adjacency: cosmolkit_model::AdjacencyList::from_topology(0, &[]),
+            ..tagged.clone()
+        };
+        assert!(matches!(
+            cleanup_invalid_atropisomers_with_ring_state(
+                &invalid,
+                &hybs(all(6, Hybridization::Sp2)),
+                None
+            ),
+            Err(super::AtropisomerCleanupError::Algorithm(
+                AtropisomerError::InvalidTopology { .. }
+            ))
+        ));
+        // A CONSUMED SSSR with wrong membership dimensions is rejected by
+        // the existing validate_rings causes.
+        let atom_rows_wrong = RingInfo::new(RingFindType::Sssr, 7, 6);
+        assert!(matches!(
+            cleanup_invalid_atropisomers_with_ring_state(
+                &tagged,
+                &hybs(all(6, Hybridization::Sp2)),
+                Some(atom_rows_wrong)
+            ),
+            Err(super::AtropisomerCleanupError::Algorithm(
+                AtropisomerError::RingAtomRowCount {
+                    actual: 7,
+                    expected: 6
+                }
+            ))
+        ));
+        let bond_rows_wrong = RingInfo::new(RingFindType::Sssr, 6, 5);
+        assert!(matches!(
+            cleanup_invalid_atropisomers_with_ring_state(
+                &tagged,
+                &hybs(all(6, Hybridization::Sp2)),
+                Some(bond_rows_wrong)
+            ),
+            Err(super::AtropisomerCleanupError::Algorithm(
+                AtropisomerError::RingBondRowCount {
+                    actual: 5,
+                    expected: 6
+                }
+            ))
+        ));
+        // Out-of-range membership cannot reach the wrapper from valid
+        // RingInfo values: add_ring GROWS membership rows, and the
+        // persisted-components constructor rejects out-of-range rows at
+        // construction, so the dimension check above always fires first.
+        // That structural fact is recorded here instead of an unreachable
+        // assertion.
+        // No-tag malformed supplied state stays unconsumed and is returned
+        // exactly.
+        let untagged = cycle(6, BondStereo::None);
+        let malformed = RingInfo::new(RingFindType::Sssr, 7, 6);
+        let malformed_snapshot = malformed.clone();
+        let find_before = probe::find_calls();
+        let (output, returned) = cleanup_invalid_atropisomers_with_ring_state(
+            &untagged,
+            &hybs(all(6, Hybridization::Sp2)),
+            Some(malformed),
+        )
+        .unwrap();
+        assert_eq!(returned, Some(malformed_snapshot), "no-tag state consumed");
+        assert_eq!(probe::find_calls() - find_before, 0, "no-tag find");
+        assert_eq!(output.bonds[0].stereo(), BondStereo::None);
+        // Vocabulary control ONLY: constructed errors prove Display and the
+        // borrowed Error::source chain, never a real acquisition failure.
+        // A canonical find failure is unreachable from these valid inputs.
+        let rings_error = crate::RingFindingError::Value { message: "probe" };
+        let cleanup_error = super::AtropisomerCleanupError::Rings(rings_error);
+        assert_eq!(
+            cleanup_error.to_string(),
+            "ring finding failed during atropisomer cleanup: probe"
+        );
+        assert!(std::error::Error::source(&cleanup_error).is_some());
+        let algorithm_error =
+            super::AtropisomerCleanupError::Algorithm(AtropisomerError::RingInfoNotSssr);
+        assert_eq!(
+            algorithm_error.to_string(),
+            "atropisomer cleanup failed: ring information must be SSSR or better"
+        );
+        assert!(std::error::Error::source(&algorithm_error).is_some());
+    }
 }
 
 #[must_use]

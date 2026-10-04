@@ -1,9 +1,43 @@
 use std::collections::BTreeMap;
 
 use cosmolkit::{
-    BINDING_CONTRACT, BindingExposure, BindingItem, BindingKind, BindingOwner, BindingParity,
-    BindingSupport, ChiralTag, Element, Molecule, SmilesError, SmilesParseParams,
+    BINDING_CONTRACT, BindingItem, BindingKind, BindingOwner, ChiralTag, Element, FunctionStatus,
+    Molecule, SmilesError, SmilesParseParams,
 };
+
+#[test]
+fn default_reader_sanitizes_kekule_benzene_without_explicit_hydrogens() {
+    let molecule = Molecule::from_smiles("C1=CC=CC=C1").unwrap();
+    assert_eq!(molecule.num_atoms(), 6);
+    assert!(molecule.atoms().iter().all(|atom| atom.is_aromatic()));
+    assert!(molecule.bonds().iter().all(|bond| bond.is_aromatic()));
+    for sanitize in [false, true] {
+        for remove_hydrogens in [false, true] {
+            let molecule = Molecule::from_smiles_with_params(
+                "C1=CC=CC=C1",
+                &SmilesParseParams {
+                    sanitize,
+                    remove_hydrogens,
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            assert_eq!(molecule.num_atoms(), 6);
+            assert!(
+                molecule
+                    .atoms()
+                    .iter()
+                    .all(|atom| atom.is_aromatic() == sanitize)
+            );
+            assert!(
+                molecule
+                    .bonds()
+                    .iter()
+                    .all(|bond| bond.is_aromatic() == sanitize)
+            );
+        }
+    }
+}
 
 #[test]
 fn public_default_and_parameterized_constructors_are_directly_callable() {
@@ -183,7 +217,7 @@ fn public_constructor_preserves_cx_name_stereo_and_properties() {
     assert_eq!(molecule.num_atoms(), 5);
     assert_eq!(
         molecule.topology().atoms[0].prop("atomLabel"),
-        Some("fluoro")
+        Some(&cosmolkit_model::PropertyValue::from("fluoro"))
     );
     assert_eq!(
         molecule.topology().atoms[1].chiral_tag(),
@@ -229,10 +263,8 @@ fn binding_contract_matches_public_smiles_surface() {
     );
 
     for row in &rows {
-        assert_eq!(row.feature, "smiles");
-        assert_eq!(row.exposure, BindingExposure::Public);
-        assert_eq!(row.support, BindingSupport::SupportedWithRdkitParity);
-        assert_eq!(row.parity, BindingParity::RequiredNow);
+        assert_eq!(row.feature, "cap-smiles");
+        assert_eq!(row.status, FunctionStatus::Experimental);
     }
     for row in &rows[..3] {
         assert_eq!(row.item, BindingItem::Type);

@@ -2,12 +2,11 @@
 mod coordinate_views;
 
 use cosmolkit::{
-    Atom, AtomId, AtomSpec, BINDING_CONTRACT, BindingExposure, BindingItem, BindingOwner,
-    BindingParity, BindingSupport, BlockSet, Bond, BondId, BondOrder, BondSpec, Conformer2D,
-    CoordinateBlock, Element, Molecule, MoleculeOpKind, MoleculeOpOutput, MoleculeProperties,
-    OperationDomain, OperationError, ParityPolicy, StateModel, StereoGroup, StereoGroupKind,
-    SupportStatus, TopologyBlock, TopologyEditKind, feature_spec, operation_invariant,
-    operation_parity, operation_spec, support_matrix,
+    Atom, AtomId, AtomSpec, BINDING_CONTRACT, BindingItem, BindingOwner, BlockSet, Bond, BondId,
+    BondOrder, BondSpec, Conformer2D, CoordinateBlock, Element, FunctionStatus, Molecule,
+    MoleculeOpKind, MoleculeOpOutput, MoleculeProperties, OperationDomain, OperationError,
+    ParityPolicy, StateModel, StereoGroup, StereoGroupKind, TopologyBlock, TopologyEditKind,
+    feature_spec, operation_invariant, operation_parity, operation_spec, support_matrix,
 };
 
 fn ring_molecule() -> Molecule {
@@ -90,9 +89,7 @@ fn binding_contract_exposes_exactly_the_frozen_two_callables() {
     for row in &rows {
         assert_eq!(row.item, BindingItem::Callable);
         assert_eq!(row.owner, BindingOwner::Molecule);
-        assert_eq!(row.exposure, BindingExposure::Public);
-        assert_eq!(row.support, BindingSupport::SupportedWithRdkitParity);
-        assert_eq!(row.parity, BindingParity::RequiredNow);
+        assert_eq!(row.status, FunctionStatus::Experimental);
         assert_eq!(row.callable.unwrap().parameters.len(), 0);
     }
     assert_eq!(
@@ -104,9 +101,8 @@ fn binding_contract_exposes_exactly_the_frozen_two_callables() {
 
 #[test]
 fn generated_registry_and_all_four_matrices_share_the_exact_operation() {
-    let feature = feature_spec("rings").unwrap();
-    assert_eq!(feature.status, SupportStatus::SupportedWithRdkitParity);
-    assert!(feature.rdkit_parity_sensitive);
+    let feature = feature_spec("cap-rings").unwrap();
+    assert_eq!(feature.name, "cap-rings");
 
     let spec = operation_spec("with_assigned_rings").unwrap();
     assert_eq!(spec.domain, OperationDomain::Topology);
@@ -125,7 +121,7 @@ fn generated_registry_and_all_four_matrices_share_the_exact_operation() {
     );
     assert_eq!(spec.derived_effects.invalidate.bits(), 1 << 1);
     assert_eq!(format!("{:?}", spec.cip_state), "Preserve");
-    assert_eq!(spec.support, SupportStatus::SupportedWithRdkitParity);
+    assert_eq!(spec.status, FunctionStatus::Experimental);
     assert_eq!(spec.parity, ParityPolicy::RequiredNow);
     assert_eq!(
         operation_invariant(spec.method).unwrap().profile,
@@ -137,7 +133,7 @@ fn generated_registry_and_all_four_matrices_share_the_exact_operation() {
     );
     let support = support_matrix()
         .iter()
-        .find(|row| row.feature.name == "rings")
+        .find(|row| row.feature.name == "cap-rings")
         .unwrap();
     assert!(std::ptr::eq(support.operation.unwrap(), spec));
 }
@@ -161,19 +157,19 @@ fn value_operation_assigns_a_private_cache_and_preserves_every_input_block() {
     assert_eq!(output.property("_CIPComputed"), Some("true"));
     assert_eq!(
         output.atom(AtomId::new(0)).unwrap().prop("_CIPCode"),
-        Some("R")
+        Some(&cosmolkit_model::PropertyValue::from("R"))
     );
     assert_eq!(
         output.bond(BondId::new(0)).unwrap().prop("_CIPBondCode"),
-        Some("E")
+        Some(&cosmolkit_model::PropertyValue::from("E"))
     );
     assert_eq!(
         output.atom(AtomId::new(4)).unwrap().prop("atom-row"),
-        Some("4")
+        Some(&cosmolkit_model::PropertyValue::from("4"))
     );
     assert_eq!(
         output.bond(BondId::new(4)).unwrap().prop("bond-row"),
-        Some("4")
+        Some(&cosmolkit_model::PropertyValue::from("4"))
     );
     assert!(format!("{source:?}").contains("derived_cache_is_empty: true"));
     assert!(format!("{output:?}").contains("derived_cache_is_empty: false"));

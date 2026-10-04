@@ -1,13 +1,14 @@
 // RDKit marker convention defined in dev/source_reproduction_protocol.md.
 
 use std::{
+    borrow::Cow,
     cmp::Ordering,
     collections::{BTreeMap, BTreeSet, VecDeque},
 };
 
 use crate::{
     RingFindType, RingFindingError, RingInfo, ValenceAssignment, ValenceError, ValenceModel,
-    fast_find_rings_from_parts,
+    fast_find_rings_from_parts, find_sssr_from_parts,
 };
 use cosmolkit_model::{
     AdjacencyList, Atom, AtomId, Bond, BondId, QueryStateError, QueryStateRef, StereoGroupKind,
@@ -28,6 +29,29 @@ pub enum CanonicalRankError {
     AtomMaskLength { expected: usize, actual: usize },
     #[error("bond mask length {actual} does not match topology bond count {expected}")]
     BondMaskLength { expected: usize, actual: usize },
+    #[error("atom symbol length {actual} does not match topology atom count {expected}")]
+    AtomSymbolLength { expected: usize, actual: usize },
+    #[error("bond symbol length {actual} does not match topology bond count {expected}")]
+    BondSymbolLength { expected: usize, actual: usize },
+    #[error(
+        "prepared valence dimensions explicit={explicit_len}, implicit={implicit_len} do not match {atom_count} atoms"
+    )]
+    PreparedValenceLength {
+        atom_count: usize,
+        explicit_len: usize,
+        implicit_len: usize,
+    },
+    #[error("prepared valence is invalid for atom {atom_index}")]
+    PreparedValenceInvalid { atom_index: usize },
+    #[error(
+        "prepared ring dimensions atoms={actual_atoms}, bonds={actual_bonds} do not match topology atoms={expected_atoms}, bonds={expected_bonds}"
+    )]
+    PreparedRingLength {
+        expected_atoms: usize,
+        actual_atoms: usize,
+        expected_bonds: usize,
+        actual_bonds: usize,
+    },
     #[error("incomplete RDKit canonical-rank port for {branch}: {reason}")]
     ProtocolDebt {
         branch: &'static str,
@@ -124,6 +148,18 @@ impl Default for KekulizeParams {
 #[derive(Debug, Clone, PartialEq)]
 pub struct KekulizeAssignment {
     pub topology: TopologyBlock,
+    /// Existing postcondition calculation, absent on the source early return.
+    /// Only `refreshed_valence_atoms` were refreshed by the source operation;
+    /// other rows must not replace a caller's intermediate property cache.
+    pub final_valence: Option<ValenceAssignment>,
+    pub refreshed_valence_atoms: Vec<AtomId>,
+    /// Final ring-state transport for the Kekulize ring-update calling
+    /// convention: `None` means the supplied caller state is unchanged
+    /// (absent, already reset, or an initialized assignment that was
+    /// borrowed without modification); `Some(initialized)` moves the newly
+    /// acquired final state; `Some(uninitialized)` replaces a previously
+    /// initialized Other assignment that canonical ranking reset.
+    pub ring_update: Option<RingInfo>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -144,6 +180,20 @@ struct PreparedKekulizeSelection {
     rings: RingInfo,
     candidate_atom_rings: Vec<Vec<AtomId>>,
     candidate_bond_rings: Vec<Vec<BondId>>,
+    found_aromatic: bool,
+    valence: ValenceAssignment,
+}
+
+/// Selection-stage results that do not depend on ring state: dimension
+/// validation, query-type filtering, valence work, dummy detection and the
+/// wedge scan, in source order and before any ring acquisition.
+#[derive(Debug)]
+struct PreparedKekulizeCore {
+    atoms_in_play: Vec<bool>,
+    bonds_in_play: Vec<bool>,
+    original_total_valences: Vec<i32>,
+    dummy_atoms: Vec<bool>,
+    wedged_atoms: Vec<bool>,
     found_aromatic: bool,
     valence: ValenceAssignment,
 }
@@ -230,12 +280,69 @@ fn checked_total_valence(valence: &ValenceAssignment, atom: AtomId) -> Result<i3
         })
 }
 
+/// Cold selection assembly retained by the owning selection tests: the same
+/// core stages plus the fresh-SSSR acquisition the rings=None engine path
+/// performs through the transition owner. Production callers use
+/// prepare_kekulize_core plus the transition owner directly.
+#[cfg(test)]
 fn prepare_kekulize_selection(
     topology: &TopologyBlock,
     atoms_in_play: &[bool],
     bonds_in_play: &[bool],
     query_state: Option<QueryStateRef<'_>>,
 ) -> Result<PreparedKekulizeSelection, KekulizeError> {
+    let core = prepare_kekulize_core(topology, atoms_in_play, bonds_in_play, query_state)?;
+    let rings = if core.found_aromatic {
+        // BEGIN RDKIT CPP FUNCTION KekulizeFragment ring selection
+        // RDKit✔️✔️: VECT_INT_VECT allringsSSSR;
+        // RDKit✔️✔️: if (!mol.getRingInfo()->isInitialized()) {
+        // RDKit✔️✔️:   MolOps::findSSSR(mol, allringsSSSR);
+        // RDKit✔️✔️: }
+        // RDKit✔️✔️: const VECT_INT_VECT &allrings =
+        // RDKit✔️✔️:     allringsSSSR.empty() ? mol.getRingInfo()->atomRings() : allringsSSSR;
+        // Detached TopologyBlock has no RingInfo input, so this owner follows
+        // the source's uninitialized-state SSSR branch after canonical rank's
+        // temporary fast-ring preparation has been reset.
+        find_sssr_from_parts(topology.atoms.len(), &topology.bonds, &topology.adjacency)?
+    } else {
+        RingInfo::new(
+            RingFindType::Fast,
+            topology.atoms.len(),
+            topology.bonds.len(),
+        )
+    };
+    let (candidate_atom_rings, candidate_bond_rings) = if core.found_aromatic {
+        collect_kekulize_candidate_rings(
+            topology,
+            &rings,
+            &core.atoms_in_play,
+            &core.bonds_in_play,
+            &core.dummy_atoms,
+            &core.wedged_atoms,
+        )?
+    } else {
+        (Vec::new(), Vec::new())
+    };
+    // END RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/Kekulize.cpp :: KekulizeFragment selection
+    Ok(PreparedKekulizeSelection {
+        atoms_in_play: core.atoms_in_play,
+        bonds_in_play: core.bonds_in_play,
+        original_total_valences: core.original_total_valences,
+        dummy_atoms: core.dummy_atoms,
+        rings,
+        candidate_atom_rings,
+        candidate_bond_rings,
+        found_aromatic: core.found_aromatic,
+        valence: core.valence,
+    })
+}
+
+fn prepare_kekulize_core(
+    topology: &TopologyBlock,
+    atoms_in_play: &[bool],
+    bonds_in_play: &[bool],
+    query_state: Option<QueryStateRef<'_>>,
+) -> Result<PreparedKekulizeCore, KekulizeError> {
     topology.validate()?;
     // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/Kekulize.cpp :: KekulizeFragment selection
     // RDKit✔️✔️: PRECONDITION(atomsToUse.size() == mol.getNumAtoms(),
@@ -259,18 +366,12 @@ fn prepare_kekulize_selection(
     // RDKit✔️✔️:   return;
     // RDKit✔️✔️: }
     if !atoms_in_play.iter().any(|selected| *selected) {
-        return Ok(PreparedKekulizeSelection {
+        return Ok(PreparedKekulizeCore {
             atoms_in_play: atoms_in_play.to_vec(),
             bonds_in_play: bonds_in_play.to_vec(),
             original_total_valences: vec![0; topology.atoms.len()],
             dummy_atoms: vec![false; topology.atoms.len()],
-            rings: RingInfo::new(
-                RingFindType::Fast,
-                topology.atoms.len(),
-                topology.bonds.len(),
-            ),
-            candidate_atom_rings: Vec::new(),
-            candidate_bond_rings: Vec::new(),
+            wedged_atoms: vec![false; topology.atoms.len()],
             found_aromatic: false,
             valence: ValenceAssignment {
                 explicit_valence: vec![0; topology.atoms.len()],
@@ -355,17 +456,6 @@ fn prepare_kekulize_selection(
     // RDKit✔️✔️: if (!foundAromatic) {
     // RDKit✔️✔️:   return;
     // RDKit✔️✔️: }
-    let rings = if found_aromatic {
-        fast_find_rings_from_parts(topology.atoms.len(), &topology.bonds, &topology.adjacency)?
-    } else {
-        RingInfo::new(
-            RingFindType::Fast,
-            topology.atoms.len(),
-            topology.bonds.len(),
-        )
-    };
-
-    let mut candidate_rings = VecDeque::new();
     let mut wedged_atoms = vec![false; topology.atoms.len()];
     for bond in &topology.bonds {
         if selected_bonds[bond.id().index()]
@@ -377,6 +467,106 @@ fn prepare_kekulize_selection(
             wedged_atoms[bond.begin().index()] = true;
         }
     }
+    let _ = &selected_bonds;
+    Ok(PreparedKekulizeCore {
+        atoms_in_play: atoms_in_play.to_vec(),
+        bonds_in_play: selected_bonds,
+        original_total_valences,
+        dummy_atoms,
+        wedged_atoms,
+        found_aromatic,
+        valence,
+    })
+}
+
+/// Copy the source-defined candidate ring rows from one borrowed assignment.
+///
+/// Owner of the KekulizeFragment candidate rotation/filter/conversion over a
+/// borrowed ring state: the caller supplies the rows it wants read (freshly
+/// acquired SSSR in the cold production caller, or an initialized caller
+/// assignment); only the source-defined candidate row copies are produced.
+fn collect_kekulize_candidate_rings(
+    topology: &TopologyBlock,
+    rings: &RingInfo,
+    atoms_in_play: &[bool],
+    selected_bonds: &[bool],
+    dummy_atoms: &[bool],
+    wedged_atoms: &[bool],
+) -> Result<(Vec<Vec<AtomId>>, Vec<Vec<BondId>>), KekulizeError> {
+    // BEGIN RDKIT CPP FUNCTION: Kekulize.cpp:658-717 candidate rotation, all-row conversion, paired filter (complete)
+    // RDKit✔️✔️:     std::deque<INT_VECT> tmpRings;
+    // RDKit✔️✔️:     auto containsNonDummy = [&atomsToUse, &dummyAts](const INT_VECT &ring) {
+    // RDKit✔️✔️:     bool ringOk = false;
+    // RDKit✔️✔️:     for (auto ai : ring) {
+    // RDKit✔️✔️:       if (!atomsToUse[ai]) {
+    // RDKit✔️✔️:         return false;
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:       if (!dummyAts[ai]) {
+    // RDKit✔️✔️:         ringOk = true;
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     return ringOk;
+    // RDKit✔️✔️:   };
+    // RDKit✔️✔️:   // we can't just copy the rings over: we're going to rearrange them so that
+    // RDKit✔️✔️:   // we try to favor starting the traversal of any ring from an atom that is
+    // RDKit✔️✔️:   // at the end of a wedged ring bond. This is part of our attempt to avoid
+    // RDKit✔️✔️:   // assigning double bonds to bonds with wedging
+    // RDKit✔️✔️:   for (const auto &ring : allrings) {
+    // RDKit✔️✔️:     if (containsNonDummy(ring)) {
+    // RDKit✔️✔️:       unsigned int startPos = 0;
+    // RDKit✔️✔️:       bool hasWedge = false;
+    // RDKit✔️✔️:       for (auto ri = 0u; ri < ring.size(); ++ri) {
+    // RDKit✔️✔️:         if (wedgedAtoms[ring[ri]]) {
+    // RDKit✔️✔️:           startPos = ri;
+    // RDKit✔️✔️:           hasWedge = true;
+    // RDKit✔️✔️:           break;
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:       INT_VECT nring(ring.size());
+    // RDKit✔️✔️:       for (auto ri = 0u; ri < ring.size(); ++ri) {
+    // RDKit✔️✔️:         nring[ri] = ring.at((ri + startPos) % ring.size());
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:       if (!hasWedge) {
+    // RDKit✔️✔️:         tmpRings.push_back(nring);
+    // RDKit✔️✔️:       } else {
+    // RDKit✔️✔️:         tmpRings.push_front(nring);
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   VECT_INT_VECT arings;
+    // RDKit✔️✔️:   arings.reserve(allrings.size());
+    // RDKit✔️✔️:   arings.insert(arings.end(), tmpRings.begin(), tmpRings.end());
+    // RDKit✔️✔️:   VECT_INT_VECT allbrings;
+    // RDKit✔️✔️:   RingUtils::convertToBonds(arings, allbrings, mol);
+    // RDKit✔️✔️:   VECT_INT_VECT brings;
+    // RDKit✔️✔️:   brings.reserve(allbrings.size());
+    // RDKit✔️✔️:   auto copyBondRingsWithinFragment = [&bondsToUse](const INT_VECT &ring) {
+    // RDKit✔️✔️:     return std::all_of(ring.begin(), ring.end(), [&bondsToUse](const int bi) {
+    // RDKit✔️✔️:       return bondsToUse[bi];
+    // RDKit✔️✔️:     });
+    // RDKit✔️✔️:   };
+    // RDKit✔️✔️:   VECT_INT_VECT aringsRemaining;
+    // RDKit✔️✔️:   aringsRemaining.reserve(arings.size());
+    // RDKit✔️✔️:   for (unsigned i = 0; i < allbrings.size(); ++i) {
+    // RDKit✔️✔️:     if (copyBondRingsWithinFragment(allbrings[i])) {
+    // RDKit✔️✔️:         brings.push_back(allbrings[i]);
+    // RDKit✔️✔️:         aringsRemaining.push_back(arings[i]);
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     arings = std::move(aringsRemaining);
+    // END RDKIT CPP FUNCTION: Kekulize.cpp:658-717 candidate rotation, all-row conversion, paired filter (complete)
+    // Behavior review: the source queues ONLY rotated ATOM rows selected by
+    // containsNonDummy (all ring atoms selected + at least one non-dummy),
+    // with wedged rows at the deque FRONT; it then derives EVERY candidate
+    // bond row from consecutive graph atom pairs plus the closing edge
+    // (RingUtils::convertToBonds) and only afterwards filters the DERIVED
+    // rows by bondsToUse. Stored bond rows never supply conversion output
+    // or determine the filter; a missing graph edge is detected BEFORE the
+    // bond filter via the existing typed RingFinding cause.
+    // Complexity review: one clone per selected atom row (the source copies
+    // nring identically), ONE reserved output per derived row, no whole
+    // RingInfo clone, no index-staging vector, no duplicate traversal.
+    let mut candidate_rings = VecDeque::new();
     // RDKit✔️✔️: auto containsNonDummy = [&atomsToUse, &dummyAts](const INT_VECT &ring) {
     // RDKit✔️✔️:   bool ringOk = false;
     // RDKit✔️✔️:   for (auto ai : ring) {
@@ -394,39 +584,378 @@ fn prepare_kekulize_selection(
     // RDKit✔️✔️:     return bondsToUse[bi];
     // RDKit✔️✔️:   });
     // RDKit✔️✔️: };
-    if found_aromatic {
-        for (atom_ring, bond_ring) in rings.atom_rings().iter().zip(rings.bond_rings()) {
-            let atoms_are_selected = atom_ring.iter().all(|atom| atoms_in_play[atom.index()]);
-            let contains_non_dummy = atom_ring.iter().any(|atom| !dummy_atoms[atom.index()]);
-            let bonds_are_selected = bond_ring.iter().all(|bond| selected_bonds[bond.index()]);
-            if atoms_are_selected && contains_non_dummy && bonds_are_selected {
-                let wedge_start = atom_ring.iter().position(|atom| wedged_atoms[atom.index()]);
-                let start = wedge_start.unwrap_or(0);
-                let mut rotated_atoms = atom_ring.clone();
-                let mut rotated_bonds = bond_ring.clone();
-                rotated_atoms.rotate_left(start);
-                rotated_bonds.rotate_left(start);
-                if wedge_start.is_some() {
-                    candidate_rings.push_front((rotated_atoms, rotated_bonds));
-                } else {
-                    candidate_rings.push_back((rotated_atoms, rotated_bonds));
-                }
+    // RDKit✔️✔️: // we can't just copy the rings over: we're going to rearrange them so that
+    // RDKit✔️✔️: // we try to favor starting the traversal of any ring from an atom that is
+    // RDKit✔️✔️: // at the end of a wedged ring bond. This is part of our attempt to avoid
+    // RDKit✔️✔️: // assigning double bonds to bonds with wedging
+    for atom_ring in rings.atom_rings() {
+        let atoms_are_selected = atom_ring.iter().all(|atom| atoms_in_play[atom.index()]);
+        let contains_non_dummy = atom_ring.iter().any(|atom| !dummy_atoms[atom.index()]);
+        if atoms_are_selected && contains_non_dummy {
+            // RDKit✔️✔️:         unsigned int startPos = 0;
+            // RDKit✔️✔️:         bool hasWedge = false;
+            // RDKit✔️✔️:         for (auto ri = 0u; ri < ring.size(); ++ri) {
+            // RDKit✔️✔️:           if (wedgedAtoms[ring[ri]]) {
+            // RDKit✔️✔️:             startPos = ri;
+            // RDKit✔️✔️:             hasWedge = true;
+            // RDKit✔️✔️:             break;
+            // RDKit✔️✔️:           }
+            // RDKit✔️✔️:         }
+            let wedge_start = atom_ring.iter().position(|atom| wedged_atoms[atom.index()]);
+            // RDKit✔️✔️:         INT_VECT nring(ring.size());
+            // RDKit✔️✔️:         for (auto ri = 0u; ri < ring.size(); ++ri) {
+            // RDKit✔️✔️:           nring[ri] = ring.at((ri + startPos) % ring.size());
+            // RDKit✔️✔️:         }
+            // RDKit✔️✔️:         if (!hasWedge) {
+            // RDKit✔️✔️:           tmpRings.push_back(nring);
+            // RDKit✔️✔️:         } else {
+            // RDKit✔️✔️:           tmpRings.push_front(nring);
+            // RDKit✔️✔️:         }
+            let start = wedge_start.unwrap_or(0);
+            let mut rotated_atoms = atom_ring.clone();
+            rotated_atoms.rotate_left(start);
+            if wedge_start.is_some() {
+                candidate_rings.push_front(rotated_atoms);
+            } else {
+                candidate_rings.push_back(rotated_atoms);
             }
         }
     }
-    let (candidate_atom_rings, candidate_bond_rings) = candidate_rings.into_iter().unzip();
-    // END RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/Kekulize.cpp :: KekulizeFragment selection
-    Ok(PreparedKekulizeSelection {
-        atoms_in_play: atoms_in_play.to_vec(),
-        bonds_in_play: selected_bonds,
-        original_total_valences,
-        dummy_atoms,
-        rings,
-        candidate_atom_rings,
-        candidate_bond_rings,
-        found_aromatic,
-        valence,
-    })
+    // Behavior review (actual three phases): phase 1 rotates each
+    // containsNonDummy-surviving atom row by clone+rotate_left (the source
+    // copy-constructs nring) and places wedged rows at the deque FRONT;
+    // phase 2 materializes ALL rotated rows into ONE owned ordered Vec
+    // (rows MOVED out of the deque, matching arings.insert of tmpRings)
+    // and derives EVERY bond row from the graph BEFORE any bond filtering;
+    // phase 3 filters the completed derived pairs by bondsToUse exactly as
+    // copyBondRingsWithinFragment over allbrings and MOVES surviving paired
+    // rows into the result (the source copies them into brings/
+    // aringsRemaining). No partial result is published; existing
+    // RingFinding errors propagate by ?.
+    // Allocation/complexity review (actual): phase 1 pays one row clone +
+    // one rotate per surviving row (O(row) each); phase 2 pays one reserved
+    // arings Vec + one reserved allbrings Vec, with per-edge neighbor-scan
+    // conversion cost O(sum of degrees over consecutive pairs, including
+    // the closing edge) — NOT O(1) per edge; phase 3 consumes both vectors
+    // by value with an O(members) mask scan. These are actual costs of
+    // this owner; no whole-Kekulize performance acceptance is claimed.
+    let count = candidate_rings.len();
+    let mut arings: Vec<Vec<AtomId>> = Vec::with_capacity(count);
+    while let Some(atom_row) = candidate_rings.pop_front() {
+        arings.push(atom_row);
+    }
+    let mut allbrings: Vec<Vec<BondId>> = Vec::with_capacity(arings.len());
+    for atom_row in &arings {
+        allbrings.push(crate::rings::ring_atom_ids_to_bond_ids(topology, atom_row)?);
+    }
+    // Phase 3 (source copyBondRingsWithinFragment over allbrings): the
+    // paired derived-bond filter consumes both completed vectors by value;
+    // surviving paired rows are MOVED into the result.
+    let mut candidate_atom_rings = Vec::new();
+    let mut candidate_bond_rings = Vec::new();
+    for (atom_row, bond_row) in arings.into_iter().zip(allbrings) {
+        if bond_row.iter().all(|bond| selected_bonds[bond.index()]) {
+            candidate_atom_rings.push(atom_row);
+            candidate_bond_rings.push(bond_row);
+        }
+    }
+    Ok((candidate_atom_rings, candidate_bond_rings))
+}
+
+/// Test-only observation points at the actual rank/SSSR/borrow sites.
+/// Baselines are captured at these sites (the counters are never reset);
+/// production builds contain no counters, probes or exported hooks.
+#[cfg(test)]
+mod ring_transport_probe {
+    use std::cell::Cell;
+
+    thread_local! {
+        static RANK_CALLS: Cell<u64> = const { Cell::new(0) };
+        static SSSR_CALLS: Cell<u64> = const { Cell::new(0) };
+        static BORROW_SITES: Cell<Vec<usize>> = const { Cell::new(Vec::new()) };
+    }
+
+    pub fn record_rank() {
+        RANK_CALLS.with(|calls| calls.set(calls.get() + 1));
+    }
+
+    pub fn record_sssr() {
+        SSSR_CALLS.with(|calls| calls.set(calls.get() + 1));
+    }
+
+    pub fn record_borrow(rings: &crate::rings::RingInfo) {
+        BORROW_SITES.with(|sites| {
+            let mut recorded = sites.take();
+            recorded.push(rings as *const _ as usize);
+            sites.set(recorded);
+        });
+    }
+
+    pub fn rank_calls() -> u64 {
+        RANK_CALLS.with(Cell::get)
+    }
+
+    pub fn sssr_calls() -> u64 {
+        SSSR_CALLS.with(Cell::get)
+    }
+
+    pub fn borrow_sites() -> Vec<usize> {
+        BORROW_SITES.with(|sites| {
+            let recorded = sites.take();
+            sites.set(recorded.clone());
+            recorded
+        })
+    }
+
+    /// Observation at the actual permanent findSSSR completion: the outer
+    /// atom/bond row slice pointers and lengths of the one acquired buffer.
+    /// The ranking helper's temporary fast discovery never reaches here.
+    thread_local! {
+        static ACQUIRED_BUFFERS: Cell<Vec<(usize, usize, usize, usize)>> =
+            const { Cell::new(Vec::new()) };
+    }
+
+    pub fn record_acquired(rings: &crate::rings::RingInfo) {
+        ACQUIRED_BUFFERS.with(|buffers| {
+            let mut recorded = buffers.take();
+            recorded.push((
+                rings.atom_rings().as_ptr() as usize,
+                rings.atom_rings().len(),
+                rings.bond_rings().as_ptr() as usize,
+                rings.bond_rings().len(),
+            ));
+            buffers.set(recorded);
+        });
+    }
+
+    pub fn acquired_buffers() -> Vec<(usize, usize, usize, usize)> {
+        ACQUIRED_BUFFERS.with(|buffers| {
+            let recorded = buffers.take();
+            buffers.set(recorded.clone());
+            recorded
+        })
+    }
+}
+
+/// The single permanent SSSR acquisition entry used by both source guards.
+/// Under cfg(test) the completion of the real finder is observed once here,
+/// capturing the acquired buffer's outer row slice pointers and lengths for
+/// the moved-output proof; production builds contain no probe.
+fn acquire_sssr_rows(topology: &TopologyBlock) -> Result<RingInfo, KekulizeError> {
+    let acquired =
+        find_sssr_from_parts(topology.atoms.len(), &topology.bonds, &topology.adjacency)?;
+    #[cfg(test)]
+    ring_transport_probe::record_acquired(&acquired);
+    Ok(acquired)
+}
+
+/// Effective ring rows available to the KekulizeFragment dispatch, tracked
+/// without cloning a supplied assignment: either the caller's initialized
+/// state is borrowed unchanged, a fresh acquisition is owned, or no
+/// initialized rows exist for the dispatch.
+enum KekulizeRingRows<'a> {
+    /// Initialized caller assignment, borrowed and never modified.
+    Borrowed(&'a RingInfo),
+    /// Fresh SSSR rows moved from the finder (source findSSSR install).
+    Acquired(RingInfo),
+    /// No initialized rows exist (absent/reset caller state with no
+    /// acquisition); the independent marking guard may still acquire.
+    Uninitialized,
+}
+
+impl KekulizeRingRows<'_> {
+    fn as_ring_info(&self) -> Option<&RingInfo> {
+        match self {
+            KekulizeRingRows::Borrowed(rings) => Some(rings),
+            KekulizeRingRows::Acquired(rings) => Some(rings),
+            KekulizeRingRows::Uninitialized => None,
+        }
+    }
+}
+
+/// Validate the membership dimensions of an initialized borrowed assignment
+/// at a site that actually consumes its rows or membership tables. The
+/// category is the existing PreparedRingError vocabulary surfaced through
+/// KekulizeError::CanonicalRank; reset storage (zero dimensions) is never
+/// validated here — it is reacquired instead.
+fn validate_consumed_ring_dimensions(
+    topology: &TopologyBlock,
+    rings: &RingInfo,
+) -> Result<(), KekulizeError> {
+    if rings.atom_row_count() != topology.atoms.len()
+        || rings.bond_row_count() != topology.bonds.len()
+    {
+        return Err(KekulizeError::CanonicalRank(
+            CanonicalRankError::PreparedRingLength {
+                expected_atoms: topology.atoms.len(),
+                actual_atoms: rings.atom_row_count(),
+                expected_bonds: topology.bonds.len(),
+                actual_bonds: rings.bond_row_count(),
+            },
+        ));
+    }
+    Ok(())
+}
+
+/// Run the KekulizeFragment ring-state transitions in source order over one
+/// borrowed-or-owned state: optional canonical ranking (new_canon.cpp
+/// rankFragmentAtoms guard and post-ranking reset) followed by the candidate
+/// acquisition restricted to effective bondsToUse.any(). Returns the rows the
+/// fused dispatch and marking read, plus the caller-visible ring update.
+fn kekulize_ring_state_transition<'a>(
+    topology: &TopologyBlock,
+    valence: &ValenceAssignment,
+    atoms_in_play: &[bool],
+    bonds_in_play: &[bool],
+    canonical: bool,
+    acquisition_required: bool,
+    rings: Option<&'a RingInfo>,
+) -> Result<(KekulizeRingRows<'a>, bool, Vec<usize>), KekulizeError> {
+    // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/new_canon.cpp :: rankFragmentAtoms (complete body, lines 821-869)
+    // RDKit✔️✔️: void rankFragmentAtoms(const ROMol &mol, std::vector<unsigned int> &res,
+    // RDKit✔️✔️:                        const boost::dynamic_bitset<> &atomsInPlay,
+    // RDKit✔️✔️:                        const boost::dynamic_bitset<> &bondsInPlay,
+    // RDKit✔️✔️:                        const std::vector<std::string> *atomSymbols,
+    // RDKit✔️✔️:                        const std::vector<std::string> *bondSymbols,
+    // RDKit✔️✔️:                        bool breakTies, bool includeChirality,
+    // RDKit✔️✔️:                        bool includeIsotopes, bool includeAtomMaps,
+    // RDKit✔️✔️:                        bool includeChiralPresence, bool includeRingStereo) {
+    // RDKit✔️✔️:   PRECONDITION(atomsInPlay.size() == mol.getNumAtoms(), "bad atomsInPlay size");
+    // RDKit✔️✔️:   PRECONDITION(bondsInPlay.size() == mol.getNumBonds(), "bad bondsInPlay size");
+    // RDKit✔️✔️:   PRECONDITION(!atomSymbols || atomSymbols->size() == mol.getNumAtoms(),
+    // RDKit✔️✔️:                "bad atomSymbols size");
+    // RDKit✔️✔️:   PRECONDITION(!bondSymbols || bondSymbols->size() == mol.getNumBonds(),
+    // RDKit✔️✔️:                "bad bondSymbols size");
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   if (!mol.getNumAtoms()) {
+    // RDKit✔️✔️:     return;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   bool clearRings = false;
+    // RDKit✔️✔️:   if (!mol.getRingInfo()->isFindFastOrBetter()) {
+    // RDKit✔️✔️:     MolOps::fastFindRings(mol);
+    // RDKit✔️✔️:     clearRings = true;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   res.resize(mol.getNumAtoms());
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   std::vector<Canon::canon_atom> atoms(mol.getNumAtoms());
+    // RDKit✔️✔️:   detail::initFragmentCanonAtoms(mol, atoms, includeChirality, atomSymbols,
+    // RDKit✔️✔️:                                  bondSymbols, atomsInPlay, bondsInPlay, true);
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   AtomCompareFunctor ftor(&atoms.front(), mol, &atomsInPlay, &bondsInPlay);
+    // RDKit✔️✔️:   ftor.df_useIsotopes = includeIsotopes;
+    // RDKit✔️✔️:   ftor.df_useChirality = includeChirality;
+    // RDKit✔️✔️:   ftor.df_useAtomMaps = includeAtomMaps;
+    // RDKit✔️✔️:   ftor.df_useChiralityRings = includeChirality;
+    // RDKit✔️✔️:   ftor.df_useChiralPresence = includeChiralPresence;
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   std::vector<int> order(mol.getNumAtoms());
+    // RDKit✔️✔️:   detail::rankWithFunctor(ftor, breakTies, order, true, includeChirality,
+    // RDKit✔️✔️:                           includeRingStereo, &atomsInPlay, &bondsInPlay);
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   for (unsigned int i = 0; i < mol.getNumAtoms(); ++i) {
+    // RDKit✔️✔️:     res[order[i]] = atoms[order[i]].index;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   if (clearRings) {
+    // RDKit✔️✔️:     mol.getRingInfo()->reset();
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: }  // end of rankFragmentAtoms()
+    // END RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/new_canon.cpp :: rankFragmentAtoms (complete body, lines 821-869)
+    // Behavior review, borrowed ranking: an initialized Fast/SSSR/Symm
+    // assignment (including initialized-empty rows) satisfies the source
+    // isFindFastOrBetter guard and is borrowed unchanged by the existing
+    // ranking helper, mirroring the source path where clearRings stays
+    // false and the mol's live RingInfo rows feed the functor untouched.
+    // Behavior review, temporary Fast/reset: absent or reset storage is
+    // passed to the helper as None — reset storage has zero membership
+    // dimensions and the SOURCE acquires temporary Fast rows inside this
+    // function instead. Canonical ranking over an initialized Other
+    // assignment runs exactly the source temporary-Fast-then-reset path
+    // (clearRings = true, mol reset at function end), so the caller's
+    // stored state is reset; the engine transports that replacement as
+    // Some(uninitialized) unless a later acquisition supersedes it.
+    // Behavior review, permanent SSSR: the Kekulize.cpp ring-selection guard
+    // below is the permanent acquisition; the fresh rows are used by the
+    // candidates, the fused dispatch and the marking reads, and reused by
+    // the marking guard without a second find.
+    // Complexity review, final MOVED ownership: ranking reuses the existing
+    // prepared-state helper (one O(V+E) temporary fast discovery only when
+    // the guard fails); the one permanent acquisition runs through the
+    // single acquisition entry and its result is MOVED — this owner builds
+    // no update and clones neither a supplied nor an acquired assignment;
+    // the engine consumes the single owned buffer into the public update by
+    // move only after every candidate/fused/marking/postcondition read has
+    // finished successfully.
+    let mut replaced_by_reset = false;
+    let atom_ranks;
+    if canonical {
+        #[cfg(test)]
+        ring_transport_probe::record_rank();
+        let ranking_rings = match rings {
+            Some(supplied) if supplied.is_initialized() => Some(supplied),
+            // Absent or reset storage: pass None so the helper performs the
+            // source's temporary fast discovery instead of dimension-checking
+            // zero-width rows.
+            _ => None,
+        };
+        atom_ranks = rank_fragment_atoms_with_prepared_state(
+            topology,
+            valence,
+            ranking_rings,
+            atoms_in_play,
+            bonds_in_play,
+            None,
+            None,
+            &CanonicalRankParams::kekulize_fragment_default(),
+        )?;
+        if let Some(supplied) = rings
+            && supplied.is_initialized()
+            && !supplied.is_find_fast_or_better()
+        {
+            // Source clearRings ran: the initialized Other caller state was
+            // reset by the ranking just performed.
+            replaced_by_reset = true;
+        }
+    } else {
+        // RDKit✔️✔️:   } else {
+        // RDKit✔️✔️:     // When canonical=false (e.g. during sanitization), we skip the
+        // RDKit✔️✔️:     // expensive ranking step and use atom indices directly.  This is
+        // RDKit✔️✔️:     // appropriate because sanitization runs *before* stereo perception:
+        // RDKit✔️✔️:     // canonical ranking would be based on incomplete chemistry and the
+        // RDKit✔️✔️:     // "deterministic" result would be meaningless.  Callers who need a
+        // RDKit✔️✔️:     // canonical Kekulé form should call Kekulize() with canonical=true
+        // RDKit✔️✔️:     // after the molecule is fully sanitized and stereo has been assigned.
+        // RDKit✔️✔️:     std::iota(atomRanks.begin(), atomRanks.end(), 0u);
+        // RDKit✔️✔️:   }
+        atom_ranks = (0..topology.atoms.len()).collect();
+    }
+
+    // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/Kekulize.cpp :: KekulizeFragment ring selection
+    // RDKit✔️✔️:   VECT_INT_VECT allringsSSSR;
+    // RDKit✔️✔️:   if (!mol.getRingInfo()->isInitialized()) {
+    // RDKit✔️✔️:     MolOps::findSSSR(mol, allringsSSSR);
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   const VECT_INT_VECT &allrings =
+    // RDKit✔️✔️:       allringsSSSR.empty() ? mol.getRingInfo()->atomRings() : allringsSSSR;
+    // END RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/Kekulize.cpp :: KekulizeFragment ring selection
+    // Behavior review: the acquisition guard is the source caller's
+    // bondsToUse.any() restriction (passed as acquisition_required) plus
+    // !isInitialized on the current state; any initialized state — including
+    // initialized-empty rows — is borrowed, never re-found or upgraded.
+    let rows = if let Some(supplied) = rings
+        && supplied.is_initialized()
+        && !replaced_by_reset
+    {
+        KekulizeRingRows::Borrowed(supplied)
+    } else if acquisition_required {
+        #[cfg(test)]
+        ring_transport_probe::record_sssr();
+        KekulizeRingRows::Acquired(acquire_sssr_rows(topology)?)
+    } else {
+        KekulizeRingRows::Uninitialized
+    };
+    Ok((rows, replaced_by_reset, atom_ranks))
 }
 
 fn is_early_atom_for_kekulize(atomic_number: u8) -> bool {
@@ -1682,10 +2211,20 @@ fn kekulize_fragment(
     bonds_in_play: &[bool],
     params: &KekulizeParams,
     query_state: Option<QueryStateRef<'_>>,
-) -> Result<TopologyBlock, KekulizeError> {
-    let prepared = prepare_kekulize_selection(topology, atoms_in_play, bonds_in_play, query_state)?;
+    rings: Option<&RingInfo>,
+) -> Result<KekulizeAssignment, KekulizeError> {
+    // Step 1-2: selection dimensions/query validation, source selection and
+    // valence work, then the atoms-none / no-aromatic early returns before
+    // any ring fetch, validation or ranking (an otherwise unused supplied
+    // assignment is never touched on these paths).
+    let prepared = prepare_kekulize_core(topology, atoms_in_play, bonds_in_play, query_state)?;
     if !prepared.found_aromatic {
-        return Ok(topology.clone());
+        return Ok(KekulizeAssignment {
+            topology: topology.clone(),
+            final_valence: None,
+            refreshed_valence_atoms: Vec::new(),
+            ring_update: None,
+        });
     }
 
     // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/Kekulize.cpp :: KekulizeFragment ranking and dispatch
@@ -1702,23 +2241,52 @@ fn kekulize_fragment(
     // RDKit✔️✔️:     // after the molecule is fully sanitized and stereo has been assigned.
     // RDKit✔️✔️:     std::iota(atomRanks.begin(), atomRanks.end(), 0u);
     // RDKit✔️✔️:   }
-    let atom_ranks = if params.canonical {
-        rank_fragment_atoms(topology, &prepared.atoms_in_play, &prepared.bonds_in_play)?
-    } else {
-        (0..topology.atoms.len()).collect()
-    };
+    // Steps 3-4: optional canonical ranking over the supplied state and the
+    // candidate SSSR acquisition restricted to effective bondsToUse.any(),
+    // both owned by the single ring-state transition owner.
+    let effective_bonds_any = prepared.bonds_in_play.iter().any(|selected| *selected);
+    let (rows, replaced_by_reset, atom_ranks) = kekulize_ring_state_transition(
+        topology,
+        &prepared.valence,
+        &prepared.atoms_in_play,
+        &prepared.bonds_in_play,
+        params.canonical,
+        effective_bonds_any,
+        rings,
+    )?;
 
     // RDKit✔️✔️:   // if any bonds to kekulize then give it a try:
     // RDKit✔️✔️:   if (bondsToUse.any()) {
     let mut working = topology.clone();
-    if prepared.bonds_in_play.iter().any(|selected| *selected)
-        && !prepared.candidate_atom_rings.is_empty()
-    {
+    let (candidate_atom_rings, candidate_bond_rings) = if effective_bonds_any {
+        match rows.as_ring_info() {
+            Some(effective) => {
+                // Consumed initialized rows: validate membership dimensions
+                // with the existing typed category before any row read.
+                validate_consumed_ring_dimensions(topology, effective)?;
+                #[cfg(test)]
+                ring_transport_probe::record_borrow(effective);
+                collect_kekulize_candidate_rings(
+                    topology,
+                    effective,
+                    &prepared.atoms_in_play,
+                    &prepared.bonds_in_play,
+                    &prepared.dummy_atoms,
+                    &prepared.wedged_atoms,
+                )?
+            }
+            None => (Vec::new(), Vec::new()),
+        }
+    } else {
+        (Vec::new(), Vec::new())
+    };
+    if effective_bonds_any && !candidate_atom_rings.is_empty() {
         let fused = kekulize_fused_components(
             working,
-            &prepared.candidate_atom_rings,
-            &prepared.candidate_bond_rings,
-            &prepared.rings,
+            &candidate_atom_rings,
+            &candidate_bond_rings,
+            rows.as_ring_info()
+                .expect("candidate rows imply initialized ring state"),
             &prepared.valence,
             &atom_ranks,
             params.max_backtracks,
@@ -1733,6 +2301,8 @@ fn kekulize_fragment(
     // END RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/Kekulize.cpp :: KekulizeFragment ranking and dispatch
 
     // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/Kekulize.cpp :: KekulizeFragment finalization
+    let mut refreshed_valence_atoms = Vec::new();
+    let mut marking_rows_storage: Option<RingInfo> = None;
     // RDKit✔️✔️:   if (markAtomsBonds) {
     // RDKit✔️✔️:     // if we want the atoms and bonds to be marked non-aromatic do
     // RDKit✔️✔️:     // that here.
@@ -1740,7 +2310,25 @@ fn kekulize_fragment(
         // RDKit✔️✔️:     if (!mol.getRingInfo()->isInitialized()) {
         // RDKit✔️✔️:       MolOps::findSSSR(mol);
         // RDKit✔️✔️:     }
-        // Ring membership was initialized during checked selection.
+        // Independent marking guard: a fresh SSSR acquisition is made only
+        // when the effective state is still uninitialized, and an acquisition
+        // made for the candidates is reused without a second find.
+        let marking_rows: &RingInfo = match rows.as_ring_info() {
+            Some(effective) => {
+                validate_consumed_ring_dimensions(topology, effective)?;
+                effective
+            }
+            None => marking_rows_storage.insert(
+                // RDKit✔️✔️:     if (!mol.getRingInfo()->isInitialized()) {
+                // RDKit✔️✔️:       MolOps::findSSSR(mol);
+                // RDKit✔️✔️:     }
+                {
+                    #[cfg(test)]
+                    ring_transport_probe::record_sssr();
+                    acquire_sssr_rows(topology)?
+                },
+            ),
+        };
         // RDKit✔️✔️:     for (auto bond : mol.bonds()) {
         // RDKit✔️✔️:       if (bondsToUse[bond->getIdx()]) {
         // RDKit✔️✔️:         bond->setIsAromatic(false);
@@ -1770,7 +2358,7 @@ fn kekulize_fragment(
             // RDKit✔️✔️:         }
             if prepared.atoms_in_play.iter().all(|selected| *selected)
                 && prepared.bonds_in_play.iter().all(|selected| *selected)
-                && prepared.rings.num_atom_rings(atom_id) == 0
+                && marking_rows.num_atom_rings(atom_id) == 0
             {
                 return Err(KekulizeError::AromaticAtomOutsideRing { atom: atom_id });
             }
@@ -1790,6 +2378,7 @@ fn kekulize_fragment(
             {
                 working.atoms[atom_idx].set_no_implicit(false);
                 working.atoms[atom_idx].set_explicit_hydrogens(0);
+                refreshed_valence_atoms.push(atom_id);
             }
             // RDKit✔️✔️:       }
             // RDKit✔️✔️:     }
@@ -1839,7 +2428,42 @@ fn kekulize_fragment(
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/Kekulize.cpp :: KekulizeFragment finalization
     working.validate()?;
-    Ok(working)
+    // Step 7 final transport: the ONE acquired assignment (candidate guard
+    // or marking guard) is consumed by move only now, after every
+    // candidate/fused/marking/postcondition read has finished successfully;
+    // borrowed states publish None; an unsuperseded canonical Other reset
+    // publishes the cleared replacement.
+    let ring_update = if let Some(marking) = marking_rows_storage {
+        Some(marking)
+    } else {
+        match rows {
+            KekulizeRingRows::Acquired(acquired) => Some(acquired),
+            _ if replaced_by_reset => {
+                let mut cleared = RingInfo::new(RingFindType::OtherOrUnknown, 0, 0);
+                cleared.reset();
+                Some(cleared)
+            }
+            _ => None,
+        }
+    };
+    // RDKit✔️✔️: void Atom::updatePropertyCache(bool strict) {
+    // RDKit✔️✔️:   calcExplicitValence(strict);
+    // RDKit✔️✔️:   calcImplicitValence(strict);
+    // RDKit✔️✔️: }
+    // RDKit✔️✔️: unsigned int Atom::getTotalValence() const {
+    // RDKit✔️✔️:   return getValence(ValenceType::EXPLICIT) + getValence(ValenceType::IMPLICIT);
+    // RDKit✔️✔️: }
+    // Behavior: the final getter does not refresh ordinary rows. Transport the
+    // already-computed assignment with exactly the N/P updatePropertyCache
+    // rows, so callers can retain source-stale intermediate rows unchanged.
+    // Complexity: move both existing valence vectors; the row list is built
+    // inside the existing atom loop. No additional chemistry evaluation.
+    Ok(KekulizeAssignment {
+        topology: working,
+        final_valence: Some(final_valence),
+        refreshed_valence_atoms,
+        ring_update,
+    })
 }
 
 pub fn kekulize(
@@ -1847,6 +2471,59 @@ pub fn kekulize(
     params: &KekulizeParams,
 ) -> Result<KekulizeAssignment, KekulizeError> {
     kekulize_with_query_state(topology, params, None)
+}
+
+/// Kekulizes a whole topology while transporting the caller's ring state.
+///
+/// `rings` supplies the caller's current ring assignment when one exists.
+/// The returned `ring_update` field reports the final state: `None` means
+/// the supplied state is unchanged (absent, already reset, or an initialized
+/// Fast/SSSR/Symm assignment that was borrowed without modification);
+/// `Some(initialized)` moves the newly acquired final state; and
+/// `Some(uninitialized)` replaces a previously initialized Other assignment
+/// that canonical ranking reset. The supplied assignment is immutable on
+/// success and error.
+pub fn kekulize_with_query_state_and_ring_info(
+    topology: &TopologyBlock,
+    params: &KekulizeParams,
+    query_state: Option<QueryStateRef<'_>>,
+    rings: Option<&RingInfo>,
+) -> Result<KekulizeAssignment, KekulizeError> {
+    if let Some(state) = query_state {
+        state.validate_for_topology(topology)?;
+    }
+    let atoms_in_play = vec![true; topology.atoms.len()];
+    let bonds_in_play = vec![true; topology.bonds.len()];
+    kekulize_fragment(
+        topology,
+        &atoms_in_play,
+        &bonds_in_play,
+        params,
+        query_state,
+        rings,
+    )
+}
+
+/// Kekulizes selected original-index atoms and bonds in a detached topology.
+pub fn kekulize_selected_fragment(
+    topology: &TopologyBlock,
+    atoms_in_play: &[bool],
+    bonds_in_play: &[bool],
+    params: &KekulizeParams,
+) -> Result<KekulizeAssignment, KekulizeError> {
+    // BEGIN RDKIT CPP FUNCTION SmilesWrite::FragmentSmilesConstruct selected kekulization
+    // RDKit✔️❌:     if (atomsInPlay && bondsInPlay) {
+    // RDKit✔️❌:       MolOps::details::KekulizeFragment(static_cast<RWMol &>(mol), *atomsInPlay,
+    // RDKit✔️❌:                                         *bondsInPlay);
+    // RDKit✔️❌:     } else {
+    // RDKit✔️❌:       MolOps::Kekulize(static_cast<RWMol &>(mol));
+    // RDKit✔️❌:     }
+    // END RDKIT CPP FUNCTION SmilesWrite::FragmentSmilesConstruct selected kekulization
+    // Behavior: the caller supplies both original-index masks, so the single
+    // core masked owner performs source validation and all selected chemistry.
+    // Cost: detached return ownership clones the topology, including the
+    // source early-return path; the upstream caller mutates its private copy.
+    kekulize_fragment(topology, atoms_in_play, bonds_in_play, params, None, None)
 }
 
 #[doc(hidden)]
@@ -1871,15 +2548,14 @@ pub fn kekulize_with_query_state(
     // RDKit✔️✔️:                             canonical, maxBackTracks);
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/Kekulize.cpp :: MolOps::Kekulize
-    Ok(KekulizeAssignment {
-        topology: kekulize_fragment(
-            topology,
-            &atoms_in_play,
-            &bonds_in_play,
-            params,
-            query_state,
-        )?,
-    })
+    kekulize_fragment(
+        topology,
+        &atoms_in_play,
+        &bonds_in_play,
+        params,
+        query_state,
+        None,
+    )
 }
 
 pub fn kekulize_if_possible(
@@ -1955,8 +2631,8 @@ struct CanonRankReadView<'a> {
     atoms: &'a [Atom],
     bonds: &'a [Bond],
     adjacency: &'a AdjacencyList,
-    rings: RingInfo,
-    valence: ValenceAssignment,
+    rings: Cow<'a, RingInfo>,
+    valence: Cow<'a, ValenceAssignment>,
 }
 
 impl<'a> CanonRankReadView<'a> {
@@ -1986,8 +2662,66 @@ impl<'a> CanonRankReadView<'a> {
             atoms,
             bonds,
             adjacency,
+            rings: Cow::Owned(rings),
+            valence: Cow::Owned(valence),
+        })
+    }
+
+    fn from_prepared_state(
+        topology: &'a TopologyBlock,
+        valence: &'a ValenceAssignment,
+        rings: Option<&'a RingInfo>,
+    ) -> Result<Self, CanonicalRankError> {
+        // RDKit✔️✔️:   if (!mol.getRingInfo()->isFindFastOrBetter()) {
+        // RDKit✔️✔️:     MolOps::fastFindRings(mol);
+        // RDKit✔️✔️:     clearRings = true;
+        // RDKit✔️✔️:   }
+        // A caller supplies already prepared property-cache values for this
+        // exact topology. Check dimensions and source per-atom validity before
+        // borrowing; a missing/unknown ring set uses the one existing fast
+        // owner. Borrowing is O(1) and avoids duplicate O(V+E) preparation.
+        if valence.explicit_valence.len() != topology.atoms.len()
+            || valence.implicit_hydrogens.len() != topology.atoms.len()
+        {
+            return Err(CanonicalRankError::PreparedValenceLength {
+                atom_count: topology.atoms.len(),
+                explicit_len: valence.explicit_valence.len(),
+                implicit_len: valence.implicit_hydrogens.len(),
+            });
+        }
+        for (atom_index, atom) in topology.atoms.iter().enumerate() {
+            if valence.explicit_valence[atom_index] < 0
+                || (!atom.no_implicit() && valence.implicit_hydrogens[atom_index] < 0)
+            {
+                return Err(CanonicalRankError::PreparedValenceInvalid { atom_index });
+            }
+        }
+        if let Some(rings) = rings
+            && (rings.atom_row_count() != topology.atoms.len()
+                || rings.bond_row_count() != topology.bonds.len())
+        {
+            return Err(CanonicalRankError::PreparedRingLength {
+                expected_atoms: topology.atoms.len(),
+                actual_atoms: rings.atom_row_count(),
+                expected_bonds: topology.bonds.len(),
+                actual_bonds: rings.bond_row_count(),
+            });
+        }
+        let rings = if let Some(rings) = rings.filter(|rings| rings.is_find_fast_or_better()) {
+            Cow::Borrowed(rings)
+        } else {
+            Cow::Owned(fast_find_rings_from_parts(
+                topology.atoms.len(),
+                &topology.bonds,
+                &topology.adjacency,
+            )?)
+        };
+        Ok(Self {
+            atoms: &topology.atoms,
+            bonds: &topology.bonds,
+            adjacency: &topology.adjacency,
             rings,
-            valence,
+            valence: Cow::Borrowed(valence),
         })
     }
 
@@ -2138,6 +2872,67 @@ pub fn rank_fragment_atoms(
     atoms_in_play: &[bool],
     bonds_in_play: &[bool],
 ) -> Result<Vec<usize>, CanonicalRankError> {
+    rank_fragment_atoms_with_params(
+        topology,
+        atoms_in_play,
+        bonds_in_play,
+        None,
+        None,
+        &CanonicalRankParams::kekulize_fragment_default(),
+    )
+}
+
+/// Ranks an original-index fragment with source symbol tables and options.
+pub fn rank_fragment_atoms_with_params(
+    topology: &TopologyBlock,
+    atoms_in_play: &[bool],
+    bonds_in_play: &[bool],
+    atom_symbols: Option<&[String]>,
+    bond_symbols: Option<&[String]>,
+    params: &CanonicalRankParams,
+) -> Result<Vec<usize>, CanonicalRankError> {
+    rank_fragment_atoms_engine(
+        topology,
+        atoms_in_play,
+        bonds_in_play,
+        atom_symbols,
+        bond_symbols,
+        params,
+        None,
+    )
+}
+
+/// Ranks a fragment while borrowing exact-topology prepared valence and rings.
+pub fn rank_fragment_atoms_with_prepared_state(
+    topology: &TopologyBlock,
+    valence: &ValenceAssignment,
+    rings: Option<&RingInfo>,
+    atoms_in_play: &[bool],
+    bonds_in_play: &[bool],
+    atom_symbols: Option<&[String]>,
+    bond_symbols: Option<&[String]>,
+    params: &CanonicalRankParams,
+) -> Result<Vec<usize>, CanonicalRankError> {
+    rank_fragment_atoms_engine(
+        topology,
+        atoms_in_play,
+        bonds_in_play,
+        atom_symbols,
+        bond_symbols,
+        params,
+        Some((valence, rings)),
+    )
+}
+
+fn rank_fragment_atoms_engine(
+    topology: &TopologyBlock,
+    atoms_in_play: &[bool],
+    bonds_in_play: &[bool],
+    atom_symbols: Option<&[String]>,
+    bond_symbols: Option<&[String]>,
+    params: &CanonicalRankParams,
+    prepared: Option<(&ValenceAssignment, Option<&RingInfo>)>,
+) -> Result<Vec<usize>, CanonicalRankError> {
     // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/new_canon.cpp :: rankFragmentAtoms
     // RDKit✔️✔️: void rankFragmentAtoms(const ROMol &mol, std::vector<unsigned int> &res,
     // RDKit✔️✔️:                        const boost::dynamic_bitset<> &atomsInPlay,
@@ -2149,6 +2944,8 @@ pub fn rank_fragment_atoms(
     // RDKit✔️✔️:                        bool includeChiralPresence, bool includeRingStereo) {
     // RDKit✔️✔️: PRECONDITION(atomsInPlay.size() == mol.getNumAtoms(), "bad atomsInPlay size");
     // RDKit✔️✔️: PRECONDITION(bondsInPlay.size() == mol.getNumBonds(), "bad bondsInPlay size");
+    // Symbol and mask validation is O(1) per table; the existing ranking
+    // engine retains its source-shaped partitions and original-index output.
     if atoms_in_play.len() != topology.atoms.len() {
         return Err(CanonicalRankError::AtomMaskLength {
             expected: topology.atoms.len(),
@@ -2159,6 +2956,26 @@ pub fn rank_fragment_atoms(
         return Err(CanonicalRankError::BondMaskLength {
             expected: topology.bonds.len(),
             actual: bonds_in_play.len(),
+        });
+    }
+    // RDKit✔️✔️: PRECONDITION(!atomSymbols || atomSymbols->size() == mol.getNumAtoms(),
+    // RDKit✔️✔️:              "bad atomSymbols size");
+    // RDKit✔️✔️: PRECONDITION(!bondSymbols || bondSymbols->size() == mol.getNumBonds(),
+    // RDKit✔️✔️:              "bad bondSymbols size");
+    if let Some(symbols) = atom_symbols
+        && symbols.len() != topology.atoms.len()
+    {
+        return Err(CanonicalRankError::AtomSymbolLength {
+            expected: topology.atoms.len(),
+            actual: symbols.len(),
+        });
+    }
+    if let Some(symbols) = bond_symbols
+        && symbols.len() != topology.bonds.len()
+    {
+        return Err(CanonicalRankError::BondSymbolLength {
+            expected: topology.bonds.len(),
+            actual: symbols.len(),
         });
     }
     // RDKit✔️✔️: if (!mol.getNumAtoms()) {
@@ -2176,18 +2993,34 @@ pub fn rank_fragment_atoms(
     // RDKit✔️✔️:   std::vector<Canon::canon_atom> atoms(mol.getNumAtoms());
     // RDKit✔️✔️:   detail::initFragmentCanonAtoms(mol, atoms, includeChirality, atomSymbols,
     // RDKit✔️✔️:                                  bondSymbols, atomsInPlay, bondsInPlay, true);
-    let view = CanonRankReadView::from_topology(topology)?;
+    let view = if let Some((valence, rings)) = prepared {
+        CanonRankReadView::from_prepared_state(topology, valence, rings)?
+    } else {
+        CanonRankReadView::from_topology(topology)?
+    };
     let mut atoms = init_fragment_canon_atoms(
         &view,
         atoms_in_play,
         bonds_in_play,
-        CanonicalRankParams::kekulize_fragment_default().include_chirality,
+        params.include_chirality,
+        atom_symbols,
+        bond_symbols,
     )?;
-    rank_initialized_atoms(
-        &view,
-        &mut atoms,
-        CanonicalRankParams::kekulize_fragment_default(),
-    )
+    // RDKit✔️✔️:   ftor.df_useIsotopes = includeIsotopes;
+    // RDKit✔️✔️:   ftor.df_useChirality = includeChirality;
+    // RDKit✔️✔️:   ftor.df_useAtomMaps = includeAtomMaps;
+    // RDKit✔️✔️:   ftor.df_useChiralityRings = includeChirality;
+    // RDKit✔️✔️:   ftor.df_useChiralPresence = includeChiralPresence;
+    // RDKit✔️✔️:   detail::rankWithFunctor(ftor, breakTies, order, true, includeChirality,
+    // RDKit✔️✔️:                           includeRingStereo, &atomsInPlay, &bondsInPlay);
+    let mut fragment_params = *params;
+    fragment_params.include_stereo_groups = false;
+    fragment_params.use_non_stereo_ranks = false;
+    // The source fragment path always enables the chirality-ring comparison
+    // when chirality is enabled; the whole-molecule path also gates on ring
+    // stereo. These are independent policy branches within the same engine.
+    fragment_params.chirality_rings_use_ring_stereo = false;
+    rank_initialized_atoms(&view, &mut atoms, fragment_params)
     // RDKit✔️✔️:   if (clearRings) {
     // RDKit✔️✔️:     mol.getRingInfo()->reset();
     // RDKit✔️✔️:   }
@@ -2434,7 +3267,12 @@ fn empty_canon_atom_from_source_atom(atom: &Atom) -> CanonAtom<'static> {
         atom_map: atom.atom_map().unwrap_or(0),
         canonical_ranking_number: atom
             .prop("_CanonicalRankingNumber")
-            .and_then(|value| value.parse::<i32>().ok())
+            .and_then(|value| match value {
+                cosmolkit_model::PropertyValue::Int(value) => Some(*value),
+                cosmolkit_model::PropertyValue::String(value) => value.parse::<i32>().ok(),
+                cosmolkit_model::PropertyValue::Double(_)
+                | cosmolkit_model::PropertyValue::Bool(_) => None,
+            })
             .unwrap_or(0),
         formal_charge: atom.formal_charge(),
         chiral_tag: atom.chiral_tag(),
@@ -2470,8 +3308,14 @@ fn init_canon_atoms(
     // RDKit✔️✔️:   }
     let atoms_in_play = vec![true; view.num_atoms()];
     let bonds_in_play = vec![true; view.bonds.len()];
-    let mut atoms =
-        init_fragment_canon_atoms(view, &atoms_in_play, &bonds_in_play, include_chirality)?;
+    let mut atoms = init_fragment_canon_atoms(
+        view,
+        &atoms_in_play,
+        &bonds_in_play,
+        include_chirality,
+        None,
+        None,
+    )?;
     // RDKit✔️✔️:   if (includeChirality && includeStereoGroups) {
     // RDKit✔️✔️:     unsigned int sgidx = 1;
     // RDKit✔️✔️:     for (auto &sg : mol.getStereoGroups()) {
@@ -2500,12 +3344,14 @@ fn init_canon_atoms(
     Ok(atoms)
 }
 
-fn init_fragment_canon_atoms(
+fn init_fragment_canon_atoms<'a>(
     view: &CanonRankReadView<'_>,
     atoms_in_play: &[bool],
     bonds_in_play: &[bool],
     include_chirality: bool,
-) -> Result<Vec<CanonAtom<'static>>, CanonicalRankError> {
+    atom_symbols: Option<&'a [String]>,
+    bond_symbols: Option<&'a [String]>,
+) -> Result<Vec<CanonAtom<'a>>, CanonicalRankError> {
     // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/new_canon.cpp :: detail::initFragmentCanonAtoms
     // RDKit✔️✔️: void initFragmentCanonAtoms(const ROMol &mol,
     // RDKit✔️✔️:                             std::vector<Canon::canon_atom> &atoms,
@@ -2516,6 +3362,9 @@ fn init_fragment_canon_atoms(
     // RDKit✔️✔️:                             const boost::dynamic_bitset<> &bondsInPlay,
     // RDKit✔️✔️:                             bool needsInit) {
     // RDKit✔️✔️:   needsInit = true;
+    // Symbol references borrow caller storage without per-atom or per-bond
+    // string allocation. Each included bond assigns both holder references
+    // in its existing O(B) initialization pass.
     let mut atoms = view
         .atoms
         .iter()
@@ -2529,7 +3378,11 @@ fn init_fragment_canon_atoms(
     // RDKit✔️✔️:     atomsi.index = i;
     // RDKit✔️✔️:     atomsi.degree = 0;
     // RDKit✔️✔️:     if (atomsInPlay[i]) {
-    // RDKit✔️✔️:       atomsi.p_symbol = nullptr;
+    // RDKit✔️✔️:       if (atomSymbols) {
+    // RDKit✔️✔️:         atomsi.p_symbol = &(*atomSymbols)[i];
+    // RDKit✔️✔️:       } else {
+    // RDKit✔️✔️:         atomsi.p_symbol = nullptr;
+    // RDKit✔️✔️:       }
     // RDKit✔️✔️:       if (needsInit) {
     // RDKit✔️✔️:         atomsi.nbrIds = std::make_unique<int[]>(atom->getDegree());
     // RDKit✔️✔️:         advancedInitCanonAtom(mol, atomsi, i);
@@ -2546,6 +3399,7 @@ fn init_fragment_canon_atoms(
         if !atoms_in_play[atom_idx] {
             continue;
         }
+        atoms[atom_idx].p_symbol = atom_symbols.map(|symbols| symbols[atom_idx].as_str());
         let atom = &view.atoms[atom_idx];
         atoms[atom_idx].total_num_hs = usize::from(atom.explicit_hydrogens())
             + usize::try_from(view.valence.implicit_hydrogens[atom_idx].max(0))
@@ -2575,6 +3429,10 @@ fn init_fragment_canon_atoms(
     // RDKit✔️✔️:           makeBondHolder(bond, bond->getEndAtomIdx(), includeChirality, atoms));
     // RDKit✔️✔️:       endAt.bonds.push_back(makeBondHolder(bond, bond->getBeginAtomIdx(),
     // RDKit✔️✔️:                                            includeChirality, atoms));
+    // RDKit✔️✔️:       if (bondSymbols) {
+    // RDKit✔️✔️:         begAt.bonds.back().p_symbol = &(*bondSymbols)[bond->getIdx()];
+    // RDKit✔️✔️:         endAt.bonds.back().p_symbol = &(*bondSymbols)[bond->getIdx()];
+    // RDKit✔️✔️:       }
     // RDKit✔️✔️:     }
     // RDKit✔️✔️:   }
     for (bond_idx, bond) in view.bonds.iter().enumerate() {
@@ -2589,8 +3447,12 @@ fn init_fragment_canon_atoms(
         atoms[end].degree += 1;
         atoms[end].all_nbr_ids.push(begin);
         atoms[end].nbr_ids.push(begin);
-        let begin_holder = make_canon_bond_holder(view, bond_idx, end, include_chirality)?;
-        let end_holder = make_canon_bond_holder(view, bond_idx, begin, include_chirality)?;
+        let mut begin_holder = make_canon_bond_holder(view, bond_idx, end, include_chirality)?;
+        let mut end_holder = make_canon_bond_holder(view, bond_idx, begin, include_chirality)?;
+        if let Some(symbols) = bond_symbols {
+            begin_holder.p_symbol = Some(symbols[bond_idx].as_str());
+            end_holder.p_symbol = Some(symbols[bond_idx].as_str());
+        }
         atoms[begin].bonds.push(begin_holder);
         atoms[end].bonds.push(end_holder);
     }
@@ -4814,6 +5676,2586 @@ mod tests {
     }
 
     #[test]
+    fn selected_kekulize_contract_checks_both_full_index_mask_lengths_before_empty_return() {
+        let graph = topology(
+            vec![
+                atom(0, AtomSpec::new(Element::C)),
+                atom(1, AtomSpec::new(Element::C)),
+            ],
+            vec![bond(0, 0, 1)],
+        );
+        let before = graph.clone();
+        let atoms = [false, false];
+        let bonds = [true];
+        assert_eq!(
+            kekulize_selected_fragment(&graph, &[false], &[], &KekulizeParams::default()),
+            Err(KekulizeError::AtomSelectionLength {
+                expected: 2,
+                actual: 1,
+            })
+        );
+        assert_eq!(
+            kekulize_selected_fragment(&graph, &atoms, &[], &KekulizeParams::default()),
+            Err(KekulizeError::BondSelectionLength {
+                expected: 1,
+                actual: 0,
+            })
+        );
+        assert_eq!(graph, before);
+        assert_eq!(atoms, [false, false]);
+        assert_eq!(bonds, [true]);
+    }
+
+    #[test]
+    fn selected_kekulize_contract_keeps_original_ids_and_caller_state() {
+        let graph = topology(
+            vec![
+                atom(0, AtomSpec::new(Element::C)),
+                atom(1, AtomSpec::new(Element::C)),
+            ],
+            vec![bond(0, 0, 1)],
+        );
+        let before = graph.clone();
+        let none = [false, false];
+        let selected_atom = [true, false];
+        let selected_bond = [true];
+        let unselected_bond = [false];
+        for (atoms, bonds) in [
+            (&none[..], &selected_bond[..]),
+            (&selected_atom[..], &selected_bond[..]),
+            (&selected_atom[..], &unselected_bond[..]),
+        ] {
+            let original_atoms = atoms.to_vec();
+            let original_bonds = bonds.to_vec();
+            let result = kekulize_selected_fragment(&graph, atoms, bonds, &Default::default())
+                .expect("source accepts independent original-index selection masks");
+            assert_eq!(result.topology, before);
+            assert_eq!(atoms, original_atoms);
+            assert_eq!(bonds, original_bonds);
+        }
+        assert_eq!(graph, before);
+    }
+
+    fn selected_kekulize_behavior_ring_pair() -> TopologyBlock {
+        topology(
+            (0..12)
+                .map(|id| atom(id, AtomSpec::new(Element::C).with_aromatic(true)))
+                .collect(),
+            [
+                (0, 1),
+                (1, 2),
+                (2, 3),
+                (3, 4),
+                (4, 5),
+                (5, 0),
+                (6, 7),
+                (7, 8),
+                (8, 9),
+                (9, 10),
+                (10, 11),
+                (11, 6),
+            ]
+            .into_iter()
+            .enumerate()
+            .map(|(id, (begin, end))| aromatic_bond(id, begin, end))
+            .collect(),
+        )
+    }
+
+    #[test]
+    fn selected_kekulize_behavior_full_masks_match_whole_entry_for_both_flags() {
+        let graph = selected_kekulize_behavior_ring_pair();
+        let before = graph.clone();
+        for mark_atoms_bonds in [false, true] {
+            for canonical in [false, true] {
+                let params = KekulizeParams {
+                    mark_atoms_bonds,
+                    canonical,
+                    ..Default::default()
+                };
+                let selected =
+                    kekulize_selected_fragment(&graph, &[true; 12], &[true; 12], &params).unwrap();
+                assert_eq!(selected, kekulize(&graph, &params).unwrap());
+            }
+        }
+        assert_eq!(graph, before);
+    }
+
+    #[test]
+    fn selected_kekulize_behavior_partial_ring_preserves_original_unselected_rows() {
+        let graph = selected_kekulize_behavior_ring_pair();
+        let before = graph.clone();
+        let mut atoms = [false; 12];
+        atoms[0] = true;
+        atoms[1] = true;
+        let mut bonds = [false; 12];
+        bonds[0] = true;
+        let result = kekulize_selected_fragment(&graph, &atoms, &bonds, &Default::default())
+            .expect("pinned partial ring has no wholly selected candidate ring");
+        assert_eq!(result.topology.atoms.len(), 12);
+        assert_eq!(result.topology.bonds.len(), 12);
+        assert!(!result.topology.atoms[0].is_aromatic());
+        assert!(!result.topology.atoms[1].is_aromatic());
+        assert!(!result.topology.bonds[0].is_aromatic());
+        assert_eq!(result.topology.bonds[0].order(), BondOrder::Aromatic);
+        assert_eq!(&result.topology.atoms[2..], &before.atoms[2..]);
+        assert_eq!(&result.topology.bonds[1..], &before.bonds[1..]);
+        assert_ne!(
+            result.topology,
+            kekulize(&graph, &Default::default()).unwrap().topology
+        );
+        assert_eq!(graph, before);
+        assert_eq!(atoms.iter().filter(|selected| **selected).count(), 2);
+        assert_eq!(bonds.iter().filter(|selected| **selected).count(), 1);
+    }
+
+    #[test]
+    fn selected_kekulize_behavior_disconnected_ring_keeps_unselected_component() {
+        let graph = selected_kekulize_behavior_ring_pair();
+        let before = graph.clone();
+        let atoms = [
+            true, true, true, true, true, true, false, false, false, false, false, false,
+        ];
+        let bonds = atoms;
+        let result = kekulize_selected_fragment(&graph, &atoms, &bonds, &Default::default())
+            .expect("one fully selected aromatic component is kekulizable");
+        assert!(
+            result.topology.atoms[..6]
+                .iter()
+                .all(|atom| !atom.is_aromatic())
+        );
+        assert!(
+            result.topology.bonds[..6]
+                .iter()
+                .all(|bond| !bond.is_aromatic())
+        );
+        assert_eq!(&result.topology.atoms[6..], &before.atoms[6..]);
+        assert_eq!(&result.topology.bonds[6..], &before.bonds[6..]);
+        assert_eq!(graph, before);
+    }
+
+    #[test]
+    fn selected_kekulize_behavior_full_nonring_aromatic_atom_reports_source_error() {
+        let graph = topology(
+            vec![atom(0, AtomSpec::new(Element::C).with_aromatic(true))],
+            vec![],
+        );
+        let before = graph.clone();
+        assert_eq!(
+            kekulize_selected_fragment(&graph, &[true], &[], &Default::default()),
+            Err(KekulizeError::AromaticAtomOutsideRing {
+                atom: AtomId::new(0)
+            })
+        );
+        assert_eq!(graph, before);
+    }
+
+    #[test]
+    fn selected_kekulize_behavior_uninitialized_rings_use_pinned_sssr_rows() {
+        let graph = topology(
+            (0..10)
+                .map(|id| atom(id, AtomSpec::new(Element::C).with_aromatic(true)))
+                .collect(),
+            [
+                (0, 1),
+                (1, 2),
+                (2, 3),
+                (3, 4),
+                (4, 5),
+                (5, 6),
+                (6, 7),
+                (7, 8),
+                (8, 9),
+                (9, 0),
+                (8, 3),
+            ]
+            .into_iter()
+            .enumerate()
+            .map(|(id, (begin, end))| aromatic_bond(id, begin, end))
+            .collect(),
+        );
+        let selected = [true; 10];
+        let prepared = prepare_kekulize_selection(&graph, &selected, &[true; 11], None).unwrap();
+        let atom_rows = prepared
+            .candidate_atom_rings
+            .iter()
+            .map(|ring| ring.iter().map(|atom| atom.index()).collect::<Vec<_>>())
+            .collect::<Vec<_>>();
+        let bond_rows = prepared
+            .candidate_bond_rings
+            .iter()
+            .map(|ring| ring.iter().map(|bond| bond.index()).collect::<Vec<_>>())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            atom_rows,
+            vec![vec![0, 9, 8, 3, 2, 1], vec![4, 5, 6, 7, 8, 3]]
+        );
+        assert_eq!(
+            bond_rows,
+            vec![vec![9, 8, 10, 2, 1, 0], vec![4, 5, 6, 7, 10, 3]]
+        );
+    }
+
+    mod kekulize_ring_k02_candidate_owner {
+        use super::*;
+        use crate::ring_info_from_selected_rows;
+
+        fn benzene_rows() -> RingInfo {
+            ring_info_from_selected_rows(
+                6,
+                6,
+                &[vec![
+                    AtomId::new(0),
+                    AtomId::new(1),
+                    AtomId::new(2),
+                    AtomId::new(3),
+                    AtomId::new(4),
+                    AtomId::new(5),
+                ]],
+                &[vec![
+                    BondId::new(0),
+                    BondId::new(1),
+                    BondId::new(2),
+                    BondId::new(3),
+                    BondId::new(4),
+                    BondId::new(5),
+                ]],
+            )
+            .unwrap()
+        }
+
+        fn ids(rows: &[Vec<AtomId>]) -> Vec<Vec<usize>> {
+            rows.iter()
+                .map(|row| row.iter().map(|atom| atom.index()).collect())
+                .collect()
+        }
+
+        fn bond_ids(rows: &[Vec<BondId>]) -> Vec<Vec<usize>> {
+            rows.iter()
+                .map(|row| row.iter().map(|bond| bond.index()).collect())
+                .collect()
+        }
+
+        fn wedged(topology: &TopologyBlock, selected_bonds: &[bool]) -> Vec<bool> {
+            let mut wedged_atoms = vec![false; topology.atoms.len()];
+            for bond in &topology.bonds {
+                if selected_bonds[bond.id().index()]
+                    && matches!(
+                        bond.direction(),
+                        BondDirection::BeginWedge | BondDirection::BeginDash
+                    )
+                {
+                    wedged_atoms[bond.begin().index()] = true;
+                }
+            }
+            wedged_atoms
+        }
+
+        // K02 call 1/2 (all-atoms/all-bonds, wedge bond b0 at ring position 0):
+        // rotation by startPos 0 keeps the stored order; the wedge marks the
+        // row as front-inserted. BEGINWEDGE and BEGINDASH are the same source
+        // wedgedAtoms signal (Kekulize.cpp:634-637).
+        #[test]
+        fn kekulize_ring_k02_all_selection_rotation_identity_both_directions() {
+            for direction in [BondDirection::BeginWedge, BondDirection::BeginDash] {
+                let graph = topology(
+                    (0..6)
+                        .map(|id| atom(id, AtomSpec::new(Element::C).with_aromatic(true)))
+                        .collect(),
+                    six_cycle_with(direction, 0),
+                );
+                let selected = [true; 6];
+                let wedged_atoms = wedged(&graph, &selected);
+                assert!(wedged_atoms[0]);
+                let rings = benzene_rows();
+                let before = rings.clone();
+                let (atom_rows, bond_rows) = collect_kekulize_candidate_rings(
+                    &graph,
+                    &rings,
+                    &selected,
+                    &selected,
+                    &[false; 6],
+                    &wedged_atoms,
+                )
+                .unwrap();
+                assert_eq!(ids(&atom_rows), vec![vec![0, 1, 2, 3, 4, 5]]);
+                assert_eq!(bond_ids(&bond_rows), vec![vec![0, 1, 2, 3, 4, 5]]);
+                // Borrowed assignment is never modified by candidate copying.
+                assert_eq!(rings, before);
+            }
+        }
+
+        fn six_cycle_with(direction: BondDirection, wedge_bond: usize) -> Vec<Bond> {
+            (0..6)
+                .map(|id| {
+                    let spec = BondSpec::new(
+                        AtomId::new(id),
+                        AtomId::new((id + 1) % 6),
+                        BondOrder::Aromatic,
+                    )
+                    .with_aromatic(true);
+                    let spec = if id == wedge_bond {
+                        spec.with_direction(direction)
+                    } else {
+                        spec
+                    };
+                    bond_with_spec(id, spec)
+                })
+                .collect()
+        }
+
+        // K02 calls 3/4 (partial atom: disconnected two-cycle graph, only the
+        // first cycle's atoms selected): only ring-1 rows are copied; ring-2
+        // rows are excluded by the atomsInPlay member check, never by graph
+        // substitution (containsNonDummy loop, Kekulize.cpp:659-670).
+        #[test]
+        fn kekulize_ring_k02_partial_atom_excludes_whole_second_ring() {
+            for direction in [BondDirection::BeginWedge, BondDirection::BeginDash] {
+                let mut atoms = Vec::new();
+                for id in 0..12 {
+                    atoms.push(atom(id, AtomSpec::new(Element::C).with_aromatic(true)));
+                }
+                let mut bonds = six_cycle_with(direction, 0);
+                for id in 6..12 {
+                    bonds.push(bond_with_spec(
+                        id,
+                        BondSpec::new(
+                            AtomId::new(id),
+                            AtomId::new(6 + (id - 6 + 1) % 6),
+                            BondOrder::Aromatic,
+                        )
+                        .with_aromatic(true),
+                    ));
+                }
+                let graph = topology(atoms, bonds);
+                let mut atoms_in_play = [false; 12];
+                for selected in &mut atoms_in_play[..6] {
+                    *selected = true;
+                }
+                let bonds_in_play = [true; 12];
+                let wedged_atoms = wedged(&graph, &bonds_in_play);
+                assert!(wedged_atoms[0]);
+                assert!(!wedged_atoms[6..].iter().any(|wedge| *wedge));
+                let rings = ring_info_from_selected_rows(
+                    12,
+                    12,
+                    &[
+                        vec![
+                            AtomId::new(0),
+                            AtomId::new(1),
+                            AtomId::new(2),
+                            AtomId::new(3),
+                            AtomId::new(4),
+                            AtomId::new(5),
+                        ],
+                        vec![
+                            AtomId::new(6),
+                            AtomId::new(7),
+                            AtomId::new(8),
+                            AtomId::new(9),
+                            AtomId::new(10),
+                            AtomId::new(11),
+                        ],
+                    ],
+                    &[
+                        vec![
+                            BondId::new(0),
+                            BondId::new(1),
+                            BondId::new(2),
+                            BondId::new(3),
+                            BondId::new(4),
+                            BondId::new(5),
+                        ],
+                        vec![
+                            BondId::new(6),
+                            BondId::new(7),
+                            BondId::new(8),
+                            BondId::new(9),
+                            BondId::new(10),
+                            BondId::new(11),
+                        ],
+                    ],
+                )
+                .unwrap();
+                let before = rings.clone();
+                let (atom_rows, bond_rows) = collect_kekulize_candidate_rings(
+                    &graph,
+                    &rings,
+                    &atoms_in_play,
+                    &bonds_in_play,
+                    &[false; 12],
+                    &wedged_atoms,
+                )
+                .unwrap();
+                assert_eq!(ids(&atom_rows), vec![vec![0, 1, 2, 3, 4, 5]]);
+                assert_eq!(bond_ids(&bond_rows), vec![vec![0, 1, 2, 3, 4, 5]]);
+                assert_eq!(rings, before);
+            }
+        }
+
+        // K02 calls 5/6 (partial bond: the ring's b0 deselected so the single
+        // stored row fails copyBondRingsWithinFragment): no candidates, and
+        // the deselected b0 can no longer contribute a wedge start.
+        #[test]
+        fn kekulize_ring_k02_partial_bond_excludes_the_ring_row() {
+            for direction in [BondDirection::BeginWedge, BondDirection::BeginDash] {
+                let graph = topology(
+                    (0..6)
+                        .map(|id| atom(id, AtomSpec::new(Element::C).with_aromatic(true)))
+                        .collect(),
+                    six_cycle_with(direction, 5),
+                );
+                let mut bonds_in_play = [true; 6];
+                bonds_in_play[0] = false;
+                let wedged_atoms = wedged(&graph, &bonds_in_play);
+                assert!(wedged_atoms[5]);
+                let rings = benzene_rows();
+                let before = rings.clone();
+                let (atom_rows, bond_rows) = collect_kekulize_candidate_rings(
+                    &graph,
+                    &rings,
+                    &[true; 6],
+                    &bonds_in_play,
+                    &[false; 6],
+                    &wedged_atoms,
+                )
+                .unwrap();
+                assert!(atom_rows.is_empty());
+                assert!(bond_rows.is_empty());
+                assert_eq!(rings, before);
+            }
+        }
+
+        // K02 calls 7/8 (wedge start at ring position 2 via bond b2 whose
+        // begin atom is atom 2): the stored row rotates so the wedged atom
+        // leads and the row is front-inserted (Kekulize.cpp:675-688).
+        #[test]
+        fn kekulize_ring_k02_wedge_start_rotates_wedged_atom_to_front() {
+            for direction in [BondDirection::BeginWedge, BondDirection::BeginDash] {
+                let graph = topology(
+                    (0..6)
+                        .map(|id| atom(id, AtomSpec::new(Element::C).with_aromatic(true)))
+                        .collect(),
+                    six_cycle_with(direction, 2),
+                );
+                let selected = [true; 6];
+                let wedged_atoms = wedged(&graph, &selected);
+                assert!(wedged_atoms[2]);
+                let rings = benzene_rows();
+                let before = rings.clone();
+                let (atom_rows, bond_rows) = collect_kekulize_candidate_rings(
+                    &graph,
+                    &rings,
+                    &selected,
+                    &selected,
+                    &[false; 6],
+                    &wedged_atoms,
+                )
+                .unwrap();
+                assert_eq!(ids(&atom_rows), vec![vec![2, 3, 4, 5, 0, 1]]);
+                assert_eq!(bond_ids(&bond_rows), vec![vec![2, 3, 4, 5, 0, 1]]);
+                assert_eq!(rings, before);
+            }
+        }
+    }
+
+    mod kekulize_ring_k03_transition {
+        use super::*;
+        use crate::ring_info_from_selected_rows;
+
+        fn benzene() -> TopologyBlock {
+            topology(
+                (0..6)
+                    .map(|id| atom(id, AtomSpec::new(Element::C).with_aromatic(true)))
+                    .collect(),
+                (0..6)
+                    .map(|id| aromatic_bond(id, id, (id + 1) % 6))
+                    .collect(),
+            )
+        }
+
+        fn full_rows() -> RingInfo {
+            ring_info_from_selected_rows(
+                6,
+                6,
+                &[vec![
+                    AtomId::new(0),
+                    AtomId::new(1),
+                    AtomId::new(2),
+                    AtomId::new(3),
+                    AtomId::new(4),
+                    AtomId::new(5),
+                ]],
+                &[vec![
+                    BondId::new(0),
+                    BondId::new(1),
+                    BondId::new(2),
+                    BondId::new(3),
+                    BondId::new(4),
+                    BondId::new(5),
+                ]],
+            )
+            .unwrap()
+        }
+
+        fn empty_rows(find_type: RingFindType) -> RingInfo {
+            RingInfo::new(find_type, 6, 6)
+        }
+
+        fn reset_state() -> RingInfo {
+            let mut rings = RingInfo::new(RingFindType::OtherOrUnknown, 6, 6);
+            rings.reset();
+            rings
+        }
+
+        fn typed_full(find_type: RingFindType) -> RingInfo {
+            let mut rings = full_rows();
+            rings.initialize(find_type);
+            rings
+        }
+
+        #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+        enum Expect {
+            /// Supplied state unchanged: ring_update None.
+            PreserveNone,
+            /// Fresh SSSR acquired: ring_update Some(initialized SSSR rows).
+            AcquireSssr,
+            /// Canonical ranking reset an initialized Other state and no
+            /// acquisition ran: ring_update Some(uninitialized).
+            ResetOnly,
+        }
+
+        fn run_case(
+            graph: &TopologyBlock,
+            valence: &ValenceAssignment,
+            name: &str,
+            rings: Option<&RingInfo>,
+            canonical: bool,
+            acquisition: bool,
+            expect: Expect,
+        ) {
+            let supplied_snapshot = rings.cloned();
+            let rank_base = ring_transport_probe::rank_calls();
+            let sssr_base = ring_transport_probe::sssr_calls();
+            let (rows, replaced_by_reset, _atom_ranks) = kekulize_ring_state_transition(
+                graph,
+                valence,
+                &[true; 6],
+                &[true; 6],
+                canonical,
+                acquisition,
+                rings,
+            )
+            .unwrap_or_else(|error| panic!("{name}: unexpected error {error:?}"));
+            // Per-call input identity checkpoint: the borrowed supplied
+            // assignment is fully unchanged after the transition.
+            assert_eq!(rings.cloned(), supplied_snapshot, "{name}: input changed");
+            // Counter deltas captured at the actual rank/SSSR sites.
+            assert_eq!(
+                ring_transport_probe::rank_calls() - rank_base,
+                u64::from(canonical),
+                "{name}: rank counter delta"
+            );
+            let expect_sssr_delta = matches!(expect, Expect::AcquireSssr);
+            assert_eq!(
+                ring_transport_probe::sssr_calls() - sssr_base,
+                u64::from(expect_sssr_delta),
+                "{name}: SSSR counter delta"
+            );
+            match expect {
+                Expect::PreserveNone => {
+                    assert!(!replaced_by_reset, "{name}: unexpected reset disposition");
+                    match rows {
+                        KekulizeRingRows::Borrowed(borrowed) => {
+                            let Some(supplied) = rings else {
+                                panic!("{name}: borrowed rows without supplied state")
+                            };
+                            assert!(std::ptr::eq(borrowed, supplied), "{name}: identity");
+                        }
+                        KekulizeRingRows::Uninitialized => {
+                            assert!(
+                                rings.is_none() || !rings.unwrap().is_initialized(),
+                                "{name}: uninitialized rows with initialized supply"
+                            );
+                        }
+                        KekulizeRingRows::Acquired(_) => {
+                            panic!("{name}: unexpected acquisition")
+                        }
+                    }
+                }
+                Expect::AcquireSssr => {
+                    // The one acquired state is owned here: consume it to
+                    // inspect the moved buffer, exactly as the engine does.
+                    let KekulizeRingRows::Acquired(update) = rows else {
+                        panic!("{name}: expected acquired state")
+                    };
+                    assert!(update.is_initialized(), "{name}: update uninitialized");
+                    assert_eq!(update.find_type(), RingFindType::Sssr, "{name}: type");
+                    assert_eq!(update.atom_rings().len(), 1, "{name}: row count");
+                    assert_eq!(update.atom_rings()[0].len(), 6, "{name}: ring size");
+                }
+                Expect::ResetOnly => {
+                    assert!(replaced_by_reset, "{name}: missing reset disposition");
+                    assert!(
+                        matches!(rows, KekulizeRingRows::Uninitialized),
+                        "{name}: rows"
+                    );
+                }
+            }
+        }
+
+        #[test]
+        fn kekulize_ring_k03_quality_predicates_on_initialized_empty_states() {
+            for find_type in [
+                RingFindType::Fast,
+                RingFindType::Sssr,
+                RingFindType::SymmSssr,
+            ] {
+                let empty = empty_rows(find_type);
+                assert!(empty.is_initialized());
+                assert_eq!(empty.atom_rings().len(), 0);
+                assert_eq!(empty.bond_rings().len(), 0);
+                assert!(empty.is_find_fast_or_better());
+                assert_eq!(empty.is_sssr_or_better(), find_type != RingFindType::Fast);
+                assert_eq!(empty.is_symm_sssr(), find_type == RingFindType::SymmSssr);
+            }
+            let reset = reset_state();
+            assert!(!reset.is_initialized());
+            assert!(!reset.is_find_fast_or_better());
+            assert!(!reset.is_sssr_or_better());
+            assert!(!reset.is_symm_sssr());
+            assert_eq!(reset.atom_row_count(), 0);
+            assert_eq!(reset.bond_row_count(), 0);
+        }
+
+        // The frozen K01 40-call disposition table: 10 ring inputs x
+        // canonical {false,true} x acquisition {false,true}. Each loop
+        // iteration is one actual private-owner call; the dispositions come
+        // from the K01 literal table, never from observed output.
+        #[test]
+        fn kekulize_ring_k03_forty_transition_dispositions() {
+            let graph = benzene();
+            let valence = crate::assign_valence_with_options_from_parts(
+                &graph.atoms,
+                &graph.bonds,
+                &graph.adjacency,
+                ValenceModel::RdkitLike,
+                false,
+            )
+            .unwrap();
+            let atoms_in_play = [true; 6];
+            let bonds_in_play = [true; 6];
+            let _ = (&atoms_in_play, &bonds_in_play);
+            for canonical in [false, true] {
+                for acquisition in [false, true] {
+                    // absent (1-10 in the table): acquires only when the
+                    // caller guard requires it; canonical ranking of absent
+                    // storage changes nothing observable.
+                    run_case(
+                        &graph,
+                        &valence,
+                        "absent",
+                        None,
+                        canonical,
+                        acquisition,
+                        if acquisition {
+                            Expect::AcquireSssr
+                        } else {
+                            Expect::PreserveNone
+                        },
+                    );
+                    // reset (11-20): reset of uninitialized storage is a
+                    // no-op; same family as absent.
+                    let reset = reset_state();
+                    run_case(
+                        &graph,
+                        &valence,
+                        "reset",
+                        Some(&reset),
+                        canonical,
+                        acquisition,
+                        if acquisition {
+                            Expect::AcquireSssr
+                        } else {
+                            Expect::PreserveNone
+                        },
+                    );
+                    // Other-empty / Other-full (21-30): initialized Other
+                    // survives noncanonical; canonical ranking resets it,
+                    // then acquisition replaces the reset with fresh SSSR.
+                    for (name, other) in [
+                        ("other-empty", empty_rows(RingFindType::OtherOrUnknown)),
+                        ("other-full", typed_full(RingFindType::OtherOrUnknown)),
+                    ] {
+                        let expect = match (canonical, acquisition) {
+                            (false, _) => Expect::PreserveNone,
+                            (true, false) => Expect::ResetOnly,
+                            (true, true) => Expect::AcquireSssr,
+                        };
+                        run_case(
+                            &graph,
+                            &valence,
+                            name,
+                            Some(&other),
+                            canonical,
+                            acquisition,
+                            expect,
+                        );
+                    }
+                    // Fast/SSSR/Symm, empty and full (31-40 + repeated
+                    // fulls): survive ranking and are borrowed unchanged on
+                    // every combination; the acquisition guard never fires
+                    // for an initialized state.
+                    for (name, state) in [
+                        ("fast-empty", empty_rows(RingFindType::Fast)),
+                        ("fast-full", typed_full(RingFindType::Fast)),
+                        ("sssr-empty", empty_rows(RingFindType::Sssr)),
+                        ("sssr-full", typed_full(RingFindType::Sssr)),
+                        ("summ-empty", empty_rows(RingFindType::SymmSssr)),
+                        ("summ-full", typed_full(RingFindType::SymmSssr)),
+                    ] {
+                        run_case(
+                            &graph,
+                            &valence,
+                            name,
+                            Some(&state),
+                            canonical,
+                            acquisition,
+                            Expect::PreserveNone,
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    mod kekulize_ring_k04_engine {
+        use super::*;
+        use crate::ring_info_from_selected_rows;
+
+        fn benzene() -> TopologyBlock {
+            topology(
+                (0..6)
+                    .map(|id| atom(id, AtomSpec::new(Element::C).with_aromatic(true)))
+                    .collect(),
+                (0..6)
+                    .map(|id| aromatic_bond(id, id, (id + 1) % 6))
+                    .collect(),
+            )
+        }
+
+        fn full_rows(find_type: RingFindType) -> RingInfo {
+            let mut rows = ring_info_from_selected_rows(
+                6,
+                6,
+                &[vec![
+                    AtomId::new(0),
+                    AtomId::new(1),
+                    AtomId::new(2),
+                    AtomId::new(3),
+                    AtomId::new(4),
+                    AtomId::new(5),
+                ]],
+                &[vec![
+                    BondId::new(0),
+                    BondId::new(1),
+                    BondId::new(2),
+                    BondId::new(3),
+                    BondId::new(4),
+                    BondId::new(5),
+                ]],
+            )
+            .unwrap();
+            rows.initialize(find_type);
+            rows
+        }
+
+        fn empty_rows(find_type: RingFindType) -> RingInfo {
+            RingInfo::new(find_type, 6, 6)
+        }
+
+        fn reset_state() -> RingInfo {
+            let mut rings = RingInfo::new(RingFindType::OtherOrUnknown, 6, 6);
+            rings.reset();
+            rings
+        }
+
+        #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+        enum Update {
+            None,
+            SssrRows,
+            ResetState,
+        }
+
+        #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+        enum Outcome {
+            /// Topology unchanged, final_valence None (early return).
+            EarlyReturn,
+            /// Topology unchanged, final_valence Some (aromatic, no fused
+            /// call, no marking or marking cleared nothing observable in
+            /// bond state; atoms keep aromatic flags).
+            UnchangedSomeValence,
+            /// Aromatic atom flags cleared, bonds untouched.
+            AtomsCleared,
+            /// Kekulized: doubles {b0,b2,b4}, singles {b1,b3,b5}; mark
+            /// additionally clears aromatic atom and bond flags.
+            Kekulized,
+            /// AromaticAtomOutsideRing{atom:0} from initialized-empty rows.
+            OutsideRing,
+        }
+
+        // The complete frozen K01 160-call product: 10 ring inputs x atoms
+        // mask {none,all} x bonds mask {none,all} x mark {F,T} x canonical
+        // {F,T}. Literal expectations are frozen from the source-derived K01
+        // table before this test ran; observing different values is a
+        // contradiction for ROOT review, never a value substitution.
+        #[test]
+        fn kekulize_ring_k04_selected_fragment_160_call_product() {
+            let graph = benzene();
+            let graph_snapshot = graph.clone();
+            let mut calls = 0usize;
+            let ring_inputs: [(&str, Option<RingInfo>); 10] = [
+                ("absent", None),
+                ("reset", Some(reset_state())),
+                (
+                    "other-empty",
+                    Some(empty_rows(RingFindType::OtherOrUnknown)),
+                ),
+                ("other-full", Some(full_rows(RingFindType::OtherOrUnknown))),
+                ("fast-empty", Some(empty_rows(RingFindType::Fast))),
+                ("fast-full", Some(full_rows(RingFindType::Fast))),
+                ("sssr-empty", Some(empty_rows(RingFindType::Sssr))),
+                ("sssr-full", Some(full_rows(RingFindType::Sssr))),
+                ("symm-empty", Some(empty_rows(RingFindType::SymmSssr))),
+                ("symm-full", Some(full_rows(RingFindType::SymmSssr))),
+            ];
+            for (ring_name, ring_input) in &ring_inputs {
+                for atoms_none in [true, false] {
+                    for bonds_none in [true, false] {
+                        for mark in [false, true] {
+                            for canonical in [false, true] {
+                                calls += 1;
+                                let label = format!(
+                                    "{ring_name}/atoms={}/bonds={}/mark={mark}/canon={canonical}",
+                                    if atoms_none { "none" } else { "all" },
+                                    if bonds_none { "none" } else { "all" },
+                                );
+                                let atoms_mask = [!atoms_none; 6];
+                                let bonds_mask = [!bonds_none; 6];
+                                let params = KekulizeParams {
+                                    mark_atoms_bonds: mark,
+                                    canonical,
+                                    ..KekulizeParams::default()
+                                };
+                                let supplied_snapshot = ring_input.clone();
+                                let rank_base = ring_transport_probe::rank_calls();
+                                let sssr_base = ring_transport_probe::sssr_calls();
+                                let borrow_base = ring_transport_probe::borrow_sites().len();
+                                let result = kekulize_fragment(
+                                    &graph,
+                                    &atoms_mask,
+                                    &bonds_mask,
+                                    &params,
+                                    None,
+                                    ring_input.as_ref(),
+                                );
+                                // Input immutability on success and error.
+                                assert_eq!(&graph, &graph_snapshot, "{label}: graph mutated");
+                                assert_eq!(
+                                    ring_input, &supplied_snapshot,
+                                    "{label}: supplied ring mutated"
+                                );
+
+                                // Frozen literal expectation for this combo.
+                                let (outcome, update, rank_delta, sssr_delta, borrow_delta) =
+                                    expectation(ring_name, atoms_none, bonds_none, mark, canonical);
+                                assert_eq!(
+                                    ring_transport_probe::rank_calls() - rank_base,
+                                    rank_delta,
+                                    "{label}: rank delta"
+                                );
+                                assert_eq!(
+                                    ring_transport_probe::sssr_calls() - sssr_base,
+                                    sssr_delta,
+                                    "{label}: SSSR delta"
+                                );
+                                assert_eq!(
+                                    ring_transport_probe::borrow_sites().len() - borrow_base,
+                                    borrow_delta,
+                                    "{label}: borrow delta"
+                                );
+                                match outcome {
+                                    Outcome::OutsideRing => {
+                                        assert_eq!(
+                                            result.err(),
+                                            Some(KekulizeError::AromaticAtomOutsideRing {
+                                                atom: AtomId::new(0)
+                                            }),
+                                            "{label}: error category"
+                                        );
+                                        continue;
+                                    }
+                                    _ => {}
+                                }
+                                let assignment =
+                                    result.unwrap_or_else(|e| panic!("{label}: {e:?}"));
+                                match outcome {
+                                    Outcome::EarlyReturn => {
+                                        assert_eq!(assignment.topology, graph, "{label}");
+                                        assert!(assignment.final_valence.is_none(), "{label}");
+                                        assert!(assignment.refreshed_valence_atoms.is_empty());
+                                    }
+                                    Outcome::UnchangedSomeValence => {
+                                        assert_eq!(assignment.topology, graph, "{label}");
+                                        assert!(assignment.final_valence.is_some(), "{label}");
+                                        assert!(assignment.refreshed_valence_atoms.is_empty());
+                                    }
+                                    Outcome::AtomsCleared => {
+                                        assert!(assignment.final_valence.is_some(), "{label}");
+                                        for atom in &assignment.topology.atoms {
+                                            assert!(!atom.is_aromatic(), "{label}: atom flag");
+                                        }
+                                        for bond in &assignment.topology.bonds {
+                                            assert_eq!(bond.order(), BondOrder::Aromatic);
+                                            assert!(bond.is_aromatic(), "{label}: bond flag");
+                                        }
+                                    }
+                                    Outcome::Kekulized => {
+                                        assert!(assignment.final_valence.is_some(), "{label}");
+                                        for (index, bond) in
+                                            assignment.topology.bonds.iter().enumerate()
+                                        {
+                                            // Source-derived from the two
+                                            // audited owners: the SSSR row
+                                            // is atoms [0,5,4,3,2,1] bonds
+                                            // [b5..b0]; the matching starts
+                                            // at the minimum-rank atom and
+                                            // steps to the lower-ranked
+                                            // neighbor. Noncanonical iota
+                                            // ranks [0..5] start at atom 0
+                                            // and step to atom 1, doubling
+                                            // b0 -> {b0,b2,b4}; canonical
+                                            // ranks [3,1,0,2,4,5] start at
+                                            // atom 2 and step to atom 1,
+                                            // doubling b1 -> {b1,b3,b5}.
+                                            let double_at_even = !canonical;
+                                            let expected = if (index % 2 == 0) == double_at_even {
+                                                BondOrder::Double
+                                            } else {
+                                                BondOrder::Single
+                                            };
+                                            assert_eq!(
+                                                bond.order(),
+                                                expected,
+                                                "{label}: bond {index} order"
+                                            );
+                                            assert_eq!(
+                                                bond.is_aromatic(),
+                                                !mark,
+                                                "{label}: bond {index} flag"
+                                            );
+                                        }
+                                        for atom in &assignment.topology.atoms {
+                                            assert_eq!(atom.is_aromatic(), !mark, "{label}");
+                                        }
+                                    }
+                                    Outcome::OutsideRing => unreachable!(),
+                                }
+                                match update {
+                                    Update::None => {
+                                        assert!(assignment.ring_update.is_none(), "{label}")
+                                    }
+                                    Update::SssrRows => {
+                                        let value = assignment
+                                            .ring_update
+                                            .as_ref()
+                                            .unwrap_or_else(|| panic!("{label}: no update"));
+                                        assert!(value.is_initialized(), "{label}");
+                                        assert_eq!(value.find_type(), RingFindType::Sssr);
+                                        assert_eq!(value.atom_rings().len(), 1, "{label}");
+                                        assert_eq!(value.atom_rings()[0].len(), 6, "{label}");
+                                    }
+                                    Update::ResetState => {
+                                        let value = assignment
+                                            .ring_update
+                                            .as_ref()
+                                            .unwrap_or_else(|| panic!("{label}: no update"));
+                                        assert!(!value.is_initialized(), "{label}");
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            assert_eq!(calls, 160, "exact census");
+        }
+
+        fn expectation(
+            ring_name: &str,
+            atoms_none: bool,
+            bonds_none: bool,
+            mark: bool,
+            canonical: bool,
+        ) -> (Outcome, Update, u64, u64, usize) {
+            if atoms_none {
+                // Early return before any ring work for every combination.
+                return (Outcome::EarlyReturn, Update::None, 0, 0, 0);
+            }
+            let typed = matches!(
+                ring_name,
+                "fast-empty"
+                    | "fast-full"
+                    | "sssr-empty"
+                    | "sssr-full"
+                    | "symm-empty"
+                    | "symm-full"
+            );
+            let other = ring_name.starts_with("other");
+            let rank_delta = u64::from(canonical);
+            if bonds_none {
+                // No candidate acquisition; the marking guard is the only
+                // possible acquisition (mark=true with uninitialized rows).
+                let acquires =
+                    mark && (ring_name == "absent" || ring_name == "reset" || (other && canonical));
+                let update = if acquires {
+                    Update::SssrRows
+                } else if other && canonical {
+                    Update::ResetState
+                } else {
+                    Update::None
+                };
+                let sssr_delta = u64::from(acquires);
+                let outcome = if mark {
+                    Outcome::AtomsCleared
+                } else {
+                    Outcome::UnchangedSomeValence
+                };
+                return (outcome, update, rank_delta, sssr_delta, 0);
+            }
+            // bonds = all: the candidate acquisition guard decides.
+            let empty = ring_name.ends_with("-empty");
+            if typed {
+                if empty {
+                    // Initialized-empty rows survive ranking, produce no
+                    // candidates and no fused call, but the candidate-read
+                    // site still consumes the borrowed rows once; marking
+                    // with all/all masks raises the source exception on the
+                    // empty membership.
+                    let outcome = if mark {
+                        Outcome::OutsideRing
+                    } else {
+                        Outcome::UnchangedSomeValence
+                    };
+                    return (outcome, Update::None, rank_delta, 0, 1);
+                }
+                // Initialized full rows are borrowed; one borrow-site read
+                // feeds the candidates and the fused dispatch.
+                return (Outcome::Kekulized, Update::None, rank_delta, 0, 1);
+            }
+            if other && !canonical && empty {
+                let outcome = if mark {
+                    Outcome::OutsideRing
+                } else {
+                    Outcome::UnchangedSomeValence
+                };
+                return (outcome, Update::None, 0, 0, 1);
+            }
+            if other && !canonical {
+                // Initialized full Other rows borrowed unchanged.
+                return (Outcome::Kekulized, Update::None, 0, 0, 1);
+            }
+            // absent/reset, any Other under canonical (post-ranking reset),
+            // and canonical Other-empty: acquisition at the candidate guard,
+            // fresh SSSR rows, fused dispatch, marking reuse.
+            (Outcome::Kekulized, Update::SssrRows, rank_delta, 1, 1)
+        }
+    }
+
+    mod kekulize_ring_k05_query_bonds {
+        use super::*;
+        use crate::ring_info_from_selected_rows;
+
+        fn benzene() -> TopologyBlock {
+            topology(
+                (0..6)
+                    .map(|id| atom(id, AtomSpec::new(Element::C).with_aromatic(true)))
+                    .collect(),
+                (0..6)
+                    .map(|id| aromatic_bond(id, id, (id + 1) % 6))
+                    .collect(),
+            )
+        }
+
+        fn other_full_rows() -> RingInfo {
+            let mut rows = ring_info_from_selected_rows(
+                6,
+                6,
+                &[vec![
+                    AtomId::new(0),
+                    AtomId::new(1),
+                    AtomId::new(2),
+                    AtomId::new(3),
+                    AtomId::new(4),
+                    AtomId::new(5),
+                ]],
+                &[vec![
+                    BondId::new(0),
+                    BondId::new(1),
+                    BondId::new(2),
+                    BondId::new(3),
+                    BondId::new(4),
+                    BondId::new(5),
+                ]],
+            )
+            .unwrap();
+            rows.initialize(RingFindType::OtherOrUnknown);
+            rows
+        }
+
+        fn query_rows(graph: &TopologyBlock, explicit: bool) -> (Vec<QueryAtom>, Vec<QueryBond>) {
+            let query_atoms = graph
+                .atoms
+                .iter()
+                .map(|carrier| {
+                    QueryAtom::from_carrier_parts(
+                        carrier.clone(),
+                        QueryNode::predicate(AtomQueryPredicate::AtomicNumber(6)),
+                    )
+                })
+                .collect();
+            let query_bonds = graph
+                .bonds
+                .iter()
+                .map(|carrier| {
+                    let predicate =
+                        QueryNode::predicate(BondQueryPredicate::Order(BondOrder::Aromatic));
+                    if explicit {
+                        QueryBond::from_parts(carrier.clone(), predicate)
+                    } else {
+                        QueryBond::from_carrier_parts(carrier.clone(), predicate)
+                    }
+                })
+                .collect();
+            (query_atoms, query_bonds)
+        }
+
+        // Eight calls: explicit bond-type predicates remove ALL effective
+        // bonds (bondsToUse.none()); carrier-derived predicates do not.
+        // Initialized Other FULL rows distinguish reset from preserve and
+        // acquisition. Original masks and query values stay unchanged.
+        #[test]
+        fn kekulize_ring_k05_query_filtered_effective_bonds_none() {
+            let graph = benzene();
+            let graph_snapshot = graph.clone();
+            let rows = other_full_rows();
+            let mut calls = 0usize;
+            for explicit in [true, false] {
+                for mark in [false, true] {
+                    for canonical in [false, true] {
+                        calls += 1;
+                        let label = format!("explicit={explicit}/mark={mark}/canon={canonical}");
+                        let (query_atoms, query_bonds) = query_rows(&graph, explicit);
+                        let state =
+                            QueryStateRef::try_for_topology(&query_atoms, &query_bonds, &graph)
+                                .unwrap();
+                        let atoms_mask = [true; 6];
+                        let bonds_mask = [true; 6];
+                        let params = KekulizeParams {
+                            mark_atoms_bonds: mark,
+                            canonical,
+                            ..KekulizeParams::default()
+                        };
+                        let rows_snapshot = rows.clone();
+                        let rank_base = ring_transport_probe::rank_calls();
+                        let sssr_base = ring_transport_probe::sssr_calls();
+                        let result = kekulize_fragment(
+                            &graph,
+                            &atoms_mask,
+                            &bonds_mask,
+                            &params,
+                            Some(state),
+                            Some(&rows),
+                        );
+                        assert_eq!(&graph, &graph_snapshot, "{label}: graph mutated");
+                        assert_eq!(rows, rows_snapshot, "{label}: rows mutated");
+                        assert_eq!(query_atoms.len(), 6, "{label}: query rows");
+                        assert_eq!(query_bonds.len(), 6, "{label}: query rows");
+
+                        let assignment =
+                            result.unwrap_or_else(|error| panic!("{label}: {error:?}"));
+                        if explicit {
+                            // Effective bonds none: no candidate acquisition;
+                            // the marking guard is the only possible find.
+                            assert_eq!(
+                                ring_transport_probe::rank_calls() - rank_base,
+                                u64::from(canonical),
+                                "{label}: rank delta"
+                            );
+                            match (mark, canonical) {
+                                (false, false) => {
+                                    assert!(assignment.ring_update.is_none(), "{label}");
+                                    assert_eq!(assignment.topology, graph, "{label}");
+                                }
+                                (false, true) => {
+                                    let update = assignment.ring_update.unwrap();
+                                    assert!(!update.is_initialized(), "{label}: reset");
+                                    assert_eq!(assignment.topology, graph, "{label}");
+                                }
+                                (true, false) => {
+                                    // Initialized Other survives and is read
+                                    // by nothing: preserved untouched.
+                                    assert!(assignment.ring_update.is_none(), "{label}");
+                                    for atom in &assignment.topology.atoms {
+                                        assert!(!atom.is_aromatic(), "{label}");
+                                    }
+                                    for bond in &assignment.topology.bonds {
+                                        assert_eq!(bond.order(), BondOrder::Aromatic);
+                                        assert!(bond.is_aromatic(), "{label}");
+                                    }
+                                }
+                                (true, true) => {
+                                    // Ranking reset the Other state, then the
+                                    // marking guard acquired fresh SSSR rows.
+                                    let update = assignment.ring_update.unwrap();
+                                    assert!(update.is_initialized(), "{label}");
+                                    assert_eq!(update.find_type(), RingFindType::Sssr);
+                                    assert_eq!(update.atom_rings().len(), 1, "{label}");
+                                    for atom in &assignment.topology.atoms {
+                                        assert!(!atom.is_aromatic(), "{label}");
+                                    }
+                                }
+                            }
+                            assert_eq!(
+                                ring_transport_probe::sssr_calls() - sssr_base,
+                                u64::from(mark && canonical),
+                                "{label}: SSSR delta"
+                            );
+                        } else {
+                            // Carrier-derived predicates are ordinary bonds:
+                            // full Other-row behavior with a fused dispatch.
+                            assert_eq!(
+                                ring_transport_probe::rank_calls() - rank_base,
+                                u64::from(canonical),
+                                "{label}: rank delta"
+                            );
+                            assert_eq!(
+                                ring_transport_probe::sssr_calls() - sssr_base,
+                                u64::from(canonical),
+                                "{label}: SSSR delta"
+                            );
+                            for (index, bond) in assignment.topology.bonds.iter().enumerate() {
+                                let double_at_even = !canonical;
+                                let expected = if (index % 2 == 0) == double_at_even {
+                                    BondOrder::Double
+                                } else {
+                                    BondOrder::Single
+                                };
+                                assert_eq!(bond.order(), expected, "{label}: b{index}");
+                                assert_eq!(bond.is_aromatic(), !mark, "{label}");
+                            }
+                            match canonical {
+                                false => assert!(assignment.ring_update.is_none(), "{label}"),
+                                true => {
+                                    let update = assignment.ring_update.unwrap();
+                                    assert!(update.is_initialized(), "{label}");
+                                    assert_eq!(update.find_type(), RingFindType::Sssr);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            assert_eq!(calls, 8, "exact census");
+        }
+    }
+
+    mod kekulize_ring_k06_failures {
+        use super::*;
+        use crate::ring_info_from_selected_rows;
+
+        fn benzene() -> TopologyBlock {
+            topology(
+                (0..6)
+                    .map(|id| atom(id, AtomSpec::new(Element::C).with_aromatic(true)))
+                    .collect(),
+                (0..6)
+                    .map(|id| aromatic_bond(id, id, (id + 1) % 6))
+                    .collect(),
+            )
+        }
+
+        fn reset_state() -> RingInfo {
+            let mut rings = RingInfo::new(RingFindType::OtherOrUnknown, 6, 6);
+            rings.reset();
+            rings
+        }
+
+        fn rows_with_dimensions(atoms: usize, bonds: usize) -> RingInfo {
+            ring_info_from_selected_rows(atoms, bonds, &[], &[]).unwrap()
+        }
+
+        #[test]
+        fn kekulize_ring_k06_typed_failure_table() {
+            // Calls 1-2: empty graph, both canonical settings. The
+            // atoms-none early return precedes every ring computation.
+            let empty = topology(vec![], vec![]);
+            for canonical in [false, true] {
+                let rank_base = ring_transport_probe::rank_calls();
+                let sssr_base = ring_transport_probe::sssr_calls();
+                let assignment = kekulize_fragment(
+                    &empty,
+                    &[],
+                    &[],
+                    &KekulizeParams {
+                        canonical,
+                        ..KekulizeParams::default()
+                    },
+                    None,
+                    None,
+                )
+                .unwrap();
+                assert_eq!(assignment.topology, empty);
+                assert!(assignment.final_valence.is_none());
+                assert!(assignment.ring_update.is_none());
+                assert_eq!(ring_transport_probe::rank_calls(), rank_base);
+                assert_eq!(ring_transport_probe::sssr_calls(), sssr_base);
+            }
+
+            // Calls 3-4: nonaromatic acyclic two-carbon graph with an
+            // initialized EMPTY Fast assignment supplied. The no-aromatic
+            // early return runs AFTER selection/valence work but never
+            // validates, fetches or mutates the unused assignment; the
+            // initialized-empty quality predicates hold directly.
+            let acyclic = topology(
+                vec![
+                    atom(0, AtomSpec::new(Element::C)),
+                    atom(1, AtomSpec::new(Element::C)),
+                ],
+                vec![bond(0, 0, 1)],
+            );
+            let supplied = RingInfo::new(RingFindType::Fast, 2, 1);
+            assert!(supplied.is_initialized());
+            assert!(supplied.is_find_fast_or_better());
+            assert_eq!(supplied.atom_rings().len(), 0);
+            let supplied_snapshot = supplied.clone();
+            for canonical in [false, true] {
+                let assignment = kekulize_fragment(
+                    &acyclic,
+                    &[true, true],
+                    &[true],
+                    &KekulizeParams {
+                        canonical,
+                        ..KekulizeParams::default()
+                    },
+                    None,
+                    Some(&supplied),
+                )
+                .unwrap();
+                assert_eq!(assignment.topology, acyclic);
+                assert!(assignment.final_valence.is_none());
+                assert!(assignment.ring_update.is_none());
+            }
+            assert_eq!(supplied, supplied_snapshot);
+
+            // Calls 5-6: aromatic graph with atoms mask none and
+            // deliberately mismatched initialized rows (7 atom dimensions).
+            // The early return precedes any validation of the unused rows.
+            let graph = benzene();
+            let mismatched = rows_with_dimensions(7, 6);
+            let mismatched_snapshot = mismatched.clone();
+            assert_eq!(mismatched.atom_row_count(), 7);
+            for canonical in [false, true] {
+                let assignment = kekulize_fragment(
+                    &graph,
+                    &[false; 6],
+                    &[true; 6],
+                    &KekulizeParams {
+                        canonical,
+                        ..KekulizeParams::default()
+                    },
+                    None,
+                    Some(&mismatched),
+                )
+                .unwrap();
+                assert_eq!(assignment.topology, graph);
+                assert!(assignment.ring_update.is_none());
+            }
+            assert_eq!(mismatched, mismatched_snapshot);
+
+            // Call 7: wrong atom mask length.
+            assert_eq!(
+                kekulize_fragment(
+                    &graph,
+                    &[true; 5],
+                    &[true; 6],
+                    &KekulizeParams::default(),
+                    None,
+                    None,
+                ),
+                Err(KekulizeError::AtomSelectionLength {
+                    expected: 6,
+                    actual: 5,
+                })
+            );
+
+            // Call 8: wrong bond mask length.
+            assert_eq!(
+                kekulize_fragment(
+                    &graph,
+                    &[true; 6],
+                    &[true; 5],
+                    &KekulizeParams::default(),
+                    None,
+                    None,
+                ),
+                Err(KekulizeError::BondSelectionLength {
+                    expected: 6,
+                    actual: 5,
+                })
+            );
+
+            // Call 9: malformed query state (rows built for a five-atom
+            // topology) rejected before any ring work.
+            let five_atom_graph = topology(
+                (0..5)
+                    .map(|id| atom(id, AtomSpec::new(Element::C).with_aromatic(true)))
+                    .collect(),
+                (0..5)
+                    .map(|id| aromatic_bond(id, id, (id + 1) % 5))
+                    .collect(),
+            );
+            let query_atoms = five_atom_graph
+                .atoms
+                .iter()
+                .map(|carrier| {
+                    QueryAtom::from_carrier_parts(
+                        carrier.clone(),
+                        QueryNode::predicate(AtomQueryPredicate::AtomicNumber(6)),
+                    )
+                })
+                .collect::<Vec<_>>();
+            let query_bonds = five_atom_graph
+                .bonds
+                .iter()
+                .map(|carrier| {
+                    QueryBond::from_carrier_parts(
+                        carrier.clone(),
+                        QueryNode::predicate(BondQueryPredicate::Order(BondOrder::Aromatic)),
+                    )
+                })
+                .collect::<Vec<_>>();
+            let foreign_state =
+                QueryStateRef::try_for_topology(&query_atoms, &query_bonds, &five_atom_graph)
+                    .unwrap();
+            let result = kekulize_with_query_state_and_ring_info(
+                &graph,
+                &KekulizeParams::default(),
+                Some(foreign_state),
+                None,
+            );
+            assert!(matches!(
+                result,
+                Err(KekulizeError::InvalidQueryState(
+                    QueryStateError::AtomCount { .. }
+                ))
+            ));
+
+            // Call 10: initialized wrong ATOM dimensions consumed by the
+            // canonical ranking helper.
+            let wrong_atoms = rows_with_dimensions(7, 6);
+            let wrong_atoms_snapshot = wrong_atoms.clone();
+            assert_eq!(
+                kekulize_fragment(
+                    &graph,
+                    &[true; 6],
+                    &[true; 6],
+                    &KekulizeParams {
+                        canonical: true,
+                        ..KekulizeParams::default()
+                    },
+                    None,
+                    Some(&wrong_atoms),
+                ),
+                Err(KekulizeError::CanonicalRank(
+                    CanonicalRankError::PreparedRingLength {
+                        expected_atoms: 6,
+                        actual_atoms: 7,
+                        expected_bonds: 6,
+                        actual_bonds: 6,
+                    }
+                ))
+            );
+            assert_eq!(wrong_atoms, wrong_atoms_snapshot);
+
+            // Call 11: initialized wrong BOND dimensions consumed by the
+            // NONCANONICAL candidate read (ranking skipped).
+            let wrong_bonds = rows_with_dimensions(6, 5);
+            let wrong_bonds_snapshot = wrong_bonds.clone();
+            assert_eq!(
+                kekulize_fragment(
+                    &graph,
+                    &[true; 6],
+                    &[true; 6],
+                    &KekulizeParams {
+                        canonical: false,
+                        ..KekulizeParams::default()
+                    },
+                    None,
+                    Some(&wrong_bonds),
+                ),
+                Err(KekulizeError::CanonicalRank(
+                    CanonicalRankError::PreparedRingLength {
+                        expected_atoms: 6,
+                        actual_atoms: 6,
+                        expected_bonds: 6,
+                        actual_bonds: 5,
+                    }
+                ))
+            );
+            assert_eq!(wrong_bonds, wrong_bonds_snapshot);
+
+            // Call 12: reset input with an aromatic full selection is a
+            // valid reacquisition: fresh SSSR rows, noncanonical doubles at
+            // {b0,b2,b4}, all aromatic flags cleared under mark=true.
+            let reset = reset_state();
+            let reset_snapshot = reset.clone();
+            let assignment = kekulize_fragment(
+                &graph,
+                &[true; 6],
+                &[true; 6],
+                &KekulizeParams {
+                    mark_atoms_bonds: true,
+                    canonical: false,
+                    ..KekulizeParams::default()
+                },
+                None,
+                Some(&reset),
+            )
+            .unwrap();
+            assert_eq!(reset, reset_snapshot);
+            let update = assignment.ring_update.unwrap();
+            assert!(update.is_initialized());
+            assert_eq!(update.find_type(), RingFindType::Sssr);
+            for (index, bond) in assignment.topology.bonds.iter().enumerate() {
+                let expected = if index % 2 == 0 {
+                    BondOrder::Double
+                } else {
+                    BondOrder::Single
+                };
+                assert_eq!(bond.order(), expected);
+                assert!(!bond.is_aromatic());
+            }
+            for atom in &assignment.topology.atoms {
+                assert!(!atom.is_aromatic());
+            }
+        }
+    }
+
+    mod kekulize_ring_k07_partial_fragment {
+        use super::*;
+        use crate::ring_info_from_selected_rows;
+
+        fn two_cycles() -> TopologyBlock {
+            let atoms = (0..12)
+                .map(|id| atom(id, AtomSpec::new(Element::C).with_aromatic(true)))
+                .collect::<Vec<_>>();
+            let bonds = (0..12)
+                .map(|id| {
+                    let (begin, end) = if id < 6 {
+                        (id, (id + 1) % 6)
+                    } else {
+                        (id, 6 + (id - 6 + 1) % 6)
+                    };
+                    aromatic_bond(id, begin, end)
+                })
+                .collect::<Vec<_>>();
+            topology(atoms, bonds)
+        }
+
+        fn both_cycle_rows(reversed: bool) -> RingInfo {
+            let mut first = vec![
+                AtomId::new(0),
+                AtomId::new(1),
+                AtomId::new(2),
+                AtomId::new(3),
+                AtomId::new(4),
+                AtomId::new(5),
+            ];
+            let mut first_bonds = vec![
+                BondId::new(0),
+                BondId::new(1),
+                BondId::new(2),
+                BondId::new(3),
+                BondId::new(4),
+                BondId::new(5),
+            ];
+            let mut second = vec![
+                AtomId::new(6),
+                AtomId::new(7),
+                AtomId::new(8),
+                AtomId::new(9),
+                AtomId::new(10),
+                AtomId::new(11),
+            ];
+            let mut second_bonds = vec![
+                BondId::new(6),
+                BondId::new(7),
+                BondId::new(8),
+                BondId::new(9),
+                BondId::new(10),
+                BondId::new(11),
+            ];
+            if reversed {
+                first.reverse();
+                first_bonds.reverse();
+                second.reverse();
+                second_bonds.reverse();
+            }
+            let mut rows = ring_info_from_selected_rows(
+                12,
+                12,
+                &[first, second],
+                &[first_bonds, second_bonds],
+            )
+            .unwrap();
+            rows.initialize(RingFindType::OtherOrUnknown);
+            rows
+        }
+
+        // Eight calls: forward/reversed full-cycle supplied rows x mark x
+        // canonical on a disconnected two-cycle topology selecting only the
+        // first cycle. Excluded second-cycle atoms/bonds keep full snapshots;
+        // every supplied row, membership, type and the initialized flag stay
+        // unchanged; canonical=false proves preservation by the ACTUAL
+        // borrowed reference identity at the fused consumer.
+        #[test]
+        fn kekulize_ring_k07_borrowed_row_preservation_on_partial_fragment() {
+            let graph = two_cycles();
+            let graph_snapshot = graph.clone();
+            let mut atoms_mask = [false; 12];
+            for selected in &mut atoms_mask[..6] {
+                *selected = true;
+            }
+            let mut bonds_mask = [false; 12];
+            for selected in &mut bonds_mask[..6] {
+                *selected = true;
+            }
+            let mut calls = 0usize;
+            for reversed in [false, true] {
+                let rows = both_cycle_rows(reversed);
+                for mark in [false, true] {
+                    for canonical in [false, true] {
+                        calls += 1;
+                        let label = format!("reversed={reversed}/mark={mark}/canon={canonical}");
+                        let rows_snapshot = rows.clone();
+                        let borrow_base = ring_transport_probe::borrow_sites().len();
+                        let assignment = kekulize_fragment(
+                            &graph,
+                            &atoms_mask,
+                            &bonds_mask,
+                            &KekulizeParams {
+                                mark_atoms_bonds: mark,
+                                canonical,
+                                ..KekulizeParams::default()
+                            },
+                            None,
+                            Some(&rows),
+                        )
+                        .unwrap();
+                        assert_eq!(&graph, &graph_snapshot, "{label}: graph mutated");
+                        assert_eq!(rows, rows_snapshot, "{label}: rows mutated");
+                        assert_eq!(rows.is_initialized(), true);
+                        assert_eq!(rows.find_type(), RingFindType::OtherOrUnknown);
+                        assert_eq!(rows.atom_rings().len(), 2, "{label}: row count");
+
+                        // Excluded second cycle: full snapshots unchanged.
+                        for atom in &assignment.topology.atoms[6..] {
+                            assert!(atom.is_aromatic(), "{label}: excluded atom");
+                        }
+                        for bond in &assignment.topology.bonds[6..] {
+                            assert_eq!(bond.order(), BondOrder::Aromatic, "{label}");
+                            assert!(bond.is_aromatic(), "{label}: excluded bond");
+                        }
+                        // Selected first cycle kekulizes: exactly three
+                        // alternating doubles (any valid Kekulé form of the
+                        // six-cycle), flags follow mark.
+                        let mut doubles = 0;
+                        for (index, bond) in assignment.topology.bonds[..6].iter().enumerate() {
+                            match bond.order() {
+                                BondOrder::Double => doubles += 1,
+                                BondOrder::Single => {}
+                                other => panic!("{label}: bond {index} order {other:?}"),
+                            }
+                            assert_eq!(bond.is_aromatic(), !mark, "{label}: flag");
+                        }
+                        assert_eq!(doubles, 3, "{label}: double count");
+                        for (index, window) in assignment.topology.bonds[..6].windows(2).enumerate()
+                        {
+                            assert_ne!(
+                                window[0].order(),
+                                window[1].order(),
+                                "{label}: alternation at {index}"
+                            );
+                        }
+                        assert_ne!(
+                            assignment.topology.bonds[0].order(),
+                            assignment.topology.bonds[5].order(),
+                            "{label}: wrap alternation"
+                        );
+                        for atom in &assignment.topology.atoms[..6] {
+                            assert_eq!(atom.is_aromatic(), !mark, "{label}");
+                        }
+
+                        match canonical {
+                            false => {
+                                // Preserved untouched: ring_update None and
+                                // the fused consumer saw the ACTUAL borrowed
+                                // reference, not a clone.
+                                assert!(assignment.ring_update.is_none(), "{label}");
+                                let sites = ring_transport_probe::borrow_sites();
+                                assert_eq!(sites.len(), borrow_base + 1, "{label}");
+                                assert_eq!(
+                                    sites[borrow_base], &rows as *const RingInfo as usize,
+                                    "{label}: borrowed identity"
+                                );
+                            }
+                            true => {
+                                // Canonical ranking reset the Other state;
+                                // the candidate guard reacquired SSSR rows
+                                // (both cycles found, first selected).
+                                let update = assignment.ring_update.unwrap();
+                                assert!(update.is_initialized(), "{label}");
+                                assert_eq!(update.find_type(), RingFindType::Sssr);
+                            }
+                        }
+                    }
+                }
+            }
+            assert_eq!(calls, 8, "exact census");
+        }
+    }
+
+    mod kekulize_ring_move_proof {
+        use super::*;
+        use crate::ring_info_from_selected_rows;
+
+        fn benzene() -> TopologyBlock {
+            topology(
+                (0..6)
+                    .map(|id| atom(id, AtomSpec::new(Element::C).with_aromatic(true)))
+                    .collect(),
+                (0..6)
+                    .map(|id| aromatic_bond(id, id, (id + 1) % 6))
+                    .collect(),
+            )
+        }
+
+        fn other_full_rows() -> RingInfo {
+            let mut rows = ring_info_from_selected_rows(
+                6,
+                6,
+                &[vec![
+                    AtomId::new(0),
+                    AtomId::new(1),
+                    AtomId::new(2),
+                    AtomId::new(3),
+                    AtomId::new(4),
+                    AtomId::new(5),
+                ]],
+                &[vec![
+                    BondId::new(0),
+                    BondId::new(1),
+                    BondId::new(2),
+                    BondId::new(3),
+                    BondId::new(4),
+                    BondId::new(5),
+                ]],
+            )
+            .unwrap();
+            rows.initialize(RingFindType::OtherOrUnknown);
+            rows
+        }
+
+        #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+        enum Expect {
+            /// No acquisition: ring_update is None (absent input preserved).
+            None,
+            /// No acquisition, but the canonical ranking reset the supplied
+            /// Other state: ring_update is Some(uninitialized).
+            ResetOnly,
+            /// Exactly one acquisition moved into ring_update.
+            MovedOnce,
+        }
+
+        // The exact MOVE-frozen eight-call product: {None, Other-full} x
+        // {bonds-none, bonds-all} x {mark false,true} with canonical=true.
+        // The observation at the real findSSSR completion captures the
+        // acquired buffer's outer row pointers; for every Some(initialized)
+        // the returned update carries the SAME buffers (moved, not copied).
+        #[test]
+        fn kekulize_ring_move_acquired_buffer_identity() {
+            let graph = benzene();
+            let graph_snapshot = graph.clone();
+            let other_full = other_full_rows();
+            let mut calls = 0usize;
+            for supplied in ["absent", "other-full"] {
+                for bonds_none in [true, false] {
+                    for mark in [false, true] {
+                        calls += 1;
+                        let label = format!(
+                            "{supplied}/bonds={}/mark={mark}",
+                            if bonds_none { "none" } else { "all" }
+                        );
+                        let rings: Option<&RingInfo> = match supplied {
+                            "absent" => None,
+                            _ => Some(&other_full),
+                        };
+                        let supplied_snapshot = rings.cloned();
+                        let expect = match (supplied, bonds_none, mark) {
+                            ("absent", true, false) => Expect::None,
+                            ("other-full", true, false) => Expect::ResetOnly,
+                            _ => Expect::MovedOnce,
+                        };
+                        let bonds_mask = [!bonds_none; 6];
+                        let base = ring_transport_probe::acquired_buffers().len();
+                        let assignment = kekulize_fragment(
+                            &graph,
+                            &[true; 6],
+                            &bonds_mask,
+                            &KekulizeParams {
+                                mark_atoms_bonds: mark,
+                                canonical: true,
+                                ..KekulizeParams::default()
+                            },
+                            None,
+                            rings,
+                        )
+                        .unwrap_or_else(|error| panic!("{label}: {error:?}"));
+                        // Immutability on every call.
+                        assert_eq!(&graph, &graph_snapshot, "{label}: graph mutated");
+                        assert_eq!(
+                            rings.cloned(),
+                            supplied_snapshot,
+                            "{label}: supplied mutated"
+                        );
+                        let buffers = ring_transport_probe::acquired_buffers();
+                        let delta = buffers.len() - base;
+                        match expect {
+                            Expect::None => {
+                                assert_eq!(delta, 0, "{label}: unexpected acquisition");
+                                assert!(assignment.ring_update.is_none(), "{label}");
+                            }
+                            Expect::ResetOnly => {
+                                assert_eq!(delta, 0, "{label}: unexpected acquisition");
+                                let update = assignment
+                                    .ring_update
+                                    .as_ref()
+                                    .unwrap_or_else(|| panic!("{label}: missing reset"));
+                                assert!(!update.is_initialized(), "{label}: reset state");
+                            }
+                            Expect::MovedOnce => {
+                                assert_eq!(delta, 1, "{label}: acquisition count");
+                                let update = assignment
+                                    .ring_update
+                                    .as_ref()
+                                    .unwrap_or_else(|| panic!("{label}: missing update"));
+                                assert!(update.is_initialized(), "{label}");
+                                assert_eq!(update.find_type(), RingFindType::Sssr, "{label}");
+                                // The nonempty fixture buffers prove genuine
+                                // identity: returned outer pointers equal the
+                                // captured finder pointers.
+                                assert_eq!(
+                                    update.atom_rings().as_ptr() as usize,
+                                    buffers[base].0,
+                                    "{label}: atom buffer identity"
+                                );
+                                assert_eq!(
+                                    update.atom_rings().len(),
+                                    buffers[base].1,
+                                    "{label}: atom row count"
+                                );
+                                assert_eq!(
+                                    update.bond_rings().as_ptr() as usize,
+                                    buffers[base].2,
+                                    "{label}: bond buffer identity"
+                                );
+                                assert_eq!(
+                                    update.bond_rings().len(),
+                                    buffers[base].3,
+                                    "{label}: bond row count"
+                                );
+                                assert_eq!(buffers[base].1, 1, "{label}: rows nonempty");
+                                assert_eq!(buffers[base].3, 1, "{label}: rows nonempty");
+                                let literal_atoms: Vec<usize> =
+                                    update.atom_rings()[0].iter().map(|a| a.index()).collect();
+                                let literal_bonds: Vec<usize> =
+                                    update.bond_rings()[0].iter().map(|b| b.index()).collect();
+                                assert_eq!(literal_atoms, vec![0, 5, 4, 3, 2, 1], "{label}");
+                                assert_eq!(literal_bonds, vec![5, 4, 3, 2, 1, 0], "{label}");
+                                for index in 0..6 {
+                                    assert_eq!(
+                                        update.atom_members(AtomId::new(index)),
+                                        &[0],
+                                        "{label}: membership"
+                                    );
+                                    assert_eq!(
+                                        update.bond_members(BondId::new(index)),
+                                        &[0],
+                                        "{label}: membership"
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            assert_eq!(calls, 8, "exact census");
+        }
+    }
+
+    mod kekulize_ring_convert_c1 {
+        use super::*;
+        use crate::ring_info_from_selected_rows;
+
+        fn aromatic_six_cycle(direction: BondDirection, wedge_begin: usize) -> TopologyBlock {
+            topology(
+                (0..6)
+                    .map(|id| atom(id, AtomSpec::new(Element::C).with_aromatic(true)))
+                    .collect(),
+                (0..6)
+                    .map(|id| {
+                        let spec = BondSpec::new(
+                            AtomId::new(id),
+                            AtomId::new((id + 1) % 6),
+                            BondOrder::Aromatic,
+                        )
+                        .with_aromatic(true);
+                        let spec = if id == wedge_begin {
+                            spec.with_direction(direction)
+                        } else {
+                            spec
+                        };
+                        bond_with_spec(id, spec)
+                    })
+                    .collect(),
+            )
+        }
+
+        fn rows(atom_order: &[usize], bond_order: &[usize]) -> RingInfo {
+            ring_info_from_selected_rows(
+                6,
+                6,
+                &[atom_order
+                    .iter()
+                    .map(|i| AtomId::new(*i))
+                    .collect::<Vec<_>>()],
+                &[bond_order
+                    .iter()
+                    .map(|i| BondId::new(*i))
+                    .collect::<Vec<_>>()],
+            )
+            .unwrap()
+        }
+
+        fn ids(rows: &[Vec<AtomId>]) -> Vec<Vec<usize>> {
+            rows.iter()
+                .map(|row| row.iter().map(|atom| atom.index()).collect())
+                .collect()
+        }
+
+        fn bond_ids(rows: &[Vec<BondId>]) -> Vec<Vec<usize>> {
+            rows.iter()
+                .map(|row| row.iter().map(|bond| bond.index()).collect())
+                .collect()
+        }
+
+        fn wedged_from_graph(
+            graph: &TopologyBlock,
+            wedge_begin: usize,
+            selected: &[bool],
+        ) -> Vec<bool> {
+            // The ACTUAL selected directed graph bond whose begin atom is
+            // the wedge begin (b_begin=(begin,begin+1)) marks wedged_atoms.
+            let mut wedged = vec![false; graph.atoms.len()];
+            for bond in &graph.bonds {
+                if selected[bond.id().index()] && bond.begin().index() == wedge_begin {
+                    wedged[bond.begin().index()] = true;
+                }
+            }
+            wedged
+        }
+
+        // C1: 32 orientation/stored-order/wedge calls against the CURRENT
+        // helper signature. Literal expectations are derived ONLY from the
+        // pinned source (rotate atom rows; derive bonds from consecutive
+        // graph pairs + closing edge) and are INDEPENDENT of the stored
+        // bond order and the wedge direction. This test is RED before the
+        // production fix whenever stored rows diverge from graph adjacency.
+        #[test]
+        fn kekulize_ring_convert_orientation_stored_order_and_wedge() {
+            let atom_orders: [(&str, [usize; 6]); 2] =
+                [("F", [0, 1, 2, 3, 4, 5]), ("R", [5, 4, 3, 2, 1, 0])];
+            let stored_orders: [[usize; 6]; 4] = [
+                [0, 1, 2, 3, 4, 5],
+                [5, 4, 3, 2, 1, 0],
+                [2, 3, 4, 5, 0, 1],
+                [0, 2, 4, 1, 3, 5],
+            ];
+            let mut calls = 0usize;
+            for (orientation, atom_order) in &atom_orders {
+                for stored in &stored_orders {
+                    for direction in [BondDirection::BeginWedge, BondDirection::BeginDash] {
+                        for wedge_begin in [0usize, 2usize] {
+                            let rings = rows(atom_order, stored);
+                            let graph = aromatic_six_cycle(direction, wedge_begin);
+                            let graph_snapshot = graph.clone();
+                            let rings_snapshot = rings.clone();
+                            let atoms_selection = [true; 6];
+                            let bonds_selection = [true; 6];
+                            let dummy_input = [false; 6];
+                            let atoms_snapshot = atoms_selection;
+                            let bonds_snapshot = bonds_selection;
+                            let dummy_snapshot = dummy_input;
+                            let label = format!(
+                                "{orientation}/stored{stored:?}/{direction:?}/w{wedge_begin}"
+                            );
+                            // Prerequisite: the ACTUAL graph bond selected as
+                            // the wedge carrier carries the current direction
+                            // and its begin atom is the current wedge begin.
+                            assert_eq!(
+                                graph.bonds[wedge_begin].direction(),
+                                direction,
+                                "{label}: wedge bond direction"
+                            );
+                            assert_eq!(
+                                graph.bonds[wedge_begin].begin().index(),
+                                wedge_begin,
+                                "{label}: wedge bond begin"
+                            );
+                            let wedged = wedged_from_graph(&graph, wedge_begin, &atoms_selection);
+                            let wedged_snapshot = wedged.clone();
+                            assert!(wedged[wedge_begin], "{label}: graph wedge");
+                            let (atom_rows, bond_rows) = collect_kekulize_candidate_rings(
+                                &graph,
+                                &rings,
+                                &atoms_selection,
+                                &bonds_selection,
+                                &dummy_input,
+                                &wedged,
+                            )
+                            .unwrap();
+                            // Census incremented AFTER the real invocation.
+                            calls += 1;
+                            // Post-invocation input preservation for THIS
+                            // call, before any result assertion.
+                            assert_eq!(&graph, &graph_snapshot, "{label}: graph mutated");
+                            assert_eq!(rings, rings_snapshot, "{label}: input mutated");
+                            assert_eq!(
+                                atoms_selection, atoms_snapshot,
+                                "{label}: atoms selection mutated"
+                            );
+                            assert_eq!(
+                                bonds_selection, bonds_snapshot,
+                                "{label}: bonds selection mutated"
+                            );
+                            assert_eq!(dummy_input, dummy_snapshot, "{label}: dummy mutated");
+                            assert_eq!(wedged, wedged_snapshot, "{label}: wedge array mutated");
+                            let (expected_atoms, expected_bonds): (&[usize], &[usize]) =
+                                match (*orientation, wedge_begin) {
+                                    ("F", 0) => (&[0, 1, 2, 3, 4, 5], &[0, 1, 2, 3, 4, 5]),
+                                    ("F", 2) => (&[2, 3, 4, 5, 0, 1], &[2, 3, 4, 5, 0, 1]),
+                                    ("R", 0) => (&[0, 5, 4, 3, 2, 1], &[5, 4, 3, 2, 1, 0]),
+                                    _ => (&[2, 1, 0, 5, 4, 3], &[1, 0, 5, 4, 3, 2]),
+                                };
+                            assert_eq!(
+                                ids(&atom_rows),
+                                vec![expected_atoms.to_vec()],
+                                "{label}: atoms"
+                            );
+                            assert_eq!(
+                                bond_ids(&bond_rows),
+                                vec![expected_bonds.to_vec()],
+                                "{label}: derived bonds"
+                            );
+                        }
+                    }
+                }
+            }
+            assert_eq!(calls, 32, "exact census");
+        }
+    }
+
+    mod kekulize_ring_convert_c234 {
+        use super::*;
+        use crate::ring_info_from_selected_rows;
+
+        fn two_cycle_graph(wedge_bond: usize, direction: BondDirection) -> TopologyBlock {
+            let atoms = (0..12)
+                .map(|id| atom(id, AtomSpec::new(Element::C).with_aromatic(true)))
+                .collect::<Vec<_>>();
+            let bonds = (0..12)
+                .map(|id| {
+                    let (begin, end) = if id < 6 {
+                        (id, (id + 1) % 6)
+                    } else {
+                        (id, 6 + (id - 6 + 1) % 6)
+                    };
+                    let spec =
+                        BondSpec::new(AtomId::new(begin), AtomId::new(end), BondOrder::Aromatic)
+                            .with_aromatic(true);
+                    let spec = if id == wedge_bond {
+                        spec.with_direction(direction)
+                    } else {
+                        spec
+                    };
+                    bond_with_spec(id, spec)
+                })
+                .collect::<Vec<_>>();
+            topology(atoms, bonds)
+        }
+
+        fn ids(rows: &[Vec<AtomId>]) -> Vec<Vec<usize>> {
+            rows.iter()
+                .map(|row| row.iter().map(|atom| atom.index()).collect())
+                .collect()
+        }
+
+        fn bond_ids(rows: &[Vec<BondId>]) -> Vec<Vec<usize>> {
+            rows.iter()
+                .map(|row| row.iter().map(|bond| bond.index()).collect())
+                .collect()
+        }
+
+        fn wedge_array(graph: &TopologyBlock, wedge_begin: usize) -> Vec<bool> {
+            let mut wedged = vec![false; graph.atoms.len()];
+            for bond in &graph.bonds {
+                if matches!(
+                    bond.direction(),
+                    BondDirection::BeginWedge | BondDirection::BeginDash
+                ) && bond.begin().index() == wedge_begin
+                {
+                    wedged[bond.begin().index()] = true;
+                }
+            }
+            wedged
+        }
+
+        // C2: 32 wrong-stored-set selection calls. Row include/exclude is
+        // decided by DERIVED graph bonds only; stored bond order never
+        // changes the output.
+        #[test]
+        fn kekulize_ring_convert_selection_derived_bond_masks() {
+            let a_fwd = (0..6).map(AtomId::new).collect::<Vec<_>>();
+            let a_bonds = (0..6).map(BondId::new).collect::<Vec<_>>();
+            let b_fwd = (6..12).map(AtomId::new).collect::<Vec<_>>();
+            let b_bonds = (6..12).map(BondId::new).collect::<Vec<_>>();
+            let mut a_rev = a_fwd.clone();
+            a_rev.reverse();
+            let mut b_rev = b_fwd.clone();
+            b_rev.reverse();
+            let mut a_bonds_rev = a_bonds.clone();
+            a_bonds_rev.reverse();
+            let mut b_bonds_rev = b_bonds.clone();
+            b_bonds_rev.reverse();
+            struct Expected {
+                atoms: Vec<Vec<usize>>,
+                bonds: Vec<Vec<usize>>,
+            }
+            let f_a = Expected {
+                atoms: vec![vec![0, 1, 2, 3, 4, 5]],
+                bonds: vec![vec![0, 1, 2, 3, 4, 5]],
+            };
+            let f_b = Expected {
+                atoms: vec![vec![6, 7, 8, 9, 10, 11]],
+                bonds: vec![vec![6, 7, 8, 9, 10, 11]],
+            };
+            let r_a = Expected {
+                atoms: vec![vec![5, 4, 3, 2, 1, 0]],
+                bonds: vec![vec![4, 3, 2, 1, 0, 5]],
+            };
+            let r_b = Expected {
+                atoms: vec![vec![11, 10, 9, 8, 7, 6]],
+                bonds: vec![vec![10, 9, 8, 7, 6, 11]],
+            };
+            let mut calls = 0usize;
+            for rings_ab_first in [true, false] {
+                for reverse_rows in [false, true] {
+                    for swapped_stored in [false, true] {
+                        // Row order preserved from input.
+                        let (row_a, row_b) = if reverse_rows {
+                            (a_rev.clone(), b_rev.clone())
+                        } else {
+                            (a_fwd.clone(), b_fwd.clone())
+                        };
+                        let (stored_a, stored_b) = if swapped_stored {
+                            (b_bonds_rev.clone(), a_bonds_rev.clone())
+                        } else {
+                            (a_bonds_rev.clone(), b_bonds_rev.clone())
+                        };
+                        let (first_a, first_b, s_first, s_second) = if rings_ab_first {
+                            (
+                                row_a.clone(),
+                                row_b.clone(),
+                                stored_a.clone(),
+                                stored_b.clone(),
+                            )
+                        } else {
+                            (
+                                row_b.clone(),
+                                row_a.clone(),
+                                stored_b.clone(),
+                                stored_a.clone(),
+                            )
+                        };
+                        let rings = ring_info_from_selected_rows(
+                            12,
+                            12,
+                            &[first_a.clone(), first_b.clone()],
+                            &[s_first.clone(), s_second.clone()],
+                        )
+                        .unwrap();
+                        for mask in ["onlyA", "onlyB", "all", "none"] {
+                            let graph = two_cycle_graph(usize::MAX, BondDirection::None);
+                            let graph_snapshot = graph.clone();
+                            let rings_snapshot = rings.clone();
+                            let atoms_all = [true; 12];
+                            let atoms_snapshot = atoms_all;
+                            let dummy = [false; 12];
+                            let dummy_snapshot = dummy;
+                            let wedged = vec![false; 12];
+                            let wedged_snapshot = wedged.clone();
+                            let mut bonds_mask = [false; 12];
+                            match mask {
+                                "onlyA" => bonds_mask[..6].fill(true),
+                                "onlyB" => bonds_mask[6..].fill(true),
+                                "all" => bonds_mask.fill(true),
+                                _ => {}
+                            }
+                            let mask_snapshot = bonds_mask;
+                            let label = format!(
+                                "ab={rings_ab_first}/rev={reverse_rows}/swap={swapped_stored}/{mask}"
+                            );
+                            let (atom_rows, bond_rows) = collect_kekulize_candidate_rings(
+                                &graph,
+                                &rings,
+                                &atoms_all,
+                                &bonds_mask,
+                                &dummy,
+                                &wedged,
+                            )
+                            .unwrap();
+                            // Post-invocation six-input comparison for THIS
+                            // call, before any output assertion; census after.
+                            calls += 1;
+                            assert_eq!(&graph, &graph_snapshot, "{label}: graph");
+                            assert_eq!(rings, rings_snapshot, "{label}: rings");
+                            assert_eq!(atoms_all, atoms_snapshot, "{label}: atoms");
+                            assert_eq!(bonds_mask, mask_snapshot, "{label}: mask");
+                            assert_eq!(dummy, dummy_snapshot, "{label}: dummy");
+                            assert_eq!(wedged, wedged_snapshot, "{label}: wedged");
+                            let expect_a = if reverse_rows { &r_a } else { &f_a };
+                            let expect_b = if reverse_rows { &r_b } else { &f_b };
+                            match mask {
+                                "onlyA" => {
+                                    assert_eq!(ids(&atom_rows), expect_a.atoms, "{label}");
+                                    assert_eq!(bond_ids(&bond_rows), expect_a.bonds, "{label}");
+                                }
+                                "onlyB" => {
+                                    assert_eq!(ids(&atom_rows), expect_b.atoms, "{label}");
+                                    assert_eq!(bond_ids(&bond_rows), expect_b.bonds, "{label}");
+                                }
+                                "all" => {
+                                    if rings_ab_first {
+                                        assert_eq!(
+                                            ids(&atom_rows),
+                                            [expect_a.atoms.clone(), expect_b.atoms.clone()]
+                                                .concat()
+                                        );
+                                        assert_eq!(
+                                            bond_ids(&bond_rows),
+                                            [expect_a.bonds.clone(), expect_b.bonds.clone()]
+                                                .concat()
+                                        );
+                                    } else {
+                                        assert_eq!(
+                                            ids(&atom_rows),
+                                            [expect_b.atoms.clone(), expect_a.atoms.clone()]
+                                                .concat()
+                                        );
+                                        assert_eq!(
+                                            bond_ids(&bond_rows),
+                                            [expect_b.bonds.clone(), expect_a.bonds.clone()]
+                                                .concat()
+                                        );
+                                    }
+                                }
+                                _ => {
+                                    assert!(atom_rows.is_empty(), "{label}");
+                                    assert!(bond_rows.is_empty(), "{label}");
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            assert_eq!(calls, 32, "exact census");
+        }
+
+        // C3: 8 exact typed errors including REAL engine calls. The broken
+        // atom row is detected at derived conversion BEFORE any bond filter.
+        #[test]
+        fn kekulize_ring_convert_errors_missing_edges() {
+            let mut calls = 0usize;
+            for row in [[0usize, 1, 3], [0usize, 1, 2]] {
+                // Frozen stored bond row is the LITERAL [0,1,2] for BOTH
+                // broken atom rows (original contract), never derived from
+                // the atom row.
+                let stored: Vec<BondId> = [0usize, 1, 2].iter().map(|i| BondId::new(*i)).collect();
+                let rings = ring_info_from_selected_rows(
+                    12,
+                    12,
+                    &[row.iter().map(|i| AtomId::new(*i)).collect::<Vec<_>>()],
+                    &[stored],
+                )
+                .unwrap();
+                let rings_snapshot = rings.clone();
+                let expected = match row[2] {
+                    3 => (1usize, 3usize),
+                    _ => (2usize, 0usize),
+                };
+                for exclude_b0 in [false, true] {
+                    let label = format!("row{row:?}/excl{exclude_b0}");
+                    // Route 1: private helper — fresh graph/rings/atom-mask/
+                    // bond-mask snapshots and EVERY argument supplied to THIS
+                    // route (dummy/wedged) captured immediately before the
+                    // call and compared immediately after THIS Result,
+                    // including Err, BEFORE any error check or route 2.
+                    let graph = two_cycle_graph(usize::MAX, BondDirection::None);
+                    let graph_snapshot = graph.clone();
+                    let rings_snapshot = rings.clone();
+                    assert!(rings.is_initialized());
+                    assert_eq!(rings.find_type(), RingFindType::OtherOrUnknown);
+                    assert_eq!(rings.atom_row_count(), 12);
+                    assert_eq!(rings.bond_row_count(), 12);
+                    let atoms_mask = [true; 12];
+                    let atoms_snapshot = atoms_mask;
+                    let mut bonds_mask = [true; 12];
+                    if exclude_b0 {
+                        bonds_mask[0] = false;
+                    }
+                    let mask_snapshot = bonds_mask;
+                    let dummy_input = [false; 12];
+                    let dummy_snapshot = dummy_input;
+                    let wedged = vec![false; 12];
+                    let wedged_snapshot = wedged.clone();
+                    let helper = collect_kekulize_candidate_rings(
+                        &graph,
+                        &rings,
+                        &atoms_mask,
+                        &bonds_mask,
+                        &dummy_input,
+                        &wedged,
+                    );
+                    calls += 1;
+                    assert_eq!(&graph, &graph_snapshot, "{label}: helper graph");
+                    assert_eq!(rings, rings_snapshot, "{label}: helper rings");
+                    assert_eq!(atoms_mask, atoms_snapshot, "{label}: helper atoms");
+                    assert_eq!(bonds_mask, mask_snapshot, "{label}: helper mask");
+                    assert_eq!(dummy_input, dummy_snapshot, "{label}: helper dummy");
+                    assert_eq!(wedged, wedged_snapshot, "{label}: helper wedged");
+                    assert_eq!(
+                        helper.err(),
+                        Some(KekulizeError::RingFinding(
+                            crate::RingFindingError::ExpectedBondNotFound {
+                                begin: AtomId::new(expected.0),
+                                end: AtomId::new(expected.1),
+                            }
+                        )),
+                        "{label}: helper"
+                    );
+                    // Route 2: REAL engine with supplied initialized Other —
+                    // fresh per-route baselines including the params value.
+                    let graph = two_cycle_graph(usize::MAX, BondDirection::None);
+                    let graph_snapshot = graph.clone();
+                    let rings_snapshot = rings.clone();
+                    assert!(rings.is_initialized());
+                    assert_eq!(rings.find_type(), RingFindType::OtherOrUnknown);
+                    assert_eq!(rings.atom_row_count(), 12);
+                    assert_eq!(rings.bond_row_count(), 12);
+                    let atoms_mask = [true; 12];
+                    let atoms_snapshot = atoms_mask;
+                    let mask_snapshot = bonds_mask;
+                    let params = KekulizeParams {
+                        canonical: false,
+                        mark_atoms_bonds: false,
+                        ..KekulizeParams::default()
+                    };
+                    let params_snapshot = params.clone();
+                    let engine = kekulize_fragment(
+                        &graph,
+                        &atoms_mask,
+                        &bonds_mask,
+                        &params,
+                        None,
+                        Some(&rings),
+                    );
+                    calls += 1;
+                    assert_eq!(&graph, &graph_snapshot, "{label}: engine graph");
+                    assert_eq!(rings, rings_snapshot, "{label}: engine rings");
+                    assert_eq!(atoms_mask, atoms_snapshot, "{label}: engine atoms");
+                    assert_eq!(bonds_mask, mask_snapshot, "{label}: engine mask");
+                    assert_eq!(params, params_snapshot, "{label}: engine params");
+                    assert_eq!(
+                        engine.err(),
+                        Some(KekulizeError::RingFinding(
+                            crate::RingFindingError::ExpectedBondNotFound {
+                                begin: AtomId::new(expected.0),
+                                end: AtomId::new(expected.1),
+                            }
+                        )),
+                        "{label}: engine"
+                    );
+                }
+            }
+            assert_eq!(calls, 8, "exact census");
+        }
+
+        // C4: 16 deque front-insertion calls. The wedge sits ONLY on the
+        // second graph cycle, so B MUST precede A even for {A,B} input.
+        #[test]
+        fn kekulize_ring_convert_front_insertion() {
+            let mut calls = 0usize;
+            for rings_ab_first in [true, false] {
+                for reverse_rows in [false, true] {
+                    for direction in [BondDirection::BeginWedge, BondDirection::BeginDash] {
+                        for wedge_begin in [6usize, 8usize] {
+                            let graph = two_cycle_graph(wedge_begin, direction);
+                            let graph_snapshot = graph.clone();
+                            let a_fwd = (0..6).map(AtomId::new).collect::<Vec<_>>();
+                            let b_fwd = (6..12).map(AtomId::new).collect::<Vec<_>>();
+                            let a_bonds = (0..6).map(BondId::new).collect::<Vec<_>>();
+                            let b_bonds = (6..12).map(BondId::new).collect::<Vec<_>>();
+                            let mut a_rev = a_fwd.clone();
+                            a_rev.reverse();
+                            let mut b_rev = b_fwd.clone();
+                            b_rev.reverse();
+                            let mut a_bonds_rev = a_bonds.clone();
+                            a_bonds_rev.reverse();
+                            let mut b_bonds_rev = b_bonds.clone();
+                            b_bonds_rev.reverse();
+                            // F/R orientation applies to BOTH cycles per
+                            // the frozen product axes.
+                            let (row_a, row_b, sb_a, sb_b) = if reverse_rows {
+                                (
+                                    a_rev.clone(),
+                                    b_rev.clone(),
+                                    a_bonds_rev.clone(),
+                                    b_bonds_rev.clone(),
+                                )
+                            } else {
+                                (
+                                    a_fwd.clone(),
+                                    b_fwd.clone(),
+                                    a_bonds.clone(),
+                                    b_bonds.clone(),
+                                )
+                            };
+                            let (first_a, first_b, s_first, s_second) = if rings_ab_first {
+                                (row_a.clone(), row_b.clone(), sb_a.clone(), sb_b.clone())
+                            } else {
+                                (row_b.clone(), row_a.clone(), sb_b.clone(), sb_a.clone())
+                            };
+                            let rings = ring_info_from_selected_rows(
+                                12,
+                                12,
+                                &[first_a, first_b],
+                                &[s_first, s_second],
+                            )
+                            .unwrap();
+                            let rings_snapshot = rings.clone();
+                            let wedged = wedge_array(&graph, wedge_begin);
+                            let wedged_snapshot = wedged.clone();
+                            let label = format!(
+                                "ab={rings_ab_first}/rev={reverse_rows}/{direction:?}/w{wedge_begin}"
+                            );
+                            // Actual graph wedge-bond prerequisites precede
+                            // the call, on named arrays.
+                            let atoms_selection = [true; 12];
+                            let atoms_snapshot = atoms_selection;
+                            let bonds_selection = [true; 12];
+                            let bonds_snapshot = bonds_selection;
+                            let dummy_input = [false; 12];
+                            let dummy_snapshot = dummy_input;
+                            assert_eq!(
+                                graph.bonds[wedge_begin].direction(),
+                                direction,
+                                "{label}: wedge bond direction"
+                            );
+                            assert_eq!(
+                                graph.bonds[wedge_begin].begin().index(),
+                                wedge_begin,
+                                "{label}: wedge bond begin"
+                            );
+                            assert!(wedged[wedge_begin], "{label}: graph wedge");
+                            let (atom_rows, bond_rows) = collect_kekulize_candidate_rings(
+                                &graph,
+                                &rings,
+                                &atoms_selection,
+                                &bonds_selection,
+                                &dummy_input,
+                                &wedged,
+                            )
+                            .unwrap();
+                            // Fresh six-input comparison immediately after
+                            // THIS call, before any output; census after.
+                            calls += 1;
+                            assert_eq!(&graph, &graph_snapshot, "{label}: graph");
+                            assert_eq!(rings, rings_snapshot, "{label}: rings");
+                            assert_eq!(atoms_selection, atoms_snapshot, "{label}: atoms");
+                            assert_eq!(bonds_selection, bonds_snapshot, "{label}: bonds");
+                            assert_eq!(dummy_input, dummy_snapshot, "{label}: dummy");
+                            assert_eq!(wedged, wedged_snapshot, "{label}: wedged");
+                            // B (wedged) first, A second.
+                            let (b_atoms, b_bonds_out): (Vec<usize>, Vec<usize>) =
+                                match (reverse_rows, wedge_begin) {
+                                    (false, 6) => {
+                                        (vec![6, 7, 8, 9, 10, 11], vec![6, 7, 8, 9, 10, 11])
+                                    }
+                                    (false, _) => {
+                                        (vec![8, 9, 10, 11, 6, 7], vec![8, 9, 10, 11, 6, 7])
+                                    }
+                                    (true, 6) => {
+                                        (vec![6, 11, 10, 9, 8, 7], vec![11, 10, 9, 8, 7, 6])
+                                    }
+                                    (true, _) => {
+                                        (vec![8, 7, 6, 11, 10, 9], vec![7, 6, 11, 10, 9, 8])
+                                    }
+                                };
+                            let (a_atoms, a_bonds_out): (Vec<usize>, Vec<usize>) = if reverse_rows {
+                                (vec![5, 4, 3, 2, 1, 0], vec![4, 3, 2, 1, 0, 5])
+                            } else {
+                                (vec![0, 1, 2, 3, 4, 5], vec![0, 1, 2, 3, 4, 5])
+                            };
+                            assert_eq!(
+                                ids(&atom_rows),
+                                vec![b_atoms.clone(), a_atoms.clone()],
+                                "{label}: atoms"
+                            );
+                            assert_eq!(
+                                bond_ids(&bond_rows),
+                                vec![b_bonds_out.clone(), a_bonds_out.clone()],
+                                "{label}: bonds"
+                            );
+                        }
+                    }
+                }
+            }
+            assert_eq!(calls, 16, "exact census");
+        }
+    }
+
+    #[test]
     fn q05_core_sanitize_query_consumers_kekulize_recurses_through_bond_type_queries() {
         let graph = topology(
             vec![
@@ -4888,6 +8330,450 @@ mod tests {
     }
 
     #[test]
+    fn fragment_rank_symbols_reverse_original_index_order_without_changing_text() {
+        // Pinned MolFragmentToSmiles(CCO) with N/O/S and S/O/N produces
+        // identical NOS text but output atom orders [0,1,2] and [2,1,0].
+        // The direct pinned CanonicalRankAtomsInFragment oracle returns
+        // [0,2,1] and [1,2,0]: traversal order is not the rank vector.
+        let graph = topology(
+            vec![
+                atom(0, AtomSpec::new(Element::C)),
+                atom(1, AtomSpec::new(Element::C)),
+                atom(2, AtomSpec::new(Element::O)),
+            ],
+            vec![bond(0, 0, 1), bond(1, 1, 2)],
+        );
+        let options = CanonicalRankParams::kekulize_fragment_default();
+        let first = ["N".to_owned(), "O".to_owned(), "S".to_owned()];
+        let reverse = ["S".to_owned(), "O".to_owned(), "N".to_owned()];
+        let plain =
+            rank_fragment_atoms_with_params(&graph, &[true; 3], &[true; 2], None, None, &options)
+                .unwrap();
+        assert_eq!(
+            plain,
+            rank_fragment_atoms(&graph, &[true; 3], &[true; 2]).unwrap()
+        );
+        assert_eq!(
+            rank_fragment_atoms_with_params(
+                &graph,
+                &[true; 3],
+                &[true; 2],
+                Some(&first),
+                None,
+                &options,
+            ),
+            Ok(vec![0, 2, 1])
+        );
+        assert_eq!(
+            rank_fragment_atoms_with_params(
+                &graph,
+                &[true; 3],
+                &[true; 2],
+                Some(&reverse),
+                None,
+                &options,
+            ),
+            Ok(vec![1, 2, 0])
+        );
+    }
+
+    #[test]
+    fn fragment_rank_symbols_borrow_both_bond_holders_and_respect_independent_masks() {
+        let graph = topology(
+            vec![
+                atom(0, AtomSpec::new(Element::C)),
+                atom(1, AtomSpec::new(Element::C)),
+                atom(2, AtomSpec::new(Element::O)),
+            ],
+            vec![bond(0, 0, 1), bond(1, 1, 2)],
+        );
+        let view = CanonRankReadView::from_topology(&graph).unwrap();
+        let atoms = ["N".to_owned(), "O".to_owned(), "S".to_owned()];
+        let first = ["-".to_owned(), "=".to_owned()];
+        let reverse = ["=".to_owned(), "-".to_owned()];
+        for symbols in [&first[..], &reverse[..]] {
+            let initialized = init_fragment_canon_atoms(
+                &view,
+                &[true; 3],
+                &[true; 2],
+                true,
+                Some(&atoms),
+                Some(symbols),
+            )
+            .unwrap();
+            assert_eq!(initialized[0].p_symbol, Some("N"));
+            assert_eq!(initialized[1].p_symbol, Some("O"));
+            assert_eq!(initialized[2].p_symbol, Some("S"));
+            for (bond_index, symbol) in symbols.iter().enumerate() {
+                let bond = &graph.bonds[bond_index];
+                for endpoint in [bond.begin().index(), bond.end().index()] {
+                    assert!(
+                        initialized[endpoint]
+                            .bonds
+                            .iter()
+                            .any(|holder| holder.bond_idx == bond_index
+                                && holder.p_symbol == Some(symbol.as_str()))
+                    );
+                }
+            }
+            let masked_bond = init_fragment_canon_atoms(
+                &view,
+                &[true; 3],
+                &[true, false],
+                true,
+                Some(&atoms),
+                Some(symbols),
+            )
+            .unwrap();
+            assert!(masked_bond[2].bonds.is_empty());
+            let masked_atom = init_fragment_canon_atoms(
+                &view,
+                &[true, true, false],
+                &[true; 2],
+                true,
+                Some(&atoms),
+                Some(symbols),
+            )
+            .unwrap();
+            assert_eq!(masked_atom[2].p_symbol, None);
+            assert!(masked_atom[2].bonds.is_empty());
+            assert_eq!(masked_atom[1].bonds.len(), 1);
+        }
+        // Pinned writer emits C-C=O and C=C-O for these two bond tables.
+        let options = CanonicalRankParams::kekulize_fragment_default();
+        for symbols in [&first[..], &reverse[..]] {
+            assert_eq!(
+                rank_fragment_atoms_with_params(
+                    &graph,
+                    &[true; 3],
+                    &[true; 2],
+                    None,
+                    Some(symbols),
+                    &options,
+                )
+                .unwrap()
+                .len(),
+                3
+            );
+        }
+    }
+
+    #[test]
+    fn fragment_rank_symbols_validate_exact_lengths_before_empty_return() {
+        let graph = topology(vec![atom(0, AtomSpec::new(Element::C))], vec![]);
+        let options = CanonicalRankParams::kekulize_fragment_default();
+        for size in [0, 2] {
+            let symbols = vec!["C".to_owned(); size];
+            assert_eq!(
+                rank_fragment_atoms_with_params(
+                    &graph,
+                    &[true],
+                    &[],
+                    Some(&symbols),
+                    None,
+                    &options,
+                ),
+                Err(CanonicalRankError::AtomSymbolLength {
+                    expected: 1,
+                    actual: size,
+                })
+            );
+        }
+        let cco = topology(
+            vec![
+                atom(0, AtomSpec::new(Element::C)),
+                atom(1, AtomSpec::new(Element::C)),
+            ],
+            vec![bond(0, 0, 1)],
+        );
+        for size in [0, 2] {
+            let symbols = vec!["-".to_owned(); size];
+            assert_eq!(
+                rank_fragment_atoms_with_params(
+                    &cco,
+                    &[true; 2],
+                    &[true],
+                    None,
+                    Some(&symbols),
+                    &options,
+                ),
+                Err(CanonicalRankError::BondSymbolLength {
+                    expected: 1,
+                    actual: size,
+                })
+            );
+        }
+        let empty = TopologyBlock::default();
+        let one = ["X".to_owned()];
+        assert_eq!(
+            rank_fragment_atoms_with_params(&empty, &[true], &[], Some(&one), None, &options),
+            Err(CanonicalRankError::AtomMaskLength {
+                expected: 0,
+                actual: 1,
+            })
+        );
+        assert_eq!(
+            rank_fragment_atoms_with_params(&empty, &[], &[], Some(&one), None, &options),
+            Err(CanonicalRankError::AtomSymbolLength {
+                expected: 0,
+                actual: 1,
+            })
+        );
+        assert_eq!(
+            rank_fragment_atoms_with_params(&empty, &[], &[], None, Some(&one), &options),
+            Err(CanonicalRankError::BondSymbolLength {
+                expected: 0,
+                actual: 1,
+            })
+        );
+        assert_eq!(
+            rank_fragment_atoms_with_params(&empty, &[], &[], None, None, &options),
+            Ok(vec![])
+        );
+    }
+
+    #[test]
+    fn fragment_rank_flags_isolate_ties_isotopes_maps_and_chiral_presence() {
+        let ethane = topology(
+            vec![
+                atom(0, AtomSpec::new(Element::C)),
+                atom(1, AtomSpec::new(Element::C)),
+            ],
+            vec![bond(0, 0, 1)],
+        );
+        let mut flags = CanonicalRankParams::default();
+        flags.break_ties = false;
+        let rank = |graph: &TopologyBlock, options: &CanonicalRankParams| {
+            rank_fragment_atoms_with_params(
+                graph,
+                &vec![true; graph.atoms.len()],
+                &vec![true; graph.bonds.len()],
+                None,
+                None,
+                options,
+            )
+            .unwrap()
+        };
+        assert_eq!(rank(&ethane, &flags), vec![0, 0]);
+        flags.break_ties = true;
+        assert_eq!(rank(&ethane, &flags), vec![0, 1]);
+        flags.break_ties = false;
+
+        // Pinned CanonicalRankAtomsInFragment([13CH4].[12CH4]):
+        // includeIsotopes=true -> [1,0], false -> [0,0].
+        let isotopes = topology(
+            vec![
+                atom(0, AtomSpec::new(Element::C).with_isotope(13)),
+                atom(1, AtomSpec::new(Element::C).with_isotope(12)),
+            ],
+            vec![],
+        );
+        assert_eq!(rank(&isotopes, &flags), vec![1, 0]);
+        flags.include_isotopes = false;
+        assert_eq!(rank(&isotopes, &flags), vec![0, 0]);
+        flags.include_isotopes = true;
+
+        let maps = topology(
+            vec![
+                atom(0, AtomSpec::new(Element::C).with_atom_map(9)),
+                atom(1, AtomSpec::new(Element::C).with_atom_map(3)),
+            ],
+            vec![],
+        );
+        assert_eq!(rank(&maps, &flags), vec![1, 0]);
+        flags.include_atom_maps = false;
+        assert_eq!(rank(&maps, &flags), vec![0, 0]);
+        flags.include_atom_maps = true;
+
+        let chiral_presence = topology(
+            vec![
+                atom(
+                    0,
+                    AtomSpec::new(Element::C).with_chiral_tag(ChiralTag::TetrahedralCw),
+                ),
+                atom(1, AtomSpec::new(Element::C)),
+            ],
+            vec![],
+        );
+        flags.include_chirality = false;
+        flags.include_chiral_presence = false;
+        assert_eq!(rank(&chiral_presence, &flags), vec![0, 0]);
+        flags.include_chiral_presence = true;
+        assert_eq!(rank(&chiral_presence, &flags), vec![1, 0]);
+    }
+
+    #[test]
+    fn fragment_rank_flags_keep_fragment_chirality_ring_rule_and_masks() {
+        let mut fragment = CanonicalRankParams::default();
+        fragment.include_chirality = true;
+        fragment.include_ring_stereo = false;
+        fragment.chirality_rings_use_ring_stereo = false;
+        let fragment_flags = CanonRankFlags::from_fragment_options(fragment);
+        assert!(fragment_flags.use_chirality_rings);
+        let whole_flags = CanonRankFlags::from_fragment_options(CanonicalRankParams {
+            chirality_rings_use_ring_stereo: true,
+            ..fragment
+        });
+        assert!(!whole_flags.use_chirality_rings);
+        fragment.include_chirality = false;
+        assert!(!CanonRankFlags::from_fragment_options(fragment).use_chirality_rings);
+
+        let graph = topology(
+            vec![
+                atom(0, AtomSpec::new(Element::C)),
+                atom(1, AtomSpec::new(Element::C)),
+                atom(2, AtomSpec::new(Element::C).with_isotope(13)),
+            ],
+            vec![bond(0, 0, 1), bond(1, 1, 2)],
+        );
+        let mut options = CanonicalRankParams::default();
+        options.break_ties = false;
+        let first = rank_fragment_atoms_with_params(
+            &graph,
+            &[true, true, false],
+            &[true, true],
+            None,
+            None,
+            &options,
+        )
+        .unwrap();
+        assert_eq!(first.len(), 3);
+        let mut changed = graph.clone();
+        changed.atoms[2] = atom(2, AtomSpec::new(Element::C).with_isotope(14));
+        let second = rank_fragment_atoms_with_params(
+            &changed,
+            &[true, true, false],
+            &[true, false],
+            None,
+            None,
+            &options,
+        )
+        .unwrap();
+        assert_eq!(first, second);
+    }
+
+    #[test]
+    fn fragment_rank_prepared_borrows_fast_rings_and_valence_without_mutation() {
+        let graph = topology(
+            vec![
+                atom(0, AtomSpec::new(Element::C)),
+                atom(1, AtomSpec::new(Element::C)),
+                atom(2, AtomSpec::new(Element::O)),
+            ],
+            vec![bond(0, 0, 1), bond(1, 1, 2)],
+        );
+        let valence =
+            crate::assign_valence_with_options_for_topology(&graph, ValenceModel::RdkitLike, false)
+                .unwrap();
+        let rings =
+            fast_find_rings_from_parts(graph.atoms.len(), &graph.bonds, &graph.adjacency).unwrap();
+        let original_graph = graph.clone();
+        let original_valence = valence.clone();
+        let original_rings = rings.clone();
+        let view = CanonRankReadView::from_prepared_state(&graph, &valence, Some(&rings)).unwrap();
+        assert!(matches!(view.valence, Cow::Borrowed(_)));
+        assert!(matches!(view.rings, Cow::Borrowed(_)));
+        let options = CanonicalRankParams::kekulize_fragment_default();
+        let prepared = rank_fragment_atoms_with_prepared_state(
+            &graph,
+            &valence,
+            Some(&rings),
+            &[true; 3],
+            &[true; 2],
+            None,
+            None,
+            &options,
+        )
+        .unwrap();
+        assert_eq!(
+            prepared,
+            rank_fragment_atoms_with_params(&graph, &[true; 3], &[true; 2], None, None, &options,)
+                .unwrap()
+        );
+        assert_eq!(graph, original_graph);
+        assert_eq!(valence, original_valence);
+        assert_eq!(rings, original_rings);
+    }
+
+    #[test]
+    fn fragment_rank_prepared_recomputes_only_missing_or_unknown_rings() {
+        let graph = topology(
+            vec![
+                atom(0, AtomSpec::new(Element::C)),
+                atom(1, AtomSpec::new(Element::C)),
+            ],
+            vec![bond(0, 0, 1)],
+        );
+        let valence =
+            crate::assign_valence_with_options_for_topology(&graph, ValenceModel::RdkitLike, false)
+                .unwrap();
+        let unknown = RingInfo::new(RingFindType::OtherOrUnknown, 2, 1);
+        let original = unknown.clone();
+        for supplied in [None, Some(&unknown)] {
+            let view = CanonRankReadView::from_prepared_state(&graph, &valence, supplied).unwrap();
+            assert!(matches!(view.valence, Cow::Borrowed(_)));
+            assert!(matches!(view.rings, Cow::Owned(_)));
+            assert!(view.rings.is_find_fast_or_better());
+            assert_eq!(
+                rank_fragment_atoms_with_prepared_state(
+                    &graph,
+                    &valence,
+                    supplied,
+                    &[true; 2],
+                    &[true],
+                    None,
+                    None,
+                    &CanonicalRankParams::kekulize_fragment_default(),
+                ),
+                rank_fragment_atoms(&graph, &[true; 2], &[true])
+            );
+        }
+        assert_eq!(unknown, original);
+    }
+
+    #[test]
+    fn fragment_rank_prepared_rejects_invalid_rows_and_accepts_no_implicit() {
+        let graph = topology(
+            vec![
+                atom(0, AtomSpec::new(Element::C).with_no_implicit(true)),
+                atom(1, AtomSpec::new(Element::C)),
+            ],
+            vec![bond(0, 0, 1)],
+        );
+        let mut valence =
+            crate::assign_valence_with_options_for_topology(&graph, ValenceModel::RdkitLike, false)
+                .unwrap();
+        valence.implicit_hydrogens[0] = -1;
+        assert!(CanonRankReadView::from_prepared_state(&graph, &valence, None).is_ok());
+        let mut bad = valence.clone();
+        bad.explicit_valence.pop();
+        assert!(matches!(
+            CanonRankReadView::from_prepared_state(&graph, &bad, None),
+            Err(CanonicalRankError::PreparedValenceLength {
+                atom_count: 2,
+                explicit_len: 1,
+                implicit_len: 2,
+            })
+        ));
+        bad = valence.clone();
+        bad.implicit_hydrogens[1] = -1;
+        assert!(matches!(
+            CanonRankReadView::from_prepared_state(&graph, &bad, None),
+            Err(CanonicalRankError::PreparedValenceInvalid { atom_index: 1 })
+        ));
+        let wrong_rings = RingInfo::new(RingFindType::Fast, 1, 0);
+        assert!(matches!(
+            CanonRankReadView::from_prepared_state(&graph, &valence, Some(&wrong_rings)),
+            Err(CanonicalRankError::PreparedRingLength {
+                expected_atoms: 2,
+                actual_atoms: 1,
+                expected_bonds: 1,
+                actual_bonds: 0,
+            })
+        ));
+    }
+
+    #[test]
     fn canonical_rank_masks_control_fragment_initialization() {
         let graph = topology(
             vec![
@@ -4899,7 +8785,8 @@ mod tests {
         );
         let view = CanonRankReadView::from_topology(&graph).unwrap();
         let atoms =
-            init_fragment_canon_atoms(&view, &[true, true, false], &[true, true], true).unwrap();
+            init_fragment_canon_atoms(&view, &[true, true, false], &[true, true], true, None, None)
+                .unwrap();
         assert_eq!(
             atoms.iter().map(|atom| atom.is_in_play).collect::<Vec<_>>(),
             vec![true, true, false]
@@ -4916,7 +8803,8 @@ mod tests {
         assert!(atoms[2].bonds.is_empty());
 
         let bond_masked =
-            init_fragment_canon_atoms(&view, &[true, true, true], &[true, false], true).unwrap();
+            init_fragment_canon_atoms(&view, &[true, true, true], &[true, false], true, None, None)
+                .unwrap();
         assert_eq!(
             bond_masked
                 .iter()
@@ -4938,7 +8826,8 @@ mod tests {
             vec![bond(0, 0, 1)],
         );
         let view = CanonRankReadView::from_topology(&ethane).unwrap();
-        let mut atoms = init_fragment_canon_atoms(&view, &[true, true], &[true], true).unwrap();
+        let mut atoms =
+            init_fragment_canon_atoms(&view, &[true, true], &[true], true, None, None).unwrap();
         let mut options = CanonicalRankParams::kekulize_fragment_default();
         options.break_ties = false;
         assert_eq!(
@@ -4973,7 +8862,8 @@ mod tests {
             vec![],
         );
         let view = CanonRankReadView::from_topology(&graph).unwrap();
-        let mut inactive = init_fragment_canon_atoms(&view, &[false, false], &[], true).unwrap();
+        let mut inactive =
+            init_fragment_canon_atoms(&view, &[false, false], &[], true, None, None).unwrap();
         let mut no_tie_break = CanonicalRankParams::kekulize_fragment_default();
         no_tie_break.break_ties = false;
         assert_eq!(

@@ -1,3 +1,6 @@
+#[path = "../src/status.rs"]
+mod status;
+
 #[path = "../src/declaration.rs"]
 mod declaration;
 #[path = "../src/matrices.rs"]
@@ -159,7 +162,7 @@ fn molecule_rows_preserve_every_block_effect_precondition_and_profile() {
         "crate::ops::SemanticPreconditionSet::TRUSTED_BOND_TOPOLOGY",
         "crate::ops::SemanticPreconditionSet::HYDROGEN_OWNERSHIP_REPRESENTED",
         "requires_mapping:crate::ops::MappingRequirement::Identity",
-        "support:crate::INSPECT_FEATURE.status",
+        "status:crate::FunctionStatus::Experimental",
         "parity:crate::ops::ParityPolicy::RequiredNow",
         "io_roundtrip:true",
     ] {
@@ -361,7 +364,7 @@ fn bio_rows_preserve_all_blocks_states_derived_states_and_required_parity() {
         "kind:crate::bio_ops::BioOpKind::Strong",
         "edit_kind:crate::bio_ops::BioEditKind::Compacting",
         "requires_mapping:crate::bio_ops::MappingRequirement::Required",
-        "support:crate::BIO_SELECTION_FEATURE.status",
+        "status:crate::FunctionStatus::Experimental",
         "parity:crate::bio_ops::BioParityPolicy::RequiredNow",
         "profile:\"bio-compact\"",
         "profile:\"gemmi-remove-waters\"",
@@ -531,5 +534,10 @@ fn operation_order_and_feature_identity_are_shared_across_all_rows() {
         assert!(table.find("FIRST_SPEC").unwrap() < table.find("SECOND_SPEC").unwrap());
     }
     assert_eq!(output.matches("feature:&crate::FEATURE").count(), 2);
-    assert_eq!(output.matches("support:crate::FEATURE.status").count(), 2);
+    assert_eq!(
+        output
+            .matches("status:crate::FunctionStatus::Experimental")
+            .count(),
+        2
+    );
 }

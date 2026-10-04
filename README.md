@@ -31,23 +31,39 @@ For supported cheminformatics operations, RDKit-compatible behavior is treated a
 
 COSMolKit combines a native Rust API with Python interfaces designed for array-oriented scientific and machine-learning workflows. Molecular graphs, coordinates, fingerprints, bounds matrices, and structural data are exposed in forms suitable for NumPy, PyTorch, dataset processing, and model-building pipelines.
 
+## Upcoming 0.5.0
+
+- **Modular Rust architecture:** separate crates own model values and domain
+  algorithms; `cosmolkit` remains the public entry point and molecule runtime.
+- **Two-level Cargo features:** use bundles such as `core`, `bio`, and
+  `fingerprints`, or `cap-*` selectors for precise control. Default is `full`;
+  see the [Rust feature guide](crates/cosmolkit/README.md#cargo-features).
+- **WebAssembly support:** run the same Rust chemistry engine in the browser
+  through JavaScript bindings, without a separate algorithm implementation.
+- **One API, three languages:** shared operations, defaults, results, and error
+  categories, with idiomatic names for Rust, Python, and JavaScript. See
+  [Public API Design](dev/public_api_design.md) for cross-language naming rules
+  and shared API contracts.
+
+Each public API is one logical entry with three projections:
+
+| Logical name | Rust | Python | JavaScript |
+|---|---|---|---|
+| `from_smiles` | `Molecule::from_smiles` | `Molecule.from_smiles` | `Molecule.fromSmiles` |
+| `molecular_weight` | `mol.molecular_weight()` | `mol.molecular_weight()` | `mol.molecularWeight()` |
+| `to_smiles` | `mol.to_smiles()` | `mol.to_smiles()` | `mol.toSmiles()` |
+| `with_hydrogens` | `mol.with_hydrogens()` | `mol.with_hydrogens()` | `mol.withHydrogens()` |
+| `tpsa` | `mol.tpsa()` | `mol.tpsa()` | `mol.tpsa()` |
+
+Learn once, then move between Python notebooks, native Rust applications, and
+browser-based JavaScript without relearning the chemistry API.
+
 ## Documentation
 
-* Python documentation: https://kit.cosmol.org/
+* Python documentation: https://kit.cosmol.org/python
+* JavaScript documentation: https://kit.cosmol.org/javascript
+* Rust documentation: https://docs.rs/cosmolkit/latest/cosmolkit/
 * Interactive Web Tools: https://tools.cosmol.org/tools
-* Rust crate notes: [`crates/cosmolkit/README.md`](https://github.com/cosmol-studio/COSMolKit/blob/main/crates/cosmolkit/README.md)
-* Validation scope and evidence: [`VALIDATION.md`](https://github.com/cosmol-studio/COSMolKit/blob/main/VALIDATION.md)
-
-## Planned Crate Architecture
-
-COSMolKit is planning a staged internal crate split that will separate the
-public molecule runtime, shared model values, and source-backed algorithm
-implementations more clearly. This is a target architecture, not the current
-workspace layout. The migration is intended to preserve the existing supported
-external API: `cosmolkit` remains the user-facing Rust crate, and normal users
-should not need to change imports or molecule workflows as implementation code
-moves between internal crates. Any unavoidable public change would be handled
-separately through the project's normal versioning and deprecation policy.
 
 ## Validation Status
 

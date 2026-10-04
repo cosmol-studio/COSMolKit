@@ -2,6 +2,8 @@
 
 Status: deferred proposal, not an approved architecture or execution plan.
 
+The approved [Coordinate Storage and Selection Contract](./coordinate_selection_contract.md) governs storage separation and selection, including CK-COORD-002. Those decisions supersede overlapping proposals below; the remaining redesign proposals stay deferred.
+
 Date: 2026-09-16.
 
 Revisit this document at the final review of the current migration work. Do

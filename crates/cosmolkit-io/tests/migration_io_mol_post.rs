@@ -6,12 +6,19 @@ use cosmolkit_io::{
 };
 use cosmolkit_model::{
     Atom, AtomId, AtomQueryPredicate, AtomSpec, Bond, BondId, BondQueryPredicate, BondSpec,
-    Conformer3D, CoordinateBlock, CoordinateDimension, MoleculeProperties, QueryAtom, QueryBond,
-    QueryGraph, QueryNode, RecursiveStructureQuery, SGroupConnection, SGroupData, StereoGroup,
-    StereoGroupKind, SubstanceGroup, SubstanceGroupId, SubstanceGroupKind, TopologyBlock,
-    query_substance_groups, replace_query_substance_groups,
+    Conformer3D, CoordinateBlock, CoordinateDimension, MoleculeProperties, PropertyValue,
+    QueryAtom, QueryBond, QueryGraph, QueryNode, RecursiveStructureQuery, SGroupConnection,
+    SGroupData, StereoGroup, StereoGroupKind, SubstanceGroup, SubstanceGroupId, SubstanceGroupKind,
+    TopologyBlock, query_substance_groups, replace_query_substance_groups,
 };
 use cosmolkit_types::{BondDirection, BondOrder, BondStereo, ChiralTag, Element, Hybridization};
+
+fn string_property(value: Option<&PropertyValue>) -> Option<&str> {
+    match value {
+        Some(PropertyValue::String(value)) => Some(value),
+        _ => None,
+    }
+}
 
 fn atom(index: usize, element: Element) -> Atom {
     Atom::from_spec(AtomId::new(index), AtomSpec::new(element))
@@ -179,14 +186,17 @@ fn mol_post_attachment_v3000_value_and_final_classification() {
                     &QueryNode::predicate(AtomQueryPredicate::Any)
                 );
                 assert!(!atom.predicate_is_carrier_derived());
-                assert_eq!(atom.prop("_fromAttchpt"), Some(*label));
+                assert_eq!(string_property(atom.prop("_fromAttchpt")), Some(*label));
                 assert_eq!(
                     record.query.bonds()[1 + offset].bond().order(),
                     BondOrder::Single
                 );
                 assert!(record.query.bonds()[1 + offset].predicate_is_carrier_derived());
             }
-            assert_eq!(record.query.atoms()[1].prop("molAttachPoint"), None);
+            assert_eq!(
+                string_property(record.query.atoms()[1].prop("molAttachPoint")),
+                None
+            );
             let coordinate_rows = record.query.coordinates_2d().map(<[_]>::len).or_else(|| {
                 record
                     .query
@@ -238,7 +248,10 @@ fn mol_post_attachment_v2000_and_existing_query_obey_source_order() {
         record.query.atoms()[2].predicate(),
         &QueryNode::predicate(AtomQueryPredicate::Any)
     );
-    assert_eq!(record.query.atoms()[1].prop("molAttachPoint"), None);
+    assert_eq!(
+        string_property(record.query.atoms()[1].prop("molAttachPoint")),
+        None
+    );
 
     // ProcessMolProps maps SUBST=-2 to the degree *after* attachment expansion.
     let parsed = read_mol_block_detached(&v3000_attachment(Some("1"), Some(-2))).unwrap();
@@ -785,7 +798,7 @@ fn mol_post_legacy_closure_iteratively_reranks_resolved_stereo_for_concrete_and_
                 topology
                     .atoms
                     .iter()
-                    .map(|atom| atom.prop("_CIPCode").map(str::to_owned))
+                    .map(|atom| string_property(atom.prop("_CIPCode")).map(str::to_owned))
                     .collect::<Vec<_>>(),
             ),
             MolBlockRecord::Query(record) => (
@@ -799,7 +812,7 @@ fn mol_post_legacy_closure_iteratively_reranks_resolved_stereo_for_concrete_and_
                     .query
                     .atoms()
                     .iter()
-                    .map(|atom| atom.prop("_CIPCode").map(str::to_owned))
+                    .map(|atom| string_property(atom.prop("_CIPCode")).map(str::to_owned))
                     .collect::<Vec<_>>(),
             ),
         };
@@ -858,15 +871,27 @@ fn mol_post_legacy_closure_retains_source_ring_special_cases_for_concrete_and_qu
                     record.query.atoms()[4].chiral_tag(),
                     ChiralTag::TetrahedralCw
                 );
-                assert_eq!(record.query.atoms()[1].prop("_ringStereoAtoms"), Some("5"));
-                assert_eq!(record.query.atoms()[4].prop("_ringStereoAtoms"), Some("2"));
+                assert_eq!(
+                    string_property(record.query.atoms()[1].prop("_ringStereoAtoms")),
+                    Some("5")
+                );
+                assert_eq!(
+                    string_property(record.query.atoms()[4].prop("_ringStereoAtoms")),
+                    Some("2")
+                );
                 continue;
             }
         };
         assert_eq!(atoms[1].chiral_tag(), ChiralTag::TetrahedralCw);
         assert_eq!(atoms[4].chiral_tag(), ChiralTag::TetrahedralCw);
-        assert_eq!(atoms[1].prop("_ringStereoAtoms"), Some("5"));
-        assert_eq!(atoms[4].prop("_ringStereoAtoms"), Some("2"));
+        assert_eq!(
+            string_property(atoms[1].prop("_ringStereoAtoms")),
+            Some("5")
+        );
+        assert_eq!(
+            string_property(atoms[4].prop("_ringStereoAtoms")),
+            Some("2")
+        );
     }
 }
 
@@ -1667,7 +1692,10 @@ fn mol_post_mol_tot_valence_sentinels_clear_property_and_respect_zbo_h() {
         };
         assert_eq!(topology.atoms[0].explicit_hydrogens(), 0);
         assert!(topology.atoms[0].no_implicit());
-        assert_eq!(topology.atoms[0].prop("molTotValence"), None);
+        assert_eq!(
+            string_property(topology.atoms[0].prop("molTotValence")),
+            None
+        );
     }
 
     let spec = AtomSpec::new(Element::C)
@@ -1688,7 +1716,10 @@ fn mol_post_mol_tot_valence_sentinels_clear_property_and_respect_zbo_h() {
     };
     assert_eq!(topology.atoms[0].explicit_hydrogens(), 2);
     assert!(!topology.atoms[0].no_implicit());
-    assert_eq!(topology.atoms[0].prop("molTotValence"), None);
+    assert_eq!(
+        string_property(topology.atoms[0].prop("molTotValence")),
+        None
+    );
 }
 
 #[test]
@@ -1720,8 +1751,11 @@ fn mol_post_processes_atom_properties_before_hyd_group() {
     };
     assert_eq!(topology.atoms[0].explicit_hydrogens(), 2);
     assert!(topology.atoms[0].no_implicit());
-    assert_eq!(topology.atoms[0].prop("_ZBO_H"), Some("1"));
-    assert_eq!(topology.atoms[0].prop("molTotValence"), None);
+    assert_eq!(string_property(topology.atoms[0].prop("_ZBO_H")), Some("1"));
+    assert_eq!(
+        string_property(topology.atoms[0].prop("molTotValence")),
+        None
+    );
     assert!(topology.substance_groups.is_empty());
 }
 
@@ -1770,7 +1804,7 @@ fn mol_post_dat_actions_remove_only_recognized_groups() {
         panic!("concrete record expected")
     };
     assert_eq!(topology.bonds[0].order(), BondOrder::Dative);
-    assert_eq!(topology.bonds[0].prop("kept"), Some("yes"));
+    assert_eq!(string_property(topology.bonds[0].prop("kept")), Some("yes"));
     assert_eq!(topology.atoms[0].formal_charge(), -1);
     assert_eq!(topology.atoms[1].formal_charge(), 2);
     assert_eq!(topology.substance_groups.len(), 1);
@@ -1875,8 +1909,14 @@ fn mol_post_smartsq_builds_typed_query_and_preserves_unconsumed_groups() {
         record.query.atoms()[0].predicate(),
         &QueryNode::predicate(AtomQueryPredicate::AtomicNumber(7))
     );
-    assert_eq!(record.query.atoms()[0].prop("MRV SMA"), Some("[#7]"));
-    assert_eq!(record.query.atoms()[0].prop("_MolFileAtomQuery"), Some("1"));
+    assert_eq!(
+        string_property(record.query.atoms()[0].prop("MRV SMA")),
+        Some("[#7]")
+    );
+    assert_eq!(
+        string_property(record.query.atoms()[0].prop("_MolFileAtomQuery")),
+        Some("1")
+    );
     let groups = query_substance_groups(&record.query);
     assert_eq!(groups.len(), 1);
     assert_eq!(groups[0].id(), SubstanceGroupId::new(0));
@@ -2348,7 +2388,7 @@ M  END\n";
             ]))
         );
         assert_eq!(
-            record.query.bonds()[0].bond().prop("_MolFileBondQuery"),
+            string_property(record.query.bonds()[0].bond().prop("_MolFileBondQuery")),
             Some("1")
         );
     }

@@ -2,10 +2,11 @@ use cosmolkit_bio::{
     AltLocLabel, AtomName, AtomSourceIds, BioAssembly, BioAssemblySpecialKind, BioAtomId,
     BioAtomRow, BioCalcFlag, BioChainId, BioChainRow, BioCoordinateBlock, BioCoordinateFormat,
     BioCrystalCell, BioCrystalInfo, BioEntityId, BioEntityRow, BioModelId, BioModelRow,
-    BioNcsOperator, BioResidueId, BioResidueRow, BioRowSpan, BioSiftsUnpResidue, BioStructure,
+    BioNcsOperator, BioResidueId, BioResidueRow, BioRowSpan, BioSiftsUnpResidue, BioStructureData,
     BioStructureError, BioStructureParts, BioTransform, ChainKind, ChainSourceIds, EntityKind,
     EntitySourceIds, PdbAtomSerial, PdbChainId, PdbSeqId, PolymerKind, ProteinProjectionError,
-    ResidueCode, ResidueInfoKind, ResidueKind, ResidueName, ResidueSourceIds,
+    ResidueCode, ResidueInfoKind, ResidueKind, ResidueName, ResidueSourceIds, protein_atoms,
+    protein_chain, protein_chains, protein_residues, validate_protein_structure,
 };
 use cosmolkit_types::Element;
 
@@ -13,8 +14,8 @@ fn span<I>(start: u32, len: u32) -> BioRowSpan<I> {
     BioRowSpan::new(start, len).unwrap()
 }
 
-fn atom_name(value: &[u8; 4]) -> AtomName {
-    AtomName::from_ascii(*value).unwrap()
+fn atom_name(value: &[u8]) -> AtomName {
+    AtomName::from_ascii(value).unwrap()
 }
 
 fn residue_name(value: &str) -> ResidueName {
@@ -73,9 +74,13 @@ fn residue(
 }
 
 fn atom(residue_id: u32, altloc: Option<u8>, serial: i32) -> BioAtomRow {
+    atom_named(residue_id, altloc, serial, b" CA ")
+}
+
+fn atom_named(residue_id: u32, altloc: Option<u8>, serial: i32, name: &[u8]) -> BioAtomRow {
     BioAtomRow::new(
         BioResidueId::new(residue_id),
-        atom_name(b" CA "),
+        atom_name(name),
         Element::C,
         None,
         altloc.map(AltLocLabel::new),
@@ -90,8 +95,45 @@ fn atom(residue_id: u32, altloc: Option<u8>, serial: i32) -> BioAtomRow {
     )
 }
 
-fn structure(parts: BioStructureParts) -> BioStructure {
-    BioStructure::from_parts(parts).unwrap()
+#[test]
+fn protein_projection_preserves_exact_two_and_four_byte_atom_names() {
+    let mut parts = one_residue_parts(ResidueInfoKind::Aa, "ALA");
+    parts.residues[0] = residue(
+        0,
+        0,
+        2,
+        "ALA",
+        ResidueInfoKind::Aa,
+        None,
+        Some(11),
+        Some("label-A"),
+    );
+    parts.atoms = vec![
+        atom_named(0, None, 101, b"CA"),
+        atom_named(0, None, 102, b" CA "),
+    ];
+    parts.coordinates = BioCoordinateBlock::new(vec![[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]);
+    let source = structure(parts);
+    let projected = source.protein().unwrap();
+    assert_eq!(source.atoms()[0].name().as_bytes(), b"CA");
+    assert_eq!(source.atoms()[1].name().as_bytes(), b" CA ");
+    let projected_atoms = projected.atoms().collect::<Vec<_>>();
+    assert_eq!(projected_atoms[0].name().as_bytes(), b"CA");
+    assert_eq!(projected_atoms[1].name().as_bytes(), b" CA ");
+    let residue_atoms = projected
+        .residues()
+        .next()
+        .unwrap()
+        .atoms()
+        .collect::<Vec<_>>();
+    assert_eq!(residue_atoms[0].row().name().as_bytes(), b"CA");
+    assert_eq!(residue_atoms[1].row().name().as_bytes(), b" CA ");
+    assert_eq!(projected_atoms[0].position(), [1.0, 2.0, 3.0]);
+    assert_eq!(projected_atoms[1].position(), [4.0, 5.0, 6.0]);
+}
+
+fn structure(parts: BioStructureParts) -> BioStructureData {
+    BioStructureData::from_parts(parts).unwrap()
 }
 
 fn empty_parts() -> BioStructureParts {
@@ -151,6 +193,111 @@ fn one_residue_parts(kind: ResidueInfoKind, name: &str) -> BioStructureParts {
         ncs_operators: Vec::new(),
         assemblies: Vec::new(),
     }
+}
+
+#[test]
+fn protein_recovery_storage_move_preserves_all_projected_blocks() {
+    let mut parts = one_residue_parts(ResidueInfoKind::Aad, "DAL");
+    parts.source_state.name = "projected source".to_owned();
+    parts.source_state.resolution = 1.25;
+    parts.source_state.ter_status = b'e';
+    parts
+        .source_state
+        .info
+        .insert("origin".into(), "mmcif".into());
+    parts.atoms.push(atom_named(0, Some(b'A'), 51, b"CA"));
+    parts.residues[0] = residue(
+        0,
+        0,
+        1,
+        "DAL",
+        ResidueInfoKind::Aad,
+        None,
+        Some(11),
+        Some("label-A"),
+    );
+    parts.coordinates = BioCoordinateBlock::new(vec![[1.0, -0.0, 3.0]]);
+    let projected = structure(parts).protein().unwrap();
+    let before = projected.structure().clone().into_parts();
+    let moved = projected.into_structure().into_parts();
+    assert_eq!(moved, before);
+    assert_eq!(moved.source_state.name, "projected source");
+    assert_eq!(
+        moved.coordinates.positions()[0][1].to_bits(),
+        (-0.0f64).to_bits()
+    );
+}
+
+#[test]
+fn protein_recovery_storage_validation_preserves_structured_non_amino_error() {
+    for (kind, name) in [
+        (ResidueInfoKind::Aa, "ALA"),
+        (ResidueInfoKind::Aad, "DAL"),
+        (ResidueInfoKind::Paa, "PAA"),
+        (ResidueInfoKind::Maa, "MAA"),
+    ] {
+        let source = structure(one_residue_parts(kind, name));
+        assert!(validate_protein_structure(&source).is_ok(), "{kind:?}");
+        let projected = source.protein().unwrap();
+        assert!(projected.validate().is_ok(), "{kind:?}");
+    }
+    let mixed = structure(one_residue_parts(ResidueInfoKind::Hoh, "HOH"));
+    assert_eq!(
+        validate_protein_structure(&mixed),
+        Err(ProteinProjectionError::NonAminoAcidResidue { index: 0 })
+    );
+    let empty = mixed.protein().unwrap();
+    assert!(empty.validate().is_ok());
+    assert_eq!(empty.into_structure().residues().len(), 0);
+}
+
+#[test]
+fn protein_recovery_views_borrow_projected_structure_and_preserve_navigation() {
+    let mut parts = one_residue_parts(ResidueInfoKind::Aa, "ALA");
+    parts.residues[0] = residue(
+        0,
+        0,
+        1,
+        "ALA",
+        ResidueInfoKind::Aa,
+        None,
+        Some(11),
+        Some("label-A"),
+    );
+    parts.atoms.push(atom_named(0, Some(b'B'), 51, b"CA"));
+    parts.coordinates = BioCoordinateBlock::new(vec![[-0.0, 2.0, 3.0]]);
+    let projected = structure(parts).protein().unwrap();
+    let structure = projected.into_structure();
+    let chains = protein_chains(&structure).collect::<Vec<_>>();
+    let residues = protein_residues(&structure).collect::<Vec<_>>();
+    let atoms = protein_atoms(&structure).collect::<Vec<_>>();
+    assert_eq!(chains.len(), 1);
+    assert_eq!(residues.len(), 1);
+    assert_eq!(atoms.len(), 1);
+    assert_eq!(chains[0].id(), BioChainId::new(0));
+    assert_eq!(chains[0].source().auth_chain_id().unwrap().as_str(), "A");
+    assert_eq!(chains[0].source().label_asym_id(), Some("label-A"));
+    assert_eq!(residues[0].chain().id(), chains[0].id());
+    assert_eq!(chains[0].residues().next().unwrap().id(), residues[0].id());
+    assert_eq!(residues[0].atoms().next().unwrap().id(), atoms[0].id());
+    assert_eq!(atoms[0].residue().id(), residues[0].id());
+    assert_eq!(atoms[0].altloc().unwrap().value(), b'B');
+    assert_eq!(atoms[0].position()[0].to_bits(), (-0.0_f64).to_bits());
+    assert!(protein_chain(&structure, 1).is_none());
+}
+
+#[test]
+fn protein_recovery_views_keep_valid_empty_residue_after_projection() {
+    let projected = structure(one_residue_parts(ResidueInfoKind::Paa, "PAA"))
+        .protein()
+        .unwrap();
+    let structure = projected.into_structure();
+    let chain = protein_chain(&structure, 0).unwrap();
+    assert_eq!(chain.residues().len(), 1);
+    assert_eq!(chain.residues().next().unwrap().id(), BioResidueId::new(0));
+    assert_eq!(chain.atoms().len(), 0);
+    assert_eq!(chain.residues().next().unwrap().atoms().len(), 0);
+    assert_eq!(protein_atoms(&structure).len(), 0);
 }
 
 #[test]
@@ -297,7 +444,7 @@ fn protein_projection_rebuilds_dense_hierarchy_and_retains_empty_residues() {
 
     assert_eq!((protein.num_models(), protein.num_chains()), (2, 2));
     assert_eq!((protein.num_residues(), protein.num_atoms()), (3, 1));
-    let chains = protein.chains();
+    let chains = protein.chains().collect::<Vec<_>>();
     assert_eq!(
         chains
             .iter()
@@ -313,9 +460,9 @@ fn protein_projection_rebuilds_dense_hierarchy_and_retains_empty_residues() {
     assert_eq!(chains[0].residues().len(), 2);
     assert_eq!(chains[0].atoms().len(), 1);
     assert_eq!(chains[1].residues().len(), 1);
-    assert!(chains[1].atoms().is_empty());
+    assert_eq!(chains[1].atoms().len(), 0);
 
-    let residues = protein.residues();
+    let residues = protein.residues().collect::<Vec<_>>();
     assert_eq!(
         residues
             .iter()
@@ -329,7 +476,10 @@ fn protein_projection_rebuilds_dense_hierarchy_and_retains_empty_residues() {
     assert_eq!(residues[0].row().atom_span(), span(0, 1));
     assert_eq!(residues[1].row().atom_span(), span(1, 0));
     assert_eq!(residues[2].row().atom_span(), span(1, 0));
-    assert_eq!(protein.atoms()[0].row().residue_id(), BioResidueId::new(0));
+    assert_eq!(
+        protein.atoms().next().unwrap().row().residue_id(),
+        BioResidueId::new(0)
+    );
 }
 
 #[test]
@@ -357,7 +507,7 @@ fn protein_projection_preserves_atom_state_altloc_sources_and_coordinate_bits() 
         [4.0, 5.0, 6.0],
     ]);
     let protein = structure(parts).protein().unwrap();
-    let atoms = protein.atoms();
+    let atoms = protein.atoms().collect::<Vec<_>>();
     assert_eq!(atoms.len(), 3);
     assert_eq!(atoms[0].id(), BioAtomId::new(0));
     assert_eq!(atoms[0].name().as_str(), " CA ");
@@ -477,9 +627,12 @@ fn protein_projection_preserves_isotope_state_through_dense_atom_and_residue_rem
     assert_eq!(source, source_before);
     assert_eq!(protein.num_residues(), 1);
     assert_eq!(protein.num_atoms(), 2);
-    assert_eq!(protein.residues()[0].id(), BioResidueId::new(0));
+    assert_eq!(
+        protein.residues().next().unwrap().id(),
+        BioResidueId::new(0)
+    );
 
-    let atoms = protein.atoms();
+    let atoms = protein.atoms().collect::<Vec<_>>();
     assert_eq!(atoms[0].id(), BioAtomId::new(0));
     assert_eq!(atoms[1].id(), BioAtomId::new(1));
     assert_eq!(atoms[0].row().residue_id(), BioResidueId::new(0));
@@ -539,7 +692,7 @@ fn protein_projection_remaps_entities_and_preserves_auth_label_distinctions() {
     let source = structure(parts.clone());
     let protein = source.protein().unwrap();
     let chain = protein.chain(0).unwrap();
-    let residue = chain.residues()[0];
+    let residue = chain.residues().next().unwrap();
     assert_eq!(chain.row().entity_id(), Some(BioEntityId::new(0)));
     assert_eq!(residue.row().entity_id(), Some(BioEntityId::new(0)));
     assert_eq!(chain.source().auth_chain_id().unwrap().as_str(), "AUTH");
@@ -633,10 +786,13 @@ fn protein_read_only_views_cover_counts_indices_parents_rows_and_residue_info() 
     assert!(protein.chain(1).is_none());
 
     let chain = protein.chain(0).unwrap();
-    let chain_again = protein.chains()[0];
+    let chain_again = protein.chains().next().unwrap();
     assert!(std::ptr::eq(chain.row(), chain_again.row()));
-    let residue = protein.residues()[0];
-    assert!(std::ptr::eq(residue.row(), chain.residues()[0].row()));
+    let residue = protein.residues().next().unwrap();
+    assert!(std::ptr::eq(
+        residue.row(),
+        chain.residues().next().unwrap().row()
+    ));
     assert!(std::ptr::eq(residue.chain().row(), chain.row()));
     assert_eq!(residue.name().as_str(), "ALA");
     assert_eq!(residue.kind(), ResidueKind::AminoAcid);
@@ -646,8 +802,11 @@ fn protein_read_only_views_cover_counts_indices_parents_rows_and_residue_info() 
     assert_eq!(residue.fasta_code(), 'A');
     assert!(residue.is_standard());
 
-    let atom = protein.atoms()[0];
-    assert!(std::ptr::eq(atom.row(), residue.atoms()[0].row()));
+    let atom = protein.atoms().next().unwrap();
+    assert!(std::ptr::eq(
+        atom.row(),
+        residue.atoms().next().unwrap().row()
+    ));
     assert!(std::ptr::eq(atom.residue().row(), residue.row()));
     assert_eq!(atom.position(), [7.0, 8.0, 9.0]);
 }

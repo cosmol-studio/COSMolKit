@@ -1,7 +1,11 @@
-use super::registry::{Input, Operation, Record, Value, Width};
+use super::registry::{FingerprintValue, Input, Operation, Record, Value, Width};
 use cosmolkit::{SparseCountFingerprint, SparseCountFingerprint32};
 
 pub fn run(input: &Input) -> Result<Record, String> {
+    let original = input;
+    let Input::Fingerprint(input) = input else {
+        return crate::molecular::run(input);
+    };
     macro_rules! execute {
         ($ty:ty, $key:ty) => {{
             let build = |entries: &[(u64, i32)]| -> Result<$ty, String> {
@@ -27,12 +31,15 @@ pub fn run(input: &Input) -> Result<Record, String> {
             let result = match input.operation {
                 Operation::FuzzyAnd => left.fuzzy_and(&right),
                 Operation::FuzzyOr => left.fuzzy_or(&right),
+                Operation::Molecular(_) => {
+                    return Err("molecular operation in fingerprint input".into());
+                }
             }
             .map_err(|e| e.to_string())?;
             if (left, right) != before {
                 return Err("operands changed".into());
             }
-            Value {
+            FingerprintValue {
                 length: result.length() as u64,
                 entries: result
                     .nonzero_elements()
@@ -47,7 +54,7 @@ pub fn run(input: &Input) -> Result<Record, String> {
         Width::U64 => execute!(SparseCountFingerprint, u64),
     };
     Ok(Record {
-        input: input.clone(),
-        output,
+        input: original.clone(),
+        output: Value::Fingerprint(output),
     })
 }

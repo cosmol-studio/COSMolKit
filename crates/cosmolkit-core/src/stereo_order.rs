@@ -4,10 +4,10 @@
 //! stereo, mutate topology, or accept a live molecule/runtime capability.
 
 use cosmolkit_model::{
-    AtomId, Bond, BondId, MappingValidationError, TopologyBlock, TopologyMapping,
-    TopologyValidationError,
+    Atom, AtomId, Bond, BondId, BondValueError, MappingValidationError, TopologyBlock,
+    TopologyMapping, TopologyValidationError,
 };
-use cosmolkit_types::{BondOrder, ChiralTag};
+use cosmolkit_types::{BondOrder, BondStereo, ChiralTag};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum TetrahedralLigand {
@@ -118,6 +118,176 @@ pub fn count_swaps_to_interconvert<T: Copy + Eq>(
         swaps += 1;
     }
     Ok(swaps)
+}
+
+/// Invert a source-supported atom stereochemical tag and its permutation state.
+pub fn invert_atom_chirality(atom: &mut Atom) -> bool {
+    // BEGIN RDKIT CPP FUNCTION Atom::invertChirality tables and body
+    // RDKit✔️✔️: static const unsigned char octahedral_invert[31] = {
+    // RDKit✔️✔️:     0,   //  0 -> 0
+    // RDKit✔️✔️:     2,   //  1 -> 2
+    // RDKit✔️✔️:     1,   //  2 -> 1
+    // RDKit✔️✔️:     16,  //  3 -> 16
+    // RDKit✔️✔️:     14,  //  4 -> 14
+    // RDKit✔️✔️:     15,  //  5 -> 15
+    // RDKit✔️✔️:     18,  //  6 -> 18
+    // RDKit✔️✔️:     17,  //  7 -> 17
+    // RDKit✔️✔️:     10,  //  8 -> 10
+    // RDKit✔️✔️:     11,  //  9 -> 11
+    // RDKit✔️✔️:     8,   // 10 -> 8
+    // RDKit✔️✔️:     9,   // 11 -> 9
+    // RDKit✔️✔️:     13,  // 12 -> 13
+    // RDKit✔️✔️:     12,  // 13 -> 12
+    // RDKit✔️✔️:     4,   // 14 -> 4
+    // RDKit✔️✔️:     5,   // 15 -> 5
+    // RDKit✔️✔️:     3,   // 16 -> 3
+    // RDKit✔️✔️:     7,   // 17 -> 7
+    // RDKit✔️✔️:     6,   // 18 -> 6
+    // RDKit✔️✔️:     24,  // 19 -> 24
+    // RDKit✔️✔️:     23,  // 20 -> 23
+    // RDKit✔️✔️:     22,  // 21 -> 22
+    // RDKit✔️✔️:     21,  // 22 -> 21
+    // RDKit✔️✔️:     20,  // 23 -> 20
+    // RDKit✔️✔️:     19,  // 24 -> 19
+    // RDKit✔️✔️:     30,  // 25 -> 30
+    // RDKit✔️✔️:     29,  // 26 -> 29
+    // RDKit✔️✔️:     28,  // 27 -> 28
+    // RDKit✔️✔️:     27,  // 28 -> 27
+    // RDKit✔️✔️:     26,  // 29 -> 26
+    // RDKit✔️✔️:     25   // 30 -> 25
+    // RDKit✔️✔️: };
+    // RDKit✔️✔️:
+    // RDKit✔️✔️: static const unsigned char trigonalbipyramidal_invert[21] = {
+    // RDKit✔️✔️:     0,   //  0 -> 0
+    // RDKit✔️✔️:     2,   //  1 -> 2
+    // RDKit✔️✔️:     1,   //  2 -> 1
+    // RDKit✔️✔️:     4,   //  3 -> 4
+    // RDKit✔️✔️:     3,   //  4 -> 3
+    // RDKit✔️✔️:     6,   //  5 -> 6
+    // RDKit✔️✔️:     5,   //  6 -> 5
+    // RDKit✔️✔️:     8,   //  7 -> 8
+    // RDKit✔️✔️:     7,   //  8 -> 7
+    // RDKit✔️✔️:     11,  //  9 -> 11
+    // RDKit✔️✔️:     12,  // 10 -> 12
+    // RDKit✔️✔️:     9,   // 11 -> 9
+    // RDKit✔️✔️:     10,  // 12 -> 10
+    // RDKit✔️✔️:     14,  // 13 -> 14
+    // RDKit✔️✔️:     13,  // 14 -> 13
+    // RDKit✔️✔️:     20,  // 15 -> 20
+    // RDKit✔️✔️:     19,  // 16 -> 19
+    // RDKit✔️✔️:     18,  // 17 -> 28
+    // RDKit✔️✔️:     17,  // 18 -> 17
+    // RDKit✔️✔️:     16,  // 19 -> 16
+    // RDKit✔️✔️:     15   // 20 -> 15
+    // RDKit✔️✔️: };
+    // RDKit✔️✔️: bool Atom::invertChirality() {
+    // RDKit✔️✔️:   unsigned int perm;
+    // RDKit✔️✔️:   switch (getChiralTag()) {
+    // RDKit✔️✔️:     case CHI_TETRAHEDRAL_CW:
+    // RDKit✔️✔️:       setChiralTag(CHI_TETRAHEDRAL_CCW);
+    // RDKit✔️✔️:       return true;
+    // RDKit✔️✔️:     case CHI_TETRAHEDRAL_CCW:
+    // RDKit✔️✔️:       setChiralTag(CHI_TETRAHEDRAL_CW);
+    // RDKit✔️✔️:       return true;
+    // RDKit✔️✔️:     case CHI_TETRAHEDRAL:
+    // RDKit✔️✔️:       if (getPropIfPresent(common_properties::_chiralPermutation, perm)) {
+    // RDKit✔️✔️:         if (perm == 1) {
+    // RDKit✔️✔️:           perm = 2;
+    // RDKit✔️✔️:         } else if (perm == 2) {
+    // RDKit✔️✔️:           perm = 1;
+    // RDKit✔️✔️:         } else {
+    // RDKit✔️✔️:           perm = 0;
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:         setProp(common_properties::_chiralPermutation, perm);
+    // RDKit✔️✔️:         return perm != 0;
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:       break;
+    // RDKit✔️✔️:     case CHI_TRIGONALBIPYRAMIDAL:
+    // RDKit✔️✔️:       if (getPropIfPresent(common_properties::_chiralPermutation, perm)) {
+    // RDKit✔️✔️:         perm = (perm <= 20) ? trigonalbipyramidal_invert[perm] : 0;
+    // RDKit✔️✔️:         setProp(common_properties::_chiralPermutation, perm);
+    // RDKit✔️✔️:         return perm != 0;
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:       break;
+    // RDKit✔️✔️:     case CHI_OCTAHEDRAL:
+    // RDKit✔️✔️:       if (getPropIfPresent(common_properties::_chiralPermutation, perm)) {
+    // RDKit✔️✔️:         perm = (perm <= 30) ? octahedral_invert[perm] : 0;
+    // RDKit✔️✔️:         setProp(common_properties::_chiralPermutation, perm);
+    // RDKit✔️✔️:         return perm != 0;
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:       break;
+    // RDKit✔️✔️:     default:
+    // RDKit✔️✔️:       break;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   return false;
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION Atom::invertChirality tables and body
+    const OCTAHEDRAL_INVERT: [u32; 31] = [
+        0, 2, 1, 16, 14, 15, 18, 17, 10, 11, 8, 9, 13, 12, 4, 5, 3, 7, 6, 24, 23, 22, 21, 20, 19,
+        30, 29, 28, 27, 26, 25,
+    ];
+    const TRIGONAL_BIPYRAMIDAL_INVERT: [u32; 21] = [
+        0, 2, 1, 4, 3, 6, 5, 8, 7, 11, 12, 9, 10, 14, 13, 20, 19, 18, 17, 16, 15,
+    ];
+    match atom.chiral_tag() {
+        ChiralTag::TetrahedralCw => {
+            atom.set_chiral_tag(ChiralTag::TetrahedralCcw);
+            true
+        }
+        ChiralTag::TetrahedralCcw => {
+            atom.set_chiral_tag(ChiralTag::TetrahedralCw);
+            true
+        }
+        ChiralTag::Tetrahedral => invert_chiral_permutation(atom, &[0, 2, 1]),
+        ChiralTag::TrigonalBipyramidal => {
+            invert_chiral_permutation(atom, &TRIGONAL_BIPYRAMIDAL_INVERT)
+        }
+        ChiralTag::Octahedral => invert_chiral_permutation(atom, &OCTAHEDRAL_INVERT),
+        _ => false,
+    }
+}
+
+fn invert_chiral_permutation(atom: &mut Atom, table: &[u32]) -> bool {
+    let Some(permutation) = atom.chiral_permutation() else {
+        return false;
+    };
+    let inverted = table.get(permutation as usize).copied().unwrap_or(0);
+    atom.set_chiral_permutation(Some(inverted));
+    inverted != 0
+}
+
+/// Invert atrop stereochemistry on a bond while preserving all other bond state.
+pub fn invert_bond_chirality(bond: &mut Bond) -> Result<bool, BondValueError> {
+    // BEGIN RDKIT CPP FUNCTION Bond::invertChirality
+    // RDKit✔️✔️: bool Bond::invertChirality() {
+    // RDKit✔️✔️:   switch (getStereo()) {
+    // RDKit✔️✔️:     case STEREOATROPCW:
+    // RDKit✔️✔️:       setStereo(STEREOATROPCCW);
+    // RDKit✔️✔️:       return true;
+    // RDKit✔️✔️:     case STEREOATROPCCW:
+    // RDKit✔️✔️:       setStereo(STEREOATROPCW);
+    // RDKit✔️✔️:       return true;
+    // RDKit✔️✔️:     default:
+    // RDKit✔️✔️:       break;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   return false;
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION Bond::invertChirality
+    // Behavior review: only the two source-supported atrop states change; every
+    // other stereo state and all unrelated bond fields remain untouched.
+    // Complexity review: one enum match and one typed setter call, with no
+    // allocation or topology scan, preserves the source constant-time path.
+    match bond.stereo() {
+        BondStereo::AtropCw => {
+            bond.set_stereo(BondStereo::AtropCcw)?;
+            Ok(true)
+        }
+        BondStereo::AtropCcw => {
+            bond.set_stereo(BondStereo::AtropCw)?;
+            Ok(true)
+        }
+        _ => Ok(false),
+    }
 }
 
 pub fn invert_tetrahedral_tag(tag: ChiralTag) -> Result<ChiralTag, StereoOrderError> {
@@ -427,4 +597,216 @@ fn validate_bond_ranges(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod stereo_inversion_tests {
+    use super::{invert_atom_chirality, invert_bond_chirality};
+    use cosmolkit_model::{Atom, AtomId, AtomSpec, Bond, BondId, BondSpec};
+    use cosmolkit_types::{BondDirection, BondOrder, BondStereo, ChiralTag, Element};
+
+    fn atom(tag: ChiralTag, permutation: Option<u32>) -> Atom {
+        let spec = AtomSpec::new(Element::C)
+            .with_formal_charge(-1)
+            .with_explicit_hydrogens(2)
+            .with_unknown_stereo(true)
+            .with_chiral_tag(tag);
+        let mut atom = Atom::from_spec(AtomId::new(0), spec);
+        atom.set_chiral_permutation(permutation);
+        atom
+    }
+
+    fn assert_transition(
+        tag: ChiralTag,
+        permutation: Option<u32>,
+        expected_tag: ChiralTag,
+        expected_permutation: Option<u32>,
+        expected_changed: bool,
+    ) {
+        let mut actual = atom(tag, permutation);
+        let mut expected = actual.clone();
+        expected.set_chiral_tag(expected_tag);
+        expected.set_chiral_permutation(expected_permutation);
+
+        assert_eq!(invert_atom_chirality(&mut actual), expected_changed);
+        assert_eq!(actual, expected);
+    }
+
+    fn bond(stereo: BondStereo) -> Bond {
+        let spec = BondSpec::new(AtomId::new(3), AtomId::new(7), BondOrder::Double)
+            .with_aromatic(true)
+            .with_conjugated(true)
+            .with_direction(BondDirection::EndDownRight)
+            .with_stereo(stereo)
+            .with_stereo_atoms(AtomId::new(2), AtomId::new(8))
+            .with_unknown_stereo(true)
+            .with_prop("source_prop", "kept".to_owned())
+            .expect("valid ordinary bond property")
+            .with_computed_prop("computed_prop", "kept".to_owned())
+            .expect("valid computed bond property");
+        Bond::from_spec(BondId::new(5), spec)
+    }
+
+    #[test]
+    fn stereo_inversion_atom_tetrahedral_tags_and_permutation_edges() {
+        assert_transition(
+            ChiralTag::TetrahedralCw,
+            None,
+            ChiralTag::TetrahedralCcw,
+            None,
+            true,
+        );
+        assert_transition(
+            ChiralTag::TetrahedralCcw,
+            Some(17),
+            ChiralTag::TetrahedralCw,
+            Some(17),
+            true,
+        );
+        assert_transition(
+            ChiralTag::Tetrahedral,
+            None,
+            ChiralTag::Tetrahedral,
+            None,
+            false,
+        );
+        assert_transition(
+            ChiralTag::Tetrahedral,
+            Some(0),
+            ChiralTag::Tetrahedral,
+            Some(0),
+            false,
+        );
+        assert_transition(
+            ChiralTag::Tetrahedral,
+            Some(1),
+            ChiralTag::Tetrahedral,
+            Some(2),
+            true,
+        );
+        assert_transition(
+            ChiralTag::Tetrahedral,
+            Some(2),
+            ChiralTag::Tetrahedral,
+            Some(1),
+            true,
+        );
+        assert_transition(
+            ChiralTag::Tetrahedral,
+            Some(3),
+            ChiralTag::Tetrahedral,
+            Some(0),
+            false,
+        );
+        assert_transition(
+            ChiralTag::Tetrahedral,
+            Some(u32::MAX),
+            ChiralTag::Tetrahedral,
+            Some(0),
+            false,
+        );
+    }
+
+    #[test]
+    fn stereo_inversion_atom_trigonal_bipyramidal_table_rows() {
+        const EXPECTED: [u32; 21] = [
+            0, 2, 1, 4, 3, 6, 5, 8, 7, 11, 12, 9, 10, 14, 13, 20, 19, 18, 17, 16, 15,
+        ];
+
+        for (permutation, expected) in EXPECTED.into_iter().enumerate() {
+            assert_transition(
+                ChiralTag::TrigonalBipyramidal,
+                Some(permutation as u32),
+                ChiralTag::TrigonalBipyramidal,
+                Some(expected),
+                expected != 0,
+            );
+        }
+        for out_of_range in [21, u32::MAX] {
+            assert_transition(
+                ChiralTag::TrigonalBipyramidal,
+                Some(out_of_range),
+                ChiralTag::TrigonalBipyramidal,
+                Some(0),
+                false,
+            );
+        }
+    }
+
+    #[test]
+    fn stereo_inversion_atom_octahedral_table_rows() {
+        const EXPECTED: [u32; 31] = [
+            0, 2, 1, 16, 14, 15, 18, 17, 10, 11, 8, 9, 13, 12, 4, 5, 3, 7, 6, 24, 23, 22, 21, 20,
+            19, 30, 29, 28, 27, 26, 25,
+        ];
+
+        for (permutation, expected) in EXPECTED.into_iter().enumerate() {
+            assert_transition(
+                ChiralTag::Octahedral,
+                Some(permutation as u32),
+                ChiralTag::Octahedral,
+                Some(expected),
+                expected != 0,
+            );
+        }
+        for out_of_range in [31, u32::MAX] {
+            assert_transition(
+                ChiralTag::Octahedral,
+                Some(out_of_range),
+                ChiralTag::Octahedral,
+                Some(0),
+                false,
+            );
+        }
+    }
+
+    #[test]
+    fn stereo_inversion_atom_unsupported_tags_preserve_all_state() {
+        for tag in [
+            ChiralTag::Unspecified,
+            ChiralTag::Other,
+            ChiralTag::Allene,
+            ChiralTag::SquarePlanar,
+        ] {
+            assert_transition(tag, Some(19), tag, Some(19), false);
+        }
+    }
+
+    #[test]
+    fn stereo_inversion_bond_atrop_states_and_repeated_inversion() {
+        for (initial, inverted) in [
+            (BondStereo::AtropCw, BondStereo::AtropCcw),
+            (BondStereo::AtropCcw, BondStereo::AtropCw),
+        ] {
+            let mut actual = bond(initial);
+            let original = actual.clone();
+            let mut expected = original.clone();
+            expected
+                .set_stereo(inverted)
+                .expect("atrop state is valid without reference atoms");
+
+            assert_eq!(invert_bond_chirality(&mut actual), Ok(true));
+            assert_eq!(actual, expected);
+            assert_eq!(invert_bond_chirality(&mut actual), Ok(true));
+            assert_eq!(actual, original);
+        }
+    }
+
+    #[test]
+    fn stereo_inversion_bond_other_stereo_states_preserve_all_state() {
+        for stereo in [
+            BondStereo::None,
+            BondStereo::Any,
+            BondStereo::Z,
+            BondStereo::E,
+            BondStereo::Cis,
+            BondStereo::Trans,
+        ] {
+            let mut actual = bond(stereo);
+            let original = actual.clone();
+
+            assert_eq!(invert_bond_chirality(&mut actual), Ok(false));
+            assert_eq!(actual, original);
+        }
+    }
 }

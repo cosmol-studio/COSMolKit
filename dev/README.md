@@ -42,8 +42,10 @@ building does not authorize publishing.
 
 ## Domain designs and protocols
 
-- [BioStructure operation contracts](./bio_structure_operation_contract_design.md)
-- [BioStructure IO policy](./bio_structure_io_policy.md)
+- [Double formatting](./double_formatting_contract.md): approved Boost-compatible pure-Rust binary64 string conversion and its validation boundary.
+
+- [Coordinate storage and selection](./coordinate_selection_contract.md): approved separate 2D/3D storage and unique-or-explicit coordinate selection.
+- [BIO architecture and lightweight operations](./bio_architecture.md): public BioStructure/Protein, detached data, IO ownership and generated COW operations.
 - [wwPDB stress protocol](./wwpdb_macromolecular_stress_experiment.md)
 - [Tetrahedral stereo](./tetrahedral_stereo.md)
 - [MolAlign API design](./rdkit_molalign_api_design.md)

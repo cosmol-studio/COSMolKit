@@ -4,8 +4,8 @@ use cosmolkit_cx::{
 };
 use cosmolkit_model::{
     AdjacencyList, AtomId, BondDirection, BondId, BondOrder, BondStereo, ChiralTag, Conformer2D,
-    Conformer3D, CoordinateDimension, SGroupData, StereoGroup, StereoGroupKind, SubstanceGroup,
-    SubstanceGroupId, SubstanceGroupKind, TopologyBlock,
+    Conformer3D, CoordinateDimension, PropertyValue, SGroupConnection, SGroupData, StereoGroup,
+    StereoGroupKind, SubstanceGroup, SubstanceGroupId, SubstanceGroupKind, TopologyBlock,
 };
 
 use crate::{CXSMILES_BOND_IDX_PROP, SmilesParseError, SmilesRecord};
@@ -36,7 +36,11 @@ fn bond_with_smiles_index(topology: &TopologyBlock, index: usize) -> Option<Bond
         .iter()
         .find(|bond| {
             bond.prop(CXSMILES_BOND_IDX_PROP)
-                .and_then(|value| value.parse::<usize>().ok())
+                .and_then(|value| match value {
+                    PropertyValue::Int(value) => usize::try_from(*value).ok(),
+                    PropertyValue::String(value) => value.parse::<usize>().ok(),
+                    PropertyValue::Double(_) | PropertyValue::Bool(_) => None,
+                })
                 == Some(index)
         })
         .map(|bond| bond.id())

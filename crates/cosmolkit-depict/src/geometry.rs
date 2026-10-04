@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 use std::f64::consts::PI;
 
-use cosmolkit_model::TopologyBlock;
+use cosmolkit_model::{PropertyValue, TopologyBlock};
 
 pub(crate) const BOND_LEN: f64 = 1.5;
 pub(crate) type Point2 = [f64; 2];
@@ -15,6 +15,14 @@ pub(crate) enum GeometryError {
     AtomCountTooLarge { atom_count: usize },
     InvalidRankProperty { atom: usize, key: &'static str },
     NotEnoughNeighbors { atom: usize, count: usize },
+}
+
+fn unsigned_rank_property(value: &PropertyValue) -> Option<u32> {
+    match value {
+        PropertyValue::Int(value) => u32::try_from(*value).ok(),
+        PropertyValue::String(value) => value.parse().ok(),
+        PropertyValue::Double(_) | PropertyValue::Bool(_) => None,
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -312,20 +320,17 @@ pub(crate) fn rank_atoms_by_rank(
             atom_count: topology.atoms.len(),
         })?;
         if let Some(text) = value.prop("_CIPRank") {
-            rank = text
-                .parse()
-                .map_err(|_| GeometryError::InvalidRankProperty {
-                    atom,
-                    key: "_CIPRank",
-                })?;
+            rank = unsigned_rank_property(text).ok_or(GeometryError::InvalidRankProperty {
+                atom,
+                key: "_CIPRank",
+            })?;
         } else {
             if let Some(text) = value.prop("_ChiralAtomRank") {
-                let chiral_rank: u32 =
-                    text.parse()
-                        .map_err(|_| GeometryError::InvalidRankProperty {
-                            atom,
-                            key: "_ChiralAtomRank",
-                        })?;
+                let chiral_rank =
+                    unsigned_rank_property(text).ok_or(GeometryError::InvalidRankProperty {
+                        atom,
+                        key: "_ChiralAtomRank",
+                    })?;
                 rank = count.wrapping_sub(chiral_rank);
             }
             rank = rank.wrapping_add(count.wrapping_mul(atom_depict_rank(topology, atom)? as u32));

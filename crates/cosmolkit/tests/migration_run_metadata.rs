@@ -1,9 +1,9 @@
 use cosmolkit::{
-    BINDING_CONTRACT, BindingExposure, BindingItem, BindingOwner, BindingParity, BindingSupport,
-    BindingTypeRole, FeatureSpec, MOLECULE_OPS, OPERATION_INVARIANT_MATRIX, PARITY_MATRIX,
-    ParityPolicy, SUPPORT_MATRIX, StateModel, SupportStatus, UnsupportedFeatureError, feature_spec,
-    feature_specs, operation_invariant, operation_invariant_matrix, operation_parity,
-    operation_spec, operation_specs, parity_matrix, support_matrix, version,
+    BINDING_CONTRACT, BindingItem, BindingOwner, BindingTypeRole, FeatureSpec, FunctionStatus,
+    MOLECULE_OPS, OPERATION_INVARIANT_MATRIX, PARITY_MATRIX, ParityPolicy, SUPPORT_MATRIX,
+    StateModel, UnsupportedFeatureError, feature_spec, feature_specs, operation_invariant,
+    operation_invariant_matrix, operation_parity, operation_spec, operation_specs, parity_matrix,
+    support_matrix, version,
 };
 
 fn binding_entry(semantic_id: &str) -> &'static cosmolkit::BindingContractEntry {
@@ -15,79 +15,79 @@ fn binding_entry(semantic_id: &str) -> &'static cosmolkit::BindingContractEntry 
 
 fn expected_feature_names() -> Vec<&'static str> {
     let mut expected = Vec::new();
-    if cfg!(feature = "sanitize") {
-        expected.push("sanitize");
+    if cfg!(feature = "cap-sanitize") {
+        expected.push("cap-sanitize");
     }
-    if cfg!(feature = "kekulize") {
-        expected.push("kekulize");
+    if cfg!(feature = "cap-kekulize") {
+        expected.push("cap-kekulize");
     }
-    if cfg!(feature = "aromaticity") {
-        expected.push("aromaticity");
+    if cfg!(feature = "cap-aromaticity") {
+        expected.push("cap-aromaticity");
     }
-    if cfg!(feature = "valence") {
-        expected.push("valence");
+    if cfg!(feature = "cap-valence") {
+        expected.push("cap-valence");
     }
-    if cfg!(feature = "radicals") {
-        expected.push("radicals");
+    if cfg!(feature = "cap-radicals") {
+        expected.push("cap-radicals");
     }
-    if cfg!(feature = "rings") {
-        expected.push("rings");
+    if cfg!(feature = "cap-rings") {
+        expected.push("cap-rings");
     }
-    if cfg!(feature = "stereo") {
-        expected.push("stereo");
+    if cfg!(feature = "cap-stereo") {
+        expected.push("cap-stereo");
     }
-    if cfg!(feature = "hydrogens") {
-        expected.push("hydrogens");
+    if cfg!(feature = "cap-hydrogens") {
+        expected.push("cap-hydrogens");
     }
-    if cfg!(feature = "transforms") {
-        expected.push("transforms");
+    if cfg!(feature = "cap-transforms") {
+        expected.push("cap-transforms");
     }
-    if cfg!(feature = "depict") {
-        expected.push("depict");
+    if cfg!(feature = "cap-depict") {
+        expected.push("cap-depict");
     }
     expected
 }
 
 fn expected_operation_methods() -> Vec<&'static str> {
     let mut expected = Vec::new();
-    if cfg!(feature = "sanitize") {
+    if cfg!(feature = "cap-sanitize") {
         expected.push("sanitize_with_params");
     }
-    if cfg!(feature = "kekulize") {
+    if cfg!(feature = "cap-kekulize") {
         expected.push("with_kekulized_bonds_with_params");
     }
-    if cfg!(feature = "aromaticity") {
+    if cfg!(feature = "cap-aromaticity") {
         expected.push("with_assigned_aromaticity_with_params");
     }
-    if cfg!(feature = "valence") {
+    if cfg!(feature = "cap-valence") {
         expected.push("with_assigned_valence_with_params");
     }
-    if cfg!(feature = "radicals") {
+    if cfg!(feature = "cap-radicals") {
         expected.push("with_assigned_radicals");
     }
-    if cfg!(feature = "rings") {
+    if cfg!(feature = "cap-rings") {
         expected.extend([
             "with_assigned_rings",
             "with_assigned_ring_families_with_params",
         ]);
     }
-    if cfg!(feature = "stereo") {
+    if cfg!(feature = "cap-stereo") {
         expected.extend([
             "with_chiral_tags_from_structure_with_params",
             "potential_stereo_with_params",
             "with_cip_labels_with_options",
         ]);
     }
-    if cfg!(feature = "hydrogens") {
+    if cfg!(feature = "cap-hydrogens") {
         expected.extend([
             "with_hydrogens_with_params",
             "without_hydrogens_with_params",
         ]);
     }
-    if cfg!(feature = "transforms") {
+    if cfg!(feature = "cap-transforms") {
         expected.push("with_atom_position_with_params");
     }
-    if cfg!(feature = "depict") {
+    if cfg!(feature = "cap-depict") {
         expected.push("with_2d_coordinates_with_params");
     }
     expected
@@ -96,18 +96,21 @@ fn expected_operation_methods() -> Vec<&'static str> {
 #[test]
 fn status_and_parity_values_preserve_every_public_branch() {
     let statuses = [
-        SupportStatus::Supported,
-        SupportStatus::SupportedWithRdkitParity,
-        SupportStatus::PreservedOnly,
-        SupportStatus::Experimental,
-        SupportStatus::Unsupported { reason: "missing" },
+        FunctionStatus::Parity { reference: "RDKit" },
+        FunctionStatus::ParityWithDifferences {
+            reference: "Gemmi",
+            explanation: "Approved difference for the documented boundary",
+        },
+        FunctionStatus::Native,
+        FunctionStatus::Experimental,
     ];
-    assert_eq!(statuses.len(), 5);
-    assert!(
+    assert_eq!(statuses.len(), 4);
+    assert!(statuses.iter().enumerate().all(|(i, status)| {
         statuses
             .iter()
-            .all(|status| statuses.iter().any(|candidate| candidate == status))
-    );
+            .enumerate()
+            .all(|(j, candidate)| (candidate == status) == (i == j))
+    }));
 
     let policies = [
         ParityPolicy::NotApplicable,
@@ -118,22 +121,12 @@ fn status_and_parity_values_preserve_every_public_branch() {
     assert_ne!(policies[0], policies[1]);
     assert_ne!(policies[1], policies[2]);
 
-    static UNSUPPORTED: FeatureSpec = FeatureSpec {
-        name: "test-unsupported",
-        category: "test",
-        status: SupportStatus::Unsupported {
-            reason: "not implemented",
-        },
-        rdkit_parity_sensitive: false,
-        docs: "Test-only local value.",
+    let unsupported = UnsupportedFeatureError {
+        feature: "test-unsupported",
+        reason: "not implemented",
     };
-    assert_eq!(
-        UnsupportedFeatureError::from_spec(&UNSUPPORTED),
-        UnsupportedFeatureError {
-            feature: "test-unsupported",
-            reason: "not implemented",
-        }
-    );
+    assert_eq!(unsupported.feature, "test-unsupported");
+    assert_eq!(unsupported.reason, "not implemented");
 }
 
 #[test]
@@ -150,7 +143,7 @@ fn slice_accessors_return_the_exact_generated_tables() {
 #[test]
 fn metadata_binding_contract_rows_are_complete_and_read_only() {
     for (semantic_id, role) in [
-        ("types.SupportStatus", BindingTypeRole::Value),
+        ("types.FunctionStatus", BindingTypeRole::Value),
         ("types.ParityPolicy", BindingTypeRole::Value),
         ("types.FeatureSpec", BindingTypeRole::Value),
         ("types.MoleculeOpSpec", BindingTypeRole::Result),
@@ -162,16 +155,14 @@ fn metadata_binding_contract_rows_are_complete_and_read_only() {
         assert_eq!(entry.item, BindingItem::Type);
         assert_eq!(entry.owner, BindingOwner::Type);
         assert_eq!(entry.feature, "metadata");
-        assert_eq!(entry.exposure, BindingExposure::Public);
-        assert_eq!(entry.support, BindingSupport::Supported);
-        assert_eq!(entry.parity, BindingParity::NotApplicable);
+        assert_eq!(entry.status, FunctionStatus::Experimental);
         assert_eq!(entry.type_role, Some(role));
     }
 
     let iterator = binding_entry("types.FeatureSpecIter");
     assert_eq!(iterator.item, BindingItem::Type);
     assert_eq!(iterator.owner, BindingOwner::Type);
-    assert_eq!(iterator.exposure, BindingExposure::Registered);
+    assert_eq!(iterator.status, FunctionStatus::Experimental);
     assert_eq!(iterator.type_role, Some(BindingTypeRole::Result));
 
     for (semantic_id, python, javascript) in [
@@ -208,8 +199,7 @@ fn metadata_binding_contract_rows_are_complete_and_read_only() {
         assert_eq!(entry.python_name, python);
         assert_eq!(entry.javascript_name, javascript);
         assert_eq!(entry.feature, "metadata");
-        assert_eq!(entry.support, BindingSupport::Supported);
-        assert_eq!(entry.parity, BindingParity::NotApplicable);
+        assert_eq!(entry.status, FunctionStatus::Experimental);
         let callable = entry.callable.expect("module callable payload");
         assert_eq!(callable.state_model, StateModel::ReadOnly);
         assert_eq!(callable.operation_semantic_id, None);
@@ -236,7 +226,7 @@ fn generated_tables_have_one_source_and_queries_do_not_define_parallel_rows() {
     assert_eq!(registry_source.matches("molecule_ops!").count(), 1);
 }
 
-#[cfg(not(feature = "hydrogens"))]
+#[cfg(not(feature = "cap-hydrogens"))]
 #[test]
 fn default_configuration_exposes_empty_generated_metadata_and_exact_misses() {
     assert!(feature_specs().next().is_none());
@@ -245,7 +235,7 @@ fn default_configuration_exposes_empty_generated_metadata_and_exact_misses() {
     assert!(operation_invariant_matrix().is_empty());
     assert!(parity_matrix().is_empty());
 
-    for name in ["", "hydrogens", "Hydrogens", "unknown"] {
+    for name in ["", "cap-hydrogens", "Cap-hydrogens", "unknown"] {
         assert_eq!(feature_spec(name), None);
     }
     for method in ["", "with_hydrogens", "WITH_HYDROGENS", "unknown"] {
@@ -256,7 +246,7 @@ fn default_configuration_exposes_empty_generated_metadata_and_exact_misses() {
     assert_eq!(version(), env!("CARGO_PKG_VERSION"));
 }
 
-#[cfg(feature = "hydrogens")]
+#[cfg(feature = "cap-hydrogens")]
 #[test]
 fn hydrogens_configuration_preserves_order_profiles_and_pointer_identity() {
     let features = feature_specs().collect::<Vec<_>>();
@@ -267,10 +257,9 @@ fn hydrogens_configuration_preserves_order_profiles_and_pointer_identity() {
             .collect::<Vec<_>>(),
         expected_feature_names()
     );
-    let hydrogens = feature_spec("hydrogens").expect("hydrogens feature");
+    let hydrogens = feature_spec("cap-hydrogens").expect("hydrogens feature");
     assert_eq!(hydrogens.category, "chemistry");
-    assert!(hydrogens.rdkit_parity_sensitive);
-    assert_eq!(hydrogens.status, SupportStatus::SupportedWithRdkitParity);
+    assert!(!hydrogens.docs.is_empty());
 
     let operations = operation_specs();
     assert_eq!(
@@ -349,14 +338,14 @@ fn hydrogens_configuration_preserves_order_profiles_and_pointer_identity() {
     assert_eq!(parity_matrix()[remove_index].rdkit_version, None);
 }
 
-#[cfg(feature = "hydrogens")]
+#[cfg(feature = "cap-hydrogens")]
 #[test]
 fn hydrogens_lookups_are_exact_and_reject_unknown_or_wrong_case_names() {
     let generated_hydrogens = feature_specs()
-        .find(|feature| feature.name == "hydrogens")
+        .find(|feature| feature.name == "cap-hydrogens")
         .expect("feature iterator must contain hydrogens");
     assert!(core::ptr::eq(
-        feature_spec("hydrogens").expect("feature lookup"),
+        feature_spec("cap-hydrogens").expect("feature lookup"),
         generated_hydrogens
     ));
     for name in ["", "Hydrogens", "HYDROGENS", "unknown"] {

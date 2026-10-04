@@ -1316,7 +1316,11 @@ fn pol_atom_matcher(_mol: &SearchTarget<'_>, atom: usize, mut ignore: Vec<bool>)
     let Some(atom) = _mol.atoms().get(atom) else {
         return false;
     };
-    if atom.prop("atomLabel") == Some("Pol") {
+    if atom
+        .prop("atomLabel")
+        .and_then(|value| value.as_string().ok())
+        == Some("Pol")
+    {
         if let Some(bit) = ignore.get_mut(atom.id().index()) {
             *bit = true;
         }
@@ -1495,6 +1499,9 @@ pub(super) fn generic_atom_matcher(
             continue;
         }
         let Some(label) = atom.prop("_QueryAtomGenericLabel") else {
+            continue;
+        };
+        let Ok(label) = label.as_string() else {
             continue;
         };
         let matcher = generic_matcher_for_label(label);

@@ -1,6 +1,6 @@
 use cosmolkit::{
-    BINDING_CONTRACT, BindingExposure, BindingItem, BindingKind, BindingOwner, BindingParity,
-    BindingSupport, Molecule, MoleculeBuilder, StateModel,
+    BINDING_CONTRACT, BindingItem, BindingKind, BindingOwner, FunctionStatus, Molecule,
+    MoleculeBuilder, StateModel,
 };
 use cosmolkit_model::{
     Atom, AtomId, AtomSpec, Bond, BondId, BondOrder, BondSpec, Conformer2D, Conformer3D,
@@ -309,10 +309,10 @@ fn read_binding_rows_and_source_guard_expose_no_mutation_or_operation() {
         let callable = entry.callable.unwrap();
         entry.item == BindingItem::Callable
             && entry.owner == BindingOwner::Molecule
-            && entry.exposure == BindingExposure::Public
+            && entry.status == FunctionStatus::Experimental
             && entry.feature == "runtime"
-            && entry.support == BindingSupport::Supported
-            && entry.parity == BindingParity::NotApplicable
+            && entry.status == FunctionStatus::Experimental
+            && entry.status == FunctionStatus::Experimental
             && callable.kind == BindingKind::Instance
             && callable.state_model == StateModel::ReadOnly
             && callable.error_type.is_none()

@@ -2,6 +2,7 @@
 
 #[allow(dead_code)]
 mod binding;
+mod bio;
 #[allow(dead_code)]
 mod declaration;
 #[allow(dead_code)]
@@ -9,6 +10,7 @@ mod matrices;
 #[allow(dead_code)]
 mod projection;
 mod result;
+mod status;
 #[allow(dead_code)]
 mod wrappers;
 
@@ -45,12 +47,6 @@ pub fn mol_multi_op_body(attribute: TokenStream, item: TokenStream) -> TokenStre
     projection::expand_body(attribute, item, projection::BodyClass::MoleculeMultiple)
 }
 
-/// Injects a BioStructure operation context into an operation body.
-#[proc_macro_attribute]
-pub fn bio_op_body(attribute: TokenStream, item: TokenStream) -> TokenStream {
-    projection::expand_body(attribute, item, projection::BodyClass::Bio)
-}
-
 /// Declares Molecule operation specifications, matrices, and access markers.
 #[proc_macro]
 pub fn molecule_ops(input: TokenStream) -> TokenStream {
@@ -65,15 +61,10 @@ pub fn molecule_ops(input: TokenStream) -> TokenStream {
     }
 }
 
-/// Declares BioStructure operation specifications, matrices, and access markers.
+/// Generates lightweight BIO value/in-place pairs, field access and metadata.
 #[proc_macro]
 pub fn bio_structure_ops(input: TokenStream) -> TokenStream {
-    match syn::parse::<declaration::BioRegistry>(input).and_then(|registry| {
-        let markers = projection::expand_bio_access_markers(&registry)?;
-        let matrices = matrices::expand_bio_matrices(&registry)?;
-        let wrappers = wrappers::expand_bio_wrappers(&registry)?;
-        Ok(quote!(#markers #matrices #wrappers))
-    }) {
+    match syn::parse::<bio::Registry>(input).map(bio::expand) {
         Ok(output) => output.into(),
         Err(error) => error.to_compile_error().into(),
     }

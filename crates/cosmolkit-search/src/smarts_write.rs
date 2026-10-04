@@ -59,6 +59,8 @@ impl std::ops::BitOrAssign for QueryBoolFeatures {
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum SmartsWriteError {
+    #[error("SMARTS property string conversion failed: {0}")]
+    Property(#[from] cosmolkit_core::PropertyStringError),
     #[error("query graph is invalid: {0}")]
     InvalidGraph(String),
     #[error("SMARTS writer query-graph traversal is not available for this graph: {detail}")]
@@ -556,7 +558,10 @@ fn write_query_cx_coordinates(query: &QueryGraph, atom_order: &[AtomId]) -> Opti
     )
 }
 
-fn write_query_cx_atom_labels(query: &QueryGraph, atom_order: &[AtomId]) -> String {
+fn write_query_cx_atom_labels(
+    query: &QueryGraph,
+    atom_order: &[AtomId],
+) -> Result<String, SmartsWriteError> {
     // RDKit✔️✔️: if (atom->getPropIfPresent(common_properties::_QueryAtomGenericLabel,
     // RDKit✔️✔️:                            lbl)) {
     // RDKit✔️✔️:   res += quote_string(lbl + "_p");
@@ -579,49 +584,58 @@ fn write_query_cx_atom_labels(query: &QueryGraph, atom_order: &[AtomId]) -> Stri
         .iter()
         .map(|atom_id| {
             let atom = &query.atoms()[atom_id.index()];
-            if let Some(label) = atom.prop("_QueryAtomGenericLabel") {
+            // RDKit Dict::getValIfPresent(std::string&) delegates to
+            // rdvalue_tostring; keep the shared typed conversion owner.
+            let property = |name| {
+                atom.prop(name)
+                    .map(cosmolkit_core::property_value_to_string)
+                    .transpose()
+            };
+            Ok(if let Some(label) = property("_QueryAtomGenericLabel")? {
                 format!("{label}_p")
             } else if atom.atomic_number() == 0
-                && atom
-                    .prop("dummyLabel")
-                    .is_some_and(|label| PSEUDOATOMS.contains(&label))
+                && property("dummyLabel")?
+                    .is_some_and(|label| PSEUDOATOMS.contains(&label.as_str()))
             {
-                format!("{}_p", atom.prop("dummyLabel").unwrap_or_default())
+                format!("{}_p", property("dummyLabel")?.unwrap_or_default())
             } else if atom.atomic_number() == 0
-                && atom
-                    .prop("_fromAttachPoint")
-                    .is_some_and(|value| matches!(value, "1" | "2"))
+                && property("_fromAttachPoint")?
+                    .is_some_and(|value| matches!(value.as_str(), "1" | "2"))
             {
-                format!("_AP{}", atom.prop("_fromAttachPoint").unwrap_or_default())
+                format!("_AP{}", property("_fromAttachPoint")?.unwrap_or_default())
             } else {
-                atom.prop("atomLabel").unwrap_or_default().to_owned()
-            }
+                property("atomLabel")?.unwrap_or_default()
+            })
         })
-        .collect::<Vec<_>>();
+        .collect::<Result<Vec<_>, SmartsWriteError>>()?;
     if labels.iter().all(String::is_empty) {
-        String::new()
+        Ok(String::new())
     } else {
-        labels.join(";")
+        Ok(labels.join(";"))
     }
 }
 
-fn write_query_cx_atom_values(query: &QueryGraph, atom_order: &[AtomId]) -> String {
+fn write_query_cx_atom_values(
+    query: &QueryGraph,
+    atom_order: &[AtomId],
+) -> Result<String, SmartsWriteError> {
     // RDKit✔️✔️: if (mol.getAtomWithIdx(idx)->getPropIfPresent(prop, lbl)) {
     // RDKit✔️✔️:   res += quote_string(lbl);
     // RDKit✔️✔️: }
     let values = atom_order
         .iter()
         .map(|atom| {
-            query.atoms()[atom.index()]
+            Ok(query.atoms()[atom.index()]
                 .prop("molFileValue")
-                .unwrap_or_default()
-                .to_owned()
+                .map(cosmolkit_core::property_value_to_string)
+                .transpose()?
+                .unwrap_or_default())
         })
-        .collect::<Vec<_>>();
+        .collect::<Result<Vec<_>, SmartsWriteError>>()?;
     if values.iter().all(String::is_empty) {
-        String::new()
+        Ok(String::new())
     } else {
-        values.join(";")
+        Ok(values.join(";"))
     }
 }
 
@@ -676,7 +690,10 @@ fn quote_query_cx_atom_property(text: &str) -> String {
     text.replace('.', "&#46;")
 }
 
-fn write_query_cx_atom_properties(query: &QueryGraph, atom_order: &[AtomId]) -> String {
+fn write_query_cx_atom_properties(
+    query: &QueryGraph,
+    atom_order: &[AtomId],
+) -> Result<String, SmartsWriteError> {
     // RDKit✔️✔️: constexpr std::array<std::string_view, 7> skip = {
     // RDKit✔️✔️:     common_properties::atomLabel, common_properties::molFileValue,
     // RDKit✔️✔️:     common_properties::molParity, common_properties::molAtomMapNumber,
@@ -702,11 +719,11 @@ fn write_query_cx_atom_properties(query: &QueryGraph, atom_order: &[AtomId]) -> 
     for (position, atom_id) in atom_order.iter().copied().enumerate() {
         let atom = &query.atoms()[atom_id.index()];
         let attachment = atom.atomic_number() == 0 && atom.prop("_fromAttachPoint").is_some();
-        for (name, value) in atom.props() {
-            if name.starts_with('_') || atom.is_prop_computed(name) || SKIP.contains(&name.as_str())
-            {
+        for (name, value) in cosmolkit_model::ordered_query_atom_properties(atom) {
+            if name.starts_with('_') || atom.is_prop_computed(name) || SKIP.contains(&name) {
                 continue;
             }
+            let value = cosmolkit_core::property_value_to_string(value)?;
             if name == "dummyLabel"
                 && (attachment || value == "*" || PSEUDOATOMS.contains(&value.as_str()))
             {
@@ -715,14 +732,14 @@ fn write_query_cx_atom_properties(query: &QueryGraph, atom_order: &[AtomId]) -> 
             entries.push(format!(
                 "{position}.{}.{}",
                 quote_query_cx_atom_property(name),
-                quote_query_cx_atom_property(value)
+                quote_query_cx_atom_property(&value)
             ));
         }
     }
     if entries.is_empty() {
-        String::new()
+        Ok(String::new())
     } else {
-        format!("atomProp:{}", entries.join(":"))
+        Ok(format!("atomProp:{}", entries.join(":")))
     }
 }
 
@@ -758,10 +775,11 @@ fn write_query_cx_bond_config(
             _ => BondDirection::None,
         };
         if direction == BondDirection::None {
-            direction = match bond
-                .prop("_MolFileBondCfg")
-                .and_then(|value| value.parse::<u8>().ok())
-            {
+            direction = match bond.prop("_MolFileBondCfg").and_then(|value| match value {
+                cosmolkit_model::PropertyValue::Int(value) => u8::try_from(*value).ok(),
+                cosmolkit_model::PropertyValue::String(value) => value.parse::<u8>().ok(),
+                _ => None,
+            }) {
                 Some(1) => BondDirection::BeginWedge,
                 Some(2) => BondDirection::Unknown,
                 Some(3) => BondDirection::BeginDash,
@@ -1387,17 +1405,17 @@ fn write_query_cx_extensions(
         result.push_str(coordinates);
         result.push(')');
     }
-    let labels = write_query_cx_atom_labels(query, atom_order);
+    let labels = write_query_cx_atom_labels(query, atom_order)?;
     if !labels.is_empty() {
         append_query_cx_extension(format!("${labels}$"), &mut result);
     }
-    let values = write_query_cx_atom_values(query, atom_order);
+    let values = write_query_cx_atom_values(query, atom_order)?;
     if !values.is_empty() {
         append_query_cx_extension(format!("$_AV:{values}$"), &mut result);
     }
     append_query_cx_extension(write_query_cx_radicals(query, atom_order), &mut result);
     append_query_cx_extension(
-        write_query_cx_atom_properties(query, atom_order),
+        write_query_cx_atom_properties(query, atom_order)?,
         &mut result,
     );
     append_query_cx_extension(
@@ -1661,9 +1679,10 @@ pub fn query_atom_to_smarts(
         result.push_str(&map.to_string());
     }
     if let Some(symbol) = atom.prop("smilesSymbol") {
+        let symbol = cosmolkit_core::property_value_to_string(symbol)?;
         needs_brackets = true;
         result = if result.is_empty() {
-            symbol.to_owned()
+            symbol
         } else {
             format!("{symbol};{result}")
         };

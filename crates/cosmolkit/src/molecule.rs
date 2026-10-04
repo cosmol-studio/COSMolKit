@@ -19,11 +19,25 @@ use crate::ops::{DerivedState, OperationError};
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(crate) struct DerivedCacheBlock {
     valid: DerivedState,
-    #[cfg(any(feature = "valence", feature = "hydrogens"))]
+    #[cfg(any(
+        feature = "cap-valence",
+        feature = "cap-hydrogens",
+        feature = "cap-smiles",
+        feature = "cap-sanitize",
+        feature = "cap-descriptors"
+    ))]
     valence: Option<cosmolkit_core::ValenceAssignment>,
-    #[cfg(feature = "rings")]
+    #[cfg(any(
+        feature = "cap-rings",
+        feature = "cap-descriptors",
+        feature = "cap-smiles",
+        feature = "cap-sanitize",
+        feature = "cap-hydrogens",
+        feature = "cap-kekulize",
+        feature = "cap-aromaticity"
+    ))]
     rings: Option<cosmolkit_core::RingInfo>,
-    #[cfg(feature = "rings")]
+    #[cfg(feature = "cap-rings")]
     ring_families: Option<cosmolkit_core::RingInfo>,
 }
 
@@ -31,21 +45,56 @@ impl DerivedCacheBlock {
     fn is_empty(&self) -> bool {
         self.valid == DerivedState::NONE
             && {
-                #[cfg(any(feature = "valence", feature = "hydrogens"))]
+                #[cfg(any(
+                    feature = "cap-valence",
+                    feature = "cap-hydrogens",
+                    feature = "cap-smiles",
+                    feature = "cap-sanitize",
+                    feature = "cap-descriptors"
+                ))]
                 {
                     self.valence.is_none()
                 }
-                #[cfg(not(any(feature = "valence", feature = "hydrogens")))]
+                #[cfg(not(any(
+                    feature = "cap-valence",
+                    feature = "cap-hydrogens",
+                    feature = "cap-smiles",
+                    feature = "cap-sanitize",
+                    feature = "cap-descriptors"
+                )))]
                 {
                     true
                 }
             }
             && {
-                #[cfg(feature = "rings")]
+                #[cfg(any(
+                    feature = "cap-rings",
+                    feature = "cap-descriptors",
+                    feature = "cap-smiles",
+                    feature = "cap-sanitize",
+                    feature = "cap-hydrogens",
+                    feature = "cap-kekulize",
+                    feature = "cap-aromaticity"
+                ))]
                 {
-                    self.rings.is_none() && self.ring_families.is_none()
+                    #[cfg(feature = "cap-rings")]
+                    {
+                        self.rings.is_none() && self.ring_families.is_none()
+                    }
+                    #[cfg(not(feature = "cap-rings"))]
+                    {
+                        self.rings.is_none()
+                    }
                 }
-                #[cfg(not(feature = "rings"))]
+                #[cfg(not(any(
+                    feature = "cap-rings",
+                    feature = "cap-descriptors",
+                    feature = "cap-smiles",
+                    feature = "cap-sanitize",
+                    feature = "cap-hydrogens",
+                    feature = "cap-kekulize",
+                    feature = "cap-aromaticity"
+                )))]
                 {
                     true
                 }
@@ -62,21 +111,41 @@ impl DerivedCacheBlock {
 
     pub(crate) fn clear(&mut self, states: DerivedState) {
         self.valid = self.valid.difference(states);
-        #[cfg(any(feature = "valence", feature = "hydrogens"))]
+        #[cfg(any(
+            feature = "cap-valence",
+            feature = "cap-hydrogens",
+            feature = "cap-smiles",
+            feature = "cap-sanitize",
+            feature = "cap-descriptors"
+        ))]
         if states.intersects(DerivedState::VALENCE) {
             self.valence = None;
         }
-        #[cfg(feature = "rings")]
+        #[cfg(any(
+            feature = "cap-rings",
+            feature = "cap-descriptors",
+            feature = "cap-smiles",
+            feature = "cap-sanitize",
+            feature = "cap-hydrogens",
+            feature = "cap-kekulize",
+            feature = "cap-aromaticity"
+        ))]
         if states.intersects(DerivedState::RINGS) {
             self.rings = None;
         }
-        #[cfg(feature = "rings")]
+        #[cfg(feature = "cap-rings")]
         if states.intersects(DerivedState::RING_FAMILIES) {
             self.ring_families = None;
         }
     }
 
-    #[cfg(any(feature = "valence", feature = "hydrogens"))]
+    #[cfg(any(
+        feature = "cap-valence",
+        feature = "cap-hydrogens",
+        feature = "cap-smiles",
+        feature = "cap-sanitize",
+        feature = "cap-descriptors"
+    ))]
     pub(crate) fn install_valence_assignment(
         &mut self,
         assignment: cosmolkit_core::ValenceAssignment,
@@ -84,33 +153,85 @@ impl DerivedCacheBlock {
         self.valence = Some(assignment);
     }
 
-    #[cfg(any(feature = "valence", feature = "hydrogens"))]
+    #[cfg(any(
+        feature = "cap-valence",
+        feature = "cap-hydrogens",
+        feature = "cap-smiles",
+        feature = "cap-sanitize",
+        feature = "cap-descriptors"
+    ))]
     pub(crate) fn valence_assignment(&self) -> Option<&cosmolkit_core::ValenceAssignment> {
-        self.valence.as_ref()
+        if self.valid.contains(DerivedState::VALENCE) {
+            self.valence.as_ref()
+        } else {
+            None
+        }
     }
 
-    #[cfg(feature = "rings")]
+    #[cfg(any(
+        feature = "cap-rings",
+        feature = "cap-descriptors",
+        feature = "cap-smiles",
+        feature = "cap-sanitize",
+        feature = "cap-hydrogens",
+        feature = "cap-kekulize",
+        feature = "cap-aromaticity"
+    ))]
     pub(crate) fn install_ring_info(&mut self, rings: cosmolkit_core::RingInfo) {
         self.rings = Some(rings);
     }
 
-    #[cfg(feature = "rings")]
+    #[cfg(any(
+        feature = "cap-rings",
+        feature = "cap-descriptors",
+        feature = "cap-smiles",
+        feature = "cap-sanitize",
+        feature = "cap-hydrogens",
+        feature = "cap-kekulize",
+        feature = "cap-aromaticity"
+    ))]
     pub(crate) fn ring_info(&self) -> Option<&cosmolkit_core::RingInfo> {
         self.rings.as_ref()
     }
 
-    #[cfg(feature = "rings")]
+    /// Valid-gated ordinary-ring read: an installed payload without the
+    /// RINGS validity bit is invisible to consumers. Malformed pairs are
+    /// rejected by construction/commit validation instead of being served.
+    #[cfg(any(
+        feature = "cap-rings",
+        feature = "cap-descriptors",
+        feature = "cap-smiles",
+        feature = "cap-sanitize",
+        feature = "cap-hydrogens",
+        feature = "cap-kekulize",
+        feature = "cap-aromaticity"
+    ))]
+    pub(crate) fn valid_ring_info(&self) -> Option<&cosmolkit_core::RingInfo> {
+        if self.valid.contains(DerivedState::RINGS) {
+            self.rings.as_ref()
+        } else {
+            None
+        }
+    }
+
+    #[cfg(feature = "cap-rings")]
     pub(crate) fn install_ring_family_info(&mut self, families: cosmolkit_core::RingInfo) {
         self.ring_families = Some(families);
     }
 
-    #[cfg(feature = "rings")]
+    #[cfg(feature = "cap-rings")]
     pub(crate) fn ring_family_info(&self) -> Option<&cosmolkit_core::RingInfo> {
         self.ring_families.as_ref()
     }
 
     pub(crate) fn validate_for_atom_count(&self, atom_count: usize) -> Result<(), OperationError> {
-        #[cfg(any(feature = "valence", feature = "hydrogens"))]
+        #[cfg(any(
+            feature = "cap-valence",
+            feature = "cap-hydrogens",
+            feature = "cap-smiles",
+            feature = "cap-sanitize",
+            feature = "cap-descriptors"
+        ))]
         {
             let valid = self.valid.contains(DerivedState::VALENCE);
             match (valid, self.valence.as_ref()) {
@@ -157,7 +278,15 @@ impl DerivedCacheBlock {
         topology: &TopologyBlock,
     ) -> Result<(), OperationError> {
         self.validate_for_atom_count(topology.atoms.len())?;
-        #[cfg(feature = "rings")]
+        #[cfg(any(
+            feature = "cap-rings",
+            feature = "cap-descriptors",
+            feature = "cap-smiles",
+            feature = "cap-sanitize",
+            feature = "cap-hydrogens",
+            feature = "cap-kekulize",
+            feature = "cap-aromaticity"
+        ))]
         {
             let valid = self.valid.contains(DerivedState::RINGS);
             match (valid, self.rings.as_ref()) {
@@ -238,7 +367,9 @@ impl DerivedCacheBlock {
                     });
                 }
             }
-
+        }
+        #[cfg(feature = "cap-rings")]
+        {
             let valid = self.valid.contains(DerivedState::RING_FAMILIES);
             match (valid, self.ring_families.as_ref()) {
                 (false, None) => {}
@@ -475,6 +606,46 @@ impl Molecule {
         })
     }
 
+    /// Constructor-only transport of final detached chemistry state. Cache
+    /// authority remains here, not in the parser or algorithm owner.
+    #[cfg(feature = "cap-smiles")]
+    pub(super) fn from_smiles_parts_with_derived_state(
+        topology: TopologyBlock,
+        coordinates: CoordinateBlock,
+        properties: MoleculeProperties,
+        valence: Option<cosmolkit_core::ValenceAssignment>,
+        rings: Option<cosmolkit_core::RingInfo>,
+    ) -> Result<Self, OperationError> {
+        let mut state = MoleculeState::try_new(topology, coordinates, properties)?;
+        let mut cache = DerivedCacheBlock::default();
+        if let Some(assignment) = valence {
+            cache.install_valence_assignment(assignment);
+            cache.mark_valid(DerivedState::VALENCE);
+        }
+        // Moved final ring carrier: an initialized Some (including
+        // initialized-empty and Other quality) is stored and marked RINGS;
+        // None or an uninitialized reset clears ordinary storage and never
+        // marks valid or finds rings. No finder runs at this seam.
+        match rings {
+            Some(rings) if rings.is_initialized() => {
+                // Actual-site cfg(test) observation of the moved row
+                // buffers immediately before installation.
+                #[cfg(test)]
+                ring_install_probe::record(&rings);
+                cache.install_ring_info(rings);
+                cache.mark_valid(DerivedState::RINGS);
+            }
+            _ => {
+                cache.clear(DerivedState::RINGS);
+            }
+        }
+        cache.validate_for_topology(&state.topology)?;
+        state.derived_cache = Arc::new(cache);
+        Ok(Self {
+            state: Arc::new(state),
+        })
+    }
+
     /// Returns detached semantic blocks for checked construction of a new value.
     #[must_use]
     pub fn to_builder(&self) -> MoleculeBuilder {
@@ -610,17 +781,560 @@ impl Molecule {
     }
 }
 
+/// Actual-site cfg(test) history for constructor ring installs: append-only,
+/// never reset. Each entry records BOTH row-buffer addresses of the final
+/// carrier immediately before it is moved into the derived cache. The seam
+/// itself runs NO finder.
+#[cfg(all(test, feature = "cap-smiles"))]
+pub(crate) mod ring_install_probe {
+    use std::cell::RefCell;
+
+    thread_local! {
+        static INSTALLS: RefCell<Vec<(usize, usize)>> = const { RefCell::new(Vec::new()) };
+    }
+
+    pub(crate) fn record(rings: &cosmolkit_core::RingInfo) {
+        INSTALLS.with(|installs| {
+            installs.borrow_mut().push((
+                rings.atom_rings().as_ptr() as usize,
+                rings.bond_rings().as_ptr() as usize,
+            ));
+        });
+    }
+
+    pub(crate) fn len() -> usize {
+        INSTALLS.with(|installs| installs.borrow().len())
+    }
+
+    pub(crate) fn after(baseline: usize) -> Vec<(usize, usize)> {
+        INSTALLS.with(|installs| {
+            let installs = installs.borrow();
+            installs[baseline.min(installs.len())..].to_vec()
+        })
+    }
+}
+
 impl Default for Molecule {
     fn default() -> Self {
         Self::new()
     }
 }
 
-#[cfg(all(test, feature = "valence"))]
+/// C1: twenty real constructor calls installing the moved final ring
+/// carrier. RINGS validity is proven independent of VALENCE; the frozen
+/// final-quality table is checked against the LIVE cache; actual install
+/// row-buffer addresses are observed at the seam and preserved.
+#[cfg(all(test, feature = "cap-smiles"))]
+mod ring_live_constructor_tests {
+    use super::*;
+
+    #[test]
+    fn ring_live_constructor_state_move_and_valence_independence() {
+        let mut calls = 0usize;
+        for input in ["", "CC", "c1ccccc1", "[H]C1CCCCC1", "[2H]C1CCCCC1"] {
+            for (profile, sanitize, remove_hydrogens) in [
+                ("bothfalse", false, false),
+                ("remove-only", false, true),
+                ("sanitize-only", true, false),
+                ("bothtrue", true, true),
+            ] {
+                let label = format!("{profile}/{input:?}");
+                let params = cosmolkit_smiles::SmilesParseParams {
+                    sanitize,
+                    remove_hydrogens,
+                    ..cosmolkit_smiles::SmilesParseParams::default()
+                };
+                let probe_before = ring_install_probe::len();
+                let molecule = Molecule::from_smiles_with_params(input, &params)
+                    .unwrap_or_else(|error| panic!("{label}: {error:?}"));
+                calls += 1;
+                let installs = ring_install_probe::after(probe_before);
+
+                // Literal final topology counts and element/isotope identity.
+                let deuterium = input == "[2H]C1CCCCC1";
+                let (want_atoms, want_bonds, hydrogen_kept) = match input {
+                    "" => (0usize, 0usize, false),
+                    "CC" => (2, 1, false),
+                    "c1ccccc1" => (6, 6, false),
+                    _ if deuterium => (7, 7, true),
+                    _ => {
+                        if remove_hydrogens {
+                            (6, 6, false)
+                        } else {
+                            (7, 7, true)
+                        }
+                    }
+                };
+                assert_eq!(molecule.num_atoms(), want_atoms, "{label}: atoms");
+                assert_eq!(molecule.num_bonds(), want_bonds, "{label}: bonds");
+                match input {
+                    "" | "CC" => {}
+                    "c1ccccc1" => {
+                        for atom in molecule.atoms() {
+                            assert_eq!(
+                                atom.element(),
+                                cosmolkit_model::Element::C,
+                                "{label}: element"
+                            );
+                            assert!(atom.isotope().is_none(), "{label}: isotope");
+                        }
+                    }
+                    _ => {
+                        if hydrogen_kept {
+                            assert_eq!(
+                                molecule.atoms()[0].element(),
+                                cosmolkit_model::Element::H,
+                                "{label}: H element"
+                            );
+                            assert_eq!(
+                                molecule.atoms()[0].isotope(),
+                                deuterium.then_some(2),
+                                "{label}: H isotope"
+                            );
+                        }
+                        let carbon_start = usize::from(hydrogen_kept);
+                        for index in carbon_start..want_atoms {
+                            assert_eq!(
+                                molecule.atoms()[index].element(),
+                                cosmolkit_model::Element::C,
+                                "{label}: C element {index}"
+                            );
+                            assert!(
+                                molecule.atoms()[index].isotope().is_none(),
+                                "{label}: C isotope {index}"
+                            );
+                        }
+                    }
+                }
+
+                // Frozen final ring-quality table for the LIVE cache.
+                let cache = molecule.derived_cache_runtime();
+                let expected_quality = match profile {
+                    "bothfalse" => None,
+                    "remove-only" => Some(cosmolkit_core::RingFindType::Fast),
+                    "sanitize-only" => Some(cosmolkit_core::RingFindType::SymmSssr),
+                    _ if input.is_empty() => Some(cosmolkit_core::RingFindType::Fast),
+                    _ => Some(cosmolkit_core::RingFindType::SymmSssr),
+                };
+                assert_eq!(
+                    cache.valid_states().contains(DerivedState::RINGS),
+                    expected_quality.is_some(),
+                    "{label}: RINGS validity"
+                );
+                // RINGS is independent of the CK-VALENCE-001 sanitize gate.
+                assert_eq!(
+                    cache.valid_states().contains(DerivedState::VALENCE),
+                    sanitize,
+                    "{label}: VALENCE validity"
+                );
+                match expected_quality {
+                    None => {
+                        assert!(cache.valid_ring_info().is_none(), "{label}: absent");
+                        assert_eq!(installs.len(), 0, "{label}: no seam install");
+                        assert!(cache.ring_info().is_none(), "{label}: no storage");
+                    }
+                    Some(quality) => {
+                        let rings = cache.valid_ring_info().expect("{label}: installed");
+                        assert!(rings.is_initialized(), "{label}: initialized");
+                        assert_eq!(rings.find_type(), quality, "{label}: find type");
+                        assert_eq!(rings.atom_row_count(), want_atoms, "{label}: atom dims");
+                        assert_eq!(rings.bond_row_count(), want_bonds, "{label}: bond dims");
+                        // Exactly one moved install; no finder at the seam.
+                        assert_eq!(installs.len(), 1, "{label}: one seam install");
+                        if !rings.atom_rings().is_empty() {
+                            assert_eq!(
+                                rings.atom_rings().as_ptr() as usize,
+                                installs[0].0,
+                                "{label}: atom buffers moved"
+                            );
+                            assert_eq!(
+                                rings.bond_rings().as_ptr() as usize,
+                                installs[0].1,
+                                "{label}: bond buffers moved"
+                            );
+                        }
+                        // Ordered paired rows and every membership entry.
+                        let cycle = matches!(input, "c1ccccc1" | "[H]C1CCCCC1" | "[2H]C1CCCCC1");
+                        if cycle {
+                            assert_eq!(rings.atom_rings().len(), 1, "{label}: ring count");
+                            assert_eq!(rings.bond_rings().len(), 1, "{label}: bond rows");
+                            let start = usize::from(hydrogen_kept);
+                            let expected_ids: Vec<usize> = (start..start + 6).collect();
+                            let mut atoms_row: Vec<usize> = rings.atom_rings()[0]
+                                .iter()
+                                .map(|atom| atom.index())
+                                .collect();
+                            atoms_row.sort_unstable();
+                            let mut bonds_row: Vec<usize> = rings.bond_rings()[0]
+                                .iter()
+                                .map(|bond| bond.index())
+                                .collect();
+                            bonds_row.sort_unstable();
+                            assert_eq!(atoms_row, expected_ids, "{label}: cycle atoms");
+                            assert_eq!(bonds_row, expected_ids, "{label}: cycle bonds");
+                            for index in 0..want_atoms {
+                                let expected: &[usize] = if hydrogen_kept && index < start {
+                                    &[]
+                                } else {
+                                    &[0]
+                                };
+                                assert_eq!(
+                                    rings.atom_members(AtomId::new(index)),
+                                    expected,
+                                    "{label}: atom member {index}"
+                                );
+                            }
+                            for index in 0..want_bonds {
+                                let expected: &[usize] = if hydrogen_kept && index < start {
+                                    &[]
+                                } else {
+                                    &[0]
+                                };
+                                assert_eq!(
+                                    rings.bond_members(BondId::new(index)),
+                                    expected,
+                                    "{label}: bond member {index}"
+                                );
+                            }
+                        } else {
+                            assert!(rings.atom_rings().is_empty(), "{label}: rows");
+                            assert!(rings.bond_rings().is_empty(), "{label}: bond rows");
+                            for index in 0..want_atoms {
+                                assert_eq!(
+                                    rings.atom_members(AtomId::new(index)),
+                                    &[] as &[usize],
+                                    "{label}: empty member {index}"
+                                );
+                            }
+                            for index in 0..want_bonds {
+                                assert_eq!(
+                                    rings.bond_members(BondId::new(index)),
+                                    &[] as &[usize],
+                                    "{label}: empty bond member {index}"
+                                );
+                            }
+                        }
+                    }
+                }
+
+                // Ordinary computed metadata and coordinates are preserved
+                // by the transport seam.
+                if sanitize || remove_hydrogens {
+                    assert_eq!(
+                        molecule.properties().prop("_StereochemDone"),
+                        Some("1"),
+                        "{label}: done marker"
+                    );
+                }
+                assert!(molecule.coordinates_2d().is_none(), "{label}: 2d");
+                assert!(molecule.conformers_3d().is_empty(), "{label}: 3d");
+            }
+        }
+        assert_eq!(calls, 20, "exact census");
+    }
+}
+
+/// C6: one real registered-operation lifecycle over the live ring state,
+/// builder isolation, malformed-cache rejection at construction, and
+/// value/in-place failure semantics.
+#[cfg(all(
+    test,
+    feature = "cap-smiles",
+    feature = "cap-descriptors",
+    feature = "cap-rings",
+    feature = "cap-hydrogens",
+    feature = "cap-depict",
+    feature = "cap-kekulize"
+))]
+mod ring_live_lifecycle_tests {
+    use super::*;
+
+    fn ring_rows(rings: &cosmolkit_core::RingInfo) -> Vec<usize> {
+        let mut row: Vec<usize> = rings.atom_rings()[0].iter().map(|a| a.index()).collect();
+        row.sort_unstable();
+        row
+    }
+
+    #[test]
+    fn ring_live_lifecycle_operation_sequence() {
+        // Default constructor: Symm, count 1.
+        let molecule = Molecule::from_smiles("c1ccccc1").unwrap();
+        let peer = molecule.clone();
+        let peer_cache = peer.derived_cache_runtime().clone();
+        assert_eq!(molecule.num_rings().unwrap(), 1, "initial count");
+        {
+            let rings = molecule.derived_cache_runtime().valid_ring_info().unwrap();
+            assert_eq!(rings.find_type(), cosmolkit_core::RingFindType::SymmSssr);
+        }
+        assert_eq!(molecule.num_rings().unwrap(), 1, "repeat query");
+
+        // Coordinate value operation preserves rows/type and old IDs.
+        let with_coords = molecule.with_2d_coordinates().unwrap();
+        {
+            let rings = with_coords
+                .derived_cache_runtime()
+                .valid_ring_info()
+                .unwrap();
+            assert_eq!(rings.find_type(), cosmolkit_core::RingFindType::SymmSssr);
+            assert_eq!(ring_rows(rings), vec![0, 1, 2, 3, 4, 5], "old IDs");
+        }
+        assert!(with_coords.coordinates_2d().is_some(), "2d installed");
+
+        // AddHs preserves ring state through LeafAtomAppend.
+        let with_hs = with_coords.with_hydrogens().unwrap();
+        {
+            let rings = with_hs.derived_cache_runtime().valid_ring_info().unwrap();
+            assert_eq!(rings.find_type(), cosmolkit_core::RingFindType::SymmSssr);
+            assert_eq!(ring_rows(rings), vec![0, 1, 2, 3, 4, 5], "old IDs");
+            assert!(with_hs.num_atoms() > 6, "hydrogens appended");
+        }
+
+        // RemoveHs with sanitize=false leaves rings ABSENT: num_rings is
+        // the typed error, every other classifier the source-defined 0.
+        let removed = with_hs
+            .without_hydrogens_with_params(&cosmolkit_core::RemoveHsParams {
+                sanitize: false,
+                ..cosmolkit_core::RemoveHsParams::default()
+            })
+            .unwrap();
+        assert!(
+            matches!(
+                removed.num_rings(),
+                Err(crate::DescriptorReadError::MissingInitializedRings)
+            ),
+            "absent after sanitize=false removal"
+        );
+        assert_eq!(removed.num_heterocycles().unwrap(), 0);
+        assert_eq!(removed.num_aromatic_rings().unwrap(), 0);
+        assert_eq!(removed.num_saturated_rings().unwrap(), 0);
+        assert_eq!(removed.num_aliphatic_rings().unwrap(), 0);
+        assert_eq!(removed.num_aromatic_heterocycles().unwrap(), 0);
+        assert_eq!(removed.num_aromatic_carbocycles().unwrap(), 0);
+        assert_eq!(removed.num_aliphatic_heterocycles().unwrap(), 0);
+        assert_eq!(removed.num_aliphatic_carbocycles().unwrap(), 0);
+        assert_eq!(removed.num_saturated_heterocycles().unwrap(), 0);
+        assert_eq!(removed.num_saturated_carbocycles().unwrap(), 0);
+
+        // Explicit assignment installs Fast, count 1.
+        let assigned = removed.with_assigned_rings().unwrap();
+        {
+            let rings = assigned.derived_cache_runtime().valid_ring_info().unwrap();
+            assert_eq!(rings.find_type(), cosmolkit_core::RingFindType::Fast);
+            assert_eq!(assigned.num_rings().unwrap(), 1, "explicit Fast count");
+        }
+
+        // The peer never changed and never gained a writable cache view.
+        assert_eq!(peer.derived_cache_runtime(), &peer_cache);
+        assert_eq!(peer.num_rings().unwrap(), 1, "peer intact");
+        assert!(std::sync::Arc::ptr_eq(
+            &peer.derived_cache_arc_runtime(),
+            &molecule.derived_cache_arc_runtime()
+        ));
+    }
+
+    #[test]
+    fn ring_live_lifecycle_builder_starts_absent() {
+        let molecule = Molecule::from_smiles("c1ccccc1").unwrap();
+        let mut builder = molecule.to_builder();
+        let _ = builder.add_atom(cosmolkit_model::AtomSpec::new(cosmolkit_model::Element::C));
+        let rebuilt = builder.build().unwrap();
+        // The builder path starts from a fresh cache: no stale rows are
+        // ever transferred from the old molecule.
+        assert!(
+            matches!(
+                rebuilt.num_rings(),
+                Err(crate::DescriptorReadError::MissingInitializedRings)
+            ),
+            "builder starts absent"
+        );
+        assert_eq!(rebuilt.num_heterocycles().unwrap(), 0);
+        assert_eq!(molecule.num_rings().unwrap(), 1, "source untouched");
+    }
+
+    #[test]
+    fn ring_live_lifecycle_malformed_cache_rejected_at_construction() {
+        // Malformed paired rows / out-of-range IDs are UNREACHABLE through
+        // public or seam construction (RingInfo exposes no row-level API);
+        // the reachable malformed pair is the validity/storage mismatch,
+        // rejected by the EXISTING construction validation.
+        let molecule = Molecule::from_smiles("c1ccccc1").unwrap();
+        let topology = molecule.topology_arc_runtime();
+        let coordinates = molecule.coordinates_arc_runtime();
+        let properties = molecule.properties_arc_runtime();
+
+        // Validity bit without storage.
+        let mut bad = DerivedCacheBlock::default();
+        bad.mark_valid(DerivedState::RINGS);
+        assert!(
+            matches!(
+                Molecule::from_runtime_parts(
+                    topology.clone(),
+                    coordinates.clone(),
+                    properties.clone(),
+                    Arc::new(bad)
+                ),
+                Err(OperationError::InvalidDerivedCache {
+                    state: "rings",
+                    field: "assignment",
+                    ..
+                })
+            ),
+            "validity without storage rejected"
+        );
+
+        // Storage without the validity bit.
+        let mut stale = DerivedCacheBlock::default();
+        stale.install_ring_info(cosmolkit_core::RingInfo::new(
+            cosmolkit_core::RingFindType::SymmSssr,
+            6,
+            6,
+        ));
+        assert!(
+            matches!(
+                Molecule::from_runtime_parts(topology, coordinates, properties, Arc::new(stale)),
+                Err(OperationError::InvalidDerivedCache {
+                    state: "rings",
+                    field: "validity_bit",
+                    ..
+                })
+            ),
+            "storage without validity rejected"
+        );
+    }
+
+    #[test]
+    fn ring_live_lifecycle_failure_semantics() {
+        // Value failure preserves the source molecule exactly.
+        let base = Molecule::from_smiles("c1ccccc1").unwrap();
+        let molecule = Molecule::from_smiles_parts_with_derived_state(
+            base.topology().clone(),
+            base.coordinate_block_runtime().clone(),
+            base.properties().clone(),
+            None,
+            Some(cosmolkit_core::RingInfo::new(
+                cosmolkit_core::RingFindType::Fast,
+                6,
+                6,
+            )),
+        )
+        .unwrap();
+        let observer = molecule.clone();
+        let error = molecule
+            .with_kekulized_bonds_with_params(&crate::KekulizeParams {
+                mark_atoms_bonds: true,
+                canonical: false,
+                max_backtracks: crate::KekulizeParams::default().max_backtracks,
+            })
+            .unwrap_err();
+        assert!(
+            matches!(
+                &error,
+                crate::OperationError::Kekulize(
+                    cosmolkit_core::KekulizeError::AromaticAtomOutsideRing { .. }
+                )
+            ),
+            "got {error:?}"
+        );
+        assert_eq!(molecule, observer, "value failure preserves source");
+
+        // In-place failure is BASIC safety: the receiver stays whole and
+        // queryable, not rolled back.
+        let mut target = observer.clone();
+        let in_place = target.kekulize_bonds_with_params_(&crate::KekulizeParams {
+            mark_atoms_bonds: true,
+            canonical: false,
+            max_backtracks: crate::KekulizeParams::default().max_backtracks,
+        });
+        assert!(in_place.is_err(), "same typed failure in place");
+        assert_eq!(target.num_atoms(), 6, "storage complete");
+        assert_eq!(target.num_heterocycles().unwrap(), 0, "queryable");
+    }
+}
+
+#[cfg(all(test, feature = "cap-valence"))]
 mod valence_cache_tests {
     use super::*;
 
-    #[cfg(feature = "hydrogens")]
+    #[cfg(all(feature = "cap-smiles", feature = "cap-descriptors"))]
+    #[test]
+    fn valence_transport_smiles_flag_product_and_read_only_descriptors() {
+        // Fixed 2026.03.1 rows, including a falsely tagged radical center whose
+        // stereo cleanup removes its explicit H and refreshes its valence.
+        for (smiles, formula, mass) in [
+            ("CCO", "C2H6O", 46.069),
+            ("[C@H](C)C", "C3H7", 43.089),
+            ("C[C@H](F)C", "C3H7F", 62.087),
+            ("[13CH3][NH3+]", "CH6N+", 33.05835484),
+            ("c1cc[nH]c1", "C4H5N", 67.091),
+            ("[H]OC", "CH4O", 32.042),
+            ("", "", 0.0),
+        ] {
+            for sanitize in [false, true] {
+                for remove_hydrogens in [false, true] {
+                    let molecule = Molecule::from_smiles_with_params(
+                        smiles,
+                        &cosmolkit_smiles::SmilesParseParams {
+                            sanitize,
+                            remove_hydrogens,
+                            ..Default::default()
+                        },
+                    )
+                    .unwrap();
+                    let cache = molecule.derived_cache_arc_runtime();
+                    assert_eq!(
+                        cache.valid_states().contains(DerivedState::VALENCE),
+                        sanitize,
+                        "{smiles} sanitize={sanitize} remove_hydrogens={remove_hydrogens}"
+                    );
+                    if sanitize {
+                        let expected = cosmolkit_core::assign_valence_with_options_for_topology(
+                            molecule.topology(),
+                            cosmolkit_core::ValenceModel::RdkitLike,
+                            false,
+                        )
+                        .unwrap();
+                        assert_eq!(cache.valence_assignment(), Some(&expected), "{smiles}");
+                        assert_eq!(
+                            molecule.molecular_formula().unwrap(),
+                            formula,
+                            "{smiles} sanitize={sanitize} remove_hydrogens={remove_hydrogens} atoms={:?}",
+                            molecule.atoms()
+                        );
+                        assert!((molecule.molecular_weight().unwrap() - mass).abs() < 1e-9);
+                        let peer = molecule.clone();
+                        let topology = molecule.topology_arc_runtime();
+                        let coordinates = molecule.coordinates_arc_runtime();
+                        let properties = molecule.properties_arc_runtime();
+                        for only_heavy in [false, true] {
+                            molecule.molecular_weight_with_options(only_heavy).unwrap();
+                            molecule
+                                .exact_molecular_weight_with_options(only_heavy)
+                                .unwrap();
+                        }
+                        for separate in [false, true] {
+                            for abbreviate in [false, true] {
+                                molecule
+                                    .molecular_formula_with_options(separate, abbreviate)
+                                    .unwrap();
+                            }
+                        }
+                        assert!(Arc::ptr_eq(&cache, &molecule.derived_cache_arc_runtime()));
+                        assert!(Arc::ptr_eq(&cache, &peer.derived_cache_arc_runtime()));
+                        assert!(Arc::ptr_eq(&topology, &molecule.topology_arc_runtime()));
+                        assert!(Arc::ptr_eq(
+                            &coordinates,
+                            &molecule.coordinates_arc_runtime()
+                        ));
+                        assert!(Arc::ptr_eq(&properties, &molecule.properties_arc_runtime()));
+                    } else {
+                        assert!(cache.valence_assignment().is_none());
+                    }
+                }
+            }
+        }
+    }
+
+    #[cfg(feature = "cap-hydrogens")]
     #[test]
     fn removal_final_valence_obeys_sanitize_and_preserves_source_cache() {
         let topology = TopologyBlock::try_from_parts(

@@ -9,11 +9,12 @@ use cosmolkit_model::{
 use cosmolkit_types::{BondDirection, BondOrder, BondStereo, ChiralTag, Hybridization};
 
 use crate::{
-    AtropisomerError, CipRankError, DoubleBondStereoError, PotentialStereoError, RingInfo,
-    StereoOrderError, ValenceAssignment, ValenceError, assign_atom_cip_ranks_with_query_state,
-    assign_directional_double_bond_stereo, bond_affects_atom_chirality,
-    cleanup_atropisomer_stereo_groups, count_swaps_to_interconvert, invert_tetrahedral_tag,
-    is_atom_bridgehead_from_topology, refine_atom_cip_ranks_from_invariants_with_query_state,
+    AtropisomerError, CipRankError, DoubleBondStereoError, PotentialStereoError, RingFindingError,
+    RingInfo, StereoOrderError, ValenceAssignment, ValenceError,
+    assign_atom_cip_ranks_with_query_state, assign_directional_double_bond_stereo,
+    bond_affects_atom_chirality, cleanup_atropisomer_stereo_groups, count_swaps_to_interconvert,
+    invert_tetrahedral_tag, is_atom_bridgehead_from_topology,
+    refine_atom_cip_ranks_from_invariants_with_query_state,
 };
 
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
@@ -34,6 +35,8 @@ pub enum LegacyStereoError {
     BondValue(#[from] BondValueError),
     #[error(transparent)]
     PotentialStereo(#[from] PotentialStereoError),
+    #[error(transparent)]
+    RingFinding(#[from] RingFindingError),
     #[error(transparent)]
     Atropisomer(#[from] AtropisomerError),
 }
@@ -362,7 +365,10 @@ fn rerank_atoms(
     let mut invariants = Vec::with_capacity(topology.atoms.len());
     for (index, atom) in topology.atoms.iter().enumerate() {
         let mut invariant = i64::from(ranks[index]) * factor;
-        invariant += match atom.prop("_CIPCode") {
+        invariant += match atom
+            .prop("_CIPCode")
+            .and_then(|value| value.as_string().ok())
+        {
             Some("S") => 10,
             Some("R") => 20,
             _ => 0,
@@ -706,6 +712,26 @@ fn assign_legacy_stereochemistry_impl(
     // rank allocation, then bounded graph passes and only source-required rank
     // refinements; no eager whole-graph clone is introduced here.
     topology.validate()?;
+    // BEGIN RDKIT CPP FUNCTION legacyStereoPerception ring preparation
+    // RDKit✔️✔️:   // later we're going to need ring information, get it now if we don't
+    // RDKit✔️✔️:   // have it already:
+    // RDKit✔️✔️:   // NOTE, if called from the SMART code, the ring info will be DUMMY, and
+    // RDKit✔️✔️:   // contains no information
+    // RDKit✔️✔️:   if (!mol.getRingInfo()->isFindFastOrBetter()) {
+    // RDKit✔️✔️:     MolOps::fastFindRings(mol);
+    // RDKit✔️✔️:   }
+    // END RDKIT CPP FUNCTION legacyStereoPerception ring preparation
+    // A borrowed Fast-or-better cache is reused without allocation. The
+    // OtherOrUnknown/absent path invokes the existing full-topology core
+    // owner and keeps its result for every subsequent ring consumer; this
+    // adds only the source-required O(V+E) search on that branch.
+    let computed_rings;
+    let rings = if rings.is_find_fast_or_better() {
+        rings
+    } else {
+        computed_rings = crate::fast_find_rings(&topology)?;
+        &computed_rings
+    };
     for atom in &mut topology.atoms {
         if clean_it {
             atom.clear_prop("_CIPCode");
@@ -978,4 +1004,107 @@ fn assign_legacy_stereochemistry_impl(
     crate::structure_tags::cleanup_stereo_groups(&mut topology);
     topology.validate()?;
     Ok(topology)
+}
+
+#[cfg(test)]
+mod legacy_ring_prepass_tests {
+    use super::*;
+    use cosmolkit_model::{Atom, AtomSpec, Bond, BondId, BondSpec};
+    use cosmolkit_types::Element;
+
+    fn two_six_membered_rings() -> TopologyBlock {
+        let atoms = (0..12)
+            .map(|index| Atom::from_spec(AtomId::new(index), AtomSpec::new(Element::C)))
+            .collect();
+        let bonds = (0..12)
+            .map(|index| {
+                let base = if index < 6 { 0 } else { 6 };
+                let offset = index - base;
+                let next = base + (offset + 1) % 6;
+                let order = if index == 0 {
+                    BondOrder::Double
+                } else {
+                    BondOrder::Single
+                };
+                let mut spec = BondSpec::new(AtomId::new(index), AtomId::new(next), order);
+                if index == 0 {
+                    spec = spec.with_stereo(BondStereo::Any);
+                }
+                Bond::from_spec(BondId::new(index), spec)
+            })
+            .collect();
+        TopologyBlock::try_from_parts(atoms, bonds, Vec::new(), Vec::new())
+            .expect("two source-aligned six-membered cycles")
+    }
+
+    fn assign_with_rings(topology: &TopologyBlock, rings: &RingInfo) -> TopologyBlock {
+        let valence = crate::assign_valence_with_options_for_topology(
+            topology,
+            crate::ValenceModel::RdkitLike,
+            false,
+        )
+        .expect("non-strict valence for fixed ring topology");
+        assign_legacy_stereochemistry_with_flags(topology.clone(), &valence, rings, true, false)
+            .expect("pinned legacy clean=true possible=false profile")
+    }
+
+    #[test]
+    fn legacy_ring_prepass_recomputes_initialized_empty_other_or_unknown() {
+        let topology = two_six_membered_rings();
+        let before = topology.clone();
+        let rings = crate::ring_info_from_selected_rows(12, 12, &[], &[]).unwrap();
+        let rings_before = rings.clone();
+        assert!(rings.is_initialized());
+        assert!(!rings.is_find_fast_or_better());
+
+        let result = assign_with_rings(&topology, &rings);
+        // Pinned RDKit 2026.03.1 legacy AssignStereochemistry on
+        // C1=CCCCC1.C1CCCCC1 changes bond 0 STEREOANY to STEREONONE.
+        assert_eq!(result.bonds[0].stereo(), BondStereo::None);
+        assert_eq!(topology, before);
+        assert_eq!(rings, rings_before);
+    }
+
+    #[test]
+    fn legacy_ring_prepass_recomputes_nonempty_retained_other_or_unknown() {
+        let topology = two_six_membered_rings();
+        let source_rings = crate::fast_find_rings(&topology).unwrap();
+        assert_eq!(source_rings.num_rings(), 2);
+        let retained_index = source_rings
+            .atom_rings()
+            .iter()
+            .position(|row| row.iter().all(|atom| atom.index() >= 6))
+            .expect("second source ring exists");
+        let retained = crate::ring_info_from_selected_rows(
+            12,
+            12,
+            &[source_rings.atom_rings()[retained_index].clone()],
+            &[source_rings.bond_rings()[retained_index].clone()],
+        )
+        .unwrap();
+        let retained_before = retained.clone();
+        assert_eq!(retained.num_bond_rings(BondId::new(0)), 0);
+
+        let result = assign_with_rings(&topology, &retained);
+        assert_eq!(result.bonds[0].stereo(), BondStereo::None);
+        assert_eq!(
+            retained, retained_before,
+            "source retained rows are immutable"
+        );
+    }
+
+    #[test]
+    fn legacy_ring_prepass_reuses_fast_or_better_source_membership() {
+        let topology = two_six_membered_rings();
+        let before = topology.clone();
+        let rings = crate::fast_find_rings(&topology).unwrap();
+        let rings_before = rings.clone();
+        assert!(rings.is_find_fast_or_better());
+        assert_eq!(rings.num_rings(), 2);
+
+        let result = assign_with_rings(&topology, &rings);
+        assert_eq!(result.bonds[0].stereo(), BondStereo::None);
+        assert_eq!(topology, before);
+        assert_eq!(rings, rings_before);
+    }
 }

@@ -1,6 +1,11 @@
 use cosmolkit_model::{
     AtomId, Bond, BondDirection, BondId, BondOrder, BondSpec, BondStereo, BondValueError,
+    PropertyValue,
 };
+
+fn string_prop(value: Option<&PropertyValue>) -> Option<&str> {
+    value.and_then(|value| value.as_string().ok())
+}
 
 fn full_spec() -> BondSpec {
     BondSpec::new(AtomId::new(1), AtomId::new(3), BondOrder::Double)
@@ -52,7 +57,7 @@ fn bond_spec_covers_defaults_builders_validation_and_remapping() {
     assert_eq!(full.stereo(), BondStereo::Cis);
     assert_eq!(full.stereo_atoms(), Some([AtomId::new(0), AtomId::new(4)]));
     assert!(full.unknown_stereo());
-    assert_eq!(full.prop("ordinary"), Some("kept"));
+    assert_eq!(string_prop(full.prop("ordinary")), Some("kept"));
     assert!(full.is_prop_computed("computed"));
     assert_eq!(full.validate(), Ok(()));
 
@@ -83,7 +88,7 @@ fn bond_from_spec_preserves_facts_and_all_detached_mutators() {
     assert_eq!(bond.stereo(), BondStereo::Cis);
     assert_eq!(bond.stereo_atoms(), Some([AtomId::new(0), AtomId::new(4)]));
     assert!(bond.unknown_stereo());
-    assert_eq!(bond.prop("ordinary"), Some("kept"));
+    assert_eq!(string_prop(bond.prop("ordinary")), Some("kept"));
     assert!(bond.is_prop_computed("computed"));
     assert_eq!(bond.validate(), Ok(()));
 
@@ -174,8 +179,8 @@ fn checked_bond_properties_cover_empty_overwrite_membership_and_clear() {
         .unwrap()
         .with_prop("ordinary", "second")
         .unwrap();
-    assert_eq!(spec.prop("cache"), Some("second"));
-    assert_eq!(spec.prop("ordinary"), Some("second"));
+    assert_eq!(string_prop(spec.prop("cache")), Some("second"));
+    assert_eq!(string_prop(spec.prop("ordinary")), Some("second"));
     assert_eq!(spec.computed_prop_names().len(), 1);
 
     let mut bond = Bond::from_spec(BondId::new(0), spec);
@@ -200,6 +205,6 @@ fn checked_bond_properties_cover_empty_overwrite_membership_and_clear() {
     bond.set_computed_prop("temporary", "gone").unwrap();
     bond.clear_computed_props();
     assert_eq!(bond.prop("temporary"), None);
-    assert_eq!(bond.prop("ordinary"), Some("second"));
+    assert_eq!(string_prop(bond.prop("ordinary")), Some("second"));
     assert!(bond.computed_prop_names().is_empty());
 }

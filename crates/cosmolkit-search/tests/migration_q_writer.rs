@@ -12,6 +12,22 @@ use cosmolkit_search::{
 };
 use cosmolkit_types::{BondDirection, BondOrder, ChiralTag, Element};
 
+#[test]
+fn typed_query_properties_keep_source_order_and_string_projection() {
+    let mut atom = QueryAtom::new(AtomId::new(0), AtomSpec::new(Element::C));
+    atom.set_prop("z", 7_i32).unwrap();
+    atom.set_prop("a", -0.0_f64).unwrap();
+    atom.set_prop("flag", true).unwrap();
+    atom.set_prop("z", 9_i32).unwrap();
+    atom.set_prop("atomLabel", 12_i32).unwrap();
+    let query = QueryGraph::from_parts(vec![atom], vec![], BTreeMap::new(), vec![], vec![], vec![])
+        .unwrap();
+    assert_eq!(
+        query_graph_to_cx_smarts(&query, &Default::default()).unwrap(),
+        "[#6] |$12$,atomProp:0.z.9:0.a.-0:0.flag.1|"
+    );
+}
+
 fn write_atom_node(predicate: QueryNode<AtomQueryPredicate>) -> Result<String, SmartsWriteError> {
     write_atom_node_with_params(predicate, &SmartsWriteParams::default())
 }

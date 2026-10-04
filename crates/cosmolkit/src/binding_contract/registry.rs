@@ -4,334 +4,880 @@ use cosmolkit_macros::binding_contract;
 
 binding_contract! {
     pub static BINDING_CONTRACT = [
+        #[cfg(feature = "cap-smiles")]
+        {
+            semantic_id: "types.SmilesWriteParams", item: type, owner: type_,
+            rust: crate::SmilesWriteParams, python: "SmilesWriteParams", javascript: "SmilesWriteParams",
+            feature: "cap-smiles", status: experimental, role: parameter,
+        },
+        #[cfg(feature = "cap-smiles")]
+        {
+            semantic_id: "types.CxSmilesWriteParams", item: type, owner: type_,
+            rust: crate::CxSmilesWriteParams, python: "CxSmilesWriteParams", javascript: "CxSmilesWriteParams",
+            feature: "cap-smiles", status: experimental, role: parameter,
+        },
+        #[cfg(feature = "cap-smiles")]
+        {
+            semantic_id: "types.CxSmilesFields", item: type, owner: type_,
+            rust: crate::CxSmilesFields, python: "CxSmilesFields", javascript: "CxSmilesFields",
+            feature: "cap-smiles", status: experimental, role: parameter,
+        },
+        #[cfg(feature = "cap-smiles")]
+        {
+            semantic_id: "types.CxCoordinateSelection", item: type, owner: type_,
+            rust: crate::CxCoordinateSelection, python: "CxCoordinateSelection", javascript: "CxCoordinateSelection",
+            feature: "cap-smiles", status: experimental, role: parameter,
+        },
+        #[cfg(feature = "cap-smiles")]
+        {
+            semantic_id: "types.RandomSmilesWriteParams", item: type, owner: type_,
+            rust: crate::RandomSmilesWriteParams, python: "RandomSmilesWriteParams", javascript: "RandomSmilesWriteParams",
+            feature: "cap-smiles", status: experimental, role: parameter,
+        },
+        #[cfg(feature = "cap-smiles")]
+        {
+            semantic_id: "types.FragmentSmilesWriteParams", item: type, owner: type_,
+            rust: crate::FragmentSmilesWriteParams, python: "FragmentSmilesWriteParams", javascript: "FragmentSmilesWriteParams",
+            feature: "cap-smiles", status: experimental, role: parameter,
+        },
+        #[cfg(feature = "cap-smiles")]
+        {
+            semantic_id: "types.FragmentCxSmilesWriteParams", item: type, owner: type_,
+            rust: crate::FragmentCxSmilesWriteParams, python: "FragmentCxSmilesWriteParams", javascript: "FragmentCxSmilesWriteParams",
+            feature: "cap-smiles", status: experimental, role: parameter,
+        },
+        #[cfg(feature = "cap-smiles")]
+        {
+            semantic_id: "types.SmilesWriteError", item: type, owner: type_,
+            rust: crate::SmilesWriteError, python: "SmilesWriteError", javascript: "SmilesWriteError",
+            feature: "cap-smiles", status: experimental, role: error,
+        },
+        #[cfg(feature = "cap-smiles")]
+        {
+            semantic_id: "Molecule.to_smiles", item: callable, owner: molecule,
+            rust: crate::Molecule::to_smiles, python: "to_smiles", javascript: "toSmiles",
+            feature: "cap-smiles", status: experimental, kind: instance,
+            parameters: [],
+            output: String, error: crate::SmilesWriteError,
+            state: read_only, operation: none,
+            signature: for<'a> fn(&'a crate::Molecule) -> Result<String, crate::SmilesWriteError>,
+        },
+        #[cfg(feature = "cap-smiles")]
+        {
+            semantic_id: "Molecule.to_smiles_with_params", item: callable, owner: molecule,
+            rust: crate::Molecule::to_smiles_with_params, python: "to_smiles_with_params", javascript: "toSmilesWithParams",
+            feature: "cap-smiles", status: experimental, kind: instance,
+            parameters: [{ name: params, type: &crate::SmilesWriteParams, default: required }],
+            output: String, error: crate::SmilesWriteError,
+            state: read_only, operation: none,
+            signature: for<'a, 'b> fn(&'a crate::Molecule, &'b crate::SmilesWriteParams) -> Result<String, crate::SmilesWriteError>,
+        },
+        #[cfg(feature = "cap-smiles")]
+        {
+            semantic_id: "Molecule.to_cx_smiles", item: callable, owner: molecule,
+            rust: crate::Molecule::to_cx_smiles, python: "to_cx_smiles", javascript: "toCxSmiles",
+            feature: "cap-smiles", status: experimental, kind: instance,
+            parameters: [],
+            output: String, error: crate::SmilesWriteError,
+            state: read_only, operation: none,
+            signature: for<'a> fn(&'a crate::Molecule) -> Result<String, crate::SmilesWriteError>,
+        },
+        #[cfg(feature = "cap-smiles")]
+        {
+            semantic_id: "Molecule.to_cx_smiles_with_params", item: callable, owner: molecule,
+            rust: crate::Molecule::to_cx_smiles_with_params, python: "to_cx_smiles_with_params", javascript: "toCxSmilesWithParams",
+            feature: "cap-smiles", status: experimental, kind: instance,
+            parameters: [{ name: params, type: &crate::CxSmilesWriteParams, default: required }],
+            output: String, error: crate::SmilesWriteError,
+            state: read_only, operation: none,
+            signature: for<'a, 'b> fn(&'a crate::Molecule, &'b crate::CxSmilesWriteParams) -> Result<String, crate::SmilesWriteError>,
+        },
+        #[cfg(feature = "cap-smiles")]
+        {
+            semantic_id: "Molecule.to_fragment_smiles", item: callable, owner: molecule,
+            rust: crate::Molecule::to_fragment_smiles, python: "to_fragment_smiles", javascript: "toFragmentSmiles",
+            feature: "cap-smiles", status: experimental, kind: instance,
+            parameters: [{ name: atoms, type: &[crate::AtomId], default: required }],
+            output: String, error: crate::SmilesWriteError,
+            state: read_only, operation: none,
+            signature: for<'a, 'b> fn(&'a crate::Molecule, &'b [crate::AtomId]) -> Result<String, crate::SmilesWriteError>,
+        },
+        #[cfg(feature = "cap-smiles")]
+        {
+            semantic_id: "Molecule.to_fragment_smiles_with_params", item: callable, owner: molecule,
+            rust: crate::Molecule::to_fragment_smiles_with_params, python: "to_fragment_smiles_with_params", javascript: "toFragmentSmilesWithParams",
+            feature: "cap-smiles", status: experimental, kind: instance,
+            parameters: [{ name: params, type: &crate::FragmentSmilesWriteParams, default: required }],
+            output: String, error: crate::SmilesWriteError,
+            state: read_only, operation: none,
+            signature: for<'a, 'b> fn(&'a crate::Molecule, &'b crate::FragmentSmilesWriteParams) -> Result<String, crate::SmilesWriteError>,
+        },
+        #[cfg(feature = "cap-smiles")]
+        {
+            semantic_id: "Molecule.to_fragment_cx_smiles", item: callable, owner: molecule,
+            rust: crate::Molecule::to_fragment_cx_smiles, python: "to_fragment_cx_smiles", javascript: "toFragmentCxSmiles",
+            feature: "cap-smiles", status: experimental, kind: instance,
+            parameters: [{ name: atoms, type: &[crate::AtomId], default: required }],
+            output: String, error: crate::SmilesWriteError,
+            state: read_only, operation: none,
+            signature: for<'a, 'b> fn(&'a crate::Molecule, &'b [crate::AtomId]) -> Result<String, crate::SmilesWriteError>,
+        },
+        #[cfg(feature = "cap-smiles")]
+        {
+            semantic_id: "Molecule.to_fragment_cx_smiles_with_params", item: callable, owner: molecule,
+            rust: crate::Molecule::to_fragment_cx_smiles_with_params, python: "to_fragment_cx_smiles_with_params", javascript: "toFragmentCxSmilesWithParams",
+            feature: "cap-smiles", status: experimental, kind: instance,
+            parameters: [{ name: params, type: &crate::FragmentCxSmilesWriteParams, default: required }],
+            output: String, error: crate::SmilesWriteError,
+            state: read_only, operation: none,
+            signature: for<'a, 'b> fn(&'a crate::Molecule, &'b crate::FragmentCxSmilesWriteParams) -> Result<String, crate::SmilesWriteError>,
+        },
+        #[cfg(feature = "cap-smiles")]
+        {
+            semantic_id: "Molecule.to_random_smiles", item: callable, owner: molecule,
+            rust: crate::Molecule::to_random_smiles, python: "to_random_smiles", javascript: "toRandomSmiles",
+            feature: "cap-smiles", status: experimental, kind: instance,
+            parameters: [{ name: count, type: u32, default: required }, { name: seed, type: u32, default: required }],
+            output: Vec<String>, error: crate::SmilesWriteError,
+            state: read_only, operation: none,
+            signature: for<'a> fn(&'a crate::Molecule, u32, u32) -> Result<Vec<String>, crate::SmilesWriteError>,
+        },
+        #[cfg(feature = "cap-smiles")]
+        {
+            semantic_id: "Molecule.to_random_smiles_with_params", item: callable, owner: molecule,
+            rust: crate::Molecule::to_random_smiles_with_params, python: "to_random_smiles_with_params", javascript: "toRandomSmilesWithParams",
+            feature: "cap-smiles", status: experimental, kind: instance,
+            parameters: [{ name: count, type: u32, default: required }, { name: seed, type: u32, default: required }, { name: params, type: &crate::RandomSmilesWriteParams, default: required }],
+            output: Vec<String>, error: crate::SmilesWriteError,
+            state: read_only, operation: none,
+            signature: for<'a, 'b> fn(&'a crate::Molecule, u32, u32, &'b crate::RandomSmilesWriteParams) -> Result<Vec<String>, crate::SmilesWriteError>,
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "types.BioSelection", item: type, owner: type_,
+            rust: crate::BioSelection, python: "BioSelection", javascript: "BioSelection",
+            feature: "cap-bio", status: experimental, role: value,
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "BioSelection.from_cid", item: callable, owner: type_,
+            rust: crate::BioSelection::from_cid, python: "from_cid", javascript: "fromCid",
+            feature: "cap-bio", status: experimental, kind: static_,
+            parameters: [{ name: cid, type: &str, default: required }],
+            output: crate::BioSelection, error: crate::BioSelectionParseError,
+            state: value_returning, operation: none,
+            signature: fn(&str) -> Result<crate::BioSelection, crate::BioSelectionParseError>,
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "Protein.selected_atom_ids", item: callable, owner: type_,
+            rust: crate::Protein::selected_atom_ids, python: "selected_atom_ids", javascript: "selectedAtomIds",
+            feature: "cap-bio", status: experimental, kind: instance,
+            parameters: [{ name: selection, type: &crate::BioSelection, default: required }],
+            output: Vec<cosmolkit_bio::BioAtomId>, error: crate::BioSelectionMatchError,
+            state: read_only, operation: none,
+            signature: fn(&crate::Protein, &crate::BioSelection) -> Result<Vec<cosmolkit_bio::BioAtomId>, crate::BioSelectionMatchError>,
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "BioStructure.selected_atom_ids", item: callable, owner: type_,
+            rust: crate::BioStructure::selected_atom_ids, python: "selected_atom_ids", javascript: "selectedAtomIds",
+            feature: "cap-bio", status: experimental, kind: instance,
+            parameters: [{ name: selection, type: &crate::BioSelection, default: required }],
+            output: Vec<cosmolkit_bio::BioAtomId>, error: crate::BioSelectionMatchError,
+            state: read_only, operation: none,
+            signature: fn(&crate::BioStructure, &crate::BioSelection) -> Result<Vec<cosmolkit_bio::BioAtomId>, crate::BioSelectionMatchError>,
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "BioSelection.to_cid", item: callable, owner: type_,
+            rust: crate::BioSelection::to_cid, python: "to_cid", javascript: "toCid",
+            feature: "cap-bio", status: experimental, kind: instance,
+            parameters: [],
+            output: String, error: none, state: read_only, operation: none,
+            signature: fn(&crate::BioSelection) -> String,
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "types.BioSelectionParseError", item: type, owner: type_,
+            rust: crate::BioSelectionParseError, python: "BioSelectionParseError", javascript: "BioSelectionParseError",
+            feature: "cap-bio", status: experimental, role: error,
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "types.BioSelectionMatchError", item: type, owner: type_,
+            rust: crate::BioSelectionMatchError, python: "BioSelectionMatchError", javascript: "BioSelectionMatchError",
+            feature: "cap-bio", status: experimental, role: error,
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "types.BioOperationError", item: type, owner: type_,
+            rust: crate::BioOperationError, python: "BioOperationError", javascript: "BioOperationError",
+            feature: "cap-bio", status: experimental, role: error,
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "BioStructure.with_translated_coordinates", item: callable, owner: type_,
+            rust: crate::BioStructure::with_translated_coordinates, python: "with_translated_coordinates", javascript: "withTranslatedCoordinates",
+            feature: "cap-bio", status: experimental, kind: instance,
+            parameters: [{ name: offset, type: [f64; 3], default: required }],
+            output: crate::BioStructure, error: crate::BioOperationError,
+            state: value_returning, operation: "with_translated_coordinates",
+            signature: fn(&crate::BioStructure, [f64; 3]) -> Result<crate::BioStructure, crate::BioOperationError>,
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "BioStructure.translate_", item: callable, owner: type_,
+            rust: crate::BioStructure::translate_, python: "translate_", javascript: "translate",
+            feature: "cap-bio", status: experimental, kind: instance,
+            parameters: [{ name: offset, type: [f64; 3], default: required }],
+            output: (), error: crate::BioOperationError,
+            state: in_place, operation: "translate_",
+            signature: fn(&mut crate::BioStructure, [f64; 3]) -> Result<(), crate::BioOperationError>,
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "Protein.with_translated_coordinates", item: callable, owner: type_,
+            rust: crate::Protein::with_translated_coordinates, python: "with_translated_coordinates", javascript: "withTranslatedCoordinates",
+            feature: "cap-bio", status: experimental, kind: instance,
+            parameters: [{ name: offset, type: [f64; 3], default: required }],
+            output: crate::Protein, error: crate::BioOperationError,
+            state: value_returning, operation: "with_translated_coordinates",
+            signature: fn(&crate::Protein, [f64; 3]) -> Result<crate::Protein, crate::BioOperationError>,
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "Protein.translate_", item: callable, owner: type_,
+            rust: crate::Protein::translate_, python: "translate_", javascript: "translate",
+            feature: "cap-bio", status: experimental, kind: instance,
+            parameters: [{ name: offset, type: [f64; 3], default: required }],
+            output: (), error: crate::BioOperationError,
+            state: in_place, operation: "translate_",
+            signature: fn(&mut crate::Protein, [f64; 3]) -> Result<(), crate::BioOperationError>,
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "BioStructure.with_selection", item: callable, owner: type_,
+            rust: crate::BioStructure::with_selection, python: "with_selection", javascript: "withSelection",
+            feature: "cap-bio", status: experimental, kind: instance,
+            parameters: [{ name: selection, type: &crate::BioSelection, default: required }],
+            output: crate::BioStructure, error: crate::BioOperationError,
+            state: value_returning, operation: "with_selection",
+            signature: fn(&crate::BioStructure, &crate::BioSelection) -> Result<crate::BioStructure, crate::BioOperationError>,
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "BioStructure.retain_selection_", item: callable, owner: type_,
+            rust: crate::BioStructure::retain_selection_, python: "retain_selection_", javascript: "retainSelection",
+            feature: "cap-bio", status: experimental, kind: instance,
+            parameters: [{ name: selection, type: &crate::BioSelection, default: required }],
+            output: (), error: crate::BioOperationError,
+            state: in_place, operation: "retain_selection_",
+            signature: fn(&mut crate::BioStructure, &crate::BioSelection) -> Result<(), crate::BioOperationError>,
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "Protein.with_selection", item: callable, owner: type_,
+            rust: crate::Protein::with_selection, python: "with_selection", javascript: "withSelection",
+            feature: "cap-bio", status: experimental, kind: instance,
+            parameters: [{ name: selection, type: &crate::BioSelection, default: required }],
+            output: crate::Protein, error: crate::BioOperationError,
+            state: value_returning, operation: "with_selection",
+            signature: fn(&crate::Protein, &crate::BioSelection) -> Result<crate::Protein, crate::BioOperationError>,
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "Protein.retain_selection_", item: callable, owner: type_,
+            rust: crate::Protein::retain_selection_, python: "retain_selection_", javascript: "retainSelection",
+            feature: "cap-bio", status: experimental, kind: instance,
+            parameters: [{ name: selection, type: &crate::BioSelection, default: required }],
+            output: (), error: crate::BioOperationError,
+            state: in_place, operation: "retain_selection_",
+            signature: fn(&mut crate::Protein, &crate::BioSelection) -> Result<(), crate::BioOperationError>,
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "types.BioSelectionCopyError", item: type, owner: type_,
+            rust: crate::BioSelectionCopyError, python: "BioSelectionCopyError", javascript: "BioSelectionCopyError",
+            feature: "cap-bio", status: experimental, role: error,
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "types.BioSelectionCopyCause", item: type, owner: type_,
+            rust: crate::BioSelectionCopyCause, python: "BioSelectionCopyCause", javascript: "BioSelectionCopyCause",
+            feature: "cap-bio", status: experimental, role: error,
+        },
+    #[cfg(feature = "cap-bio")]
+    {
+        semantic_id: "types.BioRowTraverseError", item: type, owner: type_,
+        rust: crate::BioRowTraverseError, python: "BioRowTraverseError", javascript: "BioRowTraverseError",
+        feature: "cap-bio", status: experimental, role: error,
+    },
+    #[cfg(feature = "cap-bio")]
+    {
+        semantic_id: "types.BioRowModelError", item: type, owner: type_,
+        rust: crate::BioRowModelError, python: "BioRowModelError", javascript: "BioRowModelError",
+        feature: "cap-bio", status: experimental, role: error,
+    },
+    #[cfg(feature = "cap-bio")]
+    {
+        semantic_id: "types.BioRowChainError", item: type, owner: type_,
+        rust: crate::BioRowChainError, python: "BioRowChainError", javascript: "BioRowChainError",
+        feature: "cap-bio", status: experimental, role: error,
+    },
+    // Structural readers and explicit Protein projection. Binding names are
+        // declarations, not implemented Python/JS adapters; no parity promotion.
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "types.BioPdbReadParams", item: type, owner: type_,
+            rust: crate::BioPdbReadParams, python: "BioPdbReadParams", javascript: "BioPdbReadParams",
+            feature: "cap-bio", status: experimental, role: parameter,
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "types.BioPdbReadError", item: type, owner: type_,
+            rust: crate::BioPdbReadError, python: "BioPdbReadError", javascript: "BioPdbReadError",
+            feature: "cap-bio", status: experimental, role: error,
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "types.BioPdbReadStage", item: type, owner: type_,
+            rust: crate::BioPdbReadStage, python: "BioPdbReadStage", javascript: "BioPdbReadStage",
+            feature: "cap-bio", status: experimental, role: value,
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "types.BioMmcifReadError", item: type, owner: type_,
+            rust: crate::BioMmcifReadError, python: "BioMmcifReadError", javascript: "BioMmcifReadError",
+            feature: "cap-bio", status: experimental, role: error,
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "types.BioMmcifReadStage", item: type, owner: type_,
+            rust: crate::BioMmcifReadStage, python: "BioMmcifReadStage", javascript: "BioMmcifReadStage",
+            feature: "cap-bio", status: experimental, role: value,
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "types.BioReadParams", item: type, owner: type_,
+            rust: crate::BioReadParams, python: "BioReadParams", javascript: "BioReadParams",
+            feature: "cap-bio", status: experimental, role: parameter,
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "types.BioReadError", item: type, owner: type_,
+            rust: crate::BioReadError, python: "BioReadError", javascript: "BioReadError",
+            feature: "cap-bio", status: experimental, role: error,
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "types.ProteinReadError", item: type, owner: type_,
+            rust: crate::ProteinReadError, python: "ProteinReadError", javascript: "ProteinReadError",
+            feature: "cap-bio", status: experimental, role: error,
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "types.BioMmcifWriteParams", item: type, owner: type_,
+            rust: crate::BioMmcifWriteParams, python: "BioMmcifWriteParams", javascript: "BioMmcifWriteParams",
+            feature: "cap-bio", status: experimental, role: parameter,
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "types.BioMmcifWriteError", item: type, owner: type_,
+            rust: crate::BioMmcifWriteError, python: "BioMmcifWriteError", javascript: "BioMmcifWriteError",
+            feature: "cap-bio", status: experimental, role: error,
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "BioStructure.to_mmcif_with_params", item: callable, owner: type_,
+            rust: crate::BioStructure::to_mmcif_with_params, python: "to_mmcif_with_params", javascript: "toMmcifWithParams",
+            feature: "cap-bio", status: experimental, kind: instance,
+            parameters: [{ name: params, type: &crate::BioMmcifWriteParams, default: required }],
+            output: String, error: crate::BioMmcifWriteError, state: read_only, operation: none,
+            signature: for<'a> fn(&'a crate::BioStructure, &crate::BioMmcifWriteParams) -> Result<String, crate::BioMmcifWriteError>,
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "BioStructure.to_mmcif", item: callable, owner: type_,
+            rust: crate::BioStructure::to_mmcif, python: "to_mmcif", javascript: "toMmcif",
+            feature: "cap-bio", status: experimental, kind: instance,
+            parameters: [],
+            output: String, error: crate::BioMmcifWriteError, state: read_only, operation: none,
+            signature: for<'a> fn(&'a crate::BioStructure) -> Result<String, crate::BioMmcifWriteError>,
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "BioStructure.write_mmcif_with_params", item: callable, owner: type_,
+            rust: crate::BioStructure::write_mmcif_with_params, python: "write_mmcif_with_params", javascript: "writeMmcifWithParams",
+            feature: "cap-bio", status: experimental, kind: instance,
+            parameters: [{ name: path, type: &std::path::Path, default: required }, { name: params, type: &crate::BioMmcifWriteParams, default: required }],
+            output: (), error: crate::BioMmcifWriteError, state: read_only, operation: none,
+            signature: for<'a> fn(&'a crate::BioStructure, &std::path::Path, &crate::BioMmcifWriteParams) -> Result<(), crate::BioMmcifWriteError>,
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "BioStructure.write_mmcif", item: callable, owner: type_,
+            rust: crate::BioStructure::write_mmcif, python: "write_mmcif", javascript: "writeMmcif",
+            feature: "cap-bio", status: experimental, kind: instance,
+            parameters: [{ name: path, type: &std::path::Path, default: required }],
+            output: (), error: crate::BioMmcifWriteError, state: read_only, operation: none,
+            signature: for<'a> fn(&'a crate::BioStructure, &std::path::Path) -> Result<(), crate::BioMmcifWriteError>,
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "BioStructure.from_text_with_params", item: callable, owner: type_,
+            rust: crate::BioStructure::from_text_with_params, python: "from_text_with_params", javascript: "fromTextWithParams",
+            feature: "cap-bio", status: experimental, kind: static_,
+            parameters: [{ name: text, type: &str, default: required }, { name: params, type: &crate::BioReadParams, default: required }],
+            output: crate::BioStructure, error: crate::BioReadError, state: value_returning, operation: none,
+            signature: fn(&str, &crate::BioReadParams) -> Result<crate::BioStructure, crate::BioReadError>,
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "BioStructure.from_text", item: callable, owner: type_,
+            rust: crate::BioStructure::from_text, python: "from_text", javascript: "fromText",
+            feature: "cap-bio", status: experimental, kind: static_,
+            parameters: [{ name: text, type: &str, default: required }],
+            output: crate::BioStructure, error: crate::BioReadError, state: value_returning, operation: none,
+            signature: fn(&str) -> Result<crate::BioStructure, crate::BioReadError>,
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "BioStructure.read_with_format", item: callable, owner: type_,
+            rust: crate::BioStructure::read_with_format, python: "read_with_format", javascript: "readWithFormat",
+            feature: "cap-bio", status: experimental, kind: static_,
+            parameters: [{ name: path, type: &std::path::Path, default: required }, { name: format, type: crate::BioCoordinateFormat, default: required }],
+            output: crate::BioStructure, error: crate::BioReadError, state: value_returning, operation: none,
+            signature: fn(&std::path::Path, crate::BioCoordinateFormat) -> Result<crate::BioStructure, crate::BioReadError>,
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "BioStructure.read", item: callable, owner: type_,
+            rust: crate::BioStructure::read, python: "read", javascript: "read",
+            feature: "cap-bio", status: experimental, kind: static_,
+            parameters: [{ name: path, type: &std::path::Path, default: required }],
+            output: crate::BioStructure, error: crate::BioReadError, state: value_returning, operation: none,
+            signature: fn(&std::path::Path) -> Result<crate::BioStructure, crate::BioReadError>,
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "Protein.from_text_with_params", item: callable, owner: type_,
+            rust: crate::Protein::from_text_with_params, python: "from_text_with_params", javascript: "fromTextWithParams",
+            feature: "cap-bio", status: experimental, kind: static_,
+            parameters: [{ name: text, type: &str, default: required }, { name: params, type: &crate::BioReadParams, default: required }],
+            output: crate::Protein, error: crate::ProteinReadError, state: value_returning, operation: none,
+            signature: fn(&str, &crate::BioReadParams) -> Result<crate::Protein, crate::ProteinReadError>,
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "Protein.from_text", item: callable, owner: type_,
+            rust: crate::Protein::from_text, python: "from_text", javascript: "fromText",
+            feature: "cap-bio", status: experimental, kind: static_,
+            parameters: [{ name: text, type: &str, default: required }],
+            output: crate::Protein, error: crate::ProteinReadError, state: value_returning, operation: none,
+            signature: fn(&str) -> Result<crate::Protein, crate::ProteinReadError>,
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "Protein.read_with_format", item: callable, owner: type_,
+            rust: crate::Protein::read_with_format, python: "read_with_format", javascript: "readWithFormat",
+            feature: "cap-bio", status: experimental, kind: static_,
+            parameters: [{ name: path, type: &std::path::Path, default: required }, { name: format, type: crate::BioCoordinateFormat, default: required }],
+            output: crate::Protein, error: crate::ProteinReadError, state: value_returning, operation: none,
+            signature: fn(&std::path::Path, crate::BioCoordinateFormat) -> Result<crate::Protein, crate::ProteinReadError>,
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "Protein.read", item: callable, owner: type_,
+            rust: crate::Protein::read, python: "read", javascript: "read",
+            feature: "cap-bio", status: experimental, kind: static_,
+            parameters: [{ name: path, type: &std::path::Path, default: required }],
+            output: crate::Protein, error: crate::ProteinReadError, state: value_returning, operation: none,
+            signature: fn(&std::path::Path) -> Result<crate::Protein, crate::ProteinReadError>,
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "BioStructure.from_pdb", item: callable, owner: type_,
+            rust: crate::BioStructure::from_pdb, python: "from_pdb", javascript: "fromPdb",
+            feature: "cap-bio", status: experimental, kind: static_,
+            parameters: [{ name: text, type: &str, default: required }],
+            output: crate::BioStructure, error: crate::BioPdbReadError, state: value_returning, operation: none,
+            signature: fn(&str) -> Result<crate::BioStructure, crate::BioPdbReadError>,
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "BioStructure.from_pdb_with_params", item: callable, owner: type_,
+            rust: crate::BioStructure::from_pdb_with_params, python: "from_pdb_with_params", javascript: "fromPdbWithParams",
+            feature: "cap-bio", status: experimental, kind: static_,
+            parameters: [{ name: text, type: &str, default: required }, { name: params, type: &crate::BioPdbReadParams, default: required }],
+            output: crate::BioStructure, error: crate::BioPdbReadError, state: value_returning, operation: none,
+            signature: fn(&str, &crate::BioPdbReadParams) -> Result<crate::BioStructure, crate::BioPdbReadError>,
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "BioStructure.from_mmcif", item: callable, owner: type_,
+            rust: crate::BioStructure::from_mmcif, python: "from_mmcif", javascript: "fromMmcif",
+            feature: "cap-bio", status: experimental, kind: static_,
+            parameters: [{ name: text, type: &str, default: required }],
+            output: crate::BioStructure, error: crate::BioMmcifReadError, state: value_returning, operation: none,
+            signature: fn(&str) -> Result<crate::BioStructure, crate::BioMmcifReadError>,
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "Protein.from_pdb", item: callable, owner: type_,
+            rust: crate::Protein::from_pdb, python: "from_pdb", javascript: "fromPdb",
+            feature: "cap-bio", status: experimental, kind: static_,
+            parameters: [{ name: text, type: &str, default: required }],
+            output: crate::Protein, error: crate::ProteinReadError, state: value_returning, operation: none,
+            signature: fn(&str) -> Result<crate::Protein, crate::ProteinReadError>,
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "Protein.from_pdb_with_params", item: callable, owner: type_,
+            rust: crate::Protein::from_pdb_with_params, python: "from_pdb_with_params", javascript: "fromPdbWithParams",
+            feature: "cap-bio", status: experimental, kind: static_,
+            parameters: [{ name: text, type: &str, default: required }, { name: params, type: &crate::BioPdbReadParams, default: required }],
+            output: crate::Protein, error: crate::ProteinReadError, state: value_returning, operation: none,
+            signature: fn(&str, &crate::BioPdbReadParams) -> Result<crate::Protein, crate::ProteinReadError>,
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "Protein.from_mmcif", item: callable, owner: type_,
+            rust: crate::Protein::from_mmcif, python: "from_mmcif", javascript: "fromMmcif",
+            feature: "cap-bio", status: experimental, kind: static_,
+            parameters: [{ name: text, type: &str, default: required }],
+            output: crate::Protein, error: crate::ProteinReadError, state: value_returning, operation: none,
+            signature: fn(&str) -> Result<crate::Protein, crate::ProteinReadError>,
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "BioPdbReadError.stage", item: callable, owner: type_,
+            rust: crate::BioPdbReadError::stage, python: "stage", javascript: "stage",
+            feature: "cap-bio", status: experimental, kind: instance, parameters: [],
+            output: crate::BioPdbReadStage, error: none, state: read_only, operation: none,
+            signature: fn(&crate::BioPdbReadError) -> crate::BioPdbReadStage,
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "BioPdbReadError.line_number", item: callable, owner: type_,
+            rust: crate::BioPdbReadError::line_number, python: "line_number", javascript: "lineNumber",
+            feature: "cap-bio", status: experimental, kind: instance, parameters: [],
+            output: Option<i32>, error: none, state: read_only, operation: none,
+            signature: fn(&crate::BioPdbReadError) -> Option<i32>,
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "BioPdbReadError.record_tag", item: callable, owner: type_,
+            rust: crate::BioPdbReadError::record_tag, python: "record_tag", javascript: "recordTag",
+            feature: "cap-bio", status: experimental, kind: instance, parameters: [],
+            output: Option<[u8; 4]>, error: none, state: read_only, operation: none,
+            signature: fn(&crate::BioPdbReadError) -> Option<[u8; 4]>,
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "BioMmcifReadError.stage", item: callable, owner: type_,
+            rust: crate::BioMmcifReadError::stage, python: "stage", javascript: "stage",
+            feature: "cap-bio", status: experimental, kind: instance, parameters: [],
+            output: crate::BioMmcifReadStage, error: none, state: read_only, operation: none,
+            signature: fn(&crate::BioMmcifReadError) -> crate::BioMmcifReadStage,
+        },
         // FP-values public boundary. Source: pinned RDKit SparseIntVect.h
         // and Wrap/SparseIntVect.cpp:135-185. Canonical names replace get_*
         // and *_i implementation spellings. Python/JS projections are declared,
         // not implemented by this Rust-only registration. No helper exports.
-        #[cfg(feature = "fingerprints")]
+        #[cfg(feature = "cap-fingerprints")]
         {
             semantic_id: "types.SparseCountFingerprint", item: type, owner: type_,
             rust: crate::SparseCountFingerprint, python: "SparseCountFingerprint", javascript: "SparseCountFingerprint",
-            feature: "fingerprints", exposure: public, support: supported,
-            parity: not_applicable, role: value,
+            feature: "cap-fingerprints", status: experimental, role: value,
         },
-        #[cfg(feature = "fingerprints")]
+        #[cfg(feature = "cap-fingerprints")]
         {
             semantic_id: "types.SparseCountFingerprint32", item: type, owner: type_,
             rust: crate::SparseCountFingerprint32, python: "SparseCountFingerprint32", javascript: "SparseCountFingerprint32",
-            feature: "fingerprints", exposure: public, support: supported,
-            parity: not_applicable, role: value,
+            feature: "cap-fingerprints", status: experimental, role: value,
         },
-        #[cfg(feature = "fingerprints")]
+        #[cfg(feature = "cap-fingerprints")]
         {
             semantic_id: "types.FingerprintError", item: type, owner: type_,
             rust: crate::FingerprintError, python: "FingerprintError", javascript: "FingerprintError",
-            feature: "fingerprints", exposure: public, support: supported,
-            parity: not_applicable, role: error,
+            feature: "cap-fingerprints", status: experimental, role: error,
         },
-        #[cfg(feature = "fingerprints")]
+        #[cfg(feature = "cap-fingerprints")]
         {
             semantic_id: "SparseCountFingerprint.new", item: callable, owner: type_,
             rust: crate::SparseCountFingerprint::new, python: "new", javascript: "new",
-            feature: "fingerprints", exposure: public, support: supported_with_rdkit_parity,
-            parity: required_now, kind: static_,
+            feature: "cap-fingerprints", status: experimental, kind: static_,
             parameters: [{ name: length, type: u64, default: required }],
             output: crate::SparseCountFingerprint, error: none,
             state: value_returning, operation: none,
             signature: fn(u64) -> crate::SparseCountFingerprint,
         },
-        #[cfg(feature = "fingerprints")]
+        #[cfg(feature = "cap-fingerprints")]
         {
             semantic_id: "SparseCountFingerprint.length", item: callable, owner: type_,
             rust: crate::SparseCountFingerprint::length, python: "length", javascript: "length",
-            feature: "fingerprints", exposure: public, support: supported_with_rdkit_parity,
-            parity: required_now, kind: instance,
+            feature: "cap-fingerprints", status: experimental, kind: instance,
             parameters: [],
             output: u64, error: none,
             state: read_only, operation: none,
             signature: fn(&crate::SparseCountFingerprint) -> u64,
         },
-        #[cfg(feature = "fingerprints")]
+        #[cfg(feature = "cap-fingerprints")]
         {
             semantic_id: "SparseCountFingerprint.value", item: callable, owner: type_,
             rust: crate::SparseCountFingerprint::value, python: "value", javascript: "value",
-            feature: "fingerprints", exposure: public, support: supported_with_rdkit_parity,
-            parity: required_now, kind: instance,
+            feature: "cap-fingerprints", status: experimental, kind: instance,
             parameters: [{ name: index, type: u64, default: required }],
             output: i32, error: crate::FingerprintError,
             state: read_only, operation: none,
             signature: fn(&crate::SparseCountFingerprint, u64) -> Result<i32, crate::FingerprintError>,
         },
-        #[cfg(feature = "fingerprints")]
+        #[cfg(feature = "cap-fingerprints")]
         {
             semantic_id: "SparseCountFingerprint.set_value", item: callable, owner: type_,
             rust: crate::SparseCountFingerprint::set_value, python: "set_value", javascript: "setValue",
-            feature: "fingerprints", exposure: public, support: supported_with_rdkit_parity,
-            parity: required_now, kind: instance,
+            feature: "cap-fingerprints", status: experimental, kind: instance,
             parameters: [{ name: index, type: u64, default: required }, { name: value, type: i32, default: required }],
             output: (), error: crate::FingerprintError,
             state: in_place, operation: none,
             signature: fn(&mut crate::SparseCountFingerprint, u64, i32) -> Result<(), crate::FingerprintError>,
         },
-        #[cfg(feature = "fingerprints")]
+        #[cfg(feature = "cap-fingerprints")]
         {
             semantic_id: "SparseCountFingerprint.nonzero_elements", item: callable, owner: type_,
             rust: crate::SparseCountFingerprint::nonzero_elements, python: "nonzero_elements", javascript: "nonzeroElements",
-            feature: "fingerprints", exposure: public, support: supported_with_rdkit_parity,
-            parity: required_now, kind: instance,
+            feature: "cap-fingerprints", status: experimental, kind: instance,
             parameters: [],
             output: &std::collections::BTreeMap<u64, i32>, error: none,
             state: read_only, operation: none,
             signature: fn(&crate::SparseCountFingerprint) -> &std::collections::BTreeMap<u64, i32>,
         },
-        #[cfg(feature = "fingerprints")]
+        #[cfg(feature = "cap-fingerprints")]
         {
             semantic_id: "SparseCountFingerprint.total_value", item: callable, owner: type_,
             rust: crate::SparseCountFingerprint::total_value, python: "total_value", javascript: "totalValue",
-            feature: "fingerprints", exposure: public, support: supported_with_rdkit_parity,
-            parity: required_now, kind: instance,
+            feature: "cap-fingerprints", status: experimental, kind: instance,
             parameters: [{ name: use_abs, type: bool, default: false }],
             output: i32, error: crate::FingerprintError,
             state: read_only, operation: none,
             signature: fn(&crate::SparseCountFingerprint, bool) -> Result<i32, crate::FingerprintError>,
         },
-        #[cfg(feature = "fingerprints")]
+        #[cfg(feature = "cap-fingerprints")]
         {
             semantic_id: "SparseCountFingerprint.fuzzy_and", item: callable, owner: type_,
             rust: crate::SparseCountFingerprint::fuzzy_and, python: "fuzzy_and", javascript: "fuzzyAnd",
-            feature: "fingerprints", exposure: public, support: supported_with_rdkit_parity,
-            parity: required_now, kind: instance,
+            feature: "cap-fingerprints", status: parity("RDKit"), kind: instance,
             parameters: [{ name: other, type: &crate::SparseCountFingerprint, default: required }],
             output: crate::SparseCountFingerprint, error: crate::FingerprintError,
             state: read_only, operation: none,
             signature: fn(&crate::SparseCountFingerprint, &crate::SparseCountFingerprint) -> Result<crate::SparseCountFingerprint, crate::FingerprintError>,
         },
-        #[cfg(feature = "fingerprints")]
+        #[cfg(feature = "cap-fingerprints")]
         {
             semantic_id: "SparseCountFingerprint.fuzzy_or", item: callable, owner: type_,
             rust: crate::SparseCountFingerprint::fuzzy_or, python: "fuzzy_or", javascript: "fuzzyOr",
-            feature: "fingerprints", exposure: public, support: supported_with_rdkit_parity,
-            parity: required_now, kind: instance,
+            feature: "cap-fingerprints", status: parity("RDKit"), kind: instance,
             parameters: [{ name: other, type: &crate::SparseCountFingerprint, default: required }],
             output: crate::SparseCountFingerprint, error: crate::FingerprintError,
             state: read_only, operation: none,
             signature: fn(&crate::SparseCountFingerprint, &crate::SparseCountFingerprint) -> Result<crate::SparseCountFingerprint, crate::FingerprintError>,
         },
-        #[cfg(feature = "fingerprints")]
+        #[cfg(feature = "cap-fingerprints")]
         {
             semantic_id: "SparseCountFingerprint.with_added", item: callable, owner: type_,
             rust: crate::SparseCountFingerprint::with_added, python: "with_added", javascript: "withAdded",
-            feature: "fingerprints", exposure: public, support: supported_with_rdkit_parity,
-            parity: required_now, kind: instance,
+            feature: "cap-fingerprints", status: experimental, kind: instance,
             parameters: [{ name: other, type: &crate::SparseCountFingerprint, default: required }],
             output: crate::SparseCountFingerprint, error: crate::FingerprintError,
             state: read_only, operation: none,
             signature: fn(&crate::SparseCountFingerprint, &crate::SparseCountFingerprint) -> Result<crate::SparseCountFingerprint, crate::FingerprintError>,
         },
-        #[cfg(feature = "fingerprints")]
+        #[cfg(feature = "cap-fingerprints")]
         {
             semantic_id: "SparseCountFingerprint.with_subtracted", item: callable, owner: type_,
             rust: crate::SparseCountFingerprint::with_subtracted, python: "with_subtracted", javascript: "withSubtracted",
-            feature: "fingerprints", exposure: public, support: supported_with_rdkit_parity,
-            parity: required_now, kind: instance,
+            feature: "cap-fingerprints", status: experimental, kind: instance,
             parameters: [{ name: other, type: &crate::SparseCountFingerprint, default: required }],
             output: crate::SparseCountFingerprint, error: crate::FingerprintError,
             state: read_only, operation: none,
             signature: fn(&crate::SparseCountFingerprint, &crate::SparseCountFingerprint) -> Result<crate::SparseCountFingerprint, crate::FingerprintError>,
         },
-        #[cfg(feature = "fingerprints")]
+        #[cfg(feature = "cap-fingerprints")]
         {
             semantic_id: "SparseCountFingerprint.with_added_scalar", item: callable, owner: type_,
             rust: crate::SparseCountFingerprint::with_added_scalar, python: "with_added_scalar", javascript: "withAddedScalar",
-            feature: "fingerprints", exposure: public, support: supported_with_rdkit_parity,
-            parity: required_now, kind: instance,
+            feature: "cap-fingerprints", status: experimental, kind: instance,
             parameters: [{ name: value, type: i32, default: required }],
             output: crate::SparseCountFingerprint, error: crate::FingerprintError,
             state: read_only, operation: none,
             signature: fn(&crate::SparseCountFingerprint, i32) -> Result<crate::SparseCountFingerprint, crate::FingerprintError>,
         },
-        #[cfg(feature = "fingerprints")]
+        #[cfg(feature = "cap-fingerprints")]
         {
             semantic_id: "SparseCountFingerprint.with_subtracted_scalar", item: callable, owner: type_,
             rust: crate::SparseCountFingerprint::with_subtracted_scalar, python: "with_subtracted_scalar", javascript: "withSubtractedScalar",
-            feature: "fingerprints", exposure: public, support: supported_with_rdkit_parity,
-            parity: required_now, kind: instance,
+            feature: "cap-fingerprints", status: experimental, kind: instance,
             parameters: [{ name: value, type: i32, default: required }],
             output: crate::SparseCountFingerprint, error: crate::FingerprintError,
             state: read_only, operation: none,
             signature: fn(&crate::SparseCountFingerprint, i32) -> Result<crate::SparseCountFingerprint, crate::FingerprintError>,
         },
-        #[cfg(feature = "fingerprints")]
+        #[cfg(feature = "cap-fingerprints")]
         {
             semantic_id: "SparseCountFingerprint.with_multiplied_scalar", item: callable, owner: type_,
             rust: crate::SparseCountFingerprint::with_multiplied_scalar, python: "with_multiplied_scalar", javascript: "withMultipliedScalar",
-            feature: "fingerprints", exposure: public, support: supported_with_rdkit_parity,
-            parity: required_now, kind: instance,
+            feature: "cap-fingerprints", status: experimental, kind: instance,
             parameters: [{ name: value, type: i32, default: required }],
             output: crate::SparseCountFingerprint, error: crate::FingerprintError,
             state: read_only, operation: none,
             signature: fn(&crate::SparseCountFingerprint, i32) -> Result<crate::SparseCountFingerprint, crate::FingerprintError>,
         },
-        #[cfg(feature = "fingerprints")]
+        #[cfg(feature = "cap-fingerprints")]
         {
             semantic_id: "SparseCountFingerprint.with_divided_scalar", item: callable, owner: type_,
             rust: crate::SparseCountFingerprint::with_divided_scalar, python: "with_divided_scalar", javascript: "withDividedScalar",
-            feature: "fingerprints", exposure: public, support: supported_with_rdkit_parity,
-            parity: required_now, kind: instance,
+            feature: "cap-fingerprints", status: experimental, kind: instance,
             parameters: [{ name: value, type: i32, default: required }],
             output: crate::SparseCountFingerprint, error: crate::FingerprintError,
             state: read_only, operation: none,
             signature: fn(&crate::SparseCountFingerprint, i32) -> Result<crate::SparseCountFingerprint, crate::FingerprintError>,
         },
-        #[cfg(feature = "fingerprints")]
+        #[cfg(feature = "cap-fingerprints")]
         {
             semantic_id: "SparseCountFingerprint32.new", item: callable, owner: type_,
             rust: crate::SparseCountFingerprint32::new, python: "new", javascript: "new",
-            feature: "fingerprints", exposure: public, support: supported_with_rdkit_parity,
-            parity: required_now, kind: static_,
+            feature: "cap-fingerprints", status: experimental, kind: static_,
             parameters: [{ name: length, type: u32, default: required }],
             output: crate::SparseCountFingerprint32, error: none,
             state: value_returning, operation: none,
             signature: fn(u32) -> crate::SparseCountFingerprint32,
         },
-        #[cfg(feature = "fingerprints")]
+        #[cfg(feature = "cap-fingerprints")]
         {
             semantic_id: "SparseCountFingerprint32.length", item: callable, owner: type_,
             rust: crate::SparseCountFingerprint32::length, python: "length", javascript: "length",
-            feature: "fingerprints", exposure: public, support: supported_with_rdkit_parity,
-            parity: required_now, kind: instance,
+            feature: "cap-fingerprints", status: experimental, kind: instance,
             parameters: [],
             output: u32, error: none,
             state: read_only, operation: none,
             signature: fn(&crate::SparseCountFingerprint32) -> u32,
         },
-        #[cfg(feature = "fingerprints")]
+        #[cfg(feature = "cap-fingerprints")]
         {
             semantic_id: "SparseCountFingerprint32.value", item: callable, owner: type_,
             rust: crate::SparseCountFingerprint32::value, python: "value", javascript: "value",
-            feature: "fingerprints", exposure: public, support: supported_with_rdkit_parity,
-            parity: required_now, kind: instance,
+            feature: "cap-fingerprints", status: experimental, kind: instance,
             parameters: [{ name: index, type: u32, default: required }],
             output: i32, error: crate::FingerprintError,
             state: read_only, operation: none,
             signature: fn(&crate::SparseCountFingerprint32, u32) -> Result<i32, crate::FingerprintError>,
         },
-        #[cfg(feature = "fingerprints")]
+        #[cfg(feature = "cap-fingerprints")]
         {
             semantic_id: "SparseCountFingerprint32.set_value", item: callable, owner: type_,
             rust: crate::SparseCountFingerprint32::set_value, python: "set_value", javascript: "setValue",
-            feature: "fingerprints", exposure: public, support: supported_with_rdkit_parity,
-            parity: required_now, kind: instance,
+            feature: "cap-fingerprints", status: experimental, kind: instance,
             parameters: [{ name: index, type: u32, default: required }, { name: value, type: i32, default: required }],
             output: (), error: crate::FingerprintError,
             state: in_place, operation: none,
             signature: fn(&mut crate::SparseCountFingerprint32, u32, i32) -> Result<(), crate::FingerprintError>,
         },
-        #[cfg(feature = "fingerprints")]
+        #[cfg(feature = "cap-fingerprints")]
         {
             semantic_id: "SparseCountFingerprint32.nonzero_elements", item: callable, owner: type_,
             rust: crate::SparseCountFingerprint32::nonzero_elements, python: "nonzero_elements", javascript: "nonzeroElements",
-            feature: "fingerprints", exposure: public, support: supported_with_rdkit_parity,
-            parity: required_now, kind: instance,
+            feature: "cap-fingerprints", status: experimental, kind: instance,
             parameters: [],
             output: &std::collections::BTreeMap<u32, i32>, error: none,
             state: read_only, operation: none,
             signature: fn(&crate::SparseCountFingerprint32) -> &std::collections::BTreeMap<u32, i32>,
         },
-        #[cfg(feature = "fingerprints")]
+        #[cfg(feature = "cap-fingerprints")]
         {
             semantic_id: "SparseCountFingerprint32.total_value", item: callable, owner: type_,
             rust: crate::SparseCountFingerprint32::total_value, python: "total_value", javascript: "totalValue",
-            feature: "fingerprints", exposure: public, support: supported_with_rdkit_parity,
-            parity: required_now, kind: instance,
+            feature: "cap-fingerprints", status: experimental, kind: instance,
             parameters: [{ name: use_abs, type: bool, default: false }],
             output: i32, error: crate::FingerprintError,
             state: read_only, operation: none,
             signature: fn(&crate::SparseCountFingerprint32, bool) -> Result<i32, crate::FingerprintError>,
         },
-        #[cfg(feature = "fingerprints")]
+        #[cfg(feature = "cap-fingerprints")]
         {
             semantic_id: "SparseCountFingerprint32.fuzzy_and", item: callable, owner: type_,
             rust: crate::SparseCountFingerprint32::fuzzy_and, python: "fuzzy_and", javascript: "fuzzyAnd",
-            feature: "fingerprints", exposure: public, support: supported_with_rdkit_parity,
-            parity: required_now, kind: instance,
+            feature: "cap-fingerprints", status: parity("RDKit"), kind: instance,
             parameters: [{ name: other, type: &crate::SparseCountFingerprint32, default: required }],
             output: crate::SparseCountFingerprint32, error: crate::FingerprintError,
             state: read_only, operation: none,
             signature: fn(&crate::SparseCountFingerprint32, &crate::SparseCountFingerprint32) -> Result<crate::SparseCountFingerprint32, crate::FingerprintError>,
         },
-        #[cfg(feature = "fingerprints")]
+        #[cfg(feature = "cap-fingerprints")]
         {
             semantic_id: "SparseCountFingerprint32.fuzzy_or", item: callable, owner: type_,
             rust: crate::SparseCountFingerprint32::fuzzy_or, python: "fuzzy_or", javascript: "fuzzyOr",
-            feature: "fingerprints", exposure: public, support: supported_with_rdkit_parity,
-            parity: required_now, kind: instance,
+            feature: "cap-fingerprints", status: parity("RDKit"), kind: instance,
             parameters: [{ name: other, type: &crate::SparseCountFingerprint32, default: required }],
             output: crate::SparseCountFingerprint32, error: crate::FingerprintError,
             state: read_only, operation: none,
             signature: fn(&crate::SparseCountFingerprint32, &crate::SparseCountFingerprint32) -> Result<crate::SparseCountFingerprint32, crate::FingerprintError>,
         },
-        #[cfg(feature = "fingerprints")]
+        #[cfg(feature = "cap-fingerprints")]
         {
             semantic_id: "SparseCountFingerprint32.with_added", item: callable, owner: type_,
             rust: crate::SparseCountFingerprint32::with_added, python: "with_added", javascript: "withAdded",
-            feature: "fingerprints", exposure: public, support: supported_with_rdkit_parity,
-            parity: required_now, kind: instance,
+            feature: "cap-fingerprints", status: experimental, kind: instance,
             parameters: [{ name: other, type: &crate::SparseCountFingerprint32, default: required }],
             output: crate::SparseCountFingerprint32, error: crate::FingerprintError,
             state: read_only, operation: none,
             signature: fn(&crate::SparseCountFingerprint32, &crate::SparseCountFingerprint32) -> Result<crate::SparseCountFingerprint32, crate::FingerprintError>,
         },
-        #[cfg(feature = "fingerprints")]
+        #[cfg(feature = "cap-fingerprints")]
         {
             semantic_id: "SparseCountFingerprint32.with_subtracted", item: callable, owner: type_,
             rust: crate::SparseCountFingerprint32::with_subtracted, python: "with_subtracted", javascript: "withSubtracted",
-            feature: "fingerprints", exposure: public, support: supported_with_rdkit_parity,
-            parity: required_now, kind: instance,
+            feature: "cap-fingerprints", status: experimental, kind: instance,
             parameters: [{ name: other, type: &crate::SparseCountFingerprint32, default: required }],
             output: crate::SparseCountFingerprint32, error: crate::FingerprintError,
             state: read_only, operation: none,
             signature: fn(&crate::SparseCountFingerprint32, &crate::SparseCountFingerprint32) -> Result<crate::SparseCountFingerprint32, crate::FingerprintError>,
         },
-        #[cfg(feature = "fingerprints")]
+        #[cfg(feature = "cap-fingerprints")]
         {
             semantic_id: "SparseCountFingerprint32.with_added_scalar", item: callable, owner: type_,
             rust: crate::SparseCountFingerprint32::with_added_scalar, python: "with_added_scalar", javascript: "withAddedScalar",
-            feature: "fingerprints", exposure: public, support: supported_with_rdkit_parity,
-            parity: required_now, kind: instance,
+            feature: "cap-fingerprints", status: experimental, kind: instance,
             parameters: [{ name: value, type: i32, default: required }],
             output: crate::SparseCountFingerprint32, error: crate::FingerprintError,
             state: read_only, operation: none,
             signature: fn(&crate::SparseCountFingerprint32, i32) -> Result<crate::SparseCountFingerprint32, crate::FingerprintError>,
         },
-        #[cfg(feature = "fingerprints")]
+        #[cfg(feature = "cap-fingerprints")]
         {
             semantic_id: "SparseCountFingerprint32.with_subtracted_scalar", item: callable, owner: type_,
             rust: crate::SparseCountFingerprint32::with_subtracted_scalar, python: "with_subtracted_scalar", javascript: "withSubtractedScalar",
-            feature: "fingerprints", exposure: public, support: supported_with_rdkit_parity,
-            parity: required_now, kind: instance,
+            feature: "cap-fingerprints", status: experimental, kind: instance,
             parameters: [{ name: value, type: i32, default: required }],
             output: crate::SparseCountFingerprint32, error: crate::FingerprintError,
             state: read_only, operation: none,
             signature: fn(&crate::SparseCountFingerprint32, i32) -> Result<crate::SparseCountFingerprint32, crate::FingerprintError>,
         },
-        #[cfg(feature = "fingerprints")]
+        #[cfg(feature = "cap-fingerprints")]
         {
             semantic_id: "SparseCountFingerprint32.with_multiplied_scalar", item: callable, owner: type_,
             rust: crate::SparseCountFingerprint32::with_multiplied_scalar, python: "with_multiplied_scalar", javascript: "withMultipliedScalar",
-            feature: "fingerprints", exposure: public, support: supported_with_rdkit_parity,
-            parity: required_now, kind: instance,
+            feature: "cap-fingerprints", status: experimental, kind: instance,
             parameters: [{ name: value, type: i32, default: required }],
             output: crate::SparseCountFingerprint32, error: crate::FingerprintError,
             state: read_only, operation: none,
             signature: fn(&crate::SparseCountFingerprint32, i32) -> Result<crate::SparseCountFingerprint32, crate::FingerprintError>,
         },
-        #[cfg(feature = "fingerprints")]
+        #[cfg(feature = "cap-fingerprints")]
         {
             semantic_id: "SparseCountFingerprint32.with_divided_scalar", item: callable, owner: type_,
             rust: crate::SparseCountFingerprint32::with_divided_scalar, python: "with_divided_scalar", javascript: "withDividedScalar",
-            feature: "fingerprints", exposure: public, support: supported_with_rdkit_parity,
-            parity: required_now, kind: instance,
+            feature: "cap-fingerprints", status: experimental, kind: instance,
             parameters: [{ name: value, type: i32, default: required }],
             output: crate::SparseCountFingerprint32, error: crate::FingerprintError,
             state: read_only, operation: none,
@@ -347,10 +893,7 @@ binding_contract! {
             rust: crate::Molecule,
             python: "Molecule",
             javascript: "Molecule",
-            feature: "runtime",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
+            feature: "runtime", status: experimental,
             role: value,
         },
         {
@@ -360,10 +903,7 @@ binding_contract! {
             rust: crate::MoleculeBuilder,
             python: "MoleculeBuilder",
             javascript: "MoleculeBuilder",
-            feature: "runtime",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
+            feature: "runtime", status: experimental,
             role: value,
         },
         {
@@ -373,10 +913,7 @@ binding_contract! {
             rust: crate::Molecule::new,
             python: "new",
             javascript: "new",
-            feature: "runtime",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
+            feature: "runtime", status: experimental,
             kind: static_,
             parameters: [],
             output: crate::Molecule,
@@ -392,10 +929,7 @@ binding_contract! {
             rust: crate::Molecule::from_parts,
             python: "from_parts",
             javascript: "fromParts",
-            feature: "runtime",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
+            feature: "runtime", status: experimental,
             kind: static_,
             parameters: [
                 { name: topology, type: crate::TopologyBlock, default: required },
@@ -416,10 +950,7 @@ binding_contract! {
             rust: crate::Molecule::to_builder,
             python: "to_builder",
             javascript: "toBuilder",
-            feature: "runtime",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
+            feature: "runtime", status: experimental,
             kind: instance,
             parameters: [],
             output: crate::MoleculeBuilder,
@@ -435,10 +966,7 @@ binding_contract! {
             rust: crate::Molecule::num_atoms,
             python: "num_atoms",
             javascript: "numAtoms",
-            feature: "runtime",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
+            feature: "runtime", status: experimental,
             kind: instance,
             parameters: [],
             output: usize,
@@ -454,10 +982,7 @@ binding_contract! {
             rust: crate::Molecule::num_bonds,
             python: "num_bonds",
             javascript: "numBonds",
-            feature: "runtime",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
+            feature: "runtime", status: experimental,
             kind: instance,
             parameters: [],
             output: usize,
@@ -473,10 +998,7 @@ binding_contract! {
             rust: crate::Molecule::atoms,
             python: "atoms",
             javascript: "atoms",
-            feature: "runtime",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
+            feature: "runtime", status: experimental,
             kind: instance,
             parameters: [],
             output: &[crate::Atom],
@@ -492,10 +1014,7 @@ binding_contract! {
             rust: crate::Molecule::bonds,
             python: "bonds",
             javascript: "bonds",
-            feature: "runtime",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
+            feature: "runtime", status: experimental,
             kind: instance,
             parameters: [],
             output: &[crate::Bond],
@@ -511,10 +1030,7 @@ binding_contract! {
             rust: crate::Molecule::atom,
             python: "atom",
             javascript: "atom",
-            feature: "runtime",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
+            feature: "runtime", status: experimental,
             kind: instance,
             parameters: [{ name: atom_id, type: crate::AtomId, default: required }],
             output: Option<&crate::Atom>,
@@ -530,10 +1046,7 @@ binding_contract! {
             rust: crate::Molecule::bond,
             python: "bond",
             javascript: "bond",
-            feature: "runtime",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
+            feature: "runtime", status: experimental,
             kind: instance,
             parameters: [{ name: bond_id, type: crate::BondId, default: required }],
             output: Option<&crate::Bond>,
@@ -549,10 +1062,7 @@ binding_contract! {
             rust: crate::Molecule::topology,
             python: "topology",
             javascript: "topology",
-            feature: "runtime",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
+            feature: "runtime", status: experimental,
             kind: instance,
             parameters: [],
             output: &crate::TopologyBlock,
@@ -568,10 +1078,7 @@ binding_contract! {
             rust: crate::Molecule::coordinates_2d,
             python: "coordinates_2d",
             javascript: "coordinates2d",
-            feature: "runtime",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
+            feature: "runtime", status: experimental,
             kind: instance,
             parameters: [],
             output: Option<&[[f64; 2]]>,
@@ -587,10 +1094,7 @@ binding_contract! {
             rust: crate::Molecule::conformers_3d,
             python: "conformers_3d",
             javascript: "conformers3d",
-            feature: "runtime",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
+            feature: "runtime", status: experimental,
             kind: instance,
             parameters: [],
             output: &[crate::Conformer3D],
@@ -606,10 +1110,7 @@ binding_contract! {
             rust: crate::Molecule::properties,
             python: "properties",
             javascript: "properties",
-            feature: "runtime",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
+            feature: "runtime", status: experimental,
             kind: instance,
             parameters: [],
             output: &crate::MoleculeProperties,
@@ -625,10 +1126,7 @@ binding_contract! {
             rust: crate::Molecule::property,
             python: "property",
             javascript: "property",
-            feature: "runtime",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
+            feature: "runtime", status: experimental,
             kind: instance,
             parameters: [{ name: key, type: &str, default: required }],
             output: Option<&str>,
@@ -644,10 +1142,7 @@ binding_contract! {
             rust: crate::MoleculeBuilder::new,
             python: "new",
             javascript: "new",
-            feature: "runtime",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
+            feature: "runtime", status: experimental,
             kind: static_,
             parameters: [],
             output: crate::MoleculeBuilder,
@@ -663,10 +1158,7 @@ binding_contract! {
             rust: crate::MoleculeBuilder::from_parts,
             python: "from_parts",
             javascript: "fromParts",
-            feature: "runtime",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
+            feature: "runtime", status: experimental,
             kind: static_,
             parameters: [
                 { name: topology, type: crate::TopologyBlock, default: required },
@@ -687,11 +1179,8 @@ binding_contract! {
             rust: crate::MoleculeBuilder::build,
             python: "build",
             javascript: "build",
-            feature: "runtime",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
-            kind: instance,
+            feature: "runtime", status: experimental,
+            kind: instance, receiver: owned,
             parameters: [],
             output: crate::Molecule,
             error: crate::OperationError,
@@ -706,10 +1195,7 @@ binding_contract! {
             rust: crate::MoleculeBuilder::add_atom,
             python: "add_atom",
             javascript: "addAtom",
-            feature: "runtime",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
+            feature: "runtime", status: experimental,
             kind: instance,
             parameters: [{ name: atom, type: crate::AtomSpec, default: required }],
             output: crate::AtomId,
@@ -725,10 +1211,7 @@ binding_contract! {
             rust: crate::MoleculeBuilder::add_bond,
             python: "add_bond",
             javascript: "addBond",
-            feature: "runtime",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
+            feature: "runtime", status: experimental,
             kind: instance,
             parameters: [{ name: bond, type: crate::BondSpec, default: required }],
             output: crate::BondId,
@@ -745,10 +1228,7 @@ binding_contract! {
             rust: crate::MoleculeBuilder::set_atom_formal_charge,
             python: "set_atom_formal_charge",
             javascript: "setAtomFormalCharge",
-            feature: "runtime",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
+            feature: "runtime", status: experimental,
             kind: instance,
             parameters: [
                 { name: atom_id, type: crate::AtomId, default: required },
@@ -768,10 +1248,7 @@ binding_contract! {
             rust: crate::MoleculeBuilder::set_bond_order,
             python: "set_bond_order",
             javascript: "setBondOrder",
-            feature: "runtime",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
+            feature: "runtime", status: experimental,
             kind: instance,
             parameters: [
                 { name: bond_id, type: crate::BondId, default: required },
@@ -791,10 +1268,7 @@ binding_contract! {
             rust: crate::MoleculeBuilder::remove_bond_between_atoms,
             python: "remove_bond_between_atoms",
             javascript: "removeBondBetweenAtoms",
-            feature: "runtime",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
+            feature: "runtime", status: experimental,
             kind: instance,
             parameters: [
                 { name: begin_atom, type: crate::AtomId, default: required },
@@ -814,10 +1288,7 @@ binding_contract! {
             rust: crate::MoleculeBuilder::degree,
             python: "degree",
             javascript: "degree",
-            feature: "runtime",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
+            feature: "runtime", status: experimental,
             kind: instance,
             parameters: [{ name: atom_id, type: crate::AtomId, default: required }],
             output: usize,
@@ -834,10 +1305,7 @@ binding_contract! {
             rust: crate::MoleculeBuilder::neighbor_bonds,
             python: "neighbor_bonds",
             javascript: "neighborBonds",
-            feature: "runtime",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
+            feature: "runtime", status: experimental,
             kind: instance,
             parameters: [{ name: atom_id, type: crate::AtomId, default: required }],
             output: Vec<crate::BondId>,
@@ -854,10 +1322,7 @@ binding_contract! {
             rust: crate::MoleculeBuilder::bond_between_atoms,
             python: "bond_between_atoms",
             javascript: "bondBetweenAtoms",
-            feature: "runtime",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
+            feature: "runtime", status: experimental,
             kind: instance,
             parameters: [
                 { name: begin_atom, type: crate::AtomId, default: required },
@@ -877,10 +1342,7 @@ binding_contract! {
             rust: crate::MoleculeBuilder::atoms,
             python: "atoms",
             javascript: "atoms",
-            feature: "runtime",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
+            feature: "runtime", status: experimental,
             kind: instance,
             parameters: [],
             output: &[crate::Atom],
@@ -896,10 +1358,7 @@ binding_contract! {
             rust: crate::MoleculeBuilder::bonds,
             python: "bonds",
             javascript: "bonds",
-            feature: "runtime",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
+            feature: "runtime", status: experimental,
             kind: instance,
             parameters: [],
             output: &[crate::Bond],
@@ -915,10 +1374,7 @@ binding_contract! {
             rust: crate::MoleculeBuilder::substance_groups,
             python: "substance_groups",
             javascript: "substanceGroups",
-            feature: "runtime",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
+            feature: "runtime", status: experimental,
             kind: instance,
             parameters: [],
             output: &[crate::SubstanceGroup],
@@ -934,10 +1390,7 @@ binding_contract! {
             rust: crate::MoleculeBuilder::stereo_groups,
             python: "stereo_groups",
             javascript: "stereoGroups",
-            feature: "runtime",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
+            feature: "runtime", status: experimental,
             kind: instance,
             parameters: [],
             output: &[crate::StereoGroup],
@@ -953,10 +1406,7 @@ binding_contract! {
             rust: crate::MoleculeBuilder::coordinates,
             python: "coordinates",
             javascript: "coordinates",
-            feature: "runtime",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
+            feature: "runtime", status: experimental,
             kind: instance,
             parameters: [],
             output: &crate::CoordinateBlock,
@@ -972,10 +1422,7 @@ binding_contract! {
             rust: crate::MoleculeBuilder::properties,
             python: "properties",
             javascript: "properties",
-            feature: "runtime",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
+            feature: "runtime", status: experimental,
             kind: instance,
             parameters: [],
             output: &crate::MoleculeProperties,
@@ -991,10 +1438,7 @@ binding_contract! {
             rust: crate::MoleculeBuilder::set_2d_coordinates,
             python: "set_2d_coordinates",
             javascript: "set2dCoordinates",
-            feature: "runtime",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
+            feature: "runtime", status: experimental,
             kind: instance,
             parameters: [{ name: coordinates, type: Vec<[f64; 2]>, default: required }],
             output: (),
@@ -1011,10 +1455,7 @@ binding_contract! {
             rust: crate::MoleculeBuilder::add_2d_conformer,
             python: "add_2d_conformer",
             javascript: "add2dConformer",
-            feature: "runtime",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
+            feature: "runtime", status: experimental,
             kind: instance,
             parameters: [{ name: coordinates, type: Vec<[f64; 2]>, default: required }],
             output: usize,
@@ -1031,10 +1472,7 @@ binding_contract! {
             rust: crate::MoleculeBuilder::add_3d_conformer,
             python: "add_3d_conformer",
             javascript: "add3dConformer",
-            feature: "runtime",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
+            feature: "runtime", status: experimental,
             kind: instance,
             parameters: [{ name: coordinates, type: Vec<[f64; 3]>, default: required }],
             output: usize,
@@ -1051,10 +1489,7 @@ binding_contract! {
             rust: crate::MoleculeBuilder::add_substance_group,
             python: "add_substance_group",
             javascript: "addSubstanceGroup",
-            feature: "runtime",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
+            feature: "runtime", status: experimental,
             kind: instance,
             parameters: [{ name: group, type: crate::SubstanceGroup, default: required }],
             output: crate::SubstanceGroupId,
@@ -1071,10 +1506,7 @@ binding_contract! {
             rust: crate::MoleculeBuilder::add_stereo_group,
             python: "add_stereo_group",
             javascript: "addStereoGroup",
-            feature: "runtime",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
+            feature: "runtime", status: experimental,
             kind: instance,
             parameters: [{ name: group, type: crate::StereoGroup, default: required }],
             output: usize,
@@ -1091,11 +1523,8 @@ binding_contract! {
             rust: crate::MoleculeBuilder::with_name,
             python: "with_name",
             javascript: "withName",
-            feature: "runtime",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
-            kind: instance,
+            feature: "runtime", status: experimental,
+            kind: instance, receiver: owned,
             parameters: [{ name: name, type: String, default: required }],
             output: crate::MoleculeBuilder,
             error: none,
@@ -1110,11 +1539,8 @@ binding_contract! {
             rust: crate::MoleculeBuilder::with_property,
             python: "with_property",
             javascript: "withProperty",
-            feature: "runtime",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
-            kind: instance,
+            feature: "runtime", status: experimental,
+            kind: instance, receiver: owned,
             parameters: [
                 { name: key, type: String, default: required },
                 { name: value, type: String, default: required },
@@ -1133,11 +1559,8 @@ binding_contract! {
             rust: crate::MoleculeBuilder::with_sdf_data_field,
             python: "with_sdf_data_field",
             javascript: "withSdfDataField",
-            feature: "runtime",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
-            kind: instance,
+            feature: "runtime", status: experimental,
+            kind: instance, receiver: owned,
             parameters: [
                 { name: key, type: String, default: required },
                 { name: value, type: String, default: required },
@@ -1155,11 +1578,8 @@ binding_contract! {
             rust: crate::MoleculeBuilder::with_properties,
             python: "with_properties",
             javascript: "withProperties",
-            feature: "runtime",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
-            kind: instance,
+            feature: "runtime", status: experimental,
+            kind: instance, receiver: owned,
             parameters: [{ name: properties, type: crate::MoleculeProperties, default: required }],
             output: crate::MoleculeBuilder,
             error: none,
@@ -1175,10 +1595,7 @@ binding_contract! {
             rust: crate::SubstanceGroupId,
             python: "SubstanceGroupId",
             javascript: "SubstanceGroupId",
-            feature: "runtime",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
+            feature: "runtime", status: experimental,
             role: value,
         },
         {
@@ -1188,10 +1605,7 @@ binding_contract! {
             rust: crate::SubstanceGroupKind,
             python: "SubstanceGroupKind",
             javascript: "SubstanceGroupKind",
-            feature: "runtime",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
+            feature: "runtime", status: experimental,
             role: value,
         },
         {
@@ -1201,10 +1615,7 @@ binding_contract! {
             rust: crate::SubstanceGroup,
             python: "SubstanceGroup",
             javascript: "SubstanceGroup",
-            feature: "runtime",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
+            feature: "runtime", status: experimental,
             role: value,
         },
         {
@@ -1214,10 +1625,7 @@ binding_contract! {
             rust: crate::SGroupBracket,
             python: "SGroupBracket",
             javascript: "SGroupBracket",
-            feature: "runtime",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
+            feature: "runtime", status: experimental,
             role: value,
         },
         {
@@ -1227,10 +1635,7 @@ binding_contract! {
             rust: crate::SGroupCState,
             python: "SGroupCState",
             javascript: "SGroupCState",
-            feature: "runtime",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
+            feature: "runtime", status: experimental,
             role: value,
         },
         {
@@ -1240,10 +1645,7 @@ binding_contract! {
             rust: crate::SGroupDisplay,
             python: "SGroupDisplay",
             javascript: "SGroupDisplay",
-            feature: "runtime",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
+            feature: "runtime", status: experimental,
             role: value,
         },
         {
@@ -1253,10 +1655,7 @@ binding_contract! {
             rust: crate::SubstanceGroupId::new,
             python: "new",
             javascript: "new",
-            feature: "runtime",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
+            feature: "runtime", status: experimental,
             kind: static_,
             parameters: [{ name: index, type: usize, default: required }],
             output: crate::SubstanceGroupId,
@@ -1272,10 +1671,7 @@ binding_contract! {
             rust: crate::SubstanceGroup::new,
             python: "new",
             javascript: "new",
-            feature: "runtime",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
+            feature: "runtime", status: experimental,
             kind: static_,
             parameters: [
                 { name: id, type: crate::SubstanceGroupId, default: required },
@@ -1295,10 +1691,7 @@ binding_contract! {
             rust: crate::SubstanceGroupId::index,
             python: "index",
             javascript: "index",
-            feature: "runtime",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
+            feature: "runtime", status: experimental,
             kind: instance,
             parameters: [],
             output: usize,
@@ -1314,10 +1707,7 @@ binding_contract! {
             rust: crate::SGroupBracket::new,
             python: "new",
             javascript: "new",
-            feature: "runtime",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
+            feature: "runtime", status: experimental,
             kind: static_,
             parameters: [{ name: points, type: [[f64; 3]; 3], default: required }],
             output: crate::SGroupBracket,
@@ -1333,10 +1723,7 @@ binding_contract! {
             rust: crate::SGroupCState::new,
             python: "new",
             javascript: "new",
-            feature: "runtime",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
+            feature: "runtime", status: experimental,
             kind: static_,
             parameters: [
                 { name: bond, type: crate::BondId, default: required },
@@ -1355,10 +1742,7 @@ binding_contract! {
             rust: crate::SGroupBracket::points,
             python: "points",
             javascript: "points",
-            feature: "runtime",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
+            feature: "runtime", status: experimental,
             kind: instance,
             parameters: [],
             output: &[[f64; 3]; 3],
@@ -1374,10 +1758,7 @@ binding_contract! {
             rust: crate::SGroupCState::bond,
             python: "bond",
             javascript: "bond",
-            feature: "runtime",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
+            feature: "runtime", status: experimental,
             kind: instance,
             parameters: [],
             output: crate::BondId,
@@ -1393,10 +1774,7 @@ binding_contract! {
             rust: crate::SGroupCState::vector,
             python: "vector",
             javascript: "vector",
-            feature: "runtime",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
+            feature: "runtime", status: experimental,
             kind: instance,
             parameters: [],
             output: &[f64; 3],
@@ -1412,10 +1790,7 @@ binding_contract! {
             rust: crate::SGroupDisplay::brackets,
             python: "brackets",
             javascript: "brackets",
-            feature: "runtime",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
+            feature: "runtime", status: experimental,
             kind: instance,
             parameters: [],
             output: &[crate::SGroupBracket],
@@ -1431,10 +1806,7 @@ binding_contract! {
             rust: crate::SubstanceGroup::id,
             python: "id",
             javascript: "id",
-            feature: "runtime",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
+            feature: "runtime", status: experimental,
             kind: instance,
             parameters: [],
             output: crate::SubstanceGroupId,
@@ -1450,10 +1822,7 @@ binding_contract! {
             rust: crate::SubstanceGroup::kind,
             python: "kind",
             javascript: "kind",
-            feature: "runtime",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
+            feature: "runtime", status: experimental,
             kind: instance,
             parameters: [],
             output: &crate::SubstanceGroupKind,
@@ -1469,10 +1838,7 @@ binding_contract! {
             rust: crate::SubstanceGroup::display,
             python: "display",
             javascript: "display",
-            feature: "runtime",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
+            feature: "runtime", status: experimental,
             kind: instance,
             parameters: [],
             output: Option<&crate::SGroupDisplay>,
@@ -1488,10 +1854,7 @@ binding_contract! {
             rust: crate::SubstanceGroup::cstates,
             python: "cstates",
             javascript: "cstates",
-            feature: "runtime",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
+            feature: "runtime", status: experimental,
             kind: instance,
             parameters: [],
             output: &[crate::SGroupCState],
@@ -1507,10 +1870,7 @@ binding_contract! {
             rust: crate::SubstanceGroup::head_crossing_bonds,
             python: "head_crossing_bonds",
             javascript: "headCrossingBonds",
-            feature: "runtime",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
+            feature: "runtime", status: experimental,
             kind: instance,
             parameters: [],
             output: &[crate::BondId],
@@ -1526,10 +1886,7 @@ binding_contract! {
             rust: crate::SubstanceGroup::crossing_bond_correspondence,
             python: "crossing_bond_correspondence",
             javascript: "crossingBondCorrespondence",
-            feature: "runtime",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
+            feature: "runtime", status: experimental,
             kind: instance,
             parameters: [],
             output: &[crate::BondId],
@@ -1545,11 +1902,156 @@ binding_contract! {
             rust: crate::OperationError,
             python: "OperationError",
             javascript: "OperationError",
-            feature: "runtime",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
+            feature: "runtime", status: experimental,
             role: error,
+        },
+        // Canonical detached atom/bond property values. This registry exposes
+        // the four modeled variants through their value kind and exact typed
+        // borrows only. Source string projection remains a private core/domain
+        // conversion boundary and is deliberately not registered here.
+        {
+            semantic_id: "types.PropertyValue",
+            item: type,
+            owner: type_,
+            rust: crate::PropertyValue,
+            python: "PropertyValue",
+            javascript: "PropertyValue",
+            feature: "runtime", status: experimental,
+            role: value,
+        },
+        {
+            semantic_id: "types.PropertyValueKind",
+            item: type,
+            owner: type_,
+            rust: crate::PropertyValueKind,
+            python: "PropertyValueKind",
+            javascript: "PropertyValueKind",
+            feature: "runtime", status: experimental,
+            role: value,
+        },
+        {
+            semantic_id: "types.PropertyValueError",
+            item: type,
+            owner: type_,
+            rust: crate::PropertyValueError,
+            python: "PropertyValueError",
+            javascript: "PropertyValueError",
+            feature: "runtime", status: experimental,
+            role: error,
+        },
+        {
+            semantic_id: "PropertyValueError.expected",
+            item: callable,
+            owner: type_,
+            rust: crate::PropertyValueError::expected,
+            python: "expected",
+            javascript: "expected",
+            feature: "runtime", status: experimental,
+            kind: instance,
+            parameters: [],
+            output: crate::PropertyValueKind,
+            error: none,
+            state: read_only,
+            operation: none,
+            signature: fn(&crate::PropertyValueError) -> crate::PropertyValueKind,
+        },
+        {
+            semantic_id: "PropertyValueError.actual",
+            item: callable,
+            owner: type_,
+            rust: crate::PropertyValueError::actual,
+            python: "actual",
+            javascript: "actual",
+            feature: "runtime", status: experimental,
+            kind: instance,
+            parameters: [],
+            output: crate::PropertyValueKind,
+            error: none,
+            state: read_only,
+            operation: none,
+            signature: fn(&crate::PropertyValueError) -> crate::PropertyValueKind,
+        },
+        {
+            semantic_id: "PropertyValue.kind",
+            item: callable,
+            owner: type_,
+            rust: crate::PropertyValue::kind,
+            python: "kind",
+            javascript: "kind",
+            feature: "runtime", status: experimental,
+            kind: instance,
+            parameters: [],
+            output: crate::PropertyValueKind,
+            error: none,
+            state: read_only,
+            operation: none,
+            signature: fn(&crate::PropertyValue) -> crate::PropertyValueKind,
+        },
+        {
+            semantic_id: "PropertyValue.as_string",
+            item: callable,
+            owner: type_,
+            rust: crate::PropertyValue::as_string,
+            python: "as_string",
+            javascript: "asString",
+            feature: "runtime", status: experimental,
+            kind: instance,
+            parameters: [],
+            output: &str,
+            error: crate::PropertyValueError,
+            state: read_only,
+            operation: none,
+            signature: for<'a> fn(
+                &'a crate::PropertyValue,
+            ) -> Result<&'a str, crate::PropertyValueError>,
+        },
+        {
+            semantic_id: "PropertyValue.as_int",
+            item: callable,
+            owner: type_,
+            rust: crate::PropertyValue::as_int,
+            python: "as_int",
+            javascript: "asInt",
+            feature: "runtime", status: experimental,
+            kind: instance,
+            parameters: [],
+            output: i32,
+            error: crate::PropertyValueError,
+            state: read_only,
+            operation: none,
+            signature: fn(&crate::PropertyValue) -> Result<i32, crate::PropertyValueError>,
+        },
+        {
+            semantic_id: "PropertyValue.as_double",
+            item: callable,
+            owner: type_,
+            rust: crate::PropertyValue::as_double,
+            python: "as_double",
+            javascript: "asDouble",
+            feature: "runtime", status: experimental,
+            kind: instance,
+            parameters: [],
+            output: f64,
+            error: crate::PropertyValueError,
+            state: read_only,
+            operation: none,
+            signature: fn(&crate::PropertyValue) -> Result<f64, crate::PropertyValueError>,
+        },
+        {
+            semantic_id: "PropertyValue.as_bool",
+            item: callable,
+            owner: type_,
+            rust: crate::PropertyValue::as_bool,
+            python: "as_bool",
+            javascript: "asBool",
+            feature: "runtime", status: experimental,
+            kind: instance,
+            parameters: [],
+            output: bool,
+            error: crate::PropertyValueError,
+            state: read_only,
+            operation: none,
+            signature: fn(&crate::PropertyValue) -> Result<bool, crate::PropertyValueError>,
         },
         // The canonical typed template ATTCHORD state is owned by model and
         // re-exported by cosmolkit. These rows expose only immutable values
@@ -1561,10 +2063,7 @@ binding_contract! {
             rust: crate::TemplateAttachment,
             python: "TemplateAttachment",
             javascript: "TemplateAttachment",
-            feature: "runtime",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
+            feature: "runtime", status: experimental,
             role: value,
         },
         {
@@ -1574,10 +2073,7 @@ binding_contract! {
             rust: crate::TemplateAttachmentOrder,
             python: "TemplateAttachmentOrder",
             javascript: "TemplateAttachmentOrder",
-            feature: "runtime",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
+            feature: "runtime", status: experimental,
             role: value,
         },
         {
@@ -1587,10 +2083,7 @@ binding_contract! {
             rust: crate::TemplateAttachmentOrderError,
             python: "TemplateAttachmentOrderError",
             javascript: "TemplateAttachmentOrderError",
-            feature: "runtime",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
+            feature: "runtime", status: experimental,
             role: error,
         },
         {
@@ -1600,10 +2093,7 @@ binding_contract! {
             rust: crate::TemplateAttachment::target,
             python: "target",
             javascript: "target",
-            feature: "runtime",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
+            feature: "runtime", status: experimental,
             kind: instance,
             parameters: [],
             output: crate::AtomId,
@@ -1619,10 +2109,7 @@ binding_contract! {
             rust: crate::TemplateAttachment::label,
             python: "label",
             javascript: "label",
-            feature: "runtime",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
+            feature: "runtime", status: experimental,
             kind: instance,
             parameters: [],
             output: &str,
@@ -1638,10 +2125,7 @@ binding_contract! {
             rust: crate::TemplateAttachmentOrder::entries,
             python: "entries",
             javascript: "entries",
-            feature: "runtime",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
+            feature: "runtime", status: experimental,
             kind: instance,
             parameters: [],
             output: &[crate::TemplateAttachment],
@@ -1659,10 +2143,7 @@ binding_contract! {
             rust: crate::Atom::template_attachment_order,
             python: "template_attachment_order",
             javascript: "templateAttachmentOrder",
-            feature: "runtime",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
+            feature: "runtime", status: experimental,
             kind: instance,
             parameters: [],
             output: Option<&crate::TemplateAttachmentOrder>,
@@ -1674,16 +2155,13 @@ binding_contract! {
             ) -> Option<&'a crate::TemplateAttachmentOrder>,
         },
         {
-            semantic_id: "types.SupportStatus",
+            semantic_id: "types.FunctionStatus",
             item: type,
             owner: type_,
-            rust: crate::SupportStatus,
-            python: "SupportStatus",
-            javascript: "SupportStatus",
-            feature: "metadata",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
+            rust: crate::FunctionStatus,
+            python: "FunctionStatus",
+            javascript: "FunctionStatus",
+            feature: "metadata", status: experimental,
             role: value,
         },
         {
@@ -1693,10 +2171,7 @@ binding_contract! {
             rust: crate::ParityPolicy,
             python: "ParityPolicy",
             javascript: "ParityPolicy",
-            feature: "metadata",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
+            feature: "metadata", status: experimental,
             role: value,
         },
         {
@@ -1706,10 +2181,7 @@ binding_contract! {
             rust: crate::FeatureSpec,
             python: "FeatureSpec",
             javascript: "FeatureSpec",
-            feature: "metadata",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
+            feature: "metadata", status: experimental,
             role: value,
         },
         {
@@ -1719,10 +2191,7 @@ binding_contract! {
             rust: crate::MoleculeOpSpec,
             python: "MoleculeOpSpec",
             javascript: "MoleculeOpSpec",
-            feature: "metadata",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
+            feature: "metadata", status: experimental,
             role: result,
         },
         {
@@ -1732,10 +2201,7 @@ binding_contract! {
             rust: crate::SupportMatrixEntry,
             python: "SupportMatrixEntry",
             javascript: "SupportMatrixEntry",
-            feature: "metadata",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
+            feature: "metadata", status: experimental,
             role: result,
         },
         {
@@ -1745,10 +2211,7 @@ binding_contract! {
             rust: crate::OperationInvariantEntry,
             python: "OperationInvariantEntry",
             javascript: "OperationInvariantEntry",
-            feature: "metadata",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
+            feature: "metadata", status: experimental,
             role: result,
         },
         {
@@ -1758,10 +2221,7 @@ binding_contract! {
             rust: crate::ParityMatrixEntry,
             python: "ParityMatrixEntry",
             javascript: "ParityMatrixEntry",
-            feature: "metadata",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
+            feature: "metadata", status: experimental,
             role: result,
         },
         {
@@ -1771,10 +2231,7 @@ binding_contract! {
             rust: crate::FeatureSpecIter,
             python: "FeatureSpecIter",
             javascript: "FeatureSpecIter",
-            feature: "metadata",
-            exposure: registered,
-            support: supported,
-            parity: not_applicable,
+            feature: "metadata", status: experimental,
             role: result,
         },
         {
@@ -1784,10 +2241,7 @@ binding_contract! {
             rust: crate::feature_specs,
             python: "feature_specs",
             javascript: "featureSpecs",
-            feature: "metadata",
-            exposure: registered,
-            support: supported,
-            parity: not_applicable,
+            feature: "metadata", status: experimental,
             kind: module,
             parameters: [],
             output: crate::FeatureSpecIter,
@@ -1803,10 +2257,7 @@ binding_contract! {
             rust: crate::feature_spec,
             python: "feature_spec",
             javascript: "featureSpec",
-            feature: "metadata",
-            exposure: registered,
-            support: supported,
-            parity: not_applicable,
+            feature: "metadata", status: experimental,
             kind: module,
             parameters: [{ name: name, type: &str, default: required }],
             output: Option<&'static crate::FeatureSpec>,
@@ -1822,10 +2273,7 @@ binding_contract! {
             rust: crate::operation_specs,
             python: "operation_specs",
             javascript: "operationSpecs",
-            feature: "metadata",
-            exposure: registered,
-            support: supported,
-            parity: not_applicable,
+            feature: "metadata", status: experimental,
             kind: module,
             parameters: [],
             output: &'static [&'static crate::MoleculeOpSpec],
@@ -1841,10 +2289,7 @@ binding_contract! {
             rust: crate::operation_spec,
             python: "operation_spec",
             javascript: "operationSpec",
-            feature: "metadata",
-            exposure: registered,
-            support: supported,
-            parity: not_applicable,
+            feature: "metadata", status: experimental,
             kind: module,
             parameters: [{ name: method, type: &str, default: required }],
             output: Option<&'static crate::MoleculeOpSpec>,
@@ -1860,10 +2305,7 @@ binding_contract! {
             rust: crate::support_matrix,
             python: "support_matrix",
             javascript: "supportMatrix",
-            feature: "metadata",
-            exposure: registered,
-            support: supported,
-            parity: not_applicable,
+            feature: "metadata", status: experimental,
             kind: module,
             parameters: [],
             output: &'static [crate::SupportMatrixEntry],
@@ -1879,10 +2321,7 @@ binding_contract! {
             rust: crate::operation_invariant_matrix,
             python: "operation_invariant_matrix",
             javascript: "operationInvariantMatrix",
-            feature: "metadata",
-            exposure: registered,
-            support: supported,
-            parity: not_applicable,
+            feature: "metadata", status: experimental,
             kind: module,
             parameters: [],
             output: &'static [crate::OperationInvariantEntry],
@@ -1898,10 +2337,7 @@ binding_contract! {
             rust: crate::parity_matrix,
             python: "parity_matrix",
             javascript: "parityMatrix",
-            feature: "metadata",
-            exposure: registered,
-            support: supported,
-            parity: not_applicable,
+            feature: "metadata", status: experimental,
             kind: module,
             parameters: [],
             output: &'static [crate::ParityMatrixEntry],
@@ -1917,10 +2353,7 @@ binding_contract! {
             rust: crate::operation_invariant,
             python: "operation_invariant",
             javascript: "operationInvariant",
-            feature: "metadata",
-            exposure: registered,
-            support: supported,
-            parity: not_applicable,
+            feature: "metadata", status: experimental,
             kind: module,
             parameters: [{ name: method, type: &str, default: required }],
             output: Option<&'static crate::OperationInvariantEntry>,
@@ -1936,10 +2369,7 @@ binding_contract! {
             rust: crate::operation_parity,
             python: "operation_parity",
             javascript: "operationParity",
-            feature: "metadata",
-            exposure: registered,
-            support: supported,
-            parity: not_applicable,
+            feature: "metadata", status: experimental,
             kind: module,
             parameters: [{ name: method, type: &str, default: required }],
             output: Option<&'static crate::ParityMatrixEntry>,
@@ -1955,10 +2385,7 @@ binding_contract! {
             rust: crate::version,
             python: "version",
             javascript: "version",
-            feature: "metadata",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
+            feature: "metadata", status: experimental,
             kind: module,
             parameters: [],
             output: &'static str,
@@ -1967,7 +2394,7 @@ binding_contract! {
             operation: none,
             signature: fn() -> &'static str,
         },
-        #[cfg(feature = "matrices")]
+        #[cfg(feature = "cap-matrices")]
         {
             semantic_id: "types.DenseMatrix",
             item: type,
@@ -1975,13 +2402,10 @@ binding_contract! {
             rust: crate::DenseMatrix,
             python: "DenseMatrix",
             javascript: "DenseMatrix",
-            feature: "matrices",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-matrices", status: experimental,
             role: result,
         },
-        #[cfg(feature = "matrices")]
+        #[cfg(feature = "cap-matrices")]
         {
             semantic_id: "types.DistanceMatrixParams",
             item: type,
@@ -1989,13 +2413,10 @@ binding_contract! {
             rust: crate::DistanceMatrixParams,
             python: "DistanceMatrixParams",
             javascript: "DistanceMatrixParams",
-            feature: "matrices",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-matrices", status: experimental,
             role: parameter,
         },
-        #[cfg(feature = "matrices")]
+        #[cfg(feature = "cap-matrices")]
         {
             semantic_id: "types.DistanceMatrix3dParams",
             item: type,
@@ -2003,13 +2424,10 @@ binding_contract! {
             rust: crate::DistanceMatrix3dParams,
             python: "DistanceMatrix3dParams",
             javascript: "DistanceMatrix3dParams",
-            feature: "matrices",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-matrices", status: experimental,
             role: parameter,
         },
-        #[cfg(feature = "matrices")]
+        #[cfg(feature = "cap-matrices")]
         {
             semantic_id: "types.MatrixError",
             item: type,
@@ -2017,13 +2435,10 @@ binding_contract! {
             rust: crate::MatrixError,
             python: "MatrixError",
             javascript: "MatrixError",
-            feature: "matrices",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-matrices", status: experimental,
             role: error,
         },
-        #[cfg(feature = "matrices")]
+        #[cfg(feature = "cap-matrices")]
         {
             semantic_id: "Molecule.distance_matrix",
             item: callable,
@@ -2031,10 +2446,7 @@ binding_contract! {
             rust: crate::Molecule::distance_matrix,
             python: "distance_matrix",
             javascript: "distanceMatrix",
-            feature: "matrices",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-matrices", status: experimental,
             kind: instance,
             parameters: [],
             output: crate::DenseMatrix,
@@ -2043,7 +2455,7 @@ binding_contract! {
             operation: none,
             signature: fn(&crate::Molecule) -> Result<crate::DenseMatrix, crate::MatrixError>,
         },
-        #[cfg(feature = "matrices")]
+        #[cfg(feature = "cap-matrices")]
         {
             semantic_id: "Molecule.distance_matrix_with_params",
             item: callable,
@@ -2051,10 +2463,7 @@ binding_contract! {
             rust: crate::Molecule::distance_matrix_with_params,
             python: "distance_matrix_with_params",
             javascript: "distanceMatrixWithParams",
-            feature: "matrices",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-matrices", status: experimental,
             kind: instance,
             parameters: [
                 { name: params, type: &crate::DistanceMatrixParams, default: required },
@@ -2068,7 +2477,7 @@ binding_contract! {
                 &'b crate::DistanceMatrixParams,
             ) -> Result<crate::DenseMatrix, crate::MatrixError>,
         },
-        #[cfg(feature = "matrices")]
+        #[cfg(feature = "cap-matrices")]
         {
             semantic_id: "Molecule.distance_matrix_3d",
             item: callable,
@@ -2076,10 +2485,7 @@ binding_contract! {
             rust: crate::Molecule::distance_matrix_3d,
             python: "distance_matrix_3d",
             javascript: "distanceMatrix3d",
-            feature: "matrices",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-matrices", status: experimental,
             kind: instance,
             parameters: [],
             output: crate::DenseMatrix,
@@ -2088,7 +2494,7 @@ binding_contract! {
             operation: none,
             signature: fn(&crate::Molecule) -> Result<crate::DenseMatrix, crate::MatrixError>,
         },
-        #[cfg(feature = "matrices")]
+        #[cfg(feature = "cap-matrices")]
         {
             semantic_id: "Molecule.distance_matrix_3d_with_params",
             item: callable,
@@ -2096,10 +2502,7 @@ binding_contract! {
             rust: crate::Molecule::distance_matrix_3d_with_params,
             python: "distance_matrix_3d_with_params",
             javascript: "distanceMatrix3dWithParams",
-            feature: "matrices",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-matrices", status: experimental,
             kind: instance,
             parameters: [
                 { name: params, type: &crate::DistanceMatrix3dParams, default: required },
@@ -2123,9 +2526,9 @@ binding_contract! {
         // methods are value-returning coordinate operations: read topology,
         // write only the coordinate block and its derived-state bookkeeping,
         // preserve independent 3D rows and source-object identity, with no
-        // topology edit or mapping. The later generated operation declaration
-        // must implement and verify this contract before exposure changes.
-        #[cfg(feature = "depict")]
+        // topology edit or mapping. The generated operation declaration owns
+        // their shared function status as well as this execution contract.
+        #[cfg(feature = "cap-depict")]
         {
             semantic_id: "types.Coordinate2DParams",
             item: type,
@@ -2133,13 +2536,10 @@ binding_contract! {
             rust: crate::Coordinate2DParams,
             python: "Coordinate2DParams",
             javascript: "Coordinate2DParams",
-            feature: "depict",
-            exposure: public,
-            support: experimental,
-            parity: required_when_supported,
+            feature: "cap-depict", status: experimental,
             role: parameter,
         },
-        #[cfg(feature = "depict")]
+        #[cfg(feature = "cap-depict")]
         {
             semantic_id: "types.Coordinate2DError",
             item: type,
@@ -2147,13 +2547,10 @@ binding_contract! {
             rust: crate::Coordinate2DError,
             python: "Coordinate2DError",
             javascript: "Coordinate2DError",
-            feature: "depict",
-            exposure: public,
-            support: experimental,
-            parity: required_when_supported,
+            feature: "cap-depict", status: experimental,
             role: error,
         },
-        #[cfg(feature = "depict")]
+        #[cfg(feature = "cap-depict")]
         {
             semantic_id: "types.Coordinate2DTemplateError",
             item: type,
@@ -2161,13 +2558,10 @@ binding_contract! {
             rust: crate::Coordinate2DTemplateError,
             python: "Coordinate2DTemplateError",
             javascript: "Coordinate2DTemplateError",
-            feature: "depict",
-            exposure: public,
-            support: experimental,
-            parity: required_when_supported,
+            feature: "cap-depict", status: experimental,
             role: error,
         },
-        #[cfg(feature = "depict")]
+        #[cfg(feature = "cap-depict")]
         {
             semantic_id: "types.Coordinate2DLayoutError",
             item: type,
@@ -2175,13 +2569,10 @@ binding_contract! {
             rust: crate::Coordinate2DLayoutError,
             python: "Coordinate2DLayoutError",
             javascript: "Coordinate2DLayoutError",
-            feature: "depict",
-            exposure: public,
-            support: experimental,
-            parity: required_when_supported,
+            feature: "cap-depict", status: experimental,
             role: error,
         },
-        #[cfg(feature = "depict")]
+        #[cfg(feature = "cap-depict")]
         {
             semantic_id: "Molecule.with_2d_coordinates",
             item: callable,
@@ -2189,10 +2580,7 @@ binding_contract! {
             rust: crate::Molecule::with_2d_coordinates,
             python: "with_2d_coordinates",
             javascript: "with2dCoordinates",
-            feature: "depict",
-            exposure: public,
-            support: experimental,
-            parity: required_when_supported,
+            feature: "cap-depict",
             kind: instance,
             parameters: [],
             output: crate::Molecule,
@@ -2201,7 +2589,7 @@ binding_contract! {
             operation: "with_2d_coordinates",
             signature: fn(&crate::Molecule) -> Result<crate::Molecule, crate::OperationError>,
         },
-        #[cfg(feature = "depict")]
+        #[cfg(feature = "cap-depict")]
         {
             semantic_id: "Molecule.with_2d_coordinates_with_params",
             item: callable,
@@ -2209,10 +2597,7 @@ binding_contract! {
             rust: crate::Molecule::with_2d_coordinates_with_params,
             python: "with_2d_coordinates_with_params",
             javascript: "with2dCoordinatesWithParams",
-            feature: "depict",
-            exposure: public,
-            support: experimental,
-            parity: required_when_supported,
+            feature: "cap-depict",
             kind: instance,
             parameters: [
                 { name: params, type: &crate::Coordinate2DParams, default: required },
@@ -2228,7 +2613,7 @@ binding_contract! {
         },
         // CORE-transforms public projection delegates to the single detached
         // owner through the generated coordinate-operation runtime.
-        #[cfg(feature = "transforms")]
+        #[cfg(feature = "cap-transforms")]
         {
             semantic_id: "types.AtomPositionParams",
             item: type,
@@ -2236,13 +2621,10 @@ binding_contract! {
             rust: crate::AtomPositionParams,
             python: "AtomPositionParams",
             javascript: "AtomPositionParams",
-            feature: "transforms",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-transforms", status: experimental,
             role: parameter,
         },
-        #[cfg(feature = "transforms")]
+        #[cfg(feature = "cap-transforms")]
         {
             semantic_id: "types.TransformError",
             item: type,
@@ -2250,13 +2632,10 @@ binding_contract! {
             rust: crate::TransformError,
             python: "TransformError",
             javascript: "TransformError",
-            feature: "transforms",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-transforms", status: experimental,
             role: error,
         },
-        #[cfg(feature = "transforms")]
+        #[cfg(feature = "cap-transforms")]
         {
             semantic_id: "Molecule.with_atom_position",
             item: callable,
@@ -2264,10 +2643,7 @@ binding_contract! {
             rust: crate::Molecule::with_atom_position,
             python: "with_atom_position",
             javascript: "withAtomPosition",
-            feature: "transforms",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-transforms",
             kind: instance,
             parameters: [
                 { name: atom, type: crate::AtomId, default: required },
@@ -2283,7 +2659,7 @@ binding_contract! {
                 [f64; 3],
             ) -> Result<crate::Molecule, crate::OperationError>,
         },
-        #[cfg(feature = "transforms")]
+        #[cfg(feature = "cap-transforms")]
         {
             semantic_id: "Molecule.with_atom_position_with_params",
             item: callable,
@@ -2291,10 +2667,7 @@ binding_contract! {
             rust: crate::Molecule::with_atom_position_with_params,
             python: "with_atom_position_with_params",
             javascript: "withAtomPositionWithParams",
-            feature: "transforms",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-transforms",
             kind: instance,
             parameters: [
                 { name: atom, type: crate::AtomId, default: required },
@@ -2312,7 +2685,7 @@ binding_contract! {
                 &'b crate::AtomPositionParams,
             ) -> Result<crate::Molecule, crate::OperationError>,
         },
-        #[cfg(feature = "transforms")]
+        #[cfg(feature = "cap-transforms")]
         {
             semantic_id: "Molecule.set_atom_position_",
             item: callable,
@@ -2320,10 +2693,7 @@ binding_contract! {
             rust: crate::Molecule::set_atom_position_,
             python: "set_atom_position_",
             javascript: "setAtomPosition",
-            feature: "transforms",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-transforms",
             kind: instance,
             parameters: [
                 { name: atom, type: crate::AtomId, default: required },
@@ -2339,7 +2709,7 @@ binding_contract! {
                 [f64; 3],
             ) -> Result<(), crate::OperationError>,
         },
-        #[cfg(feature = "transforms")]
+        #[cfg(feature = "cap-transforms")]
         {
             semantic_id: "Molecule.set_atom_position_with_params_",
             item: callable,
@@ -2347,10 +2717,7 @@ binding_contract! {
             rust: crate::Molecule::set_atom_position_with_params_,
             python: "set_atom_position_with_params_",
             javascript: "setAtomPositionWithParams",
-            feature: "transforms",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-transforms",
             kind: instance,
             parameters: [
                 { name: atom, type: crate::AtomId, default: required },
@@ -2373,7 +2740,7 @@ binding_contract! {
         // `SanitizeOperations` owns the exact source flag vocabulary and
         // `SanitizeStage` owns the failed-operation vocabulary; individual
         // constants/variants are not parallel callable registry entries.
-        #[cfg(feature = "sanitize")]
+        #[cfg(feature = "cap-sanitize")]
         {
             semantic_id: "types.SanitizeOperations",
             item: type,
@@ -2381,13 +2748,10 @@ binding_contract! {
             rust: crate::SanitizeOperations,
             python: "SanitizeOperations",
             javascript: "SanitizeOperations",
-            feature: "sanitize",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-sanitize", status: experimental,
             role: parameter,
         },
-        #[cfg(feature = "sanitize")]
+        #[cfg(feature = "cap-sanitize")]
         {
             semantic_id: "types.SanitizeStage",
             item: type,
@@ -2395,13 +2759,10 @@ binding_contract! {
             rust: crate::SanitizeStage,
             python: "SanitizeStage",
             javascript: "SanitizeStage",
-            feature: "sanitize",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-sanitize", status: experimental,
             role: value,
         },
-        #[cfg(feature = "sanitize")]
+        #[cfg(feature = "cap-sanitize")]
         {
             semantic_id: "types.SanitizeParams",
             item: type,
@@ -2409,13 +2770,10 @@ binding_contract! {
             rust: crate::SanitizeParams,
             python: "SanitizeParams",
             javascript: "SanitizeParams",
-            feature: "sanitize",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-sanitize", status: experimental,
             role: parameter,
         },
-        #[cfg(feature = "sanitize")]
+        #[cfg(feature = "cap-sanitize")]
         {
             semantic_id: "types.SanitizeError",
             item: type,
@@ -2423,13 +2781,10 @@ binding_contract! {
             rust: crate::SanitizeError,
             python: "SanitizeError",
             javascript: "SanitizeError",
-            feature: "sanitize",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-sanitize", status: experimental,
             role: error,
         },
-        #[cfg(feature = "sanitize")]
+        #[cfg(feature = "cap-sanitize")]
         {
             semantic_id: "types.ChemistryProblemError",
             item: type,
@@ -2437,13 +2792,10 @@ binding_contract! {
             rust: crate::ChemistryProblemError,
             python: "ChemistryProblemError",
             javascript: "ChemistryProblemError",
-            feature: "sanitize",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-sanitize", status: experimental,
             role: error,
         },
-        #[cfg(feature = "sanitize")]
+        #[cfg(feature = "cap-sanitize")]
         {
             semantic_id: "types.ChemistryProblem",
             item: type,
@@ -2451,13 +2803,10 @@ binding_contract! {
             rust: crate::ChemistryProblem,
             python: "ChemistryProblem",
             javascript: "ChemistryProblem",
-            feature: "sanitize",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-sanitize", status: experimental,
             role: value,
         },
-        #[cfg(feature = "sanitize")]
+        #[cfg(feature = "cap-sanitize")]
         {
             semantic_id: "types.ChemistryProblemReport",
             item: type,
@@ -2465,13 +2814,10 @@ binding_contract! {
             rust: crate::ChemistryProblemReport,
             python: "ChemistryProblemReport",
             javascript: "ChemistryProblemReport",
-            feature: "sanitize",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-sanitize", status: experimental,
             role: result,
         },
-        #[cfg(feature = "sanitize")]
+        #[cfg(feature = "cap-sanitize")]
         {
             semantic_id: "Molecule.sanitize",
             item: callable,
@@ -2479,10 +2825,7 @@ binding_contract! {
             rust: crate::Molecule::sanitize,
             python: "sanitize",
             javascript: "sanitize",
-            feature: "sanitize",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-sanitize",
             kind: instance,
             parameters: [],
             output: crate::Molecule,
@@ -2491,7 +2834,7 @@ binding_contract! {
             operation: "sanitize",
             signature: fn(&crate::Molecule) -> Result<crate::Molecule, crate::OperationError>,
         },
-        #[cfg(feature = "sanitize")]
+        #[cfg(feature = "cap-sanitize")]
         {
             semantic_id: "Molecule.sanitize_with_params",
             item: callable,
@@ -2499,10 +2842,7 @@ binding_contract! {
             rust: crate::Molecule::sanitize_with_params,
             python: "sanitize_with_params",
             javascript: "sanitizeWithParams",
-            feature: "sanitize",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-sanitize",
             kind: instance,
             parameters: [
                 { name: params, type: &crate::SanitizeParams, default: required },
@@ -2516,7 +2856,7 @@ binding_contract! {
                 &'b crate::SanitizeParams,
             ) -> Result<crate::Molecule, crate::OperationError>,
         },
-        #[cfg(feature = "sanitize")]
+        #[cfg(feature = "cap-sanitize")]
         {
             semantic_id: "Molecule.detect_chemistry_problems",
             item: callable,
@@ -2524,10 +2864,7 @@ binding_contract! {
             rust: crate::Molecule::detect_chemistry_problems,
             python: "detect_chemistry_problems",
             javascript: "detectChemistryProblems",
-            feature: "sanitize",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-sanitize", status: experimental,
             kind: instance,
             parameters: [],
             output: crate::ChemistryProblemReport,
@@ -2537,7 +2874,7 @@ binding_contract! {
             signature: fn(&crate::Molecule)
                 -> Result<crate::ChemistryProblemReport, crate::SanitizeError>,
         },
-        #[cfg(feature = "sanitize")]
+        #[cfg(feature = "cap-sanitize")]
         {
             semantic_id: "Molecule.detect_chemistry_problems_with_params",
             item: callable,
@@ -2545,10 +2882,7 @@ binding_contract! {
             rust: crate::Molecule::detect_chemistry_problems_with_params,
             python: "detect_chemistry_problems_with_params",
             javascript: "detectChemistryProblemsWithParams",
-            feature: "sanitize",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-sanitize", status: experimental,
             kind: instance,
             parameters: [
                 { name: params, type: &crate::SanitizeParams, default: required },
@@ -2564,7 +2898,7 @@ binding_contract! {
         },
         // CHEM-kekulize is projected through the generated operation runtime;
         // the detached behavior remains uniquely owned by cosmolkit-core.
-        #[cfg(feature = "kekulize")]
+        #[cfg(feature = "cap-kekulize")]
         {
             semantic_id: "types.KekulizeParams",
             item: type,
@@ -2572,13 +2906,10 @@ binding_contract! {
             rust: crate::KekulizeParams,
             python: "KekulizeParams",
             javascript: "KekulizeParams",
-            feature: "kekulize",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-kekulize", status: experimental,
             role: parameter,
         },
-        #[cfg(feature = "kekulize")]
+        #[cfg(feature = "cap-kekulize")]
         {
             semantic_id: "types.KekulizeError",
             item: type,
@@ -2586,13 +2917,10 @@ binding_contract! {
             rust: crate::KekulizeError,
             python: "KekulizeError",
             javascript: "KekulizeError",
-            feature: "kekulize",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-kekulize", status: experimental,
             role: error,
         },
-        #[cfg(feature = "kekulize")]
+        #[cfg(feature = "cap-kekulize")]
         {
             semantic_id: "Molecule.with_kekulized_bonds",
             item: callable,
@@ -2600,10 +2928,7 @@ binding_contract! {
             rust: crate::Molecule::with_kekulized_bonds,
             python: "with_kekulized_bonds",
             javascript: "withKekulizedBonds",
-            feature: "kekulize",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-kekulize",
             kind: instance,
             parameters: [],
             output: crate::Molecule,
@@ -2612,7 +2937,7 @@ binding_contract! {
             operation: "with_kekulized_bonds",
             signature: fn(&crate::Molecule) -> Result<crate::Molecule, crate::OperationError>,
         },
-        #[cfg(feature = "kekulize")]
+        #[cfg(feature = "cap-kekulize")]
         {
             semantic_id: "Molecule.with_kekulized_bonds_with_params",
             item: callable,
@@ -2620,10 +2945,7 @@ binding_contract! {
             rust: crate::Molecule::with_kekulized_bonds_with_params,
             python: "with_kekulized_bonds_with_params",
             javascript: "withKekulizedBondsWithParams",
-            feature: "kekulize",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-kekulize",
             kind: instance,
             parameters: [
                 { name: params, type: &crate::KekulizeParams, default: required },
@@ -2637,7 +2959,7 @@ binding_contract! {
                 &'b crate::KekulizeParams,
             ) -> Result<crate::Molecule, crate::OperationError>,
         },
-        #[cfg(feature = "kekulize")]
+        #[cfg(feature = "cap-kekulize")]
         {
             semantic_id: "Molecule.kekulize_bonds_",
             item: callable,
@@ -2645,10 +2967,7 @@ binding_contract! {
             rust: crate::Molecule::kekulize_bonds_,
             python: "kekulize_bonds_",
             javascript: "kekulizeBonds",
-            feature: "kekulize",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-kekulize",
             kind: instance,
             parameters: [],
             output: (),
@@ -2657,7 +2976,7 @@ binding_contract! {
             operation: "kekulize_bonds_",
             signature: fn(&mut crate::Molecule) -> Result<(), crate::OperationError>,
         },
-        #[cfg(feature = "kekulize")]
+        #[cfg(feature = "cap-kekulize")]
         {
             semantic_id: "Molecule.kekulize_bonds_with_params_",
             item: callable,
@@ -2665,10 +2984,7 @@ binding_contract! {
             rust: crate::Molecule::kekulize_bonds_with_params_,
             python: "kekulize_bonds_with_params_",
             javascript: "kekulizeBondsWithParams",
-            feature: "kekulize",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-kekulize",
             kind: instance,
             parameters: [
                 { name: params, type: &crate::KekulizeParams, default: required },
@@ -2684,7 +3000,7 @@ binding_contract! {
         },
         // CHEM-aromaticity is projected through the generated operation runtime;
         // the source-backed behavior remains uniquely owned by cosmolkit-core.
-        #[cfg(feature = "aromaticity")]
+        #[cfg(feature = "cap-aromaticity")]
         {
             semantic_id: "types.AromaticityModel",
             item: type,
@@ -2692,13 +3008,10 @@ binding_contract! {
             rust: crate::AromaticityModel,
             python: "AromaticityModel",
             javascript: "AromaticityModel",
-            feature: "aromaticity",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-aromaticity", status: experimental,
             role: parameter,
         },
-        #[cfg(feature = "aromaticity")]
+        #[cfg(feature = "cap-aromaticity")]
         {
             semantic_id: "types.AromaticityParams",
             item: type,
@@ -2706,13 +3019,10 @@ binding_contract! {
             rust: crate::AromaticityParams,
             python: "AromaticityParams",
             javascript: "AromaticityParams",
-            feature: "aromaticity",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-aromaticity", status: experimental,
             role: parameter,
         },
-        #[cfg(feature = "aromaticity")]
+        #[cfg(feature = "cap-aromaticity")]
         {
             semantic_id: "types.AromaticityError",
             item: type,
@@ -2720,13 +3030,10 @@ binding_contract! {
             rust: crate::AromaticityError,
             python: "AromaticityError",
             javascript: "AromaticityError",
-            feature: "aromaticity",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-aromaticity", status: experimental,
             role: error,
         },
-        #[cfg(feature = "aromaticity")]
+        #[cfg(feature = "cap-aromaticity")]
         {
             semantic_id: "Molecule.with_assigned_aromaticity",
             item: callable,
@@ -2734,10 +3041,7 @@ binding_contract! {
             rust: crate::Molecule::with_assigned_aromaticity,
             python: "with_assigned_aromaticity",
             javascript: "withAssignedAromaticity",
-            feature: "aromaticity",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-aromaticity",
             kind: instance,
             parameters: [],
             output: crate::Molecule,
@@ -2746,7 +3050,7 @@ binding_contract! {
             operation: "with_assigned_aromaticity",
             signature: fn(&crate::Molecule) -> Result<crate::Molecule, crate::OperationError>,
         },
-        #[cfg(feature = "aromaticity")]
+        #[cfg(feature = "cap-aromaticity")]
         {
             semantic_id: "Molecule.with_assigned_aromaticity_with_params",
             item: callable,
@@ -2754,10 +3058,7 @@ binding_contract! {
             rust: crate::Molecule::with_assigned_aromaticity_with_params,
             python: "with_assigned_aromaticity_with_params",
             javascript: "withAssignedAromaticityWithParams",
-            feature: "aromaticity",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-aromaticity",
             kind: instance,
             parameters: [
                 { name: params, type: &crate::AromaticityParams, default: required },
@@ -2771,7 +3072,7 @@ binding_contract! {
                 &'b crate::AromaticityParams,
             ) -> Result<crate::Molecule, crate::OperationError>,
         },
-        #[cfg(feature = "aromaticity")]
+        #[cfg(feature = "cap-aromaticity")]
         {
             semantic_id: "Molecule.assign_aromaticity_",
             item: callable,
@@ -2779,10 +3080,7 @@ binding_contract! {
             rust: crate::Molecule::assign_aromaticity_,
             python: "assign_aromaticity_",
             javascript: "assignAromaticity",
-            feature: "aromaticity",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-aromaticity",
             kind: instance,
             parameters: [],
             output: (),
@@ -2791,7 +3089,7 @@ binding_contract! {
             operation: "assign_aromaticity_",
             signature: fn(&mut crate::Molecule) -> Result<(), crate::OperationError>,
         },
-        #[cfg(feature = "aromaticity")]
+        #[cfg(feature = "cap-aromaticity")]
         {
             semantic_id: "Molecule.assign_aromaticity_with_params_",
             item: callable,
@@ -2799,10 +3097,7 @@ binding_contract! {
             rust: crate::Molecule::assign_aromaticity_with_params_,
             python: "assign_aromaticity_with_params_",
             javascript: "assignAromaticityWithParams",
-            feature: "aromaticity",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-aromaticity",
             kind: instance,
             parameters: [
                 { name: params, type: &crate::AromaticityParams, default: required },
@@ -2820,7 +3115,7 @@ binding_contract! {
         // delegate to the single detached owner through the live runtime.
         // The mutation projections share the single `with_assigned_valence`
         // operation declaration; this registry does not define an implementation.
-        #[cfg(feature = "valence")]
+        #[cfg(feature = "cap-valence")]
         {
             semantic_id: "types.ValenceModel",
             item: type,
@@ -2828,13 +3123,10 @@ binding_contract! {
             rust: crate::ValenceModel,
             python: "ValenceModel",
             javascript: "ValenceModel",
-            feature: "valence",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
+            feature: "cap-valence", status: experimental,
             role: parameter,
         },
-        #[cfg(feature = "valence")]
+        #[cfg(feature = "cap-valence")]
         {
             semantic_id: "types.ValenceParams",
             item: type,
@@ -2842,13 +3134,10 @@ binding_contract! {
             rust: crate::ValenceParams,
             python: "ValenceParams",
             javascript: "ValenceParams",
-            feature: "valence",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
+            feature: "cap-valence", status: experimental,
             role: parameter,
         },
-        #[cfg(feature = "valence")]
+        #[cfg(feature = "cap-valence")]
         {
             semantic_id: "types.ValenceError",
             item: type,
@@ -2856,13 +3145,10 @@ binding_contract! {
             rust: crate::ValenceError,
             python: "ValenceError",
             javascript: "ValenceError",
-            feature: "valence",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
+            feature: "cap-valence", status: experimental,
             role: error,
         },
-        #[cfg(feature = "valence")]
+        #[cfg(feature = "cap-valence")]
         {
             semantic_id: "Molecule.with_assigned_valence",
             item: callable,
@@ -2870,10 +3156,7 @@ binding_contract! {
             rust: crate::Molecule::with_assigned_valence,
             python: "with_assigned_valence",
             javascript: "withAssignedValence",
-            feature: "valence",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-valence",
             kind: instance,
             parameters: [],
             output: crate::Molecule,
@@ -2882,7 +3165,7 @@ binding_contract! {
             operation: "with_assigned_valence",
             signature: fn(&crate::Molecule) -> Result<crate::Molecule, crate::OperationError>,
         },
-        #[cfg(feature = "valence")]
+        #[cfg(feature = "cap-valence")]
         {
             semantic_id: "Molecule.with_assigned_valence_with_params",
             item: callable,
@@ -2890,10 +3173,7 @@ binding_contract! {
             rust: crate::Molecule::with_assigned_valence_with_params,
             python: "with_assigned_valence_with_params",
             javascript: "withAssignedValenceWithParams",
-            feature: "valence",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-valence",
             kind: instance,
             parameters: [{ name: params, type: &crate::ValenceParams, default: required }],
             output: crate::Molecule,
@@ -2903,7 +3183,7 @@ binding_contract! {
             signature: for<'a, 'b> fn(&'a crate::Molecule, &'b crate::ValenceParams)
                 -> Result<crate::Molecule, crate::OperationError>,
         },
-        #[cfg(feature = "valence")]
+        #[cfg(feature = "cap-valence")]
         {
             semantic_id: "Molecule.assign_valence_",
             item: callable,
@@ -2911,10 +3191,7 @@ binding_contract! {
             rust: crate::Molecule::assign_valence_,
             python: "assign_valence_",
             javascript: "assignValence",
-            feature: "valence",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-valence",
             kind: instance,
             parameters: [],
             output: (),
@@ -2923,7 +3200,7 @@ binding_contract! {
             operation: "assign_valence_",
             signature: fn(&mut crate::Molecule) -> Result<(), crate::OperationError>,
         },
-        #[cfg(feature = "valence")]
+        #[cfg(feature = "cap-valence")]
         {
             semantic_id: "Molecule.assign_valence_with_params_",
             item: callable,
@@ -2931,10 +3208,7 @@ binding_contract! {
             rust: crate::Molecule::assign_valence_with_params_,
             python: "assign_valence_with_params_",
             javascript: "assignValenceWithParams",
-            feature: "valence",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-valence",
             kind: instance,
             parameters: [{ name: params, type: &crate::ValenceParams, default: required }],
             output: (),
@@ -2944,7 +3218,7 @@ binding_contract! {
             signature: for<'a, 'b> fn(&'a mut crate::Molecule, &'b crate::ValenceParams)
                 -> Result<(), crate::OperationError>,
         },
-        #[cfg(feature = "valence")]
+        #[cfg(feature = "cap-valence")]
         {
             semantic_id: "Molecule.has_valence_violation",
             item: callable,
@@ -2952,10 +3226,7 @@ binding_contract! {
             rust: crate::Molecule::has_valence_violation,
             python: "has_valence_violation",
             javascript: "hasValenceViolation",
-            feature: "valence",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-valence", status: experimental,
             kind: instance,
             parameters: [{ name: atom_id, type: crate::AtomId, default: required }],
             output: bool,
@@ -2965,7 +3236,7 @@ binding_contract! {
             signature: fn(&crate::Molecule, crate::AtomId)
                 -> Result<bool, crate::ValenceError>,
         },
-        #[cfg(feature = "radicals")]
+        #[cfg(feature = "cap-radicals")]
         {
             semantic_id: "Molecule.with_assigned_radicals",
             item: callable,
@@ -2973,10 +3244,7 @@ binding_contract! {
             rust: crate::Molecule::with_assigned_radicals,
             python: "with_assigned_radicals",
             javascript: "withAssignedRadicals",
-            feature: "radicals",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-radicals",
             kind: instance,
             parameters: [],
             output: crate::Molecule,
@@ -2985,7 +3253,7 @@ binding_contract! {
             operation: "with_assigned_radicals",
             signature: fn(&crate::Molecule) -> Result<crate::Molecule, crate::OperationError>,
         },
-        #[cfg(feature = "radicals")]
+        #[cfg(feature = "cap-radicals")]
         {
             semantic_id: "Molecule.assign_radicals_",
             item: callable,
@@ -2993,10 +3261,7 @@ binding_contract! {
             rust: crate::Molecule::assign_radicals_,
             python: "assign_radicals_",
             javascript: "assignRadicals",
-            feature: "radicals",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-radicals",
             kind: instance,
             parameters: [],
             output: (),
@@ -3005,7 +3270,7 @@ binding_contract! {
             operation: "assign_radicals_",
             signature: fn(&mut crate::Molecule) -> Result<(), crate::OperationError>,
         },
-        #[cfg(feature = "rings")]
+        #[cfg(feature = "cap-rings")]
         {
             semantic_id: "types.RingSearchParams",
             item: type,
@@ -3013,13 +3278,10 @@ binding_contract! {
             rust: crate::RingSearchParams,
             python: "RingSearchParams",
             javascript: "RingSearchParams",
-            feature: "rings",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
+            feature: "cap-rings", status: experimental,
             role: parameter,
         },
-        #[cfg(feature = "rings")]
+        #[cfg(feature = "cap-rings")]
         {
             semantic_id: "Molecule.with_assigned_rings",
             item: callable,
@@ -3027,10 +3289,7 @@ binding_contract! {
             rust: crate::Molecule::with_assigned_rings,
             python: "with_assigned_rings",
             javascript: "withAssignedRings",
-            feature: "rings",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-rings",
             kind: instance,
             parameters: [],
             output: crate::Molecule,
@@ -3039,7 +3298,7 @@ binding_contract! {
             operation: "with_assigned_rings",
             signature: fn(&crate::Molecule) -> Result<crate::Molecule, crate::OperationError>,
         },
-        #[cfg(feature = "rings")]
+        #[cfg(feature = "cap-rings")]
         {
             semantic_id: "Molecule.assign_rings_",
             item: callable,
@@ -3047,10 +3306,7 @@ binding_contract! {
             rust: crate::Molecule::assign_rings_,
             python: "assign_rings_",
             javascript: "assignRings",
-            feature: "rings",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-rings",
             kind: instance,
             parameters: [],
             output: (),
@@ -3059,7 +3315,7 @@ binding_contract! {
             operation: "assign_rings_",
             signature: fn(&mut crate::Molecule) -> Result<(), crate::OperationError>,
         },
-        #[cfg(feature = "rings")]
+        #[cfg(feature = "cap-rings")]
         {
             semantic_id: "Molecule.with_assigned_ring_families",
             item: callable,
@@ -3067,10 +3323,7 @@ binding_contract! {
             rust: crate::Molecule::with_assigned_ring_families,
             python: "with_assigned_ring_families",
             javascript: "withAssignedRingFamilies",
-            feature: "rings",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-rings",
             kind: instance,
             parameters: [],
             output: crate::Molecule,
@@ -3079,7 +3332,7 @@ binding_contract! {
             operation: "with_assigned_ring_families",
             signature: fn(&crate::Molecule) -> Result<crate::Molecule, crate::OperationError>,
         },
-        #[cfg(feature = "rings")]
+        #[cfg(feature = "cap-rings")]
         {
             semantic_id: "Molecule.with_assigned_ring_families_with_params",
             item: callable,
@@ -3087,10 +3340,7 @@ binding_contract! {
             rust: crate::Molecule::with_assigned_ring_families_with_params,
             python: "with_assigned_ring_families_with_params",
             javascript: "withAssignedRingFamiliesWithParams",
-            feature: "rings",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-rings",
             kind: instance,
             parameters: [{ name: params, type: &crate::RingSearchParams, default: required }],
             output: crate::Molecule,
@@ -3100,7 +3350,7 @@ binding_contract! {
             signature: for<'a, 'b> fn(&'a crate::Molecule, &'b crate::RingSearchParams)
                 -> Result<crate::Molecule, crate::OperationError>,
         },
-        #[cfg(feature = "rings")]
+        #[cfg(feature = "cap-rings")]
         {
             semantic_id: "Molecule.assign_ring_families_",
             item: callable,
@@ -3108,10 +3358,7 @@ binding_contract! {
             rust: crate::Molecule::assign_ring_families_,
             python: "assign_ring_families_",
             javascript: "assignRingFamilies",
-            feature: "rings",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-rings",
             kind: instance,
             parameters: [],
             output: (),
@@ -3120,7 +3367,7 @@ binding_contract! {
             operation: "assign_ring_families_",
             signature: fn(&mut crate::Molecule) -> Result<(), crate::OperationError>,
         },
-        #[cfg(feature = "rings")]
+        #[cfg(feature = "cap-rings")]
         {
             semantic_id: "Molecule.assign_ring_families_with_params_",
             item: callable,
@@ -3128,10 +3375,7 @@ binding_contract! {
             rust: crate::Molecule::assign_ring_families_with_params_,
             python: "assign_ring_families_with_params_",
             javascript: "assignRingFamiliesWithParams",
-            feature: "rings",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-rings",
             kind: instance,
             parameters: [{ name: params, type: &crate::RingSearchParams, default: required }],
             output: (),
@@ -3147,7 +3391,7 @@ binding_contract! {
         // `_with_params` variants expose exactly those two fields through one
         // immutable parameter value. The public result is the canonical
         // Molecule/() operation result, never the detached assignment block.
-        #[cfg(feature = "stereo")]
+        #[cfg(feature = "cap-stereo")]
         {
             semantic_id: "types.StructureTagParams",
             item: type,
@@ -3155,13 +3399,10 @@ binding_contract! {
             rust: crate::StructureTagParams,
             python: "StructureTagParams",
             javascript: "StructureTagParams",
-            feature: "stereo",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-stereo", status: experimental,
             role: parameter,
         },
-        #[cfg(feature = "stereo")]
+        #[cfg(feature = "cap-stereo")]
         {
             semantic_id: "types.StereoError",
             item: type,
@@ -3169,13 +3410,10 @@ binding_contract! {
             rust: crate::StereoError,
             python: "StereoError",
             javascript: "StereoError",
-            feature: "stereo",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
+            feature: "cap-stereo", status: experimental,
             role: error,
         },
-        #[cfg(feature = "stereo")]
+        #[cfg(feature = "cap-stereo")]
         {
             semantic_id: "Molecule.with_chiral_tags_from_structure",
             item: callable,
@@ -3183,10 +3421,7 @@ binding_contract! {
             rust: crate::Molecule::with_chiral_tags_from_structure,
             python: "with_chiral_tags_from_structure",
             javascript: "withChiralTagsFromStructure",
-            feature: "stereo",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-stereo",
             kind: instance,
             parameters: [],
             output: crate::Molecule,
@@ -3195,7 +3430,7 @@ binding_contract! {
             operation: "with_chiral_tags_from_structure",
             signature: fn(&crate::Molecule) -> Result<crate::Molecule, crate::OperationError>,
         },
-        #[cfg(feature = "stereo")]
+        #[cfg(feature = "cap-stereo")]
         {
             semantic_id: "Molecule.with_chiral_tags_from_structure_with_params",
             item: callable,
@@ -3203,10 +3438,7 @@ binding_contract! {
             rust: crate::Molecule::with_chiral_tags_from_structure_with_params,
             python: "with_chiral_tags_from_structure_with_params",
             javascript: "withChiralTagsFromStructureWithParams",
-            feature: "stereo",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-stereo",
             kind: instance,
             parameters: [
                 { name: params, type: &crate::StructureTagParams, default: required },
@@ -3220,7 +3452,7 @@ binding_contract! {
                 &'b crate::StructureTagParams,
             ) -> Result<crate::Molecule, crate::OperationError>,
         },
-        #[cfg(feature = "stereo")]
+        #[cfg(feature = "cap-stereo")]
         {
             semantic_id: "Molecule.assign_chiral_tags_from_structure_",
             item: callable,
@@ -3228,10 +3460,7 @@ binding_contract! {
             rust: crate::Molecule::assign_chiral_tags_from_structure_,
             python: "assign_chiral_tags_from_structure_",
             javascript: "assignChiralTagsFromStructure",
-            feature: "stereo",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-stereo",
             kind: instance,
             parameters: [],
             output: (),
@@ -3240,7 +3469,7 @@ binding_contract! {
             operation: "assign_chiral_tags_from_structure_",
             signature: fn(&mut crate::Molecule) -> Result<(), crate::OperationError>,
         },
-        #[cfg(feature = "stereo")]
+        #[cfg(feature = "cap-stereo")]
         {
             semantic_id: "Molecule.assign_chiral_tags_from_structure_with_params_",
             item: callable,
@@ -3248,10 +3477,7 @@ binding_contract! {
             rust: crate::Molecule::assign_chiral_tags_from_structure_with_params_,
             python: "assign_chiral_tags_from_structure_with_params_",
             javascript: "assignChiralTagsFromStructureWithParams",
-            feature: "stereo",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-stereo",
             kind: instance,
             parameters: [
                 { name: params, type: &crate::StructureTagParams, default: required },
@@ -3269,7 +3495,7 @@ binding_contract! {
         // These rows freeze the canonical public spelling and typed result
         // surface; the source-backed perception algorithm remains uniquely
         // owned by `cosmolkit-core`.
-        #[cfg(feature = "stereo")]
+        #[cfg(feature = "cap-stereo")]
         {
             semantic_id: "types.PotentialStereoParams",
             item: type,
@@ -3277,13 +3503,10 @@ binding_contract! {
             rust: crate::PotentialStereoParams,
             python: "PotentialStereoParams",
             javascript: "PotentialStereoParams",
-            feature: "stereo",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-stereo", status: experimental,
             role: parameter,
         },
-        #[cfg(feature = "stereo")]
+        #[cfg(feature = "cap-stereo")]
         {
             semantic_id: "types.PotentialStereoType",
             item: type,
@@ -3291,13 +3514,10 @@ binding_contract! {
             rust: crate::PotentialStereoType,
             python: "PotentialStereoType",
             javascript: "PotentialStereoType",
-            feature: "stereo",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-stereo", status: experimental,
             role: value,
         },
-        #[cfg(feature = "stereo")]
+        #[cfg(feature = "cap-stereo")]
         {
             semantic_id: "types.PotentialStereoSpecified",
             item: type,
@@ -3305,13 +3525,10 @@ binding_contract! {
             rust: crate::PotentialStereoSpecified,
             python: "PotentialStereoSpecified",
             javascript: "PotentialStereoSpecified",
-            feature: "stereo",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-stereo", status: experimental,
             role: value,
         },
-        #[cfg(feature = "stereo")]
+        #[cfg(feature = "cap-stereo")]
         {
             semantic_id: "types.PotentialStereoDescriptor",
             item: type,
@@ -3319,13 +3536,10 @@ binding_contract! {
             rust: crate::PotentialStereoDescriptor,
             python: "PotentialStereoDescriptor",
             javascript: "PotentialStereoDescriptor",
-            feature: "stereo",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-stereo", status: experimental,
             role: value,
         },
-        #[cfg(feature = "stereo")]
+        #[cfg(feature = "cap-stereo")]
         {
             semantic_id: "types.PotentialStereoCenter",
             item: type,
@@ -3333,13 +3547,10 @@ binding_contract! {
             rust: crate::PotentialStereoCenter,
             python: "PotentialStereoCenter",
             javascript: "PotentialStereoCenter",
-            feature: "stereo",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-stereo", status: experimental,
             role: value,
         },
-        #[cfg(feature = "stereo")]
+        #[cfg(feature = "cap-stereo")]
         {
             semantic_id: "types.PotentialStereoInfo",
             item: type,
@@ -3347,13 +3558,10 @@ binding_contract! {
             rust: crate::PotentialStereoInfo,
             python: "PotentialStereoInfo",
             javascript: "PotentialStereoInfo",
-            feature: "stereo",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-stereo", status: experimental,
             role: value,
         },
-        #[cfg(feature = "stereo")]
+        #[cfg(feature = "cap-stereo")]
         {
             semantic_id: "types.RingStereoRelation",
             item: type,
@@ -3361,13 +3569,10 @@ binding_contract! {
             rust: crate::RingStereoRelation,
             python: "RingStereoRelation",
             javascript: "RingStereoRelation",
-            feature: "stereo",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-stereo", status: experimental,
             role: value,
         },
-        #[cfg(feature = "stereo")]
+        #[cfg(feature = "cap-stereo")]
         {
             // The binding surface is the default Molecule specialization.
             // PendingMolecule is private transaction state, never a binding type.
@@ -3377,13 +3582,11 @@ binding_contract! {
             rust: crate::PotentialStereoResult,
             python: "PotentialStereoResult",
             javascript: "PotentialStereoResult",
-            feature: "stereo",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-stereo",
+            status: experimental,
             role: result,
         },
-        #[cfg(feature = "stereo")]
+        #[cfg(feature = "cap-stereo")]
         {
             semantic_id: "types.PotentialStereoError",
             item: type,
@@ -3391,13 +3594,10 @@ binding_contract! {
             rust: crate::PotentialStereoError,
             python: "PotentialStereoError",
             javascript: "PotentialStereoError",
-            feature: "stereo",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
+            feature: "cap-stereo", status: experimental,
             role: error,
         },
-        #[cfg(feature = "stereo")]
+        #[cfg(feature = "cap-stereo")]
         {
             semantic_id: "Molecule.potential_stereo",
             item: callable,
@@ -3405,10 +3605,7 @@ binding_contract! {
             rust: crate::Molecule::potential_stereo,
             python: "potential_stereo",
             javascript: "potentialStereo",
-            feature: "stereo",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-stereo",
             kind: instance,
             parameters: [],
             output: crate::PotentialStereoResult,
@@ -3418,7 +3615,7 @@ binding_contract! {
             signature: fn(&crate::Molecule)
                 -> Result<crate::PotentialStereoResult, crate::OperationError>,
         },
-        #[cfg(feature = "stereo")]
+        #[cfg(feature = "cap-stereo")]
         {
             semantic_id: "Molecule.potential_stereo_with_params",
             item: callable,
@@ -3426,10 +3623,7 @@ binding_contract! {
             rust: crate::Molecule::potential_stereo_with_params,
             python: "potential_stereo_with_params",
             javascript: "potentialStereoWithParams",
-            feature: "stereo",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-stereo",
             kind: instance,
             parameters: [
                 { name: params, type: &crate::PotentialStereoParams, default: required },
@@ -3450,7 +3644,7 @@ binding_contract! {
         // particular RDKit seqTrans/seqCis project to typed LowerE/LowerZ, not
         // invalid stored values. The detached CipLabelAssignment is
         // transaction hand-off state, not a binding result type.
-        #[cfg(feature = "stereo")]
+        #[cfg(feature = "cap-stereo")]
         {
             semantic_id: "types.CipDescriptor",
             item: type,
@@ -3458,13 +3652,10 @@ binding_contract! {
             rust: crate::CipDescriptor,
             python: "CipDescriptor",
             javascript: "CipDescriptor",
-            feature: "stereo",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-stereo", status: experimental,
             role: value,
         },
-        #[cfg(feature = "stereo")]
+        #[cfg(feature = "cap-stereo")]
         {
             semantic_id: "types.CipDescriptorError",
             item: type,
@@ -3472,13 +3663,10 @@ binding_contract! {
             rust: crate::CipDescriptorError,
             python: "CipDescriptorError",
             javascript: "CipDescriptorError",
-            feature: "stereo",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
+            feature: "cap-stereo", status: experimental,
             role: error,
         },
-        #[cfg(feature = "stereo")]
+        #[cfg(feature = "cap-stereo")]
         {
             semantic_id: "types.CipLabelOptions",
             item: type,
@@ -3486,13 +3674,10 @@ binding_contract! {
             rust: crate::CipLabelOptions,
             python: "CipLabelOptions",
             javascript: "CipLabelOptions",
-            feature: "stereo",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
+            feature: "cap-stereo", status: experimental,
             role: parameter,
         },
-        #[cfg(feature = "stereo")]
+        #[cfg(feature = "cap-stereo")]
         {
             semantic_id: "types.CipLabelerError",
             item: type,
@@ -3500,13 +3685,10 @@ binding_contract! {
             rust: crate::CipLabelerError,
             python: "CipLabelerError",
             javascript: "CipLabelerError",
-            feature: "stereo",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
+            feature: "cap-stereo", status: experimental,
             role: error,
         },
-        #[cfg(feature = "stereo")]
+        #[cfg(feature = "cap-stereo")]
         {
             semantic_id: "Molecule.with_cip_labels",
             item: callable,
@@ -3514,10 +3696,7 @@ binding_contract! {
             rust: crate::Molecule::with_cip_labels,
             python: "with_cip_labels",
             javascript: "withCipLabels",
-            feature: "stereo",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-stereo",
             kind: instance,
             parameters: [],
             output: crate::Molecule,
@@ -3526,7 +3705,7 @@ binding_contract! {
             operation: "with_cip_labels",
             signature: fn(&crate::Molecule) -> Result<crate::Molecule, crate::OperationError>,
         },
-        #[cfg(feature = "stereo")]
+        #[cfg(feature = "cap-stereo")]
         {
             semantic_id: "Molecule.with_cip_labels_with_options",
             item: callable,
@@ -3534,10 +3713,7 @@ binding_contract! {
             rust: crate::Molecule::with_cip_labels_with_options,
             python: "with_cip_labels_with_options",
             javascript: "withCipLabelsWithOptions",
-            feature: "stereo",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-stereo",
             kind: instance,
             parameters: [
                 { name: options, type: &crate::CipLabelOptions, default: required },
@@ -3551,7 +3727,7 @@ binding_contract! {
                 &'b crate::CipLabelOptions,
             ) -> Result<crate::Molecule, crate::OperationError>,
         },
-        #[cfg(feature = "stereo")]
+        #[cfg(feature = "cap-stereo")]
         {
             semantic_id: "Molecule.assign_cip_labels_",
             item: callable,
@@ -3559,10 +3735,7 @@ binding_contract! {
             rust: crate::Molecule::assign_cip_labels_,
             python: "assign_cip_labels_",
             javascript: "assignCipLabels",
-            feature: "stereo",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-stereo",
             kind: instance,
             parameters: [],
             output: (),
@@ -3571,7 +3744,7 @@ binding_contract! {
             operation: "assign_cip_labels_",
             signature: fn(&mut crate::Molecule) -> Result<(), crate::OperationError>,
         },
-        #[cfg(feature = "stereo")]
+        #[cfg(feature = "cap-stereo")]
         {
             semantic_id: "Molecule.assign_cip_labels_with_options_",
             item: callable,
@@ -3579,10 +3752,7 @@ binding_contract! {
             rust: crate::Molecule::assign_cip_labels_with_options_,
             python: "assign_cip_labels_with_options_",
             javascript: "assignCipLabelsWithOptions",
-            feature: "stereo",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-stereo",
             kind: instance,
             parameters: [
                 { name: options, type: &crate::CipLabelOptions, default: required },
@@ -3596,7 +3766,7 @@ binding_contract! {
                 &'b crate::CipLabelOptions,
             ) -> Result<(), crate::OperationError>,
         },
-        #[cfg(feature = "descriptors")]
+        #[cfg(feature = "cap-descriptors")]
         {
             semantic_id: "Molecule.molecular_weight",
             item: callable,
@@ -3604,10 +3774,7 @@ binding_contract! {
             rust: crate::Molecule::molecular_weight,
             python: "molecular_weight",
             javascript: "molecularWeight",
-            feature: "descriptors",
-            exposure: public,
-            support: experimental,
-            parity: required_when_supported,
+            feature: "cap-descriptors", status: experimental,
             kind: instance,
             parameters: [],
             output: f64,
@@ -3616,7 +3783,7 @@ binding_contract! {
             operation: none,
             signature: fn(&crate::Molecule) -> Result<f64, crate::OperationError>,
         },
-        #[cfg(feature = "descriptors")]
+        #[cfg(feature = "cap-descriptors")]
         {
             semantic_id: "Molecule.exact_molecular_weight",
             item: callable,
@@ -3624,10 +3791,7 @@ binding_contract! {
             rust: crate::Molecule::exact_molecular_weight,
             python: "exact_molecular_weight",
             javascript: "exactMolecularWeight",
-            feature: "descriptors",
-            exposure: public,
-            support: experimental,
-            parity: required_when_supported,
+            feature: "cap-descriptors", status: experimental,
             kind: instance,
             parameters: [],
             output: f64,
@@ -3636,7 +3800,7 @@ binding_contract! {
             operation: none,
             signature: fn(&crate::Molecule) -> Result<f64, crate::OperationError>,
         },
-        #[cfg(feature = "descriptors")]
+        #[cfg(feature = "cap-descriptors")]
         {
             semantic_id: "Molecule.molecular_formula",
             item: callable,
@@ -3644,10 +3808,7 @@ binding_contract! {
             rust: crate::Molecule::molecular_formula,
             python: "molecular_formula",
             javascript: "molecularFormula",
-            feature: "descriptors",
-            exposure: public,
-            support: experimental,
-            parity: required_when_supported,
+            feature: "cap-descriptors", status: experimental,
             kind: instance,
             parameters: [],
             output: String,
@@ -3656,10 +3817,308 @@ binding_contract! {
             operation: none,
             signature: fn(&crate::Molecule) -> Result<String, crate::OperationError>,
         },
+        // Descriptor count queries: the two public error types precede the
+        // five registered query methods. DescriptorError is the canonical
+        // re-export of the domain error; DescriptorReadError is the root
+        // read boundary (missing prepared valence / typed algorithm cause).
+        #[cfg(feature = "cap-descriptors")]
+        {
+            semantic_id: "types.DescriptorError",
+            item: type,
+            owner: type_,
+            rust: crate::DescriptorError,
+            python: "DescriptorError",
+            javascript: "DescriptorError",
+            feature: "cap-descriptors", status: experimental,
+            role: error,
+        },
+        #[cfg(feature = "cap-descriptors")]
+        {
+            semantic_id: "types.DescriptorReadError",
+            item: type,
+            owner: type_,
+            rust: crate::DescriptorReadError,
+            python: "DescriptorReadError",
+            javascript: "DescriptorReadError",
+            feature: "cap-descriptors", status: experimental,
+            role: error,
+        },
+        #[cfg(feature = "cap-descriptors")]
+        {
+            semantic_id: "Molecule.num_heavy_atoms",
+            item: callable,
+            owner: molecule,
+            rust: crate::Molecule::num_heavy_atoms,
+            python: "num_heavy_atoms",
+            javascript: "numHeavyAtoms",
+            feature: "cap-descriptors", status: experimental,
+            kind: instance,
+            parameters: [],
+            output: u32,
+            error: crate::DescriptorReadError,
+            state: read_only,
+            operation: none,
+            signature: fn(&crate::Molecule) -> Result<u32, crate::DescriptorReadError>,
+        },
+        #[cfg(feature = "cap-descriptors")]
+        {
+            semantic_id: "Molecule.total_atom_count",
+            item: callable,
+            owner: molecule,
+            rust: crate::Molecule::total_atom_count,
+            python: "total_atom_count",
+            javascript: "totalAtomCount",
+            feature: "cap-descriptors", status: experimental,
+            kind: instance,
+            parameters: [],
+            output: u32,
+            error: crate::DescriptorReadError,
+            state: read_only,
+            operation: none,
+            signature: fn(&crate::Molecule) -> Result<u32, crate::DescriptorReadError>,
+        },
+        #[cfg(feature = "cap-descriptors")]
+        {
+            semantic_id: "Molecule.num_rings",
+            item: callable,
+            owner: molecule,
+            rust: crate::Molecule::num_rings,
+            python: "num_rings",
+            javascript: "numRings",
+            feature: "cap-descriptors", status: experimental,
+            kind: instance,
+            parameters: [],
+            output: u32,
+            error: crate::DescriptorReadError,
+            state: read_only,
+            operation: none,
+            signature: fn(&crate::Molecule) -> Result<u32, crate::DescriptorReadError>,
+        },
+        #[cfg(feature = "cap-descriptors")]
+        {
+            semantic_id: "Molecule.num_heterocycles",
+            item: callable,
+            owner: molecule,
+            rust: crate::Molecule::num_heterocycles,
+            python: "num_heterocycles",
+            javascript: "numHeterocycles",
+            feature: "cap-descriptors", status: experimental,
+            kind: instance,
+            parameters: [],
+            output: u32,
+            error: crate::DescriptorReadError,
+            state: read_only,
+            operation: none,
+            signature: fn(&crate::Molecule) -> Result<u32, crate::DescriptorReadError>,
+        },
+        #[cfg(feature = "cap-descriptors")]
+        {
+            semantic_id: "Molecule.num_aromatic_rings",
+            item: callable,
+            owner: molecule,
+            rust: crate::Molecule::num_aromatic_rings,
+            python: "num_aromatic_rings",
+            javascript: "numAromaticRings",
+            feature: "cap-descriptors", status: experimental,
+            kind: instance,
+            parameters: [],
+            output: u32,
+            error: crate::DescriptorReadError,
+            state: read_only,
+            operation: none,
+            signature: fn(&crate::Molecule) -> Result<u32, crate::DescriptorReadError>,
+        },
+        #[cfg(feature = "cap-descriptors")]
+        {
+            semantic_id: "Molecule.num_saturated_rings",
+            item: callable,
+            owner: molecule,
+            rust: crate::Molecule::num_saturated_rings,
+            python: "num_saturated_rings",
+            javascript: "numSaturatedRings",
+            feature: "cap-descriptors", status: experimental,
+            kind: instance,
+            parameters: [],
+            output: u32,
+            error: crate::DescriptorReadError,
+            state: read_only,
+            operation: none,
+            signature: fn(&crate::Molecule) -> Result<u32, crate::DescriptorReadError>,
+        },
+        #[cfg(feature = "cap-descriptors")]
+        {
+            semantic_id: "Molecule.num_aliphatic_rings",
+            item: callable,
+            owner: molecule,
+            rust: crate::Molecule::num_aliphatic_rings,
+            python: "num_aliphatic_rings",
+            javascript: "numAliphaticRings",
+            feature: "cap-descriptors", status: experimental,
+            kind: instance,
+            parameters: [],
+            output: u32,
+            error: crate::DescriptorReadError,
+            state: read_only,
+            operation: none,
+            signature: fn(&crate::Molecule) -> Result<u32, crate::DescriptorReadError>,
+        },
+        #[cfg(feature = "cap-descriptors")]
+        {
+            semantic_id: "Molecule.num_aromatic_heterocycles",
+            item: callable,
+            owner: molecule,
+            rust: crate::Molecule::num_aromatic_heterocycles,
+            python: "num_aromatic_heterocycles",
+            javascript: "numAromaticHeterocycles",
+            feature: "cap-descriptors", status: experimental,
+            kind: instance,
+            parameters: [],
+            output: u32,
+            error: crate::DescriptorReadError,
+            state: read_only,
+            operation: none,
+            signature: fn(&crate::Molecule) -> Result<u32, crate::DescriptorReadError>,
+        },
+        #[cfg(feature = "cap-descriptors")]
+        {
+            semantic_id: "Molecule.num_aromatic_carbocycles",
+            item: callable,
+            owner: molecule,
+            rust: crate::Molecule::num_aromatic_carbocycles,
+            python: "num_aromatic_carbocycles",
+            javascript: "numAromaticCarbocycles",
+            feature: "cap-descriptors", status: experimental,
+            kind: instance,
+            parameters: [],
+            output: u32,
+            error: crate::DescriptorReadError,
+            state: read_only,
+            operation: none,
+            signature: fn(&crate::Molecule) -> Result<u32, crate::DescriptorReadError>,
+        },
+        #[cfg(feature = "cap-descriptors")]
+        {
+            semantic_id: "Molecule.num_aliphatic_heterocycles",
+            item: callable,
+            owner: molecule,
+            rust: crate::Molecule::num_aliphatic_heterocycles,
+            python: "num_aliphatic_heterocycles",
+            javascript: "numAliphaticHeterocycles",
+            feature: "cap-descriptors", status: experimental,
+            kind: instance,
+            parameters: [],
+            output: u32,
+            error: crate::DescriptorReadError,
+            state: read_only,
+            operation: none,
+            signature: fn(&crate::Molecule) -> Result<u32, crate::DescriptorReadError>,
+        },
+        #[cfg(feature = "cap-descriptors")]
+        {
+            semantic_id: "Molecule.num_aliphatic_carbocycles",
+            item: callable,
+            owner: molecule,
+            rust: crate::Molecule::num_aliphatic_carbocycles,
+            python: "num_aliphatic_carbocycles",
+            javascript: "numAliphaticCarbocycles",
+            feature: "cap-descriptors", status: experimental,
+            kind: instance,
+            parameters: [],
+            output: u32,
+            error: crate::DescriptorReadError,
+            state: read_only,
+            operation: none,
+            signature: fn(&crate::Molecule) -> Result<u32, crate::DescriptorReadError>,
+        },
+        #[cfg(feature = "cap-descriptors")]
+        {
+            semantic_id: "Molecule.num_saturated_heterocycles",
+            item: callable,
+            owner: molecule,
+            rust: crate::Molecule::num_saturated_heterocycles,
+            python: "num_saturated_heterocycles",
+            javascript: "numSaturatedHeterocycles",
+            feature: "cap-descriptors", status: experimental,
+            kind: instance,
+            parameters: [],
+            output: u32,
+            error: crate::DescriptorReadError,
+            state: read_only,
+            operation: none,
+            signature: fn(&crate::Molecule) -> Result<u32, crate::DescriptorReadError>,
+        },
+        #[cfg(feature = "cap-descriptors")]
+        {
+            semantic_id: "Molecule.num_saturated_carbocycles",
+            item: callable,
+            owner: molecule,
+            rust: crate::Molecule::num_saturated_carbocycles,
+            python: "num_saturated_carbocycles",
+            javascript: "numSaturatedCarbocycles",
+            feature: "cap-descriptors", status: experimental,
+            kind: instance,
+            parameters: [],
+            output: u32,
+            error: crate::DescriptorReadError,
+            state: read_only,
+            operation: none,
+            signature: fn(&crate::Molecule) -> Result<u32, crate::DescriptorReadError>,
+        },
+        #[cfg(feature = "cap-descriptors")]
+        {
+            semantic_id: "Molecule.lipinski_hba",
+            item: callable,
+            owner: molecule,
+            rust: crate::Molecule::lipinski_hba,
+            python: "lipinski_hba",
+            javascript: "lipinskiHba",
+            feature: "cap-descriptors", status: experimental,
+            kind: instance,
+            parameters: [],
+            output: u32,
+            error: crate::DescriptorReadError,
+            state: read_only,
+            operation: none,
+            signature: fn(&crate::Molecule) -> Result<u32, crate::DescriptorReadError>,
+        },
+        #[cfg(feature = "cap-descriptors")]
+        {
+            semantic_id: "Molecule.lipinski_hbd",
+            item: callable,
+            owner: molecule,
+            rust: crate::Molecule::lipinski_hbd,
+            python: "lipinski_hbd",
+            javascript: "lipinskiHbd",
+            feature: "cap-descriptors", status: experimental,
+            kind: instance,
+            parameters: [],
+            output: u32,
+            error: crate::DescriptorReadError,
+            state: read_only,
+            operation: none,
+            signature: fn(&crate::Molecule) -> Result<u32, crate::DescriptorReadError>,
+        },
+        #[cfg(feature = "cap-descriptors")]
+        {
+            semantic_id: "Molecule.fraction_csp3",
+            item: callable,
+            owner: molecule,
+            rust: crate::Molecule::fraction_csp3,
+            python: "fraction_csp3",
+            javascript: "fractionCsp3",
+            feature: "cap-descriptors", status: experimental,
+            kind: instance,
+            parameters: [],
+            output: f64,
+            error: crate::DescriptorReadError,
+            state: read_only,
+            operation: none,
+            signature: fn(&crate::Molecule) -> Result<f64, crate::DescriptorReadError>,
+        },
         // H-add_stereo canonical public surface. The detached
         // AddHydrogensResult/HydrogenWarning hand-off remains internal; all
         // four callables project the same generated strong operation.
-        #[cfg(feature = "hydrogens")]
+        #[cfg(feature = "cap-hydrogens")]
         {
             semantic_id: "types.AddHsParams",
             item: type,
@@ -3667,13 +4126,10 @@ binding_contract! {
             rust: crate::AddHsParams,
             python: "AddHsParams",
             javascript: "AddHsParams",
-            feature: "hydrogens",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
+            feature: "cap-hydrogens", status: experimental,
             role: parameter,
         },
-        #[cfg(feature = "hydrogens")]
+        #[cfg(feature = "cap-hydrogens")]
         {
             semantic_id: "types.HydrogenError",
             item: type,
@@ -3681,13 +4137,10 @@ binding_contract! {
             rust: crate::HydrogenError,
             python: "HydrogenError",
             javascript: "HydrogenError",
-            feature: "hydrogens",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
+            feature: "cap-hydrogens", status: experimental,
             role: error,
         },
-        #[cfg(feature = "hydrogens")]
+        #[cfg(feature = "cap-hydrogens")]
         {
             semantic_id: "types.RemoveHsParams",
             item: type,
@@ -3695,13 +4148,10 @@ binding_contract! {
             rust: crate::RemoveHsParams,
             python: "RemoveHsParams",
             javascript: "RemoveHsParams",
-            feature: "hydrogens",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
+            feature: "cap-hydrogens", status: experimental,
             role: parameter,
         },
-        #[cfg(feature = "hydrogens")]
+        #[cfg(feature = "cap-hydrogens")]
         {
             semantic_id: "Molecule.with_hydrogens",
             item: callable,
@@ -3709,10 +4159,7 @@ binding_contract! {
             rust: crate::Molecule::with_hydrogens,
             python: "with_hydrogens",
             javascript: "withHydrogens",
-            feature: "hydrogens",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-hydrogens",
             kind: instance,
             parameters: [],
             output: crate::Molecule,
@@ -3721,7 +4168,7 @@ binding_contract! {
             operation: "with_hydrogens",
             signature: fn(&crate::Molecule) -> Result<crate::Molecule, crate::OperationError>,
         },
-        #[cfg(feature = "hydrogens")]
+        #[cfg(feature = "cap-hydrogens")]
         {
             semantic_id: "Molecule.with_hydrogens_with_params",
             item: callable,
@@ -3729,10 +4176,7 @@ binding_contract! {
             rust: crate::Molecule::with_hydrogens_with_params,
             python: "with_hydrogens_with_params",
             javascript: "withHydrogensWithParams",
-            feature: "hydrogens",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-hydrogens",
             kind: instance,
             parameters: [
                 { name: params, type: &crate::AddHsParams, default: required },
@@ -3746,7 +4190,7 @@ binding_contract! {
                 &'b crate::AddHsParams,
             ) -> Result<crate::Molecule, crate::OperationError>,
         },
-        #[cfg(feature = "hydrogens")]
+        #[cfg(feature = "cap-hydrogens")]
         {
             semantic_id: "Molecule.add_hydrogens_",
             item: callable,
@@ -3754,10 +4198,7 @@ binding_contract! {
             rust: crate::Molecule::add_hydrogens_,
             python: "add_hydrogens_",
             javascript: "addHydrogens",
-            feature: "hydrogens",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-hydrogens",
             kind: instance,
             parameters: [],
             output: (),
@@ -3766,7 +4207,7 @@ binding_contract! {
             operation: "add_hydrogens_",
             signature: fn(&mut crate::Molecule) -> Result<(), crate::OperationError>,
         },
-        #[cfg(feature = "hydrogens")]
+        #[cfg(feature = "cap-hydrogens")]
         {
             semantic_id: "Molecule.add_hydrogens_with_params_",
             item: callable,
@@ -3774,10 +4215,7 @@ binding_contract! {
             rust: crate::Molecule::add_hydrogens_with_params_,
             python: "add_hydrogens_with_params_",
             javascript: "addHydrogensWithParams",
-            feature: "hydrogens",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-hydrogens",
             kind: instance,
             parameters: [
                 { name: params, type: &crate::AddHsParams, default: required },
@@ -3791,7 +4229,7 @@ binding_contract! {
                 &'b crate::AddHsParams,
             ) -> Result<(), crate::OperationError>,
         },
-        #[cfg(feature = "hydrogens")]
+        #[cfg(feature = "cap-hydrogens")]
         {
             semantic_id: "Molecule.without_hydrogens",
             item: callable,
@@ -3799,10 +4237,7 @@ binding_contract! {
             rust: crate::Molecule::without_hydrogens,
             python: "without_hydrogens",
             javascript: "withoutHydrogens",
-            feature: "hydrogens",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-hydrogens",
             kind: instance,
             parameters: [],
             output: crate::Molecule,
@@ -3811,7 +4246,7 @@ binding_contract! {
             operation: "without_hydrogens",
             signature: fn(&crate::Molecule) -> Result<crate::Molecule, crate::OperationError>,
         },
-        #[cfg(feature = "hydrogens")]
+        #[cfg(feature = "cap-hydrogens")]
         {
             semantic_id: "Molecule.without_hydrogens_with_params",
             item: callable,
@@ -3819,10 +4254,7 @@ binding_contract! {
             rust: crate::Molecule::without_hydrogens_with_params,
             python: "without_hydrogens_with_params",
             javascript: "withoutHydrogensWithParams",
-            feature: "hydrogens",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-hydrogens",
             kind: instance,
             parameters: [
                 { name: params, type: &crate::RemoveHsParams, default: required },
@@ -3836,7 +4268,7 @@ binding_contract! {
                 &'b crate::RemoveHsParams,
             ) -> Result<crate::Molecule, crate::OperationError>,
         },
-        #[cfg(feature = "hydrogens")]
+        #[cfg(feature = "cap-hydrogens")]
         {
             semantic_id: "Molecule.remove_hydrogens_",
             item: callable,
@@ -3844,10 +4276,7 @@ binding_contract! {
             rust: crate::Molecule::remove_hydrogens_,
             python: "remove_hydrogens_",
             javascript: "removeHydrogens",
-            feature: "hydrogens",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-hydrogens",
             kind: instance,
             parameters: [],
             output: (),
@@ -3856,7 +4285,7 @@ binding_contract! {
             operation: "remove_hydrogens_",
             signature: fn(&mut crate::Molecule) -> Result<(), crate::OperationError>,
         },
-        #[cfg(feature = "hydrogens")]
+        #[cfg(feature = "cap-hydrogens")]
         {
             semantic_id: "Molecule.remove_hydrogens_with_params_",
             item: callable,
@@ -3864,10 +4293,7 @@ binding_contract! {
             rust: crate::Molecule::remove_hydrogens_with_params_,
             python: "remove_hydrogens_with_params_",
             javascript: "removeHydrogensWithParams",
-            feature: "hydrogens",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-hydrogens",
             kind: instance,
             parameters: [
                 { name: params, type: &crate::RemoveHsParams, default: required },
@@ -3883,7 +4309,7 @@ binding_contract! {
         },
         // BIO-residue owns these immutable vocabulary/source-metadata values.
         // The facade only re-exports their unique detached owner.
-        #[cfg(feature = "bio")]
+        #[cfg(feature = "cap-bio")]
         {
             semantic_id: "types.ResidueInfoKind",
             item: type,
@@ -3891,13 +4317,10 @@ binding_contract! {
             rust: crate::ResidueInfoKind,
             python: "ResidueInfoKind",
             javascript: "ResidueInfoKind",
-            feature: "bio",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-bio", status: experimental,
             role: value,
         },
-        #[cfg(feature = "bio")]
+        #[cfg(feature = "cap-bio")]
         {
             semantic_id: "types.ResidueCode",
             item: type,
@@ -3905,13 +4328,10 @@ binding_contract! {
             rust: crate::ResidueCode,
             python: "ResidueCode",
             javascript: "ResidueCode",
-            feature: "bio",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-bio", status: experimental,
             role: value,
         },
-        #[cfg(feature = "bio")]
+        #[cfg(feature = "cap-bio")]
         {
             semantic_id: "types.ResidueInfo",
             item: type,
@@ -3919,13 +4339,10 @@ binding_contract! {
             rust: crate::ResidueInfo,
             python: "ResidueInfo",
             javascript: "ResidueInfo",
-            feature: "bio",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-bio", status: experimental,
             role: value,
         },
-        #[cfg(feature = "bio")]
+        #[cfg(feature = "cap-bio")]
         {
             semantic_id: "types.PdbAtomSerial",
             item: type,
@@ -3933,13 +4350,10 @@ binding_contract! {
             rust: crate::PdbAtomSerial,
             python: "PdbAtomSerial",
             javascript: "PdbAtomSerial",
-            feature: "bio",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-bio", status: experimental,
             role: value,
         },
-        #[cfg(feature = "bio")]
+        #[cfg(feature = "cap-bio")]
         {
             semantic_id: "types.PdbChainId",
             item: type,
@@ -3947,13 +4361,10 @@ binding_contract! {
             rust: crate::PdbChainId,
             python: "PdbChainId",
             javascript: "PdbChainId",
-            feature: "bio",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-bio", status: experimental,
             role: value,
         },
-        #[cfg(feature = "bio")]
+        #[cfg(feature = "cap-bio")]
         {
             semantic_id: "types.PdbSeqId",
             item: type,
@@ -3961,13 +4372,10 @@ binding_contract! {
             rust: crate::PdbSeqId,
             python: "PdbSeqId",
             javascript: "PdbSeqId",
-            feature: "bio",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-bio", status: experimental,
             role: value,
         },
-        #[cfg(feature = "bio")]
+        #[cfg(feature = "cap-bio")]
         {
             semantic_id: "types.AtomName",
             item: type,
@@ -3975,13 +4383,10 @@ binding_contract! {
             rust: crate::AtomName,
             python: "AtomName",
             javascript: "AtomName",
-            feature: "bio",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-bio", status: experimental,
             role: value,
         },
-        #[cfg(feature = "bio")]
+        #[cfg(feature = "cap-bio")]
         {
             semantic_id: "types.ResidueName",
             item: type,
@@ -3989,13 +4394,10 @@ binding_contract! {
             rust: crate::ResidueName,
             python: "ResidueName",
             javascript: "ResidueName",
-            feature: "bio",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-bio", status: experimental,
             role: value,
         },
-        #[cfg(feature = "bio")]
+        #[cfg(feature = "cap-bio")]
         {
             semantic_id: "types.AltLocLabel",
             item: type,
@@ -4003,13 +4405,10 @@ binding_contract! {
             rust: crate::AltLocLabel,
             python: "AltLocLabel",
             javascript: "AltLocLabel",
-            feature: "bio",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-bio", status: experimental,
             role: value,
         },
-        #[cfg(feature = "bio")]
+        #[cfg(feature = "cap-bio")]
         {
             semantic_id: "types.AtomSourceIds",
             item: type,
@@ -4017,13 +4416,10 @@ binding_contract! {
             rust: crate::AtomSourceIds,
             python: "AtomSourceIds",
             javascript: "AtomSourceIds",
-            feature: "bio",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-bio", status: experimental,
             role: value,
         },
-        #[cfg(feature = "bio")]
+        #[cfg(feature = "cap-bio")]
         {
             semantic_id: "types.ResidueSourceIds",
             item: type,
@@ -4031,13 +4427,10 @@ binding_contract! {
             rust: crate::ResidueSourceIds,
             python: "ResidueSourceIds",
             javascript: "ResidueSourceIds",
-            feature: "bio",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-bio", status: experimental,
             role: value,
         },
-        #[cfg(feature = "bio")]
+        #[cfg(feature = "cap-bio")]
         {
             semantic_id: "types.ChainSourceIds",
             item: type,
@@ -4045,13 +4438,10 @@ binding_contract! {
             rust: crate::ChainSourceIds,
             python: "ChainSourceIds",
             javascript: "ChainSourceIds",
-            feature: "bio",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-bio", status: experimental,
             role: value,
         },
-        #[cfg(feature = "bio")]
+        #[cfg(feature = "cap-bio")]
         {
             semantic_id: "types.EntitySourceIds",
             item: type,
@@ -4059,13 +4449,10 @@ binding_contract! {
             rust: crate::EntitySourceIds,
             python: "EntitySourceIds",
             javascript: "EntitySourceIds",
-            feature: "bio",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-bio", status: experimental,
             role: value,
         },
-        #[cfg(feature = "bio")]
+        #[cfg(feature = "cap-bio")]
         {
             semantic_id: "types.ResidueSequenceError",
             item: type,
@@ -4073,13 +4460,10 @@ binding_contract! {
             rust: crate::ResidueSequenceError,
             python: "ResidueSequenceError",
             javascript: "ResidueSequenceError",
-            feature: "bio",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-bio", status: experimental,
             role: error,
         },
-        #[cfg(feature = "bio")]
+        #[cfg(feature = "cap-bio")]
         {
             semantic_id: "module.residue_info",
             item: callable,
@@ -4087,10 +4471,7 @@ binding_contract! {
             rust: crate::residue_info,
             python: "residue_info",
             javascript: "residueInfo",
-            feature: "bio",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-bio", status: experimental,
             kind: module,
             parameters: [{ name: index, type: usize, default: required }],
             output: crate::ResidueInfo,
@@ -4099,7 +4480,7 @@ binding_contract! {
             operation: none,
             signature: fn(usize) -> crate::ResidueInfo,
         },
-        #[cfg(feature = "bio")]
+        #[cfg(feature = "cap-bio")]
         {
             semantic_id: "module.residue_info_checked",
             item: callable,
@@ -4107,10 +4488,7 @@ binding_contract! {
             rust: crate::residue_info_checked,
             python: "residue_info_checked",
             javascript: "residueInfoChecked",
-            feature: "bio",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-bio", status: experimental,
             kind: module,
             parameters: [{ name: index, type: usize, default: required }],
             output: Option<crate::ResidueInfo>,
@@ -4119,7 +4497,7 @@ binding_contract! {
             operation: none,
             signature: fn(usize) -> Option<crate::ResidueInfo>,
         },
-        #[cfg(feature = "bio")]
+        #[cfg(feature = "cap-bio")]
         {
             semantic_id: "module.find_residue_info_index",
             item: callable,
@@ -4127,10 +4505,7 @@ binding_contract! {
             rust: crate::find_residue_info_index,
             python: "find_residue_info_index",
             javascript: "findResidueInfoIndex",
-            feature: "bio",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-bio", status: experimental,
             kind: module,
             parameters: [{ name: name, type: &str, default: required }],
             output: usize,
@@ -4139,7 +4514,7 @@ binding_contract! {
             operation: none,
             signature: fn(&str) -> usize,
         },
-        #[cfg(feature = "bio")]
+        #[cfg(feature = "cap-bio")]
         {
             semantic_id: "module.find_residue_info",
             item: callable,
@@ -4147,10 +4522,7 @@ binding_contract! {
             rust: crate::find_residue_info,
             python: "find_residue_info",
             javascript: "findResidueInfo",
-            feature: "bio",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-bio", status: experimental,
             kind: module,
             parameters: [{ name: name, type: &str, default: required }],
             output: crate::ResidueInfo,
@@ -4159,7 +4531,7 @@ binding_contract! {
             operation: none,
             signature: fn(&str) -> crate::ResidueInfo,
         },
-        #[cfg(feature = "bio")]
+        #[cfg(feature = "cap-bio")]
         {
             semantic_id: "module.residue_code",
             item: callable,
@@ -4167,10 +4539,7 @@ binding_contract! {
             rust: crate::residue_code,
             python: "residue_code",
             javascript: "residueCode",
-            feature: "bio",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-bio", status: experimental,
             kind: module,
             parameters: [{ name: name, type: &str, default: required }],
             output: crate::ResidueCode,
@@ -4179,7 +4548,7 @@ binding_contract! {
             operation: none,
             signature: fn(&str) -> crate::ResidueCode,
         },
-        #[cfg(feature = "bio")]
+        #[cfg(feature = "cap-bio")]
         {
             semantic_id: "module.expand_one_letter",
             item: callable,
@@ -4187,10 +4556,7 @@ binding_contract! {
             rust: crate::expand_one_letter,
             python: "expand_one_letter",
             javascript: "expandOneLetter",
-            feature: "bio",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-bio", status: experimental,
             kind: module,
             parameters: [
                 { name: code, type: char, default: required },
@@ -4202,7 +4568,7 @@ binding_contract! {
             operation: none,
             signature: fn(char, crate::ResidueInfoKind) -> Option<&'static str>,
         },
-        #[cfg(feature = "bio")]
+        #[cfg(feature = "cap-bio")]
         {
             semantic_id: "module.expand_one_letter_sequence",
             item: callable,
@@ -4210,10 +4576,7 @@ binding_contract! {
             rust: crate::expand_one_letter_sequence,
             python: "expand_one_letter_sequence",
             javascript: "expandOneLetterSequence",
-            feature: "bio",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-bio", status: experimental,
             kind: module,
             parameters: [
                 { name: sequence, type: &str, default: required },
@@ -4225,10 +4588,10 @@ binding_contract! {
             operation: none,
             signature: fn(&str, crate::ResidueInfoKind) -> Result<Vec<String>, crate::ResidueSequenceError>,
         },
-        // BIO-hierarchy canonical detached values. The public facade re-exports
-        // the unique validated cosmolkit-bio owner; these rows do not create a
-        // BioStructure operation or a second hierarchy implementation.
-        #[cfg(feature = "bio")]
+        // BioStructure is the public owner of detached BIO blocks. Algorithms
+        // and structural validation remain in cosmolkit-bio; generated BIO
+        // operations provide value/in-place wrappers over the same body.
+        #[cfg(feature = "cap-bio")]
         {
             semantic_id: "types.BioStructure",
             item: type,
@@ -4236,13 +4599,10 @@ binding_contract! {
             rust: crate::BioStructure,
             python: "BioStructure",
             javascript: "BioStructure",
-            feature: "bio",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-bio", status: experimental,
             role: value,
         },
-        #[cfg(feature = "bio")]
+        #[cfg(feature = "cap-bio")]
         {
             semantic_id: "types.BioStructureParts",
             item: type,
@@ -4250,13 +4610,10 @@ binding_contract! {
             rust: crate::BioStructureParts,
             python: "BioStructureParts",
             javascript: "BioStructureParts",
-            feature: "bio",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-bio", status: experimental,
             role: parameter,
         },
-        #[cfg(feature = "bio")]
+        #[cfg(feature = "cap-bio")]
         {
             semantic_id: "types.BioStructureError",
             item: type,
@@ -4264,13 +4621,10 @@ binding_contract! {
             rust: crate::BioStructureError,
             python: "BioStructureError",
             javascript: "BioStructureError",
-            feature: "bio",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-bio", status: experimental,
             role: error,
         },
-        #[cfg(feature = "bio")]
+        #[cfg(feature = "cap-bio")]
         {
             semantic_id: "types.BioCoordinateFormat",
             item: type,
@@ -4278,13 +4632,10 @@ binding_contract! {
             rust: crate::BioCoordinateFormat,
             python: "BioCoordinateFormat",
             javascript: "BioCoordinateFormat",
-            feature: "bio",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-bio", status: experimental,
             role: value,
         },
-        #[cfg(feature = "bio")]
+        #[cfg(feature = "cap-bio")]
         {
             semantic_id: "types.BioCalcFlag",
             item: type,
@@ -4292,13 +4643,10 @@ binding_contract! {
             rust: crate::BioCalcFlag,
             python: "BioCalcFlag",
             javascript: "BioCalcFlag",
-            feature: "bio",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-bio", status: experimental,
             role: value,
         },
-        #[cfg(feature = "bio")]
+        #[cfg(feature = "cap-bio")]
         {
             semantic_id: "types.EntityKind",
             item: type,
@@ -4306,13 +4654,10 @@ binding_contract! {
             rust: crate::EntityKind,
             python: "EntityKind",
             javascript: "EntityKind",
-            feature: "bio",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-bio", status: experimental,
             role: value,
         },
-        #[cfg(feature = "bio")]
+        #[cfg(feature = "cap-bio")]
         {
             semantic_id: "types.PolymerKind",
             item: type,
@@ -4320,13 +4665,10 @@ binding_contract! {
             rust: crate::PolymerKind,
             python: "PolymerKind",
             javascript: "PolymerKind",
-            feature: "bio",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-bio", status: experimental,
             role: value,
         },
-        #[cfg(feature = "bio")]
+        #[cfg(feature = "cap-bio")]
         {
             semantic_id: "types.ResidueKind",
             item: type,
@@ -4334,13 +4676,10 @@ binding_contract! {
             rust: crate::ResidueKind,
             python: "ResidueKind",
             javascript: "ResidueKind",
-            feature: "bio",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-bio", status: experimental,
             role: value,
         },
-        #[cfg(feature = "bio")]
+        #[cfg(feature = "cap-bio")]
         {
             semantic_id: "types.ChainKind",
             item: type,
@@ -4348,13 +4687,10 @@ binding_contract! {
             rust: crate::ChainKind,
             python: "ChainKind",
             javascript: "ChainKind",
-            feature: "bio",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-bio", status: experimental,
             role: value,
         },
-        #[cfg(feature = "bio")]
+        #[cfg(feature = "cap-bio")]
         {
             semantic_id: "types.BioRowSpan",
             item: type,
@@ -4362,13 +4698,10 @@ binding_contract! {
             rust: crate::BioRowSpan<crate::BioAtomId>,
             python: "BioRowSpan",
             javascript: "BioRowSpan",
-            feature: "bio",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
+            feature: "cap-bio", status: experimental,
             role: value,
         },
-        #[cfg(feature = "bio")]
+        #[cfg(feature = "cap-bio")]
         {
             semantic_id: "types.BioAtomId",
             item: type,
@@ -4376,13 +4709,10 @@ binding_contract! {
             rust: crate::BioAtomId,
             python: "BioAtomId",
             javascript: "BioAtomId",
-            feature: "bio",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
+            feature: "cap-bio", status: experimental,
             role: value,
         },
-        #[cfg(feature = "bio")]
+        #[cfg(feature = "cap-bio")]
         {
             semantic_id: "types.BioResidueId",
             item: type,
@@ -4390,13 +4720,10 @@ binding_contract! {
             rust: crate::BioResidueId,
             python: "BioResidueId",
             javascript: "BioResidueId",
-            feature: "bio",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
+            feature: "cap-bio", status: experimental,
             role: value,
         },
-        #[cfg(feature = "bio")]
+        #[cfg(feature = "cap-bio")]
         {
             semantic_id: "types.BioChainId",
             item: type,
@@ -4404,13 +4731,10 @@ binding_contract! {
             rust: crate::BioChainId,
             python: "BioChainId",
             javascript: "BioChainId",
-            feature: "bio",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
+            feature: "cap-bio", status: experimental,
             role: value,
         },
-        #[cfg(feature = "bio")]
+        #[cfg(feature = "cap-bio")]
         {
             semantic_id: "types.BioEntityId",
             item: type,
@@ -4418,13 +4742,10 @@ binding_contract! {
             rust: crate::BioEntityId,
             python: "BioEntityId",
             javascript: "BioEntityId",
-            feature: "bio",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
+            feature: "cap-bio", status: experimental,
             role: value,
         },
-        #[cfg(feature = "bio")]
+        #[cfg(feature = "cap-bio")]
         {
             semantic_id: "types.BioModelId",
             item: type,
@@ -4432,13 +4753,10 @@ binding_contract! {
             rust: crate::BioModelId,
             python: "BioModelId",
             javascript: "BioModelId",
-            feature: "bio",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
+            feature: "cap-bio", status: experimental,
             role: value,
         },
-        #[cfg(feature = "bio")]
+        #[cfg(feature = "cap-bio")]
         {
             semantic_id: "types.BioAssemblyId",
             item: type,
@@ -4446,13 +4764,10 @@ binding_contract! {
             rust: crate::BioAssemblyId,
             python: "BioAssemblyId",
             javascript: "BioAssemblyId",
-            feature: "bio",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
+            feature: "cap-bio", status: experimental,
             role: value,
         },
-        #[cfg(feature = "bio")]
+        #[cfg(feature = "cap-bio")]
         {
             semantic_id: "types.BioAltLocGroupId",
             item: type,
@@ -4460,13 +4775,10 @@ binding_contract! {
             rust: crate::BioAltLocGroupId,
             python: "BioAltLocGroupId",
             javascript: "BioAltLocGroupId",
-            feature: "bio",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
+            feature: "cap-bio", status: experimental,
             role: value,
         },
-        #[cfg(feature = "bio")]
+        #[cfg(feature = "cap-bio")]
         {
             semantic_id: "types.BioAtomRow",
             item: type,
@@ -4474,13 +4786,10 @@ binding_contract! {
             rust: crate::BioAtomRow,
             python: "BioAtomRow",
             javascript: "BioAtomRow",
-            feature: "bio",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-bio", status: experimental,
             role: value,
         },
-        #[cfg(feature = "bio")]
+        #[cfg(feature = "cap-bio")]
         {
             semantic_id: "types.BioResidueRow",
             item: type,
@@ -4488,13 +4797,10 @@ binding_contract! {
             rust: crate::BioResidueRow,
             python: "BioResidueRow",
             javascript: "BioResidueRow",
-            feature: "bio",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-bio", status: experimental,
             role: value,
         },
-        #[cfg(feature = "bio")]
+        #[cfg(feature = "cap-bio")]
         {
             semantic_id: "types.BioChainRow",
             item: type,
@@ -4502,13 +4808,10 @@ binding_contract! {
             rust: crate::BioChainRow,
             python: "BioChainRow",
             javascript: "BioChainRow",
-            feature: "bio",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-bio", status: experimental,
             role: value,
         },
-        #[cfg(feature = "bio")]
+        #[cfg(feature = "cap-bio")]
         {
             semantic_id: "types.BioEntityRow",
             item: type,
@@ -4516,13 +4819,10 @@ binding_contract! {
             rust: crate::BioEntityRow,
             python: "BioEntityRow",
             javascript: "BioEntityRow",
-            feature: "bio",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-bio", status: experimental,
             role: value,
         },
-        #[cfg(feature = "bio")]
+        #[cfg(feature = "cap-bio")]
         {
             semantic_id: "types.BioModelRow",
             item: type,
@@ -4530,13 +4830,10 @@ binding_contract! {
             rust: crate::BioModelRow,
             python: "BioModelRow",
             javascript: "BioModelRow",
-            feature: "bio",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-bio", status: experimental,
             role: value,
         },
-        #[cfg(feature = "bio")]
+        #[cfg(feature = "cap-bio")]
         {
             semantic_id: "types.BioCoordinateBlock",
             item: type,
@@ -4544,13 +4841,10 @@ binding_contract! {
             rust: crate::BioCoordinateBlock,
             python: "BioCoordinateBlock",
             javascript: "BioCoordinateBlock",
-            feature: "bio",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-bio", status: experimental,
             role: value,
         },
-        #[cfg(feature = "bio")]
+        #[cfg(feature = "cap-bio")]
         {
             semantic_id: "types.BioTransform",
             item: type,
@@ -4558,13 +4852,10 @@ binding_contract! {
             rust: crate::BioTransform,
             python: "BioTransform",
             javascript: "BioTransform",
-            feature: "bio",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-bio", status: experimental,
             role: value,
         },
-        #[cfg(feature = "bio")]
+        #[cfg(feature = "cap-bio")]
         {
             semantic_id: "types.BioCrystalCell",
             item: type,
@@ -4572,13 +4863,10 @@ binding_contract! {
             rust: crate::BioCrystalCell,
             python: "BioCrystalCell",
             javascript: "BioCrystalCell",
-            feature: "bio",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-bio", status: experimental,
             role: value,
         },
-        #[cfg(feature = "bio")]
+        #[cfg(feature = "cap-bio")]
         {
             semantic_id: "types.BioCrystalInfo",
             item: type,
@@ -4586,13 +4874,10 @@ binding_contract! {
             rust: crate::BioCrystalInfo,
             python: "BioCrystalInfo",
             javascript: "BioCrystalInfo",
-            feature: "bio",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-bio", status: experimental,
             role: value,
         },
-        #[cfg(feature = "bio")]
+        #[cfg(feature = "cap-bio")]
         {
             semantic_id: "types.BioNcsOperator",
             item: type,
@@ -4600,13 +4885,10 @@ binding_contract! {
             rust: crate::BioNcsOperator,
             python: "BioNcsOperator",
             javascript: "BioNcsOperator",
-            feature: "bio",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-bio", status: experimental,
             role: value,
         },
-        #[cfg(feature = "bio")]
+        #[cfg(feature = "cap-bio")]
         {
             semantic_id: "types.BioAssemblyOperator",
             item: type,
@@ -4614,13 +4896,10 @@ binding_contract! {
             rust: crate::BioAssemblyOperator,
             python: "BioAssemblyOperator",
             javascript: "BioAssemblyOperator",
-            feature: "bio",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-bio", status: experimental,
             role: value,
         },
-        #[cfg(feature = "bio")]
+        #[cfg(feature = "cap-bio")]
         {
             semantic_id: "types.BioAssemblyGenerator",
             item: type,
@@ -4628,13 +4907,10 @@ binding_contract! {
             rust: crate::BioAssemblyGenerator,
             python: "BioAssemblyGenerator",
             javascript: "BioAssemblyGenerator",
-            feature: "bio",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-bio", status: experimental,
             role: value,
         },
-        #[cfg(feature = "bio")]
+        #[cfg(feature = "cap-bio")]
         {
             semantic_id: "types.BioAssemblySpecialKind",
             item: type,
@@ -4642,13 +4918,10 @@ binding_contract! {
             rust: crate::BioAssemblySpecialKind,
             python: "BioAssemblySpecialKind",
             javascript: "BioAssemblySpecialKind",
-            feature: "bio",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-bio", status: experimental,
             role: value,
         },
-        #[cfg(feature = "bio")]
+        #[cfg(feature = "cap-bio")]
         {
             semantic_id: "types.BioAssembly",
             item: type,
@@ -4656,13 +4929,10 @@ binding_contract! {
             rust: crate::BioAssembly,
             python: "BioAssembly",
             javascript: "BioAssembly",
-            feature: "bio",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-bio", status: experimental,
             role: value,
         },
-        #[cfg(feature = "bio")]
+        #[cfg(feature = "cap-bio")]
         {
             semantic_id: "types.AltLocRequest",
             item: type,
@@ -4670,13 +4940,10 @@ binding_contract! {
             rust: crate::AltLocRequest,
             python: "AltLocRequest",
             javascript: "AltLocRequest",
-            feature: "bio",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-bio", status: experimental,
             role: parameter,
         },
-        #[cfg(feature = "bio")]
+        #[cfg(feature = "cap-bio")]
         {
             semantic_id: "types.BioEntityDbRef",
             item: type,
@@ -4684,13 +4951,10 @@ binding_contract! {
             rust: crate::BioEntityDbRef,
             python: "BioEntityDbRef",
             javascript: "BioEntityDbRef",
-            feature: "bio",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-bio", status: experimental,
             role: value,
         },
-        #[cfg(feature = "bio")]
+        #[cfg(feature = "cap-bio")]
         {
             semantic_id: "types.BioSiftsUnpResidue",
             item: type,
@@ -4698,17 +4962,13 @@ binding_contract! {
             rust: crate::BioSiftsUnpResidue,
             python: "BioSiftsUnpResidue",
             javascript: "BioSiftsUnpResidue",
-            feature: "bio",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-bio", status: experimental,
             role: value,
         },
-        // BIO-protein canonical detached projection. The entries freeze one
-        // owned Protein value backed by the canonical BioStructure hierarchy
-        // and borrowed read-only child views. Text/file construction remains
-        // owned by the later Gemmi-primary IO units.
-        #[cfg(feature = "bio")]
+        // Protein uses the same BIO operation boundary while preserving its
+        // amino-acid invariant. Child views borrow the detached hierarchy;
+        // associated text constructors delegate parsing to cosmolkit-io.
+        #[cfg(feature = "cap-bio")]
         {
             semantic_id: "types.Protein",
             item: type,
@@ -4716,13 +4976,10 @@ binding_contract! {
             rust: crate::Protein,
             python: "Protein",
             javascript: "Protein",
-            feature: "bio",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-bio", status: experimental,
             role: value,
         },
-        #[cfg(feature = "bio")]
+        #[cfg(feature = "cap-bio")]
         {
             semantic_id: "types.ProteinProjectionError",
             item: type,
@@ -4730,13 +4987,39 @@ binding_contract! {
             rust: crate::ProteinProjectionError,
             python: "ProteinProjectionError",
             javascript: "ProteinProjectionError",
-            feature: "bio",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-bio", status: experimental,
             role: error,
         },
-        #[cfg(feature = "bio")]
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "types.ProteinSelectionSummary",
+            item: type,
+            owner: type_,
+            rust: crate::ProteinSelectionSummary,
+            python: "ProteinSelectionSummary",
+            javascript: "ProteinSelectionSummary",
+            feature: "cap-bio", status: experimental,
+            role: value,
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "types.ProteinChainIter", item: type, owner: type_,
+            rust: crate::ProteinChainIter<'static>, python: "ProteinChainIter", javascript: "ProteinChainIter",
+            feature: "cap-bio", status: experimental, role: value,
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "types.ProteinResidueIter", item: type, owner: type_,
+            rust: crate::ProteinResidueIter<'static>, python: "ProteinResidueIter", javascript: "ProteinResidueIter",
+            feature: "cap-bio", status: experimental, role: value,
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "types.ProteinAtomIter", item: type, owner: type_,
+            rust: crate::ProteinAtomIter<'static>, python: "ProteinAtomIter", javascript: "ProteinAtomIter",
+            feature: "cap-bio", status: experimental, role: value,
+        },
+        #[cfg(feature = "cap-bio")]
         {
             semantic_id: "types.ProteinChainRef",
             item: type,
@@ -4744,13 +5027,10 @@ binding_contract! {
             rust: crate::ProteinChainRef<'static>,
             python: "ProteinChainRef",
             javascript: "ProteinChainRef",
-            feature: "bio",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-bio", status: experimental,
             role: value,
         },
-        #[cfg(feature = "bio")]
+        #[cfg(feature = "cap-bio")]
         {
             semantic_id: "types.ProteinResidueRef",
             item: type,
@@ -4758,13 +5038,10 @@ binding_contract! {
             rust: crate::ProteinResidueRef<'static>,
             python: "ProteinResidueRef",
             javascript: "ProteinResidueRef",
-            feature: "bio",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-bio", status: experimental,
             role: value,
         },
-        #[cfg(feature = "bio")]
+        #[cfg(feature = "cap-bio")]
         {
             semantic_id: "types.ProteinAtomRef",
             item: type,
@@ -4772,13 +5049,377 @@ binding_contract! {
             rust: crate::ProteinAtomRef<'static>,
             python: "ProteinAtomRef",
             javascript: "ProteinAtomRef",
-            feature: "bio",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-bio", status: experimental,
             role: value,
         },
-        #[cfg(feature = "bio")]
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "BioStructure.from_parts", item: callable, owner: type_,
+            rust: crate::BioStructure::from_parts, python: "from_parts", javascript: "fromParts",
+            feature: "cap-bio", status: experimental, kind: static_,
+            parameters: [{ name: parts, type: crate::BioStructureParts, default: required }],
+            output: crate::BioStructure, error: crate::BioStructureError, state: value_returning, operation: none,
+            signature: fn(crate::BioStructureParts) -> Result<crate::BioStructure, crate::BioStructureError>,
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "BioStructure.validate_parts", item: callable, owner: type_,
+            rust: crate::BioStructure::validate_parts, python: "validate_parts", javascript: "validateParts",
+            feature: "cap-bio", status: experimental, kind: static_,
+            parameters: [{ name: parts, type: &crate::BioStructureParts, default: required }],
+            output: (), error: crate::BioStructureError, state: read_only, operation: none,
+            signature: for<'b> fn(&'b crate::BioStructureParts) -> Result<(), crate::BioStructureError>,
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "BioStructure.validate", item: callable, owner: type_,
+            rust: crate::BioStructure::validate, python: "validate", javascript: "validate",
+            feature: "cap-bio", status: experimental, kind: instance,
+            parameters: [],
+            output: (), error: crate::BioStructureError, state: read_only, operation: none,
+            signature: for<'a> fn(&'a crate::BioStructure) -> Result<(), crate::BioStructureError>,
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "BioStructure.into_parts", item: callable, owner: type_,
+            rust: crate::BioStructure::into_parts, python: "into_parts", javascript: "intoParts",
+            feature: "cap-bio", status: experimental, kind: instance, receiver: owned,
+            parameters: [],
+            output: crate::BioStructureParts, error: none, state: value_returning, operation: none,
+            signature: fn(crate::BioStructure) -> crate::BioStructureParts,
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "BioStructure.input_format", item: callable, owner: type_,
+            rust: crate::BioStructure::input_format, python: "input_format", javascript: "inputFormat",
+            feature: "cap-bio", status: experimental, kind: instance,
+            parameters: [],
+            output: crate::BioCoordinateFormat, error: none, state: read_only, operation: none,
+            signature: for<'a> fn(&'a crate::BioStructure) -> crate::BioCoordinateFormat,
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "BioStructure.models", item: callable, owner: type_,
+            rust: crate::BioStructure::models, python: "models", javascript: "models",
+            feature: "cap-bio", status: experimental, kind: instance,
+            parameters: [],
+            output: &[crate::BioModelRow], error: none, state: read_only, operation: none,
+            signature: for<'a> fn(&'a crate::BioStructure) -> &'a [crate::BioModelRow],
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "BioStructure.chains", item: callable, owner: type_,
+            rust: crate::BioStructure::chains, python: "chains", javascript: "chains",
+            feature: "cap-bio", status: experimental, kind: instance,
+            parameters: [],
+            output: &[crate::BioChainRow], error: none, state: read_only, operation: none,
+            signature: for<'a> fn(&'a crate::BioStructure) -> &'a [crate::BioChainRow],
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "BioStructure.residues", item: callable, owner: type_,
+            rust: crate::BioStructure::residues, python: "residues", javascript: "residues",
+            feature: "cap-bio", status: experimental, kind: instance,
+            parameters: [],
+            output: &[crate::BioResidueRow], error: none, state: read_only, operation: none,
+            signature: for<'a> fn(&'a crate::BioStructure) -> &'a [crate::BioResidueRow],
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "BioStructure.atoms", item: callable, owner: type_,
+            rust: crate::BioStructure::atoms, python: "atoms", javascript: "atoms",
+            feature: "cap-bio", status: experimental, kind: instance,
+            parameters: [],
+            output: &[crate::BioAtomRow], error: none, state: read_only, operation: none,
+            signature: for<'a> fn(&'a crate::BioStructure) -> &'a [crate::BioAtomRow],
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "BioStructure.entities", item: callable, owner: type_,
+            rust: crate::BioStructure::entities, python: "entities", javascript: "entities",
+            feature: "cap-bio", status: experimental, kind: instance,
+            parameters: [],
+            output: &[crate::BioEntityRow], error: none, state: read_only, operation: none,
+            signature: for<'a> fn(&'a crate::BioStructure) -> &'a [crate::BioEntityRow],
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "BioStructure.connections", item: callable, owner: type_,
+            rust: crate::BioStructure::connections, python: "connections", javascript: "connections",
+            feature: "cap-bio", status: experimental, kind: instance,
+            parameters: [],
+            output: &[crate::BioConnection], error: none, state: read_only, operation: none,
+            signature: for<'a> fn(&'a crate::BioStructure) -> &'a [crate::BioConnection],
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "BioStructure.cispeps", item: callable, owner: type_,
+            rust: crate::BioStructure::cispeps, python: "cispeps", javascript: "cispeps",
+            feature: "cap-bio", status: experimental, kind: instance,
+            parameters: [],
+            output: &[crate::BioCisPep], error: none, state: read_only, operation: none,
+            signature: for<'a> fn(&'a crate::BioStructure) -> &'a [crate::BioCisPep],
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "BioStructure.mod_residues", item: callable, owner: type_,
+            rust: crate::BioStructure::mod_residues, python: "mod_residues", javascript: "modResidues",
+            feature: "cap-bio", status: experimental, kind: instance,
+            parameters: [],
+            output: &[crate::BioModRes], error: none, state: read_only, operation: none,
+            signature: for<'a> fn(&'a crate::BioStructure) -> &'a [crate::BioModRes],
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "BioStructure.helices", item: callable, owner: type_,
+            rust: crate::BioStructure::helices, python: "helices", javascript: "helices",
+            feature: "cap-bio", status: experimental, kind: instance,
+            parameters: [],
+            output: &[crate::BioHelix], error: none, state: read_only, operation: none,
+            signature: for<'a> fn(&'a crate::BioStructure) -> &'a [crate::BioHelix],
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "BioStructure.sheets", item: callable, owner: type_,
+            rust: crate::BioStructure::sheets, python: "sheets", javascript: "sheets",
+            feature: "cap-bio", status: experimental, kind: instance,
+            parameters: [],
+            output: &[crate::BioSheet], error: none, state: read_only, operation: none,
+            signature: for<'a> fn(&'a crate::BioStructure) -> &'a [crate::BioSheet],
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "BioStructure.ncs_operators", item: callable, owner: type_,
+            rust: crate::BioStructure::ncs_operators, python: "ncs_operators", javascript: "ncsOperators",
+            feature: "cap-bio", status: experimental, kind: instance,
+            parameters: [],
+            output: &[crate::BioNcsOperator], error: none, state: read_only, operation: none,
+            signature: for<'a> fn(&'a crate::BioStructure) -> &'a [crate::BioNcsOperator],
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "BioStructure.assemblies", item: callable, owner: type_,
+            rust: crate::BioStructure::assemblies, python: "assemblies", javascript: "assemblies",
+            feature: "cap-bio", status: experimental, kind: instance,
+            parameters: [],
+            output: &[crate::BioAssembly], error: none, state: read_only, operation: none,
+            signature: for<'a> fn(&'a crate::BioStructure) -> &'a [crate::BioAssembly],
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "BioStructure.metadata", item: callable, owner: type_,
+            rust: crate::BioStructure::metadata, python: "metadata", javascript: "metadata",
+            feature: "cap-bio", status: experimental, kind: instance,
+            parameters: [],
+            output: &crate::BioMetadata, error: none, state: read_only, operation: none,
+            signature: for<'a> fn(&'a crate::BioStructure) -> &'a crate::BioMetadata,
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "BioStructure.source_state", item: callable, owner: type_,
+            rust: crate::BioStructure::source_state, python: "source_state", javascript: "sourceState",
+            feature: "cap-bio", status: experimental, kind: instance,
+            parameters: [],
+            output: &crate::BioStructureSourceState, error: none, state: read_only, operation: none,
+            signature: for<'a> fn(&'a crate::BioStructure) -> &'a crate::BioStructureSourceState,
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "BioStructure.coordinates", item: callable, owner: type_,
+            rust: crate::BioStructure::coordinates, python: "coordinates", javascript: "coordinates",
+            feature: "cap-bio", status: experimental, kind: instance,
+            parameters: [],
+            output: &crate::BioCoordinateBlock, error: none, state: read_only, operation: none,
+            signature: for<'a> fn(&'a crate::BioStructure) -> &'a crate::BioCoordinateBlock,
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "BioStructure.crystal", item: callable, owner: type_,
+            rust: crate::BioStructure::crystal, python: "crystal", javascript: "crystal",
+            feature: "cap-bio", status: experimental, kind: instance,
+            parameters: [],
+            output: Option<&crate::BioCrystalInfo>, error: none, state: read_only, operation: none,
+            signature: for<'a> fn(&'a crate::BioStructure) -> Option<&'a crate::BioCrystalInfo>,
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "BioStructure.find_entity", item: callable, owner: type_,
+            rust: crate::BioStructure::find_entity, python: "find_entity", javascript: "findEntity",
+            feature: "cap-bio", status: experimental, kind: instance,
+            parameters: [{ name: source_id, type: &str, default: required }],
+            output: Option<(crate::BioEntityId, &crate::BioEntityRow)>, error: none, state: read_only, operation: none,
+            signature: for<'a, 'b> fn(&'a crate::BioStructure, &'b str) -> Option<(crate::BioEntityId, &'a crate::BioEntityRow)>,
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "BioStructure.find_entity_of_subchain", item: callable, owner: type_,
+            rust: crate::BioStructure::find_entity_of_subchain, python: "find_entity_of_subchain", javascript: "findEntityOfSubchain",
+            feature: "cap-bio", status: experimental, kind: instance,
+            parameters: [{ name: subchain, type: &str, default: required }],
+            output: Option<(crate::BioEntityId, &crate::BioEntityRow)>, error: none, state: read_only, operation: none,
+            signature: for<'a, 'b> fn(&'a crate::BioStructure, &'b str) -> Option<(crate::BioEntityId, &'a crate::BioEntityRow)>,
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "BioStructure.find_atom", item: callable, owner: type_,
+            rust: crate::BioStructure::find_atom, python: "find_atom", javascript: "findAtom",
+            feature: "cap-bio", status: experimental, kind: instance,
+            parameters: [{ name: residue_id, type: crate::BioResidueId, default: required }, { name: name, type: crate::AtomName, default: required }, { name: request, type: crate::AltLocRequest, default: required }, { name: element, type: Option<crate::Element>, default: required }],
+            output: Option<(crate::BioAtomId, &crate::BioAtomRow)>, error: none, state: read_only, operation: none,
+            signature: for<'a> fn(&'a crate::BioStructure, crate::BioResidueId, crate::AtomName, crate::AltLocRequest, Option<crate::Element>) -> Option<(crate::BioAtomId, &'a crate::BioAtomRow)>,
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "BioStructure.atom_by_altloc", item: callable, owner: type_,
+            rust: crate::BioStructure::atom_by_altloc, python: "atom_by_altloc", javascript: "atomByAltloc",
+            feature: "cap-bio", status: experimental, kind: instance,
+            parameters: [{ name: residue_id, type: crate::BioResidueId, default: required }, { name: name, type: crate::AtomName, default: required }, { name: altloc, type: Option<crate::AltLocLabel>, default: required }],
+            output: (crate::BioAtomId, &crate::BioAtomRow), error: crate::BioStructureError, state: read_only, operation: none,
+            signature: for<'a> fn(&'a crate::BioStructure, crate::BioResidueId, crate::AtomName, Option<crate::AltLocLabel>) -> Result<(crate::BioAtomId, &'a crate::BioAtomRow), crate::BioStructureError>,
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "types.BioConnection", item: type, owner: type_, rust: crate::BioConnection,
+            python: "BioConnection", javascript: "BioConnection", feature: "cap-bio", status: experimental, role: value,
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "types.BioCisPep", item: type, owner: type_, rust: crate::BioCisPep,
+            python: "BioCisPep", javascript: "BioCisPep", feature: "cap-bio", status: experimental, role: value,
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "types.BioModRes", item: type, owner: type_, rust: crate::BioModRes,
+            python: "BioModRes", javascript: "BioModRes", feature: "cap-bio", status: experimental, role: value,
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "types.BioHelix", item: type, owner: type_, rust: crate::BioHelix,
+            python: "BioHelix", javascript: "BioHelix", feature: "cap-bio", status: experimental, role: value,
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "types.BioSheet", item: type, owner: type_, rust: crate::BioSheet,
+            python: "BioSheet", javascript: "BioSheet", feature: "cap-bio", status: experimental, role: value,
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "types.BioMetadata", item: type, owner: type_, rust: crate::BioMetadata,
+            python: "BioMetadata", javascript: "BioMetadata", feature: "cap-bio", status: experimental, role: value,
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "types.BioStructureSourceState", item: type, owner: type_, rust: crate::BioStructureSourceState,
+            python: "BioStructureSourceState", javascript: "BioStructureSourceState", feature: "cap-bio", status: experimental, role: value,
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "BioStructure.num_models",
+            item: callable, owner: type_, rust: crate::BioStructure::num_models,
+            python: "num_models", javascript: "numModels", feature: "cap-bio", status: experimental,
+            kind: instance, parameters: [], output: usize, error: none,
+            state: read_only, operation: none,
+            signature: fn(&crate::BioStructure) -> usize,
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "BioStructure.name", item: callable, owner: type_, rust: crate::BioStructure::name,
+            python: "name", javascript: "name", feature: "cap-bio", status: experimental, kind: instance,
+            parameters: [], output: &str, error: none, state: read_only, operation: none,
+            signature: for<'a> fn(&'a crate::BioStructure) -> &'a str,
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "BioStructure.has_origx", item: callable, owner: type_, rust: crate::BioStructure::has_origx,
+            python: "has_origx", javascript: "hasOrigx", feature: "cap-bio", status: experimental, kind: instance,
+            parameters: [], output: bool, error: none, state: read_only, operation: none,
+            signature: fn(&crate::BioStructure) -> bool,
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "BioStructure.origx", item: callable, owner: type_, rust: crate::BioStructure::origx,
+            python: "origx", javascript: "origx", feature: "cap-bio", status: experimental, kind: instance,
+            parameters: [], output: &crate::BioTransform, error: none, state: read_only, operation: none,
+            signature: for<'a> fn(&'a crate::BioStructure) -> &'a crate::BioTransform,
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "BioStructure.ncs_oper_identity_id", item: callable, owner: type_, rust: crate::BioStructure::ncs_oper_identity_id,
+            python: "ncs_oper_identity_id", javascript: "ncsOperIdentityId", feature: "cap-bio", status: experimental, kind: instance,
+            parameters: [], output: Option<&str>, error: none, state: read_only, operation: none,
+            signature: for<'a> fn(&'a crate::BioStructure) -> Option<&'a str>,
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "BioStructure.resolution", item: callable, owner: type_, rust: crate::BioStructure::resolution,
+            python: "resolution", javascript: "resolution", feature: "cap-bio", status: experimental, kind: instance,
+            parameters: [], output: f64, error: none, state: read_only, operation: none,
+            signature: fn(&crate::BioStructure) -> f64,
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "BioStructure.ter_status", item: callable, owner: type_, rust: crate::BioStructure::ter_status,
+            python: "ter_status", javascript: "terStatus", feature: "cap-bio", status: experimental, kind: instance,
+            parameters: [], output: u8, error: none, state: read_only, operation: none,
+            signature: fn(&crate::BioStructure) -> u8,
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "BioStructure.num_chains",
+            item: callable, owner: type_, rust: crate::BioStructure::num_chains,
+            python: "num_chains", javascript: "numChains", feature: "cap-bio", status: experimental,
+            kind: instance, parameters: [], output: usize, error: none,
+            state: read_only, operation: none,
+            signature: fn(&crate::BioStructure) -> usize,
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "BioStructure.num_residues",
+            item: callable, owner: type_, rust: crate::BioStructure::num_residues,
+            python: "num_residues", javascript: "numResidues", feature: "cap-bio", status: experimental,
+            kind: instance, parameters: [], output: usize, error: none,
+            state: read_only, operation: none,
+            signature: fn(&crate::BioStructure) -> usize,
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "BioStructure.num_atoms",
+            item: callable, owner: type_, rust: crate::BioStructure::num_atoms,
+            python: "num_atoms", javascript: "numAtoms", feature: "cap-bio", status: experimental,
+            kind: instance, parameters: [], output: usize, error: none,
+            state: read_only, operation: none,
+            signature: fn(&crate::BioStructure) -> usize,
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "BioStructure.num_entities",
+            item: callable, owner: type_, rust: crate::BioStructure::num_entities,
+            python: "num_entities", javascript: "numEntities", feature: "cap-bio", status: experimental,
+            kind: instance, parameters: [], output: usize, error: none,
+            state: read_only, operation: none,
+            signature: fn(&crate::BioStructure) -> usize,
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "BioStructure.atom_position",
+            item: callable, owner: type_, rust: crate::BioStructure::atom_position,
+            python: "atom_position", javascript: "atomPosition", feature: "cap-bio", status: experimental,
+            kind: instance,
+            parameters: [{ name: atom, type: crate::BioAtomId, default: required }],
+            output: Option<[f64; 3]>, error: none, state: read_only, operation: none,
+            signature: fn(&crate::BioStructure, crate::BioAtomId) -> Option<[f64; 3]>,
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "BioStructure.residue_atoms",
+            item: callable, owner: type_, rust: crate::BioStructure::residue_atoms,
+            python: "residue_atoms", javascript: "residueAtoms", feature: "cap-bio", status: experimental,
+            kind: instance,
+            parameters: [{ name: residue, type: crate::BioResidueId, default: required }],
+            output: Option<&[crate::BioAtomRow]>, error: none, state: read_only, operation: none,
+            signature: for<'a> fn(&'a crate::BioStructure, crate::BioResidueId) -> Option<&'a [crate::BioAtomRow]>,
+        },
+        #[cfg(feature = "cap-bio")]
         {
             semantic_id: "BioStructure.protein",
             item: callable,
@@ -4786,10 +5427,7 @@ binding_contract! {
             rust: crate::BioStructure::protein,
             python: "protein",
             javascript: "protein",
-            feature: "bio",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-bio", status: experimental,
             kind: instance,
             parameters: [],
             output: crate::Protein,
@@ -4798,7 +5436,67 @@ binding_contract! {
             operation: none,
             signature: fn(&crate::BioStructure) -> Result<crate::Protein, crate::ProteinProjectionError>,
         },
-        #[cfg(feature = "bio")]
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "Protein.input_format",
+            item: callable, owner: type_, rust: crate::Protein::input_format,
+            python: "input_format", javascript: "inputFormat", feature: "cap-bio", status: experimental,
+            kind: instance, parameters: [], output: crate::BioCoordinateFormat,
+            error: none, state: read_only, operation: none,
+            signature: fn(&crate::Protein) -> crate::BioCoordinateFormat,
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "Protein.as_bio_structure",
+            item: callable,
+            owner: type_,
+            rust: crate::Protein::as_bio_structure,
+            python: "as_bio_structure",
+            javascript: "asBioStructure",
+            feature: "cap-bio", status: experimental,
+            kind: instance,
+            parameters: [],
+            output: &crate::BioStructure,
+            error: none,
+            state: read_only,
+            operation: none,
+            signature: for<'a> fn(&'a crate::Protein) -> &'a crate::BioStructure,
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "Protein.into_bio_structure",
+            item: callable,
+            owner: type_,
+            rust: crate::Protein::into_bio_structure,
+            python: "into_bio_structure",
+            javascript: "intoBioStructure",
+            feature: "cap-bio", status: experimental,
+            kind: instance, receiver: owned,
+            parameters: [],
+            output: crate::BioStructure,
+            error: none,
+            state: value_returning,
+            operation: none,
+            signature: fn(crate::Protein) -> crate::BioStructure,
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "Protein.selection_summary",
+            item: callable,
+            owner: type_,
+            rust: crate::Protein::selection_summary,
+            python: "selection_summary",
+            javascript: "selectionSummary",
+            feature: "cap-bio", status: experimental,
+            kind: instance,
+            parameters: [],
+            output: crate::ProteinSelectionSummary,
+            error: none,
+            state: read_only,
+            operation: none,
+            signature: fn(&crate::Protein) -> crate::ProteinSelectionSummary,
+        },
+        #[cfg(feature = "cap-bio")]
         {
             semantic_id: "Protein.num_models",
             item: callable,
@@ -4806,10 +5504,7 @@ binding_contract! {
             rust: crate::Protein::num_models,
             python: "num_models",
             javascript: "numModels",
-            feature: "bio",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-bio", status: experimental,
             kind: instance,
             parameters: [],
             output: usize,
@@ -4818,7 +5513,7 @@ binding_contract! {
             operation: none,
             signature: fn(&crate::Protein) -> usize,
         },
-        #[cfg(feature = "bio")]
+        #[cfg(feature = "cap-bio")]
         {
             semantic_id: "Protein.num_chains",
             item: callable,
@@ -4826,10 +5521,7 @@ binding_contract! {
             rust: crate::Protein::num_chains,
             python: "num_chains",
             javascript: "numChains",
-            feature: "bio",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-bio", status: experimental,
             kind: instance,
             parameters: [],
             output: usize,
@@ -4838,7 +5530,7 @@ binding_contract! {
             operation: none,
             signature: fn(&crate::Protein) -> usize,
         },
-        #[cfg(feature = "bio")]
+        #[cfg(feature = "cap-bio")]
         {
             semantic_id: "Protein.num_residues",
             item: callable,
@@ -4846,10 +5538,7 @@ binding_contract! {
             rust: crate::Protein::num_residues,
             python: "num_residues",
             javascript: "numResidues",
-            feature: "bio",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-bio", status: experimental,
             kind: instance,
             parameters: [],
             output: usize,
@@ -4858,7 +5547,7 @@ binding_contract! {
             operation: none,
             signature: fn(&crate::Protein) -> usize,
         },
-        #[cfg(feature = "bio")]
+        #[cfg(feature = "cap-bio")]
         {
             semantic_id: "Protein.num_atoms",
             item: callable,
@@ -4866,10 +5555,7 @@ binding_contract! {
             rust: crate::Protein::num_atoms,
             python: "num_atoms",
             javascript: "numAtoms",
-            feature: "bio",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-bio", status: experimental,
             kind: instance,
             parameters: [],
             output: usize,
@@ -4878,7 +5564,7 @@ binding_contract! {
             operation: none,
             signature: fn(&crate::Protein) -> usize,
         },
-        #[cfg(feature = "bio")]
+        #[cfg(feature = "cap-bio")]
         {
             semantic_id: "Protein.chains",
             item: callable,
@@ -4886,19 +5572,16 @@ binding_contract! {
             rust: crate::Protein::chains,
             python: "chains",
             javascript: "chains",
-            feature: "bio",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-bio", status: experimental,
             kind: instance,
             parameters: [],
-            output: Vec<crate::ProteinChainRef<'_>>,
+            output: crate::ProteinChainIter<'_>,
             error: none,
             state: read_only,
             operation: none,
-            signature: fn(&crate::Protein) -> Vec<crate::ProteinChainRef<'_>>,
+            signature: for<'a> fn(&'a crate::Protein) -> crate::ProteinChainIter<'a>,
         },
-        #[cfg(feature = "bio")]
+        #[cfg(feature = "cap-bio")]
         {
             semantic_id: "Protein.chain",
             item: callable,
@@ -4906,10 +5589,7 @@ binding_contract! {
             rust: crate::Protein::chain,
             python: "chain",
             javascript: "chain",
-            feature: "bio",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-bio", status: experimental,
             kind: instance,
             parameters: [
                 { name: index, type: usize, default: required },
@@ -4920,7 +5600,7 @@ binding_contract! {
             operation: none,
             signature: fn(&crate::Protein, usize) -> Option<crate::ProteinChainRef<'_>>,
         },
-        #[cfg(feature = "bio")]
+        #[cfg(feature = "cap-bio")]
         {
             semantic_id: "Protein.residues",
             item: callable,
@@ -4928,19 +5608,16 @@ binding_contract! {
             rust: crate::Protein::residues,
             python: "residues",
             javascript: "residues",
-            feature: "bio",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-bio", status: experimental,
             kind: instance,
             parameters: [],
-            output: Vec<crate::ProteinResidueRef<'_>>,
+            output: crate::ProteinResidueIter<'_>,
             error: none,
             state: read_only,
             operation: none,
-            signature: fn(&crate::Protein) -> Vec<crate::ProteinResidueRef<'_>>,
+            signature: for<'a> fn(&'a crate::Protein) -> crate::ProteinResidueIter<'a>,
         },
-        #[cfg(feature = "bio")]
+        #[cfg(feature = "cap-bio")]
         {
             semantic_id: "Protein.atoms",
             item: callable,
@@ -4948,19 +5625,16 @@ binding_contract! {
             rust: crate::Protein::atoms,
             python: "atoms",
             javascript: "atoms",
-            feature: "bio",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-bio", status: experimental,
             kind: instance,
             parameters: [],
-            output: Vec<crate::ProteinAtomRef<'_>>,
+            output: crate::ProteinAtomIter<'_>,
             error: none,
             state: read_only,
             operation: none,
-            signature: fn(&crate::Protein) -> Vec<crate::ProteinAtomRef<'_>>,
+            signature: for<'a> fn(&'a crate::Protein) -> crate::ProteinAtomIter<'a>,
         },
-        #[cfg(feature = "bio")]
+        #[cfg(feature = "cap-bio")]
         {
             semantic_id: "ProteinChainRef.id",
             item: callable,
@@ -4968,11 +5642,8 @@ binding_contract! {
             rust: crate::ProteinChainRef::id,
             python: "id",
             javascript: "id",
-            feature: "bio",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
-            kind: instance,
+            feature: "cap-bio", status: experimental,
+            kind: instance, receiver: owned,
             parameters: [],
             output: crate::BioChainId,
             error: none,
@@ -4980,7 +5651,7 @@ binding_contract! {
             operation: none,
             signature: fn(crate::ProteinChainRef<'static>) -> crate::BioChainId,
         },
-        #[cfg(feature = "bio")]
+        #[cfg(feature = "cap-bio")]
         {
             semantic_id: "ProteinChainRef.row",
             item: callable,
@@ -4988,11 +5659,8 @@ binding_contract! {
             rust: crate::ProteinChainRef::row,
             python: "row",
             javascript: "row",
-            feature: "bio",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
-            kind: instance,
+            feature: "cap-bio", status: experimental,
+            kind: instance, receiver: owned,
             parameters: [],
             output: &crate::BioChainRow,
             error: none,
@@ -5000,7 +5668,7 @@ binding_contract! {
             operation: none,
             signature: for<'a> fn(crate::ProteinChainRef<'a>) -> &'a crate::BioChainRow,
         },
-        #[cfg(feature = "bio")]
+        #[cfg(feature = "cap-bio")]
         {
             semantic_id: "ProteinChainRef.kind",
             item: callable,
@@ -5008,11 +5676,8 @@ binding_contract! {
             rust: crate::ProteinChainRef::kind,
             python: "kind",
             javascript: "kind",
-            feature: "bio",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
-            kind: instance,
+            feature: "cap-bio", status: experimental,
+            kind: instance, receiver: owned,
             parameters: [],
             output: crate::ChainKind,
             error: none,
@@ -5020,7 +5685,7 @@ binding_contract! {
             operation: none,
             signature: fn(crate::ProteinChainRef<'static>) -> crate::ChainKind,
         },
-        #[cfg(feature = "bio")]
+        #[cfg(feature = "cap-bio")]
         {
             semantic_id: "ProteinChainRef.source",
             item: callable,
@@ -5028,11 +5693,8 @@ binding_contract! {
             rust: crate::ProteinChainRef::source,
             python: "source",
             javascript: "source",
-            feature: "bio",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
-            kind: instance,
+            feature: "cap-bio", status: experimental,
+            kind: instance, receiver: owned,
             parameters: [],
             output: &crate::ChainSourceIds,
             error: none,
@@ -5040,7 +5702,7 @@ binding_contract! {
             operation: none,
             signature: for<'a> fn(crate::ProteinChainRef<'a>) -> &'a crate::ChainSourceIds,
         },
-        #[cfg(feature = "bio")]
+        #[cfg(feature = "cap-bio")]
         {
             semantic_id: "ProteinChainRef.residues",
             item: callable,
@@ -5048,19 +5710,16 @@ binding_contract! {
             rust: crate::ProteinChainRef::residues,
             python: "residues",
             javascript: "residues",
-            feature: "bio",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
-            kind: instance,
+            feature: "cap-bio", status: experimental,
+            kind: instance, receiver: owned,
             parameters: [],
-            output: Vec<crate::ProteinResidueRef<'_>>,
+            output: crate::ProteinResidueIter<'_>,
             error: none,
             state: value_returning,
             operation: none,
-            signature: for<'a> fn(crate::ProteinChainRef<'a>) -> Vec<crate::ProteinResidueRef<'a>>,
+            signature: for<'a> fn(crate::ProteinChainRef<'a>) -> crate::ProteinResidueIter<'a>,
         },
-        #[cfg(feature = "bio")]
+        #[cfg(feature = "cap-bio")]
         {
             semantic_id: "ProteinChainRef.atoms",
             item: callable,
@@ -5068,19 +5727,16 @@ binding_contract! {
             rust: crate::ProteinChainRef::atoms,
             python: "atoms",
             javascript: "atoms",
-            feature: "bio",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
-            kind: instance,
+            feature: "cap-bio", status: experimental,
+            kind: instance, receiver: owned,
             parameters: [],
-            output: Vec<crate::ProteinAtomRef<'_>>,
+            output: crate::ProteinAtomIter<'_>,
             error: none,
             state: value_returning,
             operation: none,
-            signature: for<'a> fn(crate::ProteinChainRef<'a>) -> Vec<crate::ProteinAtomRef<'a>>,
+            signature: for<'a> fn(crate::ProteinChainRef<'a>) -> crate::ProteinAtomIter<'a>,
         },
-        #[cfg(feature = "bio")]
+        #[cfg(feature = "cap-bio")]
         {
             semantic_id: "ProteinResidueRef.id",
             item: callable,
@@ -5088,11 +5744,8 @@ binding_contract! {
             rust: crate::ProteinResidueRef::id,
             python: "id",
             javascript: "id",
-            feature: "bio",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
-            kind: instance,
+            feature: "cap-bio", status: experimental,
+            kind: instance, receiver: owned,
             parameters: [],
             output: crate::BioResidueId,
             error: none,
@@ -5100,7 +5753,7 @@ binding_contract! {
             operation: none,
             signature: fn(crate::ProteinResidueRef<'static>) -> crate::BioResidueId,
         },
-        #[cfg(feature = "bio")]
+        #[cfg(feature = "cap-bio")]
         {
             semantic_id: "ProteinResidueRef.row",
             item: callable,
@@ -5108,11 +5761,8 @@ binding_contract! {
             rust: crate::ProteinResidueRef::row,
             python: "row",
             javascript: "row",
-            feature: "bio",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
-            kind: instance,
+            feature: "cap-bio", status: experimental,
+            kind: instance, receiver: owned,
             parameters: [],
             output: &crate::BioResidueRow,
             error: none,
@@ -5120,7 +5770,7 @@ binding_contract! {
             operation: none,
             signature: for<'a> fn(crate::ProteinResidueRef<'a>) -> &'a crate::BioResidueRow,
         },
-        #[cfg(feature = "bio")]
+        #[cfg(feature = "cap-bio")]
         {
             semantic_id: "ProteinResidueRef.name",
             item: callable,
@@ -5128,11 +5778,8 @@ binding_contract! {
             rust: crate::ProteinResidueRef::name,
             python: "name",
             javascript: "name",
-            feature: "bio",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
-            kind: instance,
+            feature: "cap-bio", status: experimental,
+            kind: instance, receiver: owned,
             parameters: [],
             output: crate::ResidueName,
             error: none,
@@ -5140,7 +5787,7 @@ binding_contract! {
             operation: none,
             signature: fn(crate::ProteinResidueRef<'static>) -> crate::ResidueName,
         },
-        #[cfg(feature = "bio")]
+        #[cfg(feature = "cap-bio")]
         {
             semantic_id: "ProteinResidueRef.kind",
             item: callable,
@@ -5148,11 +5795,8 @@ binding_contract! {
             rust: crate::ProteinResidueRef::kind,
             python: "kind",
             javascript: "kind",
-            feature: "bio",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
-            kind: instance,
+            feature: "cap-bio", status: experimental,
+            kind: instance, receiver: owned,
             parameters: [],
             output: crate::ResidueKind,
             error: none,
@@ -5160,7 +5804,7 @@ binding_contract! {
             operation: none,
             signature: fn(crate::ProteinResidueRef<'static>) -> crate::ResidueKind,
         },
-        #[cfg(feature = "bio")]
+        #[cfg(feature = "cap-bio")]
         {
             semantic_id: "ProteinResidueRef.info",
             item: callable,
@@ -5168,11 +5812,8 @@ binding_contract! {
             rust: crate::ProteinResidueRef::info,
             python: "info",
             javascript: "info",
-            feature: "bio",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
-            kind: instance,
+            feature: "cap-bio", status: experimental,
+            kind: instance, receiver: owned,
             parameters: [],
             output: crate::ResidueInfo,
             error: none,
@@ -5180,7 +5821,7 @@ binding_contract! {
             operation: none,
             signature: fn(crate::ProteinResidueRef<'static>) -> crate::ResidueInfo,
         },
-        #[cfg(feature = "bio")]
+        #[cfg(feature = "cap-bio")]
         {
             semantic_id: "ProteinResidueRef.code",
             item: callable,
@@ -5188,11 +5829,8 @@ binding_contract! {
             rust: crate::ProteinResidueRef::code,
             python: "code",
             javascript: "code",
-            feature: "bio",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
-            kind: instance,
+            feature: "cap-bio", status: experimental,
+            kind: instance, receiver: owned,
             parameters: [],
             output: crate::ResidueCode,
             error: none,
@@ -5200,7 +5838,7 @@ binding_contract! {
             operation: none,
             signature: fn(crate::ProteinResidueRef<'static>) -> crate::ResidueCode,
         },
-        #[cfg(feature = "bio")]
+        #[cfg(feature = "cap-bio")]
         {
             semantic_id: "ProteinResidueRef.one_letter_code",
             item: callable,
@@ -5208,11 +5846,8 @@ binding_contract! {
             rust: crate::ProteinResidueRef::one_letter_code,
             python: "one_letter_code",
             javascript: "oneLetterCode",
-            feature: "bio",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
-            kind: instance,
+            feature: "cap-bio", status: experimental,
+            kind: instance, receiver: owned,
             parameters: [],
             output: char,
             error: none,
@@ -5220,7 +5855,7 @@ binding_contract! {
             operation: none,
             signature: fn(crate::ProteinResidueRef<'static>) -> char,
         },
-        #[cfg(feature = "bio")]
+        #[cfg(feature = "cap-bio")]
         {
             semantic_id: "ProteinResidueRef.fasta_code",
             item: callable,
@@ -5228,11 +5863,8 @@ binding_contract! {
             rust: crate::ProteinResidueRef::fasta_code,
             python: "fasta_code",
             javascript: "fastaCode",
-            feature: "bio",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
-            kind: instance,
+            feature: "cap-bio", status: experimental,
+            kind: instance, receiver: owned,
             parameters: [],
             output: char,
             error: none,
@@ -5240,7 +5872,7 @@ binding_contract! {
             operation: none,
             signature: fn(crate::ProteinResidueRef<'static>) -> char,
         },
-        #[cfg(feature = "bio")]
+        #[cfg(feature = "cap-bio")]
         {
             semantic_id: "ProteinResidueRef.is_standard",
             item: callable,
@@ -5248,11 +5880,8 @@ binding_contract! {
             rust: crate::ProteinResidueRef::is_standard,
             python: "is_standard",
             javascript: "isStandard",
-            feature: "bio",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
-            kind: instance,
+            feature: "cap-bio", status: experimental,
+            kind: instance, receiver: owned,
             parameters: [],
             output: bool,
             error: none,
@@ -5260,7 +5889,7 @@ binding_contract! {
             operation: none,
             signature: fn(crate::ProteinResidueRef<'static>) -> bool,
         },
-        #[cfg(feature = "bio")]
+        #[cfg(feature = "cap-bio")]
         {
             semantic_id: "ProteinResidueRef.chain",
             item: callable,
@@ -5268,11 +5897,8 @@ binding_contract! {
             rust: crate::ProteinResidueRef::chain,
             python: "chain",
             javascript: "chain",
-            feature: "bio",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
-            kind: instance,
+            feature: "cap-bio", status: experimental,
+            kind: instance, receiver: owned,
             parameters: [],
             output: crate::ProteinChainRef<'_>,
             error: none,
@@ -5280,7 +5906,7 @@ binding_contract! {
             operation: none,
             signature: for<'a> fn(crate::ProteinResidueRef<'a>) -> crate::ProteinChainRef<'a>,
         },
-        #[cfg(feature = "bio")]
+        #[cfg(feature = "cap-bio")]
         {
             semantic_id: "ProteinResidueRef.atoms",
             item: callable,
@@ -5288,19 +5914,16 @@ binding_contract! {
             rust: crate::ProteinResidueRef::atoms,
             python: "atoms",
             javascript: "atoms",
-            feature: "bio",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
-            kind: instance,
+            feature: "cap-bio", status: experimental,
+            kind: instance, receiver: owned,
             parameters: [],
-            output: Vec<crate::ProteinAtomRef<'_>>,
+            output: crate::ProteinAtomIter<'_>,
             error: none,
             state: value_returning,
             operation: none,
-            signature: for<'a> fn(crate::ProteinResidueRef<'a>) -> Vec<crate::ProteinAtomRef<'a>>,
+            signature: for<'a> fn(crate::ProteinResidueRef<'a>) -> crate::ProteinAtomIter<'a>,
         },
-        #[cfg(feature = "bio")]
+        #[cfg(feature = "cap-bio")]
         {
             semantic_id: "ProteinAtomRef.id",
             item: callable,
@@ -5308,11 +5931,8 @@ binding_contract! {
             rust: crate::ProteinAtomRef::id,
             python: "id",
             javascript: "id",
-            feature: "bio",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
-            kind: instance,
+            feature: "cap-bio", status: experimental,
+            kind: instance, receiver: owned,
             parameters: [],
             output: crate::BioAtomId,
             error: none,
@@ -5320,7 +5940,7 @@ binding_contract! {
             operation: none,
             signature: fn(crate::ProteinAtomRef<'static>) -> crate::BioAtomId,
         },
-        #[cfg(feature = "bio")]
+        #[cfg(feature = "cap-bio")]
         {
             semantic_id: "ProteinAtomRef.row",
             item: callable,
@@ -5328,11 +5948,8 @@ binding_contract! {
             rust: crate::ProteinAtomRef::row,
             python: "row",
             javascript: "row",
-            feature: "bio",
-            exposure: public,
-            support: supported,
-            parity: not_applicable,
-            kind: instance,
+            feature: "cap-bio", status: experimental,
+            kind: instance, receiver: owned,
             parameters: [],
             output: &crate::BioAtomRow,
             error: none,
@@ -5340,7 +5957,7 @@ binding_contract! {
             operation: none,
             signature: for<'a> fn(crate::ProteinAtomRef<'a>) -> &'a crate::BioAtomRow,
         },
-        #[cfg(feature = "bio")]
+        #[cfg(feature = "cap-bio")]
         {
             semantic_id: "ProteinAtomRef.name",
             item: callable,
@@ -5348,11 +5965,8 @@ binding_contract! {
             rust: crate::ProteinAtomRef::name,
             python: "name",
             javascript: "name",
-            feature: "bio",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
-            kind: instance,
+            feature: "cap-bio", status: experimental,
+            kind: instance, receiver: owned,
             parameters: [],
             output: crate::AtomName,
             error: none,
@@ -5360,7 +5974,7 @@ binding_contract! {
             operation: none,
             signature: fn(crate::ProteinAtomRef<'static>) -> crate::AtomName,
         },
-        #[cfg(feature = "bio")]
+        #[cfg(feature = "cap-bio")]
         {
             semantic_id: "ProteinAtomRef.element",
             item: callable,
@@ -5368,11 +5982,8 @@ binding_contract! {
             rust: crate::ProteinAtomRef::element,
             python: "element",
             javascript: "element",
-            feature: "bio",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
-            kind: instance,
+            feature: "cap-bio", status: experimental,
+            kind: instance, receiver: owned,
             parameters: [],
             output: crate::Element,
             error: none,
@@ -5380,7 +5991,7 @@ binding_contract! {
             operation: none,
             signature: fn(crate::ProteinAtomRef<'static>) -> crate::Element,
         },
-        #[cfg(feature = "bio")]
+        #[cfg(feature = "cap-bio")]
         {
             semantic_id: "ProteinAtomRef.altloc",
             item: callable,
@@ -5388,11 +5999,8 @@ binding_contract! {
             rust: crate::ProteinAtomRef::altloc,
             python: "altloc",
             javascript: "altloc",
-            feature: "bio",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
-            kind: instance,
+            feature: "cap-bio", status: experimental,
+            kind: instance, receiver: owned,
             parameters: [],
             output: Option<crate::AltLocLabel>,
             error: none,
@@ -5400,7 +6008,7 @@ binding_contract! {
             operation: none,
             signature: fn(crate::ProteinAtomRef<'static>) -> Option<crate::AltLocLabel>,
         },
-        #[cfg(feature = "bio")]
+        #[cfg(feature = "cap-bio")]
         {
             semantic_id: "ProteinAtomRef.residue",
             item: callable,
@@ -5408,11 +6016,8 @@ binding_contract! {
             rust: crate::ProteinAtomRef::residue,
             python: "residue",
             javascript: "residue",
-            feature: "bio",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
-            kind: instance,
+            feature: "cap-bio", status: experimental,
+            kind: instance, receiver: owned,
             parameters: [],
             output: crate::ProteinResidueRef<'_>,
             error: none,
@@ -5420,7 +6025,7 @@ binding_contract! {
             operation: none,
             signature: for<'a> fn(crate::ProteinAtomRef<'a>) -> crate::ProteinResidueRef<'a>,
         },
-        #[cfg(feature = "bio")]
+        #[cfg(feature = "cap-bio")]
         {
             semantic_id: "ProteinAtomRef.position",
             item: callable,
@@ -5428,11 +6033,8 @@ binding_contract! {
             rust: crate::ProteinAtomRef::position,
             python: "position",
             javascript: "position",
-            feature: "bio",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
-            kind: instance,
+            feature: "cap-bio", status: experimental,
+            kind: instance, receiver: owned,
             parameters: [],
             output: [f64; 3],
             error: none,
@@ -5457,52 +6059,42 @@ binding_contract! {
         // The SDF readers below are implemented in the public Rust crate.
         // CK-COORD-001 is the approved terminal-coordinate exception to exact
         // RDKit parity; the remaining pinned source behavior is still required.
-        #[cfg(feature = "io")]
+        #[cfg(feature = "cap-io")]
         {
-semantic_id: "types.SdfRecord",
+            semantic_id: "types.SdfRecord",
             item: type,
             owner: type_,
             rust: crate::SdfRecord,
             python: "SdfRecord",
             javascript: "SdfRecord",
-            feature: "io",
-            exposure: public,
-            support: supported,
-            parity: required_when_supported,
+            feature: "cap-io", status: experimental,
             role: result,
         },
-        #[cfg(feature = "io")]
+        #[cfg(feature = "cap-io")]
         {
-semantic_id: "types.SdfGraph",
+            semantic_id: "types.SdfGraph",
             item: type,
             owner: type_,
             rust: crate::SdfGraph,
             python: "SdfGraph",
             javascript: "SdfGraph",
-            feature: "io",
-            exposure: public,
-            support: supported,
-            parity: required_when_supported,
+            feature: "cap-io", status: experimental,
             role: result,
         },
         // The record payload is classified only after molfile finalization.
         // `molecule`/`query_graph` expose checked borrows and project a
         // structured SdfError::WrongGraphKind (expected/actual payload kind).
         // Concrete-only Molecule readers instead project SdfError::QueryRecord.
-        // These categories are implemented; MolBlock rows below remain
-        // separate registered-only placeholders.
-        #[cfg(feature = "io")]
+        // Every registered row resolves to its actual public Rust item.
+        #[cfg(feature = "cap-io")]
         {
-semantic_id: "SdfRecord.graph",
+            semantic_id: "SdfRecord.graph",
             item: callable,
             owner: type_,
             rust: crate::SdfRecord::graph,
             python: "graph",
             javascript: "graph",
-            feature: "io",
-            exposure: public,
-            support: supported,
-            parity: required_when_supported,
+            feature: "cap-io", status: experimental,
             kind: instance,
             parameters: [],
             output: &crate::SdfGraph,
@@ -5511,18 +6103,15 @@ semantic_id: "SdfRecord.graph",
             operation: none,
             signature: fn(&crate::SdfRecord) -> &crate::SdfGraph,
         },
-        #[cfg(feature = "io")]
+        #[cfg(feature = "cap-io")]
         {
-semantic_id: "SdfRecord.molecule",
+            semantic_id: "SdfRecord.molecule",
             item: callable,
             owner: type_,
             rust: crate::SdfRecord::molecule,
             python: "molecule",
             javascript: "molecule",
-            feature: "io",
-            exposure: public,
-            support: supported,
-            parity: required_when_supported,
+            feature: "cap-io", status: experimental,
             kind: instance,
             parameters: [],
             output: &crate::Molecule,
@@ -5531,18 +6120,15 @@ semantic_id: "SdfRecord.molecule",
             operation: none,
             signature: fn(&crate::SdfRecord) -> Result<&crate::Molecule, crate::SdfError>,
         },
-        #[cfg(feature = "io")]
+        #[cfg(feature = "cap-io")]
         {
-semantic_id: "SdfRecord.query_graph",
+            semantic_id: "SdfRecord.query_graph",
             item: callable,
             owner: type_,
             rust: crate::SdfRecord::query_graph,
             python: "query_graph",
             javascript: "queryGraph",
-            feature: "io",
-            exposure: public,
-            support: supported,
-            parity: required_when_supported,
+            feature: "cap-io", status: experimental,
             kind: instance,
             parameters: [],
             output: &crate::QueryGraph,
@@ -5551,18 +6137,15 @@ semantic_id: "SdfRecord.query_graph",
             operation: none,
             signature: fn(&crate::SdfRecord) -> Result<&crate::QueryGraph, crate::SdfError>,
         },
-        #[cfg(feature = "io")]
+        #[cfg(feature = "cap-io")]
         {
-semantic_id: "SdfRecord.data_fields",
+            semantic_id: "SdfRecord.data_fields",
             item: callable,
             owner: type_,
             rust: crate::SdfRecord::data_fields,
             python: "data_fields",
             javascript: "dataFields",
-            feature: "io",
-            exposure: public,
-            support: supported,
-            parity: required_when_supported,
+            feature: "cap-io", status: experimental,
             kind: instance,
             parameters: [],
             output: &[(String, String)],
@@ -5571,18 +6154,15 @@ semantic_id: "SdfRecord.data_fields",
             operation: none,
             signature: fn(&crate::SdfRecord) -> &[(String, String)],
         },
-        #[cfg(feature = "io")]
+        #[cfg(feature = "cap-io")]
         {
-semantic_id: "SdfRecord.properties",
+            semantic_id: "SdfRecord.properties",
             item: callable,
             owner: type_,
             rust: crate::SdfRecord::properties,
             python: "properties",
             javascript: "properties",
-            feature: "io",
-            exposure: public,
-            support: supported,
-            parity: required_when_supported,
+            feature: "cap-io", status: experimental,
             kind: instance,
             parameters: [],
             output: &crate::MoleculeProperties,
@@ -5591,18 +6171,15 @@ semantic_id: "SdfRecord.properties",
             operation: none,
             signature: fn(&crate::SdfRecord) -> &crate::MoleculeProperties,
         },
-        #[cfg(feature = "io")]
+        #[cfg(feature = "cap-io")]
         {
-semantic_id: "SdfRecord.substance_groups",
+            semantic_id: "SdfRecord.substance_groups",
             item: callable,
             owner: type_,
             rust: crate::SdfRecord::substance_groups,
             python: "substance_groups",
             javascript: "substanceGroups",
-            feature: "io",
-            exposure: public,
-            support: supported,
-            parity: required_when_supported,
+            feature: "cap-io", status: experimental,
             kind: instance,
             parameters: [],
             output: &[crate::SubstanceGroup],
@@ -5611,18 +6188,15 @@ semantic_id: "SdfRecord.substance_groups",
             operation: none,
             signature: fn(&crate::SdfRecord) -> &[crate::SubstanceGroup],
         },
-        #[cfg(feature = "io")]
+        #[cfg(feature = "cap-io")]
         {
-semantic_id: "SdfRecord.source_coordinate_dim",
+            semantic_id: "SdfRecord.source_coordinate_dim",
             item: callable,
             owner: type_,
             rust: crate::SdfRecord::source_coordinate_dim,
             python: "source_coordinate_dim",
             javascript: "sourceCoordinateDim",
-            feature: "io",
-            exposure: public,
-            support: supported,
-            parity: required_when_supported,
+            feature: "cap-io", status: experimental,
             kind: instance,
             parameters: [],
             output: Option<crate::CoordinateDimension>,
@@ -5631,18 +6205,15 @@ semantic_id: "SdfRecord.source_coordinate_dim",
             operation: none,
             signature: fn(&crate::SdfRecord) -> Option<crate::CoordinateDimension>,
         },
-        #[cfg(feature = "io")]
+        #[cfg(feature = "cap-io")]
         {
-semantic_id: "SdfRecord.from_sdf",
+            semantic_id: "SdfRecord.from_sdf",
             item: callable,
             owner: type_,
             rust: crate::SdfRecord::from_sdf,
             python: "from_sdf",
             javascript: "fromSdf",
-            feature: "io",
-            exposure: public,
-            support: supported,
-            parity: required_when_supported,
+            feature: "cap-io", status: experimental,
             kind: static_,
             parameters: [
                 { name: input, type: &str, default: required },
@@ -5653,18 +6224,15 @@ semantic_id: "SdfRecord.from_sdf",
             operation: none,
             signature: fn(&str) -> Result<crate::SdfRecord, crate::SdfError>,
         },
-        #[cfg(feature = "io")]
+        #[cfg(feature = "cap-io")]
         {
-semantic_id: "SdfRecord.from_sdf_with_params",
+            semantic_id: "SdfRecord.from_sdf_with_params",
             item: callable,
             owner: type_,
             rust: crate::SdfRecord::from_sdf_with_params,
             python: "from_sdf_with_params",
             javascript: "fromSdfWithParams",
-            feature: "io",
-            exposure: public,
-            support: supported,
-            parity: required_when_supported,
+            feature: "cap-io", status: experimental,
             kind: static_,
             parameters: [
                 { name: input, type: &str, default: required },
@@ -5676,60 +6244,48 @@ semantic_id: "SdfRecord.from_sdf_with_params",
             operation: none,
             signature: for<'a, 'b> fn(&'a str, &'b crate::SdfReadParams) -> Result<crate::SdfRecord, crate::SdfError>,
         },
-        #[cfg(feature = "io")]
+        #[cfg(feature = "cap-io")]
         {
-semantic_id: "types.SdfCoordinateMode",
+            semantic_id: "types.SdfCoordinateMode",
             item: type,
             owner: type_,
             rust: crate::SdfCoordinateMode,
             python: "SdfCoordinateMode",
             javascript: "SdfCoordinateMode",
-            feature: "io",
-            exposure: public,
-            support: supported,
-            parity: required_when_supported,
+            feature: "cap-io", status: experimental,
             role: parameter,
         },
-        #[cfg(feature = "io")]
+        #[cfg(feature = "cap-io")]
         {
-semantic_id: "types.SdfReadParams",
+            semantic_id: "types.SdfReadParams",
             item: type,
             owner: type_,
             rust: crate::SdfReadParams,
             python: "SdfReadParams",
             javascript: "SdfReadParams",
-            feature: "io",
-            exposure: public,
-            support: supported,
-            parity: required_when_supported,
+            feature: "cap-io", status: experimental,
             role: parameter,
         },
-        #[cfg(feature = "io")]
+        #[cfg(feature = "cap-io")]
         {
-semantic_id: "types.SdfError",
+            semantic_id: "types.SdfError",
             item: type,
             owner: type_,
             rust: crate::SdfError,
             python: "SdfError",
             javascript: "SdfError",
-            feature: "io",
-            exposure: public,
-            support: supported,
-            parity: required_when_supported,
+            feature: "cap-io", status: experimental,
             role: error,
         },
-        #[cfg(feature = "io")]
+        #[cfg(feature = "cap-io")]
         {
-semantic_id: "Molecule.from_sdf",
+            semantic_id: "Molecule.from_sdf",
             item: callable,
             owner: molecule,
             rust: crate::Molecule::from_sdf,
             python: "from_sdf",
             javascript: "fromSdf",
-            feature: "io",
-            exposure: public,
-            support: supported,
-            parity: required_when_supported,
+            feature: "cap-io", status: experimental,
             kind: static_,
             parameters: [
                 { name: input, type: &str, default: required },
@@ -5740,18 +6296,15 @@ semantic_id: "Molecule.from_sdf",
             operation: none,
             signature: fn(&str) -> Result<crate::Molecule, crate::SdfError>,
         },
-        #[cfg(feature = "io")]
+        #[cfg(feature = "cap-io")]
         {
-semantic_id: "Molecule.from_sdf_with_params",
+            semantic_id: "Molecule.from_sdf_with_params",
             item: callable,
             owner: molecule,
             rust: crate::Molecule::from_sdf_with_params,
             python: "from_sdf_with_params",
             javascript: "fromSdfWithParams",
-            feature: "io",
-            exposure: public,
-            support: supported,
-            parity: required_when_supported,
+            feature: "cap-io", status: experimental,
             kind: static_,
             parameters: [
                 { name: input, type: &str, default: required },
@@ -5766,7 +6319,7 @@ semantic_id: "Molecule.from_sdf_with_params",
                 &'b crate::SdfReadParams,
             ) -> Result<crate::Molecule, crate::SdfError>,
         },
-        #[cfg(feature = "smiles")]
+        #[cfg(feature = "cap-smiles")]
         {
             semantic_id: "types.SmilesParseParams",
             item: type,
@@ -5774,13 +6327,10 @@ semantic_id: "Molecule.from_sdf_with_params",
             rust: crate::SmilesParseParams,
             python: "SmilesParseParams",
             javascript: "SmilesParseParams",
-            feature: "smiles",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-smiles", status: experimental,
             role: parameter,
         },
-        #[cfg(feature = "smiles")]
+        #[cfg(feature = "cap-smiles")]
         {
             semantic_id: "types.SmilesError",
             item: type,
@@ -5788,13 +6338,10 @@ semantic_id: "Molecule.from_sdf_with_params",
             rust: crate::SmilesError,
             python: "SmilesError",
             javascript: "SmilesError",
-            feature: "smiles",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-smiles", status: experimental,
             role: error,
         },
-        #[cfg(feature = "smiles")]
+        #[cfg(feature = "cap-smiles")]
         {
             semantic_id: "types.SmilesStereoError",
             item: type,
@@ -5802,13 +6349,10 @@ semantic_id: "Molecule.from_sdf_with_params",
             rust: crate::SmilesStereoError,
             python: "SmilesStereoError",
             javascript: "SmilesStereoError",
-            feature: "smiles",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-smiles", status: experimental,
             role: error,
         },
-        #[cfg(feature = "smiles")]
+        #[cfg(feature = "cap-smiles")]
         {
             semantic_id: "Molecule.from_smiles",
             item: callable,
@@ -5816,10 +6360,7 @@ semantic_id: "Molecule.from_sdf_with_params",
             rust: crate::Molecule::from_smiles,
             python: "from_smiles",
             javascript: "fromSmiles",
-            feature: "smiles",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-smiles", status: experimental,
             kind: static_,
             parameters: [
                 { name: input, type: &str, default: required },
@@ -5830,7 +6371,7 @@ semantic_id: "Molecule.from_sdf_with_params",
             operation: none,
             signature: fn(&str) -> Result<crate::Molecule, crate::SmilesError>,
         },
-        #[cfg(feature = "smiles")]
+        #[cfg(feature = "cap-smiles")]
         {
             semantic_id: "Molecule.from_smiles_with_params",
             item: callable,
@@ -5838,10 +6379,7 @@ semantic_id: "Molecule.from_sdf_with_params",
             rust: crate::Molecule::from_smiles_with_params,
             python: "from_smiles_with_params",
             javascript: "fromSmilesWithParams",
-            feature: "smiles",
-            exposure: public,
-            support: supported_with_rdkit_parity,
-            parity: required_now,
+            feature: "cap-smiles", status: experimental,
             kind: static_,
             parameters: [
                 { name: input, type: &str, default: required },

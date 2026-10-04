@@ -1,4 +1,12 @@
 use cosmolkit_io::{MolBlockRecord, SdfReadError, read_mol_block_detached};
+use cosmolkit_model::PropertyValue;
+
+fn string_property(value: Option<&PropertyValue>) -> Option<&str> {
+    match value {
+        Some(PropertyValue::String(value)) => Some(value),
+        _ => None,
+    }
+}
 
 fn v3000_with_atoms(atoms: &[&str]) -> String {
     let mut block = format!(
@@ -56,7 +64,7 @@ fn v3000_integer_attchord_remains_distinct_from_template_state() {
         panic!("ordinary atom must produce concrete topology");
     };
     let atom = &topology.atoms[0];
-    assert_eq!(atom.prop("molAttachOrder"), Some("3"));
+    assert_eq!(string_property(atom.prop("molAttachOrder")), Some("3"));
     assert!(atom.template_attachment_order().is_none());
 }
 

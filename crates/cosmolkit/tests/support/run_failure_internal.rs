@@ -8,8 +8,8 @@ use cosmolkit_model::{
 
 use super::*;
 use crate::ops::{
-    BlockAccess, CipStatePolicy, DerivedEffects, DerivedState, MappingRequirement, MoleculeOpKind,
-    OperationDomain, ParityPolicy, SemanticPreconditionSet, SupportStatus, TopologyEditKind,
+    BlockAccess, CipStatePolicy, DerivedEffects, DerivedState, FunctionStatus, MappingRequirement,
+    MoleculeOpKind, OperationDomain, ParityPolicy, SemanticPreconditionSet, TopologyEditKind,
 };
 
 struct FailureAccess;
@@ -44,7 +44,7 @@ fn spec(
         cip_state: CipStatePolicy::Preserve,
         semantic_preconditions: preconditions,
         requires_mapping: MappingRequirement::None,
-        support: SupportStatus::Experimental,
+        status: FunctionStatus::Experimental,
         parity: ParityPolicy::NotApplicable,
         io_roundtrip: false,
     }))
@@ -74,12 +74,15 @@ fn molecule() -> Molecule {
         .with_sdf_property_list(SdfPropertyList::new(
             SdfPropertyListTarget::Atom,
             "atom_rows",
-            vec![Some("c".to_owned()), Some("n".to_owned())],
+            vec![
+                Some(cosmolkit_model::PropertyValue::from("c")),
+                Some(cosmolkit_model::PropertyValue::from("n")),
+            ],
         ))
         .with_sdf_property_list(SdfPropertyList::new(
             SdfPropertyListTarget::Bond,
             "bond_rows",
-            vec![Some("cn".to_owned())],
+            vec![Some(cosmolkit_model::PropertyValue::from("cn"))],
         ));
     Molecule::from_parts(topology, coordinates, properties).unwrap()
 }

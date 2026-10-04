@@ -1,8 +1,9 @@
+use cosmolkit_core::property_value_to_string;
 use cosmolkit_io::{
     MolBlockRecord, SdfDataReadParams, SdfReadError, read_sdf_graph_record_detached,
     read_sdf_record_detached, read_sdf_record_detached_with_params,
 };
-use cosmolkit_model::{MoleculeProperties, SdfPropertyListTarget};
+use cosmolkit_model::{MoleculeProperties, PropertyValue, SdfPropertyListTarget};
 
 fn v2000_atom(symbol: &str) -> String {
     format!("    0.0000    0.0000    0.0000 {symbol:<3} 0  0  0  0  0  0  0  0  0  0  0  0")
@@ -41,17 +42,19 @@ fn assert_list(
     index: usize,
     target: SdfPropertyListTarget,
     name: &str,
-    values: &[Option<&str>],
+    values: &[Option<PropertyValue>],
 ) {
     let list = &properties.sdf_property_lists()[index];
     assert_eq!(list.target(), target);
     assert_eq!(list.name(), name);
+    assert_eq!(list.values(), values);
+}
+
+fn assert_typed_property(actual: Option<&PropertyValue>, expected: PropertyValue, projected: &str) {
+    assert_eq!(actual, Some(&expected));
     assert_eq!(
-        list.values(),
-        values
-            .iter()
-            .map(|value| value.map(str::to_owned))
-            .collect::<Vec<_>>()
+        property_value_to_string(actual.expect("typed property must exist")),
+        Ok(projected.to_owned())
     );
 }
 
@@ -71,27 +74,91 @@ fn sdf_props_all_eight_prefixes_apply_typed_values_and_continue_after_bad_items(
     ));
     let record = read_sdf_record_detached(&input).expect("all property-list kinds");
 
-    assert_eq!(record.topology.atoms[0].prop("Text"), Some("alpha"));
+    assert_typed_property(
+        record.topology.atoms[0].prop("Text"),
+        PropertyValue::String("alpha".to_owned()),
+        "alpha",
+    );
     assert_eq!(record.topology.atoms[1].prop("Text"), None);
-    assert_eq!(record.topology.atoms[2].prop("Text"), Some("omega"));
-    assert_eq!(record.topology.atoms[0].prop("Integer"), Some("+7"));
+    assert_typed_property(
+        record.topology.atoms[2].prop("Text"),
+        PropertyValue::String("omega".to_owned()),
+        "omega",
+    );
+    assert_typed_property(
+        record.topology.atoms[0].prop("Integer"),
+        PropertyValue::Int(7),
+        "7",
+    );
     assert_eq!(record.topology.atoms[1].prop("Integer"), None);
-    assert_eq!(record.topology.atoms[2].prop("Integer"), Some("-3"));
-    assert_eq!(record.topology.atoms[0].prop("Real"), Some("1e2"));
+    assert_typed_property(
+        record.topology.atoms[2].prop("Integer"),
+        PropertyValue::Int(-3),
+        "-3",
+    );
+    assert_typed_property(
+        record.topology.atoms[0].prop("Real"),
+        PropertyValue::Double(100.0),
+        "100",
+    );
     assert_eq!(record.topology.atoms[1].prop("Real"), None);
-    assert_eq!(record.topology.atoms[2].prop("Real"), Some("-5e-1"));
-    assert_eq!(record.topology.atoms[0].prop("Flag"), Some("true"));
-    assert_eq!(record.topology.atoms[1].prop("Flag"), Some("false"));
-    assert_eq!(record.topology.atoms[2].prop("Flag"), Some("true"));
+    assert_typed_property(
+        record.topology.atoms[2].prop("Real"),
+        PropertyValue::Double(-0.5),
+        "-0.5",
+    );
+    assert_typed_property(
+        record.topology.atoms[0].prop("Flag"),
+        PropertyValue::Bool(true),
+        "1",
+    );
+    assert_typed_property(
+        record.topology.atoms[1].prop("Flag"),
+        PropertyValue::Bool(false),
+        "0",
+    );
+    assert_typed_property(
+        record.topology.atoms[2].prop("Flag"),
+        PropertyValue::Bool(true),
+        "1",
+    );
 
-    assert_eq!(record.topology.bonds[0].prop("Text"), Some("left"));
-    assert_eq!(record.topology.bonds[1].prop("Text"), Some("right"));
-    assert_eq!(record.topology.bonds[0].prop("Integer"), Some("-9"));
-    assert_eq!(record.topology.bonds[1].prop("Integer"), Some("+11"));
-    assert_eq!(record.topology.bonds[0].prop("Real"), Some("6.25e-1"));
+    assert_typed_property(
+        record.topology.bonds[0].prop("Text"),
+        PropertyValue::String("left".to_owned()),
+        "left",
+    );
+    assert_typed_property(
+        record.topology.bonds[1].prop("Text"),
+        PropertyValue::String("right".to_owned()),
+        "right",
+    );
+    assert_typed_property(
+        record.topology.bonds[0].prop("Integer"),
+        PropertyValue::Int(-9),
+        "-9",
+    );
+    assert_typed_property(
+        record.topology.bonds[1].prop("Integer"),
+        PropertyValue::Int(11),
+        "11",
+    );
+    assert_typed_property(
+        record.topology.bonds[0].prop("Real"),
+        PropertyValue::Double(0.625),
+        "0.625",
+    );
     assert_eq!(record.topology.bonds[1].prop("Real"), None);
-    assert_eq!(record.topology.bonds[0].prop("Flag"), Some("false"));
-    assert_eq!(record.topology.bonds[1].prop("Flag"), Some("true"));
+    assert_typed_property(
+        record.topology.bonds[0].prop("Flag"),
+        PropertyValue::Bool(false),
+        "0",
+    );
+    assert_typed_property(
+        record.topology.bonds[1].prop("Flag"),
+        PropertyValue::Bool(true),
+        "1",
+    );
 
     let lists = record.properties.sdf_property_lists();
     assert_eq!(lists.len(), 8);
@@ -100,25 +167,121 @@ fn sdf_props_all_eight_prefixes_apply_typed_values_and_continue_after_bad_items(
         0,
         SdfPropertyListTarget::Atom,
         "Text",
-        &[Some("alpha"), None, Some("omega")],
+        &[
+            Some(PropertyValue::String("alpha".to_owned())),
+            None,
+            Some(PropertyValue::String("omega".to_owned())),
+        ],
     );
     assert_list(
         &record.properties,
         1,
         SdfPropertyListTarget::Atom,
         "Integer",
-        &[Some("+7"), None, Some("-3")],
+        &[
+            Some(PropertyValue::Int(7)),
+            None,
+            Some(PropertyValue::Int(-3)),
+        ],
+    );
+    assert_list(
+        &record.properties,
+        2,
+        SdfPropertyListTarget::Atom,
+        "Real",
+        &[
+            Some(PropertyValue::Double(100.0)),
+            None,
+            Some(PropertyValue::Double(-0.5)),
+        ],
+    );
+    assert_list(
+        &record.properties,
+        3,
+        SdfPropertyListTarget::Atom,
+        "Flag",
+        &[
+            Some(PropertyValue::Bool(true)),
+            Some(PropertyValue::Bool(false)),
+            Some(PropertyValue::Bool(true)),
+        ],
+    );
+    assert_list(
+        &record.properties,
+        4,
+        SdfPropertyListTarget::Bond,
+        "Text",
+        &[
+            Some(PropertyValue::String("left".to_owned())),
+            Some(PropertyValue::String("right".to_owned())),
+        ],
+    );
+    assert_list(
+        &record.properties,
+        5,
+        SdfPropertyListTarget::Bond,
+        "Integer",
+        &[Some(PropertyValue::Int(-9)), Some(PropertyValue::Int(11))],
     );
     assert_list(
         &record.properties,
         6,
         SdfPropertyListTarget::Bond,
         "Real",
-        &[Some("6.25e-1"), None],
+        &[Some(PropertyValue::Double(0.625)), None],
+    );
+    assert_list(
+        &record.properties,
+        7,
+        SdfPropertyListTarget::Bond,
+        "Flag",
+        &[
+            Some(PropertyValue::Bool(false)),
+            Some(PropertyValue::Bool(true)),
+        ],
     );
     assert_eq!(
         record.properties.prop("atom.iprop.Integer"),
         Some("+7 invalid -3")
+    );
+}
+
+#[test]
+fn sdf_props_numeric_lexemes_retain_values_and_source_projection_separately() {
+    let input = concrete_record(concat!(
+        ">  <atom.iprop.Number>\n+7 007 -3\n\n",
+        ">  <atom.dprop.Real>\n1.00 1e2 -5e-1\n\n",
+    ));
+    let record = read_sdf_record_detached(&input).expect("typed numeric spellings");
+
+    for (row, expected, projected) in [(0, 7, "7"), (1, 7, "7"), (2, -3, "-3")] {
+        assert_typed_property(
+            record.topology.atoms[row].prop("Number"),
+            PropertyValue::Int(expected),
+            projected,
+        );
+    }
+    for (row, expected, projected) in [(0, 1.0, "1"), (1, 100.0, "100"), (2, -0.5, "-0.5")] {
+        assert_typed_property(
+            record.topology.atoms[row].prop("Real"),
+            PropertyValue::Double(expected),
+            projected,
+        );
+    }
+    assert_eq!(
+        record.properties.prop("atom.iprop.Number"),
+        Some("+7 007 -3")
+    );
+    assert_eq!(
+        record.properties.prop("atom.dprop.Real"),
+        Some("1.00 1e2 -5e-1")
+    );
+    assert_eq!(
+        record.properties.sdf_data_fields(),
+        &[
+            ("atom.iprop.Number".to_owned(), "+7 007 -3".to_owned()),
+            ("atom.dprop.Real".to_owned(), "1.00 1e2 -5e-1".to_owned(),),
+        ]
     );
 }
 
@@ -135,16 +298,28 @@ fn sdf_props_custom_empty_markers_and_compressed_multiline_delimiters_preserve_r
         0,
         SdfPropertyListTarget::Atom,
         "Custom",
-        &[Some("first"), None, Some("third")],
+        &[
+            Some(PropertyValue::String("first".to_owned())),
+            None,
+            Some(PropertyValue::String("third".to_owned())),
+        ],
     );
     assert_list(
         &record.properties,
         1,
         SdfPropertyListTarget::Atom,
         "EmptyMarker",
-        &[Some("one"), Some("two"), Some("three")],
+        &[
+            Some(PropertyValue::String("one".to_owned())),
+            Some(PropertyValue::String("two".to_owned())),
+            Some(PropertyValue::String("three".to_owned())),
+        ],
     );
-    assert_eq!(record.topology.atoms[2].prop("Custom"), Some("third"));
+    assert_typed_property(
+        record.topology.atoms[2].prop("Custom"),
+        PropertyValue::String("third".to_owned()),
+        "third",
+    );
     assert_eq!(
         record.properties.prop("atom.prop.Custom"),
         Some("[?]\tfirst\t?\n third")
@@ -162,7 +337,13 @@ fn sdf_props_query_records_keep_query_carrier_and_apply_atom_and_bond_lists() {
         "M  V30 END ATOM\nM  V30 BEGIN BOND\n",
         "M  V30 1 5 1 2\n",
         "M  V30 END BOND\nM  V30 END CTAB\nM  END\n",
+        ">  <atom.prop.Text>\nquery n/a\n\n",
+        ">  <atom.iprop.Count>\n+7 invalid\n\n",
         ">  <atom.dprop.Weight>\n2.5 invalid\n\n",
+        ">  <atom.bprop.Active>\n0 1\n\n",
+        ">  <bond.prop.Text>\nedge\n\n",
+        ">  <bond.iprop.Count>\n007\n\n",
+        ">  <bond.dprop.Weight>\n-5e-1\n\n",
         ">  <bond.bprop.Selected>\n1\n\n$$$$\n",
     );
     let record = read_sdf_graph_record_detached(input).expect("query property lists");
@@ -170,23 +351,74 @@ fn sdf_props_query_records_keep_query_carrier_and_apply_atom_and_bond_lists() {
         panic!("property expansion must not lower the query graph");
     };
 
-    assert_eq!(query.query.atoms()[0].prop("Weight"), Some("2.5"));
+    assert_typed_property(
+        query.query.atoms()[0].prop("Text"),
+        PropertyValue::String("query".to_owned()),
+        "query",
+    );
+    assert_eq!(query.query.atoms()[1].prop("Text"), None);
+    assert_typed_property(
+        query.query.atoms()[0].prop("Count"),
+        PropertyValue::Int(7),
+        "7",
+    );
+    assert_eq!(query.query.atoms()[1].prop("Count"), None);
+    assert_typed_property(
+        query.query.atoms()[0].prop("Weight"),
+        PropertyValue::Double(2.5),
+        "2.5",
+    );
     assert_eq!(query.query.atoms()[1].prop("Weight"), None);
-    assert_eq!(query.query.bonds()[0].bond().prop("Selected"), Some("true"));
+    assert_typed_property(
+        query.query.atoms()[0].prop("Active"),
+        PropertyValue::Bool(false),
+        "0",
+    );
+    assert_typed_property(
+        query.query.atoms()[1].prop("Active"),
+        PropertyValue::Bool(true),
+        "1",
+    );
+    assert_typed_property(
+        query.query.bonds()[0].bond().prop("Text"),
+        PropertyValue::String("edge".to_owned()),
+        "edge",
+    );
+    assert_typed_property(
+        query.query.bonds()[0].bond().prop("Count"),
+        PropertyValue::Int(7),
+        "7",
+    );
+    assert_typed_property(
+        query.query.bonds()[0].bond().prop("Weight"),
+        PropertyValue::Double(-0.5),
+        "-0.5",
+    );
+    assert_typed_property(
+        query.query.bonds()[0].bond().prop("Selected"),
+        PropertyValue::Bool(true),
+        "1",
+    );
+    assert_eq!(query.properties.sdf_property_lists().len(), 8);
     assert_list(
         &query.properties,
-        0,
+        2,
         SdfPropertyListTarget::Atom,
         "Weight",
-        &[Some("2.5"), None],
+        &[Some(PropertyValue::Double(2.5)), None],
     );
     assert_list(
         &query.properties,
-        1,
+        7,
         SdfPropertyListTarget::Bond,
         "Selected",
-        &[Some("true")],
+        &[Some(PropertyValue::Bool(true))],
     );
+    assert_eq!(
+        query.properties.prop("atom.iprop.Count"),
+        Some("+7 invalid")
+    );
+    assert_eq!(query.properties.prop("bond.dprop.Weight"), Some("-5e-1"));
 }
 
 #[test]
@@ -341,17 +573,33 @@ fn sdf_props_repeated_lists_keep_encounter_order_and_replace_item_properties() {
         0,
         SdfPropertyListTarget::Atom,
         "Label",
-        &[Some("one"), Some("two"), Some("three")],
+        &[
+            Some(PropertyValue::String("one".to_owned())),
+            Some(PropertyValue::String("two".to_owned())),
+            Some(PropertyValue::String("three".to_owned())),
+        ],
     );
     assert_list(
         &record.properties,
         1,
         SdfPropertyListTarget::Atom,
         "Label",
-        &[Some("un"), Some("deux"), Some("trois")],
+        &[
+            Some(PropertyValue::String("un".to_owned())),
+            Some(PropertyValue::String("deux".to_owned())),
+            Some(PropertyValue::String("trois".to_owned())),
+        ],
     );
-    assert_eq!(record.topology.atoms[0].prop("Label"), Some("un"));
-    assert_eq!(record.topology.atoms[2].prop("Label"), Some("trois"));
+    assert_typed_property(
+        record.topology.atoms[0].prop("Label"),
+        PropertyValue::String("un".to_owned()),
+        "un",
+    );
+    assert_typed_property(
+        record.topology.atoms[2].prop("Label"),
+        PropertyValue::String("trois".to_owned()),
+        "trois",
+    );
     assert_eq!(
         record.properties.prop("atom.prop.Label"),
         Some("un deux trois")

@@ -1,10 +1,10 @@
 use cosmolkit::{
-    AltLocLabel, AtomName, AtomSourceIds, BINDING_CONTRACT, BindingExposure, BindingItem,
-    BindingKind, BindingOwner, BindingParity, BindingSupport, BindingTypeRole, ChainSourceIds,
-    EntitySourceIds, PdbAtomSerial, PdbChainId, PdbSeqId, ResidueCode, ResidueInfo,
-    ResidueInfoKind, ResidueName, ResidueSequenceError, ResidueSourceIds, StateModel,
-    UNKNOWN_TABULATED_RESIDUE_INDEX, expand_one_letter, expand_one_letter_sequence,
-    find_residue_info, find_residue_info_index, residue_code, residue_info, residue_info_checked,
+    AltLocLabel, AtomName, AtomSourceIds, BINDING_CONTRACT, BindingItem, BindingKind, BindingOwner,
+    BindingTypeRole, ChainSourceIds, EntitySourceIds, FunctionStatus, PdbAtomSerial, PdbChainId,
+    PdbSeqId, ResidueCode, ResidueInfo, ResidueInfoKind, ResidueName, ResidueSequenceError,
+    ResidueSourceIds, StateModel, UNKNOWN_TABULATED_RESIDUE_INDEX, expand_one_letter,
+    expand_one_letter_sequence, find_residue_info, find_residue_info_index, residue_code,
+    residue_info, residue_info_checked,
 };
 
 fn compact(value: &str) -> String {
@@ -82,7 +82,8 @@ fn public_one_letter_expansion_preserves_order_special_tokens_and_errors() {
 
 #[test]
 fn source_identifier_values_are_usable_through_the_facade() {
-    let atom_name = AtomName::from_ascii(*b" CA ").unwrap();
+    let atom_name = AtomName::from_ascii(b" CA ").unwrap();
+    let cif_atom_name = AtomName::from_ascii(b"CA").unwrap();
     let residue_name = ResidueName::from_ascii(b"MSE ").unwrap();
     let auth_chain = PdbChainId::from_ascii(b"A").unwrap();
     let sequence = PdbSeqId::new(-12, Some(b'B'));
@@ -101,6 +102,8 @@ fn source_identifier_values_are_usable_through_the_facade() {
     let entity_source = EntitySourceIds::new("entity".to_owned());
 
     assert_eq!(atom_name.as_str(), " CA ");
+    assert_eq!(cif_atom_name.as_bytes(), b"CA");
+    assert_ne!(cif_atom_name, atom_name);
     assert_eq!(residue_name.as_str(), "MSE ");
     assert_eq!(sequence.seq_num(), -12);
     assert_eq!(sequence.ins_code(), Some(b'B'));
@@ -171,10 +174,8 @@ fn binding_contract_matches_the_public_bio_residue_surface() {
         assert_eq!(compact(row.rust_path), format!("crate::{rust_name}"));
         assert_eq!(row.python_name, rust_name);
         assert_eq!(row.javascript_name, rust_name);
-        assert_eq!(row.feature, "bio");
-        assert_eq!(row.exposure, BindingExposure::Public);
-        assert_eq!(row.support, BindingSupport::SupportedWithRdkitParity);
-        assert_eq!(row.parity, BindingParity::RequiredNow);
+        assert_eq!(row.feature, "cap-bio");
+        assert_eq!(row.status, FunctionStatus::Experimental);
         assert!(row.callable.is_none());
     }
 
@@ -246,10 +247,8 @@ fn binding_contract_matches_the_public_bio_residue_surface() {
         assert_eq!(compact(row.rust_path), format!("crate::{rust_name}"));
         assert_eq!(row.python_name, rust_name);
         assert_eq!(row.javascript_name, javascript);
-        assert_eq!(row.feature, "bio");
-        assert_eq!(row.exposure, BindingExposure::Public);
-        assert_eq!(row.support, BindingSupport::SupportedWithRdkitParity);
-        assert_eq!(row.parity, BindingParity::RequiredNow);
+        assert_eq!(row.feature, "cap-bio");
+        assert_eq!(row.status, FunctionStatus::Experimental);
         assert!(row.type_role.is_none());
         let callable = row.callable.unwrap();
         assert_eq!(callable.kind, BindingKind::Module);

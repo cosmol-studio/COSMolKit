@@ -18,10 +18,13 @@ fn parse_query(smarts: &str) -> QueryGraph {
 fn q26_atom_label_and_value_slots_keep_decoded_text_and_source_indices() {
     let labels = parse_query("CCC |$left&#59;semi;right\\raw;;ignored$|");
     assert_eq!(labels.num_atoms(), 3);
-    assert_eq!(labels.atom(0).unwrap().prop("atomLabel"), Some("left;semi"));
+    assert_eq!(
+        labels.atom(0).unwrap().prop("atomLabel"),
+        Some(&cosmolkit_model::PropertyValue::from("left;semi"))
+    );
     assert_eq!(
         labels.atom(1).unwrap().prop("atomLabel"),
-        Some(r"right\raw")
+        Some(&cosmolkit_model::PropertyValue::from(r"right\raw"))
     );
     assert_eq!(labels.atom(2).unwrap().prop("atomLabel"), None);
     assert!(
@@ -34,11 +37,11 @@ fn q26_atom_label_and_value_slots_keep_decoded_text_and_source_indices() {
     let values = parse_query("CCC |$_AV:first&#59;middle;second\\raw;;ignored$|");
     assert_eq!(
         values.atom(0).unwrap().prop("molFileValue"),
-        Some("first;middle")
+        Some(&cosmolkit_model::PropertyValue::from("first;middle"))
     );
     assert_eq!(
         values.atom(1).unwrap().prop("molFileValue"),
-        Some(r"second\raw")
+        Some(&cosmolkit_model::PropertyValue::from(r"second\raw"))
     );
     assert_eq!(values.atom(2).unwrap().prop("molFileValue"), None);
 }
@@ -50,9 +53,18 @@ fn q26_atom_properties_keep_decoded_values_overwrite_order_and_skip_invalid_indi
     );
     let first = graph.atom(0).unwrap();
     let second = graph.atom(1).unwrap();
-    assert_eq!(first.prop("escaped"), Some("first:part"));
-    assert_eq!(first.prop("note"), Some("after"));
-    assert_eq!(second.prop("note"), Some(r"right\raw"));
+    assert_eq!(
+        first.prop("escaped"),
+        Some(&cosmolkit_model::PropertyValue::from("first:part"))
+    );
+    assert_eq!(
+        first.prop("note"),
+        Some(&cosmolkit_model::PropertyValue::from("after"))
+    );
+    assert_eq!(
+        second.prop("note"),
+        Some(&cosmolkit_model::PropertyValue::from(r"right\raw"))
+    );
 }
 
 #[test]
@@ -60,12 +72,18 @@ fn q26_labels_and_atom_properties_follow_record_order_before_label_processing() 
     let property_after_label = parse_query("C |$Q_e$atomProp:0.atomLabel.final|");
     let atom = property_after_label.atom(0).unwrap();
     assert_eq!(atom.identity(), QueryAtomIdentity::Element(Element::C));
-    assert_eq!(atom.prop("atomLabel"), Some("final"));
+    assert_eq!(
+        atom.prop("atomLabel"),
+        Some(&cosmolkit_model::PropertyValue::from("final"))
+    );
 
     let label_after_property = parse_query("C |atomProp:0.atomLabel.before,$Q_e$|");
     let atom = label_after_property.atom(0).unwrap();
     assert_eq!(atom.identity(), QueryAtomIdentity::Element(Element::DUMMY));
-    assert_eq!(atom.prop("atomLabel"), Some("Q_e"));
+    assert_eq!(
+        atom.prop("atomLabel"),
+        Some(&cosmolkit_model::PropertyValue::from("Q_e"))
+    );
 }
 
 #[test]
@@ -392,9 +410,12 @@ fn q32_variable_attachment_projection_keeps_source_bond_and_endpoint_references(
     assert_eq!(attached_bond.bond().end(), AtomId::new(1));
     assert_eq!(
         attached_bond.bond().prop("_MolFileBondEndPts"),
-        Some("(2 2 2)")
+        Some(&cosmolkit_model::PropertyValue::from("(2 2 2)"))
     );
-    assert_eq!(attached_bond.bond().prop("_MolFileBondAttach"), Some("ANY"));
+    assert_eq!(
+        attached_bond.bond().prop("_MolFileBondAttach"),
+        Some(&cosmolkit_model::PropertyValue::from("ANY"))
+    );
     assert_eq!(
         graph
             .bond(1)

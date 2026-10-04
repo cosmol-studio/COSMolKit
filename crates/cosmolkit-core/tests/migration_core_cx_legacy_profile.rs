@@ -6,7 +6,8 @@ use cosmolkit_core::{
     assign_valence_for_topology, cleanup_stereo_groups, symmetrized_sssr,
 };
 use cosmolkit_model::{
-    Atom, AtomId, AtomSpec, Bond, BondId, BondSpec, StereoGroup, StereoGroupKind, TopologyBlock,
+    Atom, AtomId, AtomSpec, Bond, BondId, BondSpec, PropertyValue, StereoGroup, StereoGroupKind,
+    TopologyBlock,
 };
 use cosmolkit_types::{BondOrder, BondStereo, ChiralTag, Element};
 
@@ -338,7 +339,7 @@ fn cx_legacy_possible_center_flag_is_independent_of_cleaning() {
     );
     assert_eq!(
         possible_centers.atoms[0].prop("_ChiralityPossible"),
-        Some("1")
+        Some(&PropertyValue::String("1".to_owned()))
     );
     assert!(
         possible_centers
@@ -359,7 +360,7 @@ fn cx_legacy_possible_center_flag_is_independent_of_cleaning() {
     );
     assert_eq!(
         clean_with_possible_centers.atoms[0].prop("_ChiralityPossible"),
-        Some("1")
+        Some(&PropertyValue::String("1".to_owned()))
     );
     assert_eq!(
         input, before,
@@ -373,11 +374,26 @@ fn cx_legacy_clean_flag_controls_stereo_property_cleanup() {
     let before = input.clone();
 
     let clean_false = assign_with_flags(input.clone(), false, false).unwrap();
-    assert_eq!(clean_false.atoms[0].prop("_CIPCode"), Some("S"));
-    assert_eq!(clean_false.atoms[0].prop("_ChiralityPossible"), Some("0"));
-    assert_eq!(clean_false.atoms[0].prop("_ringStereochemCand"), Some("1"));
-    assert_eq!(clean_false.atoms[0].prop("_ringStereoAtoms"), Some("4,7"));
-    assert_eq!(clean_false.bonds[5].prop("_CIPCode"), Some("Z"));
+    assert_eq!(
+        clean_false.atoms[0].prop("_CIPCode"),
+        Some(&PropertyValue::String("S".to_owned()))
+    );
+    assert_eq!(
+        clean_false.atoms[0].prop("_ChiralityPossible"),
+        Some(&PropertyValue::String("0".to_owned()))
+    );
+    assert_eq!(
+        clean_false.atoms[0].prop("_ringStereochemCand"),
+        Some(&PropertyValue::String("1".to_owned()))
+    );
+    assert_eq!(
+        clean_false.atoms[0].prop("_ringStereoAtoms"),
+        Some(&PropertyValue::String("4,7".to_owned()))
+    );
+    assert_eq!(
+        clean_false.bonds[5].prop("_CIPCode"),
+        Some(&PropertyValue::String("Z".to_owned()))
+    );
 
     let clean_true = assign_with_flags(input.clone(), true, false).unwrap();
     assert_eq!(clean_true.atoms[0].prop("_CIPCode"), None);
@@ -385,8 +401,14 @@ fn cx_legacy_clean_flag_controls_stereo_property_cleanup() {
     assert_eq!(clean_true.atoms[0].prop("_ringStereochemCand"), None);
     assert_eq!(clean_true.atoms[0].prop("_ringStereoAtoms"), None);
     assert_eq!(clean_true.bonds[5].prop("_CIPCode"), None);
-    assert_eq!(clean_true.atoms[0].prop("user_marker"), Some("keep"));
-    assert_eq!(clean_true.bonds[5].prop("user_marker"), Some("keep"));
+    assert_eq!(
+        clean_true.atoms[0].prop("user_marker"),
+        Some(&PropertyValue::String("keep".to_owned()))
+    );
+    assert_eq!(
+        clean_true.bonds[5].prop("user_marker"),
+        Some(&PropertyValue::String("keep".to_owned()))
+    );
     assert_eq!(
         input, before,
         "detached assignment must leave its input intact"

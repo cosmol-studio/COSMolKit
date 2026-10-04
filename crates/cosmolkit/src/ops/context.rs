@@ -791,19 +791,21 @@ impl<'a, Access> OpParts<'a, Access> {
             ));
         }
 
-        let all = effects
+        // Effects describe obligations; access describes storage authority.
+        // A preservation proof does not modify the cache and therefore does
+        // not require its checkout/install capability.
+        let mutations = effects
             .recompute
-            .union(effects.preserve)
             .union(effects.invalidate)
             .union(effects.operation_defined);
-        if !all.is_empty()
+        if !mutations.is_empty()
             && (!spec.access.can_write(BlockSet::DERIVED_CACHE)
                 || !spec.may_mutate.contains(BlockSet::DERIVED_CACHE))
         {
             return Err(Self::effect_error(
                 spec,
                 "declaration",
-                all,
+                mutations,
                 "derived effects require derived_cache write and may_mutate authority",
             ));
         }
@@ -896,10 +898,12 @@ impl<'a, Access> OpParts<'a, Access> {
         Ok(())
     }
 
-    fn current_cache_candidate(&self) -> Result<DerivedCacheBlock, OperationError> {
+    // Internal proof/invariant inspection borrows storage. This is not an
+    // operation-body read capability: that is still generated from access.
+    fn current_cache_candidate(&self) -> Result<&DerivedCacheBlock, OperationError> {
         match &self.derived_cache {
-            WorkingBlock::Shared => Ok(self.source.derived_cache_runtime().clone()),
-            WorkingBlock::Installed(cache) => Ok(cache.clone()),
+            WorkingBlock::Shared => Ok(self.source.derived_cache_runtime()),
+            WorkingBlock::Installed(cache) => Ok(cache),
             WorkingBlock::CheckedOut => Err(OperationError::BlockCheckedOut {
                 operation: self.spec.method,
                 block: "derived_cache",
@@ -918,9 +922,27 @@ impl<'a, Access> OpParts<'a, Access> {
             .union(self.spec.derived_effects.operation_defined);
         self.validate_effect_action("update", states, allowed)?;
         self.ensure_write_access(BlockSet::DERIVED_CACHE, "derived_cache")?;
-        let mut candidate = self.current_cache_candidate()?;
-        candidate.mark_valid(states);
-        self.derived_cache = WorkingBlock::Installed(candidate);
+        // An already-Installed cache mutates IN PLACE: a previously moved
+        // ring cache keeps its row-buffer allocations across later validity
+        // marks. Only a still-Shared slot detaches through the existing
+        // one-time COW clone before its first mutation; CheckedOut keeps
+        // the same structural error. Cost review: no cache-size clone on
+        // the Installed path; the Shared clone is the pre-existing detach.
+        if matches!(self.derived_cache, WorkingBlock::CheckedOut) {
+            return Err(OperationError::BlockCheckedOut {
+                operation: self.spec.method,
+                block: "derived_cache",
+            });
+        }
+        if matches!(self.derived_cache, WorkingBlock::Shared) {
+            let candidate = self.source.derived_cache_runtime().clone();
+            self.derived_cache = WorkingBlock::Installed(candidate);
+        }
+        match &mut self.derived_cache {
+            WorkingBlock::Installed(cache) => cache.mark_valid(states),
+            // Materialized above; CheckedOut returned early.
+            _ => unreachable!("derived_cache materialized before update"),
+        }
         self.effect_trace.updated = self.effect_trace.updated.union(states);
         Ok(())
     }
@@ -937,9 +959,26 @@ impl<'a, Access> OpParts<'a, Access> {
             .union(self.spec.derived_effects.operation_defined);
         self.validate_effect_action("clear", states, allowed)?;
         self.ensure_write_access(BlockSet::DERIVED_CACHE, "derived_cache")?;
-        let mut candidate = self.current_cache_candidate()?;
-        candidate.clear(states);
-        self.derived_cache = WorkingBlock::Installed(candidate);
+        // Same Installed-versus-Shared discipline as mark_cache_updated_
+        // runtime: in-place mutation for the owned cache, the existing
+        // one-time COW detach for a still-Shared slot, and the unchanged
+        // structural error for CheckedOut. Unrelated states cleared here
+        // never touch the installed ring row buffers.
+        if matches!(self.derived_cache, WorkingBlock::CheckedOut) {
+            return Err(OperationError::BlockCheckedOut {
+                operation: self.spec.method,
+                block: "derived_cache",
+            });
+        }
+        if matches!(self.derived_cache, WorkingBlock::Shared) {
+            let candidate = self.source.derived_cache_runtime().clone();
+            self.derived_cache = WorkingBlock::Installed(candidate);
+        }
+        match &mut self.derived_cache {
+            WorkingBlock::Installed(cache) => cache.clear(states),
+            // Materialized above; CheckedOut returned early.
+            _ => unreachable!("derived_cache materialized before clear"),
+        }
         self.effect_trace.cleared = self.effect_trace.cleared.union(states);
         Ok(())
     }
@@ -1147,20 +1186,17 @@ impl<'a, Access> OpParts<'a, Access> {
                     && candidate.atoms.iter().zip(&source.atoms).all(
                         |(candidate_atom, source_atom)| {
                             let mut expected = source_atom.clone();
+                            let mut actual = candidate_atom.clone();
+                            // Compare all unowned state, including property types,
+                            // computed flags and relative insertion order. The CIP
+                            // owner clears/reinserts its own keys; reconstructing
+                            // them in a fixed order invents a constraint absent
+                            // from the operation contract.
                             for key in ATOM_KEYS {
                                 expected.clear_prop(key);
-                                if let Some(value) = candidate_atom.prop(key) {
-                                    let result = if candidate_atom.is_prop_computed(key) {
-                                        expected.set_computed_prop(key, value)
-                                    } else {
-                                        expected.set_prop(key, value)
-                                    };
-                                    if result.is_err() {
-                                        return false;
-                                    }
-                                }
+                                actual.clear_prop(key);
                             }
-                            expected == *candidate_atom
+                            expected == actual
                         },
                     );
                 let bonds_only_change_cip = candidate.bonds.len() == source.bonds.len()
@@ -1195,24 +1231,16 @@ impl<'a, Access> OpParts<'a, Access> {
                             }
 
                             let mut expected = source_bond.clone();
+                            let mut actual = candidate_bond.clone();
                             expected.set_stereo_atoms(candidate_bond.stereo_atoms());
                             if expected.set_stereo(candidate_bond.stereo()).is_err() {
                                 return false;
                             }
                             for key in BOND_KEYS {
                                 expected.clear_prop(key);
-                                if let Some(value) = candidate_bond.prop(key) {
-                                    let result = if candidate_bond.is_prop_computed(key) {
-                                        expected.set_computed_prop(key, value)
-                                    } else {
-                                        expected.set_prop(key, value)
-                                    };
-                                    if result.is_err() {
-                                        return false;
-                                    }
-                                }
+                                actual.clear_prop(key);
                             }
-                            expected == *candidate_bond
+                            expected == actual
                         },
                     );
                 let topology_identity_is_stable = atoms_only_change_cip
@@ -1360,7 +1388,7 @@ impl<'a, Access> OpParts<'a, Access> {
                     .union(DerivedState::COORDINATES)
                     .union(DerivedState::DRAWING)
                     .union(DerivedState::FINGERPRINT);
-                let mut candidate_cache = self.current_cache_candidate()?;
+                let mut candidate_cache = self.current_cache_candidate()?.clone();
                 let mut source_cache = self.source.derived_cache_runtime().clone();
                 let non_preserved = all_states.difference(states);
                 candidate_cache.clear(non_preserved);

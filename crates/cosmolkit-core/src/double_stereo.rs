@@ -3,8 +3,8 @@
 use std::{collections::BTreeSet, f64::consts::PI};
 
 use cosmolkit_model::{
-    AtomId, Bond, BondId, BondValueError, Conformer3D, CoordinateValidationError, TopologyBlock,
-    TopologyValidationError,
+    AtomId, Bond, BondId, BondValueError, Conformer3D, CoordinateValidationError, PropertyValue,
+    TopologyBlock, TopologyValidationError,
 };
 use cosmolkit_types::{BondDirection, BondOrder, BondStereo};
 
@@ -1192,10 +1192,12 @@ fn atom_has_unknown_stereo(topology: &TopologyBlock, atom: AtomId) -> bool {
         || property_is_true(topology.atoms[atom.index()].prop("_UnknownStereo"))
 }
 
-fn property_is_true(value: Option<&str>) -> bool {
-    value
-        .and_then(|value| value.parse::<i32>().ok())
-        .is_some_and(|value| value != 0)
+fn property_is_true(value: Option<&PropertyValue>) -> bool {
+    value.is_some_and(|value| match value {
+        PropertyValue::Int(value) => *value != 0,
+        PropertyValue::String(value) => value.parse::<i32>().ok().is_some_and(|value| value != 0),
+        PropertyValue::Double(_) | PropertyValue::Bool(_) => false,
+    })
 }
 
 fn opposite_unchecked(direction: BondDirection) -> BondDirection {

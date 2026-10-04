@@ -1,6 +1,6 @@
 use cosmolkit_model::{
-    AtomId, BondDirection, BondId, BondOrder, BondStereo, CoordinateDimension, SGroupBondRole,
-    SGroupConnection, StereoGroupKind, SubstanceGroupKind,
+    AtomId, BondDirection, BondId, BondOrder, BondStereo, CoordinateDimension, PropertyValue,
+    SGroupBondRole, SGroupConnection, StereoGroupKind, SubstanceGroupKind,
 };
 use cosmolkit_smiles::{SmilesParseError, SmilesParseParams, parse_smiles, write_cx_smiles};
 
@@ -8,6 +8,13 @@ fn parse(input: &str) -> cosmolkit_smiles::SmilesRecord {
     parse_smiles(input, &SmilesParseParams::default()).unwrap_or_else(|error| {
         panic!("failed to parse {input:?}: {error}");
     })
+}
+
+fn string_property(value: Option<&PropertyValue>) -> Option<&str> {
+    match value {
+        Some(PropertyValue::String(value)) => Some(value),
+        _ => None,
+    }
 }
 
 #[test]
@@ -51,15 +58,36 @@ fn labels_values_and_properties_preserve_source_order_and_special_label_policy()
         "atomProp:0.key.old:0.key.new:2.kind.value:9.skip.value|"
     ));
     assert_eq!(record.topology.atoms[0].prop("atomLabel"), None);
-    assert_eq!(record.topology.atoms[0].prop("dummyLabel"), Some("Pol"));
+    assert_eq!(
+        string_property(record.topology.atoms[0].prop("dummyLabel")),
+        Some("Pol")
+    );
     assert_eq!(record.topology.atoms[1].prop("atomLabel"), None);
-    assert_eq!(record.topology.atoms[1].prop("dummyLabel"), Some("Mod"));
-    assert_eq!(record.topology.atoms[2].prop("atomLabel"), Some("ordinary"));
-    assert_eq!(record.topology.atoms[0].prop("molFileValue"), Some("first"));
+    assert_eq!(
+        string_property(record.topology.atoms[1].prop("dummyLabel")),
+        Some("Mod")
+    );
+    assert_eq!(
+        string_property(record.topology.atoms[2].prop("atomLabel")),
+        Some("ordinary")
+    );
+    assert_eq!(
+        string_property(record.topology.atoms[0].prop("molFileValue")),
+        Some("first")
+    );
     assert_eq!(record.topology.atoms[1].prop("molFileValue"), None);
-    assert_eq!(record.topology.atoms[2].prop("molFileValue"), Some("third"));
-    assert_eq!(record.topology.atoms[0].prop("key"), Some("new"));
-    assert_eq!(record.topology.atoms[2].prop("kind"), Some("value"));
+    assert_eq!(
+        string_property(record.topology.atoms[2].prop("molFileValue")),
+        Some("third")
+    );
+    assert_eq!(
+        string_property(record.topology.atoms[0].prop("key")),
+        Some("new")
+    );
+    assert_eq!(
+        string_property(record.topology.atoms[2].prop("kind")),
+        Some("value")
+    );
 
     for label in [
         "star_e", "Q_e", "QH_p", "AH_p", "X_p", "XH_p", "M_p", "MH_p",
@@ -123,7 +151,10 @@ fn wedges_cover_all_directions_duplicate_rejection_and_cleanup() {
         let record = parse(&input);
         assert_eq!(record.topology.bonds[0].begin(), AtomId::new(1));
         assert_eq!(record.topology.bonds[0].direction(), direction);
-        assert_eq!(record.topology.bonds[0].prop("_MolFileBondCfg"), Some(cfg));
+        assert_eq!(
+            string_property(record.topology.bonds[0].prop("_MolFileBondCfg")),
+            Some(cfg)
+        );
         assert_eq!(record.properties.prop("_needsDetectAtomStereo"), None);
     }
 
@@ -133,7 +164,7 @@ fn wedges_cover_all_directions_duplicate_rejection_and_cleanup() {
     let terminal = parse("C=C |wU:0.0|");
     assert_eq!(terminal.topology.bonds[0].order(), BondOrder::Double);
     assert_eq!(
-        terminal.topology.bonds[0].prop("_MolFileBondCfg"),
+        string_property(terminal.topology.bonds[0].prop("_MolFileBondCfg")),
         Some("1")
     );
     assert_eq!(terminal.properties.prop("_needsDetectAtomStereo"), None);
@@ -187,11 +218,11 @@ fn radicals_link_nodes_and_variable_attachments_preserve_order_and_errors() {
 
     let attachment = parse("CO*.C1=CC=NC=C1 |m:2:3.99.5.4,m:99:0|");
     assert_eq!(
-        attachment.topology.bonds[1].prop("_MolFileBondEndPts"),
+        string_property(attachment.topology.bonds[1].prop("_MolFileBondEndPts")),
         Some("(3 4 6 5)")
     );
     assert_eq!(
-        attachment.topology.bonds[1].prop("_MolFileBondAttach"),
+        string_property(attachment.topology.bonds[1].prop("_MolFileBondAttach")),
         Some("ANY")
     );
     assert!(matches!(
@@ -340,7 +371,10 @@ fn cx_polymer_crossings_lower_and_write_as_ordered_typed_references() {
         Some("repeat")
     );
     assert_eq!(group.props().get("CONNECT").map(String::as_str), Some("HT"));
-    assert_eq!(record.topology.atoms[4].prop("keep"), Some("value"));
+    assert_eq!(
+        string_property(record.topology.atoms[4].prop("keep")),
+        Some("value")
+    );
 
     let output = write_cx_smiles(&record).expect("typed crossings write through CXSMILES");
     assert!(
@@ -435,7 +469,16 @@ fn query_only_and_late_lowering_failures_are_atomic_in_both_parser_modes() {
 
 #[test]
 fn unknown_records_are_ignored_and_parser_only_indices_are_removed() {
-    let record = parse("CC |vendor:opaque,Sg:n:0::ht|");
+    // CXSmilesOps.cpp parser::parse_it skips unknown bytes individually,
+    // not comma-delimited opaque records. The 'o' in "opaque" dispatches
+    // parse_enhanced_stereo and must fail without its required colon.
+    // Pinned RDKit 2026.03.1 rejects this former positive fixture.
+    assert!(matches!(
+        parse_smiles("CC |vendor:opaque,Sg:n:0::ht|", &Default::default()),
+        Err(SmilesParseError::Cx(_))
+    ));
+    // None of these unknown bytes dispatches a recognized CX parser.
+    let record = parse("CC |xyz:zzz,Sg:n:0::ht|");
     assert_eq!(record.topology.substance_groups.len(), 1);
     assert!(
         record

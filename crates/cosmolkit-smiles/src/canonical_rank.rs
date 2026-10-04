@@ -1,7 +1,10 @@
 // RDKit marker convention defined in dev/source_reproduction_protocol.md.
 
 use cosmolkit_core::{CanonicalRankError, CanonicalRankParams, rank_mol_atoms_with_params};
-use cosmolkit_model::{AdjacencyList, AtomId, BondId, StereoGroup, TopologyBlock};
+use cosmolkit_model::{
+    AdjacencyList, AtomId, BondId, StereoGroup, TopologyBlock, set_stereo_group_write_id,
+    stereo_group_write_id,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct CanonicalRankPolicy {
@@ -205,6 +208,7 @@ fn remap_component_stereo_groups(
     // RDKit✔️✔️:     extracted_stereo_groups.push_back({stereo_group.getGroupType(),
     // RDKit✔️✔️:                                        std::move(atoms), std::move(bonds),
     // RDKit✔️✔️:                                        stereo_group.getReadId()});
+    // RDKit✔️✔️:     extracted_stereo_groups.back().setWriteId(stereo_group.getWriteId());
     // RDKit✔️✔️:   }
     // END RDKIT CPP FUNCTION Subset.cpp::copySelectedStereoGroups
     groups
@@ -225,11 +229,13 @@ fn remap_component_stereo_groups(
             {
                 return None;
             }
-            let remapped = StereoGroup::new(group.kind(), atoms, bonds);
-            Some(match group.id() {
+            let mut remapped = StereoGroup::new(group.kind(), atoms, bonds);
+            remapped = match group.id() {
                 Some(id) => remapped.with_id(id),
                 None => remapped,
-            })
+            };
+            set_stereo_group_write_id(&mut remapped, stereo_group_write_id(group));
+            Some(remapped)
         })
         .collect()
 }
@@ -405,6 +411,34 @@ mod tests {
         fragment
             .validate()
             .expect("selected group members remain valid local topology IDs");
+    }
+
+    #[test]
+    fn stereo_write_id_fragment_preserves_explicit_state_independently_of_read_ids() {
+        let mut topology = stereo_group_component_topology();
+        set_stereo_group_write_id(&mut topology.stereo_groups[0], 29);
+        set_stereo_group_write_id(&mut topology.stereo_groups[1], 41);
+        set_stereo_group_write_id(&mut topology.stereo_groups[2], 47);
+        set_stereo_group_write_id(&mut topology.stereo_groups[3], 7);
+        set_stereo_group_write_id(&mut topology.stereo_groups[4], 53);
+
+        let fragment = build_ranking_fragment(&topology, &[0, 1])
+            .expect("the selected source component maps to a valid fragment");
+
+        assert_eq!(
+            fragment
+                .stereo_groups
+                .iter()
+                .map(|group| (group.id(), stereo_group_write_id(group)))
+                .collect::<Vec<_>>(),
+            vec![(Some(17), 29), (Some(23), 41), (Some(31), 7)]
+        );
+        assert!(
+            fragment
+                .stereo_groups
+                .iter()
+                .all(|group| ![47, 53].contains(&stereo_group_write_id(group)))
+        );
     }
 
     fn two_component_topology() -> TopologyBlock {

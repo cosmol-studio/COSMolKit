@@ -8419,12 +8419,12 @@ mod cx_progress_label_tests {
         apply_cx_progress_to_query(&mut graph, &labels).expect("label effects");
         assert_eq!(
             graph.atom(0).and_then(|atom| atom.prop("atomLabel")),
-            Some("aAb")
+            Some(&cosmolkit_model::PropertyValue::String("aAb".to_owned()))
         );
         assert_eq!(graph.atom(1).and_then(|atom| atom.prop("atomLabel")), None);
         assert_eq!(
             graph.atom(2).and_then(|atom| atom.prop("atomLabel")),
-            Some("last")
+            Some(&cosmolkit_model::PropertyValue::String("last".to_owned()))
         );
 
         let values = cosmolkit_cx::parse_cx_extensions_progress("|$_AV:v0;;v2$|");
@@ -8432,7 +8432,7 @@ mod cx_progress_label_tests {
         apply_cx_progress_to_query(&mut graph, &values).expect("value effects");
         assert_eq!(
             graph.atom(0).and_then(|atom| atom.prop("molFileValue")),
-            Some("v0")
+            Some(&cosmolkit_model::PropertyValue::String("v0".to_owned()))
         );
         assert_eq!(
             graph.atom(1).and_then(|atom| atom.prop("molFileValue")),
@@ -8440,7 +8440,7 @@ mod cx_progress_label_tests {
         );
         assert_eq!(
             graph.atom(2).and_then(|atom| atom.prop("molFileValue")),
-            Some("v2")
+            Some(&cosmolkit_model::PropertyValue::String("v2".to_owned()))
         );
     }
 
@@ -8455,11 +8455,11 @@ mod cx_progress_label_tests {
         apply_cx_progress_to_query(&mut graph, &progress).expect("committed label effects");
         assert_eq!(
             graph.atom(0).and_then(|atom| atom.prop("atomLabel")),
-            Some("first")
+            Some(&cosmolkit_model::PropertyValue::String("first".to_owned()))
         );
         assert_eq!(
             graph.atom(1).and_then(|atom| atom.prop("atomLabel")),
-            Some("second")
+            Some(&cosmolkit_model::PropertyValue::String("second".to_owned()))
         );
     }
 
@@ -8503,7 +8503,10 @@ mod cx_progress_label_tests {
             cosmolkit_model::QueryAtomIdentity::Element(cosmolkit_types::Element::DUMMY)
         );
         assert!(atom.no_implicit());
-        assert_eq!(atom.prop("atomLabel"), Some("Q_e"));
+        assert_eq!(
+            atom.prop("atomLabel"),
+            Some(&cosmolkit_model::PropertyValue::String("Q_e".to_owned()))
+        );
         assert_eq!(query_substance_groups(&graph), &[substance_group]);
         assert_eq!(graph.stereo_groups(), &[stereo_group]);
         assert_eq!(graph.prop("_cxsmilesLabelsProcessed"), None);
@@ -8522,7 +8525,10 @@ mod cx_progress_label_tests {
         apply_cx_progress_to_query(&mut graph, &progress).expect("committed label property");
 
         let atom = graph.atom(0).expect("partial query atom");
-        assert_eq!(atom.prop("atomLabel"), Some("Q_e"));
+        assert_eq!(
+            atom.prop("atomLabel"),
+            Some(&cosmolkit_model::PropertyValue::String("Q_e".to_owned()))
+        );
         assert_eq!(atom.predicate(), &original_predicate);
         assert_eq!(atom.element(), Some(cosmolkit_types::Element::C));
         assert_eq!(graph.prop("_cxsmilesLabelsProcessed"), None);
@@ -8546,11 +8552,11 @@ mod cx_progress_properties_tests {
         apply_cx_progress_to_query(&mut graph, &progress).expect("atomProp effects");
         assert_eq!(
             graph.atom(0).and_then(|atom| atom.prop("label")),
-            Some("first")
+            Some(&cosmolkit_model::PropertyValue::String("first".to_owned()))
         );
         assert_eq!(
             graph.atom(1).and_then(|atom| atom.prop("kind")),
-            Some("second")
+            Some(&cosmolkit_model::PropertyValue::String("second".to_owned()))
         );
     }
 
@@ -8566,7 +8572,7 @@ mod cx_progress_properties_tests {
         apply_cx_progress_to_query(&mut graph, &progress).expect("committed property effect");
         assert_eq!(
             graph.atom(0).and_then(|atom| atom.prop("kept")),
-            Some("value")
+            Some(&cosmolkit_model::PropertyValue::String("value".to_owned()))
         );
         assert_eq!(graph.atom(0).and_then(|atom| atom.prop("later")), None);
     }
@@ -8985,7 +8991,7 @@ mod cx_progress_linknodes_tests {
         apply_cx_progress_to_query(&mut graph, &progress).expect("source partial effects");
         assert_eq!(
             graph.atom(0).and_then(|atom| atom.prop("atomLabel")),
-            Some("left")
+            Some(&cosmolkit_model::PropertyValue::String("left".to_owned()))
         );
         assert_eq!(graph.prop("molFileLinkNodes"), None);
     }
@@ -9139,7 +9145,7 @@ mod cx_progress_sgroups_tests {
         assert!(query_substance_groups(&graph).is_empty());
         assert_eq!(
             graph.atom(0).and_then(|atom| atom.prop("atomLabel")),
-            Some("Q_e")
+            Some(&cosmolkit_model::PropertyValue::String("Q_e".to_owned()))
         );
     }
 
@@ -9437,7 +9443,7 @@ mod cx_progress_polymer_tests {
         assert!(query_substance_groups(&graph).is_empty());
         assert_eq!(
             graph.atom(0).and_then(|atom| atom.prop("atomLabel")),
-            Some("Q_e")
+            Some(&cosmolkit_model::PropertyValue::String("Q_e".to_owned()))
         );
     }
 
@@ -9527,6 +9533,7 @@ mod cx_progress_attachments_tests {
         graph
             .bond(bond_index)
             .and_then(|bond| bond.bond().prop(key))
+            .map(|value| value.as_string().expect("string property fixture"))
     }
 
     #[test]
@@ -9632,6 +9639,7 @@ mod cx_progress_directions_tests {
         graph
             .bond(bond_index)
             .and_then(|bond| bond.bond().prop(key))
+            .map(|value| value.as_string().expect("string property fixture"))
     }
 
     #[test]

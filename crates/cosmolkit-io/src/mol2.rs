@@ -29,6 +29,13 @@ pub enum Mol2ReadError {
     MoleculeProperty(#[from] cosmolkit_model::MoleculePropertyError),
 }
 
+fn tripos_atom_type(atom: &Atom) -> Result<&str, Mol2ReadError> {
+    atom.prop("_TriposAtomType")
+        .ok_or_else(|| Mol2ReadError::Parse("Missing _TriposAtomType".to_owned()))?
+        .as_string()
+        .map_err(|_| Mol2ReadError::Parse("Invalid _TriposAtomType value kind".to_owned()))
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Mol2Type {
     // RDKit source: FileParsers.h `Mol2Type`
@@ -798,9 +805,7 @@ fn guess_formal_charges(builder: &mut DetachedBuilder) -> Result<(), Mol2ReadErr
                     .map_err(|error| Mol2ReadError::Parse(error.to_string()))?,
             );
         }
-        let tripos_type = builder.atoms[index]
-            .prop("_TriposAtomType")
-            .ok_or_else(|| Mol2ReadError::Parse("Missing _TriposAtomType".to_owned()))?;
+        let tripos_type = tripos_atom_type(&builder.atoms[index])?;
         // RDKit✔️✔️:       if (at->getIsAromatic() && tATT.find("ar") == std::string::npos &&
         // RDKit✔️✔️:           res->getRingInfo()->isAtomInRingOfSize(at->getIdx(), 5)) {
         // RDKit✔️✔️:         continue;
@@ -1175,10 +1180,7 @@ fn cleanup_substructures(builder: &mut DetachedBuilder) -> Result<bool, Mol2Read
             continue;
         }
         let atom = AtomId::new(index);
-        let tripos_type = builder.atoms()[index]
-            .prop("_TriposAtomType")
-            .ok_or_else(|| Mol2ReadError::Parse("Missing _TriposAtomType".to_owned()))?
-            .to_owned();
+        let tripos_type = tripos_atom_type(&builder.atoms()[index])?.to_owned();
         if tripos_type == "N.4" {
             builder
                 .atom_mut(atom)
@@ -1197,10 +1199,7 @@ fn cleanup_substructures(builder: &mut DetachedBuilder) -> Result<bool, Mol2Read
             } else {
                 bond.begin()
             };
-            let neighbor_type = builder.atoms()[neighbor.index()]
-                .prop("_TriposAtomType")
-                .ok_or_else(|| Mol2ReadError::Parse("Missing _TriposAtomType".to_owned()))?
-                .to_owned();
+            let neighbor_type = tripos_atom_type(&builder.atoms()[neighbor.index()])?.to_owned();
             if neighbor_type == "P.3" {
                 let bond = builder
                     .bond_mut(bond_id)
@@ -1219,7 +1218,7 @@ fn cleanup_substructures(builder: &mut DetachedBuilder) -> Result<bool, Mol2Read
                     };
                     if builder.atoms()[oxygen.index()].atomic_number() == 8
                         && !fixed[oxygen.index()]
-                        && builder.atoms()[oxygen.index()].prop("_TriposAtomType") == Some("O.co2")
+                        && tripos_atom_type(&builder.atoms()[oxygen.index()])? == "O.co2"
                     {
                         let oxygen_bond = builder.bond_mut(oxygen_bond_id).unwrap();
                         oxygen_bond.set_order(BondOrder::Single);
@@ -1342,8 +1341,8 @@ fn cleanup_substructures(builder: &mut DetachedBuilder) -> Result<bool, Mol2Read
                                 neighbor_bond.begin()
                             };
                             if builder.atoms()[next_neighbor.index()].atomic_number() > 1 {
-                                if builder.atoms()[next_neighbor.index()].prop("_TriposAtomType")
-                                    == Some("C.cat")
+                                if tripos_atom_type(&builder.atoms()[next_neighbor.index()])?
+                                    == "C.cat"
                                 {
                                     heavy_atom_degree = heavy_atom_degree.wrapping_add(2);
                                 } else {
@@ -1427,6 +1426,8 @@ pub fn read_mol2_detached(input: &str) -> Result<Option<Mol2Record>, Mol2ReadErr
 
 #[cfg(test)]
 mod tests {
+    use cosmolkit_model::PropertyValue;
+
     use super::*;
 
     const BASIC: &str = "@<TRIPOS>MOLECULE\nexample   \n3 2\nSMALL\nNO_CHARGES\n@<TRIPOS>ATOM\n1 C1 0.0 0.0 0.0 C.2 1 MOL 0.25\n2 O1 1.2 0.0 0.0 O.2 1 MOL -0.25\n3 H1 -0.5 0.0 0.0 H 1 MOL 0.0\n@<TRIPOS>BOND\n1 1 2 2\n2 1 3 1\n";
@@ -1528,10 +1529,13 @@ mod tests {
             record.properties.prop("_TriposChargeType"),
             Some("NO_CHARGES")
         );
-        assert_eq!(record.topology.atoms[0].prop("_TriposAtomName"), Some("C1"));
+        assert_eq!(
+            record.topology.atoms[0].prop("_TriposAtomName"),
+            Some(&PropertyValue::String("C1".to_owned()))
+        );
         assert_eq!(
             record.topology.atoms[0].prop("_TriposPartialCharge"),
-            Some("0.25")
+            Some(&PropertyValue::String("0.25".to_owned()))
         );
         assert_eq!(
             record.coordinates.conformers_3d[0].coordinates()[1],

@@ -62,10 +62,31 @@ depend on the process working directory or maintain convenience copies in
 crate-local or Python-local fixture directories. A shared support crate is
 not required for reading fixed files.
 
-`third_party/` and submodule working trees MUST NOT be used as test-data
-locations. Tests MUST remain runnable when optional submodules and external
-source checkouts are absent. An upstream fixture needed by tests MUST have a
-committed test copy under `testdata/` with provenance and checksum metadata.
+Repository tests MAY read fixtures directly from pinned `third_party/`
+submodules. Do not copy an upstream fixture merely to change its location.
+Record each selected file's submodule revision, relative path and checksum
+in its fixture documentation. Missing inputs are errors, never skips.
+Anchor runtime fixture paths at `CARGO_MANIFEST_DIR`, not the working directory.
+Do not use compile-time `include_str!`/`include_bytes!` for these external
+fixtures: read them at test runtime so packaged test sources remain compilable.
+
+Production libraries, build scripts, examples and documentation examples MUST
+NOT require these external test files. Release-profile repository tests MAY
+use them; `--release` does not mean publication. Published package builds must
+work without the source repository or initialized submodules. Coverage CI
+first builds the production library without initialized submodules; only a
+successful build permits fetching pinned third-party inputs and running tests.
+The build and tests share coverage instrumentation, release profile and target
+directory; do not clean compiled artifacts between these stages. This is a
+build-time dependency check, not proof about runtime filesystem access or
+package contents. Package contents MUST NOT include the external fixture tree.
+Running repository-only fixture tests from a downloaded crate is not a
+supported substitute for the full repository test suite; document their
+required checkout instead of silently treating absent data as a pass.
+
+This permission covers input/expected data, not compiling third-party code,
+parsing source code into expectations or invoking oracles in regression tests.
+Corpus/reference execution remains owned by `parity-tests`.
 
 A test MAY create temporary files in a temporary directory. Test execution
 MUST treat committed inputs and generated expected data as read-only and MUST

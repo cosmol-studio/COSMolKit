@@ -2,7 +2,7 @@
 mod canonical_rank;
 
 use canonical_rank::{CanonicalRankPolicy, rank_component_atoms, rank_component_atoms_with_policy};
-use cosmolkit_model::{AtomId, BondId};
+use cosmolkit_model::{AtomId, BondId, PropertyValue};
 use cosmolkit_smiles::{
     SmilesParseError, SmilesParseParams, SmilesRecord, SmilesWriteParams, finalize_smiles_stereo,
     parse_smiles, write_smiles, write_smiles_with_params,
@@ -42,6 +42,7 @@ fn s33_standard_writer_input(input: &str) -> SmilesRecord {
         &remove_params,
     )
     .unwrap();
+    let mut ring_carrier = prepared.final_rings;
     finalize_smiles_stereo(
         SmilesRecord {
             topology: prepared.topology,
@@ -49,6 +50,8 @@ fn s33_standard_writer_input(input: &str) -> SmilesRecord {
             properties: prepared.properties,
         },
         &parse_params,
+        &mut None,
+        &mut ring_carrier,
     )
     .unwrap()
 }
@@ -457,12 +460,12 @@ fn canonical_writer_maps_ring_relative_references_across_component_order() {
             .unwrap();
         assert_eq!(
             parsed.topology.atoms[first_center].prop("_ringStereoAtoms"),
-            Some(first_reference),
+            Some(&PropertyValue::String(first_reference.to_owned())),
             "first parsed relation for {input}"
         );
         assert_eq!(
             parsed.topology.atoms[second_center].prop("_ringStereoAtoms"),
-            Some(second_reference),
+            Some(&PropertyValue::String(second_reference.to_owned())),
             "second parsed relation for {input}"
         );
 
@@ -542,4 +545,81 @@ fn canonical_writer_orders_s33_components_with_the_pinned_standard_profile_and_p
         "equal-text components after [0,2,1,3] input permutation"
     );
     assert_eq!(interleaved, before, "equal-text interleaved input");
+}
+
+#[test]
+fn canonical_writer_gates_tagged_nonpotential_chirality_after_clean_stereo_preparation() {
+    use cosmolkit_types::ChiralTag;
+
+    let mut template = record("FNC");
+    template.topology.atoms[1].set_chiral_tag(ChiralTag::TetrahedralCw);
+
+    for (clean_stereo, done_marker_present, expected) in [
+        (false, false, "C[N@@H]F"),
+        (true, false, "CNF"),
+        (false, true, "C[N@@H]F"),
+        (true, true, "C[N@@H]F"),
+    ] {
+        let mut input = template.clone();
+        if done_marker_present {
+            input.properties.set_prop("_StereochemDone", "0").unwrap();
+        } else {
+            input.properties.clear_prop("_StereochemDone");
+        }
+        let before = input.clone();
+        let params = SmilesWriteParams {
+            canonical: false,
+            clean_stereo,
+            rooted_at_atom: Some(AtomId::new(2)),
+            ..SmilesWriteParams::default()
+        };
+
+        assert_eq!(
+            write_smiles_with_params(&input, &params).unwrap(),
+            expected,
+            "clean_stereo={clean_stereo}, _StereochemDone present={done_marker_present}"
+        );
+        assert_eq!(
+            input, before,
+            "writer changed the nonpotential tagged input"
+        );
+    }
+}
+
+#[test]
+fn canonical_writer_preserves_valid_tetrahedral_and_nontetrahedral_guard_paths() {
+    let template = record("F[C@H](Cl)Br");
+    for (clean_stereo, done_marker_present) in
+        [(false, false), (true, false), (false, true), (true, true)]
+    {
+        let mut input = template.clone();
+        if done_marker_present {
+            input.properties.set_prop("_StereochemDone", "0").unwrap();
+        } else {
+            input.properties.clear_prop("_StereochemDone");
+        }
+        let before = input.clone();
+        let params = SmilesWriteParams {
+            clean_stereo,
+            ..SmilesWriteParams::default()
+        };
+
+        assert_eq!(
+            write_smiles_with_params(&input, &params).unwrap(),
+            "F[C@H](Cl)Br",
+            "clean_stereo={clean_stereo}, _StereochemDone present={done_marker_present}"
+        );
+        assert_eq!(input, before, "writer changed the valid tetrahedral input");
+    }
+
+    let nontetrahedral = record("[Pt@SP1](F)(Cl)(Br)I");
+    let before = nontetrahedral.clone();
+    assert_eq!(
+        write_smiles(&nontetrahedral).unwrap(),
+        "[F][Pt@SP1]([Cl])([Br])[I]"
+    );
+    assert_eq!(
+        nontetrahedral, before,
+        "writer changed non-tetrahedral input"
+    );
 }

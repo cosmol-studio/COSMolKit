@@ -1,16 +1,10 @@
 use std::sync::Arc;
 
-use cosmolkit_model::{
-    Atom, AtomId, AtomSpec, Bond, BondId, BondOrder, BondSpec, Conformer2D, CoordinateBlock,
-    Element, MoleculeProperties, SdfPropertyList, SdfPropertyListTarget, TopologyBlock,
-};
+use cosmolkit_model::{Atom, AtomId, AtomSpec, Bond, BondId, BondOrder, BondSpec, Conformer2D, CoordinateBlock, Element, MoleculeProperties, SdfPropertyList, SdfPropertyListTarget, TopologyBlock};
 
 use super::*;
 use crate::molecule::DerivedCacheBlock;
-use crate::ops::{
-    BlockAccess, CipStatePolicy, DerivedEffects, DerivedState, MappingRequirement, MoleculeOpKind,
-    OperationDomain, ParityPolicy, SemanticPreconditionSet, SupportStatus, TopologyEditKind,
-};
+use crate::ops::{BlockAccess, CipStatePolicy, DerivedEffects, DerivedState, MappingRequirement, MoleculeOpKind, OperationDomain, ParityPolicy, SemanticPreconditionSet, FunctionStatus, TopologyEditKind};
 
 struct MultipleAccess;
 
@@ -71,7 +65,7 @@ fn spec(method: &'static str, fields: SpecFields) -> &'static MoleculeOpSpec {
         cip_state: fields.cip,
         semantic_preconditions: SemanticPreconditionSet::NONE,
         requires_mapping: fields.mapping,
-        support: SupportStatus::Experimental,
+        status: FunctionStatus::Experimental,
         parity: ParityPolicy::NotApplicable,
         io_roundtrip: false,
     }))
@@ -107,12 +101,12 @@ fn properties(name: &str) -> MoleculeProperties {
         .with_sdf_property_list(SdfPropertyList::new(
             SdfPropertyListTarget::Atom,
             "atom_rows",
-            vec![Some("c".to_owned()), Some("n".to_owned())],
+            vec![Some(cosmolkit_model::PropertyValue::from("c")), Some(cosmolkit_model::PropertyValue::from("n"))],
         ))
         .with_sdf_property_list(SdfPropertyList::new(
             SdfPropertyListTarget::Bond,
             "bond_rows",
-            vec![Some("cn".to_owned())],
+            vec![Some(cosmolkit_model::PropertyValue::from("cn"))],
         ))
 }
 
@@ -382,6 +376,7 @@ fn changed_block_without_write_authority_is_rejected() {
 }
 
 #[test]
+#[cfg(feature = "cap-rings")]
 fn invalidate_clears_each_candidate_cache_without_touching_source() {
     let base = molecule();
     let mut cache = DerivedCacheBlock::default();

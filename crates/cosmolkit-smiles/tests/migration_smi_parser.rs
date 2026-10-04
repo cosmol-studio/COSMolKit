@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use cosmolkit_model::AtomId;
+use cosmolkit_model::{AtomId, PropertyValue};
 use cosmolkit_smiles::{SmilesParseError, SmilesParseParams, parse_smiles};
 use cosmolkit_types::ChiralTag;
 
@@ -15,6 +15,99 @@ fn defaults_match_the_pinned_v2_constructor() {
     assert!(!params.skip_cleanup);
     assert!(!params.debug_parse);
     assert!(params.replacements.is_empty());
+}
+
+#[test]
+fn valence_transport_stereo_completion_marker_follows_source_flag_product() {
+    use cosmolkit_smiles::finalize_smiles_stereo;
+    for input in ["CCO", "[C@H](C)C", ""] {
+        for sanitize in [false, true] {
+            for remove_hydrogens in [false, true] {
+                for initial in [None, Some("0"), Some("1")] {
+                    let params = SmilesParseParams {
+                        sanitize,
+                        remove_hydrogens,
+                        ..Default::default()
+                    };
+                    let mut record = parse_smiles(input, &params).unwrap();
+                    record.properties.clear_prop("_StereochemDone");
+                    if let Some(value) = initial {
+                        record
+                            .properties
+                            .set_prop("_StereochemDone", value)
+                            .unwrap();
+                    }
+                    let mut ring_carrier: Option<cosmolkit_core::RingInfo> = None;
+                    let output =
+                        finalize_smiles_stereo(record, &params, &mut None, &mut ring_carrier)
+                            .unwrap();
+                    if sanitize || remove_hydrogens {
+                        assert_eq!(output.properties.prop("_StereochemDone"), Some("1"));
+                        assert!(output.properties.is_prop_computed("_StereochemDone"));
+                    } else {
+                        assert_eq!(output.properties.prop("_StereochemDone"), initial);
+                        assert!(!output.properties.is_prop_computed("_StereochemDone"));
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn valence_transport_stereo_reuses_buffers_and_rejects_malformed_rows() {
+    use cosmolkit_core::{
+        ValenceAssignment, ValenceModel, assign_valence_with_options_for_topology,
+    };
+    use cosmolkit_smiles::{SmilesStereoError, finalize_smiles_stereo};
+    for input in ["CCO", "[C@H](C)C", "S(C)(C)C", ""] {
+        let params = SmilesParseParams::default();
+        let mut ring_carrier: Option<cosmolkit_core::RingInfo> = None;
+        let record = parse_smiles(input, &params).unwrap();
+        let assignment = assign_valence_with_options_for_topology(
+            &record.topology,
+            ValenceModel::RdkitLike,
+            false,
+        )
+        .unwrap();
+        for field in ["explicit_valence", "implicit_hydrogens"] {
+            for length in [0, record.topology.atoms.len() + 1] {
+                if length == record.topology.atoms.len() {
+                    continue;
+                }
+                let mut malformed = assignment.clone();
+                if field == "explicit_valence" {
+                    malformed.explicit_valence.resize(length, 0);
+                } else {
+                    malformed.implicit_hydrogens.resize(length, 0);
+                }
+                assert!(
+                    matches!(finalize_smiles_stereo(record.clone(),&params,&mut Some(malformed), &mut ring_carrier),
+                    Err(SmilesStereoError::ValenceRows{field:observed,actual,expected})
+                    if observed==field && actual==length && expected==record.topology.atoms.len())
+                );
+            }
+        }
+        let (explicit_ptr, implicit_ptr) = (
+            assignment.explicit_valence.as_ptr(),
+            assignment.implicit_hydrogens.as_ptr(),
+        );
+        let mut prepared: Option<ValenceAssignment> = Some(assignment);
+        let output =
+            finalize_smiles_stereo(record, &params, &mut prepared, &mut ring_carrier).unwrap();
+        let final_assignment = prepared.unwrap();
+        assert_eq!(final_assignment.explicit_valence.as_ptr(), explicit_ptr);
+        assert_eq!(final_assignment.implicit_hydrogens.as_ptr(), implicit_ptr);
+        assert_eq!(
+            final_assignment,
+            assign_valence_with_options_for_topology(
+                &output.topology,
+                ValenceModel::RdkitLike,
+                false
+            )
+            .unwrap()
+        );
+    }
 }
 
 #[test]
@@ -49,7 +142,52 @@ fn stereo_finalization_prefers_two_d_coordinates_and_keeps_stored_state() {
         true,
     ));
     let source = record.clone();
-    let output = finalize_smiles_stereo(record, &params).unwrap();
+    let mut ring_carrier: Option<cosmolkit_core::RingInfo> = None;
+    let output = finalize_smiles_stereo(record, &params, &mut None, &mut ring_carrier).unwrap();
+    // F04 retention checkpoints: ALL stored coordinate components by bits
+    // (including the signed zero in the 3D row), IDs, dimensionality and
+    // properties against the original retained record.
+    assert_eq!(output.coordinates.conformers_2d.len(), 1, "2D count");
+    assert_eq!(output.coordinates.conformers_2d[0].id(), 3, "2D id");
+    let stored_2d = output.coordinates.conformers_2d[0].coordinates();
+    let source_2d = source.coordinates.conformers_2d[0].coordinates();
+    for row in 0..stored_2d.len() {
+        assert_eq!(
+            stored_2d[row][0].to_bits(),
+            source_2d[row][0].to_bits(),
+            "2D x"
+        );
+        assert_eq!(
+            stored_2d[row][1].to_bits(),
+            source_2d[row][1].to_bits(),
+            "2D y"
+        );
+    }
+    assert_eq!(output.coordinates.conformers_3d.len(), 1, "3D count");
+    assert_eq!(output.coordinates.conformers_3d[0].id(), 8, "3D id");
+    assert!(
+        output.coordinates.conformers_3d[0].is_3d(),
+        "3D dimensionality"
+    );
+    let stored_3d = output.coordinates.conformers_3d[0].coordinates();
+    let source_3d = source.coordinates.conformers_3d[0].coordinates();
+    for row in 0..stored_3d.len() {
+        assert_eq!(
+            stored_3d[row][0].to_bits(),
+            source_3d[row][0].to_bits(),
+            "3D x"
+        );
+        assert_eq!(
+            stored_3d[row][1].to_bits(),
+            source_3d[row][1].to_bits(),
+            "3D y"
+        );
+        assert_eq!(
+            stored_3d[row][2].to_bits(),
+            source_3d[row][2].to_bits(),
+            "3D z"
+        );
+    }
     assert_eq!(output.coordinates, source.coordinates);
     assert_eq!(output.properties.name(), Some("sample"));
     assert_eq!(source.properties.prop("_needsDetectBondStereo"), Some("1"));
@@ -77,7 +215,8 @@ fn stereo_finalization_propagates_typed_coordinate_failure() {
         .coordinates
         .conformers_2d
         .push(Conformer2D::new(0, vec![[0.0, 0.0]]));
-    let error = finalize_smiles_stereo(record, &params).unwrap_err();
+    let mut ring_carrier: Option<cosmolkit_core::RingInfo> = None;
+    let error = finalize_smiles_stereo(record, &params, &mut None, &mut ring_carrier).unwrap_err();
     assert!(matches!(
         error,
         SmilesStereoError::Directions(DoubleBondStereoError::InvalidConformer(_))
@@ -183,7 +322,10 @@ fn branches_rings_and_stereo_finish_in_source_order() {
 fn cx_and_name_policies_are_atomic_and_explicit() {
     let record =
         parse_smiles("CC |$left;right$| sample name", &Default::default()).expect("CX and name");
-    assert_eq!(record.topology.atoms[0].prop("atomLabel"), Some("left"));
+    assert_eq!(
+        record.topology.atoms[0].prop("atomLabel"),
+        Some(&PropertyValue::String("left".to_owned()))
+    );
     assert_eq!(record.properties.name(), Some("sample name"));
 
     let no_cx = parse_smiles(
@@ -225,7 +367,7 @@ fn cleanup_debug_and_post_parse_chemistry_flags_keep_their_layer_boundaries() {
     .expect("uncleaned");
     assert_eq!(
         retained.topology.bonds[0].prop("_cxsmilesBondIdx"),
-        Some("0")
+        Some(&PropertyValue::String("0".to_owned()))
     );
 
     let baseline = parse_smiles(

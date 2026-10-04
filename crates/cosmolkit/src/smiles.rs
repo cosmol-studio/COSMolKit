@@ -4,6 +4,224 @@ use std::fmt;
 
 use crate::{Molecule, OperationError};
 
+/// Original-index fragment selection; symbol arrays are indexed by the full molecule.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct FragmentSmilesWriteParams {
+    pub smiles: crate::SmilesWriteParams,
+    pub atoms: Vec<crate::AtomId>,
+    /// None selects all bonds between selected atoms; Some(empty) selects no bonds.
+    pub bonds: Option<Vec<crate::BondId>>,
+    pub atom_symbols: Option<Vec<String>>,
+    pub bond_symbols: Option<Vec<String>>,
+}
+
+/// Fragment selection with explicit CX fields and dimension-scoped coordinates.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct FragmentCxSmilesWriteParams {
+    pub cx: crate::CxSmilesWriteParams,
+    pub atoms: Vec<crate::AtomId>,
+    pub bonds: Option<Vec<crate::BondId>>,
+    pub atom_symbols: Option<Vec<String>>,
+    pub bond_symbols: Option<Vec<String>>,
+}
+
+/// Source-preserving serialization failures, without converting causes to strings.
+#[derive(Debug)]
+pub enum SmilesWriteError {
+    Write(cosmolkit_smiles::SmilesParseError),
+    Fragment(cosmolkit_smiles::FragmentWriteInputError),
+}
+
+impl fmt::Display for SmilesWriteError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Write(error) => write!(formatter, "SMILES serialization failed: {error}"),
+            Self::Fragment(error) => {
+                write!(formatter, "fragment SMILES serialization failed: {error}")
+            }
+        }
+    }
+}
+
+impl std::error::Error for SmilesWriteError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Write(error) => Some(error),
+            Self::Fragment(error) => Some(error),
+        }
+    }
+}
+
+impl From<cosmolkit_smiles::SmilesParseError> for SmilesWriteError {
+    fn from(error: cosmolkit_smiles::SmilesParseError) -> Self {
+        Self::Write(error)
+    }
+}
+
+impl From<cosmolkit_smiles::FragmentWriteInputError> for SmilesWriteError {
+    fn from(error: cosmolkit_smiles::FragmentWriteInputError) -> Self {
+        Self::Fragment(error)
+    }
+}
+
+impl Molecule {
+    fn smiles_ring_state(&self) -> Option<&cosmolkit_core::RingInfo> {
+        // Ordinary ring storage exists under any capability that can
+        // install it (L2 list); reads are VALID-gated so an installed
+        // payload without the RINGS bit is never served to the writers.
+        #[cfg(any(
+            feature = "cap-rings",
+            feature = "cap-descriptors",
+            feature = "cap-smiles",
+            feature = "cap-sanitize",
+            feature = "cap-hydrogens",
+            feature = "cap-kekulize",
+            feature = "cap-aromaticity"
+        ))]
+        {
+            self.derived_cache_runtime().valid_ring_info()
+        }
+        #[cfg(not(any(
+            feature = "cap-rings",
+            feature = "cap-descriptors",
+            feature = "cap-smiles",
+            feature = "cap-sanitize",
+            feature = "cap-hydrogens",
+            feature = "cap-kekulize",
+            feature = "cap-aromaticity"
+        )))]
+        {
+            None
+        }
+    }
+
+    fn smiles_valence_state(&self) -> Option<&cosmolkit_core::ValenceAssignment> {
+        self.derived_cache_runtime().valence_assignment()
+    }
+
+    fn smiles_view(&self) -> cosmolkit_smiles::SmilesRecordView<'_> {
+        cosmolkit_smiles::SmilesRecordView {
+            topology: self.topology(),
+            coordinates: self.coordinate_block_runtime(),
+            properties: self.properties(),
+        }
+    }
+
+    /// Serialize without changing molecule state or installing writer caches.
+    pub fn to_smiles(&self) -> Result<String, SmilesWriteError> {
+        self.to_smiles_with_params(&crate::SmilesWriteParams::default())
+    }
+
+    pub fn to_smiles_with_params(
+        &self,
+        params: &crate::SmilesWriteParams,
+    ) -> Result<String, SmilesWriteError> {
+        Ok(cosmolkit_smiles::write_smiles_with_params(
+            self.smiles_view(),
+            params,
+        )?)
+    }
+
+    pub fn to_cx_smiles(&self) -> Result<String, SmilesWriteError> {
+        self.to_cx_smiles_with_params(&crate::CxSmilesWriteParams::default())
+    }
+
+    /// Auto coordinates require a unique stored set; explicit dimension/ID resolves ambiguity.
+    pub fn to_cx_smiles_with_params(
+        &self,
+        params: &crate::CxSmilesWriteParams,
+    ) -> Result<String, SmilesWriteError> {
+        Ok(cosmolkit_smiles::write_cx_smiles_with_params(
+            self.smiles_view(),
+            params,
+        )?)
+    }
+
+    pub fn to_fragment_smiles(&self, atoms: &[crate::AtomId]) -> Result<String, SmilesWriteError> {
+        Ok(cosmolkit_smiles::write_fragment_smiles_output(
+            self.smiles_view(),
+            &crate::SmilesWriteParams::default(),
+            atoms,
+            None,
+            None,
+            None,
+            self.smiles_ring_state(),
+            self.smiles_valence_state(),
+        )?
+        .text)
+    }
+
+    pub fn to_fragment_smiles_with_params(
+        &self,
+        params: &FragmentSmilesWriteParams,
+    ) -> Result<String, SmilesWriteError> {
+        Ok(cosmolkit_smiles::write_fragment_smiles_output(
+            self.smiles_view(),
+            &params.smiles,
+            &params.atoms,
+            params.bonds.as_deref(),
+            params.atom_symbols.as_deref(),
+            params.bond_symbols.as_deref(),
+            self.smiles_ring_state(),
+            self.smiles_valence_state(),
+        )?
+        .text)
+    }
+
+    pub fn to_fragment_cx_smiles(
+        &self,
+        atoms: &[crate::AtomId],
+    ) -> Result<String, SmilesWriteError> {
+        Ok(cosmolkit_smiles::write_fragment_cx_smiles(
+            self.smiles_view(),
+            &crate::CxSmilesWriteParams::default(),
+            atoms,
+            None,
+            None,
+            None,
+            self.smiles_ring_state(),
+            self.smiles_valence_state(),
+        )?)
+    }
+
+    pub fn to_fragment_cx_smiles_with_params(
+        &self,
+        params: &FragmentCxSmilesWriteParams,
+    ) -> Result<String, SmilesWriteError> {
+        Ok(cosmolkit_smiles::write_fragment_cx_smiles(
+            self.smiles_view(),
+            &params.cx,
+            &params.atoms,
+            params.bonds.as_deref(),
+            params.atom_symbols.as_deref(),
+            params.bond_symbols.as_deref(),
+            self.smiles_ring_state(),
+            self.smiles_valence_state(),
+        )?)
+    }
+
+    /// Preserve source ordering and duplicates. Seeds 1..=i32::MAX reseed;
+    /// zero and high-bit u32 seeds continue the shared stream, matching the
+    /// source's u32-to-i32 cast and positive-only reseeding condition.
+    pub fn to_random_smiles(&self, count: u32, seed: u32) -> Result<Vec<String>, SmilesWriteError> {
+        self.to_random_smiles_with_params(count, seed, &crate::RandomSmilesWriteParams::default())
+    }
+
+    pub fn to_random_smiles_with_params(
+        &self,
+        count: u32,
+        seed: u32,
+        params: &crate::RandomSmilesWriteParams,
+    ) -> Result<Vec<String>, SmilesWriteError> {
+        Ok(cosmolkit_smiles::write_random_smiles_vector(
+            self.smiles_view(),
+            count,
+            seed,
+            params,
+        )?)
+    }
+}
+
 /// Structured failure from the public SMILES construction pipeline.
 #[derive(Debug)]
 pub enum SmilesError {
@@ -96,6 +314,12 @@ impl Molecule {
             mut properties,
         } = cosmolkit_smiles::parse_smiles(input, params)?;
 
+        let mut final_valence = None;
+        // Local ring-state carrier: the RH/SAN result's final_rings is moved
+        // in on its existing branch; the finalizer consumes/replaces it per
+        // the source quality guards, and the final carrier is MOVED into the
+        // constructor seam below for validated live installation.
+        let mut final_rings = None;
         if params.remove_hydrogens {
             let remove_params = cosmolkit_core::RemoveHsParams {
                 update_explicit_count: true,
@@ -111,12 +335,16 @@ impl Molecule {
             topology = result.topology;
             coordinates = result.coordinates;
             properties = result.properties;
+            final_valence = result.final_valence;
+            final_rings = result.final_rings;
         } else if params.sanitize {
-            topology = cosmolkit_core::sanitize_topology(
+            let result = cosmolkit_core::sanitize_topology(
                 &topology,
                 &cosmolkit_core::SanitizeParams::default(),
-            )?
-            .topology;
+            )?;
+            topology = result.topology;
+            final_valence = result.final_valence;
+            final_rings = result.final_rings;
         }
 
         let record = cosmolkit_smiles::finalize_smiles_stereo(
@@ -126,8 +354,18 @@ impl Molecule {
                 properties,
             },
             params,
+            &mut final_valence,
+            &mut final_rings,
         )?;
-        Self::from_parts(record.topology, record.coordinates, record.properties)
-            .map_err(SmilesError::Construction)
+        // Stereo may need local non-strict values, but sanitize=false must not
+        // revive runtime validity after CK-VALENCE-001 hydrogen removal.
+        Self::from_smiles_parts_with_derived_state(
+            record.topology,
+            record.coordinates,
+            record.properties,
+            if params.sanitize { final_valence } else { None },
+            final_rings,
+        )
+        .map_err(SmilesError::Construction)
     }
 }

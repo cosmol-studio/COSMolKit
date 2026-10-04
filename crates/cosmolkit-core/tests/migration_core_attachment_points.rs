@@ -7,8 +7,8 @@ use cosmolkit_core::{
 use cosmolkit_model::{
     Atom, AtomId, AtomQueryPredicate, AtomSpec, Bond, BondId, BondOrder, BondQueryPredicate,
     BondSpec, Conformer2D, Conformer3D, CoordinateBlock, CoordinateDimension, Element,
-    Hybridization, QueryAtom, QueryNode, QueryStateError, QueryStateRef, TopologyBlock,
-    TopologyMapping, remap_query_rows, remap_query_rows_with_appended,
+    Hybridization, PropertyValue, QueryAtom, QueryNode, QueryStateError, QueryStateRef,
+    TopologyBlock, TopologyMapping, remap_query_rows, remap_query_rows_with_appended,
 };
 
 #[test]
@@ -86,7 +86,10 @@ fn attachment_query_transport_ordinary_rows_and_explicit_append_validation() {
     )
     .unwrap();
     assert!(atoms.iter().all(QueryAtom::predicate_is_carrier_derived));
-    assert_eq!(atoms[1].prop("_fromAttchpt"), Some("2"));
+    assert_eq!(
+        atoms[1].prop("_fromAttchpt"),
+        Some(&PropertyValue::String("2".to_owned()))
+    );
     assert!(bonds[0].predicate_is_carrier_derived());
     assert!(matches!(
         remap_query_rows_with_appended(
@@ -175,7 +178,10 @@ fn attachment_expansion_values_options_and_query_origins() {
                 );
                 for (offset, &label) in labels.iter().enumerate() {
                     let atom = &result.topology.atoms[offset + 1];
-                    assert_eq!(atom.prop("_fromAttchpt"), Some(label));
+                    assert_eq!(
+                        atom.prop("_fromAttchpt"),
+                        Some(&PropertyValue::String(label.to_owned()))
+                    );
                     assert_eq!(atom.atomic_number(), 0);
                     assert_eq!(result.topology.bonds[offset].begin(), AtomId::new(0));
                     assert_eq!(result.topology.bonds[offset].end(), AtomId::new(offset + 1));
@@ -294,7 +300,10 @@ fn attachment_expansion_preserves_explicit_query_and_rejects_invalid_inputs_atom
     );
     assert!(!atoms[1].predicate_is_carrier_derived());
     assert!(bonds[0].predicate_is_carrier_derived());
-    assert_eq!(source.atoms[0].prop("molAttachPoint"), Some("1"));
+    assert_eq!(
+        source.atoms[0].prop("molAttachPoint"),
+        Some(&PropertyValue::String("1".to_owned()))
+    );
     assert!(
         expand_attachment_points(
             source.clone(),
@@ -321,7 +330,10 @@ fn attachment_expansion_preserves_explicit_query_and_rejects_invalid_inputs_atom
         )
         .is_err()
     );
-    assert_eq!(source.atoms[0].prop("molAttachPoint"), Some("1"));
+    assert_eq!(
+        source.atoms[0].prop("molAttachPoint"),
+        Some(&PropertyValue::String("1".to_owned()))
+    );
 }
 
 fn attachment_topology(dummy_count: usize, hybridization: Hybridization) -> TopologyBlock {

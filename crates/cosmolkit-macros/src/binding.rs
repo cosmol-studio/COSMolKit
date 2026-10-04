@@ -5,6 +5,8 @@
 
 use std::collections::HashSet;
 
+use crate::status::FunctionStatus;
+
 use quote::{ToTokens, format_ident, quote};
 use syn::{
     Attribute, Expr, Ident, LitStr, Meta, Path, ReturnType, Token, Type, TypeFnPtr, Visibility,
@@ -27,15 +29,16 @@ enum Owner {
     Type,
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Exposure {
-    Registered,
-    Public,
-}
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum CallableKind {
     Instance,
     Static,
     Module,
+}
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Receiver {
+    Shared,
+    Mutable,
+    Owned,
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum StateModel {
@@ -49,20 +52,6 @@ enum TypeRole {
     Parameter,
     Result,
     Error,
-}
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Support {
-    Unsupported,
-    PreservedOnly,
-    Experimental,
-    Supported,
-    SupportedWithRdkitParity,
-}
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Parity {
-    NotApplicable,
-    RequiredWhenSupported,
-    RequiredNow,
 }
 
 #[derive(Clone)]
@@ -144,15 +133,14 @@ struct BindingEntry {
     python: LitStr,
     javascript: LitStr,
     feature: LitStr,
-    exposure: Exposure,
-    support: Support,
-    parity: Parity,
+    status: Option<FunctionStatus>,
     callable: Option<CallablePayload>,
     type_role: Option<TypeRole>,
 }
 
 struct CallablePayload {
     kind: CallableKind,
+    receiver: Option<Receiver>,
     parameters: Vec<BindingParameter>,
     output: Type,
     error: ErrorType,
@@ -170,10 +158,9 @@ struct BindingEntryDraft {
     python: Option<LitStr>,
     javascript: Option<LitStr>,
     feature: Option<LitStr>,
-    exposure: Option<Ident>,
-    support: Option<Ident>,
-    parity: Option<Ident>,
+    status: Option<FunctionStatus>,
     kind: Option<Ident>,
+    receiver: Option<Ident>,
     parameters: Option<Vec<BindingParameter>>,
     output: Option<Type>,
     error: Option<ErrorType>,
@@ -230,10 +217,9 @@ fn parse_binding_entry(
             "python" => set_once(&mut draft.python, input.parse()?, &key)?,
             "javascript" => set_once(&mut draft.javascript, input.parse()?, &key)?,
             "feature" => set_once(&mut draft.feature, input.parse()?, &key)?,
-            "exposure" => set_once(&mut draft.exposure, input.parse()?, &key)?,
-            "support" => set_once(&mut draft.support, input.parse()?, &key)?,
-            "parity" => set_once(&mut draft.parity, input.parse()?, &key)?,
+            "status" => set_once(&mut draft.status, input.parse()?, &key)?,
             "kind" => set_once(&mut draft.kind, input.parse()?, &key)?,
+            "receiver" => set_once(&mut draft.receiver, input.parse()?, &key)?,
             "parameters" => {
                 let values;
                 bracketed!(values in input);
@@ -272,18 +258,11 @@ fn finish_entry(cfg_attrs: Vec<Attribute>, draft: BindingEntryDraft) -> syn::Res
     let python = required(draft.python, "python")?;
     let javascript = required(draft.javascript, "javascript")?;
     let feature = required(draft.feature, "feature")?;
-    let exposure_ident = required(draft.exposure, "exposure")?;
-    let exposure = parse_exposure(&exposure_ident)?;
-    let support_ident = required(draft.support, "support")?;
-    let support = parse_support(&support_ident)?;
-    let parity_ident = required(draft.parity, "parity")?;
-    let parity = parse_parity(&parity_ident)?;
     require_nonempty(&semantic_id, "semantic_id")?;
     require_nonempty(&python, "python")?;
     require_nonempty(&javascript, "javascript")?;
     require_nonempty(&feature, "feature")?;
     validate_cfg(&cfg_attrs, &feature)?;
-    validate_support_parity(support, parity, &parity_ident)?;
 
     let (callable, type_role) = match item {
         ItemClass::Callable => {
@@ -295,7 +274,29 @@ fn finish_entry(cfg_attrs: Vec<Attribute>, draft: BindingEntryDraft) -> syn::Res
             }
             let kind_ident = required(draft.kind, "kind")?;
             let state_ident = required(draft.state, "state")?;
+            let kind = parse_kind(&kind_ident)?;
+            let state = parse_state(&state_ident)?;
+            let receiver = match draft.receiver {
+                Some(value) => Some(match value.to_string().as_str() {
+                    "shared" => Receiver::Shared,
+                    "mutable" => Receiver::Mutable,
+                    "owned" => Receiver::Owned,
+                    _ => {
+                        return Err(syn::Error::new_spanned(
+                            value,
+                            "receiver must be shared, mutable or owned",
+                        ));
+                    }
+                }),
+                None if kind == CallableKind::Instance => Some(if state == StateModel::InPlace {
+                    Receiver::Mutable
+                } else {
+                    Receiver::Shared
+                }),
+                None => None,
+            };
             let payload = CallablePayload {
+                receiver,
                 kind: parse_kind(&kind_ident)?,
                 parameters: required(draft.parameters, "parameters")?,
                 output: required(draft.output, "output")?,
@@ -308,6 +309,7 @@ fn finish_entry(cfg_attrs: Vec<Attribute>, draft: BindingEntryDraft) -> syn::Res
         }
         ItemClass::Type => {
             reject_present(draft.kind, "kind", "type", &item_ident)?;
+            reject_present(draft.receiver, "receiver", "type", &item_ident)?;
             reject_present(draft.parameters, "parameters", "type", &item_ident)?;
             reject_present(draft.output, "output", "type", &item_ident)?;
             reject_present(draft.error, "error", "type", &item_ident)?;
@@ -333,9 +335,7 @@ fn finish_entry(cfg_attrs: Vec<Attribute>, draft: BindingEntryDraft) -> syn::Res
         python,
         javascript,
         feature,
-        exposure,
-        support,
-        parity,
+        status: draft.status,
         callable,
         type_role,
     })
@@ -406,6 +406,28 @@ fn validate_callable(
     javascript: &LitStr,
     payload: &CallablePayload,
 ) -> syn::Result<()> {
+    if (payload.kind == CallableKind::Instance) != payload.receiver.is_some() {
+        return Err(syn::Error::new_spanned(
+            rust,
+            "receiver is only valid on an instance callable",
+        ));
+    }
+    if let Some(receiver) = payload.receiver {
+        let valid = match receiver {
+            Receiver::Shared => payload.state != StateModel::InPlace,
+            Receiver::Mutable => payload.state == StateModel::InPlace,
+            Receiver::Owned => {
+                payload.state == StateModel::ValueReturning
+                    && matches!(payload.operation, OperationLink::None)
+            }
+        };
+        if !valid {
+            return Err(syn::Error::new_spanned(
+                rust,
+                "receiver conflicts with state or operation lifecycle",
+            ));
+        }
+    }
     match (owner, payload.kind) {
         (Owner::Molecule, CallableKind::Instance | CallableKind::Static)
         | (Owner::Type, CallableKind::Instance | CallableKind::Static)
@@ -445,8 +467,13 @@ fn validate_callable(
             "Python callable name must equal the canonical Rust name",
         ));
     }
+    let structural_object =
+        owner == Owner::Type
+            && rust.segments.iter().rev().nth(1).is_some_and(|segment| {
+                segment.ident == "BioStructure" || segment.ident == "Protein"
+            });
     let requires_trailing_underscore =
-        owner == Owner::Molecule && payload.state == StateModel::InPlace;
+        (owner == Owner::Molecule || structural_object) && payload.state == StateModel::InPlace;
     if rust_name.ends_with('_') != requires_trailing_underscore {
         return Err(syn::Error::new_spanned(
             rust,
@@ -511,26 +538,19 @@ fn validate_signature(owner: Owner, rust: &Path, payload: &CallablePayload) -> s
         ));
     }
     if payload.kind == CallableKind::Instance {
-        let expected: Type = match owner {
-            Owner::Molecule if payload.state == StateModel::InPlace => {
-                syn::parse_quote!(&mut crate::Molecule)
-            }
-            Owner::Molecule => syn::parse_quote!(&crate::Molecule),
+        let receiver_path: Path = match owner {
+            Owner::Molecule => syn::parse_quote!(crate::Molecule),
             Owner::Type => {
-                let mut receiver_path = rust.clone();
-                receiver_path.segments.pop();
-                receiver_path.segments.pop_punct();
-                if receiver_path.segments.is_empty() {
+                let mut path = rust.clone();
+                path.segments.pop();
+                path.segments.pop_punct();
+                if path.segments.is_empty() {
                     return Err(syn::Error::new_spanned(
                         rust,
-                        "type-owned callable path must include its receiver type",
+                        "type-owned callable needs a receiver type",
                     ));
                 }
-                match payload.state {
-                    StateModel::InPlace => syn::parse_quote!(&mut #receiver_path),
-                    StateModel::ReadOnly => syn::parse_quote!(&#receiver_path),
-                    StateModel::ValueReturning => syn::parse_quote!(#receiver_path),
-                }
+                path
             }
             Owner::Module => {
                 return Err(syn::Error::new_spanned(
@@ -538,6 +558,11 @@ fn validate_signature(owner: Owner, rust: &Path, payload: &CallablePayload) -> s
                     "module callable cannot have an instance receiver",
                 ));
             }
+        };
+        let expected: Type = match payload.receiver.expect("validated instance receiver") {
+            Receiver::Shared => syn::parse_quote!(&#receiver_path),
+            Receiver::Mutable => syn::parse_quote!(&mut #receiver_path),
+            Receiver::Owned => syn::parse_quote!(#receiver_path),
         };
         if receiver_metadata_tokens(inputs[0]) != receiver_metadata_tokens(&expected) {
             return Err(syn::Error::new_spanned(
@@ -710,17 +735,6 @@ fn validate_cfg(attrs: &[Attribute], feature: &LitStr) -> syn::Result<()> {
     Ok(())
 }
 
-fn validate_support_parity(support: Support, parity: Parity, span: &Ident) -> syn::Result<()> {
-    if (parity == Parity::RequiredNow) != (support == Support::SupportedWithRdkitParity) {
-        Err(syn::Error::new_spanned(
-            span,
-            "required_now and supported_with_rdkit_parity must be declared together",
-        ))
-    } else {
-        Ok(())
-    }
-}
-
 pub(crate) fn expand_binding_contract(
     input: proc_macro2::TokenStream,
 ) -> syn::Result<proc_macro2::TokenStream> {
@@ -744,9 +758,29 @@ fn expand_registry(registry: BindingRegistry) -> syn::Result<proc_macro2::TokenS
         let python = &entry.python;
         let javascript = &entry.javascript;
         let feature = &entry.feature;
-        let exposure = exposure_tokens(entry.exposure);
-        let support = support_tokens(entry.support);
-        let parity = parity_tokens(entry.parity);
+        let status = match (&entry.callable, &entry.status) {
+            (Some(payload), status)
+                if entry.owner == Owner::Molecule
+                    && matches!(payload.operation, OperationLink::Id(_)) =>
+            {
+                if status.is_some() {
+                    return Err(syn::Error::new_spanned(
+                        semantic_id,
+                        "linked molecule status is inherited from its operation declaration",
+                    ));
+                }
+                let OperationLink::Id(operation) = &payload.operation else {
+                    unreachable!()
+                };
+                let constant = format_ident!(
+                    "__FUNCTION_STATUS_{}",
+                    operation.value().to_ascii_uppercase()
+                );
+                quote!(crate::Molecule::#constant)
+            }
+            (_, Some(status)) => status.tokens(),
+            (_, None) => quote!(crate::FunctionStatus::Experimental),
+        };
         let (callable, role) = match (&entry.callable, entry.type_role) {
             (Some(payload), None) => {
                 let kind = kind_tokens(payload.kind);
@@ -769,9 +803,15 @@ fn expand_registry(registry: BindingRegistry) -> syn::Result<proc_macro2::TokenS
                     OperationLink::None => quote!(None),
                     OperationLink::Id(id) => quote!(Some(#id)),
                 };
+                let receiver = match payload.receiver {
+                    Some(Receiver::Shared) => quote!(Some(crate::BindingReceiver::Shared)),
+                    Some(Receiver::Mutable) => quote!(Some(crate::BindingReceiver::Mutable)),
+                    Some(Receiver::Owned) => quote!(Some(crate::BindingReceiver::Owned)),
+                    None => quote!(None),
+                };
                 (
                     quote!(Some(crate::BindingCallableContract {
-                        kind: #kind, parameters: &[#(#parameters),*], output_type: stringify!(#output),
+                        kind: #kind, receiver: #receiver, parameters: &[#(#parameters),*], output_type: stringify!(#output),
                         error_type: #error, state_model: #state, operation_semantic_id: #operation,
                     })),
                     quote!(None),
@@ -793,11 +833,11 @@ fn expand_registry(registry: BindingRegistry) -> syn::Result<proc_macro2::TokenS
             crate::BindingContractEntry {
                 semantic_id: #semantic_id, item: #item, owner: #owner,
                 rust_path: stringify!(#rust), python_name: #python, javascript_name: #javascript,
-                feature: #feature, exposure: #exposure, support: #support, parity: #parity,
+                feature: #feature, status: #status,
                 callable: #callable, type_role: #role,
             }
         });
-        if entry.exposure == Exposure::Public {
+        {
             let assertion = format_ident!("__BINDING_ASSERT_{}_{}", name, index);
             if let Some(payload) = &entry.callable {
                 let signature = &payload.signature;
@@ -878,20 +918,7 @@ fn parse_owner(v: &Ident) -> syn::Result<Owner> {
         "owner must be `molecule`, `module`, or `type_`",
     )
 }
-fn parse_exposure(v: &Ident) -> syn::Result<Exposure> {
-    parse_enum(
-        v,
-        &["registered", "public"],
-        |n| {
-            if n == "registered" {
-                Exposure::Registered
-            } else {
-                Exposure::Public
-            }
-        },
-        "exposure must be `registered` or `public`",
-    )
-}
+
 fn parse_kind(v: &Ident) -> syn::Result<CallableKind> {
     parse_enum(
         v,
@@ -929,38 +956,6 @@ fn parse_type_role(v: &Ident) -> syn::Result<TypeRole> {
         "role must be `value`, `parameter`, `result`, or `error`",
     )
 }
-fn parse_support(v: &Ident) -> syn::Result<Support> {
-    parse_enum(
-        v,
-        &[
-            "unsupported",
-            "preserved_only",
-            "experimental",
-            "supported",
-            "supported_with_rdkit_parity",
-        ],
-        |n| match n {
-            "unsupported" => Support::Unsupported,
-            "preserved_only" => Support::PreservedOnly,
-            "experimental" => Support::Experimental,
-            "supported" => Support::Supported,
-            _ => Support::SupportedWithRdkitParity,
-        },
-        "unsupported binding support status",
-    )
-}
-fn parse_parity(v: &Ident) -> syn::Result<Parity> {
-    parse_enum(
-        v,
-        &["not_applicable", "required_when_supported", "required_now"],
-        |n| match n {
-            "not_applicable" => Parity::NotApplicable,
-            "required_when_supported" => Parity::RequiredWhenSupported,
-            _ => Parity::RequiredNow,
-        },
-        "unsupported binding parity policy",
-    )
-}
 
 fn parse_enum<T>(
     value: &Ident,
@@ -989,12 +984,7 @@ fn owner_tokens(v: Owner) -> proc_macro2::TokenStream {
         Owner::Type => quote!(crate::BindingOwner::Type),
     }
 }
-fn exposure_tokens(v: Exposure) -> proc_macro2::TokenStream {
-    match v {
-        Exposure::Registered => quote!(crate::BindingExposure::Registered),
-        Exposure::Public => quote!(crate::BindingExposure::Public),
-    }
-}
+
 fn kind_tokens(v: CallableKind) -> proc_macro2::TokenStream {
     match v {
         CallableKind::Instance => quote!(crate::BindingKind::Instance),
@@ -1015,24 +1005,6 @@ fn type_role_tokens(v: TypeRole) -> proc_macro2::TokenStream {
         TypeRole::Parameter => quote!(crate::BindingTypeRole::Parameter),
         TypeRole::Result => quote!(crate::BindingTypeRole::Result),
         TypeRole::Error => quote!(crate::BindingTypeRole::Error),
-    }
-}
-fn support_tokens(v: Support) -> proc_macro2::TokenStream {
-    match v {
-        Support::Unsupported => quote!(crate::BindingSupport::Unsupported),
-        Support::PreservedOnly => quote!(crate::BindingSupport::PreservedOnly),
-        Support::Experimental => quote!(crate::BindingSupport::Experimental),
-        Support::Supported => quote!(crate::BindingSupport::Supported),
-        Support::SupportedWithRdkitParity => {
-            quote!(crate::BindingSupport::SupportedWithRdkitParity)
-        }
-    }
-}
-fn parity_tokens(v: Parity) -> proc_macro2::TokenStream {
-    match v {
-        Parity::NotApplicable => quote!(crate::BindingParity::NotApplicable),
-        Parity::RequiredWhenSupported => quote!(crate::BindingParity::RequiredWhenSupported),
-        Parity::RequiredNow => quote!(crate::BindingParity::RequiredNow),
     }
 }
 

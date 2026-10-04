@@ -3,6 +3,7 @@
 //! This is native proc-macro infrastructure. Runtime values and domain
 //! behavior remain owned by the crate in which generated tokens expand.
 
+use crate::status::FunctionStatus;
 use std::collections::HashSet;
 
 use quote::format_ident;
@@ -119,6 +120,7 @@ pub(crate) struct MoleculeFields {
     pub(crate) semantic_preconditions: Vec<SemanticPrecondition>,
     pub(crate) requires_mapping: MappingRequirement,
     pub(crate) feature: Path,
+    pub(crate) status: FunctionStatus,
     pub(crate) parity: MoleculeParity,
     pub(crate) io_roundtrip: bool,
     pub(crate) invariant_profile: LitStr,
@@ -177,6 +179,7 @@ struct RawMoleculeFields {
     semantic_preconditions: Option<Vec<Ident>>,
     requires_mapping: Option<Ident>,
     feature: Option<Path>,
+    status: Option<FunctionStatus>,
     parity: Option<Ident>,
     io_roundtrip: Option<LitBool>,
     invariant_profile: Option<LitStr>,
@@ -247,6 +250,9 @@ impl Parse for MoleculeOperation {
                         Some(parse_ident_list(&content, "semantic_preconditions")?)
                 }
                 "requires_mapping" => raw.requires_mapping = Some(content.parse()?),
+                "status" => {
+                    raw.status = Some(content.parse()?);
+                }
                 "feature" => raw.feature = Some(content.parse()?),
                 "parity" => raw.parity = Some(content.parse()?),
                 "io_roundtrip" => raw.io_roundtrip = Some(content.parse()?),
@@ -399,6 +405,7 @@ fn finish_molecule_fields(
         semantic_preconditions,
         requires_mapping,
         feature,
+        status: raw.status.unwrap_or_default(),
         parity,
         io_roundtrip,
         invariant_profile,
@@ -453,11 +460,13 @@ fn validate_molecule_relationships(
             ));
         }
     }
-    let has_derived_effect = !derived_effects.recompute.is_empty()
-        || !derived_effects.preserve.is_empty()
+    // Preservation is a proof obligation, not permission to mutate storage.
+    // Only effects that actually update/clear cache state require block write
+    // access. Cache borrows still come exclusively from access.read.
+    let mutates_derived_state = !derived_effects.recompute.is_empty()
         || !derived_effects.invalidate.is_empty()
         || !derived_effects.operation_defined.is_empty();
-    if has_derived_effect && !access.write.contains(&MoleculeBlock::DerivedCache) {
+    if mutates_derived_state && !access.write.contains(&MoleculeBlock::DerivedCache) {
         return Err(syn::Error::new(
             operation.span(),
             "declared derived effects require derived_cache write access",

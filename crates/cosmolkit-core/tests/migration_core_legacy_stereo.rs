@@ -5,7 +5,8 @@ use cosmolkit_core::{
     symmetrized_sssr,
 };
 use cosmolkit_model::{
-    Atom, AtomId, AtomSpec, Bond, BondId, BondSpec, StereoGroup, StereoGroupKind, TopologyBlock,
+    Atom, AtomId, AtomSpec, Bond, BondId, BondSpec, PropertyValue, StereoGroup, StereoGroupKind,
+    TopologyBlock,
 };
 use cosmolkit_types::{BondDirection, BondOrder, BondStereo, ChiralTag, Element};
 
@@ -75,7 +76,7 @@ fn mol_post_legacy_audit_isotope_zero_graph_hydrogen_is_protium() {
     assert_eq!(deuterium.atoms[0].chiral_tag(), ChiralTag::TetrahedralCw);
     assert!(matches!(
         deuterium.atoms[0].prop("_CIPCode"),
-        Some("R" | "S")
+        Some(PropertyValue::String(value)) if matches!(value.as_str(), "R" | "S")
     ));
 }
 
@@ -122,7 +123,10 @@ fn mol_post_legacy_audit_potential_center_materializes_lazy_rank_state() {
         ],
         vec![],
     ));
-    assert_eq!(output.atoms[0].prop("_ChiralityPossible"), Some("1"));
+    assert_eq!(
+        output.atoms[0].prop("_ChiralityPossible"),
+        Some(&PropertyValue::String("1".to_owned()))
+    );
     assert!(
         output
             .atoms

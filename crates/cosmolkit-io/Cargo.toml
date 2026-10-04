@@ -11,13 +11,49 @@ edition.workspace = true
 readme = "../cosmolkit/README.md"
 documentation = "https://docs.rs/cosmolkit"
 
+[features]
+default = []
+bio = ["dep:cosmolkit-bio"]
+# Forwarding feature (BIO-ROWS-PROBE): enables only the existing optional
+# BIO dependency's test-probes feature; no new dependency edge, no
+# default activation.
+test-probes = ["bio", "cosmolkit-bio/test-probes"]
+
 [dependencies]
-cosmolkit-bio = { version = "0.5.0-rc.5", path = "../cosmolkit-bio" }
-cosmolkit-core = { version = "0.5.0-rc.5", path = "../cosmolkit-core" }
-cosmolkit-model = { version = "0.5.0-rc.5", path = "../cosmolkit-model" }
-cosmolkit-search = { version = "0.5.0-rc.5", path = "../cosmolkit-search" }
-cosmolkit-types = { version = "0.5.0-rc.5", path = "../cosmolkit-types" }
+cosmolkit-bio = { version = "0.5.0-rc.9", path = "../cosmolkit-bio", optional = true }
+cosmolkit-core = { version = "0.5.0-rc.9", path = "../cosmolkit-core" }
+cosmolkit-model = { version = "0.5.0-rc.9", path = "../cosmolkit-model" }
+cosmolkit-search = { version = "0.5.0-rc.9", path = "../cosmolkit-search" }
+cosmolkit-types = { version = "0.5.0-rc.9", path = "../cosmolkit-types" }
 thiserror = "2.0.18"
+
+[[test]]
+name = "migration_io_bio_rows"
+required-features = ["bio", "test-probes"]
 
 [dev-dependencies]
 tempfile = "3"
+
+[[test]]
+name = "migration_io_cif"
+required-features = ["bio"]
+
+[[test]]
+name = "migration_io_bio_pdb"
+required-features = ["bio"]
+
+[[test]]
+name = "migration_io_bio_mmcif"
+required-features = ["bio"]
+
+[[test]]
+name = "migration_io_mmjson"
+required-features = ["bio"]
+
+[[test]]
+name = "migration_io_bio_chemcomp"
+required-features = ["bio"]
+
+[[test]]
+name = "migration_io_bio_read"
+required-features = ["bio"]

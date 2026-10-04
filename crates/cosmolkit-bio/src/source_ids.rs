@@ -89,35 +89,44 @@ impl PdbSeqId {
     }
 }
 
-/// Exact four-column PDB atom name, including leading and trailing spaces.
+/// Exact atom-name bytes: mmCIF logical text or all four raw PDB columns.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct AtomName([u8; 4]);
+pub struct AtomName {
+    bytes: [u8; 4],
+    len: u8,
+}
 
 impl AtomName {
     #[must_use]
-    pub const fn from_ascii(bytes: [u8; 4]) -> Option<Self> {
+    pub fn from_ascii(bytes: &[u8]) -> Option<Self> {
         // Gemmi❗✔️: struct Atom {
         // Gemmi❗✔️:   static const char* what() { return "Atom"; }
         // Gemmi❗✔️:   std::string name;
-        //
-        // Behavior review: the four-byte PDB spelling is retained exactly.
-        // Wider mmCIF names are rejected by the IO representational boundary,
-        // rather than silently truncated here.
-        if bytes.is_ascii() {
-            Some(Self(bytes))
-        } else {
-            None
+        // Behavior review: the single canonical value preserves actual
+        // source bytes/length. PDB supplies four raw columns; mmCIF supplies
+        // the decoded logical spelling. The approved maximum-four/ASCII
+        // boundary is checked, never implemented by padding or truncation.
+        // Complexity review: fixed-capacity copy, no allocation; source
+        // std::string construction is O(n), here bounded by four bytes.
+        if bytes.len() > 4 || !bytes.is_ascii() {
+            return None;
         }
+        let mut stored = [0; 4];
+        stored[..bytes.len()].copy_from_slice(bytes);
+        Some(Self {
+            bytes: stored,
+            len: bytes.len() as u8,
+        })
     }
 
     #[must_use]
-    pub const fn as_bytes(&self) -> &[u8; 4] {
-        &self.0
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.bytes[..self.len as usize]
     }
 
     #[must_use]
     pub fn as_str(&self) -> &str {
-        std::str::from_utf8(&self.0).expect("AtomName invariant")
+        std::str::from_utf8(self.as_bytes()).expect("AtomName invariant")
     }
 }
 
@@ -274,6 +283,33 @@ impl ChainSourceIds {
     #[must_use]
     pub const fn auth_chain_id(&self) -> Option<PdbChainId> {
         self.auth_chain_id
+    }
+
+    /// Borrowed variant of [`auth_chain_id`](Self::auth_chain_id) for
+    /// allocation-free chain-name resolution (BIO-CID C23, narrowed by
+    /// BIO-C22-NAME). Crate-private: `ChainSourceIds` is re-exported
+    /// through the root crate, so any `pub` method here would be
+    /// publicly exposed there — this internal helper stays unreachable
+    /// from outside the crate (proved below).
+    ///
+    /// ```compile_fail
+    /// // E0624: `auth_chain_id_ref` is crate-private and cannot be
+    /// // referenced from an external crate, even as a method item.
+    /// let method: fn(
+    ///     &cosmolkit_bio::ChainSourceIds,
+    /// ) -> Option<&cosmolkit_bio::PdbChainId> =
+    ///     cosmolkit_bio::ChainSourceIds::auth_chain_id_ref;
+    /// let _ = method;
+    /// ```
+    ///
+    /// ```no_run
+    /// // Control: the existing PUBLIC by-value accessor compiles.
+    /// let ids = cosmolkit_bio::ChainSourceIds::new(None, None);
+    /// let _ = ids.auth_chain_id();
+    /// ```
+    #[must_use]
+    pub(crate) fn auth_chain_id_ref(&self) -> Option<&PdbChainId> {
+        self.auth_chain_id.as_ref()
     }
 
     #[must_use]

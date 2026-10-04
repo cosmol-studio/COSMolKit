@@ -14,16 +14,18 @@ pub enum BindingOwner {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum BindingExposure {
-    Registered,
-    Public,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BindingKind {
     Instance,
     Static,
     Module,
+}
+
+/// Ownership of an instance callable's receiver, independent of its output.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BindingReceiver {
+    Shared,
+    Mutable,
+    Owned,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -42,6 +44,7 @@ pub struct BindingParameterContract {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct BindingCallableContract {
     pub kind: BindingKind,
+    pub receiver: Option<BindingReceiver>,
     pub parameters: &'static [BindingParameterContract],
     pub output_type: &'static str,
     pub error_type: Option<&'static str>,
@@ -57,20 +60,18 @@ pub enum BindingTypeRole {
     Error,
 }
 
+/// One manually declared behavior commitment, independent of test execution.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum BindingSupport {
-    Unsupported,
-    PreservedOnly,
+pub enum FunctionStatus {
+    Parity {
+        reference: &'static str,
+    },
+    ParityWithDifferences {
+        reference: &'static str,
+        explanation: &'static str,
+    },
+    Native,
     Experimental,
-    Supported,
-    SupportedWithRdkitParity,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum BindingParity {
-    NotApplicable,
-    RequiredWhenSupported,
-    RequiredNow,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -89,9 +90,7 @@ pub struct BindingContractEntry {
     pub python_name: &'static str,
     pub javascript_name: &'static str,
     pub feature: &'static str,
-    pub exposure: BindingExposure,
-    pub support: BindingSupport,
-    pub parity: BindingParity,
+    pub status: FunctionStatus,
     pub callable: Option<BindingCallableContract>,
     pub type_role: Option<BindingTypeRole>,
 }

@@ -7,11 +7,12 @@ use cosmolkit_model::{
 };
 use cosmolkit_types::{BondDirection, BondOrder, BondStereo, ChiralTag, Hybridization};
 
+use crate::hcount::total_hydrogen_count_from_validated;
 use crate::{
     DoubleBondControl, DoubleBondStereoDescriptor, DoubleBondStereoError,
     DoubleBondStereoSpecified, RingInfo, StereoOrderError, ValenceAssignment, ValenceError,
     bond_affects_atom_chirality, count_swaps_to_interconvert, double_bond_stereo_info,
-    is_atom_bridgehead_from_topology, total_hydrogen_count,
+    is_atom_bridgehead_from_topology,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -104,6 +105,8 @@ pub enum PotentialStereoError {
         atom: AtomId,
         value: i32,
     },
+    #[error("atom {atom} is out of range for {atom_count} atoms")]
+    AtomOutOfRange { atom: AtomId, atom_count: usize },
     #[error("invalid ring information: {reason} at row {row} (value {value}, limit {limit})")]
     InvalidRingInfo {
         reason: &'static str,
@@ -139,10 +142,9 @@ pub enum PotentialStereoError {
     BondValue(#[from] BondValueError),
 }
 
-fn validate_inputs(
+fn validate_topology_and_valence(
     topology: &TopologyBlock,
     valence: &ValenceAssignment,
-    rings: &RingInfo,
 ) -> Result<(), PotentialStereoError> {
     topology.validate()?;
     let atom_count = topology.atoms.len();
@@ -170,14 +172,22 @@ fn validate_inputs(
             });
         }
     }
-    if !rings.is_symm_sssr() {
+    Ok(())
+}
+
+fn validate_ring_rows(
+    topology: &TopologyBlock,
+    rings: &RingInfo,
+) -> Result<(), PotentialStereoError> {
+    if !rings.is_initialized() {
         return Err(PotentialStereoError::InvalidRingInfo {
-            reason: "ring information is not symmetric SSSR",
+            reason: "ring information is not initialized",
             row: 0,
-            value: rings.find_type() as usize,
+            value: 0,
             limit: 0,
         });
     }
+    let atom_count = topology.atoms.len();
     if rings.atom_row_count() != atom_count {
         return Err(PotentialStereoError::InvalidRingInfo {
             reason: "atom membership row count mismatch",
@@ -236,6 +246,24 @@ fn validate_inputs(
             });
         }
     }
+    Ok(())
+}
+
+fn validate_inputs(
+    topology: &TopologyBlock,
+    valence: &ValenceAssignment,
+    rings: &RingInfo,
+) -> Result<(), PotentialStereoError> {
+    validate_topology_and_valence(topology, valence)?;
+    if !rings.is_symm_sssr() {
+        return Err(PotentialStereoError::InvalidRingInfo {
+            reason: "ring information is not symmetric SSSR",
+            row: 0,
+            value: rings.find_type() as usize,
+            limit: 0,
+        });
+    }
+    validate_ring_rows(topology, rings)?;
     for bond in &topology.bonds {
         if matches!(bond.stereo(), BondStereo::AtropCw | BondStereo::AtropCcw) {
             return Err(PotentialStereoError::AtropisomerDependencyUnavailable { bond: bond.id() });
@@ -263,18 +291,42 @@ fn total_hydrogens(
     atom: AtomId,
     include_neighbors: bool,
 ) -> Result<usize, PotentialStereoError> {
-    Ok(total_hydrogen_count(topology, valence, atom, include_neighbors)? as usize)
+    // Every call is below shared topology/valence validation in either the
+    // whole-analysis path or the selected-atom writer batch.
+    Ok(total_hydrogen_count_from_validated(topology, valence, atom, include_neighbors)? as usize)
 }
 
-fn total_degree(
+pub(crate) fn total_degree(
     topology: &TopologyBlock,
     valence: &ValenceAssignment,
     atom: AtomId,
 ) -> Result<usize, PotentialStereoError> {
+    // BEGIN RDKIT CPP FUNCTION Atom::getTotalDegree
+    // RDKit❗✔️: unsigned int Atom::getTotalDegree() const {
+    // RDKit❗✔️:   unsigned int res = this->getTotalNumHs(false) + this->getDegree();
+    // RDKit❗✔️:   return res;
+    // RDKit❗✔️: }
+    // END RDKIT CPP FUNCTION Atom::getTotalDegree
     let value = &topology.atoms[atom.index()];
-    Ok(graph_degree(topology, atom)
-        + usize::from(value.explicit_hydrogens())
-        + usize::try_from(valence.implicit_hydrogens[atom.index()]).unwrap_or(0))
+    let implicit_hydrogens = valence
+        .implicit_hydrogens
+        .get(atom.index())
+        .copied()
+        .ok_or(PotentialStereoError::InvalidValence {
+            field: "implicit_hydrogens",
+            actual: valence.implicit_hydrogens.len(),
+            atom_count: topology.atoms.len(),
+        })?;
+    let implicit_hydrogens = usize::try_from(implicit_hydrogens).map_err(|_| {
+        PotentialStereoError::InvalidValenceValue {
+            field: "implicit_hydrogens",
+            atom,
+            value: implicit_hydrogens,
+        }
+    })?;
+    // The indexed valence read and adjacency length are constant time, as are
+    // the corresponding RDKit getters; this helper does not allocate or clone.
+    Ok(graph_degree(topology, atom) + usize::from(value.explicit_hydrogens()) + implicit_hydrogens)
 }
 
 fn has_protium_neighbor(topology: &TopologyBlock, atom: AtomId) -> bool {
@@ -310,8 +362,8 @@ fn is_potential_nontetrahedral(
     // RDKit✔️❌:     chiralType <= Atom::CHI_OCTAHEDRAL) return true;
     // RDKit✔️❌: if (chiralType == Atom::CHI_UNSPECIFIED && tnzdegree >= 4) return true;
     // END RDKIT CPP FUNCTION isAtomPotentialNontetrahedralCenter
-    // Hydrogen composition uses the already source-backed detached helper,
-    // whose full-topology validation makes this path slower than the source.
+    // Hydrogen composition reuses the source-backed helper for already
+    // validated topology; it does not repeat full-topology validation per atom.
     let value = &topology.atoms[atom.index()];
     let degree = nonzero_degree(topology, atom)? + total_hydrogens(topology, valence, atom, false)?;
     if degree > 6 || degree < 2 || (value.atomic_number() < 12 && value.atomic_number() != 4) {
@@ -326,7 +378,8 @@ fn is_potential_nontetrahedral(
 fn is_potential_tetrahedral(
     topology: &TopologyBlock,
     valence: &ValenceAssignment,
-    rings: &RingInfo,
+    rings: Option<&RingInfo>,
+    ring_rows_validated: &mut bool,
     atom: AtomId,
 ) -> Result<bool, PotentialStereoError> {
     // BEGIN RDKIT CPP FUNCTION isAtomPotentialTetrahedralCenter
@@ -377,10 +430,22 @@ fn is_potential_tetrahedral(
         if value.atomic_number() == 7
             && value.hybridization() == Hybridization::Sp3
             && !has_conjugated_bond(topology, atom)
-            && (rings.is_atom_in_ring_of_size(atom, 3)
-                || is_atom_bridgehead_from_topology(topology, atom.index(), rings) != 0)
         {
-            return Ok(true);
+            let rings = rings.ok_or(PotentialStereoError::InvalidRingInfo {
+                reason: "ring information is unavailable for nitrogen potential-stereo branch",
+                row: 0,
+                value: 0,
+                limit: 0,
+            })?;
+            if !*ring_rows_validated {
+                validate_ring_rows(topology, rings)?;
+                *ring_rows_validated = true;
+            }
+            if rings.is_atom_in_ring_of_size(atom, 3)
+                || is_atom_bridgehead_from_topology(topology, atom.index(), rings) != 0
+            {
+                return Ok(true);
+            }
         }
     }
     Ok(false)
@@ -393,8 +458,46 @@ fn is_potential_atom(
     atom: AtomId,
     allow_nontetrahedral: bool,
 ) -> Result<bool, PotentialStereoError> {
-    Ok(is_potential_tetrahedral(topology, valence, rings, atom)?
-        || (allow_nontetrahedral && is_potential_nontetrahedral(topology, valence, atom)?))
+    // `potential_stereo` validates the complete symmetric ring assignment
+    // before this whole-topology analysis begins.
+    let mut ring_rows_validated = true;
+    Ok(is_potential_tetrahedral(
+        topology,
+        valence,
+        Some(rings),
+        &mut ring_rows_validated,
+        atom,
+    )? || (allow_nontetrahedral && is_potential_nontetrahedral(topology, valence, atom)?))
+}
+
+/// Evaluate the source tetrahedral-potential predicate for the requested atom
+/// IDs in order, sharing detached-state validation across the batch.
+///
+/// Ring data is consulted and validated only when an atom reaches the source's
+/// ring-dependent nitrogen branch; the supplied ring finding type is retained.
+pub fn potential_tetrahedral_centers_for_atoms(
+    topology: &TopologyBlock,
+    valence: &ValenceAssignment,
+    rings: Option<&RingInfo>,
+    atoms: &[AtomId],
+) -> Result<Vec<bool>, PotentialStereoError> {
+    validate_topology_and_valence(topology, valence)?;
+    let atom_count = topology.atoms.len();
+    let mut ring_rows_validated = false;
+    let mut centers = Vec::with_capacity(atoms.len());
+    for &atom in atoms {
+        if atom.index() >= atom_count {
+            return Err(PotentialStereoError::AtomOutOfRange { atom, atom_count });
+        }
+        centers.push(is_potential_tetrahedral(
+            topology,
+            valence,
+            rings,
+            &mut ring_rows_validated,
+            atom,
+        )?);
+    }
+    Ok(centers)
 }
 
 fn atom_info(
@@ -481,7 +584,7 @@ fn atom_info(
     Ok(info)
 }
 
-fn is_potential_bond(
+pub(crate) fn is_potential_bond(
     topology: &TopologyBlock,
     valence: &ValenceAssignment,
     rings: &RingInfo,
@@ -503,12 +606,29 @@ fn is_potential_bond(
     }
     let begin_degree = total_degree(topology, valence, bond.begin())?;
     let end_degree = total_degree(topology, valence, bond.end())?;
-    if !(2..4).contains(&begin_degree)
-        || !(2..4).contains(&end_degree)
-        || total_hydrogens(topology, valence, bond.begin(), true)? >= 2
+    if !(2..4).contains(&begin_degree) || !(2..4).contains(&end_degree) {
+        return Ok(false);
+    }
+    if total_hydrogens(topology, valence, bond.begin(), true)? >= 2
         || total_hydrogens(topology, valence, bond.end(), true)? >= 2
     {
         return Ok(false);
+    }
+    if !rings.is_initialized() {
+        return Err(PotentialStereoError::InvalidRingInfo {
+            reason: "ring information is not initialized",
+            row: 0,
+            value: 0,
+            limit: 0,
+        });
+    }
+    if rings.bond_row_count() != topology.bonds.len() {
+        return Err(PotentialStereoError::InvalidRingInfo {
+            reason: "bond membership row count mismatch",
+            row: 0,
+            value: rings.bond_row_count(),
+            limit: topology.bonds.len(),
+        });
     }
     Ok(!rings
         .bond_ring_sizes(bond.id())
@@ -1498,8 +1618,9 @@ pub fn potential_stereo(
     // RDKit✔️❌: }
     // END RDKIT CPP FUNCTION findPotentialStereo
     // The caller supplies the already materialized valence and symmetric-ring
-    // assignments. Repeated detached total-H validation and the private rank
-    // implementation make this port intentionally slower than the C++ path.
+    // assignments. The validated total-H helper avoids rescanning topology for
+    // each atom and bond; the private rank implementation remains slower than
+    // the C++ path.
     validate_inputs(topology, valence, rings)?;
     let mut working = topology.clone();
     let atom_count = working.atoms.len();
@@ -1639,4 +1760,541 @@ pub fn potential_stereo(
         ring_relations,
         cleaned_topology: params.clean.then_some(working),
     })
+}
+
+#[cfg(test)]
+mod cf_smi_tetra_tests {
+    use super::{
+        PotentialStereoError, is_potential_tetrahedral, potential_tetrahedral_centers_for_atoms,
+        validate_topology_and_valence,
+    };
+    use crate::{RingFindType, RingInfo, ValenceAssignment};
+    use cosmolkit_model::{
+        Atom, AtomId, AtomSpec, Bond, BondId, BondSpec, TopologyBlock, TopologyValidationError,
+    };
+    use cosmolkit_types::{BondOrder, Element, Hybridization};
+
+    fn topology(atom_specs: Vec<AtomSpec>, bond_specs: Vec<BondSpec>) -> TopologyBlock {
+        let atoms = atom_specs
+            .into_iter()
+            .enumerate()
+            .map(|(index, spec)| Atom::from_spec(AtomId::new(index), spec))
+            .collect();
+        let bonds = bond_specs
+            .into_iter()
+            .enumerate()
+            .map(|(index, spec)| Bond::from_spec(BondId::new(index), spec))
+            .collect();
+        TopologyBlock::try_from_parts(atoms, bonds, vec![], vec![]).unwrap()
+    }
+
+    fn edge(begin: usize, end: usize, order: BondOrder) -> BondSpec {
+        BondSpec::new(AtomId::new(begin), AtomId::new(end), order)
+    }
+
+    fn assignment(
+        topology: &TopologyBlock,
+        center_explicit_valence: i32,
+        center_implicit_hydrogens: i32,
+    ) -> ValenceAssignment {
+        let mut explicit_valence = vec![0; topology.atoms.len()];
+        let mut implicit_hydrogens = vec![0; topology.atoms.len()];
+        if !topology.atoms.is_empty() {
+            explicit_valence[0] = center_explicit_valence;
+            implicit_hydrogens[0] = center_implicit_hydrogens;
+        }
+        ValenceAssignment {
+            explicit_valence,
+            implicit_hydrogens,
+        }
+    }
+
+    fn star(center: AtomSpec, neighbors: Vec<AtomSpec>, bonds: Vec<BondSpec>) -> TopologyBlock {
+        let mut atoms = Vec::with_capacity(neighbors.len() + 1);
+        atoms.push(center);
+        atoms.extend(neighbors);
+        topology(atoms, bonds)
+    }
+
+    fn retained_rings(
+        atom_count: usize,
+        bond_count: usize,
+        atom_rows: Vec<Vec<usize>>,
+        bond_rows: Vec<Vec<usize>>,
+    ) -> RingInfo {
+        let atom_rings = atom_rows
+            .into_iter()
+            .map(|row| row.into_iter().map(AtomId::new).collect())
+            .collect();
+        let bond_rings = bond_rows
+            .into_iter()
+            .map(|row| row.into_iter().map(BondId::new).collect())
+            .collect();
+        RingInfo::from_persisted_components(
+            true,
+            RingFindType::Fast,
+            atom_count,
+            bond_count,
+            atom_rings,
+            bond_rings,
+            vec![],
+            vec![],
+            None,
+            vec![],
+            vec![],
+        )
+        .unwrap()
+    }
+
+    fn scalar(
+        topology: &TopologyBlock,
+        valence: &ValenceAssignment,
+        rings: Option<&RingInfo>,
+        atom: AtomId,
+    ) -> Result<bool, PotentialStereoError> {
+        validate_topology_and_valence(topology, valence)?;
+        let mut ring_rows_validated = false;
+        is_potential_tetrahedral(topology, valence, rings, &mut ring_rows_validated, atom)
+    }
+
+    fn assert_source_center(
+        topology: &TopologyBlock,
+        valence: &ValenceAssignment,
+        rings: Option<&RingInfo>,
+        expected: bool,
+    ) {
+        // Fixed outcomes are derived from the pinned FindStereo.cpp branch
+        // order. The scalar comparison checks batch routing, not expectations.
+        assert_eq!(
+            potential_tetrahedral_centers_for_atoms(topology, valence, rings, &[AtomId::new(0)],),
+            Ok(vec![expected])
+        );
+        assert_eq!(
+            scalar(topology, valence, rings, AtomId::new(0)),
+            Ok(expected)
+        );
+    }
+
+    #[test]
+    fn cf_smi_tetra_degree_boundaries_preserve_requested_order_and_duplicates() {
+        let mut atom_specs = Vec::new();
+        let mut bond_specs = Vec::new();
+        let mut centers = Vec::new();
+        for degree in 0..=5 {
+            let center = atom_specs.len();
+            centers.push(AtomId::new(center));
+            atom_specs.push(AtomSpec::new(Element::C));
+            for _ in 0..degree {
+                let neighbor = atom_specs.len();
+                atom_specs.push(AtomSpec::new(Element::F));
+                bond_specs.push(edge(center, neighbor, BondOrder::Single));
+            }
+        }
+        let topology = topology(atom_specs, bond_specs);
+        let valence = assignment(&topology, 0, 0);
+        let requested = [
+            centers[5], centers[4], centers[0], centers[1], centers[2], centers[3], centers[4],
+        ];
+        let expected = [false, true, false, false, false, false, true];
+        assert_eq!(
+            potential_tetrahedral_centers_for_atoms(&topology, &valence, None, &requested),
+            Ok(expected.to_vec())
+        );
+        for (&atom, &is_potential) in requested.iter().zip(&expected) {
+            assert_eq!(scalar(&topology, &valence, None, atom), Ok(is_potential));
+        }
+    }
+
+    #[test]
+    fn cf_smi_tetra_zero_and_directional_dative_bonds_use_source_nonzero_degree() {
+        let ligands = || {
+            vec![
+                AtomSpec::new(Element::F),
+                AtomSpec::new(Element::CL),
+                AtomSpec::new(Element::BR),
+                AtomSpec::new(Element::I),
+            ]
+        };
+        let ordinary = |last_order| {
+            vec![
+                edge(0, 1, BondOrder::Single),
+                edge(0, 2, BondOrder::Single),
+                edge(0, 3, BondOrder::Single),
+                edge(0, 4, last_order),
+            ]
+        };
+
+        let zero = star(
+            AtomSpec::new(Element::C),
+            ligands(),
+            ordinary(BondOrder::Zero),
+        );
+        assert_source_center(&zero, &assignment(&zero, 0, 0), None, false);
+
+        let dative_out = star(
+            AtomSpec::new(Element::C),
+            ligands(),
+            ordinary(BondOrder::Dative),
+        );
+        assert_source_center(&dative_out, &assignment(&dative_out, 0, 0), None, false);
+
+        let mut incoming = ordinary(BondOrder::Single);
+        incoming[3] = edge(4, 0, BondOrder::Dative);
+        let dative_in = star(AtomSpec::new(Element::C), ligands(), incoming);
+        assert_source_center(&dative_in, &assignment(&dative_in, 0, 0), None, true);
+    }
+
+    #[test]
+    fn cf_smi_tetra_phosphorus_and_arsenic_exceptions_precede_hydrogen_branch() {
+        let phosphorus = star(
+            AtomSpec::new(Element::P),
+            vec![AtomSpec::new(Element::F), AtomSpec::new(Element::CL)],
+            vec![edge(0, 1, BondOrder::Single), edge(0, 2, BondOrder::Single)],
+        );
+        assert_source_center(&phosphorus, &assignment(&phosphorus, 2, 0), None, true);
+
+        let arsenic = star(
+            AtomSpec::new(Element::AS),
+            vec![
+                AtomSpec::new(Element::F),
+                AtomSpec::new(Element::CL),
+                AtomSpec::new(Element::BR),
+                AtomSpec::new(Element::H),
+            ],
+            vec![
+                edge(0, 1, BondOrder::Single),
+                edge(0, 2, BondOrder::Single),
+                edge(0, 3, BondOrder::Single),
+                edge(0, 4, BondOrder::Zero),
+            ],
+        );
+        assert_source_center(&arsenic, &assignment(&arsenic, 3, 1), None, true);
+    }
+
+    #[test]
+    fn cf_smi_tetra_explicit_implicit_protium_and_isotopic_hydrogens_follow_source() {
+        let heavy_bonds = || {
+            vec![
+                edge(0, 1, BondOrder::Single),
+                edge(0, 2, BondOrder::Single),
+                edge(0, 3, BondOrder::Single),
+            ]
+        };
+        let heavy_neighbors = || {
+            vec![
+                AtomSpec::new(Element::F),
+                AtomSpec::new(Element::CL),
+                AtomSpec::new(Element::BR),
+            ]
+        };
+
+        let explicit = star(
+            AtomSpec::new(Element::C).with_explicit_hydrogens(1),
+            heavy_neighbors(),
+            heavy_bonds(),
+        );
+        assert_source_center(&explicit, &assignment(&explicit, 0, 0), None, true);
+
+        let implicit = star(AtomSpec::new(Element::C), heavy_neighbors(), heavy_bonds());
+        assert_source_center(&implicit, &assignment(&implicit, 0, 1), None, true);
+
+        let mut protium_bonds = heavy_bonds();
+        protium_bonds.push(edge(0, 4, BondOrder::Zero));
+        let protium = star(
+            AtomSpec::new(Element::C),
+            [heavy_neighbors(), vec![AtomSpec::new(Element::H)]].concat(),
+            protium_bonds,
+        );
+        assert_source_center(&protium, &assignment(&protium, 0, 1), None, false);
+
+        let mut isotope_bonds = heavy_bonds();
+        isotope_bonds.push(edge(0, 4, BondOrder::Zero));
+        let isotopic_h = star(
+            AtomSpec::new(Element::C),
+            [
+                heavy_neighbors(),
+                vec![AtomSpec::new(Element::H).with_isotope(2)],
+            ]
+            .concat(),
+            isotope_bonds,
+        );
+        assert_source_center(&isotopic_h, &assignment(&isotopic_h, 0, 1), None, true);
+    }
+
+    #[test]
+    fn cf_smi_tetra_sulfur_and_selenium_explicit_valence_and_charge_cases() {
+        let neighbors = || {
+            vec![
+                AtomSpec::new(Element::F),
+                AtomSpec::new(Element::CL),
+                AtomSpec::new(Element::BR),
+            ]
+        };
+        let bonds = || {
+            vec![
+                edge(0, 1, BondOrder::Single),
+                edge(0, 2, BondOrder::Single),
+                edge(0, 3, BondOrder::Single),
+            ]
+        };
+
+        let sulfur_valence_four = star(AtomSpec::new(Element::S), neighbors(), bonds());
+        assert_source_center(
+            &sulfur_valence_four,
+            &assignment(&sulfur_valence_four, 4, 0),
+            None,
+            true,
+        );
+
+        let sulfur_cation = star(
+            AtomSpec::new(Element::S).with_formal_charge(1),
+            neighbors(),
+            bonds(),
+        );
+        assert_source_center(
+            &sulfur_cation,
+            &assignment(&sulfur_cation, 3, 0),
+            None,
+            true,
+        );
+
+        let sulfur_neutral = star(AtomSpec::new(Element::S), neighbors(), bonds());
+        assert_source_center(
+            &sulfur_neutral,
+            &assignment(&sulfur_neutral, 3, 0),
+            None,
+            false,
+        );
+
+        let selenium_valence_four = star(AtomSpec::new(Element::SE), neighbors(), bonds());
+        assert_source_center(
+            &selenium_valence_four,
+            &assignment(&selenium_valence_four, 4, 0),
+            None,
+            true,
+        );
+    }
+
+    #[test]
+    fn cf_smi_tetra_nitrogen_ring_bridgehead_hybridization_and_conjugation_routes() {
+        let triangle = |hybridization, conjugated| {
+            let center = AtomSpec::new(Element::N).with_hybridization(hybridization);
+            let mut first = edge(0, 1, BondOrder::Single);
+            first = first.with_conjugated(conjugated);
+            let topology = star(
+                center,
+                vec![
+                    AtomSpec::new(Element::C),
+                    AtomSpec::new(Element::C),
+                    AtomSpec::new(Element::C),
+                ],
+                vec![
+                    first,
+                    edge(1, 2, BondOrder::Single),
+                    edge(2, 0, BondOrder::Single),
+                    edge(0, 3, BondOrder::Single),
+                ],
+            );
+            let rings = retained_rings(4, 4, vec![vec![0, 1, 2]], vec![vec![0, 1, 2]]);
+            (topology, rings)
+        };
+
+        let (three_ring_nitrogen, three_ring_info) = triangle(Hybridization::Sp3, false);
+        assert_source_center(
+            &three_ring_nitrogen,
+            &assignment(&three_ring_nitrogen, 3, 0),
+            Some(&three_ring_info),
+            true,
+        );
+
+        let (sp2_nitrogen, _) = triangle(Hybridization::Sp2, false);
+        assert_source_center(&sp2_nitrogen, &assignment(&sp2_nitrogen, 3, 0), None, false);
+
+        let (conjugated_nitrogen, _) = triangle(Hybridization::Sp3, true);
+        assert_source_center(
+            &conjugated_nitrogen,
+            &assignment(&conjugated_nitrogen, 3, 0),
+            None,
+            false,
+        );
+
+        let acyclic = star(
+            AtomSpec::new(Element::N).with_hybridization(Hybridization::Sp3),
+            vec![
+                AtomSpec::new(Element::F),
+                AtomSpec::new(Element::CL),
+                AtomSpec::new(Element::BR),
+            ],
+            vec![
+                edge(0, 1, BondOrder::Single),
+                edge(0, 2, BondOrder::Single),
+                edge(0, 3, BondOrder::Single),
+            ],
+        );
+        let acyclic_rings = RingInfo::new(RingFindType::Fast, 4, 3);
+        assert_source_center(
+            &acyclic,
+            &assignment(&acyclic, 3, 0),
+            Some(&acyclic_rings),
+            false,
+        );
+
+        let bridgehead = star(
+            AtomSpec::new(Element::N).with_hybridization(Hybridization::Sp3),
+            vec![
+                AtomSpec::new(Element::C),
+                AtomSpec::new(Element::C),
+                AtomSpec::new(Element::C),
+            ],
+            vec![
+                edge(0, 1, BondOrder::Single),
+                edge(1, 2, BondOrder::Single),
+                edge(2, 0, BondOrder::Single),
+                edge(2, 3, BondOrder::Single),
+                edge(3, 0, BondOrder::Single),
+            ],
+        );
+        let bridgehead_rings = retained_rings(
+            4,
+            5,
+            vec![vec![0, 1, 2], vec![0, 1, 2, 3]],
+            vec![vec![0, 1, 2], vec![0, 1, 3, 4]],
+        );
+        assert_source_center(
+            &bridgehead,
+            &assignment(&bridgehead, 3, 0),
+            Some(&bridgehead_rings),
+            true,
+        );
+    }
+
+    #[test]
+    fn cf_smi_tetra_required_ring_state_errors_only_when_source_reaches_nitrogen_query() {
+        let nitrogen = star(
+            AtomSpec::new(Element::N).with_hybridization(Hybridization::Sp3),
+            vec![
+                AtomSpec::new(Element::F),
+                AtomSpec::new(Element::CL),
+                AtomSpec::new(Element::BR),
+            ],
+            vec![
+                edge(0, 1, BondOrder::Single),
+                edge(0, 2, BondOrder::Single),
+                edge(0, 3, BondOrder::Single),
+            ],
+        );
+        let valence = assignment(&nitrogen, 3, 0);
+        assert_eq!(
+            potential_tetrahedral_centers_for_atoms(&nitrogen, &valence, None, &[AtomId::new(0)]),
+            Err(PotentialStereoError::InvalidRingInfo {
+                reason: "ring information is unavailable for nitrogen potential-stereo branch",
+                row: 0,
+                value: 0,
+                limit: 0,
+            })
+        );
+        assert_eq!(
+            scalar(&nitrogen, &valence, None, AtomId::new(0)),
+            Err(PotentialStereoError::InvalidRingInfo {
+                reason: "ring information is unavailable for nitrogen potential-stereo branch",
+                row: 0,
+                value: 0,
+                limit: 0,
+            })
+        );
+
+        let mismatched_rings = RingInfo::new(RingFindType::Fast, 3, 3);
+        assert!(matches!(
+            potential_tetrahedral_centers_for_atoms(
+                &nitrogen,
+                &valence,
+                Some(&mismatched_rings),
+                &[AtomId::new(0)],
+            ),
+            Err(PotentialStereoError::InvalidRingInfo {
+                reason: "atom membership row count mismatch",
+                value: 3,
+                limit: 4,
+                ..
+            })
+        ));
+
+        let carbon = star(
+            AtomSpec::new(Element::C),
+            vec![AtomSpec::new(Element::F)],
+            vec![edge(0, 1, BondOrder::Single)],
+        );
+        assert_source_center(&carbon, &assignment(&carbon, 0, 0), None, false);
+    }
+
+    #[test]
+    fn cf_smi_tetra_rejects_malformed_atom_topology_and_valence_state() {
+        let source = star(
+            AtomSpec::new(Element::C),
+            vec![
+                AtomSpec::new(Element::F),
+                AtomSpec::new(Element::CL),
+                AtomSpec::new(Element::BR),
+                AtomSpec::new(Element::I),
+            ],
+            vec![
+                edge(0, 1, BondOrder::Single),
+                edge(0, 2, BondOrder::Single),
+                edge(0, 3, BondOrder::Single),
+                edge(0, 4, BondOrder::Single),
+            ],
+        );
+        let valence = assignment(&source, 4, 0);
+        assert_eq!(
+            potential_tetrahedral_centers_for_atoms(&source, &valence, None, &[AtomId::new(99)],),
+            Err(PotentialStereoError::AtomOutOfRange {
+                atom: AtomId::new(99),
+                atom_count: 5,
+            })
+        );
+        assert_eq!(
+            potential_tetrahedral_centers_for_atoms(
+                &source,
+                &ValenceAssignment {
+                    explicit_valence: vec![4; 4],
+                    implicit_hydrogens: vec![0; 5],
+                },
+                None,
+                &[AtomId::new(0)],
+            ),
+            Err(PotentialStereoError::InvalidValence {
+                field: "explicit_valence",
+                actual: 4,
+                atom_count: 5,
+            })
+        );
+        assert_eq!(
+            potential_tetrahedral_centers_for_atoms(
+                &source,
+                &ValenceAssignment {
+                    explicit_valence: vec![4, -1, 1, 1, 1],
+                    implicit_hydrogens: vec![0; 5],
+                },
+                None,
+                &[AtomId::new(0)],
+            ),
+            Err(PotentialStereoError::InvalidValenceValue {
+                field: "explicit_valence",
+                atom: AtomId::new(1),
+                value: -1,
+            })
+        );
+
+        let mut malformed = source.clone();
+        malformed.atoms[0] = malformed.atoms[0].clone().with_id(AtomId::new(1));
+        assert_eq!(
+            potential_tetrahedral_centers_for_atoms(&malformed, &valence, None, &[AtomId::new(0)],),
+            Err(PotentialStereoError::InvalidTopology(
+                TopologyValidationError::AtomIdMismatch {
+                    position: 0,
+                    id: AtomId::new(1),
+                }
+            ))
+        );
+    }
 }

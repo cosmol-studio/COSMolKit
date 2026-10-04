@@ -1,6 +1,6 @@
 use cosmolkit_model::{
     Atom, AtomId, AtomSpec, Bond, BondId, BondSpec, BondStereo, ChiralTag, CipDescriptor, Element,
-    MoleculeProperties, TopologyBlock,
+    MoleculeProperties, PropertyValue, TopologyBlock,
 };
 use cosmolkit_stereo::{CipLabelOptions, CipLabelerError, assign_cip_labels};
 use cosmolkit_types::BondOrder;
@@ -151,7 +151,10 @@ fn full_tetrahedral_assignment_writes_exact_primary_and_neighbor_order_state() {
         .unwrap();
         let center = &assignment.topology().atoms[0];
         assert_eq!(center.cip_descriptor().unwrap(), Some(expected));
-        assert_eq!(center.prop("_CIPNeighborOrder"), Some("[4,3,2,1]"));
+        assert_eq!(
+            center.prop("_CIPNeighborOrder"),
+            Some(&PropertyValue::String("[4,3,2,1]".into()))
+        );
         assert!(!center.is_prop_computed("_CIPCode"));
         assert!(center.is_prop_computed("_CIPNeighborOrder"));
     }
@@ -173,11 +176,11 @@ fn selection_masks_are_exact_duplicates_are_idempotent_and_repeated_calls_preser
     .unwrap();
     assert_eq!(
         none_selected.topology().atoms[0].prop("_CIPCode"),
-        Some("old")
+        Some(&PropertyValue::String("old".into()))
     );
     assert_eq!(
         none_selected.topology().atoms[0].prop("_CIPNeighborOrder"),
-        Some("[0]")
+        Some(&PropertyValue::String("[0]".into()))
     );
 
     let (topology, properties) = none_selected.into_parts();
@@ -187,10 +190,13 @@ fn selection_masks_are_exact_duplicates_are_idempotent_and_repeated_calls_preser
         &CipLabelOptions::default().with_atoms([AtomId::new(0), AtomId::new(0)]),
     )
     .unwrap();
-    assert_eq!(selected.topology().atoms[0].prop("_CIPCode"), Some("S"));
+    assert_eq!(
+        selected.topology().atoms[0].prop("_CIPCode"),
+        Some(&PropertyValue::String("S".into()))
+    );
     assert_eq!(
         selected.topology().atoms[0].prop("_CIPNeighborOrder"),
-        Some("[4,3,2,1]")
+        Some(&PropertyValue::String("[4,3,2,1]".into()))
     );
 
     let (topology, properties) = selected.into_parts();
@@ -200,7 +206,10 @@ fn selection_masks_are_exact_duplicates_are_idempotent_and_repeated_calls_preser
         &CipLabelOptions::default().with_atoms([]).with_bonds([]),
     )
     .unwrap();
-    assert_eq!(all_again.topology().atoms[0].prop("_CIPCode"), Some("S"));
+    assert_eq!(
+        all_again.topology().atoms[0].prop("_CIPCode"),
+        Some(&PropertyValue::String("S".into()))
+    );
     assert!(all_again.properties().is_prop_computed("_CIPComputed"));
 }
 
@@ -253,7 +262,10 @@ fn sp2_explicit_carriers_assign_uppercase_labels_and_normalize_source_stereo() {
         .unwrap();
         let axis = &assignment.topology().bonds[0];
         assert_eq!(axis.cip_descriptor().unwrap(), Some(expected));
-        assert_eq!(axis.prop("_CIPNeighborOrder"), Some("[4,5]"));
+        assert_eq!(
+            axis.prop("_CIPNeighborOrder"),
+            Some(&PropertyValue::String("[4,5]".into()))
+        );
         assert_eq!(axis.stereo(), expected_stereo);
         assert_eq!(axis.stereo_atoms(), Some([AtomId::new(4), AtomId::new(5)]));
         assert!(axis.is_prop_computed("_CIPNeighborOrder"));
@@ -269,7 +281,10 @@ fn sp2_rank_fallback_is_exact_and_missing_or_tied_rank_fails_closed() {
         &CipLabelOptions::default(),
     )
     .unwrap();
-    assert_eq!(assignment.topology().bonds[0].prop("_CIPCode"), Some("E"));
+    assert_eq!(
+        assignment.topology().bonds[0].prop("_CIPCode"),
+        Some(&PropertyValue::String("E".into()))
+    );
     assert_eq!(
         assignment.topology().bonds[0].stereo_atoms(),
         Some([AtomId::new(4), AtomId::new(5)])
@@ -312,7 +327,10 @@ fn atropisomer_assignment_uses_core_carrier_order_and_preserves_axis_stereo() {
         .unwrap();
         let axis = &assignment.topology().bonds[0];
         assert_eq!(axis.cip_descriptor().unwrap(), Some(expected));
-        assert_eq!(axis.prop("_CIPNeighborOrder"), Some("[4,5]"));
+        assert_eq!(
+            axis.prop("_CIPNeighborOrder"),
+            Some(&PropertyValue::String("[4,5]".into()))
+        );
         assert_eq!(axis.stereo(), stereo);
         assert_eq!(axis.stereo_atoms(), None);
     }
@@ -367,7 +385,10 @@ fn source_visible_limit_and_node_cap_diagnostics_remain_exact() {
         &CipLabelOptions::default().with_max_recursive_iterations(1),
     )
     .unwrap();
-    assert_eq!(assignment.topology().atoms[0].prop("_CIPCode"), Some("S"));
+    assert_eq!(
+        assignment.topology().atoms[0].prop("_CIPCode"),
+        Some(&PropertyValue::String("S".into()))
+    );
 }
 
 #[test]

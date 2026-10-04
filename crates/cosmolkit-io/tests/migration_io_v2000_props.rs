@@ -3,10 +3,17 @@ use cosmolkit_io::{
     read_mol_block_detached_with_params,
 };
 use cosmolkit_model::{
-    AtomId, AtomQueryPredicate, BondId, QueryNode, SGroupBracketStyle, SGroupConnection,
-    SubstanceGroupKind,
+    AtomId, AtomQueryPredicate, BondId, PropertyValue, QueryNode, SGroupBracketStyle,
+    SGroupConnection, SubstanceGroupKind,
 };
 use cosmolkit_types::{BondOrder, Element};
+
+fn string_property(value: Option<&PropertyValue>) -> Option<&str> {
+    match value {
+        Some(PropertyValue::String(value)) => Some(value),
+        _ => None,
+    }
+}
 
 fn atom_line(symbol: &str, charge_code: i32) -> String {
     format!(
@@ -154,7 +161,7 @@ fn new_and_old_atom_lists_preserve_source_element_negation_and_constraints() {
     ));
     let atom = &one_member.query.atoms()[0];
     assert_eq!(atom.element(), Some(Element::N));
-    assert_eq!(atom.prop("_MolFileAtomQuery"), Some("1"));
+    assert_eq!(string_property(atom.prop("_MolFileAtomQuery")), Some("1"));
     assert!(query_contains(atom.predicate(), &|predicate| {
         predicate == &AtomQueryPredicate::AtomicNumberNotIn(vec![7])
     }));
@@ -244,8 +251,8 @@ fn rgroup_and_marvin_smarts_records_create_canonical_typed_queries() {
         "M  RGP  1   1   7\nM  END\n",
     ));
     let atom = &rgroup.query.atoms()[0];
-    assert_eq!(atom.prop("_MolFileRLabel"), Some("7"));
-    assert_eq!(atom.prop("dummyLabel"), Some("R7"));
+    assert_eq!(string_property(atom.prop("_MolFileRLabel")), Some("7"));
+    assert_eq!(string_property(atom.prop("dummyLabel")), Some("R7"));
     assert_eq!(atom.isotope(), Some(7));
 
     let marvin = query(&molblock(
@@ -254,8 +261,8 @@ fn rgroup_and_marvin_smarts_records_create_canonical_typed_queries() {
         "M  MRV SMA   1 [#6,#7]\nM  END\n",
     ));
     let atom = &marvin.query.atoms()[0];
-    assert_eq!(atom.prop("MRV SMA"), Some("[#6,#7]"));
-    assert_eq!(atom.prop("_MolFileAtomQuery"), Some("1"));
+    assert_eq!(string_property(atom.prop("MRV SMA")), Some("[#6,#7]"));
+    assert_eq!(string_property(atom.prop("_MolFileAtomQuery")), Some("1"));
     assert!(query_contains(atom.predicate(), &|predicate| {
         matches!(
             predicate,
@@ -270,7 +277,7 @@ fn rgroup_and_marvin_smarts_records_create_canonical_typed_queries() {
         &[],
         "M  MRV FOO   1 impossible\nM  END\n",
     ));
-    assert_eq!(ignored.0.atoms[0].prop("MRV SMA"), None);
+    assert_eq!(string_property(ignored.0.atoms[0].prop("MRV SMA")), None);
 
     let invalid = molblock(&[atom_line("C", 0)], &[], "M  MRV SMA   1 [\nM  END\n");
     assert!(
@@ -299,11 +306,26 @@ fn aliases_extended_records_skip_and_termination_keep_exact_state() {
         ),
     );
     let (topology, properties) = concrete(&input);
-    assert_eq!(topology.atoms[0].prop("molFileAlias"), Some("carbon alias"));
-    assert_eq!(topology.atoms[1].prop("molFileValue"), Some("atom value"));
-    assert_eq!(topology.atoms[0].prop("_MolFile_PXA"), Some(" pxa payload"));
-    assert_eq!(topology.atoms[0].prop("molAttachPoint"), Some("-1"));
-    assert_eq!(topology.atoms[1].prop("molAttachPoint"), Some("1"));
+    assert_eq!(
+        string_property(topology.atoms[0].prop("molFileAlias")),
+        Some("carbon alias")
+    );
+    assert_eq!(
+        string_property(topology.atoms[1].prop("molFileValue")),
+        Some("atom value")
+    );
+    assert_eq!(
+        string_property(topology.atoms[0].prop("_MolFile_PXA")),
+        Some(" pxa payload")
+    );
+    assert_eq!(
+        string_property(topology.atoms[0].prop("molAttachPoint")),
+        Some("-1")
+    );
+    assert_eq!(
+        string_property(topology.atoms[1].prop("molAttachPoint")),
+        Some("1")
+    );
     assert_eq!(topology.atoms[0].formal_charge(), 0);
     assert_eq!(properties.prop("_MolFileLinkNodes"), Some("1 3 1 1 2"));
 
@@ -341,9 +363,12 @@ fn zero_bond_charge_hydrogen_and_attachment_records_preserve_typed_effects() {
     assert_eq!(topology.atoms[0].formal_charge(), 1);
     assert_eq!(topology.atoms[1].formal_charge(), -1);
     assert_eq!(topology.atoms[0].explicit_hydrogens(), 3);
-    assert_eq!(topology.atoms[0].prop("_ZBO_H"), Some("1"));
+    assert_eq!(string_property(topology.atoms[0].prop("_ZBO_H")), Some("1"));
     assert_eq!(topology.atoms[1].explicit_hydrogens(), 0);
-    assert_eq!(topology.atoms[1].prop("molAttachPoint"), None);
+    assert_eq!(
+        string_property(topology.atoms[1].prop("molAttachPoint")),
+        None
+    );
 }
 
 #[test]

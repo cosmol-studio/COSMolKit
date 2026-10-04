@@ -7,8 +7,8 @@ use cosmolkit_core::{
 use cosmolkit_model::{
     Atom, AtomId, AtomSpec, Bond, BondDirection, BondId, BondSpec, ChiralTag, Conformer2D,
     Conformer3D, CoordinateBlock, CoordinateDimension, CoordinateValidationError,
-    MoleculeProperties, SdfPropertyList, SdfPropertyListTarget, StereoGroup, StereoGroupKind,
-    SubstanceGroup, SubstanceGroupId, SubstanceGroupKind, TopologyBlock,
+    MoleculeProperties, PropertyValue, SdfPropertyList, SdfPropertyListTarget, StereoGroup,
+    StereoGroupKind, SubstanceGroup, SubstanceGroupId, SubstanceGroupKind, TopologyBlock,
 };
 use cosmolkit_types::{BondOrder, Element};
 
@@ -51,6 +51,152 @@ fn no_sanitize() -> RemoveHsParams {
     RemoveHsParams {
         sanitize: false,
         ..Default::default()
+    }
+}
+
+#[test]
+fn nonempty_source_mask_sanitizes_even_without_removable_hydrogens() {
+    // RDKit AddHs.cpp sizes atomsToRemove to mol.getNumAtoms(); empty()
+    // does not ask whether any removal bit was set.
+    let source = topology(
+        vec![AtomSpec::new(Element::C); 6],
+        (0..6)
+            .map(|i| {
+                BondSpec::new(
+                    atom(i),
+                    atom((i + 1) % 6),
+                    if i % 2 == 0 {
+                        BondOrder::Double
+                    } else {
+                        BondOrder::Single
+                    },
+                )
+            })
+            .collect(),
+    );
+    let mut with_hydrogen = source.clone().begin_batch_edit().unwrap();
+    let hydrogen = with_hydrogen.add_atom(AtomSpec::new(Element::H));
+    with_hydrogen
+        .add_bond(BondSpec::new(atom(0), hydrogen, BondOrder::Single))
+        .unwrap();
+    let with_hydrogen = with_hydrogen.finish().unwrap().0;
+    for input in [topology(vec![], vec![]), source, with_hydrogen] {
+        for sanitize in [false, true] {
+            for remove_nonimplicit in [false, true] {
+                for remove_and_track_isotopes in [false, true] {
+                    let result = remove_hydrogens_with_params(
+                        input.clone(),
+                        CoordinateBlock::default(),
+                        MoleculeProperties::default(),
+                        &RemoveHsParams {
+                            sanitize,
+                            remove_nonimplicit,
+                            remove_and_track_isotopes,
+                            ..Default::default()
+                        },
+                    )
+                    .unwrap();
+                    let expected_count = if input.atoms.len() == 7 && remove_nonimplicit {
+                        6
+                    } else {
+                        input.atoms.len()
+                    };
+                    assert_eq!(result.topology.atoms.len(), expected_count);
+                    assert!(
+                        result
+                            .topology
+                            .atoms
+                            .iter()
+                            .take(6)
+                            .all(|a| a.is_aromatic() == (sanitize && remove_nonimplicit))
+                    );
+                    assert!(
+                        result
+                            .topology
+                            .bonds
+                            .iter()
+                            .take(6)
+                            .all(|b| b.is_aromatic() == (sanitize && remove_nonimplicit))
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn nonempty_source_mask_normalizes_chiral_h_count_without_removal() {
+    // All nine modeled tags, both noImplicit values and every valid carbon
+    // explicit-H count cross all three postprocessing/selection switches.
+    use ChiralTag::*;
+    for tag in [
+        Unspecified,
+        TetrahedralCw,
+        TetrahedralCcw,
+        Other,
+        Tetrahedral,
+        Allene,
+        SquarePlanar,
+        TrigonalBipyramidal,
+        Octahedral,
+    ] {
+        for no_implicit in [false, true] {
+            for hydrogen_count in 0..=4 {
+                for remove_nonimplicit in [false, true] {
+                    for remove_and_track_isotopes in [false, true] {
+                        for sanitize in [false, true] {
+                            let source = topology(
+                                vec![
+                                    AtomSpec::new(Element::C)
+                                        .with_explicit_hydrogens(hydrogen_count)
+                                        .with_chiral_tag(tag)
+                                        .with_no_implicit(no_implicit),
+                                ],
+                                vec![],
+                            );
+                            let result = remove_hydrogens_with_params(
+                                source,
+                                CoordinateBlock::default(),
+                                MoleculeProperties::default(),
+                                &RemoveHsParams {
+                                    sanitize,
+                                    remove_nonimplicit,
+                                    remove_and_track_isotopes,
+                                    ..Default::default()
+                                },
+                            )
+                            .unwrap();
+                            let expected =
+                                if !no_implicit && tag != Unspecified && hydrogen_count > 1 {
+                                    0
+                                } else {
+                                    hydrogen_count
+                                };
+                            assert_eq!(
+                                result.topology.atoms[0].explicit_hydrogens(),
+                                expected,
+                                "tag={tag:?}, no_implicit={no_implicit}, H={hydrogen_count}, remove_nonimplicit={remove_nonimplicit}, track={remove_and_track_isotopes}"
+                            );
+                            // Pinned Chirality.cpp::cleanupChirality removes
+                            // non-tetrahedral tags below degree two. Here the
+                            // isolated atom's total degree is its H count when
+                            // noImplicit is set, otherwise carbon has degree four.
+                            let expected_tag = if sanitize
+                                && remove_nonimplicit
+                                && no_implicit
+                                && hydrogen_count < 2
+                                && matches!(tag, SquarePlanar | TrigonalBipyramidal | Octahedral)
+                            {
+                                Unspecified
+                            } else {
+                                tag
+                            };
+                            assert_eq!(result.topology.atoms[0].chiral_tag(), expected_tag);
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -201,7 +347,10 @@ fn empty_candidate_uses_identity_but_clears_only_computed_properties() {
         output.mapping,
         cosmolkit_model::TopologyMapping::identity(1, 0)
     );
-    assert_eq!(output.topology.atoms[0].prop("atom-user"), Some("keep"));
+    assert_eq!(
+        output.topology.atoms[0].prop("atom-user"),
+        Some(&PropertyValue::String("keep".to_owned()))
+    );
     assert_eq!(output.topology.atoms[0].prop("atom-cache"), None);
     assert_eq!(output.properties.name(), Some("named"));
     assert_eq!(output.properties.prop("user"), Some("keep"));
@@ -371,7 +520,8 @@ fn coordinates_property_lists_and_row_properties_follow_one_final_mapping() {
     let output =
         remove_hydrogens_with_params(source, coordinates, properties, &no_sanitize()).unwrap();
 
-    assert_eq!(output.coordinates.conformers_2d[0].id(), 0);
+    assert_eq!(output.coordinates.conformers_2d[0].id(), 7);
+    assert_eq!(output.coordinates.conformers_3d[0].id(), 9);
     assert_eq!(
         output.coordinates.conformers_2d[0]
             .props()
@@ -406,10 +556,19 @@ fn coordinates_property_lists_and_row_properties_follow_one_final_mapping() {
         output.properties.sdf_property_lists()[1].values(),
         &[Some("co".into())]
     );
-    assert_eq!(output.topology.atoms[0].prop("atom-user"), Some("c"));
+    assert_eq!(
+        output.topology.atoms[0].prop("atom-user"),
+        Some(&PropertyValue::String("c".to_owned()))
+    );
     assert_eq!(output.topology.atoms[0].prop("atom-cache"), None);
-    assert_eq!(output.topology.atoms[1].prop("atom-user"), Some("o"));
-    assert_eq!(output.topology.bonds[0].prop("bond-user"), Some("co"));
+    assert_eq!(
+        output.topology.atoms[1].prop("atom-user"),
+        Some(&PropertyValue::String("o".to_owned()))
+    );
+    assert_eq!(
+        output.topology.bonds[0].prop("bond-user"),
+        Some(&PropertyValue::String("co".to_owned()))
+    );
     assert_eq!(output.topology.bonds[0].prop("bond-cache"), None);
 }
 
@@ -457,7 +616,7 @@ fn higher_degree_removal_remaps_sgroups_and_enhanced_stereo_without_stale_ids() 
 }
 
 #[test]
-fn sanitize_runs_only_for_outer_nonimplicit_candidate_removal() {
+fn sanitize_respects_options_and_runs_after_preliminary_isotope_removal() {
     let unsanitized = remove_hydrogens_with_params(
         overvalent_carbon(AtomSpec::new(Element::H)),
         CoordinateBlock::default(),
@@ -488,6 +647,8 @@ fn sanitize_runs_only_for_outer_nonimplicit_candidate_removal() {
     .unwrap();
     assert_eq!(implicit_only.topology.atoms.len(), 6);
 
+    // AddHs.cpp's outer bitset still has six rows after the preliminary
+    // pass removes H. No set bits does not suppress outer sanitizeMol.
     let preliminary_only = remove_hydrogens_with_params(
         overvalent_carbon(AtomSpec::new(Element::H)),
         CoordinateBlock::default(),
@@ -497,9 +658,8 @@ fn sanitize_runs_only_for_outer_nonimplicit_candidate_removal() {
             sanitize: true,
             ..Default::default()
         },
-    )
-    .unwrap();
-    assert_eq!(preliminary_only.topology.atoms.len(), 6);
+    );
+    assert!(matches!(preliminary_only, Err(HydrogenError::Sanitize(_))));
 }
 
 #[test]

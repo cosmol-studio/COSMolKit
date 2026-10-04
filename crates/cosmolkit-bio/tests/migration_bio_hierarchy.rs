@@ -3,15 +3,47 @@ use cosmolkit_bio::{
     BioAssemblyOperator, BioAssemblySpecialKind, BioAtomId, BioAtomRow, BioCalcFlag, BioChainId,
     BioChainRow, BioCoordinateBlock, BioCoordinateFormat, BioCrystalCell, BioCrystalInfo,
     BioEntityDbRef, BioEntityId, BioEntityRow, BioModelId, BioModelRow, BioNcsOperator,
-    BioResidueId, BioResidueRow, BioRowSpan, BioSiftsUnpResidue, BioStructure, BioStructureError,
-    BioStructureParts, BioTransform, ChainKind, ChainSourceIds, EntityKind, EntitySourceIds,
-    PdbAtomSerial, PdbChainId, PdbSeqId, PolymerKind, ResidueInfoKind, ResidueName,
-    ResidueSourceIds, altloc_matches, is_same_conformer,
+    BioResidueId, BioResidueRow, BioRowSpan, BioSiftsUnpResidue, BioStructureData,
+    BioStructureError, BioStructureParts, BioTransform, ChainKind, ChainSourceIds, EntityKind,
+    EntitySourceIds, PdbAtomSerial, PdbChainId, PdbSeqId, PolymerKind, ResidueInfoKind,
+    ResidueName, ResidueSourceIds, altloc_matches, is_same_conformer,
 };
 use cosmolkit_types::Element;
 
-fn atom_name(value: &[u8; 4]) -> AtomName {
-    AtomName::from_ascii(*value).unwrap()
+fn atom_name(value: &[u8]) -> AtomName {
+    AtomName::from_ascii(value).unwrap()
+}
+
+#[test]
+fn bio_hierarchy_preserves_exact_two_and_four_byte_atom_names() {
+    for (format, spelling) in [
+        (BioCoordinateFormat::Mmcif, b"CA".as_slice()),
+        (BioCoordinateFormat::Pdb, b" CA ".as_slice()),
+    ] {
+        let mut parts = one_atom_parts([1.0, 2.0, 3.0]);
+        parts.input_format = format;
+        parts.atoms[0] = BioAtomRow::new(
+            BioResidueId::new(0),
+            atom_name(spelling),
+            Element::C,
+            None,
+            None,
+            0,
+            BioCalcFlag::NotSet,
+            1.0,
+            20.0,
+            [0.0; 6],
+            -1,
+            0.0,
+            AtomSourceIds::new(Some(PdbAtomSerial::new(99))),
+        );
+        let structure = BioStructureData::from_parts(parts).unwrap();
+        assert_eq!(structure.atoms()[0].name().as_bytes(), spelling);
+        let parts = structure.into_parts();
+        assert_eq!(parts.atoms[0].name().as_bytes(), spelling);
+        let rebuilt = BioStructureData::from_parts(parts).unwrap();
+        assert_eq!(rebuilt.atoms()[0].name().as_str().as_bytes(), spelling);
+    }
 }
 
 fn residue_name(value: &str) -> ResidueName {
@@ -108,7 +140,7 @@ fn one_atom_parts(position: [f64; 3]) -> BioStructureParts {
 
 #[test]
 fn bio_hierarchy_validates_empty_single_and_multi_model_contiguous_spans() {
-    let empty = BioStructure::from_parts(BioStructureParts {
+    let empty = BioStructureData::from_parts(BioStructureParts {
         input_format: BioCoordinateFormat::Unknown,
         models: Vec::new(),
         chains: Vec::new(),
@@ -130,7 +162,7 @@ fn bio_hierarchy_validates_empty_single_and_multi_model_contiguous_spans() {
     .unwrap();
     assert!(empty.models().is_empty());
 
-    let single = BioStructure::from_parts(one_atom_parts([1.0, 2.0, 3.0])).unwrap();
+    let single = BioStructureData::from_parts(one_atom_parts([1.0, 2.0, 3.0])).unwrap();
     assert_eq!(single.models().len(), 1);
     assert_eq!(
         single.chains()[0].source().label_asym_id(),
@@ -144,7 +176,7 @@ fn bio_hierarchy_validates_empty_single_and_multi_model_contiguous_spans() {
     let mut invalid = one_atom_parts([0.0; 3]);
     invalid.models[0] = BioModelRow::new(span(1, 0), Some(7));
     assert!(matches!(
-        BioStructure::from_parts(invalid),
+        BioStructureData::from_parts(invalid),
         Err(BioStructureError::NonContiguousSpan { .. })
     ));
 
@@ -165,7 +197,7 @@ fn bio_hierarchy_validates_empty_single_and_multi_model_contiguous_spans() {
         AtomSourceIds::new(None),
     );
     assert!(matches!(
-        BioStructure::from_parts(wrong_parent),
+        BioStructureData::from_parts(wrong_parent),
         Err(BioStructureError::ParentMismatch { table: "atoms", .. })
     ));
     assert!(matches!(
@@ -178,19 +210,19 @@ fn bio_hierarchy_validates_empty_single_and_multi_model_contiguous_spans() {
 fn bio_hierarchy_preserves_coordinate_bits_and_rejects_misalignment() {
     let nan = f64::from_bits(0x7ff8_0000_0000_0042);
     let position = [-0.0, nan, f64::INFINITY];
-    let structure = BioStructure::from_parts(one_atom_parts(position)).unwrap();
+    let structure = BioStructureData::from_parts(one_atom_parts(position)).unwrap();
     let stored = structure.coordinates().positions()[0];
     assert_eq!(stored[0].to_bits(), (-0.0_f64).to_bits());
     assert_eq!(stored[1].to_bits(), nan.to_bits());
     assert_eq!(stored[2].to_bits(), f64::INFINITY.to_bits());
     let parts = structure.into_parts();
     assert_eq!(parts.coordinates.positions()[0][1].to_bits(), nan.to_bits());
-    assert!(BioStructure::from_parts(parts).is_ok());
+    assert!(BioStructureData::from_parts(parts).is_ok());
 
     let mut invalid = one_atom_parts([0.0; 3]);
     invalid.coordinates = BioCoordinateBlock::default();
     assert!(matches!(
-        BioStructure::from_parts(invalid),
+        BioStructureData::from_parts(invalid),
         Err(BioStructureError::CoordinateCountMismatch {
             atom_count: 1,
             coordinate_count: 0
@@ -245,7 +277,7 @@ fn bio_hierarchy_parts_roundtrip_preserves_hydrogen_isotope_rows_and_order() {
     ];
     parts.coordinates = BioCoordinateBlock::new(expected_positions.clone());
 
-    let structure = BioStructure::from_parts(parts).unwrap();
+    let structure = BioStructureData::from_parts(parts).unwrap();
     assert_eq!(structure.atoms()[0].name(), structure.atoms()[1].name());
     assert_eq!(structure.atoms()[0].isotope_mass_number(), None);
     assert_eq!(structure.atoms()[1].isotope_mass_number(), Some(2));
@@ -281,7 +313,7 @@ fn bio_hierarchy_parts_roundtrip_preserves_hydrogen_isotope_rows_and_order() {
             .collect::<Vec<_>>()
     );
 
-    let rebuilt = BioStructure::from_parts(parts).unwrap().into_parts();
+    let rebuilt = BioStructureData::from_parts(parts).unwrap().into_parts();
     assert_eq!(rebuilt.atoms[0].name(), rebuilt.atoms[1].name());
     assert_eq!(rebuilt.atoms[0].isotope_mass_number(), None);
     assert_eq!(rebuilt.atoms[1].isotope_mass_number(), Some(2));
@@ -365,7 +397,7 @@ fn bio_hierarchy_altloc_matrix_and_source_order_lookup_match_gemmi() {
         ),
     ];
     parts.coordinates = BioCoordinateBlock::new(vec![[0.0; 3]; 2]);
-    let structure = BioStructure::from_parts(parts).unwrap();
+    let structure = BioStructureData::from_parts(parts).unwrap();
     assert_eq!(
         structure
             .find_atom(
@@ -395,7 +427,7 @@ fn bio_hierarchy_altloc_matrix_and_source_order_lookup_match_gemmi() {
 fn bio_hierarchy_entity_lookup_preserves_exact_strings_order_and_metadata() {
     let mut parts = one_atom_parts([0.0; 3]);
     parts.entities.push(entity("1", &["SECOND"]));
-    let structure = BioStructure::from_parts(parts).unwrap();
+    let structure = BioStructureData::from_parts(parts).unwrap();
     assert_eq!(BioEntityRow::first_mon("ALA,GLY"), "ALA");
     assert_eq!(BioEntityRow::first_mon(",GLY"), "");
     assert_eq!(BioEntityRow::first_mon("ALA"), "ALA");
@@ -544,7 +576,7 @@ fn bio_hierarchy_assembly_ncs_and_reference_validation_preserve_order() {
         .ncs_operators
         .push(BioNcsOperator::new("ncs1".to_owned(), true, transform));
     parts.assemblies.push(assembly);
-    let structure = BioStructure::from_parts(parts).unwrap();
+    let structure = BioStructureData::from_parts(parts).unwrap();
     assert_eq!(structure.assemblies()[0].generators[0].chains, ["A", "A"]);
     assert!(structure.assemblies()[0].buried_surface_area.is_nan());
     assert_eq!(
@@ -553,6 +585,10 @@ fn bio_hierarchy_assembly_ncs_and_reference_validation_preserve_order() {
     );
     assert_eq!(structure.ncs_operators()[0].id, "ncs1");
 
+    // Approved contract (BIO-COPY A01): assembly chain/subchain names are
+    // source metadata, not enforced live row references — the previously
+    // rejected "missing" chain now constructs successfully with its raw
+    // reference preserved verbatim.
     let mut bad = one_atom_parts([0.0; 3]);
     bad.assemblies.push(BioAssembly::new(
         "bad".to_owned(),
@@ -571,10 +607,8 @@ fn bio_hierarchy_assembly_ncs_and_reference_validation_preserve_order() {
             Vec::new(),
         )],
     ));
-    assert!(matches!(
-        BioStructure::from_parts(bad),
-        Err(BioStructureError::AssemblyReferenceMissing { kind: "chain", .. })
-    ));
+    let structure = BioStructureData::from_parts(bad).unwrap();
+    assert_eq!(structure.assemblies()[0].generators[0].chains, ["missing"]);
 }
 
 #[test]

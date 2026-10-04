@@ -689,23 +689,23 @@ impl QueryAtom {
     }
 
     #[must_use]
-    pub fn props(&self) -> &BTreeMap<String, String> {
-        &self.properties.props
+    pub fn props(&self) -> &BTreeMap<String, crate::PropertyValue> {
+        self.properties.props.values()
     }
 
     #[must_use]
-    pub fn prop(&self, key: &str) -> Option<&str> {
-        self.properties.props.get(key).map(String::as_str)
+    pub fn prop(&self, key: &str) -> Option<&crate::PropertyValue> {
+        self.properties.props.get(key)
     }
 
     #[must_use]
     pub fn is_prop_computed(&self, key: &str) -> bool {
-        self.properties.computed_props.contains(key)
+        self.properties.props.is_computed(key)
     }
 
     #[must_use]
     pub fn computed_prop_names(&self) -> &BTreeSet<String> {
-        &self.properties.computed_props
+        self.properties.props.computed_names()
     }
 
     #[must_use]
@@ -797,7 +797,7 @@ impl QueryAtom {
     pub fn set_prop(
         &mut self,
         key: impl Into<String>,
-        value: impl Into<String>,
+        value: impl Into<crate::PropertyValue>,
     ) -> Result<(), AtomPropertyError> {
         self.properties.set_prop(key, value)
     }
@@ -806,7 +806,7 @@ impl QueryAtom {
     pub fn set_computed_prop(
         &mut self,
         key: impl Into<String>,
-        value: impl Into<String>,
+        value: impl Into<crate::PropertyValue>,
     ) -> Result<(), AtomPropertyError> {
         self.properties.set_computed_prop(key, value)
     }
@@ -1677,13 +1677,25 @@ impl From<SubstanceGroupValidationError> for QueryGraphError {
     }
 }
 
+/// Borrow query-atom properties in the same source insertion order as atom properties.
+pub fn ordered_query_atom_properties(
+    atom: &QueryAtom,
+) -> impl ExactSizeIterator<Item = (&str, &crate::PropertyValue)> + '_ {
+    // RDKit✔️✔️: for (const auto &item : _data) {
+    // RDKit✔️✔️:   res.push_back(item.key);
+    // RDKit✔️✔️: }
+    // Dict::keys order is shared by ordinary and query atoms. Borrow the one
+    // canonical store; do not clone a carrier or build a second property map.
+    atom.properties.props.ordered()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::{
-        AtomSpec, BondSpec, Element, SGroupAttachPoint, SGroupBondRole, SGroupBracket,
-        SGroupBracketStyle, SGroupCState, SGroupConnection, SGroupData, SGroupDisplay,
-        StereoGroupKind, SubstanceGroupId, SubstanceGroupKind,
+        AtomSpec, BondSpec, Element, PropertyValue, SGroupAttachPoint, SGroupBondRole,
+        SGroupBracket, SGroupBracketStyle, SGroupCState, SGroupConnection, SGroupData,
+        SGroupDisplay, StereoGroupKind, SubstanceGroupId, SubstanceGroupKind,
     };
 
     fn carbon(id: usize) -> QueryAtom {
@@ -2275,5 +2287,121 @@ mod tests {
         };
 
         assert_eq!(graph.validate(), Err(QueryGraphError::AdjacencyMismatch));
+    }
+
+    #[test]
+    fn typed_property_transport_query_row_remap_and_deletion_preserve_types_and_inputs() {
+        let atoms = vec![
+            Atom::from_spec(
+                AtomId::new(0),
+                AtomSpec::new(Element::C)
+                    .with_prop("removed", PropertyValue::String("atom-0".to_owned()))
+                    .unwrap(),
+            ),
+            Atom::from_spec(
+                AtomId::new(1),
+                AtomSpec::new(Element::N)
+                    .with_prop("first", PropertyValue::Int(7))
+                    .unwrap()
+                    .with_computed_prop("computed", PropertyValue::Double(-0.0))
+                    .unwrap()
+                    .with_prop("first", PropertyValue::Bool(true))
+                    .unwrap(),
+            ),
+            Atom::from_spec(
+                AtomId::new(2),
+                AtomSpec::new(Element::O)
+                    .with_prop("last", PropertyValue::Bool(false))
+                    .unwrap(),
+            ),
+        ];
+        let bonds = vec![
+            Bond::from_spec(
+                BondId::new(0),
+                BondSpec::new(AtomId::new(0), AtomId::new(1), BondOrder::Single)
+                    .with_prop("removed", PropertyValue::Int(1))
+                    .unwrap(),
+            ),
+            Bond::from_spec(
+                BondId::new(1),
+                BondSpec::new(AtomId::new(1), AtomId::new(2), BondOrder::Double)
+                    .with_prop("bond", PropertyValue::Double(2.5))
+                    .unwrap()
+                    .with_computed_prop("bond-computed", PropertyValue::Bool(true))
+                    .unwrap(),
+            ),
+        ];
+        let topology = TopologyBlock::try_from_parts(atoms, bonds, Vec::new(), Vec::new()).unwrap();
+        let query_atoms = topology
+            .atoms
+            .iter()
+            .map(|atom| {
+                QueryAtom::from_parts(
+                    atom.clone(),
+                    QueryNode::predicate(AtomQueryPredicate::AtomicNumber(atom.atomic_number())),
+                )
+            })
+            .collect::<Vec<_>>();
+        let query_bonds = topology
+            .bonds
+            .iter()
+            .map(|bond| {
+                QueryBond::from_parts(
+                    bond.clone(),
+                    QueryNode::predicate(BondQueryPredicate::Order(bond.order())),
+                )
+            })
+            .collect::<Vec<_>>();
+        let topology_before = topology.clone();
+        let query_atoms_before = query_atoms.clone();
+        let query_bonds_before = query_bonds.clone();
+
+        let state = QueryStateRef::try_for_topology(&query_atoms, &query_bonds, &topology).unwrap();
+        let mut edit = topology.begin_batch_edit().unwrap();
+        edit.remove_atom(AtomId::new(0)).unwrap();
+        let (edited, mapping) = edit.finish().unwrap();
+        let (mapped_atoms, mapped_bonds) = remap_query_rows(state, &edited, &mapping).unwrap();
+
+        assert_eq!(topology, topology_before);
+        assert_eq!(query_atoms, query_atoms_before);
+        assert_eq!(query_bonds, query_bonds_before);
+        assert_eq!(mapped_atoms.len(), 2);
+        assert_eq!(mapped_bonds.len(), 1);
+        assert_eq!(
+            mapped_atoms[0].prop("first"),
+            Some(&PropertyValue::Bool(true))
+        );
+        assert_eq!(
+            mapped_atoms[0].prop("computed"),
+            Some(&PropertyValue::Double(-0.0))
+        );
+        assert!(mapped_atoms[0].is_prop_computed("computed"));
+        assert_eq!(
+            mapped_atoms[0].properties.props.ordered_keys(),
+            &["first", "computed"]
+        );
+        assert_eq!(
+            mapped_atoms[1].prop("last"),
+            Some(&PropertyValue::Bool(false))
+        );
+        assert_eq!(
+            mapped_bonds[0].bond().prop("bond"),
+            Some(&PropertyValue::Double(2.5))
+        );
+        assert_eq!(
+            mapped_bonds[0].bond().prop("bond-computed"),
+            Some(&PropertyValue::Bool(true))
+        );
+        assert!(mapped_bonds[0].bond().is_prop_computed("bond-computed"));
+        assert!(
+            mapped_atoms
+                .iter()
+                .all(|atom| atom.prop("removed").is_none())
+        );
+        assert!(
+            mapped_bonds
+                .iter()
+                .all(|bond| bond.bond().prop("removed").is_none())
+        );
     }
 }

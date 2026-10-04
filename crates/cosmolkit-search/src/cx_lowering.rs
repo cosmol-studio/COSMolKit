@@ -18,6 +18,8 @@ const QUERY_SCAN_MAGIC_VALUE: u32 = 0xDEAD_BEEF;
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum CxQueryLoweringError {
+    #[error("CX property string conversion failed: {0}")]
+    Property(#[from] cosmolkit_core::PropertyStringError),
     #[error("CX atom index {index} is outside the query graph")]
     AtomIndex { index: usize },
     #[error("CX bond index {index} is outside the query graph")]
@@ -434,7 +436,8 @@ pub(crate) fn process_cx_smiles_labels(graph: &mut QueryGraph) -> Result<(), CxQ
         let label = graph
             .atom(atom_index)
             .and_then(|atom| atom.prop("atomLabel"))
-            .map(str::to_owned);
+            .map(cosmolkit_core::property_value_to_string)
+            .transpose()?;
 
         if let Some(label) = label {
             graph
@@ -1753,8 +1756,8 @@ mod tests {
         CxCountConstraint, CxLinkNode, CxRingBond, CxSGroupHierarchy, ParsedCxExtensions,
     };
     use cosmolkit_model::{
-        Atom, AtomSpec, BondId, BondSpec, QueryAtom, SGroupBondRole, SGroupCState, SGroupData,
-        SubstanceGroup, SubstanceGroupId, SubstanceGroupKind, query_substance_groups,
+        Atom, AtomSpec, BondId, BondSpec, PropertyValue, QueryAtom, SGroupBondRole, SGroupCState,
+        SGroupData, SubstanceGroup, SubstanceGroupId, SubstanceGroupKind, query_substance_groups,
         replace_query_substance_groups,
     };
     use cosmolkit_types::Element;
@@ -1853,9 +1856,19 @@ mod tests {
             assert_eq!(atom.formal_charge(), 0, "{label}");
             assert_eq!(atom.isotope(), None, "{label}");
             assert_eq!(atom.atom_map(), None, "{label}");
-            assert_eq!(atom.prop("atomLabel"), Some(label), "{label}");
+            assert_eq!(
+                atom.prop("atomLabel"),
+                Some(&cosmolkit_model::PropertyValue::String(label.to_owned())),
+                "{label}"
+            );
             assert_eq!(atom.prop("dummyLabel"), None, "{label}");
-            assert_eq!(atom.prop("sourceProperty"), Some("retained"), "{label}");
+            assert_eq!(
+                atom.prop("sourceProperty"),
+                Some(&cosmolkit_model::PropertyValue::String(
+                    "retained".to_owned()
+                )),
+                "{label}"
+            );
             assert_eq!(query_substance_groups(&query), &[substance_group]);
             assert_eq!(query.stereo_groups(), &[stereo_group]);
             assert_eq!(query.prop(CX_LABELS_PROCESSED_PROP), None);
@@ -1888,8 +1901,20 @@ mod tests {
             assert_eq!(atom.identity(), source_identity, "{label}");
             assert_eq!(atom.predicate(), &source_predicate, "{label}");
             assert_eq!(atom.formal_charge(), 1, "{label}");
-            assert_eq!(atom.prop("atomLabel"), expected_label, "{label}");
-            assert_eq!(atom.prop("dummyLabel"), expected_dummy, "{label}");
+            assert_eq!(
+                atom.prop("atomLabel"),
+                expected_label
+                    .map(cosmolkit_model::PropertyValue::from)
+                    .as_ref(),
+                "{label}"
+            );
+            assert_eq!(
+                atom.prop("dummyLabel"),
+                expected_dummy
+                    .map(cosmolkit_model::PropertyValue::from)
+                    .as_ref(),
+                "{label}"
+            );
         }
     }
 
@@ -1917,7 +1942,12 @@ mod tests {
         apply_cx_to_query_graph(&mut query, &parsed).expect("source property ordering");
 
         let atom = query.atom(0).expect("first atom");
-        assert_eq!(atom.prop("atomLabel"), Some("ordinary after atomProp"));
+        assert_eq!(
+            atom.prop("atomLabel"),
+            Some(&cosmolkit_model::PropertyValue::String(
+                "ordinary after atomProp".to_owned()
+            ))
+        );
         assert_eq!(atom.prop("dummyLabel"), None);
         assert_eq!(atom.predicate(), &original_predicate);
         assert_eq!(atom.identity(), QueryAtomIdentity::Element(Element::C));
@@ -1943,8 +1973,16 @@ mod tests {
         process_cx_smiles_labels(&mut query).expect("guarded repeated source pass");
 
         let atom = query.atom(0).expect("guarded atom");
-        assert_eq!(atom.prop("atomLabel"), Some("Pol_p"));
-        assert_eq!(atom.prop("dummyLabel"), Some("later property"));
+        assert_eq!(
+            atom.prop("atomLabel"),
+            Some(&cosmolkit_model::PropertyValue::String("Pol_p".to_owned()))
+        );
+        assert_eq!(
+            atom.prop("dummyLabel"),
+            Some(&cosmolkit_model::PropertyValue::String(
+                "later property".to_owned()
+            ))
+        );
         assert_eq!(atom.predicate(), &first_predicate);
         assert_eq!(query.prop(CX_LABELS_PROCESSED_PROP), Some("1"));
 
@@ -2036,7 +2074,10 @@ mod tests {
         );
         let mut query = graph();
         apply_cx_to_query_graph(&mut query, &parsed).unwrap();
-        assert_eq!(query.atom(0).unwrap().prop("atomLabel"), Some("left"));
+        assert_eq!(
+            query.atom(0).unwrap().prop("atomLabel"),
+            Some(&PropertyValue::String("left".to_owned()))
+        );
         assert!(matches!(
             query.atom(0).unwrap().predicate(),
             QueryNode::And(children) if children.len() == 2

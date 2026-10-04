@@ -6,10 +6,18 @@
 
 use cosmolkit_io::{MolBlockRecord, SdfReadError, read_mol_block_detached};
 use cosmolkit_model::{
-    AtomId, AtomQueryPredicate, BondId, BondQueryPredicate, CoordinateDimension, QueryNode,
-    SGroupBondRole, SGroupBracketStyle, SGroupConnection, StereoGroupKind, query_substance_groups,
+    AtomId, AtomQueryPredicate, BondId, BondQueryPredicate, CoordinateDimension, PropertyValue,
+    QueryNode, SGroupBondRole, SGroupBracketStyle, SGroupConnection, StereoGroupKind,
+    query_substance_groups,
 };
 use cosmolkit_types::{BondDirection, BondOrder, BondStereo};
+
+fn string_property(value: Option<&PropertyValue>) -> Option<&str> {
+    match value {
+        Some(PropertyValue::String(value)) => Some(value),
+        _ => None,
+    }
+}
 
 #[test]
 fn review_utf8_attchord_byte_truncation_is_a_parse_error() {
@@ -559,7 +567,7 @@ fn v3k_sg_data_special_fields_remain_typed_until_mol_postprocessing() {
     assert_eq!(data.field_name.as_deref(), Some("MRV_IMPLICIT_H"));
     assert_eq!(data.values, ["5"]);
     assert_eq!(topology.atoms[1].explicit_hydrogens(), 0);
-    assert_eq!(topology.atoms[1].prop("_ZBO_H"), None);
+    assert_eq!(string_property(topology.atoms[1].prop("_ZBO_H")), None);
 }
 
 #[test]
@@ -1895,8 +1903,8 @@ fn v3k_attachment_props_scalar_values_remain_distinct_and_share_one_atom() {
         panic!("concrete attachment carrier expected");
     };
     let atom = &topology.atoms[0];
-    assert_eq!(atom.prop("molAttachPoint"), Some("3"));
-    assert_eq!(atom.prop("molAttachOrder"), Some("4"));
+    assert_eq!(string_property(atom.prop("molAttachPoint")), Some("3"));
+    assert_eq!(string_property(atom.prop("molAttachOrder")), Some("4"));
     assert!(atom.template_attachment_order().is_none());
 
     let literal_zero = v3000_block(&["M  V30 1 C 0 0 0 0 ATTCHPT=0"], 1);
@@ -1905,7 +1913,10 @@ fn v3k_attachment_props_scalar_values_remain_distinct_and_share_one_atom() {
     else {
         panic!("concrete attachment carrier expected");
     };
-    assert_eq!(topology.atoms[0].prop("molAttachPoint"), None);
+    assert_eq!(
+        string_property(topology.atoms[0].prop("molAttachPoint")),
+        None
+    );
 
     let converted_zero = v3000_block(&["M  V30 1 C 0 0 0 0 ATTCHPT=00"], 1);
     let MolBlockRecord::Concrete { topology, .. } =
@@ -1913,7 +1924,10 @@ fn v3k_attachment_props_scalar_values_remain_distinct_and_share_one_atom() {
     else {
         panic!("concrete attachment carrier expected");
     };
-    assert_eq!(topology.atoms[0].prop("molAttachPoint"), Some("0"));
+    assert_eq!(
+        string_property(topology.atoms[0].prop("molAttachPoint")),
+        Some("0")
+    );
 }
 
 #[test]
@@ -1935,7 +1949,7 @@ fn v3k_attachment_props_template_order_uses_rows_not_nonsequential_bookmarks() {
         panic!("concrete attachment carrier expected");
     };
     let carrier = &topology.atoms[0];
-    assert_eq!(carrier.prop("molAttachPoint"), Some("2"));
+    assert_eq!(string_property(carrier.prop("molAttachPoint")), Some("2"));
     let entries = carrier
         .template_attachment_order()
         .expect("typed template attachment order")
@@ -1999,7 +2013,10 @@ fn v3k_attachment_props_duplicate_policies_are_source_shaped() {
     else {
         panic!("concrete attachment carrier expected");
     };
-    assert_eq!(topology.atoms[0].prop("molAttachPoint"), Some("1"));
+    assert_eq!(
+        string_property(topology.atoms[0].prop("molAttachPoint")),
+        Some("1")
+    );
 
     for value in ["(4 2 Al 2 Br)", "(4 2 Al 3 Al)"] {
         let block = v3000_block(
@@ -2032,7 +2049,7 @@ fn v3k_attachment_props_targets_and_query_carriers_are_typed_or_fail_structurall
         panic!("wildcard carrier must produce query topology");
     };
     let carrier = &record.query.atoms()[0];
-    assert_eq!(carrier.prop("molAttachPoint"), Some("5"));
+    assert_eq!(string_property(carrier.prop("molAttachPoint")), Some("5"));
     let entries = carrier
         .template_attachment_order()
         .expect("query carrier preserves typed attachment order")
@@ -2078,8 +2095,14 @@ fn v3k_atom_text_props_raw_empty_and_lowercase_names_follow_source() {
     else {
         panic!("concrete text-property carrier expected");
     };
-    assert_eq!(topology.atoms[0].prop("molAtomClass"), Some("alpha"));
-    assert_eq!(topology.atoms[0].prop("molAtomSeqName"), Some("gly"));
+    assert_eq!(
+        string_property(topology.atoms[0].prop("molAtomClass")),
+        Some("alpha")
+    );
+    assert_eq!(
+        string_property(topology.atoms[0].prop("molAtomSeqName")),
+        Some("gly")
+    );
 
     let empty = v3000_block(&["M  V30 1 C 0 0 0 0 CLASS= SEQNAME="], 1);
     let MolBlockRecord::Concrete { topology, .. } =
@@ -2087,8 +2110,14 @@ fn v3k_atom_text_props_raw_empty_and_lowercase_names_follow_source() {
     else {
         panic!("concrete text-property carrier expected");
     };
-    assert_eq!(topology.atoms[0].prop("molAtomClass"), Some(""));
-    assert_eq!(topology.atoms[0].prop("molAtomSeqName"), None);
+    assert_eq!(
+        string_property(topology.atoms[0].prop("molAtomClass")),
+        Some("")
+    );
+    assert_eq!(
+        string_property(topology.atoms[0].prop("molAtomSeqName")),
+        None
+    );
 }
 
 #[test]
@@ -2102,8 +2131,14 @@ fn v3k_atom_text_props_repeated_labels_replace_in_source_order() {
     else {
         panic!("concrete text-property carrier expected");
     };
-    assert_eq!(topology.atoms[0].prop("molAtomClass"), Some("C"));
-    assert_eq!(topology.atoms[0].prop("molAtomSeqName"), Some("D"));
+    assert_eq!(
+        string_property(topology.atoms[0].prop("molAtomClass")),
+        Some("C")
+    );
+    assert_eq!(
+        string_property(topology.atoms[0].prop("molAtomSeqName")),
+        Some("D")
+    );
 }
 
 #[test]
@@ -2117,8 +2152,14 @@ fn v3k_atom_text_props_quoted_and_parenthesized_tokens_are_not_normalized() {
     else {
         panic!("concrete text-property carrier expected");
     };
-    assert_eq!(topology.atoms[0].prop("molAtomClass"), None);
-    assert_eq!(topology.atoms[0].prop("molAtomSeqName"), None);
+    assert_eq!(
+        string_property(topology.atoms[0].prop("molAtomClass")),
+        None
+    );
+    assert_eq!(
+        string_property(topology.atoms[0].prop("molAtomSeqName")),
+        None
+    );
 
     let parenthesized = v3000_block(&["M  V30 1 C 0 0 0 0 CLASS=(A B)"], 1);
     let MolBlockRecord::Concrete { topology, .. } =
@@ -2126,7 +2167,10 @@ fn v3k_atom_text_props_quoted_and_parenthesized_tokens_are_not_normalized() {
     else {
         panic!("concrete text-property carrier expected");
     };
-    assert_eq!(topology.atoms[0].prop("molAtomClass"), Some("(A B)"));
+    assert_eq!(
+        string_property(topology.atoms[0].prop("molAtomClass")),
+        Some("(A B)")
+    );
 }
 
 #[test]
@@ -2137,9 +2181,12 @@ fn v3k_atom_text_props_unknown_labels_are_ignored_but_invalid_assignments_fail()
     else {
         panic!("concrete text-property carrier expected");
     };
-    assert_eq!(topology.atoms[0].prop("molAtomClass"), Some("A"));
-    assert_eq!(topology.atoms[0].prop("UNKNOWN"), None);
-    assert_eq!(topology.atoms[0].prop("OTHER"), None);
+    assert_eq!(
+        string_property(topology.atoms[0].prop("molAtomClass")),
+        Some("A")
+    );
+    assert_eq!(string_property(topology.atoms[0].prop("UNKNOWN")), None);
+    assert_eq!(string_property(topology.atoms[0].prop("OTHER")), None);
 
     for token in ["NOEQUALS", "CLASS=A=B"] {
         let block = v3000_block(&[&format!("M  V30 1 C 0 0 0 0 {token}")], 1);
@@ -3062,7 +3109,10 @@ fn v3k_bond_rows_nonsequential_bookmarks_resolve_to_contiguous_typed_rows() {
     assert_eq!(topology.bonds[0].begin().index(), 0);
     assert_eq!(topology.bonds[0].end().index(), 2);
     assert_eq!(topology.bonds[0].order(), BondOrder::Single);
-    assert_eq!(topology.bonds[0].prop("_MolFileBondType"), Some("1"));
+    assert_eq!(
+        string_property(topology.bonds[0].prop("_MolFileBondType")),
+        Some("1")
+    );
     assert_eq!(topology.bonds[1].id().index(), 1);
     assert_eq!(topology.bonds[1].begin().index(), 2);
     assert_eq!(topology.bonds[1].end().index(), 1);
@@ -3253,11 +3303,15 @@ fn v3k_bond_orders_complete_source_table_preserves_typed_state_and_classificatio
                 assert_eq!(bond.order(), order, "type {bond_type}");
                 assert_eq!(bond.is_aromatic(), aromatic, "type {bond_type}");
                 assert_eq!(
-                    bond.prop("_MolFileBondType"),
+                    string_property(bond.prop("_MolFileBondType")),
                     Some(type_text.as_str()),
                     "type {bond_type}"
                 );
-                assert_eq!(bond.prop("_MolFileBondQuery"), None, "type {bond_type}");
+                assert_eq!(
+                    string_property(bond.prop("_MolFileBondQuery")),
+                    None,
+                    "type {bond_type}"
+                );
             }
             (Ok(MolBlockRecord::Query(record)), Some(predicate)) => {
                 let bond = record.query.bond(0).expect("typed query bond");
@@ -3265,12 +3319,12 @@ fn v3k_bond_orders_complete_source_table_preserves_typed_state_and_classificatio
                 assert_eq!(bond.bond().is_aromatic(), aromatic, "type {bond_type}");
                 let type_text = bond_type.to_string();
                 assert_eq!(
-                    bond.bond().prop("_MolFileBondType"),
+                    string_property(bond.bond().prop("_MolFileBondType")),
                     Some(type_text.as_str()),
                     "type {bond_type}"
                 );
                 assert_eq!(
-                    bond.bond().prop("_MolFileBondQuery"),
+                    string_property(bond.bond().prop("_MolFileBondQuery")),
                     has_query_prop.then_some("1"),
                     "type {bond_type}"
                 );
@@ -3321,7 +3375,7 @@ fn v3k_bond_cfg_all_values_preserve_direction_stereo_and_stored_value() {
         assert_eq!(bond.stereo(), stereo, "type {bond_type}, CFG={cfg}");
         let cfg_text = cfg.to_string();
         assert_eq!(
-            bond.prop("_MolFileBondCfg"),
+            string_property(bond.prop("_MolFileBondCfg")),
             Some(cfg_text.as_str()),
             "type {bond_type}, CFG={cfg}"
         );
@@ -3347,7 +3401,10 @@ fn v3k_bond_cfg_all_values_preserve_direction_stereo_and_stored_value() {
         assert_eq!(bond.direction(), direction, "query CFG={cfg}");
         assert_eq!(bond.stereo(), BondStereo::None, "query CFG={cfg}");
         let cfg_text = cfg.to_string();
-        assert_eq!(bond.prop("_MolFileBondCfg"), Some(cfg_text.as_str()));
+        assert_eq!(
+            string_property(bond.prop("_MolFileBondCfg")),
+            Some(cfg_text.as_str())
+        );
     }
 }
 
@@ -3378,7 +3435,7 @@ fn v3k_bond_cfg_raw_unsigned_prefix_and_boundaries_follow_source() {
         };
         let bond = &topology.bonds[0];
         assert_eq!(
-            bond.prop("_MolFileBondCfg"),
+            string_property(bond.prop("_MolFileBondCfg")),
             Some(expected),
             "CFG={value:?}"
         );
@@ -3795,10 +3852,16 @@ fn v3k_bond_props_rxctr_and_raw_values_follow_source_contracts() {
         panic!("ordinary bond properties must remain concrete");
     };
     let bond = &topology.bonds[0];
-    assert_eq!(bond.prop("molReactStatus"), Some("-7"));
-    assert_eq!(bond.prop("molStereoCare"), Some("raw"));
-    assert_eq!(bond.prop("_MolFileBondEndPts"), Some("(2 20 10)"));
-    assert_eq!(bond.prop("_MolFileBondAttach"), Some("ANY"));
+    assert_eq!(string_property(bond.prop("molReactStatus")), Some("-7"));
+    assert_eq!(string_property(bond.prop("molStereoCare")), Some("raw"));
+    assert_eq!(
+        string_property(bond.prop("_MolFileBondEndPts")),
+        Some("(2 20 10)")
+    );
+    assert_eq!(
+        string_property(bond.prop("_MolFileBondAttach")),
+        Some("ANY")
+    );
 
     for (value, expected) in [("7", "7"), ("+7", "0"), ("", "0"), ("2147483648", "0")] {
         let row = format!("M  V30 1 1 10 20 RXCTR={value}");
@@ -3813,7 +3876,10 @@ fn v3k_bond_props_rxctr_and_raw_values_follow_source_contracts() {
         else {
             panic!("RXCTR must not create query state");
         };
-        assert_eq!(topology.bonds[0].prop("molReactStatus"), Some(expected));
+        assert_eq!(
+            string_property(topology.bonds[0].prop("molReactStatus")),
+            Some(expected)
+        );
     }
 
     let invalid = v3000_with_outer_and_blocks(
@@ -3856,7 +3922,7 @@ fn v3k_bond_props_endpoint_stereo_care_requires_equal_pair_without_override() {
             panic!("stereo-care properties must not create query state");
         };
         assert_eq!(
-            topology.bonds[0].prop("molStereoCare"),
+            string_property(topology.bonds[0].prop("molStereoCare")),
             expected,
             "atoms=({atom_one:?}, {atom_two:?}), bond={bond:?}"
         );
@@ -4577,9 +4643,15 @@ fn v3k_symbols_elements_dummy_labels_for_pol_and_mod() {
         panic!("atom record must be concrete");
     };
     assert_eq!(topology.atoms[0].element().atomic_number(), 0);
-    assert_eq!(topology.atoms[0].prop("dummyLabel"), Some("Pol"));
+    assert_eq!(
+        string_property(topology.atoms[0].prop("dummyLabel")),
+        Some("Pol")
+    );
     assert_eq!(topology.atoms[1].element().atomic_number(), 0);
-    assert_eq!(topology.atoms[1].prop("dummyLabel"), Some("Mod"));
+    assert_eq!(
+        string_property(topology.atoms[1].prop("dummyLabel")),
+        Some("Mod")
+    );
 }
 
 #[test]
@@ -4610,9 +4682,15 @@ fn v3k_symbols_elements_unknown_symbol_strictness() {
         panic!("atom record must be concrete");
     };
     assert_eq!(topology.atoms[0].element().atomic_number(), 0);
-    assert_eq!(topology.atoms[0].prop("dummyLabel"), Some("Zz"));
+    assert_eq!(
+        string_property(topology.atoms[0].prop("dummyLabel")),
+        Some("Zz")
+    );
     assert_eq!(topology.atoms[1].element().atomic_number(), 0);
-    assert_eq!(topology.atoms[1].prop("dummyLabel"), Some("cl"));
+    assert_eq!(
+        string_property(topology.atoms[1].prop("dummyLabel")),
+        Some("cl")
+    );
 }
 
 #[test]
@@ -4762,7 +4840,11 @@ fn v3k_symbols_queries_r_groups_remain_concrete_with_source_metadata() {
         topology.atoms.iter().zip(symbols).zip(expected_isotopes)
     {
         assert_eq!(atom.atomic_number(), 0, "{symbol}");
-        assert_eq!(atom.prop("dummyLabel"), Some(symbol), "{symbol}");
+        assert_eq!(
+            string_property(atom.prop("dummyLabel")),
+            Some(symbol),
+            "{symbol}"
+        );
         assert_eq!(atom.isotope(), expected_isotope, "{symbol}");
         assert!(!atom.no_implicit(), "{symbol}");
     }
@@ -4858,7 +4940,11 @@ fn v3k_symbols_queries_generic_labels_preserve_the_complete_source_key_set() {
     };
     for (index, label) in labels.iter().enumerate() {
         let atom = record.query.atom(index).expect("generic query atom");
-        assert_eq!(atom.prop("atomLabel"), Some(*label), "{label}");
+        assert_eq!(
+            string_property(atom.prop("atomLabel")),
+            Some(*label),
+            "{label}"
+        );
         assert_eq!(atom.atomic_number(), 0, "{label}");
         assert!(!atom.no_implicit(), "{label}");
         let debug = format!("{:?}", atom.predicate());
@@ -5141,6 +5227,8 @@ fn v3k_mass_integer_fractional_and_integer_conversion_edges_are_source_shaped() 
     // and only falls back to toDouble/floor after the integer character screen
     // throws. Thus leading plus and signed-int overflow retain toInt's zero,
     // while a decimal point selects the floating fallback.
+    // Concrete setIsotope(0) uses the source's unspecified-isotope sentinel;
+    // the detached model projects that value to None, unlike query Isotope(0).
     let block = v3000_block(
         &[
             "M  V30 1 C 0 0 0 0 MASS=13",
@@ -5164,7 +5252,7 @@ fn v3k_mass_integer_fractional_and_integer_conversion_edges_are_source_shaped() 
         .collect::<Vec<_>>();
     assert_eq!(
         isotopes,
-        [Some(13), Some(13), Some(0), Some(0), Some(14), Some(1)]
+        [Some(13), Some(13), None, None, Some(14), Some(1)]
     );
 }
 
@@ -5290,7 +5378,7 @@ fn v3k_atom_cfg_all_source_values_store_only_typed_parity_metadata() {
     };
     let atom = record.query.atom(0).expect("query atom");
     assert_eq!(atom.mol_parity(), Some(2));
-    assert_eq!(atom.prop("molParity"), Some("2"));
+    assert_eq!(string_property(atom.prop("molParity")), Some("2"));
     assert!(matches!(
         atom.predicate(),
         QueryNode::Predicate(AtomQueryPredicate::Any)
@@ -5703,7 +5791,10 @@ fn v3k_rbcnt_literal_zero_is_the_only_source_noop() {
         panic!("literal RBCNT=0 must leave a concrete atom concrete");
     };
     assert_eq!(topology.atoms[0].atomic_number(), 6);
-    assert_eq!(topology.atoms[0].prop("molRingBondCount"), None);
+    assert_eq!(
+        string_property(topology.atoms[0].prop("molRingBondCount")),
+        None
+    );
 }
 
 #[test]
@@ -5728,7 +5819,7 @@ fn v3k_rbcnt_source_values_build_equality_queries_and_retain_metadata() {
             "RBCNT={value}"
         );
         assert_eq!(
-            record.query.atoms()[0].prop("molRingBondCount"),
+            string_property(record.query.atoms()[0].prop("molRingBondCount")),
             Some(match value {
                 "00" => "0",
                 "5" => "5",
@@ -5755,7 +5846,10 @@ fn v3k_rbcnt_source_values_build_equality_queries_and_retain_metadata() {
             QueryNode::predicate(AtomQueryPredicate::RingBondCount(0)),
         ])
     );
-    assert_eq!(record.query.atoms()[0].prop("molRingBondCount"), Some("0"));
+    assert_eq!(
+        string_property(record.query.atoms()[0].prop("molRingBondCount")),
+        Some("0")
+    );
 }
 
 #[test]
@@ -5774,7 +5868,10 @@ fn v3k_rbcnt_minus_two_sets_deferred_scan_state_and_unsigned_sentinel() {
             QueryNode::predicate(AtomQueryPredicate::RingBondCount(0xDEAD_BEEF_u32 as i32)),
         ])
     );
-    assert_eq!(record.query.atoms()[0].prop("molRingBondCount"), Some("-2"));
+    assert_eq!(
+        string_property(record.query.atoms()[0].prop("molRingBondCount")),
+        Some("-2")
+    );
     assert_eq!(record.properties.prop("_NeedsQueryScan"), Some("1"));
     assert_eq!(record.query.prop("_NeedsQueryScan"), Some("1"));
 }
@@ -5896,7 +5993,7 @@ fn v3k_atom_int_props_literal_zero_skips_each_distinct_property() {
         };
         let atom = &topology.atoms[0];
         if let Some(key) = key {
-            assert_eq!(atom.prop(key), None, "{label}=0");
+            assert_eq!(string_property(atom.prop(key)), None, "{label}=0");
         } else {
             assert_eq!(atom.mol_inversion_flag(), None, "{label}=0");
         }
@@ -5936,7 +6033,7 @@ fn v3k_atom_int_props_share_source_conversion_without_aliasing_keys() {
             if let Some(key) = key {
                 let expected_text = expected.to_string();
                 assert_eq!(
-                    atom.prop(key),
+                    string_property(atom.prop(key)),
                     Some(expected_text.as_str()),
                     "{label}={text}"
                 );
@@ -5949,7 +6046,7 @@ fn v3k_atom_int_props_share_source_conversion_without_aliasing_keys() {
                 ] {
                     if other_key != key {
                         assert_eq!(
-                            atom.prop(other_key),
+                            string_property(atom.prop(other_key)),
                             None,
                             "{label} must not set {other_key}"
                         );
@@ -5966,7 +6063,7 @@ fn v3k_atom_int_props_share_source_conversion_without_aliasing_keys() {
                     "molAtomSeqId",
                 ] {
                     assert_eq!(
-                        atom.prop(other_key),
+                        string_property(atom.prop(other_key)),
                         None,
                         "INVRET must not set {other_key}"
                     );
@@ -6001,7 +6098,11 @@ fn v3k_atom_int_props_repeated_values_replace_and_invalid_text_is_structured() {
             panic!("repeated {label} must remain concrete");
         };
         if let Some(key) = key {
-            assert_eq!(topology.atoms[0].prop(key), Some("-2"), "{label}");
+            assert_eq!(
+                string_property(topology.atoms[0].prop(key)),
+                Some("-2"),
+                "{label}"
+            );
         } else {
             assert_eq!(topology.atoms[0].mol_inversion_flag(), Some(-2));
         }
@@ -6032,8 +6133,8 @@ fn v3k_rgroups_zero_count_is_an_exact_noop_for_concrete_and_query_atoms() {
     let atom = &topology.atoms[0];
     assert_eq!(atom.atomic_number(), 6);
     assert_eq!(atom.isotope(), None);
-    assert_eq!(atom.prop("_MolFileRLabel"), None);
-    assert_eq!(atom.prop("dummyLabel"), None);
+    assert_eq!(string_property(atom.prop("_MolFileRLabel")), None);
+    assert_eq!(string_property(atom.prop("dummyLabel")), None);
 
     let wildcard = v3000_block(&["M  V30 1 * 0 0 0 0 RGROUPS=(0)"], 1);
     let MolBlockRecord::Query(record) =
@@ -6064,9 +6165,17 @@ fn v3k_rgroups_one_and_multiple_labels_apply_source_order_with_last_label_winnin
         let atom = &record.query.atoms()[0];
         assert_eq!(atom.atomic_number(), 6, "{value}");
         assert_eq!(atom.isotope(), Some(isotope), "{value}");
-        assert_eq!(atom.prop("_MolFileRLabel"), Some(label), "{value}");
+        assert_eq!(
+            string_property(atom.prop("_MolFileRLabel")),
+            Some(label),
+            "{value}"
+        );
         let dummy = format!("R{label}");
-        assert_eq!(atom.prop("dummyLabel"), Some(dummy.as_str()), "{value}");
+        assert_eq!(
+            string_property(atom.prop("dummyLabel")),
+            Some(dummy.as_str()),
+            "{value}"
+        );
         assert_eq!(
             atom.predicate(),
             &QueryNode::predicate(AtomQueryPredicate::Any),
@@ -6087,8 +6196,8 @@ fn v3k_rgroups_uses_unsigned_lexical_cast_sign_semantics_and_checked_isotope_wid
     };
     let atom = &record.query.atoms()[0];
     assert_eq!(atom.isotope(), Some(1));
-    assert_eq!(atom.prop("_MolFileRLabel"), Some("1"));
-    assert_eq!(atom.prop("dummyLabel"), Some("R1"));
+    assert_eq!(string_property(atom.prop("_MolFileRLabel")), Some("1"));
+    assert_eq!(string_property(atom.prop("dummyLabel")), Some("R1"));
 
     // RDKit narrows larger unsigned labels into Atom::d_isotope (uint16_t).
     // The detached model intentionally keeps a checked boundary instead of
@@ -6129,7 +6238,7 @@ fn v3k_rgroups_replaces_existing_query_state_and_later_properties_expand_from_nu
     };
     let atom = &record.query.atoms()[0];
     assert_eq!(atom.isotope(), Some(7));
-    assert_eq!(atom.prop("dummyLabel"), Some("R7"));
+    assert_eq!(string_property(atom.prop("dummyLabel")), Some("R7"));
     assert_eq!(
         atom.predicate(),
         &QueryNode::predicate(AtomQueryPredicate::Any)
@@ -6271,7 +6380,10 @@ fn v3k_symbols_elements_multibyte_symbol_does_not_panic() {
         panic!("atom record must be concrete");
     };
     assert_eq!(topology.atoms[0].element().atomic_number(), 0);
-    assert_eq!(topology.atoms[0].prop("dummyLabel"), Some("\u{1F600}"));
+    assert_eq!(
+        string_property(topology.atoms[0].prop("dummyLabel")),
+        Some("\u{1F600}")
+    );
 }
 
 #[test]

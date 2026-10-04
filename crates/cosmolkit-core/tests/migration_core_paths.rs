@@ -7,7 +7,7 @@ use cosmolkit_core::{
 };
 use cosmolkit_model::{
     AdjacencyList, Atom, AtomId, AtomQueryPredicate, AtomSpec, Bond, BondId, BondQueryPredicate,
-    BondSpec, BondStereo, QueryNode, StereoGroup, StereoGroupKind, SubstanceGroup,
+    BondSpec, BondStereo, PropertyValue, QueryNode, StereoGroup, StereoGroupKind, SubstanceGroup,
     SubstanceGroupId, SubstanceGroupKind, TopologyBlock, TopologyValidationError,
 };
 use cosmolkit_types::{BondOrder, Element};
@@ -519,9 +519,15 @@ fn detached_subset_coalesces_ids_remaps_state_and_clears_computed_props() {
     };
     assert_eq!(subset.atoms.len(), 2);
     assert_eq!(subset.bonds.len(), 1);
-    assert_eq!(subset.atoms[0].prop("kept"), Some("atom"));
+    assert_eq!(
+        subset.atoms[0].prop("kept"),
+        Some(&PropertyValue::String("atom".to_owned()))
+    );
     assert_eq!(subset.atoms[0].prop("computed"), None);
-    assert_eq!(subset.bonds[0].prop("kept"), Some("bond"));
+    assert_eq!(
+        subset.bonds[0].prop("kept"),
+        Some(&PropertyValue::String("bond".to_owned()))
+    );
     assert_eq!(subset.bonds[0].prop("computed"), None);
     assert_eq!(subset.bonds[0].stereo(), BondStereo::None);
     assert_eq!(subset.bonds[0].stereo_atoms(), None);

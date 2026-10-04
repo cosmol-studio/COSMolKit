@@ -5,12 +5,11 @@ use std::error::Error as _;
 
 use cosmolkit::{
     AromaticityError, AromaticityModel, AromaticityParams, Atom, AtomId, AtomSpec,
-    BINDING_CONTRACT, BindingExposure, BindingItem, BindingOwner, BindingParity, BindingSupport,
-    BlockSet, Bond, BondId, BondOrder, BondSpec, Conformer2D, CoordinateBlock, Element, Molecule,
-    MoleculeOpKind, MoleculeOpOutput, MoleculeProperties, OperationDomain, OperationError,
-    ParityPolicy, StateModel, StereoGroup, StereoGroupKind, SupportStatus, TopologyBlock,
-    TopologyEditKind, feature_spec, operation_invariant, operation_parity, operation_spec,
-    support_matrix,
+    BINDING_CONTRACT, BindingItem, BindingOwner, BlockSet, Bond, BondId, BondOrder, BondSpec,
+    Conformer2D, CoordinateBlock, Element, FunctionStatus, Molecule, MoleculeOpKind,
+    MoleculeOpOutput, MoleculeProperties, OperationDomain, OperationError, ParityPolicy,
+    StateModel, StereoGroup, StereoGroupKind, TopologyBlock, TopologyEditKind, feature_spec,
+    operation_invariant, operation_parity, operation_spec, support_matrix,
 };
 
 fn carbon_cycle(size: usize) -> TopologyBlock {
@@ -108,7 +107,7 @@ fn binding_contract_exposes_exactly_the_frozen_seven_entries() {
     ];
     let rows = BINDING_CONTRACT
         .iter()
-        .filter(|row| row.feature == "aromaticity")
+        .filter(|row| row.feature == "cap-aromaticity")
         .collect::<Vec<_>>();
     assert_eq!(
         rows.iter().map(|row| row.semantic_id).collect::<Vec<_>>(),
@@ -117,16 +116,12 @@ fn binding_contract_exposes_exactly_the_frozen_seven_entries() {
     for row in &rows[..3] {
         assert_eq!(row.item, BindingItem::Type);
         assert_eq!(row.owner, BindingOwner::Type);
-        assert_eq!(row.exposure, BindingExposure::Public);
-        assert_eq!(row.support, BindingSupport::SupportedWithRdkitParity);
-        assert_eq!(row.parity, BindingParity::RequiredNow);
+        assert_eq!(row.status, FunctionStatus::Experimental);
     }
     for row in &rows[3..] {
         assert_eq!(row.item, BindingItem::Callable);
         assert_eq!(row.owner, BindingOwner::Molecule);
-        assert_eq!(row.exposure, BindingExposure::Public);
-        assert_eq!(row.support, BindingSupport::SupportedWithRdkitParity);
-        assert_eq!(row.parity, BindingParity::RequiredNow);
+        assert_eq!(row.status, FunctionStatus::Experimental);
     }
     assert_eq!(
         rows[3].callable.unwrap().state_model,
@@ -142,9 +137,8 @@ fn binding_contract_exposes_exactly_the_frozen_seven_entries() {
 
 #[test]
 fn generated_registry_and_all_four_matrices_share_one_exact_operation() {
-    let feature = feature_spec("aromaticity").unwrap();
-    assert_eq!(feature.status, SupportStatus::SupportedWithRdkitParity);
-    assert!(feature.rdkit_parity_sensitive);
+    let feature = feature_spec("cap-aromaticity").unwrap();
+    assert_eq!(feature.name, "cap-aromaticity");
 
     let spec = operation_spec("with_assigned_aromaticity_with_params").unwrap();
     assert_eq!(spec.domain, OperationDomain::Topology);
@@ -161,17 +155,16 @@ fn generated_registry_and_all_four_matrices_share_one_exact_operation() {
     assert_eq!(spec.may_mutate, spec.access.write());
     assert_eq!(spec.auto_remap, BlockSet::NONE);
     assert_eq!(format!("{:?}", spec.requires_mapping), "None");
-    assert_eq!(spec.derived_effects.recompute.bits(), 1 << 3);
-    assert_eq!(
-        spec.derived_effects.preserve.bits(),
-        (1 << 0) | (1 << 1) | (1 << 5)
-    );
+    // L6: ordinary rings moved preserve -> recompute (initialized reuse vs
+    // absent-only Symm acquisition); every other effect is unchanged.
+    assert_eq!(spec.derived_effects.recompute.bits(), (1 << 3) | (1 << 0));
+    assert_eq!(spec.derived_effects.preserve.bits(), (1 << 1) | (1 << 5));
     assert_eq!(
         spec.derived_effects.invalidate.bits(),
         (1 << 2) | (1 << 4) | (1 << 6) | (1 << 7)
     );
     assert_eq!(format!("{:?}", spec.cip_state), "ClearComputed");
-    assert_eq!(spec.support, SupportStatus::SupportedWithRdkitParity);
+    assert_eq!(spec.status, FunctionStatus::Experimental);
     assert_eq!(spec.parity, ParityPolicy::RequiredNow);
     assert_eq!(
         operation_invariant(spec.method).unwrap().profile,
@@ -183,7 +176,7 @@ fn generated_registry_and_all_four_matrices_share_one_exact_operation() {
     );
     let support = support_matrix()
         .iter()
-        .find(|row| row.feature.name == "aromaticity")
+        .find(|row| row.feature.name == "cap-aromaticity")
         .unwrap();
     assert!(std::ptr::eq(support.operation.unwrap(), spec));
 }
@@ -220,8 +213,14 @@ fn value_operation_preserves_identity_coordinates_stereo_and_ordinary_props() {
     assert_eq!(source.coordinates_2d(), output.coordinates_2d());
     assert_eq!(source.conformers_3d(), output.conformers_3d());
     assert_eq!(output.property("source"), Some("preserved"));
-    assert_eq!(output.atoms()[0].prop("atom-note"), Some("atom-0"));
-    assert_eq!(output.bonds()[0].prop("bond-note"), Some("bond-0"));
+    assert_eq!(
+        output.atoms()[0].prop("atom-note"),
+        Some(&cosmolkit_model::PropertyValue::from("atom-0"))
+    );
+    assert_eq!(
+        output.bonds()[0].prop("bond-note"),
+        Some(&cosmolkit_model::PropertyValue::from("bond-0"))
+    );
     assert_eq!(output.property("_CIPComputed"), None);
     assert_eq!(output.atoms()[0].prop("_CIPCode"), None);
     assert_eq!(output.bonds()[0].prop("_CIPCode"), None);

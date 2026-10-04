@@ -2,7 +2,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::{AtomId, BondId};
+use crate::{AtomId, BondId, PropertyValue};
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum MoleculePropertyError {
@@ -29,7 +29,7 @@ pub enum SdfPropertyListTarget {
 pub struct SdfPropertyList {
     target: SdfPropertyListTarget,
     name: String,
-    values: Vec<Option<String>>,
+    values: Vec<Option<PropertyValue>>,
 }
 
 impl SdfPropertyList {
@@ -37,7 +37,7 @@ impl SdfPropertyList {
     pub fn new(
         target: SdfPropertyListTarget,
         name: impl Into<String>,
-        values: Vec<Option<String>>,
+        values: Vec<Option<PropertyValue>>,
     ) -> Self {
         Self {
             target,
@@ -57,7 +57,7 @@ impl SdfPropertyList {
     }
 
     #[must_use]
-    pub fn values(&self) -> &[Option<String>] {
+    pub fn values(&self) -> &[Option<PropertyValue>] {
         &self.values
     }
 }

@@ -11,9 +11,9 @@ use cosmolkit_core::{
 };
 use cosmolkit_model::{
     AdjacencyList, AtomId, AtomQueryPredicate, BondQueryPredicate, Conformer3D, CoordinateBlock,
-    QueryAtom, QueryAtomConversionError, QueryBond, QueryGraph, QueryNode, QueryStateRef,
-    RecursiveStructureQuery, SubstanceGroup, SubstanceGroupId, TopologyBlock, TopologyMapping,
-    query_substance_groups, remap_query_rows, replace_query_substance_groups,
+    PropertyValue, QueryAtom, QueryAtomConversionError, QueryBond, QueryGraph, QueryNode,
+    QueryStateRef, RecursiveStructureQuery, SubstanceGroup, SubstanceGroupId, TopologyBlock,
+    TopologyMapping, query_substance_groups, remap_query_rows, replace_query_substance_groups,
 };
 use cosmolkit_types::BondOrder;
 
@@ -57,6 +57,21 @@ pub enum MolPostError {
     QueryAtomConversion(#[from] QueryAtomConversionError),
     #[error("Molfile postprocessing failed: {0}")]
     Processing(String),
+}
+
+fn parse_int_property(value: &PropertyValue) -> Result<i32, ()> {
+    match value {
+        PropertyValue::Int(value) => Ok(*value),
+        PropertyValue::String(value) => parse_rdkit_int(value),
+        PropertyValue::Double(_) | PropertyValue::Bool(_) => Err(()),
+    }
+}
+
+fn property_diagnostic(value: &PropertyValue) -> String {
+    match value {
+        PropertyValue::String(value) => value.clone(),
+        _ => format!("<{:?}>", value.kind()),
+    }
 }
 
 fn data_values(group: &SubstanceGroup) -> &[String] {
@@ -287,7 +302,7 @@ fn process_atom_properties(
     for index in 0..topology.atoms.len() {
         let substitution = topology.atoms[index]
             .prop("molSubstCount")
-            .and_then(|value| parse_rdkit_int(value).ok())
+            .and_then(|value| parse_int_property(value).ok())
             .unwrap_or(0);
         if substitution != 0 {
             let atoms = query_atoms
@@ -328,7 +343,7 @@ fn process_atom_properties(
         }
         let value = topology.atoms[index]
             .prop("molTotValence")
-            .and_then(|value| parse_rdkit_int(value).ok())
+            .and_then(|value| parse_int_property(value).ok())
             .unwrap_or(0);
         if value != 0 && topology.atoms[index].prop("_ZBO_H").is_none() {
             let explicit =
@@ -705,7 +720,7 @@ fn record_requires_query(record: &MolBlockRecord) -> bool {
         MolBlockRecord::Concrete { topology, .. } => {
             topology.atoms.iter().any(|atom| {
                 atom.prop("molSubstCount")
-                    .and_then(|value| parse_rdkit_int(value).ok())
+                    .and_then(|value| parse_int_property(value).ok())
                     .is_some_and(|value| value != 0)
             }) || topology.substance_groups.iter().any(|group| {
                 group.data().is_some_and(|data| {
@@ -799,9 +814,9 @@ fn attachment_values(topology: &TopologyBlock) -> Result<Vec<Option<i32>>, MolPo
         .map(|atom| {
             atom.prop("molAttachPoint")
                 .map(|value| {
-                    parse_rdkit_int(value).map_err(|()| MolPostError::AttachmentValue {
+                    parse_int_property(value).map_err(|()| MolPostError::AttachmentValue {
                         atom: atom.id(),
-                        value: value.to_owned(),
+                        value: property_diagnostic(value),
                     })
                 })
                 .transpose()

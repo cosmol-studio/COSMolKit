@@ -247,7 +247,7 @@ pub fn total_hydrogen_count(
 /// Compose hydrogen counts after the caller has validated topology and
 /// assignment dimensions. This is the unique O(degree) implementation used by
 /// chemistry phases that would otherwise repeat a whole-topology scan.
-pub(crate) fn total_hydrogen_count_from_validated(
+pub fn total_hydrogen_count_from_validated(
     topology: &TopologyBlock,
     valence: &ValenceAssignment,
     atom_id: AtomId,

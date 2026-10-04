@@ -1,4 +1,4 @@
-//! Source-address values used to relate BioStructure records.
+//! Source-address values used to relate BioStructureData records.
 
 use crate::{PdbChainId, ResidueName};
 
@@ -125,7 +125,7 @@ impl PartialEq for ResidueAddress {
 
 impl Eq for ResidueAddress {}
 
-/// A logical atom address, distinct from the fixed four-column [`crate::AtomName`].
+/// A logical atom address, distinct from the bounded canonical [`crate::AtomName`].
 #[derive(Debug, Clone)]
 pub struct AtomAddress {
     chain_name: PdbChainId,

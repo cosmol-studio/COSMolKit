@@ -4,11 +4,15 @@ use cosmolkit_model::{
     Atom, AtomId, AtomPdbResidueInfo, AtomQueryPredicate, AtomRangeBounds, AtomRangeDataFunction,
     AtomRangeQuery, AtomSpec, Bond, BondDirection, BondId, BondOrder, BondQueryPredicate, BondSpec,
     BondStereo, ChiralTag, Conformer2D, Conformer3D, CoordinateValidationError, Element,
-    Hybridization, QueryAtom, QueryAtomConversionError, QueryAtomIdentity, QueryBond, QueryGraph,
-    QueryGraphError, QueryNode, QueryStateError, QueryStateRef, RecursiveStructureQuery,
-    StereoGroup, StereoGroupKind, TemplateAttachment, TemplateAttachmentOrder, TopologyBlock,
-    remap_query_rows,
+    Hybridization, PropertyValue, QueryAtom, QueryAtomConversionError, QueryAtomIdentity,
+    QueryBond, QueryGraph, QueryGraphError, QueryNode, QueryStateError, QueryStateRef,
+    RecursiveStructureQuery, StereoGroup, StereoGroupKind, TemplateAttachment,
+    TemplateAttachmentOrder, TopologyBlock, remap_query_rows,
 };
+
+fn string_atom_prop(value: Option<&PropertyValue>) -> Option<&str> {
+    value.and_then(|value| value.as_string().ok())
+}
 
 fn carbon(id: usize) -> QueryAtom {
     QueryAtom::new(AtomId::new(id), AtomSpec::new(Element::C))
@@ -549,7 +553,7 @@ fn query_atom_and_bond_cover_default_parts_access_and_mutation() {
     assert_eq!(atom.id(), AtomId::new(0));
     assert_eq!(atom.index(), 0);
     assert_eq!(atom.atom_map(), Some(8));
-    assert_eq!(atom.prop("a"), Some("b"));
+    assert_eq!(string_atom_prop(atom.prop("a")), Some("b"));
     assert_eq!(
         atom.predicate(),
         &QueryNode::predicate(AtomQueryPredicate::AtomicNumber(7))
@@ -1123,8 +1127,8 @@ fn query_atom_identity_change_clone_mapping_and_common_mutation_preserve_carrier
     assert!(raw.no_implicit());
     assert_eq!(raw.radical_electrons(), 1);
     assert_eq!(raw.hybridization(), Hybridization::Sp2);
-    assert_eq!(raw.prop("user"), Some("kept"));
-    assert_eq!(raw.prop("computed"), Some("kept"));
+    assert_eq!(string_atom_prop(raw.prop("user")), Some("kept"));
+    assert_eq!(string_atom_prop(raw.prop("computed")), Some("kept"));
     assert!(raw.is_prop_computed("computed"));
     assert_eq!(
         raw.computed_prop_names()
@@ -1163,7 +1167,7 @@ fn query_atom_identity_change_clone_mapping_and_common_mutation_preserve_carrier
     assert_eq!(raw.atomic_number(), 119);
     assert_eq!(raw.isotope(), Some(14));
     assert_eq!(raw.formal_charge(), -2);
-    assert_eq!(raw.prop("added"), Some("value"));
+    assert_eq!(string_atom_prop(raw.prop("added")), Some("value"));
     assert_eq!(raw.predicate(), &predicate);
     assert!(!raw.predicate_is_carrier_derived());
 

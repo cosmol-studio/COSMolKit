@@ -6,8 +6,9 @@ use cosmolkit_core::{
 };
 use cosmolkit_model::{
     AdjacencyList, Atom, AtomId, AtomQueryPredicate, AtomSpec, Bond, BondId, BondQueryPredicate,
-    BondSpec, QueryAtom, QueryBond, QueryNode, QueryStateRef, StereoGroup, StereoGroupKind,
-    SubstanceGroup, SubstanceGroupId, SubstanceGroupKind, TopologyBlock, TopologyValidationError,
+    BondSpec, PropertyValue, QueryAtom, QueryBond, QueryNode, QueryStateRef, StereoGroup,
+    StereoGroupKind, SubstanceGroup, SubstanceGroupId, SubstanceGroupKind, TopologyBlock,
+    TopologyValidationError,
 };
 use cosmolkit_types::{BondOrder, Element};
 
@@ -251,7 +252,10 @@ fn explicit_and_implicit_metadata_props_and_no_implicit_are_exact() {
     let parent = &result.topology.atoms[0];
     assert!(parent.no_implicit());
     assert_eq!(parent.tracked_isotopic_hydrogens(), &[2, 3]);
-    assert_eq!(parent.prop("ordinary"), Some("kept"));
+    assert_eq!(
+        parent.prop("ordinary"),
+        Some(&PropertyValue::String("kept".to_owned()))
+    );
     assert_eq!(parent.prop("computed"), None);
 }
 
@@ -316,11 +320,11 @@ fn old_properties_sgroup_and_stereo_group_rows_are_preserved() {
     assert_eq!(result.topology.stereo_groups, expected_stereo);
     assert_eq!(
         result.topology.atoms[0].prop("atom-key"),
-        Some("atom-value")
+        Some(&PropertyValue::String("atom-value".to_owned()))
     );
     assert_eq!(
         result.topology.bonds[0].prop("bond-key"),
-        Some("bond-value")
+        Some(&PropertyValue::String("bond-value".to_owned()))
     );
 }
 

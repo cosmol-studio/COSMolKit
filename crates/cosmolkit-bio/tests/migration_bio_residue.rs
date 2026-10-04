@@ -4,6 +4,36 @@ use cosmolkit_bio::{
     UNKNOWN_TABULATED_RESIDUE_INDEX, expand_one_letter, expand_one_letter_sequence,
     find_residue_info, find_residue_info_index, residue_code, residue_info, residue_info_checked,
 };
+use std::collections::HashSet;
+
+#[test]
+fn atom_name_exact_source_bytes_and_length_are_value_identity() {
+    let cases: [&[u8]; 9] = [
+        b"", b"C", b"CA", b"CA ", b" CA", b" CA ", b"A B", b"\0A", b"ABCD",
+    ];
+    let values: Vec<_> = cases
+        .iter()
+        .map(|bytes| AtomName::from_ascii(bytes).expect("zero-to-four ASCII bytes"))
+        .collect();
+    for (value, bytes) in values.iter().zip(cases) {
+        assert_eq!(value.as_bytes(), bytes);
+        assert_eq!(value.as_str().as_bytes(), bytes);
+        assert_eq!(value.as_bytes().len(), bytes.len());
+        assert_eq!(*value, value.clone());
+    }
+    assert_ne!(values[2], values[3]);
+    assert_ne!(values[2], values[4]);
+    assert_ne!(values[2], values[5]);
+    let set: HashSet<_> = values.iter().copied().collect();
+    assert_eq!(set.len(), cases.len());
+    assert_eq!(
+        set.get(&AtomName::from_ascii(b"CA").unwrap()),
+        Some(&values[2])
+    );
+    assert!(AtomName::from_ascii(b"ABCDE").is_none());
+    assert!(AtomName::from_ascii(&[0x80]).is_none());
+    assert!(AtomName::from_ascii("é".as_bytes()).is_none());
+}
 
 #[derive(Debug)]
 struct SourceResidue {
@@ -299,10 +329,10 @@ fn bio_residue_sequence_expansion_preserves_source_order_whitespace_and_errors()
 
 #[test]
 fn bio_residue_source_identifiers_preserve_bytes_and_independent_namespaces() {
-    let atom_name = AtomName::from_ascii(*b" CA ").unwrap();
+    let atom_name = AtomName::from_ascii(b" CA ").unwrap();
     assert_eq!(atom_name.as_bytes(), b" CA ");
     assert_eq!(atom_name.as_str(), " CA ");
-    assert!(AtomName::from_ascii([0xff, b'A', b' ', b' ']).is_none());
+    assert!(AtomName::from_ascii(&[0xff, b'A', b' ', b' ']).is_none());
 
     let empty = PdbChainId::from_ascii(b"").unwrap();
     let auth = PdbChainId::from_ascii(b"A").unwrap();

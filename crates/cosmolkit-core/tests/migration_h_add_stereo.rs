@@ -6,9 +6,10 @@ use cosmolkit_core::{
 };
 use cosmolkit_model::{
     Atom, AtomId, AtomPdbResidueInfo, AtomQueryPredicate, AtomSpec, Bond, BondId, BondOrder,
-    BondSpec, ChiralTag, Conformer3D, CoordinateBlock, Element, MoleculeProperties, QueryAtom,
-    QueryBond, QueryNode, QueryStateRef, SdfPropertyList, SdfPropertyListTarget, StereoGroup,
-    StereoGroupKind, SubstanceGroup, SubstanceGroupId, SubstanceGroupKind, TopologyBlock,
+    BondSpec, ChiralTag, Conformer3D, CoordinateBlock, Element, MoleculeProperties, PropertyValue,
+    QueryAtom, QueryBond, QueryNode, QueryStateRef, SdfPropertyList, SdfPropertyListTarget,
+    StereoGroup, StereoGroupKind, SubstanceGroup, SubstanceGroupId, SubstanceGroupKind,
+    TopologyBlock,
 };
 
 fn topology(atom_specs: Vec<AtomSpec>, bond_specs: Vec<BondSpec>) -> TopologyBlock {
@@ -223,7 +224,10 @@ fn skipped_query_parent_retains_explicit_count_tracking_and_computed_state() {
     assert_eq!(output.topology.atoms.len(), 1);
     assert_eq!(output.topology.atoms[0].explicit_hydrogens(), 1);
     assert_eq!(output.topology.atoms[0].tracked_isotopic_hydrogens(), &[2]);
-    assert_eq!(output.topology.atoms[0].prop("query-cache"), Some("keep"));
+    assert_eq!(
+        output.topology.atoms[0].prop("query-cache"),
+        Some(&PropertyValue::String("keep".to_owned()))
+    );
     assert!(output.warnings.is_empty());
 }
 
@@ -355,8 +359,14 @@ fn chiral_state_stereo_groups_sgroups_and_old_bond_properties_are_preserved() {
         ChiralTag::TetrahedralCw
     );
     assert_eq!(output.topology.atoms[0].chiral_permutation(), Some(4));
-    assert_eq!(output.topology.atoms[0].prop("atom-ordinary"), Some("keep"));
-    assert_eq!(output.topology.bonds[0].prop("bond-ordinary"), Some("keep"));
+    assert_eq!(
+        output.topology.atoms[0].prop("atom-ordinary"),
+        Some(&PropertyValue::String("keep".to_owned()))
+    );
+    assert_eq!(
+        output.topology.bonds[0].prop("bond-ordinary"),
+        Some(&PropertyValue::String("keep".to_owned()))
+    );
     assert!(
         output
             .topology

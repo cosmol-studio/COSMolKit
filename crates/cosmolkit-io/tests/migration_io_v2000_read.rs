@@ -2,8 +2,15 @@ use cosmolkit_io::{
     MolBlockReadParams, MolBlockRecord, QueryMolBlockRecord, SdfReadError, read_mol_block_detached,
     read_mol_block_detached_with_params,
 };
-use cosmolkit_model::{AtomQueryPredicate, BondQueryPredicate, QueryNode};
+use cosmolkit_model::{AtomQueryPredicate, BondQueryPredicate, PropertyValue, QueryNode};
 use cosmolkit_types::{BondDirection, BondOrder, BondStereo};
+
+fn string_property(value: Option<&PropertyValue>) -> Option<&str> {
+    match value {
+        Some(PropertyValue::String(value)) => Some(value),
+        _ => None,
+    }
+}
 
 #[allow(clippy::too_many_arguments)]
 fn atom_line(
@@ -230,7 +237,10 @@ fn strict_version_symbol_and_fixed_width_rules_match_the_pinned_parser() {
     let MolBlockRecord::Concrete { topology, .. } = relaxed else {
         panic!("unknown non-strict symbol is a concrete dummy")
     };
-    assert_eq!(topology.atoms[0].prop("dummyLabel"), Some("Zz"));
+    assert_eq!(
+        string_property(topology.atoms[0].prop("dummyLabel")),
+        Some("Zz")
+    );
 
     let mut bad_atom = atom_line(0.0, 0.0, 0.0, "Zz", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
     bad_atom.replace_range(34..36, "xx");
@@ -245,6 +255,8 @@ fn strict_version_symbol_and_fixed_width_rules_match_the_pinned_parser() {
 
 #[test]
 fn ordinary_shorthand_dummy_and_rgroup_symbols_keep_source_state() {
+    // RDKit sets R0 isotope to numeric zero; the detached model projects
+    // that unspecified-isotope sentinel to None.
     for (symbol, atomic_number, isotope, label) in [
         ("CL", 17, None, None),
         ("D", 1, Some(2), None),
@@ -254,7 +266,7 @@ fn ordinary_shorthand_dummy_and_rgroup_symbols_keep_source_state() {
         ("L", 0, None, None),
         ("LP", 0, None, None),
         ("R#", 0, None, Some("R#")),
-        ("R0", 0, Some(0), Some("R0")),
+        ("R0", 0, None, Some("R0")),
         ("R12", 0, Some(12), Some("R12")),
         ("R99", 0, Some(99), Some("R99")),
     ] {
@@ -262,7 +274,7 @@ fn ordinary_shorthand_dummy_and_rgroup_symbols_keep_source_state() {
         let atom = &topology.atoms[0];
         assert_eq!(atom.element().atomic_number(), atomic_number, "{symbol}");
         assert_eq!(atom.isotope(), isotope, "{symbol}");
-        assert_eq!(atom.prop("dummyLabel"), label, "{symbol}");
+        assert_eq!(string_property(atom.prop("dummyLabel")), label, "{symbol}");
         assert!(!atom.no_implicit(), "{symbol}");
     }
 }
@@ -279,7 +291,7 @@ fn complex_wildcard_and_generic_symbols_remain_typed_queries() {
         );
         assert!(atom.no_implicit(), "{symbol}");
         assert_eq!(
-            atom.prop("dummyLabel"),
+            string_property(atom.prop("dummyLabel")),
             (symbol == "R").then_some("R"),
             "{symbol}"
         );
@@ -302,7 +314,11 @@ fn complex_wildcard_and_generic_symbols_remain_typed_queries() {
             &QueryNode::predicate(AtomQueryPredicate::AtomicNumber(0)),
             "{symbol}"
         );
-        assert_eq!(atom.prop("atomLabel"), Some(symbol), "{symbol}");
+        assert_eq!(
+            string_property(atom.prop("atomLabel")),
+            Some(symbol),
+            "{symbol}"
+        );
         assert!(!atom.no_implicit(), "{symbol}");
     }
 }
@@ -317,11 +333,11 @@ fn mass_charge_hcount_and_optional_atom_fields_preserve_order_and_ranges() {
     assert_eq!(atom.mol_parity(), Some(2));
     assert_eq!(atom.atom_map(), Some(12));
     assert_eq!(atom.mol_inversion_flag(), Some(1));
-    assert_eq!(atom.prop("molStereoCare"), Some("1"));
-    assert_eq!(atom.prop("molTotValence"), Some("4"));
-    assert_eq!(atom.prop("molRxnRole"), Some("2"));
-    assert_eq!(atom.prop("molRxnComponent"), Some("3"));
-    assert_eq!(atom.prop("molRxnExactChange"), Some("5"));
+    assert_eq!(string_property(atom.prop("molStereoCare")), Some("1"));
+    assert_eq!(string_property(atom.prop("molTotValence")), Some("4"));
+    assert_eq!(string_property(atom.prop("molRxnRole")), Some("2"));
+    assert_eq!(string_property(atom.prop("molRxnComponent")), Some("3"));
+    assert_eq!(string_property(atom.prop("molRxnExactChange")), Some("5"));
     assert!(atom.no_implicit());
     assert!(atom_query_contains(
         atom.predicate(),
@@ -374,7 +390,7 @@ fn concrete_bond_types_ids_order_and_aromaticity_are_exact() {
         assert_eq!(bond.order(), expected, "kind {kind}");
         assert_eq!(bond.is_aromatic(), kind == 4, "kind {kind}");
         assert_eq!(
-            bond.prop("_MolFileBondType"),
+            string_property(bond.prop("_MolFileBondType")),
             Some(kind.to_string().as_str())
         );
     }
@@ -453,7 +469,10 @@ fn bond_stereo_reaction_optional_lexing_and_stereo_care_follow_source() {
         ));
         assert_eq!(topology.bonds[0].direction(), direction, "{stereo}");
         assert_eq!(topology.bonds[0].stereo(), bond_stereo, "{stereo}");
-        assert_eq!(topology.bonds[0].prop("molReactStatus"), Some("7"));
+        assert_eq!(
+            string_property(topology.bonds[0].prop("molReactStatus")),
+            Some("7")
+        );
     }
 
     let lexical = "  1  2  1abc  0xyzbad".to_owned();
@@ -463,7 +482,10 @@ fn bond_stereo_reaction_optional_lexing_and_stereo_care_follow_source() {
         &[lexical],
     ));
     assert_eq!(topology.bonds[0].direction(), BondDirection::None);
-    assert_eq!(topology.bonds[0].prop("molReactStatus"), None);
+    assert_eq!(
+        string_property(topology.bonds[0].prop("molReactStatus")),
+        None
+    );
 
     let care = atom_line(0.0, 0.0, 0.0, "C", 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0);
     let (topology, _) = concrete(&molblock(
@@ -471,7 +493,10 @@ fn bond_stereo_reaction_optional_lexing_and_stereo_care_follow_source() {
         &[care.clone(), care],
         &[bond_line(1, 2, 1, 0, 0, 0)],
     ));
-    assert_eq!(topology.bonds[0].prop("molStereoCare"), Some("1"));
+    assert_eq!(
+        string_property(topology.bonds[0].prop("molStereoCare")),
+        Some("1")
+    );
 }
 
 #[test]

@@ -1,4 +1,6 @@
-use cosmolkit_model::{Atom, AtomId, AtomSpec, QueryAtom, QueryAtomIdentity, TopologyBlock};
+use cosmolkit_model::{
+    Atom, AtomId, AtomSpec, PropertyValue, QueryAtom, QueryAtomIdentity, TopologyBlock,
+};
 use cosmolkit_search::{
     AtomQueryPredicate, BondQueryPredicate, QueryGraph, QueryNode, SmartsParseParams,
     SmartsWriteParams, match_query, parse_smarts, write_smarts,
@@ -65,11 +67,11 @@ fn smarts_builder_returns_canonical_graph_with_stable_row_identity() {
     );
     assert_eq!(
         graph.bond(0).unwrap().bond().prop("_cxsmilesBondIdx"),
-        Some("0")
+        Some(&PropertyValue::String("0".to_owned()))
     );
     assert_eq!(
         graph.bond(1).unwrap().bond().prop("_cxsmilesBondIdx"),
-        Some("1")
+        Some(&PropertyValue::String("1".to_owned()))
     );
     assert_eq!(
         graph.adjacency(),

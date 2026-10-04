@@ -8,7 +8,7 @@ use cosmolkit_core::{
 };
 use cosmolkit_model::{
     AdjacencyList, Atom, AtomId, AtomSpec, Bond, BondId, BondSpec, Conformer3D, CoordinateBlock,
-    TopologyBlock, TopologyValidationError,
+    TopologyBlock, TopologyValidationError, ordered_atom_properties,
 };
 use cosmolkit_types::{BondDirection, BondOrder, ChiralTag, Element};
 use serde::Deserialize;
@@ -127,7 +127,10 @@ fn bond_direction(name: &str) -> BondDirection {
     BondDirection::from_rdkit_name(name).unwrap_or_else(|| panic!("unknown bond direction {name}"))
 }
 
-fn topology_from_snapshot(snapshot: &OracleSnapshot) -> TopologyBlock {
+fn topology_from_snapshot(
+    snapshot: &OracleSnapshot,
+    property_predecessor: Option<&TopologyBlock>,
+) -> TopologyBlock {
     assert_eq!(snapshot.atom_count, snapshot.atoms.len());
     assert_eq!(snapshot.bond_count, snapshot.bonds.len());
     let atoms = snapshot
@@ -143,10 +146,46 @@ fn topology_from_snapshot(snapshot: &OracleSnapshot) -> TopologyBlock {
             if let Some(permutation) = row.chiral_permutation {
                 spec = spec.with_chiral_permutation(permutation);
             }
-            for (key, value) in &row.props {
-                spec = spec
-                    .with_prop(key, property_string(value))
-                    .expect("non-empty fixture atom property key");
+            if let Some(predecessor) = property_predecessor {
+                let predecessor = &predecessor.atoms[row.index];
+                let mut inserted = BTreeSet::new();
+                for (key, _) in ordered_atom_properties(predecessor) {
+                    let value = row.props.get(key).unwrap_or_else(|| {
+                        panic!("atom {} lost predecessor property {key}", row.index)
+                    });
+                    spec = spec
+                        .with_prop(key, property_string(value))
+                        .expect("non-empty oracle atom property key");
+                    inserted.insert(key.to_owned());
+                }
+                // The oracle JSON carrier is a BTreeMap and cannot represent
+                // Dict insertion order. Reapply the exact source write order
+                // after all predecessor properties: the non-tetrahedral branch
+                // writes `_chiralPermutation` first, and both branches then
+                // write `_NonExplicit3DChirality` when required.
+                for key in ["_chiralPermutation", "_NonExplicit3DChirality"] {
+                    if inserted.contains(key) {
+                        continue;
+                    }
+                    if let Some(value) = row.props.get(key) {
+                        spec = spec
+                            .with_prop(key, property_string(value))
+                            .expect("non-empty generated atom property key");
+                        inserted.insert(key.to_owned());
+                    }
+                }
+                assert_eq!(
+                    inserted.len(),
+                    row.props.len(),
+                    "atom {} has an unaccounted structure-tag property transition",
+                    row.index
+                );
+            } else {
+                for (key, value) in &row.props {
+                    spec = spec
+                        .with_prop(key, property_string(value))
+                        .expect("non-empty fixture atom property key");
+                }
             }
             let prop_value = row
                 .props
@@ -264,7 +303,7 @@ fn assert_coordinates_bitwise_eq(left: &CoordinateBlock, right: &CoordinateBlock
 }
 
 fn run_oracle_row(row: &OracleRow) {
-    let topology = topology_from_snapshot(&row.before);
+    let topology = topology_from_snapshot(&row.before, None);
     let original_topology = topology.clone();
     let coordinates = coordinates_from_snapshot(&row.before);
     let original_coordinates = coordinates.clone();
@@ -304,7 +343,7 @@ fn run_oracle_row(row: &OracleRow) {
             );
             assert_eq!(
                 assignment.topology,
-                topology_from_snapshot(&row.after),
+                topology_from_snapshot(&row.after, Some(&topology)),
                 "{} topology result",
                 row.case_id
             );

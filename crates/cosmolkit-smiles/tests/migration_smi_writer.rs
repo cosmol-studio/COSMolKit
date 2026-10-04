@@ -1,5 +1,5 @@
 use cosmolkit_core::KekulizeError;
-use cosmolkit_model::BondOrder;
+use cosmolkit_model::{BondOrder, PropertyValue};
 use cosmolkit_smiles::{
     CxSmilesFields, CxSmilesWriteParams, SmilesParseError, SmilesParseParams, SmilesWriteParams,
     finalize_smiles_stereo, parse_smiles, write_cx_smiles_with_params, write_smiles,
@@ -9,6 +9,13 @@ use cosmolkit_smiles::{
 fn write(input: &str, params: &SmilesWriteParams) -> String {
     let record = parse_smiles(input, &Default::default()).expect("parse pinned case");
     write_smiles_with_params(&record, params).expect("write pinned case")
+}
+
+fn string_property(value: Option<&PropertyValue>) -> Option<&str> {
+    match value {
+        Some(PropertyValue::String(value)) => Some(value),
+        _ => None,
+    }
 }
 
 fn renumbered_record(
@@ -588,6 +595,7 @@ fn equal_canonical_fragments_sort_by_source_atom_and_bond_order() {
     let params = CxSmilesWriteParams {
         smiles: SmilesWriteParams::default(),
         fields: CxSmilesFields::ATOM_LABELS,
+        ..Default::default()
     };
     assert_eq!(
         write_cx_smiles_with_params(&record, &params).unwrap(),
@@ -623,6 +631,7 @@ fn multi_fragment_subset_maps_noncontiguous_atom_and_bond_rows() {
     let params = CxSmilesWriteParams {
         smiles: SmilesWriteParams::default(),
         fields: CxSmilesFields::ATOM_LABELS | CxSmilesFields::COORDINATE_BONDS,
+        ..Default::default()
     };
     assert_eq!(
         write_cx_smiles_with_params(&record, &params).unwrap(),
@@ -667,6 +676,7 @@ fn writer_subset_remaps_forward_ring_stereo_references_after_renumbering() {
     let params = CxSmilesWriteParams {
         smiles: SmilesWriteParams::default(),
         fields: CxSmilesFields::BOND_CFG,
+        ..Default::default()
     };
     assert_eq!(
         write_cx_smiles_with_params(&record, &params).unwrap(),
@@ -1158,6 +1168,7 @@ fn nonisomeric_canonical_fallback_keeps_pinned_cx_output_maps() {
                     ..Default::default()
                 },
                 fields: CxSmilesFields::ATOM_LABELS | CxSmilesFields::BOND_CFG,
+                ..Default::default()
             };
             assert_eq!(
                 write_cx_smiles_with_params(&record, &params).unwrap(),
@@ -1215,6 +1226,7 @@ fn ordinary_writer_removes_modeled_stereo_groups_before_canonical_ranking() {
     let cx = CxSmilesWriteParams {
         smiles: SmilesWriteParams::default(),
         fields: CxSmilesFields::ENHANCED_STEREO,
+        ..Default::default()
     };
     assert_eq!(
         write_cx_smiles_with_params(&record, &cx).unwrap(),
@@ -1365,9 +1377,14 @@ fn current_stereo_wrapper_candidates_preserve_pinned_large_ring_cx_output() {
         coordinates: parsed.coordinates.clone(),
         properties: parsed.properties.clone(),
     };
-    let finalized = finalize_smiles_stereo(post_chemistry, &parser).unwrap();
+    let mut ring_carrier: Option<cosmolkit_core::RingInfo> = None;
+    let finalized =
+        finalize_smiles_stereo(post_chemistry, &parser, &mut None, &mut ring_carrier).unwrap();
     assert_eq!(finalized.properties.prop("_needsDetectBondStereo"), None);
-    assert_eq!(finalized.properties.prop("_StereochemDone"), None);
+    // Chirality.cpp::assignStereochemistry writes this computed property after
+    // successful perception; the detached wrapper must transport that effect.
+    assert_eq!(finalized.properties.prop("_StereochemDone"), Some("1"));
+    assert!(finalized.properties.is_prop_computed("_StereochemDone"));
     assert_eq!(
         finalized.topology.bonds[4].direction(),
         cosmolkit_types::BondDirection::EndUpRight
@@ -1395,6 +1412,7 @@ fn current_stereo_wrapper_candidates_preserve_pinned_large_ring_cx_output() {
                     ..Default::default()
                 },
                 fields: cosmolkit_smiles::CxSmilesFields::BOND_CFG,
+                ..Default::default()
             },
         )
         .unwrap();
@@ -1480,7 +1498,9 @@ fn pending_cx_direction_phase_is_the_first_large_ring_writer_divergence() {
         cosmolkit_types::BondDirection::None
     );
     let post_chemistry_snapshot = post_chemistry.clone();
-    let finalized = finalize_smiles_stereo(post_chemistry, &parser).unwrap();
+    let mut ring_carrier: Option<cosmolkit_core::RingInfo> = None;
+    let finalized =
+        finalize_smiles_stereo(post_chemistry, &parser, &mut None, &mut ring_carrier).unwrap();
     assert_eq!(
         post_chemistry_snapshot
             .properties
@@ -1519,6 +1539,7 @@ fn pending_cx_direction_phase_is_the_first_large_ring_writer_divergence() {
         &CxSmilesWriteParams {
             smiles: SmilesWriteParams::default(),
             fields: CxSmilesFields::BOND_CFG,
+            ..Default::default()
         },
     )
     .unwrap();
@@ -1543,6 +1564,7 @@ fn pending_cx_stereo_text_is_preserved_when_clean_stereo_is_false() {
             ..Default::default()
         },
         fields: CxSmilesFields::BOND_CFG,
+        ..Default::default()
     };
 
     assert_eq!(
@@ -1606,9 +1628,8 @@ fn raw_pending_cx_writer_matches_the_unfinalized_source_boundary() {
     // MolToSmiles passes cleanStereo and defaults force and
     // flagPossibleStereoCenters to false. This record has no done marker, so
     // force=false does not skip assignment. Keep the writer-visible
-    // canonical/isomeric options and CX field set fixed across both calls;
-    // the detached writer has not yet wired the exact
-    // clean=true/possible=false core entrypoint.
+    // canonical/isomeric options and CX field set fixed across both calls.
+    // Both clean branches now use the exact possible=false core entrypoint.
     let clean_false_params = CxSmilesWriteParams {
         smiles: SmilesWriteParams {
             do_isomeric_smiles: true,
@@ -1617,6 +1638,7 @@ fn raw_pending_cx_writer_matches_the_unfinalized_source_boundary() {
             ..Default::default()
         },
         fields: CxSmilesFields::BOND_CFG,
+        ..Default::default()
     };
     assert_eq!(
         write_cx_smiles_with_params(&record, &clean_false_params).unwrap(),
@@ -1631,6 +1653,7 @@ fn raw_pending_cx_writer_matches_the_unfinalized_source_boundary() {
             ..Default::default()
         },
         fields: CxSmilesFields::BOND_CFG,
+        ..Default::default()
     };
     assert_eq!(
         write_cx_smiles_with_params(&record, &params).unwrap(),
@@ -1673,7 +1696,8 @@ fn cx_write_after_sanitize_and_smiles_finalization_uses_finalized_state() {
         cosmolkit_types::BondDirection::None
     );
 
-    let finalized = finalize_smiles_stereo(record, &parser).unwrap();
+    let mut ring_carrier: Option<cosmolkit_core::RingInfo> = None;
+    let finalized = finalize_smiles_stereo(record, &parser, &mut None, &mut ring_carrier).unwrap();
     assert_eq!(finalized.properties.prop("_needsDetectBondStereo"), None);
     assert_eq!(
         finalized.topology.bonds[4].direction(),
@@ -1692,6 +1716,7 @@ fn cx_write_after_sanitize_and_smiles_finalization_uses_finalized_state() {
     let params = CxSmilesWriteParams {
         smiles: SmilesWriteParams::default(),
         fields: CxSmilesFields::BOND_CFG,
+        ..Default::default()
     };
     assert_eq!(
         write_cx_smiles_with_params(&finalized, &params).unwrap(),
@@ -1725,7 +1750,8 @@ fn both_false_smiles_finalization_retains_pending_marker_and_clears_directions()
         cosmolkit_types::BondDirection::EndUpRight
     );
 
-    let both_false = finalize_smiles_stereo(raw, &parser).unwrap();
+    let mut ring_carrier: Option<cosmolkit_core::RingInfo> = None;
+    let both_false = finalize_smiles_stereo(raw, &parser, &mut None, &mut ring_carrier).unwrap();
     assert_eq!(
         both_false.properties.prop("_needsDetectBondStereo"),
         Some("1")
@@ -1764,7 +1790,8 @@ fn both_false_finalization_clears_begin_wedge_and_dash_flags() {
 
     // Pinned Chirality.cpp::clearSingleBondDirFlags(mol, true) clears
     // BEGINWEDGE/BEGINDASH while retaining ENDDOWNRIGHT/ENDUPRIGHT slash flags.
-    let finalized = finalize_smiles_stereo(raw, &parser).unwrap();
+    let mut ring_carrier: Option<cosmolkit_core::RingInfo> = None;
+    let finalized = finalize_smiles_stereo(raw, &parser, &mut None, &mut ring_carrier).unwrap();
     assert_eq!(
         finalized.topology.bonds[0].direction(),
         cosmolkit_types::BondDirection::None
@@ -1788,13 +1815,14 @@ fn both_false_finalization_clears_unknown_direction_and_records_unknown_stereo()
     raw.topology.bonds[0].set_direction(cosmolkit_types::BondDirection::Unknown);
 
     // The source sets _UnknownStereo before clearing BondDir::UNKNOWN.
-    let finalized = finalize_smiles_stereo(raw, &parser).unwrap();
+    let mut ring_carrier: Option<cosmolkit_core::RingInfo> = None;
+    let finalized = finalize_smiles_stereo(raw, &parser, &mut None, &mut ring_carrier).unwrap();
     assert_eq!(
         finalized.topology.bonds[0].direction(),
         cosmolkit_types::BondDirection::None
     );
     assert_eq!(
-        finalized.topology.bonds[0].prop("_UnknownStereo"),
+        string_property(finalized.topology.bonds[0].prop("_UnknownStereo")),
         Some("1")
     );
 }
@@ -1862,18 +1890,28 @@ fn single_component_stereo_transport_keeps_source_identity_and_properties() {
         "[NH2:10][C@H:11]([CH3:12])[OH:13]"
     );
     for (index, atom) in record.topology.atoms.iter().enumerate() {
-        assert_eq!(atom.prop("source_atom"), Some(format!("a{index}").as_str()));
+        let source_atom = format!("a{index}");
+        let computed_source_atom = format!("ca{index}");
         assert_eq!(
-            atom.prop("_sourceAtom"),
-            Some(format!("ca{index}").as_str())
+            string_property(atom.prop("source_atom")),
+            Some(source_atom.as_str())
+        );
+        assert_eq!(
+            string_property(atom.prop("_sourceAtom")),
+            Some(computed_source_atom.as_str())
         );
         assert!(atom.is_prop_computed("_sourceAtom"));
     }
     for (index, bond) in record.topology.bonds.iter().enumerate() {
-        assert_eq!(bond.prop("source_bond"), Some(format!("b{index}").as_str()));
+        let source_bond = format!("b{index}");
+        let computed_source_bond = format!("cb{index}");
         assert_eq!(
-            bond.prop("_sourceBond"),
-            Some(format!("cb{index}").as_str())
+            string_property(bond.prop("source_bond")),
+            Some(source_bond.as_str())
+        );
+        assert_eq!(
+            string_property(bond.prop("_sourceBond")),
+            Some(computed_source_bond.as_str())
         );
         assert!(bond.is_prop_computed("_sourceBond"));
     }
@@ -1985,4 +2023,19 @@ fn multi_fragment_challenge_clone_prune_preserves_ordinary_done_marker() {
         record, before,
         "writer fragment preparation must preserve the ordinary input marker and source tag"
     );
+}
+#[test]
+fn typed_custom_symbol_and_supplemental_label_use_source_string_conversion() {
+    // Fixed RDKit 2026.03.1 MolToSmiles results after SetIntProp, using
+    // Dict::getValIfPresent(std::string&) rather than a strict StringTag cast.
+    let mut record = cosmolkit_smiles::parse_smiles("C", &Default::default()).unwrap();
+    record.topology.atoms[0]
+        .set_prop("smilesSymbol", 7_i32)
+        .unwrap();
+    assert_eq!(cosmolkit_smiles::write_smiles(&record).unwrap(), "[7H4]");
+    record.topology.atoms[0].clear_prop("smilesSymbol");
+    record.topology.atoms[0]
+        .set_prop("_supplementalSmilesLabel", 7_i32)
+        .unwrap();
+    assert_eq!(cosmolkit_smiles::write_smiles(&record).unwrap(), "C7");
 }

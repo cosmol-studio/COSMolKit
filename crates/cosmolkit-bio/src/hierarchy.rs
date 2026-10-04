@@ -10,6 +10,11 @@ use crate::{
     ResidueInfoKind, ResidueName, ResidueSourceIds,
 };
 
+mod lattice;
+mod spacegroup;
+pub use lattice::{BioNearestImage, find_nearest_image};
+pub use spacegroup::setup_cell_images;
+
 macro_rules! row_id {
     ($name:ident) => {
         #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -662,6 +667,10 @@ impl BioCoordinateBlock {
     pub fn positions(&self) -> &[[f64; 3]] {
         &self.positions
     }
+    /// Mutable detached coordinate rows; live public objects do not expose this.
+    pub fn positions_mut(&mut self) -> &mut [[f64; 3]] {
+        &mut self.positions
+    }
     #[must_use]
     pub fn len(&self) -> usize {
         self.positions.len()
@@ -747,11 +756,84 @@ impl BioTransform {
 }
 
 fn multiply_matrix_vector(matrix: [[f64; 3]; 3], vector: [f64; 3]) -> [f64; 3] {
+    // Gemmi❗✔️: Vec3 multiply(const Vec3& p) const {
+    // Gemmi❗✔️:   return {a[0][0] * p.x + a[0][1] * p.y + a[0][2] * p.z,
+    // Gemmi❗✔️:           a[1][0] * p.x + a[1][1] * p.y + a[1][2] * p.z,
+    // Gemmi❗✔️:           a[2][0] * p.x + a[2][1] * p.y + a[2][2] * p.z};
+    // Gemmi❗✔️: }
+    // Behavior review: row-major dot products retain Gemmi's per-row multiply/add order.
+    // Complexity review: both implementations perform three fixed-length dot products.
     [
         matrix[0][0] * vector[0] + matrix[0][1] * vector[1] + matrix[0][2] * vector[2],
         matrix[1][0] * vector[0] + matrix[1][1] * vector[1] + matrix[1][2] * vector[2],
         matrix[2][0] * vector[0] + matrix[2][1] * vector[1] + matrix[2][2] * vector[2],
     ]
+}
+
+fn matrix_determinant(matrix: [[f64; 3]; 3]) -> f64 {
+    // Gemmi❗✔️: double determinant() const {
+    // Gemmi❗✔️:   return a[0][0] * (a[1][1]*a[2][2] - a[2][1]*a[1][2]) +
+    // Gemmi❗✔️:          a[0][1] * (a[1][2]*a[2][0] - a[2][2]*a[1][0]) +
+    // Gemmi❗✔️:          a[0][2] * (a[1][0]*a[2][1] - a[2][0]*a[1][1]);
+    // Gemmi❗✔️: }
+    // Behavior review: preserve the source cofactor and addition order; parity awaits the
+    // dedicated nonsymmetric and singular matrix regressions.
+    // Complexity review: both implementations use a fixed number of scalar operations.
+    matrix[0][0] * (matrix[1][1] * matrix[2][2] - matrix[2][1] * matrix[1][2])
+        + matrix[0][1] * (matrix[1][2] * matrix[2][0] - matrix[2][2] * matrix[1][0])
+        + matrix[0][2] * (matrix[1][0] * matrix[2][1] - matrix[2][0] * matrix[1][1])
+}
+
+fn inverse_bio_matrix(matrix: [[f64; 3]; 3]) -> [[f64; 3]; 3] {
+    // Gemmi❗✔️: Mat33 inverse() const {
+    // Gemmi❗✔️:   Mat33 inv;
+    // Gemmi❗✔️:   double inv_det = 1.0 / determinant();
+    // Gemmi❗✔️:   inv[0][0] = inv_det * (a[1][1] * a[2][2] - a[2][1] * a[1][2]);
+    // Gemmi❗✔️:   inv[0][1] = inv_det * (a[0][2] * a[2][1] - a[0][1] * a[2][2]);
+    // Gemmi❗✔️:   inv[0][2] = inv_det * (a[0][1] * a[1][2] - a[0][2] * a[1][1]);
+    // Gemmi❗✔️:   inv[1][0] = inv_det * (a[1][2] * a[2][0] - a[1][0] * a[2][2]);
+    // Gemmi❗✔️:   inv[1][1] = inv_det * (a[0][0] * a[2][2] - a[0][2] * a[2][0]);
+    // Gemmi❗✔️:   inv[1][2] = inv_det * (a[1][0] * a[0][2] - a[0][0] * a[1][2]);
+    // Gemmi❗✔️:   inv[2][0] = inv_det * (a[1][0] * a[2][1] - a[2][0] * a[1][1]);
+    // Gemmi❗✔️:   inv[2][1] = inv_det * (a[2][0] * a[0][1] - a[0][0] * a[2][1]);
+    // Gemmi❗✔️:   inv[2][2] = inv_det * (a[0][0] * a[1][1] - a[1][0] * a[0][1]);
+    // Gemmi❗✔️:   return inv;
+    // Gemmi❗✔️: }
+    // Behavior review: all nine outputs follow Gemmi's cofactor expressions and the
+    // singular case intentionally uses IEEE division without a Rust-side guard.
+    // Complexity review: both implementations are fixed-size, allocation-free 3x3 work.
+    let inverse_determinant = 1.0 / matrix_determinant(matrix);
+    [
+        [
+            inverse_determinant * (matrix[1][1] * matrix[2][2] - matrix[2][1] * matrix[1][2]),
+            inverse_determinant * (matrix[0][2] * matrix[2][1] - matrix[0][1] * matrix[2][2]),
+            inverse_determinant * (matrix[0][1] * matrix[1][2] - matrix[0][2] * matrix[1][1]),
+        ],
+        [
+            inverse_determinant * (matrix[1][2] * matrix[2][0] - matrix[1][0] * matrix[2][2]),
+            inverse_determinant * (matrix[0][0] * matrix[2][2] - matrix[0][2] * matrix[2][0]),
+            inverse_determinant * (matrix[1][0] * matrix[0][2] - matrix[0][0] * matrix[1][2]),
+        ],
+        [
+            inverse_determinant * (matrix[1][0] * matrix[2][1] - matrix[2][0] * matrix[1][1]),
+            inverse_determinant * (matrix[2][0] * matrix[0][1] - matrix[0][0] * matrix[2][1]),
+            inverse_determinant * (matrix[0][0] * matrix[1][1] - matrix[1][0] * matrix[0][1]),
+        ],
+    ]
+}
+
+fn inverse_bio_transform(transform: BioTransform) -> BioTransform {
+    // Gemmi❗✔️: Transform inverse() const {
+    // Gemmi❗✔️:   Mat33 minv = mat.inverse();
+    // Gemmi❗✔️:   return {minv, minv.multiply(vec).negated()};
+    // Gemmi❗✔️: }
+    // Gemmi❗✔️: Vec3_ negated() const { return {-x, -y, -z}; }
+    // Behavior review: the inverse translation is the negated matrix-vector product,
+    // in the same operation order; regression coverage is scheduled separately.
+    // Complexity review: matrix inversion and translation each have fixed 3D cost.
+    let matrix = inverse_bio_matrix(transform.matrix);
+    let translated = multiply_matrix_vector(matrix, transform.translation);
+    BioTransform::new(matrix, [-translated[0], -translated[1], -translated[2]])
 }
 
 fn multiply_matrices(first: [[f64; 3]; 3], second: [[f64; 3]; 3]) -> [[f64; 3]; 3] {
@@ -1000,6 +1082,125 @@ impl BioCrystalInfo {
     }
 }
 
+pub fn set_crystal_cell(
+    crystal: &mut BioCrystalInfo,
+    cell: BioCrystalCell,
+) -> Result<(), BioStructureError> {
+    // Gemmi❗✔️: void set(double a_, double b_, double c_,
+    // Gemmi❗✔️:          double alpha_, double beta_, double gamma_) {
+    // Gemmi❗✔️:   if (gamma_ == 0.0)  // ignore empty/partial CRYST1 (example: 3iyp)
+    // Gemmi❗✔️:     return;
+    // Gemmi❗✔️:   a = a_;
+    // Gemmi❗✔️:   b = b_;
+    // Gemmi❗✔️:   c = c_;
+    // Gemmi❗✔️:   alpha = alpha_;
+    // Gemmi❗✔️:   beta = beta_;
+    // Gemmi❗✔️:   gamma = gamma_;
+    // Gemmi❗✔️:   calculate_properties();
+    // Gemmi❗✔️: }
+    // Behavior review: the gamma-zero sentinel is a no-op; otherwise the complete
+    // six-value cell is installed before calculation, so source-ordered failures
+    // retain the new cell and prior derived fields. Existing calculation preserves
+    // explicit matrices while refreshing derived values.
+    // Complexity review: both paths perform constant-size field and scalar work.
+    if cell.gamma == 0.0 {
+        return Ok(());
+    }
+    crystal.cell = cell;
+    crystal.calculate_properties()
+}
+
+pub fn set_crystal_fractional_transform(crystal: &mut BioCrystalInfo, transform: BioTransform) {
+    // Gemmi❗✔️: void set_matrices_from_fract(const Transform& f) {
+    // Gemmi❗✔️:   // mmCIF _atom_sites.fract_transf_* and PDB SCALEn records usually contain
+    // Gemmi❗✔️:   // fewer significant digits than the unit cell parameters, and sometimes are
+    // Gemmi❗✔️:   // just wrong. Use them only if we seem to have non-standard crystal frame.
+    // Gemmi❗✔️:   if (f.mat.approx(frac.mat, 1e-4) && f.vec.approx(frac.vec, 1e-6))
+    // Gemmi❗✔️:     return;
+    // Gemmi❗✔️:   // The SCALE record is sometimes incorrect. Here we only catch cases
+    // Gemmi❗✔️:   // when CRYST1 is set as for non-crystal and SCALE is very suspicious.
+    // Gemmi❗✔️:   if (frac.mat[0][0] == 1.0 && (f.mat[0][0] == 0.0 || f.mat[0][0] > 1.0))
+    // Gemmi❗✔️:     return;
+    // Gemmi❗✔️:   frac = f;
+    // Gemmi❗✔️:   orth = f.inverse();
+    // Gemmi❗✔️:   explicit_matrices = true;
+    // Gemmi❗✔️: }
+    // Gemmi❗✔️: bool approx(const Mat33& other, double epsilon) const {
+    // Gemmi❗✔️:   for (int i = 0; i < 3; ++i)
+    // Gemmi❗✔️:     for (int j = 0; j < 3; ++j)
+    // Gemmi❗✔️:       if (std::fabs(a[i][j] - other.a[i][j]) > epsilon)
+    // Gemmi❗✔️:         return false;
+    // Gemmi❗✔️:   return true;
+    // Gemmi❗✔️: }
+    // Gemmi❗✔️: bool approx(const Vec3_& o, Real epsilon) const {
+    // Gemmi❗✔️:   return std::fabs(x - o.x) <= epsilon &&
+    // Gemmi❗✔️:          std::fabs(y - o.y) <= epsilon &&
+    // Gemmi❗✔️:          std::fabs(z - o.z) <= epsilon;
+    // Gemmi❗✔️: }
+    // Behavior review: matrix comparisons reject only differences strictly greater
+    // than 1e-4 (so NaN differences pass that predicate), while vector comparisons
+    // require each difference <= 1e-6 (so NaN fails). The source suspicious-matrix
+    // guard and assignment -> inverse -> explicit flag order are retained.
+    // Complexity review: both implementations use nine matrix comparisons, at most
+    // three vector comparisons, and fixed-size inversion; no allocation or rescans.
+    let mut matrices_approximate = true;
+    for row in 0..3 {
+        for column in 0..3 {
+            if (transform.matrix[row][column] - crystal.fractional.matrix[row][column]).abs()
+                > 1.0e-4
+            {
+                matrices_approximate = false;
+                break;
+            }
+        }
+        if !matrices_approximate {
+            break;
+        }
+    }
+    if matrices_approximate
+        && (transform.translation[0] - crystal.fractional.translation[0]).abs() <= 1.0e-6
+        && (transform.translation[1] - crystal.fractional.translation[1]).abs() <= 1.0e-6
+        && (transform.translation[2] - crystal.fractional.translation[2]).abs() <= 1.0e-6
+    {
+        return;
+    }
+    if crystal.fractional.matrix[0][0] == 1.0
+        && (transform.matrix[0][0] == 0.0 || transform.matrix[0][0] > 1.0)
+    {
+        return;
+    }
+    crystal.fractional = transform;
+    crystal.orthogonal = inverse_bio_transform(transform);
+    crystal.explicit_matrices = true;
+}
+
+/// Replace the stored PDB Hermann–Mauguin space-group text.
+///
+/// The PDB reader applies Gemmi's `len > 56` field-presence condition and
+/// `read_string` extraction before calling this BIO-owned state transition.
+pub fn set_crystal_space_group_hm(crystal: &mut BioCrystalInfo, value: String) {
+    // Gemmi❗✔️: st.spacegroup_hm = read_string(line+55, 11);
+    // Behavior review: for a source-present field, replace the prior value even
+    // when the already-trimmed source text is empty; Some("") retains that
+    // assignment distinctly from a field that was not present.
+    // Complexity review: this is one owned String replacement with no scan.
+    crystal.space_group_hm = Some(value);
+}
+
+/// Replace PDB Z metadata only when the decoded source field is nonempty.
+pub fn set_crystal_z_pdb_if_nonempty(crystal: &mut BioCrystalInfo, value: String) {
+    // Gemmi❗✔️:         if (!z.empty())
+    // Gemmi❗✔️:           st.info["_cell.Z_PDB"] = z;
+    // Behavior review: an empty decoded field leaves the previous metadata
+    // untouched; a nonempty field replaces it. The PDB caller owns the source
+    // length guard and fixed-width read_string operation.
+    // Complexity review: one emptiness check and, only when nonempty, one owned
+    // String replacement; no collection traversal or allocation on empty input.
+    if !value.is_empty() {
+        crystal.z_pdb = Some(value);
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct BioNcsOperator {
     pub id: String,
@@ -1174,27 +1375,89 @@ pub struct BioStructureParts {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct BioStructure {
-    input_format: BioCoordinateFormat,
-    models: Vec<BioModelRow>,
-    chains: Vec<BioChainRow>,
-    residues: Vec<BioResidueRow>,
-    atoms: Vec<BioAtomRow>,
-    entities: Vec<BioEntityRow>,
-    connections: Vec<BioConnection>,
-    cispeps: Vec<BioCisPep>,
-    mod_residues: Vec<BioModRes>,
-    helices: Vec<BioHelix>,
-    sheets: Vec<BioSheet>,
-    metadata: BioMetadata,
-    source_state: BioStructureSourceState,
-    coordinates: BioCoordinateBlock,
-    crystal: Option<BioCrystalInfo>,
-    ncs_operators: Vec<BioNcsOperator>,
-    assemblies: Vec<BioAssembly>,
+pub struct BioStructureData {
+    pub input_format: BioCoordinateFormat,
+    pub models: std::sync::Arc<Vec<BioModelRow>>,
+    pub chains: std::sync::Arc<Vec<BioChainRow>>,
+    pub residues: std::sync::Arc<Vec<BioResidueRow>>,
+    pub atoms: std::sync::Arc<Vec<BioAtomRow>>,
+    pub entities: std::sync::Arc<Vec<BioEntityRow>>,
+    pub connections: std::sync::Arc<Vec<BioConnection>>,
+    pub cispeps: std::sync::Arc<Vec<BioCisPep>>,
+    pub mod_residues: std::sync::Arc<Vec<BioModRes>>,
+    pub helices: std::sync::Arc<Vec<BioHelix>>,
+    pub sheets: std::sync::Arc<Vec<BioSheet>>,
+    pub metadata: std::sync::Arc<BioMetadata>,
+    pub source_state: std::sync::Arc<BioStructureSourceState>,
+    pub coordinates: std::sync::Arc<BioCoordinateBlock>,
+    pub crystal: std::sync::Arc<Option<BioCrystalInfo>>,
+    pub ncs_operators: std::sync::Arc<Vec<BioNcsOperator>>,
+    pub assemblies: std::sync::Arc<Vec<BioAssembly>>,
 }
 
-impl BioStructure {
+/// Borrowed detached input for the selection copier; no live object or mutation authority.
+///
+/// Arc references preserve unchanged metadata without cloning the source tables.
+#[derive(Clone, Copy)]
+pub struct BioStructureCopySource<'a> {
+    pub input_format: BioCoordinateFormat,
+    pub models: &'a std::sync::Arc<Vec<BioModelRow>>,
+    pub chains: &'a std::sync::Arc<Vec<BioChainRow>>,
+    pub residues: &'a std::sync::Arc<Vec<BioResidueRow>>,
+    pub atoms: &'a std::sync::Arc<Vec<BioAtomRow>>,
+    pub entities: &'a std::sync::Arc<Vec<BioEntityRow>>,
+    pub connections: &'a std::sync::Arc<Vec<BioConnection>>,
+    pub cispeps: &'a std::sync::Arc<Vec<BioCisPep>>,
+    pub mod_residues: &'a std::sync::Arc<Vec<BioModRes>>,
+    pub helices: &'a std::sync::Arc<Vec<BioHelix>>,
+    pub sheets: &'a std::sync::Arc<Vec<BioSheet>>,
+    pub metadata: &'a std::sync::Arc<BioMetadata>,
+    pub source_state: &'a std::sync::Arc<BioStructureSourceState>,
+    pub coordinates: &'a std::sync::Arc<BioCoordinateBlock>,
+    pub crystal: &'a std::sync::Arc<Option<BioCrystalInfo>>,
+    pub ncs_operators: &'a std::sync::Arc<Vec<BioNcsOperator>>,
+    pub assemblies: &'a std::sync::Arc<Vec<BioAssembly>>,
+}
+
+impl<'a> From<&'a BioStructureData> for BioStructureCopySource<'a> {
+    fn from(data: &'a BioStructureData) -> Self {
+        Self {
+            input_format: data.input_format,
+            models: &data.models,
+            chains: &data.chains,
+            residues: &data.residues,
+            atoms: &data.atoms,
+            entities: &data.entities,
+            connections: &data.connections,
+            cispeps: &data.cispeps,
+            mod_residues: &data.mod_residues,
+            helices: &data.helices,
+            sheets: &data.sheets,
+            metadata: &data.metadata,
+            source_state: &data.source_state,
+            coordinates: &data.coordinates,
+            crystal: &data.crystal,
+            ncs_operators: &data.ncs_operators,
+            assemblies: &data.assemblies,
+        }
+    }
+}
+
+impl BioStructureCopySource<'_> {
+    pub(crate) fn validate(&self) -> Result<(), BioStructureError> {
+        validate_structure(BioStructureView {
+            models: self.models,
+            chains: self.chains,
+            residues: self.residues,
+            atoms: self.atoms,
+            entities: self.entities,
+            coordinates: self.coordinates,
+            assemblies: self.assemblies,
+        })
+    }
+}
+
+impl BioStructureData {
     pub fn from_parts(parts: BioStructureParts) -> Result<Self, BioStructureError> {
         Self::validate_parts(&parts)?;
         // Gemmi✔️🔝:     st.connections = connections;
@@ -1211,29 +1474,29 @@ impl BioStructure {
         // Gemmi✔️🔝:     st.resolution = resolution;
         // Behavior review: after full existing structure validation, each
         // owned source relationship/metadata value moves intact into the
-        // validated BioStructure. Its source-address references are not
+        // validated BioStructureData. Its source-address references are not
         // reinterpreted as BIO row ids.
         // Complexity review: moving the vectors and aggregate values is O(1)
         // per field and avoids deep element copies performed by Gemmi's
         // `empty_copy`; validation retains its existing independent cost.
         Ok(Self {
             input_format: parts.input_format,
-            models: parts.models,
-            chains: parts.chains,
-            residues: parts.residues,
-            atoms: parts.atoms,
-            entities: parts.entities,
-            connections: parts.connections,
-            cispeps: parts.cispeps,
-            mod_residues: parts.mod_residues,
-            helices: parts.helices,
-            sheets: parts.sheets,
-            metadata: parts.metadata,
-            source_state: parts.source_state,
-            coordinates: parts.coordinates,
-            crystal: parts.crystal,
-            ncs_operators: parts.ncs_operators,
-            assemblies: parts.assemblies,
+            models: std::sync::Arc::new(parts.models),
+            chains: std::sync::Arc::new(parts.chains),
+            residues: std::sync::Arc::new(parts.residues),
+            atoms: std::sync::Arc::new(parts.atoms),
+            entities: std::sync::Arc::new(parts.entities),
+            connections: std::sync::Arc::new(parts.connections),
+            cispeps: std::sync::Arc::new(parts.cispeps),
+            mod_residues: std::sync::Arc::new(parts.mod_residues),
+            helices: std::sync::Arc::new(parts.helices),
+            sheets: std::sync::Arc::new(parts.sheets),
+            metadata: std::sync::Arc::new(parts.metadata),
+            source_state: std::sync::Arc::new(parts.source_state),
+            coordinates: std::sync::Arc::new(parts.coordinates),
+            crystal: std::sync::Arc::new(parts.crystal),
+            ncs_operators: std::sync::Arc::new(parts.ncs_operators),
+            assemblies: std::sync::Arc::new(parts.assemblies),
         })
     }
 
@@ -1249,22 +1512,22 @@ impl BioStructure {
     pub fn into_parts(self) -> BioStructureParts {
         BioStructureParts {
             input_format: self.input_format,
-            models: self.models,
-            chains: self.chains,
-            residues: self.residues,
-            atoms: self.atoms,
-            entities: self.entities,
-            connections: self.connections,
-            cispeps: self.cispeps,
-            mod_residues: self.mod_residues,
-            helices: self.helices,
-            sheets: self.sheets,
-            metadata: self.metadata,
-            source_state: self.source_state,
-            coordinates: self.coordinates,
-            crystal: self.crystal,
-            ncs_operators: self.ncs_operators,
-            assemblies: self.assemblies,
+            models: std::sync::Arc::unwrap_or_clone(self.models),
+            chains: std::sync::Arc::unwrap_or_clone(self.chains),
+            residues: std::sync::Arc::unwrap_or_clone(self.residues),
+            atoms: std::sync::Arc::unwrap_or_clone(self.atoms),
+            entities: std::sync::Arc::unwrap_or_clone(self.entities),
+            connections: std::sync::Arc::unwrap_or_clone(self.connections),
+            cispeps: std::sync::Arc::unwrap_or_clone(self.cispeps),
+            mod_residues: std::sync::Arc::unwrap_or_clone(self.mod_residues),
+            helices: std::sync::Arc::unwrap_or_clone(self.helices),
+            sheets: std::sync::Arc::unwrap_or_clone(self.sheets),
+            metadata: std::sync::Arc::unwrap_or_clone(self.metadata),
+            source_state: std::sync::Arc::unwrap_or_clone(self.source_state),
+            coordinates: std::sync::Arc::unwrap_or_clone(self.coordinates),
+            crystal: std::sync::Arc::unwrap_or_clone(self.crystal),
+            ncs_operators: std::sync::Arc::unwrap_or_clone(self.ncs_operators),
+            assemblies: std::sync::Arc::unwrap_or_clone(self.assemblies),
         }
     }
 
@@ -1287,6 +1550,16 @@ impl BioStructure {
     #[must_use]
     pub fn atoms(&self) -> &[BioAtomRow] {
         &self.atoms
+    }
+    #[must_use]
+    pub fn atom_position(&self, atom: BioAtomId) -> Option<[f64; 3]> {
+        self.coordinates.positions().get(atom.index()).copied()
+    }
+    #[must_use]
+    pub fn residue_atoms(&self, residue: BioResidueId) -> Option<&[BioAtomRow]> {
+        let row = self.residues.get(residue.index())?;
+        let span = row.atom_span();
+        self.atoms.get(span.start() as usize..span.end() as usize)
     }
     #[must_use]
     pub fn entities(&self) -> &[BioEntityRow] {
@@ -1313,20 +1586,32 @@ impl BioStructure {
         &self.sheets
     }
     #[must_use]
-    pub const fn metadata(&self) -> &BioMetadata {
+    pub fn metadata(&self) -> &BioMetadata {
         &self.metadata
     }
     #[must_use]
-    pub const fn source_state(&self) -> &BioStructureSourceState {
+    pub fn source_state(&self) -> &BioStructureSourceState {
         &self.source_state
     }
+    /// Borrow the last identity NCS operation ID retained by the mmCIF reader.
     #[must_use]
-    pub const fn coordinates(&self) -> &BioCoordinateBlock {
+    pub fn ncs_oper_identity_id(&self) -> Option<&str> {
+        // Gemmi✔️✔️:             st.info["_struct_ncs_oper.id"] = op.str(12);
+        // Behavior: identity IDs reside in the existing source map; the
+        // reader overwrites this one key for each later identity row.
+        // Complexity: one ordered-map lookup, no allocation or operator scan.
+        self.source_state
+            .info
+            .get("_struct_ncs_oper.id")
+            .map(String::as_str)
+    }
+    #[must_use]
+    pub fn coordinates(&self) -> &BioCoordinateBlock {
         &self.coordinates
     }
     #[must_use]
     pub fn crystal(&self) -> Option<&BioCrystalInfo> {
-        self.crystal.as_ref()
+        self.crystal.as_ref().as_ref()
     }
     #[must_use]
     pub fn ncs_operators(&self) -> &[BioNcsOperator] {
@@ -1446,8 +1731,8 @@ impl<'a> From<&'a BioStructureParts> for BioStructureView<'a> {
     }
 }
 
-impl<'a> From<&'a BioStructure> for BioStructureView<'a> {
-    fn from(structure: &'a BioStructure) -> Self {
+impl<'a> From<&'a BioStructureData> for BioStructureView<'a> {
+    fn from(structure: &'a BioStructureData) -> Self {
         Self {
             models: &structure.models,
             chains: &structure.chains,
@@ -1557,47 +1842,15 @@ fn validate_hierarchy(view: BioStructureView<'_>) -> Result<(), BioStructureErro
             coordinate_count: view.coordinates.len(),
         });
     }
-    validate_assembly_references(view)?;
-    Ok(())
-}
-
-fn validate_assembly_references(view: BioStructureView<'_>) -> Result<(), BioStructureError> {
-    for (assembly_index, assembly) in view.assemblies.iter().enumerate() {
-        for generator in &assembly.generators {
-            for requested in &generator.chains {
-                let present = view.chains.iter().any(|chain| {
-                    chain
-                        .source()
-                        .auth_chain_id()
-                        .is_some_and(|id| id.as_str() == requested)
-                });
-                if !present {
-                    return Err(BioStructureError::AssemblyReferenceMissing {
-                        assembly: BioAssemblyId::new(assembly_index as u32),
-                        kind: "chain",
-                        value: requested.clone(),
-                    });
-                }
-            }
-            for requested in &generator.subchains {
-                let chain_present = view
-                    .chains
-                    .iter()
-                    .any(|chain| chain.source().label_asym_id() == Some(requested.as_str()));
-                let residue_present = view
-                    .residues
-                    .iter()
-                    .any(|residue| residue.source().subchain_id() == Some(requested.as_str()));
-                if !chain_present && !residue_present {
-                    return Err(BioStructureError::AssemblyReferenceMissing {
-                        assembly: BioAssemblyId::new(assembly_index as u32),
-                        kind: "subchain",
-                        value: requested.clone(),
-                    });
-                }
-            }
-        }
-    }
+    // Assembly chain/subchain names are SOURCE METADATA, not live CK row
+    // references (approved contract, bio_architecture.md "Selection copying
+    // follows pinned Gemmi"): construction must not reject, prune or
+    // rewrite them merely because rows are absent — selection copying can
+    // legitimately drop every named row while retaining the assigned
+    // assembly. Local row IDs, parents/spans, entity-row references and
+    // coordinate alignment remain validated above; a consumer needing
+    // actual assembly targets must resolve the names itself and handle
+    // absence explicitly (no such consumer exists yet).
     Ok(())
 }
 
@@ -1715,11 +1968,6 @@ pub enum BioStructureError {
         entity_id: BioEntityId,
         subchain: String,
     },
-    AssemblyReferenceMissing {
-        assembly: BioAssemblyId,
-        kind: &'static str,
-        value: String,
-    },
     ImpossibleCrystalAngle,
     AtomNotFound,
 }
@@ -1731,3 +1979,880 @@ impl fmt::Display for BioStructureError {
 }
 
 impl std::error::Error for BioStructureError {}
+
+/// Shared private `read_string` logical view over raw stored ASCII bytes
+/// (ROW-NAME Step 2): reproduces the pinned PDB reader helper in exact
+/// source order — is_space left trim (bytes 9-13 and 32), LF/CR/NUL
+/// termination of the remaining field, then is_space right trim. Borrowed,
+/// allocation-free.
+pub(crate) fn pdb_read_string_view(stored: &str) -> &str {
+    // Gemmi✔️✔️: inline bool is_space(char c) {
+    // Gemmi✔️✔️:   static const std::uint8_t table[256] = { // 1 for 9-13 and 32
+    // Gemmi✔️✔️:     0,0,0,0,0,0,0,0, 0,1,1,1,1,1,0,0, 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,
+    // Gemmi✔️✔️:     1,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0, ... remaining rows all zero ... };
+    // Gemmi✔️✔️: }
+    // Gemmi✔️✔️: std::string read_string(const char* p, int field_length) {
+    // Gemmi✔️✔️:   // left trim
+    // Gemmi✔️✔️:   while (field_length != 0 && is_space(*p)) {
+    // Gemmi✔️✔️:     ++p;
+    // Gemmi✔️✔️:     --field_length;
+    // Gemmi✔️✔️:   }
+    // Gemmi✔️✔️:   // EOL/EOF ends the string
+    // Gemmi✔️✔️:   for (int i = 0; i < field_length; ++i)
+    // Gemmi✔️✔️:     if (p[i] == '\n' || p[i] == '\r' || p[i] == '\0') {
+    // Gemmi✔️✔️:       field_length = i;
+    // Gemmi✔️✔️:       break;
+    // Gemmi✔️✔️:     }
+    // Gemmi✔️✔️:   // right trim
+    // Gemmi✔️✔️:   while (field_length != 0 && is_space(p[field_length-1]))
+    // Gemmi✔️✔️:     --field_length;
+    // Gemmi✔️✔️:   return std::string(p, field_length);
+    // Gemmi✔️✔️: }
+    // Behavior: exact source order. The left trim consumes bytes 9-13 and
+    // 32; the termination scan runs over the REMAINING field (p advanced
+    // by the left trim) and cuts at the first NUL/LF/CR, discarding
+    // everything after it; the right trim then removes trailing is_space
+    // bytes of the cut field. Interior TAB/VT/FF (9/11/12) are is_space
+    // but NOT terminators, so an interior TAB is preserved while an
+    // interior LF/CR or NUL truncates. The stored name is
+    // constructor-guaranteed ASCII (<= 4 bytes), so the byte view is valid
+    // UTF-8; the debug_assert documents that invariant rather than
+    // substituting for it.
+    // Complexity: at most two linear passes over <= 4 bytes, borrowed
+    // output, no allocation.
+    fn is_space(b: u8) -> bool {
+        matches!(b, 9..=13 | 32)
+    }
+    let bytes = stored.as_bytes();
+    // left trim
+    let mut start = 0;
+    while start != bytes.len() && is_space(bytes[start]) {
+        start += 1;
+    }
+    // EOL/EOF ends the string (scan the remaining field only)
+    let mut end = bytes.len();
+    for (i, &b) in bytes[start..].iter().enumerate() {
+        if b == b'\n' || b == b'\r' || b == 0 {
+            end = start + i;
+            break;
+        }
+    }
+    // right trim
+    while end != start && is_space(bytes[end - 1]) {
+        end -= 1;
+    }
+    debug_assert!(stored.is_ascii());
+    std::str::from_utf8(&bytes[start..end]).unwrap_or("")
+}
+
+/// Exact PDB four-column atom-name logical view (BIO-ROWS R01).
+///
+/// Borrowed helper owning the name conversion that Gemmi performs at READ
+/// time via `read_string`: only PDB-provenance documents carry raw
+/// four-column names; every CIF-family format stores the decoded logical
+/// name that must be preserved byte-for-byte. The IO writer delegates
+/// here instead of maintaining a duplicate.
+#[must_use]
+pub fn atom_name_logical_view(
+    name: &crate::source_ids::AtomName,
+    input_format: BioCoordinateFormat,
+) -> &str {
+    // Gemmi✔️✔️: atom.name = read_string(line+12, 4);          // PDB reader
+    // Gemmi✔️✔️: a.atom_name = row.str(kLabelAtomId+i);         // mmCIF reader
+    // Behavior: Gemmi's stored name for PDB input is the read_string
+    // view of the raw four columns (is_space bytes 9-13/32 trimmed at the
+    // edges, first NUL/LF/CR terminating), while CIF-family readers store
+    // the decoded logical name verbatim. CK's PDB reader keeps the RAW
+    // four columns, so this view applies the exact read_string sequence
+    // (shared private `pdb_read_string_view`, which carries the verbatim
+    // anchors) only for Pdb provenance; every other format (and Unknown,
+    // which never has PDB column padding) preserves the stored bytes
+    // verbatim. No length/shape inference: input_format is the
+    // authoritative per-document discriminator.
+    // Complexity: O(1) over at most four bytes, borrowed output — no
+    // allocation.
+    if input_format == BioCoordinateFormat::Pdb {
+        pdb_read_string_view(name.as_str())
+    } else {
+        name.as_str()
+    }
+}
+
+/// Exact residue-name logical view (BIO-ROWS R02): the same provenance
+/// rule as [`atom_name_logical_view`], applied to the stored residue
+/// name. CK's PDB reader already stores the trimmed residue name, so the
+/// Pdb branch is the identity there, but the rule is applied explicitly;
+/// CIF-family logical names (e.g. quoted `' A '`) preserve their spaces
+/// byte-for-byte.
+#[must_use]
+pub fn residue_name_logical_view(
+    name: &crate::source_ids::ResidueName,
+    input_format: BioCoordinateFormat,
+) -> &str {
+    // Gemmi✔️✔️: return {read_seq_id(seq_id), {}, read_string(name, 3)};  // PDB reader
+    // Gemmi✔️✔️: vv.emplace_back(cif::quote(res.name));                   // writer
+    // Behavior: identical provenance discriminator and the same exact
+    // read_string sequence (shared private `pdb_read_string_view`);
+    // borrowed output, O(1) over at most four bytes.
+    if input_format == BioCoordinateFormat::Pdb {
+        pdb_read_string_view(name.as_str())
+    } else {
+        name.as_str()
+    }
+}
+
+#[cfg(test)]
+mod bio_rows_namefix_tests {
+    use super::{BioCoordinateFormat, atom_name_logical_view, residue_name_logical_view};
+    use crate::source_ids::{AtomName, ResidueName};
+
+    fn aname(bytes: &[u8]) -> AtomName {
+        AtomName::from_ascii(bytes).unwrap()
+    }
+    fn rname(bytes: &[u8]) -> ResidueName {
+        ResidueName::from_ascii(bytes).unwrap()
+    }
+
+    #[test]
+    fn bio_rows_namefix_all_whitespace_bytes_at_each_edge() {
+        // is_space table (atox.hpp) marks bytes 9-13 and 32; the left and
+        // right trim loops consume exactly those at the field edges.
+        let pdb = BioCoordinateFormat::Pdb;
+        for ws in [9u8, 10, 11, 12, 13, 32] {
+            let w = [ws];
+            // leading: trim consumes it, no terminator, no right trim
+            let leading = [&w[..], b"CA"].concat();
+            assert_eq!(
+                atom_name_logical_view(&aname(&leading), pdb),
+                "CA",
+                "leading byte {ws}"
+            );
+            // trailing: bytes 9/11/12 fall to the right trim; 10/13 hit the
+            // termination scan first — the pinned source yields "CA" either
+            // way (field cut at the byte, nothing after it).
+            let trailing = [b"CA".as_slice(), &w].concat();
+            assert_eq!(
+                atom_name_logical_view(&aname(&trailing), pdb),
+                "CA",
+                "trailing byte {ws}"
+            );
+            assert_eq!(
+                residue_name_logical_view(&rname(&leading), pdb),
+                "CA",
+                "residue leading byte {ws}"
+            );
+            assert_eq!(
+                residue_name_logical_view(&rname(&trailing), pdb),
+                "CA",
+                "residue trailing byte {ws}"
+            );
+        }
+        // A field made only of whitespace bytes trims to empty.
+        assert_eq!(atom_name_logical_view(&aname(b"\t\n\x0b\x0c"), pdb), "");
+        assert_eq!(residue_name_logical_view(&rname(b" \t\r "), pdb), "");
+        // Full-width name with no whitespace survives intact.
+        assert_eq!(atom_name_logical_view(&aname(b"ABCD"), pdb), "ABCD");
+    }
+
+    #[test]
+    fn bio_rows_namefix_interior_terminators_and_tab_family() {
+        let pdb = BioCoordinateFormat::Pdb;
+        // The EOL/EOF scan cuts at the FIRST NUL/LF/CR in the remaining
+        // field; everything after it is discarded.
+        assert_eq!(atom_name_logical_view(&aname(b"AB\nC"), pdb), "AB");
+        assert_eq!(atom_name_logical_view(&aname(b"A\rBC"), pdb), "A");
+        assert_eq!(atom_name_logical_view(&aname(b"A\0BC"), pdb), "A");
+        assert_eq!(residue_name_logical_view(&rname(b"AL\nA"), pdb), "AL");
+        // NUL as the first byte of the remaining field yields the empty
+        // string (left trim does not consume NUL; is_space(0) == 0).
+        assert_eq!(atom_name_logical_view(&aname(b"\0ABC"), pdb), "");
+        // Interior TAB/VT/FF are is_space but NOT terminators: interior
+        // whitespace survives because the trims only touch the edges.
+        assert_eq!(atom_name_logical_view(&aname(b"A\tB"), pdb), "A\tB");
+        assert_eq!(atom_name_logical_view(&aname(b"A\x0bB"), pdb), "A\x0bB");
+        assert_eq!(residue_name_logical_view(&rname(b"A\x0cB"), pdb), "A\x0cB");
+        // A leading LF is whitespace for the LEFT trim (is_space) and is
+        // consumed there — termination only applies to interior bytes.
+        assert_eq!(atom_name_logical_view(&aname(b"\n CA"), pdb), "CA");
+        // Leading trim advancing past whitespace keeps a later terminator
+        // interior: "\tA\nC" -> field "A\nC" -> cut at LF -> "A".
+        assert_eq!(atom_name_logical_view(&aname(b"\tA\nC"), pdb), "A");
+    }
+
+    #[test]
+    fn bio_rows_namefix_non_pdb_preserves_these_bytes_verbatim() {
+        // CIF-family/Unknown provenance never applies read_string: the very
+        // same stored bytes are returned untouched.
+        for format in [
+            BioCoordinateFormat::Unknown,
+            BioCoordinateFormat::Detect,
+            BioCoordinateFormat::Mmcif,
+            BioCoordinateFormat::Mmjson,
+            BioCoordinateFormat::ChemComp,
+        ] {
+            for stored in [&b"\tCA"[..], b"CA\n", b"AB\0C", b"A\tB", b"\n CA", b" CA "] {
+                assert_eq!(
+                    atom_name_logical_view(&aname(stored), format),
+                    std::str::from_utf8(stored).unwrap(),
+                    "{format:?} atom {stored:?}"
+                );
+                assert_eq!(
+                    residue_name_logical_view(&rname(stored), format),
+                    std::str::from_utf8(stored).unwrap(),
+                    "{format:?} residue {stored:?}"
+                );
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod bio_rows_r02_tests {
+    use super::{BioCoordinateFormat, residue_name_logical_view};
+    use crate::source_ids::ResidueName;
+
+    fn name(bytes: &[u8]) -> ResidueName {
+        ResidueName::from_ascii(bytes).unwrap()
+    }
+
+    #[test]
+    fn bio_rows_r02_pdb_padding_versus_cif_spaces() {
+        let pdb = BioCoordinateFormat::Pdb;
+        // PDB three-column provenance: read_string trims outer spaces.
+        assert_eq!(residue_name_logical_view(&name(b"ALA "), pdb), "ALA");
+        assert_eq!(residue_name_logical_view(&name(b" ALA"), pdb), "ALA");
+        assert_eq!(residue_name_logical_view(&name(b"   "), pdb), "");
+        // CIF-family logical names keep literal spaces byte-for-byte.
+        for format in [
+            BioCoordinateFormat::Unknown,
+            BioCoordinateFormat::Detect,
+            BioCoordinateFormat::Mmcif,
+            BioCoordinateFormat::Mmjson,
+            BioCoordinateFormat::ChemComp,
+        ] {
+            assert_eq!(
+                residue_name_logical_view(&name(b" ALA"), format),
+                " ALA",
+                "{format:?}"
+            );
+            assert_eq!(
+                residue_name_logical_view(&name(b"   "), format),
+                "   ",
+                "{format:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn bio_rows_r02_blank_and_maximal_stored_names() {
+        let pdb = BioCoordinateFormat::Pdb;
+        // Blank stored name stays blank in both provenances.
+        assert_eq!(residue_name_logical_view(&name(b""), pdb), "");
+        assert_eq!(
+            residue_name_logical_view(&name(b""), BioCoordinateFormat::Mmcif),
+            ""
+        );
+        // Maximal four-byte stored names keep every byte except the PDB
+        // outer-space trim; embedded spaces are preserved in both.
+        assert_eq!(residue_name_logical_view(&name(b"MSE "), pdb), "MSE");
+        assert_eq!(
+            residue_name_logical_view(&name(b"AB D"), BioCoordinateFormat::Mmcif),
+            "AB D"
+        );
+        assert_eq!(residue_name_logical_view(&name(b"A B "), pdb), "A B");
+        // An all-space CIF name is a literal logical name, not blanked.
+        assert_eq!(
+            residue_name_logical_view(&name(b" "), BioCoordinateFormat::Mmcif),
+            " "
+        );
+    }
+}
+
+#[cfg(test)]
+mod bio_rows_r01_tests {
+    use super::{BioCoordinateFormat, atom_name_logical_view};
+    use crate::source_ids::AtomName;
+
+    fn name(bytes: &[u8]) -> AtomName {
+        AtomName::from_ascii(bytes).unwrap()
+    }
+
+    #[test]
+    fn bio_rows_r01_pdb_padding_rules() {
+        // read_string trims leading and trailing spaces of the raw four
+        // columns (pdb.cpp read_string), independently derived from the
+        // pinned left-trim/EOL/right-trim sequence.
+        let pdb = BioCoordinateFormat::Pdb;
+        assert_eq!(atom_name_logical_view(&name(b" CA "), pdb), "CA");
+        assert_eq!(atom_name_logical_view(&name(b"CA  "), pdb), "CA");
+        assert_eq!(atom_name_logical_view(&name(b"  CA"), pdb), "CA");
+        assert_eq!(atom_name_logical_view(&name(b"    "), pdb), "");
+        assert_eq!(atom_name_logical_view(&name(b"CA"), pdb), "CA");
+        // Embedded spaces are NOT trimmed: only the outer run.
+        assert_eq!(atom_name_logical_view(&name(b"C A "), pdb), "C A");
+        assert_eq!(atom_name_logical_view(&name(b" C A"), pdb), "C A");
+        // A name that is entirely spaces between letters stays verbatim.
+        assert_eq!(atom_name_logical_view(&name(b"HB1 "), pdb), "HB1");
+    }
+
+    #[test]
+    fn bio_rows_r01_non_pdb_preserves_bytes() {
+        // Every CIF-family format and Unknown/Detect preserve the stored
+        // logical name byte-for-byte — no trims at all.
+        for format in [
+            BioCoordinateFormat::Unknown,
+            BioCoordinateFormat::Detect,
+            BioCoordinateFormat::Mmcif,
+            BioCoordinateFormat::Mmjson,
+            BioCoordinateFormat::ChemComp,
+        ] {
+            assert_eq!(
+                atom_name_logical_view(&name(b" CA "), format),
+                " CA ",
+                "{format:?}"
+            );
+            assert_eq!(
+                atom_name_logical_view(&name(b"  "), format),
+                "  ",
+                "{format:?}"
+            );
+            assert_eq!(
+                atom_name_logical_view(&name(b"C A"), format),
+                "C A",
+                "{format:?}"
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+mod bio_legacy_n01_tests {
+    use super::{
+        BioCoordinateBlock, BioCoordinateFormat, BioMetadata, BioStructureData, BioStructureParts,
+        BioStructureSourceState,
+    };
+
+    #[test]
+    fn bio_legacy_n01_identity_id_borrows_existing_source_map() {
+        let mut parts = BioStructureParts {
+            input_format: BioCoordinateFormat::Mmcif,
+            models: vec![],
+            chains: vec![],
+            residues: vec![],
+            atoms: vec![],
+            entities: vec![],
+            connections: vec![],
+            cispeps: vec![],
+            mod_residues: vec![],
+            helices: vec![],
+            sheets: vec![],
+            metadata: BioMetadata::default(),
+            source_state: BioStructureSourceState::default(),
+            coordinates: BioCoordinateBlock::default(),
+            crystal: None,
+            ncs_operators: vec![],
+            assemblies: vec![],
+        };
+        assert_eq!(
+            BioStructureData::from_parts(parts.clone())
+                .unwrap()
+                .ncs_oper_identity_id(),
+            None
+        );
+        for value in ["", "identity-last"] {
+            parts
+                .source_state
+                .info
+                .insert("_struct_ncs_oper.id".into(), value.into());
+            parts
+                .source_state
+                .info
+                .insert("unrelated".into(), "kept".into());
+            let data = BioStructureData::from_parts(parts.clone()).unwrap();
+            assert_eq!(data.ncs_oper_identity_id(), Some(value));
+            assert_eq!(data.source_state().info["_struct_ncs_oper.id"], value);
+            assert_eq!(data.source_state().info["unrelated"], "kept");
+            assert_eq!(
+                data.ncs_oper_identity_id().unwrap().as_ptr(),
+                data.source_state().info["_struct_ncs_oper.id"].as_ptr()
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+mod crystal_transition_tests {
+    use super::{
+        BioCrystalCell, BioCrystalInfo, BioStructureError, BioTransform, inverse_bio_matrix,
+        inverse_bio_transform, set_crystal_cell, set_crystal_fractional_transform,
+        set_crystal_space_group_hm, set_crystal_z_pdb_if_nonempty,
+    };
+
+    fn crystal_with_matrices(
+        fractional: BioTransform,
+        orthogonal: BioTransform,
+        explicit_matrices: bool,
+    ) -> BioCrystalInfo {
+        BioCrystalInfo::new(
+            BioCrystalCell::default(),
+            Some("P 1".to_owned()),
+            Some("1".to_owned()),
+            orthogonal,
+            fractional,
+            explicit_matrices,
+            0,
+            Vec::new(),
+        )
+    }
+
+    fn assert_close(actual: f64, expected: f64) {
+        assert!(
+            (actual - expected).abs() <= 1.0e-15,
+            "actual {actual:.17e} differs from expected {expected:.17e}"
+        );
+    }
+
+    #[test]
+    fn crystal_transition_inverse_nonsymmetric_matches_gemmi_cofactors() {
+        let matrix = [[2.0, 1.0, 0.0], [0.0, 3.0, 1.0], [1.0, 0.0, 4.0]];
+        let expected = [
+            [12.0 / 25.0, -4.0 / 25.0, 1.0 / 25.0],
+            [1.0 / 25.0, 8.0 / 25.0, -2.0 / 25.0],
+            [-3.0 / 25.0, 1.0 / 25.0, 6.0 / 25.0],
+        ];
+
+        let actual = inverse_bio_matrix(matrix);
+        for row in 0..3 {
+            for column in 0..3 {
+                assert_close(actual[row][column], expected[row][column]);
+            }
+        }
+    }
+
+    #[test]
+    fn crystal_transition_inverse_translation_uses_inverse_matrix() {
+        let transform = BioTransform::new(
+            [[2.0, 1.0, 0.0], [0.0, 3.0, 1.0], [1.0, 0.0, 4.0]],
+            [1.0, 2.0, -3.0],
+        );
+
+        let actual = inverse_bio_transform(transform);
+        for (value, expected) in
+            actual
+                .translation()
+                .iter()
+                .zip([-1.0 / 25.0, -23.0 / 25.0, 19.0 / 25.0])
+        {
+            assert_close(*value, expected);
+        }
+    }
+
+    #[test]
+    fn crystal_transition_identity_inverse_is_identity() {
+        let actual = inverse_bio_transform(BioTransform::identity());
+        assert_eq!(actual, BioTransform::identity());
+        assert_eq!(
+            inverse_bio_matrix([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]),
+            [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]
+        );
+    }
+
+    #[test]
+    fn crystal_transition_singular_inverse_preserves_ieee_non_finite_values() {
+        let actual = inverse_bio_matrix([[0.0; 3]; 3]);
+        assert!(actual.into_iter().flatten().all(f64::is_nan));
+        let transform = inverse_bio_transform(BioTransform::new([[0.0; 3]; 3], [1.0, -2.0, 3.0]));
+        assert!(
+            transform
+                .matrix()
+                .iter()
+                .flatten()
+                .all(|value| value.is_nan())
+        );
+        assert!(transform.translation().iter().all(|value| value.is_nan()));
+    }
+
+    #[test]
+    fn crystal_transition_cell_gamma_zero_is_an_exact_noop() {
+        let transform = BioTransform::new(
+            [[2.0, 0.0, 0.0], [0.0, 3.0, 0.0], [0.0, 0.0, 4.0]],
+            [5.0, 6.0, 7.0],
+        );
+        let mut crystal = BioCrystalInfo::new(
+            BioCrystalCell {
+                a: 4.0,
+                b: 5.0,
+                c: 6.0,
+                alpha: 80.0,
+                beta: 95.0,
+                gamma: 100.0,
+            },
+            Some("P 21 21 21".to_owned()),
+            Some("8".to_owned()),
+            transform,
+            transform,
+            true,
+            3,
+            vec![BioTransform::identity()],
+        );
+        crystal.calculate_properties().unwrap();
+        let before = crystal.clone();
+
+        assert_eq!(
+            set_crystal_cell(
+                &mut crystal,
+                BioCrystalCell {
+                    a: 0.0,
+                    b: 0.0,
+                    c: 0.0,
+                    alpha: 0.0,
+                    beta: 0.0,
+                    gamma: -0.0,
+                }
+            ),
+            Ok(())
+        );
+        assert_eq!(crystal, before);
+    }
+
+    #[test]
+    fn crystal_transition_cell_replacement_refreshes_orthogonal_properties() {
+        let mut crystal = BioCrystalInfo::new(
+            BioCrystalCell::default(),
+            None,
+            None,
+            BioTransform::identity(),
+            BioTransform::identity(),
+            false,
+            0,
+            Vec::new(),
+        );
+        crystal.calculate_properties().unwrap();
+
+        let replacement = BioCrystalCell {
+            a: 4.0,
+            b: 5.0,
+            c: 6.0,
+            alpha: 90.0,
+            beta: 90.0,
+            gamma: 90.0,
+        };
+        set_crystal_cell(&mut crystal, replacement).unwrap();
+
+        assert_eq!(crystal.cell(), replacement);
+        assert_eq!(crystal.volume(), 120.0);
+        assert_eq!(*crystal.reciprocal_lengths(), [0.25, 0.2, 1.0 / 6.0]);
+        assert_eq!(*crystal.reciprocal_cosines(), [0.0; 3]);
+        assert_eq!(
+            *crystal.orthogonal().matrix(),
+            [[4.0, 0.0, 0.0], [0.0, 5.0, 0.0], [0.0, 0.0, 6.0]]
+        );
+    }
+
+    #[test]
+    fn crystal_transition_cell_error_keeps_source_ordered_partial_state() {
+        let mut crystal = BioCrystalInfo::new(
+            BioCrystalCell::default(),
+            Some("P 1".to_owned()),
+            Some("1".to_owned()),
+            BioTransform::identity(),
+            BioTransform::identity(),
+            false,
+            2,
+            Vec::new(),
+        );
+        crystal.calculate_properties().unwrap();
+        let old_volume = crystal.volume();
+        let old_lengths = *crystal.reciprocal_lengths();
+        let old_cosines = *crystal.reciprocal_cosines();
+        let old_orthogonal = *crystal.orthogonal();
+        let old_fractional = *crystal.fractional();
+        let invalid = BioCrystalCell {
+            a: 2.0,
+            b: 3.0,
+            c: 4.0,
+            alpha: 0.0,
+            beta: 91.0,
+            gamma: 92.0,
+        };
+
+        assert_eq!(
+            set_crystal_cell(&mut crystal, invalid),
+            Err(BioStructureError::ImpossibleCrystalAngle)
+        );
+        assert_eq!(crystal.cell(), invalid);
+        assert_eq!(crystal.volume(), old_volume);
+        assert_eq!(*crystal.reciprocal_lengths(), old_lengths);
+        assert_eq!(*crystal.reciprocal_cosines(), old_cosines);
+        assert_eq!(*crystal.orthogonal(), old_orthogonal);
+        assert_eq!(*crystal.fractional(), old_fractional);
+        assert_eq!(crystal.space_group_hm(), Some("P 1"));
+        assert_eq!(crystal.z_pdb(), Some("1"));
+        assert_eq!(crystal.cs_count(), 2);
+    }
+
+    #[test]
+    fn crystal_transition_cell_refreshes_scalars_without_replacing_explicit_matrices() {
+        let explicit = BioTransform::new(
+            [[7.0, 1.0, 2.0], [3.0, 8.0, 4.0], [5.0, 6.0, 9.0]],
+            [10.0, 11.0, 12.0],
+        );
+        let mut crystal = BioCrystalInfo::new(
+            BioCrystalCell {
+                a: 2.0,
+                b: 3.0,
+                c: 4.0,
+                alpha: 80.0,
+                beta: 90.0,
+                gamma: 100.0,
+            },
+            Some("P 1".to_owned()),
+            Some("4".to_owned()),
+            explicit,
+            explicit,
+            true,
+            1,
+            Vec::new(),
+        );
+        crystal.calculate_properties().unwrap();
+
+        set_crystal_cell(
+            &mut crystal,
+            BioCrystalCell {
+                a: 5.0,
+                b: 6.0,
+                c: 7.0,
+                alpha: 90.0,
+                beta: 90.0,
+                gamma: 90.0,
+            },
+        )
+        .unwrap();
+
+        assert!(crystal.explicit_matrices());
+        assert_eq!(*crystal.orthogonal(), explicit);
+        assert_eq!(*crystal.fractional(), explicit);
+        assert_eq!(crystal.volume(), 210.0);
+        assert_eq!(*crystal.reciprocal_lengths(), [0.2, 1.0 / 6.0, 1.0 / 7.0]);
+        assert_eq!(*crystal.reciprocal_cosines(), [0.0; 3]);
+        assert_eq!(crystal.space_group_hm(), Some("P 1"));
+        assert_eq!(crystal.z_pdb(), Some("4"));
+        assert_eq!(crystal.cs_count(), 1);
+    }
+
+    #[test]
+    fn crystal_transition_fractional_thresholds_are_inclusive() {
+        let orthogonal = BioTransform::new(
+            [[2.0, 0.0, 0.0], [0.0, 3.0, 0.0], [0.0, 0.0, 4.0]],
+            [5.0, 6.0, 7.0],
+        );
+        let mut crystal = crystal_with_matrices(BioTransform::identity(), orthogonal, false);
+        let before = crystal.clone();
+        let mut just_inside = BioTransform::identity();
+        just_inside.matrix[0][1] = 0.999e-4;
+        just_inside.translation[0] = 0.999e-6;
+        set_crystal_fractional_transform(&mut crystal, just_inside);
+        assert_eq!(crystal, before);
+
+        let mut at_threshold = BioTransform::identity();
+        at_threshold.matrix[0][1] = 1.0e-4;
+        at_threshold.translation[0] = 1.0e-6;
+        set_crystal_fractional_transform(&mut crystal, at_threshold);
+        assert_eq!(crystal, before);
+    }
+
+    #[test]
+    fn crystal_transition_fractional_differences_above_each_threshold_are_installed() {
+        let mut matrix_above = BioTransform::identity();
+        matrix_above.matrix[0][1] = 1.0001e-4;
+        let mut crystal =
+            crystal_with_matrices(BioTransform::identity(), BioTransform::identity(), false);
+        set_crystal_fractional_transform(&mut crystal, matrix_above);
+        assert_eq!(*crystal.fractional(), matrix_above);
+        assert!(crystal.explicit_matrices());
+
+        let translation_above =
+            BioTransform::new(*BioTransform::identity().matrix(), [1.0001e-6, 0.0, 0.0]);
+        let mut crystal =
+            crystal_with_matrices(BioTransform::identity(), BioTransform::identity(), false);
+        set_crystal_fractional_transform(&mut crystal, translation_above);
+        assert_eq!(*crystal.fractional(), translation_above);
+        assert_eq!(crystal.orthogonal().translation(), &[-1.0001e-6, 0.0, 0.0]);
+        assert!(crystal.explicit_matrices());
+    }
+
+    #[test]
+    fn crystal_transition_fractional_matrix_nan_difference_is_source_approximate() {
+        let orthogonal = BioTransform::new(
+            [[2.0, 0.0, 0.0], [0.0, 3.0, 0.0], [0.0, 0.0, 4.0]],
+            [5.0, 6.0, 7.0],
+        );
+        let mut crystal = crystal_with_matrices(BioTransform::identity(), orthogonal, false);
+        let before = crystal.clone();
+        let transform = BioTransform::new(
+            [[1.0, f64::NAN, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+            [0.0; 3],
+        );
+
+        set_crystal_fractional_transform(&mut crystal, transform);
+
+        assert_eq!(crystal, before);
+    }
+
+    #[test]
+    fn crystal_transition_fractional_vector_nan_is_not_source_approximate() {
+        let mut crystal =
+            crystal_with_matrices(BioTransform::identity(), BioTransform::identity(), false);
+        let transform = BioTransform::new(*BioTransform::identity().matrix(), [f64::NAN, 0.0, 0.0]);
+
+        set_crystal_fractional_transform(&mut crystal, transform);
+
+        assert!(crystal.fractional().translation()[0].is_nan());
+        assert!(crystal.orthogonal().translation()[0].is_nan());
+        assert!(crystal.explicit_matrices());
+    }
+
+    #[test]
+    fn crystal_transition_fractional_suspicious_first_matrix_values_are_ignored() {
+        for first_value in [0.0, 1.25] {
+            let orthogonal = BioTransform::new(
+                [[2.0, 0.0, 0.0], [0.0, 3.0, 0.0], [0.0, 0.0, 4.0]],
+                [5.0, 6.0, 7.0],
+            );
+            let mut crystal = crystal_with_matrices(BioTransform::identity(), orthogonal, false);
+            let before = crystal.clone();
+            let transform = BioTransform::new(
+                [[first_value, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+                [0.0; 3],
+            );
+
+            set_crystal_fractional_transform(&mut crystal, transform);
+
+            assert_eq!(crystal, before);
+        }
+    }
+
+    #[test]
+    fn crystal_transition_fractional_replacement_inverts_translation_and_sets_explicit_flag() {
+        let initial_fractional = BioTransform::new(
+            [[0.5, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+            [0.0; 3],
+        );
+        let mut crystal =
+            crystal_with_matrices(initial_fractional, BioTransform::identity(), false);
+        let replacement = BioTransform::new(
+            [[2.0, 0.0, 0.0], [0.0, 4.0, 0.0], [0.0, 0.0, 5.0]],
+            [2.0, 4.0, 10.0],
+        );
+
+        set_crystal_fractional_transform(&mut crystal, replacement);
+
+        assert_eq!(*crystal.fractional(), replacement);
+        assert_eq!(
+            *crystal.orthogonal(),
+            BioTransform::new(
+                [[0.5, 0.0, 0.0], [0.0, 0.25, 0.0], [0.0, 0.0, 0.2]],
+                [-1.0, -1.0, -2.0]
+            )
+        );
+        assert!(crystal.explicit_matrices());
+        assert_eq!(crystal.cell(), BioCrystalCell::default());
+        assert_eq!(crystal.space_group_hm(), Some("P 1"));
+        assert_eq!(crystal.z_pdb(), Some("1"));
+    }
+
+    #[test]
+    fn crystal_transition_space_group_replaces_only_its_metadata() {
+        let orthogonal = BioTransform::new(
+            [[7.0, 1.0, 2.0], [3.0, 8.0, 4.0], [5.0, 6.0, 9.0]],
+            [10.0, 11.0, 12.0],
+        );
+        let fractional = BioTransform::new(
+            [[0.5, 0.1, 0.2], [0.3, 0.4, 0.6], [0.7, 0.8, 0.9]],
+            [-1.0, -2.0, -3.0],
+        );
+        let mut crystal = BioCrystalInfo::new(
+            BioCrystalCell {
+                a: 6.0,
+                b: 7.0,
+                c: 8.0,
+                alpha: 90.0,
+                beta: 100.0,
+                gamma: 110.0,
+            },
+            Some("old-group".to_owned()),
+            Some("17".to_owned()),
+            orthogonal,
+            fractional,
+            true,
+            9,
+            vec![BioTransform::identity(), orthogonal],
+        );
+        crystal.calculate_properties().unwrap();
+
+        let before = crystal.clone();
+        set_crystal_space_group_hm(&mut crystal, "new-group".to_owned());
+        let mut expected = before.clone();
+        expected.space_group_hm = Some("new-group".to_owned());
+        assert_eq!(crystal, expected);
+
+        let before_empty_replacement = crystal.clone();
+        set_crystal_space_group_hm(&mut crystal, String::new());
+        let mut expected_empty = before_empty_replacement;
+        expected_empty.space_group_hm = Some(String::new());
+        assert_eq!(crystal, expected_empty);
+    }
+
+    #[test]
+    fn crystal_transition_z_replaces_nonempty_and_retains_empty() {
+        let mut crystal = BioCrystalInfo::new(
+            BioCrystalCell {
+                a: 5.0,
+                b: 6.0,
+                c: 7.0,
+                alpha: 90.0,
+                beta: 90.0,
+                gamma: 90.0,
+            },
+            Some("P 21 21 21".to_owned()),
+            Some("8".to_owned()),
+            BioTransform::identity(),
+            BioTransform::identity(),
+            false,
+            4,
+            vec![BioTransform::identity()],
+        );
+        crystal.calculate_properties().unwrap();
+
+        let before = crystal.clone();
+        set_crystal_z_pdb_if_nonempty(&mut crystal, "12".to_owned());
+        let mut expected = before;
+        expected.z_pdb = Some("12".to_owned());
+        assert_eq!(crystal, expected);
+
+        let before_empty = crystal.clone();
+        set_crystal_z_pdb_if_nonempty(&mut crystal, String::new());
+        assert_eq!(crystal, before_empty);
+    }
+
+    #[test]
+    fn crystal_transition_empty_z_keeps_absent_metadata_absent() {
+        let mut crystal = BioCrystalInfo::new(
+            BioCrystalCell::default(),
+            None,
+            None,
+            BioTransform::identity(),
+            BioTransform::identity(),
+            false,
+            0,
+            Vec::new(),
+        );
+        crystal.calculate_properties().unwrap();
+        let before = crystal.clone();
+
+        set_crystal_z_pdb_if_nonempty(&mut crystal, String::new());
+
+        assert_eq!(crystal, before);
+        assert_eq!(crystal.z_pdb(), None);
+    }
+}

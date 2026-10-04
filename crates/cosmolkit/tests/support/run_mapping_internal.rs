@@ -6,8 +6,8 @@ use cosmolkit_model::{
 
 use super::*;
 use crate::ops::{
-    BlockAccess, CipStatePolicy, DerivedEffects, DerivedState, MappingRequirement, MoleculeOpKind,
-    OperationDomain, ParityPolicy, SemanticPreconditionSet, SupportStatus, TopologyEditKind,
+    BlockAccess, CipStatePolicy, DerivedEffects, DerivedState, FunctionStatus, MappingRequirement,
+    MoleculeOpKind, OperationDomain, ParityPolicy, SemanticPreconditionSet, TopologyEditKind,
 };
 
 struct MappingAccess;
@@ -66,7 +66,7 @@ fn spec_with_cip(
         cip_state,
         semantic_preconditions: SemanticPreconditionSet::NONE,
         requires_mapping: requirement,
-        support: SupportStatus::Experimental,
+        status: FunctionStatus::Experimental,
         parity: ParityPolicy::NotApplicable,
         io_roundtrip: false,
     }))
@@ -145,7 +145,7 @@ fn properties(
             "atoms",
             atom_values
                 .into_iter()
-                .map(|value| value.map(str::to_owned))
+                .map(|value| value.map(cosmolkit_model::PropertyValue::from))
                 .collect(),
         ))
         .with_sdf_property_list(SdfPropertyList::new(
@@ -153,7 +153,7 @@ fn properties(
             "bonds",
             bond_values
                 .into_iter()
-                .map(|value| value.map(str::to_owned))
+                .map(|value| value.map(cosmolkit_model::PropertyValue::from))
                 .collect(),
         ))
 }
@@ -587,7 +587,10 @@ fn deletion_and_reorder_remap_all_coordinate_and_property_rows_in_new_order() {
     );
     assert_eq!(
         output.properties().sdf_property_lists()[0].values(),
-        &[Some("o".to_owned()), Some("c".to_owned())]
+        &[
+            Some(cosmolkit_model::PropertyValue::from("o")),
+            Some(cosmolkit_model::PropertyValue::from("c"))
+        ]
     );
     assert_eq!(source.topology().atoms.len(), 3);
     assert_eq!(source.properties().name(), Some("source"));
@@ -639,7 +642,12 @@ fn append_distinguishes_empty_coordinates_owner_values_and_property_none_rows() 
     assert!(output.coordinate_block_runtime().conformers_2d.is_empty());
     assert_eq!(
         output.properties().sdf_property_lists()[0].values(),
-        &[Some("c".to_owned()), None, Some("o".to_owned()), None]
+        &[
+            Some(cosmolkit_model::PropertyValue::from("c")),
+            None,
+            Some(cosmolkit_model::PropertyValue::from("o")),
+            None
+        ]
     );
 
     let source = molecule_with_rows(true);

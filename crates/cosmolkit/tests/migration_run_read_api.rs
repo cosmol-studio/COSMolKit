@@ -1,9 +1,9 @@
 use cosmolkit::{
-    Atom, AtomId, AtomSpec, BINDING_CONTRACT, BindingDefault, BindingExposure, BindingItem,
-    BindingKind, BindingOwner, BindingParity, BindingSupport, Bond, BondId, BondOrder, BondSpec,
-    Conformer2D, Conformer3D, CoordinateBlock, CoordinateValidationError, Element, Molecule,
-    MoleculeProperties, OperationError, StateModel, StereoGroup, StereoGroupKind, SubstanceGroup,
-    SubstanceGroupId, SubstanceGroupKind, TopologyBlock,
+    Atom, AtomId, AtomSpec, BINDING_CONTRACT, BindingDefault, BindingItem, BindingKind,
+    BindingOwner, Bond, BondId, BondOrder, BondSpec, Conformer2D, Conformer3D, CoordinateBlock,
+    CoordinateValidationError, Element, FunctionStatus, Molecule, MoleculeProperties,
+    OperationError, StateModel, StereoGroup, StereoGroupKind, SubstanceGroup, SubstanceGroupId,
+    SubstanceGroupKind, TopologyBlock,
 };
 
 fn atom(index: usize, element: Element) -> Atom {
@@ -136,9 +136,7 @@ fn binding_rows_exactly_match_names_signatures_and_read_only_semantics() {
         assert_eq!(entry.python_name, rust_name);
         assert_eq!(entry.javascript_name, javascript_name);
         assert_eq!(entry.feature, "runtime");
-        assert_eq!(entry.exposure, BindingExposure::Public);
-        assert_eq!(entry.support, BindingSupport::Supported);
-        assert_eq!(entry.parity, BindingParity::NotApplicable);
+        assert_eq!(entry.status, FunctionStatus::Experimental);
         assert_eq!(callable.kind, BindingKind::Instance);
         assert_eq!(callable.output_type.replace(' ', ""), output);
         assert_eq!(callable.error_type, None);

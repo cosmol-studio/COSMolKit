@@ -1,17 +1,20 @@
-# Rust parity registry pilot
+# Rust parity registry
 
 This top-level, unpublished crate tests the **public `cosmolkit` API with
 `full` enabled**. Its only chemistry dependency is `cosmolkit`. No production
-crate depends on this runner. Scope is exactly `fuzzy_and` and `fuzzy_or` on
-the two public sparse-count index widths; this is not a performance suite.
+crate depends on this runner. Executable tasks and parameter combinations are
+defined in `src/registry.rs`; future catalog entries are not executable tasks.
+This is not a performance suite.
 
 ## Read the implementation in this order
 
-1. `src/registry.rs`: two tasks, their u32/u64 widths, typed inputs/results,
-   and six explicitly named branch cases. No YAML and no hidden repetitions.
+1. `src/registry.rs`: executable tasks, widths, and typed inputs/results;
+   `src/registry/fingerprint_corpus.rs`: the deterministic fingerprint matrix;
+   `src/registry/molecule_plan.rs`: molecular task profiles and future catalog.
 2. `src/lib.rs`: `run` automatically prepares data, performs complete preflight,
    then executes and compares exact typed results.
-3. `src/execute.rs`: calls the public Rust API; no chemistry reimplementation.
+3. `src/execute.rs` and `src/molecular.rs`: public Rust calls and typed observations;
+   no chemistry reimplementation.
 4. `src/tests.rs`: tests the runner itself, including missing final-task data
    preventing **all** Rust operation calls.
 
@@ -51,6 +54,33 @@ directory. Do not stage these generated artifacts.
 
 ## What exactly executes?
 
+No task filter selects every executable task. Molecular tasks consume the
+selected `.smi` corpus (default: `smiles_small.smi`). Fuzzy tasks consume their
+own deterministic matrix, not fingerprints inferred from those SMILES:
+
+| Axis | Values |
+|---|---|
+| Key distribution | Both empty, left empty, right empty, same keys, left before right, right before left, interleaved, partial overlap, left subset, right subset |
+| Vector length | 16, 256, 65536, 2^31, u32::MAX |
+| Count palette | Positive, negative, mixed signs, stored zeros, i32 boundaries |
+| Samples per cell | 20 deterministic index rotations/count assignments |
+
+10 × 5 × 5 × 20 = **5000 input pairs**. Each pair runs through both u32/u64
+widths and both Fuzzy operations: **20000 comparisons**. This is a stratified
+input matrix, not 5000 unique chemical fingerprints or a performance loop;
+empty shapes intentionally recur across lengths and count palettes. The Rust
+generator defines exact masks, palettes and index arithmetic. Its source is
+included in reference identity, so changing it invalidates stale generations.
+
+```bash
+# All molecular tasks use 5000 SMILES; both Fuzzy tasks use 5000 input pairs.
+cargo run -p cosmolkit-parity-tests --release --features cosmolkit/op-contracts-strict -- \
+  run --corpus testdata/smiles/corpus/smiles_5000.smi
+```
+
+The following six small cases are used by runner regression tests, not as the
+default parity corpus:
+
 The builtin input pairs exercise:
 
 | Case | Source branch |
@@ -62,13 +92,9 @@ The builtin input pairs exercise:
 | `disjoint_interleaved` | Ordered scan advances across alternating keys |
 | `explicit_zero_shared_and_exclusive` | Stored zero is an entry, not an absent key |
 
-Each case executes once for each registered width and operation:
-6 input pairs x 2 widths x 2 operations = **24 comparisons**. Selecting one
-operation gives 12. These counts follow the declared cases, not a target
-sample count, repetition constant, or performance claim.
-
-Supply `--corpus FILE` to all stages to use another complete input list.
-The file is a JSON array of the Rust `Pair` type; operation/width expansion
+Supply `--corpus FILE.json` to replace the fingerprint input matrix with a
+JSON array of the Rust `Pair` type. A `.smi` path replaces only the molecular
+corpus; the other selected family keeps its default. Operation/width expansion
 still comes from the Rust registry, not the file:
 
 ```json
@@ -86,7 +112,7 @@ This pilot accepts equal-length valid vectors with unique indices strictly
 below length and i32 counts. Construction creates stored zeros separately
 before assigning nonzero counts; no arbitrary count-magnitude limit is used.
 Other inputs fail preflight rather than being skipped. Exhaustive integer-domain coverage, error parity,
-SMILES-to-fingerprint conversion and million-row streaming are not claimed.
+SMILES-to-fingerprint conversion and million-row streaming are not claimed for Fuzzy.
 The small pilot loads owned snapshots in memory to keep the execution flow
 inspectable; it is not yet the large-corpus engine.
 
@@ -141,6 +167,40 @@ in `crates/cosmolkit-fingerprints/tests/`. Neither contains this pilot's corpus
 loader, preparation, oracle invocation or comparison pipeline. The old
 1400-call timing sampler was removed; its functional shapes remain covered
 by deterministic owner regressions. No speed equivalence is inferred.
+
+## Coverage CI and reference caching
+
+Before fetching third-party test sources, coverage CI builds the selected
+libraries with the same strict features, release profile and instrumentation
+used by regression tests. A build failure prevents source initialization and
+testing. Successful builds are reused from `target/coverage-build`; only raw
+coverage measurements are cleared, not compiled artifacts.
+
+`.github/workflows/coverage.yml` runs default regression suites from every
+current publishable Rust library and this runner, with runtime strict checks.
+Python/WASM wrappers, the historical macro package and development tools are
+not selected. Explicitly ignored tests remain opt-in; documentation tests run
+separately without coverage instrumentation.
+
+In the same job, `cargo llvm-cov run --no-report` accumulates coverage for every registered
+parity task with 5000 molecular records and the 5000-pair fingerprint matrix.
+Both regression and parity execution contribute to one HTML/LCOV report.
+The independent parity JSON records inputs, expected/actual results and mismatches.
+Failures do not suppress reports and still fail CI.
+
+The reference cache binds OS/architecture, Python version, pinned environment,
+runner/registry/generator sources and the molecular corpus. Restore uses only
+that identity prefix; each newly generated, globally validated snapshot gets a
+unique run/attempt suffix so corrupt caches can be replaced. Cache hits still
+undergo the Rust manifest/input/reference checks. Only reference files are
+cached, never Rust results or coverage profiles. Fully reusable generations are
+not saved again. A chemistry mismatch does not invalidate reference data.
+
+`Swatinem/rust-cache@v2` separately caches dependency and workspace compilation
+in the normal and instrumented build directories, including after failed tests.
+Reference generations live outside those build caches. Coverage measurements
+are reset without deleting compiled artifacts, and fresh measurements from
+both test stages are merged for each run.
 
 ## Public API audit
 
@@ -197,3 +257,69 @@ the 31 new entries. The expected list was extended explicitly without removing
 its exact order/count assertions; the focused 7-test schema target and full
 runtime rerun then passed. Existing compiler warnings remain. These results
 are not a whole-workspace, Python/JS, performance or million-corpus claim.
+
+## Historical molecular execution evidence — 2026-09-26
+
+These results describe the earlier nine-task molecular runner and six-pair
+fingerprint corpus. They are retained as historical failure evidence, not the
+current registry, corpus size, or acceptance status. Later implementations may
+have corrected the reported failures; rerun current tasks to establish that.
+
+
+This is a test-integration result, not acceptance of the chemical operations.
+The release runner was built with both runtime and core `op-contracts-strict`
+using the build command above. Build exited 0; runner regressions passed 23/23
+(exit 0, none ignored). Reference: RDKit 2026.03.1, local x86_64 Linux.
+
+Final runs:
+
+```bash
+target/release/cosmolkit-parity-tests run --data target/parity-tests/molecular-small
+target/release/cosmolkit-parity-tests run \
+  --corpus testdata/smiles/corpus/smiles_5000.smi \
+  --data target/parity-tests/molecular-5000
+```
+
+Both exited 1 due to retained parity failures. Each also ran the default six
+fingerprint pairs at both widths (24/24 matched); a SMILES corpus does not
+become 5,000 fingerprint pairs.
+
+| Molecular task | Small corpus matched / compared | 5,000 corpus matched / compared |
+|---|---:|---:|
+| SMILES read | 439 / 608 | 14,447 / 20,000 |
+| Sanitize ALL | 135 / 152 | 4,447 / 5,000 |
+| Kekulize | 14 / 304 | 0 / 10,000 |
+| Molecular weight | 280 / 304 | 10,000 / 10,000 |
+| Exact molecular weight | 280 / 304 | 10,000 / 10,000 |
+| Molecular formula | 560 / 608 | 20,000 / 20,000 |
+| Add hydrogens | 14 / 304 | 0 / 10,000 |
+| Remove hydrogens | 132 / 304 | 4,411 / 10,000 |
+| 2D coordinates and topology | 7 / 152 | 0 / 5,000 |
+
+Totals including fingerprint rows: small 3,064 comparisons / 1,179 non-passes;
+5,000 corpus 100,024 comparisons / 36,695 non-passes. Small-corpus reference
+rejections are included as non-passes, not declared equivalent errors. The
+5,000 run's failing rows are observed value/state differences, not oracle or
+CK exceptions. The counts describe the full result schema: a topology mismatch
+also fails a coordinate task, and a parser mismatch can propagate downstream.
+They do not isolate the faulty algorithm or prove every operation is wrong.
+
+Concrete observations retained in the small report include `C=C` with
+sanitize=true/remove_hydrogens=true: RDKit hybridization is SP2 (3), CK is
+Unspecified (0); raw `[nH]1cccc1` followed by sanitize retains explicit H=1 in
+RDKit but yields 0 in CK. No chemistry implementation, approved-difference
+policy, expectation or tolerance was changed to hide these observations.
+
+The small corpus currently contains 152 records (its older corpus README says
+150); no rows were filtered. Input SHA-256:
+
+- Small: `47380e477dc2ab4b3c2b7cd62754e52b718bb9f3f0b977d47eb97db45074442e`
+- 5,000: `a4d579cd72621af27772256bb23ba796452276bb924fd20aac83625ffa67d849`
+
+Full typed expected/actual records and identity manifests remain under the
+ignored output directories above. The 5,000 `rust-report.json` is approximately
+2.7 GiB and must not enter Git. A repeated small run reused all 11 validated
+reference generations, generated none and reproduced the same non-passes.
+This in-memory pilot is not a claim of million-row scalability. CIP, potential
+stereo and full valence comparisons remain explicitly unregistered as described
+in TASKS.md; successful descriptor cases do not automatically promote API labels.

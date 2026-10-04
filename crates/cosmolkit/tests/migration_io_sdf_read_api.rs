@@ -209,11 +209,11 @@ fn sdf_public_property_lists_and_typed_sgroup_survive_runtime_install() {
     let applied = SdfRecord::from_sdf(&input).unwrap();
     assert_eq!(
         applied.molecule().unwrap().topology().atoms[0].prop("Label"),
-        Some("left")
+        Some(&cosmolkit_model::PropertyValue::from("left"))
     );
     assert_eq!(
         applied.molecule().unwrap().topology().atoms[1].prop("Label"),
-        Some("right")
+        Some(&cosmolkit_model::PropertyValue::from("right"))
     );
     assert_eq!(applied.properties().sdf_property_lists().len(), 1);
     assert_eq!(applied.substance_groups().len(), 1);

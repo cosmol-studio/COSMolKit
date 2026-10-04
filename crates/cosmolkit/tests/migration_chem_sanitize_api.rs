@@ -6,13 +6,12 @@ use std::path::PathBuf;
 use std::process::{Command, Output};
 
 use cosmolkit::{
-    Atom, AtomId, AtomSpec, BINDING_CONTRACT, BindingExposure, BindingItem, BindingOwner,
-    BindingParity, BindingSupport, BlockSet, Bond, BondId, BondOrder, BondSpec,
-    ChemistryProblemError, Conformer2D, CoordinateBlock, Element, Molecule, MoleculeOpKind,
-    MoleculeOpOutput, MoleculeProperties, OperationDomain, OperationError, ParityPolicy,
-    SanitizeError, SanitizeOperations, SanitizeParams, SanitizeStage, StateModel, SupportStatus,
-    TopologyBlock, TopologyEditKind, feature_spec, operation_invariant, operation_parity,
-    operation_spec, support_matrix,
+    Atom, AtomId, AtomSpec, BINDING_CONTRACT, BindingItem, BindingOwner, BlockSet, Bond, BondId,
+    BondOrder, BondSpec, ChemistryProblemError, Conformer2D, CoordinateBlock, Element,
+    FunctionStatus, Molecule, MoleculeOpKind, MoleculeOpOutput, MoleculeProperties,
+    OperationDomain, OperationError, ParityPolicy, SanitizeError, SanitizeOperations,
+    SanitizeParams, SanitizeStage, StateModel, TopologyBlock, TopologyEditKind, feature_spec,
+    operation_invariant, operation_parity, operation_spec, support_matrix,
 };
 
 fn topology_from_specs(atom_specs: Vec<AtomSpec>, bond_specs: Vec<BondSpec>) -> TopologyBlock {
@@ -179,16 +178,14 @@ fn binding_contract_exposes_exactly_the_frozen_eleven_entries() {
     ];
     let rows = BINDING_CONTRACT
         .iter()
-        .filter(|row| row.feature == "sanitize")
+        .filter(|row| row.feature == "cap-sanitize")
         .collect::<Vec<_>>();
     assert_eq!(
         rows.iter().map(|row| row.semantic_id).collect::<Vec<_>>(),
         expected
     );
     for row in &rows {
-        assert_eq!(row.exposure, BindingExposure::Public);
-        assert_eq!(row.support, BindingSupport::SupportedWithRdkitParity);
-        assert_eq!(row.parity, BindingParity::RequiredNow);
+        assert_eq!(row.status, FunctionStatus::Experimental);
     }
     for row in &rows[..7] {
         assert_eq!(row.item, BindingItem::Type);
@@ -214,9 +211,8 @@ fn binding_contract_exposes_exactly_the_frozen_eleven_entries() {
 
 #[test]
 fn generated_registry_and_all_four_matrices_share_one_exact_operation() {
-    let feature = feature_spec("sanitize").unwrap();
-    assert_eq!(feature.status, SupportStatus::SupportedWithRdkitParity);
-    assert!(feature.rdkit_parity_sensitive);
+    let feature = feature_spec("cap-sanitize").unwrap();
+    assert_eq!(feature.name, "cap-sanitize");
 
     let spec = operation_spec("sanitize_with_params").unwrap();
     assert_eq!(spec.domain, OperationDomain::Topology);
@@ -233,12 +229,16 @@ fn generated_registry_and_all_four_matrices_share_one_exact_operation() {
     assert_eq!(spec.may_mutate, spec.access.write());
     assert_eq!(spec.auto_remap, BlockSet::NONE);
     assert_eq!(format!("{:?}", spec.requires_mapping), "None");
-    assert_eq!(spec.derived_effects.recompute.bits(), 0);
+    // L3: ordinary rings moved invalidate -> recompute (final_rings
+    // replacement-or-clear transport); every other effect is unchanged.
+    assert_eq!(spec.derived_effects.recompute.bits(), (1 << 2) | (1 << 0));
     assert_eq!(spec.derived_effects.preserve.bits(), 1 << 5);
-    assert_eq!(spec.derived_effects.invalidate.bits(), 0xdf);
+    // The same downstream states remain invalidated; VALENCE alone is now
+    // recomputed or cleared from the detached owner's final stage result.
+    assert_eq!(spec.derived_effects.invalidate.bits(), 0xda);
     assert_eq!(format!("{:?}", spec.cip_state), "ClearComputed");
     assert!(spec.io_roundtrip);
-    assert_eq!(spec.support, SupportStatus::SupportedWithRdkitParity);
+    assert_eq!(spec.status, FunctionStatus::Experimental);
     assert_eq!(spec.parity, ParityPolicy::RequiredNow);
     assert_eq!(
         operation_invariant(spec.method).unwrap().profile,
@@ -250,7 +250,7 @@ fn generated_registry_and_all_four_matrices_share_one_exact_operation() {
     );
     let support = support_matrix()
         .iter()
-        .find(|row| row.feature.name == "sanitize")
+        .find(|row| row.feature.name == "cap-sanitize")
         .unwrap();
     assert!(std::ptr::eq(support.operation.unwrap(), spec));
 }
@@ -291,14 +291,22 @@ fn value_sanitize_preserves_identity_coordinates_and_ordinary_properties() {
     assert_eq!(source.coordinates_2d(), output.coordinates_2d());
     assert_eq!(source.conformers_3d(), output.conformers_3d());
     assert_eq!(output.property("source"), Some("preserved"));
-    assert_eq!(output.atoms()[0].prop("atom-note"), Some("atom-0"));
-    assert_eq!(output.bonds()[0].prop("bond-note"), Some("bond-0"));
+    assert_eq!(
+        output.atoms()[0].prop("atom-note"),
+        Some(&cosmolkit_model::PropertyValue::from("atom-0"))
+    );
+    assert_eq!(
+        output.bonds()[0].prop("bond-note"),
+        Some(&cosmolkit_model::PropertyValue::from("bond-0"))
+    );
     assert_eq!(output.property("_CIPComputed"), None);
     assert_eq!(output.atoms()[0].prop("_CIPCode"), None);
     assert_eq!(output.bonds()[0].prop("_CIPCode"), None);
     assert!(output.atoms().iter().all(Atom::is_aromatic));
     assert!(output.bonds().iter().all(Bond::is_aromatic));
-    assert!(format!("{output:?}").contains("derived_cache_is_empty: true"));
+    // The final PROPERTIES stage now transports its existing assignment into
+    // the runtime cache instead of discarding it after successful sanitization.
+    assert!(format!("{output:?}").contains("derived_cache_is_empty: false"));
     assert!(!std::ptr::eq(source.topology(), output.topology()));
     assert!(!std::ptr::eq(source.properties(), output.properties()));
     assert_eq!(source.property("_CIPComputed"), Some("true"));
@@ -314,8 +322,14 @@ fn none_selection_still_clears_only_computed_topology_and_cip_properties() {
         .unwrap();
     assert_eq!(output.property("source"), Some("preserved"));
     assert_eq!(output.property("_CIPComputed"), None);
-    assert_eq!(output.atoms()[0].prop("atom-note"), Some("atom-0"));
-    assert_eq!(output.bonds()[0].prop("bond-note"), Some("bond-0"));
+    assert_eq!(
+        output.atoms()[0].prop("atom-note"),
+        Some(&cosmolkit_model::PropertyValue::from("atom-0"))
+    );
+    assert_eq!(
+        output.bonds()[0].prop("bond-note"),
+        Some(&cosmolkit_model::PropertyValue::from("bond-0"))
+    );
     assert_eq!(output.atoms()[0].prop("_CIPCode"), None);
     assert_eq!(output.bonds()[0].prop("_CIPCode"), None);
     assert_eq!(
@@ -390,9 +404,9 @@ fn privacy_cargo_check(case: &str, strict: bool) -> Output {
          --cfg=cosmolkit_runtime_privacy_case=\"{case}\""
     );
     let features = if strict {
-        "sanitize,op-contracts-strict,cosmolkit-core/op-contracts-strict"
+        "cap-sanitize,op-contracts-strict,cosmolkit-core/op-contracts-strict"
     } else {
-        "sanitize"
+        "cap-sanitize"
     };
     Command::new(std::env::var("CARGO").unwrap_or_else(|_| "cargo".into()))
         .current_dir(workspace)
@@ -463,7 +477,7 @@ fn sanitize_has_no_mapping_multiple_output_or_inplace_alias() {
     assert!(
         BINDING_CONTRACT
             .iter()
-            .filter(|row| row.feature == "sanitize")
+            .filter(|row| row.feature == "cap-sanitize")
             .all(|row| !row.semantic_id.ends_with('_'))
     );
 }

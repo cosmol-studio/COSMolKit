@@ -17,6 +17,62 @@ use crate::SanitizeAccess;
 use crate::{MultiOutputOpParts, WithHydrogensAccess};
 use crate::{OpParts, OperationError};
 
+use super::runtime::registry::{PreserveCacheNoneProbeAccess, PreserveCacheReadProbeAccess};
+
+pub(crate) fn preserve_cache_read_probe_impl(
+    parts: &mut OpParts<'_, PreserveCacheReadProbeAccess>,
+) -> Result<(), OperationError> {
+    let _ = parts.derived_cache()?.valid_states();
+    let coordinates = parts.checkout_coordinates()?;
+    parts.install_coordinates(coordinates)?;
+    parts.prove_preserved(
+        crate::DerivedState::RINGS,
+        crate::PreservationProof::CoordinateOnly,
+    )?;
+    parts.apply_cip_policy()
+}
+
+pub(crate) fn preserve_cache_none_probe_impl(
+    parts: &mut OpParts<'_, PreserveCacheNoneProbeAccess>,
+) -> Result<(), OperationError> {
+    let coordinates = parts.checkout_coordinates()?;
+    parts.install_coordinates(coordinates)?;
+    parts.prove_preserved(
+        crate::DerivedState::RINGS,
+        crate::PreservationProof::CoordinateOnly,
+    )?;
+    parts.apply_cip_policy()
+}
+
+#[cfg(cosmolkit_runtime_privacy_case = "preserve_forbidden")]
+fn preserve_read_grants_no_mutation(parts: &mut OpParts<'_, PreserveCacheReadProbeAccess>) {
+    let _ = parts.checkout_derived_cache();
+    let _ = parts.install_derived_cache(crate::molecule::DerivedCacheBlock::default());
+    let _ = parts.clear_cache(crate::DerivedState::RINGS);
+    let _ = parts.mark_cache_updated(crate::DerivedState::RINGS);
+    let _ = parts.read_derived_cache_runtime();
+    let _ = parts.checkout_derived_cache_runtime();
+    let _ = parts.prove_preserved_runtime(
+        crate::DerivedState::RINGS,
+        crate::PreservationProof::CoordinateOnly,
+    );
+}
+
+#[cfg(cosmolkit_runtime_privacy_case = "preserve_no_read")]
+fn preservation_does_not_grant_cache_read(parts: &OpParts<'_, PreserveCacheNoneProbeAccess>) {
+    let _ = parts.derived_cache();
+}
+
+#[cfg(cosmolkit_runtime_privacy_case = "preserve_immutable")]
+fn cache_borrow_is_not_mutable(
+    parts: &OpParts<'_, PreserveCacheReadProbeAccess>,
+) -> Result<(), OperationError> {
+    parts
+        .derived_cache()?
+        .mark_valid(crate::DerivedState::RINGS);
+    Ok(())
+}
+
 #[cfg(cosmolkit_runtime_privacy_case = "pending_allowed")]
 #[cosmolkit_macros::mol_op_body(potential_stereo, context)]
 fn pending_result_body() -> Result<

@@ -6,6 +6,8 @@ use std::{
 };
 
 use crate::AtomId;
+use crate::PropertyValue;
+use crate::property_value::PropertyStore;
 
 pub use cosmolkit_types::{BondDirection, BondOrder, BondStereo};
 
@@ -76,8 +78,7 @@ pub struct BondSpec {
     stereo: BondStereo,
     stereo_atoms: Option<[AtomId; 2]>,
     unknown_stereo: bool,
-    props: BTreeMap<String, String>,
-    computed_props: BTreeSet<String>,
+    properties: PropertyStore,
 }
 
 impl BondSpec {
@@ -93,8 +94,7 @@ impl BondSpec {
             stereo: BondStereo::None,
             stereo_atoms: None,
             unknown_stereo: false,
-            props: BTreeMap::new(),
-            computed_props: BTreeSet::new(),
+            properties: PropertyStore::new(),
         }
     }
 
@@ -195,12 +195,12 @@ impl BondSpec {
     pub fn with_prop(
         mut self,
         key: impl Into<String>,
-        value: impl Into<String>,
+        value: impl Into<PropertyValue>,
     ) -> Result<Self, BondValueError> {
         let key = key.into();
         validate_property_key(&key)?;
         // RDKit✔️✔️: d_props.setVal(key, val);
-        self.props.insert(key, value.into());
+        self.properties.set(key, value.into());
         Ok(self)
     }
 
@@ -208,33 +208,32 @@ impl BondSpec {
     pub fn with_computed_prop(
         mut self,
         key: impl Into<String>,
-        value: impl Into<String>,
+        value: impl Into<PropertyValue>,
     ) -> Result<Self, BondValueError> {
         let key = key.into();
         validate_property_key(&key)?;
-        self.props.insert(key.clone(), value.into());
-        self.computed_props.insert(key);
+        self.properties.set_computed(key, value.into());
         Ok(self)
     }
 
     #[must_use]
-    pub fn props(&self) -> &BTreeMap<String, String> {
-        &self.props
+    pub fn props(&self) -> &BTreeMap<String, PropertyValue> {
+        self.properties.values()
     }
 
     #[must_use]
-    pub fn prop(&self, key: &str) -> Option<&str> {
-        self.props.get(key).map(String::as_str)
+    pub fn prop(&self, key: &str) -> Option<&PropertyValue> {
+        self.properties.get(key)
     }
 
     #[must_use]
     pub fn is_prop_computed(&self, key: &str) -> bool {
-        self.computed_props.contains(key)
+        self.properties.is_computed(key)
     }
 
     #[must_use]
     pub fn computed_prop_names(&self) -> &BTreeSet<String> {
-        &self.computed_props
+        self.properties.computed_names()
     }
 
     pub fn validate(&self) -> Result<(), BondValueError> {
@@ -268,8 +267,7 @@ pub struct Bond {
     stereo: BondStereo,
     stereo_atoms: Option<[AtomId; 2]>,
     unknown_stereo: bool,
-    props: BTreeMap<String, String>,
-    computed_props: BTreeSet<String>,
+    properties: PropertyStore,
 }
 
 impl Bond {
@@ -285,8 +283,7 @@ impl Bond {
             stereo: spec.stereo,
             stereo_atoms: spec.stereo_atoms,
             unknown_stereo: spec.unknown_stereo,
-            props: spec.props,
-            computed_props: spec.computed_props,
+            properties: spec.properties,
         }
     }
 
@@ -381,31 +378,34 @@ impl Bond {
     }
 
     #[must_use]
-    pub fn props(&self) -> &BTreeMap<String, String> {
-        &self.props
+    pub fn props(&self) -> &BTreeMap<String, PropertyValue> {
+        self.properties.values()
     }
 
     #[must_use]
-    pub fn prop(&self, key: &str) -> Option<&str> {
-        self.props.get(key).map(String::as_str)
+    pub fn prop(&self, key: &str) -> Option<&PropertyValue> {
+        self.properties.get(key)
     }
 
     /// Returns whether a property is registered as computed state.
     #[must_use]
     pub fn is_prop_computed(&self, key: &str) -> bool {
-        self.computed_props.contains(key)
+        self.properties.is_computed(key)
     }
 
     #[must_use]
     pub fn computed_prop_names(&self) -> &BTreeSet<String> {
-        &self.computed_props
+        self.properties.computed_names()
     }
 
     /// Returns the modern CIP descriptor persisted on this bond, if present.
     pub fn cip_descriptor(
         &self,
     ) -> Result<Option<crate::CipDescriptor>, crate::CipDescriptorError> {
-        crate::cip::descriptor_from_property(self.prop("_CIPCode"))
+        crate::cip::descriptor_from_property(
+            self.prop("_CIPCode")
+                .and_then(|value| value.as_string().ok()),
+        )
     }
 
     #[doc(hidden)]
@@ -468,13 +468,13 @@ impl Bond {
     pub fn set_prop(
         &mut self,
         key: impl Into<String>,
-        value: impl Into<String>,
+        value: impl Into<PropertyValue>,
     ) -> Result<(), BondValueError> {
         let key = key.into();
         validate_property_key(&key)?;
         // RDKit✔️✔️: d_props.setVal(key, val);
         // A non-computed write does not remove an existing computed marker.
-        self.props.insert(key, value.into());
+        self.properties.set(key, value.into());
         Ok(())
     }
 
@@ -482,7 +482,7 @@ impl Bond {
     pub fn set_computed_prop(
         &mut self,
         key: impl Into<String>,
-        value: impl Into<String>,
+        value: impl Into<PropertyValue>,
     ) -> Result<(), BondValueError> {
         // RDKit✔️🔝: if (computed) {
         // RDKit✔️🔝:   STR_VECT compLst;
@@ -497,8 +497,7 @@ impl Bond {
         // source vector's linear duplicate scan with logarithmic insertion.
         let key = key.into();
         validate_property_key(&key)?;
-        self.props.insert(key.clone(), value.into());
-        self.computed_props.insert(key);
+        self.properties.set_computed(key, value.into());
         Ok(())
     }
 
@@ -512,8 +511,7 @@ impl Bond {
         // RDKit✔️🔝: d_props.clearVal(key);
         // BTreeSet removal preserves the source transition with logarithmic
         // lookup instead of the source vector's linear search and erase.
-        self.props.remove(key);
-        self.computed_props.remove(key);
+        self.properties.clear(key);
     }
 
     #[doc(hidden)]
@@ -523,8 +521,62 @@ impl Bond {
         // RDKit✔️🔝: }
         // Moving the set avoids the source vector copy while preserving exact
         // membership-based clearing.
-        for key in std::mem::take(&mut self.computed_props) {
-            self.props.remove(&key);
-        }
+        self.properties.clear_computed();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{BondQueryPredicate, QueryBond, QueryNode};
+
+    fn property_order(bond: &Bond) -> Vec<&str> {
+        bond.properties
+            .ordered_keys()
+            .iter()
+            .map(String::as_str)
+            .collect()
+    }
+
+    #[test]
+    fn typed_property_transport_bond_copy_and_query_carrier_preserve_values_and_order() {
+        let spec = BondSpec::new(AtomId::new(0), AtomId::new(1), BondOrder::Single)
+            .with_prop("first", PropertyValue::String("seven".to_owned()))
+            .unwrap()
+            .with_computed_prop("computed", PropertyValue::Bool(false))
+            .unwrap()
+            .with_prop("first", PropertyValue::Int(7))
+            .unwrap();
+        assert_eq!(spec.properties.ordered_keys(), &["first", "computed"]);
+        assert_eq!(spec.prop("first"), Some(&PropertyValue::Int(7)));
+        assert!(spec.is_prop_computed("computed"));
+
+        let bond = Bond::from_spec(BondId::new(0), spec);
+        let source = bond.clone();
+        let mut query = QueryBond::from_parts(
+            bond.clone(),
+            QueryNode::predicate(BondQueryPredicate::Order(BondOrder::Single)),
+        );
+        assert_eq!(query.bond(), &source);
+        assert_eq!(property_order(query.bond()), vec!["first", "computed"]);
+        assert_eq!(query.bond().prop("first"), Some(&PropertyValue::Int(7)));
+        assert_eq!(
+            query.bond().prop("computed"),
+            Some(&PropertyValue::Bool(false))
+        );
+        assert!(query.bond().is_prop_computed("computed"));
+
+        query.bond_mut().clear_prop("first");
+        query
+            .bond_mut()
+            .set_prop("first", PropertyValue::Double(1.25))
+            .unwrap();
+        assert_eq!(property_order(query.bond()), vec!["computed", "first"]);
+        assert_eq!(
+            query.bond().prop("first"),
+            Some(&PropertyValue::Double(1.25))
+        );
+        assert_eq!(bond, source);
+        assert_eq!(property_order(&bond), vec!["first", "computed"]);
     }
 }

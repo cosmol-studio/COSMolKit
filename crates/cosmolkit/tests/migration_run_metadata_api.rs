@@ -1,10 +1,10 @@
 use cosmolkit::{
-    BINDING_CONTRACT, BindingDefault, BindingExposure, BindingItem, BindingKind, BindingOwner,
-    BindingParity, BindingSupport, BindingTypeRole, FeatureSpec, FeatureSpecIter, MOLECULE_OPS,
-    MoleculeOpSpec, OPERATION_INVARIANT_MATRIX, OperationInvariantEntry, PARITY_MATRIX,
-    ParityMatrixEntry, ParityPolicy, SUPPORT_MATRIX, StateModel, SupportMatrixEntry, SupportStatus,
-    feature_spec, feature_specs, operation_invariant, operation_invariant_matrix, operation_parity,
-    operation_spec, operation_specs, parity_matrix, support_matrix, version,
+    BINDING_CONTRACT, BindingDefault, BindingItem, BindingKind, BindingOwner, BindingTypeRole,
+    FeatureSpec, FeatureSpecIter, FunctionStatus, MOLECULE_OPS, MoleculeOpSpec,
+    OPERATION_INVARIANT_MATRIX, OperationInvariantEntry, PARITY_MATRIX, ParityMatrixEntry,
+    ParityPolicy, SUPPORT_MATRIX, StateModel, SupportMatrixEntry, feature_spec, feature_specs,
+    operation_invariant, operation_invariant_matrix, operation_parity, operation_spec,
+    operation_specs, parity_matrix, support_matrix, version,
 };
 
 fn binding_entry(semantic_id: &str) -> &'static cosmolkit::BindingContractEntry {
@@ -22,79 +22,79 @@ fn compact(text: &str) -> String {
 
 fn expected_feature_names() -> Vec<&'static str> {
     let mut expected = Vec::new();
-    if cfg!(feature = "sanitize") {
-        expected.push("sanitize");
+    if cfg!(feature = "cap-sanitize") {
+        expected.push("cap-sanitize");
     }
-    if cfg!(feature = "kekulize") {
-        expected.push("kekulize");
+    if cfg!(feature = "cap-kekulize") {
+        expected.push("cap-kekulize");
     }
-    if cfg!(feature = "aromaticity") {
-        expected.push("aromaticity");
+    if cfg!(feature = "cap-aromaticity") {
+        expected.push("cap-aromaticity");
     }
-    if cfg!(feature = "valence") {
-        expected.push("valence");
+    if cfg!(feature = "cap-valence") {
+        expected.push("cap-valence");
     }
-    if cfg!(feature = "radicals") {
-        expected.push("radicals");
+    if cfg!(feature = "cap-radicals") {
+        expected.push("cap-radicals");
     }
-    if cfg!(feature = "rings") {
-        expected.push("rings");
+    if cfg!(feature = "cap-rings") {
+        expected.push("cap-rings");
     }
-    if cfg!(feature = "stereo") {
-        expected.push("stereo");
+    if cfg!(feature = "cap-stereo") {
+        expected.push("cap-stereo");
     }
-    if cfg!(feature = "hydrogens") {
-        expected.push("hydrogens");
+    if cfg!(feature = "cap-hydrogens") {
+        expected.push("cap-hydrogens");
     }
-    if cfg!(feature = "transforms") {
-        expected.push("transforms");
+    if cfg!(feature = "cap-transforms") {
+        expected.push("cap-transforms");
     }
-    if cfg!(feature = "depict") {
-        expected.push("depict");
+    if cfg!(feature = "cap-depict") {
+        expected.push("cap-depict");
     }
     expected
 }
 
 fn expected_operation_methods() -> Vec<&'static str> {
     let mut expected = Vec::new();
-    if cfg!(feature = "sanitize") {
+    if cfg!(feature = "cap-sanitize") {
         expected.push("sanitize_with_params");
     }
-    if cfg!(feature = "kekulize") {
+    if cfg!(feature = "cap-kekulize") {
         expected.push("with_kekulized_bonds_with_params");
     }
-    if cfg!(feature = "aromaticity") {
+    if cfg!(feature = "cap-aromaticity") {
         expected.push("with_assigned_aromaticity_with_params");
     }
-    if cfg!(feature = "valence") {
+    if cfg!(feature = "cap-valence") {
         expected.push("with_assigned_valence_with_params");
     }
-    if cfg!(feature = "radicals") {
+    if cfg!(feature = "cap-radicals") {
         expected.push("with_assigned_radicals");
     }
-    if cfg!(feature = "rings") {
+    if cfg!(feature = "cap-rings") {
         expected.extend([
             "with_assigned_rings",
             "with_assigned_ring_families_with_params",
         ]);
     }
-    if cfg!(feature = "stereo") {
+    if cfg!(feature = "cap-stereo") {
         expected.extend([
             "with_chiral_tags_from_structure_with_params",
             "potential_stereo_with_params",
             "with_cip_labels_with_options",
         ]);
     }
-    if cfg!(feature = "hydrogens") {
+    if cfg!(feature = "cap-hydrogens") {
         expected.extend([
             "with_hydrogens_with_params",
             "without_hydrogens_with_params",
         ]);
     }
-    if cfg!(feature = "transforms") {
+    if cfg!(feature = "cap-transforms") {
         expected.push("with_atom_position_with_params");
     }
-    if cfg!(feature = "depict") {
+    if cfg!(feature = "cap-depict") {
         expected.push("with_2d_coordinates_with_params");
     }
     expected
@@ -114,7 +114,7 @@ fn canonical_metadata_signatures_compile_from_the_public_crate() {
     let _: fn() -> &'static str = version;
 
     assert_eq!(version(), env!("CARGO_PKG_VERSION"));
-    assert_ne!(SupportStatus::Supported, SupportStatus::Experimental);
+    assert_ne!(FunctionStatus::Native, FunctionStatus::Experimental);
     assert_ne!(
         ParityPolicy::RequiredWhenSupported,
         ParityPolicy::RequiredNow
@@ -125,8 +125,8 @@ fn canonical_metadata_signatures_compile_from_the_public_crate() {
 fn metadata_type_rows_have_exact_public_roles_and_paths() {
     let expected = [
         (
-            "types.SupportStatus",
-            "crate::SupportStatus",
+            "types.FunctionStatus",
+            "crate::FunctionStatus",
             BindingTypeRole::Value,
         ),
         (
@@ -167,9 +167,7 @@ fn metadata_type_rows_have_exact_public_roles_and_paths() {
         assert_eq!(entry.owner, BindingOwner::Type);
         assert_eq!(compact(entry.rust_path), compact(rust_path));
         assert_eq!(entry.feature, "metadata");
-        assert_eq!(entry.exposure, BindingExposure::Public);
-        assert_eq!(entry.support, BindingSupport::Supported);
-        assert_eq!(entry.parity, BindingParity::NotApplicable);
+        assert_eq!(entry.status, FunctionStatus::Experimental);
         assert_eq!(entry.type_role, Some(role));
         assert_eq!(entry.callable, None);
     }
@@ -179,7 +177,7 @@ fn metadata_type_rows_have_exact_public_roles_and_paths() {
     assert_eq!(iterator.owner, BindingOwner::Type);
     assert_eq!(compact(iterator.rust_path), "crate::FeatureSpecIter");
     assert_eq!(iterator.feature, "metadata");
-    assert_eq!(iterator.exposure, BindingExposure::Registered);
+    assert_eq!(iterator.status, FunctionStatus::Experimental);
     assert_eq!(iterator.type_role, Some(BindingTypeRole::Result));
 }
 
@@ -192,7 +190,7 @@ fn metadata_callable_rows_exactly_match_names_signatures_and_defaults() {
             "featureSpecs",
             "crate::FeatureSpecIter",
             None,
-            BindingExposure::Registered,
+            FunctionStatus::Experimental,
         ),
         (
             "module.feature_spec",
@@ -200,7 +198,7 @@ fn metadata_callable_rows_exactly_match_names_signatures_and_defaults() {
             "featureSpec",
             "Option<&'staticcrate::FeatureSpec>",
             Some(("name", "&str")),
-            BindingExposure::Registered,
+            FunctionStatus::Experimental,
         ),
         (
             "module.operation_specs",
@@ -208,7 +206,7 @@ fn metadata_callable_rows_exactly_match_names_signatures_and_defaults() {
             "operationSpecs",
             "&'static[&'staticcrate::MoleculeOpSpec]",
             None,
-            BindingExposure::Registered,
+            FunctionStatus::Experimental,
         ),
         (
             "module.operation_spec",
@@ -216,7 +214,7 @@ fn metadata_callable_rows_exactly_match_names_signatures_and_defaults() {
             "operationSpec",
             "Option<&'staticcrate::MoleculeOpSpec>",
             Some(("method", "&str")),
-            BindingExposure::Registered,
+            FunctionStatus::Experimental,
         ),
         (
             "module.support_matrix",
@@ -224,7 +222,7 @@ fn metadata_callable_rows_exactly_match_names_signatures_and_defaults() {
             "supportMatrix",
             "&'static[crate::SupportMatrixEntry]",
             None,
-            BindingExposure::Registered,
+            FunctionStatus::Experimental,
         ),
         (
             "module.operation_invariant_matrix",
@@ -232,7 +230,7 @@ fn metadata_callable_rows_exactly_match_names_signatures_and_defaults() {
             "operationInvariantMatrix",
             "&'static[crate::OperationInvariantEntry]",
             None,
-            BindingExposure::Registered,
+            FunctionStatus::Experimental,
         ),
         (
             "module.parity_matrix",
@@ -240,7 +238,7 @@ fn metadata_callable_rows_exactly_match_names_signatures_and_defaults() {
             "parityMatrix",
             "&'static[crate::ParityMatrixEntry]",
             None,
-            BindingExposure::Registered,
+            FunctionStatus::Experimental,
         ),
         (
             "module.operation_invariant",
@@ -248,7 +246,7 @@ fn metadata_callable_rows_exactly_match_names_signatures_and_defaults() {
             "operationInvariant",
             "Option<&'staticcrate::OperationInvariantEntry>",
             Some(("method", "&str")),
-            BindingExposure::Registered,
+            FunctionStatus::Experimental,
         ),
         (
             "module.operation_parity",
@@ -256,7 +254,7 @@ fn metadata_callable_rows_exactly_match_names_signatures_and_defaults() {
             "operationParity",
             "Option<&'staticcrate::ParityMatrixEntry>",
             Some(("method", "&str")),
-            BindingExposure::Registered,
+            FunctionStatus::Experimental,
         ),
         (
             "module.version",
@@ -264,11 +262,11 @@ fn metadata_callable_rows_exactly_match_names_signatures_and_defaults() {
             "version",
             "&'staticstr",
             None,
-            BindingExposure::Public,
+            FunctionStatus::Experimental,
         ),
     ];
 
-    for (semantic_id, rust_name, javascript_name, output, parameter, exposure) in expected {
+    for (semantic_id, rust_name, javascript_name, output, parameter, status) in expected {
         let entry = binding_entry(semantic_id);
         let callable = entry.callable.expect("metadata row must be callable");
         assert_eq!(entry.item, BindingItem::Callable);
@@ -277,9 +275,7 @@ fn metadata_callable_rows_exactly_match_names_signatures_and_defaults() {
         assert_eq!(entry.python_name, rust_name);
         assert_eq!(entry.javascript_name, javascript_name);
         assert_eq!(entry.feature, "metadata");
-        assert_eq!(entry.exposure, exposure);
-        assert_eq!(entry.support, BindingSupport::Supported);
-        assert_eq!(entry.parity, BindingParity::NotApplicable);
+        assert_eq!(entry.status, status);
         assert_eq!(callable.kind, BindingKind::Module);
         assert_eq!(compact(callable.output_type), compact(output));
         assert_eq!(callable.error_type, None);
@@ -352,12 +348,12 @@ fn public_queries_preserve_generated_identity_and_fail_closed_misses() {
         ));
     }
 
-    if cfg!(feature = "hydrogens") {
-        let hydrogens = feature_spec("hydrogens").expect("hydrogen feature");
+    if cfg!(feature = "cap-hydrogens") {
+        let hydrogens = feature_spec("cap-hydrogens").expect("hydrogen feature");
         assert!(core::ptr::eq(
             hydrogens,
             feature_specs()
-                .find(|feature| feature.name == "hydrogens")
+                .find(|feature| feature.name == "cap-hydrogens")
                 .expect("hydrogen feature iterator row")
         ));
         for method in [
@@ -372,7 +368,7 @@ fn public_queries_preserve_generated_identity_and_fail_closed_misses() {
             assert_eq!(operation_parity(method).unwrap().operation.method, method);
         }
     } else {
-        assert_eq!(feature_spec("hydrogens"), None);
+        assert_eq!(feature_spec("cap-hydrogens"), None);
         assert_eq!(operation_spec("with_hydrogens_with_params"), None);
         assert_eq!(operation_invariant("with_hydrogens_with_params"), None);
         assert_eq!(operation_parity("with_hydrogens_with_params"), None);

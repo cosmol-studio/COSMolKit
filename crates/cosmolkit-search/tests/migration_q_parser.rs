@@ -1,6 +1,6 @@
 use cosmolkit_model::{
     Atom, AtomId, AtomRangeBounds, AtomRangeDataFunction, AtomSpec, Bond, BondId, BondSpec,
-    Element, QueryAtom, QueryAtomIdentity, TopologyBlock,
+    Element, PropertyValue, QueryAtom, QueryAtomIdentity, TopologyBlock,
 };
 use cosmolkit_search::{
     AtomQueryPredicate, BondQueryPredicate, QueryGraph, QueryNode, SmartsParseError,
@@ -699,7 +699,7 @@ fn q20_wrapper_cx_name_flags_and_error_order() {
     let valid_cx = parse_source_case("C |$label$| note");
     assert_eq!(
         valid_cx.atom(0).and_then(|atom| atom.prop("atomLabel")),
-        Some("label")
+        Some(&PropertyValue::String("label".to_owned()))
     );
     assert_eq!(valid_cx.prop("_CXSMILES_Data"), Some("|$label$|"));
     assert_eq!(valid_cx.name(), Some("note"));
@@ -712,7 +712,7 @@ fn q20_wrapper_cx_name_flags_and_error_order() {
         .expect("parseName=false still applies valid CX records");
     assert_eq!(
         no_name.atom(0).and_then(|atom| atom.prop("atomLabel")),
-        Some("label")
+        Some(&PropertyValue::String("label".to_owned()))
     );
     assert_eq!(no_name.prop("_CXSMILES_Data"), Some("|$label$|"));
     assert_eq!(no_name.name(), None);
@@ -788,7 +788,7 @@ fn q20_lenient_cx_failure_retains_prior_record_effects() {
     // its iterator remains at `x`, so the CX data prefix also includes `s:0:`.
     assert_eq!(
         graph.atom(0).and_then(|atom| atom.prop("atomLabel")),
-        Some("label")
+        Some(&PropertyValue::String("label".to_owned()))
     );
     assert_eq!(graph.prop("_CXSMILES_Data"), Some("|$label$ s:0:"));
     assert_eq!(graph.name(), None);
@@ -806,12 +806,15 @@ fn q20_lenient_cx_lowering_failure_retains_record_effects_and_cursor() {
         .expect("lenient lowering failure preserves earlier source mutations");
     assert_eq!(
         graph.atom(0).and_then(|atom| atom.prop("atomLabel")),
-        Some("label")
+        Some(&PropertyValue::String("label".to_owned()))
     );
     let bond = graph.bond(0).expect("first wedge bond remains");
     assert_eq!(bond.endpoints(), (0, 1));
     assert_eq!(bond.bond().direction(), BondDirection::BeginWedge);
-    assert_eq!(bond.bond().prop("_MolFileBondCfg"), Some("1"));
+    assert_eq!(
+        bond.bond().prop("_MolFileBondCfg"),
+        Some(&PropertyValue::String("1".to_owned()))
+    );
     assert_eq!(graph.prop("_CXSMILES_Data"), Some("|$label$ wU:0.0,1.0"));
     assert_eq!(graph.name(), None);
 }

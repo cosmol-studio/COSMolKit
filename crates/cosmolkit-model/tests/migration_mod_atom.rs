@@ -1,7 +1,11 @@
 use cosmolkit_model::{
     Atom, AtomId, AtomPdbResidueInfo, AtomPropertyError, AtomSpec, ChiralTag, Element,
-    Hybridization,
+    Hybridization, PropertyValue,
 };
+
+fn string_prop(value: Option<&PropertyValue>) -> Option<&str> {
+    value.and_then(|value| value.as_string().ok())
+}
 
 fn full_residue() -> AtomPdbResidueInfo {
     AtomPdbResidueInfo::new(" CA ", 42, "ALA", 7, "A", true)
@@ -147,7 +151,7 @@ fn atom_spec_covers_every_default_builder_getter_and_optional_reset() {
     assert!(full.no_implicit());
     assert_eq!(full.radical_electrons(), 1);
     assert_eq!(full.hybridization(), Hybridization::Sp2);
-    assert_eq!(full.prop("ordinary"), Some("kept"));
+    assert_eq!(string_prop(full.prop("ordinary")), Some("kept"));
     assert!(full.is_prop_computed("computed"));
     assert_eq!(full.pdb_residue_info(), Some(&full_residue()));
 
@@ -189,7 +193,7 @@ fn atom_from_spec_preserves_every_fact_and_detached_setters_cover_both_states() 
     assert!(atom.no_implicit());
     assert_eq!(atom.radical_electrons(), 1);
     assert_eq!(atom.hybridization(), Hybridization::Sp2);
-    assert_eq!(atom.prop("ordinary"), Some("kept"));
+    assert_eq!(string_prop(atom.prop("ordinary")), Some("kept"));
     assert!(atom.is_prop_computed("computed"));
     assert_eq!(atom.pdb_residue_info(), Some(&full_residue()));
 
@@ -252,8 +256,8 @@ fn checked_atom_properties_cover_empty_overwrite_membership_and_clear() {
         .unwrap()
         .with_prop("ordinary", "second")
         .unwrap();
-    assert_eq!(spec.prop("cache"), Some("second"));
-    assert_eq!(spec.prop("ordinary"), Some("second"));
+    assert_eq!(string_prop(spec.prop("cache")), Some("second"));
+    assert_eq!(string_prop(spec.prop("ordinary")), Some("second"));
     assert_eq!(spec.computed_prop_names().len(), 1);
 
     let mut atom = Atom::from_spec(AtomId::new(0), spec);
@@ -276,6 +280,6 @@ fn checked_atom_properties_cover_empty_overwrite_membership_and_clear() {
     atom.set_computed_prop("temporary", "gone").unwrap();
     atom.clear_computed_props();
     assert_eq!(atom.prop("temporary"), None);
-    assert_eq!(atom.prop("ordinary"), Some("second"));
+    assert_eq!(string_prop(atom.prop("ordinary")), Some("second"));
     assert!(atom.computed_prop_names().is_empty());
 }

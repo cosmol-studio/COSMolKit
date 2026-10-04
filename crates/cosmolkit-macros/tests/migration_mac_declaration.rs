@@ -1,3 +1,6 @@
+#[path = "../src/status.rs"]
+mod status;
+
 #[path = "../src/declaration.rs"]
 mod declaration;
 
@@ -138,6 +141,58 @@ fn without_inplace_fixture(source: &str) -> String {
         "            default_inplace_method: inspect_,\n",
         "",
     )
+}
+
+#[test]
+fn function_status_defaults_and_all_four_explicit_commitments_are_independent_metadata() {
+    let source = molecule_source();
+    assert!(matches!(
+        parse_molecule(&source).operations[0].fields.status,
+        status::FunctionStatus::Experimental
+    ));
+    for (declaration, variant) in [
+        ("experimental", "Experimental"),
+        ("native", "Native"),
+        ("parity(\"RDKit\")", "Parity"),
+        (
+            "parity_with_differences(\"RDKit\", \"Explicitly approved conditions, behavior and rationale\")",
+            "ParityWithDifferences",
+        ),
+    ] {
+        let candidate = source.replace(
+            "feature: crate::INSPECT_FEATURE,",
+            &format!("feature: crate::INSPECT_FEATURE, status: {declaration},"),
+        );
+        let operation = parse_molecule(&candidate).operations.remove(0);
+        assert!(
+            operation
+                .fields
+                .status
+                .tokens()
+                .to_string()
+                .contains(variant)
+        );
+        assert_eq!(operation.fields.access.read.len(), 2);
+        assert_eq!(operation.fields.access.write.len(), 2);
+        assert_eq!(operation.fields.parity, MoleculeParity::RequiredNow);
+    }
+    for invalid in [
+        "supported",
+        "supported_with_rdkit_parity",
+        "unsupported",
+        "preserved_only",
+    ] {
+        let candidate = source.replace(
+            "feature: crate::INSPECT_FEATURE,",
+            &format!("feature: crate::INSPECT_FEATURE, status: {invalid},"),
+        );
+        assert!(molecule_error(&candidate).contains("status must be"));
+    }
+    let duplicate = source.replace(
+        "feature: crate::INSPECT_FEATURE,",
+        "feature: crate::INSPECT_FEATURE, status: native, status: experimental,",
+    );
+    assert!(molecule_error(&duplicate).contains("duplicate molecule_ops field 'status'"));
 }
 
 #[test]
@@ -494,6 +549,68 @@ fn molecule_permission_relationships_are_enforced() {
         "may_mutate: [coordinates]",
     );
     assert!(molecule_error(&cache).contains("derived effects require derived_cache write access"));
+}
+
+#[test]
+fn preserve_only_access_and_effect_category_product() {
+    let mut rows = 0;
+    for category in ["preserve", "recompute", "invalidate", "operation_defined"] {
+        for mode in ["none", "read", "write"] {
+            let (read, write) = match mode {
+                "none" => ("[]", "[coordinates]"),
+                "read" => ("[derived_cache]", "[coordinates]"),
+                "write" => ("[]", "[coordinates, derived_cache]"),
+                _ => unreachable!(),
+            };
+            let mask = |name| if category == name { "[valence]" } else { "[]" };
+            let source = format!(
+                r#"
+                op without_hydrogens {{
+                    method: without_hydrogens,
+                    impl_fn: crate::probe_impl,
+                    kind: weak,
+                    access: {{ read: {read}, write: {write} }},
+                    may_mutate: {write},
+                    derived_effects: {{
+                        recompute: {}, preserve: {}, invalidate: {}, operation_defined: {},
+                    }},
+                    cip_state: preserve,
+                    feature: crate::PROBE_FEATURE,
+                    parity: not_applicable,
+                    invariant_profile: "access-effect-product",
+                }}
+                "#,
+                mask("recompute"),
+                mask("preserve"),
+                mask("invalidate"),
+                mask("operation_defined"),
+            );
+            let result = syn::parse_str::<MoleculeRegistry>(&source);
+            let permitted = category == "preserve" || mode == "write";
+            assert_eq!(result.is_ok(), permitted, "{category}/{mode}");
+            if let Ok(registry) = result {
+                let access = &registry.operations[0].fields.access;
+                assert_eq!(
+                    access.read.contains(&MoleculeBlock::DerivedCache),
+                    mode == "read"
+                );
+                assert_eq!(
+                    access.write.contains(&MoleculeBlock::DerivedCache),
+                    mode == "write"
+                );
+            } else {
+                assert!(
+                    result
+                        .err()
+                        .unwrap()
+                        .to_string()
+                        .contains("derived_cache write access")
+                );
+            }
+            rows += 1;
+        }
+    }
+    assert_eq!(rows, 12);
 }
 
 #[test]

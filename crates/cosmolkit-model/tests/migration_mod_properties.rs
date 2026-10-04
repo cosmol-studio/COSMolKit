@@ -2,8 +2,17 @@ use std::str::FromStr;
 
 use cosmolkit_model::{
     Atom, AtomId, AtomSpec, Bond, BondId, BondOrder, BondSpec, CipDescriptor, CipDescriptorError,
-    Element, MoleculeProperties, MoleculePropertyError, SdfPropertyList, SdfPropertyListTarget,
+    Element, MoleculeProperties, MoleculePropertyError, PropertyValue, SdfPropertyList,
+    SdfPropertyListTarget,
 };
+
+fn string_item_prop(value: Option<&PropertyValue>) -> Option<&str> {
+    value.and_then(|value| value.as_string().ok())
+}
+
+fn string_value(value: &str) -> PropertyValue {
+    PropertyValue::String(value.to_owned())
+}
 
 const CIP_CASES: [(CipDescriptor, &str); 12] = [
     (CipDescriptor::R, "R"),
@@ -32,12 +41,12 @@ fn metadata_defaults_names_and_ordered_sdf_records_are_exact() {
     let atom_list = SdfPropertyList::new(
         SdfPropertyListTarget::Atom,
         "shared",
-        vec![Some(" a ".to_owned()), None],
+        vec![Some(string_value(" a ")), None],
     );
     let bond_list = SdfPropertyList::new(
         SdfPropertyListTarget::Bond,
         "shared",
-        vec![Some(String::new())],
+        vec![Some(string_value(""))],
     );
     let properties = default
         .with_name("first")
@@ -63,7 +72,7 @@ fn metadata_defaults_names_and_ordered_sdf_records_are_exact() {
     assert_eq!(properties.sdf_property_lists()[0].name(), "shared");
     assert_eq!(
         properties.sdf_property_lists()[0].values(),
-        &[Some(" a ".to_owned()), None]
+        &[Some(string_value(" a ")), None]
     );
 }
 
@@ -144,17 +153,17 @@ fn sdf_property_lists_remap_each_target_in_order_and_preserve_metadata() {
         .with_sdf_property_list(SdfPropertyList::new(
             SdfPropertyListTarget::Bond,
             "bond-list",
-            vec![None, Some("b1".to_owned())],
+            vec![None, Some(string_value("b1"))],
         ))
         .with_sdf_property_list(SdfPropertyList::new(
             SdfPropertyListTarget::Atom,
             "atom-list",
-            vec![Some("a0".to_owned()), None, Some("a2".to_owned())],
+            vec![Some(string_value("a0")), None, Some(string_value("a2"))],
         ))
         .with_sdf_property_list(SdfPropertyList::new(
             SdfPropertyListTarget::Atom,
             "atom-subset",
-            vec![Some("x0".to_owned()), Some("x1".to_owned())],
+            vec![Some(string_value("x0")), Some(string_value("x1"))],
         ));
 
     properties.remap_topology(
@@ -179,18 +188,18 @@ fn sdf_property_lists_remap_each_target_in_order_and_preserve_metadata() {
     assert_eq!(lists[0].name(), "bond-list");
     assert_eq!(
         lists[0].values(),
-        &[Some("b1".to_owned()), None, None, None]
+        &[Some(string_value("b1")), None, None, None]
     );
     assert_eq!(lists[1].target(), SdfPropertyListTarget::Atom);
     assert_eq!(lists[1].name(), "atom-list");
     assert_eq!(
         lists[1].values(),
         &[
-            Some("a2".to_owned()),
+            Some(string_value("a2")),
             None,
             None,
             None,
-            Some("a0".to_owned()),
+            Some(string_value("a0")),
         ]
     );
     assert_eq!(lists[2].target(), SdfPropertyListTarget::Atom);
@@ -199,10 +208,10 @@ fn sdf_property_lists_remap_each_target_in_order_and_preserve_metadata() {
         lists[2].values(),
         &[
             None,
-            Some("x1".to_owned()),
+            Some(string_value("x1")),
             None,
             None,
-            Some("x0".to_owned())
+            Some(string_value("x0"))
         ]
     );
 
@@ -259,7 +268,7 @@ fn atom_cip_projection_covers_absent_all_supported_and_invalid_values() {
                 .unwrap(),
         );
         assert_eq!(atom.cip_descriptor(), Ok(Some(descriptor)));
-        assert_eq!(atom.prop("_CIPCode"), Some(spelling));
+        assert_eq!(string_item_prop(atom.prop("_CIPCode")), Some(spelling));
     }
 
     let invalid = Atom::from_spec(
@@ -274,7 +283,7 @@ fn atom_cip_projection_covers_absent_all_supported_and_invalid_values() {
             value: "UNKNOWN".to_owned(),
         })
     );
-    assert_eq!(invalid.prop("_CIPCode"), Some("UNKNOWN"));
+    assert_eq!(string_item_prop(invalid.prop("_CIPCode")), Some("UNKNOWN"));
 }
 
 #[test]
@@ -289,7 +298,7 @@ fn bond_cip_projection_covers_absent_all_supported_and_invalid_values() {
             bond_spec().with_prop("_CIPCode", spelling).unwrap(),
         );
         assert_eq!(bond.cip_descriptor(), Ok(Some(descriptor)));
-        assert_eq!(bond.prop("_CIPCode"), Some(spelling));
+        assert_eq!(string_item_prop(bond.prop("_CIPCode")), Some(spelling));
     }
 
     let invalid = Bond::from_spec(
@@ -302,5 +311,5 @@ fn bond_cip_projection_covers_absent_all_supported_and_invalid_values() {
             value: "seqCis".to_owned(),
         })
     );
-    assert_eq!(invalid.prop("_CIPCode"), Some("seqCis"));
+    assert_eq!(string_item_prop(invalid.prop("_CIPCode")), Some("seqCis"));
 }

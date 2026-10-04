@@ -17,14 +17,21 @@ mod canonical_rank;
 mod cx_lowering;
 mod cx_writer;
 mod finalize_stereo;
+mod fragment;
 mod stereo;
 mod writer;
 
 pub use cx_writer::{
-    CxSmilesFields, CxSmilesWriteParams, write_cx_smiles, write_cx_smiles_with_params,
+    CxCoordinateSelection, CxSmilesFields, CxSmilesWriteParams, write_cx_smiles,
+    write_cx_smiles_with_params,
 };
 pub use finalize_stereo::{SmilesStereoError, finalize_smiles_stereo};
-pub use writer::{SmilesWriteParams, write_smiles, write_smiles_with_params};
+pub use fragment::FragmentWriteInputError;
+pub use writer::{
+    RandomSmilesWriteParams, SmilesWriteOutput, SmilesWriteParams, write_fragment_cx_smiles,
+    write_fragment_smiles_output, write_random_smiles_vector, write_smiles,
+    write_smiles_with_params, write_smiles_with_random,
+};
 
 const CXSMILES_BOND_IDX_PROP: &str = "_cxsmilesBondIdx";
 
@@ -33,6 +40,41 @@ pub struct SmilesRecord {
     pub topology: TopologyBlock,
     pub coordinates: CoordinateBlock,
     pub properties: MoleculeProperties,
+}
+
+/// Borrowed detached input for serialization. No live molecule or commit authority.
+#[derive(Clone, Copy)]
+pub struct SmilesRecordView<'a> {
+    pub topology: &'a TopologyBlock,
+    pub coordinates: &'a CoordinateBlock,
+    pub properties: &'a MoleculeProperties,
+}
+
+impl<'a> From<&'a SmilesRecord> for SmilesRecordView<'a> {
+    fn from(record: &'a SmilesRecord) -> Self {
+        Self {
+            topology: &record.topology,
+            coordinates: &record.coordinates,
+            properties: &record.properties,
+        }
+    }
+}
+
+impl<'a> From<&SmilesRecordView<'a>> for SmilesRecordView<'a> {
+    fn from(record: &SmilesRecordView<'a>) -> Self {
+        *record
+    }
+}
+
+impl SmilesRecordView<'_> {
+    /// Materialize only at the source algorithm's owned working-copy boundary.
+    fn to_owned_record(self) -> SmilesRecord {
+        SmilesRecord {
+            topology: self.topology.clone(),
+            coordinates: self.coordinates.clone(),
+            properties: self.properties.clone(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -57,8 +99,19 @@ pub enum SmilesParseError {
     WriterValence(String),
     #[error("SMILES writer kekulization failed: {0}")]
     WriterKekulize(#[source] cosmolkit_core::KekulizeError),
+    #[error("SMILES writer property conversion failed: {0}")]
+    WriterProperty(#[source] cosmolkit_core::PropertyStringError),
     #[error("SMILES writer stereochemistry preparation failed: {0}")]
     WriterStereo(String),
+    #[error("SMILES writer stereo-group inversion failed: {0}")]
+    WriterStereoBond(#[source] cosmolkit_model::BondValueError),
+    #[error("CX coordinate selection is ambiguous ({two_d_count} 2D and {three_d_count} 3D sets)")]
+    AmbiguousCoordinateSelection {
+        two_d_count: usize,
+        three_d_count: usize,
+    },
+    #[error("requested CX coordinate set {selection:?} is unavailable")]
+    MissingCoordinateSelection { selection: CxCoordinateSelection },
     #[error("root atom index {atom_index} is out of range for {atom_count} atoms")]
     WriterRootAtomOutOfRange {
         atom_index: usize,
@@ -1210,12 +1263,15 @@ fn cleanup_after_parsing(record: &mut SmilesRecord) {
         atom.clear_prop("_RingClosures");
         atom.clear_prop("_SmilesStart");
         if atom.atomic_number() == 0 {
-            match atom.prop("atomLabel") {
+            match atom
+                .prop("atomLabel")
+                .and_then(|value| value.as_string().ok())
+            {
                 Some("_AP1") => atom
-                    .set_prop("_fromAttachPoint", "1")
+                    .set_prop("_fromAttachPoint", 1_i32)
                     .expect("the internal attachment-point property key is non-empty"),
                 Some("_AP2") => atom
-                    .set_prop("_fromAttachPoint", "2")
+                    .set_prop("_fromAttachPoint", 2_i32)
                     .expect("the internal attachment-point property key is non-empty"),
                 _ => {}
             }
@@ -1527,7 +1583,14 @@ pub fn parse_smiles(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cosmolkit_model::{BondStereo, StereoGroupKind, SubstanceGroupKind};
+    use cosmolkit_model::{BondStereo, PropertyValue, StereoGroupKind, SubstanceGroupKind};
+
+    fn string_property(value: Option<&PropertyValue>) -> Option<&str> {
+        match value {
+            Some(PropertyValue::String(value)) => Some(value),
+            _ => None,
+        }
+    }
 
     #[test]
     fn parses_and_writes_detached_ethanol() {
@@ -1598,7 +1661,10 @@ mod tests {
 
         let cx = parse_smiles("CC |$foo;bar$| named sample", &Default::default()).unwrap();
         assert_eq!(cx.properties.name(), Some("named sample"));
-        assert_eq!(cx.topology.atoms[0].prop("atomLabel"), Some("foo"));
+        assert_eq!(
+            string_property(cx.topology.atoms[0].prop("atomLabel")),
+            Some("foo")
+        );
 
         let no_cx = parse_smiles(
             "CC |not cx when disabled|",
@@ -1948,7 +2014,10 @@ mod tests {
         let wedge = parse_smiles("CC |wU:1.0|", &Default::default()).unwrap();
         assert_eq!(wedge.topology.bonds[0].begin(), AtomId::new(1));
         assert_eq!(wedge.topology.bonds[0].end(), AtomId::new(0));
-        assert_eq!(wedge.topology.bonds[0].prop("_MolFileBondCfg"), Some("1"));
+        assert_eq!(
+            string_property(wedge.topology.bonds[0].prop("_MolFileBondCfg")),
+            Some("1")
+        );
         assert_eq!(wedge.properties.prop("_needsDetectAtomStereo"), None);
         assert_eq!(wedge.topology.atoms[1].chiral_tag(), ChiralTag::Unspecified);
 
@@ -1989,11 +2058,11 @@ mod tests {
 
         let attachment = parse_smiles("CO*.C1=CC=NC=C1 |m:2:3.5.4|", &Default::default()).unwrap();
         assert_eq!(
-            attachment.topology.bonds[1].prop("_MolFileBondEndPts"),
+            string_property(attachment.topology.bonds[1].prop("_MolFileBondEndPts")),
             Some("(3 4 6 5)")
         );
         assert_eq!(
-            attachment.topology.bonds[1].prop("_MolFileBondAttach"),
+            string_property(attachment.topology.bonds[1].prop("_MolFileBondAttach")),
             Some("ANY")
         );
     }

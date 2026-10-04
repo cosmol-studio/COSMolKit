@@ -1351,7 +1351,7 @@ fn standard_pdb_residue_chirality_like_rdkit(topology: &mut TopologyBlock) {
 
 #[cfg(test)]
 mod tests {
-    use cosmolkit_model::{AtomPdbResidueInfo, AtomSpec};
+    use cosmolkit_model::{AtomPdbResidueInfo, AtomSpec, PropertyValue};
     use cosmolkit_types::Element;
 
     use super::*;
@@ -1388,7 +1388,10 @@ mod tests {
         apply_standard_pdb_residue_chirality_detached(&mut topology)
             .expect("residue chirality filter");
         assert_eq!(topology.atoms[0].chiral_tag(), ChiralTag::TetrahedralCw);
-        assert_eq!(topology.atoms[0].prop("_CIPCode"), Some("R"));
+        assert_eq!(
+            topology.atoms[0].prop("_CIPCode"),
+            Some(&PropertyValue::String("R".to_owned()))
+        );
         assert_eq!(topology.atoms[1].chiral_tag(), ChiralTag::Unspecified);
         assert_eq!(topology.atoms[1].prop("_CIPCode"), None);
         assert_eq!(topology.atoms[2].chiral_tag(), ChiralTag::TetrahedralCw);

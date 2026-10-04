@@ -26,6 +26,12 @@ Keep these in the owning crate's unit tests or `tests/` directory.
   fixtures under repository-level `testdata/`, with source/version, license and
   checksum information when derived from upstream.
 - Read or embed fixtures directly. No shared test-support crate is required.
+- Upstream fixtures may be read directly from pinned `third_party/` at test
+  runtime under the repository policy's provenance rules; do not copy
+  them into the repository or embed external paths at compile time. This also
+  applies to `cargo test --release`. Production/package builds cannot require
+  the upstream checkout. Test purpose, not fixture location, determines whether
+  the test belongs here or in `parity-tests`.
 - Do not generate reference data, invoke upstream implementations, parse
   third-party source code, or implement a corpus runner inside these tests.
 - Change fixtures explicitly and review their diffs; tests never refresh them.

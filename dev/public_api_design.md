@@ -112,6 +112,14 @@ changing its semantic name.
 
 ### 4.1 Constructors
 
+The top-level public `BioStructure` and `Protein` use associated constructors
+`from_pdb`, `from_pdb_with_params` and `from_mmcif`. Their detached data stays
+in BIO and their parsers stay in IO; do not replace these constructors with
+model-prefixed module functions or add inherent IO methods to a foreign type.
+Both objects' in-place operations use the trailing underscore and their
+value-style counterparts leave the input unchanged, through the single
+lightweight BIO operation declaration described in [BIO architecture](./bio_architecture.md).
+
 Use `from_*` for constructors that create a `Molecule` or another owned value:
 
 ```text
@@ -324,18 +332,74 @@ value-style or in-place behavior
 function status
 ```
 
-Fine-grained Cargo features gate capabilities, not unrelated implementation
-dependencies. A feature may make its own `Molecule` method available, but it
-must not expose another domain's public methods merely because the
-implementation reuses an internal crate.
-
-The user-facing `full` bundle is an explicit composition of fine-grained
-capabilities and is enabled by default.
-
 The operation registry remains the source of truth for topology mutation and
 contract metadata. The public API manifest is the source of truth for naming,
 receiver classification, and language projections. The two registries must
 refer to the same logical operation rather than define duplicate behavior.
+
+### Cargo feature selection
+
+Domain names without a prefix select user bundles; `cap-*` names select individual capabilities.
+Bundles only compose capabilities. Both forms can be combined, and Cargo adds
+their selections together. `full` is the default.
+
+| Bundle | Exact capability membership |
+|---|---|
+| `core` | `cap-smiles`, `cap-io`, `cap-serialization`, `cap-descriptors`, `cap-hydrogens`, `cap-valence`, `cap-radicals`, `cap-rings`, `cap-matrices`, `cap-transforms`, `cap-stereo`, `cap-kekulize`, `cap-aromaticity`, `cap-sanitize`, `cap-stereoisomers`, `cap-tautomer` |
+| `bio` | `cap-bio` |
+| `conformer` | `cap-conformer`, `cap-confseq`, `cap-alignment` |
+| `forcefields` | `cap-forcefields` |
+| `fingerprints` | `cap-fingerprints`, `cap-hashing` |
+| `search` | `cap-search` |
+| `depict` | `cap-depict` |
+| `inchi` | `cap-inchi` |
+| `batch` | `cap-batch` |
+| `full` | All nine bundles above |
+
+Most callers use the default or select groups such as `core` and `bio`.
+For precise selection, disable defaults and choose individual capabilities:
+
+```sh
+cargo add cosmolkit --no-default-features --features cap-io,cap-kekulize,cap-sanitize,cap-hydrogens
+```
+
+With defaults disabled, `core` is not implicit. An empty selection retains
+the live molecule/runtime, builders and foundational model values, but no
+optional capability APIs. Adding `features` without disabling defaults keeps
+`full` enabled. Cargo feature unification also means another dependency can
+enable more capabilities; features are additive, not a deny list.
+
+Public cfg gates and both registry feature fields use the owning `cap-*`
+selector. Always-present declarations use `runtime` or `metadata` labels;
+those labels are not Cargo capability selectors. Bundle membership is defined
+in `crates/cosmolkit/Cargo.toml`, not duplicated in a production registry.
+
+A selector enables its required implementation dependencies directly, not
+other domains' public selectors. `cap-smiles` needs `cosmolkit-core` but does
+not expose `with_hydrogens`; `cap-bio` needs BIO-enabled `cosmolkit-io` but
+does not expose `Molecule::from_sdf`. Shared dependencies still compile their
+own required internals. These switches do not promise per-function compilation
+inside `cosmolkit-core` or another implementation crate.
+
+`runtime-invariants`, `op-contracts`, and `op-contracts-strict` are separate
+validation switches, not chemistry bundles.
+Feature selection changes availability, not an enabled function's semantics,
+operation authority or `FunctionStatus`.
+
+### Instance receiver ownership
+
+The binding registry declares `receiver: shared`, `receiver: mutable`, or
+`receiver: owned`, independently of the result type. An omitted instance
+receiver defaults to `mutable` for `in_place`, otherwise `shared`; consuming
+receivers must explicitly declare `owned`. Static/module entries have no receiver.
+The generated metadata exposes this as `BindingCallableContract.receiver`.
+
+Shared receivers use `&Self`; mutable receivers use `&mut Self` and require
+`in_place`. Owned receivers use `Self`, require `value_returning`, and cannot
+link to the borrowed/in-place operation lifecycle. The compiler checks the
+declared function signature against the actual method. No business type or
+method name grants consuming permission. `into_*` conversions transfer ownership;
+the trailing `_` remains reserved for in-place mutation, not consumption.
 
 ### Function status
 
@@ -361,6 +425,14 @@ different decisions: what to implement, and what commitment to publish.
 Labels are maintained manually; test execution does not modify them or grant
 runtime permissions. An experimental label does not relax signature checks,
 operation capabilities, state validation or explicit error handling.
+
+Declarations use `status: parity("RDKit")`,
+`status: parity_with_differences("Gemmi", "approved conditions, behavior and rationale")`,
+`status: native`, or `status: experimental`. Omission defaults to `Experimental`.
+Reference names and approved-difference explanations must be nonempty.
+For registered Molecule operations, declare the status once in `molecule_ops!`;
+binding entries inherit it through the generated value/in-place method metadata
+and cannot override it. Feature metadata describes capability selection only.
 
 The registry contains real public functions and their associated public types.
 Every entry must resolve to its declared Rust item; callable signatures must
@@ -422,21 +494,3 @@ Before adding or revising a public API, verify:
 Examples illustrate API design, not an inventory of implemented functions.
 The registry describes the actual public Rust surface. Behavior declarations
 and validation results are distinct; neither substitutes for the other.
-
-## 10. Registry Correction Guide
-
-The four-state design above is approved but has not yet been implemented in
-the registry code. Apply these corrections without changing chemical algorithms
-or operation authority:
-
-- Replace the old support/parity combinations with the single function status;
-  remove `exposure` and require actual-item/signature checks for every entry.
-- Keep unimplemented interfaces outside the registry. The four placeholder
-  entries for `MolBlockReadParams`, `MolBlockError`, `Molecule::from_molblock`
-  and `Molecule::from_molblock_with_params` have been removed.
-- For this correction, mark only `fuzzy_and` and `fuzzy_or` as `Parity` against
-  RDKit, on both `SparseCountFingerprint` and `SparseCountFingerprint32`.
-  Initialize all other function entries as `Experimental`; do not mechanically
-  preserve earlier parity claims.
-- Keep status declarations independent of test execution. This correction does
-  not introduce a test-to-registry promotion mechanism.

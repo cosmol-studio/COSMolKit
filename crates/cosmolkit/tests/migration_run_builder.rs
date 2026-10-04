@@ -1,6 +1,6 @@
 use cosmolkit::{
-    BINDING_CONTRACT, BindingItem, BindingOwner, BindingParity, BindingSupport, Molecule,
-    MoleculeBuilder, OperationError,
+    BINDING_CONTRACT, BindingItem, BindingOwner, FunctionStatus, Molecule, MoleculeBuilder,
+    OperationError,
 };
 use cosmolkit_model::{
     AdjacencyList, Atom, AtomId, AtomSpec, Bond, BondId, BondOrder, BondSpec, Conformer2D,
@@ -319,8 +319,8 @@ fn builder_binding_and_source_guards_expose_no_bypass_or_domain_branch() {
     assert_eq!(builder_entries[0].owner, BindingOwner::Type);
     assert!(builder_entries.iter().all(|entry| {
         entry.owner == BindingOwner::Type
-            && entry.support == BindingSupport::Supported
-            && entry.parity == BindingParity::NotApplicable
+            && entry.status == FunctionStatus::Experimental
+            && entry.status == FunctionStatus::Experimental
             && entry.feature == "runtime"
     }));
 

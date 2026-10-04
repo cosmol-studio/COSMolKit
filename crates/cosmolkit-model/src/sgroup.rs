@@ -887,6 +887,7 @@ pub enum StereoGroupKind {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StereoGroup {
     id: Option<u32>,
+    write_id: u32,
     kind: StereoGroupKind,
     atoms: Vec<AtomId>,
     bonds: Vec<BondId>,
@@ -897,6 +898,8 @@ impl StereoGroup {
     pub fn new(kind: StereoGroupKind, atoms: Vec<AtomId>, bonds: Vec<BondId>) -> Self {
         Self {
             id: None,
+            // RDKit✔️✔️: unsigned d_writeId = 0u;
+            write_id: 0,
             kind,
             atoms,
             bonds,
@@ -977,11 +980,88 @@ impl StereoGroup {
             .iter()
             .map(|bond| bond_map.get(bond.index()).and_then(|mapped| *mapped))
             .collect();
+        // BEGIN RDKIT CPP FUNCTION Subset.cpp::copySelectedStereoGroups
+        // RDKit✔️✔️: extracted_stereo_groups.push_back({stereo_group.getGroupType(),
+        // RDKit✔️✔️:                                    std::move(atoms), std::move(bonds),
+        // RDKit✔️✔️:                                    stereo_group.getReadId()});
+        // RDKit✔️✔️: extracted_stereo_groups.back().setWriteId(stereo_group.getWriteId());
+        // END RDKIT CPP FUNCTION Subset.cpp::copySelectedStereoGroups
         Some(Self {
             id: self.id,
+            write_id: self.write_id,
             kind: self.kind,
             atoms: atoms?,
             bonds: bonds?,
         })
+    }
+}
+
+/// Returns the detached enhanced-stereo output ID used by domain writers.
+#[doc(hidden)]
+#[must_use]
+pub const fn stereo_group_write_id(group: &StereoGroup) -> u32 {
+    // RDKit✔️✔️: unsigned getWriteId() const { return d_writeId; }
+    group.write_id
+}
+
+/// Sets the detached enhanced-stereo output ID used by domain writers.
+#[doc(hidden)]
+pub fn set_stereo_group_write_id(group: &mut StereoGroup, write_id: u32) {
+    // RDKit✔️✔️: void setWriteId(unsigned id) { d_writeId = id; }
+    group.write_id = write_id;
+}
+
+#[cfg(test)]
+mod stereo_write_id_tests {
+    use super::*;
+
+    #[test]
+    fn stereo_write_id_default_and_explicit_values_are_independent_from_read_id() {
+        let default_group = StereoGroup::new(StereoGroupKind::Or, vec![AtomId::new(0)], vec![]);
+        assert_eq!(stereo_group_write_id(&default_group), 0);
+        assert_eq!(default_group.id(), None);
+
+        let mut group = default_group.with_id(7);
+        assert_eq!(group.id(), Some(7));
+        assert_eq!(stereo_group_write_id(&group), 0);
+
+        set_stereo_group_write_id(&mut group, 0);
+        assert_eq!(group.id(), Some(7));
+        assert_eq!(stereo_group_write_id(&group), 0);
+
+        set_stereo_group_write_id(&mut group, 19);
+        assert_eq!(group.id(), Some(7));
+        assert_eq!(stereo_group_write_id(&group), 19);
+    }
+
+    #[test]
+    fn stereo_write_id_clone_equality_and_remap_preserve_stored_state() {
+        let mut group = StereoGroup::new(
+            StereoGroupKind::And,
+            vec![AtomId::new(0)],
+            vec![BondId::new(0)],
+        )
+        .with_id(7);
+        set_stereo_group_write_id(&mut group, 19);
+
+        let cloned = group.clone();
+        assert_eq!(cloned, group);
+        assert_eq!(stereo_group_write_id(&cloned), 19);
+
+        let mut different_write_state = cloned.clone();
+        set_stereo_group_write_id(&mut different_write_state, 20);
+        assert_ne!(different_write_state, group);
+        assert_eq!(different_write_state.id(), group.id());
+
+        let remapped = group
+            .remapped(&[Some(AtomId::new(3))], &[Some(BondId::new(4))])
+            .expect("all group members have mappings");
+        assert_eq!(remapped.id(), Some(7));
+        assert_eq!(stereo_group_write_id(&remapped), 19);
+        assert_eq!(remapped.atoms(), &[AtomId::new(3)]);
+        assert_eq!(remapped.bonds(), &[BondId::new(4)]);
+
+        assert_eq!(group.remapped(&[None], &[Some(BondId::new(4))]), None);
+        assert_eq!(group.remapped(&[Some(AtomId::new(3))], &[None]), None);
     }
 }

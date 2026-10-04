@@ -5,8 +5,15 @@ use cosmolkit_io::{
     SdfGraphReader, SdfReadError, read_sdf_graph_record_detached_with_params,
     read_sdf_record_detached, read_sdf_record_detached_with_params, read_sdf_records_detached,
 };
-use cosmolkit_model::{CoordinateDimension, SdfPropertyListTarget};
+use cosmolkit_model::{CoordinateDimension, PropertyValue, SdfPropertyListTarget};
 use cosmolkit_types::ChiralTag;
+
+fn string_property(value: Option<&PropertyValue>) -> Option<&str> {
+    match value {
+        Some(PropertyValue::String(value)) => Some(value),
+        _ => None,
+    }
+}
 
 fn v2000_atom(x: f64, y: f64, z: f64, symbol: &str) -> String {
     format!("{x:>10.4}{y:>10.4}{z:>10.4} {symbol:<3} 0  0  0  0  0  0  0  0  0  0  0  0")
@@ -441,9 +448,18 @@ fn sdf_read_property_lists_preserve_raw_fields_and_obey_processing_switch() {
         v2000_atom(1.0, 0.0, 0.0, "O"),
     );
     let applied = read_sdf_record_detached(&mol).expect("apply property lists");
-    assert_eq!(applied.topology.atoms[0].prop("Label"), Some("left"));
-    assert_eq!(applied.topology.atoms[1].prop("Label"), Some("right"));
-    assert_eq!(applied.topology.bonds[0].prop("OrderTag"), Some("7"));
+    assert_eq!(
+        string_property(applied.topology.atoms[0].prop("Label")),
+        Some("left")
+    );
+    assert_eq!(
+        string_property(applied.topology.atoms[1].prop("Label")),
+        Some("right")
+    );
+    assert_eq!(
+        applied.topology.bonds[0].prop("OrderTag"),
+        Some(&PropertyValue::Int(7))
+    );
     assert_eq!(applied.properties.sdf_property_lists().len(), 2);
     assert_eq!(
         applied.properties.sdf_property_lists()[0].target(),
@@ -466,7 +482,10 @@ fn sdf_read_property_lists_preserve_raw_fields_and_obey_processing_switch() {
         raw_only.properties.prop("atom.prop.Label"),
         Some("left right")
     );
-    assert_eq!(raw_only.topology.atoms[0].prop("Label"), None);
+    assert_eq!(
+        string_property(raw_only.topology.atoms[0].prop("Label")),
+        None
+    );
     assert_eq!(raw_only.topology.bonds[0].prop("OrderTag"), None);
     assert!(raw_only.properties.sdf_property_lists().is_empty());
 }

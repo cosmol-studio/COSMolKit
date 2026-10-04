@@ -12,8 +12,8 @@ use cosmolkit_core::{
     sanitize_topology,
 };
 use cosmolkit_model::{
-    AdjacencyList, Atom, AtomId, AtomSpec, Bond, BondId, BondSpec, StereoGroup, StereoGroupKind,
-    TopologyBlock,
+    AdjacencyList, Atom, AtomId, AtomSpec, Bond, BondId, BondSpec, PropertyValue, StereoGroup,
+    StereoGroupKind, TopologyBlock,
 };
 use cosmolkit_types::{BondOrder, BondStereo, ChiralTag, Element, Hybridization};
 
@@ -336,7 +336,10 @@ fn chirality_cleanup_applies_tetrahedral_hybridization_and_permutation_rules() {
     let output = cleanup_chirality(&too_large, &valence).unwrap();
     assert_eq!(output.atoms[0].chiral_tag(), ChiralTag::Tetrahedral);
     assert_eq!(output.atoms[0].chiral_permutation(), Some(0));
-    assert_eq!(output.atoms[0].prop("_chiralPermutation"), Some("0"));
+    assert_eq!(
+        output.atoms[0].prop("_chiralPermutation"),
+        Some(&PropertyValue::String("0".to_owned()))
+    );
 }
 
 #[test]
@@ -361,7 +364,7 @@ fn chirality_cleanup_enforces_non_tetrahedral_degree_and_exact_permutation_limit
         );
         assert_eq!(
             output.atoms[0].prop("_chiralPermutation"),
-            Some(maximum_permutation.to_string().as_str())
+            Some(&PropertyValue::String(maximum_permutation.to_string()))
         );
 
         let (too_small, valence) = star(
@@ -402,7 +405,10 @@ fn chirality_cleanup_enforces_non_tetrahedral_degree_and_exact_permutation_limit
         let output = cleanup_chirality(&too_large_permutation, &valence).unwrap();
         assert_eq!(output.atoms[0].chiral_tag(), tag);
         assert_eq!(output.atoms[0].chiral_permutation(), Some(0));
-        assert_eq!(output.atoms[0].prop("_chiralPermutation"), Some("0"));
+        assert_eq!(
+            output.atoms[0].prop("_chiralPermutation"),
+            Some(&PropertyValue::String("0".to_owned()))
+        );
     }
 }
 
@@ -845,9 +851,15 @@ fn sanitize_pipeline_clears_only_computed_properties_and_reports_property_before
     .unwrap()
     .topology;
     assert_eq!(input, snapshot);
-    assert_eq!(output.atoms[0].prop("user_atom"), Some("keep"));
+    assert_eq!(
+        output.atoms[0].prop("user_atom"),
+        Some(&PropertyValue::String("keep".to_owned()))
+    );
     assert_eq!(output.atoms[0].prop("computed_atom"), None);
-    assert_eq!(output.bonds[0].prop("user_bond"), Some("keep"));
+    assert_eq!(
+        output.bonds[0].prop("user_bond"),
+        Some(&PropertyValue::String("keep".to_owned()))
+    );
     assert_eq!(output.bonds[0].prop("computed_bond"), None);
 
     let mut overvalent_specs = vec![AtomSpec::new(Element::C)];
@@ -1147,6 +1159,235 @@ fn sanitize_pipeline_materializes_each_perception_and_cleanup_stage_in_stable_or
     .topology;
     assert!(adjusted.atoms[0].is_aromatic());
     assert_eq!(adjusted.atoms[0].explicit_hydrogens(), 1);
+}
+
+#[test]
+fn sanitize_final_valence_kekulize_early_return_has_no_refreshed_rows() {
+    let empty = topology_from_specs(Vec::new(), Vec::new());
+    let nonaromatic = topology_from_specs(vec![AtomSpec::new(Element::C)], Vec::new());
+    let aromatic = aromatic_cycle(6);
+    let mut calls = 0;
+    for mark_atoms_bonds in [false, true] {
+        for canonical in [false, true] {
+            let params = KekulizeParams {
+                mark_atoms_bonds,
+                canonical,
+                ..Default::default()
+            };
+            for input in [&empty, &nonaromatic] {
+                let result = kekulize(input, &params).unwrap();
+                calls += 1;
+                assert_eq!(result.topology, *input);
+                assert_eq!(result.final_valence, None);
+                assert!(result.refreshed_valence_atoms.is_empty());
+            }
+            let result = cosmolkit_core::kekulize_selected_fragment(
+                &aromatic,
+                &[false; 6],
+                &[true; 6],
+                &params,
+            )
+            .unwrap();
+            calls += 1;
+            assert_eq!(result.topology, aromatic);
+            assert_eq!(result.final_valence, None);
+            assert!(result.refreshed_valence_atoms.is_empty());
+        }
+    }
+    assert_eq!(calls, 12);
+}
+
+#[test]
+fn sanitize_final_valence_aromatic_n_p_h_stage_product_preserves_source_hydrogens() {
+    // Fixed reference rows: pinned RDKit MolOps::sanitizeMol, Kekulize.cpp
+    // lines 772-779, and adjustHs; [nH]/[pH] at both source indices 0 and 3.
+    // The KEKULIZE x SET_AROMATICITY x ADJUST_HS x PROPERTIES product is
+    // complete, supplemented by NONE/PROPERTIES/ALL named profiles.
+    let mut calls = 0;
+    for element in [Element::N, Element::P] {
+        for hetero_index in [0, 3] {
+            let input = topology_from_specs(
+                (0..5)
+                    .map(|index| {
+                        if index == hetero_index {
+                            AtomSpec::new(element)
+                                .with_aromatic(true)
+                                .with_explicit_hydrogens(1)
+                                .with_no_implicit(true)
+                        } else {
+                            AtomSpec::new(Element::C).with_aromatic(true)
+                        }
+                    })
+                    .collect(),
+                (0..5)
+                    .map(|index| {
+                        bond_spec(index, (index + 1) % 5, BondOrder::Aromatic).with_aromatic(true)
+                    })
+                    .collect(),
+            );
+            let snapshot = input.clone();
+            let mut profiles = vec![
+                SanitizeOperations::ALL,
+                SanitizeOperations::PROPERTIES,
+                SanitizeOperations::NONE,
+                SanitizeOperations::KEKULIZE,
+                SanitizeOperations::from_bits(0x0fff & !SanitizeOperations::PROPERTIES.bits())
+                    .unwrap(),
+            ];
+            for kekulize_stage in [SanitizeOperations::NONE, SanitizeOperations::KEKULIZE] {
+                for aromaticity_stage in [
+                    SanitizeOperations::NONE,
+                    SanitizeOperations::SET_AROMATICITY,
+                ] {
+                    for adjust_stage in [SanitizeOperations::NONE, SanitizeOperations::ADJUST_HS] {
+                        for properties_stage in
+                            [SanitizeOperations::NONE, SanitizeOperations::PROPERTIES]
+                        {
+                            profiles.push(
+                                kekulize_stage
+                                    | aromaticity_stage
+                                    | adjust_stage
+                                    | properties_stage,
+                            );
+                        }
+                    }
+                }
+            }
+            for operations in profiles {
+                let output = sanitize_topology(&input, &SanitizeParams { operations }).unwrap();
+                calls += 1;
+                let hetero = &output.topology.atoms[hetero_index];
+                let kekulized = operations.contains(SanitizeOperations::KEKULIZE);
+                let rearomatized = operations.contains(SanitizeOperations::SET_AROMATICITY);
+                let adjusted = operations.contains(SanitizeOperations::ADJUST_HS);
+                let expected_explicit_h = u8::from(!kekulized || rearomatized && adjusted);
+                assert_eq!(
+                    hetero.explicit_hydrogens(),
+                    expected_explicit_h,
+                    "{element:?} index={hetero_index} {operations:?}"
+                );
+                assert_eq!(hetero.no_implicit(), !kekulized);
+                assert_eq!(hetero.is_aromatic(), !kekulized || rearomatized);
+                if operations.contains(SanitizeOperations::PROPERTIES) {
+                    let valence = output.final_valence.unwrap();
+                    assert_eq!(
+                        valence.explicit_valence[hetero_index],
+                        if kekulized && !rearomatized { 2 } else { 3 }
+                    );
+                    assert_eq!(
+                        valence.implicit_hydrogens[hetero_index],
+                        i32::from(kekulized && !rearomatized)
+                    );
+                    let total_h = output
+                        .topology
+                        .atoms
+                        .iter()
+                        .enumerate()
+                        .map(|(index, atom)| {
+                            i32::from(atom.explicit_hydrogens()) + valence.implicit_hydrogens[index]
+                        })
+                        .sum::<i32>();
+                    // Without adjustHs after rearomatization, the source
+                    // intentionally loses H; never claim that partial profile
+                    // has the same formula as the complete ALL pipeline.
+                    assert_eq!(
+                        total_h,
+                        if kekulized && rearomatized && !adjusted {
+                            4
+                        } else {
+                            5
+                        }
+                    );
+                } else {
+                    assert_eq!(output.final_valence, None);
+                }
+                output.topology.validate().unwrap();
+                assert_eq!(input, snapshot);
+            }
+            for mark_atoms_bonds in [false, true] {
+                let result = kekulize(
+                    &input,
+                    &KekulizeParams {
+                        mark_atoms_bonds,
+                        canonical: false,
+                        ..Default::default()
+                    },
+                )
+                .unwrap();
+                assert!(result.final_valence.is_some());
+                assert_eq!(
+                    result.refreshed_valence_atoms,
+                    if mark_atoms_bonds {
+                        vec![AtomId::new(hetero_index)]
+                    } else {
+                        vec![]
+                    }
+                );
+                if mark_atoms_bonds {
+                    let valence = result.final_valence.unwrap();
+                    assert_eq!(valence.explicit_valence[hetero_index], 2);
+                    assert_eq!(valence.implicit_hydrogens[hetero_index], 1);
+                }
+                assert_eq!(input, snapshot);
+            }
+        }
+    }
+    assert_eq!(calls, 84);
+}
+
+#[test]
+fn sanitize_final_valence_stage_product_matches_only_the_returned_topology() {
+    let ethanol = topology_from_specs(
+        vec![atom_spec(6), atom_spec(6), atom_spec(8)],
+        vec![
+            bond_spec(0, 1, BondOrder::Single),
+            bond_spec(1, 2, BondOrder::Single),
+        ],
+    );
+    let benzene = aromatic_cycle(6);
+    let pyrrole = topology_from_specs(
+        std::iter::once(AtomSpec::new(Element::N))
+            .chain((0..4).map(|_| AtomSpec::new(Element::C)))
+            .collect(),
+        vec![
+            bond_spec(0, 1, BondOrder::Single),
+            bond_spec(1, 2, BondOrder::Double),
+            bond_spec(2, 3, BondOrder::Single),
+            bond_spec(3, 4, BondOrder::Double),
+            bond_spec(4, 0, BondOrder::Single),
+        ],
+    );
+    let stages = [
+        SanitizeOperations::ALL,
+        SanitizeOperations::PROPERTIES,
+        SanitizeOperations::NONE,
+        SanitizeOperations::KEKULIZE,
+    ];
+    let mut calls = 0;
+    for input in [&ethanol, &benzene, &pyrrole] {
+        let snapshot = input.clone();
+        for operations in stages {
+            let output = sanitize_topology(input, &SanitizeParams { operations }).unwrap();
+            calls += 1;
+            if operations.contains(SanitizeOperations::PROPERTIES) {
+                let expected = assign_valence_with_options_for_topology(
+                    &output.topology,
+                    ValenceModel::RdkitLike,
+                    true,
+                )
+                .unwrap();
+                assert_eq!(output.final_valence, Some(expected), "{operations:?}");
+            } else {
+                assert_eq!(output.final_valence, None, "{operations:?}");
+            }
+            output.topology.validate().unwrap();
+            assert_eq!(input, &snapshot);
+        }
+    }
+    assert_eq!(calls, 12);
+    let adjusted = sanitize_topology(&pyrrole, &SanitizeParams::default()).unwrap();
+    assert_eq!(adjusted.topology.atoms[0].explicit_hydrogens(), 1);
+    assert_eq!(adjusted.final_valence.unwrap().implicit_hydrogens[0], 0);
 }
 
 #[test]

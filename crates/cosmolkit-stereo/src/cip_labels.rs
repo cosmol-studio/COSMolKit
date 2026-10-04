@@ -1834,7 +1834,16 @@ impl<'a> CipSp2Bond<'a> {
                     }
                     let rank = molecule.atoms[neighbor.atom_index]
                         .prop("_CIPRank")
-                        .and_then(|value| value.parse::<u32>().ok())
+                        .and_then(|value| match value {
+                            cosmolkit_model::PropertyValue::Int(value) => {
+                                u32::try_from(*value).ok()
+                            }
+                            cosmolkit_model::PropertyValue::String(value) => {
+                                value.parse::<u32>().ok()
+                            }
+                            cosmolkit_model::PropertyValue::Double(_)
+                            | cosmolkit_model::PropertyValue::Bool(_) => None,
+                        })
                         .ok_or(CipLabelerError::IncorrectNumberOfStereoAtoms)?;
                     ranks[neighbor.atom_index] = rank;
                 }

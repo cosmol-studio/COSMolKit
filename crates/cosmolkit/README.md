@@ -6,49 +6,47 @@ For a concise Rust-native cheminformatics overview, see <https://tools.cosmol.or
 
 ## Cargo features
 
-The default `full` feature enables every capability feature and its domain
-dependencies. Dependency wiring does not imply that every corresponding public
-API or algorithm is implemented; consult the API and support status for the
-selected version. Runtime invariant and operation-contract checks remain opt-in
-via `op-contracts-strict`.
+Default features enable `full`. Most users can keep the default or select
+plain-name bundles such as `core`, `bio`, or `fingerprints`:
 
-Applications that need a smaller dependency surface can disable defaults and
-enable only the capabilities they use:
-
+<!-- rust-install-version:start -->
 ```toml
-cosmolkit = { version = "0.5.0-rc.3", default-features = false, features = ["kekulize"] }
+cosmolkit = { version = "0.5.0-rc.9", default-features = false, features = ["core", "bio"] }
+```
+<!-- rust-install-version:end -->
+
+| Bundle | Area |
+|---|---|
+| `core` | SMILES, molecular IO/serialization, descriptors, foundational chemistry, stereo, matrices, transforms and tautomers |
+| `bio` | Structural biology readers, values, selection and operations |
+| `conformer` | 3D conformers, ConfSeq and coordinate alignment |
+| `forcefields` | Energy, gradients and optimization |
+| `fingerprints` | Fingerprints and molecular hashing |
+| `search` | SMARTS and substructure search |
+| `depict` | 2D layout and depiction |
+| `inchi` | InChI and InChIKey conversion |
+| `batch` | Ordered batch processing |
+| `full` | All bundles above |
+
+Advanced selectors always start with `cap-`. For example, to select only
+molecular IO, kekulization, sanitization and hydrogen operations:
+
+```sh
+cargo add cosmolkit --no-default-features --features cap-io,cap-kekulize,cap-sanitize,cap-hydrogens
 ```
 
-| Feature | Capability | Implementation crate(s) |
-|---|---|---|
-| `hydrogens`, `valence`, `radicals`, `rings`, `matrices`, `transforms`, `kekulize`, `aromaticity`, `sanitize` | Foundational chemistry and graph operations | `cosmolkit-core` |
-| `smiles` | SMILES and CXSMILES | `cosmolkit-smiles` |
-| `search` | SMARTS and substructure search | `cosmolkit-search` |
-| `bio` | Structural biology values and operations | `cosmolkit-bio` |
-| `io` | Molecular and structural file IO | `cosmolkit-io` |
-| `inchi` | InChI and InChIKey conversion | `cosmolkit-inchi` |
-| `fingerprints` | Molecular fingerprints | `cosmolkit-fingerprints` |
-| `descriptors` | Molecular descriptors | `cosmolkit-descriptors` |
-| `depict` | 2D layout, SVG and PNG depiction | `cosmolkit-depict` |
-| `batch` | Ordered parallel batch processing | `cosmolkit-batch` |
-| `serialization` | Binary molecule serialization | `cosmolkit-io` |
-| `stereo` | Foundational stereochemistry and high-level labeling | `cosmolkit-core`, `cosmolkit-stereo` |
-| `stereoisomers` | Stereoisomer enumeration | `cosmolkit-stereo` |
-| `hashing` | Molecular hashes | `cosmolkit-fingerprints` |
-| `confseq` | ConfSeq decoding | `cosmolkit-conformer` |
-| `conformer` | 3D embedding and conformer selection | `cosmolkit-conformer` |
-| `forcefields` | Energy, gradients and optimization | `cosmolkit-forcefields` |
-| `alignment` | Coordinate alignment and RMSD | `cosmolkit-alignment` |
-| `tautomer` | Tautomer enumeration and canonicalization | `cosmolkit-tautomer` |
+With defaults disabled, neither `full` nor `core` is implicit. Bundles and
+individual selectors can be combined; adding features without disabling
+defaults keeps `full` enabled. Cargo features are additive across dependencies.
 
-Each fine-grained feature enables its implementation dependency directly, not
-another domain's public feature. Shared foundations such as `cosmolkit-types`,
-`cosmolkit-cx`, and `cosmolkit-ringdecomposer` remain transitive dependencies of
-their architectural consumers.
+Each capability gates its own public APIs and required dependencies. Sharing
+an implementation crate does not expose its other capabilities, nor does a
+selector promise to compile only individual functions inside that crate.
+Feature selection does not change an enabled operation's behavior or status.
+`op-contracts-strict` separately enables runtime and operation-contract checks.
 
-Feature selection only controls compile-time API and dependency composition;
-it does not change the behavior of an enabled operation. Python wheels always
-build the complete `full` capability set.
+For exact bundle membership and registry rules, see
+[Cargo feature selection](https://github.com/cosmol-studio/COSMolKit/blob/main/dev/public_api_design.md#cargo-feature-selection).
 
 ## Documentation
 
@@ -245,6 +243,33 @@ and shape indices, Lipinski and ring/stereo counts, MQN, Labute ASA, and
 SlogP/SMR VSA. Supported rows and parameter combinations are checked
 field-by-field against pinned RDKit golden data; unmodeled source states return
 an explicit descriptor error.
+
+### Descriptor count queries
+
+Five read-only `Molecule` queries return RDKit-compatible count values and
+are gated by `cap-descriptors`:
+
+```rust
+let mol = Molecule::from_smiles("CCO")?;
+assert_eq!(mol.num_heavy_atoms()?, 3);
+assert_eq!(mol.total_atom_count()?, 9);
+assert_eq!(mol.lipinski_hba()?, 1);
+assert_eq!(mol.lipinski_hbd()?, 1);
+assert_eq!(mol.fraction_csp3()?.to_bits(), 1.0_f64.to_bits());
+```
+
+`num_heavy_atoms` and `lipinski_hba` read only the topology;
+`total_atom_count`, `lipinski_hbd` and `fraction_csp3` require the prepared
+valence assignment cached by a sanitizing constructor and return the typed
+`DescriptorReadError::MissingPreparedValence` otherwise — the queries never
+create or install cache values themselves, and algorithm failures retain the
+owned domain error through `Error::source`. `Molecule::num_atoms` keeps its
+separate explicit-atom-row meaning; `total_atom_count` includes implicit and
+explicit-property hydrogens (`includeNeighbors=false`). `lipinski_hba` is the
+direct N/O count (not the general recursive `NumHBA`) and `lipinski_hbd` is
+the donor-hydrogen sum on N/O (not the donor-atom count). All five run in
+the parity pipeline over the 5000-record SMILES corpus under both
+`remove_hydrogens` parser policies (10000 observations per task).
 
 ## Fingerprints
 

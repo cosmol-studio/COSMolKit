@@ -23,14 +23,20 @@ mod paths;
 mod periodic_table;
 mod polymer_sgroup;
 mod potential_stereo;
+mod property_string;
 mod query_ops;
 mod radicals;
+mod random;
 mod rings;
 mod sanitize;
 mod stereo_order;
 mod structure_tags;
 mod transforms;
 mod valence;
+mod wedge;
+
+pub use random::{RdkitRandomGenerator, with_rdkit_random_generator};
+pub use stereo_order::{invert_atom_chirality, invert_bond_chirality};
 
 pub use attachment_points::{
     AttachmentExpansionError, AttachmentExpansionResult, AttachmentWarning,
@@ -41,8 +47,10 @@ pub use atropisomer::{
     AtropisomerAssignment, AtropisomerBondUpdate, AtropisomerCarrierEnd, AtropisomerConformer,
     AtropisomerDiagnostic, AtropisomerError, AtropisomerRejectionKind, AtropisomerWedgeAssignment,
     AtropisomerWedgeUpdate, StereoGroupAssignment, atropisomer_carriers,
-    cleanup_atropisomer_stereo_groups, detect_atropisomer_chirality,
-    does_topology_have_atropisomers, stereo_group_atom_ids, wedge_bonds_from_atropisomers,
+    atropisomer_carriers_for_bonds, cleanup_atropisomer_stereo_groups,
+    detect_atropisomer_chirality, does_topology_have_atropisomers,
+    get_all_atom_ids_for_stereo_group, get_all_atom_ids_for_stereo_groups, stereo_group_atom_ids,
+    wedge_bonds_from_atropisomers,
 };
 
 pub use aromaticity::{
@@ -111,7 +119,7 @@ pub use double_stereo::{
     should_detect_double_bond_stereo, translate_ez_to_cis_trans, with_double_bond_stereo_reference,
 };
 
-pub use hcount::total_hydrogen_count;
+pub use hcount::{total_hydrogen_count, total_hydrogen_count_from_validated};
 pub(crate) use hybridization::{HybridizationAssignment, HybridizationError, assign_hybridization};
 pub use nontetrahedral_stereo::{
     non_tetrahedral_across_ligand, non_tetrahedral_ideal_angle, trigonal_bipyramidal_axial_ligand,
@@ -150,7 +158,9 @@ pub mod __migration_sanitize {
 pub use kekulize::{
     CanonicalRankError, CanonicalRankParams, KekulizeAssignment, KekulizeAttempt, KekulizeError,
     KekulizeParams, kekulize, kekulize_if_possible, kekulize_if_possible_with_query_state,
-    kekulize_with_query_state, rank_fragment_atoms, rank_mol_atoms_with_params,
+    kekulize_selected_fragment, kekulize_with_query_state, kekulize_with_query_state_and_ring_info,
+    rank_fragment_atoms, rank_fragment_atoms_with_params, rank_fragment_atoms_with_prepared_state,
+    rank_mol_atoms_with_params,
 };
 
 pub use legacy_stereo::{
@@ -183,11 +193,13 @@ pub use potential_stereo::{
     PotentialStereoAssignment, PotentialStereoCenter, PotentialStereoDescriptor,
     PotentialStereoError, PotentialStereoInfo, PotentialStereoParams, PotentialStereoSpecified,
     PotentialStereoType, RingStereoRelation, potential_stereo,
+    potential_tetrahedral_centers_for_atoms,
 };
 
 pub use polymer_sgroup::{
     PolymerSGroupError, finalize_polymer_sgroup, setup_unmarked_polymer_sgroup,
 };
+pub use property_string::{PropertyStringError, property_value_to_string};
 
 pub use radicals::{RadicalAssignment, RadicalDiagnostic, RadicalError, assign_radicals};
 
@@ -195,7 +207,7 @@ pub use rings::{
     RingFindType, RingFindingError, RingInfo, RingSearchParams, fast_find_rings,
     fast_find_rings_from_parts, find_ring_families, find_ring_families_from_parts, find_sssr,
     find_sssr_from_parts, find_sssr_with_options_from_parts, is_atom_bridgehead_from_topology,
-    symmetrize_sssr_with_options_from_parts, symmetrized_sssr,
+    ring_info_from_selected_rows, symmetrize_sssr_with_options_from_parts, symmetrized_sssr,
 };
 
 pub use sanitize::{
@@ -252,4 +264,9 @@ pub use valence::{
     periodic_table_more_electronegative, periodic_table_outer_electrons, periodic_table_row,
     rdkit_atomic_number_from_symbol, rdkit_default_valence, rdkit_element_symbol, rdkit_rb0,
     rdkit_valence_list, required_valence_list,
+};
+
+pub use wedge::{
+    CrossedBondContext, MolFileBondStereoInfo, WedgeAssignments, WedgeError, WedgeInfo,
+    get_molfile_bond_stereo_info, pick_bonds_to_wedge, pick_bonds_to_wedge_with_ring_info,
 };
