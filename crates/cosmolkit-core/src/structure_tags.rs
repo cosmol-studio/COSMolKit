@@ -926,6 +926,8 @@ pub fn cleanup_stereo_groups(topology: &mut TopologyBlock) {
         if keep {
             groups.push(group.clone());
         } else if !atoms.is_empty() {
+            // The pinned constructor receives getReadId() only; write ID
+            // remains at its zero default on this reconstruction path.
             let mut replacement = StereoGroup::new(group.kind(), atoms, bonds);
             if let Some(id) = group.id() {
                 replacement = replacement.with_id(id);
@@ -1483,4 +1485,156 @@ pub fn assign_chiral_tags_from_structure(
         selected_conformer_id: Some(conformer.id()),
         clear_stereochem_done: true,
     })
+}
+
+#[cfg(test)]
+mod cf3d_sgids_core_3_tests {
+    use super::cleanup_stereo_groups;
+    use crate::atropisomer::{
+        AtropisomerAssignment, AtropisomerBondUpdate, cleanup_atropisomer_stereo_groups,
+    };
+    use cosmolkit_model::{
+        Atom, AtomId, AtomSpec, Bond, BondId, BondOrder, BondSpec, ChiralTag, StereoGroup,
+        StereoGroupKind, TopologyBlock,
+    };
+    use cosmolkit_types::{BondStereo, Element};
+
+    fn topology_with_tags(
+        tags: &[ChiralTag],
+        edges: &[(usize, usize)],
+        stereo_groups: Vec<StereoGroup>,
+    ) -> TopologyBlock {
+        let atoms = tags
+            .iter()
+            .copied()
+            .enumerate()
+            .map(|(index, tag)| {
+                Atom::from_spec(
+                    AtomId::new(index),
+                    AtomSpec::new(Element::C).with_chiral_tag(tag),
+                )
+            })
+            .collect();
+        let bonds = edges
+            .iter()
+            .copied()
+            .enumerate()
+            .map(|(index, (begin, end))| {
+                Bond::from_spec(
+                    BondId::new(index),
+                    BondSpec::new(AtomId::new(begin), AtomId::new(end), BondOrder::Single),
+                )
+            })
+            .collect();
+        TopologyBlock::try_from_parts(atoms, bonds, vec![], stereo_groups)
+            .expect("fixed stereo-group topology is valid")
+    }
+
+    #[test]
+    fn cf3d_sgids_core_3_chirality_cleanup_preserves_or_resets_by_constructor() {
+        let mut topology = topology_with_tags(
+            &[
+                ChiralTag::Unspecified,
+                ChiralTag::TetrahedralCw,
+                ChiralTag::TetrahedralCcw,
+            ],
+            &[],
+            vec![
+                StereoGroup::new(
+                    StereoGroupKind::Absolute,
+                    vec![AtomId::new(1), AtomId::new(2)],
+                    vec![],
+                )
+                .with_id(17)
+                .with_write_id(9),
+                StereoGroup::new(
+                    StereoGroupKind::Or,
+                    vec![AtomId::new(2), AtomId::new(0), AtomId::new(1)],
+                    vec![],
+                )
+                .with_id(7)
+                .with_write_id(6),
+                StereoGroup::new(StereoGroupKind::And, vec![AtomId::new(0)], vec![])
+                    .with_id(0)
+                    .with_write_id(3),
+            ],
+        );
+
+        cleanup_stereo_groups(&mut topology);
+        assert_eq!(topology.stereo_groups.len(), 2);
+        let unchanged = &topology.stereo_groups[0];
+        assert_eq!(unchanged.kind(), StereoGroupKind::Absolute);
+        assert_eq!(unchanged.id(), Some(17));
+        assert_eq!(unchanged.write_id(), 9);
+        assert_eq!(unchanged.atoms(), &[AtomId::new(1), AtomId::new(2)]);
+
+        let filtered = &topology.stereo_groups[1];
+        assert_eq!(filtered.kind(), StereoGroupKind::Or);
+        assert_eq!(filtered.id(), Some(7));
+        assert_eq!(filtered.write_id(), 0);
+        assert_eq!(filtered.atoms(), &[AtomId::new(2), AtomId::new(1)]);
+        assert!(filtered.bonds().is_empty());
+    }
+
+    #[test]
+    fn cf3d_sgids_core_3_atrop_cleanup_resets_rebuilt_groups_and_clones_others() {
+        let topology = topology_with_tags(
+            &[ChiralTag::Unspecified; 4],
+            &[(0, 1), (2, 3)],
+            vec![
+                StereoGroup::new(
+                    StereoGroupKind::Absolute,
+                    vec![AtomId::new(2), AtomId::new(0), AtomId::new(3)],
+                    vec![],
+                )
+                .with_id(17)
+                .with_write_id(9),
+                StereoGroup::new(
+                    StereoGroupKind::Or,
+                    vec![AtomId::new(2), AtomId::new(0), AtomId::new(3)],
+                    vec![],
+                )
+                .with_id(0)
+                .with_write_id(6),
+                StereoGroup::new(
+                    StereoGroupKind::And,
+                    vec![AtomId::new(2), AtomId::new(0), AtomId::new(3)],
+                    vec![],
+                )
+                .with_id(7)
+                .with_write_id(4),
+                StereoGroup::new(StereoGroupKind::Or, vec![AtomId::new(2)], vec![])
+                    .with_id(5)
+                    .with_write_id(11),
+            ],
+        );
+        let detected = AtropisomerAssignment {
+            bond_updates: vec![AtropisomerBondUpdate {
+                bond: BondId::new(0),
+                stereo: BondStereo::AtropCw,
+            }],
+            diagnostics: vec![],
+        };
+
+        let result = cleanup_atropisomer_stereo_groups(&topology, &detected)
+            .expect("fixed assignment is valid");
+        assert_eq!(result.groups.len(), 4);
+        for (group, kind) in result.groups[..3].iter().zip([
+            StereoGroupKind::Absolute,
+            StereoGroupKind::Or,
+            StereoGroupKind::And,
+        ]) {
+            assert_eq!(group.kind(), kind);
+            assert_eq!(group.id(), None);
+            assert_eq!(group.write_id(), 0);
+            assert_eq!(group.atoms(), &[AtomId::new(2), AtomId::new(3)]);
+            assert_eq!(group.bonds(), &[BondId::new(0)]);
+        }
+        let unchanged = &result.groups[3];
+        assert_eq!(unchanged.kind(), StereoGroupKind::Or);
+        assert_eq!(unchanged.id(), Some(5));
+        assert_eq!(unchanged.write_id(), 11);
+        assert_eq!(unchanged.atoms(), &[AtomId::new(2)]);
+        assert!(unchanged.bonds().is_empty());
+    }
 }

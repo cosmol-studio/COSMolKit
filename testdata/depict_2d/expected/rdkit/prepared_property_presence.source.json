@@ -1,0 +1,16 @@
+{
+  "library": "RDKit",
+  "commit": "351f8f378f8ad6bbd517980c38896e66bf907af8c",
+  "license": "BSD-3-Clause",
+  "fixture_sha256": "4841d9ef720b36546c3f54a8cf68a59fdd41f520f58376bde02a3c625cf2e89d",
+  "generator": "tools/testdata/depict_2d/prepared_property_source.cpp",
+  "generator_sha256": "cf186c175dbe9f43f16e5183f90df676a27ca69a692f8c70437c91bcabd56b2c",
+  "fixed_behavior_cells": 48,
+  "tests_generate_reference": false,
+  "license_file": "prepared_property_presence.LICENSE",
+  "cases": [
+    2508,
+    227,
+    155
+  ]
+}

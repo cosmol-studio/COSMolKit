@@ -2,8 +2,57 @@ use super::registry::{FingerprintValue, Input, Operation, Record, Value, Width};
 use cosmolkit::{SparseCountFingerprint, SparseCountFingerprint32};
 
 pub fn run(input: &Input) -> Result<Record, String> {
+    if matches!(input, Input::Uff(_)) {
+        return crate::uff::run(input);
+    }
     let original = input;
     let Input::Fingerprint(input) = input else {
+        if let Input::BioPdbOutput { case, profile } = original {
+            let structure = match case.format {
+                crate::registry::BioPdbCorpusFormat::Cif => {
+                    cosmolkit::BioStructure::from_mmcif(&case.text)
+                        .map_err(|e| format!("parse"))
+                        .ok()
+                }
+                crate::registry::BioPdbCorpusFormat::Pdb => {
+                    cosmolkit::BioStructure::from_pdb(&case.text)
+                        .map_err(|e| format!("parse"))
+                        .ok()
+                }
+            };
+            let Some(structure) = structure else {
+                return Ok(Record {
+                    input: original.clone(),
+                    output: Value::BioPdbOutput(crate::registry::BioPdbOutputValue {
+                        text: String::new(),
+                        error: Some(crate::registry::BioPdbOutputError::Parse {
+                            format: case.format,
+                            message: "parse failed".into(),
+                        }),
+                    }),
+                });
+            };
+            let params = cosmolkit::BioPdbWriteParams {
+                ter_records: profile.ter_records,
+                numbered_ter: profile.numbered_ter,
+                ter_ignores_type: profile.ter_ignores_type,
+                preserve_serial: profile.preserve_serial,
+                end_record: profile.end_record,
+            };
+            let (text, error) = match structure.to_pdb_with_params(&params) {
+                Ok(t) => (t, None),
+                Err(e) => (
+                    String::new(),
+                    Some(crate::registry::BioPdbOutputError::Write {
+                        message: e.to_string(),
+                    }),
+                ),
+            };
+            return Ok(Record {
+                input: original.clone(),
+                output: Value::BioPdbOutput(super::registry::BioPdbOutputValue { text, error }),
+            });
+        }
         return crate::molecular::run(input);
     };
     macro_rules! execute {
@@ -31,7 +80,13 @@ pub fn run(input: &Input) -> Result<Record, String> {
             let result = match input.operation {
                 Operation::FuzzyAnd => left.fuzzy_and(&right),
                 Operation::FuzzyOr => left.fuzzy_or(&right),
-                Operation::Molecular(_) => {
+                Operation::BioPdbOutput => {
+                    return Err("bio_pdb_output in fingerprint input".into());
+                }
+                Operation::Molecular(_)
+                | Operation::UffCoverage
+                | Operation::UffOptimization
+                | Operation::UffConformerOptimization => {
                     return Err("molecular operation in fingerprint input".into());
                 }
             }

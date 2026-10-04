@@ -12,7 +12,10 @@ readme = "../cosmolkit/README.md"
 documentation = "https://docs.rs/cosmolkit"
 
 [features]
-default = []
+default = ["molecule"]
+# Internal format branches, not facade public capabilities. BIO-only facade
+# builds disable these defaults and activate only `bio`.
+molecule = ["dep:cosmolkit-core", "dep:cosmolkit-search"]
 bio = ["dep:cosmolkit-bio"]
 # Forwarding feature (BIO-ROWS-PROBE): enables only the existing optional
 # BIO dependency's test-probes feature; no new dependency edge, no
@@ -21,9 +24,9 @@ test-probes = ["bio", "cosmolkit-bio/test-probes"]
 
 [dependencies]
 cosmolkit-bio = { version = "0.5.0-rc.9", path = "../cosmolkit-bio", optional = true }
-cosmolkit-core = { version = "0.5.0-rc.9", path = "../cosmolkit-core" }
+cosmolkit-core = { version = "0.5.0-rc.9", path = "../cosmolkit-core", optional = true }
 cosmolkit-model = { version = "0.5.0-rc.9", path = "../cosmolkit-model" }
-cosmolkit-search = { version = "0.5.0-rc.9", path = "../cosmolkit-search" }
+cosmolkit-search = { version = "0.5.0-rc.9", path = "../cosmolkit-search", optional = true }
 cosmolkit-types = { version = "0.5.0-rc.9", path = "../cosmolkit-types" }
 thiserror = "2.0.18"
 
@@ -56,4 +59,40 @@ required-features = ["bio"]
 
 [[test]]
 name = "migration_io_bio_read"
+required-features = ["bio"]
+
+[[test]]
+name = "migration_io_cif_alloc"
+required-features = ["bio"]
+
+[[test]]
+name = "migration_io_mol_post"
+required-features = ["molecule"]
+
+[[test]]
+name = "migration_io_sdf_props"
+required-features = ["molecule"]
+
+[[test]]
+name = "migration_io_sdf_read"
+required-features = ["molecule"]
+
+[[test]]
+name = "migration_io_v2000_props"
+required-features = ["molecule"]
+
+[[test]]
+name = "migration_io_v2000_read"
+required-features = ["molecule"]
+
+[[test]]
+name = "migration_io_v3000_attchord"
+required-features = ["molecule"]
+
+[[test]]
+name = "migration_io_v3000_read"
+required-features = ["molecule"]
+
+[[test]]
+name = "bio_pdb_write"
 required-features = ["bio"]

@@ -108,6 +108,167 @@ fn descriptor_query_dq04_num_heavy_atoms() {
     assert_eq!(raw_calls, 40, "raw discriminator separately counted");
 }
 
+/// HETERO-REPAIR: the frozen 320-call public product (20 cases x 2
+/// remove-H policies x 2 raw/sanitized constructor states x 2
+/// original/peer receivers x 2 repeats) for the topology-only
+/// num_heteroatoms query. The 12-call four-block persistent-storage
+/// proof (3 fixed molecules x 2 receivers x 2 repeats) is relocated
+/// into the internal private unit module in crates/cosmolkit/src/
+/// descriptors.rs (Arc identities are crate-private); the superseded
+/// external value-equality version is removed here.
+#[test]
+fn descriptor_heteroatoms_public_product() {
+    const HETERO_CASES: [(&str, u32); 20] = [
+        ("", 0),
+        ("C", 0),
+        ("CCO", 1),
+        ("[NH4+]", 1),
+        ("[O-]", 1),
+        ("[H][H]", 0),
+        ("[2H]O[2H]", 1),
+        ("[13CH4]", 0),
+        ("N", 1),
+        ("O", 1),
+        ("C=O", 1),
+        ("O=C(N)N", 3),
+        ("n1ccccc1", 1),
+        ("[nH]1cccc1", 1),
+        ("C1CCCCC1", 0),
+        ("CC(N)C(=O)O", 3),
+        ("[H]N([H])[H]", 1),
+        ("C[C+](C)C", 0),
+        ("*", 1),
+        ("CC#N", 1),
+    ];
+
+    // Frozen literal CONSTRUCTOR prerequisites (HETERO-REPAIR, from the
+    // frozen SMILES/policy and the DQ literal table; never derived from
+    // num_heteroatoms output). Ordered atomic numbers per case under both
+    // remove-H policies, ordered isotopes, and explicit-H row
+    // specifications. (smiles, ordered atomic numbers keep, ordered
+    // isotopes keep, explicit-H rows keep)
+    const PREREQS: [(&str, &[u8], &[Option<u16>], &[(usize, u8)]); 20] = [
+        ("", &[], &[], &[]),
+        ("C", &[6], &[None], &[]),
+        ("CCO", &[6, 6, 8], &[None, None, None], &[]),
+        ("[NH4+]", &[7], &[None], &[(0, 4)]),
+        ("[O-]", &[8], &[None], &[]),
+        ("[H][H]", &[1, 1], &[None, None], &[]),
+        ("[2H]O[2H]", &[1, 8, 1], &[Some(2), None, Some(2)], &[]),
+        ("[13CH4]", &[6], &[Some(13)], &[(0, 4)]),
+        ("N", &[7], &[None], &[]),
+        ("O", &[8], &[None], &[]),
+        ("C=O", &[6, 8], &[None, None], &[]),
+        ("O=C(N)N", &[8, 6, 7, 7], &[None, None, None, None], &[]),
+        ("n1ccccc1", &[7, 6, 6, 6, 6, 6], &[None; 6], &[]),
+        ("[nH]1cccc1", &[7, 6, 6, 6, 6], &[None; 5], &[(0, 1)]),
+        ("C1CCCCC1", &[6, 6, 6, 6, 6, 6], &[None; 6], &[]),
+        ("CC(N)C(=O)O", &[6, 6, 7, 6, 8, 8], &[None; 6], &[]),
+        // Ammonia: H rows survive ONLY remove-H=false ([1,7,1,1]); the
+        // remove policy yields just [7] with N explicit-H 3 AFTER
+        // removal. All-hydrogen [H][H] keeps both rows under both
+        // policies; deuterium rows survive both policies.
+        ("[H]N([H])[H]", &[1, 7, 1, 1], &[None; 4], &[(1, 0)]),
+        ("C[C+](C)C", &[6, 6, 6, 6], &[None; 4], &[]),
+        ("*", &[0], &[None], &[]),
+        ("CC#N", &[6, 6, 7], &[None, None, None], &[]),
+    ];
+
+    // Public-surface prerequisite check through Molecule::atoms() (rows,
+    // atomic numbers, isotopes, explicit H) BEFORE every invocation; a
+    // contradictory prerequisite fails visibly. Never SUT-derived.
+    fn assert_input_prerequisites(
+        label: &str,
+        smiles: &str,
+        atoms: &[cosmolkit_model::Atom],
+        remove_hydrogens: bool,
+    ) {
+        let index = PREREQS
+            .iter()
+            .position(|(candidate, _, _, _)| *candidate == smiles)
+            .unwrap_or_else(|| panic!("{label}: unknown prerequisite case {smiles:?}"));
+        let (_, atomic_numbers, isotopes, explicit_h) = PREREQS[index];
+        let all_hydrogen = atomic_numbers.iter().all(|&z| z == 1);
+        let kept: Vec<(u8, Option<u16>)> = atomic_numbers
+            .iter()
+            .zip(isotopes.iter())
+            .filter(|(z, isotope)| {
+                !remove_hydrogens || **z != 1 || isotope.is_some() || all_hydrogen
+            })
+            .map(|(z, isotope)| (*z, *isotope))
+            .collect();
+        assert_eq!(atoms.len(), kept.len(), "{label}: atom row count");
+        for (row, (expected_z, expected_isotope)) in atoms.iter().zip(kept.iter()) {
+            assert_eq!(row.atomic_number(), *expected_z, "{label}: atomic number");
+            assert_eq!(row.isotope(), *expected_isotope, "{label}: isotope");
+        }
+        if remove_hydrogens && smiles == "[H]N([H])[H]" {
+            assert_eq!(atoms[0].atomic_number(), 7, "{label}: N kept");
+            assert_eq!(atoms[0].explicit_hydrogens(), 3, "{label}: N H=3");
+        } else {
+            // All other explicit-H atom specifications remain the frozen
+            // literals under both policies, not just remove-H=false.
+            for &(row_index, expected_h) in explicit_h {
+                assert_eq!(
+                    atoms[row_index].explicit_hydrogens(),
+                    expected_h,
+                    "{label}: explicit H row {row_index}"
+                );
+            }
+        }
+    }
+
+    let mut calls = 0usize;
+    for (smiles, expected) in HETERO_CASES {
+        for remove_hydrogens in [false, true] {
+            for sanitized_constructor in [false, true] {
+                // Truthful constructor-policy labeling: sanitize=false
+                // builds the raw graph EXCEPT that remove-H=true still
+                // runs the real RemoveHs pass (which sanitizes on its
+                // own); this is the actual constructor policy, not an
+                // assertion of a wholly unprepared graph.
+                let params = SmilesParseParams {
+                    sanitize: sanitized_constructor,
+                    remove_hydrogens,
+                    ..Default::default()
+                };
+                let original = Molecule::from_smiles_with_params(smiles, &params).unwrap();
+                let peer = original.clone();
+                for receiver in [&original, &peer] {
+                    for _repeat in 0..2 {
+                        let label =
+                            format!("{smiles}/rh={remove_hydrogens}/s={sanitized_constructor}");
+                        // BEFORE-call constructor/element/H/isotope
+                        // prerequisite plus fresh public property clone.
+                        assert_input_prerequisites(
+                            &label,
+                            smiles,
+                            receiver.atoms(),
+                            remove_hydrogens,
+                        );
+                        let properties_before = receiver.properties().clone();
+                        let atoms = receiver.num_atoms();
+                        let bonds = receiver.num_bonds();
+                        let count = receiver
+                            .num_heteroatoms()
+                            .unwrap_or_else(|error| panic!("{label}: {error:?}"));
+                        calls += 1;
+                        assert_eq!(count, expected, "{label}");
+                        assert_eq!(receiver.num_atoms(), atoms, "{label}: atoms");
+                        assert_eq!(receiver.num_bonds(), bonds, "{label}: bonds");
+                        assert_eq!(
+                            receiver.properties(),
+                            &properties_before,
+                            "{label}: properties after the same call"
+                        );
+                    }
+                }
+            }
+        }
+    }
+    assert_eq!(calls, 320, "exact census");
+}
+
 #[test]
 fn descriptor_query_dq05_total_atom_count() {
     // Frozen 160-call product for total_atom_count (rows + attached

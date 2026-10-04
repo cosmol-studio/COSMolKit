@@ -1100,9 +1100,40 @@ impl EmbeddedAtom {
         // RDKit❗✔️:   normal = temp - loc;
         // RDKit❗✔️:   ccw = (!ccw);
         // RDKit❗✔️: }
+        // Constant-value callers have no endpoint aliases; the canonical
+        // owner below preserves the same two source reflection calls.
+        self.reflect_with_endpoint_aliases(&mut [a, b], [false, false]);
+    }
+
+    fn reflect_with_endpoint_aliases(&mut self, endpoints: &mut [Point2; 2], aliases: [bool; 2]) {
+        // RDKit❗✔️:   void Reflect(const RDGeom::Point2D &loc1, const RDGeom::Point2D &loc2) {
+        // RDKit❗✔️:     RDGeom::Point2D temp = loc + normal;
+        // RDKit❗✔️:     loc = reflectPoint(loc, loc1, loc2);
+        // RDKit❗✔️:     temp = reflectPoint(temp, loc1, loc2);
+        // RDKit❗✔️:     normal = temp - loc;
+        // RDKit❗✔️:     ccw = (!ccw);
+        // RDKit❗✔️:   }
+        // Behavior: source const references may alias this row's loc. Publish
+        // the loc assignment before the saved tip is reflected, and preserve
+        // updated endpoint state for subsequent ordered caller rows. Flags
+        // come from map keys, never payload aid or coordinate equality.
+        // Complexity: two stack points and two flags, constant work/storage;
+        // no allocations, map lookups or numerical-kernel changes. Behavior
+        // remains qualified pending the frozen native product and full gates.
+        let [a, b] = *endpoints;
+
         let tip = [self.loc[0] + self.normal[0], self.loc[1] + self.normal[1]];
+
         self.loc = reflect_point(self.loc, a, b);
-        let tip = reflect_point(tip, a, b);
+        if aliases[0] {
+            endpoints[0] = self.loc;
+        }
+        if aliases[1] {
+            endpoints[1] = self.loc;
+        }
+
+        let tip = reflect_point(tip, endpoints[0], endpoints[1]);
+
         self.normal = [tip[0] - self.loc[0], tip[1] - self.loc[1]];
         self.ccw = !self.ccw;
     }
@@ -1338,18 +1369,22 @@ impl<'a> EmbeddedFrag<'a> {
         // RDKit❗✔️:   const auto &nbrAtms = dblBond->getStereoAtoms();
         // RDKit❗✔️:   PRECONDITION(nbrAtms.size() == 2, "");
         // RDKit❗✔️:   dp_mol = &(dblBond->getOwningMol());
+        // RDKit❗✔️:
         // RDKit❗✔️:   auto begAtm = dblBond->getBeginAtomIdx();
         // RDKit❗✔️:   auto endAtm = dblBond->getEndAtomIdx();
+        // RDKit❗✔️:
         // RDKit❗✔️:   // the begin atom goes at the origin and the normal goes along -ve y-axis
         // RDKit❗✔️:   // to be rotate clock to add the cis/trans single bond
         // RDKit❗✔️:   EmbeddedAtom beatm;
         // RDKit❗✔️:   beatm.aid = begAtm;
         // RDKit❗✔️:   beatm.loc = RDGeom::Point2D(0.0, 0.0);
         // RDKit❗✔️:   beatm.nbr1 = endAtm;
+        // RDKit❗✔️:
         // RDKit❗✔️:   beatm.normal = RDGeom::Point2D(0.0, -1.0);
         // RDKit❗✔️:   beatm.ccw = false;
         // RDKit❗✔️:   beatm.CisTransNbr = nbrAtms[0];
         // RDKit❗✔️:   d_eatoms[begAtm] = beatm;
+        // RDKit❗✔️:
         // RDKit❗✔️:   // the end atom goes on the x-axis
         // RDKit❗✔️:   EmbeddedAtom eeatm;
         // RDKit❗✔️:   eeatm.aid = endAtm;
@@ -1364,11 +1399,103 @@ impl<'a> EmbeddedFrag<'a> {
         // RDKit❗✔️:     eeatm.ccw = false;
         // RDKit❗✔️:   }
         // RDKit❗✔️:   d_eatoms[endAtm] = eeatm;
+        // RDKit❗✔️:
         // RDKit❗✔️:   d_done = false;
         // RDKit❗✔️: }
-        // Behavior: only the two alkene endpoints are seeded. The designated
-        // substituents remain pending neighbors, with source cis/trans normals.
-        // Complexity: two embedded atom rows and no whole-topology clone.
+        // RDKit❗✔️:   EmbeddedAtom() { neighs.clear(); }
+        // RDKit❗✔️:
+        // RDKit❗✔️:   EmbeddedAtom(const EmbeddedAtom &other) = default;
+        // RDKit❗✔️:
+        // RDKit❗✔️:   EmbeddedAtom(unsigned int aid, const RDGeom::Point2D &pos)
+        // RDKit❗✔️:       : aid(aid),
+        // RDKit❗✔️:         angle(-1.0),
+        // RDKit❗✔️:         nbr1(-1),
+        // RDKit❗✔️:         nbr2(-1),
+        // RDKit❗✔️:         CisTransNbr(-1),
+        // RDKit❗✔️:         ccw(true),
+        // RDKit❗✔️:         rotDir(0),
+        // RDKit❗✔️:         d_density(-1.0),
+        // RDKit❗✔️:         df_fixed(false) {
+        // RDKit❗✔️:     loc = pos;
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:
+        // RDKit❗✔️:   EmbeddedAtom &operator=(const EmbeddedAtom &other) {
+        // RDKit❗✔️:     if (this == &other) {
+        // RDKit❗✔️:       return *this;
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:
+        // RDKit❗✔️:     loc = other.loc;
+        // RDKit❗✔️:     angle = other.angle;
+        // RDKit❗✔️:     nbr1 = other.nbr1;
+        // RDKit❗✔️:     nbr2 = other.nbr2;
+        // RDKit❗✔️:     CisTransNbr = other.CisTransNbr;
+        // RDKit❗✔️:     rotDir = other.rotDir;
+        // RDKit❗✔️:     normal = other.normal;
+        // RDKit❗✔️:     ccw = other.ccw;
+        // RDKit❗✔️:     neighs = other.neighs;
+        // RDKit❗✔️:     d_density = other.d_density;
+        // RDKit❗✔️:     df_fixed = other.df_fixed;
+        // RDKit❗✔️:     return *this;
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:   unsigned int aid{0};  // the id of the atom
+        // RDKit❗✔️:
+        // RDKit❗✔️:   //! the angle that is already takes at this atom, so any new atom attaching to
+        // RDKit❗✔️:   /// this atom with have to fall in the available part
+        // RDKit❗✔️:   double angle{-1.0};
+        // RDKit❗✔️:
+        // RDKit❗✔️:   //! the first neighbor of this atom that form the 'angle'
+        // RDKit❗✔️:   int nbr1{-1};
+        // RDKit❗✔️:
+        // RDKit❗✔️:   //! the second neighbor of atom that from the 'angle'
+        // RDKit❗✔️:   int nbr2{-1};
+        // RDKit❗✔️:
+        // RDKit❗✔️:   //! is this is a cis/trans atom the neighbor of this atom that is involved in
+        // RDKit❗✔️:   /// the cis/trans system - defaults to -1
+        // RDKit❗✔️:   int CisTransNbr{-1};
+        // RDKit❗✔️:
+        // RDKit❗✔️:   //! which direction do we rotate this normal to add the next bond
+        // RDKit❗✔️:   //! if ccw is true we rotate counter clockwise, otherwise rotate clock wise,
+        // RDKit❗✔️:   /// by an angle that is <= PI/2
+        // RDKit❗✔️:   bool ccw{true};
+        // RDKit❗✔️:
+        // RDKit❗✔️:   //! rotation direction around this atom when adding new atoms,
+        // RDKit❗✔️:   /// we determine this for the first neighbor and stick to this direction
+        // RDKit❗✔️:   /// after that
+        // RDKit❗✔️:   //! useful only on atoms that are degree >= 4
+        // RDKit❗✔️:   int rotDir{0};
+        // RDKit❗✔️:
+        // RDKit❗✔️:   RDGeom::Point2D loc;  // the current location of this atom
+        // RDKit❗✔️:   //! this is a normal vector to one of the bonds that added this atom
+        // RDKit❗✔️:   //! it provides the side on which we want to add a new bond to this atom
+        // RDKit❗✔️:   //! this is only relevant when we are dealing with non ring atoms. We would
+        // RDKit❗✔️:   /// like to draw chains in a zig-zag manner
+        // RDKit❗✔️:   RDGeom::Point2D normal;
+        // RDKit❗✔️:
+        // RDKit❗✔️:   //! and these are the atom IDs of the neighbors that still need to be embedded
+        // RDKit❗✔️:   RDKit::INT_VECT neighs;
+        // RDKit❗✔️:
+        // RDKit❗✔️:   // density of the atoms around this atoms
+        // RDKit❗✔️:   // - this is sum of inverse of the square of distances to other atoms from
+        // RDKit❗✔️:   //   this atom. Used in the collision removal code
+        // RDKit❗✔️:   // - initialized to -1.0
+        // RDKit❗✔️:   double d_density{-1.0};
+        // RDKit❗✔️:
+        // RDKit❗✔️:   //! if set this atom is fixed: further operations on the fragment may not
+        // RDKit❗✔️:   //! move it.
+        // RDKit❗✔️:   bool df_fixed{false};
+        // RDKit❗✔️:   double x{0.0};
+        // RDKit❗✔️:   double y{0.0};
+        // RDKit❗✔️:
+        // RDKit❗✔️:   constexpr Point2D() {}
+        // Behavior: std::map::operator[] default-constructs each destination;
+        // EmbeddedAtom::operator= then copies every payload field except aid.
+        // Thus the local source IDs stay in aid, but each stored row keeps the
+        // default destination aid (zero). Only the two alkene endpoints are
+        // seeded here; neighbor setup remains in the existing caller.
+        // Complexity: two source and two destination values plus two ordered
+        // map entries, matching the source default-construct/copy/insert shape.
+        // Vec::clone_from reuses destination capacity when it is sufficient;
+        // the empty neighbor payload here requires no element allocation.
         let bond =
             topology
                 .bonds
@@ -1390,12 +1517,16 @@ impl<'a> EmbeddedFrag<'a> {
             })?;
         let begin = bond.begin().index();
         let end = bond.end().index();
-        let mut first = EmbeddedAtom::at(begin, [0.0, 0.0]);
+        let mut first = EmbeddedAtom::source_default();
+        first.aid = begin;
+        first.loc = [0.0, 0.0];
         first.nbr1 = Some(end);
         first.normal = [0.0, -1.0];
         first.ccw = false;
         first.cis_trans_nbr = Some(left.index());
-        let mut second = EmbeddedAtom::at(end, [BOND_LEN, 0.0]);
+        let mut second = EmbeddedAtom::source_default();
+        second.aid = end;
+        second.loc = [BOND_LEN, 0.0];
         second.nbr1 = Some(begin);
         second.cis_trans_nbr = Some(right.index());
         if matches!(bond.stereo(), BondStereo::Z | BondStereo::Cis) {
@@ -1405,8 +1536,38 @@ impl<'a> EmbeddedFrag<'a> {
             second.normal = [0.0, 1.0];
             second.ccw = false;
         }
+        let mut atoms = BTreeMap::new();
+        let first_destination = atoms
+            .entry(begin)
+            .or_insert_with(EmbeddedAtom::source_default);
+        first_destination.loc = first.loc;
+        first_destination.angle = first.angle;
+        first_destination.nbr1 = first.nbr1;
+        first_destination.nbr2 = first.nbr2;
+        first_destination.cis_trans_nbr = first.cis_trans_nbr;
+        first_destination.rot_dir = first.rot_dir;
+        first_destination.normal = first.normal;
+        first_destination.ccw = first.ccw;
+        first_destination.neighs.clone_from(&first.neighs);
+        first_destination.density = first.density;
+        first_destination.fixed = first.fixed;
+
+        let second_destination = atoms
+            .entry(end)
+            .or_insert_with(EmbeddedAtom::source_default);
+        second_destination.loc = second.loc;
+        second_destination.angle = second.angle;
+        second_destination.nbr1 = second.nbr1;
+        second_destination.nbr2 = second.nbr2;
+        second_destination.cis_trans_nbr = second.cis_trans_nbr;
+        second_destination.rot_dir = second.rot_dir;
+        second_destination.normal = second.normal;
+        second_destination.ccw = second.ccw;
+        second_destination.neighs.clone_from(&second.neighs);
+        second_destination.density = second.density;
+        second_destination.fixed = second.fixed;
         Ok(Self {
-            atoms: BTreeMap::from([(begin, first), (end, second)]),
+            atoms,
             attachment_points: Vec::new(),
             done: false,
             topology,
@@ -1438,16 +1599,111 @@ impl<'a> EmbeddedFrag<'a> {
         // RDKit❗✔️:   dp_mol = mol;
         // RDKit❗✔️:   this->updateNewNeighs(aid);
         // RDKit❗✔️: }
+        // RDKit❗✔️: EmbeddedAtom() { neighs.clear(); }
+        // RDKit❗✔️: EmbeddedAtom(const EmbeddedAtom &other) = default;
+        // RDKit❗✔️:   unsigned int aid{0};  // the id of the atom
+        // RDKit❗✔️:
+        // RDKit❗✔️:   //! the angle that is already takes at this atom, so any new atom attaching to
+        // RDKit❗✔️:   /// this atom with have to fall in the available part
+        // RDKit❗✔️:   double angle{-1.0};
+        // RDKit❗✔️:
+        // RDKit❗✔️:   //! the first neighbor of this atom that form the 'angle'
+        // RDKit❗✔️:   int nbr1{-1};
+        // RDKit❗✔️:
+        // RDKit❗✔️:   //! the second neighbor of atom that from the 'angle'
+        // RDKit❗✔️:   int nbr2{-1};
+        // RDKit❗✔️:
+        // RDKit❗✔️:   //! is this is a cis/trans atom the neighbor of this atom that is involved in
+        // RDKit❗✔️:   /// the cis/trans system - defaults to -1
+        // RDKit❗✔️:   int CisTransNbr{-1};
+        // RDKit❗✔️:
+        // RDKit❗✔️:   //! which direction do we rotate this normal to add the next bond
+        // RDKit❗✔️:   //! if ccw is true we rotate counter clockwise, otherwise rotate clock wise,
+        // RDKit❗✔️:   /// by an angle that is <= PI/2
+        // RDKit❗✔️:   bool ccw{true};
+        // RDKit❗✔️:
+        // RDKit❗✔️:   //! rotation direction around this atom when adding new atoms,
+        // RDKit❗✔️:   /// we determine this for the first neighbor and stick to this direction
+        // RDKit❗✔️:   /// after that
+        // RDKit❗✔️:   //! useful only on atoms that are degree >= 4
+        // RDKit❗✔️:   int rotDir{0};
+        // RDKit❗✔️:
+        // RDKit❗✔️:   RDGeom::Point2D loc;  // the current location of this atom
+        // RDKit❗✔️:   //! this is a normal vector to one of the bonds that added this atom
+        // RDKit❗✔️:   //! it provides the side on which we want to add a new bond to this atom
+        // RDKit❗✔️:   //! this is only relevant when we are dealing with non ring atoms. We would
+        // RDKit❗✔️:   /// like to draw chains in a zig-zag manner
+        // RDKit❗✔️:   RDGeom::Point2D normal;
+        // RDKit❗✔️:
+        // RDKit❗✔️:   //! and these are the atom IDs of the neighbors that still need to be embedded
+        // RDKit❗✔️:   RDKit::INT_VECT neighs;
+        // RDKit❗✔️:
+        // RDKit❗✔️:   // density of the atoms around this atoms
+        // RDKit❗✔️:   // - this is sum of inverse of the square of distances to other atoms from
+        // RDKit❗✔️:   //   this atom. Used in the collision removal code
+        // RDKit❗✔️:   // - initialized to -1.0
+        // RDKit❗✔️:   double d_density{-1.0};
+        // RDKit❗✔️:
+        // RDKit❗✔️:   //! if set this atom is fixed: further operations on the fragment may not
+        // RDKit❗✔️:   //! move it.
+        // RDKit❗✔️:   bool df_fixed{false};
+        // RDKit❗✔️: EmbeddedAtom &operator=(const EmbeddedAtom &other) {
+        // RDKit❗✔️:   if (this == &other) {
+        // RDKit❗✔️:     return *this;
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:
+        // RDKit❗✔️:   loc = other.loc;
+        // RDKit❗✔️:   angle = other.angle;
+        // RDKit❗✔️:   nbr1 = other.nbr1;
+        // RDKit❗✔️:   nbr2 = other.nbr2;
+        // RDKit❗✔️:   CisTransNbr = other.CisTransNbr;
+        // RDKit❗✔️:   rotDir = other.rotDir;
+        // RDKit❗✔️:   normal = other.normal;
+        // RDKit❗✔️:   ccw = other.ccw;
+        // RDKit❗✔️:   neighs = other.neighs;
+        // RDKit❗✔️:   d_density = other.d_density;
+        // RDKit❗✔️:   df_fixed = other.df_fixed;
+        // RDKit❗✔️:   return *this;
+        // RDKit❗✔️: }
+        // Behavior: std::map::operator[] default-constructs the mapped value,
+        // then this custom assignment copies every listed field but not `aid`.
+        // The defaulted copy constructor would copy `aid`; it is not the path
+        // used here. The key remains the requested input ID and the payload
+        // keeps the default `aid` of zero.
+        // Complexity: one source value, one default map value, one ordered
+        // entry insertion and one field-wise assignment, matching this one-row
+        // source map transition. The copied neighbor vector is empty here, so
+        // its clone does not allocate; the existing neighbor update follows.
         if aid >= topology.atoms.len() {
             return Err(FragmentError::AtomIndexOutOfRange {
                 atom: aid,
                 atom_count: topology.atoms.len(),
             });
         }
-        let mut atom = EmbeddedAtom::at(aid, [0.0, 0.0]);
-        atom.normal = [1.0, 0.0];
+        let mut source_atom = EmbeddedAtom::source_default();
+        source_atom.aid = aid;
+        source_atom.loc = [0.0, 0.0];
+        source_atom.normal = [1.0, 0.0];
+        source_atom.angle = -1.0;
+        source_atom.ccw = true;
+        source_atom.neighs.clear();
+        let mut atoms = BTreeMap::new();
+        let destination = atoms
+            .entry(aid)
+            .or_insert_with(EmbeddedAtom::source_default);
+        destination.loc = source_atom.loc;
+        destination.angle = source_atom.angle;
+        destination.nbr1 = source_atom.nbr1;
+        destination.nbr2 = source_atom.nbr2;
+        destination.cis_trans_nbr = source_atom.cis_trans_nbr;
+        destination.rot_dir = source_atom.rot_dir;
+        destination.normal = source_atom.normal;
+        destination.ccw = source_atom.ccw;
+        destination.neighs.clone_from(&source_atom.neighs);
+        destination.density = source_atom.density;
+        destination.fixed = source_atom.fixed;
         let mut fragment = Self {
-            atoms: BTreeMap::from([(aid, atom)]),
+            atoms,
             attachment_points: Vec::new(),
             done: false,
             topology,
@@ -1464,6 +1720,17 @@ impl<'a> EmbeddedFrag<'a> {
     ) -> Result<Self, FragmentError> {
         // RDKit❗✔️: EmbeddedFrag::EmbeddedFrag(const RDKit::ROMol *mol,
         // RDKit❗✔️:                            const RDGeom::INT_POINT2D_MAP &coordMap) {
+        // RDKit❗✔️:   // constructor of a case where the user specifies the coordinates for a
+        // RDKit❗✔️:   // portion of the atoms in the molecule - we will use these coordinates
+        // RDKit❗✔️:   // blindly without testing for any kind of correctness - user is GOD :)
+        // RDKit❗✔️:
+        // RDKit❗✔️:   // we are not going to do much here simply add the atoms we have coordinates
+        // RDKit❗✔️:   // for to this fragment; as a result this fragment may not be as ready to add
+        // RDKit❗✔️:   // new neighbors etc. for the following reason.
+        // RDKit❗✔️:   // - the user may have specified coords for only a part of the atoms in a
+        // RDKit❗✔️:   //   fused ring systems
+        // RDKit❗✔️:   // - once we use these coordinates we need to set up the atoms properly so
+        // RDKit❗✔️:   //   that new neighbors can be added to them
         // RDKit❗✔️:   PRECONDITION(mol, "");
         // RDKit❗✔️:   dp_mol = mol;
         // RDKit❗✔️:   d_eatoms.clear();
@@ -1481,6 +1748,109 @@ impl<'a> EmbeddedFrag<'a> {
         // RDKit❗✔️:   this->setupNewNeighs();
         // RDKit❗✔️:   this->setupAttachmentPoints();
         // RDKit❗✔️: }
+        // RDKit❗✔️:   EmbeddedAtom() { neighs.clear(); }
+        // RDKit❗✔️:
+        // RDKit❗✔️:   EmbeddedAtom(const EmbeddedAtom &other) = default;
+        // RDKit❗✔️:
+        // RDKit❗✔️:   EmbeddedAtom(unsigned int aid, const RDGeom::Point2D &pos)
+        // RDKit❗✔️:       : aid(aid),
+        // RDKit❗✔️:         angle(-1.0),
+        // RDKit❗✔️:         nbr1(-1),
+        // RDKit❗✔️:         nbr2(-1),
+        // RDKit❗✔️:         CisTransNbr(-1),
+        // RDKit❗✔️:         ccw(true),
+        // RDKit❗✔️:         rotDir(0),
+        // RDKit❗✔️:         d_density(-1.0),
+        // RDKit❗✔️:         df_fixed(false) {
+        // RDKit❗✔️:     loc = pos;
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:
+        // RDKit❗✔️:   EmbeddedAtom &operator=(const EmbeddedAtom &other) {
+        // RDKit❗✔️:     if (this == &other) {
+        // RDKit❗✔️:       return *this;
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:
+        // RDKit❗✔️:     loc = other.loc;
+        // RDKit❗✔️:     angle = other.angle;
+        // RDKit❗✔️:     nbr1 = other.nbr1;
+        // RDKit❗✔️:     nbr2 = other.nbr2;
+        // RDKit❗✔️:     CisTransNbr = other.CisTransNbr;
+        // RDKit❗✔️:     rotDir = other.rotDir;
+        // RDKit❗✔️:     normal = other.normal;
+        // RDKit❗✔️:     ccw = other.ccw;
+        // RDKit❗✔️:     neighs = other.neighs;
+        // RDKit❗✔️:     d_density = other.d_density;
+        // RDKit❗✔️:     df_fixed = other.df_fixed;
+        // RDKit❗✔️:     return *this;
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:
+        // RDKit❗✔️:   unsigned int aid{0};  // the id of the atom
+        // RDKit❗✔️:
+        // RDKit❗✔️:   //! the angle that is already takes at this atom, so any new atom attaching to
+        // RDKit❗✔️:   /// this atom with have to fall in the available part
+        // RDKit❗✔️:   double angle{-1.0};
+        // RDKit❗✔️:
+        // RDKit❗✔️:   //! the first neighbor of this atom that form the 'angle'
+        // RDKit❗✔️:   int nbr1{-1};
+        // RDKit❗✔️:
+        // RDKit❗✔️:   //! the second neighbor of atom that from the 'angle'
+        // RDKit❗✔️:   int nbr2{-1};
+        // RDKit❗✔️:
+        // RDKit❗✔️:   //! is this is a cis/trans atom the neighbor of this atom that is involved in
+        // RDKit❗✔️:   /// the cis/trans system - defaults to -1
+        // RDKit❗✔️:   int CisTransNbr{-1};
+        // RDKit❗✔️:
+        // RDKit❗✔️:   //! which direction do we rotate this normal to add the next bond
+        // RDKit❗✔️:   //! if ccw is true we rotate counter clockwise, otherwise rotate clock wise,
+        // RDKit❗✔️:   /// by an angle that is <= PI/2
+        // RDKit❗✔️:   bool ccw{true};
+        // RDKit❗✔️:
+        // RDKit❗✔️:   //! rotation direction around this atom when adding new atoms,
+        // RDKit❗✔️:   /// we determine this for the first neighbor and stick to this direction
+        // RDKit❗✔️:   /// after that
+        // RDKit❗✔️:   //! useful only on atoms that are degree >= 4
+        // RDKit❗✔️:   int rotDir{0};
+        // RDKit❗✔️:
+        // RDKit❗✔️:   RDGeom::Point2D loc;  // the current location of this atom
+        // RDKit❗✔️:   //! this is a normal vector to one of the bonds that added this atom
+        // RDKit❗✔️:   //! it provides the side on which we want to add a new bond to this atom
+        // RDKit❗✔️:   //! this is only relevant when we are dealing with non ring atoms. We would
+        // RDKit❗✔️:   /// like to draw chains in a zig-zag manner
+        // RDKit❗✔️:   RDGeom::Point2D normal;
+        // RDKit❗✔️:
+        // RDKit❗✔️:   //! and these are the atom IDs of the neighbors that still need to be embedded
+        // RDKit❗✔️:   RDKit::INT_VECT neighs;
+        // RDKit❗✔️:
+        // RDKit❗✔️:   // density of the atoms around this atoms
+        // RDKit❗✔️:   // - this is sum of inverse of the square of distances to other atoms from
+        // RDKit❗✔️:   //   this atom. Used in the collision removal code
+        // RDKit❗✔️:   // - initialized to -1.0
+        // RDKit❗✔️:   double d_density{-1.0};
+        // RDKit❗✔️:
+        // RDKit❗✔️:   //! if set this atom is fixed: further operations on the fragment may not
+        // RDKit❗✔️:   //! move it.
+        // RDKit❗✔️: bool df_fixed{false};
+        // RDKit❗✔️:
+        // RDKit❗✔️: class RDKIT_RDGEOMETRYLIB_EXPORT Point2D : public Point {
+        // RDKit❗✔️:  public:
+        // RDKit❗✔️:   double x{0.0};
+        // RDKit❗✔️:   double y{0.0};
+        // RDKit❗✔️:
+        // RDKit❗✔️:   constexpr Point2D() {}
+        // RDKit❗✔️:   constexpr Point2D(double xv, double yv) : x(xv), y(yv) {}
+        // RDKit❗✔️:
+        // RDKit❗✔️:   //! are we embedded with the final (molecule) coordinates
+        // RDKit❗✔️:   bool d_done = false;
+        // Behavior: the source constructs a value with the requested aid and
+        // coordinate, then operator[] default-inserts a destination and copy-
+        // assigns its listed fields without assigning aid. The key stays equal
+        // to the request while destination aid remains its default zero.
+        // Cost: each sorted input key performs one ordered-map lookup/insertion,
+        // creates the source and default destination values, and field-wise
+        // assigns an empty neighbor vector. Empty Vec::clone_from does not need
+        // a heap allocation here. Existing neighbor/rank and attachment setup
+        // calls retain their own key snapshot, scans, ranking storage, and local
+        // attachment/done-neighbor collections. No broader cost claim is made.
         let mut atoms = BTreeMap::new();
         for (&aid, &loc) in coord_map {
             if aid >= topology.atoms.len() {
@@ -1489,9 +1859,24 @@ impl<'a> EmbeddedFrag<'a> {
                     atom_count: topology.atoms.len(),
                 });
             }
-            let mut atom = EmbeddedAtom::at(aid, loc);
-            atom.fixed = true;
-            atoms.insert(aid, atom);
+            let mut source_atom = EmbeddedAtom::at(aid, loc);
+            source_atom.neighs.clear();
+            source_atom.fixed = true;
+
+            let destination = atoms
+                .entry(aid)
+                .or_insert_with(EmbeddedAtom::source_default);
+            destination.loc = source_atom.loc;
+            destination.angle = source_atom.angle;
+            destination.nbr1 = source_atom.nbr1;
+            destination.nbr2 = source_atom.nbr2;
+            destination.cis_trans_nbr = source_atom.cis_trans_nbr;
+            destination.rot_dir = source_atom.rot_dir;
+            destination.normal = source_atom.normal;
+            destination.ccw = source_atom.ccw;
+            destination.neighs.clone_from(&source_atom.neighs);
+            destination.density = source_atom.density;
+            destination.fixed = source_atom.fixed;
         }
         let mut fragment = Self {
             atoms,
@@ -1557,24 +1942,139 @@ impl<'a> EmbeddedFrag<'a> {
         // RDKit❗✔️:   }
         // RDKit❗✔️:   d_eatoms[prev].nbr2 = ring.front();
         // RDKit❗✔️: }
-        // Behavior: ordered cyclic predecessor/successor and source angle.
-        // Complexity: one map insertion per ring atom.
+        // RDKit❗✔️:   EmbeddedAtom() { neighs.clear(); }
+        // RDKit❗✔️:
+        // RDKit❗✔️:   EmbeddedAtom(const EmbeddedAtom &other) = default;
+        // RDKit❗✔️:
+        // RDKit❗✔️:   EmbeddedAtom(unsigned int aid, const RDGeom::Point2D &pos)
+        // RDKit❗✔️:       : aid(aid),
+        // RDKit❗✔️:         angle(-1.0),
+        // RDKit❗✔️:         nbr1(-1),
+        // RDKit❗✔️:         nbr2(-1),
+        // RDKit❗✔️:         CisTransNbr(-1),
+        // RDKit❗✔️:         ccw(true),
+        // RDKit❗✔️:         rotDir(0),
+        // RDKit❗✔️:         d_density(-1.0),
+        // RDKit❗✔️:         df_fixed(false) {
+        // RDKit❗✔️:     loc = pos;
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:
+        // RDKit❗✔️:   EmbeddedAtom &operator=(const EmbeddedAtom &other) {
+        // RDKit❗✔️:     if (this == &other) {
+        // RDKit❗✔️:       return *this;
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:
+        // RDKit❗✔️:     loc = other.loc;
+        // RDKit❗✔️:     angle = other.angle;
+        // RDKit❗✔️:     nbr1 = other.nbr1;
+        // RDKit❗✔️:     nbr2 = other.nbr2;
+        // RDKit❗✔️:     CisTransNbr = other.CisTransNbr;
+        // RDKit❗✔️:     rotDir = other.rotDir;
+        // RDKit❗✔️:     normal = other.normal;
+        // RDKit❗✔️:     ccw = other.ccw;
+        // RDKit❗✔️:     neighs = other.neighs;
+        // RDKit❗✔️:     d_density = other.d_density;
+        // RDKit❗✔️:     df_fixed = other.df_fixed;
+        // RDKit❗✔️:     return *this;
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:   unsigned int aid{0};  // the id of the atom
+        // RDKit❗✔️:
+        // RDKit❗✔️:   //! the angle that is already takes at this atom, so any new atom attaching to
+        // RDKit❗✔️:   /// this atom with have to fall in the available part
+        // RDKit❗✔️:   double angle{-1.0};
+        // RDKit❗✔️:
+        // RDKit❗✔️:   //! the first neighbor of this atom that form the 'angle'
+        // RDKit❗✔️:   int nbr1{-1};
+        // RDKit❗✔️:
+        // RDKit❗✔️:   //! the second neighbor of atom that from the 'angle'
+        // RDKit❗✔️:   int nbr2{-1};
+        // RDKit❗✔️:
+        // RDKit❗✔️:   //! is this is a cis/trans atom the neighbor of this atom that is involved in
+        // RDKit❗✔️:   /// the cis/trans system - defaults to -1
+        // RDKit❗✔️:   int CisTransNbr{-1};
+        // RDKit❗✔️:
+        // RDKit❗✔️:   //! which direction do we rotate this normal to add the next bond
+        // RDKit❗✔️:   //! if ccw is true we rotate counter clockwise, otherwise rotate clock wise,
+        // RDKit❗✔️:   /// by an angle that is <= PI/2
+        // RDKit❗✔️:   bool ccw{true};
+        // RDKit❗✔️:
+        // RDKit❗✔️:   //! rotation direction around this atom when adding new atoms,
+        // RDKit❗✔️:   /// we determine this for the first neighbor and stick to this direction
+        // RDKit❗✔️:   /// after that
+        // RDKit❗✔️:   //! useful only on atoms that are degree >= 4
+        // RDKit❗✔️:   int rotDir{0};
+        // RDKit❗✔️:
+        // RDKit❗✔️:   RDGeom::Point2D loc;  // the current location of this atom
+        // RDKit❗✔️:   //! this is a normal vector to one of the bonds that added this atom
+        // RDKit❗✔️:   //! it provides the side on which we want to add a new bond to this atom
+        // RDKit❗✔️:   //! this is only relevant when we are dealing with non ring atoms. We would
+        // RDKit❗✔️:   /// like to draw chains in a zig-zag manner
+        // RDKit❗✔️:   RDGeom::Point2D normal;
+        // RDKit❗✔️:
+        // RDKit❗✔️:   //! and these are the atom IDs of the neighbors that still need to be embedded
+        // RDKit❗✔️:   RDKit::INT_VECT neighs;
+        // RDKit❗✔️:
+        // RDKit❗✔️:   // density of the atoms around this atoms
+        // RDKit❗✔️:   // - this is sum of inverse of the square of distances to other atoms from
+        // RDKit❗✔️:   //   this atom. Used in the collision removal code
+        // RDKit❗✔️:   // - initialized to -1.0
+        // RDKit❗✔️:   double d_density{-1.0};
+        // RDKit❗✔️:
+        // RDKit❗✔️:   //! if set this atom is fixed: further operations on the fragment may not
+        // RDKit❗✔️:   //! move it.
+        // RDKit❗✔️:   bool df_fixed{false};
+        // RDKit❗✔️: class RDKIT_RDGEOMETRYLIB_EXPORT Point2D : public Point {
+        // RDKit❗✔️:  public:
+        // RDKit❗✔️:   double x{0.0};
+        // RDKit❗✔️:   double y{0.0};
+        // RDKit❗✔️:
+        // RDKit❗✔️:   constexpr Point2D() {}
+        // RDKit❗✔️:   constexpr Point2D(double xv, double yv) : x(xv), y(yv) {}
+        // Behavior: each source-default temporary receives loc/aid/angle/nbr1;
+        // the previous successor is written before a default map destination is
+        // copy-assigned. Assignment copies every listed payload field except aid,
+        // so new destinations retain aid 0 and existing rows retain their aid.
+        // Requested map keys, ring order, closure, and unrelated fragment state
+        // are unchanged for valid nonempty cycles with complete coordinates.
+        // Complexity: one default temporary per visited atom and one ordered-map
+        // destination entry per atom (O(log M)); predecessor and closure lookups
+        // are also O(log M). Empty neighbor copies reuse existing Vec storage
+        // through clone_from; there is no whole-fragment clone or map rebuild.
         let angle = PI * (1.0 - 2.0 / ring.len() as f64);
         let mut previous = *ring.last().expect("ring decomposition has nonempty rings");
         for (index, &atom_id) in ring.iter().enumerate() {
-            let mut atom = EmbeddedAtom::at(atom_id, coords[&atom_id]);
+            let mut atom = EmbeddedAtom::source_default();
+            atom.loc = coords[&atom_id];
+            atom.aid = atom_id;
             atom.angle = angle;
             atom.nbr1 = Some(previous);
             if index != 0 {
                 self.atoms
-                    .get_mut(&previous)
-                    .expect("previous ring atom")
+                    .entry(previous)
+                    .or_insert_with(EmbeddedAtom::source_default)
                     .nbr2 = Some(atom_id);
             }
-            self.atoms.insert(atom_id, atom);
+            let destination = self
+                .atoms
+                .entry(atom_id)
+                .or_insert_with(EmbeddedAtom::source_default);
+            destination.loc = atom.loc;
+            destination.angle = atom.angle;
+            destination.nbr1 = atom.nbr1;
+            destination.nbr2 = atom.nbr2;
+            destination.cis_trans_nbr = atom.cis_trans_nbr;
+            destination.rot_dir = atom.rot_dir;
+            destination.normal = atom.normal;
+            destination.ccw = atom.ccw;
+            destination.neighs.clone_from(&atom.neighs);
+            destination.density = atom.density;
+            destination.fixed = atom.fixed;
             previous = atom_id;
         }
-        self.atoms.get_mut(&previous).expect("last ring atom").nbr2 = Some(ring[0]);
+        self.atoms
+            .entry(previous)
+            .or_insert_with(EmbeddedAtom::source_default)
+            .nbr2 = Some(ring[0]);
     }
 
     fn merge_ring(&mut self, other: &Self, common_count: usize, pin_atoms: &[usize]) {
@@ -1709,9 +2209,12 @@ impl<'a> EmbeddedFrag<'a> {
         }
         let coordinates: Vec<_> = fused_rings
             .iter()
-            .map(|ring| {
+            .enumerate()
+            .map(|(ring_index, ring)| {
                 let mut points = embed_ring(ring);
+
                 mirror_trans_ring_atoms(self.topology, ring, &mut points);
+
                 points
             })
             .collect();
@@ -1731,10 +2234,12 @@ impl<'a> EmbeddedFrag<'a> {
         if done.is_empty() {
             let first = pick_first_ring_to_embed(self.topology, fused_rings);
             self.init_from_ring_coords(&fused_rings[first], &coordinates[first]);
+
             done.push(first);
         }
         while self.atoms.len() < union.len() {
             let (next, common) = find_next_ring_to_embed(&done, fused_rings);
+
             let mut incoming = Self {
                 atoms: BTreeMap::new(),
                 attachment_points: Vec::new(),
@@ -1743,19 +2248,24 @@ impl<'a> EmbeddedFrag<'a> {
                 rings: self.rings,
             };
             incoming.init_from_ring_coords(&fused_rings[next], &coordinates[next]);
+
             let pins = if common.len() == 1 {
                 let transform = self.compute_one_atom_trans(common[0], &incoming)?;
                 incoming.transform(transform);
+
                 vec![common[0]]
             } else {
                 let first = common[0];
                 let last = *common.last().expect("connected ring overlap");
                 let transform = self.compute_two_atom_trans(first, last, &incoming)?;
                 incoming.transform(transform);
+
                 self.reflect_if_necessary_density(&mut incoming, first, last)?;
+
                 vec![first, last]
             };
             self.merge_ring(&incoming, common.len(), &pins);
+
             done.push(next);
         }
         Ok(())
@@ -1993,9 +2503,12 @@ impl<'a> EmbeddedFrag<'a> {
             return Err(FragmentError::AtomNotEmbedded { atom: aid });
         }
         let mut neighbors = Vec::new();
+        // D2N
+        // D2N
         let mut hydrogens = Vec::new();
         for neighbor in self.topology.adjacency.neighbors_of(aid) {
             let index = neighbor.atom_index;
+            // D2N
             if !self.atoms.contains_key(&index) {
                 if self.topology.atoms[index].atomic_number() == 1 {
                     hydrogens.push(index);
@@ -2004,14 +2517,22 @@ impl<'a> EmbeddedFrag<'a> {
                 }
             }
         }
+        // D2N
+        // D2N
         neighbors.extend(hydrogens);
+        // D2N
         let degree = self.topology.adjacency.neighbors_of(aid).len();
+        // D2N
         if !neighbors.is_empty() && (degree < 4 || neighbors.len() < 3) {
+            // D2N
             neighbors = rank_atoms_by_rank(self.topology, &neighbors, true)?;
         } else if degree >= 4 && neighbors.len() >= 3 {
+            // D2N
             neighbors = set_neighbor_order(self.topology, aid, &neighbors)?;
         }
         self.atoms.get_mut(&aid).expect("checked above").neighs = neighbors;
+        // D2N
+        // D2N
         if !self.atoms[&aid].neighs.is_empty() && !self.attachment_points.contains(&aid) {
             self.attachment_points.push(aid);
         }
@@ -2337,17 +2858,22 @@ impl<'a> EmbeddedFrag<'a> {
             .get(&to_aid)
             .ok_or(FragmentError::AtomNotEmbedded { atom: to_aid })?
             .angle;
+
         if angle > 0.0 {
             self.add_atom_to_atom_with_ang(aid, to_aid)?;
         } else {
             self.add_atom_to_atom_with_no_ang(aid, to_aid)?;
         }
+
         self.atoms
             .get_mut(&to_aid)
             .expect("checked above")
             .neighs
             .retain(|&neighbor| neighbor != aid);
-        self.update_new_neighbors(aid)
+
+        self.update_new_neighbors(aid)?;
+
+        Ok(())
     }
 
     fn add_atom_to_atom_with_ang(
@@ -2355,58 +2881,174 @@ impl<'a> EmbeddedFrag<'a> {
         aid: usize,
         to_aid: usize,
     ) -> Result<(), FragmentError> {
-        // RDKit❗✔️: void EmbeddedFrag::addAtomToAtomWithAng(unsigned int aid, unsigned int toAid) {
-        // RDKit❗✔️:   const auto &refAtom = d_eatoms[toAid];
-        // RDKit❗✔️:   auto refLoc = refAtom.loc;
-        // RDKit❗✔️:   RDGeom::Point2D origin(0.0, 0.0);
-        // RDKit❗✔️:   PRECONDITION(refAtom.angle > 0.0, "");
-        // RDKit❗✔️:   auto nnbr = refAtom.neighs.size();
-        // RDKit❗✔️:   double remAngle = 2 * M_PI - refAtom.angle;
-        // RDKit❗✔️:   auto currAngle = remAngle / (1 + nnbr);
-        // RDKit❗✔️:   d_eatoms[toAid].angle += currAngle;
-        // RDKit❗✔️:   const auto &nb1 = d_eatoms.at(refAtom.nbr1).loc;
-        // RDKit❗✔️:   const auto &nb2 = d_eatoms.at(refAtom.nbr2).loc;
-        // RDKit❗✔️:   if (d_eatoms[toAid].rotDir == 0) {
-        // RDKit❗✔️:     d_eatoms[toAid].rotDir = rotationDir(refLoc, nb1, nb2, remAngle);
-        // RDKit❗✔️:   }
-        // RDKit❗✔️:   currAngle *= d_eatoms[toAid].rotDir;
-        // RDKit❗✔️:   RDGeom::Transform2D rtrans;
-        // RDKit❗✔️:   rtrans.SetTransform(refLoc, currAngle);
-        // RDKit❗✔️:   auto currLoc = nb2;
-        // RDKit❗✔️:   rtrans.TransformPoint(currLoc);
-        // RDKit❗✔️:   if (fabs(remAngle) - M_PI < 1e-3) {
-        // RDKit❗✔️:     auto currLoc2 = nb2;
-        // RDKit❗✔️:     rtrans.SetTransform(refLoc, -currAngle);
-        // RDKit❗✔️:     rtrans.TransformPoint(currLoc2);
-        // RDKit❗✔️:     if (findNumNeigh(currLoc, 0.5) > findNumNeigh(currLoc2, 0.5)) {
-        // RDKit❗✔️:       currLoc = currLoc2;
-        // RDKit❗✔️:       currAngle *= -1;
-        // RDKit❗✔️:     } else {
-        // RDKit❗✔️:       rtrans.SetTransform(refLoc, currAngle);
-        // RDKit❗✔️:     }
-        // RDKit❗✔️:   }
-        // RDKit❗✔️:   d_eatoms[toAid].nbr2 = aid;
-        // RDKit❗✔️:   EmbeddedAtom eatm;
-        // RDKit❗✔️:   eatm.aid = aid;
-        // RDKit❗✔️:   eatm.loc = currLoc;
-        // RDKit❗✔️:   eatm.nbr1 = toAid;
-        // RDKit❗✔️:   eatm.angle = -1.0;
-        // RDKit❗✔️:   auto tpt = currLoc - refLoc;
-        // RDKit❗✔️:   RDGeom::Point2D norm(-tpt.y, tpt.x);
-        // RDKit❗✔️:   auto tp1 = currLoc + norm;
-        // RDKit❗✔️:   auto tp2 = currLoc - norm;
-        // RDKit❗✔️:   auto nccw = findNumNeigh(tp1, NEIGH_RADIUS);
-        // RDKit❗✔️:   auto ncw = findNumNeigh(tp2, NEIGH_RADIUS);
-        // RDKit❗✔️:   norm.normalize();
-        // RDKit❗✔️:   if (nccw < ncw) {
-        // RDKit❗✔️:     eatm.normal = norm;
-        // RDKit❗✔️:     eatm.ccw = false;
-        // RDKit❗✔️:   } else {
-        // RDKit❗✔️:     eatm.normal = (-norm);
-        // RDKit❗✔️:     eatm.ccw = true;
-        // RDKit❗✔️:   }
-        // RDKit❗✔️:   d_eatoms[aid] = eatm;
-        // RDKit❗✔️: }
+        // RDKit❗❌: void EmbeddedFrag::addAtomToAtomWithAng(unsigned int aid, unsigned int toAid) {
+        // RDKit❗❌:   const auto &refAtom = d_eatoms[toAid];
+        // RDKit❗❌:   auto refLoc = refAtom.loc;
+        // RDKit❗❌:   RDGeom::Point2D origin(0.0, 0.0);
+        // RDKit❗❌:   PRECONDITION(refAtom.angle > 0.0, "");
+        // RDKit❗❌:
+        // RDKit❗❌:   // we are adding to either to a ring atom or an atom to which we added at
+        // RDKit❗❌:   // least one substituent previously
+        // RDKit❗❌:
+        // RDKit❗❌:   // determine the angle at which we want to add the new atom based on the
+        // RDKit❗❌:   // number of remaining substituents
+        // RDKit❗❌:   auto nnbr = refAtom.neighs.size();
+        // RDKit❗❌:   double remAngle = 2 * M_PI - refAtom.angle;
+        // RDKit❗❌:   auto currAngle = remAngle / (1 + nnbr);
+        // RDKit❗❌:   d_eatoms[toAid].angle += currAngle;
+        // RDKit❗❌:
+        // RDKit❗❌:   const auto &nb1 = d_eatoms.at(refAtom.nbr1).loc;
+        // RDKit❗❌:   const auto &nb2 = d_eatoms.at(refAtom.nbr2).loc;
+        // RDKit❗❌:   if (d_eatoms[toAid].rotDir == 0) {
+        // RDKit❗❌:     d_eatoms[toAid].rotDir = rotationDir(refLoc, nb1, nb2, remAngle);
+        // RDKit❗❌:   }
+        // RDKit❗❌:
+        // RDKit❗❌:   currAngle *= d_eatoms[toAid].rotDir;
+        // RDKit❗❌:
+        // RDKit❗❌:   RDGeom::Transform2D rtrans;
+        // RDKit❗❌:   rtrans.SetTransform(refLoc, currAngle);
+        // RDKit❗❌:   auto currLoc = nb2;
+        // RDKit❗❌:   rtrans.TransformPoint(currLoc);
+        // RDKit❗❌:   if (fabs(remAngle) - M_PI < 1e-3) {
+        // RDKit❗❌:     auto currLoc2 = nb2;
+        // RDKit❗❌:     rtrans.SetTransform(refLoc, -currAngle);
+        // RDKit❗❌:     rtrans.TransformPoint(currLoc2);
+        // RDKit❗❌:     if (findNumNeigh(currLoc, 0.5) > findNumNeigh(currLoc2, 0.5)) {
+        // RDKit❗❌:       currLoc = currLoc2;
+        // RDKit❗❌:       currAngle *= -1;
+        // RDKit❗❌:     } else {
+        // RDKit❗❌:       rtrans.SetTransform(refLoc, currAngle);
+        // RDKit❗❌:     }
+        // RDKit❗❌:   }
+        // RDKit❗❌:
+        // RDKit❗❌:   // set the neighbors for the current point
+        // RDKit❗❌:   d_eatoms[toAid].nbr2 = aid;
+        // RDKit❗❌:
+        // RDKit❗❌:   EmbeddedAtom eatm;
+        // RDKit❗❌:   eatm.aid = aid;
+        // RDKit❗❌:   eatm.loc = currLoc;
+        // RDKit❗❌:   eatm.nbr1 = toAid;
+        // RDKit❗❌:   eatm.angle = -1.0;
+        // RDKit❗❌:
+        // RDKit❗❌:   // now compute the normal at this atom - which gives the direction in which we
+        // RDKit❗❌:   // want to add the next atom. We will go in the direction that seem to be
+        // RDKit❗❌:   // least explored
+        // RDKit❗❌:   auto tpt = currLoc - refLoc;
+        // RDKit❗❌:   RDGeom::Point2D norm(-tpt.y, tpt.x);
+        // RDKit❗❌:   auto tp1 = currLoc + norm;
+        // RDKit❗❌:   auto tp2 = currLoc - norm;
+        // RDKit❗❌:
+        // RDKit❗❌:   auto nccw = findNumNeigh(
+        // RDKit❗❌:       tp1, NEIGH_RADIUS);  // number of neighbors if we go counter-clockwise
+        // RDKit❗❌:   auto ncw = findNumNeigh(
+        // RDKit❗❌:       tp2, NEIGH_RADIUS);  // number of neighbors if we go clockwise
+        // RDKit❗❌:
+        // RDKit❗❌:   norm.normalize();
+        // RDKit❗❌:   if (nccw < ncw) {
+        // RDKit❗❌:     eatm.normal = norm;
+        // RDKit❗❌:     eatm.ccw = false;
+        // RDKit❗❌:   } else {
+        // RDKit❗❌:     eatm.normal = (-norm);
+        // RDKit❗❌:     eatm.ccw = true;
+        // RDKit❗❌:   }
+        // RDKit❗❌:
+        // RDKit❗❌:   d_eatoms[aid] = eatm;
+        // RDKit❗❌: }
+        // Pinned EmbeddedFrag.h33–67,84–129: default and COPY assignment.
+        // RDKit✔️✔️:   EmbeddedAtom() { neighs.clear(); }
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:   EmbeddedAtom(const EmbeddedAtom &other) = default;
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:   EmbeddedAtom(unsigned int aid, const RDGeom::Point2D &pos)
+        // RDKit✔️✔️:       : aid(aid),
+        // RDKit✔️✔️:         angle(-1.0),
+        // RDKit✔️✔️:         nbr1(-1),
+        // RDKit✔️✔️:         nbr2(-1),
+        // RDKit✔️✔️:         CisTransNbr(-1),
+        // RDKit✔️✔️:         ccw(true),
+        // RDKit✔️✔️:         rotDir(0),
+        // RDKit✔️✔️:         d_density(-1.0),
+        // RDKit✔️✔️:         df_fixed(false) {
+        // RDKit✔️✔️:     loc = pos;
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:   EmbeddedAtom &operator=(const EmbeddedAtom &other) {
+        // RDKit✔️✔️:     if (this == &other) {
+        // RDKit✔️✔️:       return *this;
+        // RDKit✔️✔️:     }
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:     loc = other.loc;
+        // RDKit✔️✔️:     angle = other.angle;
+        // RDKit✔️✔️:     nbr1 = other.nbr1;
+        // RDKit✔️✔️:     nbr2 = other.nbr2;
+        // RDKit✔️✔️:     CisTransNbr = other.CisTransNbr;
+        // RDKit✔️✔️:     rotDir = other.rotDir;
+        // RDKit✔️✔️:     normal = other.normal;
+        // RDKit✔️✔️:     ccw = other.ccw;
+        // RDKit✔️✔️:     neighs = other.neighs;
+        // RDKit✔️✔️:     d_density = other.d_density;
+        // RDKit✔️✔️:     df_fixed = other.df_fixed;
+        // RDKit✔️✔️:     return *this;
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️:   unsigned int aid{0};  // the id of the atom
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:   //! the angle that is already takes at this atom, so any new atom attaching to
+        // RDKit✔️✔️:   /// this atom with have to fall in the available part
+        // RDKit✔️✔️:   double angle{-1.0};
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:   //! the first neighbor of this atom that form the 'angle'
+        // RDKit✔️✔️:   int nbr1{-1};
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:   //! the second neighbor of atom that from the 'angle'
+        // RDKit✔️✔️:   int nbr2{-1};
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:   //! is this is a cis/trans atom the neighbor of this atom that is involved in
+        // RDKit✔️✔️:   /// the cis/trans system - defaults to -1
+        // RDKit✔️✔️:   int CisTransNbr{-1};
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:   //! which direction do we rotate this normal to add the next bond
+        // RDKit✔️✔️:   //! if ccw is true we rotate counter clockwise, otherwise rotate clock wise,
+        // RDKit✔️✔️:   /// by an angle that is <= PI/2
+        // RDKit✔️✔️:   bool ccw{true};
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:   //! rotation direction around this atom when adding new atoms,
+        // RDKit✔️✔️:   /// we determine this for the first neighbor and stick to this direction
+        // RDKit✔️✔️:   /// after that
+        // RDKit✔️✔️:   //! useful only on atoms that are degree >= 4
+        // RDKit✔️✔️:   int rotDir{0};
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:   RDGeom::Point2D loc;  // the current location of this atom
+        // RDKit✔️✔️:   //! this is a normal vector to one of the bonds that added this atom
+        // RDKit✔️✔️:   //! it provides the side on which we want to add a new bond to this atom
+        // RDKit✔️✔️:   //! this is only relevant when we are dealing with non ring atoms. We would
+        // RDKit✔️✔️:   /// like to draw chains in a zig-zag manner
+        // RDKit✔️✔️:   RDGeom::Point2D normal;
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:   //! and these are the atom IDs of the neighbors that still need to be embedded
+        // RDKit✔️✔️:   RDKit::INT_VECT neighs;
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:   // density of the atoms around this atoms
+        // RDKit✔️✔️:   // - this is sum of inverse of the square of distances to other atoms from
+        // RDKit✔️✔️:   //   this atom. Used in the collision removal code
+        // RDKit✔️✔️:   // - initialized to -1.0
+        // RDKit✔️✔️:   double d_density{-1.0};
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:   //! if set this atom is fixed: further operations on the fragment may not
+        // RDKit✔️✔️:   //! move it.
+        // RDKit✔️✔️:   bool df_fixed{false};
+        // Pinned Geometry/point.h286–289: Point2D zero default.
+        // RDKit✔️✔️:   double x{0.0};
+        // RDKit✔️✔️:   double y{0.0};
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:   constexpr Point2D() {}
+        // Behavior: destination COPY preserves aid; absent map keys use the
+        // existing source default. Temporary/requested aid and map keys stay
+        // distinct. Fixed controls establish this assignment, not all geometry
+        // or source-precondition/error equivalence across the whole helper.
+        // Complexity: map entry is O(log N); eleven fields and clone_from of
+        // the empty neighbor vector match the local source COPY shape.
+        // Whole helper cost is worse: reference.clone copies its neighbor Vec,
+        // whereas C++ borrows refAtom. No whole-helper allocation parity claim.
         let reference = self
             .atoms
             .get(&to_aid)
@@ -2436,25 +3078,37 @@ impl<'a> EmbeddedFrag<'a> {
             .loc;
         let rem_angle = 2.0 * PI - reference.angle;
         let mut current_angle = rem_angle / (1 + reference.neighs.len()) as f64;
+
         let mut rot_dir = reference.rot_dir;
         if rot_dir == 0 {
             rot_dir = rotation_dir(reference.loc, nb1, nb2, rem_angle);
         }
+
         current_angle *= f64::from(rot_dir);
+
         let mut current = Transform2D::around(reference.loc, current_angle).transform_point(nb2);
+
         if rem_angle.abs() - PI < 1e-3 {
             let other = Transform2D::around(reference.loc, -current_angle).transform_point(nb2);
+
             if self.find_num_neigh(current, 0.5) > self.find_num_neigh(other, 0.5) {
                 current = other;
+                current_angle *= -1.0;
             }
+        } else {
         }
+
         let delta = [current[0] - reference.loc[0], current[1] - reference.loc[1]];
         let raw_normal = [-delta[1], delta[0]];
         let first_point = [current[0] + raw_normal[0], current[1] + raw_normal[1]];
         let second_point = [current[0] - raw_normal[0], current[1] - raw_normal[1]];
+
         let nccw = self.find_num_neigh(first_point, 2.5);
+
         let ncw = self.find_num_neigh(second_point, 2.5);
+
         let normal = normalize(raw_normal)?;
+
         let mut atom = EmbeddedAtom::at(aid, current);
         atom.nbr1 = Some(to_aid);
         if nccw < ncw {
@@ -2468,7 +3122,21 @@ impl<'a> EmbeddedFrag<'a> {
         target.angle += rem_angle / (1 + reference.neighs.len()) as f64;
         target.rot_dir = rot_dir;
         target.nbr2 = Some(aid);
-        self.atoms.insert(aid, atom);
+        let destination = self
+            .atoms
+            .entry(aid)
+            .or_insert_with(EmbeddedAtom::source_default);
+        destination.loc = atom.loc;
+        destination.angle = atom.angle;
+        destination.nbr1 = atom.nbr1;
+        destination.nbr2 = atom.nbr2;
+        destination.cis_trans_nbr = atom.cis_trans_nbr;
+        destination.rot_dir = atom.rot_dir;
+        destination.normal = atom.normal;
+        destination.ccw = atom.ccw;
+        destination.neighs.clone_from(&atom.neighs);
+        destination.density = atom.density;
+        destination.fixed = atom.fixed;
         Ok(())
     }
 
@@ -2537,8 +3205,10 @@ impl<'a> EmbeddedFrag<'a> {
             .get(&to_aid)
             .ok_or(FragmentError::AtomNotEmbedded { atom: to_aid })?
             .clone();
+
         let mut ccw = reference.ccw;
         let mut current = reference.normal;
+
         if reference
             .cis_trans_nbr
             .is_some_and(|neighbor| neighbor != aid)
@@ -2546,30 +3216,45 @@ impl<'a> EmbeddedFrag<'a> {
             ccw = !ccw;
             current = [-current[0], -current[1]];
         }
+
         if current[0] * current[0] + current[1] * current[1] <= 1e-8 {
             return Err(FragmentError::CoincidentPoints);
         }
         let degree = self.topology.adjacency.neighbors_of(to_aid).len();
         let mut angle = compute_sub_angle(degree, self.topology.atoms[to_aid].hybridization());
+
         let flip_normal = reference.nbr1.is_none();
+
         let new_ref_normal = if flip_normal {
             Some(Transform2D::around([0.0, 0.0], angle).transform_point(reference.normal))
         } else {
             None
         };
+
         angle -= PI / 2.0;
+
         if !ccw {
             angle *= -1.0;
         }
-        current = Transform2D::around([0.0, 0.0], angle).transform_point(current);
-        current = [
-            current[0] * BOND_LEN + reference.loc[0],
-            current[1] * BOND_LEN + reference.loc[1],
-        ];
+
+        {
+            current = Transform2D::around([0.0, 0.0], angle).transform_point(current);
+        }
+
+        {
+            current = [
+                current[0] * BOND_LEN + reference.loc[0],
+                current[1] * BOND_LEN + reference.loc[1],
+            ];
+        }
+
         let delta = [reference.loc[0] - current[0], reference.loc[1] - current[1]];
         let flip = ccw ^ flip_normal;
         let signed = if flip { -1.0 } else { 1.0 };
-        let normal = normalize([-delta[1] * signed, delta[0] * signed])?;
+        let raw_normal = [-delta[1] * signed, delta[0] * signed];
+
+        let normal = normalize(raw_normal)?;
+
         // The C++ default-constructed `eatm` does not assign its `aid` here.
         let mut atom = EmbeddedAtom::at(0, current);
         atom.normal = normal;
@@ -2629,19 +3314,25 @@ impl EmbeddedFrag<'_> {
         // RDKit❗✔️:   PRECONDITION(bondId < dp_mol->getNumBonds(), "");
         // RDKit❗✔️:   // reflect all the atoms on one side of a bond using the bond as the mirror
         // RDKit❗✔️:   const auto bond = dp_mol->getBondWithIdx(bondId);
+        // RDKit❗✔️:
         // RDKit❗✔️:   // we should not be flip things around a ring bond
         // RDKit❗✔️:   CHECK_INVARIANT(!(dp_mol->getRingInfo()->numBondRings(bondId)), "");
+        // RDKit❗✔️:
         // RDKit❗✔️:   auto begAid = bond->getBeginAtomIdx();
         // RDKit❗✔️:   auto endAid = bond->getEndAtomIdx();
+        // RDKit❗✔️:
         // RDKit❗✔️:   if (!flipEnd) {
         // RDKit❗✔️:     std::swap(begAid, endAid);
         // RDKit❗✔️:   }
+        // RDKit❗✔️:
         // RDKit❗✔️:   const auto &begLoc = d_eatoms.at(begAid).loc;
         // RDKit❗✔️:   const auto &endLoc = d_eatoms.at(endAid).loc;
+        // RDKit❗✔️:
         // RDKit❗✔️:   // arbitrary choice here - find all atoms on one side of the bond
         // RDKit❗✔️:   // endAtom side - we will do this recursively
         // RDKit❗✔️:   RDKit::INT_VECT endSideAids;
         // RDKit❗✔️:   _recurseAtomOneSide(endAid, begAid, dp_mol, endSideAids);
+        // RDKit❗✔️:
         // RDKit❗✔️:   // look for fixed atoms in the fragment:
         // RDKit❗✔️:   unsigned int nAtomsFixed = 0;
         // RDKit❗✔️:   for (auto &d_eatom : d_eatoms) {
@@ -2686,6 +3377,7 @@ impl EmbeddedFrag<'_> {
         // smaller-side comparison; even a fixed row on the opposite side is
         // not separately protected by source if that side is smaller.
         // Complexity: one DFS, fixed-row scans and source-shaped visited tests.
+
         let bond = self
             .topology
             .bonds
@@ -2709,6 +3401,7 @@ impl EmbeddedFrag<'_> {
             .ok_or(FragmentError::AtomNotEmbedded { atom: end })?
             .loc;
         let end_side = self.collect_flip_side(end, begin);
+
         if self.atoms.values().any(|atom| atom.fixed) {
             // RDKit❗✔️:   if (nAtomsFixed) {
             // RDKit❗✔️:     for (auto endAtomId : endSideAids) {
@@ -2737,9 +3430,13 @@ impl EmbeddedFrag<'_> {
         // for a partial fragment with no fixed rows and a larger recursive
         // whole-molecule side; wrapping avoids a debug-only invented panic.
         let end_side_flip = self.atoms.len().wrapping_sub(end_side.len()) >= end_side.len();
+
+        // Retain the two source endpoint references throughout ordered rows
+        // using stack state. Updating a selected alias requires no map lookup.
+        let mut endpoints = [begin_loc, end_loc];
         for (&aid, atom) in &mut self.atoms {
             if end_side_flip ^ !end_side.contains(&aid) {
-                atom.reflect(begin_loc, end_loc);
+                atom.reflect_with_endpoint_aliases(&mut endpoints, [aid == begin, aid == end]);
             }
         }
         Ok(())
@@ -3253,6 +3950,7 @@ impl EmbeddedFrag<'_> {
         // Behavior: source first-collision selection, three flips per bond,
         // 15 global iterations, two trial orientations and exact rejection.
         // Complexity: each trial recomputes collision/density as source.
+
         let distance = self.collision_distance_matrix()?;
         let mut collisions = self.find_collisions(&distance, true);
         let mut done_bonds = BTreeMap::<usize, usize>::new();
@@ -3261,7 +3959,9 @@ impl EmbeddedFrag<'_> {
             let old_count = collisions.len();
             let (first, second) = collisions[0];
             let rotatable = self.rotatable_bonds_on_shortest_path(first, second)?;
+
             let old_density = self.total_density();
+
             for bond in rotatable {
                 if done_bonds.get(&bond).is_some_and(|&count| count >= 3) {
                     continue;
@@ -3270,25 +3970,31 @@ impl EmbeddedFrag<'_> {
                 self.flip_about_bond(bond, true)?;
                 collisions = self.find_collisions(&distance, true);
                 let new_density = self.total_density();
+
                 if collisions.len() < old_count {
                     done_bonds.insert(bond, 3);
+
                     break;
                 }
                 if collisions.len() == old_count && new_density < old_density {
                     break;
                 }
+
                 self.flip_about_bond(bond, true)?;
                 collisions = self.find_collisions(&distance, true);
                 self.flip_about_bond(bond, false)?;
                 collisions = self.find_collisions(&distance, true);
                 let new_density = self.total_density();
+
                 if collisions.len() < old_count {
                     done_bonds.insert(bond, 3);
+
                     break;
                 }
                 if collisions.len() == old_count && new_density < old_density {
                     break;
                 }
+
                 self.flip_about_bond(bond, false)?;
                 collisions = self.find_collisions(&distance, true);
             }
@@ -3970,6 +4676,7 @@ impl EmbeddedFrag<'_> {
         // elements are not replaced by inferred predicate atoms.
         // Complexity: O(embedded atoms^2 + topology bonds^2), as source;
         // no topology or coordinate-block clone.
+
         for atom in self.atoms.values_mut() {
             atom.density = 0.0;
         }
@@ -3989,10 +4696,12 @@ impl EmbeddedFrag<'_> {
                 };
                 let a = self.atoms[&aid].loc;
                 let b = self.atoms[&bid].loc;
+
                 let d2 = (a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2);
                 let increment = if d2 > 1.0e-3 { 1.0 / d2 } else { 1000.0 };
                 self.atoms.get_mut(&aid).expect("embedded").density += increment;
                 self.atoms.get_mut(&bid).expect("embedded").density += increment;
+
                 if d2 / (factor1 * factor2) < 0.70 * 0.70 {
                     collisions.push((aid, bid));
                 }
@@ -4037,6 +4746,7 @@ impl EmbeddedFrag<'_> {
                 }
             }
         }
+
         collisions
     }
 
@@ -4048,6 +4758,7 @@ impl EmbeddedFrag<'_> {
         // RDKit❗✔️: }
         // Behavior: source key-order left fold preserves floating summation.
         // Complexity: one scan, no allocation.
+
         self.atoms
             .values()
             .fold(0.0, |sum, atom| atom.density + sum)
@@ -4360,6 +5071,7 @@ impl<'a> EmbeddedFrag<'a> {
         // RDKit❗✔️:   }
         // RDKit❗✔️: }
         self.merge_frags_with_common(fragments)?;
+
         while let Some(&aid) = self.attachment_points.first() {
             let neighbors = self
                 .atoms
@@ -4373,12 +5085,14 @@ impl<'a> EmbeddedFrag<'a> {
             for neighbor in neighbors {
                 if let Some(index) = nonring_atoms.iter().position(|&row| row == neighbor) {
                     self.add_non_ring_atom(neighbor, aid)?;
+
                     nonring_atoms.remove(index);
                 } else if let Some(index) = fragments
                     .iter()
                     .position(|fragment| !fragment.done && fragment.atoms.contains_key(&neighbor))
                 {
                     self.merge_no_common(&mut fragments[index], aid, neighbor)?;
+
                     if self
                         .atoms
                         .get(&neighbor)
@@ -4397,6 +5111,7 @@ impl<'a> EmbeddedFrag<'a> {
                 .ok_or(FragmentError::AtomNotEmbedded { atom: aid })?
                 .neighs
                 .clear();
+
             self.merge_frags_with_common(fragments)?;
         }
         Ok(())
@@ -5193,6 +5908,7 @@ fn normalize(point: Point2) -> Result<Point2, FragmentError> {
     // RDKit❗✔️:   y /= ln;
     // RDKit❗✔️: }
     let length = (point[0] * point[0] + point[1] * point[1]).sqrt();
+
     // `RDGeneral/Numerics/Vector.h::zero_tolerance` is 1.e-16 in the pin.
     if length < 1e-16 {
         return Err(FragmentError::CoincidentPoints);
@@ -5260,5 +5976,11057 @@ fn rotation_dir(center: Point2, loc1: Point2, loc2: Point2, remaining_angle: f64
         -1
     } else {
         1
+    }
+}
+
+#[cfg(test)]
+mod point_pair_transform_tests {
+    use std::collections::BTreeMap;
+
+    use cosmolkit_core::{RingFindType, RingInfo};
+    use cosmolkit_model::{Atom, AtomId, AtomSpec, Element, TopologyBlock};
+
+    use super::{EmbeddedAtom, EmbeddedFrag, Point2, Transform2D};
+
+    #[derive(Debug, PartialEq, Eq)]
+    struct AtomState {
+        aid: usize,
+        angle: u64,
+        nbr1: Option<usize>,
+        nbr2: Option<usize>,
+        cis_trans_nbr: Option<usize>,
+        ccw: bool,
+        rot_dir: i32,
+        loc: [u64; 2],
+        normal: [u64; 2],
+        neighs: Vec<usize>,
+        density: u64,
+        fixed: bool,
+    }
+
+    #[derive(Debug, PartialEq, Eq)]
+    struct AtomMetadata {
+        aid: usize,
+        angle: u64,
+        nbr1: Option<usize>,
+        nbr2: Option<usize>,
+        cis_trans_nbr: Option<usize>,
+        ccw: bool,
+        rot_dir: i32,
+        neighs: Vec<usize>,
+        density: u64,
+        fixed: bool,
+    }
+
+    fn point(bits: [u64; 2]) -> Point2 {
+        bits.map(f64::from_bits)
+    }
+
+    fn captured_atom(aid: usize, loc: Point2) -> EmbeddedAtom {
+        let mut atom = EmbeddedAtom::at(aid, loc);
+        atom.angle = aid as f64 / 8.0;
+        atom.nbr1 = Some((aid + 1) % 45);
+        atom.nbr2 = Some((aid + 2) % 45);
+        atom.cis_trans_nbr = Some((aid + 3) % 45);
+        atom.ccw = aid % 2 != 0;
+        atom.rot_dir = aid as i32 - 20;
+        atom.neighs = vec![(aid + 4) % 45, (aid + 5) % 45];
+        atom.density = aid as f64 / 100.0;
+        atom.fixed = aid % 2 == 0;
+        atom
+    }
+
+    fn fragment<'a>(
+        topology: &'a TopologyBlock,
+        rings: &'a RingInfo,
+        atoms: BTreeMap<usize, EmbeddedAtom>,
+        attachment_points: Vec<usize>,
+        done: bool,
+    ) -> EmbeddedFrag<'a> {
+        EmbeddedFrag {
+            atoms,
+            attachment_points,
+            done,
+            topology,
+            rings,
+        }
+    }
+
+    fn atom_state(atom: &EmbeddedAtom) -> AtomState {
+        AtomState {
+            aid: atom.aid,
+            angle: atom.angle.to_bits(),
+            nbr1: atom.nbr1,
+            nbr2: atom.nbr2,
+            cis_trans_nbr: atom.cis_trans_nbr,
+            ccw: atom.ccw,
+            rot_dir: atom.rot_dir,
+            loc: atom.loc.map(f64::to_bits),
+            normal: atom.normal.map(f64::to_bits),
+            neighs: atom.neighs.clone(),
+            density: atom.density.to_bits(),
+            fixed: atom.fixed,
+        }
+    }
+
+    fn atom_metadata(atom: &EmbeddedAtom) -> AtomMetadata {
+        AtomMetadata {
+            aid: atom.aid,
+            angle: atom.angle.to_bits(),
+            nbr1: atom.nbr1,
+            nbr2: atom.nbr2,
+            cis_trans_nbr: atom.cis_trans_nbr,
+            ccw: atom.ccw,
+            rot_dir: atom.rot_dir,
+            neighs: atom.neighs.clone(),
+            density: atom.density.to_bits(),
+            fixed: atom.fixed,
+        }
+    }
+
+    fn atoms_state(fragment: &EmbeddedFrag<'_>) -> Vec<(usize, AtomState)> {
+        fragment
+            .atoms
+            .iter()
+            .map(|(&id, atom)| (id, atom_state(atom)))
+            .collect()
+    }
+
+    fn atoms_metadata(fragment: &EmbeddedFrag<'_>) -> Vec<(usize, AtomMetadata)> {
+        fragment
+            .atoms
+            .iter()
+            .map(|(&id, atom)| (id, atom_metadata(atom)))
+            .collect()
+    }
+
+    #[test]
+    fn d2_pair_fragment_caller() {
+        // Captured transition-state regression, not the complete line-155
+        // molecule topology. This detached topology has 45 disconnected
+        // carbons and no ring memberships; the actual helper does not read
+        // ring contents but retains the borrowed ring owner unchanged.
+        let atoms = (0..45)
+            .map(|index| Atom::from_spec(AtomId::new(index), AtomSpec::new(Element::C)))
+            .collect();
+        let topology = TopologyBlock::try_from_parts(atoms, Vec::new(), Vec::new(), Vec::new())
+            .expect("45 disconnected carbon atoms form a valid topology");
+        let rings = RingInfo::new(RingFindType::OtherOrUnknown, 45, 0);
+        assert_eq!(topology.atoms.len(), 45);
+        assert!(topology.bonds.is_empty());
+        assert_eq!(rings.atom_row_count(), 45);
+        assert_eq!(rings.bond_row_count(), 0);
+
+        let ref1 = point([13842690664439568919, 4614895549384485632]);
+        let ref2 = point([13840743450532881578, 4618222693736076515]);
+        let pt1 = point([4600774667239816340, 4608144052124252029]);
+        let pt2 = point([13830699860855537819, 13828302655841107966]);
+        let point35 = point([4608425305167921899, 0]);
+        let expected = [
+            (34, [13842690664439568919, 4614895549384485632]),
+            (35, [13843683345501127844, 4616908891942731194]),
+            (37, [13841084472807863234, 4617753316911589383]),
+        ];
+
+        let mut compute_two_atom_calls = 0;
+        let mut caller_transform_calls = 0;
+        let mut checked_point_rows = 0;
+        let mut mismatches = Vec::new();
+
+        for repeat in 0..2 {
+            let mut base_atoms = BTreeMap::new();
+            base_atoms.insert(34, captured_atom(34, ref1));
+            base_atoms.insert(37, captured_atom(37, ref2));
+            let base = fragment(&topology, &rings, base_atoms, vec![37, 34], true);
+
+            let mut incoming_atoms = BTreeMap::new();
+            incoming_atoms.insert(34, captured_atom(34, pt1));
+            incoming_atoms.insert(37, captured_atom(37, pt2));
+            incoming_atoms.insert(35, captured_atom(35, point35));
+            let mut incoming = fragment(&topology, &rings, incoming_atoms, vec![35, 34, 37], false);
+
+            let topology_before = topology.clone();
+            let rings_before = rings.clone();
+            let base_atoms_before = atoms_state(&base);
+            let base_keys_before = base.atoms.keys().copied().collect::<Vec<_>>();
+            let base_attachments_before = base.attachment_points.clone();
+            let base_done_before = base.done;
+            let incoming_keys_before = incoming.atoms.keys().copied().collect::<Vec<_>>();
+            let incoming_metadata_before = atoms_metadata(&incoming);
+            let incoming_attachments_before = incoming.attachment_points.clone();
+            let incoming_done_before = incoming.done;
+
+            compute_two_atom_calls += 1;
+            match base.compute_two_atom_trans(34, 37, &incoming) {
+                Ok(transform) => {
+                    incoming.transform(transform);
+                    caller_transform_calls += 1;
+                }
+                Err(error) => mismatches.push(format!(
+                    "repeat {repeat}: compute_two_atom_trans failed: {error:?}"
+                )),
+            }
+
+            for (id, expected_loc) in expected {
+                checked_point_rows += 1;
+                let Some(atom) = incoming.atoms.get(&id) else {
+                    mismatches.push(format!("repeat {repeat}: transformed atom {id} is missing"));
+                    continue;
+                };
+                let loc_bits = atom.loc.map(f64::to_bits);
+                if loc_bits != expected_loc {
+                    mismatches.push(format!(
+                        "repeat {repeat}: atom {id} location expected {expected_loc:?}, got {loc_bits:?}"
+                    ));
+                }
+                let normal_bits = atom.normal.map(f64::to_bits);
+                if normal_bits != [0, 0] {
+                    mismatches.push(format!(
+                        "repeat {repeat}: atom {id} zero normal expected [0, 0], got {normal_bits:?}"
+                    ));
+                }
+            }
+
+            let incoming_metadata_after = atoms_metadata(&incoming);
+            if incoming_metadata_after != incoming_metadata_before {
+                mismatches.push(format!(
+                    "repeat {repeat}: incoming non-coordinate atom fields changed"
+                ));
+            }
+            let incoming_keys_after = incoming.atoms.keys().copied().collect::<Vec<_>>();
+            if incoming_keys_after != incoming_keys_before {
+                mismatches.push(format!(
+                    "repeat {repeat}: incoming ordered IDs expected {incoming_keys_before:?}, got {incoming_keys_after:?}"
+                ));
+            }
+            if incoming.attachment_points != incoming_attachments_before {
+                mismatches.push(format!(
+                    "repeat {repeat}: incoming attachment points changed"
+                ));
+            }
+            if incoming.done != incoming_done_before {
+                mismatches.push(format!("repeat {repeat}: incoming done metadata changed"));
+            }
+            if atoms_state(&base) != base_atoms_before
+                || base.atoms.keys().copied().collect::<Vec<_>>() != base_keys_before
+                || base.attachment_points != base_attachments_before
+                || base.done != base_done_before
+            {
+                mismatches.push(format!("repeat {repeat}: base fragment changed"));
+            }
+            if topology != topology_before {
+                mismatches.push(format!("repeat {repeat}: topology changed"));
+            }
+            if rings != rings_before {
+                mismatches.push(format!("repeat {repeat}: ring state changed"));
+            }
+            if !std::ptr::eq(base.topology, &topology)
+                || !std::ptr::eq(incoming.topology, &topology)
+                || !std::ptr::eq(base.rings, &rings)
+                || !std::ptr::eq(incoming.rings, &rings)
+            {
+                mismatches.push(format!(
+                    "repeat {repeat}: topology/ring borrow identity changed"
+                ));
+            }
+        }
+
+        if compute_two_atom_calls != 2 {
+            mismatches.push(format!(
+                "compute_two_atom_trans call census expected 2, got {compute_two_atom_calls}"
+            ));
+        }
+        if caller_transform_calls != 2 {
+            mismatches.push(format!(
+                "fragment transform call census expected 2, got {caller_transform_calls}"
+            ));
+        }
+        if checked_point_rows != 6 {
+            mismatches.push(format!(
+                "post-invocation point-row census expected 6, got {checked_point_rows}"
+            ));
+        }
+        assert!(mismatches.is_empty(), "{}", mismatches.join("\n"));
+    }
+
+    #[derive(Clone, Copy)]
+    struct AroundEmbeddedAtomLiteral {
+        center: [u64; 2],
+        angle: u64,
+        point: [u64; 2],
+        loc: [u64; 2],
+        normal: [u64; 2],
+    }
+
+    #[test]
+    fn d2_around_embedded_atom_caller() {
+        // Frozen native SetTransform plus actual EmbeddedAtom::Transform
+        // outputs from dev/gap_reports/depict_2d/rotation_about_point.md.
+        // The input state is independent of this Rust implementation.
+        const FIXTURES: [AroundEmbeddedAtomLiteral; 12] = [
+            AroundEmbeddedAtomLiteral {
+                center: [13840167140234767549, 13841658448896447679],
+                angle: 13833581496215065898,
+                point: [13837906160088633287, 13842551789691373020],
+                loc: [13841200895337859887, 13842993950389275022],
+                normal: [13826938992748570896, 13830052621011068080],
+            },
+            AroundEmbeddedAtomLiteral {
+                center: [4600774667239816340, 4608144052124252029],
+                angle: 13835506422081213124,
+                point: [13830699860855537818, 4604930618986332161],
+                loc: [4605901809668386118, 4613127418605116318],
+                normal: [13830485043920852146, 13826187084225660792],
+            },
+            AroundEmbeddedAtomLiteral {
+                center: [0, 0],
+                angle: 0,
+                point: [0, 9223372036854775808],
+                loc: [0, 0],
+                normal: [4607182418800017408, 13826050856027422720],
+            },
+            AroundEmbeddedAtomLiteral {
+                center: [9223372036854775808, 0],
+                angle: 9223372036854775808,
+                point: [9223372036854775808, 0],
+                loc: [0, 0],
+                normal: [4607182418800017408, 13826050856027422720],
+            },
+            AroundEmbeddedAtomLiteral {
+                center: [0, 9223372036854775808],
+                angle: 4609753056924675352,
+                point: [4607182418800017408, 13830554455654793216],
+                loc: [4607182418800017408, 4607182418800017407],
+                normal: [4602678819172646914, 4607182418800017408],
+            },
+            AroundEmbeddedAtomLiteral {
+                center: [9223372036854775808, 0],
+                angle: 13833125093779451160,
+                point: [13830554455654793216, 4607182418800017408],
+                loc: [4607182418800017407, 4607182418800017408],
+                normal: [13826050856027422718, 13830554455654793216],
+            },
+            AroundEmbeddedAtomLiteral {
+                center: [4607182418800017408, 13835058055282163712],
+                angle: 4614256656552045848,
+                point: [4613937818241073152, 4616189618054758400],
+                loc: [13830554455654793219, 13844065254536904704],
+                normal: [13830554455654793210, 4602678819172646912],
+            },
+            AroundEmbeddedAtomLiteral {
+                center: [13837309855095848960, 4616189618054758400],
+                angle: 13837628693406821656,
+                point: [4598175219545276416, 13826050856027422720],
+                loc: [13842094929699930112, 4620974692658839552],
+                normal: [13830554455654793216, 4602678819172646912],
+            },
+            AroundEmbeddedAtomLiteral {
+                center: [4591870180066957722, 13819745816549104026],
+                angle: 4607394977673999205,
+                point: [4604480259023595110, 4606281698874543309],
+                loc: [13826524886406865186, 4606008017307368141],
+                normal: [4606579050858423895, 4603723883103145131],
+            },
+            AroundEmbeddedAtomLiteral {
+                center: [6850974717710472879, 16074346754565248687],
+                angle: 4600336947366414254,
+                point: [6855478317337843375, 6846471118083102383],
+                loc: [6853120471284824355, 6849333997472211297],
+                normal: [0, 0],
+            },
+            AroundEmbeddedAtomLiteral {
+                center: [4503599627370496, 9227875636482146304],
+                angle: 4600336947366414254,
+                point: [9007199254740992, 2251799813685248],
+                loc: [6259572026655921, 3423215126666318],
+                normal: [4607691933821229984, 13815569952213628840],
+            },
+            AroundEmbeddedAtomLiteral {
+                center: [12034929314500959671, 6402087712267973674],
+                angle: 13823708984221190062,
+                point: [6387181665105488315, 15625459749122749482],
+                loc: [15622769946159922631, 15624767819230837210],
+                normal: [0, 0],
+            },
+        ];
+
+        let initial_normal = [4607182418800017408, 13826050856027422720];
+        let mut around_calls = 0;
+        let mut embedded_atom_transform_calls = 0;
+        let mut coordinate_rows = 0;
+        let mut metadata_rows = 0;
+        let mut mismatches = Vec::new();
+
+        for repeat in 0..2 {
+            for (case, expected) in FIXTURES.iter().enumerate() {
+                let center = point(expected.center);
+                let center_before = center.map(f64::to_bits);
+                let angle = f64::from_bits(expected.angle);
+                let angle_before = angle.to_bits();
+                let loc = point(expected.point);
+                let loc_before = loc.map(f64::to_bits);
+
+                let transform = Transform2D::around(center, angle);
+                around_calls += 1;
+
+                let mut atom = EmbeddedAtom::at(case, loc);
+                atom.normal = point(initial_normal);
+                let metadata_before = atom_metadata(&atom);
+                let source_defaults = AtomMetadata {
+                    aid: case,
+                    angle: (-1.0_f64).to_bits(),
+                    nbr1: None,
+                    nbr2: None,
+                    cis_trans_nbr: None,
+                    ccw: true,
+                    rot_dir: 0,
+                    neighs: Vec::new(),
+                    density: (-1.0_f64).to_bits(),
+                    fixed: false,
+                };
+                if metadata_before != source_defaults {
+                    mismatches.push(format!(
+                        "case {} repeat {repeat}: source-default metadata expected {source_defaults:?}, got {metadata_before:?}",
+                        case + 1
+                    ));
+                }
+
+                atom.transform(transform);
+                embedded_atom_transform_calls += 1;
+
+                coordinate_rows += 1;
+                let loc_bits = atom.loc.map(f64::to_bits);
+                if loc_bits != expected.loc {
+                    mismatches.push(format!(
+                        "case {} repeat {repeat}: EmbeddedAtom::Transform loc expected {:?}, got {loc_bits:?}",
+                        case + 1,
+                        expected.loc
+                    ));
+                }
+                let normal_bits = atom.normal.map(f64::to_bits);
+                if normal_bits != expected.normal {
+                    mismatches.push(format!(
+                        "case {} repeat {repeat}: EmbeddedAtom::Transform normal expected {:?}, got {normal_bits:?}",
+                        case + 1,
+                        expected.normal
+                    ));
+                }
+
+                metadata_rows += 1;
+                let metadata_after = atom_metadata(&atom);
+                if metadata_after != metadata_before {
+                    mismatches.push(format!(
+                        "case {} repeat {repeat}: non-coordinate fields expected {metadata_before:?}, got {metadata_after:?}",
+                        case + 1
+                    ));
+                }
+
+                if center.map(f64::to_bits) != center_before {
+                    mismatches.push(format!(
+                        "case {} repeat {repeat}: center input changed from {center_before:?} to {:?}",
+                        case + 1,
+                        center.map(f64::to_bits)
+                    ));
+                }
+                if angle.to_bits() != angle_before {
+                    mismatches.push(format!(
+                        "case {} repeat {repeat}: angle input changed from {angle_before} to {}",
+                        case + 1,
+                        angle.to_bits()
+                    ));
+                }
+                if loc.map(f64::to_bits) != loc_before {
+                    mismatches.push(format!(
+                        "case {} repeat {repeat}: location input changed from {loc_before:?} to {:?}",
+                        case + 1,
+                        loc.map(f64::to_bits)
+                    ));
+                }
+                if atom.normal.map(f64::to_bits) == initial_normal {
+                    // A zero-angle/control case may preserve this vector, but
+                    // the frozen output check above is the controlling proof.
+                }
+            }
+        }
+
+        if around_calls != 24 {
+            mismatches.push(format!(
+                "Transform2D::around call census expected 24, got {around_calls}"
+            ));
+        }
+        if embedded_atom_transform_calls != 24 {
+            mismatches.push(format!(
+                "EmbeddedAtom::Transform call census expected 24, got {embedded_atom_transform_calls}"
+            ));
+        }
+        if coordinate_rows != 24 {
+            mismatches.push(format!(
+                "coordinate-row census expected 24, got {coordinate_rows}"
+            ));
+        }
+        if metadata_rows != 24 {
+            mismatches.push(format!(
+                "non-coordinate metadata-row census expected 24, got {metadata_rows}"
+            ));
+        }
+        assert!(mismatches.is_empty(), "{}", mismatches.join("\n"));
+    }
+}
+
+#[cfg(test)]
+mod single_fragment_source_assignment_tests {
+    use cosmolkit_core::{RingFindType, RingInfo};
+    use cosmolkit_model::{Atom, AtomId, AtomSpec, Element, TopologyBlock};
+
+    use super::{EmbeddedFrag, FragmentError};
+
+    #[derive(Debug, PartialEq, Eq)]
+    struct AtomFields {
+        aid: usize,
+        angle_bits: u64,
+        nbr1: Option<usize>,
+        nbr2: Option<usize>,
+        cis_trans_nbr: Option<usize>,
+        ccw: bool,
+        rot_dir: i32,
+        loc_bits: [u64; 2],
+        normal_bits: [u64; 2],
+        neighs: Vec<usize>,
+        density_bits: u64,
+        fixed: bool,
+    }
+
+    #[derive(Debug, PartialEq, Eq)]
+    struct FragmentFields {
+        rows: Vec<(usize, AtomFields)>,
+        attachment_points: Vec<usize>,
+        done: bool,
+        topology_identity: bool,
+        rings_identity: bool,
+    }
+
+    fn disconnected_carbons() -> TopologyBlock {
+        let atoms = (0..8)
+            .map(|index| Atom::from_spec(AtomId::new(index), AtomSpec::new(Element::C)))
+            .collect();
+        TopologyBlock::try_from_parts(atoms, Vec::new(), Vec::new(), Vec::new())
+            .expect("eight disconnected carbon atoms form a valid topology")
+    }
+
+    fn empty_rings() -> RingInfo {
+        RingInfo::new(RingFindType::OtherOrUnknown, 8, 0)
+    }
+
+    fn atom_fields(atom: &super::EmbeddedAtom) -> AtomFields {
+        AtomFields {
+            aid: atom.aid,
+            angle_bits: atom.angle.to_bits(),
+            nbr1: atom.nbr1,
+            nbr2: atom.nbr2,
+            cis_trans_nbr: atom.cis_trans_nbr,
+            ccw: atom.ccw,
+            rot_dir: atom.rot_dir,
+            loc_bits: atom.loc.map(f64::to_bits),
+            normal_bits: atom.normal.map(f64::to_bits),
+            neighs: atom.neighs.clone(),
+            density_bits: atom.density.to_bits(),
+            fixed: atom.fixed,
+        }
+    }
+
+    fn fragment_fields(
+        fragment: &EmbeddedFrag<'_>,
+        topology: &TopologyBlock,
+        rings: &RingInfo,
+    ) -> FragmentFields {
+        FragmentFields {
+            rows: fragment
+                .atoms
+                .iter()
+                .map(|(&key, atom)| (key, atom_fields(atom)))
+                .collect(),
+            attachment_points: fragment.attachment_points.clone(),
+            done: fragment.done,
+            topology_identity: std::ptr::eq(fragment.topology, topology),
+            rings_identity: std::ptr::eq(fragment.rings, rings),
+        }
+    }
+
+    fn expected_fragment(requested_id: usize) -> FragmentFields {
+        FragmentFields {
+            rows: vec![(
+                requested_id,
+                AtomFields {
+                    aid: 0,
+                    angle_bits: (-1.0_f64).to_bits(),
+                    nbr1: None,
+                    nbr2: None,
+                    cis_trans_nbr: None,
+                    ccw: true,
+                    rot_dir: 0,
+                    loc_bits: [0.0_f64.to_bits(), 0.0_f64.to_bits()],
+                    normal_bits: [1.0_f64.to_bits(), 0.0_f64.to_bits()],
+                    neighs: Vec::new(),
+                    density_bits: (-1.0_f64).to_bits(),
+                    fixed: false,
+                },
+            )],
+            attachment_points: Vec::new(),
+            done: false,
+            topology_identity: true,
+            rings_identity: true,
+        }
+    }
+
+    #[test]
+    fn d2_single_atom_source_assignment_preserves_complete_payload() {
+        let topology = disconnected_carbons();
+        let rings = empty_rings();
+        assert_eq!(topology.atoms.len(), 8);
+        assert!(topology.bonds.is_empty());
+        assert!(rings.is_initialized());
+        assert_eq!(rings.atom_row_count(), 8);
+        assert_eq!(rings.bond_row_count(), 0);
+
+        let mut calls = 0;
+        let mut aid_mismatches = Vec::new();
+        let mut mismatches = Vec::new();
+        for repeat in 0..2 {
+            for requested_id in 0..8 {
+                let call_topology = topology.clone();
+                let call_rings = rings.clone();
+                let topology_before = call_topology.clone();
+                let rings_before = call_rings.clone();
+
+                let result = EmbeddedFrag::from_single(requested_id, &call_topology, &call_rings);
+                let observed = match result.as_ref() {
+                    Ok(fragment) => Some(fragment_fields(fragment, &call_topology, &call_rings)),
+                    Err(error) => {
+                        mismatches.push(format!(
+                            "repeat {repeat}, requested key {requested_id}: expected success, got {error:?}"
+                        ));
+                        None
+                    }
+                };
+                calls += 1;
+
+                if let Some(observed) = observed {
+                    let expected = expected_fragment(requested_id);
+                    for (key, atom) in &observed.rows {
+                        if atom.aid != 0 {
+                            aid_mismatches.push(format!(
+                                "repeat {repeat}, requested key {requested_id}: key {key}, source payload aid 0, actual payload aid {}",
+                                atom.aid
+                            ));
+                        }
+                    }
+                    if observed != expected {
+                        mismatches.push(format!(
+                            "repeat {repeat}, requested key {requested_id}: expected {expected:?}, got {observed:?}"
+                        ));
+                    }
+                }
+                if call_topology != topology_before {
+                    mismatches.push(format!(
+                        "repeat {repeat}, requested key {requested_id}: topology changed"
+                    ));
+                }
+                if call_rings != rings_before {
+                    mismatches.push(format!(
+                        "repeat {repeat}, requested key {requested_id}: RingInfo changed"
+                    ));
+                }
+            }
+        }
+
+        if calls != 16 {
+            mismatches.push(format!(
+                "actual from_single call count expected 16, got {calls}"
+            ));
+        }
+        assert!(
+            mismatches.is_empty(),
+            "actual calls={calls}; aid mismatches={}:\n{}\nall payload mismatches:\n{}",
+            aid_mismatches.len(),
+            aid_mismatches.join("\n"),
+            mismatches.join("\n")
+        );
+    }
+
+    #[test]
+    fn d2_single_atom_source_assignment_returns_typed_index_errors() {
+        let requested_ids = [8_usize, 4_294_967_295_usize];
+        let mut calls = 0;
+        let mut mismatches = Vec::new();
+        for requested_id in requested_ids {
+            let call_topology = disconnected_carbons();
+            let call_rings = empty_rings();
+            let topology_before = call_topology.clone();
+            let rings_before = call_rings.clone();
+
+            let result = EmbeddedFrag::from_single(requested_id, &call_topology, &call_rings);
+            let observed = match result.as_ref() {
+                Ok(fragment) => Ok(fragment_fields(fragment, &call_topology, &call_rings)),
+                Err(error) => Err(error.clone()),
+            };
+            calls += 1;
+
+            let expected = Err(FragmentError::AtomIndexOutOfRange {
+                atom: requested_id,
+                atom_count: 8,
+            });
+            if observed != expected {
+                mismatches.push(format!(
+                    "requested ID {requested_id}: expected {expected:?}, got {observed:?}"
+                ));
+            }
+            if call_topology != topology_before {
+                mismatches.push(format!("requested ID {requested_id}: topology changed"));
+            }
+            if call_rings != rings_before {
+                mismatches.push(format!("requested ID {requested_id}: RingInfo changed"));
+            }
+        }
+
+        if calls != 2 {
+            mismatches.push(format!(
+                "actual from_single error call count expected 2, got {calls}"
+            ));
+        }
+        assert!(
+            mismatches.is_empty(),
+            "actual calls={calls}:\n{}",
+            mismatches.join("\n")
+        );
+    }
+}
+
+#[cfg(test)]
+mod coord_map_source_assignment_tests {
+    use cosmolkit_core::{RingFindType, RingInfo};
+    use cosmolkit_model::{
+        Atom, AtomId, AtomSpec, Bond, BondId, BondOrder, BondSpec, Element, TopologyBlock,
+    };
+
+    use super::{EmbeddedAtom, EmbeddedFrag, FragmentError, Point2, PointMap};
+
+    const NEG_ONE_BITS: u64 = 0xbff0_0000_0000_0000;
+
+    #[derive(Debug, Clone, Copy)]
+    struct ExpectedRow {
+        key: usize,
+        loc_bits: [u64; 2],
+        normal_bits: [u64; 2],
+        neighbors: &'static [usize],
+    }
+
+    #[derive(Debug, Clone, Copy)]
+    struct Scenario {
+        name: &'static str,
+        atom_count: usize,
+        chain: bool,
+        input_keys: &'static [usize],
+        expected_rows: &'static [ExpectedRow],
+        expected_attachment_points: &'static [usize],
+    }
+
+    const SCENARIOS: [Scenario; 8] = [
+        Scenario {
+            name: "disconnected-0",
+            atom_count: 8,
+            chain: false,
+            input_keys: &[0],
+            expected_rows: &[ExpectedRow {
+                key: 0,
+                loc_bits: [0x0000_0000_0000_0000, 0x8000_0000_0000_0000],
+                normal_bits: [0, 0],
+                neighbors: &[],
+            }],
+            expected_attachment_points: &[],
+        },
+        Scenario {
+            name: "disconnected-1",
+            atom_count: 8,
+            chain: false,
+            input_keys: &[1],
+            expected_rows: &[ExpectedRow {
+                key: 1,
+                loc_bits: [0x3ff8_0000_0000_0000, 0xbfe0_0000_0000_0000],
+                normal_bits: [0, 0],
+                neighbors: &[],
+            }],
+            expected_attachment_points: &[],
+        },
+        Scenario {
+            name: "disconnected-7",
+            atom_count: 8,
+            chain: false,
+            input_keys: &[7],
+            expected_rows: &[ExpectedRow {
+                key: 7,
+                loc_bits: [0xc000_0000_0000_0000, 0xbff0_0000_0000_0000],
+                normal_bits: [0, 0],
+                neighbors: &[],
+            }],
+            expected_attachment_points: &[],
+        },
+        Scenario {
+            name: "disconnected-0-7",
+            atom_count: 8,
+            chain: false,
+            input_keys: &[0, 7],
+            expected_rows: &[
+                ExpectedRow {
+                    key: 0,
+                    loc_bits: [0x0000_0000_0000_0000, 0x8000_0000_0000_0000],
+                    normal_bits: [0, 0],
+                    neighbors: &[],
+                },
+                ExpectedRow {
+                    key: 7,
+                    loc_bits: [0xc000_0000_0000_0000, 0xbff0_0000_0000_0000],
+                    normal_bits: [0, 0],
+                    neighbors: &[],
+                },
+            ],
+            expected_attachment_points: &[],
+        },
+        Scenario {
+            name: "disconnected-1-3-7",
+            atom_count: 8,
+            chain: false,
+            input_keys: &[1, 3, 7],
+            expected_rows: &[
+                ExpectedRow {
+                    key: 1,
+                    loc_bits: [0x3ff8_0000_0000_0000, 0xbfe0_0000_0000_0000],
+                    normal_bits: [0, 0],
+                    neighbors: &[],
+                },
+                ExpectedRow {
+                    key: 3,
+                    loc_bits: [0x4000_0000_0000_0000, 0x3ff0_0000_0000_0000],
+                    normal_bits: [0, 0],
+                    neighbors: &[],
+                },
+                ExpectedRow {
+                    key: 7,
+                    loc_bits: [0xc000_0000_0000_0000, 0xbff0_0000_0000_0000],
+                    normal_bits: [0, 0],
+                    neighbors: &[],
+                },
+            ],
+            expected_attachment_points: &[],
+        },
+        Scenario {
+            name: "disconnected-empty",
+            atom_count: 8,
+            chain: false,
+            input_keys: &[],
+            expected_rows: &[],
+            expected_attachment_points: &[],
+        },
+        Scenario {
+            name: "chain-partial-0-2",
+            atom_count: 3,
+            chain: true,
+            input_keys: &[0, 2],
+            expected_rows: &[
+                ExpectedRow {
+                    key: 0,
+                    loc_bits: [0x0000_0000_0000_0000, 0x8000_0000_0000_0000],
+                    normal_bits: [0x3ff0_0000_0000_0000, 0],
+                    neighbors: &[1],
+                },
+                ExpectedRow {
+                    key: 2,
+                    loc_bits: [0xbff8_0000_0000_0000, 0x3fe0_0000_0000_0000],
+                    normal_bits: [0x3ff0_0000_0000_0000, 0],
+                    neighbors: &[1],
+                },
+            ],
+            expected_attachment_points: &[0, 2],
+        },
+        Scenario {
+            name: "chain-full-0-1-2",
+            atom_count: 3,
+            chain: true,
+            input_keys: &[0, 1, 2],
+            expected_rows: &[
+                ExpectedRow {
+                    key: 0,
+                    loc_bits: [0x0000_0000_0000_0000, 0x8000_0000_0000_0000],
+                    normal_bits: [0, 0],
+                    neighbors: &[],
+                },
+                ExpectedRow {
+                    key: 1,
+                    loc_bits: [0x3ff8_0000_0000_0000, 0xbfe0_0000_0000_0000],
+                    normal_bits: [0, 0],
+                    neighbors: &[],
+                },
+                ExpectedRow {
+                    key: 2,
+                    loc_bits: [0xbff8_0000_0000_0000, 0x3fe0_0000_0000_0000],
+                    normal_bits: [0, 0],
+                    neighbors: &[],
+                },
+            ],
+            expected_attachment_points: &[],
+        },
+    ];
+
+    #[derive(Debug, PartialEq, Eq)]
+    struct AtomFields {
+        aid: usize,
+        angle_bits: u64,
+        nbr1: Option<usize>,
+        nbr2: Option<usize>,
+        cis_trans_nbr: Option<usize>,
+        ccw: bool,
+        rot_dir: i32,
+        loc_bits: [u64; 2],
+        normal_bits: [u64; 2],
+        neighs: Vec<usize>,
+        density_bits: u64,
+        fixed: bool,
+    }
+
+    #[derive(Debug, PartialEq, Eq)]
+    struct FragmentFields {
+        rows: Vec<(usize, AtomFields)>,
+        attachment_points: Vec<usize>,
+        done: bool,
+        topology_identity: bool,
+        rings_identity: bool,
+    }
+
+    fn point_for_key(key: usize) -> Point2 {
+        match key {
+            0 => [f64::from_bits(0), f64::from_bits(0x8000_0000_0000_0000)],
+            1 => [
+                f64::from_bits(0x3ff8_0000_0000_0000),
+                f64::from_bits(0xbfe0_0000_0000_0000),
+            ],
+            2 => [
+                f64::from_bits(0xbff8_0000_0000_0000),
+                f64::from_bits(0x3fe0_0000_0000_0000),
+            ],
+            3 => [
+                f64::from_bits(0x4000_0000_0000_0000),
+                f64::from_bits(0x3ff0_0000_0000_0000),
+            ],
+            7 => [
+                f64::from_bits(0xc000_0000_0000_0000),
+                f64::from_bits(0xbff0_0000_0000_0000),
+            ],
+            _ => unreachable!("only literal frozen coordinate keys are used"),
+        }
+    }
+
+    fn topology_for(scenario: &Scenario) -> TopologyBlock {
+        let atoms = (0..scenario.atom_count)
+            .map(|index| Atom::from_spec(AtomId::new(index), AtomSpec::new(Element::C)))
+            .collect();
+        let bonds = if scenario.chain {
+            [(0, 1), (1, 2)]
+                .into_iter()
+                .enumerate()
+                .map(|(index, (begin, end))| {
+                    Bond::from_spec(
+                        BondId::new(index),
+                        BondSpec::new(AtomId::new(begin), AtomId::new(end), BondOrder::Single),
+                    )
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+        TopologyBlock::try_from_parts(atoms, bonds, Vec::new(), Vec::new())
+            .expect("frozen coordinate-map graph is a valid topology")
+    }
+
+    fn point_map_for_keys(keys: &[usize]) -> PointMap {
+        keys.iter()
+            .copied()
+            .map(|key| (key, point_for_key(key)))
+            .collect()
+    }
+
+    fn point_map_bits(points: &PointMap) -> Vec<(usize, [u64; 2])> {
+        points
+            .iter()
+            .map(|(&key, point)| (key, point.map(f64::to_bits)))
+            .collect()
+    }
+
+    fn atom_fields(atom: &EmbeddedAtom) -> AtomFields {
+        AtomFields {
+            aid: atom.aid,
+            angle_bits: atom.angle.to_bits(),
+            nbr1: atom.nbr1,
+            nbr2: atom.nbr2,
+            cis_trans_nbr: atom.cis_trans_nbr,
+            ccw: atom.ccw,
+            rot_dir: atom.rot_dir,
+            loc_bits: atom.loc.map(f64::to_bits),
+            normal_bits: atom.normal.map(f64::to_bits),
+            neighs: atom.neighs.clone(),
+            density_bits: atom.density.to_bits(),
+            fixed: atom.fixed,
+        }
+    }
+
+    fn expected_atom_fields(row: &ExpectedRow) -> AtomFields {
+        AtomFields {
+            aid: 0,
+            angle_bits: NEG_ONE_BITS,
+            nbr1: None,
+            nbr2: None,
+            cis_trans_nbr: None,
+            ccw: true,
+            rot_dir: 0,
+            loc_bits: row.loc_bits,
+            normal_bits: row.normal_bits,
+            neighs: row.neighbors.to_vec(),
+            density_bits: NEG_ONE_BITS,
+            fixed: true,
+        }
+    }
+
+    fn fragment_fields(
+        fragment: &EmbeddedFrag<'_>,
+        topology: &TopologyBlock,
+        rings: &RingInfo,
+    ) -> FragmentFields {
+        FragmentFields {
+            rows: fragment
+                .atoms
+                .iter()
+                .map(|(&key, atom)| (key, atom_fields(atom)))
+                .collect(),
+            attachment_points: fragment.attachment_points.clone(),
+            done: fragment.done,
+            topology_identity: std::ptr::eq(fragment.topology, topology),
+            rings_identity: std::ptr::eq(fragment.rings, rings),
+        }
+    }
+
+    fn expected_fragment(scenario: &Scenario) -> FragmentFields {
+        FragmentFields {
+            rows: scenario
+                .expected_rows
+                .iter()
+                .map(|row| (row.key, expected_atom_fields(row)))
+                .collect(),
+            attachment_points: scenario.expected_attachment_points.to_vec(),
+            done: false,
+            topology_identity: true,
+            rings_identity: true,
+        }
+    }
+
+    fn ring_shape(rings: &RingInfo) -> (bool, RingFindType, usize, usize) {
+        (
+            rings.is_initialized(),
+            rings.find_type(),
+            rings.atom_row_count(),
+            rings.bond_row_count(),
+        )
+    }
+
+    #[test]
+    fn d2_coord_map_source_assignment_preserves_complete_payload() {
+        let mut calls = 0;
+        let mut rows = 0;
+        let mut payload_aid_mismatches = Vec::new();
+        let mut mismatches = Vec::new();
+
+        for repeat in 0..2 {
+            for scenario in &SCENARIOS {
+                let topology = topology_for(scenario);
+                let rings = RingInfo::new(
+                    RingFindType::OtherOrUnknown,
+                    topology.atoms.len(),
+                    topology.bonds.len(),
+                );
+                let coord_map = point_map_for_keys(scenario.input_keys);
+                let topology_before = topology.clone();
+                let rings_before = rings.clone();
+                let ring_shape_before = ring_shape(&rings);
+                let coord_map_before = point_map_bits(&coord_map);
+
+                let result = EmbeddedFrag::from_coord_map(&topology, &rings, &coord_map);
+                calls += 1;
+
+                // Inputs are checked immediately after the operation, before
+                // examining its success/error result.
+                if topology != topology_before {
+                    mismatches.push(format!(
+                        "repeat {repeat}, {}: topology changed",
+                        scenario.name
+                    ));
+                }
+                if rings != rings_before || ring_shape(&rings) != ring_shape_before {
+                    mismatches.push(format!(
+                        "repeat {repeat}, {}: RingInfo rows, memberships, dimensions, or find type changed",
+                        scenario.name
+                    ));
+                }
+                if point_map_bits(&coord_map) != coord_map_before {
+                    mismatches.push(format!(
+                        "repeat {repeat}, {}: coordinate-map keys or float bits changed",
+                        scenario.name
+                    ));
+                }
+
+                match result.as_ref() {
+                    Ok(fragment) => {
+                        rows += fragment.atoms.len();
+                        for (&key, atom) in &fragment.atoms {
+                            if atom.aid != 0 {
+                                payload_aid_mismatches.push(format!(
+                                    "repeat {repeat}, {}: map key {key}, expected payload aid 0, got {}",
+                                    scenario.name, atom.aid
+                                ));
+                            }
+                        }
+                        let observed = fragment_fields(fragment, &topology, &rings);
+                        let expected = expected_fragment(scenario);
+                        if observed != expected {
+                            mismatches.push(format!(
+                                "repeat {repeat}, {}: expected complete fragment {expected:?}, got {observed:?}",
+                                scenario.name
+                            ));
+                        }
+                    }
+                    Err(error) => mismatches.push(format!(
+                        "repeat {repeat}, {}: expected success, got {error:?}",
+                        scenario.name
+                    )),
+                }
+            }
+        }
+
+        if calls != 16 {
+            mismatches.push(format!(
+                "actual constructor call count expected 16, got {calls}"
+            ));
+        }
+        if rows != 26 {
+            mismatches.push(format!(
+                "actual returned atom-row count expected 26, got {rows}"
+            ));
+        }
+        if payload_aid_mismatches.len() != 0 {
+            mismatches.push(format!(
+                "payload-aid mismatch count expected 0 after source correction, got {}",
+                payload_aid_mismatches.len()
+            ));
+        }
+        assert!(
+            mismatches.is_empty(),
+            "actual calls={calls}, rows={rows}, payload aid mismatches={} (predicted pre-fix count 18):\n{}\nall aid mismatches:\n{}",
+            payload_aid_mismatches.len(),
+            mismatches.join("\n"),
+            payload_aid_mismatches.join("\n")
+        );
+    }
+
+    #[test]
+    fn d2_coord_map_source_assignment_returns_typed_index_errors() {
+        let invalid_atoms = [8_usize, 4_294_967_295_usize];
+        let mut calls = 0;
+        let mut mismatches = Vec::new();
+
+        for invalid_atom in invalid_atoms {
+            let topology = topology_for(&SCENARIOS[5]);
+            let rings = RingInfo::new(RingFindType::OtherOrUnknown, 8, 0);
+            let mut coord_map = point_map_for_keys(&[0]);
+            coord_map.insert(invalid_atom, point_for_key(1));
+            let topology_before = topology.clone();
+            let rings_before = rings.clone();
+            let ring_shape_before = ring_shape(&rings);
+            let coord_map_before = point_map_bits(&coord_map);
+
+            let result = EmbeddedFrag::from_coord_map(&topology, &rings, &coord_map);
+            calls += 1;
+
+            // Verify all arguments, including the valid map prefix, before
+            // matching the returned typed error.
+            if topology != topology_before {
+                mismatches.push(format!("invalid key {invalid_atom}: topology changed"));
+            }
+            if rings != rings_before || ring_shape(&rings) != ring_shape_before {
+                mismatches.push(format!(
+                    "invalid key {invalid_atom}: RingInfo rows, memberships, dimensions, or find type changed"
+                ));
+            }
+            if point_map_bits(&coord_map) != coord_map_before {
+                mismatches.push(format!(
+                    "invalid key {invalid_atom}: coordinate-map prefix/key/float bits changed"
+                ));
+            }
+
+            match result.as_ref() {
+                Err(FragmentError::AtomIndexOutOfRange { atom, atom_count })
+                    if *atom == invalid_atom && *atom_count == 8 => {}
+                Err(error) => mismatches.push(format!(
+                    "invalid key {invalid_atom}: expected AtomIndexOutOfRange {{ atom: {invalid_atom}, atom_count: 8 }}, got {error:?}"
+                )),
+                Ok(fragment) => mismatches.push(format!(
+                    "invalid key {invalid_atom}: expected typed index error, got fragment with {} rows",
+                    fragment.atoms.len()
+                )),
+            }
+        }
+
+        if calls != 2 {
+            mismatches.push(format!(
+                "actual typed-error call count expected 2, got {calls}"
+            ));
+        }
+        assert!(
+            mismatches.is_empty(),
+            "actual calls={calls}:\n{}",
+            mismatches.join("\n")
+        );
+    }
+}
+
+#[cfg(test)]
+mod ring_init_source_assignment_tests {
+    use std::collections::BTreeMap;
+
+    use cosmolkit_core::{RingFindType, RingInfo};
+    use cosmolkit_model::{
+        Atom, AtomId, AtomSpec, Bond, BondId, BondOrder, BondSpec, Element, TopologyBlock,
+    };
+
+    use super::{CoordinateTemplates, EmbeddedAtom, EmbeddedFrag, Point2, PointMap};
+
+    const NEG_ONE_BITS: u64 = 0xbff0_0000_0000_0000;
+
+    #[derive(Debug, Clone, Copy)]
+    struct RingShape {
+        name: &'static str,
+        forward: &'static [usize],
+    }
+
+    const SHAPES: [RingShape; 4] = [
+        RingShape {
+            name: "T3",
+            forward: &[1, 3, 7],
+        },
+        RingShape {
+            name: "Q4",
+            forward: &[1, 3, 5, 7],
+        },
+        RingShape {
+            name: "P5",
+            forward: &[0, 2, 3, 5, 7],
+        },
+        RingShape {
+            name: "H6",
+            forward: &[0, 1, 2, 4, 6, 7],
+        },
+    ];
+
+    #[derive(Debug, Clone, Copy)]
+    struct ExpectedRow {
+        shape: &'static str,
+        reverse: bool,
+        key: usize,
+        loc_bits: [u64; 2],
+        angle_bits: u64,
+        previous: usize,
+        next: usize,
+    }
+
+    // Literal coordinates and angles were captured from the pinned native
+    // public single-ring constructor before any Rust ring-init result.
+    const NATIVE_ROWS: [ExpectedRow; 36] = [
+        ExpectedRow {
+            shape: "T3",
+            reverse: false,
+            key: 1,
+            loc_bits: [0x3feb_b67a_e858_4cab, 0x0000_0000_0000_0000],
+            angle_bits: 0x3ff0_c152_382d_7366,
+            previous: 7,
+            next: 3,
+        },
+        ExpectedRow {
+            shape: "T3",
+            reverse: false,
+            key: 3,
+            loc_bits: [0xbfdb_b67a_e858_4ca8, 0x3fe8_0000_0000_0001],
+            angle_bits: 0x3ff0_c152_382d_7366,
+            previous: 1,
+            next: 7,
+        },
+        ExpectedRow {
+            shape: "T3",
+            reverse: false,
+            key: 7,
+            loc_bits: [0xbfdb_b67a_e858_4cb2, 0xbfe7_ffff_ffff_fffe],
+            angle_bits: 0x3ff0_c152_382d_7366,
+            previous: 3,
+            next: 1,
+        },
+        ExpectedRow {
+            shape: "T3",
+            reverse: true,
+            key: 1,
+            loc_bits: [0xbfdb_b67a_e858_4cb2, 0xbfe7_ffff_ffff_fffe],
+            angle_bits: 0x3ff0_c152_382d_7366,
+            previous: 3,
+            next: 7,
+        },
+        ExpectedRow {
+            shape: "T3",
+            reverse: true,
+            key: 3,
+            loc_bits: [0xbfdb_b67a_e858_4ca8, 0x3fe8_0000_0000_0001],
+            angle_bits: 0x3ff0_c152_382d_7366,
+            previous: 7,
+            next: 1,
+        },
+        ExpectedRow {
+            shape: "T3",
+            reverse: true,
+            key: 7,
+            loc_bits: [0x3feb_b67a_e858_4cab, 0x0000_0000_0000_0000],
+            angle_bits: 0x3ff0_c152_382d_7366,
+            previous: 1,
+            next: 3,
+        },
+        ExpectedRow {
+            shape: "Q4",
+            reverse: false,
+            key: 1,
+            loc_bits: [0x3ff0_f876_ccdf_6cda, 0x0000_0000_0000_0000],
+            angle_bits: 0x3ff9_21fb_5444_2d18,
+            previous: 7,
+            next: 3,
+        },
+        ExpectedRow {
+            shape: "Q4",
+            reverse: false,
+            key: 3,
+            loc_bits: [0x3c92_b838_8e82_ab21, 0x3ff0_f876_ccdf_6cda],
+            angle_bits: 0x3ff9_21fb_5444_2d18,
+            previous: 1,
+            next: 5,
+        },
+        ExpectedRow {
+            shape: "Q4",
+            reverse: false,
+            key: 5,
+            loc_bits: [0xbff0_f876_ccdf_6cda, 0x3ca2_b838_8e82_ab21],
+            angle_bits: 0x3ff9_21fb_5444_2d18,
+            previous: 3,
+            next: 7,
+        },
+        ExpectedRow {
+            shape: "Q4",
+            reverse: false,
+            key: 7,
+            loc_bits: [0xbcac_1454_d5c4_00b1, 0xbff0_f876_ccdf_6cda],
+            angle_bits: 0x3ff9_21fb_5444_2d18,
+            previous: 5,
+            next: 1,
+        },
+        ExpectedRow {
+            shape: "Q4",
+            reverse: true,
+            key: 1,
+            loc_bits: [0xbcac_1454_d5c4_00b1, 0xbff0_f876_ccdf_6cda],
+            angle_bits: 0x3ff9_21fb_5444_2d18,
+            previous: 3,
+            next: 7,
+        },
+        ExpectedRow {
+            shape: "Q4",
+            reverse: true,
+            key: 3,
+            loc_bits: [0xbff0_f876_ccdf_6cda, 0x3ca2_b838_8e82_ab21],
+            angle_bits: 0x3ff9_21fb_5444_2d18,
+            previous: 5,
+            next: 1,
+        },
+        ExpectedRow {
+            shape: "Q4",
+            reverse: true,
+            key: 5,
+            loc_bits: [0x3c92_b838_8e82_ab21, 0x3ff0_f876_ccdf_6cda],
+            angle_bits: 0x3ff9_21fb_5444_2d18,
+            previous: 7,
+            next: 3,
+        },
+        ExpectedRow {
+            shape: "Q4",
+            reverse: true,
+            key: 7,
+            loc_bits: [0x3ff0_f876_ccdf_6cda, 0x0000_0000_0000_0000],
+            angle_bits: 0x3ff9_21fb_5444_2d18,
+            previous: 1,
+            next: 5,
+        },
+        ExpectedRow {
+            shape: "P5",
+            reverse: false,
+            key: 0,
+            loc_bits: [0x3ff4_6a66_0874_82eb, 0x0000_0000_0000_0000],
+            angle_bits: 0x3ffe_28c7_31eb_6950,
+            previous: 7,
+            next: 2,
+        },
+        ExpectedRow {
+            shape: "P5",
+            reverse: false,
+            key: 2,
+            loc_bits: [0x3fd9_3c2f_1471_fc94, 0x3ff3_6a99_b4b1_f77d],
+            angle_bits: 0x3ffe_28c7_31eb_6950,
+            previous: 0,
+            next: 3,
+        },
+        ExpectedRow {
+            shape: "P5",
+            reverse: false,
+            key: 3,
+            loc_bits: [0xbff0_843e_c956_c09a, 0x3fe8_0000_0000_0001],
+            angle_bits: 0x3ffe_28c7_31eb_6950,
+            previous: 2,
+            next: 5,
+        },
+        ExpectedRow {
+            shape: "P5",
+            reverse: false,
+            key: 5,
+            loc_bits: [0xbff0_843e_c956_c09b, 0xbfe7_ffff_ffff_fffe],
+            angle_bits: 0x3ffe_28c7_31eb_6950,
+            previous: 3,
+            next: 7,
+        },
+        ExpectedRow {
+            shape: "P5",
+            reverse: false,
+            key: 7,
+            loc_bits: [0x3fd9_3c2f_1471_fc8f, 0xbff3_6a99_b4b1_f77e],
+            angle_bits: 0x3ffe_28c7_31eb_6950,
+            previous: 5,
+            next: 0,
+        },
+        ExpectedRow {
+            shape: "P5",
+            reverse: true,
+            key: 0,
+            loc_bits: [0x3fd9_3c2f_1471_fc8f, 0xbff3_6a99_b4b1_f77e],
+            angle_bits: 0x3ffe_28c7_31eb_6950,
+            previous: 2,
+            next: 7,
+        },
+        ExpectedRow {
+            shape: "P5",
+            reverse: true,
+            key: 2,
+            loc_bits: [0xbff0_843e_c956_c09b, 0xbfe7_ffff_ffff_fffe],
+            angle_bits: 0x3ffe_28c7_31eb_6950,
+            previous: 3,
+            next: 0,
+        },
+        ExpectedRow {
+            shape: "P5",
+            reverse: true,
+            key: 3,
+            loc_bits: [0xbff0_843e_c956_c09a, 0x3fe8_0000_0000_0001],
+            angle_bits: 0x3ffe_28c7_31eb_6950,
+            previous: 5,
+            next: 2,
+        },
+        ExpectedRow {
+            shape: "P5",
+            reverse: true,
+            key: 5,
+            loc_bits: [0x3fd9_3c2f_1471_fc94, 0x3ff3_6a99_b4b1_f77d],
+            angle_bits: 0x3ffe_28c7_31eb_6950,
+            previous: 7,
+            next: 3,
+        },
+        ExpectedRow {
+            shape: "P5",
+            reverse: true,
+            key: 7,
+            loc_bits: [0x3ff4_6a66_0874_82eb, 0x0000_0000_0000_0000],
+            angle_bits: 0x3ffe_28c7_31eb_6950,
+            previous: 0,
+            next: 5,
+        },
+        ExpectedRow {
+            shape: "H6",
+            reverse: false,
+            key: 0,
+            loc_bits: [0x3ff8_0000_0000_0001, 0x0000_0000_0000_0000],
+            angle_bits: 0x4000_c152_382d_7366,
+            previous: 7,
+            next: 1,
+        },
+        ExpectedRow {
+            shape: "H6",
+            reverse: false,
+            key: 1,
+            loc_bits: [0x3fe8_0000_0000_0003, 0x3ff4_c8dc_2e42_3980],
+            angle_bits: 0x4000_c152_382d_7366,
+            previous: 0,
+            next: 2,
+        },
+        ExpectedRow {
+            shape: "H6",
+            reverse: false,
+            key: 2,
+            loc_bits: [0xbfe7_ffff_ffff_fffe, 0x3ff4_c8dc_2e42_3981],
+            angle_bits: 0x4000_c152_382d_7366,
+            previous: 1,
+            next: 4,
+        },
+        ExpectedRow {
+            shape: "H6",
+            reverse: false,
+            key: 4,
+            loc_bits: [0xbff8_0000_0000_0001, 0x3caa_7939_4c9e_8a0c],
+            angle_bits: 0x4000_c152_382d_7366,
+            previous: 2,
+            next: 6,
+        },
+        ExpectedRow {
+            shape: "H6",
+            reverse: false,
+            key: 6,
+            loc_bits: [0xbfe8_0000_0000_0007, 0xbff4_c8dc_2e42_397f],
+            angle_bits: 0x4000_c152_382d_7366,
+            previous: 4,
+            next: 7,
+        },
+        ExpectedRow {
+            shape: "H6",
+            reverse: false,
+            key: 7,
+            loc_bits: [0x3fe7_ffff_ffff_fff8, 0xbff4_c8dc_2e42_3983],
+            angle_bits: 0x4000_c152_382d_7366,
+            previous: 6,
+            next: 0,
+        },
+        ExpectedRow {
+            shape: "H6",
+            reverse: true,
+            key: 0,
+            loc_bits: [0x3fe7_ffff_ffff_fff8, 0xbff4_c8dc_2e42_3983],
+            angle_bits: 0x4000_c152_382d_7366,
+            previous: 1,
+            next: 7,
+        },
+        ExpectedRow {
+            shape: "H6",
+            reverse: true,
+            key: 1,
+            loc_bits: [0xbfe8_0000_0000_0007, 0xbff4_c8dc_2e42_397f],
+            angle_bits: 0x4000_c152_382d_7366,
+            previous: 2,
+            next: 0,
+        },
+        ExpectedRow {
+            shape: "H6",
+            reverse: true,
+            key: 2,
+            loc_bits: [0xbff8_0000_0000_0001, 0x3caa_7939_4c9e_8a0c],
+            angle_bits: 0x4000_c152_382d_7366,
+            previous: 4,
+            next: 1,
+        },
+        ExpectedRow {
+            shape: "H6",
+            reverse: true,
+            key: 4,
+            loc_bits: [0xbfe7_ffff_ffff_fffe, 0x3ff4_c8dc_2e42_3981],
+            angle_bits: 0x4000_c152_382d_7366,
+            previous: 6,
+            next: 2,
+        },
+        ExpectedRow {
+            shape: "H6",
+            reverse: true,
+            key: 6,
+            loc_bits: [0x3fe8_0000_0000_0003, 0x3ff4_c8dc_2e42_3980],
+            angle_bits: 0x4000_c152_382d_7366,
+            previous: 7,
+            next: 4,
+        },
+        ExpectedRow {
+            shape: "H6",
+            reverse: true,
+            key: 7,
+            loc_bits: [0x3ff8_0000_0000_0001, 0x0000_0000_0000_0000],
+            angle_bits: 0x4000_c152_382d_7366,
+            previous: 0,
+            next: 6,
+        },
+    ];
+
+    #[derive(Debug, PartialEq, Eq)]
+    struct AtomFields {
+        aid: usize,
+        angle_bits: u64,
+        nbr1: Option<usize>,
+        nbr2: Option<usize>,
+        cis_trans_nbr: Option<usize>,
+        ccw: bool,
+        rot_dir: i32,
+        loc_bits: [u64; 2],
+        normal_bits: [u64; 2],
+        neighs: Vec<usize>,
+        density_bits: u64,
+        fixed: bool,
+    }
+
+    #[derive(Debug, PartialEq, Eq)]
+    struct FragmentFields {
+        rows: Vec<(usize, AtomFields)>,
+        attachment_points: Vec<usize>,
+        done: bool,
+        topology_identity: bool,
+        rings_identity: bool,
+    }
+
+    fn rows_for(shape: &RingShape, reverse: bool) -> Vec<ExpectedRow> {
+        let mut rows: Vec<_> = NATIVE_ROWS
+            .iter()
+            .copied()
+            .filter(|row| row.shape == shape.name && row.reverse == reverse)
+            .collect();
+        rows.sort_by_key(|row| row.key);
+        rows
+    }
+
+    fn traversal_for(shape: &RingShape, reverse: bool) -> Vec<usize> {
+        let mut traversal = shape.forward.to_vec();
+        if reverse {
+            traversal.reverse();
+        }
+        traversal
+    }
+
+    fn topology_for(shape: &RingShape) -> TopologyBlock {
+        let atoms = (0..8)
+            .map(|index| Atom::from_spec(AtomId::new(index), AtomSpec::new(Element::C)))
+            .collect();
+        let bonds = shape
+            .forward
+            .iter()
+            .copied()
+            .enumerate()
+            .map(|(index, begin)| {
+                let end = shape.forward[(index + 1) % shape.forward.len()];
+                Bond::from_spec(
+                    BondId::new(index),
+                    BondSpec::new(AtomId::new(begin), AtomId::new(end), BondOrder::Single),
+                )
+            })
+            .collect();
+        TopologyBlock::try_from_parts(atoms, bonds, Vec::new(), Vec::new())
+            .expect("frozen single-bond cycle is a valid topology")
+    }
+
+    fn empty_rings(topology: &TopologyBlock) -> RingInfo {
+        RingInfo::new(
+            RingFindType::OtherOrUnknown,
+            topology.atoms.len(),
+            topology.bonds.len(),
+        )
+    }
+
+    fn ring_shape(rings: &RingInfo) -> (bool, RingFindType, usize, usize) {
+        (
+            rings.is_initialized(),
+            rings.find_type(),
+            rings.atom_row_count(),
+            rings.bond_row_count(),
+        )
+    }
+
+    fn point_map_for_rows(rows: &[ExpectedRow]) -> PointMap {
+        rows.iter()
+            .map(|row| {
+                (
+                    row.key,
+                    [
+                        f64::from_bits(row.loc_bits[0]),
+                        f64::from_bits(row.loc_bits[1]),
+                    ],
+                )
+            })
+            .collect()
+    }
+
+    fn point_map_bits(points: &PointMap) -> Vec<(usize, [u64; 2])> {
+        points
+            .iter()
+            .map(|(&key, point)| (key, point.map(f64::to_bits)))
+            .collect()
+    }
+
+    fn atom_fields(atom: &EmbeddedAtom) -> AtomFields {
+        AtomFields {
+            aid: atom.aid,
+            angle_bits: atom.angle.to_bits(),
+            nbr1: atom.nbr1,
+            nbr2: atom.nbr2,
+            cis_trans_nbr: atom.cis_trans_nbr,
+            ccw: atom.ccw,
+            rot_dir: atom.rot_dir,
+            loc_bits: atom.loc.map(f64::to_bits),
+            normal_bits: atom.normal.map(f64::to_bits),
+            neighs: atom.neighs.clone(),
+            density_bits: atom.density.to_bits(),
+            fixed: atom.fixed,
+        }
+    }
+
+    fn fragment_fields(
+        fragment: &EmbeddedFrag<'_>,
+        topology: &TopologyBlock,
+        rings: &RingInfo,
+    ) -> FragmentFields {
+        FragmentFields {
+            rows: fragment
+                .atoms
+                .iter()
+                .map(|(&key, atom)| (key, atom_fields(atom)))
+                .collect(),
+            attachment_points: fragment.attachment_points.clone(),
+            done: fragment.done,
+            topology_identity: std::ptr::eq(fragment.topology, topology),
+            rings_identity: std::ptr::eq(fragment.rings, rings),
+        }
+    }
+
+    fn native_atom_fields(row: &ExpectedRow, aid: usize) -> AtomFields {
+        AtomFields {
+            aid,
+            angle_bits: row.angle_bits,
+            nbr1: Some(row.previous),
+            nbr2: Some(row.next),
+            cis_trans_nbr: None,
+            ccw: true,
+            rot_dir: 0,
+            loc_bits: row.loc_bits,
+            normal_bits: [0, 0],
+            neighs: Vec::new(),
+            density_bits: NEG_ONE_BITS,
+            fixed: false,
+        }
+    }
+
+    fn seeded_atom(aid: usize) -> EmbeddedAtom {
+        let mut atom = EmbeddedAtom::source_default();
+        atom.aid = aid;
+        atom.loc = [32.0, -32.0];
+        atom.angle = 6.0;
+        atom.nbr1 = Some(0);
+        atom.nbr2 = Some(7);
+        atom.cis_trans_nbr = Some(2);
+        atom.ccw = false;
+        atom.rot_dir = -1;
+        atom.normal = [-0.0, 8.0];
+        atom.neighs = vec![0, 7];
+        atom.density = 4.0;
+        atom.fixed = true;
+        atom
+    }
+
+    fn seeded_atom_fields(aid: usize) -> AtomFields {
+        AtomFields {
+            aid,
+            angle_bits: 6.0_f64.to_bits(),
+            nbr1: Some(0),
+            nbr2: Some(7),
+            cis_trans_nbr: Some(2),
+            ccw: false,
+            rot_dir: -1,
+            loc_bits: [32.0_f64.to_bits(), (-32.0_f64).to_bits()],
+            normal_bits: [(-0.0_f64).to_bits(), 8.0_f64.to_bits()],
+            neighs: vec![0, 7],
+            density_bits: 4.0_f64.to_bits(),
+            fixed: true,
+        }
+    }
+
+    fn smallest_unvisited(ring: &[usize]) -> usize {
+        (0..8)
+            .find(|candidate| !ring.contains(candidate))
+            .expect("every frozen cycle leaves an unvisited atom")
+    }
+
+    fn expected_private_fragment(
+        rows: &[ExpectedRow],
+        seeded: bool,
+        sentinel: Option<usize>,
+        topology_identity: bool,
+        rings_identity: bool,
+    ) -> FragmentFields {
+        let mut expected_rows: Vec<_> = rows
+            .iter()
+            .map(|row| {
+                let aid = if seeded { 7 - row.key } else { 0 };
+                (row.key, native_atom_fields(row, aid))
+            })
+            .collect();
+        if let Some(key) = sentinel {
+            expected_rows.push((key, seeded_atom_fields(7 - key)));
+        }
+        expected_rows.sort_by_key(|(key, _)| *key);
+        FragmentFields {
+            rows: expected_rows,
+            attachment_points: if seeded { vec![7, 0] } else { Vec::new() },
+            done: seeded,
+            topology_identity,
+            rings_identity,
+        }
+    }
+
+    fn expected_seed_start(
+        ring: &[usize],
+        sentinel: usize,
+        topology_identity: bool,
+        rings_identity: bool,
+    ) -> FragmentFields {
+        let mut rows: Vec<_> = ring
+            .iter()
+            .copied()
+            .map(|key| (key, seeded_atom_fields(7 - key)))
+            .collect();
+        rows.push((sentinel, seeded_atom_fields(7 - sentinel)));
+        rows.sort_by_key(|(key, _)| *key);
+        FragmentFields {
+            rows,
+            attachment_points: vec![7, 0],
+            done: true,
+            topology_identity,
+            rings_identity,
+        }
+    }
+
+    #[test]
+    fn d2_ring_init_source_assignment_private_defaults_and_existing_rows() {
+        let mut calls = 0;
+        let mut visited_rows = 0;
+        let mut total_rows = 0;
+        let mut empty_aid_mismatches = Vec::new();
+        let mut seeded_aid_mismatches = Vec::new();
+        let mut mismatches = Vec::new();
+
+        for repeat in 0..2 {
+            for shape in SHAPES {
+                for reverse in [false, true] {
+                    let ring = traversal_for(&shape, reverse);
+                    let rows = rows_for(&shape, reverse);
+                    if rows.len() != ring.len() {
+                        mismatches.push(format!(
+                            "repeat {repeat}, {} reverse={reverse}: native row table has {}, ring has {}",
+                            shape.name,
+                            rows.len(),
+                            ring.len()
+                        ));
+                    }
+                    let point_map = point_map_for_rows(&rows);
+                    let sentinel = smallest_unvisited(&ring);
+
+                    for seeded in [false, true] {
+                        let topology = topology_for(&shape);
+                        let rings = empty_rings(&topology);
+                        let topology_before = topology.clone();
+                        let rings_before = rings.clone();
+                        let ring_shape_before = ring_shape(&rings);
+                        let ring_before = ring.clone();
+                        let call_points = point_map.clone();
+                        let points_before = point_map_bits(&call_points);
+                        let mut fragment = EmbeddedFrag {
+                            atoms: BTreeMap::new(),
+                            attachment_points: Vec::new(),
+                            done: false,
+                            topology: &topology,
+                            rings: &rings,
+                        };
+                        if seeded {
+                            for &key in &ring {
+                                fragment.atoms.insert(key, seeded_atom(7 - key));
+                            }
+                            fragment.atoms.insert(sentinel, seeded_atom(7 - sentinel));
+                            fragment.attachment_points = vec![7, 0];
+                            fragment.done = true;
+                        }
+
+                        let start = fragment_fields(&fragment, &topology, &rings);
+                        let expected_start = if seeded {
+                            expected_seed_start(&ring, sentinel, true, true)
+                        } else {
+                            FragmentFields {
+                                rows: Vec::new(),
+                                attachment_points: Vec::new(),
+                                done: false,
+                                topology_identity: true,
+                                rings_identity: true,
+                            }
+                        };
+                        if start != expected_start {
+                            mismatches.push(format!(
+                                "repeat {repeat}, {} reverse={reverse} seeded={seeded}: constructed input fragment differs; expected {expected_start:?}, got {start:?}",
+                                shape.name
+                            ));
+                        }
+
+                        fragment.init_from_ring_coords(&ring, &call_points);
+                        calls += 1;
+                        visited_rows += ring.len();
+
+                        // Check every input immediately after the call and
+                        // before inspecting the resulting fragment rows.
+                        if topology != topology_before {
+                            mismatches.push(format!(
+                                "repeat {repeat}, {} reverse={reverse} seeded={seeded}: topology changed",
+                                shape.name
+                            ));
+                        }
+                        if rings != rings_before || ring_shape(&rings) != ring_shape_before {
+                            mismatches.push(format!(
+                                "repeat {repeat}, {} reverse={reverse} seeded={seeded}: RingInfo state changed",
+                                shape.name
+                            ));
+                        }
+                        if ring != ring_before {
+                            mismatches.push(format!(
+                                "repeat {repeat}, {} reverse={reverse} seeded={seeded}: traversal changed",
+                                shape.name
+                            ));
+                        }
+                        if point_map_bits(&call_points) != points_before {
+                            mismatches.push(format!(
+                                "repeat {repeat}, {} reverse={reverse} seeded={seeded}: native-coordinate PointMap changed",
+                                shape.name
+                            ));
+                        }
+
+                        if !std::ptr::eq(fragment.topology, &topology)
+                            || !std::ptr::eq(fragment.rings, &rings)
+                        {
+                            mismatches.push(format!(
+                                "repeat {repeat}, {} reverse={reverse} seeded={seeded}: borrowed topology/RingInfo identity changed",
+                                shape.name
+                            ));
+                        }
+                        let observed = fragment_fields(&fragment, &topology, &rings);
+                        total_rows += observed.rows.len();
+                        let expected = expected_private_fragment(
+                            &rows,
+                            seeded,
+                            seeded.then_some(sentinel),
+                            true,
+                            true,
+                        );
+                        if observed != expected {
+                            mismatches.push(format!(
+                                "repeat {repeat}, {} reverse={reverse} seeded={seeded}: expected complete fragment {expected:?}, got {observed:?}",
+                                shape.name
+                            ));
+                        }
+                        for row in &rows {
+                            if let Some((_, atom)) =
+                                observed.rows.iter().find(|(key, _)| *key == row.key)
+                            {
+                                let expected_aid = if seeded { 7 - row.key } else { 0 };
+                                if atom.aid != expected_aid {
+                                    let message = format!(
+                                        "repeat {repeat}, {} reverse={reverse}: key {}, expected destination payload aid {expected_aid}, got {}",
+                                        shape.name, row.key, atom.aid
+                                    );
+                                    if seeded {
+                                        seeded_aid_mismatches.push(message);
+                                    } else {
+                                        empty_aid_mismatches.push(message);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if calls != 32 {
+            mismatches.push(format!(
+                "actual private call count expected 32, got {calls}"
+            ));
+        }
+        if visited_rows != 144 {
+            mismatches.push(format!(
+                "actual private visited-row count expected 144, got {visited_rows}"
+            ));
+        }
+        if total_rows != 160 {
+            mismatches.push(format!(
+                "actual private returned-row count including sentinels expected 160, got {total_rows}"
+            ));
+        }
+        assert!(
+            mismatches.is_empty(),
+            "actual calls={calls}, visited rows={visited_rows}, returned rows={total_rows}; payload aid mismatches: empty={} (source-predicted pre-fix 64), seeded={} (source-predicted pre-fix 72):\n{}\nempty aid mismatches:\n{}\nseeded aid mismatches:\n{}",
+            empty_aid_mismatches.len(),
+            seeded_aid_mismatches.len(),
+            mismatches.join("\n"),
+            empty_aid_mismatches.join("\n"),
+            seeded_aid_mismatches.join("\n")
+        );
+    }
+
+    #[test]
+    fn d2_ring_init_source_assignment_fused_ring_caller_matches_native_rows() {
+        let mut calls = 0;
+        let mut rows = 0;
+        let mut payload_aid_mismatches = Vec::new();
+        let mut mismatches = Vec::new();
+
+        for repeat in 0..2 {
+            for shape in SHAPES {
+                for reverse in [false, true] {
+                    let ring = traversal_for(&shape, reverse);
+                    let expected_rows = rows_for(&shape, reverse);
+                    if expected_rows.len() != ring.len() {
+                        mismatches.push(format!(
+                            "repeat {repeat}, {} reverse={reverse}: native row table has {}, ring has {}",
+                            shape.name,
+                            expected_rows.len(),
+                            ring.len()
+                        ));
+                    }
+                    let topology = topology_for(&shape);
+                    let rings = empty_rings(&topology);
+                    let fused_rings = vec![ring.clone()];
+                    let topology_before = topology.clone();
+                    let rings_before = rings.clone();
+                    let ring_shape_before = ring_shape(&rings);
+                    let fused_rings_before = fused_rings.clone();
+                    let mut templates = CoordinateTemplates::default();
+                    let templates_before = templates.template_count();
+
+                    let result = EmbeddedFrag::from_fused_rings(
+                        &topology,
+                        &rings,
+                        &fused_rings,
+                        false,
+                        &mut templates,
+                    );
+                    calls += 1;
+
+                    // Compare caller inputs before matching or inspecting the
+                    // returned fragment.
+                    if topology != topology_before {
+                        mismatches.push(format!(
+                            "repeat {repeat}, {} reverse={reverse}: topology changed",
+                            shape.name
+                        ));
+                    }
+                    if rings != rings_before || ring_shape(&rings) != ring_shape_before {
+                        mismatches.push(format!(
+                            "repeat {repeat}, {} reverse={reverse}: RingInfo state changed",
+                            shape.name
+                        ));
+                    }
+                    if fused_rings != fused_rings_before {
+                        mismatches.push(format!(
+                            "repeat {repeat}, {} reverse={reverse}: ring traversal input changed",
+                            shape.name
+                        ));
+                    }
+                    let templates_after = templates.template_count();
+                    if templates_before != 0 || templates_after != 0 {
+                        mismatches.push(format!(
+                            "repeat {repeat}, {} reverse={reverse}: default template count changed from {templates_before} to {templates_after}",
+                            shape.name
+                        ));
+                    }
+
+                    match result.as_ref() {
+                        Ok(fragment) => {
+                            let observed = fragment_fields(fragment, &topology, &rings);
+                            rows += observed.rows.len();
+                            let expected = FragmentFields {
+                                rows: expected_rows
+                                    .iter()
+                                    .map(|row| (row.key, native_atom_fields(row, 0)))
+                                    .collect(),
+                                attachment_points: Vec::new(),
+                                done: false,
+                                topology_identity: true,
+                                rings_identity: true,
+                            };
+                            if observed != expected {
+                                mismatches.push(format!(
+                                    "repeat {repeat}, {} reverse={reverse}: expected complete caller fragment {expected:?}, got {observed:?}",
+                                    shape.name
+                                ));
+                            }
+                            for row in &expected_rows {
+                                if let Some((_, atom)) = observed
+                                    .rows
+                                    .iter()
+                                    .find(|(key, _)| *key == row.key)
+                                {
+                                    if atom.aid != 0 {
+                                        payload_aid_mismatches.push(format!(
+                                            "repeat {repeat}, {} reverse={reverse}: key {}, expected destination payload aid 0, got {}",
+                                            shape.name, row.key, atom.aid
+                                        ));
+                                    }
+                                }
+                            }
+                        }
+                        Err(error) => mismatches.push(format!(
+                            "repeat {repeat}, {} reverse={reverse}: expected success, got {error:?}",
+                            shape.name
+                        )),
+                    }
+                }
+            }
+        }
+
+        if calls != 16 {
+            mismatches.push(format!("actual caller call count expected 16, got {calls}"));
+        }
+        if rows != 72 {
+            mismatches.push(format!(
+                "actual caller returned-row count expected 72, got {rows}"
+            ));
+        }
+        assert!(
+            mismatches.is_empty(),
+            "actual calls={calls}, returned rows={rows}; caller payload aid mismatches={} (source-predicted pre-fix count 64):\n{}\nall aid mismatches:\n{}",
+            payload_aid_mismatches.len(),
+            mismatches.join("\n"),
+            payload_aid_mismatches.join("\n")
+        );
+    }
+}
+
+#[cfg(test)]
+mod cis_trans_source_assignment_tests {
+    use cosmolkit_core::{RingFindType, RingInfo};
+    use cosmolkit_model::{
+        Atom, AtomId, AtomSpec, Bond, BondId, BondOrder, BondSpec, BondStereo, Element,
+        TopologyBlock,
+    };
+
+    use super::{EmbeddedAtom, EmbeddedFrag, FragmentError, embed_cis_trans_systems};
+
+    #[derive(Debug, Clone, Copy)]
+    struct Orientation {
+        name: &'static str,
+        begin: usize,
+        end: usize,
+        begin_ref: usize,
+        end_ref: usize,
+    }
+
+    const ORIENTATIONS: [Orientation; 2] = [
+        Orientation {
+            name: "forward",
+            begin: 2,
+            end: 5,
+            begin_ref: 1,
+            end_ref: 6,
+        },
+        Orientation {
+            name: "reverse",
+            begin: 5,
+            end: 2,
+            begin_ref: 6,
+            end_ref: 1,
+        },
+    ];
+
+    const STEREOS: [BondStereo; 6] = [
+        BondStereo::Z,
+        BondStereo::E,
+        BondStereo::Cis,
+        BondStereo::Trans,
+        BondStereo::AtropCw,
+        BondStereo::AtropCcw,
+    ];
+
+    #[derive(Debug, PartialEq, Eq)]
+    struct AtomFields {
+        aid: usize,
+        angle_bits: u64,
+        nbr1: Option<usize>,
+        nbr2: Option<usize>,
+        cis_trans_nbr: Option<usize>,
+        ccw: bool,
+        rot_dir: i32,
+        loc_bits: [u64; 2],
+        normal_bits: [u64; 2],
+        neighs: Vec<usize>,
+        density_bits: u64,
+        fixed: bool,
+    }
+
+    #[derive(Debug, PartialEq, Eq)]
+    struct FragmentFields {
+        rows: Vec<(usize, AtomFields)>,
+        attachment_points: Vec<usize>,
+        done: bool,
+        topology_identity: bool,
+        rings_identity: bool,
+    }
+
+    #[derive(Debug, Clone, Copy)]
+    struct InvalidCase {
+        name: &'static str,
+        requested_bond: usize,
+        central_order: BondOrder,
+        stereo: BondStereo,
+        has_stereo_refs: bool,
+        expected_error_bond: usize,
+    }
+
+    const INVALID_CASES: [InvalidCase; 5] = [
+        InvalidCase {
+            name: "out_of_range_bond_id",
+            requested_bond: 3,
+            central_order: BondOrder::Double,
+            stereo: BondStereo::Z,
+            has_stereo_refs: true,
+            expected_error_bond: 3,
+        },
+        InvalidCase {
+            name: "single_bond_with_E_and_references",
+            requested_bond: 1,
+            central_order: BondOrder::Single,
+            stereo: BondStereo::E,
+            has_stereo_refs: true,
+            expected_error_bond: 1,
+        },
+        InvalidCase {
+            name: "double_bond_without_stereo_with_references",
+            requested_bond: 1,
+            central_order: BondOrder::Double,
+            stereo: BondStereo::None,
+            has_stereo_refs: true,
+            expected_error_bond: 1,
+        },
+        InvalidCase {
+            name: "double_bond_any_with_references",
+            requested_bond: 1,
+            central_order: BondOrder::Double,
+            stereo: BondStereo::Any,
+            has_stereo_refs: true,
+            expected_error_bond: 1,
+        },
+        InvalidCase {
+            name: "double_bond_E_without_references",
+            requested_bond: 1,
+            central_order: BondOrder::Double,
+            stereo: BondStereo::E,
+            has_stereo_refs: false,
+            expected_error_bond: 1,
+        },
+    ];
+
+    fn topology_for(
+        orientation: Orientation,
+        central_order: BondOrder,
+        stereo: BondStereo,
+        has_stereo_refs: bool,
+    ) -> TopologyBlock {
+        let atoms = (0..8)
+            .map(|index| Atom::from_spec(AtomId::new(index), AtomSpec::new(Element::C)))
+            .collect();
+        let first = Bond::from_spec(
+            BondId::new(0),
+            BondSpec::new(AtomId::new(1), AtomId::new(2), BondOrder::Single),
+        );
+        let mut central_spec = BondSpec::new(
+            AtomId::new(orientation.begin),
+            AtomId::new(orientation.end),
+            central_order,
+        );
+        if has_stereo_refs {
+            central_spec = central_spec.with_stereo_atoms(
+                AtomId::new(orientation.begin_ref),
+                AtomId::new(orientation.end_ref),
+            );
+        }
+        central_spec = central_spec.with_stereo(stereo);
+        let central = Bond::from_spec(BondId::new(1), central_spec);
+        let last = Bond::from_spec(
+            BondId::new(2),
+            BondSpec::new(AtomId::new(5), AtomId::new(6), BondOrder::Single),
+        );
+        TopologyBlock::try_from_parts(atoms, vec![first, central, last], Vec::new(), Vec::new())
+            .unwrap_or_else(|error| {
+                panic!(
+                    "fixture prerequisite failed while constructing {} orientation: {error:?}",
+                    orientation.name
+                )
+            })
+    }
+
+    fn empty_rings() -> RingInfo {
+        RingInfo::new(RingFindType::OtherOrUnknown, 8, 3)
+    }
+
+    fn bond_matches(
+        bond: &Bond,
+        id: usize,
+        begin: usize,
+        end: usize,
+        order: BondOrder,
+        stereo: BondStereo,
+        stereo_atoms: Option<[AtomId; 2]>,
+    ) -> bool {
+        bond.id() == BondId::new(id)
+            && bond.begin() == AtomId::new(begin)
+            && bond.end() == AtomId::new(end)
+            && bond.order() == order
+            && bond.stereo() == stereo
+            && bond.stereo_atoms() == stereo_atoms
+            && bond.props().is_empty()
+    }
+
+    fn fixture_issues(
+        topology: &TopologyBlock,
+        rings: &RingInfo,
+        orientation: Orientation,
+        central_order: BondOrder,
+        stereo: BondStereo,
+        has_stereo_refs: bool,
+    ) -> Vec<String> {
+        let mut issues = Vec::new();
+        if topology.atoms.len() != 8 {
+            issues.push(format!(
+                "expected eight atoms, got {}",
+                topology.atoms.len()
+            ));
+        }
+        if topology.bonds.len() != 3 {
+            issues.push(format!(
+                "expected three bonds, got {}",
+                topology.bonds.len()
+            ));
+        }
+        if topology
+            .atoms
+            .iter()
+            .enumerate()
+            .any(|(index, atom)| atom.id() != AtomId::new(index) || atom.atomic_number() != 6)
+        {
+            issues.push("ordered carbon atom IDs or elements differ from fixture".to_owned());
+        }
+        let expected_refs = has_stereo_refs.then_some([
+            AtomId::new(orientation.begin_ref),
+            AtomId::new(orientation.end_ref),
+        ]);
+        let expected_bonds = [
+            (0, 1, 2, BondOrder::Single, BondStereo::None, None),
+            (
+                1,
+                orientation.begin,
+                orientation.end,
+                central_order,
+                stereo,
+                expected_refs,
+            ),
+            (2, 5, 6, BondOrder::Single, BondStereo::None, None),
+        ];
+        for (position, (id, begin, end, order, stereo, refs)) in
+            expected_bonds.into_iter().enumerate()
+        {
+            if !topology
+                .bonds
+                .get(position)
+                .is_some_and(|bond| bond_matches(bond, id, begin, end, order, stereo, refs))
+            {
+                issues.push(format!(
+                    "ordered bond {position} differs from frozen ID/endpoints/order/stereo/references"
+                ));
+            }
+        }
+        if !topology.substance_groups.is_empty() || !topology.stereo_groups.is_empty() {
+            issues.push("fixture unexpectedly contains groups".to_owned());
+        }
+        if topology.validate().is_err() {
+            issues.push("constructed topology does not validate".to_owned());
+        }
+        if !rings.is_initialized() || rings.atom_row_count() != 8 || rings.bond_row_count() != 3 {
+            issues.push(format!(
+                "expected initialized OtherOrUnknown ring rows 8/3, got initialized={} rows={}/{}",
+                rings.is_initialized(),
+                rings.atom_row_count(),
+                rings.bond_row_count()
+            ));
+        }
+        if (0..8).any(|index| {
+            let atom = AtomId::new(index);
+            rings.num_atom_rings(atom) != 0 || !rings.atom_members(atom).is_empty()
+        }) || (0..3).any(|index| {
+            let bond = BondId::new(index);
+            rings.num_bond_rings(bond) != 0 || !rings.bond_members(bond).is_empty()
+        }) {
+            issues.push("expected empty atom/bond ring memberships".to_owned());
+        }
+        issues
+    }
+
+    fn atom_fields(atom: &EmbeddedAtom) -> AtomFields {
+        AtomFields {
+            aid: atom.aid,
+            angle_bits: atom.angle.to_bits(),
+            nbr1: atom.nbr1,
+            nbr2: atom.nbr2,
+            cis_trans_nbr: atom.cis_trans_nbr,
+            ccw: atom.ccw,
+            rot_dir: atom.rot_dir,
+            loc_bits: atom.loc.map(f64::to_bits),
+            normal_bits: atom.normal.map(f64::to_bits),
+            neighs: atom.neighs.clone(),
+            density_bits: atom.density.to_bits(),
+            fixed: atom.fixed,
+        }
+    }
+
+    fn fragment_fields(
+        fragment: &EmbeddedFrag<'_>,
+        topology: &TopologyBlock,
+        rings: &RingInfo,
+    ) -> FragmentFields {
+        FragmentFields {
+            rows: fragment
+                .atoms
+                .iter()
+                .map(|(&key, atom)| (key, atom_fields(atom)))
+                .collect(),
+            attachment_points: fragment.attachment_points.clone(),
+            done: fragment.done,
+            topology_identity: std::ptr::eq(fragment.topology, topology),
+            rings_identity: std::ptr::eq(fragment.rings, rings),
+        }
+    }
+
+    fn expected_fragment(
+        orientation: Orientation,
+        stereo: BondStereo,
+        after_setup: bool,
+    ) -> FragmentFields {
+        let mut keys = [orientation.begin, orientation.end];
+        keys.sort_unstable();
+        let end_is_clockwise = matches!(stereo, BondStereo::Z | BondStereo::Cis);
+        let rows = keys
+            .into_iter()
+            .map(|key| {
+                let is_begin = key == orientation.begin;
+                let neighbors = if after_setup {
+                    vec![if key == 2 { 1 } else { 6 }]
+                } else {
+                    Vec::new()
+                };
+                (
+                    key,
+                    AtomFields {
+                        aid: 0,
+                        angle_bits: (-1.0_f64).to_bits(),
+                        nbr1: Some(if is_begin {
+                            orientation.end
+                        } else {
+                            orientation.begin
+                        }),
+                        nbr2: None,
+                        cis_trans_nbr: Some(if is_begin {
+                            orientation.begin_ref
+                        } else {
+                            orientation.end_ref
+                        }),
+                        ccw: !is_begin && end_is_clockwise,
+                        rot_dir: 0,
+                        loc_bits: [
+                            if is_begin { 0.0_f64 } else { 1.5_f64 }.to_bits(),
+                            0.0_f64.to_bits(),
+                        ],
+                        normal_bits: [
+                            0.0_f64.to_bits(),
+                            if is_begin || end_is_clockwise {
+                                (-1.0_f64).to_bits()
+                            } else {
+                                1.0_f64.to_bits()
+                            },
+                        ],
+                        neighs: neighbors,
+                        density_bits: (-1.0_f64).to_bits(),
+                        fixed: false,
+                    },
+                )
+            })
+            .collect();
+        FragmentFields {
+            rows,
+            attachment_points: if after_setup { vec![2, 5] } else { Vec::new() },
+            done: false,
+            topology_identity: true,
+            rings_identity: true,
+        }
+    }
+
+    #[test]
+    fn d2_cis_trans_source_assignment_constructor_matches_native_pre_setup() {
+        let mut calls = 0;
+        let mut rows = 0;
+        let mut fixture_issues_all = Vec::new();
+        let mut aid_mismatches = Vec::new();
+        let mut mismatches = Vec::new();
+
+        for stereo in STEREOS {
+            for orientation in ORIENTATIONS {
+                for repeat in 0..2 {
+                    let topology = topology_for(orientation, BondOrder::Double, stereo, true);
+                    let rings = empty_rings();
+                    fixture_issues_all.extend(
+                        fixture_issues(
+                            &topology,
+                            &rings,
+                            orientation,
+                            BondOrder::Double,
+                            stereo,
+                            true,
+                        )
+                        .into_iter()
+                        .map(|issue| format!("repeat {repeat}, {}: {issue}", orientation.name)),
+                    );
+                    let topology_before = topology.clone();
+                    let rings_before = rings.clone();
+
+                    let result =
+                        EmbeddedFrag::from_cis_trans_bond(BondId::new(1), &topology, &rings);
+                    calls += 1;
+                    if topology != topology_before {
+                        mismatches.push(format!(
+                            "repeat {repeat}, {} {}: topology changed",
+                            orientation.name,
+                            stereo.rdkit_name()
+                        ));
+                    }
+                    if rings != rings_before {
+                        mismatches.push(format!(
+                            "repeat {repeat}, {} {}: RingInfo changed",
+                            orientation.name,
+                            stereo.rdkit_name()
+                        ));
+                    }
+
+                    match result.as_ref() {
+                        Ok(fragment) => {
+                            let observed = fragment_fields(fragment, &topology, &rings);
+                            rows += observed.rows.len();
+                            for (key, atom) in &observed.rows {
+                                if atom.aid != 0 {
+                                    aid_mismatches.push(format!(
+                                        "repeat {repeat}, {} {}: key {key}, expected destination aid 0, got {}",
+                                        orientation.name,
+                                        stereo.rdkit_name(),
+                                        atom.aid
+                                    ));
+                                }
+                            }
+                            let expected = expected_fragment(orientation, stereo, false);
+                            if observed != expected {
+                                mismatches.push(format!(
+                                    "repeat {repeat}, {} {}: expected PRE fields {expected:?}, got {observed:?}",
+                                    orientation.name,
+                                    stereo.rdkit_name()
+                                ));
+                            }
+                        }
+                        Err(error) => mismatches.push(format!(
+                            "repeat {repeat}, {} {}: expected constructor success, got {error:?}",
+                            orientation.name,
+                            stereo.rdkit_name()
+                        )),
+                    }
+                }
+            }
+        }
+
+        if calls != 24 {
+            mismatches.push(format!("actual constructor calls expected 24, got {calls}"));
+        }
+        if rows != 48 {
+            mismatches.push(format!("actual PRE rows expected 48, got {rows}"));
+        }
+        assert!(
+            fixture_issues_all.is_empty() && mismatches.is_empty(),
+            "entry calls={calls}, PRE rows={rows}, destination-aid mismatches={}; fixture prerequisite issues:\n{}\nall constructor mismatches:\n{}\nall aid mismatches:\n{}",
+            aid_mismatches.len(),
+            fixture_issues_all.join("\n"),
+            mismatches.join("\n"),
+            aid_mismatches.join("\n")
+        );
+    }
+
+    #[test]
+    fn d2_cis_trans_source_assignment_caller_matches_native_post_setup() {
+        let mut entry_calls = 0;
+        let mut fragments_returned = 0;
+        let mut rows = 0;
+        let mut fixture_issues_all = Vec::new();
+        let mut aid_mismatches = Vec::new();
+        let mut mismatches = Vec::new();
+
+        for stereo in STEREOS {
+            for orientation in ORIENTATIONS {
+                for repeat in 0..2 {
+                    let topology = topology_for(orientation, BondOrder::Double, stereo, true);
+                    let rings = empty_rings();
+                    fixture_issues_all.extend(
+                        fixture_issues(
+                            &topology,
+                            &rings,
+                            orientation,
+                            BondOrder::Double,
+                            stereo,
+                            true,
+                        )
+                        .into_iter()
+                        .map(|issue| format!("repeat {repeat}, {}: {issue}", orientation.name)),
+                    );
+                    let topology_before = topology.clone();
+                    let rings_before = rings.clone();
+
+                    let result = embed_cis_trans_systems(&topology, &rings);
+                    entry_calls += 1;
+                    if topology != topology_before {
+                        mismatches.push(format!(
+                            "repeat {repeat}, {} {}: topology changed",
+                            orientation.name,
+                            stereo.rdkit_name()
+                        ));
+                    }
+                    if rings != rings_before {
+                        mismatches.push(format!(
+                            "repeat {repeat}, {} {}: RingInfo changed",
+                            orientation.name,
+                            stereo.rdkit_name()
+                        ));
+                    }
+
+                    match result.as_ref() {
+                        Ok(fragments) => {
+                            fragments_returned += fragments.len();
+                            if fragments.len() != 1 {
+                                mismatches.push(format!(
+                                    "repeat {repeat}, {} {}: expected one caller fragment, got {}",
+                                    orientation.name,
+                                    stereo.rdkit_name(),
+                                    fragments.len()
+                                ));
+                            }
+                            for (index, fragment) in fragments.iter().enumerate() {
+                                let observed = fragment_fields(fragment, &topology, &rings);
+                                rows += observed.rows.len();
+                                for (key, atom) in &observed.rows {
+                                    if atom.aid != 0 {
+                                        aid_mismatches.push(format!(
+                                            "repeat {repeat}, {} {} fragment {index}: key {key}, expected destination aid 0, got {}",
+                                            orientation.name,
+                                            stereo.rdkit_name(),
+                                            atom.aid
+                                        ));
+                                    }
+                                }
+                                if index == 0 {
+                                    let expected = expected_fragment(orientation, stereo, true);
+                                    if observed != expected {
+                                        mismatches.push(format!(
+                                            "repeat {repeat}, {} {}: expected POST fields {expected:?}, got {observed:?}",
+                                            orientation.name,
+                                            stereo.rdkit_name()
+                                        ));
+                                    }
+                                } else {
+                                    mismatches.push(format!(
+                                        "repeat {repeat}, {} {}: unexpected extra fragment {observed:?}",
+                                        orientation.name,
+                                        stereo.rdkit_name()
+                                    ));
+                                }
+                            }
+                        }
+                        Err(error) => mismatches.push(format!(
+                            "repeat {repeat}, {} {}: expected caller success, got {error:?}",
+                            orientation.name,
+                            stereo.rdkit_name()
+                        )),
+                    }
+                }
+            }
+        }
+
+        if entry_calls != 24 {
+            mismatches.push(format!(
+                "actual caller entry calls expected 24, got {entry_calls}"
+            ));
+        }
+        if fragments_returned != 24 {
+            mismatches.push(format!(
+                "actual caller fragments expected 24, got {fragments_returned}"
+            ));
+        }
+        if rows != 48 {
+            mismatches.push(format!("actual POST rows expected 48, got {rows}"));
+        }
+        assert!(
+            fixture_issues_all.is_empty() && mismatches.is_empty(),
+            "caller entry calls={entry_calls}, fragments={fragments_returned}, POST rows={rows}, destination-aid mismatches={}; fixture prerequisite issues:\n{}\nall caller mismatches:\n{}\nall aid mismatches:\n{}",
+            aid_mismatches.len(),
+            fixture_issues_all.join("\n"),
+            mismatches.join("\n"),
+            aid_mismatches.join("\n")
+        );
+    }
+
+    #[test]
+    fn d2_cis_trans_source_assignment_returns_typed_errors_without_mutation() {
+        let mut calls = 0;
+        let mut returned_errors = 0;
+        let mut unexpected_success_rows = 0;
+        let mut fixture_issues_all = Vec::new();
+        let mut mismatches = Vec::new();
+
+        for case in INVALID_CASES {
+            for repeat in 0..2 {
+                let orientation = ORIENTATIONS[0];
+                let topology = topology_for(
+                    orientation,
+                    case.central_order,
+                    case.stereo,
+                    case.has_stereo_refs,
+                );
+                let rings = empty_rings();
+                fixture_issues_all.extend(
+                    fixture_issues(
+                        &topology,
+                        &rings,
+                        orientation,
+                        case.central_order,
+                        case.stereo,
+                        case.has_stereo_refs,
+                    )
+                    .into_iter()
+                    .map(|issue| format!("repeat {repeat}, {}: {issue}", case.name)),
+                );
+                let topology_before = topology.clone();
+                let rings_before = rings.clone();
+
+                let result = EmbeddedFrag::from_cis_trans_bond(
+                    BondId::new(case.requested_bond),
+                    &topology,
+                    &rings,
+                );
+                calls += 1;
+                if topology != topology_before {
+                    mismatches.push(format!("repeat {repeat}, {}: topology changed", case.name));
+                }
+                if rings != rings_before {
+                    mismatches.push(format!("repeat {repeat}, {}: RingInfo changed", case.name));
+                }
+
+                match result {
+                    Err(error) => {
+                        returned_errors += 1;
+                        let expected = FragmentError::CisTransBondInvalid {
+                            bond: case.expected_error_bond,
+                        };
+                        if error != expected {
+                            mismatches.push(format!(
+                                "repeat {repeat}, {}: expected {expected:?}, got {error:?}",
+                                case.name
+                            ));
+                        }
+                    }
+                    Ok(fragment) => {
+                        let observed = fragment_fields(&fragment, &topology, &rings);
+                        unexpected_success_rows += observed.rows.len();
+                        mismatches.push(format!(
+                            "repeat {repeat}, {}: expected typed error, got success {observed:?}",
+                            case.name
+                        ));
+                    }
+                }
+            }
+        }
+
+        if calls != 10 {
+            mismatches.push(format!(
+                "actual typed-error entry calls expected 10, got {calls}"
+            ));
+        }
+        if returned_errors != 10 {
+            mismatches.push(format!(
+                "actual typed errors expected 10, got {returned_errors}"
+            ));
+        }
+        if unexpected_success_rows != 0 {
+            mismatches.push(format!(
+                "typed-error inputs unexpectedly returned {unexpected_success_rows} atom rows"
+            ));
+        }
+        assert!(
+            fixture_issues_all.is_empty() && mismatches.is_empty(),
+            "entry calls={calls}, typed errors={returned_errors}, unexpected success rows={unexpected_success_rows}; fixture prerequisite issues:\n{}\nall typed-error mismatches:\n{}",
+            fixture_issues_all.join("\n"),
+            mismatches.join("\n")
+        );
+    }
+}
+
+#[cfg(test)]
+mod angled_destination_assignment_tests {
+    use super::{EmbeddedAtom, EmbeddedFrag, FragmentError};
+    use cosmolkit_core::{RingFindType, RingInfo};
+    use cosmolkit_model::{
+        Atom, AtomId, AtomSpec, Bond, BondId, BondOrder, BondSpec, Element, Hybridization,
+        TopologyBlock,
+    };
+    use std::collections::BTreeMap;
+
+    // Independently frozen native public controls: pinned RDKit351f8f378,
+    // source-explicit-loc.tsv SHA648222623d0bfc090b32c71f96d8ac21a5372306ef7b9a7db4cbafdf631adda3.
+    // Values: aid, angle bits, nbr1,nbr2,CisTransNbr,rotDir,loc x/y bits,
+    // normal x/y bits, ccw,density bits,fixed. No oracle execution in tests.
+    #[derive(Debug, Clone, Copy)]
+    struct Row {
+        key: usize,
+        values: [i128; 14],
+        neighs: &'static [usize],
+    }
+    struct Case {
+        id: usize,
+        requested: usize,
+        pre: [Row; 4],
+        post: [Row; 5],
+    }
+    const CASES: [Case; 28] = [
+        Case {
+            id: 1,
+            requested: 0,
+            pre: [
+                Row {
+                    key: 1,
+                    values: [
+                        71,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 2,
+                    values: [
+                        72,
+                        4609753056924675352,
+                        1,
+                        3,
+                        -1,
+                        -1,
+                        0,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13835058055282163712,
+                        1,
+                        0,
+                    ],
+                    neighs: &[0],
+                },
+                Row {
+                    key: 3,
+                    values: [
+                        73,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 4,
+                    values: [
+                        74,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4620693217682128896,
+                        4620693217682128896,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+            ],
+            post: [
+                Row {
+                    key: 0,
+                    values: [
+                        0,
+                        13830554455654793216,
+                        2,
+                        -1,
+                        -1,
+                        0,
+                        4607455607927041242,
+                        13830827644781817049,
+                        13827916308072577996,
+                        13827916308072577997,
+                        1,
+                        13830554455654793216,
+                        0,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 1,
+                    values: [
+                        71,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 2,
+                    values: [
+                        72,
+                        4616025215990052958,
+                        1,
+                        0,
+                        -1,
+                        -1,
+                        0,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13835058055282163712,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 3,
+                    values: [
+                        73,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 4,
+                    values: [
+                        74,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4620693217682128896,
+                        4620693217682128896,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+            ],
+        },
+        Case {
+            id: 2,
+            requested: 0,
+            pre: [
+                Row {
+                    key: 1,
+                    values: [
+                        71,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 2,
+                    values: [
+                        72,
+                        4609753056924675352,
+                        1,
+                        3,
+                        -1,
+                        -1,
+                        0,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13835058055282163712,
+                        1,
+                        0,
+                    ],
+                    neighs: &[0],
+                },
+                Row {
+                    key: 3,
+                    values: [
+                        73,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 4,
+                    values: [
+                        74,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4620693217682128896,
+                        4620693217682128896,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+            ],
+            post: [
+                Row {
+                    key: 0,
+                    values: [
+                        0,
+                        13830554455654793216,
+                        2,
+                        -1,
+                        -1,
+                        0,
+                        4607455607927041242,
+                        13830827644781817049,
+                        13827916308072577996,
+                        13827916308072577997,
+                        1,
+                        13830554455654793216,
+                        0,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 1,
+                    values: [
+                        71,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 2,
+                    values: [
+                        72,
+                        4616025215990052958,
+                        1,
+                        0,
+                        -1,
+                        -1,
+                        0,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13835058055282163712,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 3,
+                    values: [
+                        73,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 4,
+                    values: [
+                        74,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4620693217682128896,
+                        4620693217682128896,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+            ],
+        },
+        Case {
+            id: 3,
+            requested: 5,
+            pre: [
+                Row {
+                    key: 1,
+                    values: [
+                        71,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 2,
+                    values: [
+                        72,
+                        4609753056924675352,
+                        1,
+                        3,
+                        -1,
+                        -1,
+                        0,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13835058055282163712,
+                        1,
+                        0,
+                    ],
+                    neighs: &[5],
+                },
+                Row {
+                    key: 3,
+                    values: [
+                        73,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 4,
+                    values: [
+                        74,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4620693217682128896,
+                        4620693217682128896,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+            ],
+            post: [
+                Row {
+                    key: 1,
+                    values: [
+                        71,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 2,
+                    values: [
+                        72,
+                        4616025215990052958,
+                        1,
+                        5,
+                        -1,
+                        -1,
+                        0,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13835058055282163712,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 3,
+                    values: [
+                        73,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 4,
+                    values: [
+                        74,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4620693217682128896,
+                        4620693217682128896,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 5,
+                    values: [
+                        0,
+                        13830554455654793216,
+                        2,
+                        -1,
+                        -1,
+                        0,
+                        4607455607927041242,
+                        13830827644781817049,
+                        13827916308072577996,
+                        13827916308072577997,
+                        1,
+                        13830554455654793216,
+                        0,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+            ],
+        },
+        Case {
+            id: 4,
+            requested: 5,
+            pre: [
+                Row {
+                    key: 1,
+                    values: [
+                        71,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 2,
+                    values: [
+                        72,
+                        4609753056924675352,
+                        1,
+                        3,
+                        -1,
+                        -1,
+                        0,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13835058055282163712,
+                        1,
+                        0,
+                    ],
+                    neighs: &[5],
+                },
+                Row {
+                    key: 3,
+                    values: [
+                        73,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 4,
+                    values: [
+                        74,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4620693217682128896,
+                        4620693217682128896,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+            ],
+            post: [
+                Row {
+                    key: 1,
+                    values: [
+                        71,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 2,
+                    values: [
+                        72,
+                        4616025215990052958,
+                        1,
+                        5,
+                        -1,
+                        -1,
+                        0,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13835058055282163712,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 3,
+                    values: [
+                        73,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 4,
+                    values: [
+                        74,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4620693217682128896,
+                        4620693217682128896,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 5,
+                    values: [
+                        0,
+                        13830554455654793216,
+                        2,
+                        -1,
+                        -1,
+                        0,
+                        4607455607927041242,
+                        13830827644781817049,
+                        13827916308072577996,
+                        13827916308072577997,
+                        1,
+                        13830554455654793216,
+                        0,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+            ],
+        },
+        Case {
+            id: 5,
+            requested: 0,
+            pre: [
+                Row {
+                    key: 1,
+                    values: [
+                        71,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 2,
+                    values: [
+                        72,
+                        4609753056924675352,
+                        1,
+                        3,
+                        -1,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13835058055282163712,
+                        1,
+                        0,
+                    ],
+                    neighs: &[0],
+                },
+                Row {
+                    key: 3,
+                    values: [
+                        73,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 4,
+                    values: [
+                        74,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4620693217682128896,
+                        4620693217682128896,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+            ],
+            post: [
+                Row {
+                    key: 0,
+                    values: [
+                        0,
+                        13830554455654793216,
+                        2,
+                        -1,
+                        -1,
+                        0,
+                        13830827644781817050,
+                        13830827644781817049,
+                        13827916308072577996,
+                        4604544271217802189,
+                        1,
+                        13830554455654793216,
+                        0,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 1,
+                    values: [
+                        71,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 2,
+                    values: [
+                        72,
+                        4616025215990052958,
+                        1,
+                        0,
+                        -1,
+                        1,
+                        0,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13835058055282163712,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 3,
+                    values: [
+                        73,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 4,
+                    values: [
+                        74,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4620693217682128896,
+                        4620693217682128896,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+            ],
+        },
+        Case {
+            id: 6,
+            requested: 0,
+            pre: [
+                Row {
+                    key: 1,
+                    values: [
+                        71,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 2,
+                    values: [
+                        72,
+                        4609753056924675352,
+                        1,
+                        3,
+                        -1,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13835058055282163712,
+                        1,
+                        0,
+                    ],
+                    neighs: &[0],
+                },
+                Row {
+                    key: 3,
+                    values: [
+                        73,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 4,
+                    values: [
+                        74,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4620693217682128896,
+                        4620693217682128896,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+            ],
+            post: [
+                Row {
+                    key: 0,
+                    values: [
+                        0,
+                        13830554455654793216,
+                        2,
+                        -1,
+                        -1,
+                        0,
+                        13830827644781817050,
+                        13830827644781817049,
+                        13827916308072577996,
+                        4604544271217802189,
+                        1,
+                        13830554455654793216,
+                        0,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 1,
+                    values: [
+                        71,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 2,
+                    values: [
+                        72,
+                        4616025215990052958,
+                        1,
+                        0,
+                        -1,
+                        1,
+                        0,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13835058055282163712,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 3,
+                    values: [
+                        73,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 4,
+                    values: [
+                        74,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4620693217682128896,
+                        4620693217682128896,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+            ],
+        },
+        Case {
+            id: 7,
+            requested: 5,
+            pre: [
+                Row {
+                    key: 1,
+                    values: [
+                        71,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 2,
+                    values: [
+                        72,
+                        4609753056924675352,
+                        1,
+                        3,
+                        -1,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13835058055282163712,
+                        1,
+                        0,
+                    ],
+                    neighs: &[5],
+                },
+                Row {
+                    key: 3,
+                    values: [
+                        73,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 4,
+                    values: [
+                        74,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4620693217682128896,
+                        4620693217682128896,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+            ],
+            post: [
+                Row {
+                    key: 1,
+                    values: [
+                        71,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 2,
+                    values: [
+                        72,
+                        4616025215990052958,
+                        1,
+                        5,
+                        -1,
+                        1,
+                        0,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13835058055282163712,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 3,
+                    values: [
+                        73,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 4,
+                    values: [
+                        74,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4620693217682128896,
+                        4620693217682128896,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 5,
+                    values: [
+                        0,
+                        13830554455654793216,
+                        2,
+                        -1,
+                        -1,
+                        0,
+                        13830827644781817050,
+                        13830827644781817049,
+                        13827916308072577996,
+                        4604544271217802189,
+                        1,
+                        13830554455654793216,
+                        0,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+            ],
+        },
+        Case {
+            id: 8,
+            requested: 5,
+            pre: [
+                Row {
+                    key: 1,
+                    values: [
+                        71,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 2,
+                    values: [
+                        72,
+                        4609753056924675352,
+                        1,
+                        3,
+                        -1,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13835058055282163712,
+                        1,
+                        0,
+                    ],
+                    neighs: &[5],
+                },
+                Row {
+                    key: 3,
+                    values: [
+                        73,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 4,
+                    values: [
+                        74,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4620693217682128896,
+                        4620693217682128896,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+            ],
+            post: [
+                Row {
+                    key: 1,
+                    values: [
+                        71,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 2,
+                    values: [
+                        72,
+                        4616025215990052958,
+                        1,
+                        5,
+                        -1,
+                        1,
+                        0,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13835058055282163712,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 3,
+                    values: [
+                        73,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 4,
+                    values: [
+                        74,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4620693217682128896,
+                        4620693217682128896,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 5,
+                    values: [
+                        0,
+                        13830554455654793216,
+                        2,
+                        -1,
+                        -1,
+                        0,
+                        13830827644781817050,
+                        13830827644781817049,
+                        13827916308072577996,
+                        4604544271217802189,
+                        1,
+                        13830554455654793216,
+                        0,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+            ],
+        },
+        Case {
+            id: 9,
+            requested: 0,
+            pre: [
+                Row {
+                    key: 1,
+                    values: [
+                        71,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 2,
+                    values: [
+                        72,
+                        4609753056924675352,
+                        1,
+                        3,
+                        -1,
+                        1,
+                        0,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13835058055282163712,
+                        1,
+                        0,
+                    ],
+                    neighs: &[0],
+                },
+                Row {
+                    key: 3,
+                    values: [
+                        73,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 4,
+                    values: [
+                        74,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4620693217682128896,
+                        4620693217682128896,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+            ],
+            post: [
+                Row {
+                    key: 0,
+                    values: [
+                        0,
+                        13830554455654793216,
+                        2,
+                        -1,
+                        -1,
+                        0,
+                        13830827644781817050,
+                        13830827644781817049,
+                        13827916308072577996,
+                        4604544271217802189,
+                        1,
+                        13830554455654793216,
+                        0,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 1,
+                    values: [
+                        71,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 2,
+                    values: [
+                        72,
+                        4616025215990052958,
+                        1,
+                        0,
+                        -1,
+                        1,
+                        0,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13835058055282163712,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 3,
+                    values: [
+                        73,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 4,
+                    values: [
+                        74,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4620693217682128896,
+                        4620693217682128896,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+            ],
+        },
+        Case {
+            id: 10,
+            requested: 0,
+            pre: [
+                Row {
+                    key: 1,
+                    values: [
+                        71,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 2,
+                    values: [
+                        72,
+                        4609753056924675352,
+                        1,
+                        3,
+                        -1,
+                        1,
+                        0,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13835058055282163712,
+                        1,
+                        0,
+                    ],
+                    neighs: &[0],
+                },
+                Row {
+                    key: 3,
+                    values: [
+                        73,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 4,
+                    values: [
+                        74,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4620693217682128896,
+                        4620693217682128896,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+            ],
+            post: [
+                Row {
+                    key: 0,
+                    values: [
+                        0,
+                        13830554455654793216,
+                        2,
+                        -1,
+                        -1,
+                        0,
+                        13830827644781817050,
+                        13830827644781817049,
+                        13827916308072577996,
+                        4604544271217802189,
+                        1,
+                        13830554455654793216,
+                        0,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 1,
+                    values: [
+                        71,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 2,
+                    values: [
+                        72,
+                        4616025215990052958,
+                        1,
+                        0,
+                        -1,
+                        1,
+                        0,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13835058055282163712,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 3,
+                    values: [
+                        73,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 4,
+                    values: [
+                        74,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4620693217682128896,
+                        4620693217682128896,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+            ],
+        },
+        Case {
+            id: 11,
+            requested: 5,
+            pre: [
+                Row {
+                    key: 1,
+                    values: [
+                        71,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 2,
+                    values: [
+                        72,
+                        4609753056924675352,
+                        1,
+                        3,
+                        -1,
+                        1,
+                        0,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13835058055282163712,
+                        1,
+                        0,
+                    ],
+                    neighs: &[5],
+                },
+                Row {
+                    key: 3,
+                    values: [
+                        73,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 4,
+                    values: [
+                        74,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4620693217682128896,
+                        4620693217682128896,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+            ],
+            post: [
+                Row {
+                    key: 1,
+                    values: [
+                        71,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 2,
+                    values: [
+                        72,
+                        4616025215990052958,
+                        1,
+                        5,
+                        -1,
+                        1,
+                        0,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13835058055282163712,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 3,
+                    values: [
+                        73,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 4,
+                    values: [
+                        74,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4620693217682128896,
+                        4620693217682128896,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 5,
+                    values: [
+                        0,
+                        13830554455654793216,
+                        2,
+                        -1,
+                        -1,
+                        0,
+                        13830827644781817050,
+                        13830827644781817049,
+                        13827916308072577996,
+                        4604544271217802189,
+                        1,
+                        13830554455654793216,
+                        0,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+            ],
+        },
+        Case {
+            id: 12,
+            requested: 5,
+            pre: [
+                Row {
+                    key: 1,
+                    values: [
+                        71,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 2,
+                    values: [
+                        72,
+                        4609753056924675352,
+                        1,
+                        3,
+                        -1,
+                        1,
+                        0,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13835058055282163712,
+                        1,
+                        0,
+                    ],
+                    neighs: &[5],
+                },
+                Row {
+                    key: 3,
+                    values: [
+                        73,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 4,
+                    values: [
+                        74,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4620693217682128896,
+                        4620693217682128896,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+            ],
+            post: [
+                Row {
+                    key: 1,
+                    values: [
+                        71,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 2,
+                    values: [
+                        72,
+                        4616025215990052958,
+                        1,
+                        5,
+                        -1,
+                        1,
+                        0,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13835058055282163712,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 3,
+                    values: [
+                        73,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 4,
+                    values: [
+                        74,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4620693217682128896,
+                        4620693217682128896,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 5,
+                    values: [
+                        0,
+                        13830554455654793216,
+                        2,
+                        -1,
+                        -1,
+                        0,
+                        13830827644781817050,
+                        13830827644781817049,
+                        13827916308072577996,
+                        4604544271217802189,
+                        1,
+                        13830554455654793216,
+                        0,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+            ],
+        },
+        Case {
+            id: 13,
+            requested: 0,
+            pre: [
+                Row {
+                    key: 1,
+                    values: [
+                        71,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 2,
+                    values: [
+                        72,
+                        4614256656552045848,
+                        1,
+                        3,
+                        -1,
+                        -1,
+                        0,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13835058055282163712,
+                        1,
+                        0,
+                    ],
+                    neighs: &[0],
+                },
+                Row {
+                    key: 3,
+                    values: [
+                        73,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 4,
+                    values: [
+                        74,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4620693217682128896,
+                        4620693217682128896,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+            ],
+            post: [
+                Row {
+                    key: 0,
+                    values: [
+                        0,
+                        13830554455654793216,
+                        2,
+                        -1,
+                        -1,
+                        0,
+                        13832806255468478464,
+                        4366936075694672394,
+                        13587824233749437447,
+                        13830554455654793216,
+                        0,
+                        13830554455654793216,
+                        0,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 1,
+                    values: [
+                        71,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 2,
+                    values: [
+                        72,
+                        4616991696741409234,
+                        1,
+                        0,
+                        -1,
+                        -1,
+                        0,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13835058055282163712,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 3,
+                    values: [
+                        73,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 4,
+                    values: [
+                        74,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4620693217682128896,
+                        4620693217682128896,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+            ],
+        },
+        Case {
+            id: 14,
+            requested: 0,
+            pre: [
+                Row {
+                    key: 1,
+                    values: [
+                        71,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 2,
+                    values: [
+                        72,
+                        4614256656552045848,
+                        1,
+                        3,
+                        -1,
+                        -1,
+                        0,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13835058055282163712,
+                        1,
+                        0,
+                    ],
+                    neighs: &[0],
+                },
+                Row {
+                    key: 3,
+                    values: [
+                        73,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 4,
+                    values: [
+                        74,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4620693217682128896,
+                        4620693217682128896,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+            ],
+            post: [
+                Row {
+                    key: 0,
+                    values: [
+                        0,
+                        13830554455654793216,
+                        2,
+                        -1,
+                        -1,
+                        0,
+                        13832806255468478464,
+                        4366936075694672394,
+                        13587824233749437447,
+                        13830554455654793216,
+                        0,
+                        13830554455654793216,
+                        0,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 1,
+                    values: [
+                        71,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 2,
+                    values: [
+                        72,
+                        4616991696741409234,
+                        1,
+                        0,
+                        -1,
+                        -1,
+                        0,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13835058055282163712,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 3,
+                    values: [
+                        73,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 4,
+                    values: [
+                        74,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4620693217682128896,
+                        4620693217682128896,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+            ],
+        },
+        Case {
+            id: 15,
+            requested: 5,
+            pre: [
+                Row {
+                    key: 1,
+                    values: [
+                        71,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 2,
+                    values: [
+                        72,
+                        4614256656552045848,
+                        1,
+                        3,
+                        -1,
+                        -1,
+                        0,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13835058055282163712,
+                        1,
+                        0,
+                    ],
+                    neighs: &[5],
+                },
+                Row {
+                    key: 3,
+                    values: [
+                        73,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 4,
+                    values: [
+                        74,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4620693217682128896,
+                        4620693217682128896,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+            ],
+            post: [
+                Row {
+                    key: 1,
+                    values: [
+                        71,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 2,
+                    values: [
+                        72,
+                        4616991696741409234,
+                        1,
+                        5,
+                        -1,
+                        -1,
+                        0,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13835058055282163712,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 3,
+                    values: [
+                        73,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 4,
+                    values: [
+                        74,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4620693217682128896,
+                        4620693217682128896,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 5,
+                    values: [
+                        0,
+                        13830554455654793216,
+                        2,
+                        -1,
+                        -1,
+                        0,
+                        13832806255468478464,
+                        4366936075694672394,
+                        13587824233749437447,
+                        13830554455654793216,
+                        0,
+                        13830554455654793216,
+                        0,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+            ],
+        },
+        Case {
+            id: 16,
+            requested: 5,
+            pre: [
+                Row {
+                    key: 1,
+                    values: [
+                        71,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 2,
+                    values: [
+                        72,
+                        4614256656552045848,
+                        1,
+                        3,
+                        -1,
+                        -1,
+                        0,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13835058055282163712,
+                        1,
+                        0,
+                    ],
+                    neighs: &[5],
+                },
+                Row {
+                    key: 3,
+                    values: [
+                        73,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 4,
+                    values: [
+                        74,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4620693217682128896,
+                        4620693217682128896,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+            ],
+            post: [
+                Row {
+                    key: 1,
+                    values: [
+                        71,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 2,
+                    values: [
+                        72,
+                        4616991696741409234,
+                        1,
+                        5,
+                        -1,
+                        -1,
+                        0,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13835058055282163712,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 3,
+                    values: [
+                        73,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 4,
+                    values: [
+                        74,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4620693217682128896,
+                        4620693217682128896,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 5,
+                    values: [
+                        0,
+                        13830554455654793216,
+                        2,
+                        -1,
+                        -1,
+                        0,
+                        13832806255468478464,
+                        4366936075694672394,
+                        13587824233749437447,
+                        13830554455654793216,
+                        0,
+                        13830554455654793216,
+                        0,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+            ],
+        },
+        Case {
+            id: 17,
+            requested: 0,
+            pre: [
+                Row {
+                    key: 1,
+                    values: [
+                        71,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 2,
+                    values: [
+                        72,
+                        4614256656552045848,
+                        1,
+                        3,
+                        -1,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13835058055282163712,
+                        1,
+                        0,
+                    ],
+                    neighs: &[0],
+                },
+                Row {
+                    key: 3,
+                    values: [
+                        73,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 4,
+                    values: [
+                        74,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4620693217682128896,
+                        4620693217682128896,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+            ],
+            post: [
+                Row {
+                    key: 0,
+                    values: [
+                        0,
+                        13830554455654793216,
+                        2,
+                        -1,
+                        -1,
+                        0,
+                        13832806255468478464,
+                        4366936075694672394,
+                        13587824233749437447,
+                        13830554455654793216,
+                        0,
+                        13830554455654793216,
+                        0,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 1,
+                    values: [
+                        71,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 2,
+                    values: [
+                        72,
+                        4616991696741409234,
+                        1,
+                        0,
+                        -1,
+                        -1,
+                        0,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13835058055282163712,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 3,
+                    values: [
+                        73,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 4,
+                    values: [
+                        74,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4620693217682128896,
+                        4620693217682128896,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+            ],
+        },
+        Case {
+            id: 18,
+            requested: 0,
+            pre: [
+                Row {
+                    key: 1,
+                    values: [
+                        71,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 2,
+                    values: [
+                        72,
+                        4614256656552045848,
+                        1,
+                        3,
+                        -1,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13835058055282163712,
+                        1,
+                        0,
+                    ],
+                    neighs: &[0],
+                },
+                Row {
+                    key: 3,
+                    values: [
+                        73,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 4,
+                    values: [
+                        74,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4620693217682128896,
+                        4620693217682128896,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+            ],
+            post: [
+                Row {
+                    key: 0,
+                    values: [
+                        0,
+                        13830554455654793216,
+                        2,
+                        -1,
+                        -1,
+                        0,
+                        13832806255468478464,
+                        4366936075694672394,
+                        13587824233749437447,
+                        13830554455654793216,
+                        0,
+                        13830554455654793216,
+                        0,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 1,
+                    values: [
+                        71,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 2,
+                    values: [
+                        72,
+                        4616991696741409234,
+                        1,
+                        0,
+                        -1,
+                        -1,
+                        0,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13835058055282163712,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 3,
+                    values: [
+                        73,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 4,
+                    values: [
+                        74,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4620693217682128896,
+                        4620693217682128896,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+            ],
+        },
+        Case {
+            id: 19,
+            requested: 5,
+            pre: [
+                Row {
+                    key: 1,
+                    values: [
+                        71,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 2,
+                    values: [
+                        72,
+                        4614256656552045848,
+                        1,
+                        3,
+                        -1,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13835058055282163712,
+                        1,
+                        0,
+                    ],
+                    neighs: &[5],
+                },
+                Row {
+                    key: 3,
+                    values: [
+                        73,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 4,
+                    values: [
+                        74,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4620693217682128896,
+                        4620693217682128896,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+            ],
+            post: [
+                Row {
+                    key: 1,
+                    values: [
+                        71,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 2,
+                    values: [
+                        72,
+                        4616991696741409234,
+                        1,
+                        5,
+                        -1,
+                        -1,
+                        0,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13835058055282163712,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 3,
+                    values: [
+                        73,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 4,
+                    values: [
+                        74,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4620693217682128896,
+                        4620693217682128896,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 5,
+                    values: [
+                        0,
+                        13830554455654793216,
+                        2,
+                        -1,
+                        -1,
+                        0,
+                        13832806255468478464,
+                        4366936075694672394,
+                        13587824233749437447,
+                        13830554455654793216,
+                        0,
+                        13830554455654793216,
+                        0,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+            ],
+        },
+        Case {
+            id: 20,
+            requested: 5,
+            pre: [
+                Row {
+                    key: 1,
+                    values: [
+                        71,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 2,
+                    values: [
+                        72,
+                        4614256656552045848,
+                        1,
+                        3,
+                        -1,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13835058055282163712,
+                        1,
+                        0,
+                    ],
+                    neighs: &[5],
+                },
+                Row {
+                    key: 3,
+                    values: [
+                        73,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 4,
+                    values: [
+                        74,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4620693217682128896,
+                        4620693217682128896,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+            ],
+            post: [
+                Row {
+                    key: 1,
+                    values: [
+                        71,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 2,
+                    values: [
+                        72,
+                        4616991696741409234,
+                        1,
+                        5,
+                        -1,
+                        -1,
+                        0,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13835058055282163712,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 3,
+                    values: [
+                        73,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 4,
+                    values: [
+                        74,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4620693217682128896,
+                        4620693217682128896,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 5,
+                    values: [
+                        0,
+                        13830554455654793216,
+                        2,
+                        -1,
+                        -1,
+                        0,
+                        13832806255468478464,
+                        4366936075694672394,
+                        13587824233749437447,
+                        13830554455654793216,
+                        0,
+                        13830554455654793216,
+                        0,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+            ],
+        },
+        Case {
+            id: 21,
+            requested: 0,
+            pre: [
+                Row {
+                    key: 1,
+                    values: [
+                        71,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 2,
+                    values: [
+                        72,
+                        4614256656552045848,
+                        1,
+                        3,
+                        -1,
+                        1,
+                        0,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13835058055282163712,
+                        1,
+                        0,
+                    ],
+                    neighs: &[0],
+                },
+                Row {
+                    key: 3,
+                    values: [
+                        73,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 4,
+                    values: [
+                        74,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4620693217682128896,
+                        4620693217682128896,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+            ],
+            post: [
+                Row {
+                    key: 0,
+                    values: [
+                        0,
+                        13830554455654793216,
+                        2,
+                        -1,
+                        -1,
+                        0,
+                        13832806255468478464,
+                        4366936075694672394,
+                        13587824233749437447,
+                        13830554455654793216,
+                        0,
+                        13830554455654793216,
+                        0,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 1,
+                    values: [
+                        71,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 2,
+                    values: [
+                        72,
+                        4616991696741409234,
+                        1,
+                        0,
+                        -1,
+                        1,
+                        0,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13835058055282163712,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 3,
+                    values: [
+                        73,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 4,
+                    values: [
+                        74,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4620693217682128896,
+                        4620693217682128896,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+            ],
+        },
+        Case {
+            id: 22,
+            requested: 0,
+            pre: [
+                Row {
+                    key: 1,
+                    values: [
+                        71,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 2,
+                    values: [
+                        72,
+                        4614256656552045848,
+                        1,
+                        3,
+                        -1,
+                        1,
+                        0,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13835058055282163712,
+                        1,
+                        0,
+                    ],
+                    neighs: &[0],
+                },
+                Row {
+                    key: 3,
+                    values: [
+                        73,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 4,
+                    values: [
+                        74,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4620693217682128896,
+                        4620693217682128896,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+            ],
+            post: [
+                Row {
+                    key: 0,
+                    values: [
+                        0,
+                        13830554455654793216,
+                        2,
+                        -1,
+                        -1,
+                        0,
+                        13832806255468478464,
+                        4366936075694672394,
+                        13587824233749437447,
+                        13830554455654793216,
+                        0,
+                        13830554455654793216,
+                        0,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 1,
+                    values: [
+                        71,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 2,
+                    values: [
+                        72,
+                        4616991696741409234,
+                        1,
+                        0,
+                        -1,
+                        1,
+                        0,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13835058055282163712,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 3,
+                    values: [
+                        73,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 4,
+                    values: [
+                        74,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4620693217682128896,
+                        4620693217682128896,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+            ],
+        },
+        Case {
+            id: 23,
+            requested: 5,
+            pre: [
+                Row {
+                    key: 1,
+                    values: [
+                        71,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 2,
+                    values: [
+                        72,
+                        4614256656552045848,
+                        1,
+                        3,
+                        -1,
+                        1,
+                        0,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13835058055282163712,
+                        1,
+                        0,
+                    ],
+                    neighs: &[5],
+                },
+                Row {
+                    key: 3,
+                    values: [
+                        73,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 4,
+                    values: [
+                        74,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4620693217682128896,
+                        4620693217682128896,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+            ],
+            post: [
+                Row {
+                    key: 1,
+                    values: [
+                        71,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 2,
+                    values: [
+                        72,
+                        4616991696741409234,
+                        1,
+                        5,
+                        -1,
+                        1,
+                        0,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13835058055282163712,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 3,
+                    values: [
+                        73,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 4,
+                    values: [
+                        74,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4620693217682128896,
+                        4620693217682128896,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 5,
+                    values: [
+                        0,
+                        13830554455654793216,
+                        2,
+                        -1,
+                        -1,
+                        0,
+                        13832806255468478464,
+                        4366936075694672394,
+                        13587824233749437447,
+                        13830554455654793216,
+                        0,
+                        13830554455654793216,
+                        0,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+            ],
+        },
+        Case {
+            id: 24,
+            requested: 5,
+            pre: [
+                Row {
+                    key: 1,
+                    values: [
+                        71,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 2,
+                    values: [
+                        72,
+                        4614256656552045848,
+                        1,
+                        3,
+                        -1,
+                        1,
+                        0,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13835058055282163712,
+                        1,
+                        0,
+                    ],
+                    neighs: &[5],
+                },
+                Row {
+                    key: 3,
+                    values: [
+                        73,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 4,
+                    values: [
+                        74,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4620693217682128896,
+                        4620693217682128896,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+            ],
+            post: [
+                Row {
+                    key: 1,
+                    values: [
+                        71,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 2,
+                    values: [
+                        72,
+                        4616991696741409234,
+                        1,
+                        5,
+                        -1,
+                        1,
+                        0,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13835058055282163712,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 3,
+                    values: [
+                        73,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 4,
+                    values: [
+                        74,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4620693217682128896,
+                        4620693217682128896,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 5,
+                    values: [
+                        0,
+                        13830554455654793216,
+                        2,
+                        -1,
+                        -1,
+                        0,
+                        13832806255468478464,
+                        4366936075694672394,
+                        13587824233749437447,
+                        13830554455654793216,
+                        0,
+                        13830554455654793216,
+                        0,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+            ],
+        },
+        Case {
+            id: 25,
+            requested: 5,
+            pre: [
+                Row {
+                    key: 1,
+                    values: [
+                        71,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 2,
+                    values: [
+                        72,
+                        13830554455654793216,
+                        1,
+                        3,
+                        5,
+                        0,
+                        0,
+                        0,
+                        4607182418800017408,
+                        0,
+                        0,
+                        13835058055282163712,
+                        1,
+                        0,
+                    ],
+                    neighs: &[5],
+                },
+                Row {
+                    key: 3,
+                    values: [
+                        73,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 4,
+                    values: [
+                        74,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4620693217682128896,
+                        4620693217682128896,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+            ],
+            post: [
+                Row {
+                    key: 1,
+                    values: [
+                        71,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 2,
+                    values: [
+                        72,
+                        4611898577301369701,
+                        1,
+                        5,
+                        5,
+                        0,
+                        0,
+                        0,
+                        4607182418800017408,
+                        0,
+                        0,
+                        13835058055282163712,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 3,
+                    values: [
+                        73,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 4,
+                    values: [
+                        74,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4620693217682128896,
+                        4620693217682128896,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 5,
+                    values: [
+                        0,
+                        13830554455654793216,
+                        2,
+                        -1,
+                        -1,
+                        0,
+                        4608529166701312384,
+                        13828302655841107966,
+                        13826050856027422719,
+                        13829347719771606188,
+                        1,
+                        13830554455654793216,
+                        0,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+            ],
+        },
+        Case {
+            id: 26,
+            requested: 5,
+            pre: [
+                Row {
+                    key: 1,
+                    values: [
+                        71,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 2,
+                    values: [
+                        72,
+                        13830554455654793216,
+                        1,
+                        3,
+                        1,
+                        0,
+                        0,
+                        0,
+                        4607182418800017408,
+                        0,
+                        0,
+                        13835058055282163712,
+                        1,
+                        0,
+                    ],
+                    neighs: &[5],
+                },
+                Row {
+                    key: 3,
+                    values: [
+                        73,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 4,
+                    values: [
+                        74,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4620693217682128896,
+                        4620693217682128896,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+            ],
+            post: [
+                Row {
+                    key: 1,
+                    values: [
+                        71,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 2,
+                    values: [
+                        72,
+                        4611898577301369701,
+                        1,
+                        5,
+                        1,
+                        0,
+                        0,
+                        0,
+                        4607182418800017408,
+                        0,
+                        0,
+                        13835058055282163712,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 3,
+                    values: [
+                        73,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 4,
+                    values: [
+                        74,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4620693217682128896,
+                        4620693217682128896,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 5,
+                    values: [
+                        0,
+                        13830554455654793216,
+                        2,
+                        -1,
+                        -1,
+                        0,
+                        13831901203556088192,
+                        13828302655841107966,
+                        4602678819172646911,
+                        13829347719771606188,
+                        0,
+                        13830554455654793216,
+                        0,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+            ],
+        },
+        Case {
+            id: 27,
+            requested: 5,
+            pre: [
+                Row {
+                    key: 1,
+                    values: [
+                        71,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 2,
+                    values: [
+                        72,
+                        13830554455654793216,
+                        1,
+                        3,
+                        5,
+                        0,
+                        0,
+                        0,
+                        4607182418800017408,
+                        0,
+                        1,
+                        13835058055282163712,
+                        1,
+                        0,
+                    ],
+                    neighs: &[5],
+                },
+                Row {
+                    key: 3,
+                    values: [
+                        73,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 4,
+                    values: [
+                        74,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4620693217682128896,
+                        4620693217682128896,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+            ],
+            post: [
+                Row {
+                    key: 1,
+                    values: [
+                        71,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 2,
+                    values: [
+                        72,
+                        4611898577301369701,
+                        1,
+                        5,
+                        5,
+                        0,
+                        0,
+                        0,
+                        4607182418800017408,
+                        0,
+                        1,
+                        13835058055282163712,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 3,
+                    values: [
+                        73,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 4,
+                    values: [
+                        74,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4620693217682128896,
+                        4620693217682128896,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 5,
+                    values: [
+                        0,
+                        13830554455654793216,
+                        2,
+                        -1,
+                        -1,
+                        0,
+                        4608529166701312384,
+                        4604930618986332158,
+                        13826050856027422719,
+                        4605975682916830380,
+                        0,
+                        13830554455654793216,
+                        0,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+            ],
+        },
+        Case {
+            id: 28,
+            requested: 5,
+            pre: [
+                Row {
+                    key: 1,
+                    values: [
+                        71,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 2,
+                    values: [
+                        72,
+                        13830554455654793216,
+                        1,
+                        3,
+                        1,
+                        0,
+                        0,
+                        0,
+                        4607182418800017408,
+                        0,
+                        1,
+                        13835058055282163712,
+                        1,
+                        0,
+                    ],
+                    neighs: &[5],
+                },
+                Row {
+                    key: 3,
+                    values: [
+                        73,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 4,
+                    values: [
+                        74,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4620693217682128896,
+                        4620693217682128896,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+            ],
+            post: [
+                Row {
+                    key: 1,
+                    values: [
+                        71,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 2,
+                    values: [
+                        72,
+                        4611898577301369701,
+                        1,
+                        5,
+                        1,
+                        0,
+                        0,
+                        0,
+                        4607182418800017408,
+                        0,
+                        1,
+                        13835058055282163712,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 3,
+                    values: [
+                        73,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        0,
+                        4609434218613702656,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 4,
+                    values: [
+                        74,
+                        13830554455654793216,
+                        -1,
+                        -1,
+                        -1,
+                        0,
+                        4620693217682128896,
+                        4620693217682128896,
+                        0,
+                        0,
+                        1,
+                        13830554455654793216,
+                        1,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+                Row {
+                    key: 5,
+                    values: [
+                        0,
+                        13830554455654793216,
+                        2,
+                        -1,
+                        -1,
+                        0,
+                        13831901203556088192,
+                        4604930618986332158,
+                        4602678819172646911,
+                        4605975682916830380,
+                        1,
+                        13830554455654793216,
+                        0,
+                        0,
+                    ],
+                    neighs: &[],
+                },
+            ],
+        },
+    ];
+    #[derive(Debug, PartialEq, Eq)]
+    struct State {
+        rows: Vec<(usize, [i128; 14], Vec<usize>)>,
+        attachments: Vec<usize>,
+        done: bool,
+        topology_identity: bool,
+        rings_identity: bool,
+    }
+    fn values(a: &EmbeddedAtom) -> [i128; 14] {
+        let index = |v: Option<usize>| v.map_or(-1, |n| n as i128);
+        [
+            a.aid as i128,
+            a.angle.to_bits() as i128,
+            index(a.nbr1),
+            index(a.nbr2),
+            index(a.cis_trans_nbr),
+            a.rot_dir as i128,
+            a.loc[0].to_bits() as i128,
+            a.loc[1].to_bits() as i128,
+            a.normal[0].to_bits() as i128,
+            a.normal[1].to_bits() as i128,
+            i128::from(a.ccw),
+            a.density.to_bits() as i128,
+            i128::from(a.fixed),
+            0,
+        ]
+    }
+    fn decode(row: &Row) -> EmbeddedAtom {
+        let v = row.values;
+        let index = |x: i128| if x < 0 { None } else { Some(x as usize) };
+        EmbeddedAtom {
+            aid: v[0] as usize,
+            angle: f64::from_bits(v[1] as u64),
+            nbr1: index(v[2]),
+            nbr2: index(v[3]),
+            cis_trans_nbr: index(v[4]),
+            rot_dir: v[5] as i32,
+            loc: [f64::from_bits(v[6] as u64), f64::from_bits(v[7] as u64)],
+            normal: [f64::from_bits(v[8] as u64), f64::from_bits(v[9] as u64)],
+            ccw: v[10] != 0,
+            density: f64::from_bits(v[11] as u64),
+            fixed: v[12] != 0,
+            neighs: row.neighs.to_vec(),
+        }
+    }
+    fn state(f: &EmbeddedFrag<'_>, t: &TopologyBlock, r: &RingInfo) -> State {
+        State {
+            rows: f
+                .atoms
+                .iter()
+                .map(|(&k, a)| (k, values(a), a.neighs.clone()))
+                .collect(),
+            attachments: f.attachment_points.clone(),
+            done: f.done,
+            topology_identity: std::ptr::eq(f.topology, t),
+            rings_identity: std::ptr::eq(f.rings, r),
+        }
+    }
+    fn expected(rows: &[Row], private: bool, requested: usize) -> State {
+        State {
+            rows: rows
+                .iter()
+                .map(|row| {
+                    let mut n = row.neighs.to_vec();
+                    // Sole predeclared public/private difference: source dispatcher
+                    // erases requested from reference2 after the private angled helper.
+                    if private && row.key == 2 {
+                        n = vec![requested];
+                    }
+                    (row.key, row.values, n)
+                })
+                .collect(),
+            attachments: vec![2],
+            done: false,
+            topology_identity: true,
+            rings_identity: true,
+        }
+    }
+    fn topology(requested: usize) -> TopologyBlock {
+        let atoms = (0..6)
+            .map(|i| {
+                Atom::from_spec(
+                    AtomId::new(i),
+                    AtomSpec::new(Element::C).with_hybridization(Hybridization::Sp3),
+                )
+            })
+            .collect();
+        let bonds = [(1, 2), (2, 3), (2, requested)]
+            .into_iter()
+            .enumerate()
+            .map(|(i, (a, b))| {
+                Bond::from_spec(
+                    BondId::new(i),
+                    BondSpec::new(AtomId::new(a), AtomId::new(b), BondOrder::Single),
+                )
+            })
+            .collect();
+        TopologyBlock::try_from_parts(atoms, bonds, Vec::new(), Vec::new())
+            .expect("fixed topology prerequisite")
+    }
+    fn fixture<'a>(c: &Case, t: &'a TopologyBlock, r: &'a RingInfo) -> EmbeddedFrag<'a> {
+        EmbeddedFrag {
+            atoms: c
+                .pre
+                .iter()
+                .map(|row| (row.key, decode(row)))
+                .collect::<BTreeMap<_, _>>(),
+            attachment_points: vec![2],
+            done: false,
+            topology: t,
+            rings: r,
+        }
+    }
+    fn inputs(t: &TopologyBlock, r: &RingInfo) -> (String, RingInfo) {
+        (format!("{t:?}"), r.clone())
+    }
+    fn check_inputs(
+        c: &Case,
+        t: &TopologyBlock,
+        r: &RingInfo,
+        retained: &(String, RingInfo),
+        issues: &mut Vec<String>,
+    ) {
+        if inputs(t, r) != *retained {
+            issues.push(format!("case{} full ordered input changed", c.id));
+        }
+        if t.validate().is_err()
+            || t.atoms.len() != 6
+            || t.bonds.len() != 3
+            || !t.stereo_groups.is_empty()
+            || !t.substance_groups.is_empty()
+            || r.find_type() != RingFindType::OtherOrUnknown
+            || !r.is_initialized()
+            || r.atom_row_count() != 6
+            || r.bond_row_count() != 3
+            || (0..6).any(|i| !r.atom_members(AtomId::new(i)).is_empty())
+            || (0..3).any(|i| !r.bond_members(BondId::new(i)).is_empty())
+        {
+            issues.push(format!(
+                "case{} topology/ring dimensions/quality/membership prerequisite",
+                c.id
+            ));
+        }
+        let wanted = topology(c.requested);
+        if format!("{t:?}") != format!("{wanted:?}") {
+            issues.push(format!(
+                "case{} complete atom/bond/props/adjacency prerequisite",
+                c.id
+            ));
+        }
+    }
+    fn run(private: bool) {
+        let mut issues = Vec::new();
+        let mut calls = 0;
+        let mut successes = 0;
+        let selected = if private { &CASES[..24] } else { &CASES[..] };
+        for c in selected {
+            let t = topology(c.requested);
+            let r = RingInfo::new(RingFindType::OtherOrUnknown, 6, 3);
+            let retained = inputs(&t, &r);
+            let mut f = fixture(c, &t, &r);
+            check_inputs(c, &t, &r, &retained, &mut issues);
+            if state(&f, &t, &r) != expected(&c.pre, false, c.requested) {
+                issues.push(format!("case{} PRE frame", c.id));
+            }
+            let result = if private {
+                f.add_atom_to_atom_with_ang(c.requested, 2)
+            } else {
+                f.add_non_ring_atom(c.requested, 2)
+            };
+            calls += 1;
+            // Required preservation immediately after Result, before inspection.
+            check_inputs(c, &t, &r, &retained, &mut issues);
+            let actual = state(&f, &t, &r);
+            let wanted = expected(&c.post, private, c.requested);
+            if !actual.topology_identity
+                || !actual.rings_identity
+                || actual.done
+                || actual.attachments != vec![2]
+            {
+                issues.push(format!("case{} pointers/done/attachments changed", c.id));
+            }
+            if result.is_ok() {
+                successes += 1;
+            } else {
+                issues.push(format!("case{} error {result:?}", c.id));
+            }
+            if actual != wanted {
+                for (a, b) in actual.rows.iter().zip(&wanted.rows) {
+                    if a != b {
+                        issues.push(format!("case{} POST actual={a:?} expected={b:?}", c.id));
+                    }
+                }
+                if actual.rows.len() != wanted.rows.len() {
+                    issues.push(format!("case{} POST shape", c.id));
+                }
+            }
+        }
+        println!(
+            "D2-ANGLED census private={private} actual_calls={calls} success={successes} expected={}",
+            selected.len()
+        );
+        assert!(
+            calls == selected.len() && successes == selected.len() && issues.is_empty(),
+            "{}",
+            issues.join("\n")
+        );
+    }
+    #[test]
+    fn d2_angled_destination_assignment_private_24() {
+        run(true);
+    }
+    #[test]
+    fn d2_angled_destination_assignment_dispatcher_28() {
+        run(false);
+    }
+    #[test]
+    fn d2_angled_destination_assignment_errors_8() {
+        let c = &CASES[2];
+        let mut issues = Vec::new();
+        let mut calls = 0;
+        let mut errors = 0;
+        for _repeat in 0..2 {
+            for (aid, to, expected_error) in [
+                (
+                    6,
+                    2,
+                    FragmentError::AtomIndexOutOfRange {
+                        atom: 6,
+                        atom_count: 6,
+                    },
+                ),
+                (
+                    5,
+                    6,
+                    FragmentError::AtomIndexOutOfRange {
+                        atom: 6,
+                        atom_count: 6,
+                    },
+                ),
+                (1, 2, FragmentError::AtomAlreadyEmbedded { atom: 1 }),
+                (0, 5, FragmentError::AtomNotEmbedded { atom: 5 }),
+            ] {
+                let t = topology(c.requested);
+                let r = RingInfo::new(RingFindType::OtherOrUnknown, 6, 3);
+                let retained = inputs(&t, &r);
+                let mut f = fixture(c, &t, &r);
+                check_inputs(c, &t, &r, &retained, &mut issues);
+                let before = state(&f, &t, &r);
+                if before != expected(&c.pre, false, c.requested) {
+                    issues.push("error PRE frame".into());
+                }
+                let result = f.add_non_ring_atom(aid, to);
+                calls += 1;
+                check_inputs(c, &t, &r, &retained, &mut issues);
+                let after = state(&f, &t, &r);
+                if after != before {
+                    issues.push(format!("guard{aid}/{to} complete fragment changed"));
+                }
+                match result {
+                    Err(e) => {
+                        errors += 1;
+                        if e != expected_error {
+                            issues.push(format!(
+                                "guard{aid}/{to} typed {e:?} expected {expected_error:?}"
+                            ));
+                        }
+                    }
+                    Ok(()) => issues.push(format!("guard{aid}/{to} unexpected success")),
+                }
+            }
+        }
+        println!("D2-ANGLED census errors actual_calls={calls} typed_errors={errors}");
+        assert!(
+            calls == 8 && errors == 8 && issues.is_empty(),
+            "{}",
+            issues.join("\n")
+        );
+    }
+}
+
+#[cfg(test)]
+mod reflection_alias_tests {
+    use super::*;
+    use cosmolkit_core::{RingFindType, RingInfo, fast_find_rings};
+    use cosmolkit_model::{Atom, AtomSpec, Bond, BondOrder, BondSpec, Element};
+    // Literal complete native rows: key, aid, loc bits, normal bits, ccw,
+    // angle bits, nbr1/nbr2/CisTransNbr, rotDir, density bits, fixed.
+    // Native TSV332a2c5a frozen BEFORE CK,14 kernel/12 full-caller calls.
+    const KPRE: [[i128; 14]; 14] = [
+        [
+            0,
+            0,
+            4614253070214989087,
+            4609839542580166001,
+            4603669611090668421,
+            4601417811276983173,
+            0,
+            13830554455654793216,
+            -1,
+            -1,
+            -1,
+            0,
+            13830554455654793216,
+            0,
+        ],
+        [
+            0,
+            0,
+            4614253070214989087,
+            4609839542580166001,
+            4603669611090668421,
+            4601417811276983173,
+            1,
+            13830554455654793216,
+            -1,
+            -1,
+            -1,
+            0,
+            13830554455654793216,
+            0,
+        ],
+        [
+            0,
+            0,
+            13820826680459672945,
+            4607948030736670392,
+            4603669611090668421,
+            4601417811276983173,
+            0,
+            13830554455654793216,
+            -1,
+            -1,
+            -1,
+            0,
+            13830554455654793216,
+            0,
+        ],
+        [
+            0,
+            0,
+            13820826680459672945,
+            4607948030736670392,
+            4603669611090668421,
+            4601417811276983173,
+            1,
+            13830554455654793216,
+            -1,
+            -1,
+            -1,
+            0,
+            13830554455654793216,
+            0,
+        ],
+        [
+            0,
+            0,
+            4612834436332367380,
+            13829383519751676887,
+            4603669611090668421,
+            4601417811276983173,
+            0,
+            13830554455654793216,
+            -1,
+            -1,
+            -1,
+            0,
+            13830554455654793216,
+            0,
+        ],
+        [
+            0,
+            0,
+            4612834436332367380,
+            13829383519751676887,
+            4603669611090668421,
+            4601417811276983173,
+            1,
+            13830554455654793216,
+            -1,
+            -1,
+            -1,
+            0,
+            13830554455654793216,
+            0,
+        ],
+        [
+            0,
+            0,
+            4622455251036337603,
+            4616516129027742761,
+            13823708984221190062,
+            4606371770867090719,
+            0,
+            13830554455654793216,
+            -1,
+            -1,
+            -1,
+            0,
+            13830554455654793216,
+            0,
+        ],
+        [
+            0,
+            0,
+            4622455251036337603,
+            4616516129027742761,
+            13823708984221190062,
+            4606371770867090719,
+            1,
+            13830554455654793216,
+            -1,
+            -1,
+            -1,
+            0,
+            13830554455654793216,
+            0,
+        ],
+        [
+            0,
+            0,
+            4621914819081053143,
+            13838233093019459912,
+            13823708984221190062,
+            4606371770867090719,
+            0,
+            13830554455654793216,
+            -1,
+            -1,
+            -1,
+            0,
+            13830554455654793216,
+            0,
+        ],
+        [
+            0,
+            0,
+            4621914819081053143,
+            13838233093019459912,
+            13823708984221190062,
+            4606371770867090719,
+            1,
+            13830554455654793216,
+            -1,
+            -1,
+            -1,
+            0,
+            13830554455654793216,
+            0,
+        ],
+        [
+            0,
+            0,
+            4623232121972059013,
+            4613645084265294070,
+            13823708984221190062,
+            4606371770867090719,
+            0,
+            13830554455654793216,
+            -1,
+            -1,
+            -1,
+            0,
+            13830554455654793216,
+            0,
+        ],
+        [
+            0,
+            0,
+            4623232121972059013,
+            4613645084265294070,
+            13823708984221190062,
+            4606371770867090719,
+            1,
+            13830554455654793216,
+            -1,
+            -1,
+            -1,
+            0,
+            13830554455654793216,
+            0,
+        ],
+        [
+            0,
+            0,
+            4624945975734500932,
+            4618271276495847798,
+            4606722574913418428,
+            13822726034664128445,
+            1,
+            13830554455654793216,
+            -1,
+            -1,
+            -1,
+            0,
+            13830554455654793216,
+            0,
+        ],
+        [
+            0,
+            0,
+            4624945975734500934,
+            4618271276495847797,
+            13830094611768194224,
+            4599353997809352688,
+            0,
+            13830554455654793216,
+            -1,
+            -1,
+            -1,
+            0,
+            13830554455654793216,
+            0,
+        ],
+    ];
+    const KPOST: [[i128; 14]; 14] = [
+        [
+            0,
+            0,
+            4599687390380978764,
+            13835460948604670902,
+            13821080103458620312,
+            13827921496288646340,
+            1,
+            13830554455654793216,
+            -1,
+            -1,
+            -1,
+            0,
+            13830554455654793216,
+            0,
+        ],
+        [
+            0,
+            0,
+            4599687390380978764,
+            13835460948604670902,
+            13821080103458620312,
+            13827921496288646340,
+            0,
+            13830554455654793216,
+            -1,
+            -1,
+            -1,
+            0,
+            13830554455654793216,
+            0,
+        ],
+        [
+            0,
+            0,
+            13820826680459672936,
+            4607948030736670394,
+            13821080103458620312,
+            13827921496288646344,
+            1,
+            13830554455654793216,
+            -1,
+            -1,
+            -1,
+            0,
+            13830554455654793216,
+            0,
+        ],
+        [
+            0,
+            0,
+            13820826680459672936,
+            4607948030736670394,
+            13821080103458620312,
+            13827921496288646344,
+            0,
+            13830554455654793216,
+            -1,
+            -1,
+            -1,
+            0,
+            13830554455654793216,
+            0,
+        ],
+        [
+            0,
+            0,
+            4612834436332367381,
+            13829383519751676892,
+            13821080103458620336,
+            13827921496288646344,
+            1,
+            13830554455654793216,
+            -1,
+            -1,
+            -1,
+            0,
+            13830554455654793216,
+            0,
+        ],
+        [
+            0,
+            0,
+            4612834436332367381,
+            13829383519751676892,
+            13821080103458620336,
+            13827921496288646344,
+            0,
+            13830554455654793216,
+            -1,
+            -1,
+            -1,
+            0,
+            13830554455654793216,
+            0,
+        ],
+        [
+            0,
+            0,
+            4624342668187880072,
+            4614029546921358093,
+            4606058875276290112,
+            4601706064113978224,
+            1,
+            13830554455654793216,
+            -1,
+            -1,
+            -1,
+            0,
+            13830554455654793216,
+            0,
+        ],
+        [
+            0,
+            0,
+            4624342668187880072,
+            4614029546921358093,
+            4606058875276290112,
+            4601706064113978224,
+            0,
+            13830554455654793216,
+            -1,
+            -1,
+            -1,
+            0,
+            13830554455654793216,
+            0,
+        ],
+        [
+            0,
+            0,
+            4621914819081053143,
+            13838233093019459912,
+            4606058875276290128,
+            4601706064113978208,
+            1,
+            13830554455654793216,
+            -1,
+            -1,
+            -1,
+            0,
+            13830554455654793216,
+            0,
+        ],
+        [
+            0,
+            0,
+            4621914819081053143,
+            13838233093019459912,
+            4606058875276290128,
+            4601706064113978208,
+            0,
+            13830554455654793216,
+            -1,
+            -1,
+            -1,
+            0,
+            13830554455654793216,
+            0,
+        ],
+        [
+            0,
+            0,
+            4623232121972059012,
+            4613645084265294071,
+            4606058875276290144,
+            4601706064113978216,
+            1,
+            13830554455654793216,
+            -1,
+            -1,
+            -1,
+            0,
+            13830554455654793216,
+            0,
+        ],
+        [
+            0,
+            0,
+            4623232121972059012,
+            4613645084265294071,
+            4606058875276290144,
+            4601706064113978216,
+            0,
+            13830554455654793216,
+            -1,
+            -1,
+            -1,
+            0,
+            13830554455654793216,
+            0,
+        ],
+        [
+            0,
+            0,
+            4624945975734500934,
+            4618271276495847797,
+            13830094611768194224,
+            4599353997809352688,
+            0,
+            13830554455654793216,
+            -1,
+            -1,
+            -1,
+            0,
+            13830554455654793216,
+            0,
+        ],
+        [
+            0,
+            0,
+            4624945975734500932,
+            4618271276495847800,
+            4606722574913418432,
+            13822726034664128448,
+            1,
+            13830554455654793216,
+            -1,
+            -1,
+            -1,
+            0,
+            13830554455654793216,
+            0,
+        ],
+    ];
+    const CPRE: [[[i128; 14]; 5]; 12] = [
+        [
+            [
+                0,
+                0,
+                13820826680459672945,
+                4607948030736670392,
+                4603669611090668421,
+                4601417811276983173,
+                0,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+            [
+                1,
+                0,
+                4612834436332367380,
+                13829383519751676887,
+                4603669611090668421,
+                4601417811276983173,
+                1,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+            [
+                2,
+                0,
+                4614253070214989087,
+                4609839542580166001,
+                4603669611090668421,
+                4601417811276983173,
+                0,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+            [
+                3,
+                0,
+                13836701869146153943,
+                4601057523306793533,
+                4603669611090668421,
+                4601417811276983173,
+                1,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+            [
+                4,
+                0,
+                4607767886751575572,
+                4612339040373356626,
+                4603669611090668421,
+                4601417811276983173,
+                0,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+        ],
+        [
+            [
+                0,
+                0,
+                13820826680459672945,
+                4607948030736670392,
+                4603669611090668421,
+                4601417811276983173,
+                0,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+            [
+                1,
+                0,
+                4612834436332367380,
+                13829383519751676887,
+                4603669611090668421,
+                4601417811276983173,
+                1,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                1,
+            ],
+            [
+                2,
+                0,
+                4614253070214989087,
+                4609839542580166001,
+                4603669611090668421,
+                4601417811276983173,
+                0,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+            [
+                3,
+                0,
+                13836701869146153943,
+                4601057523306793533,
+                4603669611090668421,
+                4601417811276983173,
+                1,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+            [
+                4,
+                0,
+                4607767886751575572,
+                4612339040373356626,
+                4603669611090668421,
+                4601417811276983173,
+                0,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+        ],
+        [
+            [
+                0,
+                0,
+                13820826680459672945,
+                4607948030736670392,
+                4603669611090668421,
+                4601417811276983173,
+                0,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+            [
+                1,
+                0,
+                4612834436332367380,
+                13829383519751676887,
+                4603669611090668421,
+                4601417811276983173,
+                1,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+            [
+                2,
+                0,
+                4614253070214989087,
+                4609839542580166001,
+                4603669611090668421,
+                4601417811276983173,
+                0,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                1,
+            ],
+            [
+                3,
+                0,
+                13836701869146153943,
+                4601057523306793533,
+                4603669611090668421,
+                4601417811276983173,
+                1,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+            [
+                4,
+                0,
+                4607767886751575572,
+                4612339040373356626,
+                4603669611090668421,
+                4601417811276983173,
+                0,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+        ],
+        [
+            [
+                0,
+                0,
+                13820826680459672945,
+                4607948030736670392,
+                4603669611090668421,
+                4601417811276983173,
+                0,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+            [
+                1,
+                0,
+                4612834436332367380,
+                13829383519751676887,
+                4603669611090668421,
+                4601417811276983173,
+                1,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+            [
+                2,
+                0,
+                4614253070214989087,
+                4609839542580166001,
+                4603669611090668421,
+                4601417811276983173,
+                0,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+            [
+                3,
+                0,
+                13836701869146153943,
+                4601057523306793533,
+                4603669611090668421,
+                4601417811276983173,
+                1,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+            [
+                4,
+                0,
+                4607767886751575572,
+                4612339040373356626,
+                4603669611090668421,
+                4601417811276983173,
+                0,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+        ],
+        [
+            [
+                0,
+                0,
+                13820826680459672945,
+                4607948030736670392,
+                4603669611090668421,
+                4601417811276983173,
+                0,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+            [
+                1,
+                0,
+                4612834436332367380,
+                13829383519751676887,
+                4603669611090668421,
+                4601417811276983173,
+                1,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                1,
+            ],
+            [
+                2,
+                0,
+                4614253070214989087,
+                4609839542580166001,
+                4603669611090668421,
+                4601417811276983173,
+                0,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+            [
+                3,
+                0,
+                13836701869146153943,
+                4601057523306793533,
+                4603669611090668421,
+                4601417811276983173,
+                1,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+            [
+                4,
+                0,
+                4607767886751575572,
+                4612339040373356626,
+                4603669611090668421,
+                4601417811276983173,
+                0,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+        ],
+        [
+            [
+                0,
+                0,
+                13820826680459672945,
+                4607948030736670392,
+                4603669611090668421,
+                4601417811276983173,
+                0,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+            [
+                1,
+                0,
+                4612834436332367380,
+                13829383519751676887,
+                4603669611090668421,
+                4601417811276983173,
+                1,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+            [
+                2,
+                0,
+                4614253070214989087,
+                4609839542580166001,
+                4603669611090668421,
+                4601417811276983173,
+                0,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                1,
+            ],
+            [
+                3,
+                0,
+                13836701869146153943,
+                4601057523306793533,
+                4603669611090668421,
+                4601417811276983173,
+                1,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+            [
+                4,
+                0,
+                4607767886751575572,
+                4612339040373356626,
+                4603669611090668421,
+                4601417811276983173,
+                0,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+        ],
+        [
+            [
+                0,
+                0,
+                13820826680459672945,
+                4607948030736670392,
+                4603669611090668421,
+                4601417811276983173,
+                0,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+            [
+                1,
+                0,
+                4612834436332367380,
+                13829383519751676887,
+                4603669611090668421,
+                4601417811276983173,
+                1,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+            [
+                2,
+                0,
+                4614253070214989087,
+                4609839542580166001,
+                4603669611090668421,
+                4601417811276983173,
+                0,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+            [
+                3,
+                0,
+                13836701869146153943,
+                4601057523306793533,
+                4603669611090668421,
+                4601417811276983173,
+                1,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+            [
+                4,
+                0,
+                4607767886751575572,
+                4612339040373356626,
+                4603669611090668421,
+                4601417811276983173,
+                0,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+        ],
+        [
+            [
+                0,
+                0,
+                13820826680459672945,
+                4607948030736670392,
+                4603669611090668421,
+                4601417811276983173,
+                0,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+            [
+                1,
+                0,
+                4612834436332367380,
+                13829383519751676887,
+                4603669611090668421,
+                4601417811276983173,
+                1,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                1,
+            ],
+            [
+                2,
+                0,
+                4614253070214989087,
+                4609839542580166001,
+                4603669611090668421,
+                4601417811276983173,
+                0,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+            [
+                3,
+                0,
+                13836701869146153943,
+                4601057523306793533,
+                4603669611090668421,
+                4601417811276983173,
+                1,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+            [
+                4,
+                0,
+                4607767886751575572,
+                4612339040373356626,
+                4603669611090668421,
+                4601417811276983173,
+                0,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+        ],
+        [
+            [
+                0,
+                0,
+                13820826680459672945,
+                4607948030736670392,
+                4603669611090668421,
+                4601417811276983173,
+                0,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+            [
+                1,
+                0,
+                4612834436332367380,
+                13829383519751676887,
+                4603669611090668421,
+                4601417811276983173,
+                1,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+            [
+                2,
+                0,
+                4614253070214989087,
+                4609839542580166001,
+                4603669611090668421,
+                4601417811276983173,
+                0,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                1,
+            ],
+            [
+                3,
+                0,
+                13836701869146153943,
+                4601057523306793533,
+                4603669611090668421,
+                4601417811276983173,
+                1,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+            [
+                4,
+                0,
+                4607767886751575572,
+                4612339040373356626,
+                4603669611090668421,
+                4601417811276983173,
+                0,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+        ],
+        [
+            [
+                0,
+                0,
+                13820826680459672945,
+                4607948030736670392,
+                4603669611090668421,
+                4601417811276983173,
+                0,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+            [
+                1,
+                0,
+                4612834436332367380,
+                13829383519751676887,
+                4603669611090668421,
+                4601417811276983173,
+                1,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+            [
+                2,
+                0,
+                4614253070214989087,
+                4609839542580166001,
+                4603669611090668421,
+                4601417811276983173,
+                0,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+            [
+                3,
+                0,
+                13836701869146153943,
+                4601057523306793533,
+                4603669611090668421,
+                4601417811276983173,
+                1,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+            [
+                4,
+                0,
+                4607767886751575572,
+                4612339040373356626,
+                4603669611090668421,
+                4601417811276983173,
+                0,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+        ],
+        [
+            [
+                0,
+                0,
+                13820826680459672945,
+                4607948030736670392,
+                4603669611090668421,
+                4601417811276983173,
+                0,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+            [
+                1,
+                0,
+                4612834436332367380,
+                13829383519751676887,
+                4603669611090668421,
+                4601417811276983173,
+                1,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                1,
+            ],
+            [
+                2,
+                0,
+                4614253070214989087,
+                4609839542580166001,
+                4603669611090668421,
+                4601417811276983173,
+                0,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+            [
+                3,
+                0,
+                13836701869146153943,
+                4601057523306793533,
+                4603669611090668421,
+                4601417811276983173,
+                1,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+            [
+                4,
+                0,
+                4607767886751575572,
+                4612339040373356626,
+                4603669611090668421,
+                4601417811276983173,
+                0,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+        ],
+        [
+            [
+                0,
+                0,
+                13820826680459672945,
+                4607948030736670392,
+                4603669611090668421,
+                4601417811276983173,
+                0,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+            [
+                1,
+                0,
+                4612834436332367380,
+                13829383519751676887,
+                4603669611090668421,
+                4601417811276983173,
+                1,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+            [
+                2,
+                0,
+                4614253070214989087,
+                4609839542580166001,
+                4603669611090668421,
+                4601417811276983173,
+                0,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                1,
+            ],
+            [
+                3,
+                0,
+                13836701869146153943,
+                4601057523306793533,
+                4603669611090668421,
+                4601417811276983173,
+                1,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+            [
+                4,
+                0,
+                4607767886751575572,
+                4612339040373356626,
+                4603669611090668421,
+                4601417811276983173,
+                0,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+        ],
+    ];
+    const CPOST: [[[i128; 14]; 5]; 12] = [
+        [
+            [
+                0,
+                0,
+                4618321258499041646,
+                13824216203307764087,
+                13822956377096301248,
+                4604212532125439885,
+                1,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+            [
+                1,
+                0,
+                4612834436332367382,
+                13829383519751676888,
+                13822956377096301256,
+                4604212532125439885,
+                0,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+            [
+                2,
+                0,
+                4614253070214989087,
+                4609839542580166001,
+                4603669611090668421,
+                4601417811276983173,
+                0,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+            [
+                3,
+                0,
+                13836701869146153943,
+                4601057523306793533,
+                4603669611090668421,
+                4601417811276983173,
+                1,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+            [
+                4,
+                0,
+                4607767886751575572,
+                4612339040373356626,
+                4603669611090668421,
+                4601417811276983173,
+                0,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+        ],
+        [
+            [
+                0,
+                0,
+                13820826680459672945,
+                4607948030736670392,
+                4603669611090668421,
+                4601417811276983173,
+                0,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+            [
+                1,
+                0,
+                4612834436332367380,
+                13829383519751676887,
+                4603669611090668421,
+                4601417811276983173,
+                1,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                1,
+            ],
+            [
+                2,
+                0,
+                4614253070214989087,
+                4609839542580166001,
+                4603669611090668421,
+                4601417811276983173,
+                0,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+            [
+                3,
+                0,
+                13836701869146153943,
+                4601057523306793533,
+                4603669611090668421,
+                4601417811276983173,
+                1,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+            [
+                4,
+                0,
+                4607767886751575572,
+                4612339040373356626,
+                4603669611090668421,
+                4601417811276983173,
+                0,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+        ],
+        [
+            [
+                0,
+                0,
+                4618321258499041646,
+                13824216203307764087,
+                13822956377096301248,
+                4604212532125439885,
+                1,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+            [
+                1,
+                0,
+                4612834436332367382,
+                13829383519751676888,
+                13822956377096301256,
+                4604212532125439885,
+                0,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+            [
+                2,
+                0,
+                4614253070214989087,
+                4609839542580166001,
+                4603669611090668421,
+                4601417811276983173,
+                0,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                1,
+            ],
+            [
+                3,
+                0,
+                13836701869146153943,
+                4601057523306793533,
+                4603669611090668421,
+                4601417811276983173,
+                1,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+            [
+                4,
+                0,
+                4607767886751575572,
+                4612339040373356626,
+                4603669611090668421,
+                4601417811276983173,
+                0,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+        ],
+        [
+            [
+                0,
+                0,
+                4618321258499041645,
+                13824216203307764119,
+                13822956377096301248,
+                4604212532125439888,
+                1,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+            [
+                1,
+                0,
+                4612834436332367379,
+                13829383519751676886,
+                13822956377096301256,
+                4604212532125439887,
+                0,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+            [
+                2,
+                0,
+                4614253070214989087,
+                4609839542580166001,
+                4603669611090668421,
+                4601417811276983173,
+                0,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+            [
+                3,
+                0,
+                13836701869146153943,
+                4601057523306793533,
+                4603669611090668421,
+                4601417811276983173,
+                1,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+            [
+                4,
+                0,
+                4607767886751575572,
+                4612339040373356626,
+                4603669611090668421,
+                4601417811276983173,
+                0,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+        ],
+        [
+            [
+                0,
+                0,
+                4618321258499041645,
+                13824216203307764119,
+                13822956377096301248,
+                4604212532125439888,
+                1,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+            [
+                1,
+                0,
+                4612834436332367379,
+                13829383519751676886,
+                13822956377096301256,
+                4604212532125439887,
+                0,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                1,
+            ],
+            [
+                2,
+                0,
+                4614253070214989087,
+                4609839542580166001,
+                4603669611090668421,
+                4601417811276983173,
+                0,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+            [
+                3,
+                0,
+                13836701869146153943,
+                4601057523306793533,
+                4603669611090668421,
+                4601417811276983173,
+                1,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+            [
+                4,
+                0,
+                4607767886751575572,
+                4612339040373356626,
+                4603669611090668421,
+                4601417811276983173,
+                0,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+        ],
+        [
+            [
+                0,
+                0,
+                13820826680459672945,
+                4607948030736670392,
+                4603669611090668421,
+                4601417811276983173,
+                0,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+            [
+                1,
+                0,
+                4612834436332367380,
+                13829383519751676887,
+                4603669611090668421,
+                4601417811276983173,
+                1,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+            [
+                2,
+                0,
+                4614253070214989087,
+                4609839542580166001,
+                4603669611090668421,
+                4601417811276983173,
+                0,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                1,
+            ],
+            [
+                3,
+                0,
+                13836701869146153943,
+                4601057523306793533,
+                4603669611090668421,
+                4601417811276983173,
+                1,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+            [
+                4,
+                0,
+                4607767886751575572,
+                4612339040373356626,
+                4603669611090668421,
+                4601417811276983173,
+                0,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+        ],
+        [
+            [
+                0,
+                0,
+                13820826680459672945,
+                4607948030736670392,
+                4603669611090668421,
+                4601417811276983173,
+                0,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+            [
+                1,
+                0,
+                4612834436332367380,
+                13829383519751676887,
+                4603669611090668421,
+                4601417811276983173,
+                1,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+            [
+                2,
+                0,
+                4614253070214989087,
+                4609839542580166001,
+                13822956377096301256,
+                4604212532125439882,
+                1,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+            [
+                3,
+                0,
+                13836701869146153943,
+                4601057523306793533,
+                4603669611090668421,
+                4601417811276983173,
+                1,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+            [
+                4,
+                0,
+                4607767886751575572,
+                4612339040373356626,
+                4603669611090668421,
+                4601417811276983173,
+                0,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+        ],
+        [
+            [
+                0,
+                0,
+                13820826680459672945,
+                4607948030736670392,
+                4603669611090668421,
+                4601417811276983173,
+                0,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+            [
+                1,
+                0,
+                4612834436332367380,
+                13829383519751676887,
+                4603669611090668421,
+                4601417811276983173,
+                1,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                1,
+            ],
+            [
+                2,
+                0,
+                4614253070214989087,
+                4609839542580166001,
+                4603669611090668421,
+                4601417811276983173,
+                0,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+            [
+                3,
+                0,
+                13836701869146153943,
+                4601057523306793533,
+                4603669611090668421,
+                4601417811276983173,
+                1,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+            [
+                4,
+                0,
+                4607767886751575572,
+                4612339040373356626,
+                4603669611090668421,
+                4601417811276983173,
+                0,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+        ],
+        [
+            [
+                0,
+                0,
+                13820826680459672945,
+                4607948030736670392,
+                4603669611090668421,
+                4601417811276983173,
+                0,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+            [
+                1,
+                0,
+                4612834436332367380,
+                13829383519751676887,
+                4603669611090668421,
+                4601417811276983173,
+                1,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+            [
+                2,
+                0,
+                4614253070214989087,
+                4609839542580166001,
+                13822956377096301256,
+                4604212532125439882,
+                1,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                1,
+            ],
+            [
+                3,
+                0,
+                13836701869146153943,
+                4601057523306793533,
+                4603669611090668421,
+                4601417811276983173,
+                1,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+            [
+                4,
+                0,
+                4607767886751575572,
+                4612339040373356626,
+                4603669611090668421,
+                4601417811276983173,
+                0,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+        ],
+        [
+            [
+                0,
+                0,
+                13820826680459672945,
+                4607948030736670392,
+                4603669611090668421,
+                4601417811276983173,
+                0,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+            [
+                1,
+                0,
+                4612834436332367380,
+                13829383519751676887,
+                4603669611090668421,
+                4601417811276983173,
+                1,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+            [
+                2,
+                0,
+                4614253070214989089,
+                4609839542580166001,
+                13822956377096301256,
+                4604212532125439882,
+                1,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+            [
+                3,
+                0,
+                13836701869146153943,
+                4601057523306793533,
+                4603669611090668421,
+                4601417811276983173,
+                1,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+            [
+                4,
+                0,
+                4607767886751575572,
+                4612339040373356626,
+                4603669611090668421,
+                4601417811276983173,
+                0,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+        ],
+        [
+            [
+                0,
+                0,
+                13820826680459672945,
+                4607948030736670392,
+                4603669611090668421,
+                4601417811276983173,
+                0,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+            [
+                1,
+                0,
+                4612834436332367380,
+                13829383519751676887,
+                4603669611090668421,
+                4601417811276983173,
+                1,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                1,
+            ],
+            [
+                2,
+                0,
+                4614253070214989089,
+                4609839542580166001,
+                13822956377096301256,
+                4604212532125439882,
+                1,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+            [
+                3,
+                0,
+                13836701869146153943,
+                4601057523306793533,
+                4603669611090668421,
+                4601417811276983173,
+                1,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+            [
+                4,
+                0,
+                4607767886751575572,
+                4612339040373356626,
+                4603669611090668421,
+                4601417811276983173,
+                0,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+        ],
+        [
+            [
+                0,
+                0,
+                13820826680459672945,
+                4607948030736670392,
+                4603669611090668421,
+                4601417811276983173,
+                0,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+            [
+                1,
+                0,
+                4612834436332367380,
+                13829383519751676887,
+                4603669611090668421,
+                4601417811276983173,
+                1,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+            [
+                2,
+                0,
+                4614253070214989087,
+                4609839542580166001,
+                4603669611090668421,
+                4601417811276983173,
+                0,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                1,
+            ],
+            [
+                3,
+                0,
+                13836701869146153943,
+                4601057523306793533,
+                4603669611090668421,
+                4601417811276983173,
+                1,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+            [
+                4,
+                0,
+                4607767886751575572,
+                4612339040373356626,
+                4603669611090668421,
+                4601417811276983173,
+                0,
+                13830554455654793216,
+                -1,
+                -1,
+                -1,
+                0,
+                13830554455654793216,
+                0,
+            ],
+        ],
+    ];
+
+    fn decode(v: [i128; 14]) -> EmbeddedAtom {
+        let index = |x| if x < 0 { None } else { Some(x as usize) };
+        EmbeddedAtom {
+            aid: v[1] as usize,
+            loc: [f64::from_bits(v[2] as u64), f64::from_bits(v[3] as u64)],
+            normal: [f64::from_bits(v[4] as u64), f64::from_bits(v[5] as u64)],
+            ccw: v[6] != 0,
+            angle: f64::from_bits(v[7] as u64),
+            nbr1: index(v[8]),
+            nbr2: index(v[9]),
+            cis_trans_nbr: index(v[10]),
+            rot_dir: v[11] as i32,
+            density: f64::from_bits(v[12] as u64),
+            fixed: v[13] != 0,
+            neighs: Vec::new(),
+        }
+    }
+    fn row(key: usize, a: &EmbeddedAtom) -> [i128; 14] {
+        let index = |x: Option<usize>| x.map_or(-1, |i| i as i128);
+        [
+            key as i128,
+            a.aid as i128,
+            a.loc[0].to_bits() as i128,
+            a.loc[1].to_bits() as i128,
+            a.normal[0].to_bits() as i128,
+            a.normal[1].to_bits() as i128,
+            i128::from(a.ccw),
+            a.angle.to_bits() as i128,
+            index(a.nbr1),
+            index(a.nbr2),
+            index(a.cis_trans_nbr),
+            a.rot_dir as i128,
+            a.density.to_bits() as i128,
+            i128::from(a.fixed),
+        ]
+    }
+    #[test]
+    fn d2_reflection_alias_kernel_native_fourteen() {
+        let mut issues = Vec::new();
+        let mut calls = 0;
+        for i in 0..14 {
+            let mut atom = decode(KPRE[i]);
+            assert_eq!(row(0, &atom), KPRE[i], "kernel{i} whole PRE");
+            assert!(atom.neighs.is_empty());
+            let mut endpoints = if i < 6 {
+                [[-0.23, 1.17], [2.51, -0.87]]
+            } else if i < 12 {
+                [[10.17, -3.41], [12.51, 2.87]]
+            } else {
+                [
+                    [
+                        f64::from_bits(4624679614270839367),
+                        f64::from_bits(4616668647364321170),
+                    ],
+                    atom.loc,
+                ]
+            };
+            let aliases = if i < 12 {
+                match (i % 6) / 2 {
+                    0 => [false, false],
+                    1 => [true, false],
+                    _ => [false, true],
+                }
+            } else {
+                [false, true]
+            };
+            let input = endpoints;
+            for j in 0..2 {
+                if aliases[j] {
+                    assert_eq!(atom.loc.map(f64::to_bits), endpoints[j].map(f64::to_bits));
+                }
+            }
+            atom.reflect_with_endpoint_aliases(&mut endpoints, aliases);
+            calls += 1;
+            for j in 0..2 {
+                let wanted = if aliases[j] { atom.loc } else { input[j] };
+                if endpoints[j].map(f64::to_bits) != wanted.map(f64::to_bits) {
+                    issues.push(format!("kernel{i} endpoint{j}"));
+                }
+            }
+            if row(0, &atom) != KPOST[i] || !atom.neighs.is_empty() {
+                issues.push(format!(
+                    "kernel{i} whole POST {:?} expected {:?}",
+                    row(0, &atom),
+                    KPOST[i]
+                ));
+            }
+        }
+        println!("D2-REFLECT-ALIAS kernel calls={calls}");
+        assert_eq!(calls, 14);
+        assert!(issues.is_empty(), "{}", issues.join("\n"));
+    }
+    fn topology(tree: usize, ring: bool) -> TopologyBlock {
+        let atoms = (0..5)
+            .map(|i| Atom::from_spec(AtomId::new(i), AtomSpec::new(Element::C)))
+            .collect();
+        let mut edges = if tree == 0 {
+            vec![(0, 1), (1, 2), (2, 3), (3, 4)]
+        } else {
+            vec![(0, 1), (1, 2), (1, 3), (3, 4)]
+        };
+        if ring {
+            edges.push((4, 0));
+        }
+        let bonds = edges
+            .into_iter()
+            .enumerate()
+            .map(|(i, (a, b))| {
+                Bond::from_spec(
+                    BondId::new(i),
+                    BondSpec::new(AtomId::new(a), AtomId::new(b), BondOrder::Single),
+                )
+            })
+            .collect();
+        TopologyBlock::try_from_parts(atoms, bonds, Vec::new(), Vec::new())
+            .expect("literal topology")
+    }
+    fn carrier<'a>(i: usize, t: &'a TopologyBlock, r: &'a RingInfo) -> EmbeddedFrag<'a> {
+        EmbeddedFrag {
+            atoms: CPRE[i]
+                .into_iter()
+                .map(|v| (v[0] as usize, decode(v)))
+                .collect(),
+            attachment_points: vec![],
+            done: false,
+            topology: t,
+            rings: r,
+        }
+    }
+    fn state(f: &EmbeddedFrag<'_>) -> Vec<([i128; 14], Vec<usize>)> {
+        f.atoms
+            .iter()
+            .map(|(&k, a)| (row(k, a), a.neighs.clone()))
+            .collect()
+    }
+    #[test]
+    fn d2_reflection_alias_caller_twelve_and_four_errors() {
+        let mut issues = Vec::new();
+        let mut calls = 0;
+        for i in 0..12 {
+            let t = topology(i / 6, false);
+            let r = RingInfo::new(RingFindType::Fast, 5, 4);
+            let params = crate::Compute2DCoordinatesParams::default();
+            let inputs = (format!("{t:?}"), r.clone(), format!("{params:?}"));
+            assert!(t.validate().is_ok());
+            assert_eq!(t.bonds.len(), 4);
+            assert_eq!(r.num_bond_rings(BondId::new(1)), 0);
+            let mut f = carrier(i, &t, &r);
+            assert_eq!(
+                state(&f),
+                CPRE[i]
+                    .iter()
+                    .copied()
+                    .map(|v| (v, vec![]))
+                    .collect::<Vec<_>>()
+            );
+            let result = f.flip_about_bond(1, (i % 6) / 3 != 0);
+            calls += 1;
+            if (format!("{t:?}"), r.clone(), format!("{params:?}")) != inputs {
+                issues.push(format!("caller{i} detached inputs"));
+            }
+            if !std::ptr::eq(f.topology, &t)
+                || !std::ptr::eq(f.rings, &r)
+                || !f.attachment_points.is_empty()
+                || f.done
+            {
+                issues.push(format!("caller{i} carrier metadata"));
+            }
+            if result.is_err() {
+                issues.push(format!("caller{i} error {result:?}"));
+            }
+            let expected = CPOST[i]
+                .iter()
+                .copied()
+                .map(|v| (v, vec![]))
+                .collect::<Vec<_>>();
+            if state(&f) != expected {
+                issues.push(format!(
+                    "caller{i} whole ordered POST {:?} expected {:?}",
+                    state(&f),
+                    expected
+                ));
+            }
+        }
+        let mut errors = 0;
+        for kind in 0..4 {
+            let t = topology(0, kind == 1);
+            let r = if kind == 1 {
+                fast_find_rings(&t).expect("literal real ring")
+            } else {
+                RingInfo::new(RingFindType::Fast, 5, 4)
+            };
+            let params = crate::Compute2DCoordinatesParams::default();
+            let inputs = (format!("{t:?}"), r.clone(), format!("{params:?}"));
+            let mut f = carrier(0, &t, &r);
+            if kind == 2 {
+                f.atoms.remove(&1);
+            }
+            if kind == 3 {
+                f.atoms.remove(&2);
+            }
+            if kind == 1 {
+                assert!(r.num_bond_rings(BondId::new(1)) > 0);
+            }
+            let before = state(&f);
+            let bond = if kind == 0 { 99 } else { 1 };
+            let result = f.flip_about_bond(bond, true);
+            errors += 1;
+            if (format!("{t:?}"), r.clone(), format!("{params:?}")) != inputs
+                || state(&f) != before
+                || f.done
+                || !f.attachment_points.is_empty()
+            {
+                issues.push(format!("error{kind} preservation"));
+            }
+            let matched = match (kind, result) {
+                (0, Err(FragmentError::CollisionBondInvalid { bond: 99 }))
+                | (1, Err(FragmentError::CollisionBondInvalid { bond: 1 }))
+                | (2, Err(FragmentError::AtomNotEmbedded { atom: 1 }))
+                | (3, Err(FragmentError::AtomNotEmbedded { atom: 2 })) => true,
+                _ => false,
+            };
+            if !matched {
+                issues.push(format!("error{kind} typed variant"));
+            }
+        }
+        println!("D2-REFLECT-ALIAS caller calls={calls} typed_error_calls={errors}");
+        assert_eq!((calls, errors), (12, 4));
+        assert!(issues.is_empty(), "{}", issues.join("\n"));
     }
 }

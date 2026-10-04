@@ -415,9 +415,13 @@ pub fn add_hydrogens_with_query_state(
     // RDKit✔️✔️:   // regenerate that.  This caused Issue210 and Issue212:
     // RDKit✔️✔️:   mol.clearComputedProps(false);
     // END RDKIT CPP FUNCTION MolOps::addHs computed-property prelude
-    // Molecule properties are a BTreeMap/BTreeSet-backed detached value, so
-    // clearing the modeled computed subset has the same O(p log p) shape as
-    // the model owner and does not touch the runtime-owned ring cache.
+    // Behavior review: the composed boundary clears molecule properties HERE
+    // once and ALL atom/bond computed properties in the delegated topology
+    // owner. Ordinary properties survive. Neither detached stage owns rings
+    // or native valence caches; this is not full source cache parity.
+    // Cost review: molecule clearing moves the computed set and removes keys
+    // in O(q log p). The topology owner's separate store-cost qualification
+    // applies to the composed prelude; no whole-topology clone is added.
     let mut properties = properties;
     properties.clear_computed_props();
 
@@ -549,6 +553,24 @@ pub fn add_hydrogens_topology_with_query_state(
     let old_atom_count = topology.atoms.len();
     let old_bond_count = topology.bonds.len();
     let mut selected = selected_atoms(&topology, params.only_on_atoms.as_deref())?;
+
+    // BEGIN RDKIT CPP FUNCTION MolOps::addHs global topology prelude
+    // RDKit✔️❌: void addHs(RWMol &mol, const AddHsParameters &params,
+    // RDKit✔️❌:            const UINT_VECT *onlyOnAtoms) {
+    // RDKit✔️❌:   // when we hit each atom, clear its computed properties
+    // RDKit✔️❌:   // NOTE: it is essential that we not clear the ring info in the
+    // RDKit✔️❌:   // molecule's computed properties.  We don't want to have to
+    // RDKit✔️❌:   // regenerate that.  This caused Issue210 and Issue212:
+    // RDKit✔️❌:   mol.clearComputedProps(false);
+    // END RDKIT CPP FUNCTION MolOps::addHs global topology prelude
+    // Behavior review: every atom and bond is cleared, even empty selection,
+    // skipped queries and no append. The source's later selected-atom clear
+    // remains below. CK retains its prior typed topology/query/selection
+    // validation before this owned edit; malformed-input native parity is
+    // not claimed. Molecule clearing belongs to the full-block wrapper.
+    // Cost review: one shared traversal with no clone, allocation or refind
+    // here; inherited PropertyStore retention cost is qualified in the helper.
+    clear_hydrogen_topology_computed_properties(&mut topology);
 
     // BEGIN RDKIT CPP FUNCTION MolOps::addHs selection/count snapshot
     // RDKit✔️❌: unsigned int numAddHyds = 0;
@@ -4043,17 +4065,54 @@ fn compose_topology_mappings(
     Ok(composed)
 }
 
-fn clear_remove_hydrogen_computed_properties(
-    topology: &mut TopologyBlock,
-    properties: &mut MoleculeProperties,
-) {
-    properties.clear_computed_props();
+fn clear_hydrogen_topology_computed_properties(topology: &mut TopologyBlock) {
+    // BEGIN RDKIT CPP FUNCTION ROMol::clearComputedProps
+    // RDKit❗❌: void ROMol::clearComputedProps(bool includeRings) const {
+    // RDKit❗❌:   // the SSSR information:
+    // RDKit❗❌:   if (includeRings) {
+    // RDKit❗❌:     this->dp_ringInfo->reset();
+    // RDKit❗❌:   }
+    // RDKit❗❌:
+    // RDKit❗❌:   RDProps::clearComputedProps();
+    // RDKit❗❌:
+    // RDKit✔️❌:   for (auto atom : atoms()) {
+    // RDKit✔️❌:     atom->clearComputedProps();
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:
+    // RDKit✔️❌:   for (auto bond : bonds()) {
+    // RDKit✔️❌:     bond->clearComputedProps();
+    // RDKit✔️❌:   }
+    // RDKit❗❌: }
+    // END RDKIT CPP FUNCTION ROMol::clearComputedProps
+    // Behavior review: ONLY the two topology loops are implemented here;
+    // includeRings and molecule RDProps above are explicit owner context.
+    // AddHs passes false in source and preserves its separately owned rings.
+    // RemoveHs retains molecule clearing in its existing wrapper and its
+    // existing reset/final-ring transport in remove_hydrogens_pass.
+    // Both loops remove marked computed values through the existing model
+    // owner, preserving ordinary typed values and their insertion order.
+    // Cost review: O(atoms + bonds) dispatch, no temporary topology or scans
+    // across other rows. For each store with p keys and q computed keys,
+    // the existing model costs O(q log p + p log p): tree removals plus
+    // ordered-key retain/contains_key, even q=0. Pinned RDProps copies its
+    // computed list then performs dictionary searches/erasures, O(p + q*p).
+    // Thus q=0 ordinary-property stores can be worse in CK; the second
+    // marker is a known cost limitation, not an equivalence claim. Extraction
+    // changes neither store algorithm nor the original RemoveHs cost.
     for atom in &mut topology.atoms {
         atom.clear_computed_props();
     }
     for bond in &mut topology.bonds {
         bond.clear_computed_props();
     }
+}
+
+fn clear_remove_hydrogen_computed_properties(
+    topology: &mut TopologyBlock,
+    properties: &mut MoleculeProperties,
+) {
+    properties.clear_computed_props();
+    clear_hydrogen_topology_computed_properties(topology);
 }
 
 fn normalize_removed_hydrogen_chirality(topology: &mut TopologyBlock) {
@@ -6453,3 +6512,735 @@ mod tests {
         );
     }
 }
+
+// BEGIN ADDHS COMPUTED PRELUDE FROZEN REGRESSIONS
+#[cfg(test)]
+mod add_hs_computed_prelude_tests {
+    use super::*;
+    use cosmolkit_model::{
+        Atom, AtomQueryPredicate, BondQueryPredicate, PropertyValue, QueryNode,
+        ordered_atom_properties,
+    };
+    use std::collections::BTreeSet;
+
+    fn check(errors: &mut Vec<String>, label: &str, field: &str, valid: bool) {
+        if !valid {
+            errors.push(format!("{label}: {field}"));
+        }
+    }
+
+    #[derive(Debug, Clone, PartialEq)]
+    struct Input {
+        topology: TopologyBlock,
+        coordinates: CoordinateBlock,
+        properties: MoleculeProperties,
+        params: AddHsParams,
+        query_atoms: Vec<QueryAtom>,
+        query_bonds: Vec<QueryBond>,
+    }
+
+    fn selection(choice: usize) -> Option<Vec<AtomId>> {
+        match choice {
+            0 => None,
+            1 => Some(vec![]),
+            2 => Some(vec![AtomId::new(0)]),
+            3 => Some(vec![AtomId::new(2)]),
+            _ => panic!("only the frozen four selection literals exist"),
+        }
+    }
+
+    fn input(config: usize, hydrogen: u8, choice: usize, query: bool, bad_coords: bool) -> Input {
+        let mut atoms = vec![
+            Atom::from_spec(
+                AtomId::new(0),
+                AtomSpec::new(Element::C).with_explicit_hydrogens(hydrogen),
+            ),
+            Atom::from_spec(AtomId::new(1), AtomSpec::new(Element::C)),
+        ];
+        for (index, atom) in atoms.iter_mut().enumerate() {
+            atom.set_prop("label", ["atom0", "atom1"][index]).unwrap();
+            atom.set_prop("_CIPCode", ["R", "S"][index]).unwrap();
+            if config & 1 != 0 {
+                atom.set_computed_prop("_CIPRank", PropertyValue::Int([17, 19][index]))
+                    .unwrap();
+                atom.set_computed_prop("scratch", PropertyValue::Int([17, 19][index]))
+                    .unwrap();
+            }
+        }
+        let mut bond = Bond::from_spec(
+            BondId::new(0),
+            BondSpec::new(AtomId::new(0), AtomId::new(1), BondOrder::Single),
+        );
+        bond.set_prop("label", "bond0").unwrap();
+        if config & 2 != 0 {
+            bond.set_computed_prop("scratch", PropertyValue::Int(23))
+                .unwrap();
+        }
+        let bonds = vec![bond];
+        let topology = TopologyBlock {
+            adjacency: AdjacencyList::from_topology(2, &bonds),
+            atoms,
+            bonds,
+            ..TopologyBlock::default()
+        };
+        let mut properties = MoleculeProperties::default();
+        properties.set_prop("label", "mol").unwrap();
+        properties.set_computed_prop("memo", "discard").unwrap();
+        let coordinates = if bad_coords {
+            CoordinateBlock {
+                conformers_2d: vec![Conformer2D::new(17, vec![[0.0, -0.0]])],
+                ..CoordinateBlock::default()
+            }
+        } else {
+            CoordinateBlock::default()
+        };
+        let (query_atoms, query_bonds) = if query {
+            (
+                vec![
+                    QueryAtom::from_parts(
+                        topology.atoms[0].clone(),
+                        QueryNode::predicate(AtomQueryPredicate::AtomicNumber(6)),
+                    ),
+                    QueryAtom::from_carrier_parts(
+                        topology.atoms[1].clone(),
+                        QueryNode::predicate(AtomQueryPredicate::AtomicNumber(6)),
+                    ),
+                ],
+                vec![QueryBond::from_carrier_parts(
+                    topology.bonds[0].clone(),
+                    QueryNode::predicate(BondQueryPredicate::Order(BondOrder::Single)),
+                )],
+            )
+        } else {
+            (vec![], vec![])
+        };
+        Input {
+            topology,
+            coordinates,
+            properties,
+            params: AddHsParams {
+                explicit_only: true,
+                add_coords: false,
+                add_residue_info: false,
+                skip_queries: query,
+                only_on_atoms: selection(choice),
+            },
+            query_atoms,
+            query_bonds,
+        }
+    }
+
+    // Full typed input values are compared separately from Debug/order and bits.
+    fn coordinate_bits(
+        coords: &CoordinateBlock,
+    ) -> (Vec<(usize, Vec<[u64; 2]>)>, Vec<(usize, Vec<[u64; 3]>)>) {
+        (
+            coords
+                .conformers_2d
+                .iter()
+                .map(|c| {
+                    (
+                        c.id(),
+                        c.coordinates()
+                            .iter()
+                            .map(|p| p.map(f64::to_bits))
+                            .collect(),
+                    )
+                })
+                .collect(),
+            coords
+                .conformers_3d
+                .iter()
+                .map(|c| {
+                    (
+                        c.id(),
+                        c.coordinates()
+                            .iter()
+                            .map(|p| p.map(f64::to_bits))
+                            .collect(),
+                    )
+                })
+                .collect(),
+        )
+    }
+
+    fn prerequisites(
+        value: &Input,
+        config: usize,
+        hydrogen: u8,
+        choice: usize,
+        query: bool,
+        bad_coords: bool,
+        errors: &mut Vec<String>,
+        label: &str,
+    ) {
+        check(
+            errors,
+            label,
+            "pre topology validation",
+            value.topology.validate().is_ok(),
+        );
+        check(
+            errors,
+            label,
+            "pre literal counts",
+            value.topology.atoms.len() == 2 && value.topology.bonds.len() == 1,
+        );
+        for (index, atom) in value.topology.atoms.iter().enumerate() {
+            check(
+                errors,
+                label,
+                "pre atom identity/H",
+                atom.id() == AtomId::new(index)
+                    && atom.element() == Element::C
+                    && atom.explicit_hydrogens() == if index == 0 { hydrogen } else { 0 },
+            );
+            check(
+                errors,
+                label,
+                "pre typed ordinary atom properties",
+                atom.prop("label")
+                    == Some(&PropertyValue::String(["atom0", "atom1"][index].into()))
+                    && atom.prop("_CIPCode")
+                        == Some(&PropertyValue::String(["R", "S"][index].into()))
+                    && !atom.is_prop_computed("label")
+                    && !atom.is_prop_computed("_CIPCode"),
+            );
+            let keys = ordered_atom_properties(atom)
+                .map(|(key, _)| key)
+                .collect::<Vec<_>>();
+            let wanted = if config & 1 != 0 {
+                vec!["label", "_CIPCode", "_CIPRank", "scratch"]
+            } else {
+                vec!["label", "_CIPCode"]
+            };
+            check(errors, label, "pre atom insertion order", keys == wanted);
+            let names: BTreeSet<String> = if config & 1 != 0 {
+                ["_CIPRank", "scratch"]
+                    .into_iter()
+                    .map(String::from)
+                    .collect()
+            } else {
+                BTreeSet::new()
+            };
+            check(
+                errors,
+                label,
+                "pre atom computed membership",
+                atom.computed_prop_names() == &names,
+            );
+            for key in ["_CIPRank", "scratch"] {
+                let wanted = (config & 1 != 0).then_some(PropertyValue::Int([17, 19][index]));
+                check(
+                    errors,
+                    label,
+                    "pre typed computed atom value",
+                    atom.prop(key) == wanted.as_ref(),
+                );
+            }
+        }
+        let bond = &value.topology.bonds[0];
+        check(
+            errors,
+            label,
+            "pre literal bond",
+            bond.id() == BondId::new(0)
+                && bond.begin() == AtomId::new(0)
+                && bond.end() == AtomId::new(1)
+                && bond.order() == BondOrder::Single,
+        );
+        check(
+            errors,
+            label,
+            "pre typed ordinary bond value",
+            bond.prop("label") == Some(&PropertyValue::String("bond0".into()))
+                && !bond.is_prop_computed("label"),
+        );
+        check(
+            errors,
+            label,
+            "pre typed computed bond value",
+            bond.prop("scratch") == (config & 2 != 0).then_some(PropertyValue::Int(23)).as_ref(),
+        );
+        let names: BTreeSet<String> = if config & 2 != 0 {
+            ["scratch"].into_iter().map(String::from).collect()
+        } else {
+            BTreeSet::new()
+        };
+        check(
+            errors,
+            label,
+            "pre bond computed membership",
+            bond.computed_prop_names() == &names,
+        );
+        // Existing derived Debug exposes the actual PropertyStore order.
+        // This is ONLY the order proof; typed values are checked above.
+        let order = if config & 2 != 0 {
+            "order: [\"label\", \"scratch\"]"
+        } else {
+            "order: [\"label\"]"
+        };
+        check(
+            errors,
+            label,
+            "pre bond insertion order",
+            format!("{bond:?}").contains(order),
+        );
+        check(
+            errors,
+            label,
+            "pre molecule typed string values/markers/key order",
+            value.properties.prop("label") == Some("mol")
+                && value.properties.prop("memo") == Some("discard")
+                && !value.properties.is_prop_computed("label")
+                && value.properties.is_prop_computed("memo")
+                && value.properties.computed_prop_names() == &["memo".into()].into_iter().collect()
+                && value
+                    .properties
+                    .props()
+                    .keys()
+                    .map(String::as_str)
+                    .collect::<Vec<_>>()
+                    == vec!["label", "memo"],
+        );
+        check(
+            errors,
+            label,
+            "pre exact params and selection",
+            value.params
+                == AddHsParams {
+                    explicit_only: true,
+                    add_coords: false,
+                    add_residue_info: false,
+                    skip_queries: query,
+                    only_on_atoms: selection(choice),
+                },
+        );
+        if bad_coords {
+            check(
+                errors,
+                label,
+                "pre exact invalid coordinates",
+                value.coordinates.conformers_2d.len() == 1
+                    && value.coordinates.conformers_2d[0].id() == 17
+                    && coordinate_bits(&value.coordinates).0
+                        == vec![(17, vec![[0.0f64.to_bits(), (-0.0f64).to_bits()]])]
+                    && value.coordinates.conformers_3d.is_empty()
+                    && value.coordinates.validate_for_atom_count(2)
+                        == Err(CoordinateValidationError::RowCount {
+                            dimension: "2D",
+                            conformer: 17,
+                            rows: 1,
+                            atom_count: 2,
+                        }),
+            );
+        } else {
+            check(
+                errors,
+                label,
+                "pre empty coordinates",
+                value.coordinates == CoordinateBlock::default(),
+            );
+        }
+        if query {
+            let state = QueryStateRef::try_for_topology(
+                &value.query_atoms,
+                &value.query_bonds,
+                &value.topology,
+            );
+            check(errors, label, "pre query validation", state.is_ok());
+            if let Ok(state) = state {
+                check(
+                    errors,
+                    label,
+                    "pre actual/carrier query identities",
+                    state.atom_has_query(AtomId::new(0))
+                        && !state.atom_has_query(AtomId::new(1))
+                        && !state.bond_has_query(BondId::new(0)),
+                );
+                check(
+                    errors,
+                    label,
+                    "pre query predicate literals",
+                    state.atom_predicate(AtomId::new(0))
+                        == &QueryNode::predicate(AtomQueryPredicate::AtomicNumber(6))
+                        && state.atom_predicate(AtomId::new(1))
+                            == &QueryNode::predicate(AtomQueryPredicate::AtomicNumber(6))
+                        && state.bond_predicate(BondId::new(0))
+                            == &QueryNode::predicate(BondQueryPredicate::Order(BondOrder::Single)),
+                );
+            }
+        } else {
+            check(
+                errors,
+                label,
+                "pre no query rows",
+                value.query_atoms.is_empty() && value.query_bonds.is_empty(),
+            );
+        }
+    }
+
+    enum Output {
+        Topology(AddHydrogensTopologyResult),
+        Full(AddHydrogensResult),
+    }
+
+    // One actual entry call. Return inspection is deliberately AFTER preservation.
+    fn call(
+        value: &Input,
+        full: bool,
+        census: &mut usize,
+        errors: &mut Vec<String>,
+        label: &str,
+    ) -> Result<Output, HydrogenError> {
+        let state = if value.params.skip_queries {
+            Some(
+                QueryStateRef::try_for_topology(
+                    &value.query_atoms,
+                    &value.query_bonds,
+                    &value.topology,
+                )
+                .unwrap(),
+            )
+        } else {
+            None
+        };
+        let baseline = value.clone();
+        let baseline_debug = format!("{value:?}");
+        let baseline_bits = coordinate_bits(&value.coordinates);
+        let result = if full {
+            if state.is_some() {
+                add_hydrogens_with_query_state(
+                    value.topology.clone(),
+                    value.coordinates.clone(),
+                    value.properties.clone(),
+                    &value.params,
+                    state,
+                )
+            } else {
+                add_hydrogens_with_params(
+                    value.topology.clone(),
+                    value.coordinates.clone(),
+                    value.properties.clone(),
+                    &value.params,
+                )
+            }
+            .map(Output::Full)
+        } else {
+            if state.is_some() {
+                add_hydrogens_topology_with_query_state(
+                    value.topology.clone(),
+                    &value.params,
+                    state,
+                )
+            } else {
+                add_hydrogens_topology(value.topology.clone(), &value.params)
+            }
+            .map(Output::Topology)
+        };
+        *census += 1;
+        let preserved = value == &baseline
+            && format!("{value:?}") == baseline_debug
+            && coordinate_bits(&value.coordinates) == baseline_bits;
+        check(
+            errors,
+            label,
+            "post retained whole input/order/query/coordinate bits",
+            preserved,
+        );
+        println!("ADDHS_PRELUDE_CALL {label} preservation={preserved}");
+        result
+    }
+
+    // Expected state starts from the PRE-call clone and literal source removals.
+    // No production computed-clear/AddHs helper derives this expectation.
+    fn expected_topology(before: &TopologyBlock, append: bool, final_h: u8) -> TopologyBlock {
+        let mut expected = before.clone();
+        for atom in &mut expected.atoms {
+            atom.clear_prop("_CIPRank");
+            atom.clear_prop("scratch");
+        }
+        expected.bonds[0].clear_prop("scratch");
+        expected.atoms[0].set_explicit_hydrogens(final_h);
+        if append {
+            expected
+                .atoms
+                .push(Atom::from_spec(AtomId::new(2), AtomSpec::new(Element::H)));
+            expected.bonds.push(Bond::from_spec(
+                BondId::new(1),
+                BondSpec::new(AtomId::new(0), AtomId::new(2), BondOrder::Single),
+            ));
+            expected.adjacency = AdjacencyList::from_topology(3, &expected.bonds);
+        }
+        expected
+    }
+
+    fn success(
+        result: Result<Output, HydrogenError>,
+        before: &Input,
+        append: bool,
+        final_h: u8,
+        errors: &mut Vec<String>,
+        label: &str,
+    ) {
+        let output = match result {
+            Ok(value) => value,
+            Err(error) => {
+                errors.push(format!("{label}: unexpected {error:?}"));
+                return;
+            }
+        };
+        let (topology, mapping, additions) = match &output {
+            Output::Topology(value) => (&value.topology, &value.mapping, Some(&value.additions)),
+            Output::Full(value) => {
+                let mut properties = before.properties.clone();
+                properties.clear_prop("memo");
+                check(
+                    errors,
+                    label,
+                    "post whole molecule properties",
+                    value.properties == properties,
+                );
+                check(
+                    errors,
+                    label,
+                    "post empty coordinate output",
+                    value.coordinates == CoordinateBlock::default()
+                        && coordinate_bits(&value.coordinates) == (vec![], vec![]),
+                );
+                check(errors, label, "post no warnings", value.warnings.is_empty());
+                (&value.topology, &value.mapping, None)
+            }
+        };
+        let expected = expected_topology(&before.topology, append, final_h);
+        check(
+            errors,
+            label,
+            "post whole typed topology and insertion order",
+            topology == &expected && format!("{topology:?}") == format!("{expected:?}"),
+        );
+        check(
+            errors,
+            label,
+            "post output model validation",
+            topology.validate().is_ok(),
+        );
+        let atom_old = vec![Some(AtomId::new(0)), Some(AtomId::new(1))];
+        let bond_old = vec![Some(BondId::new(0))];
+        let mut atom_new = atom_old.clone();
+        let mut bond_new = bond_old.clone();
+        if append {
+            atom_new.push(None);
+            bond_new.push(None);
+        }
+        check(
+            errors,
+            label,
+            "post exact literal mapping",
+            mapping.atoms().old_to_new() == atom_old
+                && mapping.atoms().new_to_old() == atom_new
+                && mapping.bonds().old_to_new() == bond_old
+                && mapping.bonds().new_to_old() == bond_new,
+        );
+        check(
+            errors,
+            label,
+            "post mapping validation",
+            mapping
+                .validate_for_counts(2, if append { 3 } else { 2 }, 1, if append { 2 } else { 1 })
+                .is_ok(),
+        );
+        if let Some(additions) = additions {
+            let wanted = if append {
+                vec![AddedHydrogen {
+                    atom: AtomId::new(2),
+                    bond: BondId::new(1),
+                    parent: AtomId::new(0),
+                    kind: AddedHydrogenKind::Explicit,
+                }]
+            } else {
+                vec![]
+            };
+            check(
+                errors,
+                label,
+                "post literal addition metadata",
+                additions == &wanted,
+            );
+        }
+        // Safely collect local diagnoses even when the whole returned graph differs.
+        for (index, atom) in topology.atoms.iter().take(2).enumerate() {
+            check(
+                errors,
+                label,
+                "post no computed atom keys/markers",
+                atom.prop("_CIPRank").is_none()
+                    && atom.prop("scratch").is_none()
+                    && atom.computed_prop_names().is_empty(),
+            );
+            check(
+                errors,
+                label,
+                "post ordinary atom values and insertion order",
+                atom.prop("label")
+                    == Some(&PropertyValue::String(["atom0", "atom1"][index].into()))
+                    && atom.prop("_CIPCode")
+                        == Some(&PropertyValue::String(["R", "S"][index].into()))
+                    && ordered_atom_properties(atom)
+                        .map(|(key, _)| key)
+                        .collect::<Vec<_>>()
+                        == vec!["label", "_CIPCode"],
+            );
+        }
+        if let Some(bond) = topology.bonds.first() {
+            check(
+                errors,
+                label,
+                "post bond computed absence/ordinary/order",
+                bond.prop("scratch").is_none()
+                    && bond.computed_prop_names().is_empty()
+                    && bond.prop("label") == Some(&PropertyValue::String("bond0".into()))
+                    && format!("{bond:?}").contains("order: [\"label\"]"),
+            );
+        }
+    }
+
+    fn finish(census: usize, expected: usize, errors: Vec<String>, name: &str) {
+        let mut errors = errors;
+        check(&mut errors, name, "exact actual census", census == expected);
+        println!(
+            "ADDHS_PRELUDE_CENSUS {name} actual={census} expected={expected} discrepancies={}",
+            errors.len()
+        );
+        assert!(errors.is_empty(), "{name}: {errors:#?}");
+    }
+
+    #[test]
+    fn add_hs_computed_prelude_product24() {
+        let mut census = 0;
+        let mut errors = vec![];
+        for choice in [0, 1, 2] {
+            for config in [0, 1, 2, 3] {
+                for full in [false, true] {
+                    let label = format!("product24/selection={choice}/config={config}/full={full}");
+                    let value = input(config, 0, choice, false, false);
+                    prerequisites(&value, config, 0, choice, false, false, &mut errors, &label);
+                    let before = value.clone();
+                    let result = call(&value, full, &mut census, &mut errors, &label);
+                    success(result, &before, false, 0, &mut errors, &label);
+                }
+            }
+        }
+        finish(census, 24, errors, "product24");
+    }
+
+    #[test]
+    fn add_hs_computed_prelude_append6() {
+        let mut census = 0;
+        let mut errors = vec![];
+        for choice in [0, 1, 2] {
+            for full in [false, true] {
+                let label = format!("append6/selection={choice}/full={full}");
+                let value = input(3, 1, choice, false, false);
+                prerequisites(&value, 3, 1, choice, false, false, &mut errors, &label);
+                let before = value.clone();
+                let result = call(&value, full, &mut census, &mut errors, &label);
+                success(
+                    result,
+                    &before,
+                    choice != 1,
+                    u8::from(choice == 1),
+                    &mut errors,
+                    &label,
+                );
+            }
+        }
+        finish(census, 6, errors, "append6");
+    }
+
+    #[test]
+    fn add_hs_computed_prelude_query4() {
+        let mut census = 0;
+        let mut errors = vec![];
+        for choice in [0, 2] {
+            for full in [false, true] {
+                let label = format!("query4/selection={choice}/full={full}");
+                let value = input(3, 1, choice, true, false);
+                prerequisites(&value, 3, 1, choice, true, false, &mut errors, &label);
+                let before = value.clone();
+                let result = call(&value, full, &mut census, &mut errors, &label);
+                success(result, &before, false, 1, &mut errors, &label);
+            }
+        }
+        finish(census, 4, errors, "query4");
+    }
+
+    #[test]
+    fn add_hs_computed_prelude_error4() {
+        use std::error::Error;
+        let mut census = 0;
+        let mut errors = vec![];
+        for repeat in [0, 1] {
+            for bad_coords in [true, false] {
+                let choice = if bad_coords { 0 } else { 3 };
+                let label = format!("error4/repeat={repeat}/bad_coords={bad_coords}");
+                let value = input(3, 0, choice, false, bad_coords);
+                prerequisites(&value, 3, 0, choice, false, bad_coords, &mut errors, &label);
+                let result = call(&value, true, &mut census, &mut errors, &label);
+                match result {
+                    Err(error) => {
+                        check(
+                            &mut errors,
+                            &label,
+                            "existing source is None",
+                            error.source().is_none(),
+                        );
+                        if bad_coords {
+                            match &error {
+                                HydrogenError::InvalidCoordinates(payload) => {
+                                    let expected = CoordinateValidationError::RowCount {
+                                        dimension: "2D",
+                                        conformer: 17,
+                                        rows: 1,
+                                        atom_count: 2,
+                                    };
+                                    check(
+                                        &mut errors,
+                                        &label,
+                                        "exact borrowed coordinate payload",
+                                        payload == &expected,
+                                    );
+                                    // Independent cast proves payload identity ONLY, no cause chain.
+                                    let erased: &(dyn Error + 'static) = payload;
+                                    check(
+                                        &mut errors,
+                                        &label,
+                                        "independent payload downcast identity",
+                                        erased
+                                            .downcast_ref::<CoordinateValidationError>()
+                                            .is_some_and(|same| std::ptr::eq(same, payload)),
+                                    );
+                                }
+                                other => errors.push(format!("{label}: wrong error {other:?}")),
+                            }
+                        } else {
+                            check(
+                                &mut errors,
+                                &label,
+                                "exact selection error",
+                                error
+                                    == HydrogenError::OnlyOnAtomOutOfRange {
+                                        atom: AtomId::new(2),
+                                        atom_count: 2,
+                                    },
+                            );
+                        }
+                    }
+                    Ok(_) => errors.push(format!("{label}: unexpected success")),
+                }
+            }
+        }
+        finish(census, 4, errors, "error4");
+    }
+}
+// END ADDHS COMPUTED PRELUDE FROZEN REGRESSIONS

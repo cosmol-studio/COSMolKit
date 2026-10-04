@@ -1075,9 +1075,8 @@ pub fn cleanup_atropisomer_stereo_groups(
         if bonds.is_empty() {
             groups.push(group.clone());
         } else {
-            // The pinned three-argument constructor does not propagate the
-            // source group's read id; preserving it here would differ from
-            // `cleanupAtropisomerStereoGroups()`.
+            // The pinned three-argument constructor propagates neither the
+            // source read ID nor its write ID; this fresh value resets both.
             groups.push(StereoGroup::new(group.kind(), atoms, bonds));
         }
     }

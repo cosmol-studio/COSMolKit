@@ -1,8 +1,10 @@
 //! Small Rust-owned parity pilot; no performance or binding claims.
 pub mod execute;
 pub mod molecular;
+pub mod reference_parity;
 pub mod registry;
 pub mod testing;
+pub mod uff;
 
 use registry::{Corpus, CorpusType, Input, RDKIT_VERSION, Record, Task};
 use serde::{Deserialize, Serialize};
@@ -16,6 +18,7 @@ use std::{
 
 type Result<T> = std::result::Result<T, String>;
 const ORACLE: &str = include_str!("../../tools/oracles/rdkit/fingerprint_values_pilot.py");
+const REFERENCE_PIN: &str = include_str!("../../testdata/reference/rdkit.json");
 
 pub fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -85,7 +88,8 @@ fn registry_digest() -> String {
             include_str!("registry/molecule_plan.rs"),
             include_str!("registry/fingerprint_corpus.rs"),
             include_str!("registry/fingerprint.rs"),
-            include_str!("molecular.rs")
+            include_str!("molecular.rs"),
+            include_str!("uff.rs")
         )
         .as_bytes(),
     )
@@ -99,6 +103,7 @@ struct Manifest {
     corpus_type: CorpusType,
     generator: String,
     rdkit_version: String,
+    reference_pin_sha256: String,
     reference_platform: String,
     registry_sha256: String,
     oracle_sha256: String,
@@ -114,6 +119,7 @@ fn identity(task: &Task, input: &[u8], reference: &[u8], rows: usize) -> Manifes
         corpus_type: task.corpus_type,
         generator: task.generator.into(),
         rdkit_version: RDKIT_VERSION.into(),
+        reference_pin_sha256: digest(REFERENCE_PIN.as_bytes()),
         reference_platform: format!("{}-{}", std::env::consts::ARCH, std::env::consts::OS),
         registry_sha256: registry_digest(),
         oracle_sha256: digest(ORACLE.as_bytes()),
@@ -141,11 +147,19 @@ struct LabeledRecord {
 
 fn reference_label(task: &Task, input: &Input) -> Result<ReferenceLabel> {
     let (case_id, parameters) = match input {
+        Input::Uff(row) => (
+            &row.case.id,
+            serde_json::to_value(row.profile).map_err(|e| e.to_string())?,
+        ),
         Input::Fingerprint(row) => (
             &row.case.id,
             serde_json::json!({ "operation": row.operation, "width": row.width }),
         ),
         Input::Molecular { case, profile } => (
+            &case.id,
+            serde_json::to_value(profile).map_err(|e| e.to_string())?,
+        ),
+        Input::BioPdbOutput { case, profile } => (
             &case.id,
             serde_json::to_value(profile).map_err(|e| e.to_string())?,
         ),
@@ -175,10 +189,7 @@ fn check_records(task: &Task, inputs: &[Input], records: &[Record]) -> Result<()
         return Err("reference row count mismatch".into());
     }
     for (input, record) in inputs.iter().zip(records) {
-        if input != &record.input {
-            return Err("reference case/parameter mismatch".into());
-        }
-        task.validate_reference(input, &record.output)?;
+        task.validate_reference(input, &record.input, &record.output)?;
     }
     Ok(())
 }
@@ -197,6 +208,12 @@ fn oracle(task: &Task, cases: &Corpus, python: &Path, threads: usize) -> Result<
         registry::Operation::Molecular(id) => (
             serde_json::to_value(&cases.molecules),
             serde_json::to_value(id.profiles()),
+        ),
+        operation @ (registry::Operation::UffCoverage
+        | registry::Operation::UffOptimization
+        | registry::Operation::UffConformerOptimization) => (
+            serde_json::to_value(&cases.molecules),
+            serde_json::to_value(uff::profiles(operation)),
         ),
         operation => (
             serde_json::to_value(&cases.fingerprints),
@@ -366,11 +383,12 @@ fn publish(data: &Path, task: &Task, inputs: &[Input], records: &[Record]) -> Re
 
 fn generation(data: &Path, task: &Task, input: &[u8]) -> PathBuf {
     let identity = format!(
-        "schema3{}{}{}{}",
+        "schema3{}{}{}{}{}",
         task.key(),
         digest(input),
         digest(ORACLE.as_bytes()),
-        registry_digest()
+        registry_digest(),
+        digest(REFERENCE_PIN.as_bytes())
     );
     data.join(format!("{}-{}", task.key(), digest(identity.as_bytes())))
 }
@@ -474,8 +492,21 @@ fn compare_rows<'a>(
             Ok(record.output)
         });
         let matches = match (&reference.output, &actual) {
+            (registry::Value::Uff(expected), Ok(registry::Value::Uff(actual))) => {
+                uff::matches(expected, actual)
+            }
             (registry::Value::Molecular(expected), Ok(registry::Value::Molecular(actual))) => {
-                molecular::matches(expected, actual)
+                if matches!(
+                    &reference.input,
+                    Input::Molecular {
+                        profile: registry::molecule_plan::Profile::SvgDefault,
+                        ..
+                    }
+                ) {
+                    molecular::svg_matches(expected, actual)
+                } else {
+                    molecular::matches(expected, actual)
+                }
             }
             _ => actual.as_ref() == Ok(&reference.output),
         };
@@ -559,3 +590,5 @@ pub fn load_suite(data: &Path) -> Result<(Vec<&'static Task>, Ready)> {
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod uff_tests;

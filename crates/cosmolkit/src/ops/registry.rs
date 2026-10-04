@@ -4,6 +4,12 @@ use cosmolkit_macros::molecule_ops;
 
 use super::FeatureSpec;
 
+#[cfg(feature = "cap-forcefields")]
+pub(crate) const FORCEFIELDS_FEATURE: FeatureSpec = FeatureSpec {
+    name: "cap-forcefields",
+    category: "forcefields",
+    docs: "Prepared UFF parameter queries and coordinate-only optimization.",
+};
 #[allow(unexpected_cfgs)]
 #[cfg(cosmolkit_runtime_privacy_probe)]
 pub(crate) const PRESERVE_PROBE_FEATURE: FeatureSpec = FeatureSpec {
@@ -90,6 +96,50 @@ pub(crate) const SANITIZE_FEATURE: FeatureSpec = FeatureSpec {
 };
 
 molecule_ops! {
+    #[cfg(feature = "cap-forcefields")]
+    op with_uff_optimized_coordinates(params: &crate::UffOptimizationParams) {
+        method: with_uff_optimized_coordinates_with_params,
+        impl_fn: crate::ops::uff_optimization::with_uff_optimized_coordinates_impl,
+        result_type: crate::UffOptimizationResult,
+        domain: coordinate,
+        kind: weak,
+        topology_edit: none,
+        access: { read: [topology, properties, derived_cache], write: [coordinates] },
+        may_mutate: [coordinates],
+        auto_remap: [],
+        derived_effects: { recompute: [], preserve: [rings, ring_families, valence, aromaticity, stereo, coordinates, drawing, fingerprint], invalidate: [], operation_defined: [] },
+        cip_state: preserve,
+        requires_mapping: none,
+        feature: crate::ops::runtime::registry::FORCEFIELDS_FEATURE,
+        parity: required_now,
+        parity_profile: "uff_single_optimization_rdkit",
+        io_roundtrip: false,
+        invariant_profile: "uff_coordinate_only_prepared_value",
+        default_method: with_uff_optimized_coordinates,
+        default_args: [&crate::UffOptimizationParams::default()],
+    }
+    #[cfg(feature = "cap-forcefields")]
+    op with_uff_optimized_conformers(params: &crate::UffConformerOptimizationParams) {
+        method: with_uff_optimized_conformers_with_params,
+        impl_fn: crate::ops::uff_optimization::with_uff_optimized_conformers_impl,
+        result_type: crate::UffConformerOptimizationResult,
+        domain: coordinate,
+        kind: weak,
+        topology_edit: none,
+        access: { read: [topology, properties, derived_cache], write: [coordinates] },
+        may_mutate: [coordinates],
+        auto_remap: [],
+        derived_effects: { recompute: [], preserve: [rings, ring_families, valence, aromaticity, stereo, coordinates, drawing, fingerprint], invalidate: [], operation_defined: [] },
+        cip_state: preserve,
+        requires_mapping: none,
+        feature: crate::ops::runtime::registry::FORCEFIELDS_FEATURE,
+        parity: required_now,
+        parity_profile: "uff_conformer_optimization_rdkit",
+        io_roundtrip: false,
+        invariant_profile: "uff_conformers_coordinate_only_prepared_value",
+        default_method: with_uff_optimized_conformers,
+        default_args: [&crate::UffConformerOptimizationParams::default()],
+    }
     #[cfg(cosmolkit_runtime_privacy_probe)]
     op preserve_cache_read_probe {
         method: preserve_cache_read_probe,
@@ -560,7 +610,7 @@ molecule_ops! {
         kind: weak,
         topology_edit: none,
         access: {
-            read: [topology],
+            read: [topology, properties],
             write: [coordinates, derived_cache],
         },
         may_mutate: [coordinates, derived_cache],

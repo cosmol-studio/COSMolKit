@@ -9,6 +9,11 @@
 //! (low-32 truncation), distinct from the 64-bit mixing helpers used by
 //! `long long`/`unsigned long long` (F22/F23). No `DefaultHasher` or
 //! replacement hash algorithm appears anywhere in this module.
+//!
+//! Source attribution: RDKit `Code/RDGeneral/hash/{hash_fwd.hpp,hash.hpp,
+//! extensions.hpp}` at commit `351f8f378f8ad6bbd517980c38896e66bf907af8c`;
+//! the source headers' Daniel James notices and Greg Landrum modifications,
+//! with the Boost Software License, are recorded in `THIRD_PARTY_NOTICES.md`.
 
 /// `hash_result_t` (hash_fwd.hpp:18-20).
 pub type HashResult = u32;

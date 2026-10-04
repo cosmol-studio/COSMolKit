@@ -17,6 +17,12 @@ use crate::{
     periodic_table_outer_electrons, rdkit_default_valence,
 };
 
+#[cfg(test)]
+std::thread_local! {
+    static COLD_VALENCE_ASSIGNMENT_CALLS: std::cell::Cell<usize> =
+        const { std::cell::Cell::new(0) };
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AromaticityModel {
     Rdkit,
@@ -1576,6 +1582,7 @@ fn aromaticity_helper(
         max_ring_size,
         include_fused,
         None,
+        None,
     )
 }
 
@@ -1586,6 +1593,7 @@ fn aromaticity_helper_with_query_state(
     max_ring_size: usize,
     include_fused: bool,
     query_state: Option<QueryStateRef<'_>>,
+    cached_valence: Option<&ValenceAssignment>,
 ) -> Result<AromaticityAssignment, AromaticityError> {
     // BEGIN RDKIT CPP FUNCTION aromaticityHelper
     // RDKit✔️✔️: int aromaticityHelper(RWMol &mol, const VECT_INT_VECT &srings,
@@ -1684,9 +1692,49 @@ fn aromaticity_helper_with_query_state(
     // RDKit✔️✔️:   return narom;
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION aromaticityHelper
+    // BEGIN RDKIT CPP FUNCTION Atom::getValence/getTotalValence
+    // RDKit❗❗: unsigned int Atom::getValence(ValenceType which) const {
+    // RDKit❗❗:   if (!dp_mol) {
+    // RDKit❗❗:     return 0;
+    // RDKit❗❗:   }
+    // RDKit❗❗:   PRECONDITION(
+    // RDKit❗❗:       (which == ValenceType::IMPLICIT || d_explicitValence > -1),
+    // RDKit❗❗:       "getValence(ValenceType::EXPLICIT) called without call to calcExplicitValence()");
+    // RDKit❗❗:   PRECONDITION(
+    // RDKit❗❗:       (which == ValenceType::EXPLICIT || df_noImplicit ||
+    // RDKit❗❗:        d_implicitValence > -1),
+    // RDKit❗❗:       "getValence(ValenceType::IMPLICIT) called without call to calcImplicitValence()");
+    // RDKit❗❗:   if (which == ValenceType::EXPLICIT) {
+    // RDKit❗❗:     return d_explicitValence;
+    // RDKit❗❗:   } else {
+    // RDKit❗❗:     return df_noImplicit ? 0 : d_implicitValence;
+    // RDKit❗❗:   }
+    // RDKit❗❗: }
+    // RDKit❗❗:
+    // RDKit❗❗: unsigned int Atom::getTotalValence() const {
+    // RDKit❗❗:   return getValence(ValenceType::EXPLICIT) + getValence(ValenceType::IMPLICIT);
+    // RDKit❗❗: }
+    // END RDKIT CPP FUNCTION Atom::getValence/getTotalValence
+    // Behavior: the source candidate/donor calls above read the property cache
+    // already prepared by sanitizer. A supplied cache is validated then
+    // borrowed by every existing donor/candidate helper; public cold calls
+    // still take one strict whole-topology assignment at this owner.
+    // Complexity: the supplied path scans the existing rows for validation
+    // and then reuses them without a second O(V+E) assignment or cache clone;
+    // the cold path keeps its existing assignment and validation costs.
     validate_inputs(topology, rings)?;
-    let valence = crate::assign_valence_for_topology(topology, crate::ValenceModel::RdkitLike)?;
-    validate_valence(topology, &valence)?;
+    let owned_valence;
+    let valence = if let Some(valence) = cached_valence {
+        validate_valence(topology, valence)?;
+        valence
+    } else {
+        #[cfg(test)]
+        COLD_VALENCE_ASSIGNMENT_CALLS.with(|calls| calls.set(calls.get().wrapping_add(1)));
+        owned_valence =
+            crate::assign_valence_for_topology(topology, crate::ValenceModel::RdkitLike)?;
+        validate_valence(topology, &owned_valence)?;
+        &owned_valence
+    };
     let mut seen = vec![false; topology.atoms.len()];
     let mut candidates = vec![false; topology.atoms.len()];
     let mut donors = vec![ElectronDonorType::None; topology.atoms.len()];
@@ -2444,6 +2492,31 @@ pub fn assign_aromaticity_with_query_state(
     params: &AromaticityParams,
     query_state: Option<QueryStateRef<'_>>,
 ) -> Result<AromaticityAssignment, AromaticityError> {
+    assign_aromaticity_impl(topology, rings, params, query_state, None)
+}
+
+pub(crate) fn assign_default_aromaticity_with_cached_valence(
+    topology: &TopologyBlock,
+    rings: &RingInfo,
+    valence: &ValenceAssignment,
+    query_state: Option<QueryStateRef<'_>>,
+) -> Result<AromaticityAssignment, AromaticityError> {
+    assign_aromaticity_impl(
+        topology,
+        rings,
+        &AromaticityParams::default(),
+        query_state,
+        Some(valence),
+    )
+}
+
+fn assign_aromaticity_impl(
+    topology: &TopologyBlock,
+    rings: &RingInfo,
+    params: &AromaticityParams,
+    query_state: Option<QueryStateRef<'_>>,
+    cached_valence: Option<&ValenceAssignment>,
+) -> Result<AromaticityAssignment, AromaticityError> {
     // BEGIN RDKIT CPP FUNCTION MolOps::setAromaticity
     // RDKit✔️✔️: int setAromaticity(RWMol &mol, AromaticityModel model, int (*func)(RWMol &)) {
     // RDKit✔️✔️:   // This function used to check if the input molecule came
@@ -2490,12 +2563,24 @@ pub fn assign_aromaticity_with_query_state(
         state.validate_for_topology(topology)?;
     }
     let assignment = match params.model {
-        AromaticityModel::Rdkit => {
-            aromaticity_helper_with_query_state(topology, rings, 0, 0, true, query_state)?
-        }
-        AromaticityModel::Simple => {
-            aromaticity_helper_with_query_state(topology, rings, 5, 6, false, query_state)?
-        }
+        AromaticityModel::Rdkit => aromaticity_helper_with_query_state(
+            topology,
+            rings,
+            0,
+            0,
+            true,
+            query_state,
+            cached_valence,
+        )?,
+        AromaticityModel::Simple => aromaticity_helper_with_query_state(
+            topology,
+            rings,
+            5,
+            6,
+            false,
+            query_state,
+            cached_valence,
+        )?,
         AromaticityModel::Mdl => {
             mdl_aromaticity_helper_with_query_state(topology, rings, query_state)?
         }
@@ -2618,6 +2703,429 @@ mod tests {
         let mut rings = no_rings(topology);
         rings.add_ring(&[0, 1, 2], &[0, 1, 2]).unwrap();
         rings
+    }
+
+    struct SourceCachedAromaticityFixture {
+        name: &'static str,
+        topology: TopologyBlock,
+        rings: RingInfo,
+        valence: ValenceAssignment,
+        expected_atom_aromatic: &'static [bool],
+        expected_bond_aromatic: &'static [bool],
+    }
+
+    fn source_cached_line130_fixture() -> SourceCachedAromaticityFixture {
+        let elements = [
+            Element::C,
+            Element::C,
+            Element::C,
+            Element::C,
+            Element::C,
+            Element::N,
+            Element::C,
+            Element::C,
+            Element::N,
+            Element::C,
+            Element::C,
+            Element::C,
+            Element::C,
+            Element::O,
+            Element::O,
+        ];
+        let mut graph = topology(
+            elements.into_iter().map(AtomSpec::new).collect(),
+            vec![
+                (0, 1, BondOrder::Aromatic),
+                (1, 2, BondOrder::Aromatic),
+                (2, 3, BondOrder::Aromatic),
+                (3, 4, BondOrder::Aromatic),
+                (4, 5, BondOrder::Single),
+                (5, 6, BondOrder::Single),
+                (6, 7, BondOrder::Single),
+                (7, 8, BondOrder::Single),
+                (8, 9, BondOrder::Double),
+                (9, 10, BondOrder::Aromatic),
+                (9, 11, BondOrder::Single),
+                (9, 12, BondOrder::Single),
+                (6, 13, BondOrder::Double),
+                (1, 14, BondOrder::Single),
+                (10, 0, BondOrder::Aromatic),
+                (10, 4, BondOrder::Aromatic),
+            ],
+        );
+        for index in [0, 1, 2, 3, 4, 9, 10] {
+            graph.atoms[index].set_aromatic(true);
+        }
+        for index in [0, 1, 2, 3, 9, 14, 15] {
+            graph.bonds[index].set_aromatic(true);
+        }
+
+        let kekulized = crate::kekulize(
+            &graph,
+            &crate::KekulizeParams {
+                mark_atoms_bonds: true,
+                canonical: false,
+                ..crate::KekulizeParams::default()
+            },
+        )
+        .expect("pinned line130 pre-aromaticity Kekulize fixture");
+        let expected_valence = valence(
+            &[3, 4, 3, 3, 4, 2, 4, 2, 3, 4, 4, 1, 1, 2, 1],
+            &[1, 0, 1, 1, 0, 1, 0, 2, 0, 0, 0, 3, 3, 0, 1],
+        );
+        assert_eq!(kekulized.final_valence, Some(expected_valence.clone()));
+        assert!(
+            kekulized
+                .topology
+                .atoms
+                .iter()
+                .all(|atom| !atom.is_aromatic())
+        );
+        assert!(
+            kekulized
+                .topology
+                .bonds
+                .iter()
+                .all(|bond| !bond.is_aromatic())
+        );
+        let rings = ring_info(
+            &kekulized.topology,
+            &[vec![0, 1, 2, 3, 4, 10], vec![4, 5, 6, 7, 8, 9, 10]],
+        );
+
+        SourceCachedAromaticityFixture {
+            name: "line130",
+            topology: kekulized.topology,
+            rings,
+            valence: expected_valence,
+            expected_atom_aromatic: &[
+                true, true, true, true, true, false, false, false, false, false, true, false,
+                false, false, false,
+            ],
+            expected_bond_aromatic: &[
+                true, true, true, true, false, false, false, false, false, false, false, false,
+                false, false, true, true,
+            ],
+        }
+    }
+
+    fn source_cached_benzene_fixture() -> SourceCachedAromaticityFixture {
+        let (graph, rings) = alternating_cycle(&[Element::C; 6]);
+        SourceCachedAromaticityFixture {
+            name: "benzene",
+            topology: graph,
+            rings,
+            valence: valence(&[3, 3, 3, 3, 3, 3], &[1, 1, 1, 1, 1, 1]),
+            expected_atom_aromatic: &[true, true, true, true, true, true],
+            expected_bond_aromatic: &[true, true, true, true, true, true],
+        }
+    }
+
+    fn source_cached_n_p_fixture(
+        element: Element,
+        name: &'static str,
+    ) -> SourceCachedAromaticityFixture {
+        let atoms = (0..5)
+            .map(|index| {
+                if index == 0 {
+                    AtomSpec::new(element)
+                        .with_aromatic(true)
+                        .with_explicit_hydrogens(1)
+                        .with_no_implicit(true)
+                } else {
+                    AtomSpec::new(Element::C).with_aromatic(true)
+                }
+            })
+            .collect();
+        let mut graph = topology(
+            atoms,
+            (0..5)
+                .map(|index| (index, (index + 1) % 5, BondOrder::Aromatic))
+                .collect(),
+        );
+        for bond in &mut graph.bonds {
+            bond.set_aromatic(true);
+        }
+        let kekulized = crate::kekulize(
+            &graph,
+            &crate::KekulizeParams {
+                mark_atoms_bonds: true,
+                canonical: false,
+                ..crate::KekulizeParams::default()
+            },
+        )
+        .expect("pinned N/P pre-aromaticity Kekulize fixture");
+        let expected_valence = valence(&[2, 3, 3, 3, 3], &[1, 1, 1, 1, 1]);
+        assert_eq!(kekulized.final_valence, Some(expected_valence.clone()));
+        assert_eq!(kekulized.topology.atoms[0].explicit_hydrogens(), 0);
+        assert!(!kekulized.topology.atoms[0].no_implicit());
+        let rings = ring_info(&kekulized.topology, &[vec![0, 1, 2, 3, 4]]);
+
+        SourceCachedAromaticityFixture {
+            name,
+            topology: kekulized.topology,
+            rings,
+            valence: expected_valence,
+            expected_atom_aromatic: &[true, true, true, true, true],
+            expected_bond_aromatic: &[true, true, true, true, true],
+        }
+    }
+
+    fn source_cached_call_count() -> usize {
+        COLD_VALENCE_ASSIGNMENT_CALLS.with(std::cell::Cell::get)
+    }
+
+    #[test]
+    fn aromaticity_source_cached_consumer_uses_borrowed_rows_and_keeps_cold_contract() {
+        let fixtures = [
+            source_cached_line130_fixture(),
+            source_cached_benzene_fixture(),
+            source_cached_n_p_fixture(Element::N, "pyrrole"),
+            source_cached_n_p_fixture(Element::P, "phosphole"),
+        ];
+        let mut prepared_calls = 0;
+
+        for fixture in &fixtures {
+            let query_atoms = fixture
+                .topology
+                .atoms
+                .iter()
+                .map(|carrier| {
+                    QueryAtom::from_carrier_parts(
+                        carrier.clone(),
+                        QueryNode::predicate(AtomQueryPredicate::AtomicNumber(
+                            carrier.atomic_number(),
+                        )),
+                    )
+                })
+                .collect::<Vec<_>>();
+            let query_bonds = fixture
+                .topology
+                .bonds
+                .iter()
+                .map(|carrier| {
+                    QueryBond::from_carrier_parts(
+                        carrier.clone(),
+                        QueryNode::predicate(BondQueryPredicate::Order(carrier.order())),
+                    )
+                })
+                .collect::<Vec<_>>();
+            let carrier_state =
+                QueryStateRef::try_for_topology(&query_atoms, &query_bonds, &fixture.topology)
+                    .expect("carrier-derived rows align with the frozen topology");
+            assert!(
+                (0..fixture.topology.atoms.len())
+                    .all(|index| !carrier_state.atom_has_query(AtomId::new(index)))
+            );
+            assert!(
+                (0..fixture.topology.bonds.len())
+                    .all(|index| !carrier_state.bond_has_query(BondId::new(index)))
+            );
+
+            for query_state in [None, Some(carrier_state)] {
+                for repetition in 0..2 {
+                    let topology_before = fixture.topology.clone();
+                    let rings_before = fixture.rings.clone();
+                    let valence_before = fixture.valence.clone();
+                    let cold_before = source_cached_call_count();
+                    let assignment = assign_default_aromaticity_with_cached_valence(
+                        &fixture.topology,
+                        &fixture.rings,
+                        &fixture.valence,
+                        query_state,
+                    )
+                    .unwrap_or_else(|error| {
+                        panic!(
+                            "{} repetition {repetition} cached aromaticity failed: {error:?}",
+                            fixture.name
+                        )
+                    });
+
+                    assert_eq!(source_cached_call_count(), cold_before);
+                    assert_eq!(fixture.topology, topology_before);
+                    assert_eq!(fixture.rings, rings_before);
+                    assert_eq!(fixture.valence, valence_before);
+                    assert_eq!(assignment.aromatic_ring_count, 1, "{}", fixture.name);
+                    assert_eq!(
+                        assignment
+                            .topology
+                            .atoms
+                            .iter()
+                            .map(Atom::is_aromatic)
+                            .collect::<Vec<_>>(),
+                        fixture.expected_atom_aromatic,
+                        "{} atom flags, query_state={}",
+                        fixture.name,
+                        query_state.is_some()
+                    );
+                    assert_eq!(
+                        assignment
+                            .topology
+                            .bonds
+                            .iter()
+                            .map(Bond::is_aromatic)
+                            .collect::<Vec<_>>(),
+                        fixture.expected_bond_aromatic,
+                        "{} bond flags, query_state={}",
+                        fixture.name,
+                        query_state.is_some()
+                    );
+                    prepared_calls += 1;
+                }
+            }
+        }
+        assert_eq!(prepared_calls, 16);
+
+        let benzene = &fixtures[1];
+        let query_atoms = benzene
+            .topology
+            .atoms
+            .iter()
+            .map(|carrier| {
+                QueryAtom::from_carrier_parts(
+                    carrier.clone(),
+                    QueryNode::predicate(AtomQueryPredicate::AtomicNumber(carrier.atomic_number())),
+                )
+            })
+            .collect::<Vec<_>>();
+        let query_bonds = benzene
+            .topology
+            .bonds
+            .iter()
+            .map(|carrier| {
+                QueryBond::from_carrier_parts(
+                    carrier.clone(),
+                    QueryNode::predicate(BondQueryPredicate::Order(carrier.order())),
+                )
+            })
+            .collect::<Vec<_>>();
+        let carrier_state =
+            QueryStateRef::try_for_topology(&query_atoms, &query_bonds, &benzene.topology).unwrap();
+        assert!(
+            (0..benzene.topology.atoms.len())
+                .all(|index| !carrier_state.atom_has_query(AtomId::new(index)))
+        );
+        assert!(
+            (0..benzene.topology.bonds.len())
+                .all(|index| !carrier_state.bond_has_query(BondId::new(index)))
+        );
+
+        let mut rejected_cache_calls = 0;
+        for malformed in 0..4 {
+            let mut bad_valence = benzene.valence.clone();
+            let expected_error = match malformed {
+                0 => {
+                    bad_valence.explicit_valence.pop();
+                    AromaticityError::ValenceAssignmentLength {
+                        field: "explicit_valence",
+                        actual: 5,
+                        expected: 6,
+                    }
+                }
+                1 => {
+                    bad_valence.implicit_hydrogens.pop();
+                    AromaticityError::ValenceAssignmentLength {
+                        field: "implicit_hydrogens",
+                        actual: 5,
+                        expected: 6,
+                    }
+                }
+                2 => {
+                    bad_valence.explicit_valence[0] = -1;
+                    AromaticityError::InvalidValenceRow {
+                        atom: AtomId::new(0),
+                        field: "explicit_valence",
+                        value: -1,
+                    }
+                }
+                _ => {
+                    bad_valence.implicit_hydrogens[0] = -1;
+                    AromaticityError::InvalidValenceRow {
+                        atom: AtomId::new(0),
+                        field: "implicit_hydrogens",
+                        value: -1,
+                    }
+                }
+            };
+            for query_state in [None, Some(carrier_state)] {
+                let topology_before = benzene.topology.clone();
+                let rings_before = benzene.rings.clone();
+                let valence_before = bad_valence.clone();
+                let cold_before = source_cached_call_count();
+                let result = assign_default_aromaticity_with_cached_valence(
+                    &benzene.topology,
+                    &benzene.rings,
+                    &bad_valence,
+                    query_state,
+                );
+
+                assert_eq!(result.unwrap_err(), expected_error);
+                assert_eq!(source_cached_call_count(), cold_before);
+                assert_eq!(benzene.topology, topology_before);
+                assert_eq!(benzene.rings, rings_before);
+                assert_eq!(bad_valence, valence_before);
+                rejected_cache_calls += 1;
+            }
+        }
+        assert_eq!(rejected_cache_calls, 8);
+
+        let mut cold_controls = 0;
+        for fixture in &fixtures {
+            let topology_before = fixture.topology.clone();
+            let rings_before = fixture.rings.clone();
+            let valence_before = fixture.valence.clone();
+            let cold_before = source_cached_call_count();
+            let result = assign_aromaticity(
+                &fixture.topology,
+                &fixture.rings,
+                &AromaticityParams::default(),
+            );
+
+            if fixture.name == "line130" {
+                assert!(matches!(
+                    result,
+                    Err(AromaticityError::Valence(ValenceError::InvalidValence {
+                        atom,
+                        atomic_number: 6,
+                        calculated: Some(5),
+                        ..
+                    })) if atom == AtomId::new(9)
+                ));
+            } else {
+                let assignment = result.unwrap_or_else(|error| {
+                    panic!("{} public cold aromaticity failed: {error:?}", fixture.name)
+                });
+                assert_eq!(assignment.aromatic_ring_count, 1, "{}", fixture.name);
+                assert_eq!(
+                    assignment
+                        .topology
+                        .atoms
+                        .iter()
+                        .map(Atom::is_aromatic)
+                        .collect::<Vec<_>>(),
+                    fixture.expected_atom_aromatic,
+                    "{} cold atom flags",
+                    fixture.name
+                );
+                assert_eq!(
+                    assignment
+                        .topology
+                        .bonds
+                        .iter()
+                        .map(Bond::is_aromatic)
+                        .collect::<Vec<_>>(),
+                    fixture.expected_bond_aromatic,
+                    "{} cold bond flags",
+                    fixture.name
+                );
+            }
+            assert_eq!(source_cached_call_count(), cold_before + 1);
+            assert_eq!(fixture.topology, topology_before);
+            assert_eq!(fixture.rings, rings_before);
+            assert_eq!(fixture.valence, valence_before);
+            cold_controls += 1;
+        }
+        assert_eq!(cold_controls, 4);
     }
 
     #[test]

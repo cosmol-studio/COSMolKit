@@ -12,13 +12,13 @@ use cosmolkit_model::{
 };
 use cosmolkit_types::Hybridization;
 
+use crate::aromaticity::assign_default_aromaticity_with_cached_valence;
 use crate::{
-    AromaticityError, AromaticityParams, AtropisomerError, CleanupError, CleanupParams,
-    ConjugationError, HybridizationAssignment, HybridizationError, KekulizeError, KekulizeParams,
-    RadicalError, RingFindingError, RingInfo, RingSearchParams, StereoError, ValenceAssignment,
-    ValenceError, ValenceModel, ValenceParams, assign_aromaticity_with_query_state,
-    assign_conjugation, assign_hybridization, assign_radicals, assign_valence,
-    assign_valence_state_for_atom_from_parts, cleanup, find_sssr, kekulize,
+    AromaticityError, AtropisomerError, CleanupError, CleanupParams, ConjugationError,
+    HybridizationAssignment, HybridizationError, KekulizeError, KekulizeParams, RadicalError,
+    RingFindingError, RingInfo, RingSearchParams, StereoError, ValenceAssignment, ValenceError,
+    ValenceModel, ValenceParams, assign_conjugation, assign_hybridization, assign_radicals,
+    assign_valence, assign_valence_state_for_atom_from_parts, cleanup, find_sssr, kekulize,
     kekulize_with_query_state_and_ring_info, symmetrized_sssr,
 };
 
@@ -855,10 +855,15 @@ pub fn sanitize_topology_with_query_state(
             );
         }
         let ring_assignment = rings.as_ref().expect("aromaticity state present");
-        working = assign_aromaticity_with_query_state(
+        // Behavior: RDKit SetAromaticity consumes the existing atom cache;
+        // `valence` is the same strict Properties assignment with only the
+        // source-refreshed Kekulize N/P rows applied above.
+        // Complexity: borrow those rows into the default aromaticity owner,
+        // avoiding a second O(V+E) assignment while keeping its validation.
+        working = assign_default_aromaticity_with_cached_valence(
             &working,
             &ring_assignment,
-            &AromaticityParams::default(),
+            &valence,
             query_state,
         )
         .map_err(|source| SanitizeError::Aromaticity {

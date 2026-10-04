@@ -1852,6 +1852,10 @@ fn parse_stereo_collection_line(
             Ok(AtomId::new(row))
         })
         .collect::<Result<Vec<_>, _>>()?;
+    // RDKit✔️✔️: groups.emplace_back(grouptype, std::move(atoms), std::move(newBonds),
+    // RDKit✔️✔️:                     groupid);
+    // This constructor argument is the source/read ID; the independent
+    // write ID remains zero until an explicit source forwarding operation.
     Ok(Some(
         StereoGroup::new(kind, group_atoms, Vec::new()).with_id(group_id),
     ))
@@ -3487,11 +3491,71 @@ fn bracket_style_text(value: &SGroupBracketStyle) -> &str {
 }
 
 fn assigned_stereo_group_ids(groups: &[StereoGroup]) -> Vec<Option<u32>> {
+    // BEGIN RDKIT CPP FUNCTION storeIdsInUse/assignMissingIds/assignStereoGroupIds
+    // RDKit❗❗: void storeIdsInUse(boost::dynamic_bitset<> &ids, StereoGroup &sg) {
+    // RDKit❗❗:   const auto groupId = sg.getWriteId();
+    // RDKit❗❗:   if (groupId == 0) {
+    // RDKit❗❗:     return;
+    // RDKit❗❗:   } else if (groupId >= ids.size()) {
+    // RDKit❗❗:     ids.resize(groupId + 1);
+    // RDKit❗❗:   }
+    // RDKit❗❗:   if (ids[groupId]) {
+    // RDKit❗❗:     BOOST_LOG(rdWarningLog)
+    // RDKit❗❗:         << "StereoGroup ID " << groupId
+    // RDKit❗❗:         << " is used by more than one group, and will be reassined"
+    // RDKit❗❗:         << std::endl;
+    // RDKit❗❗:     sg.setWriteId(0);
+    // RDKit❗❗:   } else {
+    // RDKit❗❗:     ids[groupId] = true;
+    // RDKit❗❗:   }
+    // RDKit❗❗: }
+    // RDKit❗❗: void assignMissingIds(const boost::dynamic_bitset<> &ids,
+    // RDKit❗❗:                       unsigned &nextId, StereoGroup &sg) {
+    // RDKit❗❗:   if (sg.getWriteId() == 0) {
+    // RDKit❗❗:     ++nextId;
+    // RDKit❗❗:     while (nextId < ids.size() && ids[nextId]) {
+    // RDKit❗❗:       ++nextId;
+    // RDKit❗❗:     }
+    // RDKit❗❗:     sg.setWriteId(nextId);
+    // RDKit❗❗:   }
+    // RDKit❗❗: }
+    // RDKit❗❗: void assignStereoGroupIds(std::vector<StereoGroup> &groups) {
+    // RDKit❗❗:   if (groups.empty()) {
+    // RDKit❗❗:     return;
+    // RDKit❗❗:   }
+    // RDKit❗❗:   boost::dynamic_bitset<> andIds;
+    // RDKit❗❗:   boost::dynamic_bitset<> orIds;
+    // RDKit❗❗:   for (auto &sg : groups) {
+    // RDKit❗❗:     if (sg.getGroupType() == StereoGroupType::STEREO_AND) {
+    // RDKit❗❗:       storeIdsInUse(andIds, sg);
+    // RDKit❗❗:     } else if (sg.getGroupType() == StereoGroupType::STEREO_OR) {
+    // RDKit❗❗:       storeIdsInUse(orIds, sg);
+    // RDKit❗❗:     }
+    // RDKit❗❗:   }
+    // RDKit❗❗:   unsigned andId = 0;
+    // RDKit❗❗:   unsigned orId = 0;
+    // RDKit❗❗:   for (auto &sg : groups) {
+    // RDKit❗❗:     if (sg.getGroupType() == StereoGroupType::STEREO_AND) {
+    // RDKit❗❗:       assignMissingIds(andIds, andId, sg);
+    // RDKit❗❗:     } else if (sg.getGroupType() == StereoGroupType::STEREO_OR) {
+    // RDKit❗❗:       assignMissingIds(orIds, orId, sg);
+    // RDKit❗❗:     }
+    // RDKit❗❗:   }
+    // RDKit❗❗: }
+    // Behavior remains partial because the pinned duplicate-ID warning is not
+    // represented by this private value-only helper.
+    // Complexity review: the source bitsets use O(maximum ID) bits with O(1)
+    // lookup; BTreeSet uses O(group count) entries with O(log group count)
+    // lookup. It avoids sparse-ID-sized allocation but is slower for dense
+    // inputs, so the performance axis remains unresolved without measurements.
     let mut assigned = groups
         .iter()
         .map(|group| match group.kind() {
             StereoGroupKind::Absolute => None,
-            StereoGroupKind::Or | StereoGroupKind::And => group.id().filter(|id| *id != 0),
+            StereoGroupKind::Or | StereoGroupKind::And => {
+                let id = group.write_id();
+                (id != 0).then_some(id)
+            }
         })
         .collect::<Vec<_>>();
     for kind in [StereoGroupKind::Or, StereoGroupKind::And] {
@@ -4082,4 +4146,101 @@ pub(super) fn write_v2000_sgroups(topology: &TopologyBlock) -> Result<String, Sd
     }
     Ok(output)
     // END RDKIT CPP FUNCTION
+}
+
+#[cfg(test)]
+mod cf3d_sgids_io_4_tests {
+    use super::{parse_stereo_collection_line, parse_v3000_collection_block};
+    use crate::sdf::SdfReadError;
+    use cosmolkit_model::{AtomId, StereoGroupKind};
+
+    #[test]
+    fn cf3d_sgids_io_4_collection_numbers_are_read_ids_only() {
+        let lines = [
+            "M  V30 MDLV30/HILITE ATOMS=(2 1 2)",
+            "M  V30 MDLV30/STEABS ATOMS=(2 3 1)",
+            "M  V30 MDLV30/STEREL17 ATOMS=(2 2 4)",
+            "M  V30 MDLV30/STERAC23 ATOMS=(1 3)",
+            "M  V30 END COLLECTION",
+        ];
+        let mut cursor = 0;
+        let groups = parse_v3000_collection_block(&lines, &mut cursor, 4, true).unwrap();
+
+        assert_eq!(cursor, lines.len());
+        assert_eq!(groups.len(), 3);
+        assert_eq!(groups[0].kind(), StereoGroupKind::Absolute);
+        assert_eq!(groups[0].id(), Some(0));
+        assert_eq!(groups[0].write_id(), 0);
+        assert_eq!(groups[0].atoms(), &[AtomId::new(2), AtomId::new(0)]);
+
+        assert_eq!(groups[1].kind(), StereoGroupKind::Or);
+        assert_eq!(groups[1].id(), Some(17));
+        assert_eq!(groups[1].write_id(), 0);
+        assert_eq!(groups[1].atoms(), &[AtomId::new(1), AtomId::new(3)]);
+
+        assert_eq!(groups[2].kind(), StereoGroupKind::And);
+        assert_eq!(groups[2].id(), Some(23));
+        assert_eq!(groups[2].write_id(), 0);
+        assert_eq!(groups[2].atoms(), &[AtomId::new(2)]);
+    }
+
+    #[test]
+    fn cf3d_sgids_io_4_invalid_members_keep_source_error() {
+        let error = parse_stereo_collection_line("MDLV30/STEREL17 ATOMS=(1 5)", 8, 4).unwrap_err();
+        assert!(matches!(
+            error,
+            SdfReadError::Parse(message)
+                if message == "Stereo group atom index 5 out of range on line 8"
+        ));
+    }
+}
+
+#[cfg(test)]
+mod cf3d_sgids_io_5_tests {
+    use super::{assigned_stereo_group_ids, write_v3000_typed_blocks};
+    use cosmolkit_model::{Atom, AtomId, AtomSpec, StereoGroup, StereoGroupKind, TopologyBlock};
+    use cosmolkit_types::Element;
+
+    fn group(kind: StereoGroupKind, atom: usize, read_id: u32, write_id: u32) -> StereoGroup {
+        StereoGroup::new(kind, vec![AtomId::new(atom)], vec![])
+            .with_id(read_id)
+            .with_write_id(write_id)
+    }
+
+    #[test]
+    fn cf3d_sgids_io_5_writer_uses_write_ids_and_keeps_groups_unchanged() {
+        let stereo_groups = vec![
+            group(StereoGroupKind::Or, 0, 17, 0),
+            group(StereoGroupKind::Or, 1, 17, 9),
+            group(StereoGroupKind::Or, 2, 77, 9),
+            group(StereoGroupKind::Or, 3, 4, 4),
+            group(StereoGroupKind::And, 4, 17, 0),
+            group(StereoGroupKind::And, 5, 17, 4),
+            group(StereoGroupKind::Absolute, 6, 17, 0),
+        ];
+        let atoms = (0..7)
+            .map(|index| Atom::from_spec(AtomId::new(index), AtomSpec::new(Element::C)))
+            .collect();
+        let topology = TopologyBlock::try_from_parts(atoms, vec![], vec![], stereo_groups)
+            .expect("fixed writer topology is valid");
+        let original_groups = topology.stereo_groups.clone();
+
+        assert_eq!(
+            assigned_stereo_group_ids(&topology.stereo_groups),
+            vec![Some(1), Some(9), Some(2), Some(4), Some(1), Some(4), None]
+        );
+        assert_eq!(
+            write_v3000_typed_blocks(&topology),
+            "M  V30 BEGIN COLLECTION\n\
+             M  V30 MDLV30/STEREL1 ATOMS=(1 1)\n\
+             M  V30 MDLV30/STEREL9 ATOMS=(1 2)\n\
+             M  V30 MDLV30/STEREL2 ATOMS=(1 3)\n\
+             M  V30 MDLV30/STEREL4 ATOMS=(1 4)\n\
+             M  V30 MDLV30/STERAC1 ATOMS=(1 5)\n\
+             M  V30 MDLV30/STERAC4 ATOMS=(1 6)\n\
+             M  V30 MDLV30/STEABS ATOMS=(1 7)\n\
+             M  V30 END COLLECTION\n"
+        );
+        assert_eq!(topology.stereo_groups, original_groups);
+    }
 }

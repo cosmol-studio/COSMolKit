@@ -11,6 +11,42 @@
 //! ten classifiers return the source-defined EMPTY-ROW `0` on absence — a
 //! documented empty input, not a swallowed error. These are Experimental
 //! commitments; Python/JS projections are declared, not implemented.
+//!
+//! # Topology-only SMARTS counts
+//!
+//! `num_heteroatoms` runs the pinned `[!#6;!#1]` pattern through the ONE
+//! retained-pattern matcher with a narrow topology-only query context: it
+//! reads ONLY atomic-number rows (dummy Z0 counts; isotope H does not),
+//! never computes valence/ring state, and keeps the source default match
+//! parameters — including `maxMatches = 1000`, so more than 1000 matching
+//! rows clamp at 1000 exactly like the pinned `SubstructMatch` defaults.
+//!
+//! # General prepared SMARTS counts
+//!
+//! `num_hba` is the general recursive-SMARTS acceptor count
+//! (RDKit `CalcNumHBA`, pinned `2.0.2` pattern). Unlike the
+//! topology-only family above, it is a PREPARED read: it borrows BOTH the
+//! existing valid valence assignment and the existing initialized
+//! ordinary ring rows (absence fails `MissingPreparedValence` first, then
+//! `MissingInitializedRings`; an unsanitized molecule fails before any
+//! chemistry runs — a public prepared-state boundary limitation, not a
+//! chemical divergence), constructs the borrowed five-block
+//! descriptor input, and delegates exactly once to the domain owner. It
+//! is NOT the direct Lipinski N/O sum (`lipinski_hba`): thiophene S
+//! counts here, acid OH does not, and carbonyl O matches through the
+//! H0-v2 branch. Experimental; Python/JS projections are declared, not
+//! implemented.
+//!
+//! `num_hbd` is the general donor count (RDKit `CalcNumHBD`, pinned
+//! `2.0.1` pattern). It is a NARROW valence-only prepared read: the fixed
+//! pattern reads hydrogen-count and valence predicates but NO ring
+//! predicate (ROOT-resolved from the pinned source), so it borrows ONLY
+//! the existing valid valence assignment — valid valence with absent or
+//! reset rings still SUCCEEDS, unlike `num_hba`. It is NOT the direct
+//! Lipinski donor-hydrogen sum (`lipinski_hbd`): sulfur donors match
+//! here, `[NH4+]` counts one atom here but four hydrogens there, and
+//! isolated S has two H and counts 0. Experimental; Python/JS projections
+//! are declared, not implemented.
 
 use crate::{Molecule, OperationError};
 
@@ -168,6 +204,116 @@ impl Molecule {
             .valid_ring_info()
             .ok_or(DescriptorReadError::MissingInitializedRings)?;
         cosmolkit_descriptors::num_rings_with_ring_info(rings)
+            .map_err(|source| DescriptorReadError::Algorithm { source })
+    }
+
+    /// Returns the general SMARTS-based heteroatom count
+    /// (RDKit `CalcNumHeteroatoms`).
+    ///
+    /// Topology-only query: the pinned `[!#6;!#1]` pattern reads ONLY
+    /// atomic-number rows, so this thin read delegates once to the
+    /// descriptor owner's topology-only path (narrow query context;
+    /// default match parameters with maxMatches=1000). No prepared
+    /// valence, ring state, cache clone/installation or operation
+    /// declaration is involved; dummy rows count and isotope H does not.
+    #[cfg(feature = "cap-descriptors")]
+    #[must_use]
+    pub fn num_heteroatoms(&self) -> Result<u32, DescriptorReadError> {
+        cosmolkit_descriptors::num_heteroatoms(self.topology())
+            .map_err(|source| DescriptorReadError::Algorithm { source })
+    }
+
+    /// Returns the general SMARTS-based hydrogen-bond acceptor count
+    /// (RDKit `CalcNumHBA`).
+    ///
+    /// Mandatory-borrow review: this prepared query borrows BOTH the
+    /// EXISTING validity-checked cached valence assignment (through
+    /// [`required_descriptor_valence`]) and the EXISTING valid
+    /// initialized ordinary [`RingInfo`] rows (through the derived-cache
+    /// valid-gated read). It never computes, installs or upgrades either
+    /// payload, clones no whole cache state and exposes no fresh-state
+    /// wrapper. Absence precedence: a missing prepared valence reports
+    /// [`DescriptorReadError::MissingPreparedValence`] FIRST; a valid
+    /// valence with absent/reset ordinary rings then reports
+    /// [`DescriptorReadError::MissingInitializedRings`]. An unsanitized
+    /// molecule therefore fails before any chemistry runs — a public
+    /// prepared-state boundary limitation, not a source chemical
+    /// divergence.
+    ///
+    /// Behavior review: this is NOT the direct Lipinski N/O row sum
+    /// ([`Molecule::lipinski_hba`]); the pinned recursive SMARTS counts
+    /// distinct atom sets (thiophene S here, acid OH not, carbonyl O by
+    /// the H0-v2 branch; `c1cccn1C` -> 0 and `c1cccc(=O)n1C` -> 1 are
+    /// the pinned RDKit #8997 discriminators). Cost review: borrowing
+    /// the payloads does NOT make the call free — the domain owner
+    /// validates rows, builds the query-match context (adjacency) and
+    /// runs the recursive-pattern matcher pass; no O(1) or
+    /// allocation-free claim is made here.
+    #[cfg(feature = "cap-descriptors")]
+    #[must_use]
+    pub fn num_hba(&self) -> Result<u32, DescriptorReadError> {
+        // BEGIN RDKIT CPP MACRO EXPANSION: SMARTSCOUNTFUNC -> calcNumHBA
+        // RDKit✔️✔️: #define SMARTSCOUNTFUNC(nm, pattern, vers)         \
+        // RDKit✔️✔️:   const std::string nm##Version = vers;            \
+        // RDKit✔️✔️:   unsigned int calc##nm(const RDKit::ROMol &mol) { \
+        // RDKit✔️✔️:     pattern_flyweight m(pattern);                  \
+        // RDKit✔️✔️:     return m.get().countMatches(mol);              \
+        // RDKit✔️✔️:   }                                                \
+        // RDKit✔️✔️:   extern int no_such_variable
+        // RDKit✔️✔️: SMARTSCOUNTFUNC(NumHBA,
+        // RDKit✔️✔️:                 "[$([O,S;H1;v2]-[!$(*=[O,N,P,S])]),$([O,S;H0;v2]),$([O,S;-]),$("
+        // RDKit✔️✔️:                 "[N;v3;!$(N-*=!@[O,N,P,S])]),$([nH0X2,o,s;+0])]",
+        // RDKit✔️✔️:                 "2.0.2");
+        // END RDKIT CPP MACRO EXPANSION: SMARTSCOUNTFUNC -> calcNumHBA
+        let assignment = required_descriptor_valence(self)?;
+        let rings = self
+            .derived_cache_runtime()
+            .valid_ring_info()
+            .ok_or(DescriptorReadError::MissingInitializedRings)?;
+        let input = cosmolkit_descriptors::DescriptorInput::new(
+            self.topology(),
+            self.coordinate_block_runtime(),
+            self.properties(),
+            assignment,
+            rings,
+        );
+        cosmolkit_descriptors::num_hba_prepared(&input)
+            .map_err(|source| DescriptorReadError::Algorithm { source })
+    }
+
+    /// Returns the general SMARTS-based hydrogen-bond donor count
+    /// (RDKit `CalcNumHBD`, pinned `2.0.1` pattern).
+    ///
+    /// Mandatory-borrow review: this prepared query borrows ONLY the
+    /// EXISTING validity-checked cached valence assignment through
+    /// [`required_descriptor_valence`] and delegates exactly once to the
+    /// narrow domain owner `num_hbd_with_valence`. The fixed pattern
+    /// reads hydrogen-count and valence predicates but NO ring predicate
+    /// (ROOT-resolved from the pinned source), so this query performs NO
+    /// ring read, gate, find, install or upgrade, clones no whole cache
+    /// state, exposes no fresh-state wrapper and declares no operation.
+    /// A missing prepared valence reports
+    /// [`DescriptorReadError::MissingPreparedValence`] with no fabricated
+    /// cause; a domain failure maps to
+    /// [`DescriptorReadError::Algorithm`] with the borrowed typed source
+    /// chain. Valid valence with absent/reset rings SUCCEEDS — ring state
+    /// is not an input of this query. An unsanitized molecule fails at the
+    /// valence gate before any chemistry runs: a public prepared-state
+    /// boundary limitation, not a source chemical divergence.
+    ///
+    /// Behavior review: this is NOT the direct Lipinski donor-hydrogen sum
+    /// ([`Molecule::lipinski_hbd`]); the pinned pattern counts MATCHING
+    /// ATOMS (sulfur donors count here, `[NH4+]` counts one atom here but
+    /// four attached hydrogens there, isolated S has two H and counts 0).
+    /// Cost review: borrowing the assignment does NOT make the call free —
+    /// the domain owner validates topology and valence rows, builds the
+    /// narrow query-match context (adjacency validation/scratch) and runs
+    /// one matcher pass; no O(1) or allocation-free claim is made here.
+    #[cfg(feature = "cap-descriptors")]
+    #[must_use]
+    pub fn num_hbd(&self) -> Result<u32, DescriptorReadError> {
+        let assignment = required_descriptor_valence(self)?;
+        cosmolkit_descriptors::num_hbd_with_valence(self.topology(), assignment)
             .map_err(|source| DescriptorReadError::Algorithm { source })
     }
 
@@ -952,5 +1098,748 @@ mod descriptor_public_storage_tests {
             }
         }
         assert_eq!(calls, 20, "exact 20-call storage census");
+    }
+
+    #[test]
+    fn descriptor_heteroatoms_public_storage_internal_proof() {
+        // HETERO-REPAIR frozen INTERNAL storage proof for the
+        // topology-only num_heteroatoms query: 3 fixed molecules
+        // (CCO, *, [2H]O[2H], literal output 1 each) x 2 receivers
+        // (original + Arc-sharing peer clone) x 2 repeats = exactly 12
+        // ACTUAL calls. Relocated from the superseded external
+        // value-equality proof: Molecule::PartialEq EXCLUDES the derived
+        // cache and proves neither Arc identity nor generic
+        // NaN/signed-zero equality — this private-module proof checks
+        // the four real Arc blocks, whole cloned values, valid_states()
+        // and the optional borrowed payloads directly. No production
+        // cache clone/access change is involved.
+        const LITERALS: [(&str, u32); 3] = [("CCO", 1), ("*", 1), ("[2H]O[2H]", 1)];
+
+        let mut calls = 0usize;
+        for (smiles, literal) in LITERALS {
+            let original = Molecule::from_smiles(smiles).unwrap();
+            let peer = original.clone();
+
+            // Captured ONCE before any query; never refreshed.
+            let topology_arc = original.topology_arc_runtime();
+            let coordinates_arc = original.coordinates_arc_runtime();
+            let properties_arc = original.properties_arc_runtime();
+            let cache_arc = original.derived_cache_arc_runtime();
+            // Complete independently cloned baselines for whole values.
+            let baseline_topology = original.topology().clone();
+            let baseline_coordinates = original.coordinate_block_runtime().clone();
+            let baseline_properties = original.properties().clone();
+            let baseline_cache = original.derived_cache_runtime().clone();
+            let baseline_states = baseline_cache.valid_states();
+            // Optional borrowed payload identities (None stays None, Some
+            // stays pointer-identical); whole-value cache state is
+            // already covered by the complete cloned baseline above.
+            let baseline_valence: Option<*const cosmolkit_core::ValenceAssignment> = original
+                .derived_cache_runtime()
+                .valence_assignment()
+                .map(|reference| reference as *const _);
+            let baseline_ring: Option<*const cosmolkit_core::RingInfo> = original
+                .derived_cache_runtime()
+                .ring_info()
+                .map(|reference| reference as *const _);
+            let baseline_valid_ring: Option<*const cosmolkit_core::RingInfo> = original
+                .derived_cache_runtime()
+                .valid_ring_info()
+                .map(|reference| reference as *const _);
+
+            // ONE checkpoint closure: BOTH receivers keep every
+            // never-refreshed baseline (four Arc identities, four whole
+            // values, valid states, optional payload identities) and
+            // share all four Arc blocks with each other. Invoked
+            // immediately BEFORE and AFTER each of the twelve actual
+            // query calls.
+            let checkpoint = |stage: &str| {
+                for (who, molecule) in [("original", &original), ("peer", &peer)] {
+                    assert!(
+                        Arc::ptr_eq(&topology_arc, &molecule.topology_arc_runtime()),
+                        "{stage} {who} {smiles}: topology Arc identity"
+                    );
+                    assert!(
+                        Arc::ptr_eq(&coordinates_arc, &molecule.coordinates_arc_runtime()),
+                        "{stage} {who} {smiles}: coordinates Arc identity"
+                    );
+                    assert!(
+                        Arc::ptr_eq(&properties_arc, &molecule.properties_arc_runtime()),
+                        "{stage} {who} {smiles}: properties Arc identity"
+                    );
+                    assert!(
+                        Arc::ptr_eq(&cache_arc, &molecule.derived_cache_arc_runtime()),
+                        "{stage} {who} {smiles}: derived-cache Arc identity"
+                    );
+                    assert_eq!(
+                        molecule.topology(),
+                        &baseline_topology,
+                        "{stage} {who} {smiles}: whole topology"
+                    );
+                    assert_eq!(
+                        molecule.coordinate_block_runtime(),
+                        &baseline_coordinates,
+                        "{stage} {who} {smiles}: whole coordinates"
+                    );
+                    assert_eq!(
+                        molecule.properties(),
+                        &baseline_properties,
+                        "{stage} {who} {smiles}: whole properties"
+                    );
+                    assert_eq!(
+                        molecule.derived_cache_runtime(),
+                        &baseline_cache,
+                        "{stage} {who} {smiles}: whole derived cache"
+                    );
+                    assert_eq!(
+                        molecule.derived_cache_runtime().valid_states(),
+                        baseline_states,
+                        "{stage} {who} {smiles}: valid states"
+                    );
+                    let valence: Option<*const cosmolkit_core::ValenceAssignment> = molecule
+                        .derived_cache_runtime()
+                        .valence_assignment()
+                        .map(|reference| reference as *const _);
+                    assert_eq!(
+                        valence, baseline_valence,
+                        "{stage} {who} {smiles}: valence payload identity (None stays None)"
+                    );
+                    let ring: Option<*const cosmolkit_core::RingInfo> = molecule
+                        .derived_cache_runtime()
+                        .ring_info()
+                        .map(|reference| reference as *const _);
+                    assert_eq!(
+                        ring, baseline_ring,
+                        "{stage} {who} {smiles}: stored ring payload identity"
+                    );
+                    let valid_ring: Option<*const cosmolkit_core::RingInfo> = molecule
+                        .derived_cache_runtime()
+                        .valid_ring_info()
+                        .map(|reference| reference as *const _);
+                    assert_eq!(
+                        valid_ring, baseline_valid_ring,
+                        "{stage} {who} {smiles}: valid-ring payload identity"
+                    );
+                }
+                assert!(
+                    Arc::ptr_eq(
+                        &original.topology_arc_runtime(),
+                        &peer.topology_arc_runtime()
+                    ),
+                    "{stage} {smiles}: original/peer topology sharing"
+                );
+                assert!(
+                    Arc::ptr_eq(
+                        &original.coordinates_arc_runtime(),
+                        &peer.coordinates_arc_runtime()
+                    ),
+                    "{stage} {smiles}: original/peer coordinates sharing"
+                );
+                assert!(
+                    Arc::ptr_eq(
+                        &original.properties_arc_runtime(),
+                        &peer.properties_arc_runtime()
+                    ),
+                    "{stage} {smiles}: original/peer properties sharing"
+                );
+                assert!(
+                    Arc::ptr_eq(
+                        &original.derived_cache_arc_runtime(),
+                        &peer.derived_cache_arc_runtime()
+                    ),
+                    "{stage} {smiles}: original/peer derived-cache sharing"
+                );
+            };
+
+            for (who, receiver) in [("original", &original), ("peer", &peer)] {
+                for repeat in 0..2 {
+                    checkpoint("before");
+                    let count = receiver.num_heteroatoms().unwrap();
+                    calls += 1;
+                    checkpoint("after");
+                    assert_eq!(count, literal, "{smiles} {who} #{repeat}: literal output");
+                }
+            }
+        }
+        assert_eq!(calls, 12, "exact 12-call storage census");
+    }
+
+    #[test]
+    fn descriptor_hba_storage_prepared_payloads_preserved() {
+        // HBA-PUBLIC frozen internal storage proof for the prepared
+        // general num_hba query: 3 fixed molecules (empty, CCO, thiophene
+        // c1ccsc1; literal outputs 0/1/1) x 2 constructor policies
+        // (sanitize=true, remove-H false/true) x 2 receivers (original +
+        // Arc-sharing peer clone) x 2 repeats = exactly 24 ACTUAL calls.
+        // Once-captured never-refreshed baselines: all four Arc pointers,
+        // complete independently cloned topology/property/derived-cache
+        // values, FLOAT-BIT coordinate rows (PartialEq alone proves
+        // neither NaN nor signed-zero identity), valid_states(), and the
+        // optional borrowed valence/stored-ring/valid-ring payload
+        // identities (None stays None, Some stays pointer-identical). ONE
+        // closure runs immediately BEFORE and AFTER every call over BOTH
+        // receivers. No production cache clone/access change.
+        const FIXTURES: [(&str, u32); 3] = [("", 0), ("CCO", 1), ("c1ccsc1", 1)];
+
+        // Float-bit coordinate identity: collects every 2D/3D row's f64
+        // bits in order. An absent block is the empty vector; a present
+        // NaN/signed-zero row keeps its exact bits.
+        fn coordinate_bits(block: &cosmolkit_model::CoordinateBlock) -> Vec<u64> {
+            let mut bits = Vec::new();
+            for conformer in &block.conformers_2d {
+                for row in conformer.coordinates() {
+                    bits.extend(row.iter().map(|value| value.to_bits()));
+                }
+            }
+            for conformer in &block.conformers_3d {
+                for row in conformer.coordinates() {
+                    bits.extend(row.iter().map(|value| value.to_bits()));
+                }
+            }
+            bits
+        }
+
+        let mut calls = 0usize;
+        for (smiles, literal) in FIXTURES {
+            for remove_hydrogens in [false, true] {
+                let label = format!("{smiles:?}/rh={remove_hydrogens}");
+                let original = Molecule::from_smiles_with_params(
+                    smiles,
+                    &crate::SmilesParseParams {
+                        sanitize: true,
+                        remove_hydrogens,
+                        ..Default::default()
+                    },
+                )
+                .unwrap();
+                let peer = original.clone();
+
+                // Valid prepared payloads are asserted BEFORE any query:
+                // BOTH borrowed rows really exist on this real fixture.
+                assert!(
+                    original
+                        .derived_cache_runtime()
+                        .valence_assignment()
+                        .is_some(),
+                    "{label}: prepared valence actually valid"
+                );
+                assert!(
+                    original.derived_cache_runtime().valid_ring_info().is_some(),
+                    "{label}: ordinary rings actually initialized"
+                );
+
+                // Captured ONCE; never refreshed.
+                let topology_arc = original.topology_arc_runtime();
+                let coordinates_arc = original.coordinates_arc_runtime();
+                let properties_arc = original.properties_arc_runtime();
+                let cache_arc = original.derived_cache_arc_runtime();
+                let baseline_topology = original.topology().clone();
+                let baseline_coordinates = original.coordinate_block_runtime().clone();
+                let baseline_coordinate_bits = coordinate_bits(&baseline_coordinates);
+                let baseline_properties = original.properties().clone();
+                let baseline_cache = original.derived_cache_runtime().clone();
+                let baseline_states = baseline_cache.valid_states();
+                let baseline_valence: Option<*const cosmolkit_core::ValenceAssignment> = original
+                    .derived_cache_runtime()
+                    .valence_assignment()
+                    .map(|reference| reference as *const _);
+                let baseline_ring: Option<*const cosmolkit_core::RingInfo> = original
+                    .derived_cache_runtime()
+                    .ring_info()
+                    .map(|reference| reference as *const _);
+                let baseline_valid_ring: Option<*const cosmolkit_core::RingInfo> = original
+                    .derived_cache_runtime()
+                    .valid_ring_info()
+                    .map(|reference| reference as *const _);
+
+                let checkpoint = |stage: &str| {
+                    for (who, molecule) in [("original", &original), ("peer", &peer)] {
+                        assert!(
+                            Arc::ptr_eq(&topology_arc, &molecule.topology_arc_runtime()),
+                            "{stage} {who} {label}: topology Arc identity"
+                        );
+                        assert!(
+                            Arc::ptr_eq(&coordinates_arc, &molecule.coordinates_arc_runtime()),
+                            "{stage} {who} {label}: coordinates Arc identity"
+                        );
+                        assert!(
+                            Arc::ptr_eq(&properties_arc, &molecule.properties_arc_runtime()),
+                            "{stage} {who} {label}: properties Arc identity"
+                        );
+                        assert!(
+                            Arc::ptr_eq(&cache_arc, &molecule.derived_cache_arc_runtime()),
+                            "{stage} {who} {label}: derived-cache Arc identity"
+                        );
+                        assert_eq!(
+                            molecule.topology(),
+                            &baseline_topology,
+                            "{stage} {who} {label}: whole topology"
+                        );
+                        assert_eq!(
+                            coordinate_bits(molecule.coordinate_block_runtime()),
+                            baseline_coordinate_bits,
+                            "{stage} {who} {label}: float-bit coordinates"
+                        );
+                        // HBA-PRESERVE: the COMPLETE coordinate block is
+                        // asserted by whole-value equality against the
+                        // never-refreshed baseline clone (conformer IDs,
+                        // metadata, dimension bookkeeping and all block
+                        // fields — not only the flat f64 bits above). The
+                        // bit check stays: it pins the exact float
+                        // representation where rows exist; this whole-block
+                        // check pins every non-row field. Current fixtures
+                        // carry EMPTY coordinate blocks, so today the
+                        // nonempty-row portion of the bit proof is
+                        // exercised by no case — documented, not claimed.
+                        assert_eq!(
+                            molecule.coordinate_block_runtime(),
+                            &baseline_coordinates,
+                            "{stage} {who} {label}: whole coordinate block"
+                        );
+                        assert_eq!(
+                            molecule.properties(),
+                            &baseline_properties,
+                            "{stage} {who} {label}: whole properties"
+                        );
+                        assert_eq!(
+                            molecule.derived_cache_runtime(),
+                            &baseline_cache,
+                            "{stage} {who} {label}: whole derived cache"
+                        );
+                        assert_eq!(
+                            molecule.derived_cache_runtime().valid_states(),
+                            baseline_states,
+                            "{stage} {who} {label}: valid states"
+                        );
+                        let valence: Option<*const cosmolkit_core::ValenceAssignment> = molecule
+                            .derived_cache_runtime()
+                            .valence_assignment()
+                            .map(|reference| reference as *const _);
+                        assert_eq!(
+                            valence, baseline_valence,
+                            "{stage} {who} {label}: valence payload identity"
+                        );
+                        let ring: Option<*const cosmolkit_core::RingInfo> = molecule
+                            .derived_cache_runtime()
+                            .ring_info()
+                            .map(|reference| reference as *const _);
+                        assert_eq!(
+                            ring, baseline_ring,
+                            "{stage} {who} {label}: stored ring payload identity"
+                        );
+                        let valid_ring: Option<*const cosmolkit_core::RingInfo> = molecule
+                            .derived_cache_runtime()
+                            .valid_ring_info()
+                            .map(|reference| reference as *const _);
+                        assert_eq!(
+                            valid_ring, baseline_valid_ring,
+                            "{stage} {who} {label}: valid-ring payload identity"
+                        );
+                    }
+                    assert!(
+                        Arc::ptr_eq(
+                            &original.topology_arc_runtime(),
+                            &peer.topology_arc_runtime()
+                        ),
+                        "{stage} {label}: original/peer topology sharing"
+                    );
+                    assert!(
+                        Arc::ptr_eq(
+                            &original.coordinates_arc_runtime(),
+                            &peer.coordinates_arc_runtime()
+                        ),
+                        "{stage} {label}: original/peer coordinates sharing"
+                    );
+                    assert!(
+                        Arc::ptr_eq(
+                            &original.properties_arc_runtime(),
+                            &peer.properties_arc_runtime()
+                        ),
+                        "{stage} {label}: original/peer properties sharing"
+                    );
+                    assert!(
+                        Arc::ptr_eq(
+                            &original.derived_cache_arc_runtime(),
+                            &peer.derived_cache_arc_runtime()
+                        ),
+                        "{stage} {label}: original/peer derived-cache sharing"
+                    );
+                };
+
+                for (who, receiver) in [("original", &original), ("peer", &peer)] {
+                    for repeat in 0..2 {
+                        checkpoint("before");
+                        let count = receiver.num_hba().unwrap();
+                        calls += 1;
+                        checkpoint("after");
+                        assert_eq!(count, literal, "{label} {who} #{repeat}: literal output");
+                    }
+                }
+            }
+        }
+        assert_eq!(calls, 24, "exact 24-call storage census");
+    }
+
+    #[test]
+    fn descriptor_hba_missing_initialized_rings_fixture() {
+        // Real private fixture: the existing owning constructor seam
+        // transports a REAL parsed CCO with its REAL valid valence
+        // assignment but an ABSENT ordinary ring carrier (None clears
+        // storage and validity). num_hba must then report the typed
+        // MissingInitializedRings — a real state transition observed
+        // through the public query, not a manually constructed error.
+        let base = Molecule::from_smiles("CCO").unwrap();
+        let assignment = base
+            .derived_cache_runtime()
+            .valence_assignment()
+            .expect("sanitized base carries a valid assignment")
+            .clone();
+        let molecule = Molecule::from_smiles_parts_with_derived_state(
+            base.topology().clone(),
+            base.coordinate_block_runtime().clone(),
+            base.properties().clone(),
+            Some(assignment),
+            None,
+        )
+        .unwrap();
+        // The real reached state: valence valid, ordinary rings absent.
+        assert!(
+            molecule
+                .derived_cache_runtime()
+                .valence_assignment()
+                .is_some(),
+            "fixture keeps the valid valence"
+        );
+        assert!(
+            molecule.derived_cache_runtime().valid_ring_info().is_none(),
+            "fixture has no valid ordinary rings"
+        );
+        let observer = molecule.clone();
+        let error = molecule.num_hba().unwrap_err();
+        assert!(
+            matches!(error, DescriptorReadError::MissingInitializedRings),
+            "got {error:?}"
+        );
+        assert_eq!(molecule, observer, "failed read preserves the input");
+
+        // Absence precedence on a molecule with NEITHER payload: the
+        // valence gate reports first.
+        let raw_params = crate::SmilesParseParams {
+            sanitize: false,
+            ..Default::default()
+        };
+        let raw = Molecule::from_smiles_with_params("CCO", &raw_params).unwrap();
+        assert!(matches!(
+            raw.num_hba().unwrap_err(),
+            DescriptorReadError::MissingPreparedValence
+        ));
+    }
+
+    #[test]
+    fn descriptor_hbd_storage_prepared_payloads_preserved() {
+        // HBD-PUBLIC frozen internal storage proof for the narrow
+        // valence-only prepared query: 3 fixed molecules (empty, CCO,
+        // pyrrole c1cc[nH]c1; literal outputs 0/1/1) x 2 constructor
+        // policies (sanitize=true, remove-H false/true) x 2 receivers
+        // (original + Arc-sharing peer clone) x 2 repeats = exactly 24
+        // ACTUAL calls. Once-captured never-refreshed baselines: all four
+        // Arc pointers, complete independently cloned topology/property/
+        // derived-cache values, the COMPLETE coordinate block by
+        // whole-value equality PLUS its float-bit rows/conformer IDs where
+        // present, valid_states(), and the optional borrowed valence/
+        // stored-ring/valid-ring payload identities (None stays None, Some
+        // stays pointer-identical). These constructor fixtures have EMPTY
+        // coordinate blocks — a documented limit, not NaN coverage. ONE
+        // checkpoint runs immediately BEFORE and AFTER every call over
+        // BOTH receivers. No production cache clone/access change.
+        const FIXTURES: [(&str, u32); 3] = [("", 0), ("CCO", 1), ("c1cc[nH]c1", 1)];
+
+        fn coordinate_bits_and_ids(block: &cosmolkit_model::CoordinateBlock) -> Vec<u64> {
+            let mut bits = Vec::new();
+            for conformer in &block.conformers_2d {
+                bits.push(u64::try_from(conformer.id()).unwrap_or(u64::MAX));
+                for row in conformer.coordinates() {
+                    bits.extend(row.iter().map(|value| value.to_bits()));
+                }
+            }
+            for conformer in &block.conformers_3d {
+                bits.push(u64::try_from(conformer.id()).unwrap_or(u64::MAX));
+                for row in conformer.coordinates() {
+                    bits.extend(row.iter().map(|value| value.to_bits()));
+                }
+            }
+            bits
+        }
+
+        let mut calls = 0usize;
+        for (smiles, literal) in FIXTURES {
+            for remove_hydrogens in [false, true] {
+                let label = format!("{smiles:?}/rh={remove_hydrogens}");
+                let original = Molecule::from_smiles_with_params(
+                    smiles,
+                    &crate::SmilesParseParams {
+                        sanitize: true,
+                        remove_hydrogens,
+                        ..Default::default()
+                    },
+                )
+                .unwrap();
+                let peer = original.clone();
+
+                // Real prepared payload prerequisite BEFORE any query: the
+                // valence assignment exists; ring state may be anything.
+                assert!(
+                    original
+                        .derived_cache_runtime()
+                        .valence_assignment()
+                        .is_some(),
+                    "{label}: prepared valence actually valid"
+                );
+
+                let topology_arc = original.topology_arc_runtime();
+                let coordinates_arc = original.coordinates_arc_runtime();
+                let properties_arc = original.properties_arc_runtime();
+                let cache_arc = original.derived_cache_arc_runtime();
+                let baseline_topology = original.topology().clone();
+                let baseline_coordinates = original.coordinate_block_runtime().clone();
+                let baseline_coordinate_bits = coordinate_bits_and_ids(&baseline_coordinates);
+                let baseline_properties = original.properties().clone();
+                let baseline_cache = original.derived_cache_runtime().clone();
+                let baseline_states = baseline_cache.valid_states();
+                let baseline_valence: Option<*const cosmolkit_core::ValenceAssignment> = original
+                    .derived_cache_runtime()
+                    .valence_assignment()
+                    .map(|reference| reference as *const _);
+                let baseline_ring: Option<*const cosmolkit_core::RingInfo> = original
+                    .derived_cache_runtime()
+                    .ring_info()
+                    .map(|reference| reference as *const _);
+                let baseline_valid_ring: Option<*const cosmolkit_core::RingInfo> = original
+                    .derived_cache_runtime()
+                    .valid_ring_info()
+                    .map(|reference| reference as *const _);
+
+                let checkpoint = |stage: &str| {
+                    for (who, molecule) in [("original", &original), ("peer", &peer)] {
+                        assert!(
+                            Arc::ptr_eq(&topology_arc, &molecule.topology_arc_runtime()),
+                            "{stage} {who} {label}: topology Arc identity"
+                        );
+                        assert!(
+                            Arc::ptr_eq(&coordinates_arc, &molecule.coordinates_arc_runtime()),
+                            "{stage} {who} {label}: coordinates Arc identity"
+                        );
+                        assert!(
+                            Arc::ptr_eq(&properties_arc, &molecule.properties_arc_runtime()),
+                            "{stage} {who} {label}: properties Arc identity"
+                        );
+                        assert!(
+                            Arc::ptr_eq(&cache_arc, &molecule.derived_cache_arc_runtime()),
+                            "{stage} {who} {label}: derived-cache Arc identity"
+                        );
+                        assert_eq!(
+                            molecule.topology(),
+                            &baseline_topology,
+                            "{stage} {who} {label}: whole topology"
+                        );
+                        assert_eq!(
+                            molecule.coordinate_block_runtime(),
+                            &baseline_coordinates,
+                            "{stage} {who} {label}: whole coordinate block"
+                        );
+                        assert_eq!(
+                            coordinate_bits_and_ids(molecule.coordinate_block_runtime()),
+                            baseline_coordinate_bits,
+                            "{stage} {who} {label}: coordinate component bits/IDs"
+                        );
+                        assert_eq!(
+                            molecule.properties(),
+                            &baseline_properties,
+                            "{stage} {who} {label}: whole properties"
+                        );
+                        assert_eq!(
+                            molecule.derived_cache_runtime(),
+                            &baseline_cache,
+                            "{stage} {who} {label}: whole derived cache"
+                        );
+                        assert_eq!(
+                            molecule.derived_cache_runtime().valid_states(),
+                            baseline_states,
+                            "{stage} {who} {label}: valid states"
+                        );
+                        let valence: Option<*const cosmolkit_core::ValenceAssignment> = molecule
+                            .derived_cache_runtime()
+                            .valence_assignment()
+                            .map(|reference| reference as *const _);
+                        assert_eq!(
+                            valence, baseline_valence,
+                            "{stage} {who} {label}: valence payload identity/validity"
+                        );
+                        let ring: Option<*const cosmolkit_core::RingInfo> = molecule
+                            .derived_cache_runtime()
+                            .ring_info()
+                            .map(|reference| reference as *const _);
+                        assert_eq!(
+                            ring, baseline_ring,
+                            "{stage} {who} {label}: ring payload unchanged"
+                        );
+                        let valid_ring: Option<*const cosmolkit_core::RingInfo> = molecule
+                            .derived_cache_runtime()
+                            .valid_ring_info()
+                            .map(|reference| reference as *const _);
+                        assert_eq!(
+                            valid_ring, baseline_valid_ring,
+                            "{stage} {who} {label}: valid-ring payload unchanged"
+                        );
+                    }
+                    assert!(
+                        Arc::ptr_eq(
+                            &original.topology_arc_runtime(),
+                            &peer.topology_arc_runtime()
+                        ),
+                        "{stage} {label}: original/peer topology sharing"
+                    );
+                    assert!(
+                        Arc::ptr_eq(
+                            &original.coordinates_arc_runtime(),
+                            &peer.coordinates_arc_runtime()
+                        ),
+                        "{stage} {label}: original/peer coordinates sharing"
+                    );
+                    assert!(
+                        Arc::ptr_eq(
+                            &original.properties_arc_runtime(),
+                            &peer.properties_arc_runtime()
+                        ),
+                        "{stage} {label}: original/peer properties sharing"
+                    );
+                    assert!(
+                        Arc::ptr_eq(
+                            &original.derived_cache_arc_runtime(),
+                            &peer.derived_cache_arc_runtime()
+                        ),
+                        "{stage} {label}: original/peer derived-cache sharing"
+                    );
+                };
+
+                for (who, receiver) in [("original", &original), ("peer", &peer)] {
+                    for repeat in 0..2 {
+                        checkpoint("before");
+                        let count = receiver.num_hbd().unwrap();
+                        calls += 1;
+                        checkpoint("after");
+                        assert_eq!(count, literal, "{label} {who} #{repeat}: literal output");
+                    }
+                }
+            }
+        }
+        assert_eq!(calls, 24, "exact 24-call storage census");
+    }
+
+    #[test]
+    fn descriptor_hbd_ring_absence_and_hba_contrast_fixture() {
+        // Real owning constructor seam: final CCO with its REAL valid
+        // valence but rings None (cleared storage/validity). The narrow
+        // HBD query MUST succeed (num_hbd=1 — the pattern reads no ring
+        // predicate), while the SAME molecule's num_hba reports the typed
+        // MissingInitializedRings. Snapshots BEFORE and AFTER both calls;
+        // no new public debug API.
+        let base = Molecule::from_smiles("CCO").unwrap();
+        let assignment = base
+            .derived_cache_runtime()
+            .valence_assignment()
+            .expect("sanitized base carries a valid assignment")
+            .clone();
+        let molecule = Molecule::from_smiles_parts_with_derived_state(
+            base.topology().clone(),
+            base.coordinate_block_runtime().clone(),
+            base.properties().clone(),
+            Some(assignment),
+            None,
+        )
+        .unwrap();
+        assert!(
+            molecule
+                .derived_cache_runtime()
+                .valence_assignment()
+                .is_some(),
+            "fixture keeps the valid valence"
+        );
+        assert!(
+            molecule.derived_cache_runtime().valid_ring_info().is_none(),
+            "fixture has no valid ordinary rings"
+        );
+        let snapshot = molecule.clone();
+        let donors = molecule.num_hbd().expect("no ring gate on num_hbd");
+        assert_eq!(donors, 1, "CCO donor count with absent rings");
+        assert_eq!(molecule, snapshot, "num_hbd preserves the input");
+        let snapshot_after_hbd = molecule.clone();
+        let error = molecule.num_hba().unwrap_err();
+        assert!(
+            matches!(error, DescriptorReadError::MissingInitializedRings),
+            "same molecule num_hba: got {error:?}"
+        );
+        assert_eq!(
+            molecule, snapshot_after_hbd,
+            "num_hba failure preserves the input"
+        );
+    }
+
+    #[test]
+    fn descriptor_hbd_malformed_domain_rows_preserve_inputs() {
+        // Two malformed valence lengths through the REAL domain narrow
+        // call on a live molecule's borrowed rows: whole supplied values
+        // are preserved and the typed source chain is borrowed, not
+        // flattened.
+        let molecule = Molecule::from_smiles("CCO").unwrap();
+        let topology = molecule.topology().clone();
+        // The validator checks explicit_valence first, so the non-target
+        // field carries the valid length in each case.
+        for (field, explicit, implicit) in [
+            ("explicit_valence", 2usize, 3usize),
+            ("implicit_hydrogens", 3, 5),
+        ] {
+            let malformed = cosmolkit_core::ValenceAssignment {
+                explicit_valence: vec![1; explicit],
+                implicit_hydrogens: vec![1; implicit],
+            };
+            let malformed_before = malformed.clone();
+            let topology_before = topology.clone();
+            let error = cosmolkit_descriptors::num_hbd_with_valence(&topology, &malformed)
+                .err()
+                .unwrap_or_else(|| panic!("{field} length must be rejected"));
+            let cosmolkit_descriptors::DescriptorError::Search {
+                source: cosmolkit_descriptors::DescriptorSearchCause::Context(context),
+                ..
+            } = &error
+            else {
+                panic!("expected Search/Context, got {error:?}")
+            };
+            assert!(
+                std::error::Error::source(&error).is_some(),
+                "{field}: borrowed source chain retained"
+            );
+            let cosmolkit_search::QueryMatchContextError::ValenceRows {
+                field: actual_field,
+                expected,
+                actual,
+            } = context
+            else {
+                panic!("expected ValenceRows, got {context:?}")
+            };
+            assert_eq!(*actual_field, field, "exact field");
+            assert_eq!(*expected, 3, "expected = CCO atom count");
+            assert_eq!(
+                *actual,
+                if field == "explicit_valence" {
+                    explicit
+                } else {
+                    implicit
+                },
+                "exact actual length"
+            );
+            assert_eq!(malformed, malformed_before, "whole valence preserved");
+            assert_eq!(topology, topology_before, "whole topology preserved");
+        }
     }
 }

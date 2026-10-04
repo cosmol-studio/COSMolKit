@@ -112,7 +112,8 @@ pub enum OperationError {
     #[cfg(any(
         feature = "cap-rings",
         feature = "cap-stereo",
-        feature = "cap-aromaticity"
+        feature = "cap-aromaticity",
+        feature = "cap-fingerprints"
     ))]
     Rings(cosmolkit_core::RingFindingError),
     #[cfg(feature = "cap-stereo")]
@@ -125,6 +126,8 @@ pub enum OperationError {
     Transform(cosmolkit_core::TransformError),
     #[cfg(feature = "cap-depict")]
     Coordinate2D(cosmolkit_depict::DepictError),
+    #[cfg(feature = "cap-forcefields")]
+    UffOptimization(crate::UffOptimizationError),
     #[cfg(feature = "cap-kekulize")]
     Kekulize(cosmolkit_core::KekulizeError),
     #[cfg(feature = "cap-aromaticity")]
@@ -276,7 +279,8 @@ impl fmt::Display for OperationError {
             #[cfg(any(
                 feature = "cap-rings",
                 feature = "cap-stereo",
-                feature = "cap-aromaticity"
+                feature = "cap-aromaticity",
+                feature = "cap-fingerprints"
             ))]
             Self::Rings(error) => write!(formatter, "ring assignment failed: {error}"),
             #[cfg(feature = "cap-stereo")]
@@ -313,6 +317,8 @@ impl fmt::Display for OperationError {
             Self::Algorithm { operation, detail } => {
                 write!(formatter, "operation `{operation}` failed: {detail}")
             }
+            #[cfg(feature = "cap-forcefields")]
+            Self::UffOptimization(error) => write!(formatter, "UFF optimization failed: {error}"),
         }
     }
 }
@@ -322,12 +328,15 @@ impl std::error::Error for OperationError {
         match self {
             #[cfg(any(feature = "cap-valence", feature = "cap-stereo"))]
             Self::Valence(error) => Some(error),
+            #[cfg(feature = "cap-forcefields")]
+            Self::UffOptimization(error) => Some(error),
             #[cfg(feature = "cap-radicals")]
             Self::Radical(error) => Some(error),
             #[cfg(any(
                 feature = "cap-rings",
                 feature = "cap-stereo",
-                feature = "cap-aromaticity"
+                feature = "cap-aromaticity",
+                feature = "cap-fingerprints"
             ))]
             Self::Rings(error) => Some(error),
             #[cfg(feature = "cap-stereo")]

@@ -401,6 +401,117 @@ pub enum ResidueInfoKind {
     Els = 11,
 }
 
+impl ResidueInfoKind {
+    /// Return the stable Gemmi residue-kind name.
+    ///
+    /// Legacy-CK provenance: CK-derived Rust logic, NOT a Gemmi C++
+    /// method; the exact legacy body (published cosmolkit-core-0.3.0,
+    /// resinfo.rs) is copied below as the anchor.
+    ///
+    /// Behavior review: ONE exhaustive match over the same 12 variants
+    /// returning the frozen stable uppercase names. Debug strings (e.g.
+    /// "Aa") are NOT equivalent and no locale/Debug-to-uppercase
+    /// conversion, second table, normalizer, unknown fallback or panic is
+    /// introduced. Cost review: O(1) const-evaluable literal mapping, no
+    /// allocation or scan.
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        // BEGIN LEGACY CK SOURCE: cosmolkit-core-0.3.0 bio/resinfo.rs
+        // pub const fn name(self) -> &'static str {
+        //     match self {
+        //         Self::Unknown => "UNKNOWN",
+        //         Self::Aa => "AA",
+        //         Self::Aad => "AAD",
+        //         Self::Paa => "PAA",
+        //         Self::Maa => "MAA",
+        //         Self::Rna => "RNA",
+        //         Self::Dna => "DNA",
+        //         Self::Buf => "BUF",
+        //         Self::Hoh => "HOH",
+        //         Self::Pyr => "PYR",
+        //         Self::Ket => "KET",
+        //         Self::Els => "ELS",
+        //     }
+        // }
+        // END LEGACY CK SOURCE
+        // Scoped in-body review (BIO-KIND-PROOF): behavior — the exhaustive
+        // match below returns exactly the anchor's twelve frozen stable
+        // names, with no fallback, panic, second mapping or normalizer;
+        // cost — O(1) const-evaluable literal lookup, no allocation or scan.
+        match self {
+            Self::Unknown => "UNKNOWN",
+            Self::Aa => "AA",
+            Self::Aad => "AAD",
+            Self::Paa => "PAA",
+            Self::Maa => "MAA",
+            Self::Rna => "RNA",
+            Self::Dna => "DNA",
+            Self::Buf => "BUF",
+            Self::Hoh => "HOH",
+            Self::Pyr => "PYR",
+            Self::Ket => "KET",
+            Self::Els => "ELS",
+        }
+    }
+}
+
+// Legacy-CK provenance: CK-derived Rust trait impls, NOT a Gemmi C++
+// method/serde implementation; the exact legacy bodies are copied below as
+// anchors. Behavior review: Display delegates EXACTLY through the ONE name
+// owner via `write_str` — `write_str` does NOT add padding even when the
+// formatter width is set; that source formatting behavior is preserved,
+// not redesigned. Serialize delegates EXACTLY through the ONE name owner
+// via `serialize_str`; serializer errors propagate as supplied. No
+// Deserialize exists in the selected legacy source and none is added; no
+// integer wire, variant Rust names, format! intermediate or alias
+// spelling. Cost review: the trait mappings themselves add no allocation
+// (a &'static str handoff); the Display/serializer SINK allocation and
+// error costs are separate codec-owned concerns and are NOT claimed
+// allocation-free — no claim is made that all serialization is
+// allocation-free.
+impl std::fmt::Display for ResidueInfoKind {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // BEGIN LEGACY CK SOURCE: cosmolkit-core-0.3.0 bio/resinfo.rs
+        // impl fmt::Display for ResidueInfoKind {
+        //     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        //         formatter.write_str(self.name())
+        //     }
+        // }
+        // END LEGACY CK SOURCE
+        // Scoped in-body review (BIO-KIND-PROOF): behavior — exact
+        // write_str(self.name()) delegation as anchored; write_str adds no
+        // padding even when the formatter width is set, and that source
+        // behavior is preserved, not redesigned; cost — the mapping is a
+        // &'static str handoff with no allocation; the formatter sink's
+        // allocation is codec-owned and not claimed allocation-free.
+        formatter.write_str(self.name())
+    }
+}
+
+impl serde::Serialize for ResidueInfoKind {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        // BEGIN LEGACY CK SOURCE: cosmolkit-core-0.3.0 bio/resinfo.rs
+        // impl Serialize for ResidueInfoKind {
+        //     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        //     where
+        //         S: Serializer,
+        //     {
+        //         serializer.serialize_str(self.name())
+        //     }
+        // }
+        // END LEGACY CK SOURCE
+        // Scoped in-body review (BIO-KIND-PROOF): behavior — exact
+        // serialize_str(self.name()) delegation as anchored; serializer
+        // errors propagate as supplied; cost — the mapping is a &'static
+        // str handoff; the serializer sink's allocation and error costs are
+        // separate codec-owned concerns, not claimed allocation-free.
+        serializer.serialize_str(self.name())
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ResidueInfo {
     pub code: ResidueCode,
@@ -479,9 +590,597 @@ impl ResidueInfo {
         // Gemmi✔️✔️: bool is_na_linking() const { return (linking_type & 2); }
         (self.linking_type & 2) != 0
     }
+
+    /// Return the canonical one-letter amino-acid code when Gemmi provides
+    /// enough source metadata to identify one.
+    ///
+    /// Gemmi stores standard codes in uppercase and the corresponding code
+    /// for modified amino acids in lowercase. Blank or unmappable entries
+    /// do not acquire an inferred parent.
+    ///
+    /// Legacy-CK provenance: this helper is CK-derived Rust logic, NOT a
+    /// Gemmi C++ function; its exact legacy body (published
+    /// cosmolkit-core-0.3.0, resinfo.rs) is copied below as the anchor.
+    ///
+    /// Behavior review: non-amino rows return `None`; the ASCII-uppercase
+    /// of the existing `one_letter_code` is served ONLY when the existing
+    /// `expand_one_letter(code, Aa)` maps — no Unicode uppercase, residue
+    /// name guessing, hardcoded special residues, dictionary scan, FASTA
+    /// substitution or fallback.
+    ///
+    /// Cost review: fixed bounded char/metadata checks plus the existing
+    /// constant-time expansion dispatch; no allocation, no table scan.
+    #[must_use]
+    pub fn canonical_one_letter_code(self) -> Option<char> {
+        // BEGIN LEGACY CK SOURCE: cosmolkit-core-0.3.0 bio/resinfo.rs
+        // pub fn canonical_one_letter_code(self) -> Option<char> {
+        //     if !self.is_amino_acid() {
+        //         return None;
+        //     }
+        //     let code = self.one_letter_code.to_ascii_uppercase();
+        //     expand_one_letter(code, ResidueInfoKind::Aa).map(|_| code)
+        // }
+        // END LEGACY CK SOURCE
+        if !self.is_amino_acid() {
+            return None;
+        }
+        let code = self.one_letter_code.to_ascii_uppercase();
+        expand_one_letter(code, ResidueInfoKind::Aa).map(|_| code)
+    }
+
+    /// Return the standard amino-acid code represented by Gemmi's
+    /// one-letter metadata.
+    ///
+    /// Standard residues return themselves; modified residues return their
+    /// table-defined parent. Entries without a mappable one-letter code
+    /// return `None` rather than using a name-based guess.
+    ///
+    /// Legacy-CK provenance: CK-derived Rust logic, NOT a Gemmi C++
+    /// function; the exact legacy body (published cosmolkit-core-0.3.0,
+    /// resinfo.rs) is copied below as the anchor.
+    ///
+    /// Canonical-lookup equivalence: the legacy body's final
+    /// `name.parse().ok()` was the old registered canonical-name
+    /// recognition. This migration routes the SAME canonical expansion
+    /// result through the current `find_residue_info`/`residue_code`
+    /// owner — ONE existing lookup, no duplicate parser and no FromStr
+    /// compatibility layer. The expansion range is the frozen 25
+    /// canonical amino names (all recognized): ASX/B, GLX/Z, UNK/X,
+    /// SEC/U, PYL/O included — NOT narrowed to the usual 20. UNK's
+    /// parent is UNK (not absence); non-amino/unmappable inputs return
+    /// None; no parent is inferred from modification status. Output
+    /// depends ONLY on kind/one_letter (synthetic name/code fields do
+    /// not determine it).
+    ///
+    /// Behavior review: canonical first, existing `expand_one_letter`
+    /// next, existing recognized-code lookup on that canonical returned
+    /// name. Cost review: the helper chain is the existing fixed
+    /// bounded-dispatch lookup; no full-table scan, new map or
+    /// allocation. Absence (None) is distinct from a successful known
+    /// parent; both go through the same single lookup path. The lookup
+    /// runs exactly ONCE: ONE retained `find_residue_info(name)` result
+    /// supplies BOTH the found guard and `Some(row.code)` — no second
+    /// lookup (BIO-PARENT-LOOKUP1-4 correction of the double-lookup
+    /// defect found by ROOT final-body review).
+    #[must_use]
+    pub fn parent_standard_code(self) -> Option<ResidueCode> {
+        // BEGIN LEGACY CK SOURCE: cosmolkit-core-0.3.0 bio/resinfo.rs
+        // pub fn parent_standard_code(self) -> Option<ResidueCode> {
+        //     let code = self.canonical_one_letter_code()?;
+        //     let name = expand_one_letter(code, ResidueInfoKind::Aa)?;
+        //     name.parse().ok()
+        // }
+        // END LEGACY CK SOURCE
+        let code = self.canonical_one_letter_code()?;
+        let name = expand_one_letter(code, ResidueInfoKind::Aa)?;
+        let row = find_residue_info(name);
+        if row.found() { Some(row.code) } else { None }
+    }
+
+    /// Return whether Gemmi classifies this as a non-standard amino acid.
+    ///
+    /// Legacy-CK provenance: CK-derived Rust logic, NOT a Gemmi C++
+    /// function; the exact legacy body (published cosmolkit-core-0.3.0,
+    /// resinfo.rs) is copied below as the anchor.
+    ///
+    /// Behavior review: exactly the legacy conjunction
+    /// `is_amino_acid() && !is_standard()`, routing both predicates
+    /// through the ONE existing Gemmi-anchored owners — the source bit
+    /// test `(one_letter_code & 0x20) == 0` with Rust char semantics is
+    /// preserved. This is NOT "has a parent" and not a new case
+    /// classification heuristic: a modified-but-unmappable row (e.g.
+    /// 3FG) is true while a standard unmappable non-amino row is false.
+    ///
+    /// Cost review: two fixed bounded char/kind checks, no lookup,
+    /// allocation or table scan; const-evaluable.
+    #[must_use]
+    pub const fn is_modified_amino_acid(self) -> bool {
+        // BEGIN LEGACY CK SOURCE: cosmolkit-core-0.3.0 bio/resinfo.rs
+        // pub const fn is_modified_amino_acid(self) -> bool {
+        //     self.is_amino_acid() && !self.is_standard()
+        // }
+        // END LEGACY CK SOURCE
+        self.is_amino_acid() && !self.is_standard()
+    }
+}
+
+/// Legacy field-wise metadata wire for [`ResidueInfo`]; full anchor and
+/// reviews live inside the implementing `serialize` body.
+impl serde::Serialize for ResidueInfo {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        // BEGIN LEGACY CK SOURCE: cosmolkit-core-0.3.0 bio/resinfo.rs
+        // #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+        // #[non_exhaustive]
+        // pub struct ResidueInfo {
+        //     pub code: ResidueCode,
+        //     pub name: &'static str,
+        //     pub kind: ResidueInfoKind,
+        //     pub linking_type: u8,
+        //     pub one_letter_code: char,
+        //     pub hydrogen_count: u8,
+        //     pub weight: f32,
+        // }
+        // END LEGACY CK SOURCE
+        //
+        // Legacy-CK provenance: CK-derived Rust derive, NOT a Gemmi C++
+        // function; the exact legacy declaration (published
+        // cosmolkit-core-0.3.0, bio/resinfo.rs :527-537) is embedded
+        // above. Derive-expansion rationale: serde's
+        // `#[derive(Serialize)]` on this struct expands to a
+        // `serialize_struct("ResidueInfo", 7)` whose seven
+        // `serialize_field` calls occur in DECLARATION ORDER (code, name,
+        // kind, linking_type, one_letter_code, hydrogen_count, weight),
+        // each delegating to the field type's own Serialize impl and each
+        // able to propagate a structural serializer error immediately.
+        // This manual impl reproduces exactly that expansion without
+        // adding a derive to production. No Deserialize existed in the
+        // old source, so none is introduced. Behavior review: the code
+        // field delegates to the accepted strict Code serializer, the kind
+        // field to the accepted Kind serializer, the name is a static
+        // string, linking_type/hydrogen_count are u8, one_letter_code is
+        // the stored char, and weight preserves the f32 source bits.
+        // Structural errors propagate at each field boundary.
+        // Allocation/complexity review: one serialize_struct plus seven
+        // field calls, no lookup, no mutation, no second table;
+        // string/char/number writes are serializer sink costs.
+        use serde::ser::SerializeStruct as _;
+        let mut state = serializer.serialize_struct("ResidueInfo", 7)?;
+        state.serialize_field("code", &self.code)?;
+        state.serialize_field("name", self.name)?;
+        state.serialize_field("kind", &self.kind)?;
+        state.serialize_field("linking_type", &self.linking_type)?;
+        state.serialize_field("one_letter_code", &self.one_letter_code)?;
+        state.serialize_field("hydrogen_count", &self.hydrogen_count)?;
+        state.serialize_field("weight", &self.weight)?;
+        state.end()
+    }
+}
+
+/// CK-defined strict Serde wire contract for [`ResidueCode`].
+///
+/// This is NOT a Gemmi serialization port: the pinned Gemmi source has no
+/// Serialize/Deserialize for its residue codes, so no upstream trait bodies
+/// exist to reproduce (and none are fabricated). The contract below is a
+/// COSMolKit-defined wire format documented here and frozen in the
+/// BIO-SERDE1-28 annex.
+///
+/// Wire format (behavior): a code serializes as its EXISTING table row's
+/// canonical name string (`Serializer::serialize_str`), obtained through a
+/// checked O(1) table lookup — never a number, a Rust-safe digit prefix
+/// (digit-start names like `"0TD"` are used verbatim), a second table or
+/// Debug text. `UNKNOWN` serializes explicitly as `"UNKNOWN"` because its
+/// existing table row carries an empty name (the human-approved CK
+/// exception to that row). Deserialization accepts EXACT canonical
+/// spellings from the annex plus `"UNKNOWN"` only: it reuses the existing
+/// `find_residue_info` recognition and then requires the returned row to be
+/// recognized AND its canonical name to equal the input byte-for-byte, so
+/// the old lookup's aliases, case folds and silent UNKNOWN fallback are
+/// rejected on the wire. Invalid strings and non-string values produce
+/// serde's structured deserialization errors — never a panic, a default or
+/// a fabricated code. This strict wire policy is deliberately narrower than
+/// the Gemmi lookup functions' own permissive policy, which is unchanged.
+///
+/// Cost review (BIO-SERDE-COST1-4 corrected wording): serialization is one
+/// checked O(1) static-table index plus the serializer's own string write;
+/// deserialization reuses the existing `find_residue_info` recognition
+/// cost (length-dispatched constant-time comparison, no scan of the 368
+/// rows) plus one `&str` equality. The CANONICAL SUCCESS path of these
+/// traits introduces no trait-side allocation, new mapping structure or
+/// duplicate table. The invalid-string ERROR path is different: `visit_str`
+/// constructs an owned `format!` diagnostic message before serde error
+/// construction, so that path DOES allocate. Serializer/deserializer,
+/// error-construction and any codec-owned costs remain separate and are
+/// not claimed allocation-free here.
+impl serde::Serialize for ResidueCode {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        if matches!(self, ResidueCode::UNKNOWN) {
+            // The existing table row for UNKNOWN has an empty name; the
+            // frozen wire contract uses the explicit "UNKNOWN" token.
+            return serializer.serialize_str("UNKNOWN");
+        }
+        let index = *self as u16 as usize;
+        let info = residue_info_checked(index).ok_or_else(|| {
+            use serde::ser::Error as _;
+            S::Error::custom("residue code discriminant out of table range")
+        })?;
+        serializer.serialize_str(info.name)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for ResidueCode {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct CodeVisitor;
+
+        impl serde::de::Visitor<'_> for CodeVisitor {
+            type Value = ResidueCode;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("a canonical residue name string or \"UNKNOWN\"")
+            }
+
+            fn visit_str<E>(self, value: &str) -> Result<ResidueCode, E>
+            where
+                E: serde::de::Error,
+            {
+                if value == "UNKNOWN" {
+                    return Ok(ResidueCode::UNKNOWN);
+                }
+                // Single recognition path: the existing lookup, then strict
+                // canonical-name equality. Unrecognized inputs fall to the
+                // table's UNKNOWN row (empty name, kind Unknown), and the
+                // equality check rejects aliases and case folds alike.
+                let info = find_residue_info(value);
+                if info.found() && info.name == value {
+                    Ok(info.code)
+                } else {
+                    Err(E::custom(format!("unknown residue code string: {value:?}")))
+                }
+            }
+        }
+
+        deserializer.deserialize_str(CodeVisitor)
+    }
+}
+
+/// Error returned when a name is not present in the source residue table.
+///
+/// Legacy-CK provenance: CK-derived Rust logic, NOT a Gemmi C++
+/// method/serde implementation; the exact legacy bodies (published
+/// cosmolkit-core-0.3.0, bio/resinfo.rs) are copied below as anchors.
+// Legacy-CK source anchor (published cosmolkit-core-0.3.0 bio/resinfo.rs):
+// #[derive(Debug, Clone, PartialEq, Eq, Error)]
+// #[error("unknown residue code name '{input}'")]
+// pub struct ResidueCodeParseError {
+//     input: String,
+// }
+//
+// The legacy `Error` derive/attribute came from thiserror; BIO has no
+// thiserror dependency, so Display and std::error::Error are translated
+// manually through standard traits below, preserving the exact format.
+// Behavior review: the stored payload is the exact original input String and
+// `input()` borrows it without copying. Cost review: construction performs
+// the single failure-path `input.to_string()` allocation (success paths
+// never construct this error); Display formatting is a separate sink cost.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResidueCodeParseError {
+    input: String,
+}
+
+impl ResidueCodeParseError {
+    // BEGIN LEGACY CK SOURCE: cosmolkit-core-0.3.0 bio/resinfo.rs
+    // #[must_use]
+    // pub fn input(&self) -> &str {
+    //     &self.input
+    // }
+    // END LEGACY CK SOURCE
+    // Scoped in-body review: behavior — an exact borrow of the stored input
+    // payload with no trimming or normalization; cost — O(1) borrow, no
+    // allocation or lookup.
+    #[must_use]
+    pub fn input(&self) -> &str {
+        &self.input
+    }
+}
+
+impl std::fmt::Display for ResidueCodeParseError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // BEGIN LEGACY CK SOURCE: cosmolkit-core-0.3.0 bio/resinfo.rs
+        // #[error("unknown residue code name '{input}'")]
+        // END LEGACY CK SOURCE
+        // Scoped in-body review: behavior — the exact legacy format string
+        // with the retained original input; cost — the formatter sink owns
+        // any formatting allocation, not this mapping.
+        write!(formatter, "unknown residue code name '{}'", self.input)
+    }
+}
+
+impl std::error::Error for ResidueCodeParseError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        // Scoped in-body review: behavior — the legacy thiserror derive
+        // produced no `source` attribute, so the error chain terminates
+        // here (source is None); cost — no work.
+        None
+    }
+}
+
+impl std::str::FromStr for ResidueCode {
+    type Err = ResidueCodeParseError;
+
+    fn from_str(input: &str) -> Result<Self, Self::Err> {
+        // BEGIN LEGACY CK SOURCE: cosmolkit-core-0.3.0 bio/resinfo.rs
+        // fn from_str(input: &str) -> Result<Self, Self::Err> {
+        //     if input.eq_ignore_ascii_case("UNKNOWN") {
+        //         return Ok(Self::UNKNOWN);
+        //     }
+        //     let code = residue_code_from_name(input);
+        //     if matches!(code, Self::UNKNOWN) {
+        //         Err(ResidueCodeParseError {
+        //             input: input.to_string(),
+        //         })
+        //     } else {
+        //         Ok(code)
+        //     }
+        // }
+        // END LEGACY CK SOURCE
+        //
+        // Scoped in-body review: behavior — the exact legacy decision order:
+        // FIRST an ASCII-case-insensitive "UNKNOWN" fast path returning the
+        // sentinel with zero lookup; otherwise the ONE existing table lookup
+        // (`residue_code`, the current equivalent of the legacy
+        // `residue_code_from_name`) EXACTLY ONCE, whose source case/alias
+        // handling (WAT/H2O -> HOH, TRY -> TRP, case folds) is inherited
+        // unchanged; the sentinel result becomes an Err retaining the exact
+        // input String. No trim, normalizer allocation, second lookup,
+        // table or enum was added. Cost review — the success path is the
+        // source lookup's own cost plus at most one sentinel comparison;
+        // the failure path additionally performs exactly one
+        // `input.to_string()` allocation, identical to the legacy body.
+        if input.eq_ignore_ascii_case("UNKNOWN") {
+            return Ok(Self::UNKNOWN);
+        }
+        let code = residue_code(input);
+        if matches!(code, Self::UNKNOWN) {
+            Err(ResidueCodeParseError {
+                input: input.to_string(),
+            })
+        } else {
+            Ok(code)
+        }
+    }
 }
 
 pub const UNKNOWN_TABULATED_RESIDUE_INDEX: usize = 367;
+
+/// A residue name together with its table classification.
+///
+/// The original name remains authoritative so unrecognized component names
+/// survive roundtrips. The classified code is private and is always derived
+/// by the source-aligned table lookup, preventing contradictory identities.
+///
+/// Legacy-CK provenance: CK-derived Rust logic, NOT a Gemmi C++ type; the
+/// exact legacy declaration/bodies (published cosmolkit-core-0.3.0,
+/// bio/resinfo.rs :544-620) are copied below as anchors. Behavior review:
+/// the raw caller name is stored verbatim (aliases like "wat" and unknown
+/// names included) and the code field is ALWAYS the ONE existing
+/// `residue_code` lookup result, so no contradictory {name, code} pair can
+/// be constructed. Allocation/complexity review: construction moves the
+/// caller String (no extra copy) and performs exactly ONE lookup (the
+/// existing owner's three-byte allocation debt is part of constructor
+/// cost); readers borrow stored state with zero lookups.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ResidueIdentity {
+    name: String,
+    code: ResidueCode,
+}
+
+impl ResidueIdentity {
+    #[must_use]
+    pub fn new(name: impl Into<String>) -> Self {
+        // BEGIN LEGACY CK SOURCE: cosmolkit-core-0.3.0 bio/resinfo.rs
+        // pub fn new(name: impl Into<String>) -> Self {
+        //     let name = name.into();
+        //     let code = residue_code_from_name(&name);
+        //     Self { name, code }
+        // }
+        // END LEGACY CK SOURCE
+        //
+        // Scoped in-body review: behavior — consumes the caller String (no
+        // unnecessary copy), resolves the code with EXACTLY ONE call to the
+        // ONE existing canonical lookup (`residue_code`, the current owner of
+        // the legacy `residue_code_from_name`), and stores the raw bytes plus
+        // resolved code. Allocation — one String move plus the lookup's own
+        // documented three-byte fold allocation; no second lookup or clone.
+        let name = name.into();
+        let code = residue_code(&name);
+        Self { name, code }
+    }
+
+    #[must_use]
+    pub fn name(&self) -> &str {
+        // BEGIN LEGACY CK SOURCE: cosmolkit-core-0.3.0 bio/resinfo.rs
+        // pub fn name(&self) -> &str {
+        //     &self.name
+        // }
+        // END LEGACY CK SOURCE
+        //
+        // Scoped in-body review: behavior — borrows the stored raw name.
+        // Allocation — none (borrow only).
+        &self.name
+    }
+
+    #[must_use]
+    pub const fn code(&self) -> ResidueCode {
+        // BEGIN LEGACY CK SOURCE: cosmolkit-core-0.3.0 bio/resinfo.rs
+        // pub const fn code(&self) -> ResidueCode {
+        //     self.code
+        // }
+        // END LEGACY CK SOURCE
+        //
+        // Scoped in-body review: behavior — returns the stored resolved code
+        // (Copy). Allocation — none.
+        self.code
+    }
+
+    #[must_use]
+    pub const fn info(&self) -> ResidueInfo {
+        // BEGIN LEGACY CK SOURCE: cosmolkit-core-0.3.0 bio/resinfo.rs
+        // pub const fn info(&self) -> ResidueInfo {
+        //     self.code.info()
+        // }
+        // END LEGACY CK SOURCE
+        //
+        // Scoped in-body review: behavior — returns the table row of the
+        // STORED code through the ONE existing table accessor
+        // (`residue_info`, made const with its body unchanged so the legacy
+        // const accessor contract is preserved; the legacy method form
+        // `code.info()` is the same computation at its canonical free-function
+        // owner). Allocation — none; O(1) static-table index.
+        residue_info(self.code as usize)
+    }
+
+    #[must_use]
+    pub const fn is_tabulated(&self) -> bool {
+        // BEGIN LEGACY CK SOURCE: cosmolkit-core-0.3.0 bio/resinfo.rs
+        // pub const fn is_tabulated(&self) -> bool {
+        //     !matches!(self.code, ResidueCode::UNKNOWN)
+        // }
+        // END LEGACY CK SOURCE
+        //
+        // Scoped in-body review: behavior — true iff the stored code is any
+        // tabulated row (UNKNOWN sentinel means the name resolved to no row).
+        // Allocation — none.
+        !matches!(self.code, ResidueCode::UNKNOWN)
+    }
+}
+
+impl From<&str> for ResidueIdentity {
+    fn from(name: &str) -> Self {
+        // BEGIN LEGACY CK SOURCE: cosmolkit-core-0.3.0 bio/resinfo.rs
+        // impl From<&str> for ResidueIdentity {
+        //     fn from(name: &str) -> Self {
+        //         Self::new(name)
+        //     }
+        // }
+        // END LEGACY CK SOURCE
+        //
+        // Scoped in-body review: behavior — delegates to the ONE new/name owner.
+        // Allocation — one String allocation for the borrowed slice (caller-owned
+        // copy), then the construction lookup.
+        Self::new(name)
+    }
+}
+
+impl From<String> for ResidueIdentity {
+    fn from(name: String) -> Self {
+        // BEGIN LEGACY CK SOURCE: cosmolkit-core-0.3.0 bio/resinfo.rs
+        // impl From<String> for ResidueIdentity {
+        //     fn from(name: String) -> Self {
+        //         Self::new(name)
+        //     }
+        // }
+        // END LEGACY CK SOURCE
+        //
+        // Scoped in-body review: behavior — delegates to the ONE new/name owner;
+        // the owned buffer is MOVED (retained as the stored name), never cloned.
+        // Allocation — none beyond the construction lookup.
+        Self::new(name)
+    }
+}
+
+impl std::str::FromStr for ResidueIdentity {
+    type Err = std::convert::Infallible;
+
+    fn from_str(name: &str) -> Result<Self, Self::Err> {
+        // BEGIN LEGACY CK SOURCE: cosmolkit-core-0.3.0 bio/resinfo.rs
+        // impl FromStr for ResidueIdentity {
+        //     type Err = Infallible;
+        //
+        //     fn from_str(name: &str) -> Result<Self, Self::Err> {
+        //         Ok(Self::new(name))
+        //     }
+        // }
+        // END LEGACY CK SOURCE
+        //
+        // Scoped in-body review: behavior — infallible per the legacy contract;
+        // unknown names are preserved as UNKNOWN-coded identities, never rejected.
+        // Allocation — the borrowed-slice construction cost only.
+        Ok(Self::new(name))
+    }
+}
+
+impl std::fmt::Display for ResidueIdentity {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // BEGIN LEGACY CK SOURCE: cosmolkit-core-0.3.0 bio/resinfo.rs
+        // impl fmt::Display for ResidueIdentity {
+        //     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        //         formatter.write_str(&self.name)
+        //     }
+        // }
+        // END LEGACY CK SOURCE
+        //
+        // Scoped in-body review: behavior — prints the RAW stored name.
+        // Allocation — none (the formatter is the sink).
+        formatter.write_str(&self.name)
+    }
+}
+
+impl serde::Serialize for ResidueIdentity {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        // BEGIN LEGACY CK SOURCE: cosmolkit-core-0.3.0 bio/resinfo.rs
+        // impl Serialize for ResidueIdentity {
+        //     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        //     where
+        //         S: Serializer,
+        //     {
+        //         serializer.serialize_str(&self.name)
+        //     }
+        // }
+        // END LEGACY CK SOURCE
+        //
+        // Scoped in-body review: behavior — the ROOT-chosen legacy raw-name wire:
+        // the RAW stored name is the entire payload; no code, ordinal or strict
+        // canonical check participates. Allocation — none (serializer sink).
+        serializer.serialize_str(&self.name)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for ResidueIdentity {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        // BEGIN LEGACY CK SOURCE: cosmolkit-core-0.3.0 bio/resinfo.rs
+        // impl<'de> Deserialize<'de> for ResidueIdentity {
+        //     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        //     where
+        //         D: Deserializer<'de>,
+        //     {
+        //         String::deserialize(deserializer).map(Self::new)
+        //     }
+        // }
+        // END LEGACY CK SOURCE
+        //
+        // Scoped in-body review: behavior — reads any JSON string and rebuilds the
+        // identity through the ONE construction owner; unknown/alias names are
+        // preserved BY DESIGN. The strict `ResidueCode` Deserialize/FromStr are
+        // never called, so the two wire policies stay distinct with no silent
+        // conflict. Allocation — the deserializer's String plus the construction
+        // lookup.
+        String::deserialize(deserializer).map(Self::new)
+    }
+}
 
 // BEGIN GEMMI CPP TABLE gemmi::residue_info
 // Gemmi✔️✔️: static ResidueInfo array[368] = {
@@ -3803,7 +4502,7 @@ const RESIDUE_INFO_TABLE: [ResidueInfo; 368] = [
 // END GEMMI CPP TABLE gemmi::residue_info
 
 #[must_use]
-pub fn residue_info(idx: usize) -> ResidueInfo {
+pub const fn residue_info(idx: usize) -> ResidueInfo {
     // Gemmi✔️✔️: ResidueInfo& get_residue_info(size_t idx) {
     // Gemmi✔️✔️:   static ResidueInfo array[368] = {
     // Gemmi✔️✔️:     // hydrogen_count needs to be verified

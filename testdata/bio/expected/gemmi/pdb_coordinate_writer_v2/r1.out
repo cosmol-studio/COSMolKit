@@ -1,0 +1,24 @@
+162	ATOM      1  CA  ALA A   1       1.000   2.000   3.000  1.00 20.00           C  \nTER       2      ALA A   1                                                      \n	2
+162	ATOM      0  CA  ALA A   1       1.000   2.000   3.000  1.00 20.00           C  \nTER       1      ALA A   1                                                      \n	1
+243	ATOM      1  CA  ALA A   1       1.000   2.000   3.000  1.00 20.00           C  \nANISOU    1  CA  ALA A   1      200      0      0      0      0      0       C  \nTER       2      ALA A   1                                                      \n	2
+162	ATOM      1  CA  ALA A   1       1.000   2.000   3.000  1.00 20.00           C  \nTER       2      ALA A   1                                                      \n	2
+162	ATOM      0  CA  ALA A   1       1.000   2.000   3.000  1.00 20.00           C  \nTER       1      ALA A   1                                                      \n	1
+243	ATOM      1  CA  ALA A   1       1.000   2.000   3.000  1.00 20.00           C  \nANISOU    1  CA  ALA A   1      200      0      0      0      0      0       C  \nTER       2      ALA A   1                                                      \n	2
+162	ATOM      1  N   ALA A   1       0.500   0.500   0.500  1.00 20.00           N  \nTER       2      ALA A   1                                                      \n	2
+162	ATOM      5  N   ALA A   1       0.500   0.500   0.500  1.00 20.00           N  \nTER       6      ALA A   1                                                      \n	6
+243	ATOM      1  N   ALA A   1       0.500   0.500   0.500  1.00 20.00           N  \nANISOU    1  N   ALA A   1      200      0      0      0      0      0       N  \nTER       2      ALA A   1                                                      \n	2
+162	ATOM      1  CA AALA A9999A      1.000   2.000   3.000  1.00 20.00           C  \nTER       2      ALA A9999A                                                     \n	2
+162	ATOM      0  CA AALA A9999A      1.000   2.000   3.000  1.00 20.00           C  \nTER       1      ALA A9999A                                                     \n	1
+243	ATOM      1  CA AALA A9999A      1.000   2.000   3.000  1.00 20.00           C  \nANISOU    1  CA AALA A9999A     200      0      0      0      0      0       C  \nTER       2      ALA A9999A                                                     \n	2
+81	HETATM    1  S   SO4 A   1       1.000   2.000   3.000  1.00 20.00      SEG1 S2-\n	1
+81	HETATM    0  S   SO4 A   1       1.000   2.000   3.000  1.00 20.00      SEG1 S2-\n	0
+162	HETATM    1  S   SO4 A   1       1.000   2.000   3.000  1.00 20.00      SEG1 S2-\nANISOU    1  S   SO4 A   1      200      0      0      0      0      0  SEG1 S2-\n	1
+243	ATOM      1  CA  ALA A   1       1.000   2.000   3.000  1.00 20.00           C  \nANISOU    1  CA  ALA A   1      100      0      0      0      0      0       C  \nTER       2      ALA A   1                                                      \n	2
+243	ATOM      0  CA  ALA A   1       1.000   2.000   3.000  1.00 20.00           C  \nANISOU    0  CA  ALA A   1      100      0      0      0      0      0       C  \nTER       1      ALA A   1                                                      \n	1
+243	ATOM      1  CA  ALA A   1       1.000   2.000   3.000  1.00 20.00           C  \nANISOU    1  CA  ALA A   1      100      0      0      0      0      0       C  \nTER       2      ALA A   1                                                      \n	2
+162	ATOM      1  CA  ALA A   1       0.000  -0.001  99.999  1.00 20.00           C  \nTER       2      ALA A   1                                                      \n	2
+162	ATOM      0  CA  ALA A   1       0.000  -0.001  99.999  1.00 20.00           C  \nTER       1      ALA A   1                                                      \n	1
+243	ATOM      1  CA  ALA A   1       0.000  -0.001  99.999  1.00 20.00           C  \nANISOU    1  CA  ALA A   1      200      0      0      0      0      0       C  \nTER       2      ALA A   1                                                      \n	2
+162	ATOM      1  CA  ALA A   1    123456.7-123456.99999.40  1.00 20.00           C  \nTER       2      ALA A   1                                                      \n	2
+162	ATOM      0  CA  ALA A   1    123456.7-123456.99999.40  1.00 20.00           C  \nTER       1      ALA A   1                                                      \n	1
+243	ATOM      1  CA  ALA A   1    123456.7-123456.99999.40  1.00 20.00           C  \nANISOU    1  CA  ALA A   1      200      0      0      0      0      0       C  \nTER       2      ALA A   1                                                      \n	2

@@ -15,6 +15,9 @@ fn binding_entry(semantic_id: &str) -> &'static cosmolkit::BindingContractEntry 
 
 fn expected_feature_names() -> Vec<&'static str> {
     let mut expected = Vec::new();
+    if cfg!(feature = "cap-forcefields") {
+        expected.push("cap-forcefields");
+    }
     if cfg!(feature = "cap-sanitize") {
         expected.push("cap-sanitize");
     }
@@ -50,6 +53,10 @@ fn expected_feature_names() -> Vec<&'static str> {
 
 fn expected_operation_methods() -> Vec<&'static str> {
     let mut expected = Vec::new();
+    if cfg!(feature = "cap-forcefields") {
+        expected.push("with_uff_optimized_coordinates_with_params");
+        expected.push("with_uff_optimized_conformers_with_params");
+    }
     if cfg!(feature = "cap-sanitize") {
         expected.push("sanitize_with_params");
     }
@@ -229,11 +236,90 @@ fn generated_tables_have_one_source_and_queries_do_not_define_parallel_rows() {
 #[cfg(not(feature = "cap-hydrogens"))]
 #[test]
 fn default_configuration_exposes_empty_generated_metadata_and_exact_misses() {
-    assert!(feature_specs().next().is_none());
-    assert!(operation_specs().is_empty());
-    assert!(support_matrix().is_empty());
-    assert!(operation_invariant_matrix().is_empty());
-    assert!(parity_matrix().is_empty());
+    let expected_features = expected_feature_names();
+    let expected_methods = expected_operation_methods();
+    let features = feature_specs().collect::<Vec<_>>();
+    let operations = operation_specs();
+    assert_eq!(
+        features
+            .iter()
+            .map(|feature| feature.name)
+            .collect::<Vec<_>>(),
+        expected_features
+    );
+    assert_eq!(
+        operations
+            .iter()
+            .map(|operation| operation.method)
+            .collect::<Vec<_>>(),
+        expected_methods
+    );
+    assert_eq!(support_matrix().len(), expected_methods.len());
+    assert_eq!(operation_invariant_matrix().len(), expected_methods.len());
+    assert_eq!(parity_matrix().len(), expected_methods.len());
+
+    if expected_methods.is_empty() {
+        assert!(feature_specs().next().is_none());
+        assert!(operation_specs().is_empty());
+        assert!(support_matrix().is_empty());
+        assert!(operation_invariant_matrix().is_empty());
+        assert!(parity_matrix().is_empty());
+    }
+    for feature in features {
+        assert!(core::ptr::eq(feature_spec(feature.name).unwrap(), feature));
+    }
+    for (index, operation) in operations.iter().enumerate() {
+        let support = &support_matrix()[index];
+        let invariant = &operation_invariant_matrix()[index];
+        let parity = &parity_matrix()[index];
+        assert!(core::ptr::eq(
+            operation_spec(operation.method).unwrap(),
+            *operation
+        ));
+        assert!(core::ptr::eq(support.operation.unwrap(), *operation));
+        assert!(core::ptr::eq(invariant.operation, *operation));
+        assert!(core::ptr::eq(parity.operation, *operation));
+        assert!(core::ptr::eq(
+            operation_invariant(operation.method).unwrap(),
+            invariant
+        ));
+        assert!(core::ptr::eq(
+            operation_parity(operation.method).unwrap(),
+            parity
+        ));
+        assert!(core::ptr::eq(support.feature, parity.feature));
+        assert!(core::ptr::eq(
+            feature_spec(support.feature.name).unwrap(),
+            support.feature
+        ));
+    }
+    #[cfg(feature = "cap-depict")]
+    {
+        let operation = operation_spec("with_2d_coordinates_with_params").unwrap();
+        let index = expected_methods
+            .iter()
+            .position(|method| *method == operation.method)
+            .unwrap();
+        assert_eq!(operation.parity, ParityPolicy::RequiredWhenSupported);
+        assert_eq!(
+            operation_invariant_matrix()[index].profile,
+            "coordinate_2d_layout"
+        );
+        assert_eq!(
+            parity_matrix()[index].profile,
+            "compute_2d_coordinates_rdkit"
+        );
+        assert!(core::ptr::eq(operations[index], operation));
+        assert!(core::ptr::eq(
+            support_matrix()[index].operation.unwrap(),
+            operation
+        ));
+        assert!(core::ptr::eq(
+            operation_invariant_matrix()[index].operation,
+            operation
+        ));
+        assert!(core::ptr::eq(parity_matrix()[index].operation, operation));
+    }
 
     for name in ["", "cap-hydrogens", "Cap-hydrogens", "unknown"] {
         assert_eq!(feature_spec(name), None);

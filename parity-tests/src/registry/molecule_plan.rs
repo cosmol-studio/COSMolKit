@@ -268,13 +268,6 @@ pub const FUTURE_TASKS: &[FutureTask] = &[
         comparison: "Scalar area, bins and contributions",
     },
     FutureTask {
-        id: "morgan",
-        category: Category::FingerprintGeneration,
-        reference: Reference::Rdkit,
-        parameter_axes: "radius, bit/count/sparse output, chirality, features, invariants, roots, provenance",
-        comparison: "Vector and complete additional output",
-    },
-    FutureTask {
         id: "maccs",
         category: Category::FingerprintGeneration,
         reference: Reference::Rdkit,
@@ -387,7 +380,7 @@ pub const FUTURE_TASKS: &[FutureTask] = &[
         comparison: "Coordinates and returned transform/scale",
     },
     FutureTask {
-        id: "svg",
+        id: "svg_options",
         category: Category::Depiction,
         reference: Reference::Rdkit,
         parameter_axes: "labels, highlights, stereo, SGroups, annotations, dimensions",
@@ -436,10 +429,10 @@ pub const FUTURE_TASKS: &[FutureTask] = &[
         comparison: "Energy and gradient vector",
     },
     FutureTask {
-        id: "uff_optimize",
+        id: "uff_optimize_options",
         category: Category::ForceFields,
         reference: Reference::Rdkit,
-        parameter_axes: "iteration limit, tolerances, constraints and conformer selection",
+        parameter_axes: "additional tolerances, constraints and multi-conformer/thread dispatch beyond the executable single-conformer matrix",
         comparison: "Status, final energy and coordinates",
     },
     FutureTask {
@@ -604,6 +597,7 @@ impl TaskId {
             Self::CipLabels => "cip_labels",
             Self::PotentialStereo => "potential_stereo",
             Self::Coordinates2d => "coordinates_2d",
+            Self::Svg => "svg",
             Self::Valence => "valence",
             Self::DistanceMatrix => "distance_matrix",
             Self::NumHeavyAtoms => "num_heavy_atoms",
@@ -611,6 +605,9 @@ impl TaskId {
             Self::LipinskiHBA => "lipinski_hba",
             Self::LipinskiHBD => "lipinski_hbd",
             Self::FractionCSP3 => "fraction_csp3",
+            Self::NumHeteroatoms => "num_heteroatoms",
+            Self::NumHba => "num_hba",
+            Self::NumHbd => "num_hbd",
             Self::NumRings => "num_rings",
             Self::NumHeterocycles => "num_heterocycles",
             Self::NumAromaticRings => "num_aromatic_rings",
@@ -622,6 +619,10 @@ impl TaskId {
             Self::NumAliphaticCarbocycles => "num_aliphatic_carbocycles",
             Self::NumSaturatedHeterocycles => "num_saturated_heterocycles",
             Self::NumSaturatedCarbocycles => "num_saturated_carbocycles",
+            Self::MorganFingerprint => "morgan_fingerprint",
+            Self::MorganSparseFingerprint => "morgan_sparse_fingerprint",
+            Self::MorganCountFingerprint => "morgan_count_fingerprint",
+            Self::MorganSparseCountFingerprint => "morgan_sparse_count_fingerprint",
         }
     }
     pub const fn category(self) -> Category {
@@ -638,6 +639,9 @@ impl TaskId {
             Self::NumHeavyAtoms => Category::Descriptors,
             Self::TotalAtomCount => Category::Descriptors,
             Self::LipinskiHBA | Self::LipinskiHBD | Self::FractionCSP3 => Category::Descriptors,
+            Self::NumHeteroatoms => Category::Descriptors,
+            Self::NumHba => Category::Descriptors,
+            Self::NumHbd => Category::Descriptors,
             Self::NumRings
             | Self::NumHeterocycles
             | Self::NumAromaticRings
@@ -650,8 +654,12 @@ impl TaskId {
             | Self::NumSaturatedHeterocycles
             | Self::NumSaturatedCarbocycles => Category::Descriptors,
             Self::CipLabels | Self::PotentialStereo => Category::Stereo,
-            Self::Coordinates2d => Category::Depiction,
+            Self::Coordinates2d | Self::Svg => Category::Depiction,
             Self::DistanceMatrix => Category::Chemistry,
+            Self::MorganFingerprint
+            | Self::MorganSparseFingerprint
+            | Self::MorganCountFingerprint
+            | Self::MorganSparseCountFingerprint => Category::FingerprintGeneration,
         }
     }
 }
@@ -662,6 +670,13 @@ mod catalog_tests {
     #[test]
     fn future_catalog_has_unique_ids_and_no_fabricated_counts() {
         for (i, row) in FUTURE_TASKS.iter().enumerate() {
+            assert!(
+                super::super::TASKS
+                    .iter()
+                    .all(|task| task.operation.name() != row.id),
+                "executable task still listed as future: {}",
+                row.id
+            );
             assert!(
                 !row.id.is_empty() && !row.parameter_axes.is_empty() && !row.comparison.is_empty()
             );
@@ -703,12 +718,16 @@ pub enum TaskId {
     CipLabels,
     PotentialStereo,
     Coordinates2d,
+    Svg,
     Valence,
     NumHeavyAtoms,
     TotalAtomCount,
     LipinskiHBA,
     LipinskiHBD,
     FractionCSP3,
+    NumHeteroatoms,
+    NumHba,
+    NumHbd,
     NumRings,
     NumHeterocycles,
     NumAromaticRings,
@@ -720,6 +739,10 @@ pub enum TaskId {
     NumAliphaticCarbocycles,
     NumSaturatedHeterocycles,
     NumSaturatedCarbocycles,
+    MorganFingerprint,
+    MorganSparseFingerprint,
+    MorganCountFingerprint,
+    MorganSparseCountFingerprint,
 }
 
 /// `None` and an explicitly empty selection must never be conflated.
@@ -729,6 +752,31 @@ pub enum CipSelection {
     FirstTaggedAtom,
     FirstStereoBond,
     Empty,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum MorganOutputKind {
+    DenseBits,
+    SparseBits,
+    HashedCounts,
+    SparseCounts,
+}
+
+impl MorganOutputKind {
+    pub const fn task_name(self) -> &'static str {
+        match self {
+            Self::DenseBits => "morgan_fingerprint",
+            Self::SparseBits => "morgan_sparse_fingerprint",
+            Self::HashedCounts => "morgan_count_fingerprint",
+            Self::SparseCounts => "morgan_sparse_count_fingerprint",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum MorganInvariantKind {
+    Connectivity,
+    Features,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -771,6 +819,8 @@ pub enum Profile {
         allow_nontetrahedral: bool,
     },
     Coordinates2dDefault,
+    /// The only drawing profile: 300x300, default source preparation.
+    SvgDefault,
     Valence {
         strict: bool,
     },
@@ -787,6 +837,15 @@ pub enum Profile {
         remove_hydrogens: bool,
     },
     FractionCSP3 {
+        remove_hydrogens: bool,
+    },
+    NumHeteroatoms {
+        remove_hydrogens: bool,
+    },
+    NumHba {
+        remove_hydrogens: bool,
+    },
+    NumHbd {
         remove_hydrogens: bool,
     },
     NumRings {
@@ -822,6 +881,13 @@ pub enum Profile {
     NumSaturatedCarbocycles {
         remove_hydrogens: bool,
     },
+    Morgan {
+        output: MorganOutputKind,
+        radius: u32,
+        include_chirality: bool,
+        invariants: MorganInvariantKind,
+        count_simulation: bool,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -839,11 +905,13 @@ pub enum Comparison {
     TopologyAndOutcome,
     Float64Bits,
     ExactText,
+    SvgText,
     CipLabelsAndOutcome,
     StereoInfoAndCleanedTopology,
     CoordinatesAndTopology,
     ValenceRowsAndOutcome,
     Unsigned,
+    MorganFingerprintAndAdditionalOutput,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -938,6 +1006,24 @@ pub const TASKS: &[Task] = &[
         id: FractionCSP3,
         input: SanitizedHydrogensPerProfile,
         comparison: Float64Bits,
+        prerequisite: MolecularPipeline,
+    },
+    Task {
+        id: NumHeteroatoms,
+        input: SanitizedHydrogensPerProfile,
+        comparison: Unsigned,
+        prerequisite: MolecularPipeline,
+    },
+    Task {
+        id: NumHba,
+        input: SanitizedHydrogensPerProfile,
+        comparison: Unsigned,
+        prerequisite: MolecularPipeline,
+    },
+    Task {
+        id: NumHbd,
+        input: SanitizedHydrogensPerProfile,
+        comparison: Unsigned,
         prerequisite: MolecularPipeline,
     },
     Task {
@@ -1037,9 +1123,39 @@ pub const TASKS: &[Task] = &[
         prerequisite: MolecularPipeline,
     },
     Task {
+        id: Svg,
+        input: SanitizedHydrogensRemoved,
+        comparison: SvgText,
+        prerequisite: MolecularPipeline,
+    },
+    Task {
         id: Valence,
         input: UnsanitizedHydrogensRetained,
         comparison: ValenceRowsAndOutcome,
+        prerequisite: PublicValenceReadoutAndMolecularPipeline,
+    },
+    Task {
+        id: MorganFingerprint,
+        input: SanitizedHydrogensRemoved,
+        comparison: MorganFingerprintAndAdditionalOutput,
+        prerequisite: PublicValenceReadoutAndMolecularPipeline,
+    },
+    Task {
+        id: MorganSparseFingerprint,
+        input: SanitizedHydrogensRemoved,
+        comparison: MorganFingerprintAndAdditionalOutput,
+        prerequisite: PublicValenceReadoutAndMolecularPipeline,
+    },
+    Task {
+        id: MorganCountFingerprint,
+        input: SanitizedHydrogensRemoved,
+        comparison: MorganFingerprintAndAdditionalOutput,
+        prerequisite: PublicValenceReadoutAndMolecularPipeline,
+    },
+    Task {
+        id: MorganSparseCountFingerprint,
+        input: SanitizedHydrogensRemoved,
+        comparison: MorganFingerprintAndAdditionalOutput,
         prerequisite: PublicValenceReadoutAndMolecularPipeline,
     },
 ];
@@ -1126,6 +1242,7 @@ impl TaskId {
                 })
                 .collect(),
             Coordinates2d => vec![Profile::Coordinates2dDefault],
+            Svg => vec![Profile::SvgDefault],
             Valence => booleans.map(|strict| Profile::Valence { strict }).into(),
             NumHeavyAtoms => booleans
                 .map(|remove_hydrogens| Profile::NumHeavyAtoms { remove_hydrogens })
@@ -1141,6 +1258,15 @@ impl TaskId {
                 .into(),
             FractionCSP3 => booleans
                 .map(|remove_hydrogens| Profile::FractionCSP3 { remove_hydrogens })
+                .into(),
+            NumHeteroatoms => booleans
+                .map(|remove_hydrogens| Profile::NumHeteroatoms { remove_hydrogens })
+                .into(),
+            NumHba => booleans
+                .map(|remove_hydrogens| Profile::NumHba { remove_hydrogens })
+                .into(),
+            NumHbd => booleans
+                .map(|remove_hydrogens| Profile::NumHbd { remove_hydrogens })
                 .into(),
             NumRings => booleans
                 .map(|remove_hydrogens| Profile::NumRings { remove_hydrogens })
@@ -1175,6 +1301,41 @@ impl TaskId {
             NumSaturatedCarbocycles => booleans
                 .map(|remove_hydrogens| Profile::NumSaturatedCarbocycles { remove_hydrogens })
                 .into(),
+            MorganFingerprint
+            | MorganSparseFingerprint
+            | MorganCountFingerprint
+            | MorganSparseCountFingerprint => {
+                let output = match self {
+                    MorganFingerprint => MorganOutputKind::DenseBits,
+                    MorganSparseFingerprint => MorganOutputKind::SparseBits,
+                    MorganCountFingerprint => MorganOutputKind::HashedCounts,
+                    MorganSparseCountFingerprint => MorganOutputKind::SparseCounts,
+                    _ => unreachable!("the enclosing task id is a Morgan output family"),
+                };
+                [2_u32, 3]
+                    .into_iter()
+                    .flat_map(|radius| {
+                        [false, true]
+                            .into_iter()
+                            .flat_map(move |include_chirality| {
+                                [
+                                    MorganInvariantKind::Connectivity,
+                                    MorganInvariantKind::Features,
+                                ]
+                                .into_iter()
+                                .flat_map(move |invariants| {
+                                    [false, true].map(move |count_simulation| Profile::Morgan {
+                                        output,
+                                        radius,
+                                        include_chirality,
+                                        invariants,
+                                        count_simulation,
+                                    })
+                                })
+                            })
+                    })
+                    .collect()
+            }
         }
     }
 }
@@ -1184,7 +1345,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn molecular_plan_has_unique_tasks_and_profiles() {
+    fn parity_morgan_registry_molecular_plan_has_unique_tasks_and_profiles() {
         for (i, task) in TASKS.iter().enumerate() {
             assert!(!TASKS[..i].iter().any(|other| other.id == task.id));
             let profiles = task.id.profiles();
@@ -1196,17 +1357,15 @@ mod tests {
     }
 
     #[test]
-    fn molecular_plan_counts_are_explicit() {
+    fn parity_morgan_registry_molecular_plan_counts_are_explicit() {
         assert_eq!(
             TASKS
                 .iter()
                 .map(|t| t.id.profiles().len())
                 .collect::<Vec<_>>(),
-            // RING-LIVE-PUBLIC T1: eleven ring-state tasks, each with the
-            // two explicit remove_hydrogens profiles.
             [
-                4, 4, 1, 2, 2, 2, 4, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 4, 8, 1,
-                2
+                4, 4, 1, 2, 2, 2, 4, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
+                4, 8, 1, 1, 2, 16, 16, 16, 16
             ]
         );
         assert_eq!(
@@ -1215,15 +1374,41 @@ mod tests {
                 .filter(|t| t.prerequisite == PublicValenceReadoutAndMolecularPipeline)
                 .map(|t| t.id)
                 .collect::<Vec<_>>(),
-            [Valence]
+            [
+                Valence,
+                MorganFingerprint,
+                MorganSparseFingerprint,
+                MorganCountFingerprint,
+                MorganSparseCountFingerprint
+            ]
         );
     }
 
     #[test]
-    fn molecular_plan_does_not_silently_register_unimplemented_runners() {
+    fn parity_morgan_registry_molecular_plan_tracks_executable_registration() {
         let executable = super::super::select(None).unwrap();
-        assert_eq!(executable.len(), 28);
-        assert_eq!(executable[0].operation, super::super::Operation::FuzzyAnd);
-        assert_eq!(executable[1].operation, super::super::Operation::FuzzyOr);
+        assert_eq!(executable.len(), 41);
+        assert_eq!(
+            executable[0].operation,
+            super::super::Operation::BioPdbOutput
+        );
+        assert_eq!(
+            executable[1].operation,
+            super::super::Operation::BioPdbOutput
+        );
+        assert_eq!(executable[2].operation, super::super::Operation::FuzzyAnd);
+        assert_eq!(executable[3].operation, super::super::Operation::FuzzyOr);
+        for id in [
+            MorganFingerprint,
+            MorganSparseFingerprint,
+            MorganCountFingerprint,
+            MorganSparseCountFingerprint,
+        ] {
+            assert!(
+                executable
+                    .iter()
+                    .any(|task| task.operation == super::super::Operation::Molecular(id))
+            );
+        }
     }
 }

@@ -1318,10 +1318,205 @@ fn remap_selected_stereo_groups(
                 .filter_map(|bond| mapping.bonds.old_to_new[bond.index()])
                 .collect();
             let remapped = StereoGroup::new(group.kind(), atoms, bonds);
-            Some(match group.id() {
+            let remapped = match group.id() {
                 Some(id) => remapped.with_id(id),
                 None => remapped,
-            })
+            };
+            // RDKit✔️✔️: extracted_stereo_groups.back().setWriteId(stereo_group.getWriteId());
+            Some(remapped.with_write_id(group.write_id()))
         })
         .collect()
+}
+
+#[cfg(test)]
+mod cf3d_frag_f01_tests {
+    use super::{ConnectedComponents, connected_components};
+    use cosmolkit_model::{
+        Atom, AtomId, AtomSpec, Bond, BondId, BondOrder, BondSpec, TopologyBlock,
+    };
+    use cosmolkit_types::Element;
+
+    fn topology(atom_count: usize, edges: &[(usize, usize)]) -> TopologyBlock {
+        let atoms = (0..atom_count)
+            .map(|index| Atom::from_spec(AtomId::new(index), AtomSpec::new(Element::C)))
+            .collect();
+        let bonds = edges
+            .iter()
+            .enumerate()
+            .map(|(index, &(begin, end))| {
+                Bond::from_spec(
+                    BondId::new(index),
+                    BondSpec::new(AtomId::new(begin), AtomId::new(end), BondOrder::Single),
+                )
+            })
+            .collect();
+        TopologyBlock::try_from_parts(atoms, bonds, Vec::new(), Vec::new())
+            .expect("fixed component topology is valid")
+    }
+
+    #[test]
+    fn cf3d_frag_f01_empty_topology_has_no_labels_or_components() {
+        assert_eq!(
+            connected_components(&TopologyBlock::default()).unwrap(),
+            ConnectedComponents {
+                atom_to_component: Vec::new(),
+                components: Vec::new(),
+            }
+        );
+    }
+
+    #[test]
+    fn cf3d_frag_f01_single_atom_is_one_component() {
+        assert_eq!(
+            connected_components(&topology(1, &[])).unwrap(),
+            ConnectedComponents {
+                atom_to_component: vec![0],
+                components: vec![vec![AtomId::new(0)]],
+            }
+        );
+    }
+
+    #[test]
+    fn cf3d_frag_f01_connected_cycle_is_one_source_ordered_component() {
+        let cycle = topology(4, &[(0, 1), (1, 2), (2, 3), (3, 0)]);
+        assert_eq!(
+            connected_components(&cycle).unwrap(),
+            ConnectedComponents {
+                atom_to_component: vec![0, 0, 0, 0],
+                components: vec![vec![
+                    AtomId::new(0),
+                    AtomId::new(1),
+                    AtomId::new(2),
+                    AtomId::new(3),
+                ]],
+            }
+        );
+    }
+
+    #[test]
+    fn cf3d_frag_f01_interleaved_disconnected_rows_keep_source_membership() {
+        let disconnected = topology(5, &[(0, 2), (1, 3)]);
+        assert_eq!(
+            connected_components(&disconnected).unwrap(),
+            ConnectedComponents {
+                atom_to_component: vec![0, 1, 0, 1, 2],
+                components: vec![
+                    vec![AtomId::new(0), AtomId::new(2)],
+                    vec![AtomId::new(1), AtomId::new(3)],
+                    vec![AtomId::new(4)],
+                ],
+            }
+        );
+    }
+
+    #[test]
+    fn cf3d_frag_f01_components_follow_ascending_first_source_row() {
+        let disconnected = topology(7, &[(5, 6), (0, 3), (2, 4)]);
+        assert_eq!(
+            connected_components(&disconnected).unwrap(),
+            ConnectedComponents {
+                atom_to_component: vec![0, 1, 2, 0, 2, 3, 3],
+                components: vec![
+                    vec![AtomId::new(0), AtomId::new(3)],
+                    vec![AtomId::new(1)],
+                    vec![AtomId::new(2), AtomId::new(4)],
+                    vec![AtomId::new(5), AtomId::new(6)],
+                ],
+            }
+        );
+    }
+}
+
+#[cfg(test)]
+mod cf3d_sgids_core_2_tests {
+    use super::{DetachedPathSubgraph, SubtopologyParams, subtopology_from_path};
+    use cosmolkit_model::{
+        Atom, AtomId, AtomSpec, Bond, BondId, BondOrder, BondSpec, StereoGroup, StereoGroupKind,
+        TopologyBlock,
+    };
+    use cosmolkit_types::Element;
+
+    #[test]
+    fn cf3d_sgids_core_2_subset_path_preserves_ids_and_source_group_order() {
+        let atoms = (0..4)
+            .map(|index| Atom::from_spec(AtomId::new(index), AtomSpec::new(Element::C)))
+            .collect();
+        let bonds = [(0, 1), (2, 3)]
+            .into_iter()
+            .enumerate()
+            .map(|(index, (begin, end))| {
+                Bond::from_spec(
+                    BondId::new(index),
+                    BondSpec::new(AtomId::new(begin), AtomId::new(end), BondOrder::Single),
+                )
+            })
+            .collect();
+        let stereo_groups = vec![
+            StereoGroup::new(
+                StereoGroupKind::Or,
+                vec![AtomId::new(0), AtomId::new(2)],
+                vec![BondId::new(0), BondId::new(1)],
+            )
+            .with_id(17)
+            .with_write_id(9),
+            StereoGroup::new(
+                StereoGroupKind::And,
+                vec![AtomId::new(2)],
+                vec![BondId::new(0)],
+            )
+            .with_id(41)
+            .with_write_id(5),
+            StereoGroup::new(
+                StereoGroupKind::And,
+                vec![AtomId::new(1), AtomId::new(3)],
+                vec![BondId::new(0)],
+            )
+            .with_id(0),
+            StereoGroup::new(
+                StereoGroupKind::Absolute,
+                vec![AtomId::new(0), AtomId::new(2)],
+                vec![],
+            )
+            .with_write_id(12),
+        ];
+        let source_groups = stereo_groups.clone();
+        let topology = TopologyBlock::try_from_parts(atoms, bonds, vec![], stereo_groups)
+            .expect("fixed source topology and group references are valid");
+
+        let result =
+            subtopology_from_path(&topology, &[BondId::new(0)], &SubtopologyParams::default())
+                .expect("selected source bond forms a valid subtopology");
+        let DetachedPathSubgraph::Concrete(subgraph) = result.subgraph else {
+            panic!("default subtopology result is concrete");
+        };
+        assert_eq!(
+            result.mapping.atoms.old_to_new,
+            vec![Some(AtomId::new(0)), Some(AtomId::new(1)), None, None]
+        );
+        assert_eq!(
+            result.mapping.bonds.old_to_new,
+            vec![Some(BondId::new(0)), None]
+        );
+
+        let groups = &subgraph.stereo_groups;
+        assert_eq!(groups.len(), 3);
+        assert_eq!(groups[0].kind(), StereoGroupKind::Or);
+        assert_eq!(groups[0].id(), Some(17));
+        assert_eq!(groups[0].write_id(), 9);
+        assert_eq!(groups[0].atoms(), &[AtomId::new(0)]);
+        assert_eq!(groups[0].bonds(), &[BondId::new(0)]);
+
+        assert_eq!(groups[1].kind(), StereoGroupKind::And);
+        assert_eq!(groups[1].id(), Some(0));
+        assert_eq!(groups[1].write_id(), 0);
+        assert_eq!(groups[1].atoms(), &[AtomId::new(1)]);
+        assert_eq!(groups[1].bonds(), &[BondId::new(0)]);
+
+        assert_eq!(groups[2].kind(), StereoGroupKind::Absolute);
+        assert_eq!(groups[2].id(), None);
+        assert_eq!(groups[2].write_id(), 12);
+        assert_eq!(groups[2].atoms(), &[AtomId::new(0)]);
+        assert!(groups[2].bonds().is_empty());
+        assert_eq!(topology.stereo_groups, source_groups);
+    }
 }

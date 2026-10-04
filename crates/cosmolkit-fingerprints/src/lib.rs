@@ -3,11 +3,80 @@
 //! Value layer: source-backed ports of RDKit `Code/DataStructs`
 //! `ExplicitBitVect`, `SparseBitVect`, `SparseIntVect`, `BitOps` similarity
 //! and folding, and the `RDGeneral/hash` integral closure used by
-//! fingerprints. Generator entrypoints remain explicit unsupported
-//! capability boundaries.
+//! fingerprints. Narrow Morgan generator calls operate on explicitly
+//! prepared detached molecule state.
+//!
+//! The detached Morgan surface exposes canonical call/configuration values
+//! and the four completed result functions while keeping implementation
+//! modules private. These function-pointer assignments compile against their
+//! exact exported signatures:
+//!
+//! ```rust
+//! use cosmolkit_fingerprints::{
+//!     AdditionalOutput, Fingerprint, MorganAtomInvariants, MorganCall, MorganError,
+//!     MorganParams, MorganPreparedInput, SparseBitFingerprint, SparseCountFingerprint,
+//!     SparseCountFingerprint32, morgan_bits, morgan_count, morgan_sparse_bits,
+//!     morgan_sparse_count,
+//! };
+//!
+//! fn main() {
+//!     let _: fn(
+//!         &MorganPreparedInput<'_>,
+//!         &MorganParams,
+//!         &MorganCall<'_>,
+//!         MorganAtomInvariants<'_>,
+//!         Option<&mut AdditionalOutput>,
+//!     ) -> Result<SparseCountFingerprint, MorganError> = morgan_sparse_count;
+//!     let _: fn(
+//!         &MorganPreparedInput<'_>,
+//!         &MorganParams,
+//!         &MorganCall<'_>,
+//!         MorganAtomInvariants<'_>,
+//!         Option<&mut AdditionalOutput>,
+//!     ) -> Result<SparseBitFingerprint, MorganError> = morgan_sparse_bits;
+//!     let _: fn(
+//!         &MorganPreparedInput<'_>,
+//!         &MorganParams,
+//!         &MorganCall<'_>,
+//!         MorganAtomInvariants<'_>,
+//!         Option<&mut AdditionalOutput>,
+//!     ) -> Result<SparseCountFingerprint32, MorganError> = morgan_count;
+//!     let _: fn(
+//!         &MorganPreparedInput<'_>,
+//!         &MorganParams,
+//!         &MorganCall<'_>,
+//!         MorganAtomInvariants<'_>,
+//!         Option<&mut AdditionalOutput>,
+//!     ) -> Result<Fingerprint, MorganError> = morgan_bits;
+//! }
+//! ```
+//!
+//! Implementation modules are not part of that boundary:
+//!
+//! ```compile_fail
+//! use cosmolkit_fingerprints::morgan::MorganGenerator;
+//! ```
+//!
+//! ```compile_fail
+//! use cosmolkit_fingerprints::prepared;
+//! ```
+//!
+//! ```compile_fail
+//! use cosmolkit_fingerprints::generator;
+//! ```
+//!
+//! ```compile_fail
+//! use cosmolkit_fingerprints::rng;
+//! ```
 
+mod additional_output;
 pub mod folding;
+mod generator;
 pub mod hash;
+mod invariants;
+mod morgan;
+mod prepared;
+mod rng;
 pub mod similarity;
 mod sparse_bits;
 mod sparse_counts;
@@ -15,8 +84,18 @@ mod values;
 
 use std::fmt;
 
-use cosmolkit_model::TopologyBlock;
+use cosmolkit_core::{
+    LegacyStereoError, MatrixError, PeriodicTableError, PropertyStringError, ValenceError,
+};
+use cosmolkit_model::{MoleculePropertyError, TopologyBlock};
 
+pub use additional_output::AdditionalOutput;
+pub use cosmolkit_search::QueryGraph;
+pub use morgan::{
+    MorganAtomInvariants, MorganCall, MorganParams, morgan_bits, morgan_count, morgan_sparse_bits,
+    morgan_sparse_count,
+};
+pub use prepared::MorganPreparedInput;
 pub use sparse_bits::SparseBitFingerprint;
 pub use sparse_counts::{SparseCountFingerprint, SparseCountFingerprint32};
 pub use values::Fingerprint;
@@ -125,6 +204,129 @@ impl fmt::Display for FingerprintError {
 }
 
 impl std::error::Error for FingerprintError {}
+
+/// Error causes shared by the detached Morgan generator implementation.
+///
+/// `FingerprintError` remains the small Copy value error used by the existing
+/// fingerprint-value API; chemistry and table failures retain their concrete
+/// source types here instead of being stringified.
+#[derive(Debug)]
+pub enum MorganError {
+    Fingerprint(FingerprintError),
+    Matrix(MatrixError),
+    Valence(ValenceError),
+    PeriodicTable(PeriodicTableError),
+    LegacyStereo(LegacyStereoError),
+    MoleculeProperty(MoleculePropertyError),
+    PropertyString(PropertyStringError),
+    SmartsParse(cosmolkit_search::SmartsParseError),
+    QueryMatchContext(cosmolkit_search::QueryMatchContextError),
+    SubstructMatch(cosmolkit_search::SubstructMatchError),
+}
+
+impl fmt::Display for MorganError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Fingerprint(source) => write!(f, "Morgan fingerprint error: {source}"),
+            Self::Matrix(source) => write!(f, "Morgan matrix error: {source}"),
+            Self::Valence(source) => write!(f, "Morgan valence preparation error: {source}"),
+            Self::PeriodicTable(source) => {
+                write!(f, "Morgan periodic-table lookup error: {source}")
+            }
+            Self::LegacyStereo(source) => {
+                write!(f, "Morgan legacy stereo preparation error: {source}")
+            }
+            Self::MoleculeProperty(source) => {
+                write!(f, "Morgan molecule-property error: {source}")
+            }
+            Self::PropertyString(source) => {
+                write!(f, "Morgan property string conversion error: {source}")
+            }
+            Self::SmartsParse(source) => write!(f, "Morgan feature SMARTS parse error: {source}"),
+            Self::QueryMatchContext(source) => {
+                write!(f, "Morgan query-context validation error: {source}")
+            }
+            Self::SubstructMatch(source) => write!(f, "Morgan feature matching error: {source}"),
+        }
+    }
+}
+
+impl std::error::Error for MorganError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Fingerprint(source) => Some(source),
+            Self::Matrix(source) => Some(source),
+            Self::Valence(source) => Some(source),
+            Self::PeriodicTable(source) => Some(source),
+            Self::LegacyStereo(source) => Some(source),
+            Self::MoleculeProperty(source) => Some(source),
+            Self::PropertyString(source) => Some(source),
+            Self::SmartsParse(source) => Some(source),
+            Self::QueryMatchContext(source) => Some(source),
+            Self::SubstructMatch(source) => Some(source),
+        }
+    }
+}
+
+impl From<FingerprintError> for MorganError {
+    fn from(source: FingerprintError) -> Self {
+        Self::Fingerprint(source)
+    }
+}
+
+impl From<MatrixError> for MorganError {
+    fn from(source: MatrixError) -> Self {
+        Self::Matrix(source)
+    }
+}
+
+impl From<ValenceError> for MorganError {
+    fn from(source: ValenceError) -> Self {
+        Self::Valence(source)
+    }
+}
+
+impl From<PeriodicTableError> for MorganError {
+    fn from(source: PeriodicTableError) -> Self {
+        Self::PeriodicTable(source)
+    }
+}
+
+impl From<LegacyStereoError> for MorganError {
+    fn from(source: LegacyStereoError) -> Self {
+        Self::LegacyStereo(source)
+    }
+}
+
+impl From<MoleculePropertyError> for MorganError {
+    fn from(source: MoleculePropertyError) -> Self {
+        Self::MoleculeProperty(source)
+    }
+}
+
+impl From<PropertyStringError> for MorganError {
+    fn from(source: PropertyStringError) -> Self {
+        Self::PropertyString(source)
+    }
+}
+
+impl From<cosmolkit_search::SmartsParseError> for MorganError {
+    fn from(source: cosmolkit_search::SmartsParseError) -> Self {
+        Self::SmartsParse(source)
+    }
+}
+
+impl From<cosmolkit_search::QueryMatchContextError> for MorganError {
+    fn from(source: cosmolkit_search::QueryMatchContextError) -> Self {
+        Self::QueryMatchContext(source)
+    }
+}
+
+impl From<cosmolkit_search::SubstructMatchError> for MorganError {
+    fn from(source: cosmolkit_search::SubstructMatchError) -> Self {
+        Self::SubstructMatch(source)
+    }
+}
 
 pub fn morgan(topology: &TopologyBlock) -> Result<Fingerprint, FingerprintError> {
     let _ = topology;

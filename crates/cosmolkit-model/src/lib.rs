@@ -44,7 +44,10 @@ pub use sgroup::{
     SGroupConnection, SGroupData, SGroupDisplay, StereoGroup, StereoGroupKind, SubstanceGroup,
     SubstanceGroupId, SubstanceGroupKind, set_stereo_group_write_id, stereo_group_write_id,
 };
-pub use topology::{TopologyBatchEdit, TopologyBlock, TopologyEditError, TopologyValidationError};
+pub use topology::{
+    BondEndPointsParseErrorKind, TopologyBatchEdit, TopologyBlock, TopologyEditError,
+    TopologyValidationError,
+};
 
 pub use cosmolkit_types::{
     BondDirection, BondOrder, BondStereo, ChiralTag, ELEMENTS, ELEMENTS_WITH_DUMMY, Element,

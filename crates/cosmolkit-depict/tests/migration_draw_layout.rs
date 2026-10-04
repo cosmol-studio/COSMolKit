@@ -16,14 +16,15 @@ use cosmolkit_core::{RingFindType, RingInfo, symmetrize_sssr_with_options_from_p
 use cosmolkit_depict::{Compute2DCoordinatesParams, DepictError, compute_2d_coordinates};
 use cosmolkit_model::{
     Atom, AtomId, AtomSpec, Bond, BondId, BondOrder, BondSpec, BondStereo, ChiralTag, Element,
-    TopologyBlock,
+    MoleculeProperties, TopologyBlock,
 };
 
 #[test]
 fn entry_output_defaults_cover_empty_single_chain_and_disconnected_rows() {
+    let absent_properties = MoleculeProperties::default();
     let empty = topology(vec![], &[]);
     assert!(
-        compute_2d_coordinates(&empty, &Default::default())
+        compute_2d_coordinates(&empty, &absent_properties, &Default::default())
             .unwrap()
             .coordinates()
             .is_empty()
@@ -31,7 +32,7 @@ fn entry_output_defaults_cover_empty_single_chain_and_disconnected_rows() {
 
     let single = topology(vec![AtomSpec::new(Element::C)], &[]);
     assert_eq!(
-        compute_2d_coordinates(&single, &Default::default())
+        compute_2d_coordinates(&single, &absent_properties, &Default::default())
             .unwrap()
             .coordinates(),
         [[0.0, 0.0]]
@@ -39,7 +40,7 @@ fn entry_output_defaults_cover_empty_single_chain_and_disconnected_rows() {
 
     let chain = topology(vec![AtomSpec::new(Element::C); 3], &[(0, 1), (1, 2)]);
     let source = chain.clone();
-    let chain_xy = compute_2d_coordinates(&chain, &Default::default()).unwrap();
+    let chain_xy = compute_2d_coordinates(&chain, &absent_properties, &Default::default()).unwrap();
     assert_eq!(chain, source, "detached depiction must not mutate topology");
     assert_eq!(chain_xy.id(), 0);
     assert_eq!(
@@ -53,7 +54,7 @@ fn entry_output_defaults_cover_empty_single_chain_and_disconnected_rows() {
 
     let disconnected = topology(vec![AtomSpec::new(Element::C); 2], &[]);
     assert_eq!(
-        compute_2d_coordinates(&disconnected, &Default::default())
+        compute_2d_coordinates(&disconnected, &absent_properties, &Default::default())
             .unwrap()
             .coordinates(),
         [[0.0, 0.0], [1.0, 0.0]]
@@ -62,10 +63,12 @@ fn entry_output_defaults_cover_empty_single_chain_and_disconnected_rows() {
 
 #[test]
 fn entry_output_coordinate_constraints_cover_empty_single_many_and_invalid() {
+    let absent_properties = MoleculeProperties::default();
     let graph = topology(vec![AtomSpec::new(Element::C); 3], &[(0, 1), (1, 2)]);
-    let empty = compute_2d_coordinates(&graph, &Default::default()).unwrap();
+    let empty = compute_2d_coordinates(&graph, &absent_properties, &Default::default()).unwrap();
     let explicit_empty = compute_2d_coordinates(
         &graph,
+        &absent_properties,
         &Compute2DCoordinatesParams {
             coordinate_map: BTreeMap::new(),
             ..Default::default()
@@ -76,6 +79,7 @@ fn entry_output_coordinate_constraints_cover_empty_single_many_and_invalid() {
 
     let singleton = compute_2d_coordinates(
         &graph,
+        &absent_properties,
         &Compute2DCoordinatesParams {
             coordinate_map: BTreeMap::from([(1, [7.0, -3.0])]),
             ..Default::default()
@@ -87,6 +91,7 @@ fn entry_output_coordinate_constraints_cover_empty_single_many_and_invalid() {
     let fixed = BTreeMap::from([(0, [-0.0, 2.0]), (1, [1.5, 2.0])]);
     let multiple = compute_2d_coordinates(
         &graph,
+        &absent_properties,
         &Compute2DCoordinatesParams {
             coordinate_map: fixed.clone(),
             ..Default::default()
@@ -106,6 +111,7 @@ fn entry_output_coordinate_constraints_cover_empty_single_many_and_invalid() {
 
     let error = compute_2d_coordinates(
         &graph,
+        &absent_properties,
         &Compute2DCoordinatesParams {
             coordinate_map: BTreeMap::from([(3, [0.0, 0.0])]),
             ..Default::default()
@@ -125,12 +131,14 @@ fn entry_output_coordinate_constraints_cover_empty_single_many_and_invalid() {
 
 #[test]
 fn detached_typed_error_chain_preserves_topology_source() {
+    let absent_properties = MoleculeProperties::default();
     let mut invalid = TopologyBlock::default();
     invalid
         .atoms
         .push(Atom::from_spec(AtomId::new(1), AtomSpec::new(Element::C)));
 
-    let error = compute_2d_coordinates(&invalid, &Default::default()).unwrap_err();
+    let error =
+        compute_2d_coordinates(&invalid, &absent_properties, &Default::default()).unwrap_err();
     let source = std::error::Error::source(&error)
         .expect("depiction topology errors must retain the typed topology source");
     assert!(matches!(
@@ -144,9 +152,11 @@ fn detached_typed_error_chain_preserves_topology_source() {
 
 #[test]
 fn detached_typed_error_chain_preserves_layout_fields() {
+    let absent_properties = MoleculeProperties::default();
     let graph = topology(vec![AtomSpec::new(Element::C); 3], &[(0, 1), (1, 2)]);
     let error = compute_2d_coordinates(
         &graph,
+        &absent_properties,
         &Compute2DCoordinatesParams {
             coordinate_map: BTreeMap::from([(3, [0.0, 0.0])]),
             ..Default::default()
@@ -168,11 +178,13 @@ fn detached_typed_error_chain_preserves_layout_fields() {
 
 #[test]
 fn detached_typed_error_chain_preserves_sampling_safety_boundary() {
+    let absent_properties = MoleculeProperties::default();
     // This is the deterministic CK boundary for an upstream unwritten
     // sampling-cost slot, not an RDKit-parity result or a replacement value.
     let disconnected = topology(vec![AtomSpec::new(Element::C); 2], &[]);
     let error = compute_2d_coordinates(
         &disconnected,
+        &absent_properties,
         &Compute2DCoordinatesParams {
             flips_per_sample: 1,
             samples: 1,
@@ -196,13 +208,15 @@ fn detached_typed_error_chain_preserves_sampling_safety_boundary() {
 
 #[test]
 fn entry_output_options_cover_orientation_route_sampling_templates_and_clear_carrier() {
+    let absent_properties = MoleculeProperties::default();
     let graph = topology(
         vec![AtomSpec::new(Element::C); 5],
         &[(0, 1), (1, 2), (2, 3), (3, 4)],
     );
-    let defaults = compute_2d_coordinates(&graph, &Default::default()).unwrap();
+    let defaults = compute_2d_coordinates(&graph, &absent_properties, &Default::default()).unwrap();
     let canonical = compute_2d_coordinates(
         &graph,
+        &absent_properties,
         &Compute2DCoordinatesParams {
             canonical_orientation: true,
             ..Default::default()
@@ -222,6 +236,7 @@ fn entry_output_options_cover_orientation_route_sampling_templates_and_clear_car
 
     let routed = compute_2d_coordinates(
         &graph,
+        &absent_properties,
         &Compute2DCoordinatesParams {
             clear_existing_2d: false,
             force_rdkit: true,
@@ -242,8 +257,8 @@ fn entry_output_options_cover_orientation_route_sampling_templates_and_clear_car
         permute_degree_four: true,
         ..Default::default()
     };
-    let sampled_a = compute_2d_coordinates(&graph, &sampled_params).unwrap();
-    let sampled_b = compute_2d_coordinates(&graph, &sampled_params).unwrap();
+    let sampled_a = compute_2d_coordinates(&graph, &absent_properties, &sampled_params).unwrap();
+    let sampled_b = compute_2d_coordinates(&graph, &absent_properties, &sampled_params).unwrap();
     assert_eq!(
         sampled_a, sampled_b,
         "positive seed resets the shared source RNG"
@@ -252,12 +267,14 @@ fn entry_output_options_cover_orientation_route_sampling_templates_and_clear_car
 
 #[test]
 fn entry_output_ring_and_stereo_inputs_complete_atom_ordered_finite_rows() {
+    let absent_properties = MoleculeProperties::default();
     let ring = topology(
         vec![AtomSpec::new(Element::C); 6],
         &[(0, 1), (1, 2), (2, 3), (3, 4), (4, 5), (5, 0)],
     );
     let ring_xy = compute_2d_coordinates(
         &ring,
+        &absent_properties,
         &Compute2DCoordinatesParams {
             use_ring_templates: true,
             ..Default::default()
@@ -281,7 +298,8 @@ fn entry_output_ring_and_stereo_inputs_complete_atom_ordered_finite_rows() {
             (2, 3, BondOrder::Single, BondStereo::None, None),
         ],
     );
-    let stereo_xy = compute_2d_coordinates(&stereo, &Default::default()).unwrap();
+    let stereo_xy =
+        compute_2d_coordinates(&stereo, &absent_properties, &Default::default()).unwrap();
     assert_eq!(stereo_xy.coordinates().len(), 4);
     assert!(
         stereo_xy
@@ -297,6 +315,7 @@ fn entry_output_ring_and_stereo_inputs_complete_atom_ordered_finite_rows() {
 
 #[test]
 fn sampling_boundary_public_partial_fragments_do_not_gain_a_fallback_contract() {
+    let absent_properties = MoleculeProperties::default();
     // Fixed RDKit 2026.03.1 happens to return coordinates for C.C and reaches
     // map::at for CC.CC, but both first read unwritten sampling-cost storage.
     // Those observations are retained in DRAW-layout.md, not promoted to a
@@ -308,6 +327,7 @@ fn sampling_boundary_public_partial_fragments_do_not_gain_a_fallback_contract() 
     ] {
         let error = compute_2d_coordinates(
             &disconnected,
+            &absent_properties,
             &Compute2DCoordinatesParams {
                 flips_per_sample: 1,
                 samples: 1,

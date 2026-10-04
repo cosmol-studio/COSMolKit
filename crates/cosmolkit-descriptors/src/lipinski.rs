@@ -218,7 +218,10 @@ pub const NUM_HBD_VERSION: &str = "2.0.1";
 /// first process call) plus one matcher pass; identical cost class to the
 /// source flyweight + `SubstructMatch`, with the per-call parse the
 /// historical port performed removed by construction.
-pub fn num_hbd_prepared(input: &DescriptorInput<'_>) -> DescriptorResult<u32> {
+pub(crate) fn num_hbd_with_valence(
+    topology: &cosmolkit_model::TopologyBlock,
+    valence: &cosmolkit_core::ValenceAssignment,
+) -> DescriptorResult<u32> {
     // BEGIN RDKIT CPP MACRO EXPANSION: SMARTSCOUNTFUNC -> calcNumHBD
     // RDKit✔️✔️: #define SMARTSCOUNTFUNC(nm, pattern, vers)         \
     // RDKit✔️✔️:   const std::string nm##Version = vers;            \
@@ -230,7 +233,33 @@ pub fn num_hbd_prepared(input: &DescriptorInput<'_>) -> DescriptorResult<u32> {
     // RDKit✔️✔️: SMARTSCOUNTFUNC(NumHBD, "[N&!H0&v3,N&!H0&+1&v4,O&H1&+0,S&H1&+0,n&H1&+0]",
     // RDKit✔️✔️:                 "2.0.1");
     // END RDKIT CPP MACRO EXPANSION: SMARTSCOUNTFUNC -> calcNumHBD
-    crate::patterns::count_pattern_matches(input, "num_hbd", NUM_HBD_PATTERN)
+    //
+    // HBD-PUBLIC narrow owner: the fixed pattern reads hydrogen-count and
+    // valence predicates but NO ring predicate (ROOT-resolved from the
+    // pinned source), so this owner runs through the ONE narrow
+    // borrowed-valence context and matcher path. The supplied prepared
+    // valence rows are BORROWED — never recomputed, extended, installed or
+    // cloned; no ring state is read, gated on or fabricated. Borrow review:
+    // borrowing the rows does not erase the real validation/context/
+    // adjacency/matcher cost; no allocation-free/O(1) claim is made here.
+    crate::patterns::count_pattern_matches_with_valence(
+        topology,
+        valence,
+        "num_hbd",
+        NUM_HBD_PATTERN,
+    )
+}
+
+/// General SMARTS-based hydrogen-bond donor count over prepared FINAL
+/// input (thin routing form).
+///
+/// Routes through the ONE narrow HBD owner
+/// [`num_hbd_with_valence`] using the prepared input's supplied FINAL
+/// topology and valence rows; the pattern reads no ring predicate, so the
+/// prepared ring rows are neither required nor consulted on this path.
+/// Signature and prepared-input contract are unchanged.
+pub fn num_hbd_prepared(input: &DescriptorInput<'_>) -> DescriptorResult<u32> {
+    num_hbd_with_valence(input.topology(), input.valence())
 }
 
 /// Fixed SMARTS for the general hydrogen-bond acceptor count
@@ -330,6 +359,38 @@ pub fn num_heteroatoms_prepared(input: &DescriptorInput<'_>) -> DescriptorResult
     // RDKit✔️✔️: SMARTSCOUNTFUNC(NumHeteroatoms, "[!#6;!#1]", "1.0.1");
     // END RDKIT CPP MACRO EXPANSION: SMARTSCOUNTFUNC -> calcNumHeteroatoms
     crate::patterns::count_pattern_matches(input, "num_heteroatoms", NUM_HETEROATOMS_PATTERN)
+}
+
+/// General SMARTS-based heteroatom count over a bare TOPOLOGY (no
+/// chemistry rows).
+///
+/// D-A resolution (HETERO-PUBLIC): the `[!#6;!#1]` pattern reads ONLY
+/// atomic-number rows, so this entry routes through the ONE common
+/// retained-pattern match owner with the narrow topology-only query
+/// context (validation + borrowed adjacency; ring_info None, valence
+/// None). NO valence assignment, ring find, fabricated chemistry rows or
+/// direct element counting; default `SubstructMatchParameters`
+/// (uniquify=true, maxMatches=1000) exactly as the prepared path.
+///
+/// Complexity review: one O(V+E) validation + one retained-query
+/// acquisition + one matcher pass — the same cost class as the source
+/// flyweight + `SubstructMatch` on a mol with precomputed state.
+pub fn num_heteroatoms_topology(topology: &TopologyBlock) -> DescriptorResult<u32> {
+    // BEGIN RDKIT CPP MACRO EXPANSION: SMARTSCOUNTFUNC -> calcNumHeteroatoms
+    // RDKit✔️✔️: #define SMARTSCOUNTFUNC(nm, pattern, vers)         \
+    // RDKit✔️✔️:   const std::string nm##Version = vers;            \
+    // RDKit✔️✔️:   unsigned int calc##nm(const RDKit::ROMol &mol) { \
+    // RDKit✔️✔️:     pattern_flyweight m(pattern);                  \
+    // RDKit✔️✔️:     return m.get().countMatches(mol);              \
+    // RDKit✔️✔️:   }                                                \
+    // RDKit✔️✔️:   extern int no_such_variable
+    // RDKit✔️✔️: SMARTSCOUNTFUNC(NumHeteroatoms, "[!#6;!#1]", "1.0.1");
+    // END RDKIT CPP MACRO EXPANSION: SMARTSCOUNTFUNC -> calcNumHeteroatoms
+    crate::patterns::count_pattern_matches_topology_only(
+        topology,
+        "num_heteroatoms",
+        NUM_HETEROATOMS_PATTERN,
+    )
 }
 
 /// Fixed SMARTS for the general amide-bond count (`Lipinski.cpp:204`).

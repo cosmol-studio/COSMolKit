@@ -27,7 +27,9 @@ use crate::query_behavior::{
 use crate::{AtomQueryPredicate, BondQueryPredicate, QueryAtom, QueryBond, QueryGraph, QueryNode};
 use crate::{SearchTarget, SearchTargetAccess};
 use cosmolkit_core::PeriodicTableError;
-use cosmolkit_model::{Atom, Bond, Conformer3D, PropertyValue, StereoGroupKind};
+use cosmolkit_model::{
+    Atom, Bond, Conformer3D, NeighborRef, PropertyValue, StereoGroupKind, TopologyBlock,
+};
 use cosmolkit_types::{BondOrder, BondStereo, ChiralTag};
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
@@ -613,6 +615,77 @@ pub(crate) struct Vf2Graph {
     adjacency: Vec<Vec<(usize, usize)>>, // (neighbor_atom_index, bond_index)
 }
 
+/// A borrowed ordered adjacency row from one of the existing graph owners.
+/// Query and compiled rows store `(neighbor, bond_index)` tuples; topology
+/// rows store the same observation in `NeighborRef` values.
+#[derive(Debug, Clone, Copy)]
+enum Vf2NeighborRow<'a> {
+    Pairs(&'a [(usize, usize)]),
+    NeighborRefs(&'a [NeighborRef]),
+}
+
+impl<'a> Vf2NeighborRow<'a> {
+    fn len(self) -> usize {
+        match self {
+            Self::Pairs(row) => row.len(),
+            Self::NeighborRefs(row) => row.len(),
+        }
+    }
+
+    fn get(self, index: usize) -> Option<(usize, usize)> {
+        match self {
+            Self::Pairs(row) => row.get(index).copied(),
+            Self::NeighborRefs(row) => row
+                .get(index)
+                .map(|neighbor| (neighbor.atom_index, neighbor.bond.index())),
+        }
+    }
+
+    fn iter(self) -> Vf2NeighborIter<'a> {
+        // RDKit❗✔️: typename Graph::out_edge_iterator bNbrs, eNbrs;
+        // RDKit❗✔️: boost::tie(bNbrs, eNbrs) = boost::out_edges(node1, *g1);
+        // RDKit❗✔️: while (bNbrs != eNbrs) {
+        // RDKit❗✔️:       ++bNbrs;
+        // RDKit❗✔️: }
+        // The Rust observation borrows each owner's existing row and advances
+        // in stored order. Tuple rows copy their two indices; topology rows
+        // project NeighborRef's canonical atom and bond indices on demand.
+        // Complexity: iterator construction/advance does not allocate or copy
+        // a row; indexed lookup remains constant time on either slice.
+        match self {
+            Self::Pairs(row) => Vf2NeighborIter::Pairs(row.iter()),
+            Self::NeighborRefs(row) => Vf2NeighborIter::NeighborRefs(row.iter()),
+        }
+    }
+}
+
+enum Vf2NeighborIter<'a> {
+    Pairs(std::slice::Iter<'a, (usize, usize)>),
+    NeighborRefs(std::slice::Iter<'a, NeighborRef>),
+}
+
+impl Iterator for Vf2NeighborIter<'_> {
+    type Item = (usize, usize);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::Pairs(iter) => iter.next().copied(),
+            Self::NeighborRefs(iter) => iter
+                .next()
+                .map(|neighbor| (neighbor.atom_index, neighbor.bond.index())),
+        }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        match self {
+            Self::Pairs(iter) => iter.size_hint(),
+            Self::NeighborRefs(iter) => iter.size_hint(),
+        }
+    }
+}
+
+impl ExactSizeIterator for Vf2NeighborIter<'_> {}
+
 /// Query-side graph plan retained by [`CompiledQuery`].
 ///
 /// This is an intentionally opaque alias at the public boundary: callers can
@@ -629,19 +702,6 @@ trait Vf2GraphSource {
     fn vf2_bond_endpoints(&self, index: usize) -> (usize, usize);
 }
 
-impl Vf2GraphSource for SearchTarget<'_> {
-    fn vf2_num_atoms(&self) -> usize {
-        self.num_atoms()
-    }
-    fn vf2_num_bonds(&self) -> usize {
-        self.num_bonds()
-    }
-    fn vf2_bond_endpoints(&self, index: usize) -> (usize, usize) {
-        let bond = &self.bonds()[index];
-        (bond.begin().index(), bond.end().index())
-    }
-}
-
 impl Vf2GraphSource for QueryGraph {
     fn vf2_num_atoms(&self) -> usize {
         self.num_atoms()
@@ -654,7 +714,15 @@ impl Vf2GraphSource for QueryGraph {
     }
 }
 
+#[cfg(test)]
+std::thread_local! {
+    static VF2_GRAPH_BUILD_ENTRIES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
 fn build_vf2_graph<G: Vf2GraphSource>(mol: &G) -> Vf2Graph {
+    #[cfg(test)]
+    VF2_GRAPH_BUILD_ENTRIES.with(|entries| entries.set(entries.get() + 1));
+
     // RDKit source (implicit in vf2.hpp usage of out_edges):
     //   The VF2 state stores Graph *g1, *g2 and calls:
     //     boost::out_edges(node, *g)
@@ -662,9 +730,11 @@ fn build_vf2_graph<G: Vf2GraphSource>(mol: &G) -> Vf2Graph {
     //     boost::adjacent_vertices(node, *g)
     //   These are all O(1) in Boost adjacency_list.
     //
-    // RDKit✔️❌: We build a flat adjacency Vec<(usize, usize)> per atom.
-    //   This adds a one-time O(V+E) allocation vs the Boost inline storage,
-    //   but lookups are O(degree) which matches the original hot-path cost.
+    // Rust-only compiled-query representation:
+    //   This one-time O(V+E) materialization is limited to explicit compiled-
+    //   query construction. Ordinary and prepared matching borrow the existing
+    //   QueryGraph/TopologyBlock rows through Vf2GraphRef; compiled matching
+    //   borrows the retained graph. Indexed row lookup remains O(degree).
     let n_atoms = mol.vf2_num_atoms();
     let mut adjacency: Vec<Vec<(usize, usize)>> = vec![Vec::new(); n_atoms];
     let mut edge_endpoints = Vec::with_capacity(mol.vf2_num_bonds());
@@ -682,7 +752,7 @@ fn build_vf2_graph<G: Vf2GraphSource>(mol: &G) -> Vf2Graph {
     }
 }
 
-fn get_other_idx(g: &Vf2Graph, edge: usize, vertex: NodeId) -> NodeId {
+fn get_other_idx(g: Vf2GraphRef<'_>, edge: usize, vertex: NodeId) -> NodeId {
     // RDKit✔️✔️: template <class Graph, class VertexDescr, class EdgeDescr>
     // RDKit✔️✔️: VertexDescr getOtherIdx(const Graph &g, const EdgeDescr &edge,
     // RDKit✔️✔️:                         const VertexDescr &vertex) {
@@ -694,7 +764,7 @@ fn get_other_idx(g: &Vf2Graph, edge: usize, vertex: NodeId) -> NodeId {
     // RDKit✔️✔️: }
     // Complexity review: the endpoint table provides the same O(1) source and
     // target lookup as the Boost edge descriptor, with no per-call allocation.
-    let (source, target) = g.edge_endpoints[edge];
+    let (source, target) = g.bond_endpoints(edge);
     if source == vertex { target } else { source }
 }
 
@@ -707,12 +777,95 @@ impl Vf2Graph {
         self.n_bonds
     }
 
-    fn out_degree(&self, node: usize) -> usize {
-        self.adjacency[node].len()
+    fn neighbor_row(&self, node: usize) -> Vf2NeighborRow<'_> {
+        Vf2NeighborRow::Pairs(&self.adjacency[node])
+    }
+}
+
+/// Allocation-free observations over the three existing graph owners.
+/// Unlike RDKit's concrete Boost graph pointer, this Rust-only enum borrows
+/// the owner-specific storage directly and carries no reconstructed graph.
+#[derive(Debug, Clone, Copy)]
+enum Vf2GraphRef<'a> {
+    Query(&'a QueryGraph),
+    Target(&'a TopologyBlock),
+    Compiled(&'a Vf2Graph),
+}
+
+impl<'a> Vf2GraphRef<'a> {
+    fn query(graph: &'a QueryGraph) -> Self {
+        Self::Query(graph)
     }
 
-    fn out_edges(&self, node: usize) -> &[(usize, usize)] {
-        &self.adjacency[node]
+    fn target(graph: &'a TopologyBlock) -> Self {
+        Self::Target(graph)
+    }
+
+    fn compiled(graph: &'a Vf2Graph) -> Self {
+        Self::Compiled(graph)
+    }
+
+    fn num_atoms(self) -> usize {
+        // RDKit❗✔️:   Graph *g1, *g2;
+        // RDKit❗✔️:         n1(num_vertices(*ag1)),
+        // RDKit❗✔️:         n2(num_vertices(*ag2)) {
+        // The variants retain those graph owners by reference; each atom count
+        // is a direct field/slice-length observation with no graph creation.
+        match self {
+            Self::Query(graph) => graph.num_atoms(),
+            Self::Target(graph) => graph.atoms.len(),
+            Self::Compiled(graph) => graph.num_atoms(),
+        }
+    }
+
+    fn num_bonds(self) -> usize {
+        match self {
+            Self::Query(graph) => graph.num_bonds(),
+            Self::Target(graph) => graph.bonds.len(),
+            Self::Compiled(graph) => graph.num_bonds(),
+        }
+    }
+
+    fn out_degree(self, node: usize) -> usize {
+        // RDKit❗✔️: if (boost::out_degree(node1, *g1) > boost::out_degree(node2, *g2)) {
+        // RDKit❗✔️:   return false;
+        // RDKit❗✔️: }
+        // Each existing row's length is its undirected out-degree, observed
+        // directly in O(1) without a temporary row or graph.
+        self.neighbor_row(node).len()
+    }
+
+    fn neighbor_row(self, node: usize) -> Vf2NeighborRow<'a> {
+        // RDKit❗✔️: typename Graph::out_edge_iterator bNbrs, eNbrs;
+        // RDKit❗✔️: boost::tie(bNbrs, eNbrs) = boost::out_edges(node1, *g1);
+        // RDKit❗✔️: RDK_ADJ_ITER n1iter_beg, n1iter_end;
+        // RDKit❗✔️:             boost::adjacent_vertices(pair.n1, *g1);
+        // Query and compiled rows already store ordered pairs. A validated
+        // target topology borrows ordered NeighborRef rows whose BondId index
+        // is the canonical bond-table edge descriptor.
+        match self {
+            Self::Query(graph) => Vf2NeighborRow::Pairs(&graph.adjacency()[node]),
+            Self::Target(graph) => Vf2NeighborRow::NeighborRefs(graph.adjacency.neighbors_of(node)),
+            Self::Compiled(graph) => graph.neighbor_row(node),
+        }
+    }
+
+    fn bond_endpoints(self, edge: usize) -> (usize, usize) {
+        // RDKit❗✔️:   VertexDescr tmp = boost::source(edge, g);
+        // RDKit❗✔️:   if (tmp == vertex) {
+        // RDKit❗✔️:     tmp = boost::target(edge, g);
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:   return tmp;
+        // The Rust view observes the descriptor's canonical endpoint pair in
+        // O(1); the caller applies the same opposite-endpoint selection.
+        match self {
+            Self::Query(graph) => graph.bonds()[edge].endpoints(),
+            Self::Target(graph) => {
+                let bond = &graph.bonds[edge];
+                (bond.begin().index(), bond.end().index())
+            }
+            Self::Compiled(graph) => graph.edge_endpoints[edge],
+        }
     }
 }
 
@@ -1268,21 +1421,20 @@ fn evaluate_bond_query(
 // ### Key design differences from RDKit:
 //
 // 1. `core_1`/`core_2`: Same role — mapping from query atom idx → mol atom idx
-//    and vice versa. Uses `Option<usize>` instead of NULL_NODE sentinel.
+//    and vice versa. Both use the `NULL_NODE` sentinel, matching vf2.hpp.
 //
 // 2. `term_1`/`term_2`: Stores the core_len *depth* at which each atom was
 //    added to the terminal set, exactly as in vf2.hpp. BackTrack decrements
 //    counters keyed by depth, not recomputes from scratch.
 //
-// 3. No shared_ptr copy semantics: VF2SubState in RDKit uses COW with
-//    `share_count`. Rust's Clone+Vf2State avoids raw pointer sharing.
-//    This means each VF2 recursive branch owns its state, which is
-//    semantically correct but allocates O(depth * n) instead of
-//    O(n) shared storage. For typical molecule sizes (<1000 atoms) this
-//    is negligible; for very large searches the COW approach could be
-//    reinstated with Arc<Vec<NodeId>>.
+// 3. RDKit supports COW state copies through `share_count`, but its canonical
+//    `vf2`/`vf2_all` entry constructs one state and recursively mutates and
+//    backtracks that same state. Rust matching follows that same single-state
+//    traversal. The explicit `clone_state`/`Clone` path deep-copies its vectors
+//    for an independent caller; canonical recursion does not call it.
 //
-// 4. No boost graph: hand-rolled Vf2Graph adjacency.
+// 4. `Vf2GraphRef` borrows QueryGraph and TopologyBlock adjacency directly.
+//    Only an explicit compiled-query plan owns a materialized `Vf2Graph`.
 
 // RDKit source (vf2.hpp):
 //   typedef std::uint32_t node_id;
@@ -1400,7 +1552,7 @@ fn node_info_cmp2(a: &NodeInfo, b: &NodeInfo) -> std::cmp::Ordering {
 //   The nodes at the beginning of the vector are the most singular,
 //   from which the matching should start.
 
-fn sort_nodes_by_frequency(g: &Vf2Graph) -> Vec<NodeId> {
+fn sort_nodes_by_frequency(g: Vf2GraphRef<'_>) -> Vec<NodeId> {
     // RDKit✔️✔️: template <class Graph>
     // RDKit✔️✔️: node_id *SortNodesByFrequency(const Graph *g) {
     // RDKit✔️✔️:   std::vector<NodeInfo> vect;
@@ -1416,7 +1568,7 @@ fn sort_nodes_by_frequency(g: &Vf2Graph) -> Vec<NodeId> {
     // RDKit✔️✔️:     ++bNode;
     // RDKit✔️✔️:   }
     // RDKit✔️✔️:   std::sort(vect.begin(), vect.end(), nodeInfoComp1);
-    let mut vect: Vec<NodeInfo> = (0..g.n_atoms)
+    let mut vect: Vec<NodeInfo> = (0..g.num_atoms())
         .map(|i| {
             // RDKit's NodeInfo uses node_id (uint32_t) for all three fields.
             // The detached graph uses usize indices, so convert at this
@@ -1503,13 +1655,13 @@ fn sort_nodes_by_frequency(g: &Vf2Graph) -> Vec<NodeId> {
 /// RDKit❗✔️: VF2 subgraph isomorphism state.
 ///
 /// g1 = query graph, g2 = molecule graph.
-/// core_1[i] = mapping from query atom i -> mol atom j (or None).
-/// core_2[j] = mapping from mol atom j -> query atom i (or None).
+/// core_1[i] = mapping from query atom i -> mol atom j (or NULL_NODE).
+/// core_2[j] = mapping from mol atom j -> query atom i (or NULL_NODE).
 /// term_1[i] = depth (core_len) when atom i entered terminal set (0 = not terminal).
 /// term_2[j] = same for mol atoms.
 struct Vf2SubState<'a> {
-    g1: &'a Vf2Graph,
-    g2: &'a Vf2Graph,
+    g1: Vf2GraphRef<'a>,
+    g2: Vf2GraphRef<'a>,
     n1: usize,
     n2: usize,
     core_len: usize,
@@ -1523,7 +1675,7 @@ struct Vf2SubState<'a> {
 }
 
 impl<'a> Vf2SubState<'a> {
-    fn new(g1: &'a Vf2Graph, g2: &'a Vf2Graph, sort_nodes: bool) -> Self {
+    fn new(g1: Vf2GraphRef<'a>, g2: Vf2GraphRef<'a>, sort_nodes: bool) -> Self {
         // RDKit✔️✔️: VF2SubState(Graph *ag1, Graph *ag2, VertexCompatible &avc,
         // RDKit✔️✔️:             EdgeCompatible &aec, MatchChecking &amc, bool sortNodes = false)
         // RDKit✔️✔️:     : g1(ag1),
@@ -1569,8 +1721,8 @@ impl<'a> Vf2SubState<'a> {
         // Complexity review: both implementations initialize four O(V) arrays
         // and optionally run the same O(V log V) ordering routine. Vec uses the
         // same contiguous storage and does not add asymptotic or hot-path work.
-        let n1 = g1.n_atoms;
-        let n2 = g2.n_atoms;
+        let n1 = g1.num_atoms();
+        let n2 = g2.num_atoms();
         let order = if sort_nodes {
             Some(sort_nodes_by_frequency(g1))
         } else {
@@ -1596,7 +1748,7 @@ impl<'a> Vf2SubState<'a> {
         }
     }
 
-    fn with_order(g1: &'a Vf2Graph, g2: &'a Vf2Graph, order: &[usize]) -> Self {
+    fn with_order(g1: Vf2GraphRef<'a>, g2: Vf2GraphRef<'a>, order: &[usize]) -> Self {
         let mut state = Self::new(g1, g2, false);
         state.order = Some(order.to_vec());
         state
@@ -1878,7 +2030,7 @@ impl<'a> Vf2SubState<'a> {
             // RDKit✔️✔️: }
             if !pair.hasiter {
                 let mut mapped_terminal_neighbor = NULL_NODE;
-                for &(query_neighbor, _) in self.g1.out_edges(pair.n1) {
+                for (query_neighbor, _) in self.g1.neighbor_row(pair.n1).iter() {
                     if self.core_1[query_neighbor] != NULL_NODE {
                         mapped_terminal_neighbor = self.core_1[query_neighbor];
                         break;
@@ -1888,7 +2040,7 @@ impl<'a> Vf2SubState<'a> {
                 if mapped_terminal_neighbor != NULL_NODE {
                     pair.nbr_node = mapped_terminal_neighbor;
                     pair.nbr_cursor = 0;
-                    pair.nbr_end = self.g2.out_edges(mapped_terminal_neighbor).len();
+                    pair.nbr_end = self.g2.neighbor_row(mapped_terminal_neighbor).len();
                     pair.hasiter = true;
                 }
             }
@@ -1934,12 +2086,16 @@ impl<'a> Vf2SubState<'a> {
         // --- Select mol node (n2) ---
         // RDKit✔️✔️: if (pair.hasiter) { ... }
         if pair.hasiter {
+            let neighbors = self.g2.neighbor_row(pair.nbr_node);
             // RDKit✔️✔️: while (pair.nbrbeg < pair.nbrend && core_2[*pair.nbrbeg] != NULL_NODE) {
             // RDKit✔️✔️:   ++pair.nbrbeg;
             // RDKit✔️✔️: }
-            let neighbors = self.g2.out_edges(pair.nbr_node);
             while pair.nbr_cursor < pair.nbr_end
-                && self.core_2[neighbors[pair.nbr_cursor].0] != NULL_NODE
+                && self.core_2[neighbors
+                    .get(pair.nbr_cursor)
+                    .expect("VF2+ cursor is within its borrowed neighbor row")
+                    .0]
+                    != NULL_NODE
             {
                 pair.nbr_cursor += 1;
             }
@@ -1950,7 +2106,10 @@ impl<'a> Vf2SubState<'a> {
             // RDKit✔️✔️:   pair.n2 = n2;
             // RDKit✔️✔️: }
             if pair.nbr_cursor < pair.nbr_end {
-                pair.n2 = neighbors[pair.nbr_cursor].0;
+                pair.n2 = neighbors
+                    .get(pair.nbr_cursor)
+                    .expect("VF2+ cursor is within its borrowed neighbor row")
+                    .0;
                 pair.nbr_cursor += 1;
             } else {
                 pair.n2 = self.n2;
@@ -2135,7 +2294,7 @@ impl<'a> Vf2SubState<'a> {
         // RDKit✔️✔️:   }
         // RDKit✔️✔️:   ++bNbrs;
         // RDKit✔️✔️: }
-        for &(_, edge_idx1) in self.g1.out_edges(node1) {
+        for (_, edge_idx1) in self.g1.neighbor_row(node1).iter() {
             let other1 = get_other_idx(self.g1, edge_idx1, node1);
             if other1 == node1 {
                 continue;
@@ -2160,7 +2319,11 @@ impl<'a> Vf2SubState<'a> {
 
     /// Find a bond between atom `a` and `b` in the molecule graph (g2).
     fn find_bond(&self, a: NodeId, b: NodeId) -> Option<usize> {
-        for &(nbr, bond_idx) in self.g2.out_edges(a) {
+        // RDKit✔️✔️:         boost::tie(oEdge, found) = boost::edge(node2, other2, *g2);
+        // The existing target edge descriptor is found by the same ordered
+        // incident-row scan; the simple validated topology has one edge for
+        // the endpoint pair and this returns its canonical bond index.
+        for (nbr, bond_idx) in self.g2.neighbor_row(a).iter() {
             if nbr == b {
                 return Some(bond_idx);
             }
@@ -2246,7 +2409,7 @@ impl<'a> Vf2SubState<'a> {
         // RDKit✔️✔️:   if (!term_1[other]) { term_1[other] = core_len; ++t1_len; }
         // RDKit✔️✔️:   ++bNbrs;
         // RDKit✔️✔️: }
-        for &(_, edge) in self.g1.out_edges(node1) {
+        for (_, edge) in self.g1.neighbor_row(node1).iter() {
             let other = get_other_idx(self.g1, edge, node1);
             if other == node1 {
                 continue;
@@ -2263,7 +2426,7 @@ impl<'a> Vf2SubState<'a> {
         // RDKit✔️✔️:   if (!term_2[other]) { term_2[other] = core_len; ++t2_len; }
         // RDKit✔️✔️:   ++bNbrs;
         // RDKit✔️✔️: }
-        for &(_, edge) in self.g2.out_edges(node2) {
+        for (_, edge) in self.g2.neighbor_row(node2).iter() {
             let other = get_other_idx(self.g2, edge, node2);
             if other == node2 {
                 continue;
@@ -2329,7 +2492,7 @@ impl<'a> Vf2SubState<'a> {
         // RDKit✔️✔️:   if (term_1[other] == core_len) { term_1[other] = 0; --t1_len; }
         // RDKit✔️✔️:   ++bNbrs;
         // RDKit✔️✔️: }
-        for &(_, edge) in self.g1.out_edges(node1) {
+        for (_, edge) in self.g1.neighbor_row(node1).iter() {
             let other = get_other_idx(self.g1, edge, node1);
             if other == node1 {
                 continue;
@@ -2352,7 +2515,7 @@ impl<'a> Vf2SubState<'a> {
         // RDKit✔️✔️:   if (term_2[other] == core_len) { term_2[other] = 0; --t2_len; }
         // RDKit✔️✔️:   ++bNbrs;
         // RDKit✔️✔️: }
-        for &(_, edge) in self.g2.out_edges(node2) {
+        for (_, edge) in self.g2.neighbor_row(node2).iter() {
             let other = get_other_idx(self.g2, edge, node2);
             if other == node2 {
                 continue;
@@ -2371,30 +2534,32 @@ impl<'a> Vf2SubState<'a> {
         self.core_len -= 1;
     }
 
-    fn get_core_set(&self) -> (Vec<NodeId>, Vec<NodeId>) {
-        // RDKit✔️❌: void GetCoreSet(node_id c1[], node_id c2[]) {
-        // RDKit✔️❌:   unsigned int i, j;
-        // RDKit✔️❌:   for (i = 0, j = 0; i < n1; ++i) {
-        // RDKit✔️❌:     if (core_1[i] != NULL_NODE) {
-        // RDKit✔️❌:       c1[j] = i;
-        // RDKit✔️❌:       c2[j] = core_1[i];
-        // RDKit✔️❌:       ++j;
-        // RDKit✔️❌:     }
-        // RDKit✔️❌:   }
-        // RDKit✔️❌: }
-        // Complexity review: both scan n1 entries in O(V) and write core_len
-        // outputs. Rust allocates two result Vecs here, whereas RDKit writes
-        // into caller-provided arrays, so repeated goal checks pay two extra
-        // allocations despite identical mapping order and asymptotic cost.
-        let mut c1 = Vec::with_capacity(self.core_len);
-        let mut c2 = Vec::with_capacity(self.core_len);
-        for i in 0..self.n1 {
-            if self.core_1[i] != NULL_NODE {
-                c1.push(i);
-                c2.push(self.core_1[i]);
+    fn get_core_set_into(&self, c1: &mut [NodeId], c2: &mut [NodeId]) -> usize {
+        // RDKit❗✔️: void GetCoreSet(node_id c1[], node_id c2[]) {
+        // RDKit❗✔️:   unsigned int i, j;
+        // RDKit❗✔️:   for (i = 0, j = 0; i < n1; ++i) {
+        // RDKit❗✔️:     if (core_1[i] != NULL_NODE) {
+        // RDKit❗✔️:       c1[j] = i;
+        // RDKit❗✔️:       c2[j] = core_1[i];
+        // RDKit❗✔️:       ++j;
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:   }
+        // RDKit❗✔️: }
+        // Behavior: query indices are scanned ascending; only the populated
+        // prefix is written, and the returned count identifies that prefix.
+        // Complexity: one O(n1) scan, core_len paired indexed writes, and no
+        // allocation, matching RDKit's caller-array contract.
+        debug_assert!(c1.len() >= self.core_len);
+        debug_assert!(c2.len() >= self.core_len);
+        let mut written = 0;
+        for (query_index, &target_index) in self.core_1.iter().enumerate() {
+            if target_index != NULL_NODE {
+                c1[written] = query_index;
+                c2[written] = target_index;
+                written += 1;
             }
         }
-        (c1, c2)
+        written
     }
 
     fn match_one(
@@ -2402,58 +2567,62 @@ impl<'a> Vf2SubState<'a> {
         atom_fn: &impl Fn(usize, usize) -> bool,
         bond_fn: &impl Fn(usize, usize) -> bool,
         mut match_check: Option<&mut impl FnMut(&[NodeId], &[NodeId]) -> bool>,
-    ) -> Option<(Vec<NodeId>, Vec<NodeId>)> {
-        // RDKit✔️❌: bool Match(node_id c1[], node_id c2[]) {
-        // RDKit✔️❌:   if (IsGoal()) {
-        // RDKit✔️❌:     GetCoreSet(c1, c2);
-        // RDKit✔️❌:     if (MatchChecks(c1, c2)) {
-        // RDKit✔️❌:       return true;
-        // RDKit✔️❌:     }
-        // RDKit✔️❌:   }
-        // RDKit✔️❌:
-        // RDKit✔️❌:   if (IsDead()) {
-        // RDKit✔️❌:     return false;
-        // RDKit✔️❌:   }
-        // RDKit✔️❌:
-        // RDKit✔️❌:   Pair<Graph> pair;
-        // RDKit✔️❌:   while (NextPair(pair)) {
-        // RDKit✔️❌:     if (IsFeasiblePair(pair.n1, pair.n2)) {
-        // RDKit✔️❌:       AddPair(pair.n1, pair.n2);
-        // RDKit✔️❌:       if (Match(c1, c2)) {  // recurse
-        // RDKit✔️❌:         return true;
-        // RDKit✔️❌:       }
-        // RDKit✔️❌:       BackTrack(pair.n1, pair.n2);
-        // RDKit✔️❌:     }
-        // RDKit✔️❌:   }
-        // RDKit✔️❌:   return false;
-        // RDKit✔️❌: }
-        // Complexity review: candidate generation, feasibility checks, and
-        // depth-first recursion match RDKit's search tree. The known gap is
-        // inherited from get_core_set(), which allocates two Vecs at each goal.
+        c1: &mut [NodeId],
+        c2: &mut [NodeId],
+    ) -> bool {
+        // RDKit❗✔️: bool Match(node_id c1[], node_id c2[]) {
+        // RDKit❗✔️:   if (IsGoal()) {
+        // RDKit❗✔️:     GetCoreSet(c1, c2);
+        // RDKit❗✔️:     if (MatchChecks(c1, c2)) {
+        // RDKit❗✔️:       return true;
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:
+        // RDKit❗✔️:   if (IsDead()) {
+        // RDKit❗✔️:     return false;
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:
+        // RDKit❗✔️:   Pair<Graph> pair;
+        // RDKit❗✔️:   while (NextPair(pair)) {
+        // RDKit❗✔️:     if (IsFeasiblePair(pair.n1, pair.n2)) {
+        // RDKit❗✔️:       AddPair(pair.n1, pair.n2);
+        // RDKit❗✔️:       if (Match(c1, c2)) {  // recurse
+        // RDKit❗✔️:         return true;
+        // RDKit❗✔️:       }
+        // RDKit❗✔️:       BackTrack(pair.n1, pair.n2);
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:   return false;
+        // RDKit❗✔️: }
+        // Behavior: each goal writes the caller-owned prefix, its final check
+        // sees only that prefix, and success returns on the same DFS branch.
+        // Complexity: query-sized buffers are allocated once by the outer
+        // invocation and reused here, with no mapping allocation at each goal.
         if self.is_goal() {
-            let (c1, c2) = self.get_core_set();
+            let written = self.get_core_set_into(c1, c2);
+            debug_assert_eq!(written, self.core_len);
             let accepted = match match_check.as_mut() {
-                Some(check) => self.match_checks(&c1, &c2, check),
+                Some(check) => self.match_checks(&c1[..written], &c2[..written], check),
                 None => true,
             };
             if accepted {
-                return Some((c1, c2));
+                return true;
             }
         }
         if self.is_dead() {
-            return None;
+            return false;
         }
         let mut pair = Vf2Pair::new();
         while self.next_pair(&mut pair) {
             if self.is_feasible_pair(pair.n1, pair.n2, atom_fn, bond_fn) {
                 self.add_pair(pair.n1, pair.n2);
-                if let Some(result) = self.match_one(atom_fn, bond_fn, match_check.as_deref_mut()) {
-                    return Some(result);
+                if self.match_one(atom_fn, bond_fn, match_check.as_deref_mut(), c1, c2) {
+                    return true;
                 }
                 self.back_track(pair.n1, pair.n2);
             }
         }
-        None
+        false
     }
 
     fn match_all(
@@ -2461,52 +2630,64 @@ impl<'a> Vf2SubState<'a> {
         atom_fn: &impl Fn(usize, usize) -> bool,
         bond_fn: &impl Fn(usize, usize) -> bool,
         mut match_check: Option<&mut impl FnMut(&[NodeId], &[NodeId]) -> bool>,
-        results: &mut Vec<(Vec<NodeId>, Vec<NodeId>)>,
+        c1: &mut [NodeId],
+        c2: &mut [NodeId],
+        results: &mut Vec<Vec<(NodeId, NodeId)>>,
         max_matches: usize,
     ) -> bool {
-        // RDKit✔️❌: template <class DoubleBackInsertionSequence>
-        // RDKit✔️❌: bool MatchAll(node_id c1[], node_id c2[], DoubleBackInsertionSequence &res,
-        // RDKit✔️❌:               unsigned int lim = 0) {
-        // RDKit✔️❌:   if (IsGoal()) {
-        // RDKit✔️❌:     GetCoreSet(c1, c2);
-        // RDKit✔️❌:     if (MatchChecks(c1, c2)) {
-        // RDKit✔️❌:       typename DoubleBackInsertionSequence::value_type newSeq;
-        // RDKit✔️❌:       newSeq.reserve(core_len);
-        // RDKit✔️❌:       for (unsigned int i = 0; i < core_len; ++i) {
-        // RDKit✔️❌:         newSeq.emplace_back(c1[i], c2[i]);
-        // RDKit✔️❌:       }
-        // RDKit✔️❌:       res.push_back(newSeq);
-        // RDKit✔️❌:       return lim && res.size() >= lim;
-        // RDKit✔️❌:     }
-        // RDKit✔️❌:   }
-        // RDKit✔️❌:
-        // RDKit✔️❌:   if (IsDead()) {
-        // RDKit✔️❌:     return false;
-        // RDKit✔️❌:   }
-        // RDKit✔️❌:
-        // RDKit✔️❌:   Pair<Graph> pair;
-        // RDKit✔️❌:   while (NextPair(pair)) {
-        // RDKit✔️❌:     if (IsFeasiblePair(pair.n1, pair.n2)) {
-        // RDKit✔️❌:       AddPair(pair.n1, pair.n2);
-        // RDKit✔️❌:       if (MatchAll(c1, c2, res, lim)) {  // recurse
-        // RDKit✔️❌:         return true;
-        // RDKit✔️❌:       }
-        // RDKit✔️❌:       BackTrack(pair.n1, pair.n2);
-        // RDKit✔️❌:     }
-        // RDKit✔️❌:   }
-        // RDKit✔️❌:   return false;
-        // RDKit✔️❌: }
-        // Complexity review: the DFS search tree, candidate order, early limit,
-        // and per-result O(core_len) storage match RDKit. The known extra cost
-        // is get_core_set() allocating two Vecs before each final check.
+        // RDKit❗✔️: template <class DoubleBackInsertionSequence>
+        // RDKit❗✔️: bool MatchAll(node_id c1[], node_id c2[], DoubleBackInsertionSequence &res,
+        // RDKit❗✔️:               unsigned int lim = 0) {
+        // RDKit❗✔️:   if (IsGoal()) {
+        // RDKit❗✔️:     GetCoreSet(c1, c2);
+        // RDKit❗✔️:     if (MatchChecks(c1, c2)) {
+        // RDKit❗✔️:       typename DoubleBackInsertionSequence::value_type newSeq;
+        // RDKit❗✔️:       newSeq.reserve(core_len);
+        // RDKit❗✔️:       for (unsigned int i = 0; i < core_len; ++i) {
+        // RDKit❗✔️:         newSeq.emplace_back(c1[i], c2[i]);
+        // RDKit❗✔️:       }
+        // RDKit❗✔️:       res.push_back(newSeq);
+        // RDKit❗✔️:       return lim && res.size() >= lim;
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:
+        // RDKit❗✔️:   if (IsDead()) {
+        // RDKit❗✔️:     return false;
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:
+        // RDKit❗✔️:   Pair<Graph> pair;
+        // RDKit❗✔️:   while (NextPair(pair)) {
+        // RDKit❗✔️:     if (IsFeasiblePair(pair.n1, pair.n2)) {
+        // RDKit❗✔️:       AddPair(pair.n1, pair.n2);
+        // RDKit❗✔️:       if (MatchAll(c1, c2, res, lim)) {  // recurse
+        // RDKit❗✔️:         return true;
+        // RDKit❗✔️:       }
+        // RDKit❗✔️:       BackTrack(pair.n1, pair.n2);
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:   return false;
+        // RDKit❗✔️: }
+        // Behavior: goals are checked before dead-state handling; each accepted
+        // mapping is appended before the limit check and source-order recursion
+        // backtracks only after an unaccepted/continuing child returns false.
+        // Complexity: the caller-owned arrays are reused at every goal; one
+        // capacity-sized pair vector is created only for each accepted mapping.
         if self.is_goal() {
-            let (c1, c2) = self.get_core_set();
+            let written = self.get_core_set_into(c1, c2);
+            debug_assert_eq!(written, self.core_len);
             let accepted = match match_check.as_mut() {
-                Some(check) => self.match_checks(&c1, &c2, check),
+                Some(check) => self.match_checks(&c1[..written], &c2[..written], check),
                 None => true,
             };
             if accepted {
-                results.push((c1, c2));
+                let mut new_sequence = Vec::with_capacity(written);
+                new_sequence.extend(
+                    c1[..written]
+                        .iter()
+                        .copied()
+                        .zip(c2[..written].iter().copied()),
+                );
+                results.push(new_sequence);
                 return max_matches > 0 && results.len() >= max_matches;
             }
         }
@@ -2521,6 +2702,8 @@ impl<'a> Vf2SubState<'a> {
                     atom_fn,
                     bond_fn,
                     match_check.as_deref_mut(),
+                    c1,
+                    c2,
                     results,
                     max_matches,
                 ) {
@@ -2552,7 +2735,7 @@ impl<'a> Vf2SubState<'a> {
 //     return false;
 //   }
 
-/// RDKit✔️❌: Match — find first match via VF2 recursion.
+/// RDKit❗✔️: Match — find first match via VF2 recursion.
 ///
 /// Matches RDKit's `Match(c1, c2)` entry point. `match_check` allows
 /// final verification (like MolMatchFinalCheckFunctor). If None, all
@@ -2562,19 +2745,21 @@ fn vf2_match(
     atom_fn: &impl Fn(usize, usize) -> bool,
     bond_fn: &impl Fn(usize, usize) -> bool,
     match_check: Option<&mut impl FnMut(&[NodeId], &[NodeId]) -> bool>,
-) -> Option<(Vec<NodeId>, Vec<NodeId>)> {
-    // RDKit✔️❌: template <class SubState>
-    // RDKit✔️❌: bool match(int *pn, node_id c1[], node_id c2[], SubState &s) {
-    // RDKit✔️❌:   if (s.Match(c1, c2)) {
-    // RDKit✔️❌:     // not needed, pn = num query atoms (n1)...
-    // RDKit✔️❌:     *pn = s.CoreLen();
-    // RDKit✔️❌:     return true;
-    // RDKit✔️❌:   }
-    // RDKit✔️❌:   return false;
-    // RDKit✔️❌: }
-    // Rust returns the mapping and its length is available directly. Complexity
-    // and allocation behavior are exactly those of the single member core.
-    state.match_one(atom_fn, bond_fn, match_check)
+    c1: &mut [NodeId],
+    c2: &mut [NodeId],
+) -> bool {
+    // RDKit❗✔️: template <class SubState>
+    // RDKit❗✔️: bool match(int *pn, node_id c1[], node_id c2[], SubState &s) {
+    // RDKit❗✔️:   if (s.Match(c1, c2)) {
+    // RDKit❗✔️:     // not needed, pn = num query atoms (n1)...
+    // RDKit❗✔️:     *pn = s.CoreLen();
+    // RDKit❗✔️:     return true;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   return false;
+    // RDKit❗✔️: }
+    // Rust forwards the invocation-owned arrays through the same recursive
+    // member; vf2_entry_one projects the accepted prefix after success.
+    state.match_one(atom_fn, bond_fn, match_check, c1, c2)
 }
 
 // RDKit source (vf2.hpp), MatchAll:
@@ -2605,9 +2790,9 @@ fn vf2_match(
 //     return false;
 //   }
 
-/// RDKit✔️❌: MatchAll — find all matches up to `max_matches`.
+/// RDKit❗✔️: MatchAll — find all matches up to `max_matches`.
 ///
-/// Collects matches into `results` as (c1, c2) pairs.
+/// Collects each accepted mapping into `results` as one ordered paired sequence.
 /// Returns true when the limit has been reached, signaling the caller
 /// to stop.
 fn vf2_match_all(
@@ -2615,24 +2800,27 @@ fn vf2_match_all(
     atom_fn: &impl Fn(usize, usize) -> bool,
     bond_fn: &impl Fn(usize, usize) -> bool,
     match_check: Option<&mut impl FnMut(&[NodeId], &[NodeId]) -> bool>,
-    results: &mut Vec<(Vec<NodeId>, Vec<NodeId>)>,
+    c1: &mut [NodeId],
+    c2: &mut [NodeId],
+    results: &mut Vec<Vec<(NodeId, NodeId)>>,
     max_matches: usize,
 ) -> bool {
-    // RDKit✔️❌: template <class SubState, class DoubleBackInsertionSequence>
-    // RDKit✔️❌: bool match(node_id c1[], node_id c2[], SubState &s,
-    // RDKit✔️❌:            DoubleBackInsertionSequence &res, unsigned int max_results) {
-    // RDKit✔️❌:   s.MatchAll(c1, c2, res, max_results);
-    // RDKit✔️❌:   return !res.empty();
-    // RDKit✔️❌: }
+    // RDKit❗✔️: template <class SubState, class DoubleBackInsertionSequence>
+    // RDKit❗✔️: bool match(node_id c1[], node_id c2[], SubState &s,
+    // RDKit❗✔️:            DoubleBackInsertionSequence &res, unsigned int max_results) {
+    // RDKit❗✔️:   s.MatchAll(c1, c2, res, max_results);
+    // RDKit❗✔️:   return !res.empty();
+    // RDKit❗✔️: }
     // Complexity review: this wrapper adds one emptiness check after invoking
-    // the single member recursion core; it does not copy or re-enumerate results.
-    state.match_all(atom_fn, bond_fn, match_check, results, max_matches);
+    // the same member recursion and forwards caller-owned scratch without
+    // copying or re-enumerating results.
+    state.match_all(atom_fn, bond_fn, match_check, c1, c2, results, max_matches);
     !results.is_empty()
 }
 
 fn vf2_entry_one(
-    g1: &Vf2Graph,
-    g2: &Vf2Graph,
+    g1: Vf2GraphRef<'_>,
+    g2: Vf2GraphRef<'_>,
     atom_fn: &impl Fn(usize, usize) -> bool,
     bond_fn: &impl Fn(usize, usize) -> bool,
     match_check: Option<&mut impl FnMut(&[NodeId], &[NodeId]) -> bool>,
@@ -2671,24 +2859,34 @@ fn vf2_entry_one(
     // RDKit✔️✔️:
     // RDKit✔️✔️:   return !F.empty();
     // RDKit✔️✔️: };
-    // Complexity review: both allocate two O(V) mapping buffers, construct one
-    // unsorted state, run the same first-match DFS, and fill one O(V) result.
+    // Behavior: the invocation keeps RDKit's unsorted state and first-match
+    // DFS, then projects exactly the accepted query-order prefix once.
+    // Complexity: these two O(V) arrays are the sole mapping scratch buffers
+    // for the recursion; the result is materialized only after acceptance.
     let mut state = Vf2SubState::new(g1, g2, false);
+    let mut c1 = vec![NULL_NODE; g1.num_atoms()];
+    let mut c2 = vec![NULL_NODE; g1.num_atoms()];
     result.clear();
-    if let Some((c1, c2)) = vf2_match(&mut state, atom_fn, bond_fn, match_check) {
-        result.reserve(c1.len());
-        result.extend(c1.into_iter().zip(c2));
+    if vf2_match(&mut state, atom_fn, bond_fn, match_check, &mut c1, &mut c2) {
+        let matched = state.core_len;
+        result.reserve(g1.num_atoms());
+        result.extend(
+            c1[..matched]
+                .iter()
+                .copied()
+                .zip(c2[..matched].iter().copied()),
+        );
     }
     !result.is_empty()
 }
 
 fn vf2_entry_all(
-    g1: &Vf2Graph,
-    g2: &Vf2Graph,
+    g1: Vf2GraphRef<'_>,
+    g2: Vf2GraphRef<'_>,
     atom_fn: &impl Fn(usize, usize) -> bool,
     bond_fn: &impl Fn(usize, usize) -> bool,
     match_check: Option<&mut impl FnMut(&[NodeId], &[NodeId]) -> bool>,
-    results: &mut Vec<(Vec<NodeId>, Vec<NodeId>)>,
+    results: &mut Vec<Vec<(NodeId, NodeId)>>,
     max_results: usize,
 ) -> bool {
     vf2_entry_all_ordered(
@@ -2704,52 +2902,57 @@ fn vf2_entry_all(
 }
 
 fn vf2_entry_all_ordered(
-    g1: &Vf2Graph,
-    g2: &Vf2Graph,
+    g1: Vf2GraphRef<'_>,
+    g2: Vf2GraphRef<'_>,
     atom_fn: &impl Fn(usize, usize) -> bool,
     bond_fn: &impl Fn(usize, usize) -> bool,
     match_check: Option<&mut impl FnMut(&[NodeId], &[NodeId]) -> bool>,
-    results: &mut Vec<(Vec<NodeId>, Vec<NodeId>)>,
+    results: &mut Vec<Vec<(NodeId, NodeId)>>,
     max_results: usize,
     order: Option<&[usize]>,
 ) -> bool {
-    // RDKit✔️❌: template <class Graph, class VertexLabeling  // binary predicate
-    // RDKit✔️❌:           ,
-    // RDKit✔️❌:           class EdgeLabeling  // binary predicate
-    // RDKit✔️❌:           ,
-    // RDKit✔️❌:           class MatchChecking  // binary predicate
-    // RDKit✔️❌:           ,
-    // RDKit✔️❌:           class DoubleBackInsertionSequence  // contains a back insertion
-    // RDKit✔️❌:                                              // sequence
-    // RDKit✔️❌:           >
-    // RDKit✔️❌: bool vf2_all(const Graph &g1, const Graph &g2, VertexLabeling &vertex_labeling,
-    // RDKit✔️❌:              EdgeLabeling &edge_labeling, MatchChecking &match_checking,
-    // RDKit✔️❌:              DoubleBackInsertionSequence &F, unsigned int max_results = 1000) {
-    // RDKit✔️❌:   detail::VF2SubState<const Graph, VertexLabeling, EdgeLabeling, MatchChecking>
-    // RDKit✔️❌:       s0(&g1, &g2, vertex_labeling, edge_labeling, match_checking, false);
-    // RDKit✔️❌:   std::unique_ptr<detail::node_id[]> ni1(new detail::node_id[num_vertices(g1)]);
-    // RDKit✔️❌:   std::unique_ptr<detail::node_id[]> ni2(new detail::node_id[num_vertices(g2)]);
-    // RDKit✔️❌:
-    // RDKit✔️❌:   F.clear();
-    // RDKit✔️❌:   F.resize(0);
-    // RDKit✔️❌:
-    // RDKit✔️❌:   match(ni1.get(), ni2.get(), s0, F, max_results);
-    // RDKit✔️❌:
-    // RDKit✔️❌:   return !F.empty();
-    // RDKit✔️❌: };
-    // Complexity review: search order and result storage match RDKit. The known
-    // gap is the member core allocating mapping Vecs before each final check,
-    // while RDKit reuses ni1/ni2 across goal states.
+    // RDKit❗✔️: template <class Graph, class VertexLabeling  // binary predicate
+    // RDKit❗✔️:           ,
+    // RDKit❗✔️:           class EdgeLabeling  // binary predicate
+    // RDKit❗✔️:           ,
+    // RDKit❗✔️:           class MatchChecking  // binary predicate
+    // RDKit❗✔️:           ,
+    // RDKit❗✔️:           class DoubleBackInsertionSequence  // contains a back insertion
+    // RDKit❗✔️:                                              // sequence
+    // RDKit❗✔️:           >
+    // RDKit❗✔️: bool vf2_all(const Graph &g1, const Graph &g2, VertexLabeling &vertex_labeling,
+    // RDKit❗✔️:              EdgeLabeling &edge_labeling, MatchChecking &match_checking,
+    // RDKit❗✔️:              DoubleBackInsertionSequence &F, unsigned int max_results = 1000) {
+    // RDKit❗✔️:   detail::VF2SubState<const Graph, VertexLabeling, EdgeLabeling, MatchChecking>
+    // RDKit❗✔️:       s0(&g1, &g2, vertex_labeling, edge_labeling, match_checking, false);
+    // RDKit❗✔️:   std::unique_ptr<detail::node_id[]> ni1(new detail::node_id[num_vertices(g1)]);
+    // RDKit❗✔️:   std::unique_ptr<detail::node_id[]> ni2(new detail::node_id[num_vertices(g2)]);
+    // RDKit❗✔️:
+    // RDKit❗✔️:   F.clear();
+    // RDKit❗✔️:   F.resize(0);
+    // RDKit❗✔️:
+    // RDKit❗✔️:   match(ni1.get(), ni2.get(), s0, F, max_results);
+    // RDKit❗✔️:
+    // RDKit❗✔️:   return !F.empty();
+    // RDKit❗✔️: };
+    // Behavior: the same unsorted state and recursive order are retained; the
+    // limit stops only after an accepted mapping has entered the result list.
+    // Complexity: the two query-sized scratch arrays are reused at all goals;
+    // each accepted mapping gets one reserved vector of paired indices.
     let mut state = match order {
         Some(order) => Vf2SubState::with_order(g1, g2, order),
         None => Vf2SubState::new(g1, g2, false),
     };
+    let mut c1 = vec![NULL_NODE; g1.num_atoms()];
+    let mut c2 = vec![NULL_NODE; g1.num_atoms()];
     results.clear();
     vf2_match_all(
         &mut state,
         atom_fn,
         bond_fn,
         match_check,
+        &mut c1,
+        &mut c2,
         results,
         max_results,
     )
@@ -3591,7 +3794,8 @@ fn recursive_matcher(
     // RDKit✔️❌: }
     // Complexity review: nested preparation and VF2 follow the source. The
     // membership result is one O(target atoms) bool Vec in place of RDKit's
-    // ordered set, while the canonical VF2 mapping-allocation gap remains.
+    // ordered set; the root-only projection avoids constructing unused bond
+    // rows while the canonical VF2 goal-mapping allocations remain.
     let mut local_params = params.clone();
     local_params.max_matches = params.max_recursive_matches.max(params.max_matches);
     local_params.uniquify = false;
@@ -3605,20 +3809,21 @@ fn recursive_matcher(
         )?;
     }
 
-    // The source recursive matcher sees the same owning target's chemistry.
-    // Forward an explicitly supplied detached context through every depth;
-    // ordinary callers preserve the existing cold preparation path.
+    // Recursive queries see the same owning target chemistry; preserve both
+    // supplied prepared state and the atom-only projection through every depth.
     let matches = match query_context {
-        Some(context) => substruct_match_impl_with_recursive_cache_and_context(
-            mol,
-            query,
-            &local_params,
-            Some(recursive_cache),
-            context,
-            None,
-            None,
-        ),
-        None => substruct_match_impl_with_recursive_cache(
+        Some(context) => {
+            substruct_match_impl_with_recursive_cache_and_context::<AtomOnlyMatchResultProjection>(
+                mol,
+                query,
+                &local_params,
+                Some(recursive_cache),
+                context,
+                None,
+                None,
+            )
+        }
+        None => substruct_match_impl_with_recursive_cache::<AtomOnlyMatchResultProjection>(
             mol,
             query,
             &local_params,
@@ -3631,7 +3836,7 @@ fn recursive_matcher(
         .map_or(0, |root_index| root_index as u32 as usize);
     let mut match_starts = vec![false; mol.num_atoms()];
     for matched in matches.into_iter().take(local_params.max_matches) {
-        if let Some(&root_atom_idx) = matched.atom_mapping.get(root_index)
+        if let Some(&root_atom_idx) = matched.get(root_index)
             && root_atom_idx != NULL_NODE
             && root_atom_idx < match_starts.len()
         {
@@ -3746,14 +3951,14 @@ fn populate_recursive_query_match_cache(
     Ok(())
 }
 
-fn substruct_match_impl_with_recursive_cache(
+fn substruct_match_impl_with_recursive_cache<P: MatchResultProjection>(
     mol: &SearchTarget<'_>,
     query: &QueryGraph,
     params: &SubstructMatchParams,
     recursive_cache: Option<&RecursiveQueryMatchCache>,
-) -> SubstructMatchResultList {
+) -> Result<Vec<P::Output>, SubstructMatchError> {
     let query_ctx = build_query_match_context(mol);
-    substruct_match_impl_with_recursive_cache_and_context(
+    substruct_match_impl_with_recursive_cache_and_context::<P>(
         mol,
         query,
         params,
@@ -3764,7 +3969,74 @@ fn substruct_match_impl_with_recursive_cache(
     )
 }
 
-fn substruct_match_impl_with_recursive_cache_and_context(
+trait MatchResultProjection {
+    type Output;
+    fn project(
+        query: &QueryGraph,
+        target_graph: Vf2GraphRef<'_>,
+        atom_mapping: Vec<usize>,
+    ) -> Self::Output;
+}
+struct FullMatchResultProjection;
+impl MatchResultProjection for FullMatchResultProjection {
+    type Output = SubstructMatchResult;
+    fn project(
+        query: &QueryGraph,
+        target_graph: Vf2GraphRef<'_>,
+        atom_mapping: Vec<usize>,
+    ) -> Self::Output {
+        let bond_mapping = materialize_bond_mapping(query, target_graph, &atom_mapping);
+        SubstructMatchResult {
+            atom_mapping,
+            bond_mapping,
+        }
+    }
+}
+struct AtomOnlyMatchResultProjection;
+impl MatchResultProjection for AtomOnlyMatchResultProjection {
+    type Output = Vec<usize>;
+    fn project(
+        _query: &QueryGraph,
+        _target_graph: Vf2GraphRef<'_>,
+        atom_mapping: Vec<usize>,
+    ) -> Self::Output {
+        atom_mapping
+    }
+}
+#[cfg(test)]
+thread_local! {
+    static BOND_MAPPING_MATERIALIZATION_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+fn materialize_bond_mapping(
+    query: &QueryGraph,
+    target_graph: Vf2GraphRef<'_>,
+    atom_mapping: &[usize],
+) -> Vec<usize> {
+    // RDKit atom matches are projected above; the existing public full result also requires target bond indices.
+    #[cfg(test)]
+    BOND_MAPPING_MATERIALIZATION_COUNT.with(|count| count.set(count.get() + 1));
+    let mut bond_mapping = Vec::with_capacity(query.num_bonds());
+    for qbond in query.bonds() {
+        let q_begin = qbond.begin().index();
+        let q_end = qbond.end().index();
+        let m_begin = atom_mapping[q_begin];
+        let m_end = atom_mapping[q_end];
+        if m_begin != NULL_NODE && m_end != NULL_NODE {
+            let found = target_graph
+                .neighbor_row(m_begin)
+                .iter()
+                .find(|(neighbor, _)| *neighbor == m_end)
+                .map(|(_, edge)| edge);
+            bond_mapping.push(found.unwrap_or(NULL_NODE));
+        } else {
+            bond_mapping.push(NULL_NODE);
+        }
+    }
+
+    bond_mapping
+}
+
+fn substruct_match_impl_with_recursive_cache_and_context<P: MatchResultProjection>(
     mol: &SearchTarget<'_>,
     query: &QueryGraph,
     params: &SubstructMatchParams,
@@ -3772,7 +4044,7 @@ fn substruct_match_impl_with_recursive_cache_and_context(
     query_ctx: &QueryMatchContext,
     query_order: Option<&[usize]>,
     compiled_graph: Option<&CompiledQueryGraph>,
-) -> SubstructMatchResultList {
+) -> Result<Vec<P::Output>, SubstructMatchError> {
     let m_num_atoms = mol.num_atoms();
     let q_num_atoms = query.num_atoms();
 
@@ -3784,17 +4056,14 @@ fn substruct_match_impl_with_recursive_cache_and_context(
         return Ok(Vec::new());
     }
 
-    // RDKit passes query.getTopology() directly to boost::vf2_all. A compiled
-    // query therefore borrows its prebuilt graph instead of cloning O(Q+E)
-    // adjacency state on each use; the ordinary path still builds a local one.
-    let owned_q_graph;
-    let q_graph = if let Some(compiled_graph) = compiled_graph {
-        compiled_graph
-    } else {
-        owned_q_graph = build_vf2_graph(query);
-        &owned_q_graph
+    // RDKit's vf2_all receives the existing topology objects. The ordinary
+    // path borrows QueryGraph and SearchTarget adjacency; only a compiled
+    // query uses its already-retained owned graph. No graph is rebuilt here.
+    let q_graph = match compiled_graph {
+        Some(compiled_graph) => Vf2GraphRef::compiled(compiled_graph),
+        None => Vf2GraphRef::query(query),
     };
-    let m_graph = build_vf2_graph(mol);
+    let m_graph = Vf2GraphRef::target(mol.topology_block());
 
     // Build atom matching closure.
     // RDKit source:
@@ -3822,7 +4091,7 @@ fn substruct_match_impl_with_recursive_cache_and_context(
     //   bool found = boost::vf2_all(query.getTopology(), mol.getTopology(),
     //                               atomLabeler, bondLabeler, matchChecker,
     //                               pms, params.maxMatches);
-    let mut raw_matches: Vec<(Vec<NodeId>, Vec<NodeId>)> = Vec::new();
+    let mut raw_matches: Vec<Vec<(NodeId, NodeId)>> = Vec::new();
     let mut matches_seen: HashSet<Vec<bool>> = HashSet::new();
     let final_check_setup = MolMatchFinalCheckSetup::new(query, mol, params);
     let mut final_check_error: Option<SubstructMatchError> = None;
@@ -3846,7 +4115,7 @@ fn substruct_match_impl_with_recursive_cache_and_context(
 
     vf2_entry_all_ordered(
         q_graph,
-        &m_graph,
+        m_graph,
         &atom_fn,
         &bond_fn,
         Some(&mut check_fn),
@@ -3861,63 +4130,140 @@ fn substruct_match_impl_with_recursive_cache_and_context(
         return Err(err);
     }
 
-    // RDKit source (SubstructMatch.cpp):
-    //   if (found) {
-    //     const unsigned int nQueryAtoms = query.getNumAtoms();
-    //     matches.reserve(pms.size());
-    //     MatchVectType matchVect(nQueryAtoms);
-    //     for (const auto &pairs : pms) {
-    //       for (const auto &pair : pairs) {
-    //         matchVect[pair.first] = pair;
-    //       }
-    //       matches.push_back(matchVect);
-    //     }
-    //   }
-    let mut results: Vec<SubstructMatchResult> = Vec::new();
+    Ok(project_match_results::<P>(query, m_graph, &raw_matches))
+}
+fn project_match_results<P: MatchResultProjection>(
+    query: &QueryGraph,
+    target_graph: Vf2GraphRef<'_>,
+    raw_matches: &[Vec<(NodeId, NodeId)>],
+) -> Vec<P::Output> {
+    // RDKit source: third_party/rdkit/Code/GraphMol/Substruct/SubstructMatch.cpp
+    // RDKit✔️❌:   if (found) {
+    // RDKit✔️❌:     const unsigned int nQueryAtoms = query.getNumAtoms();
+    // RDKit✔️❌:     matches.reserve(pms.size());
+    // RDKit✔️❌:     MatchVectType matchVect(nQueryAtoms);
+    // RDKit✔️❌:     for (const auto &pairs : pms) {
+    // RDKit✔️❌:       for (const auto &pair : pairs) {
+    // RDKit✔️❌:         matchVect[pair.first] = pair;
+    // RDKit✔️❌:       }
+    // RDKit✔️❌:       matches.push_back(matchVect);
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:   }
+    // Behavior review: source-produced pairs populate their query-index slot,
+    // each accepted row remains in order, and the prior bounds guard and
+    // NULL_NODE output are preserved. P01 and the frozen S06/S08 routes pass.
+    // Complexity review: P01 verifies one reserved output outer vector, one
+    // direct final atom map per result, no reallocations, and no conversion
+    // scratch/copy. RDKit's MatchVectType is atom-only; this result also needs
+    // a bond map and incident-neighbor search per query bond. That required
+    // extra allocation/search remains source-relative overhead; this marker
+    // does not claim global matcher or projection allocation parity.
+    let q_num_atoms = query.num_atoms();
+    let mut results = Vec::with_capacity(raw_matches.len());
 
-    for (c1, c2) in &raw_matches {
-        // Build atom_mapping: query_atom_index -> mol_atom_index.
-        // RDKit uses MatchVectType (vector<pair<int,int>>) where
-        // pair.second is the mol atom index and pair.first is query atom index.
-        let mut atom_to_mol: Vec<Option<usize>> = vec![None; q_num_atoms];
-        for (&qa, &ma) in c1.iter().zip(c2.iter()) {
+    for pairs in raw_matches {
+        let mut atom_mapping = vec![NULL_NODE; q_num_atoms];
+        for &(qa, ma) in pairs {
             if qa < q_num_atoms {
-                atom_to_mol[qa] = Some(ma);
+                atom_mapping[qa] = ma;
             }
         }
 
-        // Build bond mapping by looking up bonds between matched atoms.
-        let mut bond_mapping = Vec::with_capacity(query.num_bonds());
-        for qbond in query.bonds() {
-            let q_begin = qbond.begin().index();
-            let q_end = qbond.end().index();
-            let m_begin = atom_to_mol[q_begin];
-            let m_end = atom_to_mol[q_end];
-            match (m_begin, m_end) {
-                (Some(mb), Some(me)) => {
-                    // Find bond between mb and me in mol.
-                    let found = m_graph.adjacency[mb]
-                        .iter()
-                        .find(|&&(nbr, _)| nbr == me)
-                        .map(|&(_, eidx)| eidx);
-                    bond_mapping.push(found.unwrap_or(NULL_NODE));
-                }
-                _ => {
-                    bond_mapping.push(NULL_NODE);
-                }
-            }
-        }
-
-        results.push(SubstructMatchResult {
-            atom_mapping: atom_to_mol
-                .into_iter()
-                .map(|x| x.unwrap_or(NULL_NODE))
-                .collect(),
-            bond_mapping,
-        });
+        results.push(P::project(query, target_graph, atom_mapping));
     }
 
-    Ok(results)
+    results
+}
+#[cfg(test)]
+fn project_substruct_matches(
+    query: &QueryGraph,
+    target_graph: Vf2GraphRef<'_>,
+    raw_matches: &[Vec<(NodeId, NodeId)>],
+) -> Vec<SubstructMatchResult> {
+    project_match_results::<FullMatchResultProjection>(query, target_graph, raw_matches)
+}
+
+fn substruct_matches_with_compiled_query<P: MatchResultProjection>(
+    mol: &SearchTarget<'_>,
+    query: &QueryGraph,
+    params: &SubstructMatchParams,
+    compiled_graph: &CompiledQueryGraph,
+) -> Result<Vec<P::Output>, SubstructMatchError> {
+    substruct_matches_with_compiled_query_and_context::<P>(mol, query, params, compiled_graph, None)
+}
+
+fn substruct_matches_with_compiled_query_and_context<P: MatchResultProjection>(
+    mol: &SearchTarget<'_>,
+    query: &QueryGraph,
+    params: &SubstructMatchParams,
+    compiled_graph: &CompiledQueryGraph,
+    query_context: Option<&QueryMatchContext>,
+) -> Result<Vec<P::Output>, SubstructMatchError> {
+    preflight_query_molecule(query)?;
+    if mol.num_atoms() == 0 || query.num_atoms() == 0 || query.num_atoms() > mol.num_atoms() {
+        return Ok(Vec::new());
+    }
+    let mut recursive_locker = RecursiveLocker::new(query, params.recursion_possible);
+    if params.recursion_possible {
+        populate_recursive_query_match_cache(
+            mol,
+            query,
+            params,
+            &mut recursive_locker.cache,
+            query_context,
+        )?;
+    }
+    let owned_query_context;
+    let query_ctx = match query_context {
+        Some(query_context) => query_context,
+        None => {
+            owned_query_context = build_query_match_context(mol);
+            &owned_query_context
+        }
+    };
+    // RDKit's `vf2_all` creates its initial state with `sortNodes=false`.
+    // Keep source graph order for deterministic enumeration even though the
+    // compiled plan retains its separate atom-order metadata.
+    substruct_match_impl_with_recursive_cache_and_context::<P>(
+        mol,
+        query,
+        params,
+        Some(&recursive_locker.cache),
+        &query_ctx,
+        None,
+        Some(compiled_graph),
+    )
+}
+
+#[allow(dead_code)] // Made cross-crate in the authorized Step 10 export.
+fn substruct_atom_matches_with_compiled_query(
+    mol: &SearchTarget<'_>,
+    query: &QueryGraph,
+    params: &SubstructMatchParams,
+    compiled_graph: &CompiledQueryGraph,
+) -> Result<Vec<Vec<usize>>, SubstructMatchError> {
+    substruct_matches_with_compiled_query::<AtomOnlyMatchResultProjection>(
+        mol,
+        query,
+        params,
+        compiled_graph,
+    )
+}
+
+pub(crate) fn try_get_substruct_atom_matches_with_compiled_query_and_context(
+    mol: &SearchTarget<'_>,
+    query: &QueryGraph,
+    params: &SubstructMatchParams,
+    compiled_graph: &CompiledQueryGraph,
+    query_context: &QueryMatchContext,
+) -> Result<Vec<Vec<usize>>, SubstructMatchError> {
+    substruct_matches_with_compiled_query_and_context::<AtomOnlyMatchResultProjection>(
+        mol,
+        query,
+        params,
+        compiled_graph,
+        Some(query_context),
+    )
 }
 
 fn atom_compat(
@@ -5018,11 +5364,17 @@ fn substruct_match_impl(
     // RDKit✔️❌:   }
     // RDKit✔️❌:   return matches;
     // RDKit✔️❌: }
-    // Complexity review: preflight adds one linear query-tree scan for
-    // fail-closed unsupported leaves. Recursive preparation, VF2 search, and
-    // result materialization otherwise retain RDKit's asymptotic behavior.
-    // The second marker remains ❌ because Rust's VF2 result path allocates
-    // mapping Vecs at goal checks, as documented on the canonical VF2 core.
+    // Complexity review: the fail-closed preflight adds one O(A+B+Q) query
+    // scan. The VF2 core now allocates its two query-sized mapping buffers
+    // once per invocation, reuses them at every goal, allocates no mapping
+    // output for rejected goals, and appends one paired vector per accepted
+    // all-match result. Ordinary/context calls borrow existing query/target
+    // adjacency; explicit compiled calls borrow their retained graph. These
+    // remove the prior per-goal mapping vectors and per-call graph rebuilds.
+    // The second marker remains ❌ for the distinct accepted-result projection
+    // cost: each row currently builds a temporary Vec<Option<usize>> and then
+    // collects a separate output atom map (along with the result bond map),
+    // while RDKit reuses its MatchVectType before copying each output row.
     preflight_query_molecule(query)?;
     if mol.num_atoms() == 0 || query.num_atoms() == 0 || query.num_atoms() > mol.num_atoms() {
         return Ok(Vec::new());
@@ -5037,7 +5389,12 @@ fn substruct_match_impl(
             None,
         )?;
     }
-    substruct_match_impl_with_recursive_cache(mol, query, params, Some(&recursive_locker.cache))
+    substruct_match_impl_with_recursive_cache::<FullMatchResultProjection>(
+        mol,
+        query,
+        params,
+        Some(&recursive_locker.cache),
+    )
 }
 
 /// Check if a molecule contains a substructure match for the given query.
@@ -5139,7 +5496,7 @@ pub fn try_get_substruct_matches_with_params_and_context(
             Some(query_context),
         )?;
     }
-    substruct_match_impl_with_recursive_cache_and_context(
+    substruct_match_impl_with_recursive_cache_and_context::<FullMatchResultProjection>(
         mol,
         query,
         params,
@@ -5151,7 +5508,7 @@ pub fn try_get_substruct_matches_with_params_and_context(
 }
 
 pub(crate) fn compile_query_order_from_graph(query: &CompiledQueryGraph) -> Vec<usize> {
-    sort_nodes_by_frequency(query)
+    sort_nodes_by_frequency(Vf2GraphRef::compiled(query))
 }
 
 pub(crate) fn compile_query_graph(query: &QueryGraph) -> CompiledQueryGraph {
@@ -5164,32 +5521,11 @@ pub(crate) fn get_substruct_matches_with_compiled_query(
     params: &SubstructMatchParams,
     compiled_graph: &CompiledQueryGraph,
 ) -> SubstructMatchResultList {
-    preflight_query_molecule(query)?;
-    if mol.num_atoms() == 0 || query.num_atoms() == 0 || query.num_atoms() > mol.num_atoms() {
-        return Ok(Vec::new());
-    }
-    let mut recursive_locker = RecursiveLocker::new(query, params.recursion_possible);
-    if params.recursion_possible {
-        populate_recursive_query_match_cache(
-            mol,
-            query,
-            params,
-            &mut recursive_locker.cache,
-            None,
-        )?;
-    }
-    let query_ctx = build_query_match_context(mol);
-    // RDKit's `vf2_all` creates its initial state with `sortNodes=false`.
-    // Keep source graph order for deterministic enumeration even though the
-    // compiled plan retains its separate atom-order metadata.
-    substruct_match_impl_with_recursive_cache_and_context(
+    substruct_matches_with_compiled_query::<FullMatchResultProjection>(
         mol,
         query,
         params,
-        Some(&recursive_locker.cache),
-        &query_ctx,
-        None,
-        Some(compiled_graph),
+        compiled_graph,
     )
 }
 
@@ -5564,5 +5900,2170 @@ mod q33_plain_atom_tests {
             &SubstructMatchParams::default(),
             &target_context,
         ));
+    }
+}
+
+#[cfg(test)]
+mod uff_one_fix_result_projection_tests {
+    use super::*;
+    use cosmolkit_model::{
+        AtomId, AtomSpec, BondId, BondSpec, CoordinateBlock, QueryAtom, QueryBond,
+        RecursiveStructureQuery, TopologyBlock,
+    };
+    use cosmolkit_types::Element;
+
+    fn atom(index: usize, element: Element) -> Atom {
+        Atom::from_spec(AtomId::new(index), AtomSpec::new(element))
+    }
+
+    fn target_topology(elements: &[Element], edges: &[(usize, usize)]) -> TopologyBlock {
+        let atoms = elements
+            .iter()
+            .copied()
+            .enumerate()
+            .map(|(index, element)| atom(index, element))
+            .collect();
+        let bonds = edges
+            .iter()
+            .copied()
+            .enumerate()
+            .map(|(index, (begin, end))| {
+                Bond::from_spec(
+                    BondId::new(index),
+                    BondSpec::new(AtomId::new(begin), AtomId::new(end), BondOrder::Single),
+                )
+            })
+            .collect();
+        TopologyBlock::try_from_parts(atoms, bonds, Vec::new(), Vec::new())
+            .expect("fixed Search projection target is valid")
+    }
+
+    fn query_graph(elements: &[Element], edges: &[(usize, usize)]) -> QueryGraph {
+        let atoms = elements
+            .iter()
+            .copied()
+            .enumerate()
+            .map(|(index, element)| {
+                let carrier = atom(index, element);
+                QueryAtom::from_carrier_parts(
+                    carrier.clone(),
+                    QueryNode::predicate(AtomQueryPredicate::AtomicNumber(carrier.atomic_number())),
+                )
+            })
+            .collect();
+        let bonds = edges
+            .iter()
+            .copied()
+            .enumerate()
+            .map(|(index, (begin, end))| {
+                let carrier = Bond::from_spec(
+                    BondId::new(index),
+                    BondSpec::new(AtomId::new(begin), AtomId::new(end), BondOrder::Single),
+                );
+                QueryBond::from_carrier_parts(
+                    carrier,
+                    QueryNode::predicate(BondQueryPredicate::Order(BondOrder::Single)),
+                )
+            })
+            .collect();
+        QueryGraph::from_parts(
+            atoms,
+            bonds,
+            Default::default(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        )
+        .expect("fixed Search projection query is valid")
+    }
+
+    fn assert_projection_matches_full(
+        target_topology: &TopologyBlock,
+        query: &QueryGraph,
+        params: &SubstructMatchParams,
+    ) -> Vec<Vec<usize>> {
+        let coordinates = CoordinateBlock::default();
+        let target = SearchTarget::new(
+            target_topology,
+            &coordinates,
+            &target_topology.stereo_groups,
+            None,
+            None,
+        );
+        let compiled_graph = compile_query_graph(query);
+        let query_context = build_query_match_context(&target);
+
+        BOND_MAPPING_MATERIALIZATION_COUNT.with(|count| count.set(0));
+        // Exercise the borrowed-context entry wired through the hidden
+        // cross-crate adapter used by the forcefields caller.
+        let atom_rows = try_get_substruct_atom_matches_with_compiled_query_and_context(
+            &target,
+            query,
+            params,
+            &compiled_graph,
+            &query_context,
+        )
+        .expect("atom-only projection keeps canonical matcher errors");
+        BOND_MAPPING_MATERIALIZATION_COUNT
+            .with(|count| assert_eq!(count.get(), 0, "atom-only projection built a bond map"));
+
+        let full_rows =
+            get_substruct_matches_with_compiled_query(&target, query, params, &compiled_graph)
+                .expect("full projection keeps canonical matcher errors");
+        BOND_MAPPING_MATERIALIZATION_COUNT.with(|count| {
+            assert_eq!(
+                count.get(),
+                full_rows.len(),
+                "each full hit materializes exactly one bond map"
+            )
+        });
+        let full_atom_rows = full_rows
+            .iter()
+            .map(|matched| matched.atom_mapping.clone())
+            .collect::<Vec<_>>();
+        assert_eq!(atom_rows, full_atom_rows);
+        atom_rows
+    }
+
+    #[test]
+    fn uff_one_fix_atom_projection_preserves_empty_and_no_hit_results() {
+        let target = target_topology(&[Element::C, Element::C], &[(0, 1)]);
+        let empty_query = query_graph(&[], &[]);
+        assert!(assert_projection_matches_full(
+            &target,
+            &empty_query,
+            &SubstructMatchParams::default(),
+        )
+        .is_empty());
+
+        let nitrogen_query = query_graph(&[Element::N], &[]);
+        assert!(
+            assert_projection_matches_full(
+                &target,
+                &nitrogen_query,
+                &SubstructMatchParams::default(),
+            )
+            .is_empty()
+        );
+    }
+
+    #[test]
+    fn uff_one_fix_atom_projection_preserves_multiple_hits_and_max_matches() {
+        let target = target_topology(&[Element::C, Element::C, Element::C], &[]);
+        let query = query_graph(&[Element::C], &[]);
+        for uniquify in [true, false] {
+            let params = SubstructMatchParams {
+                uniquify,
+                ..SubstructMatchParams::default()
+            };
+            assert_eq!(
+                assert_projection_matches_full(&target, &query, &params),
+                [vec![0], vec![1], vec![2]],
+                "uniquify={uniquify}"
+            );
+        }
+
+        let params = SubstructMatchParams {
+            max_matches: 1,
+            ..SubstructMatchParams::default()
+        };
+        assert_eq!(
+            assert_projection_matches_full(&target, &query, &params),
+            [vec![0]],
+        );
+    }
+
+    #[test]
+    fn uff_one_fix_atom_projection_preserves_symmetric_hit_order_and_uniqueness() {
+        let target = target_topology(&[Element::C, Element::C, Element::C], &[(0, 1), (1, 2)]);
+        let query = query_graph(&[Element::C, Element::C], &[(0, 1)]);
+
+        assert_eq!(
+            assert_projection_matches_full(&target, &query, &SubstructMatchParams::default(),),
+            [vec![0, 1], vec![1, 2]],
+        );
+        let params = SubstructMatchParams {
+            uniquify: false,
+            ..SubstructMatchParams::default()
+        };
+        assert_eq!(
+            assert_projection_matches_full(&target, &query, &params),
+            [vec![0, 1], vec![1, 0], vec![1, 2], vec![2, 1]],
+        );
+    }
+
+    #[test]
+    fn uff_one_fix_atom_projection_preserves_recursive_query_results() {
+        let target = target_topology(&[Element::C, Element::O, Element::C], &[(0, 1), (1, 2)]);
+        let mut inner_query = crate::parse_smarts("C-O", &crate::SmartsParseParams::default())
+            .expect("fixed recursive inner SMARTS parses");
+        inner_query.set_prop("_queryRootAtom", "0");
+        let recursive = RecursiveStructureQuery::from_query_graph(inner_query, 101);
+        let recursive_atom = QueryAtom::from_parts(
+            atom(0, Element::C),
+            QueryNode::predicate(AtomQueryPredicate::RecursiveSmarts(recursive)),
+        );
+        let query = QueryGraph::from_parts(
+            vec![recursive_atom],
+            Vec::new(),
+            Default::default(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        )
+        .expect("fixed recursive SMARTS graph is valid");
+
+        assert_eq!(
+            assert_projection_matches_full(&target, &query, &SubstructMatchParams::default(),),
+            [vec![0], vec![2]],
+        );
+    }
+}
+
+#[cfg(test)]
+mod search_shared_perf_allocator {
+    use std::alloc::{GlobalAlloc, Layout, System};
+    use std::cell::Cell;
+
+    std::thread_local! {
+        static TRACK_ALLOCATIONS: Cell<bool> = const { Cell::new(false) };
+        static ALLOCATIONS: Cell<usize> = const { Cell::new(0) };
+        static REALLOCATIONS: Cell<usize> = const { Cell::new(0) };
+    }
+
+    struct TestCountingAllocator;
+
+    // SAFETY: every allocation operation is forwarded to `System` with the
+    // exact layout and pointer supplied by the allocator caller. The counters
+    // observe only thread-local Cell state and do not inspect allocated bytes.
+    unsafe impl GlobalAlloc for TestCountingAllocator {
+        unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+            record_allocation();
+            // SAFETY: this forwards the original layout unchanged to System.
+            unsafe { System.alloc(layout) }
+        }
+
+        unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
+            record_allocation();
+            // SAFETY: this forwards the original layout unchanged to System.
+            unsafe { System.alloc_zeroed(layout) }
+        }
+
+        unsafe fn dealloc(&self, pointer: *mut u8, layout: Layout) {
+            // SAFETY: this forwards the original pointer/layout pair to System.
+            unsafe { System.dealloc(pointer, layout) }
+        }
+
+        unsafe fn realloc(&self, pointer: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
+            record_reallocation();
+            // SAFETY: this forwards the original pointer/layout and requested
+            // size unchanged to System.
+            unsafe { System.realloc(pointer, layout, new_size) }
+        }
+    }
+
+    #[global_allocator]
+    static TEST_ALLOCATOR: TestCountingAllocator = TestCountingAllocator;
+
+    #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+    pub(super) struct AllocationCounts {
+        pub(super) allocations: usize,
+        pub(super) reallocations: usize,
+    }
+
+    fn record_allocation() {
+        if TRACK_ALLOCATIONS.try_with(Cell::get).unwrap_or(false) {
+            let _ = ALLOCATIONS.try_with(|count| count.set(count.get().saturating_add(1)));
+        }
+    }
+
+    fn record_reallocation() {
+        if TRACK_ALLOCATIONS.try_with(Cell::get).unwrap_or(false) {
+            let _ = REALLOCATIONS.try_with(|count| count.set(count.get().saturating_add(1)));
+        }
+    }
+
+    struct TrackingGuard;
+
+    impl Drop for TrackingGuard {
+        fn drop(&mut self) {
+            let _ = TRACK_ALLOCATIONS.try_with(|tracking| tracking.set(false));
+        }
+    }
+
+    pub(super) fn measure_allocations(operation: impl FnOnce()) -> AllocationCounts {
+        // Warm all thread-local keys while tracking is disabled, so TLS setup
+        // cannot contaminate the measured region.
+        TRACK_ALLOCATIONS.with(|tracking| tracking.set(false));
+        ALLOCATIONS.with(|count| count.set(0));
+        REALLOCATIONS.with(|count| count.set(0));
+
+        let guard = TrackingGuard;
+        TRACK_ALLOCATIONS.with(|tracking| tracking.set(true));
+        operation();
+        drop(guard);
+
+        AllocationCounts {
+            allocations: ALLOCATIONS.with(Cell::get),
+            reallocations: REALLOCATIONS.with(Cell::get),
+        }
+    }
+}
+
+#[cfg(test)]
+mod search_projection_p01_tests {
+    use super::search_shared_perf_allocator::measure_allocations;
+    use super::{
+        NULL_NODE, NodeId, VF2_GRAPH_BUILD_ENTRIES, Vf2GraphRef, project_substruct_matches,
+    };
+    use cosmolkit_model::{
+        Atom, AtomId, AtomSpec, Bond, BondId, BondSpec, QueryAtom, QueryBond, QueryGraph,
+        TopologyBlock,
+    };
+    use cosmolkit_types::{BondOrder, Element};
+
+    struct FixedCase {
+        query_atoms: usize,
+        query_edges: &'static [(usize, usize)],
+        target_atoms: usize,
+        target_edges: &'static [(usize, usize)],
+        raw_rows: &'static [&'static [(usize, usize)]],
+        expected_atoms: &'static [&'static [usize]],
+        expected_bonds: &'static [&'static [usize]],
+    }
+
+    const CASES: [FixedCase; 4] = [
+        FixedCase {
+            query_atoms: 1,
+            query_edges: &[],
+            target_atoms: 3,
+            target_edges: &[(0, 1), (1, 2)],
+            raw_rows: &[&[(0, 0)], &[(0, 2)]],
+            expected_atoms: &[&[0], &[2]],
+            expected_bonds: &[&[], &[]],
+        },
+        FixedCase {
+            query_atoms: 2,
+            query_edges: &[(0, 1)],
+            target_atoms: 3,
+            target_edges: &[(0, 1), (1, 2)],
+            raw_rows: &[&[(0, 0), (1, 1)], &[(0, 2), (1, 1)]],
+            expected_atoms: &[&[0, 1], &[2, 1]],
+            expected_bonds: &[&[0], &[1]],
+        },
+        FixedCase {
+            query_atoms: 3,
+            query_edges: &[(0, 1), (1, 2)],
+            target_atoms: 4,
+            target_edges: &[(0, 1), (1, 2), (2, 3)],
+            raw_rows: &[&[(0, 0), (1, 1), (2, 2)], &[(0, 3), (1, 2), (2, 1)]],
+            expected_atoms: &[&[0, 1, 2], &[3, 2, 1]],
+            expected_bonds: &[&[0, 1], &[2, 1]],
+        },
+        FixedCase {
+            query_atoms: 2,
+            query_edges: &[],
+            target_atoms: 3,
+            target_edges: &[(0, 1), (1, 2)],
+            raw_rows: &[&[(0, 0), (1, 2)], &[(0, 2), (1, 0)]],
+            expected_atoms: &[&[0, 2], &[2, 0]],
+            expected_bonds: &[&[], &[]],
+        },
+    ];
+
+    // Frozen from the contract: A/D [0,2,3], B/C [0,3,5].
+    const EXPECTED_ALLOCATIONS: [[usize; 3]; 4] = [[0, 2, 3], [0, 3, 5], [0, 3, 5], [0, 2, 3]];
+
+    fn query(case: &FixedCase) -> QueryGraph {
+        let atoms = (0..case.query_atoms)
+            .map(|index| QueryAtom::new(AtomId::new(index), AtomSpec::new(Element::C)))
+            .collect();
+        let bonds = case
+            .query_edges
+            .iter()
+            .enumerate()
+            .map(|(index, &(begin, end))| {
+                QueryBond::new(
+                    BondId::new(index),
+                    BondSpec::new(AtomId::new(begin), AtomId::new(end), BondOrder::Single),
+                )
+            })
+            .collect();
+        QueryGraph::from_parts(
+            atoms,
+            bonds,
+            Default::default(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        )
+        .expect("P01 literal query graph is valid")
+    }
+
+    fn target(case: &FixedCase) -> TopologyBlock {
+        let atoms = (0..case.target_atoms)
+            .map(|index| Atom::from_spec(AtomId::new(index), AtomSpec::new(Element::C)))
+            .collect();
+        let bonds = case
+            .target_edges
+            .iter()
+            .enumerate()
+            .map(|(index, &(begin, end))| {
+                Bond::from_spec(
+                    BondId::new(index),
+                    BondSpec::new(AtomId::new(begin), AtomId::new(end), BondOrder::Single),
+                )
+            })
+            .collect();
+        TopologyBlock::try_from_parts(atoms, bonds, Vec::new(), Vec::new())
+            .expect("P01 literal target topology is valid")
+    }
+
+    #[test]
+    fn search_projection_p01_literal_rows_allocations_and_immutability() {
+        VF2_GRAPH_BUILD_ENTRIES.with(|entries| entries.set(0));
+        let mut actual_calls = 0;
+
+        for (case_index, case) in CASES.iter().enumerate() {
+            let query = query(case);
+            let target = target(case);
+
+            for goal_count in 0..=2 {
+                for reverse_pairs in [false, true] {
+                    let raw_matches: Vec<Vec<(NodeId, NodeId)>> = case
+                        .raw_rows
+                        .iter()
+                        .take(goal_count)
+                        .map(|row| {
+                            if reverse_pairs {
+                                row.iter().copied().rev().collect()
+                            } else {
+                                row.to_vec()
+                            }
+                        })
+                        .collect();
+                    let query_before = query.clone();
+                    let target_before = target.clone();
+                    let raw_matches_before = raw_matches.clone();
+                    let target_graph = Vf2GraphRef::target(&target);
+                    let builds_before = VF2_GRAPH_BUILD_ENTRIES.with(std::cell::Cell::get);
+
+                    let mut actual = Vec::new();
+                    let allocation_counts = measure_allocations(|| {
+                        actual = project_substruct_matches(&query, target_graph, &raw_matches);
+                    });
+
+                    let builds_after = VF2_GRAPH_BUILD_ENTRIES.with(std::cell::Cell::get);
+                    assert_eq!(
+                        builds_after, builds_before,
+                        "case {case_index}, goals {goal_count}, reversed {reverse_pairs} built a graph"
+                    );
+                    assert_eq!(
+                        allocation_counts.allocations, EXPECTED_ALLOCATIONS[case_index][goal_count],
+                        "case {case_index}, goals {goal_count}, reversed {reverse_pairs} allocation count"
+                    );
+                    assert_eq!(
+                        allocation_counts.reallocations, 0,
+                        "case {case_index}, goals {goal_count}, reversed {reverse_pairs} reallocated"
+                    );
+                    assert_eq!(actual.len(), goal_count);
+                    for row_index in 0..goal_count {
+                        assert_eq!(
+                            actual[row_index].atom_mapping.as_slice(),
+                            case.expected_atoms[row_index],
+                            "case {case_index}, row {row_index}, reversed {reverse_pairs} atom map"
+                        );
+                        assert_eq!(
+                            actual[row_index].bond_mapping.as_slice(),
+                            case.expected_bonds[row_index],
+                            "case {case_index}, row {row_index}, reversed {reverse_pairs} bond map"
+                        );
+                        assert!(
+                            actual[row_index]
+                                .atom_mapping
+                                .iter()
+                                .all(|&node| node != NULL_NODE),
+                            "all frozen accepted query atoms are mapped"
+                        );
+                    }
+                    assert_eq!(query, query_before, "P01 query was mutated");
+                    assert_eq!(target, target_before, "P01 target was mutated");
+                    assert_eq!(raw_matches, raw_matches_before, "P01 raw rows were mutated");
+                    actual_calls += 1;
+                }
+            }
+        }
+
+        assert_eq!(actual_calls, 24);
+    }
+}
+
+#[cfg(test)]
+mod search_shared_perf_s01_tests {
+    use super::search_shared_perf_allocator::measure_allocations;
+    use super::{NULL_NODE, NodeId, Vf2Graph, Vf2GraphRef, Vf2SubState};
+
+    #[derive(Clone, Copy)]
+    enum MappingShape {
+        None,
+        FirstOnly,
+        All,
+    }
+
+    fn empty_graph(n_atoms: usize) -> Vf2Graph {
+        Vf2Graph {
+            n_atoms,
+            n_bonds: 0,
+            edge_endpoints: Vec::new(),
+            adjacency: vec![Vec::new(); n_atoms],
+        }
+    }
+
+    fn state_for<'a>(
+        query: &'a Vf2Graph,
+        target: &'a Vf2Graph,
+        shape: MappingShape,
+    ) -> Vf2SubState<'a> {
+        const FIRST: &[(NodeId, NodeId)] = &[(0, 2)];
+        const ALL: &[(NodeId, NodeId)] = &[(0, 2), (1, 0), (2, 1)];
+
+        let mapping = match (query.n_atoms, shape) {
+            (0, _) | (1, MappingShape::None) | (3, MappingShape::None) => &[][..],
+            (1, MappingShape::FirstOnly | MappingShape::All) | (3, MappingShape::FirstOnly) => {
+                FIRST
+            }
+            (3, MappingShape::All) => ALL,
+            _ => unreachable!("S01 fixes query sizes to 0, 1, and 3"),
+        };
+
+        let mut state = Vf2SubState::new(
+            Vf2GraphRef::compiled(query),
+            Vf2GraphRef::compiled(target),
+            false,
+        );
+        for (depth, &(query_index, target_index)) in mapping.iter().enumerate() {
+            state.core_1[query_index] = target_index;
+            state.core_2[target_index] = query_index;
+            state.term_1[query_index] = depth + 1;
+            state.term_2[target_index] = depth + 1;
+        }
+        state.core_len = mapping.len();
+        state.t1_len = mapping.len();
+        state.t2_len = mapping.len();
+        state
+    }
+
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    struct StateSnapshot {
+        core_len: usize,
+        t1_len: usize,
+        t2_len: usize,
+        core_1: Vec<NodeId>,
+        core_2: Vec<NodeId>,
+        term_1: Vec<usize>,
+        term_2: Vec<usize>,
+    }
+
+    fn snapshot(state: &Vf2SubState<'_>) -> StateSnapshot {
+        StateSnapshot {
+            core_len: state.core_len,
+            t1_len: state.t1_len,
+            t2_len: state.t2_len,
+            core_1: state.core_1.clone(),
+            core_2: state.core_2.clone(),
+            term_1: state.term_1.clone(),
+            term_2: state.term_2.clone(),
+        }
+    }
+
+    #[test]
+    fn search_shared_perf_s01_extraction_writes_literal_prefix_without_allocating() {
+        let query_graphs = [empty_graph(0), empty_graph(1), empty_graph(3)];
+        let target_graph = empty_graph(3);
+        let shapes = [
+            MappingShape::None,
+            MappingShape::FirstOnly,
+            MappingShape::All,
+        ];
+        let mut states = Vec::with_capacity(9);
+        for query in &query_graphs {
+            for shape in shapes {
+                states.push(state_for(query, &target_graph, shape));
+            }
+        }
+
+        let sentinel = NULL_NODE - 1;
+        let mut scratch: Vec<(Vec<NodeId>, Vec<NodeId>)> = states
+            .iter()
+            .map(|state| (vec![sentinel; state.n1], vec![sentinel; state.n1]))
+            .collect();
+        for (state, (c1, c2)) in states.iter().zip(&scratch) {
+            assert_eq!(c1.capacity(), state.n1);
+            assert_eq!(c2.capacity(), state.n1);
+        }
+
+        // Literal source-order rows; do not infer expected values from core_1.
+        const EXPECTED: [(usize, &[NodeId], &[NodeId]); 9] = [
+            (0, &[], &[]),
+            (0, &[], &[]),
+            (0, &[], &[]),
+            (0, &[], &[]),
+            (1, &[0], &[2]),
+            (1, &[0], &[2]),
+            (0, &[], &[]),
+            (1, &[0], &[2]),
+            (3, &[0, 1, 2], &[2, 0, 1]),
+        ];
+        let before: Vec<_> = states.iter().map(snapshot).collect();
+        let identities: Vec<_> = scratch
+            .iter()
+            .map(|(c1, c2)| (c1.as_ptr(), c1.capacity(), c2.as_ptr(), c2.capacity()))
+            .collect();
+        let mut written = [usize::MAX; 9];
+        let mut calls = 0;
+
+        let allocations = measure_allocations(|| {
+            for index in 0..9 {
+                let (c1, c2) = &mut scratch[index];
+                written[index] = states[index].get_core_set_into(c1, c2);
+                calls += 1;
+            }
+        });
+
+        assert_eq!(calls, 9);
+        assert_eq!(allocations.allocations, 0);
+        assert_eq!(allocations.reallocations, 0);
+        for index in 0..9 {
+            let (expected_len, expected_c1, expected_c2) = EXPECTED[index];
+            assert_eq!(written[index], expected_len, "case {index}");
+            assert_eq!(
+                &scratch[index].0[..expected_len],
+                expected_c1,
+                "case {index}"
+            );
+            assert_eq!(
+                &scratch[index].1[..expected_len],
+                expected_c2,
+                "case {index}"
+            );
+            assert!(
+                scratch[index].0[expected_len..]
+                    .iter()
+                    .all(|&value| value == sentinel)
+            );
+            assert!(
+                scratch[index].1[expected_len..]
+                    .iter()
+                    .all(|&value| value == sentinel)
+            );
+
+            let (c1_ptr, c1_capacity, c2_ptr, c2_capacity) = identities[index];
+            assert_eq!(scratch[index].0.as_ptr(), c1_ptr, "case {index}");
+            assert_eq!(scratch[index].0.capacity(), c1_capacity, "case {index}");
+            assert_eq!(scratch[index].1.as_ptr(), c2_ptr, "case {index}");
+            assert_eq!(scratch[index].1.capacity(), c2_capacity, "case {index}");
+            assert_eq!(snapshot(&states[index]), before[index], "case {index}");
+        }
+    }
+}
+
+#[cfg(test)]
+mod search_shared_perf_s02_tests {
+    use super::{NodeId, Vf2Graph, Vf2GraphRef, vf2_entry_one};
+
+    type Mapping = &'static [(NodeId, NodeId)];
+    type Trace = &'static [Mapping];
+
+    const ONE_FIRST: Trace = &[&[(0, 0)]];
+    const ONE_ALL: Trace = &[&[(0, 0)], &[(0, 1)], &[(0, 2)]];
+    const TWO_FIRST: Trace = &[&[(0, 0), (1, 1)]];
+    const TWO_ALL: Trace = &[
+        &[(0, 0), (1, 1)],
+        &[(0, 0), (1, 2)],
+        &[(0, 1), (1, 0)],
+        &[(0, 1), (1, 2)],
+        &[(0, 2), (1, 0)],
+        &[(0, 2), (1, 1)],
+    ];
+    const TWO_THROUGH_FIRST_TARGET_TWO: Trace = &[
+        &[(0, 0), (1, 1)],
+        &[(0, 0), (1, 2)],
+        &[(0, 1), (1, 0)],
+        &[(0, 1), (1, 2)],
+        &[(0, 2), (1, 0)],
+    ];
+
+    fn empty_graph(n_atoms: usize) -> Vf2Graph {
+        Vf2Graph {
+            n_atoms,
+            n_bonds: 0,
+            edge_endpoints: Vec::new(),
+            adjacency: vec![Vec::new(); n_atoms],
+        }
+    }
+
+    fn expected_case(query_atoms: usize, policy: usize) -> (Trace, Option<Mapping>) {
+        match (query_atoms, policy) {
+            (1, 0) => (ONE_FIRST, Some(&[(0, 0)])),
+            (1, 1) => (ONE_ALL, None),
+            (1, 2) => (ONE_ALL, Some(&[(0, 2)])),
+            (1, 3) => (ONE_FIRST, Some(&[(0, 0)])),
+            (2, 0) => (TWO_FIRST, Some(&[(0, 0), (1, 1)])),
+            (2, 1) => (TWO_ALL, None),
+            (2, 2) => (TWO_THROUGH_FIRST_TARGET_TWO, Some(&[(0, 2), (1, 0)])),
+            (2, 3) => (TWO_FIRST, Some(&[(0, 0), (1, 1)])),
+            _ => unreachable!("S02 freezes query sizes one/two and four policies"),
+        }
+    }
+
+    #[test]
+    fn search_shared_perf_s02_first_match_preserves_literal_callback_order() {
+        let query_graphs = [empty_graph(1), empty_graph(2)];
+        let target_graph = empty_graph(3);
+        let atom_fn = |_: usize, _: usize| true;
+        let bond_fn = |_: usize, _: usize| true;
+        let mut actual_calls = 0;
+
+        for (query_index, query) in query_graphs.iter().enumerate() {
+            let query_atoms = query_index + 1;
+            for policy in 0..4 {
+                let (expected_trace, expected_result) = expected_case(query_atoms, policy);
+                let mut trace: Vec<Vec<(NodeId, NodeId)>> = Vec::new();
+                let mut goal_ordinal = 0;
+                let mut result = Vec::new();
+                let found = {
+                    let mut callback = |c1: &[NodeId], c2: &[NodeId]| {
+                        trace.push(c1.iter().copied().zip(c2.iter().copied()).collect());
+                        let ordinal = goal_ordinal;
+                        goal_ordinal += 1;
+                        match policy {
+                            0 => true,
+                            1 => false,
+                            2 => c2.first() == Some(&2),
+                            3 => ordinal % 2 == 0,
+                            _ => unreachable!("policy was frozen to four cases"),
+                        }
+                    };
+                    vf2_entry_one(
+                        Vf2GraphRef::compiled(query),
+                        Vf2GraphRef::compiled(&target_graph),
+                        &atom_fn,
+                        &bond_fn,
+                        Some(&mut callback),
+                        &mut result,
+                    )
+                };
+                actual_calls += 1;
+
+                assert_eq!(
+                    trace.len(),
+                    expected_trace.len(),
+                    "query/policy {query_atoms}/{policy}"
+                );
+                for (observed, expected) in trace.iter().zip(expected_trace) {
+                    assert_eq!(
+                        observed.as_slice(),
+                        *expected,
+                        "query/policy {query_atoms}/{policy}"
+                    );
+                }
+                assert_eq!(
+                    found,
+                    expected_result.is_some(),
+                    "query/policy {query_atoms}/{policy}"
+                );
+                assert_eq!(
+                    result.as_slice(),
+                    expected_result.unwrap_or(&[]),
+                    "query/policy {query_atoms}/{policy}"
+                );
+            }
+        }
+
+        assert_eq!(actual_calls, 8);
+    }
+}
+
+#[cfg(test)]
+mod search_shared_perf_s03_tests {
+    use super::search_shared_perf_allocator::measure_allocations;
+    use super::{NULL_NODE, NodeId, Vf2Graph, Vf2GraphRef, Vf2SubState, vf2_match_all};
+
+    type Mapping = &'static [(NodeId, NodeId)];
+    type Sequences = &'static [Mapping];
+
+    const ONE_GOALS: Sequences = &[&[(0, 0)], &[(0, 1)], &[(0, 2)]];
+    const TWO_GOALS: Sequences = &[
+        &[(0, 0), (1, 1)],
+        &[(0, 0), (1, 2)],
+        &[(0, 1), (1, 0)],
+        &[(0, 1), (1, 2)],
+        &[(0, 2), (1, 0)],
+        &[(0, 2), (1, 1)],
+    ];
+
+    const NO_SEQUENCES: Sequences = &[];
+    const ONE_TARGET_TWO: Sequences = &[&[(0, 2)]];
+    const ONE_EVEN_ORDINALS: Sequences = &[&[(0, 0)], &[(0, 2)]];
+    const TWO_TARGET_TWO: Sequences = &[&[(0, 2), (1, 0)], &[(0, 2), (1, 1)]];
+    const TWO_EVEN_ORDINALS: Sequences = &[&[(0, 0), (1, 1)], &[(0, 1), (1, 0)], &[(0, 2), (1, 0)]];
+
+    // Columns follow the literal limit list [0, 1, 2, 9]; rows are the four
+    // callback policies in their frozen order.
+    const ONE_TRACE_COUNTS: [[usize; 4]; 4] =
+        [[3, 1, 2, 3], [3, 3, 3, 3], [3, 3, 3, 3], [3, 1, 3, 3]];
+    const TWO_TRACE_COUNTS: [[usize; 4]; 4] =
+        [[6, 1, 2, 6], [6, 6, 6, 6], [6, 5, 6, 6], [6, 1, 3, 6]];
+
+    fn empty_graph(n_atoms: usize) -> Vf2Graph {
+        Vf2Graph {
+            n_atoms,
+            n_bonds: 0,
+            edge_endpoints: Vec::new(),
+            adjacency: vec![Vec::new(); n_atoms],
+        }
+    }
+
+    fn expected_sequences(query_index: usize, policy: usize) -> Sequences {
+        match (query_index, policy) {
+            (0, 0) => ONE_GOALS,
+            (0, 1) => NO_SEQUENCES,
+            (0, 2) => ONE_TARGET_TWO,
+            (0, 3) => ONE_EVEN_ORDINALS,
+            (1, 0) => TWO_GOALS,
+            (1, 1) => NO_SEQUENCES,
+            (1, 2) => TWO_TARGET_TWO,
+            (1, 3) => TWO_EVEN_ORDINALS,
+            _ => unreachable!("S03 freezes two query shapes and four policies"),
+        }
+    }
+
+    #[test]
+    fn search_shared_perf_s03_limits_order_backtracking_and_reject_allocations() {
+        let query_graphs = [empty_graph(1), empty_graph(2)];
+        let target_graph = empty_graph(3);
+        let atom_fn = |_: usize, _: usize| true;
+        let bond_fn = |_: usize, _: usize| true;
+        let limits = [0, 1, 2, 9];
+        let mut actual_calls = 0;
+        let mut measured_reject_calls = 0;
+
+        for (query_index, query) in query_graphs.iter().enumerate() {
+            let query_atoms = query_index + 1;
+            let all_goals = if query_index == 0 {
+                ONE_GOALS
+            } else {
+                TWO_GOALS
+            };
+            let trace_counts = if query_index == 0 {
+                ONE_TRACE_COUNTS
+            } else {
+                TWO_TRACE_COUNTS
+            };
+
+            for policy in 0..4 {
+                let accepted_sequences = expected_sequences(query_index, policy);
+                for (limit_index, limit) in limits.into_iter().enumerate() {
+                    let mut state = Vf2SubState::new(
+                        Vf2GraphRef::compiled(query),
+                        Vf2GraphRef::compiled(&target_graph),
+                        false,
+                    );
+                    let mut c1 = vec![NULL_NODE; query_atoms];
+                    let mut c2 = vec![NULL_NODE; query_atoms];
+                    let mut results: Vec<Vec<(NodeId, NodeId)>> = Vec::with_capacity(6);
+                    let mut trace = [[(NULL_NODE, NULL_NODE); 2]; 6];
+                    let mut trace_len = 0;
+                    let mut goal_ordinal = 0;
+                    let mut callback = |mapped_query: &[NodeId], mapped_target: &[NodeId]| {
+                        for pair_index in 0..mapped_query.len() {
+                            trace[trace_len][pair_index] =
+                                (mapped_query[pair_index], mapped_target[pair_index]);
+                        }
+                        trace_len += 1;
+                        let ordinal = goal_ordinal;
+                        goal_ordinal += 1;
+                        match policy {
+                            0 => true,
+                            1 => false,
+                            2 => mapped_target.first() == Some(&2),
+                            3 => ordinal % 2 == 0,
+                            _ => unreachable!("policy was frozen to four cases"),
+                        }
+                    };
+                    let measure_reject_case = query_index == 1 && policy == 1 && limit == 0;
+                    let mut found = false;
+                    let allocation_counts = if measure_reject_case {
+                        measured_reject_calls += 1;
+                        Some(measure_allocations(|| {
+                            found = vf2_match_all(
+                                &mut state,
+                                &atom_fn,
+                                &bond_fn,
+                                Some(&mut callback),
+                                &mut c1,
+                                &mut c2,
+                                &mut results,
+                                limit,
+                            );
+                        }))
+                    } else {
+                        found = vf2_match_all(
+                            &mut state,
+                            &atom_fn,
+                            &bond_fn,
+                            Some(&mut callback),
+                            &mut c1,
+                            &mut c2,
+                            &mut results,
+                            limit,
+                        );
+                        None
+                    };
+                    actual_calls += 1;
+
+                    let expected_trace_len = trace_counts[policy][limit_index];
+                    let expected_result_count = if limit == 0 {
+                        accepted_sequences.len()
+                    } else {
+                        accepted_sequences.len().min(limit)
+                    };
+                    assert_eq!(
+                        trace_len, expected_trace_len,
+                        "query/policy/limit {query_atoms}/{policy}/{limit}"
+                    );
+                    for (observed, expected) in trace[..trace_len]
+                        .iter()
+                        .zip(all_goals.iter().take(expected_trace_len))
+                    {
+                        assert_eq!(
+                            &observed[..query_atoms],
+                            *expected,
+                            "query/policy/limit {query_atoms}/{policy}/{limit}"
+                        );
+                    }
+                    assert_eq!(
+                        found,
+                        expected_result_count != 0,
+                        "query/policy/limit {query_atoms}/{policy}/{limit}"
+                    );
+                    assert_eq!(
+                        results.len(),
+                        expected_result_count,
+                        "query/policy/limit {query_atoms}/{policy}/{limit}"
+                    );
+                    for (observed, expected) in results
+                        .iter()
+                        .zip(accepted_sequences.iter().take(expected_result_count))
+                    {
+                        assert_eq!(
+                            observed.as_slice(),
+                            *expected,
+                            "query/policy/limit {query_atoms}/{policy}/{limit}"
+                        );
+                    }
+
+                    let reached_positive_limit = limit > 0 && expected_result_count >= limit;
+                    if !reached_positive_limit {
+                        assert_eq!(state.core_len, 0);
+                        assert_eq!(state.t1_len, 0);
+                        assert_eq!(state.t2_len, 0);
+                        assert!(state.core_1.iter().all(|&value| value == NULL_NODE));
+                        assert!(state.core_2.iter().all(|&value| value == NULL_NODE));
+                        assert!(state.term_1.iter().all(|&value| value == 0));
+                        assert!(state.term_2.iter().all(|&value| value == 0));
+                    }
+
+                    if measure_reject_case {
+                        let counts = allocation_counts.expect("reject-all case is measured");
+                        assert_eq!(counts.allocations, 0);
+                        assert_eq!(counts.reallocations, 0);
+                    } else {
+                        assert!(allocation_counts.is_none());
+                    }
+                }
+            }
+        }
+
+        assert_eq!(actual_calls, 32);
+        assert_eq!(measured_reject_calls, 1);
+    }
+}
+
+#[cfg(test)]
+mod search_shared_perf_s04_tests {
+    use super::search_shared_perf_allocator::measure_allocations;
+    use super::{Vf2Graph, Vf2GraphRef, Vf2NeighborRow, build_vf2_graph};
+    use cosmolkit_model::{
+        Atom, AtomId, AtomSpec, Bond, BondId, BondSpec, QueryAtom, QueryBond, QueryGraph,
+        TopologyBlock,
+    };
+    use cosmolkit_types::{BondOrder, Element};
+
+    const MAX_ATOMS: usize = 4;
+    const MAX_BONDS: usize = 3;
+    const MAX_DEGREE: usize = 3;
+    const UNUSED_PAIR: (usize, usize) = (usize::MAX, usize::MAX);
+
+    struct FixedShape {
+        atom_count: usize,
+        edges: &'static [(usize, usize)],
+        neighbors: &'static [&'static [(usize, usize)]],
+    }
+
+    const EMPTY: FixedShape = FixedShape {
+        atom_count: 0,
+        edges: &[],
+        neighbors: &[],
+    };
+    const CHAIN: FixedShape = FixedShape {
+        atom_count: 3,
+        edges: &[(0, 1), (1, 2)],
+        neighbors: &[&[(1, 0)], &[(0, 0), (2, 1)], &[(1, 1)]],
+    };
+    const BRANCHED: FixedShape = FixedShape {
+        atom_count: 4,
+        edges: &[(0, 1), (0, 2), (0, 3)],
+        neighbors: &[&[(1, 0), (2, 1), (3, 2)], &[(0, 0)], &[(0, 1)], &[(0, 2)]],
+    };
+    const TRIANGLE: FixedShape = FixedShape {
+        atom_count: 3,
+        edges: &[(0, 1), (1, 2), (2, 0)],
+        neighbors: &[&[(1, 0), (2, 2)], &[(0, 0), (2, 1)], &[(1, 1), (0, 2)]],
+    };
+    const SHAPES: [FixedShape; 4] = [EMPTY, CHAIN, BRANCHED, TRIANGLE];
+
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    struct ViewObservation {
+        atom_count: usize,
+        bond_count: usize,
+        degrees: [usize; MAX_ATOMS],
+        row_lengths: [usize; MAX_ATOMS],
+        iterator_lengths_before: [usize; MAX_ATOMS],
+        iterator_lengths_after: [usize; MAX_ATOMS],
+        iterated: [[(usize, usize); MAX_DEGREE]; MAX_ATOMS],
+        indexed: [[(usize, usize); MAX_DEGREE]; MAX_ATOMS],
+        row_pointers: [*const (); MAX_ATOMS],
+        endpoints: [(usize, usize); MAX_BONDS],
+    }
+
+    impl Default for ViewObservation {
+        fn default() -> Self {
+            Self {
+                atom_count: 0,
+                bond_count: 0,
+                degrees: [0; MAX_ATOMS],
+                row_lengths: [0; MAX_ATOMS],
+                iterator_lengths_before: [0; MAX_ATOMS],
+                iterator_lengths_after: [0; MAX_ATOMS],
+                iterated: [[UNUSED_PAIR; MAX_DEGREE]; MAX_ATOMS],
+                indexed: [[UNUSED_PAIR; MAX_DEGREE]; MAX_ATOMS],
+                row_pointers: [std::ptr::null(); MAX_ATOMS],
+                endpoints: [UNUSED_PAIR; MAX_BONDS],
+            }
+        }
+    }
+
+    fn atoms(count: usize) -> Vec<Atom> {
+        (0..count)
+            .map(|index| Atom::from_spec(AtomId::new(index), AtomSpec::new(Element::C)))
+            .collect()
+    }
+
+    fn bonds(shape: &FixedShape) -> Vec<Bond> {
+        shape
+            .edges
+            .iter()
+            .enumerate()
+            .map(|(index, &(begin, end))| {
+                Bond::from_spec(
+                    BondId::new(index),
+                    BondSpec::new(AtomId::new(begin), AtomId::new(end), BondOrder::Single),
+                )
+            })
+            .collect()
+    }
+
+    fn query(shape: &FixedShape) -> QueryGraph {
+        let query_atoms = (0..shape.atom_count)
+            .map(|index| QueryAtom::new(AtomId::new(index), AtomSpec::new(Element::C)))
+            .collect();
+        let query_bonds = shape
+            .edges
+            .iter()
+            .enumerate()
+            .map(|(index, &(begin, end))| {
+                QueryBond::new(
+                    BondId::new(index),
+                    BondSpec::new(AtomId::new(begin), AtomId::new(end), BondOrder::Single),
+                )
+            })
+            .collect();
+        QueryGraph::from_parts(
+            query_atoms,
+            query_bonds,
+            Default::default(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        )
+        .expect("fixed S04 query graph is valid")
+    }
+
+    fn target(shape: &FixedShape) -> TopologyBlock {
+        TopologyBlock::try_from_parts(
+            atoms(shape.atom_count),
+            bonds(shape),
+            Vec::new(),
+            Vec::new(),
+        )
+        .expect("fixed S04 target topology is valid")
+    }
+
+    fn make_view<'a>(
+        shape_index: usize,
+        representation: usize,
+        queries: &'a [QueryGraph; 4],
+        targets: &'a [TopologyBlock; 4],
+        compiled: &'a [Vf2Graph; 4],
+    ) -> Vf2GraphRef<'a> {
+        match representation {
+            0 => Vf2GraphRef::query(&queries[shape_index]),
+            1 => Vf2GraphRef::target(&targets[shape_index]),
+            2 => Vf2GraphRef::compiled(&compiled[shape_index]),
+            _ => unreachable!("S04 freezes Query, Target and Compiled views"),
+        }
+    }
+
+    fn borrowed_row_pointer(row: Vf2NeighborRow<'_>) -> *const () {
+        match row {
+            Vf2NeighborRow::Pairs(row) => row.as_ptr().cast(),
+            Vf2NeighborRow::NeighborRefs(row) => row.as_ptr().cast(),
+        }
+    }
+
+    fn owner_row_pointer(view: Vf2GraphRef<'_>, node: usize) -> *const () {
+        match view {
+            Vf2GraphRef::Query(graph) => graph.adjacency()[node].as_ptr().cast(),
+            Vf2GraphRef::Target(graph) => graph.adjacency.neighbors_of(node).as_ptr().cast(),
+            Vf2GraphRef::Compiled(graph) => graph.adjacency[node].as_ptr().cast(),
+        }
+    }
+
+    fn observe(view: Vf2GraphRef<'_>, observation: &mut ViewObservation) {
+        observation.atom_count = view.num_atoms();
+        observation.bond_count = view.num_bonds();
+        for node in 0..observation.atom_count {
+            let row = view.neighbor_row(node);
+            observation.degrees[node] = view.out_degree(node);
+            observation.row_lengths[node] = row.len();
+            observation.row_pointers[node] = borrowed_row_pointer(row);
+
+            let mut iterator = row.iter();
+            observation.iterator_lengths_before[node] = iterator.len();
+            let mut index = 0;
+            while let Some(pair) = iterator.next() {
+                observation.iterated[node][index] = pair;
+                index += 1;
+            }
+            observation.iterator_lengths_after[node] = iterator.len();
+
+            for index in 0..row.len() {
+                observation.indexed[node][index] = row.get(index).unwrap_or(UNUSED_PAIR);
+            }
+        }
+        for edge in 0..observation.bond_count {
+            observation.endpoints[edge] = view.bond_endpoints(edge);
+        }
+    }
+
+    #[test]
+    fn search_shared_perf_s04_borrowed_views_match_literal_owners_without_allocation() {
+        let queries: [QueryGraph; 4] = std::array::from_fn(|index| query(&SHAPES[index]));
+        let targets: [TopologyBlock; 4] = std::array::from_fn(|index| target(&SHAPES[index]));
+        let compiled: [Vf2Graph; 4] = std::array::from_fn(|index| build_vf2_graph(&queries[index]));
+        let queries_before = queries.clone();
+        let targets_before = targets.clone();
+        let compiled_before = compiled.clone();
+
+        let mut expected_row_pointers = [[std::ptr::null(); MAX_ATOMS]; 12];
+        for shape_index in 0..SHAPES.len() {
+            for representation in 0..3 {
+                let case_index = shape_index * 3 + representation;
+                let view = make_view(shape_index, representation, &queries, &targets, &compiled);
+                for node in 0..SHAPES[shape_index].atom_count {
+                    expected_row_pointers[case_index][node] = owner_row_pointer(view, node);
+                }
+            }
+        }
+
+        let mut observations = [ViewObservation::default(); 12];
+        let mut actual_views = 0;
+        let allocations = measure_allocations(|| {
+            for shape_index in 0..SHAPES.len() {
+                for representation in 0..3 {
+                    let view =
+                        make_view(shape_index, representation, &queries, &targets, &compiled);
+                    observe(view, &mut observations[actual_views]);
+                    actual_views += 1;
+                }
+            }
+        });
+
+        assert_eq!(actual_views, 12);
+        assert_eq!(allocations.allocations, 0);
+        assert_eq!(allocations.reallocations, 0);
+        assert_eq!(queries, queries_before);
+        assert_eq!(targets, targets_before);
+        assert_eq!(compiled, compiled_before);
+
+        for (case_index, observation) in observations.iter().enumerate() {
+            let shape_index = case_index / 3;
+            let shape = &SHAPES[shape_index];
+            assert_eq!(
+                observation.atom_count, shape.atom_count,
+                "case {case_index}"
+            );
+            assert_eq!(
+                observation.bond_count,
+                shape.edges.len(),
+                "case {case_index}"
+            );
+            for node in 0..shape.atom_count {
+                let expected_row = shape.neighbors[node];
+                let degree = expected_row.len();
+                assert_eq!(
+                    observation.degrees[node], degree,
+                    "case/node {case_index}/{node}"
+                );
+                assert_eq!(
+                    observation.row_lengths[node], degree,
+                    "case/node {case_index}/{node}"
+                );
+                assert_eq!(
+                    observation.iterator_lengths_before[node], degree,
+                    "case/node {case_index}/{node}"
+                );
+                assert_eq!(
+                    observation.iterator_lengths_after[node], 0,
+                    "case/node {case_index}/{node}"
+                );
+                assert_eq!(
+                    &observation.iterated[node][..degree],
+                    expected_row,
+                    "ordered iterator case/node {case_index}/{node}"
+                );
+                assert_eq!(
+                    &observation.indexed[node][..degree],
+                    expected_row,
+                    "indexed row case/node {case_index}/{node}"
+                );
+                assert!(
+                    observation.iterated[node][degree..]
+                        .iter()
+                        .all(|pair| *pair == UNUSED_PAIR)
+                );
+                assert!(
+                    observation.indexed[node][degree..]
+                        .iter()
+                        .all(|pair| *pair == UNUSED_PAIR)
+                );
+                assert_eq!(
+                    observation.row_pointers[node], expected_row_pointers[case_index][node],
+                    "borrowed identity case/node {case_index}/{node}"
+                );
+
+                for &(neighbor, edge) in expected_row {
+                    let (begin, end) = observation.endpoints[edge];
+                    assert!(
+                        (begin == node && end == neighbor) || (begin == neighbor && end == node),
+                        "endpoint orientations case/node/edge {case_index}/{node}/{edge}"
+                    );
+                }
+            }
+            assert_eq!(
+                &observation.endpoints[..shape.edges.len()],
+                shape.edges,
+                "literal endpoint order case {case_index}"
+            );
+            assert!(
+                observation.endpoints[shape.edges.len()..]
+                    .iter()
+                    .all(|pair| *pair == UNUSED_PAIR)
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+mod search_shared_perf_s05_tests {
+    use super::{NULL_NODE, NodeId, Vf2GraphRef, Vf2SubState, vf2_entry_one, vf2_match_all};
+    use cosmolkit_model::{Atom, AtomId, AtomSpec, QueryAtom, QueryGraph, TopologyBlock};
+    use cosmolkit_types::Element;
+
+    type Mapping = &'static [(NodeId, NodeId)];
+    type Sequences = &'static [Mapping];
+    type Trace = &'static [Mapping];
+
+    const ONE_GOALS: Sequences = &[&[(0, 0)], &[(0, 1)], &[(0, 2)]];
+    const TWO_GOALS: Sequences = &[
+        &[(0, 0), (1, 1)],
+        &[(0, 0), (1, 2)],
+        &[(0, 1), (1, 0)],
+        &[(0, 1), (1, 2)],
+        &[(0, 2), (1, 0)],
+        &[(0, 2), (1, 1)],
+    ];
+    const NO_SEQUENCES: Sequences = &[];
+    const ONE_TARGET_TWO: Sequences = &[&[(0, 2)]];
+    const ONE_EVEN_ORDINALS: Sequences = &[&[(0, 0)], &[(0, 2)]];
+    const TWO_TARGET_TWO: Sequences = &[&[(0, 2), (1, 0)], &[(0, 2), (1, 1)]];
+    const TWO_EVEN_ORDINALS: Sequences = &[&[(0, 0), (1, 1)], &[(0, 1), (1, 0)], &[(0, 2), (1, 0)]];
+
+    const ONE_FIRST: Trace = &[&[(0, 0)]];
+    const ONE_ALL: Trace = &[&[(0, 0)], &[(0, 1)], &[(0, 2)]];
+    const TWO_FIRST: Trace = &[&[(0, 0), (1, 1)]];
+    const TWO_ALL: Trace = &[
+        &[(0, 0), (1, 1)],
+        &[(0, 0), (1, 2)],
+        &[(0, 1), (1, 0)],
+        &[(0, 1), (1, 2)],
+        &[(0, 2), (1, 0)],
+        &[(0, 2), (1, 1)],
+    ];
+    const TWO_THROUGH_FIRST_TARGET_TWO: Trace = &[
+        &[(0, 0), (1, 1)],
+        &[(0, 0), (1, 2)],
+        &[(0, 1), (1, 0)],
+        &[(0, 1), (1, 2)],
+        &[(0, 2), (1, 0)],
+    ];
+
+    const LIMITS: [usize; 4] = [0, 1, 2, 9];
+    const TRACE_COUNTS: [[[usize; 4]; 4]; 2] = [
+        [[3, 1, 2, 3], [3, 3, 3, 3], [3, 3, 3, 3], [3, 1, 3, 3]],
+        [[6, 1, 2, 6], [6, 6, 6, 6], [6, 5, 6, 6], [6, 1, 3, 6]],
+    ];
+
+    fn empty_query(atom_count: usize) -> QueryGraph {
+        let atoms = (0..atom_count)
+            .map(|index| QueryAtom::new(AtomId::new(index), AtomSpec::new(Element::C)))
+            .collect();
+        QueryGraph::from_parts(
+            atoms,
+            Vec::new(),
+            Default::default(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        )
+        .expect("fixed S05 query is valid")
+    }
+
+    fn empty_target(atom_count: usize) -> TopologyBlock {
+        let atoms = (0..atom_count)
+            .map(|index| Atom::from_spec(AtomId::new(index), AtomSpec::new(Element::C)))
+            .collect();
+        TopologyBlock::try_from_parts(atoms, Vec::new(), Vec::new(), Vec::new())
+            .expect("fixed S05 target topology is valid")
+    }
+
+    fn first_expected(query_index: usize, policy: usize) -> (Trace, Option<Mapping>) {
+        match (query_index, policy) {
+            (0, 0) => (ONE_FIRST, Some(&[(0, 0)])),
+            (0, 1) => (ONE_ALL, None),
+            (0, 2) => (ONE_ALL, Some(&[(0, 2)])),
+            (0, 3) => (ONE_FIRST, Some(&[(0, 0)])),
+            (1, 0) => (TWO_FIRST, Some(&[(0, 0), (1, 1)])),
+            (1, 1) => (TWO_ALL, None),
+            (1, 2) => (TWO_THROUGH_FIRST_TARGET_TWO, Some(&[(0, 2), (1, 0)])),
+            (1, 3) => (TWO_FIRST, Some(&[(0, 0), (1, 1)])),
+            _ => unreachable!("S05 freezes two query shapes and four policies"),
+        }
+    }
+
+    fn all_expected(query_index: usize, policy: usize) -> Sequences {
+        match (query_index, policy) {
+            (0, 0) => ONE_GOALS,
+            (0, 1) => NO_SEQUENCES,
+            (0, 2) => ONE_TARGET_TWO,
+            (0, 3) => ONE_EVEN_ORDINALS,
+            (1, 0) => TWO_GOALS,
+            (1, 1) => NO_SEQUENCES,
+            (1, 2) => TWO_TARGET_TWO,
+            (1, 3) => TWO_EVEN_ORDINALS,
+            _ => unreachable!("S05 freezes two query shapes and four policies"),
+        }
+    }
+
+    // These are the same 8 first-match and 32 all-match literal cases as
+    // S02/S03, rerun through QueryGraph and TopologyBlock borrowed storage.
+    #[test]
+    fn search_shared_perf_s05_first_match_uses_borrowed_query_target_views() {
+        let query_graphs = [empty_query(1), empty_query(2)];
+        let target_graph = empty_target(3);
+        let query_graphs_before = query_graphs.clone();
+        let target_graph_before = target_graph.clone();
+        let atom_fn = |_: usize, _: usize| true;
+        let bond_fn = |_: usize, _: usize| true;
+        let mut actual_calls = 0;
+
+        for (query_index, query) in query_graphs.iter().enumerate() {
+            let query_view = Vf2GraphRef::query(query);
+            let target_view = Vf2GraphRef::target(&target_graph);
+            for policy in 0..4 {
+                let (expected_trace, expected_result) = first_expected(query_index, policy);
+                let mut trace: Vec<Vec<(NodeId, NodeId)>> = Vec::new();
+                let mut goal_ordinal = 0;
+                let mut result = Vec::new();
+                let found = {
+                    let mut callback = |c1: &[NodeId], c2: &[NodeId]| {
+                        trace.push(c1.iter().copied().zip(c2.iter().copied()).collect());
+                        let ordinal = goal_ordinal;
+                        goal_ordinal += 1;
+                        match policy {
+                            0 => true,
+                            1 => false,
+                            2 => c2.first() == Some(&2),
+                            3 => ordinal % 2 == 0,
+                            _ => unreachable!("policy was frozen to four cases"),
+                        }
+                    };
+                    vf2_entry_one(
+                        query_view,
+                        target_view,
+                        &atom_fn,
+                        &bond_fn,
+                        Some(&mut callback),
+                        &mut result,
+                    )
+                };
+                actual_calls += 1;
+
+                assert_eq!(
+                    trace.len(),
+                    expected_trace.len(),
+                    "query/policy {}/{policy}",
+                    query_index + 1
+                );
+                for (observed, expected) in trace.iter().zip(expected_trace) {
+                    assert_eq!(
+                        observed.as_slice(),
+                        *expected,
+                        "query/policy {}/{policy}",
+                        query_index + 1
+                    );
+                }
+                assert_eq!(
+                    found,
+                    expected_result.is_some(),
+                    "query/policy {}/{policy}",
+                    query_index + 1
+                );
+                assert_eq!(
+                    result.as_slice(),
+                    expected_result.unwrap_or(&[]),
+                    "query/policy {}/{policy}",
+                    query_index + 1
+                );
+            }
+        }
+
+        assert_eq!(actual_calls, 8);
+        assert_eq!(query_graphs, query_graphs_before);
+        assert_eq!(target_graph, target_graph_before);
+    }
+
+    #[test]
+    fn search_shared_perf_s05_all_match_uses_borrowed_query_target_views() {
+        let query_graphs = [empty_query(1), empty_query(2)];
+        let target_graph = empty_target(3);
+        let query_graphs_before = query_graphs.clone();
+        let target_graph_before = target_graph.clone();
+        let atom_fn = |_: usize, _: usize| true;
+        let bond_fn = |_: usize, _: usize| true;
+        let mut actual_calls = 0;
+
+        for (query_index, query) in query_graphs.iter().enumerate() {
+            let query_atoms = query_index + 1;
+            let query_view = Vf2GraphRef::query(query);
+            let target_view = Vf2GraphRef::target(&target_graph);
+            let all_goals = if query_index == 0 {
+                ONE_GOALS
+            } else {
+                TWO_GOALS
+            };
+
+            for policy in 0..4 {
+                let accepted_sequences = all_expected(query_index, policy);
+                for (limit_index, limit) in LIMITS.into_iter().enumerate() {
+                    let mut state = Vf2SubState::new(query_view, target_view, false);
+                    let mut c1 = vec![NULL_NODE; query_atoms];
+                    let mut c2 = vec![NULL_NODE; query_atoms];
+                    let mut results: Vec<Vec<(NodeId, NodeId)>> = Vec::new();
+                    let mut trace = [[(NULL_NODE, NULL_NODE); 2]; 6];
+                    let mut trace_len = 0;
+                    let mut goal_ordinal = 0;
+                    let mut callback = |mapped_query: &[NodeId], mapped_target: &[NodeId]| {
+                        for pair_index in 0..mapped_query.len() {
+                            trace[trace_len][pair_index] =
+                                (mapped_query[pair_index], mapped_target[pair_index]);
+                        }
+                        trace_len += 1;
+                        let ordinal = goal_ordinal;
+                        goal_ordinal += 1;
+                        match policy {
+                            0 => true,
+                            1 => false,
+                            2 => mapped_target.first() == Some(&2),
+                            3 => ordinal % 2 == 0,
+                            _ => unreachable!("policy was frozen to four cases"),
+                        }
+                    };
+                    let found = vf2_match_all(
+                        &mut state,
+                        &atom_fn,
+                        &bond_fn,
+                        Some(&mut callback),
+                        &mut c1,
+                        &mut c2,
+                        &mut results,
+                        limit,
+                    );
+                    actual_calls += 1;
+
+                    let expected_trace_len = TRACE_COUNTS[query_index][policy][limit_index];
+                    let expected_result_count = if limit == 0 {
+                        accepted_sequences.len()
+                    } else {
+                        accepted_sequences.len().min(limit)
+                    };
+                    assert_eq!(
+                        trace_len, expected_trace_len,
+                        "query/policy/limit {query_atoms}/{policy}/{limit}"
+                    );
+                    for (observed, expected) in trace[..trace_len]
+                        .iter()
+                        .zip(all_goals.iter().take(expected_trace_len))
+                    {
+                        assert_eq!(
+                            &observed[..query_atoms],
+                            *expected,
+                            "query/policy/limit {query_atoms}/{policy}/{limit}"
+                        );
+                    }
+                    assert_eq!(
+                        found,
+                        expected_result_count != 0,
+                        "query/policy/limit {query_atoms}/{policy}/{limit}"
+                    );
+                    assert_eq!(
+                        results.len(),
+                        expected_result_count,
+                        "query/policy/limit {query_atoms}/{policy}/{limit}"
+                    );
+                    for (observed, expected) in results
+                        .iter()
+                        .zip(accepted_sequences.iter().take(expected_result_count))
+                    {
+                        assert_eq!(
+                            observed.as_slice(),
+                            *expected,
+                            "query/policy/limit {query_atoms}/{policy}/{limit}"
+                        );
+                    }
+
+                    let reached_positive_limit = limit > 0 && expected_result_count >= limit;
+                    if !reached_positive_limit {
+                        assert_eq!(state.core_len, 0);
+                        assert_eq!(state.t1_len, 0);
+                        assert_eq!(state.t2_len, 0);
+                        assert!(state.core_1.iter().all(|&value| value == NULL_NODE));
+                        assert!(state.core_2.iter().all(|&value| value == NULL_NODE));
+                        assert!(state.term_1.iter().all(|&value| value == 0));
+                        assert!(state.term_2.iter().all(|&value| value == 0));
+                    }
+                }
+            }
+        }
+
+        assert_eq!(actual_calls, 32);
+        assert_eq!(query_graphs, query_graphs_before);
+        assert_eq!(target_graph, target_graph_before);
+    }
+}
+
+#[cfg(test)]
+mod search_shared_perf_s06_tests {
+    use super::{
+        SubstructMatchParams, VF2_GRAPH_BUILD_ENTRIES, compile_query_graph,
+        get_substruct_matches_with_compiled_query, substruct_match_impl,
+        try_get_substruct_matches_with_params_and_context,
+    };
+    use crate::{
+        SearchTarget, SearchTargetAccess, SmartsParseParams, build_prepared_query_match_context,
+        parse_smarts,
+    };
+    use cosmolkit_core::{ValenceModel, assign_valence_with_options_for_topology, fast_find_rings};
+    use cosmolkit_model::{
+        Atom, AtomId, AtomSpec, Bond, BondId, BondSpec, CoordinateBlock, QueryGraph, TopologyBlock,
+    };
+    use cosmolkit_types::{BondOrder, Element};
+
+    type ExpectedRows = &'static [(&'static [usize], &'static [usize])];
+
+    const Q76_EXPECTED: ExpectedRows = &[
+        (&[1, 2, 3], &[1, 2]),
+        (&[4, 5, 6], &[4, 5]),
+        (&[5, 4, 3], &[4, 3]),
+    ];
+    const NO_MATCHES: ExpectedRows = &[];
+    const DISCONNECTED_EXPECTED: ExpectedRows = &[
+        (&[0, 1], &[]),
+        (&[0, 2], &[]),
+        (&[1, 0], &[]),
+        (&[1, 2], &[]),
+        (&[2, 0], &[]),
+        (&[2, 1], &[]),
+    ];
+    const RECURSIVE_EXPECTED: ExpectedRows = &[(&[1], &[])];
+    const LIMITS: [usize; 4] = [0, 1, 2, 9];
+
+    struct Fixture {
+        label: &'static str,
+        query: QueryGraph,
+        topology: TopologyBlock,
+        expected: ExpectedRows,
+        uniquify: bool,
+    }
+
+    fn topology(elements: &[Element], edges: &[(usize, usize)]) -> TopologyBlock {
+        let atoms = elements
+            .iter()
+            .copied()
+            .enumerate()
+            .map(|(index, element)| Atom::from_spec(AtomId::new(index), AtomSpec::new(element)))
+            .collect();
+        let bonds = edges
+            .iter()
+            .copied()
+            .enumerate()
+            .map(|(index, (begin, end))| {
+                Bond::from_spec(
+                    BondId::new(index),
+                    BondSpec::new(AtomId::new(begin), AtomId::new(end), BondOrder::Single),
+                )
+            })
+            .collect();
+        TopologyBlock::try_from_parts(atoms, bonds, Vec::new(), Vec::new())
+            .expect("fixed S06 target topology is valid")
+    }
+
+    fn query(smarts: &str) -> QueryGraph {
+        parse_smarts(smarts, &SmartsParseParams::default())
+            .unwrap_or_else(|error| panic!("fixed S06 query {smarts:?} parses: {error}"))
+    }
+
+    fn graph_build_count() -> usize {
+        VF2_GRAPH_BUILD_ENTRIES.with(std::cell::Cell::get)
+    }
+
+    #[test]
+    fn search_shared_perf_s06_canonical_routes_borrow_prepared_graphs() {
+        VF2_GRAPH_BUILD_ENTRIES.with(|entries| entries.set(0));
+
+        let q76_target = topology(
+            &[
+                Element::C,
+                Element::C,
+                Element::C,
+                Element::O,
+                Element::C,
+                Element::C,
+                Element::O,
+            ],
+            &[(0, 1), (1, 2), (2, 3), (3, 4), (4, 5), (5, 6)],
+        );
+        let disconnected_target = topology(&[Element::C, Element::C, Element::C], &[]);
+        let cco_target = topology(&[Element::C, Element::C, Element::O], &[(0, 1), (1, 2)]);
+        let fixtures = vec![
+            Fixture {
+                label: "Q76 C-C-O",
+                query: query("C-C-O"),
+                topology: q76_target.clone(),
+                expected: Q76_EXPECTED,
+                uniquify: true,
+            },
+            Fixture {
+                label: "Q76 N no-match",
+                query: query("N"),
+                topology: q76_target,
+                expected: NO_MATCHES,
+                uniquify: true,
+            },
+            Fixture {
+                label: "disconnected C.C",
+                query: query("C.C"),
+                topology: disconnected_target,
+                expected: DISCONNECTED_EXPECTED,
+                uniquify: false,
+            },
+            Fixture {
+                label: "recursive rooted carbon",
+                query: query("[C;$([C]-[O])]"),
+                topology: cco_target,
+                expected: RECURSIVE_EXPECTED,
+                uniquify: true,
+            },
+        ];
+        let compiled_graphs = fixtures
+            .iter()
+            .map(|fixture| compile_query_graph(&fixture.query))
+            .collect::<Vec<_>>();
+        assert_eq!(graph_build_count(), fixtures.len());
+
+        let mut actual_calls = 0;
+        for (fixture_index, fixture) in fixtures.iter().enumerate() {
+            let query_before = fixture.query.clone();
+            let topology_before = fixture.topology.clone();
+            let coordinates = CoordinateBlock::default();
+            let coordinates_before = coordinates.clone();
+            let rings = fast_find_rings(&fixture.topology).expect("fixed S06 rings prepare");
+            let rings_before = rings.clone();
+            let valence = assign_valence_with_options_for_topology(
+                &fixture.topology,
+                ValenceModel::RdkitLike,
+                false,
+            )
+            .expect("fixed S06 valence prepares");
+            let valence_before = valence.clone();
+            let query_context =
+                build_prepared_query_match_context(&fixture.topology, &rings, &valence)
+                    .expect("fixed S06 prepared query context validates");
+            let target = SearchTarget::new(
+                &fixture.topology,
+                &coordinates,
+                &fixture.topology.stereo_groups,
+                Some(&rings),
+                Some(&valence),
+            );
+
+            for limit in LIMITS {
+                let params = SubstructMatchParams {
+                    max_matches: limit,
+                    uniquify: fixture.uniquify,
+                    recursion_possible: true,
+                    ..SubstructMatchParams::default()
+                };
+                for route in 0..3 {
+                    let builds_before = graph_build_count();
+                    let result = match route {
+                        0 => substruct_match_impl(&target, &fixture.query, &params),
+                        1 => try_get_substruct_matches_with_params_and_context(
+                            &target,
+                            &fixture.query,
+                            &params,
+                            &query_context,
+                        ),
+                        2 => get_substruct_matches_with_compiled_query(
+                            &target,
+                            &fixture.query,
+                            &params,
+                            &compiled_graphs[fixture_index],
+                        ),
+                        _ => unreachable!("S06 freezes ordinary, prepared and compiled routes"),
+                    };
+                    let builds_after = graph_build_count();
+                    assert_eq!(
+                        builds_after, builds_before,
+                        "{} route {route} limit {limit} rebuilt a graph",
+                        fixture.label
+                    );
+                    actual_calls += 1;
+
+                    let actual = result.unwrap_or_else(|error| {
+                        panic!("{} route {route} limit {limit}: {error}", fixture.label)
+                    });
+                    let expected_count = if limit == 0 {
+                        fixture.expected.len()
+                    } else {
+                        fixture.expected.len().min(limit)
+                    };
+                    assert_eq!(
+                        actual.len(),
+                        expected_count,
+                        "{} route {route} limit {limit}",
+                        fixture.label
+                    );
+                    for (result, (expected_atoms, expected_bonds)) in actual
+                        .iter()
+                        .zip(fixture.expected.iter().take(expected_count))
+                    {
+                        assert_eq!(
+                            result.atom_mapping, *expected_atoms,
+                            "{} route {route} limit {limit} atom mapping",
+                            fixture.label
+                        );
+                        assert_eq!(
+                            result.bond_mapping, *expected_bonds,
+                            "{} route {route} limit {limit} bond mapping",
+                            fixture.label
+                        );
+                    }
+                    assert_eq!(
+                        fixture.query, query_before,
+                        "{} query mutated",
+                        fixture.label
+                    );
+                    assert_eq!(
+                        fixture.topology, topology_before,
+                        "{} topology mutated",
+                        fixture.label
+                    );
+                    assert_eq!(
+                        coordinates, coordinates_before,
+                        "{} coordinates mutated",
+                        fixture.label
+                    );
+                    assert_eq!(rings, rings_before, "{} rings mutated", fixture.label);
+                    assert_eq!(valence, valence_before, "{} valence mutated", fixture.label);
+                }
+            }
+        }
+
+        assert_eq!(actual_calls, 48);
+        assert_eq!(graph_build_count(), fixtures.len());
+    }
+}
+
+#[cfg(test)]
+mod search_shared_perf_s07_tests {
+    use super::{
+        SubstructMatchParams, VF2_GRAPH_BUILD_ENTRIES,
+        try_get_substruct_matches_with_params_and_context,
+    };
+    use crate::{
+        SearchTarget, SmartsParseParams, build_prepared_query_match_context, parse_smarts,
+    };
+    use cosmolkit_core::{ValenceModel, assign_valence_with_options_for_topology, fast_find_rings};
+    use cosmolkit_model::{
+        Atom, AtomId, AtomSpec, Bond, BondId, BondSpec, CoordinateBlock, QueryGraph, TopologyBlock,
+    };
+    use cosmolkit_types::{BondOrder, Element};
+
+    type ExpectedRows = &'static [(&'static [usize], &'static [usize])];
+
+    const CARBON_EXPECTED: ExpectedRows = &[(&[0], &[]), (&[1], &[])];
+    const OXYGEN_EXPECTED: ExpectedRows = &[(&[2], &[])];
+    const NO_MATCHES: ExpectedRows = &[];
+    const DISCONNECTED_EXPECTED: ExpectedRows = &[(&[0, 1], &[])];
+    const CARBON_OXYGEN_EXPECTED: ExpectedRows = &[(&[1, 2], &[1])];
+    const RECURSIVE_EXPECTED: ExpectedRows = &[(&[1], &[])];
+
+    struct FeatureQuery {
+        label: &'static str,
+        graph: QueryGraph,
+        expected: ExpectedRows,
+    }
+
+    fn topology(elements: &[Element], edges: &[(usize, usize)]) -> TopologyBlock {
+        let atoms = elements
+            .iter()
+            .copied()
+            .enumerate()
+            .map(|(index, element)| Atom::from_spec(AtomId::new(index), AtomSpec::new(element)))
+            .collect();
+        let bonds = edges
+            .iter()
+            .copied()
+            .enumerate()
+            .map(|(index, (begin, end))| {
+                Bond::from_spec(
+                    BondId::new(index),
+                    BondSpec::new(AtomId::new(begin), AtomId::new(end), BondOrder::Single),
+                )
+            })
+            .collect();
+        TopologyBlock::try_from_parts(atoms, bonds, Vec::new(), Vec::new())
+            .expect("fixed S07 CCO target topology is valid")
+    }
+
+    fn query(smarts: &str) -> QueryGraph {
+        parse_smarts(smarts, &SmartsParseParams::default())
+            .unwrap_or_else(|error| panic!("fixed S07 query {smarts:?} parses: {error}"))
+    }
+
+    fn graph_build_count() -> usize {
+        VF2_GRAPH_BUILD_ENTRIES.with(std::cell::Cell::get)
+    }
+
+    #[test]
+    fn search_shared_perf_s07_prepared_context_reuses_six_fixed_queries() {
+        VF2_GRAPH_BUILD_ENTRIES.with(|entries| entries.set(0));
+        let queries = [
+            FeatureQuery {
+                label: "C",
+                graph: query("C"),
+                expected: CARBON_EXPECTED,
+            },
+            FeatureQuery {
+                label: "O",
+                graph: query("O"),
+                expected: OXYGEN_EXPECTED,
+            },
+            FeatureQuery {
+                label: "N",
+                graph: query("N"),
+                expected: NO_MATCHES,
+            },
+            FeatureQuery {
+                label: "C.C",
+                graph: query("C.C"),
+                expected: DISCONNECTED_EXPECTED,
+            },
+            FeatureQuery {
+                label: "C-O",
+                graph: query("C-O"),
+                expected: CARBON_OXYGEN_EXPECTED,
+            },
+            FeatureQuery {
+                label: "recursive C-O root",
+                graph: query("[C;$([C]-[O])]"),
+                expected: RECURSIVE_EXPECTED,
+            },
+        ];
+        let query_snapshots = queries
+            .iter()
+            .map(|feature| feature.graph.clone())
+            .collect::<Vec<_>>();
+        let topology = topology(&[Element::C, Element::C, Element::O], &[(0, 1), (1, 2)]);
+        let topology_before = topology.clone();
+        let coordinates = CoordinateBlock::default();
+        let coordinates_before = coordinates.clone();
+        let rings = fast_find_rings(&topology).expect("fixed S07 rings prepare");
+        let rings_before = rings.clone();
+        let valence =
+            assign_valence_with_options_for_topology(&topology, ValenceModel::RdkitLike, false)
+                .expect("fixed S07 valence prepares");
+        let valence_before = valence.clone();
+        let context = build_prepared_query_match_context(&topology, &rings, &valence)
+            .expect("fixed S07 prepared context validates");
+        let target = SearchTarget::new(
+            &topology,
+            &coordinates,
+            &topology.stereo_groups,
+            Some(&rings),
+            Some(&valence),
+        );
+        let params = SubstructMatchParams::default();
+
+        let mut actual_calls = 0;
+        for sweep in 0..2 {
+            for feature in &queries {
+                let builds_before = graph_build_count();
+                let actual = try_get_substruct_matches_with_params_and_context(
+                    &target,
+                    &feature.graph,
+                    &params,
+                    &context,
+                )
+                .unwrap_or_else(|error| panic!("S07 {} sweep {sweep}: {error}", feature.label));
+                let builds_after = graph_build_count();
+                assert_eq!(
+                    builds_after, builds_before,
+                    "{} sweep {sweep} rebuilt a matching graph",
+                    feature.label
+                );
+                actual_calls += 1;
+
+                assert_eq!(
+                    actual.len(),
+                    feature.expected.len(),
+                    "{} sweep {sweep} result count",
+                    feature.label
+                );
+                for (result, (expected_atoms, expected_bonds)) in
+                    actual.iter().zip(feature.expected)
+                {
+                    assert_eq!(
+                        result.atom_mapping, *expected_atoms,
+                        "{} sweep {sweep} atom mapping",
+                        feature.label
+                    );
+                    assert_eq!(
+                        result.bond_mapping, *expected_bonds,
+                        "{} sweep {sweep} bond mapping",
+                        feature.label
+                    );
+                }
+                assert_eq!(
+                    queries
+                        .iter()
+                        .map(|candidate| candidate.graph.clone())
+                        .collect::<Vec<_>>(),
+                    query_snapshots,
+                    "query inputs mutated during {} sweep {sweep}",
+                    feature.label
+                );
+                assert_eq!(topology, topology_before, "S07 topology mutated");
+                assert_eq!(coordinates, coordinates_before, "S07 coordinates mutated");
+                assert_eq!(rings, rings_before, "S07 rings mutated");
+                assert_eq!(valence, valence_before, "S07 valence mutated");
+            }
+        }
+
+        assert_eq!(actual_calls, 12);
+        assert_eq!(graph_build_count(), 0);
+    }
+}
+
+#[cfg(test)]
+mod search_shared_perf_s08_tests {
+    use super::{
+        SubstructMatchError, SubstructMatchParams, VF2_GRAPH_BUILD_ENTRIES, compile_query_graph,
+        get_substruct_matches_with_compiled_query, substruct_match_impl,
+        try_get_substruct_matches_with_params_and_context,
+    };
+    use crate::{AtomQueryPredicate, SearchTarget, build_prepared_query_match_context};
+    use cosmolkit_core::{ValenceModel, assign_valence_with_options_for_topology, fast_find_rings};
+    use cosmolkit_model::{
+        Atom, AtomId, AtomSpec, CoordinateBlock, QueryAtom, QueryGraph, QueryNode, TopologyBlock,
+    };
+    use cosmolkit_types::Element;
+    use std::collections::BTreeMap;
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+
+    #[test]
+    fn search_shared_perf_s08_unsupported_leaf_precedes_all_private_routes() {
+        let query = QueryGraph::from_parts(
+            vec![QueryAtom::from_parts(
+                Atom::from_spec(AtomId::new(0), AtomSpec::new(Element::C)),
+                QueryNode::and(vec![
+                    QueryNode::predicate(AtomQueryPredicate::AtomicNumber(7)),
+                    QueryNode::predicate(AtomQueryPredicate::UnsupportedFeature(
+                        "S08 fixed unsupported atom leaf",
+                    )),
+                ]),
+            )],
+            Vec::new(),
+            BTreeMap::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        )
+        .expect("fixed S08 query with ordered unsupported leaf is valid");
+        let query_before = query.clone();
+        let topology = TopologyBlock::try_from_parts(
+            vec![Atom::from_spec(AtomId::new(0), AtomSpec::new(Element::C))],
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        )
+        .expect("fixed S08 target topology is valid");
+        let topology_before = topology.clone();
+        let coordinates = CoordinateBlock::default();
+        let coordinates_before = coordinates.clone();
+        let rings = fast_find_rings(&topology).expect("fixed S08 rings prepare");
+        let rings_before = rings.clone();
+        let valence =
+            assign_valence_with_options_for_topology(&topology, ValenceModel::RdkitLike, false)
+                .expect("fixed S08 non-strict valence prepares");
+        let valence_before = valence.clone();
+        let context = build_prepared_query_match_context(&topology, &rings, &valence)
+            .expect("fixed S08 prepared query context validates");
+        let target = SearchTarget::new(
+            &topology,
+            &coordinates,
+            &topology.stereo_groups,
+            Some(&rings),
+            Some(&valence),
+        );
+
+        let atom_callback_calls = Arc::new(AtomicUsize::new(0));
+        let atom_callback_calls_in_check = Arc::clone(&atom_callback_calls);
+        let final_callback_calls = Arc::new(AtomicUsize::new(0));
+        let final_callback_calls_in_check = Arc::clone(&final_callback_calls);
+        let params = SubstructMatchParams {
+            extra_atom_check: Some(Arc::new(move |_, _, _, _| {
+                atom_callback_calls_in_check.fetch_add(1, Ordering::SeqCst);
+                true
+            })),
+            extra_atom_check_overrides_default_check: true,
+            extra_final_check: Some(Arc::new(move |_, _| {
+                final_callback_calls_in_check.fetch_add(1, Ordering::SeqCst);
+                true
+            })),
+            ..SubstructMatchParams::default()
+        };
+
+        VF2_GRAPH_BUILD_ENTRIES.with(|entries| entries.set(0));
+        let compiled_graph = compile_query_graph(&query);
+        assert_eq!(
+            VF2_GRAPH_BUILD_ENTRIES.with(std::cell::Cell::get),
+            1,
+            "the compiled route's graph is built exactly once before matching"
+        );
+
+        let expected_error = SubstructMatchError::Unsupported {
+            branch: "S08 fixed unsupported atom leaf",
+            rdkit_function: "QueryAtom::Match",
+        };
+        let mut actual_calls = 0;
+        for route in 0..3 {
+            let builds_before = VF2_GRAPH_BUILD_ENTRIES.with(std::cell::Cell::get);
+            let result = match route {
+                0 => substruct_match_impl(&target, &query, &params),
+                1 => try_get_substruct_matches_with_params_and_context(
+                    &target, &query, &params, &context,
+                ),
+                2 => get_substruct_matches_with_compiled_query(
+                    &target,
+                    &query,
+                    &params,
+                    &compiled_graph,
+                ),
+                _ => unreachable!("S08 freezes ordinary, prepared and compiled routes"),
+            };
+            let builds_after = VF2_GRAPH_BUILD_ENTRIES.with(std::cell::Cell::get);
+            assert_eq!(
+                builds_after, builds_before,
+                "route {route} built a matching graph after unsupported preflight"
+            );
+            assert_eq!(result, Err(expected_error.clone()), "route {route} error");
+            assert_eq!(
+                atom_callback_calls.load(Ordering::SeqCst),
+                0,
+                "route {route} reached an atom goal callback"
+            );
+            assert_eq!(
+                final_callback_calls.load(Ordering::SeqCst),
+                0,
+                "route {route} reached a completed-goal callback"
+            );
+            assert_eq!(query, query_before, "route {route} mutated the query");
+            assert_eq!(
+                topology, topology_before,
+                "route {route} mutated the topology"
+            );
+            assert_eq!(
+                coordinates, coordinates_before,
+                "route {route} mutated the coordinates"
+            );
+            assert_eq!(
+                rings, rings_before,
+                "route {route} mutated the ring assignment"
+            );
+            assert_eq!(
+                valence, valence_before,
+                "route {route} mutated the valence assignment"
+            );
+            actual_calls += 1;
+        }
+
+        assert_eq!(actual_calls, 3);
+        assert_eq!(VF2_GRAPH_BUILD_ENTRIES.with(std::cell::Cell::get), 1);
     }
 }

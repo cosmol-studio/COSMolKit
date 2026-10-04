@@ -1,4 +1,10 @@
+#![allow(unexpected_cfgs)]
+
 use std::collections::HashSet;
+#[cfg(feature = "cap-forcefields")]
+use std::path::PathBuf;
+#[cfg(feature = "cap-forcefields")]
+use std::process::{Command, Output};
 
 use cosmolkit::{
     BINDING_CONTRACT, BindingCallableContract, BindingDefault, BindingItem, BindingKind,
@@ -10,6 +16,98 @@ fn entry(semantic_id: &str) -> &'static cosmolkit::BindingContractEntry {
         .iter()
         .find(|entry| entry.semantic_id == semantic_id)
         .unwrap_or_else(|| panic!("missing binding contract entry {semantic_id}"))
+}
+
+#[cfg(cosmolkit_uff_param_api_probe)]
+mod uff_param_api_compile_probe {
+    #[cfg(cosmolkit_uff_param_api_case = "query_available")]
+    pub fn query_available(
+        molecule: &cosmolkit::Molecule,
+    ) -> Result<bool, cosmolkit::UffParameterQueryError> {
+        let _kind_method: fn(&cosmolkit::UffParameterError) -> cosmolkit::UffParameterErrorKind =
+            cosmolkit::UffParameterError::kind;
+        let _kind_values = [
+            cosmolkit::UffParameterErrorKind::Preparation,
+            cosmolkit::UffParameterErrorKind::ParameterTable,
+            cosmolkit::UffParameterErrorKind::Typing,
+        ];
+        let _query_method: fn(
+            &cosmolkit::Molecule,
+        ) -> Result<bool, cosmolkit::UffParameterQueryError> =
+            cosmolkit::Molecule::uff_has_all_molecule_params;
+        molecule.uff_has_all_molecule_params()
+    }
+
+    #[cfg(cosmolkit_uff_param_api_case = "base_api_available")]
+    pub fn base_api_available() {
+        let _molecule = cosmolkit::Molecule::new();
+    }
+
+    #[cfg(cosmolkit_uff_param_api_case = "query_unavailable")]
+    pub fn query_unavailable(molecule: &cosmolkit::Molecule) {
+        use cosmolkit::{UffParameterError, UffParameterErrorKind, UffParameterQueryError};
+
+        let _: Option<UffParameterError> = None;
+        let _: Option<UffParameterErrorKind> = None;
+        let _: Option<UffParameterQueryError> = None;
+        let _ = molecule.uff_has_all_molecule_params();
+    }
+
+    #[cfg(cosmolkit_uff_param_api_case = "forcefields_only_exclusions")]
+    pub fn forcefields_only_exclusions(molecule: &cosmolkit::Molecule) {
+        use cosmolkit::{
+            ForceFieldError, ForceFieldOptions, RingSearchParams, ValenceParams,
+            mmff_has_all_molecule_params, mmff_optimize, uff_has_all_molecule_params,
+        };
+
+        let _ = (
+            ForceFieldError::Unsupported,
+            ForceFieldOptions::default(),
+            RingSearchParams::default(),
+            ValenceParams::default(),
+            mmff_has_all_molecule_params,
+            mmff_optimize,
+            uff_has_all_molecule_params,
+        );
+        let _ = molecule.with_assigned_valence();
+        let _ = molecule.with_assigned_rings();
+        let _ = cosmolkit::forcefields::UffParameterQueryError::Cache;
+    }
+}
+
+#[cfg(feature = "cap-forcefields")]
+fn uff_param_p10_compile_check(case: &str, features: Option<&str>) -> Output {
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let workspace = manifest_dir
+        .parent()
+        .and_then(|path| path.parent())
+        .expect("cosmolkit crate must be nested under the workspace crates directory");
+    let target = workspace.join("target/uff-param-api-compile");
+    let inherited = std::env::var("RUSTFLAGS").unwrap_or_default();
+    let rustflags = format!(
+        "{inherited} --cfg cosmolkit_uff_param_api_probe --cfg=cosmolkit_uff_param_api_case=\"{case}\""
+    );
+    let mut command = Command::new(std::env::var("CARGO").unwrap_or_else(|_| "cargo".into()));
+    command
+        .current_dir(workspace)
+        .env("CARGO_TARGET_DIR", target)
+        .env("CARGO_INCREMENTAL", "0")
+        .env("RUSTFLAGS", rustflags)
+        .args([
+            "check",
+            "--quiet",
+            "-p",
+            "cosmolkit",
+            "--test",
+            "migration_run_schema",
+            "--no-default-features",
+        ]);
+    if let Some(features) = features {
+        command.args(["--features", features]);
+    }
+    command
+        .output()
+        .expect("run the external cosmolkit feature-isolation compile proof")
 }
 
 #[cfg(feature = "cap-io")]
@@ -199,6 +297,22 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
         "module.operation_parity",
         "module.version",
     ];
+    if cfg!(feature = "cap-forcefields") {
+        let operation_error = expected
+            .iter()
+            .position(|semantic_id| *semantic_id == "types.OperationError")
+            .expect("the existing OperationError registry fixture is present")
+            + 1;
+        expected.splice(
+            operation_error..operation_error,
+            [
+                "types.UffParameterQueryError",
+                "types.UffParameterError",
+                "types.UffParameterErrorKind",
+                "UffParameterError.kind",
+            ],
+        );
+    }
     if cfg!(feature = "cap-matrices") {
         expected.extend([
             "types.DenseMatrix",
@@ -219,6 +333,9 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
             "types.Coordinate2DLayoutError",
             "Molecule.with_2d_coordinates",
             "Molecule.with_2d_coordinates_with_params",
+            "types.DrawingError",
+            "Molecule.to_svg",
+            "Molecule.to_png",
         ]);
     }
     if cfg!(feature = "cap-transforms") {
@@ -336,6 +453,9 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
             "Molecule.total_atom_count",
             "Molecule.num_rings",
             "Molecule.num_heterocycles",
+            "Molecule.num_heteroatoms",
+            "Molecule.num_hba",
+            "Molecule.num_hbd",
             "Molecule.num_aromatic_rings",
             "Molecule.num_saturated_rings",
             "Molecule.num_aliphatic_rings",
@@ -348,6 +468,23 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
             "Molecule.lipinski_hba",
             "Molecule.lipinski_hbd",
             "Molecule.fraction_csp3",
+        ]);
+    }
+    if cfg!(feature = "cap-forcefields") {
+        expected.extend([
+            "Molecule.uff_has_all_molecule_params",
+            "types.UffOptimizationParams",
+            "types.UffOptimizationResult",
+            "types.UffOptimizationError",
+            "types.UffOptimizationErrorKind",
+            "types.UffConformerOptimizationParams",
+            "types.UffConformerOptimizationResult",
+            "types.UffConformerResult",
+            "UffOptimizationError.kind",
+            "Molecule.with_uff_optimized_coordinates",
+            "Molecule.with_uff_optimized_coordinates_with_params",
+            "Molecule.with_uff_optimized_conformers",
+            "Molecule.with_uff_optimized_conformers_with_params",
         ]);
     }
     if cfg!(feature = "cap-hydrogens") {
@@ -368,8 +505,20 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
     if cfg!(feature = "cap-bio") {
         expected.extend([
             "types.ResidueInfoKind",
+            "ResidueInfoKind.name",
             "types.ResidueCode",
+            "types.ResidueCodeParseError",
+            "ResidueCodeParseError.input",
+            "types.ResidueIdentity",
+            "ResidueIdentity.new",
+            "ResidueIdentity.name",
+            "ResidueIdentity.code",
+            "ResidueIdentity.info",
+            "ResidueIdentity.is_tabulated",
             "types.ResidueInfo",
+            "ResidueInfo.canonical_one_letter_code",
+            "ResidueInfo.parent_standard_code",
+            "ResidueInfo.is_modified_amino_acid",
             "types.PdbAtomSerial",
             "types.PdbChainId",
             "types.PdbSeqId",
@@ -546,13 +695,44 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
     }
 
     if cfg!(feature = "cap-fingerprints") {
-        // Exact newly registered public sparse-count surface, in registry order.
+        // Exact Morgan configuration and AdditionalOutput surface precedes
+        // the existing sparse-count entries in registry order.
         expected.splice(
             0..0,
             [
+                "types.MorganParams",
+                "types.MorganInvariants",
+                "types.MorganFingerprintParams",
+                "types.MorganReadError",
+                "types.AdditionalOutput",
+                "types.Fingerprint",
+                "types.SparseBitFingerprint",
                 "types.SparseCountFingerprint",
                 "types.SparseCountFingerprint32",
                 "types.FingerprintError",
+                "Molecule.morgan_sparse_count_fingerprint",
+                "Molecule.morgan_sparse_count_fingerprint_with_params",
+                "Molecule.morgan_sparse_fingerprint",
+                "Molecule.morgan_sparse_fingerprint_with_params",
+                "Molecule.morgan_count_fingerprint",
+                "Molecule.morgan_count_fingerprint_with_params",
+                "Molecule.morgan_fingerprint",
+                "Molecule.morgan_fingerprint_with_params",
+                "AdditionalOutput.default",
+                "AdditionalOutput.allocate_atom_counts",
+                "AdditionalOutput.allocate_atom_to_bits",
+                "AdditionalOutput.allocate_bit_info_map",
+                "AdditionalOutput.allocate_bit_paths",
+                "AdditionalOutput.allocate_atoms_per_bit",
+                "AdditionalOutput.atom_counts",
+                "AdditionalOutput.atom_to_bits",
+                "AdditionalOutput.bit_info_map",
+                "AdditionalOutput.bit_paths",
+                "AdditionalOutput.atoms_per_bit",
+                "Fingerprint.n_bits",
+                "Fingerprint.on_bits",
+                "SparseBitFingerprint.n_bits",
+                "SparseBitFingerprint.on_bits",
                 "SparseCountFingerprint.new",
                 "SparseCountFingerprint.length",
                 "SparseCountFingerprint.value",
@@ -618,6 +798,12 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
                 "BioStructure.to_mmcif",
                 "BioStructure.write_mmcif_with_params",
                 "BioStructure.write_mmcif",
+                "types.BioPdbWriteParams",
+                "types.BioPdbWriteError",
+                "BioStructure.to_pdb_with_params",
+                "BioStructure.to_pdb",
+                "BioStructure.write_pdb_with_params",
+                "BioStructure.write_pdb",
                 "BioStructure.from_text_with_params",
                 "BioStructure.from_text",
                 "BioStructure.read_with_format",
@@ -689,6 +875,280 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
     );
 }
 
+#[cfg(feature = "cap-forcefields")]
+#[test]
+fn uff_public_registry_has_exact_value_result_contract() {
+    for (id, role) in [
+        ("types.UffOptimizationParams", BindingTypeRole::Parameter),
+        ("types.UffOptimizationResult", BindingTypeRole::Result),
+        ("types.UffOptimizationError", BindingTypeRole::Error),
+        ("types.UffOptimizationErrorKind", BindingTypeRole::Value),
+    ] {
+        let row = entry(id);
+        assert_eq!(row.status, FunctionStatus::Experimental);
+        assert_eq!(row.feature, "cap-forcefields");
+        assert_eq!(row.type_role, Some(role));
+    }
+    for (method, javascript, parameter_count) in [
+        (
+            "with_uff_optimized_coordinates",
+            "withUffOptimizedCoordinates",
+            0,
+        ),
+        (
+            "with_uff_optimized_coordinates_with_params",
+            "withUffOptimizedCoordinatesWithParams",
+            1,
+        ),
+    ] {
+        let row = entry(&format!("Molecule.{method}"));
+        assert_eq!(row.status, FunctionStatus::Experimental);
+        assert_eq!(row.python_name, method);
+        assert_eq!(row.javascript_name, javascript);
+        let callable = row.callable.unwrap();
+        assert_eq!(callable.kind, BindingKind::Instance);
+        assert_eq!(callable.state_model, StateModel::ValueReturning);
+        assert_eq!(callable.parameters.len(), parameter_count);
+        assert_eq!(
+            callable.output_type.replace(' ', ""),
+            "crate::UffOptimizationResult"
+        );
+        assert_eq!(
+            callable.error_type.map(|name| name.replace(' ', "")),
+            Some("crate::OperationError".into())
+        );
+        assert_eq!(callable.operation_semantic_id, Some(method));
+    }
+    let _: fn(
+        &cosmolkit::Molecule,
+    ) -> Result<cosmolkit::UffOptimizationResult, cosmolkit::OperationError> =
+        cosmolkit::Molecule::with_uff_optimized_coordinates;
+    let _: fn(
+        &cosmolkit::Molecule,
+        &cosmolkit::UffOptimizationParams,
+    ) -> Result<cosmolkit::UffOptimizationResult, cosmolkit::OperationError> =
+        cosmolkit::Molecule::with_uff_optimized_coordinates_with_params;
+    let _: fn(&cosmolkit::UffOptimizationError) -> cosmolkit::UffOptimizationErrorKind =
+        cosmolkit::UffOptimizationError::kind;
+    let params = cosmolkit::UffOptimizationParams::default();
+    assert_eq!(params.max_iterations, 1000);
+    assert_eq!(params.vdw_threshold.to_bits(), 10.0_f64.to_bits());
+    assert!(params.ignore_interfragment_interactions);
+    assert_eq!(params.conformer_id, None);
+}
+
+#[cfg(feature = "cap-forcefields")]
+#[test]
+fn uff_param_p10_registry_has_exact_read_only_query_contract() {
+    let forcefields_ids = BINDING_CONTRACT
+        .iter()
+        .filter(|row| row.feature == "cap-forcefields")
+        .map(|row| row.semantic_id)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        forcefields_ids,
+        vec![
+            "types.UffParameterQueryError",
+            "types.UffParameterError",
+            "types.UffParameterErrorKind",
+            "UffParameterError.kind",
+            "Molecule.uff_has_all_molecule_params",
+            "types.UffOptimizationParams",
+            "types.UffOptimizationResult",
+            "types.UffOptimizationError",
+            "types.UffOptimizationErrorKind",
+            "types.UffConformerOptimizationParams",
+            "types.UffConformerOptimizationResult",
+            "types.UffConformerResult",
+            "UffOptimizationError.kind",
+            "Molecule.with_uff_optimized_coordinates",
+            "Molecule.with_uff_optimized_coordinates_with_params",
+            "Molecule.with_uff_optimized_conformers",
+            "Molecule.with_uff_optimized_conformers_with_params",
+        ],
+        "forcefields has exactly the prepared query plus single and serial all-conformer identities"
+    );
+
+    for (semantic_id, rust_name, python_name, javascript_name, role) in [
+        (
+            "types.UffParameterQueryError",
+            "UffParameterQueryError",
+            "UffParameterQueryError",
+            "UffParameterQueryError",
+            BindingTypeRole::Error,
+        ),
+        (
+            "types.UffParameterError",
+            "UffParameterError",
+            "UffParameterError",
+            "UffParameterError",
+            BindingTypeRole::Error,
+        ),
+        (
+            "types.UffParameterErrorKind",
+            "UffParameterErrorKind",
+            "UffParameterErrorKind",
+            "UffParameterErrorKind",
+            BindingTypeRole::Value,
+        ),
+    ] {
+        let row = entry(semantic_id);
+        assert_eq!(row.item, BindingItem::Type);
+        assert_eq!(row.owner, BindingOwner::Type);
+        assert!(row.rust_path.ends_with(rust_name));
+        assert_eq!(row.python_name, python_name);
+        assert_eq!(row.javascript_name, javascript_name);
+        assert_eq!(row.feature, "cap-forcefields");
+        assert_eq!(row.status, FunctionStatus::Experimental);
+        assert_eq!(row.callable, None);
+        assert_eq!(row.type_role, Some(role));
+    }
+
+    let kind = entry("UffParameterError.kind");
+    assert_eq!(kind.item, BindingItem::Callable);
+    assert_eq!(kind.owner, BindingOwner::Type);
+    assert_eq!(
+        kind.rust_path.replace(' ', ""),
+        "crate::UffParameterError::kind"
+    );
+    assert_eq!(kind.python_name, "kind");
+    assert_eq!(kind.javascript_name, "kind");
+    assert_eq!(kind.feature, "cap-forcefields");
+    assert_eq!(kind.status, FunctionStatus::Experimental);
+    assert_eq!(kind.type_role, None);
+    let kind_callable = kind.callable.expect("kind accessor callable metadata");
+    assert_eq!(kind_callable.kind, BindingKind::Instance);
+    assert!(kind_callable.parameters.is_empty());
+    assert_eq!(
+        kind_callable.output_type.replace(' ', ""),
+        "crate::UffParameterErrorKind"
+    );
+    assert_eq!(kind_callable.error_type, None);
+    assert_eq!(kind_callable.state_model, StateModel::ReadOnly);
+    assert_eq!(kind_callable.operation_semantic_id, None);
+    let _kind_signature: fn(&cosmolkit::UffParameterError) -> cosmolkit::UffParameterErrorKind =
+        cosmolkit::UffParameterError::kind;
+    let kind_name = |value| match value {
+        cosmolkit::UffParameterErrorKind::Preparation => "Preparation",
+        cosmolkit::UffParameterErrorKind::ParameterTable => "ParameterTable",
+        cosmolkit::UffParameterErrorKind::Typing => "Typing",
+    };
+    assert_eq!(
+        [
+            kind_name(cosmolkit::UffParameterErrorKind::Preparation),
+            kind_name(cosmolkit::UffParameterErrorKind::ParameterTable),
+            kind_name(cosmolkit::UffParameterErrorKind::Typing),
+        ],
+        ["Preparation", "ParameterTable", "Typing"]
+    );
+
+    let query = entry("Molecule.uff_has_all_molecule_params");
+    assert_eq!(query.item, BindingItem::Callable);
+    assert_eq!(query.owner, BindingOwner::Molecule);
+    assert_eq!(
+        query.rust_path.replace(' ', ""),
+        "crate::Molecule::uff_has_all_molecule_params"
+    );
+    assert_eq!(query.python_name, "uff_has_all_molecule_params");
+    assert_eq!(query.javascript_name, "uffHasAllMoleculeParams");
+    assert_eq!(query.feature, "cap-forcefields");
+    assert_eq!(query.status, FunctionStatus::Experimental);
+    assert_eq!(query.type_role, None);
+    let query_callable = query.callable.expect("query callable metadata");
+    assert_eq!(query_callable.kind, BindingKind::Instance);
+    assert!(query_callable.parameters.is_empty());
+    assert_eq!(query_callable.output_type, "bool");
+    assert_eq!(
+        query_callable.error_type.map(|name| name.replace(' ', "")),
+        Some("crate::UffParameterQueryError".to_owned())
+    );
+    assert_eq!(query_callable.state_model, StateModel::ReadOnly);
+    assert_eq!(query_callable.operation_semantic_id, None);
+    let _query_signature: fn(
+        &cosmolkit::Molecule,
+    ) -> Result<bool, cosmolkit::UffParameterQueryError> =
+        cosmolkit::Molecule::uff_has_all_molecule_params;
+}
+
+#[cfg(feature = "cap-forcefields")]
+#[test]
+fn uff_param_p10_external_feature_isolation() {
+    let query_available = uff_param_p10_compile_check("query_available", Some("forcefields"));
+    assert!(
+        query_available.status.success(),
+        "forcefields-only public query consumer failed to compile:\n{}",
+        String::from_utf8_lossy(&query_available.stderr)
+    );
+
+    let query_capability_only =
+        uff_param_p10_compile_check("query_available", Some("cap-forcefields"));
+    assert!(
+        query_capability_only.status.success(),
+        "cap-forcefields-only public query consumer failed to compile:\n{}",
+        String::from_utf8_lossy(&query_capability_only.stderr)
+    );
+
+    let base_without_forcefields = uff_param_p10_compile_check("base_api_available", None);
+    assert!(
+        base_without_forcefields.status.success(),
+        "base Molecule positive control failed without forcefields:\n{}",
+        String::from_utf8_lossy(&base_without_forcefields.stderr)
+    );
+
+    let query_without_forcefields = uff_param_p10_compile_check("query_unavailable", None);
+    assert!(!query_without_forcefields.status.success());
+    let query_errors = String::from_utf8_lossy(&query_without_forcefields.stderr);
+    assert!(query_errors.contains("error[E0432]"), "{query_errors}");
+    for absent_item in [
+        "UffParameterError",
+        "UffParameterErrorKind",
+        "UffParameterQueryError",
+    ] {
+        assert!(
+            query_errors.contains(absent_item),
+            "missing {absent_item}: {query_errors}"
+        );
+    }
+    assert!(
+        query_errors.contains("no method named `uff_has_all_molecule_params`"),
+        "query method absence was not the intended compile failure:\n{query_errors}"
+    );
+
+    let forcefields_only_exclusions =
+        uff_param_p10_compile_check("forcefields_only_exclusions", Some("cap-forcefields"));
+    assert!(!forcefields_only_exclusions.status.success());
+    let excluded_errors = String::from_utf8_lossy(&forcefields_only_exclusions.stderr);
+    assert!(
+        excluded_errors.contains("error[E0432]"),
+        "{excluded_errors}"
+    );
+    assert!(
+        excluded_errors.contains("error[E0599]"),
+        "{excluded_errors}"
+    );
+    assert!(
+        excluded_errors.contains("error[E0603]"),
+        "{excluded_errors}"
+    );
+    for absent_item in [
+        "ValenceParams",
+        "RingSearchParams",
+        "ForceFieldError",
+        "ForceFieldOptions",
+        "mmff_has_all_molecule_params",
+        "mmff_optimize",
+        "uff_has_all_molecule_params",
+        "with_assigned_valence",
+        "with_assigned_rings",
+        "forcefields",
+    ] {
+        assert!(
+            excluded_errors.contains(absent_item),
+            "missing {absent_item}: {excluded_errors}"
+        );
+    }
+}
+
 #[test]
 fn always_present_entries_have_exact_type_and_module_payloads() {
     let molecule = entry("types.Molecule");
@@ -725,6 +1185,53 @@ fn always_present_entries_have_exact_type_and_module_payloads() {
     assert_eq!(callable.error_type, None);
     assert_eq!(callable.state_model, StateModel::ReadOnly);
     assert_eq!(callable.operation_semantic_id, None);
+}
+
+#[cfg(feature = "cap-depict")]
+#[test]
+fn drawing_entries_have_exact_experimental_shared_query_contracts() {
+    let error = entry("types.DrawingError");
+    assert_eq!(error.item, BindingItem::Type);
+    assert_eq!(error.owner, BindingOwner::Type);
+    assert_eq!(error.rust_path.replace(' ', ""), "crate::DrawingError");
+    assert_eq!(error.python_name, "DrawingError");
+    assert_eq!(error.javascript_name, "DrawingError");
+    assert_eq!(error.feature, "cap-depict");
+    assert_eq!(error.status, FunctionStatus::Experimental);
+    assert_eq!(error.type_role, Some(BindingTypeRole::Error));
+    assert_eq!(error.callable, None);
+    for (name, javascript, output) in [
+        ("to_svg", "toSvg", "String"),
+        ("to_png", "toPng", "Vec<u8>"),
+    ] {
+        let row = entry(&format!("Molecule.{name}"));
+        assert_eq!(row.item, BindingItem::Callable);
+        assert_eq!(row.owner, BindingOwner::Molecule);
+        assert_eq!(
+            row.rust_path.replace(' ', ""),
+            format!("crate::Molecule::{name}")
+        );
+        assert_eq!(row.python_name, name);
+        assert_eq!(row.javascript_name, javascript);
+        assert_eq!(row.feature, "cap-depict");
+        assert_eq!(row.status, FunctionStatus::Experimental);
+        let callable = row.callable.unwrap();
+        assert_eq!(callable.kind, BindingKind::Instance);
+        assert_eq!(callable.receiver, Some(cosmolkit::BindingReceiver::Shared));
+        assert_eq!(callable.state_model, StateModel::ReadOnly);
+        assert_eq!(callable.operation_semantic_id, None);
+        assert_eq!(callable.output_type.replace(' ', ""), output);
+        assert_eq!(
+            callable.error_type.unwrap().replace(' ', ""),
+            "crate::DrawingError"
+        );
+        assert_eq!(callable.parameters.len(), 2);
+        for (parameter, expected_name) in callable.parameters.iter().zip(["width", "height"]) {
+            assert_eq!(parameter.name, expected_name);
+            assert_eq!(parameter.type_name, "u32");
+            assert_eq!(parameter.default, BindingDefault::Required);
+        }
+    }
 }
 
 #[cfg(feature = "cap-descriptors")]

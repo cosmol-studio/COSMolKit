@@ -63,14 +63,106 @@ jobs:
                   name: python-stubs
                   path: python
 
-            - name: Build wheels
+            - name: Setup CPython 3.10
+              if: runner.os != 'Linux'
+              id: py310
+              uses: actions/setup-python@v7
+              with:
+                  python-version: "3.10"
+                  update-environment: false
+
+            - name: Setup CPython 3.11
+              if: runner.os != 'Linux'
+              id: py311
+              uses: actions/setup-python@v7
+              with:
+                  python-version: "3.11"
+                  update-environment: false
+
+            - name: Setup CPython 3.12
+              if: runner.os != 'Linux'
+              id: py312
+              uses: actions/setup-python@v7
+              with:
+                  python-version: "3.12"
+                  update-environment: false
+
+            - name: Build abi3 wheel
               uses: PyO3/maturin-action@v1
               with:
                   command: build
                   working-directory: python
                   target: ${{ matrix.target }}
                   manylinux: ${{ matrix.manylinux }}
-                  args: --release --manifest-path Cargo.toml --features release-abi3-py39 --out dist
+                  cache: sccache
+                  args:  >-
+                      --release
+                      --manifest-path Cargo.toml
+                      --no-default-features
+                      --features release-abi3-py39
+                      --out dist
+
+            - name: Build selected CPython wheels
+              if: runner.os == 'Linux'
+              uses: PyO3/maturin-action@v1
+              with:
+                  command: build
+                  working-directory: python
+                  target: ${{ matrix.target }}
+                  manylinux: ${{ matrix.manylinux }}
+                  args: >-
+                      --release
+                      --manifest-path Cargo.toml
+                      --no-default-features
+                      --features release-cpython
+                      --interpreter python3.10 python3.11 python3.12
+                      --out dist
+
+            # macOS / Windows: 用 setup-python 给出的绝对路径
+            - name: Build CPython 3.10 wheel
+              if: runner.os != 'Linux'
+              uses: PyO3/maturin-action@v1
+              with:
+                  command: build
+                  working-directory: python
+                  target: ${{ matrix.target }}
+                  args: >-
+                      --release
+                      --manifest-path Cargo.toml
+                      --no-default-features
+                      --features release-cpython
+                      --interpreter "${{ steps.py310.outputs.python-path }}"
+                      --out dist
+
+            - name: Build CPython 3.11 wheel
+              if: runner.os != 'Linux'
+              uses: PyO3/maturin-action@v1
+              with:
+                  command: build
+                  working-directory: python
+                  target: ${{ matrix.target }}
+                  args: >-
+                      --release
+                      --manifest-path Cargo.toml
+                      --no-default-features
+                      --features release-cpython
+                      --interpreter "${{ steps.py311.outputs.python-path }}"
+                      --out dist
+
+            - name: Build CPython 3.12 wheel
+              if: runner.os != 'Linux'
+              uses: PyO3/maturin-action@v1
+              with:
+                  command: build
+                  working-directory: python
+                  target: ${{ matrix.target }}
+                  args: >-
+                      --release
+                      --manifest-path Cargo.toml
+                      --no-default-features
+                      --features release-cpython
+                      --interpreter "${{ steps.py312.outputs.python-path }}"
+                      --out dist
 
             - name: Upload wheels
               uses: actions/upload-artifact@v4

@@ -159,6 +159,7 @@ fn materialize_initial_ranks(
     valence: &ValenceAssignment,
     query_state: Option<QueryStateRef<'_>>,
 ) -> Result<Vec<u32>, LegacyStereoError> {
+    // BEGIN RDKIT CPP FUNCTION materialize_initial_ranks pinned Chirality.cpp:1325-1345
     // RDKit✔️✔️: void assignAtomCIPRanks(const ROMol &mol, UINT_VECT &ranks) {
     // RDKit✔️✔️:   PRECONDITION((!ranks.size() || ranks.size() >= mol.getNumAtoms()),
     // RDKit✔️✔️:                "bad ranks size");
@@ -167,24 +168,31 @@ fn materialize_initial_ranks(
     // RDKit✔️✔️:   }
     // RDKit✔️✔️:   unsigned int numAtoms = mol.getNumAtoms();
     // RDKit✔️✔️: #ifndef USE_NEW_STEREOCHEMISTRY
+    // RDKit✔️✔️:   // get the initial invariants:
     // RDKit✔️✔️:   DOUBLE_VECT invars(numAtoms, 0);
     // RDKit✔️✔️:   buildCIPInvariants(mol, invars);
     // RDKit✔️✔️:   iterateCIPRanks(mol, invars, ranks, false);
     // RDKit❌❌: #else
     // RDKit❌❌:   Canon::chiralRankMolAtoms(mol, ranks);
     // RDKit❌❌: #endif
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   // copy the ranks onto the atoms:
     // RDKit✔️✔️:   for (unsigned int i = 0; i < numAtoms; ++i) {
     // RDKit✔️✔️:     mol[i]->setProp(common_properties::_CIPRank, ranks[i], 1);
     // RDKit✔️✔️:   }
     // RDKit✔️✔️: }
-    // Behavior review: the pinned build follows the legacy invariant branch;
-    // the canonical rank owner supplies it and this adapter materializes the
-    // same computed atom property only when stereo inventory requires ranks.
-    // Complexity review: one rank refinement plus one linear property pass
-    // matches the pinned helper's asymptotic and allocation behavior.
+    // END RDKIT CPP FUNCTION materialize_initial_ranks
+    // Behavior: the pinned legacy rank engine returns segmented u32 ranks;
+    // checked i32 admission retains numeric values and computed membership.
+    // Modern compile-time ranking is unmodeled. Complexity: the same single
+    // refinement plus O(V) writes; numeric conversion removes temporary text.
     let ranks = assign_atom_cip_ranks_with_query_state(topology, valence, query_state)?;
     for (atom, rank) in topology.atoms.iter_mut().zip(&ranks) {
-        atom.set_computed_prop("_CIPRank", rank.to_string())?;
+        let value = i32::try_from(*rank).map_err(|_| CipRankError::InvariantOutOfRange {
+            atom: atom.id(),
+            value: i64::from(*rank),
+        })?;
+        atom.set_computed_prop("_CIPRank", value)?;
     }
     Ok(ranks)
 }
@@ -194,60 +202,107 @@ fn assign_atom_codes(
     valence: &ValenceAssignment,
     rings: &RingInfo,
     ranks: &mut Vec<u32>,
+    flag_possible_stereo_centers: bool,
     query_state: Option<QueryStateRef<'_>>,
 ) -> Result<(bool, bool), LegacyStereoError> {
-    // BEGIN RDKIT CPP FUNCTION assignAtomChiralCodes
-    // RDKit✔️✔️: PRECONDITION((!ranks.size() || ranks.size() == mol.getNumAtoms()),
-    // RDKit✔️✔️:              "bad rank vector size");
-    // RDKit✔️✔️: bool atomChanged = false;
-    // RDKit✔️✔️: unsigned int unassignedAtoms = 0;
-    // RDKit✔️✔️: for (auto atom : mol.atoms()) {
-    // RDKit✔️✔️:   Atom::ChiralType tag = atom->getChiralTag();
-    // RDKit✔️✔️:   if (flagPossibleStereoCenters ||
-    // RDKit✔️✔️:       (tag != Atom::CHI_UNSPECIFIED && tag != Atom::CHI_OTHER)) {
-    // RDKit✔️✔️:     if (atom->hasProp(common_properties::_CIPCode)) {
-    // RDKit✔️✔️:       continue;
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:     if (!ranks.size()) {
-    // RDKit✔️✔️:       assignAtomCIPRanks(mol, ranks);
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:     Chirality::INT_PAIR_VECT nbrs;
-    // RDKit✔️✔️:     auto [legalCenter, hasDupes] =
-    // RDKit✔️✔️:         isAtomPotentialChiralCenter(atom, mol, ranks, nbrs);
-    // RDKit✔️✔️:     if (legalCenter) {
-    // RDKit✔️✔️:       ++unassignedAtoms;
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:     if (legalCenter && !hasDupes && flagPossibleStereoCenters) {
-    // RDKit✔️✔️:       atom->setProp(common_properties::_ChiralityPossible, 1);
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:     if (legalCenter && !hasDupes && tag != Atom::CHI_UNSPECIFIED &&
-    // RDKit✔️✔️:         tag != Atom::CHI_OTHER) {
-    // RDKit✔️✔️:       std::sort(nbrs.begin(), nbrs.end(), Rankers::pairLess);
-    // RDKit✔️✔️:       std::list<int> nbrIndices;
-    // RDKit✔️✔️:       for (auto nbrIt = nbrs.begin(); nbrIt != nbrs.end(); ++nbrIt) {
-    // RDKit✔️✔️:         nbrIndices.push_back((*nbrIt).second);
+    // BEGIN RDKIT CPP FUNCTION assign_atom_codes pinned Chirality.cpp:1741-1821
+    // RDKit✔️✔️: std::pair<bool, bool> assignAtomChiralCodes(ROMol &mol, UINT_VECT &ranks,
+    // RDKit✔️✔️:                                             bool flagPossibleStereoCenters) {
+    // RDKit✔️✔️:   PRECONDITION((!ranks.size() || ranks.size() == mol.getNumAtoms()),
+    // RDKit✔️✔️:                "bad rank vector size");
+    // RDKit✔️✔️:   bool atomChanged = false;
+    // RDKit✔️✔️:   unsigned int unassignedAtoms = 0;
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   // ------------------
+    // RDKit✔️✔️:   // now loop over each atom and, if it's marked as chiral,
+    // RDKit✔️✔️:   //  figure out the appropriate CIP label:
+    // RDKit✔️✔️:   for (auto atom : mol.atoms()) {
+    // RDKit✔️✔️:     Atom::ChiralType tag = atom->getChiralTag();
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:     // only worry about this atom if it has a marked chirality
+    // RDKit✔️✔️:     // we understand:
+    // RDKit✔️✔️:     if (flagPossibleStereoCenters ||
+    // RDKit✔️✔️:         (tag != Atom::CHI_UNSPECIFIED && tag != Atom::CHI_OTHER)) {
+    // RDKit✔️✔️:       if (atom->hasProp(common_properties::_CIPCode)) {
+    // RDKit✔️✔️:         continue;
     // RDKit✔️✔️:       }
-    // RDKit✔️✔️:       int nSwaps = atom->getPerturbationOrder(nbrIndices);
-    // RDKit✔️✔️:       if (nbrIndices.size() == 3 && atom->getTotalNumHs() == 1) ++nSwaps;
-    // RDKit✔️✔️:       if (nSwaps % 2) {
-    // RDKit✔️✔️:         if (tag == Atom::CHI_TETRAHEDRAL_CCW) tag = Atom::CHI_TETRAHEDRAL_CW;
-    // RDKit✔️✔️:         else tag = Atom::CHI_TETRAHEDRAL_CCW;
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:       if (!ranks.size()) {
+    // RDKit✔️✔️:         //  if we need to, get the "CIP" ranking of each atom:
+    // RDKit✔️✔️:         assignAtomCIPRanks(mol, ranks);
     // RDKit✔️✔️:       }
-    // RDKit✔️✔️:       atom->setProp(common_properties::_CIPCode,
-    // RDKit✔️✔️:                     tag == Atom::CHI_TETRAHEDRAL_CCW ? "S" : "R");
+    // RDKit✔️✔️:       Chirality::INT_PAIR_VECT nbrs;
+    // RDKit✔️✔️:       // note that hasDupes is only evaluated if legalCenter==true
+    // RDKit✔️✔️:       auto [legalCenter, hasDupes] =
+    // RDKit✔️✔️:           isAtomPotentialChiralCenter(atom, mol, ranks, nbrs);
+    // RDKit✔️✔️:       if (legalCenter) {
+    // RDKit✔️✔️:         ++unassignedAtoms;
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:       if (legalCenter && !hasDupes && flagPossibleStereoCenters) {
+    // RDKit✔️✔️:         atom->setProp(common_properties::_ChiralityPossible, 1);
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:       if (legalCenter && !hasDupes && tag != Atom::CHI_UNSPECIFIED &&
+    // RDKit✔️✔️:           tag != Atom::CHI_OTHER) {
+    // RDKit✔️✔️:         // stereochem is possible and we have no duplicate neighbors, assign
+    // RDKit✔️✔️:         // a CIP code:
+    // RDKit✔️✔️:         atomChanged = true;
+    // RDKit✔️✔️:         --unassignedAtoms;
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:         // sort the list of neighbors by their CIP ranks:
+    // RDKit✔️✔️:         std::sort(nbrs.begin(), nbrs.end(), Rankers::pairLess);
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:         // collect the list of neighbor indices:
+    // RDKit✔️✔️:         std::list<int> nbrIndices;
+    // RDKit✔️✔️:         for (Chirality::INT_PAIR_VECT_CI nbrIt = nbrs.begin();
+    // RDKit✔️✔️:              nbrIt != nbrs.end(); ++nbrIt) {
+    // RDKit✔️✔️:           nbrIndices.push_back((*nbrIt).second);
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:         // ask the atom how many swaps we have to make:
+    // RDKit✔️✔️:         int nSwaps = atom->getPerturbationOrder(nbrIndices);
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:         // if the atom has 3 neighbors and a hydrogen, add a swap:
+    // RDKit✔️✔️:         if (nbrIndices.size() == 3 && atom->getTotalNumHs() == 1) {
+    // RDKit✔️✔️:           ++nSwaps;
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:         // if that number is odd, we'll change our chirality:
+    // RDKit✔️✔️:         if (nSwaps % 2) {
+    // RDKit✔️✔️:           if (tag == Atom::CHI_TETRAHEDRAL_CCW) {
+    // RDKit✔️✔️:             tag = Atom::CHI_TETRAHEDRAL_CW;
+    // RDKit✔️✔️:           } else {
+    // RDKit✔️✔️:             tag = Atom::CHI_TETRAHEDRAL_CCW;
+    // RDKit✔️✔️:           }
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:         // now assign the CIP code:
+    // RDKit✔️✔️:         std::string cipCode;
+    // RDKit✔️✔️:         if (tag == Atom::CHI_TETRAHEDRAL_CCW) {
+    // RDKit✔️✔️:           cipCode = "S";
+    // RDKit✔️✔️:         } else {
+    // RDKit✔️✔️:           cipCode = "R";
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:         atom->setProp(common_properties::_CIPCode, cipCode);
+    // RDKit✔️✔️:       }
     // RDKit✔️✔️:     }
     // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   return std::make_pair((unassignedAtoms > 0), atomChanged);
     // RDKit✔️✔️: }
-    // RDKit✔️✔️: return std::make_pair((unassignedAtoms > 0), atomChanged);
-    // END RDKIT CPP FUNCTION assignAtomChiralCodes
-    // Behavior review: legality, duplicate-rank rejection, source bond-order
-    // perturbation, implicit-H inversion and computed property writes follow
-    // the pinned legacy branch for the detached tetrahedral state model.
-    // Complexity review: ranks are lazily computed once; every center scans
-    // and sorts at most four incident bonds, matching the source traversal.
+    // END RDKIT CPP FUNCTION assign_atom_codes
+    // Behavior: the independent flag/tag guard runs before CIP presence,
+    // lazy ranking and legality. Possible is ordinary Int1 when requested;
+    // CIP is ordinary String. Existing setters retain computed membership.
+    // Complexity: one lazy rank vector, bounded-degree neighbor collection/
+    // sorting and linear atom scan. The existing tree property storage and
+    // BTreeSet duplicate check differ from source constant/vector lookups;
+    // no additional whole-graph clone or production observer is introduced.
     let mut changed = false;
     let mut unassigned = 0usize;
     for index in 0..topology.atoms.len() {
+        let tag = topology.atoms[index].chiral_tag();
+        if !flag_possible_stereo_centers && matches!(tag, ChiralTag::Unspecified | ChiralTag::Other)
+        {
+            continue;
+        }
         if topology.atoms[index].prop("_CIPCode").is_some() {
             continue;
         }
@@ -274,10 +329,9 @@ fn assign_atom_codes(
         if legal {
             unassigned += 1;
         }
-        if legal && !duplicates {
-            topology.atoms[index].set_computed_prop("_ChiralityPossible", "1")?;
+        if legal && !duplicates && flag_possible_stereo_centers {
+            topology.atoms[index].set_prop("_ChiralityPossible", 1_i32)?;
         }
-        let tag = topology.atoms[index].chiral_tag();
         if legal
             && !duplicates
             && matches!(tag, ChiralTag::TetrahedralCw | ChiralTag::TetrahedralCcw)
@@ -305,7 +359,7 @@ fn assign_atom_codes(
             } else {
                 tag
             };
-            topology.atoms[index].set_computed_prop(
+            topology.atoms[index].set_prop(
                 "_CIPCode",
                 if effective == ChiralTag::TetrahedralCcw {
                     "S"
@@ -324,40 +378,64 @@ fn rerank_atoms(
     ranks: &[u32],
     query_state: Option<QueryStateRef<'_>>,
 ) -> Result<Vec<u32>, LegacyStereoError> {
-    // BEGIN RDKIT CPP FUNCTION rerankAtoms
-    // RDKit✔️✔️: PRECONDITION(ranks.size() == mol.getNumAtoms(), "bad rank vector size");
-    // RDKit✔️✔️: unsigned int factor = 100;
-    // RDKit✔️✔️: while (factor < mol.getNumAtoms()) {
-    // RDKit✔️✔️:   factor *= 10;
-    // RDKit✔️✔️: }
-    // RDKit✔️✔️: DOUBLE_VECT invars(mol.getNumAtoms());
-    // RDKit✔️✔️: for (unsigned int i = 0; i < mol.getNumAtoms(); ++i) {
-    // RDKit✔️✔️:   invars[i] = ranks[i] * factor;
-    // RDKit✔️✔️:   const Atom *atom = mol.getAtomWithIdx(i);
-    // RDKit✔️✔️:   std::string cipCode;
-    // RDKit✔️✔️:   if (atom->getPropIfPresent(common_properties::_CIPCode, cipCode)) {
-    // RDKit✔️✔️:     if (cipCode == "S") {
-    // RDKit✔️✔️:       invars[i] += 10;
-    // RDKit✔️✔️:     } else if (cipCode == "R") {
-    // RDKit✔️✔️:       invars[i] += 20;
-    // RDKit✔️✔️:     }
+    // BEGIN RDKIT CPP FUNCTION rerank_atoms pinned Chirality.cpp:2067-2117
+    // RDKit✔️✔️: void rerankAtoms(const ROMol &mol, UINT_VECT &ranks) {
+    // RDKit✔️✔️:   PRECONDITION(ranks.size() == mol.getNumAtoms(), "bad rank vector size");
+    // RDKit✔️✔️:   unsigned int factor = 100;
+    // RDKit✔️✔️:   while (factor < mol.getNumAtoms()) {
+    // RDKit✔️✔️:     factor *= 10;
     // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   for (const auto oBond : mol.atomBonds(atom)) {
-    // RDKit✔️✔️:     if (oBond->getBondType() == Bond::DOUBLE) {
-    // RDKit✔️✔️:       if (oBond->getStereo() == Bond::STEREOE) {
-    // RDKit✔️✔️:         invars[i] += 1;
-    // RDKit✔️✔️:       } else if (oBond->getStereo() == Bond::STEREOZ) {
-    // RDKit✔️✔️:         invars[i] += 2;
+    // RDKit✔️✔️:
+    // RDKit❌❌: #ifdef VERBOSE_CANON
+    // RDKit❌❌:   BOOST_LOG(rdDebugLog) << "rerank PRE: " << std::endl;
+    // RDKit❌❌:   for (int i = 0; i < mol.getNumAtoms(); i++) {
+    // RDKit❌❌:     BOOST_LOG(rdDebugLog) << "  " << i << ": " << ranks[i] << std::endl;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: #endif
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   DOUBLE_VECT invars(mol.getNumAtoms());
+    // RDKit✔️✔️:   // and now supplement them:
+    // RDKit✔️✔️:   for (unsigned int i = 0; i < mol.getNumAtoms(); ++i) {
+    // RDKit✔️✔️:     invars[i] = ranks[i] * factor;
+    // RDKit✔️✔️:     const Atom *atom = mol.getAtomWithIdx(i);
+    // RDKit✔️✔️:     // Priority order: R > S > nothing
+    // RDKit✔️✔️:     std::string cipCode;
+    // RDKit✔️✔️:     if (atom->getPropIfPresent(common_properties::_CIPCode, cipCode)) {
+    // RDKit✔️✔️:       if (cipCode == "S") {
+    // RDKit✔️✔️:         invars[i] += 10;
+    // RDKit✔️✔️:       } else if (cipCode == "R") {
+    // RDKit✔️✔️:         invars[i] += 20;
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     for (const auto oBond : mol.atomBonds(atom)) {
+    // RDKit✔️✔️:       if (oBond->getBondType() == Bond::DOUBLE) {
+    // RDKit✔️✔️:         if (oBond->getStereo() == Bond::STEREOE) {
+    // RDKit✔️✔️:           invars[i] += 1;
+    // RDKit✔️✔️:         } else if (oBond->getStereo() == Bond::STEREOZ) {
+    // RDKit✔️✔️:           invars[i] += 2;
+    // RDKit✔️✔️:         }
     // RDKit✔️✔️:       }
     // RDKit✔️✔️:     }
     // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   iterateCIPRanks(mol, invars, ranks, true);
+    // RDKit✔️✔️:   // copy the ranks onto the atoms:
+    // RDKit✔️✔️:   for (unsigned int i = 0; i < mol.getNumAtoms(); i++) {
+    // RDKit✔️✔️:     mol.getAtomWithIdx(i)->setProp(common_properties::_CIPRank, ranks[i]);
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:
+    // RDKit❌❌: #ifdef VERBOSE_CANON
+    // RDKit❌❌:   BOOST_LOG(rdDebugLog) << "   post: " << std::endl;
+    // RDKit❌❌:   for (int i = 0; i < mol.getNumAtoms(); i++) {
+    // RDKit❌❌:     BOOST_LOG(rdDebugLog) << "  " << i << ": " << ranks[i] << std::endl;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: #endif
     // RDKit✔️✔️: }
-    // RDKit✔️✔️: iterateCIPRanks(mol, invars, ranks, true);
-    // END RDKIT CPP FUNCTION rerankAtoms
-    // Behavior review: modeled ranks are supplemented with the source R/S and
-    // incident E/Z priorities before the unique legacy seeded rank owner runs.
-    // Complexity review: one atom/adjacency pass plus the existing source-
-    // shaped rank refinement matches the source asymptotic and allocation form.
+    // END RDKIT CPP FUNCTION rerank_atoms
+    // Behavior: the existing seeded rank engine consumes exact source CIP
+    // and E/Z supplements; ordinary numeric overwrite preserves pre-existing
+    // computed membership. VERBOSE_CANON logging is not modeled. Complexity:
+    // O(V+E) invariant preparation plus the same rank refinement and O(V)
+    // writes; no additional ranking or temporary numeric String allocation.
     let mut factor = 100_i64;
     while factor < topology.atoms.len() as i64 {
         factor *= 10;
@@ -391,12 +469,12 @@ fn rerank_atoms(
         &invariants,
         query_state,
     )?;
-    // RDKit✔️✔️: // copy the ranks onto the atoms:
-    // RDKit✔️✔️: for (unsigned int i = 0; i < mol.getNumAtoms(); i++) {
-    // RDKit✔️✔️:   mol.getAtomWithIdx(i)->setProp(common_properties::_CIPRank, ranks[i]);
-    // RDKit✔️✔️: }
     for (atom, rank) in topology.atoms.iter_mut().zip(&ranks) {
-        atom.set_computed_prop("_CIPRank", rank.to_string())?;
+        let value = i32::try_from(*rank).map_err(|_| CipRankError::InvariantOutOfRange {
+            atom: atom.id(),
+            value: i64::from(*rank),
+        })?;
+        atom.set_prop("_CIPRank", value)?;
     }
     Ok(ranks)
 }
@@ -607,8 +685,9 @@ pub fn assign_legacy_stereochemistry_for_depiction(
 ) -> Result<TopologyBlock, LegacyStereoError> {
     // RDKit❗✔️:   RDKit::MolOps::assignStereochemistry(mol, false);
     // Behavior review: the one explicit argument is `cleanIt=false`; default
-    // `force=false` cannot short-circuit here because detached topology has no
-    // molecule-level `_StereochemDone` cache property.
+    // `force=false` presence guard belongs to the caller that borrows molecule
+    // properties. This topology-only delegator runs only when that caller
+    // dispatches; it cannot inspect molecule-level `_StereochemDone` itself.
     // Complexity review: this wrapper only selects the existing owner branch.
     assign_legacy_stereochemistry_impl(topology, valence, rings, None, false, false)
 }
@@ -893,8 +972,23 @@ fn assign_legacy_stereochemistry_impl(
     while keep_going {
         let changed_stereo_atoms;
         if has_stereo_atoms || has_potential_stereo_atoms {
-            (has_stereo_atoms, changed_stereo_atoms) =
-                assign_atom_codes(&mut topology, valence, rings, &mut ranks, query_state)?;
+            #[cfg(test)]
+            let observed_before = state_owner_tests::before(&topology);
+            (has_stereo_atoms, changed_stereo_atoms) = assign_atom_codes(
+                &mut topology,
+                valence,
+                rings,
+                &mut ranks,
+                flag_possible_stereo_centers,
+                query_state,
+            )?;
+            #[cfg(test)]
+            state_owner_tests::after(
+                observed_before,
+                &topology,
+                &ranks,
+                (has_stereo_atoms, changed_stereo_atoms),
+            );
         } else {
             changed_stereo_atoms = false;
         }
@@ -1106,5 +1200,368 @@ mod legacy_ring_prepass_tests {
         assert_eq!(result.bonds[0].stereo(), BondStereo::None);
         assert_eq!(topology, before);
         assert_eq!(rings, rings_before);
+    }
+}
+
+#[cfg(test)]
+mod state_owner_tests {
+    use super::*;
+    use cosmolkit_model::{Atom, AtomSpec, Bond, BondId, BondSpec, PropertyValue};
+    use cosmolkit_types::Element;
+    use std::cell::RefCell;
+
+    #[derive(Debug)]
+    struct Observation {
+        before: TopologyBlock,
+        after: TopologyBlock,
+        ranks: Vec<u32>,
+        flags: (bool, bool),
+    }
+    thread_local! {
+        static OBSERVATIONS: RefCell<Option<Vec<Observation>>> = const { RefCell::new(None) };
+    }
+    pub(super) fn before(topology: &TopologyBlock) -> Option<TopologyBlock> {
+        OBSERVATIONS.with(|slot| slot.borrow().as_ref().map(|_| topology.clone()))
+    }
+    pub(super) fn after(
+        before: Option<TopologyBlock>,
+        topology: &TopologyBlock,
+        ranks: &[u32],
+        flags: (bool, bool),
+    ) {
+        if let Some(before) = before {
+            OBSERVATIONS.with(|slot| {
+                slot.borrow_mut().as_mut().unwrap().push(Observation {
+                    before,
+                    after: topology.clone(),
+                    ranks: ranks.to_vec(),
+                    flags,
+                })
+            });
+        }
+    }
+
+    struct Fixture {
+        source_pin: String,
+        states: Vec<Vec<Vec<String>>>,
+        cells: BTreeMap<String, Cell>,
+    }
+    struct Cell {
+        returns: Vec<Returned>,
+        native_inner_calls: usize,
+        states: BTreeMap<String, usize>,
+    }
+    struct Returned {
+        ordinal: usize,
+        possible: bool,
+        has_unassigned: bool,
+        changed: bool,
+        ranks: Vec<u32>,
+    }
+    fn parse<T: std::str::FromStr>(text: &str) -> T
+    where
+        T::Err: std::fmt::Debug,
+    {
+        text.parse().unwrap()
+    }
+    fn unquote(text: &str) -> String {
+        assert!(
+            !text.contains('\\'),
+            "these fixed source keys/values contain no escapes"
+        );
+        text.strip_prefix('"')
+            .unwrap()
+            .strip_suffix('"')
+            .unwrap()
+            .to_owned()
+    }
+    fn topology(rows: &[Vec<String>]) -> TopologyBlock {
+        let mut atoms = Vec::new();
+        let mut bonds = Vec::new();
+        for row in rows {
+            if row[0] == "ATOM" {
+                let index = parse(&row[1]);
+                assert_eq!(index, atoms.len());
+                let mut spec = AtomSpec::new(Element::from_atomic_number(parse(&row[2])).unwrap())
+                    .with_isotope(parse(&row[3]))
+                    .with_formal_charge(parse(&row[4]))
+                    .with_explicit_hydrogens(parse(&row[5]))
+                    .with_no_implicit(row[6] == "1")
+                    .with_radical_electrons(parse(&row[7]))
+                    .with_aromatic(row[8] == "1")
+                    .with_hybridization(Hybridization::from_rdkit_code(parse(&row[9])).unwrap())
+                    .with_chiral_tag(ChiralTag::from_rdkit_code(parse(&row[10])).unwrap());
+                if row[11] != "0" {
+                    spec = spec.with_atom_map(parse(&row[11]));
+                }
+                atoms.push(Atom::from_spec(AtomId::new(index), spec));
+            } else if row[0] == "BOND" {
+                let index = parse(&row[1]);
+                assert_eq!(index, bonds.len());
+                let mut spec = BondSpec::new(
+                    AtomId::new(parse(&row[2])),
+                    AtomId::new(parse(&row[3])),
+                    BondOrder::from_rdkit_code(parse(&row[4])).unwrap(),
+                )
+                .with_aromatic(row[5] == "1")
+                .with_conjugated(row[6] == "1")
+                .with_direction(BondDirection::from_rdkit_code(parse(&row[7])).unwrap())
+                .with_stereo(BondStereo::from_rdkit_code(parse(&row[8])).unwrap());
+                let stereo = row[9]
+                    .split(',')
+                    .filter(|s| !s.is_empty())
+                    .map(|s| AtomId::new(parse(s)))
+                    .collect::<Vec<_>>();
+                if !stereo.is_empty() {
+                    assert_eq!(stereo.len(), 2);
+                    spec = spec.with_stereo_atoms(stereo[0], stereo[1]);
+                }
+                bonds.push(Bond::from_spec(BondId::new(index), spec));
+            }
+        }
+        let mut result = TopologyBlock::try_from_parts(atoms, bonds, vec![], vec![]).unwrap();
+        for row in rows.iter().filter(|r| r[0] == "PROP" && r[1] != "MOL") {
+            let key = unquote(&row[2]);
+            if key == "__computedProps" {
+                continue;
+            }
+            let value = match row[3].as_str() {
+                "1" => PropertyValue::Int(parse(&row[5])),
+                "6" => PropertyValue::Int(i32::try_from(parse::<u32>(&row[5])).unwrap()),
+                "3" => PropertyValue::String(unquote(&row[5])),
+                kind => panic!("unmodeled fixed atom/bond kind {kind}"),
+            };
+            let index: usize = parse(&row[1][1..]);
+            if row[1].starts_with('A') {
+                if row[4] == "1" {
+                    result.atoms[index].set_computed_prop(key, value).unwrap();
+                } else {
+                    result.atoms[index].set_prop(key, value).unwrap();
+                }
+            } else {
+                assert!(row[1].starts_with('B'));
+                if row[4] == "1" {
+                    result.bonds[index].set_computed_prop(key, value).unwrap();
+                } else {
+                    result.bonds[index].set_prop(key, value).unwrap();
+                }
+            }
+        }
+        // MOL UInt/Int/computed fields are preserved in the source fixture but
+        // deliberately not admitted as detached core values: their destination
+        // still requires the separate human model decision.
+        for row in rows
+            .iter()
+            .filter(|r| r[0] == "PROP" && r[1].starts_with('A') && r[2] == "\"__computedProps\"")
+        {
+            let atom = &result.atoms[parse::<usize>(&row[1][1..])];
+            let source_keys = row[5]
+                .split(',')
+                .filter(|s| !s.is_empty())
+                .map(unquote)
+                .collect::<Vec<_>>();
+            for key in ["_CIPRank", "_CIPCode", "_ChiralityPossible"] {
+                assert_eq!(
+                    atom.is_prop_computed(key),
+                    source_keys.iter().any(|k| k == key)
+                );
+            }
+        }
+        result
+    }
+    fn discrepancy<T: PartialEq + std::fmt::Debug>(
+        label: &str,
+        field: &str,
+        actual: &T,
+        expected: &T,
+        failures: &mut Vec<String>,
+    ) {
+        if actual != expected {
+            failures.push(format!("{label} {field}: {actual:?} != {expected:?}"));
+        }
+    }
+
+    #[test]
+    fn d2_state_owner_native_24_calls_and_two_typed_errors() {
+        let fixture: Fixture =
+            include!("../../../testdata/depict_2d/expected/rdkit/stereo_property_owners_core.rs");
+        assert_eq!(
+            fixture.source_pin,
+            "351f8f378f8ad6bbd517980c38896e66bf907af8c"
+        );
+        let mut attempted = 0;
+        let mut unexpected_errors = 0;
+        let mut preserved = 0;
+        let mut inner_calls = 0;
+        let mut failures = Vec::new();
+        for (label, cell) in fixture.cells.iter().filter(|(k, _)| k.contains("_OWNER_")) {
+            let flags = label.rsplit('_').next().unwrap().as_bytes();
+            let input = topology(&fixture.states[cell.states["OUTER_PRE"]]);
+            let expected = topology(&fixture.states[cell.states["OUTER_POST"]]);
+            let valence = crate::assign_valence_with_options_for_topology(
+                &input,
+                crate::ValenceModel::RdkitLike,
+                false,
+            )
+            .unwrap();
+            let rings =
+                crate::symmetrized_sssr(&input, &crate::RingSearchParams::default()).unwrap();
+            for repeat in 0..2 {
+                let before = (input.clone(), valence.clone(), rings.clone());
+                OBSERVATIONS.with(|slot| *slot.borrow_mut() = Some(Vec::new()));
+                let result = assign_legacy_stereochemistry_with_flags(
+                    input.clone(),
+                    &valence,
+                    &rings,
+                    flags[0] == b'1',
+                    flags[1] == b'1',
+                );
+                attempted += 1;
+                let observed = OBSERVATIONS.with(|slot| slot.borrow_mut().take().unwrap());
+                inner_calls += observed.len();
+                let current = (input.clone(), valence.clone(), rings.clone());
+                if current == before {
+                    preserved += 1;
+                }
+                discrepancy(
+                    label,
+                    "whole-input preservation",
+                    &current,
+                    &before,
+                    &mut failures,
+                );
+                match result {
+                    Ok(output) => discrepancy(
+                        label,
+                        "whole represented output",
+                        &output,
+                        &expected,
+                        &mut failures,
+                    ),
+                    Err(error) => {
+                        unexpected_errors += 1;
+                        failures.push(format!("{label}/{repeat}: {error:?}"));
+                    }
+                }
+                discrepancy(
+                    label,
+                    "actual inner call count",
+                    &observed.len(),
+                    &cell.native_inner_calls,
+                    &mut failures,
+                );
+                for (index, observation) in observed.iter().enumerate() {
+                    if let Some(source) = cell.returns.get(index) {
+                        discrepancy(
+                            label,
+                            "source ordinal",
+                            &index,
+                            &source.ordinal,
+                            &mut failures,
+                        );
+                        discrepancy(
+                            label,
+                            "forwarded flag",
+                            &(flags[1] == b'1'),
+                            &source.possible,
+                            &mut failures,
+                        );
+                        discrepancy(
+                            label,
+                            "actual returned flags",
+                            &observation.flags,
+                            &(source.has_unassigned, source.changed),
+                            &mut failures,
+                        );
+                        discrepancy(
+                            label,
+                            "actual returned ranks",
+                            &observation.ranks,
+                            &source.ranks,
+                            &mut failures,
+                        );
+                        discrepancy(
+                            label,
+                            "whole inner PRE",
+                            &observation.before,
+                            &topology(&fixture.states[cell.states[&format!("INNER_PRE_{index}")]]),
+                            &mut failures,
+                        );
+                        discrepancy(
+                            label,
+                            "whole inner POST",
+                            &observation.after,
+                            &topology(&fixture.states[cell.states[&format!("INNER_POST_{index}")]]),
+                            &mut failures,
+                        );
+                    } else {
+                        failures.push(format!("{label} unexpected inner call {index}"));
+                    }
+                }
+            }
+        }
+        let cell = &fixture.cells["2508_OWNER_11"];
+        let valid = topology(&fixture.states[cell.states["OUTER_PRE"]]);
+        let valid_valence = crate::assign_valence_with_options_for_topology(
+            &valid,
+            crate::ValenceModel::RdkitLike,
+            false,
+        )
+        .unwrap();
+        let rings = crate::symmetrized_sssr(&valid, &crate::RingSearchParams::default()).unwrap();
+        let mut errors = 0;
+        let mut error_preserved = 0;
+        for topology_error in [true, false] {
+            let mut input = valid.clone();
+            let mut valence = valid_valence.clone();
+            if topology_error {
+                input.atoms.pop();
+            } else {
+                valence.explicit_valence.clear();
+            }
+            let before = (input.clone(), valence.clone(), rings.clone());
+            let result = assign_legacy_stereochemistry_with_flags(
+                input.clone(),
+                &valence,
+                &rings,
+                false,
+                true,
+            );
+            errors += 1;
+            let typed = if topology_error {
+                matches!(result, Err(LegacyStereoError::InvalidTopology(_)))
+            } else {
+                matches!(
+                    result,
+                    Err(LegacyStereoError::CipRank(CipRankError::ValenceRowCount {
+                        field: "explicit_valence",
+                        ..
+                    }))
+                )
+            };
+            if !typed {
+                failures.push(format!("typed control {topology_error}: {result:?}"));
+            }
+            let after = (input, valence, rings.clone());
+            if after == before {
+                error_preserved += 1;
+            }
+            discrepancy(
+                "typed error",
+                "whole-input preservation",
+                &after,
+                &before,
+                &mut failures,
+            );
+        }
+        eprintln!(
+            "STATE_OWNER attempted={attempted}/24 unexpected_errors={unexpected_errors} preservation={preserved}/24 inner_calls={inner_calls}/30 typed_controls={errors}/2 error_preservation={error_preserved}/2 discrepancies={}",
+            failures.len()
+        );
+        assert_eq!(
+            (attempted, errors, preserved, error_preserved),
+            (24, 2, 24, 2)
+        );
+        assert!(failures.is_empty(), "{}", failures.join("\n"));
     }
 }

@@ -1,5 +1,8 @@
 //! Detached conformer-generation boundaries.
 
+mod bounds;
+mod smoothing;
+
 use cosmolkit_model::{Conformer3D, CoordinateBlock, TopologyBlock};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

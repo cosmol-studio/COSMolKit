@@ -21,10 +21,12 @@ pub(crate) struct DerivedCacheBlock {
     valid: DerivedState,
     #[cfg(any(
         feature = "cap-valence",
+        feature = "cap-fingerprints",
         feature = "cap-hydrogens",
         feature = "cap-smiles",
         feature = "cap-sanitize",
-        feature = "cap-descriptors"
+        feature = "cap-descriptors",
+        feature = "cap-forcefields"
     ))]
     valence: Option<cosmolkit_core::ValenceAssignment>,
     #[cfg(any(
@@ -34,10 +36,11 @@ pub(crate) struct DerivedCacheBlock {
         feature = "cap-sanitize",
         feature = "cap-hydrogens",
         feature = "cap-kekulize",
-        feature = "cap-aromaticity"
+        feature = "cap-aromaticity",
+        feature = "cap-fingerprints"
     ))]
     rings: Option<cosmolkit_core::RingInfo>,
-    #[cfg(feature = "cap-rings")]
+    #[cfg(any(feature = "cap-rings", feature = "cap-fingerprints"))]
     ring_families: Option<cosmolkit_core::RingInfo>,
 }
 
@@ -47,20 +50,24 @@ impl DerivedCacheBlock {
             && {
                 #[cfg(any(
                     feature = "cap-valence",
+                    feature = "cap-fingerprints",
                     feature = "cap-hydrogens",
                     feature = "cap-smiles",
                     feature = "cap-sanitize",
-                    feature = "cap-descriptors"
+                    feature = "cap-descriptors",
+                    feature = "cap-forcefields"
                 ))]
                 {
                     self.valence.is_none()
                 }
                 #[cfg(not(any(
                     feature = "cap-valence",
+                    feature = "cap-fingerprints",
                     feature = "cap-hydrogens",
                     feature = "cap-smiles",
                     feature = "cap-sanitize",
-                    feature = "cap-descriptors"
+                    feature = "cap-descriptors",
+                    feature = "cap-forcefields"
                 )))]
                 {
                     true
@@ -74,14 +81,15 @@ impl DerivedCacheBlock {
                     feature = "cap-sanitize",
                     feature = "cap-hydrogens",
                     feature = "cap-kekulize",
-                    feature = "cap-aromaticity"
+                    feature = "cap-aromaticity",
+                    feature = "cap-fingerprints"
                 ))]
                 {
-                    #[cfg(feature = "cap-rings")]
+                    #[cfg(any(feature = "cap-rings", feature = "cap-fingerprints"))]
                     {
                         self.rings.is_none() && self.ring_families.is_none()
                     }
-                    #[cfg(not(feature = "cap-rings"))]
+                    #[cfg(not(any(feature = "cap-rings", feature = "cap-fingerprints")))]
                     {
                         self.rings.is_none()
                     }
@@ -93,7 +101,8 @@ impl DerivedCacheBlock {
                     feature = "cap-sanitize",
                     feature = "cap-hydrogens",
                     feature = "cap-kekulize",
-                    feature = "cap-aromaticity"
+                    feature = "cap-aromaticity",
+                    feature = "cap-fingerprints"
                 )))]
                 {
                     true
@@ -113,10 +122,12 @@ impl DerivedCacheBlock {
         self.valid = self.valid.difference(states);
         #[cfg(any(
             feature = "cap-valence",
+            feature = "cap-fingerprints",
             feature = "cap-hydrogens",
             feature = "cap-smiles",
             feature = "cap-sanitize",
-            feature = "cap-descriptors"
+            feature = "cap-descriptors",
+            feature = "cap-forcefields"
         ))]
         if states.intersects(DerivedState::VALENCE) {
             self.valence = None;
@@ -128,12 +139,13 @@ impl DerivedCacheBlock {
             feature = "cap-sanitize",
             feature = "cap-hydrogens",
             feature = "cap-kekulize",
-            feature = "cap-aromaticity"
+            feature = "cap-aromaticity",
+            feature = "cap-fingerprints"
         ))]
         if states.intersects(DerivedState::RINGS) {
             self.rings = None;
         }
-        #[cfg(feature = "cap-rings")]
+        #[cfg(any(feature = "cap-rings", feature = "cap-fingerprints"))]
         if states.intersects(DerivedState::RING_FAMILIES) {
             self.ring_families = None;
         }
@@ -141,10 +153,12 @@ impl DerivedCacheBlock {
 
     #[cfg(any(
         feature = "cap-valence",
+        feature = "cap-fingerprints",
         feature = "cap-hydrogens",
         feature = "cap-smiles",
         feature = "cap-sanitize",
-        feature = "cap-descriptors"
+        feature = "cap-descriptors",
+        feature = "cap-forcefields"
     ))]
     pub(crate) fn install_valence_assignment(
         &mut self,
@@ -155,10 +169,12 @@ impl DerivedCacheBlock {
 
     #[cfg(any(
         feature = "cap-valence",
+        feature = "cap-fingerprints",
         feature = "cap-hydrogens",
         feature = "cap-smiles",
         feature = "cap-sanitize",
-        feature = "cap-descriptors"
+        feature = "cap-descriptors",
+        feature = "cap-forcefields"
     ))]
     pub(crate) fn valence_assignment(&self) -> Option<&cosmolkit_core::ValenceAssignment> {
         if self.valid.contains(DerivedState::VALENCE) {
@@ -175,7 +191,8 @@ impl DerivedCacheBlock {
         feature = "cap-sanitize",
         feature = "cap-hydrogens",
         feature = "cap-kekulize",
-        feature = "cap-aromaticity"
+        feature = "cap-aromaticity",
+        feature = "cap-fingerprints"
     ))]
     pub(crate) fn install_ring_info(&mut self, rings: cosmolkit_core::RingInfo) {
         self.rings = Some(rings);
@@ -188,7 +205,8 @@ impl DerivedCacheBlock {
         feature = "cap-sanitize",
         feature = "cap-hydrogens",
         feature = "cap-kekulize",
-        feature = "cap-aromaticity"
+        feature = "cap-aromaticity",
+        feature = "cap-fingerprints"
     ))]
     pub(crate) fn ring_info(&self) -> Option<&cosmolkit_core::RingInfo> {
         self.rings.as_ref()
@@ -204,7 +222,8 @@ impl DerivedCacheBlock {
         feature = "cap-sanitize",
         feature = "cap-hydrogens",
         feature = "cap-kekulize",
-        feature = "cap-aromaticity"
+        feature = "cap-aromaticity",
+        feature = "cap-fingerprints"
     ))]
     pub(crate) fn valid_ring_info(&self) -> Option<&cosmolkit_core::RingInfo> {
         if self.valid.contains(DerivedState::RINGS) {
@@ -214,12 +233,12 @@ impl DerivedCacheBlock {
         }
     }
 
-    #[cfg(feature = "cap-rings")]
+    #[cfg(any(feature = "cap-rings", feature = "cap-fingerprints"))]
     pub(crate) fn install_ring_family_info(&mut self, families: cosmolkit_core::RingInfo) {
         self.ring_families = Some(families);
     }
 
-    #[cfg(feature = "cap-rings")]
+    #[cfg(any(feature = "cap-rings", feature = "cap-fingerprints"))]
     pub(crate) fn ring_family_info(&self) -> Option<&cosmolkit_core::RingInfo> {
         self.ring_families.as_ref()
     }
@@ -227,10 +246,12 @@ impl DerivedCacheBlock {
     pub(crate) fn validate_for_atom_count(&self, atom_count: usize) -> Result<(), OperationError> {
         #[cfg(any(
             feature = "cap-valence",
+            feature = "cap-fingerprints",
             feature = "cap-hydrogens",
             feature = "cap-smiles",
             feature = "cap-sanitize",
-            feature = "cap-descriptors"
+            feature = "cap-descriptors",
+            feature = "cap-forcefields"
         ))]
         {
             let valid = self.valid.contains(DerivedState::VALENCE);
@@ -285,7 +306,8 @@ impl DerivedCacheBlock {
             feature = "cap-sanitize",
             feature = "cap-hydrogens",
             feature = "cap-kekulize",
-            feature = "cap-aromaticity"
+            feature = "cap-aromaticity",
+            feature = "cap-fingerprints"
         ))]
         {
             let valid = self.valid.contains(DerivedState::RINGS);
@@ -1459,5 +1481,99 @@ mod valence_cache_tests {
         cache.clear(DerivedState::VALENCE);
         assert_eq!(cache.valence_assignment(), None);
         assert_eq!(cache.validate_for_atom_count(2), Ok(()));
+    }
+}
+
+#[cfg(all(test, feature = "cap-forcefields"))]
+mod forcefields_valence_cache_tests {
+    use super::*;
+
+    #[test]
+    fn uff_param_p04_forcefields_stores_reads_validates_and_clears_assignment() {
+        let mut cache = DerivedCacheBlock::default();
+        assert_eq!(cache.validate_for_atom_count(2), Ok(()));
+        assert!(!cache.valid_states().contains(DerivedState::VALENCE));
+        assert_eq!(cache.valence_assignment(), None);
+
+        cache.install_valence_assignment(cosmolkit_core::ValenceAssignment {
+            explicit_valence: vec![1, 2],
+            implicit_hydrogens: vec![3, 2],
+        });
+        cache.mark_valid(DerivedState::VALENCE);
+
+        assert!(cache.valid_states().contains(DerivedState::VALENCE));
+        let stored = cache
+            .valence_assignment()
+            .expect("forcefields-only cache keeps the detached assignment");
+        assert_eq!(stored.explicit_valence, [1, 2]);
+        assert_eq!(stored.implicit_hydrogens, [3, 2]);
+        assert_eq!(cache.validate_for_atom_count(2), Ok(()));
+
+        cache.clear(DerivedState::VALENCE);
+        assert!(!cache.valid_states().contains(DerivedState::VALENCE));
+        assert_eq!(cache.valence_assignment(), None);
+        assert_eq!(cache.validate_for_atom_count(2), Ok(()));
+    }
+
+    #[test]
+    fn uff_param_p04_forcefields_rejects_inconsistent_cache_pairs() {
+        let mut missing_validity = DerivedCacheBlock::default();
+        missing_validity.install_valence_assignment(cosmolkit_core::ValenceAssignment {
+            explicit_valence: vec![1],
+            implicit_hydrogens: vec![0],
+        });
+        assert!(matches!(
+            missing_validity.validate_for_atom_count(1),
+            Err(OperationError::InvalidDerivedCache {
+                state: "valence",
+                field: "validity_bit",
+                actual: 0,
+                expected: 1,
+            })
+        ));
+
+        let mut missing_assignment = DerivedCacheBlock::default();
+        missing_assignment.mark_valid(DerivedState::VALENCE);
+        assert!(matches!(
+            missing_assignment.validate_for_atom_count(1),
+            Err(OperationError::InvalidDerivedCache {
+                state: "valence",
+                field: "assignment",
+                actual: 0,
+                expected: 1,
+            })
+        ));
+
+        let mut explicit_length = DerivedCacheBlock::default();
+        explicit_length.install_valence_assignment(cosmolkit_core::ValenceAssignment {
+            explicit_valence: vec![1, 2],
+            implicit_hydrogens: vec![0],
+        });
+        explicit_length.mark_valid(DerivedState::VALENCE);
+        assert!(matches!(
+            explicit_length.validate_for_atom_count(1),
+            Err(OperationError::InvalidDerivedCache {
+                state: "valence",
+                field: "explicit_valence",
+                actual: 2,
+                expected: 1,
+            })
+        ));
+
+        let mut implicit_length = DerivedCacheBlock::default();
+        implicit_length.install_valence_assignment(cosmolkit_core::ValenceAssignment {
+            explicit_valence: vec![1],
+            implicit_hydrogens: vec![0, 2],
+        });
+        implicit_length.mark_valid(DerivedState::VALENCE);
+        assert!(matches!(
+            implicit_length.validate_for_atom_count(1),
+            Err(OperationError::InvalidDerivedCache {
+                state: "valence",
+                field: "implicit_hydrogens",
+                actual: 2,
+                expected: 1,
+            })
+        ));
     }
 }

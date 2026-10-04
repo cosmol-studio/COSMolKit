@@ -213,9 +213,10 @@ pub use relationships::{
     AtomAddress, BioAsu, BioCisPep, BioConnection, BioConnectionKind, BioModRes, ResidueAddress,
 };
 pub use residue::{
-    ResidueCode, ResidueInfo, ResidueInfoKind, ResidueSequenceError,
-    UNKNOWN_TABULATED_RESIDUE_INDEX, expand_one_letter, expand_one_letter_sequence,
-    find_residue_info, find_residue_info_index, residue_code, residue_info, residue_info_checked,
+    ResidueCode, ResidueCodeParseError, ResidueIdentity, ResidueInfo, ResidueInfoKind,
+    ResidueSequenceError, UNKNOWN_TABULATED_RESIDUE_INDEX, expand_one_letter,
+    expand_one_letter_sequence, find_residue_info, find_residue_info_index, residue_code,
+    residue_info, residue_info_checked,
 };
 pub use secondary_structure::{BioHelix, BioHelixClass, BioSheet, BioStrand};
 pub use selection::{

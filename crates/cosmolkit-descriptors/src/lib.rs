@@ -3442,11 +3442,31 @@ pub(crate) fn ring_info(
 /// (retained fixed pattern, default match parameters).
 pub fn num_hbd(topology: &TopologyBlock) -> DescriptorResult<u32> {
     let assignment = valence(topology, "num_hbd")?;
-    let rings = ring_info(topology, "num_hbd")?;
-    let coordinates = CoordinateBlock::default();
-    let properties = MoleculeProperties::default();
-    let input = DescriptorInput::new(topology, &coordinates, &properties, &assignment, &rings);
-    lipinski::num_hbd_prepared(&input)
+    // HBD-PUBLIC: the cold form still performs BOTH of its historical cold
+    // preparations (canonical assignment AND the cold SSSR ring set — the
+    // latter retained explicitly to preserve the old error surface, since
+    // a failing cold ring find failed the old call too), then routes the
+    // count through the ONE narrow HBD owner with the supplied
+    // topology/assignment; the pattern itself reads no ring predicate.
+    let _rings = ring_info(topology, "num_hbd")?;
+    lipinski::num_hbd_with_valence(topology, &assignment)
+}
+
+/// General SMARTS-based hydrogen-bond donor count over an existing
+/// prepared valence assignment (HBD-PUBLIC narrow domain form).
+///
+/// ONE qualified delegation to the narrow lipinski HBD owner
+/// ([`lipinski::num_hbd_with_valence`]): the fixed pattern reads
+/// hydrogen-count and valence rows but NO ring predicate, so this form
+/// borrows the supplied FINAL topology and prepared valence rows through
+/// the ONE narrow borrowed-valence context and matcher path. No ring
+/// state is read, gated on, found or fabricated; the assignment is never
+/// recomputed, installed or cloned.
+pub fn num_hbd_with_valence(
+    topology: &TopologyBlock,
+    valence: &cosmolkit_core::ValenceAssignment,
+) -> DescriptorResult<u32> {
+    lipinski::num_hbd_with_valence(topology, valence)
 }
 
 /// General SMARTS-based hydrogen-bond acceptor count.
@@ -3465,16 +3485,491 @@ pub fn num_hba(topology: &TopologyBlock) -> DescriptorResult<u32> {
 
 /// General SMARTS-based heteroatom count.
 ///
-/// Cold convenience form: computes ONE cold canonical assignment and ONE
-/// cold SSSR ring set, then delegates to [`lipinski::num_heteroatoms_prepared`]
-/// (retained fixed pattern `"[!#6;!#1]", default match parameters).
+/// Topology-only SMARTS heteroatom count (RDKit `CalcNumHeteroatoms`).
+///
+/// D-A resolution: the `[!#6;!#1]` pattern reads ONLY atomic-number rows,
+/// so this entry delegates to [`lipinski::num_heteroatoms_topology`] via
+/// the narrow topology query context — NO valence assignment, ring find,
+/// fabricated chemistry rows or direct element counting; default match
+/// parameters (uniquify, maxMatches=1000) retained.
 pub fn num_heteroatoms(topology: &TopologyBlock) -> DescriptorResult<u32> {
-    let assignment = valence(topology, "num_heteroatoms")?;
-    let rings = ring_info(topology, "num_heteroatoms")?;
-    let coordinates = CoordinateBlock::default();
-    let properties = MoleculeProperties::default();
-    let input = DescriptorInput::new(topology, &coordinates, &properties, &assignment, &rings);
-    lipinski::num_heteroatoms_prepared(&input)
+    lipinski::num_heteroatoms_topology(topology)
+}
+
+/// HETERO-PUBLIC domain regressions: the frozen 160-call input-state
+/// product, the 12-call maxMatches boundary product, and the raw
+/// pentavalent-carbon discriminator over the topology-only owner.
+#[cfg(test)]
+mod descriptor_heteroatoms_domain_tests {
+    use super::*;
+
+    /// Frozen 20-case literal table (SMILES, expected count); identical
+    /// under BOTH remove-H policies and raw/sanitized construction.
+    const CASES: [(&str, u32); 20] = [
+        ("", 0),
+        ("C", 0),
+        ("CCO", 1),
+        ("[NH4+]", 1),
+        ("[O-]", 1),
+        ("[H][H]", 0),
+        ("[2H]O[2H]", 1),
+        ("[13CH4]", 0),
+        ("N", 1),
+        ("O", 1),
+        ("C=O", 1),
+        ("O=C(N)N", 3),
+        ("n1ccccc1", 1),
+        ("[nH]1cccc1", 1),
+        ("C1CCCCC1", 0),
+        ("CC(N)C(=O)O", 3),
+        ("[H]N([H])[H]", 1),
+        ("C[C+](C)C", 0),
+        ("*", 1),
+        ("CC#N", 1),
+    ];
+
+    /// Frozen literal CONSTRUCTOR prerequisites (input identities from the
+    /// frozen SMILES strings and remove-H policy, from the DQ literal
+    /// table — never derived from num_heteroatoms output). Ordered atomic
+    /// numbers per case, isotopes, and explicit-H row specifications.
+    /// (smiles, ordered atomic numbers keep, ordered isotopes keep,
+    /// explicit-H rows keep)
+    const PREREQS: [(&str, &[u8], &[Option<u16>], &[(usize, u8)]); 20] = [
+        ("", &[], &[], &[]),
+        ("C", &[6], &[None], &[]),
+        ("CCO", &[6, 6, 8], &[None, None, None], &[]),
+        ("[NH4+]", &[7], &[None], &[(0, 4)]),
+        ("[O-]", &[8], &[None], &[]),
+        ("[H][H]", &[1, 1], &[None, None], &[]),
+        ("[2H]O[2H]", &[1, 8, 1], &[Some(2), None, Some(2)], &[]),
+        ("[13CH4]", &[6], &[Some(13)], &[(0, 4)]),
+        ("N", &[7], &[None], &[]),
+        ("O", &[8], &[None], &[]),
+        ("C=O", &[6, 8], &[None, None], &[]),
+        ("O=C(N)N", &[8, 6, 7, 7], &[None, None, None, None], &[]),
+        ("n1ccccc1", &[7, 6, 6, 6, 6, 6], &[None; 6], &[]),
+        ("[nH]1cccc1", &[7, 6, 6, 6, 6], &[None; 5], &[(0, 1)]),
+        ("C1CCCCC1", &[6, 6, 6, 6, 6, 6], &[None; 6], &[]),
+        ("CC(N)C(=O)O", &[6, 6, 7, 6, 8, 8], &[None; 6], &[]),
+        // Ammonia: H rows survive ONLY remove-H=false (1,7,1,1); removed
+        // policy yields just [7] with N explicit-H 3 AFTER removal.
+        ("[H]N([H])[H]", &[1, 7, 1, 1], &[None; 4], &[(1, 0)]),
+        ("C[C+](C)C", &[6, 6, 6, 6], &[None; 4], &[]),
+        ("*", &[0], &[None], &[]),
+        ("CC#N", &[6, 6, 7], &[None, None, None], &[]),
+    ];
+
+    /// Assert the frozen input identities on a CONSTRUCTED topology row
+    /// list (atomic numbers in order, isotope options, explicit-H rows).
+    /// Input prerequisite check only — no descriptor call, no expected
+    /// count synthesis.
+    fn assert_input_prerequisites(
+        label: &str,
+        smiles: &str,
+        topology: &TopologyBlock,
+        remove_hydrogens: bool,
+    ) {
+        let index = PREREQS
+            .iter()
+            .position(|(candidate, _, _, _)| *candidate == smiles)
+            .unwrap_or_else(|| panic!("{label}: unknown prerequisite case {smiles:?}"));
+        let (_, atomic_numbers, isotopes, explicit_h) = PREREQS[index];
+        // The remove-H=true policy removes plain hydrogen ATOM rows
+        // attached to heavy atoms (ammonia H rows) while deuterium rows
+        // survive BOTH policies; an all-hydrogen molecule ([H][H]) keeps
+        // its rows under both policies (DQ frozen rows table: [H][H] 2/2,
+        // [2H]O[2H] 3/3, ammonia 4/1).
+        let all_hydrogen = atomic_numbers.iter().all(|&z| z == 1);
+        let expected_numbers: Vec<u8> = if remove_hydrogens {
+            atomic_numbers
+                .iter()
+                .zip(isotopes.iter())
+                .filter(|(z, isotope)| **z != 1 || isotope.is_some() || all_hydrogen)
+                .map(|(&z, _)| z)
+                .collect()
+        } else {
+            atomic_numbers.to_vec()
+        };
+        assert_eq!(
+            topology.atoms.len(),
+            expected_numbers.len(),
+            "{label}: atom row count"
+        );
+        // Direct row-by-row verification against the kept expectation.
+        let kept: Vec<(u8, Option<u16>)> = atomic_numbers
+            .iter()
+            .zip(isotopes.iter())
+            .filter(|(z, isotope)| {
+                !remove_hydrogens || **z != 1 || isotope.is_some() || all_hydrogen
+            })
+            .map(|(&z, &isotope)| (z, isotope))
+            .collect();
+        for (row, (expected_z, expected_isotope)) in topology.atoms.iter().zip(kept.iter()) {
+            assert_eq!(row.atomic_number(), *expected_z, "{label}: atomic number");
+            assert_eq!(row.isotope(), *expected_isotope, "{label}: isotope");
+        }
+        if remove_hydrogens && smiles == "[H]N([H])[H]" {
+            assert_eq!(topology.atoms[0].atomic_number(), 7, "{label}: N kept");
+            assert_eq!(topology.atoms[0].explicit_hydrogens(), 3, "{label}: N H=3");
+        } else {
+            // The other atom-spec H literals are unchanged under BOTH
+            // policies; only ammonia changes row index/count on removal.
+            for &(row_index, expected_h) in explicit_h {
+                assert_eq!(
+                    topology.atoms[row_index].explicit_hydrogens(),
+                    expected_h,
+                    "{label}: explicit H row {row_index}"
+                );
+            }
+        }
+    }
+
+    /// Real parser preparation per policy (raw parse / sanitized),
+    /// reusing the existing detached owners exactly like the ring
+    /// fixtures; no invented sanitize calls.
+    fn prepared_topology(smiles: &str, sanitized: bool) -> TopologyBlock {
+        let parsed = cosmolkit_smiles::parse_smiles(
+            smiles,
+            &cosmolkit_smiles::SmilesParseParams {
+                sanitize: false,
+                remove_hydrogens: false,
+                ..cosmolkit_smiles::SmilesParseParams::default()
+            },
+        )
+        .expect("frozen case parses");
+        if sanitized {
+            cosmolkit_core::sanitize_topology(
+                &parsed.topology,
+                &cosmolkit_core::SanitizeParams::default(),
+            )
+            .expect("frozen case sanitizes")
+            .topology
+        } else {
+            parsed.topology
+        }
+    }
+
+    #[test]
+    fn descriptor_heteroatoms_domain_input_state_product() {
+        // 20 x 2 remove-H policies x 2 raw/sanitized x 2 repeats = 160
+        // actual calls to the topology-only owner with frozen literals.
+        let mut calls = 0usize;
+        for (smiles, expected) in CASES {
+            for remove_hydrogens in [false, true] {
+                // remove-H policy changes the CONSTRUCTOR preparation
+                // (real RemoveHs) exactly like the ring fixtures; the
+                // literal count is IDENTICAL under both policies.
+                let parsed = cosmolkit_smiles::parse_smiles(
+                    smiles,
+                    &cosmolkit_smiles::SmilesParseParams {
+                        sanitize: false,
+                        remove_hydrogens: false,
+                        ..cosmolkit_smiles::SmilesParseParams::default()
+                    },
+                )
+                .expect("frozen case parses");
+                let topology = if remove_hydrogens {
+                    let result = cosmolkit_core::remove_hydrogens_with_params(
+                        parsed.topology,
+                        parsed.coordinates,
+                        parsed.properties,
+                        &cosmolkit_core::RemoveHsParams {
+                            update_explicit_count: true,
+                            sanitize: true,
+                            ..cosmolkit_core::RemoveHsParams::default()
+                        },
+                    )
+                    .expect("frozen case RemoveHs");
+                    result.topology
+                } else {
+                    parsed.topology
+                };
+                for sanitized in [false, true] {
+                    let final_topology = if sanitized {
+                        // For the sanitized arm run the real ALL-default
+                        // sanitize on the already-prepared topology.
+                        cosmolkit_core::sanitize_topology(
+                            &topology,
+                            &cosmolkit_core::SanitizeParams::default(),
+                        )
+                        .expect("frozen case sanitizes")
+                        .topology
+                    } else {
+                        topology.clone()
+                    };
+                    for _repeat in 0..2 {
+                        let label = format!("{smiles}/rh={remove_hydrogens}/s={sanitized}");
+                        // Constructor/element/H/isotope prerequisite BEFORE
+                        // every invocation (frozen input identities, never
+                        // SUT-derived).
+                        assert_input_prerequisites(
+                            &label,
+                            smiles,
+                            &final_topology,
+                            remove_hydrogens,
+                        );
+                        // Per-call fresh topology baseline.
+                        let baseline = final_topology.clone();
+                        let helper_before = VALENCE_HELPER_ENTRIES.with(std::cell::Cell::get);
+                        let count = num_heteroatoms(&final_topology)
+                            .unwrap_or_else(|error| panic!("{label}: {error:?}"));
+                        calls += 1;
+                        assert_eq!(count, expected, "{label}");
+                        assert_eq!(final_topology, baseline, "{label}: topology unchanged");
+                        // Zero helper reentry: the topology-only owner
+                        // never enters the valence helper.
+                        assert_eq!(
+                            VALENCE_HELPER_ENTRIES.with(std::cell::Cell::get),
+                            helper_before,
+                            "{label}: zero valence helper entries"
+                        );
+                    }
+                }
+            }
+        }
+        assert_eq!(calls, 160, "exact census");
+    }
+
+    #[test]
+    fn descriptor_heteroatoms_domain_maxmatches_boundary() {
+        // Disconnected real N-row topologies: literal counts
+        // [0,1,999,1000,1001,1005] clamp at maxMatches=1000.
+        let row_counts = [0usize, 1, 999, 1000, 1001, 1005];
+        let expected = [0u32, 1, 999, 1000, 1000, 1000];
+        let mut calls = 0usize;
+        for (row_index, rows) in row_counts.iter().enumerate() {
+            for _repeat in 0..2 {
+                let atoms = (0..*rows)
+                    .map(|id| {
+                        cosmolkit_model::Atom::from_spec(
+                            cosmolkit_model::AtomId::new(id),
+                            cosmolkit_model::AtomSpec::new(cosmolkit_model::Element::N),
+                        )
+                    })
+                    .collect::<Vec<_>>();
+                let topology =
+                    TopologyBlock::try_from_parts(atoms, Vec::new(), Vec::new(), Vec::new())
+                        .expect("legitimate model constructor rows");
+                let count = num_heteroatoms(&topology)
+                    .unwrap_or_else(|error| panic!("rows={rows}: {error:?}"));
+                calls += 1;
+                assert_eq!(count, expected[row_index], "rows={rows}");
+            }
+        }
+        assert_eq!(calls, 12, "exact census");
+    }
+
+    #[test]
+    fn descriptor_heteroatoms_domain_raw_pentavalent_carbon() {
+        // Raw C(C)(C)(C)(C)O: the matcher counts only the O row (1)
+        // despite the pentavalent carbon; NO sanitize/valence lookup runs
+        // before the tested path (zero valence helper entries).
+        let parsed = cosmolkit_smiles::parse_smiles(
+            "C(C)(C)(C)(C)O",
+            &cosmolkit_smiles::SmilesParseParams {
+                sanitize: false,
+                remove_hydrogens: false,
+                ..cosmolkit_smiles::SmilesParseParams::default()
+            },
+        )
+        .expect("raw parse");
+        let helper_before = VALENCE_HELPER_ENTRIES.with(std::cell::Cell::get);
+        let count = num_heteroatoms(&parsed.topology).expect("topology-only path");
+        assert_eq!(count, 1, "raw pentavalent C: only O counts");
+        assert_eq!(
+            VALENCE_HELPER_ENTRIES.with(std::cell::Cell::get),
+            helper_before,
+            "no valence lookup before the tested path"
+        );
+    }
+}
+
+/// HBD-PUBLIC frozen 104-call domain narrow-owner product plus malformed
+/// row regressions.
+#[cfg(test)]
+mod descriptor_hbd_narrow_tests {
+    use super::*;
+
+    /// Frozen 13-case literal table, independently recorded by ROOT from
+    /// RDKit 2026.03.1 under BOTH removeHs policies BEFORE any CK run.
+    /// Isolated S has two H and is 0; ammonium is 1; never SUT-derived.
+    const CASES: [(&str, u32); 13] = [
+        ("", 0),
+        ("CCO", 1),
+        ("NCC(=O)O", 2),
+        ("[NH4+]", 1),
+        ("c1cc[nH]c1", 1),
+        ("c1ccccc1", 0),
+        ("CC#CC", 0),
+        ("[H]N([H])[H]", 1),
+        ("CS", 1),
+        ("N", 1),
+        ("[OH2]", 0),
+        ("S", 0),
+        ("COC", 0),
+    ];
+
+    #[test]
+    fn descriptor_hbd_narrow_input_state_product() {
+        // 13 literals x 2 remove-H real-owner routes x 2 forms (narrow +
+        // existing prepared) x 2 repeats = 104 real HBD calls.
+        let mut calls = 0usize;
+        for (smiles, expected) in CASES {
+            for remove_hydrogens in [false, true] {
+                let parsed = cosmolkit_smiles::parse_smiles(
+                    smiles,
+                    &cosmolkit_smiles::SmilesParseParams {
+                        sanitize: false,
+                        remove_hydrogens: false,
+                        ..cosmolkit_smiles::SmilesParseParams::default()
+                    },
+                )
+                .expect("frozen case parses");
+                let topology = if remove_hydrogens {
+                    let result = cosmolkit_core::remove_hydrogens_with_params(
+                        parsed.topology,
+                        parsed.coordinates,
+                        parsed.properties,
+                        &cosmolkit_core::RemoveHsParams {
+                            update_explicit_count: true,
+                            sanitize: true,
+                            ..cosmolkit_core::RemoveHsParams::default()
+                        },
+                    )
+                    .expect("frozen case RemoveHs");
+                    result.topology
+                } else {
+                    parsed.topology
+                };
+                // The public/ring-fixture constructor policy: real
+                // ALL-default sanitize on the prepared topology, then the
+                // real non-strict assignment owner for the FINAL rows.
+                let final_topology = cosmolkit_core::sanitize_topology(
+                    &topology,
+                    &cosmolkit_core::SanitizeParams::default(),
+                )
+                .expect("frozen case sanitizes")
+                .topology;
+                let assignment = cosmolkit_core::assign_valence_for_topology(
+                    &final_topology,
+                    cosmolkit_core::ValenceModel::RdkitLike,
+                )
+                .expect("frozen case assignment");
+                for form in ["narrow", "prepared"] {
+                    for repeat in 0..2 {
+                        let label = format!("{smiles}/rh={remove_hydrogens}/{form}#{repeat}");
+                        // Fresh per-call input snapshots.
+                        let topology_before = final_topology.clone();
+                        let assignment_before = assignment.clone();
+                        let helper_before = VALENCE_HELPER_ENTRIES.with(std::cell::Cell::get);
+                        let count = match form {
+                            "narrow" => num_hbd_with_valence(&final_topology, &assignment),
+                            _ => {
+                                // Existing prepared form: real ring rows
+                                // through the real owner, full DescriptorInput.
+                                let rings = cosmolkit_core::find_sssr(
+                                    &final_topology,
+                                    &cosmolkit_core::RingSearchParams::default(),
+                                )
+                                .expect("frozen case rings");
+                                let coordinates = CoordinateBlock::default();
+                                let properties = MoleculeProperties::default();
+                                let input = DescriptorInput::new(
+                                    &final_topology,
+                                    &coordinates,
+                                    &properties,
+                                    &assignment,
+                                    &rings,
+                                );
+                                lipinski::num_hbd_prepared(&input)
+                            }
+                        }
+                        .unwrap_or_else(|error| panic!("{label}: {error:?}"));
+                        calls += 1;
+                        assert_eq!(count, expected, "{label}: literal output");
+                        assert_eq!(
+                            final_topology, topology_before,
+                            "{label}: topology unchanged"
+                        );
+                        assert_eq!(
+                            assignment, assignment_before,
+                            "{label}: assignment unchanged"
+                        );
+                        // Zero helper reentry: neither form recomputes
+                        // valence inside the owner.
+                        assert_eq!(
+                            VALENCE_HELPER_ENTRIES.with(std::cell::Cell::get),
+                            helper_before,
+                            "{label}: zero valence helper entries"
+                        );
+                    }
+                }
+            }
+        }
+        assert_eq!(calls, 104, "exact 104-call census");
+    }
+
+    #[test]
+    fn descriptor_hbd_narrow_rejects_malformed_valence_rows() {
+        // Two malformed valence lengths reach the exact Context source
+        // error through the ACTUAL narrow call; whole supplied values are
+        // preserved. The source pattern never consults ring state, so
+        // empty/reset ring rows are not a gate on this path.
+        let parsed =
+            cosmolkit_smiles::parse_smiles("CCO", &cosmolkit_smiles::SmilesParseParams::default())
+                .expect("CCO parses");
+        let topology = cosmolkit_core::sanitize_topology(
+            &parsed.topology,
+            &cosmolkit_core::SanitizeParams::default(),
+        )
+        .expect("CCO sanitizes")
+        .topology;
+        // The validator checks explicit_valence first, so the non-target
+        // field must carry the VALID length in each case.
+        for (field, explicit, implicit) in [
+            ("explicit_valence", 2usize, 3usize),
+            ("implicit_hydrogens", 3, 5),
+        ] {
+            let malformed = cosmolkit_core::ValenceAssignment {
+                explicit_valence: vec![1; explicit],
+                implicit_hydrogens: vec![1; implicit],
+            };
+            let malformed_before = malformed.clone();
+            let topology_before = topology.clone();
+            let error = num_hbd_with_valence(&topology, &malformed)
+                .err()
+                .unwrap_or_else(|| panic!("{field} length must be rejected"));
+            let DescriptorError::Search {
+                function,
+                source: DescriptorSearchCause::Context(context),
+            } = &error
+            else {
+                panic!("expected Search/Context, got {error:?}")
+            };
+            assert_eq!(*function, "num_hbd", "exact function tag");
+            let cosmolkit_search::QueryMatchContextError::ValenceRows {
+                field: actual_field,
+                expected,
+                actual,
+            } = context
+            else {
+                panic!("expected ValenceRows, got {context:?}")
+            };
+            assert_eq!(*actual_field, field, "exact field");
+            assert_eq!(*expected, 3, "expected = CCO atom count");
+            assert_eq!(
+                *actual,
+                if field == "explicit_valence" {
+                    explicit
+                } else {
+                    implicit
+                },
+                "exact actual length"
+            );
+            assert_eq!(malformed, malformed_before, "whole valence preserved");
+            assert_eq!(topology, topology_before, "whole topology preserved");
+        }
+    }
 }
 
 /// General SMARTS-based amide-bond count.

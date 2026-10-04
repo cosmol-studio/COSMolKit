@@ -1,0 +1,21 @@
+{
+  "package": "cosmolkit-core",
+  "version": "0.3.0",
+  "vcs": "d892ec3507c5b568c5ed5d86ae44e466f7d03855",
+  "isolated_path": "/tmp/ck-draw-legacy-reference-O8Thas/cosmolkit-core-0.3.0",
+  "package_files": 252,
+  "package_inventory_sha256": "63e1fbf3842bc86d885ee566183aded4000197f97618257fb7d9ee3ad45f86e9",
+  "lock_sha256": "318bdfc452c0fb32bdc38cb4062536cdd97bab06e5ebc1732c6cec081305a2b2",
+  "driver_sha256": "28a7e7e1f2610520f8f52896e23f7ca78adf35c49a4952f0e10aaccc98d81f38",
+  "fixture_files": 51,
+  "fixture_inventory_sha256": "1bb626ffadd905371975ff0a5085dc216777a49b946e331f6e3960fb1ee834ba",
+  "font_sha256": "89c3c497f618fdaa0b2d1e98fef93582f28c71debd2c4a8cdf41f190ced2909d",
+  "draw_source_sha256": "fd3aab0a92ed6767538b1aa34caa382750fe435acd4f92503d036c596d7f10b1",
+  "backends": {
+    "glam": "0.33.5",
+    "tiny-skia": "0.12.0",
+    "usvg": "0.48.1",
+    "resvg": "0.48.1"
+  },
+  "migrated_outputs_examined": false
+}

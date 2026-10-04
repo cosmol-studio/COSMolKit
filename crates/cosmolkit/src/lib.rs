@@ -1,10 +1,9 @@
 //! Public COSMolKit runtime.
 //!
 //! This crate owns the live [`Molecule`] value and the operation lifecycle.
-//! Chemistry algorithms are intentionally not implemented in this migration
-//! step. They will be moved behind this boundary one operation at a time and
-//! will receive detached [`cosmolkit_model`] blocks rather than a live
-//! molecule.
+//! Domain crates own chemistry algorithms and receive detached
+//! [`cosmolkit_model`] blocks rather than a live molecule. Public adapters
+//! delegate algorithms through declared operation capabilities.
 //!
 //! # Cargo features
 //! Default features enable `full`. Plain names such as `core`, `bio`, and
@@ -13,17 +12,34 @@
 //! implicit. Features compose additively and do not change operation behavior.
 //! See the crate README for bundle membership and advanced selection examples.
 
+#[doc(hidden)]
 pub mod binding_contract;
+#[cfg(feature = "cap-forcefields")]
+mod forcefields;
 #[cfg(feature = "cap-fingerprints")]
 pub use cosmolkit_fingerprints::{
-    FingerprintError, SparseCountFingerprint, SparseCountFingerprint32,
+    AdditionalOutput, Fingerprint, FingerprintError, MorganParams, SparseBitFingerprint,
+    SparseCountFingerprint, SparseCountFingerprint32,
+};
+#[cfg(feature = "cap-forcefields")]
+pub use forcefields::{UffParameterError, UffParameterErrorKind, UffParameterQueryError};
+#[cfg(feature = "cap-forcefields")]
+pub(crate) use ops::WithUffOptimizedConformersAccess;
+#[cfg(feature = "cap-forcefields")]
+pub(crate) use ops::WithUffOptimizedCoordinatesAccess;
+#[cfg(feature = "cap-forcefields")]
+pub use ops::{
+    UffConformerOptimizationParams, UffConformerOptimizationResult, UffConformerResult,
+    UffOptimizationError, UffOptimizationErrorKind, UffOptimizationParams, UffOptimizationResult,
 };
 #[cfg(feature = "cap-descriptors")]
 mod descriptors;
 #[cfg(feature = "cap-depict")]
+mod drawing;
+#[cfg(feature = "cap-depict")]
 pub use cosmolkit_depict::{
     Compute2DCoordinatesParams as Coordinate2DParams, Coordinate2DLayoutError,
-    Coordinate2DTemplateError, DepictError as Coordinate2DError,
+    Coordinate2DTemplateError, DepictError as Coordinate2DError, DrawingError,
 };
 #[cfg(feature = "cap-descriptors")]
 pub use cosmolkit_descriptors::DescriptorError;
@@ -33,6 +49,9 @@ pub use descriptors::DescriptorReadError;
 mod matrices;
 mod molecule;
 mod molecule_builder;
+#[cfg(feature = "cap-fingerprints")]
+mod morgan;
+#[doc(hidden)]
 pub mod ops;
 #[cfg(feature = "cap-io")]
 mod sdf;
@@ -40,6 +59,7 @@ mod sdf;
 mod smiles;
 mod strict;
 
+#[doc(hidden)]
 pub use binding_contract::{
     BINDING_CONTRACT, BindingCallableContract, BindingContractEntry, BindingDefault, BindingItem,
     BindingKind, BindingOwner, BindingParameterContract, BindingReceiver, BindingTypeRole,
@@ -62,10 +82,10 @@ pub use cosmolkit_bio::{
     BioTransform, ChainKind, ChainSourceIds, EntityKind, EntitySourceIds, PdbAtomSerial,
     PdbChainId, PdbSeqId, PolymerKind, ProteinAtomIter, ProteinAtomRef, ProteinChainIter,
     ProteinChainRef, ProteinProjectionError, ProteinResidueIter, ProteinResidueRef,
-    ProteinSelectionSummary, ResidueCode, ResidueInfo, ResidueInfoKind, ResidueKind, ResidueName,
-    ResidueSequenceError, ResidueSourceIds, UNKNOWN_TABULATED_RESIDUE_INDEX, expand_one_letter,
-    expand_one_letter_sequence, find_residue_info, find_residue_info_index, residue_code,
-    residue_info, residue_info_checked,
+    ProteinSelectionSummary, ResidueCode, ResidueCodeParseError, ResidueIdentity, ResidueInfo,
+    ResidueInfoKind, ResidueKind, ResidueName, ResidueSequenceError, ResidueSourceIds,
+    UNKNOWN_TABULATED_RESIDUE_INDEX, expand_one_letter, expand_one_letter_sequence,
+    find_residue_info, find_residue_info_index, residue_code, residue_info, residue_info_checked,
 };
 #[cfg(feature = "cap-rings")]
 pub use cosmolkit_core::RingSearchParams;
@@ -95,7 +115,8 @@ pub use cosmolkit_core::{ValenceError, ValenceModel, ValenceParams};
 #[cfg(feature = "cap-bio")]
 pub use cosmolkit_io::{
     BioMmcifReadError, BioMmcifReadStage, BioMmcifWriteError, BioMmcifWriteParams, BioPdbReadError,
-    BioPdbReadParams, BioPdbReadStage, BioReadError, BioReadParams,
+    BioPdbReadParams, BioPdbReadStage, BioPdbWriteError, BioPdbWriteParams, BioReadError,
+    BioReadParams,
 };
 #[cfg(feature = "cap-bio")]
 pub use cosmolkit_io::{BioSelectionParseError, SelectionSeqidRangeError, SelectionSyntaxError};
@@ -112,10 +133,13 @@ pub use cosmolkit_stereo::{CipLabelOptions, CipLabelerError};
 pub use matrices::DistanceMatrixParams;
 pub use molecule::Molecule;
 pub use molecule_builder::MoleculeBuilder;
+#[cfg(feature = "cap-fingerprints")]
+pub use morgan::{MorganFingerprintParams, MorganInvariants, MorganReadError};
 pub(crate) use ops::DerivedState;
 #[cfg(feature = "cap-stereo")]
 pub(crate) use ops::PotentialStereoAccess;
 #[cfg(feature = "cap-stereo")]
+#[doc(inline)]
 pub use ops::PotentialStereoResult;
 #[cfg(feature = "cap-sanitize")]
 pub(crate) use ops::SanitizeAccess;
@@ -135,13 +159,14 @@ pub(crate) use ops::WithChiralTagsFromStructureAccess;
 pub(crate) use ops::WithCipLabelsAccess;
 #[cfg(feature = "cap-kekulize")]
 pub(crate) use ops::WithKekulizedBondsAccess;
+#[doc(hidden)]
 pub use ops::{
     BlockAccess, BlockSet, FeatureSpec, FeatureSpecIter, MOLECULE_OPS, MoleculeOpKind,
-    MoleculeOpOutput, MoleculeOpSpec, OPERATION_INVARIANT_MATRIX, OperationDomain, OperationError,
+    MoleculeOpOutput, MoleculeOpSpec, OPERATION_INVARIANT_MATRIX, OperationDomain,
     OperationInvariantEntry, PARITY_MATRIX, ParityMatrixEntry, ParityPolicy, SUPPORT_MATRIX,
-    SupportMatrixEntry, TopologyEditKind, UnsupportedFeatureError, feature_spec, feature_specs,
-    operation_invariant, operation_invariant_matrix, operation_parity, operation_spec,
-    operation_specs, parity_matrix, support_matrix,
+    SupportMatrixEntry, TopologyEditKind, feature_spec, feature_specs, operation_invariant,
+    operation_invariant_matrix, operation_parity, operation_spec, operation_specs, parity_matrix,
+    support_matrix,
 };
 #[cfg(test)]
 pub(crate) use ops::{
@@ -149,6 +174,8 @@ pub(crate) use ops::{
     RingLiveCowCheckoutConflictForTestAccess,
 };
 pub(crate) use ops::{MultiOutputOpParts, OpParts, PreservationProof};
+#[doc(inline)]
+pub use ops::{OperationError, UnsupportedFeatureError};
 pub(crate) use ops::{PendingMolecule, PendingResult, ResultFinalizer};
 #[cfg(feature = "cap-rings")]
 pub(crate) use ops::{WithAssignedRingFamiliesAccess, WithAssignedRingsAccess};

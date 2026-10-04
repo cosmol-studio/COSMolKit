@@ -2404,4 +2404,65 @@ mod tests {
                 .all(|bond| bond.bond().prop("removed").is_none())
         );
     }
+    #[test]
+    fn cf3d_flags_atom_query_carrier_roundtrip_preserves_temporary_word() {
+        let mut carrier = Atom::from_spec(AtomId::new(0), AtomSpec::new(Element::C));
+        carrier.set_temporary_flags(u64::MAX);
+        carrier
+            .set_computed_prop("derived", "value")
+            .expect("valid computed property");
+
+        let predicate = QueryNode::predicate(AtomQueryPredicate::Any);
+        let explicit = QueryAtom::from_parts(carrier.clone(), predicate.clone());
+        let explicit_roundtrip = explicit
+            .clone()
+            .with_id(AtomId::new(3))
+            .try_to_atom()
+            .expect("element query converts to atom");
+        assert_eq!(explicit_roundtrip.id(), AtomId::new(3));
+        assert_eq!(explicit_roundtrip.temporary_flags(), u64::MAX);
+
+        let mut derived = QueryAtom::from_carrier_parts(carrier, predicate);
+        derived.clear_computed_props();
+        let derived_roundtrip = derived
+            .try_to_atom()
+            .expect("carrier-derived query converts to atom");
+        assert_eq!(derived_roundtrip.temporary_flags(), u64::MAX);
+        assert_eq!(derived_roundtrip.prop("derived"), None);
+
+        let different_flags = QueryAtom::from_parts(
+            {
+                let mut atom = Atom::from_spec(AtomId::new(0), AtomSpec::new(Element::C));
+                atom.set_temporary_flags(1);
+                atom
+            },
+            QueryNode::predicate(AtomQueryPredicate::Any),
+        );
+        assert_ne!(
+            explicit, different_flags,
+            "equality remains representation-based"
+        );
+    }
+
+    #[test]
+    fn cf3d_flags_bond_query_carrier_roundtrip_preserves_temporary_word() {
+        let mut carrier = Bond::from_spec(
+            BondId::new(0),
+            BondSpec::new(AtomId::new(0), AtomId::new(1), BondOrder::Single),
+        );
+        carrier.set_temporary_flags(u64::MAX);
+        carrier
+            .set_computed_prop("derived", "value")
+            .expect("valid computed property");
+
+        let predicate = QueryNode::predicate(BondQueryPredicate::Order(BondOrder::Single));
+        let explicit = QueryBond::from_parts(carrier.clone(), predicate.clone());
+        assert_eq!(explicit.bond().temporary_flags(), u64::MAX);
+        assert_eq!(explicit.clone().bond().temporary_flags(), u64::MAX);
+
+        let mut derived = QueryBond::from_carrier_parts(carrier, predicate);
+        derived.bond_mut().clear_computed_props();
+        assert_eq!(derived.bond().temporary_flags(), u64::MAX);
+        assert_eq!(derived.bond().prop("derived"), None);
+    }
 }

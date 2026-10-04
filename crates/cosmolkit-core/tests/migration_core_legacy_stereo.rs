@@ -125,7 +125,7 @@ fn mol_post_legacy_audit_potential_center_materializes_lazy_rank_state() {
     ));
     assert_eq!(
         output.atoms[0].prop("_ChiralityPossible"),
-        Some(&PropertyValue::String("1".to_owned()))
+        Some(&PropertyValue::Int(1))
     );
     assert!(
         output

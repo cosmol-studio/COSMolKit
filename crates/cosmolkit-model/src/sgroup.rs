@@ -777,6 +777,77 @@ impl SubstanceGroup {
         bond_map: &[Option<BondId>],
         sgroup_map: &[Option<SubstanceGroupId>],
     ) -> Option<Self> {
+        // BEGIN RDKIT CPP FUNCTION SubstanceGroup::adjustToRemovedAtom
+        // RDKit❗✔️: bool SubstanceGroup::adjustToRemovedAtom(unsigned int atomIdx) {
+        // RDKit❗✔️:   bool res = false;
+        // RDKit❗✔️:   for (auto &aid : d_atoms) {
+        // RDKit❗✔️:     if (aid == atomIdx) {
+        // RDKit❗✔️:       throw SubstanceGroupException(
+        // RDKit❗✔️:           "adjustToRemovedAtom() called on SubstanceGroup which contains the "
+        // RDKit❗✔️:           "atom");
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:     if (aid > atomIdx) {
+        // RDKit❗✔️:       res = true;
+        // RDKit❗✔️:       --aid;
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:   for (auto &aid : d_patoms) {
+        // RDKit❗✔️:     if (aid == atomIdx) {
+        // RDKit❗✔️:       throw SubstanceGroupException(
+        // RDKit❗✔️:           "adjustToRemovedAtom() called on SubstanceGroup which contains the "
+        // RDKit❗✔️:           "atom");
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:     if (aid > atomIdx) {
+        // RDKit❗✔️:       res = true;
+        // RDKit❗✔️:       --aid;
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:   for (auto &ap : d_saps) {
+        // RDKit❗✔️:     if (ap.aIdx == atomIdx || ap.lvIdx == rdcast<int>(atomIdx)) {
+        // RDKit❗✔️:       throw SubstanceGroupException(
+        // RDKit❗✔️:           "adjustToRemovedAtom() called on SubstanceGroup which contains the "
+        // RDKit❗✔️:           "atom");
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:     if (ap.aIdx > atomIdx) {
+        // RDKit❗✔️:       res = true;
+        // RDKit❗✔️:       --ap.aIdx;
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:     if (ap.lvIdx > rdcast<int>(atomIdx)) {
+        // RDKit❗✔️:       res = true;
+        // RDKit❗✔️:       --ap.lvIdx;
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:   return res;
+        // RDKit❗✔️: }
+        // END RDKIT CPP FUNCTION
+        // BEGIN RDKIT CPP FUNCTION SubstanceGroup::adjustToRemovedBond
+        // RDKit❗✔️: bool SubstanceGroup::adjustToRemovedBond(unsigned int bondIdx) {
+        // RDKit❗✔️:   bool res = false;
+        // RDKit❗✔️:   for (auto &bid : d_bonds) {
+        // RDKit❗✔️:     if (bid == bondIdx) {
+        // RDKit❗✔️:       throw SubstanceGroupException(
+        // RDKit❗✔️:           "adjustToRemovedBond() called on SubstanceGroup which contains the "
+        // RDKit❗✔️:           "bond");
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:     if (bid > bondIdx) {
+        // RDKit❗✔️:       res = true;
+        // RDKit❗✔️:       --bid;
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:   for (auto &cs : d_cstates) {
+        // RDKit❗✔️:     if (cs.bondIdx == bondIdx) {
+        // RDKit❗✔️:       throw SubstanceGroupException(
+        // RDKit❗✔️:           "adjustToRemovedBond() called on SubstanceGroup which contains the "
+        // RDKit❗✔️:           "bond");
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:     if (cs.bondIdx > bondIdx) {
+        // RDKit❗✔️:       res = true;
+        // RDKit❗✔️:       --cs.bondIdx;
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:   return res;
+        // RDKit❗✔️: }
+        // END RDKIT CPP FUNCTION
         let atoms: Option<Vec<_>> = self
             .atoms
             .iter()
@@ -883,10 +954,12 @@ pub enum StereoGroupKind {
     And,
 }
 
-/// Detached enhanced-stereo membership and source ID metadata.
+/// Detached enhanced-stereo membership with independent read and write IDs.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StereoGroup {
+    /// Source/read identifier, when present in the input representation.
     id: Option<u32>,
+    /// Output/write identifier assigned by the source writer rules.
     write_id: u32,
     kind: StereoGroupKind,
     atoms: Vec<AtomId>,
@@ -897,6 +970,8 @@ impl StereoGroup {
     #[must_use]
     pub fn new(kind: StereoGroupKind, atoms: Vec<AtomId>, bonds: Vec<BondId>) -> Self {
         Self {
+            // RDKit❗✔️: d_readId{readId} {}
+            // Keep the model's absent-ID state distinct from explicit zero.
             id: None,
             // RDKit✔️✔️: unsigned d_writeId = 0u;
             write_id: 0,
@@ -906,15 +981,37 @@ impl StereoGroup {
         }
     }
 
+    /// Sets the source/read identifier without changing the output/write ID.
     #[must_use]
     pub const fn with_id(mut self, id: u32) -> Self {
+        // RDKit✔️✔️: d_readId{readId} {}
         self.id = Some(id);
         self
     }
 
+    /// Returns the source/read identifier, when one was represented.
     #[must_use]
     pub const fn id(&self) -> Option<u32> {
         self.id
+    }
+
+    /// Returns the output/write identifier.
+    #[doc(hidden)]
+    #[must_use]
+    pub const fn write_id(&self) -> u32 {
+        // RDKit✔️✔️: unsigned getWriteId() const { return d_writeId; }
+        self.write_id
+    }
+
+    /// Sets the output/write identifier while retaining the source/read ID.
+    #[doc(hidden)]
+    #[must_use]
+    pub const fn with_write_id(mut self, write_id: u32) -> Self {
+        // RDKit❗✔️: void setWriteId(unsigned id) { d_writeId = id; }
+        // This detached builder consumes and returns the value instead of
+        // mutating a borrowed StereoGroup.
+        self.write_id = write_id;
+        self
     }
 
     #[must_use]
@@ -988,6 +1085,7 @@ impl StereoGroup {
         // END RDKIT CPP FUNCTION Subset.cpp::copySelectedStereoGroups
         Some(Self {
             id: self.id,
+            // RDKit✔️✔️: extracted_stereo_groups.back().setWriteId(stereo_group.getWriteId());
             write_id: self.write_id,
             kind: self.kind,
             atoms: atoms?,
@@ -1063,5 +1161,66 @@ mod stereo_write_id_tests {
 
         assert_eq!(group.remapped(&[None], &[Some(BondId::new(4))]), None);
         assert_eq!(group.remapped(&[Some(AtomId::new(3))], &[None]), None);
+    }
+}
+
+#[cfg(test)]
+mod cf3d_sgids_model_1_tests {
+    use super::{StereoGroup, StereoGroupKind};
+    use crate::{AtomId, BondId};
+
+    #[test]
+    fn cf3d_sgids_model_1_default_and_setters_keep_identity_axes_independent() {
+        let default = StereoGroup::new(StereoGroupKind::Or, vec![], vec![]);
+        assert_eq!(default.id(), None);
+        assert_eq!(default.write_id(), 0);
+
+        let read = default.clone().with_id(7);
+        assert_eq!(read.id(), Some(7));
+        assert_eq!(read.write_id(), 0);
+
+        let both = read.clone().with_write_id(9);
+        assert_eq!(both.id(), Some(7));
+        assert_eq!(both.write_id(), 9);
+        assert_eq!(both, read.clone().with_write_id(9));
+        assert_ne!(both, read);
+
+        let changed_read = both.clone().with_id(0);
+        assert_eq!(changed_read.id(), Some(0));
+        assert_eq!(changed_read.write_id(), 9);
+        assert_ne!(default, default.clone().with_id(0));
+    }
+
+    #[test]
+    fn cf3d_sgids_model_1_all_read_write_combinations_clone_and_remap() {
+        let atom_map = [Some(AtomId::new(4)), Some(AtomId::new(2))];
+        let bond_map = [Some(BondId::new(3))];
+        for read_id in [None, Some(0), Some(7)] {
+            for write_id in [0, 9] {
+                let mut source = StereoGroup::new(
+                    StereoGroupKind::And,
+                    vec![AtomId::new(0), AtomId::new(1)],
+                    vec![BondId::new(0)],
+                );
+                if let Some(read_id) = read_id {
+                    source = source.with_id(read_id);
+                }
+                source = source.with_write_id(write_id);
+                let unchanged = source.clone();
+
+                let cloned = source.clone();
+                assert_eq!(cloned.id(), read_id);
+                assert_eq!(cloned.write_id(), write_id);
+                assert_eq!(cloned, source);
+
+                let remapped = source.remapped(&atom_map, &bond_map).unwrap();
+                assert_eq!(remapped.id(), read_id);
+                assert_eq!(remapped.write_id(), write_id);
+                assert_eq!(remapped.atoms(), &[AtomId::new(4), AtomId::new(2)]);
+                assert_eq!(remapped.bonds(), &[BondId::new(3)]);
+                assert_eq!(remapped.kind(), StereoGroupKind::And);
+                assert_eq!(source, unchanged);
+            }
+        }
     }
 }

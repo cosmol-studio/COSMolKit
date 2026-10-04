@@ -8,8 +8,16 @@
 //! never serialized here; no lossless roundtrip is claimed.
 
 pub mod atoms;
+mod author;
 pub mod categories;
+mod cell;
+mod cell_category;
+mod database_status;
+mod entity;
+mod ncs;
+mod origx;
 pub mod tags;
+mod title_keywords;
 pub mod value;
 
 use std::fmt;

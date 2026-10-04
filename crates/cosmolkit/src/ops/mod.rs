@@ -32,6 +32,8 @@ mod sanitize;
 mod structure_tags;
 #[cfg(feature = "cap-transforms")]
 mod transforms;
+#[cfg(feature = "cap-forcefields")]
+mod uff_optimization;
 #[cfg(feature = "cap-valence")]
 mod valence;
 
@@ -46,8 +48,17 @@ pub use metadata::{
 };
 #[cfg(feature = "cap-stereo")]
 pub use potential_stereo::PotentialStereoResult;
+#[cfg(feature = "cap-forcefields")]
+pub(crate) use runtime::registry::WithUffOptimizedConformersAccess;
+#[cfg(feature = "cap-forcefields")]
+pub(crate) use runtime::registry::WithUffOptimizedCoordinatesAccess;
 pub use runtime::registry::{
     MOLECULE_OPS, OPERATION_INVARIANT_MATRIX, PARITY_MATRIX, SUPPORT_MATRIX,
+};
+#[cfg(feature = "cap-forcefields")]
+pub use uff_optimization::{
+    UffConformerOptimizationParams, UffConformerOptimizationResult, UffConformerResult,
+    UffOptimizationError, UffOptimizationErrorKind, UffOptimizationParams, UffOptimizationResult,
 };
 
 pub use crate::FunctionStatus;

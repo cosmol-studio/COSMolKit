@@ -73,6 +73,30 @@ pub enum QueryMatchContextError {
     Rings(#[from] RingFindingError),
 }
 
+/// ONE shared private valence-row validator (HBD-PUBLIC): checks both
+/// assignment vector lengths against the final atom count with the
+/// original field order and error shape. Reused by the prepared builder
+/// and the narrow borrowed-valence builder so the two surfaces can never
+/// drift; identical validation/error order to the previous inline loop.
+fn validate_valence_row_counts(
+    atom_count: usize,
+    valence: &ValenceAssignment,
+) -> Result<(), QueryMatchContextError> {
+    for (field, actual) in [
+        ("explicit_valence", valence.explicit_valence.len()),
+        ("implicit_hydrogens", valence.implicit_hydrogens.len()),
+    ] {
+        if actual != atom_count {
+            return Err(QueryMatchContextError::ValenceRows {
+                field,
+                expected: atom_count,
+                actual,
+            });
+        }
+    }
+    Ok(())
+}
+
 /// Borrow chemistry already prepared for the final target topology.
 ///
 /// The caller owns correspondence to the final topology. This constructor
@@ -87,18 +111,7 @@ pub fn build_prepared_query_match_context<'a>(
     topology.validate()?;
     let atom_count = topology.atoms.len();
     let bond_count = topology.bonds.len();
-    for (field, actual) in [
-        ("explicit_valence", valence.explicit_valence.len()),
-        ("implicit_hydrogens", valence.implicit_hydrogens.len()),
-    ] {
-        if actual != atom_count {
-            return Err(QueryMatchContextError::ValenceRows {
-                field,
-                expected: atom_count,
-                actual,
-            });
-        }
-    }
+    validate_valence_row_counts(atom_count, valence)?;
     if !ring_info.is_initialized() {
         return Err(QueryMatchContextError::UninitializedRings);
     }
@@ -177,6 +190,85 @@ pub fn build_prepared_query_match_context<'a>(
     Ok(QueryMatchContext {
         adj: Cow::Borrowed(&topology.adjacency),
         ring_info: Some(Cow::Borrowed(ring_info)),
+        valence: Some(Cow::Borrowed(valence)),
+    })
+}
+
+/// Build the narrow topology-only query context for fixed patterns whose
+/// predicates read no chemistry rows.
+///
+/// This COSMolKit detached adapter validates the target topology
+/// structurally, borrows its adjacency, and supplies NO ring or valence
+/// state (`ring_info: None`, `valence: None`). It exists so an
+/// element-only fixed pattern (e.g. the descriptor `[!#6;!#1]`
+// heteroatom count) can run through the ordinary matcher without any
+/// cold ring/valence computation or fabricated chemistry rows. The
+/// pinned C++ source has no corresponding context constructor (its
+/// `SubstructMatch` reads mol-internal state directly); this is a CK
+/// boundary adapter, not a source port, so no C++ anchor is claimed.
+/// Patterns that DO read H/valence/ring predicates must not use this
+/// constructor — missing values are not a permission to feed those
+/// predicates; use [`build_prepared_query_match_context`] instead.
+///
+/// Cost: the retained topology.validate() call rebuilds adjacency through
+/// AdjacencyList::try_from_topology — temporary degrees/offsets/entries/
+/// cursor Vecs and two BTreeMaps, with the ordinary row/edge component at
+/// O(V + E log(E+1)) time and O(V+E) scratch (topology metadata
+/// validation adds its own work). The RETURNED context borrows the
+/// adjacency and performs no chemistry computation and no ring/valence
+/// finding; that does NOT mean the whole construction allocates nothing,
+/// and no whole-operation source-cost-equivalence claim is made here.
+/// No cold-context-builder entry occurs on this path.
+pub fn build_topology_query_match_context<'a>(
+    topology: &'a cosmolkit_model::TopologyBlock,
+) -> Result<QueryMatchContext<'a>, QueryMatchContextError> {
+    topology.validate()?;
+    Ok(QueryMatchContext {
+        adj: Cow::Borrowed(&topology.adjacency),
+        ring_info: None,
+        valence: None,
+    })
+}
+
+/// Build the narrow borrowed-valence query context for fixed patterns
+/// whose predicates read hydrogen-count and valence rows but NO ring
+/// predicate (HBD-PUBLIC, e.g. the donor pattern
+/// `[N&!H0&v3,N&!H0&+1&v4,O&H1&+0,S&H1&+0,n&H1&+0]`).
+///
+/// This COSMolKit detached adapter validates the target topology
+/// structurally, validates both valence vector lengths against the final
+/// atom count through the ONE shared private validator (the same field
+/// order/error shape as the prepared builder), then borrows the adjacency
+/// AND the supplied prepared valence through `Cow::Borrowed`, supplying NO
+/// ring state (`ring_info: None`). It never finds, assigns, fabricates or
+/// clones chemistry rows and never enters a cold context builder. The
+/// pinned C++ source has no corresponding context constructor (its
+/// `SubstructMatch` reads mol-internal state directly); this is a CK
+/// boundary adapter, not a source port, so no C++ anchor is claimed.
+/// Patterns that read ring predicates must NOT use this constructor — a
+/// missing ring value is not permission; use
+/// [`build_prepared_query_match_context`] instead.
+///
+/// Cost: the retained `topology.validate()` call rebuilds adjacency
+/// through `AdjacencyList::try_from_topology` (temporary degrees/offsets/
+/// entries/cursor Vecs, two BTreeMaps; ordinary row/edge component at
+/// O(V + E log(E+1)) time and O(V+E) scratch; topology metadata
+/// validation adds its own work), plus the two-length row validation. The
+/// RETURNED context borrows its payloads and performs no chemistry
+/// computation; that does NOT mean the whole construction allocates
+/// nothing, and no allocation-free/O(1) or whole-operation
+/// source-cost-equivalence claim is made here. No cold-context-builder
+/// entry occurs on this path.
+pub fn build_valence_query_match_context<'a>(
+    topology: &'a cosmolkit_model::TopologyBlock,
+    valence: &'a ValenceAssignment,
+) -> Result<QueryMatchContext<'a>, QueryMatchContextError> {
+    topology.validate()?;
+    let atom_count = topology.atoms.len();
+    validate_valence_row_counts(atom_count, valence)?;
+    Ok(QueryMatchContext {
+        adj: Cow::Borrowed(&topology.adjacency),
+        ring_info: None,
         valence: Some(Cow::Borrowed(valence)),
     })
 }
@@ -7280,5 +7372,275 @@ mod q41_query_query_tests {
         assert!(!relation(&first_and, &second_and));
         assert_eq!(first_and, first_before);
         assert_eq!(second_and, second_before);
+    }
+}
+
+#[cfg(test)]
+mod descriptor_topology_context_tests {
+    use super::*;
+    use cosmolkit_model::BondSpec;
+    use cosmolkit_model::{AtomSpec, BondId, TopologyBlock};
+    use cosmolkit_types::{BondOrder, Element};
+
+    fn chain(elements: &[Element]) -> TopologyBlock {
+        let atoms = elements
+            .iter()
+            .enumerate()
+            .map(|(index, element)| Atom::from_spec(AtomId::new(index), AtomSpec::new(*element)))
+            .collect();
+        let bonds = (0..elements.len().saturating_sub(1))
+            .map(|index| {
+                Bond::from_spec(
+                    BondId::new(index),
+                    BondSpec::new(
+                        AtomId::new(index),
+                        AtomId::new(index + 1),
+                        BondOrder::Single,
+                    ),
+                )
+            })
+            .collect();
+        TopologyBlock::try_from_parts(atoms, bonds, Vec::new(), Vec::new()).unwrap()
+    }
+
+    #[test]
+    fn descriptor_topology_context_borrows_adjacency_and_omits_chemistry() {
+        let topology = chain(&[Element::C, Element::O, Element::N]);
+        // Full-input preservation baseline: the WHOLE topology captured
+        // before the actual call and compared after success.
+        let whole_before = topology.clone();
+        let cold_before = COLD_QUERY_CONTEXT_BUILDS.with(std::cell::Cell::get);
+        let context = match build_topology_query_match_context(&topology) {
+            Ok(context) => context,
+            Err(error) => panic!("valid topology must succeed: {error:?}"),
+        };
+        assert_eq!(
+            topology, whole_before,
+            "whole topology unchanged after success"
+        );
+        // Adjacency is BORROWED from the topology (pointer identity).
+        assert!(
+            matches!(&context.adj, Cow::Borrowed(value) if std::ptr::eq(*value, &topology.adjacency))
+        );
+        // No ring or valence state is supplied or computed.
+        assert!(context.ring_info.is_none());
+        assert!(context.valence.is_none());
+        // The source topology is unchanged.
+        assert_eq!(topology.atoms.len(), 3);
+        assert_eq!(topology.bonds.len(), 2);
+        topology.validate().unwrap();
+        // The narrow constructor performs ZERO cold-context-builder work.
+        assert_eq!(
+            COLD_QUERY_CONTEXT_BUILDS.with(std::cell::Cell::get),
+            cold_before,
+            "narrow constructor must never enter the cold context builder"
+        );
+    }
+
+    #[test]
+    fn descriptor_topology_context_rejects_malformed_topology() {
+        // An atom-ID misalignment fails validation (row 0 carries id 1).
+        let atoms = vec![Atom::from_spec(AtomId::new(1), AtomSpec::new(Element::C))];
+        let bonds = vec![Bond::from_spec(
+            BondId::new(0),
+            BondSpec::new(AtomId::new(1), AtomId::new(1), BondOrder::Single),
+        )];
+        let topology = TopologyBlock {
+            atoms,
+            bonds,
+            ..TopologyBlock::default()
+        };
+        let whole_before = topology.clone();
+        let error = match build_topology_query_match_context(&topology) {
+            Err(error) => error,
+            Ok(_) => panic!("malformed topology must be rejected"),
+        };
+        assert!(
+            matches!(error, QueryMatchContextError::InvalidTopology(_)),
+            "got {error:?}"
+        );
+        assert_eq!(
+            topology, whole_before,
+            "whole topology unchanged after error"
+        );
+    }
+}
+
+/// HBD-PUBLIC frozen 11-call narrow borrowed-valence constructor proofs.
+mod descriptor_hbd_context_tests {
+    use super::*;
+    use cosmolkit_core::ValenceAssignment;
+    use cosmolkit_model::{AtomSpec, BondId, TopologyBlock};
+    use cosmolkit_types::Element;
+
+    fn chain(elements: &[Element]) -> TopologyBlock {
+        let atoms = elements
+            .iter()
+            .enumerate()
+            .map(|(index, element)| Atom::from_spec(AtomId::new(index), AtomSpec::new(*element)))
+            .collect();
+        let bonds = (0..elements.len().saturating_sub(1))
+            .map(|index| {
+                Bond::from_spec(
+                    BondId::new(index),
+                    BondSpec::new(
+                        AtomId::new(index),
+                        AtomId::new(index + 1),
+                        BondOrder::Single,
+                    ),
+                )
+            })
+            .collect();
+        TopologyBlock::try_from_parts(atoms, bonds, Vec::new(), Vec::new()).unwrap()
+    }
+
+    /// Frozen valid-path census: empty and real ethane final rows x 2
+    /// repeats = 4 ACTUAL builder calls. The ethane assignment carries
+    /// exactly 2 rows (one per final atom). Fresh per-call baselines,
+    /// returned BORROWED adjacency/valence pointer identities, rings None,
+    /// cold counter unchanged; counts increment only AFTER invocation.
+    #[test]
+    fn descriptor_hbd_context_borrows_adjacency_and_valence() {
+        let cold_before = COLD_QUERY_CONTEXT_BUILDS.with(std::cell::Cell::get);
+        let empty = chain(&[]);
+        let empty_valence = ValenceAssignment {
+            explicit_valence: Vec::new(),
+            implicit_hydrogens: Vec::new(),
+        };
+        let ethane = chain(&[Element::C, Element::C]);
+        let ethane_valence = ValenceAssignment {
+            explicit_valence: vec![4, 4],
+            implicit_hydrogens: vec![3, 3],
+        };
+        let mut calls = 0usize;
+        for (label, topology, valence) in [
+            ("empty", &empty, &empty_valence),
+            ("ethane", &ethane, &ethane_valence),
+        ] {
+            assert_eq!(
+                valence.explicit_valence.len(),
+                topology.atoms.len(),
+                "{label}: final row count precondition"
+            );
+            for repeat in 0..2 {
+                // Fresh per-call baselines.
+                let topology_before = topology.clone();
+                let valence_before = valence.clone();
+                let context =
+                    build_valence_query_match_context(topology, valence).unwrap_or_else(|error| {
+                        panic!("{label} #{repeat}: valid input must succeed: {error:?}")
+                    });
+                calls += 1;
+                // Returned payloads are BORROWED from the caller's values.
+                assert!(
+                    matches!(&context.adj, Cow::Borrowed(value) if std::ptr::eq(*value, &topology.adjacency)),
+                    "{label} #{repeat}: adjacency borrowed pointer identity"
+                );
+                assert!(
+                    matches!(&context.valence, Some(Cow::Borrowed(value)) if std::ptr::eq(*value, valence)),
+                    "{label} #{repeat}: valence borrowed pointer identity"
+                );
+                // No ring state is supplied or computed.
+                assert!(context.ring_info.is_none(), "{label} #{repeat}: rings None");
+                assert_eq!(
+                    topology, &topology_before,
+                    "{label} #{repeat}: whole topology unchanged"
+                );
+                assert_eq!(
+                    valence, &valence_before,
+                    "{label} #{repeat}: whole valence unchanged"
+                );
+            }
+        }
+        // Ethane's final assignment really has the two expected rows.
+        assert_eq!(ethane_valence.explicit_valence.len(), 2, "ethane rows");
+        assert_eq!(ethane_valence.implicit_hydrogens.len(), 2, "ethane rows");
+        assert_eq!(calls, 4, "exact 4-call valid census");
+        assert_eq!(
+            COLD_QUERY_CONTEXT_BUILDS.with(std::cell::Cell::get),
+            cold_before,
+            "narrow constructor must never enter the cold context builder"
+        );
+    }
+
+    /// Frozen row-length census: BOTH assignment fields independently
+    /// shortened to 0/1 or lengthened to 3 against the 2-row ethane
+    /// topology = 6 ACTUAL builder calls, each a typed ValenceRows error
+    /// with the exact field/expected/actual triple; whole supplied values
+    /// are preserved.
+    #[test]
+    fn descriptor_hbd_context_rejects_malformed_valence_rows() {
+        let ethane = chain(&[Element::C, Element::C]);
+        let mut calls = 0usize;
+        for (field, explicit, implicit) in [
+            ("explicit_valence", 0usize, 2usize),
+            ("explicit_valence", 1, 2),
+            ("explicit_valence", 3, 2),
+            ("implicit_hydrogens", 2, 0),
+            ("implicit_hydrogens", 2, 1),
+            ("implicit_hydrogens", 2, 3),
+        ] {
+            let valence = ValenceAssignment {
+                explicit_valence: vec![4; explicit],
+                implicit_hydrogens: vec![3; implicit],
+            };
+            let valence_before = valence.clone();
+            let error = build_valence_query_match_context(&ethane, &valence)
+                .err()
+                .unwrap_or_else(|| panic!("{field} len must be rejected"));
+            calls += 1;
+            let QueryMatchContextError::ValenceRows {
+                field: actual_field,
+                expected,
+                actual,
+            } = &error
+            else {
+                panic!("expected ValenceRows, got {error:?}")
+            };
+            assert_eq!(*actual_field, field, "exact field");
+            assert_eq!(*expected, 2, "expected = ethane atom count");
+            assert_eq!(
+                *actual,
+                if field == "explicit_valence" {
+                    explicit
+                } else {
+                    implicit
+                },
+                "exact actual length"
+            );
+            assert_eq!(valence, valence_before, "whole valence preserved");
+        }
+        assert_eq!(calls, 6, "exact 6-call malformed-row census");
+    }
+
+    /// ONE genuinely malformed adjacency topology (atom-ID misalignment)
+    /// with a matching-length assignment = 1 structural typed error.
+    #[test]
+    fn descriptor_hbd_context_rejects_malformed_topology() {
+        let atoms = vec![Atom::from_spec(AtomId::new(1), AtomSpec::new(Element::C))];
+        let bonds = vec![Bond::from_spec(
+            BondId::new(0),
+            BondSpec::new(AtomId::new(1), AtomId::new(1), BondOrder::Single),
+        )];
+        let topology = TopologyBlock {
+            atoms,
+            bonds,
+            ..TopologyBlock::default()
+        };
+        let valence = ValenceAssignment {
+            explicit_valence: vec![4],
+            implicit_hydrogens: vec![0],
+        };
+        let topology_before = topology.clone();
+        let valence_before = valence.clone();
+        let error = build_valence_query_match_context(&topology, &valence)
+            .err()
+            .expect("malformed topology must be rejected");
+        assert!(
+            matches!(error, QueryMatchContextError::InvalidTopology(_)),
+            "got {error:?}"
+        );
+        assert_eq!(topology, topology_before, "whole topology preserved");
+        assert_eq!(valence, valence_before, "whole valence preserved");
     }
 }

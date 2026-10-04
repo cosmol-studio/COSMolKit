@@ -31,20 +31,27 @@ full = [
     "bio",
     "conformer",
     "depict",
+    "descriptors",
     "fingerprints",
     "forcefields",
     "inchi",
+    "io",
     "search",
+    "tautomer",
+    "cap-stereoisomers",
 ]
 
 # User bundles: explicit API composition, not implementation dependencies.
 core = [
-    "cap-smiles", "cap-io", "cap-serialization", "cap-descriptors",
+    "cap-smiles",
     "cap-hydrogens", "cap-valence", "cap-radicals", "cap-rings",
     "cap-matrices", "cap-transforms", "cap-stereo", "cap-kekulize",
-    "cap-aromaticity", "cap-sanitize", "cap-stereoisomers", "cap-tautomer",
+    "cap-aromaticity", "cap-sanitize",
 ]
 bio = ["cap-bio"]
+descriptors = ["cap-descriptors"]
+tautomer = ["cap-tautomer"]
+io = ["cap-io", "cap-serialization"]
 conformer = ["cap-conformer", "cap-confseq", "cap-alignment"]
 forcefields = ["cap-forcefields"]
 fingerprints = ["cap-fingerprints", "cap-hashing"]
@@ -62,15 +69,15 @@ cap-hydrogens = ["dep:cosmolkit-core"]
 cap-confseq = ["dep:cosmolkit-conformer"]
 cap-depict = ["dep:cosmolkit-depict"]
 cap-descriptors = ["dep:cosmolkit-descriptors", "dep:cosmolkit-core"]
-cap-fingerprints = ["dep:cosmolkit-fingerprints"]
-cap-forcefields = ["dep:cosmolkit-forcefields"]
+cap-fingerprints = ["dep:cosmolkit-fingerprints", "dep:cosmolkit-core"]
+cap-forcefields = ["dep:cosmolkit-forcefields", "dep:cosmolkit-core"]
 cap-hashing = ["dep:cosmolkit-fingerprints"]
 cap-inchi = ["dep:cosmolkit-inchi"]
-cap-io = ["dep:cosmolkit-io"]
+cap-io = ["dep:cosmolkit-io", "cosmolkit-io/molecule"]
 cap-matrices = ["dep:cosmolkit-core"]
 cap-transforms = ["dep:cosmolkit-core"]
 cap-search = ["dep:cosmolkit-search"]
-cap-serialization = ["dep:cosmolkit-io"]
+cap-serialization = ["dep:cosmolkit-io", "cosmolkit-io/molecule"]
 cap-smiles = ["dep:cosmolkit-smiles", "dep:cosmolkit-core"]
 cap-stereo = ["dep:cosmolkit-core", "dep:cosmolkit-stereo"]
 cap-stereoisomers = ["dep:cosmolkit-stereo"]
@@ -95,7 +102,7 @@ cosmolkit-depict = { version = "0.5.0-rc.9", path = "../cosmolkit-depict", optio
 cosmolkit-fingerprints = { version = "0.5.0-rc.9", path = "../cosmolkit-fingerprints", optional = true }
 cosmolkit-forcefields = { version = "0.5.0-rc.9", path = "../cosmolkit-forcefields", optional = true }
 cosmolkit-inchi = { version = "0.5.0-rc.9", path = "../cosmolkit-inchi", optional = true }
-cosmolkit-io = { version = "0.5.0-rc.9", path = "../cosmolkit-io", optional = true }
+cosmolkit-io = { version = "0.5.0-rc.9", path = "../cosmolkit-io", optional = true, default-features = false }
 cosmolkit-search = { version = "0.5.0-rc.9", path = "../cosmolkit-search", optional = true }
 cosmolkit-smiles = { version = "0.5.0-rc.9", path = "../cosmolkit-smiles", optional = true }
 cosmolkit-stereo = { version = "0.5.0-rc.9", path = "../cosmolkit-stereo", optional = true }
@@ -103,6 +110,10 @@ cosmolkit-tautomer = { version = "0.5.0-rc.9", path = "../cosmolkit-tautomer", o
 
 [dev-dependencies]
 serde_json = "1"
+
+[[test]]
+name = "residue_code_serde"
+required-features = ["cap-bio"]
 
 [[test]]
 name = "migration_bio_read_api"
@@ -213,3 +224,7 @@ required-features = ["op-contracts-strict"]
 [[test]]
 name = "migration_run_multiple"
 required-features = ["op-contracts-strict"]
+
+[[test]]
+name = "migration_uff_parameter_query"
+required-features = ["cap-forcefields", "cap-smiles", "cap-valence", "cap-hydrogens"]

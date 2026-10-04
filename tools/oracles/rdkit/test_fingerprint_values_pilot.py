@@ -25,10 +25,50 @@ MATRICES = {
     "add_hydrogens": profiles("AddHydrogens", explicit_only=[False, True]),
     "remove_hydrogens": profiles("RemoveHydrogens", sanitize=[False, True]),
     "coordinates_2d": profiles("Coordinates2dDefault"),
+    "svg": profiles("SvgDefault"),
     "distance_matrix": profiles("DistanceMatrix", use_bond_order=[False, True], use_atom_weights=[False, True]),
     "fuzzy_and": [{"operation": "FuzzyAnd", "width": width} for width in ("U32", "U64")],
     "fuzzy_or": [{"operation": "FuzzyOr", "width": width} for width in ("U32", "U64")],
 }
+
+
+UFF_GENERATORS = {
+    "uff_has_all_molecule_params": "generate_uff_has_all_molecule_params",
+    "uff_optimize": "generate_uff_optimize",
+    "uff_optimize_conformers": "generate_uff_optimize_conformers",
+}
+
+UFF_MATRICES = {
+    "uff_has_all_molecule_params": [
+        {"Coverage": {"add_hydrogens": False}},
+        {"Coverage": {"add_hydrogens": True}},
+    ],
+    "uff_optimize": [
+        {"Optimization": {
+            "add_hydrogens": True,
+            "max_iterations": 1,
+            "vdw_threshold": 100,
+            "ignore_interfragment_interactions": True,
+            "conformer_id": None,
+        }},
+    ],
+    "uff_optimize_conformers": [
+        {"ConformerOptimization": {
+            "add_hydrogens": True,
+            "max_iterations": 1,
+            "vdw_threshold": 100,
+            "ignore_interfragment_interactions": True,
+            "conformer_count": 2,
+        }},
+    ],
+}
+
+UFF_CASES = [
+    {"id": "a", "smiles": "C"},
+    {"id": "b", "smiles": "C"},
+    {"id": "bad-first", "smiles": "invalid"},
+    {"id": "bad-second", "smiles": "invalid"},
+]
 
 
 def inputs(name):
@@ -70,3 +110,101 @@ def test_empty_work_rejected(name, empty_cases, empty_parameters):
     with pytest.raises(ValueError, match="empty"):
         oracle.GENERATORS["generate_" + name](
             [] if empty_cases else inputs(name), [] if empty_parameters else MATRICES[name], 2)
+
+
+@pytest.mark.parametrize("parameters", [[], ["SvgDefault", "SvgDefault"], ["Coordinates2dDefault"], [{"SvgDefault": {"width": 301}}]])
+def test_svg_rejects_every_nonfrozen_parameter_matrix(parameters):
+    with pytest.raises(ValueError, match="frozen SvgDefault"):
+        oracle.generate_svg(inputs("svg"), parameters, 1)
+def _uff_record_bytes(rows):
+    return (
+        json.dumps([row["input"] for row in rows], sort_keys=True, separators=(",", ":")).encode(),
+        json.dumps([row["output"] for row in rows], sort_keys=True, separators=(",", ":")).encode(),
+    )
+
+
+@pytest.mark.parametrize("name", UFF_GENERATORS)
+def test_uff_generators_preserve_full_matrix_order_and_parallel_bytes(name):
+    generate = oracle.GENERATORS[UFF_GENERATORS[name]]
+    corpus = [dict(case) for case in UFF_CASES]
+    parameters = [dict(profile) for profile in UFF_MATRICES[name]]
+    assert len(parameters) == {
+        "uff_has_all_molecule_params": 2,
+        "uff_optimize": 1,
+        "uff_optimize_conformers": 1,
+    }[name]
+    original_corpus = json.dumps(corpus, sort_keys=True)
+    original_parameters = json.dumps(parameters, sort_keys=True)
+    expected_order = [
+        (case["id"], profile)
+        for case in corpus
+        for profile in parameters
+    ]
+
+    if name != "uff_has_all_molecule_params":
+        stale = generate(
+            [{"id": "stale-first", "smiles": "invalid"}],
+            [parameters[0]],
+            1,
+        )
+        assert "stale-first" in stale[0]["input"]["Uff"]["preparation"]["Rejected"]["detail"]
+
+    serial = generate(corpus, parameters, 1)
+    assert len(serial) == len(corpus) * len(parameters)
+    serial_bytes = _uff_record_bytes(serial)
+    assert [
+        (row["input"]["Uff"]["case"]["id"], row["input"]["Uff"]["profile"])
+        for row in serial
+    ] == expected_order
+
+    records_by_identity = {
+        (row["input"]["Uff"]["case"]["id"], json.dumps(row["input"]["Uff"]["profile"], sort_keys=True)): row
+        for row in serial
+    }
+    for profile in parameters:
+        profile_key = json.dumps(profile, sort_keys=True)
+        first = records_by_identity[("a", profile_key)]
+        duplicate = records_by_identity[("b", profile_key)]
+        assert first["input"]["Uff"]["preparation"] == duplicate["input"]["Uff"]["preparation"]
+        assert first["output"] == duplicate["output"]
+        if "Coverage" not in profile:
+            bad_first = records_by_identity[("bad-first", profile_key)]
+            bad_second = records_by_identity[("bad-second", profile_key)]
+            first_rejection = bad_first["input"]["Uff"]["preparation"]["Rejected"]
+            second_rejection = bad_second["input"]["Uff"]["preparation"]["Rejected"]
+            assert first_rejection == second_rejection
+            assert "bad-first" in first_rejection["detail"]
+
+    assert json.dumps(corpus, sort_keys=True) == original_corpus
+    assert json.dumps(parameters, sort_keys=True) == original_parameters
+    for threads in (2, 4):
+        parallel = generate(corpus, parameters, threads)
+        assert len(parallel) == len(expected_order)
+        assert [
+            (row["input"]["Uff"]["case"]["id"], row["input"]["Uff"]["profile"])
+            for row in parallel
+        ] == expected_order
+        assert _uff_record_bytes(parallel) == serial_bytes
+        assert json.dumps(corpus, sort_keys=True) == original_corpus
+        assert json.dumps(parameters, sort_keys=True) == original_parameters
+
+
+@pytest.mark.parametrize("name", UFF_GENERATORS)
+@pytest.mark.parametrize("threads", [0, -1, 1.5, True, None])
+def test_uff_generators_reject_invalid_concurrency(name, threads):
+    with pytest.raises(ValueError, match="positive integer"):
+        oracle.GENERATORS[UFF_GENERATORS[name]](
+            UFF_CASES, UFF_MATRICES[name], threads)
+
+
+@pytest.mark.parametrize("name", UFF_GENERATORS)
+@pytest.mark.parametrize("empty_cases,empty_parameters", [
+    (True, False), (False, True), (True, True),
+])
+def test_uff_generators_reject_empty_work(name, empty_cases, empty_parameters):
+    with pytest.raises(ValueError, match="empty"):
+        oracle.GENERATORS[UFF_GENERATORS[name]](
+            [] if empty_cases else UFF_CASES,
+            [] if empty_parameters else UFF_MATRICES[name],
+            2,
+        )

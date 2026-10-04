@@ -39,8 +39,9 @@ fn next_2d_conformer_id(
 #[mol_op_body(with_2d_coordinates, parts)]
 pub(crate) fn with_2d_coordinates_impl(params: &Coordinate2DParams) -> Result<(), OperationError> {
     let topology = parts.topology()?;
+    let properties = parts.properties()?;
     let atom_count = topology.atoms.len();
-    let conformer = cosmolkit_depict::compute_2d_coordinates(topology, params)
+    let conformer = cosmolkit_depict::compute_2d_coordinates(topology, properties, params)
         .map_err(OperationError::Coordinate2D)?;
 
     // RDKit❗✔️: unsigned int copyCoordinate(RDKit::ROMol &mol,
@@ -79,4 +80,216 @@ pub(crate) fn with_2d_coordinates_impl(params: &Coordinate2DParams) -> Result<()
         PreservationProof::CoordinateOnly,
     )?;
     parts.apply_cip_policy()
+}
+
+#[cfg(all(test, feature = "cap-smiles"))]
+#[path = "../../tests/fixtures/d2_prepared_property.rs"]
+mod prepared_property_fixture;
+
+#[cfg(all(test, feature = "cap-smiles"))]
+mod prepared_property_tests {
+    use super::*;
+    use crate::{
+        Atom, AtomId, AtomSpec, CoordinateBlock, Element, Molecule, MoleculeProperties,
+        TopologyBlock,
+    };
+    use std::sync::Arc;
+
+    fn identities(molecule: &Molecule) -> [usize; 4] {
+        [
+            Arc::as_ptr(&molecule.topology_arc_runtime()) as usize,
+            Arc::as_ptr(&molecule.coordinates_arc_runtime()) as usize,
+            Arc::as_ptr(&molecule.properties_arc_runtime()) as usize,
+            Arc::as_ptr(&molecule.derived_cache_arc_runtime()) as usize,
+        ]
+    }
+
+    fn coordinate_bits(coordinates: &CoordinateBlock) -> (Vec<Vec<[u64; 2]>>, Vec<Vec<[u64; 3]>>) {
+        (
+            coordinates
+                .conformers_2d
+                .iter()
+                .map(|conf| {
+                    conf.coordinates()
+                        .iter()
+                        .map(|xy| xy.map(f64::to_bits))
+                        .collect()
+                })
+                .collect(),
+            coordinates
+                .conformers_3d
+                .iter()
+                .map(|conf| {
+                    conf.coordinates()
+                        .iter()
+                        .map(|xyz| xyz.map(f64::to_bits))
+                        .collect()
+                })
+                .collect(),
+        )
+    }
+
+    #[test]
+    fn d2_prepared_property_internal_twelve_source_peer_storage_calls() {
+        let mut calls = 0;
+        let mut discrepancies = Vec::new();
+        for (line, smiles) in prepared_property_fixture::CASES {
+            for orientation in [false, true] {
+                for repeat in 0..2 {
+                    let source = Molecule::from_smiles(smiles).unwrap();
+                    assert!(source.property("_StereochemDone").is_some());
+                    let peer = source.clone();
+                    let ids = identities(&source);
+                    assert_eq!(identities(&peer), ids);
+                    let topology = source.topology().clone();
+                    let coordinates = source.coordinate_block_runtime().clone();
+                    let properties = source.properties().clone();
+                    let cache = source.derived_cache_runtime().clone();
+                    let before_bits = coordinate_bits(&coordinates);
+                    let valence = cache
+                        .valence_assignment()
+                        .expect("actual sanitized constructor cache")
+                        .clone();
+                    let valence_address =
+                        source.derived_cache_runtime().valence_assignment().unwrap() as *const _;
+                    let params = Coordinate2DParams {
+                        canonical_orientation: orientation,
+                        ..Default::default()
+                    };
+                    let before_params = params.clone();
+                    let result = source.with_2d_coordinates_with_params(&params);
+                    calls += 1;
+                    // Both complete four-block source/peer snapshots precede Result inspection.
+                    for molecule in [&source, &peer] {
+                        assert_eq!(identities(molecule), ids);
+                        assert_eq!(molecule.topology(), &topology);
+                        assert_eq!(molecule.coordinate_block_runtime(), &coordinates);
+                        assert_eq!(
+                            coordinate_bits(molecule.coordinate_block_runtime()),
+                            before_bits
+                        );
+                        assert_eq!(molecule.properties(), &properties);
+                        assert_eq!(molecule.derived_cache_runtime(), &cache);
+                        assert_eq!(
+                            molecule.derived_cache_runtime().valence_assignment(),
+                            Some(&valence)
+                        );
+                        assert_eq!(
+                            molecule
+                                .derived_cache_runtime()
+                                .valence_assignment()
+                                .unwrap() as *const _,
+                            valence_address
+                        );
+                    }
+                    assert_eq!(params, before_params);
+                    match result {
+                        Err(error) => discrepancies
+                            .push(format!("line:{line}/{orientation}/{repeat}: {error:?}")),
+                        Ok(output) => {
+                            let output_ids = identities(&output);
+                            assert_eq!(output_ids[0], ids[0]);
+                            assert_eq!(output_ids[2], ids[2]);
+                            assert_ne!(output_ids[1], ids[1]);
+                            assert_ne!(output_ids[3], ids[3]);
+                            assert_eq!(output.topology(), &topology);
+                            assert_eq!(output.properties(), &properties);
+                            let stored = output.coordinate_block_runtime();
+                            assert_eq!(stored.conformers_2d.len(), 1);
+                            assert_eq!(stored.conformers_2d[0].id(), 0);
+                            assert_eq!(stored.conformers_3d, coordinates.conformers_3d);
+                            assert_eq!(
+                                stored.source_coordinate_dim,
+                                Some(crate::CoordinateDimension::TwoD)
+                            );
+                            assert_eq!(
+                                output.derived_cache_runtime().valence_assignment(),
+                                Some(&valence)
+                            );
+                            let allowed_invalidations =
+                                DerivedState::STEREO.union(DerivedState::DRAWING);
+                            assert_eq!(
+                                output.derived_cache_runtime().valid_states(),
+                                cache.valid_states().difference(allowed_invalidations)
+                            );
+                            discrepancies.extend(prepared_property_fixture::check(
+                                output.topology(),
+                                output.properties(),
+                                stored.conformers_2d[0].coordinates(),
+                                line,
+                                orientation,
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+        println!(
+            "D2-PREPARED internal_calls={calls} source_peer_preservation=12/12 discrepancies={}",
+            discrepancies.len()
+        );
+        assert_eq!(calls, 12);
+        assert!(discrepancies.is_empty(), "{}", discrepancies.join("\n"));
+    }
+
+    #[test]
+    fn d2_prepared_property_two_typed_errors_preserve_inputs_and_peer() {
+        // Invalid detached topology cannot enter a valid live Molecule. Test
+        // that existing domain boundary directly, without bypassing runtime
+        // construction; the second control is the real public map error.
+        let mut invalid = TopologyBlock::default();
+        invalid
+            .atoms
+            .push(Atom::from_spec(AtomId::new(1), AtomSpec::new(Element::C)));
+        let peer_topology = invalid.clone();
+        let properties = MoleculeProperties::default();
+        let before_properties = properties.clone();
+        let params = Coordinate2DParams::default();
+        let before_params = params.clone();
+        let result = cosmolkit_depict::compute_2d_coordinates(&invalid, &properties, &params);
+        assert_eq!(invalid, peer_topology);
+        assert_eq!(properties, before_properties);
+        assert_eq!(params, before_params);
+        assert!(
+            matches!(result, Err(crate::Coordinate2DError::InvalidTopology(
+            cosmolkit_model::TopologyValidationError::AtomIdMismatch { position: 0, id })
+        ) if id == AtomId::new(1))
+        );
+
+        let source = Molecule::from_smiles("CC").unwrap();
+        let peer = source.clone();
+        let ids = identities(&source);
+        let topology = source.topology().clone();
+        let coordinates = source.coordinate_block_runtime().clone();
+        let properties = source.properties().clone();
+        let cache = source.derived_cache_runtime().clone();
+        let bits = coordinate_bits(&coordinates);
+        let mut params = Coordinate2DParams::default();
+        params.coordinate_map.insert(2, [-0.0, 1.0]);
+        let params_before = params.clone();
+        let map_bits = params.coordinate_map[&2].map(f64::to_bits);
+        let result = source.with_2d_coordinates_with_params(&params);
+        for molecule in [&source, &peer] {
+            assert_eq!(identities(molecule), ids);
+            assert_eq!(molecule.topology(), &topology);
+            assert_eq!(molecule.coordinate_block_runtime(), &coordinates);
+            assert_eq!(coordinate_bits(molecule.coordinate_block_runtime()), bits);
+            assert_eq!(molecule.properties(), &properties);
+            assert_eq!(molecule.derived_cache_runtime(), &cache);
+        }
+        assert_eq!(params, params_before);
+        assert_eq!(params.coordinate_map[&2].map(f64::to_bits), map_bits);
+        assert!(matches!(
+            result,
+            Err(OperationError::Coordinate2D(
+                crate::Coordinate2DError::Fragment(
+                    crate::Coordinate2DLayoutError::AtomIndexOutOfRange {
+                        atom: 2,
+                        atom_count: 2
+                    }
+                )
+            ))
+        ));
+        println!("D2-PREPARED typed_error_controls=2 preservation=2/2");
+    }
 }

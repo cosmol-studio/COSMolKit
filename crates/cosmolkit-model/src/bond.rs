@@ -268,10 +268,19 @@ pub struct Bond {
     stereo_atoms: Option<[AtomId; 2]>,
     unknown_stereo: bool,
     properties: PropertyStore,
+    // BEGIN RDKIT CPP FUNCTION Bond::Bond(const Bond &) temporary flags
+    // RDKit❗✔️: d_flags = other.d_flags;
+    // END RDKIT CPP FUNCTION Bond::Bond(const Bond &) temporary flags
+    // Bond's existing derived Clone copies this typed word. It is separate
+    // from ordinary/computed properties, which may be cleared independently.
+    temporary_flags: u64,
 }
 
 impl Bond {
     pub fn from_spec(id: BondId, spec: BondSpec) -> Self {
+        // BEGIN RDKIT CPP MEMBER Bond::d_flags default
+        // RDKit✔️✔️: std::uint64_t d_flags = 0;
+        // END RDKIT CPP MEMBER Bond::d_flags default
         Self {
             id,
             begin: spec.begin,
@@ -284,6 +293,7 @@ impl Bond {
             stereo_atoms: spec.stereo_atoms,
             unknown_stereo: spec.unknown_stereo,
             properties: spec.properties,
+            temporary_flags: 0,
         }
     }
 
@@ -334,6 +344,25 @@ impl Bond {
     pub const fn order(&self) -> BondOrder {
         // RDKit✔️✔️: BondType getBondType() const { return static_cast<BondType>(d_bondType); }
         self.order
+    }
+
+    /// Returns the source-compatible temporary bond flag word.
+    #[doc(hidden)]
+    #[must_use]
+    pub const fn temporary_flags(&self) -> u64 {
+        // BEGIN RDKIT CPP FUNCTION Bond::getFlags
+        // RDKit✔️✔️: std::uint64_t getFlags() const { return d_flags; }
+        // END RDKIT CPP FUNCTION Bond::getFlags
+        self.temporary_flags
+    }
+
+    /// Sets the source-compatible temporary bond flag word.
+    #[doc(hidden)]
+    pub fn set_temporary_flags(&mut self, flags: u64) {
+        // BEGIN RDKIT CPP FUNCTION Bond::setFlags
+        // RDKit✔️✔️: void setFlags(std::uint64_t flags) { d_flags = flags; }
+        // END RDKIT CPP FUNCTION Bond::setFlags
+        self.temporary_flags = flags;
     }
 
     #[must_use]
@@ -578,5 +607,77 @@ mod tests {
         );
         assert_eq!(bond, source);
         assert_eq!(property_order(&bond), vec!["first", "computed"]);
+    }
+}
+
+#[cfg(test)]
+mod flags_tests {
+    use super::*;
+
+    fn single_bond(id: usize) -> Bond {
+        Bond::from_spec(
+            BondId::new(id),
+            BondSpec::new(AtomId::new(0), AtomId::new(1), BondOrder::Single),
+        )
+    }
+
+    #[test]
+    fn cf3d_flags_bond_zero_default_every_bit_and_fixed_masks() {
+        assert_eq!(single_bond(0).temporary_flags(), 0);
+
+        for bit in 0..u64::BITS {
+            let mut bond = single_bond(bit as usize);
+            let expected = 1_u64 << bit;
+            bond.set_temporary_flags(expected);
+            assert_eq!(bond.temporary_flags(), expected, "bit {bit}");
+        }
+
+        for expected in [u64::MAX, 0xAAAA_AAAA_AAAA_AAAA, 0x5555_5555_5555_5555] {
+            let mut bond = single_bond(0);
+            bond.set_temporary_flags(expected);
+            assert_eq!(bond.temporary_flags(), expected);
+        }
+    }
+
+    #[test]
+    fn cf3d_flags_bond_clone_remap_clear_and_equality_preserve_word() {
+        let mut source = single_bond(0);
+        source.set_temporary_flags(u64::MAX);
+        source
+            .set_prop("ordinary", "kept")
+            .expect("valid ordinary property");
+        source
+            .set_computed_prop("derived", "cleared")
+            .expect("valid computed property");
+
+        let cloned = source.clone();
+        assert_eq!(cloned, source);
+        assert_eq!(cloned.temporary_flags(), u64::MAX);
+
+        let remapped =
+            source
+                .clone()
+                .remapped(BondId::new(7), AtomId::new(3), AtomId::new(4), None);
+        assert_eq!(remapped.id(), BondId::new(7));
+        assert_eq!(remapped.begin(), AtomId::new(3));
+        assert_eq!(remapped.end(), AtomId::new(4));
+        assert_eq!(remapped.temporary_flags(), u64::MAX);
+
+        let mut cleared = source.clone();
+        cleared.clear_computed_props();
+        assert_eq!(cleared.temporary_flags(), u64::MAX);
+        assert_eq!(cleared.prop("derived"), None);
+        assert_eq!(
+            cleared.prop("ordinary"),
+            Some(&crate::PropertyValue::String("kept".to_owned()))
+        );
+
+        let mut changed_clone = source.clone();
+        changed_clone.set_temporary_flags(1);
+        assert_eq!(source.temporary_flags(), u64::MAX, "clone is isolated");
+        assert_ne!(
+            changed_clone, source,
+            "equality remains representation-based"
+        );
     }
 }

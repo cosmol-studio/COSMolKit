@@ -13,4 +13,6 @@ documentation = "https://docs.rs/cosmolkit"
 
 [dependencies]
 cosmolkit-conformer = { version = "0.5.0-rc.9", path = "../cosmolkit-conformer" }
+cosmolkit-core = { version = "0.5.0-rc.9", path = "../cosmolkit-core", default-features = false }
 cosmolkit-model = { version = "0.5.0-rc.9", path = "../cosmolkit-model" }
+cosmolkit-search = { version = "0.5.0-rc.9", path = "../cosmolkit-search", default-features = false }

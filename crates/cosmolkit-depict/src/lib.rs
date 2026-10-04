@@ -10,7 +10,8 @@ use cosmolkit_core::{
     ValenceParams, assign_legacy_stereochemistry_for_depiction, assign_valence, symmetrized_sssr,
 };
 use cosmolkit_model::{
-    Conformer2D, CoordinateBlock, CoordinateValidationError, TopologyBlock, TopologyValidationError,
+    Conformer2D, CoordinateBlock, CoordinateValidationError, MoleculeProperties, TopologyBlock,
+    TopologyValidationError,
 };
 
 use crate::embedded_frag::{
@@ -22,9 +23,12 @@ use crate::geometry::{GeometryError, PointMap, atom_depict_rank};
 use crate::nontetrahedral::embed_nontetrahedral_stereo;
 use crate::templates::{CoordinateTemplates, TemplateError};
 
+mod draw;
+mod draw_prepare;
 mod embedded_frag;
 mod geometry;
 mod nontetrahedral;
+mod raster;
 mod templates;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -666,6 +670,7 @@ fn compute_initial_coordinates<'a>(
         .map(|atom| atom_depict_rank(topology, atom))
         .collect::<Result<Vec<_>, _>>()
         .map_err(FragmentError::from)?;
+
     let mut fragments = Vec::new();
     let prespecified = seed_coordinate_constraints(topology, rings, coordinate_map)?;
     let has_prespecified = prespecified.is_some();
@@ -684,7 +689,9 @@ fn compute_initial_coordinates<'a>(
         use_ring_templates,
         &mut templates,
     )?);
+
     fragments.extend(embed_nontetrahedral_stereo(topology, rings)?);
+
     fragments.extend(embed_cis_trans_systems(topology, rings)?);
 
     let mut embedded = vec![false; topology.atoms.len()];
@@ -698,6 +705,7 @@ fn compute_initial_coordinates<'a>(
         .enumerate()
         .filter_map(|(atom, &done)| (!done).then_some(atom))
         .collect();
+
     let mut selected = has_prespecified
         .then_some(0)
         .or_else(|| largest_unfinished_fragment(&fragments));
@@ -715,22 +723,33 @@ fn compute_initial_coordinates<'a>(
                         .wrapping_add(**atom as i32)
                 })
                 .expect("loop requires a nonempty atom list");
+            let seed_stage = format!("initial_seed_atom_{atom}");
+
+            let seed = EmbeddedFrag::from_single(atom, topology, rings)?;
+
             nonembedded.remove(position);
-            fragments.push(EmbeddedFrag::from_single(atom, topology, rings)?);
+
+            fragments.push(seed);
+
             fragments.len() - 1
         };
         let mut fragment = fragments.remove(index);
+
         fragment.done = true;
+
         fragment.expand_fragment(&mut nonembedded, &mut fragments)?;
+
         fragments.insert(index.min(fragments.len()), fragment);
         selected = largest_unfinished_fragment(&fragments);
     }
+
     Ok(fragments)
 }
 
 /// Compute one detached atom-ordered 2D conformer.
 pub fn compute_2d_coordinates(
     topology: &TopologyBlock,
+    properties: &MoleculeProperties,
     params: &Compute2DCoordinatesParams,
 ) -> Result<Conformer2D, DepictError> {
     // RDKit❗✔️: unsigned int compute2DCoords(RDKit::ROMol &mol,
@@ -787,6 +806,7 @@ pub fn compute_2d_coordinates(
         },
     )
     .map_err(DepictError::PropertyCache)?;
+
     let rings = symmetrized_sssr(
         topology,
         &RingSearchParams {
@@ -795,11 +815,52 @@ pub fn compute_2d_coordinates(
         },
     )
     .map_err(DepictError::RingFinding)?;
-    let working = assign_legacy_stereochemistry_for_depiction(topology.clone(), &valence, &rings)
-        .map_err(DepictError::StereoAssignment)?;
+    let copied_topology = topology.clone();
+
+    // BEGIN RDKIT CPP FUNCTION MolOps::assignStereochemistry presence boundary
+    // RDKit❗✔️: void assignStereochemistry(ROMol &mol, bool cleanIt, bool force,
+    // RDKit❗✔️:                            bool flagPossibleStereoCenters) {
+    // RDKit✔️🔝:   if (!force && mol.hasProp(common_properties::_StereochemDone)) {
+    // RDKit✔️🔝:     return;
+    // RDKit✔️🔝:   }
+    // RDKit❗✔️:
+    // RDKit❗✔️:   if (mol.needsUpdatePropertyCache()) {
+    // RDKit❗✔️:     mol.updatePropertyCache(false);
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:
+    // RDKit❌❌:   if (!Chirality::getUseLegacyStereoPerception()) {
+    // RDKit❌❌:     Chirality::stereoPerception(mol, cleanIt, flagPossibleStereoCenters);
+    // RDKit❗✔️:   } else {
+    // RDKit❗✔️:     Chirality::legacyStereoPerception(mol, cleanIt, flagPossibleStereoCenters);
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   mol.setProp(common_properties::_StereochemDone, 1, true);
+    // RDKit❗✔️: }
+    // END RDKIT CPP FUNCTION MolOps::assignStereochemistry presence boundary
+    // Pinned Chirality.cpp:2889-2905; MolOps.h defaults force=false and
+    // flagPossibleStereoCenters=false. The fixed source profile is legacy.
+    // Behavior: presence alone returns the existing copied topology. Values,
+    // types and computed membership do not control this branch. The existing
+    // core owner handles the absent branch; its copy-local done publication
+    // is not returned or published to the borrowed live properties. Existing
+    // valence/ring preparation ordering and absent cache validity remain
+    // qualified separately; this is not complete ROMol prepared-state parity.
+    // Cost: borrowed BTreeMap lookup is O(log P) versus source Dict's O(P)
+    // presence scan, with no allocation; the same single clone is moved into
+    // either branch. No chemistry or extra preparation is duplicated.
+    let working = if properties.prop("_StereochemDone").is_some() {
+        copied_topology
+    } else {
+        #[cfg(test)]
+        d2_probe1_tests::prepared_properties::observe_dispatch();
+        assign_legacy_stereochemistry_for_depiction(copied_topology, &valence, &rings)
+            .map_err(DepictError::StereoAssignment)?
+    };
+    #[cfg(test)]
+    d2_probe1_tests::prepared_properties::observe_working(&working);
     let coordinate_map = Some(&params.coordinate_map);
     let mut fragments =
         compute_initial_coordinates(&working, &rings, coordinate_map, params.use_ring_templates)?;
+
     for fragment in &mut fragments {
         if params.samples > 0 && params.flips_per_sample > 0 {
             fragment.random_sample_flips_and_permutations(
@@ -814,15 +875,18 @@ pub fn compute_2d_coordinates(
             fragment.remove_collisions_bond_flip()?;
         }
     }
-    for fragment in &mut fragments {
-        fragment.remove_collisions_open_angles()?;
-        fragment.remove_collisions_shorten_bonds()?;
+
+    for fragment_index in 0..fragments.len() {
+        fragments[fragment_index].remove_collisions_open_angles()?;
+
+        fragments[fragment_index].remove_collisions_shorten_bonds()?;
     }
     orient_and_shift_fragments(
         &mut fragments,
         params.canonical_orientation,
         Some(params.coordinate_map.len()),
     );
+
     translate_single_coordinate_constraint(&working, &mut fragments, coordinate_map)?;
 
     // RDKit❗✔️: auto *conf = new RDKit::Conformer(mol.getNumAtoms());
@@ -847,6 +911,7 @@ pub fn compute_2d_coordinates(
     conformer
         .validate_for_atom_count(working.atoms.len())
         .map_err(DepictError::CoordinateValidation)?;
+
     Ok(conformer)
 }
 
@@ -861,19 +926,51 @@ pub fn layout_2d(
     topology: &TopologyBlock,
     _options: &DepictOptions,
 ) -> Result<CoordinateBlock, DepictError> {
-    let conformer = compute_2d_coordinates(topology, &Compute2DCoordinatesParams::default())?;
+    // This deprecated topology-only helper explicitly has absent MOL properties.
+    let absent_properties = MoleculeProperties::default();
+    let conformer = compute_2d_coordinates(
+        topology,
+        &absent_properties,
+        &Compute2DCoordinatesParams::default(),
+    )?;
     Ok(CoordinateBlock {
         conformers_2d: vec![conformer],
         ..Default::default()
     })
 }
 
+pub use draw::DrawingError;
+
+/// Borrowed input to detached drawing preparation. Stored 2D layouts take
+/// priority; missing 2D is generated without replacing stored 3D conformers.
+pub struct DrawingInput<'a> {
+    pub topology: &'a TopologyBlock,
+    pub coordinates: &'a CoordinateBlock,
+    pub properties: &'a cosmolkit_model::MoleculeProperties,
+    pub valence: Option<&'a cosmolkit_core::ValenceAssignment>,
+    pub rings: Option<&'a cosmolkit_core::RingInfo>,
+}
+
 pub fn render_svg(
-    _topology: &TopologyBlock,
-    _coordinates: &CoordinateBlock,
-    _options: &DepictOptions,
-) -> Result<String, DepictError> {
-    Err(DepictError::CoordGenUnavailable)
+    input: DrawingInput<'_>,
+    options: &DepictOptions,
+) -> Result<String, DrawingError> {
+    if options.width == 0 || options.height == 0 {
+        return Err(DrawingError::InvalidDimensions {
+            width: options.width,
+            height: options.height,
+        });
+    }
+    let prepared = draw_prepare::prepare(input)?;
+    draw::render_prepared_svg(&prepared.borrow(), options.width, options.height)
+}
+
+pub fn render_png(
+    input: DrawingInput<'_>,
+    options: &DepictOptions,
+) -> Result<Vec<u8>, DrawingError> {
+    let svg = render_svg(input, options)?;
+    raster::svg_to_png(&svg)
 }
 
 #[cfg(test)]
@@ -925,5 +1022,437 @@ mod error_projection_tests {
             public_source.downcast_ref::<QueryAtomConversionError>(),
             Some(&source)
         );
+    }
+}
+
+#[cfg(test)]
+mod d2_probe1_tests {
+    use std::str::FromStr;
+
+    use cosmolkit_model::{
+        Atom, AtomId, AtomSpec, Bond, BondDirection, BondId, BondOrder, BondSpec, BondStereo,
+        ChiralTag, Element, Hybridization, MoleculeProperties, PropertyValue, TopologyBlock,
+    };
+
+    use super::{Compute2DCoordinatesParams, compute_2d_coordinates};
+
+    pub(super) mod prepared_properties {
+        use super::*;
+        use std::cell::{Cell, RefCell};
+        use std::collections::BTreeMap;
+
+        thread_local! {
+            static DISPATCHES: Cell<usize> = const { Cell::new(0) };
+            static CAPTURE: RefCell<(bool, Option<TopologyBlock>)> = const { RefCell::new((false, None)) };
+        }
+
+        pub(crate) fn observe_dispatch() {
+            DISPATCHES.with(|count| count.set(count.get() + 1));
+        }
+
+        pub(crate) fn observe_working(topology: &TopologyBlock) {
+            CAPTURE.with(|capture| {
+                let mut capture = capture.borrow_mut();
+                if capture.0 {
+                    capture.1 = Some(topology.clone());
+                }
+            });
+        }
+
+        fn captured_topology(block: &str) -> TopologyBlock {
+            let trace = format!(
+                "D2\tconstructor_final\tMETA\tfixed\n{}",
+                block
+                    .lines()
+                    .map(|line| format!("D2\tconstructor_final\t{line}\n"))
+                    .collect::<String>()
+            );
+            super::last_boundary::transport(&trace).0
+        }
+
+        fn captured_properties(block: &str) -> MoleculeProperties {
+            let mut properties = MoleculeProperties::default();
+            for line in block.lines() {
+                let row = line.split('\t').collect::<Vec<_>>();
+                assert_eq!(row.len(), 8);
+                assert_eq!(&row[..2], &["PROP", "MOL"]);
+                let key = super::last_boundary::unhex(row[4]);
+                if key == "__computedProps" {
+                    assert_eq!(row[5], "12");
+                    // Vector representation remains raw source metadata. Scalar
+                    // computed membership is taken from each actual capture.
+                    continue;
+                }
+                assert!(matches!(row[5], "1" | "3"));
+                let value = super::last_boundary::unhex(row[7]);
+                if row[6] == "1" {
+                    properties.set_computed_prop(key, value).unwrap();
+                } else {
+                    properties.set_prop(key, value).unwrap();
+                }
+            }
+            properties
+        }
+
+        #[test]
+        fn d2_prepared_property_domain_all_48_native_cells_twice() {
+            let fixed = include_str!(
+                "../../../testdata/depict_2d/expected/rdkit/prepared_property_presence.tsv"
+            );
+            let mut blocks = BTreeMap::new();
+            for section in fixed.split("BLOCK\t").skip(1) {
+                let (key, content) = section.split_once('\n').unwrap();
+                let (content, _) = content.split_once("END\n").unwrap();
+                assert!(blocks.insert(key, content).is_none());
+            }
+            let cells = fixed
+                .lines()
+                .filter(|line| line.starts_with("CELL\t"))
+                .collect::<Vec<_>>();
+            assert_eq!(cells.len(), 48);
+            assert_eq!(blocks.len(), 39);
+            let mut discrepancies = Vec::new();
+            let mut calls = 0;
+            let mut errors = 0;
+            let mut preserved = 0;
+            let mut dispatch_matches = 0;
+            let mut working_matches = 0;
+            let mut coordinate_matches = 0;
+            let mut equal_bits = 0;
+            let mut scalar_bits = 0;
+            CAPTURE.with(|capture| capture.borrow_mut().0 = true);
+            for cell in cells {
+                let row = cell.split('\t').collect::<Vec<_>>();
+                assert_eq!(row.len(), 7);
+                let label = row[1];
+                let expected_working = captured_topology(blocks[row[4]]);
+                let expected_xy = blocks[row[6]]
+                    .lines()
+                    .map(|line| {
+                        let fields = line.split('\t').collect::<Vec<_>>();
+                        assert_eq!(fields.len(), 4);
+                        assert_eq!(fields[0], "XY");
+                        (
+                            parse::<usize>(fields[1]),
+                            [parse::<u64>(fields[2]), parse::<u64>(fields[3])],
+                        )
+                    })
+                    .collect::<Vec<_>>();
+                for repeat in 0..2 {
+                    let topology = captured_topology(blocks[row[2]]);
+                    let properties = captured_properties(blocks[row[3]]);
+                    let params = Compute2DCoordinatesParams {
+                        canonical_orientation: label.ends_with(":O1"),
+                        ..Default::default()
+                    };
+                    let before_topology = topology.clone();
+                    let before_properties = properties.clone();
+                    let before_params = params.clone();
+                    let before_values = format!("{topology:?}|{properties:?}|{params:?}");
+                    let before_addresses = (
+                        topology.atoms.as_ptr(),
+                        topology.bonds.as_ptr(),
+                        properties.props() as *const _,
+                        &params as *const _,
+                    );
+                    let before_map_bits = params
+                        .coordinate_map
+                        .iter()
+                        .map(|(id, xy)| (*id, xy.map(f64::to_bits)))
+                        .collect::<Vec<_>>();
+                    let baseline = DISPATCHES.with(Cell::get);
+                    let result = compute_2d_coordinates(&topology, &properties, &params);
+                    calls += 1;
+                    // Inspect input preservation BEFORE inspecting any Result.
+                    let preservation = topology == before_topology
+                        && properties == before_properties
+                        && params == before_params
+                        && before_values == format!("{topology:?}|{properties:?}|{params:?}")
+                        && before_addresses
+                            == (
+                                topology.atoms.as_ptr(),
+                                topology.bonds.as_ptr(),
+                                properties.props() as *const _,
+                                &params as *const _,
+                            )
+                        && before_map_bits
+                            == params
+                                .coordinate_map
+                                .iter()
+                                .map(|(id, xy)| (*id, xy.map(f64::to_bits)))
+                                .collect::<Vec<_>>();
+                    if preservation {
+                        preserved += 1;
+                    } else {
+                        discrepancies.push(format!("{label}/{repeat}: input preservation"));
+                    }
+                    let delta = DISPATCHES.with(Cell::get) - baseline;
+                    let expected_delta = usize::from(properties.prop("_StereochemDone").is_none());
+                    if delta == expected_delta {
+                        dispatch_matches += 1;
+                    } else {
+                        discrepancies.push(format!("{label}/{repeat}: actual dispatch delta {delta} expected {expected_delta}"));
+                    }
+                    let working = CAPTURE.with(|capture| capture.borrow_mut().1.take());
+                    if working.as_ref() == Some(&expected_working) {
+                        working_matches += 1;
+                    } else {
+                        discrepancies.push(format!("{label}/{repeat}: complete working topology differs\nactual={working:?}\nexpected={expected_working:?}"));
+                    }
+                    match result {
+                        Err(error) => {
+                            errors += 1;
+                            discrepancies.push(format!("{label}/{repeat}: {error:?}"));
+                        }
+                        Ok(conformer) => {
+                            let mut matches = conformer.coordinates().len() == expected_xy.len();
+                            for &(atom, expected) in &expected_xy {
+                                if let Some(actual) = conformer.coordinates().get(atom) {
+                                    for axis in 0..2 {
+                                        scalar_bits += 1;
+                                        equal_bits +=
+                                            usize::from(actual[axis].to_bits() == expected[axis]);
+                                        if (actual[axis] - f64::from_bits(expected[axis])).abs()
+                                            > 1e-8
+                                        {
+                                            matches = false;
+                                            discrepancies.push(format!("{label}/{repeat}: XY {atom}/{axis} actual={} expected={} bits={}/{}", actual[axis], f64::from_bits(expected[axis]), actual[axis].to_bits(), expected[axis]));
+                                        }
+                                    }
+                                } else {
+                                    matches = false;
+                                }
+                            }
+                            if matches {
+                                coordinate_matches += 1;
+                            } else {
+                                discrepancies.push(format!(
+                                    "{label}/{repeat}: ordered coordinate rows differ"
+                                ));
+                            }
+                        }
+                    }
+                }
+            }
+            CAPTURE.with(|capture| capture.borrow_mut().0 = false);
+            println!(
+                "D2-PREPARED domain_calls={calls} errors={errors} preservation={preserved}/96 dispatch={dispatch_matches}/96 working={working_matches}/96 coordinates={coordinate_matches}/96 equal_bits={equal_bits}/{scalar_bits}"
+            );
+            assert_eq!(calls, 96);
+            assert!(discrepancies.is_empty(), "{}", discrepancies.join("\n"));
+        }
+    }
+    #[derive(Default)]
+    struct SourceInput {
+        atoms: Vec<Vec<String>>,
+        bonds: Vec<Vec<String>>,
+    }
+
+    fn parse<T>(field: &str) -> T
+    where
+        T: FromStr,
+        T::Err: std::fmt::Debug,
+    {
+        field.parse().expect("valid pinned source trace field")
+    }
+
+    fn source_inputs(text: &str) -> Vec<SourceInput> {
+        let mut inputs = Vec::new();
+        let mut current = None;
+        for line in text.lines() {
+            let fields = line.split('\t').collect::<Vec<_>>();
+            if fields.len() < 3 || fields[0] != "D2" {
+                continue;
+            }
+            if fields[1] == "constructor_final" && fields[2] == "META" {
+                if let Some(input) = current.take() {
+                    inputs.push(input);
+                }
+                current = Some(SourceInput::default());
+                continue;
+            }
+            if fields[1] != "constructor_final" {
+                continue;
+            }
+            let Some(input) = current.as_mut() else {
+                continue;
+            };
+            match fields[2] {
+                "ATOM" => input.atoms.push(
+                    fields[3..]
+                        .iter()
+                        .map(|field| (*field).to_owned())
+                        .collect(),
+                ),
+                "BOND" => input.bonds.push(
+                    fields[3..]
+                        .iter()
+                        .map(|field| (*field).to_owned())
+                        .collect(),
+                ),
+                _ => {}
+            }
+        }
+        if let Some(input) = current {
+            inputs.push(input);
+        }
+        inputs
+    }
+
+    fn topology(input: &SourceInput) -> TopologyBlock {
+        let mut atoms = Vec::with_capacity(input.atoms.len());
+        for row in &input.atoms {
+            assert_eq!(row.len(), 11);
+            let index: usize = parse(&row[0]);
+            assert_eq!(index, atoms.len(), "source atom table index is ordered");
+            let element = Element::from_atomic_number(parse(&row[1]))
+                .expect("pinned source atomic number is modeled");
+            let hybridization = Hybridization::from_rdkit_code(parse(&row[8]))
+                .expect("pinned source hybridization is modeled");
+            let chiral_tag = ChiralTag::from_rdkit_code(parse(&row[9]))
+                .expect("pinned source chiral tag is modeled");
+            let mut spec = AtomSpec::new(element)
+                .with_isotope(parse(&row[2]))
+                .with_formal_charge(parse(&row[3]))
+                .with_explicit_hydrogens(parse(&row[4]))
+                .with_no_implicit(parse::<u8>(&row[5]) != 0)
+                .with_radical_electrons(parse(&row[6]))
+                .with_aromatic(parse::<u8>(&row[7]) != 0)
+                .with_hybridization(hybridization)
+                .with_chiral_tag(chiral_tag);
+            let atom_map: u32 = parse(&row[10]);
+            if atom_map != 0 {
+                spec = spec.with_atom_map(atom_map);
+            }
+            atoms.push(Atom::from_spec(AtomId::new(index), spec));
+        }
+
+        let mut bonds = Vec::with_capacity(input.bonds.len());
+        for row in &input.bonds {
+            assert_eq!(row.len(), 9);
+            let index: usize = parse(&row[0]);
+            assert_eq!(index, bonds.len(), "source bond table index is ordered");
+            let begin = AtomId::new(parse(&row[1]));
+            let end = AtomId::new(parse(&row[2]));
+            let order = BondOrder::from_rdkit_code(parse(&row[3]))
+                .expect("pinned source bond order is modeled");
+            let direction = BondDirection::from_rdkit_code(parse(&row[6]))
+                .expect("pinned source bond direction is modeled");
+            let stereo = BondStereo::from_rdkit_code(parse(&row[7]))
+                .expect("pinned source bond stereo is modeled");
+            let mut spec = BondSpec::new(begin, end, order)
+                .with_aromatic(parse::<u8>(&row[4]) != 0)
+                .with_conjugated(parse::<u8>(&row[5]) != 0)
+                .with_direction(direction)
+                .with_stereo(stereo);
+            if !row[8].is_empty() {
+                let stereo_atoms = row[8]
+                    .split(',')
+                    .map(|field| AtomId::new(parse(field)))
+                    .collect::<Vec<_>>();
+                assert_eq!(stereo_atoms.len(), 2, "source stereo references are paired");
+                spec = spec.with_stereo_atoms(stereo_atoms[0], stereo_atoms[1]);
+            }
+            bonds.push(Bond::from_spec(BondId::new(index), spec));
+        }
+        TopologyBlock::try_from_parts(atoms, bonds, Vec::new(), Vec::new())
+            .expect("pinned constructor-final topology is modeled")
+    }
+
+    mod last_boundary {
+        use super::*;
+        pub(super) fn unhex(text: &str) -> String {
+            assert_eq!(text.len() % 2, 0);
+            String::from_utf8(
+                text.as_bytes()
+                    .chunks_exact(2)
+                    .map(|pair| u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap())
+                    .collect(),
+            )
+            .expect("native property bytes are UTF-8 in these fixed cases")
+        }
+        pub(super) fn transport(case_trace: &str) -> (TopologyBlock, MoleculeProperties) {
+            let inputs = source_inputs(case_trace);
+            assert_eq!(inputs.len(), 1);
+            let mut topology = topology(&inputs[0]);
+            for line in case_trace.lines() {
+                let fields = line.split('\t').collect::<Vec<_>>();
+                if fields.len() < 3 || fields[..2] != ["D2", "constructor_final"] {
+                    continue;
+                }
+                if fields[2] == "QUERY" {
+                    assert_eq!(fields[5], "0", "selected constructor has no query");
+                }
+                if fields[2] != "PROP" || fields[3] == "MOL" {
+                    continue;
+                }
+                assert_eq!(fields.len(), 10);
+                let key = unhex(fields[6]);
+                if key == "__computedProps" {
+                    assert_eq!(fields[7], "12");
+                    // Source vector metadata is retained in the raw input;
+                    // actual scalar computed membership is transported below.
+                    continue;
+                }
+                let value = unhex(fields[9]);
+                let value = match fields[7] {
+                    "1" => PropertyValue::Int(parse(&value)),
+                    "6" => PropertyValue::Int(
+                        i32::try_from(parse::<u32>(&value))
+                            .expect("native unsigned CIP rank fits modeled signed integer"),
+                    ),
+                    "2" => PropertyValue::Double(f64::from_bits(parse(&value))),
+                    "3" => PropertyValue::String(value),
+                    "5" => PropertyValue::Bool(match value.as_str() {
+                        "0" => false,
+                        "1" => true,
+                        _ => panic!("native boolean is 0/1"),
+                    }),
+                    other => panic!("unmodeled actual scalar property tag {other}"),
+                };
+                let index: usize = parse(fields[4]);
+                let computed = fields[8] == "1";
+                match fields[3] {
+                    "ATOM" => {
+                        if computed {
+                            topology.atoms[index].set_computed_prop(key, value).unwrap();
+                        } else {
+                            topology.atoms[index].set_prop(key, value).unwrap();
+                        }
+                    }
+                    "BOND" => {
+                        if computed {
+                            topology.bonds[index].set_computed_prop(key, value).unwrap();
+                        } else {
+                            topology.bonds[index].set_prop(key, value).unwrap();
+                        }
+                    }
+                    other => panic!("unknown property owner {other}"),
+                }
+            }
+            let mut properties = MoleculeProperties::default();
+            for row in case_trace
+                .lines()
+                .filter(|row| row.starts_with("D2\tconstructor_final\tPROP\tMOL\t"))
+            {
+                let fields = row.split('\t').collect::<Vec<_>>();
+                assert_eq!(fields.len(), 10);
+                let key = unhex(fields[6]);
+                if key == "__computedProps" {
+                    assert_eq!(fields[7], "12");
+                    // Native vector remains raw metadata, scalar membership
+                    // is transported through the existing model markers.
+                    continue;
+                }
+                assert!(matches!(fields[7], "1" | "3"));
+                let value = unhex(fields[9]);
+                if fields[8] == "1" {
+                    properties.set_computed_prop(key, value).unwrap();
+                } else {
+                    properties.set_prop(key, value).unwrap();
+                }
+            }
+            (topology, properties)
+        }
     }
 }

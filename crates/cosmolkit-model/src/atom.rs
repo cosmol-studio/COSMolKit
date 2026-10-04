@@ -433,6 +433,12 @@ pub(crate) struct AtomProperties {
     pub(crate) no_implicit: bool,
     pub(crate) radical_electrons: u8,
     pub(crate) hybridization: Hybridization,
+    // BEGIN RDKIT CPP FUNCTION Atom::initFromOther temporary flags
+    // RDKit❗✔️: d_flags = other.d_flags;
+    // END RDKIT CPP FUNCTION Atom::initFromOther temporary flags
+    // The existing derived Clone transports this one typed scalar with the
+    // surrounding carrier; do not fold it into ordinary/computed properties.
+    pub(crate) temporary_flags: u64,
     pub(crate) props: PropertyStore,
     pub(crate) pdb_residue_info: Option<AtomPdbResidueInfo>,
     pub(crate) template_attachment_order: Option<TemplateAttachmentOrder>,
@@ -456,6 +462,10 @@ impl AtomProperties {
             no_implicit: false,
             radical_electrons: 0,
             hybridization: Hybridization::Unspecified,
+            // BEGIN RDKIT CPP MEMBER Atom::d_flags default
+            // RDKit✔️✔️: std::uint64_t d_flags = 0ul;
+            // END RDKIT CPP MEMBER Atom::d_flags default
+            temporary_flags: 0,
             props: PropertyStore::new(),
             pdb_residue_info: None,
             template_attachment_order: None,
@@ -955,6 +965,25 @@ impl Atom {
         self.element.atomic_number()
     }
 
+    /// Returns the source-compatible temporary atom flag word.
+    #[doc(hidden)]
+    #[must_use]
+    pub const fn temporary_flags(&self) -> u64 {
+        // BEGIN RDKIT CPP FUNCTION Atom::getFlags
+        // RDKit✔️✔️: std::uint64_t getFlags() const { return d_flags; }
+        // END RDKIT CPP FUNCTION Atom::getFlags
+        self.properties.temporary_flags
+    }
+
+    /// Sets the source-compatible temporary atom flag word.
+    #[doc(hidden)]
+    pub fn set_temporary_flags(&mut self, flags: u64) {
+        // BEGIN RDKIT CPP FUNCTION Atom::setFlags
+        // RDKit✔️✔️: void setFlags(std::uint64_t flags) { d_flags = flags; }
+        // END RDKIT CPP FUNCTION Atom::setFlags
+        self.properties.temporary_flags = flags;
+    }
+
     #[must_use]
     pub const fn formal_charge(&self) -> i8 {
         // RDKit✔️✔️: int getFormalCharge() const { return d_formalCharge; }
@@ -1387,5 +1416,66 @@ mod tests {
         assert_eq!(query.prop("first"), Some(&PropertyValue::Bool(true)));
         assert_eq!(query.prop("computed"), Some(&PropertyValue::Double(-0.0)));
         assert!(query.is_prop_computed("computed"));
+    }
+}
+
+#[cfg(test)]
+mod flags_tests {
+    use super::*;
+
+    fn carbon(id: usize) -> Atom {
+        Atom::from_spec(AtomId::new(id), AtomSpec::new(Element::C))
+    }
+
+    #[test]
+    fn cf3d_flags_atom_zero_default_all_bits_and_masks() {
+        let mut atom = carbon(0);
+        assert_eq!(atom.temporary_flags(), 0);
+
+        for bit in 0..u64::BITS {
+            let expected = 1_u64 << bit;
+            atom.set_temporary_flags(expected);
+            assert_eq!(atom.temporary_flags(), expected, "bit {bit}");
+            assert_eq!(atom.clone().temporary_flags(), expected, "clone bit {bit}");
+        }
+
+        for expected in [u64::MAX, 0xAAAA_AAAA_AAAA_AAAA, 0x5555_5555_5555_5555] {
+            atom.set_temporary_flags(expected);
+            assert_eq!(atom.temporary_flags(), expected);
+            assert_eq!(atom.clone().temporary_flags(), expected);
+        }
+    }
+
+    #[test]
+    fn cf3d_flags_atom_clone_id_remap_clear_and_source_isolation() {
+        let mut source = carbon(1);
+        source.set_temporary_flags(0x8123_4567_89AB_CDEF);
+        source
+            .set_computed_prop("derived", "value")
+            .expect("valid computed property");
+
+        let mut clone = source.clone();
+        assert_eq!(clone, source, "derived equality compares representation");
+        clone.set_temporary_flags(0xFEDC_BA98_7654_3210);
+        assert_eq!(source.temporary_flags(), 0x8123_4567_89AB_CDEF);
+        assert_eq!(clone.temporary_flags(), 0xFEDC_BA98_7654_3210);
+        assert_ne!(
+            clone, source,
+            "temporary flags are part of stored representation"
+        );
+
+        let remapped = clone.clone().with_id(AtomId::new(9));
+        assert_eq!(remapped.id(), AtomId::new(9));
+        assert_eq!(remapped.temporary_flags(), 0xFEDC_BA98_7654_3210);
+
+        clone.clear_computed_props();
+        assert_eq!(clone.temporary_flags(), 0xFEDC_BA98_7654_3210);
+        assert_eq!(clone.prop("derived"), None);
+        assert!(clone.computed_prop_names().is_empty());
+        assert_eq!(source.temporary_flags(), 0x8123_4567_89AB_CDEF);
+        assert_eq!(
+            source.prop("derived"),
+            Some(&PropertyValue::String("value".to_owned()))
+        );
     }
 }

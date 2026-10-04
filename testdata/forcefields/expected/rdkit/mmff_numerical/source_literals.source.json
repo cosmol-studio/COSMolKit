@@ -1,0 +1,17 @@
+{
+  "library": "RDKit",
+  "commit": "351f8f378f8ad6bbd517980c38896e66bf907af8c",
+  "license": "BSD-3-Clause",
+  "fixture_sha256": "1abf4b5de53077ad06f3f24d08902d3f886fe471c502f6e4a94cb8d38742a6ab",
+  "generator": "tools/testdata/mmff_numerical_source_literals.cpp",
+  "generator_sha256": "7088b2ce30af1aa41337505aa3c413f539aaaace8598637a3b47b8898f87aaec",
+  "fixed_behavior_cells": 597,
+  "tests_generate_reference": false,
+  "compiler_flags": [
+    "-std=c++20",
+    "-O0",
+    "-fno-fast-math",
+    "-ffp-contract=off"
+  ],
+  "compiler": "g++ 15.2.0; x86_64 Linux"
+}

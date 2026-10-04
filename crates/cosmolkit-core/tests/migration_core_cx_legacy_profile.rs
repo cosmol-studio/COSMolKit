@@ -339,7 +339,7 @@ fn cx_legacy_possible_center_flag_is_independent_of_cleaning() {
     );
     assert_eq!(
         possible_centers.atoms[0].prop("_ChiralityPossible"),
-        Some(&PropertyValue::String("1".to_owned()))
+        Some(&PropertyValue::Int(1))
     );
     assert!(
         possible_centers
@@ -360,7 +360,7 @@ fn cx_legacy_possible_center_flag_is_independent_of_cleaning() {
     );
     assert_eq!(
         clean_with_possible_centers.atoms[0].prop("_ChiralityPossible"),
-        Some(&PropertyValue::String("1".to_owned()))
+        Some(&PropertyValue::Int(1))
     );
     assert_eq!(
         input, before,

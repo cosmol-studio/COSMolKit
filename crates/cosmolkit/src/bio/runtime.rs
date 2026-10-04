@@ -145,6 +145,51 @@ impl BioStructure {
     pub fn write_mmcif(&self, path: &std::path::Path) -> Result<(), crate::BioMmcifWriteError> {
         self.write_mmcif_with_params(path, &crate::BioMmcifWriteParams::default())
     }
+
+    /// Serialize structure coordinates to PDB text with explicit options.
+    ///
+    /// Experimental: this emits ONLY the seven-record coordinate
+    /// projection — ATOM, HETATM, ANISOU, TER, MODEL, ENDMDL and the
+    /// optional END record. HEADER, TITLE, SEQRES, SSBOND, LINK, CISPEP,
+    /// CRYST1, ORIGX, SCALE, MTRIX, HETNAM, CONECT, assemblies, refinement
+    /// and all other source categories are never written; no lossless
+    /// roundtrip is claimed.
+    pub fn to_pdb_with_params(
+        &self,
+        params: &crate::BioPdbWriteParams,
+    ) -> Result<String, crate::BioPdbWriteError> {
+        cosmolkit_io::bio_structure_to_pdb_text(&self.data, params)
+    }
+
+    /// Serialize structure coordinates to PDB text with default options.
+    ///
+    /// Experimental: same seven-record coordinate projection and
+    /// exclusions as [`BioStructure::to_pdb_with_params`].
+    pub fn to_pdb(&self) -> Result<String, crate::BioPdbWriteError> {
+        self.to_pdb_with_params(&crate::BioPdbWriteParams::default())
+    }
+
+    /// Write structure coordinates to a PDB file with explicit options.
+    ///
+    /// Experimental: same seven-record coordinate projection as
+    /// [`BioStructure::to_pdb_with_params`]; the text is fully produced
+    /// before the destination is created or truncated, and write failures
+    /// retain the path and underlying IO error.
+    pub fn write_pdb_with_params(
+        &self,
+        path: &std::path::Path,
+        params: &crate::BioPdbWriteParams,
+    ) -> Result<(), crate::BioPdbWriteError> {
+        cosmolkit_io::write_bio_structure_pdb_file(&self.data, path, params)
+    }
+
+    /// Write structure coordinates to a PDB file with default options.
+    ///
+    /// Experimental: same seven-record coordinate projection as
+    /// [`BioStructure::to_pdb_with_params`].
+    pub fn write_pdb(&self, path: &std::path::Path) -> Result<(), crate::BioPdbWriteError> {
+        self.write_pdb_with_params(path, &crate::BioPdbWriteParams::default())
+    }
     pub fn protein(&self) -> Result<Protein, ProteinProjectionError> {
         Ok(Protein {
             structure: BioStructure {
@@ -990,5 +1035,454 @@ mod tests {
             .is_err()
         );
         assert_eq!(candidate, snapshot);
+    }
+}
+
+#[cfg(test)]
+mod bio_pdb_output_storage_tests {
+    use super::BioStructure;
+    use crate::BioPdbWriteParams;
+    use cosmolkit_bio::BioMetadata;
+    use cosmolkit_bio::BioStructureSourceState;
+    use std::sync::Arc;
+
+    const PDB_TEXT: &str = "ATOM      1  CA  ALA A   1       1.000   2.000   3.000  1.00 20.00           C  \nTER       2      ALA A   1                                                      \nEND";
+
+    /// Coordinate float-bit snapshot from both receivers.
+    struct BitsSnapshot {
+        positions: Vec<[u64; 3]>,
+        source_state_name_len: usize,
+        models_len: usize,
+        chains_len: usize,
+        residues_len: usize,
+        atoms_len: usize,
+        entities_len: usize,
+        connections_len: usize,
+        metadata_is_default: bool,
+        source_state_is_default: bool,
+        crystal_is_none: bool,
+        ncs_len: usize,
+        assemblies_len: usize,
+    }
+
+    fn capture(structure: &BioStructure) -> BitsSnapshot {
+        let parts = structure.clone().into_parts();
+        BitsSnapshot {
+            positions: parts
+                .coordinates
+                .positions()
+                .iter()
+                .map(|p| [p[0].to_bits(), p[1].to_bits(), p[2].to_bits()])
+                .collect(),
+            source_state_name_len: parts.source_state.name.len(),
+            models_len: parts.models.len(),
+            chains_len: parts.chains.len(),
+            residues_len: parts.residues.len(),
+            atoms_len: parts.atoms.len(),
+            entities_len: parts.entities.len(),
+            connections_len: parts.connections.len(),
+            metadata_is_default: parts.metadata == BioMetadata::default(),
+            source_state_is_default: parts.source_state == BioStructureSourceState::default(),
+            crystal_is_none: parts.crystal.is_none(),
+            ncs_len: parts.ncs_operators.len(),
+            assemblies_len: parts.assemblies.len(),
+        }
+    }
+
+    fn compare(
+        label: &str,
+        before: &BitsSnapshot,
+        after: &BitsSnapshot,
+        discrepancies: &mut Vec<String>,
+    ) {
+        if before.positions != after.positions {
+            discrepancies.push(format!("{label}: coordinate float bits mutated"));
+        }
+        if before.models_len != after.models_len
+            || before.chains_len != after.chains_len
+            || before.residues_len != after.residues_len
+            || before.atoms_len != after.atoms_len
+        {
+            discrepancies.push(format!("{label}: hierarchy lengths mutated"));
+        }
+        if before.entities_len != after.entities_len
+            || before.connections_len != after.connections_len
+        {
+            discrepancies.push(format!("{label}: entity/connection lengths mutated"));
+        }
+        if before.metadata_is_default != after.metadata_is_default
+            || before.source_state_is_default != after.source_state_is_default
+        {
+            discrepancies.push(format!("{label}: metadata/source_state mutated"));
+        }
+        if before.crystal_is_none != after.crystal_is_none
+            || before.ncs_len != after.ncs_len
+            || before.assemblies_len != after.assemblies_len
+        {
+            discrepancies.push(format!("{label}: crystal/ncs/assemblies mutated"));
+        }
+        if before.source_state_name_len != after.source_state_name_len {
+            discrepancies.push(format!("{label}: source_state name mutated"));
+        }
+    }
+
+    /// Arc sharing identity: all 16 Arc fields of BioStructureData must
+    /// be pointer-equal between the original and its clone (proving the
+    /// clone shares, not deep-copies), AND unchanged (same pointers)
+    /// after each write call.
+    fn arc_identities(structure: &BioStructure) -> [usize; 16] {
+        let d = &structure.data;
+        [
+            Arc::as_ptr(&d.models) as usize,
+            Arc::as_ptr(&d.chains) as usize,
+            Arc::as_ptr(&d.residues) as usize,
+            Arc::as_ptr(&d.atoms) as usize,
+            Arc::as_ptr(&d.entities) as usize,
+            Arc::as_ptr(&d.connections) as usize,
+            Arc::as_ptr(&d.cispeps) as usize,
+            Arc::as_ptr(&d.mod_residues) as usize,
+            Arc::as_ptr(&d.helices) as usize,
+            Arc::as_ptr(&d.sheets) as usize,
+            Arc::as_ptr(&d.metadata) as usize,
+            Arc::as_ptr(&d.source_state) as usize,
+            Arc::as_ptr(&d.coordinates) as usize,
+            Arc::as_ptr(&d.crystal) as usize,
+            Arc::as_ptr(&d.ncs_operators) as usize,
+            Arc::as_ptr(&d.assemblies) as usize,
+        ]
+    }
+
+    /// Owned COMPLETE payload baseline from into_parts(): every field
+    /// including input_format, not just lengths or default flags.
+    fn payload_baseline(structure: &BioStructure) -> cosmolkit_bio::BioStructureParts {
+        structure.clone().into_parts()
+    }
+
+    fn compare_payloads(
+        label: &str,
+        before: &cosmolkit_bio::BioStructureParts,
+        after: &cosmolkit_bio::BioStructureParts,
+        discrepancies: &mut Vec<String>,
+    ) {
+        if before.input_format != after.input_format {
+            discrepancies.push(format!("{label}: input_format changed"));
+        }
+        if before.models != after.models
+            || before.chains != after.chains
+            || before.residues != after.residues
+            || before.atoms != after.atoms
+        {
+            discrepancies.push(format!("{label}: hierarchy rows changed"));
+        }
+        if before.coordinates != after.coordinates {
+            discrepancies.push(format!("{label}: coordinate block changed"));
+        }
+        if before.metadata != after.metadata || before.source_state != after.source_state {
+            discrepancies.push(format!("{label}: metadata/source_state changed"));
+        }
+        if before.entities != after.entities
+            || before.connections != after.connections
+            || before.cispeps != after.cispeps
+            || before.mod_residues != after.mod_residues
+            || before.helices != after.helices
+            || before.sheets != after.sheets
+        {
+            discrepancies.push(format!("{label}: typed metadata rows changed"));
+        }
+        if before.crystal != after.crystal
+            || before.ncs_operators != after.ncs_operators
+            || before.assemblies != after.assemblies
+        {
+            discrepancies.push(format!("{label}: crystal/ncs/assemblies changed"));
+        }
+    }
+
+    /// Storage proof: to_pdb()/to_pdb_with_params() MUST NOT mutate any
+    /// BioStructure internal state. 12 calls across methods/profiles with
+    /// PRE-paired checkpoints on BOTH original and cloned peer, coordinate
+    /// float bits, ALL shared-block dimensions, and Err inclusion.
+    #[test]
+    fn bio_pdb_output_storage_unchanged_across_12_calls() {
+        let original = BioStructure::from_pdb(PDB_TEXT).expect("parses");
+        let peer = original.clone();
+
+        let params_set = [
+            BioPdbWriteParams::default(),
+            BioPdbWriteParams {
+                end_record: false,
+                ..Default::default()
+            },
+            BioPdbWriteParams {
+                ter_records: false,
+                ..Default::default()
+            },
+        ];
+
+        let mut calls = 0usize;
+        let mut discrepancies: Vec<String> = Vec::new();
+
+        let dir = std::env::temp_dir().join("ck_pdb_storage_test");
+        std::fs::create_dir_all(&dir).unwrap();
+
+        // 12 calls: to_pdb ×3 profiles + to_pdb_with_params ×3 profiles
+        // + write_pdb_with_params ×3 profiles + write_pdb ×1 (default)
+        // + write_pdb_with_params to directory (Err) ×1 + peer write ×1.
+
+        // Calls 1-3: to_pdb default ×3 (idempotent repeated reads)
+        for rep in 0..3 {
+            let label = format!("to_pdb[{rep}]");
+            let orig_before = capture(&original);
+            let peer_before = capture(&peer);
+            let result = original.to_pdb();
+            calls += 1;
+            let orig_after = capture(&original);
+            let peer_after = capture(&peer);
+            compare(
+                &format!("{label}/orig"),
+                &orig_before,
+                &orig_after,
+                &mut discrepancies,
+            );
+            compare(
+                &format!("{label}/peer"),
+                &peer_before,
+                &peer_after,
+                &mut discrepancies,
+            );
+            if let Err(e) = &result {
+                discrepancies.push(format!("{label}: unexpected Err {e:?}"));
+            }
+        }
+
+        // Calls 4-6: to_pdb_with_params ×3 profiles
+        for (i, params) in params_set.iter().enumerate() {
+            let label = format!("to_pdb_with_params[{i}]");
+            let orig_before = capture(&original);
+            let peer_before = capture(&peer);
+            let result = original.to_pdb_with_params(params);
+            calls += 1;
+            let orig_after = capture(&original);
+            let peer_after = capture(&peer);
+            compare(
+                &format!("{label}/orig"),
+                &orig_before,
+                &orig_after,
+                &mut discrepancies,
+            );
+            compare(
+                &format!("{label}/peer"),
+                &peer_before,
+                &peer_after,
+                &mut discrepancies,
+            );
+            if let Err(e) = &result {
+                discrepancies.push(format!("{label}: unexpected Err {e:?}"));
+            }
+        }
+
+        // Calls 7-9: write_pdb_with_params ×3 profiles (Ok results)
+        for (i, params) in params_set.iter().enumerate() {
+            let label = format!("write_pdb_with_params[{i}]");
+            let path = dir.join(format!("storage_{i}.pdb"));
+            let orig_before = capture(&original);
+            let peer_before = capture(&peer);
+            let result = original.write_pdb_with_params(&path, params);
+            calls += 1;
+            let orig_after = capture(&original);
+            let peer_after = capture(&peer);
+            compare(
+                &format!("{label}/orig"),
+                &orig_before,
+                &orig_after,
+                &mut discrepancies,
+            );
+            compare(
+                &format!("{label}/peer"),
+                &peer_before,
+                &peer_after,
+                &mut discrepancies,
+            );
+            if let Err(e) = &result {
+                discrepancies.push(format!("{label}: unexpected Err {e:?}"));
+            }
+            let _ = std::fs::remove_file(&path);
+        }
+
+        // Call 10: write_pdb default (short form)
+        {
+            let label = "write_pdb";
+            let path = dir.join("storage_default.pdb");
+            let orig_before = capture(&original);
+            let peer_before = capture(&peer);
+            let result = original.write_pdb(&path);
+            calls += 1;
+            let orig_after = capture(&original);
+            let peer_after = capture(&peer);
+            compare(
+                &format!("{label}/orig"),
+                &orig_before,
+                &orig_after,
+                &mut discrepancies,
+            );
+            compare(
+                &format!("{label}/peer"),
+                &peer_before,
+                &peer_after,
+                &mut discrepancies,
+            );
+            if let Err(e) = &result {
+                discrepancies.push(format!("{label}: unexpected Err {e:?}"));
+            }
+            let _ = std::fs::remove_file(&path);
+        }
+
+        // Call 11: write_pdb to a DIRECTORY (Err result — storage must
+        // still be unchanged even on error).
+        {
+            let label = "write_pdb_to_dir";
+            let dir_target = dir.join("target_dir");
+            std::fs::create_dir_all(&dir_target).unwrap();
+            let orig_before = capture(&original);
+            let peer_before = capture(&peer);
+            let result = original.write_pdb(&dir_target);
+            calls += 1;
+            let orig_after = capture(&original);
+            let peer_after = capture(&peer);
+            compare(
+                &format!("{label}/orig"),
+                &orig_before,
+                &orig_after,
+                &mut discrepancies,
+            );
+            compare(
+                &format!("{label}/peer"),
+                &peer_before,
+                &peer_after,
+                &mut discrepancies,
+            );
+            // Err is EXPECTED here (writing to a directory).
+            if result.is_ok() {
+                discrepancies.push(format!("{label}: unexpected Ok"));
+            }
+            let _ = std::fs::remove_dir(&dir_target);
+        }
+
+        // Call 12: peer.write_pdb (verify the PEER also stays unchanged)
+        {
+            let label = "peer_write_pdb";
+            let path = dir.join("peer_storage.pdb");
+            let orig_before = capture(&original);
+            let peer_before = capture(&peer);
+            let result = peer.write_pdb(&path);
+            calls += 1;
+            let orig_after = capture(&original);
+            let peer_after = capture(&peer);
+            compare(
+                &format!("{label}/orig"),
+                &orig_before,
+                &orig_after,
+                &mut discrepancies,
+            );
+            compare(
+                &format!("{label}/peer"),
+                &peer_before,
+                &peer_after,
+                &mut discrepancies,
+            );
+            if let Err(e) = &result {
+                discrepancies.push(format!("{label}: unexpected Err {e:?}"));
+            }
+            let _ = std::fs::remove_file(&path);
+        }
+
+        assert_eq!(calls, 12, "exact 12 storage-proof calls");
+        assert!(
+            discrepancies.is_empty(),
+            "storage discrepancies: {discrepancies:?}"
+        );
+    }
+
+    /// C00-C11 receiver census: 12 additional storage-proof calls using
+    /// DIFFERENT structures (fixture-indexed), with Arc identity, complete
+    /// payload baselines, and paired sharing checks.
+    #[test]
+    fn bio_pdb_output_storage_c00_c11_receivers() {
+        // Build simple structures for the 12-receiver census. Each uses
+        // a slightly different PDB text to ensure independent state.
+        let receivers: Vec<BioStructure> = (0..12)
+            .map(|i| {
+                let text = format!(
+                    "ATOM      1  CA  ALA A   {idx:>4}       1.000   2.000   3.000  1.00 20.00           C  \nTER       2      ALA A   {idx:>4}                                                      \nEND",
+                    idx = i + 1
+                );
+                BioStructure::from_pdb(&text).expect("receiver parses")
+            })
+            .collect();
+
+        let mut calls = 0usize;
+        let mut discrepancies: Vec<String> = Vec::new();
+
+        for (index, structure) in receivers.iter().enumerate() {
+            let label = format!("receiver[{index}]");
+            let peer = structure.clone();
+
+            // Arc sharing: original and clone share ALL 16 Arc pointers.
+            let orig_arcs_before = arc_identities(structure);
+            let peer_arcs = arc_identities(&peer);
+            if orig_arcs_before != peer_arcs {
+                discrepancies.push(format!("{label}: clone does NOT share Arc pointers"));
+            }
+
+            // Complete payload baseline.
+            let orig_payload_before = payload_baseline(structure);
+            let peer_payload_before = payload_baseline(&peer);
+
+            // input_format verification.
+            if structure.data.input_format != cosmolkit_bio::BioCoordinateFormat::Pdb {
+                discrepancies.push(format!("{label}: unexpected input_format"));
+            }
+
+            // One call per receiver.
+            let result = structure.to_pdb();
+            calls += 1;
+
+            // AFTER: Arc pointers unchanged.
+            let orig_arcs_after = arc_identities(structure);
+            if orig_arcs_before != orig_arcs_after {
+                discrepancies.push(format!("{label}: Arc pointers changed"));
+            }
+
+            // AFTER: complete payload unchanged.
+            let orig_payload_after = payload_baseline(structure);
+            compare_payloads(
+                &format!("{label}/orig"),
+                &orig_payload_before,
+                &orig_payload_after,
+                &mut discrepancies,
+            );
+            let peer_payload_after = payload_baseline(&peer);
+            compare_payloads(
+                &format!("{label}/peer"),
+                &peer_payload_before,
+                &peer_payload_after,
+                &mut discrepancies,
+            );
+
+            // AFTER: peer Arc still shared with original.
+            let peer_arcs_after = arc_identities(&peer);
+            if orig_arcs_after != peer_arcs_after {
+                discrepancies.push(format!("{label}: peer Arc sharing broken"));
+            }
+
+            if let Err(e) = &result {
+                discrepancies.push(format!("{label}: unexpected Err {e:?}"));
+            }
+        }
+
+        assert_eq!(calls, 12, "exact 12 C00-C11 receiver calls");
+        assert!(
+            discrepancies.is_empty(),
+            "receiver discrepancies: {discrepancies:?}"
+        );
     }
 }

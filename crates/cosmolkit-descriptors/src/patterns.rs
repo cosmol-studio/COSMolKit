@@ -10,7 +10,8 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 use cosmolkit_search::{
     MatchResult, QueryGraph, QueryMatchContext, SearchTarget, SmartsParseParams,
-    SubstructMatchParams, build_prepared_query_match_context, parse_smarts,
+    SubstructMatchParams, build_prepared_query_match_context, build_topology_query_match_context,
+    build_valence_query_match_context, parse_smarts,
     try_get_substruct_matches_with_params_and_context,
 };
 
@@ -142,35 +143,12 @@ pub(crate) fn pattern_matches_with_context(
     pattern: &'static str,
     context: &QueryMatchContext<'_>,
 ) -> DescriptorResult<Vec<MatchResult>> {
-    // RDKit✔️🔝:   unsigned int countMatches(const RDKit::ROMol &mol) const {
-    // RDKit✔️🔝:     PRECONDITION(m_matcher, "no matcher");
-    // RDKit✔️🔝:     std::vector<RDKit::MatchVectType> matches;
-    // RDKit✔️🔝:     // This is an ugly one. Recursive queries aren't thread safe.
-    // RDKit✔️🔝:     // Unfortunately we have to take a performance hit here in order
-    // RDKit✔️🔝:     // to guarantee thread safety
-    // RDKit✔️🔝:     if (m_needCopies) {
-    // RDKit✔️🔝:       const RDKit::ROMol nm(*(m_matcher), true);
-    // RDKit✔️🔝:       RDKit::SubstructMatch(mol, nm, matches);
-    // RDKit✔️🔝:     } else {
-    // RDKit✔️🔝:       const RDKit::ROMol &nm = *m_matcher;
-    // RDKit✔️🔝:       RDKit::SubstructMatch(mol, nm, matches);
-    // RDKit✔️🔝:     }
-    // RDKit✔️🔝:     return matches.size();
-    // RDKit✔️🔝:   }
-    //
-    // Behavioral notes: the three-argument `SubstructMatch` overload runs
-    // with default `SubstructMatchParameters`, reproduced by
-    // `SubstructMatchParams::default()` (uniquify=true, maxMatches=1000,
-    // recursionPossible=true, useChirality=false,
-    // useQueryQueryMatches=false); the count is `matches.size()`.
-    //
-    // 🔝 performance note: the source deep-copies the whole query mol on
-    // every `countMatches` call for patterns containing `$` purely to make
-    // recursive queries thread safe. The Rust matcher takes the retained
-    // query as an immutable shared reference and builds its recursive-query
-    // cache per call, so no query copy is ever made while the observable
-    // match set is identical.
-    let query = retained_pattern(function, pattern)?;
+    // Prepared-input wrapper: constructs the SearchTarget from the
+    // prepared DescriptorInput rows and DELEGATES the actual fixed-pattern
+    // matching to the ONE common owner `pattern_matches_on_target`, where
+    // the complete pinned countMatches body, its behavior review and the
+    // recursive-query-copy improvement note live. This wrapper only
+    // constructs the target view and delegates; it owns no matching loop.
     let target = SearchTarget::new(
         input.topology(),
         input.coordinates(),
@@ -178,8 +156,67 @@ pub(crate) fn pattern_matches_with_context(
         Some(input.ring_info()),
         Some(input.valence()),
     );
-    let matches = try_get_substruct_matches_with_params_and_context(
-        &target,
+    pattern_matches_on_target(&target, function, pattern, context)
+}
+
+/// The ONE common fixed-pattern match owner over explicit target rows.
+///
+/// Both the prepared-input path ([`pattern_matches_with_context`]) and the
+/// topology-only path route here: acquire the retained query and run the
+/// default-parameter match over the supplied `SearchTarget`. The caller owns
+/// context construction (prepared chemistry rows vs the narrow
+/// topology-only context) and ring/valence row supply.
+pub(crate) fn pattern_matches_on_target(
+    target: &SearchTarget<'_>,
+    function: &'static str,
+    pattern: &'static str,
+    context: &QueryMatchContext<'_>,
+) -> DescriptorResult<Vec<MatchResult>> {
+    // BEGIN RDKIT CPP FUNCTION: Lipinski.cpp ss_matcher::countMatches — the
+    // ONE actual fixed-pattern matching owner reached by BOTH the prepared
+    // path and the topology-only path. Callers construct the SearchTarget
+    // and the context; this owner acquires the retained query and runs the
+    // default-parameter match.
+    // RDKit✔️✔️:   unsigned int countMatches(const RDKit::ROMol &mol) const {
+    // RDKit✔️✔️:     PRECONDITION(m_matcher, "no matcher");
+    // RDKit✔️✔️:     std::vector<RDKit::MatchVectType> matches;
+    // RDKit✔️✔️:     // This is an ugly one. Recursive queries aren't thread safe.
+    // RDKit✔️✔️:     // Unfortunately we have to take a performance hit here in order
+    // RDKit✔️✔️:     // to guarantee thread safety
+    // RDKit✔️✔️:     if (m_needCopies) {
+    // RDKit✔️✔️:       const RDKit::ROMol nm(*(m_matcher), true);
+    // RDKit✔️✔️:       RDKit::SubstructMatch(mol, nm, matches);
+    // RDKit✔️✔️:     } else {
+    // RDKit✔️✔️:       const RDKit::ROMol &nm = *m_matcher;
+    // RDKit✔️✔️:       RDKit::SubstructMatch(mol, nm, matches);
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     return matches.size();
+    // RDKit✔️✔️:   }
+    //
+    // Behavior review (complete pinned body above): the three-argument
+    // SubstructMatch overload runs with default SubstructMatchParameters —
+    // reproduced by SubstructMatchParams::default() (uniquify=true,
+    // maxMatches=1000, recursionPossible=true, useChirality=false,
+    // useQueryQueryMatches=false); the result is the ordered match vector
+    // whose length the counting callers use. The caller supplies the
+    // target-derived context (prepared chemistry rows OR the narrow
+    // topology-only context); this owner performs no context construction
+    // itself and no chemistry computation.
+    //
+    // Cost review: one retained-query acquisition (map hit after the first
+    // process call, Arc clone) plus one matcher pass over the query
+    // pattern against the caller's target. The source's m_needCopies
+    // deep-copies the whole query mol on EVERY call for recursive-query
+    // thread safety (Lipinski.cpp:43-47); the Rust matcher shares one
+    // immutable Arc<QueryGraph> and builds its per-call recursive-query
+    // cache instead — this is ONLY a narrow recursive-query-copy
+    // improvement: no query copy is ever made
+    // while the observable match set is identical. No other whole-operation
+    // cost-equivalence claim is made here; matcher-internal costs belong to
+    // the search crate's own reviews.
+    let query = retained_pattern(function, pattern)?;
+    try_get_substruct_matches_with_params_and_context(
+        target,
         &query,
         &SubstructMatchParams::default(),
         context,
@@ -187,8 +224,74 @@ pub(crate) fn pattern_matches_with_context(
     .map_err(|source| DescriptorError::Search {
         function,
         source: DescriptorSearchCause::Match(source),
+    })
+}
+
+/// Topology-only fixed-pattern match count for element-only patterns.
+///
+/// Builds the ONE narrow topology query context (validation + borrowed
+/// adjacency, ring_info None, valence None) and delegates to the ONE
+/// common match owner with default `SubstructMatchParameters`. The
+/// caller-supplied topology is structurally validated; NO ring/valence
+/// rows are computed, borrowed or fabricated.
+pub(crate) fn count_pattern_matches_topology_only(
+    topology: &cosmolkit_model::TopologyBlock,
+    function: &'static str,
+    pattern: &'static str,
+) -> DescriptorResult<u32> {
+    let context =
+        build_topology_query_match_context(topology).map_err(|source| DescriptorError::Search {
+            function,
+            source: DescriptorSearchCause::Context(source),
+        })?;
+    let matches = {
+        let coordinates = cosmolkit_model::CoordinateBlock::default();
+        let target = SearchTarget::new(topology, &coordinates, &topology.stereo_groups, None, None);
+        pattern_matches_on_target(&target, function, pattern, &context)?
+    };
+    u32::try_from(matches.len()).map_err(|_| DescriptorError::CountOverflow {
+        function,
+        field: "matches",
+    })
+}
+
+/// Narrow borrowed-valence fixed-pattern match count (HBD-PUBLIC).
+///
+/// Builds the ONE narrow borrowed-valence query context (topology +
+/// valence-row validation, borrowed adjacency/valence, ring_info None)
+/// and delegates to the ONE common match owner with default
+/// `SubstructMatchParameters`. The supplied prepared valence rows are
+/// BORROWED — never recomputed, extended or cloned — and NO ring rows are
+/// computed, borrowed or fabricated (the HBD pattern reads H/valence
+/// predicates only). The empty coordinate block is an UNREAD interface
+/// value of `SearchTarget`, not fabricated chemistry or cache state.
+pub(crate) fn count_pattern_matches_with_valence(
+    topology: &cosmolkit_model::TopologyBlock,
+    valence: &cosmolkit_core::ValenceAssignment,
+    function: &'static str,
+    pattern: &'static str,
+) -> DescriptorResult<u32> {
+    let context = build_valence_query_match_context(topology, valence).map_err(|source| {
+        DescriptorError::Search {
+            function,
+            source: DescriptorSearchCause::Context(source),
+        }
     })?;
-    Ok(matches)
+    let matches = {
+        let coordinates = cosmolkit_model::CoordinateBlock::default();
+        let target = SearchTarget::new(
+            topology,
+            &coordinates,
+            &topology.stereo_groups,
+            None,
+            Some(valence),
+        );
+        pattern_matches_on_target(&target, function, pattern, &context)?
+    };
+    u32::try_from(matches.len()).map_err(|_| DescriptorError::CountOverflow {
+        function,
+        field: "matches",
+    })
 }
 
 /// Count pattern matches using one already-prepared shared query context.

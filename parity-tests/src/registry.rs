@@ -10,6 +10,10 @@ pub enum Operation {
     FuzzyAnd,
     FuzzyOr,
     Molecular(molecule_plan::TaskId),
+    BioPdbOutput,
+    UffCoverage,
+    UffOptimization,
+    UffConformerOptimization,
 }
 
 impl Operation {
@@ -18,6 +22,10 @@ impl Operation {
             Self::FuzzyAnd => "fuzzy_and",
             Self::FuzzyOr => "fuzzy_or",
             Self::Molecular(id) => id.name(),
+            Self::BioPdbOutput => "bio_pdb_output",
+            Self::UffCoverage => "uff_has_all_molecule_params",
+            Self::UffOptimization => "uff_optimize",
+            Self::UffConformerOptimization => "uff_optimize_conformers",
         }
     }
 }
@@ -61,6 +69,16 @@ pub struct Task {
 }
 
 pub const TASKS: &[Task] = &[
+    Task {
+        operation: Operation::BioPdbOutput,
+        corpus_type: CorpusType::Pdb,
+        generator: "generate_bio_pdb_output_pdb",
+    },
+    Task {
+        operation: Operation::BioPdbOutput,
+        corpus_type: CorpusType::Cif,
+        generator: "generate_bio_pdb_output_cif",
+    },
     Task {
         operation: Operation::FuzzyAnd,
         corpus_type: CorpusType::FingerprintPairs,
@@ -127,6 +145,21 @@ pub const TASKS: &[Task] = &[
         generator: "generate_fraction_csp3",
     },
     Task {
+        operation: Operation::Molecular(molecule_plan::TaskId::NumHeteroatoms),
+        corpus_type: CorpusType::Smiles,
+        generator: "generate_num_heteroatoms",
+    },
+    Task {
+        operation: Operation::Molecular(molecule_plan::TaskId::NumHba),
+        corpus_type: CorpusType::Smiles,
+        generator: "generate_num_hba",
+    },
+    Task {
+        operation: Operation::Molecular(molecule_plan::TaskId::NumHbd),
+        corpus_type: CorpusType::Smiles,
+        generator: "generate_num_hbd",
+    },
+    Task {
         operation: Operation::Molecular(molecule_plan::TaskId::AddHydrogens),
         corpus_type: CorpusType::Smiles,
         generator: "generate_add_hydrogens",
@@ -140,6 +173,11 @@ pub const TASKS: &[Task] = &[
         operation: Operation::Molecular(molecule_plan::TaskId::Coordinates2d),
         corpus_type: CorpusType::Smiles,
         generator: "generate_coordinates_2d",
+    },
+    Task {
+        operation: Operation::Molecular(molecule_plan::TaskId::Svg),
+        corpus_type: CorpusType::Smiles,
+        generator: "generate_svg",
     },
     Task {
         operation: Operation::Molecular(molecule_plan::TaskId::DistanceMatrix),
@@ -201,6 +239,41 @@ pub const TASKS: &[Task] = &[
         corpus_type: CorpusType::Smiles,
         generator: "generate_num_saturated_carbocycles",
     },
+    Task {
+        operation: Operation::UffCoverage,
+        corpus_type: CorpusType::Smiles,
+        generator: "generate_uff_has_all_molecule_params",
+    },
+    Task {
+        operation: Operation::UffOptimization,
+        corpus_type: CorpusType::Smiles,
+        generator: "generate_uff_optimize",
+    },
+    Task {
+        operation: Operation::UffConformerOptimization,
+        corpus_type: CorpusType::Smiles,
+        generator: "generate_uff_optimize_conformers",
+    },
+    Task {
+        operation: Operation::Molecular(molecule_plan::TaskId::MorganFingerprint),
+        corpus_type: CorpusType::Smiles,
+        generator: "generate_morgan_fingerprint",
+    },
+    Task {
+        operation: Operation::Molecular(molecule_plan::TaskId::MorganSparseFingerprint),
+        corpus_type: CorpusType::Smiles,
+        generator: "generate_morgan_sparse_fingerprint",
+    },
+    Task {
+        operation: Operation::Molecular(molecule_plan::TaskId::MorganCountFingerprint),
+        corpus_type: CorpusType::Smiles,
+        generator: "generate_morgan_count_fingerprint",
+    },
+    Task {
+        operation: Operation::Molecular(molecule_plan::TaskId::MorganSparseCountFingerprint),
+        corpus_type: CorpusType::Smiles,
+        generator: "generate_morgan_sparse_count_fingerprint",
+    },
 ];
 
 pub const RDKIT_VERSION: &str = "2026.03.1";
@@ -246,17 +319,101 @@ pub struct SmilesCase {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Input {
+    Uff(crate::uff::UffInput),
     Fingerprint(FingerprintInput),
     Molecular {
         case: SmilesCase,
         profile: molecule_plan::Profile,
     },
+    BioPdbOutput {
+        case: BioPdbCase,
+        profile: BioPdbOutputProfile,
+    },
+}
+
+/// Typed BIO text case for PDB output parity (frozen §5).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BioPdbCase {
+    pub id: String,
+    pub text: String,
+    pub format: BioPdbCorpusFormat,
+}
+
+/// Corpus format for BIO PDB output tasks.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BioPdbCorpusFormat {
+    Pdb,
+    Cif,
+}
+
+/// The 32 source option profiles (frozen §5: 2^5 bool combinations).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BioPdbOutputProfile {
+    pub ter_records: bool,
+    pub numbered_ter: bool,
+    pub ter_ignores_type: bool,
+    pub preserve_serial: bool,
+    pub end_record: bool,
+}
+
+impl BioPdbOutputProfile {
+    pub const ALL: [Self; 32] = [
+        Self::f(false, false, false, false, false),
+        Self::f(false, false, false, false, true),
+        Self::f(false, false, false, true, false),
+        Self::f(false, false, false, true, true),
+        Self::f(false, false, true, false, false),
+        Self::f(false, false, true, false, true),
+        Self::f(false, false, true, true, false),
+        Self::f(false, false, true, true, true),
+        Self::f(false, true, false, false, false),
+        Self::f(false, true, false, false, true),
+        Self::f(false, true, false, true, false),
+        Self::f(false, true, false, true, true),
+        Self::f(false, true, true, false, false),
+        Self::f(false, true, true, false, true),
+        Self::f(false, true, true, true, false),
+        Self::f(false, true, true, true, true),
+        Self::f(true, false, false, false, false),
+        Self::f(true, false, false, false, true),
+        Self::f(true, false, false, true, false),
+        Self::f(true, false, false, true, true),
+        Self::f(true, false, true, false, false),
+        Self::f(true, false, true, false, true),
+        Self::f(true, false, true, true, false),
+        Self::f(true, false, true, true, true),
+        Self::f(true, true, false, false, false),
+        Self::f(true, true, false, false, true),
+        Self::f(true, true, false, true, false),
+        Self::f(true, true, false, true, true),
+        Self::f(true, true, true, false, false),
+        Self::f(true, true, true, false, true),
+        Self::f(true, true, true, true, false),
+        Self::f(true, true, true, true, true),
+    ];
+
+    const fn f(ter: bool, num: bool, ign: bool, pres: bool, end: bool) -> Self {
+        Self {
+            ter_records: ter,
+            numbered_ter: num,
+            ter_ignores_type: ign,
+            preserve_serial: pres,
+            end_record: end,
+        }
+    }
 }
 
 impl Input {
     pub fn task_name(&self) -> &'static str {
         match self {
+            Self::Uff(row) => match row.profile {
+                crate::uff::Profile::Coverage { .. } => "uff_has_all_molecule_params",
+                crate::uff::Profile::Optimization { .. } => "uff_optimize",
+                crate::uff::Profile::ConformerOptimization { .. } => "uff_optimize_conformers",
+            },
             Self::Fingerprint(input) => input.operation.name(),
+            Self::BioPdbOutput { .. } => "bio_pdb_output",
             Self::Molecular { profile, .. } => {
                 use molecule_plan::Profile::*;
                 match profile {
@@ -271,6 +428,9 @@ impl Input {
                     LipinskiHBA { .. } => "lipinski_hba",
                     LipinskiHBD { .. } => "lipinski_hbd",
                     FractionCSP3 { .. } => "fraction_csp3",
+                    NumHeteroatoms { .. } => "num_heteroatoms",
+                    NumHba { .. } => "num_hba",
+                    NumHbd { .. } => "num_hbd",
                     NumRings { .. } => "num_rings",
                     NumHeterocycles { .. } => "num_heterocycles",
                     NumAromaticRings { .. } => "num_aromatic_rings",
@@ -285,10 +445,12 @@ impl Input {
                     AddHydrogens { .. } => "add_hydrogens",
                     RemoveHydrogens { .. } => "remove_hydrogens",
                     Coordinates2dDefault => "coordinates_2d",
+                    SvgDefault => "svg",
                     CipLabels { .. } => "cip_labels",
                     PotentialStereo { .. } => "potential_stereo",
                     Valence { .. } => "valence",
                     DistanceMatrix { .. } => "distance_matrix",
+                    Morgan { output, .. } => output.task_name(),
                 }
             }
         }
@@ -297,36 +459,118 @@ impl Input {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Value {
+    Uff(crate::uff::Observation),
     Fingerprint(FingerprintValue),
     Molecular(crate::molecular::Outcome),
+    BioPdbOutput(BioPdbOutputValue),
+}
+
+/// Text output from a BIO PDB write operation.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BioPdbOutputValue {
+    pub text: String,
+    pub error: Option<BioPdbOutputError>,
+}
+
+/// Stage-typed error for BIO PDB output.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "stage", rename_all = "snake_case")]
+pub enum BioPdbOutputError {
+    Parse {
+        format: BioPdbCorpusFormat,
+        message: String,
+    },
+    Write {
+        message: String,
+    },
+}
+
+impl std::fmt::Display for BioPdbOutputError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Parse { format, message } => {
+                write!(f, "parse {format:?}: {message}")
+            }
+            Self::Write { message } => write!(f, "write: {message}"),
+        }
+    }
+}
+
+/// Native reference identity for the BIO PDB output tasks.
+pub const BIO_PDB_REFERENCE: ReferenceBackend = ReferenceBackend {
+    library: "gemmi",
+    version: "0.7.5",
+    commit: "5cc1c23c6007e0e6cbd69289c6f7c0bff50e943e",
+};
+
+pub struct ReferenceBackend {
+    pub library: &'static str,
+    pub version: &'static str,
+    pub commit: &'static str,
 }
 
 #[derive(Clone, Debug, Default)]
 pub struct Corpus {
     pub fingerprints: Vec<Pair>,
     pub molecules: Vec<SmilesCase>,
+    pub bio_cases: Vec<BioPdbCase>,
 }
 
 impl Task {
     pub fn key(&self) -> String {
         format!("{}_{}", self.operation.name(), self.corpus_type.name())
     }
-    pub fn validate_reference(&self, input: &Input, output: &Value) -> Result<(), String> {
-        match (self.corpus_type, input, output) {
-            (
-                CorpusType::FingerprintPairs,
-                Input::Fingerprint(input),
-                Value::Fingerprint(output),
-            ) => fingerprint::validate_output(input, output),
-            (CorpusType::Smiles, Input::Molecular { profile, .. }, Value::Molecular(output)) => {
-                crate::molecular::validate_output(profile, output)
+    pub fn validate_reference(
+        &self,
+        recipe: &Input,
+        prepared: &Input,
+        output: &Value,
+    ) -> Result<(), String> {
+        if !matches!(recipe, Input::Uff(_)) && recipe != prepared {
+            return Err("reference case/parameter mismatch".into());
+        }
+        if recipe.task_name() != self.operation.name()
+            || prepared.task_name() != self.operation.name()
+        {
+            return Err("reference task/input mismatch".into());
+        }
+        match (recipe, prepared, output) {
+            (Input::Uff(recipe), Input::Uff(prepared), Value::Uff(output)) => {
+                crate::uff::validate_reference(recipe, prepared, output)
             }
+            (
+                Input::Fingerprint(recipe),
+                Input::Fingerprint(prepared),
+                Value::Fingerprint(output),
+            ) if recipe == prepared => fingerprint::validate_output(recipe, output),
+            (
+                Input::Molecular { .. },
+                Input::Molecular { profile, .. },
+                Value::Molecular(output),
+            ) if recipe == prepared => crate::molecular::validate_output(profile, output),
+            (
+                Input::BioPdbOutput { .. },
+                Input::BioPdbOutput { case, .. },
+                Value::BioPdbOutput(_),
+            ) if recipe == prepared => match self.corpus_type {
+                CorpusType::Pdb if case.format == BioPdbCorpusFormat::Pdb => Ok(()),
+                CorpusType::Cif if case.format == BioPdbCorpusFormat::Cif => Ok(()),
+                CorpusType::Pdb => Err("pdb task requires pdb format case".into()),
+                CorpusType::Cif => Err("cif task requires cif format case".into()),
+                _ => Err("reference input/output kind mismatch".into()),
+            },
             _ => Err("reference input/output kind mismatch".into()),
         }
     }
     pub fn count(&self, cases: &Corpus) -> usize {
         match self.operation {
+            Operation::UffCoverage
+            | Operation::UffOptimization
+            | Operation::UffConformerOptimization => {
+                cases.molecules.len() * crate::uff::profiles(self.operation).len()
+            }
             Operation::Molecular(id) => cases.molecules.len() * id.profiles().len(),
+            Operation::BioPdbOutput => cases.bio_cases.len() * BioPdbOutputProfile::ALL.len(),
             _ => cases.fingerprints.len() * fingerprint::WIDTHS.len(),
         }
     }
@@ -372,6 +616,40 @@ pub fn validate(corpus: &Corpus, tasks: &[&Task]) -> Result<(), String> {
 }
 
 pub fn expand(cases: &Corpus, task: &Task) -> Vec<Input> {
+    if task.operation == Operation::BioPdbOutput {
+        return cases
+            .bio_cases
+            .iter()
+            .flat_map(|case| {
+                BioPdbOutputProfile::ALL
+                    .into_iter()
+                    .map(move |profile| Input::BioPdbOutput {
+                        case: case.clone(),
+                        profile,
+                    })
+            })
+            .collect();
+    }
+    if matches!(
+        task.operation,
+        Operation::UffCoverage | Operation::UffOptimization | Operation::UffConformerOptimization
+    ) {
+        return cases
+            .molecules
+            .iter()
+            .flat_map(|case| {
+                crate::uff::profiles(task.operation)
+                    .into_iter()
+                    .map(move |profile| {
+                        Input::Uff(crate::uff::UffInput {
+                            case: case.clone(),
+                            profile,
+                            preparation: None,
+                        })
+                    })
+            })
+            .collect();
+    }
     if let Operation::Molecular(id) = task.operation {
         return cases
             .molecules

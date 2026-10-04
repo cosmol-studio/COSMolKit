@@ -1,3 +1,6 @@
+#[path = "fixtures/d2_prepared_property.rs"]
+mod prepared_property_fixture;
+
 use std::collections::BTreeMap;
 use std::error::Error as _;
 
@@ -9,6 +12,71 @@ use cosmolkit::{
     ParityPolicy, StateModel, TopologyBlock, TopologyEditKind, feature_spec, operation_invariant,
     operation_parity, operation_spec, support_matrix,
 };
+
+#[test]
+fn d2_prepared_property_public_twelve_native_operations() {
+    let mut calls = 0;
+    let mut errors = Vec::new();
+    for (line, smiles) in prepared_property_fixture::CASES {
+        for orientation in [false, true] {
+            for repeat in 0..2 {
+                let source = Molecule::from_smiles(smiles).unwrap();
+                assert!(
+                    source.property("_StereochemDone").is_some(),
+                    "actual parser prerequisite"
+                );
+                let before = source.clone();
+                let before_topology = source.topology().clone();
+                let before_properties = source.properties().clone();
+                let before_coordinates = source.to_builder().coordinates().clone();
+                let params = Coordinate2DParams {
+                    canonical_orientation: orientation,
+                    ..Default::default()
+                };
+                let params_before = params.clone();
+                let result = source.with_2d_coordinates_with_params(&params);
+                calls += 1;
+                // Full original input checks precede inspecting Result.
+                assert_eq!(source, before);
+                assert_eq!(source.topology(), &before_topology);
+                assert_eq!(source.properties(), &before_properties);
+                assert_eq!(source.to_builder().coordinates(), &before_coordinates);
+                assert_eq!(params, params_before);
+                match result {
+                    Err(error) => {
+                        errors.push(format!("line:{line}/{orientation}/{repeat}: {error:?}"))
+                    }
+                    Ok(output) => {
+                        assert!(std::ptr::eq(source.topology(), output.topology()));
+                        assert!(std::ptr::eq(source.properties(), output.properties()));
+                        assert_eq!(output.properties(), &before_properties);
+                        let coordinates = output.to_builder().coordinates().clone();
+                        assert_eq!(coordinates.conformers_2d.len(), 1);
+                        assert_eq!(coordinates.conformers_2d[0].id(), 0);
+                        assert_eq!(coordinates.conformers_3d, before_coordinates.conformers_3d);
+                        assert_eq!(
+                            coordinates.source_coordinate_dim,
+                            Some(CoordinateDimension::TwoD)
+                        );
+                        errors.extend(prepared_property_fixture::check(
+                            output.topology(),
+                            output.properties(),
+                            coordinates.conformers_2d[0].coordinates(),
+                            line,
+                            orientation,
+                        ));
+                    }
+                }
+            }
+        }
+    }
+    println!(
+        "D2-PREPARED public_calls={calls} preservation=12/12 discrepancies={}",
+        errors.len()
+    );
+    assert_eq!(calls, 12);
+    assert!(errors.is_empty(), "{}", errors.join("\n"));
+}
 
 fn find_error_source<'a, T: std::error::Error + 'static>(
     error: &'a (dyn std::error::Error + 'static),
@@ -386,6 +454,9 @@ fn binding_registry_operation_contract_and_feature_isolation() {
             "types.Coordinate2DLayoutError",
             "Molecule.with_2d_coordinates",
             "Molecule.with_2d_coordinates_with_params",
+            "types.DrawingError",
+            "Molecule.to_svg",
+            "Molecule.to_png",
         ]
     );
     for row in &rows {
@@ -395,7 +466,7 @@ fn binding_registry_operation_contract_and_feature_isolation() {
         assert_eq!(row.item, BindingItem::Type);
         assert_eq!(row.owner, BindingOwner::Type);
     }
-    for row in &rows[4..] {
+    for row in &rows[4..6] {
         assert_eq!(row.item, BindingItem::Callable);
         assert_eq!(row.owner, BindingOwner::Molecule);
         assert_eq!(
@@ -405,6 +476,17 @@ fn binding_registry_operation_contract_and_feature_isolation() {
     }
     assert_eq!(rows[4].callable.unwrap().parameters.len(), 0);
     assert_eq!(rows[5].callable.unwrap().parameters.len(), 1);
+    assert_eq!(rows[6].item, BindingItem::Type);
+    assert_eq!(rows[6].owner, BindingOwner::Type);
+    assert_eq!(rows[6].callable, None);
+    for row in &rows[7..] {
+        assert_eq!(row.item, BindingItem::Callable);
+        assert_eq!(row.owner, BindingOwner::Molecule);
+        let callable = row.callable.unwrap();
+        assert_eq!(callable.state_model, StateModel::ReadOnly);
+        assert_eq!(callable.operation_semantic_id, None);
+        assert_eq!(callable.parameters.len(), 2);
+    }
 
     let feature = feature_spec("cap-depict").unwrap();
     assert_eq!(feature.name, "cap-depict");
@@ -414,7 +496,10 @@ fn binding_registry_operation_contract_and_feature_isolation() {
     assert_eq!(spec.kind, MoleculeOpKind::Weak);
     assert_eq!(spec.topology_edit, TopologyEditKind::None);
     assert_eq!(spec.output, MoleculeOpOutput::Single);
-    assert_eq!(spec.access.read(), BlockSet::TOPOLOGY);
+    assert_eq!(
+        spec.access.read(),
+        BlockSet::TOPOLOGY.union(BlockSet::PROPERTIES)
+    );
     assert_eq!(
         spec.access.write(),
         BlockSet::COORDINATES.union(BlockSet::DERIVED_CACHE)
@@ -443,7 +528,8 @@ fn binding_registry_operation_contract_and_feature_isolation() {
     assert!(
         BINDING_CONTRACT
             .iter()
-            .filter(|row| row.feature == "cap-depict")
+            .filter(|row| row.feature == "cap-depict" && row.callable.is_some())
+            .filter(|row| row.callable.unwrap().state_model == StateModel::ValueReturning)
             .all(|row| !row.semantic_id.contains("svg") && !row.semantic_id.contains("png"))
     );
 }

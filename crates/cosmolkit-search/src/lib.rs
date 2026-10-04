@@ -29,7 +29,8 @@ pub use query_behavior::{
     SmartsParseError, atom_matches_query, atom_matches_query_with_context, atom_predicate_matches,
     atom_predicate_matches_with_context, atom_query_has_magic_value, bond_matches_query,
     bond_matches_query_with_context, bond_predicate_matches, bond_predicate_matches_with_context,
-    build_prepared_query_match_context, build_query_match_context, complete_mol_queries,
+    build_prepared_query_match_context, build_query_match_context,
+    build_topology_query_match_context, build_valence_query_match_context, complete_mol_queries,
     convert_complex_name_to_query, is_atom_aromatic, make_single_or_aromatic_bond_query,
     query_bond_min_ring_size, query_is_bond_in_ring,
 };
@@ -130,6 +131,25 @@ impl CompiledQuery {
         )
         .map_err(MatchError::from)
     }
+}
+
+/// Internal borrowed-context entry for callers that consume query atom rows
+/// only. It shares the compiled plan and typed matcher failures with the full
+/// result path without constructing bond mappings.
+#[doc(hidden)]
+pub fn try_get_substruct_atom_matches_with_compiled_query_and_context(
+    target: &SearchTarget<'_>,
+    query: &CompiledQuery,
+    params: &SubstructMatchParams,
+    query_context: &QueryMatchContext,
+) -> Result<Vec<Vec<usize>>, SubstructMatchError> {
+    matcher::try_get_substruct_atom_matches_with_compiled_query_and_context(
+        target,
+        &query.query,
+        params,
+        &query.compiled_graph,
+        query_context,
+    )
 }
 
 /// Compile a detached query graph into a reusable execution plan.

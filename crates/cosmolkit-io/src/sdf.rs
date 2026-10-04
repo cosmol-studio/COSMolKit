@@ -7582,7 +7582,7 @@ mod tests {
         AtomId, AtomQueryPredicate, BondId, BondQueryPredicate, CoordinateBlock,
         CoordinateDimension, MoleculeProperties, PropertyValue, QueryNode, SGroupBondRole,
         SGroupBracket, SGroupCState, SGroupConnection, SGroupDisplay, SdfPropertyListTarget,
-        StereoGroupKind, SubstanceGroup, SubstanceGroupId, SubstanceGroupKind,
+        StereoGroup, StereoGroupKind, SubstanceGroup, SubstanceGroupId, SubstanceGroupKind,
         query_substance_groups,
     };
     use cosmolkit_types::{BondDirection, BondStereo};
@@ -9234,6 +9234,7 @@ mod tests {
         assert_eq!(topology.stereo_groups[0].atoms(), &[AtomId::new(0)]);
         assert_eq!(topology.stereo_groups[1].kind(), StereoGroupKind::Or);
         assert_eq!(topology.stereo_groups[1].id(), Some(2));
+        assert_eq!(topology.stereo_groups[1].write_id(), 0);
         assert_eq!(topology.stereo_groups[1].atoms(), &[AtomId::new(1)]);
 
         let output = write_v3000_detached(
@@ -9245,6 +9246,9 @@ mod tests {
         assert!(output.contains("M  V30 COUNTS 2 1 2 0 0"));
         assert!(output.contains("M  V30 BEGIN SGROUP"));
         assert!(output.contains("M  V30 BEGIN COLLECTION"));
+        assert!(output.contains("M  V30 MDLV30/STEREL1 ATOMS=(1 2)"));
+        assert_eq!(topology.stereo_groups[1].id(), Some(2));
+        assert_eq!(topology.stereo_groups[1].write_id(), 0);
         let (roundtrip, _, _) = read_v3000_detached(&output).expect("roundtrip typed V3000 state");
         assert_eq!(roundtrip.substance_groups.len(), 2);
         assert_eq!(roundtrip.substance_groups[0].label(), Some("Me"));
@@ -9256,7 +9260,15 @@ mod tests {
             roundtrip.substance_groups[1].data().unwrap().values,
             ["payload"]
         );
-        assert_eq!(roundtrip.stereo_groups, topology.stereo_groups);
+        let expected_roundtrip_stereo_groups = vec![
+            StereoGroup::new(StereoGroupKind::Absolute, vec![AtomId::new(0)], vec![])
+                .with_id(0)
+                .with_write_id(0),
+            StereoGroup::new(StereoGroupKind::Or, vec![AtomId::new(1)], vec![])
+                .with_id(1)
+                .with_write_id(0),
+        ];
+        assert_eq!(roundtrip.stereo_groups, expected_roundtrip_stereo_groups);
     }
 
     fn v3000_query_sgroup_fixture() -> String {
