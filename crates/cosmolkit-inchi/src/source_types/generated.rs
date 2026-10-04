@@ -1162,6 +1162,7 @@ pub struct tagInputParms {
 }
 impl ::std::default::Default for tagInputParms {
     fn default() -> Self {
+        panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
         Self {
             szSdfDataHeader: ::std::array::from_fn(|_| ::std::default::Default::default()),
             pSdfLabel: ::std::default::Default::default(),

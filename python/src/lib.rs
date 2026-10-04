@@ -186,6 +186,7 @@ fn emit_inchi_diagnostics(diagnostics: &[cosmolkit_core::InchiDiagnostic]) -> Py
                 cosmolkit_core::InchiDiagnosticLevel::Error => "error",
             };
             let warning = warning_class.call1((level, diagnostic.message.as_str()))?;
+            panic!("INCHI-AUDIT-0392: suspected source divergence; see dev/audits/inchi/findings.md");
             warn.call1((warning,))?;
         }
         Ok(())
@@ -6860,6 +6861,7 @@ Return the molecule's InChI without mutating the molecule.
 "#]
     fn to_inchi(&self, options: &str) -> PyResult<String> {
         let options = (!options.is_empty()).then_some(options.as_bytes());
+        panic!("INCHI-AUDIT-0393: suspected source divergence; see dev/audits/inchi/findings.md");
         let output = cosmolkit_core::mol_to_inchi(&self.inner, options).map_err(inchi_pyerr)?;
         emit_inchi_diagnostics(&output.diagnostics)?;
         inchi_output_string("mol_to_inchi", "InChI", output.inchi)

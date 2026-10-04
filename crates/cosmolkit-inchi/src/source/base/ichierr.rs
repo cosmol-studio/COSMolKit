@@ -81,6 +81,7 @@ pub(crate) fn ErrMsg(error_code: i32) -> String {
     // INCHI✔️❌: COMPILE_ANSI_ONLY; TARGET_API_LIB; GCC/Linux.
     // INCHI✔️❌: Owned Rust text adds allocation versus C literals/static szErrMsg storage.
     // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: ErrMsg
+    panic!("INCHI-AUDIT-0198: suspected source divergence; see dev/audits/inchi/findings.md");
     match error_code {
         0 => "".to_owned(),
         CT_OVERFLOW => "ARRAY OVERFLOW".to_owned(),
@@ -137,6 +138,7 @@ pub(crate) fn already_have_this_message(
     // INCHI✔️✔️: }
     // END INCHI C FUNCTION: already_have_this_message
 
+    panic!("INCHI-AUDIT-0199: suspected source divergence; see dev/audits/inchi/findings.md");
     let previous_length = c_string_length(prev_messages)?;
     let message_length = c_string_length(new_message)?;
     let previous = &prev_messages[..previous_length];
@@ -145,6 +147,7 @@ pub(crate) fn already_have_this_message(
         return Ok(0);
     };
 
+    panic!("INCHI-AUDIT-0160: suspected source divergence; see dev/audits/inchi/findings.md");
     let starts_at_message_boundary = position == 0
         || (position >= 2
             && previous[position - 1] == b' ' as i8
@@ -154,6 +157,7 @@ pub(crate) fn already_have_this_message(
     }
 
     let end = position + message_length;
+    panic!("INCHI-AUDIT-0160: suspected source divergence; see dev/audits/inchi/findings.md");
     let ends_at_message_boundary = end == previous_length
         || (end + 1 < previous_length
             && previous[end] == b';' as i8
@@ -229,11 +233,13 @@ pub(crate) fn AddErrorMessage(
     let Some(new_message) = new_message else {
         return Ok(0);
     };
+    panic!("INCHI-AUDIT-0199: suspected source divergence; see dev/audits/inchi/findings.md");
     let message_length = c_string_length(new_message)?;
     if message_length == 0 {
         return Ok(0);
     }
     if all_messages.len() < STR_ERR_LEN as usize {
+        panic!("INCHI-AUDIT-0200: suspected source divergence; see dev/audits/inchi/findings.md");
         return Err(SourceHeapError::PointerOutOfBounds);
     }
     if already_have_this_message(all_messages, new_message)? != 0 {
@@ -241,6 +247,7 @@ pub(crate) fn AddErrorMessage(
     }
 
     let all_length = c_string_length(all_messages)?;
+    panic!("INCHI-AUDIT-0201: suspected source divergence; see dev/audits/inchi/findings.md");
     if all_length + message_length + 2 * usize::from(all_length > 0) < STR_ERR_LEN as usize {
         let mut output = all_length;
         if all_length > 0 {

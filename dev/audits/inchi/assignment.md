@@ -155,6 +155,28 @@ are allowed. Report: compilation/tests NOT RUN by instruction.
 
 ## Continuation and reporting
 
+Supervisor continuity instruction (2026-10-01): Tab5/terminal_4 in
+COSMolKit_3 is included in the existing supervisor stop watch. Complete ALL
+2019 production bodies and their numbered region/closure actions; no timed,
+batch, finding-count or review-request stopping points. This changes no audit
+scope, denominator, prior evidence or no-execution rule. Persist the exact next
+unchecked step/function before compaction, then compact and resume that step.
+Read policy/protocol at startup and after compaction only as already approved;
+do not add repeated per-function standards Reads.
+
+Use the existing verified shared sender for completion, genuine blockers or
+unexpected stops:
+`bash /home/datahouse-raid5/wjt/COSMolKit/dev/tools/notify_supervisor.sh "English report"`.
+Include Tab5, COSMolKit_3, exact step/function, audited/total function count,
+finding/panic counts, stop reason and evidence path. Require its DELIVERED
+marker; a draft/newline/exit without verification is not notification. If
+delivery is blocked, preserve the report in the existing audit evidence and
+continue independent authorized work; do not overwrite another pane's draft.
+The external watch only notifies the supervisor of a stop suspicion; it never
+changes scope, submits implementation instructions or resumes after a user
+interruption. Provider/capacity errors require notification and supervisor
+review, not silent idling or unapproved provider/model changes.
+
 Continue through all functions until the complete audit is done, a genuine
 task-wide blocker occurs, or interrupted. A finding is not a reason to stop:
 record it, insert the panic, and proceed. Persist the current function/region,

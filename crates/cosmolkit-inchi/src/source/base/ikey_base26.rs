@@ -27,9 +27,11 @@ pub(crate) fn base26_triplet_1(a: &[u8]) -> [u8; 3] {
     // INCHI✔️✔️: COMPILE_ANSI_ONLY; TARGET_API_LIB; GCC/Linux; FIX_BASE26_ENC_BUG is undefined.
     // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: base26_triplet_1
 
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let b0 = u32::from(a[0]);
     let b1 = u32::from(a[1] & 0x3f);
     let table_index = b0 | (b1 << 8);
+    panic!("INCHI-AUDIT-0399: suspected source divergence; see dev/audits/inchi/findings.md");
     let alphabet_index = if table_index < 2_704 {
         table_index
     } else if table_index < 12_168 {
@@ -76,10 +78,12 @@ pub(crate) fn base26_triplet_2(a: &[u8]) -> [u8; 3] {
     // INCHI✔️✔️: COMPILE_ANSI_ONLY; TARGET_API_LIB; GCC/Linux; FIX_BASE26_ENC_BUG is undefined.
     // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: base26_triplet_2
 
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let b0 = u32::from(a[1] & 0xc0);
     let b1 = u32::from(a[2]);
     let b2 = u32::from(a[3] & 0x0f);
     let table_index = (b0 | (b1 << 8) | (b2 << 16)) >> 6;
+    panic!("INCHI-AUDIT-0399: suspected source divergence; see dev/audits/inchi/findings.md");
     let alphabet_index = if table_index < 2_704 {
         table_index
     } else if table_index < 12_168 {
@@ -126,10 +130,12 @@ pub(crate) fn base26_triplet_3(a: &[u8]) -> [u8; 3] {
     // INCHI✔️✔️: COMPILE_ANSI_ONLY; TARGET_API_LIB; GCC/Linux; FIX_BASE26_ENC_BUG is undefined.
     // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: base26_triplet_3
 
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let b0 = u32::from(a[3] & 0xf0);
     let b1 = u32::from(a[4]);
     let b2 = u32::from(a[5] & 0x03);
     let table_index = (b0 | (b1 << 8) | (b2 << 16)) >> 4;
+    panic!("INCHI-AUDIT-0399: suspected source divergence; see dev/audits/inchi/findings.md");
     let alphabet_index = if table_index < 2_704 {
         table_index
     } else if table_index < 12_168 {
@@ -174,9 +180,11 @@ pub(crate) fn base26_triplet_4(a: &[u8]) -> [u8; 3] {
     // INCHI✔️✔️: COMPILE_ANSI_ONLY; TARGET_API_LIB; GCC/Linux; FIX_BASE26_ENC_BUG is undefined.
     // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: base26_triplet_4
 
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let b0 = u32::from(a[5] & 0xfc);
     let b1 = u32::from(a[6]);
     let table_index = (b0 | (b1 << 8)) >> 2;
+    panic!("INCHI-AUDIT-0399: suspected source divergence; see dev/audits/inchi/findings.md");
     let alphabet_index = if table_index < 2_704 {
         table_index
     } else if table_index < 12_168 {
@@ -263,9 +271,11 @@ pub(crate) fn base26_dublet_for_bits_28_to_36(a: &[u8]) -> [u8; 2] {
     // INCHI✔️✔️: COMPILE_ANSI_ONLY; TARGET_API_LIB; GCC/Linux; FIX_BASE26_ENC_BUG is undefined.
     // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: base26_dublet_for_bits_28_to_36
 
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let b0 = u32::from(a[3] & 0xf0);
     let b1 = u32::from(a[4] & 0x1f);
     let table_index = (b0 | (b1 << 8)) >> 4;
+    panic!("INCHI-AUDIT-0399: suspected source divergence; see dev/audits/inchi/findings.md");
     [
         b'A' + (table_index / 26) as u8,
         b'A' + (table_index % 26) as u8,
@@ -297,9 +307,11 @@ pub(crate) fn base26_dublet_for_bits_56_to_64(a: &[u8]) -> [u8; 2] {
     // functions is reproduced above from ikey_base26.c:1111-1160.
     // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: base26_dublet_for_bits_56_to_64
 
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let b0 = u32::from(a[7]);
     let b1 = u32::from(a[8] & 0x01);
     let table_index = b0 | (b1 << 8);
+    panic!("INCHI-AUDIT-0399: suspected source divergence; see dev/audits/inchi/findings.md");
     [
         b'A' + (table_index / 26) as u8,
         b'A' + (table_index % 26) as u8,

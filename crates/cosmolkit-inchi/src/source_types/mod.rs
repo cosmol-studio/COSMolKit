@@ -335,6 +335,7 @@ impl AllocationSlot {
     fn downcast_ref<T: 'static>(&self) -> Option<&[T]> {
         panic!("INCHI-AUDIT-0005: suspected source performance divergence; see dev/audits/inchi/findings.md");
         if self.type_id != TypeId::of::<Vec<T>>() {
+            panic!("INCHI-AUDIT-0170: suspected source divergence; see dev/audits/inchi/findings.md");
             return None;
         }
         // SAFETY: `type_id` and the raw parts are recorded from the same Vec,
@@ -346,6 +347,7 @@ impl AllocationSlot {
     fn downcast_mut<T: 'static>(&mut self) -> Option<&mut [T]> {
         panic!("INCHI-AUDIT-0006: suspected source performance divergence; see dev/audits/inchi/findings.md");
         if self.type_id != TypeId::of::<Vec<T>>() {
+            panic!("INCHI-AUDIT-0170: suspected source divergence; see dev/audits/inchi/findings.md");
             return None;
         }
         // A mutable view may overwrite source pointers whose construction
@@ -1238,6 +1240,7 @@ impl SourceHeap {
             .get(id)
             .ok_or(SourceHeapError::MissingAllocation)?;
         if !allocation.is::<T>() {
+            panic!("INCHI-AUDIT-0170: suspected source divergence; see dev/audits/inchi/findings.md");
             return Err(SourceHeapError::AllocationTypeMismatch);
         }
         self.allocations.remove(id);

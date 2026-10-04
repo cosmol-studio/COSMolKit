@@ -27,6 +27,7 @@ use crate::source_types::{
 };
 
 fn mol_fmt1_c_string_eq(value: &[i8], expected: &[u8]) -> bool {
+    panic!("INCHI-AUDIT-0350: suspected source divergence; see dev/audits/inchi/findings.md");
     let length = value
         .iter()
         .position(|byte| *byte == 0)
@@ -42,6 +43,7 @@ fn mol_fmt1_add_ascii_message(
     target: Option<&mut [i8]>,
     message: &[u8],
 ) -> Result<i32, SourceHeapError> {
+    panic!("INCHI-AUDIT-0345: suspected source divergence; see dev/audits/inchi/findings.md");
     let terminated = message
         .iter()
         .map(|byte| *byte as i8)
@@ -59,6 +61,7 @@ fn mol_fmt1_treat_error(
     if *error == 0 && new_error != 0 {
         *error = new_error;
     }
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let _ = mol_fmt1_add_ascii_message(target, message)?;
     Ok(())
 }
@@ -67,10 +70,16 @@ fn mol_fmt1_trim_array<const N: usize>(
     heap: &mut SourceHeap,
     value: &mut [i8; N],
 ) -> Result<i32, SourceHeapError> {
+    panic!("INCHI-AUDIT-0351: suspected source divergence; see dev/audits/inchi/findings.md");
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let pointer = heap.allocate_model_storage(value.to_vec())?;
+    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
     let mut length = 0_i32;
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     lrtrim(heap, pointer, Some(&mut length))?;
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     value.copy_from_slice(heap.slice(pointer.as_const())?);
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     heap.free(pointer)?;
     Ok(length)
 }
@@ -80,7 +89,9 @@ fn mol_fmt1_sgroup_pointer(
     sgroups: &MOL_FMT_SGROUPS,
     index: i32,
 ) -> Result<SourceMutPointer<crate::source_types::MOL_FMT_SGROUP>, SourceHeapError> {
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let index = usize::try_from(index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     heap.slice(sgroups.group.as_const())?
         .get(index)
         .copied()
@@ -186,6 +197,7 @@ MOL_FMT_DATA* ReadMolfile( INCHI_IOSTREAM *inp_file,
     // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: ReadMolfile
 
     if !pname.is_null() && lname != 0 {
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         *heap
             .slice_mut(pname)?
             .first_mut()
@@ -195,6 +207,7 @@ MOL_FMT_DATA* ReadMolfile( INCHI_IOSTREAM *inp_file,
         *value = 0;
     }
 
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let mfdata = MolfileReadDataLines(
         heap,
         inp_file.as_deref_mut(),
@@ -210,6 +223,8 @@ MOL_FMT_DATA* ReadMolfile( INCHI_IOSTREAM *inp_file,
     if *err < 0 {
         *err = err.wrapping_neg();
     } else {
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
+        panic!("INCHI-AUDIT-0001: suspected source divergence; see dev/audits/inchi/findings.md");
         let ret_skip_extras = SDFileSkipExtraData(
             heap,
             inp_file.as_deref_mut(),
@@ -230,6 +245,8 @@ MOL_FMT_DATA* ReadMolfile( INCHI_IOSTREAM *inp_file,
     }
 
     if !mfdata.is_null() {
+        panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let mut ctab = if OnlyHeaderBlock.is_null() {
             heap.slice(mfdata.as_const())?
                 .first()
@@ -245,6 +262,7 @@ MOL_FMT_DATA* ReadMolfile( INCHI_IOSTREAM *inp_file,
             return Err(SourceHeapError::PointerOutOfBounds);
         };
         let pseudos_allowed = i32::from(treat_NPZz == 1 || treat_polymers != POLYMERS_NO as i32);
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let _ = MolfileTreatPseudoElementAtoms(
             heap,
             &mut ctab,
@@ -556,56 +574,77 @@ err_fin:
     // INCHI✔️❌: FIX_CURE53_ISSUE_NULL_DEREFERENCE_MAKE_A_COPY_OF_T_GROUP_INFO == 1 and FIX_IMPOSSIBLE_H_ISOTOPE_BUG == 1.
     // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: MolfileReadDataLines
     let all = only_header.is_null();
+    panic!("INCHI-AUDIT-0001: suspected source divergence; see dev/audits/inchi/findings.md");
     let mut data = SourceMutPointer::null();
+    panic!("INCHI-AUDIT-0352: suspected source divergence; see dev/audits/inchi/findings.md");
     let mut hdr = MOL_FMT_HEADER_BLOCK::default();
+    panic!("INCHI-AUDIT-0352: suspected source divergence; see dev/audits/inchi/findings.md");
+    panic!("INCHI-AUDIT-0001: suspected source divergence; see dev/audits/inchi/findings.md");
     let mut ctab = MOL_FMT_CTAB::default();
+    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
     let mut rc = 0_i32;
     let mut ended = false;
     *err = 0;
     'read: {
         if all {
+            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
+            panic!("INCHI-AUDIT-0001: suspected source divergence; see dev/audits/inchi/findings.md");
             data = match inchi_calloc::<MOL_FMT_DATA>(heap, 1, std::mem::size_of::<MOL_FMT_DATA>() as u64) {
                 Ok(p) => p,
                 Err(SourceHeapError::AllocationFailed) => {
+                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     rc = 1; let _ = mol_fmt1_add_ascii_message(errors.as_deref_mut(), b"Out of RAM")?; break 'read;
                 }
                 Err(e) => return Err(e),
             };
         }
+        panic!("INCHI-AUDIT-0001: suspected source divergence; see dev/audits/inchi/findings.md");
         ctab.bonds = SourceMutPointer::null();
+        panic!("INCHI-AUDIT-0001: suspected source divergence; see dev/audits/inchi/findings.md");
         ctab.atoms = SourceMutPointer::null();
+        panic!("INCHI-AUDIT-0001: suspected source divergence; see dev/audits/inchi/findings.md");
         ctab.coords = SourceMutPointer::null();
+        panic!("INCHI-AUDIT-0001: suspected source divergence; see dev/audits/inchi/findings.md");
         ctab.v3000 = SourceMutPointer::null();
 
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         rc = MolfileReadHeaderLines(heap, &mut hdr, inp_file.as_deref_mut(), errors.as_deref_mut())?;
         if rc != 0 { rc = rc.wrapping_add(10); break 'read; }
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         rc = MolfileReadCountsLine(heap, &mut ctab, inp_file.as_deref_mut(), errors.as_deref_mut())?;
         if rc != 0 { rc = rc.wrapping_add(20); break 'read; }
         if !ctab.v3000.is_null() {
+            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             rc = MolfileV3000ReadCTABBeginAndCountsLine(heap, &mut ctab, inp_file.as_deref_mut(), errors.as_deref_mut())?;
             if rc != 0 { rc = rc.wrapping_add(70); break 'read; }
+            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             rc = MolfileV3000Init(heap, &mut ctab, errors.as_deref_mut())?;
             if rc != 0 { rc = rc.wrapping_add(70); break 'read; }
         }
         if all {
             let n = ctab.n_atoms.max(1) as u64;
+            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             ctab.atoms = match inchi_calloc::<MOL_FMT_ATOM>(heap, n, std::mem::size_of::<MOL_FMT_ATOM>() as u64) {
                 Ok(p) => p,
                 Err(SourceHeapError::AllocationFailed) => {
+                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     rc = 2; let _ = mol_fmt1_add_ascii_message(errors.as_deref_mut(), b"Out of RAM")?; break 'read;
                 }
                 Err(e) => return Err(e),
             };
             if get_coords != 0 {
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 ctab.coords = match inchi_calloc::<MOL_COORD>(heap, n, std::mem::size_of::<MOL_COORD>() as u64) {
                     Ok(p) => p,
                     Err(SourceHeapError::AllocationFailed) => {
+                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         rc = 2; let _ = mol_fmt1_add_ascii_message(errors.as_deref_mut(), b"Out of RAM")?; break 'read;
                     }
                     Err(e) => return Err(e),
                 };
             }
         }
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         rc = if ctab.v3000.is_null() {
             MolfileReadAtomsBlock(heap, &mut ctab, inp_file.as_deref_mut(), rc, errors.as_deref_mut())?
         } else {
@@ -617,9 +656,11 @@ err_fin:
         }
         if all && rc < 30 && !ended {
             let n = ctab.n_bonds.max(1) as u64;
+            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             ctab.bonds = match inchi_calloc::<MOL_FMT_BOND>(heap, n, std::mem::size_of::<MOL_FMT_BOND>() as u64) {
                 Ok(p) => p,
                 Err(SourceHeapError::AllocationFailed) => {
+                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     rc = 3; let _ = mol_fmt1_add_ascii_message(errors.as_deref_mut(), b"Out of RAM")?; break 'read;
                 }
                 Err(e) => return Err(e),
@@ -627,6 +668,7 @@ err_fin:
         }
         let mut previous = rc;
         if !ended {
+            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             rc = if ctab.v3000.is_null() {
                 MolfileReadBondsBlock(heap, &mut ctab, inp_file.as_deref_mut(), rc, errors.as_deref_mut())?
             } else {
@@ -637,6 +679,7 @@ err_fin:
                 rc = if previous != 0 { previous } else { rc.wrapping_add(40) };
             }
             if !ctab.v3000.is_null() {
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 rc = MolfileV3000ReadTailOfCTAB(heap, &mut ctab, inp_file.as_deref_mut(), rc, errors.as_deref_mut())?;
                 if rc != 0 {
                     if rc < 0 { rc = rc.wrapping_abs(); ended = true; }
@@ -646,11 +689,13 @@ err_fin:
         }
         previous = rc;
         if !ended {
+            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             rc = MolfileReadSTextBlock(heap, &ctab, inp_file.as_deref_mut(), rc, errors.as_deref_mut())?;
             if rc != 0 { rc = if previous != 0 { previous } else { rc.wrapping_add(50) }; }
         }
         previous = rc;
         if !ended {
+            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             rc = MolfileReadPropBlock(heap, &mut ctab, &mut hdr, inp_file.as_deref_mut(), treat_polymers, rc, errors.as_deref_mut(), no_warnings)?;
             if rc != 0 {
                 if rc < 0 { rc = rc.wrapping_abs(); ended = true; }
@@ -658,10 +703,15 @@ err_fin:
             }
         }
         if !ctab.atoms.is_null() {
+            panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
+            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let n = usize::try_from(ctab.n_atoms).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
+            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let atoms = heap.slice(ctab.atoms.as_const())?.get(..n).ok_or(SourceHeapError::PointerOutOfBounds)?;
             for atom in atoms {
                 if atom.valence > MAXVAL as i8 {
+                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     rc = 79; let _ = mol_fmt1_add_ascii_message(errors.as_deref_mut(), b"Too large input atomic valence")?; break;
                 }
             }
@@ -671,6 +721,7 @@ err_fin:
                     || (mol_fmt1_c_string_eq(&atom.symbol, b"D") && !matches!(m, -1 | 0 | 1))
                     || (mol_fmt1_c_string_eq(&atom.symbol, b"T") && !matches!(m, -2 | -1 | 0));
                 if bad {
+                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     rc = 78; let _ = mol_fmt1_add_ascii_message(errors.as_deref_mut(), b"Unacceptable isotope of hydrogen")?; break;
                 }
             }
@@ -679,16 +730,25 @@ err_fin:
     *err = if ended { rc.wrapping_neg() } else { rc };
     if all {
         if !data.is_null() {
+            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let out = heap.slice_mut(data)?.first_mut().ok_or(SourceHeapError::PointerOutOfBounds)?;
+            panic!("INCHI-AUDIT-0352: suspected source divergence; see dev/audits/inchi/findings.md");
             out.hdr = hdr; out.ctab = ctab;
         }
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         if rc != 0 { data = FreeMolfileData(heap, data)?; }
         Ok(data)
     } else {
+        panic!("INCHI-AUDIT-0352: suspected source divergence; see dev/audits/inchi/findings.md");
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         *heap.slice_mut(only_header)?.first_mut().ok_or(SourceHeapError::PointerOutOfBounds)? = hdr;
         if !only_ctab.is_null() {
+            panic!("INCHI-AUDIT-0352: suspected source divergence; see dev/audits/inchi/findings.md");
+            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             *heap.slice_mut(only_ctab)?.first_mut().ok_or(SourceHeapError::PointerOutOfBounds)? = ctab;
         }
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
+        panic!("INCHI-AUDIT-0001: suspected source divergence; see dev/audits/inchi/findings.md");
         if rc != 0 { Ok(SourceMutPointer::null()) } else { Ok(only_header.cast()) }
     }
 }
@@ -824,38 +884,63 @@ err_fin:
     // INCHI✔️❌: COMPILE_ANSI_ONLY; TARGET_API_LIB; GCC/Linux LP64; both long-line rejection blocks are comments and inactive.
     // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: MolfileReadHeaderLines
 
+    panic!("INCHI-AUDIT-0353: suspected source divergence; see dev/audits/inchi/findings.md");
+    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
     let line = heap.allocate_model_storage(vec![0_i8; MOL_FMT_INPLINELEN as usize])?;
     let result = (|| -> Result<i32, SourceHeapError> {
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let mut p = inchi_fgetsLf(heap, line, MOL_FMT_INPLINELEN as i32, inp_file.as_deref_mut())?;
         if p.is_null() { return Ok(1); }
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         remove_one_lf(heap, line)?;
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let _ = MolfileReadField(heap, MolfileFieldData::String(&mut hdr.molname), 200, i32::from(MOL_FMT_STRING_DATA), &mut p)?;
 
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         p = inchi_fgetsLf(heap, line, MOL_FMT_INPLINELEN as i32, inp_file.as_deref_mut())?;
         if p.is_null() { return Ok(3); }
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         remove_one_lf(heap, line)?;
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let _ = MolfileReadField(heap, MolfileFieldData::String(&mut hdr.user_initls), 2, i32::from(MOL_FMT_STRING_DATA), &mut p)?;
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let _ = MolfileReadField(heap, MolfileFieldData::String(&mut hdr.prog_name), 8, i32::from(MOL_FMT_STRING_DATA), &mut p)?;
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let _ = MolfileReadField(heap, MolfileFieldData::Char(&mut hdr.month), 2, i32::from(MOL_FMT_CHAR_INT_DATA), &mut p)?;
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let _ = MolfileReadField(heap, MolfileFieldData::Char(&mut hdr.day), 2, i32::from(MOL_FMT_CHAR_INT_DATA), &mut p)?;
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let _ = MolfileReadField(heap, MolfileFieldData::Char(&mut hdr.year), 2, i32::from(MOL_FMT_CHAR_INT_DATA), &mut p)?;
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let _ = MolfileReadField(heap, MolfileFieldData::Char(&mut hdr.hour), 2, i32::from(MOL_FMT_CHAR_INT_DATA), &mut p)?;
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let _ = MolfileReadField(heap, MolfileFieldData::Char(&mut hdr.minute), 2, i32::from(MOL_FMT_CHAR_INT_DATA), &mut p)?;
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let _ = MolfileReadField(heap, MolfileFieldData::String(&mut hdr.dim_code), 2, i32::from(MOL_FMT_STRING_DATA), &mut p)?;
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let _ = MolfileReadField(heap, MolfileFieldData::Short(&mut hdr.scaling_factor1), 2, i32::from(MOL_FMT_SHORT_INT_DATA), &mut p)?;
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let _ = MolfileReadField(heap, MolfileFieldData::Double(&mut hdr.scaling_factor2), 10, i32::from(MOL_FMT_DOUBLE_DATA), &mut p)?;
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let _ = MolfileReadField(heap, MolfileFieldData::Double(&mut hdr.energy), 12, i32::from(MOL_FMT_DOUBLE_DATA), &mut p)?;
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let _ = MolfileReadField(heap, MolfileFieldData::Long(&mut hdr.internal_regno), 6, i32::from(MOL_FMT_LONG_INT_DATA), &mut p)?;
         p = line;
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let _ = MolfileReadField(heap, MolfileFieldData::String(&mut hdr.line2), 200, i32::from(MOL_FMT_STRING_DATA), &mut p)?;
 
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         p = inchi_fgetsLf(heap, line, MOL_FMT_INPLINELEN as i32, inp_file.as_deref_mut())?;
         if p.is_null() { return Ok(7); }
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         remove_one_lf(heap, line)?;
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let _ = MolfileReadField(heap, MolfileFieldData::String(&mut hdr.comment), 80, i32::from(MOL_FMT_STRING_DATA), &mut p)?;
         Ok(0)
     })();
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let cleanup = heap.free(line);
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     match (result, cleanup) {
         (Err(error), _) | (Ok(_), Err(error)) => Err(error),
         (Ok(value), Ok(())) => Ok(value),
@@ -971,17 +1056,25 @@ err_fin:
     const INTERPRET_ERROR: &[i8] = &[b'C' as i8,b'a' as i8,b'n' as i8,b'n' as i8,b'o' as i8,b't' as i8,b' ' as i8,b'i' as i8,b'n' as i8,b't' as i8,b'e' as i8,b'r' as i8,b'p' as i8,b'r' as i8,b'e' as i8,b't' as i8,b' ' as i8,b'c' as i8,b'o' as i8,b'u' as i8,b'n' as i8,b't' as i8,b's' as i8,b' ' as i8,b'l' as i8,b'i' as i8,b'n' as i8,b'e' as i8,b':' as i8,0];
     const RAM_ERROR: &[i8] = &[b'O' as i8,b'u' as i8,b't' as i8,b' ' as i8,b'o' as i8,b'f' as i8,b' ' as i8,b'R' as i8,b'A' as i8,b'M' as i8,0];
 
+    panic!("INCHI-AUDIT-0353: suspected source divergence; see dev/audits/inchi/findings.md");
+    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
     let line = heap.allocate_model_storage(vec![0_i8; MOL_FMT_INPLINELEN as usize])?;
     let result = (|| -> Result<i32, SourceHeapError> {
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let mut p = inchi_fgetsLf(heap, line, MOL_FMT_INPLINELEN as i32, inp_file)?;
         if p.is_null() {
+            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let _ = AddErrorMessage(p_str_err.as_deref_mut(), Some(READ_ERROR))?;
             return Ok(1);
         }
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         remove_one_lf(heap, line)?;
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         if heap.slice(line.as_const())?[MOL_FMT_MAXLINELEN as usize] != 0 {
+            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let _ = AddErrorMessage(p_str_err.as_deref_mut(), Some(LONG_ERROR))?;
         }
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let invalid = MolfileReadField(heap, MolfileFieldData::ShortIntoInt(&mut ctab.n_atoms), 3, i32::from(MOL_FMT_SHORT_INT_DATA), &mut p)? < 0
             || MolfileReadField(heap, MolfileFieldData::ShortIntoInt(&mut ctab.n_bonds), 3, i32::from(MOL_FMT_SHORT_INT_DATA), &mut p)? < 0
             || MolfileReadField(heap, MolfileFieldData::None, 3, i32::from(MOL_FMT_JUMP_TO_RIGHT), &mut p)? < 0
@@ -994,31 +1087,45 @@ err_fin:
             || MolfileReadField(heap, MolfileFieldData::None, 3, i32::from(MOL_FMT_JUMP_TO_RIGHT), &mut p)? < 0
             || MolfileReadField(heap, MolfileFieldData::Short(&mut ctab.n_property_lines), 3, i32::from(MOL_FMT_SHORT_INT_DATA), &mut p)? < 0;
         if invalid {
+            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let _ = AddErrorMessage(p_str_err.as_deref_mut(), Some(INTERPRET_ERROR))?;
+            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let _ = dotify_non_printable_chars(heap, line)?;
+            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let message = heap.slice(line.as_const())?;
+            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let _ = AddErrorMessage(p_str_err.as_deref_mut(), Some(message))?;
             return Ok(3);
         }
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let _ = MolfileReadField(heap, MolfileFieldData::String(&mut ctab.version_string), 6, i32::from(MOL_FMT_STRING_DATA), &mut p)?;
+        panic!("INCHI-AUDIT-0350: suspected source divergence; see dev/audits/inchi/findings.md");
         let version_length = ctab.version_string.iter().position(|byte| *byte == 0).ok_or(SourceHeapError::MissingNulTerminator)?;
         if &ctab.version_string[..version_length] == [b'V' as i8,b'3' as i8,b'0' as i8,b'0' as i8,b'0' as i8] {
+            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
+            panic!("INCHI-AUDIT-0001: suspected source divergence; see dev/audits/inchi/findings.md");
             ctab.v3000 = match inchi_calloc::<MOL_FMT_v3000>(heap, 1, std::mem::size_of::<MOL_FMT_v3000>() as u64) {
                 Ok(pointer) => pointer,
                 Err(SourceHeapError::AllocationFailed) => {
+                    panic!("INCHI-AUDIT-0001: suspected source divergence; see dev/audits/inchi/findings.md");
                     ctab.v3000 = SourceMutPointer::null();
+                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let _ = AddErrorMessage(p_str_err.as_deref_mut(), Some(RAM_ERROR))?;
                     return Ok(-1);
                 }
                 Err(error) => return Err(error),
             };
         } else {
+            panic!("INCHI-AUDIT-0001: suspected source divergence; see dev/audits/inchi/findings.md");
             ctab.v3000 = SourceMutPointer::null();
         }
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let _ = MolFmtSgroups_Alloc(heap, Some(&mut ctab.sgroups), 1)?;
         Ok(0)
     })();
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let cleanup = heap.free(line);
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     match (result, cleanup) {
         (Err(error), _) | (Ok(_), Err(error)) => Err(error),
         (Ok(value), Ok(())) => Ok(value),
@@ -1201,23 +1308,32 @@ int MolfileReadAtomsBlock( MOL_FMT_CTAB* ctab,
     const READ_ERROR: &[i8] = &[b'C' as i8,b'a' as i8,b'n' as i8,b'n' as i8,b'o' as i8,b't' as i8,b' ' as i8,b'r' as i8,b'e' as i8,b'a' as i8,b'd' as i8,b' ' as i8,b'a' as i8,b't' as i8,b'o' as i8,b'm' as i8,b' ' as i8,b'b' as i8,b'l' as i8,b'o' as i8,b'c' as i8,b'k' as i8,b' ' as i8,b'l' as i8,b'i' as i8,b'n' as i8,b'e' as i8,0];
     const LONG_ERROR: &[i8] = &[b'T' as i8,b'o' as i8,b'o' as i8,b' ' as i8,b'l' as i8,b'o' as i8,b'n' as i8,b'g' as i8,b' ' as i8,b'a' as i8,b't' as i8,b'o' as i8,b'm' as i8,b' ' as i8,b'b' as i8,b'l' as i8,b'o' as i8,b'c' as i8,b'k' as i8,b' ' as i8,b'l' as i8,b'i' as i8,b'n' as i8,b'e' as i8,0];
     const INTERPRET_ERROR: &[i8] = &[b'C' as i8,b'a' as i8,b'n' as i8,b'n' as i8,b'o' as i8,b't' as i8,b' ' as i8,b'i' as i8,b'n' as i8,b't' as i8,b'e' as i8,b'r' as i8,b'p' as i8,b'r' as i8,b'e' as i8,b't' as i8,b' ' as i8,b'a' as i8,b't' as i8,b'o' as i8,b'm' as i8,b' ' as i8,b'b' as i8,b'l' as i8,b'o' as i8,b'c' as i8,b'k' as i8,b' ' as i8,b'l' as i8,b'i' as i8,b'n' as i8,b'e' as i8,b':' as i8,0];
+    panic!("INCHI-AUDIT-0353: suspected source divergence; see dev/audits/inchi/findings.md");
+    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
     let line = heap.allocate_model_storage(vec![0_i8; MOL_FMT_INPLINELEN as usize])?;
     let result = (|| -> Result<i32, SourceHeapError> {
         let mut i = 0_i32;
         while i < ctab.n_atoms {
+            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let mut p = inchi_fgetsLf(heap, line, MOL_FMT_INPLINELEN as i32, inp_file.as_deref_mut())?;
             if p.is_null() {
                 if err == 0 {
                     err = 2;
+                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let _ = AddErrorMessage(p_str_err.as_deref_mut(), Some(READ_ERROR))?;
                 }
                 break;
             }
+            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             remove_one_lf(heap, line)?;
+            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             if heap.slice(line.as_const())?[MOL_FMT_MAXLINELEN as usize] != 0 {
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let _ = AddErrorMessage(p_str_err.as_deref_mut(), Some(LONG_ERROR))?;
             }
+            panic!("INCHI-AUDIT-0331: suspected source divergence; see dev/audits/inchi/findings.md");
             let is_end = {
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let bytes = heap.slice(line.as_const())?;
                 bytes.get(..SD_FMT_END_OF_DATA.len()).is_some_and(|value| value.iter().map(|byte| *byte as u8).eq(SD_FMT_END_OF_DATA.iter().copied()))
             };
@@ -1231,16 +1347,24 @@ int MolfileReadAtomsBlock( MOL_FMT_CTAB* ctab,
             }
 
             if !ctab.coords.is_null() {
+                panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                 let source = heap.slice(p.as_const())?.to_vec();
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let index = usize::try_from(i).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let coords = heap.slice_mut(ctab.coords)?;
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let target = coords.get_mut(index).ok_or(SourceHeapError::PointerOutOfBounds)?;
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let _ = mystrncpy_slice(Some(target), Some(&source), 31)?;
             }
 
             if !ctab.atoms.is_null() {
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let index = usize::try_from(i).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+                panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                 let mut atom = heap.slice(ctab.atoms.as_const())?.get(index).cloned().ok_or(SourceHeapError::PointerOutOfBounds)?;
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let invalid_first = MolfileReadField(heap, MolfileFieldData::Double(&mut atom.fx), 10, i32::from(MOL_FMT_DOUBLE_DATA), &mut p)? < 0
                     || MolfileReadField(heap, MolfileFieldData::Double(&mut atom.fy), 10, i32::from(MOL_FMT_DOUBLE_DATA), &mut p)? < 0
                     || MolfileReadField(heap, MolfileFieldData::Double(&mut atom.fz), 10, i32::from(MOL_FMT_DOUBLE_DATA), &mut p)? < 0
@@ -1253,11 +1377,16 @@ int MolfileReadAtomsBlock( MOL_FMT_CTAB* ctab,
                     || MolfileReadField(heap, MolfileFieldData::None, 3, i32::from(MOL_FMT_JUMP_TO_RIGHT), &mut p)? < 0
                     || MolfileReadField(heap, MolfileFieldData::Char(&mut atom.valence), 3, i32::from(MOL_FMT_CHAR_INT_DATA), &mut p)? < 0;
                 if invalid_first {
+                    panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                     heap.slice_mut(ctab.atoms)?[index] = atom;
                     err = 4;
+                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let _ = AddErrorMessage(p_str_err.as_deref_mut(), Some(INTERPRET_ERROR))?;
+                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let _ = dotify_non_printable_chars(heap, line)?;
+                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let source_line = heap.slice(line.as_const())?;
+                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let _ = AddErrorMessage(p_str_err.as_deref_mut(), Some(source_line))?;
                     if is_end {
                         err = err.wrapping_abs().wrapping_neg();
@@ -1267,6 +1396,7 @@ int MolfileReadAtomsBlock( MOL_FMT_CTAB* ctab,
                     continue;
                 }
 
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let symbol_length = atom.symbol.iter().position(|byte| *byte == 0).ok_or(SourceHeapError::MissingNulTerminator)?;
                 if symbol_length == 2 && (atom.symbol[1] as u8).is_ascii_uppercase() {
                     atom.symbol[1] = (atom.symbol[1] as u8).to_ascii_lowercase() as i8;
@@ -1287,18 +1417,24 @@ int MolfileReadAtomsBlock( MOL_FMT_CTAB* ctab,
                     }
                 }
 
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let invalid_second = MolfileReadField(heap, MolfileFieldData::None, 3, i32::from(MOL_FMT_JUMP_TO_RIGHT), &mut p)? < 0
                     || MolfileReadField(heap, MolfileFieldData::None, 3, i32::from(MOL_FMT_JUMP_TO_RIGHT), &mut p)? < 0
                     || MolfileReadField(heap, MolfileFieldData::None, 3, i32::from(MOL_FMT_JUMP_TO_RIGHT), &mut p)? < 0
                     || MolfileReadField(heap, MolfileFieldData::None, 3, i32::from(MOL_FMT_JUMP_TO_RIGHT), &mut p)? < 0
                     || MolfileReadField(heap, MolfileFieldData::None, 3, i32::from(MOL_FMT_JUMP_TO_RIGHT), &mut p)? < 0
                     || MolfileReadField(heap, MolfileFieldData::None, 3, i32::from(MOL_FMT_JUMP_TO_RIGHT), &mut p)? < 0;
+                panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                 heap.slice_mut(ctab.atoms)?[index] = atom;
                 if invalid_second {
                     err = 5;
+                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let _ = AddErrorMessage(p_str_err.as_deref_mut(), Some(INTERPRET_ERROR))?;
+                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let _ = dotify_non_printable_chars(heap, line)?;
+                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let source_line = heap.slice(line.as_const())?;
+                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let _ = AddErrorMessage(p_str_err.as_deref_mut(), Some(source_line))?;
                     if is_end {
                         err = err.wrapping_abs().wrapping_neg();
@@ -1310,7 +1446,9 @@ int MolfileReadAtomsBlock( MOL_FMT_CTAB* ctab,
         }
         Ok(err)
     })();
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let cleanup = heap.free(line);
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     match (result, cleanup) {
         (Err(error), _) | (Ok(_), Err(error)) => Err(error),
         (Ok(value), Ok(())) => Ok(value),
@@ -1429,23 +1567,31 @@ int MolfileReadBondsBlock( MOL_FMT_CTAB* ctab,
 
     const READ_ERROR: &[i8] = &[b'C' as i8,b'a' as i8,b'n' as i8,b'n' as i8,b'o' as i8,b't' as i8,b' ' as i8,b'r' as i8,b'e' as i8,b'a' as i8,b'd' as i8,b' ' as i8,b'b' as i8,b'o' as i8,b'n' as i8,b'd' as i8,b' ' as i8,b'b' as i8,b'l' as i8,b'o' as i8,b'c' as i8,b'k' as i8,b' ' as i8,b'l' as i8,b'i' as i8,b'n' as i8,b'e' as i8,0];
     const INTERPRET_ERROR: &[i8] = &[b'C' as i8,b'a' as i8,b'n' as i8,b'n' as i8,b'o' as i8,b't' as i8,b' ' as i8,b'i' as i8,b'n' as i8,b't' as i8,b'e' as i8,b'r' as i8,b'p' as i8,b'r' as i8,b'e' as i8,b't' as i8,b' ' as i8,b'b' as i8,b'o' as i8,b'n' as i8,b'd' as i8,b' ' as i8,b'b' as i8,b'l' as i8,b'o' as i8,b'c' as i8,b'k' as i8,b' ' as i8,b'l' as i8,b'i' as i8,b'n' as i8,b'e' as i8,b':' as i8,0];
+    panic!("INCHI-AUDIT-0353: suspected source divergence; see dev/audits/inchi/findings.md");
+    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
     let line = heap.allocate_model_storage(vec![0_i8; MOL_FMT_INPLINELEN as usize])?;
     let result = (|| -> Result<i32, SourceHeapError> {
         let mut i = 0_i32;
         while i < ctab.n_bonds {
+            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let mut p = inchi_fgetsLf(heap, line, MOL_FMT_INPLINELEN as i32, inp_file.as_deref_mut())?;
             if p.is_null() {
                 if err == 0 {
                     err = 2;
+                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let _ = AddErrorMessage(p_str_err.as_deref_mut(), Some(READ_ERROR))?;
                 }
                 break;
             }
+            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             remove_one_lf(heap, line)?;
+            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             if heap.slice(line.as_const())?[MOL_FMT_MAXLINELEN as usize] != 0 && err == 0 {
                 err = 3;
             }
+            panic!("INCHI-AUDIT-0331: suspected source divergence; see dev/audits/inchi/findings.md");
             let is_end = {
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let bytes = heap.slice(line.as_const())?;
                 bytes.get(..SD_FMT_END_OF_DATA.len()).is_some_and(|value| value.iter().map(|byte| *byte as u8).eq(SD_FMT_END_OF_DATA.iter().copied()))
             };
@@ -1458,20 +1604,28 @@ int MolfileReadBondsBlock( MOL_FMT_CTAB* ctab,
                 continue;
             }
             if !ctab.bonds.is_null() {
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let index = usize::try_from(i).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+                panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                 let mut bond = heap.slice(ctab.bonds.as_const())?.get(index).cloned().ok_or(SourceHeapError::PointerOutOfBounds)?;
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let invalid = MolfileReadField(heap, MolfileFieldData::Short(&mut bond.atnum1), 3, i32::from(MOL_FMT_SHORT_INT_DATA), &mut p)? < 0
                     || MolfileReadField(heap, MolfileFieldData::Short(&mut bond.atnum2), 3, i32::from(MOL_FMT_SHORT_INT_DATA), &mut p)? < 0
                     || MolfileReadField(heap, MolfileFieldData::Char(&mut bond.bond_type), 3, i32::from(MOL_FMT_CHAR_INT_DATA), &mut p)? < 0
                     || MolfileReadField(heap, MolfileFieldData::Char(&mut bond.bond_stereo), 3, i32::from(MOL_FMT_CHAR_INT_DATA), &mut p)? < 0
                     || MolfileReadField(heap, MolfileFieldData::None, 3, i32::from(MOL_FMT_JUMP_TO_RIGHT), &mut p)? < 0
                     || MolfileReadField(heap, MolfileFieldData::None, 3, i32::from(MOL_FMT_JUMP_TO_RIGHT), &mut p)? < 0;
+                panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                 heap.slice_mut(ctab.bonds)?[index] = bond;
                 if invalid {
                     err = 4;
+                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let _ = AddErrorMessage(p_str_err.as_deref_mut(), Some(INTERPRET_ERROR))?;
+                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let _ = dotify_non_printable_chars(heap, line)?;
+                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let source_line = heap.slice(line.as_const())?;
+                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let _ = AddErrorMessage(p_str_err.as_deref_mut(), Some(source_line))?;
                     if is_end {
                         err = err.wrapping_abs().wrapping_neg();
@@ -1483,7 +1637,9 @@ int MolfileReadBondsBlock( MOL_FMT_CTAB* ctab,
         }
         Ok(err)
     })();
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let cleanup = heap.free(line);
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     match (result, cleanup) {
         (Err(error), _) | (Ok(_), Err(error)) => Err(error),
         (Ok(value), Ok(())) => Ok(value),
@@ -1546,15 +1702,19 @@ err_fin:
     // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: MolfileReadSTextBlock
 
     const READ_ERROR: &[i8] = &[b'C' as i8,b'a' as i8,b'n' as i8,b'n' as i8,b'o' as i8,b't' as i8,b' ' as i8,b'r' as i8,b'e' as i8,b'a' as i8,b'd' as i8,b' ' as i8,b'S' as i8,b'T' as i8,b'E' as i8,b'X' as i8,b'T' as i8,b' ' as i8,b'b' as i8,b'l' as i8,b'o' as i8,b'c' as i8,b'k' as i8,b' ' as i8,b'l' as i8,b'i' as i8,b'n' as i8,b'e' as i8,0];
+    panic!("INCHI-AUDIT-0353: suspected source divergence; see dev/audits/inchi/findings.md");
+    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
     let line = heap.allocate_model_storage(vec![0_i8; MOL_FMT_INPLINELEN as usize])?;
     let result = (|| -> Result<i32, SourceHeapError> {
         let limit = 2_i32.wrapping_mul(i32::from(ctab.n_stext_entries));
         let mut i = 0_i16;
         while i32::from(i) < limit {
+            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let p = inchi_fgetsLf(heap, line, MOL_FMT_INPLINELEN as i32, inp_file.as_deref_mut())?;
             if p.is_null() {
                 if err == 0 {
                     err = 2;
+                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let _ = AddErrorMessage(p_str_err.as_deref_mut(), Some(READ_ERROR))?;
                 }
                 break;
@@ -1563,7 +1723,9 @@ err_fin:
         }
         Ok(err)
     })();
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let cleanup = heap.free(line);
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     match (result, cleanup) {
         (Err(error), _) | (Ok(_), Err(error)) => Err(error),
         (Ok(value), Ok(())) => Ok(value),
@@ -2054,11 +2216,14 @@ err_fin:
 
     const MULTI_LINE_MODE_NO_MODE: i32 = 0;
     const MULTI_LINE_MODE_ISIS_ALIAS: i32 = 1;
+    panic!("INCHI-AUDIT-0353: suspected source divergence; see dev/audits/inchi/findings.md");
+    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
     let line = heap.allocate_model_storage(vec![0_i8; MOL_FMT_INPLINELEN as usize])?;
     let result = (|| -> Result<i32, SourceHeapError> {
         let mut multi_line_mode = MULTI_LINE_MODE_NO_MODE;
         let mut atom_number = 0_i32;
         let mut skip_lines = 0_i16;
+        panic!("INCHI-AUDIT-0355: suspected source divergence; see dev/audits/inchi/findings.md");
         let num_atoms = ctab.n_atoms;
         let mut charge_encountered = 0_i32;
         let mut radical_encountered = 0_i32;
@@ -2067,15 +2232,20 @@ err_fin:
         let mut i = 0_i16;
 
         while ctab.version_string[0] != 0 || i < ctab.n_property_lines {
+            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let mut p = inchi_fgetsLf(heap, line, MOL_FMT_INPLINELEN as i32, inp_file.as_deref_mut())?;
             if p.is_null() {
                 if err == 0 {
+                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     mol_fmt1_treat_error(&mut err, 2, p_str_err.as_deref_mut(), b"Cannot read properties block line")?;
                 }
                 break;
             }
+            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             remove_one_lf(heap, line)?;
+            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             if heap.slice(line.as_const())?[MOL_FMT_MAXLINELEN as usize] != 0 {
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 mol_fmt1_treat_error(&mut err, 3, p_str_err.as_deref_mut(), b"Too long properties block line")?;
                 i = i.wrapping_add(1);
                 continue;
@@ -2088,6 +2258,7 @@ err_fin:
 
             if multi_line_mode == MULTI_LINE_MODE_ISIS_ALIAS && atom_number != 0 {
                 multi_line_mode = MULTI_LINE_MODE_NO_MODE;
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let len = normalize_string(heap, p)?;
                 if len <= 0 {
                     atom_number = 0;
@@ -2095,15 +2266,23 @@ err_fin:
                     continue;
                 }
                 if len < 6 {
+                    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                     let mut charge = 0_i32;
+                    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                     let mut radical = 0_i32;
+                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     extract_charges_and_radicals(Some(heap.slice_mut(p)?), Some(&mut radical), Some(&mut charge))?;
                     let symbol = {
+                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let value = heap.slice(p.as_const())?;
+                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let length = value.iter().position(|byte| *byte == 0).ok_or(SourceHeapError::MissingNulTerminator)?;
+                        panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                         value[..=length].to_vec()
                     };
+                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let atom_index = usize::try_from(atom_number.wrapping_sub(1)).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let atom = heap.slice_mut(ctab.atoms)?.get_mut(atom_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
                     atom.charge = charge as i8;
                     atom.radical = radical as i8;
@@ -2117,10 +2296,13 @@ err_fin:
                         atom.mass_difference = 2;
                     } else {
                         atom.mass_difference = 0;
+                        panic!("INCHI-AUDIT-0354: suspected source divergence; see dev/audits/inchi/findings.md");
                         if symbol.len() < atom.symbol.len() {
+                            panic!("INCHI-AUDIT-0348: suspected source divergence; see dev/audits/inchi/findings.md");
                             atom.symbol.fill(0);
                             atom.symbol[..symbol.len()].copy_from_slice(&symbol);
                         } else {
+                            panic!("INCHI-AUDIT-0348: suspected source divergence; see dev/audits/inchi/findings.md");
                             atom.symbol = [b'?' as i8, b'?' as i8, b'?' as i8, 0, 0, 0];
                         }
                     }
@@ -2132,13 +2314,18 @@ err_fin:
                 continue;
             }
 
+            panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
             let mut char_m = [0_i8; 2];
+            panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
             let mut blank = [0_i8; 3];
+            panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
             let mut type_ = [0_i8; 4];
+            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let recognized = MolfileReadField(heap, MolfileFieldData::String(&mut char_m), 1, i32::from(MOL_FMT_STRING_DATA), &mut p)? == 1
                 && MolfileReadField(heap, MolfileFieldData::String(&mut blank), 2, i32::from(MOL_FMT_STRING_DATA), &mut p)? == 0
                 && MolfileReadField(heap, MolfileFieldData::String(&mut type_), 3, i32::from(MOL_FMT_STRING_DATA), &mut p)? > 0;
             if !recognized {
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 if mol_fmt1_c_string_eq(heap.slice(line.as_const())?, &SD_FMT_END_OF_DATA[..SD_FMT_END_OF_DATA.len() - 1]) {
                     err = if err != 0 { err.wrapping_abs().wrapping_neg() } else { -4 };
                     break;
@@ -2158,8 +2345,11 @@ err_fin:
                     continue;
                 }
                 b'A' => {
+                    panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                     let temporary = heap.allocate_model_storage(type_.to_vec())?;
+                    panic!("INCHI-AUDIT-0331: suspected source divergence; see dev/audits/inchi/findings.md");
                     atom_number = inchi_strtol(heap, temporary.as_const(), None, 10)? as i32;
+                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     heap.free(temporary)?;
                     if !ctab.atoms.is_null() && atom_number > 0 && atom_number <= ctab.n_atoms {
                         multi_line_mode = MULTI_LINE_MODE_ISIS_ALIAS;
@@ -2171,6 +2361,7 @@ err_fin:
                     continue;
                 }
                 b'S' if mol_fmt1_c_string_eq(&type_, b"SKP") => {
+                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     if MolfileReadField(heap, MolfileFieldData::Short(&mut skip_lines), 3, i32::from(MOL_FMT_SHORT_INT_DATA), &mut p)? <= 0 {
                         skip_lines = 0;
                     }
@@ -2185,13 +2376,19 @@ err_fin:
             }
 
             if mol_fmt1_c_string_eq(&type_, b"REG") {
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let remaining = heap.slice(p.as_const())?;
+                panic!("INCHI-AUDIT-0154: suspected source divergence; see dev/audits/inchi/findings.md");
                 let nul = remaining.iter().position(|byte| *byte == 0).ok_or(SourceHeapError::MissingNulTerminator)?;
                 let leading = remaining[..nul].iter().take_while(|byte| **byte == b' ' as i8).count();
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 p = p.offset(i64::try_from(leading).map_err(|_| SourceHeapError::PointerOffsetOverflow)?)?;
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let remaining = heap.slice(p.as_const())?;
+                panic!("INCHI-AUDIT-0154: suspected source divergence; see dev/audits/inchi/findings.md");
                 let nul = remaining.iter().position(|byte| *byte == 0).ok_or(SourceHeapError::MissingNulTerminator)?;
                 let width = remaining[..nul].iter().position(|byte| *byte == b' ' as i8).unwrap_or(nul).min(MOL_FMT_MAX_VALUE_LEN as usize);
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let _ = MolfileReadField(heap, MolfileFieldData::Long(&mut p_hdr.internal_regno), i32::try_from(width).map_err(|_| SourceHeapError::SourceIntegerOverflow)?, i32::from(MOL_FMT_LONG_INT_DATA), &mut p)?;
                 i = i.wrapping_add(1);
                 continue;
@@ -2208,16 +2405,22 @@ err_fin:
                 continue;
             }
 
+            panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
             let mut num_entries = 0_i16;
+            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             if mol_fmt1_c_string_eq(&type_, b"CHG")
                 && MolfileReadField(heap, MolfileFieldData::Short(&mut num_entries), 3, i32::from(MOL_FMT_SHORT_INT_DATA), &mut p)? > 0
                 && (1..=8).contains(&num_entries)
             {
+                panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                 let mut atom_numbers = [0_i16; 8];
+                panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                 let mut charges = [0_i16; 8];
                 if charge_encountered == 0 && radical_encountered == 0 { charge_encountered = -1; }
                 let mut invalid = false;
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 for j in 0..usize::try_from(num_entries).map_err(|_| SourceHeapError::SourceIntegerOverflow)? {
+                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     if MolfileReadField(heap, MolfileFieldData::Short(&mut atom_numbers[j]), 0, i32::from(MOL_FMT_SHORT_INT_DATA), &mut p)? < 0
                         || MolfileReadField(heap, MolfileFieldData::Short(&mut charges[j]), 0, i32::from(MOL_FMT_SHORT_INT_DATA), &mut p)? < 0
                         || atom_numbers[j] <= 0 || i32::from(atom_numbers[j]) > num_atoms || charges[j] < -15 || charges[j] > 15 {
@@ -2226,21 +2429,29 @@ err_fin:
                     }
                 }
                 if invalid {
+                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     mol_fmt1_treat_error(&mut err, 0, p_str_err.as_deref_mut(), b"Charge not recognized:")?;
+                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let _ = dotify_non_printable_chars(heap, line)?;
+                    panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                     let source_line = heap.slice(line.as_const())?.to_vec();
+                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let _ = AddErrorMessage(p_str_err.as_deref_mut(), Some(&source_line))?;
                     i = i.wrapping_add(1);
                     continue;
                 }
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let atoms = heap.slice_mut(ctab.atoms)?;
                 if charge_encountered == -1 {
+                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     for atom in atoms.iter_mut().take(usize::try_from(num_atoms).map_err(|_| SourceHeapError::SourceIntegerOverflow)?) {
                         if atom.atom_aliased_flag == 0 { atom.charge = 0; atom.radical = 0; }
                     }
                     charge_encountered = 1;
                 }
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 for j in 0..usize::try_from(num_entries).map_err(|_| SourceHeapError::SourceIntegerOverflow)? {
+                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let index = usize::try_from(atom_numbers[j] - 1).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     if atoms[index].atom_aliased_flag == 0 { atoms[index].charge = charges[j] as i8; }
                 }
@@ -2248,15 +2459,20 @@ err_fin:
                 continue;
             }
 
+            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             if mol_fmt1_c_string_eq(&type_, b"RAD")
                 && MolfileReadField(heap, MolfileFieldData::Short(&mut num_entries), 3, i32::from(MOL_FMT_SHORT_INT_DATA), &mut p)? > 0
                 && (1..=8).contains(&num_entries)
             {
+                panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                 let mut atom_numbers = [0_i16; 8];
+                panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                 let mut radicals = [0_i16; 8];
                 if charge_encountered == 0 && radical_encountered == 0 { radical_encountered = -1; }
                 let mut invalid = false;
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 for j in 0..usize::try_from(num_entries).map_err(|_| SourceHeapError::SourceIntegerOverflow)? {
+                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     if MolfileReadField(heap, MolfileFieldData::Short(&mut atom_numbers[j]), 0, i32::from(MOL_FMT_SHORT_INT_DATA), &mut p)? < 0
                         || MolfileReadField(heap, MolfileFieldData::Short(&mut radicals[j]), 0, i32::from(MOL_FMT_SHORT_INT_DATA), &mut p)? < 0
                         || atom_numbers[j] <= 0 || i32::from(atom_numbers[j]) > num_atoms || radicals[j] < 0 || radicals[j] > 3 {
@@ -2265,21 +2481,29 @@ err_fin:
                     }
                 }
                 if invalid {
+                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     mol_fmt1_treat_error(&mut err, 0, p_str_err.as_deref_mut(), b"Radical not recognized:")?;
+                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let _ = dotify_non_printable_chars(heap, line)?;
+                    panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                     let source_line = heap.slice(line.as_const())?.to_vec();
+                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let _ = AddErrorMessage(p_str_err.as_deref_mut(), Some(&source_line))?;
                     i = i.wrapping_add(1);
                     continue;
                 }
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let atoms = heap.slice_mut(ctab.atoms)?;
                 if radical_encountered == -1 {
+                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     for atom in atoms.iter_mut().take(usize::try_from(num_atoms).map_err(|_| SourceHeapError::SourceIntegerOverflow)?) {
                         if atom.atom_aliased_flag == 0 { atom.charge = 0; atom.radical = 0; }
                     }
                     radical_encountered = 1;
                 }
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 for j in 0..usize::try_from(num_entries).map_err(|_| SourceHeapError::SourceIntegerOverflow)? {
+                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let index = usize::try_from(atom_numbers[j] - 1).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     if atoms[index].atom_aliased_flag == 0 { atoms[index].radical = radicals[j] as i8; }
                 }
@@ -2287,36 +2511,52 @@ err_fin:
                 continue;
             }
 
+            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             if mol_fmt1_c_string_eq(&type_, b"ISO")
                 && MolfileReadField(heap, MolfileFieldData::Short(&mut num_entries), 3, i32::from(MOL_FMT_SHORT_INT_DATA), &mut p)? > 0
                 && (1..=8).contains(&num_entries)
             {
+                panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                 let mut atom_numbers = [0_i16; 8];
+                panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                 let mut isotope_mass = [0_i16; 8];
                 if isotope_encountered == 0 { isotope_encountered = -1; }
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 for j in 0..usize::try_from(num_entries).map_err(|_| SourceHeapError::SourceIntegerOverflow)? {
+                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     if MolfileReadField(heap, MolfileFieldData::Short(&mut atom_numbers[j]), 0, i32::from(MOL_FMT_SHORT_INT_DATA), &mut p)? < 0
                         || MolfileReadField(heap, MolfileFieldData::Short(&mut isotope_mass[j]), 0, i32::from(MOL_FMT_SHORT_INT_DATA), &mut p)? < 0
                         || atom_numbers[j] <= 0 || i32::from(atom_numbers[j]) > num_atoms {
                         atom_numbers[j] = -1;
+                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         mol_fmt1_treat_error(&mut err, 0, p_str_err.as_deref_mut(), b"Isotopic data not recognized:")?;
+                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let _ = dotify_non_printable_chars(heap, line)?;
+                        panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                         let source_line = heap.slice(line.as_const())?.to_vec();
+                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let _ = AddErrorMessage(p_str_err.as_deref_mut(), Some(&source_line))?;
                     }
                 }
                 if isotope_encountered == -1 {
+                    panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
                     for atom in heap.slice_mut(ctab.atoms)?.iter_mut().take(usize::try_from(num_atoms).map_err(|_| SourceHeapError::SourceIntegerOverflow)?) { atom.mass_difference = 0; }
                     isotope_encountered = 1;
                 }
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 for j in 0..usize::try_from(num_entries).map_err(|_| SourceHeapError::SourceIntegerOverflow)? {
                     if atom_numbers[j] <= 0 { continue; }
+                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let index = usize::try_from(atom_numbers[j] - 1).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                     let symbol = heap.slice(ctab.atoms.as_const())?[index].symbol;
                     if symbol[1] != 0 || (symbol[0] != b'D' as i8 && symbol[0] != b'T' as i8) {
+                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let atw = get_atomic_mass(Some(&symbol))?;
+                        panic!("INCHI-AUDIT-0331: suspected source divergence; see dev/audits/inchi/findings.md");
                         let difference = i32::from(isotope_mass[j]).wrapping_sub(atw);
                         if atw != 0 && difference.wrapping_abs() < 20 {
+                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                             heap.slice_mut(ctab.atoms)?[index].mass_difference = if difference != 0 { difference as i8 } else { ZERO_ATW_DIFF as i8 };
                         }
                     }
@@ -2333,11 +2573,16 @@ err_fin:
                     i = i.wrapping_add(1);
                     continue;
                 }
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let polymer_result = MolfileReadSgroupOfPolymer(heap, ctab, Some(p_hdr), inp_file.as_deref_mut(), line, &type_, p, err, p_str_err.as_deref_mut())?;
                 if polymer_result != 0 {
+                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     mol_fmt1_treat_error(&mut err, polymer_result, p_str_err.as_deref_mut(), b"Could not interpret Molfile polymer data:")?;
+                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let _ = dotify_non_printable_chars(heap, line)?;
+                    panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                     let source_line = heap.slice(line.as_const())?.to_vec();
+                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let _ = AddErrorMessage(p_str_err.as_deref_mut(), Some(&source_line))?;
                 }
             }
@@ -2345,11 +2590,14 @@ err_fin:
         }
 
         if treat_polymers == 0 && polymer_occurred != 0 && b_no_warnings == 0 {
+            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let _ = mol_fmt1_add_ascii_message(p_str_err.as_deref_mut(), b"Ignore polymer data")?;
         }
         Ok(err)
     })();
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let cleanup = heap.free(line);
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     match (result, cleanup) {
         (Err(error), _) | (Ok(_), Err(error)) => Err(error),
         (Ok(value), Ok(())) => Ok(value),
@@ -2806,23 +3054,34 @@ err_exit:
 
     let num_atoms = ctab.n_atoms as i16;
     let num_bonds = ctab.n_bonds as i16;
+    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
     let mut num_entries = 0_i16;
     let mut sg_num = -1_i16;
+    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
     let mut sg_nums = [0_i16; 8];
+    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
     let mut sg_atoms = [0_i16; 15];
+    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
     let mut sg_bonds = [0_i16; 15];
+    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
     let mut stmp = [0_i8; 5];
+    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
     let mut stmplong = [0_i8; 81];
 
     if mol_fmt1_c_string_eq(sz_type, b"STY") {
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let count_result = MolfileReadField(heap, MolfileFieldData::Short(&mut num_entries), 3, i32::from(MOL_FMT_SHORT_INT_DATA), &mut p)?;
         if count_result > 0 && (1..=8).contains(&num_entries) {
             for j in 0..i32::from(num_entries) {
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let slot = usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let mut fail = MolfileReadField(heap, MolfileFieldData::Short(&mut sg_nums[slot]), 0, i32::from(MOL_FMT_SHORT_INT_DATA), &mut p)? < 0
                     || MolfileReadField(heap, MolfileFieldData::String(&mut stmp), 4, i32::from(MOL_FMT_STRING_DATA), &mut p)? < 0;
+                panic!("INCHI-AUDIT-0331: suspected source divergence; see dev/audits/inchi/findings.md");
                 let mut type_ = MOL_FMT_M_STY_NON as i32;
                 if !fail {
+                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let _ = mol_fmt1_trim_array(heap, &mut stmp)?;
                     type_ = if mol_fmt1_c_string_eq(&stmp, b"SRU") {
                         MOL_FMT_M_STY_SRU as i32
@@ -2842,19 +3101,25 @@ err_exit:
                     };
                 }
                 if !fail {
+                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let mut index = MolFmtSgroups_GetIndexBySgroupId(heap, i32::from(sg_nums[slot]), &ctab.sgroups)?;
                     if index == -1 {
+                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         if MolFmtSgroups_Append(heap, Some(&mut ctab.sgroups), i32::from(sg_nums[slot]), type_)? != 0 {
                             fail = true;
                         } else {
                             index = ctab.sgroups.used.wrapping_sub(1);
                         }
                     } else {
+                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let pointer = mol_fmt1_sgroup_pointer(heap, &ctab.sgroups, index)?;
+                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         heap.slice_mut(pointer)?[0].type_ = type_;
                     }
                     if !fail {
+                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let pointer = mol_fmt1_sgroup_pointer(heap, &ctab.sgroups, index)?;
+                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let group = &mut heap.slice_mut(pointer)?[0];
                         group.xbr1 = [-777777.777; 4];
                         group.xbr2 = [-777777.777; 4];
@@ -2863,26 +3128,34 @@ err_exit:
                 }
                 if fail {
                     err = 5;
+                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     MolFmtSgroups_Free(heap, Some(&mut ctab.sgroups))?;
                     return Ok(err);
                 }
             }
         }
     } else if mol_fmt1_c_string_eq(sz_type, b"SST") {
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let count_result = MolfileReadField(heap, MolfileFieldData::Short(&mut num_entries), 3, i32::from(MOL_FMT_SHORT_INT_DATA), &mut p)?;
         if count_result > 0 && (1..=8).contains(&num_entries) {
             let mut fail = false;
             for j in 0..i32::from(num_entries) {
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let slot = usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 fail = MolfileReadField(heap, MolfileFieldData::Short(&mut sg_nums[slot]), 0, i32::from(MOL_FMT_SHORT_INT_DATA), &mut p)? < 0
                     || MolfileReadField(heap, MolfileFieldData::String(&mut stmp), 4, i32::from(MOL_FMT_STRING_DATA), &mut p)? < 0;
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let index = if fail { -1 } else { MolFmtSgroups_GetIndexBySgroupId(heap, i32::from(sg_nums[slot]), &ctab.sgroups)? };
                 if index == -1 {
                     fail = true;
                 }
                 if !fail {
+                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let pointer = mol_fmt1_sgroup_pointer(heap, &ctab.sgroups, index)?;
+                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     heap.slice_mut(pointer)?[0].subtype = MOL_FMT_M_SST_NON as i32;
+                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let _ = mol_fmt1_trim_array(heap, &mut stmp)?;
                     let subtype = if mol_fmt1_c_string_eq(&stmp, b"ALT") {
                         Some(MOL_FMT_M_SST_ALT as i32)
@@ -2894,6 +3167,7 @@ err_exit:
                         None
                     };
                     if let Some(subtype) = subtype {
+                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         heap.slice_mut(pointer)?[0].subtype = subtype;
                     } else {
                         fail = true;
@@ -2903,47 +3177,63 @@ err_exit:
             }
             if fail {
                 err = 6;
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 MolFmtSgroups_Free(heap, Some(&mut ctab.sgroups))?;
                 return Ok(err);
             }
         }
     } else if mol_fmt1_c_string_eq(sz_type, b"SLB") {
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let count_result = MolfileReadField(heap, MolfileFieldData::Short(&mut num_entries), 3, i32::from(MOL_FMT_SHORT_INT_DATA), &mut p)?;
         if count_result > 0 && (1..=8).contains(&num_entries) {
             let mut fail = false;
             for j in 0..i32::from(num_entries) {
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let slot = usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                 let mut tmp = 0_i16;
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 fail = MolfileReadField(heap, MolfileFieldData::Short(&mut sg_nums[slot]), 0, i32::from(MOL_FMT_SHORT_INT_DATA), &mut p)? < 0
                     || MolfileReadField(heap, MolfileFieldData::Short(&mut tmp), 0, i32::from(MOL_FMT_SHORT_INT_DATA), &mut p)? < 0;
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let index = if fail { -1 } else { MolFmtSgroups_GetIndexBySgroupId(heap, i32::from(sg_nums[slot]), &ctab.sgroups)? };
                 if index == -1 {
                     fail = true;
                 } else if !fail {
+                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let pointer = mol_fmt1_sgroup_pointer(heap, &ctab.sgroups, index)?;
+                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     heap.slice_mut(pointer)?[0].label = i32::from(tmp);
                 }
             }
             if fail {
                 err = 7;
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 MolFmtSgroups_Free(heap, Some(&mut ctab.sgroups))?;
                 return Ok(err);
             }
         }
     } else if mol_fmt1_c_string_eq(sz_type, b"SCN") {
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let count_result = MolfileReadField(heap, MolfileFieldData::Short(&mut num_entries), 3, i32::from(MOL_FMT_SHORT_INT_DATA), &mut p)?;
         if count_result > 0 && (1..=8).contains(&num_entries) {
             for j in 0..i32::from(num_entries) {
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let slot = usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let mut fail = MolfileReadField(heap, MolfileFieldData::Short(&mut sg_nums[slot]), 0, i32::from(MOL_FMT_SHORT_INT_DATA), &mut p)? < 0
                     || MolfileReadField(heap, MolfileFieldData::String(&mut stmp), 4, i32::from(MOL_FMT_STRING_DATA), &mut p)? < 0;
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let index = if fail { -1 } else { MolFmtSgroups_GetIndexBySgroupId(heap, i32::from(sg_nums[slot]), &ctab.sgroups)? };
                 if index == -1 {
                     fail = true;
                 }
                 if !fail {
+                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let pointer = mol_fmt1_sgroup_pointer(heap, &ctab.sgroups, index)?;
+                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     heap.slice_mut(pointer)?[0].conn = MOL_FMT_M_CONN_NON as i32;
+                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let _ = mol_fmt1_trim_array(heap, &mut stmp)?;
                     let conn = if mol_fmt1_c_string_eq(&stmp, b"HT") {
                         Some(MOL_FMT_M_CONN_HT as i32)
@@ -2955,6 +3245,7 @@ err_exit:
                         None
                     };
                     if let Some(conn) = conn {
+                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         heap.slice_mut(pointer)?[0].conn = conn;
                     } else {
                         fail = true;
@@ -2962,6 +3253,7 @@ err_exit:
                 }
                 if fail {
                     err = 8;
+                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     MolFmtSgroups_Free(heap, Some(&mut ctab.sgroups))?;
                     return Ok(err);
                 }
@@ -2970,16 +3262,21 @@ err_exit:
     }
 
     else if mol_fmt1_c_string_eq(sz_type, b"SAL") {
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let mut fail = !(MolfileReadField(heap, MolfileFieldData::Short(&mut sg_num), 4, i32::from(MOL_FMT_SHORT_INT_DATA), &mut p)? > 0
             && MolfileReadField(heap, MolfileFieldData::Short(&mut num_entries), 3, i32::from(MOL_FMT_SHORT_INT_DATA), &mut p)? > 0);
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let index = if fail { -1 } else { MolFmtSgroups_GetIndexBySgroupId(heap, i32::from(sg_num), &ctab.sgroups)? };
         if index == -1 {
             fail = true;
         }
         if !fail {
             for j in 0..i32::from(num_entries) {
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let slot = usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let Some(atom) = sg_atoms.get_mut(slot) else { return Err(SourceHeapError::PointerOutOfBounds); };
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 if MolfileReadField(heap, MolfileFieldData::Short(atom), 0, i32::from(MOL_FMT_SHORT_INT_DATA), &mut p)? < 0
                     || *atom <= 0 || *atom > num_atoms
                 {
@@ -2990,11 +3287,16 @@ err_exit:
         }
         if !fail {
             for j in 0..i32::from(num_entries) {
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let slot = usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let pointer = mol_fmt1_sgroup_pointer(heap, &ctab.sgroups, index)?;
+                panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                 let mut group = heap.slice(pointer.as_const())?[0].clone();
                 let append = IntArray_Append(heap, Some(&mut group.alist), i32::from(sg_atoms[slot]));
+                panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                 heap.slice_mut(pointer)?[0] = group;
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 if append? != 0 {
                     fail = true;
                     break;
@@ -3003,20 +3305,26 @@ err_exit:
         }
         if fail {
             err = 9;
+            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             MolFmtSgroups_Free(heap, Some(&mut ctab.sgroups))?;
             return Ok(err);
         }
     } else if mol_fmt1_c_string_eq(sz_type, b"SBL") {
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let mut fail = !(MolfileReadField(heap, MolfileFieldData::Short(&mut sg_num), 4, i32::from(MOL_FMT_SHORT_INT_DATA), &mut p)? > 0
             && MolfileReadField(heap, MolfileFieldData::Short(&mut num_entries), 3, i32::from(MOL_FMT_SHORT_INT_DATA), &mut p)? > 0);
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let index = if fail { -1 } else { MolFmtSgroups_GetIndexBySgroupId(heap, i32::from(sg_num), &ctab.sgroups)? };
         if index == -1 {
             fail = true;
         }
         if !fail {
             for j in 0..i32::from(num_entries) {
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let slot = usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let Some(bond) = sg_bonds.get_mut(slot) else { return Err(SourceHeapError::PointerOutOfBounds); };
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 if MolfileReadField(heap, MolfileFieldData::Short(bond), 0, i32::from(MOL_FMT_SHORT_INT_DATA), &mut p)? < 0
                     || *bond <= 0 || *bond > num_bonds
                 {
@@ -3027,11 +3335,16 @@ err_exit:
         }
         if !fail {
             for j in 0..i32::from(num_entries) {
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let slot = usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let pointer = mol_fmt1_sgroup_pointer(heap, &ctab.sgroups, index)?;
+                panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                 let mut group = heap.slice(pointer.as_const())?[0].clone();
                 let append = IntArray_Append(heap, Some(&mut group.blist), i32::from(sg_bonds[slot]));
+                panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                 heap.slice_mut(pointer)?[0] = group;
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 if append? != 0 {
                     fail = true;
                     break;
@@ -3040,22 +3353,28 @@ err_exit:
         }
         if fail {
             err = 10;
+            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             MolFmtSgroups_Free(heap, Some(&mut ctab.sgroups))?;
             return Ok(err);
         }
     }
 
     else if mol_fmt1_c_string_eq(sz_type, b"SDI") {
+        panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
         let mut x = [0.0_f64; 4];
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let mut fail = !(MolfileReadField(heap, MolfileFieldData::Short(&mut sg_num), 4, i32::from(MOL_FMT_SHORT_INT_DATA), &mut p)? > 0
             && MolfileReadField(heap, MolfileFieldData::Short(&mut num_entries), 3, i32::from(MOL_FMT_SHORT_INT_DATA), &mut p)? > 0);
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let index = if fail { -1 } else { MolFmtSgroups_GetIndexBySgroupId(heap, i32::from(sg_num), &ctab.sgroups)? };
         if index == -1 || num_entries != 4 {
             fail = true;
         }
         if !fail {
             for j in 0..i32::from(num_entries) {
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let slot = usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 if MolfileReadField(heap, MolfileFieldData::Double(&mut x[slot]), 0, i32::from(MOL_FMT_DOUBLE_DATA), &mut p)? < 0 {
                     fail = true;
                     break;
@@ -3063,7 +3382,9 @@ err_exit:
             }
         }
         if !fail {
+            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let pointer = mol_fmt1_sgroup_pointer(heap, &ctab.sgroups, index)?;
+            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let group = &mut heap.slice_mut(pointer)?[0];
             if (-group.xbr1[0].abs() + 777777.777).abs() < 1.0e-7 {
                 group.xbr1 = x;
@@ -3073,25 +3394,34 @@ err_exit:
         }
         if fail {
             err = 11;
+            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             MolFmtSgroups_Free(heap, Some(&mut ctab.sgroups))?;
             return Ok(err);
         }
     } else if mol_fmt1_c_string_eq(sz_type, b"SMT") {
         let mut index = -1_i32;
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         if MolfileReadField(heap, MolfileFieldData::Short(&mut sg_num), 4, i32::from(MOL_FMT_SHORT_INT_DATA), &mut p)? > 0
             && MolfileReadField(heap, MolfileFieldData::String(&mut stmplong), 80, i32::from(MOL_FMT_STRING_DATA), &mut p)? > 0
         {
+            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             index = MolFmtSgroups_GetIndexBySgroupId(heap, i32::from(sg_num), &ctab.sgroups)?;
         }
         if index == -1 {
             err = 11;
+            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             MolFmtSgroups_Free(heap, Some(&mut ctab.sgroups))?;
             return Ok(err);
         }
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let _ = mol_fmt1_trim_array(heap, &mut stmplong)?;
+        panic!("INCHI-AUDIT-0154: suspected source divergence; see dev/audits/inchi/findings.md");
         let length = stmplong.iter().position(|byte| *byte == 0).ok_or(SourceHeapError::MissingNulTerminator)?;
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let pointer = mol_fmt1_sgroup_pointer(heap, &ctab.sgroups, index)?;
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let group = &mut heap.slice_mut(pointer)?[0];
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let destination = group.smt.get_mut(..=length).ok_or(SourceHeapError::PointerOutOfBounds)?;
         destination.copy_from_slice(&stmplong[..=length]);
     }
@@ -3171,12 +3501,15 @@ static int MolfileTreatPseudoElementAtoms( MOL_FMT_CTAB* ctab,
         errors: &mut Option<&mut [i8]>,
         symbol: &[i8],
     ) -> Result<(), SourceHeapError> {
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         mol_fmt1_treat_error(err, 76, errors.as_deref_mut(), b"Invalid element(s):")?;
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let _ = AddErrorMessage(errors.as_deref_mut(), Some(symbol))?;
         Ok(())
     }
 
     let mut nzz = 0_i32;
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let count = if ctab.n_atoms > 0 {
         usize::try_from(ctab.n_atoms).map_err(|_| SourceHeapError::SourceIntegerOverflow)?
     } else {
@@ -3185,9 +3518,12 @@ static int MolfileTreatPseudoElementAtoms( MOL_FMT_CTAB* ctab,
     if count == 0 {
         return Ok(0);
     }
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let atoms = heap.slice_mut(ctab.atoms)?;
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     for atom in atoms.get_mut(..count).ok_or(SourceHeapError::PointerOutOfBounds)? {
         if mol_fmt1_c_string_eq(&atom.symbol, b"Zy") {
+            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             treat_symbol_error(err, &mut errors, &atom.symbol)?;
         }
         let is_star = mol_fmt1_c_string_eq(&atom.symbol, b"*");
@@ -3195,8 +3531,10 @@ static int MolfileTreatPseudoElementAtoms( MOL_FMT_CTAB* ctab,
         if is_star || is_zz {
             nzz = nzz.wrapping_add(1);
             if pseudos_allowed == 0 {
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 treat_symbol_error(err, &mut errors, &atom.symbol)?;
             } else if is_star {
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let _ = mystrncpy_slice(
                     Some(&mut atom.symbol),
                     Some(&[b'Z' as i8, b'z' as i8, 0]),

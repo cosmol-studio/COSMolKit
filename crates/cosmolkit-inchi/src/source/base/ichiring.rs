@@ -20,11 +20,13 @@ impl RingSearchWorkspace {
         n_atom_level: SourceMutPointer<AT_RANK>,
         source: SourceMutPointer<S_CHAR>,
     ) -> Result<Self, SourceHeapError> {
+        panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
         let queue_value = heap
             .slice(q.as_const())?
             .first()
             .ok_or(SourceHeapError::PointerOutOfBounds)?
             .clone();
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let writable_ids = [
             q.allocation_identity(),
             queue_value.Val.allocation_identity(),
@@ -41,12 +43,16 @@ impl RingSearchWorkspace {
             return Err(SourceHeapError::PointerAllocationMismatch);
         }
 
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let total = usize::try_from(queue_value.nTotLength)
             .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let first =
             usize::try_from(queue_value.nFirst).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let length = usize::try_from(queue_value.nLength)
             .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         if total == 0 || first >= total || length > total {
             return Err(SourceHeapError::PointerOutOfBounds);
         }
@@ -55,11 +61,17 @@ impl RingSearchWorkspace {
         // and GetMinRingSize neither frees nor resizes them. The source graph
         // contract makes every active neighbor and queued atom an index into
         // atom[], nAtomLevel[], and cSource[].
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let atom = unsafe { heap.stable_slice(atom.as_const())? };
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let queue = unsafe { heap.stable_slice_mut(q)? };
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let values = unsafe { heap.stable_slice_mut(queue_value.Val)? };
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let atom_level = unsafe { heap.stable_slice_mut(n_atom_level)? };
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let source = unsafe { heap.stable_slice_mut(source)? };
+        panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
         if values.len() < total || atom.len() < atom_level.len() || source.len() < atom_level.len()
         {
             return Err(SourceHeapError::PointerOutOfBounds);
@@ -128,6 +140,7 @@ fn get_min_ring_size_with_workspace(
     n_max_ring_size: AT_RANK,
 ) -> i32 {
     let mut n_min_ring_size = (MAX_ATOMS + 1) as AT_RANK;
+    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
     let mut at_no: qInt = 0;
 
     loop {
@@ -154,6 +167,7 @@ fn get_min_ring_size_with_workspace(
                     return 0;
                 }
 
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let current_source = *unsafe { workspace.source.get_unchecked(iat_no) };
                 // SAFETY: iat_no is a queued source atom index. Each read is
                 // kept as a scalar so queue mutation does not extend a borrow
@@ -174,6 +188,7 @@ fn get_min_ring_size_with_workspace(
                             return -1;
                         }
                     } else {
+                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let next_source = *unsafe { workspace.source.get_unchecked(inext) };
                         if i32::from(next_level) + 1 >= i32::from(n_cur_level)
                             && next_source != current_source
@@ -242,6 +257,7 @@ pub(crate) fn QueueCreate(
         return Ok(SourceMutPointer::null());
     }
 
+    panic!("INCHI-AUDIT-0001: suspected source divergence; see dev/audits/inchi/findings.md");
     let queue = match inchi_calloc::<QUEUE>(heap, 1, 24) {
         Ok(pointer) => pointer,
         Err(SourceHeapError::AllocationFailed) => return Ok(SourceMutPointer::null()),
@@ -259,6 +275,7 @@ pub(crate) fn QueueCreate(
         }
     };
 
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let queue_value = heap
         .slice_mut(queue)?
         .first_mut()
@@ -294,6 +311,7 @@ pub(crate) fn QueueAdd(
     if q.is_null() || Val.is_null() {
         return Ok(-1);
     }
+    panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
     let queue = heap
         .slice(q.as_const())?
         .first()
@@ -302,20 +320,25 @@ pub(crate) fn QueueAdd(
     if queue.nLength >= queue.nTotLength {
         return Ok(-1);
     }
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     if queue.nTotLength == 0 {
         return Err(SourceHeapError::SourceIntegerOverflow);
     }
     let destination = queue.nFirst.wrapping_add(queue.nLength) % queue.nTotLength;
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let destination =
         usize::try_from(destination).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let value = *heap
         .slice(Val.as_const())?
         .first()
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     *heap
         .slice_mut(queue.Val)?
         .get_mut(destination)
         .ok_or(SourceHeapError::PointerOutOfBounds)? = value;
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let queue_mut = heap
         .slice_mut(q)?
         .first_mut()
@@ -357,6 +380,7 @@ pub(crate) fn QueueGet(
     if q.is_null() || Val.is_null() {
         return Ok(-1);
     }
+    panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
     let queue = heap
         .slice(q.as_const())?
         .first()
@@ -365,15 +389,19 @@ pub(crate) fn QueueGet(
     if queue.nLength <= 0 {
         return Ok(-1);
     }
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let first = usize::try_from(queue.nFirst).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let value = *heap
         .slice(queue.Val.as_const())?
         .get(first)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     *heap
         .slice_mut(Val)?
         .first_mut()
         .ok_or(SourceHeapError::PointerOutOfBounds)? = value;
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let queue_mut = heap
         .slice_mut(q)?
         .first_mut()
@@ -412,16 +440,20 @@ pub(crate) fn QueueGetAny(
     */
     // END INCHI C FUNCTION: QueueGetAny
 
+    panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
+    panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
     let queue = heap
         .slice(q.as_const())?
         .first()
         .ok_or(SourceHeapError::PointerOutOfBounds)?
         .clone();
     if 0 <= ord && ord < queue.nTotLength {
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let value = *heap
             .slice(queue.Val.as_const())?
             .get(usize::try_from(ord).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         *heap
             .slice_mut(Val)?
             .first_mut()
@@ -458,6 +490,7 @@ pub(crate) fn QueueReinit(
     if q.is_null() {
         return Ok(-1);
     }
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let queue = heap
         .slice_mut(q)?
         .first_mut()
@@ -492,6 +525,7 @@ pub(crate) fn QueueLength(
     if q.is_null() {
         return Ok(0);
     }
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     Ok(heap
         .slice(q.as_const())?
         .first()
@@ -525,6 +559,7 @@ pub(crate) fn QueueWrittenLength(
     if q.is_null() {
         return Ok(0);
     }
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let queue = heap
         .slice(q.as_const())?
         .first()
@@ -634,6 +669,7 @@ pub(crate) fn GetMinRingSize(
     if q.is_null() {
         return Ok(0);
     }
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let initial_length = heap
         .slice(q.as_const())?
         .first()
@@ -722,6 +758,8 @@ pub(crate) fn is_bond_in_Nmax_memb_ring(
         return Ok(0);
     }
 
+    panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let queue = heap
         .slice_mut(q)?
         .first_mut()
@@ -730,7 +768,9 @@ pub(crate) fn is_bond_in_Nmax_memb_ring(
     queue.nLength = 0;
 
     let mut workspace = RingSearchWorkspace::new(heap, atom, q, nAtomLevel, cSource)?;
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let start = usize::try_from(at_no).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     if start >= workspace.atom.len()
         || start >= workspace.atom_level.len()
         || start >= workspace.source.len()
@@ -820,9 +860,12 @@ pub(crate) fn is_atom_in_3memb_ring(
     // INCHI✔️✔️: }
     // END INCHI C FUNCTION: is_atom_in_3memb_ring
 
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let start_index = usize::try_from(at_no).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     // SAFETY: this function is read-only and does not free or resize atom[].
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let atoms = unsafe { heap.stable_slice(atom.as_const())? };
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let start = atoms
         .get(start_index)
         .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
@@ -832,6 +875,7 @@ pub(crate) fn is_atom_in_3memb_ring(
     let valence = i32::from(start.valence);
     for i in 0..valence {
         let neighbor_index = usize::from(start.neighbor[i as usize]);
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let neighbor = atoms
             .get(neighbor_index)
             .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
@@ -878,11 +922,13 @@ pub(crate) fn QueueDelete(
         return Ok(SourceMutPointer::null());
     }
 
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let value = heap
         .slice(q.as_const())?
         .first()
         .ok_or(SourceHeapError::PointerOutOfBounds)?
         .Val;
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let value_result = inchi_free(heap, value);
     let queue_result = inchi_free(heap, q);
     value_result?;

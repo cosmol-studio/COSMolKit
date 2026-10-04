@@ -13,6 +13,7 @@ use crate::source_types::{
 
 fn source_strtol_decimal(bytes: &[u8], start: usize) -> i32 {
     let mut index = start;
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let negative = match bytes.get(index).copied() {
         Some(b'-') => {
             index += 1;
@@ -31,6 +32,7 @@ fn source_strtol_decimal(bytes: &[u8], start: usize) -> i32 {
     } else {
         i64::MAX as u64
     };
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     while let Some(digit) = bytes
         .get(index)
         .copied()
@@ -480,20 +482,24 @@ pub(crate) fn GetINCHIKeyFromINCHI(
     // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: GetINCHIKeyFromINCHI
 
     if !szXtra1.is_null() {
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         heap.slice_mut(szXtra1)?[0] = 0;
     }
     if !szXtra2.is_null() {
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         heap.slice_mut(szXtra2)?[0] = 0;
     }
     if szINCHISource.is_null() {
         return Ok(INCHIKEY_EMPTY_INPUT as i32);
     }
 
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let source_length = heap
         .slice(szINCHISource)?
         .iter()
         .position(|byte| *byte == 0)
         .ok_or(SourceHeapError::MissingNulTerminator)?;
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let source = heap.slice(szINCHISource)?;
     if source_length < 9
         || source[..6]
@@ -526,13 +532,19 @@ pub(crate) fn GetINCHIKeyFromINCHI(
         return Ok(INCHIKEY_INVALID_INCHI as i32);
     }
 
+    panic!("INCHI-AUDIT-0001: suspected source divergence; see dev/audits/inchi/findings.md");
     let mut str_pointer = SourceMutPointer::null();
+    panic!("INCHI-AUDIT-0001: suspected source divergence; see dev/audits/inchi/findings.md");
     let mut smajor = SourceMutPointer::null();
+    panic!("INCHI-AUDIT-0001: suspected source divergence; see dev/audits/inchi/findings.md");
     let mut sminor = SourceMutPointer::null();
+    panic!("INCHI-AUDIT-0001: suspected source divergence; see dev/audits/inchi/findings.md");
     let mut stmp = SourceMutPointer::null();
+    panic!("INCHI-AUDIT-0001: suspected source divergence; see dev/audits/inchi/findings.md");
     let mut sproto = SourceMutPointer::null();
     let mut ret = INCHIKEY_OK as i32;
 
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     match extract_inchi_substring(heap, &mut str_pointer, szINCHISource, source_length as u64) {
         Ok(()) => {}
         Err(SourceHeapError::AllocationFailed) => ret = INCHIKEY_NOT_ENOUGH_MEMORY as i32,
@@ -543,33 +555,39 @@ pub(crate) fn GetINCHIKeyFromINCHI(
     }
     let mut slen = 0_usize;
     if ret == INCHIKEY_OK as i32 {
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         slen = heap
             .slice(str_pointer.as_const())?
             .iter()
             .position(|byte| *byte == 0)
             .ok_or(SourceHeapError::MissingNulTerminator)?;
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let allocate = |result: Result<SourceMutPointer<u8>, SourceHeapError>| match result {
             Ok(pointer) => Ok(pointer),
             Err(SourceHeapError::AllocationFailed) => Ok(SourceMutPointer::null()),
             Err(error) => Err(error),
         };
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         smajor = allocate(inchi_calloc(heap, (slen + 1) as u64, 1))?;
         if smajor.is_null() {
             ret = INCHIKEY_NOT_ENOUGH_MEMORY as i32;
         }
         if ret == INCHIKEY_OK as i32 {
+            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             sminor = allocate(inchi_calloc(heap, (2 * slen + 2) as u64, 1))?;
             if sminor.is_null() {
                 ret = INCHIKEY_NOT_ENOUGH_MEMORY as i32;
             }
         }
         if ret == INCHIKEY_OK as i32 {
+            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             stmp = allocate(inchi_calloc(heap, (slen + 1) as u64, 1))?;
             if stmp.is_null() {
                 ret = INCHIKEY_NOT_ENOUGH_MEMORY as i32;
             }
         }
         if ret == INCHIKEY_OK as i32 {
+            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             sproto = allocate(inchi_calloc(heap, (slen + 1) as u64, 1))?;
             if sproto.is_null() {
                 ret = INCHIKEY_NOT_ENOUGH_MEMORY as i32;
@@ -578,11 +596,14 @@ pub(crate) fn GetINCHIKeyFromINCHI(
     }
 
     if ret == INCHIKEY_OK as i32 {
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         heap.slice_mut(szINCHIKey)?[0] = 0;
         let mut jproto = 0_usize;
         let mut j = pos_slash1 + 1;
         while j < slen - 1 {
+            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             if heap.slice(str_pointer.as_const())?[j] == b'/' as i8 {
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 match heap.slice(str_pointer.as_const())?[j + 1] as u8 {
                     b'c' | b'h' | b'q' => {
                         j += 1;
@@ -616,9 +637,12 @@ pub(crate) fn GetINCHIKeyFromINCHI(
             };
             {
                 for index in 0..major_length {
+                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let byte = heap.slice(str_pointer.as_const())?[pos_slash1 + 1 + index] as u8;
+                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     heap.slice_mut(smajor)?[index] = byte;
                 }
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 heap.slice_mut(smajor)?[major_length] = 0;
             }
 
@@ -630,11 +654,15 @@ pub(crate) fn GetINCHIKeyFromINCHI(
                 } else {
                     {
                         for index in 0..proto_length {
+                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                             let byte = heap.slice(str_pointer.as_const())?[jproto + index] as u8;
+                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                             heap.slice_mut(sproto)?[index] = byte;
                         }
+                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         heap.slice_mut(sproto)?[proto_length] = 0;
                     }
+                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let nprotons =
                         source_strtol_decimal(&heap.slice(sproto.as_const())?[..proto_length], 2);
                     flagproto = match nprotons {
@@ -653,26 +681,33 @@ pub(crate) fn GetINCHIKeyFromINCHI(
                 let minor_length = if j != slen + 1 { slen - j } else { 0 };
                 {
                     for index in 0..minor_length {
+                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let byte = heap.slice(str_pointer.as_const())?[j + index] as u8;
+                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         heap.slice_mut(sminor)?[index] = byte;
                     }
+                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     heap.slice_mut(sminor)?[minor_length] = 0;
                 }
 
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let major_length = heap
                     .slice(smajor.as_const())?
                     .iter()
                     .position(|byte| *byte == 0)
                     .ok_or(SourceHeapError::MissingNulTerminator)?;
                 let mut digest_major = [0_u8; 32];
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 sha2_csum(
                     &heap.slice(smajor.as_const())?[..major_length],
                     major_length as i32,
                     &mut digest_major,
                 );
 
+                panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                 let mut key = [0_u8; 28];
                 let mut key_index = 0_usize;
+                panic!("INCHI-AUDIT-0267: suspected source divergence; see dev/audits/inchi/findings.md");
                 for encoded in [
                     base26_triplet_1(&digest_major).as_slice(),
                     base26_triplet_2(&digest_major).as_slice(),
@@ -684,6 +719,7 @@ pub(crate) fn GetINCHIKeyFromINCHI(
                     key_index += encoded.len();
                 }
 
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let minor_length = heap
                     .slice(sminor.as_const())?
                     .iter()
@@ -691,20 +727,26 @@ pub(crate) fn GetINCHIKeyFromINCHI(
                     .ok_or(SourceHeapError::MissingNulTerminator)?;
                 if minor_length > 0 && minor_length < 255 {
                     for index in 0..=minor_length {
+                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let byte = heap.slice(sminor.as_const())?[index];
+                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         heap.slice_mut(stmp)?[index] = byte;
                     }
                     for index in 0..=minor_length {
+                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let byte = heap.slice(stmp.as_const())?[index];
+                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         heap.slice_mut(sminor)?[minor_length + index] = byte;
                     }
                 }
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let hashed_minor_length = heap
                     .slice(sminor.as_const())?
                     .iter()
                     .position(|byte| *byte == 0)
                     .ok_or(SourceHeapError::MissingNulTerminator)?;
                 let mut digest_minor = [0_u8; 32];
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 sha2_csum(
                     &heap.slice(sminor.as_const())?[..hashed_minor_length],
                     hashed_minor_length as i32,
@@ -713,6 +755,7 @@ pub(crate) fn GetINCHIKeyFromINCHI(
 
                 key[key_index] = b'-';
                 key_index += 1;
+                panic!("INCHI-AUDIT-0267: suspected source divergence; see dev/audits/inchi/findings.md");
                 for encoded in [
                     base26_triplet_1(&digest_minor).as_slice(),
                     base26_triplet_2(&digest_minor).as_slice(),
@@ -730,14 +773,17 @@ pub(crate) fn GetINCHIKeyFromINCHI(
                 key[key_index + 2] = b'-';
                 key[key_index + 3] = flagproto;
                 key[key_index + 4] = 0;
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 for (destination, source) in heap.slice_mut(szINCHIKey)?.iter_mut().zip(key.iter())
                 {
                     *destination = *source as i8;
                 }
 
                 if xtra1 != 0 && !szXtra1.is_null() {
+                    panic!("INCHI-AUDIT-0344: suspected source divergence; see dev/audits/inchi/findings.md");
                     let mut xtra = [0_u8; 49];
                     get_xtra_hash_major_hex(&digest_major, &mut xtra);
+                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     for (destination, source) in
                         heap.slice_mut(szXtra1)?.iter_mut().zip(xtra.iter())
                     {
@@ -745,8 +791,10 @@ pub(crate) fn GetINCHIKeyFromINCHI(
                     }
                 }
                 if xtra2 != 0 && !szXtra2.is_null() {
+                    panic!("INCHI-AUDIT-0344: suspected source divergence; see dev/audits/inchi/findings.md");
                     let mut xtra = [0_u8; 57];
                     get_xtra_hash_minor_hex(&digest_minor, &mut xtra);
+                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     for (destination, source) in
                         heap.slice_mut(szXtra2)?.iter_mut().zip(xtra.iter())
                     {
@@ -758,18 +806,23 @@ pub(crate) fn GetINCHIKeyFromINCHI(
     }
 
     if !str_pointer.is_null() {
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         inchi_free(heap, str_pointer)?;
     }
     if !smajor.is_null() {
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         inchi_free(heap, smajor)?;
     }
     if !sminor.is_null() {
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         inchi_free(heap, sminor)?;
     }
     if !stmp.is_null() {
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         inchi_free(heap, stmp)?;
     }
     if !sproto.is_null() {
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         inchi_free(heap, sproto)?;
     }
     Ok(ret)

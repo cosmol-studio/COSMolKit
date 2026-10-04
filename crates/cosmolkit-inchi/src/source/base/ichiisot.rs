@@ -107,6 +107,7 @@ pub(crate) fn set_atom_iso_sort_keys(
     let has_isotopic_endpoint_numbers =
         t_group_info.is_some_and(|info| !info.nIsotopicEndpointAtomNumber.is_null());
     let mut atoms = if num_at > 0 {
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         Some(heap.slice_mut(at)?)
     } else {
         None
@@ -114,6 +115,7 @@ pub(crate) fn set_atom_iso_sort_keys(
     let mut num_isotopic = 0_i32;
     let mut i = 0_i32;
     while i < num_at {
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let atom = atoms
             .as_deref_mut()
             .and_then(|atoms| atoms.get_mut(i as usize))

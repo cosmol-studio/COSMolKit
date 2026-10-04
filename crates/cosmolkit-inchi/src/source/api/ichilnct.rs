@@ -156,37 +156,53 @@ pub(crate) fn Get_inchi_Input_FromAuxInfo(
     }
 
     let input_pointer = output.pInp;
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let options = heap
         .slice(input_pointer.as_const())?
         .first()
         .ok_or(SourceHeapError::PointerOutOfBounds)?
         .szOptions;
+    panic!("INCHI-AUDIT-0001: suspected source divergence; see dev/audits/inchi/findings.md");
     *output = InchiInpData::default();
     output.pInp = input_pointer;
+    panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
+    panic!("INCHI-AUDIT-0001: suspected source divergence; see dev/audits/inchi/findings.md");
     let mut input_data = inchi_Input {
         szOptions: options,
         ..inchi_Input::default()
     };
+    panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
     *heap
         .slice_mut(input_pointer)?
         .first_mut()
         .ok_or(SourceHeapError::PointerOutOfBounds)? = input_data.clone();
 
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let aux_length = heap
         .slice(aux_info.as_const())?
         .iter()
         .position(|byte| *byte == 0)
         .ok_or(SourceHeapError::MissingNulTerminator)?;
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
+    panic!("INCHI-AUDIT-0381: suspected source divergence; see dev/audits/inchi/findings.md");
     let aux_length_i32 =
         i32::try_from(aux_length).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let allocated_length = aux_length_i32
         .checked_add(1)
         .ok_or(SourceHeapError::SourceIntegerOverflow)?;
 
+    panic!("INCHI-AUDIT-0353: suspected source divergence; see dev/audits/inchi/findings.md");
+    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
     let header = heap.allocate_model_storage(vec![0_i8; MAX_SDF_HEADER as usize])?;
+    panic!("INCHI-AUDIT-0353: suspected source divergence; see dev/audits/inchi/findings.md");
+    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
     let label = heap.allocate_model_storage(vec![0_i8; MAX_SDF_VALUE as usize])?;
+    panic!("INCHI-AUDIT-0353: suspected source divergence; see dev/audits/inchi/findings.md");
     let error_buffer = heap.allocate_model_storage(vec![0_i8; STR_ERR_LEN as usize])?;
+    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
     let mut stream = INCHI_IOSTREAM::default();
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     inchi_ios_init(
         Some(&mut stream),
         INCHI_IOS_TYPE_STRING as i32,
@@ -200,6 +216,7 @@ pub(crate) fn Get_inchi_Input_FromAuxInfo(
     let mut structure_number = 0_i64;
     let mut chiral = 0_u64;
     let mut error = 0_i32;
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let parsed = InchiToInchi_Input(
         heap,
         Some(&mut stream),
@@ -217,8 +234,11 @@ pub(crate) fn Get_inchi_Input_FromAuxInfo(
     );
 
     let operation = parsed.and_then(|atom_count| {
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         output.bChiral =
             i32::try_from(chiral).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+        panic!("INCHI-AUDIT-0353: suspected source divergence; see dev/audits/inchi/findings.md");
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         output.szErrMsg.copy_from_slice(
             heap.slice(error_buffer.as_const())?
                 .get(..STR_ERR_LEN as usize)
@@ -247,18 +267,23 @@ pub(crate) fn Get_inchi_Input_FromAuxInfo(
         if return_value != tagRetValGetINCHI_inchi_Ret_OKAY
             && return_value != tagRetValGetINCHI_inchi_Ret_WARNING
         {
+            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             Free_inchi_Input(heap, &mut input_data)?;
             output.bChiral = 0;
         }
         Ok(return_value)
     });
 
+    panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
     *heap
         .slice_mut(input_pointer)?
         .first_mut()
         .ok_or(SourceHeapError::PointerOutOfBounds)? = input_data;
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let header_cleanup = inchi_free(heap, header);
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let label_cleanup = inchi_free(heap, label);
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let error_cleanup = inchi_free(heap, error_buffer);
     let cleanup = header_cleanup
         .and(label_cleanup)
@@ -284,7 +309,9 @@ pub(crate) fn Free_inchi_Input(
     // INCHI✔️❌: }
     // END INCHI C FUNCTION: Free_inchi_Input
 
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     FreeInchi_Atom(heap, Some(&mut input.atom))?;
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     FreeInchi_Stereo0D(heap, Some(&mut input.stereo0D))?;
     input.num_atoms = 0;
     input.num_stereo0D = 0;
@@ -525,6 +552,8 @@ pub(crate) fn InchiToInchi_Input(
     // END INCHI C FUNCTION: InchiToInchi_Input
 
     if let Some(error_text) = error_text {
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
+        panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
         *heap
             .slice_mut(error_text)?
             .first_mut()
@@ -547,11 +576,15 @@ pub(crate) fn InchiToInchi_Input(
         let stereo_old = orig_at_data
             .as_deref()
             .map_or(SourceMutPointer::null(), |input| input.stereo0D);
+        panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
         let mut new_stereo_count = 0_i32;
+        panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
         let mut new_dimensions = 0_i32;
+        panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
         let mut new_bond_count = 0_i32;
         let output_requested = orig_at_data.is_some();
 
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let new_atom_count = InchiToInchiAtom(
             heap,
             Some(&mut *input),
@@ -573,6 +606,7 @@ pub(crate) fn InchiToInchi_Input(
         )?;
 
         if new_atom_count <= 0 && *error == 0 {
+            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             add_source_error(heap, error_text, "Empty structure")?;
             *error = 98;
         } else if let Some(input_data) = orig_at_data.as_deref_mut()
@@ -586,14 +620,17 @@ pub(crate) fn InchiToInchi_Input(
             break;
         } else if new_atom_count > 0 {
             if let Some(input_data) = orig_at_data.as_deref_mut() {
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let total_atom_count = new_atom_count
                     .checked_add(i32::from(input_data.num_atoms))
                     .ok_or(SourceHeapError::SourceIntegerOverflow)?;
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let total_stereo_count = new_stereo_count
                     .checked_add(i32::from(input_data.num_stereo0D))
                     .ok_or(SourceHeapError::SourceIntegerOverflow)?;
 
                 if total_atom_count >= MAX_ATOMS as i32 {
+                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     add_source_error(
                         heap,
                         error_text,
@@ -604,18 +641,22 @@ pub(crate) fn InchiToInchi_Input(
                 } else if atom_old.is_null() {
                     input_data.atom = atom_new;
                     atom_new = SourceMutPointer::null();
+                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     input_data.num_atoms = i16::try_from(new_atom_count)
                         .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
                     input_data.stereo0D = stereo_new;
                     stereo_new = SourceMutPointer::null();
+                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     input_data.num_stereo0D = i16::try_from(new_stereo_count)
                         .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
                     new_stereo_count = 0;
                     let _ = new_stereo_count;
                 } else {
+                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     input_data.atom = match CreateInchiAtom(heap, total_atom_count) {
                         Ok(atoms) => atoms,
                         Err(SourceHeapError::AllocationFailed) => {
+                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                             add_source_error(heap, error_text, "Out of RAM")?;
                             *error = -1;
                             SourceMutPointer::null()
@@ -624,14 +665,17 @@ pub(crate) fn InchiToInchi_Input(
                     };
 
                     if !input_data.atom.is_null() {
+                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let old_atom_count = usize::try_from(input_data.num_atoms)
                             .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
                         for index in 0..old_atom_count {
+                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                             let atom = heap
                                 .slice(atom_old.as_const())?
                                 .get(index)
                                 .cloned()
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                             *heap
                                 .slice_mut(input_data.atom)?
                                 .get_mut(index)
@@ -640,20 +684,26 @@ pub(crate) fn InchiToInchi_Input(
 
                         if input_data.num_atoms != 0 {
                             let offset = input_data.num_atoms;
+                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                             let new_atom_count_usize = usize::try_from(new_atom_count)
                                 .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                             let atoms = heap.slice_mut(atom_new)?;
+                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                             for atom in atoms
                                 .get_mut(..new_atom_count_usize)
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?
                             {
+                                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                 let bond_count = usize::try_from(atom.num_bonds)
                                     .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+                                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                 for neighbor in atom
                                     .neighbor
                                     .get_mut(..bond_count)
                                     .ok_or(SourceHeapError::PointerOutOfBounds)?
                                 {
+                                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                     *neighbor = neighbor
                                         .checked_add(offset)
                                         .ok_or(SourceHeapError::SourceIntegerOverflow)?;
@@ -662,19 +712,24 @@ pub(crate) fn InchiToInchi_Input(
                         }
 
                         let mut atom_old_slot = atom_old;
+                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         FreeInchi_Atom(heap, Some(&mut atom_old_slot))?;
 
                         if !atom_new.is_null() {
+                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                             let destination_start = usize::try_from(input_data.num_atoms)
                                 .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                             let new_atom_count_usize = usize::try_from(new_atom_count)
                                 .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
                             for index in 0..new_atom_count_usize {
+                                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                 let atom = heap
                                     .slice(atom_new.as_const())?
                                     .get(index)
                                     .cloned()
                                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                 *heap
                                     .slice_mut(input_data.atom)?
                                     .get_mut(destination_start + index)
@@ -683,11 +738,13 @@ pub(crate) fn InchiToInchi_Input(
                         }
 
                         if new_stereo_count > 0 && !stereo_new.is_null() {
+                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                             input_data.stereo0D =
                                 match CreateInchi_Stereo0D(heap, total_stereo_count) {
                                     Ok(stereo) => stereo,
                                     Err(SourceHeapError::AllocationFailed) => {
                                         new_stereo_count = 0;
+                                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                         add_source_error(heap, error_text, "Out of RAM")?;
                                         *error = -1;
                                         SourceMutPointer::null()
@@ -696,14 +753,17 @@ pub(crate) fn InchiToInchi_Input(
                                 };
 
                             if !input_data.stereo0D.is_null() {
+                                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                 let old_stereo_count = usize::try_from(input_data.num_stereo0D)
                                     .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
                                 for index in 0..old_stereo_count {
+                                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                     let stereo = heap
                                         .slice(stereo_old.as_const())?
                                         .get(index)
                                         .cloned()
                                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                     *heap
                                         .slice_mut(input_data.stereo0D)?
                                         .get_mut(index)
@@ -711,20 +771,24 @@ pub(crate) fn InchiToInchi_Input(
                                 }
 
                                 let atom_offset = input_data.num_atoms;
+                                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                 let new_stereo_count_usize = usize::try_from(new_stereo_count)
                                     .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+                                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                 let new_stereo = heap
                                     .slice_mut(stereo_new)?
                                     .get_mut(..new_stereo_count_usize)
                                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
                                 for stereo in new_stereo {
                                     if stereo.central_atom >= 0 {
+                                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                         stereo.central_atom = stereo
                                             .central_atom
                                             .checked_add(atom_offset)
                                             .ok_or(SourceHeapError::SourceIntegerOverflow)?;
                                     }
                                     for neighbor in &mut stereo.neighbor {
+                                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                         *neighbor = neighbor
                                             .checked_add(atom_offset)
                                             .ok_or(SourceHeapError::SourceIntegerOverflow)?;
@@ -732,16 +796,20 @@ pub(crate) fn InchiToInchi_Input(
                                 }
 
                                 let mut stereo_old_slot = stereo_old;
+                                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                 FreeInchi_Stereo0D(heap, Some(&mut stereo_old_slot))?;
 
+                                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                 let destination_start = usize::try_from(input_data.num_stereo0D)
                                     .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
                                 for index in 0..new_stereo_count_usize {
+                                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                     let stereo = heap
                                         .slice(stereo_new.as_const())?
                                         .get(index)
                                         .cloned()
                                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                     *heap
                                         .slice_mut(input_data.stereo0D)?
                                         .get_mut(destination_start + index)
@@ -752,6 +820,7 @@ pub(crate) fn InchiToInchi_Input(
                             new_stereo_count = 0;
                         }
 
+                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         input_data.num_atoms = input_data
                             .num_atoms
                             .checked_add(
@@ -759,6 +828,7 @@ pub(crate) fn InchiToInchi_Input(
                                     .map_err(|_| SourceHeapError::SourceIntegerOverflow)?,
                             )
                             .ok_or(SourceHeapError::SourceIntegerOverflow)?;
+                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         input_data.num_stereo0D = input_data
                             .num_stereo0D
                             .checked_add(
@@ -769,13 +839,16 @@ pub(crate) fn InchiToInchi_Input(
                     }
                 }
             } else {
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 accumulated_atom_count = accumulated_atom_count
                     .checked_add(new_atom_count)
                     .ok_or(SourceHeapError::SourceIntegerOverflow)?;
             }
         }
 
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         FreeInchi_Atom(heap, Some(&mut atom_new))?;
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         FreeInchi_Stereo0D(heap, Some(&mut stereo_new))?;
         let _ = (new_dimensions, new_bond_count);
 
@@ -785,15 +858,19 @@ pub(crate) fn InchiToInchi_Input(
     }
 
     if !atom_new.is_null() {
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         inchi_free(heap, atom_new)?;
     }
 
     if *error != 0 {
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let input_data = orig_at_data
             .as_deref_mut()
             .ok_or(SourceHeapError::NullPointer)?;
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         FreeInchi_Input(heap, input_data)?;
     }
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     if *error != 0
         && !(10 < *error && *error < 20)
         && let Some(error_text) = error_text
@@ -802,6 +879,7 @@ pub(crate) fn InchiToInchi_Input(
             .first()
             .is_some_and(|byte| *byte == 0)
     {
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         add_source_error(heap, Some(error_text), "Unknown error")?;
     }
 

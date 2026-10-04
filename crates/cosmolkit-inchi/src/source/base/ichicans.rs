@@ -82,7 +82,9 @@ pub(crate) fn find_atoms_with_parity(
     */
     // END INCHI C FUNCTION: find_atoms_with_parity
 
+    panic!("INCHI-AUDIT-0160: suspected source divergence; see dev/audits/inchi/findings.md");
     let current = usize::try_from(cur_atom).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     if heap
         .slice(visited.as_const())?
         .get(current)
@@ -92,6 +94,7 @@ pub(crate) fn find_atoms_with_parity(
     {
         return Ok(0);
     }
+    panic!("INCHI-AUDIT-0098: suspected source divergence; see dev/audits/inchi/findings.md");
     let atom = heap
         .slice(at)?
         .get(current)
@@ -148,8 +151,10 @@ pub(crate) fn SetHalfStereoBondIllDefPariy(
     if k1 >= MAX_NUM_STEREO_BOND_NEIGH as i32 {
         return Ok(0);
     }
+    panic!("INCHI-AUDIT-0160: suspected source divergence; see dev/audits/inchi/findings.md");
     let atom_index = usize::try_from(jn).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let stereo_index = usize::try_from(k1).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let atom = heap
         .slice_mut(at)?
         .get_mut(atom_index)
@@ -208,11 +213,14 @@ pub(crate) fn RemoveHalfStereoBond(
     */
     // END INCHI C FUNCTION: RemoveHalfStereoBond
 
+    panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
+    panic!("INCHI-AUDIT-0160: suspected source divergence; see dev/audits/inchi/findings.md");
     let atom_index = usize::try_from(jn).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let stereo_index = usize::try_from(k1).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     if stereo_index >= MAX_NUM_STEREO_BOND_NEIGH as usize {
         return Ok(0);
     }
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let atom = heap
         .slice_mut(at)?
         .get_mut(atom_index)
@@ -279,8 +287,10 @@ pub(crate) fn SetOneStereoBondIllDefParity(
     */
     // END INCHI C FUNCTION: SetOneStereoBondIllDefParity
 
+    panic!("INCHI-AUDIT-0160: suspected source divergence; see dev/audits/inchi/findings.md");
     let current_index = usize::try_from(jc).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let stereo_index = usize::try_from(k).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let jn = i32::from(
         *heap
             .slice(at.as_const())?
@@ -295,8 +305,10 @@ pub(crate) fn SetOneStereoBondIllDefParity(
     let mut ret = 0_i32;
     let mut k1 = 0_i32;
     while k1 < MAX_NUM_STEREO_BOND_NEIGH as i32 {
+        panic!("INCHI-AUDIT-0160: suspected source divergence; see dev/audits/inchi/findings.md");
         let opposite_index =
             usize::try_from(jn).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let kn = heap
             .slice(at.as_const())?
             .get(opposite_index)
@@ -356,9 +368,12 @@ pub(crate) fn RemoveOneStereoBond(
     */
     // END INCHI C FUNCTION: RemoveOneStereoBond
 
+    panic!("INCHI-AUDIT-0160: suspected source divergence; see dev/audits/inchi/findings.md");
     let current_index = usize::try_from(jc).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let stereo_index = usize::try_from(k).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    panic!("INCHI-AUDIT-0160: suspected source divergence; see dev/audits/inchi/findings.md");
     let opposite_index = {
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let atoms = heap.slice(at.as_const())?;
         let atom = atoms
             .get(current_index)
@@ -375,6 +390,7 @@ pub(crate) fn RemoveOneStereoBond(
 
     let mut ret = 0_i32;
     for opposite_stereo_index in 0..MAX_NUM_STEREO_BOND_NEIGH as usize {
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let opposite_neighbor = {
             let atoms = heap.slice(at.as_const())?;
             atoms
@@ -424,7 +440,9 @@ pub(crate) fn RemoveOneStereoCenter(
     // INCHI✔️✔️: }
     // END INCHI C FUNCTION: RemoveOneStereoCenter
 
+    panic!("INCHI-AUDIT-0160: suspected source divergence; see dev/audits/inchi/findings.md");
     let index = usize::try_from(jc).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let atom = heap
         .slice_mut(at)?
         .get_mut(index)
@@ -558,10 +576,12 @@ pub(crate) fn InvertStereo(
     // END INCHI C FUNCTION: InvertStereo
 
     for i in 0..num_at_tg {
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let rank = *heap
             .slice(nCanonRank)?
             .get(i as usize)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        panic!("INCHI-AUDIT-0160: suspected source divergence; see dev/audits/inchi/findings.md");
         let output_index = usize::from(rank)
             .checked_sub(1)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -574,12 +594,15 @@ pub(crate) fn InvertStereo(
     let mut num_changes = 0_i32;
     for i in 0..pCS.nLenLinearCTStereoCarb {
         let index = i as usize;
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
+        panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
         let record = heap
             .slice(pCS.LinearCTStereoCarb.as_const())?
             .get(index)
             .cloned()
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
         if atom_parity_well_defined(i32::from(record.parity)) {
+            panic!("INCHI-AUDIT-0160: suspected source divergence; see dev/audits/inchi/findings.md");
             let canonical_index = usize::from(record.at_num)
                 .checked_sub(1)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -616,12 +639,15 @@ pub(crate) fn InvertStereo(
 
     for i in 0..pCS.nLenLinearCTStereoDble {
         let index = i as usize;
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
+        panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
         let record = heap
             .slice(pCS.LinearCTStereoDble.as_const())?
             .get(index)
             .cloned()
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
         if atom_parity_well_defined(i32::from(record.parity)) {
+            panic!("INCHI-AUDIT-0160: suspected source divergence; see dev/audits/inchi/findings.md");
             let first_canonical_index = usize::from(record.at_num1)
                 .checked_sub(1)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -631,6 +657,7 @@ pub(crate) fn InvertStereo(
                     .get(first_canonical_index)
                     .ok_or(SourceHeapError::PointerOutOfBounds)?,
             );
+            panic!("INCHI-AUDIT-0098: suspected source divergence; see dev/audits/inchi/findings.md");
             let first = heap
                 .slice(at.as_const())?
                 .get(j1)
@@ -638,6 +665,7 @@ pub(crate) fn InvertStereo(
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
             let cumulene_len = bond_chain_len(i32::from(first.stereo_bond_parity[0]));
             if cumulene_len % 2 != 0 {
+                panic!("INCHI-AUDIT-0160: suspected source divergence; see dev/audits/inchi/findings.md");
                 let second_canonical_index = usize::from(record.at_num2)
                     .checked_sub(1)
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -647,6 +675,8 @@ pub(crate) fn InvertStereo(
                         .get(second_canonical_index)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?,
                 );
+                panic!("INCHI-AUDIT-0098: suspected source divergence; see dev/audits/inchi/findings.md");
+                panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
                 let second = heap
                     .slice(at.as_const())?
                     .get(j2)
@@ -914,7 +944,9 @@ pub(crate) fn FillSingleStereoDescriptors(
         return Ok(0);
     }
 
+    panic!("INCHI-AUDIT-0160: suspected source divergence; see dev/audits/inchi/findings.md");
     let atom_index = usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    panic!("INCHI-AUDIT-0098: suspected source divergence; see dev/audits/inchi/findings.md");
     let atom_snapshot = heap
         .slice(at.as_const())?
         .get(atom_index)
@@ -924,10 +956,12 @@ pub(crate) fn FillSingleStereoDescriptors(
         return Ok(0);
     }
 
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let rank = *heap
         .slice(nRank.as_const())?
         .get(atom_index)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
     let mut neighbor_numbers = [0_u16; MAXVAL as usize];
     if atom_parity_well_defined(i32::from(atom_snapshot.parity)) && num_trans < 0 {
         let neighbor_count = usize::try_from(i32::from(atom_snapshot.valence))
@@ -938,6 +972,7 @@ pub(crate) fn FillSingleStereoDescriptors(
         for (index, value) in neighbor_numbers[..neighbor_count].iter_mut().enumerate() {
             *value = index as AT_NUMB;
         }
+        panic!("INCHI-AUDIT-0187: suspected source divergence; see dev/audits/inchi/findings.md");
         pCG.m_pn_RankForSort = nRank.as_const();
         num_trans = sort_neighbor_orders(
             &mut neighbor_numbers,
@@ -948,7 +983,9 @@ pub(crate) fn FillSingleStereoDescriptors(
     }
 
     if !LinearCTStereoDble.is_null() && atom_snapshot.stereo_bond_neighbor[0] != 0 {
+        panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
         let mut stereo_neighbor_numbers = [0_u16; MAX_NUM_STEREO_BONDS as usize];
+        panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
         let mut stereo_neighbors = [0_u16; MAX_NUM_STEREO_BONDS as usize];
         let mut stereo_count = 0_usize;
         let mut num_allene = 0_i32;
@@ -980,6 +1017,7 @@ pub(crate) fn FillSingleStereoDescriptors(
         for &stereo_order_value in &stereo_neighbor_numbers[..stereo_count] {
             let stereo_order = usize::from(stereo_order_value);
             let stereo_neighbor = usize::from(stereo_neighbors[stereo_order]);
+            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let neighbor_rank = *heap
                 .slice(nRank.as_const())?
                 .get(stereo_neighbor)
@@ -996,6 +1034,8 @@ pub(crate) fn FillSingleStereoDescriptors(
             let parity = if (1..=4).contains(&stereo_bond_parity) {
                 stereo_bond_parity
             } else {
+                panic!("INCHI-AUDIT-0098: suspected source divergence; see dev/audits/inchi/findings.md");
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let opposite_atom = heap
                     .slice(at.as_const())?
                     .get(stereo_neighbor)
@@ -1059,8 +1099,10 @@ pub(crate) fn FillSingleStereoDescriptors(
             if *nStereoDbleLen >= nMaxStereoDbleLen {
                 return Ok(CT_OVERFLOW);
             }
+            panic!("INCHI-AUDIT-0160: suspected source divergence; see dev/audits/inchi/findings.md");
             let descriptor_index = usize::try_from(*nStereoDbleLen)
                 .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let descriptor = heap
                 .slice_mut(LinearCTStereoDble)?
                 .get_mut(descriptor_index)
@@ -1079,8 +1121,10 @@ pub(crate) fn FillSingleStereoDescriptors(
         if *nStereoCarbLen >= nMaxStereoCarbLen {
             return Ok(CT_OVERFLOW);
         }
+        panic!("INCHI-AUDIT-0160: suspected source divergence; see dev/audits/inchi/findings.md");
         let descriptor_index =
             usize::try_from(*nStereoCarbLen).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let descriptor = heap
             .slice_mut(LinearCTStereoCarb)?
             .get_mut(descriptor_index)
@@ -1131,6 +1175,7 @@ pub(crate) fn SwitchAtomStereoAndIsotopicStereo(
     // END INCHI C FUNCTION: SwitchAtomStereoAndIsotopicStereo
 
     for i in 0..num_atoms {
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let atom = heap
             .slice_mut(at)?
             .get_mut(i as usize)
@@ -1277,6 +1322,7 @@ pub(crate) fn FillAllStereoDescriptors(
     for allene in [0_i32, 1_i32] {
         let mut index = 0_i32;
         while ret == 0 && index < num_atoms {
+            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let atom_number = *heap
                 .slice(nAtomNumberCanon.as_const())?
                 .get(index as usize)
@@ -1296,7 +1342,9 @@ pub(crate) fn FillAllStereoDescriptors(
                 pCS.nMaxLenLinearCTStereoDble,
                 allene,
             );
+            panic!("INCHI-AUDIT-0195: suspected source divergence; see dev/audits/inchi/findings.md");
             pCS.nLenLinearCTStereoCarb = carb_len;
+            panic!("INCHI-AUDIT-0195: suspected source divergence; see dev/audits/inchi/findings.md");
             pCS.nLenLinearCTStereoDble = double_len;
             ret = call_result?;
             index = index.wrapping_add(1);
@@ -1624,12 +1672,21 @@ pub(crate) fn SetKnownStereoBondParities(
     }
 
     let _ = pCG;
+    panic!("INCHI-AUDIT-0196: suspected source divergence; see dev/audits/inchi/findings.md");
+    panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
     let mut atoms = heap.slice(at.as_const())?.to_vec();
+    panic!("INCHI-AUDIT-0196: suspected source divergence; see dev/audits/inchi/findings.md");
+    panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
     let canonical_ranks = heap.slice(nCanonRank)?.to_vec();
+    panic!("INCHI-AUDIT-0196: suspected source divergence; see dev/audits/inchi/findings.md");
+    panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
     let ranks = heap.slice(nRank)?.to_vec();
+    panic!("INCHI-AUDIT-0196: suspected source divergence; see dev/audits/inchi/findings.md");
+    panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
     let atom_numbers = heap.slice(nAtomNumber)?.to_vec();
     macro_rules! finish {
         ($value:expr) => {{
+            panic!("INCHI-AUDIT-0196: suspected source divergence; see dev/audits/inchi/findings.md");
             heap.slice_mut(at)?
                 .get_mut(..atoms.len())
                 .ok_or(SourceHeapError::PointerOutOfBounds)?
@@ -1641,6 +1698,7 @@ pub(crate) fn SetKnownStereoBondParities(
     let mut num_set = 0_i32;
     for i1_raw in 0..num_atoms {
         let i1 = i1_raw as usize;
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         if atoms[i1].parity == 0
             || atoms[i1].stereo_bond_neighbor[0] == 0
             || !parity_well_defined(i32::from(atoms[i1].parity))
@@ -1660,6 +1718,7 @@ pub(crate) fn SetKnownStereoBondParities(
             let mut n2 = 0_usize;
             let mut reverse_number = 0_i32;
             while n2 < MAX_NUM_STEREO_BONDS as usize {
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 reverse_number = i32::from(atoms[i2].stereo_bond_neighbor[n2]);
                 if reverse_number == 0 || reverse_number - 1 == i1_raw {
                     break;
@@ -1697,6 +1756,7 @@ pub(crate) fn SetKnownStereoBondParities(
             let atom1_neighbor_rank = ranks[usize::from(atoms[i1].neighbor[order1])];
             let neighbor_count2 = i32::from(atoms[i2].valence);
 
+            panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
             let mut neighbor_ranks1 = [0_u16; MAX_NUM_STEREO_BONDS as usize];
             let mut count1 = 0_usize;
             for neighbor_order in 0..neighbor_count1 {
@@ -1720,6 +1780,7 @@ pub(crate) fn SetKnownStereoBondParities(
 
             let order2 = usize::try_from(i32::from(atoms[i2].stereo_bond_ord[n2]))
                 .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
             let mut neighbor_ranks2 = [0_u16; MAX_NUM_STEREO_BONDS as usize];
             let mut count2 = 0_usize;
             for neighbor_order in 0..neighbor_count2 {
@@ -1745,6 +1806,7 @@ pub(crate) fn SetKnownStereoBondParities(
             let mut trans_k = -4_i32;
             let mut j1 = 0_i32;
             while j1 <= maximum1 {
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let k1 = usize::from(atom_numbers[(maximum1 - j1) as usize]);
                 if atom_rank1 != ranks[k1] {
                     break;
@@ -1781,12 +1843,14 @@ pub(crate) fn SetKnownStereoBondParities(
                         finish!(CT_STEREOCOUNT_ERR);
                     }
 
+                    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                     let mut canonical_neighbor_ranks1 = [0_u16; MAX_NUM_STEREO_BONDS as usize];
                     let mut matched1 = 0_i32;
                     for neighbor_order in 0..neighbor_count1 {
                         if neighbor_order == m1 {
                             continue;
                         }
+                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let neighbor = usize::from(atoms[k1].neighbor[neighbor_order as usize]);
                         for rank_slot in 0..neighbor_count1 - 1 {
                             if ranks[neighbor] == neighbor_ranks1[rank_slot as usize] {
@@ -1806,10 +1870,12 @@ pub(crate) fn SetKnownStereoBondParities(
                         0
                     };
 
+                    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                     let mut canonical_neighbor_ranks2 = [0_u16; MAX_NUM_STEREO_BONDS as usize];
                     let mut matched2 = 0_i32;
                     let mut m2 = -1_i32;
                     for neighbor_order in 0..neighbor_count2 {
+                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let neighbor = usize::from(atoms[k2].neighbor[neighbor_order as usize]);
                         if neighbor == previous {
                             m2 = neighbor_order;
@@ -1866,6 +1932,7 @@ pub(crate) fn SetKnownStereoBondParities(
                         1_i32.wrapping_add(parity)
                     };
                 }
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 atoms[i1].stereo_bond_parity[n1] = ((encoded_parity & !BITS_PARITY) | parity) as i8;
                 let opposite_encoded = i32::from(atoms[i2].stereo_bond_parity[n2]);
                 atoms[i2].stereo_bond_parity[n2] =
@@ -2208,11 +2275,17 @@ pub(crate) fn MarkKnownEqualStereoBondParities(
     if num_atoms <= 0 {
         return Ok(0);
     }
+    panic!("INCHI-AUDIT-0196: suspected source divergence; see dev/audits/inchi/findings.md");
     let mut atoms = heap.slice(at.as_const())?.to_vec();
+    panic!("INCHI-AUDIT-0196: suspected source divergence; see dev/audits/inchi/findings.md");
+    panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
     let ranks = heap.slice(nRank)?.to_vec();
+    panic!("INCHI-AUDIT-0196: suspected source divergence; see dev/audits/inchi/findings.md");
+    panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
     let atom_numbers = heap.slice(nAtomNumber)?.to_vec();
     macro_rules! finish {
         ($value:expr) => {{
+            panic!("INCHI-AUDIT-0196: suspected source divergence; see dev/audits/inchi/findings.md");
             let destination = heap.slice_mut(at)?;
             destination
                 .get_mut(..atoms.len())
@@ -2225,6 +2298,7 @@ pub(crate) fn MarkKnownEqualStereoBondParities(
     let mut num_set = 0_i32;
     for i1_raw in 0..num_atoms {
         let i1 = i1_raw as usize;
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         if atoms[i1].parity == 0 || atoms[i1].stereo_bond_neighbor[0] == 0 {
             continue;
         }
@@ -2261,6 +2335,7 @@ pub(crate) fn MarkKnownEqualStereoBondParities(
             n2 = 0;
             let mut m = 0_i32;
             while n2 < MAX_NUM_STEREO_BONDS as usize {
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 m = i32::from(atoms[i2].stereo_bond_neighbor[n2]);
                 if m == 0 || m - 1 == i1_raw {
                     break;
@@ -2284,6 +2359,7 @@ pub(crate) fn MarkKnownEqualStereoBondParities(
 
             let mut j1 = 0_i32;
             while j1 <= i_max1 {
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let k1 = usize::from(atom_numbers[(i_max1 - j1) as usize]);
                 if atom_rank1 != ranks[k1] {
                     break;
@@ -2336,6 +2412,7 @@ pub(crate) fn MarkKnownEqualStereoBondParities(
                     if m2 < 0 {
                         finish!(CT_STEREOCOUNT_ERR);
                     }
+                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     if atoms[k2].bHasStereoOrEquToStereo == 0 {
                         atoms[k2].bHasStereoOrEquToStereo = 1;
                     }
@@ -2343,6 +2420,7 @@ pub(crate) fn MarkKnownEqualStereoBondParities(
                     let mut s1 = 0_usize;
                     m = 0;
                     while s1 < MAX_NUM_STEREO_BONDS as usize {
+                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         m = i32::from(atoms[k1].stereo_bond_neighbor[s1]);
                         if m == 0 || m - 1 == k2 as i32 {
                             break;
@@ -2387,6 +2465,7 @@ pub(crate) fn MarkKnownEqualStereoBondParities(
             if different_parities == 0 && (1..=4).contains(&stereo_bond_parity) {
                 let mut j1 = 0_i32;
                 while j1 <= i_max1 {
+                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let k1 = usize::from(atom_numbers[(i_max1 - j1) as usize]);
                     if atom_rank1 != ranks[k1] {
                         break;
@@ -2416,6 +2495,7 @@ pub(crate) fn MarkKnownEqualStereoBondParities(
                             let b2 =
                                 i32::from(i32::from(atoms[k2].stereo_bond_parity[s2]) & 0x40 == 0);
                             if b1 + b2 == 2 {
+                                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                 atoms[k1].stereo_bond_parity[s1] |= 0x40;
                                 atoms[k2].stereo_bond_parity[s2] |= 0x40;
                                 num_set = num_set.wrapping_add(1);
@@ -2477,7 +2557,9 @@ pub(crate) fn GetNextNeighborAndRank(
     // END INCHI C FUNCTION: GetNextNeighborAndRank
 
     let atoms = heap.slice(at)?;
+    panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
     let ranks = heap.slice(nCanonRank)?;
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let atom = atoms
         .get(usize::from(cur))
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -2485,6 +2567,8 @@ pub(crate) fn GetNextNeighborAndRank(
     let mut j1 = (MAX_ATOMS + 1) as AT_RANK;
     for i in 0..i32::from(atom.valence) {
         let j = atom.neighbor[i as usize];
+        panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let crj = *ranks
             .get(usize::from(j))
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -2581,7 +2665,9 @@ pub(crate) fn GetAndCheckNextNeighbors(
     // INCHI✔️✔️: }
     // END INCHI C FUNCTION: GetAndCheckNextNeighbors
 
+    panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
     let canonical_ranks = heap.slice(nCanonRank)?;
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let mut cr1 = if u32::from(*n1) > MAX_ATOMS {
         0
     } else {
@@ -2599,8 +2685,11 @@ pub(crate) fn GetAndCheckNextNeighbors(
         return Ok(0);
     }
     let ranks = heap.slice(nRank)?;
+    panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
     let visited1 = heap.slice(nVisited1)?;
+    panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
     let visited2 = heap.slice(nVisited2)?;
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     if ranks[usize::from(*n1)] != ranks[usize::from(*n2)]
         || visited1[usize::from(*n1)] != visited2[usize::from(*n2)]
     {
@@ -2609,6 +2698,7 @@ pub(crate) fn GetAndCheckNextNeighbors(
 
     let atoms = heap.slice(at)?;
     let find_stereo = |cur: AT_RANK, next: AT_RANK| -> (bool, usize) {
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let atom = &atoms[usize::from(cur)];
         let mut index = 0_usize;
         while index < MAX_NUM_STEREO_BONDS as usize {
@@ -2733,15 +2823,18 @@ pub(crate) fn PathsHaveIdenticalKnownParities(
     // END INCHI C FUNCTION: PathsHaveIdenticalKnownParities
 
     nLength = nLength.wrapping_add(1);
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     *heap
         .slice_mut(nVisited1)?
         .get_mut(usize::from(cur1))
         .ok_or(SourceHeapError::PointerOutOfBounds)? = nLength;
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     *heap
         .slice_mut(nVisited2)?
         .get_mut(usize::from(cur2))
         .ok_or(SourceHeapError::PointerOutOfBounds)? = nLength;
 
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let (parity1, parity2, valence1, valence2) = {
         let atoms = heap.slice(at)?;
         let atom1 = atoms
@@ -2787,6 +2880,7 @@ pub(crate) fn PathsHaveIdenticalKnownParities(
         {
             return Ok(0);
         }
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let was_visited = *heap
             .slice(nVisited1.as_const())?
             .get(usize::from(n1))
@@ -2944,6 +3038,7 @@ pub(crate) fn RemoveKnownNonStereoBondParities(
     let result = (|| -> Result<i32, SourceHeapError> {
         let mut ret = 0_i32;
         for i1 in 0..num_atoms {
+            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let should_scan = {
                 let atoms = heap.slice(at.as_const())?;
                 let atom = atoms
@@ -2957,6 +3052,7 @@ pub(crate) fn RemoveKnownNonStereoBondParities(
 
             let mut n1 = 0_i32;
             while n1 < MAX_NUM_STEREO_BONDS as i32 {
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let (s2, bond_parity, stereo_order, valence) = {
                     let atoms = heap.slice(at.as_const())?;
                     let atom = &atoms[i1 as usize];
@@ -2979,10 +3075,12 @@ pub(crate) fn RemoveKnownNonStereoBondParities(
 
                 let opposite_atom = s2.wrapping_sub(1);
                 let m = i32::from(stereo_order);
+                panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                 let mut neigh = [0 as AT_RANK; 3];
                 let mut n = 0_i32;
                 for j in 0..i32::from(valence) {
                     if j != m {
+                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         neigh[n as usize] =
                             heap.slice(at.as_const())?[i1 as usize].neighbor[j as usize];
                         n += 1;
@@ -2995,11 +3093,13 @@ pub(crate) fn RemoveKnownNonStereoBondParities(
                     n1 += 1;
                     continue;
                 }
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let ranks = heap.slice(nRank)?;
                 if ranks[usize::from(neigh[0])] != ranks[usize::from(neigh[1])] {
                     n1 += 1;
                     continue;
                 }
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let same_ring = {
                     let atoms = heap.slice(at.as_const())?;
                     atoms[i1 as usize].nRingSystem == atoms[usize::from(neigh[0])].nRingSystem
@@ -3014,6 +3114,8 @@ pub(crate) fn RemoveKnownNonStereoBondParities(
                 } else {
                     let atom_count = usize::try_from(num_atoms)
                         .map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?;
+                    panic!("INCHI-AUDIT-0012: suspected source divergence; see dev/audits/inchi/findings.md");
+                    panic!("INCHI-AUDIT-0177: suspected source divergence; see dev/audits/inchi/findings.md");
                     let pointer = match heap.allocate(vec![0 as AT_RANK; atom_count]) {
                         Ok(pointer) => pointer,
                         Err(SourceHeapError::AllocationFailed) => return Ok(CT_OUT_OF_RAM),
@@ -3022,6 +3124,7 @@ pub(crate) fn RemoveKnownNonStereoBondParities(
                     visited = Some(pointer);
                     pointer
                 };
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 heap.slice_mut(visited_pointer)?.fill(0);
                 heap.slice_mut(visited_pointer)?[i1 as usize] = 1;
                 if PathsHaveIdenticalKnownParities(
@@ -3042,6 +3145,7 @@ pub(crate) fn RemoveKnownNonStereoBondParities(
                         return Ok(CT_STEREOBOND_ERROR);
                     }
                     n1 -= 1;
+                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let canonical_ranks = heap.slice(nCanonRank)?;
                     let first = canonical_ranks[i1 as usize];
                     let second = canonical_ranks[usize::from(opposite_atom)];
@@ -3050,11 +3154,14 @@ pub(crate) fn RemoveKnownNonStereoBondParities(
                     let mut m = pCS.nLenLinearCTStereoDble - 1;
                     let mut n = 0_i32;
                     while n <= m {
+                        panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
+                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let record =
                             heap.slice(pCS.LinearCTStereoDble.as_const())?[n as usize].clone();
                         if record.at_num1 == atom_rank1 && record.at_num2 == atom_rank2 {
                             if n < m {
                                 let records = heap.slice_mut(pCS.LinearCTStereoDble)?;
+                                panic!("INCHI-AUDIT-0042: suspected source divergence; see dev/audits/inchi/findings.md");
                                 for index in n as usize..m as usize {
                                     records[index] = records[index + 1].clone();
                                 }
@@ -3231,6 +3338,7 @@ pub(crate) fn SetKnownStereoCenterParities(
     let _ = pCG;
     let mut num_set = 0_i32;
     for i in 0..num_atoms {
+        panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
         let (parity, stereo_atom_parity, has_stereo_bond, num_neigh, atom_neighbors) = {
             let atoms = heap.slice(at.as_const())?;
             let atom = atoms
@@ -3254,12 +3362,16 @@ pub(crate) fn SetKnownStereoCenterParities(
         if count > MAX_NUM_STEREO_ATOM_NEIGH as usize {
             return Err(SourceHeapError::PointerOutOfBounds);
         }
+        panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
         let mut neighbor_ranks = [0 as AT_RANK; MAX_NUM_STEREO_ATOM_NEIGH as usize];
         for j in 0..count {
+            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             neighbor_ranks[j] = heap.slice(nRank)?[usize::from(atom_neighbors[j])];
         }
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let atom_rank = heap.slice(nRank)?[i as usize];
         let trans_i = if num_neigh == 1 {
+            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             heap.slice_mut(at)?[i as usize].stereo_atom_parity = parity;
             0
         } else {
@@ -3279,10 +3391,12 @@ pub(crate) fn SetKnownStereoCenterParities(
         let maximum = i32::from(atom_rank) - 1;
         let mut j1 = 0_i32;
         while j1 <= maximum {
+            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let k = heap.slice(nAtomNumber)?[(maximum - j1) as usize];
             if heap.slice(nRank)?[usize::from(k)] != atom_rank {
                 break;
             }
+            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let equivalent = heap
                 .slice(at.as_const())?
                 .get(usize::from(k))
@@ -3290,12 +3404,15 @@ pub(crate) fn SetKnownStereoCenterParities(
             if i32::from(equivalent.valence) != num_neigh {
                 return Ok(CT_STEREOCOUNT_ERR);
             }
+            panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
             let equivalent_neighbors = equivalent.neighbor;
+            panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
             let mut neighbor_canonical_ranks = [0 as AT_RANK; MAX_NUM_STEREO_ATOM_NEIGH as usize];
             let mut matched = 0_i32;
             for m in 0..count {
                 for n in 0..count {
                     let neighbor = equivalent_neighbors[n];
+                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     if heap.slice(nRank)?[usize::from(neighbor)] == neighbor_ranks[m] {
                         neighbor_canonical_ranks[m] =
                             heap.slice(nCanonRank)?[usize::from(neighbor)];
@@ -3316,6 +3433,7 @@ pub(crate) fn SetKnownStereoCenterParities(
             j1 += 1;
         }
         if transactions_for_equivalent == previous_transactions {
+            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             heap.slice_mut(at)?[i as usize].stereo_atom_parity =
                 (2 - (i32::from(parity) + trans_i + previous_transactions) % 2) as i8;
             num_set = num_set.wrapping_add(1);
@@ -3453,6 +3571,7 @@ pub(crate) fn RemoveKnownNonStereoCenterParities(
             &mut |left, right| {
                 let left = AT_RANK::from_ne_bytes([left[0], left[1]]);
                 let right = AT_RANK::from_ne_bytes([right[0], right[1]]);
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let difference =
                     i32::from(ranks[usize::from(left)]) - i32::from(ranks[usize::from(right)]);
                 Ok(if difference == 0 {
@@ -3470,6 +3589,8 @@ pub(crate) fn RemoveKnownNonStereoCenterParities(
     let result = (|| -> Result<i32, SourceHeapError> {
         let mut ret = 0_i32;
         for i in 0..num_atoms {
+            panic!("INCHI-AUDIT-0098: suspected source divergence; see dev/audits/inchi/findings.md");
+            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let atom_snapshot = heap
                 .slice(at.as_const())?
                 .get(i as usize)
@@ -3487,15 +3608,19 @@ pub(crate) fn RemoveKnownNonStereoCenterParities(
             if count > MAX_NUM_STEREO_ATOM_NEIGH as usize {
                 return Err(SourceHeapError::PointerOutOfBounds);
             }
+            panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
             let mut neighbor_ranks = [0 as AT_RANK; MAX_NUM_STEREO_ATOM_NEIGH as usize];
+            panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
             let mut neighbor_orders = [0 as AT_RANK; MAX_NUM_STEREO_ATOM_NEIGH as usize];
             for j in 0..count {
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 neighbor_ranks[j] = heap.slice(nRank)?[usize::from(atom_snapshot.neighbor[j])];
                 neighbor_orders[j] = j as AT_RANK;
             }
             if count == 1 {
                 continue;
             }
+            panic!("INCHI-AUDIT-0197: suspected source divergence; see dev/audits/inchi/findings.md");
             sort_orders(&mut neighbor_orders, &neighbor_ranks, count)?;
             let mut j = 1_usize;
             let mut k = 1_usize;
@@ -3503,6 +3628,7 @@ pub(crate) fn RemoveKnownNonStereoCenterParities(
                 let current_order = usize::from(neighbor_orders[j]);
                 let previous_order = usize::from(neighbor_orders[j - 1]);
                 let current_neighbor = atom_snapshot.neighbor[current_order];
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 if atom_snapshot.nRingSystem
                     != heap.slice(at.as_const())?[usize::from(current_neighbor)].nRingSystem
                     && neighbor_ranks[previous_order] == neighbor_ranks[current_order]
@@ -3512,6 +3638,8 @@ pub(crate) fn RemoveKnownNonStereoCenterParities(
                         let visited_pointer = if let Some(pointer) = visited {
                             pointer
                         } else {
+                            panic!("INCHI-AUDIT-0012: suspected source divergence; see dev/audits/inchi/findings.md");
+                            panic!("INCHI-AUDIT-0177: suspected source divergence; see dev/audits/inchi/findings.md");
                             let pointer = match heap
                                 .allocate(vec![0 as AT_RANK; num_atoms as usize])
                             {
@@ -3522,6 +3650,7 @@ pub(crate) fn RemoveKnownNonStereoCenterParities(
                             visited = Some(pointer);
                             pointer
                         };
+                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         heap.slice_mut(visited_pointer)?.fill(0);
                         heap.slice_mut(visited_pointer)?[i as usize] = 1;
                         if PathsHaveIdenticalKnownParities(
@@ -3538,6 +3667,7 @@ pub(crate) fn RemoveKnownNonStereoCenterParities(
                             1,
                         )? != 0
                         {
+                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                             let atom = &mut heap.slice_mut(at)?[i as usize];
                             atom.parity = 0;
                             atom.stereo_atom_parity = 0;
@@ -3546,11 +3676,13 @@ pub(crate) fn RemoveKnownNonStereoCenterParities(
                             let last = pCS.nLenLinearCTStereoCarb - 1;
                             let mut n = 0_i32;
                             while n <= last {
+                                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                 if heap.slice(pCS.LinearCTStereoCarb.as_const())?[n as usize].at_num
                                     == heap.slice(nCanonRank)?[i as usize]
                                 {
                                     if n < last {
                                         let records = heap.slice_mut(pCS.LinearCTStereoCarb)?;
+                                        panic!("INCHI-AUDIT-0042: suspected source divergence; see dev/audits/inchi/findings.md");
                                         for index in n as usize..last as usize {
                                             records[index] = records[index + 1].clone();
                                         }
@@ -3675,6 +3807,7 @@ pub(crate) fn MarkKnownEqualStereoCenterParities(
 
     let mut num_centers = 0_i32;
     for i in 0..num_atoms {
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let atom = heap
             .slice(at.as_const())?
             .get(i as usize)
@@ -3690,15 +3823,18 @@ pub(crate) fn MarkKnownEqualStereoCenterParities(
         if parity == 0 {
             continue;
         }
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let atom_rank = heap.slice(nRank)?[i as usize];
         let maximum = i32::from(atom_rank) - 1;
         let mut different_parities = -1_i32;
         let mut j1 = 0_i32;
         while j1 <= maximum {
+            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let k = heap.slice(nAtomNumber)?[(maximum - j1) as usize];
             if heap.slice(nRank)?[usize::from(k)] != atom_rank {
                 break;
             }
+            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let parity_k = i32::from(heap.slice(at.as_const())?[usize::from(k)].stereo_atom_parity)
                 & BITS_PARITY;
             if parity_k != parity {
@@ -3706,6 +3842,7 @@ pub(crate) fn MarkKnownEqualStereoCenterParities(
             } else if different_parities < 0 {
                 different_parities = 0;
             }
+            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let equivalent = &mut heap.slice_mut(at)?[usize::from(k)];
             if parity_k == 0 {
                 equivalent.bHasStereoOrEquToStereo = 2;
@@ -3717,10 +3854,12 @@ pub(crate) fn MarkKnownEqualStereoCenterParities(
         if different_parities == 0 && parity_known(parity) {
             let mut j1 = 0_i32;
             while j1 <= maximum {
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let k = heap.slice(nAtomNumber)?[(maximum - j1) as usize];
                 if heap.slice(nRank)?[usize::from(k)] != atom_rank {
                     break;
                 }
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 heap.slice_mut(at)?[usize::from(k)].stereo_atom_parity |= 0x40;
                 num_centers = num_centers.wrapping_add(1);
                 j1 += 1;
@@ -3958,6 +4097,7 @@ pub(crate) fn UnmarkNonStereo(
             &mut |left, right| {
                 let left = usize::from(AT_RANK::from_ne_bytes([left[0], left[1]]));
                 let right = usize::from(AT_RANK::from_ne_bytes([right[0], right[1]]));
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 Ok(i32::from(ranks[usize::from(neighbors[left])])
                     - i32::from(ranks[usize::from(neighbors[right])]))
             },
@@ -3968,6 +4108,8 @@ pub(crate) fn UnmarkNonStereo(
     let _ = pCG;
     let atom_count = usize::try_from(num_atoms)
         .map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?;
+    panic!("INCHI-AUDIT-0012: suspected source divergence; see dev/audits/inchi/findings.md");
+    panic!("INCHI-AUDIT-0177: suspected source divergence; see dev/audits/inchi/findings.md");
     let visited = match heap.allocate(vec![0 as S_CHAR; atom_count]) {
         Ok(pointer) => pointer,
         Err(SourceHeapError::AllocationFailed) => return Ok(-1),
@@ -3984,6 +4126,7 @@ pub(crate) fn UnmarkNonStereo(
             let mut i1 = 0_i32;
             let mut previous_atom_rank: AT_RANK = 0;
             while i <= num_atoms {
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let current = if i < num_atoms {
                     Some(heap.slice(nAtomNumber)?[i as usize])
                 } else {
@@ -3998,6 +4141,8 @@ pub(crate) fn UnmarkNonStereo(
                     if i2 - i1 > num_no_parity_atoms {
                         let first_center = heap.slice(nAtomNumber)?[i1 as usize];
                         num_no_parity_atoms = 0;
+                        panic!("INCHI-AUDIT-0098: suspected source divergence; see dev/audits/inchi/findings.md");
+                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let first = heap.slice(at.as_const())?[usize::from(first_center)].clone();
                         let valence = i32::from(first.valence);
                         let implicit_h = if first.endpoint != 0 {
@@ -4011,6 +4156,7 @@ pub(crate) fn UnmarkNonStereo(
                         }
                         {
                             let count = valence as usize;
+                            panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                             let mut neighbor_numbers =
                                 [0 as AT_RANK; MAX_NUM_STEREO_ATOM_NEIGH as usize];
                             for (index, value) in
@@ -4019,9 +4165,12 @@ pub(crate) fn UnmarkNonStereo(
                                 *value = index as AT_RANK;
                             }
                             for ic in i1..i2 {
+                                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                 let center = heap.slice(nAtomNumber)?[ic as usize];
+                                panic!("INCHI-AUDIT-0098: suspected source divergence; see dev/audits/inchi/findings.md");
                                 let atom_snapshot =
                                     heap.slice(at.as_const())?[usize::from(center)].clone();
+                                panic!("INCHI-AUDIT-0187: suspected source divergence; see dev/audits/inchi/findings.md");
                                 sort_neighbor_numbers(
                                     &mut neighbor_numbers,
                                     count,
@@ -4033,6 +4182,7 @@ pub(crate) fn UnmarkNonStereo(
                                 let mut k1 = 0_usize;
                                 let mut previous_neighbor_rank: AT_RANK = 0;
                                 while k <= count {
+                                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                     let rank_changed = k == count
                                         || previous_neighbor_rank
                                             != heap.slice(nRank)?[usize::from(
@@ -4047,6 +4197,7 @@ pub(crate) fn UnmarkNonStereo(
                                             for kn in k1..k2 {
                                                 let neighbor = atom_snapshot.neighbor
                                                     [usize::from(neighbor_numbers[kn])];
+                                                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                                 let current_ring = heap.slice(at.as_const())?
                                                     [usize::from(neighbor)]
                                                 .nRingSystem;
@@ -4059,6 +4210,7 @@ pub(crate) fn UnmarkNonStereo(
                                             }
                                             neighbors_with_parity = 0;
                                             for kn in k1..k2 {
+                                                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                                 heap.slice_mut(visited)?.fill(0);
                                                 heap.slice_mut(visited)?[usize::from(center)] = 1;
                                                 let neighbor = atom_snapshot.neighbor
@@ -4108,6 +4260,7 @@ pub(crate) fn UnmarkNonStereo(
                                 for ic in i1..i2 {
                                     let center = heap.slice(nAtomNumber)?[ic as usize];
                                     {
+                                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                         let atom = &mut heap.slice_mut(at)?[usize::from(center)];
                                         atom.parity = 0;
                                         atom.stereo_atom_parity = 0;
@@ -4115,6 +4268,7 @@ pub(crate) fn UnmarkNonStereo(
                                         atom.bHasStereoOrEquToStereo = 0;
                                     }
                                     for slot in 0..MAX_NUM_STEREO_BOND_NEIGH as usize {
+                                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                         let opposite = heap.slice(at.as_const())?
                                             [usize::from(center)]
                                         .stereo_bond_neighbor[slot];
@@ -4123,6 +4277,7 @@ pub(crate) fn UnmarkNonStereo(
                                         }
                                         let opposite_index = opposite - 1;
                                         for reverse in 0..MAX_NUM_STEREO_BOND_NEIGH as usize {
+                                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                             let reverse_neighbor = heap.slice(at.as_const())?
                                                 [usize::from(opposite_index)]
                                             .stereo_bond_neighbor[reverse];
@@ -4158,6 +4313,7 @@ pub(crate) fn UnmarkNonStereo(
                     num_no_parity_atoms = 0;
                 }
                 if let Some(current) = current {
+                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     num_no_parity_atoms +=
                         i32::from(heap.slice(at.as_const())?[usize::from(current)].parity == 0);
                 }
@@ -4365,6 +4521,8 @@ pub(crate) fn GetStereoNeighborPos(
     // INCHI✔️✔️: }
     // END INCHI C FUNCTION: GetStereoNeighborPos
 
+    panic!("INCHI-AUDIT-0160: suspected source divergence; see dev/audits/inchi/findings.md");
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let atom = heap
         .slice(at.as_const())?
         .get(usize::try_from(iAt1).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
@@ -4469,6 +4627,8 @@ pub(crate) fn GetStereoBondParity(
     // END INCHI C FUNCTION: GetStereoBondParity
 
     let atoms = heap.slice(at.as_const())?;
+    panic!("INCHI-AUDIT-0160: suspected source divergence; see dev/audits/inchi/findings.md");
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let atom_i = atoms
         .get(usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -4498,6 +4658,7 @@ pub(crate) fn GetStereoBondParity(
         return Ok(source_parity & BITS_PARITY);
     }
 
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let atom_n = atoms
         .get(usize::try_from(n).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -4600,6 +4761,7 @@ pub(crate) fn GetPermutationParity(
     // INCHI✔️✔️: }
     // END INCHI C FUNCTION: GetPermutationParity
 
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let atom = heap
         .slice(at.as_const())?
         .first()
@@ -4607,13 +4769,16 @@ pub(crate) fn GetPermutationParity(
     if i32::from(atom.valence) > MAX_NUM_STEREO_ATOM_NEIGH as i32 {
         return Ok(-1);
     }
+    panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
     let ranks = heap.slice(nCanonRank.as_const())?;
+    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
     let mut neighbor_ranks = [0_u16; MAX_NUM_STEREO_ATOM_NEIGH as usize];
     let mut j = 0_i32;
     let mut k = 0_usize;
     while j < i32::from(atom.valence) {
         let neighbor = atom.neighbor[j as usize];
         if neighbor != nAvoidNeighbor {
+            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             neighbor_ranks[k] = *ranks
                 .get(usize::from(neighbor))
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -4704,6 +4869,8 @@ pub(crate) fn GetStereoCenterParity(
     // INCHI✔️✔️: #define CT_NEIGH_INCREASE
     // END INCHI ACTIVE MACRO CONFIGURATION
 
+    panic!("INCHI-AUDIT-0160: suspected source divergence; see dev/audits/inchi/findings.md");
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let atom = heap
         .slice(at.as_const())?
         .get(usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
@@ -4723,10 +4890,13 @@ pub(crate) fn GetStereoCenterParity(
     if count > MAXVAL as usize {
         return Err(SourceHeapError::PointerOutOfBounds);
     }
+    panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
     let ranks = heap.slice(nRank.as_const())?;
+    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
     let mut neighbor_numbers = [0_u16; MAXVAL as usize];
     for (k, slot) in neighbor_numbers.iter_mut().take(count).enumerate() {
         let neighbor = atom.neighbor[k];
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         if *ranks
             .get(usize::from(neighbor))
             .ok_or(SourceHeapError::PointerOutOfBounds)?
@@ -4736,6 +4906,7 @@ pub(crate) fn GetStereoCenterParity(
         }
         *slot = k as AT_NUMB;
     }
+    panic!("INCHI-AUDIT-0187: suspected source divergence; see dev/audits/inchi/findings.md");
     pCG.m_pn_RankForSort = nRank.as_const();
     let bytes = bytemuck::cast_slice_mut::<AT_NUMB, u8>(&mut neighbor_numbers);
     let num_trans = insertions_sort(

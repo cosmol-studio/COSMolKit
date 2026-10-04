@@ -229,7 +229,10 @@ pub(crate) fn sha2_process(ctx: &mut Sha2Context, data: &[u8; 64]) {
         z ^ (x & (y ^ z))
     }
 
+    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
     let mut words = [0_u64; 64];
+    panic!("INCHI-AUDIT-0331: suspected source divergence; see dev/audits/inchi/findings.md");
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     for (word, bytes) in words[..16].iter_mut().zip(data.chunks_exact(4)) {
         *word = (u64::from(bytes[0]) << 24)
             | (u64::from(bytes[1]) << 16)
@@ -410,9 +413,11 @@ pub(crate) fn sha2_update(ctx: &mut Sha2Context, input: &[u8], ilen: i32) {
     }
 
     if left != 0 && remaining >= fill {
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         ctx.buffer[left..left + fill].copy_from_slice(&input[..fill]);
         // The source reads ctx->buffer in place. Safe Rust copies this fixed block
         // to avoid aliasing the mutable context, adding known hot-path work.
+        panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
         let block = ctx.buffer;
         sha2_process(ctx, &block);
         input_offset += fill;
@@ -421,6 +426,7 @@ pub(crate) fn sha2_update(ctx: &mut Sha2Context, input: &[u8], ilen: i32) {
     }
 
     while remaining >= 64 {
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let block: &[u8; 64] = input[input_offset..input_offset + 64]
             .try_into()
             .expect("the source loop requires a complete 64-byte block");
@@ -430,6 +436,7 @@ pub(crate) fn sha2_update(ctx: &mut Sha2Context, input: &[u8], ilen: i32) {
     }
 
     if remaining > 0 {
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         ctx.buffer[left..left + remaining]
             .copy_from_slice(&input[input_offset..input_offset + remaining]);
     }
@@ -493,14 +500,19 @@ pub(crate) fn sha2_finish(ctx: &mut Sha2Context, output: &mut [u8; 32]) {
 
     #[inline(always)]
     fn put_uint32_be(value: u64, output: &mut [u8], offset: usize) {
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         output[offset] = (value >> 24) as u8;
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         output[offset + 1] = (value >> 16) as u8;
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         output[offset + 2] = (value >> 8) as u8;
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         output[offset + 3] = value as u8;
     }
 
     let high = (ctx.total[0] >> 29) | ctx.total[1].wrapping_shl(3);
     let low = ctx.total[0].wrapping_shl(3);
+    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
     let mut message_length = [0_u8; 8];
     put_uint32_be(high, &mut message_length, 0);
     put_uint32_be(low, &mut message_length, 4);
@@ -511,6 +523,7 @@ pub(crate) fn sha2_finish(ctx: &mut Sha2Context, output: &mut [u8; 32]) {
     sha2_update(ctx, &SHA2_PADDING, padding_length as i32);
     sha2_update(ctx, &message_length, 8);
 
+    panic!("INCHI-AUDIT-0331: suspected source divergence; see dev/audits/inchi/findings.md");
     for (index, state) in ctx.state.iter().copied().enumerate() {
         put_uint32_be(state, output, index * 4);
     }
@@ -533,6 +546,7 @@ pub(crate) fn sha2_csum(input: &[u8], ilen: i32, output: &mut [u8; 32]) {
     // INCHI✔️❌: No conditional or macro-only function behavior is active in this source frame.
     // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: sha2_csum
 
+    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
     let mut ctx = Sha2Context {
         total: [0; 2],
         state: [0; 8],

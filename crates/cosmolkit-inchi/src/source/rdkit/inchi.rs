@@ -500,6 +500,7 @@ fn source_c_text(
     pointer: SourceMutPointer<i8>,
 ) -> Result<Vec<u8>, SourceHeapError> {
     let bytes = heap.slice(pointer.as_const())?;
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let end = bytes
         .iter()
         .position(|byte| *byte == 0)
@@ -515,15 +516,20 @@ impl InchiStructureEngine for SourceInchiStructureEngine<'_> {
         if self.pending_output.is_some() {
             return Err(SourceHeapError::UnsupportedSourceBehavior);
         }
+        panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
+        panic!("INCHI-AUDIT-0177: suspected source divergence; see dev/audits/inchi/findings.md");
         let inchi = self
             .heap
             .allocate_model_storage(inchi_with_nul.iter().map(|byte| *byte as i8).collect())?;
+        panic!("INCHI-AUDIT-0177: suspected source divergence; see dev/audits/inchi/findings.md");
         let options = self.heap.allocate_model_storage(vec![0_i8])?;
         let input = inchi_InputINCHI {
             szInChI: inchi,
             szOptions: options,
         };
+        panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
         let mut output = inchi_OutputStruct::default();
+        panic!("INCHI-AUDIT-0099: suspected source divergence; see dev/audits/inchi/findings.md");
         let return_code = GetStructFromINCHI(
             self.heap,
             Some(&input),
@@ -532,7 +538,9 @@ impl InchiStructureEngine for SourceInchiStructureEngine<'_> {
             self.build,
             self.clock_result,
         );
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         self.heap.free(inchi)?;
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         self.heap.free(options)?;
         let return_code = return_code?;
 
@@ -549,11 +557,14 @@ impl InchiStructureEngine for SourceInchiStructureEngine<'_> {
         let atoms = if return_code == tagRetValGetINCHI_inchi_Ret_OKAY
             || return_code == tagRetValGetINCHI_inchi_Ret_WARNING
         {
+            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let count = usize::try_from(output.num_atoms)
                 .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
             if count == 0 {
                 Vec::new()
             } else {
+                panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
+                panic!("INCHI-AUDIT-0177: suspected source divergence; see dev/audits/inchi/findings.md");
                 self.heap
                     .slice(output.atom.as_const())?
                     .get(..count)
@@ -566,11 +577,14 @@ impl InchiStructureEngine for SourceInchiStructureEngine<'_> {
         let stereo0d = if return_code == tagRetValGetINCHI_inchi_Ret_OKAY
             || return_code == tagRetValGetINCHI_inchi_Ret_WARNING
         {
+            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let count = usize::try_from(output.num_stereo0D)
                 .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
             if count == 0 {
                 Vec::new()
             } else {
+                panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
+                panic!("INCHI-AUDIT-0177: suspected source divergence; see dev/audits/inchi/findings.md");
                 self.heap
                     .slice(output.stereo0D.as_const())?
                     .get(..count)
@@ -580,6 +594,7 @@ impl InchiStructureEngine for SourceInchiStructureEngine<'_> {
         } else {
             Vec::new()
         };
+        panic!("INCHI-AUDIT-0001: suspected source divergence; see dev/audits/inchi/findings.md");
         self.pending_output = Some(output);
         Ok(AdapterInchiStructureOutput {
             return_code,
@@ -595,6 +610,7 @@ impl InchiStructureEngine for SourceInchiStructureEngine<'_> {
             .pending_output
             .take()
             .ok_or(SourceHeapError::UnsupportedSourceBehavior)?;
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         FreeStructFromINCHI(self.heap, Some(&mut output))
     }
 }
@@ -637,6 +653,7 @@ fn free_generation_inputs(
     options: SourceMutPointer<i8>,
 ) -> Result<(), SourceHeapError> {
     let mut first_error = None;
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     for result in [heap.free(options), heap.free(stereo0d), heap.free(atoms)] {
         if first_error.is_none() {
             first_error = result.err();
@@ -650,17 +667,21 @@ impl InchiGenerationEngine for SourceInchiGenerationEngine<'_> {
         &mut self,
         input: &AdapterInchiGenerationInput,
     ) -> Result<AdapterInchiGenerationOutput, SourceHeapError> {
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         if self.pending_output.is_some() {
             return Err(SourceHeapError::UnsupportedSourceBehavior);
         }
         let atoms = if input.atoms.is_empty() {
             SourceMutPointer::null()
         } else {
+            panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
+            panic!("INCHI-AUDIT-0177: suspected source divergence; see dev/audits/inchi/findings.md");
             self.heap.allocate(input.atoms.clone())?
         };
         let stereo0d = if input.stereo0d.is_empty() {
             SourceMutPointer::null()
         } else {
+            panic!("INCHI-AUDIT-0177: suspected source divergence; see dev/audits/inchi/findings.md");
             match self.heap.allocate(input.stereo0d.clone()) {
                 Ok(stereo0d) => stereo0d,
                 Err(error) => {
@@ -670,6 +691,7 @@ impl InchiGenerationEngine for SourceInchiGenerationEngine<'_> {
             }
         };
         let options = if let Some(options) = &input.options_with_nul {
+            panic!("INCHI-AUDIT-0177: suspected source divergence; see dev/audits/inchi/findings.md");
             match self
                 .heap
                 .allocate(options.iter().map(|byte| *byte as i8).collect())
@@ -691,7 +713,9 @@ impl InchiGenerationEngine for SourceInchiGenerationEngine<'_> {
             num_atoms: input.atoms.len() as i16,
             num_stereo0D: input.stereo0d.len() as i16,
         };
+        panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
         let mut output = inchi_Output::default();
+        panic!("INCHI-AUDIT-0099: suspected source divergence; see dev/audits/inchi/findings.md");
         let return_code = GetINCHI(
             self.heap,
             Some(&source_input),
@@ -730,6 +754,7 @@ impl InchiGenerationEngine for SourceInchiGenerationEngine<'_> {
         })();
         match copied {
             Ok(copied) => {
+                panic!("INCHI-AUDIT-0001: suspected source divergence; see dev/audits/inchi/findings.md");
                 self.pending_output = Some(PendingInchiGenerationOutput {
                     output,
                     atoms,
@@ -753,6 +778,7 @@ impl InchiGenerationEngine for SourceInchiGenerationEngine<'_> {
             .pending_output
             .take()
             .ok_or(SourceHeapError::UnsupportedSourceBehavior)?;
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let output_result = FreeINCHI(self.heap, Some(&mut pending.output));
         let input_result =
             free_generation_inputs(self.heap, pending.atoms, pending.stereo0d, pending.options);
@@ -776,9 +802,12 @@ impl InchiKeyEngine for SourceInchiKeyEngine<'_> {
         &mut self,
         inchi_with_nul: &[u8],
     ) -> Result<AdapterInchiKeyOutput, SourceHeapError> {
+        panic!("INCHI-AUDIT-0177: suspected source divergence; see dev/audits/inchi/findings.md");
         let input = self
             .heap
             .allocate_model_storage(inchi_with_nul.iter().map(|byte| *byte as i8).collect())?;
+        panic!("INCHI-AUDIT-0177: suspected source divergence; see dev/audits/inchi/findings.md");
+        panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
         let key = match self.heap.allocate_model_storage(vec![0_i8; 29]) {
             Ok(pointer) => pointer,
             Err(error) => {
@@ -786,6 +815,8 @@ impl InchiKeyEngine for SourceInchiKeyEngine<'_> {
                 return Err(error);
             }
         };
+        panic!("INCHI-AUDIT-0177: suspected source divergence; see dev/audits/inchi/findings.md");
+        panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
         let xtra1 = match self.heap.allocate_model_storage(vec![0_i8; 65]) {
             Ok(pointer) => pointer,
             Err(error) => {
@@ -794,6 +825,8 @@ impl InchiKeyEngine for SourceInchiKeyEngine<'_> {
                 return Err(error);
             }
         };
+        panic!("INCHI-AUDIT-0177: suspected source divergence; see dev/audits/inchi/findings.md");
+        panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
         let xtra2 = match self.heap.allocate_model_storage(vec![0_i8; 65]) {
             Ok(pointer) => pointer,
             Err(error) => {
@@ -819,6 +852,7 @@ impl InchiKeyEngine for SourceInchiKeyEngine<'_> {
             Ok(AdapterInchiKeyOutput { status, key_buffer })
         });
         let mut cleanup_error = None;
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         for result in [
             self.heap.free(xtra2),
             self.heap.free(xtra1),
@@ -860,6 +894,7 @@ impl AdapterMol {
         let mut adjacency = vec![Vec::new(); atoms.len()];
         for (bond_index, bond) in bonds.iter().enumerate() {
             for atom_index in [bond.begin_atom_index, bond.end_atom_index] {
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let Ok(index) = usize::try_from(atom_index) else {
                     return Err(AdapterGraphError {
                         bond_index,
@@ -877,6 +912,7 @@ impl AdapterMol {
             }
             let begin = bond.begin_atom_index as usize;
             let end = bond.end_atom_index as usize;
+            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let graph_bond_index = u32::try_from(bond_index).map_err(|_| AdapterGraphError {
                 bond_index,
                 atom_index: bond.begin_atom_index,
@@ -1404,6 +1440,7 @@ fn cleanup_explicit_valence(
                 }
             }
             BondType::ThreeCenter | BondType::DativeL | BondType::DativeR | BondType::Other => {
+                panic!("INCHI-AUDIT-0397: suspected source divergence; see dev/audits/inchi/findings.md");
                 return Err(AdapterValenceError {
                     kind: "ValueErrorException",
                     message: "Bad bond type",
@@ -1414,11 +1451,13 @@ fn cleanup_explicit_valence(
         };
         valence += contribution;
     }
+    panic!("INCHI-AUDIT-0386: suspected source divergence; see dev/audits/inchi/findings.md");
     let valence = (valence + 0.1).round() as i32;
     // RDKit✔️✔️: atom->calcExplicitValence(false);
     // `calcExplicitValence()` writes `d_explicitValence`. Some clean-up
     // branches intentionally do not call it again after changing a bond, so
     // retaining this value is observable when sanitization is disabled.
+    panic!("INCHI-AUDIT-0390: suspected source divergence; see dev/audits/inchi/findings.md");
     mol.atoms[atom_index as usize].cached_explicit_valence = Some(valence);
     Ok(valence)
 }
@@ -1443,6 +1482,7 @@ fn valence4n_cleanup1_matches(mol: &AdapterMol) -> Vec<[u32; 5]> {
             {
                 continue;
             }
+            panic!("INCHI-AUDIT-0387: suspected source divergence; see dev/audits/inchi/findings.md");
             for &(query_3, bond_23) in &mol.adjacency[query_2 as usize] {
                 if query_3 == query_1
                     || mol.atoms[query_3 as usize].atomic_number != 7
@@ -1506,6 +1546,7 @@ fn valence5n_cleanup6_matches(mol: &AdapterMol) -> Vec<[u32; 7]> {
             {
                 continue;
             }
+            panic!("INCHI-AUDIT-0387: suspected source divergence; see dev/audits/inchi/findings.md");
             for &(query_3, bond_23) in &mol.adjacency[query_2 as usize] {
                 if query_3 == query_1
                     || mol.atoms[query_3 as usize].atomic_number != 6
@@ -1585,6 +1626,7 @@ fn valence5n_cleanup7_matches(mol: &AdapterMol) -> Vec<[u32; 7]> {
             {
                 continue;
             }
+            panic!("INCHI-AUDIT-0387: suspected source divergence; see dev/audits/inchi/findings.md");
             for &(query_3, bond_23) in &mol.adjacency[query_2 as usize] {
                 if query_3 == query_1
                     || mol.atoms[query_3 as usize].atomic_number != 7
@@ -1669,6 +1711,7 @@ fn valence5n_cleanup8_matches(mol: &AdapterMol) -> Vec<[u32; 6]> {
                 {
                     continue;
                 }
+                panic!("INCHI-AUDIT-0387: suspected source divergence; see dev/audits/inchi/findings.md");
                 for &(query_4, bond_40) in &mol.adjacency[query_0 as usize] {
                     if [query_1, query_5].contains(&query_4)
                         || mol.atoms[query_4 as usize].atomic_number != 7
@@ -1734,6 +1777,7 @@ fn valence5n_cleanup9_matches(mol: &AdapterMol) -> Vec<[u32; 6]> {
                 {
                     continue;
                 }
+                panic!("INCHI-AUDIT-0387: suspected source divergence; see dev/audits/inchi/findings.md");
                 for &(query_4, bond_40) in &mol.adjacency[query_0 as usize] {
                     if [query_1, query_5].contains(&query_4)
                         || mol.atoms[query_4 as usize].atomic_number != 6
@@ -2259,7 +2303,9 @@ pub(crate) fn valence5n_cleanup4(mol: &mut AdapterMol, atom_index: u32) -> bool 
     // RDKit✔️✔️: stored out-edge order, and nSi cannot exceed two before the early return.
     // END RDKIT ACTIVE CONFIGURATION: _Valence5NCleanUp4
 
+    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
     let mut silicon_neighbor_indices = [0_u32; 2];
+    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
     let mut silicon_bond_indices = [0_u32; 2];
     let mut silicon_count = 0_usize;
 
@@ -3756,6 +3802,7 @@ pub(crate) fn clean_up(mol: &mut AdapterMol) -> Result<(), AdapterCleanup5Error>
                     if !cleaned {
                         cleaned = valence5n_cleanup4(mol, atom_index);
                     }
+                    panic!("INCHI-AUDIT-0331: suspected source divergence; see dev/audits/inchi/findings.md");
                     for atomic_number in [8, 16, 9, 17] {
                         if !cleaned {
                             cleaned = valence5n_cleanup5(mol, atom_index, atomic_number)?;
@@ -3823,6 +3870,7 @@ fn adapter_element_name(atom: &inchi_Atom) -> Result<Vec<u8>, InchiToMolError> {
     let end = atom.elname.iter().position(|byte| *byte == 0).ok_or(
         InchiToMolError::InvalidSourceOutput("inchi atom element name is not NUL-terminated"),
     )?;
+    panic!("INCHI-AUDIT-0177: suspected source divergence; see dev/audits/inchi/findings.md");
     Ok(atom.elname[..end].iter().map(|byte| *byte as u8).collect())
 }
 
@@ -4340,9 +4388,11 @@ pub(crate) fn inchi_to_mol(
     let output = engine.get_struct_from_inchi(&inchi_with_nul)?;
     return_values.return_code = output.return_code;
     if let Some(message) = &output.message {
+        panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
         return_values.message.clone_from(message);
     }
     if let Some(log) = &output.log {
+        panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
         return_values.log.clone_from(log);
     }
 
@@ -4365,6 +4415,8 @@ pub(crate) fn inchi_to_mol(
                 isotope = i32::from(inchi_atom.isotopic_mass) - ISOTOPIC_SHIFT_FLAG as i32;
             }
 
+            panic!("INCHI-AUDIT-0389: suspected source divergence; see dev/audits/inchi/findings.md");
+            panic!("INCHI-AUDIT-0391: suspected source divergence; see dev/audits/inchi/findings.md");
             let mut atom = AdapterAtom {
                 atomic_number,
                 formal_charge: i32::from(inchi_atom.charge),
@@ -4379,6 +4431,8 @@ pub(crate) fn inchi_to_mol(
             };
             if inchi_atom.radical != 0 {
                 if inchi_atom.radical != 3 && inchi_atom.radical != 2 {
+                    panic!("INCHI-AUDIT-0137: suspected source divergence; see dev/audits/inchi/findings.md");
+                    panic!("INCHI-AUDIT-0177: suspected source divergence; see dev/audits/inchi/findings.md");
                     diagnostics.push(AdapterDiagnostic {
                         level: AdapterDiagnosticLevel::Warning,
                         message: format!(
@@ -4406,9 +4460,11 @@ pub(crate) fn inchi_to_mol(
         for (index, inchi_atom) in output.atoms.iter().enumerate() {
             let bond_count = inchi_atom.num_bonds as u32;
             for bond_offset in 0..bond_count {
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let offset = usize::try_from(bond_offset).map_err(|_| {
                     InchiToMolError::InvalidSourceOutput("bond offset exceeds usize")
                 })?;
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 if offset >= inchi_atom.neighbor.len() {
                     return Err(InchiToMolError::InvalidSourceOutput(
                         "InChI atom bond count exceeds fixed source array",
@@ -4438,6 +4494,7 @@ pub(crate) fn inchi_to_mol(
                         false,
                     )
                 } else if raw_bond_type == tagINCHIBondType_INCHI_BOND_TYPE_ALTERN as u32 {
+                    panic!("INCHI-AUDIT-0177: suspected source divergence; see dev/audits/inchi/findings.md");
                     diagnostics.push(AdapterDiagnostic {
                         level: AdapterDiagnosticLevel::Warning,
                         message: "receive ALTERN bond type which should be avoided. This is treated as aromatic."
@@ -4445,6 +4502,7 @@ pub(crate) fn inchi_to_mol(
                     });
                     (BondType::Aromatic, true)
                 } else {
+                    panic!("INCHI-AUDIT-0177: suspected source divergence; see dev/audits/inchi/findings.md");
                     diagnostics.push(AdapterDiagnostic {
                         level: AdapterDiagnosticLevel::Error,
                         message: format!("illegal bond type ({raw_bond_type}) in InChI"),
@@ -4456,11 +4514,13 @@ pub(crate) fn inchi_to_mol(
                     });
                 };
 
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let begin_atom_index = *index_to_atom_index_mapping.get(index as usize).ok_or(
                     InchiToMolError::InvalidSourceOutput(
                         "source atom index is outside atom mapping",
                     ),
                 )?;
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let end_atom_index = *index_to_atom_index_mapping.get(neighbor as usize).ok_or(
                     InchiToMolError::InvalidSourceOutput(
                         "source neighbor index is outside atom mapping",
@@ -4506,6 +4566,7 @@ pub(crate) fn inchi_to_mol(
         }
 
         for (isotope, source_atom_index, repeat) in isotopes {
+            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let attached_atom_index = *index_to_atom_index_mapping
                 .get(source_atom_index as usize)
                 .ok_or(InchiToMolError::InvalidSourceOutput(
@@ -4538,6 +4599,7 @@ pub(crate) fn inchi_to_mol(
         let mut z_bond_pairs = Vec::<(i32, i32)>::new();
         if !output.stereo0d.is_empty() {
             let ranks = toolkit.assign_atom_cip_ranks(&mut built)?;
+            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             if ranks.len() < built.atoms.len() {
                 return Err(InchiToMolError::InvalidSourceOutput(
                     "toolkit CIP rank vector is shorter than the molecule",
@@ -4558,6 +4620,7 @@ pub(crate) fn inchi_to_mol(
                     value if value == tagINCHIStereoType0D_INCHI_StereoType_None as i32 => {}
                     value if value == tagINCHIStereoType0D_INCHI_StereoType_DoubleBond as i32 => {
                         let mapped = |source_index: i16| {
+                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                             index_to_atom_index_mapping
                                 .get(source_index as u16 as usize)
                                 .copied()
@@ -4572,6 +4635,7 @@ pub(crate) fn inchi_to_mol(
 
                         let Some(double_bond_index) = bond_index_between(&built, left, right)
                         else {
+                            panic!("INCHI-AUDIT-0177: suspected source divergence; see dev/audits/inchi/findings.md");
                             diagnostics.push(AdapterDiagnostic {
                                 level: AdapterDiagnosticLevel::Warning,
                                 message:
@@ -4613,6 +4677,7 @@ pub(crate) fn inchi_to_mol(
                         let (left_neighbor, extra_left_neighbor) = find_neighbors(&built, left);
                         let (right_neighbor, extra_right_neighbor) = find_neighbors(&built, right);
                         if left_neighbor < 0 || right_neighbor < 0 {
+                            panic!("INCHI-AUDIT-0177: suspected source divergence; see dev/audits/inchi/findings.md");
                             diagnostics.push(AdapterDiagnostic {
                                 level: AdapterDiagnosticLevel::Warning,
                                 message: "Ignoring stereochemistry on double-bond without appropriate neighbors"
@@ -4642,6 +4707,7 @@ pub(crate) fn inchi_to_mol(
                              neighbor: i32,
                              extra_neighbor: i32|
                              -> Result<u32, InchiToMolError> {
+                                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                 let selected =
                                     bond_index_between(&built, reference, neighbor as u32).ok_or(
                                         InchiToMolError::InvalidSourceOutput(
@@ -4654,6 +4720,7 @@ pub(crate) fn inchi_to_mol(
                                     {
                                         modifier *= -1;
                                     }
+                                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                     let extra = bond_index_between(
                                         &built,
                                         reference,
@@ -4715,6 +4782,7 @@ pub(crate) fn inchi_to_mol(
                         bond.stereo_atoms.push(right_neighbor as u32);
                     }
                     value if value == tagINCHIStereoType0D_INCHI_StereoType_Tetrahedral as i32 => {
+                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let central = *index_to_atom_index_mapping
                             .get(stereo.central_atom as u16 as usize)
                             .ok_or(InchiToMolError::InvalidSourceOutput(
@@ -4730,11 +4798,13 @@ pub(crate) fn inchi_to_mol(
                         }
                         let mut neighbors = Vec::new();
                         while neighbor_position < 4 {
+                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                             let end = *index_to_atom_index_mapping
                                 .get(stereo.neighbor[neighbor_position] as u16 as usize)
                                 .ok_or(InchiToMolError::InvalidSourceOutput(
                                     "tetrahedral neighbor is outside atom mapping",
                                 ))?;
+                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                             let bond = bond_index_between(&built, central, end).ok_or(
                                 InchiToMolError::InvalidSourceOutput(
                                     "tetrahedral neighbor has no central bond",
@@ -4755,6 +4825,7 @@ pub(crate) fn inchi_to_mol(
                         }
                     }
                     value if value == tagINCHIStereoType0D_INCHI_StereoType_Allene as i32 => {
+                        panic!("INCHI-AUDIT-0177: suspected source divergence; see dev/audits/inchi/findings.md");
                         diagnostics.push(AdapterDiagnostic {
                             level: AdapterDiagnosticLevel::Warning,
                             message: "Allene-style stereochemistry is not supported yet and will be ignored."
@@ -4762,6 +4833,7 @@ pub(crate) fn inchi_to_mol(
                         });
                     }
                     value => {
+                        panic!("INCHI-AUDIT-0177: suspected source divergence; see dev/audits/inchi/findings.md");
                         diagnostics.push(AdapterDiagnostic {
                             level: AdapterDiagnosticLevel::Warning,
                             message: format!("Unrecognized stereo0D type ({value}) is ignored!"),
@@ -4770,6 +4842,7 @@ pub(crate) fn inchi_to_mol(
                 }
             }
             if !assign_bond_dirs(&mut built, &z_bond_pairs, &e_bond_pairs)? {
+                panic!("INCHI-AUDIT-0177: suspected source divergence; see dev/audits/inchi/findings.md");
                 diagnostics.push(AdapterDiagnostic {
                     level: AdapterDiagnosticLevel::Warning,
                     message: "Cannot assign bond directions!".to_owned(),
@@ -4779,10 +4852,12 @@ pub(crate) fn inchi_to_mol(
         molecule = Some(built);
     }
 
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     engine.free_struct_from_inchi()?;
 
     if let Some(mut built) = molecule {
         clean_up(&mut built)?;
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         toolkit.synchronize_after_cleanup(&built)?;
         if sanitize {
             if remove_hs {
@@ -4838,10 +4913,12 @@ pub(crate) fn fix_option_symbol(
     // RDKit✔️✔️: only in the verbatim source frame. Rust validates those caller preconditions.
     // END RDKIT ACTIVE CONFIGURATION: fixOptionSymbol
 
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let input_len = input
         .iter()
         .position(|byte| *byte == 0)
         .ok_or(FixOptionSymbolError::InputIsNotNulTerminated)?;
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     if output.len() <= input_len {
         return Err(FixOptionSymbolError::OutputIsTooSmall);
     }
@@ -4895,6 +4972,8 @@ fn r_cleanup_matches(molecule: &AdapterMol) -> Vec<[u32; 5]> {
         {
             continue;
         }
+        panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
+        panic!("INCHI-AUDIT-0177: suspected source divergence; see dev/audits/inchi/findings.md");
         let mut central_atoms = molecule.adjacency[query_0 as usize]
             .iter()
             .filter_map(|&(neighbor, bond)| {
@@ -4904,8 +4983,11 @@ fn r_cleanup_matches(molecule: &AdapterMol) -> Vec<[u32; 5]> {
                     .then_some(neighbor)
             })
             .collect::<Vec<_>>();
+        panic!("INCHI-AUDIT-0388: suspected source divergence; see dev/audits/inchi/findings.md");
         central_atoms.sort_unstable();
         for query_1 in central_atoms {
+            panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
+            panic!("INCHI-AUDIT-0177: suspected source divergence; see dev/audits/inchi/findings.md");
             let mut oxygen_atoms = molecule.adjacency[query_1 as usize]
                 .iter()
                 .filter_map(|&(neighbor, bond)| {
@@ -4915,6 +4997,7 @@ fn r_cleanup_matches(molecule: &AdapterMol) -> Vec<[u32; 5]> {
                         .then_some(neighbor)
                 })
                 .collect::<Vec<_>>();
+            panic!("INCHI-AUDIT-0388: suspected source divergence; see dev/audits/inchi/findings.md");
             oxygen_atoms.sort_unstable();
             for &query_2 in &oxygen_atoms {
                 if molecule.atoms[query_2 as usize].formal_charge != -1 {
@@ -5031,6 +5114,7 @@ pub(crate) fn r_clean_up(molecule: &mut AdapterMol) {
             if uncharged_found == Some(index) {
                 continue;
             }
+            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let bond_index = bond_index_between(molecule, mapping[1], mapping[index])
                 .expect("rCleanUp match contains every query bond");
             if uncharged_found.is_none() && index == 0 {
@@ -5425,18 +5509,24 @@ pub(crate) fn mol_to_inchi(
 
     let mut diagnostics = Vec::new();
     let mut working = molecule.clone();
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     if toolkit.needs_update_property_cache(molecule)? {
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         toolkit.update_property_cache(&mut working, false)?;
     }
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     toolkit.kekulize(&mut working, false)?;
     r_clean_up(&mut working);
 
     let atom_count = working.atoms.len();
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     if let Some(conformer) = working.conformers.first()
         && conformer.len() != atom_count
     {
         return Err(MolToInchiError::InvalidConformer);
     }
+    panic!("INCHI-AUDIT-0012: suspected source divergence; see dev/audits/inchi/findings.md");
+    panic!("INCHI-AUDIT-0177: suspected source divergence; see dev/audits/inchi/findings.md");
     let mut inchi_atoms = vec![inchi_Atom::default(); atom_count];
     let mut stereo0d_entries = Vec::new();
 
@@ -5452,7 +5542,9 @@ pub(crate) fn mol_to_inchi(
             [output.x, output.y, output.z] = conformer[index];
         }
 
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let element = toolkit.element_symbol(atomic_number)?;
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         if element.len() >= output.elname.len() || element.contains(&0) {
             return Err(MolToInchiError::ElementSymbolTooLong);
         }
@@ -5462,6 +5554,7 @@ pub(crate) fn mol_to_inchi(
         output.elname[element.len()] = 0;
 
         output.isotopic_mass = if isotope != 0 {
+            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let reference_weight = (toolkit.atomic_weight(atomic_number)? + 0.5) as i32;
             (ISOTOPIC_SHIFT_FLAG as i32 + isotope - reference_weight) as i16
         } else {
@@ -5469,6 +5562,7 @@ pub(crate) fn mol_to_inchi(
         };
         output.charge = formal_charge as i8;
 
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let hydrogen_count = match atomic_number {
             6 | 7 | 8 | 9 | 17 | 35 | 53 => -1,
             _ => toolkit.total_num_hydrogens(&working, index as u32)? as i32,
@@ -5476,6 +5570,7 @@ pub(crate) fn mol_to_inchi(
         output.num_iso_H = [hydrogen_count as i8, 0, 0, 0];
         output.radical = 0;
         if num_radical_electrons != 0 {
+            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             output.num_iso_H[0] =
                 toolkit.total_num_hydrogens(&working, index as u32)? as i8;
         }
@@ -5484,9 +5579,12 @@ pub(crate) fn mol_to_inchi(
             chiral_tag,
             ChiralTag::TetrahedralCcw | ChiralTag::TetrahedralCw
         ) {
+            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             toolkit.calc_implicit_valence(&mut working, index as u32)?;
+            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let total_degree = toolkit.total_degree(&working, index as u32)?;
             if !(3..=4).contains(&total_degree) {
+                panic!("INCHI-AUDIT-0177: suspected source divergence; see dev/audits/inchi/findings.md");
                 diagnostics.push(AdapterDiagnostic {
                     level: AdapterDiagnosticLevel::Warning,
                     message: "tetrahedral chirality on atom with <3 or >4 neighbors will be ignored.\n"
@@ -5494,6 +5592,7 @@ pub(crate) fn mol_to_inchi(
                 });
                 continue;
             }
+            panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
             let mut stereo = inchi_Stereo0D {
                 central_atom: index as i16,
                 type_: tagINCHIStereoType0D_INCHI_StereoType_Tetrahedral as i8,
@@ -5553,9 +5652,11 @@ pub(crate) fn mol_to_inchi(
             std::mem::swap(&mut atom_index_1, &mut atom_index_2);
             direction_modifier = -1;
         }
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let atom_output = &mut inchi_atoms[atom_index_1 as usize];
         let slot = atom_output.num_bonds as u32;
         if slot >= MAXVAL {
+            panic!("INCHI-AUDIT-0177: suspected source divergence; see dev/audits/inchi/findings.md");
             diagnostics.push(AdapterDiagnostic {
                 level: AdapterDiagnosticLevel::Error,
                 message: format!(
@@ -5572,6 +5673,7 @@ pub(crate) fn mol_to_inchi(
         atom_output.neighbor[slot] = atom_index_2 as i16;
         let mut bond_type = bond.bond_type;
         if bond_type as u8 > BondType::Triple as u8 {
+            panic!("INCHI-AUDIT-0177: suspected source divergence; see dev/audits/inchi/findings.md");
             diagnostics.push(AdapterDiagnostic {
                 level: AdapterDiagnosticLevel::Warning,
                 message: format!(
@@ -5614,6 +5716,7 @@ pub(crate) fn mol_to_inchi(
                 central_atom: NO_ATOM as i16,
                 type_: tagINCHIStereoType0D_INCHI_StereoType_DoubleBond as i8,
             };
+            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             if bond_index_between(
                 &working,
                 stereo.neighbor[0] as u32,
@@ -5625,6 +5728,7 @@ pub(crate) fn mol_to_inchi(
             }
             stereo0d_entries.push(stereo);
         } else if bond.stereo == BondStereo::Any {
+            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let source = [
                 inchi_atoms[atom_index_2 as usize].x,
                 inchi_atoms[atom_index_2 as usize].y,
@@ -5638,11 +5742,15 @@ pub(crate) fn mol_to_inchi(
     }
 
     let options_with_nul = if let Some(options) = options {
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let length = options
             .iter()
             .position(|byte| *byte == 0)
             .ok_or(MolToInchiError::InvalidOptions)?;
+        panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
+        panic!("INCHI-AUDIT-0177: suspected source divergence; see dev/audits/inchi/findings.md");
         let mut converted = vec![0_u8; length + 1];
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         fix_option_symbol(options, &mut converted)
             .map_err(|_| MolToInchiError::InvalidOptions)?;
         Some(converted)
@@ -5654,6 +5762,7 @@ pub(crate) fn mol_to_inchi(
         stereo0d: stereo0d_entries,
         options_with_nul,
     };
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let output = engine.get_inchi(&input)?;
     return_values.return_code = output.return_code;
     let inchi = output.inchi.unwrap_or_default();
@@ -5666,6 +5775,7 @@ pub(crate) fn mol_to_inchi(
     if let Some(aux_info) = output.aux_info {
         return_values.aux_info = aux_info;
     }
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     engine.free_inchi()?;
     Ok(MolToInchiResult { inchi, diagnostics })
 }
@@ -5721,11 +5831,15 @@ pub(crate) fn inchi_to_inchi_key(
     // RDKit✔️❌: on success; an invalid scripted source result is a structured error.
     // END RDKIT ACTIVE CONFIGURATION: InchiToInchiKey
 
+    panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
+    panic!("INCHI-AUDIT-0177: suspected source divergence; see dev/audits/inchi/findings.md");
     let mut inchi_with_nul = Vec::with_capacity(inchi.len() + 1);
     inchi_with_nul.extend_from_slice(inchi);
     inchi_with_nul.push(0);
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let output = engine.get_inchi_key(&inchi_with_nul)?;
     if output.status == INCHIKEY_OK as i32 {
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let nul = output
             .key_buffer
             .iter()
@@ -5754,9 +5868,11 @@ pub(crate) fn inchi_to_inchi_key(
         }
         _ => b"".as_slice(),
     };
+    panic!("INCHI-AUDIT-0177: suspected source divergence; see dev/audits/inchi/findings.md");
     let mut message = Vec::with_capacity(error.len() + b" in generating InChI Key\n".len());
     message.extend_from_slice(error);
     message.extend_from_slice(b" in generating InChI Key\n");
+    panic!("INCHI-AUDIT-0177: suspected source divergence; see dev/audits/inchi/findings.md");
     Ok(InchiToInchiKeyResult {
         key: Vec::new(),
         diagnostics: vec![AdapterDiagnostic {
@@ -5793,6 +5909,7 @@ pub(crate) fn mol_to_inchi_key(
     // END RDKIT ACTIVE CONFIGURATION: MolToInchiKey
 
     let mut return_values = ExtraInchiReturnValues::default();
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let generated = mol_to_inchi(
         generation_engine,
         toolkit,
@@ -5800,8 +5917,10 @@ pub(crate) fn mol_to_inchi_key(
         &mut return_values,
         options,
     )?;
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let keyed = inchi_to_inchi_key(key_engine, &generated.inchi)?;
     let mut diagnostics = generated.diagnostics;
+    panic!("INCHI-AUDIT-0177: suspected source divergence; see dev/audits/inchi/findings.md");
     diagnostics.extend(keyed.diagnostics);
     Ok(MolToInchiKeyResult {
         key: keyed.key,

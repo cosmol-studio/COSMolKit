@@ -69,12 +69,14 @@ pub(crate) fn GetPlusMinusVertex(
 
     let group_index = pTCGroups.nGroup[TCG_Plus as usize];
     if group_index >= 0 {
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let group = heap
             .slice(pTCGroups.pTCG.as_const())?
             .get(group_index as usize)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
         let edge_index = group.nForwardEdge;
         if edge_index > 0 && group.nVertexNumber >= pBNS.num_atoms {
+            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let edge = heap
                 .slice(pBNS.edge.as_const())?
                 .get(edge_index as usize)
@@ -87,12 +89,14 @@ pub(crate) fn GetPlusMinusVertex(
 
     let group_index = pTCGroups.nGroup[TCG_Minus as usize];
     if group_index >= 0 {
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let group = heap
             .slice(pTCGroups.pTCG.as_const())?
             .get(group_index as usize)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
         let edge_index = group.nForwardEdge;
         if edge_index > 0 && group.nVertexNumber >= pBNS.num_atoms {
+            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let edge = heap
                 .slice(pBNS.edge.as_const())?
                 .get(edge_index as usize)
@@ -179,12 +183,16 @@ pub(crate) fn bIsUnsatCarbonInASmallRing(
     // INCHI✔️❌: AT_RANK is unsigned 16-bit; is_bond_in_Nmax_memb_ring is the existing complete source port.
     // END INCHI ACTIVE MACRO CONFIGURATION: bIsUnsatCarbonInASmallRing
 
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let index = usize::try_from(iat).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
     let atom = heap
         .slice(at2.as_const())?
         .get(index)
         .cloned()
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
+    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
     let valence = pVA.get(index).ok_or(SourceHeapError::PointerOutOfBounds)?;
     if min_ring_size < 5 {
         if atom.valence == 2 && valence.cMinRingSize <= 5 && atom.chem_bonds_valence == 4 {
@@ -1528,14 +1536,23 @@ pub(crate) fn FixMobileHRestoredStructure(
     // END INCHI ACTIVE MACRO CONFIGURATION: FixMobileHRestoredStructure
     let mut ret = 0_i32;
     let forbidden_edge_mask_inv = !forbidden_edge_mask;
+    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
     let mut comparison = CMP2MHINCHI::default();
+    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
     let mut all_charge_edges = EDGE_LIST::default();
+    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
     let mut current_edges = EDGE_LIST::default();
+    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
     let mut current_edges_2 = EDGE_LIST::default();
+    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
     let mut current_edges_3 = EDGE_LIST::default();
+    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
     let mut taut_edges = EDGE_LIST::default();
+    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
     let mut nitrogen_flower_edges = EDGE_LIST::default();
+    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
     let mut other_nitrogen_flower_edges = EDGE_LIST::default();
+    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
     let mut fixed_large_ring_stereo_edges = EDGE_LIST::default();
 
     let _ = AllocEdgeList(heap, &mut all_charge_edges, EDGE_LIST_CLEAR)?;
@@ -1580,6 +1597,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                 if ret != 0 {
                     return Ok(());
                 }
+                panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                 let at2_snapshot = heap.slice(at2.as_const())?.to_vec();
                 ret = FillOutCMP2MHINCHI(
                     heap,
@@ -1596,11 +1614,13 @@ pub(crate) fn FixMobileHRestoredStructure(
             }};
         }
 
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let input_fixed = heap
             .slice(pInChI[0].as_const())?
             .first()
             .ok_or(SourceHeapError::PointerOutOfBounds)?
             .nNum_H_fixed;
+        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
         let reversed_fixed = heap
             .slice(pStruct.pOneINChI[0].as_const())?
             .first()
@@ -1612,6 +1632,7 @@ pub(crate) fn FixMobileHRestoredStructure(
 
         let mut group_index = 0_i32;
         while group_index < pTCGroups.num_tgroups {
+            panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
             let group = heap
                 .slice(pTCGroups.pTCG.as_const())?
                 .get(
@@ -1620,6 +1641,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                 )
                 .cloned()
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
             let vertex = heap
                 .slice(pBNS.vert.as_const())?
                 .get(
@@ -1630,6 +1652,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
             let mut order = 0_i32;
             while order < i32::from(vertex.num_adj_edges) {
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let edge = i32::from(
                     *heap
                         .slice(vertex.iedge.as_const())?
@@ -1650,13 +1673,16 @@ pub(crate) fn FixMobileHRestoredStructure(
 
         let mut atom_number = 0_i32;
         while atom_number < pStruct.num_atoms {
+            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let atom_index =
                 usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
             let valence = pVA
                 .get(atom_index)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?
                 .clone();
             let minus_edge = valence.nCMinusGroupEdge.wrapping_sub(1);
+            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             if minus_edge >= 0
                 && heap
                     .slice(pBNS.edge.as_const())?
@@ -1674,6 +1700,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                 }
             }
             let plus_edge = valence.nCPlusGroupEdge.wrapping_sub(1);
+            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             if plus_edge >= 0
                 && heap
                     .slice(pBNS.edge.as_const())?
@@ -1692,6 +1719,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                 if valence.cNumValenceElectrons == 5 && valence.cMetal == 0 {
                     let upper = GetChargeFlowerUpperEdge(heap, pBNS, pVA, plus_edge)?;
                     if upper != NO_VERTEX {
+                        panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                         let flower = heap
                             .slice(pBNS.edge.as_const())?
                             .get(
@@ -1732,6 +1760,8 @@ pub(crate) fn FixMobileHRestoredStructure(
         }
 
         if forbidden_stereo_edge_mask != 0 {
+            panic!("INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md");
+            panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
             let bfs = heap
                 .slice(pStruct.pbfsq.as_const())?
                 .first()
@@ -1739,13 +1769,16 @@ pub(crate) fn FixMobileHRestoredStructure(
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
             atom_number = 0;
             while atom_number < pStruct.num_atoms {
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let atom_index = usize::try_from(atom_number)
                     .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                 let atom = heap
                     .slice(at2.as_const())?
                     .get(atom_index)
                     .cloned()
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                 let vertex = heap
                     .slice(pBNS.vert.as_const())?
                     .get(atom_index)
@@ -1753,6 +1786,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
                 let mut order = 0_i32;
                 while order < i32::from(atom.valence) {
+                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let edge_number = i32::from(
                         *heap
                             .slice(vertex.iedge.as_const())?
@@ -1762,6 +1796,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                             )
                             .ok_or(SourceHeapError::PointerOutOfBounds)?,
                     );
+                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     if i32::from(
                         heap.slice(pBNS.edge.as_const())?
                             .get(
@@ -1808,12 +1843,14 @@ pub(crate) fn FixMobileHRestoredStructure(
                 == 0
             && comparison.nNumTgOMinusInChI != 0
         {
+            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let flags = heap
                 .slice(pTCGroups.pTCG.as_const())?
                 .first()
                 .ok_or(SourceHeapError::PointerOutOfBounds)?
                 .tg_RestoreFlags;
             if flags & TGRF_MINUS_FIRST == 0 {
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 heap.slice_mut(pTCGroups.pTCG)?
                     .first_mut()
                     .ok_or(SourceHeapError::PointerOutOfBounds)?
@@ -1823,11 +1860,13 @@ pub(crate) fn FixMobileHRestoredStructure(
                 if ret != 0 {
                     return Ok(());
                 }
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let input_fixed = heap
                     .slice(pInChI[0].as_const())?
                     .first()
                     .ok_or(SourceHeapError::PointerOutOfBounds)?
                     .nNum_H_fixed;
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let reversed_fixed = heap
                     .slice(pStruct.pOneINChI[0].as_const())?
                     .first()
@@ -1836,6 +1875,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                 if input_fixed.is_null() && reversed_fixed.is_null() {
                     return Ok(());
                 }
+                panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                 let at2_snapshot = heap.slice(at2.as_const())?.to_vec();
                 ret = FillOutCMP2MHINCHI(
                     heap,
@@ -1858,7 +1898,9 @@ pub(crate) fn FixMobileHRestoredStructure(
                 == 0
             && comparison.nNumTgOMinusInChI == 0
         {
+            panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
             let mut double_bond_n_iii = [0_i32; MAX_DIFF_MOBH as usize];
+            panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
             let mut single_bond_n_iii = [0_i32; MAX_DIFF_MOBH as usize];
             let mut number_double_bond_n_iii = 0_i32;
             let mut number_single_bond_n_iii = 0_i32;
@@ -1867,13 +1909,16 @@ pub(crate) fn FixMobileHRestoredStructure(
 
             let mut atom_number = 0_i32;
             while atom_number < pStruct.num_atoms {
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let atom_index = usize::try_from(atom_number)
                     .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                 let atom = heap
                     .slice(at2.as_const())?
                     .get(atom_index)
                     .cloned()
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let valence = pVA
                     .get(atom_index)
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -1897,6 +1942,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                     let mut classified_double = false;
                     if (first_double_shape || second_double_shape) && minus_edge >= 0 {
                         let minus_edge_available = {
+                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                             let edge = heap
                                 .slice(pBNS.edge.as_const())?
                                 .get(
@@ -1907,6 +1953,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                             edge.forbidden == 0 && edge.cap != 0 && edge.flow == 0
                         };
                         if minus_edge_available {
+                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                             double_bond_n_iii[number_double_bond_n_iii as usize] = atom_number;
                             number_double_bond_n_iii = number_double_bond_n_iii.wrapping_add(1);
                             classified_double = true;
@@ -1921,6 +1968,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                         let plus_edge = valence.nCPlusGroupEdge.wrapping_sub(1);
                         if plus_edge >= 0 {
                             let plus_edge_available = {
+                                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                 let edge = heap
                                     .slice(pBNS.edge.as_const())?
                                     .get(
@@ -1931,6 +1979,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                                 edge.forbidden == 0 && edge.cap != 0 && edge.flow != 0
                             };
                             if plus_edge_available {
+                                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                 single_bond_n_iii[number_single_bond_n_iii as usize] = atom_number;
                                 number_single_bond_n_iii = number_single_bond_n_iii.wrapping_add(1);
                                 ret = AddToEdgeList(
@@ -1954,18 +2003,24 @@ pub(crate) fn FixMobileHRestoredStructure(
                 RemoveForbiddenEdgeMask(heap, pBNS, &current_edges, forbidden_edge_mask)?;
                 let mut candidate_index = 0_i32;
                 while candidate_index < number_double_bond_n_iii && current_success == 0 {
+                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let atom_number = double_bond_n_iii[candidate_index as usize];
+                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let atom_index = usize::try_from(atom_number)
                         .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                     let atom_vertex = heap
                         .slice(pBNS.vert.as_const())?
                         .get(atom_index)
                         .cloned()
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let incident_edges = heap.slice(atom_vertex.iedge.as_const())?;
+                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let first_edge_number = *incident_edges
                         .first()
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let first_has_flow = heap
                         .slice(pBNS.edge.as_const())?
                         .get(
@@ -1978,9 +2033,11 @@ pub(crate) fn FixMobileHRestoredStructure(
                     let bond_edge_number = if first_has_flow {
                         first_edge_number
                     } else {
+                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let second_edge_number = *incident_edges
                             .get(1)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let second_has_flow = heap
                             .slice(pBNS.edge.as_const())?
                             .get(
@@ -2000,11 +2057,15 @@ pub(crate) fn FixMobileHRestoredStructure(
                         candidate_index = candidate_index.wrapping_add(1);
                         continue;
                     }
+                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let minus_edge_number = pVA[atom_index].nCMinusGroupEdge.wrapping_sub(1);
+                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let bond_edge_index = usize::try_from(bond_edge_number)
                         .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let minus_edge_index = usize::try_from(minus_edge_number)
                         .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                     let bond_edge_before = heap
                         .slice(pBNS.edge.as_const())?
                         .get(bond_edge_index)
@@ -2017,6 +2078,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                     let first_vertex = i32::from(bond_edge_before.neighbor1);
                     let second_vertex = i32::from(bond_edge_before.neighbor12) ^ first_vertex;
                     {
+                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let edges = heap.slice_mut(pBNS.edge)?;
                         edges[bond_edge_index].forbidden =
                             (i32::from(edges[bond_edge_index].forbidden) | forbidden_edge_mask)
@@ -2028,8 +2090,10 @@ pub(crate) fn FixMobileHRestoredStructure(
                         edges[bond_edge_index].flow = edges[bond_edge_index].flow.wrapping_sub(1);
                     }
                     {
+                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let vertices = heap.slice_mut(pBNS.vert)?;
                         for vertex_number in [first_vertex, second_vertex] {
+                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                             let vertex = vertices
                                 .get_mut(
                                     usize::try_from(vertex_number)
@@ -2041,11 +2105,17 @@ pub(crate) fn FixMobileHRestoredStructure(
                     }
                     pBNS.tot_st_flow = pBNS.tot_st_flow.wrapping_sub(2);
 
+                    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                     let mut path_start = 0_i32;
+                    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                     let mut path_end = 0_i32;
+                    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                     let mut path_length = 0_i32;
+                    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                     let mut delta_h = 0_i32;
+                    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                     let mut delta_charge = 0_i32;
+                    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                     let mut number_visited_atoms = 0_i32;
                     ret = RunBnsTestOnce(
                         heap,
@@ -2067,6 +2137,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                         ret = RunBnsRestoreOnce(heap, pBNS, pBD, pVA, pTCGroups, clock_result)?;
                         if ret > 0 {
                             current_success = current_success.wrapping_add(1);
+                            panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                             let minus_edge_before = heap
                                 .slice(pBNS.edge.as_const())?
                                 .get(minus_edge_index)
@@ -2076,6 +2147,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                             let minus_second_vertex =
                                 i32::from(minus_edge_before.neighbor12) ^ minus_first_vertex;
                             {
+                                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                 let edges = heap.slice_mut(pBNS.edge)?;
                                 edges[minus_edge_index].cap =
                                     edges[minus_edge_index].cap.wrapping_sub(1);
@@ -2083,8 +2155,10 @@ pub(crate) fn FixMobileHRestoredStructure(
                                     edges[minus_edge_index].flow.wrapping_sub(1);
                             }
                             {
+                                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                 let vertices = heap.slice_mut(pBNS.vert)?;
                                 for vertex_number in [minus_first_vertex, minus_second_vertex] {
+                                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                     let vertex = vertices
                                         .get_mut(
                                             usize::try_from(vertex_number)
@@ -2097,6 +2171,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                             }
                             pBNS.tot_st_flow = pBNS.tot_st_flow.wrapping_sub(2);
                             pBNS.tot_st_cap = pBNS.tot_st_cap.wrapping_sub(2);
+                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                             let structure_atom = heap
                                 .slice_mut(pStruct.at)?
                                 .get_mut(atom_index)
@@ -2108,6 +2183,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                         }
                     } else {
                         {
+                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                             let edges = heap.slice_mut(pBNS.edge)?;
                             edges[bond_edge_index].forbidden =
                                 (i32::from(edges[bond_edge_index].forbidden)
@@ -2121,8 +2197,10 @@ pub(crate) fn FixMobileHRestoredStructure(
                                 edges[bond_edge_index].flow.wrapping_add(1);
                         }
                         {
+                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                             let vertices = heap.slice_mut(pBNS.vert)?;
                             for vertex_number in [first_vertex, second_vertex] {
+                                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                 let vertex = vertices
                                     .get_mut(
                                         usize::try_from(vertex_number)
@@ -2161,6 +2239,7 @@ pub(crate) fn FixMobileHRestoredStructure(
             let mut current_success = 0_i32;
             let mut taut_group_index = 0_i32;
             while taut_group_index < pTCGroups.num_tgroups && current_success == 0 {
+                panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                 let group = heap
                     .slice(pTCGroups.pTCG.as_const())?
                     .get(
@@ -2169,6 +2248,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                     )
                     .cloned()
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                 let group_vertex = heap
                     .slice(pBNS.vert.as_const())?
                     .get(
@@ -2181,6 +2261,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                 while group_edge_order < i32::from(group_vertex.num_adj_edges)
                     && current_success == 0
                 {
+                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let taut_edge_number = i32::from(
                         *heap
                             .slice(group_vertex.iedge.as_const())?
@@ -2190,6 +2271,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                             )
                             .ok_or(SourceHeapError::PointerOutOfBounds)?,
                     );
+                    panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                     let taut_edge = heap
                         .slice(pBNS.edge.as_const())?
                         .get(
@@ -2203,6 +2285,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                     let mut center_edge_1 = -1_i32;
                     let mut center_edge_2 = -1_i32;
                     let mut second_endpoint = NO_VERTEX;
+                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     if pVA
                         .get(
                             usize::try_from(endpoint)
@@ -2213,6 +2296,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                         == 6
                         && taut_edge.cap != 0
                     {
+                        panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                         let endpoint_vertex = heap
                             .slice(pBNS.vert.as_const())?
                             .get(
@@ -2221,6 +2305,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                             )
                             .cloned()
                             .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                        panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                         let endpoint_atom = heap
                             .slice(at2.as_const())?
                             .get(
@@ -2233,6 +2318,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                         while neighbor_order < i32::from(endpoint_atom.valence)
                             && second_taut_edge < 0
                         {
+                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                             center_edge_1 = i32::from(
                                 *heap
                                     .slice(endpoint_vertex.iedge.as_const())?
@@ -2242,6 +2328,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                                     )
                                     .ok_or(SourceHeapError::PointerOutOfBounds)?,
                             );
+                            panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                             let first_center_edge = heap
                                 .slice(pBNS.edge.as_const())?
                                 .get(
@@ -2251,6 +2338,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                                 .cloned()
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
                             let center = i32::from(first_center_edge.neighbor12) ^ endpoint;
+                            panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                             let center_atom = heap
                                 .slice(at2.as_const())?
                                 .get(
@@ -2268,6 +2356,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                                 neighbor_order = neighbor_order.wrapping_add(1);
                                 continue;
                             }
+                            panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                             let center_vertex = heap
                                 .slice(pBNS.vert.as_const())?
                                 .get(
@@ -2278,6 +2367,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
                             let mut center_order = 0_i32;
                             while center_order < i32::from(center_atom.valence) {
+                                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                 center_edge_2 = i32::from(
                                     *heap
                                         .slice(center_vertex.iedge.as_const())?
@@ -2287,6 +2377,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                                         )
                                         .ok_or(SourceHeapError::PointerOutOfBounds)?,
                                 );
+                                panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                                 let second_center_edge = heap
                                     .slice(pBNS.edge.as_const())?
                                     .get(
@@ -2296,8 +2387,10 @@ pub(crate) fn FixMobileHRestoredStructure(
                                     .cloned()
                                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
                                 second_endpoint = i32::from(second_center_edge.neighbor12) ^ center;
+                                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                 let second_index = usize::try_from(second_endpoint)
                                     .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                 if second_center_edge.cap != 0
                                     && i32::from(second_center_edge.flow)
                                         + i32::from(first_center_edge.flow)
@@ -2306,9 +2399,11 @@ pub(crate) fn FixMobileHRestoredStructure(
                                         == taut_group_index.wrapping_add(1)
                                     && pVA[second_index].cNumValenceElectrons == 5
                                 {
+                                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                     let candidate_taut_edge =
                                         pVA[second_index].nTautGroupEdge.wrapping_sub(1);
                                     if candidate_taut_edge >= 0 {
+                                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                         let edge =
                                             heap.slice(pBNS.edge.as_const())?
                                                 .get(usize::try_from(candidate_taut_edge).map_err(
@@ -2331,24 +2426,34 @@ pub(crate) fn FixMobileHRestoredStructure(
                         }
                     }
                     if second_taut_edge >= 0 {
+                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let taut_index = usize::try_from(taut_edge_number)
                             .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let second_taut_index = usize::try_from(second_taut_edge)
                             .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let center_1_index = usize::try_from(center_edge_1)
                             .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let center_2_index = usize::try_from(center_edge_2)
                             .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let before = heap.slice(pBNS.edge.as_const())?;
+                        panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                         let first_taut = before[taut_index].clone();
+                        panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                         let second_taut = before[second_taut_index].clone();
+                        panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                         let first_center = before[center_1_index].clone();
+                        panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                         let second_center = before[center_2_index].clone();
                         if i32::from(first_taut.cap) - i32::from(first_taut.flow) == 0
                             && i32::from(second_taut.cap) - i32::from(second_taut.flow) == 1
                             && first_center.flow == 0
                             && second_center.flow == 1
                         {
+                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                             let edges = heap.slice_mut(pBNS.edge)?;
                             edges[taut_index].flow = edges[taut_index].flow.wrapping_sub(1);
                             edges[second_taut_index].flow =
@@ -2357,6 +2462,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                             edges[center_1_index].flow = edges[center_1_index].flow.wrapping_add(1);
                             action |= 1;
                         }
+                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let after = heap.slice(pBNS.edge.as_const())?;
                         if i32::from(after[taut_index].cap) - i32::from(after[taut_index].flow) == 1
                             && i32::from(after[second_taut_index].cap)
@@ -2365,8 +2471,10 @@ pub(crate) fn FixMobileHRestoredStructure(
                             && after[center_1_index].flow == 1
                             && after[center_2_index].flow == 0
                         {
+                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                             let group_index = usize::try_from(taut_group_index)
                                 .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                             let groups = heap.slice_mut(pTCGroups.pTCG)?;
                             groups[group_index].tg_num_H =
                                 groups[group_index].tg_num_H.wrapping_sub(1);
@@ -2374,6 +2482,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                                 groups[group_index].tg_num_Minus.wrapping_add(1);
                             groups[group_index].tg_RestoreFlags |= TGRF_MINUS_FIRST;
                             groups[group_index].tg_set_Minus = second_endpoint.wrapping_add(1);
+                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                             let taut_groups = heap.slice_mut(pStruct.ti.t_group)?;
                             taut_groups[group_index].num[1] =
                                 taut_groups[group_index].num[1].wrapping_add(1);
@@ -2396,6 +2505,7 @@ pub(crate) fn FixMobileHRestoredStructure(
             {
                 taut_group_index = 0;
                 while taut_group_index < pTCGroups.num_tgroups {
+                    panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                     let group = heap
                         .slice(pTCGroups.pTCG.as_const())?
                         .get(
@@ -2404,6 +2514,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                         )
                         .cloned()
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                    panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                     let group_vertex = heap
                         .slice(pBNS.vert.as_const())?
                         .get(
@@ -2414,6 +2525,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
                     let mut order = 0_i32;
                     while order < i32::from(group_vertex.num_adj_edges) {
+                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let taut_edge_number = i32::from(
                             *heap
                                 .slice(group_vertex.iedge.as_const())?
@@ -2423,6 +2535,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                                 )
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?,
                         );
+                        panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                         let taut_edge = heap
                             .slice(pBNS.edge.as_const())?
                             .get(
@@ -2432,11 +2545,13 @@ pub(crate) fn FixMobileHRestoredStructure(
                             .cloned()
                             .ok_or(SourceHeapError::PointerOutOfBounds)?;
                         let endpoint = usize::from(taut_edge.neighbor1);
+                        panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                         let endpoint_atom = heap
                             .slice(at2.as_const())?
                             .get(endpoint)
                             .cloned()
                             .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         if pVA[endpoint].cNumValenceElectrons == 6
                             && endpoint_atom.valence == endpoint_atom.chem_bonds_valence
                             && taut_edge.flow != 0
@@ -2458,6 +2573,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                             && taut_edge.cap != 0
                             && taut_edge.flow.wrapping_add(1) == taut_edge.cap
                         {
+                            panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                             let endpoint_vertex = heap
                                 .slice(pBNS.vert.as_const())?
                                 .get(endpoint)
@@ -2468,6 +2584,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                             while neighbor_order < i32::from(endpoint_atom.valence)
                                 && found_edge < 0
                             {
+                                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                 let first_edge_number = i32::from(
                                     *heap
                                         .slice(endpoint_vertex.iedge.as_const())?
@@ -2477,6 +2594,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                                         )
                                         .ok_or(SourceHeapError::PointerOutOfBounds)?,
                                 );
+                                panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                                 let first_edge = heap
                                     .slice(pBNS.edge.as_const())?
                                     .get(
@@ -2486,21 +2604,27 @@ pub(crate) fn FixMobileHRestoredStructure(
                                     .cloned()
                                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
                                 if first_edge.flow == 1 {
+                                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                     let center = i32::from(first_edge.neighbor12)
                                         ^ i32::try_from(endpoint)
                                             .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                     let center_index = usize::try_from(center)
                                         .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                     if heap.slice(at2.as_const())?[center_index].endpoint != 0 {
                                         neighbor_order = neighbor_order.wrapping_add(1);
                                         continue;
                                     }
+                                    panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                                     let center_atom =
                                         heap.slice(at2.as_const())?[center_index].clone();
+                                    panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                                     let center_vertex =
                                         heap.slice(pBNS.vert.as_const())?[center_index].clone();
                                     let mut center_order = 0_i32;
                                     while center_order < i32::from(center_atom.valence) {
+                                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                         let second_edge_number = i32::from(
                                             *heap
                                                 .slice(center_vertex.iedge.as_const())?
@@ -2509,6 +2633,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                                                 )?)
                                                 .ok_or(SourceHeapError::PointerOutOfBounds)?,
                                         );
+                                        panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                                         let second_edge =
                                             heap.slice(pBNS.edge.as_const())?
                                                 .get(usize::try_from(second_edge_number).map_err(
@@ -2518,17 +2643,21 @@ pub(crate) fn FixMobileHRestoredStructure(
                                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
                                         let second_endpoint =
                                             i32::from(second_edge.neighbor12) ^ center;
+                                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                         let second_index = usize::try_from(second_endpoint)
                                             .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                         if second_edge.flow == 0
                                             && i32::from(
                                                 heap.slice(at2.as_const())?[second_index].endpoint,
                                             ) == taut_group_index.wrapping_add(1)
                                             && pVA[second_index].cNumValenceElectrons == 6
                                         {
+                                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                             let candidate =
                                                 pVA[second_index].nTautGroupEdge.wrapping_sub(1);
                                             if candidate > 0 {
+                                                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                                 let edge = heap
                                                     .slice(pBNS.edge.as_const())?
                                                     .get(usize::try_from(candidate).map_err(
@@ -2580,6 +2709,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                 } else {
                     &current_edges
                 };
+                panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                 let selected_edges = if selected.num_edges > 0 {
                     heap.slice(selected.pnEdges.as_const())?[..usize::try_from(selected.num_edges)
                         .map_err(|_| SourceHeapError::PointerOutOfBounds)?]
@@ -2591,8 +2721,10 @@ pub(crate) fn FixMobileHRestoredStructure(
                     if current_success != 0 {
                         break;
                     }
+                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let edge_index = usize::try_from(edge_number)
                         .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                     let edge_before = heap
                         .slice(pBNS.edge.as_const())?
                         .get(edge_index)
@@ -2606,6 +2738,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                     let mut found_group = None;
                     let mut index = 0_i32;
                     while index < pTCGroups.num_tgroups {
+                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         if heap
                             .slice(pTCGroups.pTCG.as_const())?
                             .get(
@@ -2624,10 +2757,13 @@ pub(crate) fn FixMobileHRestoredStructure(
                     let Some(found_group) = found_group else {
                         continue;
                     };
+                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     heap.slice_mut(pBNS.edge)?[edge_index].flow = edge_before.flow.wrapping_sub(1);
                     {
+                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let vertices = heap.slice_mut(pBNS.vert)?;
                         for vertex_number in [first_vertex, second_vertex] {
+                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                             let vertex = vertices
                                 .get_mut(
                                     usize::try_from(vertex_number)
@@ -2638,11 +2774,17 @@ pub(crate) fn FixMobileHRestoredStructure(
                         }
                     }
                     pBNS.tot_st_flow = pBNS.tot_st_flow.wrapping_sub(2);
+                    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                     let mut path_start = 0_i32;
+                    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                     let mut path_end = 0_i32;
+                    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                     let mut path_length = 0_i32;
+                    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                     let mut delta_h = 0_i32;
+                    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                     let mut delta_charge = 0_i32;
+                    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                     let mut visited = 0_i32;
                     ret = RunBnsTestOnce(
                         heap,
@@ -2664,15 +2806,19 @@ pub(crate) fn FixMobileHRestoredStructure(
                         ret = RunBnsRestoreOnce(heap, pBNS, pBD, pVA, pTCGroups, clock_result)?;
                         if ret > 0 {
                             current_success = current_success.wrapping_add(1);
+                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                             let group_index = usize::try_from(found_group)
                                 .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                             let groups = heap.slice_mut(pTCGroups.pTCG)?;
                             groups[group_index].tg_num_H =
                                 groups[group_index].tg_num_H.wrapping_sub(1);
                             groups[group_index].tg_num_Minus =
                                 groups[group_index].tg_num_Minus.wrapping_add(1);
                             groups[group_index].tg_RestoreFlags |= TGRF_MINUS_FIRST;
+                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                             let taut_groups = heap.slice_mut(pStruct.ti.t_group)?;
+                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                             let taut_group = taut_groups
                                 .get_mut(group_index)
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -2684,9 +2830,12 @@ pub(crate) fn FixMobileHRestoredStructure(
                             action |= 4;
                         }
                     } else {
+                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         heap.slice_mut(pBNS.edge)?[edge_index].flow = edge_before.flow;
+                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let vertices = heap.slice_mut(pBNS.vert)?;
                         for vertex_number in [first_vertex, second_vertex] {
+                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                             let vertex = vertices
                                 .get_mut(
                                     usize::try_from(vertex_number)
@@ -2708,13 +2857,16 @@ pub(crate) fn FixMobileHRestoredStructure(
             {
                 taut_group_index = 0;
                 while taut_group_index < pTCGroups.num_tgroups && current_success == 0 {
+                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let group_index = usize::try_from(taut_group_index)
                         .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                     let group = heap
                         .slice(pTCGroups.pTCG.as_const())?
                         .get(group_index)
                         .cloned()
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                    panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                     let vertex = heap
                         .slice(pBNS.vert.as_const())?
                         .get(
@@ -2725,6 +2877,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
                     let mut order = 0_i32;
                     while order < i32::from(vertex.num_adj_edges) && current_success == 0 {
+                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let edge_number = i32::from(
                             *heap
                                 .slice(vertex.iedge.as_const())?
@@ -2734,6 +2887,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                                 )
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?,
                         );
+                        panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                         let edge = heap
                             .slice(pBNS.edge.as_const())?
                             .get(
@@ -2743,6 +2897,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                             .cloned()
                             .ok_or(SourceHeapError::PointerOutOfBounds)?;
                         let endpoint = usize::from(edge.neighbor1);
+                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let atom = heap
                             .slice(at2.as_const())?
                             .get(endpoint)
@@ -2754,16 +2909,20 @@ pub(crate) fn FixMobileHRestoredStructure(
                             && edge.flow == edge.cap
                         {
                             current_success = current_success.wrapping_add(1);
+                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                             let groups = heap.slice_mut(pTCGroups.pTCG)?;
                             groups[group_index].tg_num_H =
                                 groups[group_index].tg_num_H.wrapping_sub(1);
                             groups[group_index].tg_num_Minus =
                                 groups[group_index].tg_num_Minus.wrapping_add(1);
                             groups[group_index].tg_RestoreFlags |= TGRF_MINUS_FIRST;
+                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                             groups[group_index].tg_set_Minus = i32::try_from(endpoint)
                                 .map_err(|_| SourceHeapError::PointerOutOfBounds)?
                                 .wrapping_add(1);
+                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                             let taut_groups = heap.slice_mut(pStruct.ti.t_group)?;
+                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                             let taut_group = taut_groups
                                 .get_mut(group_index)
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -2783,6 +2942,7 @@ pub(crate) fn FixMobileHRestoredStructure(
             if current_success != 0 {
                 rebuild!();
                 compare!();
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let reversed_minus = if pStruct.One_ti.num_t_groups == 1 {
                     heap.slice(pStruct.One_ti.t_group.as_const())?
                         .first()
@@ -2794,6 +2954,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                 if pStruct.One_ti.num_t_groups == 1 && reversed_minus != 0 {
                     let group_index = 0_usize;
                     if action & (8 | 2) != 0 {
+                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let groups = heap.slice_mut(pTCGroups.pTCG)?;
                         groups[group_index].tg_num_H = groups[group_index].tg_num_H.wrapping_add(1);
                         groups[group_index].tg_num_Minus =
@@ -2801,6 +2962,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                         groups[group_index].tg_RestoreFlags &= !TGRF_MINUS_FIRST;
                         groups[group_index].tg_set_Minus = 0;
                     } else if action & 4 != 0 {
+                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let groups = heap.slice_mut(pTCGroups.pTCG)?;
                         groups[group_index].tg_num_H = groups[group_index].tg_num_H.wrapping_add(1);
                         groups[group_index].tg_num_Minus =
@@ -2810,6 +2972,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                         ret = RI_ERR_PROGR;
                         return Ok(());
                     }
+                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let taut_group = heap
                         .slice_mut(pStruct.ti.t_group)?
                         .get_mut(group_index)
@@ -2843,16 +3006,20 @@ pub(crate) fn FixMobileHRestoredStructure(
                     let canonical_to_atom = pStruct.nCanon2Atno[0];
                     let mut canonical_number = 0_i32;
                     while canonical_number < pStruct.num_atoms {
+                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let canonical_index = usize::try_from(canonical_number)
                             .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let atom_number = i32::from(
                             *heap
                                 .slice(canonical_to_atom.as_const())?
                                 .get(canonical_index)
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?,
                         );
+                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let atom_index = usize::try_from(atom_number)
                             .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let atom = heap
                             .slice(at2.as_const())?
                             .get(atom_index)
@@ -2866,6 +3033,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                         {
                             let plus_edge = pVA[atom_index].nCPlusGroupEdge.wrapping_sub(1);
                             if plus_edge >= 0 {
+                                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                 let edge = heap
                                     .slice(pBNS.edge.as_const())?
                                     .get(
@@ -2895,14 +3063,17 @@ pub(crate) fn FixMobileHRestoredStructure(
                     let mut taut_group_index = 0_i32;
                     while taut_group_index < pTCGroups.num_tgroups && current_success == 0 {
                         current_edges_2.num_edges = 0;
+                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let group_index = usize::try_from(taut_group_index)
                             .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                        panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                         let group = heap
                             .slice(pTCGroups.pTCG.as_const())?
                             .get(group_index)
                             .cloned()
                             .ok_or(SourceHeapError::PointerOutOfBounds)?;
                         let group_vertex_number = group.nVertexNumber;
+                        panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                         let group_vertex = heap
                             .slice(pBNS.vert.as_const())?
                             .get(
@@ -2913,6 +3084,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                             .ok_or(SourceHeapError::PointerOutOfBounds)?;
                         let mut order = 0_i32;
                         while order < i32::from(group_vertex.num_adj_edges) {
+                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                             let edge_number = i32::from(
                                 *heap
                                     .slice(group_vertex.iedge.as_const())?
@@ -2922,6 +3094,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                                     )
                                     .ok_or(SourceHeapError::PointerOutOfBounds)?,
                             );
+                            panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                             let edge = heap
                                 .slice(pBNS.edge.as_const())?
                                 .get(
@@ -2931,6 +3104,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                                 .cloned()
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
                             let endpoint = usize::from(edge.neighbor1);
+                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                             let atom = heap
                                 .slice(at2.as_const())?
                                 .get(endpoint)
@@ -2960,7 +3134,9 @@ pub(crate) fn FixMobileHRestoredStructure(
                         RemoveForbiddenEdgeMask(heap, pBNS, &current_edges_2, forbidden_edge_mask)?;
 
                         {
+                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                             let vertices = heap.slice_mut(pBNS.vert)?;
+                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                             let plus = vertices
                                 .get_mut(
                                     usize::try_from(plus_minus_vertex)
@@ -2968,6 +3144,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                                 )
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
                             plus.st_edge.cap = plus.st_edge.cap.wrapping_add(1);
+                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                             let taut = vertices
                                 .get_mut(
                                     usize::try_from(group_vertex_number)
@@ -2978,6 +3155,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                         }
                         pBNS.tot_st_cap = pBNS.tot_st_cap.wrapping_add(2);
 
+                        panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                         let plus_vertex = heap
                             .slice(pBNS.vert.as_const())?
                             .get(
@@ -2988,6 +3166,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                             .ok_or(SourceHeapError::PointerOutOfBounds)?;
                         let mut plus_order = 0_i32;
                         while plus_order < i32::from(plus_vertex.num_adj_edges) {
+                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                             let edge_number = i32::from(
                                 *heap
                                     .slice(plus_vertex.iedge.as_const())?
@@ -2997,6 +3176,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                                     )
                                     .ok_or(SourceHeapError::PointerOutOfBounds)?,
                             );
+                            panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                             let edge = heap
                                 .slice(pBNS.edge.as_const())?
                                 .get(
@@ -3006,6 +3186,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                                 .cloned()
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
                             let intermediate = i32::from(edge.neighbor12) ^ plus_minus_vertex;
+                            panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                             let intermediate_vertex = heap
                                 .slice(pBNS.vert.as_const())?
                                 .get(
@@ -3014,12 +3195,15 @@ pub(crate) fn FixMobileHRestoredStructure(
                                 )
                                 .cloned()
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                            panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                             let edge_numbers = heap.slice(intermediate_vertex.iedge.as_const())?
                                 [..usize::from(intermediate_vertex.num_adj_edges)]
                                 .to_vec();
                             for edge_number in edge_numbers {
+                                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                 let index = usize::try_from(edge_number)
                                     .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                 let edge = heap
                                     .slice_mut(pBNS.edge)?
                                     .get_mut(index)
@@ -3029,11 +3213,17 @@ pub(crate) fn FixMobileHRestoredStructure(
                             plus_order = plus_order.wrapping_add(1);
                         }
 
+                        panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                         let mut path_start = 0_i32;
+                        panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                         let mut path_end = 0_i32;
+                        panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                         let mut path_length = 0_i32;
+                        panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                         let mut delta_h = 0_i32;
+                        panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                         let mut delta_charge = 0_i32;
+                        panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                         let mut visited = 0_i32;
                         ret = RunBnsTestOnce(
                             heap,
@@ -3058,6 +3248,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                             if ret > 0 {
                                 current_success = current_success.wrapping_add(1);
                                 pTCGroups.total_charge = pTCGroups.total_charge.wrapping_add(1);
+                                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                 let groups = heap.slice_mut(pTCGroups.pTCG)?;
                                 groups[group_index].edges_cap =
                                     groups[group_index].edges_cap.wrapping_add(1);
@@ -3068,11 +3259,14 @@ pub(crate) fn FixMobileHRestoredStructure(
                             }
                         } else {
                             {
+                                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                 let vertices = heap.slice_mut(pBNS.vert)?;
+                                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                 let plus_index = usize::try_from(plus_minus_vertex)
                                     .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                                 vertices[plus_index].st_edge.cap =
                                     vertices[plus_index].st_edge.cap.wrapping_sub(1);
+                                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                 let group_vertex_index = usize::try_from(group_vertex_number)
                                     .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                                 vertices[group_vertex_index].st_edge.cap =
@@ -3081,6 +3275,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                             pBNS.tot_st_cap = pBNS.tot_st_cap.wrapping_sub(2);
                             plus_order = 0;
                             while plus_order < i32::from(plus_vertex.num_adj_edges) {
+                                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                 let edge_number = i32::from(
                                     *heap
                                         .slice(plus_vertex.iedge.as_const())?
@@ -3090,6 +3285,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                                         )
                                         .ok_or(SourceHeapError::PointerOutOfBounds)?,
                                 );
+                                panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                                 let edge = heap
                                     .slice(pBNS.edge.as_const())?
                                     .get(
@@ -3099,6 +3295,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                                     .cloned()
                                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
                                 let intermediate = i32::from(edge.neighbor12) ^ plus_minus_vertex;
+                                panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                                 let vertex = heap
                                     .slice(pBNS.vert.as_const())?
                                     .get(
@@ -3107,12 +3304,15 @@ pub(crate) fn FixMobileHRestoredStructure(
                                     )
                                     .cloned()
                                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                                panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                                 let edge_numbers = heap.slice(vertex.iedge.as_const())?
                                     [..usize::from(vertex.num_adj_edges)]
                                     .to_vec();
                                 for edge_number in edge_numbers {
+                                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                     let index = usize::try_from(edge_number)
                                         .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                     let edge = heap
                                         .slice_mut(pBNS.edge)?
                                         .get_mut(index)
@@ -3148,6 +3348,7 @@ pub(crate) fn FixMobileHRestoredStructure(
             let mut current_success = 0_i32;
             let mut difference_index = 0_i32;
             while current_success == 0 && difference_index < i32::from(comparison.len_c2at) {
+                panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                 let difference = comparison.c2at[usize::try_from(difference_index)
                     .map_err(|_| SourceHeapError::PointerOutOfBounds)?]
                 .clone();
@@ -3161,19 +3362,23 @@ pub(crate) fn FixMobileHRestoredStructure(
                     continue;
                 }
                 let oxygen_number = i32::from(difference.atomNumber);
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let oxygen_index = usize::try_from(oxygen_number)
                     .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                 let oxygen = heap
                     .slice(at2.as_const())?
                     .get(oxygen_index)
                     .cloned()
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
                 if oxygen.charge == -1 {
+                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let oxygen_minus_edge = pVA
                         .get(oxygen_index)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?
                         .nCMinusGroupEdge
                         .wrapping_sub(1);
+                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let oxygen_edge_has_flow = oxygen_minus_edge >= 0
                         && heap
                             .slice(pBNS.edge.as_const())?
@@ -3192,8 +3397,10 @@ pub(crate) fn FixMobileHRestoredStructure(
                             }
                             let mut atom_number = 0_i32;
                             while current_success == 0 && atom_number < pStruct.num_atoms {
+                                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                 let atom_index = usize::try_from(atom_number)
                                     .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                                panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                                 let atom = heap
                                     .slice(at2.as_const())?
                                     .get(atom_index)
@@ -3207,6 +3414,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                                     carbon_minus_edge =
                                         pVA[atom_index].nCMinusGroupEdge.wrapping_sub(1);
                                     if carbon_minus_edge >= 0 {
+                                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                         let carbon_edge_no_flow =
                                             heap.slice(pBNS.edge.as_const())?
                                                 .get(usize::try_from(carbon_minus_edge).map_err(
@@ -3216,6 +3424,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                                                 .flow
                                                 == 0;
                                         if carbon_edge_no_flow {
+                                            panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                                             let bfs = heap
                                                 .slice(pStruct.pbfsq.as_const())?
                                                 .first()
@@ -3246,6 +3455,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                                         forbidden_edge_mask,
                                     )?;
                                     {
+                                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                         let carbon_edge = heap
                                             .slice_mut(pBNS.edge)?
                                             .get_mut(
@@ -3258,8 +3468,10 @@ pub(crate) fn FixMobileHRestoredStructure(
                                             & forbidden_edge_mask_inv)
                                             as i8;
                                     }
+                                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                     let oxygen_edge_index = usize::try_from(oxygen_minus_edge)
                                         .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                                    panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                                     let oxygen_edge_before = heap
                                         .slice(pBNS.edge.as_const())?
                                         .get(oxygen_edge_index)
@@ -3272,11 +3484,14 @@ pub(crate) fn FixMobileHRestoredStructure(
                                     let first_vertex = i32::from(oxygen_edge_before.neighbor1);
                                     let second_vertex =
                                         i32::from(oxygen_edge_before.neighbor12) ^ first_vertex;
+                                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                     heap.slice_mut(pBNS.edge)?[oxygen_edge_index].flow =
                                         oxygen_edge_before.flow.wrapping_sub(1);
                                     {
+                                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                         let vertices = heap.slice_mut(pBNS.vert)?;
                                         for vertex_number in [first_vertex, second_vertex] {
+                                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                             let vertex = vertices
                                                 .get_mut(usize::try_from(vertex_number).map_err(
                                                     |_| SourceHeapError::PointerOutOfBounds,
@@ -3288,11 +3503,17 @@ pub(crate) fn FixMobileHRestoredStructure(
                                     }
                                     pBNS.tot_st_flow = pBNS.tot_st_flow.wrapping_sub(2);
 
+                                    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                                     let mut path_start = 0_i32;
+                                    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                                     let mut path_end = 0_i32;
+                                    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                                     let mut path_length = 0_i32;
+                                    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                                     let mut delta_h = 0_i32;
+                                    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                                     let mut delta_charge = 0_i32;
+                                    panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                                     let mut number_visited_atoms = 0_i32;
                                     ret = RunBnsTestOnce(
                                         heap,
@@ -3326,6 +3547,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                                         }
                                     } else {
                                         {
+                                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                             let oxygen_edge = heap
                                                 .slice_mut(pBNS.edge)?
                                                 .get_mut(oxygen_edge_index)
@@ -3337,8 +3559,10 @@ pub(crate) fn FixMobileHRestoredStructure(
                                             oxygen_edge.flow = oxygen_edge.flow.wrapping_add(1);
                                         }
                                         {
+                                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                             let vertices = heap.slice_mut(pBNS.vert)?;
                                             for vertex_number in [first_vertex, second_vertex] {
+                                                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                                 let vertex = vertices
                                                     .get_mut(
                                                         usize::try_from(vertex_number).map_err(
@@ -3386,10 +3610,13 @@ pub(crate) fn FixMobileHRestoredStructure(
             const CHG_SET_O_FIXED: usize = 3;
             const CHG_SET_NUM: usize = 4;
 
+            panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
             let mut double_bond_oxygen = [0_i16; MAX_DIFF_FIXH as usize];
+            panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
             let mut nitrogen_dioxide = [0_i16; MAX_DIFF_FIXH as usize];
             let mut number_double_bond_oxygen = 0_i32;
             let canonical_to_atom = pStruct.nCanon2Atno[0];
+            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
             let mobile_h_reversed = if pStruct.pOne_norm_data[0].is_null() {
                 SourceMutPointer::null()
             } else {
@@ -3398,6 +3625,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                     .ok_or(SourceHeapError::PointerOutOfBounds)?
                     .at
             };
+            panic!("INCHI-AUDIT-0001: suspected source divergence; see dev/audits/inchi/findings.md");
             let mut changeable_edges: [EDGE_LIST; CHG_SET_NUM] =
                 std::array::from_fn(|_| EDGE_LIST::default());
             current_edges.num_edges = 0;
@@ -3406,16 +3634,20 @@ pub(crate) fn FixMobileHRestoredStructure(
 
             let mut canonical_number = 0_i32;
             while canonical_number < pStruct.num_atoms && !leave_case {
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let canonical_index = usize::try_from(canonical_number)
                     .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let atom_number = i32::from(
                     *heap
                         .slice(canonical_to_atom.as_const())?
                         .get(canonical_index)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?,
                 );
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 let atom_index = usize::try_from(atom_number)
                     .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                 let atom = heap
                     .slice(at2.as_const())?
                     .get(atom_index)
@@ -3423,6 +3655,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
                 let mut minus_edge = -1_i32;
                 let mut dioxide_center = None;
+                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                 if number_double_bond_oxygen < MAX_DIFF_FIXH as i32
                     && pVA[atom_index].cNumValenceElectrons == 6
                     && atom.endpoint == 0
@@ -3452,11 +3685,13 @@ pub(crate) fn FixMobileHRestoredStructure(
                     && atom.chem_bonds_valence == 2
                 {
                     let nitrogen_index = usize::from(atom.neighbor[0]);
+                    panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                     let nitrogen = heap
                         .slice(at2.as_const())?
                         .get(nitrogen_index)
                         .cloned()
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     if pVA
                         .get(nitrogen_index)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?
@@ -3471,6 +3706,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                     }
                 }
                 if let Some(nitrogen_index) = dioxide_center {
+                    panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                     let nitrogen = heap
                         .slice(at2.as_const())?
                         .get(nitrogen_index)
@@ -3480,6 +3716,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                     let mut number_others = 0_i32;
                     let mut neighbor_order = 0_i32;
                     while neighbor_order < i32::from(nitrogen.valence) {
+                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let position = usize::try_from(neighbor_order)
                             .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                         let neighbor_number = i32::from(nitrogen.neighbor[position]);
@@ -3487,13 +3724,16 @@ pub(crate) fn FixMobileHRestoredStructure(
                             neighbor_order = neighbor_order.wrapping_add(1);
                             continue;
                         }
+                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let neighbor_index = usize::try_from(neighbor_number)
                             .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                        panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                         let neighbor = heap
                             .slice(at2.as_const())?
                             .get(neighbor_index)
                             .cloned()
                             .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let neighbor_reversed_endpoint = !mobile_h_reversed.is_null()
                             && heap
                                 .slice(mobile_h_reversed.as_const())?
@@ -3501,6 +3741,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?
                                 .endpoint
                                 != 0;
+                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         if pVA
                             .get(neighbor_index)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?
@@ -3526,6 +3767,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                         neighbor_order = neighbor_order.wrapping_add(1);
                     }
                     if number_oxygen == 1 && number_others == 1 {
+                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let nitrogen_number = i32::try_from(nitrogen_index)
                             .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                         let mut duplicate_index = 0_i32;
@@ -3559,6 +3801,7 @@ pub(crate) fn FixMobileHRestoredStructure(
             if number_double_bond_oxygen != 0 && !leave_case {
                 let mut difference_index = 0_i32;
                 while difference_index < i32::from(comparison.len_c2at) && !leave_case {
+                    panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                     let difference = comparison.c2at[usize::try_from(difference_index)
                         .map_err(|_| SourceHeapError::PointerOutOfBounds)?]
                     .clone();
@@ -3567,8 +3810,10 @@ pub(crate) fn FixMobileHRestoredStructure(
                         && difference.nAtChargeRevrs == -1
                     {
                         let atom_number = i32::from(difference.atomNumber);
+                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let atom_index = usize::try_from(atom_number)
                             .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let minus_edge = pVA
                             .get(atom_index)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?
@@ -3576,6 +3821,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                             .wrapping_sub(1);
                         let charge_edge_ok = minus_edge >= 0
                             && {
+                                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                 let edge = heap
                                     .slice(pBNS.edge.as_const())?
                                     .get(
@@ -3628,25 +3874,31 @@ pub(crate) fn FixMobileHRestoredStructure(
 
                 let mut target_index = 0_i32;
                 while target_index < number_double_bond_oxygen && !leave_case {
+                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let atom_index =
                         usize::try_from(i32::from(double_bond_oxygen[target_index as usize]))
                             .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let target_minus_edge = pVA
                         .get(atom_index)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?
                         .nCMinusGroupEdge
                         .wrapping_sub(1);
+                    panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                     let atom_vertex = heap
                         .slice(pBNS.vert.as_const())?
                         .get(atom_index)
                         .cloned()
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let bond_edge_number = *heap
                         .slice(atom_vertex.iedge.as_const())?
                         .first()
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                    panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                     let bond_edge_index = usize::try_from(bond_edge_number)
                         .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    panic!("INCHI-AUDIT-0161: suspected source divergence; see dev/audits/inchi/findings.md");
                     let bond_edge_before = heap
                         .slice(pBNS.edge.as_const())?
                         .get(bond_edge_index)
@@ -3659,6 +3911,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                     let first_vertex = i32::from(bond_edge_before.neighbor1);
                     let second_vertex = i32::from(bond_edge_before.neighbor12) ^ first_vertex;
                     {
+                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let edge = heap
                             .slice_mut(pBNS.edge)?
                             .get_mut(bond_edge_index)
@@ -3667,8 +3920,11 @@ pub(crate) fn FixMobileHRestoredStructure(
                         edge.flow = edge.flow.wrapping_sub(1);
                     }
                     {
+                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let vertices = heap.slice_mut(pBNS.vert)?;
+                        panic!("INCHI-AUDIT-0267: suspected source divergence; see dev/audits/inchi/findings.md");
                         for vertex_number in [first_vertex, second_vertex] {
+                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                             let vertex = vertices
                                 .get_mut(
                                     usize::try_from(vertex_number)
@@ -3696,6 +3952,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                             forbidden_edge_mask,
                         )?;
                         {
+                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                             let edge = heap
                                 .slice_mut(pBNS.edge)?
                                 .get_mut(
@@ -3706,11 +3963,17 @@ pub(crate) fn FixMobileHRestoredStructure(
                             edge.forbidden =
                                 (i32::from(edge.forbidden) & forbidden_edge_mask_inv) as i8;
                         }
+                        panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                         let mut path_start = 0_i32;
+                        panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                         let mut path_end = 0_i32;
+                        panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                         let mut path_length = 0_i32;
+                        panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                         let mut delta_h = 0_i32;
+                        panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                         let mut delta_charge = 0_i32;
+                        panic!("INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md");
                         let mut number_visited_atoms = 0_i32;
                         ret = RunBnsTestOnce(
                             heap,
@@ -3739,6 +4002,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                     current_success = current_success.wrapping_add(one_success);
                     RemoveForbiddenEdgeMask(heap, pBNS, &all_charge_edges, forbidden_edge_mask)?;
                     {
+                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         let edge = heap
                             .slice_mut(pBNS.edge)?
                             .get_mut(bond_edge_index)
@@ -3747,10 +4011,14 @@ pub(crate) fn FixMobileHRestoredStructure(
                             (i32::from(edge.forbidden) & forbidden_edge_mask_inv) as i8;
                     }
                     if one_success == 0 {
+                        panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                         heap.slice_mut(pBNS.edge)?[bond_edge_index].flow = bond_edge_before.flow;
                         {
+                            panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                             let vertices = heap.slice_mut(pBNS.vert)?;
+                            panic!("INCHI-AUDIT-0267: suspected source divergence; see dev/audits/inchi/findings.md");
                             for vertex_number in [first_vertex, second_vertex] {
+                                panic!("INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md");
                                 let vertex = vertices
                                     .get_mut(
                                         usize::try_from(vertex_number)
