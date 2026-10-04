@@ -281,7 +281,7 @@ impl RingInfo {
     }
 
     #[allow(dead_code)]
-    pub(crate) fn preallocate(&mut self, atom_count: usize, bond_count: usize) {
+    pub fn preallocate(&mut self, atom_count: usize, bond_count: usize) {
         // BEGIN RDKIT CPP FUNCTION RingInfo::preallocate
         // RDKit✔️✔️: void RingInfo::preallocate(unsigned int numAtoms, unsigned int numBonds) {
         // RDKit✔️✔️:   d_atomMembers.resize(numAtoms);
@@ -899,7 +899,16 @@ impl RingInfo {
         &self.bond_ring_families
     }
 
-    pub(crate) fn add_ring(
+    /// Append already perceived, aligned atom and bond rows in the caller's
+    /// index domain, retaining their order, memberships and supplied find type.
+    /// The caller owns chemical cycle, completeness and perception-quality
+    /// preconditions; this method neither finds nor certifies cycles or SSSR.
+    ///
+    /// A length mismatch returns an error before mutation. Membership tables
+    /// grow for supplied indexes; rows are not sorted or deduplicated.
+    /// Work and storage follow the supplied members and any membership growth,
+    /// with the existing fused-ring cache clearing and typed row allocations.
+    pub fn add_ring(
         &mut self,
         atom_indices: &[usize],
         bond_indices: &[usize],
@@ -3133,6 +3142,98 @@ mod selected_row_tests {
 
     use cosmolkit_model::{Atom, AtomSpec, Bond, BondSpec};
     use cosmolkit_types::{BondOrder, Element};
+
+    #[test]
+    fn drawing_ring_preallocate_eight_carrier_preservation_calls() {
+        let mut calls = 0;
+        for quality in [RingFindType::Sssr, RingFindType::SymmSssr] {
+            for has_cycle in [false, true] {
+                for target in [3, 5] {
+                    let mut carrier = RingInfo::new(quality, 3, 3);
+                    if has_cycle {
+                        carrier.add_ring(&[0, 1, 2], &[0, 1, 2]).unwrap();
+                        carrier.atom_ring_families =
+                            vec![vec![AtomId::new(0), AtomId::new(1), AtomId::new(2)]];
+                        carrier.bond_ring_families =
+                            vec![vec![BondId::new(0), BondId::new(1), BondId::new(2)]];
+                        carrier.relevant_cycle_count = Some(1);
+                        carrier.fused_rings = vec![vec![false]];
+                        carrier.num_fused_bonds = vec![0];
+                    }
+                    assert!(carrier.is_initialized());
+                    assert_eq!(carrier.find_type(), quality);
+                    assert_eq!(carrier.atom_row_count(), 3);
+                    assert_eq!(carrier.bond_row_count(), 3);
+                    let original_members = if has_cycle {
+                        vec![vec![0], vec![0], vec![0]]
+                    } else {
+                        vec![vec![], vec![], vec![]]
+                    };
+                    assert_eq!(carrier.atom_members, original_members);
+                    assert_eq!(carrier.bond_members, original_members);
+                    if has_cycle {
+                        assert_eq!(
+                            carrier.atom_rings,
+                            vec![vec![AtomId::new(0), AtomId::new(1), AtomId::new(2)]]
+                        );
+                        assert_eq!(
+                            carrier.bond_rings,
+                            vec![vec![BondId::new(0), BondId::new(1), BondId::new(2)]]
+                        );
+                    } else {
+                        assert!(carrier.atom_rings.is_empty());
+                        assert!(carrier.bond_rings.is_empty());
+                    }
+                    let before = carrier.clone();
+                    let atom_rows_ptr = carrier.atom_rings.as_ptr();
+                    let bond_rows_ptr = carrier.bond_rings.as_ptr();
+                    let cycle_ptrs = has_cycle.then(|| {
+                        (
+                            carrier.atom_rings[0].as_ptr(),
+                            carrier.bond_rings[0].as_ptr(),
+                        )
+                    });
+                    let literal_members = match (has_cycle, target) {
+                        (false, 3) => vec![vec![], vec![], vec![]],
+                        (false, 5) => vec![vec![], vec![], vec![], vec![], vec![]],
+                        (true, 3) => vec![vec![0], vec![0], vec![0]],
+                        (true, 5) => vec![vec![0], vec![0], vec![0], vec![], vec![]],
+                        _ => unreachable!(),
+                    };
+                    let mut expected = before.clone();
+                    expected.atom_members = literal_members.clone();
+                    expected.bond_members = literal_members.clone();
+
+                    carrier.preallocate(target, target);
+                    calls += 1;
+
+                    assert_eq!(carrier, expected);
+                    assert_eq!(carrier.atom_row_count(), target);
+                    assert_eq!(carrier.bond_row_count(), target);
+                    for (index, members) in literal_members.iter().enumerate() {
+                        assert_eq!(carrier.atom_members(AtomId::new(index)), members);
+                        assert_eq!(carrier.bond_members(BondId::new(index)), members);
+                    }
+                    assert_eq!(carrier.initialized, before.initialized);
+                    assert_eq!(carrier.find_type, before.find_type);
+                    assert_eq!(carrier.atom_rings, before.atom_rings);
+                    assert_eq!(carrier.bond_rings, before.bond_rings);
+                    assert_eq!(carrier.atom_ring_families, before.atom_ring_families);
+                    assert_eq!(carrier.bond_ring_families, before.bond_ring_families);
+                    assert_eq!(carrier.relevant_cycle_count, before.relevant_cycle_count);
+                    assert_eq!(carrier.fused_rings, before.fused_rings);
+                    assert_eq!(carrier.num_fused_bonds, before.num_fused_bonds);
+                    if let Some((atoms_ptr, bonds_ptr)) = cycle_ptrs {
+                        assert_eq!(carrier.atom_rings.as_ptr(), atom_rows_ptr);
+                        assert_eq!(carrier.bond_rings.as_ptr(), bond_rows_ptr);
+                        assert_eq!(carrier.atom_rings[0].as_ptr(), atoms_ptr);
+                        assert_eq!(carrier.bond_rings[0].as_ptr(), bonds_ptr);
+                    }
+                }
+            }
+        }
+        assert_eq!(calls, 8, "exact post-invocation census");
+    }
 
     fn six_cycle_topology() -> TopologyBlock {
         let atoms = (0..6)

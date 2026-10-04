@@ -25,6 +25,7 @@ tests!(
     add_hydrogens_smiles,
     remove_hydrogens_smiles,
     coordinates_2d_smiles,
+    svg_smiles,
     distance_matrix_smiles,
     num_rings_smiles,
     num_heterocycles_smiles,

@@ -37,6 +37,44 @@ const BUNDLES: &[(&str, &[&str])] = &[
 ];
 const FOUR_CAPS: &[&str] = &["cap-io", "cap-kekulize", "cap-sanitize", "cap-hydrogens"];
 
+#[test]
+fn drawing_queries_and_error_follow_cap_depict_default_and_strict() {
+    let probe = Probe::new();
+    for strict in [false, true] {
+        let mut features = vec!["cap-depict"];
+        if strict {
+            features.push("op-contracts-strict");
+        }
+        probe.configure(false, &features);
+        let output = probe.check_source("pub fn probe() {\nlet _: fn(&cosmolkit::Molecule,u32,u32)->Result<String,cosmolkit::DrawingError> = cosmolkit::Molecule::to_svg;\nlet _: fn(&cosmolkit::Molecule,u32,u32)->Result<Vec<u8>,cosmolkit::DrawingError> = cosmolkit::Molecule::to_png;\n}\n");
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let output = probe.check_source("pub fn probe() {\nlet _ = cosmolkit::Molecule::from_smiles;\nlet _ = cosmolkit::Molecule::with_hydrogens;\nlet _ = cosmolkit::Molecule::with_kekulized_bonds;\nlet _ = cosmolkit::Molecule::with_assigned_rings;\n}\n");
+        assert!(!output.status.success());
+        assert_eq!(
+            String::from_utf8_lossy(&output.stderr)
+                .matches("error[E0599]")
+                .count(),
+            4
+        );
+        let absent = if strict {
+            vec!["op-contracts-strict"]
+        } else {
+            Vec::new()
+        };
+        probe.configure(false, &absent);
+        let output = probe.check_source("pub fn probe() {\nlet _ = cosmolkit::Molecule::to_svg;\nlet _ = cosmolkit::Molecule::to_png;\nlet _: Option<cosmolkit::DrawingError> = None;\n}\n");
+        assert!(!output.status.success());
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert_eq!(stderr.matches("error[E0599]").count(), 2, "{stderr}");
+        assert_eq!(stderr.matches("error[E0425]").count(), 1, "{stderr}");
+        assert!(stderr.contains("DrawingError"), "{stderr}");
+    }
+}
+
 // Independent expected membership, not a second production feature registry.
 fn all_caps() -> BTreeSet<&'static str> {
     BUNDLES

@@ -672,7 +672,7 @@ fn can_be_stereo_bond(
     // properties adds work compared with RDKit's typed property lookup.
 }
 
-fn determine_bond_wedge_state(
+pub fn determine_bond_wedge_state(
     topology: &TopologyBlock,
     bond_id: BondId,
     from_atom: AtomId,
@@ -1234,14 +1234,21 @@ fn pick_bond_to_wedge(
     // RDKit❗✔️:   auto minPr = std::min_element(nbrScores.begin(), nbrScores.end());
     // RDKit❗✔️:   return minPr->second;
     // RDKit❗✔️: }
+    // RDKit❗✔️:
+    // RDKit❗✔️: }  // namespace detail
+    // RDKit❗✔️:
     // END RDKIT CPP FUNCTION pickBondToWedge
     // Behavior remains provisional until the Step 10 score/branch tests. Complexity
     // keeps the source's candidate Vec, one incident-bond scan, logarithmic occupancy
     // lookup and linear min selection; ring counts and atom-property lookups are direct.
     if !rings.is_sssr_or_better() {
+        #[cfg(test)]
+        drawing_ring_probe::acquire();
         *rings = find_sssr(topology, &RingSearchParams::default())?;
     }
 
+    #[cfg(test)]
+    drawing_ring_probe::scoring(rings);
     let mut neighbor_scores = Vec::<(i32, BondId)>::new();
     for neighbor in topology.adjacency.neighbors_of(center.index()) {
         let bond = &topology.bonds[neighbor.bond.index()];
@@ -1309,6 +1316,16 @@ pub fn pick_bonds_to_wedge_with_ring_info(
     topology: &TopologyBlock,
     conformer: Option<AtropisomerConformer<'_>>,
 ) -> Result<(WedgeAssignments, RingInfo), WedgeError> {
+    pick_bonds_to_wedge_with_existing_ring_info(topology, conformer, None)
+}
+
+/// Consume a detached ring carrier, preserving trusted SSSR/SymmSSSR rows.
+/// The carrier must correspond to the final topology supplied by the caller.
+pub fn pick_bonds_to_wedge_with_existing_ring_info(
+    topology: &TopologyBlock,
+    conformer: Option<AtropisomerConformer<'_>>,
+    rings: Option<RingInfo>,
+) -> Result<(WedgeAssignments, RingInfo), WedgeError> {
     // BEGIN RDKIT CPP FUNCTION Chirality::pickBondsToWedge
     // RDKit❗❌: std::map<int, std::unique_ptr<Chirality::WedgeInfoBase>> pickBondsToWedge(
     // RDKit❗❌:     const ROMol &mol, const BondWedgingParameters *params,
@@ -1348,6 +1365,7 @@ pub fn pick_bonds_to_wedge_with_ring_info(
     // RDKit❗❌:     }
     // RDKit❗❌:   }
     // RDKit❗❌:   RDKit::Atropisomers::wedgeBondsFromAtropisomers(mol, conf, wedgeInfo);
+    // RDKit❗❌:
     // RDKit❗❌:   return wedgeInfo;
     // RDKit❗❌: }
     // END RDKIT CPP FUNCTION Chirality::pickBondsToWedge
@@ -1358,12 +1376,15 @@ pub fn pick_bonds_to_wedge_with_ring_info(
     // RDKit❗❌:         &wedgeBonds) {
     // RDKit❗❌:   PRECONDITION(conf == nullptr || &(conf->getOwningMol()) == &mol,
     // RDKit❗❌:                "conformer does not belong to molecule");
+    // RDKit❗❌:
     // RDKit❗❌:   // WedgeBondFromAtropisomerOneBond 2d/3d requires ring bond counts
     // RDKit❗❌:   if (!mol.getRingInfo()->isSssrOrBetter()) {
     // RDKit❗❌:     RDKit::MolOps::findSSSR(mol);
     // RDKit❗❌:   }
+    // RDKit❗❌:
     // RDKit❗❌:   for (auto bond : mol.bonds()) {
     // RDKit❗❌:     auto bondStereo = bond->getStereo();
+    // RDKit❗❌:
     // RDKit❗❌:     if (bond->getBondType() != Bond::BondType::SINGLE ||
     // RDKit❗❌:         (bondStereo != Bond::BondStereo::STEREOATROPCW &&
     // RDKit❗❌:          bondStereo != Bond::BondStereo::STEREOATROPCCW) ||
@@ -1373,6 +1394,7 @@ pub fn pick_bonds_to_wedge_with_ring_info(
     // RDKit❗❌:         bond->getEndAtom()->getTotalDegree() > 3) {
     // RDKit❗❌:       continue;
     // RDKit❗❌:     }
+    // RDKit❗❌:
     // RDKit❗❌:     if (conf) {
     // RDKit❗❌:       if (conf->is3D()) {
     // RDKit❗❌:         WedgeBondFromAtropisomerOneBond3d(bond, mol, conf, wedgeBonds);
@@ -1384,6 +1406,7 @@ pub fn pick_bonds_to_wedge_with_ring_info(
     // RDKit❗❌:     }
     // RDKit❗❌:   }
     // RDKit❗❌: }
+    // RDKit❗❌:
     // END RDKIT CPP FUNCTION Atropisomers::wedgeBondsFromAtropisomers
     // The detached boundary has no molecule-owned ring cache or conformer
     // pointer identity. It preserves the source default, exact model topology,
@@ -1409,11 +1432,33 @@ pub fn pick_bonds_to_wedge_with_ring_info(
         });
     }
 
-    let mut rings = RingInfo::new(
-        RingFindType::Fast,
-        topology.atoms.len(),
-        topology.bonds.len(),
-    );
+    // Input review: trusted initialized SSSR-or-better membership dimensions
+    // are checked before any scoring; weaker carriers follow the source guards.
+    // Move review: use the supplied allocation in place and return it by move.
+    // Cost review: O(1) getters/checks; no full RingInfo clone or eager finder.
+    let mut rings = rings.unwrap_or_else(|| {
+        RingInfo::new(
+            RingFindType::Fast,
+            topology.atoms.len(),
+            topology.bonds.len(),
+        )
+    });
+    if rings.is_sssr_or_better() {
+        if rings.atom_row_count() != topology.atoms.len() {
+            return Err(AtropisomerError::RingAtomRowCount {
+                actual: rings.atom_row_count(),
+                expected: topology.atoms.len(),
+            }
+            .into());
+        }
+        if rings.bond_row_count() != topology.bonds.len() {
+            return Err(AtropisomerError::RingBondRowCount {
+                actual: rings.bond_row_count(),
+                expected: topology.bonds.len(),
+            }
+            .into());
+        }
+    }
     let mut wedge_assignments = WedgeAssignments::default();
     for atom_index in atom_indices {
         if chiral_neighbor_counts[atom_index] > NO_NEIGHBORS {
@@ -1443,9 +1488,13 @@ pub fn pick_bonds_to_wedge_with_ring_info(
     // The pinned atrop stage promotes ring state even when no chiral center
     // called pickBondToWedge first. The shared detached owner requires SSSR.
     if !rings.is_sssr_or_better() {
+        #[cfg(test)]
+        drawing_ring_probe::acquire();
         rings = find_sssr(topology, &RingSearchParams::default())?;
     }
     let occupied_bonds: BTreeSet<_> = wedge_assignments.by_bond.keys().copied().collect();
+    #[cfg(test)]
+    drawing_ring_probe::atrop(&rings);
     let atropisomer_assignments =
         wedge_bonds_from_atropisomers(topology, &rings, conformer, &occupied_bonds)?;
     wedge_assignments.diagnostics = atropisomer_assignments.diagnostics;
@@ -1459,7 +1508,316 @@ pub fn pick_bonds_to_wedge_with_ring_info(
 }
 
 #[cfg(test)]
+mod drawing_ring_probe {
+    use super::*;
+    use std::cell::RefCell;
+
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    pub(super) struct Observation {
+        pub atoms_ptr: usize,
+        pub bonds_ptr: usize,
+        pub quality: RingFindType,
+        pub atoms: Vec<Vec<AtomId>>,
+        pub bonds: Vec<Vec<BondId>>,
+        pub atom_counts: Vec<usize>,
+        pub bond_counts: Vec<usize>,
+    }
+    pub(super) fn observe(rings: &RingInfo) -> Observation {
+        Observation {
+            atoms_ptr: rings.atom_rings().as_ptr() as usize,
+            bonds_ptr: rings.bond_rings().as_ptr() as usize,
+            quality: rings.find_type(),
+            atoms: rings.atom_rings().to_vec(),
+            bonds: rings.bond_rings().to_vec(),
+            atom_counts: (0..rings.atom_row_count())
+                .map(|i| rings.num_atom_rings(AtomId::new(i)))
+                .collect(),
+            bond_counts: (0..rings.bond_row_count())
+                .map(|i| rings.num_bond_rings(BondId::new(i)))
+                .collect(),
+        }
+    }
+    #[derive(Default, Clone)]
+    pub(super) struct State {
+        pub acquisitions: usize,
+        pub scoring: Vec<Observation>,
+        pub atrop: Vec<Observation>,
+    }
+    thread_local! {
+        static STATE: RefCell<State> = RefCell::new(State::default());
+    }
+    pub(super) fn acquire() {
+        STATE.with(|state| state.borrow_mut().acquisitions += 1);
+    }
+    pub(super) fn scoring(rings: &RingInfo) {
+        STATE.with(|state| state.borrow_mut().scoring.push(observe(rings)));
+    }
+    pub(super) fn atrop(rings: &RingInfo) {
+        STATE.with(|state| state.borrow_mut().atrop.push(observe(rings)));
+    }
+    pub(super) fn state() -> State {
+        STATE.with(|state| state.borrow().clone())
+    }
+}
+
+#[cfg(test)]
 mod tests {
+    mod drawing_ring_input_tests {
+        use super::*;
+        use crate::AtropisomerError;
+        use crate::wedge::{
+            drawing_ring_probe as probe, pick_bonds_to_wedge_with_existing_ring_info,
+        };
+
+        const XY: [[f64; 2]; 7] = [
+            [0., 0.],
+            [1., 0.],
+            [-1., 0.],
+            [2., 1.],
+            [2., -1.],
+            [-2., 1.],
+            [-2., -1.],
+        ];
+        const EDGES: [(usize, usize); 7] = [(0, 1), (0, 2), (1, 3), (3, 4), (4, 1), (2, 5), (2, 6)];
+
+        fn graph() -> TopologyBlock {
+            topology_from_specs(
+                (0..7)
+                    .map(|i| {
+                        atom(
+                            6,
+                            if i == 0 {
+                                ChiralTag::TetrahedralCw
+                            } else {
+                                ChiralTag::Unspecified
+                            },
+                        )
+                    })
+                    .collect(),
+                EDGES
+                    .iter()
+                    .map(|&(a, b)| edge(a, b, BondOrder::Single))
+                    .collect(),
+            )
+        }
+
+        fn carrier(state: usize) -> Option<RingInfo> {
+            let quality = match state {
+                4 | 6 => RingFindType::Sssr,
+                5 | 7 => RingFindType::SymmSssr,
+                3 => RingFindType::Fast,
+                _ => RingFindType::OtherOrUnknown,
+            };
+            if state == 0 {
+                return None;
+            }
+            let mut rings = RingInfo::new(quality, 7, 7);
+            if state == 1 {
+                rings.reset();
+            }
+            if state >= 6 {
+                rings.add_ring(&[1, 3, 4], &[2, 3, 4]).unwrap();
+            }
+            Some(rings)
+        }
+
+        fn prerequisites(topology: &TopologyBlock, coords: &Conformer2D) {
+            topology.validate().unwrap();
+            coords.validate_for_atom_count(7).unwrap();
+            assert_eq!(coords.id(), 17);
+            assert_eq!(coords.coordinates(), &XY);
+            for (i, atom) in topology.atoms.iter().enumerate() {
+                assert_eq!(atom.id(), AtomId::new(i));
+                assert_eq!(atom.element(), Element::C);
+                assert_eq!(
+                    atom.chiral_tag(),
+                    if i == 0 {
+                        ChiralTag::TetrahedralCw
+                    } else {
+                        ChiralTag::Unspecified
+                    }
+                );
+                assert!(!atom.is_aromatic());
+                assert!(atom.props().is_empty());
+                assert_eq!(
+                    topology.adjacency.neighbors_of(i).len(),
+                    [2, 3, 3, 2, 2, 1, 1][i]
+                );
+            }
+            for (i, bond) in topology.bonds.iter().enumerate() {
+                assert_eq!(bond.id(), BondId::new(i));
+                assert_eq!((bond.begin().index(), bond.end().index()), EDGES[i]);
+                assert_eq!(bond.order(), BondOrder::Single);
+                assert_eq!(bond.direction(), BondDirection::None);
+                assert_eq!(bond.stereo(), BondStereo::None);
+                assert!(!bond.is_aromatic());
+                assert!(bond.props().is_empty());
+            }
+        }
+
+        #[test]
+        fn drawing_ring_wedge_eighteen_actual_calls() {
+            let mut calls = 0;
+            for state in 0..8 {
+                for with_coords in [false, true] {
+                    let topology = graph();
+                    let coords = Conformer2D::new(17, XY.to_vec());
+                    prerequisites(&topology, &coords);
+                    let topology_snapshot = topology.clone();
+                    let coords_snapshot = coords.clone();
+                    let coordinate_bits = coords
+                        .coordinates()
+                        .iter()
+                        .map(|p| p.map(f64::to_bits))
+                        .collect::<Vec<_>>();
+                    let rings = carrier(state);
+                    let ring_snapshot = rings.clone();
+                    let move_baseline = if state >= 4 {
+                        Some(probe::observe(rings.as_ref().unwrap()))
+                    } else {
+                        None
+                    };
+                    if let Some(rings) = &rings {
+                        assert_eq!(rings.is_initialized(), state != 1);
+                        if state != 1 {
+                            assert_eq!(rings.atom_row_count(), 7);
+                            assert_eq!(rings.bond_row_count(), 7);
+                            assert_eq!(
+                                rings.atom_rings(),
+                                if state >= 6 {
+                                    vec![vec![AtomId::new(1), AtomId::new(3), AtomId::new(4)]]
+                                } else {
+                                    vec![]
+                                }
+                            );
+                            assert_eq!(
+                                rings.bond_rings(),
+                                if state >= 6 {
+                                    vec![vec![BondId::new(2), BondId::new(3), BondId::new(4)]]
+                                } else {
+                                    vec![]
+                                }
+                            );
+                            for i in 0..7 {
+                                assert_eq!(
+                                    rings.num_atom_rings(AtomId::new(i)),
+                                    usize::from(state >= 6 && [1, 3, 4].contains(&i))
+                                );
+                                assert_eq!(
+                                    rings.num_bond_rings(BondId::new(i)),
+                                    usize::from(state >= 6 && [2, 3, 4].contains(&i))
+                                );
+                            }
+                        }
+                    }
+                    let baseline = probe::state();
+                    let result = pick_bonds_to_wedge_with_existing_ring_info(
+                        &topology,
+                        with_coords.then_some(AtropisomerConformer::TwoD(&coords)),
+                        rings,
+                    );
+                    calls += 1;
+                    let observed = probe::state();
+                    assert_eq!(topology, topology_snapshot);
+                    assert_eq!(coords, coords_snapshot);
+                    assert_eq!(
+                        coords
+                            .coordinates()
+                            .iter()
+                            .map(|p| p.map(f64::to_bits))
+                            .collect::<Vec<_>>(),
+                        coordinate_bits
+                    );
+                    let (wedges, returned) = result.unwrap();
+                    let expected_bond = if state == 4 || state == 5 { 0 } else { 1 };
+                    assert_eq!(
+                        wedges.iter().collect::<Vec<_>>(),
+                        vec![(
+                            BondId::new(expected_bond),
+                            &WedgeInfo::Chiral {
+                                center: AtomId::new(0)
+                            }
+                        )]
+                    );
+                    assert!(wedges.diagnostics().is_empty());
+                    assert_eq!(
+                        observed.acquisitions - baseline.acquisitions,
+                        usize::from(state < 4)
+                    );
+                    assert_eq!(observed.scoring.len() - baseline.scoring.len(), 1);
+                    assert_eq!(observed.atrop.len() - baseline.atrop.len(), 1);
+                    let final_observation = probe::observe(&returned);
+                    assert_eq!(observed.scoring[baseline.scoring.len()], final_observation);
+                    assert_eq!(observed.atrop[baseline.atrop.len()], final_observation);
+                    if let Some(move_baseline) = move_baseline {
+                        assert_eq!(final_observation, move_baseline);
+                        assert_eq!(Some(returned), ring_snapshot);
+                    } else {
+                        assert_eq!(returned.find_type(), RingFindType::Sssr);
+                        assert_eq!(
+                            returned.atom_rings(),
+                            &[vec![AtomId::new(1), AtomId::new(3), AtomId::new(4)]]
+                        );
+                        assert_eq!(
+                            returned.bond_rings(),
+                            &[vec![BondId::new(2), BondId::new(3), BondId::new(4)]]
+                        );
+                        for i in 0..7 {
+                            assert_eq!(
+                                returned.num_atom_rings(AtomId::new(i)),
+                                usize::from([1, 3, 4].contains(&i))
+                            );
+                            assert_eq!(
+                                returned.num_bond_rings(BondId::new(i)),
+                                usize::from([2, 3, 4].contains(&i))
+                            );
+                        }
+                    }
+                }
+            }
+            assert_eq!(calls, 16);
+            for (atoms, bonds, expected) in [
+                (
+                    8,
+                    7,
+                    AtropisomerError::RingAtomRowCount {
+                        actual: 8,
+                        expected: 7,
+                    },
+                ),
+                (
+                    7,
+                    8,
+                    AtropisomerError::RingBondRowCount {
+                        actual: 8,
+                        expected: 7,
+                    },
+                ),
+            ] {
+                let topology = graph();
+                let coords = Conformer2D::new(17, XY.to_vec());
+                prerequisites(&topology, &coords);
+                let snapshot = (topology.clone(), coords.clone());
+                let rings = RingInfo::new(RingFindType::Sssr, atoms, bonds);
+                assert_eq!(rings.atom_row_count(), atoms);
+                assert_eq!(rings.bond_row_count(), bonds);
+                let baseline = probe::state();
+                let result = pick_bonds_to_wedge_with_existing_ring_info(
+                    &topology,
+                    Some(AtropisomerConformer::TwoD(&coords)),
+                    Some(rings),
+                );
+                calls += 1;
+                assert_eq!(result, Err(WedgeError::Atropisomer(expected)));
+                let observed = probe::state();
+                assert_eq!(observed.acquisitions, baseline.acquisitions);
+                assert_eq!(observed.scoring, baseline.scoring);
+                assert_eq!(observed.atrop, baseline.atrop);
+                assert_eq!((topology, coords), snapshot);
+            }
+            assert_eq!(calls, 18);
+        }
+    }
     use super::{
         AtropisomerConformer, AtropisomerWedgeUpdate, CrossedBondContext, MolFileBondStereoInfo,
         WedgeAssignments, WedgeError, WedgeInfo, bond_get_dir_code, can_be_stereo_bond,

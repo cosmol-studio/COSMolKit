@@ -386,6 +386,9 @@ fn binding_registry_operation_contract_and_feature_isolation() {
             "types.Coordinate2DLayoutError",
             "Molecule.with_2d_coordinates",
             "Molecule.with_2d_coordinates_with_params",
+            "types.DrawingError",
+            "Molecule.to_svg",
+            "Molecule.to_png",
         ]
     );
     for row in &rows {
@@ -395,7 +398,7 @@ fn binding_registry_operation_contract_and_feature_isolation() {
         assert_eq!(row.item, BindingItem::Type);
         assert_eq!(row.owner, BindingOwner::Type);
     }
-    for row in &rows[4..] {
+    for row in &rows[4..6] {
         assert_eq!(row.item, BindingItem::Callable);
         assert_eq!(row.owner, BindingOwner::Molecule);
         assert_eq!(
@@ -405,6 +408,17 @@ fn binding_registry_operation_contract_and_feature_isolation() {
     }
     assert_eq!(rows[4].callable.unwrap().parameters.len(), 0);
     assert_eq!(rows[5].callable.unwrap().parameters.len(), 1);
+    assert_eq!(rows[6].item, BindingItem::Type);
+    assert_eq!(rows[6].owner, BindingOwner::Type);
+    assert_eq!(rows[6].callable, None);
+    for row in &rows[7..] {
+        assert_eq!(row.item, BindingItem::Callable);
+        assert_eq!(row.owner, BindingOwner::Molecule);
+        let callable = row.callable.unwrap();
+        assert_eq!(callable.state_model, StateModel::ReadOnly);
+        assert_eq!(callable.operation_semantic_id, None);
+        assert_eq!(callable.parameters.len(), 2);
+    }
 
     let feature = feature_spec("cap-depict").unwrap();
     assert_eq!(feature.name, "cap-depict");
@@ -443,7 +457,8 @@ fn binding_registry_operation_contract_and_feature_isolation() {
     assert!(
         BINDING_CONTRACT
             .iter()
-            .filter(|row| row.feature == "cap-depict")
+            .filter(|row| row.feature == "cap-depict" && row.callable.is_some())
+            .filter(|row| row.callable.unwrap().state_model == StateModel::ValueReturning)
             .all(|row| !row.semantic_id.contains("svg") && !row.semantic_id.contains("png"))
     );
 }

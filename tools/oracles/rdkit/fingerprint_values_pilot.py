@@ -6,6 +6,7 @@ from concurrent.futures import ProcessPoolExecutor
 from functools import partial
 from rdkit import Chem, DataStructs, rdBase
 from rdkit.Chem import Descriptors, rdMolDescriptors, rdDepictor
+from rdkit.Chem.Draw import rdMolDraw2D
 
 
 def topology(mol):
@@ -42,6 +43,11 @@ def molecular(row):
         if mol is None:
             raise ValueError("RDKit MolFromSmiles returned None")
         stage = "Operation"
+        if name == "SvgDefault":
+            drawer = rdMolDraw2D.MolDraw2DSVG(300, 300, -1, -1, True)
+            rdMolDraw2D.PrepareAndDrawMolecule(drawer, mol)
+            drawer.FinishDrawing()
+            return {"Text": drawer.GetDrawingText()}
         if name == "DistanceMatrix":
             matrix = Chem.GetDistanceMatrix(mol, useBO=options["use_bond_order"],
                 useAtomWts=options["use_atom_weights"], force=True)
@@ -304,6 +310,12 @@ def generate_coordinates_2d(corpus, parameters, threads):
     return _generate(corpus, parameters, threads, _molecular_case)
 
 
+def generate_svg(corpus, parameters, threads):
+    if parameters != ["SvgDefault"]:
+        raise ValueError("SVG requires exactly the frozen SvgDefault 300x300 profile")
+    return _generate(corpus, parameters, threads, _molecular_case)
+
+
 def generate_distance_matrix(corpus, parameters, threads):
     return _generate(corpus, parameters, threads, _molecular_case)
 
@@ -336,6 +348,7 @@ GENERATORS = {
     "generate_add_hydrogens": generate_add_hydrogens,
     "generate_remove_hydrogens": generate_remove_hydrogens,
     "generate_coordinates_2d": generate_coordinates_2d,
+    "generate_svg": generate_svg,
     "generate_distance_matrix": generate_distance_matrix,
 }
 

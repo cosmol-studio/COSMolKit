@@ -142,6 +142,11 @@ pub const TASKS: &[Task] = &[
         generator: "generate_coordinates_2d",
     },
     Task {
+        operation: Operation::Molecular(molecule_plan::TaskId::Svg),
+        corpus_type: CorpusType::Smiles,
+        generator: "generate_svg",
+    },
+    Task {
         operation: Operation::Molecular(molecule_plan::TaskId::DistanceMatrix),
         corpus_type: CorpusType::Smiles,
         generator: "generate_distance_matrix",
@@ -285,6 +290,7 @@ impl Input {
                     AddHydrogens { .. } => "add_hydrogens",
                     RemoveHydrogens { .. } => "remove_hydrogens",
                     Coordinates2dDefault => "coordinates_2d",
+                    SvgDefault => "svg",
                     CipLabels { .. } => "cip_labels",
                     PotentialStereo { .. } => "potential_stereo",
                     Valence { .. } => "valence",

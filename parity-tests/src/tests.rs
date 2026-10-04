@@ -2,6 +2,160 @@ use super::*;
 use registry::Pair;
 use std::cell::Cell;
 
+#[test]
+fn svg_schema_rejects_wrong_kind_missing_payload_and_parameter_expansion() {
+    use molecular::Outcome;
+    use registry::molecule_plan::{Profile, TaskId};
+    assert_eq!(TaskId::Svg.profiles(), vec![Profile::SvgDefault]);
+    assert_eq!(
+        serde_json::to_value(Profile::SvgDefault).unwrap(),
+        "SvgDefault"
+    );
+    assert!(serde_json::from_str::<Profile>(r#"{"SvgDefault":{"width":301}}"#).is_err());
+    for output in [
+        Outcome::Unsigned(1),
+        Outcome::Text(String::new()),
+        Outcome::Text("<svg>".into()),
+    ] {
+        assert!(molecular::validate_output(&Profile::SvgDefault, &output).is_err());
+    }
+    assert!(serde_json::from_str::<Outcome>(r#"{"Text":null}"#).is_err());
+    assert!(serde_json::from_str::<Outcome>(r#"{"Text":{}}"#).is_err());
+    assert!(
+        molecular::validate_output(&Profile::SvgDefault, &Outcome::Text("<svg></svg>".into()))
+            .is_ok()
+    );
+    let error = Outcome::Error {
+        stage: molecular::Stage::Parse,
+        detail: "retained invalid input".into(),
+    };
+    assert!(molecular::validate_output(&Profile::SvgDefault, &error).is_ok());
+    assert!(!molecular::svg_matches(&error, &error));
+}
+
+#[test]
+fn svg_typed_comparison_normalizes_only_the_four_literal_branding_substitutions() {
+    use molecular::Outcome;
+    use registry::molecule_plan::Profile;
+    let expected = "<svg xmlns:rdkit='http://www.rdkit.org/xml'><rdkit:mol/><path d='M 1.0,2.0 L 3.0,4.0'/></svg>";
+    let actual = "<svg xmlns:cosmolkit='https://www.cosmol.org'><cosmolkit:mol/><path d='M 1.0,2.0 L 3.0,4.0'/></svg>";
+    let cases = Corpus {
+        fingerprints: vec![],
+        molecules: vec![registry::SmilesCase {
+            id: "svg-synthetic".into(),
+            smiles: "CCO".into(),
+        }],
+    };
+    let tasks = registry::select(Some("svg_smiles")).unwrap();
+    let data = tempfile::tempdir().unwrap();
+    let inputs = registry::expand(&cases, tasks[0]);
+    assert_eq!(inputs.len(), 1);
+    publish(
+        data.path(),
+        tasks[0],
+        &inputs,
+        &[Record {
+            input: inputs[0].clone(),
+            output: registry::Value::Molecular(Outcome::Text(expected.into())),
+        }],
+    )
+    .unwrap();
+    let compare = |text: &str| {
+        run(&tasks, &cases, data.path(), |input| {
+            Ok(Record {
+                input: input.clone(),
+                output: registry::Value::Molecular(Outcome::Text(text.into())),
+            })
+        })
+        .unwrap()[0]
+            .matches
+    };
+    assert!(compare(actual));
+    for changed in [
+        actual.replace("1.0", "1.1"),
+        actual.replace("M ", "L "),
+        actual.replace("<path", " <path"),
+        actual.replace("1.0", "1.00"),
+        actual.replace("https://www.cosmol.org", "https://different.invalid"),
+    ] {
+        assert!(
+            !compare(&changed),
+            "must preserve exact SVG content: {changed}"
+        );
+    }
+    // A formula Text observation keeps its existing exact comparison.
+    assert!(!molecular::matches(
+        &Outcome::Text(expected.into()),
+        &Outcome::Text(actual.into())
+    ));
+    assert_eq!(inputs[0].task_name(), "svg");
+    assert!(matches!(
+        &inputs[0],
+        Input::Molecular {
+            profile: Profile::SvgDefault,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn svg_registration_preserves_complete_cargo_task_key_census() {
+    let keys: Vec<_> = registry::TASKS.iter().map(|task| task.key()).collect();
+    assert_eq!(
+        keys,
+        [
+            "fuzzy_and_fingerprint_pairs",
+            "fuzzy_or_fingerprint_pairs",
+            "smiles_read_smiles",
+            "sanitize_smiles",
+            "kekulize_smiles",
+            "molecular_weight_smiles",
+            "exact_molecular_weight_smiles",
+            "molecular_formula_smiles",
+            "num_heavy_atoms_smiles",
+            "total_atom_count_smiles",
+            "lipinski_hba_smiles",
+            "lipinski_hbd_smiles",
+            "fraction_csp3_smiles",
+            "add_hydrogens_smiles",
+            "remove_hydrogens_smiles",
+            "coordinates_2d_smiles",
+            "svg_smiles",
+            "distance_matrix_smiles",
+            "num_rings_smiles",
+            "num_heterocycles_smiles",
+            "num_aromatic_rings_smiles",
+            "num_saturated_rings_smiles",
+            "num_aliphatic_rings_smiles",
+            "num_aromatic_heterocycles_smiles",
+            "num_aromatic_carbocycles_smiles",
+            "num_aliphatic_heterocycles_smiles",
+            "num_aliphatic_carbocycles_smiles",
+            "num_saturated_heterocycles_smiles",
+            "num_saturated_carbocycles_smiles",
+        ]
+    );
+    let task = registry::select(Some("svg_smiles")).unwrap()[0];
+    assert_eq!(task.generator, "generate_svg");
+    assert_eq!(task.corpus_type, CorpusType::Smiles);
+    let source = include_str!("../tests/reference_parity.rs");
+    let registered: Vec<_> = source
+        .split("tests!(")
+        .nth(1)
+        .unwrap()
+        .split(");")
+        .next()
+        .unwrap()
+        .split(',')
+        .map(str::trim)
+        .filter(|key| !key.is_empty())
+        .collect();
+    assert_eq!(
+        keys.iter().map(String::as_str).collect::<Vec<_>>(),
+        registered
+    );
+}
+
 fn fingerprint_tasks() -> Result<Vec<&'static Task>> {
     Ok(registry::TASKS
         .iter()

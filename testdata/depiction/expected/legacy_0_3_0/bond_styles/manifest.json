@@ -1,0 +1,1227 @@
+{
+  "all_canonical_prerequisites_before_any_svg": true,
+  "executable_sha256": "d3f4f43752befb4e628ff5d52d23628b7a7bd31f194e357737df055c838ccb60",
+  "input_count": 12,
+  "inputs": [
+    {
+      "actual_atoms": "[\n    Atom {\n        id: AtomId(\n            0,\n        ),\n        element: Element {\n            atomic_number: 6,\n        },\n        formal_charge: 0,\n        explicit_hydrogens: 0,\n        chiral_tag: Unspecified,\n        chiral_permutation: None,\n        unknown_stereo: false,\n        mol_parity: None,\n        mol_inversion_flag: None,\n        implicit_hydrogen: false,\n        tracked_isotopic_hydrogens: [],\n        is_aromatic: false,\n        isotope: None,\n        atom_map: None,\n        no_implicit: false,\n        radical_electrons: 0,\n        hybridization: Unspecified,\n        query: None,\n        props: {},\n        computed_props: {},\n        pdb_residue_info: None,\n    },\n    Atom {\n        id: AtomId(\n            1,\n        ),\n        element: Element {\n            atomic_number: 6,\n        },\n        formal_charge: 0,\n        explicit_hydrogens: 0,\n        chiral_tag: Unspecified,\n        chiral_permutation: None,\n        unknown_stereo: false,\n        mol_parity: None,\n        mol_inversion_flag: None,\n        implicit_hydrogen: false,\n        tracked_isotopic_hydrogens: [],\n        is_aromatic: false,\n        isotope: None,\n        atom_map: None,\n        no_implicit: false,\n        radical_electrons: 0,\n        hybridization: Unspecified,\n        query: None,\n        props: {},\n        computed_props: {},\n        pdb_residue_info: None,\n    },\n]",
+      "actual_bonds": "[\n    Bond {\n        id: BondId(\n            0,\n        ),\n        begin: AtomId(\n            0,\n        ),\n        end: AtomId(\n            1,\n        ),\n        order: Triple,\n        is_aromatic: false,\n        is_conjugated: false,\n        direction: None,\n        stereo: None,\n        stereo_atoms: None,\n        unknown_stereo: false,\n        query: None,\n        props: {},\n        computed_props: {},\n    },\n]",
+      "actual_properties": "MoleculeProperties {\n    name: None,\n    sdf_data_fields: [],\n    sdf_property_lists: [],\n    props: {},\n    computed_props: {},\n}",
+      "actual_rings": "RingInfo {\n    initialized: true,\n    find_type: SymmSssr,\n    atom_members: [\n        [],\n        [],\n    ],\n    bond_members: [\n        [],\n    ],\n    atom_rings: [],\n    bond_rings: [],\n    atom_ring_families: [],\n    bond_ring_families: [],\n    relevant_cycle_count: None,\n    fused_rings: [],\n    num_fused_bonds: [],\n}",
+      "actual_valence": "ValenceAssignment {\n    explicit_valence: [\n        3,\n        3,\n    ],\n    implicit_hydrogens: [\n        1,\n        1,\n    ],\n}",
+      "atom_ids": [
+        0,
+        1
+      ],
+      "begin": 0,
+      "bond_id": 0,
+      "conformer_2d_ids": [
+        0
+      ],
+      "conformer_3d_ids": [],
+      "coordinate_bits": [
+        [
+          0,
+          0
+        ],
+        [
+          4609434218613702656,
+          0
+        ]
+      ],
+      "coordinate_identity_after": [
+        [
+          0,
+          [
+            [
+              0,
+              0
+            ],
+            [
+              4609434218613702656,
+              0
+            ]
+          ]
+        ]
+      ],
+      "coordinate_identity_before": [
+        [
+          0,
+          [
+            [
+              0,
+              0
+            ],
+            [
+              4609434218613702656,
+              0
+            ]
+          ]
+        ]
+      ],
+      "coordinates": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          1.5,
+          0.0
+        ]
+      ],
+      "end": 1,
+      "explicit_valence": [
+        3,
+        3
+      ],
+      "height": 300,
+      "implicit_hydrogens": [
+        1,
+        1
+      ],
+      "label": "triple_fwd",
+      "semantic_order": "Triple",
+      "source_after": "Molecule {\n    topology: TopologyBlock {\n        atoms: [\n            Atom {\n                id: AtomId(\n                    0,\n                ),\n                element: Element {\n                    atomic_number: 6,\n                },\n                formal_charge: 0,\n                explicit_hydrogens: 0,\n                chiral_tag: Unspecified,\n                chiral_permutation: None,\n                unknown_stereo: false,\n                mol_parity: None,\n                mol_inversion_flag: None,\n                implicit_hydrogen: false,\n                tracked_isotopic_hydrogens: [],\n                is_aromatic: false,\n                isotope: None,\n                atom_map: None,\n                no_implicit: false,\n                radical_electrons: 0,\n                hybridization: Unspecified,\n                query: None,\n                props: {},\n                computed_props: {},\n                pdb_residue_info: None,\n            },\n            Atom {\n                id: AtomId(\n                    1,\n                ),\n                element: Element {\n                    atomic_number: 6,\n                },\n                formal_charge: 0,\n                explicit_hydrogens: 0,\n                chiral_tag: Unspecified,\n                chiral_permutation: None,\n                unknown_stereo: false,\n                mol_parity: None,\n                mol_inversion_flag: None,\n                implicit_hydrogen: false,\n                tracked_isotopic_hydrogens: [],\n                is_aromatic: false,\n                isotope: None,\n                atom_map: None,\n                no_implicit: false,\n                radical_electrons: 0,\n                hybridization: Unspecified,\n                query: None,\n                props: {},\n                computed_props: {},\n                pdb_residue_info: None,\n            },\n        ],\n        bonds: [\n            Bond {\n                id: BondId(\n                    0,\n                ),\n                begin: AtomId(\n                    0,\n                ),\n                end: AtomId(\n                    1,\n                ),\n                order: Triple,\n                is_aromatic: false,\n                is_conjugated: false,\n                direction: None,\n                stereo: None,\n                stereo_atoms: None,\n                unknown_stereo: false,\n                query: None,\n                props: {},\n                computed_props: {},\n            },\n        ],\n        adjacency: AdjacencyList {\n            offsets: [\n                0,\n                1,\n                2,\n            ],\n            entries: [\n                NeighborRef {\n                    atom_index: 1,\n                    bond: BondId(\n                        0,\n                    ),\n                },\n                NeighborRef {\n                    atom_index: 0,\n                    bond: BondId(\n                        0,\n                    ),\n                },\n            ],\n        },\n        substance_groups: [],\n        stereo_groups: [],\n    },\n    coordinates: CoordinateBlock {\n        conformers_2d: [\n            Conformer2D {\n                id: 0,\n                coords: [\n                    [\n                        0.0,\n                        0.0,\n                    ],\n                    [\n                        1.5,\n                        0.0,\n                    ],\n                ],\n                props: {},\n            },\n        ],\n        conformers_3d: [],\n        source_coordinate_dim: Some(\n            TwoD,\n        ),\n    },\n    properties: MoleculeProperties {\n        name: None,\n        sdf_data_fields: [],\n        sdf_property_lists: [],\n        props: {},\n        computed_props: {},\n    },\n    derived_cache: DerivedCacheBlock {\n        rings: None,\n        ring_families: None,\n        valence: None,\n        aromaticity_valid: false,\n        stereo_valid: false,\n    },\n    capabilities: MoleculeCapabilities {\n        topology_trust: TrustedGraph,\n    },\n    computed_properties: ComputedPropertyCache {\n        crippen: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        crippen_atom_contributions: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        connectivity_hk_deltas: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        connectivity_n_vals: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        labute: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        topological_distance_matrix: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        distance_matrices_3d: RwLock {\n            data: {},\n            poisoned: false,\n            ..\n        },\n        potential_stereo: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n    },\n}",
+      "source_before": "Molecule {\n    topology: TopologyBlock {\n        atoms: [\n            Atom {\n                id: AtomId(\n                    0,\n                ),\n                element: Element {\n                    atomic_number: 6,\n                },\n                formal_charge: 0,\n                explicit_hydrogens: 0,\n                chiral_tag: Unspecified,\n                chiral_permutation: None,\n                unknown_stereo: false,\n                mol_parity: None,\n                mol_inversion_flag: None,\n                implicit_hydrogen: false,\n                tracked_isotopic_hydrogens: [],\n                is_aromatic: false,\n                isotope: None,\n                atom_map: None,\n                no_implicit: false,\n                radical_electrons: 0,\n                hybridization: Unspecified,\n                query: None,\n                props: {},\n                computed_props: {},\n                pdb_residue_info: None,\n            },\n            Atom {\n                id: AtomId(\n                    1,\n                ),\n                element: Element {\n                    atomic_number: 6,\n                },\n                formal_charge: 0,\n                explicit_hydrogens: 0,\n                chiral_tag: Unspecified,\n                chiral_permutation: None,\n                unknown_stereo: false,\n                mol_parity: None,\n                mol_inversion_flag: None,\n                implicit_hydrogen: false,\n                tracked_isotopic_hydrogens: [],\n                is_aromatic: false,\n                isotope: None,\n                atom_map: None,\n                no_implicit: false,\n                radical_electrons: 0,\n                hybridization: Unspecified,\n                query: None,\n                props: {},\n                computed_props: {},\n                pdb_residue_info: None,\n            },\n        ],\n        bonds: [\n            Bond {\n                id: BondId(\n                    0,\n                ),\n                begin: AtomId(\n                    0,\n                ),\n                end: AtomId(\n                    1,\n                ),\n                order: Triple,\n                is_aromatic: false,\n                is_conjugated: false,\n                direction: None,\n                stereo: None,\n                stereo_atoms: None,\n                unknown_stereo: false,\n                query: None,\n                props: {},\n                computed_props: {},\n            },\n        ],\n        adjacency: AdjacencyList {\n            offsets: [\n                0,\n                1,\n                2,\n            ],\n            entries: [\n                NeighborRef {\n                    atom_index: 1,\n                    bond: BondId(\n                        0,\n                    ),\n                },\n                NeighborRef {\n                    atom_index: 0,\n                    bond: BondId(\n                        0,\n                    ),\n                },\n            ],\n        },\n        substance_groups: [],\n        stereo_groups: [],\n    },\n    coordinates: CoordinateBlock {\n        conformers_2d: [\n            Conformer2D {\n                id: 0,\n                coords: [\n                    [\n                        0.0,\n                        0.0,\n                    ],\n                    [\n                        1.5,\n                        0.0,\n                    ],\n                ],\n                props: {},\n            },\n        ],\n        conformers_3d: [],\n        source_coordinate_dim: Some(\n            TwoD,\n        ),\n    },\n    properties: MoleculeProperties {\n        name: None,\n        sdf_data_fields: [],\n        sdf_property_lists: [],\n        props: {},\n        computed_props: {},\n    },\n    derived_cache: DerivedCacheBlock {\n        rings: None,\n        ring_families: None,\n        valence: None,\n        aromaticity_valid: false,\n        stereo_valid: false,\n    },\n    capabilities: MoleculeCapabilities {\n        topology_trust: TrustedGraph,\n    },\n    computed_properties: ComputedPropertyCache {\n        crippen: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        crippen_atom_contributions: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        connectivity_hk_deltas: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        connectivity_n_vals: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        labute: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        topological_distance_matrix: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        distance_matrices_3d: RwLock {\n            data: {},\n            poisoned: false,\n            ..\n        },\n        potential_stereo: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n    },\n}",
+      "source_preserved": true,
+      "specs": {
+        "atoms": [
+          "AtomSpec {\n    element: Element {\n        atomic_number: 6,\n    },\n    formal_charge: 0,\n    explicit_hydrogens: 0,\n    chiral_tag: Unspecified,\n    chiral_permutation: None,\n    unknown_stereo: false,\n    mol_parity: None,\n    mol_inversion_flag: None,\n    implicit_hydrogen: false,\n    tracked_isotopic_hydrogens: [],\n    is_aromatic: false,\n    isotope: None,\n    atom_map: None,\n    no_implicit: false,\n    radical_electrons: 0,\n    hybridization: Unspecified,\n    query: None,\n    props: {},\n    computed_props: {},\n    pdb_residue_info: None,\n}",
+          "AtomSpec {\n    element: Element {\n        atomic_number: 6,\n    },\n    formal_charge: 0,\n    explicit_hydrogens: 0,\n    chiral_tag: Unspecified,\n    chiral_permutation: None,\n    unknown_stereo: false,\n    mol_parity: None,\n    mol_inversion_flag: None,\n    implicit_hydrogen: false,\n    tracked_isotopic_hydrogens: [],\n    is_aromatic: false,\n    isotope: None,\n    atom_map: None,\n    no_implicit: false,\n    radical_electrons: 0,\n    hybridization: Unspecified,\n    query: None,\n    props: {},\n    computed_props: {},\n    pdb_residue_info: None,\n}"
+        ],
+        "bond": "BondSpec {\n    begin: AtomId(\n        0,\n    ),\n    end: AtomId(\n        1,\n    ),\n    order: Triple,\n    is_aromatic: false,\n    is_conjugated: false,\n    direction: None,\n    stereo: None,\n    stereo_atoms: None,\n    unknown_stereo: false,\n    query: None,\n    props: {},\n    computed_props: {},\n}"
+      },
+      "width": 300
+    },
+    {
+      "actual_atoms": "[\n    Atom {\n        id: AtomId(\n            0,\n        ),\n        element: Element {\n            atomic_number: 6,\n        },\n        formal_charge: 0,\n        explicit_hydrogens: 0,\n        chiral_tag: Unspecified,\n        chiral_permutation: None,\n        unknown_stereo: false,\n        mol_parity: None,\n        mol_inversion_flag: None,\n        implicit_hydrogen: false,\n        tracked_isotopic_hydrogens: [],\n        is_aromatic: false,\n        isotope: None,\n        atom_map: None,\n        no_implicit: false,\n        radical_electrons: 0,\n        hybridization: Unspecified,\n        query: None,\n        props: {},\n        computed_props: {},\n        pdb_residue_info: None,\n    },\n    Atom {\n        id: AtomId(\n            1,\n        ),\n        element: Element {\n            atomic_number: 6,\n        },\n        formal_charge: 0,\n        explicit_hydrogens: 0,\n        chiral_tag: Unspecified,\n        chiral_permutation: None,\n        unknown_stereo: false,\n        mol_parity: None,\n        mol_inversion_flag: None,\n        implicit_hydrogen: false,\n        tracked_isotopic_hydrogens: [],\n        is_aromatic: false,\n        isotope: None,\n        atom_map: None,\n        no_implicit: false,\n        radical_electrons: 0,\n        hybridization: Unspecified,\n        query: None,\n        props: {},\n        computed_props: {},\n        pdb_residue_info: None,\n    },\n]",
+      "actual_bonds": "[\n    Bond {\n        id: BondId(\n            0,\n        ),\n        begin: AtomId(\n            1,\n        ),\n        end: AtomId(\n            0,\n        ),\n        order: Triple,\n        is_aromatic: false,\n        is_conjugated: false,\n        direction: None,\n        stereo: None,\n        stereo_atoms: None,\n        unknown_stereo: false,\n        query: None,\n        props: {},\n        computed_props: {},\n    },\n]",
+      "actual_properties": "MoleculeProperties {\n    name: None,\n    sdf_data_fields: [],\n    sdf_property_lists: [],\n    props: {},\n    computed_props: {},\n}",
+      "actual_rings": "RingInfo {\n    initialized: true,\n    find_type: SymmSssr,\n    atom_members: [\n        [],\n        [],\n    ],\n    bond_members: [\n        [],\n    ],\n    atom_rings: [],\n    bond_rings: [],\n    atom_ring_families: [],\n    bond_ring_families: [],\n    relevant_cycle_count: None,\n    fused_rings: [],\n    num_fused_bonds: [],\n}",
+      "actual_valence": "ValenceAssignment {\n    explicit_valence: [\n        3,\n        3,\n    ],\n    implicit_hydrogens: [\n        1,\n        1,\n    ],\n}",
+      "atom_ids": [
+        0,
+        1
+      ],
+      "begin": 1,
+      "bond_id": 0,
+      "conformer_2d_ids": [
+        0
+      ],
+      "conformer_3d_ids": [],
+      "coordinate_bits": [
+        [
+          0,
+          0
+        ],
+        [
+          4609434218613702656,
+          0
+        ]
+      ],
+      "coordinate_identity_after": [
+        [
+          0,
+          [
+            [
+              0,
+              0
+            ],
+            [
+              4609434218613702656,
+              0
+            ]
+          ]
+        ]
+      ],
+      "coordinate_identity_before": [
+        [
+          0,
+          [
+            [
+              0,
+              0
+            ],
+            [
+              4609434218613702656,
+              0
+            ]
+          ]
+        ]
+      ],
+      "coordinates": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          1.5,
+          0.0
+        ]
+      ],
+      "end": 0,
+      "explicit_valence": [
+        3,
+        3
+      ],
+      "height": 300,
+      "implicit_hydrogens": [
+        1,
+        1
+      ],
+      "label": "triple_rev",
+      "semantic_order": "Triple",
+      "source_after": "Molecule {\n    topology: TopologyBlock {\n        atoms: [\n            Atom {\n                id: AtomId(\n                    0,\n                ),\n                element: Element {\n                    atomic_number: 6,\n                },\n                formal_charge: 0,\n                explicit_hydrogens: 0,\n                chiral_tag: Unspecified,\n                chiral_permutation: None,\n                unknown_stereo: false,\n                mol_parity: None,\n                mol_inversion_flag: None,\n                implicit_hydrogen: false,\n                tracked_isotopic_hydrogens: [],\n                is_aromatic: false,\n                isotope: None,\n                atom_map: None,\n                no_implicit: false,\n                radical_electrons: 0,\n                hybridization: Unspecified,\n                query: None,\n                props: {},\n                computed_props: {},\n                pdb_residue_info: None,\n            },\n            Atom {\n                id: AtomId(\n                    1,\n                ),\n                element: Element {\n                    atomic_number: 6,\n                },\n                formal_charge: 0,\n                explicit_hydrogens: 0,\n                chiral_tag: Unspecified,\n                chiral_permutation: None,\n                unknown_stereo: false,\n                mol_parity: None,\n                mol_inversion_flag: None,\n                implicit_hydrogen: false,\n                tracked_isotopic_hydrogens: [],\n                is_aromatic: false,\n                isotope: None,\n                atom_map: None,\n                no_implicit: false,\n                radical_electrons: 0,\n                hybridization: Unspecified,\n                query: None,\n                props: {},\n                computed_props: {},\n                pdb_residue_info: None,\n            },\n        ],\n        bonds: [\n            Bond {\n                id: BondId(\n                    0,\n                ),\n                begin: AtomId(\n                    1,\n                ),\n                end: AtomId(\n                    0,\n                ),\n                order: Triple,\n                is_aromatic: false,\n                is_conjugated: false,\n                direction: None,\n                stereo: None,\n                stereo_atoms: None,\n                unknown_stereo: false,\n                query: None,\n                props: {},\n                computed_props: {},\n            },\n        ],\n        adjacency: AdjacencyList {\n            offsets: [\n                0,\n                1,\n                2,\n            ],\n            entries: [\n                NeighborRef {\n                    atom_index: 1,\n                    bond: BondId(\n                        0,\n                    ),\n                },\n                NeighborRef {\n                    atom_index: 0,\n                    bond: BondId(\n                        0,\n                    ),\n                },\n            ],\n        },\n        substance_groups: [],\n        stereo_groups: [],\n    },\n    coordinates: CoordinateBlock {\n        conformers_2d: [\n            Conformer2D {\n                id: 0,\n                coords: [\n                    [\n                        0.0,\n                        0.0,\n                    ],\n                    [\n                        1.5,\n                        0.0,\n                    ],\n                ],\n                props: {},\n            },\n        ],\n        conformers_3d: [],\n        source_coordinate_dim: Some(\n            TwoD,\n        ),\n    },\n    properties: MoleculeProperties {\n        name: None,\n        sdf_data_fields: [],\n        sdf_property_lists: [],\n        props: {},\n        computed_props: {},\n    },\n    derived_cache: DerivedCacheBlock {\n        rings: None,\n        ring_families: None,\n        valence: None,\n        aromaticity_valid: false,\n        stereo_valid: false,\n    },\n    capabilities: MoleculeCapabilities {\n        topology_trust: TrustedGraph,\n    },\n    computed_properties: ComputedPropertyCache {\n        crippen: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        crippen_atom_contributions: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        connectivity_hk_deltas: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        connectivity_n_vals: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        labute: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        topological_distance_matrix: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        distance_matrices_3d: RwLock {\n            data: {},\n            poisoned: false,\n            ..\n        },\n        potential_stereo: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n    },\n}",
+      "source_before": "Molecule {\n    topology: TopologyBlock {\n        atoms: [\n            Atom {\n                id: AtomId(\n                    0,\n                ),\n                element: Element {\n                    atomic_number: 6,\n                },\n                formal_charge: 0,\n                explicit_hydrogens: 0,\n                chiral_tag: Unspecified,\n                chiral_permutation: None,\n                unknown_stereo: false,\n                mol_parity: None,\n                mol_inversion_flag: None,\n                implicit_hydrogen: false,\n                tracked_isotopic_hydrogens: [],\n                is_aromatic: false,\n                isotope: None,\n                atom_map: None,\n                no_implicit: false,\n                radical_electrons: 0,\n                hybridization: Unspecified,\n                query: None,\n                props: {},\n                computed_props: {},\n                pdb_residue_info: None,\n            },\n            Atom {\n                id: AtomId(\n                    1,\n                ),\n                element: Element {\n                    atomic_number: 6,\n                },\n                formal_charge: 0,\n                explicit_hydrogens: 0,\n                chiral_tag: Unspecified,\n                chiral_permutation: None,\n                unknown_stereo: false,\n                mol_parity: None,\n                mol_inversion_flag: None,\n                implicit_hydrogen: false,\n                tracked_isotopic_hydrogens: [],\n                is_aromatic: false,\n                isotope: None,\n                atom_map: None,\n                no_implicit: false,\n                radical_electrons: 0,\n                hybridization: Unspecified,\n                query: None,\n                props: {},\n                computed_props: {},\n                pdb_residue_info: None,\n            },\n        ],\n        bonds: [\n            Bond {\n                id: BondId(\n                    0,\n                ),\n                begin: AtomId(\n                    1,\n                ),\n                end: AtomId(\n                    0,\n                ),\n                order: Triple,\n                is_aromatic: false,\n                is_conjugated: false,\n                direction: None,\n                stereo: None,\n                stereo_atoms: None,\n                unknown_stereo: false,\n                query: None,\n                props: {},\n                computed_props: {},\n            },\n        ],\n        adjacency: AdjacencyList {\n            offsets: [\n                0,\n                1,\n                2,\n            ],\n            entries: [\n                NeighborRef {\n                    atom_index: 1,\n                    bond: BondId(\n                        0,\n                    ),\n                },\n                NeighborRef {\n                    atom_index: 0,\n                    bond: BondId(\n                        0,\n                    ),\n                },\n            ],\n        },\n        substance_groups: [],\n        stereo_groups: [],\n    },\n    coordinates: CoordinateBlock {\n        conformers_2d: [\n            Conformer2D {\n                id: 0,\n                coords: [\n                    [\n                        0.0,\n                        0.0,\n                    ],\n                    [\n                        1.5,\n                        0.0,\n                    ],\n                ],\n                props: {},\n            },\n        ],\n        conformers_3d: [],\n        source_coordinate_dim: Some(\n            TwoD,\n        ),\n    },\n    properties: MoleculeProperties {\n        name: None,\n        sdf_data_fields: [],\n        sdf_property_lists: [],\n        props: {},\n        computed_props: {},\n    },\n    derived_cache: DerivedCacheBlock {\n        rings: None,\n        ring_families: None,\n        valence: None,\n        aromaticity_valid: false,\n        stereo_valid: false,\n    },\n    capabilities: MoleculeCapabilities {\n        topology_trust: TrustedGraph,\n    },\n    computed_properties: ComputedPropertyCache {\n        crippen: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        crippen_atom_contributions: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        connectivity_hk_deltas: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        connectivity_n_vals: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        labute: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        topological_distance_matrix: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        distance_matrices_3d: RwLock {\n            data: {},\n            poisoned: false,\n            ..\n        },\n        potential_stereo: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n    },\n}",
+      "source_preserved": true,
+      "specs": {
+        "atoms": [
+          "AtomSpec {\n    element: Element {\n        atomic_number: 6,\n    },\n    formal_charge: 0,\n    explicit_hydrogens: 0,\n    chiral_tag: Unspecified,\n    chiral_permutation: None,\n    unknown_stereo: false,\n    mol_parity: None,\n    mol_inversion_flag: None,\n    implicit_hydrogen: false,\n    tracked_isotopic_hydrogens: [],\n    is_aromatic: false,\n    isotope: None,\n    atom_map: None,\n    no_implicit: false,\n    radical_electrons: 0,\n    hybridization: Unspecified,\n    query: None,\n    props: {},\n    computed_props: {},\n    pdb_residue_info: None,\n}",
+          "AtomSpec {\n    element: Element {\n        atomic_number: 6,\n    },\n    formal_charge: 0,\n    explicit_hydrogens: 0,\n    chiral_tag: Unspecified,\n    chiral_permutation: None,\n    unknown_stereo: false,\n    mol_parity: None,\n    mol_inversion_flag: None,\n    implicit_hydrogen: false,\n    tracked_isotopic_hydrogens: [],\n    is_aromatic: false,\n    isotope: None,\n    atom_map: None,\n    no_implicit: false,\n    radical_electrons: 0,\n    hybridization: Unspecified,\n    query: None,\n    props: {},\n    computed_props: {},\n    pdb_residue_info: None,\n}"
+        ],
+        "bond": "BondSpec {\n    begin: AtomId(\n        1,\n    ),\n    end: AtomId(\n        0,\n    ),\n    order: Triple,\n    is_aromatic: false,\n    is_conjugated: false,\n    direction: None,\n    stereo: None,\n    stereo_atoms: None,\n    unknown_stereo: false,\n    query: None,\n    props: {},\n    computed_props: {},\n}"
+      },
+      "width": 300
+    },
+    {
+      "actual_atoms": "[\n    Atom {\n        id: AtomId(\n            0,\n        ),\n        element: Element {\n            atomic_number: 6,\n        },\n        formal_charge: 0,\n        explicit_hydrogens: 0,\n        chiral_tag: Unspecified,\n        chiral_permutation: None,\n        unknown_stereo: false,\n        mol_parity: None,\n        mol_inversion_flag: None,\n        implicit_hydrogen: false,\n        tracked_isotopic_hydrogens: [],\n        is_aromatic: false,\n        isotope: None,\n        atom_map: None,\n        no_implicit: false,\n        radical_electrons: 0,\n        hybridization: Unspecified,\n        query: None,\n        props: {},\n        computed_props: {},\n        pdb_residue_info: None,\n    },\n    Atom {\n        id: AtomId(\n            1,\n        ),\n        element: Element {\n            atomic_number: 6,\n        },\n        formal_charge: 0,\n        explicit_hydrogens: 0,\n        chiral_tag: Unspecified,\n        chiral_permutation: None,\n        unknown_stereo: false,\n        mol_parity: None,\n        mol_inversion_flag: None,\n        implicit_hydrogen: false,\n        tracked_isotopic_hydrogens: [],\n        is_aromatic: false,\n        isotope: None,\n        atom_map: None,\n        no_implicit: false,\n        radical_electrons: 0,\n        hybridization: Unspecified,\n        query: None,\n        props: {},\n        computed_props: {},\n        pdb_residue_info: None,\n    },\n]",
+      "actual_bonds": "[\n    Bond {\n        id: BondId(\n            0,\n        ),\n        begin: AtomId(\n            0,\n        ),\n        end: AtomId(\n            1,\n        ),\n        order: Quadruple,\n        is_aromatic: false,\n        is_conjugated: false,\n        direction: None,\n        stereo: None,\n        stereo_atoms: None,\n        unknown_stereo: false,\n        query: None,\n        props: {},\n        computed_props: {},\n    },\n]",
+      "actual_properties": "MoleculeProperties {\n    name: None,\n    sdf_data_fields: [],\n    sdf_property_lists: [],\n    props: {},\n    computed_props: {},\n}",
+      "actual_rings": "RingInfo {\n    initialized: true,\n    find_type: SymmSssr,\n    atom_members: [\n        [],\n        [],\n    ],\n    bond_members: [\n        [],\n    ],\n    atom_rings: [],\n    bond_rings: [],\n    atom_ring_families: [],\n    bond_ring_families: [],\n    relevant_cycle_count: None,\n    fused_rings: [],\n    num_fused_bonds: [],\n}",
+      "actual_valence": "ValenceAssignment {\n    explicit_valence: [\n        4,\n        4,\n    ],\n    implicit_hydrogens: [\n        0,\n        0,\n    ],\n}",
+      "atom_ids": [
+        0,
+        1
+      ],
+      "begin": 0,
+      "bond_id": 0,
+      "conformer_2d_ids": [
+        0
+      ],
+      "conformer_3d_ids": [],
+      "coordinate_bits": [
+        [
+          0,
+          0
+        ],
+        [
+          4609434218613702656,
+          0
+        ]
+      ],
+      "coordinate_identity_after": [
+        [
+          0,
+          [
+            [
+              0,
+              0
+            ],
+            [
+              4609434218613702656,
+              0
+            ]
+          ]
+        ]
+      ],
+      "coordinate_identity_before": [
+        [
+          0,
+          [
+            [
+              0,
+              0
+            ],
+            [
+              4609434218613702656,
+              0
+            ]
+          ]
+        ]
+      ],
+      "coordinates": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          1.5,
+          0.0
+        ]
+      ],
+      "end": 1,
+      "explicit_valence": [
+        4,
+        4
+      ],
+      "height": 300,
+      "implicit_hydrogens": [
+        0,
+        0
+      ],
+      "label": "quadruple_fwd",
+      "semantic_order": "Quadruple",
+      "source_after": "Molecule {\n    topology: TopologyBlock {\n        atoms: [\n            Atom {\n                id: AtomId(\n                    0,\n                ),\n                element: Element {\n                    atomic_number: 6,\n                },\n                formal_charge: 0,\n                explicit_hydrogens: 0,\n                chiral_tag: Unspecified,\n                chiral_permutation: None,\n                unknown_stereo: false,\n                mol_parity: None,\n                mol_inversion_flag: None,\n                implicit_hydrogen: false,\n                tracked_isotopic_hydrogens: [],\n                is_aromatic: false,\n                isotope: None,\n                atom_map: None,\n                no_implicit: false,\n                radical_electrons: 0,\n                hybridization: Unspecified,\n                query: None,\n                props: {},\n                computed_props: {},\n                pdb_residue_info: None,\n            },\n            Atom {\n                id: AtomId(\n                    1,\n                ),\n                element: Element {\n                    atomic_number: 6,\n                },\n                formal_charge: 0,\n                explicit_hydrogens: 0,\n                chiral_tag: Unspecified,\n                chiral_permutation: None,\n                unknown_stereo: false,\n                mol_parity: None,\n                mol_inversion_flag: None,\n                implicit_hydrogen: false,\n                tracked_isotopic_hydrogens: [],\n                is_aromatic: false,\n                isotope: None,\n                atom_map: None,\n                no_implicit: false,\n                radical_electrons: 0,\n                hybridization: Unspecified,\n                query: None,\n                props: {},\n                computed_props: {},\n                pdb_residue_info: None,\n            },\n        ],\n        bonds: [\n            Bond {\n                id: BondId(\n                    0,\n                ),\n                begin: AtomId(\n                    0,\n                ),\n                end: AtomId(\n                    1,\n                ),\n                order: Quadruple,\n                is_aromatic: false,\n                is_conjugated: false,\n                direction: None,\n                stereo: None,\n                stereo_atoms: None,\n                unknown_stereo: false,\n                query: None,\n                props: {},\n                computed_props: {},\n            },\n        ],\n        adjacency: AdjacencyList {\n            offsets: [\n                0,\n                1,\n                2,\n            ],\n            entries: [\n                NeighborRef {\n                    atom_index: 1,\n                    bond: BondId(\n                        0,\n                    ),\n                },\n                NeighborRef {\n                    atom_index: 0,\n                    bond: BondId(\n                        0,\n                    ),\n                },\n            ],\n        },\n        substance_groups: [],\n        stereo_groups: [],\n    },\n    coordinates: CoordinateBlock {\n        conformers_2d: [\n            Conformer2D {\n                id: 0,\n                coords: [\n                    [\n                        0.0,\n                        0.0,\n                    ],\n                    [\n                        1.5,\n                        0.0,\n                    ],\n                ],\n                props: {},\n            },\n        ],\n        conformers_3d: [],\n        source_coordinate_dim: Some(\n            TwoD,\n        ),\n    },\n    properties: MoleculeProperties {\n        name: None,\n        sdf_data_fields: [],\n        sdf_property_lists: [],\n        props: {},\n        computed_props: {},\n    },\n    derived_cache: DerivedCacheBlock {\n        rings: None,\n        ring_families: None,\n        valence: None,\n        aromaticity_valid: false,\n        stereo_valid: false,\n    },\n    capabilities: MoleculeCapabilities {\n        topology_trust: TrustedGraph,\n    },\n    computed_properties: ComputedPropertyCache {\n        crippen: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        crippen_atom_contributions: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        connectivity_hk_deltas: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        connectivity_n_vals: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        labute: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        topological_distance_matrix: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        distance_matrices_3d: RwLock {\n            data: {},\n            poisoned: false,\n            ..\n        },\n        potential_stereo: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n    },\n}",
+      "source_before": "Molecule {\n    topology: TopologyBlock {\n        atoms: [\n            Atom {\n                id: AtomId(\n                    0,\n                ),\n                element: Element {\n                    atomic_number: 6,\n                },\n                formal_charge: 0,\n                explicit_hydrogens: 0,\n                chiral_tag: Unspecified,\n                chiral_permutation: None,\n                unknown_stereo: false,\n                mol_parity: None,\n                mol_inversion_flag: None,\n                implicit_hydrogen: false,\n                tracked_isotopic_hydrogens: [],\n                is_aromatic: false,\n                isotope: None,\n                atom_map: None,\n                no_implicit: false,\n                radical_electrons: 0,\n                hybridization: Unspecified,\n                query: None,\n                props: {},\n                computed_props: {},\n                pdb_residue_info: None,\n            },\n            Atom {\n                id: AtomId(\n                    1,\n                ),\n                element: Element {\n                    atomic_number: 6,\n                },\n                formal_charge: 0,\n                explicit_hydrogens: 0,\n                chiral_tag: Unspecified,\n                chiral_permutation: None,\n                unknown_stereo: false,\n                mol_parity: None,\n                mol_inversion_flag: None,\n                implicit_hydrogen: false,\n                tracked_isotopic_hydrogens: [],\n                is_aromatic: false,\n                isotope: None,\n                atom_map: None,\n                no_implicit: false,\n                radical_electrons: 0,\n                hybridization: Unspecified,\n                query: None,\n                props: {},\n                computed_props: {},\n                pdb_residue_info: None,\n            },\n        ],\n        bonds: [\n            Bond {\n                id: BondId(\n                    0,\n                ),\n                begin: AtomId(\n                    0,\n                ),\n                end: AtomId(\n                    1,\n                ),\n                order: Quadruple,\n                is_aromatic: false,\n                is_conjugated: false,\n                direction: None,\n                stereo: None,\n                stereo_atoms: None,\n                unknown_stereo: false,\n                query: None,\n                props: {},\n                computed_props: {},\n            },\n        ],\n        adjacency: AdjacencyList {\n            offsets: [\n                0,\n                1,\n                2,\n            ],\n            entries: [\n                NeighborRef {\n                    atom_index: 1,\n                    bond: BondId(\n                        0,\n                    ),\n                },\n                NeighborRef {\n                    atom_index: 0,\n                    bond: BondId(\n                        0,\n                    ),\n                },\n            ],\n        },\n        substance_groups: [],\n        stereo_groups: [],\n    },\n    coordinates: CoordinateBlock {\n        conformers_2d: [\n            Conformer2D {\n                id: 0,\n                coords: [\n                    [\n                        0.0,\n                        0.0,\n                    ],\n                    [\n                        1.5,\n                        0.0,\n                    ],\n                ],\n                props: {},\n            },\n        ],\n        conformers_3d: [],\n        source_coordinate_dim: Some(\n            TwoD,\n        ),\n    },\n    properties: MoleculeProperties {\n        name: None,\n        sdf_data_fields: [],\n        sdf_property_lists: [],\n        props: {},\n        computed_props: {},\n    },\n    derived_cache: DerivedCacheBlock {\n        rings: None,\n        ring_families: None,\n        valence: None,\n        aromaticity_valid: false,\n        stereo_valid: false,\n    },\n    capabilities: MoleculeCapabilities {\n        topology_trust: TrustedGraph,\n    },\n    computed_properties: ComputedPropertyCache {\n        crippen: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        crippen_atom_contributions: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        connectivity_hk_deltas: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        connectivity_n_vals: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        labute: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        topological_distance_matrix: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        distance_matrices_3d: RwLock {\n            data: {},\n            poisoned: false,\n            ..\n        },\n        potential_stereo: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n    },\n}",
+      "source_preserved": true,
+      "specs": {
+        "atoms": [
+          "AtomSpec {\n    element: Element {\n        atomic_number: 6,\n    },\n    formal_charge: 0,\n    explicit_hydrogens: 0,\n    chiral_tag: Unspecified,\n    chiral_permutation: None,\n    unknown_stereo: false,\n    mol_parity: None,\n    mol_inversion_flag: None,\n    implicit_hydrogen: false,\n    tracked_isotopic_hydrogens: [],\n    is_aromatic: false,\n    isotope: None,\n    atom_map: None,\n    no_implicit: false,\n    radical_electrons: 0,\n    hybridization: Unspecified,\n    query: None,\n    props: {},\n    computed_props: {},\n    pdb_residue_info: None,\n}",
+          "AtomSpec {\n    element: Element {\n        atomic_number: 6,\n    },\n    formal_charge: 0,\n    explicit_hydrogens: 0,\n    chiral_tag: Unspecified,\n    chiral_permutation: None,\n    unknown_stereo: false,\n    mol_parity: None,\n    mol_inversion_flag: None,\n    implicit_hydrogen: false,\n    tracked_isotopic_hydrogens: [],\n    is_aromatic: false,\n    isotope: None,\n    atom_map: None,\n    no_implicit: false,\n    radical_electrons: 0,\n    hybridization: Unspecified,\n    query: None,\n    props: {},\n    computed_props: {},\n    pdb_residue_info: None,\n}"
+        ],
+        "bond": "BondSpec {\n    begin: AtomId(\n        0,\n    ),\n    end: AtomId(\n        1,\n    ),\n    order: Quadruple,\n    is_aromatic: false,\n    is_conjugated: false,\n    direction: None,\n    stereo: None,\n    stereo_atoms: None,\n    unknown_stereo: false,\n    query: None,\n    props: {},\n    computed_props: {},\n}"
+      },
+      "width": 300
+    },
+    {
+      "actual_atoms": "[\n    Atom {\n        id: AtomId(\n            0,\n        ),\n        element: Element {\n            atomic_number: 6,\n        },\n        formal_charge: 0,\n        explicit_hydrogens: 0,\n        chiral_tag: Unspecified,\n        chiral_permutation: None,\n        unknown_stereo: false,\n        mol_parity: None,\n        mol_inversion_flag: None,\n        implicit_hydrogen: false,\n        tracked_isotopic_hydrogens: [],\n        is_aromatic: false,\n        isotope: None,\n        atom_map: None,\n        no_implicit: false,\n        radical_electrons: 0,\n        hybridization: Unspecified,\n        query: None,\n        props: {},\n        computed_props: {},\n        pdb_residue_info: None,\n    },\n    Atom {\n        id: AtomId(\n            1,\n        ),\n        element: Element {\n            atomic_number: 6,\n        },\n        formal_charge: 0,\n        explicit_hydrogens: 0,\n        chiral_tag: Unspecified,\n        chiral_permutation: None,\n        unknown_stereo: false,\n        mol_parity: None,\n        mol_inversion_flag: None,\n        implicit_hydrogen: false,\n        tracked_isotopic_hydrogens: [],\n        is_aromatic: false,\n        isotope: None,\n        atom_map: None,\n        no_implicit: false,\n        radical_electrons: 0,\n        hybridization: Unspecified,\n        query: None,\n        props: {},\n        computed_props: {},\n        pdb_residue_info: None,\n    },\n]",
+      "actual_bonds": "[\n    Bond {\n        id: BondId(\n            0,\n        ),\n        begin: AtomId(\n            1,\n        ),\n        end: AtomId(\n            0,\n        ),\n        order: Quadruple,\n        is_aromatic: false,\n        is_conjugated: false,\n        direction: None,\n        stereo: None,\n        stereo_atoms: None,\n        unknown_stereo: false,\n        query: None,\n        props: {},\n        computed_props: {},\n    },\n]",
+      "actual_properties": "MoleculeProperties {\n    name: None,\n    sdf_data_fields: [],\n    sdf_property_lists: [],\n    props: {},\n    computed_props: {},\n}",
+      "actual_rings": "RingInfo {\n    initialized: true,\n    find_type: SymmSssr,\n    atom_members: [\n        [],\n        [],\n    ],\n    bond_members: [\n        [],\n    ],\n    atom_rings: [],\n    bond_rings: [],\n    atom_ring_families: [],\n    bond_ring_families: [],\n    relevant_cycle_count: None,\n    fused_rings: [],\n    num_fused_bonds: [],\n}",
+      "actual_valence": "ValenceAssignment {\n    explicit_valence: [\n        4,\n        4,\n    ],\n    implicit_hydrogens: [\n        0,\n        0,\n    ],\n}",
+      "atom_ids": [
+        0,
+        1
+      ],
+      "begin": 1,
+      "bond_id": 0,
+      "conformer_2d_ids": [
+        0
+      ],
+      "conformer_3d_ids": [],
+      "coordinate_bits": [
+        [
+          0,
+          0
+        ],
+        [
+          4609434218613702656,
+          0
+        ]
+      ],
+      "coordinate_identity_after": [
+        [
+          0,
+          [
+            [
+              0,
+              0
+            ],
+            [
+              4609434218613702656,
+              0
+            ]
+          ]
+        ]
+      ],
+      "coordinate_identity_before": [
+        [
+          0,
+          [
+            [
+              0,
+              0
+            ],
+            [
+              4609434218613702656,
+              0
+            ]
+          ]
+        ]
+      ],
+      "coordinates": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          1.5,
+          0.0
+        ]
+      ],
+      "end": 0,
+      "explicit_valence": [
+        4,
+        4
+      ],
+      "height": 300,
+      "implicit_hydrogens": [
+        0,
+        0
+      ],
+      "label": "quadruple_rev",
+      "semantic_order": "Quadruple",
+      "source_after": "Molecule {\n    topology: TopologyBlock {\n        atoms: [\n            Atom {\n                id: AtomId(\n                    0,\n                ),\n                element: Element {\n                    atomic_number: 6,\n                },\n                formal_charge: 0,\n                explicit_hydrogens: 0,\n                chiral_tag: Unspecified,\n                chiral_permutation: None,\n                unknown_stereo: false,\n                mol_parity: None,\n                mol_inversion_flag: None,\n                implicit_hydrogen: false,\n                tracked_isotopic_hydrogens: [],\n                is_aromatic: false,\n                isotope: None,\n                atom_map: None,\n                no_implicit: false,\n                radical_electrons: 0,\n                hybridization: Unspecified,\n                query: None,\n                props: {},\n                computed_props: {},\n                pdb_residue_info: None,\n            },\n            Atom {\n                id: AtomId(\n                    1,\n                ),\n                element: Element {\n                    atomic_number: 6,\n                },\n                formal_charge: 0,\n                explicit_hydrogens: 0,\n                chiral_tag: Unspecified,\n                chiral_permutation: None,\n                unknown_stereo: false,\n                mol_parity: None,\n                mol_inversion_flag: None,\n                implicit_hydrogen: false,\n                tracked_isotopic_hydrogens: [],\n                is_aromatic: false,\n                isotope: None,\n                atom_map: None,\n                no_implicit: false,\n                radical_electrons: 0,\n                hybridization: Unspecified,\n                query: None,\n                props: {},\n                computed_props: {},\n                pdb_residue_info: None,\n            },\n        ],\n        bonds: [\n            Bond {\n                id: BondId(\n                    0,\n                ),\n                begin: AtomId(\n                    1,\n                ),\n                end: AtomId(\n                    0,\n                ),\n                order: Quadruple,\n                is_aromatic: false,\n                is_conjugated: false,\n                direction: None,\n                stereo: None,\n                stereo_atoms: None,\n                unknown_stereo: false,\n                query: None,\n                props: {},\n                computed_props: {},\n            },\n        ],\n        adjacency: AdjacencyList {\n            offsets: [\n                0,\n                1,\n                2,\n            ],\n            entries: [\n                NeighborRef {\n                    atom_index: 1,\n                    bond: BondId(\n                        0,\n                    ),\n                },\n                NeighborRef {\n                    atom_index: 0,\n                    bond: BondId(\n                        0,\n                    ),\n                },\n            ],\n        },\n        substance_groups: [],\n        stereo_groups: [],\n    },\n    coordinates: CoordinateBlock {\n        conformers_2d: [\n            Conformer2D {\n                id: 0,\n                coords: [\n                    [\n                        0.0,\n                        0.0,\n                    ],\n                    [\n                        1.5,\n                        0.0,\n                    ],\n                ],\n                props: {},\n            },\n        ],\n        conformers_3d: [],\n        source_coordinate_dim: Some(\n            TwoD,\n        ),\n    },\n    properties: MoleculeProperties {\n        name: None,\n        sdf_data_fields: [],\n        sdf_property_lists: [],\n        props: {},\n        computed_props: {},\n    },\n    derived_cache: DerivedCacheBlock {\n        rings: None,\n        ring_families: None,\n        valence: None,\n        aromaticity_valid: false,\n        stereo_valid: false,\n    },\n    capabilities: MoleculeCapabilities {\n        topology_trust: TrustedGraph,\n    },\n    computed_properties: ComputedPropertyCache {\n        crippen: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        crippen_atom_contributions: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        connectivity_hk_deltas: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        connectivity_n_vals: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        labute: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        topological_distance_matrix: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        distance_matrices_3d: RwLock {\n            data: {},\n            poisoned: false,\n            ..\n        },\n        potential_stereo: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n    },\n}",
+      "source_before": "Molecule {\n    topology: TopologyBlock {\n        atoms: [\n            Atom {\n                id: AtomId(\n                    0,\n                ),\n                element: Element {\n                    atomic_number: 6,\n                },\n                formal_charge: 0,\n                explicit_hydrogens: 0,\n                chiral_tag: Unspecified,\n                chiral_permutation: None,\n                unknown_stereo: false,\n                mol_parity: None,\n                mol_inversion_flag: None,\n                implicit_hydrogen: false,\n                tracked_isotopic_hydrogens: [],\n                is_aromatic: false,\n                isotope: None,\n                atom_map: None,\n                no_implicit: false,\n                radical_electrons: 0,\n                hybridization: Unspecified,\n                query: None,\n                props: {},\n                computed_props: {},\n                pdb_residue_info: None,\n            },\n            Atom {\n                id: AtomId(\n                    1,\n                ),\n                element: Element {\n                    atomic_number: 6,\n                },\n                formal_charge: 0,\n                explicit_hydrogens: 0,\n                chiral_tag: Unspecified,\n                chiral_permutation: None,\n                unknown_stereo: false,\n                mol_parity: None,\n                mol_inversion_flag: None,\n                implicit_hydrogen: false,\n                tracked_isotopic_hydrogens: [],\n                is_aromatic: false,\n                isotope: None,\n                atom_map: None,\n                no_implicit: false,\n                radical_electrons: 0,\n                hybridization: Unspecified,\n                query: None,\n                props: {},\n                computed_props: {},\n                pdb_residue_info: None,\n            },\n        ],\n        bonds: [\n            Bond {\n                id: BondId(\n                    0,\n                ),\n                begin: AtomId(\n                    1,\n                ),\n                end: AtomId(\n                    0,\n                ),\n                order: Quadruple,\n                is_aromatic: false,\n                is_conjugated: false,\n                direction: None,\n                stereo: None,\n                stereo_atoms: None,\n                unknown_stereo: false,\n                query: None,\n                props: {},\n                computed_props: {},\n            },\n        ],\n        adjacency: AdjacencyList {\n            offsets: [\n                0,\n                1,\n                2,\n            ],\n            entries: [\n                NeighborRef {\n                    atom_index: 1,\n                    bond: BondId(\n                        0,\n                    ),\n                },\n                NeighborRef {\n                    atom_index: 0,\n                    bond: BondId(\n                        0,\n                    ),\n                },\n            ],\n        },\n        substance_groups: [],\n        stereo_groups: [],\n    },\n    coordinates: CoordinateBlock {\n        conformers_2d: [\n            Conformer2D {\n                id: 0,\n                coords: [\n                    [\n                        0.0,\n                        0.0,\n                    ],\n                    [\n                        1.5,\n                        0.0,\n                    ],\n                ],\n                props: {},\n            },\n        ],\n        conformers_3d: [],\n        source_coordinate_dim: Some(\n            TwoD,\n        ),\n    },\n    properties: MoleculeProperties {\n        name: None,\n        sdf_data_fields: [],\n        sdf_property_lists: [],\n        props: {},\n        computed_props: {},\n    },\n    derived_cache: DerivedCacheBlock {\n        rings: None,\n        ring_families: None,\n        valence: None,\n        aromaticity_valid: false,\n        stereo_valid: false,\n    },\n    capabilities: MoleculeCapabilities {\n        topology_trust: TrustedGraph,\n    },\n    computed_properties: ComputedPropertyCache {\n        crippen: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        crippen_atom_contributions: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        connectivity_hk_deltas: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        connectivity_n_vals: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        labute: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        topological_distance_matrix: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        distance_matrices_3d: RwLock {\n            data: {},\n            poisoned: false,\n            ..\n        },\n        potential_stereo: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n    },\n}",
+      "source_preserved": true,
+      "specs": {
+        "atoms": [
+          "AtomSpec {\n    element: Element {\n        atomic_number: 6,\n    },\n    formal_charge: 0,\n    explicit_hydrogens: 0,\n    chiral_tag: Unspecified,\n    chiral_permutation: None,\n    unknown_stereo: false,\n    mol_parity: None,\n    mol_inversion_flag: None,\n    implicit_hydrogen: false,\n    tracked_isotopic_hydrogens: [],\n    is_aromatic: false,\n    isotope: None,\n    atom_map: None,\n    no_implicit: false,\n    radical_electrons: 0,\n    hybridization: Unspecified,\n    query: None,\n    props: {},\n    computed_props: {},\n    pdb_residue_info: None,\n}",
+          "AtomSpec {\n    element: Element {\n        atomic_number: 6,\n    },\n    formal_charge: 0,\n    explicit_hydrogens: 0,\n    chiral_tag: Unspecified,\n    chiral_permutation: None,\n    unknown_stereo: false,\n    mol_parity: None,\n    mol_inversion_flag: None,\n    implicit_hydrogen: false,\n    tracked_isotopic_hydrogens: [],\n    is_aromatic: false,\n    isotope: None,\n    atom_map: None,\n    no_implicit: false,\n    radical_electrons: 0,\n    hybridization: Unspecified,\n    query: None,\n    props: {},\n    computed_props: {},\n    pdb_residue_info: None,\n}"
+        ],
+        "bond": "BondSpec {\n    begin: AtomId(\n        1,\n    ),\n    end: AtomId(\n        0,\n    ),\n    order: Quadruple,\n    is_aromatic: false,\n    is_conjugated: false,\n    direction: None,\n    stereo: None,\n    stereo_atoms: None,\n    unknown_stereo: false,\n    query: None,\n    props: {},\n    computed_props: {},\n}"
+      },
+      "width": 300
+    },
+    {
+      "actual_atoms": "[\n    Atom {\n        id: AtomId(\n            0,\n        ),\n        element: Element {\n            atomic_number: 6,\n        },\n        formal_charge: 0,\n        explicit_hydrogens: 0,\n        chiral_tag: Unspecified,\n        chiral_permutation: None,\n        unknown_stereo: false,\n        mol_parity: None,\n        mol_inversion_flag: None,\n        implicit_hydrogen: false,\n        tracked_isotopic_hydrogens: [],\n        is_aromatic: false,\n        isotope: None,\n        atom_map: None,\n        no_implicit: false,\n        radical_electrons: 0,\n        hybridization: Unspecified,\n        query: None,\n        props: {},\n        computed_props: {},\n        pdb_residue_info: None,\n    },\n    Atom {\n        id: AtomId(\n            1,\n        ),\n        element: Element {\n            atomic_number: 6,\n        },\n        formal_charge: 0,\n        explicit_hydrogens: 0,\n        chiral_tag: Unspecified,\n        chiral_permutation: None,\n        unknown_stereo: false,\n        mol_parity: None,\n        mol_inversion_flag: None,\n        implicit_hydrogen: false,\n        tracked_isotopic_hydrogens: [],\n        is_aromatic: false,\n        isotope: None,\n        atom_map: None,\n        no_implicit: false,\n        radical_electrons: 0,\n        hybridization: Unspecified,\n        query: None,\n        props: {},\n        computed_props: {},\n        pdb_residue_info: None,\n    },\n]",
+      "actual_bonds": "[\n    Bond {\n        id: BondId(\n            0,\n        ),\n        begin: AtomId(\n            0,\n        ),\n        end: AtomId(\n            1,\n        ),\n        order: Hydrogen,\n        is_aromatic: false,\n        is_conjugated: false,\n        direction: None,\n        stereo: None,\n        stereo_atoms: None,\n        unknown_stereo: false,\n        query: None,\n        props: {},\n        computed_props: {},\n    },\n]",
+      "actual_properties": "MoleculeProperties {\n    name: None,\n    sdf_data_fields: [],\n    sdf_property_lists: [],\n    props: {},\n    computed_props: {},\n}",
+      "actual_rings": "RingInfo {\n    initialized: true,\n    find_type: SymmSssr,\n    atom_members: [\n        [],\n        [],\n    ],\n    bond_members: [\n        [],\n    ],\n    atom_rings: [],\n    bond_rings: [],\n    atom_ring_families: [],\n    bond_ring_families: [],\n    relevant_cycle_count: None,\n    fused_rings: [],\n    num_fused_bonds: [],\n}",
+      "actual_valence": "ValenceAssignment {\n    explicit_valence: [\n        0,\n        0,\n    ],\n    implicit_hydrogens: [\n        4,\n        4,\n    ],\n}",
+      "atom_ids": [
+        0,
+        1
+      ],
+      "begin": 0,
+      "bond_id": 0,
+      "conformer_2d_ids": [
+        0
+      ],
+      "conformer_3d_ids": [],
+      "coordinate_bits": [
+        [
+          0,
+          0
+        ],
+        [
+          4609434218613702656,
+          0
+        ]
+      ],
+      "coordinate_identity_after": [
+        [
+          0,
+          [
+            [
+              0,
+              0
+            ],
+            [
+              4609434218613702656,
+              0
+            ]
+          ]
+        ]
+      ],
+      "coordinate_identity_before": [
+        [
+          0,
+          [
+            [
+              0,
+              0
+            ],
+            [
+              4609434218613702656,
+              0
+            ]
+          ]
+        ]
+      ],
+      "coordinates": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          1.5,
+          0.0
+        ]
+      ],
+      "end": 1,
+      "explicit_valence": [
+        0,
+        0
+      ],
+      "height": 300,
+      "implicit_hydrogens": [
+        4,
+        4
+      ],
+      "label": "hydrogen_fwd",
+      "semantic_order": "Hydrogen",
+      "source_after": "Molecule {\n    topology: TopologyBlock {\n        atoms: [\n            Atom {\n                id: AtomId(\n                    0,\n                ),\n                element: Element {\n                    atomic_number: 6,\n                },\n                formal_charge: 0,\n                explicit_hydrogens: 0,\n                chiral_tag: Unspecified,\n                chiral_permutation: None,\n                unknown_stereo: false,\n                mol_parity: None,\n                mol_inversion_flag: None,\n                implicit_hydrogen: false,\n                tracked_isotopic_hydrogens: [],\n                is_aromatic: false,\n                isotope: None,\n                atom_map: None,\n                no_implicit: false,\n                radical_electrons: 0,\n                hybridization: Unspecified,\n                query: None,\n                props: {},\n                computed_props: {},\n                pdb_residue_info: None,\n            },\n            Atom {\n                id: AtomId(\n                    1,\n                ),\n                element: Element {\n                    atomic_number: 6,\n                },\n                formal_charge: 0,\n                explicit_hydrogens: 0,\n                chiral_tag: Unspecified,\n                chiral_permutation: None,\n                unknown_stereo: false,\n                mol_parity: None,\n                mol_inversion_flag: None,\n                implicit_hydrogen: false,\n                tracked_isotopic_hydrogens: [],\n                is_aromatic: false,\n                isotope: None,\n                atom_map: None,\n                no_implicit: false,\n                radical_electrons: 0,\n                hybridization: Unspecified,\n                query: None,\n                props: {},\n                computed_props: {},\n                pdb_residue_info: None,\n            },\n        ],\n        bonds: [\n            Bond {\n                id: BondId(\n                    0,\n                ),\n                begin: AtomId(\n                    0,\n                ),\n                end: AtomId(\n                    1,\n                ),\n                order: Hydrogen,\n                is_aromatic: false,\n                is_conjugated: false,\n                direction: None,\n                stereo: None,\n                stereo_atoms: None,\n                unknown_stereo: false,\n                query: None,\n                props: {},\n                computed_props: {},\n            },\n        ],\n        adjacency: AdjacencyList {\n            offsets: [\n                0,\n                1,\n                2,\n            ],\n            entries: [\n                NeighborRef {\n                    atom_index: 1,\n                    bond: BondId(\n                        0,\n                    ),\n                },\n                NeighborRef {\n                    atom_index: 0,\n                    bond: BondId(\n                        0,\n                    ),\n                },\n            ],\n        },\n        substance_groups: [],\n        stereo_groups: [],\n    },\n    coordinates: CoordinateBlock {\n        conformers_2d: [\n            Conformer2D {\n                id: 0,\n                coords: [\n                    [\n                        0.0,\n                        0.0,\n                    ],\n                    [\n                        1.5,\n                        0.0,\n                    ],\n                ],\n                props: {},\n            },\n        ],\n        conformers_3d: [],\n        source_coordinate_dim: Some(\n            TwoD,\n        ),\n    },\n    properties: MoleculeProperties {\n        name: None,\n        sdf_data_fields: [],\n        sdf_property_lists: [],\n        props: {},\n        computed_props: {},\n    },\n    derived_cache: DerivedCacheBlock {\n        rings: None,\n        ring_families: None,\n        valence: None,\n        aromaticity_valid: false,\n        stereo_valid: false,\n    },\n    capabilities: MoleculeCapabilities {\n        topology_trust: TrustedGraph,\n    },\n    computed_properties: ComputedPropertyCache {\n        crippen: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        crippen_atom_contributions: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        connectivity_hk_deltas: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        connectivity_n_vals: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        labute: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        topological_distance_matrix: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        distance_matrices_3d: RwLock {\n            data: {},\n            poisoned: false,\n            ..\n        },\n        potential_stereo: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n    },\n}",
+      "source_before": "Molecule {\n    topology: TopologyBlock {\n        atoms: [\n            Atom {\n                id: AtomId(\n                    0,\n                ),\n                element: Element {\n                    atomic_number: 6,\n                },\n                formal_charge: 0,\n                explicit_hydrogens: 0,\n                chiral_tag: Unspecified,\n                chiral_permutation: None,\n                unknown_stereo: false,\n                mol_parity: None,\n                mol_inversion_flag: None,\n                implicit_hydrogen: false,\n                tracked_isotopic_hydrogens: [],\n                is_aromatic: false,\n                isotope: None,\n                atom_map: None,\n                no_implicit: false,\n                radical_electrons: 0,\n                hybridization: Unspecified,\n                query: None,\n                props: {},\n                computed_props: {},\n                pdb_residue_info: None,\n            },\n            Atom {\n                id: AtomId(\n                    1,\n                ),\n                element: Element {\n                    atomic_number: 6,\n                },\n                formal_charge: 0,\n                explicit_hydrogens: 0,\n                chiral_tag: Unspecified,\n                chiral_permutation: None,\n                unknown_stereo: false,\n                mol_parity: None,\n                mol_inversion_flag: None,\n                implicit_hydrogen: false,\n                tracked_isotopic_hydrogens: [],\n                is_aromatic: false,\n                isotope: None,\n                atom_map: None,\n                no_implicit: false,\n                radical_electrons: 0,\n                hybridization: Unspecified,\n                query: None,\n                props: {},\n                computed_props: {},\n                pdb_residue_info: None,\n            },\n        ],\n        bonds: [\n            Bond {\n                id: BondId(\n                    0,\n                ),\n                begin: AtomId(\n                    0,\n                ),\n                end: AtomId(\n                    1,\n                ),\n                order: Hydrogen,\n                is_aromatic: false,\n                is_conjugated: false,\n                direction: None,\n                stereo: None,\n                stereo_atoms: None,\n                unknown_stereo: false,\n                query: None,\n                props: {},\n                computed_props: {},\n            },\n        ],\n        adjacency: AdjacencyList {\n            offsets: [\n                0,\n                1,\n                2,\n            ],\n            entries: [\n                NeighborRef {\n                    atom_index: 1,\n                    bond: BondId(\n                        0,\n                    ),\n                },\n                NeighborRef {\n                    atom_index: 0,\n                    bond: BondId(\n                        0,\n                    ),\n                },\n            ],\n        },\n        substance_groups: [],\n        stereo_groups: [],\n    },\n    coordinates: CoordinateBlock {\n        conformers_2d: [\n            Conformer2D {\n                id: 0,\n                coords: [\n                    [\n                        0.0,\n                        0.0,\n                    ],\n                    [\n                        1.5,\n                        0.0,\n                    ],\n                ],\n                props: {},\n            },\n        ],\n        conformers_3d: [],\n        source_coordinate_dim: Some(\n            TwoD,\n        ),\n    },\n    properties: MoleculeProperties {\n        name: None,\n        sdf_data_fields: [],\n        sdf_property_lists: [],\n        props: {},\n        computed_props: {},\n    },\n    derived_cache: DerivedCacheBlock {\n        rings: None,\n        ring_families: None,\n        valence: None,\n        aromaticity_valid: false,\n        stereo_valid: false,\n    },\n    capabilities: MoleculeCapabilities {\n        topology_trust: TrustedGraph,\n    },\n    computed_properties: ComputedPropertyCache {\n        crippen: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        crippen_atom_contributions: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        connectivity_hk_deltas: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        connectivity_n_vals: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        labute: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        topological_distance_matrix: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        distance_matrices_3d: RwLock {\n            data: {},\n            poisoned: false,\n            ..\n        },\n        potential_stereo: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n    },\n}",
+      "source_preserved": true,
+      "specs": {
+        "atoms": [
+          "AtomSpec {\n    element: Element {\n        atomic_number: 6,\n    },\n    formal_charge: 0,\n    explicit_hydrogens: 0,\n    chiral_tag: Unspecified,\n    chiral_permutation: None,\n    unknown_stereo: false,\n    mol_parity: None,\n    mol_inversion_flag: None,\n    implicit_hydrogen: false,\n    tracked_isotopic_hydrogens: [],\n    is_aromatic: false,\n    isotope: None,\n    atom_map: None,\n    no_implicit: false,\n    radical_electrons: 0,\n    hybridization: Unspecified,\n    query: None,\n    props: {},\n    computed_props: {},\n    pdb_residue_info: None,\n}",
+          "AtomSpec {\n    element: Element {\n        atomic_number: 6,\n    },\n    formal_charge: 0,\n    explicit_hydrogens: 0,\n    chiral_tag: Unspecified,\n    chiral_permutation: None,\n    unknown_stereo: false,\n    mol_parity: None,\n    mol_inversion_flag: None,\n    implicit_hydrogen: false,\n    tracked_isotopic_hydrogens: [],\n    is_aromatic: false,\n    isotope: None,\n    atom_map: None,\n    no_implicit: false,\n    radical_electrons: 0,\n    hybridization: Unspecified,\n    query: None,\n    props: {},\n    computed_props: {},\n    pdb_residue_info: None,\n}"
+        ],
+        "bond": "BondSpec {\n    begin: AtomId(\n        0,\n    ),\n    end: AtomId(\n        1,\n    ),\n    order: Hydrogen,\n    is_aromatic: false,\n    is_conjugated: false,\n    direction: None,\n    stereo: None,\n    stereo_atoms: None,\n    unknown_stereo: false,\n    query: None,\n    props: {},\n    computed_props: {},\n}"
+      },
+      "width": 300
+    },
+    {
+      "actual_atoms": "[\n    Atom {\n        id: AtomId(\n            0,\n        ),\n        element: Element {\n            atomic_number: 6,\n        },\n        formal_charge: 0,\n        explicit_hydrogens: 0,\n        chiral_tag: Unspecified,\n        chiral_permutation: None,\n        unknown_stereo: false,\n        mol_parity: None,\n        mol_inversion_flag: None,\n        implicit_hydrogen: false,\n        tracked_isotopic_hydrogens: [],\n        is_aromatic: false,\n        isotope: None,\n        atom_map: None,\n        no_implicit: false,\n        radical_electrons: 0,\n        hybridization: Unspecified,\n        query: None,\n        props: {},\n        computed_props: {},\n        pdb_residue_info: None,\n    },\n    Atom {\n        id: AtomId(\n            1,\n        ),\n        element: Element {\n            atomic_number: 6,\n        },\n        formal_charge: 0,\n        explicit_hydrogens: 0,\n        chiral_tag: Unspecified,\n        chiral_permutation: None,\n        unknown_stereo: false,\n        mol_parity: None,\n        mol_inversion_flag: None,\n        implicit_hydrogen: false,\n        tracked_isotopic_hydrogens: [],\n        is_aromatic: false,\n        isotope: None,\n        atom_map: None,\n        no_implicit: false,\n        radical_electrons: 0,\n        hybridization: Unspecified,\n        query: None,\n        props: {},\n        computed_props: {},\n        pdb_residue_info: None,\n    },\n]",
+      "actual_bonds": "[\n    Bond {\n        id: BondId(\n            0,\n        ),\n        begin: AtomId(\n            1,\n        ),\n        end: AtomId(\n            0,\n        ),\n        order: Hydrogen,\n        is_aromatic: false,\n        is_conjugated: false,\n        direction: None,\n        stereo: None,\n        stereo_atoms: None,\n        unknown_stereo: false,\n        query: None,\n        props: {},\n        computed_props: {},\n    },\n]",
+      "actual_properties": "MoleculeProperties {\n    name: None,\n    sdf_data_fields: [],\n    sdf_property_lists: [],\n    props: {},\n    computed_props: {},\n}",
+      "actual_rings": "RingInfo {\n    initialized: true,\n    find_type: SymmSssr,\n    atom_members: [\n        [],\n        [],\n    ],\n    bond_members: [\n        [],\n    ],\n    atom_rings: [],\n    bond_rings: [],\n    atom_ring_families: [],\n    bond_ring_families: [],\n    relevant_cycle_count: None,\n    fused_rings: [],\n    num_fused_bonds: [],\n}",
+      "actual_valence": "ValenceAssignment {\n    explicit_valence: [\n        0,\n        0,\n    ],\n    implicit_hydrogens: [\n        4,\n        4,\n    ],\n}",
+      "atom_ids": [
+        0,
+        1
+      ],
+      "begin": 1,
+      "bond_id": 0,
+      "conformer_2d_ids": [
+        0
+      ],
+      "conformer_3d_ids": [],
+      "coordinate_bits": [
+        [
+          0,
+          0
+        ],
+        [
+          4609434218613702656,
+          0
+        ]
+      ],
+      "coordinate_identity_after": [
+        [
+          0,
+          [
+            [
+              0,
+              0
+            ],
+            [
+              4609434218613702656,
+              0
+            ]
+          ]
+        ]
+      ],
+      "coordinate_identity_before": [
+        [
+          0,
+          [
+            [
+              0,
+              0
+            ],
+            [
+              4609434218613702656,
+              0
+            ]
+          ]
+        ]
+      ],
+      "coordinates": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          1.5,
+          0.0
+        ]
+      ],
+      "end": 0,
+      "explicit_valence": [
+        0,
+        0
+      ],
+      "height": 300,
+      "implicit_hydrogens": [
+        4,
+        4
+      ],
+      "label": "hydrogen_rev",
+      "semantic_order": "Hydrogen",
+      "source_after": "Molecule {\n    topology: TopologyBlock {\n        atoms: [\n            Atom {\n                id: AtomId(\n                    0,\n                ),\n                element: Element {\n                    atomic_number: 6,\n                },\n                formal_charge: 0,\n                explicit_hydrogens: 0,\n                chiral_tag: Unspecified,\n                chiral_permutation: None,\n                unknown_stereo: false,\n                mol_parity: None,\n                mol_inversion_flag: None,\n                implicit_hydrogen: false,\n                tracked_isotopic_hydrogens: [],\n                is_aromatic: false,\n                isotope: None,\n                atom_map: None,\n                no_implicit: false,\n                radical_electrons: 0,\n                hybridization: Unspecified,\n                query: None,\n                props: {},\n                computed_props: {},\n                pdb_residue_info: None,\n            },\n            Atom {\n                id: AtomId(\n                    1,\n                ),\n                element: Element {\n                    atomic_number: 6,\n                },\n                formal_charge: 0,\n                explicit_hydrogens: 0,\n                chiral_tag: Unspecified,\n                chiral_permutation: None,\n                unknown_stereo: false,\n                mol_parity: None,\n                mol_inversion_flag: None,\n                implicit_hydrogen: false,\n                tracked_isotopic_hydrogens: [],\n                is_aromatic: false,\n                isotope: None,\n                atom_map: None,\n                no_implicit: false,\n                radical_electrons: 0,\n                hybridization: Unspecified,\n                query: None,\n                props: {},\n                computed_props: {},\n                pdb_residue_info: None,\n            },\n        ],\n        bonds: [\n            Bond {\n                id: BondId(\n                    0,\n                ),\n                begin: AtomId(\n                    1,\n                ),\n                end: AtomId(\n                    0,\n                ),\n                order: Hydrogen,\n                is_aromatic: false,\n                is_conjugated: false,\n                direction: None,\n                stereo: None,\n                stereo_atoms: None,\n                unknown_stereo: false,\n                query: None,\n                props: {},\n                computed_props: {},\n            },\n        ],\n        adjacency: AdjacencyList {\n            offsets: [\n                0,\n                1,\n                2,\n            ],\n            entries: [\n                NeighborRef {\n                    atom_index: 1,\n                    bond: BondId(\n                        0,\n                    ),\n                },\n                NeighborRef {\n                    atom_index: 0,\n                    bond: BondId(\n                        0,\n                    ),\n                },\n            ],\n        },\n        substance_groups: [],\n        stereo_groups: [],\n    },\n    coordinates: CoordinateBlock {\n        conformers_2d: [\n            Conformer2D {\n                id: 0,\n                coords: [\n                    [\n                        0.0,\n                        0.0,\n                    ],\n                    [\n                        1.5,\n                        0.0,\n                    ],\n                ],\n                props: {},\n            },\n        ],\n        conformers_3d: [],\n        source_coordinate_dim: Some(\n            TwoD,\n        ),\n    },\n    properties: MoleculeProperties {\n        name: None,\n        sdf_data_fields: [],\n        sdf_property_lists: [],\n        props: {},\n        computed_props: {},\n    },\n    derived_cache: DerivedCacheBlock {\n        rings: None,\n        ring_families: None,\n        valence: None,\n        aromaticity_valid: false,\n        stereo_valid: false,\n    },\n    capabilities: MoleculeCapabilities {\n        topology_trust: TrustedGraph,\n    },\n    computed_properties: ComputedPropertyCache {\n        crippen: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        crippen_atom_contributions: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        connectivity_hk_deltas: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        connectivity_n_vals: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        labute: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        topological_distance_matrix: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        distance_matrices_3d: RwLock {\n            data: {},\n            poisoned: false,\n            ..\n        },\n        potential_stereo: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n    },\n}",
+      "source_before": "Molecule {\n    topology: TopologyBlock {\n        atoms: [\n            Atom {\n                id: AtomId(\n                    0,\n                ),\n                element: Element {\n                    atomic_number: 6,\n                },\n                formal_charge: 0,\n                explicit_hydrogens: 0,\n                chiral_tag: Unspecified,\n                chiral_permutation: None,\n                unknown_stereo: false,\n                mol_parity: None,\n                mol_inversion_flag: None,\n                implicit_hydrogen: false,\n                tracked_isotopic_hydrogens: [],\n                is_aromatic: false,\n                isotope: None,\n                atom_map: None,\n                no_implicit: false,\n                radical_electrons: 0,\n                hybridization: Unspecified,\n                query: None,\n                props: {},\n                computed_props: {},\n                pdb_residue_info: None,\n            },\n            Atom {\n                id: AtomId(\n                    1,\n                ),\n                element: Element {\n                    atomic_number: 6,\n                },\n                formal_charge: 0,\n                explicit_hydrogens: 0,\n                chiral_tag: Unspecified,\n                chiral_permutation: None,\n                unknown_stereo: false,\n                mol_parity: None,\n                mol_inversion_flag: None,\n                implicit_hydrogen: false,\n                tracked_isotopic_hydrogens: [],\n                is_aromatic: false,\n                isotope: None,\n                atom_map: None,\n                no_implicit: false,\n                radical_electrons: 0,\n                hybridization: Unspecified,\n                query: None,\n                props: {},\n                computed_props: {},\n                pdb_residue_info: None,\n            },\n        ],\n        bonds: [\n            Bond {\n                id: BondId(\n                    0,\n                ),\n                begin: AtomId(\n                    1,\n                ),\n                end: AtomId(\n                    0,\n                ),\n                order: Hydrogen,\n                is_aromatic: false,\n                is_conjugated: false,\n                direction: None,\n                stereo: None,\n                stereo_atoms: None,\n                unknown_stereo: false,\n                query: None,\n                props: {},\n                computed_props: {},\n            },\n        ],\n        adjacency: AdjacencyList {\n            offsets: [\n                0,\n                1,\n                2,\n            ],\n            entries: [\n                NeighborRef {\n                    atom_index: 1,\n                    bond: BondId(\n                        0,\n                    ),\n                },\n                NeighborRef {\n                    atom_index: 0,\n                    bond: BondId(\n                        0,\n                    ),\n                },\n            ],\n        },\n        substance_groups: [],\n        stereo_groups: [],\n    },\n    coordinates: CoordinateBlock {\n        conformers_2d: [\n            Conformer2D {\n                id: 0,\n                coords: [\n                    [\n                        0.0,\n                        0.0,\n                    ],\n                    [\n                        1.5,\n                        0.0,\n                    ],\n                ],\n                props: {},\n            },\n        ],\n        conformers_3d: [],\n        source_coordinate_dim: Some(\n            TwoD,\n        ),\n    },\n    properties: MoleculeProperties {\n        name: None,\n        sdf_data_fields: [],\n        sdf_property_lists: [],\n        props: {},\n        computed_props: {},\n    },\n    derived_cache: DerivedCacheBlock {\n        rings: None,\n        ring_families: None,\n        valence: None,\n        aromaticity_valid: false,\n        stereo_valid: false,\n    },\n    capabilities: MoleculeCapabilities {\n        topology_trust: TrustedGraph,\n    },\n    computed_properties: ComputedPropertyCache {\n        crippen: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        crippen_atom_contributions: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        connectivity_hk_deltas: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        connectivity_n_vals: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        labute: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        topological_distance_matrix: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        distance_matrices_3d: RwLock {\n            data: {},\n            poisoned: false,\n            ..\n        },\n        potential_stereo: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n    },\n}",
+      "source_preserved": true,
+      "specs": {
+        "atoms": [
+          "AtomSpec {\n    element: Element {\n        atomic_number: 6,\n    },\n    formal_charge: 0,\n    explicit_hydrogens: 0,\n    chiral_tag: Unspecified,\n    chiral_permutation: None,\n    unknown_stereo: false,\n    mol_parity: None,\n    mol_inversion_flag: None,\n    implicit_hydrogen: false,\n    tracked_isotopic_hydrogens: [],\n    is_aromatic: false,\n    isotope: None,\n    atom_map: None,\n    no_implicit: false,\n    radical_electrons: 0,\n    hybridization: Unspecified,\n    query: None,\n    props: {},\n    computed_props: {},\n    pdb_residue_info: None,\n}",
+          "AtomSpec {\n    element: Element {\n        atomic_number: 6,\n    },\n    formal_charge: 0,\n    explicit_hydrogens: 0,\n    chiral_tag: Unspecified,\n    chiral_permutation: None,\n    unknown_stereo: false,\n    mol_parity: None,\n    mol_inversion_flag: None,\n    implicit_hydrogen: false,\n    tracked_isotopic_hydrogens: [],\n    is_aromatic: false,\n    isotope: None,\n    atom_map: None,\n    no_implicit: false,\n    radical_electrons: 0,\n    hybridization: Unspecified,\n    query: None,\n    props: {},\n    computed_props: {},\n    pdb_residue_info: None,\n}"
+        ],
+        "bond": "BondSpec {\n    begin: AtomId(\n        1,\n    ),\n    end: AtomId(\n        0,\n    ),\n    order: Hydrogen,\n    is_aromatic: false,\n    is_conjugated: false,\n    direction: None,\n    stereo: None,\n    stereo_atoms: None,\n    unknown_stereo: false,\n    query: None,\n    props: {},\n    computed_props: {},\n}"
+      },
+      "width": 300
+    },
+    {
+      "actual_atoms": "[\n    Atom {\n        id: AtomId(\n            0,\n        ),\n        element: Element {\n            atomic_number: 6,\n        },\n        formal_charge: 0,\n        explicit_hydrogens: 0,\n        chiral_tag: Unspecified,\n        chiral_permutation: None,\n        unknown_stereo: false,\n        mol_parity: None,\n        mol_inversion_flag: None,\n        implicit_hydrogen: false,\n        tracked_isotopic_hydrogens: [],\n        is_aromatic: false,\n        isotope: None,\n        atom_map: None,\n        no_implicit: false,\n        radical_electrons: 0,\n        hybridization: Unspecified,\n        query: None,\n        props: {},\n        computed_props: {},\n        pdb_residue_info: None,\n    },\n    Atom {\n        id: AtomId(\n            1,\n        ),\n        element: Element {\n            atomic_number: 6,\n        },\n        formal_charge: 0,\n        explicit_hydrogens: 0,\n        chiral_tag: Unspecified,\n        chiral_permutation: None,\n        unknown_stereo: false,\n        mol_parity: None,\n        mol_inversion_flag: None,\n        implicit_hydrogen: false,\n        tracked_isotopic_hydrogens: [],\n        is_aromatic: false,\n        isotope: None,\n        atom_map: None,\n        no_implicit: false,\n        radical_electrons: 0,\n        hybridization: Unspecified,\n        query: None,\n        props: {},\n        computed_props: {},\n        pdb_residue_info: None,\n    },\n]",
+      "actual_bonds": "[\n    Bond {\n        id: BondId(\n            0,\n        ),\n        begin: AtomId(\n            0,\n        ),\n        end: AtomId(\n            1,\n        ),\n        order: Unspecified,\n        is_aromatic: false,\n        is_conjugated: false,\n        direction: None,\n        stereo: None,\n        stereo_atoms: None,\n        unknown_stereo: false,\n        query: None,\n        props: {},\n        computed_props: {},\n    },\n]",
+      "actual_properties": "MoleculeProperties {\n    name: None,\n    sdf_data_fields: [],\n    sdf_property_lists: [],\n    props: {},\n    computed_props: {},\n}",
+      "actual_rings": "RingInfo {\n    initialized: true,\n    find_type: SymmSssr,\n    atom_members: [\n        [],\n        [],\n    ],\n    bond_members: [\n        [],\n    ],\n    atom_rings: [],\n    bond_rings: [],\n    atom_ring_families: [],\n    bond_ring_families: [],\n    relevant_cycle_count: None,\n    fused_rings: [],\n    num_fused_bonds: [],\n}",
+      "actual_valence": "ValenceAssignment {\n    explicit_valence: [\n        0,\n        0,\n    ],\n    implicit_hydrogens: [\n        4,\n        4,\n    ],\n}",
+      "atom_ids": [
+        0,
+        1
+      ],
+      "begin": 0,
+      "bond_id": 0,
+      "conformer_2d_ids": [
+        0
+      ],
+      "conformer_3d_ids": [],
+      "coordinate_bits": [
+        [
+          0,
+          0
+        ],
+        [
+          4609434218613702656,
+          0
+        ]
+      ],
+      "coordinate_identity_after": [
+        [
+          0,
+          [
+            [
+              0,
+              0
+            ],
+            [
+              4609434218613702656,
+              0
+            ]
+          ]
+        ]
+      ],
+      "coordinate_identity_before": [
+        [
+          0,
+          [
+            [
+              0,
+              0
+            ],
+            [
+              4609434218613702656,
+              0
+            ]
+          ]
+        ]
+      ],
+      "coordinates": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          1.5,
+          0.0
+        ]
+      ],
+      "end": 1,
+      "explicit_valence": [
+        0,
+        0
+      ],
+      "height": 300,
+      "implicit_hydrogens": [
+        4,
+        4
+      ],
+      "label": "unspecified_fwd",
+      "semantic_order": "Unspecified",
+      "source_after": "Molecule {\n    topology: TopologyBlock {\n        atoms: [\n            Atom {\n                id: AtomId(\n                    0,\n                ),\n                element: Element {\n                    atomic_number: 6,\n                },\n                formal_charge: 0,\n                explicit_hydrogens: 0,\n                chiral_tag: Unspecified,\n                chiral_permutation: None,\n                unknown_stereo: false,\n                mol_parity: None,\n                mol_inversion_flag: None,\n                implicit_hydrogen: false,\n                tracked_isotopic_hydrogens: [],\n                is_aromatic: false,\n                isotope: None,\n                atom_map: None,\n                no_implicit: false,\n                radical_electrons: 0,\n                hybridization: Unspecified,\n                query: None,\n                props: {},\n                computed_props: {},\n                pdb_residue_info: None,\n            },\n            Atom {\n                id: AtomId(\n                    1,\n                ),\n                element: Element {\n                    atomic_number: 6,\n                },\n                formal_charge: 0,\n                explicit_hydrogens: 0,\n                chiral_tag: Unspecified,\n                chiral_permutation: None,\n                unknown_stereo: false,\n                mol_parity: None,\n                mol_inversion_flag: None,\n                implicit_hydrogen: false,\n                tracked_isotopic_hydrogens: [],\n                is_aromatic: false,\n                isotope: None,\n                atom_map: None,\n                no_implicit: false,\n                radical_electrons: 0,\n                hybridization: Unspecified,\n                query: None,\n                props: {},\n                computed_props: {},\n                pdb_residue_info: None,\n            },\n        ],\n        bonds: [\n            Bond {\n                id: BondId(\n                    0,\n                ),\n                begin: AtomId(\n                    0,\n                ),\n                end: AtomId(\n                    1,\n                ),\n                order: Unspecified,\n                is_aromatic: false,\n                is_conjugated: false,\n                direction: None,\n                stereo: None,\n                stereo_atoms: None,\n                unknown_stereo: false,\n                query: None,\n                props: {},\n                computed_props: {},\n            },\n        ],\n        adjacency: AdjacencyList {\n            offsets: [\n                0,\n                1,\n                2,\n            ],\n            entries: [\n                NeighborRef {\n                    atom_index: 1,\n                    bond: BondId(\n                        0,\n                    ),\n                },\n                NeighborRef {\n                    atom_index: 0,\n                    bond: BondId(\n                        0,\n                    ),\n                },\n            ],\n        },\n        substance_groups: [],\n        stereo_groups: [],\n    },\n    coordinates: CoordinateBlock {\n        conformers_2d: [\n            Conformer2D {\n                id: 0,\n                coords: [\n                    [\n                        0.0,\n                        0.0,\n                    ],\n                    [\n                        1.5,\n                        0.0,\n                    ],\n                ],\n                props: {},\n            },\n        ],\n        conformers_3d: [],\n        source_coordinate_dim: Some(\n            TwoD,\n        ),\n    },\n    properties: MoleculeProperties {\n        name: None,\n        sdf_data_fields: [],\n        sdf_property_lists: [],\n        props: {},\n        computed_props: {},\n    },\n    derived_cache: DerivedCacheBlock {\n        rings: None,\n        ring_families: None,\n        valence: None,\n        aromaticity_valid: false,\n        stereo_valid: false,\n    },\n    capabilities: MoleculeCapabilities {\n        topology_trust: TrustedGraph,\n    },\n    computed_properties: ComputedPropertyCache {\n        crippen: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        crippen_atom_contributions: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        connectivity_hk_deltas: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        connectivity_n_vals: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        labute: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        topological_distance_matrix: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        distance_matrices_3d: RwLock {\n            data: {},\n            poisoned: false,\n            ..\n        },\n        potential_stereo: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n    },\n}",
+      "source_before": "Molecule {\n    topology: TopologyBlock {\n        atoms: [\n            Atom {\n                id: AtomId(\n                    0,\n                ),\n                element: Element {\n                    atomic_number: 6,\n                },\n                formal_charge: 0,\n                explicit_hydrogens: 0,\n                chiral_tag: Unspecified,\n                chiral_permutation: None,\n                unknown_stereo: false,\n                mol_parity: None,\n                mol_inversion_flag: None,\n                implicit_hydrogen: false,\n                tracked_isotopic_hydrogens: [],\n                is_aromatic: false,\n                isotope: None,\n                atom_map: None,\n                no_implicit: false,\n                radical_electrons: 0,\n                hybridization: Unspecified,\n                query: None,\n                props: {},\n                computed_props: {},\n                pdb_residue_info: None,\n            },\n            Atom {\n                id: AtomId(\n                    1,\n                ),\n                element: Element {\n                    atomic_number: 6,\n                },\n                formal_charge: 0,\n                explicit_hydrogens: 0,\n                chiral_tag: Unspecified,\n                chiral_permutation: None,\n                unknown_stereo: false,\n                mol_parity: None,\n                mol_inversion_flag: None,\n                implicit_hydrogen: false,\n                tracked_isotopic_hydrogens: [],\n                is_aromatic: false,\n                isotope: None,\n                atom_map: None,\n                no_implicit: false,\n                radical_electrons: 0,\n                hybridization: Unspecified,\n                query: None,\n                props: {},\n                computed_props: {},\n                pdb_residue_info: None,\n            },\n        ],\n        bonds: [\n            Bond {\n                id: BondId(\n                    0,\n                ),\n                begin: AtomId(\n                    0,\n                ),\n                end: AtomId(\n                    1,\n                ),\n                order: Unspecified,\n                is_aromatic: false,\n                is_conjugated: false,\n                direction: None,\n                stereo: None,\n                stereo_atoms: None,\n                unknown_stereo: false,\n                query: None,\n                props: {},\n                computed_props: {},\n            },\n        ],\n        adjacency: AdjacencyList {\n            offsets: [\n                0,\n                1,\n                2,\n            ],\n            entries: [\n                NeighborRef {\n                    atom_index: 1,\n                    bond: BondId(\n                        0,\n                    ),\n                },\n                NeighborRef {\n                    atom_index: 0,\n                    bond: BondId(\n                        0,\n                    ),\n                },\n            ],\n        },\n        substance_groups: [],\n        stereo_groups: [],\n    },\n    coordinates: CoordinateBlock {\n        conformers_2d: [\n            Conformer2D {\n                id: 0,\n                coords: [\n                    [\n                        0.0,\n                        0.0,\n                    ],\n                    [\n                        1.5,\n                        0.0,\n                    ],\n                ],\n                props: {},\n            },\n        ],\n        conformers_3d: [],\n        source_coordinate_dim: Some(\n            TwoD,\n        ),\n    },\n    properties: MoleculeProperties {\n        name: None,\n        sdf_data_fields: [],\n        sdf_property_lists: [],\n        props: {},\n        computed_props: {},\n    },\n    derived_cache: DerivedCacheBlock {\n        rings: None,\n        ring_families: None,\n        valence: None,\n        aromaticity_valid: false,\n        stereo_valid: false,\n    },\n    capabilities: MoleculeCapabilities {\n        topology_trust: TrustedGraph,\n    },\n    computed_properties: ComputedPropertyCache {\n        crippen: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        crippen_atom_contributions: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        connectivity_hk_deltas: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        connectivity_n_vals: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        labute: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        topological_distance_matrix: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        distance_matrices_3d: RwLock {\n            data: {},\n            poisoned: false,\n            ..\n        },\n        potential_stereo: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n    },\n}",
+      "source_preserved": true,
+      "specs": {
+        "atoms": [
+          "AtomSpec {\n    element: Element {\n        atomic_number: 6,\n    },\n    formal_charge: 0,\n    explicit_hydrogens: 0,\n    chiral_tag: Unspecified,\n    chiral_permutation: None,\n    unknown_stereo: false,\n    mol_parity: None,\n    mol_inversion_flag: None,\n    implicit_hydrogen: false,\n    tracked_isotopic_hydrogens: [],\n    is_aromatic: false,\n    isotope: None,\n    atom_map: None,\n    no_implicit: false,\n    radical_electrons: 0,\n    hybridization: Unspecified,\n    query: None,\n    props: {},\n    computed_props: {},\n    pdb_residue_info: None,\n}",
+          "AtomSpec {\n    element: Element {\n        atomic_number: 6,\n    },\n    formal_charge: 0,\n    explicit_hydrogens: 0,\n    chiral_tag: Unspecified,\n    chiral_permutation: None,\n    unknown_stereo: false,\n    mol_parity: None,\n    mol_inversion_flag: None,\n    implicit_hydrogen: false,\n    tracked_isotopic_hydrogens: [],\n    is_aromatic: false,\n    isotope: None,\n    atom_map: None,\n    no_implicit: false,\n    radical_electrons: 0,\n    hybridization: Unspecified,\n    query: None,\n    props: {},\n    computed_props: {},\n    pdb_residue_info: None,\n}"
+        ],
+        "bond": "BondSpec {\n    begin: AtomId(\n        0,\n    ),\n    end: AtomId(\n        1,\n    ),\n    order: Unspecified,\n    is_aromatic: false,\n    is_conjugated: false,\n    direction: None,\n    stereo: None,\n    stereo_atoms: None,\n    unknown_stereo: false,\n    query: None,\n    props: {},\n    computed_props: {},\n}"
+      },
+      "width": 300
+    },
+    {
+      "actual_atoms": "[\n    Atom {\n        id: AtomId(\n            0,\n        ),\n        element: Element {\n            atomic_number: 6,\n        },\n        formal_charge: 0,\n        explicit_hydrogens: 0,\n        chiral_tag: Unspecified,\n        chiral_permutation: None,\n        unknown_stereo: false,\n        mol_parity: None,\n        mol_inversion_flag: None,\n        implicit_hydrogen: false,\n        tracked_isotopic_hydrogens: [],\n        is_aromatic: false,\n        isotope: None,\n        atom_map: None,\n        no_implicit: false,\n        radical_electrons: 0,\n        hybridization: Unspecified,\n        query: None,\n        props: {},\n        computed_props: {},\n        pdb_residue_info: None,\n    },\n    Atom {\n        id: AtomId(\n            1,\n        ),\n        element: Element {\n            atomic_number: 6,\n        },\n        formal_charge: 0,\n        explicit_hydrogens: 0,\n        chiral_tag: Unspecified,\n        chiral_permutation: None,\n        unknown_stereo: false,\n        mol_parity: None,\n        mol_inversion_flag: None,\n        implicit_hydrogen: false,\n        tracked_isotopic_hydrogens: [],\n        is_aromatic: false,\n        isotope: None,\n        atom_map: None,\n        no_implicit: false,\n        radical_electrons: 0,\n        hybridization: Unspecified,\n        query: None,\n        props: {},\n        computed_props: {},\n        pdb_residue_info: None,\n    },\n]",
+      "actual_bonds": "[\n    Bond {\n        id: BondId(\n            0,\n        ),\n        begin: AtomId(\n            1,\n        ),\n        end: AtomId(\n            0,\n        ),\n        order: Unspecified,\n        is_aromatic: false,\n        is_conjugated: false,\n        direction: None,\n        stereo: None,\n        stereo_atoms: None,\n        unknown_stereo: false,\n        query: None,\n        props: {},\n        computed_props: {},\n    },\n]",
+      "actual_properties": "MoleculeProperties {\n    name: None,\n    sdf_data_fields: [],\n    sdf_property_lists: [],\n    props: {},\n    computed_props: {},\n}",
+      "actual_rings": "RingInfo {\n    initialized: true,\n    find_type: SymmSssr,\n    atom_members: [\n        [],\n        [],\n    ],\n    bond_members: [\n        [],\n    ],\n    atom_rings: [],\n    bond_rings: [],\n    atom_ring_families: [],\n    bond_ring_families: [],\n    relevant_cycle_count: None,\n    fused_rings: [],\n    num_fused_bonds: [],\n}",
+      "actual_valence": "ValenceAssignment {\n    explicit_valence: [\n        0,\n        0,\n    ],\n    implicit_hydrogens: [\n        4,\n        4,\n    ],\n}",
+      "atom_ids": [
+        0,
+        1
+      ],
+      "begin": 1,
+      "bond_id": 0,
+      "conformer_2d_ids": [
+        0
+      ],
+      "conformer_3d_ids": [],
+      "coordinate_bits": [
+        [
+          0,
+          0
+        ],
+        [
+          4609434218613702656,
+          0
+        ]
+      ],
+      "coordinate_identity_after": [
+        [
+          0,
+          [
+            [
+              0,
+              0
+            ],
+            [
+              4609434218613702656,
+              0
+            ]
+          ]
+        ]
+      ],
+      "coordinate_identity_before": [
+        [
+          0,
+          [
+            [
+              0,
+              0
+            ],
+            [
+              4609434218613702656,
+              0
+            ]
+          ]
+        ]
+      ],
+      "coordinates": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          1.5,
+          0.0
+        ]
+      ],
+      "end": 0,
+      "explicit_valence": [
+        0,
+        0
+      ],
+      "height": 300,
+      "implicit_hydrogens": [
+        4,
+        4
+      ],
+      "label": "unspecified_rev",
+      "semantic_order": "Unspecified",
+      "source_after": "Molecule {\n    topology: TopologyBlock {\n        atoms: [\n            Atom {\n                id: AtomId(\n                    0,\n                ),\n                element: Element {\n                    atomic_number: 6,\n                },\n                formal_charge: 0,\n                explicit_hydrogens: 0,\n                chiral_tag: Unspecified,\n                chiral_permutation: None,\n                unknown_stereo: false,\n                mol_parity: None,\n                mol_inversion_flag: None,\n                implicit_hydrogen: false,\n                tracked_isotopic_hydrogens: [],\n                is_aromatic: false,\n                isotope: None,\n                atom_map: None,\n                no_implicit: false,\n                radical_electrons: 0,\n                hybridization: Unspecified,\n                query: None,\n                props: {},\n                computed_props: {},\n                pdb_residue_info: None,\n            },\n            Atom {\n                id: AtomId(\n                    1,\n                ),\n                element: Element {\n                    atomic_number: 6,\n                },\n                formal_charge: 0,\n                explicit_hydrogens: 0,\n                chiral_tag: Unspecified,\n                chiral_permutation: None,\n                unknown_stereo: false,\n                mol_parity: None,\n                mol_inversion_flag: None,\n                implicit_hydrogen: false,\n                tracked_isotopic_hydrogens: [],\n                is_aromatic: false,\n                isotope: None,\n                atom_map: None,\n                no_implicit: false,\n                radical_electrons: 0,\n                hybridization: Unspecified,\n                query: None,\n                props: {},\n                computed_props: {},\n                pdb_residue_info: None,\n            },\n        ],\n        bonds: [\n            Bond {\n                id: BondId(\n                    0,\n                ),\n                begin: AtomId(\n                    1,\n                ),\n                end: AtomId(\n                    0,\n                ),\n                order: Unspecified,\n                is_aromatic: false,\n                is_conjugated: false,\n                direction: None,\n                stereo: None,\n                stereo_atoms: None,\n                unknown_stereo: false,\n                query: None,\n                props: {},\n                computed_props: {},\n            },\n        ],\n        adjacency: AdjacencyList {\n            offsets: [\n                0,\n                1,\n                2,\n            ],\n            entries: [\n                NeighborRef {\n                    atom_index: 1,\n                    bond: BondId(\n                        0,\n                    ),\n                },\n                NeighborRef {\n                    atom_index: 0,\n                    bond: BondId(\n                        0,\n                    ),\n                },\n            ],\n        },\n        substance_groups: [],\n        stereo_groups: [],\n    },\n    coordinates: CoordinateBlock {\n        conformers_2d: [\n            Conformer2D {\n                id: 0,\n                coords: [\n                    [\n                        0.0,\n                        0.0,\n                    ],\n                    [\n                        1.5,\n                        0.0,\n                    ],\n                ],\n                props: {},\n            },\n        ],\n        conformers_3d: [],\n        source_coordinate_dim: Some(\n            TwoD,\n        ),\n    },\n    properties: MoleculeProperties {\n        name: None,\n        sdf_data_fields: [],\n        sdf_property_lists: [],\n        props: {},\n        computed_props: {},\n    },\n    derived_cache: DerivedCacheBlock {\n        rings: None,\n        ring_families: None,\n        valence: None,\n        aromaticity_valid: false,\n        stereo_valid: false,\n    },\n    capabilities: MoleculeCapabilities {\n        topology_trust: TrustedGraph,\n    },\n    computed_properties: ComputedPropertyCache {\n        crippen: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        crippen_atom_contributions: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        connectivity_hk_deltas: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        connectivity_n_vals: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        labute: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        topological_distance_matrix: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        distance_matrices_3d: RwLock {\n            data: {},\n            poisoned: false,\n            ..\n        },\n        potential_stereo: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n    },\n}",
+      "source_before": "Molecule {\n    topology: TopologyBlock {\n        atoms: [\n            Atom {\n                id: AtomId(\n                    0,\n                ),\n                element: Element {\n                    atomic_number: 6,\n                },\n                formal_charge: 0,\n                explicit_hydrogens: 0,\n                chiral_tag: Unspecified,\n                chiral_permutation: None,\n                unknown_stereo: false,\n                mol_parity: None,\n                mol_inversion_flag: None,\n                implicit_hydrogen: false,\n                tracked_isotopic_hydrogens: [],\n                is_aromatic: false,\n                isotope: None,\n                atom_map: None,\n                no_implicit: false,\n                radical_electrons: 0,\n                hybridization: Unspecified,\n                query: None,\n                props: {},\n                computed_props: {},\n                pdb_residue_info: None,\n            },\n            Atom {\n                id: AtomId(\n                    1,\n                ),\n                element: Element {\n                    atomic_number: 6,\n                },\n                formal_charge: 0,\n                explicit_hydrogens: 0,\n                chiral_tag: Unspecified,\n                chiral_permutation: None,\n                unknown_stereo: false,\n                mol_parity: None,\n                mol_inversion_flag: None,\n                implicit_hydrogen: false,\n                tracked_isotopic_hydrogens: [],\n                is_aromatic: false,\n                isotope: None,\n                atom_map: None,\n                no_implicit: false,\n                radical_electrons: 0,\n                hybridization: Unspecified,\n                query: None,\n                props: {},\n                computed_props: {},\n                pdb_residue_info: None,\n            },\n        ],\n        bonds: [\n            Bond {\n                id: BondId(\n                    0,\n                ),\n                begin: AtomId(\n                    1,\n                ),\n                end: AtomId(\n                    0,\n                ),\n                order: Unspecified,\n                is_aromatic: false,\n                is_conjugated: false,\n                direction: None,\n                stereo: None,\n                stereo_atoms: None,\n                unknown_stereo: false,\n                query: None,\n                props: {},\n                computed_props: {},\n            },\n        ],\n        adjacency: AdjacencyList {\n            offsets: [\n                0,\n                1,\n                2,\n            ],\n            entries: [\n                NeighborRef {\n                    atom_index: 1,\n                    bond: BondId(\n                        0,\n                    ),\n                },\n                NeighborRef {\n                    atom_index: 0,\n                    bond: BondId(\n                        0,\n                    ),\n                },\n            ],\n        },\n        substance_groups: [],\n        stereo_groups: [],\n    },\n    coordinates: CoordinateBlock {\n        conformers_2d: [\n            Conformer2D {\n                id: 0,\n                coords: [\n                    [\n                        0.0,\n                        0.0,\n                    ],\n                    [\n                        1.5,\n                        0.0,\n                    ],\n                ],\n                props: {},\n            },\n        ],\n        conformers_3d: [],\n        source_coordinate_dim: Some(\n            TwoD,\n        ),\n    },\n    properties: MoleculeProperties {\n        name: None,\n        sdf_data_fields: [],\n        sdf_property_lists: [],\n        props: {},\n        computed_props: {},\n    },\n    derived_cache: DerivedCacheBlock {\n        rings: None,\n        ring_families: None,\n        valence: None,\n        aromaticity_valid: false,\n        stereo_valid: false,\n    },\n    capabilities: MoleculeCapabilities {\n        topology_trust: TrustedGraph,\n    },\n    computed_properties: ComputedPropertyCache {\n        crippen: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        crippen_atom_contributions: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        connectivity_hk_deltas: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        connectivity_n_vals: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        labute: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        topological_distance_matrix: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        distance_matrices_3d: RwLock {\n            data: {},\n            poisoned: false,\n            ..\n        },\n        potential_stereo: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n    },\n}",
+      "source_preserved": true,
+      "specs": {
+        "atoms": [
+          "AtomSpec {\n    element: Element {\n        atomic_number: 6,\n    },\n    formal_charge: 0,\n    explicit_hydrogens: 0,\n    chiral_tag: Unspecified,\n    chiral_permutation: None,\n    unknown_stereo: false,\n    mol_parity: None,\n    mol_inversion_flag: None,\n    implicit_hydrogen: false,\n    tracked_isotopic_hydrogens: [],\n    is_aromatic: false,\n    isotope: None,\n    atom_map: None,\n    no_implicit: false,\n    radical_electrons: 0,\n    hybridization: Unspecified,\n    query: None,\n    props: {},\n    computed_props: {},\n    pdb_residue_info: None,\n}",
+          "AtomSpec {\n    element: Element {\n        atomic_number: 6,\n    },\n    formal_charge: 0,\n    explicit_hydrogens: 0,\n    chiral_tag: Unspecified,\n    chiral_permutation: None,\n    unknown_stereo: false,\n    mol_parity: None,\n    mol_inversion_flag: None,\n    implicit_hydrogen: false,\n    tracked_isotopic_hydrogens: [],\n    is_aromatic: false,\n    isotope: None,\n    atom_map: None,\n    no_implicit: false,\n    radical_electrons: 0,\n    hybridization: Unspecified,\n    query: None,\n    props: {},\n    computed_props: {},\n    pdb_residue_info: None,\n}"
+        ],
+        "bond": "BondSpec {\n    begin: AtomId(\n        1,\n    ),\n    end: AtomId(\n        0,\n    ),\n    order: Unspecified,\n    is_aromatic: false,\n    is_conjugated: false,\n    direction: None,\n    stereo: None,\n    stereo_atoms: None,\n    unknown_stereo: false,\n    query: None,\n    props: {},\n    computed_props: {},\n}"
+      },
+      "width": 300
+    },
+    {
+      "actual_atoms": "[\n    Atom {\n        id: AtomId(\n            0,\n        ),\n        element: Element {\n            atomic_number: 6,\n        },\n        formal_charge: 0,\n        explicit_hydrogens: 0,\n        chiral_tag: Unspecified,\n        chiral_permutation: None,\n        unknown_stereo: false,\n        mol_parity: None,\n        mol_inversion_flag: None,\n        implicit_hydrogen: false,\n        tracked_isotopic_hydrogens: [],\n        is_aromatic: false,\n        isotope: None,\n        atom_map: None,\n        no_implicit: false,\n        radical_electrons: 0,\n        hybridization: Unspecified,\n        query: None,\n        props: {},\n        computed_props: {},\n        pdb_residue_info: None,\n    },\n    Atom {\n        id: AtomId(\n            1,\n        ),\n        element: Element {\n            atomic_number: 6,\n        },\n        formal_charge: 0,\n        explicit_hydrogens: 0,\n        chiral_tag: Unspecified,\n        chiral_permutation: None,\n        unknown_stereo: false,\n        mol_parity: None,\n        mol_inversion_flag: None,\n        implicit_hydrogen: false,\n        tracked_isotopic_hydrogens: [],\n        is_aromatic: false,\n        isotope: None,\n        atom_map: None,\n        no_implicit: false,\n        radical_electrons: 0,\n        hybridization: Unspecified,\n        query: None,\n        props: {},\n        computed_props: {},\n        pdb_residue_info: None,\n    },\n]",
+      "actual_bonds": "[\n    Bond {\n        id: BondId(\n            0,\n        ),\n        begin: AtomId(\n            0,\n        ),\n        end: AtomId(\n            1,\n        ),\n        order: Dative,\n        is_aromatic: false,\n        is_conjugated: false,\n        direction: None,\n        stereo: None,\n        stereo_atoms: None,\n        unknown_stereo: false,\n        query: None,\n        props: {},\n        computed_props: {},\n    },\n]",
+      "actual_properties": "MoleculeProperties {\n    name: None,\n    sdf_data_fields: [],\n    sdf_property_lists: [],\n    props: {},\n    computed_props: {},\n}",
+      "actual_rings": "RingInfo {\n    initialized: true,\n    find_type: SymmSssr,\n    atom_members: [\n        [],\n        [],\n    ],\n    bond_members: [\n        [],\n    ],\n    atom_rings: [],\n    bond_rings: [],\n    atom_ring_families: [],\n    bond_ring_families: [],\n    relevant_cycle_count: None,\n    fused_rings: [],\n    num_fused_bonds: [],\n}",
+      "actual_valence": "ValenceAssignment {\n    explicit_valence: [\n        0,\n        1,\n    ],\n    implicit_hydrogens: [\n        4,\n        3,\n    ],\n}",
+      "atom_ids": [
+        0,
+        1
+      ],
+      "begin": 0,
+      "bond_id": 0,
+      "conformer_2d_ids": [
+        0
+      ],
+      "conformer_3d_ids": [],
+      "coordinate_bits": [
+        [
+          0,
+          0
+        ],
+        [
+          4609434218613702656,
+          0
+        ]
+      ],
+      "coordinate_identity_after": [
+        [
+          0,
+          [
+            [
+              0,
+              0
+            ],
+            [
+              4609434218613702656,
+              0
+            ]
+          ]
+        ]
+      ],
+      "coordinate_identity_before": [
+        [
+          0,
+          [
+            [
+              0,
+              0
+            ],
+            [
+              4609434218613702656,
+              0
+            ]
+          ]
+        ]
+      ],
+      "coordinates": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          1.5,
+          0.0
+        ]
+      ],
+      "end": 1,
+      "explicit_valence": [
+        0,
+        1
+      ],
+      "height": 300,
+      "implicit_hydrogens": [
+        4,
+        3
+      ],
+      "label": "dative_fwd",
+      "semantic_order": "Dative",
+      "source_after": "Molecule {\n    topology: TopologyBlock {\n        atoms: [\n            Atom {\n                id: AtomId(\n                    0,\n                ),\n                element: Element {\n                    atomic_number: 6,\n                },\n                formal_charge: 0,\n                explicit_hydrogens: 0,\n                chiral_tag: Unspecified,\n                chiral_permutation: None,\n                unknown_stereo: false,\n                mol_parity: None,\n                mol_inversion_flag: None,\n                implicit_hydrogen: false,\n                tracked_isotopic_hydrogens: [],\n                is_aromatic: false,\n                isotope: None,\n                atom_map: None,\n                no_implicit: false,\n                radical_electrons: 0,\n                hybridization: Unspecified,\n                query: None,\n                props: {},\n                computed_props: {},\n                pdb_residue_info: None,\n            },\n            Atom {\n                id: AtomId(\n                    1,\n                ),\n                element: Element {\n                    atomic_number: 6,\n                },\n                formal_charge: 0,\n                explicit_hydrogens: 0,\n                chiral_tag: Unspecified,\n                chiral_permutation: None,\n                unknown_stereo: false,\n                mol_parity: None,\n                mol_inversion_flag: None,\n                implicit_hydrogen: false,\n                tracked_isotopic_hydrogens: [],\n                is_aromatic: false,\n                isotope: None,\n                atom_map: None,\n                no_implicit: false,\n                radical_electrons: 0,\n                hybridization: Unspecified,\n                query: None,\n                props: {},\n                computed_props: {},\n                pdb_residue_info: None,\n            },\n        ],\n        bonds: [\n            Bond {\n                id: BondId(\n                    0,\n                ),\n                begin: AtomId(\n                    0,\n                ),\n                end: AtomId(\n                    1,\n                ),\n                order: Dative,\n                is_aromatic: false,\n                is_conjugated: false,\n                direction: None,\n                stereo: None,\n                stereo_atoms: None,\n                unknown_stereo: false,\n                query: None,\n                props: {},\n                computed_props: {},\n            },\n        ],\n        adjacency: AdjacencyList {\n            offsets: [\n                0,\n                1,\n                2,\n            ],\n            entries: [\n                NeighborRef {\n                    atom_index: 1,\n                    bond: BondId(\n                        0,\n                    ),\n                },\n                NeighborRef {\n                    atom_index: 0,\n                    bond: BondId(\n                        0,\n                    ),\n                },\n            ],\n        },\n        substance_groups: [],\n        stereo_groups: [],\n    },\n    coordinates: CoordinateBlock {\n        conformers_2d: [\n            Conformer2D {\n                id: 0,\n                coords: [\n                    [\n                        0.0,\n                        0.0,\n                    ],\n                    [\n                        1.5,\n                        0.0,\n                    ],\n                ],\n                props: {},\n            },\n        ],\n        conformers_3d: [],\n        source_coordinate_dim: Some(\n            TwoD,\n        ),\n    },\n    properties: MoleculeProperties {\n        name: None,\n        sdf_data_fields: [],\n        sdf_property_lists: [],\n        props: {},\n        computed_props: {},\n    },\n    derived_cache: DerivedCacheBlock {\n        rings: None,\n        ring_families: None,\n        valence: None,\n        aromaticity_valid: false,\n        stereo_valid: false,\n    },\n    capabilities: MoleculeCapabilities {\n        topology_trust: TrustedGraph,\n    },\n    computed_properties: ComputedPropertyCache {\n        crippen: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        crippen_atom_contributions: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        connectivity_hk_deltas: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        connectivity_n_vals: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        labute: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        topological_distance_matrix: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        distance_matrices_3d: RwLock {\n            data: {},\n            poisoned: false,\n            ..\n        },\n        potential_stereo: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n    },\n}",
+      "source_before": "Molecule {\n    topology: TopologyBlock {\n        atoms: [\n            Atom {\n                id: AtomId(\n                    0,\n                ),\n                element: Element {\n                    atomic_number: 6,\n                },\n                formal_charge: 0,\n                explicit_hydrogens: 0,\n                chiral_tag: Unspecified,\n                chiral_permutation: None,\n                unknown_stereo: false,\n                mol_parity: None,\n                mol_inversion_flag: None,\n                implicit_hydrogen: false,\n                tracked_isotopic_hydrogens: [],\n                is_aromatic: false,\n                isotope: None,\n                atom_map: None,\n                no_implicit: false,\n                radical_electrons: 0,\n                hybridization: Unspecified,\n                query: None,\n                props: {},\n                computed_props: {},\n                pdb_residue_info: None,\n            },\n            Atom {\n                id: AtomId(\n                    1,\n                ),\n                element: Element {\n                    atomic_number: 6,\n                },\n                formal_charge: 0,\n                explicit_hydrogens: 0,\n                chiral_tag: Unspecified,\n                chiral_permutation: None,\n                unknown_stereo: false,\n                mol_parity: None,\n                mol_inversion_flag: None,\n                implicit_hydrogen: false,\n                tracked_isotopic_hydrogens: [],\n                is_aromatic: false,\n                isotope: None,\n                atom_map: None,\n                no_implicit: false,\n                radical_electrons: 0,\n                hybridization: Unspecified,\n                query: None,\n                props: {},\n                computed_props: {},\n                pdb_residue_info: None,\n            },\n        ],\n        bonds: [\n            Bond {\n                id: BondId(\n                    0,\n                ),\n                begin: AtomId(\n                    0,\n                ),\n                end: AtomId(\n                    1,\n                ),\n                order: Dative,\n                is_aromatic: false,\n                is_conjugated: false,\n                direction: None,\n                stereo: None,\n                stereo_atoms: None,\n                unknown_stereo: false,\n                query: None,\n                props: {},\n                computed_props: {},\n            },\n        ],\n        adjacency: AdjacencyList {\n            offsets: [\n                0,\n                1,\n                2,\n            ],\n            entries: [\n                NeighborRef {\n                    atom_index: 1,\n                    bond: BondId(\n                        0,\n                    ),\n                },\n                NeighborRef {\n                    atom_index: 0,\n                    bond: BondId(\n                        0,\n                    ),\n                },\n            ],\n        },\n        substance_groups: [],\n        stereo_groups: [],\n    },\n    coordinates: CoordinateBlock {\n        conformers_2d: [\n            Conformer2D {\n                id: 0,\n                coords: [\n                    [\n                        0.0,\n                        0.0,\n                    ],\n                    [\n                        1.5,\n                        0.0,\n                    ],\n                ],\n                props: {},\n            },\n        ],\n        conformers_3d: [],\n        source_coordinate_dim: Some(\n            TwoD,\n        ),\n    },\n    properties: MoleculeProperties {\n        name: None,\n        sdf_data_fields: [],\n        sdf_property_lists: [],\n        props: {},\n        computed_props: {},\n    },\n    derived_cache: DerivedCacheBlock {\n        rings: None,\n        ring_families: None,\n        valence: None,\n        aromaticity_valid: false,\n        stereo_valid: false,\n    },\n    capabilities: MoleculeCapabilities {\n        topology_trust: TrustedGraph,\n    },\n    computed_properties: ComputedPropertyCache {\n        crippen: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        crippen_atom_contributions: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        connectivity_hk_deltas: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        connectivity_n_vals: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        labute: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        topological_distance_matrix: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        distance_matrices_3d: RwLock {\n            data: {},\n            poisoned: false,\n            ..\n        },\n        potential_stereo: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n    },\n}",
+      "source_preserved": true,
+      "specs": {
+        "atoms": [
+          "AtomSpec {\n    element: Element {\n        atomic_number: 6,\n    },\n    formal_charge: 0,\n    explicit_hydrogens: 0,\n    chiral_tag: Unspecified,\n    chiral_permutation: None,\n    unknown_stereo: false,\n    mol_parity: None,\n    mol_inversion_flag: None,\n    implicit_hydrogen: false,\n    tracked_isotopic_hydrogens: [],\n    is_aromatic: false,\n    isotope: None,\n    atom_map: None,\n    no_implicit: false,\n    radical_electrons: 0,\n    hybridization: Unspecified,\n    query: None,\n    props: {},\n    computed_props: {},\n    pdb_residue_info: None,\n}",
+          "AtomSpec {\n    element: Element {\n        atomic_number: 6,\n    },\n    formal_charge: 0,\n    explicit_hydrogens: 0,\n    chiral_tag: Unspecified,\n    chiral_permutation: None,\n    unknown_stereo: false,\n    mol_parity: None,\n    mol_inversion_flag: None,\n    implicit_hydrogen: false,\n    tracked_isotopic_hydrogens: [],\n    is_aromatic: false,\n    isotope: None,\n    atom_map: None,\n    no_implicit: false,\n    radical_electrons: 0,\n    hybridization: Unspecified,\n    query: None,\n    props: {},\n    computed_props: {},\n    pdb_residue_info: None,\n}"
+        ],
+        "bond": "BondSpec {\n    begin: AtomId(\n        0,\n    ),\n    end: AtomId(\n        1,\n    ),\n    order: Dative,\n    is_aromatic: false,\n    is_conjugated: false,\n    direction: None,\n    stereo: None,\n    stereo_atoms: None,\n    unknown_stereo: false,\n    query: None,\n    props: {},\n    computed_props: {},\n}"
+      },
+      "width": 300
+    },
+    {
+      "actual_atoms": "[\n    Atom {\n        id: AtomId(\n            0,\n        ),\n        element: Element {\n            atomic_number: 6,\n        },\n        formal_charge: 0,\n        explicit_hydrogens: 0,\n        chiral_tag: Unspecified,\n        chiral_permutation: None,\n        unknown_stereo: false,\n        mol_parity: None,\n        mol_inversion_flag: None,\n        implicit_hydrogen: false,\n        tracked_isotopic_hydrogens: [],\n        is_aromatic: false,\n        isotope: None,\n        atom_map: None,\n        no_implicit: false,\n        radical_electrons: 0,\n        hybridization: Unspecified,\n        query: None,\n        props: {},\n        computed_props: {},\n        pdb_residue_info: None,\n    },\n    Atom {\n        id: AtomId(\n            1,\n        ),\n        element: Element {\n            atomic_number: 6,\n        },\n        formal_charge: 0,\n        explicit_hydrogens: 0,\n        chiral_tag: Unspecified,\n        chiral_permutation: None,\n        unknown_stereo: false,\n        mol_parity: None,\n        mol_inversion_flag: None,\n        implicit_hydrogen: false,\n        tracked_isotopic_hydrogens: [],\n        is_aromatic: false,\n        isotope: None,\n        atom_map: None,\n        no_implicit: false,\n        radical_electrons: 0,\n        hybridization: Unspecified,\n        query: None,\n        props: {},\n        computed_props: {},\n        pdb_residue_info: None,\n    },\n]",
+      "actual_bonds": "[\n    Bond {\n        id: BondId(\n            0,\n        ),\n        begin: AtomId(\n            1,\n        ),\n        end: AtomId(\n            0,\n        ),\n        order: Dative,\n        is_aromatic: false,\n        is_conjugated: false,\n        direction: None,\n        stereo: None,\n        stereo_atoms: None,\n        unknown_stereo: false,\n        query: None,\n        props: {},\n        computed_props: {},\n    },\n]",
+      "actual_properties": "MoleculeProperties {\n    name: None,\n    sdf_data_fields: [],\n    sdf_property_lists: [],\n    props: {},\n    computed_props: {},\n}",
+      "actual_rings": "RingInfo {\n    initialized: true,\n    find_type: SymmSssr,\n    atom_members: [\n        [],\n        [],\n    ],\n    bond_members: [\n        [],\n    ],\n    atom_rings: [],\n    bond_rings: [],\n    atom_ring_families: [],\n    bond_ring_families: [],\n    relevant_cycle_count: None,\n    fused_rings: [],\n    num_fused_bonds: [],\n}",
+      "actual_valence": "ValenceAssignment {\n    explicit_valence: [\n        1,\n        0,\n    ],\n    implicit_hydrogens: [\n        3,\n        4,\n    ],\n}",
+      "atom_ids": [
+        0,
+        1
+      ],
+      "begin": 1,
+      "bond_id": 0,
+      "conformer_2d_ids": [
+        0
+      ],
+      "conformer_3d_ids": [],
+      "coordinate_bits": [
+        [
+          0,
+          0
+        ],
+        [
+          4609434218613702656,
+          0
+        ]
+      ],
+      "coordinate_identity_after": [
+        [
+          0,
+          [
+            [
+              0,
+              0
+            ],
+            [
+              4609434218613702656,
+              0
+            ]
+          ]
+        ]
+      ],
+      "coordinate_identity_before": [
+        [
+          0,
+          [
+            [
+              0,
+              0
+            ],
+            [
+              4609434218613702656,
+              0
+            ]
+          ]
+        ]
+      ],
+      "coordinates": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          1.5,
+          0.0
+        ]
+      ],
+      "end": 0,
+      "explicit_valence": [
+        1,
+        0
+      ],
+      "height": 300,
+      "implicit_hydrogens": [
+        3,
+        4
+      ],
+      "label": "dative_rev",
+      "semantic_order": "Dative",
+      "source_after": "Molecule {\n    topology: TopologyBlock {\n        atoms: [\n            Atom {\n                id: AtomId(\n                    0,\n                ),\n                element: Element {\n                    atomic_number: 6,\n                },\n                formal_charge: 0,\n                explicit_hydrogens: 0,\n                chiral_tag: Unspecified,\n                chiral_permutation: None,\n                unknown_stereo: false,\n                mol_parity: None,\n                mol_inversion_flag: None,\n                implicit_hydrogen: false,\n                tracked_isotopic_hydrogens: [],\n                is_aromatic: false,\n                isotope: None,\n                atom_map: None,\n                no_implicit: false,\n                radical_electrons: 0,\n                hybridization: Unspecified,\n                query: None,\n                props: {},\n                computed_props: {},\n                pdb_residue_info: None,\n            },\n            Atom {\n                id: AtomId(\n                    1,\n                ),\n                element: Element {\n                    atomic_number: 6,\n                },\n                formal_charge: 0,\n                explicit_hydrogens: 0,\n                chiral_tag: Unspecified,\n                chiral_permutation: None,\n                unknown_stereo: false,\n                mol_parity: None,\n                mol_inversion_flag: None,\n                implicit_hydrogen: false,\n                tracked_isotopic_hydrogens: [],\n                is_aromatic: false,\n                isotope: None,\n                atom_map: None,\n                no_implicit: false,\n                radical_electrons: 0,\n                hybridization: Unspecified,\n                query: None,\n                props: {},\n                computed_props: {},\n                pdb_residue_info: None,\n            },\n        ],\n        bonds: [\n            Bond {\n                id: BondId(\n                    0,\n                ),\n                begin: AtomId(\n                    1,\n                ),\n                end: AtomId(\n                    0,\n                ),\n                order: Dative,\n                is_aromatic: false,\n                is_conjugated: false,\n                direction: None,\n                stereo: None,\n                stereo_atoms: None,\n                unknown_stereo: false,\n                query: None,\n                props: {},\n                computed_props: {},\n            },\n        ],\n        adjacency: AdjacencyList {\n            offsets: [\n                0,\n                1,\n                2,\n            ],\n            entries: [\n                NeighborRef {\n                    atom_index: 1,\n                    bond: BondId(\n                        0,\n                    ),\n                },\n                NeighborRef {\n                    atom_index: 0,\n                    bond: BondId(\n                        0,\n                    ),\n                },\n            ],\n        },\n        substance_groups: [],\n        stereo_groups: [],\n    },\n    coordinates: CoordinateBlock {\n        conformers_2d: [\n            Conformer2D {\n                id: 0,\n                coords: [\n                    [\n                        0.0,\n                        0.0,\n                    ],\n                    [\n                        1.5,\n                        0.0,\n                    ],\n                ],\n                props: {},\n            },\n        ],\n        conformers_3d: [],\n        source_coordinate_dim: Some(\n            TwoD,\n        ),\n    },\n    properties: MoleculeProperties {\n        name: None,\n        sdf_data_fields: [],\n        sdf_property_lists: [],\n        props: {},\n        computed_props: {},\n    },\n    derived_cache: DerivedCacheBlock {\n        rings: None,\n        ring_families: None,\n        valence: None,\n        aromaticity_valid: false,\n        stereo_valid: false,\n    },\n    capabilities: MoleculeCapabilities {\n        topology_trust: TrustedGraph,\n    },\n    computed_properties: ComputedPropertyCache {\n        crippen: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        crippen_atom_contributions: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        connectivity_hk_deltas: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        connectivity_n_vals: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        labute: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        topological_distance_matrix: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        distance_matrices_3d: RwLock {\n            data: {},\n            poisoned: false,\n            ..\n        },\n        potential_stereo: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n    },\n}",
+      "source_before": "Molecule {\n    topology: TopologyBlock {\n        atoms: [\n            Atom {\n                id: AtomId(\n                    0,\n                ),\n                element: Element {\n                    atomic_number: 6,\n                },\n                formal_charge: 0,\n                explicit_hydrogens: 0,\n                chiral_tag: Unspecified,\n                chiral_permutation: None,\n                unknown_stereo: false,\n                mol_parity: None,\n                mol_inversion_flag: None,\n                implicit_hydrogen: false,\n                tracked_isotopic_hydrogens: [],\n                is_aromatic: false,\n                isotope: None,\n                atom_map: None,\n                no_implicit: false,\n                radical_electrons: 0,\n                hybridization: Unspecified,\n                query: None,\n                props: {},\n                computed_props: {},\n                pdb_residue_info: None,\n            },\n            Atom {\n                id: AtomId(\n                    1,\n                ),\n                element: Element {\n                    atomic_number: 6,\n                },\n                formal_charge: 0,\n                explicit_hydrogens: 0,\n                chiral_tag: Unspecified,\n                chiral_permutation: None,\n                unknown_stereo: false,\n                mol_parity: None,\n                mol_inversion_flag: None,\n                implicit_hydrogen: false,\n                tracked_isotopic_hydrogens: [],\n                is_aromatic: false,\n                isotope: None,\n                atom_map: None,\n                no_implicit: false,\n                radical_electrons: 0,\n                hybridization: Unspecified,\n                query: None,\n                props: {},\n                computed_props: {},\n                pdb_residue_info: None,\n            },\n        ],\n        bonds: [\n            Bond {\n                id: BondId(\n                    0,\n                ),\n                begin: AtomId(\n                    1,\n                ),\n                end: AtomId(\n                    0,\n                ),\n                order: Dative,\n                is_aromatic: false,\n                is_conjugated: false,\n                direction: None,\n                stereo: None,\n                stereo_atoms: None,\n                unknown_stereo: false,\n                query: None,\n                props: {},\n                computed_props: {},\n            },\n        ],\n        adjacency: AdjacencyList {\n            offsets: [\n                0,\n                1,\n                2,\n            ],\n            entries: [\n                NeighborRef {\n                    atom_index: 1,\n                    bond: BondId(\n                        0,\n                    ),\n                },\n                NeighborRef {\n                    atom_index: 0,\n                    bond: BondId(\n                        0,\n                    ),\n                },\n            ],\n        },\n        substance_groups: [],\n        stereo_groups: [],\n    },\n    coordinates: CoordinateBlock {\n        conformers_2d: [\n            Conformer2D {\n                id: 0,\n                coords: [\n                    [\n                        0.0,\n                        0.0,\n                    ],\n                    [\n                        1.5,\n                        0.0,\n                    ],\n                ],\n                props: {},\n            },\n        ],\n        conformers_3d: [],\n        source_coordinate_dim: Some(\n            TwoD,\n        ),\n    },\n    properties: MoleculeProperties {\n        name: None,\n        sdf_data_fields: [],\n        sdf_property_lists: [],\n        props: {},\n        computed_props: {},\n    },\n    derived_cache: DerivedCacheBlock {\n        rings: None,\n        ring_families: None,\n        valence: None,\n        aromaticity_valid: false,\n        stereo_valid: false,\n    },\n    capabilities: MoleculeCapabilities {\n        topology_trust: TrustedGraph,\n    },\n    computed_properties: ComputedPropertyCache {\n        crippen: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        crippen_atom_contributions: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        connectivity_hk_deltas: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        connectivity_n_vals: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        labute: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        topological_distance_matrix: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        distance_matrices_3d: RwLock {\n            data: {},\n            poisoned: false,\n            ..\n        },\n        potential_stereo: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n    },\n}",
+      "source_preserved": true,
+      "specs": {
+        "atoms": [
+          "AtomSpec {\n    element: Element {\n        atomic_number: 6,\n    },\n    formal_charge: 0,\n    explicit_hydrogens: 0,\n    chiral_tag: Unspecified,\n    chiral_permutation: None,\n    unknown_stereo: false,\n    mol_parity: None,\n    mol_inversion_flag: None,\n    implicit_hydrogen: false,\n    tracked_isotopic_hydrogens: [],\n    is_aromatic: false,\n    isotope: None,\n    atom_map: None,\n    no_implicit: false,\n    radical_electrons: 0,\n    hybridization: Unspecified,\n    query: None,\n    props: {},\n    computed_props: {},\n    pdb_residue_info: None,\n}",
+          "AtomSpec {\n    element: Element {\n        atomic_number: 6,\n    },\n    formal_charge: 0,\n    explicit_hydrogens: 0,\n    chiral_tag: Unspecified,\n    chiral_permutation: None,\n    unknown_stereo: false,\n    mol_parity: None,\n    mol_inversion_flag: None,\n    implicit_hydrogen: false,\n    tracked_isotopic_hydrogens: [],\n    is_aromatic: false,\n    isotope: None,\n    atom_map: None,\n    no_implicit: false,\n    radical_electrons: 0,\n    hybridization: Unspecified,\n    query: None,\n    props: {},\n    computed_props: {},\n    pdb_residue_info: None,\n}"
+        ],
+        "bond": "BondSpec {\n    begin: AtomId(\n        1,\n    ),\n    end: AtomId(\n        0,\n    ),\n    order: Dative,\n    is_aromatic: false,\n    is_conjugated: false,\n    direction: None,\n    stereo: None,\n    stereo_atoms: None,\n    unknown_stereo: false,\n    query: None,\n    props: {},\n    computed_props: {},\n}"
+      },
+      "width": 300
+    },
+    {
+      "actual_atoms": "[\n    Atom {\n        id: AtomId(\n            0,\n        ),\n        element: Element {\n            atomic_number: 6,\n        },\n        formal_charge: 0,\n        explicit_hydrogens: 0,\n        chiral_tag: Unspecified,\n        chiral_permutation: None,\n        unknown_stereo: false,\n        mol_parity: None,\n        mol_inversion_flag: None,\n        implicit_hydrogen: false,\n        tracked_isotopic_hydrogens: [],\n        is_aromatic: false,\n        isotope: None,\n        atom_map: None,\n        no_implicit: false,\n        radical_electrons: 0,\n        hybridization: Unspecified,\n        query: None,\n        props: {},\n        computed_props: {},\n        pdb_residue_info: None,\n    },\n    Atom {\n        id: AtomId(\n            1,\n        ),\n        element: Element {\n            atomic_number: 6,\n        },\n        formal_charge: 0,\n        explicit_hydrogens: 0,\n        chiral_tag: Unspecified,\n        chiral_permutation: None,\n        unknown_stereo: false,\n        mol_parity: None,\n        mol_inversion_flag: None,\n        implicit_hydrogen: false,\n        tracked_isotopic_hydrogens: [],\n        is_aromatic: false,\n        isotope: None,\n        atom_map: None,\n        no_implicit: false,\n        radical_electrons: 0,\n        hybridization: Unspecified,\n        query: None,\n        props: {},\n        computed_props: {},\n        pdb_residue_info: None,\n    },\n]",
+      "actual_bonds": "[\n    Bond {\n        id: BondId(\n            0,\n        ),\n        begin: AtomId(\n            0,\n        ),\n        end: AtomId(\n            1,\n        ),\n        order: DativeOne,\n        is_aromatic: false,\n        is_conjugated: false,\n        direction: None,\n        stereo: None,\n        stereo_atoms: None,\n        unknown_stereo: false,\n        query: None,\n        props: {},\n        computed_props: {},\n    },\n]",
+      "actual_properties": "MoleculeProperties {\n    name: None,\n    sdf_data_fields: [],\n    sdf_property_lists: [],\n    props: {},\n    computed_props: {},\n}",
+      "actual_rings": "RingInfo {\n    initialized: true,\n    find_type: SymmSssr,\n    atom_members: [\n        [],\n        [],\n    ],\n    bond_members: [\n        [],\n    ],\n    atom_rings: [],\n    bond_rings: [],\n    atom_ring_families: [],\n    bond_ring_families: [],\n    relevant_cycle_count: None,\n    fused_rings: [],\n    num_fused_bonds: [],\n}",
+      "actual_valence": "ValenceAssignment {\n    explicit_valence: [\n        0,\n        1,\n    ],\n    implicit_hydrogens: [\n        4,\n        3,\n    ],\n}",
+      "atom_ids": [
+        0,
+        1
+      ],
+      "begin": 0,
+      "bond_id": 0,
+      "conformer_2d_ids": [
+        0
+      ],
+      "conformer_3d_ids": [],
+      "coordinate_bits": [
+        [
+          0,
+          0
+        ],
+        [
+          4609434218613702656,
+          0
+        ]
+      ],
+      "coordinate_identity_after": [
+        [
+          0,
+          [
+            [
+              0,
+              0
+            ],
+            [
+              4609434218613702656,
+              0
+            ]
+          ]
+        ]
+      ],
+      "coordinate_identity_before": [
+        [
+          0,
+          [
+            [
+              0,
+              0
+            ],
+            [
+              4609434218613702656,
+              0
+            ]
+          ]
+        ]
+      ],
+      "coordinates": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          1.5,
+          0.0
+        ]
+      ],
+      "end": 1,
+      "explicit_valence": [
+        0,
+        1
+      ],
+      "height": 300,
+      "implicit_hydrogens": [
+        4,
+        3
+      ],
+      "label": "dative_one_fwd",
+      "semantic_order": "DativeOne",
+      "source_after": "Molecule {\n    topology: TopologyBlock {\n        atoms: [\n            Atom {\n                id: AtomId(\n                    0,\n                ),\n                element: Element {\n                    atomic_number: 6,\n                },\n                formal_charge: 0,\n                explicit_hydrogens: 0,\n                chiral_tag: Unspecified,\n                chiral_permutation: None,\n                unknown_stereo: false,\n                mol_parity: None,\n                mol_inversion_flag: None,\n                implicit_hydrogen: false,\n                tracked_isotopic_hydrogens: [],\n                is_aromatic: false,\n                isotope: None,\n                atom_map: None,\n                no_implicit: false,\n                radical_electrons: 0,\n                hybridization: Unspecified,\n                query: None,\n                props: {},\n                computed_props: {},\n                pdb_residue_info: None,\n            },\n            Atom {\n                id: AtomId(\n                    1,\n                ),\n                element: Element {\n                    atomic_number: 6,\n                },\n                formal_charge: 0,\n                explicit_hydrogens: 0,\n                chiral_tag: Unspecified,\n                chiral_permutation: None,\n                unknown_stereo: false,\n                mol_parity: None,\n                mol_inversion_flag: None,\n                implicit_hydrogen: false,\n                tracked_isotopic_hydrogens: [],\n                is_aromatic: false,\n                isotope: None,\n                atom_map: None,\n                no_implicit: false,\n                radical_electrons: 0,\n                hybridization: Unspecified,\n                query: None,\n                props: {},\n                computed_props: {},\n                pdb_residue_info: None,\n            },\n        ],\n        bonds: [\n            Bond {\n                id: BondId(\n                    0,\n                ),\n                begin: AtomId(\n                    0,\n                ),\n                end: AtomId(\n                    1,\n                ),\n                order: DativeOne,\n                is_aromatic: false,\n                is_conjugated: false,\n                direction: None,\n                stereo: None,\n                stereo_atoms: None,\n                unknown_stereo: false,\n                query: None,\n                props: {},\n                computed_props: {},\n            },\n        ],\n        adjacency: AdjacencyList {\n            offsets: [\n                0,\n                1,\n                2,\n            ],\n            entries: [\n                NeighborRef {\n                    atom_index: 1,\n                    bond: BondId(\n                        0,\n                    ),\n                },\n                NeighborRef {\n                    atom_index: 0,\n                    bond: BondId(\n                        0,\n                    ),\n                },\n            ],\n        },\n        substance_groups: [],\n        stereo_groups: [],\n    },\n    coordinates: CoordinateBlock {\n        conformers_2d: [\n            Conformer2D {\n                id: 0,\n                coords: [\n                    [\n                        0.0,\n                        0.0,\n                    ],\n                    [\n                        1.5,\n                        0.0,\n                    ],\n                ],\n                props: {},\n            },\n        ],\n        conformers_3d: [],\n        source_coordinate_dim: Some(\n            TwoD,\n        ),\n    },\n    properties: MoleculeProperties {\n        name: None,\n        sdf_data_fields: [],\n        sdf_property_lists: [],\n        props: {},\n        computed_props: {},\n    },\n    derived_cache: DerivedCacheBlock {\n        rings: None,\n        ring_families: None,\n        valence: None,\n        aromaticity_valid: false,\n        stereo_valid: false,\n    },\n    capabilities: MoleculeCapabilities {\n        topology_trust: TrustedGraph,\n    },\n    computed_properties: ComputedPropertyCache {\n        crippen: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        crippen_atom_contributions: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        connectivity_hk_deltas: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        connectivity_n_vals: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        labute: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        topological_distance_matrix: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        distance_matrices_3d: RwLock {\n            data: {},\n            poisoned: false,\n            ..\n        },\n        potential_stereo: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n    },\n}",
+      "source_before": "Molecule {\n    topology: TopologyBlock {\n        atoms: [\n            Atom {\n                id: AtomId(\n                    0,\n                ),\n                element: Element {\n                    atomic_number: 6,\n                },\n                formal_charge: 0,\n                explicit_hydrogens: 0,\n                chiral_tag: Unspecified,\n                chiral_permutation: None,\n                unknown_stereo: false,\n                mol_parity: None,\n                mol_inversion_flag: None,\n                implicit_hydrogen: false,\n                tracked_isotopic_hydrogens: [],\n                is_aromatic: false,\n                isotope: None,\n                atom_map: None,\n                no_implicit: false,\n                radical_electrons: 0,\n                hybridization: Unspecified,\n                query: None,\n                props: {},\n                computed_props: {},\n                pdb_residue_info: None,\n            },\n            Atom {\n                id: AtomId(\n                    1,\n                ),\n                element: Element {\n                    atomic_number: 6,\n                },\n                formal_charge: 0,\n                explicit_hydrogens: 0,\n                chiral_tag: Unspecified,\n                chiral_permutation: None,\n                unknown_stereo: false,\n                mol_parity: None,\n                mol_inversion_flag: None,\n                implicit_hydrogen: false,\n                tracked_isotopic_hydrogens: [],\n                is_aromatic: false,\n                isotope: None,\n                atom_map: None,\n                no_implicit: false,\n                radical_electrons: 0,\n                hybridization: Unspecified,\n                query: None,\n                props: {},\n                computed_props: {},\n                pdb_residue_info: None,\n            },\n        ],\n        bonds: [\n            Bond {\n                id: BondId(\n                    0,\n                ),\n                begin: AtomId(\n                    0,\n                ),\n                end: AtomId(\n                    1,\n                ),\n                order: DativeOne,\n                is_aromatic: false,\n                is_conjugated: false,\n                direction: None,\n                stereo: None,\n                stereo_atoms: None,\n                unknown_stereo: false,\n                query: None,\n                props: {},\n                computed_props: {},\n            },\n        ],\n        adjacency: AdjacencyList {\n            offsets: [\n                0,\n                1,\n                2,\n            ],\n            entries: [\n                NeighborRef {\n                    atom_index: 1,\n                    bond: BondId(\n                        0,\n                    ),\n                },\n                NeighborRef {\n                    atom_index: 0,\n                    bond: BondId(\n                        0,\n                    ),\n                },\n            ],\n        },\n        substance_groups: [],\n        stereo_groups: [],\n    },\n    coordinates: CoordinateBlock {\n        conformers_2d: [\n            Conformer2D {\n                id: 0,\n                coords: [\n                    [\n                        0.0,\n                        0.0,\n                    ],\n                    [\n                        1.5,\n                        0.0,\n                    ],\n                ],\n                props: {},\n            },\n        ],\n        conformers_3d: [],\n        source_coordinate_dim: Some(\n            TwoD,\n        ),\n    },\n    properties: MoleculeProperties {\n        name: None,\n        sdf_data_fields: [],\n        sdf_property_lists: [],\n        props: {},\n        computed_props: {},\n    },\n    derived_cache: DerivedCacheBlock {\n        rings: None,\n        ring_families: None,\n        valence: None,\n        aromaticity_valid: false,\n        stereo_valid: false,\n    },\n    capabilities: MoleculeCapabilities {\n        topology_trust: TrustedGraph,\n    },\n    computed_properties: ComputedPropertyCache {\n        crippen: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        crippen_atom_contributions: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        connectivity_hk_deltas: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        connectivity_n_vals: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        labute: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        topological_distance_matrix: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        distance_matrices_3d: RwLock {\n            data: {},\n            poisoned: false,\n            ..\n        },\n        potential_stereo: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n    },\n}",
+      "source_preserved": true,
+      "specs": {
+        "atoms": [
+          "AtomSpec {\n    element: Element {\n        atomic_number: 6,\n    },\n    formal_charge: 0,\n    explicit_hydrogens: 0,\n    chiral_tag: Unspecified,\n    chiral_permutation: None,\n    unknown_stereo: false,\n    mol_parity: None,\n    mol_inversion_flag: None,\n    implicit_hydrogen: false,\n    tracked_isotopic_hydrogens: [],\n    is_aromatic: false,\n    isotope: None,\n    atom_map: None,\n    no_implicit: false,\n    radical_electrons: 0,\n    hybridization: Unspecified,\n    query: None,\n    props: {},\n    computed_props: {},\n    pdb_residue_info: None,\n}",
+          "AtomSpec {\n    element: Element {\n        atomic_number: 6,\n    },\n    formal_charge: 0,\n    explicit_hydrogens: 0,\n    chiral_tag: Unspecified,\n    chiral_permutation: None,\n    unknown_stereo: false,\n    mol_parity: None,\n    mol_inversion_flag: None,\n    implicit_hydrogen: false,\n    tracked_isotopic_hydrogens: [],\n    is_aromatic: false,\n    isotope: None,\n    atom_map: None,\n    no_implicit: false,\n    radical_electrons: 0,\n    hybridization: Unspecified,\n    query: None,\n    props: {},\n    computed_props: {},\n    pdb_residue_info: None,\n}"
+        ],
+        "bond": "BondSpec {\n    begin: AtomId(\n        0,\n    ),\n    end: AtomId(\n        1,\n    ),\n    order: DativeOne,\n    is_aromatic: false,\n    is_conjugated: false,\n    direction: None,\n    stereo: None,\n    stereo_atoms: None,\n    unknown_stereo: false,\n    query: None,\n    props: {},\n    computed_props: {},\n}"
+      },
+      "width": 300
+    },
+    {
+      "actual_atoms": "[\n    Atom {\n        id: AtomId(\n            0,\n        ),\n        element: Element {\n            atomic_number: 6,\n        },\n        formal_charge: 0,\n        explicit_hydrogens: 0,\n        chiral_tag: Unspecified,\n        chiral_permutation: None,\n        unknown_stereo: false,\n        mol_parity: None,\n        mol_inversion_flag: None,\n        implicit_hydrogen: false,\n        tracked_isotopic_hydrogens: [],\n        is_aromatic: false,\n        isotope: None,\n        atom_map: None,\n        no_implicit: false,\n        radical_electrons: 0,\n        hybridization: Unspecified,\n        query: None,\n        props: {},\n        computed_props: {},\n        pdb_residue_info: None,\n    },\n    Atom {\n        id: AtomId(\n            1,\n        ),\n        element: Element {\n            atomic_number: 6,\n        },\n        formal_charge: 0,\n        explicit_hydrogens: 0,\n        chiral_tag: Unspecified,\n        chiral_permutation: None,\n        unknown_stereo: false,\n        mol_parity: None,\n        mol_inversion_flag: None,\n        implicit_hydrogen: false,\n        tracked_isotopic_hydrogens: [],\n        is_aromatic: false,\n        isotope: None,\n        atom_map: None,\n        no_implicit: false,\n        radical_electrons: 0,\n        hybridization: Unspecified,\n        query: None,\n        props: {},\n        computed_props: {},\n        pdb_residue_info: None,\n    },\n]",
+      "actual_bonds": "[\n    Bond {\n        id: BondId(\n            0,\n        ),\n        begin: AtomId(\n            1,\n        ),\n        end: AtomId(\n            0,\n        ),\n        order: DativeOne,\n        is_aromatic: false,\n        is_conjugated: false,\n        direction: None,\n        stereo: None,\n        stereo_atoms: None,\n        unknown_stereo: false,\n        query: None,\n        props: {},\n        computed_props: {},\n    },\n]",
+      "actual_properties": "MoleculeProperties {\n    name: None,\n    sdf_data_fields: [],\n    sdf_property_lists: [],\n    props: {},\n    computed_props: {},\n}",
+      "actual_rings": "RingInfo {\n    initialized: true,\n    find_type: SymmSssr,\n    atom_members: [\n        [],\n        [],\n    ],\n    bond_members: [\n        [],\n    ],\n    atom_rings: [],\n    bond_rings: [],\n    atom_ring_families: [],\n    bond_ring_families: [],\n    relevant_cycle_count: None,\n    fused_rings: [],\n    num_fused_bonds: [],\n}",
+      "actual_valence": "ValenceAssignment {\n    explicit_valence: [\n        1,\n        0,\n    ],\n    implicit_hydrogens: [\n        3,\n        4,\n    ],\n}",
+      "atom_ids": [
+        0,
+        1
+      ],
+      "begin": 1,
+      "bond_id": 0,
+      "conformer_2d_ids": [
+        0
+      ],
+      "conformer_3d_ids": [],
+      "coordinate_bits": [
+        [
+          0,
+          0
+        ],
+        [
+          4609434218613702656,
+          0
+        ]
+      ],
+      "coordinate_identity_after": [
+        [
+          0,
+          [
+            [
+              0,
+              0
+            ],
+            [
+              4609434218613702656,
+              0
+            ]
+          ]
+        ]
+      ],
+      "coordinate_identity_before": [
+        [
+          0,
+          [
+            [
+              0,
+              0
+            ],
+            [
+              4609434218613702656,
+              0
+            ]
+          ]
+        ]
+      ],
+      "coordinates": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          1.5,
+          0.0
+        ]
+      ],
+      "end": 0,
+      "explicit_valence": [
+        1,
+        0
+      ],
+      "height": 300,
+      "implicit_hydrogens": [
+        3,
+        4
+      ],
+      "label": "dative_one_rev",
+      "semantic_order": "DativeOne",
+      "source_after": "Molecule {\n    topology: TopologyBlock {\n        atoms: [\n            Atom {\n                id: AtomId(\n                    0,\n                ),\n                element: Element {\n                    atomic_number: 6,\n                },\n                formal_charge: 0,\n                explicit_hydrogens: 0,\n                chiral_tag: Unspecified,\n                chiral_permutation: None,\n                unknown_stereo: false,\n                mol_parity: None,\n                mol_inversion_flag: None,\n                implicit_hydrogen: false,\n                tracked_isotopic_hydrogens: [],\n                is_aromatic: false,\n                isotope: None,\n                atom_map: None,\n                no_implicit: false,\n                radical_electrons: 0,\n                hybridization: Unspecified,\n                query: None,\n                props: {},\n                computed_props: {},\n                pdb_residue_info: None,\n            },\n            Atom {\n                id: AtomId(\n                    1,\n                ),\n                element: Element {\n                    atomic_number: 6,\n                },\n                formal_charge: 0,\n                explicit_hydrogens: 0,\n                chiral_tag: Unspecified,\n                chiral_permutation: None,\n                unknown_stereo: false,\n                mol_parity: None,\n                mol_inversion_flag: None,\n                implicit_hydrogen: false,\n                tracked_isotopic_hydrogens: [],\n                is_aromatic: false,\n                isotope: None,\n                atom_map: None,\n                no_implicit: false,\n                radical_electrons: 0,\n                hybridization: Unspecified,\n                query: None,\n                props: {},\n                computed_props: {},\n                pdb_residue_info: None,\n            },\n        ],\n        bonds: [\n            Bond {\n                id: BondId(\n                    0,\n                ),\n                begin: AtomId(\n                    1,\n                ),\n                end: AtomId(\n                    0,\n                ),\n                order: DativeOne,\n                is_aromatic: false,\n                is_conjugated: false,\n                direction: None,\n                stereo: None,\n                stereo_atoms: None,\n                unknown_stereo: false,\n                query: None,\n                props: {},\n                computed_props: {},\n            },\n        ],\n        adjacency: AdjacencyList {\n            offsets: [\n                0,\n                1,\n                2,\n            ],\n            entries: [\n                NeighborRef {\n                    atom_index: 1,\n                    bond: BondId(\n                        0,\n                    ),\n                },\n                NeighborRef {\n                    atom_index: 0,\n                    bond: BondId(\n                        0,\n                    ),\n                },\n            ],\n        },\n        substance_groups: [],\n        stereo_groups: [],\n    },\n    coordinates: CoordinateBlock {\n        conformers_2d: [\n            Conformer2D {\n                id: 0,\n                coords: [\n                    [\n                        0.0,\n                        0.0,\n                    ],\n                    [\n                        1.5,\n                        0.0,\n                    ],\n                ],\n                props: {},\n            },\n        ],\n        conformers_3d: [],\n        source_coordinate_dim: Some(\n            TwoD,\n        ),\n    },\n    properties: MoleculeProperties {\n        name: None,\n        sdf_data_fields: [],\n        sdf_property_lists: [],\n        props: {},\n        computed_props: {},\n    },\n    derived_cache: DerivedCacheBlock {\n        rings: None,\n        ring_families: None,\n        valence: None,\n        aromaticity_valid: false,\n        stereo_valid: false,\n    },\n    capabilities: MoleculeCapabilities {\n        topology_trust: TrustedGraph,\n    },\n    computed_properties: ComputedPropertyCache {\n        crippen: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        crippen_atom_contributions: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        connectivity_hk_deltas: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        connectivity_n_vals: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        labute: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        topological_distance_matrix: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        distance_matrices_3d: RwLock {\n            data: {},\n            poisoned: false,\n            ..\n        },\n        potential_stereo: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n    },\n}",
+      "source_before": "Molecule {\n    topology: TopologyBlock {\n        atoms: [\n            Atom {\n                id: AtomId(\n                    0,\n                ),\n                element: Element {\n                    atomic_number: 6,\n                },\n                formal_charge: 0,\n                explicit_hydrogens: 0,\n                chiral_tag: Unspecified,\n                chiral_permutation: None,\n                unknown_stereo: false,\n                mol_parity: None,\n                mol_inversion_flag: None,\n                implicit_hydrogen: false,\n                tracked_isotopic_hydrogens: [],\n                is_aromatic: false,\n                isotope: None,\n                atom_map: None,\n                no_implicit: false,\n                radical_electrons: 0,\n                hybridization: Unspecified,\n                query: None,\n                props: {},\n                computed_props: {},\n                pdb_residue_info: None,\n            },\n            Atom {\n                id: AtomId(\n                    1,\n                ),\n                element: Element {\n                    atomic_number: 6,\n                },\n                formal_charge: 0,\n                explicit_hydrogens: 0,\n                chiral_tag: Unspecified,\n                chiral_permutation: None,\n                unknown_stereo: false,\n                mol_parity: None,\n                mol_inversion_flag: None,\n                implicit_hydrogen: false,\n                tracked_isotopic_hydrogens: [],\n                is_aromatic: false,\n                isotope: None,\n                atom_map: None,\n                no_implicit: false,\n                radical_electrons: 0,\n                hybridization: Unspecified,\n                query: None,\n                props: {},\n                computed_props: {},\n                pdb_residue_info: None,\n            },\n        ],\n        bonds: [\n            Bond {\n                id: BondId(\n                    0,\n                ),\n                begin: AtomId(\n                    1,\n                ),\n                end: AtomId(\n                    0,\n                ),\n                order: DativeOne,\n                is_aromatic: false,\n                is_conjugated: false,\n                direction: None,\n                stereo: None,\n                stereo_atoms: None,\n                unknown_stereo: false,\n                query: None,\n                props: {},\n                computed_props: {},\n            },\n        ],\n        adjacency: AdjacencyList {\n            offsets: [\n                0,\n                1,\n                2,\n            ],\n            entries: [\n                NeighborRef {\n                    atom_index: 1,\n                    bond: BondId(\n                        0,\n                    ),\n                },\n                NeighborRef {\n                    atom_index: 0,\n                    bond: BondId(\n                        0,\n                    ),\n                },\n            ],\n        },\n        substance_groups: [],\n        stereo_groups: [],\n    },\n    coordinates: CoordinateBlock {\n        conformers_2d: [\n            Conformer2D {\n                id: 0,\n                coords: [\n                    [\n                        0.0,\n                        0.0,\n                    ],\n                    [\n                        1.5,\n                        0.0,\n                    ],\n                ],\n                props: {},\n            },\n        ],\n        conformers_3d: [],\n        source_coordinate_dim: Some(\n            TwoD,\n        ),\n    },\n    properties: MoleculeProperties {\n        name: None,\n        sdf_data_fields: [],\n        sdf_property_lists: [],\n        props: {},\n        computed_props: {},\n    },\n    derived_cache: DerivedCacheBlock {\n        rings: None,\n        ring_families: None,\n        valence: None,\n        aromaticity_valid: false,\n        stereo_valid: false,\n    },\n    capabilities: MoleculeCapabilities {\n        topology_trust: TrustedGraph,\n    },\n    computed_properties: ComputedPropertyCache {\n        crippen: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        crippen_atom_contributions: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        connectivity_hk_deltas: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        connectivity_n_vals: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        labute: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        topological_distance_matrix: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        distance_matrices_3d: RwLock {\n            data: {},\n            poisoned: false,\n            ..\n        },\n        potential_stereo: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n    },\n}",
+      "source_preserved": true,
+      "specs": {
+        "atoms": [
+          "AtomSpec {\n    element: Element {\n        atomic_number: 6,\n    },\n    formal_charge: 0,\n    explicit_hydrogens: 0,\n    chiral_tag: Unspecified,\n    chiral_permutation: None,\n    unknown_stereo: false,\n    mol_parity: None,\n    mol_inversion_flag: None,\n    implicit_hydrogen: false,\n    tracked_isotopic_hydrogens: [],\n    is_aromatic: false,\n    isotope: None,\n    atom_map: None,\n    no_implicit: false,\n    radical_electrons: 0,\n    hybridization: Unspecified,\n    query: None,\n    props: {},\n    computed_props: {},\n    pdb_residue_info: None,\n}",
+          "AtomSpec {\n    element: Element {\n        atomic_number: 6,\n    },\n    formal_charge: 0,\n    explicit_hydrogens: 0,\n    chiral_tag: Unspecified,\n    chiral_permutation: None,\n    unknown_stereo: false,\n    mol_parity: None,\n    mol_inversion_flag: None,\n    implicit_hydrogen: false,\n    tracked_isotopic_hydrogens: [],\n    is_aromatic: false,\n    isotope: None,\n    atom_map: None,\n    no_implicit: false,\n    radical_electrons: 0,\n    hybridization: Unspecified,\n    query: None,\n    props: {},\n    computed_props: {},\n    pdb_residue_info: None,\n}"
+        ],
+        "bond": "BondSpec {\n    begin: AtomId(\n        1,\n    ),\n    end: AtomId(\n        0,\n    ),\n    order: DativeOne,\n    is_aromatic: false,\n    is_conjugated: false,\n    direction: None,\n    stereo: None,\n    stereo_atoms: None,\n    unknown_stereo: false,\n    query: None,\n    props: {},\n    computed_props: {},\n}"
+      },
+      "width": 300
+    }
+  ],
+  "links": [
+    {
+      "path": "tools/testdata/drawing_bond_style_reference.rs",
+      "sha256": "d615761b0095c9d8c6ea2071d8667f6b7feff654a7b0698127a962b654cd7c8a"
+    },
+    {
+      "path": "target/legacy-drawing-reference-build/release/deps/libcosmolkit_core-e2e8e1910a9fd42c.rlib",
+      "sha256": "830c316216fa42016311b4bcea6374f0b66d05e2731a6a8c018b74b2661a27c5"
+    },
+    {
+      "path": "target/legacy-drawing-reference-build/release/deps/libserde_json-21be7c7129c38d8b.rlib",
+      "sha256": "f07d4316babee118fc52fcb14999349f1874e3d8fd238897bb9c3b28e9bb7adf"
+    },
+    {
+      "path": "/tmp/ck-draw-legacy-reference-O8Thas/cosmolkit-core-0.3.0/src/properties/draw.rs",
+      "sha256": "fd3aab0a92ed6767538b1aa34caa382750fe435acd4f92503d036c596d7f10b1"
+    },
+    {
+      "path": "/tmp/ck-draw-legacy-reference-O8Thas/cosmolkit-core-0.3.0/src/chemistry/valence.rs",
+      "sha256": "ab858e7eca1e9d2859ed416aa1565ba2d6545dd36a289962b62fda532b8ea04a"
+    },
+    {
+      "path": "/tmp/ck-draw-legacy-reference-O8Thas/cosmolkit-core-0.3.0/Cargo.lock",
+      "sha256": "318bdfc452c0fb32bdc38cb4062536cdd97bab06e5ebc1732c6cec081305a2b2"
+    }
+  ],
+  "migrated_outputs_examined": false,
+  "output_count": 12,
+  "outputs": [
+    {
+      "bytes": 1077,
+      "file": "triple_fwd.svg",
+      "label": "triple_fwd",
+      "sha256": "068b799730533155e61757865feb527814856e8d055ffd4a0323b21dea1b499d"
+    },
+    {
+      "bytes": 1077,
+      "file": "triple_rev.svg",
+      "label": "triple_rev",
+      "sha256": "ff90d31a0df44b03a04eccec70b630f54a817189901bc85aa2c92c6dde501895"
+    },
+    {
+      "bytes": 681,
+      "file": "quadruple_fwd.svg",
+      "label": "quadruple_fwd",
+      "sha256": "38fbdb623f98afd8c975469e70db29875c79df6eb25a705574e063e9ca871f66"
+    },
+    {
+      "bytes": 681,
+      "file": "quadruple_rev.svg",
+      "label": "quadruple_rev",
+      "sha256": "29a1e5dd04249d6f2cb9b5c6d2f3327d27ee37fc756533c7f29b7861735b9591"
+    },
+    {
+      "bytes": 702,
+      "file": "hydrogen_fwd.svg",
+      "label": "hydrogen_fwd",
+      "sha256": "1fc64a7004f19eff74d6ea40b732358e1bc9625ae046435d625215677360ec3b"
+    },
+    {
+      "bytes": 702,
+      "file": "hydrogen_rev.svg",
+      "label": "hydrogen_rev",
+      "sha256": "0035ee7e8d53a15635da5bbdfd4e16f22af83551b1208c2469caff1cadd65bf8"
+    },
+    {
+      "bytes": 702,
+      "file": "unspecified_fwd.svg",
+      "label": "unspecified_fwd",
+      "sha256": "1fc64a7004f19eff74d6ea40b732358e1bc9625ae046435d625215677360ec3b"
+    },
+    {
+      "bytes": 702,
+      "file": "unspecified_rev.svg",
+      "label": "unspecified_rev",
+      "sha256": "0035ee7e8d53a15635da5bbdfd4e16f22af83551b1208c2469caff1cadd65bf8"
+    },
+    {
+      "bytes": 1135,
+      "file": "dative_fwd.svg",
+      "label": "dative_fwd",
+      "sha256": "af1bfaf58fb92a3f85676a9038fb4a32f60a067b398806fb2ddd7c54176bf5ac"
+    },
+    {
+      "bytes": 1132,
+      "file": "dative_rev.svg",
+      "label": "dative_rev",
+      "sha256": "0849640c6d63c82546ab36dba3d377f2e9d6e44f0f18357219ed8eea04619cad"
+    },
+    {
+      "bytes": 1135,
+      "file": "dative_one_fwd.svg",
+      "label": "dative_one_fwd",
+      "sha256": "af1bfaf58fb92a3f85676a9038fb4a32f60a067b398806fb2ddd7c54176bf5ac"
+    },
+    {
+      "bytes": 1132,
+      "file": "dative_one_rev.svg",
+      "label": "dative_one_rev",
+      "sha256": "0849640c6d63c82546ab36dba3d377f2e9d6e44f0f18357219ed8eea04619cad"
+    }
+  ],
+  "platform": {
+    "arch": "x86_64",
+    "os": "linux"
+  },
+  "profile": {
+    "coordinates": "supplied2D",
+    "height": 300,
+    "options": "legacy default",
+    "width": 300
+  },
+  "reference": {
+    "isolated_package": "/tmp/ck-draw-legacy-reference-O8Thas/cosmolkit-core-0.3.0",
+    "license": "MIT",
+    "package": "cosmolkit-core",
+    "vcs_metadata": "d892ec3507c5b568c5ed5d86ae44e466f7d03855",
+    "version": "0.3.0"
+  },
+  "same_direction_alias_controls": [
+    [
+      "hydrogen_fwd",
+      "unspecified_fwd"
+    ],
+    [
+      "hydrogen_rev",
+      "unspecified_rev"
+    ],
+    [
+      "dative_fwd",
+      "dative_one_fwd"
+    ],
+    [
+      "dative_rev",
+      "dative_one_rev"
+    ]
+  ],
+  "schema": "drawing_bond_style_legacy_reference_v1",
+  "source_alias_controls_passed": true,
+  "source_calls": 12
+}

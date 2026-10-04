@@ -208,8 +208,19 @@ fn skipped_query_parent_retains_explicit_count_tracking_and_computed_state() {
         query_state.atom_has_query(AtomId::new(0)),
         "the parent must be an explicit QueryAtom without Molfile metadata"
     );
-    let output = add_hydrogens_with_query_state(
-        source,
+    assert_eq!(
+        source.atoms[0].prop("query-cache"),
+        Some(&PropertyValue::String("keep".to_owned()))
+    );
+    assert!(source.atoms[0].is_prop_computed("query-cache"));
+    assert_eq!(source.atoms[0].explicit_hydrogens(), 1);
+    assert_eq!(source.atoms[0].tracked_isotopic_hydrogens(), &[2]);
+    let source_snapshot = source.clone();
+    let query_atoms_snapshot = query_atoms.clone();
+    let query_bonds_snapshot = query_bonds.clone();
+    let mut calls = 0;
+    let result = add_hydrogens_with_query_state(
+        source.clone(),
         CoordinateBlock::default(),
         MoleculeProperties::default(),
         &AddHsParams {
@@ -218,16 +229,21 @@ fn skipped_query_parent_retains_explicit_count_tracking_and_computed_state() {
             ..Default::default()
         },
         Some(query_state),
-    )
-    .unwrap();
+    );
+    calls += 1;
+    assert_eq!(calls, 1);
+    assert_eq!(source, source_snapshot);
+    assert_eq!(query_atoms, query_atoms_snapshot);
+    assert_eq!(query_bonds, query_bonds_snapshot);
+    let output = result.unwrap();
 
     assert_eq!(output.topology.atoms.len(), 1);
     assert_eq!(output.topology.atoms[0].explicit_hydrogens(), 1);
     assert_eq!(output.topology.atoms[0].tracked_isotopic_hydrogens(), &[2]);
-    assert_eq!(
-        output.topology.atoms[0].prop("query-cache"),
-        Some(&PropertyValue::String("keep".to_owned()))
-    );
+    // AddHs.cpp:532-642 clears computed properties before skipQueries;
+    // ROMol.cpp:588-603 applies that clear to ALL atoms and bonds.
+    assert_eq!(output.topology.atoms[0].prop("query-cache"), None);
+    assert!(output.topology.atoms[0].computed_prop_names().is_empty());
     assert!(output.warnings.is_empty());
 }
 

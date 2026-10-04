@@ -96,14 +96,6 @@ pub enum KekulizeError {
         "cannot enumerate {questions} dummy-atom questions with the source {bit_width}-bit subset counter"
     )]
     QuestionSubsetOverflow { questions: usize, bit_width: u32 },
-    #[error(
-        "bond {bond} has inconsistent aromatic state: order {order:?}, aromatic flag {is_aromatic}"
-    )]
-    AromaticBondStateMismatch {
-        bond: BondId,
-        order: BondOrder,
-        is_aromatic: bool,
-    },
     #[error("aromatic atom {atom} is not in a ring")]
     AromaticAtomOutsideRing { atom: AtomId },
     #[error("could not kekulize molecule; remaining atoms: {problem_atoms:?}")]
@@ -232,6 +224,26 @@ struct QuestionEnumerator {
 }
 
 fn atom_is_aromatic_for_kekulize(topology: &TopologyBlock, atom: AtomId) -> bool {
+    // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/Atom.cpp :: isAromaticAtom
+    // RDKit✔️✔️: bool isAromaticAtom(const Atom &atom) {
+    // RDKit✔️✔️:   if (atom.getIsAromatic()) {
+    // RDKit✔️✔️:     return true;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   if (atom.hasOwningMol()) {
+    // RDKit✔️✔️:     for (const auto &bond : atom.getOwningMol().atomBonds(&atom)) {
+    // RDKit✔️✔️:       if (bond->getIsAromatic() ||
+    // RDKit✔️✔️:           bond->getBondType() == Bond::BondType::AROMATIC) {
+    // RDKit✔️✔️:         return true;
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   return false;
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/Atom.cpp :: isAromaticAtom
+    // Behavior: a validated detached topology supplies the owning neighborhood;
+    // preserve the atom flag OR incident flag OR incident aromatic-order test.
+    // Cost: O(degree) indexed adjacency traversal with early return, no allocation
+    // or clone, matching the source neighborhood scan and flag short circuit.
     if topology.atoms[atom.index()].is_aromatic() {
         return true;
     }
@@ -400,19 +412,9 @@ fn prepare_kekulize_core(
             selected_bonds[bond.id().index()] = false;
             continue;
         }
-        if bond.order() == BondOrder::Aromatic && !bond.is_aromatic()
-            || bond.is_aromatic()
-                && !matches!(
-                    bond.order(),
-                    BondOrder::Single | BondOrder::Double | BondOrder::Aromatic
-                )
-        {
-            return Err(KekulizeError::AromaticBondStateMismatch {
-                bond: bond.id(),
-                order: bond.order(),
-                is_aromatic: bond.is_aromatic(),
-            });
-        }
+        // Behavior: after source type-query exclusion, this bond-only loop
+        // tests the flag alone. Independent order/flag values are not rejected.
+        // Cost: O(1) per selected bond; no allocation or extra neighborhood scan.
         if bond.is_aromatic() {
             found_aromatic = true;
         }
@@ -2571,6 +2573,19 @@ pub fn kekulize_if_possible_with_query_state(
     params: &KekulizeParams,
     query_state: Option<QueryStateRef<'_>>,
 ) -> Result<KekulizeAttempt, KekulizeError> {
+    kekulize_if_possible_with_query_state_and_ring_info(topology, params, query_state, None)
+}
+
+/// Source IfPossible fallback over the existing ring-aware Kekulize owner.
+/// Supplied rings are immutable; Applied transports the owner's ring_update.
+/// The existing NotKekulizable attempt does not transport exception-time ring
+/// updates: failure-side upstream RingInfo parity remains qualified.
+pub fn kekulize_if_possible_with_query_state_and_ring_info(
+    topology: &TopologyBlock,
+    params: &KekulizeParams,
+    query_state: Option<QueryStateRef<'_>>,
+    rings: Option<&RingInfo>,
+) -> Result<KekulizeAttempt, KekulizeError> {
     // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/Kekulize.cpp :: MolOps::KekulizeIfPossible
     // RDKit✔️✔️: bool KekulizeIfPossible(RWMol &mol, bool markAtomsBonds, bool canonical,
     // RDKit✔️✔️:                         unsigned int maxBackTracks) {
@@ -2585,32 +2600,40 @@ pub fn kekulize_if_possible_with_query_state(
     // RDKit✔️✔️:     if (isAromaticAtom(*atom)) {
     // RDKit✔️✔️:       aromaticAtoms.set(atom->getIdx());
     // RDKit✔️✔️:     }
-    // The detached input is immutable, so its complete state is the source
-    // snapshot and is returned unchanged for the audited sanitize failures.
+    // RDKit✔️✔️:   }
     // RDKit✔️✔️:   bool res = true;
     // RDKit✔️✔️:   try {
     // RDKit✔️✔️:     Kekulize(mol, markAtomsBonds, canonical, maxBackTracks);
-    match kekulize_with_query_state(topology, params, query_state) {
+    // RDKit✔️✔️:   } catch (const MolSanitizeException &) {
+    // RDKit✔️✔️:     res = false;
+    // RDKit✔️✔️:     for (unsigned int i = 0; i < mol.getNumBonds(); ++i) {
+    // RDKit✔️✔️:       if (aromaticBonds[i]) {
+    // RDKit✔️✔️:         auto bond = mol.getBondWithIdx(i);
+    // RDKit✔️✔️:         bond->setIsAromatic(true);
+    // RDKit✔️✔️:         bond->setBondType(Bond::BondType::AROMATIC);
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     for (unsigned int i = 0; i < mol.getNumAtoms(); ++i) {
+    // RDKit✔️✔️:       if (aromaticAtoms[i]) {
+    // RDKit✔️✔️:         mol.getAtomWithIdx(i)->setIsAromatic(true);
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   return res;
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/Kekulize.cpp :: MolOps::KekulizeIfPossible
+    // The detached input is immutable, so its complete state is the source
+    // snapshot and is returned unchanged for the audited sanitize failures.
+    // Input review: forward all four inputs unchanged to ONE existing owner.
+    // Behavior review: retain all modeled fallback categories and problem order;
+    // all other typed errors propagate. Failure ring-update parity is qualified.
+    // Cost review: no extra ranking, acquisition, or success topology/ring clone;
+    // Applied moves its complete assignment, fallback retains its original clone.
+    #[cfg(test)]
+    drawing_ring_if_possible_probe::forward(topology, params, query_state.is_some(), rings);
+    match kekulize_with_query_state_and_ring_info(topology, params, query_state, rings) {
         Ok(assignment) => Ok(KekulizeAttempt::Applied(assignment)),
-        // RDKit✔️✔️:   } catch (const MolSanitizeException &) {
         Err(KekulizeError::NotKekulizable { problem_atoms }) => {
-            // RDKit✔️✔️:     res = false;
-            // RDKit✔️✔️:     for (unsigned int i = 0; i < mol.getNumBonds(); ++i) {
-            // RDKit✔️✔️:       if (aromaticBonds[i]) {
-            // RDKit✔️✔️:         auto bond = mol.getBondWithIdx(i);
-            // RDKit✔️✔️:         bond->setIsAromatic(true);
-            // RDKit✔️✔️:         bond->setBondType(Bond::BondType::AROMATIC);
-            // RDKit✔️✔️:       }
-            // RDKit✔️✔️:     }
-            // RDKit✔️✔️:     for (unsigned int i = 0; i < mol.getNumAtoms(); ++i) {
-            // RDKit✔️✔️:       if (aromaticAtoms[i]) {
-            // RDKit✔️✔️:         mol.getAtomWithIdx(i)->setIsAromatic(true);
-            // RDKit✔️✔️:       }
-            // RDKit✔️✔️:     }
-            // RDKit✔️✔️:   }
-            // RDKit✔️✔️:   return res;
-            // RDKit✔️✔️: }
-            // END RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/Kekulize.cpp :: MolOps::KekulizeIfPossible
             Ok(KekulizeAttempt::NotKekulizable {
                 topology: topology.clone(),
                 problem_atoms,
@@ -2624,6 +2647,40 @@ pub fn kekulize_if_possible_with_query_state(
             })
         }
         Err(error) => Err(error),
+    }
+}
+
+#[cfg(test)]
+mod drawing_ring_if_possible_probe {
+    use super::*;
+    use std::cell::RefCell;
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    pub(super) struct Forward {
+        pub topology: usize,
+        pub params: KekulizeParams,
+        pub query_present: bool,
+        pub rings: Option<usize>,
+    }
+    thread_local! {
+        static CALLS: RefCell<Vec<Forward>> = const { RefCell::new(Vec::new()) };
+    }
+    pub(super) fn forward(
+        topology: &TopologyBlock,
+        params: &KekulizeParams,
+        query_present: bool,
+        rings: Option<&RingInfo>,
+    ) {
+        CALLS.with(|calls| {
+            calls.borrow_mut().push(Forward {
+                topology: topology as *const _ as usize,
+                params: params.clone(),
+                query_present,
+                rings: rings.map(|rings| rings as *const _ as usize),
+            })
+        });
+    }
+    pub(super) fn calls() -> Vec<Forward> {
+        CALLS.with(|calls| calls.borrow().clone())
     }
 }
 
@@ -5673,6 +5730,357 @@ mod tests {
 
     fn topology(atoms: Vec<Atom>, bonds: Vec<Bond>) -> TopologyBlock {
         TopologyBlock::try_from_parts(atoms, bonds, vec![], vec![]).unwrap()
+    }
+
+    mod drawing_ring_input_tests {
+        use super::*;
+
+        fn cycle(n: usize) -> TopologyBlock {
+            topology(
+                (0..n)
+                    .map(|id| atom(id, AtomSpec::new(Element::C).with_aromatic(true)))
+                    .collect(),
+                (0..n)
+                    .map(|id| aromatic_bond(id, id, (id + 1) % n))
+                    .collect(),
+            )
+        }
+
+        fn rows(n: usize, quality: RingFindType) -> RingInfo {
+            let mut rings = RingInfo::new(quality, n, n);
+            rings
+                .add_ring(&(0..n).collect::<Vec<_>>(), &(0..n).collect::<Vec<_>>())
+                .unwrap();
+            rings
+        }
+
+        fn prerequisites(input: &TopologyBlock, n: usize, supplied: Option<&RingInfo>) {
+            assert_eq!(input.atoms.len(), n);
+            assert_eq!(input.bonds.len(), n);
+            for id in 0..n {
+                assert_eq!(
+                    input.atoms[id],
+                    atom(id, AtomSpec::new(Element::C).with_aromatic(true))
+                );
+                assert_eq!(input.bonds[id], aromatic_bond(id, id, (id + 1) % n));
+                assert_eq!(input.adjacency.neighbors_of(id).len(), 2);
+            }
+            if let Some(rings) = supplied {
+                assert!(rings.is_sssr_or_better());
+                assert_eq!(rings.atom_row_count(), n);
+                assert_eq!(rings.bond_row_count(), n);
+                assert_eq!(
+                    rings.atom_rings(),
+                    &[(0..n).map(AtomId::new).collect::<Vec<_>>()]
+                );
+                assert_eq!(
+                    rings.bond_rings(),
+                    &[(0..n).map(BondId::new).collect::<Vec<_>>()]
+                );
+                for id in 0..n {
+                    assert_eq!(rings.num_atom_rings(AtomId::new(id)), 1);
+                    assert_eq!(rings.num_bond_rings(BondId::new(id)), 1);
+                }
+            }
+        }
+
+        fn forwarded(
+            base: usize,
+            input: &TopologyBlock,
+            params: &KekulizeParams,
+            query_present: bool,
+            supplied: Option<&RingInfo>,
+        ) {
+            let calls = drawing_ring_if_possible_probe::calls();
+            assert_eq!(calls.len(), base + 1);
+            assert_eq!(
+                calls[base],
+                drawing_ring_if_possible_probe::Forward {
+                    topology: input as *const _ as usize,
+                    params: *params,
+                    query_present,
+                    rings: supplied.map(|rings| rings as *const _ as usize),
+                }
+            );
+        }
+
+        #[test]
+        fn drawing_ring_kekulize_seventeen_actual_calls() {
+            // Frozen K1: six unique inputs repeated twice. Expectations come
+            // from retained K04/K06 and pinned source, never this test's output.
+            let mut calls = 0usize;
+            for _repeat in 0..2 {
+                for mark in [false, true] {
+                    for quality in [None, Some(RingFindType::Sssr), Some(RingFindType::SymmSssr)] {
+                        let input = cycle(6);
+                        let supplied = quality.map(|quality| rows(6, quality));
+                        prerequisites(&input, 6, supplied.as_ref());
+                        let snapshot = input.clone();
+                        let ring_snapshot = supplied.clone();
+                        let params = KekulizeParams {
+                            mark_atoms_bonds: mark,
+                            canonical: false,
+                            max_backtracks: 100,
+                        };
+                        let params_snapshot = params;
+                        let mut expected = snapshot.clone();
+                        for atom in &mut expected.atoms {
+                            atom.set_aromatic(!mark);
+                        }
+                        for (bond, order) in expected.bonds.iter_mut().zip([
+                            BondOrder::Double,
+                            BondOrder::Single,
+                            BondOrder::Double,
+                            BondOrder::Single,
+                            BondOrder::Double,
+                            BondOrder::Single,
+                        ]) {
+                            bond.set_order(order);
+                            bond.set_aromatic(!mark);
+                        }
+                        let base = drawing_ring_if_possible_probe::calls().len();
+                        let acquisitions = ring_transport_probe::sssr_calls();
+                        let ranks = ring_transport_probe::rank_calls();
+                        let result = kekulize_if_possible_with_query_state_and_ring_info(
+                            &input,
+                            &params,
+                            None,
+                            supplied.as_ref(),
+                        );
+                        calls += 1;
+                        assert_eq!(input, snapshot);
+                        assert_eq!(supplied, ring_snapshot);
+                        assert_eq!(params, params_snapshot);
+                        forwarded(base, &input, &params, false, supplied.as_ref());
+                        assert_eq!(ring_transport_probe::rank_calls(), ranks);
+                        assert_eq!(
+                            ring_transport_probe::sssr_calls() - acquisitions,
+                            if supplied.is_none() { 1 } else { 0 }
+                        );
+                        let KekulizeAttempt::Applied(assignment) = result.unwrap() else {
+                            panic!("K1 must apply");
+                        };
+                        assert_eq!(assignment.topology, expected);
+                        if supplied.is_some() {
+                            assert!(assignment.ring_update.is_none());
+                        } else {
+                            let update = assignment.ring_update.unwrap();
+                            assert_eq!(update.find_type(), RingFindType::Sssr);
+                            assert_eq!(update.atom_row_count(), 6);
+                            assert_eq!(update.bond_row_count(), 6);
+                            assert_eq!(update.atom_rings().len(), 1);
+                            assert_eq!(update.bond_rings().len(), 1);
+                            assert_eq!(update.atom_rings()[0].len(), 6);
+                            assert_eq!(update.bond_rings()[0].len(), 6);
+                            for id in 0..6 {
+                                assert_eq!(update.num_atom_rings(AtomId::new(id)), 1);
+                                assert_eq!(update.num_bond_rings(BondId::new(id)), 1);
+                            }
+                        }
+                    }
+                }
+            }
+            assert_eq!(calls, 12);
+            // Frozen K2: preserve original fallback; no failure-side ring-update claim.
+            for quality in [None, Some(RingFindType::Sssr)] {
+                let input = cycle(5);
+                let supplied = quality.map(|quality| rows(5, quality));
+                prerequisites(&input, 5, supplied.as_ref());
+                let snapshot = input.clone();
+                let ring_snapshot = supplied.clone();
+                let params = KekulizeParams {
+                    mark_atoms_bonds: false,
+                    canonical: false,
+                    max_backtracks: 100,
+                };
+                let base = drawing_ring_if_possible_probe::calls().len();
+                let result = kekulize_if_possible_with_query_state_and_ring_info(
+                    &input,
+                    &params,
+                    None,
+                    supplied.as_ref(),
+                );
+                calls += 1;
+                assert_eq!(input, snapshot);
+                assert_eq!(supplied, ring_snapshot);
+                forwarded(base, &input, &params, false, supplied.as_ref());
+                assert_eq!(
+                    result,
+                    Ok(KekulizeAttempt::NotKekulizable {
+                        topology: snapshot,
+                        problem_atoms: vec![
+                            AtomId::new(0),
+                            AtomId::new(1),
+                            AtomId::new(2),
+                            AtomId::new(3),
+                            AtomId::new(4)
+                        ]
+                    })
+                );
+            }
+            assert_eq!(calls, 14);
+            // Frozen K3: actual malformed topology, foreign query, consumed dimensions.
+            let params = KekulizeParams {
+                mark_atoms_bonds: false,
+                canonical: false,
+                max_backtracks: 100,
+            };
+            let mut malformed = cycle(6);
+            malformed.atoms[0] = atom(1, AtomSpec::new(Element::C).with_aromatic(true));
+            let snapshot = malformed.clone();
+            let base = drawing_ring_if_possible_probe::calls().len();
+            let result = kekulize_if_possible_with_query_state_and_ring_info(
+                &malformed, &params, None, None,
+            );
+            calls += 1;
+            assert_eq!(malformed, snapshot);
+            forwarded(base, &malformed, &params, false, None);
+            assert_eq!(
+                result,
+                Err(KekulizeError::InvalidTopology(
+                    TopologyValidationError::AtomIdMismatch {
+                        position: 0,
+                        id: AtomId::new(1)
+                    }
+                ))
+            );
+
+            let input = cycle(6);
+            let snapshot = input.clone();
+            let foreign = cycle(5);
+            let foreign_snapshot = foreign.clone();
+            let query_atoms = foreign
+                .atoms
+                .iter()
+                .map(|carrier| {
+                    QueryAtom::from_carrier_parts(
+                        carrier.clone(),
+                        QueryNode::predicate(AtomQueryPredicate::AtomicNumber(6)),
+                    )
+                })
+                .collect::<Vec<_>>();
+            let query_bonds = foreign
+                .bonds
+                .iter()
+                .map(|carrier| {
+                    QueryBond::from_carrier_parts(
+                        carrier.clone(),
+                        QueryNode::predicate(BondQueryPredicate::Order(BondOrder::Aromatic)),
+                    )
+                })
+                .collect::<Vec<_>>();
+            let atom_snapshot = query_atoms.clone();
+            let bond_snapshot = query_bonds.clone();
+            let query =
+                QueryStateRef::try_for_topology(&query_atoms, &query_bonds, &foreign).unwrap();
+            let base = drawing_ring_if_possible_probe::calls().len();
+            let result = kekulize_if_possible_with_query_state_and_ring_info(
+                &input,
+                &params,
+                Some(query),
+                None,
+            );
+            calls += 1;
+            assert_eq!(input, snapshot);
+            assert_eq!(foreign, foreign_snapshot);
+            assert_eq!(query_atoms, atom_snapshot);
+            assert_eq!(query_bonds, bond_snapshot);
+            forwarded(base, &input, &params, true, None);
+            assert_eq!(
+                result,
+                Err(KekulizeError::InvalidQueryState(
+                    QueryStateError::AtomCount {
+                        actual: 5,
+                        expected: 6
+                    }
+                ))
+            );
+
+            let supplied = crate::ring_info_from_selected_rows(6, 5, &[], &[]).unwrap();
+            let ring_snapshot = supplied.clone();
+            assert!(supplied.is_initialized());
+            assert_eq!(supplied.find_type(), RingFindType::OtherOrUnknown);
+            assert_eq!(supplied.atom_row_count(), 6);
+            assert_eq!(supplied.bond_row_count(), 5);
+            let base = drawing_ring_if_possible_probe::calls().len();
+            let result = kekulize_if_possible_with_query_state_and_ring_info(
+                &input,
+                &params,
+                None,
+                Some(&supplied),
+            );
+            calls += 1;
+            assert_eq!(input, snapshot);
+            assert_eq!(supplied, ring_snapshot);
+            forwarded(base, &input, &params, false, Some(&supplied));
+            assert_eq!(
+                result,
+                Err(KekulizeError::CanonicalRank(
+                    CanonicalRankError::PreparedRingLength {
+                        expected_atoms: 6,
+                        actual_atoms: 6,
+                        expected_bonds: 6,
+                        actual_bonds: 5
+                    }
+                ))
+            );
+            assert_eq!(calls, 17);
+        }
+    }
+
+    #[test]
+    fn kekulize_source_selection_independent_flags_and_masks_product() {
+        // Frozen SOURCE-K B32; Atom.cpp isAromaticAtom inspects incident
+        // order/flags even when that bond is outside the selected bond mask.
+        let mut calls = 0;
+        for order in [
+            BondOrder::Single,
+            BondOrder::Double,
+            BondOrder::Triple,
+            BondOrder::Aromatic,
+        ] {
+            for bond_flag in [false, true] {
+                for atom_flag in [false, true] {
+                    for selected in [false, true] {
+                        let input = topology(
+                            vec![
+                                atom(0, AtomSpec::new(Element::C).with_aromatic(atom_flag)),
+                                atom(1, AtomSpec::new(Element::C).with_aromatic(atom_flag)),
+                            ],
+                            vec![bond_with_spec(
+                                0,
+                                BondSpec::new(AtomId::new(0), AtomId::new(1), order)
+                                    .with_aromatic(bond_flag),
+                            )],
+                        );
+                        for (id, row) in input.atoms.iter().enumerate() {
+                            assert_eq!(row.id(), AtomId::new(id));
+                            assert_eq!(row.element(), Element::C);
+                            assert_eq!(row.is_aromatic(), atom_flag);
+                        }
+                        assert_eq!(input.bonds[0].id(), BondId::new(0));
+                        assert_eq!(input.bonds[0].begin(), AtomId::new(0));
+                        assert_eq!(input.bonds[0].end(), AtomId::new(1));
+                        assert_eq!(input.bonds[0].order(), order);
+                        assert_eq!(input.bonds[0].is_aromatic(), bond_flag);
+                        let snapshot = input.clone();
+                        let result = prepare_kekulize_core(&input, &[true; 2], &[selected], None);
+                        calls += 1;
+                        assert_eq!(input, snapshot, "retained input changed at call {calls}");
+                        let prepared = result.unwrap();
+                        assert_eq!(
+                            prepared.found_aromatic,
+                            atom_flag || bond_flag || order == BondOrder::Aromatic,
+                            "order={order:?}, bond_flag={bond_flag}, atom_flag={atom_flag}, selected={selected}"
+                        );
+                        assert_eq!(prepared.bonds_in_play, vec![selected]);
+                        assert_eq!(prepared.atoms_in_play, vec![true; 2]);
+                    }
+                }
+            }
+        }
+        assert_eq!(calls, 32);
+        eprintln!("SOURCE-K B32 actual selection calls: {calls}");
     }
 
     #[test]

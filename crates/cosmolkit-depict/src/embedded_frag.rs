@@ -1438,16 +1438,111 @@ impl<'a> EmbeddedFrag<'a> {
         // RDKit❗✔️:   dp_mol = mol;
         // RDKit❗✔️:   this->updateNewNeighs(aid);
         // RDKit❗✔️: }
+        // RDKit❗✔️: EmbeddedAtom() { neighs.clear(); }
+        // RDKit❗✔️: EmbeddedAtom(const EmbeddedAtom &other) = default;
+        // RDKit❗✔️:   unsigned int aid{0};  // the id of the atom
+        // RDKit❗✔️:
+        // RDKit❗✔️:   //! the angle that is already takes at this atom, so any new atom attaching to
+        // RDKit❗✔️:   /// this atom with have to fall in the available part
+        // RDKit❗✔️:   double angle{-1.0};
+        // RDKit❗✔️:
+        // RDKit❗✔️:   //! the first neighbor of this atom that form the 'angle'
+        // RDKit❗✔️:   int nbr1{-1};
+        // RDKit❗✔️:
+        // RDKit❗✔️:   //! the second neighbor of atom that from the 'angle'
+        // RDKit❗✔️:   int nbr2{-1};
+        // RDKit❗✔️:
+        // RDKit❗✔️:   //! is this is a cis/trans atom the neighbor of this atom that is involved in
+        // RDKit❗✔️:   /// the cis/trans system - defaults to -1
+        // RDKit❗✔️:   int CisTransNbr{-1};
+        // RDKit❗✔️:
+        // RDKit❗✔️:   //! which direction do we rotate this normal to add the next bond
+        // RDKit❗✔️:   //! if ccw is true we rotate counter clockwise, otherwise rotate clock wise,
+        // RDKit❗✔️:   /// by an angle that is <= PI/2
+        // RDKit❗✔️:   bool ccw{true};
+        // RDKit❗✔️:
+        // RDKit❗✔️:   //! rotation direction around this atom when adding new atoms,
+        // RDKit❗✔️:   /// we determine this for the first neighbor and stick to this direction
+        // RDKit❗✔️:   /// after that
+        // RDKit❗✔️:   //! useful only on atoms that are degree >= 4
+        // RDKit❗✔️:   int rotDir{0};
+        // RDKit❗✔️:
+        // RDKit❗✔️:   RDGeom::Point2D loc;  // the current location of this atom
+        // RDKit❗✔️:   //! this is a normal vector to one of the bonds that added this atom
+        // RDKit❗✔️:   //! it provides the side on which we want to add a new bond to this atom
+        // RDKit❗✔️:   //! this is only relevant when we are dealing with non ring atoms. We would
+        // RDKit❗✔️:   /// like to draw chains in a zig-zag manner
+        // RDKit❗✔️:   RDGeom::Point2D normal;
+        // RDKit❗✔️:
+        // RDKit❗✔️:   //! and these are the atom IDs of the neighbors that still need to be embedded
+        // RDKit❗✔️:   RDKit::INT_VECT neighs;
+        // RDKit❗✔️:
+        // RDKit❗✔️:   // density of the atoms around this atoms
+        // RDKit❗✔️:   // - this is sum of inverse of the square of distances to other atoms from
+        // RDKit❗✔️:   //   this atom. Used in the collision removal code
+        // RDKit❗✔️:   // - initialized to -1.0
+        // RDKit❗✔️:   double d_density{-1.0};
+        // RDKit❗✔️:
+        // RDKit❗✔️:   //! if set this atom is fixed: further operations on the fragment may not
+        // RDKit❗✔️:   //! move it.
+        // RDKit❗✔️:   bool df_fixed{false};
+        // RDKit❗✔️: EmbeddedAtom &operator=(const EmbeddedAtom &other) {
+        // RDKit❗✔️:   if (this == &other) {
+        // RDKit❗✔️:     return *this;
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:
+        // RDKit❗✔️:   loc = other.loc;
+        // RDKit❗✔️:   angle = other.angle;
+        // RDKit❗✔️:   nbr1 = other.nbr1;
+        // RDKit❗✔️:   nbr2 = other.nbr2;
+        // RDKit❗✔️:   CisTransNbr = other.CisTransNbr;
+        // RDKit❗✔️:   rotDir = other.rotDir;
+        // RDKit❗✔️:   normal = other.normal;
+        // RDKit❗✔️:   ccw = other.ccw;
+        // RDKit❗✔️:   neighs = other.neighs;
+        // RDKit❗✔️:   d_density = other.d_density;
+        // RDKit❗✔️:   df_fixed = other.df_fixed;
+        // RDKit❗✔️:   return *this;
+        // RDKit❗✔️: }
+        // Behavior: std::map::operator[] default-constructs the mapped value,
+        // then this custom assignment copies every listed field but not `aid`.
+        // The defaulted copy constructor would copy `aid`; it is not the path
+        // used here. The key remains the requested input ID and the payload
+        // keeps the default `aid` of zero.
+        // Complexity: one source value, one default map value, one ordered
+        // entry insertion and one field-wise assignment, matching this one-row
+        // source map transition. The copied neighbor vector is empty here, so
+        // its clone does not allocate; the existing neighbor update follows.
         if aid >= topology.atoms.len() {
             return Err(FragmentError::AtomIndexOutOfRange {
                 atom: aid,
                 atom_count: topology.atoms.len(),
             });
         }
-        let mut atom = EmbeddedAtom::at(aid, [0.0, 0.0]);
-        atom.normal = [1.0, 0.0];
+        let mut source_atom = EmbeddedAtom::source_default();
+        source_atom.aid = aid;
+        source_atom.loc = [0.0, 0.0];
+        source_atom.normal = [1.0, 0.0];
+        source_atom.angle = -1.0;
+        source_atom.ccw = true;
+        source_atom.neighs.clear();
+        let mut atoms = BTreeMap::new();
+        let destination = atoms
+            .entry(aid)
+            .or_insert_with(EmbeddedAtom::source_default);
+        destination.loc = source_atom.loc;
+        destination.angle = source_atom.angle;
+        destination.nbr1 = source_atom.nbr1;
+        destination.nbr2 = source_atom.nbr2;
+        destination.cis_trans_nbr = source_atom.cis_trans_nbr;
+        destination.rot_dir = source_atom.rot_dir;
+        destination.normal = source_atom.normal;
+        destination.ccw = source_atom.ccw;
+        destination.neighs.clone_from(&source_atom.neighs);
+        destination.density = source_atom.density;
+        destination.fixed = source_atom.fixed;
         let mut fragment = Self {
-            atoms: BTreeMap::from([(aid, atom)]),
+            atoms,
             attachment_points: Vec::new(),
             done: false,
             topology,
@@ -1464,6 +1559,17 @@ impl<'a> EmbeddedFrag<'a> {
     ) -> Result<Self, FragmentError> {
         // RDKit❗✔️: EmbeddedFrag::EmbeddedFrag(const RDKit::ROMol *mol,
         // RDKit❗✔️:                            const RDGeom::INT_POINT2D_MAP &coordMap) {
+        // RDKit❗✔️:   // constructor of a case where the user specifies the coordinates for a
+        // RDKit❗✔️:   // portion of the atoms in the molecule - we will use these coordinates
+        // RDKit❗✔️:   // blindly without testing for any kind of correctness - user is GOD :)
+        // RDKit❗✔️:
+        // RDKit❗✔️:   // we are not going to do much here simply add the atoms we have coordinates
+        // RDKit❗✔️:   // for to this fragment; as a result this fragment may not be as ready to add
+        // RDKit❗✔️:   // new neighbors etc. for the following reason.
+        // RDKit❗✔️:   // - the user may have specified coords for only a part of the atoms in a
+        // RDKit❗✔️:   //   fused ring systems
+        // RDKit❗✔️:   // - once we use these coordinates we need to set up the atoms properly so
+        // RDKit❗✔️:   //   that new neighbors can be added to them
         // RDKit❗✔️:   PRECONDITION(mol, "");
         // RDKit❗✔️:   dp_mol = mol;
         // RDKit❗✔️:   d_eatoms.clear();
@@ -1481,6 +1587,109 @@ impl<'a> EmbeddedFrag<'a> {
         // RDKit❗✔️:   this->setupNewNeighs();
         // RDKit❗✔️:   this->setupAttachmentPoints();
         // RDKit❗✔️: }
+        // RDKit❗✔️:   EmbeddedAtom() { neighs.clear(); }
+        // RDKit❗✔️:
+        // RDKit❗✔️:   EmbeddedAtom(const EmbeddedAtom &other) = default;
+        // RDKit❗✔️:
+        // RDKit❗✔️:   EmbeddedAtom(unsigned int aid, const RDGeom::Point2D &pos)
+        // RDKit❗✔️:       : aid(aid),
+        // RDKit❗✔️:         angle(-1.0),
+        // RDKit❗✔️:         nbr1(-1),
+        // RDKit❗✔️:         nbr2(-1),
+        // RDKit❗✔️:         CisTransNbr(-1),
+        // RDKit❗✔️:         ccw(true),
+        // RDKit❗✔️:         rotDir(0),
+        // RDKit❗✔️:         d_density(-1.0),
+        // RDKit❗✔️:         df_fixed(false) {
+        // RDKit❗✔️:     loc = pos;
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:
+        // RDKit❗✔️:   EmbeddedAtom &operator=(const EmbeddedAtom &other) {
+        // RDKit❗✔️:     if (this == &other) {
+        // RDKit❗✔️:       return *this;
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:
+        // RDKit❗✔️:     loc = other.loc;
+        // RDKit❗✔️:     angle = other.angle;
+        // RDKit❗✔️:     nbr1 = other.nbr1;
+        // RDKit❗✔️:     nbr2 = other.nbr2;
+        // RDKit❗✔️:     CisTransNbr = other.CisTransNbr;
+        // RDKit❗✔️:     rotDir = other.rotDir;
+        // RDKit❗✔️:     normal = other.normal;
+        // RDKit❗✔️:     ccw = other.ccw;
+        // RDKit❗✔️:     neighs = other.neighs;
+        // RDKit❗✔️:     d_density = other.d_density;
+        // RDKit❗✔️:     df_fixed = other.df_fixed;
+        // RDKit❗✔️:     return *this;
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:
+        // RDKit❗✔️:   unsigned int aid{0};  // the id of the atom
+        // RDKit❗✔️:
+        // RDKit❗✔️:   //! the angle that is already takes at this atom, so any new atom attaching to
+        // RDKit❗✔️:   /// this atom with have to fall in the available part
+        // RDKit❗✔️:   double angle{-1.0};
+        // RDKit❗✔️:
+        // RDKit❗✔️:   //! the first neighbor of this atom that form the 'angle'
+        // RDKit❗✔️:   int nbr1{-1};
+        // RDKit❗✔️:
+        // RDKit❗✔️:   //! the second neighbor of atom that from the 'angle'
+        // RDKit❗✔️:   int nbr2{-1};
+        // RDKit❗✔️:
+        // RDKit❗✔️:   //! is this is a cis/trans atom the neighbor of this atom that is involved in
+        // RDKit❗✔️:   /// the cis/trans system - defaults to -1
+        // RDKit❗✔️:   int CisTransNbr{-1};
+        // RDKit❗✔️:
+        // RDKit❗✔️:   //! which direction do we rotate this normal to add the next bond
+        // RDKit❗✔️:   //! if ccw is true we rotate counter clockwise, otherwise rotate clock wise,
+        // RDKit❗✔️:   /// by an angle that is <= PI/2
+        // RDKit❗✔️:   bool ccw{true};
+        // RDKit❗✔️:
+        // RDKit❗✔️:   //! rotation direction around this atom when adding new atoms,
+        // RDKit❗✔️:   /// we determine this for the first neighbor and stick to this direction
+        // RDKit❗✔️:   /// after that
+        // RDKit❗✔️:   //! useful only on atoms that are degree >= 4
+        // RDKit❗✔️:   int rotDir{0};
+        // RDKit❗✔️:
+        // RDKit❗✔️:   RDGeom::Point2D loc;  // the current location of this atom
+        // RDKit❗✔️:   //! this is a normal vector to one of the bonds that added this atom
+        // RDKit❗✔️:   //! it provides the side on which we want to add a new bond to this atom
+        // RDKit❗✔️:   //! this is only relevant when we are dealing with non ring atoms. We would
+        // RDKit❗✔️:   /// like to draw chains in a zig-zag manner
+        // RDKit❗✔️:   RDGeom::Point2D normal;
+        // RDKit❗✔️:
+        // RDKit❗✔️:   //! and these are the atom IDs of the neighbors that still need to be embedded
+        // RDKit❗✔️:   RDKit::INT_VECT neighs;
+        // RDKit❗✔️:
+        // RDKit❗✔️:   // density of the atoms around this atoms
+        // RDKit❗✔️:   // - this is sum of inverse of the square of distances to other atoms from
+        // RDKit❗✔️:   //   this atom. Used in the collision removal code
+        // RDKit❗✔️:   // - initialized to -1.0
+        // RDKit❗✔️:   double d_density{-1.0};
+        // RDKit❗✔️:
+        // RDKit❗✔️:   //! if set this atom is fixed: further operations on the fragment may not
+        // RDKit❗✔️:   //! move it.
+        // RDKit❗✔️: bool df_fixed{false};
+        // RDKit❗✔️:
+        // RDKit❗✔️: class RDKIT_RDGEOMETRYLIB_EXPORT Point2D : public Point {
+        // RDKit❗✔️:  public:
+        // RDKit❗✔️:   double x{0.0};
+        // RDKit❗✔️:   double y{0.0};
+        // RDKit❗✔️:
+        // RDKit❗✔️:   constexpr Point2D() {}
+        // RDKit❗✔️:   constexpr Point2D(double xv, double yv) : x(xv), y(yv) {}
+        // RDKit❗✔️:
+        // RDKit❗✔️:   //! are we embedded with the final (molecule) coordinates
+        // RDKit❗✔️:   bool d_done = false;
+        // Behavior: the source constructs a value with the requested aid and
+        // coordinate, then operator[] default-inserts a destination and copy-
+        // assigns its listed fields without assigning aid. The key stays equal
+        // to the request while destination aid remains its default zero.
+        // Cost: each sorted input key performs one ordered-map lookup/insertion,
+        // creates the source and default destination values, and field-wise
+        // assigns an empty neighbor vector. Empty Vec::clone_from does not need
+        // a heap allocation here. Existing neighbor/rank and attachment setup
+        // calls retain their own key snapshot, scans, ranking storage, and local
+        // attachment/done-neighbor collections. No broader cost claim is made.
         let mut atoms = BTreeMap::new();
         for (&aid, &loc) in coord_map {
             if aid >= topology.atoms.len() {
@@ -1489,9 +1698,24 @@ impl<'a> EmbeddedFrag<'a> {
                     atom_count: topology.atoms.len(),
                 });
             }
-            let mut atom = EmbeddedAtom::at(aid, loc);
-            atom.fixed = true;
-            atoms.insert(aid, atom);
+            let mut source_atom = EmbeddedAtom::at(aid, loc);
+            source_atom.neighs.clear();
+            source_atom.fixed = true;
+
+            let destination = atoms
+                .entry(aid)
+                .or_insert_with(EmbeddedAtom::source_default);
+            destination.loc = source_atom.loc;
+            destination.angle = source_atom.angle;
+            destination.nbr1 = source_atom.nbr1;
+            destination.nbr2 = source_atom.nbr2;
+            destination.cis_trans_nbr = source_atom.cis_trans_nbr;
+            destination.rot_dir = source_atom.rot_dir;
+            destination.normal = source_atom.normal;
+            destination.ccw = source_atom.ccw;
+            destination.neighs.clone_from(&source_atom.neighs);
+            destination.density = source_atom.density;
+            destination.fixed = source_atom.fixed;
         }
         let mut fragment = Self {
             atoms,
@@ -1557,24 +1781,139 @@ impl<'a> EmbeddedFrag<'a> {
         // RDKit❗✔️:   }
         // RDKit❗✔️:   d_eatoms[prev].nbr2 = ring.front();
         // RDKit❗✔️: }
-        // Behavior: ordered cyclic predecessor/successor and source angle.
-        // Complexity: one map insertion per ring atom.
+        // RDKit❗✔️:   EmbeddedAtom() { neighs.clear(); }
+        // RDKit❗✔️:
+        // RDKit❗✔️:   EmbeddedAtom(const EmbeddedAtom &other) = default;
+        // RDKit❗✔️:
+        // RDKit❗✔️:   EmbeddedAtom(unsigned int aid, const RDGeom::Point2D &pos)
+        // RDKit❗✔️:       : aid(aid),
+        // RDKit❗✔️:         angle(-1.0),
+        // RDKit❗✔️:         nbr1(-1),
+        // RDKit❗✔️:         nbr2(-1),
+        // RDKit❗✔️:         CisTransNbr(-1),
+        // RDKit❗✔️:         ccw(true),
+        // RDKit❗✔️:         rotDir(0),
+        // RDKit❗✔️:         d_density(-1.0),
+        // RDKit❗✔️:         df_fixed(false) {
+        // RDKit❗✔️:     loc = pos;
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:
+        // RDKit❗✔️:   EmbeddedAtom &operator=(const EmbeddedAtom &other) {
+        // RDKit❗✔️:     if (this == &other) {
+        // RDKit❗✔️:       return *this;
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:
+        // RDKit❗✔️:     loc = other.loc;
+        // RDKit❗✔️:     angle = other.angle;
+        // RDKit❗✔️:     nbr1 = other.nbr1;
+        // RDKit❗✔️:     nbr2 = other.nbr2;
+        // RDKit❗✔️:     CisTransNbr = other.CisTransNbr;
+        // RDKit❗✔️:     rotDir = other.rotDir;
+        // RDKit❗✔️:     normal = other.normal;
+        // RDKit❗✔️:     ccw = other.ccw;
+        // RDKit❗✔️:     neighs = other.neighs;
+        // RDKit❗✔️:     d_density = other.d_density;
+        // RDKit❗✔️:     df_fixed = other.df_fixed;
+        // RDKit❗✔️:     return *this;
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:   unsigned int aid{0};  // the id of the atom
+        // RDKit❗✔️:
+        // RDKit❗✔️:   //! the angle that is already takes at this atom, so any new atom attaching to
+        // RDKit❗✔️:   /// this atom with have to fall in the available part
+        // RDKit❗✔️:   double angle{-1.0};
+        // RDKit❗✔️:
+        // RDKit❗✔️:   //! the first neighbor of this atom that form the 'angle'
+        // RDKit❗✔️:   int nbr1{-1};
+        // RDKit❗✔️:
+        // RDKit❗✔️:   //! the second neighbor of atom that from the 'angle'
+        // RDKit❗✔️:   int nbr2{-1};
+        // RDKit❗✔️:
+        // RDKit❗✔️:   //! is this is a cis/trans atom the neighbor of this atom that is involved in
+        // RDKit❗✔️:   /// the cis/trans system - defaults to -1
+        // RDKit❗✔️:   int CisTransNbr{-1};
+        // RDKit❗✔️:
+        // RDKit❗✔️:   //! which direction do we rotate this normal to add the next bond
+        // RDKit❗✔️:   //! if ccw is true we rotate counter clockwise, otherwise rotate clock wise,
+        // RDKit❗✔️:   /// by an angle that is <= PI/2
+        // RDKit❗✔️:   bool ccw{true};
+        // RDKit❗✔️:
+        // RDKit❗✔️:   //! rotation direction around this atom when adding new atoms,
+        // RDKit❗✔️:   /// we determine this for the first neighbor and stick to this direction
+        // RDKit❗✔️:   /// after that
+        // RDKit❗✔️:   //! useful only on atoms that are degree >= 4
+        // RDKit❗✔️:   int rotDir{0};
+        // RDKit❗✔️:
+        // RDKit❗✔️:   RDGeom::Point2D loc;  // the current location of this atom
+        // RDKit❗✔️:   //! this is a normal vector to one of the bonds that added this atom
+        // RDKit❗✔️:   //! it provides the side on which we want to add a new bond to this atom
+        // RDKit❗✔️:   //! this is only relevant when we are dealing with non ring atoms. We would
+        // RDKit❗✔️:   /// like to draw chains in a zig-zag manner
+        // RDKit❗✔️:   RDGeom::Point2D normal;
+        // RDKit❗✔️:
+        // RDKit❗✔️:   //! and these are the atom IDs of the neighbors that still need to be embedded
+        // RDKit❗✔️:   RDKit::INT_VECT neighs;
+        // RDKit❗✔️:
+        // RDKit❗✔️:   // density of the atoms around this atoms
+        // RDKit❗✔️:   // - this is sum of inverse of the square of distances to other atoms from
+        // RDKit❗✔️:   //   this atom. Used in the collision removal code
+        // RDKit❗✔️:   // - initialized to -1.0
+        // RDKit❗✔️:   double d_density{-1.0};
+        // RDKit❗✔️:
+        // RDKit❗✔️:   //! if set this atom is fixed: further operations on the fragment may not
+        // RDKit❗✔️:   //! move it.
+        // RDKit❗✔️:   bool df_fixed{false};
+        // RDKit❗✔️: class RDKIT_RDGEOMETRYLIB_EXPORT Point2D : public Point {
+        // RDKit❗✔️:  public:
+        // RDKit❗✔️:   double x{0.0};
+        // RDKit❗✔️:   double y{0.0};
+        // RDKit❗✔️:
+        // RDKit❗✔️:   constexpr Point2D() {}
+        // RDKit❗✔️:   constexpr Point2D(double xv, double yv) : x(xv), y(yv) {}
+        // Behavior: each source-default temporary receives loc/aid/angle/nbr1;
+        // the previous successor is written before a default map destination is
+        // copy-assigned. Assignment copies every listed payload field except aid,
+        // so new destinations retain aid 0 and existing rows retain their aid.
+        // Requested map keys, ring order, closure, and unrelated fragment state
+        // are unchanged for valid nonempty cycles with complete coordinates.
+        // Complexity: one default temporary per visited atom and one ordered-map
+        // destination entry per atom (O(log M)); predecessor and closure lookups
+        // are also O(log M). Empty neighbor copies reuse existing Vec storage
+        // through clone_from; there is no whole-fragment clone or map rebuild.
         let angle = PI * (1.0 - 2.0 / ring.len() as f64);
         let mut previous = *ring.last().expect("ring decomposition has nonempty rings");
         for (index, &atom_id) in ring.iter().enumerate() {
-            let mut atom = EmbeddedAtom::at(atom_id, coords[&atom_id]);
+            let mut atom = EmbeddedAtom::source_default();
+            atom.loc = coords[&atom_id];
+            atom.aid = atom_id;
             atom.angle = angle;
             atom.nbr1 = Some(previous);
             if index != 0 {
                 self.atoms
-                    .get_mut(&previous)
-                    .expect("previous ring atom")
+                    .entry(previous)
+                    .or_insert_with(EmbeddedAtom::source_default)
                     .nbr2 = Some(atom_id);
             }
-            self.atoms.insert(atom_id, atom);
+            let destination = self
+                .atoms
+                .entry(atom_id)
+                .or_insert_with(EmbeddedAtom::source_default);
+            destination.loc = atom.loc;
+            destination.angle = atom.angle;
+            destination.nbr1 = atom.nbr1;
+            destination.nbr2 = atom.nbr2;
+            destination.cis_trans_nbr = atom.cis_trans_nbr;
+            destination.rot_dir = atom.rot_dir;
+            destination.normal = atom.normal;
+            destination.ccw = atom.ccw;
+            destination.neighs.clone_from(&atom.neighs);
+            destination.density = atom.density;
+            destination.fixed = atom.fixed;
             previous = atom_id;
         }
-        self.atoms.get_mut(&previous).expect("last ring atom").nbr2 = Some(ring[0]);
+        self.atoms
+            .entry(previous)
+            .or_insert_with(EmbeddedAtom::source_default)
+            .nbr2 = Some(ring[0]);
     }
 
     fn merge_ring(&mut self, other: &Self, common_count: usize, pin_atoms: &[usize]) {
@@ -5260,5 +5599,2142 @@ fn rotation_dir(center: Point2, loc1: Point2, loc2: Point2, remaining_angle: f64
         -1
     } else {
         1
+    }
+}
+
+#[cfg(test)]
+mod point_pair_transform_tests {
+    use std::collections::BTreeMap;
+
+    use cosmolkit_core::{RingFindType, RingInfo};
+    use cosmolkit_model::{Atom, AtomId, AtomSpec, Element, TopologyBlock};
+
+    use super::{EmbeddedAtom, EmbeddedFrag, Point2, Transform2D};
+
+    #[derive(Debug, PartialEq, Eq)]
+    struct AtomState {
+        aid: usize,
+        angle: u64,
+        nbr1: Option<usize>,
+        nbr2: Option<usize>,
+        cis_trans_nbr: Option<usize>,
+        ccw: bool,
+        rot_dir: i32,
+        loc: [u64; 2],
+        normal: [u64; 2],
+        neighs: Vec<usize>,
+        density: u64,
+        fixed: bool,
+    }
+
+    #[derive(Debug, PartialEq, Eq)]
+    struct AtomMetadata {
+        aid: usize,
+        angle: u64,
+        nbr1: Option<usize>,
+        nbr2: Option<usize>,
+        cis_trans_nbr: Option<usize>,
+        ccw: bool,
+        rot_dir: i32,
+        neighs: Vec<usize>,
+        density: u64,
+        fixed: bool,
+    }
+
+    fn point(bits: [u64; 2]) -> Point2 {
+        bits.map(f64::from_bits)
+    }
+
+    fn captured_atom(aid: usize, loc: Point2) -> EmbeddedAtom {
+        let mut atom = EmbeddedAtom::at(aid, loc);
+        atom.angle = aid as f64 / 8.0;
+        atom.nbr1 = Some((aid + 1) % 45);
+        atom.nbr2 = Some((aid + 2) % 45);
+        atom.cis_trans_nbr = Some((aid + 3) % 45);
+        atom.ccw = aid % 2 != 0;
+        atom.rot_dir = aid as i32 - 20;
+        atom.neighs = vec![(aid + 4) % 45, (aid + 5) % 45];
+        atom.density = aid as f64 / 100.0;
+        atom.fixed = aid % 2 == 0;
+        atom
+    }
+
+    fn fragment<'a>(
+        topology: &'a TopologyBlock,
+        rings: &'a RingInfo,
+        atoms: BTreeMap<usize, EmbeddedAtom>,
+        attachment_points: Vec<usize>,
+        done: bool,
+    ) -> EmbeddedFrag<'a> {
+        EmbeddedFrag {
+            atoms,
+            attachment_points,
+            done,
+            topology,
+            rings,
+        }
+    }
+
+    fn atom_state(atom: &EmbeddedAtom) -> AtomState {
+        AtomState {
+            aid: atom.aid,
+            angle: atom.angle.to_bits(),
+            nbr1: atom.nbr1,
+            nbr2: atom.nbr2,
+            cis_trans_nbr: atom.cis_trans_nbr,
+            ccw: atom.ccw,
+            rot_dir: atom.rot_dir,
+            loc: atom.loc.map(f64::to_bits),
+            normal: atom.normal.map(f64::to_bits),
+            neighs: atom.neighs.clone(),
+            density: atom.density.to_bits(),
+            fixed: atom.fixed,
+        }
+    }
+
+    fn atom_metadata(atom: &EmbeddedAtom) -> AtomMetadata {
+        AtomMetadata {
+            aid: atom.aid,
+            angle: atom.angle.to_bits(),
+            nbr1: atom.nbr1,
+            nbr2: atom.nbr2,
+            cis_trans_nbr: atom.cis_trans_nbr,
+            ccw: atom.ccw,
+            rot_dir: atom.rot_dir,
+            neighs: atom.neighs.clone(),
+            density: atom.density.to_bits(),
+            fixed: atom.fixed,
+        }
+    }
+
+    fn atoms_state(fragment: &EmbeddedFrag<'_>) -> Vec<(usize, AtomState)> {
+        fragment
+            .atoms
+            .iter()
+            .map(|(&id, atom)| (id, atom_state(atom)))
+            .collect()
+    }
+
+    fn atoms_metadata(fragment: &EmbeddedFrag<'_>) -> Vec<(usize, AtomMetadata)> {
+        fragment
+            .atoms
+            .iter()
+            .map(|(&id, atom)| (id, atom_metadata(atom)))
+            .collect()
+    }
+
+    #[test]
+    fn d2_pair_fragment_caller() {
+        // Captured transition-state regression, not the complete line-155
+        // molecule topology. This detached topology has 45 disconnected
+        // carbons and no ring memberships; the actual helper does not read
+        // ring contents but retains the borrowed ring owner unchanged.
+        let atoms = (0..45)
+            .map(|index| Atom::from_spec(AtomId::new(index), AtomSpec::new(Element::C)))
+            .collect();
+        let topology = TopologyBlock::try_from_parts(atoms, Vec::new(), Vec::new(), Vec::new())
+            .expect("45 disconnected carbon atoms form a valid topology");
+        let rings = RingInfo::new(RingFindType::OtherOrUnknown, 45, 0);
+        assert_eq!(topology.atoms.len(), 45);
+        assert!(topology.bonds.is_empty());
+        assert_eq!(rings.atom_row_count(), 45);
+        assert_eq!(rings.bond_row_count(), 0);
+
+        let ref1 = point([13842690664439568919, 4614895549384485632]);
+        let ref2 = point([13840743450532881578, 4618222693736076515]);
+        let pt1 = point([4600774667239816340, 4608144052124252029]);
+        let pt2 = point([13830699860855537819, 13828302655841107966]);
+        let point35 = point([4608425305167921899, 0]);
+        let expected = [
+            (34, [13842690664439568919, 4614895549384485632]),
+            (35, [13843683345501127844, 4616908891942731194]),
+            (37, [13841084472807863234, 4617753316911589383]),
+        ];
+
+        let mut compute_two_atom_calls = 0;
+        let mut caller_transform_calls = 0;
+        let mut checked_point_rows = 0;
+        let mut mismatches = Vec::new();
+
+        for repeat in 0..2 {
+            let mut base_atoms = BTreeMap::new();
+            base_atoms.insert(34, captured_atom(34, ref1));
+            base_atoms.insert(37, captured_atom(37, ref2));
+            let base = fragment(&topology, &rings, base_atoms, vec![37, 34], true);
+
+            let mut incoming_atoms = BTreeMap::new();
+            incoming_atoms.insert(34, captured_atom(34, pt1));
+            incoming_atoms.insert(37, captured_atom(37, pt2));
+            incoming_atoms.insert(35, captured_atom(35, point35));
+            let mut incoming = fragment(&topology, &rings, incoming_atoms, vec![35, 34, 37], false);
+
+            let topology_before = topology.clone();
+            let rings_before = rings.clone();
+            let base_atoms_before = atoms_state(&base);
+            let base_keys_before = base.atoms.keys().copied().collect::<Vec<_>>();
+            let base_attachments_before = base.attachment_points.clone();
+            let base_done_before = base.done;
+            let incoming_keys_before = incoming.atoms.keys().copied().collect::<Vec<_>>();
+            let incoming_metadata_before = atoms_metadata(&incoming);
+            let incoming_attachments_before = incoming.attachment_points.clone();
+            let incoming_done_before = incoming.done;
+
+            compute_two_atom_calls += 1;
+            match base.compute_two_atom_trans(34, 37, &incoming) {
+                Ok(transform) => {
+                    incoming.transform(transform);
+                    caller_transform_calls += 1;
+                }
+                Err(error) => mismatches.push(format!(
+                    "repeat {repeat}: compute_two_atom_trans failed: {error:?}"
+                )),
+            }
+
+            for (id, expected_loc) in expected {
+                checked_point_rows += 1;
+                let Some(atom) = incoming.atoms.get(&id) else {
+                    mismatches.push(format!("repeat {repeat}: transformed atom {id} is missing"));
+                    continue;
+                };
+                let loc_bits = atom.loc.map(f64::to_bits);
+                if loc_bits != expected_loc {
+                    mismatches.push(format!(
+                        "repeat {repeat}: atom {id} location expected {expected_loc:?}, got {loc_bits:?}"
+                    ));
+                }
+                let normal_bits = atom.normal.map(f64::to_bits);
+                if normal_bits != [0, 0] {
+                    mismatches.push(format!(
+                        "repeat {repeat}: atom {id} zero normal expected [0, 0], got {normal_bits:?}"
+                    ));
+                }
+            }
+
+            let incoming_metadata_after = atoms_metadata(&incoming);
+            if incoming_metadata_after != incoming_metadata_before {
+                mismatches.push(format!(
+                    "repeat {repeat}: incoming non-coordinate atom fields changed"
+                ));
+            }
+            let incoming_keys_after = incoming.atoms.keys().copied().collect::<Vec<_>>();
+            if incoming_keys_after != incoming_keys_before {
+                mismatches.push(format!(
+                    "repeat {repeat}: incoming ordered IDs expected {incoming_keys_before:?}, got {incoming_keys_after:?}"
+                ));
+            }
+            if incoming.attachment_points != incoming_attachments_before {
+                mismatches.push(format!(
+                    "repeat {repeat}: incoming attachment points changed"
+                ));
+            }
+            if incoming.done != incoming_done_before {
+                mismatches.push(format!("repeat {repeat}: incoming done metadata changed"));
+            }
+            if atoms_state(&base) != base_atoms_before
+                || base.atoms.keys().copied().collect::<Vec<_>>() != base_keys_before
+                || base.attachment_points != base_attachments_before
+                || base.done != base_done_before
+            {
+                mismatches.push(format!("repeat {repeat}: base fragment changed"));
+            }
+            if topology != topology_before {
+                mismatches.push(format!("repeat {repeat}: topology changed"));
+            }
+            if rings != rings_before {
+                mismatches.push(format!("repeat {repeat}: ring state changed"));
+            }
+            if !std::ptr::eq(base.topology, &topology)
+                || !std::ptr::eq(incoming.topology, &topology)
+                || !std::ptr::eq(base.rings, &rings)
+                || !std::ptr::eq(incoming.rings, &rings)
+            {
+                mismatches.push(format!(
+                    "repeat {repeat}: topology/ring borrow identity changed"
+                ));
+            }
+        }
+
+        if compute_two_atom_calls != 2 {
+            mismatches.push(format!(
+                "compute_two_atom_trans call census expected 2, got {compute_two_atom_calls}"
+            ));
+        }
+        if caller_transform_calls != 2 {
+            mismatches.push(format!(
+                "fragment transform call census expected 2, got {caller_transform_calls}"
+            ));
+        }
+        if checked_point_rows != 6 {
+            mismatches.push(format!(
+                "post-invocation point-row census expected 6, got {checked_point_rows}"
+            ));
+        }
+        assert!(mismatches.is_empty(), "{}", mismatches.join("\n"));
+    }
+
+    #[derive(Clone, Copy)]
+    struct AroundEmbeddedAtomLiteral {
+        center: [u64; 2],
+        angle: u64,
+        point: [u64; 2],
+        loc: [u64; 2],
+        normal: [u64; 2],
+    }
+
+    #[test]
+    fn d2_around_embedded_atom_caller() {
+        // Frozen native SetTransform plus actual EmbeddedAtom::Transform
+        // outputs from dev/gap_reports/depict_2d/rotation_about_point.md.
+        // The input state is independent of this Rust implementation.
+        const FIXTURES: [AroundEmbeddedAtomLiteral; 12] = [
+            AroundEmbeddedAtomLiteral {
+                center: [13840167140234767549, 13841658448896447679],
+                angle: 13833581496215065898,
+                point: [13837906160088633287, 13842551789691373020],
+                loc: [13841200895337859887, 13842993950389275022],
+                normal: [13826938992748570896, 13830052621011068080],
+            },
+            AroundEmbeddedAtomLiteral {
+                center: [4600774667239816340, 4608144052124252029],
+                angle: 13835506422081213124,
+                point: [13830699860855537818, 4604930618986332161],
+                loc: [4605901809668386118, 4613127418605116318],
+                normal: [13830485043920852146, 13826187084225660792],
+            },
+            AroundEmbeddedAtomLiteral {
+                center: [0, 0],
+                angle: 0,
+                point: [0, 9223372036854775808],
+                loc: [0, 0],
+                normal: [4607182418800017408, 13826050856027422720],
+            },
+            AroundEmbeddedAtomLiteral {
+                center: [9223372036854775808, 0],
+                angle: 9223372036854775808,
+                point: [9223372036854775808, 0],
+                loc: [0, 0],
+                normal: [4607182418800017408, 13826050856027422720],
+            },
+            AroundEmbeddedAtomLiteral {
+                center: [0, 9223372036854775808],
+                angle: 4609753056924675352,
+                point: [4607182418800017408, 13830554455654793216],
+                loc: [4607182418800017408, 4607182418800017407],
+                normal: [4602678819172646914, 4607182418800017408],
+            },
+            AroundEmbeddedAtomLiteral {
+                center: [9223372036854775808, 0],
+                angle: 13833125093779451160,
+                point: [13830554455654793216, 4607182418800017408],
+                loc: [4607182418800017407, 4607182418800017408],
+                normal: [13826050856027422718, 13830554455654793216],
+            },
+            AroundEmbeddedAtomLiteral {
+                center: [4607182418800017408, 13835058055282163712],
+                angle: 4614256656552045848,
+                point: [4613937818241073152, 4616189618054758400],
+                loc: [13830554455654793219, 13844065254536904704],
+                normal: [13830554455654793210, 4602678819172646912],
+            },
+            AroundEmbeddedAtomLiteral {
+                center: [13837309855095848960, 4616189618054758400],
+                angle: 13837628693406821656,
+                point: [4598175219545276416, 13826050856027422720],
+                loc: [13842094929699930112, 4620974692658839552],
+                normal: [13830554455654793216, 4602678819172646912],
+            },
+            AroundEmbeddedAtomLiteral {
+                center: [4591870180066957722, 13819745816549104026],
+                angle: 4607394977673999205,
+                point: [4604480259023595110, 4606281698874543309],
+                loc: [13826524886406865186, 4606008017307368141],
+                normal: [4606579050858423895, 4603723883103145131],
+            },
+            AroundEmbeddedAtomLiteral {
+                center: [6850974717710472879, 16074346754565248687],
+                angle: 4600336947366414254,
+                point: [6855478317337843375, 6846471118083102383],
+                loc: [6853120471284824355, 6849333997472211297],
+                normal: [0, 0],
+            },
+            AroundEmbeddedAtomLiteral {
+                center: [4503599627370496, 9227875636482146304],
+                angle: 4600336947366414254,
+                point: [9007199254740992, 2251799813685248],
+                loc: [6259572026655921, 3423215126666318],
+                normal: [4607691933821229984, 13815569952213628840],
+            },
+            AroundEmbeddedAtomLiteral {
+                center: [12034929314500959671, 6402087712267973674],
+                angle: 13823708984221190062,
+                point: [6387181665105488315, 15625459749122749482],
+                loc: [15622769946159922631, 15624767819230837210],
+                normal: [0, 0],
+            },
+        ];
+
+        let initial_normal = [4607182418800017408, 13826050856027422720];
+        let mut around_calls = 0;
+        let mut embedded_atom_transform_calls = 0;
+        let mut coordinate_rows = 0;
+        let mut metadata_rows = 0;
+        let mut mismatches = Vec::new();
+
+        for repeat in 0..2 {
+            for (case, expected) in FIXTURES.iter().enumerate() {
+                let center = point(expected.center);
+                let center_before = center.map(f64::to_bits);
+                let angle = f64::from_bits(expected.angle);
+                let angle_before = angle.to_bits();
+                let loc = point(expected.point);
+                let loc_before = loc.map(f64::to_bits);
+
+                let transform = Transform2D::around(center, angle);
+                around_calls += 1;
+
+                let mut atom = EmbeddedAtom::at(case, loc);
+                atom.normal = point(initial_normal);
+                let metadata_before = atom_metadata(&atom);
+                let source_defaults = AtomMetadata {
+                    aid: case,
+                    angle: (-1.0_f64).to_bits(),
+                    nbr1: None,
+                    nbr2: None,
+                    cis_trans_nbr: None,
+                    ccw: true,
+                    rot_dir: 0,
+                    neighs: Vec::new(),
+                    density: (-1.0_f64).to_bits(),
+                    fixed: false,
+                };
+                if metadata_before != source_defaults {
+                    mismatches.push(format!(
+                        "case {} repeat {repeat}: source-default metadata expected {source_defaults:?}, got {metadata_before:?}",
+                        case + 1
+                    ));
+                }
+
+                atom.transform(transform);
+                embedded_atom_transform_calls += 1;
+
+                coordinate_rows += 1;
+                let loc_bits = atom.loc.map(f64::to_bits);
+                if loc_bits != expected.loc {
+                    mismatches.push(format!(
+                        "case {} repeat {repeat}: EmbeddedAtom::Transform loc expected {:?}, got {loc_bits:?}",
+                        case + 1,
+                        expected.loc
+                    ));
+                }
+                let normal_bits = atom.normal.map(f64::to_bits);
+                if normal_bits != expected.normal {
+                    mismatches.push(format!(
+                        "case {} repeat {repeat}: EmbeddedAtom::Transform normal expected {:?}, got {normal_bits:?}",
+                        case + 1,
+                        expected.normal
+                    ));
+                }
+
+                metadata_rows += 1;
+                let metadata_after = atom_metadata(&atom);
+                if metadata_after != metadata_before {
+                    mismatches.push(format!(
+                        "case {} repeat {repeat}: non-coordinate fields expected {metadata_before:?}, got {metadata_after:?}",
+                        case + 1
+                    ));
+                }
+
+                if center.map(f64::to_bits) != center_before {
+                    mismatches.push(format!(
+                        "case {} repeat {repeat}: center input changed from {center_before:?} to {:?}",
+                        case + 1,
+                        center.map(f64::to_bits)
+                    ));
+                }
+                if angle.to_bits() != angle_before {
+                    mismatches.push(format!(
+                        "case {} repeat {repeat}: angle input changed from {angle_before} to {}",
+                        case + 1,
+                        angle.to_bits()
+                    ));
+                }
+                if loc.map(f64::to_bits) != loc_before {
+                    mismatches.push(format!(
+                        "case {} repeat {repeat}: location input changed from {loc_before:?} to {:?}",
+                        case + 1,
+                        loc.map(f64::to_bits)
+                    ));
+                }
+                if atom.normal.map(f64::to_bits) == initial_normal {
+                    // A zero-angle/control case may preserve this vector, but
+                    // the frozen output check above is the controlling proof.
+                }
+            }
+        }
+
+        if around_calls != 24 {
+            mismatches.push(format!(
+                "Transform2D::around call census expected 24, got {around_calls}"
+            ));
+        }
+        if embedded_atom_transform_calls != 24 {
+            mismatches.push(format!(
+                "EmbeddedAtom::Transform call census expected 24, got {embedded_atom_transform_calls}"
+            ));
+        }
+        if coordinate_rows != 24 {
+            mismatches.push(format!(
+                "coordinate-row census expected 24, got {coordinate_rows}"
+            ));
+        }
+        if metadata_rows != 24 {
+            mismatches.push(format!(
+                "non-coordinate metadata-row census expected 24, got {metadata_rows}"
+            ));
+        }
+        assert!(mismatches.is_empty(), "{}", mismatches.join("\n"));
+    }
+}
+
+#[cfg(test)]
+mod single_fragment_source_assignment_tests {
+    use cosmolkit_core::{RingFindType, RingInfo};
+    use cosmolkit_model::{Atom, AtomId, AtomSpec, Element, TopologyBlock};
+
+    use super::{EmbeddedFrag, FragmentError};
+
+    #[derive(Debug, PartialEq, Eq)]
+    struct AtomFields {
+        aid: usize,
+        angle_bits: u64,
+        nbr1: Option<usize>,
+        nbr2: Option<usize>,
+        cis_trans_nbr: Option<usize>,
+        ccw: bool,
+        rot_dir: i32,
+        loc_bits: [u64; 2],
+        normal_bits: [u64; 2],
+        neighs: Vec<usize>,
+        density_bits: u64,
+        fixed: bool,
+    }
+
+    #[derive(Debug, PartialEq, Eq)]
+    struct FragmentFields {
+        rows: Vec<(usize, AtomFields)>,
+        attachment_points: Vec<usize>,
+        done: bool,
+        topology_identity: bool,
+        rings_identity: bool,
+    }
+
+    fn disconnected_carbons() -> TopologyBlock {
+        let atoms = (0..8)
+            .map(|index| Atom::from_spec(AtomId::new(index), AtomSpec::new(Element::C)))
+            .collect();
+        TopologyBlock::try_from_parts(atoms, Vec::new(), Vec::new(), Vec::new())
+            .expect("eight disconnected carbon atoms form a valid topology")
+    }
+
+    fn empty_rings() -> RingInfo {
+        RingInfo::new(RingFindType::OtherOrUnknown, 8, 0)
+    }
+
+    fn atom_fields(atom: &super::EmbeddedAtom) -> AtomFields {
+        AtomFields {
+            aid: atom.aid,
+            angle_bits: atom.angle.to_bits(),
+            nbr1: atom.nbr1,
+            nbr2: atom.nbr2,
+            cis_trans_nbr: atom.cis_trans_nbr,
+            ccw: atom.ccw,
+            rot_dir: atom.rot_dir,
+            loc_bits: atom.loc.map(f64::to_bits),
+            normal_bits: atom.normal.map(f64::to_bits),
+            neighs: atom.neighs.clone(),
+            density_bits: atom.density.to_bits(),
+            fixed: atom.fixed,
+        }
+    }
+
+    fn fragment_fields(
+        fragment: &EmbeddedFrag<'_>,
+        topology: &TopologyBlock,
+        rings: &RingInfo,
+    ) -> FragmentFields {
+        FragmentFields {
+            rows: fragment
+                .atoms
+                .iter()
+                .map(|(&key, atom)| (key, atom_fields(atom)))
+                .collect(),
+            attachment_points: fragment.attachment_points.clone(),
+            done: fragment.done,
+            topology_identity: std::ptr::eq(fragment.topology, topology),
+            rings_identity: std::ptr::eq(fragment.rings, rings),
+        }
+    }
+
+    fn expected_fragment(requested_id: usize) -> FragmentFields {
+        FragmentFields {
+            rows: vec![(
+                requested_id,
+                AtomFields {
+                    aid: 0,
+                    angle_bits: (-1.0_f64).to_bits(),
+                    nbr1: None,
+                    nbr2: None,
+                    cis_trans_nbr: None,
+                    ccw: true,
+                    rot_dir: 0,
+                    loc_bits: [0.0_f64.to_bits(), 0.0_f64.to_bits()],
+                    normal_bits: [1.0_f64.to_bits(), 0.0_f64.to_bits()],
+                    neighs: Vec::new(),
+                    density_bits: (-1.0_f64).to_bits(),
+                    fixed: false,
+                },
+            )],
+            attachment_points: Vec::new(),
+            done: false,
+            topology_identity: true,
+            rings_identity: true,
+        }
+    }
+
+    #[test]
+    fn d2_single_atom_source_assignment_preserves_complete_payload() {
+        let topology = disconnected_carbons();
+        let rings = empty_rings();
+        assert_eq!(topology.atoms.len(), 8);
+        assert!(topology.bonds.is_empty());
+        assert!(rings.is_initialized());
+        assert_eq!(rings.atom_row_count(), 8);
+        assert_eq!(rings.bond_row_count(), 0);
+
+        let mut calls = 0;
+        let mut aid_mismatches = Vec::new();
+        let mut mismatches = Vec::new();
+        for repeat in 0..2 {
+            for requested_id in 0..8 {
+                let call_topology = topology.clone();
+                let call_rings = rings.clone();
+                let topology_before = call_topology.clone();
+                let rings_before = call_rings.clone();
+
+                let result = EmbeddedFrag::from_single(requested_id, &call_topology, &call_rings);
+                let observed = match result.as_ref() {
+                    Ok(fragment) => Some(fragment_fields(fragment, &call_topology, &call_rings)),
+                    Err(error) => {
+                        mismatches.push(format!(
+                            "repeat {repeat}, requested key {requested_id}: expected success, got {error:?}"
+                        ));
+                        None
+                    }
+                };
+                calls += 1;
+
+                if let Some(observed) = observed {
+                    let expected = expected_fragment(requested_id);
+                    for (key, atom) in &observed.rows {
+                        if atom.aid != 0 {
+                            aid_mismatches.push(format!(
+                                "repeat {repeat}, requested key {requested_id}: key {key}, source payload aid 0, actual payload aid {}",
+                                atom.aid
+                            ));
+                        }
+                    }
+                    if observed != expected {
+                        mismatches.push(format!(
+                            "repeat {repeat}, requested key {requested_id}: expected {expected:?}, got {observed:?}"
+                        ));
+                    }
+                }
+                if call_topology != topology_before {
+                    mismatches.push(format!(
+                        "repeat {repeat}, requested key {requested_id}: topology changed"
+                    ));
+                }
+                if call_rings != rings_before {
+                    mismatches.push(format!(
+                        "repeat {repeat}, requested key {requested_id}: RingInfo changed"
+                    ));
+                }
+            }
+        }
+
+        if calls != 16 {
+            mismatches.push(format!(
+                "actual from_single call count expected 16, got {calls}"
+            ));
+        }
+        assert!(
+            mismatches.is_empty(),
+            "actual calls={calls}; aid mismatches={}:\n{}\nall payload mismatches:\n{}",
+            aid_mismatches.len(),
+            aid_mismatches.join("\n"),
+            mismatches.join("\n")
+        );
+    }
+
+    #[test]
+    fn d2_single_atom_source_assignment_returns_typed_index_errors() {
+        let requested_ids = [8_usize, 4_294_967_295_usize];
+        let mut calls = 0;
+        let mut mismatches = Vec::new();
+        for requested_id in requested_ids {
+            let call_topology = disconnected_carbons();
+            let call_rings = empty_rings();
+            let topology_before = call_topology.clone();
+            let rings_before = call_rings.clone();
+
+            let result = EmbeddedFrag::from_single(requested_id, &call_topology, &call_rings);
+            let observed = match result.as_ref() {
+                Ok(fragment) => Ok(fragment_fields(fragment, &call_topology, &call_rings)),
+                Err(error) => Err(error.clone()),
+            };
+            calls += 1;
+
+            let expected = Err(FragmentError::AtomIndexOutOfRange {
+                atom: requested_id,
+                atom_count: 8,
+            });
+            if observed != expected {
+                mismatches.push(format!(
+                    "requested ID {requested_id}: expected {expected:?}, got {observed:?}"
+                ));
+            }
+            if call_topology != topology_before {
+                mismatches.push(format!("requested ID {requested_id}: topology changed"));
+            }
+            if call_rings != rings_before {
+                mismatches.push(format!("requested ID {requested_id}: RingInfo changed"));
+            }
+        }
+
+        if calls != 2 {
+            mismatches.push(format!(
+                "actual from_single error call count expected 2, got {calls}"
+            ));
+        }
+        assert!(
+            mismatches.is_empty(),
+            "actual calls={calls}:\n{}",
+            mismatches.join("\n")
+        );
+    }
+}
+
+#[cfg(test)]
+mod coord_map_source_assignment_tests {
+    use cosmolkit_core::{RingFindType, RingInfo};
+    use cosmolkit_model::{
+        Atom, AtomId, AtomSpec, Bond, BondId, BondOrder, BondSpec, Element, TopologyBlock,
+    };
+
+    use super::{EmbeddedAtom, EmbeddedFrag, FragmentError, Point2, PointMap};
+
+    const NEG_ONE_BITS: u64 = 0xbff0_0000_0000_0000;
+
+    #[derive(Debug, Clone, Copy)]
+    struct ExpectedRow {
+        key: usize,
+        loc_bits: [u64; 2],
+        normal_bits: [u64; 2],
+        neighbors: &'static [usize],
+    }
+
+    #[derive(Debug, Clone, Copy)]
+    struct Scenario {
+        name: &'static str,
+        atom_count: usize,
+        chain: bool,
+        input_keys: &'static [usize],
+        expected_rows: &'static [ExpectedRow],
+        expected_attachment_points: &'static [usize],
+    }
+
+    const SCENARIOS: [Scenario; 8] = [
+        Scenario {
+            name: "disconnected-0",
+            atom_count: 8,
+            chain: false,
+            input_keys: &[0],
+            expected_rows: &[ExpectedRow {
+                key: 0,
+                loc_bits: [0x0000_0000_0000_0000, 0x8000_0000_0000_0000],
+                normal_bits: [0, 0],
+                neighbors: &[],
+            }],
+            expected_attachment_points: &[],
+        },
+        Scenario {
+            name: "disconnected-1",
+            atom_count: 8,
+            chain: false,
+            input_keys: &[1],
+            expected_rows: &[ExpectedRow {
+                key: 1,
+                loc_bits: [0x3ff8_0000_0000_0000, 0xbfe0_0000_0000_0000],
+                normal_bits: [0, 0],
+                neighbors: &[],
+            }],
+            expected_attachment_points: &[],
+        },
+        Scenario {
+            name: "disconnected-7",
+            atom_count: 8,
+            chain: false,
+            input_keys: &[7],
+            expected_rows: &[ExpectedRow {
+                key: 7,
+                loc_bits: [0xc000_0000_0000_0000, 0xbff0_0000_0000_0000],
+                normal_bits: [0, 0],
+                neighbors: &[],
+            }],
+            expected_attachment_points: &[],
+        },
+        Scenario {
+            name: "disconnected-0-7",
+            atom_count: 8,
+            chain: false,
+            input_keys: &[0, 7],
+            expected_rows: &[
+                ExpectedRow {
+                    key: 0,
+                    loc_bits: [0x0000_0000_0000_0000, 0x8000_0000_0000_0000],
+                    normal_bits: [0, 0],
+                    neighbors: &[],
+                },
+                ExpectedRow {
+                    key: 7,
+                    loc_bits: [0xc000_0000_0000_0000, 0xbff0_0000_0000_0000],
+                    normal_bits: [0, 0],
+                    neighbors: &[],
+                },
+            ],
+            expected_attachment_points: &[],
+        },
+        Scenario {
+            name: "disconnected-1-3-7",
+            atom_count: 8,
+            chain: false,
+            input_keys: &[1, 3, 7],
+            expected_rows: &[
+                ExpectedRow {
+                    key: 1,
+                    loc_bits: [0x3ff8_0000_0000_0000, 0xbfe0_0000_0000_0000],
+                    normal_bits: [0, 0],
+                    neighbors: &[],
+                },
+                ExpectedRow {
+                    key: 3,
+                    loc_bits: [0x4000_0000_0000_0000, 0x3ff0_0000_0000_0000],
+                    normal_bits: [0, 0],
+                    neighbors: &[],
+                },
+                ExpectedRow {
+                    key: 7,
+                    loc_bits: [0xc000_0000_0000_0000, 0xbff0_0000_0000_0000],
+                    normal_bits: [0, 0],
+                    neighbors: &[],
+                },
+            ],
+            expected_attachment_points: &[],
+        },
+        Scenario {
+            name: "disconnected-empty",
+            atom_count: 8,
+            chain: false,
+            input_keys: &[],
+            expected_rows: &[],
+            expected_attachment_points: &[],
+        },
+        Scenario {
+            name: "chain-partial-0-2",
+            atom_count: 3,
+            chain: true,
+            input_keys: &[0, 2],
+            expected_rows: &[
+                ExpectedRow {
+                    key: 0,
+                    loc_bits: [0x0000_0000_0000_0000, 0x8000_0000_0000_0000],
+                    normal_bits: [0x3ff0_0000_0000_0000, 0],
+                    neighbors: &[1],
+                },
+                ExpectedRow {
+                    key: 2,
+                    loc_bits: [0xbff8_0000_0000_0000, 0x3fe0_0000_0000_0000],
+                    normal_bits: [0x3ff0_0000_0000_0000, 0],
+                    neighbors: &[1],
+                },
+            ],
+            expected_attachment_points: &[0, 2],
+        },
+        Scenario {
+            name: "chain-full-0-1-2",
+            atom_count: 3,
+            chain: true,
+            input_keys: &[0, 1, 2],
+            expected_rows: &[
+                ExpectedRow {
+                    key: 0,
+                    loc_bits: [0x0000_0000_0000_0000, 0x8000_0000_0000_0000],
+                    normal_bits: [0, 0],
+                    neighbors: &[],
+                },
+                ExpectedRow {
+                    key: 1,
+                    loc_bits: [0x3ff8_0000_0000_0000, 0xbfe0_0000_0000_0000],
+                    normal_bits: [0, 0],
+                    neighbors: &[],
+                },
+                ExpectedRow {
+                    key: 2,
+                    loc_bits: [0xbff8_0000_0000_0000, 0x3fe0_0000_0000_0000],
+                    normal_bits: [0, 0],
+                    neighbors: &[],
+                },
+            ],
+            expected_attachment_points: &[],
+        },
+    ];
+
+    #[derive(Debug, PartialEq, Eq)]
+    struct AtomFields {
+        aid: usize,
+        angle_bits: u64,
+        nbr1: Option<usize>,
+        nbr2: Option<usize>,
+        cis_trans_nbr: Option<usize>,
+        ccw: bool,
+        rot_dir: i32,
+        loc_bits: [u64; 2],
+        normal_bits: [u64; 2],
+        neighs: Vec<usize>,
+        density_bits: u64,
+        fixed: bool,
+    }
+
+    #[derive(Debug, PartialEq, Eq)]
+    struct FragmentFields {
+        rows: Vec<(usize, AtomFields)>,
+        attachment_points: Vec<usize>,
+        done: bool,
+        topology_identity: bool,
+        rings_identity: bool,
+    }
+
+    fn point_for_key(key: usize) -> Point2 {
+        match key {
+            0 => [f64::from_bits(0), f64::from_bits(0x8000_0000_0000_0000)],
+            1 => [
+                f64::from_bits(0x3ff8_0000_0000_0000),
+                f64::from_bits(0xbfe0_0000_0000_0000),
+            ],
+            2 => [
+                f64::from_bits(0xbff8_0000_0000_0000),
+                f64::from_bits(0x3fe0_0000_0000_0000),
+            ],
+            3 => [
+                f64::from_bits(0x4000_0000_0000_0000),
+                f64::from_bits(0x3ff0_0000_0000_0000),
+            ],
+            7 => [
+                f64::from_bits(0xc000_0000_0000_0000),
+                f64::from_bits(0xbff0_0000_0000_0000),
+            ],
+            _ => unreachable!("only literal frozen coordinate keys are used"),
+        }
+    }
+
+    fn topology_for(scenario: &Scenario) -> TopologyBlock {
+        let atoms = (0..scenario.atom_count)
+            .map(|index| Atom::from_spec(AtomId::new(index), AtomSpec::new(Element::C)))
+            .collect();
+        let bonds = if scenario.chain {
+            [(0, 1), (1, 2)]
+                .into_iter()
+                .enumerate()
+                .map(|(index, (begin, end))| {
+                    Bond::from_spec(
+                        BondId::new(index),
+                        BondSpec::new(AtomId::new(begin), AtomId::new(end), BondOrder::Single),
+                    )
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+        TopologyBlock::try_from_parts(atoms, bonds, Vec::new(), Vec::new())
+            .expect("frozen coordinate-map graph is a valid topology")
+    }
+
+    fn point_map_for_keys(keys: &[usize]) -> PointMap {
+        keys.iter()
+            .copied()
+            .map(|key| (key, point_for_key(key)))
+            .collect()
+    }
+
+    fn point_map_bits(points: &PointMap) -> Vec<(usize, [u64; 2])> {
+        points
+            .iter()
+            .map(|(&key, point)| (key, point.map(f64::to_bits)))
+            .collect()
+    }
+
+    fn atom_fields(atom: &EmbeddedAtom) -> AtomFields {
+        AtomFields {
+            aid: atom.aid,
+            angle_bits: atom.angle.to_bits(),
+            nbr1: atom.nbr1,
+            nbr2: atom.nbr2,
+            cis_trans_nbr: atom.cis_trans_nbr,
+            ccw: atom.ccw,
+            rot_dir: atom.rot_dir,
+            loc_bits: atom.loc.map(f64::to_bits),
+            normal_bits: atom.normal.map(f64::to_bits),
+            neighs: atom.neighs.clone(),
+            density_bits: atom.density.to_bits(),
+            fixed: atom.fixed,
+        }
+    }
+
+    fn expected_atom_fields(row: &ExpectedRow) -> AtomFields {
+        AtomFields {
+            aid: 0,
+            angle_bits: NEG_ONE_BITS,
+            nbr1: None,
+            nbr2: None,
+            cis_trans_nbr: None,
+            ccw: true,
+            rot_dir: 0,
+            loc_bits: row.loc_bits,
+            normal_bits: row.normal_bits,
+            neighs: row.neighbors.to_vec(),
+            density_bits: NEG_ONE_BITS,
+            fixed: true,
+        }
+    }
+
+    fn fragment_fields(
+        fragment: &EmbeddedFrag<'_>,
+        topology: &TopologyBlock,
+        rings: &RingInfo,
+    ) -> FragmentFields {
+        FragmentFields {
+            rows: fragment
+                .atoms
+                .iter()
+                .map(|(&key, atom)| (key, atom_fields(atom)))
+                .collect(),
+            attachment_points: fragment.attachment_points.clone(),
+            done: fragment.done,
+            topology_identity: std::ptr::eq(fragment.topology, topology),
+            rings_identity: std::ptr::eq(fragment.rings, rings),
+        }
+    }
+
+    fn expected_fragment(scenario: &Scenario) -> FragmentFields {
+        FragmentFields {
+            rows: scenario
+                .expected_rows
+                .iter()
+                .map(|row| (row.key, expected_atom_fields(row)))
+                .collect(),
+            attachment_points: scenario.expected_attachment_points.to_vec(),
+            done: false,
+            topology_identity: true,
+            rings_identity: true,
+        }
+    }
+
+    fn ring_shape(rings: &RingInfo) -> (bool, RingFindType, usize, usize) {
+        (
+            rings.is_initialized(),
+            rings.find_type(),
+            rings.atom_row_count(),
+            rings.bond_row_count(),
+        )
+    }
+
+    #[test]
+    fn d2_coord_map_source_assignment_preserves_complete_payload() {
+        let mut calls = 0;
+        let mut rows = 0;
+        let mut payload_aid_mismatches = Vec::new();
+        let mut mismatches = Vec::new();
+
+        for repeat in 0..2 {
+            for scenario in &SCENARIOS {
+                let topology = topology_for(scenario);
+                let rings = RingInfo::new(
+                    RingFindType::OtherOrUnknown,
+                    topology.atoms.len(),
+                    topology.bonds.len(),
+                );
+                let coord_map = point_map_for_keys(scenario.input_keys);
+                let topology_before = topology.clone();
+                let rings_before = rings.clone();
+                let ring_shape_before = ring_shape(&rings);
+                let coord_map_before = point_map_bits(&coord_map);
+
+                let result = EmbeddedFrag::from_coord_map(&topology, &rings, &coord_map);
+                calls += 1;
+
+                // Inputs are checked immediately after the operation, before
+                // examining its success/error result.
+                if topology != topology_before {
+                    mismatches.push(format!(
+                        "repeat {repeat}, {}: topology changed",
+                        scenario.name
+                    ));
+                }
+                if rings != rings_before || ring_shape(&rings) != ring_shape_before {
+                    mismatches.push(format!(
+                        "repeat {repeat}, {}: RingInfo rows, memberships, dimensions, or find type changed",
+                        scenario.name
+                    ));
+                }
+                if point_map_bits(&coord_map) != coord_map_before {
+                    mismatches.push(format!(
+                        "repeat {repeat}, {}: coordinate-map keys or float bits changed",
+                        scenario.name
+                    ));
+                }
+
+                match result.as_ref() {
+                    Ok(fragment) => {
+                        rows += fragment.atoms.len();
+                        for (&key, atom) in &fragment.atoms {
+                            if atom.aid != 0 {
+                                payload_aid_mismatches.push(format!(
+                                    "repeat {repeat}, {}: map key {key}, expected payload aid 0, got {}",
+                                    scenario.name, atom.aid
+                                ));
+                            }
+                        }
+                        let observed = fragment_fields(fragment, &topology, &rings);
+                        let expected = expected_fragment(scenario);
+                        if observed != expected {
+                            mismatches.push(format!(
+                                "repeat {repeat}, {}: expected complete fragment {expected:?}, got {observed:?}",
+                                scenario.name
+                            ));
+                        }
+                    }
+                    Err(error) => mismatches.push(format!(
+                        "repeat {repeat}, {}: expected success, got {error:?}",
+                        scenario.name
+                    )),
+                }
+            }
+        }
+
+        if calls != 16 {
+            mismatches.push(format!(
+                "actual constructor call count expected 16, got {calls}"
+            ));
+        }
+        if rows != 26 {
+            mismatches.push(format!(
+                "actual returned atom-row count expected 26, got {rows}"
+            ));
+        }
+        if payload_aid_mismatches.len() != 0 {
+            mismatches.push(format!(
+                "payload-aid mismatch count expected 0 after source correction, got {}",
+                payload_aid_mismatches.len()
+            ));
+        }
+        assert!(
+            mismatches.is_empty(),
+            "actual calls={calls}, rows={rows}, payload aid mismatches={} (predicted pre-fix count 18):\n{}\nall aid mismatches:\n{}",
+            payload_aid_mismatches.len(),
+            mismatches.join("\n"),
+            payload_aid_mismatches.join("\n")
+        );
+    }
+
+    #[test]
+    fn d2_coord_map_source_assignment_returns_typed_index_errors() {
+        let invalid_atoms = [8_usize, 4_294_967_295_usize];
+        let mut calls = 0;
+        let mut mismatches = Vec::new();
+
+        for invalid_atom in invalid_atoms {
+            let topology = topology_for(&SCENARIOS[5]);
+            let rings = RingInfo::new(RingFindType::OtherOrUnknown, 8, 0);
+            let mut coord_map = point_map_for_keys(&[0]);
+            coord_map.insert(invalid_atom, point_for_key(1));
+            let topology_before = topology.clone();
+            let rings_before = rings.clone();
+            let ring_shape_before = ring_shape(&rings);
+            let coord_map_before = point_map_bits(&coord_map);
+
+            let result = EmbeddedFrag::from_coord_map(&topology, &rings, &coord_map);
+            calls += 1;
+
+            // Verify all arguments, including the valid map prefix, before
+            // matching the returned typed error.
+            if topology != topology_before {
+                mismatches.push(format!("invalid key {invalid_atom}: topology changed"));
+            }
+            if rings != rings_before || ring_shape(&rings) != ring_shape_before {
+                mismatches.push(format!(
+                    "invalid key {invalid_atom}: RingInfo rows, memberships, dimensions, or find type changed"
+                ));
+            }
+            if point_map_bits(&coord_map) != coord_map_before {
+                mismatches.push(format!(
+                    "invalid key {invalid_atom}: coordinate-map prefix/key/float bits changed"
+                ));
+            }
+
+            match result.as_ref() {
+                Err(FragmentError::AtomIndexOutOfRange { atom, atom_count })
+                    if *atom == invalid_atom && *atom_count == 8 => {}
+                Err(error) => mismatches.push(format!(
+                    "invalid key {invalid_atom}: expected AtomIndexOutOfRange {{ atom: {invalid_atom}, atom_count: 8 }}, got {error:?}"
+                )),
+                Ok(fragment) => mismatches.push(format!(
+                    "invalid key {invalid_atom}: expected typed index error, got fragment with {} rows",
+                    fragment.atoms.len()
+                )),
+            }
+        }
+
+        if calls != 2 {
+            mismatches.push(format!(
+                "actual typed-error call count expected 2, got {calls}"
+            ));
+        }
+        assert!(
+            mismatches.is_empty(),
+            "actual calls={calls}:\n{}",
+            mismatches.join("\n")
+        );
+    }
+}
+
+#[cfg(test)]
+mod ring_init_source_assignment_tests {
+    use std::collections::BTreeMap;
+
+    use cosmolkit_core::{RingFindType, RingInfo};
+    use cosmolkit_model::{
+        Atom, AtomId, AtomSpec, Bond, BondId, BondOrder, BondSpec, Element, TopologyBlock,
+    };
+
+    use super::{CoordinateTemplates, EmbeddedAtom, EmbeddedFrag, Point2, PointMap};
+
+    const NEG_ONE_BITS: u64 = 0xbff0_0000_0000_0000;
+
+    #[derive(Debug, Clone, Copy)]
+    struct RingShape {
+        name: &'static str,
+        forward: &'static [usize],
+    }
+
+    const SHAPES: [RingShape; 4] = [
+        RingShape {
+            name: "T3",
+            forward: &[1, 3, 7],
+        },
+        RingShape {
+            name: "Q4",
+            forward: &[1, 3, 5, 7],
+        },
+        RingShape {
+            name: "P5",
+            forward: &[0, 2, 3, 5, 7],
+        },
+        RingShape {
+            name: "H6",
+            forward: &[0, 1, 2, 4, 6, 7],
+        },
+    ];
+
+    #[derive(Debug, Clone, Copy)]
+    struct ExpectedRow {
+        shape: &'static str,
+        reverse: bool,
+        key: usize,
+        loc_bits: [u64; 2],
+        angle_bits: u64,
+        previous: usize,
+        next: usize,
+    }
+
+    // Literal coordinates and angles were captured from the pinned native
+    // public single-ring constructor before any Rust ring-init result.
+    const NATIVE_ROWS: [ExpectedRow; 36] = [
+        ExpectedRow {
+            shape: "T3",
+            reverse: false,
+            key: 1,
+            loc_bits: [0x3feb_b67a_e858_4cab, 0x0000_0000_0000_0000],
+            angle_bits: 0x3ff0_c152_382d_7366,
+            previous: 7,
+            next: 3,
+        },
+        ExpectedRow {
+            shape: "T3",
+            reverse: false,
+            key: 3,
+            loc_bits: [0xbfdb_b67a_e858_4ca8, 0x3fe8_0000_0000_0001],
+            angle_bits: 0x3ff0_c152_382d_7366,
+            previous: 1,
+            next: 7,
+        },
+        ExpectedRow {
+            shape: "T3",
+            reverse: false,
+            key: 7,
+            loc_bits: [0xbfdb_b67a_e858_4cb2, 0xbfe7_ffff_ffff_fffe],
+            angle_bits: 0x3ff0_c152_382d_7366,
+            previous: 3,
+            next: 1,
+        },
+        ExpectedRow {
+            shape: "T3",
+            reverse: true,
+            key: 1,
+            loc_bits: [0xbfdb_b67a_e858_4cb2, 0xbfe7_ffff_ffff_fffe],
+            angle_bits: 0x3ff0_c152_382d_7366,
+            previous: 3,
+            next: 7,
+        },
+        ExpectedRow {
+            shape: "T3",
+            reverse: true,
+            key: 3,
+            loc_bits: [0xbfdb_b67a_e858_4ca8, 0x3fe8_0000_0000_0001],
+            angle_bits: 0x3ff0_c152_382d_7366,
+            previous: 7,
+            next: 1,
+        },
+        ExpectedRow {
+            shape: "T3",
+            reverse: true,
+            key: 7,
+            loc_bits: [0x3feb_b67a_e858_4cab, 0x0000_0000_0000_0000],
+            angle_bits: 0x3ff0_c152_382d_7366,
+            previous: 1,
+            next: 3,
+        },
+        ExpectedRow {
+            shape: "Q4",
+            reverse: false,
+            key: 1,
+            loc_bits: [0x3ff0_f876_ccdf_6cda, 0x0000_0000_0000_0000],
+            angle_bits: 0x3ff9_21fb_5444_2d18,
+            previous: 7,
+            next: 3,
+        },
+        ExpectedRow {
+            shape: "Q4",
+            reverse: false,
+            key: 3,
+            loc_bits: [0x3c92_b838_8e82_ab21, 0x3ff0_f876_ccdf_6cda],
+            angle_bits: 0x3ff9_21fb_5444_2d18,
+            previous: 1,
+            next: 5,
+        },
+        ExpectedRow {
+            shape: "Q4",
+            reverse: false,
+            key: 5,
+            loc_bits: [0xbff0_f876_ccdf_6cda, 0x3ca2_b838_8e82_ab21],
+            angle_bits: 0x3ff9_21fb_5444_2d18,
+            previous: 3,
+            next: 7,
+        },
+        ExpectedRow {
+            shape: "Q4",
+            reverse: false,
+            key: 7,
+            loc_bits: [0xbcac_1454_d5c4_00b1, 0xbff0_f876_ccdf_6cda],
+            angle_bits: 0x3ff9_21fb_5444_2d18,
+            previous: 5,
+            next: 1,
+        },
+        ExpectedRow {
+            shape: "Q4",
+            reverse: true,
+            key: 1,
+            loc_bits: [0xbcac_1454_d5c4_00b1, 0xbff0_f876_ccdf_6cda],
+            angle_bits: 0x3ff9_21fb_5444_2d18,
+            previous: 3,
+            next: 7,
+        },
+        ExpectedRow {
+            shape: "Q4",
+            reverse: true,
+            key: 3,
+            loc_bits: [0xbff0_f876_ccdf_6cda, 0x3ca2_b838_8e82_ab21],
+            angle_bits: 0x3ff9_21fb_5444_2d18,
+            previous: 5,
+            next: 1,
+        },
+        ExpectedRow {
+            shape: "Q4",
+            reverse: true,
+            key: 5,
+            loc_bits: [0x3c92_b838_8e82_ab21, 0x3ff0_f876_ccdf_6cda],
+            angle_bits: 0x3ff9_21fb_5444_2d18,
+            previous: 7,
+            next: 3,
+        },
+        ExpectedRow {
+            shape: "Q4",
+            reverse: true,
+            key: 7,
+            loc_bits: [0x3ff0_f876_ccdf_6cda, 0x0000_0000_0000_0000],
+            angle_bits: 0x3ff9_21fb_5444_2d18,
+            previous: 1,
+            next: 5,
+        },
+        ExpectedRow {
+            shape: "P5",
+            reverse: false,
+            key: 0,
+            loc_bits: [0x3ff4_6a66_0874_82eb, 0x0000_0000_0000_0000],
+            angle_bits: 0x3ffe_28c7_31eb_6950,
+            previous: 7,
+            next: 2,
+        },
+        ExpectedRow {
+            shape: "P5",
+            reverse: false,
+            key: 2,
+            loc_bits: [0x3fd9_3c2f_1471_fc94, 0x3ff3_6a99_b4b1_f77d],
+            angle_bits: 0x3ffe_28c7_31eb_6950,
+            previous: 0,
+            next: 3,
+        },
+        ExpectedRow {
+            shape: "P5",
+            reverse: false,
+            key: 3,
+            loc_bits: [0xbff0_843e_c956_c09a, 0x3fe8_0000_0000_0001],
+            angle_bits: 0x3ffe_28c7_31eb_6950,
+            previous: 2,
+            next: 5,
+        },
+        ExpectedRow {
+            shape: "P5",
+            reverse: false,
+            key: 5,
+            loc_bits: [0xbff0_843e_c956_c09b, 0xbfe7_ffff_ffff_fffe],
+            angle_bits: 0x3ffe_28c7_31eb_6950,
+            previous: 3,
+            next: 7,
+        },
+        ExpectedRow {
+            shape: "P5",
+            reverse: false,
+            key: 7,
+            loc_bits: [0x3fd9_3c2f_1471_fc8f, 0xbff3_6a99_b4b1_f77e],
+            angle_bits: 0x3ffe_28c7_31eb_6950,
+            previous: 5,
+            next: 0,
+        },
+        ExpectedRow {
+            shape: "P5",
+            reverse: true,
+            key: 0,
+            loc_bits: [0x3fd9_3c2f_1471_fc8f, 0xbff3_6a99_b4b1_f77e],
+            angle_bits: 0x3ffe_28c7_31eb_6950,
+            previous: 2,
+            next: 7,
+        },
+        ExpectedRow {
+            shape: "P5",
+            reverse: true,
+            key: 2,
+            loc_bits: [0xbff0_843e_c956_c09b, 0xbfe7_ffff_ffff_fffe],
+            angle_bits: 0x3ffe_28c7_31eb_6950,
+            previous: 3,
+            next: 0,
+        },
+        ExpectedRow {
+            shape: "P5",
+            reverse: true,
+            key: 3,
+            loc_bits: [0xbff0_843e_c956_c09a, 0x3fe8_0000_0000_0001],
+            angle_bits: 0x3ffe_28c7_31eb_6950,
+            previous: 5,
+            next: 2,
+        },
+        ExpectedRow {
+            shape: "P5",
+            reverse: true,
+            key: 5,
+            loc_bits: [0x3fd9_3c2f_1471_fc94, 0x3ff3_6a99_b4b1_f77d],
+            angle_bits: 0x3ffe_28c7_31eb_6950,
+            previous: 7,
+            next: 3,
+        },
+        ExpectedRow {
+            shape: "P5",
+            reverse: true,
+            key: 7,
+            loc_bits: [0x3ff4_6a66_0874_82eb, 0x0000_0000_0000_0000],
+            angle_bits: 0x3ffe_28c7_31eb_6950,
+            previous: 0,
+            next: 5,
+        },
+        ExpectedRow {
+            shape: "H6",
+            reverse: false,
+            key: 0,
+            loc_bits: [0x3ff8_0000_0000_0001, 0x0000_0000_0000_0000],
+            angle_bits: 0x4000_c152_382d_7366,
+            previous: 7,
+            next: 1,
+        },
+        ExpectedRow {
+            shape: "H6",
+            reverse: false,
+            key: 1,
+            loc_bits: [0x3fe8_0000_0000_0003, 0x3ff4_c8dc_2e42_3980],
+            angle_bits: 0x4000_c152_382d_7366,
+            previous: 0,
+            next: 2,
+        },
+        ExpectedRow {
+            shape: "H6",
+            reverse: false,
+            key: 2,
+            loc_bits: [0xbfe7_ffff_ffff_fffe, 0x3ff4_c8dc_2e42_3981],
+            angle_bits: 0x4000_c152_382d_7366,
+            previous: 1,
+            next: 4,
+        },
+        ExpectedRow {
+            shape: "H6",
+            reverse: false,
+            key: 4,
+            loc_bits: [0xbff8_0000_0000_0001, 0x3caa_7939_4c9e_8a0c],
+            angle_bits: 0x4000_c152_382d_7366,
+            previous: 2,
+            next: 6,
+        },
+        ExpectedRow {
+            shape: "H6",
+            reverse: false,
+            key: 6,
+            loc_bits: [0xbfe8_0000_0000_0007, 0xbff4_c8dc_2e42_397f],
+            angle_bits: 0x4000_c152_382d_7366,
+            previous: 4,
+            next: 7,
+        },
+        ExpectedRow {
+            shape: "H6",
+            reverse: false,
+            key: 7,
+            loc_bits: [0x3fe7_ffff_ffff_fff8, 0xbff4_c8dc_2e42_3983],
+            angle_bits: 0x4000_c152_382d_7366,
+            previous: 6,
+            next: 0,
+        },
+        ExpectedRow {
+            shape: "H6",
+            reverse: true,
+            key: 0,
+            loc_bits: [0x3fe7_ffff_ffff_fff8, 0xbff4_c8dc_2e42_3983],
+            angle_bits: 0x4000_c152_382d_7366,
+            previous: 1,
+            next: 7,
+        },
+        ExpectedRow {
+            shape: "H6",
+            reverse: true,
+            key: 1,
+            loc_bits: [0xbfe8_0000_0000_0007, 0xbff4_c8dc_2e42_397f],
+            angle_bits: 0x4000_c152_382d_7366,
+            previous: 2,
+            next: 0,
+        },
+        ExpectedRow {
+            shape: "H6",
+            reverse: true,
+            key: 2,
+            loc_bits: [0xbff8_0000_0000_0001, 0x3caa_7939_4c9e_8a0c],
+            angle_bits: 0x4000_c152_382d_7366,
+            previous: 4,
+            next: 1,
+        },
+        ExpectedRow {
+            shape: "H6",
+            reverse: true,
+            key: 4,
+            loc_bits: [0xbfe7_ffff_ffff_fffe, 0x3ff4_c8dc_2e42_3981],
+            angle_bits: 0x4000_c152_382d_7366,
+            previous: 6,
+            next: 2,
+        },
+        ExpectedRow {
+            shape: "H6",
+            reverse: true,
+            key: 6,
+            loc_bits: [0x3fe8_0000_0000_0003, 0x3ff4_c8dc_2e42_3980],
+            angle_bits: 0x4000_c152_382d_7366,
+            previous: 7,
+            next: 4,
+        },
+        ExpectedRow {
+            shape: "H6",
+            reverse: true,
+            key: 7,
+            loc_bits: [0x3ff8_0000_0000_0001, 0x0000_0000_0000_0000],
+            angle_bits: 0x4000_c152_382d_7366,
+            previous: 0,
+            next: 6,
+        },
+    ];
+
+    #[derive(Debug, PartialEq, Eq)]
+    struct AtomFields {
+        aid: usize,
+        angle_bits: u64,
+        nbr1: Option<usize>,
+        nbr2: Option<usize>,
+        cis_trans_nbr: Option<usize>,
+        ccw: bool,
+        rot_dir: i32,
+        loc_bits: [u64; 2],
+        normal_bits: [u64; 2],
+        neighs: Vec<usize>,
+        density_bits: u64,
+        fixed: bool,
+    }
+
+    #[derive(Debug, PartialEq, Eq)]
+    struct FragmentFields {
+        rows: Vec<(usize, AtomFields)>,
+        attachment_points: Vec<usize>,
+        done: bool,
+        topology_identity: bool,
+        rings_identity: bool,
+    }
+
+    fn rows_for(shape: &RingShape, reverse: bool) -> Vec<ExpectedRow> {
+        let mut rows: Vec<_> = NATIVE_ROWS
+            .iter()
+            .copied()
+            .filter(|row| row.shape == shape.name && row.reverse == reverse)
+            .collect();
+        rows.sort_by_key(|row| row.key);
+        rows
+    }
+
+    fn traversal_for(shape: &RingShape, reverse: bool) -> Vec<usize> {
+        let mut traversal = shape.forward.to_vec();
+        if reverse {
+            traversal.reverse();
+        }
+        traversal
+    }
+
+    fn topology_for(shape: &RingShape) -> TopologyBlock {
+        let atoms = (0..8)
+            .map(|index| Atom::from_spec(AtomId::new(index), AtomSpec::new(Element::C)))
+            .collect();
+        let bonds = shape
+            .forward
+            .iter()
+            .copied()
+            .enumerate()
+            .map(|(index, begin)| {
+                let end = shape.forward[(index + 1) % shape.forward.len()];
+                Bond::from_spec(
+                    BondId::new(index),
+                    BondSpec::new(AtomId::new(begin), AtomId::new(end), BondOrder::Single),
+                )
+            })
+            .collect();
+        TopologyBlock::try_from_parts(atoms, bonds, Vec::new(), Vec::new())
+            .expect("frozen single-bond cycle is a valid topology")
+    }
+
+    fn empty_rings(topology: &TopologyBlock) -> RingInfo {
+        RingInfo::new(
+            RingFindType::OtherOrUnknown,
+            topology.atoms.len(),
+            topology.bonds.len(),
+        )
+    }
+
+    fn ring_shape(rings: &RingInfo) -> (bool, RingFindType, usize, usize) {
+        (
+            rings.is_initialized(),
+            rings.find_type(),
+            rings.atom_row_count(),
+            rings.bond_row_count(),
+        )
+    }
+
+    fn point_map_for_rows(rows: &[ExpectedRow]) -> PointMap {
+        rows.iter()
+            .map(|row| {
+                (
+                    row.key,
+                    [
+                        f64::from_bits(row.loc_bits[0]),
+                        f64::from_bits(row.loc_bits[1]),
+                    ],
+                )
+            })
+            .collect()
+    }
+
+    fn point_map_bits(points: &PointMap) -> Vec<(usize, [u64; 2])> {
+        points
+            .iter()
+            .map(|(&key, point)| (key, point.map(f64::to_bits)))
+            .collect()
+    }
+
+    fn atom_fields(atom: &EmbeddedAtom) -> AtomFields {
+        AtomFields {
+            aid: atom.aid,
+            angle_bits: atom.angle.to_bits(),
+            nbr1: atom.nbr1,
+            nbr2: atom.nbr2,
+            cis_trans_nbr: atom.cis_trans_nbr,
+            ccw: atom.ccw,
+            rot_dir: atom.rot_dir,
+            loc_bits: atom.loc.map(f64::to_bits),
+            normal_bits: atom.normal.map(f64::to_bits),
+            neighs: atom.neighs.clone(),
+            density_bits: atom.density.to_bits(),
+            fixed: atom.fixed,
+        }
+    }
+
+    fn fragment_fields(
+        fragment: &EmbeddedFrag<'_>,
+        topology: &TopologyBlock,
+        rings: &RingInfo,
+    ) -> FragmentFields {
+        FragmentFields {
+            rows: fragment
+                .atoms
+                .iter()
+                .map(|(&key, atom)| (key, atom_fields(atom)))
+                .collect(),
+            attachment_points: fragment.attachment_points.clone(),
+            done: fragment.done,
+            topology_identity: std::ptr::eq(fragment.topology, topology),
+            rings_identity: std::ptr::eq(fragment.rings, rings),
+        }
+    }
+
+    fn native_atom_fields(row: &ExpectedRow, aid: usize) -> AtomFields {
+        AtomFields {
+            aid,
+            angle_bits: row.angle_bits,
+            nbr1: Some(row.previous),
+            nbr2: Some(row.next),
+            cis_trans_nbr: None,
+            ccw: true,
+            rot_dir: 0,
+            loc_bits: row.loc_bits,
+            normal_bits: [0, 0],
+            neighs: Vec::new(),
+            density_bits: NEG_ONE_BITS,
+            fixed: false,
+        }
+    }
+
+    fn seeded_atom(aid: usize) -> EmbeddedAtom {
+        let mut atom = EmbeddedAtom::source_default();
+        atom.aid = aid;
+        atom.loc = [32.0, -32.0];
+        atom.angle = 6.0;
+        atom.nbr1 = Some(0);
+        atom.nbr2 = Some(7);
+        atom.cis_trans_nbr = Some(2);
+        atom.ccw = false;
+        atom.rot_dir = -1;
+        atom.normal = [-0.0, 8.0];
+        atom.neighs = vec![0, 7];
+        atom.density = 4.0;
+        atom.fixed = true;
+        atom
+    }
+
+    fn seeded_atom_fields(aid: usize) -> AtomFields {
+        AtomFields {
+            aid,
+            angle_bits: 6.0_f64.to_bits(),
+            nbr1: Some(0),
+            nbr2: Some(7),
+            cis_trans_nbr: Some(2),
+            ccw: false,
+            rot_dir: -1,
+            loc_bits: [32.0_f64.to_bits(), (-32.0_f64).to_bits()],
+            normal_bits: [(-0.0_f64).to_bits(), 8.0_f64.to_bits()],
+            neighs: vec![0, 7],
+            density_bits: 4.0_f64.to_bits(),
+            fixed: true,
+        }
+    }
+
+    fn smallest_unvisited(ring: &[usize]) -> usize {
+        (0..8)
+            .find(|candidate| !ring.contains(candidate))
+            .expect("every frozen cycle leaves an unvisited atom")
+    }
+
+    fn expected_private_fragment(
+        rows: &[ExpectedRow],
+        seeded: bool,
+        sentinel: Option<usize>,
+        topology_identity: bool,
+        rings_identity: bool,
+    ) -> FragmentFields {
+        let mut expected_rows: Vec<_> = rows
+            .iter()
+            .map(|row| {
+                let aid = if seeded { 7 - row.key } else { 0 };
+                (row.key, native_atom_fields(row, aid))
+            })
+            .collect();
+        if let Some(key) = sentinel {
+            expected_rows.push((key, seeded_atom_fields(7 - key)));
+        }
+        expected_rows.sort_by_key(|(key, _)| *key);
+        FragmentFields {
+            rows: expected_rows,
+            attachment_points: if seeded { vec![7, 0] } else { Vec::new() },
+            done: seeded,
+            topology_identity,
+            rings_identity,
+        }
+    }
+
+    fn expected_seed_start(
+        ring: &[usize],
+        sentinel: usize,
+        topology_identity: bool,
+        rings_identity: bool,
+    ) -> FragmentFields {
+        let mut rows: Vec<_> = ring
+            .iter()
+            .copied()
+            .map(|key| (key, seeded_atom_fields(7 - key)))
+            .collect();
+        rows.push((sentinel, seeded_atom_fields(7 - sentinel)));
+        rows.sort_by_key(|(key, _)| *key);
+        FragmentFields {
+            rows,
+            attachment_points: vec![7, 0],
+            done: true,
+            topology_identity,
+            rings_identity,
+        }
+    }
+
+    #[test]
+    fn d2_ring_init_source_assignment_private_defaults_and_existing_rows() {
+        let mut calls = 0;
+        let mut visited_rows = 0;
+        let mut total_rows = 0;
+        let mut empty_aid_mismatches = Vec::new();
+        let mut seeded_aid_mismatches = Vec::new();
+        let mut mismatches = Vec::new();
+
+        for repeat in 0..2 {
+            for shape in SHAPES {
+                for reverse in [false, true] {
+                    let ring = traversal_for(&shape, reverse);
+                    let rows = rows_for(&shape, reverse);
+                    if rows.len() != ring.len() {
+                        mismatches.push(format!(
+                            "repeat {repeat}, {} reverse={reverse}: native row table has {}, ring has {}",
+                            shape.name,
+                            rows.len(),
+                            ring.len()
+                        ));
+                    }
+                    let point_map = point_map_for_rows(&rows);
+                    let sentinel = smallest_unvisited(&ring);
+
+                    for seeded in [false, true] {
+                        let topology = topology_for(&shape);
+                        let rings = empty_rings(&topology);
+                        let topology_before = topology.clone();
+                        let rings_before = rings.clone();
+                        let ring_shape_before = ring_shape(&rings);
+                        let ring_before = ring.clone();
+                        let call_points = point_map.clone();
+                        let points_before = point_map_bits(&call_points);
+                        let mut fragment = EmbeddedFrag {
+                            atoms: BTreeMap::new(),
+                            attachment_points: Vec::new(),
+                            done: false,
+                            topology: &topology,
+                            rings: &rings,
+                        };
+                        if seeded {
+                            for &key in &ring {
+                                fragment.atoms.insert(key, seeded_atom(7 - key));
+                            }
+                            fragment.atoms.insert(sentinel, seeded_atom(7 - sentinel));
+                            fragment.attachment_points = vec![7, 0];
+                            fragment.done = true;
+                        }
+
+                        let start = fragment_fields(&fragment, &topology, &rings);
+                        let expected_start = if seeded {
+                            expected_seed_start(&ring, sentinel, true, true)
+                        } else {
+                            FragmentFields {
+                                rows: Vec::new(),
+                                attachment_points: Vec::new(),
+                                done: false,
+                                topology_identity: true,
+                                rings_identity: true,
+                            }
+                        };
+                        if start != expected_start {
+                            mismatches.push(format!(
+                                "repeat {repeat}, {} reverse={reverse} seeded={seeded}: constructed input fragment differs; expected {expected_start:?}, got {start:?}",
+                                shape.name
+                            ));
+                        }
+
+                        fragment.init_from_ring_coords(&ring, &call_points);
+                        calls += 1;
+                        visited_rows += ring.len();
+
+                        // Check every input immediately after the call and
+                        // before inspecting the resulting fragment rows.
+                        if topology != topology_before {
+                            mismatches.push(format!(
+                                "repeat {repeat}, {} reverse={reverse} seeded={seeded}: topology changed",
+                                shape.name
+                            ));
+                        }
+                        if rings != rings_before || ring_shape(&rings) != ring_shape_before {
+                            mismatches.push(format!(
+                                "repeat {repeat}, {} reverse={reverse} seeded={seeded}: RingInfo state changed",
+                                shape.name
+                            ));
+                        }
+                        if ring != ring_before {
+                            mismatches.push(format!(
+                                "repeat {repeat}, {} reverse={reverse} seeded={seeded}: traversal changed",
+                                shape.name
+                            ));
+                        }
+                        if point_map_bits(&call_points) != points_before {
+                            mismatches.push(format!(
+                                "repeat {repeat}, {} reverse={reverse} seeded={seeded}: native-coordinate PointMap changed",
+                                shape.name
+                            ));
+                        }
+
+                        if !std::ptr::eq(fragment.topology, &topology)
+                            || !std::ptr::eq(fragment.rings, &rings)
+                        {
+                            mismatches.push(format!(
+                                "repeat {repeat}, {} reverse={reverse} seeded={seeded}: borrowed topology/RingInfo identity changed",
+                                shape.name
+                            ));
+                        }
+                        let observed = fragment_fields(&fragment, &topology, &rings);
+                        total_rows += observed.rows.len();
+                        let expected = expected_private_fragment(
+                            &rows,
+                            seeded,
+                            seeded.then_some(sentinel),
+                            true,
+                            true,
+                        );
+                        if observed != expected {
+                            mismatches.push(format!(
+                                "repeat {repeat}, {} reverse={reverse} seeded={seeded}: expected complete fragment {expected:?}, got {observed:?}",
+                                shape.name
+                            ));
+                        }
+                        for row in &rows {
+                            if let Some((_, atom)) =
+                                observed.rows.iter().find(|(key, _)| *key == row.key)
+                            {
+                                let expected_aid = if seeded { 7 - row.key } else { 0 };
+                                if atom.aid != expected_aid {
+                                    let message = format!(
+                                        "repeat {repeat}, {} reverse={reverse}: key {}, expected destination payload aid {expected_aid}, got {}",
+                                        shape.name, row.key, atom.aid
+                                    );
+                                    if seeded {
+                                        seeded_aid_mismatches.push(message);
+                                    } else {
+                                        empty_aid_mismatches.push(message);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if calls != 32 {
+            mismatches.push(format!(
+                "actual private call count expected 32, got {calls}"
+            ));
+        }
+        if visited_rows != 144 {
+            mismatches.push(format!(
+                "actual private visited-row count expected 144, got {visited_rows}"
+            ));
+        }
+        if total_rows != 160 {
+            mismatches.push(format!(
+                "actual private returned-row count including sentinels expected 160, got {total_rows}"
+            ));
+        }
+        assert!(
+            mismatches.is_empty(),
+            "actual calls={calls}, visited rows={visited_rows}, returned rows={total_rows}; payload aid mismatches: empty={} (source-predicted pre-fix 64), seeded={} (source-predicted pre-fix 72):\n{}\nempty aid mismatches:\n{}\nseeded aid mismatches:\n{}",
+            empty_aid_mismatches.len(),
+            seeded_aid_mismatches.len(),
+            mismatches.join("\n"),
+            empty_aid_mismatches.join("\n"),
+            seeded_aid_mismatches.join("\n")
+        );
+    }
+
+    #[test]
+    fn d2_ring_init_source_assignment_fused_ring_caller_matches_native_rows() {
+        let mut calls = 0;
+        let mut rows = 0;
+        let mut payload_aid_mismatches = Vec::new();
+        let mut mismatches = Vec::new();
+
+        for repeat in 0..2 {
+            for shape in SHAPES {
+                for reverse in [false, true] {
+                    let ring = traversal_for(&shape, reverse);
+                    let expected_rows = rows_for(&shape, reverse);
+                    if expected_rows.len() != ring.len() {
+                        mismatches.push(format!(
+                            "repeat {repeat}, {} reverse={reverse}: native row table has {}, ring has {}",
+                            shape.name,
+                            expected_rows.len(),
+                            ring.len()
+                        ));
+                    }
+                    let topology = topology_for(&shape);
+                    let rings = empty_rings(&topology);
+                    let fused_rings = vec![ring.clone()];
+                    let topology_before = topology.clone();
+                    let rings_before = rings.clone();
+                    let ring_shape_before = ring_shape(&rings);
+                    let fused_rings_before = fused_rings.clone();
+                    let mut templates = CoordinateTemplates::default();
+                    let templates_before = templates.template_count();
+
+                    let result = EmbeddedFrag::from_fused_rings(
+                        &topology,
+                        &rings,
+                        &fused_rings,
+                        false,
+                        &mut templates,
+                    );
+                    calls += 1;
+
+                    // Compare caller inputs before matching or inspecting the
+                    // returned fragment.
+                    if topology != topology_before {
+                        mismatches.push(format!(
+                            "repeat {repeat}, {} reverse={reverse}: topology changed",
+                            shape.name
+                        ));
+                    }
+                    if rings != rings_before || ring_shape(&rings) != ring_shape_before {
+                        mismatches.push(format!(
+                            "repeat {repeat}, {} reverse={reverse}: RingInfo state changed",
+                            shape.name
+                        ));
+                    }
+                    if fused_rings != fused_rings_before {
+                        mismatches.push(format!(
+                            "repeat {repeat}, {} reverse={reverse}: ring traversal input changed",
+                            shape.name
+                        ));
+                    }
+                    let templates_after = templates.template_count();
+                    if templates_before != 0 || templates_after != 0 {
+                        mismatches.push(format!(
+                            "repeat {repeat}, {} reverse={reverse}: default template count changed from {templates_before} to {templates_after}",
+                            shape.name
+                        ));
+                    }
+
+                    match result.as_ref() {
+                        Ok(fragment) => {
+                            let observed = fragment_fields(fragment, &topology, &rings);
+                            rows += observed.rows.len();
+                            let expected = FragmentFields {
+                                rows: expected_rows
+                                    .iter()
+                                    .map(|row| (row.key, native_atom_fields(row, 0)))
+                                    .collect(),
+                                attachment_points: Vec::new(),
+                                done: false,
+                                topology_identity: true,
+                                rings_identity: true,
+                            };
+                            if observed != expected {
+                                mismatches.push(format!(
+                                    "repeat {repeat}, {} reverse={reverse}: expected complete caller fragment {expected:?}, got {observed:?}",
+                                    shape.name
+                                ));
+                            }
+                            for row in &expected_rows {
+                                if let Some((_, atom)) = observed
+                                    .rows
+                                    .iter()
+                                    .find(|(key, _)| *key == row.key)
+                                {
+                                    if atom.aid != 0 {
+                                        payload_aid_mismatches.push(format!(
+                                            "repeat {repeat}, {} reverse={reverse}: key {}, expected destination payload aid 0, got {}",
+                                            shape.name, row.key, atom.aid
+                                        ));
+                                    }
+                                }
+                            }
+                        }
+                        Err(error) => mismatches.push(format!(
+                            "repeat {repeat}, {} reverse={reverse}: expected success, got {error:?}",
+                            shape.name
+                        )),
+                    }
+                }
+            }
+        }
+
+        if calls != 16 {
+            mismatches.push(format!("actual caller call count expected 16, got {calls}"));
+        }
+        if rows != 72 {
+            mismatches.push(format!(
+                "actual caller returned-row count expected 72, got {rows}"
+            ));
+        }
+        assert!(
+            mismatches.is_empty(),
+            "actual calls={calls}, returned rows={rows}; caller payload aid mismatches={} (source-predicted pre-fix count 64):\n{}\nall aid mismatches:\n{}",
+            payload_aid_mismatches.len(),
+            mismatches.join("\n"),
+            payload_aid_mismatches.join("\n")
+        );
     }
 }

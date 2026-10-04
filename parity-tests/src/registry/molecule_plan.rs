@@ -604,6 +604,7 @@ impl TaskId {
             Self::CipLabels => "cip_labels",
             Self::PotentialStereo => "potential_stereo",
             Self::Coordinates2d => "coordinates_2d",
+            Self::Svg => "svg",
             Self::Valence => "valence",
             Self::DistanceMatrix => "distance_matrix",
             Self::NumHeavyAtoms => "num_heavy_atoms",
@@ -650,7 +651,7 @@ impl TaskId {
             | Self::NumSaturatedHeterocycles
             | Self::NumSaturatedCarbocycles => Category::Descriptors,
             Self::CipLabels | Self::PotentialStereo => Category::Stereo,
-            Self::Coordinates2d => Category::Depiction,
+            Self::Coordinates2d | Self::Svg => Category::Depiction,
             Self::DistanceMatrix => Category::Chemistry,
         }
     }
@@ -703,6 +704,7 @@ pub enum TaskId {
     CipLabels,
     PotentialStereo,
     Coordinates2d,
+    Svg,
     Valence,
     NumHeavyAtoms,
     TotalAtomCount,
@@ -771,6 +773,8 @@ pub enum Profile {
         allow_nontetrahedral: bool,
     },
     Coordinates2dDefault,
+    /// The only drawing profile: 300x300, default source preparation.
+    SvgDefault,
     Valence {
         strict: bool,
     },
@@ -839,6 +843,7 @@ pub enum Comparison {
     TopologyAndOutcome,
     Float64Bits,
     ExactText,
+    SvgText,
     CipLabelsAndOutcome,
     StereoInfoAndCleanedTopology,
     CoordinatesAndTopology,
@@ -1037,6 +1042,12 @@ pub const TASKS: &[Task] = &[
         prerequisite: MolecularPipeline,
     },
     Task {
+        id: Svg,
+        input: SanitizedHydrogensRemoved,
+        comparison: SvgText,
+        prerequisite: MolecularPipeline,
+    },
+    Task {
         id: Valence,
         input: UnsanitizedHydrogensRetained,
         comparison: ValenceRowsAndOutcome,
@@ -1126,6 +1137,7 @@ impl TaskId {
                 })
                 .collect(),
             Coordinates2d => vec![Profile::Coordinates2dDefault],
+            Svg => vec![Profile::SvgDefault],
             Valence => booleans.map(|strict| Profile::Valence { strict }).into(),
             NumHeavyAtoms => booleans
                 .map(|remove_hydrogens| Profile::NumHeavyAtoms { remove_hydrogens })
@@ -1206,7 +1218,7 @@ mod tests {
             // two explicit remove_hydrogens profiles.
             [
                 4, 4, 1, 2, 2, 2, 4, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 4, 8, 1,
-                2
+                1, 2
             ]
         );
         assert_eq!(
@@ -1222,7 +1234,7 @@ mod tests {
     #[test]
     fn molecular_plan_does_not_silently_register_unimplemented_runners() {
         let executable = super::super::select(None).unwrap();
-        assert_eq!(executable.len(), 28);
+        assert_eq!(executable.len(), 29);
         assert_eq!(executable[0].operation, super::super::Operation::FuzzyAnd);
         assert_eq!(executable[1].operation, super::super::Operation::FuzzyOr);
     }

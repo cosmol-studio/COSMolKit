@@ -21,9 +21,11 @@ pub use cosmolkit_fingerprints::{
 #[cfg(feature = "cap-descriptors")]
 mod descriptors;
 #[cfg(feature = "cap-depict")]
+mod drawing;
+#[cfg(feature = "cap-depict")]
 pub use cosmolkit_depict::{
     Compute2DCoordinatesParams as Coordinate2DParams, Coordinate2DLayoutError,
-    Coordinate2DTemplateError, DepictError as Coordinate2DError,
+    Coordinate2DTemplateError, DepictError as Coordinate2DError, DrawingError,
 };
 #[cfg(feature = "cap-descriptors")]
 pub use cosmolkit_descriptors::DescriptorError;

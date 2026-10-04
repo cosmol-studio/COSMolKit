@@ -1,0 +1,31 @@
+<?xml version='1.0' encoding='iso-8859-1'?>
+<svg version='1.1' baseProfile='full'
+              xmlns='http://www.w3.org/2000/svg'
+                      xmlns:rdkit='http://www.rdkit.org/xml'
+                      xmlns:xlink='http://www.w3.org/1999/xlink'
+                  xml:space='preserve'
+width='300px' height='300px' viewBox='0 0 300 300'>
+<!-- END OF HEADER -->
+<rect style='opacity:1.0;fill:#FFFFFF;stroke:none' width='300.0' height='300.0' x='0.0' y='0.0'> </rect>
+<path class='bond-0 atom-0 atom-1' d='M 85.5,152.8 L 265.0,152.8' style='fill:none;fill-rule:evenodd;stroke:#000000;stroke-width:2.0px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1' />
+<!-- annotation class=note -->
+<text x='41.7' y='122.9' text-anchor='middle' dominant-baseline='central' fill='#0000FF' font-family='Noto Sans' font-size='32px' dy='0'>a</text>
+<text x='56.4' y='122.9' text-anchor='middle' dominant-baseline='central' fill='#0000FF' font-family='Noto Sans' font-size='32px' dy='0'>t</text>
+<text x='63.8' y='122.9' text-anchor='middle' dominant-baseline='central' fill='#0000FF' font-family='Noto Sans' font-size='32px' dy='0'>o</text>
+<text x='78.5' y='122.9' text-anchor='middle' dominant-baseline='central' fill='#0000FF' font-family='Noto Sans' font-size='32px' dy='0'>m</text>
+<text x='100.6' y='122.9' text-anchor='middle' dominant-baseline='central' fill='#0000FF' font-family='Noto Sans' font-size='32px' dy='0'>_</text>
+<text x='115.3' y='122.9' text-anchor='middle' dominant-baseline='central' fill='#0000FF' font-family='Noto Sans' font-size='32px' dy='0'>A</text>
+<!-- annotation class=note -->
+<text x='120.4' y='170.7' text-anchor='middle' dominant-baseline='central' fill='#FF0000' font-family='Noto Sans' font-size='32px' dy='0'>b</text>
+<text x='138.8' y='170.7' text-anchor='middle' dominant-baseline='central' fill='#FF0000' font-family='Noto Sans' font-size='32px' dy='0'>o</text>
+<text x='157.2' y='170.7' text-anchor='middle' dominant-baseline='central' fill='#FF0000' font-family='Noto Sans' font-size='32px' dy='0'>n</text>
+<text x='175.7' y='170.7' text-anchor='middle' dominant-baseline='central' fill='#FF0000' font-family='Noto Sans' font-size='32px' dy='0'>d</text>
+<text x='194.1' y='170.7' text-anchor='middle' dominant-baseline='central' fill='#FF0000' font-family='Noto Sans' font-size='32px' dy='0'>_</text>
+<text x='212.5' y='170.7' text-anchor='middle' dominant-baseline='central' fill='#FF0000' font-family='Noto Sans' font-size='32px' dy='0'>B</text>
+<!-- annotation class=molnote -->
+<text x='81.3' y='256.5' text-anchor='middle' dominant-baseline='central' fill='#000000' font-family='Noto Sans' font-size='32px' dy='0'>m</text>
+<text x='103.4' y='256.5' text-anchor='middle' dominant-baseline='central' fill='#000000' font-family='Noto Sans' font-size='32px' dy='0'>o</text>
+<text x='118.2' y='256.5' text-anchor='middle' dominant-baseline='central' fill='#000000' font-family='Noto Sans' font-size='32px' dy='0'>l</text>
+<text x='124.0' y='256.5' text-anchor='middle' dominant-baseline='central' fill='#000000' font-family='Noto Sans' font-size='32px' dy='0'>_</text>
+<text x='138.8' y='256.5' text-anchor='middle' dominant-baseline='central' fill='#000000' font-family='Noto Sans' font-size='32px' dy='0'>C</text>
+</svg>

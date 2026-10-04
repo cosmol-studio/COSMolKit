@@ -2611,6 +2611,38 @@ binding_contract! {
                 &'b crate::Coordinate2DParams,
             ) -> Result<crate::Molecule, crate::OperationError>,
         },
+        #[cfg(feature = "cap-depict")]
+        {
+            semantic_id: "types.DrawingError", item: type, owner: type_,
+            rust: crate::DrawingError, python: "DrawingError", javascript: "DrawingError",
+            feature: "cap-depict", status: experimental, role: error,
+        },
+        #[cfg(feature = "cap-depict")]
+        {
+            semantic_id: "Molecule.to_svg", item: callable, owner: molecule,
+            rust: crate::Molecule::to_svg, python: "to_svg", javascript: "toSvg",
+            feature: "cap-depict", status: experimental, kind: instance,
+            parameters: [
+                { name: width, type: u32, default: required },
+                { name: height, type: u32, default: required },
+            ],
+            output: String, error: crate::DrawingError,
+            state: read_only, operation: none,
+            signature: fn(&crate::Molecule, u32, u32) -> Result<String, crate::DrawingError>,
+        },
+        #[cfg(feature = "cap-depict")]
+        {
+            semantic_id: "Molecule.to_png", item: callable, owner: molecule,
+            rust: crate::Molecule::to_png, python: "to_png", javascript: "toPng",
+            feature: "cap-depict", status: experimental, kind: instance,
+            parameters: [
+                { name: width, type: u32, default: required },
+                { name: height, type: u32, default: required },
+            ],
+            output: Vec<u8>, error: crate::DrawingError,
+            state: read_only, operation: none,
+            signature: fn(&crate::Molecule, u32, u32) -> Result<Vec<u8>, crate::DrawingError>,
+        },
         // CORE-transforms public projection delegates to the single detached
         // owner through the generated coordinate-operation runtime.
         #[cfg(feature = "cap-transforms")]

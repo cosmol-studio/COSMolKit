@@ -1,0 +1,14 @@
+{
+  "atom_specs": [],
+  "atoms": [],
+  "bonds": [],
+  "computed_rings": "RingInfo {\n    initialized: true,\n    find_type: Sssr,\n    atom_members: [],\n    bond_members: [],\n    atom_rings: [],\n    bond_rings: [],\n    atom_ring_families: [],\n    bond_ring_families: [],\n    relevant_cycle_count: None,\n    fused_rings: [],\n    num_fused_bonds: [],\n}",
+  "computed_valence": "ValenceAssignment {\n    explicit_valence: [],\n    implicit_hydrogens: [],\n}",
+  "coordinate_bits": [],
+  "coordinates": [],
+  "height": 300,
+  "label": "empty",
+  "properties": "MoleculeProperties {\n    name: None,\n    sdf_data_fields: [],\n    sdf_property_lists: [],\n    props: {},\n    computed_props: {},\n}",
+  "source_snapshot": "Molecule {\n    topology: TopologyBlock {\n        atoms: [],\n        bonds: [],\n        adjacency: AdjacencyList {\n            offsets: [\n                0,\n            ],\n            entries: [],\n        },\n        substance_groups: [],\n        stereo_groups: [],\n    },\n    coordinates: CoordinateBlock {\n        conformers_2d: [\n            Conformer2D {\n                id: 0,\n                coords: [],\n                props: {},\n            },\n        ],\n        conformers_3d: [],\n        source_coordinate_dim: Some(\n            TwoD,\n        ),\n    },\n    properties: MoleculeProperties {\n        name: None,\n        sdf_data_fields: [],\n        sdf_property_lists: [],\n        props: {},\n        computed_props: {},\n    },\n    derived_cache: DerivedCacheBlock {\n        rings: None,\n        ring_families: None,\n        valence: None,\n        aromaticity_valid: false,\n        stereo_valid: false,\n    },\n    capabilities: MoleculeCapabilities {\n        topology_trust: TrustedGraph,\n    },\n    computed_properties: ComputedPropertyCache {\n        crippen: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        crippen_atom_contributions: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        connectivity_hk_deltas: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        connectivity_n_vals: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        labute: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        topological_distance_matrix: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n        distance_matrices_3d: RwLock {\n            data: {},\n            poisoned: false,\n            ..\n        },\n        potential_stereo: RwLock {\n            data: None,\n            poisoned: false,\n            ..\n        },\n    },\n}",
+  "width": 300
+}

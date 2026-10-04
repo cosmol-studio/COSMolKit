@@ -22,9 +22,12 @@ use crate::geometry::{GeometryError, PointMap, atom_depict_rank};
 use crate::nontetrahedral::embed_nontetrahedral_stereo;
 use crate::templates::{CoordinateTemplates, TemplateError};
 
+mod draw;
+mod draw_prepare;
 mod embedded_frag;
 mod geometry;
 mod nontetrahedral;
+mod raster;
 mod templates;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -868,12 +871,38 @@ pub fn layout_2d(
     })
 }
 
+pub use draw::DrawingError;
+
+/// Borrowed input to detached drawing preparation. Stored 2D layouts take
+/// priority; missing 2D is generated without replacing stored 3D conformers.
+pub struct DrawingInput<'a> {
+    pub topology: &'a TopologyBlock,
+    pub coordinates: &'a CoordinateBlock,
+    pub properties: &'a cosmolkit_model::MoleculeProperties,
+    pub valence: Option<&'a cosmolkit_core::ValenceAssignment>,
+    pub rings: Option<&'a cosmolkit_core::RingInfo>,
+}
+
 pub fn render_svg(
-    _topology: &TopologyBlock,
-    _coordinates: &CoordinateBlock,
-    _options: &DepictOptions,
-) -> Result<String, DepictError> {
-    Err(DepictError::CoordGenUnavailable)
+    input: DrawingInput<'_>,
+    options: &DepictOptions,
+) -> Result<String, DrawingError> {
+    if options.width == 0 || options.height == 0 {
+        return Err(DrawingError::InvalidDimensions {
+            width: options.width,
+            height: options.height,
+        });
+    }
+    let prepared = draw_prepare::prepare(input)?;
+    draw::render_prepared_svg(&prepared.borrow(), options.width, options.height)
+}
+
+pub fn render_png(
+    input: DrawingInput<'_>,
+    options: &DepictOptions,
+) -> Result<Vec<u8>, DrawingError> {
+    let svg = render_svg(input, options)?;
+    raster::svg_to_png(&svg)
 }
 
 #[cfg(test)]

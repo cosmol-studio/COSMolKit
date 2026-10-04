@@ -5,9 +5,10 @@ edition.workspace = true
 license.workspace = true
 authors.workspace = true
 publish = false
+autobins = false
 
 [lib]
-name = "cosmolkit"
+name = "cosmolkit_py"
 crate-type = ["cdylib", "rlib"]
 doc = false
 
@@ -23,11 +24,12 @@ num-bigint = "0.5.1"
 
 [features]
 default = ["release-abi3-py39"]
+drawing-bindings = []
 extension-module = ["pyo3/macros", "pyo3/extension-module"]
 release-abi3-py39 = ["extension-module", "pyo3/abi3-py39"]
 dev-abi3-py310 = ["extension-module", "pyo3/abi3-py310"]
 stubgen = ["dep:pyo3-stub-gen"]
-dev-stub = ["dev-abi3-py310", "stubgen"]
+dev-stub = ["pyo3/macros", "pyo3/abi3-py310", "stubgen", "pyo3-stub-gen/infer_signature"]
 
 [[bin]]
 name = "stub_gen"

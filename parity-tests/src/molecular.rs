@@ -144,6 +144,7 @@ pub fn validate_output(profile: &Profile, output: &Outcome) -> Result<(), String
             f64::from_bits(*bits).is_finite()
         }
         (MolecularFormula { .. }, Outcome::Text(_)) => true,
+        (SvgDefault, Outcome::Text(svg)) => svg.contains("<svg") && svg.contains("</svg>"),
         (NumHeavyAtoms { .. }, Outcome::Unsigned(_)) => true,
         (TotalAtomCount { .. }, Outcome::Unsigned(_)) => true,
         (LipinskiHBA { .. } | LipinskiHBD { .. }, Outcome::Unsigned(_)) => true,
@@ -250,6 +251,12 @@ pub fn run(input: &Input) -> Result<Record, String> {
         stage = Stage::Operation;
         use Profile::*;
         let transformed = match profile {
+            SvgDefault => {
+                return mol
+                    .to_svg(300, 300)
+                    .map(Outcome::Text)
+                    .map_err(|e| e.to_string());
+            }
             DistanceMatrix {
                 use_bond_order,
                 use_atom_weights,
@@ -491,4 +498,24 @@ pub fn matches(expected: &Outcome, actual: &Outcome) -> bool {
         }
         _ => expected == actual,
     }
+}
+
+/// Only the four literal tool-identifier substitutions from the old SVG test.
+pub fn svg_matches(expected: &Outcome, actual: &Outcome) -> bool {
+    let (Outcome::Text(expected), Outcome::Text(actual)) = (expected, actual) else {
+        return false;
+    };
+    fn normalize(svg: &str) -> String {
+        svg.replace(
+            "xmlns:rdkit='http://www.rdkit.org/xml'",
+            "xmlns:tool='__tool_namespace__'",
+        )
+        .replace(
+            "xmlns:cosmolkit='https://www.cosmol.org'",
+            "xmlns:tool='__tool_namespace__'",
+        )
+        .replace("rdkit:", "tool:")
+        .replace("cosmolkit:", "tool:")
+    }
+    normalize(expected) == normalize(actual)
 }

@@ -475,7 +475,17 @@ fn compare_rows<'a>(
         });
         let matches = match (&reference.output, &actual) {
             (registry::Value::Molecular(expected), Ok(registry::Value::Molecular(actual))) => {
-                molecular::matches(expected, actual)
+                if matches!(
+                    &reference.input,
+                    Input::Molecular {
+                        profile: registry::molecule_plan::Profile::SvgDefault,
+                        ..
+                    }
+                ) {
+                    molecular::svg_matches(expected, actual)
+                } else {
+                    molecular::matches(expected, actual)
+                }
             }
             _ => actual.as_ref() == Ok(&reference.output),
         };

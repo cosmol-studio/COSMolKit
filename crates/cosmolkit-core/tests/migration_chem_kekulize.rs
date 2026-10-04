@@ -68,6 +68,107 @@ fn assert_kekule_ring(topology: &TopologyBlock, ring_bonds: usize, double_bonds:
 }
 
 #[test]
+fn kekulize_source_state_independent_flags_parameter_product() {
+    // Frozen SOURCE-K A48: Kekulize.cpp selection/markDbondCands/finalization
+    // and Atom.cpp isAromaticAtom. False bond flags do not enter makeSingle.
+    let mut calls = 0;
+    let mut outcomes = Vec::new();
+    for graph in 0..3 {
+        for mark_atoms_bonds in [false, true] {
+            for canonical in [false, true] {
+                for max_backtracks in [0, 100] {
+                    for if_possible in [false, true] {
+                        let size = if graph == 0 { 2 } else { 6 };
+                        let input = topology(
+                            (0..size)
+                                .map(|id| {
+                                    let element = if graph == 2 && id == 0 {
+                                        Element::N
+                                    } else {
+                                        Element::C
+                                    };
+                                    atom(id, AtomSpec::new(element).with_aromatic(graph != 0))
+                                })
+                                .collect(),
+                            (0..if graph == 0 { 1 } else { 6 })
+                                .map(|id| {
+                                    bond(
+                                        id,
+                                        BondSpec::new(
+                                            AtomId::new(id),
+                                            AtomId::new((id + 1) % size),
+                                            BondOrder::Aromatic,
+                                        )
+                                        .with_aromatic(false),
+                                    )
+                                })
+                                .collect(),
+                        );
+                        for (id, row) in input.atoms.iter().enumerate() {
+                            assert_eq!(row.id(), AtomId::new(id));
+                            assert_eq!(
+                                row.element(),
+                                if graph == 2 && id == 0 {
+                                    Element::N
+                                } else {
+                                    Element::C
+                                }
+                            );
+                            assert_eq!(row.is_aromatic(), graph != 0);
+                        }
+                        for (id, row) in input.bonds.iter().enumerate() {
+                            assert_eq!(row.id(), BondId::new(id));
+                            assert_eq!(row.begin(), AtomId::new(id));
+                            assert_eq!(row.end(), AtomId::new((id + 1) % size));
+                            assert_eq!(row.order(), BondOrder::Aromatic);
+                            assert!(!row.is_aromatic());
+                        }
+                        let baseline = input.clone();
+                        let mut expected = baseline.clone();
+                        if graph != 0 && mark_atoms_bonds {
+                            for row in &mut expected.atoms {
+                                row.set_aromatic(false);
+                            }
+                        }
+                        let params = KekulizeParams {
+                            mark_atoms_bonds,
+                            canonical,
+                            max_backtracks,
+                        };
+                        let result = if if_possible {
+                            kekulize_if_possible(&input, &params).map(|attempt| match attempt {
+                                KekulizeAttempt::Applied(assignment) => Some(assignment.topology),
+                                KekulizeAttempt::NotKekulizable { .. } => None,
+                            })
+                        } else {
+                            kekulize(&input, &params).map(|assignment| Some(assignment.topology))
+                        };
+                        calls += 1;
+                        assert_eq!(input, baseline, "retained input changed at call {calls}");
+                        outcomes.push((graph, params, if_possible, result, expected));
+                    }
+                }
+            }
+        }
+    }
+    assert_eq!(calls, 48);
+    eprintln!("SOURCE-K A48 actual whole-entry calls: {calls}");
+    let failures = outcomes.into_iter().filter_map(|(graph, params, if_possible, result, expected)| {
+        if result.as_ref().is_ok_and(|output| output.as_ref() == Some(&expected)) {
+            None
+        } else {
+            Some(format!("graph={graph}, params={params:?}, if_possible={if_possible}: {result:?}; expected={expected:?}"))
+        }
+    }).collect::<Vec<_>>();
+    assert!(
+        failures.is_empty(),
+        "{} of 48 source rows failed:\n{}",
+        failures.len(),
+        failures.join("\n")
+    );
+}
+
+#[test]
 fn public_defaults_empty_and_nonaromatic_inputs_are_exact_noops() {
     assert_eq!(
         KekulizeParams::default(),
@@ -372,19 +473,17 @@ fn malformed_aromatic_query_and_topology_errors_are_exact_and_not_swallowed() {
             BondSpec::new(AtomId::new(0), AtomId::new(1), BondOrder::Aromatic),
         )],
     );
-    for result in [
-        kekulize(&inconsistent, &KekulizeParams::default()).map(|_| ()),
-        kekulize_if_possible(&inconsistent, &KekulizeParams::default()).map(|_| ()),
-    ] {
-        assert!(matches!(
-            result,
-            Err(KekulizeError::AromaticBondStateMismatch {
-                bond,
-                order: BondOrder::Aromatic,
-                is_aromatic: false,
-            }) if bond == BondId::new(0)
-        ));
-    }
+    // Source accepts independent aromatic order/false flags; preserve the
+    // original literal two-atom input and both whole-entry invocations.
+    let snapshot = inconsistent.clone();
+    let result = kekulize(&inconsistent, &KekulizeParams::default());
+    assert_eq!(inconsistent, snapshot);
+    assert_eq!(result.unwrap().topology, snapshot);
+    let result = kekulize_if_possible(&inconsistent, &KekulizeParams::default());
+    assert_eq!(inconsistent, snapshot);
+    assert!(
+        matches!(result.unwrap(), KekulizeAttempt::Applied(assignment) if assignment.topology == snapshot)
+    );
 
     let compound_query = topology(
         vec![

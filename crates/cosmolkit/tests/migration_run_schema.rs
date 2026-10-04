@@ -219,6 +219,9 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
             "types.Coordinate2DLayoutError",
             "Molecule.with_2d_coordinates",
             "Molecule.with_2d_coordinates_with_params",
+            "types.DrawingError",
+            "Molecule.to_svg",
+            "Molecule.to_png",
         ]);
     }
     if cfg!(feature = "cap-transforms") {
@@ -725,6 +728,53 @@ fn always_present_entries_have_exact_type_and_module_payloads() {
     assert_eq!(callable.error_type, None);
     assert_eq!(callable.state_model, StateModel::ReadOnly);
     assert_eq!(callable.operation_semantic_id, None);
+}
+
+#[cfg(feature = "cap-depict")]
+#[test]
+fn drawing_entries_have_exact_experimental_shared_query_contracts() {
+    let error = entry("types.DrawingError");
+    assert_eq!(error.item, BindingItem::Type);
+    assert_eq!(error.owner, BindingOwner::Type);
+    assert_eq!(error.rust_path.replace(' ', ""), "crate::DrawingError");
+    assert_eq!(error.python_name, "DrawingError");
+    assert_eq!(error.javascript_name, "DrawingError");
+    assert_eq!(error.feature, "cap-depict");
+    assert_eq!(error.status, FunctionStatus::Experimental);
+    assert_eq!(error.type_role, Some(BindingTypeRole::Error));
+    assert_eq!(error.callable, None);
+    for (name, javascript, output) in [
+        ("to_svg", "toSvg", "String"),
+        ("to_png", "toPng", "Vec<u8>"),
+    ] {
+        let row = entry(&format!("Molecule.{name}"));
+        assert_eq!(row.item, BindingItem::Callable);
+        assert_eq!(row.owner, BindingOwner::Molecule);
+        assert_eq!(
+            row.rust_path.replace(' ', ""),
+            format!("crate::Molecule::{name}")
+        );
+        assert_eq!(row.python_name, name);
+        assert_eq!(row.javascript_name, javascript);
+        assert_eq!(row.feature, "cap-depict");
+        assert_eq!(row.status, FunctionStatus::Experimental);
+        let callable = row.callable.unwrap();
+        assert_eq!(callable.kind, BindingKind::Instance);
+        assert_eq!(callable.receiver, Some(cosmolkit::BindingReceiver::Shared));
+        assert_eq!(callable.state_model, StateModel::ReadOnly);
+        assert_eq!(callable.operation_semantic_id, None);
+        assert_eq!(callable.output_type.replace(' ', ""), output);
+        assert_eq!(
+            callable.error_type.unwrap().replace(' ', ""),
+            "crate::DrawingError"
+        );
+        assert_eq!(callable.parameters.len(), 2);
+        for (parameter, expected_name) in callable.parameters.iter().zip(["width", "height"]) {
+            assert_eq!(parameter.name, expected_name);
+            assert_eq!(parameter.type_name, "u32");
+            assert_eq!(parameter.default, BindingDefault::Required);
+        }
+    }
 }
 
 #[cfg(feature = "cap-descriptors")]

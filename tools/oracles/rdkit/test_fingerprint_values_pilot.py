@@ -25,6 +25,7 @@ MATRICES = {
     "add_hydrogens": profiles("AddHydrogens", explicit_only=[False, True]),
     "remove_hydrogens": profiles("RemoveHydrogens", sanitize=[False, True]),
     "coordinates_2d": profiles("Coordinates2dDefault"),
+    "svg": profiles("SvgDefault"),
     "distance_matrix": profiles("DistanceMatrix", use_bond_order=[False, True], use_atom_weights=[False, True]),
     "fuzzy_and": [{"operation": "FuzzyAnd", "width": width} for width in ("U32", "U64")],
     "fuzzy_or": [{"operation": "FuzzyOr", "width": width} for width in ("U32", "U64")],
@@ -70,3 +71,9 @@ def test_empty_work_rejected(name, empty_cases, empty_parameters):
     with pytest.raises(ValueError, match="empty"):
         oracle.GENERATORS["generate_" + name](
             [] if empty_cases else inputs(name), [] if empty_parameters else MATRICES[name], 2)
+
+
+@pytest.mark.parametrize("parameters", [[], ["SvgDefault", "SvgDefault"], ["Coordinates2dDefault"], [{"SvgDefault": {"width": 301}}]])
+def test_svg_rejects_every_nonfrozen_parameter_matrix(parameters):
+    with pytest.raises(ValueError, match="frozen SvgDefault"):
+        oracle.generate_svg(inputs("svg"), parameters, 1)
