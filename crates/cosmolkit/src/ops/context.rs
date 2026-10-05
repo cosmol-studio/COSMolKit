@@ -80,6 +80,7 @@ impl<Access> ResultFinalizer<'_, Access> {
 pub(crate) enum PreservationProof {
     UnchangedInput,
     CoordinateOnly,
+    StableAtomCoordinates,
     StereoCleanup,
     StructureTagAssignment {
         clear_stereochem_done: bool,
@@ -406,6 +407,53 @@ impl<'a, Access> OpParts<'a, Access> {
                 operation: spec.method,
                 block,
             })
+        }
+    }
+
+    /// Restore every write-owned slot before returning an error or unwinding.
+    pub(super) fn with_candidate_blocks_runtime<R>(
+        &mut self,
+        body: impl FnOnce(
+            &mut TopologyBlock,
+            &CoordinateBlock,
+            &mut MoleculeProperties,
+            &mut DerivedCacheBlock,
+        ) -> Result<R, OperationError>,
+    ) -> Result<R, OperationError> {
+        self.ensure_write_access(BlockSet::TOPOLOGY, "topology")?;
+        self.ensure_write_access(BlockSet::PROPERTIES, "properties")?;
+        self.ensure_write_access(BlockSet::DERIVED_CACHE, "derived_cache")?;
+        self.ensure_read_access(BlockSet::COORDINATES, "coordinates")?;
+        // The source coordinate block is borrowed; the Arc clone only keeps
+        // that one immutable allocation alive across restoration/unwind.
+        let coordinates = self.source.coordinates_arc_runtime();
+        let mut topology = self.checkout_topology_runtime()?;
+        let mut properties = match self.checkout_properties_runtime() {
+            Ok(value) => value,
+            Err(error) => {
+                self.topology = WorkingBlock::Installed(topology);
+                return Err(error);
+            }
+        };
+        let mut cache = match self.checkout_derived_cache_runtime() {
+            Ok(value) => value,
+            Err(error) => {
+                self.topology = WorkingBlock::Installed(topology);
+                self.properties = WorkingBlock::Installed(properties);
+                return Err(error);
+            }
+        };
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            body(&mut topology, &coordinates, &mut properties, &mut cache)
+        }));
+        // Restore storage before fallible invariant validation; finish owns
+        // acceptance of these complete detached blocks.
+        self.topology = WorkingBlock::Installed(topology);
+        self.properties = WorkingBlock::Installed(properties);
+        self.derived_cache = WorkingBlock::Installed(cache);
+        match result {
+            Ok(value) => value,
+            Err(payload) => std::panic::resume_unwind(payload),
         }
     }
 
@@ -868,9 +916,13 @@ impl<'a, Access> OpParts<'a, Access> {
                 });
             }
             CipStatePolicy::TautomerSourceTransition
-                if spec.method != "enumerate_tautomers_with_options"
-                    || spec.output != MoleculeOpOutput::Multiple
-                    || !writes_cip_blocks =>
+                if !matches!(
+                    (spec.method, spec.output),
+                    (
+                        "enumerate_tautomers_with_params",
+                        MoleculeOpOutput::Multiple
+                    ) | ("canonical_tautomer_with_params", MoleculeOpOutput::Single)
+                ) || !writes_cip_blocks =>
             {
                 return Err(OperationError::CipStateContract {
                     operation: spec.method,
@@ -1064,6 +1116,42 @@ impl<'a, Access> OpParts<'a, Access> {
                         "preserve",
                         states,
                         "unchanged-input proof failed",
+                    ));
+                }
+            }
+            PreservationProof::StableAtomCoordinates => {
+                let source = self.source.topology();
+                let candidate = self.current_topology_candidate()?;
+                let stable_atoms = source.atoms.len() == candidate.atoms.len()
+                    && source
+                        .atoms
+                        .iter()
+                        .zip(&candidate.atoms)
+                        .all(|(before, after)| {
+                            before.id() == after.id()
+                                && before.atomic_number() == after.atomic_number()
+                        });
+                let unchanged_coordinates =
+                    self.current_coordinates_candidate()? == self.source.coordinate_block_runtime();
+                let unchanged_validity = self
+                    .current_cache_candidate()?
+                    .valid_states()
+                    .intersection(states)
+                    == self
+                        .source
+                        .derived_cache_runtime()
+                        .valid_states()
+                        .intersection(states);
+                if !DerivedState::COORDINATES.contains(states)
+                    || !stable_atoms
+                    || !unchanged_coordinates
+                    || !unchanged_validity
+                {
+                    return Err(Self::effect_error(
+                        self.spec,
+                        "preserve",
+                        states,
+                        "stable-atom coordinate proof failed",
                     ));
                 }
             }
@@ -2130,8 +2218,9 @@ pub(super) fn validate_multiple_candidate(
     source: &Molecule,
     spec: &'static MoleculeOpSpec,
     topology: TopologyBlock,
-    coordinates: CoordinateBlock,
+    coordinates: Option<CoordinateBlock>,
     properties: MoleculeProperties,
+    prepared_cache: Option<super::multiple::PreparedCacheValues>,
 ) -> Result<
     (
         Arc<TopologyBlock>,
@@ -2142,6 +2231,9 @@ pub(super) fn validate_multiple_candidate(
     OperationError,
 > {
     OpParts::<()>::validate_operation_spec(spec)?;
+    let coordinate_view = coordinates
+        .as_ref()
+        .unwrap_or_else(|| source.coordinate_block_runtime());
 
     let row_identity_unchanged = source.topology().atoms.len() == topology.atoms.len()
         && source.topology().bonds.len() == topology.bonds.len()
@@ -2181,7 +2273,7 @@ pub(super) fn validate_multiple_candidate(
     if RUNTIME_INVARIANTS_ENABLED {
         OpParts::<()>::validate_detached_candidate_invariants(
             &topology,
-            &coordinates,
+            coordinate_view,
             &properties,
         )?;
     }
@@ -2193,7 +2285,7 @@ pub(super) fn validate_multiple_candidate(
             "topology",
         ),
         (
-            coordinates != *source.coordinate_block_runtime(),
+            coordinate_view != source.coordinate_block_runtime(),
             BlockSet::COORDINATES,
             "coordinates",
         ),
@@ -2215,7 +2307,9 @@ pub(super) fn validate_multiple_candidate(
         spec,
         source: source.operation_snapshot_runtime(false, spec.method)?,
         topology: WorkingBlock::Installed(topology),
-        coordinates: WorkingBlock::Installed(coordinates),
+        coordinates: coordinates
+            .map(WorkingBlock::Installed)
+            .unwrap_or(WorkingBlock::Shared),
         properties: WorkingBlock::Installed(properties),
         derived_cache: WorkingBlock::Shared,
         topology_edit: (spec.topology_edit != TopologyEditKind::None).then_some(spec.topology_edit),
@@ -2228,19 +2322,39 @@ pub(super) fn validate_multiple_candidate(
     };
 
     OpParts::<()>::validate_effect_contract(spec)?;
+    let prepared_states = if prepared_cache.is_some() {
+        DerivedState::VALENCE.union(DerivedState::RINGS)
+    } else {
+        DerivedState::NONE
+    };
     let clear = spec
         .derived_effects
         .recompute
         .union(spec.derived_effects.invalidate)
-        .union(spec.derived_effects.operation_defined);
+        .union(spec.derived_effects.operation_defined)
+        .difference(prepared_states);
     if !clear.is_empty() {
         candidate.clear_cache_runtime(clear)?;
     }
+    #[cfg(feature = "cap-tautomer")]
+    if let Some(values) = prepared_cache {
+        let mut cache = candidate.checkout_derived_cache_runtime()?;
+        cache.install_valence_assignment(values.valence);
+        cache.install_ring_info(values.rings);
+        candidate.install_derived_cache_runtime(cache)?;
+        candidate.mark_cache_updated_runtime(DerivedState::VALENCE.union(DerivedState::RINGS))?;
+    }
+    #[cfg(not(feature = "cap-tautomer"))]
+    debug_assert!(prepared_cache.is_none());
     candidate.apply_cip_policy_runtime()?;
     if !spec.derived_effects.preserve.is_empty() {
         candidate.prove_preserved_runtime(
             spec.derived_effects.preserve,
-            PreservationProof::UnchangedInput,
+            if !prepared_states.is_empty() {
+                PreservationProof::StableAtomCoordinates
+            } else {
+                PreservationProof::UnchangedInput
+            },
         )?;
     }
     candidate.finish_parts()

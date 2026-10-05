@@ -8,7 +8,19 @@ use super::context::{OpParts, validate_multiple_candidate};
 use super::{BlockSet, MoleculeOpOutput, MoleculeOpSpec, OperationError};
 use crate::Molecule;
 
-type DetachedCandidate = (TopologyBlock, CoordinateBlock, MoleculeProperties);
+enum DetachedCandidate {
+    Blocks(TopologyBlock, CoordinateBlock, MoleculeProperties),
+    #[cfg(feature = "cap-tautomer")]
+    Prepared(TopologyBlock, MoleculeProperties, PreparedCacheValues),
+}
+
+/// Typed detached facts; construction and cache authority stay in runtime.
+pub(super) struct PreparedCacheValues {
+    #[cfg(feature = "cap-tautomer")]
+    pub(super) valence: cosmolkit_core::ValenceAssignment,
+    #[cfg(feature = "cap-tautomer")]
+    pub(super) rings: cosmolkit_core::RingInfo,
+}
 
 /// One private collection transaction for a generated multiple-output body.
 ///
@@ -72,9 +84,16 @@ impl<'a, Access> MultiOutputOpParts<'a, Access> {
         Ok(self.source.properties())
     }
 
+    pub(super) fn source_derived_cache_runtime(
+        &self,
+    ) -> Result<&crate::molecule::DerivedCacheBlock, OperationError> {
+        self.ensure_read_access(BlockSet::DERIVED_CACHE, "derived_cache")?;
+        Ok(self.source.derived_cache_runtime())
+    }
+
     pub(super) fn emit_all_runtime(
         &mut self,
-        candidates: Vec<DetachedCandidate>,
+        candidates: Vec<(TopologyBlock, CoordinateBlock, MoleculeProperties)>,
     ) -> Result<(), OperationError> {
         if self.emitted.is_some() {
             return Err(OperationError::OperationContract {
@@ -85,7 +104,52 @@ impl<'a, Access> MultiOutputOpParts<'a, Access> {
                 actual: 1,
             });
         }
-        self.emitted = Some(candidates);
+        self.emitted = Some(
+            candidates
+                .into_iter()
+                .map(|(t, c, p)| DetachedCandidate::Blocks(t, c, p))
+                .collect(),
+        );
+        Ok(())
+    }
+
+    #[cfg(feature = "cap-tautomer")]
+    pub(super) fn emit_prepared_runtime(
+        &mut self,
+        candidates: Vec<(
+            TopologyBlock,
+            MoleculeProperties,
+            cosmolkit_core::ValenceAssignment,
+            cosmolkit_core::RingInfo,
+        )>,
+    ) -> Result<(), OperationError> {
+        if !self.spec.access.can_write(BlockSet::DERIVED_CACHE) {
+            return Err(OperationError::AccessDenied {
+                operation: self.spec.method,
+                block: "derived_cache",
+            });
+        }
+        if self.emitted.is_some() {
+            return Err(OperationError::OperationContract {
+                operation: self.spec.method,
+                field: "outputs",
+                issue: "multiple-output operation emitted more than once",
+                expected: 0,
+                actual: 1,
+            });
+        }
+        self.emitted = Some(
+            candidates
+                .into_iter()
+                .map(|(topology, properties, valence, rings)| {
+                    DetachedCandidate::Prepared(
+                        topology,
+                        properties,
+                        PreparedCacheValues { valence, rings },
+                    )
+                })
+                .collect(),
+        );
         Ok(())
     }
 
@@ -97,13 +161,19 @@ impl<'a, Access> MultiOutputOpParts<'a, Access> {
 
         let validated = candidates
             .into_iter()
-            .map(|(topology, coordinates, properties)| {
+            .map(|candidate| {
+                let (topology, coordinates, properties, prepared) = match candidate {
+                    DetachedCandidate::Blocks(t, c, p) => (t, Some(c), p, None),
+                    #[cfg(feature = "cap-tautomer")]
+                    DetachedCandidate::Prepared(t, p, facts) => (t, None, p, Some(facts)),
+                };
                 validate_multiple_candidate(
                     self.source,
                     self.spec,
                     topology,
                     coordinates,
                     properties,
+                    prepared,
                 )
             })
             .collect::<Result<Vec<_>, _>>()?;

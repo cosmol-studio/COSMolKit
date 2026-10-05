@@ -175,7 +175,8 @@ pub use kekulize::{
 };
 
 pub use legacy_stereo::{
-    LegacyStereoError, assign_legacy_stereochemistry, assign_legacy_stereochemistry_for_depiction,
+    LegacyStereoAssignment, LegacyStereoError, assign_legacy_stereochemistry,
+    assign_legacy_stereochemistry_for_depiction, assign_legacy_stereochemistry_with_assignments,
     assign_legacy_stereochemistry_with_flags, assign_legacy_stereochemistry_with_query_state,
 };
 

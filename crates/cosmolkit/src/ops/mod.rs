@@ -104,3 +104,10 @@ pub use mmff_optimization::{
 };
 #[cfg(feature = "cap-forcefields")]
 pub(crate) use runtime::registry::{WithMmffOptimizedAccess, WithMmffOptimizedConfsAccess};
+
+#[cfg(feature = "cap-tautomer")]
+mod tautomer;
+#[cfg(feature = "cap-tautomer")]
+pub(crate) use runtime::registry::{
+    CanonicalTautomerWithParamsAccess, EnumerateTautomersWithParamsAccess,
+};

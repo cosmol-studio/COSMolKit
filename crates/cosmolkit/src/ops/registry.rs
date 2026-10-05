@@ -95,7 +95,61 @@ pub(crate) const SANITIZE_FEATURE: FeatureSpec = FeatureSpec {
     docs: "RDKit-compatible molecule sanitization and chemistry-problem detection.",
 };
 
+#[cfg(feature = "cap-tautomer")]
+pub(crate) const TAUTOMER_FEATURE: FeatureSpec = FeatureSpec {
+    name: "cap-tautomer",
+    category: "chemistry",
+    docs: "Source-backed ordered tautomer enumeration and canonical selection.",
+};
+
 molecule_ops! {
+    #[cfg(feature = "cap-tautomer")]
+    op enumerate_tautomers_with_params(params: &crate::TautomerParams) {
+        method: enumerate_tautomers_with_params,
+        impl_fn: crate::ops::tautomer::enumerate_tautomers_impl,
+        output: multiple,
+        result_type: crate::TautomerEnumeration,
+        assemble_fn: crate::tautomer::assemble_enumeration,
+        domain: topology,
+        kind: weak,
+        topology_edit: local,
+        access: { read: [coordinates], write: [topology, properties, derived_cache] },
+        may_mutate: [topology, properties, derived_cache],
+        auto_remap: [],
+        derived_effects: { recompute: [valence, rings, aromaticity, stereo], preserve: [coordinates], invalidate: [ring_families, drawing, fingerprint], operation_defined: [] },
+        cip_state: tautomer_source_transition,
+        requires_mapping: identity,
+        feature: crate::ops::runtime::registry::TAUTOMER_FEATURE,
+        parity: required_now,
+        parity_profile: "tautomer_current_v1_source_5000",
+        io_roundtrip: false,
+        invariant_profile: "tautomer_source_state_and_shared_coordinates",
+        default_method: enumerate_tautomers,
+        default_args: [&crate::TautomerParams::default()],
+    }
+
+    #[cfg(feature = "cap-tautomer")]
+    op canonical_tautomer_with_params(params: &crate::TautomerParams) {
+        method: canonical_tautomer_with_params,
+        impl_fn: crate::ops::tautomer::canonical_tautomer_impl,
+        domain: topology,
+        kind: weak,
+        topology_edit: local,
+        access: { read: [coordinates], write: [topology, properties, derived_cache] },
+        may_mutate: [topology, properties, derived_cache],
+        auto_remap: [],
+        derived_effects: { recompute: [valence, rings, aromaticity, stereo], preserve: [coordinates], invalidate: [ring_families, drawing, fingerprint], operation_defined: [] },
+        cip_state: tautomer_source_transition,
+        requires_mapping: identity,
+        feature: crate::ops::runtime::registry::TAUTOMER_FEATURE,
+        parity: required_now,
+        parity_profile: "tautomer_current_v1_source_5000",
+        io_roundtrip: false,
+        invariant_profile: "tautomer_source_state_and_shared_coordinates",
+        default_method: canonical_tautomer,
+        default_args: [&crate::TautomerParams::default()],
+    }
+
     #[cfg(feature = "cap-forcefields")]
     op with_mmff_optimized(params: &crate::MmffOptimizationParams) {
         method: with_mmff_optimized_with_params,

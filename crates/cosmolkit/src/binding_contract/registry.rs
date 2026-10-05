@@ -74,6 +74,50 @@ binding_contract! {
         #[cfg(feature="cap-forcefields")]
         {semantic_id:"Molecule.with_mmff_optimized_confs_with_params",item:callable,owner:molecule,rust:crate::Molecule::with_mmff_optimized_confs_with_params,python:"with_mmff_optimized_confs_with_params",javascript:"withMmffOptimizedConfsWithParams",feature:"cap-forcefields",kind:instance,parameters:[{ name: params, type: &crate::MmffConformerOptimizationParams, default: required }],output:crate::MmffOptimizeMoleculeConfsResult,error:crate::OperationError,state:value_returning,operation:"with_mmff_optimized_confs_with_params",signature:fn(&crate::Molecule, &crate::MmffConformerOptimizationParams) -> Result<crate::MmffOptimizeMoleculeConfsResult, crate::OperationError>,},
 
+        #[cfg(feature="cap-tautomer")]
+        { semantic_id:"types.TautomerParams", item:type, owner:type_, rust:crate::TautomerParams, python:"TautomerParams", javascript:"TautomerParams", feature:"cap-tautomer", status:experimental, role:parameter, },
+        #[cfg(feature="cap-tautomer")]
+        { semantic_id:"types.TautomerScoreParams", item:type, owner:type_, rust:crate::TautomerScoreParams, python:"TautomerScoreParams", javascript:"TautomerScoreParams", feature:"cap-tautomer", status:experimental, role:parameter, },
+        #[cfg(feature="cap-tautomer")]
+        { semantic_id:"types.TautomerScoreTerm", item:type, owner:type_, rust:crate::TautomerScoreTerm, python:"TautomerScoreTerm", javascript:"TautomerScoreTerm", feature:"cap-tautomer", status:experimental, role:value, },
+        #[cfg(feature="cap-tautomer")]
+        { semantic_id:"types.TautomerScore", item:type, owner:type_, rust:crate::TautomerScore, python:"TautomerScore", javascript:"TautomerScore", feature:"cap-tautomer", status:experimental, role:result, },
+        #[cfg(feature="cap-tautomer")]
+        { semantic_id:"types.TautomerEnumeration", item:type, owner:type_, rust:crate::TautomerEnumeration, python:"TautomerEnumeration", javascript:"TautomerEnumeration", feature:"cap-tautomer", status:experimental, role:result, },
+        #[cfg(feature="cap-tautomer")]
+        { semantic_id:"types.TautomerEnumerationStatus", item:type, owner:type_, rust:crate::TautomerEnumerationStatus, python:"TautomerEnumerationStatus", javascript:"TautomerEnumerationStatus", feature:"cap-tautomer", status:experimental, role:value, },
+        #[cfg(feature="cap-tautomer")]
+        { semantic_id:"types.TautomerRunError", item:type, owner:type_, rust:crate::TautomerRunError, python:"TautomerRunError", javascript:"TautomerRunError", feature:"cap-tautomer", status:experimental, role:error, },
+        #[cfg(feature="cap-tautomer")]
+        { semantic_id:"types.TautomerCatalogError", item:type, owner:type_, rust:crate::TautomerCatalogError, python:"TautomerCatalogError", javascript:"TautomerCatalogError", feature:"cap-tautomer", status:experimental, role:error, },
+        #[cfg(feature="cap-tautomer")]
+        { semantic_id:"types.TautomerMoleculeView", item:type, owner:type_, rust:crate::TautomerMoleculeView, python:"TautomerMoleculeView", javascript:"TautomerMoleculeView", feature:"cap-tautomer", status:experimental, role:value, },
+        #[cfg(feature="cap-tautomer")]
+        { semantic_id:"types.TautomerProgress", item:type, owner:type_, rust:crate::TautomerProgress, python:"TautomerProgress", javascript:"TautomerProgress", feature:"cap-tautomer", status:experimental, role:result, },
+        #[cfg(feature="cap-tautomer")]
+        { semantic_id:"Molecule.enumerate_tautomers", item:callable, owner:molecule, rust:crate::Molecule::enumerate_tautomers, python:"enumerate_tautomers", javascript:"enumerateTautomers", feature:"cap-tautomer", kind:instance,
+           parameters:[], output:crate::TautomerEnumeration, error:crate::OperationError, state:value_returning, operation:"enumerate_tautomers",
+           signature:for<'a> fn(&'a crate::Molecule)->Result<crate::TautomerEnumeration,crate::OperationError>, },
+        #[cfg(feature="cap-tautomer")]
+        { semantic_id:"Molecule.enumerate_tautomers_with_params", item:callable, owner:molecule, rust:crate::Molecule::enumerate_tautomers_with_params, python:"enumerate_tautomers_with_params", javascript:"enumerateTautomersWithParams", feature:"cap-tautomer", kind:instance,
+           parameters:[{name:params,type:&crate::TautomerParams,default:required}], output:crate::TautomerEnumeration, error:crate::OperationError, state:value_returning, operation:"enumerate_tautomers_with_params",
+           signature:for<'a, 'b> fn(&'a crate::Molecule, &'b crate::TautomerParams)->Result<crate::TautomerEnumeration,crate::OperationError>, },
+        #[cfg(feature="cap-tautomer")]
+        { semantic_id:"Molecule.canonical_tautomer", item:callable, owner:molecule, rust:crate::Molecule::canonical_tautomer, python:"canonical_tautomer", javascript:"canonicalTautomer", feature:"cap-tautomer", kind:instance,
+           parameters:[], output:crate::Molecule, error:crate::OperationError, state:value_returning, operation:"canonical_tautomer",
+           signature:for<'a> fn(&'a crate::Molecule)->Result<crate::Molecule,crate::OperationError>, },
+        #[cfg(feature="cap-tautomer")]
+        { semantic_id:"Molecule.canonical_tautomer_with_params", item:callable, owner:molecule, rust:crate::Molecule::canonical_tautomer_with_params, python:"canonical_tautomer_with_params", javascript:"canonicalTautomerWithParams", feature:"cap-tautomer", kind:instance,
+           parameters:[{name:params,type:&crate::TautomerParams,default:required}], output:crate::Molecule, error:crate::OperationError, state:value_returning, operation:"canonical_tautomer_with_params",
+           signature:for<'a, 'b> fn(&'a crate::Molecule, &'b crate::TautomerParams)->Result<crate::Molecule,crate::OperationError>, },
+        #[cfg(feature="cap-tautomer")]
+        { semantic_id:"Molecule.tautomer_score", item:callable, owner:molecule, rust:crate::Molecule::tautomer_score, python:"tautomer_score", javascript:"tautomerScore", feature:"cap-tautomer", status:experimental, kind:instance,
+           parameters:[], output:crate::TautomerScore, error:crate::TautomerRunError, state:read_only, operation:none,
+           signature:for<'a> fn(&'a crate::Molecule)->Result<crate::TautomerScore,crate::TautomerRunError>, },
+        #[cfg(feature="cap-tautomer")]
+        { semantic_id:"Molecule.tautomer_score_with_params", item:callable, owner:molecule, rust:crate::Molecule::tautomer_score_with_params, python:"tautomer_score_with_params", javascript:"tautomerScoreWithParams", feature:"cap-tautomer", status:experimental, kind:instance,
+           parameters:[{name:params,type:&crate::TautomerScoreParams,default:required}], output:crate::TautomerScore, error:crate::TautomerRunError, state:read_only, operation:none,
+           signature:for<'a, 'b> fn(&'a crate::Molecule, &'b crate::TautomerScoreParams)->Result<crate::TautomerScore,crate::TautomerRunError>, },
         {
             semantic_id: "types.Element", item: type, owner: type_,
             rust: crate::Element, python: "Element", javascript: "Element",

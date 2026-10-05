@@ -256,3 +256,15 @@ pub(crate) use ops::{WithMmffOptimizedAccess, WithMmffOptimizedConfsAccess};
 
 #[cfg(feature = "cap-forcefields")]
 pub use forcefields::{MmffEnergyGradient, MmffEvaluationParams};
+
+#[cfg(feature = "cap-tautomer")]
+mod tautomer;
+#[cfg(feature = "cap-tautomer")]
+pub(crate) use ops::{CanonicalTautomerWithParamsAccess, EnumerateTautomersWithParamsAccess};
+#[cfg(feature = "cap-tautomer")]
+pub use tautomer::{
+    TautomerCatalogError, TautomerEnumeration, TautomerEnumerationCallback,
+    TautomerEnumerationStatus, TautomerMoleculeView, TautomerParams, TautomerProgress,
+    TautomerRunError, TautomerScore, TautomerScoreParams, TautomerScoreTerm, TautomerScorer,
+    default_tautomer_score_terms,
+};

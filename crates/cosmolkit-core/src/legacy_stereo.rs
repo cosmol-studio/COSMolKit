@@ -690,6 +690,7 @@ pub fn assign_legacy_stereochemistry_for_depiction(
     // dispatches; it cannot inspect molecule-level `_StereochemDone` itself.
     // Complexity review: this wrapper only selects the existing owner branch.
     assign_legacy_stereochemistry_impl(topology, valence, rings, None, false, false)
+        .map(|assignment| assignment.topology)
 }
 
 /// Apply the fixed RDKit legacy assignment to detached topology state with
@@ -726,6 +727,7 @@ pub fn assign_legacy_stereochemistry_with_flags(
         clean_it,
         flag_possible_stereo_centers,
     )
+    .map(|assignment| assignment.topology)
 }
 
 #[doc(hidden)]
@@ -736,6 +738,37 @@ pub fn assign_legacy_stereochemistry_with_query_state(
     query_state: Option<QueryStateRef<'_>>,
 ) -> Result<TopologyBlock, LegacyStereoError> {
     assign_legacy_stereochemistry_impl(topology, valence, rings, query_state, true, true)
+        .map(|assignment| assignment.topology)
+}
+
+/// Detached state effects of the fixed legacy stereochemistry profile.
+#[derive(Debug, Clone, PartialEq)]
+pub struct LegacyStereoAssignment {
+    pub topology: TopologyBlock,
+    /// Source-required ring preparation, absent when the input cache is reused.
+    pub ring_update: Option<RingInfo>,
+}
+
+/// Run legacy stereochemistry and retain its detached ring-state effects.
+#[doc(hidden)]
+pub fn assign_legacy_stereochemistry_with_assignments(
+    topology: TopologyBlock,
+    valence: &ValenceAssignment,
+    rings: &RingInfo,
+    clean_it: bool,
+    flag_possible_stereo_centers: bool,
+) -> Result<LegacyStereoAssignment, LegacyStereoError> {
+    // RDKit❗✔️:     Chirality::legacyStereoPerception(mol, cleanIt, flagPossibleStereoCenters);
+    // One owner returns both the topology and its source ring preparation;
+    // this adapter neither copies a cache nor executes a second algorithm.
+    assign_legacy_stereochemistry_impl(
+        topology,
+        valence,
+        rings,
+        None,
+        clean_it,
+        flag_possible_stereo_centers,
+    )
 }
 
 fn assign_legacy_stereochemistry_impl(
@@ -745,7 +778,7 @@ fn assign_legacy_stereochemistry_impl(
     query_state: Option<QueryStateRef<'_>>,
     clean_it: bool,
     flag_possible_stereo_centers: bool,
-) -> Result<TopologyBlock, LegacyStereoError> {
+) -> Result<LegacyStereoAssignment, LegacyStereoError> {
     if let Some(state) = query_state {
         state
             .validate_for_topology(&topology)
@@ -804,13 +837,13 @@ fn assign_legacy_stereochemistry_impl(
     // OtherOrUnknown/absent path invokes the existing full-topology core
     // owner and keeps its result for every subsequent ring consumer; this
     // adds only the source-required O(V+E) search on that branch.
-    let computed_rings;
-    let rings = if rings.is_find_fast_or_better() {
-        rings
+    let source_rings = rings;
+    let mut ring_update = if rings.is_find_fast_or_better() {
+        None
     } else {
-        computed_rings = crate::fast_find_rings(&topology)?;
-        &computed_rings
+        Some(crate::fast_find_rings(&topology)?)
     };
+    let rings = ring_update.as_ref().unwrap_or(source_rings);
     for atom in &mut topology.atoms {
         if clean_it {
             atom.clear_prop("_CIPCode");
@@ -1045,11 +1078,31 @@ fn assign_legacy_stereochemistry_impl(
     // existing cleanup passes and introduces no extra allocation or scan.
     if !clean_it {
         topology.validate()?;
-        return Ok(topology);
+        return Ok(LegacyStereoAssignment {
+            topology,
+            ring_update,
+        });
     }
 
     // RDKit✔️❌: boost::dynamic_bitset<> possibleSpecialCases(mol.getNumAtoms());
     // RDKit✔️❌: Chirality::findChiralAtomSpecialCases(mol, possibleSpecialCases, atomRanks);
+    // BEGIN RDKIT CPP FUNCTION findChiralAtomSpecialCases ring preparation
+    // RDKit✔️❌:   if (!mol.getRingInfo()->isSymmSssr()) {
+    // RDKit✔️❌:     VECT_INT_VECT sssrs;
+    // RDKit✔️❌:     MolOps::symmetrizeSSSR(mol, sssrs);
+    // RDKit✔️❌:   }
+    // END RDKIT CPP FUNCTION findChiralAtomSpecialCases ring preparation
+    // This source transition precedes every chiral-atom guard. Retain its
+    // ring update for the caller as well as all cleanup consumers below.
+    // The existing detached symmetrization owner reconstructs its SSSR
+    // context instead of reusing the source molecule's cached extra rings.
+    if !rings.is_symm_sssr() {
+        ring_update = Some(crate::symmetrized_sssr(
+            &topology,
+            &crate::RingSearchParams::default(),
+        )?);
+    }
+    let rings = ring_update.as_ref().unwrap_or(source_rings);
     let special_ring_atoms = install_ring_special_cases(&mut topology, valence, rings, &ranks)?;
 
     // RDKit✔️✔️: for (auto atom : mol.atoms()) {
@@ -1123,7 +1176,10 @@ fn assign_legacy_stereochemistry_impl(
     }
     crate::structure_tags::cleanup_stereo_groups(&mut topology);
     topology.validate()?;
-    Ok(topology)
+    Ok(LegacyStereoAssignment {
+        topology,
+        ring_update,
+    })
 }
 
 #[cfg(test)]

@@ -911,6 +911,35 @@ fn write_smiles_output_with_random_stream<'record>(
         topology.adjacency =
             cosmolkit_model::AdjacencyList::from_topology(topology.atoms.len(), &topology.bonds);
     }
+    // BEGIN RDKIT CPP FUNCTION detail::MolToSmiles ordinary bond cleanup
+    // RDKit✔️✔️:     if (!doingCXSmiles) {
+    // RDKit✔️✔️:       for (auto bond : tmol->bonds()) {
+    // RDKit✔️✔️:         if (bond->getBondDir() == Bond::BondDir::UNKNOWN ||
+    // RDKit✔️✔️:             bond->getBondDir() == Bond::BondDir::EITHERDOUBLE) {
+    // RDKit✔️✔️:           bond->setBondDir(Bond::BondDir::NONE);
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:         if (bond->getStereo() == Bond::BondStereo::STEREOANY) {
+    // RDKit✔️✔️:           bond->setStereo(Bond::BondStereo::STEREONONE);
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
+    // END RDKIT CPP FUNCTION detail::MolToSmiles ordinary bond cleanup
+    // Undefined stereo changes canonical bond invariants. Clear it on the
+    // writer copy before ranking, as in the source's one O(E) cleanup pass.
+    if !doing_cx_smiles {
+        for bond in &mut topology.bonds {
+            if matches!(
+                bond.direction(),
+                BondDirection::Unknown | BondDirection::EitherDouble
+            ) {
+                bond.set_direction(BondDirection::None);
+            }
+            if bond.stereo() == BondStereo::Any {
+                bond.set_stereo(BondStereo::None)
+                    .map_err(SmilesParseError::WriterStereoBond)?;
+            }
+        }
+    }
     if !doing_cx_smiles && !params.include_dative_bonds {
         // BEGIN RDKIT CPP FUNCTION detail::MolToSmiles includeDativeBonds conversion
         // RDKit❗✔️:     if (doingCXSmiles || !params.includeDativeBonds) {
@@ -2394,7 +2423,14 @@ fn reject_unmodeled_stereochemical_writing(
                 BondDirection::None | BondDirection::EndDownRight | BondDirection::EndUpRight
             ) || !matches!(
                 bond.stereo(),
+                // RDKit✔️✔️:         if (bond->getStereo() == Bond::BondStereo::STEREOANY) {
+                // RDKit✔️✔️:           bond->setStereo(Bond::BondStereo::STEREONONE);
+                // RDKit✔️✔️:         }
+                // The existing writer-owned copy executes this source cleanup
+                // before ranking. ANY is supported input; preserve its source
+                // value while serializing the cleaned copy, O(1) per bond.
                 BondStereo::None
+                    | BondStereo::Any
                     | BondStereo::E
                     | BondStereo::Z
                     | BondStereo::Cis

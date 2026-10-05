@@ -502,15 +502,19 @@ fn lightweight_bundles_have_isolated_build_dependencies() {
         ),
         (
             &["tautomer"],
-            &["cosmolkit-tautomer"],
+            // Tautomer.cpp delegates sanitize/rings/legacy stereo, SMARTS
+            // matching and canonical keys to these existing algorithm owners.
             &[
+                "cosmolkit-tautomer",
                 "cosmolkit-core",
+                "cosmolkit-search",
+                "cosmolkit-smiles",
+            ],
+            &[
                 "cosmolkit-bio",
                 "cosmolkit-io",
-                "cosmolkit-smiles",
                 "cosmolkit-stereo",
                 "cosmolkit-descriptors",
-                "cosmolkit-search",
             ],
         ),
         (
@@ -558,6 +562,14 @@ fn lightweight_bundles_have_isolated_build_dependencies() {
                 assert!(
                     !packages.contains(*name),
                     "{selected:?}: unexpected {name}: {packages:?}"
+                );
+            }
+            if *features == ["tautomer"] {
+                // Implementation reuse must not expose any unrelated API.
+                let (capabilities, _) = probe.resolved_caps();
+                assert_eq!(
+                    capabilities,
+                    ["cap-tautomer".to_owned()].into_iter().collect()
                 );
             }
             if !features.contains(&"full") {

@@ -117,6 +117,7 @@ pub(crate) fn operation_pyerr(py: Python<'_>, source: ck::OperationError) -> PyE
         E::Hydrogen(..) => "Hydrogen",
         E::UffOptimization(..) => "UffOptimization",
         E::MmffOptimization(..) => "MmffOptimization",
+        E::Tautomer(..) => "Tautomer",
     };
     let error = OperationError::new_err(source.to_string());
     if let Err(attribute_error) = error

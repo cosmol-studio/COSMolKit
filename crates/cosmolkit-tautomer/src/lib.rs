@@ -1,22 +1,22 @@
 //! Detached tautomer transformation and enumeration boundaries.
-
-use cosmolkit_model::{MoleculeProperties, TopologyBlock};
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TautomerError {
-    Unsupported,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct TautomerOptions {
-    pub max_results: Option<usize>,
-}
-
-pub fn enumerate(
-    topology: &TopologyBlock,
-    properties: &MoleculeProperties,
-    options: &TautomerOptions,
-) -> Result<Vec<(TopologyBlock, MoleculeProperties)>, TautomerError> {
-    let _ = (topology, properties, options);
-    Err(TautomerError::Unsupported)
-}
+mod catalog;
+mod engine;
+mod enumeration;
+mod ordered;
+mod params;
+mod score;
+mod transforms;
+pub use catalog::{
+    TautomerCatalog, TautomerCatalogError, TautomerTransform, TautomerTransformError,
+};
+pub use engine::{TautomerRecord, TautomerRecordView, TautomerRunError};
+pub use enumeration::{
+    TautomerEnumerationCallback, TautomerEnumerationOutput, TautomerProgress,
+    canonicalize_with_catalog, enumerate_with_catalog, pick_canonical_with,
+};
+pub use params::{TautomerEnumerationStatus, TautomerParams};
+pub use score::{
+    TautomerScore, TautomerScoreTerm, default_tautomer_score_terms, score_tautomer,
+    score_tautomer_hetero_hydrogens, score_tautomer_rings, score_tautomer_substructures,
+    score_tautomer_with_terms,
+};

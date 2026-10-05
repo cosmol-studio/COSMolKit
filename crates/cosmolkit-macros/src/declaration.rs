@@ -645,9 +645,12 @@ fn validate_cip_transition(
     if cip_state != CipStatePolicy::TautomerSourceTransition {
         return Ok(());
     }
-    let valid = operation == "enumerate_tautomers_with_options"
-        && method == "enumerate_tautomers_with_options"
-        && output == MoleculeOutput::Multiple
+    let valid = ((operation == "enumerate_tautomers_with_params"
+        && method == "enumerate_tautomers_with_params"
+        && output == MoleculeOutput::Multiple)
+        || (operation == "canonical_tautomer_with_params"
+            && method == "canonical_tautomer_with_params"
+            && output == MoleculeOutput::Single))
         && access.write.contains(&MoleculeBlock::Topology)
         && access.write.contains(&MoleculeBlock::Properties);
     if valid {
@@ -655,7 +658,7 @@ fn validate_cip_transition(
     } else {
         Err(syn::Error::new(
             operation.span(),
-            "tautomer_source_transition is permitted only for the multiple-output enumerate_tautomers_with_options operation with topology and properties write access",
+            "tautomer_source_transition is permitted only for canonical tautomer operations with their exact cardinality and topology and properties write access",
         ))
     }
 }

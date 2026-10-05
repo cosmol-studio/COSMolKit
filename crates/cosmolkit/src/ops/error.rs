@@ -19,6 +19,8 @@ pub enum OperationError {
         operation: &'static MoleculeOpSpec,
         source: UnsupportedFeatureError,
     },
+    #[cfg(feature = "cap-tautomer")]
+    Tautomer(crate::TautomerRunError),
     Unsupported {
         operation: &'static str,
     },
@@ -323,6 +325,8 @@ impl fmt::Display for OperationError {
             Self::MmffOptimization(error) => write!(formatter, "MMFF optimization failed: {error}"),
             #[cfg(feature = "cap-forcefields")]
             Self::UffOptimization(error) => write!(formatter, "UFF optimization failed: {error}"),
+            #[cfg(feature = "cap-tautomer")]
+            Self::Tautomer(error) => write!(formatter, "tautomer operation failed: {error}"),
         }
     }
 }
@@ -330,6 +334,8 @@ impl fmt::Display for OperationError {
 impl std::error::Error for OperationError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
+            #[cfg(feature = "cap-tautomer")]
+            Self::Tautomer(error) => Some(error),
             #[cfg(any(feature = "cap-valence", feature = "cap-stereo"))]
             Self::Valence(error) => Some(error),
             #[cfg(feature = "cap-forcefields")]

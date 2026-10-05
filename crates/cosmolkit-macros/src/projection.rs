@@ -444,6 +444,34 @@ fn expand_molecule_marker(operation: &MoleculeOperation) -> syn::Result<proc_mac
         });
     }
 
+    if operation.fields.output == MoleculeOutput::Single
+        && operation
+            .fields
+            .access
+            .write
+            .contains(&MoleculeBlock::Topology)
+        && operation
+            .fields
+            .access
+            .write
+            .contains(&MoleculeBlock::Properties)
+        && operation
+            .fields
+            .access
+            .write
+            .contains(&MoleculeBlock::DerivedCache)
+        && operation
+            .fields
+            .access
+            .read
+            .contains(&MoleculeBlock::Coordinates)
+    {
+        methods.push(quote! {
+            pub(crate) fn with_candidate_blocks<R>(&mut self,body:impl FnOnce(&mut cosmolkit_model::TopologyBlock,&cosmolkit_model::CoordinateBlock,&mut cosmolkit_model::MoleculeProperties,&mut crate::molecule::DerivedCacheBlock)->Result<R,crate::OperationError>)->Result<R,crate::OperationError> {
+                self.with_candidate_blocks_runtime(body)
+            }
+        });
+    }
     let capability_impl = match operation.fields.output {
         MoleculeOutput::Single => quote! {
             #(#cfg_attrs)*
@@ -452,7 +480,7 @@ fn expand_molecule_marker(operation: &MoleculeOperation) -> syn::Result<proc_mac
             }
         },
         MoleculeOutput::Multiple => {
-            let read_methods = operation.fields.access.read.iter().filter_map(|block| match block {
+            let read_methods = operation.fields.access.read.iter().chain(&operation.fields.access.write).filter_map(|block| match block {
                 MoleculeBlock::Topology => Some(quote! {
                     pub(crate) fn topology(&self) -> Result<&cosmolkit_model::TopologyBlock, crate::OperationError> {
                         self.source_topology_runtime()
@@ -468,12 +496,32 @@ fn expand_molecule_marker(operation: &MoleculeOperation) -> syn::Result<proc_mac
                         self.source_properties_runtime()
                     }
                 }),
-                MoleculeBlock::DerivedCache => None,
+                MoleculeBlock::DerivedCache => Some(quote! {
+                    pub(crate) fn derived_cache(&self) -> Result<&crate::molecule::DerivedCacheBlock,crate::OperationError> {
+                        self.source_derived_cache_runtime()
+                    }
+                }),
             });
+            let prepared_emission = if operation
+                .fields
+                .access
+                .write
+                .contains(&MoleculeBlock::DerivedCache)
+            {
+                quote! {
+                    #[cfg(feature="cap-tautomer")]
+                    pub(crate) fn emit_prepared(&mut self,candidates:Vec<(cosmolkit_model::TopologyBlock,cosmolkit_model::MoleculeProperties,cosmolkit_core::ValenceAssignment,cosmolkit_core::RingInfo)>)->Result<(),crate::OperationError> {
+                        self.emit_prepared_runtime(candidates)
+                    }
+                }
+            } else {
+                quote! {}
+            };
             quote! {
                 #(#cfg_attrs)*
                 impl<'a> crate::MultiOutputOpParts<'a, #marker> {
                     #(#read_methods)*
+                    #prepared_emission
 
                     pub(crate) fn emit_all(
                         &mut self,

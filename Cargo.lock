@@ -162,7 +162,9 @@ dependencies = [
  "cosmolkit-smiles",
  "cosmolkit-stereo",
  "cosmolkit-tautomer",
+ "serde",
  "serde_json",
+ "sha2",
 ]
 
 [[package]]
@@ -264,6 +266,7 @@ dependencies = [
  "cosmolkit-core",
  "cosmolkit-model",
  "cosmolkit-search",
+ "thiserror",
 ]
 
 [[package]]
@@ -387,7 +390,14 @@ dependencies = [
 name = "cosmolkit-tautomer"
 version = "0.5.0-rc.9"
 dependencies = [
+ "cosmolkit-core",
  "cosmolkit-model",
+ "cosmolkit-search",
+ "cosmolkit-smiles",
+ "cosmolkit-types",
+ "serde_json",
+ "tempfile",
+ "thiserror",
 ]
 
 [[package]]

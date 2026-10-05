@@ -26,7 +26,8 @@ pub(crate) struct DerivedCacheBlock {
         feature = "cap-smiles",
         feature = "cap-sanitize",
         feature = "cap-descriptors",
-        feature = "cap-forcefields"
+        feature = "cap-forcefields",
+        feature = "cap-tautomer"
     ))]
     valence: Option<cosmolkit_core::ValenceAssignment>,
     #[cfg(any(
@@ -38,7 +39,8 @@ pub(crate) struct DerivedCacheBlock {
         feature = "cap-kekulize",
         feature = "cap-aromaticity",
         feature = "cap-forcefields",
-        feature = "cap-fingerprints"
+        feature = "cap-fingerprints",
+        feature = "cap-tautomer"
     ))]
     rings: Option<cosmolkit_core::RingInfo>,
     #[cfg(any(feature = "cap-rings", feature = "cap-fingerprints"))]
@@ -56,7 +58,8 @@ impl DerivedCacheBlock {
                     feature = "cap-smiles",
                     feature = "cap-sanitize",
                     feature = "cap-descriptors",
-                    feature = "cap-forcefields"
+                    feature = "cap-forcefields",
+                    feature = "cap-tautomer"
                 ))]
                 {
                     self.valence.is_none()
@@ -68,7 +71,8 @@ impl DerivedCacheBlock {
                     feature = "cap-smiles",
                     feature = "cap-sanitize",
                     feature = "cap-descriptors",
-                    feature = "cap-forcefields"
+                    feature = "cap-forcefields",
+                    feature = "cap-tautomer"
                 )))]
                 {
                     true
@@ -84,7 +88,8 @@ impl DerivedCacheBlock {
                     feature = "cap-kekulize",
                     feature = "cap-aromaticity",
                     feature = "cap-forcefields",
-                    feature = "cap-fingerprints"
+                    feature = "cap-fingerprints",
+                    feature = "cap-tautomer"
                 ))]
                 {
                     #[cfg(any(feature = "cap-rings", feature = "cap-fingerprints"))]
@@ -105,7 +110,8 @@ impl DerivedCacheBlock {
                     feature = "cap-kekulize",
                     feature = "cap-aromaticity",
                     feature = "cap-forcefields",
-                    feature = "cap-fingerprints"
+                    feature = "cap-fingerprints",
+                    feature = "cap-tautomer"
                 )))]
                 {
                     true
@@ -130,7 +136,8 @@ impl DerivedCacheBlock {
             feature = "cap-smiles",
             feature = "cap-sanitize",
             feature = "cap-descriptors",
-            feature = "cap-forcefields"
+            feature = "cap-forcefields",
+            feature = "cap-tautomer"
         ))]
         if states.intersects(DerivedState::VALENCE) {
             self.valence = None;
@@ -144,7 +151,8 @@ impl DerivedCacheBlock {
             feature = "cap-kekulize",
             feature = "cap-aromaticity",
             feature = "cap-forcefields",
-            feature = "cap-fingerprints"
+            feature = "cap-fingerprints",
+            feature = "cap-tautomer"
         ))]
         if states.intersects(DerivedState::RINGS) {
             self.rings = None;
@@ -162,7 +170,8 @@ impl DerivedCacheBlock {
         feature = "cap-smiles",
         feature = "cap-sanitize",
         feature = "cap-descriptors",
-        feature = "cap-forcefields"
+        feature = "cap-forcefields",
+        feature = "cap-tautomer"
     ))]
     pub(crate) fn install_valence_assignment(
         &mut self,
@@ -178,7 +187,8 @@ impl DerivedCacheBlock {
         feature = "cap-smiles",
         feature = "cap-sanitize",
         feature = "cap-descriptors",
-        feature = "cap-forcefields"
+        feature = "cap-forcefields",
+        feature = "cap-tautomer"
     ))]
     pub(crate) fn valence_assignment(&self) -> Option<&cosmolkit_core::ValenceAssignment> {
         if self.valid.contains(DerivedState::VALENCE) {
@@ -197,7 +207,8 @@ impl DerivedCacheBlock {
         feature = "cap-kekulize",
         feature = "cap-aromaticity",
         feature = "cap-forcefields",
-        feature = "cap-fingerprints"
+        feature = "cap-fingerprints",
+        feature = "cap-tautomer"
     ))]
     pub(crate) fn install_ring_info(&mut self, rings: cosmolkit_core::RingInfo) {
         self.rings = Some(rings);
@@ -212,7 +223,8 @@ impl DerivedCacheBlock {
         feature = "cap-kekulize",
         feature = "cap-aromaticity",
         feature = "cap-forcefields",
-        feature = "cap-fingerprints"
+        feature = "cap-fingerprints",
+        feature = "cap-tautomer"
     ))]
     pub(crate) fn ring_info(&self) -> Option<&cosmolkit_core::RingInfo> {
         self.rings.as_ref()
@@ -230,7 +242,8 @@ impl DerivedCacheBlock {
         feature = "cap-kekulize",
         feature = "cap-aromaticity",
         feature = "cap-forcefields",
-        feature = "cap-fingerprints"
+        feature = "cap-fingerprints",
+        feature = "cap-tautomer"
     ))]
     pub(crate) fn valid_ring_info(&self) -> Option<&cosmolkit_core::RingInfo> {
         if self.valid.contains(DerivedState::RINGS) {
@@ -258,7 +271,8 @@ impl DerivedCacheBlock {
             feature = "cap-smiles",
             feature = "cap-sanitize",
             feature = "cap-descriptors",
-            feature = "cap-forcefields"
+            feature = "cap-forcefields",
+            feature = "cap-tautomer"
         ))]
         {
             let valid = self.valid.contains(DerivedState::VALENCE);
@@ -315,7 +329,8 @@ impl DerivedCacheBlock {
             feature = "cap-kekulize",
             feature = "cap-aromaticity",
             feature = "cap-forcefields",
-            feature = "cap-fingerprints"
+            feature = "cap-fingerprints",
+            feature = "cap-tautomer"
         ))]
         {
             let valid = self.valid.contains(DerivedState::RINGS);
