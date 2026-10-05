@@ -21,6 +21,7 @@ pub(crate) struct DerivedCacheBlock {
     valid: DerivedState,
     #[cfg(any(
         feature = "cap-valence",
+        feature = "cap-stereo",
         feature = "cap-fingerprints",
         feature = "cap-hydrogens",
         feature = "cap-smiles",
@@ -34,6 +35,7 @@ pub(crate) struct DerivedCacheBlock {
     valence: Option<cosmolkit_core::ValenceAssignment>,
     #[cfg(any(
         feature = "cap-rings",
+        feature = "cap-stereo",
         feature = "cap-descriptors",
         feature = "cap-smiles",
         feature = "cap-sanitize",
@@ -49,6 +51,7 @@ pub(crate) struct DerivedCacheBlock {
     rings: Option<cosmolkit_core::RingInfo>,
     #[cfg(any(
         feature = "cap-rings",
+        feature = "cap-stereo",
         feature = "cap-fingerprints",
         feature = "cap-serialization"
     ))]
@@ -61,6 +64,7 @@ impl DerivedCacheBlock {
             && {
                 #[cfg(any(
                     feature = "cap-valence",
+                    feature = "cap-stereo",
                     feature = "cap-fingerprints",
                     feature = "cap-hydrogens",
                     feature = "cap-smiles",
@@ -76,6 +80,7 @@ impl DerivedCacheBlock {
                 }
                 #[cfg(not(any(
                     feature = "cap-valence",
+                    feature = "cap-stereo",
                     feature = "cap-fingerprints",
                     feature = "cap-hydrogens",
                     feature = "cap-smiles",
@@ -93,6 +98,7 @@ impl DerivedCacheBlock {
             && {
                 #[cfg(any(
                     feature = "cap-rings",
+                    feature = "cap-stereo",
                     feature = "cap-descriptors",
                     feature = "cap-smiles",
                     feature = "cap-sanitize",
@@ -108,6 +114,7 @@ impl DerivedCacheBlock {
                 {
                     #[cfg(any(
                         feature = "cap-rings",
+                        feature = "cap-stereo",
                         feature = "cap-fingerprints",
                         feature = "cap-serialization"
                     ))]
@@ -116,6 +123,7 @@ impl DerivedCacheBlock {
                     }
                     #[cfg(not(any(
                         feature = "cap-rings",
+                        feature = "cap-stereo",
                         feature = "cap-fingerprints",
                         feature = "cap-serialization"
                     )))]
@@ -125,6 +133,7 @@ impl DerivedCacheBlock {
                 }
                 #[cfg(not(any(
                     feature = "cap-rings",
+                    feature = "cap-stereo",
                     feature = "cap-descriptors",
                     feature = "cap-smiles",
                     feature = "cap-sanitize",
@@ -155,6 +164,7 @@ impl DerivedCacheBlock {
         self.valid = self.valid.difference(states);
         #[cfg(any(
             feature = "cap-valence",
+            feature = "cap-stereo",
             feature = "cap-fingerprints",
             feature = "cap-hydrogens",
             feature = "cap-smiles",
@@ -170,6 +180,7 @@ impl DerivedCacheBlock {
         }
         #[cfg(any(
             feature = "cap-rings",
+            feature = "cap-stereo",
             feature = "cap-descriptors",
             feature = "cap-smiles",
             feature = "cap-sanitize",
@@ -187,6 +198,7 @@ impl DerivedCacheBlock {
         }
         #[cfg(any(
             feature = "cap-rings",
+            feature = "cap-stereo",
             feature = "cap-fingerprints",
             feature = "cap-serialization"
         ))]
@@ -197,6 +209,7 @@ impl DerivedCacheBlock {
 
     #[cfg(any(
         feature = "cap-valence",
+        feature = "cap-stereo",
         feature = "cap-fingerprints",
         feature = "cap-hydrogens",
         feature = "cap-smiles",
@@ -216,6 +229,7 @@ impl DerivedCacheBlock {
 
     #[cfg(any(
         feature = "cap-valence",
+        feature = "cap-stereo",
         feature = "cap-fingerprints",
         feature = "cap-hydrogens",
         feature = "cap-smiles",
@@ -236,6 +250,7 @@ impl DerivedCacheBlock {
 
     #[cfg(any(
         feature = "cap-rings",
+        feature = "cap-stereo",
         feature = "cap-descriptors",
         feature = "cap-smiles",
         feature = "cap-sanitize",
@@ -254,6 +269,7 @@ impl DerivedCacheBlock {
 
     #[cfg(any(
         feature = "cap-rings",
+        feature = "cap-stereo",
         feature = "cap-descriptors",
         feature = "cap-smiles",
         feature = "cap-sanitize",
@@ -275,6 +291,7 @@ impl DerivedCacheBlock {
     /// rejected by construction/commit validation instead of being served.
     #[cfg(any(
         feature = "cap-rings",
+        feature = "cap-stereo",
         feature = "cap-descriptors",
         feature = "cap-smiles",
         feature = "cap-sanitize",
@@ -297,6 +314,7 @@ impl DerivedCacheBlock {
 
     #[cfg(any(
         feature = "cap-rings",
+        feature = "cap-stereo",
         feature = "cap-fingerprints",
         feature = "cap-serialization"
     ))]
@@ -306,6 +324,7 @@ impl DerivedCacheBlock {
 
     #[cfg(any(
         feature = "cap-rings",
+        feature = "cap-stereo",
         feature = "cap-fingerprints",
         feature = "cap-serialization"
     ))]
@@ -316,6 +335,7 @@ impl DerivedCacheBlock {
     pub(crate) fn validate_for_atom_count(&self, atom_count: usize) -> Result<(), OperationError> {
         #[cfg(any(
             feature = "cap-valence",
+            feature = "cap-stereo",
             feature = "cap-fingerprints",
             feature = "cap-hydrogens",
             feature = "cap-smiles",
@@ -374,6 +394,7 @@ impl DerivedCacheBlock {
         self.validate_for_atom_count(topology.atoms.len())?;
         #[cfg(any(
             feature = "cap-rings",
+            feature = "cap-stereo",
             feature = "cap-descriptors",
             feature = "cap-smiles",
             feature = "cap-sanitize",
@@ -467,7 +488,11 @@ impl DerivedCacheBlock {
                 }
             }
         }
-        #[cfg(any(feature = "cap-rings", feature = "cap-serialization"))]
+        #[cfg(any(
+            feature = "cap-rings",
+            feature = "cap-stereo",
+            feature = "cap-serialization"
+        ))]
         {
             let valid = self.valid.contains(DerivedState::RING_FAMILIES);
             match (valid, self.ring_families.as_ref()) {
@@ -856,6 +881,33 @@ impl Molecule {
             #[cfg(feature = "cap-descriptors")]
             descriptor_queries_poisoned: false,
         })
+    }
+
+    /// Read the project-native ordered tetrahedral ligand values without changing caches.
+    #[cfg(feature = "cap-stereo")]
+    pub fn tetrahedral_stereo(
+        &self,
+    ) -> Result<Vec<crate::TetrahedralStereo>, crate::StereoReadError> {
+        cosmolkit_stereo::tetrahedral_stereo(
+            self.topology(),
+            self.state.derived_cache.valence.as_ref(),
+        )
+    }
+
+    /// Validate the original project stereo read path without assigning new state.
+    #[cfg(feature = "cap-stereo")]
+    pub fn perceive_stereochemistry(&self) -> Result<(), crate::StereoReadError> {
+        cosmolkit_stereo::perceive_stereochemistry(
+            self.topology(),
+            self.state.derived_cache.valence.as_ref(),
+            self.state.derived_cache.rings.as_ref(),
+        )
+    }
+
+    /// Return the original project tag labels, optionally including unspecified atoms.
+    #[cfg(feature = "cap-stereo")]
+    pub fn find_chiral_centers(&self, include_unassigned: bool) -> Vec<(usize, String)> {
+        cosmolkit_stereo::find_chiral_centers(self.topology(), include_unassigned)
     }
 
     /// Returns detached semantic blocks for checked construction of a new value.

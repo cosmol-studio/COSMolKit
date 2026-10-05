@@ -107,7 +107,7 @@ mod enabled {
     #[test]
     fn construction_types_and_callable_have_exact_contract() {
         let _: fn(&str, &SmartsParseParams) -> Result<QueryGraph, SmartsParseError> = parse_smarts;
-        let _: fn(&str) -> Result<QueryGraph, SmartsParseError> = cosmolkit::search::parse_smarts;
+        let _: fn(&str) -> Result<QueryGraph, SmartsParseError> = cosmolkit::parse_smarts;
         assert_eq!(
             entry("search.parse_smarts")
                 .callable
@@ -140,7 +140,7 @@ mod enabled {
         assert_eq!(row.owner, BindingOwner::Module);
         assert_eq!(
             row.rust_path.replace(' ', ""),
-            "crate::search::parse_smarts_with_params"
+            "crate::parse_smarts_with_params"
         );
         assert_eq!(row.python_name, "parse_smarts_with_params");
         assert_eq!(row.javascript_name, "parseSmartsWithParams");

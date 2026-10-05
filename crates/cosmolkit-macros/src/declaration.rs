@@ -108,6 +108,10 @@ pub(crate) struct MoleculeFields {
     pub(crate) impl_fn: Path,
     pub(crate) output: MoleculeOutput,
     pub(crate) result_type: Option<Type>,
+    // Detached body metadata returned only after the runtime commits successfully.
+    pub(crate) report_type: Option<Type>,
+    // The value transform returns Molecule; only its in-place form returns metadata.
+    pub(crate) inplace_result_type: Option<Type>,
     pub(crate) assemble_fn: Option<Path>,
     pub(crate) domain: MoleculeDomain,
     pub(crate) kind: OperationKind,
@@ -167,6 +171,8 @@ struct RawMoleculeFields {
     impl_fn: Option<Path>,
     output: Option<Ident>,
     result_type: Option<Type>,
+    report_type: Option<Type>,
+    inplace_result_type: Option<Type>,
     assemble_fn: Option<Path>,
     domain: Option<Ident>,
     kind: Option<Ident>,
@@ -234,6 +240,8 @@ impl Parse for MoleculeOperation {
                 "impl_fn" => raw.impl_fn = Some(content.parse()?),
                 "output" => raw.output = Some(content.parse()?),
                 "result_type" => raw.result_type = Some(content.parse()?),
+                "report_type" => raw.report_type = Some(content.parse()?),
+                "inplace_result_type" => raw.inplace_result_type = Some(content.parse()?),
                 "assemble_fn" => raw.assemble_fn = Some(content.parse()?),
                 "domain" => raw.domain = Some(content.parse()?),
                 "kind" => raw.kind = Some(content.parse()?),
@@ -353,6 +361,8 @@ fn finish_molecule_fields(
         parameter_count,
         output,
         raw.result_type.as_ref(),
+        raw.report_type.as_ref(),
+        raw.inplace_result_type.as_ref(),
         raw.assemble_fn.as_ref(),
         kind,
         topology_edit,
@@ -393,6 +403,8 @@ fn finish_molecule_fields(
         impl_fn,
         output,
         result_type: raw.result_type,
+        report_type: raw.report_type,
+        inplace_result_type: raw.inplace_result_type,
         assemble_fn: raw.assemble_fn,
         domain,
         kind,
@@ -426,6 +438,8 @@ fn validate_molecule_relationships(
     parameter_count: usize,
     output: MoleculeOutput,
     result_type: Option<&Type>,
+    report_type: Option<&Type>,
+    inplace_result_type: Option<&Type>,
     assemble_fn: Option<&Path>,
     kind: OperationKind,
     topology_edit: TopologyEditKind,
@@ -505,6 +519,32 @@ fn validate_molecule_relationships(
             operation.span(),
             "multiple-output molecule operations cannot generate an in-place wrapper",
         ));
+    }
+    if let Some(report) = report_type.or(inplace_result_type) {
+        if report_type.is_some() && inplace_result_type.is_some() {
+            return Err(syn::Error::new_spanned(
+                report,
+                "report_type and inplace_result_type are mutually exclusive",
+            ));
+        }
+        if result_type.is_some() || assemble_fn.is_some() {
+            return Err(syn::Error::new_spanned(
+                report,
+                "detached report fields cannot be combined with pending result_type or assemble_fn",
+            ));
+        }
+        if output != MoleculeOutput::Single {
+            return Err(syn::Error::new_spanned(
+                report,
+                "detached report fields require single-output molecule operations",
+            ));
+        }
+        if inplace_result_type.is_some() && !inplace {
+            return Err(syn::Error::new_spanned(
+                report,
+                "inplace_result_type requires inplace: true",
+            ));
+        }
     }
     match (output, result_type, assemble_fn) {
         (MoleculeOutput::Single, _, Some(path)) => {

@@ -15,6 +15,7 @@ mod properties;
 mod property_value;
 mod query;
 mod sgroup;
+mod stereo;
 mod topology;
 mod valence;
 
@@ -57,3 +58,5 @@ pub use cosmolkit_types::{
 };
 
 pub use valence::{AtomMetadata, ValenceError, ValencePhase};
+
+pub use stereo::{LigandRef, TetrahedralStereo};

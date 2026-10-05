@@ -255,6 +255,9 @@ fn expand_bio_operation(operation: &BioOperation) -> syn::Result<MatrixRows> {
 
 fn molecule_result_type(operation: &MoleculeOperation) -> proc_macro2::TokenStream {
     let fields = &operation.fields;
+    if let Some(report) = fields.report_type.as_ref() {
+        return quote!(stringify!((Molecule, #report)));
+    }
     match (
         fields.output,
         fields.result_type.as_ref(),

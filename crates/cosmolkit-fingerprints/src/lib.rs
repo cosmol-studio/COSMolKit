@@ -417,3 +417,8 @@ impl From<FingerprintWorkerError> for MorganError {
 
 mod atom_pairs_parameters;
 pub use atom_pairs_parameters::AtomPairsParameters;
+
+mod topological_torsion_path;
+pub use topological_torsion_path::{
+    TopologicalTorsionPathScoreError, explain_path_score, topological_torsion_path_score,
+};

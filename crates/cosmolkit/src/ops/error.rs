@@ -117,7 +117,8 @@ pub enum OperationError {
         feature = "cap-rings",
         feature = "cap-stereo",
         feature = "cap-aromaticity",
-        feature = "cap-fingerprints"
+        feature = "cap-fingerprints",
+        feature = "cap-serialization"
     ))]
     Rings(cosmolkit_core::RingFindingError),
     #[cfg(feature = "cap-stereo")]
@@ -286,7 +287,8 @@ impl fmt::Display for OperationError {
                 feature = "cap-rings",
                 feature = "cap-stereo",
                 feature = "cap-aromaticity",
-                feature = "cap-fingerprints"
+                feature = "cap-fingerprints",
+                feature = "cap-serialization"
             ))]
             Self::Rings(error) => write!(formatter, "ring assignment failed: {error}"),
             #[cfg(feature = "cap-stereo")]
@@ -352,7 +354,8 @@ impl std::error::Error for OperationError {
                 feature = "cap-rings",
                 feature = "cap-stereo",
                 feature = "cap-aromaticity",
-                feature = "cap-fingerprints"
+                feature = "cap-fingerprints",
+                feature = "cap-serialization"
             ))]
             Self::Rings(error) => Some(error),
             #[cfg(feature = "cap-stereo")]

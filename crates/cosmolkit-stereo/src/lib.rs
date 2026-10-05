@@ -2,6 +2,10 @@
 
 mod cip_graph;
 mod cip_labels;
+mod tetrahedral;
+pub use tetrahedral::{
+    StereoReadError, find_chiral_centers, perceive_stereochemistry, tetrahedral_stereo,
+};
 
 pub use cip_graph::CipLabelerError;
 pub use cip_labels::{CipLabelAssignment, CipLabelOptions, assign_cip_labels};
@@ -35,13 +39,6 @@ pub fn assign_chiral_types_from_bond_dirs(
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct StereoOptions {
     pub max_isomers: Option<usize>,
-}
-
-pub fn perceive(topology: &TopologyBlock) -> Result<TopologyBlock, StereoError> {
-    let _ = topology;
-    Err(StereoError::Unsupported {
-        reason: "high-level stereochemistry perception is not detached yet",
-    })
 }
 
 pub fn enumerate(

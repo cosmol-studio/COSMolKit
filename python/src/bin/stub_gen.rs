@@ -77,6 +77,7 @@ _binding_profile: builtins.str
         "MorganReadError",
         "AtomPairReadError",
         "TopologicalTorsionReadError",
+        "TopologicalTorsionPathScoreError",
         "FingerprintPreparationError",
         "FingerprintError",
         "FingerprintJsonError",
@@ -91,6 +92,7 @@ _binding_profile: builtins.str
         "MmffOptimizationError",
         "UffOptimizationError",
         "UffParameterQueryError",
+        "StereoReadError",
     ] {
         text.push_str(&format!("\nclass {name}(builtins.ValueError):\n    domain: builtins.str\n    kind: builtins.str\n"));
         text = text.replace("__all__ = [\n", &format!("__all__ = [\n    \"{name}\",\n"));
@@ -100,6 +102,10 @@ _binding_profile: builtins.str
     text = text.replace("class CipRankError(builtins.ValueError):\n    domain: builtins.str\n    kind: builtins.str\n", "class CipRankError(builtins.ValueError):\n    domain: builtins.str\n    kind: builtins.str\n    # Context fields exist only on applicable Rust variants.\n    field: builtins.str\n    actual: builtins.int\n    atom_count: builtins.int\n    atom: builtins.int\n    value: builtins.int\n    map_number: builtins.int\n    degree: builtins.int\n    maximum_supported: builtins.int\n    bond: builtins.int\n    order: builtins.int\n");
     text = text.replace("class FingerprintError(builtins.ValueError):\n    domain: builtins.str\n    kind: builtins.str\n", "class FingerprintError(builtins.ValueError):\n    domain: builtins.str\n    kind: builtins.str\n    # Context fields exist only on applicable variants.\n    index: builtins.int\n    size: builtins.int\n    left: builtins.int\n    right: builtins.int\n    factor: builtins.int\n    n_bits: builtins.int\n    value: builtins.float\n    site: builtins.str\n    what: builtins.str\n    reason: builtins.str\n");
     text = text.replace("class SmartsParseError(builtins.ValueError):\n    domain: builtins.str\n    kind: builtins.str\n", "class SmartsParseError(builtins.ValueError):\n    domain: builtins.str\n    kind: builtins.str\n    # Context fields exist only on applicable Rust variants.\n    position: builtins.int\n    character: builtins.str\n    context: builtins.str\n    detail: builtins.str\n    ring: builtins.int\n    atom: builtins.int\n    begin_atom: builtins.int\n    end_atom: builtins.int\n    feature: builtins.str\n    carrier: builtins.int\n");
+    text = text.replace(
+        "class TopologicalTorsionPathScoreError(builtins.ValueError):\n    domain: builtins.str\n    kind: builtins.str\n",
+        "class TopologicalTorsionPathScoreError(builtins.ValueError):\n    domain: builtins.str\n    kind: builtins.str\n    # Context fields exist only on applicable Rust variants.\n    actual: builtins.int\n    required: builtins.int\n    index: builtins.int\n    atom_count: builtins.int\n    code: builtins.int\n    subtract: builtins.int\n",
+    );
     // Forcefield exceptions are published through create_exception!, so they
     // have no pyclass stub metadata. Project only attributes set by the thin
     // native converters; parameter causes expose kind without domain.
@@ -233,6 +239,14 @@ _binding_profile: builtins.str
         .into_iter()
         .map(|v| (v.as_str().into(), format!("{:?}", v.as_str())))
         .collect(),
+    );
+    text.push_str("\nclass TetrahedralStereo(typing.NamedTuple):\n    center: builtins.int\n    ligands: builtins.list[typing.Optional[builtins.int]]\n");
+    text = text.replace("__all__ = [\n", "__all__ = [\n    \"TetrahedralStereo\",\n");
+    let original = "def tetrahedral_stereo(self) -> builtins.list[typing.Any]:";
+    assert_eq!(text.matches(original).count(), 1);
+    text = text.replace(
+        original,
+        "def tetrahedral_stereo(self) -> builtins.list[TetrahedralStereo]:",
     );
     let mut text = expose_bio_types(text);
     text.push_str("\nclass AtomCodeExplanationError(builtins.KeyError):\n    domain: builtins.str\n    kind: builtins.str\n    code: builtins.int\n");

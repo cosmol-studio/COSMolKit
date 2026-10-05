@@ -14,6 +14,7 @@ mod canonical_fingerprint_values;
 mod canonical_molecular_hash;
 mod canonical_potential_stereo;
 mod canonical_search;
+mod canonical_stereo_queries;
 mod canonical_values;
 mod drawing_binding;
 
@@ -26,3 +27,5 @@ mod tautomer_binding;
 
 mod canonical_property_values;
 mod uff_binding;
+
+mod canonical_path_score;

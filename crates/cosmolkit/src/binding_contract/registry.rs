@@ -4,6 +4,71 @@ use cosmolkit_macros::binding_contract;
 
 binding_contract! {
     pub static BINDING_CONTRACT = [
+        {
+            semantic_id: "types.Element", item: type, owner: type_,
+            rust: crate::Element, python: "Element", javascript: "Element",
+            feature: "metadata", status: experimental, role: value,
+        },
+        {
+            semantic_id: "Element.from_atomic_number", item: callable, owner: type_,
+            rust: crate::Element::from_atomic_number, python: "from_atomic_number", javascript: "fromAtomicNumber",
+            feature: "metadata", status: experimental, kind: static_,
+            parameters: [{ name: atomic_number, type: u8, default: required }],
+            output: Option<crate::Element>, error: none,
+            state: value_returning, operation: none,
+            signature: fn(u8) -> Option<crate::Element>,
+        },
+        {
+            semantic_id: "Element.from_symbol", item: callable, owner: type_,
+            rust: crate::Element::from_symbol, python: "from_symbol", javascript: "fromSymbol",
+            feature: "metadata", status: experimental, kind: static_,
+            parameters: [{ name: symbol, type: &str, default: required }],
+            output: Option<crate::Element>, error: none,
+            state: value_returning, operation: none,
+            signature: for<'a> fn(&'a str) -> Option<crate::Element>,
+        },
+        {
+            semantic_id: "Element.atomic_number", item: callable, owner: type_,
+            rust: crate::Element::atomic_number, python: "atomic_number", javascript: "atomicNumber",
+            feature: "metadata", status: experimental, kind: instance, receiver: owned,
+            parameters: [], output: u8, error: none,
+            state: value_returning, operation: none,
+            signature: fn(crate::Element) -> u8,
+        },
+        {
+            semantic_id: "Element.symbol", item: callable, owner: type_,
+            rust: crate::Element::symbol, python: "symbol", javascript: "symbol",
+            feature: "metadata", status: experimental, kind: instance, receiver: owned,
+            parameters: [], output: &'static str, error: none,
+            state: value_returning, operation: none,
+            signature: fn(crate::Element) -> &'static str,
+        },
+        {
+            semantic_id: "types.ElementInfo", item: type, owner: type_,
+            rust: crate::ElementInfo, python: "ElementInfo", javascript: "ElementInfo",
+            feature: "metadata", status: experimental, role: result,
+        },
+        #[cfg(feature = "cap-valence")]
+        {
+            semantic_id: "module.element_info", item: callable, owner: module,
+            rust: crate::element_info, python: "element_info", javascript: "elementInfo",
+            feature: "cap-valence", status: experimental, kind: module,
+            parameters: [{ name: element, type: crate::Element, default: required }],
+            output: crate::ElementInfo, error: none,
+            state: read_only, operation: none,
+            signature: fn(crate::Element) -> crate::ElementInfo,
+        },
+        {
+            semantic_id: "types.QueryGraph", item: type, owner: type_,
+            rust: crate::QueryGraph, python: "QueryGraph", javascript: "QueryGraph",
+            feature: "metadata", status: experimental, role: value,
+        },
+        #[cfg(feature="cap-fingerprints")]
+        {semantic_id:"errors.TopologicalTorsionPathScoreError",item:type,owner:type_,rust:crate::TopologicalTorsionPathScoreError,python:"TopologicalTorsionPathScoreError",javascript:"TopologicalTorsionPathScoreError",feature:"cap-fingerprints",status:experimental,role:error,},
+        #[cfg(feature="cap-fingerprints")]
+        {semantic_id:"Molecule.topological_torsion_path_score",item:callable,owner:molecule,rust:crate::Molecule::topological_torsion_path_score,python:"topological_torsion_path_score",javascript:"topologicalTorsionPathScore",feature:"cap-fingerprints",status:experimental,kind:instance,receiver:shared,parameters:[{name:path,type:&[usize],default:required},{name:size,type:usize,default:required},{name:atom_codes,type:Option<&[u32]>,default:none}],output:u64,error:crate::TopologicalTorsionPathScoreError,state:read_only,operation:none,signature:for<'a,'b,'c> fn(&'a crate::Molecule,&'b [usize],usize,Option<&'c [u32]>)->Result<u64,crate::TopologicalTorsionPathScoreError>,},
+        #[cfg(feature="cap-fingerprints")]
+        {semantic_id:"explain_path_score",item:callable,owner:module,rust:crate::explain_path_score,python:"explain_path_score",javascript:"explainPathScore",feature:"cap-fingerprints",status:experimental,kind:module,parameters:[{name:score,type:u64,default:required},{name:size,type:usize,default:integer(4)}],output:Vec<(&'static str,u32,u32)>,error:none,state:read_only,operation:none,signature:fn(u64,usize)->Vec<(&'static str,u32,u32)>,},
         #[cfg(feature = "cap-fingerprints")]
         { semantic_id: "types.AtomPairsParameters", item: type, owner: type_, rust: crate::AtomPairsParameters, python: "AtomPairsParameters", javascript: "AtomPairsParameters", feature: "cap-fingerprints", status: experimental, role: value, },
         #[cfg(feature = "cap-fingerprints")]
@@ -172,65 +237,7 @@ binding_contract! {
             state: value_returning, operation: "with_atom_pair_atom_code",
             signature: fn(&crate::Molecule, crate::AtomId, u32, bool, bool) -> Result<crate::AtomPairAtomCodeResult, crate::OperationError>,
         },
-        {
-            semantic_id: "types.Element", item: type, owner: type_,
-            rust: crate::Element, python: "Element", javascript: "Element",
-            feature: "metadata", status: experimental, role: value,
-        },
-        {
-            semantic_id: "Element.from_atomic_number", item: callable, owner: type_,
-            rust: crate::Element::from_atomic_number, python: "from_atomic_number", javascript: "fromAtomicNumber",
-            feature: "metadata", status: experimental, kind: static_,
-            parameters: [{ name: atomic_number, type: u8, default: required }],
-            output: Option<crate::Element>, error: none,
-            state: value_returning, operation: none,
-            signature: fn(u8) -> Option<crate::Element>,
-        },
-        {
-            semantic_id: "Element.from_symbol", item: callable, owner: type_,
-            rust: crate::Element::from_symbol, python: "from_symbol", javascript: "fromSymbol",
-            feature: "metadata", status: experimental, kind: static_,
-            parameters: [{ name: symbol, type: &str, default: required }],
-            output: Option<crate::Element>, error: none,
-            state: value_returning, operation: none,
-            signature: for<'a> fn(&'a str) -> Option<crate::Element>,
-        },
-        {
-            semantic_id: "Element.atomic_number", item: callable, owner: type_,
-            rust: crate::Element::atomic_number, python: "atomic_number", javascript: "atomicNumber",
-            feature: "metadata", status: experimental, kind: instance, receiver: owned,
-            parameters: [], output: u8, error: none,
-            state: value_returning, operation: none,
-            signature: fn(crate::Element) -> u8,
-        },
-        {
-            semantic_id: "Element.symbol", item: callable, owner: type_,
-            rust: crate::Element::symbol, python: "symbol", javascript: "symbol",
-            feature: "metadata", status: experimental, kind: instance, receiver: owned,
-            parameters: [], output: &'static str, error: none,
-            state: value_returning, operation: none,
-            signature: fn(crate::Element) -> &'static str,
-        },
-        {
-            semantic_id: "types.ElementInfo", item: type, owner: type_,
-            rust: crate::ElementInfo, python: "ElementInfo", javascript: "ElementInfo",
-            feature: "metadata", status: experimental, role: result,
-        },
-        #[cfg(feature = "cap-valence")]
-        {
-            semantic_id: "module.element_info", item: callable, owner: module,
-            rust: crate::element_info, python: "element_info", javascript: "elementInfo",
-            feature: "cap-valence", status: experimental, kind: module,
-            parameters: [{ name: element, type: crate::Element, default: required }],
-            output: crate::ElementInfo, error: none,
-            state: read_only, operation: none,
-            signature: fn(crate::Element) -> crate::ElementInfo,
-        },
-        {
-            semantic_id: "types.QueryGraph", item: type, owner: type_,
-            rust: crate::QueryGraph, python: "QueryGraph", javascript: "QueryGraph",
-            feature: "metadata", status: experimental, role: value,
-        },
+
 #[cfg(feature="cap-forcefields")]
 {semantic_id:"MmffAtomProperties.atom_type",item:callable,owner:type_,rust:crate::MmffAtomProperties::atom_type,python:"atom_type",javascript:"atomType",feature:"cap-forcefields",status:experimental,kind:instance,parameters:[],output:u8,error:none,state:read_only,operation:none,signature:fn(&crate::MmffAtomProperties)->u8,},
 #[cfg(feature="cap-forcefields")]
@@ -9404,5 +9411,16 @@ binding_contract! {
           python:"molecular_hash_with_ranks", javascript:"molecularHashWithRanks", feature:"cap-hashing", status:experimental, kind:instance,
           parameters:[{name:ranks,type:&[u32],default:required}], output:u64, error:crate::MoleculeHashError, state:read_only, operation:none,
           signature:fn(&crate::Molecule,&[u32])->Result<u64,crate::MoleculeHashError>, },
+
+        { semantic_id: "types.LigandRef", item: type, owner: type_, rust: crate::LigandRef, python: "LigandRef", javascript: "LigandRef", feature: "runtime", status: native, role: value, },
+        { semantic_id: "types.TetrahedralStereo", item: type, owner: type_, rust: crate::TetrahedralStereo, python: "TetrahedralStereo", javascript: "TetrahedralStereo", feature: "runtime", status: native, role: result, },
+        #[cfg(feature = "cap-stereo")]
+        { semantic_id: "types.StereoReadError", item: type, owner: type_, rust: crate::StereoReadError, python: "StereoReadError", javascript: "StereoReadError", feature: "cap-stereo", status: native, role: error, },
+        #[cfg(feature = "cap-stereo")]
+        { semantic_id: "Molecule.tetrahedral_stereo", item: callable, owner: molecule, rust: crate::Molecule::tetrahedral_stereo, python: "tetrahedral_stereo", javascript: "tetrahedralStereo", feature: "cap-stereo", status: native, kind: instance, parameters: [], output: Vec<crate::TetrahedralStereo>, error: crate::StereoReadError, state: read_only, operation: none, signature: fn(&crate::Molecule) -> Result<Vec<crate::TetrahedralStereo>, crate::StereoReadError>, },
+        #[cfg(feature = "cap-stereo")]
+        { semantic_id: "Molecule.perceive_stereochemistry", item: callable, owner: molecule, rust: crate::Molecule::perceive_stereochemistry, python: "perceive_stereochemistry", javascript: "perceiveStereochemistry", feature: "cap-stereo", status: native, kind: instance, parameters: [], output: (), error: crate::StereoReadError, state: read_only, operation: none, signature: fn(&crate::Molecule) -> Result<(), crate::StereoReadError>, },
+        #[cfg(feature = "cap-stereo")]
+        { semantic_id: "Molecule.find_chiral_centers", item: callable, owner: molecule, rust: crate::Molecule::find_chiral_centers, python: "find_chiral_centers", javascript: "findChiralCenters", feature: "cap-stereo", status: native, kind: instance, parameters: [{name: include_unassigned, type: bool, default: true}], output: Vec<(usize, String)>, error: none, state: read_only, operation: none, signature: fn(&crate::Molecule, bool) -> Vec<(usize, String)>, },
     ];
 }

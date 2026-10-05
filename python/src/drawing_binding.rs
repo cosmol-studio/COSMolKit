@@ -344,6 +344,18 @@ impl Molecule {
 #[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
 #[pymethods]
 impl Molecule {
+    #[pyo3(signature=(path,size,atom_codes=None))]
+    fn topological_torsion_path_score(
+        &self,
+        py: Python<'_>,
+        path: Vec<usize>,
+        size: usize,
+        atom_codes: Option<Vec<u32>>,
+    ) -> PyResult<u64> {
+        self.inner
+            .topological_torsion_path_score(&path, size, atom_codes.as_deref())
+            .map_err(|e| crate::canonical_path_score::score_pyerr(py, e))
+    }
     fn properties(&self) -> crate::canonical_property_values::MoleculeProperties {
         crate::canonical_property_values::MoleculeProperties {
             inner: self.inner.properties().clone(),
@@ -1279,6 +1291,23 @@ impl Molecule {
             .with_hydrogens()
             .map(|inner| Self { inner })
             .map_err(|e| operation_pyerr(py, e))
+    }
+    fn tetrahedral_stereo(&self, py: Python<'_>) -> PyResult<Vec<Py<PyAny>>> {
+        self.inner
+            .tetrahedral_stereo()
+            .map_err(|e| crate::canonical_stereo_queries::error_pyerr(py, e))?
+            .into_iter()
+            .map(|row| crate::canonical_stereo_queries::tetrahedral_row(py, row))
+            .collect()
+    }
+    fn perceive_stereochemistry(&self, py: Python<'_>) -> PyResult<()> {
+        self.inner
+            .perceive_stereochemistry()
+            .map_err(|e| crate::canonical_stereo_queries::error_pyerr(py, e))
+    }
+    #[pyo3(signature = (include_unassigned=true))]
+    fn find_chiral_centers(&self, include_unassigned: bool) -> Vec<(usize, String)> {
+        self.inner.find_chiral_centers(include_unassigned)
     }
     fn to_builder(&self) -> crate::canonical_builder::MoleculeBuilder {
         crate::canonical_builder::MoleculeBuilder {
@@ -2255,6 +2284,7 @@ fn cosmolkit(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<Coordinate2DParams>()?;
     crate::canonical_descriptor_binding::register(module)?;
     crate::canonical_values::register(module)?;
+    crate::canonical_path_score::register(module)?;
     crate::canonical_element_metadata::register(module)?;
     crate::mmff_binding::register(module)?;
     crate::uff_binding::register(module)?;
@@ -2264,6 +2294,7 @@ fn cosmolkit(module: &Bound<'_, PyModule>) -> PyResult<()> {
     crate::canonical_binary::register(module)?;
     crate::canonical_molecular_hash::register(module)?;
     crate::canonical_builder::register(module)?;
+    crate::canonical_stereo_queries::register(module)?;
     crate::tautomer_binding::register(module)?;
     crate::canonical_property_values::register(module)?;
     crate::canonical_bio_residue::register(module)?;

@@ -156,7 +156,7 @@ pub use cosmolkit_smiles::{
     SmilesParseParams, SmilesStereoError, SmilesWriteParams,
 };
 #[cfg(feature = "cap-stereo")]
-pub use cosmolkit_stereo::{CipLabelOptions, CipLabelerError};
+pub use cosmolkit_stereo::{CipLabelOptions, CipLabelerError, StereoReadError};
 #[cfg(feature = "cap-matrices")]
 pub use matrices::DistanceMatrixParams;
 pub use molecule::Molecule;
@@ -333,3 +333,8 @@ mod molecular_hash;
 pub use cosmolkit_core::CipRankError;
 #[cfg(feature = "cap-hashing")]
 pub use cosmolkit_fingerprints::MoleculeHashError;
+
+#[cfg(feature = "cap-fingerprints")]
+mod topological_torsion_path;
+#[cfg(feature = "cap-fingerprints")]
+pub use cosmolkit_fingerprints::{TopologicalTorsionPathScoreError, explain_path_score};

@@ -53,60 +53,86 @@ fn expand_molecule_operation(
     let spec = format_ident!("{}_SPEC", name.to_string().to_ascii_uppercase());
     let docs = fields.docs.as_ref().map(|text| quote!(#[doc = #text]));
 
-    let primary = match (
-        fields.output,
-        fields.result_type.as_ref(),
-        fields.assemble_fn.as_ref(),
-    ) {
-        (MoleculeOutput::Single, None, None) => quote! {
+    let detached_result = fields
+        .report_type
+        .as_ref()
+        .or(fields.inplace_result_type.as_ref());
+    let primary = if let Some(result) = detached_result {
+        let return_type = molecule_value_return_type(fields);
+        let committed_result = if fields.report_type.is_some() {
+            quote!((molecule, result))
+        } else {
+            quote!({
+                let _ = result;
+                molecule
+            })
+        };
+        quote! {
             #(#cfg)*
             #docs
-            pub fn #method(&self, #(#params),*) -> Result<crate::Molecule, crate::ops::OperationError> {
-
+            pub fn #method(&self, #(#params),*) -> Result<#return_type, crate::ops::OperationError> {
                 let mut parts = crate::OpParts::new(self, &#spec)?;
-                #impl_fn(&mut parts, #(#call_args),*)?;
-                parts.finish()
+                let result: #result = #impl_fn(&mut parts, #(#call_args),*)?;
+                let molecule = parts.finish()?;
+                Ok(#committed_result)
             }
-        },
-        (MoleculeOutput::Single, Some(result), None) => {
-            let marker = crate::projection::access_marker(name)?;
-            quote! {
+        }
+    } else {
+        match (
+            fields.output,
+            fields.result_type.as_ref(),
+            fields.assemble_fn.as_ref(),
+        ) {
+            (MoleculeOutput::Single, None, None) => quote! {
+                #(#cfg)*
+                #docs
+                pub fn #method(&self, #(#params),*) -> Result<crate::Molecule, crate::ops::OperationError> {
+
+                    let mut parts = crate::OpParts::new(self, &#spec)?;
+                    #impl_fn(&mut parts, #(#call_args),*)?;
+                    parts.finish()
+                }
+            },
+            (MoleculeOutput::Single, Some(result), None) => {
+                let marker = crate::projection::access_marker(name)?;
+                quote! {
+                    #(#cfg)*
+                    #docs
+                    pub fn #method(&self, #(#params),*) -> Result<#result, crate::ops::OperationError> {
+
+                        let mut parts = crate::OpParts::new(self, &#spec)?;
+                        let pending: #result<crate::PendingMolecule<#marker>> = #impl_fn(&mut parts, #(#call_args),*)?;
+                        parts.finish_result(pending)
+                    }
+                }
+            }
+            (MoleculeOutput::Multiple, None, None) => quote! {
+                #(#cfg)*
+                #docs
+                pub fn #method(&self, #(#params),*) -> Result<Vec<crate::Molecule>, crate::ops::OperationError> {
+
+                    let mut parts = crate::MultiOutputOpParts::new(self, &#spec)?;
+                    #impl_fn(&mut parts, #(#call_args),*)?;
+                    parts.finish()
+                }
+            },
+            (MoleculeOutput::Multiple, Some(result), Some(assemble)) => quote! {
                 #(#cfg)*
                 #docs
                 pub fn #method(&self, #(#params),*) -> Result<#result, crate::ops::OperationError> {
 
-                    let mut parts = crate::OpParts::new(self, &#spec)?;
-                    let pending: #result<crate::PendingMolecule<#marker>> = #impl_fn(&mut parts, #(#call_args),*)?;
-                    parts.finish_result(pending)
+                    let mut parts = crate::MultiOutputOpParts::new(self, &#spec)?;
+                    let metadata = #impl_fn(&mut parts, #(#call_args),*)?;
+                    let molecules = parts.finish()?;
+                    #assemble(molecules, metadata)
                 }
+            },
+            _ => {
+                return Err(syn::Error::new_spanned(
+                    name,
+                    "validated molecule result/assembler relationship became inconsistent",
+                ));
             }
-        }
-        (MoleculeOutput::Multiple, None, None) => quote! {
-            #(#cfg)*
-            #docs
-            pub fn #method(&self, #(#params),*) -> Result<Vec<crate::Molecule>, crate::ops::OperationError> {
-
-                let mut parts = crate::MultiOutputOpParts::new(self, &#spec)?;
-                #impl_fn(&mut parts, #(#call_args),*)?;
-                parts.finish()
-            }
-        },
-        (MoleculeOutput::Multiple, Some(result), Some(assemble)) => quote! {
-            #(#cfg)*
-            #docs
-            pub fn #method(&self, #(#params),*) -> Result<#result, crate::ops::OperationError> {
-
-                let mut parts = crate::MultiOutputOpParts::new(self, &#spec)?;
-                let metadata = #impl_fn(&mut parts, #(#call_args),*)?;
-                let molecules = parts.finish()?;
-                #assemble(molecules, metadata)
-            }
-        },
-        _ => {
-            return Err(syn::Error::new_spanned(
-                name,
-                "validated molecule result/assembler relationship became inconsistent",
-            ));
         }
     };
 
@@ -118,7 +144,7 @@ fn expand_molecule_operation(
             .inplace_docs
             .as_ref()
             .map(|text| quote!(#[doc = #text]));
-        if let Some(result) = fields.result_type.as_ref() {
+        if let Some(result) = detached_result {
             quote! {
                 #(#cfg)*
                 #inplace_docs
@@ -190,10 +216,7 @@ fn expand_molecule_operation(
             } else {
                 quote!(, #(#forwarded_params),*)
             };
-            let return_type = fields
-                .result_type
-                .as_ref()
-                .map_or_else(|| quote!(()), |result| quote!(#result));
+            let return_type = detached_result.map_or_else(|| quote!(()), |result| quote!(#result));
             quote! {
                 #(#cfg)*
                 pub fn #default_method(&mut self #forwarded_signature) -> Result<#return_type, crate::ops::OperationError> {
@@ -237,6 +260,9 @@ fn expand_molecule_operation(
 fn molecule_value_return_type(
     fields: &crate::declaration::MoleculeFields,
 ) -> proc_macro2::TokenStream {
+    if let Some(report) = fields.report_type.as_ref() {
+        return quote!((crate::Molecule, #report));
+    }
     match (
         fields.output,
         fields.result_type.as_ref(),

@@ -1580,6 +1580,55 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
             "Molecule.molecular_hash_with_ranks",
         ]);
     }
+    // Element metadata and QueryGraph are the canonical stable prefix.
+    // Move only these literal fixtures; retain all other original relative order.
+    let mut prefix = vec![
+        "types.Element",
+        "Element.from_atomic_number",
+        "Element.from_symbol",
+        "Element.atomic_number",
+        "Element.symbol",
+        "types.ElementInfo",
+    ];
+    if cfg!(feature = "cap-valence") {
+        prefix.push("module.element_info");
+    }
+    prefix.push("types.QueryGraph");
+    for id in &prefix {
+        let position = expected
+            .iter()
+            .position(|existing| existing == id)
+            .expect("original canonical prefix fixture is present");
+        expected.remove(position);
+    }
+    if cfg!(feature = "cap-fingerprints") {
+        prefix.extend([
+            "errors.TopologicalTorsionPathScoreError",
+            "Molecule.topological_torsion_path_score",
+            "explain_path_score",
+            "types.AtomPairsParameters",
+            "AtomPairsParameters.version",
+            "AtomPairsParameters.num_type_bits",
+            "AtomPairsParameters.num_pi_bits",
+            "AtomPairsParameters.num_branch_bits",
+            "AtomPairsParameters.num_chiral_bits",
+            "AtomPairsParameters.code_size",
+            "AtomPairsParameters.num_path_bits",
+            "AtomPairsParameters.max_path_length",
+            "AtomPairsParameters.num_atom_pair_fingerprint_bits",
+            "AtomPairsParameters.atom_types",
+        ]);
+    }
+    expected.splice(0..0, prefix);
+    expected.extend(["types.LigandRef", "types.TetrahedralStereo"]);
+    if cfg!(feature = "cap-stereo") {
+        expected.extend([
+            "types.StereoReadError",
+            "Molecule.tetrahedral_stereo",
+            "Molecule.perceive_stereochemistry",
+            "Molecule.find_chiral_centers",
+        ]);
+    }
     assert_eq!(
         BINDING_CONTRACT
             .iter()
@@ -2300,6 +2349,16 @@ fn status_commitments_are_per_function_and_shared_with_registered_operations() {
             "Molecule.to_svg" | "Molecule.write_svg"
         ) {
             canonical_svg_identity_status()
+        } else if matches!(
+            contract.semantic_id,
+            "types.LigandRef"
+                | "types.TetrahedralStereo"
+                | "types.StereoReadError"
+                | "Molecule.tetrahedral_stereo"
+                | "Molecule.perceive_stereochemistry"
+                | "Molecule.find_chiral_centers"
+        ) {
+            FunctionStatus::Native
         } else {
             FunctionStatus::Experimental
         };
