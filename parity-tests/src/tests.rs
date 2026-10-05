@@ -230,6 +230,8 @@ fn svg_registration_preserves_complete_cargo_task_key_census() {
             "chi_n_v_smiles",
             "chi_n_n_smiles",
             "substructure_match_smiles",
+            "tautomer_enumeration_smiles",
+            "tautomer_canonicalization_smiles",
         ]
     );
     let task = registry::select(Some("svg_smiles")).unwrap()[0];
@@ -2151,6 +2153,16 @@ fn uff_new_registration_order_profiles_and_canonical_list_rows() {
             "generate_substructure_match",
             CorpusType::Smiles,
         ),
+        (
+            "tautomer_enumeration_smiles",
+            "generate_tautomer_enumeration",
+            CorpusType::Smiles,
+        ),
+        (
+            "tautomer_canonicalization_smiles",
+            "generate_tautomer_canonicalization",
+            CorpusType::Smiles,
+        ),
     ];
     assert_eq!(tasks.len(), expected.len());
     assert_eq!(
@@ -2260,6 +2272,8 @@ fn uff_new_registration_order_profiles_and_canonical_list_rows() {
             "chi_n_v_smiles: 7 cases; generate_chi_n_v",
             "chi_n_n_smiles: 7 cases; generate_chi_n_n",
             "substructure_match_smiles: 18 cases; generate_substructure_match",
+            "tautomer_enumeration_smiles: 2 cases; generate_tautomer_enumeration",
+            "tautomer_canonicalization_smiles: 2 cases; generate_tautomer_canonicalization",
         ]
         .map(str::to_string)
     );
@@ -2424,7 +2438,7 @@ fn parity_morgan_registry_profiles_names_counts_defaults_and_selection() {
 
     let selected_all = registry::select(None).unwrap();
     assert_eq!(selected_all.len(), registry::TASKS.len());
-    assert_eq!(selected_all.len(), 63);
+    assert_eq!(selected_all.len(), 65);
     assert_eq!(
         selected_all[62].operation,
         crate::registry::Operation::SubstructureMatch
@@ -2504,6 +2518,8 @@ fn parity_morgan_registry_profiles_names_counts_defaults_and_selection() {
             "chi_n_v",
             "chi_n_n",
             "substructure_match",
+            "tautomer_enumeration",
+            "tautomer_canonicalization",
         ]
     );
     assert_eq!(
@@ -2575,10 +2591,12 @@ fn parity_morgan_registry_profiles_names_counts_defaults_and_selection() {
             "chi_n_v_smiles",
             "chi_n_n_smiles",
             "substructure_match_smiles",
+            "tautomer_enumeration_smiles",
+            "tautomer_canonicalization_smiles",
         ]
     );
 
-    assert_eq!(registry::molecule_plan::TASKS.len(), 58);
+    assert_eq!(registry::molecule_plan::TASKS.len(), 60);
     assert_eq!(
         registry::molecule_plan::TASKS
             .iter()
@@ -2587,7 +2605,7 @@ fn parity_morgan_registry_profiles_names_counts_defaults_and_selection() {
         [
             4, 4, 1, 2, 2, 2, 4, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 4,
             8, 1, 1, 2, 16, 16, 16, 16, 1, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 7,
-            7
+            7, 2, 2
         ]
     );
 }

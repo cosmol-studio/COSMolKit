@@ -14,7 +14,7 @@ from rdkit.Chem.MolStandardize import rdMolStandardize
 
 
 EXPECTED_RDKIT_VERSION = "2026.3.1"
-EXPECTED_RDKIT_SOURCE_REVISION = "351f8f378f8ad6bbd517980c38896e66bf907af8c"
+EXPECTED_RDKIT_SOURCE_REVISION = "351f8f378f8ad6bbd517980c38896e66bf907af8"
 PROFILE_PATH = Path(__file__).with_name("tautomer_profile.json")
 RDLogger.DisableLog("rdApp.*")
 

@@ -145,28 +145,7 @@ pub(crate) fn total_hydrogens(
 }
 pub(crate) fn prepared(view: TautomerRecordView<'_>) -> Result<TautomerRecord, TautomerRunError> {
     view.topology.validate()?;
-    let valence = match view.valence {
-        Some(value)
-            if value.explicit_valence.len() == view.topology.atoms.len()
-                && value.implicit_hydrogens.len() == view.topology.atoms.len()
-                && value.explicit_valence.iter().all(|v| *v >= 0)
-                && view
-                    .topology
-                    .atoms
-                    .iter()
-                    .zip(&value.implicit_hydrogens)
-                    .all(|(a, v)| a.no_implicit() || *v >= 0) =>
-        {
-            value.clone()
-        }
-        _ => assign_valence(
-            view.topology,
-            &ValenceParams {
-                model: ValenceModel::RdkitLike,
-                strict: false,
-            },
-        )?,
-    };
+    let valence = prepared_valence(view)?;
     let rings = match view.rings {
         Some(value) if value.is_symm_sssr() => value.clone(),
         _ => symmetrized_sssr(view.topology, &Default::default())?,
@@ -853,4 +832,55 @@ pub(crate) fn apply_tautomer_transform_match(
 
 #[cfg(test)]
 #[path = "stereo_tests.rs"]
-mod stereo_tests;
+pub(crate) mod stereo_tests;
+
+fn prepared_valence(view: TautomerRecordView<'_>) -> Result<ValenceAssignment, TautomerRunError> {
+    Ok(match view.valence {
+        Some(value)
+            if value.explicit_valence.len() == view.topology.atoms.len()
+                && value.implicit_hydrogens.len() == view.topology.atoms.len()
+                && value.explicit_valence.iter().all(|v| *v >= 0)
+                && view
+                    .topology
+                    .atoms
+                    .iter()
+                    .zip(&value.implicit_hydrogens)
+                    .all(|(a, v)| a.no_implicit() || *v >= 0) =>
+        {
+            value.clone()
+        }
+        _ => assign_valence(
+            view.topology,
+            &ValenceParams {
+                model: ValenceModel::RdkitLike,
+                strict: false,
+            },
+        )?,
+    })
+}
+
+pub(crate) fn copy_for_canonical_assignment(
+    view: TautomerRecordView<'_>,
+) -> Result<TautomerRecord, TautomerRunError> {
+    // RDKit✔️❌:   ROMol *res = new ROMol(*bestMol);
+    // Preserve existing ring quality before the unique legacy owner performs
+    // source-required fast-ring and cleanIt SymmSSSR preparation.
+    view.topology.validate()?;
+    Ok(TautomerRecord {
+        topology: view.topology.clone(),
+        properties: view.properties.clone(),
+        valence: prepared_valence(view)?,
+        rings: match view.rings {
+            Some(rings) => rings.clone(),
+            None => RingInfo::new(
+                RingFindType::OtherOrUnknown,
+                view.topology.atoms.len(),
+                view.topology.bonds.len(),
+            ),
+        },
+    })
+}
+
+#[cfg(test)]
+#[path = "application_tests.rs"]
+mod application_tests;

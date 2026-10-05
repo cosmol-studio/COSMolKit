@@ -102,6 +102,11 @@ fn entry() -> Result<(), String> {
             .iter()
             .filter(|task| parity::descriptor_reference::handles(task))
             .collect()
+    } else if task.as_deref() == Some("tautomers_existing") {
+        registry::TASKS
+            .iter()
+            .filter(|task| parity::tautomer_reference::handles(task))
+            .collect()
     } else {
         registry::select(task.as_deref())?
     };

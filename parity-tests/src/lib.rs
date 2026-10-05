@@ -8,6 +8,8 @@ pub mod reference_parity;
 pub mod registry;
 pub mod search;
 pub mod special_regression;
+pub mod tautomer;
+pub mod tautomer_reference;
 pub mod testing;
 pub mod uff;
 
@@ -94,6 +96,7 @@ fn registry_digest() -> String {
             include_str!("registry/fingerprint_corpus.rs"),
             include_str!("registry/fingerprint.rs"),
             include_str!("molecular.rs"),
+            include_str!("tautomer.rs"),
             include_str!("uff.rs"),
             include_str!("search.rs")
         )
@@ -121,7 +124,9 @@ struct Manifest {
 }
 
 fn adapter_digest(task: &Task) -> String {
-    if descriptor_reference::handles(task) {
+    if tautomer_reference::handles(task) {
+        digest(include_str!("tautomer_reference.rs").as_bytes())
+    } else if descriptor_reference::handles(task) {
         digest(include_str!("descriptor_reference.rs").as_bytes())
     } else if draw_reference::handles(task) {
         digest(include_str!("draw_reference.rs").as_bytes())
@@ -146,7 +151,8 @@ fn identity(task: &Task, input: &[u8], reference: &[u8], rows: usize) -> Manifes
         input_sha256: digest(input),
         reference_sha256: digest(reference),
         rows,
-        imported_reference: descriptor_reference::provenance(task)
+        imported_reference: tautomer_reference::provenance(task)
+            .or_else(|| descriptor_reference::provenance(task))
             .or_else(|| draw_reference::provenance(task))
             .or_else(|| native_draw_reference::provenance(task)),
     }
@@ -224,6 +230,9 @@ fn check_records(task: &Task, inputs: &[Input], records: &[Record]) -> Result<()
 fn oracle(task: &Task, cases: &Corpus, python: &Path, threads: usize) -> Result<Vec<Record>> {
     if threads == 0 {
         return Err("threads must be positive".into());
+    }
+    if tautomer_reference::handles(task) {
+        return tautomer_reference::generate(task, cases);
     }
     if descriptor_reference::handles(task) {
         return descriptor_reference::generate(task, cases);

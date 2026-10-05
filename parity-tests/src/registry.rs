@@ -431,6 +431,16 @@ pub const TASKS: &[Task] = &[
         corpus_type: CorpusType::Smiles,
         generator: "generate_substructure_match",
     },
+    Task {
+        operation: Operation::Molecular(molecule_plan::TaskId::TautomerEnumeration),
+        corpus_type: CorpusType::Smiles,
+        generator: "generate_tautomer_enumeration",
+    },
+    Task {
+        operation: Operation::Molecular(molecule_plan::TaskId::TautomerCanonicalization),
+        corpus_type: CorpusType::Smiles,
+        generator: "generate_tautomer_canonicalization",
+    },
 ];
 
 pub const RDKIT_VERSION: &str = "2026.03.1";
@@ -630,6 +640,8 @@ impl Input {
                     Chi4N => "chi_4_n",
                     ChiNV { .. } => "chi_n_v",
                     ChiNN { .. } => "chi_n_n",
+                    TautomerEnumeration { .. } => "tautomer_enumeration",
+                    TautomerCanonicalization { .. } => "tautomer_canonicalization",
                     Morgan { output, .. } => output.task_name(),
                 }
             }

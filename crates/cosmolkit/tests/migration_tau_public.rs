@@ -179,3 +179,68 @@ fn limits_and_current_v1_custom_catalogs_keep_source_defaults() {
         1
     );
 }
+
+#[test]
+fn rich_result_collection_projection_matches_every_molecule_and_modified_set() {
+    // The deprecated vector overload delegated to Enumerate. Canonical callers
+    // project the validated rich result rather than introducing a second API.
+    for (text, params) in [
+        ("C", TautomerParams::default()),
+        ("CC(C)=O", TautomerParams::default()),
+        ("CC(C)=O", TautomerParams::default().with_max_transforms(1)),
+        (
+            "OC(C)=C(C)C",
+            TautomerParams::default().with_max_tautomers(2),
+        ),
+    ] {
+        let source = Molecule::from_smiles(text).unwrap();
+        let before = source.clone();
+        let rich = source.enumerate_tautomers_with_params(&params).unwrap();
+        let projected = rich.iter().cloned().collect::<Vec<_>>();
+        let mut atoms = std::collections::BTreeSet::from([AtomId::new(source.num_atoms() + 7)]);
+        let mut bonds = std::collections::BTreeSet::from([BondId::new(source.num_bonds() + 7)]);
+        atoms.clone_from(rich.modified_atoms());
+        bonds.clone_from(rich.modified_bonds());
+        assert_eq!(
+            projected,
+            rich.entries().map(|(_, m)| m.clone()).collect::<Vec<_>>(),
+            "molecules for {text}"
+        );
+        assert_eq!(atoms, *rich.modified_atoms(), "atoms for {text}");
+        assert_eq!(bonds, *rich.modified_bonds(), "bonds for {text}");
+        assert_eq!(source, before, "source for {text}");
+    }
+}
+#[test]
+fn rich_result_optional_projections_and_failed_operation_preserve_caller_values() {
+    let source = Molecule::from_smiles("CC(C)=O").unwrap();
+    let rich = source.enumerate_tautomers().unwrap();
+    let molecules = rich.iter().cloned().collect::<Vec<_>>();
+    let mut atoms_only = std::collections::BTreeSet::from([AtomId::new(99)]);
+    atoms_only.clone_from(rich.modified_atoms());
+    assert_eq!(atoms_only, *rich.modified_atoms());
+    assert_eq!(molecules, rich.iter().cloned().collect::<Vec<_>>());
+    let mut bonds_only = std::collections::BTreeSet::from([BondId::new(99)]);
+    bonds_only.clone_from(rich.modified_bonds());
+    assert_eq!(bonds_only, *rich.modified_bonds());
+    assert_eq!(molecules, rich.iter().cloned().collect::<Vec<_>>());
+    assert_eq!(molecules, (&rich).into_iter().cloned().collect::<Vec<_>>());
+    let invalid = Molecule::from_smiles_with_params(
+        "c1cccc1",
+        &SmilesParseParams {
+            sanitize: false,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let before = invalid.clone();
+    let atoms = std::collections::BTreeSet::from([AtomId::new(17)]);
+    let bonds = std::collections::BTreeSet::from([BondId::new(19)]);
+    assert!(matches!(
+        invalid.enumerate_tautomers(),
+        Err(OperationError::Tautomer(TautomerRunError::Kekulize(_)))
+    ));
+    assert_eq!(atoms, std::collections::BTreeSet::from([AtomId::new(17)]));
+    assert_eq!(bonds, std::collections::BTreeSet::from([BondId::new(19)]));
+    assert_eq!(invalid, before);
+}

@@ -1,7 +1,42 @@
 fn main() -> pyo3_stub_gen::Result<()> {
     cosmolkit_py::stub_info()?.generate()?;
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("cosmolkit.pyi");
-    let text = std::fs::read_to_string(&path)?;
+    let mut text = std::fs::read_to_string(&path)?;
+    // PyO3 eq_int class enums expose typed variants and integer conversion,
+    // not enum.Enum.name/value. Keep the generated TAU/property stubs faithful
+    // to their actual native classes rather than promising nonexistent fields.
+    for name in [
+        "TautomerEnumerationStatus",
+        "PropertyValueKind",
+        "SdfPropertyListTarget",
+    ] {
+        let prefix = format!("class {name}(enum.Enum):\n");
+        assert_eq!(
+            text.matches(&prefix).count(),
+            1,
+            "generated {name} schema changed"
+        );
+        let start = text.find(&prefix).unwrap();
+        let end = start + text[start..].find("\n\n").expect("generated enum boundary");
+        let members = text[start + prefix.len()..end]
+            .lines()
+            .map(|line| {
+                line.strip_prefix("    ")
+                    .and_then(|member| member.strip_suffix(" = ..."))
+                    .expect("generated PyO3 enum variant")
+                    .to_owned()
+            })
+            .collect::<Vec<_>>();
+        assert!(!members.is_empty(), "generated {name} has no variants");
+        let replacement = format!(
+            "class {name}:\n{}    def __int__(self) -> builtins.int: ...\n    def __eq__(self, other: builtins.object, /) -> builtins.bool | types.NotImplementedType: ...\n    def __ne__(self, other: builtins.object, /) -> builtins.bool | types.NotImplementedType: ...",
+            members
+                .iter()
+                .map(|member| format!("    {member}: typing.ClassVar[{name}]\n"))
+                .collect::<String>()
+        );
+        text.replace_range(start..end, &replacement);
+    }
     let text = text.replace("__all__ = [\n",
         "__all__ = [\n    \"DrawingError\",\n    \"OperationError\",\n    \"__version__\",\n    \"_binding_profile\",\n");
     let text = format!(
@@ -42,6 +77,11 @@ _binding_profile: builtins.str
         "FingerprintError",
         "DescriptorReadError",
         "DescriptorError",
+        "TautomerRunError",
+        "TautomerCatalogError",
+        "PropertyValueError",
+        "ValenceError",
+        "CipDescriptorError",
         "MmffMolPropertiesError",
         "MmffOptimizationError",
         "UffOptimizationError",
@@ -88,6 +128,103 @@ _binding_profile: builtins.str
     text.replace_range(start..end, &class);
     text = text.replacen("import typing\n", "import typing\nimport types\n", 1);
     text = text.replace("class DescriptorError(builtins.ValueError):\n    domain: builtins.str\n    kind: builtins.str\n", "class DescriptorError(builtins.ValueError):\n    domain: builtins.str\n    kind: builtins.str\n    # Context fields exist only for applicable Rust variants.\n    function: builtins.str\n    field: builtins.str\n    actual: builtins.int\n    expected: builtins.int\n    minimum: builtins.int\n    expected_rows: builtins.int\n    actual_rows: typing.Optional[builtins.int]\n    include_sulfur_phosphorus: builtins.bool\n    contribs_len: builtins.int\n    bin_prop_len: builtins.int\n    bins_len: builtins.int\n    cell: builtins.str\n    row: builtins.int\n    detail: builtins.str\n");
+    // Dynamic Python enums use exactly the canonical vocabulary used by register().
+    fn append_enum(text: &mut String, name: &str, base: &str, members: Vec<(String, String)>) {
+        assert!(
+            !text.contains(&format!("class {name}(")),
+            "duplicate generated enum {name}"
+        );
+        if !text.contains("import enum\n") {
+            text.insert_str(0, "import enum\n");
+        }
+        text.push_str(&format!("\nclass {name}({base}):\n"));
+        for (member, value) in members {
+            text.push_str(&format!("    {member} = {value}\n"));
+        }
+        *text = text.replace("__all__ = [\n", &format!("__all__ = [\n    \"{name}\",\n"));
+    }
+    append_enum(
+        &mut text,
+        "BondOrder",
+        "enum.IntEnum",
+        (0..=::cosmolkit::BondOrder::Zero.rdkit_code())
+            .map(|code| {
+                let value =
+                    ::cosmolkit::BondOrder::from_rdkit_code(code).expect("declared source code");
+                (value.rdkit_name().into(), value.rdkit_code().to_string())
+            })
+            .collect(),
+    );
+    append_enum(
+        &mut text,
+        "ChiralTag",
+        "enum.IntEnum",
+        (0..=::cosmolkit::ChiralTag::Octahedral.rdkit_code())
+            .map(|code| {
+                let value =
+                    ::cosmolkit::ChiralTag::from_rdkit_code(code).expect("declared source code");
+                (value.rdkit_name().into(), value.rdkit_code().to_string())
+            })
+            .collect(),
+    );
+    append_enum(
+        &mut text,
+        "BondDirection",
+        "enum.IntEnum",
+        (0..=::cosmolkit::BondDirection::Unknown.rdkit_code())
+            .map(|code| {
+                let value = ::cosmolkit::BondDirection::from_rdkit_code(code)
+                    .expect("declared source code");
+                (value.rdkit_name().into(), value.rdkit_code().to_string())
+            })
+            .collect(),
+    );
+    append_enum(
+        &mut text,
+        "BondStereo",
+        "enum.IntEnum",
+        (0..=::cosmolkit::BondStereo::AtropCcw.rdkit_code())
+            .map(|code| {
+                let value =
+                    ::cosmolkit::BondStereo::from_rdkit_code(code).expect("declared source code");
+                (value.rdkit_name().into(), value.rdkit_code().to_string())
+            })
+            .collect(),
+    );
+    append_enum(
+        &mut text,
+        "Hybridization",
+        "enum.IntEnum",
+        (0..=::cosmolkit::Hybridization::Other.rdkit_code())
+            .map(|code| {
+                let value = ::cosmolkit::Hybridization::from_rdkit_code(code)
+                    .expect("declared source code");
+                (value.rdkit_name().into(), value.rdkit_code().to_string())
+            })
+            .collect(),
+    );
+    append_enum(
+        &mut text,
+        "CipDescriptor",
+        "builtins.str, enum.Enum",
+        [
+            ::cosmolkit::CipDescriptor::R,
+            ::cosmolkit::CipDescriptor::S,
+            ::cosmolkit::CipDescriptor::LowerR,
+            ::cosmolkit::CipDescriptor::LowerS,
+            ::cosmolkit::CipDescriptor::E,
+            ::cosmolkit::CipDescriptor::Z,
+            ::cosmolkit::CipDescriptor::LowerE,
+            ::cosmolkit::CipDescriptor::LowerZ,
+            ::cosmolkit::CipDescriptor::M,
+            ::cosmolkit::CipDescriptor::P,
+            ::cosmolkit::CipDescriptor::LowerM,
+            ::cosmolkit::CipDescriptor::LowerP,
+        ]
+        .into_iter()
+        .map(|v| (v.as_str().into(), format!("{:?}", v.as_str())))
+        .collect(),
+    );
     let mut text = expose_bio_types(text);
     text.push_str("\nclass AtomCodeExplanationError(builtins.KeyError):\n    domain: builtins.str\n    kind: builtins.str\n    code: builtins.int\n");
     text = text.replace(

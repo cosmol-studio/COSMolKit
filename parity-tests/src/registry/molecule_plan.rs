@@ -465,20 +465,6 @@ pub const FUTURE_TASKS: &[FutureTask] = &[
         comparison: "Best mapping and RMSD",
     },
     FutureTask {
-        id: "tautomer_enumeration",
-        category: Category::Tautomers,
-        reference: Reference::Rdkit,
-        parameter_axes: "default/v1 transforms, enumeration limits, stereo/isotope retention and reassignment",
-        comparison: "Ordered results, modified atoms/bonds and completion",
-    },
-    FutureTask {
-        id: "tautomer_canonicalization",
-        category: Category::Tautomers,
-        reference: Reference::Rdkit,
-        parameter_axes: "scoring profiles and enumeration policy",
-        comparison: "Scores and canonical selected structure",
-    },
-    FutureTask {
         id: "inchi_generate",
         category: Category::Identifiers,
         reference: Reference::Rdkit,
@@ -580,6 +566,8 @@ impl FutureTask {
 impl TaskId {
     pub const fn name(self) -> &'static str {
         match self {
+            Self::TautomerEnumeration => "tautomer_enumeration",
+            Self::TautomerCanonicalization => "tautomer_canonicalization",
             Self::Chi0 => "chi_0",
             Self::Chi1 => "chi_1",
             Self::HallKierAlpha => "hall_kier_alpha",
@@ -642,6 +630,7 @@ impl TaskId {
     }
     pub const fn category(self) -> Category {
         match self {
+            Self::TautomerEnumeration | Self::TautomerCanonicalization => Category::Tautomers,
             Self::Chi0
             | Self::Chi1
             | Self::HallKierAlpha
@@ -742,6 +731,8 @@ mod catalog_tests {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum TaskId {
+    TautomerEnumeration,
+    TautomerCanonicalization,
     DistanceMatrix,
     SmilesRead,
     Sanitize,
@@ -837,7 +828,39 @@ pub enum MorganInvariantKind {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TautomerCatalog {
+    Current,
+    V1,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TautomerProfile {
+    pub catalog: TautomerCatalog,
+    pub max_tautomers: u32,
+    pub max_transforms: u32,
+    pub remove_sp3_stereo: bool,
+    pub remove_bond_stereo: bool,
+    pub remove_isotopic_hydrogens: bool,
+    pub reassign_stereo: bool,
+}
+impl TautomerProfile {
+    pub const fn branch(self) -> &'static str {
+        match self.catalog {
+            TautomerCatalog::Current => "default",
+            TautomerCatalog::V1 => "v1",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Profile {
+    TautomerEnumeration {
+        parameters: TautomerProfile,
+    },
+    TautomerCanonicalization {
+        parameters: TautomerProfile,
+    },
     DistanceMatrix {
         use_bond_order: bool,
         use_atom_weights: bool,
@@ -985,6 +1008,8 @@ pub enum InputState {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Comparison {
+    TautomerFullEnumeration,
+    TautomerFullCanonicalization,
     MatrixBits,
     TopologyAndOutcome,
     Float64Bits,
@@ -1370,6 +1395,18 @@ pub const TASKS: &[Task] = &[
         comparison: Float64Bits,
         prerequisite: MolecularPipeline,
     },
+    Task {
+        id: TautomerEnumeration,
+        input: SanitizedHydrogensRemoved,
+        comparison: TautomerFullEnumeration,
+        prerequisite: MolecularPipeline,
+    },
+    Task {
+        id: TautomerCanonicalization,
+        input: SanitizedHydrogensRemoved,
+        comparison: TautomerFullCanonicalization,
+        prerequisite: MolecularPipeline,
+    },
 ];
 
 impl TaskId {
@@ -1378,6 +1415,26 @@ impl TaskId {
     pub fn profiles(self) -> Vec<Profile> {
         let booleans = [false, true];
         match self {
+            TautomerEnumeration | TautomerCanonicalization => {
+                [TautomerCatalog::Current, TautomerCatalog::V1]
+                    .map(|catalog| {
+                        let parameters = TautomerProfile {
+                            catalog,
+                            max_tautomers: 1000,
+                            max_transforms: 1000,
+                            remove_sp3_stereo: true,
+                            remove_bond_stereo: true,
+                            remove_isotopic_hydrogens: true,
+                            reassign_stereo: true,
+                        };
+                        if self == TautomerEnumeration {
+                            Profile::TautomerEnumeration { parameters }
+                        } else {
+                            Profile::TautomerCanonicalization { parameters }
+                        }
+                    })
+                    .into()
+            }
             Chi0 => vec![Profile::Chi0],
             Chi1 => vec![Profile::Chi1],
             HallKierAlpha => vec![Profile::HallKierAlpha],
@@ -1599,7 +1656,7 @@ mod tests {
             [
                 4, 4, 1, 2, 2, 2, 4, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
                 4, 8, 1, 1, 2, 16, 16, 16, 16, 1, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 1,
-                1, 1, 7, 7
+                1, 1, 7, 7, 2, 2
             ]
         );
         assert_eq!(
@@ -1621,7 +1678,7 @@ mod tests {
     #[test]
     fn parity_morgan_registry_molecular_plan_tracks_executable_registration() {
         let executable = super::super::select(None).unwrap();
-        assert_eq!(executable.len(), 63);
+        assert_eq!(executable.len(), 65);
         assert_eq!(
             executable[62].operation,
             super::super::Operation::SubstructureMatch

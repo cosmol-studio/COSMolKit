@@ -60,13 +60,17 @@ pub(crate) fn canonical_tautomer_impl(params: &TautomerParams) -> Result<(), Ope
                 rings: cache.valid_ring_info(),
             };
             let callback = CallbackAdapter(params);
-            let record = cosmolkit_tautomer::canonicalize_with_catalog(
-                source,
-                &params.catalog,
-                params.policy,
-                Some(&callback),
-                |view| params.score_view(view),
-            )
+            let record = if params.finalize_selected {
+                cosmolkit_tautomer::finalize_canonical_candidate(source)
+            } else {
+                cosmolkit_tautomer::canonicalize_with_catalog(
+                    source,
+                    &params.catalog,
+                    params.policy,
+                    Some(&callback),
+                    |view| params.score_view(view),
+                )
+            }
             .map_err(OperationError::Tautomer)?;
             let rows = (topology.atoms.len(), topology.bonds.len());
             *topology = record.topology;

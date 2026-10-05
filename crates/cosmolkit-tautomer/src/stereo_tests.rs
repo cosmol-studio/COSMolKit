@@ -1,5 +1,7 @@
 use super::*;
-fn fixture_from_smiles(text: &str) -> Result<TautomerRecord, Box<dyn std::error::Error>> {
+pub(crate) fn fixture_from_smiles(
+    text: &str,
+) -> Result<TautomerRecord, Box<dyn std::error::Error>> {
     let params = cosmolkit_smiles::SmilesParseParams::default();
     let parsed = cosmolkit_smiles::parse_smiles(text, &params)?;
     let result = remove_hydrogens_with_params(

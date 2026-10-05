@@ -229,6 +229,8 @@ pub struct MorganSparseCountsOutput {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Outcome {
+    TautomerEnumeration(crate::tautomer::Enumeration),
+    TautomerCanonicalization(crate::tautomer::Canonicalization),
     Matrix {
         dimension: usize,
         values_bits: Vec<u64>,
@@ -316,6 +318,12 @@ pub fn topology(mol: &Molecule) -> Topology {
 pub fn validate_output(profile: &Profile, output: &Outcome) -> Result<(), String> {
     use Profile::*;
     let valid = match (profile, output) {
+        (TautomerEnumeration { .. }, Outcome::TautomerEnumeration(value)) => {
+            crate::tautomer::valid_enumeration(value)
+        }
+        (TautomerCanonicalization { .. }, Outcome::TautomerCanonicalization(value)) => {
+            crate::tautomer::valid_canonicalization(value)
+        }
         (
             DistanceMatrix { .. },
             Outcome::Matrix {
@@ -562,6 +570,12 @@ pub fn run(input: &Input) -> Result<Record, String> {
         stage = Stage::Operation;
         use Profile::*;
         let transformed = match profile {
+            TautomerEnumeration { parameters } => {
+                return crate::tautomer::enumerate(&mol, *parameters);
+            }
+            TautomerCanonicalization { parameters } => {
+                return crate::tautomer::canonicalize(&mol, *parameters);
+            }
             Chi0 => {
                 return mol
                     .chi_0()

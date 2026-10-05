@@ -106,9 +106,9 @@ fn canonical_public_signatures_and_defaults_compile() {
 fn binding_contract_exposes_the_frozen_nine_entries() {
     let expected = [
         "module.element_info",
+        "Molecule.atom_metadata",
         "types.ValenceModel",
         "types.ValenceParams",
-        "types.ValenceError",
         "Molecule.with_assigned_valence",
         "Molecule.with_assigned_valence_with_params",
         "Molecule.assign_valence_",
@@ -128,7 +128,25 @@ fn binding_contract_exposes_the_frozen_nine_entries() {
     assert_eq!(rows[0].status, FunctionStatus::Experimental);
     assert_eq!(rows[0].callable.unwrap().state_model, StateModel::ReadOnly);
     assert_eq!(rows[0].callable.unwrap().operation_semantic_id, None);
-    for row in &rows[1..4] {
+    // The source-backed AtomMetadata result and ValenceError vocabulary are
+    // shared metadata; the cached getter itself belongs to cap-valence.
+    assert_eq!(rows[1].item, BindingItem::Callable);
+    assert_eq!(rows[1].owner, BindingOwner::Molecule);
+    assert_eq!(rows[1].status, FunctionStatus::Experimental);
+    assert_eq!(rows[1].callable.unwrap().state_model, StateModel::ReadOnly);
+    assert_eq!(rows[1].callable.unwrap().operation_semantic_id, None);
+    let shared_errors = BINDING_CONTRACT
+        .iter()
+        .filter(|row| row.semantic_id == "types.ValenceError")
+        .collect::<Vec<_>>();
+    assert_eq!(shared_errors.len(), 1);
+    assert_eq!(shared_errors[0].feature, "metadata");
+    assert_eq!(shared_errors[0].item, BindingItem::Type);
+    assert_eq!(shared_errors[0].owner, BindingOwner::Type);
+    assert_eq!(shared_errors[0].status, FunctionStatus::Experimental);
+    let _: fn(&Molecule) -> Result<Vec<cosmolkit::AtomMetadata>, ValenceError> =
+        Molecule::atom_metadata;
+    for row in &rows[2..4] {
         assert_eq!(row.item, BindingItem::Type);
         assert_eq!(row.owner, BindingOwner::Type);
         assert_eq!(row.status, FunctionStatus::Experimental);

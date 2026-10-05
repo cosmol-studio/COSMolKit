@@ -1144,4 +1144,12 @@ mod tests {
         );
         assert_eq!(candidates["a"].num_modified_atoms, 9);
     }
+    #[test]
+    fn enumeration_result_rejects_an_unmaterialized_candidate() {
+        let mut candidates = SmilesTautomerMap::<String>::new();
+        candidates.insert("C".into(), TautomerCandidate::empty());
+        assert!(
+            matches!(materialize_tautomer_candidates_in_source_order(candidates),Err(TautomerEnumerationError::MissingCandidateMolecule{canonical_smiles}) if canonical_smiles=="C")
+        );
+    }
 }

@@ -20,4 +20,7 @@ pyo3_stub_gen::define_stub_info_gatherer!(stub_info);
 
 mod mmff_binding;
 
+mod tautomer_binding;
+
+mod canonical_property_values;
 mod uff_binding;

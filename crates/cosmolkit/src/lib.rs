@@ -113,7 +113,8 @@ pub use cosmolkit_core::{AddHsParams, HydrogenError, RemoveHsParams};
 #[cfg(feature = "cap-aromaticity")]
 pub use cosmolkit_core::{AromaticityError, AromaticityModel, AromaticityParams};
 #[cfg(feature = "cap-valence")]
-pub use cosmolkit_core::{AtomMetadata, ValenceError, ValenceModel, ValenceParams};
+pub use cosmolkit_core::{ValenceModel, ValenceParams};
+// Detached metadata and its error are always-present model vocabulary.
 #[cfg(feature = "cap-transforms")]
 pub use cosmolkit_core::{AtomPositionParams, TransformError};
 #[cfg(feature = "cap-sanitize")]
@@ -141,6 +142,7 @@ pub use cosmolkit_io::{
 pub use cosmolkit_io::{BioSelectionParseError, SelectionSeqidRangeError, SelectionSyntaxError};
 pub use cosmolkit_model as model;
 pub use cosmolkit_model::*;
+pub use cosmolkit_model::{AtomMetadata, ValenceError};
 #[cfg(feature = "cap-smiles")]
 pub use cosmolkit_smiles::{
     CxCoordinateSelection, CxSmilesFields, CxSmilesWriteParams, RandomSmilesWriteParams,
@@ -297,18 +299,19 @@ pub use tautomer::{
     TautomerCatalogError, TautomerEnumeration, TautomerEnumerationCallback,
     TautomerEnumerationStatus, TautomerMoleculeView, TautomerParams, TautomerProgress,
     TautomerRunError, TautomerScore, TautomerScoreParams, TautomerScoreTerm, TautomerScorer,
+    canonical_tautomer_from_molecules, canonical_tautomer_from_molecules_with_params,
     default_tautomer_score_terms,
 };
 
 #[cfg(all(feature = "cap-bio", feature = "cap-io"))]
 pub use bio::BioMoleculeError;
-#[cfg(all(feature = "cap-bio", feature = "cap-io"))]
-pub use cosmolkit_io::{BioMoleculeConversionError, BioMoleculeParams};
-#[cfg(feature = "cap-forcefields")]
-pub use ops::{UffEnergyGradient, UffEvaluationParams};
 #[cfg(feature = "cap-fingerprints")]
 pub use cosmolkit_fingerprints::{AtomCodeExplanation, AtomCodeExplanationError};
+#[cfg(all(feature = "cap-bio", feature = "cap-io"))]
+pub use cosmolkit_io::{BioMoleculeConversionError, BioMoleculeParams};
 #[cfg(feature = "cap-fingerprints")]
 pub use ops::AtomPairAtomCodeResult;
 #[cfg(feature = "cap-fingerprints")]
 pub(crate) use ops::WithAtomPairAtomCodeAccess;
+#[cfg(feature = "cap-forcefields")]
+pub use ops::{UffEnergyGradient, UffEvaluationParams};

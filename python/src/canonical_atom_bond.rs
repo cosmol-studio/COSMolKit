@@ -24,7 +24,7 @@ pub(crate) fn cip_pyerr(py: Python<'_>, source: ck::CipDescriptorError) -> PyErr
         &source,
     )
 }
-fn property_pyerr(py: Python<'_>, source: ck::PropertyValueError) -> PyErr {
+pub(crate) fn property_pyerr(py: Python<'_>, source: ck::PropertyValueError) -> PyErr {
     let e = crate::canonical_values::annotate(
         py,
         PropertyValueError::new_err(source.to_string()),
@@ -185,6 +185,10 @@ impl Atom {
     }
     fn no_implicit(&self) -> bool {
         self.inner.no_implicit()
+    }
+    #[gen_stub(override_return_type(type_repr = "Hybridization"))]
+    fn hybridization<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        enum_member(py, "Hybridization", self.inner.hybridization().rdkit_code())
     }
     fn radical_electrons(&self) -> u8 {
         self.inner.radical_electrons()
@@ -369,6 +373,23 @@ pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
     )?;
     module.add("ValenceError", module.py().get_type::<ValenceError>())?;
     let enum_module = module.py().import("enum")?;
+    let members = PyDict::new(module.py());
+    for code in 0..=ck::Hybridization::Other.rdkit_code() {
+        let value = ck::Hybridization::from_rdkit_code(code).ok_or_else(|| {
+            PyRuntimeError::new_err(format!(
+                "canonical Hybridization lacks declared code {code}"
+            ))
+        })?;
+        members.set_item(value.rdkit_name(), value.rdkit_code())?;
+    }
+    let kwargs = PyDict::new(module.py());
+    kwargs.set_item("module", "cosmolkit")?;
+    module.add(
+        "Hybridization",
+        enum_module
+            .getattr("IntEnum")?
+            .call(("Hybridization", members), Some(&kwargs))?,
+    )?;
     let members = PyDict::new(module.py());
     for code in 0..=ck::BondOrder::Zero.rdkit_code() {
         let value = ck::BondOrder::from_rdkit_code(code).ok_or_else(|| {

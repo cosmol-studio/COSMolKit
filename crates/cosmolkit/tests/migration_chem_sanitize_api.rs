@@ -6,12 +6,13 @@ use std::path::PathBuf;
 use std::process::{Command, Output};
 
 use cosmolkit::{
-    Atom, AtomId, AtomSpec, BINDING_CONTRACT, BindingItem, BindingOwner, BlockSet, Bond, BondId,
-    BondOrder, BondSpec, ChemistryProblemError, Conformer2D, CoordinateBlock, Element,
-    FunctionStatus, Molecule, MoleculeOpKind, MoleculeOpOutput, MoleculeProperties,
-    OperationDomain, OperationError, ParityPolicy, SanitizeError, SanitizeOperations,
-    SanitizeParams, SanitizeStage, StateModel, TopologyBlock, TopologyEditKind, feature_spec,
-    operation_invariant, operation_parity, operation_spec, support_matrix,
+    Atom, AtomId, AtomSpec, BINDING_CONTRACT, BindingDefault, BindingItem, BindingKind,
+    BindingOwner, BindingReceiver, BlockSet, Bond, BondId, BondOrder, BondSpec,
+    ChemistryProblemError, Conformer2D, CoordinateBlock, Element, FunctionStatus, Molecule,
+    MoleculeOpKind, MoleculeOpOutput, MoleculeProperties, OperationDomain, OperationError,
+    ParityPolicy, SanitizeError, SanitizeOperations, SanitizeParams, SanitizeStage, StateModel,
+    TopologyBlock, TopologyEditKind, feature_spec, operation_invariant, operation_parity,
+    operation_spec, operation_specs, support_matrix,
 };
 
 fn topology_from_specs(atom_specs: Vec<AtomSpec>, bond_specs: Vec<BondSpec>) -> TopologyBlock {
@@ -124,6 +125,9 @@ fn problem_topology() -> TopologyBlock {
 #[test]
 fn canonical_signatures_defaults_and_flag_vocabulary_are_exact() {
     let _: fn(&Molecule) -> Result<Molecule, OperationError> = Molecule::sanitize;
+    let _: fn(&mut Molecule) -> Result<(), OperationError> = Molecule::sanitize_;
+    let _: for<'a, 'b> fn(&'a mut Molecule, &'b SanitizeParams) -> Result<(), OperationError> =
+        Molecule::sanitize_with_params_;
     let _: for<'a, 'b> fn(&'a Molecule, &'b SanitizeParams) -> Result<Molecule, OperationError> =
         Molecule::sanitize_with_params;
     let _: fn(&Molecule) -> Result<cosmolkit::ChemistryProblemReport, SanitizeError> =
@@ -162,7 +166,7 @@ fn canonical_signatures_defaults_and_flag_vocabulary_are_exact() {
 }
 
 #[test]
-fn binding_contract_exposes_exactly_the_frozen_eleven_entries() {
+fn binding_contract_exposes_original_eleven_and_two_declared_inplace_entries() {
     let expected = [
         "types.SanitizeOperations",
         "types.SanitizeStage",
@@ -175,6 +179,8 @@ fn binding_contract_exposes_exactly_the_frozen_eleven_entries() {
         "Molecule.sanitize_with_params",
         "Molecule.detect_chemistry_problems",
         "Molecule.detect_chemistry_problems_with_params",
+        "Molecule.sanitize_",
+        "Molecule.sanitize_with_params_",
     ];
     let rows = BINDING_CONTRACT
         .iter()
@@ -207,6 +213,41 @@ fn binding_contract_exposes_exactly_the_frozen_eleven_entries() {
     assert_eq!(rows[10].callable.unwrap().state_model, StateModel::ReadOnly);
     assert!(rows[9].callable.unwrap().operation_semantic_id.is_none());
     assert!(rows[10].callable.unwrap().operation_semantic_id.is_none());
+    // The sole molecule_ops! sanitize declaration generates these two canonical
+    // in-place wrappers. Retain all eleven original rows and validate the
+    // existing binding declarations rather than asserting an obsolete surface.
+    for (row, method, javascript_name, parameter_count) in [
+        (rows[11], "sanitize_", "sanitize_", 0),
+        (rows[12], "sanitize_with_params_", "sanitizeWithParams_", 1),
+    ] {
+        let compact = |text: &str| {
+            text.chars()
+                .filter(|character| !character.is_whitespace())
+                .collect::<String>()
+        };
+        assert_eq!(compact(row.rust_path), format!("crate::Molecule::{method}"));
+        assert_eq!(row.python_name, method);
+        assert_eq!(row.javascript_name, javascript_name);
+        assert_eq!(row.feature, "cap-sanitize");
+        assert_eq!(row.type_role, None);
+        let callable = row.callable.unwrap();
+        assert_eq!(callable.kind, BindingKind::Instance);
+        assert_eq!(callable.receiver, Some(BindingReceiver::Mutable));
+        assert_eq!(callable.state_model, StateModel::InPlace);
+        assert_eq!(callable.operation_semantic_id, Some(method));
+        assert_eq!(compact(callable.output_type), "()");
+        assert_eq!(
+            callable.error_type.map(compact),
+            Some("crate::OperationError".into())
+        );
+        assert_eq!(callable.parameters.len(), parameter_count);
+        if parameter_count == 1 {
+            let parameter = callable.parameters[0];
+            assert_eq!(parameter.name, "params");
+            assert_eq!(compact(parameter.type_name), "&crate::SanitizeParams");
+            assert_eq!(parameter.default, BindingDefault::Required);
+        }
+    }
 }
 
 #[test]
@@ -467,17 +508,34 @@ fn sanitize_operation_body_sees_only_its_generated_capabilities() {
 }
 
 #[test]
-fn sanitize_has_no_mapping_multiple_output_or_inplace_alias() {
+fn sanitize_has_no_mapping_multiple_output_or_separate_inplace_operation() {
     let spec = operation_spec("sanitize_with_params").unwrap();
     assert_eq!(spec.output, MoleculeOpOutput::Single);
     assert_eq!(spec.result_type, "Molecule");
     assert_eq!(spec.topology_edit, TopologyEditKind::Local);
     assert_eq!(format!("{:?}", spec.requires_mapping), "None");
     assert_eq!(spec.auto_remap, BlockSet::NONE);
-    assert!(
+    // Canonical generated in-place methods share the one sanitize operation;
+    // they do not introduce a second operation declaration or broader effects.
+    assert_eq!(
+        operation_specs()
+            .iter()
+            .filter(|row| row.method.starts_with("sanitize"))
+            .map(|row| row.method)
+            .collect::<Vec<_>>(),
+        ["sanitize_with_params"]
+    );
+    for method in ["sanitize_", "sanitize_with_params_"] {
+        assert!(operation_spec(method).is_none());
+        assert!(operation_invariant(method).is_none());
+        assert!(operation_parity(method).is_none());
+    }
+    assert_eq!(
         BINDING_CONTRACT
             .iter()
-            .filter(|row| row.feature == "cap-sanitize")
-            .all(|row| !row.semantic_id.ends_with('_'))
+            .filter(|row| row.feature == "cap-sanitize" && row.semantic_id.ends_with('_'))
+            .map(|row| row.semantic_id)
+            .collect::<Vec<_>>(),
+        ["Molecule.sanitize_", "Molecule.sanitize_with_params_"]
     );
 }

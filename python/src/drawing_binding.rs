@@ -138,6 +138,7 @@ pub(crate) fn operation_pyerr(py: Python<'_>, source: ck::OperationError) -> PyE
         match &source {
             E::UffOptimization(cause) => Some(crate::uff_binding::optimization_pyerr(py, cause)),
             E::MmffOptimization(cause) => Some(crate::mmff_binding::optimization_pyerr(py, cause)),
+            E::Tautomer(cause) => Some(crate::tautomer_binding::run_pyerr(py, cause)),
             E::PotentialStereo(cause) => {
                 Some(crate::canonical_potential_stereo::error_pyerr(py, cause))
             }
@@ -343,6 +344,50 @@ impl Molecule {
 #[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
 #[pymethods]
 impl Molecule {
+    fn properties(&self) -> crate::canonical_property_values::MoleculeProperties {
+        crate::canonical_property_values::MoleculeProperties {
+            inner: self.inner.properties().clone(),
+        }
+    }
+    fn enumerate_tautomers(
+        &self,
+        py: Python<'_>,
+    ) -> PyResult<crate::tautomer_binding::TautomerEnumeration> {
+        crate::tautomer_binding::enumerate(py, self, None)
+    }
+    fn enumerate_tautomers_with_params(
+        &self,
+        py: Python<'_>,
+        params: &crate::tautomer_binding::TautomerParams,
+    ) -> PyResult<crate::tautomer_binding::TautomerEnumeration> {
+        crate::tautomer_binding::enumerate(py, self, Some(params))
+    }
+    fn canonical_tautomer(&self, py: Python<'_>) -> PyResult<Self> {
+        crate::tautomer_binding::canonical(py, self, None)
+    }
+    fn canonical_tautomer_with_params(
+        &self,
+        py: Python<'_>,
+        params: &crate::tautomer_binding::TautomerParams,
+    ) -> PyResult<Self> {
+        crate::tautomer_binding::canonical(py, self, Some(params))
+    }
+    fn tautomer_score(&self, py: Python<'_>) -> PyResult<crate::tautomer_binding::TautomerScore> {
+        self.inner
+            .tautomer_score()
+            .map(|inner| crate::tautomer_binding::TautomerScore { inner })
+            .map_err(|error| crate::tautomer_binding::run_pyerr(py, &error))
+    }
+    fn tautomer_score_with_params(
+        &self,
+        py: Python<'_>,
+        params: &crate::tautomer_binding::TautomerScoreParams,
+    ) -> PyResult<crate::tautomer_binding::TautomerScore> {
+        self.inner
+            .tautomer_score_with_params(&params.inner)
+            .map(|inner| crate::tautomer_binding::TautomerScore { inner })
+            .map_err(|error| crate::tautomer_binding::run_pyerr(py, &error))
+    }
     #[pyo3(signature=(atom_id, branch_subtract=0, include_chirality=false, use_legacy_stereo_perception=true))]
     fn with_atom_pair_atom_code(
         &self,
@@ -2094,6 +2139,8 @@ fn cosmolkit(module: &Bound<'_, PyModule>) -> PyResult<()> {
     crate::canonical_atom_bond::register(module)?;
     crate::canonical_potential_stereo::register(module)?;
     crate::canonical_builder::register(module)?;
+    crate::tautomer_binding::register(module)?;
+    crate::canonical_property_values::register(module)?;
     crate::canonical_bio_residue::register(module)?;
     crate::canonical_bio_binding::register(module)?;
     Ok(())

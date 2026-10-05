@@ -23,79 +23,183 @@ pub struct TautomerScoreParams {
 }
 
 /// Immutable detached inspection during a callback or custom score.
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct TautomerMoleculeView<'a> {
-    pub(crate) inner: cosmolkit_tautomer::TautomerRecordView<'a>,
+    storage: TautomerViewStorage<'a>,
 }
-impl TautomerMoleculeView<'_> {
+#[derive(Clone)]
+enum TautomerViewStorage<'a> {
+    Borrowed(cosmolkit_tautomer::TautomerRecordView<'a>),
+    Owned(Arc<TautomerViewSnapshot>),
+}
+struct TautomerViewSnapshot {
+    topology: cosmolkit_model::TopologyBlock,
+    coordinates: CoordinateBlock,
+    properties: MoleculeProperties,
+    valence: Option<cosmolkit_core::ValenceAssignment>,
+    rings: Option<cosmolkit_core::RingInfo>,
+}
+impl<'a> TautomerMoleculeView<'a> {
+    fn borrowed(view: cosmolkit_tautomer::TautomerRecordView<'a>) -> Self {
+        Self {
+            storage: TautomerViewStorage::Borrowed(view),
+        }
+    }
+    fn record(&self) -> cosmolkit_tautomer::TautomerRecordView<'_> {
+        match &self.storage {
+            TautomerViewStorage::Borrowed(view) => *view,
+            TautomerViewStorage::Owned(value) => cosmolkit_tautomer::TautomerRecordView {
+                topology: &value.topology,
+                coordinates: &value.coordinates,
+                properties: &value.properties,
+                valence: value.valence.as_ref(),
+                rings: value.rings.as_ref(),
+            },
+        }
+    }
+    /// Retain an immutable view after the callback without any live runtime authority.
+    pub fn to_owned(&self) -> TautomerMoleculeView<'static> {
+        let storage = match &self.storage {
+            TautomerViewStorage::Owned(value) => TautomerViewStorage::Owned(value.clone()),
+            TautomerViewStorage::Borrowed(view) => {
+                TautomerViewStorage::Owned(Arc::new(TautomerViewSnapshot {
+                    topology: view.topology.clone(),
+                    coordinates: view.coordinates.clone(),
+                    properties: view.properties.clone(),
+                    valence: view.valence.cloned(),
+                    rings: view.rings.cloned(),
+                }))
+            }
+        };
+        TautomerMoleculeView { storage }
+    }
     pub fn num_atoms(&self) -> usize {
-        self.inner.topology.atoms.len()
+        self.record().topology.atoms.len()
     }
     pub fn num_bonds(&self) -> usize {
-        self.inner.topology.bonds.len()
+        self.record().topology.bonds.len()
+    }
+    /// Canonical metadata query through its unique foundational owner.
+    pub fn atom_metadata(&self) -> Result<Vec<crate::AtomMetadata>, crate::ValenceError> {
+        let record = self.record();
+        cosmolkit_core::atom_metadata_from_assignment(record.topology, record.valence)
+    }
+    /// Degree from the validated detached adjacency, independent of valence errors.
+    pub fn atom_degree(&self, id: AtomId) -> Option<usize> {
+        let record = self.record();
+        record.topology.atoms.get(id.index())?;
+        Some(record.topology.adjacency.neighbors_of(id.index()).len())
     }
     pub fn atoms(&self) -> &[Atom] {
-        &self.inner.topology.atoms
+        &self.record().topology.atoms
     }
     pub fn bonds(&self) -> &[Bond] {
-        &self.inner.topology.bonds
+        &self.record().topology.bonds
     }
     pub fn atom(&self, id: AtomId) -> Option<&Atom> {
-        self.inner.topology.atoms.get(id.index())
+        self.record().topology.atoms.get(id.index())
     }
     pub fn bond(&self, id: BondId) -> Option<&Bond> {
-        self.inner.topology.bonds.get(id.index())
+        self.record().topology.bonds.get(id.index())
     }
     pub fn properties(&self) -> &MoleculeProperties {
-        self.inner.properties
+        self.record().properties
     }
     pub fn to_smiles(&self) -> Result<String, TautomerRunError> {
+        let view = self.record();
         Ok(cosmolkit_smiles::write_smiles(
             cosmolkit_smiles::SmilesRecordView {
-                topology: self.inner.topology,
-                coordinates: self.inner.coordinates,
-                properties: self.inner.properties,
+                topology: view.topology,
+                coordinates: view.coordinates,
+                properties: view.properties,
             },
         )?)
     }
     pub fn tautomer_score(&self) -> Result<TautomerScore, TautomerRunError> {
-        cosmolkit_tautomer::score_tautomer(self.inner)
+        cosmolkit_tautomer::score_tautomer(self.record())
     }
 }
-
-/// Borrowed source-ordered progress before application of a matched transform.
+/// Source-ordered progress before application of a matched transform.
 pub struct TautomerProgress<'a> {
-    inner: cosmolkit_tautomer::TautomerProgress<'a>,
-    coordinates: &'a CoordinateBlock,
+    storage: TautomerProgressStorage<'a>,
+}
+enum TautomerProgressStorage<'a> {
+    Borrowed {
+        inner: cosmolkit_tautomer::TautomerProgress<'a>,
+        coordinates: &'a CoordinateBlock,
+    },
+    Owned {
+        entries: Vec<(String, TautomerMoleculeView<'static>)>,
+        status: TautomerEnumerationStatus,
+        num_transforms: u32,
+        modified_atoms: BTreeSet<AtomId>,
+        modified_bonds: BTreeSet<BondId>,
+    },
 }
 impl TautomerProgress<'_> {
+    /// Preserve this exact pre-application snapshot for a language callback.
+    pub fn to_owned(&self) -> TautomerProgress<'static> {
+        TautomerProgress {
+            storage: TautomerProgressStorage::Owned {
+                entries: self
+                    .entries()
+                    .map(|(key, value)| (key.to_owned(), value.to_owned()))
+                    .collect(),
+                status: self.status(),
+                num_transforms: self.num_transforms(),
+                modified_atoms: self.modified_atoms().clone(),
+                modified_bonds: self.modified_bonds().clone(),
+            },
+        }
+    }
     pub fn len(&self) -> usize {
-        self.inner.len()
+        match &self.storage {
+            TautomerProgressStorage::Borrowed { inner, .. } => inner.len(),
+            TautomerProgressStorage::Owned { entries, .. } => entries.len(),
+        }
     }
     pub fn is_empty(&self) -> bool {
-        self.inner.is_empty()
+        self.len() == 0
     }
     pub fn status(&self) -> TautomerEnumerationStatus {
-        self.inner.status()
+        match &self.storage {
+            TautomerProgressStorage::Borrowed { inner, .. } => inner.status(),
+            TautomerProgressStorage::Owned { status, .. } => *status,
+        }
     }
     pub fn num_transforms(&self) -> u32 {
-        self.inner.num_transforms()
+        match &self.storage {
+            TautomerProgressStorage::Borrowed { inner, .. } => inner.num_transforms(),
+            TautomerProgressStorage::Owned { num_transforms, .. } => *num_transforms,
+        }
     }
     pub fn modified_atoms(&self) -> &BTreeSet<AtomId> {
-        self.inner.modified_atoms()
+        match &self.storage {
+            TautomerProgressStorage::Borrowed { inner, .. } => inner.modified_atoms(),
+            TautomerProgressStorage::Owned { modified_atoms, .. } => modified_atoms,
+        }
     }
     pub fn modified_bonds(&self) -> &BTreeSet<BondId> {
-        self.inner.modified_bonds()
+        match &self.storage {
+            TautomerProgressStorage::Borrowed { inner, .. } => inner.modified_bonds(),
+            TautomerProgressStorage::Owned { modified_bonds, .. } => modified_bonds,
+        }
     }
-    pub fn entries(&self) -> impl ExactSizeIterator<Item = (&str, TautomerMoleculeView<'_>)> {
-        self.inner.entries().map(|(key, value)| {
-            (
-                key,
-                TautomerMoleculeView {
-                    inner: value.view(self.coordinates),
-                },
-            )
-        })
+    pub fn entries(
+        &self,
+    ) -> Box<dyn ExactSizeIterator<Item = (&str, TautomerMoleculeView<'_>)> + '_> {
+        match &self.storage {
+            TautomerProgressStorage::Borrowed { inner, coordinates } => {
+                Box::new(inner.entries().map(|(key, value)| {
+                    (key, TautomerMoleculeView::borrowed(value.view(coordinates)))
+                }))
+            }
+            TautomerProgressStorage::Owned { entries, .. } => Box::new(
+                entries
+                    .iter()
+                    .map(|(key, value)| (key.as_str(), value.clone())),
+            ),
+        }
     }
 }
 /// Returning false cancels the enumeration; an error aborts the value operation.
@@ -116,6 +220,9 @@ pub trait TautomerScorer: Send + Sync {
 pub struct TautomerParams {
     pub(crate) policy: cosmolkit_tautomer::TautomerParams,
     pub(crate) catalog: Arc<cosmolkit_tautomer::TautomerCatalog>,
+    // Internal invocation mode for finalizing a selected validated result.
+    // It is never exposed or returned as public parameter configuration.
+    pub(crate) finalize_selected: bool,
     callback: Option<Arc<dyn TautomerEnumerationCallback>>,
     scorer: Option<Arc<dyn TautomerScorer>>,
     pub score_params: TautomerScoreParams,
@@ -139,6 +246,7 @@ impl Default for TautomerParams {
         static CATALOG: OnceLock<Arc<cosmolkit_tautomer::TautomerCatalog>> = OnceLock::new();
         Self {
             policy: Default::default(),
+            finalize_selected: false,
             catalog: CATALOG
                 .get_or_init(|| {
                     Arc::new(
@@ -196,7 +304,7 @@ impl TautomerParams {
         view: cosmolkit_tautomer::TautomerRecordView<'_>,
     ) -> Result<i32, TautomerRunError> {
         match &self.scorer {
-            Some(scorer) => scorer.score(TautomerMoleculeView { inner: view }),
+            Some(scorer) => scorer.score(TautomerMoleculeView::borrowed(view)),
             None => score_view(view, &self.score_params).map(TautomerScore::total),
         }
     }
@@ -283,10 +391,12 @@ impl cosmolkit_tautomer::TautomerEnumerationCallback for CallbackAdapter<'_> {
     ) -> Result<bool, TautomerRunError> {
         match &self.0.callback {
             Some(callback) => callback.should_continue(
-                TautomerMoleculeView { inner: source },
+                TautomerMoleculeView::borrowed(source),
                 TautomerProgress {
-                    inner: progress,
-                    coordinates: source.coordinates,
+                    storage: TautomerProgressStorage::Borrowed {
+                        inner: progress,
+                        coordinates: source.coordinates,
+                    },
                 },
             ),
             None => Ok(true),
@@ -302,6 +412,26 @@ pub struct TautomerEnumeration {
     modified_bonds: BTreeSet<BondId>,
 }
 impl TautomerEnumeration {
+    pub fn canonical_tautomer(&self) -> Result<Molecule, OperationError> {
+        self.canonical_tautomer_with_params(&TautomerParams::default())
+    }
+    pub fn canonical_tautomer_with_params(
+        &self,
+        params: &TautomerParams,
+    ) -> Result<Molecule, OperationError> {
+        let index = cosmolkit_tautomer::select_canonical_index_with(
+            self.entries
+                .iter()
+                .map(|(key, molecule)| (key.as_str(), record_view(molecule))),
+            |view| params.score_view(view),
+        )
+        .map_err(OperationError::Tautomer)?;
+        let mut invocation = params.clone();
+        invocation.finalize_selected = true;
+        self.entries[index]
+            .1
+            .canonical_tautomer_with_params(&invocation)
+    }
     pub fn len(&self) -> usize {
         self.entries.len()
     }
@@ -323,11 +453,33 @@ impl TautomerEnumeration {
     pub fn canonical_smiles(&self) -> Vec<&str> {
         self.entries.iter().map(|(k, _)| k.as_str()).collect()
     }
-    pub fn iter(&self) -> impl ExactSizeIterator<Item = &Molecule> {
-        self.entries.iter().map(|(_, m)| m)
+    pub fn iter(
+        &self,
+    ) -> std::iter::Map<
+        std::slice::Iter<'_, (String, Molecule)>,
+        fn(&(String, Molecule)) -> &Molecule,
+    > {
+        self.entries.iter().map(|(_, molecule)| molecule)
     }
-    pub fn entries(&self) -> impl ExactSizeIterator<Item = (&str, &Molecule)> {
-        self.entries.iter().map(|(k, m)| (k.as_str(), m))
+    pub fn entries(
+        &self,
+    ) -> std::iter::Map<
+        std::slice::Iter<'_, (String, Molecule)>,
+        fn(&(String, Molecule)) -> (&str, &Molecule),
+    > {
+        self.entries
+            .iter()
+            .map(|(key, molecule)| (key.as_str(), molecule))
+    }
+}
+impl<'a> IntoIterator for &'a TautomerEnumeration {
+    type Item = &'a Molecule;
+    type IntoIter = std::iter::Map<
+        std::slice::Iter<'a, (String, Molecule)>,
+        for<'b> fn(&'b (String, Molecule)) -> &'b Molecule,
+    >;
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
     }
 }
 impl std::ops::Index<usize> for TautomerEnumeration {
@@ -335,6 +487,25 @@ impl std::ops::Index<usize> for TautomerEnumeration {
     fn index(&self, index: usize) -> &Molecule {
         &self.entries[index].1
     }
+}
+/// Select from supplied values without enumerating, preserving their input order.
+pub fn canonical_tautomer_from_molecules(
+    molecules: &[Molecule],
+) -> Result<Molecule, OperationError> {
+    canonical_tautomer_from_molecules_with_params(molecules, &TautomerParams::default())
+}
+pub fn canonical_tautomer_from_molecules_with_params(
+    molecules: &[Molecule],
+    params: &TautomerParams,
+) -> Result<Molecule, OperationError> {
+    let index = cosmolkit_tautomer::select_canonical_index_from_iterable_with(
+        molecules.iter().map(record_view),
+        |view| params.score_view(view),
+    )
+    .map_err(OperationError::Tautomer)?;
+    let mut invocation = params.clone();
+    invocation.finalize_selected = true;
+    molecules[index].canonical_tautomer_with_params(&invocation)
 }
 pub(crate) struct EnumerationMetadata {
     pub(crate) keys: Vec<String>,
@@ -411,3 +582,213 @@ mod tests {
         ));
     }
 }
+
+fn record_view(molecule: &Molecule) -> cosmolkit_tautomer::TautomerRecordView<'_> {
+    let cache = molecule.derived_cache_runtime();
+    cosmolkit_tautomer::TautomerRecordView {
+        topology: molecule.topology(),
+        coordinates: molecule.coordinate_block_runtime(),
+        properties: molecule.properties(),
+        valence: cache.valence_assignment(),
+        rings: cache.valid_ring_info(),
+    }
+}
+
+#[cfg(all(test, feature = "cap-smiles"))]
+mod canonical_selection_tests {
+    use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    struct ScoreFn<F>(F);
+    impl<F> TautomerScorer for ScoreFn<F>
+    where
+        F: Fn(TautomerMoleculeView<'_>) -> Result<i32, TautomerRunError> + Send + Sync,
+    {
+        fn score(&self, m: TautomerMoleculeView<'_>) -> Result<i32, TautomerRunError> {
+            (self.0)(m)
+        }
+    }
+    fn configured(
+        f: impl Fn(TautomerMoleculeView<'_>) -> Result<i32, TautomerRunError> + Send + Sync + 'static,
+    ) -> TautomerParams {
+        let mut p = TautomerParams::default();
+        p.set_scorer(Some(Arc::new(ScoreFn(f))));
+        p
+    }
+    fn fixture(entries: Vec<(&str, Molecule)>) -> TautomerEnumeration {
+        TautomerEnumeration {
+            entries: entries
+                .into_iter()
+                .map(|(k, m)| (k.to_owned(), m))
+                .collect(),
+            ..Default::default()
+        }
+    }
+    #[test]
+    fn canonical_selection_rejects_empty_inputs_and_unselectable_minimum_scores() {
+        assert!(matches!(
+            TautomerEnumeration::default().canonical_tautomer(),
+            Err(OperationError::Tautomer(
+                TautomerRunError::NoCanonicalTautomer
+            ))
+        ));
+        let result = fixture(vec![
+            ("C", Molecule::from_smiles("C").unwrap()),
+            ("CC", Molecule::from_smiles("CC").unwrap()),
+        ]);
+        assert!(matches!(
+            result.canonical_tautomer_with_params(&configured(|_| Ok(i32::MIN))),
+            Err(OperationError::Tautomer(
+                TautomerRunError::NoCanonicalTautomer
+            ))
+        ));
+    }
+    #[test]
+    fn canonical_selection_single_item_skips_scoring_and_returns_a_clean_copy() {
+        let parsed = Molecule::from_smiles("F[C@H](Cl)Br").unwrap();
+        let mut properties = parsed.properties().clone();
+        properties.clear_prop("_StereochemDone");
+        let source = parsed
+            .to_builder()
+            .with_properties(properties)
+            .build()
+            .unwrap();
+        let before = source.clone();
+        let result = fixture(vec![("retained-without-rewrite", source.clone())]);
+        let calls = Arc::new(AtomicUsize::new(0));
+        let seen = calls.clone();
+        let selected = result
+            .canonical_tautomer_with_params(&configured(move |_| {
+                seen.fetch_add(1, Ordering::SeqCst);
+                Ok(7)
+            }))
+            .unwrap();
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+        assert_eq!(source, before);
+        assert_eq!(source.property("_StereochemDone"), None);
+        assert_eq!(selected.property("_StereochemDone"), Some("1"));
+        assert!(selected.properties().is_prop_computed("_StereochemDone"));
+        let selected = selected
+            .to_builder()
+            .with_property("selected-only".into(), "yes".into())
+            .unwrap()
+            .build()
+            .unwrap();
+        assert_eq!(selected.property("selected-only"), Some("yes"));
+        assert_eq!(source.property("selected-only"), None);
+    }
+    #[test]
+    fn canonical_selection_uses_signed_maximum_and_retained_result_keys() {
+        let result = fixture(vec![
+            ("z-retained", Molecule::from_smiles("C").unwrap()),
+            ("a-retained", Molecule::from_smiles("CC").unwrap()),
+            ("m-retained", Molecule::from_smiles("CCC").unwrap()),
+        ]);
+        let negative = result
+            .canonical_tautomer_with_params(&configured(|m| {
+                Ok(match m.num_atoms() {
+                    1 => -10,
+                    2 => -1,
+                    _ => -5,
+                })
+            }))
+            .unwrap();
+        assert_eq!(negative.to_smiles().unwrap(), "CC");
+        let positive = result
+            .canonical_tautomer_with_params(&configured(|m| Ok(m.num_atoms() as i32)))
+            .unwrap();
+        assert_eq!(positive.to_smiles().unwrap(), "CCC");
+        let tied = result
+            .canonical_tautomer_with_params(&configured(|_| Ok(4)))
+            .unwrap();
+        assert_eq!(tied.to_smiles().unwrap(), "CC");
+        assert_eq!(
+            result.canonical_smiles(),
+            ["z-retained", "a-retained", "m-retained"]
+        );
+    }
+    #[test]
+    fn canonical_selection_default_and_custom_scorers_share_finalization() {
+        let source = Molecule::from_smiles("CC(C)=O").unwrap();
+        let before = source.clone();
+        let result = source.enumerate_tautomers().unwrap();
+        let a = result.canonical_tautomer().unwrap();
+        let b = result
+            .canonical_tautomer_with_params(&configured(|m| Ok(m.tautomer_score()?.total())))
+            .unwrap();
+        assert_eq!(a, b);
+        assert_eq!(a.property("_StereochemDone"), Some("1"));
+        assert!(a.properties().is_prop_computed("_StereochemDone"));
+        assert_eq!(source, before);
+    }
+    #[test]
+    fn canonical_result_selection_does_not_enumerate_the_selected_candidate_again() {
+        struct NeverEnumerate;
+        impl TautomerEnumerationCallback for NeverEnumerate {
+            fn should_continue(
+                &self,
+                _: TautomerMoleculeView<'_>,
+                _: TautomerProgress<'_>,
+            ) -> Result<bool, TautomerRunError> {
+                panic!("pickCanonical does not enumerate")
+            }
+        }
+        let source = Molecule::from_smiles("CC(C)=O").unwrap();
+        let result = source.enumerate_tautomers().unwrap();
+        let mut params = TautomerParams::default();
+        params.set_callback(Some(Arc::new(NeverEnumerate)));
+        assert_eq!(
+            result
+                .canonical_tautomer_with_params(&params)
+                .unwrap()
+                .to_smiles()
+                .unwrap(),
+            "CC(C)=O"
+        );
+    }
+    #[test]
+    fn owned_callback_views_retain_source_and_preapplication_progress_after_the_run() {
+        struct Capture(
+            std::sync::Mutex<Option<(TautomerMoleculeView<'static>, TautomerProgress<'static>)>>,
+        );
+        impl TautomerEnumerationCallback for Capture {
+            fn should_continue(
+                &self,
+                m: TautomerMoleculeView<'_>,
+                p: TautomerProgress<'_>,
+            ) -> Result<bool, TautomerRunError> {
+                *self.0.lock().unwrap() = Some((m.to_owned(), p.to_owned()));
+                Ok(false)
+            }
+        }
+        let capture = Arc::new(Capture(std::sync::Mutex::new(None)));
+        let mut params = TautomerParams::default();
+        params.set_callback(Some(capture.clone()));
+        let source = Molecule::from_smiles("CC(C)=O").unwrap();
+        let result = source.enumerate_tautomers_with_params(&params).unwrap();
+        assert_eq!(result.status(), TautomerEnumerationStatus::Canceled);
+        drop(result);
+        drop(source);
+        let captured = capture.0.lock().unwrap();
+        let (m, p) = captured.as_ref().unwrap();
+        assert_eq!(m.to_smiles().unwrap(), "CC(C)=O");
+        assert_eq!(m.tautomer_score().unwrap().total(), 5);
+        assert_eq!(p.len(), 1);
+        assert_eq!(p.status(), TautomerEnumerationStatus::Completed);
+        assert_eq!(p.num_transforms(), 1);
+        assert!(p.modified_atoms().is_empty());
+        assert!(p.modified_bonds().is_empty());
+        let entries = p
+            .entries()
+            .map(|(key, m)| (key.to_owned(), m.to_smiles().unwrap()))
+            .collect::<Vec<_>>();
+        assert_eq!(entries, [("CC(C)=O".into(), "CC(C)=O".into())]);
+    }
+}
+
+#[cfg(all(test, feature = "cap-smiles"))]
+#[path = "tautomer_result_tests.rs"]
+mod result_tests;
+
+#[cfg(all(test, feature = "cap-smiles"))]
+#[path = "tautomer_configuration_tests.rs"]
+mod configuration_tests;

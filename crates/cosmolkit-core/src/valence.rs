@@ -11,6 +11,8 @@ use cosmolkit_types::BondOrder;
 
 use crate::periodic_table;
 
+pub use cosmolkit_model::{AtomMetadata, ValenceError, ValencePhase};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ValenceModel {
     RdkitLike,
@@ -31,96 +33,10 @@ impl Default for ValenceParams {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ValencePhase {
-    EffectiveAtomicNumber,
-    Explicit,
-    Implicit,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ValenceAssignment {
     pub explicit_valence: Vec<i32>,
     pub implicit_hydrogens: Vec<i32>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-pub enum ValenceError {
-    /// Source explicit getter PRECONDITION used by numPi; preserve literal text.
-    #[error("getValence(ValenceType::EXPLICIT) called without call to calcExplicitValence()")]
-    PiElectronExplicitValenceCacheNotInitialized { atom: AtomId },
-    /// Source CHECK_INVARIANT in numPiElectrons; retain its literal message.
-    #[error("explicit valence exceeds atom degree")]
-    PiElectronInvariant {
-        atom: AtomId,
-        explicit_valence: u32,
-        physical_bonds: u32,
-    },
-    #[error("{message}")]
-    InvalidValence {
-        atom: AtomId,
-        atomic_number: u8,
-        formal_charge: i8,
-        phase: ValencePhase,
-        calculated: Option<i32>,
-        reason: &'static str,
-        message: String,
-    },
-    #[error("invalid topology: {source}")]
-    InvalidTopology { source: TopologyValidationError },
-    #[error("atom {atom} is out of range for {atom_count} atoms")]
-    AtomOutOfRange { atom: AtomId, atom_count: usize },
-    #[error(
-        "adjacency for atom {atom} references neighbor atom row {neighbor_atom}, out of range for {atom_count} atoms"
-    )]
-    AdjacencyAtomOutOfRange {
-        atom: AtomId,
-        neighbor_atom: usize,
-        atom_count: usize,
-    },
-    #[error(
-        "adjacency for atom {atom} references bond {bond}, out of range for {bond_count} bonds"
-    )]
-    AdjacencyBondOutOfRange {
-        atom: AtomId,
-        bond: BondId,
-        bond_count: usize,
-    },
-    #[error(
-        "adjacency for atom {atom} references neighbor row {neighbor_atom} through bond {bond}, but that bond has endpoints {begin}-{end}"
-    )]
-    AdjacencyEndpointMismatch {
-        atom: AtomId,
-        neighbor_atom: usize,
-        bond: BondId,
-        begin: AtomId,
-        end: AtomId,
-    },
-    #[error("explicit valence input for atom {atom} must be nonnegative, got {value}")]
-    InvalidExplicitValenceInput { atom: AtomId, value: i32 },
-    #[error("periodic-table field {field} is unavailable for atomic number {atomic_number}")]
-    PeriodicTableLookup {
-        atomic_number: u8,
-        field: &'static str,
-    },
-    #[error("explicit valence is not available for atom {atom}")]
-    ExplicitValenceCacheNotInitialized { atom: AtomId },
-    #[error("implicit valence is not available for atom {atom}")]
-    ImplicitValenceCacheNotInitialized { atom: AtomId },
-    #[error(
-        "hydrogen count overflow at atom {atom}: explicit={explicit}, implicit={implicit}, neighbor_hydrogens={neighbor_hydrogens}"
-    )]
-    HydrogenCountOverflow {
-        atom: AtomId,
-        explicit: u32,
-        implicit: u32,
-        neighbor_hydrogens: usize,
-    },
-    #[error("Bad bond type")]
-    BadBondType {
-        bond: Option<BondId>,
-        order: BondOrder,
-    },
 }
 
 fn atom_from_parts(atoms: &[Atom], atom_id: AtomId) -> Result<&Atom, ValenceError> {
@@ -1458,50 +1374,79 @@ pub fn num_pi_electrons_for_topology(
     Ok(valence - physical_bonds)
 }
 
-/// Owned context-dependent atom read results. Canonical Atom vocabulary stays
-/// in the model; these rows hold only degree and calculated valence metadata.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct AtomMetadata {
-    pub degree: usize,
-    pub explicit_valence: i32,
-    pub implicit_hydrogens: i32,
-    pub total_hydrogens: i32,
-    pub total_valence: i32,
-}
 /// Read all atom metadata with one existing valence-owner calculation.
 /// This does not install a cache or grant callers any runtime authority.
 pub fn atom_metadata(topology: &TopologyBlock) -> Result<Vec<AtomMetadata>, ValenceError> {
     let assignment = assign_valence(topology, &ValenceParams::default())?;
+    atom_metadata_from_assignment(topology, Some(&assignment))
+}
+
+/// Project source atom getters from an existing cache without recalculating it.
+/// The assignment is borrowed; absent or uninitialized entries remain typed errors.
+pub fn atom_metadata_from_assignment(
+    topology: &TopologyBlock,
+    assignment: Option<&ValenceAssignment>,
+) -> Result<Vec<AtomMetadata>, ValenceError> {
+    // RDKit✔️❌: unsigned int Atom::getDegree() const {
+    // RDKit✔️❌:   return dp_mol ? getOwningMol().getAtomDegree(this) : 0;
+    // RDKit✔️❌: }
+    // RDKit✔️❌:
+    // RDKit✔️❌: unsigned int Atom::getValence(ValenceType which) const {
+    // RDKit✔️❌:   if (!dp_mol) {
+    // RDKit✔️❌:     return 0;
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   PRECONDITION(
+    // RDKit✔️❌:       (which == ValenceType::IMPLICIT || d_explicitValence > -1),
+    // RDKit✔️❌:       "getValence(ValenceType::EXPLICIT) called without call to calcExplicitValence()");
+    // RDKit✔️❌:   PRECONDITION(
+    // RDKit✔️❌:       (which == ValenceType::EXPLICIT || df_noImplicit ||
+    // RDKit✔️❌:        d_implicitValence > -1),
+    // RDKit✔️❌:       "getValence(ValenceType::IMPLICIT) called without call to calcImplicitValence()");
+    // RDKit✔️❌:   if (which == ValenceType::EXPLICIT) {
+    // RDKit✔️❌:     return d_explicitValence;
+    // RDKit✔️❌:   } else {
+    // RDKit✔️❌:     return df_noImplicit ? 0 : d_implicitValence;
+    // RDKit✔️❌:   }
+    // RDKit✔️❌: }
+    // RDKit✔️❌:
+    // RDKit✔️❌: unsigned int Atom::getTotalValence() const {
+    // RDKit✔️❌:   return getValence(ValenceType::EXPLICIT) + getValence(ValenceType::IMPLICIT);
+    // RDKit✔️❌: }
+    // RDKit✔️❌: std::int8_t d_implicitValence, d_explicitValence;
+    // RDKit✔️❌: int Atom::calcExplicitValence(bool strict) {
+    // RDKit✔️❌:   bool checkIt = false;
+    // RDKit✔️❌:   d_explicitValence = calculateExplicitValence(*this, strict, checkIt);
+    // RDKit✔️❌:   return d_explicitValence;
+    // RDKit✔️❌: }
+    // The detached assignment retains calculation-width i32 values. Reproduce
+    // the source's int8 storage conversion at this cached-getter boundary,
+    // before applying its > -1 precondition; never recalculate strict valence.
+    // Detached validation adds O(V+E) work over O(V) source cached getters,
+    // so the complexity marker records that extra boundary cost.
+    // Owned rows require one O(V) allocation. Validating detached topology once
+    // costs O(V+E); each getter then performs O(1) cache/adjacency access.
+    validate_topology(topology)?;
     let mut rows = Vec::with_capacity(topology.atoms.len());
-    for (index, atom) in topology.atoms.iter().enumerate() {
-        // RDKit❗✔️: unsigned int Atom::getDegree() const {
-        // RDKit❗✔️:   return dp_mol ? getOwningMol().getAtomDegree(this) : 0;
-        // RDKit❗✔️: }
-        // RDKit❗✔️: unsigned int Atom::getTotalNumHs(bool includeNeighbors) const {
-        // RDKit❗✔️:   int res = getNumExplicitHs() + getNumImplicitHs();
-        // RDKit❗✔️:   if (includeNeighbors && dp_mol) {
-        // RDKit❗✔️:     auto nbrs = dp_mol->atomNeighbors(this);
-        // RDKit❗✔️:     res += std::count_if(nbrs.begin(), nbrs.end(), [](const auto nbr) {
-        // RDKit❗✔️:       return (nbr->getAtomicNum() == 1);
-        // RDKit❗✔️:     });
-        // RDKit❗✔️:   }
-        // RDKit❗✔️:   return res;
-        // RDKit❗✔️: }
-        // RDKit❗✔️: unsigned int Atom::getTotalValence() const {
-        // RDKit❗✔️:   return getValence(ValenceType::EXPLICIT) + getValence(ValenceType::IMPLICIT);
-        // RDKit❗✔️: }
-        // The original Python read record fixes includeNeighbors=false. Degree
-        // is the validated adjacency row length; both paths cost O(1)/atom.
-        // Explicit/implicit valence uses the sole foundational calculation once,
-        // propagating invalid topology/valence instead of suppressing its error.
-        // One O(V) owned result allocation matches the original record traversal.
-        let explicit_valence = assignment.explicit_valence[index];
-        let implicit_hydrogens = assignment.implicit_hydrogens[index];
+    for atom in &topology.atoms {
+        let id = atom.id();
+        let explicit_valence = assignment
+            .and_then(|a| a.explicit_valence.get(id.index()))
+            .copied()
+            .map(|value| i32::from(value as i8))
+            .filter(|value| *value >= 0)
+            .ok_or(ValenceError::ExplicitValenceCacheNotInitialized { atom: id })?;
+        let total_hydrogens = crate::hcount::total_hydrogen_count_from_validated(
+            topology,
+            assignment.expect("explicit cache checked"),
+            id,
+            false,
+        )? as i32;
+        let implicit_hydrogens = total_hydrogens - i32::from(atom.explicit_hydrogens());
         rows.push(AtomMetadata {
-            degree: topology.adjacency.neighbors_of(index).len(),
+            degree: topology.adjacency.neighbors_of(id.index()).len(),
             explicit_valence,
             implicit_hydrogens,
-            total_hydrogens: i32::from(atom.explicit_hydrogens()) + implicit_hydrogens,
+            total_hydrogens,
             total_valence: explicit_valence + implicit_hydrogens,
         });
     }

@@ -74,13 +74,10 @@ impl Default for TautomerEnumerationOutput {
     }
 }
 
-pub fn enumerate_with_catalog(
+fn initialize_candidates_with_key(
     source: TautomerRecordView<'_>,
-    catalog: &TautomerCatalog,
-    params: TautomerParams,
-    callback: Option<&dyn TautomerEnumerationCallback>,
-) -> Result<TautomerEnumerationOutput, TautomerRunError> {
-    // RDKit✔️❌:   std::string smi = MolToSmiles(mol, true);
+    key: String,
+) -> Result<(TautomerRecord, TautomerExpansionState<Arc<TautomerRecord>>), TautomerRunError> {
     // RDKit✔️❌:   ROMOL_SPTR taut(new ROMol(mol));
     // RDKit✔️❌:   if (taut->needsUpdatePropertyCache()) {
     // RDKit✔️❌:     taut->updatePropertyCache(false);
@@ -92,13 +89,9 @@ pub fn enumerate_with_catalog(
     // RDKit✔️❌:   MolOps::Kekulize(*kekulized, false, true);
     // Owned detached topology/properties replace source ROMol copies; immutable
     // coordinates are borrowed throughout. Existing core owns all preparation.
-    let key = canonical_smiles(source)?;
     let initial = prepared(source)?;
     let initial_kekulized = kekulized(&initial)?;
-    // Keep the original source's tags/CIP for restoration, independently of
-    // the candidate whose computed props are cleared by partial sanitize.
-    let original = &initial;
-    let mut state = TautomerExpansionState {
+    let state = TautomerExpansionState {
         candidates: std::collections::BTreeMap::from([(
             key,
             TautomerCandidate {
@@ -114,6 +107,19 @@ pub fn enumerate_with_catalog(
         status: TautomerEnumerationStatus::Completed,
         num_transforms: 0,
     };
+    Ok((initial, state))
+}
+pub fn enumerate_with_catalog(
+    source: TautomerRecordView<'_>,
+    catalog: &TautomerCatalog,
+    params: TautomerParams,
+    callback: Option<&dyn TautomerEnumerationCallback>,
+) -> Result<TautomerEnumerationOutput, TautomerRunError> {
+    // RDKit✔️❌:   std::string smi = MolToSmiles(mol, true);
+    let key = canonical_smiles(source)?;
+    let (initial, mut state) = initialize_candidates_with_key(source, key)?;
+    // Preserve original tags/CIP independently of candidate computed properties.
+    let original = &initial;
     // RDKit✔️❌:   while (!completed && !bailOut) {
     loop {
         let pass = expand_tautomer_candidates_in_source_order(
@@ -191,11 +197,35 @@ fn control_pruning_error(error: TautomerPruningError<TautomerRunError>) -> Tauto
     }
 }
 
-pub fn pick_canonical_with(
-    result: &TautomerEnumerationOutput,
-    coordinates: &CoordinateBlock,
-    mut scorer: impl FnMut(TautomerRecordView<'_>) -> Result<i32, TautomerRunError>,
-) -> Result<TautomerRecord, TautomerRunError> {
+/// Select from retained source keys without recomputing SMILES or finalizing values.
+pub fn select_canonical_index_with<'a>(
+    candidates: impl ExactSizeIterator<Item = (&'a str, TautomerRecordView<'a>)>,
+    scorer: impl FnMut(TautomerRecordView<'a>) -> Result<i32, TautomerRunError>,
+) -> Result<usize, TautomerRunError> {
+    select_canonical_index_by(candidates, scorer, |key, _| {
+        Ok(std::borrow::Cow::Borrowed(key))
+    })
+}
+/// Source iterable selection computes canonical keys only for a winning score or tie.
+pub fn select_canonical_index_from_iterable_with<'a>(
+    candidates: impl ExactSizeIterator<Item = TautomerRecordView<'a>>,
+    scorer: impl FnMut(TautomerRecordView<'a>) -> Result<i32, TautomerRunError>,
+) -> Result<usize, TautomerRunError> {
+    select_canonical_index_by(candidates.map(|value| ((), value)), scorer, |(), view| {
+        canonical_smiles(view).map(std::borrow::Cow::Owned)
+    })
+}
+// Retained results and source iterables share exactly one signed-score selection
+// loop. Keys are borrowed in the result path and computed lazily in the iterable
+// path, preserving scoring order, duplicate inputs and error timing.
+fn select_canonical_index_by<'a, E>(
+    candidates: impl ExactSizeIterator<Item = (E, TautomerRecordView<'a>)>,
+    mut scorer: impl FnMut(TautomerRecordView<'a>) -> Result<i32, TautomerRunError>,
+    mut key: impl FnMut(
+        E,
+        TautomerRecordView<'a>,
+    ) -> Result<std::borrow::Cow<'a, str>, TautomerRunError>,
+) -> Result<usize, TautomerRunError> {
     // RDKit✔️✔️:   ROMOL_SPTR bestMol;
     // RDKit✔️✔️:   if (tautRes.d_tautomers.size() == 1) {
     // RDKit✔️✔️:     bestMol = tautRes.d_tautomers.begin()->second.tautomer;
@@ -217,30 +247,69 @@ pub fn pick_canonical_with(
     // RDKit✔️✔️:       }
     // RDKit✔️✔️:     }
     // RDKit✔️✔️:   }
-    let selected = if result.entries.len() == 1 {
-        &result.entries[0].1
-    } else {
-        let mut best_score = i32::MIN;
-        let mut best_smiles = "";
-        let mut best = None;
-        for (key, candidate) in &result.entries {
-            let score = scorer(candidate.view(coordinates))?;
-            if score > best_score || (score == best_score && key.as_str() < best_smiles) {
+    // RDKit✔️✔️:     if (tautomers.size() == 1) {
+    // RDKit✔️✔️:       bestMol = *tautomers.begin();
+    // RDKit✔️✔️:     } else {
+    // RDKit✔️✔️:       for (const auto &t : tautomers) {
+    // RDKit✔️✔️:         auto score = scoreFunc(*t);
+    // RDKit✔️✔️:         if (score > bestScore) {
+    // RDKit✔️✔️:           bestScore = score;
+    // RDKit✔️✔️:           bestSmiles = MolToSmiles(*t);
+    // RDKit✔️✔️:           bestMol = t;
+    // RDKit✔️✔️:         } else if (score == bestScore) {
+    // RDKit✔️✔️:           auto smiles = MolToSmiles(*t);
+    // RDKit✔️✔️:           if (smiles < bestSmiles) {
+    // RDKit✔️✔️:             bestSmiles = smiles;
+    // RDKit✔️✔️:             bestMol = t;
+    // RDKit✔️✔️:           }
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
+    if candidates.len() == 1 {
+        return Ok(0);
+    }
+    let mut best_score = i32::MIN;
+    let mut best_smiles = std::borrow::Cow::Borrowed("");
+    let mut best = None;
+    for (index, (metadata, candidate)) in candidates.enumerate() {
+        let score = scorer(candidate)?;
+        if score >= best_score {
+            let smiles = key(metadata, candidate)?;
+            if score > best_score || smiles < best_smiles {
                 best_score = score;
-                best_smiles = key;
-                best = Some(candidate);
+                best_smiles = smiles;
+                best = Some(index);
             }
         }
-        best.ok_or(TautomerRunError::NoCanonicalTautomer)?
-    };
+    }
+    best.ok_or(TautomerRunError::NoCanonicalTautomer)
+}
+/// Source pickCanonical final copy and forced legacy assignment, without enumeration.
+pub fn finalize_canonical_candidate(
+    selected: TautomerRecordView<'_>,
+) -> Result<TautomerRecord, TautomerRunError> {
     // RDKit✔️❌:   ROMol *res = new ROMol(*bestMol);
     // RDKit✔️❌:   static const bool cleanIt = true;
     // RDKit✔️❌:   static const bool force = true;
     // RDKit✔️❌:   MolOps::assignStereochemistry(*res, cleanIt, force);
-    // The existing core legacy owner executes without a force=false guard.
-    let mut output = selected.clone();
+    // Legacy assignment owns source-defined missing-cache/ring preparation.
+    let mut output = crate::engine::copy_for_canonical_assignment(selected)?;
     assign_stereo(&mut output)?;
     Ok(output)
+}
+pub fn pick_canonical_with(
+    result: &TautomerEnumerationOutput,
+    coordinates: &CoordinateBlock,
+    scorer: impl FnMut(TautomerRecordView<'_>) -> Result<i32, TautomerRunError>,
+) -> Result<TautomerRecord, TautomerRunError> {
+    let index = select_canonical_index_with(
+        result
+            .entries
+            .iter()
+            .map(|(key, value)| (key.as_str(), value.view(coordinates))),
+        scorer,
+    )?;
+    finalize_canonical_candidate(result.entries[index].1.view(coordinates))
 }
 pub fn canonicalize_with_catalog(
     source: TautomerRecordView<'_>,
@@ -267,3 +336,6 @@ pub fn canonicalize_with_catalog(
     // RDKit✔️❌:   return pickCanonical(res, scoreFunc);
     pick_canonical_with(&result, source.coordinates, scorer)
 }
+
+#[cfg(test)]
+mod initialization_tests;

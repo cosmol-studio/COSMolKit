@@ -16,6 +16,7 @@ mod property_value;
 mod query;
 mod sgroup;
 mod topology;
+mod valence;
 
 pub use adjacency::{AdjacencyError, AdjacencyList, NeighborRef};
 pub use atom::{
@@ -53,3 +54,5 @@ pub use cosmolkit_types::{
     BondDirection, BondOrder, BondStereo, ChiralTag, ELEMENTS, ELEMENTS_WITH_DUMMY, Element,
     ElementInfo, ElementParseError, Hybridization,
 };
+
+pub use valence::{AtomMetadata, ValenceError, ValencePhase};
