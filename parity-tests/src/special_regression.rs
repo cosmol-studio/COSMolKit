@@ -45,7 +45,7 @@ fn identity(
         task: task.key.into(),
         rdkit_version: registry::RDKIT_VERSION.into(),
         reference_pin_sha256: digest(crate::REFERENCE_PIN.as_bytes()),
-        generator_sha256: digest(&read(&root().join(task.generator))?),
+        generator_sha256: generator_digest(task)?,
         registry_sha256: digest(include_str!("registry.rs").as_bytes()),
         platform: format!("{}-{}", std::env::consts::ARCH, std::env::consts::OS),
         input_sha256: digest(input),
@@ -54,18 +54,37 @@ fn identity(
     })
 }
 
-fn validate(input: &[u8], reference: &[u8], count: usize) -> Result<Snapshot> {
+fn generator_digest(task: &registry::SpecialRegression) -> Result<String> {
+    let sources = std::iter::once(task.generator)
+        .chain(task.generator_dependencies.iter().copied())
+        .map(|path| Ok((path, digest(&read(&root().join(path))?))))
+        .collect::<Result<Vec<_>>>()?;
+    Ok(digest(&encode(&sources)?))
+}
+
+fn validate(
+    input: &[u8],
+    reference: &[u8],
+    count: usize,
+    schema: registry::SpecialRegressionSchema,
+) -> Result<Snapshot> {
     let fixture: Value = serde_json::from_slice(input).map_err(|e| e.to_string())?;
     // These are distinct pinned spellings, not a version-normalization rule:
     // rdBase reports 2026.03.1; Python distribution/fixture reports 2026.3.1.
     let pin: Value = serde_json::from_str(crate::REFERENCE_PIN).map_err(|e| e.to_string())?;
     if fixture["schema_version"] != 1
         || fixture["reference"]["version"] != pin["python_distribution_version"]
+        || (matches!(schema, registry::SpecialRegressionSchema::TautomerBranches)
+            && fixture["reference"]["source_revision"] != pin["source_revision"])
     {
         return Err("special regression fixture schema/reference mismatch".into());
     }
     let mut ids = Vec::new();
-    for field in ["cases", "octahedral_switch_cases"] {
+    let tables: &[&str] = match schema {
+        registry::SpecialRegressionSchema::StructureTags => &["cases", "octahedral_switch_cases"],
+        registry::SpecialRegressionSchema::TautomerBranches => &["cases"],
+    };
+    for &field in tables {
         let cases = fixture[field]
             .as_array()
             .ok_or_else(|| format!("missing fixture table: {field}"))?;
@@ -90,6 +109,10 @@ fn validate(input: &[u8], reference: &[u8], count: usize) -> Result<Snapshot> {
         return Err("special regression reference row count mismatch".into());
     }
     for (id, row) in ids.iter().zip(&rows) {
+        if matches!(schema, registry::SpecialRegressionSchema::TautomerBranches) {
+            validate_tautomer_row(&fixture, id, row)?;
+            continue;
+        }
         if row["case_id"].as_str() != Some(id)
             || !matches!(row["status"].as_str(), Some("ok" | "error"))
             || !row["before"].is_object()
@@ -106,6 +129,117 @@ fn validate(input: &[u8], reference: &[u8], count: usize) -> Result<Snapshot> {
     Ok(Snapshot { fixture, rows })
 }
 
+fn validate_tautomer_row(fixture: &Value, id: &str, row: &Value) -> Result<()> {
+    let fail = || format!("special regression tautomer identity/schema: {id}");
+    let case = fixture["cases"]
+        .as_array()
+        .ok_or_else(fail)?
+        .iter()
+        .find(|case| case["case_id"] == id)
+        .ok_or_else(fail)?;
+    if row["case_id"] != id
+        || row["schema_version"] != 1
+        || !case["smiles"].is_string()
+        || !case["row"].is_u64()
+        || !case["sanitize"].is_boolean()
+        || !case["remove_hs"].is_boolean()
+        || ["row", "smiles", "sanitize", "remove_hs", "source"]
+            .iter()
+            .any(|key| row[key] != case[key])
+        || row["parse"]["ok"] != true
+        || !row["parse"]["error"].is_null()
+    {
+        return Err(fail());
+    }
+    let branches = row["branches"].as_object().ok_or_else(fail)?;
+    let parameters = fixture["branches"].as_array().ok_or_else(fail)?;
+    if parameters.len() != 2
+        || branches.len() != 2
+        || parameters[0]["name"] != "default"
+        || parameters[1]["name"] != "v1"
+    {
+        return Err(fail());
+    }
+    for params in parameters {
+        let name = params["name"].as_str().ok_or_else(fail)?;
+        let branch = branches.get(name).ok_or_else(fail)?;
+        let smiles = branch["ordered_smiles"].as_array().ok_or_else(fail)?;
+        let states = branch["molecule_states"].as_array().ok_or_else(fail)?;
+        let scores = branch["scores"].as_array().ok_or_else(fail)?;
+        if branch["parameters"] != *params
+            || branch["ok"] != true
+            || !branch["error"].is_null()
+            || !branch["status"].is_string()
+            || smiles.is_empty()
+            || smiles.iter().any(|v| !v.is_string())
+            || states.len() != smiles.len()
+            || scores.len() != smiles.len()
+            || !branch["modified_atoms"].is_array()
+            || !branch["modified_bonds"].is_array()
+            || !branch["canonical_smiles"].is_string()
+            || branch["canonical_state"]["isomeric_smiles"] != branch["canonical_smiles"]
+        {
+            return Err(fail());
+        }
+        for (state, expected_smiles) in states.iter().zip(smiles).chain(std::iter::once((
+            &branch["canonical_state"],
+            &branch["canonical_smiles"],
+        ))) {
+            if state["isomeric_smiles"] != *expected_smiles
+                || !state["atoms"].is_array()
+                || !state["bonds"].is_array()
+            {
+                return Err(fail());
+            }
+            for atom in state["atoms"].as_array().unwrap() {
+                if [
+                    "atomic_number",
+                    "formal_charge",
+                    "explicit_hydrogens",
+                    "isotope",
+                    "radical_electrons",
+                ]
+                .iter()
+                .any(|key| !atom[key].is_i64())
+                    || ["no_implicit", "aromatic"]
+                        .iter()
+                        .any(|key| !atom[key].is_boolean())
+                    || ["chiral_tag", "hybridization"]
+                        .iter()
+                        .any(|key| !atom[key].is_string())
+                    || !(atom["cip_code"].is_string()
+                        || (atom.get("cip_code").is_some() && atom["cip_code"].is_null()))
+                {
+                    return Err(fail());
+                }
+            }
+            for bond in state["bonds"].as_array().unwrap() {
+                if ["begin", "end"].iter().any(|key| !bond[key].is_u64())
+                    || ["aromatic", "conjugated"]
+                        .iter()
+                        .any(|key| !bond[key].is_boolean())
+                    || ["bond_type", "direction", "stereo"]
+                        .iter()
+                        .any(|key| !bond[key].is_string())
+                    || !bond["stereo_atoms"]
+                        .as_array()
+                        .is_some_and(|ids| ids.iter().all(Value::is_u64))
+                {
+                    return Err(fail());
+                }
+            }
+        }
+        if scores.iter().any(|score| {
+            ["ring", "substructure", "hetero_hydrogen", "total"]
+                .iter()
+                .any(|key| !score[key].is_i64())
+        }) {
+            return Err(fail());
+        }
+    }
+    Ok(())
+}
+
 /// Read-only global preflight of the complete fixed selection; no CK calls.
 pub fn preflight(key: &str, data: &Path) -> Result<Snapshot> {
     let task = task(key)?;
@@ -119,7 +253,7 @@ pub fn preflight(key: &str, data: &Path) -> Result<Snapshot> {
         if published_input != input || manifest != identity(task, &input, &reference)? {
             return Err("stale/corrupt special regression identity or checksums".into());
         }
-        validate(&input, &reference, task.rows)
+        validate(&input, &reference, task.rows, task.schema)
     };
     load().map_err(|error| {
         format!(
@@ -162,19 +296,30 @@ pub fn prepare(key: &str, data: &Path, python: &Path) -> Result<Preparation> {
         });
     }
     let input = read(&root().join(task.fixture))?;
-    let generator = read(&root().join(task.generator))?;
+    let generator = generator_digest(task)?;
     let temporary = tempfile::Builder::new()
         .prefix(".prepare-special-")
         .tempdir_in(data)
         .map_err(|e| e.to_string())?;
-    // The legacy generator selects this fixed matrix by the exact output name,
-    // without reading/expanding its SMILES option. Retain that owner unchanged.
+    // The structure-tag generator selects its fixed matrix by the exact output
+    // name. Recipes with explicit input receive the frozen snapshot below;
+    // neither path expands the corpus or reads CK comparison results.
     let output_path = temporary.path().join(task.output);
     let output_path = fs::canonicalize(temporary.path())
         .map_err(|e| e.to_string())?
         .join(output_path.file_name().unwrap());
-    let output = Command::new(python)
-        .arg(root().join(task.generator))
+    let mut command = Command::new(python);
+    command.arg(root().join(task.generator));
+    if task.takes_input {
+        // Give the oracle the frozen snapshot, not a path it can reread after edits.
+        fs::write(temporary.path().join("input.json"), &input).map_err(|e| e.to_string())?;
+        command.arg("--input").arg(
+            fs::canonicalize(temporary.path())
+                .map_err(|e| e.to_string())?
+                .join("input.json"),
+        );
+    }
+    let output = command
         .arg("--output")
         .arg(&output_path)
         .current_dir(root())
@@ -195,12 +340,10 @@ pub fn prepare(key: &str, data: &Path, python: &Path) -> Result<Preparation> {
     }
     let reference = read(&output_path)?;
     let checked: Result<()> = (|| {
-        if input != read(&root().join(task.fixture))?
-            || generator != read(&root().join(task.generator))?
-        {
+        if input != read(&root().join(task.fixture))? || generator != generator_digest(task)? {
             return Err("generator/fixture changed during preparation".into());
         }
-        validate(&input, &reference, task.rows)?;
+        validate(&input, &reference, task.rows, task.schema)?;
         fs::write(temporary.path().join("input.json"), &input).map_err(|e| e.to_string())?;
         fs::write(temporary.path().join("reference.jsonl"), &reference)
             .map_err(|e| e.to_string())?;
@@ -242,6 +385,7 @@ pub fn prepare(key: &str, data: &Path, python: &Path) -> Result<Preparation> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use registry::SpecialRegressionSchema::StructureTags;
 
     fn fixed_pair() -> (Vec<u8>, Vec<u8>) {
         let input = serde_json::json!({
@@ -267,17 +411,17 @@ mod tests {
     #[test]
     fn special_regression_checks_complete_census_order_and_errors() {
         let (input, reference) = fixed_pair();
-        let ready = validate(&input, &reference, 2).unwrap();
+        let ready = validate(&input, &reference, 2, StructureTags).unwrap();
         assert_eq!(ready.rows.len(), 2);
         assert_eq!(ready.rows[1]["status"], "error");
-        assert!(validate(&input, &reference, 3).is_err());
+        assert!(validate(&input, &reference, 3, StructureTags).is_err());
         let reversed = std::str::from_utf8(&reference)
             .unwrap()
             .lines()
             .rev()
             .collect::<Vec<_>>()
             .join("\n");
-        assert!(validate(&input, reversed.as_bytes(), 2).is_err());
+        assert!(validate(&input, reversed.as_bytes(), 2, StructureTags).is_err());
         let mut invalid = ready.rows;
         invalid[0]["case_id"] = Value::String("fixed_error".into());
         let duplicate = invalid
@@ -285,7 +429,7 @@ mod tests {
             .map(Value::to_string)
             .collect::<Vec<_>>()
             .join("\n");
-        assert!(validate(&input, duplicate.as_bytes(), 2).is_err());
+        assert!(validate(&input, duplicate.as_bytes(), 2, StructureTags).is_err());
     }
 
     #[test]
@@ -310,5 +454,54 @@ mod tests {
         assert_eq!(baseline.rows, 77);
         assert_eq!(baseline.category, "special_regression");
         assert_eq!(baseline.generator_sha256.len(), 64);
+    }
+
+    #[test]
+    fn tautomer_special_regression_checks_inputs_parameters_and_all_branches() {
+        let selected = task("tautomer_long_conjugated").unwrap();
+        let input = read(&root().join(selected.fixture)).unwrap();
+        let fixture: Value = serde_json::from_slice(&input).unwrap();
+        let mut row = fixture["cases"][0].clone();
+        row["schema_version"] = 1.into();
+        row["parse"] = serde_json::json!({"ok":true,"error":null});
+        row["branches"] = serde_json::json!({});
+        for params in fixture["branches"].as_array().unwrap() {
+            let state = serde_json::json!({"isomeric_smiles":"C","atoms":[],"bonds":[]});
+            row["branches"][params["name"].as_str().unwrap()] = serde_json::json!({
+                "parameters":params,"ok":true,"error":null,"status":"Completed",
+                "ordered_smiles":["C"],"molecule_states":[state],
+                "scores":[{"ring":0,"substructure":0,"hetero_hydrogen":0,"total":0}],
+                "modified_atoms":[],"modified_bonds":[],"canonical_smiles":"C","canonical_state":state,
+            });
+        }
+        let check = |row: &Value| {
+            validate(
+                &input,
+                &serde_json::to_vec(row).unwrap(),
+                1,
+                selected.schema,
+            )
+        };
+        assert_eq!(check(&row).unwrap().rows.len(), 1);
+        let mut malformed = row.clone();
+        malformed["branches"].as_object_mut().unwrap().remove("v1");
+        assert!(check(&malformed).is_err());
+        let mut malformed = row.clone();
+        malformed["branches"]["default"]["parameters"]["max_transforms"] = 1.into();
+        assert!(check(&malformed).is_err());
+        let mut malformed = row.clone();
+        malformed["smiles"] = "CC".into();
+        assert!(check(&malformed).is_err());
+        let mut malformed = row.clone();
+        malformed["branches"]["default"]["molecule_states"] = serde_json::json!([]);
+        assert!(check(&malformed).is_err());
+        let mut malformed = row.clone();
+        malformed["branches"]["default"]["canonical_state"]["atoms"] = serde_json::json!([{}]);
+        assert!(check(&malformed).is_err());
+        let dir = tempfile::tempdir().unwrap();
+        let error = preflight(selected.key, dir.path()).err().unwrap();
+        assert!(error.contains("0 Rust operation calls"));
+        assert!(error.contains("--special-regression tautomer_long_conjugated"));
+        assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 0);
     }
 }

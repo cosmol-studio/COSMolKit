@@ -788,7 +788,7 @@ def make_topological_torsion_generators(
 
 def topological_torsion_additional_output() -> tuple[Any, Any]:
     rdkit_output = rdFingerprintGenerator.AdditionalOutput()
-    cosmolkit_output = cosmolkit.AdditionalOutput()
+    cosmolkit_output = cosmolkit.FingerprintAdditionalOutput()
     for rdkit_method, cosmolkit_method in (
         ("AllocateAtomCounts", "allocate_atom_counts"),
         ("AllocateAtomToBits", "allocate_atom_to_bits"),

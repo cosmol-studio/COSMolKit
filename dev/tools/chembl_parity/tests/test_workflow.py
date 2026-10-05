@@ -33,6 +33,25 @@ prepare = load_module("chembl_parity_prepare", TOOL_DIR / "prepare_corpus.py")
 
 
 class WorkflowTests(unittest.TestCase):
+    def test_retired_tautomer_tool_is_not_registered(self) -> None:
+        profile = runner.load_json(TOOL_DIR / "profiles/complete.json")
+        runner.validate_profile(profile)
+        self.assertEqual(len(profile["phases"]), 34)
+        self.assertNotIn("audit_tautomer.py", runner.KNOWN_SCRIPTS)
+        self.assertNotIn("audit_tautomer.py", runner.SCRIPT_MODES)
+        self.assertNotIn("tautomer", {phase["name"] for phase in profile["phases"]})
+        self.assertFalse((TOOL_DIR / "tautomer_oracle/Cargo.toml").exists())
+        self.assertFalse((TOOL_DIR / "audit_tautomer.py").exists())
+        # Old profiles must fail explicitly, not silently drop their phase or
+        # reuse historical acceptance under a reduced current task selection.
+        profile["phases"].append({
+            "name": "tautomer",
+            "script": "audit_tautomer.py",
+            "mode": "tautomer",
+        })
+        with self.assertRaisesRegex(ValueError, "unknown script"):
+            runner.validate_profile(profile)
+
     def test_descriptor_auditor_counts_complete_high_feasibility_matrix(self) -> None:
         record = {
             "row": 0,

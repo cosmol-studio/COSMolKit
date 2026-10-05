@@ -13,15 +13,42 @@ pub struct SpecialRegression {
     pub generator: &'static str,
     pub output: &'static str,
     pub rows: usize,
+    pub schema: SpecialRegressionSchema,
+    pub generator_dependencies: &'static [&'static str],
+    pub takes_input: bool,
 }
 
-pub const SPECIAL_REGRESSIONS: &[SpecialRegression] = &[SpecialRegression {
-    key: "assign_chiral_tags_from_structure",
-    fixture: "testdata/stereo/fixtures/assign_atom_chiral_tags_from_structure_cases.json",
-    generator: "tools/testdata/rdkit/_generate_tetrahedral_stereo_geometry.py",
-    output: "assign_atom_chiral_tags_from_structure.jsonl",
-    rows: 77,
-}];
+#[derive(Clone, Copy)]
+pub enum SpecialRegressionSchema {
+    StructureTags,
+    TautomerBranches,
+}
+
+pub const SPECIAL_REGRESSIONS: &[SpecialRegression] = &[
+    SpecialRegression {
+        key: "assign_chiral_tags_from_structure",
+        fixture: "testdata/stereo/fixtures/assign_atom_chiral_tags_from_structure_cases.json",
+        generator: "tools/testdata/rdkit/_generate_tetrahedral_stereo_geometry.py",
+        output: "assign_atom_chiral_tags_from_structure.jsonl",
+        rows: 77,
+        schema: SpecialRegressionSchema::StructureTags,
+        generator_dependencies: &[],
+        takes_input: false,
+    },
+    SpecialRegression {
+        key: "tautomer_long_conjugated",
+        fixture: "testdata/tautomer/fixtures/rdkit/long_conjugated_cases.json",
+        generator: "tools/testdata/rdkit/_generate_tautomer_special_regression.py",
+        output: "long_conjugated.jsonl",
+        rows: 1,
+        schema: SpecialRegressionSchema::TautomerBranches,
+        generator_dependencies: &[
+            "tools/testdata/rdkit/_tautomer_oracle.py",
+            "tools/testdata/rdkit/tautomer_profile.json",
+        ],
+        takes_input: true,
+    },
+];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Operation {

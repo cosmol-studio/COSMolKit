@@ -36,7 +36,11 @@ fn parse_template_backend(value: &str) -> PyResult<cosmolkit_core::ConfSeqTempla
 ///
 /// `template_backend` accepts "distance_geometry" for the reference backend or
 /// "fast_geometry" for the fast initial-coordinate backend.
-fn decode(confseq: &str, optimize_with_uff: bool, template_backend: &str) -> PyResult<Molecule> {
+fn decode_confseq(
+    confseq: &str,
+    optimize_with_uff: bool,
+    template_backend: &str,
+) -> PyResult<Molecule> {
     let options = cosmolkit_core::ConfSeqDecodeOptions {
         optimize_with_uff,
         template_backend: parse_template_backend(template_backend)?,
@@ -52,8 +56,8 @@ fn decode(confseq: &str, optimize_with_uff: bool, template_backend: &str) -> PyR
 /// Decode one ConfSeq corpus row with its explicit tokenized input SMILES.
 ///
 /// This is intended for corpus parity and diagnostics. Normal callers should
-/// use `decode(confseq, ...)`.
-fn decode_with_input_smiles(
+/// use `decode_confseq(confseq, ...)`.
+fn decode_confseq_with_input_smiles(
     in_smiles: &str,
     confseq: &str,
     optimize_with_uff: bool,
@@ -75,7 +79,7 @@ fn decode_with_input_smiles(
 ///
 /// `template_backend` accepts "distance_geometry" for the reference backend or
 /// "fast_geometry" for the fast initial-coordinate backend.
-fn decode_batch(
+fn decode_confseq_batch(
     confseq_list: Vec<String>,
     errors: &str,
     n_jobs: Option<usize>,
@@ -108,8 +112,8 @@ fn decode_batch(
 /// Decode ConfSeq corpus rows with explicit tokenized input SMILES strings.
 ///
 /// This is intended for corpus parity and diagnostics. Normal callers should
-/// use `decode_batch(confseq_list, ...)`.
-fn decode_batch_with_input_smiles(
+/// use `decode_confseq_batch(confseq_list, ...)`.
+fn decode_confseq_batch_with_input_smiles(
     in_smiles_list: Vec<String>,
     confseq_list: Vec<String>,
     errors: &str,
@@ -140,19 +144,11 @@ fn decode_batch_with_input_smiles(
 }
 
 pub(crate) fn add_confseq_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    let py = m.py();
-    let submodule = PyModule::new(py, "confseq")?;
-    submodule.add_function(wrap_pyfunction!(decode, &submodule)?)?;
-    submodule.add_function(wrap_pyfunction!(decode_with_input_smiles, &submodule)?)?;
-    submodule.add_function(wrap_pyfunction!(decode_batch, &submodule)?)?;
-    submodule.add_function(wrap_pyfunction!(
-        decode_batch_with_input_smiles,
-        &submodule
-    )?)?;
-    py.import("sys")?
-        .getattr("modules")?
-        .set_item("cosmolkit.confseq", &submodule)?;
-    m.add_submodule(&submodule)?;
-    m.add("confseq", submodule)?;
+    // Retained binding implementation: register flat names when its migration
+    // is enabled; never recreate the old cosmolkit.confseq namespace.
+    m.add_function(wrap_pyfunction!(decode_confseq, m)?)?;
+    m.add_function(wrap_pyfunction!(decode_confseq_with_input_smiles, m)?)?;
+    m.add_function(wrap_pyfunction!(decode_confseq_batch, m)?)?;
+    m.add_function(wrap_pyfunction!(decode_confseq_batch_with_input_smiles, m)?)?;
     Ok(())
 }

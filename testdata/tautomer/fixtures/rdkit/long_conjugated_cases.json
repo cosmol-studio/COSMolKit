@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "reference": {
+    "version": "2026.3.1",
+    "source_revision": "351f8f378f8ad6bbd517980c38896e66bf907af8c"
+  },
+  "cases": [
+    {
+      "case_id": "smiles_5000:1399",
+      "row": 1399,
+      "smiles": "O=C(O)CCCCCCC/C=C\\CC(=O)/C=C(O)/C=C/CCO",
+      "sanitize": true,
+      "remove_hs": true,
+      "source": "testdata/smiles/corpus/smiles_5000.smi:1400"
+    }
+  ],
+  "branches": [
+    {
+      "name": "default",
+      "catalog": "current",
+      "max_tautomers": 1000,
+      "max_transforms": 1000,
+      "remove_sp3_stereo": true,
+      "remove_bond_stereo": true,
+      "remove_isotopic_hydrogens": true,
+      "reassign_stereo": true
+    },
+    {
+      "name": "v1",
+      "catalog": "v1",
+      "max_tautomers": 1000,
+      "max_transforms": 1000,
+      "remove_sp3_stereo": true,
+      "remove_bond_stereo": true,
+      "remove_isotopic_hydrogens": true,
+      "reassign_stereo": true
+    }
+  ]
+}

@@ -71,16 +71,34 @@ pub fn validate_oracle(
     label: &str,
 ) {
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join(relative_path);
+    let rows = BufReader::new(File::open(path).unwrap())
+        .lines()
+        .map(|line| serde_json::from_str(&line.unwrap()).unwrap())
+        .collect::<Vec<Value>>();
+    assert_eq!(rows.len(), expected_rows);
+    compare_rows(
+        &rows,
+        expected_branches,
+        &Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target"),
+        label,
+    );
+}
+
+/// Compare owned, preflighted reference snapshots without rereading/generating data.
+pub fn compare_rows(
+    reference_rows: &[Value],
+    expected_branches: usize,
+    evidence_dir: &Path,
+    label: &str,
+) {
     let current = TautomerCatalog::current().unwrap();
     let v1 = TautomerCatalog::v1().unwrap();
     let mut failures = Vec::new();
-    let evidence_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join(format!("../../target/TAU-{label}-detached-fields.jsonl"));
+    let evidence_path = evidence_dir.join(format!("TAU-{label}-detached-fields.jsonl"));
     let mut fields_file = std::io::BufWriter::new(File::create(evidence_path).unwrap());
     let mut checked = 0;
     let mut rows = 0;
-    for line in BufReader::new(File::open(path).unwrap()).lines() {
-        let row: Value = serde_json::from_str(&line.unwrap()).unwrap();
+    for row in reference_rows {
         rows += 1;
         let parsed = cosmolkit_smiles::parse_smiles(
             row["smiles"].as_str().unwrap(),
@@ -195,20 +213,20 @@ pub fn validate_oracle(
         }
     }
     std::io::Write::flush(&mut fields_file).unwrap();
-    assert_eq!(rows, expected_rows);
+    assert_eq!(rows, reference_rows.len());
     assert_eq!(checked, expected_branches);
-    let out = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join(format!("../../target/TAU-{label}-detached-failures.json"));
+    let out = evidence_dir.join(format!("TAU-{label}-detached-failures.json"));
     std::fs::write(
-        out,
+        &out,
         serde_json::to_vec_pretty(&json!({"rows":rows,"branches":checked,"failures":failures}))
             .unwrap(),
     )
     .unwrap();
     assert!(
         failures.is_empty(),
-        "{} differences across {checked} source branches; full evidence in target/TAU-{label}-detached-failures.json; first: {:?}",
+        "{} differences across {checked} source branches; full evidence in {}; first: {:?}",
         failures.len(),
+        out.display(),
         failures
             .first()
             .map(|f| (&f["case"], &f["branch"], &f["field"], &f["error"]))

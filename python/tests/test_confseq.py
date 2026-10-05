@@ -13,14 +13,16 @@ CORPUS_CONFSEQ = (
 )
 
 
-def test_confseq_submodule_is_importable():
-    confseq = importlib.import_module("cosmolkit.confseq")
-
-    assert confseq.decode is cosmolkit.confseq.decode
+def test_confseq_functions_are_flat_and_the_old_submodule_is_not_exposed():
+    for name in ("decode_confseq", "decode_confseq_with_input_smiles", "decode_confseq_batch", "decode_confseq_batch_with_input_smiles"):
+        assert callable(getattr(cosmolkit, name))
+    assert not hasattr(cosmolkit, "confseq")
+    with pytest.raises(ModuleNotFoundError):
+        importlib.import_module("cosmolkit.confseq")
 
 
 def test_confseq_decode_returns_cosmolkit_molecule():
-    mol = cosmolkit.confseq.decode("C C")
+    mol = cosmolkit.decode_confseq("C C")
 
     assert isinstance(mol, cosmolkit.Molecule)
     assert mol.num_atoms() == 2
@@ -28,7 +30,7 @@ def test_confseq_decode_returns_cosmolkit_molecule():
 
 
 def test_confseq_decode_can_disable_uff_optimization():
-    mol = cosmolkit.confseq.decode("C C", optimize_with_uff=False)
+    mol = cosmolkit.decode_confseq("C C", optimize_with_uff=False)
 
     assert isinstance(mol, cosmolkit.Molecule)
     assert mol.num_atoms() == 2
@@ -36,12 +38,12 @@ def test_confseq_decode_can_disable_uff_optimization():
 
 
 def test_confseq_decode_accepts_explicit_template_backend():
-    dg = cosmolkit.confseq.decode(
+    dg = cosmolkit.decode_confseq(
         CORPUS_CONFSEQ,
         optimize_with_uff=False,
         template_backend="distance_geometry",
     )
-    fast = cosmolkit.confseq.decode(
+    fast = cosmolkit.decode_confseq(
         CORPUS_CONFSEQ,
         optimize_with_uff=False,
         template_backend="fast_geometry",
@@ -57,7 +59,7 @@ def test_confseq_decode_accepts_explicit_template_backend():
 
 def test_confseq_decode_rejects_unknown_template_backend():
     with pytest.raises(ValueError, match="template_backend"):
-        cosmolkit.confseq.decode(
+        cosmolkit.decode_confseq(
             "C C",
             optimize_with_uff=False,
             template_backend="unknown",
@@ -66,7 +68,7 @@ def test_confseq_decode_rejects_unknown_template_backend():
 
 def test_confseq_decode_rejects_old_base_conformer_backend_name():
     with pytest.raises(ValueError, match="template_backend"):
-        cosmolkit.confseq.decode(
+        cosmolkit.decode_confseq(
             "C <90> | C C",
             optimize_with_uff=False,
             template_backend="base_conformer",
@@ -74,7 +76,7 @@ def test_confseq_decode_rejects_old_base_conformer_backend_name():
 
 
 def test_confseq_decode_batch_preserves_order_and_uses_local_cache():
-    mols = cosmolkit.confseq.decode_batch(
+    mols = cosmolkit.decode_confseq_batch(
         ["C C", "C C"],
         n_jobs=1,
         optimize_with_uff=False,
@@ -88,7 +90,7 @@ def test_confseq_decode_batch_preserves_order_and_uses_local_cache():
 
 
 def test_confseq_decode_batch_can_keep_errors():
-    mols = cosmolkit.confseq.decode_batch(
+    mols = cosmolkit.decode_confseq_batch(
         ["C C", "not smiles"],
         errors="keep",
     )

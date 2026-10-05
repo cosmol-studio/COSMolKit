@@ -1,4 +1,4 @@
-"""Decode ConfSeq strings with the reference and fast template backends."""
+"""ConfSeq migration example; requires the not-yet-enabled ConfSeq projection."""
 
 from __future__ import annotations
 
@@ -13,13 +13,13 @@ confseq = (
     "N 2 <-172> C ( = O ) <-2> C <0> N <3> C <174> 2 = O ) c n 1"
 )
 
-reference = ck.confseq.decode(
+reference = ck.decode_confseq(
     confseq,
     optimize_with_uff=False,
     template_backend="distance_geometry",
 )
 
-fast = ck.confseq.decode(
+fast = ck.decode_confseq(
     confseq,
     optimize_with_uff=False,
     template_backend="fast_geometry",
